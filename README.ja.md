@@ -46,3 +46,10 @@ FixtureGpioのdigital read clientも追加し、ESP32側で許可したUIAPduino
 
 FixtureUartのconfigure/write/read clientを追加した。115200 bpsでV003の`PING`/`PONG`往復を確認し、
 peerが返す`ERROR command`もUART transfer自体のfailureへ変換せず取得できた。
+
+最新版fixture imageではUART `DOUT`とFixtureGpioを組み合わせ、target pin 7→ESP32 GPIO27、
+target pin 9→ESP32 GPIO14のLOW/HIGH/LOWを確認した。再実行用smoke testは次で起動する。
+
+```sh
+uv run examples/uiapduino_fixture_smoke.py --port /dev/ttyUSB0
+```
