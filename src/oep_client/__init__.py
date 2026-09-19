@@ -11,6 +11,7 @@ from .prototype import (
     ProtocolError,
     SerialConnection,
     TargetControlClient,
+    TargetFlashClient,
     TargetMemoryClient,
     crc16_ccitt,
     decode_frame,
@@ -20,6 +21,6 @@ from .prototype import (
 __all__ = [
     "CORE_REQUEST", "CORE_RESULT", "FUNCTION_REQUEST", "FUNCTION_RESULT",
     "Endpoint", "FunctionResult", "OfferedFunction", "ProtocolError", "SerialConnection",
-    "TargetControlClient", "TargetMemoryClient", "crc16_ccitt",
+    "TargetControlClient", "TargetFlashClient", "TargetMemoryClient", "crc16_ccitt",
     "decode_frame", "encode_frame",
 ]

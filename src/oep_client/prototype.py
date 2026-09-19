@@ -39,6 +39,7 @@ TARGET_GET_STATUS = 0x01
 TARGET_NORMALIZE_USER = 0x02
 TARGET_ENTER_PRODUCT_BOOTLOADER = 0x03
 TARGET_READ_MEMORY = 0x01
+TARGET_PROGRAM_PAGE64 = 0x01
 
 
 class ProtocolError(ValueError):
@@ -238,6 +239,22 @@ class TargetMemoryClient:
         if len(result.data) != length:
             raise ProtocolError("memory result length mismatch")
         return result.data
+
+
+class TargetFlashClient:
+    def __init__(self, endpoint: Endpoint, connection: "SerialConnection") -> None:
+        self._endpoint = endpoint
+        self._connection = connection
+
+    def program_page64(self, address: int, data: bytes) -> FunctionResult:
+        if address & 63 or len(data) != 64:
+            raise ValueError("prototype flash writes require one aligned 64-byte page")
+        correlation, request = self._endpoint.function_request(
+            FUNCTION_TARGET_FLASH, TARGET_PROGRAM_PAGE64,
+            struct.pack("<I", address) + data)
+        response = self._connection.exchange(request)
+        return self._endpoint.parse_function_result(
+            response, correlation, FUNCTION_TARGET_FLASH)
 
 
 class SerialConnection:
