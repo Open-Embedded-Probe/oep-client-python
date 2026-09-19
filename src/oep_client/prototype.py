@@ -40,6 +40,7 @@ TARGET_NORMALIZE_USER = 0x02
 TARGET_ENTER_PRODUCT_BOOTLOADER = 0x03
 TARGET_READ_MEMORY = 0x01
 TARGET_PROGRAM_PAGE64 = 0x01
+FIXTURE_READ_DIGITAL = 0x01
 
 
 class ProtocolError(ValueError):
@@ -255,6 +256,23 @@ class TargetFlashClient:
         response = self._connection.exchange(request)
         return self._endpoint.parse_function_result(
             response, correlation, FUNCTION_TARGET_FLASH)
+
+
+class FixtureGpioClient:
+    def __init__(self, endpoint: Endpoint, connection: "SerialConnection") -> None:
+        self._endpoint = endpoint
+        self._connection = connection
+
+    def read_digital(self, pin: int) -> int | FunctionResult:
+        correlation, request = self._endpoint.function_request(
+            FUNCTION_FIXTURE_GPIO, FIXTURE_READ_DIGITAL, bytes((pin,)))
+        result = self._endpoint.parse_function_result(
+            self._connection.exchange(request), correlation, FUNCTION_FIXTURE_GPIO)
+        if not result.succeeded:
+            return result
+        if len(result.data) != 1 or result.data[0] > 1:
+            raise ProtocolError("malformed digital input result")
+        return result.data[0]
 
 
 class SerialConnection:

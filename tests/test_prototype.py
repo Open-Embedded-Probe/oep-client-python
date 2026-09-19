@@ -5,6 +5,7 @@ import pytest
 from oep_client import Endpoint, ProtocolError, decode_frame, encode_frame
 from oep_client.prototype import (
     FUNCTION_TARGET_CONTROL,
+    FixtureGpioClient,
     OUTCOME_FAILED,
     OUTCOME_SUCCESS,
     REJECTION_OPERATION,
@@ -121,3 +122,15 @@ def test_program_flash_page64():
         client.program_page64(0x08003FC1, bytes(64))
     with pytest.raises(ValueError):
         client.program_page64(0x08003FC0, bytes(63))
+
+
+class GpioConnection:
+    def exchange(self, request):
+        role, operation, correlation, target, pin = struct.unpack("<BBHHB", request)
+        assert (role, operation, target, pin) == (0x10, 1, 0x0201, 27)
+        return struct.pack("<BBHHBB", 0x90, RESOLUTION_COMPLETED, correlation,
+                           target, OUTCOME_SUCCESS, 1)
+
+
+def test_fixture_digital_read():
+    assert FixtureGpioClient(Endpoint(), GpioConnection()).read_digital(27) == 1
