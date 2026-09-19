@@ -41,6 +41,9 @@ TARGET_ENTER_PRODUCT_BOOTLOADER = 0x03
 TARGET_READ_MEMORY = 0x01
 TARGET_PROGRAM_PAGE64 = 0x01
 FIXTURE_READ_DIGITAL = 0x01
+FIXTURE_UART_CONFIGURE = 0x01
+FIXTURE_UART_WRITE = 0x02
+FIXTURE_UART_READ_AVAILABLE = 0x03
 
 
 class ProtocolError(ValueError):
@@ -273,6 +276,46 @@ class FixtureGpioClient:
         if len(result.data) != 1 or result.data[0] > 1:
             raise ProtocolError("malformed digital input result")
         return result.data[0]
+
+
+class FixtureUartClient:
+    def __init__(self, endpoint: Endpoint, connection: "SerialConnection") -> None:
+        self._endpoint = endpoint
+        self._connection = connection
+
+    def _exchange(self, operation: int, payload: bytes) -> FunctionResult:
+        correlation, request = self._endpoint.function_request(
+            FUNCTION_FIXTURE_UART, operation, payload)
+        return self._endpoint.parse_function_result(
+            self._connection.exchange(request), correlation, FUNCTION_FIXTURE_UART)
+
+    def configure(self, baudrate: int) -> int | FunctionResult:
+        result = self._exchange(FIXTURE_UART_CONFIGURE, struct.pack("<I", baudrate))
+        if not result.succeeded:
+            return result
+        if len(result.data) != 4:
+            raise ProtocolError("malformed UART configuration result")
+        return struct.unpack("<I", result.data)[0]
+
+    def write(self, data: bytes) -> int | FunctionResult:
+        if not data or len(data) > 64:
+            raise ValueError("prototype UART writes require 1..64 bytes")
+        result = self._exchange(FIXTURE_UART_WRITE, data)
+        if not result.succeeded:
+            return result
+        if len(result.data) != 1:
+            raise ProtocolError("malformed UART write result")
+        return result.data[0]
+
+    def read_available(self, maximum: int = 64) -> bytes | FunctionResult:
+        if maximum < 1 or maximum > 80:
+            raise ValueError("prototype UART reads require maximum 1..80")
+        result = self._exchange(FIXTURE_UART_READ_AVAILABLE, bytes((maximum,)))
+        if not result.succeeded:
+            return result
+        if not result.data or result.data[0] != len(result.data) - 1:
+            raise ProtocolError("malformed UART read result")
+        return result.data[1:]
 
 
 class SerialConnection:
