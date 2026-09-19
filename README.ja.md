@@ -41,3 +41,5 @@ clientは4 byte aligned、4～32 byteだけを受け付ける。これはprototy
 同日、TargetFlashの64-byte page programを追加した。`0x08003fc0`への書込みと独立read-backが
 一致し、範囲外要求が開始前にrejectedとなることを確認した。page dataを一つの論理requestへ
 載せるため、相手が通知するmaximum messageは96 byteになった。
+
+FixtureGpioのdigital read clientも追加し、ESP32側で許可したUIAPduino配線だけを実機観測した。
