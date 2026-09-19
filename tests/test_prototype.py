@@ -11,6 +11,7 @@ from oep_client.prototype import (
     RESOLUTION_COMPLETED,
     RESOLUTION_REJECTED,
     TARGET_GET_STATUS,
+    TargetFlashClient,
     TargetMemoryClient,
 )
 
@@ -101,3 +102,22 @@ def test_bounded_memory_read():
         client.read(0x08000001, 8)
     with pytest.raises(ValueError):
         client.read(0x08000000, 36)
+
+
+class FlashConnection:
+    def exchange(self, request):
+        role, operation, correlation, target, address = struct.unpack_from("<BBHHI", request)
+        assert (role, operation, target, address) == (0x10, 1, 0x0103, 0x08003FC0)
+        assert request[10:] == bytes(range(64))
+        return struct.pack("<BBHHB", 0x90, RESOLUTION_COMPLETED, correlation,
+                           target, OUTCOME_SUCCESS)
+
+
+def test_program_flash_page64():
+    client = TargetFlashClient(Endpoint(), FlashConnection())
+    result = client.program_page64(0x08003FC0, bytes(range(64)))
+    assert result.succeeded
+    with pytest.raises(ValueError):
+        client.program_page64(0x08003FC1, bytes(64))
+    with pytest.raises(ValueError):
+        client.program_page64(0x08003FC0, bytes(63))

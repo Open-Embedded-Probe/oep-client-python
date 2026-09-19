@@ -2,6 +2,7 @@ import argparse
 
 from .prototype import (
     Endpoint, FunctionResult, SerialConnection, TargetControlClient,
+    TargetFlashClient,
     TargetMemoryClient,
 )
 
@@ -16,6 +17,8 @@ def main() -> None:
     parser.add_argument("--target", choices=("status", "normalize-user", "bootloader"))
     parser.add_argument("--read-memory", nargs=2, metavar=("ADDRESS", "LENGTH"),
                         help="read 4..32 aligned bytes; integers accept 0x prefix")
+    parser.add_argument("--program-page64", nargs=2, metavar=("ADDRESS", "HEX"),
+                        help="destructively program exactly 64 bytes")
     args = parser.parse_args()
     endpoint = Endpoint()
     connection = SerialConnection(args.port)
@@ -47,6 +50,11 @@ def main() -> None:
                 print_result("read-memory", result)
             else:
                 print(f"read-memory address=0x{address:08x} data={result.hex()}")
+        if args.program_page64:
+            address = int(args.program_page64[0], 0)
+            data = bytes.fromhex(args.program_page64[1])
+            result = TargetFlashClient(endpoint, connection).program_page64(address, data)
+            print_result("program-page64", result)
     finally:
         connection.close()
 
