@@ -43,3 +43,6 @@ clientは4 byte aligned、4～32 byteだけを受け付ける。これはprototy
 載せるため、相手が通知するmaximum messageは96 byteになった。
 
 FixtureGpioのdigital read clientも追加し、ESP32側で許可したUIAPduino配線だけを実機観測した。
+
+FixtureUartのconfigure/write/read clientを追加した。115200 bpsでV003の`PING`/`PONG`往復を確認し、
+peerが返す`ERROR command`もUART transfer自体のfailureへ変換せず取得できた。

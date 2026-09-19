@@ -6,6 +6,7 @@ from oep_client import Endpoint, ProtocolError, decode_frame, encode_frame
 from oep_client.prototype import (
     FUNCTION_TARGET_CONTROL,
     FixtureGpioClient,
+    FixtureUartClient,
     OUTCOME_FAILED,
     OUTCOME_SUCCESS,
     REJECTION_OPERATION,
@@ -134,3 +135,27 @@ class GpioConnection:
 
 def test_fixture_digital_read():
     assert FixtureGpioClient(Endpoint(), GpioConnection()).read_digital(27) == 1
+
+
+class UartConnection:
+    def exchange(self, request):
+        role, operation, correlation, target = struct.unpack_from("<BBHH", request)
+        assert (role, target) == (0x10, 0x0202)
+        if operation == 1:
+            assert request[6:] == struct.pack("<I", 115200)
+            data = struct.pack("<I", 115200)
+        elif operation == 2:
+            assert request[6:] == b"PING\n"
+            data = bytes((5,))
+        else:
+            assert request[6:] == b"\x40"
+            data = b"\x05PONG\n"
+        return struct.pack("<BBHHB", 0x90, RESOLUTION_COMPLETED, correlation,
+                           target, OUTCOME_SUCCESS) + data
+
+
+def test_fixture_uart_operations():
+    uart = FixtureUartClient(Endpoint(), UartConnection())
+    assert uart.configure(115200) == 115200
+    assert uart.write(b"PING\n") == 5
+    assert uart.read_available() == b"PONG\n"
