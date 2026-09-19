@@ -35,7 +35,7 @@ wheels = [
 [[package]]
 name = "oep-client-prototype"
 version = "0.0.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "pyserial" },
 ]

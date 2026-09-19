@@ -4,6 +4,10 @@ version = "0.0.0"
 requires-python = ">=3.10"
 dependencies = ["pyserial>=3.5"]
 
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [dependency-groups]
 dev = ["pytest>=8"]
 
