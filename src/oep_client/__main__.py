@@ -1,11 +1,16 @@
 import argparse
 
-from .prototype import Endpoint, SerialConnection
+from .prototype import Endpoint, FunctionResult, SerialConnection, TargetControlClient
+
+
+def print_result(name: str, result: FunctionResult) -> None:
+    print(f"{name} resolution={result.resolution} detail={result.detail}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Destructive OEP P0 prototype")
     parser.add_argument("--port", required=True)
+    parser.add_argument("--target", choices=("status", "normalize-user", "bootloader"))
     args = parser.parse_args()
     endpoint = Endpoint()
     connection = SerialConnection(args.port)
@@ -17,6 +22,19 @@ def main() -> None:
         functions = endpoint.parse_functions(connection.exchange(request), correlation)
         for function in functions:
             print(f"function reference=0x{function.reference:04x} revision={function.revision} flags=0x{function.flags:02x}")
+        if args.target:
+            target = TargetControlClient(endpoint, connection)
+            if args.target == "status":
+                result = target.get_status()
+                if isinstance(result, FunctionResult):
+                    print_result("target-status", result)
+                else:
+                    print("target-status " + " ".join(
+                        f"{key}={value}" for key, value in result.items()))
+            elif args.target == "normalize-user":
+                print_result("normalize-user", target.normalize_user())
+            else:
+                print_result("bootloader", target.enter_product_bootloader())
     finally:
         connection.close()
 
