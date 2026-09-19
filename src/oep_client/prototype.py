@@ -16,6 +16,17 @@ STATUS_COMPLETED = 0x00
 STATUS_REJECTED_OPERATION = 0x01
 STATUS_REJECTED_PAYLOAD = 0x02
 
+RESOLUTION_REJECTED = 0x00
+RESOLUTION_COMPLETED = 0x01
+
+REJECTION_TARGET = 0x01
+REJECTION_OPERATION = 0x02
+REJECTION_PAYLOAD = 0x03
+REJECTION_UNAVAILABLE = 0x04
+
+OUTCOME_SUCCESS = 0x00
+OUTCOME_FAILED = 0x01
+
 FUNCTION_TARGET_CONTROL = 0x0101
 FUNCTION_TARGET_MEMORY = 0x0102
 FUNCTION_TARGET_FLASH = 0x0103
@@ -23,6 +34,10 @@ FUNCTION_FIXTURE_GPIO = 0x0201
 FUNCTION_FIXTURE_UART = 0x0202
 FUNCTION_FIXTURE_I2C = 0x0203
 FUNCTION_FIXTURE_SPI = 0x0204
+
+TARGET_GET_STATUS = 0x01
+TARGET_NORMALIZE_USER = 0x02
+TARGET_ENTER_PRODUCT_BOOTLOADER = 0x03
 
 
 class ProtocolError(ValueError):
@@ -102,6 +117,18 @@ class OfferedFunction:
     flags: int
 
 
+@dataclass(frozen=True)
+class FunctionResult:
+    resolution: int
+    target: int
+    detail: int
+    data: bytes
+
+    @property
+    def succeeded(self) -> bool:
+        return self.resolution == RESOLUTION_COMPLETED and self.detail == OUTCOME_SUCCESS
+
+
 class Endpoint:
     """Stateless message builder/parser for the destructive P0 prototype."""
 
@@ -120,6 +147,10 @@ class Endpoint:
     def list_functions_request(self) -> tuple[int, bytes]:
         correlation = self._correlation()
         return correlation, struct.pack("<BBHB", CORE_REQUEST, CORE_LIST_FUNCTIONS, correlation, 0)
+
+    def function_request(self, target: int, operation: int, payload: bytes = b"") -> tuple[int, bytes]:
+        correlation = self._correlation()
+        return correlation, struct.pack("<BBHH", FUNCTION_REQUEST, operation, correlation, target) + payload
 
     @staticmethod
     def parse_confirm(message: bytes, correlation: int) -> dict[str, int]:
@@ -143,6 +174,48 @@ class Endpoint:
             raise ProtocolError("malformed function list")
         return [OfferedFunction(*struct.unpack_from("<HBB", payload, 1 + i * 4))
                 for i in range(payload[0])]
+
+    @staticmethod
+    def parse_function_result(message: bytes, correlation: int, target: int) -> FunctionResult:
+        if len(message) < 7 or message[0] != FUNCTION_RESULT:
+            raise ProtocolError("not a function result")
+        resolution, actual_correlation, actual_target = struct.unpack_from("<BHH", message, 1)
+        if actual_correlation != correlation or actual_target != target:
+            raise ProtocolError("function result mismatch")
+        if resolution not in (RESOLUTION_REJECTED, RESOLUTION_COMPLETED):
+            raise ProtocolError("unknown function resolution")
+        detail = message[6]
+        data = message[7:]
+        if resolution == RESOLUTION_REJECTED and data:
+            raise ProtocolError("rejected result has unexpected data")
+        return FunctionResult(resolution, target, detail, data)
+
+
+class TargetControlClient:
+    def __init__(self, endpoint: Endpoint, connection: "SerialConnection") -> None:
+        self._endpoint = endpoint
+        self._connection = connection
+
+    def _exchange(self, operation: int) -> FunctionResult:
+        correlation, request = self._endpoint.function_request(
+            FUNCTION_TARGET_CONTROL, operation)
+        response = self._connection.exchange(request)
+        return self._endpoint.parse_function_result(
+            response, correlation, FUNCTION_TARGET_CONTROL)
+
+    def get_status(self) -> dict[str, int] | FunctionResult:
+        result = self._exchange(TARGET_GET_STATUS)
+        if not result.succeeded:
+            return result
+        if len(result.data) != 3:
+            raise ProtocolError("malformed target status")
+        return dict(zip(("flags", "start_mode", "boot_status"), result.data))
+
+    def normalize_user(self) -> FunctionResult:
+        return self._exchange(TARGET_NORMALIZE_USER)
+
+    def enter_product_bootloader(self) -> FunctionResult:
+        return self._exchange(TARGET_ENTER_PRODUCT_BOOTLOADER)
 
 
 class SerialConnection:
