@@ -38,6 +38,7 @@ FUNCTION_FIXTURE_SPI = 0x0204
 TARGET_GET_STATUS = 0x01
 TARGET_NORMALIZE_USER = 0x02
 TARGET_ENTER_PRODUCT_BOOTLOADER = 0x03
+TARGET_READ_MEMORY = 0x01
 
 
 class ProtocolError(ValueError):
@@ -216,6 +217,27 @@ class TargetControlClient:
 
     def enter_product_bootloader(self) -> FunctionResult:
         return self._exchange(TARGET_ENTER_PRODUCT_BOOTLOADER)
+
+
+class TargetMemoryClient:
+    def __init__(self, endpoint: Endpoint, connection: "SerialConnection") -> None:
+        self._endpoint = endpoint
+        self._connection = connection
+
+    def read(self, address: int, length: int) -> bytes | FunctionResult:
+        if address & 3 or length < 4 or length > 32 or length & 3:
+            raise ValueError("prototype reads must be 4-byte aligned and 4..32 bytes")
+        correlation, request = self._endpoint.function_request(
+            FUNCTION_TARGET_MEMORY, TARGET_READ_MEMORY,
+            struct.pack("<IB", address, length))
+        response = self._connection.exchange(request)
+        result = self._endpoint.parse_function_result(
+            response, correlation, FUNCTION_TARGET_MEMORY)
+        if not result.succeeded:
+            return result
+        if len(result.data) != length:
+            raise ProtocolError("memory result length mismatch")
+        return result.data
 
 
 class SerialConnection:

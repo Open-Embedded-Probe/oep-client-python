@@ -24,6 +24,7 @@ uv run python -m oep_client --port /dev/ttyUSB0
 uv run python -m oep_client --port /dev/ttyUSB0 --target status
 uv run python -m oep_client --port /dev/ttyUSB0 --target normalize-user
 uv run python -m oep_client --port /dev/ttyUSB0 --target bootloader
+uv run python -m oep_client --port /dev/ttyUSB0 --read-memory 0x08000000 16
 ```
 
 2026-09-19、無印ESP32 prototypeとの間でendpoint revision 1、最大message 64 byteおよび
@@ -32,3 +33,6 @@ V003 control/memory/flash、fixture GPIO/UART/I2C/SPIの仮reference 7件を取�
 2026-09-20、実装済みfunctionだけを公開するよう修正し、TargetControl `0x0101`を取得した。
 OEP requestとして状態取得、user mode正規化、製品bootloader移行が成功し、boot移行後に
 Windows側で`1209:b803`の再列挙を確認した。
+
+同日、TargetMemoryのbounded readを追加し、`0x08000000`から16 byteを実機取得した。現在の
+clientは4 byte aligned、4～32 byteだけを受け付ける。これはprototype制約である。
