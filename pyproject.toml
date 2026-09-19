@@ -1,0 +1,11 @@
+[project]
+name = "oep-client-prototype"
+version = "0.0.0"
+requires-python = ">=3.10"
+dependencies = ["pyserial>=3.5"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
