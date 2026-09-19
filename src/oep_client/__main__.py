@@ -1,6 +1,9 @@
 import argparse
 
-from .prototype import Endpoint, FunctionResult, SerialConnection, TargetControlClient
+from .prototype import (
+    Endpoint, FunctionResult, SerialConnection, TargetControlClient,
+    TargetMemoryClient,
+)
 
 
 def print_result(name: str, result: FunctionResult) -> None:
@@ -11,6 +14,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Destructive OEP P0 prototype")
     parser.add_argument("--port", required=True)
     parser.add_argument("--target", choices=("status", "normalize-user", "bootloader"))
+    parser.add_argument("--read-memory", nargs=2, metavar=("ADDRESS", "LENGTH"),
+                        help="read 4..32 aligned bytes; integers accept 0x prefix")
     args = parser.parse_args()
     endpoint = Endpoint()
     connection = SerialConnection(args.port)
@@ -35,6 +40,13 @@ def main() -> None:
                 print_result("normalize-user", target.normalize_user())
             else:
                 print_result("bootloader", target.enter_product_bootloader())
+        if args.read_memory:
+            address, length = (int(value, 0) for value in args.read_memory)
+            result = TargetMemoryClient(endpoint, connection).read(address, length)
+            if isinstance(result, FunctionResult):
+                print_result("read-memory", result)
+            else:
+                print(f"read-memory address=0x{address:08x} data={result.hex()}")
     finally:
         connection.close()
 

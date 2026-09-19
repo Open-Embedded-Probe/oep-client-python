@@ -11,6 +11,7 @@ from oep_client.prototype import (
     RESOLUTION_COMPLETED,
     RESOLUTION_REJECTED,
     TARGET_GET_STATUS,
+    TargetMemoryClient,
 )
 
 
@@ -83,3 +84,20 @@ def test_function_result_must_match_target_and_correlation():
         endpoint.parse_function_result(response, correlation + 1, FUNCTION_TARGET_CONTROL)
     with pytest.raises(ProtocolError):
         endpoint.parse_function_result(response, correlation, FUNCTION_TARGET_CONTROL + 1)
+
+
+class MemoryConnection:
+    def exchange(self, request):
+        role, operation, correlation, target, address, length = struct.unpack("<BBHHIB", request)
+        assert (role, operation, target, address, length) == (0x10, 1, 0x0102, 0x08000000, 8)
+        return struct.pack("<BBHHB8s", 0x90, RESOLUTION_COMPLETED, correlation,
+                           target, OUTCOME_SUCCESS, b"abcdefgh")
+
+
+def test_bounded_memory_read():
+    client = TargetMemoryClient(Endpoint(), MemoryConnection())
+    assert client.read(0x08000000, 8) == b"abcdefgh"
+    with pytest.raises(ValueError):
+        client.read(0x08000001, 8)
+    with pytest.raises(ValueError):
+        client.read(0x08000000, 36)
