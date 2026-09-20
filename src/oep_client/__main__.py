@@ -52,6 +52,7 @@ def main() -> None:
     args = parser.parse_args()
     endpoint = Endpoint()
     connection = SerialConnection(args.port, timeout=args.timeout)
+    cleanup_target: TargetControlClient | None = None
     try:
         correlation, request = endpoint.confirm_request()
         confirmation = endpoint.parse_confirm(connection.exchange(request), correlation)
@@ -62,6 +63,10 @@ def main() -> None:
             print(f"function reference=0x{function.reference:04x} revision={function.revision} flags=0x{function.flags:02x}")
         if args.target:
             target = TargetControlClient(endpoint, connection)
+            # Entering the product bootloader is an explicit terminal state;
+            # every diagnostic operation must instead leave the target running.
+            if args.target != "bootloader":
+                cleanup_target = target
             if args.target == "status":
                 result = target.get_status()
                 if isinstance(result, FunctionResult):
@@ -74,6 +79,7 @@ def main() -> None:
             else:
                 print_result("bootloader", target.enter_product_bootloader())
         if args.read_memory:
+            cleanup_target = TargetControlClient(endpoint, connection)
             address, length = (int(value, 0) for value in args.read_memory)
             result = TargetMemoryClient(endpoint, connection).read(address, length)
             if isinstance(result, FunctionResult):
@@ -87,34 +93,45 @@ def main() -> None:
             else:
                 print(f"gpio-read pin={args.gpio_read} value={result}")
         if args.program_page64:
+            cleanup_target = TargetControlClient(endpoint, connection)
             address = int(args.program_page64[0], 0)
             data = bytes.fromhex(args.program_page64[1])
             result = TargetFlashClient(endpoint, connection).program_page64(address, data)
             print_result("program-page64", result)
         memory = TargetMemoryClient(endpoint, connection)
         if args.backup_flash:
+            cleanup_target = TargetControlClient(endpoint, connection)
             data = read_range(memory, args.flash_base, args.flash_size, progress)
             Path(args.backup_flash).write_bytes(data)
-            reset_target(TargetControlClient(endpoint, connection))
+            reset_target(cleanup_target)
             print(f"backup-flash bytes={len(data)} sha256={hashlib.sha256(data).hexdigest()}")
         if args.program_image:
             if not args.destructive:
                 parser.error("--program-image requires --destructive")
             desired = padded_image(Path(args.program_image).read_bytes(), args.flash_size)
+            cleanup_target = TargetControlClient(endpoint, connection)
             summary = program_image(
                 memory, TargetFlashClient(endpoint, connection),
                 args.flash_base, desired, progress=progress)
-            reset_target(TargetControlClient(endpoint, connection))
+            reset_target(cleanup_target)
             verify_image(memory, args.flash_base, desired, progress)
-            reset_target(TargetControlClient(endpoint, connection))
+            reset_target(cleanup_target)
             print(f"program-image pages={summary.pages_programmed} "
                   f"attempts={summary.attempts} sha256={hashlib.sha256(desired).hexdigest()}")
         if args.verify_image:
             expected = padded_image(Path(args.verify_image).read_bytes(), args.flash_size)
+            cleanup_target = TargetControlClient(endpoint, connection)
             verify_image(memory, args.flash_base, expected, progress)
-            reset_target(TargetControlClient(endpoint, connection))
+            reset_target(cleanup_target)
             print(f"verify-image bytes={len(expected)} sha256={hashlib.sha256(expected).hexdigest()}")
     finally:
+        # Every target memory/flash operation halts through RVSWD. This also
+        # covers an exception between an operation and its normal reset.
+        if cleanup_target is not None:
+            try:
+                reset_target(cleanup_target)
+            except Exception:
+                pass
         connection.close()
 
 
