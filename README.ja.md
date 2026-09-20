@@ -25,7 +25,6 @@ uv run python -m oep_client --port /dev/ttyUSB0 --target status
 uv run python -m oep_client --port /dev/ttyUSB0 --target normalize-user
 uv run python -m oep_client --port /dev/ttyUSB0 --target bootloader
 uv run python -m oep_client --port /dev/ttyUSB0 --read-memory 0x08000000 16
-uv run python -m oep_client --port /dev/ttyUSB0 --program-page64 0x08003fc0 <128桁のHEX>
 ```
 
 2026-09-19、無印ESP32 prototypeとの間でendpoint revision 1、最大message 64 byteおよび
@@ -38,9 +37,10 @@ Windows側で`1209:b803`の再列挙を確認した。
 同日、TargetMemoryのbounded readを追加し、`0x08000000`から16 byteを実機取得した。現在の
 clientは4 byte aligned、4～32 byteだけを受け付ける。これはprototype制約である。
 
-同日、TargetFlashの64-byte page programを追加した。`0x08003fc0`への書込みと独立read-backが
-一致し、範囲外要求が開始前にrejectedとなることを確認した。page dataを一つの論理requestへ
-載せるため、相手が通知するmaximum messageは96 byteになった。
+同日、TargetFlashの64-byte page programを実験した。直後のverifyと後続requestのread-backが
+一致しないcase、およびreset後にbootへ移行できない状態が判明したため、ESP32 prototypeは
+TargetFlashをoffered functionから外している。clientコードは失敗解析用に残すが、現在の実機で
+利用可能な操作ではない。96 byteのmaximum messageはendpointの受理容量として維持する。
 
 FixtureGpioのdigital read clientも追加し、ESP32側で許可したUIAPduino配線だけを実機観測した。
 
