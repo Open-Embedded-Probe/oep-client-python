@@ -35,7 +35,7 @@ OEP requestとして状態取得、user mode正規化、製品bootloader移行�
 Windows側で`1209:b803`の再列挙を確認した。
 
 同日、TargetMemoryのbounded readを追加し、`0x08000000`から16 byteを実機取得した。現在の
-clientは4 byte aligned、4～32 byteだけを受け付ける。これはprototype制約である。連続readでは
+clientは4 byte aligned、4～88 byteだけを受け付ける。これは96-byte messageのprototype制約である。連続readでは
 一部requestが`completed/failed`となることも確認しており、SWDIO backendの安定性は未確立である。
 
 同日、TargetFlashの64-byte page programを実験した。直後のverifyと後続requestのread-backが

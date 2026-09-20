@@ -41,6 +41,16 @@ TARGET_ENTER_PRODUCT_BOOTLOADER = 0x03
 TARGET_READ_MEMORY = 0x01
 TARGET_PROGRAM_PAGE64 = 0x01
 FIXTURE_READ_DIGITAL = 0x01
+FIXTURE_READ_DIGITAL_BANK = 0x02
+FIXTURE_CONFIGURE_DIGITAL = 0x03
+FIXTURE_INPUT_FLOATING = 0x00
+FIXTURE_INPUT_PULL_UP = 0x01
+FIXTURE_INPUT_PULL_DOWN = 0x02
+FIXTURE_INPUT_PULL_UP_DOWN = 0x03
+FIXTURE_OUTPUT_LOW = 0x04
+FIXTURE_OUTPUT_HIGH = 0x05
+FIXTURE_OPEN_DRAIN_LOW = 0x06
+FIXTURE_OPEN_DRAIN_RELEASE = 0x07
 FIXTURE_UART_CONFIGURE = 0x01
 FIXTURE_UART_WRITE = 0x02
 FIXTURE_UART_READ_AVAILABLE = 0x03
@@ -230,8 +240,8 @@ class TargetMemoryClient:
         self._connection = connection
 
     def read(self, address: int, length: int) -> bytes | FunctionResult:
-        if address & 3 or length < 4 or length > 32 or length & 3:
-            raise ValueError("prototype reads must be 4-byte aligned and 4..32 bytes")
+        if address & 3 or length < 4 or length > 88 or length & 3:
+            raise ValueError("prototype reads must be 4-byte aligned and 4..88 bytes")
         correlation, request = self._endpoint.function_request(
             FUNCTION_TARGET_MEMORY, TARGET_READ_MEMORY,
             struct.pack("<IB", address, length))
@@ -276,6 +286,25 @@ class FixtureGpioClient:
         if len(result.data) != 1 or result.data[0] > 1:
             raise ProtocolError("malformed digital input result")
         return result.data[0]
+
+    def read_digital_bank(self) -> tuple[int, int] | FunctionResult:
+        correlation, request = self._endpoint.function_request(
+            FUNCTION_FIXTURE_GPIO, FIXTURE_READ_DIGITAL_BANK)
+        result = self._endpoint.parse_function_result(
+            self._connection.exchange(request), correlation, FUNCTION_FIXTURE_GPIO)
+        if not result.succeeded:
+            return result
+        if len(result.data) != 16:
+            raise ProtocolError("malformed digital bank result")
+        return struct.unpack("<QQ", result.data)
+
+    def configure_digital(self, pin: int, mode: int) -> FunctionResult:
+        if not 0 <= pin <= 63 or not 0 <= mode <= FIXTURE_OPEN_DRAIN_RELEASE:
+            raise ValueError("fixture GPIO pin must be 0..63 and mode 0..7")
+        correlation, request = self._endpoint.function_request(
+            FUNCTION_FIXTURE_GPIO, FIXTURE_CONFIGURE_DIGITAL, bytes((pin, mode)))
+        return self._endpoint.parse_function_result(
+            self._connection.exchange(request), correlation, FUNCTION_FIXTURE_GPIO)
 
 
 class FixtureUartClient:

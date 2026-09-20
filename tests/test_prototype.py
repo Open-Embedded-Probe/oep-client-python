@@ -6,6 +6,7 @@ from oep_client import Endpoint, ProtocolError, decode_frame, encode_frame
 from oep_client.prototype import (
     FUNCTION_TARGET_CONTROL,
     FixtureGpioClient,
+    FIXTURE_INPUT_PULL_UP_DOWN,
     FixtureUartClient,
     OUTCOME_FAILED,
     OUTCOME_SUCCESS,
@@ -92,18 +93,20 @@ def test_function_result_must_match_target_and_correlation():
 class MemoryConnection:
     def exchange(self, request):
         role, operation, correlation, target, address, length = struct.unpack("<BBHHIB", request)
-        assert (role, operation, target, address, length) == (0x10, 1, 0x0102, 0x08000000, 8)
-        return struct.pack("<BBHHB8s", 0x90, RESOLUTION_COMPLETED, correlation,
-                           target, OUTCOME_SUCCESS, b"abcdefgh")
+        assert (role, operation, target, address) == (0x10, 1, 0x0102, 0x08000000)
+        data = bytes(range(length))
+        return struct.pack("<BBHHB", 0x90, RESOLUTION_COMPLETED, correlation,
+                           target, OUTCOME_SUCCESS) + data
 
 
 def test_bounded_memory_read():
     client = TargetMemoryClient(Endpoint(), MemoryConnection())
-    assert client.read(0x08000000, 8) == b"abcdefgh"
+    assert client.read(0x08000000, 8) == bytes(range(8))
+    assert client.read(0x08000000, 88) == bytes(range(88))
     with pytest.raises(ValueError):
         client.read(0x08000001, 8)
     with pytest.raises(ValueError):
-        client.read(0x08000000, 36)
+        client.read(0x08000000, 92)
 
 
 class FlashConnection:
@@ -127,14 +130,25 @@ def test_program_flash_page64():
 
 class GpioConnection:
     def exchange(self, request):
-        role, operation, correlation, target, pin = struct.unpack("<BBHHB", request)
-        assert (role, operation, target, pin) == (0x10, 1, 0x0201, 27)
-        return struct.pack("<BBHHBB", 0x90, RESOLUTION_COMPLETED, correlation,
-                           target, OUTCOME_SUCCESS, 1)
+        role, operation, correlation, target = struct.unpack_from("<BBHH", request)
+        if operation == 1:
+            assert request[6] == 27
+            data = b"\x01"
+        elif operation == 2:
+            assert operation == 2 and len(request) == 6
+            data = struct.pack("<QQ", 0x35, 0x21)
+        else:
+            assert operation == 3 and request[6:] == bytes((46, FIXTURE_INPUT_PULL_UP_DOWN))
+            data = b""
+        return struct.pack("<BBHHB", 0x90, RESOLUTION_COMPLETED, correlation,
+                           target, OUTCOME_SUCCESS) + data
 
 
 def test_fixture_digital_read():
-    assert FixtureGpioClient(Endpoint(), GpioConnection()).read_digital(27) == 1
+    client = FixtureGpioClient(Endpoint(), GpioConnection())
+    assert client.read_digital(27) == 1
+    assert client.read_digital_bank() == (0x35, 0x21)
+    assert client.configure_digital(46, FIXTURE_INPUT_PULL_UP_DOWN).succeeded
 
 
 class UartConnection:

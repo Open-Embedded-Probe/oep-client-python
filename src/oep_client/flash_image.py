@@ -31,8 +31,8 @@ def read_range(memory: TargetMemoryClient, address: int, length: int,
     if address & 3 or length <= 0 or length & 3:
         raise ValueError("range must be non-empty and 4-byte aligned")
     output = bytearray()
-    for offset in range(0, length, 32):
-        count = min(32, length - offset)
+    for offset in range(0, length, 88):
+        count = min(88, length - offset)
         result = memory.read(address + offset, count)
         if not isinstance(result, bytes):
             raise RuntimeError(
