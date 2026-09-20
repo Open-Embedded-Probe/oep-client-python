@@ -71,7 +71,8 @@ uv run python -m oep_client \
 
 Arduino CLI等が生成したraw `.bin`を書き込む。入力末尾からflash終端までは`0xff`で埋め、現在値と
 比較して異なる64-byte pageだけを書き込む。`--destructive`を省くと実行しない。書込み後はtargetを
-software resetし、63,488 byteを別OEP readで全域verifyする。
+software resetし、63,488 byteを別OEP readで全域verifyした後、readによるhaltを解除するため再度
+software resetする。backupとverify-onlyも終了時にtargetを通常実行へ戻す。
 
 ```sh
 uv run python -m oep_client \
