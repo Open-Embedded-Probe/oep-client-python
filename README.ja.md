@@ -43,6 +43,9 @@ clientは4 byte aligned、4～32 byteだけを受け付ける。これはprototy
 TargetFlashをoffered functionから外している。clientコードは失敗解析用に残すが、現在の実機で
 利用可能な操作ではない。96 byteのmaximum messageはendpointの受理容量として維持する。
 
+上記はV003/SWIO backendの当時の結果である。2026-09-20に追加したESP32-P4/X035 RVSWD
+backendはTargetFlashを公開し、64-byte単発、差分全image、reset後全域verifyまで実機確認した。
+
 FixtureGpioのdigital read clientも追加し、ESP32側で許可したUIAPduino配線だけを実機観測した。
 
 FixtureUartのconfigure/write/read clientを追加した。115200 bpsでV003の`PING`/`PONG`往復を確認し、
@@ -54,3 +57,38 @@ target pin 9→ESP32 GPIO14のLOW/HIGH/LOWを確認した。再実行用smoke te
 ```sh
 uv run examples/uiapduino_fixture_smoke.py --port /dev/ttyUSB0
 ```
+
+## CH32X035 image操作
+
+このCLIはまだ破壊的prototypeであり、既定値`0x08000000`、63,488 byteはCH32X035専用である。
+最初に現在のimageを退避する。
+
+```sh
+uv run python -m oep_client \
+  --port /run/board-identify/by-id/esp32-series-30eda0e31108 \
+  --backup-flash original.bin
+```
+
+Arduino CLI等が生成したraw `.bin`を書き込む。入力末尾からflash終端までは`0xff`で埋め、現在値と
+比較して異なる64-byte pageだけを書き込む。`--destructive`を省くと実行しない。書込み後はtargetを
+software resetし、63,488 byteを別OEP readで全域verifyする。
+
+```sh
+uv run python -m oep_client \
+  --port /run/board-identify/by-id/esp32-series-30eda0e31108 \
+  --program-image build/sketch.ino.bin --destructive
+```
+
+書込みせず照合だけ行う場合:
+
+```sh
+uv run python -m oep_client \
+  --port /run/board-identify/by-id/esp32-series-30eda0e31108 \
+  --verify-image build/sketch.ino.bin
+```
+
+別容量のtargetでは`--flash-base`と`--flash-size`を必ず明示する。現在のX035 bit-bang実装では
+全域read/verifyに約240秒、変更109 pageのprogramに約298秒かかるため、既定timeoutは45秒とした。
+operation failureは同一64-byte pageを最大2回再送する。未回復の物理pageがあるとprobeは別pageを
+拒否する。probe自身をresetするとRAM上の回復cacheを失うので、その場合は既知の完全imageからの
+再書込みを行う。
