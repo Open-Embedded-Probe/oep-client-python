@@ -1,9 +1,11 @@
 import struct
+import os
 
 import pytest
 
 from oep_client import Endpoint, ProtocolError, decode_frame, encode_frame
 from oep_client.prototype import (
+    ConnectionBusyError,
     FUNCTION_TARGET_CONTROL,
     FixtureGpioClient,
     FixtureI2cClient,
@@ -17,6 +19,7 @@ from oep_client.prototype import (
     TARGET_GET_STATUS,
     TargetFlashClient,
     TargetMemoryClient,
+    _PortLease,
 )
 
 
@@ -28,6 +31,19 @@ def test_frame_round_trip_and_corruption():
     damaged[4] ^= 1
     with pytest.raises(ProtocolError):
         decode_frame(bytes(damaged))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="uses POSIX flock")
+def test_probe_transport_lease_rejects_a_second_client(tmp_path):
+    port = str(tmp_path / "probe-port")
+    first = _PortLease(port)
+    try:
+        with pytest.raises(ConnectionBusyError):
+            _PortLease(port)
+    finally:
+        first.close()
+    second = _PortLease(port)
+    second.close()
 
 
 def test_confirmation_correlation():

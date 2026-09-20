@@ -1,6 +1,8 @@
 """Temporary P0 wire model shared with the Arduino prototype."""
 
 from dataclasses import dataclass
+import hashlib
+import os
 import struct
 import time
 
@@ -59,6 +61,45 @@ FIXTURE_I2C_GET_STATUS = 0x01
 
 class ProtocolError(ValueError):
     pass
+
+
+class ConnectionBusyError(ConnectionError):
+    """Another cooperative OEP client already owns this probe transport."""
+
+
+class _PortLease:
+    """Advisory cross-process lease keyed by the canonical serial-device path."""
+
+    def __init__(self, port: str) -> None:
+        self._fd: int | None = None
+        if os.name != "posix":
+            # pyserial's `exclusive=True` remains the best available guard on
+            # platforms without POSIX flock. Hardware HIL currently runs on
+            # Linux, where the lock below is mandatory.
+            return
+        import fcntl
+
+        identity = os.path.realpath(port).encode("utf-8")
+        name = hashlib.sha256(identity).hexdigest()
+        directory = "/tmp/oep-client-locks"
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        fd = os.open(os.path.join(directory, name), os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            os.close(fd)
+            raise ConnectionBusyError(
+                f"OEP transport is already in use: {port}") from error
+        self._fd = fd
+
+    def close(self) -> None:
+        if self._fd is None:
+            return
+        import fcntl
+
+        fcntl.flock(self._fd, fcntl.LOCK_UN)
+        os.close(self._fd)
+        self._fd = None
 
 
 def crc16_ccitt(data: bytes) -> int:
@@ -380,13 +421,24 @@ class SerialConnection:
 
     def __init__(self, port: str, baudrate: int = 115200, timeout: float = 2.0):
         import serial
-        self._serial = serial.Serial(port, baudrate, timeout=0.05)
+
+        self._lease = _PortLease(port)
+        try:
+            self._serial = serial.Serial(
+                port, baudrate, timeout=0.05,
+                exclusive=True if os.name == "posix" else None)
+        except Exception:
+            self._lease.close()
+            raise
         self._timeout = timeout
         time.sleep(0.2)
         self._serial.reset_input_buffer()
 
     def close(self) -> None:
-        self._serial.close()
+        try:
+            self._serial.close()
+        finally:
+            self._lease.close()
 
     def exchange(self, message: bytes) -> bytes:
         self._serial.write(encode_frame(message))
