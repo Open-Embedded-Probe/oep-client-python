@@ -1,10 +1,19 @@
 import argparse
+import hashlib
+from pathlib import Path
 
 from .prototype import (
     Endpoint, FunctionResult, SerialConnection, TargetControlClient,
     TargetFlashClient,
     TargetMemoryClient,
 )
+from .flash_image import padded_image, program_image, read_range, reset_target, verify_image
+
+
+def progress(operation: str, completed: int, total: int) -> None:
+    interval = 128 if operation == "program" else 4096
+    if completed == total or completed % interval == 0:
+        print(f"{operation} {completed}/{total}", flush=True)
 
 
 def print_result(name: str, result: FunctionResult) -> None:
@@ -15,14 +24,29 @@ def print_result(name: str, result: FunctionResult) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Destructive OEP P0 prototype")
     parser.add_argument("--port", required=True)
+    parser.add_argument("--timeout", type=float, default=45.0,
+                        help="response timeout in seconds; default: 45")
     parser.add_argument("--target", choices=("status", "normalize-user", "bootloader"))
     parser.add_argument("--read-memory", nargs=2, metavar=("ADDRESS", "LENGTH"),
                         help="read 4..32 aligned bytes; integers accept 0x prefix")
     parser.add_argument("--program-page64", nargs=2, metavar=("ADDRESS", "HEX"),
                         help="destructively program exactly 64 bytes")
+    parser.add_argument("--backup-flash", metavar="FILE",
+                        help="read the configured flash range into FILE")
+    parser.add_argument("--program-image", metavar="FILE",
+                        help="diff, program, reset, and verify a raw binary image")
+    parser.add_argument("--verify-image", metavar="FILE",
+                        help="verify a padded raw binary image without programming")
+    parser.add_argument("--flash-base", type=lambda value: int(value, 0),
+                        default=0x08000000)
+    parser.add_argument("--flash-size", type=lambda value: int(value, 0),
+                        default=63488,
+                        help="default: 63488 bytes (CH32X035)")
+    parser.add_argument("--destructive", action="store_true",
+                        help="required with --program-image")
     args = parser.parse_args()
     endpoint = Endpoint()
-    connection = SerialConnection(args.port)
+    connection = SerialConnection(args.port, timeout=args.timeout)
     try:
         correlation, request = endpoint.confirm_request()
         confirmation = endpoint.parse_confirm(connection.exchange(request), correlation)
@@ -56,6 +80,26 @@ def main() -> None:
             data = bytes.fromhex(args.program_page64[1])
             result = TargetFlashClient(endpoint, connection).program_page64(address, data)
             print_result("program-page64", result)
+        memory = TargetMemoryClient(endpoint, connection)
+        if args.backup_flash:
+            data = read_range(memory, args.flash_base, args.flash_size, progress)
+            Path(args.backup_flash).write_bytes(data)
+            print(f"backup-flash bytes={len(data)} sha256={hashlib.sha256(data).hexdigest()}")
+        if args.program_image:
+            if not args.destructive:
+                parser.error("--program-image requires --destructive")
+            desired = padded_image(Path(args.program_image).read_bytes(), args.flash_size)
+            summary = program_image(
+                memory, TargetFlashClient(endpoint, connection),
+                args.flash_base, desired, progress=progress)
+            reset_target(TargetControlClient(endpoint, connection))
+            verify_image(memory, args.flash_base, desired, progress)
+            print(f"program-image pages={summary.pages_programmed} "
+                  f"attempts={summary.attempts} sha256={hashlib.sha256(desired).hexdigest()}")
+        if args.verify_image:
+            expected = padded_image(Path(args.verify_image).read_bytes(), args.flash_size)
+            verify_image(memory, args.flash_base, expected, progress)
+            print(f"verify-image bytes={len(expected)} sha256={hashlib.sha256(expected).hexdigest()}")
     finally:
         connection.close()
 
