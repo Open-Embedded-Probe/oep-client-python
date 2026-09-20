@@ -3,7 +3,7 @@ import hashlib
 from pathlib import Path
 
 from .prototype import (
-    Endpoint, FunctionResult, SerialConnection, TargetControlClient,
+    Endpoint, FixtureGpioClient, FunctionResult, SerialConnection, TargetControlClient,
     TargetFlashClient,
     TargetMemoryClient,
 )
@@ -11,8 +11,11 @@ from .flash_image import padded_image, program_image, read_range, reset_target, 
 
 
 def progress(operation: str, completed: int, total: int) -> None:
-    interval = 128 if operation == "program" else 4096
-    if completed == total or completed % interval == 0:
+    # Updates are measured in pages for program and in transport-sized byte
+    # chunks for reads. Report each 1/16 boundary instead of using a byte
+    # modulus, which went silent when the read chunk changed from 32 to 88.
+    previous = completed - (1 if operation == "program" else min(88, completed))
+    if completed == total or completed * 16 // total != previous * 16 // total:
         print(f"{operation} {completed}/{total}", flush=True)
 
 
@@ -28,7 +31,9 @@ def main() -> None:
                         help="response timeout in seconds; default: 45")
     parser.add_argument("--target", choices=("status", "normalize-user", "bootloader"))
     parser.add_argument("--read-memory", nargs=2, metavar=("ADDRESS", "LENGTH"),
-                        help="read 4..32 aligned bytes; integers accept 0x prefix")
+                        help="read 4..88 aligned bytes; integers accept 0x prefix")
+    parser.add_argument("--gpio-read", metavar="PIN", type=lambda value: int(value, 0),
+                        help="read one probe-side FixtureGpio pin")
     parser.add_argument("--program-page64", nargs=2, metavar=("ADDRESS", "HEX"),
                         help="destructively program exactly 64 bytes")
     parser.add_argument("--backup-flash", metavar="FILE",
@@ -75,6 +80,12 @@ def main() -> None:
                 print_result("read-memory", result)
             else:
                 print(f"read-memory address=0x{address:08x} data={result.hex()}")
+        if args.gpio_read is not None:
+            result = FixtureGpioClient(endpoint, connection).read_digital(args.gpio_read)
+            if isinstance(result, FunctionResult):
+                print_result("gpio-read", result)
+            else:
+                print(f"gpio-read pin={args.gpio_read} value={result}")
         if args.program_page64:
             address = int(args.program_page64[0], 0)
             data = bytes.fromhex(args.program_page64[1])
