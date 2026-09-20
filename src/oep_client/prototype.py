@@ -54,6 +54,7 @@ FIXTURE_OPEN_DRAIN_RELEASE = 0x07
 FIXTURE_UART_CONFIGURE = 0x01
 FIXTURE_UART_WRITE = 0x02
 FIXTURE_UART_READ_AVAILABLE = 0x03
+FIXTURE_I2C_GET_STATUS = 0x01
 
 
 class ProtocolError(ValueError):
@@ -345,6 +346,33 @@ class FixtureUartClient:
         if not result.data or result.data[0] != len(result.data) - 1:
             raise ProtocolError("malformed UART read result")
         return result.data[1:]
+
+
+class FixtureI2cClient:
+    """Read bounded diagnostic state from a fixture I2C peer."""
+
+    def __init__(self, endpoint: Endpoint, connection: "SerialConnection") -> None:
+        self._endpoint = endpoint
+        self._connection = connection
+
+    def get_status(self) -> dict[str, int] | FunctionResult:
+        correlation, request = self._endpoint.function_request(
+            FUNCTION_FIXTURE_I2C, FIXTURE_I2C_GET_STATUS)
+        result = self._endpoint.parse_function_result(
+            self._connection.exchange(request), correlation, FUNCTION_FIXTURE_I2C)
+        if not result.succeeded:
+            return result
+        if len(result.data) != 10:
+            raise ProtocolError("malformed I2C fixture status")
+        flags, last_rx_length, rx_transactions, request_transactions, frequency_hz = (
+            struct.unpack("<BBHHI", result.data))
+        return {
+            "flags": flags,
+            "last_rx_length": last_rx_length,
+            "rx_transactions": rx_transactions,
+            "request_transactions": request_transactions,
+            "frequency_hz": frequency_hz,
+        }
 
 
 class SerialConnection:
