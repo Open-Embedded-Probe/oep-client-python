@@ -84,6 +84,7 @@ def main() -> None:
         if args.backup_flash:
             data = read_range(memory, args.flash_base, args.flash_size, progress)
             Path(args.backup_flash).write_bytes(data)
+            reset_target(TargetControlClient(endpoint, connection))
             print(f"backup-flash bytes={len(data)} sha256={hashlib.sha256(data).hexdigest()}")
         if args.program_image:
             if not args.destructive:
@@ -94,11 +95,13 @@ def main() -> None:
                 args.flash_base, desired, progress=progress)
             reset_target(TargetControlClient(endpoint, connection))
             verify_image(memory, args.flash_base, desired, progress)
+            reset_target(TargetControlClient(endpoint, connection))
             print(f"program-image pages={summary.pages_programmed} "
                   f"attempts={summary.attempts} sha256={hashlib.sha256(desired).hexdigest()}")
         if args.verify_image:
             expected = padded_image(Path(args.verify_image).read_bytes(), args.flash_size)
             verify_image(memory, args.flash_base, expected, progress)
+            reset_target(TargetControlClient(endpoint, connection))
             print(f"verify-image bytes={len(expected)} sha256={hashlib.sha256(expected).hexdigest()}")
     finally:
         connection.close()
