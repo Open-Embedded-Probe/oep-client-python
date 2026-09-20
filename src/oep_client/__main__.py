@@ -8,7 +8,8 @@ from .prototype import (
 
 
 def print_result(name: str, result: FunctionResult) -> None:
-    print(f"{name} resolution={result.resolution} detail={result.detail}")
+    suffix = f" data={result.data.hex()}" if result.data else ""
+    print(f"{name} resolution={result.resolution} detail={result.detail}{suffix}")
 
 
 def main() -> None:
