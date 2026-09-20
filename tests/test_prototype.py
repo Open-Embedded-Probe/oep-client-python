@@ -6,6 +6,7 @@ from oep_client import Endpoint, ProtocolError, decode_frame, encode_frame
 from oep_client.prototype import (
     FUNCTION_TARGET_CONTROL,
     FixtureGpioClient,
+    FixtureI2cClient,
     FIXTURE_INPUT_PULL_UP_DOWN,
     FixtureUartClient,
     OUTCOME_FAILED,
@@ -173,3 +174,23 @@ def test_fixture_uart_operations():
     assert uart.configure(115200) == 115200
     assert uart.write(b"PING\n") == 5
     assert uart.read_available() == b"PONG\n"
+
+
+class I2cConnection:
+    def exchange(self, request):
+        role, operation, correlation, target = struct.unpack("<BBHH", request)
+        assert (role, operation, target, len(request)) == (0x10, 1, 0x0203, 6)
+        data = struct.pack("<BBHHI", 0x07, 3, 4, 5, 100000)
+        return struct.pack("<BBHHB", 0x90, RESOLUTION_COMPLETED, correlation,
+                           target, OUTCOME_SUCCESS) + data
+
+
+def test_fixture_i2c_status():
+    status = FixtureI2cClient(Endpoint(), I2cConnection()).get_status()
+    assert status == {
+        "flags": 0x07,
+        "last_rx_length": 3,
+        "rx_transactions": 4,
+        "request_transactions": 5,
+        "frequency_hz": 100000,
+    }
