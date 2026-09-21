@@ -455,16 +455,17 @@ class FixtureI2cClient:
             self._connection.exchange(request), correlation, FUNCTION_FIXTURE_I2C)
         if not result.succeeded:
             return result
-        if len(result.data) != 10:
+        if len(result.data) != 11:
             raise ProtocolError("malformed I2C fixture status")
-        flags, last_rx_length, rx_transactions, request_transactions, frequency_hz = (
-            struct.unpack("<BBHHI", result.data))
+        flags, last_rx_length, rx_transactions, request_transactions, frequency_hz, stretch_cause_mask = (
+            struct.unpack("<BBHHIB", result.data))
         return {
             "flags": flags,
             "last_rx_length": last_rx_length,
             "rx_transactions": rx_transactions,
             "request_transactions": request_transactions,
             "frequency_hz": frequency_hz,
+            "stretch_cause_mask": stretch_cause_mask,
         }
 
 
