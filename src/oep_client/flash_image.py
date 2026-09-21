@@ -52,6 +52,32 @@ def program_image(memory: TargetMemoryClient, flash: TargetFlashClient,
     changed = [offset for offset in range(0, len(desired), 64)
                if current[offset:offset + 64] != desired[offset:offset + 64]]
     attempts = 0
+    # Revision-2 probes accept a complete physical erase page as four staged
+    # transport-sized fragments and commit it once.  Keep the old 64-byte
+    # path for lightweight fakes and earlier probe firmware.
+    if hasattr(flash, "stage_page64") and hasattr(flash, "commit_page256"):
+        changed_physical = [offset for offset in range(0, len(desired), 256)
+                            if current[offset:offset + 256] != desired[offset:offset + 256]]
+        for index, offset in enumerate(changed_physical, 1):
+            for fragment in range(0, 256, 64):
+                staged = flash.stage_page64(
+                    address + offset + fragment, desired[offset + fragment:offset + fragment + 64])
+                if not staged.succeeded:
+                    raise RuntimeError(
+                        f"flash stage failed at 0x{address + offset + fragment:08x}: {staged}")
+            last: FunctionResult | None = None
+            for _ in range(retries + 1):
+                attempts += 1
+                last = flash.commit_page256(address + offset)
+                if last.succeeded:
+                    break
+            else:
+                raise RuntimeError(
+                    f"flash commit failed at 0x{address + offset:08x}: {last}")
+            if progress:
+                progress("program", index, len(changed_physical))
+        return ProgramSummary(len(desired), len(changed_physical), attempts)
+
     for index, offset in enumerate(changed, 1):
         last: FunctionResult | None = None
         for _ in range(retries + 1):
