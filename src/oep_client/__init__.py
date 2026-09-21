@@ -30,6 +30,7 @@ from .capabilities import (
 )
 from .caps_protocol import ProbeCapsClient, caps_to_dict
 from .configuration_protocol import ProbeConfigurationClient
+from .i2c_capture import I2cObservation, decode_i2c_address, unpack_rmt_symbols
 
 __all__ = [
     "CORE_REQUEST", "CORE_RESULT", "FUNCTION_REQUEST", "FUNCTION_RESULT",
@@ -43,4 +44,5 @@ __all__ = [
     "ProbeCapsClient",
     "ProbeConfigurationClient",
     "caps_to_dict",
+    "I2cObservation", "decode_i2c_address", "unpack_rmt_symbols",
 ]
