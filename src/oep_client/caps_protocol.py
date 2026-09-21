@@ -36,6 +36,9 @@ ROLE_NAMES = {
     "spi_controller": {1: "sck", 2: "miso", 3: "mosi", 4: "cs"},
     "spi_target": {1: "sck", 2: "miso", 3: "mosi", 4: "cs"},
 }
+ROLE_FUNCTION_NAMES = {
+    "capture": {"clock": "capture", "data": "capture"},
+}
 
 
 def _names(mask: int) -> frozenset[str]:
@@ -161,21 +164,25 @@ class ProbeCapsClient:
                     if group_wire_id != identifier or role_id == 0:
                         raise ProtocolError("invalid peripheral-group role")
                     name = names.get(role_id)
-                    if name is None or name not in roles:
+                    if name is None:
                         raise ProtocolError("unknown peripheral-group role")
+                    expected_function = ROLE_FUNCTION_NAMES.get(kind, {}).get(
+                        name, name)
                     if function >= len(FUNCTION_NAMES) or \
-                            FUNCTION_NAMES[function].rsplit(".", 1)[-1] != name:
+                            FUNCTION_NAMES[function].rsplit(".", 1)[-1] != expected_function:
                         raise ProtocolError("invalid peripheral-group role function")
                     discovered.append((name, role_id))
                 else:
                     raise ProtocolError("peripheral-group role list is not terminated")
-                if set(name for name, _ in discovered) != set(roles) or \
+                if len({name for name, _ in discovered}) != len(discovered) or \
                         len({role_id for _, role_id in discovered}) != len(discovered):
-                    raise ProtocolError("incomplete peripheral-group roles")
+                    raise ProtocolError("duplicate peripheral-group roles")
                 role_ids.append(tuple(discovered))
 
         groups = tuple(PeripheralGroup(
-            group_id, kind, roles,
+            group_id, kind,
+            (frozenset(name for name, _ in role_ids[index])
+             if revision == 2 else roles),
             frozenset(raw_groups[index][1] for index in range(group_count)
                       if exclusive & (1 << index)), wire_id=identifier,
             instance=int(group_id.removeprefix(kind)), role_wire_ids=role_ids[index])

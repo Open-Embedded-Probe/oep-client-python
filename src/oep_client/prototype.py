@@ -37,6 +37,7 @@ FUNCTION_FIXTURE_GPIO = 0x0201
 FUNCTION_FIXTURE_UART = 0x0202
 FUNCTION_FIXTURE_I2C = 0x0203
 FUNCTION_FIXTURE_SPI = 0x0204
+FUNCTION_FIXTURE_CAPTURE = 0x0205
 
 TARGET_GET_STATUS = 0x01
 TARGET_NORMALIZE_USER = 0x02
@@ -60,6 +61,8 @@ FIXTURE_UART_CONFIGURE = 0x01
 FIXTURE_UART_WRITE = 0x02
 FIXTURE_UART_READ_AVAILABLE = 0x03
 FIXTURE_I2C_GET_STATUS = 0x01
+FIXTURE_CAPTURE_GET_STATUS = 0x01
+FIXTURE_CAPTURE_READ_SYMBOLS = 0x02
 PROBE_INFO_GET = 0x01
 
 
@@ -462,6 +465,43 @@ class FixtureI2cClient:
             "request_transactions": request_transactions,
             "frequency_hz": frequency_hz,
         }
+
+
+class FixtureCaptureClient:
+    """Read raw dual-input RMT records from a configured capture lease."""
+
+    def __init__(self, endpoint: Endpoint, connection: "SerialConnection") -> None:
+        self._endpoint = endpoint
+        self._connection = connection
+
+    def _exchange(self, operation: int, payload: bytes = b"") -> FunctionResult:
+        correlation, request = self._endpoint.function_request(
+            FUNCTION_FIXTURE_CAPTURE, operation, payload)
+        return self._endpoint.parse_function_result(
+            self._connection.exchange(request), correlation, FUNCTION_FIXTURE_CAPTURE)
+
+    def get_status(self) -> dict[str, int] | FunctionResult:
+        result = self._exchange(FIXTURE_CAPTURE_GET_STATUS)
+        if not result.succeeded:
+            return result
+        if len(result.data) != 7:
+            raise ProtocolError("malformed capture status")
+        flags, clock_symbols, data_symbols, resolution_hz = struct.unpack(
+            "<BBBI", result.data)
+        return {"flags": flags, "clock_symbols": clock_symbols,
+                "data_symbols": data_symbols, "resolution_hz": resolution_hz}
+
+    def read_symbols(self, role_id: int, offset: int = 0,
+                     maximum: int = 16) -> tuple[int, ...] | FunctionResult:
+        if role_id not in (1, 2) or not 0 <= offset <= 255 or not 1 <= maximum <= 16:
+            raise ValueError("capture role, offset, or maximum is invalid")
+        result = self._exchange(FIXTURE_CAPTURE_READ_SYMBOLS,
+                                bytes((role_id, offset, maximum)))
+        if not result.succeeded:
+            return result
+        if not result.data or len(result.data) != 1 + result.data[0] * 4:
+            raise ProtocolError("malformed capture symbol result")
+        return struct.unpack("<" + "I" * result.data[0], result.data[1:])
 
 
 class SerialConnection:
