@@ -6,6 +6,7 @@ class Channel:
     id: int
     functions: frozenset[str]
     input_only: bool = False
+    voltage_domains: frozenset[str] = frozenset()
 
 @dataclass(frozen=True)
 class PeripheralGroup:
@@ -24,6 +25,7 @@ class Caps:
 class Connection:
     signal: str
     channel: int
+    voltage_domain: str | None = None
 
 @dataclass(frozen=True)
 class ConnectionManifest:
@@ -46,6 +48,9 @@ def resolve(caps: Caps, manifest: ConnectionManifest,
             raise ValueError(f"channel {channel_id} cannot provide {function}")
         if channel.input_only and function in {"gpio.out", "open_drain", "uart.tx", "i2c.sda", "i2c.scl", "spi.tx", "spi.sck", "spi.cs"}:
             raise ValueError(f"input-only channel {channel_id} cannot drive {function}")
+        declared = next(item for item in manifest.connections if item.signal == signal)
+        if declared.voltage_domain and declared.voltage_domain not in channel.voltage_domains:
+            raise ValueError(f"channel {channel_id} does not support voltage domain {declared.voltage_domain}")
         allocation[signal] = channel_id
     if len(set(allocation.values())) != len(allocation):
         raise ValueError("allocation aliases one probe channel to multiple signals")
