@@ -64,6 +64,7 @@ def main() -> None:
         parser.error(str(error))
     cleanup_target: TargetControlClient | None = None
     timings: dict[str, float] = {}
+    preflight = None
 
     def timed(name, operation):
         started = time.monotonic()
@@ -162,9 +163,19 @@ def main() -> None:
             if args.program_image:
                 result["program"] = {
                     "bytes_compared": summary.bytes_compared,
+                    "bytes_verified": args.flash_size,
                     "pages_programmed": summary.pages_programmed,
                     "attempts": summary.attempts,
                 }
+                result["target_preflight"] = {
+                    "chip_id": f"0x{preflight.chip_id:08x}",
+                    "option_bytes": f"0x{preflight.option_bytes:08x}",
+                    "write_protection": f"0x{preflight.write_protection:08x}",
+                }
+            if args.backup_flash:
+                result["backup"] = {"bytes_read": args.flash_size}
+            if args.verify_image:
+                result["verify"] = {"bytes_verified": args.flash_size}
             Path(args.result_json).write_text(
                 json.dumps(result, sort_keys=True) + "\n", encoding="utf-8")
     finally:
