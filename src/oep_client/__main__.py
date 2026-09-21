@@ -5,7 +5,7 @@ from pathlib import Path
 import time
 
 from .prototype import (
-    Endpoint, FixtureGpioClient, FunctionResult, SerialConnection, TargetControlClient,
+    ConnectionBusyError, Endpoint, FixtureGpioClient, FunctionResult, SerialConnection, TargetControlClient,
     TargetFlashClient,
     TargetMemoryClient,
 )
@@ -55,7 +55,10 @@ def main() -> None:
                         help="write machine-readable operation timings on completion")
     args = parser.parse_args()
     endpoint = Endpoint()
-    connection = SerialConnection(args.port, timeout=args.timeout)
+    try:
+        connection = SerialConnection(args.port, timeout=args.timeout)
+    except ConnectionBusyError as error:
+        parser.error(str(error))
     cleanup_target: TargetControlClient | None = None
     timings: dict[str, float] = {}
 
