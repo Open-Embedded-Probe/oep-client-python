@@ -3,7 +3,7 @@ import pytest
 from oep_client import (
     Allocation, Caps, Channel, ConfigurePlan, Connection, ConnectionManifest,
     LeaseRegistry, PeripheralGroup, RoleRequest, resolve, resolve_group,
-    resolve_plan, validate_caps,
+    resolve_plan, validate_caps, VoltageDomain,
 )
 
 
@@ -95,7 +95,26 @@ def test_rejects_invalid_probe_caps(caps, message):
 
 
 def test_rejects_unsupported_voltage_domain():
-    caps = Caps((Channel(1, frozenset(("gpio.in",)), voltage_domains=frozenset(("3v3",))),))
+    caps = Caps(
+        (Channel(1, frozenset(("gpio.in",)),
+                 voltage_domains=frozenset(("3v3",))),),
+        voltage_domains=(VoltageDomain("3v3", 3300, 3600),))
     manifest = ConnectionManifest((Connection("sense", 1, "5v"),))
     with pytest.raises(ValueError, match="voltage domain 5v"):
         resolve(caps, manifest, {"sense": "gpio.in"})
+
+
+def test_rejects_unknown_or_input_only_voltage_domains():
+    with pytest.raises(ValueError, match="unknown voltage domain"):
+        validate_caps(Caps((Channel(
+            1, frozenset(), voltage_domains=frozenset(("3v3",))),)))
+
+    caps = Caps(
+        (Channel(1, frozenset(("gpio.out",)),
+                 voltage_domains=frozenset(("sense5v",))),),
+        voltage_domains=(VoltageDomain("sense5v", 5000, 5500,
+                                       can_drive=False),))
+    with pytest.raises(ValueError, match="input-only"):
+        resolve(caps,
+                ConnectionManifest((Connection("drive", 1, "sense5v"),)),
+                {"drive": "gpio.out"})
