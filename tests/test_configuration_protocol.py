@@ -49,3 +49,20 @@ def test_rejects_plan_without_wire_group():
     invalid = ConfigurePlan((GroupPlan("uart", "uart", (), wire_id=None),))
     with pytest.raises(ValueError, match="wire id"):
         ProbeConfigurationClient(Endpoint(), ConfigurationConnection()).apply(invalid)
+
+
+def test_encodes_multiple_groups_as_one_atomic_apply():
+    combined = ConfigurePlan((
+        plan().groups[0],
+        GroupPlan("i2c_target1", "i2c_target", (
+            RoleAllocation("sda", "dut.sda", "i2c.sda", 50),
+            RoleAllocation("scl", "dut.scl", "i2c.scl", 52),
+        ), wire_id=2),
+    ))
+    encoded = ProbeConfigurationClient._encode(combined)
+    assert encoded == bytes((1, 4)) + b"".join((
+        struct.pack("<HBH", 1, 6, 12),
+        struct.pack("<HBH", 1, 7, 6),
+        struct.pack("<HBH", 2, 8, 50),
+        struct.pack("<HBH", 2, 9, 52),
+    ))
