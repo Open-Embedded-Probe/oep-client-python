@@ -1,6 +1,6 @@
 import pytest
 
-from oep_client import Caps, Channel, Connection, ConnectionManifest, PeripheralGroup, resolve, resolve_group
+from oep_client import Caps, Channel, Connection, ConnectionManifest, PeripheralGroup, resolve, resolve_group, resolve_plan
 
 
 def test_resolves_declared_uart_wiring():
@@ -35,3 +35,10 @@ def test_resolves_all_uart_group_roles_or_nothing():
     assert resolve_group(caps, manifest, "uart0", {"dut.tx": "uart.rx", "dut.rx": "uart.tx"}) == {"dut.tx": 1, "dut.rx": 2}
     with pytest.raises(ValueError, match="requires roles"):
         resolve_group(caps, manifest, "uart0", {"dut.tx": "uart.rx"})
+
+
+def test_rejects_exclusive_groups_before_allocation():
+    caps = Caps((), (PeripheralGroup("uart0", "uart", frozenset(), frozenset(("capture0",))),
+                     PeripheralGroup("capture0", "capture", frozenset())))
+    with pytest.raises(ValueError, match="conflict"):
+        resolve_plan(caps, ConnectionManifest(()), {"uart0": {}, "capture0": {}})
