@@ -42,11 +42,12 @@ def test_reads_mcu_independent_paged_caps():
     assert caps.channels[0].functions == frozenset(("gpio.in", "uart.rx"))
     assert caps.channels[1].voltage_domains == frozenset(("domain:1",))
     assert caps.groups[0].id == "uart0"
+    assert caps.groups[0].wire_id == 1
     assert caps.groups[0].roles == frozenset(("rx", "tx"))
     assert caps.voltage_domains[0].nominal_mv == 3300
     assert caps_to_dict(caps)["groups"] == [{
         "id": "uart0", "kind": "uart", "roles": ["rx", "tx"],
-        "exclusive_with": []}]
+        "exclusive_with": [], "wire_id": 1, "instance": 0}]
 
 
 class BadSummaryConnection:
