@@ -50,3 +50,13 @@ def resolve(caps: Caps, manifest: ConnectionManifest,
     if len(set(allocation.values())) != len(allocation):
         raise ValueError("allocation aliases one probe channel to multiple signals")
     return allocation
+
+def resolve_group(caps: Caps, manifest: ConnectionManifest, group_id: str,
+                  signals: dict[str, str]) -> dict[str, int]:
+    """Resolve every required role of one declared peripheral instance."""
+    group = next((item for item in caps.groups if item.id == group_id), None)
+    if group is None:
+        raise ValueError(f"unknown peripheral group {group_id}")
+    if set(signals) != set(group.roles):
+        raise ValueError(f"group {group_id} requires roles {sorted(group.roles)}")
+    return resolve(caps, manifest, signals)

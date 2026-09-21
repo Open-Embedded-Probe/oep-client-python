@@ -1,6 +1,6 @@
 import pytest
 
-from oep_client import Caps, Channel, Connection, ConnectionManifest, resolve
+from oep_client import Caps, Channel, Connection, ConnectionManifest, PeripheralGroup, resolve, resolve_group
 
 
 def test_resolves_declared_uart_wiring():
@@ -26,3 +26,12 @@ def test_rejects_output_on_input_only_channel():
     with pytest.raises(ValueError, match="input-only"):
         resolve(caps, ConnectionManifest((Connection("drive", 46),)),
                 {"drive": "gpio.out"})
+
+
+def test_resolves_all_uart_group_roles_or_nothing():
+    caps = Caps((Channel(1, frozenset(("uart.rx",))), Channel(2, frozenset(("uart.tx",)))),
+                (PeripheralGroup("uart0", "uart", frozenset(("dut.tx", "dut.rx"))),))
+    manifest = ConnectionManifest((Connection("dut.tx", 1), Connection("dut.rx", 2)))
+    assert resolve_group(caps, manifest, "uart0", {"dut.tx": "uart.rx", "dut.rx": "uart.tx"}) == {"dut.tx": 1, "dut.rx": 2}
+    with pytest.raises(ValueError, match="requires roles"):
+        resolve_group(caps, manifest, "uart0", {"dut.tx": "uart.rx"})
