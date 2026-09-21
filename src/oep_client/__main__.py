@@ -131,8 +131,11 @@ def main() -> None:
                 parser.error("--program-image requires --destructive")
             desired = padded_image(Path(args.program_image).read_bytes(), args.flash_size)
             cleanup_target = TargetControlClient(endpoint, connection)
-            preflight = timed("program_preflight", lambda: preflight_x035_f8u6(
-                memory, args.flash_base, args.flash_size))
+            try:
+                preflight = timed("program_preflight", lambda: preflight_x035_f8u6(
+                    memory, args.flash_base, args.flash_size))
+            except (RuntimeError, ValueError) as error:
+                parser.error(str(error))
             print("target-preflight "
                   f"chip_id=0x{preflight.chip_id:08x} "
                   f"option_bytes=0x{preflight.option_bytes:08x} "
