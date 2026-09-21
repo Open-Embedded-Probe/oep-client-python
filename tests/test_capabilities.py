@@ -32,6 +32,13 @@ def test_rejects_output_on_input_only_channel():
                 {"drive": "gpio.out"})
 
 
+def test_rejects_reserved_channel():
+    caps = Caps((Channel(2, frozenset(("gpio.in",)), reserved=True),))
+    with pytest.raises(ValueError, match="reserved"):
+        resolve(caps, ConnectionManifest((Connection("sense", 2),)),
+                {"sense": "gpio.in"})
+
+
 def test_resolves_all_uart_group_roles_or_nothing():
     caps = Caps((Channel(1, frozenset(("uart.rx",))), Channel(2, frozenset(("uart.tx",)))),
                 (PeripheralGroup("uart0", "uart", frozenset(("rx", "tx"))),))

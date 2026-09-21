@@ -7,6 +7,7 @@ class Channel:
     functions: frozenset[str]
     input_only: bool = False
     voltage_domains: frozenset[str] = frozenset()
+    reserved: bool = False
 
 @dataclass(frozen=True)
 class PeripheralGroup:
@@ -163,6 +164,8 @@ def resolve(caps: Caps, manifest: ConnectionManifest,
         channel = by_id.get(channel_id)
         if channel is None or function not in channel.functions:
             raise ValueError(f"channel {channel_id} cannot provide {function}")
+        if channel.reserved:
+            raise ValueError(f"channel {channel_id} is reserved")
         if channel.input_only and function in {"gpio.out", "open_drain", "uart.tx", "i2c.sda", "i2c.scl", "spi.tx", "spi.sck", "spi.cs"}:
             raise ValueError(f"input-only channel {channel_id} cannot drive {function}")
         declared = next(item for item in manifest.connections if item.signal == signal)

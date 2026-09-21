@@ -27,6 +27,7 @@ from .capabilities import (
     GroupPlan, LeaseRegistry, PeripheralGroup, RoleAllocation, RoleRequest, resolve,
     VoltageDomain, resolve_group, resolve_plan, validate_caps,
 )
+from .caps_protocol import ProbeCapsClient
 
 __all__ = [
     "CORE_REQUEST", "CORE_RESULT", "FUNCTION_REQUEST", "FUNCTION_RESULT",
@@ -37,4 +38,5 @@ __all__ = [
     "ConnectionManifest", "GroupPlan", "LeaseRegistry", "PeripheralGroup", "RoleAllocation",
     "RoleRequest", "resolve", "resolve_group", "resolve_plan",
     "validate_caps", "VoltageDomain",
+    "ProbeCapsClient",
 ]
