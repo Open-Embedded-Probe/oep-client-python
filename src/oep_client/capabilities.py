@@ -60,3 +60,21 @@ def resolve_group(caps: Caps, manifest: ConnectionManifest, group_id: str,
     if set(signals) != set(group.roles):
         raise ValueError(f"group {group_id} requires roles {sorted(group.roles)}")
     return resolve(caps, manifest, signals)
+
+def resolve_plan(caps: Caps, manifest: ConnectionManifest,
+                 groups: dict[str, dict[str, str]]) -> dict[str, dict[str, int]]:
+    """Resolve a complete peripheral plan, rejecting declared exclusions."""
+    declared = {item.id: item for item in caps.groups}
+    selected = set(groups)
+    if not selected <= set(declared):
+        raise ValueError("plan requests an unknown peripheral group")
+    for group_id in selected:
+        conflict = selected & declared[group_id].exclusive_with
+        if conflict:
+            raise ValueError(f"peripheral groups conflict: {group_id} and {sorted(conflict)[0]}")
+    allocation = {group_id: resolve_group(caps, manifest, group_id, signals)
+                  for group_id, signals in groups.items()}
+    used = [channel for item in allocation.values() for channel in item.values()]
+    if len(set(used)) != len(used):
+        raise ValueError("peripheral groups share a probe channel")
+    return allocation
