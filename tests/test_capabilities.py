@@ -19,3 +19,10 @@ def test_rejects_invalid_allocation(manifest, required):
     caps = Caps((Channel(1, frozenset(("uart.rx",))),))
     with pytest.raises(ValueError):
         resolve(caps, manifest, required)
+
+
+def test_rejects_output_on_input_only_channel():
+    caps = Caps((Channel(46, frozenset(("gpio.out",)), input_only=True),))
+    with pytest.raises(ValueError, match="input-only"):
+        resolve(caps, ConnectionManifest((Connection("drive", 46),)),
+                {"drive": "gpio.out"})
