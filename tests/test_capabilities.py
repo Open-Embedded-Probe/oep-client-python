@@ -42,3 +42,10 @@ def test_rejects_exclusive_groups_before_allocation():
                      PeripheralGroup("capture0", "capture", frozenset())))
     with pytest.raises(ValueError, match="conflict"):
         resolve_plan(caps, ConnectionManifest(()), {"uart0": {}, "capture0": {}})
+
+
+def test_rejects_unsupported_voltage_domain():
+    caps = Caps((Channel(1, frozenset(("gpio.in",)), voltage_domains=frozenset(("3v3",))),))
+    manifest = ConnectionManifest((Connection("sense", 1, "5v"),))
+    with pytest.raises(ValueError, match="voltage domain 5v"):
+        resolve(caps, manifest, {"sense": "gpio.in"})
