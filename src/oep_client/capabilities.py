@@ -8,8 +8,17 @@ class Channel:
     input_only: bool = False
 
 @dataclass(frozen=True)
+class PeripheralGroup:
+    """One hardware peer instance and the roles it requires together."""
+    id: str
+    kind: str
+    roles: frozenset[str]
+    exclusive_with: frozenset[str] = frozenset()
+
+@dataclass(frozen=True)
 class Caps:
     channels: tuple[Channel, ...]
+    groups: tuple[PeripheralGroup, ...] = ()
 
 @dataclass(frozen=True)
 class Connection:
