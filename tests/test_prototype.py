@@ -143,6 +143,10 @@ def test_program_flash_page64():
         client.program_page64(0x08003FC1, bytes(64))
     with pytest.raises(ValueError):
         client.program_page64(0x08003FC0, bytes(63))
+    with pytest.raises(ValueError):
+        client.stage_page64(0x08003FC1, bytes(64))
+    with pytest.raises(ValueError):
+        client.commit_page256(0x08003FC0)
 
 
 class GpioConnection:

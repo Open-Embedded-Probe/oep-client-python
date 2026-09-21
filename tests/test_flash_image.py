@@ -27,6 +27,26 @@ class Flash:
         return FunctionResult(RESOLUTION_COMPLETED, 0x0103, OUTCOME_SUCCESS, b"")
 
 
+class StagedFlash(Flash):
+    def __init__(self, memory: Memory):
+        super().__init__(memory)
+        self.staged: dict[int, bytearray] = {}
+        self.stage_calls = 0
+        self.commit_calls = 0
+
+    def stage_page64(self, address: int, data: bytes):
+        self.stage_calls += 1
+        page = address & ~255
+        image = self.staged.setdefault(page, bytearray(256))
+        image[address - page:address - page + 64] = data
+        return FunctionResult(RESOLUTION_COMPLETED, 0x0103, OUTCOME_SUCCESS, b"")
+
+    def commit_page256(self, address: int):
+        self.commit_calls += 1
+        self.memory.data[address:address + 256] = self.staged[address]
+        return FunctionResult(RESOLUTION_COMPLETED, 0x0103, OUTCOME_SUCCESS, b"")
+
+
 def test_padding_and_bounds():
     assert padded_image(b"abc", 64)[:5] == b"abc\xff\xff"
     with pytest.raises(ValueError):
@@ -45,6 +65,18 @@ def test_read_program_retry_and_verify():
     assert flash.calls == 2
     verify_image(memory, 0, desired)
     assert read_range(memory, 0, 128) == desired
+
+
+def test_program_groups_changed_fragments_by_physical_page():
+    memory = Memory(bytes(256))
+    desired = bytes(range(256))
+    flash = StagedFlash(memory)
+    summary = program_image(memory, flash, 0, desired)
+    assert summary.pages_programmed == 1
+    assert summary.attempts == 1
+    assert flash.stage_calls == 4
+    assert flash.commit_calls == 1
+    assert bytes(memory.data) == desired
 
 
 def test_verify_reports_first_mismatch():

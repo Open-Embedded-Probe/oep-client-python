@@ -42,6 +42,8 @@ TARGET_NORMALIZE_USER = 0x02
 TARGET_ENTER_PRODUCT_BOOTLOADER = 0x03
 TARGET_READ_MEMORY = 0x01
 TARGET_PROGRAM_PAGE64 = 0x01
+TARGET_STAGE_PAGE64 = 0x02
+TARGET_COMMIT_PAGE256 = 0x03
 FIXTURE_READ_DIGITAL = 0x01
 FIXTURE_READ_DIGITAL_BANK = 0x02
 FIXTURE_CONFIGURE_DIGITAL = 0x03
@@ -308,6 +310,25 @@ class TargetFlashClient:
         correlation, request = self._endpoint.function_request(
             FUNCTION_TARGET_FLASH, TARGET_PROGRAM_PAGE64,
             struct.pack("<I", address) + data)
+        response = self._connection.exchange(request)
+        return self._endpoint.parse_function_result(
+            response, correlation, FUNCTION_TARGET_FLASH)
+
+    def stage_page64(self, address: int, data: bytes) -> FunctionResult:
+        if address & 63 or len(data) != 64:
+            raise ValueError("prototype flash stages require one aligned 64-byte fragment")
+        correlation, request = self._endpoint.function_request(
+            FUNCTION_TARGET_FLASH, TARGET_STAGE_PAGE64,
+            struct.pack("<I", address) + data)
+        response = self._connection.exchange(request)
+        return self._endpoint.parse_function_result(
+            response, correlation, FUNCTION_TARGET_FLASH)
+
+    def commit_page256(self, address: int) -> FunctionResult:
+        if address & 255:
+            raise ValueError("prototype flash commits require a 256-byte aligned page")
+        correlation, request = self._endpoint.function_request(
+            FUNCTION_TARGET_FLASH, TARGET_COMMIT_PAGE256, struct.pack("<I", address))
         response = self._connection.exchange(request)
         return self._endpoint.parse_function_result(
             response, correlation, FUNCTION_TARGET_FLASH)
