@@ -16,10 +16,20 @@ class PeripheralGroup:
     roles: frozenset[str]
     exclusive_with: frozenset[str] = frozenset()
 
+
+@dataclass(frozen=True)
+class VoltageDomain:
+    id: str
+    nominal_mv: int
+    input_max_mv: int
+    can_drive: bool = True
+
+
 @dataclass(frozen=True)
 class Caps:
     channels: tuple[Channel, ...]
     groups: tuple[PeripheralGroup, ...] = ()
+    voltage_domains: tuple[VoltageDomain, ...] = ()
 
 @dataclass(frozen=True)
 class Connection:
@@ -108,6 +118,22 @@ def validate_caps(caps: Caps) -> None:
     if any(channel_id < 0 for channel_id in channel_ids):
         raise ValueError("probe channel ids must be non-negative")
 
+    domain_ids = [domain.id for domain in caps.voltage_domains]
+    if len(set(domain_ids)) != len(domain_ids):
+        raise ValueError("probe caps repeat a voltage domain id")
+    for domain in caps.voltage_domains:
+        if not domain.id:
+            raise ValueError("probe voltage domain id must not be empty")
+        if domain.nominal_mv <= 0 or domain.input_max_mv < domain.nominal_mv:
+            raise ValueError(f"invalid voltage range for domain {domain.id}")
+    declared_domains = set(domain_ids)
+    for channel in caps.channels:
+        unknown = channel.voltage_domains - declared_domains
+        if unknown:
+            raise ValueError(
+                f"channel {channel.id} references unknown voltage domain "
+                f"{sorted(unknown)[0]}")
+
     group_ids = [group.id for group in caps.groups]
     if len(set(group_ids)) != len(group_ids):
         raise ValueError("probe caps repeat a peripheral group id")
@@ -142,6 +168,11 @@ def resolve(caps: Caps, manifest: ConnectionManifest,
         declared = next(item for item in manifest.connections if item.signal == signal)
         if declared.voltage_domain and declared.voltage_domain not in channel.voltage_domains:
             raise ValueError(f"channel {channel_id} does not support voltage domain {declared.voltage_domain}")
+        if declared.voltage_domain and function in {"gpio.out", "open_drain", "uart.tx", "i2c.sda", "i2c.scl", "spi.tx", "spi.sck", "spi.cs"}:
+            domain = next(item for item in caps.voltage_domains
+                          if item.id == declared.voltage_domain)
+            if not domain.can_drive:
+                raise ValueError(f"voltage domain {domain.id} is input-only")
         allocation[signal] = channel_id
     if len(set(allocation.values())) != len(allocation):
         raise ValueError("allocation aliases one probe channel to multiple signals")
