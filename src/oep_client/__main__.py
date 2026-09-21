@@ -1,6 +1,8 @@
 import argparse
 import hashlib
+import json
 from pathlib import Path
+import time
 
 from .prototype import (
     Endpoint, FixtureGpioClient, FunctionResult, SerialConnection, TargetControlClient,
@@ -49,10 +51,21 @@ def main() -> None:
                         help="default: 63488 bytes (CH32X035)")
     parser.add_argument("--destructive", action="store_true",
                         help="required with --program-image")
+    parser.add_argument("--result-json", metavar="FILE",
+                        help="write machine-readable operation timings on completion")
     args = parser.parse_args()
     endpoint = Endpoint()
     connection = SerialConnection(args.port, timeout=args.timeout)
     cleanup_target: TargetControlClient | None = None
+    timings: dict[str, float] = {}
+
+    def timed(name, operation):
+        started = time.monotonic()
+        try:
+            return operation()
+        finally:
+            timings[name] = round(time.monotonic() - started, 6)
+
     try:
         correlation, request = endpoint.confirm_request()
         confirmation = endpoint.parse_confirm(connection.exchange(request), correlation)
@@ -101,29 +114,47 @@ def main() -> None:
         memory = TargetMemoryClient(endpoint, connection)
         if args.backup_flash:
             cleanup_target = TargetControlClient(endpoint, connection)
-            data = read_range(memory, args.flash_base, args.flash_size, progress)
+            data = timed("backup_read", lambda: read_range(
+                memory, args.flash_base, args.flash_size, progress))
             Path(args.backup_flash).write_bytes(data)
-            reset_target(cleanup_target)
+            timed("backup_reset", lambda: reset_target(cleanup_target))
             print(f"backup-flash bytes={len(data)} sha256={hashlib.sha256(data).hexdigest()}")
         if args.program_image:
             if not args.destructive:
                 parser.error("--program-image requires --destructive")
             desired = padded_image(Path(args.program_image).read_bytes(), args.flash_size)
             cleanup_target = TargetControlClient(endpoint, connection)
-            summary = program_image(
+            summary = timed("program", lambda: program_image(
                 memory, TargetFlashClient(endpoint, connection),
-                args.flash_base, desired, progress=progress)
-            reset_target(cleanup_target)
-            verify_image(memory, args.flash_base, desired, progress)
-            reset_target(cleanup_target)
+                args.flash_base, desired, progress=progress))
+            timed("program_reset", lambda: reset_target(cleanup_target))
+            timed("program_verify", lambda: verify_image(
+                memory, args.flash_base, desired, progress))
+            timed("program_verify_reset", lambda: reset_target(cleanup_target))
             print(f"program-image pages={summary.pages_programmed} "
                   f"attempts={summary.attempts} sha256={hashlib.sha256(desired).hexdigest()}")
         if args.verify_image:
             expected = padded_image(Path(args.verify_image).read_bytes(), args.flash_size)
             cleanup_target = TargetControlClient(endpoint, connection)
-            verify_image(memory, args.flash_base, expected, progress)
-            reset_target(cleanup_target)
+            timed("verify", lambda: verify_image(
+                memory, args.flash_base, expected, progress))
+            timed("verify_reset", lambda: reset_target(cleanup_target))
             print(f"verify-image bytes={len(expected)} sha256={hashlib.sha256(expected).hexdigest()}")
+        if args.result_json:
+            result = {
+                "port": args.port,
+                "flash_base": args.flash_base,
+                "flash_size": args.flash_size,
+                "timings_seconds": timings,
+            }
+            if args.program_image:
+                result["program"] = {
+                    "bytes_compared": summary.bytes_compared,
+                    "pages_programmed": summary.pages_programmed,
+                    "attempts": summary.attempts,
+                }
+            Path(args.result_json).write_text(
+                json.dumps(result, sort_keys=True) + "\n", encoding="utf-8")
     finally:
         # Every target memory/flash operation halts through RVSWD. This also
         # covers an exception between an operation and its normal reset.
