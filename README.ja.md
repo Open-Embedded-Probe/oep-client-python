@@ -62,7 +62,7 @@ uv run examples/uiapduino_fixture_smoke.py --port /dev/ttyUSB0
 
 P4 firmwareはDUT名、DUT pin名、配線表を保持しない。hostがprobeのCapsを読んだ後、今回の物理接続だけを
 `ConnectionManifest`として渡し、解決済みの全roleを一括で予約する。下例の`dut.tx`/`dut.rx`はhost側だけの
-論理名であり、probeへ送るのはgroup/function/channelだけである。releaseは例外経路でも必ず行う。
+論理名であり、probeへ送るのはgroup/role ID/function/channelだけである。releaseは例外経路でも必ず行う。
 
 ```python
 from oep_client import (
@@ -92,8 +92,10 @@ finally:
     connection.close()
 ```
 
-`ProbeConfiguration` revision 1はUART groupだけを実装している。I2Cは安全なstop/reconfigureとtraceの
-実装後にCapsへ追加するまで、固定診断APIとしてのみ残す。`--caps`はtargetへ触れないread-only確認である。
+`ProbeConfiguration` revision 2はCapsが列挙したstable role IDを使用する。これにより、将来のRMT captureの
+`clock`/`data`のように同じfunctionを持つ複数roleも曖昧にならない。revision 1のpeerは互換的に
+function-only encodingを用いるが、新規capabilityはrevision 2で定義する。`--caps`はtargetへ触れない
+read-only確認である。
 
 ## CH32X035 image操作
 
