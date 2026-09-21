@@ -18,6 +18,10 @@ class PeripheralGroup:
     exclusive_with: frozenset[str] = frozenset()
     wire_id: int | None = None
     instance: int = 0
+    # Revision-2 capability records give every role a stable wire identifier.
+    # An empty mapping denotes a revision-1 peer, whose configuration format
+    # identifies roles by function only.
+    role_wire_ids: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -58,6 +62,7 @@ class RoleAllocation:
     signal: str
     function: str
     channel: int
+    wire_role_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -150,6 +155,12 @@ def validate_caps(caps: Caps) -> None:
             raise ValueError(
                 f"peripheral group {group.id} excludes unknown group "
                 f"{sorted(unknown)[0]}")
+        role_ids = dict(group.role_wire_ids)
+        if role_ids and set(role_ids) != set(group.roles):
+            raise ValueError(f"peripheral group {group.id} has incomplete role ids")
+        if any(role_id <= 0 for role_id in role_ids.values()) or \
+                len(set(role_ids.values())) != len(role_ids):
+            raise ValueError(f"peripheral group {group.id} has invalid role ids")
 
 def resolve(caps: Caps, manifest: ConnectionManifest,
             required: dict[str, str]) -> dict[str, int]:
@@ -196,9 +207,11 @@ def resolve_group(caps: Caps, manifest: ConnectionManifest, group_id: str,
         raise ValueError(f"group {group_id} repeats a role")
     resolved = resolve(caps, manifest,
                        {item.signal: item.function for item in requests})
+    role_ids = dict(group.role_wire_ids)
     return GroupPlan(group.id, group.kind, tuple(
         RoleAllocation(item.role, item.signal, item.function,
-                       resolved[item.signal]) for item in requests),
+                       resolved[item.signal], role_ids.get(item.role))
+        for item in requests),
         group.wire_id)
 
 def resolve_plan(caps: Caps, manifest: ConnectionManifest,

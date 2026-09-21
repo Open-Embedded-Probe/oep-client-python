@@ -2,13 +2,15 @@
 import struct
 
 from .capabilities import Caps, Channel, PeripheralGroup, VoltageDomain, validate_caps
-from .prototype import Endpoint, FunctionResult, ProtocolError
+from .prototype import (Endpoint, FunctionResult, ProtocolError,
+                        REJECTION_UNAVAILABLE, RESOLUTION_REJECTED)
 
 FUNCTION_PROBE_CAPS = 0x0002
 CAPS_GET_SUMMARY = 0x01
 CAPS_GET_CHANNEL = 0x02
 CAPS_GET_GROUP = 0x03
 CAPS_GET_VOLTAGE_DOMAIN = 0x04
+CAPS_GET_GROUP_ROLE = 0x05
 
 FUNCTION_NAMES = (
     "gpio.in", "gpio.out", "open_drain", "pull_up", "pull_down",
@@ -25,6 +27,14 @@ GROUP_KINDS = {
     6: "capture",
     7: "pwm",
     8: "analog",
+}
+ROLE_NAMES = {
+    "uart": {1: "rx", 2: "tx"},
+    "i2c_controller": {1: "sda", 2: "scl"},
+    "i2c_target": {1: "sda", 2: "scl"},
+    "capture": {1: "clock", 2: "data"},
+    "spi_controller": {1: "sck", 2: "miso", 3: "mosi", 4: "cs"},
+    "spi_target": {1: "sck", 2: "miso", 3: "mosi", 4: "cs"},
 }
 
 
@@ -48,7 +58,8 @@ def caps_to_dict(caps: Caps) -> dict:
             {"id": group.id, "kind": group.kind,
              "roles": sorted(group.roles),
              "exclusive_with": sorted(group.exclusive_with),
-             "wire_id": group.wire_id, "instance": group.instance}
+             "wire_id": group.wire_id, "instance": group.instance,
+             "role_wire_ids": dict(group.role_wire_ids)}
             for group in caps.groups],
         "voltage_domains": [
             {"id": domain.id, "nominal_mv": domain.nominal_mv,
@@ -77,7 +88,7 @@ class ProbeCapsClient:
         if len(summary.data) != 4:
             raise ProtocolError("malformed capability summary")
         revision, channel_count, group_count, domain_count = summary.data
-        if revision != 1 or group_count > 64 or domain_count > 8:
+        if revision not in (1, 2) or group_count > 64 or domain_count > 8:
             raise ProtocolError("unsupported capability summary")
 
         domains = []
@@ -130,12 +141,45 @@ class ProbeCapsClient:
                                frozenset(name.rsplit(".", 1)[-1]
                                          for name in functions), exclusive))
 
+        role_ids = [()] * group_count
+        if revision == 2:
+            role_ids = []
+            for group_ordinal, (identifier, _, kind, roles, _) in enumerate(raw_groups):
+                discovered = []
+                names = ROLE_NAMES.get(kind, {})
+                for role_ordinal in range(32):
+                    result = self._exchange(CAPS_GET_GROUP_ROLE,
+                                            bytes((group_ordinal, role_ordinal)))
+                    if (result.resolution == RESOLUTION_REJECTED and
+                            result.detail == REJECTION_UNAVAILABLE):
+                        break
+                    if not result.succeeded:
+                        return result
+                    if len(result.data) != 4:
+                        raise ProtocolError("malformed peripheral-group role")
+                    group_wire_id, role_id, function = struct.unpack("<HBB", result.data)
+                    if group_wire_id != identifier or role_id == 0:
+                        raise ProtocolError("invalid peripheral-group role")
+                    name = names.get(role_id)
+                    if name is None or name not in roles:
+                        raise ProtocolError("unknown peripheral-group role")
+                    if function >= len(FUNCTION_NAMES) or \
+                            FUNCTION_NAMES[function].rsplit(".", 1)[-1] != name:
+                        raise ProtocolError("invalid peripheral-group role function")
+                    discovered.append((name, role_id))
+                else:
+                    raise ProtocolError("peripheral-group role list is not terminated")
+                if set(name for name, _ in discovered) != set(roles) or \
+                        len({role_id for _, role_id in discovered}) != len(discovered):
+                    raise ProtocolError("incomplete peripheral-group roles")
+                role_ids.append(tuple(discovered))
+
         groups = tuple(PeripheralGroup(
             group_id, kind, roles,
             frozenset(raw_groups[index][1] for index in range(group_count)
                       if exclusive & (1 << index)), wire_id=identifier,
-            instance=int(group_id.removeprefix(kind)))
-            for identifier, group_id, kind, roles, exclusive in raw_groups)
+            instance=int(group_id.removeprefix(kind)), role_wire_ids=role_ids[index])
+            for index, (identifier, group_id, kind, roles, exclusive) in enumerate(raw_groups))
         caps = Caps(tuple(channels), groups, tuple(domains))
         validate_caps(caps)
         return caps

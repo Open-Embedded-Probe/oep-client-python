@@ -47,16 +47,52 @@ def test_reads_mcu_independent_paged_caps():
     assert caps.voltage_domains[0].nominal_mv == 3300
     assert caps_to_dict(caps)["groups"] == [{
         "id": "uart0", "kind": "uart", "roles": ["rx", "tx"],
-        "exclusive_with": [], "wire_id": 1, "instance": 0}]
+        "exclusive_with": [], "wire_id": 1, "instance": 0,
+        "role_wire_ids": {}}]
 
 
 class BadSummaryConnection:
     def exchange(self, request):
         _, _, correlation, target = struct.unpack_from("<BBHH", request)
         return struct.pack("<BBHHB", FUNCTION_RESULT, RESOLUTION_COMPLETED,
-                           correlation, target, OUTCOME_SUCCESS) + bytes((2, 0, 0, 0))
+                           correlation, target, OUTCOME_SUCCESS) + bytes((3, 0, 0, 0))
 
 
 def test_rejects_unknown_caps_revision():
     with pytest.raises(ProtocolError, match="unsupported"):
         ProbeCapsClient(Endpoint(), BadSummaryConnection()).get_caps()
+
+
+class Revision2CapsConnection:
+    def exchange(self, request):
+        role, operation, correlation, target = struct.unpack_from("<BBHH", request)
+        assert role == 0x10 and target == FUNCTION_PROBE_CAPS
+        payload = request[6:]
+        if operation == 1:
+            data = bytes((2, 2, 1, 0))
+        elif operation == 2:
+            data = (struct.pack("<HBBQ", 12, 0, 0, function_mask("uart.rx"))
+                    if payload == b"\x00" else
+                    struct.pack("<HBBQ", 6, 0, 0, function_mask("uart.tx")))
+        elif operation == 3:
+            data = struct.pack("<HBBQQ", 1, 1, 0,
+                               function_mask("uart.rx", "uart.tx"), 0)
+        elif operation == 5:
+            ordinal, role_ordinal = payload
+            if role_ordinal == 0:
+                data = struct.pack("<HBB", 1, 1, FUNCTION_NAMES.index("uart.rx"))
+            elif role_ordinal == 1:
+                data = struct.pack("<HBB", 1, 2, FUNCTION_NAMES.index("uart.tx"))
+            else:
+                return struct.pack("<BBHHB", FUNCTION_RESULT, 0,
+                                   correlation, target, 4)
+            assert ordinal == 0
+        else:
+            raise AssertionError((operation, payload))
+        return struct.pack("<BBHHB", FUNCTION_RESULT, RESOLUTION_COMPLETED,
+                           correlation, target, OUTCOME_SUCCESS) + data
+
+
+def test_reads_revision2_stable_group_role_ids():
+    caps = ProbeCapsClient(Endpoint(), Revision2CapsConnection()).get_caps()
+    assert caps.groups[0].role_wire_ids == (("rx", 1), ("tx", 2))
