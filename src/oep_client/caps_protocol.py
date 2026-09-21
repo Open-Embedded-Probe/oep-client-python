@@ -36,6 +36,27 @@ def _names(mask: int) -> frozenset[str]:
                      if mask & (1 << bit))
 
 
+def caps_to_dict(caps: Caps) -> dict:
+    """Stable JSON-friendly representation for CLI/artifact use."""
+    return {
+        "channels": [
+            {"id": channel.id, "functions": sorted(channel.functions),
+             "input_only": channel.input_only, "reserved": channel.reserved,
+             "voltage_domains": sorted(channel.voltage_domains)}
+            for channel in caps.channels],
+        "groups": [
+            {"id": group.id, "kind": group.kind,
+             "roles": sorted(group.roles),
+             "exclusive_with": sorted(group.exclusive_with)}
+            for group in caps.groups],
+        "voltage_domains": [
+            {"id": domain.id, "nominal_mv": domain.nominal_mv,
+             "input_max_mv": domain.input_max_mv,
+             "can_drive": domain.can_drive}
+            for domain in caps.voltage_domains],
+    }
+
+
 class ProbeCapsClient:
     def __init__(self, endpoint: Endpoint, connection) -> None:
         self._endpoint = endpoint

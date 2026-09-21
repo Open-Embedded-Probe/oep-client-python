@@ -2,7 +2,7 @@ import struct
 
 import pytest
 
-from oep_client import Endpoint, ProbeCapsClient, ProtocolError
+from oep_client import Endpoint, ProbeCapsClient, ProtocolError, caps_to_dict
 from oep_client.caps_protocol import FUNCTION_NAMES, FUNCTION_PROBE_CAPS
 from oep_client.prototype import FUNCTION_RESULT, OUTCOME_SUCCESS, RESOLUTION_COMPLETED
 
@@ -44,6 +44,9 @@ def test_reads_mcu_independent_paged_caps():
     assert caps.groups[0].id == "uart0"
     assert caps.groups[0].roles == frozenset(("rx", "tx"))
     assert caps.voltage_domains[0].nominal_mv == 3300
+    assert caps_to_dict(caps)["groups"] == [{
+        "id": "uart0", "kind": "uart", "roles": ["rx", "tx"],
+        "exclusive_with": []}]
 
 
 class BadSummaryConnection:
