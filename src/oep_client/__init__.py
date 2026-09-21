@@ -9,6 +9,7 @@ from .prototype import (
     Endpoint,
     FunctionResult,
     FixtureGpioClient,
+    FixtureI2cClient,
     FixtureUartClient,
     ProbeInfo,
     ProbeInfoClient,
@@ -32,7 +33,7 @@ from .configuration_protocol import ProbeConfigurationClient
 
 __all__ = [
     "CORE_REQUEST", "CORE_RESULT", "FUNCTION_REQUEST", "FUNCTION_RESULT",
-    "ConnectionBusyError", "Endpoint", "FunctionResult", "FixtureGpioClient", "FixtureUartClient", "ProbeInfo", "ProbeInfoClient", "OfferedFunction", "ProtocolError", "SerialConnection",
+    "ConnectionBusyError", "Endpoint", "FunctionResult", "FixtureGpioClient", "FixtureI2cClient", "FixtureUartClient", "ProbeInfo", "ProbeInfoClient", "OfferedFunction", "ProtocolError", "SerialConnection",
     "TargetControlClient", "TargetFlashClient", "TargetMemoryClient", "crc16_ccitt",
     "decode_frame", "encode_frame",
     "Allocation", "Caps", "Channel", "ConfigurePlan", "Connection",
