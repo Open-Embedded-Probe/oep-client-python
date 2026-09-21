@@ -3,7 +3,7 @@ import pytest
 from oep_client import (
     Allocation, Caps, Channel, ConfigurePlan, Connection, ConnectionManifest,
     LeaseRegistry, PeripheralGroup, RoleRequest, resolve, resolve_group,
-    resolve_plan,
+    resolve_plan, validate_caps,
 )
 
 
@@ -78,6 +78,20 @@ def test_lease_registry_rejects_duplicates_and_use_after_release():
     assert registry.release("lease-1") == allocation
     with pytest.raises(ValueError, match="not active"):
         registry.require("lease-1")
+
+
+@pytest.mark.parametrize("caps, message", [
+    (Caps((Channel(1, frozenset()), Channel(1, frozenset()))), "channel id"),
+    (Caps((), (PeripheralGroup("uart0", "uart", frozenset()),
+               PeripheralGroup("uart0", "uart", frozenset()))), "group id"),
+    (Caps((), (PeripheralGroup("uart0", "uart", frozenset(),
+                               frozenset(("missing",))),)), "unknown group"),
+    (Caps((), (PeripheralGroup("uart0", "uart", frozenset(),
+                               frozenset(("uart0",))),)), "excludes itself"),
+])
+def test_rejects_invalid_probe_caps(caps, message):
+    with pytest.raises(ValueError, match=message):
+        validate_caps(caps)
 
 
 def test_rejects_unsupported_voltage_domain():

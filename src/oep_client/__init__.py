@@ -25,7 +25,7 @@ from .prototype import (
 from .capabilities import (
     Allocation, Caps, Channel, ConfigurePlan, Connection, ConnectionManifest,
     GroupPlan, LeaseRegistry, PeripheralGroup, RoleAllocation, RoleRequest, resolve,
-    resolve_group, resolve_plan,
+    resolve_group, resolve_plan, validate_caps,
 )
 
 __all__ = [
@@ -36,4 +36,5 @@ __all__ = [
     "Allocation", "Caps", "Channel", "ConfigurePlan", "Connection",
     "ConnectionManifest", "GroupPlan", "LeaseRegistry", "PeripheralGroup", "RoleAllocation",
     "RoleRequest", "resolve", "resolve_group", "resolve_plan",
+    "validate_caps",
 ]

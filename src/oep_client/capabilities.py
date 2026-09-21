@@ -99,9 +99,32 @@ class LeaseRegistry:
         del self._active[lease_id]
         return allocation
 
+
+def validate_caps(caps: Caps) -> None:
+    """Reject ambiguous or internally inconsistent probe declarations."""
+    channel_ids = [channel.id for channel in caps.channels]
+    if len(set(channel_ids)) != len(channel_ids):
+        raise ValueError("probe caps repeat a channel id")
+    if any(channel_id < 0 for channel_id in channel_ids):
+        raise ValueError("probe channel ids must be non-negative")
+
+    group_ids = [group.id for group in caps.groups]
+    if len(set(group_ids)) != len(group_ids):
+        raise ValueError("probe caps repeat a peripheral group id")
+    declared = set(group_ids)
+    for group in caps.groups:
+        if group.id in group.exclusive_with:
+            raise ValueError(f"peripheral group {group.id} excludes itself")
+        unknown = group.exclusive_with - declared
+        if unknown:
+            raise ValueError(
+                f"peripheral group {group.id} excludes unknown group "
+                f"{sorted(unknown)[0]}")
+
 def resolve(caps: Caps, manifest: ConnectionManifest,
             required: dict[str, str]) -> dict[str, int]:
     """Return an exact allocation; reject absent/ambiguous channel bindings."""
+    validate_caps(caps)
     by_id = {channel.id: channel for channel in caps.channels}
     bound = {item.signal: item.channel for item in manifest.connections}
     if len(bound) != len(manifest.connections):
@@ -143,6 +166,7 @@ def resolve_group(caps: Caps, manifest: ConnectionManifest, group_id: str,
 def resolve_plan(caps: Caps, manifest: ConnectionManifest,
                  groups: dict[str, tuple[RoleRequest, ...]]) -> ConfigurePlan:
     """Resolve a complete peripheral plan, rejecting declared exclusions."""
+    validate_caps(caps)
     declared = {item.id: item for item in caps.groups}
     selected = set(groups)
     if not selected <= set(declared):
