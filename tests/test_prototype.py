@@ -204,7 +204,7 @@ class I2cConnection:
     def exchange(self, request):
         role, operation, correlation, target = struct.unpack("<BBHH", request)
         assert (role, operation, target, len(request)) == (0x10, 1, 0x0203, 6)
-        data = struct.pack("<BBHHI", 0x07, 3, 4, 5, 100000)
+        data = struct.pack("<BBHHIB", 0x07, 3, 4, 5, 100000, 0x09)
         return struct.pack("<BBHHB", 0x90, RESOLUTION_COMPLETED, correlation,
                            target, OUTCOME_SUCCESS) + data
 
@@ -217,4 +217,5 @@ def test_fixture_i2c_status():
         "rx_transactions": 4,
         "request_transactions": 5,
         "frequency_hz": 100000,
+        "stretch_cause_mask": 0x09,
     }
