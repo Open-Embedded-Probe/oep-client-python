@@ -9,6 +9,7 @@ from .prototype import (
     TargetFlashClient,
     TargetMemoryClient,
 )
+from .caps_protocol import ProbeCapsClient, caps_to_dict
 from .flash_image import (
     padded_image, preflight_x035_f8u6, program_image, read_range, reset_target,
     verify_image,
@@ -39,6 +40,8 @@ def main() -> None:
                         help="read 4..88 aligned bytes; integers accept 0x prefix")
     parser.add_argument("--gpio-read", metavar="PIN", type=lambda value: int(value, 0),
                         help="read one probe-side FixtureGpio pin")
+    parser.add_argument("--caps", action="store_true",
+                        help="read the generic probe capability declaration only")
     parser.add_argument("--program-page64", nargs=2, metavar=("ADDRESS", "HEX"),
                         help="destructively program exactly 64 bytes")
     parser.add_argument("--backup-flash", metavar="FILE",
@@ -81,6 +84,12 @@ def main() -> None:
         functions = endpoint.parse_functions(connection.exchange(request), correlation)
         for function in functions:
             print(f"function reference=0x{function.reference:04x} revision={function.revision} flags=0x{function.flags:02x}")
+        if args.caps:
+            caps = ProbeCapsClient(endpoint, connection).get_caps()
+            if isinstance(caps, FunctionResult):
+                print_result("caps", caps)
+            else:
+                print("caps " + json.dumps(caps_to_dict(caps), sort_keys=True))
         if args.target:
             target = TargetControlClient(endpoint, connection)
             # Entering the product bootloader is an explicit terminal state;
