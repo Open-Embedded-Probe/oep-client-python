@@ -9,6 +9,7 @@ FUNCTION_PROBE_CONFIGURATION = 0x0003
 CONFIGURATION_APPLY = 0x01
 CONFIGURATION_RELEASE = 0x02
 CONFIGURATION_REVISION = 1
+CONFIGURATION_REVISION_ROLE_IDS = 2
 
 
 class ProbeConfigurationClient:
@@ -37,17 +38,30 @@ class ProbeConfigurationClient:
                 except ValueError as error:
                     raise ValueError(
                         f"unknown probe function {role.function}") from error
-                entries.append((group.wire_id, function, role.channel))
-        if not entries or len(entries) > 17:
-            raise ValueError("configuration plan must contain 1..17 roles")
-        if len({(group, function) for group, function, _ in entries}) != len(entries):
+                entries.append((group.wire_id, role.wire_role_id, function, role.channel))
+        if not entries:
+            raise ValueError("configuration plan must contain at least one role")
+        has_role_ids = [role_id is not None for _, role_id, _, _ in entries]
+        if any(has_role_ids) and not all(has_role_ids):
+            raise ValueError("configuration plan mixes role-id revisions")
+        revision = (CONFIGURATION_REVISION_ROLE_IDS if all(has_role_ids)
+                    else CONFIGURATION_REVISION)
+        maximum = 14 if revision == CONFIGURATION_REVISION_ROLE_IDS else 17
+        if len(entries) > maximum:
+            raise ValueError(f"configuration plan must contain 1..{maximum} roles")
+        if len({(group, role_id if revision == 2 else function)
+                for group, role_id, function, _ in entries}) != len(entries):
             raise ValueError("configuration plan repeats a group role")
         if any(group < 0 or group > 0xffff or channel < 0 or channel > 0xffff
-               for group, _, channel in entries):
+               for group, _, _, channel in entries):
             raise ValueError("configuration plan contains an out-of-range id")
-        return bytes((CONFIGURATION_REVISION, len(entries))) + b"".join(
-            struct.pack("<HBH", group, function, channel)
-            for group, function, channel in entries)
+        if revision == CONFIGURATION_REVISION:
+            return bytes((revision, len(entries))) + b"".join(
+                struct.pack("<HBH", group, function, channel)
+                for group, _, function, channel in entries)
+        return bytes((revision, len(entries))) + b"".join(
+            struct.pack("<HBBH", group, role_id, function, channel)
+            for group, role_id, function, channel in entries)
 
     def apply(self, plan: ConfigurePlan) -> Allocation | FunctionResult:
         result = self._exchange(CONFIGURATION_APPLY, self._encode(plan))

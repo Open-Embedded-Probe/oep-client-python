@@ -66,3 +66,15 @@ def test_encodes_multiple_groups_as_one_atomic_apply():
         struct.pack("<HBH", 2, 8, 50),
         struct.pack("<HBH", 2, 9, 52),
     ))
+
+
+def test_encodes_revision2_stable_role_ids():
+    revision2 = ConfigurePlan((GroupPlan(
+        "uart0", "uart", (
+            RoleAllocation("rx", "dut.tx", "uart.rx", 12, 1),
+            RoleAllocation("tx", "dut.rx", "uart.tx", 6, 2),
+        ), wire_id=1),))
+    assert ProbeConfigurationClient._encode(revision2) == bytes((2, 2)) + b"".join((
+        struct.pack("<HBBH", 1, 1, 6, 12),
+        struct.pack("<HBBH", 1, 2, 7, 6),
+    ))
