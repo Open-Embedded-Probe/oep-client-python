@@ -63,6 +63,7 @@ FIXTURE_UART_READ_AVAILABLE = 0x03
 FIXTURE_I2C_GET_STATUS = 0x01
 FIXTURE_CAPTURE_GET_STATUS = 0x01
 FIXTURE_CAPTURE_READ_SYMBOLS = 0x02
+FIXTURE_CAPTURE_START = 0x03
 PROBE_INFO_GET = 0x01
 
 
@@ -502,6 +503,9 @@ class FixtureCaptureClient:
         if not result.data or len(result.data) != 1 + result.data[0] * 4:
             raise ProtocolError("malformed capture symbol result")
         return struct.unpack("<" + "I" * result.data[0], result.data[1:])
+
+    def start(self) -> FunctionResult:
+        return self._exchange(FIXTURE_CAPTURE_START)
 
 
 class SerialConnection:
