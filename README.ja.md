@@ -58,6 +58,43 @@ target pin 9→ESP32 GPIO14のLOW/HIGH/LOWを確認した。再実行用smoke te
 uv run examples/uiapduino_fixture_smoke.py --port /dev/ttyUSB0
 ```
 
+## 汎用probeの能力取得と構成 lease
+
+P4 firmwareはDUT名、DUT pin名、配線表を保持しない。hostがprobeのCapsを読んだ後、今回の物理接続だけを
+`ConnectionManifest`として渡し、解決済みの全roleを一括で予約する。下例の`dut.tx`/`dut.rx`はhost側だけの
+論理名であり、probeへ送るのはgroup/function/channelだけである。releaseは例外経路でも必ず行う。
+
+```python
+from oep_client import (
+    Connection, ConnectionManifest, Endpoint, ProbeCapsClient,
+    ProbeConfigurationClient, RoleRequest, SerialConnection, resolve_plan,
+)
+
+port = "/run/board-identify/by-id/esp32-series-30eda0e31108"
+connection = SerialConnection(port)
+endpoint = Endpoint()
+caps = ProbeCapsClient(endpoint, connection).get_caps()
+manifest = ConnectionManifest((
+    Connection("dut.tx", 12, "domain:1"),
+    Connection("dut.rx", 6, "domain:1"),
+))
+plan = resolve_plan(caps, manifest, {"uart1": (
+    RoleRequest("rx", "dut.tx", "uart.rx"),
+    RoleRequest("tx", "dut.rx", "uart.tx"),
+)})
+configuration = ProbeConfigurationClient(endpoint, connection)
+allocation = configuration.apply(plan)
+try:
+    # FixtureUartConfigureなど、allocationに属する操作を行う。
+    pass
+finally:
+    configuration.release(allocation)
+    connection.close()
+```
+
+`ProbeConfiguration` revision 1はUART groupだけを実装している。I2Cは安全なstop/reconfigureとtraceの
+実装後にCapsへ追加するまで、固定診断APIとしてのみ残す。`--caps`はtargetへ触れないread-only確認である。
+
 ## CH32X035 image操作
 
 このCLIはまだ破壊的prototypeであり、既定値`0x08000000`、63,488 byteはCH32X035専用である。
