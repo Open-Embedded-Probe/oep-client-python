@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from oep_client import Endpoint, ProtocolError, decode_frame, encode_frame
+from oep_client import Endpoint, FixtureI2cClient as PublicFixtureI2cClient, ProtocolError, decode_frame, encode_frame
 from oep_client.prototype import (
     ConnectionBusyError,
     FUNCTION_TARGET_CONTROL,
@@ -31,6 +31,10 @@ def test_frame_round_trip_and_corruption():
     damaged[4] ^= 1
     with pytest.raises(ProtocolError):
         decode_frame(bytes(damaged))
+
+
+def test_exports_fixture_i2c_client():
+    assert PublicFixtureI2cClient is FixtureI2cClient
 
 
 @pytest.mark.skipif(os.name != "posix", reason="uses POSIX flock")
