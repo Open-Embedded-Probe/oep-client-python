@@ -9,7 +9,10 @@ from .prototype import (
     TargetFlashClient,
     TargetMemoryClient,
 )
-from .flash_image import padded_image, program_image, read_range, reset_target, verify_image
+from .flash_image import (
+    padded_image, preflight_x035_f8u6, program_image, read_range, reset_target,
+    verify_image,
+)
 
 
 def progress(operation: str, completed: int, total: int) -> None:
@@ -127,6 +130,12 @@ def main() -> None:
                 parser.error("--program-image requires --destructive")
             desired = padded_image(Path(args.program_image).read_bytes(), args.flash_size)
             cleanup_target = TargetControlClient(endpoint, connection)
+            preflight = timed("program_preflight", lambda: preflight_x035_f8u6(
+                memory, args.flash_base, args.flash_size))
+            print("target-preflight "
+                  f"chip_id=0x{preflight.chip_id:08x} "
+                  f"option_bytes=0x{preflight.option_bytes:08x} "
+                  f"write_protection=0x{preflight.write_protection:08x}")
             summary = timed("program", lambda: program_image(
                 memory, TargetFlashClient(endpoint, connection),
                 args.flash_base, desired, progress=progress))

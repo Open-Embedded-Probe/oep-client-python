@@ -16,6 +16,20 @@ class ProgramSummary:
     attempts: int
 
 
+@dataclass(frozen=True)
+class X035Preflight:
+    chip_id: int
+    option_bytes: int
+    write_protection: int
+
+
+X035_F8U6_CHIP_ID = 0x035E0601
+X035_ESIG_CHIP_ID = 0x1FFFF704
+X035_FLASH_OBR = 0x4002201C
+X035_FLASH_WPR = 0x40022020
+X035_FLASH_BYTES = 63488
+
+
 def padded_image(data: bytes, size: int, fill: int = 0xFF) -> bytes:
     if size <= 0 or size & 63:
         raise ValueError("flash size must be a positive multiple of 64")
@@ -41,6 +55,34 @@ def read_range(memory: TargetMemoryClient, address: int, length: int,
         if progress:
             progress("read", offset + count, length)
     return bytes(output)
+
+
+def preflight_x035_f8u6(memory: TargetMemoryClient, flash_base: int,
+                        flash_size: int) -> X035Preflight:
+    """Fail closed before destructive X035F8U6 image programming."""
+    if flash_base != 0x08000000 or flash_size != X035_FLASH_BYTES:
+        raise ValueError(
+            "X035F8U6 requires flash base 0x08000000 and size 63488")
+
+    def read_word(address: int) -> int:
+        result = memory.read(address, 4)
+        if not isinstance(result, bytes) or len(result) != 4:
+            raise RuntimeError(f"preflight read failed at 0x{address:08x}: {result}")
+        return int.from_bytes(result, "little")
+
+    chip_id = read_word(X035_ESIG_CHIP_ID)
+    option_bytes = read_word(X035_FLASH_OBR)
+    write_protection = read_word(X035_FLASH_WPR)
+    if chip_id != X035_F8U6_CHIP_ID:
+        raise RuntimeError(
+            f"refusing destructive write: expected CH32X035F8U6 "
+            f"0x{X035_F8U6_CHIP_ID:08x}, got 0x{chip_id:08x}")
+    if option_bytes & 0x2:
+        raise RuntimeError("refusing destructive write: read protection is enabled")
+    if write_protection != 0xFFFFFFFF:
+        raise RuntimeError(
+            f"refusing destructive write: write protection is 0x{write_protection:08x}")
+    return X035Preflight(chip_id, option_bytes, write_protection)
 
 
 def program_image(memory: TargetMemoryClient, flash: TargetFlashClient,
