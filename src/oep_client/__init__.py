@@ -10,6 +10,8 @@ from .prototype import (
     FunctionResult,
     FixtureGpioClient,
     FixtureUartClient,
+    ProbeInfo,
+    ProbeInfoClient,
     OfferedFunction,
     ProtocolError,
     SerialConnection,
@@ -23,7 +25,7 @@ from .prototype import (
 
 __all__ = [
     "CORE_REQUEST", "CORE_RESULT", "FUNCTION_REQUEST", "FUNCTION_RESULT",
-    "ConnectionBusyError", "Endpoint", "FunctionResult", "FixtureGpioClient", "FixtureUartClient", "OfferedFunction", "ProtocolError", "SerialConnection",
+    "ConnectionBusyError", "Endpoint", "FunctionResult", "FixtureGpioClient", "FixtureUartClient", "ProbeInfo", "ProbeInfoClient", "OfferedFunction", "ProtocolError", "SerialConnection",
     "TargetControlClient", "TargetFlashClient", "TargetMemoryClient", "crc16_ccitt",
     "decode_frame", "encode_frame",
 ]

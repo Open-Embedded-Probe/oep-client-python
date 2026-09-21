@@ -30,6 +30,7 @@ OUTCOME_SUCCESS = 0x00
 OUTCOME_FAILED = 0x01
 
 FUNCTION_TARGET_CONTROL = 0x0101
+FUNCTION_PROBE_INFO = 0x0001
 FUNCTION_TARGET_MEMORY = 0x0102
 FUNCTION_TARGET_FLASH = 0x0103
 FUNCTION_FIXTURE_GPIO = 0x0201
@@ -59,6 +60,7 @@ FIXTURE_UART_CONFIGURE = 0x01
 FIXTURE_UART_WRITE = 0x02
 FIXTURE_UART_READ_AVAILABLE = 0x03
 FIXTURE_I2C_GET_STATUS = 0x01
+PROBE_INFO_GET = 0x01
 
 
 class ProtocolError(ValueError):
@@ -178,6 +180,14 @@ class OfferedFunction:
 
 
 @dataclass(frozen=True)
+class ProbeInfo:
+    profile_id: int
+    firmware_revision: int
+    reserved_pin_mask: int
+    fixture_pin_mask: int
+
+
+@dataclass(frozen=True)
 class FunctionResult:
     resolution: int
     target: int
@@ -276,6 +286,23 @@ class TargetControlClient:
 
     def enter_product_bootloader(self) -> FunctionResult:
         return self._exchange(TARGET_ENTER_PRODUCT_BOOTLOADER)
+
+
+class ProbeInfoClient:
+    def __init__(self, endpoint: Endpoint, connection: "SerialConnection") -> None:
+        self._endpoint = endpoint
+        self._connection = connection
+
+    def get_info(self) -> ProbeInfo | FunctionResult:
+        correlation, request = self._endpoint.function_request(
+            FUNCTION_PROBE_INFO, PROBE_INFO_GET)
+        result = self._endpoint.parse_function_result(
+            self._connection.exchange(request), correlation, FUNCTION_PROBE_INFO)
+        if not result.succeeded:
+            return result
+        if len(result.data) != 24:
+            raise ProtocolError("malformed probe-info result")
+        return ProbeInfo(*struct.unpack("<IIQQ", result.data))
 
 
 class TargetMemoryClient:
