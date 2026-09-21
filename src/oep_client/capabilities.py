@@ -16,6 +16,8 @@ class PeripheralGroup:
     kind: str
     roles: frozenset[str]
     exclusive_with: frozenset[str] = frozenset()
+    wire_id: int | None = None
+    instance: int = 0
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,7 @@ class GroupPlan:
     group_id: str
     kind: str
     roles: tuple[RoleAllocation, ...]
+    wire_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -195,7 +198,8 @@ def resolve_group(caps: Caps, manifest: ConnectionManifest, group_id: str,
                        {item.signal: item.function for item in requests})
     return GroupPlan(group.id, group.kind, tuple(
         RoleAllocation(item.role, item.signal, item.function,
-                       resolved[item.signal]) for item in requests))
+                       resolved[item.signal]) for item in requests),
+        group.wire_id)
 
 def resolve_plan(caps: Caps, manifest: ConnectionManifest,
                  groups: dict[str, tuple[RoleRequest, ...]]) -> ConfigurePlan:

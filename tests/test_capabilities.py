@@ -68,6 +68,7 @@ def test_resolve_plan_is_immutable_and_keeps_probe_roles_separate():
         {"uart0": (RoleRequest("rx", "console.tx", "uart.rx"),)})
     assert isinstance(result, ConfigurePlan)
     assert result.groups[0].roles[0].signal == "console.tx"
+    assert result.groups[0].wire_id is None
 
 
 def test_lease_registry_rejects_duplicates_and_use_after_release():

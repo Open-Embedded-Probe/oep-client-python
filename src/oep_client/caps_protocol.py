@@ -47,7 +47,8 @@ def caps_to_dict(caps: Caps) -> dict:
         "groups": [
             {"id": group.id, "kind": group.kind,
              "roles": sorted(group.roles),
-             "exclusive_with": sorted(group.exclusive_with)}
+             "exclusive_with": sorted(group.exclusive_with),
+             "wire_id": group.wire_id, "instance": group.instance}
             for group in caps.groups],
         "voltage_domains": [
             {"id": domain.id, "nominal_mv": domain.nominal_mv,
@@ -132,8 +133,9 @@ class ProbeCapsClient:
         groups = tuple(PeripheralGroup(
             group_id, kind, roles,
             frozenset(raw_groups[index][1] for index in range(group_count)
-                      if exclusive & (1 << index)))
-            for _, group_id, kind, roles, exclusive in raw_groups)
+                      if exclusive & (1 << index)), wire_id=identifier,
+            instance=int(group_id.removeprefix(kind)))
+            for identifier, group_id, kind, roles, exclusive in raw_groups)
         caps = Caps(tuple(channels), groups, tuple(domains))
         validate_caps(caps)
         return caps
