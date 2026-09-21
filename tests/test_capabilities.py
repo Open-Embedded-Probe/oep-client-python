@@ -1,0 +1,21 @@
+import pytest
+
+from oep_client import Caps, Channel, Connection, ConnectionManifest, resolve
+
+
+def test_resolves_declared_uart_wiring():
+    caps = Caps((Channel(1, frozenset(("uart.rx",))),
+                 Channel(2, frozenset(("uart.tx",)))))
+    manifest = ConnectionManifest((Connection("dut.tx", 1), Connection("dut.rx", 2)))
+    assert resolve(caps, manifest, {"dut.tx": "uart.rx", "dut.rx": "uart.tx"}) == {"dut.tx": 1, "dut.rx": 2}
+
+
+@pytest.mark.parametrize("manifest,required", [
+    (ConnectionManifest(()), {"dut.tx": "uart.rx"}),
+    (ConnectionManifest((Connection("dut.tx", 1),)), {"dut.tx": "uart.tx"}),
+    (ConnectionManifest((Connection("a", 1), Connection("b", 1))), {"a": "uart.rx", "b": "uart.rx"}),
+])
+def test_rejects_invalid_allocation(manifest, required):
+    caps = Caps((Channel(1, frozenset(("uart.rx",))),))
+    with pytest.raises(ValueError):
+        resolve(caps, manifest, required)
