@@ -62,7 +62,9 @@ def main() -> None:
     p = sub.add_parser("read"); p.add_argument("output")
     p = sub.add_parser("program"); p.add_argument("image"); p.add_argument("--no-verify", action="store_true")
     p = sub.add_parser("verify"); p.add_argument("image")
-    sub.add_parser("reset")
+    p = sub.add_parser("reset"); p.add_argument("--mode", choices=["system", "boot", "user", "pin"], default="system",
+                                                help="system: ndmreset (default); boot: product bootloader = pin reset (when the probe has an NRST line) then the "
+                                                     "E129 payload -> UIAPduino HID 1209:b803; user: normalise to user mode (E130 payload); pin: NRST pulse only")
     args = parser.parse_args()
 
     client = open_client(args.port, args.timeout)
@@ -93,8 +95,16 @@ def main() -> None:
             if not outcome.verified:
                 print(json.dumps(result, indent=1)); sys.exit(1)
         elif args.command == "reset":
-            report = target.control.reset()
-            print(f"reset flags=0x{report.flags:02x} attempts={report.attempts} pc=0x{report.pc:08x}")
+            if args.mode == "boot":
+                # The UIAPduino bootloader stays only with RCC_RSTSCKR.PINRSTF set (2026-09-22): pulse NRST first
+                # where the probe can, then run the boot payload.
+                ok, _ = target.control.reset_report(3)
+                if not ok: print("note: probe has no NRST line; boot entry needs a recent hardware reset on the target")
+                time.sleep(0.3)
+            mode = {"system": 0, "boot": 1, "user": 2, "pin": 3}[args.mode]
+            report = target.control.reset(mode)
+            result["reset"] = {"mode": args.mode, "flags": report.flags, "attempts": report.attempts, "pc": f"0x{report.pc:08x}"}
+            print(f"reset mode={args.mode} flags=0x{report.flags:02x} attempts={report.attempts} pc=0x{report.pc:08x}")
     print(json.dumps(result, indent=1))
     if args.result_json:
         Path(args.result_json).write_text(json.dumps(result, indent=1) + "\n", encoding="utf-8")
