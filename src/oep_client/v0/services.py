@@ -51,8 +51,10 @@ class TargetControl:
         """Like reset() but returns (completed_ok, result) instead of raising on a failed outcome."""
         response = self.client.call(self.function, codec.TARGET_CONTROL_OP_RESET,
                                     codec.TargetControlResetRequest(mode=mode, confirm=1 if confirm else 0).pack())
-        if response.rejected:
+        if response.rejected and response.detail != codec.REJECT_UNAVAILABLE:
             response.expect_success("target.control reset")
+        if response.rejected:
+            return False, codec.TargetControlResetResult(flags=0, attempts=0, pc=0)
         return response.succeeded, codec.TargetControlResetResult.unpack(response.payload)
 
     def max_clock_hz(self) -> int:
