@@ -243,6 +243,11 @@ class P4I2cTarget:
     def reset(self) -> None:
         self.client.call(self.function, codec.P4_I2C_TARGET_OP_RESET).expect_success("p4.i2c-target reset")
 
+    def read_hw(self) -> codec.P4I2CTargetReadHwResult:
+        """Vendor debug view: ESP32-P4 I2C0 slave sr / int_raw / fifo_st / ctr register images."""
+        response = self.client.call(self.function, codec.P4_I2C_TARGET_OP_READ_HW)
+        return codec.P4I2CTargetReadHwResult.unpack(response.expect_success("p4.i2c-target read_hw"))
+
 
 class FixtureCapture:
     """fixture.capture: sampled logic capture, a read-only observer of probe channels.
