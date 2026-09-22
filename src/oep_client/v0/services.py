@@ -38,9 +38,30 @@ class TargetControl:
     def resume(self) -> None:
         self.client.call(self.function, codec.TARGET_CONTROL_OP_RESUME).expect_success("target.control resume")
 
-    def reset(self, mode: int = 0) -> None:
-        self.client.call(self.function, codec.TARGET_CONTROL_OP_RESET,
-                         codec.TargetControlResetRequest(mode=mode).pack()).expect_success("target.control reset")
+    RESET_RUNNING, RESET_CONFIRMED, RESET_RECOVERED, RESET_HALT_FAILED = 1, 2, 4, 8
+
+    def reset(self, mode: int = 0, *, confirm: bool = True) -> codec.TargetControlResetResult:
+        """System reset, target runs. With confirm the probe samples the PC after the release
+        and retries the release until it can; the returned flags/pc are the evidence."""
+        response = self.client.call(self.function, codec.TARGET_CONTROL_OP_RESET,
+                                    codec.TargetControlResetRequest(mode=mode, confirm=1 if confirm else 0).pack())
+        return codec.TargetControlResetResult.unpack(response.expect_success("target.control reset"))
+
+    def reset_report(self, mode: int = 0, *, confirm: bool = True) -> tuple[bool, codec.TargetControlResetResult]:
+        """Like reset() but returns (completed_ok, result) instead of raising on a failed outcome."""
+        response = self.client.call(self.function, codec.TARGET_CONTROL_OP_RESET,
+                                    codec.TargetControlResetRequest(mode=mode, confirm=1 if confirm else 0).pack())
+        if response.rejected:
+            response.expect_success("target.control reset")
+        return response.succeeded, codec.TargetControlResetResult.unpack(response.payload)
+
+    def max_clock_hz(self) -> int:
+        """SWCLK rate the probe settled on at its last attach (describe TLV max_clock_hz), 0 if none yet."""
+        from . import tlv as _tlv
+        for tag, value in _tlv.decode(self.client.describe(self.function)):
+            if tag == codec.TLV_CORE_MAX_CLOCK_HZ:
+                return int.from_bytes(value, "little")
+        return 0
 
     def read_dmi(self, address: int) -> int:
         response = self.client.call(self.function, codec.TARGET_CONTROL_OP_READ_DMI,
