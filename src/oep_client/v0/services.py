@@ -254,6 +254,43 @@ class P4I2cTarget:
         return codec.P4I2CTargetReadHwResult.unpack(response.expect_success("p4.i2c-target read_hw"))
 
 
+class P4SpiTarget:
+    """Vendor tool (owner 0x0100, id 0x0002): ESP32-P4 SPI slave (SPI2_HOST, no DMA, <= 64 bytes).
+    One CS-framed transaction at a time: arm() with the MISO bytes, then read_rx() after the master's CS rose."""
+    DEFINITION = codec.DEF_P4_SPI_TARGET
+    ROLE_SCK, ROLE_MOSI, ROLE_MISO, ROLE_CS = 1, 2, 3, 4
+    MSB_FIRST, LSB_FIRST = 0, 1
+
+    def __init__(self, client: Client, function: int):
+        self.client, self.function = client, function
+
+    def assignments(self, sck: int, mosi: int, miso: int, cs: int):
+        return [(self.function, self.ROLE_SCK, sck), (self.function, self.ROLE_MOSI, mosi),
+                (self.function, self.ROLE_MISO, miso), (self.function, self.ROLE_CS, cs)]
+
+    def configure(self, mode: int, bit_order: int = 0) -> None:
+        self.client.call(self.function, codec.P4_SPI_TARGET_OP_CONFIGURE,
+                         codec.P4SpiTargetConfigureRequest(mode=mode, bit_order=bit_order).pack()).expect_success("p4.spi-target configure")
+
+    def arm(self, length: int, tx: bytes = b"") -> None:
+        """Queue one transaction of `length` bytes; MISO sends tx, zero padded."""
+        self.client.call(self.function, codec.P4_SPI_TARGET_OP_ARM,
+                         codec.P4SpiTargetArmRequest(length=length, tx=tx).pack()).expect_success("p4.spi-target arm")
+
+    def read_rx(self) -> tuple[int, int, bytes]:
+        """(pending, bits, mosi_data) of the oldest finished transaction; (0, 0, b"") when none."""
+        response = self.client.call(self.function, codec.P4_SPI_TARGET_OP_READ_RX)
+        result = codec.P4SpiTargetReadRxResult.unpack(response.expect_success("p4.spi-target read_rx"))
+        return result.pending, result.bits, result.data
+
+    def status(self) -> codec.P4SpiTargetStatusResult:
+        response = self.client.call(self.function, codec.P4_SPI_TARGET_OP_STATUS)
+        return codec.P4SpiTargetStatusResult.unpack(response.expect_success("p4.spi-target status"))
+
+    def reset(self) -> None:
+        self.client.call(self.function, codec.P4_SPI_TARGET_OP_RESET).expect_success("p4.spi-target reset")
+
+
 class FixtureCapture:
     """fixture.capture: sampled logic capture, a read-only observer of probe channels.
     Plan roles: line k (0..7) -> channel. One byte per sample, bit k = line k."""
