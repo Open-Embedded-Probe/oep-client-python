@@ -109,6 +109,15 @@ def program_image(target: Target, image: bytes, *, verify: bool = True, reset: b
 
     t = time.perf_counter()
     failed = target.flash.program_pages(pages) if pages else []
+    # A page whose probe-side read-back did not match is retried; the final CRC
+    # verify below is still the authority.
+    retries = 0
+    for _ in range(2):
+        if not failed:
+            break
+        retry_pages = [(a, d) for a, d in pages if a in failed]
+        retries += len(retry_pages)
+        failed = target.flash.program_pages(retry_pages)
     timings["program"] = time.perf_counter() - t
 
     verified = 0
@@ -120,6 +129,7 @@ def program_image(target: Target, image: bytes, *, verify: bool = True, reset: b
         t = time.perf_counter()
         target.control.reset()
         timings["reset"] = time.perf_counter() - t
+    timings["page_retries"] = float(retries)
     return ImageResult(part, chip_id, (geometry.base, geometry.size, geometry.page),
                        geometry.size // geometry.page, len(pages), failed,
                        TargetFlash.crc32(desired), verified if verify else TargetFlash.crc32(desired), timings)
