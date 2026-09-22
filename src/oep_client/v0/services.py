@@ -42,6 +42,17 @@ class TargetControl:
         self.client.call(self.function, codec.TARGET_CONTROL_OP_RESET,
                          codec.TargetControlResetRequest(mode=mode).pack()).expect_success("target.control reset")
 
+    def read_dmi(self, address: int) -> int:
+        response = self.client.call(self.function, codec.TARGET_CONTROL_OP_READ_DMI,
+                                    codec.TargetControlReadDmiRequest(address=address).pack())
+        return codec.TargetControlReadDmiResult.unpack(response.expect_success("target.control read_dmi")).value
+
+    def read_register(self, regno: int) -> int:
+        """Abstract-command register read while halted: CSR number, or 0x1000 + GPR index."""
+        response = self.client.call(self.function, codec.TARGET_CONTROL_OP_READ_REGISTER,
+                                    codec.TargetControlReadRegisterRequest(regno=regno).pack())
+        return codec.TargetControlReadRegisterResult.unpack(response.expect_success("target.control read_register")).value
+
 
 class TargetMemory:
     DEFINITION = codec.DEF_TARGET_MEMORY
