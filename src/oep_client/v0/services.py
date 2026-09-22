@@ -199,25 +199,25 @@ class P4I2cTarget:
 
     def configure(self, address: int, mode: int) -> None:
         self.client.call(self.function, codec.P4_I2C_TARGET_OP_CONFIGURE,
-                         codec.P4I2cTargetConfigureRequest(address=address, mode=mode).pack()).expect_success("p4.i2c-target configure")
+                         codec.P4I2CTargetConfigureRequest(address=address, mode=mode).pack()).expect_success("p4.i2c-target configure")
 
     def arm_rx(self, length: int) -> None:
         self.client.call(self.function, codec.P4_I2C_TARGET_OP_ARM_RX,
-                         codec.P4I2cTargetArmRxRequest(length=length).pack()).expect_success("p4.i2c-target arm_rx")
+                         codec.P4I2CTargetArmRxRequest(length=length).pack()).expect_success("p4.i2c-target arm_rx")
 
     def read_rx(self) -> tuple[int, bytes]:
         response = self.client.call(self.function, codec.P4_I2C_TARGET_OP_READ_RX)
-        result = codec.P4I2cTargetReadRxResult.unpack(response.expect_success("p4.i2c-target read_rx"))
+        result = codec.P4I2CTargetReadRxResult.unpack(response.expect_success("p4.i2c-target read_rx"))
         return result.pending, result.data
 
     def preload_tx(self, data: bytes) -> int:
         response = self.client.call(self.function, codec.P4_I2C_TARGET_OP_PRELOAD_TX,
-                                    codec.P4I2cTargetPreloadTxRequest(data=data).pack())
-        return codec.P4I2cTargetPreloadTxResult.unpack(response.expect_success("p4.i2c-target preload_tx")).slots
+                                    codec.P4I2CTargetPreloadTxRequest(data=data).pack())
+        return codec.P4I2CTargetPreloadTxResult.unpack(response.expect_success("p4.i2c-target preload_tx")).slots
 
-    def status(self) -> codec.P4I2cTargetStatusResult:
+    def status(self) -> codec.P4I2CTargetStatusResult:
         response = self.client.call(self.function, codec.P4_I2C_TARGET_OP_STATUS)
-        return codec.P4I2cTargetStatusResult.unpack(response.expect_success("p4.i2c-target status"))
+        return codec.P4I2CTargetStatusResult.unpack(response.expect_success("p4.i2c-target status"))
 
     def reset(self) -> None:
         self.client.call(self.function, codec.P4_I2C_TARGET_OP_RESET).expect_success("p4.i2c-target reset")
