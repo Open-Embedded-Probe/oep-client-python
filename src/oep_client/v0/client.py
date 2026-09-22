@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from collections import deque
 from dataclasses import dataclass
 
@@ -68,6 +70,7 @@ class Client:
 
     def __init__(self, transport: FrameTransport, timeout: float = 2.0):
         self.transport = transport
+        self.resyncs = 0   # corrupted results discarded and re-requested
         self.timeout = timeout
         self._next_correlation = 1
         self.limits = Confirmation(0, 64, 64, 1, 0)  # before confirmation: minimal profile
@@ -97,13 +100,28 @@ class Client:
         return Response(header.correlation, header.resolution, header.detail, message[codec.ResultHeader.HEADER_LENGTH:])
 
     def call(self, function: int, operation: int, payload: bytes = b"") -> Response:
-        correlation, message = self._encode(function, operation, payload)
-        self.transport.send(message)
-        return self._receive(correlation)
+        """One request, one result. A result that does not parse or does not match (bytes lost on a UART
+        bridge without flow control, 2026-09-22) is discarded once and the request is sent again under a
+        new correlation; every v0 operation is safe to repeat."""
+        for attempt in range(2):
+            correlation, message = self._encode(function, operation, payload)
+            self.transport.send(message)
+            try:
+                return self._receive(correlation)
+            except (ValueError, ConnectionError, RequestError, TimeoutError) as e:
+                framing = isinstance(e, (ValueError, ConnectionError, TimeoutError)) or "framing" in str(e)
+                if attempt or not framing:
+                    raise
+                self.resyncs += 1
+                time.sleep(0.05)
+                self.transport.discard_input()
+        raise RequestError("unreachable")
 
     def pipeline(self, requests) -> list[Response]:
         """requests: iterable of (function, operation, payload). Keeps outstanding bytes
         within window_bytes and count within max_inflight; results return in order."""
+        if self.limits.max_inflight <= 1:   # nothing to pipeline: take the resync-and-retry path
+            return [self.call(f, o, p) for f, o, p in requests]
         responses: list[Response] = []
         pending: deque[tuple[int, int]] = deque()  # (correlation, message length)
         outstanding_bytes = 0
