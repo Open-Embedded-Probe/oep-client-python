@@ -183,3 +183,41 @@ class FixtureUart:
                 return bytes(buf)
             time.sleep(0.005)
         return bytes(buf)
+
+
+class P4I2cTarget:
+    """Vendor tool (owner 0x0100): ESP32-P4 hardware I2C target with the E147-E150 slot/framing contract."""
+    DEFINITION = codec.DEF_P4_I2C_TARGET
+    MODE_FIXED_RX, MODE_FRAMED_RX, MODE_PRELOADED_TX = 1, 2, 3
+    ROLE_SDA, ROLE_SCL = 1, 2
+
+    def __init__(self, client: Client, function: int):
+        self.client, self.function = client, function
+
+    def assignments(self, sda: int, scl: int):
+        return [(self.function, self.ROLE_SDA, sda), (self.function, self.ROLE_SCL, scl)]
+
+    def configure(self, address: int, mode: int) -> None:
+        self.client.call(self.function, codec.P4_I2C_TARGET_OP_CONFIGURE,
+                         codec.P4I2cTargetConfigureRequest(address=address, mode=mode).pack()).expect_success("p4.i2c-target configure")
+
+    def arm_rx(self, length: int) -> None:
+        self.client.call(self.function, codec.P4_I2C_TARGET_OP_ARM_RX,
+                         codec.P4I2cTargetArmRxRequest(length=length).pack()).expect_success("p4.i2c-target arm_rx")
+
+    def read_rx(self) -> tuple[int, bytes]:
+        response = self.client.call(self.function, codec.P4_I2C_TARGET_OP_READ_RX)
+        result = codec.P4I2cTargetReadRxResult.unpack(response.expect_success("p4.i2c-target read_rx"))
+        return result.pending, result.data
+
+    def preload_tx(self, data: bytes) -> int:
+        response = self.client.call(self.function, codec.P4_I2C_TARGET_OP_PRELOAD_TX,
+                                    codec.P4I2cTargetPreloadTxRequest(data=data).pack())
+        return codec.P4I2cTargetPreloadTxResult.unpack(response.expect_success("p4.i2c-target preload_tx")).slots
+
+    def status(self) -> codec.P4I2cTargetStatusResult:
+        response = self.client.call(self.function, codec.P4_I2C_TARGET_OP_STATUS)
+        return codec.P4I2cTargetStatusResult.unpack(response.expect_success("p4.i2c-target status"))
+
+    def reset(self) -> None:
+        self.client.call(self.function, codec.P4_I2C_TARGET_OP_RESET).expect_success("p4.i2c-target reset")
