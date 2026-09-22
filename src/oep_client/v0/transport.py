@@ -59,7 +59,7 @@ class FrameTransport:
                     del self._buffer[:2]
                     continue
                 if length > self.max_frame:
-                    raise ConnectionError(f"frame length {length} exceeds max_frame {self.max_frame}; framing lost")
+                    raise ConnectionError(f"frame length {length} exceeds max_frame {self.max_frame}; framing lost (first bytes {bytes(self._buffer[:48])!r})")
                 if len(self._buffer) >= 2 + length:
                     message = bytes(self._buffer[2:2 + length])
                     del self._buffer[:2 + length]
@@ -165,7 +165,7 @@ class BulkTransport:
                         del self._buffer[:2]
                         continue
                     if length > self.max_frame:
-                        raise ConnectionError(f"frame length {length} exceeds max_frame {self.max_frame}; framing lost")
+                        raise ConnectionError(f"frame length {length} exceeds max_frame {self.max_frame}; framing lost (first bytes {bytes(self._buffer[:48])!r})")
                     if len(self._buffer) >= 2 + length:
                         message = bytes(self._buffer[2:2 + length])
                         del self._buffer[:2 + length]

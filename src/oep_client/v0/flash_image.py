@@ -11,6 +11,15 @@ from .services import TargetControl, TargetFlash, TargetMemory
 
 # CH32X03x electronic signature (device-data evidence/device_ids.csv): chip id -> (part, flash bytes)
 X035_ESIG_CHIP_ID = 0x1FFFF704
+# CH32V003 electronic signature (device-data evidence/device_ids.csv): chip id -> (part, flash bytes).
+# Selected by the probe's flash geometry (16 KiB), since the ESIG address differs from the X03x one.
+V003_ESIG_CHIP_ID = 0x1FFFF7C4
+V003_PARTS = {
+    0x00320500: ("CH32V003A4M6", 16384),
+    0x00300500: ("CH32V003F4P6", 16384),
+    0x00310500: ("CH32V003F4U6", 16384),
+    0x00330500: ("CH32V003J4M6", 16384),
+}
 X035_PARTS = {
     0x03510601: ("CH32X035C8T6", 63488),
     0x03570601: ("CH32X035F7P6", 49152),
@@ -69,11 +78,17 @@ class Target:
     def preflight(self) -> tuple[str, int, int]:
         """Halt, identify the X035 part and check protection. Fail closed."""
         self.control.halt()
-        chip_id = self.memory.read_word(X035_ESIG_CHIP_ID)
-        if chip_id not in X035_PARTS:
-            raise RequestError(f"unknown CH32X03x chip id 0x{chip_id:08x}; refusing destructive operations")
-        part, flash_size = X035_PARTS[chip_id]
         geometry = self.flash.geometry()
+        if geometry.size == 16384:   # CH32V003 family: the ESIG lives at a different address
+            chip_id = self.memory.read_word(V003_ESIG_CHIP_ID) & ~0xF0
+            if chip_id not in V003_PARTS:
+                raise RequestError(f"unknown CH32V003 chip id 0x{chip_id:08x}; refusing destructive operations")
+            part, flash_size = V003_PARTS[chip_id]
+        else:
+            chip_id = self.memory.read_word(X035_ESIG_CHIP_ID)
+            if chip_id not in X035_PARTS:
+                raise RequestError(f"unknown CH32X03x chip id 0x{chip_id:08x}; refusing destructive operations")
+            part, flash_size = X035_PARTS[chip_id]
         if geometry.size != flash_size:
             raise RequestError(f"probe geometry {geometry.size} bytes does not match {part} ({flash_size} bytes)")
         obr = self.memory.read_word(X035_FLASH_OBR)

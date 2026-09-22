@@ -35,12 +35,20 @@ def open_client(port: str, timeout: float) -> Client:
         transport = FrameTransport(stream)
     transport.discard_input()
     client = Client(transport, timeout=timeout)
-    for attempt in range(5):
+    for attempt in range(6):
         try:
             client.confirm()
             return client
         except (TimeoutError, Exception):
-            time.sleep(0.3)
+            if attempt == 2 and not port.startswith("usb:"):
+                # A probe on a UART with an auto-reset circuit (classic ESP32) can be left with a
+                # half-parsed frame by a stray byte from another program; a hard reset into run
+                # mode (esptool's DTR/RTS pattern) is the recovery of last resort (2026-09-22).
+                stream.dtr = False; stream.rts = True; time.sleep(0.1); stream.rts = False
+                time.sleep(1.2)
+                transport.discard_input()
+            else:
+                time.sleep(0.3)
     raise SystemExit("probe did not answer OEP confirmation")
 
 
