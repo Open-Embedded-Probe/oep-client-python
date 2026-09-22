@@ -23,10 +23,16 @@ from .transport import FrameTransport
 
 
 def open_client(port: str, timeout: float) -> Client:
-    # Opening a USB-Serial/JTAG port resets an ESP32-P4 probe; give the firmware time to come back.
-    stream = serial.Serial(port, 115200, timeout=0.05)
-    time.sleep(1.0)
-    transport = FrameTransport(stream)
+    """port: a serial device, or usb:VID:PID[:serial] for a vendor bulk probe (pyusb)."""
+    if port.startswith("usb:"):
+        from .transport import BulkTransport
+        parts = port.split(":")
+        transport = BulkTransport.open(int(parts[1], 16), int(parts[2], 16), parts[3] if len(parts) > 3 else None)
+    else:
+        # Opening a USB-Serial/JTAG port resets an ESP32-P4 probe; give the firmware time to come back.
+        stream = serial.Serial(port, 115200, timeout=0.05)
+        time.sleep(1.0)
+        transport = FrameTransport(stream)
     transport.discard_input()
     client = Client(transport, timeout=timeout)
     for attempt in range(5):

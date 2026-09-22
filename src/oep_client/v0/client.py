@@ -107,16 +107,33 @@ class Client:
         responses: list[Response] = []
         pending: deque[tuple[int, int]] = deque()  # (correlation, message length)
         outstanding_bytes = 0
+        batch: list[bytes] = []   # frames admitted to the window but not yet written
+        send_many = getattr(self.transport, "send_many", None)
+
+        def flush_batch():
+            if not batch:
+                return
+            if send_many:
+                send_many(batch)      # one transport write per burst (E160: 4x over one frame per write)
+            else:
+                for m in batch:
+                    self.transport.send(m)
+            batch.clear()
+
         for function, operation, payload in requests:
             correlation, message = self._encode(function, operation, payload)
-            while pending and (len(pending) >= self.limits.max_inflight or
-                               outstanding_bytes + len(message) + 2 > self.limits.window_bytes):
-                corr, size = pending.popleft()
-                responses.append(self._receive(corr))
-                outstanding_bytes -= size
-            self.transport.send(message)
+            if pending and (len(pending) >= self.limits.max_inflight or
+                            outstanding_bytes + len(message) + 2 > self.limits.window_bytes):
+                flush_batch()
+                while pending and (len(pending) >= self.limits.max_inflight or
+                                   outstanding_bytes + len(message) + 2 > self.limits.window_bytes):
+                    corr, size = pending.popleft()
+                    responses.append(self._receive(corr))
+                    outstanding_bytes -= size
+            batch.append(message)
             pending.append((correlation, len(message) + 2))
             outstanding_bytes += len(message) + 2
+        flush_batch()
         while pending:
             corr, _ = pending.popleft()
             responses.append(self._receive(corr))
