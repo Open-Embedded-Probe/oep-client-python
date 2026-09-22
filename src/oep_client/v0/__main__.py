@@ -79,7 +79,8 @@ def main() -> None:
             if not outcome.verified:
                 print(json.dumps(result, indent=1)); sys.exit(1)
         elif args.command == "reset":
-            target.control.reset()
+            report = target.control.reset()
+            print(f"reset flags=0x{report.flags:02x} attempts={report.attempts} pc=0x{report.pc:08x}")
     print(json.dumps(result, indent=1))
     if args.result_json:
         Path(args.result_json).write_text(json.dumps(result, indent=1) + "\n", encoding="utf-8")

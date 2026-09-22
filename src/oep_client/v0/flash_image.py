@@ -127,8 +127,10 @@ def program_image(target: Target, image: bytes, *, verify: bool = True, reset: b
         timings["verify"] = time.perf_counter() - t
     if reset:
         t = time.perf_counter()
-        target.control.reset()
+        report = target.control.reset()
         timings["reset"] = time.perf_counter() - t
+        timings["reset_flags"] = float(report.flags)
+        timings["reset_attempts"] = float(report.attempts)
     timings["page_retries"] = float(retries)
     return ImageResult(part, chip_id, (geometry.base, geometry.size, geometry.page),
                        geometry.size // geometry.page, len(pages), failed,
@@ -147,8 +149,10 @@ def verify_image(target: Target, image: bytes, *, reset: bool = True) -> ImageRe
     timings["verify"] = time.perf_counter() - t
     if reset:
         t = time.perf_counter()
-        target.control.reset()
+        report = target.control.reset()
         timings["reset"] = time.perf_counter() - t
+        timings["reset_flags"] = float(report.flags)
+        timings["reset_attempts"] = float(report.attempts)
     return ImageResult(part, chip_id, (geometry.base, geometry.size, geometry.page), geometry.size // geometry.page,
                        0, [], TargetFlash.crc32(desired), verified, timings)
 
@@ -162,6 +166,8 @@ def read_image(target: Target, *, reset: bool = True) -> tuple[bytes, dict[str, 
     timings["read"] = time.perf_counter() - t
     if reset:
         t = time.perf_counter()
-        target.control.reset()
+        report = target.control.reset()
         timings["reset"] = time.perf_counter() - t
+        timings["reset_flags"] = float(report.flags)
+        timings["reset_attempts"] = float(report.attempts)
     return data, timings
