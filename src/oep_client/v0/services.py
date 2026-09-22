@@ -242,3 +242,52 @@ class P4I2cTarget:
 
     def reset(self) -> None:
         self.client.call(self.function, codec.P4_I2C_TARGET_OP_RESET).expect_success("p4.i2c-target reset")
+
+
+class FixtureCapture:
+    """fixture.capture: sampled logic capture, a read-only observer of probe channels.
+    Plan roles: line k (0..7) -> channel. One byte per sample, bit k = line k."""
+    DEFINITION = codec.DEF_FIXTURE_CAPTURE
+    CONFIGURED, RUNNING, COMPLETE, ERROR = 1, 2, 4, 8
+
+    def __init__(self, client: Client, function: int):
+        self.client, self.function = client, function
+
+    def assignments(self, *channels: int):
+        return [(self.function, line, channel) for line, channel in enumerate(channels)]
+
+    def configure(self, sample_rate_hz: int, samples: int) -> codec.FixtureCaptureConfigureResult:
+        response = self.client.call(self.function, codec.FIXTURE_CAPTURE_OP_CONFIGURE,
+                                    codec.FixtureCaptureConfigureRequest(sample_rate_hz=sample_rate_hz, samples=samples).pack())
+        return codec.FixtureCaptureConfigureResult.unpack(response.expect_success("fixture.capture configure"))
+
+    def arm(self) -> None:
+        self.client.call(self.function, codec.FIXTURE_CAPTURE_OP_ARM).expect_success("fixture.capture arm")
+
+    def status(self) -> codec.FixtureCaptureStatusResult:
+        response = self.client.call(self.function, codec.FIXTURE_CAPTURE_OP_STATUS)
+        return codec.FixtureCaptureStatusResult.unpack(response.expect_success("fixture.capture status"))
+
+    def wait(self, timeout: float = 2.0) -> codec.FixtureCaptureStatusResult:
+        import time
+        deadline = time.monotonic() + timeout
+        while True:
+            st = self.status()
+            if st.flags & (self.COMPLETE | self.ERROR) or time.monotonic() >= deadline:
+                return st
+
+    def read(self, offset: int, maximum: int) -> bytes:
+        response = self.client.call(self.function, codec.FIXTURE_CAPTURE_OP_READ,
+                                    codec.FixtureCaptureReadRequest(offset=offset, maximum=maximum).pack())
+        return codec.FixtureCaptureReadResult.unpack(response.expect_success("fixture.capture read")).data
+
+    def read_all(self, samples: int) -> bytes:
+        """Pipelined read of the whole capture (one byte per sample)."""
+        chunk = self.client.limits.max_frame - 8
+        requests = [(self.function, codec.FIXTURE_CAPTURE_OP_READ,
+                     codec.FixtureCaptureReadRequest(offset=off, maximum=min(chunk, samples - off)).pack())
+                    for off in range(0, samples, chunk)]
+        out = bytearray()
+        for response in self.client.pipeline(requests):
+            out += codec.FixtureCaptureReadResult.unpack(response.expect_success("fixture.capture read")).data
+        return bytes(out)
