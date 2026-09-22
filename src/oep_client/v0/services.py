@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from . import codec
-from .client import Client
+from .client import Client, RequestError
 
 
 class ProbeIdentity:
@@ -115,3 +115,60 @@ class TargetFlash:
     @staticmethod
     def crc32(data: bytes) -> int:
         return _crc32(data)
+
+
+class FixtureGpio:
+    DEFINITION = codec.DEF_FIXTURE_GPIO
+    INPUT_FLOATING, INPUT_PULL_UP, INPUT_PULL_DOWN, INPUT_PULL_UP_DOWN = 0, 1, 2, 3
+    OUTPUT_LOW, OUTPUT_HIGH, OPEN_DRAIN_LOW, OPEN_DRAIN_RELEASE = 4, 5, 6, 7
+
+    def __init__(self, client: Client, function: int):
+        self.client, self.function = client, function
+
+    def configure(self, channel: int, mode: int) -> None:
+        self.client.call(self.function, codec.FIXTURE_GPIO_OP_CONFIGURE,
+                         codec.FixtureGpioConfigureRequest(channel=channel, mode=mode).pack()).expect_success("fixture.gpio configure")
+
+    def read_bank(self) -> tuple[int, int]:
+        response = self.client.call(self.function, codec.FIXTURE_GPIO_OP_READ_BANK)
+        result = codec.FixtureGpioReadBankResult.unpack(response.expect_success("fixture.gpio read_bank"))
+        return result.available, result.values
+
+    def read(self, channel: int) -> int:
+        available, values = self.read_bank()
+        if not (available >> channel) & 1:
+            raise RequestError(f"channel {channel} is not a fixture GPIO")
+        return (values >> channel) & 1
+
+
+class FixtureUart:
+    DEFINITION = codec.DEF_FIXTURE_UART
+    ROLE_RX, ROLE_TX = 1, 2
+
+    def __init__(self, client: Client, function: int):
+        self.client, self.function = client, function
+
+    def assignments(self, rx: int, tx: int):
+        return [(self.function, self.ROLE_RX, rx), (self.function, self.ROLE_TX, tx)]
+
+    def configure(self, baud: int) -> int:
+        response = self.client.call(self.function, codec.FIXTURE_UART_OP_CONFIGURE, codec.FixtureUartConfigureRequest(baud=baud).pack())
+        return codec.FixtureUartConfigureResult.unpack(response.expect_success("fixture.uart configure")).actual_baud
+
+    def write(self, data: bytes) -> int:
+        response = self.client.call(self.function, codec.FIXTURE_UART_OP_WRITE, codec.FixtureUartWriteRequest(data=data).pack())
+        return codec.FixtureUartWriteResult.unpack(response.expect_success("fixture.uart write")).written
+
+    def read(self, maximum: int = 512) -> bytes:
+        response = self.client.call(self.function, codec.FIXTURE_UART_OP_READ, codec.FixtureUartReadRequest(maximum=maximum).pack())
+        return codec.FixtureUartReadResult.unpack(response.expect_success("fixture.uart read")).data
+
+    def read_until(self, terminator: bytes, timeout: float = 2.0) -> bytes:
+        import time
+        deadline, buf = time.monotonic() + timeout, bytearray()
+        while time.monotonic() < deadline:
+            buf += self.read()
+            if terminator in buf:
+                return bytes(buf)
+            time.sleep(0.005)
+        return bytes(buf)
