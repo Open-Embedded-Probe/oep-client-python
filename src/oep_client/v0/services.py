@@ -243,6 +243,11 @@ class P4I2cTarget:
     def reset(self) -> None:
         self.client.call(self.function, codec.P4_I2C_TARGET_OP_RESET).expect_success("p4.i2c-target reset")
 
+    def set_stretch(self, stretch_us: int) -> None:
+        """Hold every hardware SCL stretch for stretch_us (0 = off); takes effect at the next configure()."""
+        self.client.call(self.function, codec.P4_I2C_TARGET_OP_SET_STRETCH,
+                         codec.P4I2CTargetSetStretchRequest(stretch_us=stretch_us).pack()).expect_success("p4.i2c-target set_stretch")
+
     def read_hw(self) -> codec.P4I2CTargetReadHwResult:
         """Vendor debug view: ESP32-P4 I2C0 slave sr / int_raw / fifo_st / ctr register images."""
         response = self.client.call(self.function, codec.P4_I2C_TARGET_OP_READ_HW)
