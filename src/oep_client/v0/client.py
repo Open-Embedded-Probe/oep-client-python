@@ -160,6 +160,18 @@ class Client:
                              codec.CoreDescribeRequest(function=function, first=first).pack())
         return codec.CoreDescribeResult.unpack(response.expect_success("describe")).tlv
 
+    def plan_apply(self, assignments) -> tuple[int, bytes]:
+        """assignments: iterable of (function, role, channel). Returns (lease, effective TLV)."""
+        from . import tlv as _tlv
+        payload = _tlv.encode(_tlv.role_assignment(f, r, c) for f, r, c in assignments)
+        response = self.call(codec.DEF_CORE_FUNCTION, codec.CORE_OP_PLAN_APPLY, codec.CorePlanApplyRequest(tlv=payload).pack())
+        result = codec.CorePlanApplyResult.unpack(response.expect_success("plan apply"))
+        return result.lease, result.tlv
+
+    def plan_release(self, lease: int) -> None:
+        self.call(codec.DEF_CORE_FUNCTION, codec.CORE_OP_PLAN_RELEASE,
+                  codec.CorePlanReleaseRequest(lease=lease).pack()).expect_success("plan release")
+
     def ping(self, data: bytes = b"") -> bytes:
         response = self.call(codec.DEF_CORE_FUNCTION, codec.CORE_OP_PING, codec.CorePingRequest(data=data).pack())
         return codec.CorePingResult.unpack(response.expect_success("ping")).data
