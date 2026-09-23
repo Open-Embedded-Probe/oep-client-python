@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from . import codec
 from .client import Client, RequestError
 
@@ -149,6 +151,48 @@ class TargetFlash:
     @staticmethod
     def crc32(data: bytes) -> int:
         return _crc32(data)
+
+
+class TargetConsole:
+    """The target's own console, carried by the debug module's data registers.
+
+    No UART and no console wiring: the sketch writes into the two registers the debug
+    module maps into its address space (ArduinoCore-CH32's SerialSDI) and the probe
+    collects them. It only runs while the target is attached and not halted, so a halt
+    for memory or flash work pauses the console rather than corrupting it.
+    """
+
+    DEFINITION = codec.DEF_TARGET_CONSOLE
+
+    def __init__(self, client: Client, function: int):
+        self.client, self.function = client, function
+
+    def configure(self, enable: bool = True) -> bool:
+        response = self.client.call(self.function, codec.TARGET_CONSOLE_OP_CONFIGURE,
+                                    codec.TargetConsoleConfigureRequest(enable=1 if enable else 0).pack())
+        return bool(codec.TargetConsoleConfigureResult.unpack(
+            response.expect_success("target.console configure")).enabled)
+
+    def read(self, maximum: int = 512) -> bytes:
+        response = self.client.call(self.function, codec.TARGET_CONSOLE_OP_READ,
+                                    codec.TargetConsoleReadRequest(maximum=maximum).pack())
+        return codec.TargetConsoleReadResult.unpack(response.expect_success("target.console read")).data
+
+    def status(self):
+        response = self.client.call(self.function, codec.TARGET_CONSOLE_OP_STATUS)
+        return codec.TargetConsoleStatusResult.unpack(response.expect_success("target.console status"))
+
+    def read_until(self, terminator: bytes, timeout: float = 2.0) -> bytes:
+        deadline, text = time.monotonic() + timeout, b""
+        while time.monotonic() < deadline:
+            chunk = self.read()
+            if chunk:
+                text += chunk
+                if terminator in text:
+                    break
+            else:
+                time.sleep(0.01)
+        return text
 
 
 class FixtureGpio:
