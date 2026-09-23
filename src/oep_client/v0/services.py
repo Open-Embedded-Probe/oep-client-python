@@ -163,15 +163,24 @@ class TargetConsole:
     """
 
     DEFINITION = codec.DEF_TARGET_CONSOLE
+    SDI, DMDATA = 0, 1          # SerialSDI: target to host only. SerialDMDATA: two way.
 
     def __init__(self, client: Client, function: int):
         self.client, self.function = client, function
 
-    def configure(self, enable: bool = True) -> bool:
+    def configure(self, enable: bool = True, framing: int = SDI) -> bool:
         response = self.client.call(self.function, codec.TARGET_CONSOLE_OP_CONFIGURE,
-                                    codec.TargetConsoleConfigureRequest(enable=1 if enable else 0).pack())
+                                    codec.TargetConsoleConfigureRequest(
+                                        enable=1 if enable else 0, framing=framing).pack())
         return bool(codec.TargetConsoleConfigureResult.unpack(
             response.expect_success("target.console configure")).enabled)
+
+    def write(self, data: bytes) -> int:
+        """Queue bytes for the target (framing 1 only). Three go per frame, as the
+        target collects them; nothing here waits for that."""
+        response = self.client.call(self.function, codec.TARGET_CONSOLE_OP_WRITE,
+                                    codec.TargetConsoleWriteRequest(data=data).pack())
+        return codec.TargetConsoleWriteResult.unpack(response.expect_success("target.console write")).queued
 
     def read(self, maximum: int = 512) -> bytes:
         response = self.client.call(self.function, codec.TARGET_CONSOLE_OP_READ,
