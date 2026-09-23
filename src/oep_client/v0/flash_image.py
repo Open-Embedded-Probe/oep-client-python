@@ -29,8 +29,21 @@ X035_PARTS = {
     0x03500601: ("CH32X035R8T6", 63488),
     0x035A0601: ("CH32X033F8P6", 63488),
 }
-X035_FLASH_OBR = 0x4002201C
-X035_FLASH_WPR = 0x40022020
+# CH32L103 keeps its chip id at the same address as the CH32X03x, with bits [7:4] a
+# don't-care (device-data evidence/device_ids.csv). Its sibling CH32V103 does not - that
+# one is at 0x1ffff884 in the STM32-compatible IDCODE format - so it is not listed here.
+# All the L103 parts in that table are 64 KiB. Read protection has to be off to see any of
+# this: a protected part reads one constant everywhere in flash, chip id included.
+L103_PARTS = {
+    0x10310700: ("CH32L103C8T6", 65536),
+    0x10320700: ("CH32L103K8U6", 65536),
+    0x103A0700: ("CH32L103F8P6", 65536),
+    0x103B0700: ("CH32L103G8R6", 65536),
+    0x103D0700: ("CH32L103F8U6", 65536),
+}
+# Same addresses across these families: option bytes and write protection.
+FLASH_OBR = 0x4002201C
+FLASH_WPR = 0x40022020
 
 
 @dataclass
@@ -86,13 +99,16 @@ class Target:
             part, flash_size = V003_PARTS[chip_id]
         else:
             chip_id = self.memory.read_word(X035_ESIG_CHIP_ID)
-            if chip_id not in X035_PARTS:
-                raise RequestError(f"unknown CH32X03x chip id 0x{chip_id:08x}; refusing destructive operations")
-            part, flash_size = X035_PARTS[chip_id]
+            if chip_id in X035_PARTS:
+                part, flash_size = X035_PARTS[chip_id]
+            elif (chip_id & ~0xF0) in L103_PARTS:
+                part, flash_size = L103_PARTS[chip_id & ~0xF0]
+            else:
+                raise RequestError(f"unknown chip id 0x{chip_id:08x}; refusing destructive operations")
         if geometry.size != flash_size:
             raise RequestError(f"probe geometry {geometry.size} bytes does not match {part} ({flash_size} bytes)")
-        obr = self.memory.read_word(X035_FLASH_OBR)
-        wpr = self.memory.read_word(X035_FLASH_WPR)
+        obr = self.memory.read_word(FLASH_OBR)
+        wpr = self.memory.read_word(FLASH_WPR)
         if obr & 0x2:
             raise RequestError("read protection is enabled; refusing")
         if wpr != 0xFFFFFFFF:
