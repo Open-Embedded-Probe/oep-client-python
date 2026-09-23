@@ -163,7 +163,11 @@ class TargetConsole:
     """
 
     DEFINITION = codec.DEF_TARGET_CONSOLE
-    SDI, DMDATA = 0, 1          # SerialSDI: target to host only. SerialDMDATA: two way.
+    # SerialSDI: target to host only. SerialDMDATA: two way, minichlink's framing. DMSEQ:
+    # two way with sequence numbers and a CRC-8 on every word (oep-spec
+    # docs/target-console-dmseq.ja.md) - no byte duplicated or dropped when a DMI access
+    # goes astray; ArduinoCore-CH32's SerialDMSeq.
+    SDI, DMDATA, DMSEQ = 0, 1, 2
 
     def __init__(self, client: Client, function: int):
         self.client, self.function = client, function
@@ -176,8 +180,8 @@ class TargetConsole:
             response.expect_success("target.console configure")).enabled)
 
     def write(self, data: bytes) -> int:
-        """Queue bytes for the target (framing 1 only). Three go per frame, as the
-        target collects them; nothing here waits for that."""
+        """Queue bytes for the target (framings DMDATA and DMSEQ). They go three (DMDATA) or
+        two (DMSEQ) per frame as the target collects them; nothing here waits for that."""
         response = self.client.call(self.function, codec.TARGET_CONSOLE_OP_WRITE,
                                     codec.TargetConsoleWriteRequest(data=data).pack())
         return codec.TargetConsoleWriteResult.unpack(response.expect_success("target.console write")).queued
