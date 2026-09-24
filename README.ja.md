@@ -1,134 +1,50 @@
-# OEP Python client prototype
+# OEP Python client
 
-破壊的変更を前提とするOEP client実験です。公開protocolまたは互換APIではありません。
+Open Embedded Probe の host 側。仮置きの v1（oep-spec `docs/v1-core-wire-delta.ja.md`）を話す。破壊的変更を前提とする
+実験段階で、互換 API は約束しない。
 
-現在のP1 prototypeは、仮UART frameとcore messageに加えてV003 TargetControlを確認します。
-
-- endpoint confirmation
-- offered function一覧の取得
-- 16 bit correlationの照合
-- transport破損とOEP rejectionの分離
-- target状態取得、user mode正規化、製品bootloader移行
-- requestの拒否と、開始後に失敗したcompleted outcomeの分離
-
-数値割当とAPIは予告なく削除・変更します。
+target の知識は host にある、という OEP の分担に従う。probe は線と DMI / DP・AP の転送しか知らず、CH32 の flash
+コントローラ、RAM ローダー、RP2350 の boot ROM、Cortex-M の debug レジスタなどはここに置く。
 
 ```sh
 uv run pytest
 ```
 
-実機のP0確認:
+## モジュール（`oep_client.v1`）
 
-```sh
-uv run python -m oep_client --port /dev/ttyUSB0
-uv run python -m oep_client --port /dev/ttyUSB0 --target status
-uv run python -m oep_client --port /dev/ttyUSB0 --target normalize-user
-uv run python -m oep_client --port /dev/ttyUSB0 --target bootloader
-uv run python -m oep_client --port /dev/ttyUSB0 --read-memory 0x08000000 16
-```
+| モジュール | 中身 |
+|---|---|
+| `host` | 要求と結果、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`） |
+| `link` | シリアルの transport（USB は長さつきフレーム、USB-UART は COBS + CRC）、corr による照合、`open_host()` |
+| `core` | インターフェースを名前で探す（キャッシュつき）、confirm、probe のラベル、ピンの割り当て（plan）、`Interface` の土台 |
+| `riscv` | `oep.wire.rvswd` / `oep.wire.swio`、`oep.target.riscv-dm`、リセット線の探索、GPIO 経由の attach |
+| `console` | `oep.target.console`（位置つきのストリーム）と、バイト列として読む `ConsoleIO` |
+| `fixture` | `oep.fixture.gpio` / `uart` / `capture`（v0 の payload のまま） |
+| `arm` | `oep.wire.swd`、`oep.target.arm-adi`、MEM-AP、Cortex-M の停止と関数呼び出し |
+| `ch32_flash` | CH32 の書き込み（RAM ローダー、ページ単位の書き直し） |
+| `rp2350` | RP2350 の boot ROM 経由の flash と reboot |
+| `uiapduino` | UIAPduino のブートローダへの出入り |
+| `catalog` / `names` / `interfaces` / `dump` / `fake` / `endpoint` | 能力の一覧と describe の形、表示、ハードウェアなしの偽物 |
+| `target` | 上の主なものを 1 か所から import する入口（最初の版に合わせて書いた呼び出し側のため） |
 
-2026-09-19、無印ESP32 prototypeとの間でendpoint revision 1、最大message 64 byteおよび
-V003 control/memory/flash、fixture GPIO/UART/I2C/SPIの仮reference 7件を取得しました。
-
-2026-09-20、実装済みfunctionだけを公開するよう修正し、TargetControl `0x0101`を取得した。
-OEP requestとして状態取得、user mode正規化、製品bootloader移行が成功し、boot移行後に
-Windows側で`1209:b803`の再列挙を確認した。
-
-同日、TargetMemoryのbounded readを追加し、`0x08000000`から16 byteを実機取得した。現在の
-clientは4 byte aligned、4～88 byteだけを受け付ける。これは96-byte messageのprototype制約である。連続readでは
-一部requestが`completed/failed`となることも確認しており、SWDIO backendの安定性は未確立である。
-
-同日、TargetFlashの64-byte page programを実験した。直後のverifyと後続requestのread-backが
-一致しないcase、およびreset後にbootへ移行できない状態が判明したため、ESP32 prototypeは
-TargetFlashをoffered functionから外している。clientコードは失敗解析用に残すが、現在の実機で
-利用可能な操作ではない。96 byteのmaximum messageはendpointの受理容量として維持する。
-
-上記はV003/SWIO backendの当時の結果である。2026-09-20に追加したESP32-P4/X035 RVSWD
-backendはTargetFlashを公開し、64-byte単発、差分全image、reset後全域verifyまで実機確認した。
-
-FixtureGpioのdigital read clientも追加し、ESP32側で許可したUIAPduino配線だけを実機観測した。
-
-FixtureUartのconfigure/write/read clientを追加した。115200 bpsでV003の`PING`/`PONG`往復を確認し、
-peerが返す`ERROR command`もUART transfer自体のfailureへ変換せず取得できた。
-
-最新版fixture imageではUART `DOUT`とFixtureGpioを組み合わせ、target pin 7→ESP32 GPIO27、
-target pin 9→ESP32 GPIO14のLOW/HIGH/LOWを確認した。再実行用smoke testは次で起動する。
-
-```sh
-uv run examples/uiapduino_fixture_smoke.py --port /dev/ttyUSB0
-```
-
-## 汎用probeの能力取得と構成 lease
-
-P4 firmwareはDUT名、DUT pin名、配線表を保持しない。hostがprobeのCapsを読んだ後、今回の物理接続だけを
-`ConnectionManifest`として渡し、解決済みの全roleを一括で予約する。下例の`dut.tx`/`dut.rx`はhost側だけの
-論理名であり、probeへ送るのはgroup/role ID/function/channelだけである。releaseは例外経路でも必ず行う。
+## 使い方の例
 
 ```python
-from oep_client import (
-    Connection, ConnectionManifest, Endpoint, ProbeCapsClient,
-    ProbeConfigurationClient, RoleRequest, SerialConnection, resolve_plan,
-)
+from oep_client.v1 import link, riscv, ch32_flash
 
-port = "/run/board-identify/by-id/esp32-series-30eda0e31108"
-connection = SerialConnection(port)
-endpoint = Endpoint()
-caps = ProbeCapsClient(endpoint, connection).get_caps()
-manifest = ConnectionManifest((
-    Connection("dut.tx", 12, "domain:1"),
-    Connection("dut.rx", 6, "domain:1"),
-))
-plan = resolve_plan(caps, manifest, {"uart1": (
-    RoleRequest("rx", "dut.tx", "uart.rx"),
-    RoleRequest("tx", "dut.rx", "uart.tx"),
-)})
-configuration = ProbeConfigurationClient(endpoint, connection)
-allocation = configuration.apply(plan)
-try:
-    # FixtureUartConfigureなど、allocationに属する操作を行う。
-    pass
-finally:
-    configuration.release(allocation)
-    connection.close()
+hst = link.open_host("/run/board-identify/by-id/esp32-series-30eda0e31108")   # pipelining つき
+hst.open(lease_ms=30000)
+wire = riscv.Wire(hst, "oep.wire.rvswd")
+conn, _ = wire.attach(halt=True)
+dm = riscv.RiscvDm(hst, conn)
+dm.reset_halt()
+result = ch32_flash.program(hst, dm, open("sketch.bin", "rb").read(), ch32_flash.PROFILES["x035"])
+dm.reset(confirm=True)
+wire.detach(conn)
+hst.end()
 ```
 
-`ProbeConfiguration` revision 2はCapsが列挙したstable role IDを使用する。これにより、将来のRMT captureの
-`clock`/`data`のように同じfunctionを持つ複数roleも曖昧にならない。revision 1のpeerは互換的に
-function-only encodingを用いるが、新規capabilityはrevision 2で定義する。`--caps`はtargetへ触れない
-read-only確認である。
+能力の一覧は `uv run python -m oep_client.v1 dump --port <probe>`（`--fake p4-x035` でハードウェアなし）。
+実機での一通りの確認は ArduinoCore-CH32 の `tests/manual/oep_smoke/`（`oep_smoke.py`、`oep_probe_checks.py`）。
 
-## CH32X035 image操作
-
-このCLIはまだ破壊的prototypeであり、既定値`0x08000000`、63,488 byteはCH32X035専用である。
-最初に現在のimageを退避する。
-
-```sh
-uv run python -m oep_client \
-  --port /run/board-identify/by-id/esp32-series-30eda0e31108 \
-  --backup-flash original.bin
-```
-
-Arduino CLI等が生成したraw `.bin`を書き込む。入力末尾からflash終端までは`0xff`で埋め、現在値と
-比較して異なる64-byte pageだけを書き込む。`--destructive`を省くと実行しない。書込み後はtargetを
-software resetし、63,488 byteを別OEP readで全域verifyした後、readによるhaltを解除するため再度
-software resetする。backupとverify-onlyも終了時にtargetを通常実行へ戻す。
-
-```sh
-uv run python -m oep_client \
-  --port /run/board-identify/by-id/esp32-series-30eda0e31108 \
-  --program-image build/sketch.ino.bin --destructive
-```
-
-書込みせず照合だけ行う場合:
-
-```sh
-uv run python -m oep_client \
-  --port /run/board-identify/by-id/esp32-series-30eda0e31108 \
-  --verify-image build/sketch.ino.bin
-```
-
-別容量のtargetでは`--flash-base`と`--flash-size`を必ず明示する。現在のX035 bit-bang実装では
-全域read/verifyに約240秒、変更109 pageのprogramに約298秒かかるため、既定timeoutは45秒とした。
-operation failureは同一64-byte pageを最大2回再送する。未回復の物理pageがあるとprobeは別pageを
-拒否する。probe自身をresetするとRAM上の回復cacheを失うので、その場合は既知の完全imageからの
-再書込みを行う。
+`oep_client.v0` は v0 の wire 形式を話す手動ツールのために残している。
