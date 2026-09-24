@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import struct
 
-from . import host as h, message as m, target
+from . import host as h, message as m
+from .core import Interface
+from .riscv import WireBase
 
 DP_DPIDR = DP_ABORT = 0x0
 DP_CTRL_STAT = 0x4
@@ -17,37 +19,32 @@ DP_RDBUFF = 0xC
 STATUS_NAMES = {0: "ok", 1: "malformed", 2: "FAULT", 3: "no reply", 4: "WAIT"}
 
 
-class SwdWire(target.Wire):
-    def __init__(self, hst: h.Host):
-        super().__init__(hst, "oep.wire.swd")
+class SwdWire(WireBase):
+    NAME = "oep.wire.swd"
 
-    def scan(self) -> list[target.Found]:
-        return super().scan()
+    def __init__(self, hst: h.Host):
+        super().__init__(hst)
 
     def attach(self, targetsel: int | None = None) -> tuple[int, int, bool]:
         """-> (connection, DPIDR, woke from dormant)."""
         p = self._call(self.ATTACH, b"" if targetsel is None else struct.pack("<I", targetsel)).payload
-        conn, dpidr, flags = struct.unpack("<BIB", p[:6])
+        conn, dpidr, flags = struct.unpack_from("<BIB", p)
         return conn, dpidr, bool(flags & 1)
 
 
-class AdiError(RuntimeError):
+class AdiError(h.OepError):
     pass
 
 
-class ArmAdi:
+class ArmAdi(Interface):
+    NAME = "oep.target.arm-adi"
     TRANSFER, READ_BLOCK, WRITE_BLOCK = 0x01, 0x02, 0x03
 
     def __init__(self, hst: h.Host, conn: int, adiv6: bool = False):
-        self.host, self.conn, self.fn = hst, conn, target.find(hst, "oep.target.arm-adi")
+        super().__init__(hst, prefix=bytes([conn]))
+        self.conn = conn
         self.adiv6 = adiv6
         self._select: int | None = None
-
-    def _call(self, op: int, body: bytes = b"") -> m.Result:
-        r = self.host.request(self.fn, op, bytes([self.conn]) + body)
-        if not r.succeeded:
-            raise h.Rejected(r)
-        return r
 
     # ---- raw transfers ----
     @staticmethod
@@ -113,9 +110,21 @@ class MemAp:
         csw = adi.ap_read(ap, self.base)
         adi.ap_write(ap, self.base, (((csw & ~0x37) | 0x12) | csw_set) & ~csw_clear)   # 32 bits, AddrInc single
         adi._ap_select(ap, self.base)                        # the bank the block operations assume
+        # Words per block operation, from the probe's frame limit: request header 6 + session 4 + connection 1 +
+        # address 4 on the way in, result header 5 on the way out.
+        from .core import confirm
+        self.chunk = max(1, (confirm(adi.host)["max_frame"] - 15) // 4)
+
+    def write_many(self, pairs: list[tuple[int, int]]) -> None:
+        """Scattered single-word writes in one transfer list (TAR, DRW per word, RDBUFF at the end so the last one
+        has landed): one round trip instead of one per word - what a debug-register sequence needs."""
+        self.adi._ap_select(self.ap, self.base)
+        steps = b"".join(self.adi.req(True, False, self.base + 0x4, a) + self.adi.req(True, False, self.base + 0xC, v)
+                         for a, v in pairs)
+        self.adi.transfer(steps + self.adi.req(False, True, DP_RDBUFF))
 
     def read_block(self, address: int, words: int) -> list[int]:
-        out, chunk = [], 240
+        out, chunk = [], self.chunk
         for off in range(0, words, chunk):
             self.adi._ap_select(self.ap, self.base)
             n = min(chunk, words - off)
@@ -124,7 +133,7 @@ class MemAp:
         return out
 
     def write_block(self, address: int, values: list[int]) -> None:
-        chunk = 240
+        chunk = self.chunk
         for off in range(0, len(values), chunk):
             self.adi._ap_select(self.ap, self.base)
             part = values[off:off + chunk]
@@ -190,14 +199,17 @@ class CortexM:
         self._wait(self.S_REGRDY, 1.0)
 
     def prepare_call(self, fn: int, args=()) -> None:
-        """Registers for fn(args...): r0-r3, SP, LR to the breakpoint, PC, Thumb bit, no active exception."""
-        self.mem.write32(self.bkpt_at, 0xBE00BE00)              # bkpt #0, twice
-        for i, a in enumerate(args):
-            self.set_reg(i, a)
-        self.set_reg(self.SP, self.stack_top)
-        self.set_reg(self.LR, self.bkpt_at | 1)
-        self.set_reg(self.PC, fn & ~1)
-        self.set_reg(self.XPSR, (self.reg(self.XPSR) | 1 << 24) & ~0x1FF)
+        """Registers for fn(args...): r0-r3, SP, LR to the breakpoint, PC, Thumb bit, no active exception. The
+        writes go out as one transfer list; a register write takes the core a few cycles and each SWD transfer
+        takes microseconds, so S_REGRDY is checked once at the end rather than after each."""
+        xpsr = (self.reg(self.XPSR) | 1 << 24) & ~0x1FF
+        regs = [*enumerate(args), (self.SP, self.stack_top), (self.LR, self.bkpt_at | 1), (self.PC, fn & ~1),
+                (self.XPSR, xpsr)]
+        pairs = [(self.bkpt_at, 0xBE00BE00)]                    # bkpt #0, twice
+        for n, value in regs:
+            pairs += [(self.DCRDR, value), (self.DCRSR, (1 << 16) | n)]
+        self.mem.write_many(pairs)
+        self._wait(self.S_REGRDY, 1.0)
 
     def call(self, fn: int, args=(), timeout: float = 10.0) -> int:
         """Run fn(args...) on the halted core with interrupts masked (their handlers may live in flash that the call

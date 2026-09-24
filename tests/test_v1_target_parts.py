@@ -11,13 +11,16 @@ FNS = {"oep.wire.rvswd": 1, "oep.target.riscv-dm": 2, "oep.fixture.gpio": 3, "oe
        "oep.target.arm-adi": 5}
 
 
-class ScriptedHost:
-    """Routes (fn, op) to a handler returning (resolution, detail, payload); records every request."""
+class ScriptedHost(h.Host):
+    """A Host whose requests go to handlers: (fn, op) -> (resolution, detail, payload); records every request.
+    Interface names resolve through the host's fn cache, filled in advance."""
 
     def __init__(self, handlers):
+        super().__init__(send=None)
         self.handlers, self.log = handlers, []
+        self._fns.update(FNS)
 
-    def request(self, fn, op, payload=b"", locked=True):
+    def request(self, fn, op, payload=b"", *, locked=True):
         self.log.append((fn, op, payload))
         res, detail, body = self.handlers[(fn, op)](payload)
         r = m.Result(len(self.log), res, detail, body)
@@ -25,7 +28,7 @@ class ScriptedHost:
             raise h.Rejected(r)
         return r
 
-    def pipeline(self, requests, exchange=None, locked=True):
+    def pipeline(self, requests, exchange=None, *, locked=True):
         out = []
         for fn, op, payload in requests:
             self.log.append((fn, op, payload))
@@ -36,11 +39,6 @@ class ScriptedHost:
 
 def ok(body=b""):
     return m.COMPLETED, m.SUCCESS, body
-
-
-@pytest.fixture(autouse=True)
-def names(monkeypatch):
-    monkeypatch.setattr(target, "find", lambda hst, name: FNS[name])
 
 
 # ---- reset-line search ----------------------------------------------------------------------------
@@ -90,7 +88,7 @@ def test_attach_after_gpio_reset_pipelines_release_with_attach_and_retries():
 
 def test_attach_after_gpio_reset_gives_up():
     hst = ScriptedHost({(3, 0x01): lambda p: ok(), (1, target.Wire.ATTACH): lambda p: (m.COMPLETED, m.FAILED, b"")})
-    with pytest.raises(h.Rejected):
+    with pytest.raises(h.Failed):
         target.attach_after_gpio_reset(hst, target.Wire(hst), 3, 23, exchange=None, tries=2, low_s=0)
 
 
@@ -157,7 +155,8 @@ def adi_bench():
     fake = FakeAdi()
     hst = ScriptedHost({(5, arm.ArmAdi.TRANSFER): fake.transfer, (5, arm.ArmAdi.READ_BLOCK): fake.read_block,
                         (5, arm.ArmAdi.WRITE_BLOCK): fake.write_block,
-                        (4, target.Wire.ATTACH): lambda p: ok(struct.pack("<BIB", 1, 0x4c013477, 1))})
+                        (4, target.Wire.ATTACH): lambda p: ok(struct.pack("<BIB", 1, 0x4c013477, 1)),
+                        (0, m.OP_CONFIRM): lambda p: ok(struct.pack("<4sBHHB", b"OEP!", 1, 1024, 4096, 8))})
     return fake, hst
 
 
@@ -185,7 +184,7 @@ def test_mem_ap_sets_csw_from_the_caller_and_chunks_blocks(adi_bench):
     words = mem.read_block(0x1000, 500)
     assert words == [0x1000 + 4 * i for i in range(500)]
     blocks = [p for fn, op, p in hst.log if op == arm.ArmAdi.READ_BLOCK]
-    assert [struct.unpack("<IH", p[1:])[1] for p in blocks] == [240, 240, 20]
+    assert [struct.unpack("<IH", p[1:])[1] for p in blocks] == [252, 248]   # (1024 - 15) // 4 words per block
     mem.write_block(0x2007F3F0, list(range(16)))
     assert mem.read_block(0x2007F3F0, 16) == list(range(16))
 
@@ -246,6 +245,10 @@ class FakeCortexM:
     def write_block(self, a, vals):
         for i, v in enumerate(vals):
             self.write32(a + 4 * i, v)
+
+    def write_many(self, pairs):
+        for a, v in pairs:
+            self.write32(a, v)
 
     def run(self):
         pc, r = self.regs[15], self.regs
