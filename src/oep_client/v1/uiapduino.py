@@ -1,0 +1,92 @@
+"""UIAPduino (CH32V003) bootloader entry and return to user mode, from the host with v1 draft parts only.
+
+The knowledge that used to sit in the v0 probe (target.control reset modes 1 and 2) lives here now: two RAM
+payloads (wch-protocols E129 / E130, assembled for the V003) that the V003's own CPU runs, because the same
+registers written from a halted debug session do not take (E127). The probe only moves a gpio line, writes RAM and
+walks DMI steps (oep-spec capability-name-hierarchy.ja.md: NRST is a labelled gpio channel, not a capability).
+
+  enter_bootloader: pulse NRST (the bootloader stays only when RCC_RSTSCKR.PINRSTF is set, E161), attach and halt,
+                    place PREPARE_BOOT, resume into it with mstatus = 0 -> HID 1209:b803 in about a second
+  normalize_user:   the same with NORMALIZE_USER (clears BOOT_MODE) and no pin pulse
+"""
+
+from __future__ import annotations
+
+import struct
+import time
+
+from ..v0 import codec
+from . import host as h, target
+
+PAYLOAD_BASE = 0x20000000
+DMCONTROL, ABSTRACTCS, COMMAND, DATA0 = 0x10, 0x16, 0x17, 0x04
+MSTATUS, DPC = 0x0300, 0x07B1
+GPIO_OPEN_DRAIN_LOW, GPIO_OPEN_DRAIN_RELEASE = 6, 7
+
+# kNormalizeUserReset: unlock FLASH, clear BOOT_MODE, PFIC SYSRST
+NORMALIZE_USER = [
+    0x400222b7, 0x00428293, 0x45670337, 0x12330313, 0x0062a023, 0xcdef9337,
+    0x9ab30313, 0x0062a023, 0x400222b7, 0x02428293, 0x45670337, 0x12330313,
+    0x0062a023, 0xcdef9337, 0x9ab30313, 0x0062a023, 0x400222b7, 0x02828293,
+    0x45670337, 0x12330313, 0x0062a023, 0xcdef9337, 0x9ab30313, 0x0062a023,
+    0x400222b7, 0x00c28293, 0x0002a303, 0xffffc3b7, 0xfff38393, 0x00737333,
+    0x0062a023, 0xe000e2b7, 0x04828293, 0xbeef0337, 0x08030313, 0x0062a023,
+    0x0000006f,
+]
+# kPrepareBootAndReset: unlock, set BOOT_MODE, PD4 (software USB D-) low for a detach window, PFIC SYSRST
+PREPARE_BOOT = [
+    0x400222b7, 0x00428293, 0x45670337, 0x12330313, 0x0062a023, 0xcdef9337,
+    0x9ab30313, 0x0062a023, 0x400222b7, 0x02428293, 0x45670337, 0x12330313,
+    0x0062a023, 0xcdef9337, 0x9ab30313, 0x0062a023, 0x400222b7, 0x02828293,
+    0x45670337, 0x12330313, 0x0062a023, 0xcdef9337, 0x9ab30313, 0x0062a023,
+    0x400222b7, 0x00c28293, 0x0002a303, 0xffffc3b7, 0xfff38393, 0x00737333,
+    0x000043b7, 0x00736333, 0x0062a023, 0x400212b7, 0x01828293, 0x0002a303,
+    0x02036313, 0x0062a023, 0x400112b7, 0x40028293, 0x0002a303, 0xfff103b7,
+    0xfff38393, 0x00737333, 0x000303b7, 0x00736333, 0x0062a023, 0x400112b7,
+    0x41428293, 0x01000313, 0x0062a023, 0x004c52b7, 0xb4028293, 0xfff28293,
+    0xfe029ee3, 0xe000e2b7, 0x04828293, 0xbeef0337, 0x08030313, 0x0062a023,
+    0x0000006f,
+]
+
+
+def _write_register(dm: target.RiscvDm, regno: int, value: int) -> bytes:
+    """DMI steps of one abstract-command register write (aarsize 32, transfer, write), then wait for it."""
+    return (dm.step_write(DATA0, value) + dm.step_write(COMMAND, 0x00230000 | regno)
+            + dm.step_poll(ABSTRACTCS, 1 << 12, 0, 100))
+
+
+def run_payload(hst: h.Host, wire: target.Wire, payload: list[int]) -> None:
+    """Attach halted, place the payload, resume into it with interrupts off, and let go of the target."""
+    conn, _ = wire.attach(halt=True)
+    dm = target.RiscvDm(hst, conn)
+    data = struct.pack(f"<{len(payload)}I", *payload)
+    dm.write_block(PAYLOAD_BASE, data)
+    if dm.read_block(PAYLOAD_BASE, len(payload)) != data:
+        raise RuntimeError("payload did not read back")
+    # mstatus = 0 first: with MIE set the halted application's SysTick ran over the payload (2026-09-22).
+    # resumereq twice, then drop haltreq so the payload's own system reset is not halted again (E129).
+    steps = (_write_register(dm, MSTATUS, 0) + _write_register(dm, DPC, PAYLOAD_BASE)
+             + dm.step_write(DMCONTROL, 0x40000001) + dm.step_write(DMCONTROL, 0x40000001)
+             + dm.step_write(DMCONTROL, 0x00000001))
+    dm.dmi(steps)
+    time.sleep(0.02)
+    wire.detach(conn)
+
+
+def pulse_nrst(hst: h.Host, gpio_fn: int, channel: int, low_s: float = 0.02) -> None:
+    """Open-drain low, then released to Hi-Z (never driven high). This drops any debug connection."""
+    hst.request(gpio_fn, codec.FIXTURE_GPIO_OP_CONFIGURE,
+                codec.FixtureGpioConfigureRequest(channel=channel, mode=GPIO_OPEN_DRAIN_LOW).pack())
+    time.sleep(low_s)
+    hst.request(gpio_fn, codec.FIXTURE_GPIO_OP_CONFIGURE,
+                codec.FixtureGpioConfigureRequest(channel=channel, mode=GPIO_OPEN_DRAIN_RELEASE).pack())
+
+
+def enter_bootloader(hst: h.Host, wire: target.Wire, gpio_fn: int, nrst_channel: int) -> None:
+    pulse_nrst(hst, gpio_fn, nrst_channel)
+    time.sleep(0.3)
+    run_payload(hst, wire, PREPARE_BOOT)
+
+
+def normalize_user(hst: h.Host, wire: target.Wire) -> None:
+    run_payload(hst, wire, NORMALIZE_USER)
