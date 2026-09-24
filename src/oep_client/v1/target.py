@@ -79,6 +79,40 @@ class Wire:
     def detach(self, conn: int) -> None:
         self._call(self.DETACH, bytes([conn]))
 
+    def find_reset_line(self, candidates: list[int], reset_vector: int = 0, hold_ms: int = 20,
+                        tries: int = 3) -> list[int]:
+        """Which of `candidates` resets the target: attach under reset through each, and see where the hart stops.
+        The real line stops it before its first instruction (dpc = reset_vector); any other channel leaves the
+        target running, so the halt lands somewhere in its code. A channel counts once any of `tries` lands on the
+        vector: through the CH32L103's real NRST one search in four missed once (2026-09-24), while landing on the
+        vector by chance is not a worry. Channels the probe does not allow (rejected) are skipped; a failed attach
+        counts as a miss and is tried again. Each try pulls one channel
+        low (open drain) for hold_ms. The target is left running (or halted, where resume is not acknowledged)."""
+        hits = []
+        self.last_search = {}   # channel -> list of dpc values (None: attach failed), or the rejection
+        for channel in candidates:
+            seen = []
+            for _ in range(tries):
+                try:
+                    conn, dpc = self.attach_under_reset(channel, hold_ms)
+                except h.Rejected as e:
+                    if e.result.resolution == m.REJECTED:   # not a channel this probe allows
+                        seen = e
+                        break
+                    seen.append(None)                      # the attach itself failed: try again
+                    continue
+                seen.append(dpc)
+                try:
+                    RiscvDm(self.host, conn).resume()
+                except h.Rejected:
+                    pass   # a CH32L103 raises no allresumeack; a hart left halted still lands off the vector next time
+                finally:
+                    self.detach(conn)
+                if dpc == reset_vector:
+                    hits.append(channel)
+                    break
+            self.last_search[channel] = seen
+        return hits
 
 class RiscvDm:
     DMI, HALT, RESUME, RESET, READ_BLOCK, WRITE_BLOCK, RUN, STEP = 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08
@@ -304,3 +338,23 @@ class FixtureUartIO:
             data = data[r.written:]
             if not r.written:
                 time.sleep(0.005)
+
+
+def attach_after_gpio_reset(hst: h.Host, wire_: Wire, gpio_fn: int, channel: int, exchange, *, tries: int = 10,
+                            low_s: float = 0.02) -> tuple[int, int]:
+    """For a probe without attach_under_reset: pull `channel` low through oep.fixture.gpio, then send its release
+    and an attach (halt) in one exchange so the probe starts the attach right after the release, and retry - a race
+    at the edge of the target's reset window (2026-09-24, CH32V003 with SWIO turned off: 2 of 5 pipelined, 0 of 5
+    one request at a time). `exchange` is the link's pipelining exchange. -> (connection, DMSTATUS)"""
+    from ..v0 import codec
+    low, release = 6, 7   # fixture.gpio open-drain low / released (Hi-Z), never driven high
+    configure = lambda mode: codec.FixtureGpioConfigureRequest(channel=channel, mode=mode).pack()
+    for _ in range(tries):
+        hst.request(gpio_fn, codec.FIXTURE_GPIO_OP_CONFIGURE, configure(low))
+        time.sleep(low_s)
+        results = hst.pipeline([(gpio_fn, codec.FIXTURE_GPIO_OP_CONFIGURE, configure(release)),
+                                (wire_.fn, Wire.ATTACH, bytes([1]))], exchange=exchange)
+        if results[1].succeeded:
+            conn, status = struct.unpack_from("<BI", results[1].payload)
+            return conn, status
+    raise h.Rejected(results[1])
