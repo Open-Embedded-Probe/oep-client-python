@@ -84,8 +84,9 @@ class Wire:
         """Which of `candidates` resets the target: attach under reset through each, and see where the hart stops.
         The real line stops it before its first instruction (dpc = reset_vector); any other channel leaves the
         target running, so the halt lands somewhere in its code. A channel counts once any of `tries` lands on the
-        vector: through the CH32L103's real NRST one search in four missed once (2026-09-24), while landing on the
-        vector by chance is not a worry. Channels the probe does not allow (rejected) are skipped; a failed attach
+        vector: the CH32L103 is caught by polling right after the release (it keeps no haltreq through NRST), which
+        misses now and then (1 in 60 after the probe fix of 2026-09-24), while landing on the vector by chance is
+        not a worry. Channels the probe does not allow (rejected) are skipped; a failed attach
         counts as a miss and is tried again. Each try pulls one channel
         low (open drain) for hold_ms. The target is left running (or halted, where resume is not acknowledged)."""
         hits = []
