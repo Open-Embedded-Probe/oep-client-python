@@ -121,7 +121,19 @@ def program(hst: h.Host, dm: target.RiscvDm, image: bytes, profile: FlashProfile
                 dm.write32(reg, 0xCDEF89AB)
     else:
         loader = V003_LOADER
-    _write(dm, LOADER, loader + b"\0" * (-len(loader) % 4), block)
+    loader = loader + b"\0" * (-len(loader) % 4)
+
+    def place_loader() -> None:
+        # Read it back before it runs: a garbled loader is the worst garbling there is - it drives the flash
+        # controller, still reaches its ebreak, and writes wrong data into every page after it (the CH32L103's
+        # flying leads, 2026-09-24: 38 pages rewritten, none right). A probe's ack proves nothing about content.
+        for _ in range(3):
+            _write(dm, LOADER, loader, block)
+            if _read(dm, LOADER, len(loader), block) == loader:
+                return
+        raise RuntimeError("the RAM loader did not read back after three tries")
+
+    place_loader()
 
     def run_fast(off: int) -> dict | None:
         _write(dm, FAST_BUFFER, image[off:off + profile.page], block)
@@ -159,6 +171,7 @@ def program(hst: h.Host, dm: target.RiscvDm, image: bytes, profile: FlashProfile
         if not bad:
             break
         failures = []
+        place_loader()   # the pages came out wrong: the loader itself may have been hit, place it again
         for off in bad:
             rewritten += 1
             off -= off % profile.page

@@ -40,13 +40,20 @@ class Found:
 
 
 class Wire:
-    SCAN, ATTACH, DETACH = 0x01, 0x02, 0x03
+    SCAN, ATTACH, DETACH, ATTACH_UNDER_RESET = 0x01, 0x02, 0x03, 0x04
+    DEFAULT_RESET = 0xFFFF
 
     def __init__(self, hst: h.Host, name: str = "oep.wire.rvswd"):
         self.host, self.fn = hst, find(hst, name)
 
+    def _call(self, op: int, body: bytes = b"") -> m.Result:
+        r = self.host.request(self.fn, op, body)
+        if not r.succeeded:
+            raise h.Rejected(r)
+        return r
+
     def scan(self) -> list[Found]:
-        p = self.host.request(self.fn, self.SCAN).payload
+        p = self._call(self.SCAN).payload
         out, at = [], 1
         for _ in range(p[0]):
             kind, dio, clk, status = struct.unpack_from("<BHHI", p, at)
@@ -55,15 +62,27 @@ class Wire:
         return out
 
     def attach(self, halt: bool = True) -> tuple[int, int]:
-        conn, status = struct.unpack("<BI", self.host.request(self.fn, self.ATTACH, bytes([int(halt)])).payload)
+        """-> (connection, DMSTATUS). self.had_reset: a pending havereset was acknowledged first (a V00x's
+        DMSTATUS halt / run bits stay frozen until then)."""
+        p = self._call(self.ATTACH, bytes([int(halt)])).payload
+        conn, status = struct.unpack_from("<BI", p)
+        self.had_reset = len(p) > 5 and bool(p[5] & 1)
         return conn, status
 
+    def attach_under_reset(self, channel: int | None = None, hold_ms: int = 20) -> tuple[int, int]:
+        """Hold the target in reset through `channel` (None: the probe's default reset line), attach, release and
+        halt it at once - the way back from firmware that turns the debug pins into GPIOs. -> (connection, dpc)"""
+        body = struct.pack("<HH", self.DEFAULT_RESET if channel is None else channel, hold_ms)
+        conn, dpc = struct.unpack("<BI", self._call(self.ATTACH_UNDER_RESET, body).payload)
+        return conn, dpc
+
     def detach(self, conn: int) -> None:
-        self.host.request(self.fn, self.DETACH, bytes([conn]))
+        self._call(self.DETACH, bytes([conn]))
 
 
 class RiscvDm:
-    DMI, HALT, RESUME, RESET, READ_BLOCK, WRITE_BLOCK, RUN = 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
+    DMI, HALT, RESUME, RESET, READ_BLOCK, WRITE_BLOCK, RUN, STEP = 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08
+    RESET_RUN, RESET_RUN_CONFIRM, RESET_HALT = 0, 1, 2
 
     def __init__(self, hst: h.Host, conn: int, name: str = "oep.target.riscv-dm"):
         self.host, self.conn, self.fn = hst, conn, find(hst, name)
@@ -85,8 +104,20 @@ class RiscvDm:
         self._call(self.RESUME)
 
     def reset(self, confirm: bool = True) -> tuple[int, int, int]:
-        flags, attempts, pc = struct.unpack("<BBI", self._call(self.RESET, bytes([int(confirm)])).payload)
+        """Reset and let it run (confirm: seen running by a PC sample). -> (flags, attempts, pc)"""
+        mode = self.RESET_RUN_CONFIRM if confirm else self.RESET_RUN
+        flags, attempts, pc = struct.unpack("<BBI", self._call(self.RESET, bytes([mode])).payload)
         return flags, attempts, pc
+
+    def reset_halt(self) -> int:
+        """Reset and stop before the first instruction (haltreq held through the reset). -> dpc"""
+        _, _, pc = struct.unpack("<BBI", self._call(self.RESET, bytes([self.RESET_HALT])).payload)
+        return pc
+
+    def step(self) -> tuple[bool, int, int]:
+        """One instruction (dcsr.step, one resume, privilege kept). -> (moved, dpc before, dpc after)"""
+        moved, before, after = struct.unpack("<BII", self._call(self.STEP).payload)
+        return bool(moved), before, after
 
     def read_block(self, address: int, count: int) -> bytes:
         return self._call(self.READ_BLOCK, struct.pack("<IH", address, count)).payload
@@ -121,6 +152,15 @@ class RiscvDm:
     @staticmethod
     def step_poll(address: int, mask: int, value: int, max_reads: int) -> bytes:
         return struct.pack("<BBIIH", 0x03, address, mask, value, max_reads)
+
+    @staticmethod
+    def step_delay(us: int) -> bytes:
+        return struct.pack("<BI", 0x04, us)
+
+    @staticmethod
+    def step_poll_time(address: int, mask: int, value: int, max_us: int) -> bytes:
+        """poll bounded by time rather than reads: the same meaning on a slow bit-banged link and a fast one."""
+        return struct.pack("<BBIII", 0x05, address, mask, value, max_us)
 
 
 @dataclass
