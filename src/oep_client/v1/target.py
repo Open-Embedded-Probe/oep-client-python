@@ -171,3 +171,30 @@ class Console:
 
     def close(self) -> None:
         self.host.request(self.fn, self.CLOSE, bytes([self.stream]))
+
+
+# ---- pin plan (core plan_apply / plan_release, the v0 shape) ---------------------------------------
+OP_PLAN_APPLY, OP_PLAN_RELEASE = 0x04, 0x05
+
+
+def plan_apply(hst: h.Host, assignments: list[tuple[int, int, int]]) -> None:
+    """assignments: (fn, role, channel). All interfaces accept their roles or none is applied. The plan is
+    probe state: it stays until plan_release, whatever happens to the session."""
+    tlv = b"".join(bytes([0x90, 5]) + struct.pack("<HBH", fn, role, ch) for fn, role, ch in assignments)
+    hst.request(m.CORE_FN, OP_PLAN_APPLY, tlv)
+
+
+def plan_release(hst: h.Host) -> None:
+    hst.request(m.CORE_FN, OP_PLAN_RELEASE)
+
+
+def find_all(hst: h.Host, name: str) -> list[int]:
+    """fns of every interface with exactly this name (instances of the same kind, e.g. two UARTs)."""
+    out, first = [], 0
+    while True:
+        total, page = wire.unpack_list_result(
+            hst.request(m.CORE_FN, m.OP_LIST, wire.pack_list_request(name, True, first), locked=False).payload)
+        out += [e.fn for e in page]
+        first += len(page)
+        if not page or first >= total:
+            return out
