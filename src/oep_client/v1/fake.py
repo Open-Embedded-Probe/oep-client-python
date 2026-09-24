@@ -47,7 +47,7 @@ class FakeProbe:
         if fn != CORE_FN:
             raise ValueError(f"fake: fn {fn} has no operations here")
         if op == OP_CONFIRM:
-            return struct.pack("<4sBH", b"OEP!", REVISION, self.max_frame)
+            return struct.pack("<4sBHHB", b"OEP!", REVISION, self.max_frame, self.max_frame, 1)
         if op == OP_LIST:
             return self._list(*wire.unpack_list_request(payload))
         if op == OP_DESCRIBE:
