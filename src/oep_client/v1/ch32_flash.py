@@ -2,7 +2,7 @@
 
 The probe knows nothing about flash: the host places a RAM loader, block-writes each chunk into a RAM buffer and
 runs the loader until its ebreak (oep.target.riscv-dm), then reads everything back. Pages that fail or read back
-wrong are written again, up to twice (flying-lead jigs garble a DMI transfer now and then).
+wrong are written again, up to twice (a DMI transfer is garbled now and then).
 
   fast-page  CH32X035 / CH32L103 (QingKe V4, 256-byte fast page programming). Loader: oep-spec
              experiments/flash-primitives/x035_loader.S at 0x20000000; a0 = page, a1 = buffer; ebreak at +0xb0.
@@ -140,7 +140,7 @@ def program(hst: h.Host, dm: target.RiscvDm, image: bytes, profile: FlashProfile
     def place_loader() -> None:
         # Read it back before it runs: a garbled loader is the worst garbling there is - it drives the flash
         # controller, still reaches its ebreak, and writes wrong data into every page after it (the CH32L103's
-        # flying leads, 2026-09-24: 38 pages rewritten, none right). A probe's ack proves nothing about content.
+        # RP2350 probe, 2026-09-24: 38 pages rewritten, none right). A probe's ack proves nothing about content.
         for _ in range(3):
             _write(dm, LOADER, loader, block)
             if _read(dm, LOADER, len(loader), block) == loader:
