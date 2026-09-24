@@ -2,7 +2,7 @@
 
   uv run python -m oep_client.v1 dump --fake p4-x035
   uv run python -m oep_client.v1 dump --fake esp32-v003 --prefix oep.fixture
-  uv run python -m oep_client.v1 dump --fake p4-x035 --prefix oep.fixture.i2c-target --exact --json
+  uv run python -m oep_client.v1 dump --fake p4-x035 --prefix oep.target --json
 """
 
 from __future__ import annotations
