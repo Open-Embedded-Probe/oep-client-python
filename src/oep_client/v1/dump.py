@@ -95,7 +95,8 @@ def describe_offer(o: Offer) -> dict:
     specific = {}
     for tag, value in d.specific:
         label, decode = (known.tags.get(tag & 0x7F) if known else None) or (f"tag 0x{tag:02x}", lambda v: v.hex())
-        specific[label] = decode(value)
+        # a tag may repeat (one label per channel): keep every value
+        specific[label] = f"{specific[label]}; {decode(value)}" if label in specific else decode(value)
     if specific:
         out["declares"] = specific
     if d.unknown_critical:

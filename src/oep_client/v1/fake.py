@@ -87,71 +87,84 @@ class FakeProbe:
 
 
 # ---- example profiles ----------------------------------------------------
+# Names follow oep-spec docs/capability-name-hierarchy.ja.md (provisional, 2026-09-24): probe-wide
+# declarations in oep.core's describe, oep.wire.<link> to scan and attach, oep.target.riscv-dm and
+# oep.target.console on the connection, fixtures gpio / uart / capture, the ESP-IDF I2C and SPI
+# targets under the project's own name. Probe-wide tags (oep.core, interface-specific 0x40..):
+CORE_FIRMWARE, CORE_MODEL, CORE_UNIT_ID, CORE_CHANNELS = 0x40, 0x41, 0x42, 0x43
+CORE_RESERVED, CORE_PROFILE, CORE_LABEL, CORE_RESETS_ON_OPEN, CORE_UART_RATES = 0x44, 0x45, 0x46, 0x47, 0x48
+NS = "io.github.ch32-riscv-ug"
+
 
 def _roles(assign: dict[int, list[int]]) -> tuple[bytes, ...]:
     return tuple(wire.role_channels(r, ch) for r, ch in assign.items())
 
 
+def _label(channel: int, name: str) -> bytes:
+    return wire.tlv(CORE_LABEL, struct.pack("<H", channel) + name.encode("ascii"))
+
+
+def _core(firmware: str, model: str, unit_id: bytes, channels: int, reserved: list[int], profile: str,
+          labels: dict[int, str], extra: tuple[bytes, ...] = ()) -> Offered:
+    base, bits = wire.channels_to_bitmap(reserved)
+    return Offered(0, 0, "oep.core", (
+        wire.text(CORE_FIRMWARE, firmware), wire.text(CORE_MODEL, model), wire.tlv(CORE_UNIT_ID, unit_id),
+        wire.u16(CORE_CHANNELS, channels), wire.tlv(CORE_RESERVED, struct.pack("<H", base) + bits),
+        wire.text(CORE_PROFILE, profile)) + tuple(_label(c, n) for c, n in labels.items()) + extra)
+
+
 def p4_x035() -> FakeProbe:
-    """ESP32-P4 development probe on the CH32X035F8U6 jig (as flashed on 2026-09-24)."""
+    """ESP32-P4 development probe on the CH32X035F8U6 jig (as wired on 2026-09-24)."""
     reserved = [2, 24, 25, 54]                      # RVSWD SWDIO/SWCLK, USB-Serial/JTAG
     pins = [p for p in range(55) if p not in reserved]
-    base, bits = wire.channels_to_bitmap(reserved)
-    ns = "io.github.ch32-riscv-ug"
     return FakeProbe("p4-x035", 1024, [
-        Offered(0, 0, "oep.core"),
-        Offered(1, 1, "oep.probe.identity", (
-            wire.u16(0x40, 55), wire.tlv(0x41, struct.pack("<H", base) + bits),
-            wire.text(0x42, f"{ns}.p4-devkit"))),
-        Offered(2, 2, "oep.target.control", (
-            wire.u32(FEATURES, 0b001), wire.u8(IMPLEMENTATION, 1),
-            wire.u8(0x40, 1), wire.u16(0x41, 3300))),
-        Offered(3, 2, "oep.target.debug.riscv", (wire.u8(IMPLEMENTATION, 1),)),
-        Offered(4, 2, "oep.target.memory", (wire.u16(MAX_LENGTH, 1024),)),
-        Offered(5, 2, "oep.target.flash", (wire.u8(IMPLEMENTATION, 1), wire.u8(0x40, 1))),
-        Offered(6, 2, "oep.target.console", (wire.u32(FEATURES, 0b111),)),
-        Offered(7, 3, "oep.fixture.gpio", _roles({1: pins})),
-        Offered(8, 4, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
+        _core("3.0.0", "esp32-p4-devkit", bytes.fromhex("30eda0e31108"), 55, reserved, f"{NS}.p4-x035",
+              {2: "SWDIO", 54: "SWCLK", 51: "LED"}),
+        Offered(1, 1, "oep.wire.rvswd", (
+            wire.channel_group(1, [(1, 2), (2, 54)]), wire.u32(MAX_CLOCK_HZ, 5_000_000), wire.u8(IMPLEMENTATION, 1))),
+        Offered(2, 1, "oep.target.riscv-dm", (wire.u32(FEATURES, 0b1111), wire.u8(IMPLEMENTATION, 1))),
+        Offered(3, 1, "oep.target.console", (
+            wire.u32(FEATURES, 0b0111), wire.u32(0x40, 8192), wire.u8(0x41, 16), wire.u16(0x43, 1000))),
+        Offered(4, 2, "oep.fixture.gpio", _roles({1: pins})),
+        Offered(5, 3, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
             wire.u32(MAX_CLOCK_HZ, 3_000_000), wire.u8(IMPLEMENTATION, 2))),
-        Offered(9, 5, "oep.fixture.capture", _roles({k: pins for k in range(8)}) + (
+        Offered(6, 4, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
+            wire.u32(MAX_CLOCK_HZ, 3_000_000), wire.u8(IMPLEMENTATION, 2))),
+        Offered(7, 5, "oep.fixture.capture", _roles({k: pins for k in range(8)}) + (
             wire.u32(MAX_CLOCK_HZ, 20_000_000), wire.u32(MIN_CLOCK_HZ, 1_000),
             wire.u16(MAX_LENGTH, 65000), wire.u8(IMPLEMENTATION, 3))),
-        Offered(10, 6, "oep.fixture.i2c-target", _roles({1: pins, 2: pins}) + (
+        Offered(8, 6, f"{NS}.esp32.i2c-target", _roles({1: pins, 2: pins}) + (
             wire.u16(MAX_LENGTH, 128), wire.u32(MAX_CLOCK_HZ, 1_000_000),
             wire.u32(FEATURES, 0b11), wire.u8(IMPLEMENTATION, 2), wire.u16(EXCLUSIVE_GROUP, 1))),
-        Offered(11, 6, f"{ns}.p4.i2c-target", (wire.u32(FEATURES, 0b1), wire.u32(0x40, 100_000))),
-        Offered(12, 7, "oep.fixture.spi-target", _roles({1: pins, 2: pins, 3: pins, 4: pins}) + (
+        Offered(9, 7, f"{NS}.esp32.spi-target", _roles({1: pins, 2: pins, 3: pins, 4: pins}) + (
             wire.u16(MAX_LENGTH, 64), wire.u32(MAX_CLOCK_HZ, 3_000_000), wire.u8(IMPLEMENTATION, 2))),
-        Offered(13, 7, f"{ns}.p4.spi-target"),
     ])
 
 
 def esp32_v003() -> FakeProbe:
-    """A small bit-bang probe with 64-byte frames: classic ESP32 on a CH32V003 (SWIO) jig."""
-    wired = [4, 5, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 25, 26, 27, 32, 33]
-    ns = "io.github.ch32-riscv-ug"
+    """A small probe with 64-byte frames over a 115200 bps UART: classic ESP32 on a CH32V003 (SWIO) jig."""
+    reserved = [0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15, 16]
+    wired = [4, 5, 13, 14, 17, 18, 19, 21, 22, 25, 26, 27, 32, 33]
     return FakeProbe("esp32-v003", 64, [
-        Offered(0, 0, "oep.core"),
-        Offered(1, 1, "oep.probe.identity", (
-            wire.u16(0x40, 40), wire.text(0x42, f"{ns}.esp32-v003"))),
-        Offered(2, 2, "oep.target.control", (
-            wire.u32(FEATURES, 0b011), wire.u8(IMPLEMENTATION, 1),
-            wire.u8(0x40, 2), wire.u16(0x41, 3300))),
-        Offered(3, 2, "oep.target.debug.riscv"),
-        Offered(4, 2, "oep.target.memory", (wire.u16(MAX_LENGTH, 48),)),
-        Offered(5, 2, "oep.target.flash", (wire.u8(IMPLEMENTATION, 1), wire.u8(0x40, 1))),
-        Offered(6, 2, "oep.target.console", (wire.u32(FEATURES, 0b111),)),
-        Offered(7, 2, f"{ns}.ch32.uiapduino-boot", (wire.u32(FEATURES, 0b11),)),
-        Offered(8, 3, "oep.fixture.gpio", _roles({1: wired})),
-        Offered(9, 4, "oep.fixture.uart", _roles({1: wired, 2: wired}) + (
-            wire.u32(MAX_CLOCK_HZ, 115_200), wire.u8(IMPLEMENTATION, 1))),
-        Offered(10, 5, "oep.fixture.i2c-target", _roles({1: wired, 2: wired}) + (
-            wire.u16(MAX_LENGTH, 16), wire.u32(MAX_CLOCK_HZ, 100_000), wire.u8(IMPLEMENTATION, 1))),
-        # The fast SPI target only on the IO_MUX-native pins: two fixed pin sets.
-        Offered(11, 6, "oep.fixture.spi-target", (
-            wire.channel_group(1, [(1, 18), (2, 23), (3, 19), (4, 5)]),
-            wire.channel_group(2, [(1, 14), (2, 13), (3, 12), (4, 15)]),
-            wire.u16(MAX_LENGTH, 32), wire.u32(MAX_CLOCK_HZ, 10_000_000), wire.u8(IMPLEMENTATION, 2))),
+        _core("3.0.0", "esp32-d0wd", bytes.fromhex("0070070d9394"), 40, reserved, f"{NS}.esp32-v003",
+              {16: "SWIO", 23: "NRST", 22: "DUT TX", 21: "DUT RX"},
+              (wire.tlv(CORE_UART_RATES, struct.pack("<I", 115200)),)),
+        Offered(1, 1, "oep.wire.swio", (wire.channel_group(1, [(1, 16)]), wire.u8(IMPLEMENTATION, 1))),
+        Offered(2, 1, "oep.target.riscv-dm", (wire.u32(FEATURES, 0b0111), wire.u8(IMPLEMENTATION, 1))),
+        Offered(3, 1, "oep.target.console", (
+            wire.u32(FEATURES, 0b0111), wire.u32(0x40, 1024), wire.u8(0x41, 8), wire.u16(0x43, 48))),
+        Offered(4, 2, "oep.fixture.gpio", _roles({1: wired + [23]})),
+        Offered(5, 3, "oep.fixture.uart", _roles({1: wired, 2: wired}) + (
+            wire.u32(MAX_CLOCK_HZ, 115_200), wire.u8(IMPLEMENTATION, 2))),
+        Offered(6, 4, "oep.fixture.capture", _roles({k: wired for k in range(4)}) + (
+            wire.u32(MAX_CLOCK_HZ, 2_000_000), wire.u32(MIN_CLOCK_HZ, 400_000), wire.u8(IMPLEMENTATION, 1))),
+        Offered(7, 5, f"{NS}.esp32.i2c-target", _roles({1: wired, 2: wired}) + (
+            wire.u16(MAX_LENGTH, 16), wire.u32(MAX_CLOCK_HZ, 100_000), wire.u8(IMPLEMENTATION, 2))),
+        # Two fixed pin sets (an example of channel_group; GPIO23 is the DUT's NRST on this jig).
+        Offered(8, 6, f"{NS}.esp32.spi-target", (
+            wire.channel_group(1, [(1, 18), (2, 19), (3, 5), (4, 4)]),
+            wire.channel_group(2, [(1, 14), (2, 13), (3, 27), (4, 26)]),
+            wire.u16(MAX_LENGTH, 32), wire.u32(MAX_CLOCK_HZ, 3_000_000), wire.u8(IMPLEMENTATION, 2))),
     ])
 
 

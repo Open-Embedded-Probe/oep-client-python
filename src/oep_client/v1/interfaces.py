@@ -23,10 +23,6 @@ def _u32(v: bytes) -> str:
     return str(struct.unpack("<I", v)[0])
 
 
-def _mv(v: bytes) -> str:
-    return f"{struct.unpack('<H', v)[0]} mV"
-
-
 def _text(v: bytes) -> str:
     return v.decode("ascii", "replace")
 
@@ -36,12 +32,16 @@ def _channels(v: bytes) -> str:
     return ranges(wire.bitmap_to_channels(base, v[2:]))
 
 
-def _enum(names: dict[int, str]) -> Callable[[bytes], str]:
-    return lambda v: names.get(v[0], f"0x{v[0]:02x}")
+def _hex(v: bytes) -> str:
+    return v.hex()
 
 
-TRANSPORTS = {1: "RVSWD", 2: "SWIO (1-wire)", 3: "ARM SWD", 4: "JTAG"}
-PROGRAM_PATHS = {1: "debug module (DMI)", 2: "SPI", 3: "PIO"}
+def _label(v: bytes) -> str:
+    return f"{struct.unpack_from('<H', v)[0]} = {v[2:].decode('ascii', 'replace')}"
+
+
+def _u32_list(v: bytes) -> str:
+    return ", ".join(str(x) for x in struct.unpack(f"<{len(v) // 4}I", v))
 
 
 @dataclass(frozen=True)
@@ -53,39 +53,37 @@ class Known:
     tags: dict[int, tuple[str, Callable[[bytes], str]]] = field(default_factory=dict)
 
 
+# Names from oep-spec docs/capability-name-hierarchy.ja.md (provisional, 2026-09-24).
 KNOWN: dict[str, Known] = {
-    "oep.core": Known("confirmation, list, describe, plan, stop, ping"),
-    "oep.probe.identity": Known(
-        "the probe itself",
-        tags={0x40: ("channels", _u16), 0x41: ("reserved", _channels), 0x42: ("profile", _text)}),
-    "oep.target.control": Known(
-        "attach, halt, resume, reset",
-        features={0: "system reset", 1: "pin reset (NRST wired)", 2: "reset-halt"},
-        tags={0x40: ("debug transport", _enum(TRANSPORTS)), 0x41: ("target I/O", _mv)}),
-    "oep.target.debug.riscv": Known("RISC-V debug module registers (DMI, abstract commands)"),
-    "oep.target.memory": Known("target memory read / write"),
-    "oep.target.flash": Known(
-        "geometry, erase, program, verify",
-        tags={0x40: ("program path", _enum(PROGRAM_PATHS))}),
+    "oep.core": Known(
+        "confirm, list, describe, open / end / keepalive, lock state, status, cancel; describe = the probe itself",
+        tags={0x40: ("firmware", _text), 0x41: ("model", _text), 0x42: ("unit id", _hex),
+              0x43: ("channels", _u16), 0x44: ("reserved", _channels), 0x45: ("profile", _text),
+              0x46: ("label", _label), 0x47: ("resets on open", lambda v: "yes"),
+              0x48: ("uart rates", _u32_list)}),
+    "oep.wire.rvswd": Known("scan, attach, detach over RVSWD (attach returns a connection)",
+                            roles={1: "SWDIO", 2: "SWCLK"}),
+    "oep.wire.swio": Known("scan, attach, detach over SWIO, one wire (attach returns a connection)",
+                           roles={1: "SWIO"}),
+    "oep.wire.swd": Known("scan, attach, detach over ARM SWD", roles={1: "SWDIO", 2: "SWCLK"}),
+    "oep.target.riscv-dm": Known(
+        "RISC-V Debug Module over DMI: step lists, block read/write, run until halt, halt/resume",
+        features={0: "block read/write (progbuf + autoexec)", 1: "run until halt", 2: "ndmreset", 3: "reset-halt"}),
+    "oep.target.arm-adi": Known("ARM Debug Interface: DP/AP transfer lists, block transfers"),
     "oep.target.console": Known(
-        "the target's console over the debug module's data registers",
-        features={0: "framing 0 SerialSDI", 1: "framing 1 SerialDMDATA", 2: "framing 2 dmseq"}),
+        "console streams on a debug connection or a UART assignment (position-addressed, marks)",
+        features={0: "SDI", 1: "DMDATA", 2: "dmseq", 3: "UART source"},
+        tags={0x40: ("buffer", lambda v: f"{_u32(v)} bytes"), 0x41: ("marks", lambda v: str(v[0])),
+              0x43: ("max read", _u16)}),
     "oep.fixture.gpio": Known("drive and read probe pins", roles={1: "line"}),
-    "oep.fixture.uart": Known("a UART on probe pins", roles={1: "RX", 2: "TX"}),
+    "oep.fixture.uart": Known("a UART (USART, asynchronous) on probe pins", roles={1: "RX", 2: "TX"}),
     "oep.fixture.capture": Known("sampled logic capture", roles={k: f"line{k}" for k in range(8)}),
-    "oep.fixture.i2c-target": Known(
-        "an I2C target the DUT can address",
+    "io.github.ch32-riscv-ug.esp32.i2c-target": Known(
+        "an I2C target the DUT can address (ESP-IDF slave driver)",
         roles={1: "SDA", 2: "SCL"}, features={0: "preloaded tx", 1: "clock stretching"}),
-    "oep.fixture.spi-target": Known(
-        "an SPI target the DUT can clock",
+    "io.github.ch32-riscv-ug.esp32.spi-target": Known(
+        "an SPI target the DUT can clock (ESP-IDF slave driver)",
         roles={1: "SCK", 2: "MOSI", 3: "MISO", 4: "CS"}, features={0: "LSB first"}),
-    "io.github.ch32-riscv-ug.p4.i2c-target": Known(
-        "ESP32-P4 I2C target extras",
-        features={0: "hardware register view"}, tags={0x40: ("max stretch", lambda v: f"{_u32(v)} us")}),
-    "io.github.ch32-riscv-ug.p4.spi-target": Known("ESP32-P4 SPI target extras"),
-    "io.github.ch32-riscv-ug.ch32.uiapduino-boot": Known(
-        "UIAPduino bootloader entry through a RAM payload (QingKe V2)",
-        features={0: "enter bootloader", 1: "normalise to user mode"}),
 }
 
 
