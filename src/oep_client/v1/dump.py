@@ -30,7 +30,7 @@ class Capabilities:
 
 
 def collect(call, prefix: str = "", exact: bool = False) -> Capabilities:
-    magic, revision, max_frame = struct.unpack("<4sBH", call(CORE_FN, OP_CONFIRM, b""))
+    magic, revision, max_frame = struct.unpack_from("<4sBH", call(CORE_FN, OP_CONFIRM, b""))
     if magic != b"OEP!":
         raise ValueError("not an OEP endpoint")
     caps = Capabilities(revision, max_frame, requests={"confirm": 1, "list": 0, "describe": 0})
