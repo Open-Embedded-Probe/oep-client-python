@@ -63,6 +63,22 @@ class Host:
             raise _REJECTS.get(result.detail, Rejected)(result)
         return result
 
+    def pipeline(self, requests: list[tuple[int, int, bytes]], exchange: Callable[[list[bytes]], list[bytes]] | None = None,
+                 *, locked: bool = True) -> list[m.Result]:
+        """Several requests in flight (`exchange` keeps the probe's in-flight and window limits); results in
+        order, rejects NOT raised - the caller looks at each result. Without `exchange`, one at a time."""
+        reqs = []
+        for fn, op, payload in requests:
+            self._corr = self._corr % 0xFFFF + 1
+            reqs.append(m.Request(self._corr, fn, op, payload, self.session if locked else None))
+        packed = [r.pack() for r in reqs]
+        replies = exchange(packed) if exchange else [self.send(p) for p in packed]
+        results = [m.Result.unpack(r) for r in replies]
+        for req, res in zip(reqs, results):
+            if res.corr != req.corr:
+                raise ValueError(f"result for correlation {res.corr}, expected {req.corr}")
+        return results
+
     # ---- session --------------------------------------------------------------------------------
     def open(self, lease_ms: int = 0, *, force: bool = False, session: int | None = None) -> Opened:
         """A new random id unless `session` is given (a one-shot CLI resuming its saved id)."""

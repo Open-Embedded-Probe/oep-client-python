@@ -219,3 +219,16 @@ def test_cancel(bench):
     r = a.status(ref)
     assert r.resolution == m.COMPLETED and r.detail == m.FAILED
     write(a, 3)                                 # no longer busy
+
+
+def test_pipeline_keeps_order_and_reports_rejects_per_result(bench):
+    _, ep = bench
+    a = new_host(ep, 1)
+    a.open()
+    reqs = [(TOY, endpoint.TOY_WRITE, struct.pack("<I", v)) for v in (1, 2, 3)] + [(TOY, endpoint.TOY_READ, b"")]
+    results = a.pipeline(reqs, lambda msgs: [ep.handle(x) for x in msgs])
+    assert [r.succeeded for r in results] == [True] * 4
+    assert struct.unpack("<I", results[-1].payload)[0] == 3
+    a.session = 0x0BAD0BAD                        # a stale id: every result says so, nothing is raised
+    results = a.pipeline(reqs[:2], lambda msgs: [ep.handle(x) for x in msgs])
+    assert [r.detail for r in results] == [m.LOCKED, m.LOCKED]
