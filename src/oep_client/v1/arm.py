@@ -135,3 +135,83 @@ class MemAp:
 
     def write32(self, address: int, value: int) -> None:
         self.write_block(address, [value])
+
+
+class CortexM:
+    """Armv7-M / Armv8-M core debug through a MEM-AP: halt, resume, core registers through DCRSR / DCRDR, and running
+    a function on the target (arguments in r0-r3, LR at a BKPT in RAM, run until the core halts on it) - the way a
+    host-side flash algorithm drives the target's own ROM or a RAM loader."""
+
+    DHCSR, DCRSR, DCRDR, AIRCR = 0xE000EDF0, 0xE000EDF4, 0xE000EDF8, 0xE000ED0C
+    KEY = 0xA05F0000
+    C_DEBUGEN, C_HALT, C_MASKINTS = 1, 2, 8
+    S_REGRDY, S_HALT = 1 << 16, 1 << 17
+    SP, LR, PC, XPSR = 13, 14, 15, 16
+
+    def __init__(self, mem: MemAp, bkpt_at: int, stack_top: int):
+        """bkpt_at: a word of RAM the target does not need (the return breakpoint goes there); stack_top: where the
+        called function's stack starts (its RAM below is clobbered)."""
+        self.mem, self.bkpt_at, self.stack_top = mem, bkpt_at, stack_top
+
+    def _wait(self, mask: int, timeout: float):
+        import time
+        deadline = time.monotonic() + timeout
+        while True:
+            v = self.mem.read32(self.DHCSR)
+            if v & mask:
+                return v
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"DHCSR {v:#010x}: waiting for {mask:#x}")
+
+    def halted(self) -> bool:
+        return bool(self.mem.read32(self.DHCSR) & self.S_HALT)
+
+    def halt(self) -> None:
+        self.mem.write32(self.DHCSR, self.KEY | self.C_DEBUGEN | self.C_HALT)
+        self._wait(self.S_HALT, 1.0)
+
+    def resume(self, mask_ints: bool = False) -> None:
+        self.mem.write32(self.DHCSR, self.KEY | self.C_DEBUGEN | (self.C_MASKINTS if mask_ints else 0))
+
+    def release(self) -> None:
+        """Run, debug off. C_MASKINTS is cleared first: it lives in the debug domain and survives every reset but
+        power-on, and firmware left with it set runs without SysTick / USB interrupts (RP2350, 2026-09-24)."""
+        self.mem.write32(self.DHCSR, self.KEY | self.C_DEBUGEN | self.C_HALT)
+        self.mem.write32(self.DHCSR, self.KEY)
+
+    def reg(self, n: int) -> int:
+        self.mem.write32(self.DCRSR, n)
+        self._wait(self.S_REGRDY, 1.0)
+        return self.mem.read32(self.DCRDR)
+
+    def set_reg(self, n: int, value: int) -> None:
+        self.mem.write32(self.DCRDR, value)
+        self.mem.write32(self.DCRSR, (1 << 16) | n)
+        self._wait(self.S_REGRDY, 1.0)
+
+    def prepare_call(self, fn: int, args=()) -> None:
+        """Registers for fn(args...): r0-r3, SP, LR to the breakpoint, PC, Thumb bit, no active exception."""
+        self.mem.write32(self.bkpt_at, 0xBE00BE00)              # bkpt #0, twice
+        for i, a in enumerate(args):
+            self.set_reg(i, a)
+        self.set_reg(self.SP, self.stack_top)
+        self.set_reg(self.LR, self.bkpt_at | 1)
+        self.set_reg(self.PC, fn & ~1)
+        self.set_reg(self.XPSR, (self.reg(self.XPSR) | 1 << 24) & ~0x1FF)
+
+    def call(self, fn: int, args=(), timeout: float = 10.0) -> int:
+        """Run fn(args...) on the halted core with interrupts masked (their handlers may live in flash that the call
+        makes unreadable), wait for the breakpoint, clear the mask, return r0."""
+        self.prepare_call(fn, args)
+        self.resume(mask_ints=True)
+        self._wait(self.S_HALT, timeout)
+        self.mem.write32(self.DHCSR, self.KEY | self.C_DEBUGEN | self.C_HALT)   # MASKINTS off while halted
+        pc = self.reg(self.PC)
+        if pc & ~3 != self.bkpt_at:
+            raise AdiError(f"stopped at {pc:#010x}, not at the return breakpoint")
+        return self.reg(0)
+
+    def sys_reset(self) -> None:
+        """AIRCR.SYSRESETREQ: the core restarts; debug-domain state (DHCSR) survives, so clear the mask first."""
+        self.mem.write32(self.DHCSR, self.KEY | self.C_DEBUGEN | self.C_HALT)
+        self.mem.write32(self.AIRCR, 0x05FA0004)
