@@ -1,33 +1,101 @@
-"""v1 draft transport: length-prefixed frames over a serial port (USB CDC, USB-Serial/JTAG), one request at a time.
+"""v1 draft transport over a serial port.
+
+Framing follows the path: length-prefixed frames on a reliable stream (USB CDC, USB-Serial/JTAG), COBS + CRC-16
+behind a USB-UART bridge, where bytes are dropped or changed without an error (oep-spec probe-development-guide
+§3). The bridge is recognised by its USB VID:PID unless `framing` says otherwise.
 
 The port opens with pyserial's defaults - DTR and RTS asserted - which reset none of the measured probes
-(oep-spec docs/host-development-guide.ja.md §1). No sleep after open: the probe does not restart.
+(host-development-guide §1). No sleep after open: the probe does not restart.
+
+A corrupt or missing reply to a request without a session id (lock-free reads, open) is asked for once more; a
+state-changing request is never re-sent here, because a re-send may run it twice (session-and-exclusivity).
 """
 
 from __future__ import annotations
 
+import os
+import time
+
 import serial
+from serial.tools import list_ports
 
 from ..v0.transport import FrameTransport
+from . import cobs
+
+# USB-UART bridges: their bytes are not protected end to end, so the probe behind them speaks COBS + CRC.
+UART_BRIDGES = {
+    (0x1A86, 0x7523): "CH340", (0x1A86, 0x7522): "CH340K", (0x1A86, 0x55D3): "CH343", (0x1A86, 0x55D4): "CH9102",
+    (0x10C4, 0xEA60): "CP210x", (0x0403, 0x6001): "FT232R", (0x0403, 0x6015): "FT231X", (0x067B, 0x2303): "PL2303",
+}
+
+
+def framing_for(port: str) -> str:
+    real = os.path.realpath(port)
+    for p in list_ports.comports():
+        if os.path.realpath(p.device) == real and p.vid is not None:
+            return "cobs" if (p.vid, p.pid) in UART_BRIDGES else "length"
+    return "length"
 
 
 class SerialLink:
-    def __init__(self, port: str, timeout: float = 3.0, exclusive: bool = True):
+    def __init__(self, port: str, timeout: float = 3.0, exclusive: bool = True, framing: str | None = None):
         # exclusive: a second process on the same Linux tty would interleave bytes with ours
         self.stream = serial.Serial(port, 115200, timeout=0.05, exclusive=exclusive)
-        self.frames = FrameTransport(self.stream)
-        self.frames.discard_input()
+        self.framing = framing or framing_for(port)
         self.timeout = timeout
+        self.retries = 0
+        self.corrupt = 0
+        if self.framing == "length":
+            self.frames = FrameTransport(self.stream)
+            self.frames.discard_input()
+        else:
+            self._buf = bytearray()
+            self.stream.reset_input_buffer()
 
+    # ---- one frame each way ----------------------------------------------------------------------
+    def _write(self, messages: list[bytes]) -> None:
+        if self.framing == "length":
+            self.frames.send_many(messages)
+        else:
+            self.stream.write(b"".join(cobs.frame(msg) for msg in messages))
+
+    def _recv(self) -> bytes:
+        if self.framing == "length":
+            reply = self.frames.recv(self.timeout)
+            if reply is None:
+                raise TimeoutError("no result from the probe")
+            return reply
+        deadline = time.monotonic() + self.timeout
+        while True:
+            end = self._buf.find(0)
+            if end >= 0:
+                raw = bytes(self._buf[:end])
+                del self._buf[:end + 1]
+                if not raw:
+                    continue
+                return cobs.unframe(raw)             # raises CorruptFrame
+            if time.monotonic() > deadline:
+                raise TimeoutError("no result from the probe")
+            self._buf += self.stream.read(max(1, self.stream.in_waiting))
+
+    # ---- requests --------------------------------------------------------------------------------
     def send(self, message: bytes) -> bytes:
-        self.frames.send(message)
-        return self._recv()
+        for attempt in (0, 1):
+            self._write([message])
+            try:
+                return self._recv()
+            except (cobs.CorruptFrame, TimeoutError) as e:
+                if isinstance(e, cobs.CorruptFrame):
+                    self.corrupt += 1
+                if attempt or message[0] & 0x80:      # state-changing: never re-sent here
+                    raise
+                self.retries += 1
 
     def exchange(self, messages: list[bytes], max_inflight: int, window_bytes: int) -> list[bytes]:
         """Pipelined: keep up to max_inflight requests and window_bytes outstanding, results in order.
 
-        The probe answers in the order it received (v0 / v1 draft), so replies pair with requests by position;
-        the caller still checks correlations. Frames admitted together go out in one write (E160).
+        The probe answers in the order it received (v1 draft), so replies pair with requests by position; the
+        caller still checks correlations. Frames admitted together go out in one write (E160). No re-send here.
         """
         replies: list[bytes] = []
         outstanding: list[int] = []        # sizes of requests in flight
@@ -36,24 +104,18 @@ class SerialLink:
             size = len(msg) + 2
             while outstanding and (len(outstanding) >= max_inflight or sum(outstanding) + size > window_bytes):
                 if batch:
-                    self.frames.send_many(batch)
+                    self._write(batch)
                     batch = []
                 replies.append(self._recv())
                 outstanding.pop(0)
             batch.append(msg)
             outstanding.append(size)
         if batch:
-            self.frames.send_many(batch)
+            self._write(batch)
         while outstanding:
             replies.append(self._recv())
             outstanding.pop(0)
         return replies
-
-    def _recv(self) -> bytes:
-        reply = self.frames.recv(self.timeout)
-        if reply is None:
-            raise TimeoutError("no result from the probe")
-        return reply
 
     def close(self) -> None:
         self.stream.close()
