@@ -12,7 +12,7 @@ import struct
 from dataclasses import dataclass, field
 from typing import Callable
 
-from . import wire
+from . import catalog
 
 
 def _u16(v: bytes) -> str:
@@ -29,7 +29,7 @@ def _text(v: bytes) -> str:
 
 def _channels(v: bytes) -> str:
     base = struct.unpack_from("<H", v)[0]
-    return ranges(wire.bitmap_to_channels(base, v[2:]))
+    return ranges(catalog.bitmap_to_channels(base, v[2:]))
 
 
 def _hex(v: bytes) -> str:

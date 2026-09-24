@@ -12,8 +12,8 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass
 
-from . import names, wire
-from .wire import (CHANNEL_GROUP, EXCLUSIVE_GROUP, FEATURES, IMPLEMENTATION, MAX_CLOCK_HZ, MAX_LENGTH,
+from . import catalog, names
+from .catalog import (CHANNEL_GROUP, EXCLUSIVE_GROUP, FEATURES, IMPLEMENTATION, MAX_CLOCK_HZ, MAX_LENGTH,
                    MIN_CLOCK_HZ, ListEntry)
 
 CORE_FN = 0
@@ -49,7 +49,7 @@ class FakeProbe:
         if op == OP_CONFIRM:
             return struct.pack("<4sBHHB", b"OEP!", REVISION, self.max_frame, self.max_frame, 1)
         if op == OP_LIST:
-            return self._list(*wire.unpack_list_request(payload))
+            return self._list(*catalog.unpack_list_request(payload))
         if op == OP_DESCRIBE:
             target, first = struct.unpack("<HB", payload)
             return self._describe(target, first)
@@ -60,12 +60,12 @@ class FakeProbe:
         budget = self.max_frame - RESULT_HEADER - 2
         page, used = [], 0
         for o in hits[first:]:
-            size = len(wire.pack_entry(self._entry(o)))
+            size = len(catalog.pack_entry(self._entry(o)))
             if page and used + size > budget:
                 break
             page.append(self._entry(o))
             used += size
-        return wire.pack_list_result(len(hits), page)
+        return catalog.pack_list_result(len(hits), page)
 
     def _describe(self, fn: int, first: int) -> bytes:
         o = next((x for x in self.offered if x.fn == fn), None)
@@ -97,20 +97,20 @@ NS = "io.github.ch32-riscv-ug"
 
 
 def _roles(assign: dict[int, list[int]]) -> tuple[bytes, ...]:
-    return tuple(wire.role_channels(r, ch) for r, ch in assign.items())
+    return tuple(catalog.role_channels(r, ch) for r, ch in assign.items())
 
 
 def _label(channel: int, name: str) -> bytes:
-    return wire.tlv(CORE_LABEL, struct.pack("<H", channel) + name.encode("ascii"))
+    return catalog.tlv(CORE_LABEL, struct.pack("<H", channel) + name.encode("ascii"))
 
 
 def _core(firmware: str, model: str, unit_id: bytes, channels: int, reserved: list[int], profile: str,
           labels: dict[int, str], extra: tuple[bytes, ...] = ()) -> Offered:
-    base, bits = wire.channels_to_bitmap(reserved)
+    base, bits = catalog.channels_to_bitmap(reserved)
     return Offered(0, 0, "oep.core", (
-        wire.text(CORE_FIRMWARE, firmware), wire.text(CORE_MODEL, model), wire.tlv(CORE_UNIT_ID, unit_id),
-        wire.u16(CORE_CHANNELS, channels), wire.tlv(CORE_RESERVED, struct.pack("<H", base) + bits),
-        wire.text(CORE_PROFILE, profile)) + tuple(_label(c, n) for c, n in labels.items()) + extra)
+        catalog.text(CORE_FIRMWARE, firmware), catalog.text(CORE_MODEL, model), catalog.tlv(CORE_UNIT_ID, unit_id),
+        catalog.u16(CORE_CHANNELS, channels), catalog.tlv(CORE_RESERVED, struct.pack("<H", base) + bits),
+        catalog.text(CORE_PROFILE, profile)) + tuple(_label(c, n) for c, n in labels.items()) + extra)
 
 
 def p4_x035() -> FakeProbe:
@@ -121,23 +121,23 @@ def p4_x035() -> FakeProbe:
         _core("3.0.0", "esp32-p4-devkit", bytes.fromhex("30eda0e31108"), 55, reserved, f"{NS}.p4-x035",
               {2: "SWDIO", 54: "SWCLK", 51: "LED"}),
         Offered(1, 1, "oep.wire.rvswd", (
-            wire.channel_group(1, [(1, 2), (2, 54)]), wire.u32(MAX_CLOCK_HZ, 5_000_000), wire.u8(IMPLEMENTATION, 1))),
-        Offered(2, 1, "oep.target.riscv-dm", (wire.u32(FEATURES, 0b1111), wire.u8(IMPLEMENTATION, 1))),
+            catalog.channel_group(1, [(1, 2), (2, 54)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(IMPLEMENTATION, 1))),
+        Offered(2, 1, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1))),
         Offered(3, 1, "oep.target.console", (
-            wire.u32(FEATURES, 0b0111), wire.u32(0x40, 8192), wire.u8(0x41, 16), wire.u16(0x43, 1000))),
+            catalog.u32(FEATURES, 0b0111), catalog.u32(0x40, 8192), catalog.u8(0x41, 16), catalog.u16(0x43, 1000))),
         Offered(4, 2, "oep.fixture.gpio", _roles({1: pins})),
         Offered(5, 3, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
-            wire.u32(MAX_CLOCK_HZ, 3_000_000), wire.u8(IMPLEMENTATION, 2))),
+            catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
         Offered(6, 4, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
-            wire.u32(MAX_CLOCK_HZ, 3_000_000), wire.u8(IMPLEMENTATION, 2))),
+            catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
         Offered(7, 5, "oep.fixture.capture", _roles({k: pins for k in range(8)}) + (
-            wire.u32(MAX_CLOCK_HZ, 20_000_000), wire.u32(MIN_CLOCK_HZ, 1_000),
-            wire.u16(MAX_LENGTH, 65000), wire.u8(IMPLEMENTATION, 3))),
+            catalog.u32(MAX_CLOCK_HZ, 20_000_000), catalog.u32(MIN_CLOCK_HZ, 1_000),
+            catalog.u16(MAX_LENGTH, 65000), catalog.u8(IMPLEMENTATION, 3))),
         Offered(8, 6, f"{NS}.esp32.i2c-target", _roles({1: pins, 2: pins}) + (
-            wire.u16(MAX_LENGTH, 128), wire.u32(MAX_CLOCK_HZ, 1_000_000),
-            wire.u32(FEATURES, 0b11), wire.u8(IMPLEMENTATION, 2), wire.u16(EXCLUSIVE_GROUP, 1))),
+            catalog.u16(MAX_LENGTH, 128), catalog.u32(MAX_CLOCK_HZ, 1_000_000),
+            catalog.u32(FEATURES, 0b11), catalog.u8(IMPLEMENTATION, 2), catalog.u16(EXCLUSIVE_GROUP, 1))),
         Offered(9, 7, f"{NS}.esp32.spi-target", _roles({1: pins, 2: pins, 3: pins, 4: pins}) + (
-            wire.u16(MAX_LENGTH, 64), wire.u32(MAX_CLOCK_HZ, 3_000_000), wire.u8(IMPLEMENTATION, 2))),
+            catalog.u16(MAX_LENGTH, 64), catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
     ])
 
 
@@ -148,23 +148,23 @@ def esp32_v003() -> FakeProbe:
     return FakeProbe("esp32-v003", 64, [
         _core("3.0.0", "esp32-d0wd", bytes.fromhex("0070070d9394"), 40, reserved, f"{NS}.esp32-v003",
               {16: "SWIO", 23: "NRST", 22: "DUT TX", 21: "DUT RX"},
-              (wire.tlv(CORE_UART_RATES, struct.pack("<I", 115200)),)),
-        Offered(1, 1, "oep.wire.swio", (wire.channel_group(1, [(1, 16)]), wire.u8(IMPLEMENTATION, 1))),
-        Offered(2, 1, "oep.target.riscv-dm", (wire.u32(FEATURES, 0b0111), wire.u8(IMPLEMENTATION, 1))),
+              (catalog.tlv(CORE_UART_RATES, struct.pack("<I", 115200)),)),
+        Offered(1, 1, "oep.wire.swio", (catalog.channel_group(1, [(1, 16)]), catalog.u8(IMPLEMENTATION, 1))),
+        Offered(2, 1, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b0111), catalog.u8(IMPLEMENTATION, 1))),
         Offered(3, 1, "oep.target.console", (
-            wire.u32(FEATURES, 0b0111), wire.u32(0x40, 1024), wire.u8(0x41, 8), wire.u16(0x43, 48))),
+            catalog.u32(FEATURES, 0b0111), catalog.u32(0x40, 1024), catalog.u8(0x41, 8), catalog.u16(0x43, 48))),
         Offered(4, 2, "oep.fixture.gpio", _roles({1: wired + [23]})),
         Offered(5, 3, "oep.fixture.uart", _roles({1: wired, 2: wired}) + (
-            wire.u32(MAX_CLOCK_HZ, 115_200), wire.u8(IMPLEMENTATION, 2))),
+            catalog.u32(MAX_CLOCK_HZ, 115_200), catalog.u8(IMPLEMENTATION, 2))),
         Offered(6, 4, "oep.fixture.capture", _roles({k: wired for k in range(4)}) + (
-            wire.u32(MAX_CLOCK_HZ, 2_000_000), wire.u32(MIN_CLOCK_HZ, 400_000), wire.u8(IMPLEMENTATION, 1))),
+            catalog.u32(MAX_CLOCK_HZ, 2_000_000), catalog.u32(MIN_CLOCK_HZ, 400_000), catalog.u8(IMPLEMENTATION, 1))),
         Offered(7, 5, f"{NS}.esp32.i2c-target", _roles({1: wired, 2: wired}) + (
-            wire.u16(MAX_LENGTH, 16), wire.u32(MAX_CLOCK_HZ, 100_000), wire.u8(IMPLEMENTATION, 2))),
+            catalog.u16(MAX_LENGTH, 16), catalog.u32(MAX_CLOCK_HZ, 100_000), catalog.u8(IMPLEMENTATION, 2))),
         # Two fixed pin sets (an example of channel_group; GPIO23 is the DUT's NRST on this jig).
         Offered(8, 6, f"{NS}.esp32.spi-target", (
-            wire.channel_group(1, [(1, 18), (2, 19), (3, 5), (4, 4)]),
-            wire.channel_group(2, [(1, 14), (2, 13), (3, 27), (4, 26)]),
-            wire.u16(MAX_LENGTH, 32), wire.u32(MAX_CLOCK_HZ, 3_000_000), wire.u8(IMPLEMENTATION, 2))),
+            catalog.channel_group(1, [(1, 18), (2, 19), (3, 5), (4, 4)]),
+            catalog.channel_group(2, [(1, 14), (2, 13), (3, 27), (4, 26)]),
+            catalog.u16(MAX_LENGTH, 32), catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
     ])
 
 

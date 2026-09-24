@@ -10,15 +10,15 @@ import json
 import struct
 from dataclasses import dataclass, field
 
-from . import interfaces, names, wire
+from . import catalog, interfaces, names
 
 CORE_FN, OP_CONFIRM, OP_LIST, OP_DESCRIBE = 0, 0x01, 0x02, 0x03
 
 
 @dataclass
 class Offer:
-    entry: wire.ListEntry
-    description: wire.Description
+    entry: catalog.ListEntry
+    description: catalog.Description
 
 
 @dataclass
@@ -34,9 +34,9 @@ def collect(call, prefix: str = "", exact: bool = False) -> Capabilities:
     if magic != b"OEP!":
         raise ValueError("not an OEP endpoint")
     caps = Capabilities(revision, max_frame, requests={"confirm": 1, "list": 0, "describe": 0})
-    entries: list[wire.ListEntry] = []
+    entries: list[catalog.ListEntry] = []
     while True:
-        total, page = wire.unpack_list_result(call(CORE_FN, OP_LIST, wire.pack_list_request(prefix, exact, len(entries))))
+        total, page = catalog.unpack_list_result(call(CORE_FN, OP_LIST, catalog.pack_list_request(prefix, exact, len(entries))))
         caps.requests["list"] += 1
         entries += page
         if len(entries) >= total or not page:
@@ -48,10 +48,10 @@ def collect(call, prefix: str = "", exact: bool = False) -> Capabilities:
             caps.requests["describe"] += 1
             more, chunk = result[0], result[1:]
             data += chunk
-            first += len(wire.split_tlv(chunk))
+            first += len(catalog.split_tlv(chunk))
             if not more or not chunk:
                 break
-        caps.offers.append(Offer(e, wire.decode_description(data)))
+        caps.offers.append(Offer(e, catalog.decode_description(data)))
     return caps
 
 
@@ -91,7 +91,7 @@ def describe_offer(o: Offer) -> dict:
     if d.features is not None:
         out["features"] = _features(d.features, known.features if known else {})
     if d.implementation is not None:
-        out["implementation"] = wire.IMPLEMENTATIONS.get(d.implementation, str(d.implementation))
+        out["implementation"] = catalog.IMPLEMENTATIONS.get(d.implementation, str(d.implementation))
     specific = {}
     for tag, value in d.specific:
         label, decode = (known.tags.get(tag & 0x7F) if known else None) or (f"tag 0x{tag:02x}", lambda v: v.hex())

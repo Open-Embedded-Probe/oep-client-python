@@ -53,9 +53,9 @@ def test_a_48_byte_name_fits_a_64_byte_frame():
     assert len(name) == 48
     probe = fake.FakeProbe("tiny", 64, [fake.Offered(0, 0, "oep.core"), fake.Offered(1, 1, name)])
     ep = endpoint.Endpoint(probe, Clock())
-    from oep_client.v1 import wire
-    result = ep.handle(m.Request(1, 0, m.OP_LIST, wire.pack_list_request(name, True, 0)).pack())
-    assert len(result) == 62 and wire.unpack_list_result(result[5:])[1][0].name == name
+    from oep_client.v1 import catalog
+    result = ep.handle(m.Request(1, 0, m.OP_LIST, catalog.pack_list_request(name, True, 0)).pack())
+    assert len(result) == 62 and catalog.unpack_list_result(result[5:])[1][0].name == name
 
 
 # ---- the lock table -------------------------------------------------------------------------------

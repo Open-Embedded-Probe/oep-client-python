@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from oep_client.v1 import dump, fake, names, wire
+from oep_client.v1 import catalog, dump, fake, names
 
 
 # ---- names ---------------------------------------------------------------
@@ -55,25 +55,25 @@ def test_prefix_matches_on_label_boundaries():
 # ---- wire ----------------------------------------------------------------
 
 def test_list_round_trip():
-    entries = [wire.ListEntry(5, 3, 0, 0, "oep.fixture.i2c-target"),
-               wire.ListEntry(6, 3, 1, 0, "io.github.ch32-riscv-ug.p4.i2c-target")]
-    assert wire.unpack_list_result(wire.pack_list_result(7, entries)) == (7, entries)
-    assert wire.unpack_list_request(wire.pack_list_request("oep.fixture", True, 4)) == ("oep.fixture", True, 4)
+    entries = [catalog.ListEntry(5, 3, 0, 0, "oep.fixture.i2c-target"),
+               catalog.ListEntry(6, 3, 1, 0, "io.github.ch32-riscv-ug.p4.i2c-target")]
+    assert catalog.unpack_list_result(catalog.pack_list_result(7, entries)) == (7, entries)
+    assert catalog.unpack_list_request(catalog.pack_list_request("oep.fixture", True, 4)) == ("oep.fixture", True, 4)
 
 
 def test_channel_bitmap_round_trip():
     chans = [0, 1, 3, 4, 5, 23, 26, 53]
-    assert wire.bitmap_to_channels(*wire.channels_to_bitmap(chans)) == chans
+    assert catalog.bitmap_to_channels(*catalog.channels_to_bitmap(chans)) == chans
 
 
 def test_description_keeps_what_it_does_not_know():
-    data = (wire.role_channels(1, [4, 5]) + wire.role_channels(1, [9])
-            + wire.channel_group(1, [(1, 18), (2, 23)])
-            + wire.u32(wire.FEATURES, 0b101)
-            + wire.tlv(0x3E, b"\x01")                 # unknown common, not critical: skipped
-            + wire.tlv(0x80 | 0x3D, b"")              # unknown common, critical: remembered
-            + wire.u8(0x40, 2))                       # interface-specific: kept raw
-    d = wire.decode_description(data)
+    data = (catalog.role_channels(1, [4, 5]) + catalog.role_channels(1, [9])
+            + catalog.channel_group(1, [(1, 18), (2, 23)])
+            + catalog.u32(catalog.FEATURES, 0b101)
+            + catalog.tlv(0x3E, b"\x01")                 # unknown common, not critical: skipped
+            + catalog.tlv(0x80 | 0x3D, b"")              # unknown common, critical: remembered
+            + catalog.u8(0x40, 2))                       # interface-specific: kept raw
+    d = catalog.decode_description(data)
     assert d.roles == {1: [4, 5, 9]}
     assert d.groups == {1: [(1, 18), (2, 23)]}
     assert d.features == 0b101
@@ -126,8 +126,8 @@ def test_filters():
 def test_unknown_interfaces_are_shown_raw():
     probe = fake.FakeProbe("x", 256, [
         fake.Offered(0, 0, "oep.core"),
-        fake.Offered(1, 1, "local.bench.widget", (wire.role_channels(3, [7]), wire.u32(wire.FEATURES, 0b10),
-                                                   wire.u8(0x41, 9)))])
+        fake.Offered(1, 1, "local.bench.widget", (catalog.role_channels(3, [7]), catalog.u32(catalog.FEATURES, 0b10),
+                                                   catalog.u8(0x41, 9)))])
     row = dump.describe_offer(dump.collect(probe.call).offers[1])
     assert row["known"] is False
     assert row["roles"] == {"role3": "7"} and row["features"] == ["bit1"]

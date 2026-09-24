@@ -20,14 +20,15 @@ from __future__ import annotations
 import struct
 import time
 
-from ..v0 import codec
 from . import host as h, target
+from .fixture import Gpio
+
+GPIO_OPEN_DRAIN_LOW, GPIO_OPEN_DRAIN_RELEASE = Gpio.OPEN_DRAIN_LOW, Gpio.OPEN_DRAIN_RELEASE   # for older scripts
 
 PAYLOAD_BASE = 0x20000000
 RSTSCKR, PINRSTF = 0x40021024, 1 << 26
 DMCONTROL, ABSTRACTCS, COMMAND, DATA0 = 0x10, 0x16, 0x17, 0x04
 MSTATUS, DPC = 0x0300, 0x07B1
-GPIO_OPEN_DRAIN_LOW, GPIO_OPEN_DRAIN_RELEASE = 6, 7
 
 # kNormalizeUserReset: unlock FLASH, clear BOOT_MODE, PFIC SYSRST
 NORMALIZE_USER = [
@@ -64,28 +65,27 @@ def _write_register(dm: target.RiscvDm, regno: int, value: int) -> bytes:
 def run_payload(hst: h.Host, wire: target.Wire, payload: list[int]) -> None:
     """Attach halted, place the payload, resume into it with interrupts off, and let go of the target."""
     conn, _ = wire.attach(halt=True)
-    dm = target.RiscvDm(hst, conn)
-    data = struct.pack(f"<{len(payload)}I", *payload)
-    dm.write_block(PAYLOAD_BASE, data)
-    if dm.read_block(PAYLOAD_BASE, len(payload)) != data:
-        raise RuntimeError("payload did not read back")
-    # mstatus = 0 first: with MIE set the halted application's SysTick ran over the payload (2026-09-22).
-    # resumereq twice, then drop haltreq so the payload's own system reset is not halted again (E129).
-    steps = (_write_register(dm, MSTATUS, 0) + _write_register(dm, DPC, PAYLOAD_BASE)
-             + dm.step_write(DMCONTROL, 0x40000001) + dm.step_write(DMCONTROL, 0x40000001)
-             + dm.step_write(DMCONTROL, 0x00000001))
-    dm.dmi(steps)
-    time.sleep(0.02)
-    wire.detach(conn)
+    try:
+        dm = target.RiscvDm(hst, conn)
+        data = struct.pack(f"<{len(payload)}I", *payload)
+        dm.write_block(PAYLOAD_BASE, data)
+        if dm.read_block(PAYLOAD_BASE, len(payload)) != data:
+            raise RuntimeError("payload did not read back")
+        # mstatus = 0 first: with MIE set the halted application's SysTick ran over the payload (2026-09-22).
+        # resumereq twice, then drop haltreq so the payload's own system reset is not halted again (E129).
+        # dmi() raises if an abstract-command poll gave up, so a register write that did not land stops here.
+        steps = (_write_register(dm, MSTATUS, 0) + _write_register(dm, DPC, PAYLOAD_BASE)
+                 + dm.step_write(DMCONTROL, 0x40000001) + dm.step_write(DMCONTROL, 0x40000001)
+                 + dm.step_write(DMCONTROL, 0x00000001))
+        dm.dmi(steps)
+        time.sleep(0.02)
+    finally:
+        wire.detach(conn)
 
 
 def pulse_nrst(hst: h.Host, gpio_fn: int, channel: int, low_s: float = 0.02) -> None:
     """Open-drain low, then released to Hi-Z (never driven high). This drops any debug connection."""
-    hst.request(gpio_fn, codec.FIXTURE_GPIO_OP_CONFIGURE,
-                codec.FixtureGpioConfigureRequest(channel=channel, mode=GPIO_OPEN_DRAIN_LOW).pack())
-    time.sleep(low_s)
-    hst.request(gpio_fn, codec.FIXTURE_GPIO_OP_CONFIGURE,
-                codec.FixtureGpioConfigureRequest(channel=channel, mode=GPIO_OPEN_DRAIN_RELEASE).pack())
+    Gpio(hst, gpio_fn).pulse_low(channel, low_s)
 
 
 class NeedsPinReset(RuntimeError):

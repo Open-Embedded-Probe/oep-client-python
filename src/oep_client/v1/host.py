@@ -15,10 +15,28 @@ from typing import Callable
 from . import message as m
 
 
-class Rejected(Exception):
+class OepError(Exception):
+    """Anything the probe or the link said no to."""
+
+
+class Rejected(OepError):
+    """The probe refused the request (resolution rejected): unknown fn / op, malformed, unavailable, locked..."""
+
     def __init__(self, result: m.Result):
         super().__init__(result.describe())
         self.result = result
+
+
+class Failed(OepError):
+    """The probe ran the request and it did not work (completed, outcome failed or partial)."""
+
+    def __init__(self, result: m.Result):
+        super().__init__(result.describe())
+        self.result = result
+
+
+class ProtocolError(OepError, ValueError):
+    """A result that does not fit: wrong correlation, too short."""
 
 
 class Locked(Rejected):
@@ -50,7 +68,18 @@ class Host:
     send: Callable[[bytes], bytes]
     rng: random.Random = field(default_factory=random.SystemRandom)
     session: int | None = None
+    # The link's pipelining (SerialLink.exchange bound to the probe's in-flight / window limits); None: one at a time.
+    exchange: Callable[[list[bytes]], list[bytes]] | None = None
     _corr: int = 0
+    _fns: dict = field(default_factory=dict)   # interface name -> fn, valid until the probe reboots
+    _boot_id: int | None = None
+
+    def call(self, fn: int, op: int, payload: bytes = b"", *, locked: bool = True) -> m.Result:
+        """request() that also raises Failed unless the probe says it worked: what every operation wants."""
+        r = self.request(fn, op, payload, locked=locked)
+        if not r.succeeded:
+            raise Failed(r)
+        return r
 
     def request(self, fn: int, op: int, payload: bytes = b"", *, locked: bool = True) -> m.Result:
         """locked=True sends the session id (role 0x81); lock-free requests may leave it off."""
@@ -58,7 +87,7 @@ class Host:
         req = m.Request(self._corr, fn, op, payload, self.session if locked else None)
         result = m.Result.unpack(self.send(req.pack()))
         if result.corr != req.corr:
-            raise ValueError(f"result for correlation {result.corr}, expected {req.corr}")
+            raise ProtocolError(f"result for correlation {result.corr}, expected {req.corr}")
         if result.resolution == m.REJECTED:
             raise _REJECTS.get(result.detail, Rejected)(result)
         return result
@@ -72,11 +101,23 @@ class Host:
             self._corr = self._corr % 0xFFFF + 1
             reqs.append(m.Request(self._corr, fn, op, payload, self.session if locked else None))
         packed = [r.pack() for r in reqs]
+        exchange = exchange or self.exchange
         replies = exchange(packed) if exchange else [self.send(p) for p in packed]
         results = [m.Result.unpack(r) for r in replies]
         for req, res in zip(reqs, results):
             if res.corr != req.corr:
-                raise ValueError(f"result for correlation {res.corr}, expected {req.corr}")
+                raise ProtocolError(f"result for correlation {res.corr}, expected {req.corr}")
+        return results
+
+    def pipeline_calls(self, requests: list[tuple[int, int, bytes]], *, locked: bool = True) -> list[m.Result]:
+        """pipeline() for operations that must all work: raises at the first result that was not a success (the
+        probe ran every request in order anyway)."""
+        results = self.pipeline(requests, locked=locked)
+        for r in results:
+            if r.resolution == m.REJECTED:
+                raise _REJECTS.get(r.detail, Rejected)(r)
+            if not r.succeeded:
+                raise Failed(r)
         return results
 
     # ---- session --------------------------------------------------------------------------------
@@ -86,6 +127,9 @@ class Host:
         r = self.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IIB", sid, lease_ms, int(force)), locked=False)
         self.session = sid
         lease, boot_id, resumed = struct.unpack("<IIB", r.payload)
+        if boot_id != self._boot_id:
+            self._fns.clear()                      # a rebooted probe may number its interfaces differently
+            self._boot_id = boot_id
         return Opened(lease, boot_id, bool(resumed))
 
     def end(self) -> None:

@@ -96,13 +96,23 @@ def _block_size(hst: h.Host) -> int:
     return (info["max_frame"] - 5 - 6 - 4 - 1 - 4) // 4 * 4    # result/request headers, session, conn, address
 
 
+def _write_requests(dm: target.RiscvDm, address: int, data: bytes, block: int) -> list[tuple[int, int, bytes]]:
+    return [dm.request(dm.WRITE_BLOCK, struct.pack("<I", address + off) + data[off:off + block])
+            for off in range(0, len(data), block)]
+
+
 def _write(dm: target.RiscvDm, address: int, data: bytes, block: int) -> None:
-    for off in range(0, len(data), block):
-        dm.write_block(address + off, data[off:off + block])
+    dm.host.pipeline_calls(_write_requests(dm, address, data, block))
 
 
 def _read(dm: target.RiscvDm, address: int, length: int, block: int) -> bytes:
-    return b"".join(dm.read_block(address + off, min(block, length - off) // 4) for off in range(0, length, block))
+    """Read back in blocks, pipelined when the host has the link's exchange (reads are independent)."""
+    reqs = [dm.request(dm.READ_BLOCK, struct.pack("<IH", address + off, min(block, length - off) // 4))
+            for off in range(0, length, block)]
+    return b"".join(r.payload for r in dm.host.pipeline_calls(reqs))
+
+
+PIPELINE_PAGES = 16   # pages per pipelined batch: enough to keep the link busy, small enough to show progress
 
 
 def program(hst: h.Host, dm: target.RiscvDm, image: bytes, profile: FlashProfile) -> ProgramResult:
@@ -114,13 +124,17 @@ def program(hst: h.Host, dm: target.RiscvDm, image: bytes, profile: FlashProfile
     t = {}
     t0 = time.perf_counter()
     if profile.method == "fast-page":
-        loader, pages = FAST_PAGE_LOADER, None
+        loader = FAST_PAGE_LOADER
         if dm.read32(CTLR) & (LOCK | FLOCK):
             for reg in (KEYR, MODEKEYR):
                 dm.write32(reg, 0x45670123)
                 dm.write32(reg, 0xCDEF89AB)
-    else:
+            if dm.read32(CTLR) & (LOCK | FLOCK):
+                raise RuntimeError(f"the flash controller stayed locked (CTLR {dm.read32(CTLR):#x})")
+    elif profile.method == "v003-wlink":
         loader = V003_LOADER
+    else:
+        raise ValueError(f"unknown flash method {profile.method!r}")
     loader = loader + b"\0" * (-len(loader) % 4)
 
     def place_loader() -> None:
@@ -135,30 +149,45 @@ def program(hst: h.Host, dm: target.RiscvDm, image: bytes, profile: FlashProfile
 
     place_loader()
 
-    def run_fast(off: int) -> dict | None:
-        _write(dm, FAST_BUFFER, image[off:off + profile.page], block)
-        stopped, dpc, a0, _ = dm.run(LOADER, [(0x100A, profile.base + off), (0x100B, FAST_BUFFER), (0x0300, 0)])
-        return None if (stopped and dpc == FAST_DONE and a0 == 0) else {"address": hex(profile.base + off), "dpc": hex(dpc)}
+    def page_job(off: int, length: int, flags: int) -> tuple[list, tuple[int, int, bytes], int]:
+        """The requests for one page (buffer writes, then the loader run) and the dpc that means success."""
+        if profile.method == "fast-page":
+            writes = _write_requests(dm, FAST_BUFFER, image[off:off + profile.page], block)
+            run = dm.request(dm.RUN, dm.run_body(LOADER, [(0x100A, profile.base + off), (0x100B, FAST_BUFFER),
+                                                          (0x0300, 0)]))
+            return writes, run, FAST_DONE
+        writes = _write_requests(dm, V003_INPUT, image[off:off + length], block)
+        run = dm.request(dm.RUN, dm.run_body(LOADER, [(0x100A, flags), (0x100B, profile.base + off), (0x100C, length),
+                                                      (0x1002, V003_STACK), (0x0300, 0)], timeout_ms=1000))
+        return writes, run, V003_EBREAK
 
-    def run_v003(off: int, length: int, flags: int) -> dict | None:
-        _write(dm, V003_INPUT, image[off:off + length], block)
-        stopped, dpc, _, _ = dm.run(LOADER, [(0x100A, flags), (0x100B, profile.base + off), (0x100C, length),
-                                            (0x1002, V003_STACK), (0x0300, 0)], timeout_ms=1000)
-        return None if (stopped and dpc == V003_EBREAK) else {"address": hex(profile.base + off), "dpc": hex(dpc)}
+    def run_pages(jobs: list[tuple[int, int, int]]) -> list[dict]:
+        """Pipelined in batches: the probe runs requests in order, so each page's buffer writes land before its
+        run. A page whose write or run did not work is reported; the read-back catches anything else."""
+        failures = []
+        for at in range(0, len(jobs), PIPELINE_PAGES):
+            batch = [page_job(*job) for job in jobs[at:at + PIPELINE_PAGES]]
+            reqs = [r for writes, run, _ in batch for r in writes + [run]]
+            results = iter(hst.pipeline(reqs))
+            for (off, _, _), (writes, _, done_pc) in zip(jobs[at:at + PIPELINE_PAGES], batch):
+                wrote = all(next(results).succeeded for _ in writes)
+                r = next(results)
+                if not (wrote and r.succeeded):
+                    failures.append({"address": hex(profile.base + off), "dpc": None})
+                    continue
+                stopped, dpc, a0, _ = dm.run_result(r.payload)
+                if not (stopped and dpc == done_pc and (profile.method != "fast-page" or a0 == 0)):
+                    failures.append({"address": hex(profile.base + off), "dpc": hex(dpc)})
+        return failures
 
-    failures = []
     if profile.method == "fast-page":
-        for off in range(0, len(image), profile.page):
-            if f := run_fast(off):
-                failures.append(f)
+        failures = run_pages([(off, profile.page, 0) for off in range(0, len(image), profile.page)])
     else:
         stopped, dpc, _, _ = dm.run(LOADER, [(0x100A, 0x03), (0x100B, profile.base), (0x100C, 0),
                                             (0x1002, V003_STACK), (0x0300, 0)], timeout_ms=1000)   # unlock + mass erase
         if not (stopped and dpc == V003_EBREAK):
             raise RuntimeError(f"mass erase did not stop on the loader's ebreak (dpc {dpc:#x})")
-        for off in range(0, len(image), V003_RUN):
-            if f := run_v003(off, min(V003_RUN, len(image) - off), 0x09):
-                failures.append(f)
+        failures = run_pages([(off, min(V003_RUN, len(image) - off), 0x09) for off in range(0, len(image), V003_RUN)])
     t["program"] = round(time.perf_counter() - t0, 3)
     t0 = time.perf_counter()
     back = _read(dm, profile.base, len(image), block)
@@ -170,13 +199,8 @@ def program(hst: h.Host, dm: target.RiscvDm, image: bytes, profile: FlashProfile
                       if back[off:off + profile.page] != image[off:off + profile.page]})
         if not bad:
             break
-        failures = []
         place_loader()   # the pages came out wrong: the loader itself may have been hit, place it again
-        for off in bad:
-            rewritten += 1
-            off -= off % profile.page
-            f = run_fast(off) if profile.method == "fast-page" else run_v003(off, profile.page, 0x1D)
-            if f:
-                failures.append(f)
+        rewritten += len(bad)
+        failures = run_pages([(off - off % profile.page, profile.page, 0x1D) for off in bad])
         back = _read(dm, profile.base, len(image), block)
     return ProgramResult(len(image), back == image, rewritten, failures, t)
