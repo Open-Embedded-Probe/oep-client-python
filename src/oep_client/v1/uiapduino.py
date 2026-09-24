@@ -5,8 +5,13 @@ payloads (wch-protocols E129 / E130, assembled for the V003) that the V003's own
 registers written from a halted debug session do not take (E127). The probe only moves a gpio line, writes RAM and
 walks DMI steps (oep-spec capability-name-hierarchy.ja.md: NRST is a labelled gpio channel, not a capability).
 
-  enter_bootloader: pulse NRST (the bootloader stays only when RCC_RSTSCKR.PINRSTF is set, E161), attach and halt,
-                    place PREPARE_BOOT, resume into it with mstatus = 0 -> HID 1209:b803 in about a second
+  enter_bootloader: the bootloader stays only when RCC_RSTSCKR.PINRSTF is set (E161). Read it first: if a pin
+                    reset's flag is still there (nobody wrote RMVF since), go in over SWIO alone; otherwise pulse
+                    NRST when the jig has it wired, or say what is needed. Then attach halted, place PREPARE_BOOT and
+                    resume into it with mstatus = 0 -> HID 1209:b803 in about a second.
+                    Only an external NRST pulse sets PINRSTF on the V003: not the IWDG, the WWDG, a software reset,
+                    nor the target driving its own PD7 low while the reset function owns the pad (measured
+                    2026-09-24, oep-spec experiments/v003-reset-flags); power-on leaves it 0 per the RM.
   normalize_user:   the same with NORMALIZE_USER (clears BOOT_MODE) and no pin pulse
 """
 
@@ -19,6 +24,7 @@ from ..v0 import codec
 from . import host as h, target
 
 PAYLOAD_BASE = 0x20000000
+RSTSCKR, PINRSTF = 0x40021024, 1 << 26
 DMCONTROL, ABSTRACTCS, COMMAND, DATA0 = 0x10, 0x16, 0x17, 0x04
 MSTATUS, DPC = 0x0300, 0x07B1
 GPIO_OPEN_DRAIN_LOW, GPIO_OPEN_DRAIN_RELEASE = 6, 7
@@ -82,10 +88,33 @@ def pulse_nrst(hst: h.Host, gpio_fn: int, channel: int, low_s: float = 0.02) -> 
                 codec.FixtureGpioConfigureRequest(channel=channel, mode=GPIO_OPEN_DRAIN_RELEASE).pack())
 
 
-def enter_bootloader(hst: h.Host, wire: target.Wire, gpio_fn: int, nrst_channel: int) -> None:
-    pulse_nrst(hst, gpio_fn, nrst_channel)
-    time.sleep(0.3)
+class NeedsPinReset(RuntimeError):
+    pass
+
+
+def pin_reset_flag(hst: h.Host, wire: target.Wire) -> bool:
+    conn, _ = wire.attach(halt=True)
+    dm = target.RiscvDm(hst, conn)
+    try:
+        return bool(dm.read32(RSTSCKR) & PINRSTF)
+    finally:
+        dm.resume()
+        wire.detach(conn)
+
+
+def enter_bootloader(hst: h.Host, wire: target.Wire, gpio_fn: int | None = None,
+                     nrst_channel: int | None = None) -> str:
+    """-> "swio" (a pin reset's flag was still set) or "nrst" (pulsed). Raises NeedsPinReset otherwise."""
+    how = "swio"
+    if not pin_reset_flag(hst, wire):
+        if gpio_fn is None or nrst_channel is None:
+            raise NeedsPinReset("PINRSTF is clear and no NRST line was given: press the board's reset or "
+                                "power-cycle it (without the sketch clearing the flags), then try again")
+        pulse_nrst(hst, gpio_fn, nrst_channel)
+        time.sleep(0.3)
+        how = "nrst"
     run_payload(hst, wire, PREPARE_BOOT)
+    return how
 
 
 def normalize_user(hst: h.Host, wire: target.Wire) -> None:
