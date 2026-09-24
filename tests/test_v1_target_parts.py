@@ -60,6 +60,7 @@ def test_find_reset_line_hits_the_vector_skips_disallowed_and_retries_failures()
 
     hst = ScriptedHost({(1, target.Wire.ATTACH_UNDER_RESET): aur,
                         (2, target.RiscvDm.RESUME): lambda p: (m.COMPLETED, m.FAILED, b""),   # an L103 resume
+                        (2, target.RiscvDm.RESET): lambda p: ok(struct.pack("<BBI", 3, 1, 0x1234)),
                         (1, target.Wire.DETACH): lambda p: ok()})
     wire = target.Wire(hst)
     assert wire.find_reset_line([3, 9, 2, 5], tries=3) == [2]
@@ -67,6 +68,8 @@ def test_find_reset_line_hits_the_vector_skips_disallowed_and_retries_failures()
     assert wire.last_search[2] == [0x1302, 0]
     assert wire.last_search[5] == [None, 0x1305, 0x1305]
     assert wire.last_search[3] == [0x1303] * 3
+    resets = [p for fn, op, p in hst.log if (fn, op) == (2, target.RiscvDm.RESET)]
+    assert resets == [bytes([1, target.RiscvDm.RESET_RUN_CONFIRM])]   # only after the hit: off the vector for real
 
 
 def test_attach_after_gpio_reset_pipelines_release_with_attach_and_retries():

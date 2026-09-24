@@ -103,10 +103,17 @@ class Wire:
                     seen.append(None)                      # the attach itself failed: try again
                     continue
                 seen.append(dpc)
+                dm = RiscvDm(self.host, conn)
                 try:
-                    RiscvDm(self.host, conn).resume()
+                    if dpc == reset_vector:
+                        # Leave the vector for real: a hart left halted there reads dpc = vector again through the
+                        # next, wrong channel (2026-09-24: a CH32L103 whose resume was not acknowledged made the
+                        # channel after NRST a false hit). A reset-and-run always gets it going.
+                        dm.reset(confirm=True)
+                    else:
+                        dm.resume()
                 except h.Rejected:
-                    pass   # a CH32L103 raises no allresumeack; a hart left halted still lands off the vector next time
+                    pass   # a CH32L103 raises no allresumeack; a hart left halted mid-code still lands off the vector
                 finally:
                     self.detach(conn)
                 if dpc == reset_vector:
