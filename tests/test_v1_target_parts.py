@@ -196,3 +196,102 @@ def test_transfer_fault_raises_with_the_step_count(adi_bench):
     adi.select(0xE000)
     with pytest.raises(arm.AdiError, match="after 0 steps: FAULT"):
         adi.transfer(adi.req(True, True, 0x0))
+
+
+# ---- Cortex-M call primitive and the RP2350 ROM flash sequence, on a fake core --------------------------------
+
+class FakeCortexM:
+    """A MemAp stand-in: DHCSR / DCRSR / DCRDR semantics, plus a ROM whose table lookup and flash functions are
+    modelled by what they do to the fake's registers and flash, so the host's sequence can be checked end to end."""
+    ROM = {("I", "F"): 0xE3D, ("E", "X"): 0xF65, ("R", "E"): 0xF15, ("R", "P"): 0xEDD, ("F", "C"): 0x3801,
+           ("C", "X"): 0x659, ("R", "B"): 0x6F3}
+
+    def __init__(self):
+        self.regs = {i: 0 for i in range(17)}
+        self.regs[16] = 0x01000000
+        self.ram = {}
+        self.flash = bytearray(b"\xff" * (64 * 1024))
+        self.dhcsr = 0
+        self.xip = True
+        self.log = []
+
+    def read32(self, a):
+        if a == 0xE000EDF0: return self.dhcsr | (1 << 16)
+        if a == 0xE000EDF8: return self.regs[self.sel]
+        if a == 0x14: return 0x008D0000                              # table_lookup ptr 0x8d in the high halfword
+        if 0x10000000 <= a < 0x10000000 + len(self.flash):
+            assert self.xip, "flash read while XIP is off"
+            return struct.unpack_from("<I", self.flash, a - 0x10000000)[0]
+        return self.ram.get(a, 0)
+
+    def write32(self, a, v):
+        if a == 0xE000EDF0:
+            was_halted = self.dhcsr & 1 << 17
+            self.dhcsr = v & 0xF
+            if not v & 2 and was_halted:                             # let go (debug on or off): run the "function" at PC
+                self.run()
+            self.dhcsr |= 1 << 17 if v & 2 else 0
+        elif a == 0xE000EDF4:
+            self.sel = v & 0xFF
+            if v >> 16:
+                self.regs[self.sel] = self.pending
+        elif a == 0xE000EDF8:
+            self.pending = v
+        else:
+            self.ram[a] = v
+
+    def read_block(self, a, n):
+        return [self.read32(a + 4 * i) for i in range(n)]
+
+    def write_block(self, a, vals):
+        for i, v in enumerate(vals):
+            self.write32(a + 4 * i, v)
+
+    def run(self):
+        pc, r = self.regs[15], self.regs
+        if pc == 0x6F2:                                              # reboot: runs with interrupts on, never returns
+            assert not self.dhcsr & 8, "reboot with C_MASKINTS left set"
+            self.log.append(f"reboot flags {r[0]} delay {r[1]}"); return
+        assert self.dhcsr & 8, "a ROM call without C_MASKINTS"
+        if pc == 0x8C:                                              # rom_table_lookup(code, mask)
+            r[0] = self.ROM.get((chr(r[0] & 0xFF), chr(r[0] >> 8)), 0)
+        elif pc == 0xF64:  self.xip = False; self.log.append("exit_xip")
+        elif pc == 0xE3C:  self.log.append("connect")
+        elif pc == 0xF14:
+            assert not self.xip
+            self.flash[r[0]:r[0] + r[1]] = b"\xff" * r[1]; self.log.append(f"erase {r[0]:#x}+{r[1]}")
+        elif pc == 0xEDC:
+            assert not self.xip
+            for i in range(r[2] // 4):
+                struct.pack_into("<I", self.flash, r[0] + 4 * i, self.ram.get(r[1] + 4 * i, 0))
+            self.log.append(f"program {r[0]:#x}+{r[2]}")
+        elif pc == 0x3800: self.log.append("flush")
+        elif pc == 0x658:  self.xip = True; self.log.append("enter_cmd_xip")
+        else: raise AssertionError(f"call to {pc:#x}")
+        assert self.regs[13] == 0x20080000 and self.regs[14] == 0x20040001 and self.regs[16] & 1 << 24
+        self.regs[15] = 0x20040000                                    # returned onto the breakpoint
+        self.dhcsr |= 1 << 17
+
+
+def test_cortexm_call_returns_r0_and_clears_maskints():
+    fake = FakeCortexM()
+    core = arm.CortexM(fake, bkpt_at=0x20040000, stack_top=0x20080000)
+    core.halt()
+    assert core.call(0x8C, (ord("R") | ord("B") << 8, 4)) == 0x6F3
+    assert fake.ram[0x20040000] == 0xBE00BE00
+    assert not fake.dhcsr & 8                                          # C_MASKINTS cleared after the call
+
+
+def test_rp2350_flash_program_runs_the_sdk_sequence_and_verifies():
+    from oep_client.v1 import rp2350
+    fake = FakeCortexM()
+    core = arm.CortexM(fake, bkpt_at=rp2350.BKPT_AT, stack_top=rp2350.STACK_TOP)
+    core.halt()
+    image = bytes(range(256)) * 70 + b"\x12\x34"                      # 17922 B: 70 pages + a partial one
+    assert rp2350.program_and_verify(core, image, 0)
+    assert fake.log[:3] == ["connect", "exit_xip", "erase 0x0+20480"]  # erase rounded to 4 KiB sectors
+    assert fake.log[3:5] == ["program 0x0+16384", "program 0x4000+1792"]   # 16 KiB buffer, page-padded tail
+    assert fake.log[5:] == ["flush", "enter_cmd_xip"]
+    assert bytes(fake.flash[:len(image)]) == image and fake.flash[len(image):20480] == b"\xff" * (20480 - len(image))
+    rp2350.Rom(core).reboot()
+    assert fake.log[-1] == "reboot flags 0 delay 10" and not fake.dhcsr & 8
