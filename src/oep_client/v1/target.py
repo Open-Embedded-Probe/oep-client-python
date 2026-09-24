@@ -120,3 +120,54 @@ class RiscvDm:
     @staticmethod
     def step_poll(address: int, mask: int, value: int, max_reads: int) -> bytes:
         return struct.pack("<BBIIH", 0x03, address, mask, value, max_reads)
+
+
+@dataclass
+class Mark:
+    position: int
+    kind: int
+    time_ms: int
+    detail: int
+
+
+MARK_NAMES = {1: "reset", 2: "restart", 3: "attach", 4: "detach", 5: "lost", 6: "clear", 7: "host", 8: "link-lost"}
+
+
+class Console:
+    """oep.target.console: a stream on the debug connection; reads and marks need no lock."""
+    OPEN, READ, MARKS, CLEAR, MARK, WRITE, CLOSE = 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
+    SDI, DMDATA, DMSEQ = 0, 1, 2
+    FROM_POSITION, FROM_OLDEST, FROM_NOW, FROM_MARK = 0, 1, 2, 3
+
+    def __init__(self, hst: h.Host, name: str = "oep.target.console"):
+        self.host, self.fn, self.stream = hst, find(hst, name), 1
+
+    def open(self, conn: int, mechanism: int = DMSEQ) -> int:
+        self.stream = self.host.request(self.fn, self.OPEN, bytes([conn, mechanism])).payload[0]
+        return self.stream
+
+    def read(self, start: int = FROM_OLDEST, arg: int = 0, maximum: int = 1000) -> tuple[int, bool, bool, bytes]:
+        """-> (start position, more, gap, data). start: FROM_* ; arg: a position or a mark kind."""
+        p = self.host.request(self.fn, self.READ, struct.pack("<BBIH", self.stream, start, arg, maximum),
+                              locked=False).payload
+        pos, flags = struct.unpack_from("<IB", p)
+        return pos, bool(flags & 1), bool(flags & 2), p[5:]
+
+    def read_from(self, position: int, maximum: int = 1000) -> tuple[int, bool, bool, bytes]:
+        return self.read(self.FROM_POSITION, position, maximum)
+
+    def marks(self, since: int = 0) -> list[Mark]:
+        p = self.host.request(self.fn, self.MARKS, struct.pack("<BI", self.stream, since), locked=False).payload
+        return [Mark(*struct.unpack_from("<IBIB", p, 1 + 10 * i)) for i in range(p[0])]
+
+    def clear(self) -> None:
+        self.host.request(self.fn, self.CLEAR, bytes([self.stream]))
+
+    def mark(self, value: int) -> None:
+        self.host.request(self.fn, self.MARK, bytes([self.stream, value]))
+
+    def write(self, data: bytes) -> int:
+        return struct.unpack("<H", self.host.request(self.fn, self.WRITE, bytes([self.stream]) + data).payload)[0]
+
+    def close(self) -> None:
+        self.host.request(self.fn, self.CLOSE, bytes([self.stream]))
