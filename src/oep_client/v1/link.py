@@ -15,6 +15,7 @@ re-sent read, the tail of an exchange that failed) is read past, so the link can
 
 from __future__ import annotations
 
+import collections
 import os
 import time
 
@@ -48,6 +49,8 @@ class SerialLink:
         self.retries = 0
         self.corrupt = 0
         self.stale = 0                             # replies read past because they answered an earlier request
+        self.dropped = 0                           # probe-initiated frames of a role this client does not handle
+        self.pushes: collections.deque[bytes] = collections.deque()   # experimental role 0x06 frames, oldest first
         if self.framing == "length":
             self.frames = LengthFrames(self.stream)
             self.frames.discard_input()
@@ -86,13 +89,43 @@ class SerialLink:
     def _corr(message: bytes) -> int:
         return message[1] | message[2] << 8          # request and result both carry it right after the role byte
 
+    def _route(self, frame: bytes) -> bool:
+        """Frames that are not results: pushes are kept, other roles dropped. True if `frame` was one of them.
+        Only a result (role 0x02) carries a correlation id; matching anything else by its bytes 1-2 would take a
+        push for a reply whenever its fn happened to equal the id."""
+        if frame and frame[0] == 0x02:
+            return False
+        if frame and frame[0] == 0x06:
+            self.pushes.append(frame)
+        else:
+            self.dropped += 1
+        return True
+
     def _recv_for(self, corr: int) -> bytes:
-        """The reply to request `corr`, reading past replies left over from earlier requests."""
+        """The reply to request `corr`, reading past replies left over from earlier requests (and routing pushes)."""
         while True:
             reply = self._recv()
+            if self._route(reply):
+                continue
             if len(reply) >= 3 and self._corr(reply) == corr:
                 return reply
             self.stale += 1
+
+    def pump(self, timeout: float = 0.0) -> int:
+        """Read whatever frames arrive within `timeout` (pushes are kept, stray results counted stale). -> frames read."""
+        saved, self.timeout = self.timeout, timeout
+        n = 0
+        try:
+            while True:
+                try:
+                    frame = self._recv()
+                except TimeoutError:
+                    return n
+                n += 1
+                if not self._route(frame):
+                    self.stale += 1
+        finally:
+            self.timeout = saved
 
     def _clear(self) -> None:
         if self.framing == "length":
