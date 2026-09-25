@@ -35,6 +35,9 @@ def tlvs(payload: bytes) -> list[tuple[int, bytes]]:
     return m.split_tlvs(payload)
 
 
+SEGMENT_BYTES = 29   # serial u32, position u64, samples u32, start_us u64, trigger_index u32, flags u8
+
+
 @dataclass
 class Segment:
     serial: int
@@ -46,7 +49,7 @@ class Segment:
 
     @classmethod
     def unpack(cls, b: bytes) -> "Segment":
-        serial, position, samples, start_us, trig, flags = struct.unpack_from("<IIIIIB", b)
+        serial, position, samples, start_us, trig, flags = struct.unpack_from("<IQIQIB", b)
         return cls(serial, position, samples, start_us, None if trig == 0xFFFFFFFF else trig, flags)
 
 
@@ -95,7 +98,8 @@ def take_pushes(link, fn: int) -> list[tuple[int, int, bytes]]:
         (mine if struct.unpack_from("<H", f, 1)[0] == fn else rest).append(f)
     link.pushes.clear()
     link.pushes.extend(rest)
-    return [(struct.unpack_from("<H", f, 3)[0], struct.unpack_from("<I", f, 5)[0], f[9:]) for f in mine]
+    # the core header is role fn seq; the capture's payload is position(u64) then data (standard position stream)
+    return [(struct.unpack_from("<H", f, 3)[0], struct.unpack_from("<Q", f, 5)[0], f[13:]) for f in mine]
 
 
 def _config(payload: bytes, analog: bool) -> Config:
@@ -197,8 +201,8 @@ class LogicCapture(Interface):
                 if got.start is None:
                     got.start = position
                 else:
-                    expected = (got.start + len(got.data) + sum(n for _, n in got.gaps)) & 0xFFFFFFFF
-                    skipped = (position - expected) & 0xFFFFFFFF
+                    expected = got.start + len(got.data) + sum(n for _, n in got.gaps)   # u64 positions: no wrap
+                    skipped = position - expected
                     if skipped:
                         got.gaps.append((len(got.data), skipped))
                 got.data += data
@@ -220,7 +224,7 @@ class LogicCapture(Interface):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if got.start is not None:
-                reached = (got.start + len(got.data) + sum(n for _, n in got.gaps)) & 0xFFFFFFFF
+                reached = got.start + len(got.data) + sum(n for _, n in got.gaps)
                 if reached == end:
                     return got
             self.stream(link, seconds=min(0.1, max(0.0, deadline - time.monotonic())), into=got)
@@ -235,7 +239,7 @@ class LogicCapture(Interface):
 
     def status(self) -> tuple[int, int, int, int]:
         """-> state, segments done, write position, flags."""
-        return m.Reader(self._call(self.STATUS, locked=False).payload).take("BIIB")
+        return m.Reader(self._call(self.STATUS, locked=False).payload).take("BIQB")
 
     def release(self, serial: int) -> None:
         """Repeat: segments up to `serial` may be reused."""
@@ -243,7 +247,7 @@ class LogicCapture(Interface):
 
     def segments(self, from_serial: int = 0) -> list[Segment]:
         rd = m.Reader(self._call(self.SEGMENTS, struct.pack("<I", from_serial), locked=False).payload)
-        out = [Segment.unpack(rd.bytes(21)) for _ in range(rd.u8())]
+        out = [Segment.unpack(rd.bytes(SEGMENT_BYTES)) for _ in range(rd.u8())]
         rd.tail()
         return out
 
@@ -264,15 +268,15 @@ class LogicCapture(Interface):
     def read(self, position: int, length: int) -> bytes:
         """Bytes [position, position+length) of the stream, pipelined in frame-sized reads."""
         chunk = max(1, confirm(self.host)["max_frame"] - 16)
-        reqs = [self.request(self.READ, struct.pack("<II", position + off, min(chunk, length - off)))
+        reqs = [self.request(self.READ, struct.pack("<QI", position + off, min(chunk, length - off)))
                 for off in range(0, length, chunk)]
         out = bytearray()
         for off, r in zip(range(0, length, chunk), self.host.pipeline_calls(reqs, locked=False)):
-            got_pos, flags = m.Reader(r.payload).take("IB")
+            got_pos, flags = m.Reader(r.payload).take("QB")
             data = r.payload[5:]
             want = min(chunk, length - off)
             while len(data) < want:                       # a short answer: read on from where it stopped
-                more = self._call(self.READ, struct.pack("<II", position + off + len(data), want - len(data)),
+                more = self._call(self.READ, struct.pack("<QI", position + off + len(data), want - len(data)),
                                   locked=False).payload[5:]
                 if not more:
                     raise h.ProtocolError(f"read at {position + off + len(data)} returned nothing")

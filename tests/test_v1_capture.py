@@ -41,7 +41,7 @@ def test_one_channel_packs_eight_samples_per_byte_lsb_first():
 
 
 def test_segment_without_trigger():
-    s = c.Segment.unpack(struct.pack("<IIIIIB", 0, 0, 200192, 123, 0xFFFFFFFF, 0))
+    s = c.Segment.unpack(struct.pack("<IQIQIB", 0, 0, 200192, 123, 0xFFFFFFFF, 0))
     assert s.trigger_index is None and s.samples == 200192
 
 
@@ -59,7 +59,7 @@ class FakeLink:
 
 
 def push(fn, seq, position, data):
-    return bytes([0x06]) + struct.pack("<HHI", fn, seq, position) + data
+    return bytes([0x06]) + struct.pack("<HHQ", fn, seq, position) + data   # core header + position(u64)
 
 
 def test_stream_follows_positions_and_counts_gaps_and_lost_frames():
@@ -73,10 +73,10 @@ def test_stream_follows_positions_and_counts_gaps_and_lost_frames():
     assert got.gaps == [(4, 6)] and got.seq_lost == 1 and list(link.pushes) == [other]
 
 
-def test_stream_position_wraps_without_a_gap():
+def test_stream_positions_past_4_gib_follow_on_without_a_gap():
     cap = c.LogicCapture.__new__(c.LogicCapture)
     cap.fn = 1
-    link = FakeLink([[push(1, 0, 0xFFFFFFFE, b"ab"), push(1, 1, 0, b"cd")]])
+    link = FakeLink([[push(1, 0, 0xFFFFFFFE, b"ab"), push(1, 1, 0x100000000, b"cd")]])   # u64: no wrap at 2^32
     got = cap.stream(link, nbytes=4)
     assert bytes(got.data) == b"abcd" and got.gaps == [] and got.seq_lost == 0
 
