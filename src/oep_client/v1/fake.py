@@ -15,7 +15,7 @@ import struct
 from dataclasses import dataclass
 
 from . import catalog, message as m, names
-from .catalog import (CHANNEL_GROUP, EXCLUSIVE_GROUP, FEATURES, IMPLEMENTATION, MAX_CLOCK_HZ, MAX_LENGTH,
+from .catalog import (CHANNEL_GROUP, FEATURES, IMPLEMENTATION, MAX_CLOCK_HZ, MAX_LENGTH,
                    MIN_CLOCK_HZ, ListEntry)
 
 CORE_FN = 0
@@ -144,7 +144,7 @@ def p4_x035() -> FakeProbe:
             catalog.u16(MAX_LENGTH, 65000), catalog.u8(IMPLEMENTATION, 3))),
         Offered(8, 6, f"{NS}.esp32.i2c-target", _roles({1: pins, 2: pins}) + (
             catalog.u16(MAX_LENGTH, 128), catalog.u32(MAX_CLOCK_HZ, 1_000_000),
-            catalog.u32(FEATURES, 0b11), catalog.u8(IMPLEMENTATION, 2), catalog.u16(EXCLUSIVE_GROUP, 1))),
+            catalog.u32(FEATURES, 0b11), catalog.u8(IMPLEMENTATION, 2))),
         Offered(9, 7, f"{NS}.esp32.spi-target", _roles({1: pins, 2: pins, 3: pins, 4: pins}) + (
             catalog.u16(MAX_LENGTH, 64), catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
     ])
