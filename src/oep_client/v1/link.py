@@ -1,4 +1,4 @@
-"""v1 transport over a serial port or a USB vendor bulk pair (oep-spec v1-core-wire-delta §1).
+"""v1 transport over a serial port or a USB vendor bulk pair (oep-spec oep-core §3).
 
 Framing follows the path: length-prefixed frames on a reliable stream (USB CDC, USB-Serial/JTAG, vendor bulk), COBS +
 CRC-16 behind a USB-UART bridge, where bytes are dropped or changed without an error (oep-spec probe-development-guide
@@ -179,7 +179,7 @@ class SerialLink:
             self.timeout = saved
 
     def resync(self, tries: int = 3) -> None:
-        """v1 wire §1: read and discard until the input is quiet for 50 ms, then prove the link with a confirm (a read,
+        """oep-core §5.1: read and discard until the input is quiet for 50 ms, then prove the link with a confirm (a read,
         safe to send), then go on. When the input does not go quiet (pushes keep coming), the host's unsubscribe and end go
         out blind, once (and send() then does not send its request again)."""
         self.resyncs += 1
@@ -291,7 +291,7 @@ class SerialLink:
 
 def open_usb_host(vid: int = 0x303A, pid: int = 0x4021, serial: str | None = None, timeout: float = 3.0,
                   transports: tuple[str, ...] = ("vendor", "hid")):
-    """A Host on the probe's USB device (the P4's HS OTG port), trying its ways in in the v1 wire §1 order: vendor bulk,
+    """A Host on the probe's USB device (the P4's HS OTG port), trying its ways in in the oep-core §3.3 order: vendor bulk,
     then vendor-defined HID (when raw USB is not permitted or the probe offers no vendor interface). A CDC port is
     opened by path (open_host). Length-prefixed frames on all of them."""
     from . import host

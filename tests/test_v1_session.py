@@ -55,7 +55,7 @@ def test_a_48_byte_name_fits_a_64_byte_frame():
     ep = endpoint.Endpoint(probe, Clock())
     from oep_client.v1 import catalog
     result = ep.handle(m.Request(1, 0, m.OP_LIST, catalog.pack_list_request(name, True, 0)).pack())
-    assert len(result) == 63 and catalog.unpack_list_result(result[5:])[1][0].name == name   # v1 wire §6
+    assert len(result) == 63 and catalog.unpack_list_result(result[5:])[1][0].name == name   # oep-v1 frame budget (v1-core-wire-delta §6)
 
 
 # ---- the lock table -------------------------------------------------------------------------------
@@ -234,7 +234,7 @@ def test_pipeline_keeps_order_and_reports_rejects_per_result(bench):
     assert [r.detail for r in results] == [m.LOCKED, m.LOCKED]
 
 
-# ---- confirm and the role 0x81 gate (v1 wire §5, §2) -----------------------------------------------------
+# ---- confirm and the role 0x81 gate (oep-core §7.1, §4.1) -----------------------------------------------------
 
 def test_confirm_sends_a_range_and_reads_the_v1_answer(bench):
     _, ep = bench

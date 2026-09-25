@@ -1,4 +1,4 @@
-"""oep.wire.rvswd / oep.wire.swio and oep.target.riscv-dm, revision 1 (oep-spec v1-core-wire-delta §5.4, §5.5).
+"""oep.wire.rvswd / oep.wire.swio and oep.target.riscv-dm, revision 1 (oep-spec oep-if-debug §1-§4).
 
 The host knows the target; the probe only moves wires and DMI. Everything chip-specific (flash controller, RAM loaders,
 register meanings) stays on this side.
@@ -74,7 +74,7 @@ class WireBase(Interface):
     SCAN, ATTACH, DETACH, ATTACH_UNDER_RESET = 0x01, 0x02, 0x03, 0x04
     REVISION = 1
     TAG_MAX_SPEED = 0x01
-    TAG_PINS = 0x03          # swdio(u16) swclk(u16, 0xFFFF on one wire), critical (v1 wire §5.5)
+    TAG_PINS = 0x03          # swdio(u16) swclk(u16, 0xFFFF on one wire), critical (oep-if-debug §1)
 
     def scan(self, pairs: list[tuple[int, int]] | None = None) -> list[Found]:
         """Try `pairs` of (swdio, swclk); None = every pair the probe allows (describe's channel_group /

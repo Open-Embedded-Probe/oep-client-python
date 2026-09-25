@@ -1,5 +1,5 @@
 """Length-prefixed frames on a reliable byte stream (USB CDC, USB-Serial/JTAG, USB vendor bulk): u16 length, then the
-message (oep-spec v1-core-wire-delta §1). No CRC: a length that cannot be right, or a frame that stops half way, means
+message (oep-spec oep-core §3). No CRC: a length that cannot be right, or a frame that stops half way, means
 the boundaries are lost - FramingLost, and the link resyncs."""
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ STALL_S = reg.TIMING["probe_frame_gap_ms"] / 1000   # a frame whose bytes stop t
 
 class FramingLost(ConnectionError):
     """The frame boundaries are lost: an impossible length, a frame that stalled half way, a result for another
-    request. The link reads and discards until the input is quiet, then confirms (v1 wire §1)."""
+    request. The link reads and discards until the input is quiet, then confirms (oep-core §5.1)."""
 
 
 class LengthFrames:

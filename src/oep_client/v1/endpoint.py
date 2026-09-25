@@ -1,7 +1,7 @@
 """A fake probe endpoint that speaks OEP v1, answering whole messages (no hardware).
 
 It wraps a `fake.FakeProbe` (which answers list / describe) and adds what oep-spec docs/session-and-exclusivity.ja.md
-and docs/v1-core-wire-delta.ja.md define:
+and docs/oep-core.ja.md / docs/oep-if-*.ja.md define:
 
 - confirm with a revision range (§5); `revision=0` makes a v0 probe that answers in the v0 shape and drops role 0x81
   requests unanswered (§2)

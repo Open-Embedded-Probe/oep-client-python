@@ -1,4 +1,4 @@
-"""Revision 1 interface shapes end to end against the fake endpoint (oep-spec v1-core-wire-delta §5.4-§5.8): wire
+"""Revision 1 interface shapes end to end against the fake endpoint (oep-spec oep-if-*): wire
 attach, riscv-dm (dmi n + poll values + the done rule, block done/status, run n_out), no connection, console rev 1,
 fixture.gpio / uart rev 1, and the interface revision check."""
 
@@ -305,7 +305,7 @@ def test_an_unhonourable_value_follows_the_critical_bit(dm):
 
 
 def test_scan_and_attach_take_the_pin_pair_and_refuse_one_not_allowed(bench):
-    """v1 wire §5.5: scan tries the pairs given (none = every pair the probe allows) and answers pairs attach takes back;
+    """oep-if-debug §1: scan tries the pairs given (none = every pair the probe allows) and answers pairs attach takes back;
     attach takes a pins TLV; a pair the probe does not allow is refused before anything runs."""
     _, hst = bench
     wire = riscv.Wire(hst)
