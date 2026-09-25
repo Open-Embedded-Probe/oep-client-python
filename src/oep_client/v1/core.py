@@ -1,32 +1,41 @@
 """The probe's core (fn 0) as the other clients need it: finding interfaces by name, confirm, the probe's own labels,
-the pin plan - and `Interface`, the base every interface client shares (its fn, and calls that raise unless they
-worked)."""
+the pin plan - and `Interface`, the base every interface client shares (its fn, its revision checked against the list
+entry, and calls that raise unless they worked)."""
 
 from __future__ import annotations
 
 import struct
 
-from . import catalog, host as h, message as m
+from . import catalog, host as h, message as m, registry as reg
 
-OP_PLAN_APPLY, OP_PLAN_RELEASE = 0x04, 0x05
-TAG_ROLE_ASSIGNMENT = 0x90
-CORE_LABEL = 0x46
+OP_PLAN_APPLY, OP_PLAN_RELEASE = m.OP_PLAN_APPLY, m.OP_PLAN_RELEASE
+TAG_ROLE_ASSIGNMENT = reg.CORE.tlv["plan_apply"]["role_assignment"]     # already critical (0x90)
+CORE_LABEL = reg.CORE.tlv["describe"]["label"]
 
 
-def _list(hst: h.Host, name: str) -> list[int]:
-    fns, first = [], 0
+class UnsupportedRevision(h.OepError):
+    """The probe offers the interface in a revision whose payload shapes this client does not speak (v1 wire §0:
+    a host never uses an interface revision it does not know)."""
+
+
+def list_entries(hst: h.Host, name: str = "", exact: bool = False) -> list[catalog.ListEntry]:
+    """Every list entry under `name` (exact: that name only), paged by first (u16). The fn -> revision of each is
+    remembered on the host."""
+    entries: list[catalog.ListEntry] = []
     while True:
         total, page = catalog.unpack_list_result(
-            hst.request(m.CORE_FN, m.OP_LIST, catalog.pack_list_request(name, True, first), locked=False).payload)
-        fns += [e.fn for e in page]
-        first += len(page)
-        if not page or first >= total:          # an empty page ends it too: no endless loop on a short answer
-            return fns
+            hst.request(m.CORE_FN, m.OP_LIST, catalog.pack_list_request(name, exact, len(entries)), locked=False).payload)
+        entries += page
+        if not page or len(entries) >= total:    # an empty page ends it too: no endless loop on a short answer
+            break
+    for e in entries:
+        hst._revisions[e.fn] = e.revision
+    return entries
 
 
 def find_all(hst: h.Host, name: str) -> list[int]:
     """fns of every interface with exactly this name (instances of the same kind, e.g. two UARTs)."""
-    return _list(hst, name)
+    return [e.fn for e in list_entries(hst, name, True)]
 
 
 def find(hst: h.Host, name: str) -> int:
@@ -34,31 +43,39 @@ def find(hst: h.Host, name: str) -> int:
     building a client per connection costs no list request."""
     fn = hst._fns.get(name)
     if fn is None:
-        fns = _list(hst, name)
+        fns = find_all(hst, name)
         if not fns:
             raise LookupError(f"probe does not offer {name}")
         fn = hst._fns[name] = fns[0]
     return fn
 
 
+def revision(hst: h.Host, name: str, fn: int) -> int:
+    """The list entry's revision of interface `fn` (asked by name when not known yet)."""
+    if fn not in hst._revisions:
+        list_entries(hst, name, True)
+    if fn not in hst._revisions:
+        raise LookupError(f"probe lists no {name} at fn {fn}")
+    return hst._revisions[fn]
+
+
 def confirm(hst: h.Host) -> dict:
-    p = hst.request(m.CORE_FN, m.OP_CONFIRM, locked=False).payload
-    magic, revision, max_frame, window, inflight = struct.unpack("<4sBHHB", p[:10])
-    return {"magic": magic, "revision": revision, "max_frame": max_frame, "window": window, "max_inflight": inflight}
+    """The probe's limits (asked once per host): revision, flags, max_frame, window (u32), max_inflight."""
+    return hst.confirmed()
 
 
 def probe_labels(hst: h.Host) -> dict[str, int]:
     """Channel labels the probe declares in oep.core's describe (tag 0x46): {"NRST": 23, ...}."""
     data, first = b"", 0
     while True:
-        p = hst.request(m.CORE_FN, m.OP_DESCRIBE, struct.pack("<HB", 0, first), locked=False).payload
-        chunk = p[1:]
+        p = hst.request(m.CORE_FN, m.OP_DESCRIBE, catalog.pack_describe_request(0, first), locked=False).payload
+        more, chunk = m.Reader(p).u8(), p[1:]
         data += chunk
         first += len(catalog.split_tlv(chunk))
-        if not p[0] or not chunk:
+        if not more or not chunk:
             break
     return {value[2:].decode("ascii", "replace"): struct.unpack_from("<H", value)[0]
-            for tag, value in catalog.split_tlv(data) if tag & 0x7F == CORE_LABEL}
+            for tag, value in catalog.split_tlv(data) if tag & 0x7F == CORE_LABEL and len(value) >= 2}
 
 
 def plan_apply(hst: h.Host, assignments: list[tuple[int, int, int]]) -> None:
@@ -74,24 +91,36 @@ def plan_release(hst: h.Host) -> None:
 
 class Interface:
     """One interface client: its fn (found by name, cached), and calls that raise Rejected / Failed unless the probe
-    says it worked. `prefix` goes in front of every payload (the connection byte of a target interface)."""
+    says it worked. `prefix` goes in front of every payload (the connection byte of a target interface).
+    REVISION: the interface revision whose shapes the class speaks; the list entry must say the same (None: any)."""
 
     NAME = ""
+    REVISION: int | None = None
 
     def __init__(self, hst: h.Host, name: str | None = None, prefix: bytes = b"", fn: int | None = None):
         self.host = hst
-        self.fn = fn if fn is not None else find(hst, name or self.NAME)
+        self.name = name or self.NAME
+        self.fn = fn if fn is not None else find(hst, self.name)
         self.prefix = prefix
+        if self.REVISION is not None:
+            rev = revision(hst, self.name, self.fn)
+            if rev != self.REVISION:
+                raise UnsupportedRevision(f"{self.name} (fn {self.fn}) is revision {rev} on this probe; this client "
+                                          f"speaks revision {self.REVISION} only")
 
     def _call(self, op: int, body: bytes = b"", *, locked: bool = True) -> m.Result:
         return self.host.call(self.fn, op, self.prefix + body, locked=locked)
+
+    def _request(self, op: int, body: bytes = b"", *, locked: bool = True) -> m.Result:
+        """Rejections raise; completed results of any outcome come back for the caller to decode."""
+        return self.host.request(self.fn, op, self.prefix + body, locked=locked)
 
     def request(self, op: int, body: bytes = b"") -> tuple[int, int, bytes]:
         """The raw (fn, op, payload) of one operation, for Host.pipeline / pipeline_calls."""
         return self.fn, op, self.prefix + body
 
 
-LINK_SOURCE, LINK_SINK = 0x40, 0x41   # core, lock-free (numbers draft)
+LINK_SOURCE, LINK_SINK = m.OP_LINK_SOURCE, m.OP_LINK_SINK   # core, lock-free
 
 
 def link_speed(hst: h.Host, *, size: int | None = None, inflight: int | None = None, seconds: float = 1.0) -> dict:
@@ -110,6 +139,6 @@ def link_speed(hst: h.Host, *, size: int | None = None, inflight: int | None = N
         moved, t0 = 0, time.perf_counter()
         while time.perf_counter() - t0 < seconds:
             for r in hst.pipeline_calls([(m.CORE_FN, op, body)] * inflight, locked=False):
-                moved += len(r.payload) if op == LINK_SOURCE else struct.unpack("<I", r.payload)[0]
+                moved += len(r.payload) if op == LINK_SOURCE else m.Reader(r.payload).u32()
         out[key] = moved / (time.perf_counter() - t0) / 1e6
     return out

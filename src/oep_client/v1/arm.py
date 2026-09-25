@@ -1,4 +1,4 @@
-"""v1 draft clients for oep.wire.swd and oep.target.arm-adi (op tables provisional, 2026-09-24).
+"""oep.wire.swd and oep.target.arm-adi, revision 1 (oep-spec v1-core-wire-delta §5.4, §5.6).
 
 The probe moves raw DP / AP transfers and MEM-AP blocks; everything above - power-up, SELECT (ADIv5 APSEL/APBANKSEL or
 ADIv6 AP addresses), CSW, the Cortex-M debug registers - is here, as target knowledge belongs to the host.
@@ -8,37 +8,59 @@ from __future__ import annotations
 
 import struct
 
-from . import host as h, message as m
+from . import host as h, message as m, registry as reg
 from .core import Interface
-from .riscv import WireBase
+from .riscv import OK, TargetError, WireBase, check, ran, status_name  # noqa: F401
 
 DP_DPIDR = DP_ABORT = 0x0
 DP_CTRL_STAT = 0x4
 DP_SELECT = 0x8
 DP_RDBUFF = 0xC
-STATUS_NAMES = {0: "ok", 1: "malformed", 2: "FAULT", 3: "no reply", 4: "WAIT"}
+_ADI = reg.TARGET_ARM_ADI
 
 
 class SwdWire(WireBase):
     NAME = "oep.wire.swd"
+    TAG_TARGETSEL = reg.WIRE_SWD.tlv["attach"]["targetsel"]
 
     def __init__(self, hst: h.Host):
         super().__init__(hst)
+        self.speed_hz = 0
+        self.existing = False
 
-    def attach(self, targetsel: int | None = None) -> tuple[int, int, bool]:
-        """-> (connection, DPIDR, woke from dormant)."""
-        p = self._call(self.ATTACH, b"" if targetsel is None else struct.pack("<I", targetsel)).payload
-        conn, dpidr, flags = struct.unpack_from("<BIB", p)
+    def attach(self, targetsel: int | None = None, max_speed: int | None = None) -> tuple[int, int, bool]:
+        """-> (connection, DPIDR, woke from dormant). targetsel (multidrop) and max_speed go as critical TLVs: a probe
+        that cannot honour them refuses. self.existing: the wire was attached already (its connection returned)."""
+        body = self._speed_tlv(max_speed)
+        if targetsel is not None:
+            body += m.tlv(self.TAG_TARGETSEL, struct.pack("<I", targetsel), critical=True)
+        rd = m.Reader(self._call(self.ATTACH, body).payload)
+        conn, dpidr, flags, self.speed_hz = rd.take("BIBI")
+        self.existing = bool(flags & 2)
+        rd.tail()
         return conn, dpidr, bool(flags & 1)
 
 
-class AdiError(h.OepError):
+class AdiError(TargetError):
     pass
+
+
+def transfer_reads(steps: bytes) -> list[bool]:
+    """Per transfer in a packed list: True for a read (1 byte), False for a write (1 + 4 bytes)."""
+    out, at = [], 0
+    while at < len(steps):
+        read = bool(steps[at] & 2)
+        out.append(read)
+        at += 1 if read else 5
+    if at != len(steps):
+        raise ValueError("the transfer list ends inside a write")
+    return out
 
 
 class ArmAdi(Interface):
     NAME = "oep.target.arm-adi"
-    TRANSFER, READ_BLOCK, WRITE_BLOCK = 0x01, 0x02, 0x03
+    REVISION = 1
+    TRANSFER, READ_BLOCK, WRITE_BLOCK = _ADI.op["transfer"], _ADI.op["read_block"], _ADI.op["write_block"]
 
     def __init__(self, hst: h.Host, conn: int, adiv6: bool = False):
         super().__init__(hst, prefix=bytes([conn]))
@@ -53,13 +75,18 @@ class ArmAdi(Interface):
         return b if read else b + struct.pack("<I", value)
 
     def transfer(self, steps: bytes) -> list[int]:
-        p = self._call(self.TRANSFER, steps).payload
-        done, status, ack = struct.unpack_from("<HBB", p)
-        values = list(struct.unpack_from(f"<{(len(p) - 4) // 4}I", p, 4))
-        if status:
-            raise AdiError(f"transfer stopped after {done} steps: {STATUS_NAMES.get(status, status)} (ack {ack:#x})")
+        """A packed transfer list (req() concatenated). -> the values read, in order (an AP read's value arrives one
+        transfer late, as on the wire). A list that stopped raises AdiError (status, done, the values it read, and
+        self.last_ack = the raw ACK of the last transfer)."""
+        reads = transfer_reads(steps)
+        r = self._request(self.TRANSFER, struct.pack("<H", len(reads)) + steps)
+        rd = ran(r)
+        done, status, self.last_ack = rd.take("HBB")
+        values = rd.words(sum(reads[:done]))
+        rd.tail()
+        if status != OK or not r.succeeded or done != len(reads):
+            raise AdiError(f"transfer (ack {self.last_ack:#x})", status, r, done=done, values=values)
         return values
-
     def dp_read(self, addr: int) -> int:
         return self.transfer(self.req(False, True, addr))[0]
 
@@ -96,7 +123,7 @@ class ArmAdi(Interface):
             cs = self.dp_read(DP_CTRL_STAT)
             if (cs >> 29) & 1 and (cs >> 31) & 1:
                 return cs
-        raise AdiError(f"no power-up ack: CTRL/STAT {cs:#010x}")
+        raise h.OepError(f"no power-up ack: CTRL/STAT {cs:#010x}")
 
 
 class MemAp:
@@ -111,9 +138,9 @@ class MemAp:
         adi.ap_write(ap, self.base, (((csw & ~0x37) | 0x12) | csw_set) & ~csw_clear)   # 32 bits, AddrInc single
         adi._ap_select(ap, self.base)                        # the bank the block operations assume
         # Words per block operation, from the probe's frame limit: request header 6 + session 4 + connection 1 +
-        # address 4 on the way in, result header 5 on the way out.
+        # address 4 + count 2 on the way in (the answer's 5 + done 2 + status 1 is smaller).
         from .core import confirm
-        self.chunk = max(1, (confirm(adi.host)["max_frame"] - 15) // 4)
+        self.chunk = max(1, (confirm(adi.host)["max_frame"] - 17) // 4)
 
     def write_many(self, pairs: list[tuple[int, int]]) -> None:
         """Scattered single-word writes in one transfer list (TAR, DRW per word, RDBUFF at the end so the last one
@@ -128,8 +155,14 @@ class MemAp:
         for off in range(0, words, chunk):
             self.adi._ap_select(self.ap, self.base)
             n = min(chunk, words - off)
-            p = self.adi._call(ArmAdi.READ_BLOCK, struct.pack("<IH", address + off * 4, n)).payload
-            out += struct.unpack(f"<{n}I", p)
+            r = self.adi._request(ArmAdi.READ_BLOCK, struct.pack("<IH", address + off * 4, n))
+            rd = ran(r)
+            done, status = rd.take("HB")
+            got = rd.words(done)
+            rd.tail()
+            if status != OK or not r.succeeded or done != n:
+                raise AdiError("read_block", status, r, done=off + done, values=out + got)
+            out += got
         return out
 
     def write_block(self, address: int, values: list[int]) -> None:
@@ -137,7 +170,13 @@ class MemAp:
         for off in range(0, len(values), chunk):
             self.adi._ap_select(self.ap, self.base)
             part = values[off:off + chunk]
-            self.adi._call(ArmAdi.WRITE_BLOCK, struct.pack("<I", address + off * 4) + struct.pack(f"<{len(part)}I", *part))
+            r = self.adi._request(ArmAdi.WRITE_BLOCK, struct.pack("<IH", address + off * 4, len(part))
+                                  + struct.pack(f"<{len(part)}I", *part))
+            rd = ran(r)
+            done, status = rd.take("HB")
+            rd.tail()
+            if status != OK or not r.succeeded:
+                raise AdiError("write_block", status, r, done=off + done)
 
     def read32(self, address: int) -> int:
         return self.read_block(address, 1)[0]
@@ -220,7 +259,7 @@ class CortexM:
         self.mem.write32(self.DHCSR, self.KEY | self.C_DEBUGEN | self.C_HALT)   # MASKINTS off while halted
         pc = self.reg(self.PC)
         if pc & ~3 != self.bkpt_at:
-            raise AdiError(f"stopped at {pc:#010x}, not at the return breakpoint")
+            raise h.OepError(f"stopped at {pc:#010x}, not at the return breakpoint")
         return self.reg(0)
 
     def sys_reset(self) -> None:

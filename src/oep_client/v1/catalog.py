@@ -1,10 +1,11 @@
 """Draft wire forms for capability discovery by name (oep-spec docs/capability-declaration-model.ja.md).
 
-list request : flags(u8) first(u8) prefix_len(u8) prefix      flags bit0 = exact
-list result  : total(u8) count(u8) entries
+list request : flags(u8) first(u16) prefix_len(u8) prefix     flags bit0 = exact
+list result  : total(u16) count(u8) entries [TLV tail]         oep.core (fn 0) is the first entry
 list entry   : fn(u16) instance(u16) revision(u8) flags(u8) name_len(u8) name
-describe     : request fn(u16) first(u8); result more(u8) then TLV bytes (tag u8, len u8, value;
+describe     : request fn(u16) first(u16); result more(u8) then TLV bytes (tag u8, len u8, value;
                tag bit 7 = critical). more = 1: TLVs remain after this page, ask again from first + count
+(oep-spec v1-core-wire-delta §5; the entry revision decides the interface's payload shapes, §0)
 
 Common TLV tags 0x01..0x3F mean the same for every interface; 0x40..0x7F belong to the interface.
 """
@@ -13,6 +14,8 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass, field
+
+from .message import Reader, split_tlvs
 
 LIST_EXACT = 0x01
 
@@ -44,14 +47,17 @@ class ListEntry:
 
 def pack_list_request(prefix: str = "", exact: bool = False, first: int = 0) -> bytes:
     raw = prefix.encode("ascii")
-    return struct.pack("<BBB", LIST_EXACT if exact else 0, first, len(raw)) + raw
+    return struct.pack("<BHB", LIST_EXACT if exact else 0, first, len(raw)) + raw
 
 
-def unpack_list_request(payload: bytes) -> tuple[str, bool, int]:
-    flags, first, n = struct.unpack_from("<BBB", payload)
-    if len(payload) != 3 + n:
+def unpack_list_request(payload: bytes) -> tuple[str, bool, int, bytes]:
+    """-> (prefix, exact, first, the request's TLV tail)."""
+    if len(payload) < 4:
+        raise ValueError("list request shorter than its fixed part")
+    flags, first, n = struct.unpack_from("<BHB", payload)
+    if len(payload) < 4 + n:
         raise ValueError("list request: prefix length does not match")
-    return payload[3:3 + n].decode("ascii"), bool(flags & LIST_EXACT), first
+    return payload[4:4 + n].decode("ascii"), bool(flags & LIST_EXACT), first, payload[4 + n:]
 
 
 def pack_entry(e: ListEntry) -> bytes:
@@ -60,20 +66,23 @@ def pack_entry(e: ListEntry) -> bytes:
 
 
 def pack_list_result(total: int, entries: list[ListEntry]) -> bytes:
-    return struct.pack("<BB", total, len(entries)) + b"".join(pack_entry(e) for e in entries)
+    return struct.pack("<HB", total, len(entries)) + b"".join(pack_entry(e) for e in entries)
 
 
 def unpack_list_result(payload: bytes) -> tuple[int, list[ListEntry]]:
-    total, count = struct.unpack_from("<BB", payload)
-    pos, out = 2, []
+    """-> (total, this page's entries). What follows the counted entries is a §0 TLV tail: skipped."""
+    rd = Reader(payload)
+    total, count = rd.take("HB")
+    out = []
     for _ in range(count):
-        fn, instance, revision, flags, n = struct.unpack_from("<HHBBB", payload, pos)
-        pos += 7
-        out.append(ListEntry(fn, instance, revision, flags, payload[pos:pos + n].decode("ascii")))
-        pos += n
-    if pos != len(payload):
-        raise ValueError("list result: trailing bytes")
+        fn, instance, revision, flags, n = rd.take("HHBBB")
+        out.append(ListEntry(fn, instance, revision, flags, rd.bytes(n).decode("ascii", "replace")))
+    rd.tail()
     return total, out
+
+
+def pack_describe_request(fn: int, first: int) -> bytes:
+    return struct.pack("<HH", fn, first)
 
 
 # ---- describe TLVs -------------------------------------------------------
@@ -85,16 +94,7 @@ def tlv(tag: int, value: bytes) -> bytes:
 
 
 def split_tlv(data: bytes) -> list[tuple[int, bytes]]:
-    pos, out = 0, []
-    while pos < len(data):
-        if pos + 2 > len(data):
-            raise ValueError("TLV: truncated header")
-        tag, n = data[pos], data[pos + 1]
-        if pos + 2 + n > len(data):
-            raise ValueError(f"TLV 0x{tag:02x}: truncated value")
-        out.append((tag, data[pos + 2:pos + 2 + n]))
-        pos += 2 + n
-    return out
+    return split_tlvs(data)
 
 
 def channels_to_bitmap(channels) -> tuple[int, bytes]:

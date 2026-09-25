@@ -1,5 +1,8 @@
-"""oep.fixture.capture / oep.fixture.analog, the basic set of oep-spec docs/logic-capture.ja.md (§3.0 layouts, §4
-segments, §5 operations). Draft: tag and op numbers follow the proposal and may still move."""
+"""oep.fixture.capture / oep.fixture.analog revision 1, the basic set of oep-spec docs/logic-capture.ja.md (§3.0
+layouts, §4 segments, §5 operations; v1-core-wire-delta §5.9). Numbers from `registry`.
+
+configure: a TLV the probe cannot honour is refused (rejected unsupported, 0x0B, payload = the tag) when the host marked
+it critical, and otherwise ignored and listed in the answer's ignored TLV (0x7F, v1 wire §0)."""
 
 from __future__ import annotations
 
@@ -9,26 +12,27 @@ import zipfile
 from dataclasses import dataclass, field
 from fractions import Fraction
 
-from . import host as h
+from . import host as h, message as m, registry as reg
 from .core import Interface, confirm
 
+_CAP = reg.FIXTURE_CAPTURE
 # configure TLVs; bit 7 of a tag = critical (the probe must reject what it cannot do)
-MODE, RATE, SAMPLES, SEGMENTS, TRIGGER, PRETRIGGER, FRONTEND = 0x40, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47
-ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, TIMING, SCALE, BLOCKING, IGNORED = range(0x50, 0x58)
-CRITICAL = 0x80
-ONE_SHOT, REPEAT, STREAMING = 1, 2, 3
+MODE, RATE, SAMPLES, SEGMENTS, TRIGGER, PRETRIGGER, FRONTEND = (
+    _CAP.tlv["configure"][k] for k in ("mode", "rate", "samples", "segments", "trigger", "pretrigger", "frontend"))
+ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, TIMING, SCALE, BLOCKING = (
+    _CAP.tlv["configure_answer"][k] for k in ("actual_rate", "layout", "actual_samples", "actual_segments", "timing",
+                                              "scale", "blocking_ms"))
+IGNORED = m.TAG_IGNORED
+CRITICAL = m.TAG_CRITICAL
+ONE_SHOT, REPEAT, STREAMING = (_CAP.enum["mode"][k] for k in ("one_shot", "repeat", "streaming"))
 IMMEDIATE, LEVEL, EDGE, CROSS_UP, CROSS_DOWN = range(5)
+STATE = _CAP.enum["state"]
 # events (v1 wire §4.5, role 0x05)
-EVENT_SEGMENT, EVENT_STOPPED, EVENT_TRIGGERED = 0x01, 0x02, 0x03
+EVENT_SEGMENT, EVENT_STOPPED, EVENT_TRIGGERED = (_CAP.event[k] for k in ("segment", "stopped", "triggered"))
 
 
 def tlvs(payload: bytes) -> list[tuple[int, bytes]]:
-    out, at = [], 0
-    while at + 2 <= len(payload):
-        tag, n = payload[at], payload[at + 1]
-        out.append((tag, payload[at + 2:at + 2 + n]))
-        at += 2 + n
-    return out
+    return m.split_tlvs(payload)
 
 
 @dataclass
@@ -125,8 +129,10 @@ def _config(payload: bytes, analog: bool) -> Config:
 class LogicCapture(Interface):
     """Basic logic capture. Channels are the plan's roles 0..C-1."""
     NAME = "oep.fixture.capture"
+    REVISION = 1
     ANALOG = False
-    CONFIGURE, START, STOP, FORCE, STATUS, READ, SEGMENTS, RELEASE, QUERY_OP = range(1, 10)
+    CONFIGURE, START, STOP, FORCE, STATUS, READ, SEGMENTS, RELEASE, QUERY_OP = (
+        _CAP.op[k] for k in ("configure", "start", "stop", "force", "status", "read", "segments", "release", "query"))
 
     def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
         super().__init__(hst, name, fn=fn)
@@ -135,7 +141,8 @@ class LogicCapture(Interface):
     def configure(self, *, rate: int, mode: int = ONE_SHOT, samples: int | None = None, segments: int | None = None,
                   trigger: tuple[int, int, int] | None = None, pretrigger: int | None = None, query: bool = False,
                   critical: set[int] = frozenset()) -> Config:
-        """-> the probe's actual values. `critical`: tags the probe must honour or reject."""
+        """-> the probe's actual values (Config.ignored: tags the probe ignored). `critical`: tags the probe must honour
+        or reject (host.Unsupported, .tag = the one it cannot)."""
         def tlv(tag: int, value: bytes) -> bytes:
             return bytes([tag | (CRITICAL if tag in critical else 0), len(value)]) + value
         body = tlv(MODE, bytes([mode])) + tlv(RATE, struct.pack("<I", rate))
@@ -157,10 +164,10 @@ class LogicCapture(Interface):
     def subscribe(self, min_bytes: int = 0, max_delay_ms: int = 0) -> None:
         """Events, and in streaming the data pushes (v1 wire §4.5): send when min_bytes are ready or max_delay_ms after the
         first byte (0, 0: as soon as there is anything)."""
-        self.host.call(0, 0x30, struct.pack("<HHH", self.fn, min_bytes, max_delay_ms))
+        self.host.subscribe(self.fn, min_bytes, max_delay_ms)
 
     def unsubscribe(self) -> None:
-        self.host.call(0, 0x32, struct.pack("<H", self.fn))
+        self.host.unsubscribe(self.fn)
 
     def stream(self, link, *, seconds: float | None = None, nbytes: int | None = None,
                into: Received | None = None, keepalive_s: float = 1.0) -> Received:
@@ -221,32 +228,36 @@ class LogicCapture(Interface):
 
     def start(self) -> int:
         """-> blocking_ms (0: the probe keeps answering while it captures)."""
-        return struct.unpack("<I", self._call(self.START).payload)[0]
+        return m.Reader(self._call(self.START).payload).u32()
 
     def stop(self) -> None:
         self._call(self.STOP)
 
     def status(self) -> tuple[int, int, int, int]:
         """-> state, segments done, write position, flags."""
-        return struct.unpack("<BIIB", self._call(self.STATUS, locked=False).payload)
+        return m.Reader(self._call(self.STATUS, locked=False).payload).take("BIIB")
 
     def release(self, serial: int) -> None:
         """Repeat: segments up to `serial` may be reused."""
         self._call(self.RELEASE, struct.pack("<I", serial))
 
     def segments(self, from_serial: int = 0) -> list[Segment]:
-        p = self._call(self.SEGMENTS, struct.pack("<I", from_serial), locked=False).payload
-        return [Segment.unpack(p[1 + 21 * i:]) for i in range(p[0])]
+        rd = m.Reader(self._call(self.SEGMENTS, struct.pack("<I", from_serial), locked=False).payload)
+        out = [Segment.unpack(rd.bytes(21)) for _ in range(rd.u8())]
+        rd.tail()
+        return out
 
     def wait(self, timeout: float = 5.0) -> list[Segment]:
         """Poll status until the one-shot is done (or failed). -> its segments."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             state = self.status()[0]
-            if state == 4:
+            if state == STATE["done"]:
                 return self.segments()
-            if state == 6:
-                raise h.Failed(None)
+            if state == STATE["error"]:
+                raise h.Failed(None, "the capture stopped with an error")
+            if state not in STATE.values():
+                raise h.ProtocolError(f"capture state {state} is not one this client knows")
             time.sleep(0.002)
         raise TimeoutError("capture did not finish")
 
@@ -257,7 +268,7 @@ class LogicCapture(Interface):
                 for off in range(0, length, chunk)]
         out = bytearray()
         for off, r in zip(range(0, length, chunk), self.host.pipeline_calls(reqs, locked=False)):
-            got_pos, flags = struct.unpack_from("<IB", r.payload)
+            got_pos, flags = m.Reader(r.payload).take("IB")
             data = r.payload[5:]
             want = min(chunk, length - off)
             while len(data) < want:                       # a short answer: read on from where it stopped

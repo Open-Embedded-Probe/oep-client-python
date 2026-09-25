@@ -17,7 +17,7 @@ import struct
 import time
 from dataclasses import dataclass, field
 
-from . import host as h, target
+from . import host as h, riscv, target
 
 # oep-spec experiments/flash-primitives/x035_loader.S, assembled at 0x20000000 (riscv32-esp-elf binutils)
 FAST_PAGE_LOADER = bytes.fromhex(
@@ -93,23 +93,45 @@ V003_INPUT, V003_STACK, V003_EBREAK, V003_RUN = 0x20000200, 0x20000800, 0x200001
 
 def _block_size(hst: h.Host) -> int:
     info = target.confirm(hst)
-    return (info["max_frame"] - 5 - 6 - 4 - 1 - 4) // 4 * 4    # result/request headers, session, conn, address
+    # request header 6 + session 4 + connection 1 + address 4 + count 2 (the read answer's 5 + done 2 + status 1 is
+    # smaller); a little slack for the result header
+    return (info["max_frame"] - 5 - 6 - 4 - 1 - 4 - 2) // 4 * 4
 
 
 def _write_requests(dm: target.RiscvDm, address: int, data: bytes, block: int) -> list[tuple[int, int, bytes]]:
-    return [dm.request(dm.WRITE_BLOCK, struct.pack("<I", address + off) + data[off:off + block])
+    return [dm.request(dm.WRITE_BLOCK, dm.write_block_body(address + off, data[off:off + block]))
             for off in range(0, len(data), block)]
 
 
+def _write_ok(r) -> bool:
+    """A write_block result that wrote every word: outcome success and status ok (§5.4)."""
+    if not r.succeeded:
+        return False
+    try:
+        rd = target.ran(r)
+        rd.u16()
+        return rd.u8() == riscv.OK
+    except h.OepError:
+        return False
+
+
 def _write(dm: target.RiscvDm, address: int, data: bytes, block: int) -> None:
-    dm.host.pipeline_calls(_write_requests(dm, address, data, block))
+    for r in dm.host.pipeline_calls(_write_requests(dm, address, data, block)):
+        if not _write_ok(r):
+            raise riscv.TargetError("write_block", target.ran(r).take("HB")[1], r)
 
 
 def _read(dm: target.RiscvDm, address: int, length: int, block: int) -> bytes:
     """Read back in blocks, pipelined when the host has the link's exchange (reads are independent)."""
-    reqs = [dm.request(dm.READ_BLOCK, struct.pack("<IH", address + off, min(block, length - off) // 4))
-            for off in range(0, length, block)]
-    return b"".join(r.payload for r in dm.host.pipeline_calls(reqs))
+    spans = [(address + off, min(block, length - off) // 4) for off in range(0, length, block)]
+    out = b""
+    for (a, n), r in zip(spans, dm.host.pipeline_calls([dm.request(dm.READ_BLOCK, struct.pack("<IH", a, n))
+                                                         for a, n in spans])):
+        data, done, status = dm.read_block_result(r)
+        if status != riscv.OK or done != n:
+            raise riscv.TargetError("read_block", status, r, done=done, data=data)
+        out += data
+    return out
 
 
 PIPELINE_PAGES = 16   # pages per pipelined batch: enough to keep the link busy, small enough to show progress
@@ -154,11 +176,12 @@ def program(hst: h.Host, dm: target.RiscvDm, image: bytes, profile: FlashProfile
         if profile.method == "fast-page":
             writes = _write_requests(dm, FAST_BUFFER, image[off:off + profile.page], block)
             run = dm.request(dm.RUN, dm.run_body(LOADER, [(0x100A, profile.base + off), (0x100B, FAST_BUFFER),
-                                                          (0x0300, 0)]))
+                                                          (0x0300, 0)], outs=(riscv.REG_A0,)))
             return writes, run, FAST_DONE
         writes = _write_requests(dm, V003_INPUT, image[off:off + length], block)
         run = dm.request(dm.RUN, dm.run_body(LOADER, [(0x100A, flags), (0x100B, profile.base + off), (0x100C, length),
-                                                      (0x1002, V003_STACK), (0x0300, 0)], timeout_ms=1000))
+                                                      (0x1002, V003_STACK), (0x0300, 0)], timeout_ms=1000,
+                                                     outs=(riscv.REG_A0,)))
         return writes, run, V003_EBREAK
 
     def run_pages(jobs: list[tuple[int, int, int]]) -> list[dict]:
@@ -170,23 +193,25 @@ def program(hst: h.Host, dm: target.RiscvDm, image: bytes, profile: FlashProfile
             reqs = [r for writes, run, _ in batch for r in writes + [run]]
             results = iter(hst.pipeline(reqs))
             for (off, _, _), (writes, _, done_pc) in zip(jobs[at:at + PIPELINE_PAGES], batch):
-                wrote = all(next(results).succeeded for _ in writes)
+                wrote = all([_write_ok(next(results)) for _ in writes])
                 r = next(results)
-                if not (wrote and r.succeeded):
+                if not (wrote and r.ran):
                     failures.append({"address": hex(profile.base + off), "dpc": None})
                     continue
-                stopped, dpc, a0, _ = dm.run_result(r.payload)
-                if not (stopped and dpc == done_pc and (profile.method != "fast-page" or a0 == 0)):
-                    failures.append({"address": hex(profile.base + off), "dpc": hex(dpc)})
+                run = dm.run_result(r, 1)
+                a0 = run.values[0]
+                if not (r.succeeded and run.status == riscv.OK and run.stopped and run.dpc == done_pc
+                        and (profile.method != "fast-page" or a0 == 0)):
+                    failures.append({"address": hex(profile.base + off), "dpc": hex(run.dpc)})
         return failures
 
     if profile.method == "fast-page":
         failures = run_pages([(off, profile.page, 0) for off in range(0, len(image), profile.page)])
     else:
-        stopped, dpc, _, _ = dm.run(LOADER, [(0x100A, 0x03), (0x100B, profile.base), (0x100C, 0),
-                                            (0x1002, V003_STACK), (0x0300, 0)], timeout_ms=1000)   # unlock + mass erase
-        if not (stopped and dpc == V003_EBREAK):
-            raise RuntimeError(f"mass erase did not stop on the loader's ebreak (dpc {dpc:#x})")
+        run = dm.run(LOADER, [(0x100A, 0x03), (0x100B, profile.base), (0x100C, 0),
+                              (0x1002, V003_STACK), (0x0300, 0)], timeout_ms=1000)   # unlock + mass erase
+        if not (run.stopped and run.dpc == V003_EBREAK):
+            raise RuntimeError(f"mass erase did not stop on the loader's ebreak (dpc {run.dpc:#x})")
         failures = run_pages([(off, min(V003_RUN, len(image) - off), 0x09) for off in range(0, len(image), V003_RUN)])
     t["program"] = round(time.perf_counter() - t0, 3)
     t0 = time.perf_counter()

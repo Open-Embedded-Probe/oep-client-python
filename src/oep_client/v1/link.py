@@ -1,16 +1,18 @@
-"""v1 draft transport over a serial port.
+"""v1 transport over a serial port or a USB vendor bulk pair (oep-spec v1-core-wire-delta §1).
 
-Framing follows the path: length-prefixed frames on a reliable stream (USB CDC, USB-Serial/JTAG), COBS + CRC-16
-behind a USB-UART bridge, where bytes are dropped or changed without an error (oep-spec probe-development-guide
+Framing follows the path: length-prefixed frames on a reliable stream (USB CDC, USB-Serial/JTAG, vendor bulk), COBS +
+CRC-16 behind a USB-UART bridge, where bytes are dropped or changed without an error (oep-spec probe-development-guide
 §3). The bridge is recognised by its USB VID:PID unless `framing` says otherwise.
 
 The port opens with pyserial's defaults - DTR and RTS asserted - which reset none of the measured probes
 (host-development-guide §1). No sleep after open: the probe does not restart.
 
-A corrupt or missing reply to a request without a session id (lock-free reads, open) is asked for once more; a
-state-changing request is never re-sent here, because a re-send may run it twice (session-and-exclusivity).
-Replies are matched to requests by correlation id: one that belongs to an earlier request (the late answer to a
-re-sent read, the tail of an exchange that failed) is read past, so the link cannot fall one reply behind.
+Length frames carry no CRC, so lost boundaries are recovered by the §1 resync: on a result for another request, an
+impossible length or a frame that stops half way, read and discard until the input is quiet for 50 ms, prove the link
+with a confirm, and go on. When pushes keep the input from going quiet, the host's unsubscribe and end (harmless twice)
+are sent blind. A request without a session id (lock-free reads, open) is sent once more after a corrupt or missing
+reply; a state-changing request is never re-sent, because a re-send may run it twice (session-and-exclusivity).
+Behind COBS, frames carry their own boundaries and CRC: a reply to an earlier request is read past there.
 """
 
 from __future__ import annotations
@@ -22,14 +24,20 @@ import time
 import serial
 from serial.tools import list_ports
 
-from . import cobs
-from .frames import LengthFrames
+from . import cobs, message as m, registry as reg
+from .frames import FramingLost, LengthFrames
 
 # USB-UART bridges: their bytes are not protected end to end, so the probe behind them speaks COBS + CRC.
 UART_BRIDGES = {
     (0x1A86, 0x7523): "CH340", (0x1A86, 0x7522): "CH340K", (0x1A86, 0x55D3): "CH343", (0x1A86, 0x55D4): "CH9102",
     (0x10C4, 0xEA60): "CP210x", (0x0403, 0x6001): "FT232R", (0x0403, 0x6015): "FT231X", (0x067B, 0x2303): "PL2303",
 }
+
+RESYNC_QUIET_S = reg.TIMING["resync_quiet_ms"] / 1000
+
+
+class CorrMismatch(FramingLost):
+    """A result for a request other than the one waited for."""
 
 
 def framing_for(port: str) -> str:
@@ -41,23 +49,44 @@ def framing_for(port: str) -> str:
 
 
 class SerialLink:
+    NOISY_S = 1.0          # a resync that is still not quiet after this sends the blind stops
+
     def __init__(self, port: str, timeout: float = 3.0, exclusive: bool = True, framing: str | None = None):
         # exclusive: a second process on the same Linux tty would interleave bytes with ours
-        self.stream = serial.Serial(port, 115200, timeout=0.05, exclusive=exclusive)
-        self.framing = framing or framing_for(port)
+        stream = serial.Serial(port, 115200, timeout=0.05, exclusive=exclusive)
+        self._setup(stream, framing or framing_for(port), timeout)
+
+    @classmethod
+    def on_stream(cls, stream, framing: str = "length", timeout: float = 3.0) -> SerialLink:
+        """A link on any pyserial-shaped stream (a USB bulk pair, a test's scripted stream)."""
+        lk = cls.__new__(cls)
+        lk._setup(stream, framing, timeout)
+        return lk
+
+    def _setup(self, stream, framing: str, timeout: float) -> None:
+        self.stream = stream
+        self.framing = framing
         self.timeout = timeout
         self.retries = 0
         self.corrupt = 0
-        self.stale = 0                             # replies read past because they answered an earlier request
+        self.stale = 0                             # replies that answered another request
+        self.resyncs = 0
         self.dropped = 0                           # probe-initiated frames of a role this client does not handle
-        self.pushes: collections.deque[bytes] = collections.deque()   # experimental role 0x06 frames, oldest first
-        self.events: collections.deque[bytes] = collections.deque()   # experimental role 0x05 frames, oldest first
+        self.pushes: collections.deque[bytes] = collections.deque()   # role 0x06 frames, oldest first
+        self.events: collections.deque[bytes] = collections.deque()   # role 0x05 frames, oldest first
+        self.corr_source = self._own_corr          # the host's correlation counter once bound (open_host)
+        self.blind = lambda: []                    # the host's blind stops (unsubscribe / end) once bound
+        self._corr_n = 0x8000
         if self.framing == "length":
             self.frames = LengthFrames(self.stream)
             self.frames.discard_input()
         else:
             self._buf = bytearray()
             self.stream.reset_input_buffer()
+
+    def _own_corr(self) -> int:
+        self._corr_n = self._corr_n % 0xFFFF + 1
+        return self._corr_n
 
     # ---- one frame each way ----------------------------------------------------------------------
     def _write(self, messages: list[bytes]) -> None:
@@ -91,21 +120,22 @@ class SerialLink:
         return message[1] | message[2] << 8          # request and result both carry it right after the role byte
 
     def _route(self, frame: bytes) -> bool:
-        """Frames that are not results: data pushes and events are kept, other roles dropped. True if `frame` was one of them.
-        Only a result (role 0x02) carries a correlation id; matching anything else by its bytes 1-2 would take a
-        push for a reply whenever its fn happened to equal the id."""
-        if frame and frame[0] == 0x02:
+        """Frames that are not results: data pushes and events are kept, other roles dropped. True if `frame` was one
+        of them. Only a result (role 0x02) carries a correlation id; matching anything else by its bytes 1-2 would take
+        a push for a reply whenever its fn happened to equal the id."""
+        if frame and frame[0] == m.ROLE_RESULT:
             return False
-        if frame and frame[0] == 0x06:
+        if frame and frame[0] == m.ROLE_DATA:
             self.pushes.append(frame)
-        elif frame and frame[0] == 0x05:
+        elif frame and frame[0] == m.ROLE_EVENT:
             self.events.append(frame)
         else:
             self.dropped += 1
         return True
 
     def _recv_for(self, corr: int) -> bytes:
-        """The reply to request `corr`, reading past replies left over from earlier requests (and routing pushes)."""
+        """The reply to request `corr` (pushes and events routed on the way). Length frames: a result for another
+        request raises CorrMismatch (the §1 resync follows); COBS: it is read past."""
         while True:
             reply = self._recv()
             if self._route(reply):
@@ -113,6 +143,9 @@ class SerialLink:
             if len(reply) >= 3 and self._corr(reply) == corr:
                 return reply
             self.stale += 1
+            if self.framing == "length":
+                raise CorrMismatch(f"a result for correlation {self._corr(reply) if len(reply) >= 3 else None}, "
+                                   f"waiting for {corr}")
 
     def pump(self, timeout: float = 0.0, until_one: bool = False) -> int:
         """Read the frames that arrive within `timeout` in total (pushes are kept, stray results counted stale); a
@@ -128,6 +161,13 @@ class SerialLink:
                     frame = self._recv()
                 except TimeoutError:
                     return n
+                except FramingLost:
+                    self.timeout = saved
+                    self.resync()
+                    return n
+                except cobs.CorruptFrame:
+                    self.corrupt += 1
+                    continue
                 n += 1
                 if not self._route(frame):
                     self.stale += 1
@@ -136,10 +176,44 @@ class SerialLink:
         finally:
             self.timeout = saved
 
-    def _clear(self) -> None:
+    def resync(self, tries: int = 3) -> None:
+        """v1 wire §1: read and discard until the input is quiet for 50 ms, then prove the link with a confirm (a read,
+        safe to send), then go on. Never re-sends a state-changing request. When the input does not go quiet (pushes
+        keep coming), the host's unsubscribe and end go out blind, once."""
+        self.resyncs += 1
+        if self.framing != "length":
+            time.sleep(RESYNC_QUIET_S)
+            self._buf.clear()
+            self.stream.reset_input_buffer()
+            return
+        blind_sent = False
+        for _ in range(tries):
+            while not self.frames.discard_until_quiet(RESYNC_QUIET_S, self.NOISY_S):
+                if blind_sent:
+                    raise ConnectionError("resync: the input never went quiet, even after unsubscribe and end")
+                stops = self.blind()
+                blind_sent = True
+                if stops:
+                    self._write(stops)
+            corr = self.corr_source()
+            self._write([m.Request(corr, m.CORE_FN, m.OP_CONFIRM, m.CONFIRM_REQUEST + bytes([0, 0xFF])).pack()])
+            try:
+                while True:
+                    reply = self._recv()
+                    if self._route(reply):
+                        continue
+                    if len(reply) >= 3 and self._corr(reply) == corr:
+                        return                  # any result with our correlation proves the boundaries again
+            except (FramingLost, TimeoutError):
+                continue
+        raise ConnectionError(f"resync: no confirm came back in {tries} tries")
+
+    def _recover(self) -> None:
+        """After a lost, broken or missing reply: leave the link in step for the next request."""
         if self.framing == "length":
-            self.frames.discard_input()
+            self.resync()
         else:
+            time.sleep(RESYNC_QUIET_S)
             self._buf.clear()
             self.stream.reset_input_buffer()
 
@@ -149,19 +223,20 @@ class SerialLink:
             self._write([message])
             try:
                 return self._recv_for(corr)
-            except (cobs.CorruptFrame, TimeoutError) as e:
+            except (cobs.CorruptFrame, TimeoutError, FramingLost) as e:
                 if isinstance(e, cobs.CorruptFrame):
                     self.corrupt += 1
-                if attempt or message[0] & 0x80:      # state-changing: never re-sent here
+                self._recover()
+                if attempt or message[0] & m.ROLE_SESSION:      # state-changing: never re-sent
                     raise
                 self.retries += 1
 
     def exchange(self, messages: list[bytes], max_inflight: int, window_bytes: int) -> list[bytes]:
         """Pipelined: keep up to max_inflight requests and window_bytes outstanding, results in order.
 
-        The probe answers in the order it received (v1 draft); each reply is still matched by correlation id.
-        Frames admitted together go out in one write (E160). No re-send here; after an error the input is cleared
-        so the next request does not read this exchange's leftovers.
+        The probe answers in the order it received; each reply is still matched by correlation id. Frames admitted
+        together go out in one write (E160). No re-send here; after an error the link resyncs so the next request
+        does not read this exchange's leftovers, and the error is raised.
         """
         replies: list[bytes] = []
         outstanding: list[tuple[int, int]] = []      # (correlation, size) of requests in flight
@@ -181,9 +256,10 @@ class SerialLink:
                 self._write(batch)
             while outstanding:
                 replies.append(self._recv_for(outstanding.pop(0)[0]))
-        except (cobs.CorruptFrame, TimeoutError):
-            time.sleep(0.05)
-            self._clear()
+        except (cobs.CorruptFrame, TimeoutError, FramingLost) as e:
+            if isinstance(e, cobs.CorruptFrame):
+                self.corrupt += 1
+            self._recover()
             raise
         return replies
 
@@ -191,36 +267,41 @@ class SerialLink:
         """This link's exchange with the probe's limits (core confirm), for Host(exchange=...)."""
         return lambda msgs: self.exchange(msgs, limits["max_inflight"], limits["window"])
 
+    def attach_host(self, hst) -> None:
+        """Bind to a host: its correlation counter and blind stops for the resync, and after a confirm, the probe's
+        limits (in-flight, window, max_frame) for pipelining and the framing check."""
+        self.corr_source = hst.next_corr
+        self.blind = hst.blind_stop
+        hst.link = self
+        limits = hst.confirm()
+        hst.exchange = self.bind(limits)
+        if self.framing == "length" and limits.get("max_frame"):
+            self.frames.max_frame = limits["max_frame"]
+
     def close(self) -> None:
         self.stream.close()
 
 
 def open_usb_host(vid: int = 0x303A, pid: int = 0x4021, serial: str | None = None, timeout: float = 3.0):
     """A Host on a USB vendor bulk pair (the P4's HS OTG port): length-prefixed frames, as on USB-Serial/JTAG."""
-    from . import core, host
+    from . import host
     from .usb_stream import UsbAsyncStream, UsbBulkStream
     try:
         import usb1  # noqa: F401  python-libusb1: queued asynchronous IN transfers (streaming near the HS ceiling)
         stream = UsbAsyncStream.open(vid, pid, serial)
     except ImportError:
         stream = UsbBulkStream.open(vid, pid, serial)
-    lk = SerialLink.__new__(SerialLink)
-    lk.stream, lk.framing, lk.timeout = stream, "length", timeout
-    lk.retries = lk.corrupt = lk.stale = lk.dropped = 0
-    lk.pushes, lk.events = collections.deque(), collections.deque()
-    lk.frames = LengthFrames(lk.stream)
+    lk = SerialLink.on_stream(stream, "length", timeout)
     hst = host.Host(lk.send)
-    hst.exchange = lk.bind(core.confirm(hst))
-    hst.link = lk
+    lk.attach_host(hst)
     return hst
 
 
 def open_host(port: str, **kwargs):
     """A Host on this port with the link's pipelining bound to the probe's limits (core confirm): Host.pipeline and
     everything built on it (flash, capture reads) then keep several requests in flight."""
-    from . import core, host
+    from . import host
     lk = SerialLink(port, **kwargs)
     hst = host.Host(lk.send)
-    hst.exchange = lk.bind(core.confirm(hst))
-    hst.link = lk
+    lk.attach_host(hst)
     return hst

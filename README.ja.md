@@ -1,6 +1,7 @@
 # OEP Python client
 
-Open Embedded Probe の host 側。仮置きの v1（oep-spec `docs/v1-core-wire-delta.ja.md`）を話す。破壊的変更を前提とする
+Open Embedded Probe の host 側。v1（oep-spec `docs/v1-core-wire-delta.ja.md`、固める候補の形）を話す。番号は oep-spec の
+`generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.v1.registry` から取る。破壊的変更を前提とする
 実験段階で、互換 API は約束しない。
 
 target の知識は host にある、という OEP の分担に従う。probe は線と DMI / DP・AP の転送しか知らず、CH32 の flash
@@ -15,11 +16,13 @@ uv run pytest
 | モジュール | 中身 |
 |---|---|
 | `host` | 要求と結果、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`） |
-| `link` | シリアルの transport（USB は長さつきフレーム、USB-UART は COBS + CRC）、corr による照合、`open_host()` |
+| `link` | シリアルと USB vendor bulk の transport（長さつきフレーム、USB-UART は COBS + CRC）、corr による照合、§1 の立て直し（resync）、`open_host()` |
 | `core` | インターフェースを名前で探す（キャッシュつき）、confirm、probe のラベル、ピンの割り当て（plan）、`Interface` の土台 |
 | `riscv` | `oep.wire.rvswd` / `oep.wire.swio`、`oep.target.riscv-dm`、リセット線の探索、GPIO 経由の attach |
 | `console` | `oep.target.console`（位置つきのストリーム）と、バイト列として読む `ConsoleIO` |
-| `fixture` | `oep.fixture.gpio` / `uart` / `capture`（v0 の payload のまま） |
+| `fixture` | `oep.fixture.gpio` / `uart`（revision 1） |
+| `capture` | `oep.fixture.capture`（revision 1、logic-capture の基本の形） |
+| `registry` | oep-spec の番号の表から生成したモジュール（編集しない。oep-spec から写し直す） |
 | `arm` | `oep.wire.swd`、`oep.target.arm-adi`、MEM-AP、Cortex-M の停止と関数呼び出し |
 | `ch32_flash` | CH32 の書き込み（RAM ローダー、ページ単位の書き直し） |
 | `rp2350` | RP2350 の boot ROM 経由の flash と reboot |

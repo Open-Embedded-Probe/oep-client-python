@@ -25,6 +25,7 @@ class FakeCh32:
         self.runs = 0
         self.ctlr_locked = True
         self.keys = []
+        self.timeouts = []
 
     def read(self, a, n):
         if cf.PROFILES["x035"].base <= a < cf.PROFILES["x035"].base + len(self.flash):
@@ -47,18 +48,22 @@ class FakeCh32:
         def read_block(p):
             a, count = struct.unpack("<IH", p[1:])
             if a == cf.CTLR:
-                return ok(struct.pack("<I", (cf.LOCK | cf.FLOCK) if self.ctlr_locked else 0))
-            return ok(self.read(a, count * 4))
+                return ok(struct.pack("<HBI", 1, 0, (cf.LOCK | cf.FLOCK) if self.ctlr_locked else 0))
+            return ok(struct.pack("<HB", count, 0) + self.read(a, count * 4))
 
         def write_block(p):
-            a = struct.unpack_from("<I", p, 1)[0]
-            self.write(a, p[5:])
-            return ok()
+            a, count = struct.unpack_from("<IH", p, 1)
+            assert len(p) == 7 + 4 * count
+            self.write(a, p[7:])
+            return ok(struct.pack("<HB", count, 0))
 
         def run(p):
             self.runs += 1
-            pc, timeout, n = struct.unpack_from("<IHB", p, 1)
-            regs = dict(struct.unpack_from("<HI", p, 8 + 6 * i) for i in range(n))
+            pc, timeout, n = struct.unpack_from("<IIB", p, 1)
+            regs = dict(struct.unpack_from("<HI", p, 10 + 6 * i) for i in range(n))
+            n_out = p[10 + 6 * n]
+            assert n_out == 1 and struct.unpack_from("<H", p, 11 + 6 * n)[0] == 0x100A    # a0 back
+            self.timeouts.append(timeout)
             if 0x100C in regs:                  # V003 loader
                 flags, addr, length = regs[0x100A], regs[0x100B], regs[0x100C]
                 if flags == 0x03:
@@ -66,7 +71,7 @@ class FakeCh32:
                 else:
                     off = addr - cf.PROFILES["v003"].base
                     self.flash[off:off + length] = self.read(cf.V003_INPUT, length)
-                return ok(struct.pack("<BIII", 1, cf.V003_EBREAK, 0, 100))
+                return ok(struct.pack("<BBIII", 0, 1, cf.V003_EBREAK, 100, 0))
             addr, buf = regs[0x100A], regs[0x100B]
             off = addr - cf.PROFILES["x035"].base
             data = self.read(buf, 256)
@@ -74,11 +79,10 @@ class FakeCh32:
                 self.garble.discard(off)
                 data = bytes(b ^ 0x5A for b in data)
             self.flash[off:off + 256] = data
-            return ok(struct.pack("<BIII", 1, cf.FAST_DONE, 0, 100))
+            return ok(struct.pack("<BBIII", 0, 1, cf.FAST_DONE, 100, 0))
 
         return {(DM, riscv.RiscvDm.READ_BLOCK): read_block, (DM, riscv.RiscvDm.WRITE_BLOCK): write_block,
-                (DM, riscv.RiscvDm.RUN): run,
-                (0, m.OP_CONFIRM): lambda p: ok(struct.pack("<4sBHHB", b"OEP!", 1, 1024, 4096, 8))}
+                (DM, riscv.RiscvDm.RUN): run}
 
 
 def test_fast_page_programs_verifies_and_rewrites_a_garbled_page():
@@ -111,10 +115,14 @@ def test_an_unknown_flash_method_is_refused():
 
 def test_run_payload_detaches_even_when_the_payload_does_not_read_back():
     detached = []
-    hst = ScriptedHost({(WIRE, riscv.Wire.ATTACH): lambda p: ok(struct.pack("<BIB", 1, 0x382, 0)),
+    def read_block(p):
+        count = struct.unpack("<IH", p[1:])[1]
+        return ok(struct.pack("<HB", count, 0) + b"\0" * 4 * count)
+
+    hst = ScriptedHost({(WIRE, riscv.Wire.ATTACH): lambda p: ok(struct.pack("<BIBI", 1, 0x382, 0, 1_000_000)),
                         (WIRE, riscv.Wire.DETACH): lambda p: detached.append(p) or ok(),
-                        (DM, riscv.RiscvDm.WRITE_BLOCK): lambda p: ok(),
-                        (DM, riscv.RiscvDm.READ_BLOCK): lambda p: ok(b"\0" * 4 * struct.unpack("<IH", p[1:])[1])})
+                        (DM, riscv.RiscvDm.WRITE_BLOCK): lambda p: ok(struct.pack("<HB", (len(p) - 7) // 4, 0)),
+                        (DM, riscv.RiscvDm.READ_BLOCK): read_block})
     with pytest.raises(RuntimeError, match="did not read back"):
         uiapduino.normalize_user(hst, riscv.Wire(hst, "oep.wire.swio"))
     assert detached == [b"\x01"]
@@ -137,12 +145,15 @@ def test_fixture_uart_write_splits_and_waits_for_the_uart():
     taken = iter([256, 0, 100, 44])                  # the UART takes a chunk, then nothing once, then the rest
 
     def write(p):
-        return ok(struct.pack("<H", min(next(taken), len(p))))
+        count = struct.unpack_from("<H", p)[0]
+        assert len(p) == 2 + count
+        took = min(next(taken), count)
+        return m.COMPLETED, m.SUCCESS if took == count else m.PARTIAL, struct.pack("<H", took)   # partial is no error
 
-    hst = ScriptedHost({(UART, fixture.FixtureUartIO.WRITE): write})
+    hst = ScriptedHost({(UART, fixture.FixtureUart.WRITE): write})
     uart = fixture.FixtureUartIO(hst, UART)
     uart.write(bytes(400))
-    sizes = [len(p) for fn, op, p in hst.log if op == fixture.FixtureUartIO.WRITE]
+    sizes = [len(p) - 2 for fn, op, p in hst.log if op == fixture.FixtureUart.WRITE]
     assert sizes == [256, 144, 144, 44]
 
 
