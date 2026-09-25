@@ -68,6 +68,7 @@ class Take:
     def tail(self, known: set[int] = frozenset()) -> tuple[dict[int, bytes], list[int]]:
         """-> (known tags without the critical bit -> value, ignored non-critical tags)."""
         rest, at, got, ignored = self.data[self.at:], 0, {}, []
+        self.critical = set()                                      # known tags that came with the critical bit
         while at < len(rest):
             if at + 2 > len(rest) or at + 2 + rest[at + 1] > len(rest):
                 raise Reject(m.MALFORMED)
@@ -77,12 +78,22 @@ class Take:
                 raise Reject(m.MALFORMED)
             if tag & 0x7F in known:
                 got[tag & 0x7F] = value
+                if tag & m.TAG_CRITICAL:
+                    self.critical.add(tag & 0x7F)
             elif tag & m.TAG_CRITICAL:
                 raise Reject(m.UNSUPPORTED, bytes([tag]))
             else:
                 ignored.append(tag)
         self.at = len(self.data)
         return got, ignored
+
+    def refuse(self, tag: int, got: dict[int, bytes], ignored: list[int]) -> None:
+        """A known TLV whose value cannot be honoured (§0): critical -> unsupported with the tag as received, else it
+        is dropped and listed as ignored."""
+        if tag in self.critical:
+            raise Reject(m.UNSUPPORTED, bytes([tag | m.TAG_CRITICAL]))
+        got.pop(tag, None)
+        ignored.append(tag)
 
 
 @dataclass
@@ -541,7 +552,7 @@ class Endpoint:
                 raise Reject(m.UNSUPPORTED)
             method = got.get(_RV.tlv["reset"]["method"])
             if method is not None and (len(method) != 1 or method[0] > 2):
-                raise Reject(m.UNSUPPORTED, bytes([_RV.tlv["reset"]["method"] | m.TAG_CRITICAL]))
+                t.refuse(_RV.tlv["reset"]["method"], got, ignored)
             tg.havereset = True
             tg.halted = mode == 2
             tg.dpc = tg.reset_vector if mode == 2 else tg.reset_vector + 0x200
@@ -715,7 +726,8 @@ class Endpoint:
                 raise Reject(m.UNAVAILABLE)
             fmt = got.get(_UART.tlv["configure"]["format"], b"\0")
             if len(fmt) != 1 or fmt[0] & ~0x1F or fmt[0] & 3 > 1 or (fmt[0] >> 2) & 3 > 2:
-                raise Reject(m.UNSUPPORTED, bytes([_UART.tlv["configure"]["format"] | m.TAG_CRITICAL]))
+                t.refuse(_UART.tlv["configure"]["format"], got, ignored)
+                fmt = bytes(1)
             actual = 80_000_000 // (80_000_000 // baud)
             self.uart_baud[fn] = (actual, fmt[0])
             self.uarts.setdefault(fn, Stream())
