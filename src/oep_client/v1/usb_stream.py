@@ -79,7 +79,10 @@ class UsbBulkStream:
             return out
 
     def write(self, data: bytes) -> int:
-        return self.ep_out.write(data, timeout=2000)
+        n = self.ep_out.write(data, timeout=2000)
+        if data and len(data) % self.ep_out.wMaxPacketSize == 0:   # a zero-length packet ends the probe's transfer
+            self.ep_out.write(b"", timeout=2000)
+        return n
 
     def reset_input_buffer(self) -> None:
         with self._cond:
@@ -182,7 +185,10 @@ class UsbAsyncStream:
             return out
 
     def write(self, data: bytes) -> int:
-        return self.handle.bulkWrite(self.ep_out, data, timeout=2000)
+        n = self.handle.bulkWrite(self.ep_out, data, timeout=2000)
+        if data and len(data) % 512 == 0:   # end the probe's receive transfer (a probe reading large transfers needs it)
+            self.handle.bulkWrite(self.ep_out, b"", timeout=2000)
+        return n
 
     def reset_input_buffer(self) -> None:
         with self._cond:
