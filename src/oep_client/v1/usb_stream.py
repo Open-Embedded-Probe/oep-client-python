@@ -2,7 +2,11 @@
 in_waiting, write, reset_input_buffer), so length-prefixed frames run over it unchanged. pyusb is imported only here.
 
 IN is drained on a thread: a bulk write blocks until the device takes the data, and the device stops taking data
-once its answers fill its FIFO and nobody reads them (E160)."""
+once its answers fill its FIFO and nobody reads them (E160).
+
+Each IN read asks for READ_SIZE bytes. A read completes when that much has arrived or a short packet ends the
+transfer; if its timeout hits first, pyusb raises and the bytes already received are lost. Under a continuous stream
+(12.5 MB/s, 2026-09-25) a 64 KiB read waited for more than its 50 ms and dropped whole answers, so reads stay small."""
 
 from __future__ import annotations
 
@@ -11,6 +15,8 @@ import time
 
 
 class UsbBulkStream:
+    READ_SIZE = 16384
+
     def __init__(self, device, endpoint_in, endpoint_out, interface: int):
         self.device, self.ep_in, self.ep_out, self.interface = device, endpoint_in, endpoint_out, interface
         self.timeout = 0.05
@@ -42,7 +48,7 @@ class UsbBulkStream:
         import usb.core
         while not self._closed:
             try:
-                data = self.ep_in.read(65536, timeout=50)
+                data = self.ep_in.read(self.READ_SIZE, timeout=200)
             except usb.core.USBTimeoutError:
                 continue
             except usb.core.USBError:

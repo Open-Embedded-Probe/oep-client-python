@@ -145,6 +145,10 @@ class LogicCapture(Interface):
         """-> state, segments done, write position, flags."""
         return struct.unpack("<BIIB", self._call(self.STATUS, locked=False).payload)
 
+    def release(self, serial: int) -> None:
+        """Repeat: segments up to `serial` may be reused."""
+        self._call(self.RELEASE, struct.pack("<I", serial))
+
     def segments(self, from_serial: int = 0) -> list[Segment]:
         p = self._call(self.SEGMENTS, struct.pack("<I", from_serial), locked=False).payload
         return [Segment.unpack(p[1 + 21 * i:]) for i in range(p[0])]
