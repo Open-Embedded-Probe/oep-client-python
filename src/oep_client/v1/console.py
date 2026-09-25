@@ -53,9 +53,9 @@ class PositionStream(Interface):
     def read(self, start: int = FROM_OLDEST, arg: int = 0, maximum: int = 1000) -> Chunk:
         """-> Chunk(start position, more, gap, data). start: FROM_* ; arg: a position or a mark kind (0: any).
         Lock-free; reading does not consume."""
-        p = self._call(self.READ, self._stream_prefix() + struct.pack("<BIH", start, arg, maximum), locked=False).payload
+        p = self._call(self.READ, self._stream_prefix() + struct.pack("<BQH", start, arg, maximum), locked=False).payload
         rd = m.Reader(p)
-        pos, flags = rd.take("IB")
+        pos, flags = rd.take("QB")
         return Chunk(pos, bool(flags & 1), bool(flags & 2), rd.rest())   # data ends the result: no tail (§0)
 
     def read_from(self, position: int, maximum: int = 1000) -> Chunk:
@@ -65,7 +65,7 @@ class PositionStream(Interface):
         """One answer's marks with serial >= from_serial (in serial order). -> (marks, more)."""
         rd = m.Reader(self._call(self.MARKS, self._stream_prefix() + struct.pack("<I", from_serial), locked=False).payload)
         more, count = rd.take("BB")
-        marks = [Mark(*rd.take("IIBIB")) for _ in range(count)]
+        marks = [Mark(*rd.take("IQBIB")) for _ in range(count)]
         rd.tail()
         return marks, bool(more)
 
@@ -137,15 +137,15 @@ class StreamIO:
 
     def _limits(self) -> tuple[int, int]:
         """(read, write) chunk sizes that fit the probe's frame: request header 6 + session 4 + stream 1 + count 2,
-        result header 5 + start 4 + flags 1."""
+        result header 5 + start 8 + flags 1."""
         frame = self.source.host.confirmed()["max_frame"]
-        return max(1, min(self.MAX_READ, frame - 10)), max(1, min(self.MAX_WRITE, frame - 13))
+        return max(1, min(self.MAX_READ, frame - 14)), max(1, min(self.MAX_WRITE, frame - 13))
 
     def read(self, n: int = 512) -> bytes:
         c = self.source.read_from(self.position, min(n, self._limits()[0]))
         if c.gap:
-            self.lost += m.serial_diff(c.start, self.position)
-        self.position = (c.start + len(c.data)) & 0xFFFFFFFF
+            self.lost += c.start - self.position   # u64 positions: no wrap
+        self.position = c.start + len(c.data)
         return c.data
 
     def write(self, data: bytes) -> None:

@@ -133,7 +133,7 @@ def test_console_io_counts_what_the_ring_dropped():
 
     def read(p):
         start, data, flags = next(reads)
-        return ok(struct.pack("<IB", start, flags) + data)
+        return ok(struct.pack("<QB", start, flags) + data)
 
     hst = ScriptedHost({(CONSOLE, console.Console.READ): read})
     io = console.ConsoleIO(console.Console(hst), start=100)

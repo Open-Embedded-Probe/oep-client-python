@@ -607,7 +607,7 @@ class Endpoint:
     # ---- position streams (console, fixture.uart) -----------------------------------------------
     def _stream_op(self, s: Stream, op: int, t: Take, accept: int) -> tuple[int, int, bytes]:
         if op == _CON.op["read"]:
-            frm, arg, mx = t.take("BIH")
+            frm, arg, mx = t.take("BQH")
             t.tail()
             if frm == 0:
                 pos = arg
@@ -621,19 +621,19 @@ class Endpoint:
             else:
                 raise Reject(m.UNSUPPORTED)
             flags = 0
-            if m.serial_diff(pos, s.base) < 0:
+            if pos < s.base:
                 pos, flags = s.base, 2
             data = bytes(s.data[pos - s.base:pos - s.base + mx])
             if pos + len(data) < s.end:
                 flags |= 1
-            return m.COMPLETED, m.SUCCESS, struct.pack("<IB", pos, flags) + data
+            return m.COMPLETED, m.SUCCESS, struct.pack("<QB", pos, flags) + data
         if op == _CON.op["marks"]:
             frm = t.take("I")
             _, ignored = t.tail()
             hits = [mk for mk in s.marks if m.serial_diff(mk[0], frm) >= 0]
             page = hits[:self.MARKS_PER_ANSWER]
             body = struct.pack("<BB", int(len(hits) > len(page)), len(page))
-            body += b"".join(struct.pack("<IIBIB", *mk) for mk in page)
+            body += b"".join(struct.pack("<IQBIB", *mk) for mk in page)
             return self._answer(body, ignored)
         if s.closed:
             raise Reject(m.UNAVAILABLE)
