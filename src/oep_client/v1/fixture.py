@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 
 from . import host as h
-from .core import Interface
+from .core import Interface, confirm
 
 
 class Gpio(Interface):
@@ -103,7 +103,19 @@ class Capture(Interface):
                 return st
 
     def read_all(self, samples: int) -> bytes:
-        """The whole capture, pipelined in READ_CHUNK pieces (reads are lock-free and re-sent once if corrupt)."""
-        reqs = [self.request(self.READ, struct.pack("<IH", off, min(self.READ_CHUNK, samples - off)))
-                for off in range(0, samples, self.READ_CHUNK)]
-        return b"".join(r.payload for r in self.host.pipeline_calls(reqs, locked=False))
+        """The whole capture, pipelined in pieces that fit the probe's frame (reads are lock-free and re-sent once if
+        corrupt). A probe may answer a read with fewer bytes than asked; the rest is read again from where it stopped."""
+        chunk = max(1, min(self.READ_CHUNK, confirm(self.host)["max_frame"] - 16))
+        reqs = [self.request(self.READ, struct.pack("<IH", off, min(chunk, samples - off)))
+                for off in range(0, samples, chunk)]
+        pieces = [r.payload for r in self.host.pipeline_calls(reqs, locked=False)]
+        out = bytearray()
+        for off, piece in zip(range(0, samples, chunk), pieces):
+            want = min(chunk, samples - off)
+            while len(piece) < want:
+                more = self._call(self.READ, struct.pack("<IH", off + len(piece), want - len(piece)), locked=False).payload
+                if not more:
+                    raise h.ProtocolError(f"capture read at {off + len(piece)} returned nothing")
+                piece += more
+            out += piece
+        return bytes(out)
