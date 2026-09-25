@@ -195,6 +195,21 @@ class SerialLink:
         self.stream.close()
 
 
+def open_usb_host(vid: int = 0x303A, pid: int = 0x4021, serial: str | None = None, timeout: float = 3.0):
+    """A Host on a USB vendor bulk pair (the P4's HS OTG port): length-prefixed frames, as on USB-Serial/JTAG."""
+    from . import core, host
+    from .usb_stream import UsbBulkStream
+    lk = SerialLink.__new__(SerialLink)
+    lk.stream, lk.framing, lk.timeout = UsbBulkStream.open(vid, pid, serial), "length", timeout
+    lk.retries = lk.corrupt = lk.stale = lk.dropped = 0
+    lk.pushes, lk.events = collections.deque(), collections.deque()
+    lk.frames = LengthFrames(lk.stream)
+    hst = host.Host(lk.send)
+    hst.exchange = lk.bind(core.confirm(hst))
+    hst.link = lk
+    return hst
+
+
 def open_host(port: str, **kwargs):
     """A Host on this port with the link's pipelining bound to the probe's limits (core confirm): Host.pipeline and
     everything built on it (flash, capture reads) then keep several requests in flight."""
