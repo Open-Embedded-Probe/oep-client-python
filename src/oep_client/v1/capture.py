@@ -163,13 +163,16 @@ class LogicCapture(Interface):
         self.host.call(0, 0x32, struct.pack("<H", self.fn))
 
     def stream(self, link, *, seconds: float | None = None, nbytes: int | None = None,
-               into: Received | None = None) -> Received:
+               into: Received | None = None, keepalive_s: float = 1.0) -> Received:
         """Streaming: collect data pushes until `nbytes` have arrived or `seconds` have passed (at least one is needed).
-        A position that does not follow the previous push is a probe-side drop (a gap); a seq that skips is a lost frame."""
+        A position that does not follow the previous push is a probe-side drop (a gap); a seq that skips is a lost frame.
+        The subscription ends with the lock, so the lock is kept alive every `keepalive_s` while collecting (a stream
+        longer than the lease otherwise stopped: 35 MB missing at the end of 10 s at 150 MHz with a 10 s lease)."""
         if seconds is None and nbytes is None:
             raise ValueError("stream() needs seconds or nbytes")
         got = into or Received()
         deadline = time.monotonic() + seconds if seconds is not None else None
+        kept = time.monotonic()
         expect_seq = getattr(got, "_seq", None)
         event_seqs = getattr(got, "_events", set())   # events share the fn's seq (they stay on the link for the caller)
         while True:
@@ -194,6 +197,9 @@ class LogicCapture(Interface):
                 got.data += data
                 got.frames += 1
             got._seq, got._events = expect_seq, event_seqs
+            if keepalive_s and time.monotonic() - kept >= keepalive_s:
+                self.host.keepalive()
+                kept = time.monotonic()
             if nbytes is not None and len(got.data) >= nbytes:
                 return got
             if deadline is not None and time.monotonic() >= deadline:
