@@ -282,19 +282,40 @@ class SerialLink:
         self.stream.close()
 
 
-def open_usb_host(vid: int = 0x303A, pid: int = 0x4021, serial: str | None = None, timeout: float = 3.0):
-    """A Host on a USB vendor bulk pair (the P4's HS OTG port): length-prefixed frames, as on USB-Serial/JTAG."""
+def open_usb_host(vid: int = 0x303A, pid: int = 0x4021, serial: str | None = None, timeout: float = 3.0,
+                  transports: tuple[str, ...] = ("vendor", "hid")):
+    """A Host on the probe's USB device (the P4's HS OTG port), trying its ways in in the v1 wire §1 order: vendor bulk,
+    then vendor-defined HID (when raw USB is not permitted or the probe offers no vendor interface). A CDC port is
+    opened by path (open_host). Length-prefixed frames on all of them."""
     from . import host
+    errors = []
+    for kind in transports:
+        try:
+            stream = _open_usb_stream(kind, vid, pid, serial)
+        except (OSError, FileNotFoundError, ImportError) as e:
+            errors.append(f"{kind}: {e}")
+            continue
+        except Exception as e:                           # usb1.USBError / usb.core.USBError (access, busy)
+            errors.append(f"{kind}: {type(e).__name__}: {e}")
+            continue
+        lk = SerialLink.on_stream(stream, "length", timeout)
+        lk.transport = kind
+        hst = host.Host(lk.send)
+        lk.attach_host(hst)
+        return hst
+    raise FileNotFoundError(f"no way in to {vid:04x}:{pid:04x}: " + "; ".join(errors))
+
+
+def _open_usb_stream(kind: str, vid: int, pid: int, serial: str | None):
+    if kind == "hid":
+        from .hid_stream import open_hid
+        return open_hid(vid, pid, serial)
     from .usb_stream import UsbAsyncStream, UsbBulkStream
     try:
         import usb1  # noqa: F401  python-libusb1: queued asynchronous IN transfers (streaming near the HS ceiling)
-        stream = UsbAsyncStream.open(vid, pid, serial)
+        return UsbAsyncStream.open(vid, pid, serial)
     except ImportError:
-        stream = UsbBulkStream.open(vid, pid, serial)
-    lk = SerialLink.on_stream(stream, "length", timeout)
-    hst = host.Host(lk.send)
-    lk.attach_host(hst)
-    return hst
+        return UsbBulkStream.open(vid, pid, serial)
 
 
 def open_host(port: str, **kwargs):
