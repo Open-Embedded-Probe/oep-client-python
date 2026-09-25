@@ -89,3 +89,27 @@ class Interface:
     def request(self, op: int, body: bytes = b"") -> tuple[int, int, bytes]:
         """The raw (fn, op, payload) of one operation, for Host.pipeline / pipeline_calls."""
         return self.fn, op, self.prefix + body
+
+
+LINK_SOURCE, LINK_SINK = 0x40, 0x41   # core, lock-free (numbers draft)
+
+
+def link_speed(hst: h.Host, *, size: int | None = None, inflight: int | None = None, seconds: float = 1.0) -> dict:
+    """The link's request/response throughput both ways, as a repeat read or a write sees it: `inflight` requests of
+    `size` bytes kept going in batches for `seconds` (defaults: one full frame, the probe's in-flight limit).
+    -> {"in_mb_s", "out_mb_s", "size", "inflight"} (in = probe to host)."""
+    import time
+    limits = confirm(hst)
+    size = size or limits["max_frame"] - 16
+    inflight = min(inflight or limits["max_inflight"], limits["max_inflight"])
+    first = hst.call(m.CORE_FN, LINK_SOURCE, struct.pack("<I", size), locked=False).payload
+    if len(first) != size or any(b != (k & 0xFF) for k, b in enumerate(first[:256])):
+        raise h.ProtocolError(f"link_source answered {len(first)} bytes, not the {size} asked (or a wrong pattern)")
+    out = {"size": size, "inflight": inflight}
+    for key, op, body in (("in_mb_s", LINK_SOURCE, struct.pack("<I", size)), ("out_mb_s", LINK_SINK, bytes(size))):
+        moved, t0 = 0, time.perf_counter()
+        while time.perf_counter() - t0 < seconds:
+            for r in hst.pipeline_calls([(m.CORE_FN, op, body)] * inflight, locked=False):
+                moved += len(r.payload) if op == LINK_SOURCE else struct.unpack("<I", r.payload)[0]
+        out[key] = moved / (time.perf_counter() - t0) / 1e6
+    return out
