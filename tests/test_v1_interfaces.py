@@ -109,6 +109,7 @@ def test_dmi_value_count_rule():
     assert riscv.dmi_value_count(kinds, 4, riscv.OK) == 2
     assert riscv.dmi_value_count(kinds, 2, riscv.STATUS["timeout"]) == 2    # the failed poll adds its last value
     assert riscv.dmi_value_count(kinds, 1, riscv.STATUS["line"]) == 1       # a failed write adds nothing
+    assert riscv.dmi_value_count(kinds, 2, riscv.STATUS["line"]) == 1       # a poll whose read failed adds nothing
 
 
 def test_block_access_reports_how_far_it_got(dm):

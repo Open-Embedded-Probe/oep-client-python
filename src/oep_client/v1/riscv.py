@@ -20,6 +20,7 @@ from .fixture import Gpio
 
 STATUS = reg.STATUS
 OK = STATUS["ok"]
+TIMEOUT = STATUS["timeout"]
 STATUS_NAMES = {v: k for k, v in STATUS.items()}
 _RV = reg.TARGET_RISCV_DM
 STEP = _RV.enum["dmi_step"]
@@ -27,7 +28,7 @@ STEP_WRITE, STEP_READ, STEP_POLL_READS, STEP_WAIT_US, STEP_POLL_US = (
     STEP["write"], STEP["read"], STEP["poll_reads"], STEP["wait_us"], STEP["poll_us"])
 STEP_SIZES = {STEP_WRITE: 6, STEP_READ: 2, STEP_POLL_READS: 12, STEP_WAIT_US: 5, STEP_POLL_US: 14}
 VALUE_STEPS = {STEP_READ, STEP_POLL_READS, STEP_POLL_US}      # steps that add a value to the result
-POLL_STEPS = {STEP_POLL_READS, STEP_POLL_US}                  # ... and add their last value even when they fail
+POLL_STEPS = {STEP_POLL_READS, STEP_POLL_US}                  # ... and add their last value when they time out
 REG_A0, REG_A1 = 0x100A, 0x100B
 
 
@@ -199,9 +200,10 @@ def count_steps(steps: bytes) -> list[int]:
 
 
 def dmi_value_count(kinds: list[int], done: int, status: int) -> int:
-    """§5.5: the reads and polls among the first `done` steps, plus the failed step's last value when it is a poll."""
+    """§5.5: the reads and polls among the first `done` steps, plus the failed step's last value when it is a poll
+    that timed out (a poll whose read failed on the line adds nothing)."""
     n = sum(k in VALUE_STEPS for k in kinds[:done])
-    if status != OK and done < len(kinds) and kinds[done] in POLL_STEPS:
+    if status == TIMEOUT and done < len(kinds) and kinds[done] in POLL_STEPS:
         n += 1
     return n
 
