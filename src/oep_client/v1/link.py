@@ -198,9 +198,14 @@ class SerialLink:
 def open_usb_host(vid: int = 0x303A, pid: int = 0x4021, serial: str | None = None, timeout: float = 3.0):
     """A Host on a USB vendor bulk pair (the P4's HS OTG port): length-prefixed frames, as on USB-Serial/JTAG."""
     from . import core, host
-    from .usb_stream import UsbBulkStream
+    from .usb_stream import UsbAsyncStream, UsbBulkStream
+    try:
+        import usb1  # noqa: F401  python-libusb1: queued asynchronous IN transfers (streaming near the HS ceiling)
+        stream = UsbAsyncStream.open(vid, pid, serial)
+    except ImportError:
+        stream = UsbBulkStream.open(vid, pid, serial)
     lk = SerialLink.__new__(SerialLink)
-    lk.stream, lk.framing, lk.timeout = UsbBulkStream.open(vid, pid, serial), "length", timeout
+    lk.stream, lk.framing, lk.timeout = stream, "length", timeout
     lk.retries = lk.corrupt = lk.stale = lk.dropped = 0
     lk.pushes, lk.events = collections.deque(), collections.deque()
     lk.frames = LengthFrames(lk.stream)

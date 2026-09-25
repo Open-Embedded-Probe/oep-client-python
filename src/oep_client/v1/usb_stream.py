@@ -91,3 +91,111 @@ class UsbBulkStream:
         self._reader.join(timeout=0.5)
         usb.util.release_interface(self.device, self.interface)
         usb.util.dispose_resources(self.device)
+
+
+class UsbAsyncStream:
+    """The same shape as UsbBulkStream on python-libusb1 (`usb1`): IN runs as DEPTH asynchronous transfers of URB_SIZE
+    kept queued by an event thread, so a continuous stream near the HS ceiling (wch-protocols E116: 1 MiB x 8 reaches
+    ~47 MB/s over usbipd) is taken without gaps. A transfer completes when full or on a short packet; the probe ends a
+    transfer whose length is a whole number of packets with a zero-length packet, so small answers never wait."""
+
+    URB_SIZE = 1 << 20
+    DEPTH = 8
+
+    def __init__(self, context, handle, endpoint_in: int, endpoint_out: int, interface: int):
+        import usb1
+        self._usb1 = usb1
+        self.context, self.handle, self.ep_in, self.ep_out, self.interface = context, handle, endpoint_in, endpoint_out, interface
+        self.timeout = 0.05
+        self._buffer = bytearray()
+        self._cond = threading.Condition()
+        self._closed = False
+        self._transfers = []
+        for _ in range(self.DEPTH):
+            t = handle.getTransfer()
+            t.setBulk(endpoint_in, self.URB_SIZE, callback=self._done, timeout=0)
+            t.submit()
+            self._transfers.append(t)
+        self._events = threading.Thread(target=self._run, daemon=True)
+        self._events.start()
+
+    @classmethod
+    def open(cls, vid: int, pid: int, serial: str | None = None) -> "UsbAsyncStream":
+        import usb1
+        context = usb1.USBContext()
+        context.open()
+        for dev in context.getDeviceIterator(skip_on_error=True):
+            if dev.getVendorID() != vid or dev.getProductID() != pid:
+                continue
+            handle = dev.open()
+            if serial and (handle.getSerialNumber() or "").lower() != serial.lower():
+                handle.close()
+                continue
+            for setting in dev.iterSettings():
+                eps = [(e.getAddress(), e.getAttributes()) for e in setting]
+                ins = [a for a, attr in eps if attr & 3 == 2 and a & 0x80]
+                outs = [a for a, attr in eps if attr & 3 == 2 and not a & 0x80]
+                if ins and outs:
+                    handle.claimInterface(setting.getNumber())
+                    return cls(context, handle, ins[0], outs[0], setting.getNumber())
+            handle.close()
+        context.close()
+        raise FileNotFoundError(f"no USB device {vid:04x}:{pid:04x}" + (f" serial {serial}" if serial else ""))
+
+    def _done(self, transfer) -> None:
+        usb1 = self._usb1
+        status = transfer.getStatus()
+        if status == usb1.TRANSFER_COMPLETED:
+            n = transfer.getActualLength()
+            if n:
+                data = transfer.getBuffer()[:n]
+                with self._cond:
+                    self._buffer += data
+                    self._cond.notify_all()
+        if not self._closed and status in (usb1.TRANSFER_COMPLETED, usb1.TRANSFER_TIMED_OUT):
+            transfer.submit()
+
+    def _run(self) -> None:
+        while not self._closed:
+            try:
+                self.context.handleEventsTimeout(0.1)
+            except self._usb1.USBErrorInterrupted:
+                continue
+
+    @property
+    def in_waiting(self) -> int:
+        with self._cond:
+            return len(self._buffer)
+
+    def read(self, n: int = 1) -> bytes:
+        deadline = time.monotonic() + (self.timeout or 0)
+        with self._cond:
+            while not self._buffer:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    return b""
+                self._cond.wait(left)
+            out = bytes(self._buffer[:n])
+            del self._buffer[:n]
+            return out
+
+    def write(self, data: bytes) -> int:
+        return self.handle.bulkWrite(self.ep_out, data, timeout=2000)
+
+    def reset_input_buffer(self) -> None:
+        with self._cond:
+            self._buffer.clear()
+
+    def close(self) -> None:
+        self._closed = True
+        for t in self._transfers:
+            try:
+                t.cancel()
+            except self._usb1.USBError:
+                pass
+        self._events.join(timeout=0.5)
+        try:
+            self.handle.releaseInterface(self.interface)
+        finally:
+            self.handle.close()
+            self.context.close()
