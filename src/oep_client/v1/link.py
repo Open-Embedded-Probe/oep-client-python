@@ -10,8 +10,9 @@ The port opens with pyserial's defaults - DTR and RTS asserted - which reset non
 Length frames carry no CRC, so lost boundaries are recovered by the §1 resync: on a result for another request, an
 impossible length or a frame that stops half way, read and discard until the input is quiet for 50 ms, prove the link
 with a confirm, and go on. When pushes keep the input from going quiet, the host's unsubscribe and end (harmless twice)
-are sent blind. A request without a session id (lock-free reads, open) is sent once more after a corrupt or missing
-reply; a state-changing request is never re-sent, because a re-send may run it twice (session-and-exclusivity).
+are sent blind. A request is sent once more after a corrupt or missing reply, with the same corr: the probe keeps the lock holder's
+recent results (keyed on corr, checked against fn, op and a payload CRC, dropped at every open) and answers the repeat
+from them, so a state-changing request is not run twice (v1-open-proposals §4).
 Behind COBS, frames carry their own boundaries and CRC: a reply to an earlier request is read past there.
 """
 
@@ -71,6 +72,7 @@ class SerialLink:
         self.corrupt = 0
         self.stale = 0                             # replies that answered another request
         self.resyncs = 0
+        self.ended_blind = False
         self.dropped = 0                           # probe-initiated frames of a role this client does not handle
         self.pushes: collections.deque[bytes] = collections.deque()   # role 0x06 frames, oldest first
         self.events: collections.deque[bytes] = collections.deque()   # role 0x05 frames, oldest first
@@ -178,8 +180,8 @@ class SerialLink:
 
     def resync(self, tries: int = 3) -> None:
         """v1 wire §1: read and discard until the input is quiet for 50 ms, then prove the link with a confirm (a read,
-        safe to send), then go on. Never re-sends a state-changing request. When the input does not go quiet (pushes
-        keep coming), the host's unsubscribe and end go out blind, once."""
+        safe to send), then go on. When the input does not go quiet (pushes keep coming), the host's unsubscribe and end go
+        out blind, once (and send() then does not send its request again)."""
         self.resyncs += 1
         if self.framing != "length":
             time.sleep(RESYNC_QUIET_S)
@@ -195,6 +197,7 @@ class SerialLink:
                 blind_sent = True
                 if stops:
                     self._write(stops)
+                    self.ended_blind = True     # the session ended: a request sent again would only meet no_session
             corr = self.corr_source()
             self._write([m.Request(corr, m.CORE_FN, m.OP_CONFIRM, m.CONFIRM_REQUEST + bytes([0, 0xFF])).pack()])
             try:
@@ -219,6 +222,7 @@ class SerialLink:
 
     def send(self, message: bytes) -> bytes:
         corr = self._corr(message)
+        self.ended_blind = False
         for attempt in (0, 1):
             self._write([message])
             try:
@@ -227,8 +231,11 @@ class SerialLink:
                 if isinstance(e, cobs.CorruptFrame):
                     self.corrupt += 1
                 self._recover()
-                if attempt or message[0] & m.ROLE_SESSION:      # state-changing: never re-sent
+                if attempt or (message[0] & m.ROLE_SESSION and self.ended_blind):
                     raise
+                # sent once more with the same corr, state-changing ones too: the probe keeps the lock holder's recent
+                # results and answers a repeat from them instead of running it twice (v1-open-proposals §4). A result
+                # too large to keep comes back rejected result_lost: the caller reads the state again.
                 self.retries += 1
 
     def exchange(self, messages: list[bytes], max_inflight: int, window_bytes: int) -> list[bytes]:

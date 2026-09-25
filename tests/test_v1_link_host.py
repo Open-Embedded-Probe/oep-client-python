@@ -110,14 +110,16 @@ def test_a_reply_for_another_request_resyncs_and_a_read_is_sent_once_more():
     assert lk.stale == 1 and lk.resyncs == 1 and lk.retries == 1
 
 
-def test_a_state_changing_request_is_never_sent_again_after_a_resync():
+def test_a_state_changing_request_is_sent_again_with_the_same_corr_after_a_resync():
     s = Stream(answering())
     lk = make_link(s)
     s.rx += frame(result(99))
-    with pytest.raises(link.CorrMismatch):
-        lk.send(m.Request(7, 1, 0x01, b"x", session=0x1234).pack())
-    assert [op for _, _, op in sent(s)] == [0x01, m.OP_CONFIRM]
-    assert lk.resyncs == 1 and lk.retries == 0
+    reply = lk.send(m.Request(7, 1, 0x01, b"x", session=0x1234).pack())   # the probe answers a repeat from its table
+    assert m.Result.unpack(reply).corr == 7
+    ops = sent(s)
+    assert [op for _, _, op in ops] == [0x01, m.OP_CONFIRM, 0x01]
+    assert ops[0][1] == ops[2][1] == 7                                     # the same corr both times
+    assert lk.resyncs == 1 and lk.retries == 1
 
 
 def test_an_impossible_length_resyncs():
@@ -134,9 +136,8 @@ def test_a_frame_that_stops_half_way_resyncs(monkeypatch):
     s = Stream(answering())
     lk = make_link(s)
     s.rx += struct.pack("<H", 10) + b"\x02\x05"                   # 2 of 10 bytes, then nothing
-    with pytest.raises(frames.FramingLost):
-        lk.send(m.Request(4, 1, 0x01, b"", session=1).pack())
-    assert lk.resyncs == 1 and [op for _, _, op in sent(s)] == [0x01, m.OP_CONFIRM]
+    lk.send(m.Request(4, 1, 0x01, b"", session=1).pack())            # sent again with corr 4 after the resync
+    assert lk.resyncs == 1 and [op for _, _, op in sent(s)] == [0x01, m.OP_CONFIRM, 0x01]
 
 
 def test_pushes_that_never_stop_are_stopped_blind_with_unsubscribe_and_end(monkeypatch):
@@ -146,7 +147,7 @@ def test_pushes_that_never_stop_are_stopped_blind_with_unsubscribe_and_end(monke
     hst = h.Host(lk.send)
     hst.session, hst.revision, hst.subscriptions = 0xABCD, 1, {5}
     lk.corr_source, lk.blind = hst.next_corr, hst.blind_stop
-    s.noise = frame(bytes([0x06]) + struct.pack("<HHI", 5, 0, 0) + b"x" * 32)
+    s.noise = frame(bytes([0x06]) + struct.pack("<HHQ", 5, 0, 0) + b"x" * 32)
 
     def respond(msg):
         req = m.Request.unpack(msg)
