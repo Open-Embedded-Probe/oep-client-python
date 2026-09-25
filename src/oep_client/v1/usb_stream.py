@@ -96,11 +96,13 @@ class UsbBulkStream:
 class UsbAsyncStream:
     """The same shape as UsbBulkStream on python-libusb1 (`usb1`): IN runs as DEPTH asynchronous transfers of URB_SIZE
     kept queued by an event thread, so a continuous stream near the HS ceiling (wch-protocols E116: 1 MiB x 8 reaches
-    ~47 MB/s over usbipd) is taken without gaps. A transfer completes when full or on a short packet; the probe ends a
+    ~47 MB/s over usbipd; 64 KiB x 32 carried 2 x 160 Msps here) is taken without gaps. A transfer completes when full or on a short packet; the probe ends a
     transfer whose length is a whole number of packets with a zero-length packet, so small answers never wait."""
 
-    URB_SIZE = 1 << 20
-    DEPTH = 8
+    # 64 KiB x 32: a probe streaming whole-packet frames (16 KiB) completes a read every four frames, so the latency at
+    # a low rate stays short (1 MiB reads waited 0.8 s at 1.25 MB/s), and 2 MiB stay queued for the host's hiccups
+    URB_SIZE = 64 * 1024
+    DEPTH = 32
 
     def __init__(self, context, handle, endpoint_in: int, endpoint_out: int, interface: int):
         import usb1
