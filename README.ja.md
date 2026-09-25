@@ -2,7 +2,7 @@
 
 Open Embedded Probe の host 側。v1（oep-spec `docs/v1-core-wire-delta.ja.md`、固める候補の形）を話す。番号は oep-spec の
 `generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.v1.registry` から取る。破壊的変更を前提とする
-実験段階で、互換 API は約束しない。
+実験段階で、互換 API は約束しない。OEP を初めて読む人は oep-spec の `docs/review-guide.ja.md`（どこに何が書いてあるか）から。
 
 target の知識は host にある、という OEP の分担に従う。probe は線と DMI / DP・AP の転送しか知らず、CH32 の flash
 コントローラ、RAM ローダー、RP2350 の boot ROM、Cortex-M の debug レジスタなどはここに置く。
