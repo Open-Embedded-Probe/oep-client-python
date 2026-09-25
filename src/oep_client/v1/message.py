@@ -1,4 +1,4 @@
-"""v1 messages (oep-spec docs/v1-core-wire-delta.ja.md §0-§3): the v0 request/result headers plus the session flag,
+"""v1 messages (oep-spec docs/oep-core.ja.md §2-§5): the v0 request/result headers plus the session flag,
 and the §0 rules for what follows a payload's fixed part.
 
   request : role(0x01) corr(u16) fn(u16) op(u8) payload

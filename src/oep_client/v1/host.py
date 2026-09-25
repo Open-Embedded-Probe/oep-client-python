@@ -4,7 +4,7 @@ The host picks a random u32 session id for every open (never a counter: after a 
 start again and match an old process's id). A one-shot CLI keeps the id between commands; a request that goes
 through with the same id proves nobody else operated the probe in between (oep-spec session-and-exclusivity).
 
-v1 wire §2: role 0x81 (a session id in the header) goes only to a probe whose confirm answered revision 1 or more; a
+oep-core §4.1: role 0x81 (a session id in the header) goes only to a probe whose confirm answered revision 1 or more; a
 v0 probe drops the unknown role without an answer. The host confirms before its first open or session request.
 §3: when the probe's boot_id changes (open, heartbeat), or a probe with boot_id 0 answers no session, every
 connection and the plan are gone: `epoch` counts those losses, so a client holding a connection can tell.
@@ -33,7 +33,7 @@ class Rejected(OepError):
 
 class Failed(OepError):
     """The probe ran the request and it did not work (completed, outcome failed or partial), or answered with a
-    resolution or outcome this host does not know (a failure too, v1 wire §0)."""
+    resolution or outcome this host does not know (a failure too, oep-core §2.4)."""
 
     def __init__(self, result: m.Result | None, why: str = ""):
         super().__init__(why or (result.describe() if result is not None else "failed"))

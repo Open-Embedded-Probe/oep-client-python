@@ -1,4 +1,4 @@
-"""OEP over a vendor-defined USB HID interface (oep-spec v1-core-wire-delta §1): the way in when vendor bulk is not
+"""OEP over a vendor-defined USB HID interface (oep-spec oep-core §3): the way in when vendor bulk is not
 usable (no WinUSB / udev permission for raw USB), before a CDC port, which a probe may give to serial forwarding.
 
 Framing: every report carries count (u16 LE) and then that many bytes of the length-prefixed frame stream, the rest of

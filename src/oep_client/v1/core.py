@@ -14,7 +14,7 @@ CORE_LABEL = reg.CORE.tlv["describe"]["label"]
 
 
 class UnsupportedRevision(h.OepError):
-    """The probe offers the interface in a revision whose payload shapes this client does not speak (v1 wire §0:
+    """The probe offers the interface in a revision whose payload shapes this client does not speak (oep-core §2.7:
     a host never uses an interface revision it does not know)."""
 
 

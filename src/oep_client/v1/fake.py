@@ -5,7 +5,7 @@ operations - confirm, list, describe - by encoding real payloads and paging them
 so what `dump` shows is what a host would decode from a probe of that shape.
 
 The profiles are EXAMPLES of declarations, not a decision about which capabilities are standard.
-Wire forms: v1-core-wire-delta §5 (confirm with a revision range, list first / total u16 with oep.core as the first
+Wire forms: oep-core §7 (confirm with a revision range, list first / total u16 with oep.core as the first
 entry, describe first u16).
 """
 

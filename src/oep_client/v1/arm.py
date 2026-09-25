@@ -1,4 +1,4 @@
-"""oep.wire.swd and oep.target.arm-adi, revision 1 (oep-spec v1-core-wire-delta §5.4, §5.6).
+"""oep.wire.swd and oep.target.arm-adi, revision 1 (oep-spec oep-if-debug §1, §5-§6).
 
 The probe moves raw DP / AP transfers and MEM-AP blocks; everything above - power-up, SELECT (ADIv5 APSEL/APBANKSEL or
 ADIv6 AP addresses), CSW, the Cortex-M debug registers - is here, as target knowledge belongs to the host.

@@ -5,7 +5,7 @@ list result  : total(u16) count(u8) entries [TLV tail]         oep.core (fn 0) i
 list entry   : fn(u16) instance(u16) revision(u8) flags(u8) name_len(u8) name
 describe     : request fn(u16) first(u16); result more(u8) then TLV bytes (tag u8, len u8, value;
                tag bit 7 = critical). more = 1: TLVs remain after this page, ask again from first + count
-(oep-spec v1-core-wire-delta §5; the entry revision decides the interface's payload shapes, §0)
+(oep-spec oep-core §7.2; the entry revision decides the interface's payload shapes, §2.7)
 
 Common TLV tags 0x01..0x3F mean the same for every interface; 0x40..0x7F belong to the interface.
 """

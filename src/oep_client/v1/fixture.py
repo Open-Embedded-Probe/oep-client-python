@@ -1,4 +1,4 @@
-"""oep.fixture.gpio and oep.fixture.uart, revision 1 (oep-spec v1-core-wire-delta §5.8). The capture is in `capture`
+"""oep.fixture.gpio and oep.fixture.uart, revision 1 (oep-spec oep-if-fixture). The capture is in `capture`
 (oep.fixture.capture revision 1 = logic-capture's basic set).
 
 Plan roles stay as they were: gpio 1 = line; uart 1 = RX, 2 = TX. Only channels the plan assigned can be used.

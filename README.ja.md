@@ -1,6 +1,6 @@
 # OEP Python client
 
-Open Embedded Probe の host 側。v1（oep-spec `docs/v1-core-wire-delta.ja.md`、固める候補の形）を話す。番号は oep-spec の
+Open Embedded Probe の host 側。v1（oep-spec の `docs/oep-core.ja.md` と `docs/oep-if-*.ja.md`、固める候補の形）を話す。番号は oep-spec の
 `generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.v1.registry` から取る。破壊的変更を前提とする
 実験段階で、互換 API は約束しない。OEP を初めて読む人は oep-spec の `docs/review-guide.ja.md`（どこに何が書いてあるか）から。
 

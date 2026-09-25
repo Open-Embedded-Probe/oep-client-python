@@ -1,8 +1,8 @@
-"""oep.fixture.capture / oep.fixture.analog revision 1, the basic set of oep-spec docs/logic-capture.ja.md (§3.0
-layouts, §4 segments, §5 operations; v1-core-wire-delta §5.9). Numbers from `registry`.
+"""oep.fixture.capture / oep.fixture.analog revision 1 (oep-spec docs/oep-if-capture.ja.md: §1 layouts, §2 segments,
+§3 operations). Numbers from `registry`.
 
 configure: a TLV the probe cannot honour is refused (rejected unsupported, 0x0B, payload = the tag) when the host marked
-it critical, and otherwise ignored and listed in the answer's ignored TLV (0x7F, v1 wire §0)."""
+it critical, and otherwise ignored and listed in the answer's ignored TLV (0x7F, oep-core §2.3)."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ CRITICAL = m.TAG_CRITICAL
 ONE_SHOT, REPEAT, STREAMING = (_CAP.enum["mode"][k] for k in ("one_shot", "repeat", "streaming"))
 IMMEDIATE, LEVEL, EDGE, CROSS_UP, CROSS_DOWN = range(5)
 STATE = _CAP.enum["state"]
-# events (v1 wire §4.5, role 0x05)
+# events (oep-core §11, role 0x05)
 EVENT_SEGMENT, EVENT_STOPPED, EVENT_TRIGGERED = (_CAP.event[k] for k in ("segment", "stopped", "triggered"))
 
 
@@ -166,7 +166,7 @@ class LogicCapture(Interface):
         return c
 
     def subscribe(self, min_bytes: int = 0, max_delay_ms: int = 0) -> None:
-        """Events, and in streaming the data pushes (v1 wire §4.5): send when min_bytes are ready or max_delay_ms after the
+        """Events, and in streaming the data pushes (oep-core §11): send when min_bytes are ready or max_delay_ms after the
         first byte (0, 0: as soon as there is anything)."""
         self.host.subscribe(self.fn, min_bytes, max_delay_ms)
 

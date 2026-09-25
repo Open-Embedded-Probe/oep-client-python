@@ -1,5 +1,5 @@
 """oep.target.console revision 1: the target's console as a position stream on a debug connection (oep-spec
-v1-core-wire-delta §5.7, console-stream.ja.md), and ConsoleIO, the same as a plain byte stream.
+oep-if-console, oep-if-common §1), and ConsoleIO, the same as a plain byte stream.
 
 The position streams of oep.target.console and oep.fixture.uart share their read / marks / clear / mark / write
 operations (same numbers and meanings; the UART has no stream byte): `PositionStream` holds them, `prefix` is the
