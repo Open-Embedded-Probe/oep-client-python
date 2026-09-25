@@ -51,6 +51,7 @@ class SerialLink:
         self.stale = 0                             # replies read past because they answered an earlier request
         self.dropped = 0                           # probe-initiated frames of a role this client does not handle
         self.pushes: collections.deque[bytes] = collections.deque()   # experimental role 0x06 frames, oldest first
+        self.events: collections.deque[bytes] = collections.deque()   # experimental role 0x05 frames, oldest first
         if self.framing == "length":
             self.frames = LengthFrames(self.stream)
             self.frames.discard_input()
@@ -90,13 +91,15 @@ class SerialLink:
         return message[1] | message[2] << 8          # request and result both carry it right after the role byte
 
     def _route(self, frame: bytes) -> bool:
-        """Frames that are not results: pushes are kept, other roles dropped. True if `frame` was one of them.
+        """Frames that are not results: data pushes and events are kept, other roles dropped. True if `frame` was one of them.
         Only a result (role 0x02) carries a correlation id; matching anything else by its bytes 1-2 would take a
         push for a reply whenever its fn happened to equal the id."""
         if frame and frame[0] == 0x02:
             return False
         if frame and frame[0] == 0x06:
             self.pushes.append(frame)
+        elif frame and frame[0] == 0x05:
+            self.events.append(frame)
         else:
             self.dropped += 1
         return True
@@ -111,9 +114,10 @@ class SerialLink:
                 return reply
             self.stale += 1
 
-    def pump(self, timeout: float = 0.0) -> int:
+    def pump(self, timeout: float = 0.0, until_one: bool = False) -> int:
         """Read the frames that arrive within `timeout` in total (pushes are kept, stray results counted stale); a
-        probe that keeps pushing cannot hold this past the deadline. -> frames read."""
+        probe that keeps pushing cannot hold this past the deadline. `until_one`: return as soon as a frame was read.
+        -> frames read."""
         saved = self.timeout
         deadline = time.monotonic() + timeout
         n = 0
@@ -127,7 +131,7 @@ class SerialLink:
                 n += 1
                 if not self._route(frame):
                     self.stale += 1
-                if time.monotonic() >= deadline:
+                if until_one or time.monotonic() >= deadline:
                     return n
         finally:
             self.timeout = saved
