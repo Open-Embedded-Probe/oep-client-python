@@ -74,6 +74,26 @@ class Config:
         return self.samples * len(self.order) * self.slot // 8
 
 
+@dataclass
+class Received:
+    """What stream() collected: the bytes in arrival order, where the stream skipped (probe-side drops) and lost frames."""
+    data: bytearray = field(default_factory=bytearray)
+    start: int | None = None                                   # stream position of data[0]
+    gaps: list[tuple[int, int]] = field(default_factory=list)  # (index in data where it skipped, bytes skipped)
+    seq_lost: int = 0                                          # push frames missing by seq
+    frames: int = 0
+
+
+def take_pushes(link, fn: int) -> list[tuple[int, int, bytes]]:
+    """Remove this fn's data pushes (role 0x06) from the link: [(seq, position, data)], oldest first."""
+    mine, rest = [], []
+    for f in link.pushes:
+        (mine if struct.unpack_from("<H", f, 1)[0] == fn else rest).append(f)
+    link.pushes.clear()
+    link.pushes.extend(rest)
+    return [(struct.unpack_from("<H", f, 3)[0], struct.unpack_from("<I", f, 5)[0], f[9:]) for f in mine]
+
+
 def _config(payload: bytes, analog: bool) -> Config:
     c = Config()
     for tag, v in tlvs(payload):
@@ -133,6 +153,65 @@ class LogicCapture(Interface):
         if not query:
             self.config = c
         return c
+
+    def subscribe(self, min_bytes: int = 0, max_delay_ms: int = 0) -> None:
+        """Events, and in streaming the data pushes (v1 wire §4.5): send when min_bytes are ready or max_delay_ms after the
+        first byte (0, 0: as soon as there is anything)."""
+        self.host.call(0, 0x30, struct.pack("<HHH", self.fn, min_bytes, max_delay_ms))
+
+    def unsubscribe(self) -> None:
+        self.host.call(0, 0x32, struct.pack("<H", self.fn))
+
+    def stream(self, link, *, seconds: float | None = None, nbytes: int | None = None,
+               into: Received | None = None) -> Received:
+        """Streaming: collect data pushes until `nbytes` have arrived or `seconds` have passed (at least one is needed).
+        A position that does not follow the previous push is a probe-side drop (a gap); a seq that skips is a lost frame."""
+        if seconds is None and nbytes is None:
+            raise ValueError("stream() needs seconds or nbytes")
+        got = into or Received()
+        deadline = time.monotonic() + seconds if seconds is not None else None
+        expect_seq = getattr(got, "_seq", None)
+        event_seqs = getattr(got, "_events", set())   # events share the fn's seq (they stay on the link for the caller)
+        while True:
+            for e in link.events:
+                if struct.unpack_from("<H", e, 1)[0] == self.fn:
+                    event_seqs.add(struct.unpack_from("<H", e, 3)[0])
+            for seq, position, data in take_pushes(link, self.fn):
+                while expect_seq is not None and expect_seq != seq:
+                    if expect_seq in event_seqs:
+                        event_seqs.discard(expect_seq)
+                    else:
+                        got.seq_lost += 1
+                    expect_seq = (expect_seq + 1) & 0xFFFF
+                expect_seq = (seq + 1) & 0xFFFF
+                if got.start is None:
+                    got.start = position
+                else:
+                    expected = (got.start + len(got.data) + sum(n for _, n in got.gaps)) & 0xFFFFFFFF
+                    skipped = (position - expected) & 0xFFFFFFFF
+                    if skipped:
+                        got.gaps.append((len(got.data), skipped))
+                got.data += data
+                got.frames += 1
+            got._seq, got._events = expect_seq, event_seqs
+            if nbytes is not None and len(got.data) >= nbytes:
+                return got
+            if deadline is not None and time.monotonic() >= deadline:
+                return got
+            link.pump(0.02, until_one=True)
+
+    def finish(self, link, got: Received, timeout: float = 5.0) -> Received:
+        """Streaming, after stop(): collect the pushes still to come, up to the last byte captured (status's write
+        position), or until `timeout`."""
+        end = self.status()[2]
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if got.start is not None:
+                reached = (got.start + len(got.data) + sum(n for _, n in got.gaps)) & 0xFFFFFFFF
+                if reached == end:
+                    return got
+            self.stream(link, seconds=min(0.1, max(0.0, deadline - time.monotonic())), into=got)
+        return got
 
     def start(self) -> int:
         """-> blocking_ms (0: the probe keeps answering while it captures)."""
