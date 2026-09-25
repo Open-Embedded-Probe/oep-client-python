@@ -446,16 +446,24 @@ class Endpoint:
         return m.COMPLETED, m.SUCCESS, b""
 
     # ---- oep.wire.rvswd / swio ------------------------------------------------------------------
+    PINS = (2, 54)   # the one pair this fake wire allows (as the P4 X035 fixture)
+
     def _wire(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         tg = self.target
-        if op == 0x01:                                             # scan
+        if op == 0x01:                                             # scan: count(u8) pairs; only (2, 54) is allowed
+            count = t.take("B")
+            pairs = [t.take("HH") for _ in range(count)]
             t.tail()
-            return m.COMPLETED, m.SUCCESS, struct.pack("<BBHHI", 1, 1, 2, 54, tg.dmstatus())
+            if any(p != self.PINS for p in pairs):
+                raise Reject(m.UNAVAILABLE)
+            return m.COMPLETED, m.SUCCESS, struct.pack("<BBHHI", 1, 1, *self.PINS, tg.dmstatus())
         if op == 0x02:                                             # attach
             method = t.take("B")
-            got, ignored = t.tail({0x01})
+            got, ignored = t.tail({0x01, 0x03})
             if method > 1:
                 raise Reject(m.UNSUPPORTED)
+            if 0x03 in got and struct.unpack("<HH", got[0x03]) != self.PINS:
+                raise Reject(m.UNAVAILABLE)                        # a pair this probe does not allow
             speed = min(4_000_000, struct.unpack("<I", got[0x01])[0]) if 0x01 in got else 4_000_000
             existing = next((c for c, w in self.connections.items() if w == fn), None)
             flags = 0

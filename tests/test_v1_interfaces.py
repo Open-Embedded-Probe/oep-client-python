@@ -302,3 +302,19 @@ def test_an_unhonourable_value_follows_the_critical_bit(dm):
     r = hst.call(DM, riscv.reg.TARGET_RISCV_DM.op["reset"], body + bytes([method, 1, 9]))
     tail = m.split_tlvs(r.payload[7:])
     assert (m.TAG_IGNORED, bytes([method])) in [(t, v) for t, v in tail]
+
+
+def test_scan_and_attach_take_the_pin_pair_and_refuse_one_not_allowed(bench):
+    """v1 wire §5.5: scan tries the pairs given (none = every pair the probe allows) and answers pairs attach takes back;
+    attach takes a pins TLV; a pair the probe does not allow is refused before anything runs."""
+    _, hst = bench
+    wire = riscv.Wire(hst)
+    found = wire.scan()
+    assert [f.pins for f in found] == [(2, 54)]
+    assert [f.pins for f in wire.scan([(2, 54)])] == [(2, 54)]
+    with pytest.raises(host.Rejected):
+        wire.scan([(2, 54), (3, 4)])
+    with pytest.raises(host.Rejected):
+        wire.attach(halt=False, pins=(3, 4))
+    conn, _ = wire.attach(halt=False, pins=found[0].pins)
+    assert conn >= 1

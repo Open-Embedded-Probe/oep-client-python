@@ -314,3 +314,4 @@ def test_rp2350_flash_program_runs_the_sdk_sequence_and_verifies():
     assert bytes(fake.flash[:len(image)]) == image and fake.flash[len(image):20480] == b"\xff" * (20480 - len(image))
     rp2350.Rom(core).reboot()
     assert fake.log[-1] == "reboot flags 0 delay 10" and not fake.dhcsr & 8
+
