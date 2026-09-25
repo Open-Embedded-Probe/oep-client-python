@@ -1,5 +1,6 @@
 """The link's correlation matching and the host's call / fn cache, on a scripted byte stream (no serial port)."""
 
+import collections
 import struct
 
 import pytest
@@ -37,7 +38,8 @@ def frame(msg: bytes) -> bytes:
 def make_link(stream):
     lk = link.SerialLink.__new__(link.SerialLink)
     lk.stream, lk.framing, lk.timeout = stream, "length", 0.3
-    lk.retries = lk.corrupt = lk.stale = 0
+    lk.retries = lk.corrupt = lk.stale = lk.dropped = 0
+    lk.pushes = collections.deque()
     lk.frames = frames.LengthFrames(stream)
     return lk
 
@@ -52,6 +54,19 @@ def test_a_late_reply_to_an_earlier_request_is_read_past():
     s.rx += frame(result(6, b"old")) + frame(result(7, b"new"))   # 6 answered late, after its re-send timed out
     assert lk.send(m.Request(7, 0, 0x01, b"").pack()).endswith(b"new")
     assert lk.stale == 1
+
+
+def test_pushes_are_routed_by_role_and_never_taken_for_a_reply():
+    s = Stream()
+    lk = make_link(s)
+    # A data push for fn 7 carries 07 00 where a result carries its correlation id: matched by bytes, it would pass
+    # for the reply to request 7.
+    push = bytes([0x06]) + struct.pack("<HHI", 7, 0, 100) + b"data"
+    s.rx += frame(push) + frame(bytes([0x05, 7, 0, 0, 0, 1])) + frame(result(7, b"reply"))
+    assert lk.send(m.Request(7, 0, 0x01, b"").pack()).endswith(b"reply")
+    assert list(lk.pushes) == [push] and lk.dropped == 1 and lk.stale == 0
+    s.rx += frame(push)
+    assert lk.pump(0.05) == 1 and len(lk.pushes) == 2
 
 
 def test_exchange_matches_by_correlation_and_clears_after_an_error():
