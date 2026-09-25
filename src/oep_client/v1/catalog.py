@@ -23,7 +23,6 @@ LIST_EXACT = 0x01
 ROLE_CHANNELS = 0x01     # role(u8) base(u16) bitmap(bytes): channels usable for that role
 MAX_CLOCK_HZ = 0x02      # u32
 MAX_LENGTH = 0x03        # u16
-EXCLUSIVE_GROUP = 0x04   # u16, repeated
 MIN_CLOCK_HZ = 0x05      # u32
 FEATURES = 0x06          # u32, bits defined by the interface
 IMPLEMENTATION = 0x07    # u8: 0 unspecified, 1 software, 2 peripheral, 3 peripheral + DMA/PIO
@@ -146,7 +145,6 @@ class Description:
     max_clock_hz: int | None = None
     min_clock_hz: int | None = None
     max_length: int | None = None
-    exclusive_groups: list[int] = field(default_factory=list)
     features: int | None = None
     implementation: int | None = None
     specific: list[tuple[int, bytes]] = field(default_factory=list)
@@ -169,8 +167,6 @@ def decode_description(data: bytes) -> Description:
             d.min_clock_hz = struct.unpack("<I", value)[0]
         elif t == MAX_LENGTH:
             d.max_length = struct.unpack("<H", value)[0]
-        elif t == EXCLUSIVE_GROUP:
-            d.exclusive_groups.append(struct.unpack("<H", value)[0])
         elif t == FEATURES:
             d.features = struct.unpack("<I", value)[0]
         elif t == IMPLEMENTATION:

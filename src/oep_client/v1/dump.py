@@ -89,8 +89,6 @@ def describe_offer(o: Offer) -> dict:
     for key in ("max_clock_hz", "min_clock_hz", "max_length"):
         if getattr(d, key) is not None:
             out[key] = getattr(d, key)
-    if d.exclusive_groups:
-        out["exclusive_groups"] = d.exclusive_groups
     if d.features is not None:
         out["features"] = _features(d.features, known.features if known else {})
     if d.implementation is not None:
@@ -151,8 +149,6 @@ def to_text(caps: Capabilities) -> str:
                 lines.append(f"{pad}  features: " + ", ".join(r["features"]))
             if "implementation" in r:
                 lines.append(f"{pad}  implementation: {r['implementation']}")
-            if r.get("exclusive_groups"):
-                lines.append(f"{pad}  exclusive group {', '.join(map(str, r['exclusive_groups']))}")
             for k, v in r.get("declares", {}).items():
                 lines.append(f"{pad}  {k}: {v}")
             if "unusable" in r:
