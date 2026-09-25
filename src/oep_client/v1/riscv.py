@@ -74,9 +74,14 @@ class WireBase(Interface):
     SCAN, ATTACH, DETACH, ATTACH_UNDER_RESET = 0x01, 0x02, 0x03, 0x04
     REVISION = 1
     TAG_MAX_SPEED = 0x01
+    TAG_PINS = 0x03          # swdio(u16) swclk(u16, 0xFFFF on one wire), critical (v1 wire §5.5)
 
-    def scan(self) -> list[Found]:
-        rd = m.Reader(self._call(self.SCAN).payload)
+    def scan(self, pairs: list[tuple[int, int]] | None = None) -> list[Found]:
+        """Try `pairs` of (swdio, swclk); None = every pair the probe allows (describe's channel_group /
+        role_channels). A pair the probe does not allow refuses the whole scan (rejected unavailable)."""
+        pairs = pairs or []
+        body = bytes([len(pairs)]) + b"".join(struct.pack("<HH", d, c) for d, c in pairs)
+        rd = m.Reader(self._call(self.SCAN, body).payload)
         out = []
         for _ in range(rd.u8()):
             kind, dio, clk, status = rd.take("BHHI")
@@ -91,6 +96,10 @@ class WireBase(Interface):
         # critical: a probe that cannot keep to a ceiling must refuse, not ignore it (§0: safety arguments)
         return b"" if max_speed is None else m.tlv(self.TAG_MAX_SPEED, struct.pack("<I", max_speed), critical=True)
 
+    def _pins_tlv(self, pins: tuple[int, int] | None) -> bytes:
+        # the pair to attach on (a scan result's .pins); None: the probe's only pair
+        return b"" if pins is None else m.tlv(self.TAG_PINS, struct.pack("<HH", *pins), critical=True)
+
 
 class Wire(WireBase):
     """oep.wire.rvswd / oep.wire.swio (CH32 debug links to a RISC-V debug module)."""
@@ -104,11 +113,11 @@ class Wire(WireBase):
         self.speed_hz = 0
         self.ignored: list[int] = []
 
-    def attach(self, halt: bool = True, max_speed: int | None = None) -> tuple[int, int]:
+    def attach(self, halt: bool = True, max_speed: int | None = None, pins: tuple[int, int] | None = None) -> tuple[int, int]:
         """-> (connection, DMSTATUS). Attaching an attached wire returns its connection as it is (self.existing).
         self.had_reset: a pending havereset was acknowledged first (a V00x's DMSTATUS halt / run bits stay frozen
         until then); self.speed_hz: the speed the probe chose; max_speed: a ceiling the probe must keep (critical)."""
-        body = bytes([self.HALT if halt else self.RUN]) + self._speed_tlv(max_speed)
+        body = bytes([self.HALT if halt else self.RUN]) + self._speed_tlv(max_speed) + self._pins_tlv(pins)
         rd = m.Reader(self._call(self.ATTACH, body).payload)
         conn, status, flags, self.speed_hz = rd.take("BIBI")
         self.had_reset, self.existing = bool(flags & 1), bool(flags & 2)
@@ -116,10 +125,11 @@ class Wire(WireBase):
         return conn, status
 
     def attach_under_reset(self, channel: int | None = None, hold_ms: int = 20,
-                           max_speed: int | None = None) -> tuple[int, int]:
+                           max_speed: int | None = None, pins: tuple[int, int] | None = None) -> tuple[int, int]:
         """Hold the target in reset through `channel` (None: the probe's default reset line), attach, release and
         halt it at once - the way back from firmware that turns the debug pins into GPIOs. -> (connection, dpc)"""
-        body = struct.pack("<HH", self.DEFAULT_RESET if channel is None else channel, hold_ms) + self._speed_tlv(max_speed)
+        body = (struct.pack("<HH", self.DEFAULT_RESET if channel is None else channel, hold_ms) + self._speed_tlv(max_speed)
+                + self._pins_tlv(pins))
         rd = m.Reader(self._call(self.ATTACH_UNDER_RESET, body).payload)
         conn, dpc, self.speed_hz = rd.take("BII")
         rd.tail()

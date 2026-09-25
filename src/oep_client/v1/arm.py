@@ -28,10 +28,11 @@ class SwdWire(WireBase):
         self.speed_hz = 0
         self.existing = False
 
-    def attach(self, targetsel: int | None = None, max_speed: int | None = None) -> tuple[int, int, bool]:
+    def attach(self, targetsel: int | None = None, max_speed: int | None = None,
+               pins: tuple[int, int] | None = None) -> tuple[int, int, bool]:
         """-> (connection, DPIDR, woke from dormant). targetsel (multidrop) and max_speed go as critical TLVs: a probe
         that cannot honour them refuses. self.existing: the wire was attached already (its connection returned)."""
-        body = self._speed_tlv(max_speed)
+        body = self._speed_tlv(max_speed) + self._pins_tlv(pins)
         if targetsel is not None:
             body += m.tlv(self.TAG_TARGETSEL, struct.pack("<I", targetsel), critical=True)
         rd = m.Reader(self._call(self.ATTACH, body).payload)
