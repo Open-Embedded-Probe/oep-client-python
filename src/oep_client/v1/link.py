@@ -112,11 +112,14 @@ class SerialLink:
             self.stale += 1
 
     def pump(self, timeout: float = 0.0) -> int:
-        """Read whatever frames arrive within `timeout` (pushes are kept, stray results counted stale). -> frames read."""
-        saved, self.timeout = self.timeout, timeout
+        """Read the frames that arrive within `timeout` in total (pushes are kept, stray results counted stale); a
+        probe that keeps pushing cannot hold this past the deadline. -> frames read."""
+        saved = self.timeout
+        deadline = time.monotonic() + timeout
         n = 0
         try:
             while True:
+                self.timeout = max(0.0, deadline - time.monotonic())
                 try:
                     frame = self._recv()
                 except TimeoutError:
@@ -124,6 +127,8 @@ class SerialLink:
                 n += 1
                 if not self._route(frame):
                     self.stale += 1
+                if time.monotonic() >= deadline:
+                    return n
         finally:
             self.timeout = saved
 
