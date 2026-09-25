@@ -38,6 +38,8 @@ LOCKED = _R["locked"]                      # another session holds the lock; pay
 SESSION_REQUIRED = _R["session_required"]  # a state-changing request came without a session id
 NO_CONNECTION = _R["no_connection"]        # the probe does not know the request's connection: attach again
 UNSUPPORTED = _R["unsupported"]            # a critical TLV (payload: its tag) or a fixed-part value it cannot handle
+RESULT_LOST = _R["result_lost"]            # a request sent again whose result the probe did not keep: read the state again
+CORR_REUSED = _R["corr_reused"]            # a request sent again with the same corr but another fn, op or payload
 
 REJECT_NAMES = {v: k.replace("_", " ") for k, v in _R.items()}
 REJECT_NAMES[MALFORMED] = "malformed payload"
