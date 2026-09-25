@@ -5,6 +5,8 @@ operations - confirm, list, describe - by encoding real payloads and paging them
 so what `dump` shows is what a host would decode from a probe of that shape.
 
 The profiles are EXAMPLES of declarations, not a decision about which capabilities are standard.
+Wire forms: v1-core-wire-delta §5 (confirm with a revision range, list first / total u16 with oep.core as the first
+entry, describe first u16).
 """
 
 from __future__ import annotations
@@ -12,14 +14,15 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass
 
-from . import catalog, names
+from . import catalog, message as m, names
 from .catalog import (CHANNEL_GROUP, EXCLUSIVE_GROUP, FEATURES, IMPLEMENTATION, MAX_CLOCK_HZ, MAX_LENGTH,
                    MIN_CLOCK_HZ, ListEntry)
 
 CORE_FN = 0
 OP_CONFIRM, OP_LIST, OP_DESCRIBE = 0x01, 0x02, 0x03
 RESULT_HEADER = 5            # role(1) correlation(2) resolution(1) detail(1) in front of every payload
-REVISION = 1                 # the draft's own revision, reported by confirm
+REVISION = 1                 # the protocol revision confirm reports
+WINDOW, MAX_INFLIGHT = 4096, 4
 
 
 @dataclass(frozen=True)
@@ -28,7 +31,7 @@ class Offered:
     instance: int
     name: str
     tlvs: tuple[bytes, ...] = ()
-    revision: int = 0
+    revision: int = 1
     flags: int = 0
 
 
@@ -47,17 +50,23 @@ class FakeProbe:
         if fn != CORE_FN:
             raise ValueError(f"fake: fn {fn} has no operations here")
         if op == OP_CONFIRM:
-            return struct.pack("<4sBHHB", b"OEP!", REVISION, self.max_frame, self.max_frame, 1)
+            if len(payload) < 6 or payload[:4] != m.CONFIRM_REQUEST:
+                raise ValueError("fake: confirm needs \"OEP?\" min_rev max_rev")
+            if not payload[4] <= REVISION <= payload[5]:
+                raise LookupError(f"fake: no revision in {payload[4]}..{payload[5]}")
+            return struct.pack("<4sBBHIB", m.CONFIRM_RESULT, REVISION, 0, self.max_frame, WINDOW, MAX_INFLIGHT)
         if op == OP_LIST:
-            return self._list(*catalog.unpack_list_request(payload))
+            return self._list(*catalog.unpack_list_request(payload)[:3])
         if op == OP_DESCRIBE:
-            target, first = struct.unpack("<HB", payload)
+            if len(payload) < 4:
+                raise ValueError("fake: describe needs fn(u16) first(u16)")
+            target, first = struct.unpack_from("<HH", payload)
             return self._describe(target, first)
         raise ValueError(f"fake: core op 0x{op:02x} unknown")
 
     def _list(self, prefix: str, exact: bool, first: int) -> bytes:
         hits = [o for o in self.offered if names.matches(o.name, prefix, exact)]
-        budget = self.max_frame - RESULT_HEADER - 2
+        budget = self.max_frame - RESULT_HEADER - 3
         page, used = [], 0
         for o in hits[first:]:
             size = len(catalog.pack_entry(self._entry(o)))

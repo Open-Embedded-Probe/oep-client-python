@@ -58,7 +58,22 @@ def test_list_round_trip():
     entries = [catalog.ListEntry(5, 3, 0, 0, "oep.fixture.i2c-target"),
                catalog.ListEntry(6, 3, 1, 0, "io.github.ch32-riscv-ug.p4.i2c-target")]
     assert catalog.unpack_list_result(catalog.pack_list_result(7, entries)) == (7, entries)
-    assert catalog.unpack_list_request(catalog.pack_list_request("oep.fixture", True, 4)) == ("oep.fixture", True, 4)
+    assert catalog.unpack_list_request(catalog.pack_list_request("oep.fixture", True, 300)) == ("oep.fixture", True, 300, b"")
+    assert catalog.pack_list_request("oep.core", True, 0x1234)[:4] == bytes([1, 0x34, 0x12, 8])   # first is u16
+
+
+def test_list_total_is_u16_and_a_longer_answer_is_not_rejected():
+    entries = [catalog.ListEntry(0, 0, 1, 0, "oep.core")]
+    packed = catalog.pack_list_result(300, entries)
+    assert packed[:3] == bytes([0x2C, 0x01, 1])                    # total u16, count u8
+    assert catalog.unpack_list_result(packed + bytes([0x55, 2, 9, 9])) == (300, entries)   # a TLV tail is skipped
+
+
+def test_oep_core_is_the_first_list_entry():
+    caps = dump.collect(fake.esp32_v003().call)
+    first = caps.offers[0].entry
+    assert (first.fn, first.name, first.revision) == (0, "oep.core", 1)
+    assert caps.revision == 1 and caps.max_frame == 64
 
 
 def test_channel_bitmap_round_trip():

@@ -15,17 +15,19 @@ class ScriptedHost(h.Host):
     """A Host whose requests go to handlers: (fn, op) -> (resolution, detail, payload); records every request.
     Interface names resolve through the host's fn cache, filled in advance."""
 
-    def __init__(self, handlers):
+    def __init__(self, handlers, revisions=None):
         super().__init__(send=None)
         self.handlers, self.log = handlers, []
+        self.handlers.setdefault((0, m.OP_CONFIRM), lambda p: ok(CONFIRM))
         self._fns.update(FNS)
+        self._revisions.update({fn: 1 for fn in FNS.values()} if revisions is None else revisions)
 
     def request(self, fn, op, payload=b"", *, locked=True):
         self.log.append((fn, op, payload))
         res, detail, body = self.handlers[(fn, op)](payload)
         r = m.Result(len(self.log), res, detail, body)
         if res == m.REJECTED:
-            raise h.Rejected(r)
+            raise h.rejection(r)
         return r
 
     def pipeline(self, requests, exchange=None, *, locked=True):
@@ -41,6 +43,9 @@ def ok(body=b""):
     return m.COMPLETED, m.SUCCESS, body
 
 
+CONFIRM = struct.pack("<4sBBHIB", b"OEP!", 1, 0, 1024, 4096, 8)
+
+
 # ---- reset-line search ----------------------------------------------------------------------------
 
 def test_find_reset_line_hits_the_vector_skips_disallowed_and_retries_failures():
@@ -54,11 +59,11 @@ def test_find_reset_line_hits_the_vector_skips_disallowed_and_retries_failures()
         if channel == 5 and tries[5] == 1:
             return m.COMPLETED, m.FAILED, b""                          # the attach itself failed once
         dpc = 0 if channel == 2 and tries[2] == 2 else 0x1300 + channel  # the real line, caught on its second try
-        return ok(struct.pack("<BI", 1, dpc))
+        return ok(struct.pack("<BII", 1, dpc, 1_000_000))
 
     hst = ScriptedHost({(1, target.Wire.ATTACH_UNDER_RESET): aur,
-                        (2, target.RiscvDm.RESUME): lambda p: (m.COMPLETED, m.FAILED, b""),   # an L103 resume
-                        (2, target.RiscvDm.RESET): lambda p: ok(struct.pack("<BBI", 3, 1, 0x1234)),
+                        (2, target.RiscvDm.RESUME): lambda p: (m.COMPLETED, m.FAILED, bytes([5])),   # an L103: state
+                        (2, target.RiscvDm.RESET): lambda p: ok(struct.pack("<BBBI", 0, 3, 1, 0x1234)),
                         (1, target.Wire.DETACH): lambda p: ok()})
     wire = target.Wire(hst)
     assert wire.find_reset_line([3, 9, 2, 5], tries=3) == [2]
@@ -75,7 +80,7 @@ def test_attach_after_gpio_reset_pipelines_release_with_attach_and_retries():
 
     def attach(p):
         attaches.append(p)
-        return (ok(struct.pack("<BIB", 1, 0xc82, 0)) if len(attaches) == 3 else (m.COMPLETED, m.FAILED, b""))
+        return (ok(struct.pack("<BIBI", 1, 0xc82, 0, 1_000_000)) if len(attaches) == 3 else (m.COMPLETED, m.FAILED, b""))
 
     hst = ScriptedHost({(3, 0x01): lambda p: ok(), (1, target.Wire.ATTACH): attach})
     wire = target.Wire(hst)
@@ -84,6 +89,8 @@ def test_attach_after_gpio_reset_pipelines_release_with_attach_and_retries():
     assert len(attaches) == 3 and attaches[0] == b"\x01"                # attach with halt
     ops = [(fn, op) for fn, op, _ in hst.log]
     assert ops[:3] == [(3, 0x01), (3, 0x01), (1, target.Wire.ATTACH)]   # low, then release + attach together
+    assert hst.log[0][2] == bytes([1]) + struct.pack("<HB", 23, 5)       # set: n=1, channel 23 open-drain low
+    assert hst.log[1][2] == bytes([1]) + struct.pack("<HB", 23, 6)       # ... then released
 
 
 def test_attach_after_gpio_reset_gives_up():
@@ -95,12 +102,14 @@ def test_attach_after_gpio_reset_gives_up():
 # ---- riscv-dm decoding ----------------------------------------------------------------------------
 
 def test_reset_halt_and_step_decode():
-    hst = ScriptedHost({(2, target.RiscvDm.RESET): lambda p: ok(struct.pack("<BBI", 0, 1, 0x0) if p[1] == 2 else b""),
-                        (2, target.RiscvDm.STEP): lambda p: ok(struct.pack("<BII", 1, 0x0, 0x17f0))})
+    hst = ScriptedHost({(2, target.RiscvDm.RESET): lambda p: ok(struct.pack("<BBBI", 0, 0, 1, 0x0) if p[1] == 2 else b""),
+                        (2, target.RiscvDm.STEP): lambda p: ok(struct.pack("<BBII", 0, 1, 0x0, 0x17f0) + b"\x40\x01\x00")})
     dm = target.RiscvDm(hst, 1)
     assert dm.reset_halt() == 0
     assert hst.log[-1][2] == bytes([1, 2])                              # connection, mode 2
-    assert dm.step() == (True, 0x0, 0x17f0)
+    assert dm.step() == (True, 0x0, 0x17f0)                             # an unknown TLV after the fixed part: skipped
+    dm.reset_halt(method=target.RiscvDm.METHOD_SYSTEM)
+    assert hst.log[-1][2] == bytes([1, 2, 0x81, 1, 2])                  # method as a critical TLV
 
 
 # ---- ARM ADI / MEM-AP -----------------------------------------------------------------------------
@@ -113,7 +122,8 @@ class FakeAdi:
         self.selects = []
 
     def transfer(self, p):
-        p, at, out, done = p[1:], 0, b"", 0
+        n = struct.unpack_from("<H", p, 1)[0]
+        p, at, out, done = p[3:], 0, b"", 0
         while at < len(p):
             req = p[at]; at += 1
             ap, read, a = req & 1, req >> 1 & 1, (req >> 2 & 3) << 2
@@ -134,20 +144,23 @@ class FakeAdi:
                     if read: out += struct.pack("<I", self.posted); self.posted = self.csw
                     else: self.csw = value
                 elif addr == 0xE000:
-                    return ok(struct.pack("<HBB", done, 2, 4) + out)     # FAULT
+                    return m.COMPLETED, m.FAILED, struct.pack("<HBB", done, 3, 4) + out     # status fault, ACK FAULT
             done += 1
+        assert done == n
         return ok(struct.pack("<HBB", done, 0, 1) + out)
 
     def read_block(self, p):
         address, count = struct.unpack("<IH", p[1:])
         assert self.select == 0x2D00                                     # TAR / DRW bank selected
-        return ok(b"".join(struct.pack("<I", self.mem.get(address + 4 * i, address + 4 * i)) for i in range(count)))
+        return ok(struct.pack("<HB", count, 0)
+                  + b"".join(struct.pack("<I", self.mem.get(address + 4 * i, address + 4 * i)) for i in range(count)))
 
     def write_block(self, p):
-        address = struct.unpack_from("<I", p, 1)[0]
-        for i in range((len(p) - 5) // 4):
-            self.mem[address + 4 * i] = struct.unpack_from("<I", p, 5 + 4 * i)[0]
-        return ok()
+        address, count = struct.unpack_from("<IH", p, 1)
+        assert len(p) == 7 + 4 * count
+        for i in range(count):
+            self.mem[address + 4 * i] = struct.unpack_from("<I", p, 7 + 4 * i)[0]
+        return ok(struct.pack("<HB", count, 0))
 
 
 @pytest.fixture
@@ -155,16 +168,18 @@ def adi_bench():
     fake = FakeAdi()
     hst = ScriptedHost({(5, arm.ArmAdi.TRANSFER): fake.transfer, (5, arm.ArmAdi.READ_BLOCK): fake.read_block,
                         (5, arm.ArmAdi.WRITE_BLOCK): fake.write_block,
-                        (4, target.Wire.ATTACH): lambda p: ok(struct.pack("<BIB", 1, 0x4c013477, 1)),
-                        (0, m.OP_CONFIRM): lambda p: ok(struct.pack("<4sBHHB", b"OEP!", 1, 1024, 4096, 8))})
+                        (4, target.Wire.ATTACH): lambda p: ok(struct.pack("<BIBI", 1, 0x4c013477, 1, 2_000_000))})
     return fake, hst
 
 
 def test_swd_attach_decodes_dpidr_and_dormant(adi_bench):
     fake, hst = adi_bench
     assert arm.SwdWire(hst).attach() == (1, 0x4c013477, True)
-    arm.SwdWire(hst).attach(targetsel=0x01002927)
-    assert hst.log[-1][2] == struct.pack("<I", 0x01002927)
+    wire = arm.SwdWire(hst)
+    wire.attach(targetsel=0x01002927, max_speed=1_000_000)
+    assert hst.log[-1][2] == (bytes([0x81, 4]) + struct.pack("<I", 1_000_000)          # critical TLVs
+                              + bytes([0x82, 4]) + struct.pack("<I", 0x01002927))
+    assert wire.speed_hz == 2_000_000
 
 
 def test_ap_read_uses_adiv6_select_and_the_posted_value(adi_bench):
@@ -184,7 +199,7 @@ def test_mem_ap_sets_csw_from_the_caller_and_chunks_blocks(adi_bench):
     words = mem.read_block(0x1000, 500)
     assert words == [0x1000 + 4 * i for i in range(500)]
     blocks = [p for fn, op, p in hst.log if op == arm.ArmAdi.READ_BLOCK]
-    assert [struct.unpack("<IH", p[1:])[1] for p in blocks] == [252, 248]   # (1024 - 15) // 4 words per block
+    assert [struct.unpack("<IH", p[1:])[1] for p in blocks] == [251, 249]   # (1024 - 17) // 4 words per block
     mem.write_block(0x2007F3F0, list(range(16)))
     assert mem.read_block(0x2007F3F0, 16) == list(range(16))
 
@@ -193,8 +208,9 @@ def test_transfer_fault_raises_with_the_step_count(adi_bench):
     fake, hst = adi_bench
     adi = arm.ArmAdi(hst, 1, adiv6=True)
     adi.select(0xE000)
-    with pytest.raises(arm.AdiError, match="after 0 steps: FAULT"):
+    with pytest.raises(arm.AdiError, match=r"ack 0x4\) stopped after 0: fault \(failed\)") as e:
         adi.transfer(adi.req(True, True, 0x0))
+    assert e.value.status == 3 and e.value.done == 0 and adi.last_ack == 4
 
 
 # ---- Cortex-M call primitive and the RP2350 ROM flash sequence, on a fake core --------------------------------

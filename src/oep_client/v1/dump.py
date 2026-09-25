@@ -10,7 +10,7 @@ import json
 import struct
 from dataclasses import dataclass, field
 
-from . import catalog, interfaces, names
+from . import catalog, interfaces, message as m, names
 
 CORE_FN, OP_CONFIRM, OP_LIST, OP_DESCRIBE = 0, 0x01, 0x02, 0x03
 
@@ -30,9 +30,12 @@ class Capabilities:
 
 
 def collect(call, prefix: str = "", exact: bool = False) -> Capabilities:
-    magic, revision, max_frame = struct.unpack_from("<4sBH", call(CORE_FN, OP_CONFIRM, b""))
-    if magic != b"OEP!":
+    p = call(CORE_FN, OP_CONFIRM, m.CONFIRM_REQUEST + bytes([0, 1]))     # v0 and v1 both answer
+    magic, revision = struct.unpack_from("<4sB", p)
+    if magic != m.CONFIRM_RESULT:
         raise ValueError("not an OEP endpoint")
+    # revision 0: max_frame(u16) follows; revision 1: flags(u8), then max_frame(u16)
+    max_frame = struct.unpack_from("<H", p, 5 if revision == 0 else 6)[0]
     caps = Capabilities(revision, max_frame, requests={"confirm": 1, "list": 0, "describe": 0})
     entries: list[catalog.ListEntry] = []
     while True:
@@ -44,7 +47,7 @@ def collect(call, prefix: str = "", exact: bool = False) -> Capabilities:
     for e in entries:
         data, first = b"", 0
         while True:
-            result = call(CORE_FN, OP_DESCRIBE, struct.pack("<HB", e.fn, first))
+            result = call(CORE_FN, OP_DESCRIBE, catalog.pack_describe_request(e.fn, first))
             caps.requests["describe"] += 1
             more, chunk = result[0], result[1:]
             data += chunk

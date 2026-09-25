@@ -1,41 +1,64 @@
-"""oep.fixture.gpio / uart / capture: the v0 payloads under their v1 names (oep-spec v1-core-wire-delta: the fixture
-payloads stay as they were until a need to change them appears). Packed here directly - no v0 codec import."""
+"""oep.fixture.gpio and oep.fixture.uart, revision 1 (oep-spec v1-core-wire-delta §5.8). The capture is in `capture`
+(oep.fixture.capture revision 1 = logic-capture's basic set).
+
+Plan roles stay as they were: gpio 1 = line; uart 1 = RX, 2 = TX. Only channels the plan assigned can be used.
+"""
 
 from __future__ import annotations
 
 import struct
 import time
-from dataclasses import dataclass
 
-from . import host as h
-from .core import Interface, confirm
+from . import host as h, message as m, registry as reg
+from .console import PositionStream, StreamIO
+from .core import Interface
+
+_GPIO, _UART = reg.FIXTURE_GPIO, reg.FIXTURE_UART
+_MODE = _GPIO.enum["mode"]
 
 
 class Gpio(Interface):
-    """oep.fixture.gpio. The open-drain modes never drive a line high: the way to move a target's reset line."""
+    """oep.fixture.gpio. `set` applies (channel, mode) pairs in order in one request (pull NRST, then release it); a
+    channel the plan did not assign or a mode the probe lacks rejects the whole list as unavailable (payload: its
+    index). The open-drain modes never drive a line high: the way to move a target's reset line."""
     NAME = "oep.fixture.gpio"
-    CONFIGURE, READ_BANK = 0x01, 0x02
-    INPUT, INPUT_PULLUP, INPUT_PULLDOWN, INPUT_PULLUPDOWN, OUTPUT_LOW, OUTPUT_HIGH, OPEN_DRAIN_LOW, OPEN_DRAIN_RELEASE = range(8)
+    REVISION = 1
+    SET, READ = _GPIO.op["set"], _GPIO.op["read"]
+    INPUT, INPUT_PULLUP, INPUT_PULLDOWN = _MODE["input"], _MODE["input_pullup"], _MODE["input_pulldown"]
+    OUTPUT_LOW, OUTPUT_HIGH = _MODE["output_low"], _MODE["output_high"]
+    OPEN_DRAIN_LOW, OPEN_DRAIN_RELEASE = _MODE["open_drain_low"], _MODE["open_drain_release"]
 
     def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
         super().__init__(hst, name, fn=fn)
 
     @staticmethod
-    def _configure_body(channel: int, mode: int) -> bytes:
-        return struct.pack("<BB", channel, mode)
+    def set_body(pairs: list[tuple[int, int]]) -> bytes:
+        return struct.pack("<B", len(pairs)) + b"".join(struct.pack("<HB", ch, mode) for ch, mode in pairs)
+
+    def set(self, pairs: list[tuple[int, int]]) -> None:
+        """[(channel, mode)], applied in order."""
+        self._call(self.SET, self.set_body(pairs))
 
     def configure(self, channel: int, mode: int) -> None:
-        self._call(self.CONFIGURE, self._configure_body(channel, mode))
+        self.set([(channel, mode)])
+
+    def read(self, channels: list[int]) -> list[int]:
+        """-> one level (0 / 1) per channel. Lock-free."""
+        rd = m.Reader(self._call(self.READ, struct.pack("<B", len(channels))
+                                 + b"".join(struct.pack("<H", c) for c in channels), locked=False).payload)
+        levels = list(rd.bytes(len(channels)))
+        rd.tail()
+        return levels
 
     def pull_low(self, channel: int) -> None:
-        self.configure(channel, self.OPEN_DRAIN_LOW)
+        self.set([(channel, self.OPEN_DRAIN_LOW)])
 
     def release(self, channel: int) -> None:
-        self.configure(channel, self.OPEN_DRAIN_RELEASE)
+        self.set([(channel, self.OPEN_DRAIN_RELEASE)])
 
     def request_release(self, channel: int) -> tuple[int, int, bytes]:
         """The release as a raw request, to pipeline with whatever must follow it at once."""
-        return self.request(self.CONFIGURE, self._configure_body(channel, self.OPEN_DRAIN_RELEASE))
+        return self.request(self.SET, self.set_body([(channel, self.OPEN_DRAIN_RELEASE)]))
 
     def pulse_low(self, channel: int, low_s: float = 0.02) -> None:
         """Open-drain low, then released to Hi-Z (never driven high)."""
@@ -46,76 +69,52 @@ class Gpio(Interface):
             self.release(channel)
 
 
-class FixtureUartIO(Interface):
-    """oep.fixture.uart as a plain byte stream, after a plan gave it RX / TX. Reads consume, so they take the lock."""
+class FixtureUart(PositionStream):
+    """oep.fixture.uart: one position stream per fn, like the console without a stream byte. Received bytes are kept
+    from configure until plan_release, whatever the session; reads are lock-free and do not consume. TX idles high
+    before configure and after plan_release."""
     NAME = "oep.fixture.uart"
-    CONFIGURE, WRITE, READ = 0x01, 0x02, 0x03
+    REVISION = 1
+    CONFIGURE = _UART.op["configure"]
+    TAG_FORMAT = _UART.tlv["configure"]["format"]
+    # format bits: data bits (0 = 8, 1 = 7), parity (0 none, 1 even, 2 odd) << 2, stop bits (0 = 1, 1 = 2) << 4
+    EIGHT_N_1 = 0x00
+
+    def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
+        super().__init__(hst, name, fn=fn)
+
+    @staticmethod
+    def format_byte(data_bits: int = 8, parity: str = "N", stop_bits: int = 1) -> int:
+        return ({8: 0, 7: 1}[data_bits] | {"N": 0, "E": 1, "O": 2}[parity.upper()] << 2 | {1: 0, 2: 1}[stop_bits] << 4)
+
+    def configure(self, baud: int, fmt: int | None = None) -> int:
+        """-> the actual baud. fmt (format_byte()) goes as a critical TLV: a probe that cannot set it refuses rather
+        than running 8N1; None leaves the default 8N1."""
+        body = struct.pack("<I", baud)
+        if fmt is not None:
+            body += m.tlv(self.TAG_FORMAT, bytes([fmt]), critical=True)
+        rd = m.Reader(self._call(self.CONFIGURE, body).payload)
+        actual = rd.u32()
+        rd.tail()
+        return actual
+
+
+class FixtureUartIO(StreamIO):
+    """oep.fixture.uart as a plain byte stream, after a plan gave it RX / TX: configure() starts reading from the
+    stream's position at that moment (earlier bytes are skipped); write() splits and waits for the UART."""
     MAX_READ, MAX_WRITE = 480, 256            # fit the smallest probe frame in use (V003: 512 bytes)
 
     def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
-        super().__init__(hst, name, fn=fn)
+        self.uart = FixtureUart(hst, fn, name)
+        self.source, self.position, self.lost = self.uart, None, 0
+        self.baud = 0
 
-    def configure(self, baud: int) -> None:
-        self._call(self.CONFIGURE, struct.pack("<I", baud))
+    def configure(self, baud: int, fmt: int | None = None) -> int:
+        self.baud = self.uart.configure(baud, fmt)
+        self.position = self.uart.read(PositionStream.FROM_NOW, 0, 0).start
+        return self.baud
 
     def read(self, n: int = 512) -> bytes:
-        return self._call(self.READ, struct.pack("<H", min(n, self.MAX_READ))).payload
-
-    def write(self, data: bytes) -> None:
-        while data:
-            written = struct.unpack_from("<H", self._call(self.WRITE, data[:self.MAX_WRITE]).payload)[0]
-            data = data[written:]
-            if not written:
-                time.sleep(0.005)             # the UART has not taken the last chunk yet
-
-
-@dataclass
-class CaptureStatus:
-    flags: int
-    samples: int
-    CONFIGURED, RUNNING, COMPLETE, ERROR = 1, 2, 4, 8
-
-
-class Capture(Interface):
-    """oep.fixture.capture: sampled logic capture, one byte per sample (bit k = plan role / line k)."""
-    NAME = "oep.fixture.capture"
-    CONFIGURE, ARM, STATUS, READ = 0x01, 0x02, 0x03, 0x04
-    READ_CHUNK = 900
-
-    def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
-        super().__init__(hst, name, fn=fn)
-
-    def configure(self, sample_rate_hz: int, samples: int) -> tuple[int, int, int]:
-        """-> (actual sample rate, samples, lines)."""
-        return struct.unpack_from("<IIB", self._call(self.CONFIGURE, struct.pack("<II", sample_rate_hz, samples)).payload)
-
-    def arm(self) -> None:
-        self._call(self.ARM)
-
-    def status(self) -> CaptureStatus:
-        return CaptureStatus(*struct.unpack_from("<BI", self._call(self.STATUS, locked=False).payload))
-
-    def wait(self, timeout: float = 5.0) -> CaptureStatus:
-        deadline = time.monotonic() + timeout
-        while True:
-            st = self.status()
-            if st.flags & (CaptureStatus.COMPLETE | CaptureStatus.ERROR) or time.monotonic() > deadline:
-                return st
-
-    def read_all(self, samples: int) -> bytes:
-        """The whole capture, pipelined in pieces that fit the probe's frame (reads are lock-free and re-sent once if
-        corrupt). A probe may answer a read with fewer bytes than asked; the rest is read again from where it stopped."""
-        chunk = max(1, min(self.READ_CHUNK, confirm(self.host)["max_frame"] - 16))
-        reqs = [self.request(self.READ, struct.pack("<IH", off, min(chunk, samples - off)))
-                for off in range(0, samples, chunk)]
-        pieces = [r.payload for r in self.host.pipeline_calls(reqs, locked=False)]
-        out = bytearray()
-        for off, piece in zip(range(0, samples, chunk), pieces):
-            want = min(chunk, samples - off)
-            while len(piece) < want:
-                more = self._call(self.READ, struct.pack("<IH", off + len(piece), want - len(piece)), locked=False).payload
-                if not more:
-                    raise h.ProtocolError(f"capture read at {off + len(piece)} returned nothing")
-                piece += more
-            out += piece
-        return bytes(out)
+        if self.position is None:                  # not configured here: read from the oldest byte kept
+            self.position = self.uart.read(PositionStream.FROM_OLDEST, 0, 0).start
+        return super().read(n)

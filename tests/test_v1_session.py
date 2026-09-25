@@ -6,7 +6,7 @@ import pytest
 
 from oep_client.v1 import endpoint, fake, host, message as m
 
-TOY = 1          # any non-core fn has the fake's stand-in operations
+TOY = 7          # a fn the fake does not simulate (esp32_v003: the i2c-target) has the stand-in operations
 
 
 class Clock:
@@ -34,7 +34,7 @@ def write(h, value):
 
 
 def read(h):
-    return struct.unpack("<I", h.request(TOY, endpoint.TOY_READ, locked=False).payload)[0]
+    return struct.unpack_from("<I", h.request(TOY, endpoint.TOY_READ, locked=False).payload)[0]
 
 
 # ---- messages -------------------------------------------------------------------------------------
@@ -55,7 +55,7 @@ def test_a_48_byte_name_fits_a_64_byte_frame():
     ep = endpoint.Endpoint(probe, Clock())
     from oep_client.v1 import catalog
     result = ep.handle(m.Request(1, 0, m.OP_LIST, catalog.pack_list_request(name, True, 0)).pack())
-    assert len(result) == 62 and catalog.unpack_list_result(result[5:])[1][0].name == name
+    assert len(result) == 63 and catalog.unpack_list_result(result[5:])[1][0].name == name   # v1 wire §6
 
 
 # ---- the lock table -------------------------------------------------------------------------------
@@ -96,7 +96,7 @@ def test_reads_need_no_lock_while_another_host_holds_it(bench):
     write(a, 42)
     assert read(b) == 42                       # lock-free read, no session
     assert b.lock_state()[0] is True
-    assert b.request(0, m.OP_LIST, b"\x00\x00\x00", locked=False).succeeded
+    assert b.request(0, m.OP_LIST, b"\x00\x00\x00\x00", locked=False).succeeded
 
 
 def test_watchdog_counts_from_the_last_request(bench):
@@ -165,7 +165,7 @@ def test_a_probe_reboot_forgets_the_last_id_and_boot_id_says_so(bench):
 def start_long(h, ms):
     r = h.request(TOY, endpoint.TOY_LONG, struct.pack("<I", ms))
     assert r.resolution == m.ACCEPTED
-    return struct.unpack("<H", r.payload)[0]
+    return struct.unpack_from("<H", r.payload)[0]
 
 
 def test_long_operation_is_polled_with_progress(bench):
@@ -232,3 +232,121 @@ def test_pipeline_keeps_order_and_reports_rejects_per_result(bench):
     a.session = 0x0BAD0BAD                        # a stale id: every result says so, nothing is raised
     results = a.pipeline(reqs[:2], lambda msgs: [ep.handle(x) for x in msgs])
     assert [r.detail for r in results] == [m.LOCKED, m.LOCKED]
+
+
+# ---- confirm and the role 0x81 gate (v1 wire §5, §2) -----------------------------------------------------
+
+def test_confirm_sends_a_range_and_reads_the_v1_answer(bench):
+    _, ep = bench
+    a = new_host(ep, 1)
+    limits = a.confirm()
+    assert ep.requests[-1].payload == b"OEP?\x01\x01"
+    assert limits["revision"] == 1 and limits["flags"] == 0 and limits["max_frame"] == 64
+    assert limits["window"] == 1 << 18 and limits["max_inflight"] == 4            # window is u32 now
+    with pytest.raises(host.Unsupported):
+        a.confirm(2, 3)                                                             # nothing in the range
+
+
+def test_no_role_0x81_to_a_v0_probe(bench):
+    clock, _ = bench
+    ep = endpoint.Endpoint(fake.esp32_v003(), clock, revision=0)
+    a = new_host(ep, 1)
+    with pytest.raises(host.NotV1):
+        a.open()
+    assert a.revision == 0 and a.limits["window"] == 0xFFFF                        # read in the v0 shape
+    a.session = 0x1234                                                              # a saved id, say
+    with pytest.raises(host.NotV1):
+        write(a, 1)
+    assert read(a) == 0                                                             # role 0x01 still goes
+    assert ep.dropped == 0 and all(r.session is None for r in ep.requests)
+
+
+def test_a_probe_that_refuses_the_ranged_confirm_is_not_v1():
+    def send(raw):
+        req = m.Request.unpack(raw)
+        return m.Result(req.corr, m.REJECTED, m.MALFORMED).pack()
+    a = host.Host(send)
+    with pytest.raises(host.NotV1):
+        a.open()
+    assert a.revision == 0
+
+
+def test_the_first_session_request_confirms_first(bench):
+    _, ep = bench
+    a = new_host(ep, 1)
+    a.open()
+    assert [(r.fn, r.op) for r in ep.requests[:2]] == [(0, m.OP_CONFIRM), (0, m.OP_OPEN)]
+
+
+# ---- §0 tails ---------------------------------------------------------------------------------------------
+
+def test_the_host_skips_tlvs_it_does_not_know_after_every_result(bench):
+    clock, _ = bench
+    ep = endpoint.Endpoint(fake.esp32_v003(), clock, tail=m.tlv(0x55, b"new!") + m.tlv(0x56, b""))
+    a = new_host(ep, 1)
+    assert a.confirm()["tail"].get(0x55) == b"new!"
+    opened = a.open(lease_ms=1000)
+    assert opened.lease_ms == 1000 and not opened.resumed
+    write(a, 9)
+    assert read(a) == 9 and a.lock_state() == (True, 1000)
+    from oep_client.v1 import riscv
+    wire = riscv.Wire(a, "oep.wire.swio")
+    conn, _ = wire.attach()
+    riscv.RiscvDm(a, conn).halt()
+
+
+def test_request_tails_critical_refused_non_critical_ignored(bench):
+    _, ep = bench
+    a = new_host(ep, 1)
+    a.open()
+    r = a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 5) + m.tlv(0x21, b"\x01") + m.tlv(0x22, b""))
+    assert r.succeeded and m.Reader(r.payload).tail().ignored == [0x21, 0x22]
+    with pytest.raises(host.Unsupported) as e:
+        a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 6) + m.tlv(0x21, b"\x01", critical=True))
+    assert e.value.tag == 0xA1
+    assert read(a) == 5                                                  # refused: nothing written
+    with pytest.raises(host.Rejected, match="malformed"):
+        a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 7) + bytes([0xFF, 0]))    # tag 0xFF is invalid
+    with pytest.raises(host.Rejected, match="malformed"):
+        a.request(TOY, endpoint.TOY_WRITE, b"\x01\x02")                  # shorter than the fixed part
+    with pytest.raises(ValueError):
+        m.tlv(0x7F, b"")                                                 # 0x7F is the ignored list
+
+
+def test_a_result_shorter_than_its_fixed_part_is_broken():
+    def send(raw):
+        req = m.Request.unpack(raw)
+        return m.Result(req.corr, m.COMPLETED, m.SUCCESS, b"\x01\x00").pack()     # lock_state needs 5 bytes
+    with pytest.raises(host.ProtocolError):
+        host.Host(send).lock_state()
+    with pytest.raises(host.ProtocolError):
+        m.Tail.parse(bytes([0x40, 5, 1]))                                # a truncated TLV
+
+
+def test_serial_arithmetic_on_wrapping_values():
+    assert m.serial_diff(2, 0xFFFFFFFE) == 4 and m.serial_diff(0xFFFFFFFE, 2) == -4
+    assert m.serial_diff(1, 0xFFFF, bits=16) == 2
+
+
+# ---- §3: connections and the plan lost ----------------------------------------------------------------------
+
+def test_no_session_from_a_probe_without_a_boot_id_means_everything_is_lost(bench):
+    clock, _ = bench
+    ep = endpoint.Endpoint(fake.esp32_v003(), clock, boot_id=0)
+    a = new_host(ep, 1)
+    a.open()
+    epoch = a.epoch
+    ep.reboot(0)
+    with pytest.raises(host.NoSession):
+        write(a, 1)
+    assert a.epoch == epoch + 1
+
+
+def test_a_changed_boot_id_in_a_heartbeat_means_everything_is_lost(bench):
+    _, ep = bench
+    a = new_host(ep, 1)
+    a.open()
+    a.boot_id_seen(ep.boot_id)
+    assert a.epoch == 0
+    a.boot_id_seen(0x77777777)
+    assert a.epoch == 1
