@@ -289,3 +289,16 @@ def test_stream_io_fits_a_64_byte_frame():
     ep.uart_rx(5, bytes(range(100)))
     got = io.read(512)
     assert 0 < len(got) <= 54 and got == bytes(range(len(got)))
+
+
+def test_an_unhonourable_value_follows_the_critical_bit(dm):
+    """§0: a known TLV whose value the probe cannot honour - critical: unsupported with the tag as received;
+    non-critical: dropped and listed in the ignored TLV (0x7F)."""
+    ep, hst, rv = dm
+    method = riscv.reg.TARGET_RISCV_DM.tlv["reset"]["method"]
+    body = bytes([rv.conn, 0])                                     # connection, mode 0 (run)
+    with pytest.raises(host.Unsupported):
+        hst.call(DM, riscv.reg.TARGET_RISCV_DM.op["reset"], body + bytes([method | 0x80, 1, 9]))
+    r = hst.call(DM, riscv.reg.TARGET_RISCV_DM.op["reset"], body + bytes([method, 1, 9]))
+    tail = m.split_tlvs(r.payload[7:])
+    assert (m.TAG_IGNORED, bytes([method])) in [(t, v) for t, v in tail]
