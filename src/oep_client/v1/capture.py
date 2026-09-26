@@ -265,27 +265,33 @@ class LogicCapture(Interface):
             time.sleep(0.002)
         raise TimeoutError("capture did not finish")
 
+    BATCH = 16   # frame-sized reads per pipeline; a keepalive between batches when a session is open
+
     def read(self, position: int, length: int) -> bytes:
-        """Bytes [position, position+length) of the stream, pipelined in frame-sized reads."""
+        """Bytes [position, position+length) of the stream, pipelined in frame-sized reads.
+
+        The reads need no lock and go without the session id, so a repeat after a broken reply is simply run again
+        (reads are not deduplicated, oep-core §5.2). They do not extend the lease, though: a long read (64 KB over a
+        115200 bps UART probe takes seconds) sends a keepalive between batches, or the lease lapsed mid-read, the plan
+        went with it (core §9) and the capture read back nothing (2026-09-26, V003 jig)."""
         chunk = max(1, confirm(self.host)["max_frame"] - 16)
-        reqs = [self.request(self.READ, struct.pack("<QI", position + off, min(chunk, length - off)))
-                for off in range(0, length, chunk)]
+        offsets = list(range(0, length, chunk))
         out = bytearray()
-        # Reads need no lock, but a long one (64 KB over a 115200 bps UART takes seconds) must not outlive the lease:
-        # with a session open they carry its id, so each one extends the lease (oep-core §4.1). Without it the lease
-        # lapsed mid-read, the plan went with it (core §9) and the capture read back nothing (2026-09-26, V003 jig).
-        keep = self.host.session is not None
-        for off, r in zip(range(0, length, chunk), self.host.pipeline_calls(reqs, locked=keep)):
-            got_pos, flags = m.Reader(r.payload).take("QB")
-            data = r.payload[9:]                          # after position(u64) flags(u8)
-            want = min(chunk, length - off)
-            while len(data) < want:                       # a short answer: read on from where it stopped
-                more = self._call(self.READ, struct.pack("<QI", position + off + len(data), want - len(data)),
-                                  locked=keep).payload[9:]
-                if not more:
-                    raise h.ProtocolError(f"read at {position + off + len(data)} returned nothing")
-                data += more
-            out += data
+        for at in range(0, len(offsets), self.BATCH):
+            if at and self.host.session is not None:
+                self.host.keepalive()
+            batch = offsets[at:at + self.BATCH]
+            reqs = [self.request(self.READ, struct.pack("<QI", position + off, min(chunk, length - off))) for off in batch]
+            for off, r in zip(batch, self.host.pipeline_calls(reqs, locked=False)):
+                data = r.payload[9:]                      # after position(u64) flags(u8)
+                want = min(chunk, length - off)
+                while len(data) < want:                   # a short answer: read on from where it stopped
+                    more = self._call(self.READ, struct.pack("<QI", position + off + len(data), want - len(data)),
+                                      locked=False).payload[9:]
+                    if not more:
+                        raise h.ProtocolError(f"read at {position + off + len(data)} returned nothing")
+                    data += more
+                out += data
         return bytes(out)
 
     def read_segment(self, segment: Segment) -> bytes:
