@@ -261,8 +261,22 @@ class RiscvDm(Interface):
         self._status_only("halt", self.HALT)
 
     def resume(self) -> None:
-        """ok = the hart left debug mode at least once (status state if it never did)."""
+        """One resumereq; ok = the hart left debug mode (status state if the probe saw it not go). Parts that need more
+        (the CH32 rule) are the host's: ch32_flash.resume."""
         self._status_only("resume", self.RESUME)
+
+    DPC = 0x07B1
+
+    def read_register(self, regno: int) -> int:
+        """A GPR / CSR of the halted hart through an abstract command (access register, 32 bits) in plain DMI steps, so
+        any probe with dmi does it. A cmderr is cleared, then raised."""
+        _, values = self.dmi([self.step_write(0x17, 0x00220000 | regno), self.step_poll(0x16, 1 << 12, 0, 100),
+                              self.step_read(0x04)])
+        cs, data0 = values[0], values[1]
+        if (cs >> 8) & 7:
+            self.dmi([self.step_write(0x16, 0x700)])
+            raise RuntimeError(f"abstract command for register {regno:#x} failed (cmderr {(cs >> 8) & 7})")
+        return data0
 
     def _reset(self, mode: int, method: int | None) -> tuple[int, int, int]:
         body = bytes([mode])

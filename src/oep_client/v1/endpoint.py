@@ -107,6 +107,7 @@ class FakeTarget:
     fault_at: set = field(default_factory=set)         # word addresses a block access faults on
     regs: dict = field(default_factory=dict)           # regno -> value
     havereset: bool = True
+    resume_misses: int = 0                             # resumes that do not take (status state, dpc unchanged)
     # run(pc, regs) -> (stopped, dpc, elapsed_us); default: halts 0x10 past the start
     run_hook: Callable | None = None
 
@@ -483,6 +484,8 @@ class Endpoint:
                         status = LINE
                         break
                     tg.dmi[address] = value
+                    if address == 0x17 and value & 0xFFFF == 0x07B1:   # access register dpc: into DATA0, not busy
+                        tg.dmi[0x04], tg.dmi[0x16] = tg.dpc, 0
                 elif kind == STEP["read"]:
                     values.append(tg.read_dmi(args))
                 elif kind in (STEP["poll_reads"], STEP["poll_us"]):
@@ -504,6 +507,9 @@ class Endpoint:
             return m.COMPLETED, m.SUCCESS, bytes([OK])
         if op == _RV.op["resume"]:
             t.tail()
+            if tg.resume_misses:                                  # a CH32V006 now and then: the request does not take
+                tg.resume_misses -= 1
+                return m.COMPLETED, m.FAILED, bytes([STATE])
             if tg.halted:
                 tg.halted, tg.dpc = False, tg.dpc + 0x40
             return m.COMPLETED, m.SUCCESS, bytes([OK])
