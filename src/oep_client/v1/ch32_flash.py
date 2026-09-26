@@ -233,3 +233,22 @@ def program(hst: h.Host, dm: target.RiscvDm, image: bytes, profile: FlashProfile
         failures = run_pages([(off - off % profile.page, profile.page, 0x1D) for off in bad])
         back = _read(dm, profile.base, len(image), block)
     return ProgramResult(len(image), back == image, rewritten, failures, t)
+
+
+def resume(dm: riscv.RiscvDm, tries: int = 8) -> bool:
+    """resume for a CH32 - the host's knowledge, not the probe's (oep-if-debug §4.2): a CH32V006 now and then misses a
+    resumereq, and a CH32L103 never raises allresumeack, so a hart that stops again at once (a breakpoint ahead) looks
+    as if it never went. So: resume; when the probe saw it not go, read dpc - moved means it ran and stopped again,
+    unchanged means ask again. -> True once it went. The hart must be halted first; a breakpoint on the instruction
+    dpc points at cannot be told from not running, so step off it first."""
+    before = dm.read_register(dm.DPC)
+    for _ in range(tries):
+        try:
+            dm.resume()
+            return True
+        except riscv.TargetError as e:
+            if e.status != riscv.STATUS["state"]:
+                raise
+        if dm.read_register(dm.DPC) != before:
+            return True
+    return False

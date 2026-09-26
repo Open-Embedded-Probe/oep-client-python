@@ -348,3 +348,13 @@ def test_a_plan_replaces_only_the_fns_it_names_and_release_takes_a_list(bench):
     assert ep.requests[-1].payload == bytes([1]) + struct.pack("<H", UART)
     core.plan_release(hst)                                         # none named: every fn
     assert ep.plan == set() and ep.requests[-1].payload == bytes([0])
+
+
+def test_ch32_resume_asks_again_while_dpc_has_not_moved(dm):
+    from oep_client.v1 import ch32_flash
+    ep, hst, d = dm
+    assert d.read_register(d.DPC) == ep.target.dpc
+    ep.target.resume_misses = 2                                    # two requests that do not take, then it goes
+    assert ch32_flash.resume(d) and not ep.target.halted
+    ep.target.halted, ep.target.resume_misses = True, 9
+    assert not ch32_flash.resume(d, tries=3)                       # it never went
