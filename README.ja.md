@@ -21,7 +21,9 @@ uv run pytest
 | `riscv` | `oep.wire.rvswd` / `oep.wire.swio`、`oep.target.riscv-dm`、リセット線の探索、GPIO 経由の attach |
 | `console` | `oep.target.console`（位置つきのストリーム）と、バイト列として読む `ConsoleIO` |
 | `fixture` | `oep.fixture.gpio` / `uart`（revision 1） |
-| `capture` | `oep.fixture.capture`（revision 1、logic-capture の基本の形） |
+| `capture` | `oep.fixture.capture`（revision 1、oep-spec の oep-if-capture） |
+| `esp32_targets` | 独自インターフェース `io.github.ch32-riscv-ug.esp32.i2c-target` / `spi-target`（oep-probe-arduino の ESP32 の I2C / SPI の target） |
+| `decode` | キャプチャのチャネルの復号（I2C） |
 | `registry` | oep-spec の番号の表から生成したモジュール（編集しない。oep-spec から写し直す） |
 | `arm` | `oep.wire.swd`、`oep.target.arm-adi`、MEM-AP、Cortex-M の停止と関数呼び出し |
 | `ch32_flash` | CH32 の書き込み（RAM ローダー、ページ単位の書き直し） |
@@ -50,4 +52,4 @@ hst.end()
 能力の一覧は `uv run python -m oep_client.v1 dump --port <probe>`（`--fake p4-x035` でハードウェアなし）。
 実機での一通りの確認は ArduinoCore-CH32 の `tests/manual/oep_smoke/`（`oep_smoke.py`、`oep_probe_checks.py`）。
 
-`oep_client.v0` は v0 の wire 形式を話す手動ツールのために残している。
+v0 の client（`oep_client.v0`）は 2026-09-26 に消した（git の履歴に残る）。v0 を話す probe はもう無い。
