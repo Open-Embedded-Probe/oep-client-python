@@ -79,8 +79,8 @@ def probe_labels(hst: h.Host) -> dict[str, int]:
 
 
 def plan_apply(hst: h.Host, assignments: list[tuple[int, int, int]]) -> None:
-    """assignments: (fn, role, channel). All interfaces accept their roles or none is applied. The plan is probe
-    state: it stays until plan_release, whatever happens to the session."""
+    """assignments: (fn, role, channel). All interfaces accept their roles or none is applied. The plan is the
+    session's resource: kept over an explicit end, released at a lease lapse or a force takeover (oep-core §9)."""
     tlv = b"".join(bytes([TAG_ROLE_ASSIGNMENT, 5]) + struct.pack("<HBH", fn, role, ch) for fn, role, ch in assignments)
     hst.call(m.CORE_FN, OP_PLAN_APPLY, tlv)
 

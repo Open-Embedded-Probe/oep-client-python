@@ -78,19 +78,24 @@ class WireBase(Interface):
 
     def scan(self, pairs: list[tuple[int, int]] | None = None) -> list[Found]:
         """Try `pairs` of (swdio, swclk); None = every pair the probe allows (describe's channel_group /
-        role_channels). A pair the probe does not allow refuses the whole scan (rejected unavailable)."""
-        pairs = pairs or []
-        body = bytes([len(pairs)]) + b"".join(struct.pack("<HH", d, c) for d, c in pairs)
-        rd = m.Reader(self._call(self.SCAN, body).payload)
+        role_channels). A pair the probe does not allow refuses the whole scan (rejected unavailable). The probe stops
+        when its answer would not fit one frame and says how many pairs it tried; the rest go again (oep-if-debug §1)."""
+        pairs = list(pairs or [])
         out = []
-        for _ in range(rd.u8()):
-            kind, dio, clk, status = rd.take("BHHI")
-            out.append(Found(kind, (dio, clk), status))
-        rd.tail()
-        return out
+        while True:
+            body = bytes([len(pairs)]) + b"".join(struct.pack("<HH", d, c) for d, c in pairs)
+            rd = m.Reader(self._call(self.SCAN, body).payload)
+            tried, count = rd.take("BB")
+            for _ in range(count):
+                kind, dio, clk, status = rd.take("BHHI")
+                out.append(Found(kind, (dio, clk), status))
+            rd.tail()
+            if not pairs or tried >= len(pairs) or tried == 0:
+                return out
+            pairs = pairs[tried:]
 
     def detach(self, conn: int) -> None:
-        self._call(self.DETACH, bytes([conn]))
+        self._call(self.DETACH, struct.pack("<H", conn))
 
     def _speed_tlv(self, max_speed: int | None) -> bytes:
         # critical: a probe that cannot keep to a ceiling must refuse, not ignore it (§0: safety arguments)
@@ -119,7 +124,7 @@ class Wire(WireBase):
         until then); self.speed_hz: the speed the probe chose; max_speed: a ceiling the probe must keep (critical)."""
         body = bytes([self.HALT if halt else self.RUN]) + self._speed_tlv(max_speed) + self._pins_tlv(pins)
         rd = m.Reader(self._call(self.ATTACH, body).payload)
-        conn, status, flags, self.speed_hz = rd.take("BIBI")
+        conn, status, flags, self.speed_hz = rd.take("HIBI")
         self.had_reset, self.existing = bool(flags & 1), bool(flags & 2)
         self.ignored = rd.tail().ignored
         return conn, status
@@ -131,7 +136,7 @@ class Wire(WireBase):
         body = (struct.pack("<HH", self.DEFAULT_RESET if channel is None else channel, hold_ms) + self._speed_tlv(max_speed)
                 + self._pins_tlv(pins))
         rd = m.Reader(self._call(self.ATTACH_UNDER_RESET, body).payload)
-        conn, dpc, self.speed_hz = rd.take("BII")
+        conn, dpc, self.speed_hz = rd.take("HII")
         rd.tail()
         return conn, dpc
 
@@ -219,7 +224,7 @@ def dmi_value_count(kinds: list[int], done: int, status: int) -> int:
 
 
 class RiscvDm(Interface):
-    """oep.target.riscv-dm on one connection (every request starts with the connection byte)."""
+    """oep.target.riscv-dm on one connection (every request starts with the connection, u16)."""
     NAME = "oep.target.riscv-dm"
     REVISION = 1
     DMI, HALT, RESUME, RESET, READ_BLOCK, WRITE_BLOCK, RUN, STEP = (
@@ -231,7 +236,7 @@ class RiscvDm(Interface):
     NO_TIMEOUT = 0xFFFFFFFF
 
     def __init__(self, hst: h.Host, conn: int, name: str = "oep.target.riscv-dm"):
-        super().__init__(hst, name, prefix=bytes([conn]))
+        super().__init__(hst, name, prefix=struct.pack("<H", conn))
         self.conn = conn
 
     def _status_only(self, what: str, op: int) -> None:
@@ -396,6 +401,6 @@ def attach_after_gpio_reset(hst: h.Host, wire_: Wire, gpio_fn: int, channel: int
         if not release.succeeded:
             raise h.Failed(release)                       # never leave the reset line held
         if last.succeeded:
-            conn, status = m.Reader(last.payload).take("BI")
+            conn, status = m.Reader(last.payload).take("HI")
             return conn, status
     raise h.Failed(last) if last is not None else ValueError("tries must be at least 1")

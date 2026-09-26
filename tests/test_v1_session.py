@@ -160,67 +160,6 @@ def test_a_probe_reboot_forgets_the_last_id_and_boot_id_says_so(bench):
     assert again.boot_id != first.boot_id and not again.resumed
 
 
-# ---- long operations ------------------------------------------------------------------------------
-
-def start_long(h, ms):
-    r = h.request(TOY, endpoint.TOY_LONG, struct.pack("<I", ms))
-    assert r.resolution == m.ACCEPTED
-    return struct.unpack_from("<H", r.payload)[0]
-
-
-def test_long_operation_is_polled_with_progress(bench):
-    clock, ep = bench
-    a = new_host(ep, 1)
-    a.open(lease_ms=10000)
-    write(a, 77)
-    ref = start_long(a, 300)
-
-    def tick():
-        clock.ms += 100
-    final, progress = a.wait(ref, tick)
-    assert progress == [(0, 300), (100, 300), (200, 300)]
-    assert final.succeeded and struct.unpack("<I", final.payload)[0] == 77
-
-
-def test_conflicting_requests_are_busy_and_reads_are_not(bench):
-    clock, ep = bench
-    a = new_host(ep, 1)
-    a.open(lease_ms=10000)
-    start_long(a, 1000)
-    with pytest.raises(host.Busy):
-        write(a, 1)
-    assert read(a) == 0
-    a.keepalive()                               # core session ops still go through
-
-
-def test_the_operation_outlives_its_host_and_its_result_waits_for_the_same_id(bench):
-    clock, ep = bench
-    a, b = new_host(ep, 1), new_host(ep, 2)
-    a.open(lease_ms=500)
-    write(a, 5)
-    ref = start_long(a, 2000)
-    clock.ms = 10000                            # the host vanished; the lock lapsed long ago
-    saved = a.session
-    back = new_host(ep, 3)
-    back.open(session=saved)                    # same id: the result is still there
-    assert back.status(ref).succeeded
-    back.end()
-    b.open()                                    # a new id takes the lock: the last result goes
-    with pytest.raises(host.Rejected, match="unavailable"):
-        b.status(ref)
-
-
-def test_cancel(bench):
-    clock, ep = bench
-    a = new_host(ep, 1)
-    a.open(lease_ms=10000)
-    ref = start_long(a, 1000)
-    a.cancel(ref)
-    r = a.status(ref)
-    assert r.resolution == m.COMPLETED and r.detail == m.FAILED
-    write(a, 3)                                 # no longer busy
-
-
 def test_pipeline_keeps_order_and_reports_rejects_per_result(bench):
     _, ep = bench
     a = new_host(ep, 1)

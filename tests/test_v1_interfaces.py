@@ -81,7 +81,7 @@ def test_dmi_counts_its_steps_and_polls_return_their_last_value(dm):
     done, values = d.dmi(steps)
     assert done == 4 and values == [0x382, 0x0002]
     sent = ep.requests[-1].payload
-    assert sent[1:3] == struct.pack("<H", 4)                      # connection, then n(u16), then the steps
+    assert sent[2:4] == struct.pack("<H", 4)                      # connection(u16), then n(u16), then the steps
     assert d.dmi(b"".join(steps[:2])) == (2, [0x382])            # packed bytes are counted too
 
 
@@ -116,7 +116,7 @@ def test_block_access_reports_how_far_it_got(dm):
     ep, hst, d = dm
     d.write_block(0x20000000, struct.pack("<3I", 1, 2, 3))
     assert d.read_block(0x20000000, 3) == struct.pack("<3I", 1, 2, 3)
-    assert ep.requests[-2].payload[1:7] == struct.pack("<IH", 0x20000000, 3)   # address, count
+    assert ep.requests[-2].payload[2:8] == struct.pack("<IH", 0x20000000, 3)   # address, count
     ep.target.fault_at.add(0x20000008)
     with pytest.raises(riscv.TargetError) as e:
         d.read_block(0x20000000, 4)
@@ -136,7 +136,7 @@ def test_run_returns_the_registers_asked_for(dm):
     r = d.run(0x20000000, [(0x100A, 5)], timeout_ms=None, outs=(0x100A, 0x100B))
     assert r.stopped and r.dpc == 0x200000B0 and r.elapsed_us == 1234 and r.values == [0, 0x08000100]
     body = ep.requests[-1].payload
-    assert body[5:9] == b"\xff\xff\xff\xff"                       # timeout_ms u32, no limit
+    assert body[6:10] == b"\xff\xff\xff\xff"                      # timeout_ms u32, no limit
     assert d.run(0x20000000, [], outs=()).values == []           # n_out 0: no values
 
     ep.target.run_hook = lambda pc, regs: (False, pc + 8, 200000)
@@ -296,7 +296,7 @@ def test_an_unhonourable_value_follows_the_critical_bit(dm):
     non-critical: dropped and listed in the ignored TLV (0x7F)."""
     ep, hst, rv = dm
     method = riscv.reg.TARGET_RISCV_DM.tlv["reset"]["method"]
-    body = bytes([rv.conn, 0])                                     # connection, mode 0 (run)
+    body = struct.pack("<HB", rv.conn, 0)                          # connection(u16), mode 0 (run)
     with pytest.raises(host.Unsupported):
         hst.call(DM, riscv.reg.TARGET_RISCV_DM.op["reset"], body + bytes([method | 0x80, 1, 9]))
     r = hst.call(DM, riscv.reg.TARGET_RISCV_DM.op["reset"], body + bytes([method, 1, 9]))
