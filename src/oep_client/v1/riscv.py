@@ -111,22 +111,32 @@ class Wire(WireBase):
     NAME = "oep.wire.rvswd"
     DEFAULT_RESET = 0xFFFF
     RUN, HALT = reg.WIRE_RVSWD.enum["attach_method"]["run"], reg.WIRE_RVSWD.enum["attach_method"]["halt"]
+    TAG_TARGET_ID = reg.WIRE_RVSWD.tlv["attach_answer"]["target_id"]
+    SCHEME_WCH_DMI_7F = reg.WIRE_RVSWD.enum["target_id_scheme"]["wch_dmi_7f"]
 
     def __init__(self, hst: h.Host, name: str = "oep.wire.rvswd"):
         super().__init__(hst, name)
         self.had_reset = self.existing = False
         self.speed_hz = 0
         self.ignored: list[int] = []
+        self.target_id: tuple[int, bytes] | None = None   # (scheme, value) the last attach read, or None
+
+    def _take_target_id(self, tail: m.Tail) -> None:
+        v = tail.get(self.TAG_TARGET_ID)
+        self.target_id = (v[0], bytes(v[1:])) if v else None
 
     def attach(self, halt: bool = True, max_speed: int | None = None, pins: tuple[int, int] | None = None) -> tuple[int, int]:
         """-> (connection, DMSTATUS). Attaching an attached wire returns its connection as it is (self.existing).
         self.had_reset: a pending havereset was acknowledged first (a V00x's DMSTATUS halt / run bits stay frozen
-        until then); self.speed_hz: the speed the probe chose; max_speed: a ceiling the probe must keep (critical)."""
+        until then); self.speed_hz: the speed the probe chose; max_speed: a ceiling the probe must keep (critical);
+        self.target_id: (scheme, value) of the target's identity when the probe could read one (oep-if-debug §1)."""
         body = bytes([self.HALT if halt else self.RUN]) + self._speed_tlv(max_speed) + self._pins_tlv(pins)
         rd = m.Reader(self._call(self.ATTACH, body).payload)
         conn, status, flags, self.speed_hz = rd.take("HIBI")
         self.had_reset, self.existing = bool(flags & 1), bool(flags & 2)
-        self.ignored = rd.tail().ignored
+        tail = rd.tail()
+        self.ignored = tail.ignored
+        self._take_target_id(tail)
         return conn, status
 
     def attach_under_reset(self, channel: int | None = None, hold_ms: int = 20,
@@ -137,7 +147,7 @@ class Wire(WireBase):
                 + self._pins_tlv(pins))
         rd = m.Reader(self._call(self.ATTACH_UNDER_RESET, body).payload)
         conn, dpc, self.speed_hz = rd.take("HII")
-        rd.tail()
+        self._take_target_id(rd.tail())
         return conn, dpc
 
     def find_reset_line(self, candidates: list[int], reset_vector: int = 0, hold_ms: int = 20,

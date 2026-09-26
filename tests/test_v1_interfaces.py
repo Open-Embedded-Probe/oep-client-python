@@ -318,3 +318,33 @@ def test_scan_and_attach_take_the_pin_pair_and_refuse_one_not_allowed(bench):
         wire.attach(halt=False, pins=(3, 4))
     conn, _ = wire.attach(halt=False, pins=found[0].pins)
     assert conn >= 1
+
+
+# ---- review (portability) R1 / R6: target_id on attach, the plan per fn ------------------------------------
+
+def test_attach_reports_the_target_id_when_the_probe_reads_one(bench):
+    ep, hst = bench
+    wire = riscv.Wire(hst)
+    wire.attach(halt=False)
+    assert wire.target_id is None                                  # the probe read none: no TLV
+    riscv.Wire(hst).detach(1)
+    ep.target_id = 0x035E0601
+    conn, _ = wire.attach(halt=False)
+    assert wire.target_id == (riscv.Wire.SCHEME_WCH_DMI_7F, struct.pack("<I", 0x035E0601))
+
+
+def test_a_plan_replaces_only_the_fns_it_names_and_release_takes_a_list(bench):
+    ep, hst = bench
+    core.plan_apply(hst, [(GPIO, 1, 23)])
+    core.plan_apply(hst, [(UART, 1, 20), (UART, 2, 21)])           # another fn: the gpio plan stays
+    assert ep.plan == {(GPIO, 1, 23), (UART, 1, 20), (UART, 2, 21)}
+    core.plan_apply(hst, [(GPIO, 1, 5)])                           # the same fn: replaced
+    assert ep.plan == {(GPIO, 1, 5), (UART, 1, 20), (UART, 2, 21)}
+    with pytest.raises(host.Rejected, match="unavailable"):
+        core.plan_apply(hst, [(GPIO, 1, 20)])                      # a pin the uart holds: nothing changes
+    assert (GPIO, 1, 5) in ep.plan
+    core.plan_release(hst, [UART])
+    assert ep.plan == {(GPIO, 1, 5)}
+    assert ep.requests[-1].payload == bytes([1]) + struct.pack("<H", UART)
+    core.plan_release(hst)                                         # none named: every fn
+    assert ep.plan == set() and ep.requests[-1].payload == bytes([0])

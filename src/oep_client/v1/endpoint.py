@@ -174,6 +174,7 @@ class Endpoint:
                     if t[0] == fake.CORE_LABEL:
                         self.labels[t[4:2 + t[1]].decode()] = struct.unpack_from("<H", t, 2)[0]
         self.target = FakeTarget()
+        self.target_id: int | None = None              # the wch_dmi_7f target_id attach reports (None: none)
         self.connections: dict[int, int] = {}          # connection -> wire fn
         self._next_conn = 1
         self.streams: dict[int, Stream] = {}           # console stream id -> stream
@@ -372,18 +373,24 @@ class Endpoint:
                     got.append(struct.unpack_from("<HBH", value))
                 elif tag & m.TAG_CRITICAL:
                     return m.REJECTED, m.UNSUPPORTED, bytes([tag])
+            named = {fn for fn, _, _ in got}
+            kept = {a for a in self.plan if a[0] not in named}              # the fns named are replaced, the rest kept
             for fn, role, ch in got:
                 name = self.names.get(fn, "")
                 roles = {"oep.fixture.gpio": {1}, "oep.fixture.uart": {1, 2}}.get(name, set())
-                if role not in roles:
+                if role not in roles or any(k[2] == ch for k in kept):     # a pin another fn holds
                     return m.REJECTED, m.UNAVAILABLE, b""
-            self.plan |= set(got)
+            self.plan = kept | set(got)
             return m.COMPLETED, m.SUCCESS, b""
-        if op == m.OP_PLAN_RELEASE:
-            for fn, role, ch in self.plan:
+        if op == m.OP_PLAN_RELEASE:                                 # n(u8) n x fn(u16); n = 0: every fn
+            n = t.take("B")
+            fns = {t.take("H") for _ in range(n)}
+            t.tail()
+            gone = {a for a in self.plan if not fns or a[0] in fns}
+            for fn, role, ch in gone:
                 self.gpio_modes.pop(ch, None)
                 self.uarts.pop(fn, None)
-            self.plan.clear()
+            self.plan -= gone
             return m.COMPLETED, m.SUCCESS, b""
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
@@ -418,7 +425,8 @@ class Endpoint:
                 conn, flags = existing, flags | 2
             if method == 1:
                 tg.halted = True
-            return self._answer(struct.pack("<HIBI", conn, tg.dmstatus(), flags, speed), ignored)
+            tid = b"" if self.target_id is None else m.tlv(0x10, bytes([1]) + struct.pack("<I", self.target_id))
+            return self._answer(struct.pack("<HIBI", conn, tg.dmstatus(), flags, speed) + tid, ignored)
         if op == 0x03:                                             # detach
             conn = t.take("H")
             t.tail()
