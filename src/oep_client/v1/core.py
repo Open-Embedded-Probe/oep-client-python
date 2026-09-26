@@ -79,14 +79,16 @@ def probe_labels(hst: h.Host) -> dict[str, int]:
 
 
 def plan_apply(hst: h.Host, assignments: list[tuple[int, int, int]]) -> None:
-    """assignments: (fn, role, channel). All interfaces accept their roles or none is applied. The plan is the
+    """assignments: (fn, role, channel). The fns named get these plans, every other fn keeps its own (oep-core §8);
+    all interfaces accept their roles or nothing changes. The plan is the
     session's resource: kept over an explicit end, released at a lease lapse or a force takeover (oep-core §9)."""
     tlv = b"".join(bytes([TAG_ROLE_ASSIGNMENT, 5]) + struct.pack("<HBH", fn, role, ch) for fn, role, ch in assignments)
     hst.call(m.CORE_FN, OP_PLAN_APPLY, tlv)
 
 
-def plan_release(hst: h.Host) -> None:
-    hst.call(m.CORE_FN, OP_PLAN_RELEASE)
+def plan_release(hst: h.Host, fns: list[int] | tuple[int, ...] = ()) -> None:
+    """Release the plan of these fns (none: every fn, oep-core §8)."""
+    hst.call(m.CORE_FN, OP_PLAN_RELEASE, bytes([len(fns)]) + b"".join(struct.pack("<H", f) for f in fns))
 
 
 class Interface:
