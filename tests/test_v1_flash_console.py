@@ -46,23 +46,23 @@ class FakeCh32:
 
     def handlers(self):
         def read_block(p):
-            a, count = struct.unpack("<IH", p[1:])
+            a, count = struct.unpack("<IH", p[2:])
             if a == cf.CTLR:
                 return ok(struct.pack("<HBI", 1, 0, (cf.LOCK | cf.FLOCK) if self.ctlr_locked else 0))
             return ok(struct.pack("<HB", count, 0) + self.read(a, count * 4))
 
         def write_block(p):
-            a, count = struct.unpack_from("<IH", p, 1)
-            assert len(p) == 7 + 4 * count
-            self.write(a, p[7:])
+            a, count = struct.unpack_from("<IH", p, 2)
+            assert len(p) == 8 + 4 * count
+            self.write(a, p[8:])
             return ok(struct.pack("<HB", count, 0))
 
         def run(p):
             self.runs += 1
-            pc, timeout, n = struct.unpack_from("<IIB", p, 1)
-            regs = dict(struct.unpack_from("<HI", p, 10 + 6 * i) for i in range(n))
-            n_out = p[10 + 6 * n]
-            assert n_out == 1 and struct.unpack_from("<H", p, 11 + 6 * n)[0] == 0x100A    # a0 back
+            pc, timeout, n = struct.unpack_from("<IIB", p, 2)
+            regs = dict(struct.unpack_from("<HI", p, 11 + 6 * i) for i in range(n))
+            n_out = p[11 + 6 * n]
+            assert n_out == 1 and struct.unpack_from("<H", p, 12 + 6 * n)[0] == 0x100A    # a0 back
             self.timeouts.append(timeout)
             if 0x100C in regs:                  # V003 loader
                 flags, addr, length = regs[0x100A], regs[0x100B], regs[0x100C]
@@ -116,16 +116,16 @@ def test_an_unknown_flash_method_is_refused():
 def test_run_payload_detaches_even_when_the_payload_does_not_read_back():
     detached = []
     def read_block(p):
-        count = struct.unpack("<IH", p[1:])[1]
+        count = struct.unpack("<IH", p[2:])[1]
         return ok(struct.pack("<HB", count, 0) + b"\0" * 4 * count)
 
-    hst = ScriptedHost({(WIRE, riscv.Wire.ATTACH): lambda p: ok(struct.pack("<BIBI", 1, 0x382, 0, 1_000_000)),
+    hst = ScriptedHost({(WIRE, riscv.Wire.ATTACH): lambda p: ok(struct.pack("<HIBI", 1, 0x382, 0, 1_000_000)),
                         (WIRE, riscv.Wire.DETACH): lambda p: detached.append(p) or ok(),
-                        (DM, riscv.RiscvDm.WRITE_BLOCK): lambda p: ok(struct.pack("<HB", (len(p) - 7) // 4, 0)),
+                        (DM, riscv.RiscvDm.WRITE_BLOCK): lambda p: ok(struct.pack("<HB", (len(p) - 8) // 4, 0)),
                         (DM, riscv.RiscvDm.READ_BLOCK): read_block})
     with pytest.raises(RuntimeError, match="did not read back"):
         uiapduino.normalize_user(hst, riscv.Wire(hst, "oep.wire.swio"))
-    assert detached == [b"\x01"]
+    assert detached == [b"\x01\x00"]
 
 
 def test_console_io_counts_what_the_ring_dropped():

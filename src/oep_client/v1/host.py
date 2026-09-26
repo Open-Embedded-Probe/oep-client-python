@@ -272,19 +272,3 @@ class Host:
         self.subscriptions.clear()
         return out
 
-    # ---- long operations ------------------------------------------------------------------------
-    def status(self, activity: int) -> m.Result:
-        return self.request(m.CORE_FN, m.OP_STATUS, struct.pack("<H", activity), locked=False)
-
-    def cancel(self, activity: int) -> None:
-        self.request(m.CORE_FN, m.OP_CANCEL, struct.pack("<H", activity))
-
-    def wait(self, activity: int, between: Callable[[], None] = lambda: None) -> tuple[m.Result, list[tuple[int, int]]]:
-        """Poll status until the activity completes; returns the final result and the progress seen."""
-        progress = []
-        while True:
-            r = self.status(activity)
-            if r.resolution != m.ACCEPTED:
-                return r, progress
-            progress.append(m.Reader(r.payload).take("II"))
-            between()

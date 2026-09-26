@@ -111,19 +111,19 @@ class Console(PositionStream):
         self.existing = False
 
     def _stream_prefix(self) -> bytes:
-        return bytes([self.stream])
+        return struct.pack("<H", self.stream)
 
     def open(self, conn: int, mechanism: int = DMSEQ) -> int:
         """-> the stream. An open stream of the same (connection, mechanism) comes back as it is (self.existing):
         position and marks carry on. An unknown mechanism is rejected unsupported."""
-        rd = m.Reader(self._call(self.OPEN, bytes([conn, mechanism])).payload)
-        self.stream, flags = rd.take("BB")
+        rd = m.Reader(self._call(self.OPEN, struct.pack("<HB", conn, mechanism)).payload)
+        self.stream, flags = rd.take("HB")
         self.existing = bool(flags & 1)
         rd.tail()
         return self.stream
 
     def close(self) -> None:
-        self._call(self.CLOSE, bytes([self.stream]))
+        self._call(self.CLOSE, struct.pack("<H", self.stream))
 
 
 class StreamIO:

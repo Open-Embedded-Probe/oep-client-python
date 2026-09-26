@@ -36,7 +36,7 @@ class SwdWire(WireBase):
         if targetsel is not None:
             body += m.tlv(self.TAG_TARGETSEL, struct.pack("<I", targetsel), critical=True)
         rd = m.Reader(self._call(self.ATTACH, body).payload)
-        conn, dpidr, flags, self.speed_hz = rd.take("BIBI")
+        conn, dpidr, flags, self.speed_hz = rd.take("HIBI")
         self.existing = bool(flags & 2)
         rd.tail()
         return conn, dpidr, bool(flags & 1)
@@ -64,7 +64,7 @@ class ArmAdi(Interface):
     TRANSFER, READ_BLOCK, WRITE_BLOCK = _ADI.op["transfer"], _ADI.op["read_block"], _ADI.op["write_block"]
 
     def __init__(self, hst: h.Host, conn: int, adiv6: bool = False):
-        super().__init__(hst, prefix=bytes([conn]))
+        super().__init__(hst, prefix=struct.pack("<H", conn))
         self.conn = conn
         self.adiv6 = adiv6
         self._select: int | None = None
@@ -138,10 +138,10 @@ class MemAp:
         csw = adi.ap_read(ap, self.base)
         adi.ap_write(ap, self.base, (((csw & ~0x37) | 0x12) | csw_set) & ~csw_clear)   # 32 bits, AddrInc single
         adi._ap_select(ap, self.base)                        # the bank the block operations assume
-        # Words per block operation, from the probe's frame limit: request header 6 + session 4 + connection 1 +
+        # Words per block operation, from the probe's frame limit: request header 6 + session 4 + connection 2 +
         # address 4 + count 2 on the way in (the answer's 5 + done 2 + status 1 is smaller).
         from .core import confirm
-        self.chunk = max(1, (confirm(adi.host)["max_frame"] - 17) // 4)
+        self.chunk = max(1, (confirm(adi.host)["max_frame"] - 18) // 4)
 
     def write_many(self, pairs: list[tuple[int, int]]) -> None:
         """Scattered single-word writes in one transfer list (TAR, DRW per word, RDBUFF at the end so the last one

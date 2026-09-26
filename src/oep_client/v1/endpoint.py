@@ -7,19 +7,17 @@ and docs/oep-core.ja.md / docs/oep-if-*.ja.md define:
   requests unanswered (§2)
 - a lock held by a host-chosen session id, extended by every request of its holder and counted from when
   that request completed (watchdog); when it lapses or ends, the last id is remembered and may resume
-- rejects: no session, locked (+ remaining ms, never the holder's id), session required, busy, no connection,
+- rejects: no session, locked (+ remaining ms, never the holder's id), session required, no connection,
   unsupported (+ the critical tag), malformed (short fixed part, tag 0xFF)
 - §0 tails: a request's TLVs after its fixed part - unknown critical -> rejected unsupported, unknown non-critical ->
   listed in the result's ignored TLV (0x7F); `tail=` appends TLVs to every result that may carry them, so hosts can
   be checked to skip what they do not know
-- one long operation at a time: accepted + an activity number, polled with core status
 - the plan (plan_apply / plan_release), and simulations of the revision 1 interfaces the profiles offer:
   oep.wire.rvswd / swio (attach, existing connection, max_speed), oep.target.riscv-dm on a `FakeTarget`,
   oep.target.console streams, oep.fixture.gpio and oep.fixture.uart
 
 Every other non-core fn gets three stand-in operations so the session rules can be exercised - FAKE ONLY, they mean
-nothing on a real probe:  0x01 write(u32) changes state, 0x02 read -> u32 needs no lock,
-0x03 long(ms u32) runs for that many clock milliseconds and completes with the value.
+nothing on a real probe:  0x01 write(u32) changes state, 0x02 read -> u32 needs no lock.
 """
 
 from __future__ import annotations
@@ -30,7 +28,7 @@ from typing import Callable
 
 from . import fake, message as m, registry as reg
 
-TOY_WRITE, TOY_READ, TOY_LONG = 0x01, 0x02, 0x03
+TOY_WRITE, TOY_READ = 0x01, 0x02
 OK, WAIT, LINE, FAULT, TIMEOUT, STATE = (reg.STATUS[k] for k in ("ok", "wait", "line", "fault", "timeout", "state"))
 _RV, _CON, _GPIO, _UART = reg.TARGET_RISCV_DM, reg.TARGET_CONSOLE, reg.FIXTURE_GPIO, reg.FIXTURE_UART
 STEP = _RV.enum["dmi_step"]
@@ -94,21 +92,6 @@ class Take:
             raise Reject(m.UNSUPPORTED, bytes([tag | m.TAG_CRITICAL]))
         got.pop(tag, None)
         ignored.append(tag)
-
-
-@dataclass
-class Activity:
-    ref: int
-    started_ms: int
-    total_ms: int
-    value: int
-    cancelled: bool = False
-
-    def done_ms(self, now: int) -> int:
-        return min(self.total_ms, now - self.started_ms)
-
-    def finished(self, now: int) -> bool:
-        return self.cancelled or self.done_ms(now) >= self.total_ms
 
 
 @dataclass
@@ -179,8 +162,6 @@ class Endpoint:
         self.lease_ms = lease_default_ms
         self.expires_ms = 0
         self.values: dict[int, int] = {}
-        self.activity: Activity | None = None
-        self._next_ref = 1
         self.dropped = 0                     # requests a v0 endpoint dropped (role 0x81)
         self.requests: list[m.Request] = []
         self.subscribed: set[int] = set()
@@ -257,8 +238,6 @@ class Endpoint:
                 return refused
         if req.fn == m.CORE_FN:
             return self._core(req)
-        if self.activity and not self.activity.finished(self.now()) and not self._lock_free(req.fn, req.op):
-            return m.REJECTED, m.BUSY, b""
         sim = SIMS.get(self.names[req.fn])
         if sim is not None:
             handler = getattr(self, f"_{sim}", None)
@@ -276,12 +255,6 @@ class Endpoint:
             _, ignored = t.tail()
             self.values[req.fn] = value
             return self._answer(b"", ignored)
-        if req.op == TOY_LONG:
-            total = t.take("I")
-            t.tail()
-            self.activity = Activity(self._next_ref, self.now(), total, self.values.get(req.fn, 0))
-            self._next_ref = self._next_ref % 0xFFFF + 1
-            return m.ACCEPTED, 0, struct.pack("<H", self.activity.ref)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
     # ---- the lock -------------------------------------------------------------------------------
@@ -315,18 +288,12 @@ class Endpoint:
         if self.holder is not None and self.holder != session and not force:
             return m.REJECTED, m.LOCKED, struct.pack("<I", self._remaining())
         resumed = session in (self.holder, self.last)
-        if session != self.last:
-            self._forget_result()                                  # a new session: the last result goes
         if session != self.holder:
             self.subscribed.clear()
         self.holder = self.last = session
         self.lease_ms = min(lease or self.lease_default_ms, self.lease_max_ms)
         self.expires_ms = self.now() + self.lease_ms
         return self._answer(struct.pack("<IIB", self.lease_ms, self.boot_id, int(resumed)), ignored)
-
-    def _forget_result(self) -> None:
-        if self.activity and self.activity.finished(self.now()):
-            self.activity = None
 
     def reboot(self, boot_id: int) -> None:
         """The probe restarts: lock, last id, connections, streams and plan are gone."""
@@ -338,7 +305,6 @@ class Endpoint:
         self.stream_keys.clear()
         self.plan.clear()
         self.uarts.clear()
-        self.activity = None
 
     def lose_connections(self) -> None:
         """A wire or target reset drops every connection; their console streams close with a link-lost mark."""
@@ -373,8 +339,6 @@ class Endpoint:
         if op == m.OP_LOCK_STATE:
             _, ignored = t.tail()
             return self._answer(struct.pack("<BI", int(self.holder is not None), self._remaining()), ignored)
-        if op == m.OP_STATUS:
-            return self._status(t)
         if op == m.OP_LINK_SOURCE:
             n = min(t.take("I"), self.probe.max_frame - m.RESULT_HEADER)
             return m.COMPLETED, m.SUCCESS, bytes(k & 0xFF for k in range(n))
@@ -387,8 +351,6 @@ class Endpoint:
         if op == m.OP_KEEPALIVE:
             _, ignored = t.tail()
             return self._answer(b"", ignored)
-        if op == m.OP_CANCEL:
-            return self._cancel(t)
         if op == m.OP_SUBSCRIBE:
             fn = t.take("H")
             if t.at < len(t.data):
@@ -425,38 +387,18 @@ class Endpoint:
             return m.COMPLETED, m.SUCCESS, b""
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
-    def _status(self, t: Take) -> tuple[int, int, bytes]:
-        ref = t.take("H")
-        a = self.activity
-        if a is None or a.ref != ref:
-            return m.REJECTED, m.UNAVAILABLE, b""
-        now = self.now()
-        if a.cancelled:
-            return m.COMPLETED, m.FAILED, b""
-        if a.finished(now):
-            return m.COMPLETED, m.SUCCESS, struct.pack("<I", a.value)
-        return m.ACCEPTED, 0, struct.pack("<II", a.done_ms(now), a.total_ms)
-
-    def _cancel(self, t: Take) -> tuple[int, int, bytes]:
-        ref = t.take("H")
-        a = self.activity
-        if a is None or a.ref != ref or a.finished(self.now()):
-            return m.REJECTED, m.UNAVAILABLE, b""
-        a.cancelled = True
-        return m.COMPLETED, m.SUCCESS, b""
-
     # ---- oep.wire.rvswd / swio ------------------------------------------------------------------
     PINS = (2, 54)   # the one pair this fake wire allows (as the P4 X035 fixture)
 
     def _wire(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         tg = self.target
-        if op == 0x01:                                             # scan: count(u8) pairs; only (2, 54) is allowed
+        if op == 0x01:                                             # scan: count(u8) pairs -> tried count ...; only (2, 54)
             count = t.take("B")
             pairs = [t.take("HH") for _ in range(count)]
             t.tail()
             if any(p != self.PINS for p in pairs):
                 raise Reject(m.UNAVAILABLE)
-            return m.COMPLETED, m.SUCCESS, struct.pack("<BBHHI", 1, 1, *self.PINS, tg.dmstatus())
+            return m.COMPLETED, m.SUCCESS, struct.pack("<BBBHHI", max(count, 1), 1, 1, *self.PINS, tg.dmstatus())
         if op == 0x02:                                             # attach
             method = t.take("B")
             got, ignored = t.tail({0x01, 0x03})
@@ -468,8 +410,7 @@ class Endpoint:
             existing = next((c for c, w in self.connections.items() if w == fn), None)
             flags = 0
             if existing is None:
-                conn = self._next_conn
-                self._next_conn = self._next_conn % 255 + 1
+                conn = self._new_conn()
                 self.connections[conn] = fn
                 if tg.havereset:
                     tg.havereset, flags = False, flags | 1
@@ -477,9 +418,9 @@ class Endpoint:
                 conn, flags = existing, flags | 2
             if method == 1:
                 tg.halted = True
-            return self._answer(struct.pack("<BIBI", conn, tg.dmstatus(), flags, speed), ignored)
+            return self._answer(struct.pack("<HIBI", conn, tg.dmstatus(), flags, speed), ignored)
         if op == 0x03:                                             # detach
-            conn = t.take("B")
+            conn = t.take("H")
             t.tail()
             if conn not in self.connections:
                 raise Reject(m.NO_CONNECTION)
@@ -495,12 +436,17 @@ class Endpoint:
             if channel not in (0xFFFF, self.labels.get("NRST")):
                 raise Reject(m.UNAVAILABLE)
             self.connections = {c: w for c, w in self.connections.items() if w != fn}
-            conn = self._next_conn
-            self._next_conn = self._next_conn % 255 + 1
+            conn = self._new_conn()
             self.connections[conn] = fn
             tg.halted, tg.dpc = True, tg.reset_vector
-            return self._answer(struct.pack("<BII", conn, tg.dpc, 4_000_000), ignored)
+            return self._answer(struct.pack("<HII", conn, tg.dpc, 4_000_000), ignored)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
+
+    def _new_conn(self) -> int:
+        if self._next_conn > 0xFFFF:
+            raise Reject(m.UNAVAILABLE)                            # every number used this boot (core §9)
+        conn, self._next_conn = self._next_conn, self._next_conn + 1
+        return conn
 
     # ---- oep.target.riscv-dm --------------------------------------------------------------------
     @staticmethod
@@ -508,7 +454,7 @@ class Endpoint:
         return m.SUCCESS if status == OK else (m.PARTIAL if done else m.FAILED)
 
     def _dm(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
-        conn = t.take("B")
+        conn = t.take("H")
         if conn not in self.connections:
             raise Reject(m.NO_CONNECTION)
         tg = self.target
@@ -667,7 +613,7 @@ class Endpoint:
     # ---- oep.target.console ---------------------------------------------------------------------
     def _console(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         if op == _CON.op["open"]:
-            conn, mech = t.take("BB")
+            conn, mech = t.take("HB")
             _, ignored = t.tail()
             if conn not in self.connections:
                 raise Reject(m.NO_CONNECTION)
@@ -675,15 +621,15 @@ class Endpoint:
                 raise Reject(m.UNSUPPORTED)
             sid = self.stream_keys.get((conn, mech))
             if sid is not None and not self.streams[sid].closed:
-                return self._answer(struct.pack("<BB", sid, 1), ignored)
+                return self._answer(struct.pack("<HB", sid, 1), ignored)
             for key in [k for k in self.stream_keys if k[1] == mech]:    # a closed one of this mechanism goes
                 self.streams.pop(self.stream_keys.pop(key), None)
             sid = self._next_stream
-            self._next_stream = self._next_stream % 255 + 1
+            self._next_stream += 1                                 # never reused within a boot (core §9)
             self.streams[sid], self.stream_keys[(conn, mech)] = Stream(), sid
             self.streams[sid].add_mark(MARK["attach"], self.now())
-            return self._answer(struct.pack("<BB", sid, 0), ignored)
-        sid = t.take("B")
+            return self._answer(struct.pack("<HB", sid, 0), ignored)
+        sid = t.take("H")
         s = self.streams.get(sid)
         if s is None:
             raise Reject(m.UNAVAILABLE)

@@ -52,7 +52,6 @@ _OP = reg.CORE.op
 OP_CONFIRM, OP_LIST, OP_DESCRIBE = _OP["confirm"], _OP["list"], _OP["describe"]
 OP_PLAN_APPLY, OP_PLAN_RELEASE = _OP["plan_apply"], _OP["plan_release"]
 OP_OPEN, OP_END, OP_KEEPALIVE, OP_LOCK_STATE = _OP["open"], _OP["end"], _OP["keepalive"], _OP["lock_state"]
-OP_STATUS, OP_CANCEL = _OP["status"], _OP["cancel"]
 OP_SUBSCRIBE, OP_UNSUBSCRIBE = _OP["subscribe"], _OP["unsubscribe"]
 OP_LINK_SOURCE, OP_LINK_SINK = _OP["link_source"], _OP["link_sink"]
 
