@@ -242,10 +242,22 @@ class SerialLink:
         """Pipelined: keep up to max_inflight requests and window_bytes outstanding, results in order.
 
         The probe answers in the order it received; each reply is still matched by correlation id. Frames admitted
-        together go out in one write (E160). No re-send here; after an error the link resyncs so the next request
-        does not read this exchange's leftovers, and the error is raised.
+        together go out in one write (E160). After a broken or missing reply the link resyncs and the requests not yet
+        answered go once more with the same corr (oep-core §5.2: the probe answers a repeat from what it kept); a second
+        failure is raised.
         """
         replies: list[bytes] = []
+        try:
+            return self._exchange_once(messages, max_inflight, window_bytes, replies)
+        except (cobs.CorruptFrame, TimeoutError, FramingLost):
+            if self.ended_blind:
+                raise
+            self.retries += 1
+            rest = messages[len(replies):]
+            return replies + self._exchange_once(rest, max_inflight, window_bytes, [])
+
+    def _exchange_once(self, messages: list[bytes], max_inflight: int, window_bytes: int,
+                       replies: list[bytes]) -> list[bytes]:
         outstanding: list[tuple[int, int]] = []      # (correlation, size) of requests in flight
         batch: list[bytes] = []
         try:

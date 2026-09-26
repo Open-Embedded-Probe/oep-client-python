@@ -180,17 +180,17 @@ def test_each_frame_goes_out_in_one_write():
         at = 0
 
 
-def test_exchange_resyncs_after_a_stray_reply_and_raises():
+def test_exchange_resyncs_after_a_stray_reply_and_sends_the_rest_again():
     s = Stream()
     lk = make_link(s)
     reqs = [m.Request(c, 1, 0x02, b"x").pack() for c in (10, 11, 12)]
     s.rx += frame(result(10)) + frame(result(11)) + frame(result(12))
     assert [m.Result.unpack(r).corr for r in lk.exchange(reqs, 2, 4096)] == [10, 11, 12]
     s.respond = answering()
-    s.rx += frame(result(19))                                     # not 20
-    with pytest.raises(link.CorrMismatch):
-        lk.exchange([m.Request(c, 1, 0x02, b"x").pack() for c in (20, 21)], 2, 4096)
-    assert lk.resyncs == 1
+    s.rx += frame(result(19))                                     # not 20: resync, then 20 and 21 go once more
+    got = lk.exchange([m.Request(c, 1, 0x02, b"x").pack() for c in (20, 21)], 2, 4096)
+    assert [m.Result.unpack(r).corr for r in got] == [20, 21]
+    assert lk.resyncs == 1 and lk.retries == 1
 
 
 def test_attach_host_binds_limits_and_max_frame():
