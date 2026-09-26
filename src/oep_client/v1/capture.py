@@ -273,11 +273,11 @@ class LogicCapture(Interface):
         out = bytearray()
         for off, r in zip(range(0, length, chunk), self.host.pipeline_calls(reqs, locked=False)):
             got_pos, flags = m.Reader(r.payload).take("QB")
-            data = r.payload[5:]
+            data = r.payload[9:]                          # after position(u64) flags(u8)
             want = min(chunk, length - off)
             while len(data) < want:                       # a short answer: read on from where it stopped
                 more = self._call(self.READ, struct.pack("<QI", position + off + len(data), want - len(data)),
-                                  locked=False).payload[5:]
+                                  locked=False).payload[9:]
                 if not more:
                     raise h.ProtocolError(f"read at {position + off + len(data)} returned nothing")
                 data += more

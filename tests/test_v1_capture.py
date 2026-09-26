@@ -88,3 +88,17 @@ def test_stream_does_not_count_the_fns_events_as_lost():
     link.events = __import__("collections").deque([bytes([0x05]) + struct.pack("<HHB", 2, 1, 1)])   # seq 1 = an event
     got = cap.stream(link, nbytes=4)
     assert got.seq_lost == 0 and len(link.events) == 1
+
+
+def test_read_spans_frames_without_the_header_leaking_into_the_data():
+    """read() splits a long read into frame-sized ones; each answer is position(u64) flags(u8) data."""
+    from test_v1_target_parts import ScriptedHost, ok
+    stream = bytes(range(256)) * 12                                   # 3072 bytes: more than one 1024-byte frame
+    def read(p):
+        pos, n = struct.unpack("<QI", p[:12])
+        return ok(struct.pack("<QB", pos, 0) + stream[pos:pos + n])
+    hst = ScriptedHost({(21, c.LogicCapture.READ): read})
+    hst._fns[c.LogicCapture.NAME] = 21
+    hst._revisions[21] = 1
+    lc = c.LogicCapture(hst)
+    assert lc.read(100, 2500) == stream[100:2600]
