@@ -271,13 +271,17 @@ class LogicCapture(Interface):
         reqs = [self.request(self.READ, struct.pack("<QI", position + off, min(chunk, length - off)))
                 for off in range(0, length, chunk)]
         out = bytearray()
-        for off, r in zip(range(0, length, chunk), self.host.pipeline_calls(reqs, locked=False)):
+        # Reads need no lock, but a long one (64 KB over a 115200 bps UART takes seconds) must not outlive the lease:
+        # with a session open they carry its id, so each one extends the lease (oep-core §4.1). Without it the lease
+        # lapsed mid-read, the plan went with it (core §9) and the capture read back nothing (2026-09-26, V003 jig).
+        keep = self.host.session is not None
+        for off, r in zip(range(0, length, chunk), self.host.pipeline_calls(reqs, locked=keep)):
             got_pos, flags = m.Reader(r.payload).take("QB")
             data = r.payload[9:]                          # after position(u64) flags(u8)
             want = min(chunk, length - off)
             while len(data) < want:                       # a short answer: read on from where it stopped
                 more = self._call(self.READ, struct.pack("<QI", position + off + len(data), want - len(data)),
-                                  locked=False).payload[9:]
+                                  locked=keep).payload[9:]
                 if not more:
                     raise h.ProtocolError(f"read at {position + off + len(data)} returned nothing")
                 data += more
