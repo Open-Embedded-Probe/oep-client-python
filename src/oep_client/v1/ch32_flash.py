@@ -208,8 +208,12 @@ def program(hst: h.Host, dm: target.RiscvDm, image: bytes, profile: FlashProfile
     if profile.method == "fast-page":
         failures = run_pages([(off, profile.page, 0) for off in range(0, len(image), profile.page)])
     else:
-        run = dm.run(LOADER, [(0x100A, 0x03), (0x100B, profile.base), (0x100C, 0),
-                              (0x1002, V003_STACK), (0x0300, 0)], timeout_ms=1000)   # unlock + mass erase
+        for _ in range(3):   # unlock + mass erase; a stop at the loader's first instruction never ran (the probe
+            # does not re-issue a run, oep-if-debug §4.4 - erasing twice is harmless, so the host asks again)
+            run = dm.run(LOADER, [(0x100A, 0x03), (0x100B, profile.base), (0x100C, 0),
+                                  (0x1002, V003_STACK), (0x0300, 0)], timeout_ms=1000)
+            if not (run.stopped and run.dpc == LOADER):
+                break
         if not (run.stopped and run.dpc == V003_EBREAK):
             raise RuntimeError(f"mass erase did not stop on the loader's ebreak (dpc {run.dpc:#x})")
         failures = run_pages([(off, min(V003_RUN, len(image) - off), 0x09) for off in range(0, len(image), V003_RUN)])
