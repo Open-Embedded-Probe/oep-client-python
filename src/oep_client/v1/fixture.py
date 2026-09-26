@@ -27,6 +27,7 @@ class Gpio(Interface):
     INPUT, INPUT_PULLUP, INPUT_PULLDOWN = _MODE["input"], _MODE["input_pullup"], _MODE["input_pulldown"]
     OUTPUT_LOW, OUTPUT_HIGH = _MODE["output_low"], _MODE["output_high"]
     OPEN_DRAIN_LOW, OPEN_DRAIN_RELEASE = _MODE["open_drain_low"], _MODE["open_drain_release"]
+    INPUT_PULLUP_PULLDOWN = _MODE["input_pullup_pulldown"]   # both pulls: a weak mid level
 
     def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
         super().__init__(hst, name, fn=fn)
