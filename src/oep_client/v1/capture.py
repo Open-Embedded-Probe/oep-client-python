@@ -28,6 +28,7 @@ CRITICAL = m.TAG_CRITICAL
 ONE_SHOT, REPEAT, STREAMING = (_CAP.enum["mode"][k] for k in ("one_shot", "repeat", "streaming"))
 IMMEDIATE, LEVEL, EDGE, CROSS_UP, CROSS_DOWN = range(5)
 STATE = _CAP.enum["state"]
+SEGMENT_SLIPPED = _CAP.enum["segment_flag"]["slipped"]
 # events (oep-core §11, role 0x05)
 EVENT_SEGMENT, EVENT_STOPPED, EVENT_TRIGGERED = (_CAP.event[k] for k in ("segment", "stopped", "triggered"))
 
@@ -47,6 +48,11 @@ class Segment:
     start_us: int
     trigger_index: int | None
     flags: int
+
+    @property
+    def slipped(self) -> bool:
+        """flags bit2: the time base bent inside the segment (samples later than the timing answer, oep-if-capture §2)."""
+        return bool(self.flags & SEGMENT_SLIPPED)
 
     @classmethod
     def unpack(cls, b: bytes) -> "Segment":
