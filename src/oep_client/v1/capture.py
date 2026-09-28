@@ -12,7 +12,8 @@ import zipfile
 from dataclasses import dataclass, field
 from fractions import Fraction
 
-from . import host as h, message as m, registry as reg
+from . import cobs, host as h, message as m, registry as reg
+from .frames import FramingLost
 from .core import Interface, confirm
 
 _CAP = reg.FIXTURE_CAPTURE
@@ -265,6 +266,7 @@ class LogicCapture(Interface):
             time.sleep(0.002)
         raise TimeoutError("capture did not finish")
 
+    READ_TRIES = 4   # batches of reads sent again after the link's own repeat failed too
     BATCH = 16   # frame-sized reads per pipeline; a keepalive between batches when a session is open
 
     def read(self, position: int, length: int) -> bytes:
@@ -281,8 +283,17 @@ class LogicCapture(Interface):
             if at and self.host.session is not None:
                 self.host.keepalive()
             batch = offsets[at:at + self.BATCH]
-            reqs = [self.request(self.READ, struct.pack("<QI", position + off, min(chunk, length - off))) for off in batch]
-            for off, r in zip(batch, self.host.pipeline_calls(reqs, locked=False)):
+            for attempt in range(self.READ_TRIES):
+                reqs = [self.request(self.READ, struct.pack("<QI", position + off, min(chunk, length - off))) for off in batch]
+                try:
+                    replies = self.host.pipeline_calls(reqs, locked=False)
+                    break
+                except (cobs.CorruptFrame, TimeoutError, FramingLost):
+                    # the link sent the batch once more already; a read changes nothing, so the whole batch can go
+                    # again (the V003 jig's CP2102 dropped bytes twice in one 60 KB read, 2026-09-29)
+                    if attempt == self.READ_TRIES - 1:
+                        raise
+            for off, r in zip(batch, replies):
                 data = r.payload[9:]                      # after position(u64) flags(u8)
                 want = min(chunk, length - off)
                 while len(data) < want:                   # a short answer: read on from where it stopped
