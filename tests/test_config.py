@@ -83,3 +83,17 @@ def test_plan_label_idle_from_the_command(capsys, monkeypatch):
     items = config.ProbeConfig(hst).items()
     assert config.Label(20, "DUT TX") in items and config.Idle(21, "pull-up") in items
     assert ep.saved is not None
+
+
+def test_slot_takes_the_only_wire_by_default(monkeypatch):
+    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())               # oep.wire.swio only
+    hst = h.Host(lambda b: ep.handle(b, 0))
+
+    class FakeLink:
+        def close(self):
+            pass
+    hst.link = FakeLink()
+    monkeypatch.setattr(cli.link, "open_host", lambda target: hst)
+    assert cli.main(["config", "slot", "x", "--name", "v003", "--attach", "at-boot", "--retry", "1"]) == 0
+    (slot,) = [i for i in config.ProbeConfig(hst).items() if isinstance(i, config.Slot)]
+    assert slot.wire_fn == 1 and slot.pins == (16, 0xFFFF)
