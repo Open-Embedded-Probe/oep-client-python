@@ -370,3 +370,16 @@ def test_fake_serve_uart_plan_and_rx():
     finally:
         proc.stdin.close()
         proc.wait(timeout=5)
+
+
+def test_the_closing_0x00_of_a_frame_is_not_raw_after_the_gap():
+    clock = Clock()
+    ep = endpoint.Endpoint(fake.p4_bench(), clock)
+    p = ep.pairs[1]
+    ep.load_config([slot_item(0, 1, p[0]), bind_item(0, MODE["manual"], [(KIND["slot_console"], 0)])])
+    port = fake_serial.FakeSerialPort(ep, 0)
+    port.feed(framed(m.Request(1, 0, m.OP_LOCK_STATE, b"")))       # lock-free: the port is not held
+    clock.t += 250
+    port.tick()
+    sid = ep.stream_keys[(ep._conn_at(1, p[0]), 2)]
+    assert bytes(ep.streams[sid].written) == b""                   # no stray 0x00 at the target
