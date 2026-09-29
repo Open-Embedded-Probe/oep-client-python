@@ -324,7 +324,8 @@ def test_fake_serve_run_hook_from_a_file(tmp_path):
     hook = tmp_path / "loader.py"
     hook.write_text("def run(target, pc, regs):\n    target.mem[0x100] = regs.get(0x100A, 0)\n    return True, pc + 4, 7\n")
     a = fake_serve.main.__globals__["argparse"].Namespace(
-        profile="p4-x035", target_id=None, absent=[], slot=[], bind=None, port_index=0, run_hook=f"{hook}:run")
+        profile="p4-x035", target_id=None, absent=[], slot=[], bind=None, port_index=0, run_hook=f"{hook}:run",
+        uart_plan=False)
     ep = fake_serve.build(a)
     assert ep.target.run_hook(0x2000, {0x100A: 5}) == (True, 0x2004, 7) and ep.target.mem[0x100] == 5
 
@@ -344,3 +345,28 @@ def test_a_closed_console_stays_readable_until_the_same_place_opens_again():
     a2 = attach(p[0])
     h.ok(3, 0x01, struct.pack("<HB", a2, 2))                         # the same place again: the old one goes
     assert h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).detail == m.UNAVAILABLE
+
+
+def test_fake_serve_uart_plan_and_rx():
+    import time
+    from oep_client.v1 import fixture, link
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.v1.fake_serve", "--tcp", "0", "--framing", "length",
+                             "--profile", "esp32-v003", "--uart-plan", "--uart-rx", "rx %d\\n", "--every", "10"],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    try:
+        port = proc.stdout.readline().split()[1]
+        hst = link.open_host(f"tcp://127.0.0.1:{port}", timeout=1.0)
+        hst.open(3000)
+        uart = fixture.FixtureUartIO(hst)
+        assert uart.configure(115200) > 0                            # the saved plan: configure works
+        assert uart.configure(9600) > 0                              # and again, while it runs
+        got, deadline = b"", time.monotonic() + 2
+        while b"\n" not in got and time.monotonic() < deadline:
+            got += uart.read()
+        assert got.startswith(b"rx ")                                # the RX side, from the configure on
+        uart.write(b"to the DUT")                                    # out on TX
+        hst.end()
+        hst.link.close()
+    finally:
+        proc.stdin.close()
+        proc.wait(timeout=5)
