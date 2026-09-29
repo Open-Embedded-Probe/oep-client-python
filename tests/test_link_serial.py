@@ -82,9 +82,13 @@ def test_open_host_on_a_serial_port_with_console_bytes_and_tiocexcl():
         if os.geteuid() != 0:
             with pytest.raises(link.PortBusy):
                 link.open_host(where[1])                              # exclusive: one host at a time
+        import time
+        deadline = time.monotonic() + 3                               # lock-free reads among the console bytes,
+        while hst.link.noise == 0 and time.monotonic() < deadline:   # before a session holds the port's raw side
+            assert [k for _, k, _ in core.transports(hst)] == [1]     # a UART bridge
+            time.sleep(0.02)
         opened = core.take(hst, 3000, owner="test")                   # the only way in: by force at once
         assert opened.lease_ms == 3000
-        assert [k for _, k, _ in core.transports(hst)] == [1]         # a UART bridge
         for _ in range(20):                                           # requests among the console bytes
             hst.keepalive()
         hst.end()
