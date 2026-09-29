@@ -97,3 +97,14 @@ def test_slot_takes_the_only_wire_by_default(monkeypatch):
     assert cli.main(["config", "slot", "x", "--name", "v003", "--attach", "at-boot", "--retry", "1"]) == 0
     (slot,) = [i for i in config.ProbeConfig(hst).items() if isinstance(i, config.Slot)]
     assert slot.wire_fn == 1 and slot.pins == (16, 0xFFFF)
+
+
+def test_a_plan_refused_for_a_saved_plan_names_the_holder():
+    import pytest
+    from oep_client import core
+    ep, hst = open_bench()
+    cfg = config.ProbeConfig(hst)
+    cfg.set([config.Plan(5, 1, 20), config.Plan(5, 2, 21)])        # fixture.uart keeps 20 / 21 as a setting
+    with pytest.raises(core.PinsTaken) as e:
+        core.plan_apply(hst, [(4, 1, 21)])                          # gpio wants 21
+    assert e.value.holders == [(21, "the saved plan of fn 5 (role 2)")] and "fn 5" in str(e.value)

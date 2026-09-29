@@ -109,7 +109,47 @@ def plan_apply(hst: h.Host, assignments: list[tuple[int, int, int]]) -> None:
     all interfaces accept their roles or nothing changes. The plan is the
     session's resource: kept over an explicit end, released at a lease lapse or a force takeover (oep-core §9)."""
     tlv = b"".join(bytes([TAG_ROLE_ASSIGNMENT, 5]) + struct.pack("<HBH", fn, role, ch) for fn, role, ch in assignments)
-    hst.call(m.CORE_FN, OP_PLAN_APPLY, tlv)
+    try:
+        hst.call(m.CORE_FN, OP_PLAN_APPLY, tlv)
+    except h.Rejected as e:
+        if e.result.detail != m.UNAVAILABLE:
+            raise
+        why = _pin_holders(hst, assignments)
+        if why:
+            raise PinsTaken(e.result, why) from None
+        raise
+
+
+class PinsTaken(h.Rejected):
+    """plan_apply refused (unavailable) and the probe's settings say why: a pin kept by another fn's saved plan or by a
+    slot (oep.probe.config). `holders`: (channel, what holds it)."""
+
+    def __init__(self, result, holders: list[tuple[int, str]]):
+        super().__init__(result)
+        self.holders = holders
+
+    def __str__(self) -> str:
+        return "pins taken: " + "; ".join(f"channel {ch} by {who}" for ch, who in self.holders) + \
+            " (oep config show; oep config remove <probe> plan <fn> frees a saved plan)"
+
+
+def _pin_holders(hst: h.Host, assignments: list[tuple[int, int, int]]) -> list[tuple[int, str]]:
+    """What the settings keep on the channels asked for (best effort: an empty list when there is no oep.probe.config
+    or it cannot be read)."""
+    from . import config
+    try:
+        items = config.ProbeConfig(hst).items()
+    except (LookupError, h.OepError):
+        return []
+    fns = {fn for fn, _, _ in assignments}
+    out = []
+    for fn, role, ch in assignments:
+        for it in items:
+            if isinstance(it, config.Plan) and it.channel == ch and it.fn not in fns:
+                out.append((ch, f"the saved plan of fn {it.fn} (role {it.role})"))
+            elif isinstance(it, config.Slot) and ch in it.pins:
+                out.append((ch, f"slot {it.slot} {it.name}"))
+    return out
 
 
 def plan_release(hst: h.Host, fns: list[int] | tuple[int, ...] = ()) -> None:
