@@ -27,7 +27,8 @@ def test_edges_round_trip_and_never_contain_the_delimiter(data):
 def test_known_encodings():
     assert cobs.encode(b"\x00") == b"\x01\x01"
     assert cobs.encode(b"\x11\x22\x00\x33") == b"\x03\x11\x22\x02\x33"
-    assert cobs.encode(bytes(range(1, 255))) == b"\xff" + bytes(range(1, 255)) + b"\x01"
+    assert cobs.encode(bytes(range(1, 255))) == b"\xff" + bytes(range(1, 255))     # no empty block after
+    assert cobs.decode(b"\xff" + bytes(range(1, 255)) + b"\x01") == bytes(range(1, 255))   # but it is taken
 
 
 def test_random_frames_round_trip():
@@ -35,8 +36,8 @@ def test_random_frames_round_trip():
     for _ in range(300):
         msg = rng.randbytes(rng.randrange(1, 600))
         f = cobs.frame(msg)
-        assert f[-1] == 0 and 0 not in f[:-1]
-        assert cobs.unframe(f[:-1]) == msg
+        assert f[0] == 0 and f[-1] == 0 and 0 not in f[1:-1]
+        assert cobs.unframe(f[1:-1]) == msg
 
 
 def test_a_flipped_byte_is_caught():
