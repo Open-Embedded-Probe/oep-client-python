@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Fake serial port: a candidate that is only its 0x00 is not raw after the 200 ms gap (the probe firmware had the same bug: a stray 0x00 reached the target's console).
+- (JA) 偽のシリアルの口: 0x00 だけの候補は、200 ms の後も生のバイトにしない（probe の firmware にも同じバグがあり、target のコンソールに 0x00 が届いていた）。
 - (EN) `oep config slot` takes the probe's only RISC-V wire when `--wire` is left out (a SWIO-only probe needed `--wire swio`).
 - (JA) `oep config slot` は `--wire` を省くと、probe の唯一の RISC-V の線を使う（SWIO だけの probe で `--wire swio` が要っていた）。
 - (EN) `oep config plan <probe> <fn | name#k> ROLE=CH ...` (role names from the registry: rx, tx, line...), `oep config label` and `oep config idle`.

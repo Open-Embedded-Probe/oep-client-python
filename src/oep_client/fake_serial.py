@@ -5,7 +5,8 @@
 
 - a candidate runs from a 0x00 to the next 0x00; if it decodes and its CRC matches it is a request, otherwise it
   (with its leading 0x00) is raw bytes, and the closing 0x00 starts the next candidate; bytes outside a candidate
-  are raw at once; a candidate that stops for 200 ms (`tick`) is raw; an empty candidate (0x00 0x00) is nothing
+  are raw at once; a candidate that stops for 200 ms (`tick`) is raw; a candidate that is only its 0x00 (0x00 0x00,
+  or the closing 0x00 of a frame when nothing follows) is nothing
 - raw bytes go to the endpoint's bind for this port (`Endpoint.port_input`)
 - answers go out as 0x00 <COBS> 0x00, ahead of raw chunks (`Endpoint.port_output`); one writer, never a raw byte
   inside a frame
@@ -80,7 +81,8 @@ class FakeSerialPort:
     def _gap(self, now: int) -> None:
         if self.cand is not None and now - self.last_ms >= GAP_MS:
             raw, self.cand = bytes(self.cand), None
-            self._raw(bytearray(raw))
+            if len(raw) > 1:                         # only its 0x00: a delimiter (a frame's closing 0x00), not raw
+                self._raw(bytearray(raw))
 
     def _raw(self, raw: bytearray) -> None:
         if raw:
