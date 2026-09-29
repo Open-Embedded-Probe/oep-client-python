@@ -21,6 +21,7 @@ from . import message as m
 from .message import OepError, ProtocolError, ShortPayload  # noqa: F401  (re-exported: callers use host.*)
 
 MIN_REVISION = MAX_REVISION = 1          # the v1 shapes this client speaks
+OWNER = 0x01                             # open's owner TLV, and the same tag after lock_state / rejected locked
 
 
 class Rejected(OepError):
@@ -48,6 +49,20 @@ class Locked(Rejected):
     @property
     def remaining_ms(self) -> int:
         return struct.unpack("<I", self.result.payload[:4])[0]
+
+    @property
+    def owner(self) -> str | None:
+        """The holder's owner text, when its open gave one (oep-core §6.4)."""
+        value = m.Tail.parse(self.result.payload[4:]).get(OWNER)
+        return value.decode("utf-8", "replace") if value is not None else None
+
+    def __str__(self) -> str:
+        who = f" by {self.owner}" if self.owner else ""
+        return f"locked{who} ({self.remaining_ms} ms of its lease left)"
+
+
+class InUse(OepError):
+    """The lock stayed with another session: its holder kept its lease going (named when it gave an owner)."""
 
 
 class NoSession(Rejected):
@@ -97,6 +112,8 @@ class Host:
     limits: dict | None = None             # confirm's answer as a dict
     epoch: int = 0                         # +1 whenever every connection and the plan are lost (§3)
     subscriptions: set = field(default_factory=set)   # fns subscribed in this session (a resync stops them blind)
+    # Called with every capture segment read (capture.CaptureRecord): the hook a run recorder hangs on.
+    on_capture: list = field(default_factory=list)
     _corr: int = 0
     _fns: dict = field(default_factory=dict)   # interface name -> fn, valid until the probe reboots (boot_id)
     _revisions: dict = field(default_factory=dict)   # fn -> interface revision from list
@@ -225,11 +242,14 @@ class Host:
             raise NotV1(f"the probe speaks OEP revision {self.revision}; session requests need revision 1 or more")
 
     # ---- session --------------------------------------------------------------------------------
-    def open(self, lease_ms: int = 0, *, force: bool = False, session: int | None = None) -> Opened:
-        """A new random id unless `session` is given (a one-shot CLI resuming its saved id)."""
+    def open(self, lease_ms: int = 0, *, force: bool = False, session: int | None = None,
+             owner: str | None = None) -> Opened:
+        """A new random id unless `session` is given (a one-shot CLI resuming its saved id). lease_ms 0 = the probe's
+        default; 1000..60000 are taken as asked. owner: who holds the lock (1-32 bytes), shown to other hosts."""
         self.require_v1()
         sid = session if session is not None else self.rng.randrange(1, 1 << 32)
-        r = self.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IIB", sid, lease_ms, int(force)), locked=False)
+        tail = m.tlv(OWNER, owner.encode()[:32]) if owner else b""
+        r = self.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IIB", sid, lease_ms, int(force)) + tail, locked=False)
         if sid != self.session:
             self.subscriptions.clear()
         self.session = sid
@@ -249,6 +269,33 @@ class Host:
     def lock_state(self) -> tuple[bool, int]:
         locked, remaining = m.Reader(self.request(m.CORE_FN, m.OP_LOCK_STATE, locked=False).payload).take("BI")
         return bool(locked), remaining
+
+    def lock_owner(self) -> tuple[bool, int, str | None]:
+        """lock_state with the holder's owner text (None: it gave none)."""
+        p = self.request(m.CORE_FN, m.OP_LOCK_STATE, locked=False).payload
+        locked, remaining = m.Reader(p).take("BI")
+        value = m.Tail.parse(p[5:]).get(OWNER)
+        return bool(locked), remaining, value.decode("utf-8", "replace") if value is not None else None
+
+    def take(self, lease_ms: int = 3000, *, owner: str | None = None, only_way_in: bool = False,
+             wait_s: float = 5.0, force: bool = False) -> Opened:
+        """open() the way host guide §2 takes the lock. only_way_in: this link is the probe's only transport and a
+        serial port opened exclusively - whoever held the lock cannot be there any more, so it is taken by force at
+        once. Otherwise the holder's lease is waited out (up to wait_s); a holder that keeps it going raises InUse,
+        naming it. force: take it anyway (the user said so)."""
+        import time
+        if force or only_way_in:
+            return self.open(lease_ms, force=True, owner=owner)
+        deadline = time.monotonic() + wait_s
+        while True:
+            try:
+                return self.open(lease_ms, owner=owner)
+            except Locked as e:
+                left = deadline - time.monotonic()
+                if left <= 0 or e.remaining_ms / 1000 > left:
+                    who = e.owner or "another session"
+                    raise InUse(f"the probe is in use by {who} (lease {e.remaining_ms} ms left, kept going)") from e
+                time.sleep(min(left, e.remaining_ms / 1000 + 0.05))
 
     # ---- notifications (§4.5) -------------------------------------------------------------------
     def subscribe(self, fn: int, min_bytes: int = 0, max_delay_ms: int = 0) -> None:

@@ -1,65 +1,119 @@
-"""v1 transport over a serial port or a USB vendor bulk pair (oep-spec oep-core §3).
+"""v1 transports (oep-spec oep-core §3): a serial port, a USB vendor bulk / HID pair, or a local TCP connection (a
+host-side broker), all under one Host.
 
-Framing follows the path: length-prefixed frames on a reliable stream (USB CDC, USB-Serial/JTAG, vendor bulk), COBS +
-CRC-16 behind a USB-UART bridge, where bytes are dropped or changed without an error (oep-spec probe-development-guide
-§3). The bridge is recognised by its USB VID:PID unless `framing` says otherwise.
+Framing follows the kind of transport, never the VID:PID. A serial port (USB CDC, USB-Serial/JTAG, a UART bridge) is
+COBS + CRC-16 sent as 0x00 <COBS> 0x00, and the probe's raw bytes (a target's console, its bind) share the line: every
+span between 0x00s (and from the open to the first 0x00) is a candidate, and one that does not decode, fails its CRC or
+answers another request is noise, skipped without a resend (oep-core §3.1, host guide §1.6). A missing answer is seen
+by the timeout only, and the request goes once more with the same corr. Vendor bulk, HID and TCP are length(u16) message;
+lost boundaries there are recovered by the §5.1 resync: on a result for another request, an impossible length or a
+frame that stops half way, read and discard until the input is quiet for 50 ms, prove the link with a confirm, and go
+on. When pushes keep the input from going quiet, the host's unsubscribe and end (harmless twice) are sent blind.
 
-The port opens with pyserial's defaults - DTR and RTS asserted - which reset none of the measured probes
-(host-development-guide §1). No sleep after open: the probe does not restart.
+A request is sent once more after a missing (or, on length frames, broken) reply, with the same corr: the probe keeps
+the lock holder's recent results and answers the repeat from them, so a state-changing request is not run twice
+(oep-core §5.2).
 
-Length frames carry no CRC, so lost boundaries are recovered by the §1 resync: on a result for another request, an
-impossible length or a frame that stops half way, read and discard until the input is quiet for 50 ms, prove the link
-with a confirm, and go on. When pushes keep the input from going quiet, the host's unsubscribe and end (harmless twice)
-are sent blind. A request is sent once more after a corrupt or missing reply, with the same corr: the probe keeps the lock holder's
-recent results (keyed on corr, checked against fn, op and a payload CRC, dropped at every open) and answers the repeat
-from them, so a state-changing request is not run twice (v1-open-proposals §4).
-Behind COBS, frames carry their own boundaries and CRC: a reply to an earlier request is read past there.
+A serial port is opened exclusively (host guide §2): pyserial's `exclusive=True` (flock, advisory) and, on Linux and
+macOS, TIOCEXCL, so a second open fails at once (EBUSY) instead of sharing the answers. The port opens with pyserial's
+defaults - DTR and RTS asserted - which reset none of the measured probes (host guide §1). No sleep after open.
 """
 
 from __future__ import annotations
 
 import collections
-import os
+import select
+import socket
 import time
 
 import serial
-from serial.tools import list_ports
 
 from . import cobs, message as m, registry as reg
 from .frames import FramingLost, LengthFrames
 
-# USB-UART bridges: their bytes are not protected end to end, so the probe behind them speaks COBS + CRC.
-UART_BRIDGES = {
-    (0x1A86, 0x7523): "CH340", (0x1A86, 0x7522): "CH340K", (0x1A86, 0x55D3): "CH343", (0x1A86, 0x55D4): "CH9102",
-    (0x10C4, 0xEA60): "CP210x", (0x0403, 0x6001): "FT232R", (0x0403, 0x6015): "FT231X", (0x067B, 0x2303): "PL2303",
-}
-
 RESYNC_QUIET_S = reg.TIMING["resync_quiet_ms"] / 1000
+USB_VID, USB_PID = 0x303A, 0x0002   # the reference P4 probe until the OEP PID is taken (probe guide §3.8)
 
 
 class CorrMismatch(FramingLost):
     """A result for a request other than the one waited for."""
 
 
-def framing_for(port: str) -> str:
-    real = os.path.realpath(port)
-    for p in list_ports.comports():
-        if os.path.realpath(p.device) == real and p.vid is not None:
-            return "cobs" if (p.vid, p.pid) in UART_BRIDGES else "length"
-    return "length"
+class PortBusy(OSError):
+    """Another program holds the serial port (it was opened exclusively): only one host at a time on a serial port."""
+
+
+def open_serial(port: str, baud: int = 115200):
+    """The port opened exclusively (flock and TIOCEXCL): a second open by anyone fails with PortBusy."""
+    try:
+        stream = serial.Serial(port, baud, timeout=0.05, exclusive=True)
+    except serial.SerialException as e:
+        if "busy" in str(e).lower() or "lock" in str(e).lower() or getattr(e, "errno", None) == 16:
+            raise PortBusy(f"{port} is open in another program: {e}") from e
+        raise
+    try:
+        import fcntl
+        import termios
+        fcntl.ioctl(stream.fileno(), termios.TIOCEXCL)
+    except (ImportError, AttributeError, OSError):
+        pass                                        # Windows opens a COM port exclusively by itself
+    return stream
+
+
+class TcpStream:
+    """A TCP connection shaped like the part of a pyserial port the link uses (read with a timeout, write,
+    in_waiting): a local broker in the spec's TCP form, length(u16) message (oep-core §3.1)."""
+
+    def __init__(self, host: str, port: int, connect_timeout: float = 3.0):
+        self.sock = socket.create_connection((host, port), timeout=connect_timeout)
+        self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self.timeout = 0.05
+        self._buf = bytearray()
+
+    @property
+    def in_waiting(self) -> int:
+        self._pull(0)
+        return len(self._buf)
+
+    def _pull(self, wait: float) -> None:
+        ready, _, _ = select.select([self.sock], [], [], wait)
+        if ready:
+            data = self.sock.recv(65536)
+            if not data:
+                raise ConnectionError("the TCP peer closed the connection")
+            self._buf += data
+
+    def read(self, n: int = 1) -> bytes:
+        if not self._buf:
+            self._pull(self.timeout or 0)
+        out = bytes(self._buf[:n])
+        del self._buf[:n]
+        return out
+
+    def write(self, data: bytes) -> int:
+        self.sock.sendall(data)
+        return len(data)
+
+    def reset_input_buffer(self) -> None:
+        self._buf.clear()
+        while select.select([self.sock], [], [], 0)[0]:
+            if not self.sock.recv(65536):
+                break
+
+    def close(self) -> None:
+        self.sock.close()
 
 
 class SerialLink:
     NOISY_S = 1.0          # a resync that is still not quiet after this sends the blind stops
 
-    def __init__(self, port: str, timeout: float = 3.0, exclusive: bool = True, framing: str | None = None):
-        # exclusive: a second process on the same Linux tty would interleave bytes with ours
-        stream = serial.Serial(port, 115200, timeout=0.05, exclusive=exclusive)
-        self._setup(stream, framing or framing_for(port), timeout)
+    def __init__(self, port: str, timeout: float = 3.0):
+        self._setup(open_serial(port), "cobs", timeout)
 
     @classmethod
     def on_stream(cls, stream, framing: str = "length", timeout: float = 3.0) -> SerialLink:
-        """A link on any pyserial-shaped stream (a USB bulk pair, a test's scripted stream)."""
+        """A link on any pyserial-shaped stream: "cobs" for a serial port (a pty, a scripted stream), "length" for a
+        USB bulk pair, HID or TCP."""
         lk = cls.__new__(cls)
         lk._setup(stream, framing, timeout)
         return lk
@@ -71,6 +125,7 @@ class SerialLink:
         self.retries = 0
         self.corrupt = 0
         self.stale = 0                             # replies that answered another request
+        self.noise = 0                             # serial ports: bytes that were not a frame (the probe's raw side)
         self.resyncs = 0
         self.ended_blind = False
         self.dropped = 0                           # probe-initiated frames of a role this client does not handle
@@ -108,10 +163,14 @@ class SerialLink:
             end = self._buf.find(0)
             if end >= 0:
                 raw = bytes(self._buf[:end])
-                del self._buf[:end + 1]
+                del self._buf[:end + 1]              # the 0x00 also starts the next candidate
                 if not raw:
                     continue
-                return cobs.unframe(raw)             # raises CorruptFrame
+                try:
+                    return cobs.unframe(raw)
+                except cobs.CorruptFrame:
+                    self.noise += len(raw)           # raw bytes of the port, or a broken frame: noise, no resend
+                    continue
             if time.monotonic() > deadline:
                 raise TimeoutError("no result from the probe")
             self._buf += self.stream.read(max(1, self.stream.in_waiting))
@@ -137,7 +196,7 @@ class SerialLink:
 
     def _recv_for(self, corr: int) -> bytes:
         """The reply to request `corr` (pushes and events routed on the way). Length frames: a result for another
-        request raises CorrMismatch (the §1 resync follows); COBS: it is read past."""
+        request raises CorrMismatch (the §5.1 resync follows); a serial port: it is read past (oep-core §11.1)."""
         while True:
             reply = self._recv()
             if self._route(reply):
@@ -184,10 +243,7 @@ class SerialLink:
         out blind, once (and send() then does not send its request again)."""
         self.resyncs += 1
         if self.framing != "length":
-            time.sleep(RESYNC_QUIET_S)
-            self._buf.clear()
-            self.stream.reset_input_buffer()
-            return
+            return                                  # COBS frames carry their own boundaries: nothing to find again
         blind_sent = False
         for _ in range(tries):
             while not self.frames.discard_until_quiet(RESYNC_QUIET_S, self.NOISY_S):
@@ -212,13 +268,10 @@ class SerialLink:
         raise ConnectionError(f"resync: no confirm came back in {tries} tries")
 
     def _recover(self) -> None:
-        """After a lost, broken or missing reply: leave the link in step for the next request."""
+        """After a lost, broken or missing reply: leave the link in step for the next request. A serial port needs
+        nothing (a late answer is read past by its corr)."""
         if self.framing == "length":
             self.resync()
-        else:
-            time.sleep(RESYNC_QUIET_S)
-            self._buf.clear()
-            self.stream.reset_input_buffer()
 
     def send(self, message: bytes) -> bytes:
         corr = self._corr(message)
@@ -301,7 +354,7 @@ class SerialLink:
         self.stream.close()
 
 
-def open_usb_host(vid: int = 0x303A, pid: int = 0x4021, serial: str | None = None, timeout: float = 3.0,
+def open_usb_host(vid: int = USB_VID, pid: int = USB_PID, serial: str | None = None, timeout: float = 3.0,
                   transports: tuple[str, ...] = ("vendor", "hid")):
     """A Host on the probe's USB device (the P4's HS OTG port), trying its ways in in the oep-core §3.3 order: vendor bulk,
     then vendor-defined HID (when raw USB is not permitted or the probe offers no vendor interface). A CDC port is
@@ -337,11 +390,25 @@ def _open_usb_stream(kind: str, vid: int, pid: int, serial: str | None):
         return UsbBulkStream.open(vid, pid, serial)
 
 
-def open_host(port: str, **kwargs):
-    """A Host on this port with the link's pipelining bound to the probe's limits (core confirm): Host.pipeline and
-    everything built on it (flash, capture reads) then keep several requests in flight."""
+def open_host(target: str, timeout: float = 3.0):
+    """A Host on `target`, with the link's pipelining bound to the probe's limits (core confirm): Host.pipeline and
+    everything built on it (flash, capture reads) then keep several requests in flight.
+
+    target: a serial port path (COM3 on Windows); tcp://HOST:PORT for a local broker (length frames); usb[:VID:PID[:SERIAL]]
+    (hex) for the probe's USB device, vendor bulk then HID (oep-core §3.3)."""
     from . import host
-    lk = SerialLink(port, **kwargs)
+    if target.startswith("tcp://"):
+        addr, _, port = target[len("tcp://"):].rpartition(":")
+        lk = SerialLink.on_stream(TcpStream(addr or "127.0.0.1", int(port)), "length", timeout)
+        lk.transport = "tcp"
+    elif target == "usb" or target.startswith("usb:"):
+        parts = target.split(":")[1:]
+        vid = int(parts[0], 16) if parts else USB_VID
+        pid = int(parts[1], 16) if len(parts) > 1 else USB_PID
+        return open_usb_host(vid, pid, parts[2] if len(parts) > 2 else None, timeout)
+    else:
+        lk = SerialLink(target, timeout)
+        lk.transport = "serial"
     hst = host.Host(lk.send)
     lk.attach_host(hst)
     return hst

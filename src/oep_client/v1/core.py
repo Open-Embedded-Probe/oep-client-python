@@ -11,6 +11,9 @@ from . import catalog, host as h, message as m, registry as reg
 OP_PLAN_APPLY, OP_PLAN_RELEASE = m.OP_PLAN_APPLY, m.OP_PLAN_RELEASE
 TAG_ROLE_ASSIGNMENT = reg.CORE.tlv["plan_apply"]["role_assignment"]     # already critical (0x90)
 CORE_LABEL = reg.CORE.tlv["describe"]["label"]
+CORE_TRANSPORT = reg.CORE.tlv["describe"]["transport"]
+TRANSPORT_KIND = reg.CORE.enum["transport_kind"]
+SERIAL_KINDS = {TRANSPORT_KIND["uart_bridge"], TRANSPORT_KIND["usb_cdc"], TRANSPORT_KIND["usb_serial_jtag"]}
 
 
 class UnsupportedRevision(h.OepError):
@@ -64,18 +67,41 @@ def confirm(hst: h.Host) -> dict:
     return hst.confirmed()
 
 
-def probe_labels(hst: h.Host) -> dict[str, int]:
-    """Channel labels the probe declares in oep.core's describe (tag 0x46): {"NRST": 23, ...}."""
+def describe(hst: h.Host, fn: int = 0) -> list[tuple[int, bytes]]:
+    """Every describe TLV of `fn` (0: the probe itself), paged by first."""
     data, first = b"", 0
     while True:
-        p = hst.request(m.CORE_FN, m.OP_DESCRIBE, catalog.pack_describe_request(0, first), locked=False).payload
+        p = hst.request(m.CORE_FN, m.OP_DESCRIBE, catalog.pack_describe_request(fn, first), locked=False).payload
         more, chunk = m.Reader(p).u8(), p[1:]
         data += chunk
         first += len(catalog.split_tlv(chunk))
         if not more or not chunk:
             break
+    return catalog.split_tlv(data)
+
+
+def probe_labels(hst: h.Host) -> dict[str, int]:
+    """Channel labels the probe declares in oep.core's describe (tag 0x46): {"NRST": 23, ...}."""
     return {value[2:].decode("ascii", "replace"): struct.unpack_from("<H", value)[0]
-            for tag, value in catalog.split_tlv(data) if tag & 0x7F == CORE_LABEL and len(value) >= 2}
+            for tag, value in describe(hst) if tag & 0x7F == CORE_LABEL and len(value) >= 2}
+
+
+def transports(hst: h.Host) -> list[tuple[int, int, int]]:
+    """The probe's transports from oep.core's describe (core §7.5): [(index, kind, usb interface or 0xFF)]."""
+    return [(v[0], v[1], v[2] if len(v) > 2 else 0xFF) for tag, v in describe(hst) if tag & 0x7F == CORE_TRANSPORT
+            and len(v) >= 2]
+
+
+def take(hst: h.Host, lease_ms: int = 3000, *, owner: str | None = None, wait_s: float = 5.0,
+         force: bool = False) -> h.Opened:
+    """Take the lock as host guide §2 says: when the probe's only transport is a serial port and this host opened it
+    exclusively, the previous holder cannot be there any more - force at once; otherwise wait out the holder's lease
+    (up to wait_s), and name it (InUse) if it keeps it going. force: the user asked for it."""
+    link = getattr(hst, "link", None)
+    ways = transports(hst)
+    only = len(ways) == 1 and ways[0][1] in SERIAL_KINDS and getattr(link, "framing", None) == "cobs" \
+        and getattr(link, "transport", None) == "serial"
+    return hst.take(lease_ms, owner=owner, only_way_in=only, wait_s=wait_s, force=force)
 
 
 def plan_apply(hst: h.Host, assignments: list[tuple[int, int, int]]) -> None:
