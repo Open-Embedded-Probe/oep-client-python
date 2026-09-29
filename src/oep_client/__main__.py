@@ -59,7 +59,7 @@ def _config_parser(sub) -> None:
     slot.add_argument("probe")
     slot.add_argument("--slot", type=int, default=0, help="the slot number (default 0)")
     slot.add_argument("--name", required=True, help="1-32 of a-z 0-9 - _ (the oep://<probe>/<name> address)")
-    slot.add_argument("--wire", default="rvswd", help="rvswd or swio (or an fn)")
+    slot.add_argument("--wire", help="rvswd or swio (or an fn); default: the probe's only wire")
     slot.add_argument("--pins", help="swdio,swclk (one pin on swio); default: the wire's only pin set")
     slot.add_argument("--attach", choices=sorted(config.ATTACH), default="host")
     slot.add_argument("--retry", type=int, default=0, help="at-boot: try again every N s while absent (0: never)")
@@ -131,8 +131,20 @@ def _plan_fn(hst, spec: str) -> tuple[int, dict[str, int]]:
     return fn, roles
 
 
-def _wire_fn(hst, wire: str) -> int:
-    return int(wire) if wire.isdigit() else core.find(hst, wire if wire.startswith("oep.") else f"oep.wire.{wire}")
+def _wire_fn(hst, wire: str | None) -> int:
+    if wire is None:
+        wires = [e for e in core.list_entries(hst, "oep.wire") if e.name in ("oep.wire.rvswd", "oep.wire.swio")]
+        if len(wires) != 1:
+            raise SystemExit("this probe has " + (", ".join(f"{e.name} (fn {e.fn})" for e in wires) or "no RISC-V wire")
+                             + ": name one with --wire")
+        return wires[0].fn
+    name = wire if wire.startswith("oep.") else f"oep.wire.{wire}"
+    if wire.isdigit():
+        return int(wire)
+    try:
+        return core.find(hst, name)
+    except LookupError:
+        raise SystemExit(f"this probe does not offer {name}") from None
 
 
 def _stream(spec: str, slots: dict[str, int]) -> tuple[str, int]:
@@ -165,6 +177,7 @@ def _config(args) -> int:
             return _show(hst, cfg, args.json)
         if args.action == "slot":
             fn = _wire_fn(hst, args.wire)
+            args.wire = args.wire or str(fn)
             lock = None
             if args.lock:
                 mask, _, value = args.lock.partition(":")
