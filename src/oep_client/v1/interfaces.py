@@ -44,6 +44,15 @@ def _u32_list(v: bytes) -> str:
     return ", ".join(str(x) for x in struct.unpack(f"<{len(v) // 4}I", v))
 
 
+_TRANSPORTS = {1: "UART bridge", 2: "USB CDC", 3: "USB-Serial/JTAG", 4: "vendor bulk", 5: "HID", 6: "TCP"}
+_MECHANISMS = {0: "SDI", 1: "DMDATA", 2: "dmseq"}
+
+
+def _transport(v: bytes) -> str:
+    itf = "" if len(v) < 3 or v[2] == 0xFF else f" (interface {v[2]})"
+    return f"{v[0]} = {_TRANSPORTS.get(v[1], f'kind {v[1]}')}{itf}"
+
+
 @dataclass(frozen=True)
 class Known:
     summary: str
@@ -60,21 +69,28 @@ KNOWN: dict[str, Known] = {
         tags={0x40: ("firmware", _text), 0x41: ("model", _text), 0x42: ("unit id", _hex),
               0x43: ("channels", _u16), 0x44: ("reserved", _channels), 0x45: ("profile", _text),
               0x46: ("label", _label), 0x47: ("resets on open", lambda v: "yes"),
-              0x48: ("uart rates", _u32_list)}),
+              0x49: ("transport", _transport), 0x4A: ("OEP VID:PID", lambda v: "yes" if v[:1] == b"\x01" else "no")}),
     "oep.wire.rvswd": Known("scan, attach, detach over RVSWD (attach returns a connection)",
-                            roles={1: "SWDIO", 2: "SWCLK"}),
+                            roles={1: "SWDIO", 2: "SWCLK"}, tags={0x40: ("max connections", lambda v: str(v[0]))}),
     "oep.wire.swio": Known("scan, attach, detach over SWIO, one wire (attach returns a connection)",
-                           roles={1: "SWIO"}),
-    "oep.wire.swd": Known("scan, attach, detach over ARM SWD", roles={1: "SWDIO", 2: "SWCLK"}),
+                           roles={1: "SWIO"}, tags={0x40: ("max connections", lambda v: str(v[0]))}),
+    "oep.wire.swd": Known("scan, attach, detach over ARM SWD", roles={1: "SWDIO", 2: "SWCLK"},
+                          tags={0x40: ("max connections", lambda v: str(v[0]))}),
     "oep.target.riscv-dm": Known(
         "RISC-V Debug Module over DMI: step lists, block read/write, run until halt, halt/resume",
-        features={0: "block read/write (progbuf + autoexec)", 1: "run until halt", 2: "ndmreset", 3: "reset-halt"}),
+        features={0: "block read/write", 1: "run until halt", 2: "reset", 3: "step"},
+        tags={0x40: ("clobbers", lambda v: ", ".join(f"0x{r:04x}" for r in struct.unpack(f"<{len(v) // 2}H", v)))}),
     "oep.target.arm-adi": Known("ARM Debug Interface: DP/AP transfer lists, block transfers"),
     "oep.target.console": Known(
-        "console streams on a debug connection or a UART assignment (position-addressed, marks)",
-        features={0: "SDI", 1: "DMDATA", 2: "dmseq", 3: "UART source"},
-        tags={0x40: ("buffer", lambda v: f"{_u32(v)} bytes"), 0x41: ("marks", lambda v: str(v[0])),
-              0x43: ("max read", _u16)}),
+        "console streams on a debug connection (position-addressed, marks)",
+        tags={0x40: ("mechanisms", lambda v: ", ".join(_MECHANISMS.get(b, str(b)) for b in v))}),
+    "oep.probe.config": Known(
+        "the probe's configuration (plan, labels, idle pins, slots, binds) and its storage",
+        tags={0x40: ("storage", lambda v: f"{_u32(v[:4])} bytes, state {v[4]}"),
+              0x41: ("items", lambda v: ", ".join(str(b) for b in v)), 0x42: ("slots", lambda v: str(v[0])),
+              0x43: ("bind modes", lambda v: ", ".join(n for b, n in enumerate(("last-reset", "manual", "mixed"))
+                                                       if v[0] >> b & 1)),
+              0x44: ("slot state", _hex), 0x45: ("bind state", _hex)}),
     "oep.fixture.gpio": Known("drive and read probe pins", roles={1: "line"}),
     "oep.fixture.uart": Known("a UART (USART, asynchronous) on probe pins", roles={1: "RX", 2: "TX"}),
     "oep.fixture.capture": Known("sampled logic capture", roles={k: f"line{k}" for k in range(8)}),

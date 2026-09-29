@@ -29,7 +29,8 @@ uv run pytest
 | `ch32_flash` | CH32 の書き込み（RAM ローダー、ページ単位の書き直し） |
 | `rp2350` | RP2350 の boot ROM 経由の flash と reboot |
 | `uiapduino` | UIAPduino のブートローダへの出入り |
-| `catalog` / `names` / `interfaces` / `dump` / `fake` / `endpoint` | 能力の一覧と describe の形、表示、ハードウェアなしの偽物 |
+| `catalog` / `names` / `interfaces` / `dump` | 能力の一覧と describe の形、表示 |
+| `fake` / `endpoint` / `fake_serial` / `fake_serve` | 偽の probe（下の「偽の probe」） |
 | `target` | 上の主なものを 1 か所から import する入口（最初の版に合わせて書いた呼び出し側のため） |
 
 ## 使い方の例
@@ -51,5 +52,24 @@ hst.end()
 
 能力の一覧は `uv run python -m oep_client.v1 dump --port <probe>`（`--fake p4-x035` でハードウェアなし）。
 実機での一通りの確認は ArduinoCore-CH32 の `tests/manual/oep_smoke/`（`oep_smoke.py`、`oep_probe_checks.py`）。
+
+## 偽の probe（動く spec）
+
+`endpoint.Endpoint` は oep-spec の規範どおりに答える偽の probe で、ch32rv・この client・probe の firmware を突き合わせる
+「動く spec」として使う（spec が変わったら、probe の firmware より先にここを合わせる）。`fake` は宣言の例（profile:
+`p4-x035`、`esp32-v003`、`p4-bench` = スロット 3 か所と席 2 つの架空の治具）、`fake_serial` はシリアルの口のバイトの側（COBS の
+候補、生のバイトと bind、セッション中の停止と再開）。
+
+外のプログラムの試験には `fake_serve` を子プロセスで使う:
+
+```sh
+uv run python -m oep_client.v1.fake_serve --pty --profile p4-bench --slot x035 --bind last-reset \
+    --console 'uptime %d\r\n' --every 100
+# 最初の行: PTY /dev/pts/N（--tcp 0 なら PORT n）。stdin を閉じると終わる
+```
+
+pty がシリアルの口（host が TIOCEXCL を掛けて開く）、`--tcp PORT` は `--framing cobs`（シリアルの口）か `--framing length`
+（vendor bulk / TCP の形）。故障の注入は `--drop N`（N 番目の答えを 1 回出さない。要求は実行済みなので送り直しは覚えた答えを
+受ける）、`--noise TEXT`（答えの前に雑音）、`--corrupt N`（N 番目の答えの CRC を 1 回壊す）。ほかは `--help`。
 
 v0 の client（`oep_client.v0`）は 2026-09-26 に消した（git の履歴に残る）。v0 を話す probe はもう無い。

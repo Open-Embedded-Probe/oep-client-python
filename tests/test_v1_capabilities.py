@@ -101,8 +101,8 @@ def test_description_keeps_what_it_does_not_know():
 def test_p4_follows_the_agreed_names():
     caps = dump.collect(fake.p4_x035().call)
     by_name = {o.entry.name: o for o in caps.offers}
-    assert len(caps.offers) == 10
-    assert caps.requests["list"] == 1 and caps.requests["describe"] == 10
+    assert len(caps.offers) == 11
+    assert caps.requests["list"] == 1 and caps.requests["describe"] == 11
     # the debug port: wire, riscv-dm and console are one instance
     assert {by_name[n].entry.instance for n in ("oep.wire.rvswd", "oep.target.riscv-dm", "oep.target.console")} == {1}
     assert by_name["oep.wire.rvswd"].description.groups[1] == [(1, 2), (2, 54)]
@@ -117,7 +117,7 @@ def test_the_probe_itself_is_described_by_core():
     row = dump.describe_offer(dump.collect(fake.esp32_v003().call).offers[0])
     assert row["name"] == "oep.core"
     d = row["declares"]
-    assert d["unit id"] == "0070070d9394" and d["uart rates"] == "115200"
+    assert d["unit id"] == "0070070d9394" and d["transport"] == "0 = UART bridge"
     assert "16 = SWIO" in d["label"] and "23 = NRST" in d["label"]    # repeated tags all kept
 
 
@@ -155,4 +155,4 @@ def test_text_and_json_outputs():
     assert "instance 6" in text and "io.github.ch32-riscv-ug.esp32.i2c-target" in text
     assert "features: preloaded tx, clock stretching" in text
     data = json.loads(dump.to_json(caps))
-    assert data["max_frame"] == 1024 and len(data["interfaces"]) == 10
+    assert data["max_frame"] == 1024 and len(data["interfaces"]) == 11
