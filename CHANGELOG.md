@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `oep config plan <probe> <fn | name#k> ROLE=CH ...` (role names from the registry: rx, tx, line...), `oep config label` and `oep config idle`.
+- (JA) `oep config plan <probe> <fn | 名前#k> ROLE=CH ...`（role の名前は registry から: rx、tx、line など）、`oep config label`、`oep config idle`。
 
 ## 0.0.3
 - (EN) `oep_client.config` (oep.probe.config: slots, binds, plan / label / idle items, get / set / save / erase, the live slot and bind state) and the `oep config show | slot | bind | remove | save | erase` command. An English README.md, also the PyPI page.

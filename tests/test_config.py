@@ -65,3 +65,21 @@ def test_the_command(capsys, monkeypatch):
     assert cli.main(["config", "show", "x"]) == 0
     out = capsys.readouterr().out
     assert "0 x035: fn 1 pins 2,3 at-boot retry 1 s dmseq" in out and "port 0 (usb_serial_jtag): last-reset [slot:x035]" in out
+
+
+def test_plan_label_idle_from_the_command(capsys, monkeypatch):
+    ep, hst = open_bench()
+
+    class FakeLink:
+        def close(self):
+            pass
+    hst.link = FakeLink()
+    hst.end()
+    monkeypatch.setattr(cli.link, "open_host", lambda target: hst)
+    assert cli.main(["config", "plan", "x", "oep.fixture.uart", "rx=20", "tx=21"]) == 0
+    assert cli.main(["config", "label", "x", "20", "DUT TX"]) == 0
+    assert cli.main(["config", "idle", "x", "21", "pull-up", "--save"]) == 0
+    assert {(5, 1, 20), (5, 2, 21)} <= ep.plan and 5 in ep.plan_from_config
+    items = config.ProbeConfig(hst).items()
+    assert config.Label(20, "DUT TX") in items and config.Idle(21, "pull-up") in items
+    assert ep.saved is not None

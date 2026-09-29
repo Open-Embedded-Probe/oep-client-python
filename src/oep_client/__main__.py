@@ -4,6 +4,7 @@
   oep config show <probe>
   oep config slot <probe> --name x035 --wire rvswd --pins 2,54 --attach at-boot --retry 1 --mechanism dmseq
   oep config bind <probe> --port 1 --mode last-reset --stream slot:x035
+  oep config plan <probe> oep.fixture.uart#2 rx=48 tx=49       (the fn's whole plan; fn number or name#instance)
   oep config remove <probe> bind 1        oep config save <probe>        oep config erase <probe>
 
 <probe>: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]. A change takes the lock (owner "oep config") and
@@ -72,6 +73,21 @@ def _config_parser(sub) -> None:
     bind.add_argument("--stream", action="append", required=True, help="slot:NAME, slot:N or uart:FN (repeatable)")
     bind.add_argument("--select", type=int, default=0, help="manual: the stream it carries (index in --stream)")
     bind.add_argument("--save", action="store_true")
+    plan = cs.add_parser("plan", help="the pins an interface keeps (its whole plan, kept as a setting)")
+    plan.add_argument("probe")
+    plan.add_argument("fn", help="an fn, or an interface name with #k for its k-th instance (1 = the first)")
+    plan.add_argument("roles", nargs="+", help="ROLE=CHANNEL, ROLE a number or the interface's role name (rx, tx, line...)")
+    plan.add_argument("--save", action="store_true")
+    label = cs.add_parser("label", help="name a channel (shown in oep.core's describe)")
+    label.add_argument("probe")
+    label.add_argument("channel", type=int)
+    label.add_argument("text")
+    label.add_argument("--save", action="store_true")
+    idle = cs.add_parser("idle", help="the state of a free pin")
+    idle.add_argument("probe")
+    idle.add_argument("channel", type=int)
+    idle.add_argument("mode", choices=sorted(config.IDLE))
+    idle.add_argument("--save", action="store_true")
     rm = cs.add_parser("remove", help="remove one item: slot N, bind PORT, plan FN, label CH, idle CH")
     rm.add_argument("probe")
     rm.add_argument("kind", choices=["slot", "bind", "plan", "label", "idle"])
@@ -93,6 +109,26 @@ def _pins(hst, fn: int, text: str | None, wire: str) -> tuple[int, int]:
     if len(groups) != 1:
         raise SystemExit(f"{wire}: {len(groups)} pin sets on this probe - name one with --pins")
     return groups[0]
+
+
+def _plan_fn(hst, spec: str) -> tuple[int, dict[str, int]]:
+    """fn and its role names (from the registry) for `spec`: an fn number, or name[#k] (k-th instance, 1-based)."""
+    from . import registry as reg
+    if spec.isdigit():
+        fn = int(spec)
+        name = next((e.name for e in core.list_entries(hst) if e.fn == fn), "")
+    else:
+        name, _, k = spec.partition("#")
+        fns = core.find_all(hst, name)
+        if not fns:
+            raise SystemExit(f"the probe offers no {name}")
+        index = int(k) - 1 if k else 0
+        if not 0 <= index < len(fns):
+            raise SystemExit(f"{name}: {len(fns)} instance(s), fns {fns}")
+        fn = fns[index]
+    iface = reg.INTERFACES.get(name)
+    roles = dict(iface.enum.get("role", {})) if iface else {}
+    return fn, roles
 
 
 def _wire_fn(hst, wire: str) -> int:
@@ -140,6 +176,22 @@ def _config(args) -> int:
             slots = {it.name: it.slot for it in cfg.items() if isinstance(it, config.Slot)}
             it = config.Bind(args.port, args.mode, [_stream(s, slots) for s in args.stream], args.select)
             _change(hst, cfg, [it], args.save)
+        elif args.action == "plan":
+            fn, roles = _plan_fn(hst, args.fn)
+            items = []
+            for spec in args.roles:
+                role, _, ch = spec.partition("=")
+                if not ch:
+                    raise SystemExit(f"{spec}: want ROLE=CHANNEL")
+                number = int(role) if role.isdigit() else roles.get(role.lower())
+                if number is None:
+                    raise SystemExit(f"{role}: not a role of fn {fn} (roles: {', '.join(sorted(roles)) or 'numbers only'})")
+                items.append(config.Plan(fn, number, int(ch, 0)))
+            _change(hst, cfg, items, args.save)
+        elif args.action == "label":
+            _change(hst, cfg, [config.Label(args.channel, args.text)], args.save)
+        elif args.action == "idle":
+            _change(hst, cfg, [config.Idle(args.channel, args.mode)], args.save)
         elif args.action == "remove":
             _change(hst, cfg, [config.remove(args.kind, args.key)], args.save)
         else:
