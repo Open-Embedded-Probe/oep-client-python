@@ -8,12 +8,16 @@ target の知識は host にある、という OEP の分担に従う。probe �
 コントローラ、RAM ローダー、RP2350 の boot ROM、Cortex-M の debug レジスタなどはここに置く。
 
 ```sh
-pip install git+https://github.com/Open-Embedded-Probe/oep-client-python   # or: pip install -e <checkout>
+pip install oep-client-python     # PyPI (import oep_client); a checkout: pip install -e <checkout>
 uv run pytest                                                            # in a checkout
 ```
 
 `import oep_client.v1` だけで使える（`sys.path` に `src/` を足す使い方は不要になった）。番号の表は `tools/sync_registry.sh` で
-oep-spec から写す。
+oep-spec から写す。PyPI の `oep-client` は別のプロジェクトなので、配布名は `oep-client-python`。
+
+リリースは GitHub Actions の Release（workflow_dispatch、version = X.Y.Z か X.Y.ZbN）: `tools/prepare_release.py` が
+pyproject.toml と `oep_client.__version__` を書き換え、CHANGELOG.md の Unreleased をその版にし、試験と build の後に commit と tag、
+GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md の Unreleased に (EN) / (JA) で書き足しておく。
 
 ## モジュール（`oep_client.v1`）
 
