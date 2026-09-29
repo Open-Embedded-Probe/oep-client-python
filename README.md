@@ -21,7 +21,7 @@ uv run pytest                     # in a checkout
 `oep-client` is another project, so the distribution is named `oep-client-python`.
 
 Releases: run the GitHub Actions workflow Release (workflow_dispatch, version X.Y.Z or X.Y.ZbN). `tools/prepare_release.py`
-sets the version in pyproject.toml and `oep_client.__version__` and turns CHANGELOG.md's Unreleased into that version; after
+sets the version in pyproject.toml, uv.lock and `oep_client.__version__` and turns CHANGELOG.md's Unreleased into that version; after
 the tests and the build it commits, tags, makes the GitHub Release and publishes to PyPI (Trusted Publishing). Record changes
 under Unreleased in CHANGELOG.md, (EN) and (JA).
 
