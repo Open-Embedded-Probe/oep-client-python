@@ -207,6 +207,7 @@ class SlotRuntime:
     last_try_ms: int | None = None
     evicted: bool = False                              # the seat rule closed its connection: no retry until a new cue
     mismatch_tid: int | None = None                    # what the last automatic attach saw when the lock did not match
+    no_tid: bool = False                               # ... or it saw no target_id to check a lock against
 
 
 @dataclass
@@ -1295,11 +1296,13 @@ class Endpoint:
                 return
             tg.havereset = False
         c = self.conns[cid]
-        if self._lock_ok(s, c.tid) is True:
+        ok = self._lock_ok(s, c.tid)
+        rt.no_tid = ok is None
+        if ok is True:
             c.users.add(("slot", n))
             rt.mismatch_tid = None
         else:
-            rt.mismatch_tid = c.tid                                # found, wrong chip: let go of it
+            rt.mismatch_tid = c.tid                                # found, wrong chip (or no id): let go of it
             if not c.users:
                 self._close_conn(cid, MARK["detach"])
 
@@ -1347,7 +1350,8 @@ class Endpoint:
             state = SLOT_STATE["connected"] if ok else (SLOT_STATE["no_target_id"] if ok is None
                                                         else SLOT_STATE["lock_mismatch"])
         else:
-            state = SLOT_STATE["lock_mismatch"] if rt.mismatch_tid is not None else SLOT_STATE["absent"]
+            state = (SLOT_STATE["no_target_id"] if rt.no_tid else
+                     SLOT_STATE["lock_mismatch"] if rt.mismatch_tid is not None else SLOT_STATE["absent"])
         age = NEVER if rt.last_try_ms is None else min(NEVER - 1, self.now() - rt.last_try_ms)
         raw = b"" if tid is None else struct.pack("<I", tid)
         return struct.pack("<BBHIBB", n, state, cid or 0, age, 1 if raw else 0, len(raw)) + raw
