@@ -1,6 +1,6 @@
 """Serve a fake probe (`endpoint.Endpoint`) on a pty or a TCP port, for other programs' tests.
 
-    python -m oep_client.v1.fake_serve [--pty | --tcp PORT] [options]
+    python -m oep_client.fake_serve [--pty | --tcp PORT] [options]
 
 --pty (the default) opens a pseudo terminal that is the probe's serial port (oep-core §3.4): COBS frames
 0x00 <COBS> 0x00 and the raw bytes of the port's bind on one line. The host opens the printed path itself (and
@@ -297,7 +297,7 @@ def _serve_conn(a, ep, console, conn, watch_stdin) -> bool:
 
 
 def main(argv: list[str] | None = None) -> None:
-    ap = argparse.ArgumentParser(prog="python -m oep_client.v1.fake_serve", description=__doc__.split("\n\n")[0])
+    ap = argparse.ArgumentParser(prog="python -m oep_client.fake_serve", description=__doc__.split("\n\n")[0])
     where = ap.add_mutually_exclusive_group()
     where.add_argument("--pty", action="store_true")
     where.add_argument("--tcp", type=int, metavar="PORT")

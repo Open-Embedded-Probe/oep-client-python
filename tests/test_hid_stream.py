@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from oep_client.v1 import hid_stream, link
+from oep_client import hid_stream, link
 
 
 def espusbdevice_vendor_descriptor(size: int) -> bytes:

@@ -5,7 +5,7 @@ import struct
 
 import pytest
 
-from oep_client.v1 import arm, host as h, message as m, target
+from oep_client import arm, host as h, message as m, target
 
 FNS = {"oep.wire.rvswd": 1, "oep.target.riscv-dm": 2, "oep.fixture.gpio": 3, "oep.wire.swd": 4,
        "oep.target.arm-adi": 5}
@@ -302,7 +302,7 @@ def test_cortexm_call_returns_r0_and_clears_maskints():
 
 
 def test_rp2350_flash_program_runs_the_sdk_sequence_and_verifies():
-    from oep_client.v1 import rp2350
+    from oep_client import rp2350
     fake = FakeCortexM()
     core = arm.CortexM(fake, bkpt_at=rp2350.BKPT_AT, stack_top=rp2350.STACK_TOP)
     core.halt()

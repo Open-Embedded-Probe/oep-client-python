@@ -7,7 +7,7 @@ import struct
 
 import pytest
 
-from oep_client.v1 import capture, console, core, endpoint, fake, fixture, host, message as m, riscv
+from oep_client import capture, console, core, endpoint, fake, fixture, host, message as m, riscv
 
 WIRE, DM, CONSOLE, GPIO, UART = 1, 2, 3, 4, 5          # p4_x035
 
@@ -259,7 +259,7 @@ def test_uart_configure_format_and_reads_that_do_not_consume(bench):
 
 
 def test_capture_critical_tag_it_cannot_honour_is_unsupported():
-    from test_v1_target_parts import ScriptedHost
+    from test_target_parts import ScriptedHost
 
     def configure(p):
         for tag, _ in m.split_tlvs(p):
@@ -351,7 +351,7 @@ def test_a_plan_replaces_only_the_fns_it_names_and_release_takes_a_list(bench):
 
 
 def test_ch32_resume_asks_again_while_dpc_has_not_moved(dm):
-    from oep_client.v1 import ch32_flash
+    from oep_client import ch32_flash
     ep, hst, d = dm
     assert d.read_register(d.DPC) == ep.target.dpc
     ep.target.resume_misses = 2                                    # two requests that do not take, then it goes
