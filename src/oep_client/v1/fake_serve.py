@@ -25,6 +25,9 @@ Options:
   --bind MODE           bind the serial port to every --slot: last-reset, manual or mixed
   --target-id HEX       the target_id every target's attach reports (wch_dmi_7f)
   --absent N            the N-th pin pair of the first wire has no target (repeatable)
+  --uart-plan           the first oep.fixture.uart gets its RX / TX plan at boot, as if saved (the jig's "DUT TX" /
+                        "DUT RX" labels when the profile has them, else the first free channels); configure then works
+  --uart-rx TEXT        what arrives on that UART's RX every --every ms once it is configured (%d = a counter)
   --run-hook SPEC       what riscv-dm run does on every target: SPEC is module:function or path/file.py:function,
                         called as function(target, pc, regs) -> (stopped, dpc, elapsed_us). `target` is the
                         endpoint.FakeTarget (mem = word address -> value, regs = regno -> value, halted, dpc), so a
@@ -45,7 +48,7 @@ import sys
 import time
 import tty
 
-from . import endpoint, fake, fake_serial, registry as reg
+from . import catalog, endpoint, fake, fake_serial, registry as reg
 
 _ITEM = reg.PROBE_CONFIG.tlv["item"]
 _MODES = reg.PROBE_CONFIG.enum["bind_mode"]
@@ -82,9 +85,38 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
                            for n in range(len(a.slot)))
         value = struct.pack("<BBBB", a.port_index, _MODES[a.bind.replace("-", "_")], 0, len(a.slot)) + streams
         items.append(bytes([_ITEM["bind"], len(value)]) + value)
+    if a.uart_plan:
+        fn = uart_fn(ep)
+        rx, tx = _uart_channels(ep, fn)
+        for role, ch in ((1, rx), (2, tx)):
+            items.append(bytes([_ITEM["plan"], 5]) + struct.pack("<HBH", fn, role, ch))
     if items:
         ep.load_config(items, saved=True)
     return ep
+
+
+def uart_fn(ep: endpoint.Endpoint) -> int:
+    fn = ep.fns.get("oep.fixture.uart")
+    if fn is None:
+        raise SystemExit("this profile offers no oep.fixture.uart")
+    return fn
+
+
+def _uart_channels(ep: endpoint.Endpoint, fn: int) -> tuple[int, int]:
+    """RX, TX for the UART's plan: the jig's DUT TX (probe RX) / DUT RX (probe TX) labels, else the first two free."""
+    labels = {name: ch for ch, name in ep.static_labels.items()}
+    if "DUT TX" in labels and "DUT RX" in labels:
+        return labels["DUT TX"], labels["DUT RX"]
+    allowed = []
+    for t in ep.static[fn]:
+        if t[0] == catalog.ROLE_CHANNELS and t[2] == 1:
+            base = struct.unpack_from("<H", t, 3)[0]
+            allowed = catalog.bitmap_to_channels(base, t[5:2 + t[1]])
+    taken = {p for s in ep.slots.values() for p in s.pair} | {a[2] for a in ep.plan}
+    free = [ch for ch in allowed if ch not in taken]
+    if len(free) < 2:
+        raise SystemExit("no two free channels for the UART's plan")
+    return free[0], free[1]
 
 
 def _load_hook(spec: str):
@@ -118,20 +150,28 @@ def _filter(a: argparse.Namespace):
     return answer
 
 
+def _text(fmt: str, count: int) -> bytes:
+    text = fmt.replace("%d", str(count)) if "%d" in fmt else fmt
+    return text.encode().decode("unicode_escape").encode("latin-1")
+
+
 class Console:
-    def __init__(self, ep: endpoint.Endpoint, fmt: str | None, every_ms: int):
-        self.ep, self.fmt, self.every = ep, fmt, every_ms
+    """Every `every_ms`: the targets write `fmt` to their consoles, and `uart_rx` arrives on the UART's RX (fn
+    `uart`) while it runs (configured)."""
+
+    def __init__(self, ep: endpoint.Endpoint, fmt: str | None, every_ms: int, uart_rx: str | None = None,
+                 uart: int | None = None):
+        self.ep, self.fmt, self.every, self.uart_rx, self.uart = ep, fmt, every_ms, uart_rx, uart
         self.next_ms, self.count = 0, 0
 
     def tick(self) -> None:
-        if not self.fmt or self.ep.now() < self.next_ms:
+        if not (self.fmt or self.uart_rx) or self.ep.now() < self.next_ms:
             return
         self.next_ms = self.ep.now() + self.every
-        for i, tg in enumerate(self.ep.targets.values()):
-            text = self.fmt.replace("{t}", str(i))
-            if "%d" in text:
-                text = text.replace("%d", str(self.count))
-            self.ep.target_says(text.encode().decode("unicode_escape").encode("latin-1"), tg)
+        for i, tg in enumerate(self.ep.targets.values()) if self.fmt else ():
+            self.ep.target_says(_text(self.fmt.replace("{t}", str(i)), self.count), tg)
+        if self.uart_rx and self.uart in self.ep.uarts:
+            self.ep.uart_rx(self.uart, _text(self.uart_rx, self.count))
         self.count += 1
 
 
@@ -273,6 +313,8 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--bind", choices=["last-reset", "manual", "mixed"])
     ap.add_argument("--target-id")
     ap.add_argument("--absent", type=int, action="append", default=[])
+    ap.add_argument("--uart-plan", action="store_true")
+    ap.add_argument("--uart-rx")
     ap.add_argument("--run-hook")
     ap.add_argument("--once", action="store_true")
     a = ap.parse_args(argv)
@@ -285,7 +327,7 @@ def main(argv: list[str] | None = None) -> None:
         probe_ep = endpoint.Endpoint(profile(), lambda: 0)
         a.port_index = min(probe_ep.serial_ports) if probe_ep.serial_ports else 0
     ep = build(a)
-    console = Console(ep, a.console, _ms(a.every))
+    console = Console(ep, a.console, _ms(a.every), a.uart_rx, uart_fn(ep) if a.uart_rx else None)
     try:
         if a.tcp is None:
             serve_pty(a, ep, console)
