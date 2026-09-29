@@ -923,7 +923,7 @@ class Endpoint:
                 pos = s.end
             elif frm == 3:
                 hits = [mk for mk in s.marks if arg == 0 or mk[2] == arg]
-                pos = hits[-1][1] if hits else s.base
+                pos = hits[-1][1] if hits else s.end                 # no such mark: from now (common §1.2)
             else:
                 raise Reject(m.UNSUPPORTED)
             flags = 0

@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Fake probe: a read from the last mark of a kind that is not there starts now, not at the oldest byte (oep-if-common §1.2).
+- (JA) 偽の probe: その kind のマークが無いときの「最後のマークから」の read は、一番古い位置ではなく今から（oep-if-common §1.2）。
 
 ## 0.0.4
 - (EN) Fake serial port: a candidate that is only its 0x00 is not raw after the 200 ms gap (the probe firmware had the same bug: a stray 0x00 reached the target's console).
