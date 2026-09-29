@@ -327,3 +327,20 @@ def test_fake_serve_run_hook_from_a_file(tmp_path):
         profile="p4-x035", target_id=None, absent=[], slot=[], bind=None, port_index=0, run_hook=f"{hook}:run")
     ep = fake_serve.build(a)
     assert ep.target.run_hook(0x2000, {0x100A: 5}) == (True, 0x2004, 7) and ep.target.mem[0x100] == 5
+
+
+def test_a_closed_console_stays_readable_until_the_same_place_opens_again():
+    ep, h = bench()
+    p = ep.pairs[1]
+    def attach(pair):
+        r = h.raw(1, 0x02, bytes([0]) + m.tlv(0x03, struct.pack("<HH", *pair), critical=True))
+        return struct.unpack_from("<H", r.payload)[0]
+    a = attach(p[0])
+    sa = struct.unpack_from("<H", h.ok(3, 0x01, struct.pack("<HB", a, 2)))[0]
+    h.ok(1, 0x03, struct.pack("<H", a))                              # detach: the stream closes, stays readable
+    b = attach(p[1])
+    h.ok(3, 0x01, struct.pack("<HB", b, 2))                          # the same mechanism on another place
+    assert h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).succeeded
+    a2 = attach(p[0])
+    h.ok(3, 0x01, struct.pack("<HB", a2, 2))                         # the same place again: the old one goes
+    assert h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).detail == m.UNAVAILABLE
