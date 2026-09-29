@@ -100,7 +100,8 @@ def test_the_same_host_over_tcp_length_frames_and_a_holder_that_keeps_its_lease_
     try:
         a = link.open_host(f"tcp://127.0.0.1:{where[1]}", timeout=1.0)
         a.open(60000, owner="ch32rv monitor")
-        assert a.lock_owner() == (True, a.lock_owner()[1], "ch32rv monitor")
+        locked, remaining, owner = a.lock_owner()                     # one read: the lease ticks down between two
+        assert locked and 0 < remaining <= 60000 and owner == "ch32rv monitor"
         b = h.Host(a.link.send)                                       # another host on the same link (a broker's client)
         b.link = a.link
         b.revision = 1
