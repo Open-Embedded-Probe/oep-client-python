@@ -8,20 +8,24 @@ target の知識は host にある、という OEP の分担に従う。probe �
 コントローラ、RAM ローダー、RP2350 の boot ROM、Cortex-M の debug レジスタなどはここに置く。
 
 ```sh
-uv run pytest
+pip install git+https://github.com/Open-Embedded-Probe/oep-client-python   # or: pip install -e <checkout>
+uv run pytest                                                            # in a checkout
 ```
+
+`import oep_client.v1` だけで使える（`sys.path` に `src/` を足す使い方は不要になった）。番号の表は `tools/sync_registry.sh` で
+oep-spec から写す。
 
 ## モジュール（`oep_client.v1`）
 
 | モジュール | 中身 |
 |---|---|
 | `host` | 要求と結果、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`） |
-| `link` | シリアルと USB vendor bulk の transport（長さつきフレーム、USB-UART は COBS + CRC）、corr による照合、§1 の立て直し（resync）、`open_host()` |
-| `core` | インターフェースを名前で探す（キャッシュつき）、confirm、probe のラベル、ピンの割り当て（plan）、`Interface` の土台 |
+| `link` | transport: シリアルの口（常に COBS + CRC、`0x00 <COBS> 0x00`、フレームの外は雑音として捨てる、排他で開く）、USB vendor bulk / HID と TCP（長さつきフレーム、§5.1 の立て直し）、corr による照合と送り直し、`open_host(target)` |
+| `core` | インターフェースを名前で探す（キャッシュつき）、confirm、probe の describe（ラベル、transport の一覧）、ロックの取り方（`take`）、ピンの割り当て（plan）、`Interface` の土台 |
 | `riscv` | `oep.wire.rvswd` / `oep.wire.swio`、`oep.target.riscv-dm`、リセット線の探索、GPIO 経由の attach |
 | `console` | `oep.target.console`（位置つきのストリーム）と、バイト列として読む `ConsoleIO` |
 | `fixture` | `oep.fixture.gpio` / `uart`（revision 1） |
-| `capture` | `oep.fixture.capture`（revision 1、oep-spec の oep-if-capture） |
+| `capture` | `oep.fixture.capture`（revision 1、oep-spec の oep-if-capture）。読んだ区画は `Host.on_capture` の callback に `CaptureRecord` で渡る（記録の受け口。wireskein には依存しない） |
 | `esp32_targets` | 独自インターフェース `io.github.ch32-riscv-ug.esp32.i2c-target` / `spi-target`（oep-probe-arduino の ESP32 の I2C / SPI の target） |
 | `decode` | キャプチャのチャネルの復号（I2C） |
 | `registry` | oep-spec の番号の表から生成したモジュール（編集しない。oep-spec から写し直す） |
@@ -36,10 +40,11 @@ uv run pytest
 ## 使い方の例
 
 ```python
-from oep_client.v1 import link, riscv, ch32_flash
+from oep_client.v1 import core, link, riscv, ch32_flash
 
 hst = link.open_host("/run/board-identify/by-id/esp32-series-30eda0e31108")   # pipelining つき
-hst.open(lease_ms=30000)
+# a serial port (always COBS), "tcp://127.0.0.1:PORT" (a broker), "usb" / "usb:303a:0002[:SERIAL]" (vendor, then HID)
+core.take(hst, 30000, owner="flash script")   # the only way in: force; else wait out the lease, name the holder
 wire = riscv.Wire(hst, "oep.wire.rvswd")
 conn, _ = wire.attach(halt=True)
 dm = riscv.RiscvDm(hst, conn)

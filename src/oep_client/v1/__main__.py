@@ -20,7 +20,7 @@ def main(argv=None) -> int:
     d = sub.add_parser("dump", help="list and describe every interface a probe offers")
     src = d.add_mutually_exclusive_group(required=True)
     src.add_argument("--fake", choices=sorted(fake.PROFILES), help="in-process example probe")
-    src.add_argument("--port", help="a serial port with a v1 draft probe (lock-free reads only)")
+    src.add_argument("--port", help="a probe: a serial port, tcp://HOST:PORT or usb[:VID:PID] (lock-free reads only)")
     d.add_argument("--prefix", default="", help="only names under this namespace (label boundaries)")
     d.add_argument("--exact", action="store_true", help="the prefix is a whole name")
     d.add_argument("--json", action="store_true", help="machine-readable output")
@@ -29,7 +29,7 @@ def main(argv=None) -> int:
     if args.fake:
         call = fake.PROFILES[args.fake]().call
     else:
-        hst = host.Host(link.SerialLink(args.port).send)
+        hst = link.open_host(args.port)
         call = lambda fn, op, payload: hst.request(fn, op, payload, locked=False).payload   # noqa: E731
     caps = dump.collect(call, args.prefix, args.exact)
     sys.stdout.write(dump.to_json(caps) + "\n" if args.json else dump.to_text(caps))

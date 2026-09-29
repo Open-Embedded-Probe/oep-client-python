@@ -89,6 +89,19 @@ class Config:
 
 
 @dataclass
+class CaptureRecord:
+    """One segment as it was read, for whoever records runs (Host.on_capture): the probe's own words - no pin names,
+    no target (the recorder's caller knows those). armed_s / read_s: time.monotonic() at start() and at the read."""
+    fn: int
+    name: str
+    config: Config
+    segment: Segment
+    data: bytes
+    armed_s: float | None
+    read_s: float
+
+
+@dataclass
 class Received:
     """What stream() collected: the bytes in arrival order, where the stream skipped (probe-side drops) and lost frames."""
     data: bytearray = field(default_factory=bytearray)
@@ -148,6 +161,7 @@ class LogicCapture(Interface):
     def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
         super().__init__(hst, name, fn=fn)
         self.config: Config | None = None
+        self.armed_s: float | None = None     # time.monotonic() at the last start()
 
     def configure(self, *, rate: int, mode: int = ONE_SHOT, samples: int | None = None, segments: int | None = None,
                   trigger: tuple[int, int, int] | None = None, pretrigger: int | None = None, query: bool = False,
@@ -239,7 +253,9 @@ class LogicCapture(Interface):
 
     def start(self) -> int:
         """-> blocking_ms (0: the probe keeps answering while it captures)."""
-        return m.Reader(self._call(self.START).payload).u32()
+        blocking = m.Reader(self._call(self.START).payload).u32()
+        self.armed_s = time.monotonic()
+        return blocking
 
     def stop(self) -> None:
         self._call(self.STOP)
@@ -312,8 +328,15 @@ class LogicCapture(Interface):
         return bytes(out)
 
     def read_segment(self, segment: Segment) -> bytes:
+        """The segment's bytes; every Host.on_capture callback gets them as a CaptureRecord (a run recorder, e.g.
+        pytest-embedded-wireskein, without this package knowing it)."""
         c = self.config
-        return self.read(segment.position, (segment.samples * c.width + 7) // 8)
+        data = self.read(segment.position, (segment.samples * c.width + 7) // 8)
+        if self.host.on_capture:
+            record = CaptureRecord(self.fn, self.name, c, segment, data, self.armed_s, time.monotonic())
+            for callback in list(self.host.on_capture):
+                callback(record)
+        return data
 
     # ---- the §3.0 layout ---------------------------------------------------------------------------------
     def channel(self, data: bytes, k: int, samples: int | None = None) -> list[int]:
