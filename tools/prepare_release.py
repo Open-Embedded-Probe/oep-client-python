@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = ROOT / "pyproject.toml"
 INIT_FILE = ROOT / "src" / "oep_client" / "__init__.py"
 CHANGELOG = ROOT / "CHANGELOG.md"
+LOCK = ROOT / "uv.lock"
 
 
 def update_pyproject(version: str) -> None:
@@ -35,6 +36,22 @@ def update_init(version: str) -> None:
     if not re.search(r'(?m)^__version__ = "[^"]+"$', text):
         raise RuntimeError("Failed to update __version__ in __init__.py")
     INIT_FILE.write_text(updated, encoding="utf-8")
+
+
+def update_lock(version: str) -> None:
+    """The project's own entry in uv.lock (the editable one) carries the version too: set it here, so the release
+    commit has uv.lock in step instead of the next `uv sync` rewriting it. Nothing else in the lock changes."""
+    if not LOCK.exists():
+        return
+    text = LOCK.read_text(encoding="utf-8")
+    name = re.search(r'(?m)^name = "([^"]+)"$', PYPROJECT.read_text(encoding="utf-8")).group(1)
+    pattern = re.compile(
+        r'(\[\[package\]\]\nname = "' + re.escape(name) + r'"\nversion = ")[^"]+("\nsource = \{ editable = "\." \})'
+    )
+    updated, count = pattern.subn(lambda m: m.group(1) + version + m.group(2), text)
+    if count != 1:
+        raise RuntimeError(f"Failed to update the version of {name} in uv.lock")
+    LOCK.write_text(updated, encoding="utf-8")
 
 
 def update_changelog(version: str) -> None:
@@ -81,6 +98,7 @@ def main() -> None:
 
     update_pyproject(version)
     update_init(version)
+    update_lock(version)
     update_changelog(version)
     print(f"Prepared release: {version}")
 
