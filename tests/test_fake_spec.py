@@ -383,3 +383,16 @@ def test_the_closing_0x00_of_a_frame_is_not_raw_after_the_gap():
     port.tick()
     sid = ep.stream_keys[(ep._conn_at(1, p[0]), 2)]
     assert bytes(ep.streams[sid].written) == b""                   # no stray 0x00 at the target
+
+
+def test_read_from_a_last_mark_that_is_not_there_is_from_now():
+    ep, h = bench()
+    p = ep.pairs[1][0]
+    r = h.raw(1, 0x02, bytes([0]) + m.tlv(0x03, struct.pack("<HH", *p), critical=True))
+    uart_fn = 5
+    h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", uart_fn, 1, 20)) + m.tlv(0x90, struct.pack("<HBH", uart_fn, 2, 21)))
+    h.ok(uart_fn, 0x01, struct.pack("<I", 115200))
+    ep.uart_rx(uart_fn, b"old output")
+    reset = reg.TARGET_CONSOLE.enum["mark_kind"]["reset"]
+    got = h.raw(uart_fn, 0x02, struct.pack("<BQH", 3, reset, 64), session=False).payload
+    assert struct.unpack_from("<Q", got)[0] == 10 and got[9:] == b""   # no reset mark: from now, not the old bytes
