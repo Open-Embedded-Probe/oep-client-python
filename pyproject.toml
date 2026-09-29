@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "oep-client-python"
 version = "0.0.2"
 description = "Open Embedded Probe (OEP) v1 host: serial / USB / TCP transports, the session rules, the standard interfaces, and a fake probe"
-readme = "README.ja.md"
+readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
@@ -35,7 +35,7 @@ Repository = "https://github.com/Open-Embedded-Probe/oep-client-python"
 packages = ["src/oep_client"]
 
 [tool.hatch.build.targets.sdist]
-only-include = ["src/oep_client", "tests", "README.ja.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
+only-include = ["src/oep_client", "tests", "README.md", "README.ja.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
 
 [dependency-groups]
 dev = ["pytest>=8"]

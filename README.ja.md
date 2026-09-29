@@ -1,5 +1,7 @@
 # OEP Python client
 
+[English](README.md)
+
 Open Embedded Probe の host 側。v1（oep-spec の `docs/oep-core.ja.md` と `docs/oep-if-*.ja.md`、固める候補の形）を話す。番号は oep-spec の
 `generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.registry` から取る。破壊的変更を前提とする
 実験段階で、互換 API は約束しない。OEP を初めて読む人は oep-spec の `docs/review-guide.ja.md`（どこに何が書いてあるか）から。
@@ -29,6 +31,7 @@ GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md 
 | `riscv` | `oep.wire.rvswd` / `oep.wire.swio`、`oep.target.riscv-dm`、リセット線の探索、GPIO 経由の attach |
 | `console` | `oep.target.console`（位置つきのストリーム）と、バイト列として読む `ConsoleIO` |
 | `fixture` | `oep.fixture.gpio` / `uart`（revision 1） |
+| `config` | `oep.probe.config`（スロット、bind、plan / label / idle の項目、get / set / save / erase、スロットと bind の今の状態） |
 | `capture` | `oep.fixture.capture`（revision 1、oep-spec の oep-if-capture）。読んだ区画は `Host.on_capture` の callback に `CaptureRecord` で渡る（記録の受け口。wireskein には依存しない） |
 | `esp32_targets` | 独自インターフェース `io.github.ch32-riscv-ug.esp32.i2c-target` / `spi-target`（oep-probe-arduino の ESP32 の I2C / SPI の target） |
 | `decode` | キャプチャのチャネルの復号（I2C） |
@@ -59,7 +62,18 @@ wire.detach(conn)
 hst.end()
 ```
 
-能力の一覧は `uv run python -m oep_client dump --port <probe>`（`--fake p4-x035` でハードウェアなし）。
+## `oep` の命令
+
+```sh
+oep dump --port <probe>                      # 能力の一覧（--fake p4-x035 でハードウェアなし）
+oep config show <probe>                      # 設定とスロット / bind の今の状態
+oep config slot <probe> --name x035 --wire rvswd --pins 2,54 --attach at-boot --retry 1 --mechanism dmseq
+oep config bind <probe> --port 1 --mode last-reset --stream slot:x035
+oep config save <probe>                      # 再起動の後も残す（remove / erase もある）
+```
+
+`<probe>` はシリアルの口、`tcp://HOST:PORT`、`usb[:VID:PID[:SERIAL]]`。変更はロックを取り（owner "oep config"）、終わったら
+セッションを閉じる。変更はすぐ効き、`save` の後は再起動しても残る。
 実機での一通りの確認は ArduinoCore-CH32 の `tests/manual/oep_smoke/`（`oep_smoke.py`、`oep_probe_checks.py`）。
 
 ## 偽の probe（動く spec）
