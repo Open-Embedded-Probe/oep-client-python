@@ -291,6 +291,7 @@ class Endpoint:
         self._order = 0
         self.streams: dict[int, Stream] = {}           # console stream id -> stream
         self.stream_keys: dict[tuple[int, int], int] = {}   # (connection, mechanism) -> stream id
+        self.stream_places: dict[int, tuple[int, tuple[int, int]]] = {}   # stream id -> (wire fn, pin pair) it was on
         self._next_stream = 1
         self.gpio_modes: dict[int, int] = {}
         self.gpio_inputs: dict[int, int] = {}
@@ -985,11 +986,16 @@ class Endpoint:
         sid = self.stream_keys.get((conn, mech))
         if sid is not None and not self.streams[sid].closed:
             return sid, True
-        for key in [k for k, v in self.stream_keys.items() if k[1] == mech and self.streams[v].closed]:
-            self.streams.pop(self.stream_keys.pop(key), None)      # a closed one of this mechanism goes (console §2)
+        place = (self.conns[conn].fn, self.conns[conn].pair)
+        for key in [k for k, v in self.stream_keys.items()          # a closed one of this mechanism on this place goes
+                    if k[1] == mech and self.streams[v].closed and self.stream_places.get(v) == place]:
+            sid = self.stream_keys.pop(key)
+            self.streams.pop(sid, None)
+            self.stream_places.pop(sid, None)
         sid = self._next_stream
         self._next_stream += 1                                     # never reused within a boot (core §9)
         self.streams[sid], self.stream_keys[(conn, mech)] = Stream(), sid
+        self.stream_places[sid] = place
         self.streams[sid].add_mark(MARK["attach"], self.now())
         return sid, False
 
