@@ -25,11 +25,17 @@ Options:
   --bind MODE           bind the serial port to every --slot: last-reset, manual or mixed
   --target-id HEX       the target_id every target's attach reports (wch_dmi_7f)
   --absent N            the N-th pin pair of the first wire has no target (repeatable)
+  --run-hook SPEC       what riscv-dm run does on every target: SPEC is module:function or path/file.py:function,
+                        called as function(target, pc, regs) -> (stopped, dpc, elapsed_us). `target` is the
+                        endpoint.FakeTarget (mem = word address -> value, regs = regno -> value, halted, dpc), so a
+                        host's loader can be played by the host's own test code (the fake knows no loader).
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib
+import importlib.util
 import os
 import re
 import select
@@ -57,6 +63,10 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
     if a.target_id is not None:
         for tg in ep.targets.values():
             tg.target_id = int(a.target_id, 16)
+    if a.run_hook:
+        hook = _load_hook(a.run_hook)
+        for tg in ep.targets.values():
+            tg.run_hook = (lambda t: lambda pc, regs: hook(t, pc, regs))(tg)
     for n in a.absent:
         ep.targets[(wire, ep.pairs[wire][n])].present = False
     items = []
@@ -75,6 +85,19 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
     if items:
         ep.load_config(items, saved=True)
     return ep
+
+
+def _load_hook(spec: str):
+    where, _, name = spec.rpartition(":")
+    if not where or not name:
+        raise SystemExit(f"--run-hook {spec}: want module:function or file.py:function")
+    if where.endswith(".py") or os.sep in where:
+        loader = importlib.util.spec_from_file_location("fake_run_hook", where)
+        module = importlib.util.module_from_spec(loader)
+        loader.loader.exec_module(module)
+    else:
+        module = importlib.import_module(where)
+    return getattr(module, name)
 
 
 def _filter(a: argparse.Namespace):
@@ -250,6 +273,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--bind", choices=["last-reset", "manual", "mixed"])
     ap.add_argument("--target-id")
     ap.add_argument("--absent", type=int, action="append", default=[])
+    ap.add_argument("--run-hook")
     ap.add_argument("--once", action="store_true")
     a = ap.parse_args(argv)
     if a.tcp is None and a.framing == "length":

@@ -317,3 +317,13 @@ def test_fake_serve_pty_speaks_cobs_with_console_bytes_and_honours_tiocexcl():
     finally:
         proc.stdin.close()
         proc.wait(timeout=5)
+
+
+def test_fake_serve_run_hook_from_a_file(tmp_path):
+    from oep_client.v1 import fake_serve
+    hook = tmp_path / "loader.py"
+    hook.write_text("def run(target, pc, regs):\n    target.mem[0x100] = regs.get(0x100A, 0)\n    return True, pc + 4, 7\n")
+    a = fake_serve.main.__globals__["argparse"].Namespace(
+        profile="p4-x035", target_id=None, absent=[], slot=[], bind=None, port_index=0, run_hook=f"{hook}:run")
+    ep = fake_serve.build(a)
+    assert ep.target.run_hook(0x2000, {0x100A: 5}) == (True, 0x2004, 7) and ep.target.mem[0x100] == 5
