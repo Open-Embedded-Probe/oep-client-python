@@ -1,2 +1,5 @@
-"""OEP host client. `oep_client.v1` is the current draft; `oep_client.v0` stays for the manual tools that still
-speak the v0 wire format."""
+"""Open Embedded Probe (OEP) host client. `oep_client.v1` speaks the v1 protocol (oep-spec docs/oep-core.ja.md)."""
+
+__all__ = ["__version__"]
+
+__version__ = "0.0.0"
