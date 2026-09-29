@@ -25,7 +25,7 @@ usb-async = ["libusb1>=3"]   # queued asynchronous IN transfers: streaming near 
 hid = ["hidapi>=0.14"]      # the vendor HID way in through the OS HID driver (Windows without WinUSB, Linux hidraw)
 
 [project.scripts]
-oep = "oep_client.v1.__main__:main"
+oep = "oep_client.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/Open-Embedded-Probe/oep-client-python"

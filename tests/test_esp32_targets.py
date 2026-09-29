@@ -2,8 +2,8 @@
 
 import struct
 
-from oep_client.v1 import decode, esp32_targets as et, message as m
-from test_v1_target_parts import ScriptedHost, ok
+from oep_client import decode, esp32_targets as et, message as m
+from test_target_parts import ScriptedHost, ok
 
 I2C, SPI = 11, 12
 

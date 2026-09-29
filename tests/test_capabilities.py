@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from oep_client.v1 import catalog, dump, fake, names
+from oep_client import catalog, dump, fake, names
 
 
 # ---- names ---------------------------------------------------------------

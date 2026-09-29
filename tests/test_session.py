@@ -4,7 +4,7 @@ import struct
 
 import pytest
 
-from oep_client.v1 import endpoint, fake, host, message as m
+from oep_client import endpoint, fake, host, message as m
 
 TOY = 7          # a fn the fake does not simulate (esp32_v003: the i2c-target) has the stand-in operations
 
@@ -53,7 +53,7 @@ def test_a_48_byte_name_fits_a_64_byte_frame():
     assert len(name) == 48
     probe = fake.FakeProbe("tiny", 64, [fake.Offered(0, 0, "oep.core"), fake.Offered(1, 1, name)])
     ep = endpoint.Endpoint(probe, Clock())
-    from oep_client.v1 import catalog
+    from oep_client import catalog
     result = ep.handle(m.Request(1, 0, m.OP_LIST, catalog.pack_list_request(name, True, 0)).pack())
     assert len(result) == 63 and catalog.unpack_list_result(result[5:])[1][0].name == name   # oep-v1 frame budget (v1-core-wire-delta §6)
 
@@ -228,7 +228,7 @@ def test_the_host_skips_tlvs_it_does_not_know_after_every_result(bench):
     assert opened.lease_ms == 1000 and not opened.resumed
     write(a, 9)
     assert read(a) == 9 and a.lock_state() == (True, 1000)
-    from oep_client.v1 import riscv
+    from oep_client import riscv
     wire = riscv.Wire(a, "oep.wire.swio")
     conn, _ = wire.attach()
     riscv.RiscvDm(a, conn).halt()

@@ -1,7 +1,7 @@
 # OEP Python client
 
 Open Embedded Probe の host 側。v1（oep-spec の `docs/oep-core.ja.md` と `docs/oep-if-*.ja.md`、固める候補の形）を話す。番号は oep-spec の
-`generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.v1.registry` から取る。破壊的変更を前提とする
+`generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.registry` から取る。破壊的変更を前提とする
 実験段階で、互換 API は約束しない。OEP を初めて読む人は oep-spec の `docs/review-guide.ja.md`（どこに何が書いてあるか）から。
 
 target の知識は host にある、という OEP の分担に従う。probe は線と DMI / DP・AP の転送しか知らず、CH32 の flash
@@ -12,14 +12,14 @@ pip install oep-client-python     # PyPI (import oep_client); a checkout: pip in
 uv run pytest                                                            # in a checkout
 ```
 
-`import oep_client.v1` だけで使える（`sys.path` に `src/` を足す使い方は不要になった）。番号の表は `tools/sync_registry.sh` で
+`import oep_client` だけで使える（`sys.path` に `src/` を足す使い方は不要になった）。番号の表は `tools/sync_registry.sh` で
 oep-spec から写す。PyPI の `oep-client` は別のプロジェクトなので、配布名は `oep-client-python`。
 
 リリースは GitHub Actions の Release（workflow_dispatch、version = X.Y.Z か X.Y.ZbN）: `tools/prepare_release.py` が
 pyproject.toml と `oep_client.__version__` を書き換え、CHANGELOG.md の Unreleased をその版にし、試験と build の後に commit と tag、
 GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md の Unreleased に (EN) / (JA) で書き足しておく。
 
-## モジュール（`oep_client.v1`）
+## モジュール（`oep_client`）
 
 | モジュール | 中身 |
 |---|---|
@@ -44,7 +44,7 @@ GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md 
 ## 使い方の例
 
 ```python
-from oep_client.v1 import core, link, riscv, ch32_flash
+from oep_client import core, link, riscv, ch32_flash
 
 hst = link.open_host("/run/board-identify/by-id/esp32-series-30eda0e31108")   # pipelining つき
 # a serial port (always COBS), "tcp://127.0.0.1:PORT" (a broker), "usb" / "usb:303a:0002[:SERIAL]" (vendor, then HID)
@@ -59,7 +59,7 @@ wire.detach(conn)
 hst.end()
 ```
 
-能力の一覧は `uv run python -m oep_client.v1 dump --port <probe>`（`--fake p4-x035` でハードウェアなし）。
+能力の一覧は `uv run python -m oep_client dump --port <probe>`（`--fake p4-x035` でハードウェアなし）。
 実機での一通りの確認は ArduinoCore-CH32 の `tests/manual/oep_smoke/`（`oep_smoke.py`、`oep_probe_checks.py`）。
 
 ## 偽の probe（動く spec）
@@ -72,7 +72,7 @@ hst.end()
 外のプログラムの試験には `fake_serve` を子プロセスで使う:
 
 ```sh
-uv run python -m oep_client.v1.fake_serve --pty --profile p4-bench --slot x035 --bind last-reset \
+uv run python -m oep_client.fake_serve --pty --profile p4-bench --slot x035 --bind last-reset \
     --console 'uptime %d\r\n' --every 100
 # 最初の行: PTY /dev/pts/N（--tcp 0 なら PORT n）。stdin を閉じると終わる
 ```

@@ -9,7 +9,7 @@ import sys
 
 import pytest
 
-from oep_client.v1 import capture, cobs, core, host as h, link, message as m
+from oep_client import capture, cobs, core, host as h, link, message as m
 
 
 class Scripted:
@@ -67,7 +67,7 @@ def test_a_missing_answer_goes_once_more_with_the_same_corr():
 
 
 def serve(*args):
-    proc = subprocess.Popen([sys.executable, "-m", "oep_client.v1.fake_serve", *args],
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", *args],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     return proc, proc.stdout.readline().split()
 

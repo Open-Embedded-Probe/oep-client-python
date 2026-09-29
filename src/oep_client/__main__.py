@@ -1,9 +1,9 @@
 """Draft OEP capability discovery by name, on an in-process fake or a v1 draft probe.
 
-  uv run python -m oep_client.v1 dump --port /run/board-identify/by-id/<probe>
-  uv run python -m oep_client.v1 dump --fake p4-x035
-  uv run python -m oep_client.v1 dump --fake esp32-v003 --prefix oep.fixture
-  uv run python -m oep_client.v1 dump --fake p4-x035 --prefix oep.target --json
+  uv run python -m oep_client dump --port /run/board-identify/by-id/<probe>
+  uv run python -m oep_client dump --fake p4-x035
+  uv run python -m oep_client dump --fake esp32-v003 --prefix oep.fixture
+  uv run python -m oep_client dump --fake p4-x035 --prefix oep.target --json
 """
 
 from __future__ import annotations

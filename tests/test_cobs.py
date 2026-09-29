@@ -4,7 +4,7 @@ import random
 
 import pytest
 
-from oep_client.v1 import cobs
+from oep_client import cobs
 
 
 def test_crc_check_value():

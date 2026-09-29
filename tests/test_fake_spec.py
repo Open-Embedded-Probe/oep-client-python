@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from oep_client.v1 import cobs, endpoint, fake, fake_serial, message as m, registry as reg
+from oep_client import cobs, endpoint, fake, fake_serial, message as m, registry as reg
 
 CFG = reg.PROBE_CONFIG
 ITEM, ATTACH, MODE, KIND = CFG.tlv["item"], CFG.enum["slot_attach"], CFG.enum["bind_mode"], CFG.enum["bind_stream"]
@@ -289,7 +289,7 @@ def test_last_reset_follows_the_target_the_host_reset():
 
 @pytest.mark.skipif(sys.platform != "linux", reason="pty and TIOCEXCL as on Linux")
 def test_fake_serve_pty_speaks_cobs_with_console_bytes_and_honours_tiocexcl():
-    proc = subprocess.Popen([sys.executable, "-m", "oep_client.v1.fake_serve", "--pty", "--profile", "p4-bench",
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", "--pty", "--profile", "p4-bench",
                              "--slot", "x035", "--bind", "last-reset", "--console", "tick %d\\n", "--every", "20"],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     try:
@@ -320,7 +320,7 @@ def test_fake_serve_pty_speaks_cobs_with_console_bytes_and_honours_tiocexcl():
 
 
 def test_fake_serve_run_hook_from_a_file(tmp_path):
-    from oep_client.v1 import fake_serve
+    from oep_client import fake_serve
     hook = tmp_path / "loader.py"
     hook.write_text("def run(target, pc, regs):\n    target.mem[0x100] = regs.get(0x100A, 0)\n    return True, pc + 4, 7\n")
     a = fake_serve.main.__globals__["argparse"].Namespace(
@@ -349,8 +349,8 @@ def test_a_closed_console_stays_readable_until_the_same_place_opens_again():
 
 def test_fake_serve_uart_plan_and_rx():
     import time
-    from oep_client.v1 import fixture, link
-    proc = subprocess.Popen([sys.executable, "-m", "oep_client.v1.fake_serve", "--tcp", "0", "--framing", "length",
+    from oep_client import fixture, link
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", "--tcp", "0", "--framing", "length",
                              "--profile", "esp32-v003", "--uart-plan", "--uart-rx", "rx %d\\n", "--every", "10"],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     try:

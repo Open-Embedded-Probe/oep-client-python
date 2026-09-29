@@ -6,8 +6,8 @@ import struct
 
 import pytest
 
-from oep_client.v1 import ch32_flash as cf, console, fixture, host as h, message as m, riscv, uiapduino
-from test_v1_target_parts import FNS, ScriptedHost, ok
+from oep_client import ch32_flash as cf, console, fixture, host as h, message as m, riscv, uiapduino
+from test_target_parts import FNS, ScriptedHost, ok
 
 WIRE, DM, GPIO = FNS["oep.wire.rvswd"], FNS["oep.target.riscv-dm"], FNS["oep.fixture.gpio"]
 CONSOLE, UART = 6, 7

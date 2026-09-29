@@ -1,9 +1,9 @@
-"""oep_client.v1.capture: the configure answer and the §3.0 logic layout (oep-spec logic-capture.ja.md)."""
+"""oep_client.capture: the configure answer and the §3.0 logic layout (oep-spec logic-capture.ja.md)."""
 
 import struct
 from fractions import Fraction
 
-from oep_client.v1 import capture as c
+from oep_client import capture as c
 
 
 def answer(*items):
@@ -92,7 +92,7 @@ def test_stream_does_not_count_the_fns_events_as_lost():
 
 def test_read_spans_frames_without_the_header_leaking_into_the_data():
     """read() splits a long read into frame-sized ones; each answer is position(u64) flags(u8) data."""
-    from test_v1_target_parts import ScriptedHost, ok
+    from test_target_parts import ScriptedHost, ok
     stream = bytes(range(256)) * 12                                   # 3072 bytes: more than one 1024-byte frame
     def read(p):
         pos, n = struct.unpack("<QI", p[:12])

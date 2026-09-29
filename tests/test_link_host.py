@@ -5,7 +5,7 @@ import struct
 
 import pytest
 
-from oep_client.v1 import catalog, core, frames, host as h, link, message as m
+from oep_client import catalog, core, frames, host as h, link, message as m
 
 
 class Stream:
