@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) A console write's chunk fits the probe's frame: frame - 12 - the stream's prefix (the console's stream u16; none on a fixture UART). It was frame - 13 for both, one byte over on a console with 64-byte frames. Found porting it to oep-client-js.
+- (JA) console の書き込みの 1 回の大きさが probe のフレームに収まるようにした: frame − 12 − stream の前置き（console は stream の u16、fixture UART は無し）。両方とも frame − 13 だったので、64 byte のフレームの console で 1 byte はみ出していた。oep-client-js に移すときに見つかった。
 
 ## 0.0.19
 - (EN) The pre-freeze decisions (oep-spec docs/v1-freeze-decisions.ja.md), in the fake and the client at once:
