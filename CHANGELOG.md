@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) The fake: an attach without pins joins the wire's one live connection, also on a wire whose pins the host chooses (oep-if-debug §1).
+- (JA) 偽の probe: pins の無い attach は、その線の生きている接続が 1 つならそれに乗る。host がピンを選ぶ線でも同じ（oep-if-debug §1）。
 
 ## 0.0.8
 - (EN) Wires whose pins the host chooses (oep-if-debug §1, role_channels): the fake takes any allowed free pair, skips the pairs whose pins something holds in a count-0 scan, holds a live connection's pins against plans, and has a profile for it (`rp2350-pins`). `Wire.scan()` goes through the whole list (at most 255 pairs a request; count 0 continues with the new skip TLV until tried = 0).
