@@ -103,8 +103,8 @@ def test_p4_follows_the_agreed_names():
     by_name = {o.entry.name: o for o in caps.offers}
     assert len(caps.offers) == 13
     assert caps.requests["list"] == 1 and caps.requests["describe"] == 13
-    # the debug port: wire, riscv-dm and console are one instance
-    assert {by_name[n].entry.instance for n in ("oep.wire.rvswd", "oep.target.riscv-dm", "oep.target.console")} == {1}
+    # the debug port: wire, riscv-dm and console are the first instance of each
+    assert {by_name[n].entry.instance for n in ("oep.wire.rvswd", "oep.target.riscv-dm", "oep.target.console")} == {0}
     assert by_name["oep.wire.rvswd"].description.groups[1] == [(1, 2), (2, 54)]
     i2c = by_name["oep.fixture.i2c-target"]
     assert i2c.description.roles[1] == i2c.description.roles[2]
@@ -153,7 +153,7 @@ def test_unknown_interfaces_are_shown_raw():
 def test_text_and_json_outputs():
     caps = dump.collect(fake.p4_x035().call)
     text = dump.to_text(caps)
-    assert "instance 6" in text and "oep.fixture.i2c-target" in text
+    assert "instance 0" in text and "oep.fixture.i2c-target" in text
     assert "features: preloaded tx, clock stretching" in text
     data = json.loads(dump.to_json(caps))
     assert data["max_frame"] == 1024 and len(data["interfaces"]) == 13
