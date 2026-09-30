@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.0.16
+- (EN) No user-facing changes recorded.
+- (JA) ユーザー向け変更の記録はありません。
+
 ## 0.0.15
 - (EN) `CaptureGroup.wait()` keeps the lock alive while it waits too (`keepalive_s`).
 - (JA) `CaptureGroup.wait()` も、待つ間ロックを保つ（`keepalive_s`）。
