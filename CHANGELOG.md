@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.11
 - (EN) The fake analog declares its 16-bit slots as bit 4 of the channels tag (bit i = 2^i, oep-if-capture §3.5).
 - (JA) 偽の probe のアナログは、16 ビットの枠を channels の tag のビット 4 で宣言する（ビット i = 2^i、oep-if-capture §3.5）。
 
