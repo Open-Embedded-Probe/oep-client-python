@@ -10,6 +10,7 @@ transfer; if its timeout hits first, pyusb raises and the bytes already received
 
 from __future__ import annotations
 
+import atexit
 import threading
 import time
 
@@ -114,15 +115,21 @@ class UsbAsyncStream:
         self.timeout = 0.05
         self._buffer = bytearray()
         self._cond = threading.Condition()
-        self._closed = False
+        self._closed = False           # no more resubmits (close() started)
+        self._stop = False             # the event thread ends (every transfer is back)
         self._transfers = []
+        self._active = 0               # transfers submitted and not yet back for good
         for _ in range(self.DEPTH):
             t = handle.getTransfer()
             t.setBulk(endpoint_in, self.URB_SIZE, callback=self._done, timeout=0)
             t.submit()
             self._transfers.append(t)
+            self._active += 1
         self._events = threading.Thread(target=self._run, daemon=True)
         self._events.start()
+        # Closed at exit too: left to usb1's own finalizers, the context went while the event thread was inside
+        # handleEventsTimeout with transfers out - the process hung at exit or libusb aborted (usbi_mutex_destroy).
+        atexit.register(self.close)
 
     @classmethod
     def open(cls, vid: int, pid: int, serial: str | None = None) -> "UsbAsyncStream":
@@ -158,14 +165,23 @@ class UsbAsyncStream:
                     self._buffer += data
                     self._cond.notify_all()
         if not self._closed and status in (usb1.TRANSFER_COMPLETED, usb1.TRANSFER_TIMED_OUT):
-            transfer.submit()
+            try:
+                transfer.submit()
+                return
+            except usb1.USBError:
+                pass
+        with self._cond:
+            self._active -= 1          # back for good (cancelled, failed, or closing)
+            self._cond.notify_all()
 
     def _run(self) -> None:
-        while not self._closed:
+        while not self._stop:
             try:
                 self.context.handleEventsTimeout(0.1)
             except self._usb1.USBErrorInterrupted:
                 continue
+            except self._usb1.USBError:
+                break
 
     @property
     def in_waiting(self) -> int:
@@ -195,15 +211,27 @@ class UsbAsyncStream:
             self._buffer.clear()
 
     def close(self) -> None:
+        """Cancel the IN transfers and let the event thread take them back before the handle and the context go
+        (closing with transfers still out hung the process or aborted libusb). Safe to call twice (atexit)."""
+        if self._closed:
+            return
         self._closed = True
+        atexit.unregister(self.close)
         for t in self._transfers:
             try:
                 t.cancel()
             except self._usb1.USBError:
                 pass
-        self._events.join(timeout=0.5)
+        deadline = time.monotonic() + 1.0
+        with self._cond:
+            while self._active > 0 and self._events.is_alive() and time.monotonic() < deadline:
+                self._cond.wait(0.05)
+        self._stop = True
+        self._events.join(timeout=1.0)
         try:
             self.handle.releaseInterface(self.interface)
+        except self._usb1.USBError:
+            pass
         finally:
             self.handle.close()
             self.context.close()
