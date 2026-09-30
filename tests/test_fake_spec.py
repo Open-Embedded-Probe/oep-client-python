@@ -59,7 +59,7 @@ def slot_item(n, wire, pair, attach=ATTACH["at_boot"], retry=1, mech=2, name=Non
 
 def bind_item(port, mode, streams, selected=0):
     return m.tlv(ITEM["bind"], struct.pack("<BBBB", port, mode, selected, len(streams))
-                 + b"".join(struct.pack("<BH", k, i) for k, i in streams))
+                 + b"".join(struct.pack("<BBH", 3, k, i) for k, i in streams))
 
 
 def describe(ep, fn):
@@ -203,6 +203,16 @@ def test_slot_names_are_url_safe(name):
 
 
 # ---- binds and the serial port ---------------------------------------------------------------------------
+
+def test_bind_streams_carry_a_len_and_a_longer_ones_tail_is_skipped():
+    ep, h = bench()
+    head = struct.pack("<BBBB", 0, MODE["mixed"], 0, 1)
+    longer = m.tlv(ITEM["bind"], head + struct.pack("<BBHH", 5, KIND["slot_console"], 0, 0xBEEF))
+    assert h.raw(6, 0x02, slot_item(0, 1, ep.pairs[1][0]) + longer).succeeded
+    assert ep.binds[0].streams == ((KIND["slot_console"], 0),)
+    short = m.tlv(ITEM["bind"], head + struct.pack("<BBH", 2, KIND["slot_console"], 0))
+    assert h.raw(6, 0x02, short).detail == m.MALFORMED
+
 
 def framed(req):
     return cobs.frame(req.pack())

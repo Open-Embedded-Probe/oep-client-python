@@ -38,7 +38,7 @@ X.Y.Z（v1 の凍結までは、どのリリースも wire を壊しうるので
 | `config` | `oep.probe.config`（スロット、bind、plan / label / idle の項目、get / set / save / erase、スロットと bind の今の状態） |
 | `capture` | `oep.fixture.logic`（revision 1、oep-spec の oep-if-capture）。読んだ区画は `Host.on_capture` の callback に `CaptureRecord` で渡る（記録の受け口。wireskein には依存しない） |
 | `decode` | キャプチャのチャネルの復号（I2C） |
-| `registry` | oep-spec の番号の表から生成したモジュール（編集しない。oep-spec から写し直す） |
+| `registry` | oep-spec の番号の表から生成したモジュール（編集しない。oep-spec から写し直す）。名前からインターフェースの番号を引く公開の入口は `registry.INTERFACES[name]`（`.revision`、`.op`、`.tlv`、`.enum`。例 `INTERFACES["oep.fixture.uart"].enum["role"]`）。`FIXTURE_UART` などのモジュールの名前は同じもの |
 | `arm` | `oep.wire.swd`、`oep.target.arm-adi`、MEM-AP、Cortex-M の停止と関数呼び出し |
 | `ch32_flash` | CH32 の書き込み（RAM ローダー、ページ単位の書き直し） |
 | `rp2350` | RP2350 の boot ROM 経由の flash と reboot |

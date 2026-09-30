@@ -4,7 +4,7 @@
   oep config show <probe>
   oep config slot <probe> --name x035 --wire rvswd --pins 2,54 --attach at-boot --retry 1 --mechanism dmseq
   oep config bind <probe> --port 1 --mode last-reset --stream slot:x035
-  oep config plan <probe> oep.fixture.uart#2 rx=48 tx=49       (the fn's whole plan; fn number or name#instance)
+  oep config plan <probe> oep.fixture.uart#1 rx=48 tx=49       (the fn's whole plan; fn number or name#instance)
   oep config remove <probe> bind 1        oep config save <probe>        oep config erase <probe>
 
 <probe>: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]. A change takes the lock (owner "oep config") and
@@ -79,7 +79,7 @@ def _config_parser(sub) -> None:
     bind.add_argument("--save", action="store_true")
     plan = cs.add_parser("plan", help="the pins an interface keeps (its whole plan, kept as a setting)")
     plan.add_argument("probe")
-    plan.add_argument("fn", help="an fn, or an interface name with #k for its k-th instance (1 = the first)")
+    plan.add_argument("fn", help="an fn, or name#instance (the list instance, 0 = the first; #0 may be left out, core §7.2)")
     plan.add_argument("roles", nargs="+", help="ROLE=CHANNEL, ROLE a number or the interface's role name (rx, tx, line...)")
     plan.add_argument("--save", action="store_true")
     label = cs.add_parser("label", help="name a channel (shown in oep.core's describe)")
@@ -116,20 +116,21 @@ def _pins(hst, fn: int, text: str | None, wire: str) -> tuple[int, int]:
 
 
 def _plan_fn(hst, spec: str) -> tuple[int, dict[str, int]]:
-    """fn and its role names (from the registry) for `spec`: an fn number, or name[#k] (k-th instance, 1-based)."""
+    """fn and its role names (from the registry) for `spec`: an fn number, or name[#instance] (the list's instance,
+    0-based, core §7.2)."""
     from . import registry as reg
     if spec.isdigit():
         fn = int(spec)
         name = next((e.name for e in core.list_entries(hst) if e.fn == fn), "")
     else:
         name, _, k = spec.partition("#")
-        fns = core.find_all(hst, name)
-        if not fns:
+        entries = [e for e in core.list_entries(hst, name, exact=True)]
+        if not entries:
             raise SystemExit(f"the probe offers no {name}")
-        index = int(k) - 1 if k else 0
-        if not 0 <= index < len(fns):
-            raise SystemExit(f"{name}: {len(fns)} instance(s), fns {fns}")
-        fn = fns[index]
+        instance = int(k) if k else 0
+        fn = next((e.fn for e in entries if e.instance == instance), None)
+        if fn is None:
+            raise SystemExit(f"{name}: instances {sorted(e.instance for e in entries)}, not {instance}")
     iface = reg.INTERFACES.get(name)
     roles = dict(iface.enum.get("role", {})) if iface else {}
     return fn, roles

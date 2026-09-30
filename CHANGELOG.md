@@ -1,6 +1,14 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Breaking: a bind's streams carry a length each (oep-spec probe.config §1.2, freeze decision 1, missed until now): `n × (len, kind, id)`, len 3 today; the fake skips a longer one's tail and refuses one under 3 as malformed.
+- (JA) 破壊的変更: bind のストリームの並びの各要素の前に長さを置く（oep-spec probe.config §1.2。凍結の決定 1 で漏れていた）: `n × (len、kind、id)`、今の len は 3。fake は長い要素の後ろを飛ばし、3 未満は malformed で断る。
+- (EN) `usb:X` is always a unit id, whatever its length (a 4-character unit id was read as a VID); a VID comes with its PID, `usb:VID:PID[:SERIAL]`.
+- (JA) `usb:X` は長さによらず unit id として読む（4 文字の unit id を VID と読んでいた）。VID は PID と一緒に `usb:VID:PID[:SERIAL]` で書く。
+- (EN) Breaking: the CLI's `name#k` is the list's instance, from 0 (oep-spec core §7.2's `name#instance`; `#0` may be left out). It was the k-th from 1.
+- (JA) 破壊的変更: CLI の `name#k` は list の instance（0 から）にした（oep-spec core §7.2 の `name#instance`、`#0` は省ける）。1 から数えた k 番目だった。
+- (EN) README: `registry.INTERFACES[name]` is the public way to reach an interface's numbers by name.
+- (JA) README: 名前からインターフェースの番号を引く公開の入口は `registry.INTERFACES[name]` と書いた。
 
 ## 0.0.20
 - (EN) A console write's chunk fits the probe's frame: frame - 12 - the stream's prefix (the console's stream u16; none on a fixture UART). It was frame - 13 for both, one byte over on a console with 64-byte frames. Found porting it to oep-client-js.
