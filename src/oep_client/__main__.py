@@ -64,6 +64,10 @@ def _config_parser(sub) -> None:
     slot.add_argument("--attach", choices=sorted(config.ATTACH), default="host")
     slot.add_argument("--retry", type=int, default=0, help="at-boot: try again every N s while absent (0: never)")
     slot.add_argument("--mechanism", choices=sorted(config.MECHANISM), default="dmseq")
+    slot.add_argument("--max-speed", type=int, default=0,
+                      help="the line's ceiling in Hz for the probe's own attach (0: none); the target's, e.g. 1000000")
+    slot.add_argument("--idle-clock", choices=sorted(config.IDLE_CLOCK), default="high",
+                      help="rvswd: SWCLK while the line rests (the target's: low on CH32L103 / V203)")
     slot.add_argument("--lock", help="MASK:VALUE (hex u32) the target_id (WCH DMI 0x7F) must match, e.g. ffffff0f:035e0600")
     slot.add_argument("--save", action="store_true", help="save after the change")
     bind = cs.add_parser("bind", help="what a serial port carries")
@@ -183,7 +187,7 @@ def _config(args) -> int:
                 mask, _, value = args.lock.partition(":")
                 lock = (1, struct.pack("<I", int(mask, 16)), struct.pack("<I", int(value, 16)))
             it = config.Slot(args.slot, fn, _pins(hst, fn, args.pins, args.wire), args.name, args.attach, args.retry,
-                             args.mechanism, lock)
+                             args.mechanism, lock, args.max_speed, args.idle_clock)
             _change(hst, cfg, [it], args.save)
         elif args.action == "bind":
             slots = {it.name: it.slot for it in cfg.items() if isinstance(it, config.Slot)}
@@ -250,6 +254,7 @@ def _show(hst, cfg, as_json: bool) -> int:
             s = by_slot.get(it.slot)
             pins = f"{it.pins[0]}" if it.pins[1] == 0xFFFF else f"{it.pins[0]},{it.pins[1]}"
             retry = f" retry {it.retry_s} s" if it.attach == "at-boot" else ""
+            retry += (f" max {it.max_speed} Hz" if it.max_speed else "") + (" idle-low" if it.idle_clock == "low" else "")
             lock = (f" lock {int.from_bytes(it.lock[1], 'little'):08x}:{int.from_bytes(it.lock[2], 'little'):08x}"
                     if it.lock else "")
             live = ""

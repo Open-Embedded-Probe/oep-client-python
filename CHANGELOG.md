@@ -1,6 +1,10 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) No default reset line (oep-if-debug §3): `Wire.attach_under_reset(channel, ...)` needs its channel, and `Wire.reset_channels()` reads the ones the probe allows (describe role_channels, role reset). The fake takes only those, and not one a plan holds.
+- (JA) 既定の reset 線は無くなった（oep-if-debug §3）: `Wire.attach_under_reset(channel, ...)` は channel が必須。probe が許す channel は `Wire.reset_channels()` で読む（describe の role_channels の role reset）。偽の probe はそれだけを受け、plan が持つ channel は断る。
+- (EN) The line's settings are the target's, passed by the host: `attach(..., idle_clock="low")` (rvswd, critical) and the probe.config slot's new max_speed / idle_clock fields (`oep config slot --max-speed --idle-clock`) for the probe's own attach. The slot item's layout changed.
+- (JA) 線の設定は target のもので、host が渡す: `attach(..., idle_clock="low")`（rvswd、critical）と、probe が自分で attach するための probe.config のスロットの max_speed / idle_clock（`oep config slot --max-speed --idle-clock`）。スロットの項目の形が変わった。
 - (EN) The fake probe keeps a plan the settings put in (oep-core §8): plan_release leaves it (n = 0 included) and plan_apply naming its fn is rejected unavailable.
 - (JA) 偽の probe は、設定が入れた plan を設定のものとして扱う（oep-core §8）: plan_release はそれを解かず（n = 0 でも）、その fn を挙げた plan_apply は rejected unavailable。
 

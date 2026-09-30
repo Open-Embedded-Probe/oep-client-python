@@ -14,8 +14,8 @@ import struct
 import time
 from dataclasses import dataclass, field
 
-from . import host as h, message as m, registry as reg
-from .core import Interface
+from . import catalog, host as h, message as m, registry as reg
+from .core import Interface, describe
 from .fixture import Gpio
 
 STATUS = reg.STATUS
@@ -109,7 +109,9 @@ class WireBase(Interface):
 class Wire(WireBase):
     """oep.wire.rvswd / oep.wire.swio (CH32 debug links to a RISC-V debug module)."""
     NAME = "oep.wire.rvswd"
-    DEFAULT_RESET = 0xFFFF
+    ROLE_RESET = reg.WIRE_RVSWD.enum["pin_role"]["reset"]
+    TAG_IDLE_CLOCK = reg.WIRE_RVSWD.tlv["attach"]["idle_clock"]
+    IDLE_CLOCK = reg.WIRE_RVSWD.enum["idle_clock"]
     RUN, HALT = reg.WIRE_RVSWD.enum["attach_method"]["run"], reg.WIRE_RVSWD.enum["attach_method"]["halt"]
     TAG_TARGET_ID = reg.WIRE_RVSWD.tlv["attach_answer"]["target_id"]
     SCHEME_WCH_DMI_7F = reg.WIRE_RVSWD.enum["target_id_scheme"]["wch_dmi_7f"]
@@ -125,12 +127,28 @@ class Wire(WireBase):
         v = tail.get(self.TAG_TARGET_ID)
         self.target_id = (v[0], bytes(v[1:])) if v else None
 
-    def attach(self, halt: bool = True, max_speed: int | None = None, pins: tuple[int, int] | None = None) -> tuple[int, int]:
+    def _idle_tlv(self, idle_clock: str | None) -> bytes:
+        # rvswd only, critical: a probe that cannot rest the line that way must refuse (oep-if-debug §3)
+        return b"" if idle_clock is None else m.tlv(self.TAG_IDLE_CLOCK, bytes([self.IDLE_CLOCK[idle_clock]]), critical=True)
+
+    def reset_channels(self) -> list[int]:
+        """The channels attach_under_reset may take (describe role_channels, role reset). There is no default reset
+        line: the host names one every time (oep-if-debug §3)."""
+        out = set()
+        for tag, v in describe(self.host, self.fn):
+            if tag & ~m.TAG_CRITICAL == catalog.ROLE_CHANNELS and v[0] == self.ROLE_RESET:
+                out.update(catalog.bitmap_to_channels(struct.unpack_from("<H", v, 1)[0], v[3:]))
+        return sorted(out)
+
+    def attach(self, halt: bool = True, max_speed: int | None = None, pins: tuple[int, int] | None = None,
+               idle_clock: str | None = None) -> tuple[int, int]:
         """-> (connection, DMSTATUS). Attaching an attached wire returns its connection as it is (self.existing).
         self.had_reset: a pending havereset was acknowledged first (a V00x's DMSTATUS halt / run bits stay frozen
         until then); self.speed_hz: the speed the probe chose; max_speed: a ceiling the probe must keep (critical);
-        self.target_id: (scheme, value) of the target's identity when the probe could read one (oep-if-debug §1)."""
-        body = bytes([self.HALT if halt else self.RUN]) + self._speed_tlv(max_speed) + self._pins_tlv(pins)
+        idle_clock: "high" / "low", how rvswd rests SWCLK (critical). Both are the target's, known by the host
+        (oep-if-debug §3). self.target_id: (scheme, value) of the target's identity when the probe could read one."""
+        body = (bytes([self.HALT if halt else self.RUN]) + self._speed_tlv(max_speed) + self._pins_tlv(pins)
+                + self._idle_tlv(idle_clock))
         rd = m.Reader(self._call(self.ATTACH, body).payload)
         conn, status, flags, self.speed_hz = rd.take("HIBI")
         self.had_reset, self.existing = bool(flags & 1), bool(flags & 2)
@@ -139,12 +157,13 @@ class Wire(WireBase):
         self._take_target_id(tail)
         return conn, status
 
-    def attach_under_reset(self, channel: int | None = None, hold_ms: int = 20,
-                           max_speed: int | None = None, pins: tuple[int, int] | None = None) -> tuple[int, int]:
-        """Hold the target in reset through `channel` (None: the probe's default reset line), attach, release and
-        halt it at once - the way back from firmware that turns the debug pins into GPIOs. -> (connection, dpc)"""
-        body = (struct.pack("<HH", self.DEFAULT_RESET if channel is None else channel, hold_ms) + self._speed_tlv(max_speed)
-                + self._pins_tlv(pins))
+    def attach_under_reset(self, channel: int, hold_ms: int = 20, max_speed: int | None = None,
+                           pins: tuple[int, int] | None = None, idle_clock: str | None = None) -> tuple[int, int]:
+        """Hold the target in reset through `channel` (always named: there is no default reset line; the probe
+        allows reset_channels()), attach, release and halt it at once - the way back from firmware that turns the
+        debug pins into GPIOs. -> (connection, dpc)"""
+        body = (struct.pack("<HH", channel, hold_ms) + self._speed_tlv(max_speed) + self._pins_tlv(pins)
+                + self._idle_tlv(idle_clock))
         rd = m.Reader(self._call(self.ATTACH_UNDER_RESET, body).payload)
         conn, dpc, self.speed_hz = rd.take("HII")
         self._take_target_id(rd.tail())

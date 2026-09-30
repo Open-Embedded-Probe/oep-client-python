@@ -60,6 +60,7 @@ WIRES = ("oep.wire.rvswd", "oep.wire.swio")
 OWNER = reg.CORE.tlv["open"]["owner"]
 SLOT_NAME = re.compile(r"[a-z0-9_-]{1,32}")
 NO_SLOT, NEVER = 0xFF, 0xFFFFFFFF
+PIN_ROLE_RESET = reg.WIRE_RVSWD.enum["pin_role"]["reset"]   # the channels attach_under_reset may take
 
 
 class Reject(Exception):
@@ -180,6 +181,7 @@ class Connection:
     speed: int = 4_000_000
     tid: int | None = None
     users: set = field(default_factory=set)            # "host" and/or ("slot", n)
+    idle_clock: int = 0                                # rvswd: SWCLK while the line rests, 0 high / 1 low
 
 
 @dataclass(frozen=True)
@@ -189,6 +191,8 @@ class Slot:
     pair: tuple[int, int]
     attach: int
     retry_s: int
+    max_speed: int                                     # 0: no ceiling (oep-if-debug §3: the target's, the host's to set)
+    idle_clock: int
     mechanism: int
     name: str
     lock: tuple[int, bytes, bytes] | None              # (scheme, mask, value)
@@ -249,9 +253,13 @@ class Endpoint:
         self.serial_ports = {i for i, k in enumerate(self.transports) if k in fake.SERIAL_KINDS}
         self.pairs: dict[int, list[tuple[int, int]]] = {}  # wire fn -> allowed (swdio, swclk), declared order
         self.max_connections: dict[int, int] = {}
+        self.reset_channels: dict[int, set[int]] = {}     # wire fn -> channels attach_under_reset may take (role 3)
         for fn, name in self.names.items():
             if name in WIRES:
                 self.pairs[fn] = [self._group_pair(name, t) for t in self.static[fn] if t[0] == catalog.CHANNEL_GROUP]
+                self.reset_channels[fn] = {
+                    c for t in self.static[fn] if t[0] == catalog.ROLE_CHANNELS and t[2] == PIN_ROLE_RESET
+                    for c in catalog.bitmap_to_channels(struct.unpack_from("<H", t, 3)[0], t[5:2 + t[1]])}
                 self.max_connections[fn] = next((t[2] for t in self.static[fn] if t[0] == fake.MAX_CONNECTIONS), 1)
         self.targets: dict[tuple[int, tuple[int, int]], FakeTarget] = {
             (fn, p): FakeTarget() for fn in sorted(self.pairs) for p in self.pairs[fn]}
@@ -658,10 +666,14 @@ class Endpoint:
                 if method > 1:
                     raise Reject(m.UNSUPPORTED)
             else:
-                channel, _hold = t.take("HH")
-                if channel not in (0xFFFF, self._channel_named("NRST")):
+                channel, _hold = t.take("HH")                       # no default reset line (oep-if-debug §3)
+                if channel not in self.reset_channels.get(fn, set()) or any(a[2] == channel for a in self.plan):
                     raise Reject(m.UNAVAILABLE)
-            got, ignored = t.tail({0x01, 0x03})
+            rvswd = self.names[fn] == "oep.wire.rvswd"
+            got, ignored = t.tail({0x01, 0x03, 0x04} if rvswd else {0x01, 0x03})
+            if 0x04 in got and (len(got[0x04]) != 1 or got[0x04][0] > 1):
+                raise Reject(m.MALFORMED)
+            idle_clock = got[0x04][0] if 0x04 in got else 0
             pair = self._pick_pair(fn, got)
             tg = self.targets[(fn, pair)]
             speed = min(4_000_000, struct.unpack("<I", got[0x01])[0]) if 0x01 in got else 4_000_000
@@ -677,6 +689,7 @@ class Endpoint:
                 flags |= 2
                 self.conns[cid].speed = min(self.conns[cid].speed, speed)
             c = self.conns[cid]
+            c.idle_clock = idle_clock                              # an existing connection takes the new rest level
             c.users.add("host")
             for n, s in self.slots.items():                        # a new connection for an evicted slot: a new cue
                 if s.wire_fn == fn and s.pair == pair:
@@ -1219,13 +1232,15 @@ class Endpoint:
 
     def _parse_slot(self, v: bytes) -> Slot:
         t = Take(v)
-        n, wire_fn, swdio, swclk, attach, retry_s, mech, name_len = t.take("BHHHBHBB")
+        n, wire_fn, swdio, swclk, attach, retry_s, max_speed, idle_clock, mech, name_len = t.take("BHHHBHIBBB")
         name = t.bytes(name_len)
         scheme = t.take("B")
         rest = v[t.at:]
         if n >= self.slots_max or attach not in SLOT_ATTACH.values():
             raise Reject(m.MALFORMED)
         if retry_s and attach != SLOT_ATTACH["at_boot"]:
+            raise Reject(m.MALFORMED)
+        if idle_clock > 1 or (idle_clock and self.names.get(wire_fn) != "oep.wire.rvswd"):
             raise Reject(m.MALFORMED)
         if not SLOT_NAME.fullmatch(name.decode("ascii", "replace")):
             raise Reject(m.MALFORMED)
@@ -1240,7 +1255,7 @@ class Endpoint:
             lock = (scheme, rest[:len(rest) // 2], rest[len(rest) // 2:])
         elif rest:
             raise Reject(m.MALFORMED)
-        return Slot(n, wire_fn, (swdio, swclk), attach, retry_s, mech, name.decode(), lock)
+        return Slot(n, wire_fn, (swdio, swclk), attach, retry_s, max_speed, idle_clock, mech, name.decode(), lock)
 
     def _parse_bind(self, v: bytes, slots: dict[int, Slot]) -> Bind:
         t = Take(v)
@@ -1292,7 +1307,9 @@ class Endpoint:
             if not tg.present:
                 return
             try:
-                cid = self._seat(s.wire_fn, s.pair, tg, 4_000_000, evict=False)   # automatic: never evicts
+                speed = min(4_000_000, s.max_speed) if s.max_speed else 4_000_000   # the slot's line settings
+                cid = self._seat(s.wire_fn, s.pair, tg, speed, evict=False)   # automatic: never evicts
+                self.conns[cid].idle_clock = s.idle_clock
             except Reject:
                 return
             tg.havereset = False

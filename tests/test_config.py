@@ -122,3 +122,32 @@ def test_a_settings_plan_is_not_the_sessions():
     assert e.value.result.detail == m.UNAVAILABLE
     hst.call(m.CORE_FN, m.OP_PLAN_RELEASE, b"\x00")
     assert {(5, 1, 20), (5, 2, 21)} <= ep.plan and 5 in ep.plan_from_config
+
+
+def test_reset_channels_and_a_named_reset_line():
+    """oep-if-debug §3: the host reads the reset channels the probe allows and names one; there is no default."""
+    from oep_client import target
+    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())
+    hst = h.Host(lambda b: ep.handle(b, 0))
+    hst.open(3000)
+    wire = target.Wire(hst, "oep.wire.swio")
+    assert wire.reset_channels() == [23]
+    conn, _dpc = wire.attach_under_reset(23)
+    assert conn in ep.conns
+
+
+def test_slot_line_settings_from_the_command(capsys, monkeypatch):
+    ep, hst = open_bench()
+
+    class FakeLink:
+        def close(self):
+            pass
+    hst.link = FakeLink()
+    hst.end()
+    monkeypatch.setattr(cli.link, "open_host", lambda target: hst)
+    assert cli.main(["config", "slot", "x", "--name", "l103", "--pins", "2,3", "--attach", "at-boot", "--retry", "1",
+                     "--max-speed", "1000000", "--idle-clock", "low"]) == 0
+    (slot,) = [i for i in config.ProbeConfig(hst).items() if isinstance(i, config.Slot)]
+    assert (slot.max_speed, slot.idle_clock) == (1_000_000, "low")
+    assert cli.main(["config", "show", "x"]) == 0
+    assert "max 1000000 Hz idle-low" in capsys.readouterr().out
