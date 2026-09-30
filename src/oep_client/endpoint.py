@@ -696,11 +696,14 @@ class Endpoint:
             got, _ = t.tail({0x01})
             if 0x01 in got and (count or len(got[0x01]) != 2):
                 raise Reject(m.MALFORMED)                          # skip goes with count 0 only
-            if any(not self._allows(fn, p) or set(p) & self._held(fn, p) for p in pairs):
-                raise Reject(m.UNAVAILABLE)                        # not allowed, or a channel something holds (§8.1)
+            live = [c.pair for c in self.conns.values() if c.fn == fn]
+            full = len(live) >= self.max_connections.get(fn, 1)   # every seat taken: the live pairs only
+            if any(not self._allows(fn, p) or set(p) & self._held(fn, p) or (full and p not in live) for p in pairs):
+                raise Reject(m.UNAVAILABLE)                        # not allowed, held (§8.1), or no seat to try it on
             if not pairs:                                          # the count-0 list, from `skip` on (oep-if-debug §1)
                 skip = struct.unpack("<H", got[0x01])[0] if 0x01 in got else 0
-                pairs = [p for p in self._allowed_pairs(fn) if not set(p) & self._held(fn, p)][skip:]
+                pairs = [p for p in self._allowed_pairs(fn)
+                         if not set(p) & self._held(fn, p) and (not full or p in live)][skip:]
             pairs = pairs[:255]                                    # tried is a u8
             found = []
             for p in pairs:
