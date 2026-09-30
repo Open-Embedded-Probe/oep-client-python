@@ -49,10 +49,10 @@ class Host:
         return r.payload
 
 
-def slot_item(n, wire, pair, attach=ATTACH["at_boot"], retry=1, mech=2, name=None, lock=None):
+def slot_item(n, wire, pair, attach=ATTACH["at_boot"], retry=1, mech=2, name=None, lock=None, max_speed=0, idle=0):
     raw = (name or f"s{n}").encode()
-    value = struct.pack("<BHHHBHBB", n, wire, *pair, attach, retry if attach == ATTACH["at_boot"] else 0, mech,
-                        len(raw)) + raw
+    value = struct.pack("<BHHHBHIBBB", n, wire, *pair, attach, retry if attach == ATTACH["at_boot"] else 0, max_speed,
+                        idle, mech, len(raw)) + raw
     value += b"\x00" if lock is None else bytes([1]) + lock[0] + lock[1]
     return m.tlv(ITEM["slot"], value)
 
@@ -198,7 +198,7 @@ def test_too_many_at_boot_slots_are_refused():
 def test_slot_names_are_url_safe(name):
     ep, h = bench()
     assert h.raw(6, 0x02, slot_item(0, 1, ep.pairs[1][0], name=name or None) if name else
-                 m.tlv(ITEM["slot"], struct.pack("<BHHHBHBB", 0, 1, *ep.pairs[1][0], 1, 1, 2, 0) + b"\x00")).detail == m.MALFORMED
+                 m.tlv(ITEM["slot"], struct.pack("<BHHHBHIBBB", 0, 1, *ep.pairs[1][0], 1, 1, 0, 0, 2, 0) + b"\x00")).detail == m.MALFORMED
 
 
 # ---- binds and the serial port ---------------------------------------------------------------------------
@@ -396,3 +396,38 @@ def test_read_from_a_last_mark_that_is_not_there_is_from_now():
     reset = reg.TARGET_CONSOLE.enum["mark_kind"]["reset"]
     got = h.raw(uart_fn, 0x02, struct.pack("<BQH", 3, reset, 64), session=False).payload
     assert struct.unpack_from("<Q", got)[0] == 10 and got[9:] == b""   # no reset mark: from now, not the old bytes
+
+
+def test_no_default_reset_line_only_the_declared_channels():
+    """oep-if-debug §3: attach_under_reset names its channel; the probe takes only role 3 (reset) channels, and not
+    one a plan holds."""
+    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())
+    h = Host(ep)
+    h.open()
+    assert ep.reset_channels[1] == {23}
+    for channel in (0xFFFF, 22):                                    # no default; 22 is not a reset line
+        assert h.raw(1, 0x04, struct.pack("<HH", channel, 20)).detail == m.UNAVAILABLE
+    h.ok(1, 0x04, struct.pack("<HH", 23, 20))
+    h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 23)))   # fixture.gpio takes NRST
+    assert h.raw(1, 0x04, struct.pack("<HH", 23, 20)).detail == m.UNAVAILABLE
+
+
+def test_idle_clock_is_rvswd_s_and_a_slot_carries_the_line_settings():
+    ep, h = bench()
+    pair = ep.pairs[1][0]
+    idle_low = m.tlv(0x04, b"\x01", critical=True)
+    h.ok(1, 0x02, b"\x01" + m.tlv(0x03, struct.pack("<HH", *pair), critical=True) + idle_low)
+    assert ep.conns[ep._conn_at(1, pair)].idle_clock == 1
+    assert h.raw(1, 0x02, b"\x01" + m.tlv(0x03, struct.pack("<HH", *pair), critical=True)
+                 + m.tlv(0x04, b"\x02", critical=True)).detail == m.MALFORMED
+    ep2, h2 = bench()
+    p2 = ep2.pairs[1][1]
+    h2.ok(6, 0x02, slot_item(0, 1, p2, name="l103", max_speed=1_000_000, idle=1))
+    c = ep2.conns[ep2._conn_at(1, p2)]
+    assert (c.speed, c.idle_clock) == (1_000_000, 1)                 # the probe's own attach uses the slot's settings
+    v003 = endpoint.Endpoint(fake.esp32_v003(), Clock())
+    hv = Host(v003)
+    hv.open()
+    assert hv.raw(9, 0x02, slot_item(0, 1, v003.pairs[1][0], idle=1)).detail == m.MALFORMED   # swio has no idle_clock
+    r = hv.raw(1, 0x02, b"\x01" + idle_low)
+    assert r.resolution == m.REJECTED and r.detail == m.UNSUPPORTED  # an unknown critical TLV on swio

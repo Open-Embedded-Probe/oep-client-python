@@ -29,6 +29,7 @@ MECHANISM = {k: v for k, v in reg.TARGET_CONSOLE.enum["mechanism"].items()}
 SLOT_STATE = {v: k.replace("_", "-") for k, v in _CFG.enum["slot_state"].items()}
 BIND_FLOW = {v: k for k, v in _CFG.enum["bind_flow"].items()}
 IDLE = {k.replace("_", "-"): v for k, v in _CFG.enum["idle_mode"].items()}
+IDLE_CLOCK = dict(reg.WIRE_RVSWD.enum["idle_clock"])            # a slot's idle_clock (oep-if-debug §3)
 STORAGE_STATE = {v: k for k, v in _CFG.enum["storage_state"].items()}
 
 
@@ -79,12 +80,15 @@ class Slot:
     retry_s: int = 0               # at-boot: try again every retry_s while the target is not there (0: never)
     mechanism: str = "dmseq"       # sdi, dmdata, dmseq
     lock: tuple[int, bytes, bytes] | None = None
+    max_speed: int = 0             # the line's ceiling in Hz for the probe's own attach (0: none) - the target's
+    idle_clock: str = "high"       # rvswd: SWCLK while the line rests, high / low - the target's (oep-if-debug §3)
     TAG = ITEM["slot"]
 
     def value(self) -> bytes:
         name = self.name.encode()
-        v = struct.pack("<BHHHBHBB", self.slot, self.wire_fn, *self.pins, ATTACH[self.attach],
-                        self.retry_s if self.attach == "at-boot" else 0, MECHANISM[self.mechanism], len(name)) + name
+        v = struct.pack("<BHHHBHIBBB", self.slot, self.wire_fn, *self.pins, ATTACH[self.attach],
+                        self.retry_s if self.attach == "at-boot" else 0, self.max_speed, IDLE_CLOCK[self.idle_clock],
+                        MECHANISM[self.mechanism], len(name)) + name
         if self.lock is None:
             return v + b"\x00"
         scheme, mask, value = self.lock
@@ -127,15 +131,16 @@ def decode(tag: int, v: bytes):
         return Label(struct.unpack_from("<H", v)[0], v[2:].decode("utf-8", "replace"))
     if tag == ITEM["idle"] and len(v) == 3:
         return Idle(struct.unpack_from("<H", v)[0], _name(IDLE, v[2]))
-    if tag == ITEM["slot"] and len(v) >= 13:
-        n, wire_fn, swdio, swclk, attach, retry_s, mech, name_len = struct.unpack_from("<BHHHBHBB", v)
-        name = v[12:12 + name_len].decode("ascii", "replace")
-        rest = v[12 + name_len:]
+    if tag == ITEM["slot"] and len(v) >= 18:
+        n, wire_fn, swdio, swclk, attach, retry_s, max_speed, idle, mech, name_len = struct.unpack_from("<BHHHBHIBBB", v)
+        name = v[17:17 + name_len].decode("ascii", "replace")
+        rest = v[17 + name_len:]
         lock = None
         if rest and rest[0]:
             half = (len(rest) - 1) // 2
             lock = (rest[0], rest[1:1 + half], rest[1 + half:])
-        return Slot(n, wire_fn, (swdio, swclk), name, _name(ATTACH, attach), retry_s, _name(MECHANISM, mech), lock)
+        return Slot(n, wire_fn, (swdio, swclk), name, _name(ATTACH, attach), retry_s, _name(MECHANISM, mech), lock,
+                    max_speed, _name(IDLE_CLOCK, idle))
     if tag == ITEM["bind"] and len(v) >= 4:
         port, mode, selected, n = struct.unpack_from("<BBBB", v)
         streams = [(_name(STREAM, v[4 + 3 * k]), struct.unpack_from("<H", v, 5 + 3 * k)[0]) for k in range(n)]
