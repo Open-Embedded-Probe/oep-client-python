@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `LogicCapture.force()`: waiting for the trigger, start now. `wait()` keeps the lock alive while it waits (`keepalive_s`, default 1 s): a trigger may come later than the lease.
+- (JA) `LogicCapture.force()`: トリガを待っていれば、今すぐ始める。`wait()` は待つ間ロックを保つ（`keepalive_s`、既定 1 秒）。トリガはリースより後に来ることがある。
 
 ## 0.0.11
 - (EN) The fake analog declares its 16-bit slots as bit 4 of the channels tag (bit i = 2^i, oep-if-capture §3.5).

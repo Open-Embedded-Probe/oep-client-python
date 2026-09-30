@@ -75,6 +75,19 @@ def test_a_trigger_is_where_the_channel_does_it(kind, role, value, index):
     assert seg.trigger_index == index
 
 
+
+def test_force_is_accepted_and_wait_keeps_the_lock():
+    ep, hst, lc, clock = bench()
+    core.plan_apply(hst, [(lc.fn, 0, 20), (lc.fn, 1, 21)])
+    lc.configure(rate=1_000_000, samples=64, trigger=(c.EDGE, 1, 1))
+    lc.start()
+    lc.force()                                  # the fake finds its trigger at start: nothing is waiting
+    sent = []
+    keepalive = hst.keepalive
+    hst.keepalive = lambda: (sent.append(1), keepalive())
+    (seg,) = lc.wait(keepalive_s=1e-9)
+    assert sent and seg.trigger_index is not None
+
 def test_slipped_segments_say_so():
     ep, hst, lc, _ = bench()
     ep.capture_slipped = True
