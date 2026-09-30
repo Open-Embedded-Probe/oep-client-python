@@ -160,6 +160,24 @@ def test_a_capture_listens_on_pins_other_interfaces_hold():
         core.plan_apply(hst, [(gpio, 1, 12)])                       # the UART still holds it against drivers
 
 
+
+def test_an_analog_pin_is_shared_with_nothing():
+    """The analog cuts its pads' digital input and output (oep-if-capture §1.2): refused whichever comes second."""
+    ep, hst, lc, _ = bench()
+    an = c.AnalogCapture(hst)
+    gpio = core.find(hst, "oep.fixture.gpio")
+    core.plan_apply(hst, [(an.fn, 0, 16)])
+    for other in ([(lc.fn, 0, 16)], [(gpio, 1, 16)]):             # logic that would read 0, a driver that would not drive
+        with pytest.raises(h.Rejected):
+            core.plan_apply(hst, other)
+    core.plan_apply(hst, [(lc.fn, 0, 17)])                          # another pad: fine
+    core.plan_release(hst, [an.fn])
+    core.plan_apply(hst, [(lc.fn, 0, 16)])
+    with pytest.raises(h.Rejected):
+        core.plan_apply(hst, [(an.fn, 0, 16)])                      # the analog after the logic: refused too
+    with pytest.raises(h.Rejected):
+        core.plan_apply(hst, [(an.fn, 0, 18), (gpio, 1, 18)])      # in one request as well
+
 def test_fake_serve_streams_over_tcp_to_the_client():
     """The whole path wireskein takes: open_host, take, plan, configure, subscribe, start, stream, stop, finish."""
     import subprocess

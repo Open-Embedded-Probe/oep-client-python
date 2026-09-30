@@ -518,7 +518,7 @@ class Endpoint:
     def _held(self, fn: int | None = None, pair: tuple[int, int] | None = None) -> set[int]:
         """Channels something holds (core §8.1): the plan, the slots' pairs, the live connections' pairs - except
         wire `fn`'s own connection on `pair` (attaching there again, or scanning through it)."""
-        held = {a[2] for a in self.plan if a[0] not in self.captures}   # a capture only listens
+        held = {a[2] for a in self.plan if not self._listens(a[0])}   # a logic capture only listens
         held |= {p for s in self.slots.values() for p in s.pair if p != 0xFFFF and not (s.wire_fn == fn and s.pair == pair)}
         held |= {p for c in self.conns.values() for p in c.pair if p != 0xFFFF and not (c.fn == fn and c.pair == pair)}
         return held
@@ -799,14 +799,27 @@ class Endpoint:
             return m.COMPLETED, m.SUCCESS, b""
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
+    def _listens(self, fn: int) -> bool:
+        """A logic capture only listens: it shares pins with anything (core §8.1). The analog does not: its pads go to
+        their analog function, cutting their digital input and output (oep-if-capture §1.2), as on this library's ESP32s."""
+        return fn in self.captures and not self.captures[fn].analog
+
     def _check_plan(self, got: list[tuple[int, int, int]]) -> None:
         """plan_apply's all-or-nothing check: the roles each fn has, and no pin another fn (or a slot) holds."""
         named = {fn for fn, _, _ in got}
-        # a capture only listens: it shares pins with anything, and nothing is kept from a pin by it (core §8.1)
-        kept = {a for a in self.plan if a[0] not in named and a[0] not in self.captures}
+        others = {a for a in self.plan if a[0] not in named}
+        kept = {a for a in others if not self._listens(a[0])}
         slot_pins = {p for s in self.slots.values() for p in s.pair if p != 0xFFFF}
         slot_pins |= {p for c in self.conns.values() for p in c.pair if p != 0xFFFF}   # a live connection's pins too
+        analog = {fn for fn, cap in self.captures.items() if cap.analog}
         for fn, role, ch in got:
+            beside = [f for f, _, c in got if c == ch and f != fn] + [a[0] for a in others if a[2] == ch]
+            if fn in analog:   # the analog shares its pin with nothing: another fn's plan, a slot, a connection
+                if role not in self._declared_roles(fn, ch) or beside or ch in slot_pins:
+                    raise Reject(m.UNAVAILABLE)
+                continue
+            if any(f in analog for f in beside):   # nor may anything come onto an analog pin
+                raise Reject(m.UNAVAILABLE)
             if fn in self.captures:
                 if role not in self._declared_roles(fn, ch):
                     raise Reject(m.UNAVAILABLE)
