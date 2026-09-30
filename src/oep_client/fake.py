@@ -120,7 +120,7 @@ def _analog_decl(frontends: list[tuple[int, int, int, int]], max_samples: int) -
     out = tuple(catalog.tlv(_ANAD["mode"], struct.pack("<BBII", _CAPM[k], 1, max_samples, 8 if k == "repeat" else 1))
                 for k in ("one_shot", "repeat", "streaming"))
     out += tuple(catalog.tlv(_ANAD["frontend"], struct.pack("<BiiI", *f)) for f in frontends)
-    return out + (catalog.tlv(_ANAD["channels"], bytes([4, 0b100])),                   # s 16
+    return out + (catalog.tlv(_ANAD["channels"], bytes([4, 1 << 4])),                   # s 16 (bit i = 2^i)
                   catalog.tlv(_ANAD["trigger"], struct.pack("<BI", 0b11001, max_samples - 1)),   # immediate, cross up / down
                   catalog.u32(_ANAD["max_read"], 4096), catalog.u16(_ANAD["segment_ring"], 8),
                   catalog.u32(FEATURES, 0b001))
