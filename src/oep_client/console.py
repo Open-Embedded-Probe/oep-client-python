@@ -136,10 +136,12 @@ class StreamIO:
         self.lost = 0
 
     def _limits(self) -> tuple[int, int]:
-        """(read, write) chunk sizes that fit the probe's frame: request header 6 + session 4 + stream 1 + count 2,
-        result header 5 + start 8 + flags 1."""
+        """(read, write) chunk sizes that fit the probe's frame: a write is request header 6 + session 4 + the stream's
+        prefix (the console's stream u16, none on a fixture UART) + count 2; a read's result is header 5 + start 8 +
+        flags 1. (The write was frame - 13 for both: one byte over on the console's 64-byte frames.)"""
         frame = self.source.host.confirmed()["max_frame"]
-        return max(1, min(self.MAX_READ, frame - 14)), max(1, min(self.MAX_WRITE, frame - 13))
+        write = frame - 12 - len(self.source._stream_prefix())
+        return max(1, min(self.MAX_READ, frame - 14)), max(1, min(self.MAX_WRITE, write))
 
     def read(self, n: int = 512) -> bytes:
         c = self.source.read_from(self.position, min(n, self._limits()[0]))
