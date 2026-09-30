@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.8
 - (EN) Wires whose pins the host chooses (oep-if-debug §1, role_channels): the fake takes any allowed free pair, skips the pairs whose pins something holds in a count-0 scan, holds a live connection's pins against plans, and has a profile for it (`rp2350-pins`). `Wire.scan()` goes through the whole list (at most 255 pairs a request; count 0 continues with the new skip TLV until tried = 0).
 - (JA) host がピンを選ぶ wire（oep-if-debug §1、role_channels）: 偽の probe は、許された空いている組ならどれでも受け、count = 0 の scan では何かが持っているピンの組を飛ばし、生きている接続のピンを plan から守る。そのための profile（`rp2350-pins`）を足した。`Wire.scan()` は並びを最後まで回る（1 回 255 組まで。count = 0 は新しい skip の TLV で tried = 0 まで続ける）。
 
