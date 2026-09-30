@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.19
 - (EN) The pre-freeze decisions (oep-spec docs/v1-freeze-decisions.ja.md), in the fake and the client at once:
   - `oep.fixture.capture` is `oep.fixture.logic`; the I2C / SPI targets are the standard `oep.fixture.i2c-target` / `spi-target` (`fixture.I2cTarget` / `SpiTarget`; `esp32_targets` is gone). Their status is separate fields (`I2cStatus(state=, mode=, armed=, queued=, …)`); `read_hw` is gone, `set_stretch` is `stretch` (op 0x07).
   - Answer lists put each element's length first (core §2.3): list, scan, connections, marks, capture segments (`message.Reader.element()`, `message.element()`); what an element carries after the known fields is skipped.
