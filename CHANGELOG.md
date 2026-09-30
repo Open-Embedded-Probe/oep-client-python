@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) The fake's analog shares its pins with nothing (oep-if-capture §1.2): a plan that puts a logic capture, a fixture or a wire on an analog channel, or the analog on a pin another fn / a slot / a connection uses, is rejected unavailable, whichever comes second. A logic capture still listens on anything else.
+- (JA) 偽の probe のアナログは、ピンを誰とも共有しない（oep-if-capture §1.2）。アナログのチャネルにロジックのキャプチャ、fixture、線を載せる plan も、ほかの fn・スロット・接続が使うピンにアナログを載せる plan も、後から来た方を rejected unavailable で断る。ロジックのキャプチャは、それ以外ではどのピンでも聞ける。
 
 ## 0.0.16
 - (EN) No user-facing changes recorded.
