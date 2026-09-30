@@ -80,8 +80,14 @@ oep config save <probe>                      # 再起動の後も残す（remove
 
 `endpoint.Endpoint` は oep-spec の規範どおりに答える偽の probe で、ch32rv・この client・probe の firmware を突き合わせる
 「動く spec」として使う（spec が変わったら、probe の firmware より先にここを合わせる）。`fake` は宣言の例（profile:
-`p4-x035`、`esp32-v003`、`p4-bench` = スロット 3 か所と席 2 つの架空の治具）、`fake_serial` はシリアルの口のバイトの側（COBS の
-候補、生のバイトと bind、セッション中の停止と再開）。
+`p4-x035`、`esp32-v003`、`p4-bench` = スロット 3 か所と席 2 つの架空の治具、`rp2350-pins` = host がピンを選ぶ wire）、`fake_serial` は
+シリアルの口のバイトの側（COBS の候補、生のバイトと bind、セッション中の停止と再開）。
+
+`fake_capture` は `oep.fixture.capture`（ロジック）: ワンショット、リピート（実際のレートで時計どおりに区画ができ、リング、release）、
+ストリーミング（購読している間のデータの push）、レベル / エッジのトリガとプリトリガ、出来事。取れるものは決まっている: サンプル i は
+カウンタの値 i で、チャネル k はそのビット k（周期 2^(k+1) サンプルの方形波）。layout は profile が許す形（`p4-x035`: P4 の
+PARLIO と同じ w 1〜16、3 本なら w 4。`esp32-v003`: classic ESP32 の sampler と同じ w 8、ワンショットだけ）。capture は聞くだけ
+なので、ほかのインターフェースが持つピンにも plan できる。
 
 外のプログラムの試験には `fake_serve` を子プロセスで使う:
 
@@ -93,6 +99,7 @@ uv run python -m oep_client.fake_serve --pty --profile p4-bench --slot x035 --bi
 
 pty がシリアルの口（host が TIOCEXCL を掛けて開く）、`--tcp PORT` は `--framing cobs`（シリアルの口）か `--framing length`
 （vendor bulk / TCP の形）。故障の注入は `--drop N`（N 番目の答えを 1 回出さない。要求は実行済みなので送り直しは覚えた答えを
-受ける）、`--noise TEXT`（答えの前に雑音）、`--corrupt N`（N 番目の答えの CRC を 1 回壊す）。ほかは `--help`。
+受ける）、`--noise TEXT`（答えの前に雑音）、`--corrupt N`（N 番目の答えの CRC を 1 回壊す）。`--capture-slipped` は capture の
+区画すべてに flags bit2 を立てる。出来事とデータの push は pty にも TCP（両方の framing）にも出る。ほかは `--help`。
 
 v0 の client（`oep_client.v0`）は 2026-09-26 に消した（git の履歴に残る）。v0 を話す probe はもう無い。

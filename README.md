@@ -85,8 +85,15 @@ A run on hardware: ArduinoCore-CH32's `tests/manual/oep_smoke/` (`oep_smoke.py`,
 
 `endpoint.Endpoint` is a fake probe that answers as oep-spec says; ch32rv, this client and the probe firmware are checked
 against it (when the spec changes, this is brought in line before the firmware). `fake` holds example declarations (profiles
-`p4-x035`, `esp32-v003`, `p4-bench` = a made-up jig with three slots and two seats), `fake_serial` the byte side of a serial
-port (COBS candidates, raw bytes and binds, held during a session and resumed after it).
+`p4-x035`, `esp32-v003`, `p4-bench` = a made-up jig with three slots and two seats, `rp2350-pins` = a wire whose pins the host
+chooses), `fake_serial` the byte side of a serial port (COBS candidates, raw bytes and binds, held during a session and
+resumed after it).
+
+`fake_capture` is `oep.fixture.capture` (logic): one-shot, repeat (segments with the clock at the actual rate, a ring,
+release) and streaming (data pushes while subscribed), level / edge triggers with a pretrigger, and events. What it
+captures is known: sample i is the counter i, channel k its bit k (a square wave of period 2^(k+1) samples), in the layout
+the profile allows (`p4-x035`: w 1-16 as the P4's PARLIO, three channels in w 4; `esp32-v003`: w 8 as the classic ESP32's
+sampler, one-shot only). A capture only listens, so it may be planned on pins other interfaces hold.
 
 Other programs' tests run `fake_serve` as a child process:
 
@@ -100,4 +107,5 @@ The pty is a serial port (the host opens it with TIOCEXCL); `--tcp PORT` is `--f
 `--framing length` (the vendor bulk / TCP form). Faults: `--drop N` (the N-th answer is not sent, once; the request did run,
 so a resend gets the remembered result), `--noise TEXT` (noise before every answer), `--corrupt N` (the N-th answer's CRC
 broken once). `--uart-plan` / `--uart-rx` give the first fixture UART a plan and RX bytes, `--run-hook` a host's own model of
-riscv-dm run. The rest: `--help`.
+riscv-dm run, `--capture-slipped` flags bit2 on every capture segment. Events and data pushes go out on the pty and on TCP
+(both framings). The rest: `--help`.

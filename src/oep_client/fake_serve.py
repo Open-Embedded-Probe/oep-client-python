@@ -12,7 +12,7 @@ The first line on stdout says where to open: `PTY /dev/pts/N` or `PORT n`. The p
 (so a test's child never stays behind), or with --once when the first TCP connection closes.
 
 Options:
-  --profile NAME        p4-x035 (default), esp32-v003 or p4-bench (p4_x035 style names work too)
+  --profile NAME        p4-x035 (default), esp32-v003, p4-bench or rp2350-pins (p4_x035 style names work too)
   --port-index N        which serial port of the profile the pty / cobs TCP is (default: the first one)
   --noise TEXT          raw bytes written in front of every answer (the host must skip them)
   --drop N              the N-th answer (1-based) is not sent, once (the request did run: a resend gets the
@@ -25,6 +25,7 @@ Options:
   --bind MODE           bind the serial port to every --slot: last-reset, manual or mixed
   --target-id HEX       the target_id every target's attach reports (wch_dmi_7f)
   --absent N            the N-th pin pair of the first wire has no target (repeatable)
+  --capture-slipped     every oep.fixture.capture segment says flags bit2 (slipped: a pace that fell behind)
   --uart-plan           the first oep.fixture.uart gets its RX / TX plan at boot, as if saved (the jig's "DUT TX" /
                         "DUT RX" labels when the profile has them, else the first free channels); configure then works
   --uart-rx TEXT        what arrives on that UART's RX every --every ms once it is configured (%d = a counter)
@@ -70,6 +71,7 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
         hook = _load_hook(a.run_hook)
         for tg in ep.targets.values():
             tg.run_hook = (lambda t: lambda pc, regs: hook(t, pc, regs))(tg)
+    ep.capture_slipped = getattr(a, "capture_slipped", False)
     for n in a.absent:
         ep.targets[(wire, ep.pairs[wire][n])].present = False
     items = []
@@ -294,6 +296,10 @@ def _serve_conn(a, ep, console, conn, watch_stdin) -> bool:
                 conn.setblocking(False)
         else:
             ep.tick()
+            for f in ep.pushes():                                  # events and data pushes (core §11)
+                conn.setblocking(True)
+                conn.sendall(struct.pack("<H", len(f)) + f)
+                conn.setblocking(False)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -317,6 +323,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--uart-rx")
     ap.add_argument("--run-hook")
     ap.add_argument("--once", action="store_true")
+    ap.add_argument("--capture-slipped", action="store_true")
     a = ap.parse_args(argv)
     if a.tcp is None and a.framing == "length":
         ap.error("--framing length is for --tcp")

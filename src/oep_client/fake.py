@@ -108,6 +108,21 @@ TRANSPORT = reg.CORE.enum["transport_kind"]
 SERIAL_KINDS = {TRANSPORT["uart_bridge"], TRANSPORT["usb_cdc"], TRANSPORT["usb_serial_jtag"]}
 NS = "io.github.ch32-riscv-ug"
 MECHANISMS = reg.TARGET_CONSOLE.tlv["describe"]["mechanisms"]
+_CAPD = reg.FIXTURE_CAPTURE.tlv["describe"]
+_CAPM = reg.FIXTURE_CAPTURE.enum["mode"]
+
+
+def _capture_decl(modes: list[str], max_channels: int, widths: list[int], max_samples: int, ring: int,
+                  max_read: int) -> tuple[bytes, ...]:
+    """oep.fixture.capture's declarations (oep-if-capture §3.5): a mode entry per mode, channels (max, the w allowed as
+    bits: bit i = w 2^i), the trigger types (immediate, level, edge) with the most pretrigger, max_read, segment_ring."""
+    out = tuple(catalog.tlv(_CAPD["mode"], struct.pack("<BBII", _CAPM[k], 1, max_samples, ring if k == "repeat" else 1))
+                for k in modes)
+    bits = sum(1 << (w.bit_length() - 1) for w in widths)
+    return out + (catalog.tlv(_CAPD["channels"], bytes([max_channels, bits])),
+                  catalog.tlv(_CAPD["trigger"], struct.pack("<BI", 0b111, max_samples - 1)),
+                  catalog.u32(_CAPD["max_read"], max_read), catalog.u16(_CAPD["segment_ring"], ring),
+                  catalog.u32(FEATURES, 0b001))
 MAX_CONNECTIONS = reg.WIRE_RVSWD.tlv["describe"]["max_connections"]
 _CFG = reg.PROBE_CONFIG.tlv["describe"]
 
@@ -165,9 +180,11 @@ def p4_x035() -> FakeProbe:
             catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
         Offered(6, 4, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
             catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
-        Offered(7, 5, "oep.fixture.capture", _roles({k: pins for k in range(8)}) + (
+        # the P4's PARLIO: w 1-16, one-shot / repeat / streaming
+        Offered(7, 5, "oep.fixture.capture", _roles({k: pins for k in range(16)}) + (
             catalog.u32(MAX_CLOCK_HZ, 20_000_000), catalog.u32(MIN_CLOCK_HZ, 1_000),
-            catalog.u16(MAX_LENGTH, 65000), catalog.u8(IMPLEMENTATION, 3))),
+            catalog.u16(MAX_LENGTH, 65000), catalog.u8(IMPLEMENTATION, 3))
+            + _capture_decl(["one_shot", "repeat", "streaming"], 16, [1, 2, 4, 8, 16], 1 << 20, 8, 4096)),
         Offered(8, 6, f"{NS}.esp32.i2c-target", _roles({1: pins, 2: pins}) + (
             catalog.u16(MAX_LENGTH, 128), catalog.u32(MAX_CLOCK_HZ, 1_000_000),
             catalog.u32(FEATURES, 0b11), catalog.u8(IMPLEMENTATION, 2))),
@@ -194,8 +211,10 @@ def esp32_v003() -> FakeProbe:
         Offered(4, 2, "oep.fixture.gpio", _roles({1: wired + [23]})),
         Offered(5, 3, "oep.fixture.uart", _roles({1: wired, 2: wired}) + (
             catalog.u32(MAX_CLOCK_HZ, 115_200), catalog.u8(IMPLEMENTATION, 2))),
+        # the classic ESP32's GPIO sampler: a byte a sample (w 8), one-shot
         Offered(6, 4, "oep.fixture.capture", _roles({k: wired for k in range(4)}) + (
-            catalog.u32(MAX_CLOCK_HZ, 2_000_000), catalog.u32(MIN_CLOCK_HZ, 400_000), catalog.u8(IMPLEMENTATION, 1))),
+            catalog.u32(MAX_CLOCK_HZ, 2_000_000), catalog.u32(MIN_CLOCK_HZ, 400_000), catalog.u8(IMPLEMENTATION, 1))
+            + _capture_decl(["one_shot"], 8, [8], 65536, 1, 480)),
         Offered(7, 5, f"{NS}.esp32.i2c-target", _roles({1: wired, 2: wired}) + (
             catalog.u16(MAX_LENGTH, 16), catalog.u32(MAX_CLOCK_HZ, 100_000), catalog.u8(IMPLEMENTATION, 2))),
         # Two fixed pin sets (an example of channel_group; GPIO23 is the DUT's NRST on this jig).
