@@ -191,34 +191,34 @@ def p4_x035() -> FakeProbe:
               _transports([(TRANSPORT["usb_serial_jtag"], 0xFF), (TRANSPORT["vendor_bulk"], 0),
                            (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)])
               + (catalog.u8(CORE_OEP_PID, 1), catalog.text(CORE_CHIP, "esp32p4 v1.0"))),
-        Offered(1, 1, "oep.wire.rvswd", (
+        Offered(1, 0, "oep.wire.rvswd", (
             catalog.channel_group(1, [(1, 2), (2, 54)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(IMPLEMENTATION, 1),
             catalog.u8(MAX_CONNECTIONS, 1))),
-        Offered(2, 1, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
+        Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
                                               catalog.u16(MAX_LENGTH, 1000))),
-        Offered(3, 1, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
-        Offered(4, 2, "oep.fixture.gpio", _roles({1: pins})),
-        Offered(5, 3, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
+        Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
+        Offered(4, 0, "oep.fixture.gpio", _roles({1: pins})),
+        Offered(5, 0, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
             catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
-        Offered(6, 4, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
+        Offered(6, 1, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
             catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
         # the P4's PARLIO: w 1-16, one-shot / repeat / streaming
-        Offered(7, 5, "oep.fixture.logic", _roles({k: pins for k in range(16)}) + (
+        Offered(7, 0, "oep.fixture.logic", _roles({k: pins for k in range(16)}) + (
             catalog.u32(MAX_CLOCK_HZ, 20_000_000), catalog.u32(MIN_CLOCK_HZ, 1_000),
             catalog.u16(MAX_LENGTH, 65000), catalog.u8(IMPLEMENTATION, 3))
             + _capture_decl(["one_shot", "repeat", "streaming"], 16, [1, 2, 4, 8, 16], 1 << 20, 8, 4096)),
-        Offered(8, 6, "oep.fixture.i2c-target", _roles({1: pins, 2: pins}) + (
+        Offered(8, 0, "oep.fixture.i2c-target", _roles({1: pins, 2: pins}) + (
             catalog.u16(MAX_LENGTH, 128), catalog.u32(MAX_CLOCK_HZ, 1_000_000),
             catalog.u32(FEATURES, 0b11), catalog.u8(IMPLEMENTATION, 2))),
-        Offered(9, 7, "oep.fixture.spi-target", _roles({1: pins, 2: pins, 3: pins, 4: pins}) + (
+        Offered(9, 0, "oep.fixture.spi-target", _roles({1: pins, 2: pins, 3: pins, 4: pins}) + (
             catalog.u16(MAX_LENGTH, 64), catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
-        _config(10, 8, slots_max=1),
+        _config(10, 0, slots_max=1),
         # the P4's ADC1 (GPIO16-23): one ADC for all its channels, 611 Hz - 83.3 kHz in all; ESP32-style attenuations
-        Offered(11, 1, "oep.fixture.analog", _roles({k: list(range(16, 24)) for k in range(4)}) + (
+        Offered(11, 0, "oep.fixture.analog", _roles({k: list(range(16, 24)) for k in range(4)}) + (
             catalog.u32(MAX_CLOCK_HZ, 83_333), catalog.u32(MIN_CLOCK_HZ, 611), catalog.u8(IMPLEMENTATION, 3))
             + _analog_decl([(0, 0, 950, 0), (1, 0, 1250, 2500), (2, 0, 1750, 6000), (3, 0, 3100, 12000)], 65536)),
         # the logic (fn 7) and the analog (fn 11) together; the ADC's 83.3 kHz is shared by its channels
-        Offered(12, 1, "oep.fixture.capture-group", _group_decl([7, 11], [(83_333, [11])], {11: 5000})),
+        Offered(12, 0, "oep.fixture.capture-group", _group_decl([7, 11], [(83_333, [11])], {11: 5000})),
     ])
 
 
@@ -231,26 +231,26 @@ def esp32_v003() -> FakeProbe:
         _core("3.0.0", "esp32", "0070070d9394", 40, reserved, f"{NS}.esp32-v003",
               {16: "SWIO", 23: "NRST", 22: "DUT TX", 21: "DUT RX"},
               _transports([(TRANSPORT["uart_bridge"], 0xFF)])),
-        Offered(1, 1, "oep.wire.swio", (catalog.channel_group(1, [(1, 16)]), catalog.role_channels(3, [23]),
+        Offered(1, 0, "oep.wire.swio", (catalog.channel_group(1, [(1, 16)]), catalog.role_channels(3, [23]),
                                         catalog.u8(IMPLEMENTATION, 1), catalog.u8(MAX_CONNECTIONS, 1))),
-        Offered(2, 1, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b0111), catalog.u8(IMPLEMENTATION, 1),
+        Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b0111), catalog.u8(IMPLEMENTATION, 1),
                                               catalog.u16(MAX_LENGTH, 40))),
-        Offered(3, 1, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
-        Offered(4, 2, "oep.fixture.gpio", _roles({1: wired + [23]})),
-        Offered(5, 3, "oep.fixture.uart", _roles({1: wired, 2: wired}) + (
+        Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
+        Offered(4, 0, "oep.fixture.gpio", _roles({1: wired + [23]})),
+        Offered(5, 0, "oep.fixture.uart", _roles({1: wired, 2: wired}) + (
             catalog.u32(MAX_CLOCK_HZ, 115_200), catalog.u8(IMPLEMENTATION, 2))),
         # the classic ESP32's GPIO sampler: a byte a sample (w 8), one-shot
-        Offered(6, 4, "oep.fixture.logic", _roles({k: wired for k in range(4)}) + (
+        Offered(6, 0, "oep.fixture.logic", _roles({k: wired for k in range(4)}) + (
             catalog.u32(MAX_CLOCK_HZ, 2_000_000), catalog.u32(MIN_CLOCK_HZ, 400_000), catalog.u8(IMPLEMENTATION, 1))
             + _capture_decl(["one_shot"], 8, [8], 65536, 1, 480)),
-        Offered(7, 5, "oep.fixture.i2c-target", _roles({1: wired, 2: wired}) + (
+        Offered(7, 0, "oep.fixture.i2c-target", _roles({1: wired, 2: wired}) + (
             catalog.u16(MAX_LENGTH, 16), catalog.u32(MAX_CLOCK_HZ, 100_000), catalog.u8(IMPLEMENTATION, 2))),
         # Two fixed pin sets (an example of channel_group; GPIO23 is the DUT's NRST on this jig).
-        Offered(8, 6, "oep.fixture.spi-target", (
+        Offered(8, 0, "oep.fixture.spi-target", (
             catalog.channel_group(1, [(1, 18), (2, 19), (3, 5), (4, 4)]),
             catalog.channel_group(2, [(1, 14), (2, 13), (3, 27), (4, 26)]),
             catalog.u16(MAX_LENGTH, 32), catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
-        _config(9, 7, slots_max=1, modes=0b011, storage=1024),
+        _config(9, 0, slots_max=1, modes=0b011, storage=1024),
     ])
 
 
@@ -264,17 +264,17 @@ def p4_bench() -> FakeProbe:
               {2: "A SWDIO", 3: "A SWCLK", 4: "B SWDIO", 5: "B SWCLK", 6: "C SWDIO", 7: "C SWCLK"},
               _transports([(TRANSPORT["usb_serial_jtag"], 0xFF), (TRANSPORT["vendor_bulk"], 0),
                            (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)]) + (catalog.u8(CORE_OEP_PID, 1),)),
-        Offered(1, 1, "oep.wire.rvswd", (
+        Offered(1, 0, "oep.wire.rvswd", (
             catalog.channel_group(1, [(1, 2), (2, 3)]), catalog.channel_group(2, [(1, 4), (2, 5)]),
             catalog.channel_group(3, [(1, 6), (2, 7)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000),
             catalog.u8(IMPLEMENTATION, 1), catalog.u8(MAX_CONNECTIONS, 2))),
-        Offered(2, 1, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
+        Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
                                               catalog.u16(MAX_LENGTH, 1000))),
-        Offered(3, 1, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
-        Offered(4, 2, "oep.fixture.gpio", _roles({1: pins})),
-        Offered(5, 3, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
+        Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
+        Offered(4, 0, "oep.fixture.gpio", _roles({1: pins})),
+        Offered(5, 0, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
             catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
-        _config(6, 4, slots_max=4),
+        _config(6, 0, slots_max=4),
     ])
 
 
@@ -287,13 +287,13 @@ def rp2350_pins() -> FakeProbe:
     return FakeProbe("rp2350-pins", 1024, [
         _core("3.0.0", "rp2350", "e66138935f2b1f2c", 30, reserved, "",
               {}, _transports([(TRANSPORT["usb_cdc"], 0)])),
-        Offered(1, 1, "oep.wire.rvswd", _roles({1: pins, 2: pins, 3: pins}) + (
+        Offered(1, 0, "oep.wire.rvswd", _roles({1: pins, 2: pins, 3: pins}) + (
             catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(IMPLEMENTATION, 1), catalog.u8(MAX_CONNECTIONS, 1))),
-        Offered(2, 1, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
+        Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
                                               catalog.u16(MAX_LENGTH, 1000))),
-        Offered(3, 1, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
-        Offered(4, 2, "oep.fixture.gpio", _roles({1: pins})),
-        Offered(5, 3, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
+        Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
+        Offered(4, 0, "oep.fixture.gpio", _roles({1: pins})),
+        Offered(5, 0, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
             catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
     ])
 

@@ -7,6 +7,8 @@
 - (JA) `usb:X` は長さによらず unit id として読む（4 文字の unit id を VID と読んでいた）。VID は PID と一緒に `usb:VID:PID[:SERIAL]` で書く。
 - (EN) Breaking: the CLI's `name#k` is the list's instance, from 0 (oep-spec core §7.2's `name#instance`; `#0` may be left out). It was the k-th from 1.
 - (JA) 破壊的変更: CLI の `name#k` は list の instance（0 から）にした（oep-spec core §7.2 の `name#instance`、`#0` は省ける）。1 から数えた k 番目だった。
+- (EN) The fake probes number each interface's instance from 0 per name (core §7.2), as the probe firmware now does; they had arbitrary numbers.
+- (JA) fake の probe はインターフェースの instance を名前ごとに 0 から振る（core §7.2）。probe の firmware も同じにした。これまでは適当な番号だった。
 - (EN) README: `registry.INTERFACES[name]` is the public way to reach an interface's numbers by name.
 - (JA) README: 名前からインターフェースの番号を引く公開の入口は `registry.INTERFACES[name]` と書いた。
 
