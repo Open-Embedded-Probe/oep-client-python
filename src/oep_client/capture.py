@@ -1,5 +1,9 @@
-"""oep.fixture.capture / oep.fixture.analog revision 1 (oep-spec docs/oep-if-capture.ja.md: §1 layouts, §2 segments,
-§3 operations). Numbers from `registry`.
+"""oep.fixture.capture / oep.fixture.analog / oep.fixture.capture-group revision 1 (oep-spec docs/oep-if-capture.ja.md:
+§1 layouts, §2 segments, §3 operations, §3.8 calibration, §4 groups). Numbers from `registry`.
+
+Times are the probe's one clock (ns since its boot, comparable within one boot_id): estimates with an uncertainty, the
+probe's known corrections applied. Analog values are always raw; the probe's 1st-order scale, its calibration data and
+its reference are for the host to choose from.
 
 configure: a TLV the probe cannot honour is refused (rejected unsupported, 0x0B, payload = the tag) when the host marked
 it critical, and otherwise ignored and listed in the answer's ignored TLV (0x7F, oep-core §2.3)."""
@@ -17,12 +21,17 @@ from .frames import FramingLost
 from .core import Interface, confirm
 
 _CAP = reg.FIXTURE_CAPTURE
+_ANA = reg.FIXTURE_ANALOG
+_GRP = reg.FIXTURE_CAPTURE_GROUP
 # configure TLVs; bit 7 of a tag = critical (the probe must reject what it cannot do)
 MODE, RATE, SAMPLES, SEGMENTS, TRIGGER, PRETRIGGER, FRONTEND = (
     _CAP.tlv["configure"][k] for k in ("mode", "rate", "samples", "segments", "trigger", "pretrigger", "frontend"))
-ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, TIMING, SCALE, BLOCKING = (
-    _CAP.tlv["configure_answer"][k] for k in ("actual_rate", "layout", "actual_samples", "actual_segments", "timing",
-                                              "scale", "blocking_ms"))
+ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, TIMING, SCALE, BLOCKING, SKEW, FRONTEND_USED, REFERENCE, \
+    RATE_ACCURACY = (_ANA.tlv["configure_answer"][k] for k in (
+        "actual_rate", "layout", "actual_samples", "actual_segments", "timing", "scale", "blocking_ms", "skew",
+        "frontend_used", "reference", "rate_accuracy"))
+FACTORY, VREFINT = _ANA.tlv["calibration_answer"]["factory"], _ANA.tlv["calibration_answer"]["vrefint"]
+REFERENCE_SOURCE = {v: k for k, v in _ANA.enum["reference_source"].items()}
 IGNORED = m.TAG_IGNORED
 CRITICAL = m.TAG_CRITICAL
 ONE_SHOT, REPEAT, STREAMING = (_CAP.enum["mode"][k] for k in ("one_shot", "repeat", "streaming"))
@@ -37,7 +46,8 @@ def tlvs(payload: bytes) -> list[tuple[int, bytes]]:
     return m.split_tlvs(payload)
 
 
-SEGMENT_BYTES = 29   # serial u32, position u64, samples u32, start_us u64, trigger_index u32, flags u8
+SEGMENT_BYTES = 33   # serial u32, position u64, samples u32, start_ns u64, start_uncertainty_ns u32, trigger_index u32,
+                     # flags u8
 
 
 @dataclass
@@ -45,7 +55,8 @@ class Segment:
     serial: int
     position: int
     samples: int
-    start_us: int
+    start_ns: int                    # the first sample's time on the probe's clock (an estimate)
+    start_uncertainty_ns: int        # +- of start_ns (a guide, not a promise)
     trigger_index: int | None
     flags: int
 
@@ -56,8 +67,8 @@ class Segment:
 
     @classmethod
     def unpack(cls, b: bytes) -> "Segment":
-        serial, position, samples, start_us, trig, flags = struct.unpack_from("<IQIQIB", b)
-        return cls(serial, position, samples, start_us, None if trig == 0xFFFFFFFF else trig, flags)
+        serial, position, samples, start_ns, uncertainty, trig, flags = struct.unpack_from("<IQIQIIB", b)
+        return cls(serial, position, samples, start_ns, uncertainty, None if trig == 0xFFFFFFFF else trig, flags)
 
 
 @dataclass
@@ -74,9 +85,13 @@ class Config:
     segments: int = 0
     jitter_kind: int = 0
     jitter_ns: int = 0
-    skew_ns: list[int] = field(default_factory=list)
-    zero: int = 0
-    scale_nv: int = 0
+    rate_measured: bool = False                  # rate_accuracy: the rate was measured (else computed from a divider)
+    rate_ppm: int = 0                            # its uncertainty (0: unknown)
+    skew_ns: dict[int, int] = field(default_factory=dict)      # analog, per channel (role)
+    zero: dict[int, int] = field(default_factory=dict)         # analog, per channel
+    scale_nv: dict[int, int] = field(default_factory=dict)     # analog, nV per value, per channel
+    frontend: dict[int, int] = field(default_factory=dict)     # analog: the frontend each channel took
+    reference: tuple[str, int, bool] | None = None             # analog: (source, mV, measured)
     blocking_ms: int = 0
     ignored: list[int] = field(default_factory=list)
 
@@ -140,9 +155,19 @@ def _config(payload: bytes, analog: bool) -> Config:
             c.segments = struct.unpack("<I", v)[0]
         elif tag == TIMING:
             c.jitter_kind, c.jitter_ns = v[0], struct.unpack_from("<I", v, 1)[0]
-            c.skew_ns = [struct.unpack_from("<I", v, 5 + 4 * i)[0] for i in range((len(v) - 5) // 4)]
-        elif tag == SCALE:
-            c.zero, c.scale_nv = struct.unpack("<II", v)
+        elif tag == RATE_ACCURACY:
+            c.rate_measured, c.rate_ppm = v[0] == 1, struct.unpack_from("<I", v, 1)[0]
+        elif tag == SCALE and analog:
+            role, zero, scale = struct.unpack("<BII", v)
+            c.zero[role], c.scale_nv[role] = zero, scale
+        elif tag == SKEW and analog:
+            role, ns = struct.unpack("<BI", v)
+            c.skew_ns[role] = ns
+        elif tag == FRONTEND_USED and analog:
+            c.frontend[v[0]] = v[1]
+        elif tag == REFERENCE and analog:
+            source, mv, how = struct.unpack("<BIB", v)
+            c.reference = (REFERENCE_SOURCE.get(source, str(source)), mv, how == 1)
         elif tag == BLOCKING:
             c.blocking_ms = struct.unpack("<I", v)[0]
         elif tag == IGNORED:
@@ -165,7 +190,7 @@ class LogicCapture(Interface):
 
     def configure(self, *, rate: int, mode: int = ONE_SHOT, samples: int | None = None, segments: int | None = None,
                   trigger: tuple[int, int, int] | None = None, pretrigger: int | None = None, query: bool = False,
-                  critical: set[int] = frozenset()) -> Config:
+                  critical: set[int] = frozenset(), frontends: dict[int, int] | None = None) -> Config:
         """-> the probe's actual values (Config.ignored: tags the probe ignored). `critical`: tags the probe must honour
         or reject (host.Unsupported, .tag = the one it cannot)."""
         def tlv(tag: int, value: bytes) -> bytes:
@@ -179,6 +204,8 @@ class LogicCapture(Interface):
             body += tlv(TRIGGER, struct.pack("<BBH", *trigger))
         if pretrigger is not None:
             body += tlv(PRETRIGGER, struct.pack("<I", pretrigger))
+        for role, fe in sorted((frontends or {}).items()):   # analog: the input range per channel (describe frontend)
+            body += tlv(FRONTEND, bytes([role, fe]))
         # query is its own operation: the lock is decided per operation, before the payload is looked at
         op = self.QUERY_OP if query else self.CONFIGURE
         c = _config(self._call(op, body, locked=not query).payload, self.ANALOG)
@@ -331,7 +358,8 @@ class LogicCapture(Interface):
         """The segment's bytes; every Host.on_capture callback gets them as a CaptureRecord (a run recorder, e.g.
         pytest-embedded-wireskein, without this package knowing it)."""
         c = self.config
-        data = self.read(segment.position, (segment.samples * c.width + 7) // 8)
+        n = (segment.samples * c.width + 7) // 8 if c.width else segment.samples * len(c.order) * c.slot // 8
+        data = self.read(segment.position, n)
         if self.host.on_capture:
             record = CaptureRecord(self.fn, self.name, c, segment, data, self.armed_s, time.monotonic())
             for callback in list(self.host.on_capture):
@@ -365,3 +393,105 @@ class LogicCapture(Interface):
             z.writestr("version", "2")
             z.writestr("metadata", "\n".join(meta))
             z.writestr("logic-1-1", out)
+
+
+@dataclass
+class Calibration:
+    """What the probe knows for turning an analog value into a voltage (oep-if-capture §3.8), raw: the probe applies
+    none of it. factory: (frontend or None, scheme, raw bytes) - scheme names how to read raw; vrefint: (raw, ns), the
+    internal reference measured after the last start."""
+    factory: list[tuple[int | None, str, bytes]] = field(default_factory=list)
+    vrefint: tuple[int, int] | None = None
+
+
+class AnalogCapture(LogicCapture):
+    """Basic analog capture (oep.fixture.analog): the same operations as the logic one; values are raw (§1.2)."""
+    NAME = "oep.fixture.analog"
+    ANALOG = True
+    CALIBRATION = _ANA.op["calibration"]
+
+    def values(self, data: bytes, k: int, samples: int | None = None) -> list[int]:
+        """Channel k's raw values (§1.2: slot s bits little endian, the value in bits o .. o+b-1, frames in `order`)."""
+        c = self.config
+        width = c.slot // 8
+        frame = width * len(c.order)
+        n = samples if samples is not None else len(data) // frame
+        m_ = c.order.index(k)
+        mask = (1 << c.bits) - 1
+        return [(int.from_bytes(data[i * frame + m_ * width:i * frame + (m_ + 1) * width], "little") >> c.offset) & mask
+                for i in range(n)]
+
+    def millivolts(self, k: int, value: int) -> float:
+        """The probe's own 1st-order reading of a raw value of channel k, (value - zero) x scale_nv (a nominal
+        reference: see reference and calibration() for others)."""
+        c = self.config
+        return (value - c.zero.get(k, 0)) * c.scale_nv.get(k, 0) / 1_000_000
+
+    def calibration(self) -> Calibration:
+        out = Calibration()
+        for tag, v in tlvs(self._call(self.CALIBRATION, locked=False).payload):
+            if tag == FACTORY:
+                n = v[1]
+                out.factory.append((None if v[0] == 0xFF else v[0], v[2:2 + n].decode("utf-8", "replace"), bytes(v[2 + n:])))
+            elif tag == VREFINT:
+                out.vrefint = struct.unpack("<IQ", v)
+        return out
+
+
+@dataclass
+class GroupStatus:
+    state: int
+    start_ns: int | None
+    trigger_ns: int | None
+    trigger_fn: int | None
+
+
+class CaptureGroup(Interface):
+    """oep.fixture.capture-group (§4): tracks (LogicCapture / AnalogCapture, each configured as usual) started together,
+    one of them the trigger. Each track is read as usual; a track's offset is its first segment's start_ns minus the
+    group's start_ns, and every track's segment marks the trigger's instant (trigger_index)."""
+    NAME = "oep.fixture.capture-group"
+    REVISION = 1
+    BIND, START, STOP, FORCE, STATUS = (_GRP.op[k] for k in ("bind", "start", "stop", "force", "status"))
+    TAG_TRIGGER_TRACK = _GRP.tlv["bind"]["trigger_track"]
+    EVENT_TRIGGERED, EVENT_STOPPED = _GRP.event["triggered"], _GRP.event["stopped"]
+    NO_TIME = 0xFFFFFFFFFFFFFFFF
+
+    def bind(self, tracks: list[LogicCapture], trigger: LogicCapture | None = None) -> None:
+        """Bind these (configured) tracks; [] unbinds. `trigger`: the track whose configure trigger starts them all."""
+        body = struct.pack(f"<B{len(tracks)}H", len(tracks), *(t.fn for t in tracks))
+        if trigger is not None:
+            body += m.tlv(self.TAG_TRIGGER_TRACK, struct.pack("<H", trigger.fn), critical=True)
+        self._call(self.BIND, body)
+
+    def start(self, tracks: list[LogicCapture] = ()) -> tuple[int, int]:
+        """-> (blocking_ms, the group's start_ns). `tracks`: whose armed_s to set (for records)."""
+        blocking, start_ns = m.Reader(self._call(self.START).payload).take("IQ")
+        now = time.monotonic()
+        for t in tracks:
+            t.armed_s = now
+        return blocking, start_ns
+
+    def stop(self) -> None:
+        self._call(self.STOP)
+
+    def force(self) -> None:
+        self._call(self.FORCE)
+
+    def status(self) -> GroupStatus:
+        state, start, trig, fn = m.Reader(self._call(self.STATUS, locked=False).payload).take("BQQH")
+        none = self.NO_TIME
+        return GroupStatus(state, None if start == none else start, None if trig == none else trig, fn or None)
+
+    def wait(self, timeout: float = 5.0) -> GroupStatus:
+        """Poll until every track is done (one-shot)."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            st = self.status()
+            if st.state == STATE["done"]:
+                return st
+            if st.state == STATE["error"]:
+                raise h.Failed(None, "the group's capture stopped with an error")
+            time.sleep(0.002)
+        raise TimeoutError("the group's capture did not finish")
+

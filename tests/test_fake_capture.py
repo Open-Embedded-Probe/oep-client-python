@@ -180,3 +180,77 @@ def test_fake_serve_streams_over_tcp_to_the_client():
     finally:
         proc.stdin.close()
         proc.wait(timeout=5)
+
+
+# ---- analog and groups (oep-if-capture §1.2, §3.8, §4) -------------------------------------------------------------
+
+def test_segments_carry_ns_times_with_an_uncertainty():
+    ep, hst, lc, clock = bench()
+    clock.t = 7
+    core.plan_apply(hst, [(lc.fn, 0, 20)])
+    lc.configure(rate=1_000_000, samples=64)
+    lc.start()
+    (seg,) = lc.wait()
+    assert (seg.start_ns, seg.start_uncertainty_ns) == (7_000_000, 50)
+
+
+def test_analog_values_scale_and_calibration():
+    ep, hst, lc, clock = bench()
+    an = c.AnalogCapture(hst)
+    core.plan_apply(hst, [(an.fn, 0, 16), (an.fn, 1, 17)])
+    cfg = an.configure(rate=10_000, samples=256, frontends={1: 0})
+    assert (cfg.slot, cfg.offset, cfg.bits, cfg.order) == (16, 0, 12, [0, 1])
+    assert cfg.rate == c.Fraction(83_333, 9)                        # the ADC's 83.3 kHz divided: at or under 10 kHz
+    assert cfg.frontend == {0: 3, 1: 0} and cfg.skew_ns == {0: 0, 1: int(1e9 / (cfg.rate * 2))}   # one ADC, in turn
+    assert cfg.scale_nv[0] == 3100 * 1_000_000 // 4095 and cfg.reference == ("internal", 1100, False)
+    assert cfg.rate_measured and cfg.rate_ppm == 1500
+    an.start()
+    (seg,) = an.wait()
+    data = an.read_segment(seg)
+    assert an.values(data, 0, 256) == [fake_capture.analog_value(0, i) for i in range(256)]   # a square
+    assert an.values(data, 1, 256) == [fake_capture.analog_value(1, i) for i in range(256)]   # a sine
+    assert an.millivolts(0, 4095) == pytest.approx(3100, abs=1)
+    cal = an.calibration()
+    assert [f[0] for f in cal.factory] == [0, 1, 2, 3] and cal.factory[0][1] == "org.example.fake.two-point"
+    assert cal.vrefint == (1365, seg.start_ns)
+
+
+def test_a_group_starts_logic_and_analog_together_and_marks_the_trigger_on_both():
+    ep, hst, lc, clock = bench()
+    an, grp = c.AnalogCapture(hst), c.CaptureGroup(hst)
+    clock.t = 3
+    core.plan_apply(hst, [(lc.fn, 0, 20), (lc.fn, 1, 21), (an.fn, 0, 16)])
+    lc.configure(rate=1_000_000, samples=10_000, trigger=(c.EDGE, 1, 0), pretrigger=4000)
+    an.configure(rate=10_000, samples=100)
+    grp.bind([lc, an], trigger=lc)
+    with pytest.raises(h.Rejected):
+        an.start()                                                  # bound: the group starts it
+    _, start_ns = grp.start([lc, an])
+    st = grp.wait()
+    assert st.start_ns == start_ns == 3_000_000 and st.trigger_fn == lc.fn
+    (ls,), (as_,) = lc.segments(), an.segments()
+    assert ls.start_ns - start_ns == 0 and as_.start_ns - start_ns == 5000          # the analog starts 5 us later
+    # bit 1 rises at i % 4 == 2: the first at or after 4000 is 4002 (4.002 ms); the analog's (9259 Hz) nearest is 37
+    assert ls.trigger_index == 4002 and st.trigger_ns == start_ns + 4_002_000
+    assert as_.trigger_index == round((st.trigger_ns - as_.start_ns) * an.config.rate / 1_000_000_000) == 37
+    grp.bind([])
+    an.start()                                                      # unbound: its own again
+
+
+def test_a_group_refuses_what_it_cannot_bind():
+    ep, hst, lc, clock = bench()
+    an, grp = c.AnalogCapture(hst), c.CaptureGroup(hst)
+    core.plan_apply(hst, [(lc.fn, 0, 20), (an.fn, 0, 16), (an.fn, 1, 17)])
+    lc.configure(rate=1_000_000, samples=100)
+    an.configure(rate=10_000, samples=100, mode=c.REPEAT)
+    with pytest.raises(h.Rejected):
+        grp.bind([lc, an])                                          # the modes differ
+    an.configure(rate=41_666, samples=100)                          # 2 channels x 41.6 kHz = the ADC's whole budget
+    grp.bind([lc, an])
+    assert an.config.rate * 2 <= 83_333
+    with pytest.raises(h.Rejected):
+        lc.configure(rate=1_000_000, samples=100)                   # bound: configure again after unbinding
+    grp.bind([])
+    lc.configure(rate=1_000_000, samples=100, trigger=(c.EDGE, 0, 0))
+    with pytest.raises(h.Rejected):
+        grp.bind([lc, an], trigger=an)                              # only the trigger track may have a trigger

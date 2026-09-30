@@ -101,8 +101,8 @@ def test_description_keeps_what_it_does_not_know():
 def test_p4_follows_the_agreed_names():
     caps = dump.collect(fake.p4_x035().call)
     by_name = {o.entry.name: o for o in caps.offers}
-    assert len(caps.offers) == 11
-    assert caps.requests["list"] == 1 and caps.requests["describe"] == 11
+    assert len(caps.offers) == 13
+    assert caps.requests["list"] == 1 and caps.requests["describe"] == 13
     # the debug port: wire, riscv-dm and console are one instance
     assert {by_name[n].entry.instance for n in ("oep.wire.rvswd", "oep.target.riscv-dm", "oep.target.console")} == {1}
     assert by_name["oep.wire.rvswd"].description.groups[1] == [(1, 2), (2, 54)]
@@ -155,4 +155,4 @@ def test_text_and_json_outputs():
     assert "instance 6" in text and "io.github.ch32-riscv-ug.esp32.i2c-target" in text
     assert "features: preloaded tx, clock stretching" in text
     data = json.loads(dump.to_json(caps))
-    assert data["max_frame"] == 1024 and len(data["interfaces"]) == 11
+    assert data["max_frame"] == 1024 and len(data["interfaces"]) == 13
