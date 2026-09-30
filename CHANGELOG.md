@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `CaptureGroup.wait()` keeps the lock alive while it waits too (`keepalive_s`).
+- (JA) `CaptureGroup.wait()` も、待つ間ロックを保つ（`keepalive_s`）。
 
 ## 0.0.14
 - (EN) No user-facing changes recorded.
