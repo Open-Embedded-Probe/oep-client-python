@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "oep-client-python"
-version = "0.0.14"
+version = "0.0.15"
 description = "Open Embedded Probe (OEP) v1 host: serial / USB / TCP transports, the session rules, the standard interfaces, and a fake probe"
 readme = "README.md"
 license = "MIT"
