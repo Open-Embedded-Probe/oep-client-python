@@ -287,6 +287,10 @@ class LogicCapture(Interface):
     def stop(self) -> None:
         self._call(self.STOP)
 
+    def force(self) -> None:
+        """Waiting for the trigger: start now (the segment's trigger_index marks where)."""
+        self._call(self.FORCE)
+
     def status(self) -> tuple[int, int, int, int]:
         """-> state, segments done, write position, flags."""
         return m.Reader(self._call(self.STATUS, locked=False).payload).take("BIQB")
@@ -301,10 +305,15 @@ class LogicCapture(Interface):
         rd.tail()
         return out
 
-    def wait(self, timeout: float = 5.0) -> list[Segment]:
-        """Poll status until the one-shot is done (or failed). -> its segments."""
+    def wait(self, timeout: float = 5.0, keepalive_s: float = 1.0) -> list[Segment]:
+        """Poll status until the one-shot is done (or failed). -> its segments. Waiting for a trigger may take longer
+        than the lease: the lock is kept alive every `keepalive_s` (status needs no lock, so it does not)."""
         deadline = time.monotonic() + timeout
+        kept = time.monotonic()
         while time.monotonic() < deadline:
+            if keepalive_s and self.host.session is not None and time.monotonic() - kept >= keepalive_s:
+                self.host.keepalive()
+                kept = time.monotonic()
             state = self.status()[0]
             if state == STATE["done"]:
                 return self.segments()
