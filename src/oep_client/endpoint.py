@@ -575,17 +575,18 @@ class Endpoint:
                     got.append(struct.unpack_from("<HBH", value))
                 elif tag & m.TAG_CRITICAL:
                     return m.REJECTED, m.UNSUPPORTED, bytes([tag])
-            self._check_plan(got)
             named = {fn for fn, _, _ in got}
+            if named & self.plan_from_config:                       # the settings' plan is the settings' (core §8)
+                raise Reject(m.UNAVAILABLE)
+            self._check_plan(got)
             self.plan = {a for a in self.plan if a[0] not in named} | set(got)
-            self.plan_from_config -= named
             return m.COMPLETED, m.SUCCESS, b""
         if op == m.OP_PLAN_RELEASE:                                 # n(u8) n x fn(u16); n = 0: every fn
             n = t.take("B")
             fns = {t.take("H") for _ in range(n)}
             t.tail()
-            for fn in {a[0] for a in self.plan if not fns or a[0] in fns}:
-                self._drop_plan(fn)
+            for fn in {a[0] for a in self.plan if not fns or a[0] in fns} - self.plan_from_config:
+                self._drop_plan(fn)                                 # the settings' plans stay, n = 0 too (core §8)
             return m.COMPLETED, m.SUCCESS, b""
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 

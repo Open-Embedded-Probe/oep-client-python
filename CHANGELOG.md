@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) The fake probe keeps a plan the settings put in (oep-core §8): plan_release leaves it (n = 0 included) and plan_apply naming its fn is rejected unavailable.
+- (JA) 偽の probe は、設定が入れた plan を設定のものとして扱う（oep-core §8）: plan_release はそれを解かず（n = 0 でも）、その fn を挙げた plan_apply は rejected unavailable。
 
 ## 0.0.5
 - (EN) USB (python-libusb1) streams close cleanly and at exit: the IN transfers are cancelled and taken back by the event thread before the handle and the context go. A program that ended without closing the link hung at exit, or libusb aborted.
