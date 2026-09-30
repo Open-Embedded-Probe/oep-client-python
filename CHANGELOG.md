@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) USB (python-libusb1) streams close cleanly and at exit: the IN transfers are cancelled and taken back by the event thread before the handle and the context go. A program that ended without closing the link hung at exit, or libusb aborted.
+- (JA) USB（python-libusb1）の stream は、終了時にも片付いて閉じる: IN の転送を取り消し、event thread が取り戻してから handle と context を閉じる。link を閉じずに終わったプログラムが終了で固まったり、libusb が abort したりしていた。
 - (EN) `core.plan_apply` refused as unavailable names what holds the pins when the settings say so (`core.PinsTaken`: another fn's saved plan, a slot).
 - (JA) `core.plan_apply` が unavailable で断られたとき、設定から分かれば何がピンを持っているかを示す（`core.PinsTaken`: 別の fn の保存した plan、スロット）。
 - (EN) Fake probe: a read from the last mark of a kind that is not there starts now, not at the oldest byte (oep-if-common §1.2).
