@@ -111,7 +111,7 @@ class Bind:
     def value(self) -> bytes:
         v = struct.pack("<BBBB", self.port, MODE[self.mode], self.selected if self.mode == "manual" else 0,
                         len(self.streams))
-        return v + b"".join(struct.pack("<BH", STREAM[kind], i) for kind, i in self.streams)
+        return v + b"".join(struct.pack("<BBH", 3, STREAM[kind], i) for kind, i in self.streams)   # len, kind, id
 
 
 def item(it) -> bytes:
@@ -147,7 +147,12 @@ def decode(tag: int, v: bytes):
                     mechanism=_name(MECHANISM, mech), lock=lock, max_speed=max_speed, idle_clock=_name(IDLE_CLOCK, idle))
     if tag == ITEM["bind"] and len(v) >= 4:
         port, mode, selected, n = struct.unpack_from("<BBBB", v)
-        streams = [(_name(STREAM, v[4 + 3 * k]), struct.unpack_from("<H", v, 5 + 3 * k)[0]) for k in range(n)]
+        streams, at = [], 4
+        for _ in range(n):                                         # len, kind, id: a longer one's tail skipped
+            if at >= len(v) or v[at] < 3 or at + 1 + v[at] > len(v):
+                return (tag, v)
+            streams.append((_name(STREAM, v[at + 1]), struct.unpack_from("<H", v, at + 2)[0]))
+            at += 1 + v[at]
         return Bind(port=port, mode=_name(MODE, mode), streams=streams, selected=selected)
     return (tag, v)
 

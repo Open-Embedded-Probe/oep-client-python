@@ -83,7 +83,7 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
                             0, 0, mech, len(raw)) + raw + b"\x00"       # no speed ceiling, rests high, no lock
         items.append(bytes([_ITEM["slot"], len(value)]) + value)
     if a.bind:
-        streams = b"".join(struct.pack("<BH", reg.PROBE_CONFIG.enum["bind_stream"]["slot_console"], n)
+        streams = b"".join(struct.pack("<BBH", 3, reg.PROBE_CONFIG.enum["bind_stream"]["slot_console"], n)
                            for n in range(len(a.slot)))
         value = struct.pack("<BBBB", a.port_index, _MODES[a.bind.replace("-", "_")], 0, len(a.slot)) + streams
         items.append(bytes([_ITEM["bind"], len(value)]) + value)

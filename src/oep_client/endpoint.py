@@ -217,6 +217,17 @@ class Slot:
     lock: tuple[int, bytes, bytes] | None              # (scheme, mask, value)
 
 
+def _bind_streams(v: bytes) -> list[int]:
+    """Where each stream of a bind value starts (probe.config §1.2: n × (len, kind, id), len >= 3, its tail skipped)."""
+    at, out = 4, []
+    for _ in range(v[3]):
+        if at >= len(v) or v[at] < 3 or at + 1 + v[at] > len(v):
+            raise Reject(m.MALFORMED)
+        out.append(at + 1)
+        at += 1 + v[at]
+    return out
+
+
 @dataclass(frozen=True)
 class Bind:
     port: int
@@ -1435,9 +1446,9 @@ class Endpoint:
             elif tag == ITEM["slot"]:
                 fns.add(struct.unpack_from("<H", value, 1)[0])
             elif tag == ITEM["bind"]:
-                for k in range(value[3]):
-                    if value[4 + 3 * k] == BIND_STREAM["fixture_uart"]:
-                        fns.add(struct.unpack_from("<H", value, 5 + 3 * k)[0])
+                for at in _bind_streams(value):
+                    if value[at] == BIND_STREAM["fixture_uart"]:
+                        fns.add(struct.unpack_from("<H", value, at + 1)[0])
         return fns
 
     def _apply_saved(self) -> None:
@@ -1459,9 +1470,9 @@ class Endpoint:
                 new[(tag, key)] = value[:1] + pack(struct.unpack_from("<H", value, 1)[0]) + value[3:]
             elif tag == ITEM["bind"]:
                 v = bytearray(value)
-                for k in range(v[3]):
-                    if v[4 + 3 * k] == BIND_STREAM["fixture_uart"]:
-                        v[5 + 3 * k:7 + 3 * k] = pack(struct.unpack_from("<H", v, 5 + 3 * k)[0])
+                for at in _bind_streams(value):
+                    if v[at] == BIND_STREAM["fixture_uart"]:
+                        v[at + 1:at + 3] = pack(struct.unpack_from("<H", v, at + 1)[0])
                 new[(tag, key)] = bytes(v)
             else:
                 new[(tag, key)] = value
@@ -1574,9 +1585,10 @@ class Endpoint:
         return Slot(n, wire_fn, (swdio, swclk), attach, retry_s, max_speed, idle_clock, mech, name.decode(), lock)
 
     def _parse_bind(self, v: bytes, slots: dict[int, Slot]) -> Bind:
-        t = Take(v)
-        port, mode, selected, n = t.take("BBBB")
-        streams = tuple(t.take("BH") for _ in range(n))
+        if len(v) < 4:
+            raise Reject(m.MALFORMED)
+        port, mode, selected, n = v[:4]
+        streams = tuple((v[at], struct.unpack_from("<H", v, at + 1)[0]) for at in _bind_streams(v))
         if n == 0:                                                 # after the streams: later fields, skipped
             raise Reject(m.MALFORMED)
         if port not in self.serial_ports:

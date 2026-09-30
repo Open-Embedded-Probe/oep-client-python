@@ -446,7 +446,7 @@ def open_host(target: str, timeout: float = 3.0):
         lk.transport = "tcp"
     elif target == "usb" or target.startswith("usb:"):
         parts = target.split(":")[1:]
-        if len(parts) == 1 and len(parts[0]) != 4:            # usb:UNIT_ID (a VID is 4 hex digits)
+        if len(parts) == 1:                                   # usb:UNIT_ID (any length: a VID comes with its PID)
             vid, pid = find_usb(parts[0])
             return open_usb_host(vid, pid, parts[0], timeout)
         vid = int(parts[0], 16) if parts else USB_VID

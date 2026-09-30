@@ -42,7 +42,7 @@ oep-client-python X.Y.Z (until the v1 freeze every release may break the wire; t
 | `config` | `oep.probe.config` (slots, binds, plan / label / idle items, get / set / save / erase, the live slot and bind state) |
 | `capture` | `oep.fixture.logic` (revision 1, oep-spec oep-if-capture). Every segment read goes to the `Host.on_capture` callbacks as a `CaptureRecord` (the hook for run recorders; no wireskein dependency) |
 | `decode` | decoding capture channels (I2C) |
-| `registry` | generated from oep-spec's number table (never edited; copied again from oep-spec) |
+| `registry` | generated from oep-spec's number table (never edited; copied again from oep-spec). The public way to reach an interface by name is `registry.INTERFACES[name]` (`.revision`, `.op`, `.tlv`, `.enum`, e.g. `INTERFACES["oep.fixture.uart"].enum["role"]`); the module-level names (`FIXTURE_UART`, ...) are the same objects |
 | `arm` | `oep.wire.swd`, `oep.target.arm-adi`, MEM-AP, halting and calling functions on a Cortex-M |
 | `ch32_flash` | writing a CH32 (a RAM loader, page by page) |
 | `rp2350` | flash and reboot through the RP2350 boot ROM |
