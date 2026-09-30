@@ -492,10 +492,15 @@ class CaptureGroup(Interface):
         none = self.NO_TIME
         return GroupStatus(state, None if start == none else start, None if trig == none else trig, fn or None)
 
-    def wait(self, timeout: float = 5.0) -> GroupStatus:
-        """Poll until every track is done (one-shot)."""
+    def wait(self, timeout: float = 5.0, keepalive_s: float = 1.0) -> GroupStatus:
+        """Poll until every track is done (one-shot). The lock is kept alive every `keepalive_s` while it waits (a
+        trigger may come later than the lease)."""
         deadline = time.monotonic() + timeout
+        kept = time.monotonic()
         while time.monotonic() < deadline:
+            if keepalive_s and self.host.session is not None and time.monotonic() - kept >= keepalive_s:
+                self.host.keepalive()
+                kept = time.monotonic()
             st = self.status()
             if st.state == STATE["done"]:
                 return st
