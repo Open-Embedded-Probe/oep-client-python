@@ -347,18 +347,20 @@ class LogicCapture(Interface):
         return [(data[(i * c.width + bit0) >> 3] >> ((i * c.width + bit0) & 7)) & 1 for i in range(n)]
 
     def to_sr(self, path: str, data: bytes, samples: int, names: list[str] | None = None) -> None:
-        """A sigrok session file: one byte per sample, bit k = channel k (so up to 8 channels here)."""
+        """A sigrok session file: bit k of each sample = channel k, one byte per sample up to 8 channels, two (little
+        endian, sigrok's unitsize 2) up to 16."""
         c = self.config
         n_ch = len(c.positions)
-        if n_ch > 8:
-            raise ValueError("to_sr writes one byte per sample; more than 8 channels need unitsize 2")
+        unit = 1 if n_ch <= 8 else 2
+        if n_ch > 16:
+            raise ValueError("to_sr writes up to 16 channels")
         names = names or [f"D{k}" for k in range(n_ch)]
         chans = [self.channel(data, k, samples) for k in range(n_ch)]
-        out = bytes(sum(chans[k][i] << k for k in range(n_ch)) for i in range(samples))
+        out = b"".join(sum(chans[k][i] << k for k in range(n_ch)).to_bytes(unit, "little") for i in range(samples))
         rate = c.rate.numerator // c.rate.denominator
         meta = ["[global]", "sigrok version=0.5.2", "", "[device 1]", "capturefile=logic-1",
                 f"total probes={n_ch}", f"samplerate={rate} Hz", "total analog=0"]
-        meta += [f"probe{k + 1}={nm}" for k, nm in enumerate(names)] + ["unitsize=1", ""]
+        meta += [f"probe{k + 1}={nm}" for k, nm in enumerate(names)] + [f"unitsize={unit}", ""]
         with zipfile.ZipFile(path, "w") as z:
             z.writestr("version", "2")
             z.writestr("metadata", "\n".join(meta))

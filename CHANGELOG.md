@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `LogicCapture.to_sr` writes up to 16 channels (sigrok unitsize 2 above 8); it stopped at 8.
+- (JA) `LogicCapture.to_sr` は 16 ch まで書く（8 ch を超えると sigrok の unitsize 2）。前は 8 ch まで。
 
 ## 0.0.6
 - (EN) No default reset line (oep-if-debug §3): `Wire.attach_under_reset(channel, ...)` needs its channel, and `Wire.reset_channels()` reads the ones the probe allows (describe role_channels, role reset). The fake takes only those, and not one a plan holds.

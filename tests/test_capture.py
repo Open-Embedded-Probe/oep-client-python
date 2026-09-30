@@ -102,3 +102,16 @@ def test_read_spans_frames_without_the_header_leaking_into_the_data():
     hst._revisions[21] = 1
     lc = c.LogicCapture(hst)
     assert lc.read(100, 2500) == stream[100:2600]
+
+
+def test_sigrok_file_takes_sixteen_channels_in_two_bytes(tmp_path):
+    import zipfile
+    lc = logic(16, list(range(16)))
+    lc.config.rate = Fraction(20_000_000)
+    samples = [0x8001, 0x0102]
+    path = tmp_path / "x.sr"
+    lc.to_sr(str(path), b"".join(v.to_bytes(2, "little") for v in samples), 2)
+    with zipfile.ZipFile(path) as z:
+        meta = z.read("metadata").decode()
+        assert "unitsize=2" in meta and "total probes=16" in meta and "samplerate=20000000 Hz" in meta
+        assert z.read("logic-1-1") == bytes([0x01, 0x80, 0x02, 0x01])
