@@ -91,6 +91,8 @@ class FakeSerialPort:
     def tick(self) -> None:
         self._gap(self.ep.now())
         self.ep.tick()
+        for f in self.ep.pushes():                   # events and data the probe sends by itself (core §11)
+            self.frames.append(cobs.frame(f))
 
     def output(self, room: int = 4096) -> bytes:
         """What the probe sends now: waiting answers first, then raw bytes by the bind (up to `room` in all)."""

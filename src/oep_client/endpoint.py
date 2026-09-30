@@ -39,7 +39,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Callable
 
-from . import catalog, fake, message as m, registry as reg
+from . import catalog, fake, fake_capture, message as m, registry as reg
 
 TOY_WRITE, TOY_READ = 0x01, 0x02
 OK, WAIT, LINE, FAULT, TIMEOUT, STATE = (reg.STATUS[k] for k in ("ok", "wait", "line", "fault", "timeout", "state"))
@@ -275,6 +275,8 @@ class Endpoint:
             first = self._role_pairs(fn)[0]
             self.targets[(fn, first)] = FakeTarget()
         self.target = next(iter(self.targets.values()), FakeTarget())
+        self.captures: dict[int, fake_capture.FakeCapture] = {
+            fn: self._capture_from(self.static[fn]) for fn, name in self.names.items() if name == "oep.fixture.capture"}
         self.mechanisms = set()
         for fn, name in self.names.items():
             if name == "oep.target.console":
@@ -302,6 +304,9 @@ class Endpoint:
         self.dropped = 0                     # requests a v0 endpoint dropped (role 0x81)
         self.requests: list[m.Request] = []
         self.subscribed: set[int] = set()
+        self.push_seq: dict[int, int] = {}              # fn -> the next event / data seq (core §11.2)
+        self.outbox: list[bytes] = []                   # events and data frames waiting to go out (pushes())
+        self.capture_slipped = False                    # every capture segment says flags bit2 (a pace that fell behind)
         self.plan: set[tuple[int, int, int]] = set()   # (fn, role, channel), from plan_apply and the config
         self.plan_from_config: set[int] = set()        # fns whose plan came from the config (not a session's)
         self.resend: OrderedDict[int, tuple[int, int, int, bytes | None]] = OrderedDict()
@@ -340,6 +345,91 @@ class Endpoint:
     def target_id(self, value: int | None) -> None:
         self.target.target_id = value
 
+    @staticmethod
+    def _capture_from(tlvs: list[bytes]) -> fake_capture.FakeCapture:
+        """A capture as its describe declares it (modes, the w allowed, the rate range, max_read, the ring)."""
+        d = reg.FIXTURE_CAPTURE.tlv["describe"]
+        modes, widths, lo, hi, ring, most = set(), {8}, 1, 1_000_000, 1, 1024
+        for t in tlvs:
+            tag, v = t[0], t[2:2 + t[1]]
+            if tag == d["mode"]:
+                modes.add(v[0])
+            elif tag == d["channels"]:
+                widths = {1 << i for i in range(6) if v[1] >> i & 1}
+            elif tag == catalog.MIN_CLOCK_HZ:
+                lo = struct.unpack("<I", v)[0]
+            elif tag == catalog.MAX_CLOCK_HZ:
+                hi = struct.unpack("<I", v)[0]
+            elif tag == d["segment_ring"]:
+                ring = struct.unpack("<H", v)[0]
+            elif tag == d["max_read"]:
+                most = struct.unpack("<I", v)[0]
+        return fake_capture.FakeCapture(modes or {fake_capture.MODE["one_shot"]}, widths, lo, hi, ring, most)
+
+    def _next_seq(self, fn: int) -> int:
+        seq = self.push_seq.get(fn, 0)
+        self.push_seq[fn] = (seq + 1) & 0xFFFF
+        return seq
+
+    def _events(self, fn: int, events: list[bytes]) -> None:
+        """Events (kind(u8) payload) of `fn` to go out while it is subscribed; unsubscribed, they are not sent."""
+        for e in events:
+            if fn in self.subscribed:
+                self.outbox.append(bytes([m.ROLE_EVENT]) + struct.pack("<HH", fn, self._next_seq(fn)) + e)
+
+    def pushes(self) -> list[bytes]:
+        """The frames the probe sends by itself now (core §11): events, and a streaming capture's data. A serving loop
+        frames and sends them; a test takes them from here."""
+        self.tick()
+        for fn, cap in self.captures.items():
+            if fn in self.subscribed:
+                self.outbox += cap.pushes(fn, lambda fn=fn: self._next_seq(fn), self.probe.max_frame)
+        out, self.outbox = self.outbox, []
+        return out
+
+    def _capture(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
+        cap, O = self.captures[fn], fake_capture.OP
+        self._events(fn, cap.tick(self.now()))                     # what the clock captured up to this request
+        roles = sorted(a[1] for a in self.plan if a[0] == fn)
+        budget = self.probe.max_frame - m.RESULT_HEADER
+        try:
+            if op in (O["configure"], O["query"]):
+                got, ignored = t.tail(set(fake_capture.TLV.values()) - {fake_capture.TLV["frontend"]})
+                settled = cap.settle(got, t.critical, len(roles))
+                if op == O["configure"]:
+                    cap.apply(settled)
+                    cap.slipped = self.capture_slipped
+                return self._answer(cap.answer(settled), ignored)
+            if op == O["start"]:
+                t.tail()
+                self._events(fn, cap.start(self.now()))
+                return m.COMPLETED, m.SUCCESS, struct.pack("<I", 0)
+            if op == O["stop"]:
+                t.tail()
+                self._events(fn, cap.stop())
+                return m.COMPLETED, m.SUCCESS, b""
+            if op == O["force"]:
+                t.tail()
+                return m.COMPLETED, m.SUCCESS, b""                  # nothing waits: a trigger is found at start
+            if op == O["status"]:
+                t.tail()
+                return m.COMPLETED, m.SUCCESS, cap.status()
+            if op == O["read"]:
+                position, most = t.take("QI")
+                return m.COMPLETED, m.SUCCESS, cap.read(position, most, budget)
+            if op == O["segments"]:
+                first = t.take("I")
+                t.tail()
+                return m.COMPLETED, m.SUCCESS, cap.segment_list(first, budget)
+            if op == O["release"]:
+                serial = t.take("I")
+                t.tail()
+                cap.release(serial, self.now())
+                return m.COMPLETED, m.SUCCESS, b""
+        except fake_capture.Reject as e:
+            raise Reject(e.reason, e.payload)
+        return m.REJECTED, m.UNKNOWN_OPERATION, b""
+
     def _role_pairs(self, fn: int) -> list[tuple[int, int]]:
         """A role_channels wire's pairs in the count = 0 order (oep-if-debug §1): swdio ascending, then swclk."""
         roles = self.pin_roles[fn]
@@ -361,7 +451,7 @@ class Endpoint:
     def _held(self, fn: int | None = None, pair: tuple[int, int] | None = None) -> set[int]:
         """Channels something holds (core §8.1): the plan, the slots' pairs, the live connections' pairs - except
         wire `fn`'s own connection on `pair` (attaching there again, or scanning through it)."""
-        held = {a[2] for a in self.plan}
+        held = {a[2] for a in self.plan if a[0] not in self.captures}   # a capture only listens
         held |= {p for s in self.slots.values() for p in s.pair if p != 0xFFFF and not (s.wire_fn == fn and s.pair == pair)}
         held |= {p for c in self.conns.values() for p in c.pair if p != 0xFFFF and not (c.fn == fn and c.pair == pair)}
         return held
@@ -613,6 +703,7 @@ class Endpoint:
             if fn != 0 and fn not in self.names:
                 return m.REJECTED, m.UNAVAILABLE, b""
             self.subscribed.add(fn)
+            self.push_seq[fn] = 0                                  # seq from 0 at every subscribe (core §11.2)
             return m.COMPLETED, m.SUCCESS, b""
         if op == m.OP_UNSUBSCRIBE:
             fn = t.take("H")
@@ -644,13 +735,23 @@ class Endpoint:
     def _check_plan(self, got: list[tuple[int, int, int]]) -> None:
         """plan_apply's all-or-nothing check: the roles each fn has, and no pin another fn (or a slot) holds."""
         named = {fn for fn, _, _ in got}
-        kept = {a for a in self.plan if a[0] not in named}
+        # a capture only listens: it shares pins with anything, and nothing is kept from a pin by it (core §8.1)
+        kept = {a for a in self.plan if a[0] not in named and a[0] not in self.captures}
         slot_pins = {p for s in self.slots.values() for p in s.pair if p != 0xFFFF}
         slot_pins |= {p for c in self.conns.values() for p in c.pair if p != 0xFFFF}   # a live connection's pins too
         for fn, role, ch in got:
+            if fn in self.captures:
+                if role not in self._declared_roles(fn, ch):
+                    raise Reject(m.UNAVAILABLE)
+                continue
             roles = {"oep.fixture.gpio": {1}, "oep.fixture.uart": {1, 2}}.get(self.names.get(fn, ""), set())
             if role not in roles or any(k[2] == ch for k in kept) or ch in slot_pins:
                 raise Reject(m.UNAVAILABLE)
+
+    def _declared_roles(self, fn: int, channel: int) -> set[int]:
+        """The roles fn's describe offers on `channel` (role_channels)."""
+        return {t[2] for t in self.static[fn] if t[0] == catalog.ROLE_CHANNELS
+                and channel in catalog.bitmap_to_channels(struct.unpack_from("<H", t, 3)[0], t[5:2 + t[1]])}
 
     def _drop_plan(self, fn: int) -> None:
         for a in [a for a in self.plan if a[0] == fn]:
@@ -1402,9 +1503,11 @@ class Endpoint:
                         self.flows[(port, key)] = Flow(sid, 0)
 
     def tick(self) -> None:
-        """Time passes: the lease, at-boot retries, mixed lines closed by quiet."""
+        """Time passes: the lease, at-boot retries, mixed lines closed by quiet, the captures."""
         self._lapse()
         now = self.now()
+        for fn, cap in self.captures.items():
+            self._events(fn, cap.tick(now))
         for n, s in self.slots.items():
             rt = self.slot_rt[n]
             if (s.attach == SLOT_ATTACH["at_boot"] and s.retry_s and not rt.evicted
@@ -1552,4 +1655,4 @@ class Endpoint:
 
 SIMS = {"oep.wire.rvswd": "wire", "oep.wire.swio": "wire", "oep.target.riscv-dm": "dm",
         "oep.target.console": "console", "oep.fixture.gpio": "gpio", "oep.fixture.uart": "uart",
-        "oep.probe.config": "config_op"}
+        "oep.probe.config": "config_op", "oep.fixture.capture": "capture"}
