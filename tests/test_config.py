@@ -2,7 +2,9 @@
 
 import struct
 
-from oep_client import __main__ as cli, config, endpoint, fake, host as h
+import pytest
+
+from oep_client import __main__ as cli, config, endpoint, fake, host as h, message as m
 
 
 class Clock:
@@ -108,3 +110,15 @@ def test_a_plan_refused_for_a_saved_plan_names_the_holder():
     with pytest.raises(core.PinsTaken) as e:
         core.plan_apply(hst, [(4, 1, 21)])                          # gpio wants 21
     assert e.value.holders == [(21, "the saved plan of fn 5 (role 2)")] and "fn 5" in str(e.value)
+
+
+def test_a_settings_plan_is_not_the_sessions():
+    """core §8: plan_release leaves a plan the settings put in (n = 0 too); plan_apply naming its fn is refused."""
+    ep, hst = open_bench()
+    config.ProbeConfig(hst).set([config.Plan(5, 1, 20), config.Plan(5, 2, 21)])
+    assert 5 in ep.plan_from_config
+    with pytest.raises(h.Rejected) as e:
+        hst.call(m.CORE_FN, m.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 5, 1, 22)))
+    assert e.value.result.detail == m.UNAVAILABLE
+    hst.call(m.CORE_FN, m.OP_PLAN_RELEASE, b"\x00")
+    assert {(5, 1, 20), (5, 2, 21)} <= ep.plan and 5 in ep.plan_from_config
