@@ -455,12 +455,14 @@ def test_a_wire_takes_any_free_pair_the_host_names():
     assert h.raw(1, 0x02, b"\x01" + pins(1, 2)).detail == m.UNAVAILABLE    # GP1 is the live connection's
     assert h.raw(0, m.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 0))).detail == m.UNAVAILABLE
     assert m.Reader(h.ok(1, 0x01, b"\x00")).take("B") == 1           # its one seat is taken: the live pair only
+    assert struct.unpack_from("<H", h.ok(1, 0x02, b"\x00"))[0] == conn   # no pins: the one live connection
     assert h.raw(1, 0x01, b"\x01" + struct.pack("<HH", 2, 3)).detail == m.UNAVAILABLE
     h.ok(1, 0x03, struct.pack("<H", conn) + m.tlv(0x01, b""))       # detach (force): the pins go back
     h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 5)))
     assert h.raw(1, 0x01, b"\x01" + struct.pack("<HH", 5, 6)).detail == m.UNAVAILABLE   # GP5 is the plan's
     assert h.raw(1, 0x02, b"\x01" + pins(3, 3)).detail == m.UNAVAILABLE                 # one channel twice
     assert h.raw(1, 0x02, b"\x01" + pins(19, 3)).detail == m.UNAVAILABLE                # not offered (PSRAM CS)
+    assert h.raw(1, 0x02, b"\x01").detail == m.UNAVAILABLE          # no pins, no live connection: the host chooses
     r = h.raw(1, 0x02, b"\x01" + pins(7, 8))                        # a free pair nothing answers on
     assert r.resolution == m.COMPLETED and not r.succeeded
 

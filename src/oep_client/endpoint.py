@@ -787,8 +787,11 @@ class Endpoint:
             if not self._allows(fn, pair) or set(pair) & self._held(fn, pair):
                 raise Reject(m.UNAVAILABLE)                        # not allowed here, or its pins are held (§8.1)
             return pair
+        live = [c.pair for c in self.conns.values() if c.fn == fn]
+        if len(live) == 1:
+            return live[0]                                         # no pins: the wire's one live connection
         allowed = self._allowed_pairs(fn)
-        if len(allowed) != 1:
+        if live or len(allowed) != 1:
             raise Reject(m.UNAVAILABLE)                            # the host chooses among several
         return allowed[0]
 
