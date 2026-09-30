@@ -1,4 +1,4 @@
-"""oep.fixture.capture in the fake probe, through oep_client.capture (oep-if-capture): the counter waveform, the layouts,
+"""oep.fixture.logic in the fake probe, through oep_client.capture (oep-if-capture): the counter waveform, the layouts,
 triggers, repeat's ring and release, streaming pushes."""
 
 import struct
@@ -168,8 +168,9 @@ def test_an_analog_pin_is_shared_with_nothing():
     gpio = core.find(hst, "oep.fixture.gpio")
     core.plan_apply(hst, [(an.fn, 0, 16)])
     for other in ([(lc.fn, 0, 16)], [(gpio, 1, 16)]):             # logic that would read 0, a driver that would not drive
-        with pytest.raises(h.Rejected):
+        with pytest.raises(h.Unavailable) as e:
             core.plan_apply(hst, other)
+        assert (e.value.cause, e.value.channels, e.value.holder_fn, e.value.holder_kind) == ("pin_in_use", [16], an.fn, "plan")
     core.plan_apply(hst, [(lc.fn, 0, 17)])                          # another pad: fine
     core.plan_release(hst, [an.fn])
     core.plan_apply(hst, [(lc.fn, 0, 16)])

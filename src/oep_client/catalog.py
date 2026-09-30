@@ -1,7 +1,7 @@
 """Draft wire forms for capability discovery by name (oep-spec docs/capability-declaration-model.ja.md).
 
 list request : flags(u8) first(u16) prefix_len(u8) prefix     flags bit0 = exact
-list result  : total(u16) count(u8) entries [TLV tail]         oep.core (fn 0) is the first entry
+list result  : total(u16) count(u8) count x (len(u8) entry) [TLV tail]   oep.core (fn 0) is the first entry
 list entry   : fn(u16) instance(u16) revision(u8) flags(u8) name_len(u8) name
 describe     : request fn(u16) first(u16); result more(u8) then TLV bytes (tag u8, len u8, value;
                tag bit 7 = critical). more = 1: TLVs remain after this page, ask again from first + count
@@ -15,7 +15,7 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 
-from .message import Reader, split_tlvs
+from .message import Reader, element, split_tlvs
 
 LIST_EXACT = 0x01
 
@@ -65,7 +65,7 @@ def pack_entry(e: ListEntry) -> bytes:
 
 
 def pack_list_result(total: int, entries: list[ListEntry]) -> bytes:
-    return struct.pack("<HB", total, len(entries)) + b"".join(pack_entry(e) for e in entries)
+    return struct.pack("<HB", total, len(entries)) + b"".join(element(pack_entry(e)) for e in entries)
 
 
 def unpack_list_result(payload: bytes) -> tuple[int, list[ListEntry]]:
@@ -74,8 +74,9 @@ def unpack_list_result(payload: bytes) -> tuple[int, list[ListEntry]]:
     total, count = rd.take("HB")
     out = []
     for _ in range(count):
-        fn, instance, revision, flags, n = rd.take("HHBBB")
-        out.append(ListEntry(fn, instance, revision, flags, rd.bytes(n).decode("ascii", "replace")))
+        e = rd.element()
+        fn, instance, revision, flags, n = e.take("HHBBB")
+        out.append(ListEntry(fn, instance, revision, flags, e.bytes(n).decode("ascii", "replace")))
     rd.tail()
     return total, out
 

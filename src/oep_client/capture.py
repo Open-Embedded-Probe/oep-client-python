@@ -1,4 +1,4 @@
-"""oep.fixture.capture / oep.fixture.analog / oep.fixture.capture-group revision 1 (oep-spec docs/oep-if-capture.ja.md:
+"""oep.fixture.logic / oep.fixture.analog / oep.fixture.capture-group revision 1 (oep-spec docs/oep-if-capture.ja.md:
 §1 layouts, §2 segments, §3 operations, §3.8 calibration, §4 groups). Numbers from `registry`.
 
 Times are the probe's one clock (ns since its boot, comparable within one boot_id): estimates with an uncertainty, the
@@ -20,7 +20,7 @@ from . import cobs, host as h, message as m, registry as reg
 from .frames import FramingLost
 from .core import Interface, confirm
 
-_CAP = reg.FIXTURE_CAPTURE
+_CAP = reg.FIXTURE_LOGIC
 _ANA = reg.FIXTURE_ANALOG
 _GRP = reg.FIXTURE_CAPTURE_GROUP
 # configure TLVs; bit 7 of a tag = critical (the probe must reject what it cannot do)
@@ -158,7 +158,7 @@ def _config(payload: bytes, analog: bool) -> Config:
         elif tag == RATE_ACCURACY:
             c.rate_measured, c.rate_ppm = v[0] == 1, struct.unpack_from("<I", v, 1)[0]
         elif tag == SCALE and analog:
-            role, zero, scale = struct.unpack("<BII", v)
+            role, zero, scale = struct.unpack("<Bii", v)            # signed: an inverting frontend (§3.3)
             c.zero[role], c.scale_nv[role] = zero, scale
         elif tag == SKEW and analog:
             role, ns = struct.unpack("<BI", v)
@@ -177,7 +177,7 @@ def _config(payload: bytes, analog: bool) -> Config:
 
 class LogicCapture(Interface):
     """Basic logic capture. Channels are the plan's roles 0..C-1."""
-    NAME = "oep.fixture.capture"
+    NAME = "oep.fixture.logic"
     REVISION = 1
     ANALOG = False
     CONFIGURE, START, STOP, FORCE, STATUS, READ, SEGMENTS, RELEASE, QUERY_OP = (
@@ -301,7 +301,7 @@ class LogicCapture(Interface):
 
     def segments(self, from_serial: int = 0) -> list[Segment]:
         rd = m.Reader(self._call(self.SEGMENTS, struct.pack("<I", from_serial), locked=False).payload)
-        out = [Segment.unpack(rd.bytes(SEGMENT_BYTES)) for _ in range(rd.u8())]
+        out = [Segment.unpack(rd.element().bytes(SEGMENT_BYTES)) for _ in range(rd.u8())]
         rd.tail()
         return out
 

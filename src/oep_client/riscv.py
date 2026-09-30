@@ -95,7 +95,7 @@ class WireBase(Interface):
             rd = m.Reader(self._call(self.SCAN, body).payload)
             tried, count = rd.take("BB")
             for _ in range(count):
-                kind, dio, clk, status = rd.take("BHHI")
+                kind, dio, clk, status = rd.element().take("BHHI")
                 out.append(Found(kind, (dio, clk), status))
             rd.tail()
             if tried == 0:

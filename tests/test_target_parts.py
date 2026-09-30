@@ -5,7 +5,7 @@ import struct
 
 import pytest
 
-from oep_client import arm, host as h, message as m, target
+from oep_client import arm, host as h, message as m, riscv as target
 
 FNS = {"oep.wire.rvswd": 1, "oep.target.riscv-dm": 2, "oep.fixture.gpio": 3, "oep.wire.swd": 4,
        "oep.target.arm-adi": 5}

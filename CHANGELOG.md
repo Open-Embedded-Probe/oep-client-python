@@ -1,6 +1,22 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) The pre-freeze decisions (oep-spec docs/v1-freeze-decisions.ja.md), in the fake and the client at once:
+  - `oep.fixture.capture` is `oep.fixture.logic`; the I2C / SPI targets are the standard `oep.fixture.i2c-target` / `spi-target` (`fixture.I2cTarget` / `SpiTarget`; `esp32_targets` is gone). Their status is separate fields (`I2cStatus(state=, mode=, armed=, queued=, …)`); `read_hw` is gone, `set_stretch` is `stretch` (op 0x07).
+  - Answer lists put each element's length first (core §2.3): list, scan, connections, marks, capture segments (`message.Reader.element()`, `message.element()`); what an element carries after the known fields is skipped.
+  - probe.config: a slot's lock is length-prefixed (`lock_len`, 0 = none); settings are saved with the (name, instance, revision) of each interface they name and renumbered at boot, so another interface added or moved leaves them in force (the fake: `saved_ids`); the storage says why it is unreadable (`State.unreadable`). The item classes (`Plan`, `Label`, `Idle`, `Slot`, `Bind`) take keyword arguments only.
+  - rejected unavailable carries core §4.3's TLVs: `host.Unavailable` with `.cause`, `.channels`, `.holder_fn`, `.holder_kind` (and `.tlvs`; gpio's refused position is its TLV 0x40). An unknown console stream is `no_connection`.
+  - The analog's zero and scale are signed (i32).
+  - USB: the vendor transport is the class 0xFF interface's bulk pair (not the first bulk pair); `open_host("usb:<unit id>")` finds the OEP probe whose USB serial is that unit id; unit_id is text (the fake: `esp32p4` / `esp32` / `rp2350` models, lowercase hex unit ids).
+  - `target` (the first draft's re-exports) is gone: import the modules; README lists the public modules and the version pairing with the firmware.
+- (JA) 凍結前の決定（oep-spec docs/v1-freeze-decisions.ja.md）を、fake とクライアントに一度に入れた:
+  - `oep.fixture.capture` は `oep.fixture.logic` になった。I2C / SPI の target は標準の `oep.fixture.i2c-target` / `spi-target`（`fixture.I2cTarget` / `SpiTarget`。`esp32_targets` は無くなった）。status は分けたフィールド（`I2cStatus(state=, mode=, armed=, queued=, …)`）、`read_hw` は無くなり、`set_stretch` は `stretch`（op 0x07）。
+  - 応答の並びは要素の前に長さを置く（core §2.3）: list、scan、connections、marks、capture の segments（`message.Reader.element()`、`message.element()`）。要素の知っているフィールドの後ろは飛ばす。
+  - probe.config: スロットの錠は長さ付き（`lock_len`、0 は錠なし）。設定は、指すインターフェースの (name、instance、revision) と一緒に保存し、起動時に番号を読み替える。ほかのインターフェースを足したり動かしたりしても設定は効いたまま（fake: `saved_ids`）。storage は読めない理由を返す（`State.unreadable`）。項目のクラス（`Plan`、`Label`、`Idle`、`Slot`、`Bind`）はキーワード引数だけを取る。
+  - rejected unavailable は core §4.3 の TLV を持つ: `host.Unavailable` の `.cause`、`.channels`、`.holder_fn`、`.holder_kind`（と `.tlvs`。gpio の断った位置は、その TLV 0x40）。知らない console の stream は `no_connection`。
+  - アナログの zero と scale は符号付き（i32）。
+  - USB: vendor の経路は class 0xFF のインターフェースの bulk の組（最初の bulk の組ではない）。`open_host("usb:<unit id>")` は、USB の serial がその unit id の OEP の probe を探す。unit_id は text（fake: model は `esp32p4` / `esp32` / `rp2350`、unit id は小文字の 16 進）。
+  - `target`（最初の版の再輸出）は無くなった: モジュールを直接 import する。README に公開のモジュールと、firmware との版の組を書いた。
 
 ## 0.0.18
 - (EN) No user-facing changes recorded.

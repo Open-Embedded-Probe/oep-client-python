@@ -55,7 +55,7 @@ def test_a_48_byte_name_fits_a_64_byte_frame():
     ep = endpoint.Endpoint(probe, Clock())
     from oep_client import catalog
     result = ep.handle(m.Request(1, 0, m.OP_LIST, catalog.pack_list_request(name, True, 0)).pack())
-    assert len(result) == 63 and catalog.unpack_list_result(result[5:])[1][0].name == name   # oep-v1 frame budget (v1-core-wire-delta §6)
+    assert len(result) == 64 and catalog.unpack_list_result(result[5:])[1][0].name == name   # oep-v1 frame budget (v1-core-wire-delta §6)
 
 
 # ---- the lock table -------------------------------------------------------------------------------

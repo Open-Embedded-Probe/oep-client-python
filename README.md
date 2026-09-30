@@ -27,6 +27,10 @@ under Unreleased in CHANGELOG.md, (EN) and (JA).
 
 ## Modules (`oep_client`)
 
+The modules below are the public API; import them directly (`from oep_client import riscv`). Anything not listed, and
+names starting with `_`, may change. A probe firmware and this client go together by version: OpenEmbeddedProbe X.Y.Z with
+oep-client-python X.Y.Z (until the v1 freeze every release may break the wire; the versions move together).
+
 | Module | Contents |
 |---|---|
 | `host` | requests and results, the session id and the lock, `call()` (raises unless it worked), pipelining, the errors (`OepError` / `Rejected` / `Failed`) |
@@ -34,10 +38,9 @@ under Unreleased in CHANGELOG.md, (EN) and (JA).
 | `core` | interfaces by name (cached), confirm, the probe's describe (labels, the transport list), taking the lock (`take`), the pin plan, the `Interface` base |
 | `riscv` | `oep.wire.rvswd` / `oep.wire.swio`, `oep.target.riscv-dm`, finding the reset line, attach through GPIO |
 | `console` | `oep.target.console` (position streams) and `ConsoleIO`, read as bytes |
-| `fixture` | `oep.fixture.gpio` / `uart` (revision 1) |
+| `fixture` | `oep.fixture.gpio` / `uart` / `i2c-target` / `spi-target` (revision 1) |
 | `config` | `oep.probe.config` (slots, binds, plan / label / idle items, get / set / save / erase, the live slot and bind state) |
-| `capture` | `oep.fixture.capture` (revision 1, oep-spec oep-if-capture). Every segment read goes to the `Host.on_capture` callbacks as a `CaptureRecord` (the hook for run recorders; no wireskein dependency) |
-| `esp32_targets` | the custom interfaces `io.github.ch32-riscv-ug.esp32.i2c-target` / `spi-target` (the ESP32 I2C / SPI targets of oep-probe-arduino) |
+| `capture` | `oep.fixture.logic` (revision 1, oep-spec oep-if-capture). Every segment read goes to the `Host.on_capture` callbacks as a `CaptureRecord` (the hook for run recorders; no wireskein dependency) |
 | `decode` | decoding capture channels (I2C) |
 | `registry` | generated from oep-spec's number table (never edited; copied again from oep-spec) |
 | `arm` | `oep.wire.swd`, `oep.target.arm-adi`, MEM-AP, halting and calling functions on a Cortex-M |
@@ -46,7 +49,6 @@ under Unreleased in CHANGELOG.md, (EN) and (JA).
 | `uiapduino` | into and out of the UIAPduino bootloader |
 | `catalog` / `names` / `interfaces` / `dump` | the capability list and describe shapes, display |
 | `fake` / `endpoint` / `fake_serial` / `fake_serve` | the fake probe (below) |
-| `target` | one place to import the main ones from |
 
 ## Example
 
@@ -54,7 +56,8 @@ under Unreleased in CHANGELOG.md, (EN) and (JA).
 from oep_client import core, link, riscv, ch32_flash
 
 hst = link.open_host("/run/board-identify/by-id/esp32-series-30eda0e31108")   # pipelined
-# a serial port (always COBS), "tcp://127.0.0.1:PORT" (a broker), "usb" / "usb:303a:0002[:SERIAL]" (vendor, then HID)
+# a serial port (always COBS), "tcp://127.0.0.1:PORT" (a broker), "usb:<unit id>" (the probe whose USB serial it is),
+# "usb" / "usb:303a:0002[:SERIAL]" (vendor, then HID)
 core.take(hst, 30000, owner="flash script")   # the only way in: force; else wait out the lease, name the holder
 wire = riscv.Wire(hst, "oep.wire.rvswd")
 conn, _ = wire.attach(halt=True)
@@ -89,7 +92,7 @@ against it (when the spec changes, this is brought in line before the firmware).
 chooses), `fake_serial` the byte side of a serial port (COBS candidates, raw bytes and binds, held during a session and
 resumed after it).
 
-`fake_capture` is `oep.fixture.capture` (logic): one-shot, repeat (segments with the clock at the actual rate, a ring,
+`fake_capture` is `oep.fixture.logic` (logic): one-shot, repeat (segments with the clock at the actual rate, a ring,
 release) and streaming (data pushes while subscribed), level / edge triggers with a pretrigger, and events. What it
 captures is known: sample i is the counter i, channel k its bit k (a square wave of period 2^(k+1) samples), in the layout
 the profile allows (`p4-x035`: w 1-16 as the P4's PARLIO, three channels in w 4; `esp32-v003`: w 8 as the classic ESP32's

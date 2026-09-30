@@ -17,7 +17,7 @@ import struct
 import time
 from dataclasses import dataclass, field
 
-from . import host as h, riscv, target
+from . import core, host as h, riscv
 
 # oep-spec experiments/flash-primitives/x035_loader.S, assembled at 0x20000000 (riscv32-esp-elf binutils)
 FAST_PAGE_LOADER = bytes.fromhex(
@@ -92,13 +92,13 @@ V003_INPUT, V003_STACK, V003_EBREAK, V003_RUN = 0x20000200, 0x20000800, 0x200001
 
 
 def _block_size(hst: h.Host) -> int:
-    info = target.confirm(hst)
+    info = core.confirm(hst)
     # request header 6 + session 4 + connection 1 + address 4 + count 2 (the read answer's 5 + done 2 + status 1 is
     # smaller); a little slack for the result header
     return (info["max_frame"] - 5 - 6 - 4 - 1 - 4 - 2) // 4 * 4
 
 
-def _write_requests(dm: target.RiscvDm, address: int, data: bytes, block: int) -> list[tuple[int, int, bytes]]:
+def _write_requests(dm: riscv.RiscvDm, address: int, data: bytes, block: int) -> list[tuple[int, int, bytes]]:
     return [dm.request(dm.WRITE_BLOCK, dm.write_block_body(address + off, data[off:off + block]))
             for off in range(0, len(data), block)]
 
@@ -108,20 +108,20 @@ def _write_ok(r) -> bool:
     if not r.succeeded:
         return False
     try:
-        rd = target.ran(r)
+        rd = riscv.ran(r)
         rd.u16()
         return rd.u8() == riscv.OK
     except h.OepError:
         return False
 
 
-def _write(dm: target.RiscvDm, address: int, data: bytes, block: int) -> None:
+def _write(dm: riscv.RiscvDm, address: int, data: bytes, block: int) -> None:
     for r in dm.host.pipeline_calls(_write_requests(dm, address, data, block)):
         if not _write_ok(r):
-            raise riscv.TargetError("write_block", target.ran(r).take("HB")[1], r)
+            raise riscv.TargetError("write_block", riscv.ran(r).take("HB")[1], r)
 
 
-def _read(dm: target.RiscvDm, address: int, length: int, block: int) -> bytes:
+def _read(dm: riscv.RiscvDm, address: int, length: int, block: int) -> bytes:
     """Read back in blocks, pipelined when the host has the link's exchange (reads are independent)."""
     spans = [(address + off, min(block, length - off) // 4) for off in range(0, length, block)]
     out = b""
@@ -137,7 +137,7 @@ def _read(dm: target.RiscvDm, address: int, length: int, block: int) -> bytes:
 PIPELINE_PAGES = 16   # pages per pipelined batch: enough to keep the link busy, small enough to show progress
 
 
-def program(hst: h.Host, dm: target.RiscvDm, image: bytes, profile: FlashProfile) -> ProgramResult:
+def program(hst: h.Host, dm: riscv.RiscvDm, image: bytes, profile: FlashProfile) -> ProgramResult:
     """Program `image` at profile.base on a halted, attached target (dm), verify by reading back."""
     image = image + b"\xff" * (-len(image) % profile.page)
     if profile.size and len(image) > profile.size:

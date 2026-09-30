@@ -53,7 +53,7 @@ def slot_item(n, wire, pair, attach=ATTACH["at_boot"], retry=1, mech=2, name=Non
     raw = (name or f"s{n}").encode()
     value = struct.pack("<BHHHBHIBBB", n, wire, *pair, attach, retry if attach == ATTACH["at_boot"] else 0, max_speed,
                         idle, mech, len(raw)) + raw
-    value += b"\x00" if lock is None else bytes([1]) + lock[0] + lock[1]
+    value += b"\x00" if lock is None else bytes([1 + 2 * len(lock[0]), 1]) + lock[0] + lock[1]   # lock_len, scheme 1
     return m.tlv(ITEM["slot"], value)
 
 
@@ -161,7 +161,8 @@ def test_at_boot_slots_attach_and_say_so_without_the_lock():
     assert states[0][1] == STATE["connected"] and struct.unpack_from("<I", states[0], 10)[0] == 0x035E0601
     assert states[1][1] == STATE["absent"] and struct.unpack_from("<I", states[1], 4)[0] < 10
     listed = h.raw(1, 0x05, session=False).payload                  # connections, lock-free
-    assert listed[0] == 1 and listed[1 + 10] == 0b10 and listed[1 + 11] == 0   # used by slot 0 only
+    assert listed[0] == 1 and listed[1] >= 14                       # count, then len(u8) of the entry (core §2.3)
+    assert listed[2 + 10] == 0b10 and listed[2 + 11] == 0            # used by slot 0 only
 
 
 def test_a_lock_that_does_not_match_lets_go():
@@ -344,7 +345,7 @@ def test_a_closed_console_stays_readable_until_the_same_place_opens_again():
     assert h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).succeeded
     a2 = attach(p[0])
     h.ok(3, 0x01, struct.pack("<HB", a2, 2))                         # the same place again: the old one goes
-    assert h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).detail == m.UNAVAILABLE
+    assert h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).detail == m.NO_CONNECTION   # the old number is gone (core §4.3)
 
 
 def test_fake_serve_uart_plan_and_rx():
@@ -446,7 +447,7 @@ def test_a_wire_takes_any_free_pair_the_host_names():
     pins = lambda d, c: m.tlv(0x03, struct.pack("<HH", d, c), critical=True)
     r = m.Reader(h.ok(1, 0x01, b"\x00"))                              # count 0: the first 255 free pairs
     tried, count = r.take("BB")
-    assert tried == 255 and count == 1 and r.take("BHHI")[1:3] == (0, 1)
+    assert tried == 255 and count == 1 and r.element().take("BHHI")[1:3] == (0, 1)
     skip = lambda n: m.tlv(0x01, struct.pack("<H", n))
     assert m.Reader(h.ok(1, 0x01, b"\x00" + skip(29 * 28 - 10))).take("B") == 10   # the last ten
     assert m.Reader(h.ok(1, 0x01, b"\x00" + skip(29 * 28))).take("B") == 0         # the end
@@ -468,7 +469,7 @@ def test_a_wire_takes_any_free_pair_the_host_names():
 
 
 def test_the_client_scan_walks_the_whole_count_0_list():
-    from oep_client import host as hh, target
+    from oep_client import host as hh, riscv as target
     ep = endpoint.Endpoint(fake.rp2350_pins(), Clock())
     hst = hh.Host(lambda b: ep.handle(b, 0))
     hst.open(3000)

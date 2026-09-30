@@ -228,7 +228,7 @@ def test_gpio_set_is_a_list_in_order_and_only_planned_channels(bench):
     assert g.read([23, 5]) == [1, 1]
     with pytest.raises(host.Rejected, match="unavailable") as e:
         g.set([(5, g.OUTPUT_LOW), (40, g.OUTPUT_LOW)])
-    assert e.value.result.payload == bytes([1])                   # the index of the channel it refused
+    assert e.value.channels == [40] and (0x40, bytes([1])) in e.value.tlvs   # the channel, its index (fixture §1)
     assert ep.gpio_modes[5] == g.OUTPUT_HIGH                      # nothing done
     g.pulse_low(23, 0)
     assert ep.gpio_log[-2:] == [(23, 5), (23, 6)]

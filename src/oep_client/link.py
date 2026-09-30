@@ -378,6 +378,48 @@ def open_usb_host(vid: int = USB_VID, pid: int = USB_PID, serial: str | None = N
     raise FileNotFoundError(f"no way in to {vid:04x}:{pid:04x}: " + "; ".join(errors))
 
 
+OEP_VID_PID = (0x1209, 0x4F45)   # the OEP PID (pid.codes, applied for); until then iProduct "OEP..." (core §3.3)
+
+
+def is_oep_device(vid: int, pid: int, product: str | None) -> bool:
+    """core §3.3: the OEP VID:PID, or (until it is granted) an iProduct starting "OEP"."""
+    return (vid, pid) == OEP_VID_PID or (product or "").startswith("OEP")
+
+
+def find_usb(unit_id: str) -> tuple[int, int]:
+    """The VID:PID of the OEP probe whose USB serial number is `unit_id` (core §3.3, §7.5) - how a host that kept a
+    probe's unit_id (oep://<unit_id>/<slot>) finds it again whatever VID:PID it enumerates with."""
+    want = unit_id.lower()
+    try:
+        import usb1
+        with usb1.USBContext() as ctx:
+            for dev in ctx.getDeviceIterator(skip_on_error=True):
+                try:
+                    h = dev.open()
+                except Exception:                            # no access to this one: not ours to judge
+                    continue
+                try:
+                    if (h.getSerialNumber() or "").lower() == want and \
+                            is_oep_device(dev.getVendorID(), dev.getProductID(), h.getProduct()):
+                        return dev.getVendorID(), dev.getProductID()
+                except Exception:
+                    pass
+                finally:
+                    h.close()
+    except ImportError:
+        import usb.core
+        import usb.util
+        for dev in usb.core.find(find_all=True):
+            try:
+                serial = usb.util.get_string(dev, dev.iSerialNumber) or ""
+                product = usb.util.get_string(dev, dev.iProduct) or ""
+            except Exception:
+                continue
+            if serial.lower() == want and is_oep_device(dev.idVendor, dev.idProduct, product):
+                return dev.idVendor, dev.idProduct
+    raise FileNotFoundError(f"no OEP probe with unit id (USB serial) {unit_id}")
+
+
 def _open_usb_stream(kind: str, vid: int, pid: int, serial: str | None):
     if kind == "hid":
         from .hid_stream import open_hid
@@ -395,7 +437,8 @@ def open_host(target: str, timeout: float = 3.0):
     everything built on it (flash, capture reads) then keep several requests in flight.
 
     target: a serial port path (COM3 on Windows); tcp://HOST:PORT for a local broker (length frames); usb[:VID:PID[:SERIAL]]
-    (hex) for the probe's USB device, vendor bulk then HID (oep-core §3.3)."""
+    (hex) for the probe's USB device, vendor bulk then HID (oep-core §3.3); usb:UNIT_ID for the OEP probe whose USB
+    serial is that unit id, whatever its VID:PID."""
     from . import host
     if target.startswith("tcp://"):
         addr, _, port = target[len("tcp://"):].rpartition(":")
@@ -403,6 +446,9 @@ def open_host(target: str, timeout: float = 3.0):
         lk.transport = "tcp"
     elif target == "usb" or target.startswith("usb:"):
         parts = target.split(":")[1:]
+        if len(parts) == 1 and len(parts[0]) != 4:            # usb:UNIT_ID (a VID is 4 hex digits)
+            vid, pid = find_usb(parts[0])
+            return open_usb_host(vid, pid, parts[0], timeout)
         vid = int(parts[0], 16) if parts else USB_VID
         pid = int(parts[1], 16) if len(parts) > 1 else USB_PID
         return open_usb_host(vid, pid, parts[2] if len(parts) > 2 else None, timeout)

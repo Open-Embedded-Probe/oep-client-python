@@ -66,7 +66,7 @@ class Known:
 KNOWN: dict[str, Known] = {
     "oep.core": Known(
         "confirm, list, describe, open / end / keepalive, lock state, status, cancel; describe = the probe itself",
-        tags={0x40: ("firmware", _text), 0x41: ("model", _text), 0x42: ("unit id", _hex),
+        tags={0x40: ("firmware", _text), 0x41: ("model", _text), 0x42: ("unit id", _text),
               0x43: ("channels", _u16), 0x44: ("reserved", _channels), 0x45: ("profile", _text),
               0x46: ("label", _label), 0x47: ("resets on open", lambda v: "yes"),
               0x49: ("transport", _transport), 0x4A: ("OEP VID:PID", lambda v: "yes" if v[:1] == b"\x01" else "no")}),
@@ -92,11 +92,11 @@ KNOWN: dict[str, Known] = {
               0x44: ("slot state", _hex), 0x45: ("bind state", _hex)}),
     "oep.fixture.gpio": Known("drive and read probe pins", roles={1: "line"}),
     "oep.fixture.uart": Known("a UART (USART, asynchronous) on probe pins", roles={1: "RX", 2: "TX"}),
-    "oep.fixture.capture": Known("sampled logic capture", roles={k: f"line{k}" for k in range(8)}),
-    "io.github.ch32-riscv-ug.esp32.i2c-target": Known(
+    "oep.fixture.logic": Known("sampled logic capture", roles={k: f"line{k}" for k in range(8)}),
+    "oep.fixture.i2c-target": Known(
         "an I2C target the DUT can address (ESP-IDF slave driver)",
         roles={1: "SDA", 2: "SCL"}, features={0: "preloaded tx", 1: "clock stretching"}),
-    "io.github.ch32-riscv-ug.esp32.spi-target": Known(
+    "oep.fixture.spi-target": Known(
         "an SPI target the DUT can clock (ESP-IDF slave driver)",
         roles={1: "SCK", 2: "MOSI", 3: "MISO", 4: "CS"}, features={0: "LSB first"}),
 }
