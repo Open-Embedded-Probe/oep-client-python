@@ -431,3 +431,47 @@ def test_idle_clock_is_rvswd_s_and_a_slot_carries_the_line_settings():
     assert hv.raw(9, 0x02, slot_item(0, 1, v003.pairs[1][0], idle=1)).detail == m.MALFORMED   # swio has no idle_clock
     r = hv.raw(1, 0x02, b"\x01" + idle_low)
     assert r.resolution == m.REJECTED and r.detail == m.UNSUPPORTED  # an unknown critical TLV on swio
+
+
+def pins_probe():
+    ep = endpoint.Endpoint(fake.rp2350_pins(), Clock())
+    h = Host(ep)
+    h.open()
+    return ep, h
+
+
+def test_a_wire_takes_any_free_pair_the_host_names():
+    """oep-if-debug §1: role_channels pairs; count 0 in swdio / swclk order; a live connection holds its pins."""
+    ep, h = pins_probe()
+    pins = lambda d, c: m.tlv(0x03, struct.pack("<HH", d, c), critical=True)
+    r = m.Reader(h.ok(1, 0x01, b"\x00"))                              # count 0: the first 255 free pairs
+    tried, count = r.take("BB")
+    assert tried == 255 and count == 1 and r.take("BHHI")[1:3] == (0, 1)
+    skip = lambda n: m.tlv(0x01, struct.pack("<H", n))
+    assert m.Reader(h.ok(1, 0x01, b"\x00" + skip(29 * 28 - 10))).take("B") == 10   # the last ten
+    assert m.Reader(h.ok(1, 0x01, b"\x00" + skip(29 * 28))).take("B") == 0         # the end
+    assert h.raw(1, 0x01, b"\x01" + struct.pack("<HH", 0, 1) + skip(1)).detail == m.MALFORMED
+    conn = struct.unpack_from("<H", h.ok(1, 0x02, b"\x01" + pins(0, 1)))[0]
+    assert h.raw(1, 0x02, b"\x01" + pins(1, 2)).detail == m.UNAVAILABLE    # GP1 is the live connection's
+    assert h.raw(0, m.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 0))).detail == m.UNAVAILABLE
+    total = 0
+    while (n := m.Reader(h.ok(1, 0x01, b"\x00" + skip(total))).take("B")):
+        total += n
+    assert total == 27 * 26 + 1                                     # pairs without GP0 / GP1, and the live one
+    h.ok(1, 0x03, struct.pack("<H", conn) + m.tlv(0x01, b""))       # detach (force): the pins go back
+    h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 5)))
+    assert h.raw(1, 0x01, b"\x01" + struct.pack("<HH", 5, 6)).detail == m.UNAVAILABLE   # GP5 is the plan's
+    assert h.raw(1, 0x02, b"\x01" + pins(3, 3)).detail == m.UNAVAILABLE                 # one channel twice
+    assert h.raw(1, 0x02, b"\x01" + pins(19, 3)).detail == m.UNAVAILABLE                # not offered (PSRAM CS)
+    r = h.raw(1, 0x02, b"\x01" + pins(7, 8))                        # a free pair nothing answers on
+    assert r.resolution == m.COMPLETED and not r.succeeded
+
+
+def test_the_client_scan_walks_the_whole_count_0_list():
+    from oep_client import host as hh, target
+    ep = endpoint.Endpoint(fake.rp2350_pins(), Clock())
+    hst = hh.Host(lambda b: ep.handle(b, 0))
+    hst.open(3000)
+    ep._target(1, (28, 29)).present = True                        # the last pair of the list
+    found = target.Wire(hst).scan()
+    assert [f.pins for f in found] == [(0, 1), (28, 29)]

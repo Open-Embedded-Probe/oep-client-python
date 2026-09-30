@@ -139,7 +139,8 @@ def _core(firmware: str, model: str, unit_id: bytes, channels: int, reserved: li
     return Offered(0, 0, "oep.core", (
         catalog.text(CORE_FIRMWARE, firmware), catalog.text(CORE_MODEL, model), catalog.tlv(CORE_UNIT_ID, unit_id),
         catalog.u16(CORE_CHANNELS, channels), catalog.tlv(CORE_RESERVED, struct.pack("<H", base) + bits),
-        catalog.text(CORE_PROFILE, profile)) + tuple(_label(c, n) for c, n in labels.items()) + extra)
+        ) + ((catalog.text(CORE_PROFILE, profile),) if profile else ()) + tuple(_label(c, n) for c, n in labels.items())
+        + extra)
 
 
 def p4_x035() -> FakeProbe:
@@ -230,4 +231,24 @@ def p4_bench() -> FakeProbe:
     ])
 
 
-PROFILES = {"p4-x035": p4_x035, "esp32-v003": esp32_v003, "p4-bench": p4_bench}
+def rp2350_pins() -> FakeProbe:
+    """A board firmware whose wire takes its pins from the host (oep-if-debug §1, role_channels): any two of GP0-GP29
+    but GP19 (the Pro Micro RP2350's PSRAM CS) are an RVSWD pair, a reset line or fixture pins. USB CDC (serial port 0).
+    The fake target answers on (0, 1), the first pair."""
+    reserved = [19]
+    pins = [p for p in range(30) if p not in reserved]
+    return FakeProbe("rp2350-pins", 1024, [
+        _core("3.0.0", "sparkfun-promicro-rp2350", bytes.fromhex("e66138935f2b1f2c"), 30, reserved, "",
+              {}, _transports([(TRANSPORT["usb_cdc"], 0)])),
+        Offered(1, 1, "oep.wire.rvswd", _roles({1: pins, 2: pins, 3: pins}) + (
+            catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(IMPLEMENTATION, 1), catalog.u8(MAX_CONNECTIONS, 1))),
+        Offered(2, 1, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
+                                              catalog.u16(MAX_LENGTH, 1000))),
+        Offered(3, 1, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
+        Offered(4, 2, "oep.fixture.gpio", _roles({1: pins})),
+        Offered(5, 3, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
+            catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
+    ])
+
+
+PROFILES = {"p4-x035": p4_x035, "esp32-v003": esp32_v003, "p4-bench": p4_bench, "rp2350-pins": rp2350_pins}

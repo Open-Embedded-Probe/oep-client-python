@@ -76,23 +76,36 @@ class WireBase(Interface):
     TAG_MAX_SPEED = 0x01
     TAG_PINS = 0x03          # swdio(u16) swclk(u16, 0xFFFF on one wire), critical (oep-if-debug §1)
 
+    TAG_SKIP = 0x01          # scan, count 0 only: pairs of the count-0 list to skip (oep-if-debug §1)
+
     def scan(self, pairs: list[tuple[int, int]] | None = None) -> list[Found]:
-        """Try `pairs` of (swdio, swclk); None = every pair the probe allows (describe's channel_group /
-        role_channels). A pair the probe does not allow refuses the whole scan (rejected unavailable). The probe stops
-        when its answer would not fit one frame and says how many pairs it tried; the rest go again (oep-if-debug §1)."""
-        pairs = list(pairs or [])
+        """Try `pairs` of (swdio, swclk); None = every pair the probe allows and nothing holds (describe's
+        channel_group / role_channels, oep-if-debug §1). A pair the probe does not allow, or one whose pins something
+        holds, refuses the whole scan (rejected unavailable). The probe tries at most 255 pairs a request and stops early
+        when its answer would not fit one frame; this goes on until every pair is tried (count 0: with skip until
+        tried = 0)."""
         out = []
+        pairs = list(pairs or [])
+        skip = 0
         while True:
-            body = bytes([len(pairs)]) + b"".join(struct.pack("<HH", d, c) for d, c in pairs)
+            chunk = pairs[:255]
+            body = bytes([len(chunk)]) + b"".join(struct.pack("<HH", d, c) for d, c in chunk)
+            if not pairs and skip:
+                body += m.tlv(self.TAG_SKIP, struct.pack("<H", skip))
             rd = m.Reader(self._call(self.SCAN, body).payload)
             tried, count = rd.take("BB")
             for _ in range(count):
                 kind, dio, clk, status = rd.take("BHHI")
                 out.append(Found(kind, (dio, clk), status))
             rd.tail()
-            if not pairs or tried >= len(pairs) or tried == 0:
+            if tried == 0:
                 return out
-            pairs = pairs[tried:]
+            if pairs:
+                pairs = pairs[tried:]
+                if not pairs:
+                    return out
+            else:
+                skip += tried
 
     def detach(self, conn: int) -> None:
         self._call(self.DETACH, struct.pack("<H", conn))

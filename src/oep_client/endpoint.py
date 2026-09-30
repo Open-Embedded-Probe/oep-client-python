@@ -254,15 +254,26 @@ class Endpoint:
         self.pairs: dict[int, list[tuple[int, int]]] = {}  # wire fn -> allowed (swdio, swclk), declared order
         self.max_connections: dict[int, int] = {}
         self.reset_channels: dict[int, set[int]] = {}     # wire fn -> channels attach_under_reset may take (role 3)
+        self.pin_roles: dict[int, dict[int, set[int]]] = {}   # wire fn -> role -> candidates (role_channels wires)
         for fn, name in self.names.items():
             if name in WIRES:
                 self.pairs[fn] = [self._group_pair(name, t) for t in self.static[fn] if t[0] == catalog.CHANNEL_GROUP]
+                roles: dict[int, set[int]] = {}
+                for t in self.static[fn]:
+                    if t[0] == catalog.ROLE_CHANNELS and t[2] in (1, 2):
+                        roles.setdefault(t[2], set()).update(
+                            catalog.bitmap_to_channels(struct.unpack_from("<H", t, 3)[0], t[5:2 + t[1]]))
+                if roles:
+                    self.pin_roles[fn] = roles
                 self.reset_channels[fn] = {
                     c for t in self.static[fn] if t[0] == catalog.ROLE_CHANNELS and t[2] == PIN_ROLE_RESET
                     for c in catalog.bitmap_to_channels(struct.unpack_from("<H", t, 3)[0], t[5:2 + t[1]])}
                 self.max_connections[fn] = next((t[2] for t in self.static[fn] if t[0] == fake.MAX_CONNECTIONS), 1)
         self.targets: dict[tuple[int, tuple[int, int]], FakeTarget] = {
             (fn, p): FakeTarget() for fn in sorted(self.pairs) for p in self.pairs[fn]}
+        for fn in sorted(self.pin_roles):                          # any pair: one target, on the first pair
+            first = self._role_pairs(fn)[0]
+            self.targets[(fn, first)] = FakeTarget()
         self.target = next(iter(self.targets.values()), FakeTarget())
         self.mechanisms = set()
         for fn, name in self.names.items():
@@ -328,6 +339,38 @@ class Endpoint:
     @target_id.setter
     def target_id(self, value: int | None) -> None:
         self.target.target_id = value
+
+    def _role_pairs(self, fn: int) -> list[tuple[int, int]]:
+        """A role_channels wire's pairs in the count = 0 order (oep-if-debug §1): swdio ascending, then swclk."""
+        roles = self.pin_roles[fn]
+        if self.names[fn] == "oep.wire.swio":
+            return [(d, 0xFFFF) for d in sorted(roles.get(1, ()))]
+        return [(d, c) for d in sorted(roles.get(1, ())) for c in sorted(roles.get(2, ())) if d != c]
+
+    def _allowed_pairs(self, fn: int) -> list[tuple[int, int]]:
+        return self._role_pairs(fn) if fn in self.pin_roles else self.pairs.get(fn, [])
+
+    def _allows(self, fn: int, pair: tuple[int, int]) -> bool:
+        if fn in self.pin_roles:
+            roles = self.pin_roles[fn]
+            swio = self.names[fn] == "oep.wire.swio"
+            return pair[0] in roles.get(1, ()) and (pair[1] == 0xFFFF if swio else
+                                                    pair[1] in roles.get(2, ()) and pair[1] != pair[0])
+        return pair in self.pairs.get(fn, [])
+
+    def _held(self, fn: int | None = None, pair: tuple[int, int] | None = None) -> set[int]:
+        """Channels something holds (core §8.1): the plan, the slots' pairs, the live connections' pairs - except
+        wire `fn`'s own connection on `pair` (attaching there again, or scanning through it)."""
+        held = {a[2] for a in self.plan}
+        held |= {p for s in self.slots.values() for p in s.pair if p != 0xFFFF and not (s.wire_fn == fn and s.pair == pair)}
+        held |= {p for c in self.conns.values() for p in c.pair if p != 0xFFFF and not (c.fn == fn and c.pair == pair)}
+        return held
+
+    def _target(self, fn: int, pair: tuple[int, int]) -> FakeTarget:
+        tg = self.targets.get((fn, pair))
+        if tg is None:                                             # a pair nothing is wired to
+            tg = self.targets[(fn, pair)] = FakeTarget(present=False)
+        return tg
 
     @staticmethod
     def _group_pair(name: str, t: bytes) -> tuple[int, int]:
@@ -603,6 +646,7 @@ class Endpoint:
         named = {fn for fn, _, _ in got}
         kept = {a for a in self.plan if a[0] not in named}
         slot_pins = {p for s in self.slots.values() for p in s.pair if p != 0xFFFF}
+        slot_pins |= {p for c in self.conns.values() for p in c.pair if p != 0xFFFF}   # a live connection's pins too
         for fn, role, ch in got:
             roles = {"oep.fixture.gpio": {1}, "oep.fixture.uart": {1, 2}}.get(self.names.get(fn, ""), set())
             if role not in roles or any(k[2] == ch for k in kept) or ch in slot_pins:
@@ -646,17 +690,21 @@ class Endpoint:
 
     # ---- oep.wire.rvswd / swio ------------------------------------------------------------------
     def _wire(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
-        allowed = self.pairs.get(fn, [])
         if op == 0x01:                                             # scan: count(u8) pairs -> tried count found...
             count = t.take("B")
             pairs = [t.take("HH") for _ in range(count)]
-            t.tail()
-            if any(p not in allowed for p in pairs):
-                raise Reject(m.UNAVAILABLE)
-            pairs = pairs or allowed
+            got, _ = t.tail({0x01})
+            if 0x01 in got and (count or len(got[0x01]) != 2):
+                raise Reject(m.MALFORMED)                          # skip goes with count 0 only
+            if any(not self._allows(fn, p) or set(p) & self._held(fn, p) for p in pairs):
+                raise Reject(m.UNAVAILABLE)                        # not allowed, or a channel something holds (§8.1)
+            if not pairs:                                          # the count-0 list, from `skip` on (oep-if-debug §1)
+                skip = struct.unpack("<H", got[0x01])[0] if 0x01 in got else 0
+                pairs = [p for p in self._allowed_pairs(fn) if not set(p) & self._held(fn, p)][skip:]
+            pairs = pairs[:255]                                    # tried is a u8
             found = []
             for p in pairs:
-                tg = self.targets[(fn, p)]
+                tg = self._target(fn, p)
                 if tg.present:                                     # a live connection's pair: read over it, no restart
                     found.append(struct.pack("<BHHI", 1, *p, tg.dmstatus()))
             return m.COMPLETED, m.SUCCESS, struct.pack("<BB", len(pairs), len(found)) + b"".join(found)
@@ -675,7 +723,7 @@ class Endpoint:
                 raise Reject(m.MALFORMED)
             idle_clock = got[0x04][0] if 0x04 in got else 0
             pair = self._pick_pair(fn, got)
-            tg = self.targets[(fn, pair)]
+            tg = self._target(fn, pair)
             speed = min(4_000_000, struct.unpack("<I", got[0x01])[0]) if 0x01 in got else 4_000_000
             cid = self._conn_at(fn, pair)
             flags = 0
@@ -729,14 +777,14 @@ class Endpoint:
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
     def _pick_pair(self, fn: int, got: dict[int, bytes]) -> tuple[int, int]:
-        allowed = self.pairs.get(fn, [])
         if 0x03 in got:
             if len(got[0x03]) != 4:
                 raise Reject(m.MALFORMED)
             pair = struct.unpack("<HH", got[0x03])
-            if pair not in allowed:
-                raise Reject(m.UNAVAILABLE)                        # a pair this probe does not allow
+            if not self._allows(fn, pair) or set(pair) & self._held(fn, pair):
+                raise Reject(m.UNAVAILABLE)                        # not allowed here, or its pins are held (§8.1)
             return pair
+        allowed = self._allowed_pairs(fn)
         if len(allowed) != 1:
             raise Reject(m.UNAVAILABLE)                            # the host chooses among several
         return allowed[0]
@@ -779,7 +827,7 @@ class Endpoint:
 
     def _target_of(self, cid: int) -> FakeTarget:
         c = self.conns[cid]
-        return self.targets[(c.fn, c.pair)]
+        return self._target(c.fn, c.pair)
 
     # ---- oep.target.riscv-dm --------------------------------------------------------------------
     @staticmethod
@@ -1181,7 +1229,7 @@ class Endpoint:
         places = [(s.wire_fn, s.pair) for s in slots.values()]
         if len(set(places)) != len(places):
             raise Reject(m.UNAVAILABLE)
-        for fn in self.pairs:
+        for fn in self.pairs:                                      # every wire (pin_roles wires have an empty list)
             if sum(1 for s in slots.values() if s.wire_fn == fn and s.attach == SLOT_ATTACH["at_boot"]) > \
                     self.max_connections.get(fn, 1):
                 raise Reject(m.UNAVAILABLE)
@@ -1244,7 +1292,7 @@ class Endpoint:
             raise Reject(m.MALFORMED)
         if not SLOT_NAME.fullmatch(name.decode("ascii", "replace")):
             raise Reject(m.MALFORMED)
-        if self.names.get(wire_fn) not in WIRES or (swdio, swclk) not in self.pairs.get(wire_fn, []):
+        if self.names.get(wire_fn) not in WIRES or not self._allows(wire_fn, (swdio, swclk)):
             raise Reject(m.UNAVAILABLE)
         if mech not in self.mechanisms:
             raise Reject(m.UNSUPPORTED)
@@ -1301,7 +1349,7 @@ class Endpoint:
         s = self.slots[n]
         rt = self.slot_rt[n]
         rt.last_try_ms = self.now()
-        tg = self.targets[(s.wire_fn, s.pair)]
+        tg = self._target(s.wire_fn, s.pair)
         cid = self._conn_at(s.wire_fn, s.pair)
         if cid is None:
             if not tg.present:
