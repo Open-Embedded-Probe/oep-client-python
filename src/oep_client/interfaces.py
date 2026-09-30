@@ -71,15 +71,14 @@ KNOWN: dict[str, Known] = {
               0x46: ("label", _label), 0x47: ("resets on open", lambda v: "yes"),
               0x49: ("transport", _transport), 0x4A: ("OEP VID:PID", lambda v: "yes" if v[:1] == b"\x01" else "no")}),
     "oep.wire.rvswd": Known("scan, attach, detach over RVSWD (attach returns a connection)",
-                            roles={1: "SWDIO", 2: "SWCLK"}, tags={0x40: ("max connections", lambda v: str(v[0]))}),
+                            roles={1: "SWDIO", 2: "SWCLK", 3: "reset"}, tags={0x40: ("max connections", lambda v: str(v[0]))}),
     "oep.wire.swio": Known("scan, attach, detach over SWIO, one wire (attach returns a connection)",
-                           roles={1: "SWIO"}, tags={0x40: ("max connections", lambda v: str(v[0]))}),
+                           roles={1: "SWIO", 3: "reset"}, tags={0x40: ("max connections", lambda v: str(v[0]))}),
     "oep.wire.swd": Known("scan, attach, detach over ARM SWD", roles={1: "SWDIO", 2: "SWCLK"},
                           tags={0x40: ("max connections", lambda v: str(v[0]))}),
     "oep.target.riscv-dm": Known(
         "RISC-V Debug Module over DMI: step lists, block read/write, run until halt, halt/resume",
-        features={0: "block read/write", 1: "run until halt", 2: "reset", 3: "step"},
-        tags={0x40: ("clobbers", lambda v: ", ".join(f"0x{r:04x}" for r in struct.unpack(f"<{len(v) // 2}H", v)))}),
+        features={0: "block read/write", 1: "run until halt", 2: "reset", 3: "step"}),
     "oep.target.arm-adi": Known("ARM Debug Interface: DP/AP transfer lists, block transfers"),
     "oep.target.console": Known(
         "console streams on a debug connection (position-addressed, marks)",

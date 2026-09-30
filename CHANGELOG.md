@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `oep dump` names the wires' reset role (role 3) and no longer lists riscv-dm's clobbers (gone: the probe puts the registers back itself, oep-if-debug §4.5).
+- (JA) `oep dump` は wire の reset の役（role 3）を名前で出し、riscv-dm の clobbers を出さなくなった（無くなった: probe が自分でレジスタを戻す、oep-if-debug §4.5）。
 - (EN) `LogicCapture.to_sr` writes up to 16 channels (sigrok unitsize 2 above 8); it stopped at 8.
 - (JA) `LogicCapture.to_sr` は 16 ch まで書く（8 ch を超えると sigrok の unitsize 2）。前は 8 ch まで。
 
