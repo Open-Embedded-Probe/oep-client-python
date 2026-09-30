@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.9
 - (EN) The fake probe has `oep.fixture.capture` (logic, `fake_capture`): one-shot, repeat (a ring and release), streaming (data pushes), level / edge triggers with a pretrigger, events, and a known waveform (sample i = the counter i, channel k = its bit k) in the profile's layout (P4: w 1-16; classic ESP32: w 8). A capture shares pins with other interfaces (it only listens). `Endpoint.pushes()` gives the frames the probe sends by itself; fake_serve sends them on the pty and TCP. `--capture-slipped` sets flags bit2 on every segment.
 - (JA) 偽の probe に `oep.fixture.capture`（ロジック、`fake_capture`）を入れた: ワンショット、リピート（リングと release）、ストリーミング（データの push）、レベル / エッジのトリガとプリトリガ、出来事。取れる波形は決まっている（サンプル i = カウンタ i、チャネル k = そのビット k）。layout は profile のもの（P4: w 1〜16、classic ESP32: w 8）。capture はほかのインターフェースとピンを共有できる（聞くだけ）。`Endpoint.pushes()` が probe の送り出すフレームを返し、fake_serve は pty と TCP に流す。`--capture-slipped` は区画すべてに flags bit2 を立てる。
 - (EN) The fake: an attach without pins joins the wire's one live connection, also on a wire whose pins the host chooses (oep-if-debug §1).
