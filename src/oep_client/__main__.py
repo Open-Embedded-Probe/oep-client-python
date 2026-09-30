@@ -186,12 +186,14 @@ def _config(args) -> int:
             if args.lock:
                 mask, _, value = args.lock.partition(":")
                 lock = (1, struct.pack("<I", int(mask, 16)), struct.pack("<I", int(value, 16)))
-            it = config.Slot(args.slot, fn, _pins(hst, fn, args.pins, args.wire), args.name, args.attach, args.retry,
-                             args.mechanism, lock, args.max_speed, args.idle_clock)
+            it = config.Slot(slot=args.slot, wire_fn=fn, pins=_pins(hst, fn, args.pins, args.wire), name=args.name,
+                             attach=args.attach, retry_s=args.retry, mechanism=args.mechanism, lock=lock,
+                             max_speed=args.max_speed, idle_clock=args.idle_clock)
             _change(hst, cfg, [it], args.save)
         elif args.action == "bind":
             slots = {it.name: it.slot for it in cfg.items() if isinstance(it, config.Slot)}
-            it = config.Bind(args.port, args.mode, [_stream(s, slots) for s in args.stream], args.select)
+            it = config.Bind(port=args.port, mode=args.mode, streams=[_stream(s, slots) for s in args.stream],
+                             selected=args.select)
             _change(hst, cfg, [it], args.save)
         elif args.action == "plan":
             fn, roles = _plan_fn(hst, args.fn)
@@ -203,12 +205,12 @@ def _config(args) -> int:
                 number = int(role) if role.isdigit() else roles.get(role.lower())
                 if number is None:
                     raise SystemExit(f"{role}: not a role of fn {fn} (roles: {', '.join(sorted(roles)) or 'numbers only'})")
-                items.append(config.Plan(fn, number, int(ch, 0)))
+                items.append(config.Plan(fn=fn, role=number, channel=int(ch, 0)))
             _change(hst, cfg, items, args.save)
         elif args.action == "label":
-            _change(hst, cfg, [config.Label(args.channel, args.text)], args.save)
+            _change(hst, cfg, [config.Label(channel=args.channel, text=args.text)], args.save)
         elif args.action == "idle":
-            _change(hst, cfg, [config.Idle(args.channel, args.mode)], args.save)
+            _change(hst, cfg, [config.Idle(channel=args.channel, mode=args.mode)], args.save)
         elif args.action == "remove":
             _change(hst, cfg, [config.remove(args.kind, args.key)], args.save)
         else:

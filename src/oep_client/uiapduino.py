@@ -20,7 +20,7 @@ from __future__ import annotations
 import struct
 import time
 
-from . import host as h, target
+from . import host as h, riscv
 from .fixture import Gpio
 
 GPIO_OPEN_DRAIN_LOW, GPIO_OPEN_DRAIN_RELEASE = Gpio.OPEN_DRAIN_LOW, Gpio.OPEN_DRAIN_RELEASE   # for older scripts
@@ -56,17 +56,17 @@ PREPARE_BOOT = [
 ]
 
 
-def _write_register(dm: target.RiscvDm, regno: int, value: int) -> bytes:
+def _write_register(dm: riscv.RiscvDm, regno: int, value: int) -> bytes:
     """DMI steps of one abstract-command register write (aarsize 32, transfer, write), then wait for it."""
     return (dm.step_write(DATA0, value) + dm.step_write(COMMAND, 0x00230000 | regno)
             + dm.step_poll(ABSTRACTCS, 1 << 12, 0, 100))
 
 
-def run_payload(hst: h.Host, wire: target.Wire, payload: list[int]) -> None:
+def run_payload(hst: h.Host, wire: riscv.Wire, payload: list[int]) -> None:
     """Attach halted, place the payload, resume into it with interrupts off, and let go of the target."""
     conn, _ = wire.attach(halt=True)
     try:
-        dm = target.RiscvDm(hst, conn)
+        dm = riscv.RiscvDm(hst, conn)
         data = struct.pack(f"<{len(payload)}I", *payload)
         dm.write_block(PAYLOAD_BASE, data)
         if dm.read_block(PAYLOAD_BASE, len(payload)) != data:
@@ -92,9 +92,9 @@ class NeedsPinReset(RuntimeError):
     pass
 
 
-def pin_reset_flag(hst: h.Host, wire: target.Wire) -> bool:
+def pin_reset_flag(hst: h.Host, wire: riscv.Wire) -> bool:
     conn, _ = wire.attach(halt=True)
-    dm = target.RiscvDm(hst, conn)
+    dm = riscv.RiscvDm(hst, conn)
     try:
         return bool(dm.read32(RSTSCKR) & PINRSTF)
     finally:
@@ -102,7 +102,7 @@ def pin_reset_flag(hst: h.Host, wire: target.Wire) -> bool:
         wire.detach(conn)
 
 
-def enter_bootloader(hst: h.Host, wire: target.Wire, gpio_fn: int | None = None,
+def enter_bootloader(hst: h.Host, wire: riscv.Wire, gpio_fn: int | None = None,
                      nrst_channel: int | None = None) -> str:
     """-> "swio" (a pin reset's flag was still set) or "nrst" (pulsed). Raises NeedsPinReset otherwise."""
     how = "swio"
@@ -117,5 +117,5 @@ def enter_bootloader(hst: h.Host, wire: target.Wire, gpio_fn: int | None = None,
     return how
 
 
-def normalize_user(hst: h.Host, wire: target.Wire) -> None:
+def normalize_user(hst: h.Host, wire: riscv.Wire) -> None:
     run_payload(hst, wire, NORMALIZE_USER)

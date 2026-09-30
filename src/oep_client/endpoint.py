@@ -68,6 +68,25 @@ class Reject(Exception):
         self.reason, self.payload = reason, payload
 
 
+_UNA = reg.CORE.tlv["unavailable_payload"]
+UNAVAILABLE_CAUSE, HOLDER_KIND = reg.CORE.enum["unavailable_cause"], reg.CORE.enum["holder_kind"]
+
+
+def unavailable(cause: str | None = None, channel: int | None = None, holder_fn: int | None = None,
+                holder_kind: str | None = None, extra: bytes = b"") -> Reject:
+    """rejected unavailable with core §4.3's payload: why, the channel, who holds it (each optional)."""
+    body = b""
+    if cause:
+        body += m.tlv(_UNA["cause"], bytes([UNAVAILABLE_CAUSE[cause]]))
+    if channel is not None:
+        body += m.tlv(_UNA["channel"], struct.pack("<H", channel))
+    if holder_fn is not None:
+        body += m.tlv(_UNA["holder_fn"], struct.pack("<H", holder_fn))
+    if holder_kind:
+        body += m.tlv(_UNA["holder_kind"], bytes([HOLDER_KIND[holder_kind]]))
+    return Reject(m.UNAVAILABLE, body + extra)
+
+
 class Take:
     """Reads a request's fixed part; too short -> rejected malformed. `tail(known)` applies the request-tail rule."""
 
@@ -241,6 +260,7 @@ class Endpoint:
         self.window, self.max_inflight = window, max_inflight
         self.remember_max = remember_max
         self.names = {o.fn: o.name for o in probe.offered}
+        self.identity = {o.fn: (o.name, o.instance, o.revision) for o in probe.offered}   # what a saved item names
         self.fns = {name: fn for fn, name in sorted(self.names.items(), reverse=True)}   # first fn of each name
         self.static = {o.fn: o.tlvs for o in probe.offered}
         self.static_labels: dict[int, str] = {}
@@ -277,7 +297,7 @@ class Endpoint:
         self.target = next(iter(self.targets.values()), FakeTarget())
         self.captures: dict[int, fake_capture.FakeCapture] = {
             fn: self._capture_from(self.static[fn]) for fn, name in self.names.items()
-            if name in ("oep.fixture.capture", "oep.fixture.analog")}
+            if name in ("oep.fixture.logic", "oep.fixture.analog")}
         self.groups: dict[int, fake_capture.FakeGroup] = {
             fn: self._group_from(self.static[fn]) for fn, name in self.names.items() if name == "oep.fixture.capture-group"}
         self.mechanisms = set()
@@ -329,6 +349,8 @@ class Endpoint:
         self.uart_tx: dict[int, bytearray] = {}        # what a serial port's raw bytes sent out on a fixture UART
         self.config: dict[tuple[int, int], bytes | list[bytes]] = {}   # (item tag, key) -> value (plan: list)
         self.saved: dict | None = getattr(self, "saved", None)
+        self.saved_ids: dict[int, tuple] = getattr(self, "saved_ids", {})   # saved fn -> (name, instance, revision)
+        self.saved_reason = 0                          # why the saved settings were not applied (probe.config §4)
         self.slots: dict[int, Slot] = {}
         self.binds: dict[int, Bind] = {}
         self.slot_rt: dict[int, SlotRuntime] = {}
@@ -338,7 +360,7 @@ class Endpoint:
         self.held_ports: set[int] = set()
         self.session_resets: dict[tuple[int, int], tuple[object, int]] = {}   # stream key -> (sid, position)
         if self.saved is not None:
-            self._apply_config(dict(self.saved), boot=True)
+            self._apply_saved()
 
     @property
     def target_id(self) -> int | None:
@@ -351,7 +373,7 @@ class Endpoint:
     @staticmethod
     def _capture_from(tlvs: list[bytes]) -> fake_capture.FakeCapture:
         """A capture as its describe declares it (modes, the w allowed, the rate range, max_read, the ring)."""
-        d = reg.FIXTURE_CAPTURE.tlv["describe"]
+        d = reg.FIXTURE_LOGIC.tlv["describe"]
         modes, widths, lo, hi, ring, most, fronts = set(), {8}, 1, 1_000_000, 1, 1024, {}
         for t in tlvs:
             tag, v = t[0], t[2:2 + t[1]]
@@ -427,7 +449,7 @@ class Endpoint:
                     cap.slipped = self.capture_slipped
                 return self._answer(cap.answer(settled), ignored)
             if op in (O["start"], O["stop"], O["force"]) and cap.group is not None:
-                raise Reject(m.UNAVAILABLE)                        # bound: the group starts and stops it
+                raise unavailable("bound_in_group")                # bound: the group starts and stops it
             if op == O["start"]:
                 t.tail()
                 self._events(fn, cap.start(self.now()))
@@ -786,7 +808,8 @@ class Endpoint:
                     return m.REJECTED, m.UNSUPPORTED, bytes([tag])
             named = {fn for fn, _, _ in got}
             if named & self.plan_from_config:                       # the settings' plan is the settings' (core §8)
-                raise Reject(m.UNAVAILABLE)
+                raise unavailable("held_by_settings", holder_fn=min(named & self.plan_from_config),
+                                  holder_kind="settings_plan")
             self._check_plan(got)
             self.plan = {a for a in self.plan if a[0] not in named} | set(got)
             return m.COMPLETED, m.SUCCESS, b""
@@ -812,21 +835,31 @@ class Endpoint:
         slot_pins = {p for s in self.slots.values() for p in s.pair if p != 0xFFFF}
         slot_pins |= {p for c in self.conns.values() for p in c.pair if p != 0xFFFF}   # a live connection's pins too
         analog = {fn for fn, cap in self.captures.items() if cap.analog}
+        def held(ch: int, holder: int | None) -> Reject:
+            if holder is not None:
+                return unavailable("pin_in_use", ch, holder, "plan")
+            slot = next((n for n, s in self.slots.items() if ch in s.pair), None)
+            conn = next((c.fn for c in self.conns.values() if ch in c.pair), None)
+            return unavailable("pin_in_use", ch, conn, "slot" if slot is not None else "connection")
         for fn, role, ch in got:
             beside = [f for f, _, c in got if c == ch and f != fn] + [a[0] for a in others if a[2] == ch]
             if fn in analog:   # the analog shares its pin with nothing: another fn's plan, a slot, a connection
-                if role not in self._declared_roles(fn, ch) or beside or ch in slot_pins:
-                    raise Reject(m.UNAVAILABLE)
+                if role not in self._declared_roles(fn, ch):
+                    raise unavailable(channel=ch)
+                if beside or ch in slot_pins:
+                    raise held(ch, beside[0] if beside else None)
                 continue
             if any(f in analog for f in beside):   # nor may anything come onto an analog pin
-                raise Reject(m.UNAVAILABLE)
+                raise held(ch, next(f for f in beside if f in analog))
             if fn in self.captures:
                 if role not in self._declared_roles(fn, ch):
-                    raise Reject(m.UNAVAILABLE)
+                    raise unavailable(channel=ch)
                 continue
             roles = {"oep.fixture.gpio": {1}, "oep.fixture.uart": {1, 2}}.get(self.names.get(fn, ""), set())
-            if role not in roles or any(k[2] == ch for k in kept) or ch in slot_pins:
-                raise Reject(m.UNAVAILABLE)
+            if role not in roles:
+                raise unavailable(channel=ch)
+            if any(k[2] == ch for k in kept) or ch in slot_pins:
+                raise held(ch, next((k[0] for k in kept if k[2] == ch), None))
 
     def _declared_roles(self, fn: int, channel: int) -> set[int]:
         """The roles fn's describe offers on `channel` (role_channels)."""
@@ -853,8 +886,9 @@ class Endpoint:
         elif self.names[fn] == "oep.probe.config":
             tlvs = [t for t in tlvs if t[0] != CFG_DESCRIBE["storage"]]
             saved_hash = self._hash(self.saved) if self.saved is not None else 0
+            state = 0 if self.saved is None else 2 if self.saved_reason else 1
             tlvs.insert(0, catalog.tlv(CFG_DESCRIBE["storage"], struct.pack(
-                "<IBII", self.storage_max, 0 if self.saved is None else 1, saved_hash, 20)))
+                "<IBIIB", self.storage_max, state, saved_hash, 20, self.saved_reason)))
             tlvs += [catalog.tlv(CFG_DESCRIBE["slot_state"], self._slot_state(n)) for n in sorted(self.slots)]
             tlvs += [catalog.tlv(CFG_DESCRIBE["bind_state"], self._bind_state(p)) for p in sorted(self.binds)]
         return tlvs
@@ -890,7 +924,7 @@ class Endpoint:
             for p in pairs:
                 tg = self._target(fn, p)
                 if tg.present:                                     # a live connection's pair: read over it, no restart
-                    found.append(struct.pack("<BHHI", 1, *p, tg.dmstatus()))
+                    found.append(m.element(struct.pack("<BHHI", 1, *p, tg.dmstatus())))
             return m.COMPLETED, m.SUCCESS, struct.pack("<BB", len(pairs), len(found)) + b"".join(found)
         if op in (0x02, 0x04):                                     # attach, attach_under_reset
             if op == 0x02:
@@ -956,7 +990,7 @@ class Endpoint:
                 users = (1 if "host" in c.users else 0) | (2 if any(u != "host" for u in c.users) else 0)
                 slot = next((n for n, s in self.slots.items() if s.wire_fn == fn and s.pair == c.pair), NO_SLOT)
                 tid = b"" if c.tid is None else struct.pack("<I", c.tid)
-                out += struct.pack("<HHHIBBBB", cid, *c.pair, c.speed, users, slot, 1 if tid else 0, len(tid)) + tid
+                out += m.element(struct.pack("<HHHIBBBB", cid, *c.pair, c.speed, users, slot, 1 if tid else 0, len(tid)) + tid)
             return m.COMPLETED, m.SUCCESS, bytes(out)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
@@ -1188,7 +1222,7 @@ class Endpoint:
             hits = [mk for mk in s.marks if m.serial_diff(mk[0], frm) >= 0]
             page = hits[:self.MARKS_PER_ANSWER]
             body = struct.pack("<BB", int(len(hits) > len(page)), len(page))
-            body += b"".join(struct.pack("<IQBIB", *mk) for mk in page)
+            body += b"".join(m.element(struct.pack("<IQBIB", *mk)) for mk in page)
             return self._answer(body, ignored)
         if s.closed:
             raise Reject(m.UNAVAILABLE)
@@ -1225,7 +1259,7 @@ class Endpoint:
         sid = t.take("H")
         s = self.streams.get(sid)
         if s is None:
-            raise Reject(m.UNAVAILABLE)
+            raise Reject(m.NO_CONNECTION)                          # a number it does not know (core §4.3)
         if op == _CON.op["close"]:
             t.tail()
             s.closed = True
@@ -1268,8 +1302,8 @@ class Endpoint:
             pairs = [t.take("HB") for _ in range(n)]
             t.tail()
             for i, (ch, mode) in enumerate(pairs):
-                if ch not in mine or mode > 7:
-                    raise Reject(m.UNAVAILABLE, bytes([i]))
+                if ch not in mine or mode > 7:                     # the position as the gpio's TLV (fixture §1)
+                    raise unavailable(channel=ch, extra=m.tlv(_GPIO.tlv["unavailable_payload"]["index"], bytes([i])))
             for ch, mode in pairs:
                 self.gpio_modes[ch] = mode
                 self.gpio_log.append((ch, mode))
@@ -1280,7 +1314,7 @@ class Endpoint:
             _, ignored = t.tail()
             for i, ch in enumerate(chans):
                 if ch not in mine:
-                    raise Reject(m.UNAVAILABLE, bytes([i]))
+                    raise unavailable(channel=ch, extra=m.tlv(_GPIO.tlv["unavailable_payload"]["index"], bytes([i])))
             levels = []
             for ch in chans:
                 mode = self.gpio_modes.get(ch, 0)
@@ -1359,12 +1393,14 @@ class Endpoint:
         if op == _CFG.op["save"]:
             t.tail()
             if len(b"".join(self._canonical(self.config))) > self.storage_max:
-                raise Reject(m.UNAVAILABLE)
+                raise unavailable("storage_full")
             self.saved = dict(self.config)
+            self.saved_ids = {fn: self.identity[fn] for fn in self._referenced(self.config) if fn in self.identity}
+            self.saved_reason = 0
             return m.COMPLETED, m.SUCCESS, struct.pack("<I", self._hash(self.config))
         if op == _CFG.op["erase"]:
             t.tail()
-            self.saved = None
+            self.saved, self.saved_ids, self.saved_reason = None, {}, 0
             return m.COMPLETED, m.SUCCESS, b""
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
@@ -1389,6 +1425,51 @@ class Endpoint:
     def _hash(self, config: dict | None) -> int:
         return zlib.crc32(b"".join(self._canonical(config or {})))
 
+    @staticmethod
+    def _referenced(config: dict) -> set[int]:
+        """The fns saved items name (probe.config §2): plan fns, slot wire_fns, fixture UARTs a bind carries."""
+        fns = set()
+        for (tag, key), value in config.items():
+            if tag == ITEM["plan"]:
+                fns.add(key)
+            elif tag == ITEM["slot"]:
+                fns.add(struct.unpack_from("<H", value, 1)[0])
+            elif tag == ITEM["bind"]:
+                for k in range(value[3]):
+                    if value[4 + 3 * k] == BIND_STREAM["fixture_uart"]:
+                        fns.add(struct.unpack_from("<H", value, 5 + 3 * k)[0])
+        return fns
+
+    def _apply_saved(self) -> None:
+        """At boot: the saved items' fns found again by (name, instance, revision) and renumbered, then applied; one
+        not found (or of another revision) leaves the whole unapplied (probe.config §2)."""
+        now = {ident: fn for fn, ident in self.identity.items()}
+        remap = {}
+        for fn, ident in self.saved_ids.items():
+            if ident not in now:
+                self.saved_reason = 2
+                return
+            remap[fn] = now[ident]
+        pack = lambda fn: struct.pack("<H", remap.get(fn, fn))
+        new = {}
+        for (tag, key), value in self.saved.items():
+            if tag == ITEM["plan"]:
+                new[(tag, remap.get(key, key))] = [pack(key) + v[2:] for v in value]
+            elif tag == ITEM["slot"]:
+                new[(tag, key)] = value[:1] + pack(struct.unpack_from("<H", value, 1)[0]) + value[3:]
+            elif tag == ITEM["bind"]:
+                v = bytearray(value)
+                for k in range(v[3]):
+                    if v[4 + 3 * k] == BIND_STREAM["fixture_uart"]:
+                        v[5 + 3 * k:7 + 3 * k] = pack(struct.unpack_from("<H", v, 5 + 3 * k)[0])
+                new[(tag, key)] = bytes(v)
+            else:
+                new[(tag, key)] = value
+        try:
+            self._apply_config(new, boot=True)
+        except Reject:
+            self.saved_reason = 3
+
     def load_config(self, items: list[bytes], saved: bool = True) -> None:
         """Put `items` (item TLVs) in as the config, as a set would; with `saved` they are also the saved config
         (a probe that booted with them)."""
@@ -1402,6 +1483,7 @@ class Endpoint:
         self._apply_config(new, changed_slots=None)
         if saved:
             self.saved = dict(self.config)
+            self.saved_ids = {fn: self.identity[fn] for fn in self._referenced(self.config) if fn in self.identity}
 
     def _apply_config(self, new: dict, changed_slots: set[int] | None = None, boot: bool = False) -> None:
         """Check the whole config, then make it the current one (set is all-or-nothing up to reserving resources);
@@ -1469,8 +1551,8 @@ class Endpoint:
         t = Take(v)
         n, wire_fn, swdio, swclk, attach, retry_s, max_speed, idle_clock, mech, name_len = t.take("BHHHBHIBBB")
         name = t.bytes(name_len)
-        scheme = t.take("B")
-        rest = v[t.at:]
+        lock_len = t.take("B")                                     # the lock's part; 0 = none (probe.config §1.1)
+        lock_part = t.bytes(lock_len)                              # what follows is for later fields: skipped (core §2.3)
         if n >= self.slots_max or attach not in SLOT_ATTACH.values():
             raise Reject(m.MALFORMED)
         if retry_s and attach != SLOT_ATTACH["at_boot"]:
@@ -1484,19 +1566,18 @@ class Endpoint:
         if mech not in self.mechanisms:
             raise Reject(m.UNSUPPORTED)
         lock = None
-        if scheme:
-            if not rest or len(rest) % 2:
+        if lock_len:
+            if lock_len < 3 or lock_len % 2 == 0 or lock_part[0] == 0:
                 raise Reject(m.MALFORMED)
-            lock = (scheme, rest[:len(rest) // 2], rest[len(rest) // 2:])
-        elif rest:
-            raise Reject(m.MALFORMED)
+            half = (lock_len - 1) // 2
+            lock = (lock_part[0], lock_part[1:1 + half], lock_part[1 + half:])
         return Slot(n, wire_fn, (swdio, swclk), attach, retry_s, max_speed, idle_clock, mech, name.decode(), lock)
 
     def _parse_bind(self, v: bytes, slots: dict[int, Slot]) -> Bind:
         t = Take(v)
         port, mode, selected, n = t.take("BBBB")
         streams = tuple(t.take("BH") for _ in range(n))
-        if t.at != len(v) or n == 0:
+        if n == 0:                                                 # after the streams: later fields, skipped
             raise Reject(m.MALFORMED)
         if port not in self.serial_ports:
             raise Reject(m.UNAVAILABLE)
@@ -1735,5 +1816,5 @@ class Endpoint:
 
 SIMS = {"oep.wire.rvswd": "wire", "oep.wire.swio": "wire", "oep.target.riscv-dm": "dm",
         "oep.target.console": "console", "oep.fixture.gpio": "gpio", "oep.fixture.uart": "uart",
-        "oep.probe.config": "config_op", "oep.fixture.capture": "capture", "oep.fixture.analog": "capture",
+        "oep.probe.config": "config_op", "oep.fixture.logic": "capture", "oep.fixture.analog": "capture",
         "oep.fixture.capture-group": "group"}

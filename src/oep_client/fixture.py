@@ -1,26 +1,28 @@
-"""oep.fixture.gpio and oep.fixture.uart, revision 1 (oep-spec oep-if-fixture). The capture is in `capture`
-(oep.fixture.capture revision 1 = logic-capture's basic set).
+"""oep.fixture.gpio, oep.fixture.uart, oep.fixture.i2c-target and oep.fixture.spi-target, revision 1 (oep-spec
+oep-if-fixture). The capture is in `capture` (oep.fixture.logic / analog).
 
-Plan roles stay as they were: gpio 1 = line; uart 1 = RX, 2 = TX. Only channels the plan assigned can be used.
+Plan roles: gpio 1 = line; uart 1 = RX, 2 = TX; i2c-target 1 = SDA, 2 = SCL; spi-target 1 = SCK, 2 = MOSI, 3 = MISO, 4 = CS.
+Only channels the plan assigned can be used.
 """
 
 from __future__ import annotations
 
 import struct
 import time
+from dataclasses import dataclass
 
 from . import host as h, message as m, registry as reg
 from .console import PositionStream, StreamIO
 from .core import Interface
 
-_GPIO, _UART = reg.FIXTURE_GPIO, reg.FIXTURE_UART
+_GPIO, _UART, _I2C, _SPI = reg.FIXTURE_GPIO, reg.FIXTURE_UART, reg.FIXTURE_I2C_TARGET, reg.FIXTURE_SPI_TARGET
 _MODE = _GPIO.enum["mode"]
 
 
 class Gpio(Interface):
     """oep.fixture.gpio. `set` applies (channel, mode) pairs in order in one request (pull NRST, then release it); a
-    channel the plan did not assign or a mode the probe lacks rejects the whole list as unavailable (payload: its
-    index). The open-drain modes never drive a line high: the way to move a target's reset line."""
+    channel the plan did not assign or a mode the probe lacks rejects the whole list as unavailable (host.Unavailable:
+    .channels, and its position as TLV 0x40). The open-drain modes never drive a line high: the way to move a target's reset line."""
     NAME = "oep.fixture.gpio"
     REVISION = 1
     SET, READ = _GPIO.op["set"], _GPIO.op["read"]
@@ -119,3 +121,113 @@ class FixtureUartIO(StreamIO):
         if self.position is None:                  # not configured here: read from the oldest byte kept
             self.position = self.uart.read(PositionStream.FROM_OLDEST, 0, 0).start
         return super().read(n)
+
+
+@dataclass(frozen=True, kw_only=True)
+class I2cStatus:
+    state: int          # 0 not configured, 1 running
+    mode: int           # the configure mode
+    armed: bool         # mode 1: waiting for a write
+    queued: int         # frames waiting for read_rx
+    rx_frames: int
+    tx_slots: int
+    errors: int
+
+
+class I2cTarget(Interface):
+    """oep.fixture.i2c-target (oep-if-fixture §3): the probe as an I2C target. Mode 1 fixed rx (arm_rx with the exact
+    length), 2 framed rx (a 1-byte length write, then the payload), 3 preloaded tx (slots the controller reads)."""
+    NAME = _I2C.name
+    REVISION = _I2C.revision
+    CONFIGURE, ARM_RX, READ_RX, PRELOAD_TX, STATUS, RESET, STRETCH = (
+        _I2C.op[k] for k in ("configure", "arm_rx", "read_rx", "preload_tx", "status", "reset", "stretch"))
+    MODE_FIXED_RX, MODE_FRAMED_RX, MODE_PRELOADED_TX = (_I2C.enum["mode"][k] for k in ("fixed_rx", "framed_rx", "preloaded_tx"))
+    ROLE_SDA, ROLE_SCL = _I2C.enum["role"]["sda"], _I2C.enum["role"]["scl"]
+
+    def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
+        super().__init__(hst, name, fn=fn)
+
+    def assignments(self, sda: int, scl: int) -> list[tuple[int, int, int]]:
+        return [(self.fn, self.ROLE_SDA, sda), (self.fn, self.ROLE_SCL, scl)]
+
+    def configure(self, address: int, mode: int) -> None:
+        self._call(self.CONFIGURE, struct.pack("<BB", address, mode))
+
+    def arm_rx(self, length: int) -> None:
+        self._call(self.ARM_RX, struct.pack("<H", length))
+
+    def read_rx(self) -> tuple[int, bytes]:
+        """-> (frames still queued after this one, the oldest frame or b"")."""
+        rd = m.Reader(self._call(self.READ_RX).payload)
+        pending, count = rd.take("BH")
+        return pending, rd.bytes(count)
+
+    def preload_tx(self, data: bytes) -> int:
+        """-> the slots preloaded so far (u8, wraps)."""
+        rd = m.Reader(self._call(self.PRELOAD_TX, struct.pack("<H", len(data)) + data).payload)
+        slots = rd.u8()
+        rd.tail()
+        return slots
+
+    def status(self) -> I2cStatus:
+        rd = m.Reader(self._call(self.STATUS, locked=False).payload)
+        state, mode, armed, queued, rx, tx, errors = rd.take("BBBBIBH")
+        rd.tail()
+        return I2cStatus(state=state, mode=mode, armed=bool(armed), queued=queued, rx_frames=rx, tx_slots=tx, errors=errors)
+
+    def reset(self) -> None:
+        self._call(self.RESET)
+
+    def stretch(self, stretch_us: int) -> None:
+        """Hold SCL low for stretch_us after each received byte (0 = off); probes declaring features bit1 only."""
+        self._call(self.STRETCH, struct.pack("<I", stretch_us))
+
+
+@dataclass(frozen=True, kw_only=True)
+class SpiStatus:
+    state: int
+    mode: int
+    bit_order: int
+    armed: bool
+    queued: int
+    transactions: int
+    errors: int
+
+
+class SpiTarget(Interface):
+    """oep.fixture.spi-target (oep-if-fixture §4): one CS-framed transaction at a time - arm() with the MISO bytes,
+    then read_rx() after the controller raised CS."""
+    NAME = _SPI.name
+    REVISION = _SPI.revision
+    CONFIGURE, ARM, READ_RX, STATUS, RESET = (_SPI.op[k] for k in ("configure", "arm", "read_rx", "status", "reset"))
+    ROLE_SCK, ROLE_MOSI, ROLE_MISO, ROLE_CS = (_SPI.enum["role"][k] for k in ("sck", "mosi", "miso", "cs"))
+    MSB_FIRST, LSB_FIRST = 0, 1
+
+    def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
+        super().__init__(hst, name, fn=fn)
+
+    def assignments(self, sck: int, mosi: int, miso: int, cs: int) -> list[tuple[int, int, int]]:
+        return [(self.fn, self.ROLE_SCK, sck), (self.fn, self.ROLE_MOSI, mosi), (self.fn, self.ROLE_MISO, miso),
+                (self.fn, self.ROLE_CS, cs)]
+
+    def configure(self, mode: int = 0, bit_order: int = 0) -> None:
+        self._call(self.CONFIGURE, struct.pack("<BB", mode, bit_order))
+
+    def arm(self, length: int, tx: bytes = b"") -> None:
+        self._call(self.ARM, struct.pack("<HH", length, len(tx)) + tx)
+
+    def read_rx(self) -> tuple[int, int, bytes]:
+        """-> (transactions still queued, bits clocked, the MOSI bytes) of the oldest finished transaction."""
+        rd = m.Reader(self._call(self.READ_RX).payload)
+        pending, bits, count = rd.take("BIH")
+        return pending, bits, rd.bytes(count)
+
+    def status(self) -> SpiStatus:
+        rd = m.Reader(self._call(self.STATUS, locked=False).payload)
+        state, mode, order, armed, queued, n, errors = rd.take("BBBBBIH")
+        rd.tail()
+        return SpiStatus(state=state, mode=mode, bit_order=order, armed=bool(armed), queued=queued, transactions=n,
+                         errors=errors)
+
+    def reset(self) -> None:
+        self._call(self.RESET)

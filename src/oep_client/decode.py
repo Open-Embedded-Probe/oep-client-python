@@ -1,4 +1,4 @@
-"""Host-side decoders for capture channels (oep.fixture.capture: `LogicCapture.channel(data, k)` gives one value
+"""Host-side decoders for capture channels (oep.fixture.logic: `LogicCapture.channel(data, k)` gives one value
 per sample)."""
 
 from __future__ import annotations

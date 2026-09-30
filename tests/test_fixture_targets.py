@@ -1,8 +1,8 @@
-"""The ESP32 I2C / SPI target clients (custom interfaces revision 1) and the I2C decoder, against a scripted host."""
+"""oep.fixture.i2c-target / spi-target clients and the I2C decoder, against a scripted host."""
 
 import struct
 
-from oep_client import decode, esp32_targets as et, message as m
+from oep_client import decode, fixture as et, message as m
 from test_target_parts import ScriptedHost, ok
 
 I2C, SPI = 11, 12
@@ -19,15 +19,16 @@ def test_i2c_target_shapes():
     hst = host({(I2C, et.I2cTarget.CONFIGURE): lambda p: ok(),
                 (I2C, et.I2cTarget.PRELOAD_TX): lambda p: ok(bytes([2])),
                 (I2C, et.I2cTarget.READ_RX): lambda p: ok(bytes([1]) + struct.pack("<H", 3) + b"abc"),
-                (I2C, et.I2cTarget.STATUS): lambda p: ok(struct.pack("<BIBH", 0x07, 5, 2, 0)),
-                (I2C, et.I2cTarget.READ_HW): lambda p: ok(struct.pack("<7I", *range(7)))})
+                (I2C, et.I2cTarget.STATUS): lambda p: ok(struct.pack("<BBBBIBH", 1, 3, 0, 1, 5, 2, 0)),
+                (I2C, et.I2cTarget.STRETCH): lambda p: ok()})
     t = et.I2cTarget(hst)
     t.configure(0x42, t.MODE_PRELOADED_TX)
     assert hst.log[-1][2] == bytes([0x42, 3])
     assert t.preload_tx(b"\x11\x22") == 2 and hst.log[-1][2] == struct.pack("<H", 2) + b"\x11\x22"
     assert t.read_rx() == (1, b"abc")
-    assert t.status() == et.I2cStatus(0x07, 5, 2, 0)
-    assert t.read_hw().scl_stretch_conf == 6
+    assert t.status() == et.I2cStatus(state=1, mode=3, armed=False, queued=1, rx_frames=5, tx_slots=2, errors=0)
+    t.stretch(50)
+    assert hst.log[-1][2] == struct.pack("<I", 50)
     assert t.assignments(50, 52) == [(I2C, 1, 50), (I2C, 2, 52)]
 
 

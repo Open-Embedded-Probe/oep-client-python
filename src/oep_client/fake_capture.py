@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-"""oep.fixture.capture / oep.fixture.analog / oep.fixture.capture-group in the fake probe (oep-spec
+"""oep.fixture.logic / oep.fixture.analog / oep.fixture.capture-group in the fake probe (oep-spec
 docs/oep-if-capture.ja.md, revision 1).
 
 What it captures is known in advance, so a receiver can check it (sample i counted from the track's start, across
@@ -30,7 +30,7 @@ from fractions import Fraction
 
 from . import message as m, registry as reg
 
-CAP, ANA, GRP = reg.FIXTURE_CAPTURE, reg.FIXTURE_ANALOG, reg.FIXTURE_CAPTURE_GROUP
+CAP, ANA, GRP = reg.FIXTURE_LOGIC, reg.FIXTURE_ANALOG, reg.FIXTURE_CAPTURE_GROUP
 OP = CAP.op
 TLV, ANSWER = CAP.tlv["configure"], ANA.tlv["configure_answer"]
 MODE, STATE, TRIGGER = CAP.enum["mode"], CAP.enum["state"], CAP.enum["trigger"]
@@ -191,7 +191,7 @@ class FakeCapture:
             step_ns = int(1e9 / (s["rate"] * c))                   # one ADC, the channels in turn
             for k in range(c):
                 lo, hi, _ = self.frontends[s["frontends"][k]]
-                out += tlv(ANSWER["scale"], struct.pack("<BII", k, 0, (hi - lo) * 1_000_000 // FULL))
+                out += tlv(ANSWER["scale"], struct.pack("<Bii", k, 0, (hi - lo) * 1_000_000 // FULL))   # signed (§3.3)
                 out += tlv(ANSWER["skew"], struct.pack("<BI", k, k * step_ns))
                 out += tlv(ANSWER["frontend_used"], bytes([k, s["frontends"][k]]))
             out += tlv(ANSWER["reference"], struct.pack("<BIB", ANA.enum["reference_source"]["internal"], 1100, 0))
@@ -338,8 +338,8 @@ class FakeCapture:
         return struct.pack("<QB", position, flags) + data
 
     def segment_list(self, first: int, budget: int) -> bytes:
-        out = [s.pack() for s in self.segs if s.serial >= first]
-        out = out[:max(0, (budget - 1) // SEGMENT.size)][:255]
+        out = [m.element(s.pack()) for s in self.segs if s.serial >= first]   # len(u8) then the info (core §2.3)
+        out = out[:max(0, (budget - 1) // (1 + SEGMENT.size))][:255]
         return bytes([len(out)]) + b"".join(out)
 
     def release(self, serial: int, now_ms: int) -> None:

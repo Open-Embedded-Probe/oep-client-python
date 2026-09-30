@@ -23,6 +23,10 @@ GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md 
 
 ## モジュール（`oep_client`）
 
+下の表のモジュールが公開の API です。直接 import します（`from oep_client import riscv`）。表に無いものと、`_` で始まる名前は
+変わることがあります。probe の firmware とこのクライアントは版で組になります: OpenEmbeddedProbe X.Y.Z と oep-client-python
+X.Y.Z（v1 の凍結までは、どのリリースも wire を壊しうるので、版を一緒に動かします）。
+
 | モジュール | 中身 |
 |---|---|
 | `host` | 要求と結果、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`） |
@@ -30,10 +34,9 @@ GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md 
 | `core` | インターフェースを名前で探す（キャッシュつき）、confirm、probe の describe（ラベル、transport の一覧）、ロックの取り方（`take`）、ピンの割り当て（plan）、`Interface` の土台 |
 | `riscv` | `oep.wire.rvswd` / `oep.wire.swio`、`oep.target.riscv-dm`、リセット線の探索、GPIO 経由の attach |
 | `console` | `oep.target.console`（位置つきのストリーム）と、バイト列として読む `ConsoleIO` |
-| `fixture` | `oep.fixture.gpio` / `uart`（revision 1） |
+| `fixture` | `oep.fixture.gpio` / `uart` / `i2c-target` / `spi-target`（revision 1） |
 | `config` | `oep.probe.config`（スロット、bind、plan / label / idle の項目、get / set / save / erase、スロットと bind の今の状態） |
-| `capture` | `oep.fixture.capture`（revision 1、oep-spec の oep-if-capture）。読んだ区画は `Host.on_capture` の callback に `CaptureRecord` で渡る（記録の受け口。wireskein には依存しない） |
-| `esp32_targets` | 独自インターフェース `io.github.ch32-riscv-ug.esp32.i2c-target` / `spi-target`（oep-probe-arduino の ESP32 の I2C / SPI の target） |
+| `capture` | `oep.fixture.logic`（revision 1、oep-spec の oep-if-capture）。読んだ区画は `Host.on_capture` の callback に `CaptureRecord` で渡る（記録の受け口。wireskein には依存しない） |
 | `decode` | キャプチャのチャネルの復号（I2C） |
 | `registry` | oep-spec の番号の表から生成したモジュール（編集しない。oep-spec から写し直す） |
 | `arm` | `oep.wire.swd`、`oep.target.arm-adi`、MEM-AP、Cortex-M の停止と関数呼び出し |
@@ -42,7 +45,6 @@ GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md 
 | `uiapduino` | UIAPduino のブートローダへの出入り |
 | `catalog` / `names` / `interfaces` / `dump` | 能力の一覧と describe の形、表示 |
 | `fake` / `endpoint` / `fake_serial` / `fake_serve` | 偽の probe（下の「偽の probe」） |
-| `target` | 上の主なものを 1 か所から import する入口（最初の版に合わせて書いた呼び出し側のため） |
 
 ## 使い方の例
 
@@ -50,7 +52,8 @@ GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md 
 from oep_client import core, link, riscv, ch32_flash
 
 hst = link.open_host("/run/board-identify/by-id/esp32-series-30eda0e31108")   # pipelining つき
-# a serial port (always COBS), "tcp://127.0.0.1:PORT" (a broker), "usb" / "usb:303a:0002[:SERIAL]" (vendor, then HID)
+# a serial port (always COBS), "tcp://127.0.0.1:PORT" (a broker), "usb:<unit id>" (the probe whose USB serial it is),
+# "usb" / "usb:303a:0002[:SERIAL]" (vendor, then HID)
 core.take(hst, 30000, owner="flash script")   # the only way in: force; else wait out the lease, name the holder
 wire = riscv.Wire(hst, "oep.wire.rvswd")
 conn, _ = wire.attach(halt=True)
@@ -83,7 +86,7 @@ oep config save <probe>                      # 再起動の後も残す（remove
 `p4-x035`、`esp32-v003`、`p4-bench` = スロット 3 か所と席 2 つの架空の治具、`rp2350-pins` = host がピンを選ぶ wire）、`fake_serial` は
 シリアルの口のバイトの側（COBS の候補、生のバイトと bind、セッション中の停止と再開）。
 
-`fake_capture` は `oep.fixture.capture`（ロジック）: ワンショット、リピート（実際のレートで時計どおりに区画ができ、リング、release）、
+`fake_capture` は `oep.fixture.logic`（ロジック）: ワンショット、リピート（実際のレートで時計どおりに区画ができ、リング、release）、
 ストリーミング（購読している間のデータの push）、レベル / エッジのトリガとプリトリガ、出来事。取れるものは決まっている: サンプル i は
 カウンタの値 i で、チャネル k はそのビット k（周期 2^(k+1) サンプルの方形波）。layout は profile が許す形（`p4-x035`: P4 の
 PARLIO と同じ w 1〜16、3 本なら w 4。`esp32-v003`: classic ESP32 の sampler と同じ w 8、ワンショットだけ）。capture は聞くだけ

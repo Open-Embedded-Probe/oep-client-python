@@ -65,7 +65,7 @@ class PositionStream(Interface):
         """One answer's marks with serial >= from_serial (in serial order). -> (marks, more)."""
         rd = m.Reader(self._call(self.MARKS, self._stream_prefix() + struct.pack("<I", from_serial), locked=False).payload)
         more, count = rd.take("BB")
-        marks = [Mark(*rd.take("IQBIB")) for _ in range(count)]
+        marks = [Mark(*rd.element().take("IQBIB")) for _ in range(count)]
         rd.tail()
         return marks, bool(more)
 

@@ -228,6 +228,18 @@ class Reader:
     def tail(self) -> Tail:
         return Tail.parse(self.rest())
 
+    def element(self) -> "Reader":
+        """One element of an answer's list: len(u8) then the element (core §2.3). The element's own Reader: read what
+        you know of it; what follows (fields added later) is skipped with it."""
+        return Reader(self.bytes(self.u8()))
+
+
+def element(body: bytes) -> bytes:
+    """An answer list's element as sent: len(u8) then the element (core §2.3)."""
+    if len(body) > 255:
+        raise ValueError("a list element is at most 255 bytes")
+    return bytes([len(body)]) + body
+
 
 def serial_diff(a: int, b: int, bits: int = 32) -> int:
     """a - b for values that wrap (positions u32, seq u16, µs u32): the difference as a signed number of `bits` (§0)."""

@@ -106,10 +106,10 @@ def test_p4_follows_the_agreed_names():
     # the debug port: wire, riscv-dm and console are one instance
     assert {by_name[n].entry.instance for n in ("oep.wire.rvswd", "oep.target.riscv-dm", "oep.target.console")} == {1}
     assert by_name["oep.wire.rvswd"].description.groups[1] == [(1, 2), (2, 54)]
-    i2c = by_name["io.github.ch32-riscv-ug.esp32.i2c-target"]
+    i2c = by_name["oep.fixture.i2c-target"]
     assert i2c.description.roles[1] == i2c.description.roles[2]
     assert 2 not in i2c.description.roles[1]          # reserved for RVSWD
-    for gone in ("oep.probe.identity", "oep.target.control", "oep.target.flash", "oep.fixture.i2c-target"):
+    for gone in ("oep.probe.identity", "oep.target.control", "oep.target.flash", "io.github.ch32-riscv-ug.esp32.i2c-target"):
         assert gone not in by_name
 
 
@@ -132,9 +132,10 @@ def test_paging_does_not_change_what_is_seen():
 def test_filters():
     probe = fake.esp32_v003()
     fixture = dump.collect(probe.call, "oep.fixture")
-    assert {o.entry.name for o in fixture.offers} == {"oep.fixture.gpio", "oep.fixture.uart", "oep.fixture.capture"}
-    one = dump.collect(probe.call, "io.github.ch32-riscv-ug.esp32.spi-target", exact=True)
-    assert [o.entry.name for o in one.offers] == ["io.github.ch32-riscv-ug.esp32.spi-target"]
+    assert {o.entry.name for o in fixture.offers} == {"oep.fixture.gpio", "oep.fixture.uart", "oep.fixture.logic",
+                                                    "oep.fixture.i2c-target", "oep.fixture.spi-target"}
+    one = dump.collect(probe.call, "oep.fixture.spi-target", exact=True)
+    assert [o.entry.name for o in one.offers] == ["oep.fixture.spi-target"]
     assert one.offers[0].description.groups[2][0] == (1, 14)
 
 
@@ -152,7 +153,7 @@ def test_unknown_interfaces_are_shown_raw():
 def test_text_and_json_outputs():
     caps = dump.collect(fake.p4_x035().call)
     text = dump.to_text(caps)
-    assert "instance 6" in text and "io.github.ch32-riscv-ug.esp32.i2c-target" in text
+    assert "instance 6" in text and "oep.fixture.i2c-target" in text
     assert "features: preloaded tx, clock stretching" in text
     data = json.loads(dump.to_json(caps))
     assert data["max_frame"] == 1024 and len(data["interfaces"]) == 13

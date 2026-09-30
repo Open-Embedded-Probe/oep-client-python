@@ -17,7 +17,7 @@ import struct
 from dataclasses import dataclass, field
 from typing import Callable
 
-from . import message as m
+from . import message as m, registry as reg
 from .message import OepError, ProtocolError, ShortPayload  # noqa: F401  (re-exported: callers use host.*)
 
 MIN_REVISION = MAX_REVISION = 1          # the v1 shapes this client speaks
@@ -86,8 +86,45 @@ class Unsupported(Rejected):
         return self.result.payload[0] if self.result.payload else None
 
 
+class Unavailable(Rejected):
+    """rejected unavailable (core §4.3): the payload's TLVs say why (each may be missing): cause, the channels it met,
+    who holds them (holder_fn, holder_kind). `tlvs` has every TLV, the interface's own (0x40 and up) too."""
+    CAUSES = {v: k for k, v in reg.CORE.enum["unavailable_cause"].items()}
+    KINDS = {v: k for k, v in reg.CORE.enum["holder_kind"].items()}
+    _T = reg.CORE.tlv["unavailable_payload"]
+
+    @property
+    def tlvs(self) -> list[tuple[int, bytes]]:
+        try:
+            return m.split_tlvs(self.result.payload)
+        except ValueError:
+            return []
+
+    def _first(self, tag: int) -> bytes | None:
+        return next((v for t, v in self.tlvs if t & 0x7F == tag), None)
+
+    @property
+    def cause(self) -> str | None:
+        v = self._first(self._T["cause"])
+        return self.CAUSES.get(v[0], str(v[0])) if v else None
+
+    @property
+    def channels(self) -> list[int]:
+        return [struct.unpack_from("<H", v)[0] for t, v in self.tlvs if t & 0x7F == self._T["channel"] and len(v) >= 2]
+
+    @property
+    def holder_fn(self) -> int | None:
+        v = self._first(self._T["holder_fn"])
+        return struct.unpack_from("<H", v)[0] if v and len(v) >= 2 else None
+
+    @property
+    def holder_kind(self) -> str | None:
+        v = self._first(self._T["holder_kind"])
+        return self.KINDS.get(v[0], str(v[0])) if v else None
+
+
 _REJECTS = {m.LOCKED: Locked, m.NO_SESSION: NoSession, m.BUSY: Busy, m.NO_CONNECTION: NoConnection,
-            m.UNSUPPORTED: Unsupported}
+            m.UNSUPPORTED: Unsupported, m.UNAVAILABLE: Unavailable}
 
 
 def rejection(result: m.Result) -> Rejected:

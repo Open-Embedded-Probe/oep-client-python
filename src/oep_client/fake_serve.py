@@ -25,7 +25,7 @@ Options:
   --bind MODE           bind the serial port to every --slot: last-reset, manual or mixed
   --target-id HEX       the target_id every target's attach reports (wch_dmi_7f)
   --absent N            the N-th pin pair of the first wire has no target (repeatable)
-  --capture-slipped     every oep.fixture.capture segment says flags bit2 (slipped: a pace that fell behind)
+  --capture-slipped     every oep.fixture.logic segment says flags bit2 (slipped: a pace that fell behind)
   --uart-plan           the first oep.fixture.uart gets its RX / TX plan at boot, as if saved (the jig's "DUT TX" /
                         "DUT RX" labels when the profile has them, else the first free channels); configure then works
   --uart-rx TEXT        what arrives on that UART's RX every --every ms once it is configured (%d = a counter)

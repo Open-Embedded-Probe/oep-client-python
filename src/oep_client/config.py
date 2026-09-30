@@ -2,8 +2,8 @@
 pins, slots, binds - read and set as items, saved when the host says so, and the live slot / bind state.
 
     cfg = config.ProbeConfig(hst)
-    cfg.set([config.Slot(0, wire_fn, (2, 54), "x035", attach="at-boot", retry_s=1, mechanism="dmseq"),
-             config.Bind(1, "last-reset", [("slot", 0)])])
+    cfg.set([config.Slot(slot=0, wire_fn=wire_fn, pins=(2, 54), name="x035", attach="at-boot", retry_s=1),
+             config.Bind(port=1, mode="last-reset", streams=[("slot", 0)])])
     cfg.save()
     cfg.items(), cfg.state()
 
@@ -31,13 +31,14 @@ BIND_FLOW = {v: k for k, v in _CFG.enum["bind_flow"].items()}
 IDLE = {k.replace("_", "-"): v for k, v in _CFG.enum["idle_mode"].items()}
 IDLE_CLOCK = dict(reg.WIRE_RVSWD.enum["idle_clock"])            # a slot's idle_clock (oep-if-debug §3)
 STORAGE_STATE = {v: k for k, v in _CFG.enum["storage_state"].items()}
+UNREADABLE = {1: "unreadable form", 2: "an interface it names is gone or of another revision", 3: "refused when applied"}
 
 
 def _name(table: dict[str, int], value: int) -> str:
     return next((k for k, v in table.items() if v == value), str(value))
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Plan:
     fn: int
     role: int
@@ -48,7 +49,7 @@ class Plan:
         return struct.pack("<HBH", self.fn, self.role, self.channel)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Label:
     channel: int
     text: str
@@ -58,7 +59,7 @@ class Label:
         return struct.pack("<H", self.channel) + self.text.encode()
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Idle:
     channel: int
     mode: str = "pull-up"          # hi-z, pull-up, pull-down
@@ -68,7 +69,7 @@ class Idle:
         return struct.pack("<HB", self.channel, IDLE[self.mode])
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Slot:
     """A place a target is wired to (probe.config §1.1). pins: (swdio, swclk), swclk 0xFFFF on one wire (swio).
     lock: (scheme, mask, value) - the target_id a connection must show, e.g. (1, mask u32 LE, value u32 LE)."""
@@ -90,14 +91,14 @@ class Slot:
                         self.retry_s if self.attach == "at-boot" else 0, self.max_speed, IDLE_CLOCK[self.idle_clock],
                         MECHANISM[self.mechanism], len(name)) + name
         if self.lock is None:
-            return v + b"\x00"
+            return v + b"\x00"                                    # lock_len 0: no lock
         scheme, mask, value = self.lock
-        if len(mask) != len(value) or not mask:
-            raise ValueError("a lock's mask and value have the same length, at least 1 byte")
-        return v + bytes([scheme]) + mask + value
+        if len(mask) != len(value) or not mask or not scheme:
+            raise ValueError("a lock has a scheme and a mask and value of the same length, at least 1 byte")
+        return v + bytes([1 + 2 * len(mask), scheme]) + mask + value
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Bind:
     """What serial port `port` (the describe transport index) carries (probe.config §1.2). streams: ("slot", n) or
     ("uart", fn); selected: manual's choice (an index into streams)."""
@@ -126,25 +127,28 @@ def remove(kind: str, key: int) -> bytes:
 def decode(tag: int, v: bytes):
     """One item as one of the classes above (an unknown tag: (tag, value))."""
     if tag == ITEM["plan"] and len(v) == 5:
-        return Plan(*struct.unpack("<HBH", v))
+        fn, role, channel = struct.unpack("<HBH", v)
+        return Plan(fn=fn, role=role, channel=channel)
     if tag == ITEM["label"] and len(v) >= 2:
-        return Label(struct.unpack_from("<H", v)[0], v[2:].decode("utf-8", "replace"))
+        return Label(channel=struct.unpack_from("<H", v)[0], text=v[2:].decode("utf-8", "replace"))
     if tag == ITEM["idle"] and len(v) == 3:
-        return Idle(struct.unpack_from("<H", v)[0], _name(IDLE, v[2]))
+        return Idle(channel=struct.unpack_from("<H", v)[0], mode=_name(IDLE, v[2]))
     if tag == ITEM["slot"] and len(v) >= 18:
         n, wire_fn, swdio, swclk, attach, retry_s, max_speed, idle, mech, name_len = struct.unpack_from("<BHHHBHIBBB", v)
         name = v[17:17 + name_len].decode("ascii", "replace")
-        rest = v[17 + name_len:]
+        at = 17 + name_len
+        lock_len = v[at] if at < len(v) else 0
+        part = v[at + 1:at + 1 + lock_len]                         # after it: later fields (core §2.3), skipped
         lock = None
-        if rest and rest[0]:
-            half = (len(rest) - 1) // 2
-            lock = (rest[0], rest[1:1 + half], rest[1 + half:])
-        return Slot(n, wire_fn, (swdio, swclk), name, _name(ATTACH, attach), retry_s, _name(MECHANISM, mech), lock,
-                    max_speed, _name(IDLE_CLOCK, idle))
+        if lock_len >= 3:
+            half = (lock_len - 1) // 2
+            lock = (part[0], part[1:1 + half], part[1 + half:])
+        return Slot(slot=n, wire_fn=wire_fn, pins=(swdio, swclk), name=name, attach=_name(ATTACH, attach), retry_s=retry_s,
+                    mechanism=_name(MECHANISM, mech), lock=lock, max_speed=max_speed, idle_clock=_name(IDLE_CLOCK, idle))
     if tag == ITEM["bind"] and len(v) >= 4:
         port, mode, selected, n = struct.unpack_from("<BBBB", v)
         streams = [(_name(STREAM, v[4 + 3 * k]), struct.unpack_from("<H", v, 5 + 3 * k)[0]) for k in range(n)]
-        return Bind(port, _name(MODE, mode), streams, selected)
+        return Bind(port=port, mode=_name(MODE, mode), streams=streams, selected=selected)
     return (tag, v)
 
 
@@ -170,6 +174,7 @@ class State:
     storage_bytes: int = 0
     storage: str = "none"          # none, applied, unreadable
     saved_hash: int = 0
+    unreadable: str | None = None  # why, when unreadable (probe.config §4)
     items: list[int] = field(default_factory=list)
     slots_max: int = 0
     bind_modes: list[str] = field(default_factory=list)
@@ -216,6 +221,8 @@ class ProbeConfig(Interface):
             if tag == DESCRIBE["storage"] and len(v) >= 9:
                 st.storage_bytes, state, st.saved_hash = struct.unpack_from("<IBI", v)
                 st.storage = STORAGE_STATE.get(state, str(state))
+                if len(v) >= 14 and v[13]:
+                    st.unreadable = UNREADABLE.get(v[13], str(v[13]))
             elif tag == DESCRIBE["items"]:
                 st.items = list(v)
             elif tag == DESCRIBE["slots_max"] and v:

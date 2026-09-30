@@ -15,6 +15,9 @@ import threading
 import time
 
 
+
+VENDOR_CLASS = 0xFF   # the vendor bulk transport's interface class (oep-core §3.3); one per probe
+
 class UsbBulkStream:
     READ_SIZE = 16384
 
@@ -37,13 +40,15 @@ class UsbBulkStream:
             raise FileNotFoundError(f"no USB device {vid:04x}:{pid:04x}" + (f" serial {serial}" if serial else ""))
         cfg = dev.get_active_configuration()
         for intf in cfg:
+            if intf.bInterfaceClass != VENDOR_CLASS:   # the vendor interface, not the first bulk pair (a CDC's)
+                continue
             eps = [e for e in intf if usb.util.endpoint_type(e.bmAttributes) == usb.util.ENDPOINT_TYPE_BULK]
             ins = [e for e in eps if usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_IN]
             outs = [e for e in eps if usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_OUT]
             if ins and outs:
                 usb.util.claim_interface(dev, intf.bInterfaceNumber)
                 return cls(dev, ins[0], outs[0], intf.bInterfaceNumber)
-        raise FileNotFoundError("no bulk IN/OUT pair on the device")
+        raise FileNotFoundError("no vendor-class (0xFF) bulk IN/OUT pair on the device")
 
     def _drain(self) -> None:
         import usb.core
@@ -144,6 +149,8 @@ class UsbAsyncStream:
                 handle.close()
                 continue
             for setting in dev.iterSettings():
+                if setting.getClass() != VENDOR_CLASS:
+                    continue
                 eps = [(e.getAddress(), e.getAttributes()) for e in setting]
                 ins = [a for a, attr in eps if attr & 3 == 2 and a & 0x80]
                 outs = [a for a, attr in eps if attr & 3 == 2 and not a & 0x80]
