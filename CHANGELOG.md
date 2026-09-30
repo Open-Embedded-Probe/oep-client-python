@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) The fake analog declares its 16-bit slots as bit 4 of the channels tag (bit i = 2^i, oep-if-capture §3.5).
+- (JA) 偽の probe のアナログは、16 ビットの枠を channels の tag のビット 4 で宣言する（ビット i = 2^i、oep-if-capture §3.5）。
 
 ## 0.0.10
 - (EN) Captures' times are ns on the probe's one clock with an uncertainty (oep-if-capture): `Segment.start_ns` / `start_uncertainty_ns` replace `start_us` (a segment is 33 bytes), the triggered event carries `trigger_ns`, and `Config.rate_measured` / `rate_ppm` say how sure the rate is. Analog captures: `AnalogCapture` (raw `values()`, the probe's `millivolts()`, `calibration()` - factory data and Vrefint, raw), with the answer read per channel (`zero`, `scale_nv`, `skew_ns`, `frontend`) and `reference`; `configure(frontends=)`. `CaptureGroup` binds tracks, starts them together with one trigger, and gives the group's `start_ns` and `trigger_ns`. The fake has them all (p4-x035: an analog on the ADC1 and a group), and describes a `chip`.
