@@ -41,7 +41,7 @@ def test_one_channel_packs_eight_samples_per_byte_lsb_first():
 
 
 def test_segment_without_trigger():
-    s = c.Segment.unpack(struct.pack("<IQIQIB", 0, 0, 200192, 123, 0xFFFFFFFF, 0))
+    s = c.Segment.unpack(struct.pack("<IQIQIIB", 0, 0, 200192, 123000, 50, 0xFFFFFFFF, 0))
     assert s.trigger_index is None and s.samples == 200192
 
 

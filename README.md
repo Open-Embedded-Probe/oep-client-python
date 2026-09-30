@@ -93,7 +93,11 @@ resumed after it).
 release) and streaming (data pushes while subscribed), level / edge triggers with a pretrigger, and events. What it
 captures is known: sample i is the counter i, channel k its bit k (a square wave of period 2^(k+1) samples), in the layout
 the profile allows (`p4-x035`: w 1-16 as the P4's PARLIO, three channels in w 4; `esp32-v003`: w 8 as the classic ESP32's
-sampler, one-shot only). A capture only listens, so it may be planned on pins other interfaces hold.
+sampler, one-shot only). A capture only listens, so it may be planned on pins other interfaces hold. `p4-x035` also has
+`oep.fixture.analog` (4 channels of the P4's ADC1 on GPIO16-23: an even channel k a square wave, an odd one a sine, of
+period 64 (k // 2 + 1) samples, 12-bit values in 16-bit slots; ESP32-style frontends; a made-up two-point calibration and a
+Vrefint) and `oep.fixture.capture-group` binding the logic and the analog: started together, the analog 5 us later
+(+-2 us), the trigger of one marked on both. Times are ns on the probe's one clock.
 
 Other programs' tests run `fake_serve` as a child process:
 

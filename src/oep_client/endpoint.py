@@ -276,7 +276,10 @@ class Endpoint:
             self.targets[(fn, first)] = FakeTarget()
         self.target = next(iter(self.targets.values()), FakeTarget())
         self.captures: dict[int, fake_capture.FakeCapture] = {
-            fn: self._capture_from(self.static[fn]) for fn, name in self.names.items() if name == "oep.fixture.capture"}
+            fn: self._capture_from(self.static[fn]) for fn, name in self.names.items()
+            if name in ("oep.fixture.capture", "oep.fixture.analog")}
+        self.groups: dict[int, fake_capture.FakeGroup] = {
+            fn: self._group_from(self.static[fn]) for fn, name in self.names.items() if name == "oep.fixture.capture-group"}
         self.mechanisms = set()
         for fn, name in self.names.items():
             if name == "oep.target.console":
@@ -349,10 +352,13 @@ class Endpoint:
     def _capture_from(tlvs: list[bytes]) -> fake_capture.FakeCapture:
         """A capture as its describe declares it (modes, the w allowed, the rate range, max_read, the ring)."""
         d = reg.FIXTURE_CAPTURE.tlv["describe"]
-        modes, widths, lo, hi, ring, most = set(), {8}, 1, 1_000_000, 1, 1024
+        modes, widths, lo, hi, ring, most, fronts = set(), {8}, 1, 1_000_000, 1, 1024, {}
         for t in tlvs:
             tag, v = t[0], t[2:2 + t[1]]
-            if tag == d["mode"]:
+            if tag == d["frontend"]:                               # analog: frontend min_mv max_mv attenuation_mdb
+                fe, lo_mv, hi_mv, mdb = struct.unpack("<BiiI", v)
+                fronts[fe] = (lo_mv, hi_mv, mdb)
+            elif tag == d["mode"]:
                 modes.add(v[0])
             elif tag == d["channels"]:
                 widths = {1 << i for i in range(6) if v[1] >> i & 1}
@@ -364,7 +370,21 @@ class Endpoint:
                 ring = struct.unpack("<H", v)[0]
             elif tag == d["max_read"]:
                 most = struct.unpack("<I", v)[0]
-        return fake_capture.FakeCapture(modes or {fake_capture.MODE["one_shot"]}, widths, lo, hi, ring, most)
+        return fake_capture.FakeCapture(modes or {fake_capture.MODE["one_shot"]}, widths, lo, hi, ring, most, fronts)
+
+    @staticmethod
+    def _group_from(tlvs: list[bytes]) -> fake_capture.FakeGroup:
+        d = reg.FIXTURE_CAPTURE_GROUP.tlv["describe"]
+        tracks, most, budgets = [], 1, []
+        for t in tlvs:
+            tag, v = t[0], t[2:2 + t[1]]
+            if tag == d["tracks"]:
+                tracks = list(struct.unpack(f"<{len(v) // 2}H", v))
+            elif tag == d["max_tracks"]:
+                most = v[0]
+            elif tag == d["budget"]:
+                budgets.append((struct.unpack_from("<I", v)[0], list(struct.unpack_from(f"<{(len(v) - 4) // 2}H", v, 4))))
+        return fake_capture.FakeGroup(tracks, most, budgets)
 
     def _next_seq(self, fn: int) -> int:
         seq = self.push_seq.get(fn, 0)
@@ -394,12 +414,20 @@ class Endpoint:
         budget = self.probe.max_frame - m.RESULT_HEADER
         try:
             if op in (O["configure"], O["query"]):
-                got, ignored = t.tail(set(fake_capture.TLV.values()) - {fake_capture.TLV["frontend"]})
-                settled = cap.settle(got, t.critical, len(roles))
+                rest = t.data[t.at:]
+                analog = self.names[fn] == "oep.fixture.analog"
+                known = set(fake_capture.TLV.values()) - (set() if analog else {fake_capture.TLV["frontend"]})
+                got, ignored = t.tail(known)
+                # the frontend TLV comes once per channel: read them all
+                fronts = [tuple(v[:2]) for tag, v in m.split_tlvs(rest) if tag & 0x7F == fake_capture.TLV["frontend"]] \
+                    if analog else []
+                settled = cap.settle(got, t.critical, len(roles), fronts)
                 if op == O["configure"]:
                     cap.apply(settled)
                     cap.slipped = self.capture_slipped
                 return self._answer(cap.answer(settled), ignored)
+            if op in (O["start"], O["stop"], O["force"]) and cap.group is not None:
+                raise Reject(m.UNAVAILABLE)                        # bound: the group starts and stops it
             if op == O["start"]:
                 t.tail()
                 self._events(fn, cap.start(self.now()))
@@ -426,6 +454,45 @@ class Endpoint:
                 t.tail()
                 cap.release(serial, self.now())
                 return m.COMPLETED, m.SUCCESS, b""
+            if op == fake_capture.ANA.op["calibration"] and cap.analog:
+                t.tail()
+                return m.COMPLETED, m.SUCCESS, cap.calibration()
+        except fake_capture.Reject as e:
+            raise Reject(e.reason, e.payload)
+        return m.REJECTED, m.UNKNOWN_OPERATION, b""
+
+    def _group(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
+        grp, O = self.groups[fn], fake_capture.GRP.op
+        try:
+            if op == O["bind"]:
+                n = t.take("B")
+                fns = [t.take("H") for _ in range(n)]
+                got, ignored = t.tail({fake_capture.GRP.tlv["bind"]["trigger_track"]})
+                src = got.get(fake_capture.GRP.tlv["bind"]["trigger_track"])
+                grp.bind(self.captures, fns, struct.unpack("<H", src)[0] if src else 0)
+                return self._answer(b"", ignored)
+            if op == O["start"]:
+                t.tail()
+                per, own = grp.start(self.captures, self.now())
+                for track, events in per:
+                    self._events(track, events)
+                self._events(fn, own)
+                return m.COMPLETED, m.SUCCESS, struct.pack("<IQ", 0, grp.start_ns)
+            if op == O["stop"]:
+                t.tail()
+                per, own = grp.stop(self.captures)
+                for track, events in per:
+                    self._events(track, events)
+                self._events(fn, own)
+                return m.COMPLETED, m.SUCCESS, b""
+            if op == O["force"]:
+                t.tail()
+                return m.COMPLETED, m.SUCCESS, b""
+            if op == O["status"]:
+                t.tail()
+                for track in grp.tracks:
+                    self._events(track, self.captures[track].tick(self.now()))
+                return m.COMPLETED, m.SUCCESS, grp.status(self.captures)
         except fake_capture.Reject as e:
             raise Reject(e.reason, e.payload)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
@@ -1655,4 +1722,5 @@ class Endpoint:
 
 SIMS = {"oep.wire.rvswd": "wire", "oep.wire.swio": "wire", "oep.target.riscv-dm": "dm",
         "oep.target.console": "console", "oep.fixture.gpio": "gpio", "oep.fixture.uart": "uart",
-        "oep.probe.config": "config_op", "oep.fixture.capture": "capture"}
+        "oep.probe.config": "config_op", "oep.fixture.capture": "capture", "oep.fixture.analog": "capture",
+        "oep.fixture.capture-group": "group"}

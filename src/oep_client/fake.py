@@ -109,6 +109,27 @@ SERIAL_KINDS = {TRANSPORT["uart_bridge"], TRANSPORT["usb_cdc"], TRANSPORT["usb_s
 NS = "io.github.ch32-riscv-ug"
 MECHANISMS = reg.TARGET_CONSOLE.tlv["describe"]["mechanisms"]
 _CAPD = reg.FIXTURE_CAPTURE.tlv["describe"]
+_ANAD = reg.FIXTURE_ANALOG.tlv["describe"]
+_GRPD = reg.FIXTURE_CAPTURE_GROUP.tlv["describe"]
+CORE_CHIP = reg.CORE.tlv["describe"]["chip"]
+
+
+def _analog_decl(frontends: list[tuple[int, int, int, int]], max_samples: int) -> tuple[bytes, ...]:
+    """oep.fixture.analog's declarations: one-shot / repeat / streaming, 4 channels in 16-bit slots, the frontends
+    (number, min_mv, max_mv, attenuation_mdb), triggers cross up / down."""
+    out = tuple(catalog.tlv(_ANAD["mode"], struct.pack("<BBII", _CAPM[k], 1, max_samples, 8 if k == "repeat" else 1))
+                for k in ("one_shot", "repeat", "streaming"))
+    out += tuple(catalog.tlv(_ANAD["frontend"], struct.pack("<BiiI", *f)) for f in frontends)
+    return out + (catalog.tlv(_ANAD["channels"], bytes([4, 0b100])),                   # s 16
+                  catalog.tlv(_ANAD["trigger"], struct.pack("<BI", 0b11001, max_samples - 1)),   # immediate, cross up / down
+                  catalog.u32(_ANAD["max_read"], 4096), catalog.u16(_ANAD["segment_ring"], 8),
+                  catalog.u32(FEATURES, 0b001))
+
+
+def _group_decl(tracks: list[int], budgets: list[tuple[int, list[int]]], skews: dict[int, int]) -> tuple[bytes, ...]:
+    return ((catalog.tlv(_GRPD["tracks"], struct.pack(f"<{len(tracks)}H", *tracks)), catalog.u8(_GRPD["max_tracks"], len(tracks)))
+            + tuple(catalog.tlv(_GRPD["budget"], struct.pack(f"<I{len(f)}H", most, *f)) for most, f in budgets)
+            + tuple(catalog.tlv(_GRPD["start_skew"], struct.pack("<HI", fn, ns)) for fn, ns in skews.items()))
 _CAPM = reg.FIXTURE_CAPTURE.enum["mode"]
 
 
@@ -168,7 +189,8 @@ def p4_x035() -> FakeProbe:
         _core("3.0.0", "esp32-p4-devkit", bytes.fromhex("30eda0e31108"), 55, reserved, f"{NS}.p4-x035",
               {2: "SWDIO", 54: "SWCLK", 51: "LED"},
               _transports([(TRANSPORT["usb_serial_jtag"], 0xFF), (TRANSPORT["vendor_bulk"], 0),
-                           (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)]) + (catalog.u8(CORE_OEP_PID, 1),)),
+                           (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)])
+              + (catalog.u8(CORE_OEP_PID, 1), catalog.text(CORE_CHIP, "esp32p4 v1.0"))),
         Offered(1, 1, "oep.wire.rvswd", (
             catalog.channel_group(1, [(1, 2), (2, 54)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(IMPLEMENTATION, 1),
             catalog.u8(MAX_CONNECTIONS, 1))),
@@ -191,6 +213,12 @@ def p4_x035() -> FakeProbe:
         Offered(9, 7, f"{NS}.esp32.spi-target", _roles({1: pins, 2: pins, 3: pins, 4: pins}) + (
             catalog.u16(MAX_LENGTH, 64), catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
         _config(10, 8, slots_max=1),
+        # the P4's ADC1 (GPIO16-23): one ADC for all its channels, 611 Hz - 83.3 kHz in all; ESP32-style attenuations
+        Offered(11, 1, "oep.fixture.analog", _roles({k: list(range(16, 24)) for k in range(4)}) + (
+            catalog.u32(MAX_CLOCK_HZ, 83_333), catalog.u32(MIN_CLOCK_HZ, 611), catalog.u8(IMPLEMENTATION, 3))
+            + _analog_decl([(0, 0, 950, 0), (1, 0, 1250, 2500), (2, 0, 1750, 6000), (3, 0, 3100, 12000)], 65536)),
+        # the logic (fn 7) and the analog (fn 11) together; the ADC's 83.3 kHz is shared by its channels
+        Offered(12, 1, "oep.fixture.capture-group", _group_decl([7, 11], [(83_333, [11])], {11: 5000})),
     ])
 
 
