@@ -72,13 +72,21 @@ class Gpio(Interface):
             self.release(channel)
 
 
+UART_CONFIGURED = {v: k for k, v in _UART.enum["uart_configured"].items()}   # default, session, item, item_fallback
+
+
 @dataclass(frozen=True, kw_only=True)
 class UartStatus:
-    """oep.fixture.uart status (op 0x07, lock-free): whether a configure (or the settings' uart item) is in force, and
-    the baud / format it runs with."""
-    configured: bool
+    """oep.fixture.uart status (op 0x07, lock-free): what is in force - "default" (115200 8N1, nothing set),
+    "session" (a configure), "item" (the settings' uart item), "item_fallback" (the item's baud could not be made when
+    the plan ran the UART: the default applies) - and the baud / format it runs with."""
+    configured: str
     baud: int
     format: int
+
+    @property
+    def is_default(self) -> bool:
+        return self.configured in ("default", "item_fallback")
 
 
 class FixtureUart(PositionStream):
@@ -117,7 +125,7 @@ class FixtureUart(PositionStream):
         rd = m.Reader(self._call(self.STATUS, locked=False).payload)
         configured, baud, fmt = rd.take("BIB")
         rd.tail()
-        return UartStatus(configured=bool(configured), baud=baud, format=fmt)
+        return UartStatus(configured=UART_CONFIGURED.get(configured, str(configured)), baud=baud, format=fmt)
 
 
 class FixtureUartIO(StreamIO):

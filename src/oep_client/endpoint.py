@@ -77,6 +77,7 @@ PIN_ROLE_RESET = reg.WIRE_RVSWD.enum["pin_role"]["reset"]   # the channels an at
 TARGET_ID_LEN = reg.WIRE_RVSWD.enum["target_id_len"]["wch_dmi_7f"]
 TARGET_ID_SCHEMES = set(reg.WIRE_RVSWD.enum["target_id_scheme"].values()) | set(reg.WIRE_SWD.enum["target_id_scheme"].values())
 UART_FORMAT_MASK = 0x1F                                    # the defined format bits (fixture §2)
+UART_CONFIGURED = _UART.enum["uart_configured"]            # status's configured byte: default / session / item / item_fallback
 _T_SCAN, _T_ATTACH, _T_DETACH, _T_ATTACH_ANSWER = (reg.WIRE_RVSWD.tlv[k] for k in ("scan", "attach", "detach", "attach_answer"))
 
 
@@ -376,6 +377,8 @@ class Endpoint:
                              for fn, name in self.names.items() if name == "oep.fixture.gpio"}
         self.uart_formats = {fn: next((set(t[3:3 + t[2]]) for t in self.static[fn] if t[0] == fake.UART_FORMATS), {0})
                              for fn, name in self.names.items() if name == "oep.fixture.uart"}
+        self.uart_max_hz = {fn: next((struct.unpack_from("<I", t, 2)[0] for t in self.static[fn] if t[0] == catalog.MAX_CLOCK_HZ),
+                                     3_000_000) for fn, name in self.names.items() if name == "oep.fixture.uart"}
         cfg_fn = self.fns.get("oep.probe.config")
         cfg = {t[0]: t[2:2 + t[1]] for t in self.static.get(cfg_fn, ())}
         self.slots_max = cfg[CFG_DESCRIBE["slots_max"]][0] if CFG_DESCRIBE["slots_max"] in cfg else 0
@@ -419,7 +422,8 @@ class Endpoint:
         self.gpio_log: list[tuple[int, int]] = []
         self.uarts: dict[int, Stream] = {}             # fn -> stream (while its plan has RX or TX)
         self.uart_carry: dict[int, tuple[int, int]] = {}   # fn -> (position, mark serial) a released stream left off at
-        self.uart_baud: dict[int, tuple[int, int]] = {}    # fn -> (baud, format) in force (a configure or the uart item)
+        self.uart_baud: dict[int, tuple[int, int, int]] = {}   # fn -> (baud, format, uart_configured) in force
+        self.uart_clock_hz = 80_000_000                # the UARTs' divider clock (a test lowers it: the item's fallback)
         self.uart_session_cfg: set[int] = set()        # fns a session's configure set (it beats the uart item)
         self.uart_tx: dict[int, bytearray] = {}        # what a serial port's raw bytes sent out on a fixture UART
         self.config: dict[tuple[int, int], bytes | list[bytes]] = {}   # (item tag, key) -> value (plan: list)
@@ -1048,28 +1052,43 @@ class Endpoint:
             s = self.uarts[fn] = Stream()
             s.base, s.serial = self.uart_carry.get(fn, (0, 0))
             if fn not in self.uart_session_cfg:
-                item = self.config.get((ITEM["uart"], fn))
-                if item is not None:
-                    _, baud, fmt = struct.unpack_from("<HIB", item)
-                    self.uart_baud[fn] = (self._uart_actual(baud), fmt)
+                self._uart_apply_item(fn)
         elif not planned and s is not None:
             self.uart_carry[fn] = (s.end, s.serial)
             del self.uarts[fn]
             self.uart_baud.pop(fn, None)
             self.uart_session_cfg.discard(fn)
 
-    @staticmethod
-    def _uart_actual(baud: int) -> int:
-        return 80_000_000 // (80_000_000 // baud)
+    def _uart_apply_item(self, fn: int) -> None:
+        """The settings' uart item on a UART whose plan runs (fixture §2): the divider is made now; a baud it cannot
+        make within 5 % falls back to the default 115200 8N1 with configured = item_fallback (3). No item: default."""
+        item = self.config.get((ITEM["uart"], fn))
+        if item is None:
+            self.uart_baud.pop(fn, None)
+            return
+        _, baud, fmt = struct.unpack_from("<HIB", item)
+        actual = self._uart_actual(baud)
+        if abs(actual - baud) * 20 > baud:
+            self.uart_baud[fn] = (115200, 0, UART_CONFIGURED["item_fallback"])
+        else:
+            self.uart_baud[fn] = (actual, fmt, UART_CONFIGURED["item"])
 
-    def _uart_check(self, baud: int, fmt: int, fn: int, fmt_tag: int | None) -> int:
+    def _uart_actual(self, baud: int) -> int:
+        return self.uart_clock_hz // max(1, self.uart_clock_hz // baud)
+
+    def _uart_check(self, baud: int, fmt: int, fn: int, fmt_tag: int | None, divide: bool = True) -> int:
         """fixture §2's refusals: baud 0 and undefined format bits -> malformed; a format the UART does not declare ->
         unsupported (the format TLV's tag as received, or 0x00 for the item); a baud off by more than 5 % ->
-        unsupported 0x00. -> the actual baud."""
+        unsupported 0x00. -> the actual baud. `divide` False (the settings' item at set time): the range alone
+        (1 .. the UART's max_clock_hz), the divider is made when the plan runs the UART (-> item_fallback)."""
         if baud == 0 or fmt & ~UART_FORMAT_MASK or fmt & 3 > 1 or (fmt >> 2) & 3 > 2:
             raise Reject(m.MALFORMED)
         if fmt not in self.uart_formats.get(fn, {0}):
             raise Reject(m.UNSUPPORTED, bytes([fmt_tag if fmt_tag is not None else m.TAG_FIXED]))
+        if not divide:
+            if baud > self.uart_max_hz.get(fn, 3_000_000):
+                raise Reject(m.UNSUPPORTED)
+            return baud
         actual = self._uart_actual(baud)
         if abs(actual - baud) * 20 > baud:
             raise Reject(m.UNSUPPORTED)
@@ -1634,13 +1653,13 @@ class Endpoint:
                     raise
             if fn not in self.uarts:
                 raise unavailable("wrong_state")                   # no pins: the plan has neither RX nor TX (fixture §2)
-            self.uart_baud[fn] = (actual, fmt[0])
+            self.uart_baud[fn] = (actual, fmt[0], UART_CONFIGURED["session"])
             self.uart_session_cfg.add(fn)                          # a session's configure beats the uart item
             return self._answer(struct.pack("<I", actual), ignored)
-        if op == _UART.op["status"]:                               # lock-free: configured baud format
+        if op == _UART.op["status"]:                               # lock-free: configured(uart_configured) baud format
             _, ignored = t.tail()
-            baud, fmt = self.uart_baud.get(fn, (115200, 0))
-            return self._answer(struct.pack("<BIB", int(fn in self.uart_baud), baud, fmt), ignored)
+            baud, fmt, how = self.uart_baud.get(fn, (115200, 0, UART_CONFIGURED["default"]))
+            return self._answer(struct.pack("<BIB", how, baud, fmt), ignored)
         s = self.uarts.get(fn)
         if s is None:
             raise unavailable("wrong_state")                       # the plan makes the stream (fixture §2)
@@ -1883,7 +1902,7 @@ class Endpoint:
                     raise Reject(m.UNKNOWN_FUNCTION)
                 if self.names[fn] != "oep.fixture.uart":
                     raise Reject(m.UNSUPPORTED)
-                uarts[fn] = (self._uart_check(baud, fmt, fn, None), fmt)
+                uarts[fn] = (self._uart_check(baud, fmt, fn, None, divide=False), fmt)   # the range now, the divider at plan time
         want = [a for fn in plans for a in plans[fn]]
         if len(want) + len([a for a in self.plan if a[0] not in plans and a[0] not in self.plan_from_config]) > \
                 (self.plan_roles if self.plan_roles is not None else 1 << 30):
@@ -1903,12 +1922,9 @@ class Endpoint:
             self.plan = {a for a in self.plan if a[0] != fn} | set(assigned)
             self.plan_from_config.add(fn)
             self._uart_plan_changed(fn)
-        for fn, (baud, fmt) in uarts.items():                      # the uart item: on the planned UARTs no session set
-            if fn in self.uarts and fn not in self.uart_session_cfg:
-                self.uart_baud[fn] = (baud, fmt)
-        for fn in list(self.uart_baud):
-            if (ITEM["uart"], fn) not in new and fn not in self.uart_session_cfg and fn in self.uarts:
-                del self.uart_baud[fn]                             # its item went: back to the default
+        for fn in self.uarts:                                      # the uart item (or its going) on the planned UARTs no session set
+            if fn not in self.uart_session_cfg:
+                self._uart_apply_item(fn)
         for n in list(self.slot_rt):
             if n not in slots:
                 del self.slot_rt[n]
