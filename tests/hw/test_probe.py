@@ -28,7 +28,10 @@ pytestmark = pytest.mark.hw
 
 GPIO_ROLE_LINE = reg.FIXTURE_GPIO.enum["role"]["line"]
 UART_RX, UART_TX = reg.FIXTURE_UART.enum["role"]["rx"], reg.FIXTURE_UART.enum["role"]["tx"]
-ERROR_RATE_MAX = float(os.environ.get("OEP_HW_ERROR_MAX", "") or 0.01)   # port_speed verdict: one at a time, (broken + lost) / frames
+# port_speed verdict (host guide §7.3.2): a one-at-a-time cell at a raised rate fails when broken + lost >= 3 and its ratio is
+# over max(2 x the same cell's ratio at the boot speed, this floor). The floor is the guide's measured 5 %.
+ERROR_RATE_FLOOR = float(os.environ.get("OEP_HW_ERROR_MAX", "") or 0.05)
+MIN_BAD_FRAMES = 3
 
 
 def _env_int(name: str, default: int) -> int:
@@ -319,6 +322,7 @@ def test_port_speed(run: record.Run):
     rec = run.record("port_speed", rates=[r or "now" for r in rates], inflight=inflight, frames=frames,
                      size=limits["max_frame"] - 16, timeout=timeout)
     rows, failing = [], []
+    baseline: dict[tuple[str, int], float] = {}
     t0 = time.monotonic()
     for asked, result in zip(rates, linktest.matrix(hst, rates=rates, patterns=list(linktest.PATTERNS), inflight=inflight,
                                                     frames=frames, timeout=timeout)):
@@ -328,8 +332,15 @@ def test_port_speed(run: record.Run):
             cell = dataclasses.asdict(c)
             if not c.error:
                 cell["error_rate"] = round(c.error_rate, 4)
-                if c.inflight == 1 and c.error_rate > ERROR_RATE_MAX:
-                    failing.append(f"{result.rate} {c.pattern} x1: {c.error_rate * 100:.1f} % (broken {c.broken}, lost {c.lost})")
+                key = (c.pattern, c.inflight)
+                if asked is None:
+                    baseline[key] = c.error_rate          # the boot speed: the baseline for the same flow
+                elif c.inflight == 1:
+                    threshold = max(2 * baseline.get(key, 0.0), ERROR_RATE_FLOOR)
+                    cell["threshold"] = round(threshold, 4)
+                    if c.broken + c.lost >= MIN_BAD_FRAMES and c.error_rate > threshold:
+                        failing.append(f"{result.rate} {c.pattern} x1: {c.error_rate * 100:.1f} % > {threshold * 100:.1f} % "
+                                       f"(broken {c.broken}, lost {c.lost}, baseline {baseline.get(key, 0.0) * 100:.1f} %)")
             row["cells"].append(cell)
         if result.why and asked is None:
             failing.append(f"the speed in force: {result.why}")

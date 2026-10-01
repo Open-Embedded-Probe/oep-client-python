@@ -1,0 +1,256 @@
+{
+  "schema": 1,
+  "board": {
+    "id": "esp32-series-30eda0e31108",
+    "kind": "esp32p4",
+    "profile": "esp32p4",
+    "model": "esp32p4",
+    "port": "usb:30eda0e31108",
+    "unit_id": "30eda0e31108",
+    "usbip_busid": "12-4",
+    "gpio": [
+      32,
+      33
+    ],
+    "disable": 34,
+    "uart": [
+      36,
+      37
+    ],
+    "notes": "X035 jig (ESP32-P4, HS USB): the bench's; ask first"
+  },
+  "client": {
+    "version": "0.0.26",
+    "python": "3.13.3",
+    "commit": "eff9ca9",
+    "dirty": false
+  },
+  "firmware": {
+    "before": {
+      "boot_id": 3241186709,
+      "revision": 1,
+      "max_frame": 1024,
+      "max_inflight": 8,
+      "window": 4096,
+      "firmware": "0.0.25",
+      "model": "esp32p4",
+      "unit_id": "30eda0e31108",
+      "chip": "esp32p4 v1.3",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 4
+        },
+        {
+          "index": 1,
+          "kind": 3
+        },
+        {
+          "index": 2,
+          "kind": 5
+        },
+        {
+          "index": 3,
+          "kind": 2
+        }
+      ],
+      "max_op_ms": 10000
+    },
+    "source": {
+      "kind": "local",
+      "dir": "/home/mt/dev_oep/oep-probe-arduino",
+      "commit": "5bafb92",
+      "dirty": false,
+      "version": "0.0.26",
+      "profile": "esp32p4",
+      "command": "arduino-cli compile --profile esp32p4 --build-path /home/mt/.cache/oep-hw/build-path/esp32p4 --output-dir /home/mt/.cache/oep-hw/build/5bafb92/esp32p4 examples/Firmware/OepProbe",
+      "build_seconds": 9.9,
+      "images": {
+        "merged": "/home/mt/.cache/oep-hw/build/5bafb92/esp32p4/OepProbe.ino.merged.bin",
+        "app": "/home/mt/.cache/oep-hw/build/5bafb92/esp32p4/OepProbe.ino.bin"
+      }
+    },
+    "expected": "0.0.26",
+    "flashed": true,
+    "after": {
+      "boot_id": 2161005073,
+      "revision": 1,
+      "max_frame": 1024,
+      "max_inflight": 8,
+      "window": 4096,
+      "firmware": "0.0.26",
+      "model": "esp32p4",
+      "unit_id": "30eda0e31108",
+      "chip": "esp32p4 v1.3",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 4
+        },
+        {
+          "index": 1,
+          "kind": 3
+        },
+        {
+          "index": 2,
+          "kind": 5
+        },
+        {
+          "index": 3,
+          "kind": 2
+        }
+      ],
+      "max_op_ms": 10000
+    }
+  },
+  "started": "2026-10-02T08:23:47+09:00",
+  "seconds": 29.0,
+  "host": {
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2+-x86_64-with-glibc2.39",
+    "python": "3.13.3"
+  },
+  "environment": {
+    "OEP_PROBE_DIR": "/home/mt/dev_oep/oep-probe-arduino",
+    "OEP_HW_TARGET": "x035@2,54",
+    "OEP_HW_BOARDS": "esp32-series-30eda0e31108"
+  },
+  "tests": {
+    "flash": {
+      "port": "usb:30eda0e31108",
+      "tool": "dfu (pyusb)",
+      "interface": 4,
+      "transfer_size": 4096,
+      "blocks": 143,
+      "seconds": 7.9,
+      "back_after_s": 7.3,
+      "boot_seconds": 0.0,
+      "firmware_after": "0.0.26",
+      "verdict": "passed"
+    },
+    "identity": {
+      "boot_id": 2161005073,
+      "firmware": "0.0.26",
+      "model": "esp32p4",
+      "unit_id": "30eda0e31108",
+      "chip": "esp32p4 v1.3",
+      "revision": 1,
+      "max_frame": 1024,
+      "max_inflight": 8,
+      "interfaces": [
+        "0:oep.core@1",
+        "1:oep.wire.rvswd@1",
+        "2:oep.target.riscv-dm@1",
+        "3:oep.target.console@1",
+        "4:oep.fixture.gpio@1",
+        "5:oep.fixture.uart@1",
+        "6:oep.fixture.uart@1",
+        "7:oep.fixture.logic@1",
+        "8:oep.fixture.i2c-target@1",
+        "9:oep.fixture.spi-target@1",
+        "10:oep.probe.config@1",
+        "11:oep.fixture.analog@1",
+        "12:oep.fixture.capture-group@1"
+      ],
+      "boot_id_before": 3241186709,
+      "firmware_expected": "0.0.26",
+      "verdict": "passed"
+    },
+    "config": {
+      "storage_bytes": 384,
+      "slots_max": 4,
+      "items_before": 6,
+      "hash_before": 1290950575,
+      "hash_set": 2595757482,
+      "items_after_set": 8,
+      "disabled_refused_as": "PinsTaken",
+      "hash_saved": 2595757482,
+      "storage": "applied",
+      "saved_hash": 2595757482,
+      "reboot": "skipped: no reset line from the host (a USB probe)",
+      "hash_after_unset": 1290950575,
+      "saved_hash_final": 1290950575,
+      "verdict": "passed"
+    },
+    "wire": {
+      "target": "x035",
+      "wire": "oep.wire.rvswd",
+      "pairs_asked": [
+        [
+          2,
+          54
+        ]
+      ],
+      "scan": [
+        {
+          "kind": 1,
+          "pins": [
+            2,
+            54
+          ],
+          "dmstatus": "0x00030c82"
+        }
+      ],
+      "scan_seconds": 0.0,
+      "connection": 1,
+      "dmstatus": "0x00030382",
+      "attach_flags": 10,
+      "speed_hz": 777810,
+      "halted": true,
+      "dpc": "0x00000160",
+      "target_id": "01065e03",
+      "reset": null,
+      "loops": 50,
+      "loop_seconds": 1.4,
+      "registers_changed": [],
+      "block_address": "0x20000000",
+      "verdict": "passed"
+    },
+    "gpio": {
+      "channels": [
+        32,
+        33
+      ],
+      "levels": {
+        "32:output_high": 1,
+        "32:output_low": 0,
+        "32:input_pullup": 1,
+        "32:input_pulldown": 0,
+        "33:output_high": 1,
+        "33:output_low": 0,
+        "33:input_pullup": 1,
+        "33:input_pulldown": 0,
+        "both:input": [
+          0,
+          0
+        ]
+      },
+      "verdict": "passed"
+    },
+    "uart": {
+      "rx": 12,
+      "tx": 6,
+      "loopback": false,
+      "settings_plan": true,
+      "actual_115200": 115211,
+      "status_configured": "session",
+      "status_baud": 115211,
+      "status_format": 0,
+      "actual_9600": 9600,
+      "verdict": "passed"
+    },
+    "port_speed": {
+      "verdict": "skipped",
+      "why": "Skipped: port_speed is for a UART bridge probe only"
+    },
+    "session": {
+      "lease_ms": 1000,
+      "resumed_first": 0,
+      "expired": "session expired (lease 1000 ms): the lease lapsed and the probe swept this session's resources - open again",
+      "resumed_after_lapse": 2,
+      "forced_resumed": 0,
+      "forced_new_id": true,
+      "old_id_after_force": "locked by oep tests/hw force (2999 ms of its lease left)",
+      "verdict": "passed"
+    }
+  }
+}
