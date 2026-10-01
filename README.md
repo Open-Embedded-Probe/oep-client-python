@@ -33,14 +33,14 @@ oep-client-python X.Y.Z (until the v1 freeze every release may break the wire; t
 
 | Module | Contents |
 |---|---|
-| `host` | requests and results, the session id and the lock, `call()` (raises unless it worked), pipelining, the errors (`OepError` / `Rejected` / `Failed`) |
+| `host` | requests and results, the session id and the lock, `call()` (raises unless it worked), pipelining, the errors (`OepError` / `Rejected` / `Failed`; `Expired` when the lease lapsed or a force took the lock - the session is never re-opened behind the caller's back, `Host.epoch` moves) |
 | `link` | transports: serial ports (always COBS + CRC as `0x00 <COBS> 0x00`, bytes outside frames skipped as noise, opened exclusively), USB vendor bulk / HID and TCP (length frames, the §5.1 resync); matching by corr and resending; `open_host(target)` |
-| `core` | interfaces by name (cached), confirm, the probe's describe (labels, the transport list), taking the lock (`take`), the pin plan, the `Interface` base |
-| `riscv` | `oep.wire.rvswd` / `oep.wire.swio`, `oep.target.riscv-dm`, finding the reset line, attach through GPIO |
-| `console` | `oep.target.console` (position streams) and `ConsoleIO`, read as bytes |
-| `fixture` | `oep.fixture.gpio` / `uart` / `i2c-target` / `spi-target` (revision 1) |
-| `config` | `oep.probe.config` (slots, binds, plan / label / idle items, get / set / save / erase, the live slot and bind state) |
-| `capture` | `oep.fixture.logic` (revision 1, oep-spec oep-if-capture). Every segment read goes to the `Host.on_capture` callbacks as a `CaptureRecord` (the hook for run recorders; no wireskein dependency) |
+| `core` | interfaces by name (cached), confirm (with the probe's `boot_id`), the probe's describe (declarations only, cached per boot: labels, the transport list, `max_op_ms`), taking the lock (`take`), the pin plan, the `Interface` base |
+| `riscv` | `oep.wire.rvswd` / `oep.wire.swio` (scan, attach - `max_speed` always sent, `reset=(channel, hold_ms)` for an attach under reset -, detach, connections), `oep.target.riscv-dm` (answers count their values; `RunResult.not_halted`), finding the reset line, attach through GPIO |
+| `console` | `oep.target.console` (position streams: read answers carry their length, marks are `time_ns`, the lock-free `streams()` list) and `ConsoleIO`, read as bytes |
+| `fixture` | `oep.fixture.gpio` / `uart` (its stream is the plan's; `status()`) / `i2c-target` / `spi-target` (revision 1) |
+| `config` | `oep.probe.config` (slots, binds, plan / label / idle / uart items, get / set / unset / save / erase; `describe()` = the declarations, `state()` = the live storage / slot / bind state; `hash_of(items)` = the probe's hash) |
+| `capture` | `oep.fixture.logic` / `analog` / `capture-group` (revision 1, oep-spec oep-if-capture). Every start is a generation (`LogicCapture.generation`) that read and release name - `read_segment(segment)` does it by itself; `status()` returns a `Status`. Every segment read goes to the `Host.on_capture` callbacks as a `CaptureRecord` (the hook for run recorders; no wireskein dependency) |
 | `decode` | decoding capture channels (I2C) |
 | `registry` | generated from oep-spec's number table (never edited; copied again from oep-spec). The public way to reach an interface by name is `registry.INTERFACES[name]` (`.revision`, `.op`, `.tlv`, `.enum`, e.g. `INTERFACES["oep.fixture.uart"].enum["role"]`); the module-level names (`FIXTURE_UART`, ...) are the same objects |
 | `arm` | `oep.wire.swd`, `oep.target.arm-adi`, MEM-AP, halting and calling functions on a Cortex-M |
@@ -73,10 +73,12 @@ hst.end()
 
 ```sh
 oep dump --port <probe>                      # what the probe offers (--fake p4-x035: no hardware)
-oep config show <probe>                      # the settings and the live slot / bind state
+oep config show <probe>                      # the settings, the declarations and the live state
+oep config state <probe>                     # the live slot / bind / storage state alone (lock-free, for polling)
 oep config slot <probe> --name x035 --wire rvswd --pins 2,54 --attach at-boot --retry 1 --mechanism dmseq
 oep config bind <probe> --port 1 --mode last-reset --stream slot:x035
-oep config save <probe>                      # kept over a restart (also: remove, erase)
+oep config uart <probe> oep.fixture.uart 115200 --format 8N1   # applied whenever that UART's plan has RX or TX
+oep config save <probe>                      # kept over a restart (also: remove = unset, erase)
 ```
 
 `<probe>` is a serial port, `tcp://HOST:PORT` or `usb[:VID:PID[:SERIAL]]`. A change takes the lock (owner "oep config") and
@@ -86,8 +88,10 @@ A run on hardware: ArduinoCore-CH32's `tests/manual/oep_smoke/` (`oep_smoke.py`,
 
 ## The fake probe (a working spec)
 
-`endpoint.Endpoint` is a fake probe that answers as oep-spec says; ch32rv, this client and the probe firmware are checked
-against it (when the spec changes, this is brought in line before the firmware). `fake` holds example declarations (profiles
+`endpoint.Endpoint` is a fake probe that answers as oep-spec says (2026-10-01: every answer carries the length of its
+data or list, TLVs may follow anything, rejected `expired` after a lapse, one resource number space, describe = declarations
+and `state` for the rest, capture generations); ch32rv, this client and the probe firmware are checked against it (when the
+spec changes, this is brought in line before the firmware). `fake` holds example declarations (profiles
 `p4-x035`, `esp32-v003`, `p4-bench` = a made-up jig with three slots and two seats, `rp2350-pins` = a wire whose pins the host
 chooses), `fake_serial` the byte side of a serial port (COBS candidates, raw bytes and binds, held during a session and
 resumed after it).

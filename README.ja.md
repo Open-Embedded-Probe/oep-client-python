@@ -29,14 +29,14 @@ X.Y.Z（v1 の凍結までは、どのリリースも wire を壊しうるので
 
 | モジュール | 中身 |
 |---|---|
-| `host` | 要求と結果、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`） |
+| `host` | 要求と結果、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`。lease 切れや force でロックを失えば `Expired`。黙って open し直さず、`Host.epoch` が進む） |
 | `link` | transport: シリアルの口（常に COBS + CRC、`0x00 <COBS> 0x00`、フレームの外は雑音として捨てる、排他で開く）、USB vendor bulk / HID と TCP（長さつきフレーム、§5.1 の立て直し）、corr による照合と送り直し、`open_host(target)` |
-| `core` | インターフェースを名前で探す（キャッシュつき）、confirm、probe の describe（ラベル、transport の一覧）、ロックの取り方（`take`）、ピンの割り当て（plan）、`Interface` の土台 |
-| `riscv` | `oep.wire.rvswd` / `oep.wire.swio`、`oep.target.riscv-dm`、リセット線の探索、GPIO 経由の attach |
-| `console` | `oep.target.console`（位置つきのストリーム）と、バイト列として読む `ConsoleIO` |
-| `fixture` | `oep.fixture.gpio` / `uart` / `i2c-target` / `spi-target`（revision 1） |
-| `config` | `oep.probe.config`（スロット、bind、plan / label / idle の項目、get / set / save / erase、スロットと bind の今の状態） |
-| `capture` | `oep.fixture.logic`（revision 1、oep-spec の oep-if-capture）。読んだ区画は `Host.on_capture` の callback に `CaptureRecord` で渡る（記録の受け口。wireskein には依存しない） |
+| `core` | インターフェースを名前で探す（キャッシュつき）、confirm（probe の `boot_id` つき）、probe の describe（宣言だけ。起動の間 cache: ラベル、transport の一覧、`max_op_ms`）、ロックの取り方（`take`）、ピンの割り当て（plan）、`Interface` の土台 |
+| `riscv` | `oep.wire.rvswd` / `oep.wire.swio`（scan、attach: `max_speed` は常に送る、`reset=(channel, hold_ms)` でリセットをかけながら attach、detach、connections）、`oep.target.riscv-dm`（応答は値の数を持つ。`RunResult.not_halted`）、リセット線の探索、GPIO 経由の attach |
+| `console` | `oep.target.console`（位置つきのストリーム: read の応答は長さを持ち、マークは `time_ns`、ロック不要の `streams()`）と、バイト列として読む `ConsoleIO` |
+| `fixture` | `oep.fixture.gpio` / `uart`（ストリームは plan が作る。`status()`）/ `i2c-target` / `spi-target`（revision 1） |
+| `config` | `oep.probe.config`（スロット、bind、plan / label / idle / uart の項目、get / set / unset / save / erase。`describe()` = 宣言、`state()` = 保存・スロット・bind の今の状態、`hash_of(items)` = probe と同じ hash） |
+| `capture` | `oep.fixture.logic` / `analog` / `capture-group`（revision 1、oep-spec の oep-if-capture）。start ごとに世代（`LogicCapture.generation`）が進み、read と release はそれを付ける（`read_segment(segment)` は自分で付ける）。`status()` は `Status` を返す。読んだ区画は `Host.on_capture` の callback に `CaptureRecord` で渡る（記録の受け口。wireskein には依存しない） |
 | `decode` | キャプチャのチャネルの復号（I2C） |
 | `registry` | oep-spec の番号の表から生成したモジュール（編集しない。oep-spec から写し直す）。名前からインターフェースの番号を引く公開の入口は `registry.INTERFACES[name]`（`.revision`、`.op`、`.tlv`、`.enum`。例 `INTERFACES["oep.fixture.uart"].enum["role"]`）。`FIXTURE_UART` などのモジュールの名前は同じもの |
 | `arm` | `oep.wire.swd`、`oep.target.arm-adi`、MEM-AP、Cortex-M の停止と関数呼び出し |
@@ -69,10 +69,12 @@ hst.end()
 
 ```sh
 oep dump --port <probe>                      # 能力の一覧（--fake p4-x035 でハードウェアなし）
-oep config show <probe>                      # 設定とスロット / bind の今の状態
+oep config show <probe>                      # 設定、宣言、今の状態
+oep config state <probe>                     # スロット / bind / 保存の今の状態だけ（ロック不要。監視用）
 oep config slot <probe> --name x035 --wire rvswd --pins 2,54 --attach at-boot --retry 1 --mechanism dmseq
 oep config bind <probe> --port 1 --mode last-reset --stream slot:x035
-oep config save <probe>                      # 再起動の後も残す（remove / erase もある）
+oep config uart <probe> oep.fixture.uart 115200 --format 8N1   # その UART の plan に RX / TX が付くたびに掛かる
+oep config save <probe>                      # 再起動の後も残す（remove = unset、erase もある）
 ```
 
 `<probe>` はシリアルの口、`tcp://HOST:PORT`、`usb[:VID:PID[:SERIAL]]`。変更はロックを取り（owner "oep config"）、終わったら
@@ -81,8 +83,9 @@ oep config save <probe>                      # 再起動の後も残す（remove
 
 ## 偽の probe（動く spec）
 
-`endpoint.Endpoint` は oep-spec の規範どおりに答える偽の probe で、ch32rv・この client・probe の firmware を突き合わせる
-「動く spec」として使う（spec が変わったら、probe の firmware より先にここを合わせる）。`fake` は宣言の例（profile:
+`endpoint.Endpoint` は oep-spec の規範どおりに答える偽の probe で（2026-10-01: 応答のデータと並びは長さを持ち、どの応答にも TLV が
+続けられる、期限切れ後の rejected `expired`、資源番号は 1 つの空間、describe は宣言だけで状態は `state`、キャプチャの世代）、
+ch32rv・この client・probe の firmware を突き合わせる「動く spec」として使う（spec が変わったら、probe の firmware より先にここを合わせる）。`fake` は宣言の例（profile:
 `p4-x035`、`esp32-v003`、`p4-bench` = スロット 3 か所と席 2 つの架空の治具、`rp2350-pins` = host がピンを選ぶ wire）、`fake_serial` は
 シリアルの口のバイトの側（COBS の候補、生のバイトと bind、セッション中の停止と再開）。
 
