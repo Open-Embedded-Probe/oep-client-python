@@ -13,6 +13,8 @@ from test_config import Clock, open_bench
 
 def _cause(e) -> tuple[str | None, list[int]]:
     assert isinstance(e.value, h.Unavailable), e.value
+    if e.value.cause == "held_by_settings":
+        assert e.value.holder_kind == "disabled"                            # holder_kind 6 next to the channel
     return e.value.cause, e.value.channels
 
 
@@ -198,3 +200,13 @@ def test_the_disable_command(monkeypatch):
     assert ep.disabled == {40, 41} and ep.saved is not None
     assert cli.main(["config", "remove", "x", "disable", "41"]) == 0
     assert ep.disabled == {40}
+
+
+def test_disabling_a_channel_the_firmware_does_not_declare_is_unsupported():
+    ep, hst = open_bench()
+    cfg = config.ProbeConfig(hst)
+    for ch in (24, 60):                                                       # reserved on this probe; past its channels
+        with pytest.raises(h.Unsupported) as e:
+            cfg.set([config.Disable(channel=ch)])
+        assert struct.pack("<H", ch) in e.value.result.payload
+    assert ep.disabled == set()
