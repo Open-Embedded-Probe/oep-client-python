@@ -453,7 +453,7 @@ class Endpoint:
         """A request naming a disabled channel: rejected unavailable cause 5 (held by settings) with the channel."""
         for ch in channels:
             if ch != 0xFFFF and ch in self.disabled:
-                raise unavailable("held_by_settings", ch, extra=extra)
+                raise unavailable("held_by_settings", ch, holder_kind="disabled", extra=extra)
 
     def _all_channels(self) -> set[int]:
         """Every channel some fn's describe offers (role_channels, channel_group, the wires' pairs and reset lines)."""
@@ -1941,6 +1941,9 @@ class Endpoint:
             elif tag == ITEM["idle"]:
                 if len(value) != 3 or value[2] > 2:
                     raise Reject(m.MALFORMED)
+            elif tag == ITEM["disable"] and key not in self._all_channels():
+                # a channel the firmware does not declare: unsupported, as idle (probe.config §1)
+                raise unsupported_fixed(m.tlv(_UNA["channel"], struct.pack("<H", key)))
             elif tag == ITEM["label"]:
                 if len(value) < 3:
                     raise Reject(m.MALFORMED)
@@ -2022,7 +2025,7 @@ class Endpoint:
     def _refuse_disabled_in(disabled: set[int], channels: list[int]) -> None:
         for ch in channels:
             if ch != 0xFFFF and ch in disabled:
-                raise unavailable("held_by_settings", ch)
+                raise unavailable("held_by_settings", ch, holder_kind="disabled")
 
     def _parse_slot(self, v: bytes) -> Slot:
         """probe.config §1.1, refused in core §4.3's order: the form (malformed), then what this probe lacks
