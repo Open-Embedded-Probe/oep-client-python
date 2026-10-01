@@ -33,6 +33,12 @@ define:
 - the serial ports' raw side (core §3.4, probe.config §1.2): `port_input` / `port_output` carry the bytes outside
   the frames for each serial port by its bind; a port the lock holder's requests came in on is held until the
   session ends, then resumes from the session's last host reset. The byte framing itself is `fake_serial`.
+- port_speed (core §3.5, optional): on when the profile's describe declares it (`port_speed_base`, the boot speed;
+  None = off: the op is unknown_operation). try / commit / revert on the UART bridge the request came in on (else
+  unavailable cause 6), a rate the fake UART cannot make (outside 300..5000000) unsupported; a try reverts after
+  verify_ms without a commit or at a broken candidate, a commit after idle_ms with no good frame or 3 broken
+  candidates within 1 s, the session's end reverts after its answer. The line itself is modelled by `broken_rates`
+  (rate -> BrokenRate): frames at such a rate break, from a size and in the directions given (`fake_serial` applies it).
 
 Every other non-core fn gets two stand-in operations so the session rules can be exercised - FAKE ONLY, they mean
 nothing on a real probe:  0x01 write(u32) changes state, 0x02 read -> u32 needs no lock.
@@ -302,6 +308,23 @@ class Flow:
     last_ms: int = 0
 
 
+@dataclass
+class BrokenRate:
+    """How a line rate breaks frames in the fake (port_speed tests): frames of `min_size` bytes and more (on the wire)
+    break, towards the host and / or towards the probe. A broken frame towards the probe is a candidate whose CRC does
+    not match; towards the host its CRC is spoiled."""
+    min_size: int = 0
+    to_host: bool = True
+    to_probe: bool = True
+
+
+PORT_SPEED_TAG = reg.CORE.tlv["describe"]["port_speed"]
+OP_PORT_SPEED = reg.CORE.op["port_speed"]
+SPEED_STEP = reg.CORE.enum["port_speed_step"]
+SPEED_BAD_MAX, SPEED_BAD_WINDOW_MS = 3, 1000       # committed: this many broken candidates within the window revert
+SPEED_RATES = (300, 5_000_000)                     # what the fake's UART makes (anything between, exactly)
+
+
 class Endpoint:
     MARKS_PER_ANSWER = 3                     # small, so hosts must follow `more`
     CHUNK = 64                               # raw bytes a serial port takes at a time (probe guide §3.6)
@@ -388,6 +411,10 @@ class Endpoint:
         self.bind_modes = struct.unpack_from("<I", cfg[CFG_DESCRIBE["bind_modes"]])[0] if CFG_DESCRIBE["bind_modes"] in cfg else 0
         self.console_accept = 64
         self.uart_accept = 256
+        # port_speed (core §3.5): on when the profile declares it; the boot speed every revert goes back to
+        self.port_speed_base: int | None = 115200 if any(t[0] == PORT_SPEED_TAG for t in self.static.get(0, ())) else None
+        self.broken_rates: dict[int, BrokenRate] = {}   # the line: rates that break frames (fake_serial applies it)
+        self._transport = 0                             # the transport the request being handled came in on
         self._boot()
 
     def _boot(self) -> None:
@@ -440,6 +467,16 @@ class Endpoint:
         self.held_ports: set[int] = set()
         self.session_resets: dict[tuple[int, int], tuple[object, int]] = {}   # stream key -> (sid, position)
         self.parked: dict[int, int] = {}               # channel -> the idle mode the probe put the free pin in
+        self.speed_state = "base"                      # port_speed: "base", "try" or "committed" (core §3.5)
+        self.speed_port: int | None = None             # the port off its boot speed
+        self.speed_rate = 0                            # the rate it runs at
+        self.speed_asked = 0                           # the baud the try asked (the commit names it again)
+        self.speed_until_ms = 0                        # try: the commit's deadline (verify_ms)
+        self.speed_idle_ms = 0                         # committed: revert after this long with no good frame (0 never)
+        self.speed_good_ms = 0                         # the last good frame on that port
+        self.speed_bad: list[int] = []                 # committed: the times of the recent broken candidates
+        self.speed_pending: tuple | None = None        # ("switch", port, baud, verify_ms) / ("revert",): after the answer
+        self.speed_log: list[tuple[int, int]] = []     # (port, rate) every switch, reverts included
         if self.saved is not None:
             self._apply_saved()                        # the saved disable items first: those pins are never parked
         self._park(self._all_channels())               # then the free pins' idle state (probe.config §2 boot order)
@@ -708,6 +745,7 @@ class Endpoint:
             return None
         req = m.Request.unpack(data)
         self.requests.append(req)
+        self._transport = transport
         remembered = self._resent(req)
         if remembered is not None:
             return remembered
@@ -728,6 +766,8 @@ class Endpoint:
         out = m.Result(req.corr, res, detail, payload).pack()
         if req.session is not None and req.session == self.last:
             self._remember(req, out)
+        if transport not in self.serial_ports:
+            self.speed_after_answer()                              # the answer is not on a port whose speed changes
         return out
 
     def _interface(self, fn: int):
@@ -764,6 +804,8 @@ class Endpoint:
             return self._open(req.payload)
         if req.fn != m.CORE_FN and req.fn not in self.names:
             return m.REJECTED, m.UNKNOWN_FUNCTION, b""
+        if req.fn == m.CORE_FN and req.op == OP_PORT_SPEED and self.port_speed_base is None:
+            return m.REJECTED, m.UNKNOWN_OPERATION, b""            # the optional feature off (core §3.5)
         if not self._lock_free(req.fn, req.op):
             refused = self._check(req.session)
             if refused:
@@ -951,6 +993,8 @@ class Endpoint:
         if op == m.OP_KEEPALIVE:
             _, ignored = t.tail()
             return self._answer(b"", ignored)
+        if op == OP_PORT_SPEED:
+            return self._port_speed(t)
         if op == m.OP_SUBSCRIBE:
             fn, _min_bytes, max_delay_ms = t.take("HHI")           # max_delay_ms u32 (core §11.3)
             t.tail()
@@ -1133,8 +1177,95 @@ class Endpoint:
     # ---- describe: the static declarations plus the live ones -----------------------------------
     def _declarations(self, fn: int) -> list[bytes]:
         """describe: the profile's declarations as they are (core §7.3: nothing that changes - the firmware's labels
-        only, the settings' are read by get; probe.config's state is its op state)."""
+        only, the settings' are read by get; probe.config's state is its op state). fn 0's port_speed follows
+        `port_speed_base` (a test turns the feature off or on)."""
+        if fn == m.CORE_FN:
+            out = [t for t in self.static[fn] if t[0] != PORT_SPEED_TAG]
+            return out + [catalog.u8(PORT_SPEED_TAG, 1)] if self.port_speed_base is not None else out
         return list(self.static[fn])
+
+    # ---- port_speed (core §3.5) -----------------------------------------------------------------
+    def _port_speed(self, t: "Take") -> tuple[int, int, bytes]:
+        """port(u8) baud(u32) step(u8) verify_ms(u16) idle_ms(u32) [TLV] -> baud(u32): the rate that applies."""
+        port, baud, step, verify_ms, idle_ms = t.take("BIBHI")
+        _, ignored = t.tail()
+        if step not in SPEED_STEP.values():
+            raise unsupported_fixed()
+        if port != self._transport or port >= len(self.transports) or \
+                self.transports[port] != fake.TRANSPORT["uart_bridge"]:
+            raise unavailable("wrong_state")                       # only the UART bridge the request came in on
+        if step == SPEED_STEP["try"]:
+            if not SPEED_RATES[0] <= baud <= SPEED_RATES[1]:
+                raise unsupported_fixed()                          # a baud this UART cannot make
+            self.speed_pending = ("switch", port, baud, verify_ms)
+            return self._answer(struct.pack("<I", baud), ignored)
+        if step == SPEED_STEP["commit"]:
+            if self.speed_state == "base" or port != self.speed_port or baud != self.speed_asked:
+                raise unavailable("wrong_state")                   # nothing tried, or another baud
+            self.speed_state = "committed"
+            self.speed_idle_ms = idle_ms
+            self.speed_good_ms = self.now()
+            self.speed_bad.clear()
+            return self._answer(struct.pack("<I", self.speed_rate), ignored)
+        self.speed_pending = ("revert",)
+        return self._answer(struct.pack("<I", self.port_speed_base), ignored)
+
+    def port_baud(self, port: int) -> int:
+        """The rate serial port `port` runs at now (its boot speed, or what port_speed set)."""
+        if self.speed_state != "base" and port == self.speed_port:
+            return self.speed_rate
+        return self.port_speed_base or 115200
+
+    def breaks(self, port: int, size: int, to_host: bool) -> bool:
+        """The line model: a frame of `size` bytes on `port` at its rate now breaks (`broken_rates`)."""
+        b = self.broken_rates.get(self.port_baud(port))
+        return b is not None and size >= b.min_size and (b.to_host if to_host else b.to_probe)
+
+    def speed_after_answer(self) -> None:
+        """The answer that asked for a switch or a revert is out (at the old speed): now do it."""
+        pending, self.speed_pending = self.speed_pending, None
+        if pending is None:
+            return
+        if pending[0] == "revert":
+            self._speed_revert()
+            return
+        _, port, baud, verify_ms = pending
+        self.speed_state, self.speed_port, self.speed_rate, self.speed_asked = "try", port, baud, baud
+        self.speed_until_ms = self.now() + verify_ms
+        self.speed_good_ms = self.now()
+        self.speed_bad.clear()
+        self.speed_log.append((port, baud))
+
+    def _speed_revert(self) -> None:
+        if self.speed_state == "base":
+            return
+        self.speed_log.append((self.speed_port, self.port_speed_base))
+        self.speed_state, self.speed_port, self.speed_rate, self.speed_asked = "base", None, 0, 0
+        self.speed_bad.clear()
+
+    def speed_frame(self, port: int, good: bool) -> None:
+        """A candidate closed on serial port `port`: a frame (good) or not (a broken candidate)."""
+        if self.speed_state == "base" or port != self.speed_port:
+            return
+        if good:
+            self.speed_good_ms = self.now()
+            return
+        if self.speed_state == "try":
+            self._speed_revert()                                   # the new speed breaks frames: not this one
+            return
+        now = self.now()
+        self.speed_bad = [t for t in self.speed_bad if now - t < SPEED_BAD_WINDOW_MS] + [now]
+        if len(self.speed_bad) >= SPEED_BAD_MAX:
+            self._speed_revert()
+
+    def _speed_tick(self) -> None:
+        if self.speed_pending and self.speed_pending[0] == "revert":
+            self.speed_after_answer()
+        now = self.now()
+        if self.speed_state == "try" and now >= self.speed_until_ms:
+            self._speed_revert()                                   # no commit within verify_ms
+        elif self.speed_state == "committed" and self.speed_idle_ms and now - self.speed_good_ms >= self.speed_idle_ms:
+            self._speed_revert()
 
     def _page(self, tlvs: list[bytes], first: int) -> bytes:
         budget = self.probe.max_frame - m.RESULT_HEADER - 1
@@ -2177,8 +2308,9 @@ class Endpoint:
                         self.flows[(port, key)] = Flow(sid, 0)
 
     def tick(self) -> None:
-        """Time passes: the lease, at-boot retries, mixed lines closed by quiet, the captures."""
+        """Time passes: the lease, at-boot retries, mixed lines closed by quiet, the captures, port_speed's timers."""
         self._lapse()
+        self._speed_tick()
         now = self.now()
         for fn, cap in self.captures.items():
             self._events(fn, cap.tick(now))
@@ -2313,7 +2445,10 @@ class Endpoint:
             s.written += data
 
     def _session_over(self) -> None:
-        """The session ended (end, lapse, force): the ports it held resume from its last host reset (or now)."""
+        """The session ended (end, lapse, force): the ports it held resume from its last host reset (or now); a port
+        off its boot speed goes back after the answer (core §3.5)."""
+        if self.speed_state != "base":
+            self.speed_pending = ("revert",)
         for port in self.held_ports:
             b = self.binds.get(port)
             if b is None:

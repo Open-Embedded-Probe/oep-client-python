@@ -9,6 +9,7 @@
   oep config uart <probe> oep.fixture.uart#1 115200 --format 8N1
   oep config disable <probe> 3 4           (channels the probe never uses or touches; remove disable CH re-enables)
   oep config remove <probe> bind 1        oep config save <probe>        oep config erase <probe>
+  oep speed <probe> 1500000,921600,500000 (port_speed, core §3.5: try the rates in order on a UART bridge, report)
 
 <probe>: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]. A change takes the lock (owner "oep config") and
 ends the session after it; it takes effect at once, and stays over a restart only after `save` (or --save).
@@ -29,6 +30,13 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="oep", description="Open Embedded Probe: what a probe offers, its settings")
     sub = parser.add_subparsers(dest="command", required=True)
     _config_parser(sub)
+    sp = sub.add_parser("speed", help="port_speed (core §3.5): try faster rates on a UART bridge, print the report")
+    sp.add_argument("probe", help="the probe's serial port (a UART bridge this host opens)")
+    sp.add_argument("rates", help="comma-separated, in order of preference (the first that passes is kept)")
+    sp.add_argument("--baud", type=int, default=link.BASE_BAUD, help="the boot speed (default 115200)")
+    sp.add_argument("--verify-bytes", type=int, default=32768)
+    sp.add_argument("--verify-s", type=float, default=1.0)
+    sp.add_argument("--json", action="store_true")
     d = sub.add_parser("dump", help="list and describe every interface a probe offers")
     src = d.add_mutually_exclusive_group(required=True)
     src.add_argument("--fake", choices=sorted(fake.PROFILES), help="in-process example probe")
@@ -39,6 +47,8 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     if args.command == "config":
         return _config(args)
+    if args.command == "speed":
+        return _speed(args)
 
     if args.fake:
         call = fake.PROFILES[args.fake]().call
@@ -48,6 +58,26 @@ def main(argv=None) -> int:
     caps = dump.collect(call, args.prefix, args.exact)
     sys.stdout.write(dump.to_json(caps) + "\n" if args.json else dump.to_text(caps))
     return 0
+
+
+# ---- oep speed ----------------------------------------------------------------------------------------------------
+
+def _speed(args) -> int:
+    """Take the lock, raise_speed, print the report; the session's end puts the port back at its boot speed."""
+    import dataclasses
+    rates = [int(r) for r in args.rates.replace(" ", "").split(",") if r]
+    hst = link.open_host(args.probe, baud=args.baud)
+    try:
+        core.take(hst, 5000, owner="oep speed")
+        report = link.raise_speed(hst, rates, verify_bytes=args.verify_bytes, verify_s=args.verify_s)
+        if args.json:
+            sys.stdout.write(json.dumps(dataclasses.asdict(report), indent=2) + "\n")
+        else:
+            sys.stdout.write(report.to_text())
+        hst.end()
+    finally:
+        hst.link.close()
+    return 0 if report.supported else 2
 
 
 # ---- oep config ----------------------------------------------------------------------------------------------------
