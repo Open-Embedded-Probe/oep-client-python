@@ -122,6 +122,7 @@ class SerialLink:
         self.stream = stream
         self.framing = framing
         self.timeout = timeout
+        self.resend = True                         # a lost reply: the request once more with the same corr (core §5.2)
         self.retries = 0
         self.corrupt = 0
         self.stale = 0                             # replies that answered another request
@@ -284,7 +285,7 @@ class SerialLink:
                 if isinstance(e, cobs.CorruptFrame):
                     self.corrupt += 1
                 self._recover()
-                if attempt or (message[0] & m.ROLE_SESSION and self.ended_blind):
+                if attempt or not self.resend or (message[0] & m.ROLE_SESSION and self.ended_blind):
                     raise
                 # sent once more with the same corr, state-changing ones too: the probe keeps the lock holder's recent
                 # results and answers a repeat from them instead of running it twice (v1-open-proposals §4). A result
@@ -303,7 +304,7 @@ class SerialLink:
         try:
             return self._exchange_once(messages, max_inflight, window_bytes, replies)
         except (cobs.CorruptFrame, TimeoutError, FramingLost):
-            if self.ended_blind:
+            if self.ended_blind or not self.resend:
                 raise
             self.retries += 1
             rest = messages[len(replies):]
@@ -433,19 +434,29 @@ def _open_usb_stream(kind: str, vid: int, pid: int, serial: str | None):
         return UsbBulkStream.open(vid, pid, serial)
 
 
-def open_host(target: str, timeout: float = 3.0):
+TCP_TIMEOUT = 15.0   # behind a broker: outlast its own 3 s retry towards the probe, and never send again ourselves
+
+
+def open_host(target: str, timeout: float | None = None, resend: bool | None = None):
     """A Host on `target`, with the link's pipelining bound to the probe's limits (core confirm): Host.pipeline and
     everything built on it (flash, capture reads) then keep several requests in flight.
 
     target: a serial port path (COM3 on Windows); tcp://HOST:PORT for a local broker (length frames); usb[:VID:PID[:SERIAL]]
     (hex) for the probe's USB device, vendor bulk then HID (oep-core §3.3); usb:UNIT_ID for the OEP probe whose USB
-    serial is that unit id, whatever its VID:PID."""
+    serial is that unit id, whatever its VID:PID.
+
+    timeout: seconds to wait for a reply (default 3; TCP 15). resend: send a request once more with the same corr when
+    its reply was lost (default on; off for TCP, where a broker retries towards the probe itself and a second copy from
+    here would only race it - a lost reply is then raised to the caller)."""
     from . import host
     if target.startswith("tcp://"):
         addr, _, port = target[len("tcp://"):].rpartition(":")
-        lk = SerialLink.on_stream(TcpStream(addr or "127.0.0.1", int(port)), "length", timeout)
+        lk = SerialLink.on_stream(TcpStream(addr or "127.0.0.1", int(port)), "length",
+                                  TCP_TIMEOUT if timeout is None else timeout)
+        lk.resend = False if resend is None else resend
         lk.transport = "tcp"
     elif target == "usb" or target.startswith("usb:"):
+        timeout = 3.0 if timeout is None else timeout
         parts = target.split(":")[1:]
         if len(parts) == 1:                                   # usb:UNIT_ID (any length: a VID comes with its PID)
             vid, pid = find_usb(parts[0])
@@ -454,8 +465,10 @@ def open_host(target: str, timeout: float = 3.0):
         pid = int(parts[1], 16) if len(parts) > 1 else USB_PID
         return open_usb_host(vid, pid, parts[2] if len(parts) > 2 else None, timeout)
     else:
-        lk = SerialLink(target, timeout)
+        lk = SerialLink(target, 3.0 if timeout is None else timeout)
         lk.transport = "serial"
+    if resend is not None:
+        lk.resend = resend
     hst = host.Host(lk.send)
     lk.attach_host(hst)
     return hst
