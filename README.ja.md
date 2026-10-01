@@ -29,7 +29,7 @@ X.Y.Z（v1 の凍結までは、どのリリースも wire を壊しうるので
 
 | モジュール | 中身 |
 |---|---|
-| `host` | 要求と結果、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`。lease 切れや force でロックを失えば `Expired`。黙って open し直さず、`Host.epoch` が進む） |
+| `host` | 要求と結果、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`。lease 切れなら `Expired`。黙って open し直さず、`Host.epoch` が進む） |
 | `link` | transport: シリアルの口（常に COBS + CRC、`0x00 <COBS> 0x00`、フレームの外は雑音として捨てる、排他で開く）、USB vendor bulk / HID と TCP（長さつきフレーム、§5.1 の立て直し）、corr による照合と送り直し、`open_host(target)` |
 | `core` | インターフェースを名前で探す（キャッシュつき）、confirm（probe の `boot_id` つき）、probe の describe（宣言だけ。起動の間 cache: ラベル、transport の一覧、`max_op_ms`）、ロックの取り方（`take`）、ピンの割り当て（plan）、`Interface` の土台 |
 | `riscv` | `oep.wire.rvswd` / `oep.wire.swio`（scan、attach: `max_speed` は常に送る、`reset=(channel, hold_ms)` でリセットをかけながら attach、detach、connections）、`oep.target.riscv-dm`（応答は値の数を持つ。`RunResult.not_halted`）、リセット線の探索、GPIO 経由の attach |

@@ -171,8 +171,9 @@ def test_force_takes_the_lock_and_the_old_holder_is_refused(bench):
         write(a, 1)
     write(b, 1)
     b.end()
-    with pytest.raises(host.NoSession):        # the forcing session is the last one now: a's id is not it
+    with pytest.raises(host.NoSession):        # the forcing session is the last one now: a's id is not it (never expired)
         write(a, 1)
+    assert ep.last == b.session and not ep.last_swept
 
 
 def test_a_probe_reboot_forgets_the_last_id_and_boot_id_says_so(bench):

@@ -6,8 +6,8 @@ through with the same id proves nobody else operated the probe in between (oep-s
 
 oep-core §4.1: role 0x81 (a session id in the header) goes only to a probe whose confirm answered revision 1 or more; a
 v0 probe drops the unknown role without an answer. The host confirms before its first open or session request.
-oep-core §6.5 / §9: when the probe's boot_id changes (confirm, open, heartbeat), when the lock lapsed or was taken
-(rejected expired, open answering resumed = 2) and when another session came in between (rejected no_session), every
+oep-core §6.5 / §9: when the probe's boot_id changes (confirm, open, heartbeat), when the lease lapsed (rejected
+expired, open answering resumed = 2) and when another session came in between, by force or not (rejected no_session), every
 connection, stream and the plan this session had are gone: `epoch` counts those losses, so a client holding a
 connection can tell. An expired session is never re-opened behind the caller's back: `Expired` is raised and the caller
 opens again (host guide §2.5).
@@ -73,9 +73,10 @@ class NoSession(Rejected):
 
 
 class Expired(Rejected):
-    """rejected expired (core §6.2, §9): this session's lock ended by the lease lapsing or by another session's force,
-    and the probe swept its resources (plan, connections, streams). Nothing is re-opened silently: the caller opens
-    again (resumed = 2 then) and rebuilds what it had. `lease_ms`: the lease the session had (None when unknown)."""
+    """rejected expired (core §6.2, §9): this session's lease lapsed and the probe swept its resources (plan,
+    connections, streams). Nothing is re-opened silently: the caller opens again (resumed = 2 then) and rebuilds what
+    it had. `lease_ms`: the lease the session had (None when unknown). A session whose lock another id took by force
+    sees locked while that one holds it, then no_session (the probe remembers the last id only) - never expired."""
 
     def __init__(self, result: m.Result, lease_ms: int | None = None):
         super().__init__(result)
@@ -83,7 +84,7 @@ class Expired(Rejected):
 
     def __str__(self) -> str:
         lease = f" (lease {self.lease_ms} ms)" if self.lease_ms is not None else ""
-        return f"session expired{lease}: the lock lapsed or was taken by force and the probe swept its resources - open again"
+        return f"session expired{lease}: the lease lapsed and the probe swept this session's resources - open again"
 
 
 class Busy(Rejected):
@@ -170,7 +171,7 @@ class Opened:
 
     @property
     def swept(self) -> bool:
-        """The same session id came back after its lease lapsed or a force: its resources are gone (core §9)."""
+        """The same session id came back after its lease lapsed: its resources are gone (core §9)."""
         return self.resumed == RESUMED["swept"]
 
 
@@ -225,8 +226,8 @@ class Host:
 
     def _rejected(self, result: m.Result) -> None:
         if result.detail in (m.NO_SESSION, m.EXPIRED):
-            # expired: the lease lapsed or a force took the lock, and the probe swept this session's resources (core
-            # §9). no_session: another session opened in between and took them over. Either way they are not ours.
+            # expired: the lease lapsed and the probe swept this session's resources (core §9). no_session: another
+            # session opened in between (a force among them) and took them over. Either way they are not ours.
             self._swept()
 
     def _swept(self) -> None:
@@ -332,7 +333,7 @@ class Host:
         """A new random id unless `session` is given (a one-shot CLI resuming its saved id). lease_ms 0 = the probe's
         default; 1000..60000 are taken as asked. owner: who holds the lock (1-32 bytes), shown to other hosts.
         Opened.resumed: 0 a new session, 1 the same id with its resources kept, 2 the same id after its lease lapsed
-        or a force swept them (core §6.4: the host rebuilds its plan and connections; `epoch` moved)."""
+        swept them (core §6.4: the host rebuilds its plan and connections; `epoch` moved)."""
         self.require_v1()
         sid = session if session is not None else self.rng.randrange(1, 1 << 32)
         tail = m.tlv(OWNER, owner.encode()[:32]) if owner else b""

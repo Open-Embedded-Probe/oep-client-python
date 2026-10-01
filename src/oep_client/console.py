@@ -159,12 +159,16 @@ class Console(PositionStream):
         self._call(self.CLOSE, struct.pack("<H", self.stream))
 
     def streams(self) -> list[StreamInfo]:
-        """The probe's console streams, live and closed-but-readable (oep-if-console §1, lock-free): how a host
-        without the lock finds a stream's number."""
-        rd = m.Reader(self._call(self.STREAMS, locked=False).payload)
-        out = [StreamInfo(*rd.element().take("HHBBB")) for _ in range(rd.u8())]
-        rd.tail()
-        return out
+        """The probe's console streams, live and closed-but-readable, in the order they were made (oep-if-console §1,
+        lock-free; paged by first(u8) / more like connections): how a host without the lock finds a stream's number."""
+        out: list[StreamInfo] = []
+        while True:
+            rd = m.Reader(self._call(self.STREAMS, bytes([len(out)]), locked=False).payload)
+            more, count = rd.take("BB")
+            out += [StreamInfo(*rd.element().take("HHBBB")) for _ in range(count)]
+            rd.tail()
+            if not more or not count or len(out) > 0xFF:
+                return out
 
 
 class StreamIO:

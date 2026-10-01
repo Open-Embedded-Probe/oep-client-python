@@ -429,8 +429,8 @@ class FakeGroup:
         if len(set(fns)) != len(fns):
             raise Reject(m.MALFORMED)
         if any(fn not in self.tracks_allowed for fn in fns):
-            raise Reject(m.UNSUPPORTED, bytes([m.TAG_FIXED]) + m.tlv(
-                reg.CORE.tlv["unavailable_payload"]["fn"], struct.pack("<H", next(fn for fn in fns if fn not in self.tracks_allowed))))
+            raise Reject(m.UNSUPPORTED, bytes([m.TAG_FIXED]) + m.tlv(          # 0x00 + TLV fn (core §4.3)
+                reg.CORE.tlv["unsupported_payload"]["fn"], struct.pack("<H", next(fn for fn in fns if fn not in self.tracks_allowed))))
         for fn in self.tracks:
             caps[fn].group = None
         self.tracks, self.trigger_fn, self.start_ns, self.trigger_ns = [], 0, NO_TIME, NO_TIME

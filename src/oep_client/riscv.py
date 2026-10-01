@@ -147,16 +147,20 @@ class WireBase(Interface):
         self._call(self.DETACH, body)
 
     def connections(self) -> list["ConnectionInfo"]:
-        """The wire's live connections (oep-if-debug §2.1, lock-free)."""
-        rd = m.Reader(self._call(self.CONNECTIONS, locked=False).payload)
-        out = []
-        for _ in range(rd.u8()):
-            e = rd.element()
-            conn, swdio, swclk, speed, users, slot, scheme, n = e.take("HHHIBBBB")
-            out.append(ConnectionInfo(conn, (swdio, swclk), speed, users, None if slot == 0xFF else slot,
-                                      (scheme, e.bytes(n)) if scheme else None))
-        rd.tail()
-        return out
+        """The wire's live connections, in the order they were made (oep-if-debug §2.1, lock-free; paged: the request
+        is first(u8), the answer more count entries, followed until more is 0)."""
+        out: list[ConnectionInfo] = []
+        while True:
+            rd = m.Reader(self._call(self.CONNECTIONS, bytes([len(out)]), locked=False).payload)
+            more, count = rd.take("BB")
+            for _ in range(count):
+                e = rd.element()
+                conn, swdio, swclk, speed, users, slot, scheme, n = e.take("HHHIBBBB")
+                out.append(ConnectionInfo(conn, (swdio, swclk), speed, users, None if slot == 0xFF else slot,
+                                          (scheme, e.bytes(n)) if scheme else None))
+            rd.tail()
+            if not more or not count or len(out) > 0xFF:
+                return out
 
     def _speed_tlv(self, max_speed: int | None) -> bytes:
         # critical: a probe that cannot keep to a ceiling must refuse, not ignore it (core §2.3: safety arguments)
