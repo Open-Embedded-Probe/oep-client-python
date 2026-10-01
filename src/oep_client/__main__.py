@@ -9,7 +9,8 @@
   oep config uart <probe> oep.fixture.uart#1 115200 --format 8N1
   oep config disable <probe> 3 4           (channels the probe never uses or touches; remove disable CH re-enables)
   oep config remove <probe> bind 1        oep config save <probe>        oep config erase <probe>
-  oep speed <probe> 1500000,921600,500000 (port_speed, core §3.5: try the rates in order on a UART bridge, report)
+  oep speed <probe> [--candidates 921600,500000] [--verify [--flows in:2,out:2]] (port_speed, core §3.5 and the host
+                                           guide §7: try the candidates in order on a UART bridge, report)
   oep linktest <probe> --rates now,921600 --patterns in,out,duplex --inflight 1,2 --sizes 128,496 --frames 300
 
 <probe>: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]. A change takes the lock (owner "oep config") and
@@ -31,13 +32,23 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="oep", description="Open Embedded Probe: what a probe offers, its settings")
     sub = parser.add_subparsers(dest="command", required=True)
     _config_parser(sub)
-    sp = sub.add_parser("speed", help="port_speed (core §3.5): try faster rates on a UART bridge, print the report")
+    sp = sub.add_parser("speed", help="port_speed (core §3.5, host guide §7): try faster rates on a UART bridge, "
+                        "print the report")
     sp.add_argument("probe", help="the probe's serial port (a UART bridge this host opens)")
-    sp.add_argument("rates", help="comma-separated, in order of preference (the first that passes is kept)")
+    sp.add_argument("rates", nargs="?", default="", help="the candidates, comma-separated, in order of preference "
+                    "(the first that passes is kept; default 500000). Same as --candidates")
+    sp.add_argument("--candidates", default="", help="the candidates, comma-separated (default 500000)")
+    sp.add_argument("--flows", default="", help="the flows to verify, comma-separated FLOW[:N] (in, out, duplex; N in "
+                    "flight, 0 = the most the link keeps; default: all three at that N). Selects --verify")
+    form = sp.add_mutually_exclusive_group()
+    form.add_argument("--verify", action="store_true", help="the full form (guide §7.3): baseline, the flows measured "
+                      "at every candidate, a failed flow run again one at a time")
+    form.add_argument("--minimal", action="store_true", help="the minimal form (guide §7.2, the default): try, confirm, "
+                      "commit, no measurement")
+    sp.add_argument("--frames", type=int, default=link.FLOW_FRAMES, help="frames per flow when verifying (default 16)")
+    sp.add_argument("--no-record", action="store_true", help="do not read or write the record of passed / failed rates "
+                    "(~/.cache/oep-client/link-speed.json, 30 days; on by default here, off in the library)")
     sp.add_argument("--baud", type=int, default=link.BASE_BAUD, help="the boot speed (default 115200)")
-    sp.add_argument("--verify-bytes", type=int, default=32768)
-    sp.add_argument("--verify-s", type=float, default=1.0)
-    sp.add_argument("--duplex-s", type=float, default=1.0, help="both ways at once for this long (default 1)")
     sp.add_argument("--json", action="store_true")
     lt = sub.add_parser("linktest", help="measure the link: traffic patterns at rates the host asks for, what breaks")
     lt.add_argument("probe", help="a probe: a serial port, tcp://HOST:PORT or usb[:VID:PID]")
@@ -117,15 +128,30 @@ def _linktest(args) -> int:
 
 # ---- oep speed ----------------------------------------------------------------------------------------------------
 
+def _flows(text: str) -> list[tuple[str, int]] | None:
+    """--flows "in:2,out,duplex:1" -> [("in", 2), ("out", 0), ("duplex", 1)]; "" -> None (the default flows)."""
+    out = []
+    for item in text.replace(" ", "").split(","):
+        if not item:
+            continue
+        name, _, n = item.partition(":")
+        out.append((name, int(n) if n else 0))
+    return out or None
+
+
 def _speed(args) -> int:
-    """Take the lock, raise_speed, print the report; the session's end puts the port back at its boot speed."""
+    """Take the lock, raise_speed by the host guide's procedure, print the report; the session's end puts the port
+    back at its boot speed. The record of passed / failed rates is on unless --no-record."""
     import dataclasses
-    rates = [int(r) for r in args.rates.replace(" ", "").split(",") if r]
+    text = args.candidates or args.rates
+    candidates = [int(r) for r in text.replace(" ", "").split(",") if r] or list(link.DEFAULT_CANDIDATES)
+    flows = _flows(args.flows)
+    verify = True if args.verify or flows else (False if args.minimal else None)
     hst = link.open_host(args.probe, baud=args.baud)
     try:
         core.take(hst, 5000, owner="oep speed")
-        report = link.raise_speed(hst, rates, verify_bytes=args.verify_bytes, verify_s=args.verify_s,
-                                   duplex_s=args.duplex_s)
+        report = link.raise_speed(hst, candidates, flows=flows, verify=verify, frames=args.frames,
+                                   record=not args.no_record)
         if args.json:
             sys.stdout.write(json.dumps(dataclasses.asdict(report), indent=2) + "\n")
         else:
