@@ -100,8 +100,10 @@ print(hst.link.speed.to_text())             # 試した速さごとに、実際�
 3 MHz ÷ n だけ、CH340 は 921600 は通り 1500000 は probe → host が壊れた: oep-spec docs/uart-speed-negotiation.ja.md）ので、速さは
 host が選ぶ。結果（`link.speed`: `rate`、`chosen`、`in_kb_s` / `out_kb_s`、`trials`）はキャプチャや書き込みの予算を立てるのに使う。
 
-probe はセッションが終わったとき（`end`、lease の期限切れ、force）、フレームが壊れたとき、線が黙ったとき（`idle_ms`）に自分で
-起動時の速さに戻る: link は `end` にはすぐ合わせ、上げた速さで応答の来ない要求（送り直しも）があれば、起動時の速さに戻って
+probe はセッションが終わったとき（`end`、lease の期限切れ、force）、フレームが壊れたとき、線が黙ったとき（`idle_ms`、最長
+`port_speed_idle_max_ms` = 3 秒。落ちた host の速さもそれより長くは残らない）に自分で起動時の速さに戻る: 上げている間、link は
+1 秒黙っていれば要求の前に keepalive を送り、長く黙る呼び出し側は `hst.link.keep_alive()` で同じことをする。シリアルの口を開くと
+最初の confirm を約 4 秒繰り返して、残った速さが戻るのを待つ。link は `end` にはすぐ合わせ、上げた速さで応答の来ない要求（送り直しも）があれば、起動時の速さに戻って
 confirm し、そこでもう一度送る（固まらない）。機能の無い probe は `not supported` で、速さは変わらない。ブローカー（TCP）の後ろでは
 client ではなくブローカーが行う。シリアルの口は、ドライバにあれば low-latency のモードで開く（FTDI の latency timer 16 → 1 ms で
 UART bridge の速度が 3 倍になった）。ボードの起動時の速さが 115200 でなければ `open_host(..., baud=)` で渡す。
