@@ -37,7 +37,7 @@ class SwdWire(WireBase):
         body = bytes([0]) + self._speed_tlv(self._speed_or_default(max_speed)) + self._pins_tlv(pins) + self._reset_tlv(reset)
         if targetsel is not None:
             body += m.tlv(self.TAG_TARGETSEL, struct.pack("<I", targetsel), critical=True)
-        rd = m.Reader(self._call(self.ATTACH, body).payload)
+        rd = m.Reader(self._call(self.ATTACH, body, expect_ms=reset[1] if reset else 0).payload)
         conn, dpidr, self.flags, self.speed_hz = rd.take("HIBI")
         self.existing = bool(self.flags & self.FLAGS["existing"])
         rd.tail()

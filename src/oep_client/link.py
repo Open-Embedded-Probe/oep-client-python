@@ -69,6 +69,7 @@ OPEN_TRY_S = 0.5     # each of those confirms waits this long (at most the link'
 STRIKE_MAX, STRIKE_WINDOW_S = 3, 5.0   # raised, in use: this many broken frames / resends within the window step down
 STEP_DOWN_WAIT_S = 0.2   # the step down's revert (step 2) at the raised rate waits this long, never sent again
 RAISED_WAIT_MIN_S = 0.3  # raised, in use: each wait for an answer is a quarter of the lease, at least this
+EXPECT_MARGIN_S = 0.5    # a request that may take long on the probe (Host.expecting): waited that long and this
 LINK_ERRORS = (cobs.CorruptFrame, TimeoutError, FramingLost)
 
 
@@ -179,6 +180,8 @@ class SerialLink:
         self.unusable_session: int | None = None   # the session `unusable` belongs to
         self.session_frame = None                  # (op, payload) -> a core request in the session, once bound
         self.lease_s = lambda: None                # the session's lease, once bound (raised: bounds every wait)
+        self.expected_s = lambda: 0.0              # how long the request going out may take on the probe (Host.expecting)
+        self._own = 0                              # >0: the link's own short requests (confirms, keepalive, revert)
         self.corr_source = self._own_corr          # the host's correlation counter once bound (open_host)
         self.keepalive_frame = None                # raised: a keepalive request in the session, once bound (attach_host)
         self.last_tx = time.monotonic()            # when the link last wrote (raised: quiet for KEEPALIVE_S = keepalive)
@@ -206,7 +209,7 @@ class SerialLink:
 
     def _recv(self) -> bytes:
         if self.framing == "length":
-            reply = self.frames.recv(self.timeout)
+            reply = self.frames.recv(self._wait())
             if reply is None:
                 raise TimeoutError("no result from the probe")
             return reply
@@ -273,6 +276,7 @@ class SerialLink:
         saved = self.timeout
         deadline = time.monotonic() + timeout
         n = 0
+        self._own += 1                             # its reads wait what it says, whatever a caller expects
         try:
             while True:
                 if self._raised():                 # a long pump at a raised rate keeps the line alive (core §3.5)
@@ -302,6 +306,7 @@ class SerialLink:
                     return n
         finally:
             self.timeout = saved
+            self._own -= 1
             self._step_down_if_due()
 
     def resync(self, tries: int = 3) -> None:
@@ -431,6 +436,7 @@ class SerialLink:
         self._write([m.Request(corr, m.CORE_FN, m.OP_CONFIRM, m.CONFIRM_REQUEST + bytes([0, 0xFF])).pack()])
         saved = self.timeout
         self.timeout = timeout
+        self._own += 1
         try:
             self._recv_for(corr)
             return True
@@ -438,6 +444,7 @@ class SerialLink:
             return False
         finally:
             self.timeout = saved
+            self._own -= 1
 
     def _confirm_within(self, wait_s: float, each_s: float) -> bool:
         """Confirms, each waiting `each_s`, until one is answered (True) or `wait_s` has passed (False)."""
@@ -471,7 +478,11 @@ class SerialLink:
         if time.monotonic() - self.last_tx < KEEPALIVE_S:
             return False
         self.last_tx = time.monotonic()            # before sending: send() asks again and must not recurse
-        self.send(self.keepalive_frame())
+        self._own += 1
+        try:
+            self.send(self.keepalive_frame())
+        finally:
+            self._own -= 1
         return True
 
     def _keep_raised(self) -> None:
@@ -489,11 +500,16 @@ class SerialLink:
         """How long one answer is waited for: the link's timeout; raised and in use, at most a quarter of the
         session's lease (at least RAISED_WAIT_MIN_S) - a probe that went back by itself (broken candidates, core §3.5
         item 5) hears nothing at the raised rate, and the fallback (both waits, the confirm at the boot speed, the
-        request again there) must end well inside the lease."""
-        if not self._in_use():
-            return self.timeout
-        lease = self.lease_s()
-        return self.timeout if lease is None else min(self.timeout, max(RAISED_WAIT_MIN_S, lease / 4))
+        request again there) must end well inside the lease. A request that may take longer on the probe
+        (Host.expecting: a run's timeout_ms, a dmi list's waits, ...; the probe does not count the lease meanwhile,
+        core §6.1) waits at least that and EXPECT_MARGIN_S, at any rate; the link's own requests never do."""
+        wait = self.timeout
+        if self._in_use():
+            lease = self.lease_s()
+            if lease is not None:
+                wait = min(self.timeout, max(RAISED_WAIT_MIN_S, lease / 4))
+        expected = 0.0 if self._own else self.expected_s()
+        return max(wait, expected + EXPECT_MARGIN_S) if expected > 0 else wait
 
     def _strike(self, e: Exception) -> None:
         """Raised and in use: a frame broke or a request is sent again (`e`). STRIKE_MAX within STRIKE_WINDOW_S: the
@@ -520,6 +536,7 @@ class SerialLink:
         if self.session_frame is not None and self.speed_port is not None:
             saved = self.timeout, self.resend, self.fallback
             self.timeout, self.resend, self.fallback = STEP_DOWN_WAIT_S, False, False
+            self._own += 1
             try:
                 self._send(self.session_frame(OP_PORT_SPEED, struct.pack("<BIBHI", self.speed_port, 0,
                                                                          SPEED_STEP["revert"], 0, 0)))
@@ -527,6 +544,7 @@ class SerialLink:
                 pass
             finally:
                 self.timeout, self.resend, self.fallback = saved
+                self._own -= 1
         if not self.back_to_base():
             raise ConnectionError(f"the probe answers neither at {rate} nor at the boot speed {self.base_baud}")
         self._stepped(rate, why)
@@ -598,6 +616,8 @@ class SerialLink:
         self.session_frame = lambda op, payload: m.Request(hst.next_corr(), m.CORE_FN, op, payload, hst.session).pack()
         self.keepalive_frame = lambda: self.session_frame(m.OP_KEEPALIVE, b"")
         self.lease_s = lambda: hst.lease_ms / 1000 if hst.session is not None and hst.lease_ms else None
+        hst.before_request = self._keep_raised      # the keepalive before the request's corr is taken (core §4.1)
+        self.expected_s = lambda: hst.expect_ms / 1000
         hst.link = self
         if self.framing == "cobs" and getattr(self, "transport", None) == "serial":
             self.wait_boot_speed()

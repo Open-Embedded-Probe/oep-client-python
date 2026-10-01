@@ -238,7 +238,8 @@ class Wire(WireBase):
         low for hold_ms, then attach - halting before the first instruction with halt=True - the way back from firmware
         that turns the debug pins into GPIOs. self.target_id: (scheme, value) of the target's identity when the probe
         could read one."""
-        rd = m.Reader(self._call(self.ATTACH, self.attach_body(halt, max_speed, pins, idle_clock, reset)).payload)
+        rd = m.Reader(self._call(self.ATTACH, self.attach_body(halt, max_speed, pins, idle_clock, reset),
+                                 expect_ms=reset[1] if reset else 0).payload)
         conn, status, self.flags, self.speed_hz = rd.take("HIBI")
         self.had_reset = bool(self.flags & self.FLAGS["havereset_acked"])
         self.existing = bool(self.flags & self.FLAGS["existing"])
@@ -334,6 +335,22 @@ def count_steps(steps: bytes) -> list[int]:
     if at != len(steps):
         raise ValueError("the step list ends inside a step")
     return kinds
+
+
+def dmi_wait_ms(raw: bytes) -> int:
+    """The time a step list may take by its waits and time-bounded polls (wait_us, poll_us), in ms (rounded up)."""
+    us, at = 0, 0
+    while at < len(raw):
+        kind = raw[at]
+        if kind == STEP_WAIT_US:
+            us += struct.unpack_from("<I", raw, at + 1)[0]
+        elif kind == STEP_POLL_US:
+            us += struct.unpack_from("<I", raw, at + 10)[0]
+        size = STEP_SIZES.get(kind)
+        if size is None:
+            break
+        at += size
+    return -(-us // 1000)
 
 
 def dmi_value_count(kinds: list[int], done: int, status: int) -> int:
@@ -483,7 +500,7 @@ class RiscvDm(Interface):
         it). timeout_ms None: the probe's max_op_ms (core §7.5), the most it allows. Other statuses raise TargetError."""
         if timeout_ms is None:
             timeout_ms = max_op_ms(self.host)
-        r = self._request(self.RUN, self.run_body(pc, regs, timeout_ms, outs))
+        r = self._request(self.RUN, self.run_body(pc, regs, timeout_ms, outs), expect_ms=timeout_ms)
         res = self.run_result(r)
         if res.status == STATUS["timeout"] and not res.stopped:
             return res
@@ -496,7 +513,7 @@ class RiscvDm(Interface):
         raises StepListError (with what it did read): a caller cannot mistake an unfinished poll for a met one."""
         raw = b"".join(steps) if isinstance(steps, list) else steps
         kinds = count_steps(raw)
-        r = self._request(self.DMI, struct.pack("<H", len(kinds)) + raw)
+        r = self._request(self.DMI, struct.pack("<H", len(kinds)) + raw, expect_ms=dmi_wait_ms(raw))
         rd = ran(r)
         done, status, nvals = rd.take("HBH")
         values = rd.words(nvals)

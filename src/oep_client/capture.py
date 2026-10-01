@@ -335,7 +335,7 @@ class LogicCapture(Interface):
 
     def start(self) -> int:
         """-> blocking_ms (0: the probe keeps answering while it captures). self.generation: the new capture's."""
-        rd = m.Reader(self._call(self.START).payload)
+        rd = m.Reader(self._call(self.START, expect_ms=self.config.blocking_ms if self.config else 0).payload)
         blocking, self.generation = rd.take("II")
         rd.tail()
         self.armed_s = time.monotonic()
@@ -576,7 +576,8 @@ class CaptureGroup(Interface):
     def start(self, tracks: list[LogicCapture] = ()) -> tuple[int, int]:
         """-> (blocking_ms, the group's start_ns). `tracks`: whose armed_s and generation to set (the answer's TLV
         generations names each track's new generation; self.generations keeps them by fn)."""
-        rd = m.Reader(self._call(self.START).payload)
+        rd = m.Reader(self._call(self.START, expect_ms=max([t.config.blocking_ms for t in tracks if t.config] or [0]))
+                      .payload)
         blocking, start_ns = rd.take("IQ")
         gens = rd.tail().get(GROUP_GENERATIONS) or b""
         self.generations = {fn: g for fn, g in struct.iter_unpack("<HI", gens[:len(gens) // 6 * 6])}
