@@ -5,6 +5,11 @@ Times are the probe's one clock (ns since its boot, comparable within one boot_i
 probe's known corrections applied. Analog values are always raw; the probe's 1st-order scale, its calibration data and
 its reference are for the host to choose from.
 
+Every start begins a new generation (u32, from 1): segment serials and positions count from 0 inside it, and read and
+release name it, so a read sent for the last capture never returns the next one's bytes (oep-if-capture §3.2). The
+client keeps it (`LogicCapture.generation`, from start / status / the group's start) and passes it on; `read_segment`
+takes the segment's own.
+
 configure: a TLV the probe cannot honour is refused (rejected unsupported, 0x0B, payload = the tag) when the host marked
 it critical, and otherwise ignored and listed in the answer's ignored TLV (0x7F, oep-core §2.3)."""
 
@@ -24,13 +29,17 @@ _CAP = reg.FIXTURE_LOGIC
 _ANA = reg.FIXTURE_ANALOG
 _GRP = reg.FIXTURE_CAPTURE_GROUP
 # configure TLVs; bit 7 of a tag = critical (the probe must reject what it cannot do)
-MODE, RATE, SAMPLES, SEGMENTS, TRIGGER, PRETRIGGER, FRONTEND = (
-    _CAP.tlv["configure"][k] for k in ("mode", "rate", "samples", "segments", "trigger", "pretrigger", "frontend"))
+MODE, RATE, SAMPLES, SEGMENTS, TRIGGER, PRETRIGGER = (
+    _CAP.tlv["configure"][k] for k in ("mode", "rate", "samples", "segments", "trigger", "pretrigger"))
+FRONTEND = _ANA.tlv["configure"]["frontend"]             # analog only
 ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, TIMING, SCALE, BLOCKING, SKEW, FRONTEND_USED, REFERENCE, \
     RATE_ACCURACY = (_ANA.tlv["configure_answer"][k] for k in (
         "actual_rate", "layout", "actual_samples", "actual_segments", "timing", "scale", "blocking_ms", "skew",
         "frontend_used", "reference", "rate_accuracy"))
 FACTORY, VREFINT = _ANA.tlv["calibration_answer"]["factory"], _ANA.tlv["calibration_answer"]["vrefint"]
+STATUS_ERROR = _CAP.tlv["status_answer"]["error"]          # status's TLV: why the state is 6
+DATA_GENERATION = _CAP.tlv["data"]["generation"]           # a data frame's TLV: its generation (always in streaming)
+GROUP_GENERATIONS = _GRP.tlv["start_answer"]["generations"]
 REFERENCE_SOURCE = {v: k for k, v in _ANA.enum["reference_source"].items()}
 IGNORED = m.TAG_IGNORED
 CRITICAL = m.TAG_CRITICAL
@@ -38,6 +47,8 @@ ONE_SHOT, REPEAT, STREAMING = (_CAP.enum["mode"][k] for k in ("one_shot", "repea
 IMMEDIATE, LEVEL, EDGE, CROSS_UP, CROSS_DOWN = range(5)
 STATE = _CAP.enum["state"]
 SEGMENT_SLIPPED = _CAP.enum["segment_flag"]["slipped"]
+STATUS_FLAGS = _CAP.enum["status_flag"]                    # dropped, slipped (reset at start)
+ERRORS = {v: k for k, v in _CAP.enum["error"].items()}     # state 6's reason
 # events (oep-core §11, role 0x05)
 EVENT_SEGMENT, EVENT_STOPPED, EVENT_TRIGGERED = (_CAP.event[k] for k in ("segment", "stopped", "triggered"))
 
@@ -46,8 +57,8 @@ def tlvs(payload: bytes) -> list[tuple[int, bytes]]:
     return m.split_tlvs(payload)
 
 
-SEGMENT_BYTES = 33   # serial u32, position u64, samples u32, start_ns u64, start_uncertainty_ns u32, trigger_index u32,
-                     # flags u8
+SEGMENT_BYTES = 37   # serial u32, position u64, samples u32, start_ns u64, start_uncertainty_ns u32, trigger_index u32,
+                     # flags u8, generation u32 (oep-if-capture §2)
 
 
 @dataclass
@@ -59,6 +70,7 @@ class Segment:
     start_uncertainty_ns: int        # +- of start_ns (a guide, not a promise)
     trigger_index: int | None
     flags: int
+    generation: int = 0              # the start this segment belongs to (read / release name it)
 
     @property
     def slipped(self) -> bool:
@@ -67,8 +79,34 @@ class Segment:
 
     @classmethod
     def unpack(cls, b: bytes) -> "Segment":
-        serial, position, samples, start_ns, uncertainty, trig, flags = struct.unpack_from("<IQIQIIB", b)
-        return cls(serial, position, samples, start_ns, uncertainty, None if trig == 0xFFFFFFFF else trig, flags)
+        serial, position, samples, start_ns, uncertainty, trig, flags, generation = struct.unpack_from("<IQIQIIBI", b)
+        return cls(serial, position, samples, start_ns, uncertainty, None if trig == 0xFFFFFFFF else trig, flags,
+                   generation)
+
+
+@dataclass
+class Status:
+    """status's answer (oep-if-capture §3.2). Iterates as (state, serial_done, write_pos, flags), the first shape."""
+    state: int
+    serial_done: int                 # segments finished
+    write_pos: int                   # bytes taken so far (dropped ones counted: the next byte's position)
+    flags: int                       # bit0 dropped, bit1 slipped - since start
+    generation: int
+    error: int | None = None         # state 6: why (ERRORS)
+
+    def __iter__(self):
+        return iter((self.state, self.serial_done, self.write_pos, self.flags))
+
+    def __getitem__(self, i: int):
+        return (self.state, self.serial_done, self.write_pos, self.flags)[i]
+
+    @property
+    def dropped(self) -> bool:
+        return bool(self.flags & STATUS_FLAGS["dropped"])
+
+    @property
+    def error_name(self) -> str | None:
+        return None if self.error is None else ERRORS.get(self.error, f"error 0x{self.error:02x}")
 
 
 @dataclass
@@ -124,17 +162,27 @@ class Received:
     gaps: list[tuple[int, int]] = field(default_factory=list)  # (index in data where it skipped, bytes skipped)
     seq_lost: int = 0                                          # push frames missing by seq
     frames: int = 0
+    stale: int = 0                                             # pushes of an earlier generation, dropped
 
 
-def take_pushes(link, fn: int) -> list[tuple[int, int, bytes]]:
-    """Remove this fn's data pushes (role 0x06) from the link: [(seq, position, data)], oldest first."""
+def unpack_push(frame: bytes) -> tuple[int, int, int, bytes, int | None]:
+    """A data frame (core §11.2: role fn seq position(u64) len(u16) data [TLV]) -> (fn, seq, position, data,
+    generation): the TLV 0x01 generation, None when the frame carries none."""
+    fn, seq, position = struct.unpack_from("<HHQ", frame, 1)
+    rd = m.Reader(frame[13:])
+    data = rd.counted("H")
+    g = rd.tail().get(DATA_GENERATION)
+    return fn, seq, position, data, struct.unpack("<I", g)[0] if g is not None and len(g) == 4 else None
+
+
+def take_pushes(link, fn: int) -> list[tuple[int, int, bytes, int | None]]:
+    """Remove this fn's data pushes (role 0x06) from the link: [(seq, position, data, generation)], oldest first."""
     mine, rest = [], []
     for f in link.pushes:
         (mine if struct.unpack_from("<H", f, 1)[0] == fn else rest).append(f)
     link.pushes.clear()
     link.pushes.extend(rest)
-    # the core header is role fn seq; the capture's payload is position(u64) then data (standard position stream)
-    return [(struct.unpack_from("<H", f, 3)[0], struct.unpack_from("<Q", f, 5)[0], f[13:]) for f in mine]
+    return [unpack_push(f)[1:] for f in mine]
 
 
 def _config(payload: bytes, analog: bool) -> Config:
@@ -183,10 +231,13 @@ class LogicCapture(Interface):
     CONFIGURE, START, STOP, FORCE, STATUS, READ, SEGMENTS, RELEASE, QUERY_OP = (
         _CAP.op[k] for k in ("configure", "start", "stop", "force", "status", "read", "segments", "release", "query"))
 
+    generation: int | None = None         # the current capture's generation (start / status / the group's start)
+
     def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
         super().__init__(hst, name, fn=fn)
         self.config: Config | None = None
         self.armed_s: float | None = None     # time.monotonic() at the last start()
+        self.generation = None
 
     def configure(self, *, rate: int, mode: int = ONE_SHOT, samples: int | None = None, segments: int | None = None,
                   trigger: tuple[int, int, int] | None = None, pretrigger: int | None = None, query: bool = False,
@@ -201,7 +252,7 @@ class LogicCapture(Interface):
         if segments is not None:
             body += tlv(SEGMENTS, struct.pack("<I", segments))
         if trigger is not None:
-            body += tlv(TRIGGER, struct.pack("<BBH", *trigger))
+            body += tlv(TRIGGER, struct.pack("<BBI", *trigger))        # type, role, value (u32)
         if pretrigger is not None:
             body += tlv(PRETRIGGER, struct.pack("<I", pretrigger))
         for role, fe in sorted((frontends or {}).items()):   # analog: the input range per channel (describe frontend)
@@ -225,8 +276,9 @@ class LogicCapture(Interface):
                into: Received | None = None, keepalive_s: float = 1.0) -> Received:
         """Streaming: collect data pushes until `nbytes` have arrived or `seconds` have passed (at least one is needed).
         A position that does not follow the previous push is a probe-side drop (a gap); a seq that skips is a lost frame.
-        The subscription ends with the lock, so the lock is kept alive every `keepalive_s` while collecting (a stream
-        longer than the lease otherwise stopped: 35 MB missing at the end of 10 s at 150 MHz with a 10 s lease)."""
+        A push of another generation than this capture's (a leftover of the start before, oep-if-capture §3.4) is
+        dropped. The subscription ends with the lock, so the lock is kept alive every `keepalive_s` while collecting (a
+        stream longer than the lease otherwise stopped: 35 MB missing at the end of 10 s at 150 MHz with a 10 s lease)."""
         if seconds is None and nbytes is None:
             raise ValueError("stream() needs seconds or nbytes")
         got = into or Received()
@@ -238,7 +290,7 @@ class LogicCapture(Interface):
             for e in link.events:
                 if struct.unpack_from("<H", e, 1)[0] == self.fn:
                     event_seqs.add(struct.unpack_from("<H", e, 3)[0])
-            for seq, position, data in take_pushes(link, self.fn):
+            for seq, position, data, generation in take_pushes(link, self.fn):
                 while expect_seq is not None and expect_seq != seq:
                     if expect_seq in event_seqs:
                         event_seqs.discard(expect_seq)
@@ -246,6 +298,9 @@ class LogicCapture(Interface):
                         got.seq_lost += 1
                     expect_seq = (expect_seq + 1) & 0xFFFF
                 expect_seq = (seq + 1) & 0xFFFF
+                if generation is not None and self.generation is not None and generation != self.generation:
+                    got.stale += 1                              # the generation before: not this capture's bytes
+                    continue
                 if got.start is None:
                     got.start = position
                 else:
@@ -268,7 +323,7 @@ class LogicCapture(Interface):
     def finish(self, link, got: Received, timeout: float = 5.0) -> Received:
         """Streaming, after stop(): collect the pushes still to come, up to the last byte captured (status's write
         position), or until `timeout`."""
-        end = self.status()[2]
+        end = self.status().write_pos
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if got.start is not None:
@@ -279,8 +334,10 @@ class LogicCapture(Interface):
         return got
 
     def start(self) -> int:
-        """-> blocking_ms (0: the probe keeps answering while it captures)."""
-        blocking = m.Reader(self._call(self.START).payload).u32()
+        """-> blocking_ms (0: the probe keeps answering while it captures). self.generation: the new capture's."""
+        rd = m.Reader(self._call(self.START).payload)
+        blocking, self.generation = rd.take("II")
+        rd.tail()
         self.armed_s = time.monotonic()
         return blocking
 
@@ -291,19 +348,44 @@ class LogicCapture(Interface):
         """Waiting for the trigger: start now (the segment's trigger_index marks where)."""
         self._call(self.FORCE)
 
-    def status(self) -> tuple[int, int, int, int]:
-        """-> state, segments done, write position, flags."""
-        return m.Reader(self._call(self.STATUS, locked=False).payload).take("BIQB")
+    def status(self) -> Status:
+        """-> Status (state, segments done, write position, flags, generation, error). Lock-free; it also brings the
+        generation a host that did not start the capture needs for read."""
+        rd = m.Reader(self._call(self.STATUS, locked=False).payload)
+        state, done, pos, flags, generation = rd.take("BIQBI")
+        error = rd.tail().get(STATUS_ERROR)
+        self.generation = generation
+        return Status(state, done, pos, flags, generation, error[0] if error else None)
 
-    def release(self, serial: int) -> None:
-        """Repeat: segments up to `serial` may be reused."""
-        self._call(self.RELEASE, struct.pack("<I", serial))
+    def release(self, serial: int, generation: int | None = None) -> None:
+        """Repeat: segments up to and including `serial` may be reused (of this generation; another one is rejected
+        unavailable). In state 5 (no free segment) the probe goes on by itself once there is room."""
+        self._call(self.RELEASE, struct.pack("<II", self._generation(generation), serial))
+
+    def _generation(self, generation: int | None) -> int:
+        if generation is not None:
+            return generation
+        if self.generation is None:
+            self.status()                                   # a host that did not start it: ask
+        return self.generation
+
+    def segments_page(self, from_serial: int = 0) -> tuple[list[Segment], bool]:
+        """One answer's segment records from `from_serial` on. -> (segments, more)."""
+        rd = m.Reader(self._call(self.SEGMENTS, struct.pack("<I", from_serial), locked=False).payload)
+        more, count = rd.take("BB")
+        out = [Segment.unpack(rd.element().bytes(SEGMENT_BYTES)) for _ in range(count)]
+        rd.tail()
+        return out, bool(more)
 
     def segments(self, from_serial: int = 0) -> list[Segment]:
-        rd = m.Reader(self._call(self.SEGMENTS, struct.pack("<I", from_serial), locked=False).payload)
-        out = [Segment.unpack(rd.element().bytes(SEGMENT_BYTES)) for _ in range(rd.u8())]
-        rd.tail()
-        return out
+        """Every segment record from `from_serial` on, following `more`."""
+        out: list[Segment] = []
+        while True:
+            page, more = self.segments_page(from_serial)
+            out += page
+            if not more or not page:
+                return out
+            from_serial = page[-1].serial + 1
 
     def wait(self, timeout: float = 5.0, keepalive_s: float = 1.0) -> list[Segment]:
         """Poll status until the one-shot is done (or failed). -> its segments. Waiting for a trigger may take longer
@@ -314,11 +396,12 @@ class LogicCapture(Interface):
             if keepalive_s and self.host.session is not None and time.monotonic() - kept >= keepalive_s:
                 self.host.keepalive()
                 kept = time.monotonic()
-            state = self.status()[0]
+            st = self.status()
+            state = st.state
             if state == STATE["done"]:
                 return self.segments()
             if state == STATE["error"]:
-                raise h.Failed(None, "the capture stopped with an error")
+                raise h.Failed(None, f"the capture stopped with an error ({st.error_name or 'unknown'})")
             if state not in STATE.values():
                 raise h.ProtocolError(f"capture state {state} is not one this client knows")
             time.sleep(0.002)
@@ -327,14 +410,25 @@ class LogicCapture(Interface):
     READ_TRIES = 4   # batches of reads sent again after the link's own repeat failed too
     BATCH = 16   # frame-sized reads per pipeline; a keepalive between batches when a session is open
 
-    def read(self, position: int, length: int) -> bytes:
-        """Bytes [position, position+length) of the stream, pipelined in frame-sized reads.
+    READ_HEAD = 13   # the answer's position(u64) flags(u8) len(u32) in front of the data
+
+    @staticmethod
+    def _read_data(payload: bytes) -> bytes:
+        rd = m.Reader(payload)
+        rd.take("QB")
+        return rd.counted("I")                             # position flags len(u32) data [TLV]
+
+    def read(self, position: int, length: int, generation: int | None = None) -> bytes:
+        """Bytes [position, position+length) of the stream, pipelined in frame-sized reads. `generation`: the capture
+        they belong to (default: the one this client saw at start / status); the probe refuses another one as
+        unavailable (cause 6), so an old read never gets the next capture's bytes.
 
         The reads need no lock and go without the session id, so a repeat after a broken reply is simply run again
         (reads are not deduplicated, oep-core §5.2). They do not extend the lease, though: a long read (64 KB over a
         115200 bps UART probe takes seconds) sends a keepalive between batches, or the lease lapsed mid-read, the plan
         went with it (core §9) and the capture read back nothing (2026-09-26, V003 jig)."""
-        chunk = max(1, confirm(self.host)["max_frame"] - 16)
+        g = self._generation(generation)
+        chunk = max(1, confirm(self.host)["max_frame"] - m.RESULT_HEADER - self.READ_HEAD)
         offsets = list(range(0, length, chunk))
         out = bytearray()
         for at in range(0, len(offsets), self.BATCH):
@@ -342,7 +436,8 @@ class LogicCapture(Interface):
                 self.host.keepalive()
             batch = offsets[at:at + self.BATCH]
             for attempt in range(self.READ_TRIES):
-                reqs = [self.request(self.READ, struct.pack("<QI", position + off, min(chunk, length - off))) for off in batch]
+                reqs = [self.request(self.READ, struct.pack("<IQI", g, position + off, min(chunk, length - off)))
+                        for off in batch]
                 try:
                     replies = self.host.pipeline_calls(reqs, locked=False)
                     break
@@ -352,11 +447,11 @@ class LogicCapture(Interface):
                     if attempt == self.READ_TRIES - 1:
                         raise
             for off, r in zip(batch, replies):
-                data = r.payload[9:]                      # after position(u64) flags(u8)
+                data = self._read_data(r.payload)
                 want = min(chunk, length - off)
                 while len(data) < want:                   # a short answer: read on from where it stopped
-                    more = self._call(self.READ, struct.pack("<QI", position + off + len(data), want - len(data)),
-                                      locked=False).payload[9:]
+                    more = self._read_data(self._call(self.READ, struct.pack(
+                        "<IQI", g, position + off + len(data), want - len(data)), locked=False).payload)
                     if not more:
                         raise h.ProtocolError(f"read at {position + off + len(data)} returned nothing")
                     data += more
@@ -364,11 +459,11 @@ class LogicCapture(Interface):
         return bytes(out)
 
     def read_segment(self, segment: Segment) -> bytes:
-        """The segment's bytes; every Host.on_capture callback gets them as a CaptureRecord (a run recorder, e.g.
-        pytest-embedded-wireskein, without this package knowing it)."""
+        """The segment's bytes (of its generation); every Host.on_capture callback gets them as a CaptureRecord (a run
+        recorder, e.g. pytest-embedded-wireskein, without this package knowing it)."""
         c = self.config
         n = (segment.samples * c.width + 7) // 8 if c.width else segment.samples * len(c.order) * c.slot // 8
-        data = self.read(segment.position, n)
+        data = self.read(segment.position, n, segment.generation or None)
         if self.host.on_capture:
             record = CaptureRecord(self.fn, self.name, c, segment, data, self.armed_s, time.monotonic())
             for callback in list(self.host.on_capture):
@@ -408,9 +503,11 @@ class LogicCapture(Interface):
 class Calibration:
     """What the probe knows for turning an analog value into a voltage (oep-if-capture §3.8), raw: the probe applies
     none of it. factory: (frontend or None, scheme, raw bytes) - scheme names how to read raw; vrefint: (raw, ns), the
-    internal reference measured after the last start."""
+    internal reference measured after the last start, and vrefint_nominal_mv its nominal voltage (what the supply is
+    worked back from)."""
     factory: list[tuple[int | None, str, bytes]] = field(default_factory=list)
     vrefint: tuple[int, int] | None = None
+    vrefint_nominal_mv: int | None = None
 
 
 class AnalogCapture(LogicCapture):
@@ -439,11 +536,14 @@ class AnalogCapture(LogicCapture):
     def calibration(self) -> Calibration:
         out = Calibration()
         for tag, v in tlvs(self._call(self.CALIBRATION, locked=False).payload):
-            if tag == FACTORY:
-                n = v[1]
-                out.factory.append((None if v[0] == 0xFF else v[0], v[2:2 + n].decode("utf-8", "replace"), bytes(v[2 + n:])))
-            elif tag == VREFINT:
-                out.vrefint = struct.unpack("<IQ", v)
+            if tag == FACTORY:                               # frontend scheme_len scheme raw_len(u16) raw
+                rd = m.Reader(v)
+                fe = rd.u8()
+                scheme = rd.counted("B").decode("utf-8", "replace")
+                out.factory.append((None if fe == 0xFF else fe, scheme, bytes(rd.counted("H"))))
+            elif tag == VREFINT:                             # raw(u32) ns(u64) nominal_mv(u32)
+                raw, ns, nominal = struct.unpack_from("<IQI", v)
+                out.vrefint, out.vrefint_nominal_mv = (raw, ns), nominal
         return out
 
 
@@ -474,11 +574,17 @@ class CaptureGroup(Interface):
         self._call(self.BIND, body)
 
     def start(self, tracks: list[LogicCapture] = ()) -> tuple[int, int]:
-        """-> (blocking_ms, the group's start_ns). `tracks`: whose armed_s to set (for records)."""
-        blocking, start_ns = m.Reader(self._call(self.START).payload).take("IQ")
+        """-> (blocking_ms, the group's start_ns). `tracks`: whose armed_s and generation to set (the answer's TLV
+        generations names each track's new generation; self.generations keeps them by fn)."""
+        rd = m.Reader(self._call(self.START).payload)
+        blocking, start_ns = rd.take("IQ")
+        gens = rd.tail().get(GROUP_GENERATIONS) or b""
+        self.generations = {fn: g for fn, g in struct.iter_unpack("<HI", gens[:len(gens) // 6 * 6])}
         now = time.monotonic()
         for t in tracks:
             t.armed_s = now
+            if t.fn in self.generations:
+                t.generation = self.generations[t.fn]
         return blocking, start_ns
 
     def stop(self) -> None:
@@ -488,7 +594,9 @@ class CaptureGroup(Interface):
         self._call(self.FORCE)
 
     def status(self) -> GroupStatus:
-        state, start, trig, fn = m.Reader(self._call(self.STATUS, locked=False).payload).take("BQQH")
+        rd = m.Reader(self._call(self.STATUS, locked=False).payload)
+        state, start, trig, fn = rd.take("BQQH")
+        rd.tail()
         none = self.NO_TIME
         return GroupStatus(state, None if start == none else start, None if trig == none else trig, fn or None)
 

@@ -3,19 +3,20 @@ oep-if-console, oep-if-common §1), and ConsoleIO, the same as a plain byte stre
 
 The position streams of oep.target.console and oep.fixture.uart share their read / marks / clear / mark / write
 operations (same numbers and meanings; the UART has no stream byte): `PositionStream` holds them, `prefix` is the
-stream byte or nothing.
+stream byte or nothing. Every answer is a fixed part, a counted list or data, then TLVs the host skips (core §2.3).
 """
 
 from __future__ import annotations
 
 import struct
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import host as h, message as m, registry as reg
 from .core import Interface
 
 _CON = reg.TARGET_CONSOLE
+_COMMON = reg.COMMON.enum
 
 
 @dataclass
@@ -23,11 +24,19 @@ class Mark:
     serial: int          # per stream, wraps (u32): marks are read on by serial
     position: int
     kind: int
-    time_ms: int         # probe uptime in ms (u32, wraps after ~49.7 days)
+    time_ns: int         # the probe's one clock: ns since its boot (u64, core §2.6a)
     detail: int
 
+    @property
+    def name(self) -> str:
+        return MARK_NAMES.get(self.kind, f"kind 0x{self.kind:02x}")
 
-MARK_NAMES = {v: k.replace("_", "-") for k, v in _CON.enum["mark_kind"].items()}
+
+MARK_BYTES = 22          # serial u32, position u64, kind u8, time_ns u64, detail u8 (common §1.3)
+MARK_NAMES = {v: k.replace("_", "-") for k, v in _COMMON["mark_kind"].items()}
+MARK_KIND = dict(_COMMON["mark_kind"])
+MARK_DETAIL = {k[len("mark_detail_"):]: dict(v) for k, v in _COMMON.items() if k.startswith("mark_detail_")}
+READ_FLAGS = _COMMON["read_flags"]
 
 
 @dataclass
@@ -36,15 +45,31 @@ class Chunk:
     more: bool
     gap: bool
     data: bytes
+    tail: m.Tail = field(default_factory=m.Tail, compare=False)
 
     def __iter__(self):                      # (start, more, gap, data), as the first version returned
         return iter((self.start, self.more, self.gap, self.data))
 
 
+@dataclass(frozen=True)
+class StreamInfo:
+    """One row of the console's streams answer (oep-if-console §1): the stream, its connection and mechanism, who uses
+    it (bit0 a host session, bit1 a slot) and whether it is open (0) or closed but still readable (1)."""
+    stream: int
+    connection: int
+    mechanism: int
+    users: int
+    state: int
+
+    @property
+    def open(self) -> bool:
+        return self.state == _CON.enum["stream_state"]["open"]
+
+
 class PositionStream(Interface):
-    """read / marks / clear / mark / write of a position stream (console §5.7, fixture.uart §5.8)."""
+    """read / marks / clear / mark / write of a position stream (oep-if-common §1)."""
     READ, MARKS, CLEAR, MARK, WRITE = (_CON.op[k] for k in ("read", "marks", "clear", "mark", "write"))
-    FROM_POSITION, FROM_OLDEST, FROM_NOW, FROM_MARK = (_CON.enum["read_from"][k]
+    FROM_POSITION, FROM_OLDEST, FROM_NOW, FROM_MARK = (_COMMON["read_from"][k]
                                                        for k in ("position", "oldest", "now", "last_mark"))
 
     def _stream_prefix(self) -> bytes:
@@ -52,11 +77,12 @@ class PositionStream(Interface):
 
     def read(self, start: int = FROM_OLDEST, arg: int = 0, maximum: int = 1000) -> Chunk:
         """-> Chunk(start position, more, gap, data). start: FROM_* ; arg: a position or a mark kind (0: any).
-        Lock-free; reading does not consume."""
+        Lock-free; reading does not consume. The answer is start(u64) flags(u8) len(u16) data [TLV]."""
         p = self._call(self.READ, self._stream_prefix() + struct.pack("<BQH", start, arg, maximum), locked=False).payload
         rd = m.Reader(p)
         pos, flags = rd.take("QB")
-        return Chunk(pos, bool(flags & 1), bool(flags & 2), rd.rest())   # data ends the result: no tail (§0)
+        data = rd.counted("H")
+        return Chunk(pos, bool(flags & READ_FLAGS["more"]), bool(flags & READ_FLAGS["gap"]), data, rd.tail())
 
     def read_from(self, position: int, maximum: int = 1000) -> Chunk:
         return self.read(self.FROM_POSITION, position, maximum)
@@ -65,7 +91,7 @@ class PositionStream(Interface):
         """One answer's marks with serial >= from_serial (in serial order). -> (marks, more)."""
         rd = m.Reader(self._call(self.MARKS, self._stream_prefix() + struct.pack("<I", from_serial), locked=False).payload)
         more, count = rd.take("BB")
-        marks = [Mark(*rd.element().take("IQBIB")) for _ in range(count)]
+        marks = [Mark(*rd.element().take("IQBQB")) for _ in range(count)]
         rd.tail()
         return marks, bool(more)
 
@@ -87,7 +113,8 @@ class PositionStream(Interface):
         self._call(self.MARK, self._stream_prefix() + bytes([value]))
 
     def write(self, data: bytes) -> int:
-        """-> bytes accepted (the probe does not buffer; fewer than asked is completed partial, not an error)."""
+        """-> bytes accepted: what fit the mechanism's send slot (common §1.4; delivery is not implied). Fewer than
+        asked is completed partial, not an error; nothing accepted is completed failed (raised as Failed)."""
         r = self._request(self.WRITE, self._stream_prefix() + struct.pack("<H", len(data)) + data)
         if r.resolution != m.COMPLETED or r.detail not in (m.SUCCESS, m.PARTIAL):
             raise h.Failed(r)
@@ -98,12 +125,15 @@ class PositionStream(Interface):
 
 
 class Console(PositionStream):
-    """oep.target.console: streams on a debug connection, one per (connection, mechanism); reads and marks need no
-    lock. A stream whose connection is lost is closed with a link-lost mark and stays readable until the next open."""
+    """oep.target.console: streams on a debug connection, one live stream per connection; reads, marks and the streams
+    list need no lock. A stream lives while anything uses it (the sessions that opened it, a slot's bind): close and a
+    lease lapse take one share; a closed stream (connection lost, every user gone) stays readable until the same
+    place is opened again, when it comes back under the same number."""
     NAME = "oep.target.console"
     REVISION = 1
-    OPEN, CLOSE = _CON.op["open"], _CON.op["close"]
+    OPEN, CLOSE, STREAMS = _CON.op["open"], _CON.op["close"], _CON.op["streams"]
     SDI, DMDATA, DMSEQ = (_CON.enum["mechanism"][k] for k in ("sdi", "dmdata", "dmseq"))
+    NONE = _CON.enum["mechanism"]["none"]          # a slot's "no console" (never opened)
 
     def __init__(self, hst: h.Host, name: str = "oep.target.console"):
         super().__init__(hst, name)
@@ -115,15 +145,26 @@ class Console(PositionStream):
 
     def open(self, conn: int, mechanism: int = DMSEQ) -> int:
         """-> the stream. An open stream of the same (connection, mechanism) comes back as it is (self.existing):
-        position and marks carry on. An unknown mechanism is rejected unsupported."""
+        position and marks carry on; so does a closed one of the same place and mechanism, under its old number. A
+        mechanism the probe lacks is rejected unsupported; another mechanism on a connection whose stream is live is
+        rejected unavailable (cause 6)."""
         rd = m.Reader(self._call(self.OPEN, struct.pack("<HB", conn, mechanism)).payload)
         self.stream, flags = rd.take("HB")
-        self.existing = bool(flags & 1)
+        self.existing = bool(flags & _CON.enum["open_flags"]["existing"])
         rd.tail()
         return self.stream
 
     def close(self) -> None:
+        """Take this session's share of the stream (it closes when nobody uses it any more). Closed already: ok."""
         self._call(self.CLOSE, struct.pack("<H", self.stream))
+
+    def streams(self) -> list[StreamInfo]:
+        """The probe's console streams, live and closed-but-readable (oep-if-console §1, lock-free): how a host
+        without the lock finds a stream's number."""
+        rd = m.Reader(self._call(self.STREAMS, locked=False).payload)
+        out = [StreamInfo(*rd.element().take("HHBBB")) for _ in range(rd.u8())]
+        rd.tail()
+        return out
 
 
 class StreamIO:
@@ -138,10 +179,10 @@ class StreamIO:
     def _limits(self) -> tuple[int, int]:
         """(read, write) chunk sizes that fit the probe's frame: a write is request header 6 + session 4 + the stream's
         prefix (the console's stream u16, none on a fixture UART) + count 2; a read's result is header 5 + start 8 +
-        flags 1. (The write was frame - 13 for both: one byte over on the console's 64-byte frames.)"""
+        flags 1 + len 2."""
         frame = self.source.host.confirmed()["max_frame"]
         write = frame - 12 - len(self.source._stream_prefix())
-        return max(1, min(self.MAX_READ, frame - 14)), max(1, min(self.MAX_WRITE, write))
+        return max(1, min(self.MAX_READ, frame - 16)), max(1, min(self.MAX_WRITE, write))
 
     def read(self, n: int = 512) -> bytes:
         c = self.source.read_from(self.position, min(n, self._limits()[0]))
@@ -153,7 +194,12 @@ class StreamIO:
     def write(self, data: bytes) -> None:
         chunk = self._limits()[1]
         while data:
-            took = self.source.write(data[:chunk])
+            try:
+                took = self.source.write(data[:chunk])
+            except h.Failed as e:
+                if e.result is None or not e.result.ran:
+                    raise
+                took = 0                           # accepted 0: the slot was full
             data = data[took:]
             if not took:
                 time.sleep(0.005)   # the target has not taken the last chunk yet

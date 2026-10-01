@@ -29,17 +29,19 @@ class SwdWire(WireBase):
         self.existing = False
 
     def attach(self, targetsel: int | None = None, max_speed: int | None = None,
-               pins: tuple[int, int] | None = None) -> tuple[int, int, bool]:
-        """-> (connection, DPIDR, woke from dormant). targetsel (multidrop) and max_speed go as critical TLVs: a probe
-        that cannot honour them refuses. self.existing: the wire was attached already (its connection returned)."""
-        body = self._speed_tlv(max_speed) + self._pins_tlv(pins)
+               pins: tuple[int, int] | None = None, reset: tuple[int, int] | None = None) -> tuple[int, int, bool]:
+        """-> (connection, DPIDR, woke from dormant). The request is method 0 (swd has no halting attach) and TLVs:
+        max_speed (required, critical; None: the wire's declared max_clock_hz), targetsel (multidrop, critical), pins,
+        reset = (channel, hold_ms) (critical). self.existing: the wire was attached already (its connection returned).
+        self.flags: the attach_flags byte."""
+        body = bytes([0]) + self._speed_tlv(self._speed_or_default(max_speed)) + self._pins_tlv(pins) + self._reset_tlv(reset)
         if targetsel is not None:
             body += m.tlv(self.TAG_TARGETSEL, struct.pack("<I", targetsel), critical=True)
         rd = m.Reader(self._call(self.ATTACH, body).payload)
-        conn, dpidr, flags, self.speed_hz = rd.take("HIBI")
-        self.existing = bool(flags & 2)
+        conn, dpidr, self.flags, self.speed_hz = rd.take("HIBI")
+        self.existing = bool(self.flags & self.FLAGS["existing"])
         rd.tail()
-        return conn, dpidr, bool(flags & 1)
+        return conn, dpidr, bool(self.flags & self.FLAGS["dormant_woken"])
 
 
 class AdiError(TargetError):
@@ -82,8 +84,8 @@ class ArmAdi(Interface):
         reads = transfer_reads(steps)
         r = self._request(self.TRANSFER, struct.pack("<H", len(reads)) + steps)
         rd = ran(r)
-        done, status, self.last_ack = rd.take("HBB")
-        values = rd.words(sum(reads[:done]))
+        done, status, self.last_ack, nvals = rd.take("HBBH")    # nvals: the values the answer carries (debug §6)
+        values = rd.words(nvals)
         rd.tail()
         if status != OK or not r.succeeded or done != len(reads):
             raise AdiError(f"transfer (ack {self.last_ack:#x})", status, r, done=done, values=values)

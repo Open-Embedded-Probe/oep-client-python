@@ -46,10 +46,10 @@ class Gpio(Interface):
         self.set([(channel, mode)])
 
     def read(self, channels: list[int]) -> list[int]:
-        """-> one level (0 / 1) per channel. Lock-free."""
+        """-> one level (0 / 1) per channel. Lock-free. The answer is n(u8) n x level [TLV] (fixture §1)."""
         rd = m.Reader(self._call(self.READ, struct.pack("<B", len(channels))
                                  + b"".join(struct.pack("<H", c) for c in channels), locked=False).payload)
-        levels = list(rd.bytes(len(channels)))
+        levels = list(rd.counted("B"))
         rd.tail()
         return levels
 
@@ -72,13 +72,23 @@ class Gpio(Interface):
             self.release(channel)
 
 
+@dataclass(frozen=True, kw_only=True)
+class UartStatus:
+    """oep.fixture.uart status (op 0x07, lock-free): whether a configure (or the settings' uart item) is in force, and
+    the baud / format it runs with."""
+    configured: bool
+    baud: int
+    format: int
+
+
 class FixtureUart(PositionStream):
-    """oep.fixture.uart: one position stream per fn, like the console without a stream byte. Received bytes are kept
-    from configure until plan_release, whatever the session; reads are lock-free and do not consume. TX idles high
-    before configure and after plan_release."""
+    """oep.fixture.uart: one position stream per fn, like the console without a stream byte. The stream exists while
+    the plan gives the fn RX or TX; received bytes are kept from then on, whatever the session, and the position never
+    goes back within one boot (a plan released and applied again carries on). Reads are lock-free and do not consume.
+    TX idles high while planned, before configure too."""
     NAME = "oep.fixture.uart"
     REVISION = 1
-    CONFIGURE = _UART.op["configure"]
+    CONFIGURE, STATUS = _UART.op["configure"], _UART.op["status"]
     TAG_FORMAT = _UART.tlv["configure"]["format"]
     # format bits: data bits (0 = 8, 1 = 7), parity (0 none, 1 even, 2 odd) << 2, stop bits (0 = 1, 1 = 2) << 4
     EIGHT_N_1 = 0x00
@@ -91,8 +101,9 @@ class FixtureUart(PositionStream):
         return ({8: 0, 7: 1}[data_bits] | {"N": 0, "E": 1, "O": 2}[parity.upper()] << 2 | {1: 0, 2: 1}[stop_bits] << 4)
 
     def configure(self, baud: int, fmt: int | None = None) -> int:
-        """-> the actual baud. fmt (format_byte()) goes as a critical TLV: a probe that cannot set it refuses rather
-        than running 8N1; None leaves the default 8N1."""
+        """-> the actual baud (within 5 % of the one asked, else the probe refuses unsupported). fmt (format_byte())
+        goes as a critical TLV: a probe that cannot set it refuses rather than running 8N1; None leaves the default
+        8N1. An fn whose plan has neither RX nor TX is rejected unavailable (cause 6)."""
         body = struct.pack("<I", baud)
         if fmt is not None:
             body += m.tlv(self.TAG_FORMAT, bytes([fmt]), critical=True)
@@ -100,6 +111,13 @@ class FixtureUart(PositionStream):
         actual = rd.u32()
         rd.tail()
         return actual
+
+    def status(self) -> UartStatus:
+        """configured, baud, format as the UART runs now (lock-free)."""
+        rd = m.Reader(self._call(self.STATUS, locked=False).payload)
+        configured, baud, fmt = rd.take("BIB")
+        rd.tail()
+        return UartStatus(configured=bool(configured), baud=baud, format=fmt)
 
 
 class FixtureUartIO(StreamIO):
@@ -146,6 +164,7 @@ class I2cTarget(Interface):
 
     def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
         super().__init__(hst, name, fn=fn)
+        self.last_ns: int | None = None
 
     def assignments(self, sda: int, scl: int) -> list[tuple[int, int, int]]:
         return [(self.fn, self.ROLE_SDA, sda), (self.fn, self.ROLE_SCL, scl)]
@@ -156,11 +175,17 @@ class I2cTarget(Interface):
     def arm_rx(self, length: int) -> None:
         self._call(self.ARM_RX, struct.pack("<H", length))
 
+    TAG_NS = _I2C.tlv["read_rx_answer"]["ns"]
+
     def read_rx(self) -> tuple[int, bytes]:
-        """-> (frames still queued after this one, the oldest frame or b"")."""
+        """-> (frames still queued after this one, the oldest frame or b""). self.last_ns: when the probe received it
+        (its clock, ns) when the probe says (TLV ns), else None."""
         rd = m.Reader(self._call(self.READ_RX).payload)
-        pending, count = rd.take("BH")
-        return pending, rd.bytes(count)
+        pending = rd.u8()
+        data = rd.counted("H")
+        ns = rd.tail().get(self.TAG_NS)
+        self.last_ns = struct.unpack("<Q", ns)[0] if ns is not None and len(ns) == 8 else None
+        return pending, data
 
     def preload_tx(self, data: bytes) -> int:
         """-> the slots preloaded so far (u8, wraps)."""
@@ -171,7 +196,7 @@ class I2cTarget(Interface):
 
     def status(self) -> I2cStatus:
         rd = m.Reader(self._call(self.STATUS, locked=False).payload)
-        state, mode, armed, queued, rx, tx, errors = rd.take("BBBBIBH")
+        state, mode, armed, queued, rx, tx, errors = rd.take("BBBBIBI")
         rd.tail()
         return I2cStatus(state=state, mode=mode, armed=bool(armed), queued=queued, rx_frames=rx, tx_slots=tx, errors=errors)
 
@@ -205,6 +230,7 @@ class SpiTarget(Interface):
 
     def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
         super().__init__(hst, name, fn=fn)
+        self.last_ns: int | None = None
 
     def assignments(self, sck: int, mosi: int, miso: int, cs: int) -> list[tuple[int, int, int]]:
         return [(self.fn, self.ROLE_SCK, sck), (self.fn, self.ROLE_MOSI, mosi), (self.fn, self.ROLE_MISO, miso),
@@ -216,15 +242,21 @@ class SpiTarget(Interface):
     def arm(self, length: int, tx: bytes = b"") -> None:
         self._call(self.ARM, struct.pack("<HH", length, len(tx)) + tx)
 
+    TAG_NS = _SPI.tlv["read_rx_answer"]["ns"]
+
     def read_rx(self) -> tuple[int, int, bytes]:
-        """-> (transactions still queued, bits clocked, the MOSI bytes) of the oldest finished transaction."""
+        """-> (transactions still queued, bits clocked, the MOSI bytes) of the oldest finished transaction. self.last_ns:
+        when it ended on the probe's clock (TLV ns) when the probe says, else None."""
         rd = m.Reader(self._call(self.READ_RX).payload)
-        pending, bits, count = rd.take("BIH")
-        return pending, bits, rd.bytes(count)
+        pending, bits = rd.take("BI")
+        data = rd.counted("H")
+        ns = rd.tail().get(self.TAG_NS)
+        self.last_ns = struct.unpack("<Q", ns)[0] if ns is not None and len(ns) == 8 else None
+        return pending, bits, data
 
     def status(self) -> SpiStatus:
         rd = m.Reader(self._call(self.STATUS, locked=False).payload)
-        state, mode, order, armed, queued, n, errors = rd.take("BBBBBIH")
+        state, mode, order, armed, queued, n, errors = rd.take("BBBBBII")
         rd.tail()
         return SpiStatus(state=state, mode=mode, bit_order=order, armed=bool(armed), queued=queued, transactions=n,
                          errors=errors)
