@@ -101,9 +101,9 @@ def _linktest(args) -> int:
                                       frames=args.frames, seconds=args.seconds, timeout=args.timeout):
             if args.json:
                 for c in result.cells:
-                    print(json.dumps({**dataclasses.asdict(c), "actual": result.actual, "low_latency": args.low_latency}))
+                    print(json.dumps({**dataclasses.asdict(c), "actual": result.actual, "low_latency": args.low_latency}), flush=True)
                 if result.why:
-                    print(json.dumps({"rate": result.rate, "why": result.why}))
+                    print(json.dumps({"rate": result.rate, "why": result.why}), flush=True)
             else:
                 print(result.text(), flush=True)
         try:
