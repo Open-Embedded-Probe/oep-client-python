@@ -94,33 +94,42 @@ A probe whose describe declares `port_speed` (oep-core §3.5; the classic ESP32 
 run its UART bridge faster than the boot speed (115200) for one session. Nothing changes unless the host asks:
 
 ```python
-hst = link.open_host("/dev/ttyUSB0", port_speed=[1500000, 921600, 500000])   # takes the lock, keeps the session open
-print(hst.link.speed.to_text())             # every rate tried: actual, in / out KB/s, broken frames, the one in force
-# or, in a session already taken: report = link.raise_speed(hst, [1500000, 921600], verify_bytes=32768, verify_s=1.0)
+hst = link.open_host("/dev/ttyUSB0", port_speed=[921600, 500000])    # takes the lock, keeps the session open
+print(hst.link.speed.to_text())             # every candidate tried, the baseline, the flows, the one in force
+# the full form (a baseline and the flows measured), in a session already taken:
+report = link.raise_speed(hst, [921600, 500000], verify=True, flows=[("out", 2)], record=True)
 ```
 
-Each rate in order: `try` (answered at the speed now, then the probe switches) -> the host switches -> a verify both ways
-with max_frame-sized frames (link_source / link_sink, pipelined) for `verify_bytes` or `verify_s`, counting broken frames
-and measuring KB/s each way -> both ways at once at the in-flight that passed (link_source and link_sink interleaved,
-about 1 s and at least 64 frames, `duplex_kb_s`; a line that carries each way alone can still break under duplex use - a
-CH340 at 921600 did) -> `commit` when nothing broke, else revert and back to the boot speed, confirmed there (a
-probe whose revert was lost waits out its `verify_ms`). The first rate that passes is kept; a rate the probe's UART cannot
-make is skipped. Which rates pass depends on the bridge chip and its driver (an FTDI took only 3 MHz / n, a CH340 921600
-but not 1500000 towards the host: oep-spec docs/uart-speed-negotiation.ja.md), so the host chooses them. The report
-(`link.speed`: `rate`, `chosen`, `in_kb_s` / `out_kb_s`, `trials`) is there to budget a capture or a write.
+The host's procedure is the oep-spec host guide §7 (core §3.5 is the handshake). The **minimal form** (the default, about
+50 ms, no measurement): each candidate in order - `try` (answered at the speed now, then the probe switches) -> the host
+switches to the requested baud -> 20 ms -> a `confirm` (100 ms, up to 3) -> `commit`. The **full form** (`verify=True`,
+or `flows=` given): a baseline at the boot speed per flow (this session's frames, or 60 measured), then for each
+candidate every flow the session will use - `flows` of `("in"|"out"|"duplex", n)` (in = link_source probe -> host, out =
+link_sink host -> probe, duplex = both interleaved; `n` in flight, 0 = the most the link keeps) - 16 frames at
+max_frame - 16, counting broken and lost and measuring KB/s; a flow fails on broken + lost >= 3 over max(2 x baseline,
+5 %), runs once more at n = 1 first (then n = 1 is the link's cap), and one failed flow fails the candidate. A failed
+candidate reverts (step 2) and goes back to the boot speed, confirmed there. The first candidate that passes is kept; a
+rate the probe's UART cannot make is skipped. Which rates pass depends on the bridge chip and its driver (an FTDI took
+only 3 MHz / n, a CH340 921600 but not 1500000 towards the host: oep-spec docs/uart-speed-negotiation.ja.md), so the
+host chooses them. The report (`link.speed`: `base`, `rate`, `chosen`, `baseline`, `trials` of `SpeedTrial` with
+`flows`, `in_kb_s` / `out_kb_s` / `duplex_kb_s`) is there to budget a capture or a write.
 
 The probe goes back to the boot speed by itself when the session ends (`end`, a lapse, a force), when frames break or the
 line goes quiet (`idle_ms`, at most `port_speed_idle_max_ms` = 3 s; a host that died leaves the rate no longer than
-that): while raised the link sends a keepalive before a request when it has been quiet for 1 s, and `hst.link.keep_alive()`
-does the same for a caller that sits idle for long; opening a serial port retries its first confirm for about 4 s to
-wait out a rate left over. The link follows an `end` at once, and a request that goes unanswered at a raised rate (its
-resend too) takes the link back to the boot speed, confirmed, and goes once more there - it never wedges; while raised
-each wait for an answer is at most a quarter of the lease, so this ends well inside it. In use, 3 broken frames or
-resends within 5 s step the link down: port_speed revert at the raised rate, the boot speed, a confirm, the request
-again there. A rate left either way is not used again in that session (`speed.stepped_down`, `speed.down_why`). A probe
-without the feature answers `not supported` and stays at its speed. Behind a broker (TCP) the broker does this, not the
-client. Serial ports are also opened in the driver's low-latency mode where it has one (an FTDI's latency timer 16 -> 1 ms
-tripled a UART bridge's throughput). `open_host(..., baud=)` names the boot speed when the board's profile is not 115200.
+that): while raised the link sends a keepalive before a request when it has been quiet for less than half of `idle_ms`
+(1 s), and `hst.link.keep_alive()` does the same for a caller that sits idle for long; opening a serial port retries its
+first confirm for about 4 s to wait out a rate left over. The link follows an `end` or a revert at once, and a request
+that goes unanswered at a raised rate (its resend too) takes the link back to the boot speed, confirmed, and goes once
+more there - it never wedges; while raised each wait for an answer is at most a quarter of the lease, so this ends well
+inside it. In use the link judges the frames of the last 3 s (none under 50): over max(2 x baseline, 10 %) broken or
+lost steps the link down - port_speed revert at the raised rate, the boot speed, a confirm - and the rate is not raised
+again in that session (`speed.stepped_down`, `speed.down_why`, `speed.step_downs`). `record=True` (a bool, a path, or a
+`speed_record.SpeedRecord`; the `oep speed` CLI's default, off in the library) keeps passed / failed rates per (port,
+unit_id) under `~/.cache/oep-client/link-speed.json` for 30 days, putting a passed rate first and leaving failed ones
+out. A probe without the feature answers `not supported` and stays at its speed. Behind a broker (TCP) the broker does
+this, not the client. Serial ports are also opened in the driver's low-latency mode where it has one (an FTDI's latency
+timer 16 -> 1 ms tripled a UART bridge's throughput). `open_host(..., baud=)` names the boot speed when the board's
+profile is not 115200.
 
 ## The fake probe (a working spec)
 

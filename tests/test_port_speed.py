@@ -2,6 +2,7 @@
 session's end, the wrong port, off), and the client's opt-in raise_speed against it - in process, where the fake
 also sees the host's own rate (`FakeSerialStream`), and on a pty through open_host(port_speed=...)."""
 
+import json
 import struct
 import subprocess
 import sys
@@ -85,12 +86,29 @@ def test_try_then_commit_answered_at_the_old_speed():
     assert p.ep.speed_state == "try" and p.ep.port_baud(0) == 1500000
     r = p.send(0, PS, ps(0, 1000000, COMMIT), sid)                              # another baud: cause 6
     assert r.detail == m.UNAVAILABLE and r.payload[:3] == bytes([0x01, 1, 6])
+    r = p.send(0, PS, ps(0, 1500000, TRY), sid)                                 # a try while trying: cause 6
+    assert r.detail == m.UNAVAILABLE and r.payload[:3] == bytes([0x01, 1, 6]) and p.ep.speed_state == "try"
     r = p.send(0, PS, ps(0, 1500000, COMMIT), sid)
     assert r.succeeded and p.ep.speed_state == "committed"
+    r = p.send(0, PS, ps(0, 1500000, COMMIT), sid)                              # committed already: cause 6
+    assert r.detail == m.UNAVAILABLE and r.payload[:3] == bytes([0x01, 1, 6]) and p.ep.speed_state == "committed"
+    r = p.send(0, PS, ps(0, 921600, TRY), sid)                                  # a try while committed: cause 6
+    assert r.detail == m.UNAVAILABLE and p.ep.port_baud(0) == 1500000
     p.tick(endpoint.SPEED_IDLE_MAX_MS - 1)                                      # idle_ms 0: the maximum, not never
     assert p.ep.port_baud(0) == 1500000
     p.tick(1)
     assert p.ep.port_baud(0) == 115200
+
+
+def test_a_step_that_does_not_fit_the_boot_state_is_cause_6():
+    p = Port()
+    sid = opened(p)
+    for step in (COMMIT, REVERT):
+        r = p.send(0, PS, ps(0, 500000, step), sid)
+        assert r.detail == m.UNAVAILABLE and r.payload[:3] == bytes([0x01, 1, 6])
+    assert p.ep.speed_state == "base" and p.ep.speed_log == []
+    assert p.send(0, PS, ps(0, 500000, 3), sid).detail == m.MALFORMED          # not a defined step
+    assert p.send(0, PS, ps(0, 500000, 0xFF), sid).detail == m.MALFORMED
 
 
 def test_a_long_idle_ms_is_clamped_to_the_maximum():
@@ -116,15 +134,19 @@ def test_try_times_out_and_a_late_commit_is_wrong_state():
     assert p.send(0, PS, ps(0, 750000, COMMIT), sid).detail == m.UNAVAILABLE
 
 
-def test_a_broken_candidate_while_trying_reverts_at_once():
+def test_a_broken_candidate_while_trying_reverts_once_a_good_frame_came_at_the_new_speed():
     p = Port()
     sid = opened(p)
     p.send(0, PS, ps(0, 230400, TRY, 5000), sid)
+    p.noise()                                                                    # the switch-over's leftovers: not counted
     p.noise()
+    assert p.ep.speed_state == "try" and p.ep.speed_log == [(0, 230400)]
+    p.send(0, m.OP_LOCK_STATE)                                                  # the first good frame at the new speed
+    p.noise()                                                                    # condition 2: one broken candidate
     assert p.ep.speed_state == "base" and p.ep.speed_log == [(0, 230400), (0, 115200)]
 
 
-def test_committed_reverts_when_idle_or_at_three_broken_candidates_in_a_second():
+def test_committed_reverts_when_idle_or_at_three_broken_candidates_in_a_row():
     p = Port()
     sid = opened(p)
     p.send(0, PS, ps(0, 500000, TRY), sid)
@@ -140,11 +162,13 @@ def test_committed_reverts_when_idle_or_at_three_broken_candidates_in_a_second()
     p.noise()
     p.tick(300)
     p.noise()
-    p.tick(800)
-    p.noise()                                                                   # the first is 1.1 s old
-    assert p.ep.port_baud(0) == 500000
-    p.tick(100)
+    p.tick(1200)                                                                # time does not matter: a good frame does
+    p.send(0, m.OP_LOCK_STATE)                                                  # ... and it restarts the run
     p.noise()
+    p.noise()
+    assert p.ep.port_baud(0) == 500000 and p.ep.speed_bad == 2
+    p.tick(5)
+    p.noise()                                                                   # the third in a row (condition 4)
     assert p.ep.port_baud(0) == 115200
 
 
@@ -178,15 +202,13 @@ def test_only_the_uart_bridge_the_request_came_in_on_and_rates_it_can_make():
     assert r.detail == m.UNAVAILABLE and r.payload[:3] == bytes([0x01, 1, 6])
     r = p.send(0, PS, ps(0, 9_000_000, TRY), sid)
     assert r.detail == m.UNSUPPORTED and r.payload[:1] == b"\x00"
-    r = p.send(0, PS, ps(0, 500000, 3), sid)
-    assert r.detail == m.UNSUPPORTED
     q = Port(fake.p4_x035)                                                      # USB-Serial/JTAG: no UART bridge
     q.ep.port_speed_base = 115200
     sid = opened(q)
     assert q.send(0, PS, ps(0, 500000, TRY), sid).detail == m.UNAVAILABLE
 
 
-# ---- the client: raise_speed ---------------------------------------------------------------------------------------------
+# ---- the client: raise_speed (host guide §7) -----------------------------------------------------------------------------
 
 def in_process(profile=fake.esp32_v003, lease=10000):
     start = time.monotonic()
@@ -200,34 +222,123 @@ def in_process(profile=fake.esp32_v003, lease=10000):
     return ep, hst, lk
 
 
-FAST = dict(verify_bytes=2048, verify_s=0.3, verify_ms=900, duplex_s=0.2, duplex_frames=16)
+FAST = dict(verify_ms=900)   # the probe's try state ends soon: a failed candidate costs under a second
 
 
-def test_commit_at_a_good_rate_with_the_report():
+def ops(ep, since=0):
+    return [(q.op, q.payload[5] if q.op == PS else None) for q in ep.requests[since:] if q.fn == 0]
+
+
+def test_the_minimal_form_tries_confirms_and_commits_without_a_measurement():
+    """Host guide §7.2: one candidate, switch, 20 ms, a confirm, commit - no flows, no baseline."""
     ep, hst, lk = in_process()
+    n = len(ep.requests)
     report = link.raise_speed(hst, [1500000], **FAST)
     assert report.supported and report.chosen == report.rate == 1500000 and report.base == 115200
+    assert not report.verified and report.baseline == {} and report.baseline_flows == []
     t, = report.trials
-    assert t.committed and t.actual == 1500000 and t.broken_in == t.broken_out == 0
-    assert t.in_bytes > 0 and t.out_bytes > 0 and t.in_kb_s > 0 and t.out_kb_s > 0
-    assert report.in_kb_s == t.in_kb_s and report.out_kb_s == t.out_kb_s
+    assert t.committed and t.actual == t.switched == 1500000 and t.flows == [] and t.n_cap == 0
+    assert report.in_kb_s is None and t.in_kb_s is None
+    assert ops(ep, n) == [(PS, TRY), (m.OP_CONFIRM, None), (PS, COMMIT)]
     assert lk.speed is report and lk.baud == 1500000 and ep.speed_state == "committed"
+    assert ep.speed_idle_ms == 3000 and lk.keepalive_s == link.KEEPALIVE_S == 1.0 and lk.inflight_cap == 0
     hst.keepalive()                                                              # the session goes on at the new rate
-    assert "committed" in report.to_text()
+    assert "committed" in report.to_text() and "in force: 1500000 (raised)" in report.to_text()
 
 
-def test_a_broken_rate_reverts_and_the_next_one_is_committed():
+def test_the_default_candidate_is_500000():
     ep, hst, lk = in_process()
-    ep.broken_rates[230400] = endpoint.BrokenRate(min_size=40)   # a small confirm passes, full frames break
+    report = link.raise_speed(hst, **FAST)
+    assert link.DEFAULT_CANDIDATES == (500000,) and report.chosen == 500000 and lk.baud == 500000
+
+
+def test_minimal_form_falls_back_when_the_confirm_does_not_come_and_goes_on():
+    ep, hst, lk = in_process()
     ep.broken_rates[1000000] = endpoint.BrokenRate(to_probe=False)   # probe -> host only: the probe sees nothing wrong
-    report = link.raise_speed(hst, [230400, 1000000, 9_000_000, 500000], **FAST)
-    a, b, c, d = report.trials
-    assert not a.committed and a.why == "frames broke" and a.broken_in > 0
-    assert not b.committed and b.why == "no confirm at the new rate"   # its answers to the confirm never arrive
-    assert c.why.startswith("unsupported")
-    assert d.committed and report.chosen == 500000 and lk.baud == 500000
+    t0 = time.monotonic()
+    report = link.raise_speed(hst, [1000000, 9_000_000, 500000], **FAST)
+    a, b, c = report.trials
+    assert not a.committed and a.why == "no confirm at the new rate" and a.actual == 1000000
+    assert b.why.startswith("unsupported") and b.actual is None
+    assert c.committed and report.chosen == 500000 and lk.baud == 500000
     assert ep.speed_state == "committed" and ep.port_baud(0) == 500000
-    assert (0, 230400) in ep.speed_log and (0, 1000000) in ep.speed_log
+    assert (0, 1000000) in ep.speed_log and time.monotonic() - t0 < 3.0
+    assert "no confirm" in report.to_text()
+
+
+def test_the_full_form_measures_every_flow_and_fails_a_rate_whose_frames_break():
+    """Host guide §7.3.2: a baseline per flow at the boot speed, then 16 frames per flow at each candidate; a flow fails
+    on broken + lost >= 3 over max(2 x baseline, 5 %), and one failed flow fails the candidate."""
+    ep, hst, lk = in_process()
+    ep.broken_rates[230400] = endpoint.BrokenRate(min_size=40, to_probe=False)   # the confirm passes, full answers break
+    report = link.raise_speed(hst, [230400, 500000], verify=True, verify_ms=5000)   # the try state outlasts the measurement
+    assert report.verified and set(report.baseline) == {"in", "out", "duplex"} and all(v == 0 for v in report.baseline.values())
+    assert [f.name for f in report.baseline_flows] == ["in@4", "out@4", "duplex@4"]   # measured: 60 frames each
+    assert all(f.frames == 60 for f in report.baseline_flows) and report.baseline_frames == 0
+    a, b = report.trials
+    assert not a.committed and a.why.startswith("in@") and "over 5%" in a.why
+    assert [f.name for f in a.flows] == ["in@4", "in@1"] and all(not f.passed for f in a.flows)
+    assert a.flows[0].broken + a.flows[0].lost >= 3 and a.flows[0].frames >= 16
+    assert b.committed and [f.name for f in b.flows] == ["in@4", "out@4", "duplex@4"] and all(f.passed for f in b.flows)
+    assert all(f.frames >= 16 and f.broken == f.lost == 0 and f.kb_s > 0 for f in b.flows)
+    assert report.in_kb_s == b.in_kb_s > 0 and report.out_kb_s > 0 and report.duplex_kb_s > 0 and b.n_cap == 0
+    assert report.chosen == 500000 and lk.baud == 500000 and ep.port_baud(0) == 500000 and lk.inflight_cap == 0
+    text = report.to_text()
+    assert "baseline at 115200 (measured, 60 frames per flow)" in text and "failed" in text and "committed" in text
+
+
+def test_the_full_form_verifies_only_the_flows_asked_and_caps_n_at_1_when_a_flow_needs_it():
+    ep, hst, lk = in_process()
+    ep.broken_rates[921600] = endpoint.BrokenRate(min_size=40, duplex=True, to_probe=False)   # answers break with both ways busy
+    report = link.raise_speed(hst, [921600], flows=[("in", 2), ("duplex", 0)], **FAST)
+    assert report.verified
+    t, = report.trials
+    assert t.committed and [f.name for f in t.flows] == ["in@2", "duplex@4", "duplex@1"]
+    assert [f.passed for f in t.flows] == [True, False, True] and t.flows[1].broken + t.flows[1].lost >= 3
+    assert t.n_cap == 1 and lk.inflight_cap == 1 and lk.inflight_for(hst.limits) == 1
+    assert "committed (in flight 1)" in report.to_text()
+    assert [f.name for f in report.baseline_flows] == ["in@2", "duplex@4"]
+    assert link.resolve_flows(["out", ("in", 9)], 4) == [("out", 4), ("in", 4)]
+    with pytest.raises(ValueError):
+        link.resolve_flows([("sideways", 1)], 4)
+
+
+def test_the_baseline_comes_from_the_sessions_frames_when_there_are_enough():
+    ep, hst, lk = in_process()
+    for _ in range(70):
+        hst.request(0, m.OP_LOCK_STATE)
+    assert lk.base_counts["good"] >= 70 and lk.base_counts["broken"] == lk.base_counts["lost"] == 0
+    report = link.raise_speed(hst, [500000], flows=[("duplex", 1)], **FAST)
+    assert report.baseline_frames >= 70 and report.baseline == {"duplex": 0.0} and report.baseline_flows == []
+    assert report.chosen == 500000 and "frames of this session" in report.to_text()
+    report = link.raise_speed(hst, [500000], flows=[("in", 1)], baseline=0.02, **FAST)   # given: nothing measured
+    assert report.baseline == {"in": 0.02} and report.baseline_flows == [] and report.baseline_frames == 0
+    hst.end()
+    core.take(hst, 10000)                                                        # a new session: its own count
+    assert lk.base_counts["good"] <= 2
+
+
+def test_a_boot_speed_that_loses_too_much_is_not_raised():
+    ep, hst, lk = in_process()
+    ep.broken_rates[115200] = endpoint.BrokenRate(min_size=40, to_probe=False, every=4)   # 25 % of full answers
+    report = link.raise_speed(hst, [500000], flows=[("in", 2)], **FAST)
+    assert report.supported and not report.trials and "not raised" in report.why and "in@1" in report.why
+    assert [f.name for f in report.baseline_flows] == ["in@2", "in@1"]       # over 10 %: once more at n = 1
+    assert all(f.ratio > 0.1 for f in report.baseline_flows)
+    assert lk.baud == 115200 and ep.speed_state == "base" and ep.speed_log == []
+    del ep.broken_rates[115200]
+    hst.keepalive()
+
+
+def test_a_broken_frame_towards_the_probe_reverts_it_and_the_flow_is_lost():
+    ep, hst, lk = in_process()
+    ep.broken_rates[230400] = endpoint.BrokenRate(min_size=40, to_host=False)   # requests break: the probe reverts
+    t0 = time.monotonic()
+    report = link.raise_speed(hst, [230400, 500000], flows=["out"], **FAST)
+    a, b = report.trials
+    assert not a.committed and a.flows[0].lost > 0 and a.flows[0].gone and a.why == \
+        "out@4: no answer at 230400 any more (the probe went back)"
+    assert b.committed and (0, 230400) in ep.speed_log and lk.baud == 500000 and time.monotonic() - t0 < 4.0
 
 
 def test_the_sessions_end_takes_the_link_back_to_the_boot_speed():
@@ -242,6 +353,7 @@ def test_the_sessions_end_takes_the_link_back_to_the_boot_speed():
 def test_a_revert_seen_as_a_timeout_goes_back_to_the_boot_speed():
     ep, hst, lk = in_process()
     link.raise_speed(hst, [750000], idle_ms=200, **FAST)
+    assert lk.keepalive_s == pytest.approx(0.08)                               # under half of idle_ms
     time.sleep(0.35)                                       # the probe reverts by itself (idle_ms)
     ep.tick()
     assert ep.port_baud(0) == 115200 and lk.baud == 750000
@@ -252,9 +364,18 @@ def test_a_revert_seen_as_a_timeout_goes_back_to_the_boot_speed():
 def test_raise_speed_commits_the_idle_maximum_by_default():
     ep, hst, lk = in_process()
     link.raise_speed(hst, [750000], **FAST)
-    assert ep.speed_idle_ms == link.IDLE_MAX_MS == 3000
+    assert ep.speed_idle_ms == link.IDLE_MAX_MS == 3000 and lk.keepalive_s == 1.0
     link.raise_speed(hst, [500000], idle_ms=0, **FAST)          # 0: the maximum too
     assert ep.speed_idle_ms == 3000
+
+
+def test_verify_ms_stays_a_second_under_the_lease():
+    ep, hst, lk = in_process(lease=2400)
+    link.raise_speed(hst, [750000])
+    assert ep.requests[-3].op == PS and struct.unpack_from("<H", ep.requests[-3].payload, 6)[0] == 1400
+    ep2, hst2, lk2 = in_process(lease=10000)
+    link.raise_speed(hst2, [750000])
+    assert struct.unpack_from("<H", ep2.requests[-3].payload, 6)[0] == link.VERIFY_MS == 2000
 
 
 def test_a_raised_link_keeps_the_line_alive_when_quiet():
@@ -277,40 +398,25 @@ def test_a_raised_link_keeps_the_line_alive_when_quiet():
     assert not lk.keep_alive()                                  # back at the boot speed: none
 
 
-def test_a_rate_that_breaks_only_both_ways_at_once_fails_the_duplex_phase():
-    ep, hst, lk = in_process()
-    ep.broken_rates[921600] = endpoint.BrokenRate(min_size=40, duplex=True)   # each way alone passes
-    report = link.raise_speed(hst, [921600, 500000], **FAST)
-    a, b = report.trials
-    assert not a.committed and a.why == "broke both ways at once" and a.broken_duplex > 0
-    assert a.broken_in == a.broken_out == 0 and a.in_kb_s > 0 and a.out_kb_s > 0
-    assert b.committed and b.duplex_kb_s > 0 and b.duplex_bytes > 0 and report.duplex_kb_s == b.duplex_kb_s
-    assert report.chosen == 500000 and ep.port_baud(0) == 500000
-    text = report.to_text()
-    assert "duplex KB/s" in text and "broke both ways at once" in text
-    q = endpoint.BrokenRate(min_size=40, duplex=True, to_probe=False)        # the answer breaks instead
-    ep2, hst2, lk2 = in_process()
-    ep2.broken_rates[921600] = q
-    report = link.raise_speed(hst2, [921600], **FAST)
-    assert report.trials[0].why == "broke both ways at once" and report.chosen is None and lk2.baud == 115200
-    hst2.keepalive()
-
-
-def raised_in_use(lease=10000):
+def raised_in_use(lease=10000, **kw):
     ep, hst, lk = in_process(lease=lease)
-    report = link.raise_speed(hst, [921600], **FAST)
+    report = link.raise_speed(hst, [921600], **FAST, **kw)
     assert report.chosen == 921600
     return ep, hst, lk, report
 
 
-def test_in_use_three_broken_frames_within_5_s_step_down_for_the_session():
+def test_in_use_the_3_s_window_over_10_percent_steps_down_for_the_session():
+    """Host guide §7.3.2 item 4: the last 3 s judged once 50 frames are in them; over max(2 x baseline, 10 %) broken
+    or lost -> revert, the boot speed, never raised again in this session."""
     ep, hst, lk, report = raised_in_use()
     ep.broken_rates[921600] = endpoint.BrokenRate(to_probe=False, every=4)   # answers only: the probe sees nothing
-    for _ in range(16):
+    for _ in range(60):
         hst.request(0, m.OP_LOCK_STATE)                                      # every one answered (a resend at once)
     assert lk.baud == 115200 and ep.port_baud(0) == 115200
-    assert report.stepped_down and "3 broken frames" in report.down_why and report.chosen is None
-    assert report.rate == 115200 and "stepped down" in report.to_text()
+    assert report.stepped_down and "frames broken or lost within 3 s" in report.down_why and report.chosen is None
+    s, = report.step_downs
+    assert s.rate == 921600 and s.ratio is not None and s.ratio > 0.10 and s.why == report.down_why
+    assert report.rate == 115200 and "stepped down from 921600" in report.to_text()
     assert ep.holder is not None and ep.holder == hst.session                # the lease held throughout
     hst.keepalive()
     again = link.raise_speed(hst, [921600], **FAST)                          # not again in this session
@@ -323,29 +429,42 @@ def test_in_use_three_broken_frames_within_5_s_step_down_for_the_session():
 
 def test_in_use_broken_requests_step_down_too_and_the_request_goes_on_at_base():
     ep, hst, lk, report = raised_in_use()
-    ep.broken_rates[921600] = endpoint.BrokenRate(to_host=False, every=3)    # the probe sees broken candidates
-    for _ in range(12):
+    lk.timeout = 0.05                                                        # the fake answers within a millisecond
+    ep.broken_rates[921600] = endpoint.BrokenRate(to_host=False, every=3)    # the probe sees broken candidates: lost
+    for _ in range(60):
         hst.request(0, m.OP_LOCK_STATE)
     assert lk.baud == 115200 and ep.port_baud(0) == 115200 and report.stepped_down
     assert ep.holder == hst.session
     hst.keepalive()
 
 
-def test_in_use_a_single_broken_frame_does_not_step_down():
+def test_in_use_no_judgement_under_50_frames_or_under_the_floor():
     ep, hst, lk, report = raised_in_use()
-    ep.broken_rates[921600] = endpoint.BrokenRate(to_probe=False, every=4)
-    for _ in range(4):
-        hst.request(0, m.OP_LOCK_STATE)
-    del ep.broken_rates[921600]
-    for _ in range(10):
-        hst.request(0, m.OP_LOCK_STATE)
-    assert lk.baud == 921600 and ep.port_baud(0) == 921600 and not report.stepped_down and lk.retries == 1
-    time.sleep(0.1)
-    ep.broken_rates[921600] = endpoint.BrokenRate(to_probe=False, every=4)   # two more, but the first is old enough
-    lk.strikes = [time.monotonic() - link.STRIKE_WINDOW_S]
-    for _ in range(8):
+    ep.broken_rates[921600] = endpoint.BrokenRate(to_probe=False, every=2)   # half the answers: 33 % of the frames
+    for _ in range(12):
+        hst.request(0, m.OP_LOCK_STATE)                                      # 12 and their resends: under 50 frames
+    assert lk.baud == 921600 and not report.stepped_down and lk.retries >= 6 and len(lk.window) < 50
+    assert sum(bad for _, bad in lk.window) / len(lk.window) > 0.10          # over the floor, yet not judged
+    lk.window.clear()
+    ep.broken_rates[921600] = endpoint.BrokenRate(to_probe=False, every=20)
+    for _ in range(100):
+        hst.request(0, m.OP_LOCK_STATE)                                      # about 5 %: under the floor
+    assert lk.baud == 921600 and not report.stepped_down and ep.port_baud(0) == 921600 and len(lk.window) >= 100
+    assert all(t - lk.window[0][0] <= link.IN_USE_WINDOW_S for t, _ in lk.window)
+
+
+def test_in_use_the_threshold_doubles_a_measured_baseline():
+    ep, hst, lk = in_process()
+    report = link.raise_speed(hst, [921600], flows=[("in", 1)], baseline=0.08, **FAST)   # threshold 16 %
+    assert report.chosen == 921600 and lk.baseline_ratio == 0.08
+    ep.broken_rates[921600] = endpoint.BrokenRate(to_probe=False, every=8)   # 1 in 9 frames: 11 %
+    for _ in range(80):
         hst.request(0, m.OP_LOCK_STATE)
     assert lk.baud == 921600 and not report.stepped_down
+    ep.broken_rates[921600] = endpoint.BrokenRate(to_probe=False, every=3)   # 25 %
+    for _ in range(80):
+        hst.request(0, m.OP_LOCK_STATE)
+    assert lk.baud == 115200 and report.stepped_down and "over 16%" in report.down_why
 
 
 def test_no_answer_at_a_raised_rate_falls_back_well_inside_the_lease():
@@ -357,9 +476,21 @@ def test_no_answer_at_a_raised_rate_falls_back_well_inside_the_lease():
     took = time.monotonic() - t0
     assert r.succeeded and took < 2.0 and lk.baud == 115200
     assert report.lost and report.stepped_down and "no answer" in report.down_why
-    assert ep.holder == hst.session
+    assert report.step_downs[0].ratio is None and ep.holder == hst.session
     again = link.raise_speed(hst, [921600], **FAST)
     assert again.trials[0].why.startswith("stepped down") and lk.baud == 115200
+
+
+def test_no_answer_and_no_confirm_at_the_boot_speed_is_a_link_error():
+    ep, hst, lk, report = raised_in_use()
+    ep._speed_revert = lambda: None                                          # the probe never comes back
+    ep.broken_rates[921600] = endpoint.BrokenRate(to_host=False)             # ... and hears nothing more
+    ep.speed_frame = lambda port, good: None
+    t0 = time.monotonic()
+    with pytest.raises(ConnectionError, match="neither at 921600 nor at the boot speed"):
+        hst.request(0, m.OP_LOCK_STATE)
+    assert link.OPEN_RETRY_S - 0.5 < time.monotonic() - t0 < link.OPEN_RETRY_S + 2.5   # idle max + 1 s of confirms
+    assert lk.baud == 115200                                                 # never back to the raised rate
 
 
 def test_a_long_run_at_a_raised_rate_waits_its_timeout_ms_without_a_step_down():
@@ -394,12 +525,48 @@ def test_a_long_run_at_a_raised_rate_waits_its_timeout_ms_without_a_step_down():
     t0 = time.monotonic()
     r = dm.run(0x20000000, [], timeout_ms=2000)
     assert r.stopped and 1.9 < time.monotonic() - t0 < 3.0
-    assert lk.baud == 921600 and not report.stepped_down and lk.retries == 0 and not lk.strikes
+    assert lk.baud == 921600 and not report.stepped_down and lk.retries == 0 and not any(bad for _, bad in lk.window)
     assert ep.holder == hst.session
     hst.keepalive()                                      # after 2 s of quiet: the link's keepalive first, a lower corr
     corrs = [q.corr for q in ep.requests[-2:]]
     assert corrs == sorted(corrs) and [q.op for q in ep.requests[-2:]] == [m.OP_KEEPALIVE] * 2
     assert link.EXPECT_MARGIN_S < 1 and hst.expect_ms == 0      # only that request waited longer
+
+
+class RefusingStream:
+    """A pyserial-shaped stream whose driver refuses some baud rates (pyserial raises ValueError)."""
+
+    def __init__(self, refuse):
+        self._baud, self.refuse, self.timeout, self.in_waiting = 115200, refuse, 0.05, 0
+
+    @property
+    def baudrate(self):
+        return self._baud
+
+    @baudrate.setter
+    def baudrate(self, v):
+        if v in self.refuse:
+            raise ValueError(f"Not a valid baudrate: {v}")
+        self._baud = v
+
+    def read(self, n=1):
+        return b""
+
+    def write(self, data):
+        return len(data)
+
+    def reset_input_buffer(self):
+        pass
+
+
+def test_set_baud_switches_to_the_requested_rate_and_to_the_answer_only_when_the_os_refuses():
+    lk = link.SerialLink.on_stream(RefusingStream({1500000}), "cobs", 0.1)
+    assert lk.set_baud(921600, 922190) == 921600 and lk.stream.baudrate == 921600 and lk.baud == 921600
+    assert lk.set_baud(1500000, 1499250) == 1499250 and lk.stream.baudrate == 1499250   # the OS refused: the answer
+    with pytest.raises(ValueError):
+        lk.set_baud(1500000)                                                 # no fallback given
+    with pytest.raises(ValueError):
+        lk.set_baud(1500000, 1500000)
 
 
 def second_host(ep):
@@ -455,6 +622,63 @@ def test_not_a_serial_port_of_its_own():
     assert not report.supported and "serial port" in report.why
 
 
+# ---- the record (host guide §7.4) --------------------------------------------------------------------------------------
+
+def test_the_record_puts_passed_rates_first_skips_failed_ones_and_expires(tmp_path):
+    from oep_client import speed_record
+    path = tmp_path / "link-speed.json"
+    rec = speed_record.SpeedRecord(path)
+    ep, hst, lk = in_process()
+    ep.broken_rates[230400] = endpoint.BrokenRate(to_probe=False)            # no confirm there
+    report = link.raise_speed(hst, [230400, 500000], record=rec, **FAST)
+    assert report.chosen == 500000 and report.skipped == []
+    unit = "0070070d9394"                                                    # the fake esp32-v003's unit_id
+    assert rec.lookup("<stream>", unit) == ([500000], [230400]) and lk.record_key == ("<stream>", unit)
+    saved = json.loads(path.read_text())
+    assert saved[f"<stream>|{unit}"]["rates"]["500000"]["passed"] is True
+    assert saved[f"<stream>|{unit}"]["rates"]["230400"]["passed"] is False
+    hst.end()
+    core.take(hst, 10000)
+    report = link.raise_speed(hst, [921600, 230400, 500000], record=str(path), **FAST)   # a path: the same file
+    assert report.skipped == [230400] and [t.rate for t in report.trials] == [500000]   # passed first, failed out
+    assert report.chosen == 500000 and "skipped (the record says failed): 230400" in report.to_text()
+    ep.broken_rates[500000] = endpoint.BrokenRate(to_probe=False, every=3)   # in use it breaks: the step down is noted
+    for _ in range(60):
+        hst.request(0, m.OP_LOCK_STATE)
+    assert report.stepped_down
+    assert rec.lookup("<stream>", unit) == ([], [500000, 230400]) if False else \
+        speed_record.SpeedRecord(path).lookup("<stream>", unit) == ([], [500000, 230400])
+    data = json.loads(path.read_text())
+    data[f"<stream>|{unit}"]["rates"]["230400"]["at"] = "2026-08-01T00:00:00+00:00"   # older than 30 days
+    path.write_text(json.dumps(data))
+    rec2 = speed_record.SpeedRecord(path)
+    assert rec2.lookup("<stream>", unit) == ([], [500000])
+    rec2.save()
+    assert "230400" not in path.read_text()
+    assert speed_record.SpeedRecord(path).lookup("/dev/other", unit) == ([], [])     # another port: nothing known
+
+
+def test_the_record_is_a_cache_an_unreadable_file_is_not_an_error(tmp_path):
+    from oep_client import speed_record
+    path = tmp_path / "broken.json"
+    path.write_text("{not json")
+    rec = speed_record.SpeedRecord(path)
+    assert rec.error and rec.lookup("p", "u") == ([], [])
+    rec.note("p", "u", 500000, True)
+    assert speed_record.SpeedRecord(path).lookup("p", "u") == ([500000], [])
+    unwritable = speed_record.SpeedRecord(tmp_path / "nope" / "x" / "y.json")
+    unwritable.path.parent.parent.mkdir()
+    unwritable.path.parent.parent.chmod(0o500)
+    try:
+        unwritable.note("p", "u", 1, True)
+        assert unwritable.error is None or "y.json" in unwritable.error
+    finally:
+        unwritable.path.parent.parent.chmod(0o700)
+    assert speed_record.default_path().name == "link-speed.json" and speed_record.default_path().parent.name == "oep-client"
+
+
+# ---- a pty and the CLI -------------------------------------------------------------------------------------------------
+
 @pytest.mark.skipif(sys.platform != "linux", reason="a pty")
 def test_open_host_with_port_speed_on_a_pty():
     proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", "--pty", "--profile", "esp32-v003",
@@ -464,7 +688,8 @@ def test_open_host_with_port_speed_on_a_pty():
         hst = link.open_host(where[1], timeout=1.0, port_speed=[230400, 500000])
         report = hst.link.speed
         assert [t.committed for t in report.trials] == [False, True] and report.chosen == 500000
-        assert hst.link.stream.baudrate == 500000
+        assert report.trials[0].why == "no confirm at the new rate" and not report.verified
+        assert hst.link.stream.baudrate == 500000 and hst.link.port_path == where[1]
         hst.keepalive()
         hst.end()
         assert hst.link.stream.baudrate == 115200
@@ -476,15 +701,24 @@ def test_open_host_with_port_speed_on_a_pty():
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="a pty")
-def test_oep_speed_cli_prints_the_report(capsys):
+def test_oep_speed_cli_prints_the_report_and_keeps_the_record(capsys, tmp_path, monkeypatch):
     from oep_client import __main__ as cli
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", "--pty", "--profile", "esp32-v003",
                              "--broken-rate", "230400:40:in"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     try:
         where = proc.stdout.readline().split()
-        assert cli.main(["speed", where[1], "230400,750000", "--verify-bytes", "2048", "--verify-s", "0.3"]) == 0
+        assert cli.main(["speed", where[1], "--candidates", "230400,750000", "--flows", "in:1"]) == 0
         out = capsys.readouterr().out
-        assert "frames broke" in out and "committed" in out and "in force: 750000 (raised)" in out
+        assert "in@1" in out and "failed" in out and "committed" in out and "in force: 750000 (raised)" in out
+        record = json.loads((tmp_path / "oep-client" / "link-speed.json").read_text())
+        rates = record[f"{where[1]}|0070070d9394"]["rates"]
+        assert rates["230400"]["passed"] is False and rates["750000"]["passed"] is True
+        assert cli.main(["speed", where[1], "230400,750000", "--minimal", "--json"]) == 0   # the record skips 230400
+        out = json.loads(capsys.readouterr().out)
+        assert out["skipped"] == [230400] and [t["rate"] for t in out["trials"]] == [750000] and out["chosen"] == 750000
+        assert cli.main(["speed", where[1], "--no-record"]) == 0                 # the default candidate, 500000
+        assert "in force: 500000 (raised)" in capsys.readouterr().out
     finally:
         proc.stdin.close()
         proc.wait(5)

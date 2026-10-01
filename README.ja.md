@@ -76,7 +76,7 @@ oep config slot <probe> --name x035 --wire rvswd --pins 2,54 --attach at-boot --
 oep config bind <probe> --port 1 --mode last-reset --stream slot:x035
 oep config uart <probe> oep.fixture.uart 115200 --format 8N1   # その UART の plan に RX / TX が付くたびに掛かる
 oep config save <probe>                      # 再起動の後も残す（remove = unset、erase もある）
-oep speed <probe> 1500000,921600,500000      # port_speed: UART bridge の速い速さを試し、結果を出す（下）
+oep speed <probe> [--candidates 921600,500000] [--verify [--flows out:2]]  # port_speed: 速い速さを試し、結果を出す（下）
 ```
 
 `<probe>` はシリアルの口、`tcp://HOST:PORT`、`usb[:VID:PID[:SERIAL]]`。変更はロックを取り（owner "oep config"）、終わったら
@@ -89,28 +89,37 @@ describe に `port_speed` を宣言する probe（oep-core §3.5。参照の cla
 間、UART bridge を起動時の速さ（115200）より速くできます。host が頼まない限り何も変わりません:
 
 ```python
-hst = link.open_host("/dev/ttyUSB0", port_speed=[1500000, 921600, 500000])   # ロックを取り、セッションを開いたままにする
-print(hst.link.speed.to_text())             # 試した速さごとに、実際の速さ、in / out の KB/s、壊れたフレーム、今の速さ
-# 取ってあるセッションの中では: report = link.raise_speed(hst, [1500000, 921600], verify_bytes=32768, verify_s=1.0)
+hst = link.open_host("/dev/ttyUSB0", port_speed=[921600, 500000])    # ロックを取り、セッションを開いたままにする
+print(hst.link.speed.to_text())             # 候補ごとに、基準、流し方、今の速さ
+# 完全な形（基準と流し方を測る）を取ってあるセッションの中で:
+report = link.raise_speed(hst, [921600, 500000], verify=True, flows=[("out", 2)], record=True)
 ```
 
-速さごとに順に: `試す`（今の速さで応答してから probe が切り替える）→ host も切り替える → 両方向に max_frame の大きさのフレームで
-（link_source / link_sink、パイプライン）`verify_bytes` か `verify_s` の分だけ確かめ、壊れたフレームを数え、それぞれの向きの KB/s を
-測る → 通った同時の数で両方向を同時に（link_source と link_sink を交互に、約 1 秒、64 フレーム以上。`duplex_kb_s`。向きごとには
-通っても同時に流すと壊れる線がある。921600 の CH340 がそうだった）流す → 何も壊れなければ `決める`、壊れれば戻して起動時の速さに戻り、そこで confirm し直す（戻すが届かなかった probe は `verify_ms`
-を待って戻る）。最初に通った速さを使う。probe の UART が作れない速さは飛ばす。通る速さは変換チップとドライバで決まる（FTDI は
-3 MHz ÷ n だけ、CH340 は 921600 は通り 1500000 は probe → host が壊れた: oep-spec docs/uart-speed-negotiation.ja.md）ので、速さは
-host が選ぶ。結果（`link.speed`: `rate`、`chosen`、`in_kb_s` / `out_kb_s`、`trials`）はキャプチャや書き込みの予算を立てるのに使う。
+手順は oep-spec の host 開発ガイド §7（core §3.5 は握手だけ）。**最小の形**（既定、約 50 ms、計測なし）: 候補ごとに順に
+`試す`（今の速さで応答してから probe が切り替える）→ host は要求した baud に切り替える → 20 ms → `confirm`（100 ms、3 回まで）→
+`決める`。**完全な形**（`verify=True` か `flows=` を渡す）: 起動時の速さの基準を流し方ごとに取り（このセッションのフレーム、
+無ければ 60 フレーム）、候補ごとに使う流し方だけ流す。流し方 = `("in"|"out"|"duplex", n)`（in = link_source probe → host、
+out = link_sink host → probe、duplex = 両方を交互。`n` は同時数、0 = link が出す最大）で、max_frame − 16 のフレームを 16 個流し、
+壊れと失われを数え KB/s を測る。壊れ + 失われが 3 以上で割合が max(基準 × 2, 5 %) を超えたら流し方は通らず、n = 1 で流し直し
+（通れば n = 1 が link の上限）、1 つでも通らなければ候補は通らない。通らない候補は戻して（step 2）起動時の速さに戻り confirm し直す。
+最初に通った候補を使う。probe の UART が作れない速さは飛ばす。通る速さは変換チップとドライバで決まる（FTDI は 3 MHz ÷ n だけ、
+CH340 は 921600 は通り 1500000 は probe → host が壊れた: oep-spec docs/uart-speed-negotiation.ja.md）ので、速さは host が選ぶ。
+結果（`link.speed`: `base`、`rate`、`chosen`、`baseline`、`trials` = `flows` と `in_kb_s` / `out_kb_s` / `duplex_kb_s` を持つ
+`SpeedTrial`）はキャプチャや書き込みの予算を立てるのに使う。
 
 probe はセッションが終わったとき（`end`、lease の期限切れ、force）、フレームが壊れたとき、線が黙ったとき（`idle_ms`、最長
 `port_speed_idle_max_ms` = 3 秒。落ちた host の速さもそれより長くは残らない）に自分で起動時の速さに戻る: 上げている間、link は
-1 秒黙っていれば要求の前に keepalive を送り、長く黙る呼び出し側は `hst.link.keep_alive()` で同じことをする。シリアルの口を開くと
-最初の confirm を約 4 秒繰り返して、残った速さが戻るのを待つ。link は `end` にはすぐ合わせ、上げた速さで応答の来ない要求（送り直しも）があれば、起動時の速さに戻って
-confirm し、そこでもう一度送る（固まらない）。上げている間は応答を待つ 1 回が lease の 4 分の 1 までなので、lease の内に十分収まる。
-使っている間に 5 秒の内に 3 回フレームが壊れるか送り直すと、上げた速さで port_speed の戻すを送り、起動時の速さに戻って confirm し、
-要求をそこで送る。どちらで離れた速さもそのセッションの間は使わない（`speed.stepped_down`、`speed.down_why`）。機能の無い probe は `not supported` で、速さは変わらない。ブローカー（TCP）の後ろでは
-client ではなくブローカーが行う。シリアルの口は、ドライバにあれば low-latency のモードで開く（FTDI の latency timer 16 → 1 ms で
-UART bridge の速度が 3 倍になった）。ボードの起動時の速さが 115200 でなければ `open_host(..., baud=)` で渡す。
+`idle_ms` の半分より短く黙れば要求の前に keepalive を送り、長く黙る呼び出し側は `hst.link.keep_alive()` で同じことをする。
+シリアルの口を開くと最初の confirm を約 4 秒繰り返して、残った速さが戻るのを待つ。link は `end` と戻すにはすぐ合わせ、上げた速さで
+応答の来ない要求（送り直しも）があれば起動時の速さに戻って confirm し、そこでもう一度送る（固まらない）。上げている間は応答を待つ
+1 回が lease の 4 分の 1 までなので、lease の内に十分収まる。使っている間は直近 3 秒のフレーム（50 未満なら判定しない）を見て、
+max(基準 × 2, 10 %) を超えて壊れ・失われたら、上げた速さで port_speed の戻すを送り、起動時の速さに戻って confirm し、その速さは
+そのセッションの間は使わない（`speed.stepped_down`、`speed.down_why`、`speed.step_downs`）。`record=True`（真偽値・パス・
+`speed_record.SpeedRecord`。`oep speed` CLI は既定で ON、ライブラリは OFF）は、通った / 通らなかった速さを（口、unit_id）ごとに
+`~/.cache/oep-client/link-speed.json` に 30 日残し、通った速さを先頭に、通らなかった速さを外す。機能の無い probe は `not supported`
+で、速さは変わらない。ブローカー（TCP）の後ろでは client ではなくブローカーが行う。シリアルの口は、ドライバにあれば low-latency の
+モードで開く（FTDI の latency timer 16 → 1 ms で UART bridge の速度が 3 倍になった）。ボードの起動時の速さが 115200 でなければ
+`open_host(..., baud=)` で渡す。
 
 ## 偽の probe（動く spec）
 
