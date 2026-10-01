@@ -158,6 +158,7 @@ class SerialLink:
         self.speed_lost = 0                        # times a raised rate was found gone (back to the boot speed)
         self.fallback = True                       # a raised rate that stops answering: back to the boot speed
         self.corr_source = self._own_corr          # the host's correlation counter once bound (open_host)
+        self.held = lambda: False                  # a session holds the port (its raw transfer stopped): broken = resend
         self.blind = lambda: []                    # the host's blind stops (unsubscribe / end) once bound
         self._corr_n = 0x8000
         if self.framing == "length":
@@ -196,6 +197,12 @@ class SerialLink:
                     return cobs.unframe(raw)
                 except cobs.CorruptFrame:
                     self.noise += len(raw)           # raw bytes of the port, or a broken frame: noise, no resend
+                    if self.held():
+                        # a session holds this port: the probe sends no raw bytes on it (oep-core §3.4), so this was a
+                        # broken frame - most likely the reply. Send again now instead of waiting out the timeout (a
+                        # second waited 1 s each on an M5Stack ATOM's FTDI, 2026-10-01); a repeat is answered from
+                        # the probe's retry table (§5.2)
+                        raise
                     continue
             if time.monotonic() > deadline:
                 raise TimeoutError("no result from the probe")
@@ -453,6 +460,7 @@ class SerialLink:
         limits (in-flight, window, max_frame) for pipelining and the framing check."""
         self.corr_source = hst.next_corr
         self.blind = hst.blind_stop
+        self.held = lambda: hst.session is not None
         hst.link = self
         limits = hst.confirm()
         hst.exchange = self.bind(limits)
