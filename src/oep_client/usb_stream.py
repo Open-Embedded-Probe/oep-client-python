@@ -16,7 +16,11 @@ import time
 
 
 
-VENDOR_CLASS = 0xFF   # the vendor bulk transport's interface class (oep-core §3.3); one per probe
+from . import registry as reg
+
+# the vendor bulk transport's interface: class 0xFF, subclass 'O', protocol 'E' (oep-core §3.3); one per probe
+VENDOR_CLASS, VENDOR_SUBCLASS, VENDOR_PROTOCOL = (reg.USB[k] for k in ("vendor_bulk_class", "vendor_bulk_subclass",
+                                                                       "vendor_bulk_protocol"))
 
 class UsbBulkStream:
     READ_SIZE = 16384
@@ -40,7 +44,8 @@ class UsbBulkStream:
             raise FileNotFoundError(f"no USB device {vid:04x}:{pid:04x}" + (f" serial {serial}" if serial else ""))
         cfg = dev.get_active_configuration()
         for intf in cfg:
-            if intf.bInterfaceClass != VENDOR_CLASS:   # the vendor interface, not the first bulk pair (a CDC's)
+            if (intf.bInterfaceClass, intf.bInterfaceSubClass, intf.bInterfaceProtocol) != \
+                    (VENDOR_CLASS, VENDOR_SUBCLASS, VENDOR_PROTOCOL):   # the OEP vendor interface, not another 0xFF one
                 continue
             eps = [e for e in intf if usb.util.endpoint_type(e.bmAttributes) == usb.util.ENDPOINT_TYPE_BULK]
             ins = [e for e in eps if usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_IN]
@@ -48,7 +53,7 @@ class UsbBulkStream:
             if ins and outs:
                 usb.util.claim_interface(dev, intf.bInterfaceNumber)
                 return cls(dev, ins[0], outs[0], intf.bInterfaceNumber)
-        raise FileNotFoundError("no vendor-class (0xFF) bulk IN/OUT pair on the device")
+        raise FileNotFoundError("no OEP vendor interface (class 0xFF, subclass 0x4F, protocol 0x45) with a bulk IN/OUT pair")
 
     def _drain(self) -> None:
         import usb.core
@@ -149,7 +154,8 @@ class UsbAsyncStream:
                 handle.close()
                 continue
             for setting in dev.iterSettings():
-                if setting.getClass() != VENDOR_CLASS:
+                if (setting.getClass(), setting.getSubClass(), setting.getProtocol()) != \
+                        (VENDOR_CLASS, VENDOR_SUBCLASS, VENDOR_PROTOCOL):   # the OEP vendor interface (core §3.3)
                     continue
                 eps = [(e.getAddress(), e.getAttributes()) for e in setting]
                 ins = [a for a, attr in eps if attr & 3 == 2 and a & 0x80]

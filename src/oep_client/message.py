@@ -5,10 +5,11 @@ and the §0 rules for what follows a payload's fixed part.
             role(0x81) corr(u16) fn(u16) op(u8) session_id(u32) payload     role bit 7 = session_id present
   result  : role(0x02) corr(u16) resolution(u8) detail(u8) payload
 
-§0 tails: after a result's fixed part (and any counted list) come TLVs (tag u8, len u8, value); the host skips tags it
-does not know and never rejects a longer result. A request may end with TLVs too; tag bit 7 = critical (the probe
-honours it or answers rejected unsupported with the tag), and the probe lists the non-critical tags it ignored in a
-result TLV 0x7F. Numbers come from `registry` (generated from oep-spec registry/oep-v1.toml).
+§2.3 tails: after a result's fixed part (and any counted list) come TLVs (tag u8, len u8, value; a len byte of 0xFF means
+a u16 len follows, for values of 255 bytes and more - core §2.2); the host skips tags it does not know and never rejects a
+longer result. A request may end with TLVs too; tag bit 7 = critical (the probe honours it or answers rejected unsupported
+with the tag), and the probe lists the non-critical tags it ignored in a result TLV 0x7F. Numbers come from `registry`
+(generated from oep-spec registry/oep-v1.toml).
 """
 
 from __future__ import annotations
@@ -40,11 +41,15 @@ NO_CONNECTION = _R["no_connection"]        # the probe does not know the request
 UNSUPPORTED = _R["unsupported"]            # a critical TLV (payload: its tag) or a fixed-part value it cannot handle
 RESULT_LOST = _R["result_lost"]            # a request sent again whose result the probe did not keep: read the state again
 CORR_REUSED = _R["corr_reused"]            # a request sent again with the same corr but another fn, op or payload
+EXPIRED = _R["expired"]                    # this session's lock lapsed or was taken by force, its resources swept: open again
 
 REJECT_NAMES = {v: k.replace("_", " ") for k, v in _R.items()}
 REJECT_NAMES[MALFORMED] = "malformed payload"
 
 TAG_CRITICAL, TAG_IGNORED, TAG_INVALID = reg.TAG_CRITICAL, reg.TAG_IGNORED, reg.TAG_INVALID
+TAG_FIXED = reg.TAG_RESERVED_ZERO          # the rejected unsupported payload's first byte for a fixed-part value (core §4.3)
+TLV_LEN_LONG = reg.TLV_LEN_LONG            # the len byte that says a u16 len follows (core §2.2)
+TLV_SHORT_MAX = TLV_LEN_LONG - 1           # the longest value the short form carries (254)
 
 # core (fn 0) operations
 CORE_FN = 0
@@ -68,7 +73,11 @@ class ProtocolError(OepError, ValueError):
 
 
 class ShortPayload(ProtocolError):
-    """A payload shorter than its fixed part, or a truncated TLV (a broken result, §0)."""
+    """A payload shorter than its fixed part, or a truncated TLV (a broken result, core §2.3)."""
+
+
+class BadTlv(ProtocolError):
+    """A TLV that is not encoded the one way core §2.2 allows (a value under 255 bytes in the long form)."""
 
 
 @dataclass(frozen=True)
@@ -143,25 +152,38 @@ class Result:
 # ---- §0 TLV tails ------------------------------------------------------------------------------------------
 
 def tlv(tag: int, value: bytes, critical: bool = False) -> bytes:
-    """One TLV; `critical` sets tag bit 7 (a request argument the probe must honour or refuse)."""
-    if len(value) > 255:
-        raise ValueError(f"TLV 0x{tag:02x}: value of {len(value)} bytes does not fit")
-    if tag & 0x7F == TAG_IGNORED:
-        raise ValueError("tag 0x7F is reserved for the ignored list")
-    return bytes((tag | (TAG_CRITICAL if critical else 0), len(value))) + value
+    """One TLV in the one encoding core §2.2 allows: `tag len(u8) value` up to 254 bytes, `tag 0xFF len(u16) value` from
+    255 on. `critical` sets tag bit 7 (a request argument the probe must honour or refuse)."""
+    if len(value) > 0xFFFF:
+        raise ValueError(f"TLV 0x{tag:02x}: value of {len(value)} bytes does not fit a u16 length")
+    if tag & 0x7F == TAG_IGNORED or tag == TAG_FIXED:
+        raise ValueError("tags 0x00 and 0x7F are reserved (the unsupported marker, the ignored list)")
+    head = bytes((tag | (TAG_CRITICAL if critical else 0),))
+    if len(value) <= TLV_SHORT_MAX:
+        return head + bytes((len(value),)) + value
+    return head + bytes((TLV_LEN_LONG,)) + struct.pack("<H", len(value)) + value
 
 
 def split_tlvs(data: bytes) -> list[tuple[int, bytes]]:
-    """TLVs in order. A truncated TLV raises ShortPayload (the result is broken)."""
+    """TLVs in order, both forms (core §2.2). A truncated TLV raises ShortPayload (the result is broken); the long form
+    carrying a value the short form would hold raises BadTlv (not the one encoding)."""
     pos, out = 0, []
     while pos < len(data):
         if pos + 2 > len(data):
             raise ShortPayload("TLV: truncated header")
         tag, n = data[pos], data[pos + 1]
-        if pos + 2 + n > len(data):
+        pos += 2
+        if n == TLV_LEN_LONG:
+            if pos + 2 > len(data):
+                raise ShortPayload(f"TLV 0x{tag:02x}: truncated long length")
+            n = struct.unpack_from("<H", data, pos)[0]
+            pos += 2
+            if n <= TLV_SHORT_MAX:
+                raise BadTlv(f"TLV 0x{tag:02x}: a {n}-byte value in the long form")
+        if pos + n > len(data):
             raise ShortPayload(f"TLV 0x{tag:02x}: truncated value")
-        out.append((tag, data[pos + 2:pos + 2 + n]))
-        pos += 2 + n
+        out.append((tag, data[pos:pos + n]))
+        pos += n
     return out
 
 
@@ -188,7 +210,8 @@ class Tail:
 
 class Reader:
     """Reads a result payload's fixed part front to back; too short -> ShortPayload. `tail()` then reads the rest as
-    §0 TLVs; `rest()` takes the rest as bytes (a result ending with a list of unknown length: nothing may follow)."""
+    core §2.3 TLVs; `rest()` takes the rest as bytes (fn 0's link_source only: the one answer that ends with a list
+    of unknown length, core §12)."""
 
     def __init__(self, payload: bytes):
         self.data, self.at = payload, 0
@@ -210,6 +233,9 @@ class Reader:
     def u32(self) -> int:
         return self.take("I")
 
+    def u64(self) -> int:
+        return self.take("Q")
+
     def bytes(self, n: int) -> bytes:
         if self.at + n > len(self.data):
             raise ShortPayload(f"payload of {len(self.data)} bytes: needs {self.at + n}")
@@ -219,6 +245,11 @@ class Reader:
 
     def words(self, n: int) -> list[int]:
         return list(struct.unpack(f"<{n}I", self.bytes(4 * n)))
+
+    def counted(self, fmt: str) -> bytes:
+        """A byte string with its length in front (`fmt` = the length's struct code: H for u16, I for u32): what every
+        answer carrying data has since core §2.3 put a length on every container."""
+        return self.bytes(self.take(fmt))
 
     def rest(self) -> bytes:
         out = self.data[self.at:]
@@ -242,6 +273,7 @@ def element(body: bytes) -> bytes:
 
 
 def serial_diff(a: int, b: int, bits: int = 32) -> int:
-    """a - b for values that wrap (positions u32, seq u16, µs u32): the difference as a signed number of `bits` (§0)."""
+    """a - b for values that wrap (serials u32, seq u16, resource numbers u16): the difference as a signed number of
+    `bits` (core §2.6)."""
     d = (a - b) & ((1 << bits) - 1)
     return d - (1 << bits) if d >> (bits - 1) else d

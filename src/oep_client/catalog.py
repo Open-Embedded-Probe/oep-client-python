@@ -3,9 +3,10 @@
 list request : flags(u8) first(u16) prefix_len(u8) prefix     flags bit0 = exact
 list result  : total(u16) count(u8) count x (len(u8) entry) [TLV tail]   oep.core (fn 0) is the first entry
 list entry   : fn(u16) instance(u16) revision(u8) flags(u8) name_len(u8) name
-describe     : request fn(u16) first(u16); result more(u8) then TLV bytes (tag u8, len u8, value;
+describe     : request fn(u16) first(u16); result more(u8) then TLV bytes (tag u8, len u8 or 0xFF + u16, value;
                tag bit 7 = critical). more = 1: TLVs remain after this page, ask again from first + count
-(oep-spec oep-core §7.2; the entry revision decides the interface's payload shapes, §2.7)
+(oep-spec oep-core §7.2; the entry revision decides the interface's payload shapes, §2.7). A describe is declarations
+only (§7.3): it may be cached while the probe's boot_id stays the same.
 
 Common TLV tags 0x01..0x3F mean the same for every interface; 0x40..0x7F belong to the interface.
 """
@@ -15,6 +16,7 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 
+from . import message as m
 from .message import Reader, element, split_tlvs
 
 LIST_EXACT = 0x01
@@ -26,7 +28,7 @@ MAX_LENGTH = 0x03        # u16
 MIN_CLOCK_HZ = 0x05      # u32
 FEATURES = 0x06          # u32, bits defined by the interface
 IMPLEMENTATION = 0x07    # u8: 0 unspecified, 1 software, 2 peripheral, 3 peripheral + DMA/PIO
-CHANNEL_GROUP = 0x08     # group(u8) then (role(u8), channel(u16)) repeated: a fixed pin set
+CHANNEL_GROUP = 0x08     # group(u8) n(u8) then n x (role(u8), channel(u16)): a fixed pin set
 CRITICAL = 0x80
 INTERFACE_TAG_FIRST = 0x40
 
@@ -88,9 +90,8 @@ def pack_describe_request(fn: int, first: int) -> bytes:
 # ---- describe TLVs -------------------------------------------------------
 
 def tlv(tag: int, value: bytes) -> bytes:
-    if len(value) > 255:
-        raise ValueError(f"TLV 0x{tag:02x}: value of {len(value)} bytes does not fit")
-    return bytes((tag, len(value))) + value
+    """A describe TLV (the short form up to 254 bytes, the long form from 255 on - core §2.2)."""
+    return m.tlv(tag, value)
 
 
 def split_tlv(data: bytes) -> list[tuple[int, bytes]]:
@@ -118,7 +119,13 @@ def role_channels(role: int, channels) -> bytes:
 
 
 def channel_group(group: int, pins: list[tuple[int, int]]) -> bytes:
-    return tlv(CHANNEL_GROUP, bytes([group]) + b"".join(struct.pack("<BH", r, c) for r, c in pins))
+    return tlv(CHANNEL_GROUP, bytes([group, len(pins)]) + b"".join(struct.pack("<BH", r, c) for r, c in pins))
+
+
+def unpack_channel_group(value: bytes) -> tuple[int, list[tuple[int, int]]]:
+    """-> (group, [(role, channel)]) of a channel_group value (core §7.4: group(u8) n(u8) n x (role(u8) channel(u16)))."""
+    group, n = value[0], value[1]
+    return group, [struct.unpack_from("<BH", value, 2 + 3 * i) for i in range(n)]
 
 
 def u8(tag: int, v: int) -> bytes:
@@ -160,8 +167,8 @@ def decode_description(data: bytes) -> Description:
             role, base = struct.unpack_from("<BH", value)
             d.roles.setdefault(role, []).extend(bitmap_to_channels(base, value[3:]))
         elif t == CHANNEL_GROUP:
-            group = value[0]
-            d.groups[group] = [struct.unpack_from("<BH", value, 1 + 3 * i) for i in range((len(value) - 1) // 3)]
+            group, pins = unpack_channel_group(value)
+            d.groups[group] = pins
         elif t == MAX_CLOCK_HZ:
             d.max_clock_hz = struct.unpack("<I", value)[0]
         elif t == MIN_CLOCK_HZ:

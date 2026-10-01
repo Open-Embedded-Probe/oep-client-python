@@ -12,6 +12,7 @@ OP_PLAN_APPLY, OP_PLAN_RELEASE = m.OP_PLAN_APPLY, m.OP_PLAN_RELEASE
 TAG_ROLE_ASSIGNMENT = reg.CORE.tlv["plan_apply"]["role_assignment"]     # already critical (0x90)
 CORE_LABEL = reg.CORE.tlv["describe"]["label"]
 CORE_TRANSPORT = reg.CORE.tlv["describe"]["transport"]
+CORE_MAX_OP_MS = reg.CORE.tlv["describe"]["max_op_ms"]
 TRANSPORT_KIND = reg.CORE.enum["transport_kind"]
 SERIAL_KINDS = {TRANSPORT_KIND["uart_bridge"], TRANSPORT_KIND["usb_cdc"], TRANSPORT_KIND["usb_serial_jtag"]}
 
@@ -68,7 +69,11 @@ def confirm(hst: h.Host) -> dict:
 
 
 def describe(hst: h.Host, fn: int = 0) -> list[tuple[int, bytes]]:
-    """Every describe TLV of `fn` (0: the probe itself), paged by first."""
+    """Every describe TLV of `fn` (0: the probe itself), paged by first. Declarations only (core §7.3): cached on the
+    host while the probe's boot_id stays the same."""
+    cached = hst._describes.get(fn)
+    if cached is not None:
+        return list(cached)
     data, first = b"", 0
     while True:
         p = hst.request(m.CORE_FN, m.OP_DESCRIBE, catalog.pack_describe_request(fn, first), locked=False).payload
@@ -77,13 +82,26 @@ def describe(hst: h.Host, fn: int = 0) -> list[tuple[int, bytes]]:
         first += len(catalog.split_tlv(chunk))
         if not more or not chunk:
             break
-    return catalog.split_tlv(data)
+    out = catalog.split_tlv(data)
+    hst._describes[fn] = out
+    return list(out)
 
 
 def probe_labels(hst: h.Host) -> dict[str, int]:
-    """Channel labels the probe declares in oep.core's describe (tag 0x46): {"NRST": 23, ...}."""
+    """The firmware's fixed channel labels from oep.core's describe (tag 0x46): {"NRST": 23, ...}. Labels the
+    settings gave are read from oep.probe.config (config.ProbeConfig.items(), Label)."""
     return {value[2:].decode("ascii", "replace"): struct.unpack_from("<H", value)[0]
             for tag, value in describe(hst) if tag & 0x7F == CORE_LABEL and len(value) >= 2}
+
+
+def max_op_ms(hst: h.Host) -> int:
+    """The longest one request may take on this probe (oep.core describe max_op_ms, core §7.5): the ceiling of run's
+    timeout_ms, a dmi list's waits, an attach's hold_ms. A probe that declares none (not v1-complete) is taken as the
+    reference firmware's 10000 ms."""
+    for tag, value in describe(hst):
+        if tag & 0x7F == CORE_MAX_OP_MS and len(value) >= 4:
+            return struct.unpack_from("<I", value)[0]
+    return reg.LIMITS["max_op_ms_reference"]
 
 
 def transports(hst: h.Host) -> list[tuple[int, int, int]]:
