@@ -17,7 +17,7 @@ import struct
 import time
 from dataclasses import dataclass, field
 
-from . import core, host as h, riscv
+from . import host as h, riscv
 
 # oep-spec experiments/flash-primitives/x035_loader.S, assembled at 0x20000000 (riscv32-esp-elf binutils)
 FAST_PAGE_LOADER = bytes.fromhex(
@@ -91,11 +91,10 @@ LOADER, FAST_BUFFER, FAST_DONE = 0x20000000, 0x20000400, 0x200000B0
 V003_INPUT, V003_STACK, V003_EBREAK, V003_RUN = 0x20000200, 0x20000800, 0x2000015C, 1024
 
 
-def _block_size(hst: h.Host) -> int:
-    info = core.confirm(hst)
-    # request header 6 + session 4 + connection 1 + address 4 + count 2 (the read answer's 5 + done 2 + status 1 is
-    # smaller); a little slack for the result header
-    return (info["max_frame"] - 5 - 6 - 4 - 1 - 4 - 2) // 4 * 4
+def _block_size(dm: riscv.RiscvDm) -> int:
+    """Bytes per read_block / write_block: the probe's declared max_length (oep-if-debug §4.5), never a value computed
+    from max_frame (riscv.NoMaxLength when the probe declares none)."""
+    return dm.max_words * 4
 
 
 def _write_requests(dm: riscv.RiscvDm, address: int, data: bytes, block: int) -> list[tuple[int, int, bytes]]:
@@ -142,7 +141,7 @@ def program(hst: h.Host, dm: riscv.RiscvDm, image: bytes, profile: FlashProfile)
     image = image + b"\xff" * (-len(image) % profile.page)
     if profile.size and len(image) > profile.size:
         raise ValueError(f"image of {len(image)} bytes exceeds {profile.size}")
-    block = _block_size(hst)
+    block = _block_size(dm)
     t = {}
     t0 = time.perf_counter()
     if profile.method == "fast-page":

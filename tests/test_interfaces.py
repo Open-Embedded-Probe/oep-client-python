@@ -146,6 +146,7 @@ def test_dmi_value_count_rule():
 
 def test_block_access_reports_how_far_it_got(dm):
     ep, hst, d = dm
+    assert d.max_length == fake.block_max_length(1024) == 1000 and d.max_words == 250   # from describe, not max_frame
     d.write_block(0x20000000, struct.pack("<3I", 1, 2, 3))
     assert d.read_block(0x20000000, 3) == struct.pack("<3I", 1, 2, 3)
     assert ep.requests[-2].payload[2:8] == struct.pack("<IH", 0x20000000, 3)   # address, count
