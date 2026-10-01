@@ -1,5 +1,5 @@
 """oep.probe.config revision 1 (oep-spec docs/oep-if-probe-config.ja.md): the probe's settings - plan, labels, idle
-pins, slots, binds, fixture UART settings - read and set as items, removed with unset, saved when the host says so, and
+pins, slots, binds, fixture UART settings, disabled channels - read and set as items, removed with unset, saved when the host says so, and
 the live slot / bind / storage state as its own lock-free operation (describe is declarations only, core §7.3).
 
     cfg = config.ProbeConfig(hst)
@@ -85,6 +85,20 @@ class Idle:
 
 
 @dataclass(kw_only=True)
+class Disable:
+    """A channel the probe never uses or touches (probe.config §1, item 0x07): not on this board, or wired to another
+    part. Any request naming it is refused unavailable (cause 5, held by settings); describe still declares it."""
+    channel: int
+    TAG = ITEM["disable"]
+
+    def key(self) -> tuple:
+        return (self.channel,)
+
+    def value(self) -> bytes:
+        return struct.pack("<H", self.channel)
+
+
+@dataclass(kw_only=True)
 class Slot:
     """A place a target is wired to (probe.config §1.1). pins: (swdio, swclk), swclk 0xFFFF on one wire (swio).
     lock: (scheme, mask, value) - the target_id a connection must show, e.g. (1, mask u32 LE, value u32 LE); mask and
@@ -160,7 +174,7 @@ class Removal:
     key: int
 
     def encoded(self) -> bytes:
-        """len(u8) tag(u8) key: the key is fn(u16) for plan / uart, channel(u16) for label / idle, slot(u8), port(u8)."""
+        """len(u8) tag(u8) key: the key is fn(u16) for plan / uart, channel(u16) for label / idle / disable, slot(u8), port(u8)."""
         tag = ITEM[self.kind]
         key = bytes([self.key]) if self.kind in ("slot", "bind") else struct.pack("<H", self.key)
         return bytes([1 + len(key), tag]) + key
@@ -172,7 +186,7 @@ def item(it) -> bytes:
 
 def remove(kind: str, key: int) -> Removal:
     """The removal of the item of this key (for `unset`, or in a `set` list): kind plan (key fn: its whole plan), label
-    / idle (channel), slot, bind (port), uart (fn)."""
+    / idle / disable (channel), slot, bind (port), uart (fn)."""
     if kind not in ITEM:
         raise ValueError(f"no item kind {kind!r}")
     return Removal(kind, key)
@@ -187,6 +201,8 @@ def decode(tag: int, v: bytes):
         return Label(channel=struct.unpack_from("<H", v)[0], text=v[2:].decode("utf-8", "replace"))
     if tag == ITEM["idle"] and len(v) >= 3:
         return Idle(channel=struct.unpack_from("<H", v)[0], mode=_name(IDLE, v[2]))
+    if tag == ITEM["disable"] and len(v) >= 2:
+        return Disable(channel=struct.unpack_from("<H", v)[0])
     if tag == ITEM["slot"] and len(v) >= SLOT_HEAD.size + 1:
         n, wire_fn, swdio, swclk, attach, retry_ms, max_speed, idle, mech, name_len = SLOT_HEAD.unpack_from(v)
         at = SLOT_HEAD.size
@@ -219,7 +235,7 @@ def decode(tag: int, v: bytes):
 
 def _sort_key(tag: int, value: bytes) -> tuple:
     """The canonical order's key of one item (probe.config §2): tag, then the key - plan (fn, role, channel), label /
-    idle channel, slot, port, uart fn."""
+    idle / disable channel, slot, port, uart fn."""
     if tag == ITEM["plan"] and len(value) >= 5:
         return (tag,) + struct.unpack_from("<HBH", value)
     if tag in (ITEM["slot"], ITEM["bind"]):
@@ -299,7 +315,7 @@ class ProbeConfig(Interface):
                     return h, out
 
     def items(self) -> list:
-        """The current settings, decoded (Plan, Label, Idle, Slot, Bind, Uart)."""
+        """The current settings, decoded (Plan, Label, Idle, Slot, Bind, Uart, Disable)."""
         return [decode(t, v) for t, v in self.get()[1]]
 
     def set(self, items: list) -> int:

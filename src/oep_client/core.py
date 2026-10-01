@@ -140,7 +140,7 @@ def plan_apply(hst: h.Host, assignments: list[tuple[int, int, int]]) -> None:
 
 class PinsTaken(h.Rejected):
     """plan_apply refused (unavailable) and the probe's settings say why: a pin kept by another fn's saved plan or by a
-    slot (oep.probe.config). `holders`: (channel, what holds it)."""
+    slot, or a channel the settings disable (oep.probe.config). `holders`: (channel, what holds it)."""
 
     def __init__(self, result, holders: list[tuple[int, str]]):
         super().__init__(result)
@@ -167,6 +167,8 @@ def _pin_holders(hst: h.Host, assignments: list[tuple[int, int, int]]) -> list[t
                 out.append((ch, f"the saved plan of fn {it.fn} (role {it.role})"))
             elif isinstance(it, config.Slot) and ch in it.pins:
                 out.append((ch, f"slot {it.slot} {it.name}"))
+            elif isinstance(it, config.Disable) and it.channel == ch:
+                out.append((ch, "the settings (disabled; oep config remove <probe> disable <channel> enables it)"))
     return out
 
 

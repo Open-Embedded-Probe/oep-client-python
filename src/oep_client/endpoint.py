@@ -28,7 +28,8 @@ define:
   `FakeTarget` per pin pair (dmi / run answers count their values; run's stopped 2), oep.target.console streams (one
   live stream per connection, lifetime by its users, the streams list), oep.fixture.gpio, oep.fixture.uart (its stream
   made by the plan, status, the settings' uart item), and oep.probe.config (plan / label / idle / slot / bind / uart
-  items, get / set / unset / save / erase, the state op - describe is declarations only)
+  / disable items, get / set / unset / save / erase, the state op - describe is declarations only; a disabled channel
+  is refused everywhere with unavailable cause 5 and never parked: `parked` records the free pins' states it set)
 - the serial ports' raw side (core §3.4, probe.config §1.2): `port_input` / `port_output` carry the bytes outside
   the frames for each serial port by its bind; a port the lock holder's requests came in on is held until the
   session ends, then resumes from the session's last host reset. The byte framing itself is `fake_serial`.
@@ -438,8 +439,39 @@ class Endpoint:
         self.mixed_out: dict[int, bytearray] = {}
         self.held_ports: set[int] = set()
         self.session_resets: dict[tuple[int, int], tuple[object, int]] = {}   # stream key -> (sid, position)
+        self.parked: dict[int, int] = {}               # channel -> the idle mode the probe put the free pin in
         if self.saved is not None:
-            self._apply_saved()
+            self._apply_saved()                        # the saved disable items first: those pins are never parked
+        self._park(self._all_channels())               # then the free pins' idle state (probe.config §2 boot order)
+
+    @property
+    def disabled(self) -> set[int]:
+        """The channels the settings' disable items take away (probe.config §1): never used, driven or configured."""
+        return {key for tag, key in self.config if tag == ITEM["disable"]}
+
+    def _refuse_disabled(self, channels, extra: bytes = b"") -> None:
+        """A request naming a disabled channel: rejected unavailable cause 5 (held by settings) with the channel."""
+        for ch in channels:
+            if ch != 0xFFFF and ch in self.disabled:
+                raise unavailable("held_by_settings", ch, extra=extra)
+
+    def _all_channels(self) -> set[int]:
+        """Every channel some fn's describe offers (role_channels, channel_group, the wires' pairs and reset lines)."""
+        out = {ch for fn in self.static if fn != m.CORE_FN for ch in self._declared_channels(fn)}
+        out |= {p for pairs in self.pairs.values() for pair in pairs for p in pair}
+        out |= {ch for chs in self.reset_channels.values() for ch in chs}
+        out.discard(0xFFFF)
+        return out
+
+    def _park(self, channels) -> None:
+        """Free pins go to their idle state (the idle item, else Hi-Z) at boot and whenever released (probe.config §1);
+        a disabled channel stays as the reset left it (never parked), a held one is not free."""
+        busy = self._held()
+        for ch in channels:
+            if ch == 0xFFFF or ch in self.disabled or ch in busy:
+                continue
+            item = self.config.get((ITEM["idle"], ch))
+            self.parked[ch] = item[2] if item else 0               # 0 = Hi-Z
 
     @property
     def target_id(self) -> int | None:
@@ -959,6 +991,7 @@ class Endpoint:
                 raise unavailable("held_by_settings", holder_fn=min(named & self.plan_from_config),
                                   holder_kind="settings_plan")
             self._check_plan(got)
+            self._refuse_disabled(ch for _, _, ch in got)          # a disabled channel (probe.config §1): cause 5
             if self.plan_roles is not None and len([a for a in self.plan if a[0] not in named]) + len(got) > self.plan_roles:
                 raise unavailable("limit")                          # plan_roles (core §8)
             self.plan = {a for a in self.plan if a[0] not in named} | set(got)
@@ -1034,11 +1067,14 @@ class Endpoint:
         return out
 
     def _drop_plan(self, fn: int) -> None:
+        released = set()
         for a in [a for a in self.plan if a[0] == fn]:
             self.gpio_modes.pop(a[2], None)
             self.plan.discard(a)
+            released.add(a[2])
         self.plan_from_config.discard(fn)
         self._uart_plan_changed(fn)
+        self._park(released)
 
     # ---- oep.fixture.uart's stream: made by the plan, gone with it (fixture §2) ---------------------
     def _uart_plan_changed(self, fn: int) -> None:
@@ -1129,12 +1165,13 @@ class Endpoint:
                 raise Reject(m.MALFORMED)
             live = [c.pair for c in self.conns.values() if c.fn == fn]
             full = len(live) >= self.max_connections.get(fn, 1)   # every seat taken: the live pairs only
+            self._refuse_disabled(ch for p in pairs if self._allows(fn, p) for ch in p)   # cause 5 (probe.config §1)
             if any(not self._allows(fn, p) or set(p) & self._held(fn, p) or (full and p not in live) for p in pairs):
                 raise Reject(m.UNAVAILABLE)                        # not allowed, held (§8.1), or no seat to try it on
             if not pairs:                                          # the count-0 list, from `skip` on (oep-if-debug §1)
                 skip = struct.unpack("<H", skip_tlv)[0] if skip_tlv is not None else 0
-                pairs = [p for p in self._allowed_pairs(fn)
-                         if not set(p) & self._held(fn, p) and (not full or p in live)][skip:]
+                pairs = [p for p in self._allowed_pairs(fn) if not set(p) & self.disabled   # disabled: not listed
+                         and not set(p) & self._held(fn, p) and (not full or p in live)][skip:]
             pairs = pairs[:255]                                    # tried is a u8
             found = []
             for p in pairs:
@@ -1164,6 +1201,7 @@ class Endpoint:
                     raise Reject(m.UNSUPPORTED, bytes([_T_ATTACH["reset"] | m.TAG_CRITICAL]))   # not a reset line here (§3)
                 if hold_ms > self.max_op_ms:
                     raise Reject(m.UNSUPPORTED, bytes([_T_ATTACH["reset"] | m.TAG_CRITICAL]))   # longer than one request may take
+                self._refuse_disabled([channel])                   # a disabled reset line: cause 5 (probe.config §1)
                 if any(a[2] == channel for a in self.plan):
                     raise unavailable("pin_in_use", channel, next(a[0] for a in self.plan if a[2] == channel), "plan")
             idle_clock = idle_tlv[0] if idle_tlv is not None else 0
@@ -1241,13 +1279,17 @@ class Endpoint:
             pair = struct.unpack("<HH", got[0x03])
             if not self._allows(fn, pair):
                 raise Reject(m.UNSUPPORTED, bytes([_T_ATTACH["pins"] | m.TAG_CRITICAL]))   # not a pair this wire offers (core §4.3 order 6)
+            self._refuse_disabled(pair)                            # a disabled channel: cause 5 (probe.config §1)
             if set(pair) & self._held(fn, pair):
                 raise unavailable("pin_in_use", next(iter(set(pair) & self._held(fn, pair))))   # held (§8.1)
             return pair
         live = [c.pair for c in self.conns.values() if c.fn == fn]
         if len(live) == 1:
             return live[0]                                         # no pins: the wire's one live connection
-        allowed = self._allowed_pairs(fn)
+        offered = self._allowed_pairs(fn)
+        allowed = [p for p in offered if not set(p) & self.disabled]   # the probe never picks a disabled channel
+        if not live and len(offered) == 1 and not allowed:
+            self._refuse_disabled(offered[0])                      # its one pair is disabled: cause 5
         if live or len(allowed) != 1:
             raise Reject(m.UNAVAILABLE)                            # the host chooses among several
         return allowed[0]
@@ -1281,8 +1323,10 @@ class Endpoint:
 
     def _close_conn(self, cid: int, mark: int) -> None:
         """The connection goes; its streams close (mark `mark`, then closed 4) and stay readable (console §2)."""
-        self.conns.pop(cid, None)
+        gone = self.conns.pop(cid, None)
         self.resources.pop(cid, None)
+        if gone is not None:
+            self._park(gone.pair)                                  # its pins are free again: their idle state
         for (c, _), sid in list(self.stream_keys.items()):
             if c == cid and not self.streams[sid].closed:
                 self.streams[sid].add_mark(mark, self.now_ns())
@@ -1612,6 +1656,7 @@ class Endpoint:
                 if not self.gpio_allowed.get(fn, 0xFF) >> mode & 1:   # a mode it does not drive (fixture §1)
                     raise unsupported_fixed(m.tlv(_UNA["channel"], struct.pack("<H", ch)), m.tlv(index_tag, bytes([i])))
             for i, (ch, mode) in enumerate(pairs):
+                self._refuse_disabled([ch], m.tlv(index_tag, bytes([i])))   # disabled: cause 5 (probe.config §1)
                 if ch not in mine:                                 # the position as the gpio's TLV (fixture §1)
                     raise unavailable(channel=ch, extra=m.tlv(index_tag, bytes([i])))
             for ch, mode in pairs:
@@ -1623,6 +1668,7 @@ class Endpoint:
             chans = [t.take("H") for _ in range(n)]
             _, ignored = t.tail()
             for i, ch in enumerate(chans):
+                self._refuse_disabled([ch], m.tlv(_GPIO.tlv["unavailable_payload"]["index"], bytes([i])))
                 if ch not in mine:
                     raise unavailable(channel=ch, extra=m.tlv(_GPIO.tlv["unavailable_payload"]["index"], bytes([i])))
             levels = []
@@ -1872,6 +1918,10 @@ class Endpoint:
         places = [(s.wire_fn, s.pair) for s in slots.values()]
         if len(set(places)) != len(places):
             raise Reject(m.MALFORMED)                              # two slots on one place: the settings contradict
+        disabled = {key for tag, key in new if tag == ITEM["disable"]}
+        idles = {key for tag, key in new if tag == ITEM["idle"]}
+        if disabled & idles:
+            raise Reject(m.MALFORMED)                              # idle and disable for one channel (probe.config §1)
         for fn in self.pairs:                                      # every wire (pin_roles wires have an empty list)
             if sum(1 for s in slots.values() if s.wire_fn == fn and s.attach == SLOT_ATTACH["at_boot"]) > \
                     self.max_connections.get(fn, 1):
@@ -1911,13 +1961,16 @@ class Endpoint:
         self.slots = slots                                         # the pin check below sees the new slots
         try:
             self._check_plan(want)
+            self._check_disabled(new, disabled, plans, want, slots)
         except Reject:
             self.slots = {k: self._parse_slot(v) for (t, k), v in self.config.items() if t == ITEM["slot"]}
             raise
         # accepted: make it current
-        for fn in old_plan_fns - set(plans):
+        old_idle = {key: v for (tag, key), v in self.config.items() if tag == ITEM["idle"]}
+        repark = (self.disabled - disabled) | {key for key in idles | set(old_idle) if new.get((ITEM["idle"], key)) != old_idle.get(key)}
+        self.config = new                                          # the disable items first: a dropped plan's pins
+        for fn in old_plan_fns - set(plans):                       # are not parked when the same set disables them
             self._drop_plan(fn)
-        self.config = new
         for fn, assigned in plans.items():
             self.plan = {a for a in self.plan if a[0] != fn} | set(assigned)
             self.plan_from_config.add(fn)
@@ -1937,11 +1990,39 @@ class Endpoint:
                     self.flows.pop((port, key), None)
                 self.mixed_out.pop(port, None)
         self.binds = binds
+        if not boot:
+            self._park(repark)                                     # an idle item set, or a channel enabled again: now
         for n, s in slots.items():
             if s.attach == SLOT_ATTACH["at_boot"] and (boot or changed_slots is None or n in changed_slots):
                 self.slot_rt[n].evicted = False
                 self._auto_attach(n)
         self._refresh()
+
+    def _check_disabled(self, new: dict, disabled: set[int], plans: dict, want: list, slots: dict) -> None:
+        """probe.config §1 disable: a channel in use now (a plan, a connection, a slot this set keeps) cannot be disabled
+        (unavailable cause 1); an item naming a disabled channel (a plan, a slot's pins) is cause 5 with the channel."""
+        for ch in sorted(disabled - self.disabled):
+            for fn, _, c in sorted(self.plan):
+                if c != ch:
+                    continue
+                if fn in self.plan_from_config:
+                    if new.get((ITEM["plan"], fn)) == self.config.get((ITEM["plan"], fn)):
+                        raise unavailable("pin_in_use", ch, fn, "settings_plan")
+                elif fn not in plans:                              # a session's plan this set does not replace
+                    raise unavailable("pin_in_use", ch, fn, "plan")
+            conn = next((c for c in self.conns.values() if ch in c.pair), None)
+            if conn is not None:
+                raise unavailable("pin_in_use", ch, conn.fn, "connection")
+            for (tag, key), value in self.config.items():
+                if tag == ITEM["slot"] and new.get((tag, key)) == value and ch in self._parse_slot(value).pair:
+                    raise unavailable("pin_in_use", ch, holder_kind="slot")
+        self._refuse_disabled_in(disabled, [c for _, _, c in want] + [p for s in slots.values() for p in s.pair])
+
+    @staticmethod
+    def _refuse_disabled_in(disabled: set[int], channels: list[int]) -> None:
+        for ch in channels:
+            if ch != 0xFFFF and ch in disabled:
+                raise unavailable("held_by_settings", ch)
 
     def _parse_slot(self, v: bytes) -> Slot:
         """probe.config §1.1, refused in core §4.3's order: the form (malformed), then what this probe lacks
