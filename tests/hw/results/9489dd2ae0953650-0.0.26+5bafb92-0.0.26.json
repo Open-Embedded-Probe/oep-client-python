@@ -1,0 +1,203 @@
+{
+  "schema": 1,
+  "board": {
+    "id": "9489dd2ae0953650",
+    "kind": "rp2",
+    "profile": "promicrorp2350",
+    "model": "rp2350",
+    "port": "cdc:9489dd2ae0953650",
+    "unit_id": "9489dd2ae0953650",
+    "gpio": [
+      26,
+      27
+    ],
+    "disable": 28,
+    "uart": [
+      13,
+      12
+    ],
+    "notes": "SparkFun Pro Micro RP2350 (1b4f:0026, iProduct 'OEP probe (RP2350)'); no board-identify id: keyed by unit id"
+  },
+  "client": {
+    "version": "0.0.26",
+    "python": "3.13.3",
+    "commit": "1def4d7",
+    "dirty": false
+  },
+  "firmware": {
+    "before": {
+      "boot_id": 1860768310,
+      "revision": 1,
+      "max_frame": 1024,
+      "max_inflight": 8,
+      "window": 4096,
+      "firmware": "0.0.26",
+      "model": "rp2350",
+      "unit_id": "9489dd2ae0953650",
+      "chip": "rp2350 v3",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 2
+        }
+      ],
+      "max_op_ms": 10000
+    },
+    "source": {
+      "kind": "local",
+      "dir": "/home/mt/dev_oep/oep-probe-arduino",
+      "commit": "5bafb92",
+      "dirty": false,
+      "version": "0.0.26",
+      "profile": "promicrorp2350",
+      "command": "arduino-cli compile --profile promicrorp2350 --build-path /home/mt/.cache/oep-hw/build-path/promicrorp2350 --output-dir /home/mt/.cache/oep-hw/build/5bafb92/promicrorp2350 examples/Firmware/OepProbe",
+      "build_seconds": 5.2,
+      "images": {
+        "uf2": "/home/mt/.cache/oep-hw/build/5bafb92/promicrorp2350/OepProbe.ino.uf2"
+      }
+    },
+    "expected": "0.0.26",
+    "flashed": true,
+    "after": {
+      "boot_id": 1472164930,
+      "revision": 1,
+      "max_frame": 1024,
+      "max_inflight": 8,
+      "window": 4096,
+      "firmware": "0.0.26",
+      "model": "rp2350",
+      "unit_id": "9489dd2ae0953650",
+      "chip": "rp2350 v3",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 2
+        }
+      ],
+      "max_op_ms": 10000
+    }
+  },
+  "started": "2026-10-02T08:27:56+09:00",
+  "seconds": 22.8,
+  "host": {
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2+-x86_64-with-glibc2.39",
+    "python": "3.13.3"
+  },
+  "environment": {
+    "OEP_PROBE_DIR": "/home/mt/dev_oep/oep-probe-arduino",
+    "OEP_HW_PICOTOOL": "/tmp/claude-1000/-home-mt-dev-oep/97c2d659-a2f1-4977-906a-8a289d6c8404/scratchpad/tools/picotool/picotool",
+    "OEP_HW_BOARDS": "9489dd2ae0953650"
+  },
+  "tests": {
+    "flash": {
+      "port": "/dev/ttyACM6",
+      "tool": "picotool",
+      "command": "/tmp/claude-1000/-home-mt-dev-oep/97c2d659-a2f1-4977-906a-8a289d6c8404/scratchpad/tools/picotool/picotool load -x /home/mt/.cache/oep-hw/build/5bafb92/promicrorp2350/OepProbe.ino.uf2 --bus 1 --address 73",
+      "seconds": 2.0,
+      "tail": [
+        "Loading into Flash:   [===========================   ]  92%",
+        "Loading into Flash:   [============================  ]  95%",
+        "Loading into Flash:   [============================= ]  98%",
+        "Loading into Flash:   [==============================]  100%",
+        "",
+        "The device was rebooted to start the application."
+      ],
+      "boot_device": "RP2350 Boot 2e8a:000f serial 9489DD2AE0953650",
+      "seconds_total": 15.0,
+      "boot_seconds": 0.0,
+      "firmware_after": "0.0.26",
+      "verdict": "passed"
+    },
+    "identity": {
+      "boot_id": 1472164930,
+      "firmware": "0.0.26",
+      "model": "rp2350",
+      "unit_id": "9489dd2ae0953650",
+      "chip": "rp2350 v3",
+      "revision": 1,
+      "max_frame": 1024,
+      "max_inflight": 8,
+      "interfaces": [
+        "0:oep.core@1",
+        "1:oep.wire.rvswd@1",
+        "2:oep.target.riscv-dm@1",
+        "3:oep.target.console@1",
+        "4:oep.wire.swd@1",
+        "5:oep.target.arm-adi@1",
+        "6:oep.fixture.gpio@1",
+        "7:oep.fixture.uart@1",
+        "8:oep.probe.config@1",
+        "9:oep.fixture.analog@1"
+      ],
+      "boot_id_before": 1860768310,
+      "firmware_expected": "0.0.26",
+      "verdict": "passed"
+    },
+    "config": {
+      "storage_bytes": 384,
+      "slots_max": 4,
+      "items_before": 0,
+      "hash_before": 0,
+      "hash_set": 4116208488,
+      "items_after_set": 2,
+      "disabled_refused_as": "PinsTaken",
+      "hash_saved": 4116208488,
+      "storage": "applied",
+      "saved_hash": 4116208488,
+      "reboot": "skipped: no reset line from the host (a USB probe)",
+      "hash_after_unset": 0,
+      "saved_hash_final": 0,
+      "verdict": "passed"
+    },
+    "wire": {
+      "verdict": "skipped",
+      "why": "Skipped: no target wired (OEP_HW_TARGET=<name>[@swdio[,swclk]] says one is)"
+    },
+    "gpio": {
+      "channels": [
+        26,
+        27
+      ],
+      "levels": {
+        "26:output_high": 1,
+        "26:output_low": 0,
+        "26:input_pullup": 1,
+        "26:input_pulldown": 0,
+        "27:output_high": 1,
+        "27:output_low": 0,
+        "27:input_pullup": 1,
+        "27:input_pulldown": 0,
+        "both:input": [
+          0,
+          0
+        ]
+      },
+      "verdict": "passed"
+    },
+    "uart": {
+      "rx": 13,
+      "tx": 12,
+      "loopback": false,
+      "actual_115200": 115200,
+      "status_configured": "session",
+      "status_baud": 115200,
+      "status_format": 0,
+      "actual_9600": 9600,
+      "verdict": "passed"
+    },
+    "port_speed": {
+      "verdict": "skipped",
+      "why": "Skipped: port_speed is for a UART bridge probe only"
+    },
+    "session": {
+      "lease_ms": 1000,
+      "resumed_first": 0,
+      "expired": "session expired (lease 1000 ms): the lease lapsed and the probe swept this session's resources - open again",
+      "resumed_after_lapse": 2,
+      "forced_resumed": 0,
+      "forced_new_id": true,
+      "old_id_after_force": "locked by oep tests/hw force (2999 ms of its lease left)",
+      "verdict": "passed"
+    }
+  }
+}
