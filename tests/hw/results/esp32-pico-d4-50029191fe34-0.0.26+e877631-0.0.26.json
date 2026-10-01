@@ -1,0 +1,528 @@
+{
+  "schema": 1,
+  "board": {
+    "id": "esp32-pico-d4-50029191fe34",
+    "kind": "esp32",
+    "profile": "esp32",
+    "model": "esp32",
+    "port": "/run/board-identify/by-id/esp32-pico-d4-50029191fe34",
+    "flash_port": "/run/board-identify/by-id/esp32-pico-d4-50029191fe34",
+    "rates": [
+      1500000,
+      921600,
+      500000
+    ],
+    "gpio": [
+      25,
+      26
+    ],
+    "disable": 33,
+    "uart": [
+      32,
+      21
+    ],
+    "notes": "M5Stack ATOM (ESP32-PICO-D4), FTDI bridge; free for OEP tests"
+  },
+  "client": {
+    "version": "0.0.26",
+    "python": "3.13.3",
+    "commit": "2308d96",
+    "dirty": false
+  },
+  "firmware": {
+    "before": {
+      "boot_id": 2591787561,
+      "revision": 1,
+      "max_frame": 512,
+      "max_inflight": 2,
+      "window": 1024,
+      "firmware": "0.0.25",
+      "model": "esp32",
+      "unit_id": "50029191fe34",
+      "chip": "esp32picod4 v1.0",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 1
+        }
+      ],
+      "max_op_ms": 10000,
+      "port_speed": true
+    },
+    "source": {
+      "kind": "local",
+      "dir": "/home/mt/dev_oep/oep-probe-arduino",
+      "commit": "e877631",
+      "dirty": false,
+      "version": "0.0.26",
+      "profile": "esp32",
+      "command": "arduino-cli compile --profile esp32 --output-dir /home/mt/.cache/oep-hw/build/e877631/esp32 examples/Firmware/OepProbe",
+      "images": {
+        "merged": "/home/mt/.cache/oep-hw/build/e877631/esp32/OepProbe.ino.merged.bin",
+        "app": "/home/mt/.cache/oep-hw/build/e877631/esp32/OepProbe.ino.bin"
+      }
+    },
+    "expected": "0.0.26",
+    "flashed": true,
+    "after": {
+      "boot_id": 1736820107,
+      "revision": 1,
+      "max_frame": 512,
+      "max_inflight": 2,
+      "window": 1024,
+      "firmware": "0.0.26",
+      "model": "esp32",
+      "unit_id": "50029191fe34",
+      "chip": "esp32picod4 v1.0",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 1
+        }
+      ],
+      "max_op_ms": 10000,
+      "port_speed": true
+    }
+  },
+  "started": "2026-10-02T00:12:54+09:00",
+  "seconds": 216.0,
+  "host": {
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2+-x86_64-with-glibc2.39",
+    "python": "3.13.3"
+  },
+  "environment": {
+    "OEP_PROBE_DIR": "/home/mt/dev_oep/oep-probe-arduino",
+    "OEP_HW_BOARDS": "esp32-pico-d4-50029191fe34"
+  },
+  "tests": {
+    "flash": {
+      "port": "/run/board-identify/by-id/esp32-pico-d4-50029191fe34",
+      "tool": "esptool",
+      "command": "/home/mt/.local/bin/esptool --chip esp32 -p /run/board-identify/by-id/esp32-pico-d4-50029191fe34 -b 115200 --after hard-reset write-flash 0x0 /home/mt/.cache/oep-hw/build/e877631/esp32/OepProbe.ino.merged.bin",
+      "seconds": 40.3,
+      "tail": [
+        "\u001b[KWriting at 0x0006c13d [===========================>  ]  93.6% 245760/262662 bytes... ",
+        "\u001b[KWriting at 0x00382b9f [============================> ]  99.8% 262144/262662 bytes... ",
+        "\u001b[KWriting at 0x00400000 [==============================] 100.0% 262662/262662 bytes... ",
+        "\u001b[1A\u001b[2K\u001b[1A\u001b[2KWrote 4194304 bytes (262662 compressed) at 0x00000000 in 32.7 seconds (1025.6 kbit/s).",
+        "Verifying written data...",
+        "\u001b[1A\u001b[2KHash of data verified.",
+        "",
+        "Hard resetting via RTS pin..."
+      ],
+      "boot_seconds": 0.2,
+      "firmware_after": "0.0.26",
+      "verdict": "passed"
+    },
+    "identity": {
+      "boot_id": 1736820107,
+      "firmware": "0.0.26",
+      "model": "esp32",
+      "unit_id": "50029191fe34",
+      "chip": "esp32picod4 v1.0",
+      "revision": 1,
+      "max_frame": 512,
+      "max_inflight": 2,
+      "interfaces": [
+        "0:oep.core@1",
+        "1:oep.wire.swio@1",
+        "2:oep.target.riscv-dm@1",
+        "3:oep.target.console@1",
+        "4:oep.fixture.gpio@1",
+        "5:oep.fixture.uart@1",
+        "6:oep.fixture.i2c-target@1",
+        "7:oep.fixture.spi-target@1",
+        "8:oep.fixture.logic@1",
+        "9:oep.probe.config@1",
+        "10:oep.fixture.analog@1",
+        "11:oep.fixture.capture-group@1"
+      ],
+      "boot_id_before": 2591787561,
+      "firmware_expected": "0.0.26",
+      "verdict": "passed"
+    },
+    "config": {
+      "storage_bytes": 384,
+      "slots_max": 4,
+      "items_before": 0,
+      "hash_before": 0,
+      "hash_set": 1955047637,
+      "items_after_set": 2,
+      "disabled_refused_as": "PinsTaken",
+      "hash_saved": 1955047637,
+      "storage": "applied",
+      "saved_hash": 1955047637,
+      "reboot": {
+        "boot_id_before": 1736820107,
+        "boot_id_after": 1376622347,
+        "seconds": 0.74
+      },
+      "storage_after_reboot": "applied",
+      "saved_hash_after_reboot": 1955047637,
+      "hash_after_reboot": 1955047637,
+      "hash_after_unset": 0,
+      "saved_hash_final": 0,
+      "verdict": "passed"
+    },
+    "wire": {
+      "verdict": "skipped",
+      "why": "Skipped: no target wired (OEP_HW_TARGET=<name>[@swdio[,swclk]] says one is)"
+    },
+    "gpio": {
+      "channels": [
+        25,
+        26
+      ],
+      "levels": {
+        "25:output_high": 1,
+        "25:output_low": 0,
+        "25:input_pullup": 1,
+        "25:input_pulldown": 0,
+        "26:output_high": 1,
+        "26:output_low": 0,
+        "26:input_pullup": 1,
+        "26:input_pulldown": 0,
+        "both:input": [
+          0,
+          0
+        ]
+      },
+      "verdict": "passed"
+    },
+    "uart": {
+      "rx": 32,
+      "tx": 21,
+      "loopback": false,
+      "actual_115200": 115942,
+      "status_configured": "session",
+      "status_baud": 115942,
+      "status_format": 0,
+      "actual_9600": 9603,
+      "verdict": "passed"
+    },
+    "port_speed": {
+      "rates": [
+        "now",
+        1500000,
+        921600,
+        500000
+      ],
+      "inflight": [
+        1,
+        2
+      ],
+      "frames": 100,
+      "size": 496,
+      "timeout": 0.3,
+      "results": [
+        {
+          "asked": "now",
+          "rate": 115200,
+          "actual": null,
+          "switched": false,
+          "why": "",
+          "cells": [
+            {
+              "rate": 115200,
+              "pattern": "in",
+              "inflight": 1,
+              "size": 496,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 4.703321516979486,
+              "kb_s": 10.545738755247493,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 115200,
+              "pattern": "in",
+              "inflight": 2,
+              "size": 496,
+              "frames": 100,
+              "ok": 98,
+              "broken": 0,
+              "lost": 2,
+              "seconds": 4.480841694981791,
+              "kb_s": 10.847961902880286,
+              "error": "",
+              "error_rate": 0.02
+            },
+            {
+              "rate": 115200,
+              "pattern": "out",
+              "inflight": 1,
+              "size": 496,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 4.802624654956162,
+              "kb_s": 10.327686122381918,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 115200,
+              "pattern": "out",
+              "inflight": 2,
+              "size": 496,
+              "frames": 100,
+              "ok": 93,
+              "broken": 0,
+              "lost": 7,
+              "seconds": 4.452980823931284,
+              "kb_s": 10.358903804862157,
+              "error": "",
+              "error_rate": 0.07
+            },
+            {
+              "rate": 115200,
+              "pattern": "duplex",
+              "inflight": 1,
+              "size": 496,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 4.71398529689759,
+              "kb_s": 10.521882627135726,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 115200,
+              "pattern": "duplex",
+              "inflight": 2,
+              "size": 496,
+              "frames": 100,
+              "ok": 34,
+              "broken": 0,
+              "lost": 66,
+              "seconds": 1.8778704709839076,
+              "kb_s": 8.980385101409114,
+              "error": "",
+              "error_rate": 0.66
+            }
+          ]
+        },
+        {
+          "asked": 1500000,
+          "rate": 1500000,
+          "actual": 1500586,
+          "switched": true,
+          "why": "",
+          "cells": [
+            {
+              "rate": 1500000,
+              "pattern": "in",
+              "inflight": 1,
+              "size": 496,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 0.6003783519845456,
+              "kb_s": 82.61457102183584,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 1500000,
+              "pattern": "in",
+              "inflight": 2,
+              "size": 496,
+              "frames": 100,
+              "ok": 31,
+              "broken": 0,
+              "lost": 69,
+              "seconds": 0.3606960528995842,
+              "kb_s": 42.62868938097472,
+              "error": "",
+              "error_rate": 0.69
+            },
+            {
+              "rate": 1500000,
+              "pattern": "out",
+              "inflight": 1,
+              "size": 496,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 0.756845947005786,
+              "kb_s": 65.53513326751133,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 1500000,
+              "pattern": "out",
+              "inflight": 2,
+              "size": 496,
+              "frames": 100,
+              "ok": 23,
+              "broken": 0,
+              "lost": 77,
+              "seconds": 0.449966779910028,
+              "kb_s": 25.3529827297052,
+              "error": "",
+              "error_rate": 0.77
+            },
+            {
+              "rate": 1500000,
+              "pattern": "duplex",
+              "inflight": 1,
+              "size": 496,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 0.6590075460262597,
+              "kb_s": 75.26469203438161,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 1500000,
+              "pattern": "duplex",
+              "inflight": 2,
+              "size": 496,
+              "frames": 100,
+              "ok": 0,
+              "broken": 0,
+              "lost": 100,
+              "seconds": 0.2369195290375501,
+              "kb_s": 0.0,
+              "error": "",
+              "error_rate": 1.0
+            }
+          ]
+        },
+        {
+          "asked": 921600,
+          "rate": 921600,
+          "actual": 922190,
+          "switched": false,
+          "why": "no confirm at the new rate",
+          "cells": []
+        },
+        {
+          "asked": 500000,
+          "rate": 500000,
+          "actual": 500000,
+          "switched": true,
+          "why": "",
+          "cells": [
+            {
+              "rate": 500000,
+              "pattern": "in",
+              "inflight": 1,
+              "size": 496,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 1.3576556969201192,
+              "kb_s": 36.533563047331526,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 500000,
+              "pattern": "in",
+              "inflight": 2,
+              "size": 496,
+              "frames": 100,
+              "ok": 75,
+              "broken": 0,
+              "lost": 25,
+              "seconds": 1.0656244340352714,
+              "kb_s": 34.90910944968883,
+              "error": "",
+              "error_rate": 0.25
+            },
+            {
+              "rate": 500000,
+              "pattern": "out",
+              "inflight": 1,
+              "size": 496,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 1.5705781020224094,
+              "kb_s": 31.580728100137673,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 500000,
+              "pattern": "out",
+              "inflight": 2,
+              "size": 496,
+              "frames": 100,
+              "ok": 67,
+              "broken": 0,
+              "lost": 33,
+              "seconds": 1.1889634269755334,
+              "kb_s": 27.950397166155938,
+              "error": "",
+              "error_rate": 0.33
+            },
+            {
+              "rate": 500000,
+              "pattern": "duplex",
+              "inflight": 1,
+              "size": 496,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 1.4268904780037701,
+              "kb_s": 34.76090195050622,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 500000,
+              "pattern": "duplex",
+              "inflight": 2,
+              "size": 496,
+              "frames": 100,
+              "ok": 0,
+              "broken": 0,
+              "lost": 100,
+              "seconds": 0.45409566699527204,
+              "kb_s": 0.0,
+              "error": "",
+              "error_rate": 1.0
+            }
+          ]
+        }
+      ],
+      "seconds": 37.4,
+      "failing": [],
+      "link_counters": {
+        "corrupt": 140,
+        "stale": 140,
+        "noise": 62972,
+        "retries": 2,
+        "resyncs": 0
+      },
+      "verdict": "passed"
+    },
+    "session": {
+      "lease_ms": 1000,
+      "resumed_first": 0,
+      "expired": "session expired (lease 1000 ms): the lease lapsed and the probe swept this session's resources - open again",
+      "resumed_after_lapse": 2,
+      "forced_resumed": 0,
+      "forced_new_id": true,
+      "old_id_after_force": "locked by oep tests/hw force (2996 ms of its lease left)",
+      "verdict": "passed"
+    }
+  }
+}

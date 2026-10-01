@@ -11,7 +11,8 @@ target の知識は host にある、という OEP の分担に従う。probe �
 
 ```sh
 pip install oep-client-python     # PyPI (import oep_client); a checkout: pip install -e <checkout>
-uv run pytest                                                            # in a checkout
+uv run pytest                                                            # in a checkout（偽の probe。実機なし）
+OEP_HW_BOARDS=<board id> OEP_PROBE_DIR=<oep-probe-arduino の checkout> uv run pytest tests/hw -m hw   # 実機: tests/hw/README.ja.md
 ```
 
 `import oep_client` だけで使える（`sys.path` に `src/` を足す使い方は不要になった）。番号の表は `tools/sync_registry.sh` で

@@ -14,7 +14,8 @@ here.
 
 ```sh
 pip install oep-client-python     # PyPI (import oep_client); a checkout: pip install -e <checkout>
-uv run pytest                     # in a checkout
+uv run pytest                     # in a checkout (the fake probe; no hardware)
+OEP_HW_BOARDS=<board id> OEP_PROBE_DIR=<oep-probe-arduino checkout> uv run pytest tests/hw -m hw   # a real probe: tests/hw/README.md
 ```
 
 `import oep_client` is all it takes. The registry is copied from oep-spec with `tools/sync_registry.sh`. PyPI's
