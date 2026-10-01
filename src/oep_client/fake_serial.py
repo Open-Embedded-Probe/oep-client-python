@@ -17,7 +17,8 @@ bytes to send, or None to send nothing (fault injection for tests).
 port_speed (core §3.5): every closed candidate tells the endpoint whether it was a frame (`Endpoint.speed_frame`), a
 switch or revert a request asked for happens once its answer is queued (at the old speed), and the endpoint's
 `broken_rates` break frames at the port's rate now: a candidate from the host is then not a frame, an answer or push
-goes out with a spoiled CRC. `FakeSerialStream` is the port as a pyserial-shaped stream for an in-process host, with
+goes out with a spoiled CRC (a `duplex` one only while a request of its size comes in with such an answer still
+unread: the request, or that answer, breaks). `FakeSerialStream` is the port as a pyserial-shaped stream for an in-process host, with
 the host's own `baudrate`: while it differs from the probe's, every byte either way arrives garbled.
 """
 
@@ -40,6 +41,7 @@ class FakeSerialPort:
         self.frames: list[bytes] = []                # framed answers waiting to go out
         self.answers = 0
         self.garble: Callable[[bytes, int], bytes] | None = None   # (frame, the rate it goes at) -> what arrives
+        self.spoiled: set[int] = set()               # the waiting answers a duplex BrokenRate already broke
 
     def feed(self, data: bytes) -> None:
         now = self.ep.now()
@@ -65,8 +67,10 @@ class FakeSerialPort:
         self.cand = None
         if not body:
             return                                   # 0x00 0x00: an empty frame
+        size = len(body) + 2
+        duplex = self._both_ways(size)
         try:
-            if self.ep.breaks(self.index, len(body) + 2, to_host=False):
+            if self.ep.breaks(self.index, size, to_host=False, duplex=duplex):
                 raise cobs.CorruptFrame("the line's rate breaks this frame")
             msg = cobs.unframe(body)
         except cobs.CorruptFrame:
@@ -90,6 +94,22 @@ class FakeSerialPort:
             self.frames.append(self._line(wire))
         self.ep.speed_after_answer()                 # port_speed: switch (or revert) now the answer is out
 
+    def _both_ways(self, size: int) -> bool:
+        """A request of `size` bytes came in: with a BrokenRate that breaks only both ways at once (`duplex`), whether
+        an answer of its min_size or more is still unread (both ways busy) - and then that answer breaks if the rate
+        breaks frames towards the host."""
+        b = self.ep.duplex_rate(self.index)
+        if b is None or size < b.min_size:
+            return False
+        big = [k for k, f in enumerate(self.frames) if len(f) >= b.min_size]
+        if not big:
+            return False
+        k = big[-1]                                  # the answer on the line now (the latest); never spoiled twice
+        if k not in self.spoiled and self.ep.breaks(self.index, len(self.frames[k]), to_host=True, duplex=True):
+            self.frames[k] = _spoil(self.frames[k])
+            self.spoiled.add(k)
+        return True
+
     def _gap(self, now: int) -> None:
         if self.cand is not None and now - self.last_ms >= GAP_MS:
             raw, self.cand = bytes(self.cand), None
@@ -109,9 +129,7 @@ class FakeSerialPort:
     def _line(self, wire: bytes) -> bytes:
         """A framed message as the line delivers it at the port's rate now (`Endpoint.broken_rates`, `garble`)."""
         if self.ep.breaks(self.index, len(wire), to_host=True):
-            body = bytearray(cobs.decode(wire[1:-1]))
-            body[-1] ^= 0xFF                         # the CRC's high byte
-            wire = b"\x00" + cobs.encode(bytes(body)) + b"\x00"
+            wire = _spoil(wire)
         return self.garble(wire, self.ep.port_baud(self.index)) if self.garble else wire
 
     def output(self, room: int = 4096) -> bytes:
@@ -119,6 +137,7 @@ class FakeSerialPort:
         out = bytearray()
         while self.frames and len(out) + len(self.frames[0]) <= max(room, len(self.frames[0])):
             out += self.frames.pop(0)
+            self.spoiled = {k - 1 for k in self.spoiled if k}
             if len(out) >= room:
                 return bytes(out)
         while len(out) < room:
@@ -127,6 +146,16 @@ class FakeSerialPort:
                 break
             out += chunk
         return bytes(out)
+
+
+def _spoil(wire: bytes) -> bytes:
+    """A framed message with its CRC's high byte spoiled (a frame the line broke); bytes that are no frame as they are."""
+    try:
+        body = bytearray(cobs.decode(wire[1:-1]))
+    except cobs.CorruptFrame:
+        return wire
+    body[-1] ^= 0xFF
+    return b"\x00" + cobs.encode(bytes(body)) + b"\x00"
 
 
 def _garble(data: bytes) -> bytes:

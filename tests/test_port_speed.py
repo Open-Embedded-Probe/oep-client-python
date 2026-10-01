@@ -200,7 +200,7 @@ def in_process(profile=fake.esp32_v003, lease=10000):
     return ep, hst, lk
 
 
-FAST = dict(verify_bytes=2048, verify_s=0.3, verify_ms=600)
+FAST = dict(verify_bytes=2048, verify_s=0.3, verify_ms=900, duplex_s=0.2, duplex_frames=16)
 
 
 def test_commit_at_a_good_rate_with_the_report():
@@ -275,6 +275,91 @@ def test_a_raised_link_keeps_the_line_alive_when_quiet():
     hst.end()
     time.sleep(1.2)
     assert not lk.keep_alive()                                  # back at the boot speed: none
+
+
+def test_a_rate_that_breaks_only_both_ways_at_once_fails_the_duplex_phase():
+    ep, hst, lk = in_process()
+    ep.broken_rates[921600] = endpoint.BrokenRate(min_size=40, duplex=True)   # each way alone passes
+    report = link.raise_speed(hst, [921600, 500000], **FAST)
+    a, b = report.trials
+    assert not a.committed and a.why == "broke both ways at once" and a.broken_duplex > 0
+    assert a.broken_in == a.broken_out == 0 and a.in_kb_s > 0 and a.out_kb_s > 0
+    assert b.committed and b.duplex_kb_s > 0 and b.duplex_bytes > 0 and report.duplex_kb_s == b.duplex_kb_s
+    assert report.chosen == 500000 and ep.port_baud(0) == 500000
+    text = report.to_text()
+    assert "duplex KB/s" in text and "broke both ways at once" in text
+    q = endpoint.BrokenRate(min_size=40, duplex=True, to_probe=False)        # the answer breaks instead
+    ep2, hst2, lk2 = in_process()
+    ep2.broken_rates[921600] = q
+    report = link.raise_speed(hst2, [921600], **FAST)
+    assert report.trials[0].why == "broke both ways at once" and report.chosen is None and lk2.baud == 115200
+    hst2.keepalive()
+
+
+def raised_in_use(lease=10000):
+    ep, hst, lk = in_process(lease=lease)
+    report = link.raise_speed(hst, [921600], **FAST)
+    assert report.chosen == 921600
+    return ep, hst, lk, report
+
+
+def test_in_use_three_broken_frames_within_5_s_step_down_for_the_session():
+    ep, hst, lk, report = raised_in_use()
+    ep.broken_rates[921600] = endpoint.BrokenRate(to_probe=False, every=4)   # answers only: the probe sees nothing
+    for _ in range(16):
+        hst.request(0, m.OP_LOCK_STATE)                                      # every one answered (a resend at once)
+    assert lk.baud == 115200 and ep.port_baud(0) == 115200
+    assert report.stepped_down and "3 broken frames" in report.down_why and report.chosen is None
+    assert report.rate == 115200 and "stepped down" in report.to_text()
+    assert ep.holder is not None and ep.holder == hst.session                # the lease held throughout
+    hst.keepalive()
+    again = link.raise_speed(hst, [921600], **FAST)                          # not again in this session
+    assert again.trials[0].why.startswith("stepped down") and again.chosen is None and lk.baud == 115200
+    hst.end()
+    core.take(hst, 10000)                                                    # a new session may try it again
+    del ep.broken_rates[921600]
+    assert link.raise_speed(hst, [921600], **FAST).chosen == 921600
+
+
+def test_in_use_broken_requests_step_down_too_and_the_request_goes_on_at_base():
+    ep, hst, lk, report = raised_in_use()
+    ep.broken_rates[921600] = endpoint.BrokenRate(to_host=False, every=3)    # the probe sees broken candidates
+    for _ in range(12):
+        hst.request(0, m.OP_LOCK_STATE)
+    assert lk.baud == 115200 and ep.port_baud(0) == 115200 and report.stepped_down
+    assert ep.holder == hst.session
+    hst.keepalive()
+
+
+def test_in_use_a_single_broken_frame_does_not_step_down():
+    ep, hst, lk, report = raised_in_use()
+    ep.broken_rates[921600] = endpoint.BrokenRate(to_probe=False, every=4)
+    for _ in range(4):
+        hst.request(0, m.OP_LOCK_STATE)
+    del ep.broken_rates[921600]
+    for _ in range(10):
+        hst.request(0, m.OP_LOCK_STATE)
+    assert lk.baud == 921600 and ep.port_baud(0) == 921600 and not report.stepped_down and lk.retries == 1
+    time.sleep(0.1)
+    ep.broken_rates[921600] = endpoint.BrokenRate(to_probe=False, every=4)   # two more, but the first is old enough
+    lk.strikes = [time.monotonic() - link.STRIKE_WINDOW_S]
+    for _ in range(8):
+        hst.request(0, m.OP_LOCK_STATE)
+    assert lk.baud == 921600 and not report.stepped_down
+
+
+def test_no_answer_at_a_raised_rate_falls_back_well_inside_the_lease():
+    ep, hst, lk, report = raised_in_use(lease=3000)
+    lk.timeout = 3.0                                                         # the default: 2 x 3 s would pass the lease
+    ep._speed_revert()                                                       # the probe went back by itself, silently
+    t0 = time.monotonic()
+    r = hst.request(0, m.OP_LOCK_STATE)                                      # sent again at the boot speed
+    took = time.monotonic() - t0
+    assert r.succeeded and took < 2.0 and lk.baud == 115200
+    assert report.lost and report.stepped_down and "no answer" in report.down_why
+    assert ep.holder == hst.session
+    again = link.raise_speed(hst, [921600], **FAST)
+    assert again.trials[0].why.startswith("stepped down") and lk.baud == 115200
 
 
 def second_host(ep):

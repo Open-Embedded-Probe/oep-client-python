@@ -39,7 +39,8 @@ define:
   verify_ms without a commit or at a broken candidate, a commit after idle_ms (at most port_speed_idle_max_ms, 3000;
   0 and anything longer count as that maximum) with no good frame or 3 broken
   candidates within 1 s, the session's end reverts after its answer. The line itself is modelled by `broken_rates`
-  (rate -> BrokenRate): frames at such a rate break, from a size and in the directions given (`fake_serial` applies it).
+  (rate -> BrokenRate): frames at such a rate break, from a size and in the directions given, only both ways at once
+  (`duplex`), only every Nth (`every`) (`fake_serial` applies it).
 
 Every other non-core fn gets two stand-in operations so the session rules can be exercised - FAKE ONLY, they mean
 nothing on a real probe:  0x01 write(u32) changes state, 0x02 read -> u32 needs no lock.
@@ -317,6 +318,16 @@ class BrokenRate:
     min_size: int = 0
     to_host: bool = True
     to_probe: bool = True
+    duplex: bool = False       # only while both ways carry such frames at once (a request of min_size and more comes in
+                               # while an answer of min_size and more is still unread): the request breaks (to_probe),
+                               # the unread answer breaks (to_host)
+    every: int = 1             # of the frames that would break, only every Nth does (1: all)
+    seen: int = 0              # the frames that would have broken so far (`every` counts these)
+
+    def hit(self) -> bool:
+        """One more frame that would break: True when this one does (`every`)."""
+        self.seen += 1
+        return self.seen % max(1, self.every) == 0
 
 
 PORT_SPEED_TAG = reg.CORE.tlv["describe"]["port_speed"]
@@ -1218,10 +1229,19 @@ class Endpoint:
             return self.speed_rate
         return self.port_speed_base or 115200
 
-    def breaks(self, port: int, size: int, to_host: bool) -> bool:
-        """The line model: a frame of `size` bytes on `port` at its rate now breaks (`broken_rates`)."""
+    def breaks(self, port: int, size: int, to_host: bool, duplex: bool = False) -> bool:
+        """The line model: a frame of `size` bytes on `port` at its rate now breaks (`broken_rates`). duplex: the other
+        way carries a frame of the rate's min_size or more at the same time (a BrokenRate with `duplex` breaks only
+        then)."""
         b = self.broken_rates.get(self.port_baud(port))
-        return b is not None and size >= b.min_size and (b.to_host if to_host else b.to_probe)
+        if b is None or size < b.min_size or not (b.to_host if to_host else b.to_probe) or (b.duplex and not duplex):
+            return False
+        return b.hit()
+
+    def duplex_rate(self, port: int) -> BrokenRate | None:
+        """The rate `port` runs at now when it breaks only both ways at once (fake_serial checks the unread answers)."""
+        b = self.broken_rates.get(self.port_baud(port))
+        return b if b is not None and b.duplex else None
 
     def speed_after_answer(self) -> None:
         """The answer that asked for a switch or a revert is out (at the old speed): now do it."""

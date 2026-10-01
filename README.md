@@ -100,7 +100,9 @@ print(hst.link.speed.to_text())             # every rate tried: actual, in / out
 
 Each rate in order: `try` (answered at the speed now, then the probe switches) -> the host switches -> a verify both ways
 with max_frame-sized frames (link_source / link_sink, pipelined) for `verify_bytes` or `verify_s`, counting broken frames
-and measuring KB/s each way -> `commit` when nothing broke, else revert and back to the boot speed, confirmed there (a
+and measuring KB/s each way -> both ways at once at the in-flight that passed (link_source and link_sink interleaved,
+about 1 s and at least 64 frames, `duplex_kb_s`; a line that carries each way alone can still break under duplex use - a
+CH340 at 921600 did) -> `commit` when nothing broke, else revert and back to the boot speed, confirmed there (a
 probe whose revert was lost waits out its `verify_ms`). The first rate that passes is kept; a rate the probe's UART cannot
 make is skipped. Which rates pass depends on the bridge chip and its driver (an FTDI took only 3 MHz / n, a CH340 921600
 but not 1500000 towards the host: oep-spec docs/uart-speed-negotiation.ja.md), so the host chooses them. The report
@@ -111,7 +113,10 @@ line goes quiet (`idle_ms`, at most `port_speed_idle_max_ms` = 3 s; a host that 
 that): while raised the link sends a keepalive before a request when it has been quiet for 1 s, and `hst.link.keep_alive()`
 does the same for a caller that sits idle for long; opening a serial port retries its first confirm for about 4 s to
 wait out a rate left over. The link follows an `end` at once, and a request that goes unanswered at a raised rate (its
-resend too) takes the link back to the boot speed, confirmed, and goes once more there - it never wedges. A probe
+resend too) takes the link back to the boot speed, confirmed, and goes once more there - it never wedges; while raised
+each wait for an answer is at most a quarter of the lease, so this ends well inside it. In use, 3 broken frames or
+resends within 5 s step the link down: port_speed revert at the raised rate, the boot speed, a confirm, the request
+again there. A rate left either way is not used again in that session (`speed.stepped_down`, `speed.down_why`). A probe
 without the feature answers `not supported` and stays at its speed. Behind a broker (TCP) the broker does this, not the
 client. Serial ports are also opened in the driver's low-latency mode where it has one (an FTDI's latency timer 16 -> 1 ms
 tripled a UART bridge's throughput). `open_host(..., baud=)` names the boot speed when the board's profile is not 115200.
