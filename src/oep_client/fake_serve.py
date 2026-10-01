@@ -29,6 +29,11 @@ Options:
   --uart-plan           the first oep.fixture.uart gets its RX / TX plan at boot, as if saved (the jig's "DUT TX" /
                         "DUT RX" labels when the profile has them, else the first free channels); configure then works
   --uart-rx TEXT        what arrives on that UART's RX every --every ms once it is configured (%d = a counter)
+  --no-port-speed       the profile's port_speed (core §3.5; esp32-v003 has it) off: the op is unknown_operation
+  --broken-rate SPEC    port_speed's line model: frames at RATE break (repeatable). SPEC is RATE[:MIN_SIZE][:in|out]:
+                        only frames of MIN_SIZE bytes and more on the wire (default every frame), only towards the
+                        host (in) or the probe (out) (default both). The fake cannot see the host's own rate (a pty,
+                        TCP): only the probe's rate decides
   --run-hook SPEC       what riscv-dm run does on every target: SPEC is module:function or path/file.py:function,
                         called as function(target, pc, regs) -> (stopped, dpc, elapsed_us). `target` is the
                         endpoint.FakeTarget (mem = word address -> value, regs = regno -> value, halted, dpc), so a
@@ -72,6 +77,13 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
         for tg in ep.targets.values():
             tg.run_hook = (lambda t: lambda pc, regs: hook(t, pc, regs))(tg)
     ep.capture_slipped = getattr(a, "capture_slipped", False)
+    if getattr(a, "no_port_speed", False):
+        ep.port_speed_base = None
+    for spec in getattr(a, "broken_rate", []):
+        rate, *rest = spec.split(":")
+        size = next((int(x) for x in rest if x.isdigit()), 0)
+        way = next((x for x in rest if x in ("in", "out")), None)
+        ep.broken_rates[int(rate)] = endpoint.BrokenRate(size, to_host=way != "out", to_probe=way != "in")
     for n in a.absent:
         ep.targets[(wire, ep.pairs[wire][n])].present = False
     items = []
@@ -324,6 +336,8 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--run-hook")
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--capture-slipped", action="store_true")
+    ap.add_argument("--no-port-speed", action="store_true")
+    ap.add_argument("--broken-rate", action="append", default=[])
     a = ap.parse_args(argv)
     if a.tcp is None and a.framing == "length":
         ap.error("--framing length is for --tcp")

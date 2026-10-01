@@ -75,11 +75,36 @@ oep config slot <probe> --name x035 --wire rvswd --pins 2,54 --attach at-boot --
 oep config bind <probe> --port 1 --mode last-reset --stream slot:x035
 oep config uart <probe> oep.fixture.uart 115200 --format 8N1   # その UART の plan に RX / TX が付くたびに掛かる
 oep config save <probe>                      # 再起動の後も残す（remove = unset、erase もある）
+oep speed <probe> 1500000,921600,500000      # port_speed: UART bridge の速い速さを試し、結果を出す（下）
 ```
 
 `<probe>` はシリアルの口、`tcp://HOST:PORT`、`usb[:VID:PID[:SERIAL]]`。変更はロックを取り（owner "oep config"）、終わったら
 セッションを閉じる。変更はすぐ効き、`save` の後は再起動しても残る。
 実機での一通りの確認は ArduinoCore-CH32 の `tests/manual/oep_smoke/`（`oep_smoke.py`、`oep_probe_checks.py`）。
+
+## UART bridge を速くする（port_speed、使うときだけ）
+
+describe に `port_speed` を宣言する probe（oep-core §3.5。参照の classic ESP32 の firmware は宣言する）では、host は 1 つのセッションの
+間、UART bridge を起動時の速さ（115200）より速くできます。host が頼まない限り何も変わりません:
+
+```python
+hst = link.open_host("/dev/ttyUSB0", port_speed=[1500000, 921600, 500000])   # ロックを取り、セッションを開いたままにする
+print(hst.link.speed.to_text())             # 試した速さごとに、実際の速さ、in / out の KB/s、壊れたフレーム、今の速さ
+# 取ってあるセッションの中では: report = link.raise_speed(hst, [1500000, 921600], verify_bytes=32768, verify_s=1.0)
+```
+
+速さごとに順に: `試す`（今の速さで応答してから probe が切り替える）→ host も切り替える → 両方向に max_frame の大きさのフレームで
+（link_source / link_sink、パイプライン）`verify_bytes` か `verify_s` の分だけ確かめ、壊れたフレームを数え、それぞれの向きの KB/s を
+測る → 何も壊れなければ `決める`、壊れれば戻して起動時の速さに戻り、そこで confirm し直す（戻すが届かなかった probe は `verify_ms`
+を待って戻る）。最初に通った速さを使う。probe の UART が作れない速さは飛ばす。通る速さは変換チップとドライバで決まる（FTDI は
+3 MHz ÷ n だけ、CH340 は 921600 は通り 1500000 は probe → host が壊れた: oep-spec docs/uart-speed-negotiation.ja.md）ので、速さは
+host が選ぶ。結果（`link.speed`: `rate`、`chosen`、`in_kb_s` / `out_kb_s`、`trials`）はキャプチャや書き込みの予算を立てるのに使う。
+
+probe はセッションが終わったとき（`end`、lease の期限切れ、force）、フレームが壊れたとき、線が黙ったとき（`idle_ms`）に自分で
+起動時の速さに戻る: link は `end` にはすぐ合わせ、上げた速さで応答の来ない要求（送り直しも）があれば、起動時の速さに戻って
+confirm し、そこでもう一度送る（固まらない）。機能の無い probe は `not supported` で、速さは変わらない。ブローカー（TCP）の後ろでは
+client ではなくブローカーが行う。シリアルの口は、ドライバにあれば low-latency のモードで開く（FTDI の latency timer 16 → 1 ms で
+UART bridge の速度が 3 倍になった）。ボードの起動時の速さが 115200 でなければ `open_host(..., baud=)` で渡す。
 
 ## 偽の probe（動く spec）
 
@@ -109,6 +134,8 @@ uv run python -m oep_client.fake_serve --pty --profile p4-bench --slot x035 --bi
 pty がシリアルの口（host が TIOCEXCL を掛けて開く）、`--tcp PORT` は `--framing cobs`（シリアルの口）か `--framing length`
 （vendor bulk / TCP の形）。故障の注入は `--drop N`（N 番目の答えを 1 回出さない。要求は実行済みなので送り直しは覚えた答えを
 受ける）、`--noise TEXT`（答えの前に雑音）、`--corrupt N`（N 番目の答えの CRC を 1 回壊す）。`--capture-slipped` は capture の
-区画すべてに flags bit2 を立てる。出来事とデータの push は pty にも TCP（両方の framing）にも出る。ほかは `--help`。
+区画すべてに flags bit2 を立てる。port_speed: `esp32-v003` は持つ（`--no-port-speed` で外す）。
+`--broken-rate RATE[:MIN_SIZE][:in|out]` はその速さでフレームを壊す（同じプロセスの `fake_serial.FakeSerialStream` は、host の速さが
+probe の速さと違う間、両方向のバイトをすべて壊す）。出来事とデータの push は pty にも TCP（両方の framing）にも出る。ほかは `--help`。
 
 v0 の client（`oep_client.v0`）は 2026-09-26 に消した（git の履歴に残る）。v0 を話す probe はもう無い。

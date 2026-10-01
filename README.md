@@ -79,12 +79,39 @@ oep config slot <probe> --name x035 --wire rvswd --pins 2,54 --attach at-boot --
 oep config bind <probe> --port 1 --mode last-reset --stream slot:x035
 oep config uart <probe> oep.fixture.uart 115200 --format 8N1   # applied whenever that UART's plan has RX or TX
 oep config save <probe>                      # kept over a restart (also: remove = unset, erase)
+oep speed <probe> 1500000,921600,500000      # port_speed: try faster rates on a UART bridge, print the report (below)
 ```
 
 `<probe>` is a serial port, `tcp://HOST:PORT` or `usb[:VID:PID[:SERIAL]]`. A change takes the lock (owner "oep config") and
 ends the session after it; it takes effect at once and, after `save`, stays over a restart.
 
 A run on hardware: ArduinoCore-CH32's `tests/manual/oep_smoke/` (`oep_smoke.py`, `oep_probe_checks.py`).
+
+## A faster UART bridge (port_speed, opt-in)
+
+A probe whose describe declares `port_speed` (oep-core §3.5; the classic ESP32 reference firmware does) lets the host
+run its UART bridge faster than the boot speed (115200) for one session. Nothing changes unless the host asks:
+
+```python
+hst = link.open_host("/dev/ttyUSB0", port_speed=[1500000, 921600, 500000])   # takes the lock, keeps the session open
+print(hst.link.speed.to_text())             # every rate tried: actual, in / out KB/s, broken frames, the one in force
+# or, in a session already taken: report = link.raise_speed(hst, [1500000, 921600], verify_bytes=32768, verify_s=1.0)
+```
+
+Each rate in order: `try` (answered at the speed now, then the probe switches) -> the host switches -> a verify both ways
+with max_frame-sized frames (link_source / link_sink, pipelined) for `verify_bytes` or `verify_s`, counting broken frames
+and measuring KB/s each way -> `commit` when nothing broke, else revert and back to the boot speed, confirmed there (a
+probe whose revert was lost waits out its `verify_ms`). The first rate that passes is kept; a rate the probe's UART cannot
+make is skipped. Which rates pass depends on the bridge chip and its driver (an FTDI took only 3 MHz / n, a CH340 921600
+but not 1500000 towards the host: oep-spec docs/uart-speed-negotiation.ja.md), so the host chooses them. The report
+(`link.speed`: `rate`, `chosen`, `in_kb_s` / `out_kb_s`, `trials`) is there to budget a capture or a write.
+
+The probe goes back to the boot speed by itself when the session ends (`end`, a lapse, a force), when frames break or the
+line goes quiet (`idle_ms`): the link follows an `end` at once, and a request that goes unanswered at a raised rate (its
+resend too) takes the link back to the boot speed, confirmed, and goes once more there - it never wedges. A probe
+without the feature answers `not supported` and stays at its speed. Behind a broker (TCP) the broker does this, not the
+client. Serial ports are also opened in the driver's low-latency mode where it has one (an FTDI's latency timer 16 -> 1 ms
+tripled a UART bridge's throughput). `open_host(..., baud=)` names the boot speed when the board's profile is not 115200.
 
 ## The fake probe (a working spec)
 
@@ -118,5 +145,7 @@ The pty is a serial port (the host opens it with TIOCEXCL); `--tcp PORT` is `--f
 `--framing length` (the vendor bulk / TCP form). Faults: `--drop N` (the N-th answer is not sent, once; the request did run,
 so a resend gets the remembered result), `--noise TEXT` (noise before every answer), `--corrupt N` (the N-th answer's CRC
 broken once). `--uart-plan` / `--uart-rx` give the first fixture UART a plan and RX bytes, `--run-hook` a host's own model of
-riscv-dm run, `--capture-slipped` flags bit2 on every capture segment. Events and data pushes go out on the pty and on TCP
+riscv-dm run, `--capture-slipped` flags bit2 on every capture segment. port_speed: `esp32-v003` has it
+(`--no-port-speed` turns it off), and `--broken-rate RATE[:MIN_SIZE][:in|out]` makes a rate break frames (in process,
+`fake_serial.FakeSerialStream` also garbles everything while the host's own rate differs from the probe's). Events and data pushes go out on the pty and on TCP
 (both framings). The rest: `--help`.

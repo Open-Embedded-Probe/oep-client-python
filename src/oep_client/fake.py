@@ -118,6 +118,7 @@ _CAPD = reg.FIXTURE_LOGIC.tlv["describe"]
 _ANAD = reg.FIXTURE_ANALOG.tlv["describe"]
 _GRPD = reg.FIXTURE_CAPTURE_GROUP.tlv["describe"]
 CORE_CHIP = reg.CORE.tlv["describe"]["chip"]
+CORE_PORT_SPEED = reg.CORE.tlv["describe"]["port_speed"]   # the optional port_speed is on (core §3.5)
 
 
 def _analog_decl(frontends: list[tuple[int, int, int, int]], max_samples: int) -> tuple[bytes, ...]:
@@ -245,13 +246,13 @@ def p4_x035() -> FakeProbe:
 
 def esp32_v003() -> FakeProbe:
     """A small probe with 64-byte frames over a 115200 bps UART bridge (its only transport, serial port 0):
-    classic ESP32 on a CH32V003 (SWIO) jig."""
+    classic ESP32 on a CH32V003 (SWIO) jig. port_speed on (core §3.5), as the reference classic ESP32 firmware."""
     reserved = [0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15, 16]
     wired = [4, 5, 13, 14, 17, 18, 19, 21, 22, 25, 26, 27, 32, 33]
     return FakeProbe("esp32-v003", 64, [
         _core("3.0.0", "esp32", "0070070d9394", 40, reserved, f"{NS}.esp32-v003",
               {16: "SWIO", 23: "NRST", 22: "DUT TX", 21: "DUT RX"},
-              _transports([(TRANSPORT["uart_bridge"], 0xFF)])),
+              _transports([(TRANSPORT["uart_bridge"], 0xFF)]) + (catalog.u8(CORE_PORT_SPEED, 1),)),
         Offered(1, 0, "oep.wire.swio", (catalog.channel_group(1, [(1, 16)]), catalog.role_channels(3, [23]),
                                         catalog.u8(IMPLEMENTATION, 1), catalog.u8(MAX_CONNECTIONS, 1))),
         Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b0111), catalog.u8(IMPLEMENTATION, 1),
