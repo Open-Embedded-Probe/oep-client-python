@@ -378,12 +378,13 @@ def open_usb_host(vid: int = USB_VID, pid: int = USB_PID, serial: str | None = N
     raise FileNotFoundError(f"no way in to {vid:04x}:{pid:04x}: " + "; ".join(errors))
 
 
-OEP_VID_PID = (0x1209, 0x4F45)   # the OEP PID (pid.codes, applied for); until then iProduct "OEP..." (core §3.3)
+OEP_VID_PID = (reg.USB["reference_vid"], reg.USB["reference_pid"])   # the reference firmware's; never a way to tell a probe
 
 
 def is_oep_device(vid: int, pid: int, product: str | None) -> bool:
-    """core §3.3: the OEP VID:PID, or (until it is granted) an iProduct starting "OEP"."""
-    return (vid, pid) == OEP_VID_PID or (product or "").startswith("OEP")
+    """core §3.3: an OEP probe is a USB device whose iProduct starts with "OEP" (registry usb.iproduct_prefix); the
+    VID:PID tells nothing (vid and pid are taken for the callers that have them)."""
+    return (product or "").startswith(reg.USB["iproduct_prefix"])
 
 
 def find_usb(unit_id: str) -> tuple[int, int]:

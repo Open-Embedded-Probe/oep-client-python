@@ -6,8 +6,11 @@ through with the same id proves nobody else operated the probe in between (oep-s
 
 oep-core §4.1: role 0x81 (a session id in the header) goes only to a probe whose confirm answered revision 1 or more; a
 v0 probe drops the unknown role without an answer. The host confirms before its first open or session request.
-§3: when the probe's boot_id changes (open, heartbeat), or a probe with boot_id 0 answers no session, every
-connection and the plan are gone: `epoch` counts those losses, so a client holding a connection can tell.
+oep-core §6.5 / §9: when the probe's boot_id changes (confirm, open, heartbeat), when the lock lapsed or was taken
+(rejected expired, open answering resumed = 2) and when another session came in between (rejected no_session), every
+connection, stream and the plan this session had are gone: `epoch` counts those losses, so a client holding a
+connection can tell. An expired session is never re-opened behind the caller's back: `Expired` is raised and the caller
+opens again (host guide §2.5).
 """
 
 from __future__ import annotations
@@ -69,6 +72,20 @@ class NoSession(Rejected):
     pass
 
 
+class Expired(Rejected):
+    """rejected expired (core §6.2, §9): this session's lock ended by the lease lapsing or by another session's force,
+    and the probe swept its resources (plan, connections, streams). Nothing is re-opened silently: the caller opens
+    again (resumed = 2 then) and rebuilds what it had. `lease_ms`: the lease the session had (None when unknown)."""
+
+    def __init__(self, result: m.Result, lease_ms: int | None = None):
+        super().__init__(result)
+        self.lease_ms = lease_ms
+
+    def __str__(self) -> str:
+        lease = f" (lease {self.lease_ms} ms)" if self.lease_ms is not None else ""
+        return f"session expired{lease}: the lock lapsed or was taken by force and the probe swept its resources - open again"
+
+
 class Busy(Rejected):
     pass
 
@@ -79,11 +96,20 @@ class NoConnection(Rejected):
 
 
 class Unsupported(Rejected):
-    """A critical TLV (`tag`) or a fixed-part value (tag None) the probe cannot handle."""
+    """A critical TLV (`tag`, as received) or a fixed-part value (tag None; the wire says 0x00) the probe cannot handle
+    (core §4.3). `tlvs`: what follows, saying which element (channel, index) when the probe knows."""
 
     @property
     def tag(self) -> int | None:
-        return self.result.payload[0] if self.result.payload else None
+        p = self.result.payload
+        return p[0] if p and p[0] != m.TAG_FIXED else None
+
+    @property
+    def tlvs(self) -> list[tuple[int, bytes]]:
+        try:
+            return m.split_tlvs(self.result.payload[1:])
+        except ValueError:
+            return []
 
 
 class Unavailable(Rejected):
@@ -124,18 +150,28 @@ class Unavailable(Rejected):
 
 
 _REJECTS = {m.LOCKED: Locked, m.NO_SESSION: NoSession, m.BUSY: Busy, m.NO_CONNECTION: NoConnection,
-            m.UNSUPPORTED: Unsupported, m.UNAVAILABLE: Unavailable}
+            m.UNSUPPORTED: Unsupported, m.UNAVAILABLE: Unavailable, m.EXPIRED: Expired}
 
 
-def rejection(result: m.Result) -> Rejected:
+def rejection(result: m.Result, lease_ms: int | None = None) -> Rejected:
+    if result.detail == m.EXPIRED:
+        return Expired(result, lease_ms)
     return _REJECTS.get(result.detail, Rejected)(result)
+
+
+RESUMED = reg.CORE.enum["resumed"]       # open's resumed: 0 new, 1 resumed (resources kept), 2 swept (core §6.4)
 
 
 @dataclass
 class Opened:
     lease_ms: int
     boot_id: int
-    resumed: bool
+    resumed: int                 # 0 a new session, 1 the same id with its resources, 2 the same id after a sweep
+
+    @property
+    def swept(self) -> bool:
+        """The same session id came back after its lease lapsed or a force: its resources are gone (core §9)."""
+        return self.resumed == RESUMED["swept"]
 
 
 @dataclass
@@ -147,13 +183,15 @@ class Host:
     exchange: Callable[[list[bytes]], list[bytes]] | None = None
     revision: int | None = None            # confirm's answer; None until asked
     limits: dict | None = None             # confirm's answer as a dict
-    epoch: int = 0                         # +1 whenever every connection and the plan are lost (§3)
+    lease_ms: int | None = None            # the lease the last open gave (named by Expired)
+    epoch: int = 0                         # +1 whenever every connection and the plan are lost (core §6.5, §9)
     subscriptions: set = field(default_factory=set)   # fns subscribed in this session (a resync stops them blind)
     # Called with every capture segment read (capture.CaptureRecord): the hook a run recorder hangs on.
     on_capture: list = field(default_factory=list)
     _corr: int = 0
     _fns: dict = field(default_factory=dict)   # interface name -> fn, valid until the probe reboots (boot_id)
     _revisions: dict = field(default_factory=dict)   # fn -> interface revision from list
+    _describes: dict = field(default_factory=dict)   # fn -> its describe TLVs (declarations: valid for one boot_id)
     _boot_id: int | None = None
 
     def next_corr(self) -> int:
@@ -182,23 +220,29 @@ class Host:
             raise ProtocolError(f"result for correlation {result.corr}, expected {req.corr}")
         if result.resolution == m.REJECTED:
             self._rejected(result)
-            raise rejection(result)
+            raise rejection(result, self.lease_ms)
         return result
 
     def _rejected(self, result: m.Result) -> None:
-        if result.detail == m.NO_SESSION:
-            self.subscriptions.clear()                  # the lock is gone, and the subscriptions with it
-            if self._boot_id == 0:
-                self._lost()                            # a probe that cannot tell its boots: assume it restarted
+        if result.detail in (m.NO_SESSION, m.EXPIRED):
+            # expired: the lease lapsed or a force took the lock, and the probe swept this session's resources (core
+            # §9). no_session: another session opened in between and took them over. Either way they are not ours.
+            self._swept()
 
-    def _lost(self) -> None:
+    def _swept(self) -> None:
+        """This session's resources (plan, connections, streams, subscriptions) are gone; the probe is the same."""
         self.epoch += 1
-        self._fns.clear()                               # a rebooted probe may number its interfaces differently
-        self._revisions.clear()
         self.subscriptions.clear()
 
+    def _lost(self) -> None:
+        """The probe restarted: the resources, and the fn numbers with them."""
+        self._swept()
+        self._fns.clear()                               # a rebooted probe may number its interfaces differently
+        self._revisions.clear()
+        self._describes.clear()
+
     def boot_id_seen(self, boot_id: int) -> None:
-        """A boot_id from an open result or a heartbeat: a change means the probe restarted (§3)."""
+        """A boot_id from confirm, an open result or a heartbeat: a change means the probe restarted (core §6.5)."""
         if self._boot_id is not None and boot_id != self._boot_id:
             self._lost()
         self._boot_id = boot_id
@@ -226,16 +270,18 @@ class Host:
         results = self.pipeline(requests, locked=locked)
         for r in results:
             if r.resolution == m.REJECTED:
-                raise rejection(r)
+                raise rejection(r, self.lease_ms)
             if not r.succeeded:
                 raise Failed(r)
         return results
 
     # ---- confirm (§5, §2) -----------------------------------------------------------------------
     def confirm(self, min_rev: int = MIN_REVISION, max_rev: int = MAX_REVISION) -> dict:
-        """Ask for a revision in [min_rev, max_rev]. -> {"revision", "flags", "max_frame", "window", "max_inflight"}.
-        A v0 probe answers revision 0 in the v0 shape; one that refuses the ranged confirm as malformed is not v1
-        either (revision 0 is recorded and the rejection raised). No revision in the range: rejected unsupported."""
+        """Ask for a revision in [min_rev, max_rev]. -> {"revision", "flags", "max_frame", "window", "max_inflight",
+        "boot_id"}. The boot_id is the probe's for this boot (core §6.5, §7.1): a host without the lock learns of a
+        restart from it. A v0 probe answers revision 0 in the v0 shape; one that refuses the ranged confirm as malformed
+        is not v1 either (revision 0 is recorded and the rejection raised). No revision in the range: rejected
+        unsupported."""
         try:
             r = self.request(m.CORE_FN, m.OP_CONFIRM, m.CONFIRM_REQUEST + bytes([min_rev, max_rev]), locked=False)
         except Rejected as e:
@@ -248,6 +294,7 @@ class Host:
         magic, revision = rd.bytes(4), rd.u8()
         if magic != m.CONFIRM_RESULT:
             raise ProtocolError(f"confirm answered magic {magic!r}")
+        boot_id = None
         if revision == 0:                                   # v0: max_frame(16) window(16) max_inflight(8) flags(8)
             max_frame, window, inflight = rd.take("HHB")
             flags = rd.u8() if rd.at < len(rd.data) else 0
@@ -255,11 +302,12 @@ class Host:
         else:
             if not min_rev <= revision <= max_rev:
                 raise ProtocolError(f"confirm answered revision {revision}, outside the {min_rev}..{max_rev} asked")
-            flags, max_frame, window, inflight = rd.take("BHIB")
+            flags, max_frame, window, inflight, boot_id = rd.take("BHIBI")
             tail = rd.tail()
+            self.boot_id_seen(boot_id)
         self.revision = revision
         self.limits = {"magic": magic, "revision": revision, "flags": flags, "max_frame": max_frame, "window": window,
-                       "max_inflight": inflight, "tail": tail}
+                       "max_inflight": inflight, "boot_id": boot_id, "tail": tail}
         return self.limits
 
     def confirmed(self) -> dict:
@@ -282,7 +330,9 @@ class Host:
     def open(self, lease_ms: int = 0, *, force: bool = False, session: int | None = None,
              owner: str | None = None) -> Opened:
         """A new random id unless `session` is given (a one-shot CLI resuming its saved id). lease_ms 0 = the probe's
-        default; 1000..60000 are taken as asked. owner: who holds the lock (1-32 bytes), shown to other hosts."""
+        default; 1000..60000 are taken as asked. owner: who holds the lock (1-32 bytes), shown to other hosts.
+        Opened.resumed: 0 a new session, 1 the same id with its resources kept, 2 the same id after its lease lapsed
+        or a force swept them (core §6.4: the host rebuilds its plan and connections; `epoch` moved)."""
         self.require_v1()
         sid = session if session is not None else self.rng.randrange(1, 1 << 32)
         tail = m.tlv(OWNER, owner.encode()[:32]) if owner else b""
@@ -290,11 +340,16 @@ class Host:
         if sid != self.session:
             self.subscriptions.clear()
         self.session = sid
-        lease, boot_id, resumed = m.Reader(r.payload).take("IIB")
+        rd = m.Reader(r.payload)
+        lease, boot_id, resumed = rd.take("IIB")
+        rd.tail()
         self.boot_id_seen(boot_id)
-        if not resumed:
+        self.lease_ms = lease
+        if resumed == RESUMED["swept"]:
+            self._swept()
+        elif resumed != RESUMED["resumed"]:
             self.subscriptions.clear()
-        return Opened(lease, boot_id, bool(resumed))
+        return Opened(lease, boot_id, resumed)
 
     def end(self) -> None:
         self.request(m.CORE_FN, m.OP_END)
@@ -304,7 +359,9 @@ class Host:
         self.request(m.CORE_FN, m.OP_KEEPALIVE)
 
     def lock_state(self) -> tuple[bool, int]:
-        locked, remaining = m.Reader(self.request(m.CORE_FN, m.OP_LOCK_STATE, locked=False).payload).take("BI")
+        rd = m.Reader(self.request(m.CORE_FN, m.OP_LOCK_STATE, locked=False).payload)
+        locked, remaining = rd.take("BI")
+        rd.tail()
         return bool(locked), remaining
 
     def lock_owner(self) -> tuple[bool, int, str | None]:
@@ -337,8 +394,9 @@ class Host:
     # ---- notifications (§4.5) -------------------------------------------------------------------
     def subscribe(self, fn: int, min_bytes: int = 0, max_delay_ms: int = 0) -> None:
         """Events and data pushes from `fn` (fn 0: heartbeats every max_delay_ms, 0 = 1000 ms). Send when min_bytes are
-        ready or max_delay_ms after the first byte (0, 0: as soon as there is anything). Ends with the lock."""
-        self.call(m.CORE_FN, m.OP_SUBSCRIBE, struct.pack("<HHH", fn, min_bytes, max_delay_ms))
+        ready or max_delay_ms (u32) after the first byte (0, 0: as soon as there is anything). Ends with the lock; an fn
+        that emits nothing is rejected unsupported (core §11.3)."""
+        self.call(m.CORE_FN, m.OP_SUBSCRIBE, struct.pack("<HHI", fn, min_bytes, max_delay_ms))
         self.subscriptions.add(fn)
 
     def unsubscribe(self, fn: int) -> None:
