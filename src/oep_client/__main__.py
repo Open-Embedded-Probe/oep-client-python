@@ -7,6 +7,7 @@
   oep config bind <probe> --port 1 --mode last-reset --stream slot:x035
   oep config plan <probe> oep.fixture.uart#1 rx=48 tx=49       (the fn's whole plan; fn number or name#instance)
   oep config uart <probe> oep.fixture.uart#1 115200 --format 8N1
+  oep config disable <probe> 3 4           (channels the probe never uses or touches; remove disable CH re-enables)
   oep config remove <probe> bind 1        oep config save <probe>        oep config erase <probe>
 
 <probe>: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]. A change takes the lock (owner "oep config") and
@@ -98,13 +99,17 @@ def _config_parser(sub) -> None:
     idle.add_argument("channel", type=int)
     idle.add_argument("mode", choices=sorted(config.IDLE))
     idle.add_argument("--save", action="store_true")
+    dis = cs.add_parser("disable", help="channels the probe never uses or touches (not on this board)")
+    dis.add_argument("probe")
+    dis.add_argument("channels", type=int, nargs="+")
+    dis.add_argument("--save", action="store_true")
     uart = cs.add_parser("uart", help="a fixture UART's baud / format, applied whenever its plan has RX or TX")
     uart.add_argument("probe")
     uart.add_argument("fn", help="an fn, or name#instance of the oep.fixture.uart")
     uart.add_argument("baud", type=int)
     uart.add_argument("--format", default="8N1", help="data bits, parity, stop bits: 8N1 (default), 8E1, 7O2 ...")
     uart.add_argument("--save", action="store_true")
-    rm = cs.add_parser("remove", help="remove one item (unset): slot N, bind PORT, plan FN, label CH, idle CH, uart FN")
+    rm = cs.add_parser("remove", help="remove one item (unset): slot N, bind PORT, plan FN, label CH, idle CH, uart FN, disable CH")
     rm.add_argument("probe")
     rm.add_argument("kind", choices=sorted(config.ITEM))
     rm.add_argument("key", type=int)
@@ -235,6 +240,8 @@ def _config(args) -> int:
             _change(hst, cfg, [config.Label(channel=args.channel, text=args.text)], args.save)
         elif args.action == "idle":
             _change(hst, cfg, [config.Idle(channel=args.channel, mode=args.mode)], args.save)
+        elif args.action == "disable":
+            _change(hst, cfg, [config.Disable(channel=ch) for ch in args.channels], args.save)
         elif args.action == "remove":
             _change(hst, cfg, [config.remove(args.kind, args.key)], args.save)
         else:
