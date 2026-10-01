@@ -15,6 +15,7 @@ opens again (host guide §2.5).
 
 from __future__ import annotations
 
+import contextlib
 import random
 import struct
 from dataclasses import dataclass, field
@@ -194,14 +195,32 @@ class Host:
     _revisions: dict = field(default_factory=dict)   # fn -> interface revision from list
     _describes: dict = field(default_factory=dict)   # fn -> its describe TLVs (declarations: valid for one boot_id)
     _boot_id: int | None = None
+    expect_ms: int = 0                     # how long the request going out now may take on the probe (`expecting`)
+    # Called before a request takes its corr (the link's keepalive at a raised port_speed rate): what it sends first
+    # must carry the lower corr, or the probe takes the request for an old one (core §4.1)
+    before_request: Callable[[], None] | None = None
+
+    @contextlib.contextmanager
+    def expecting(self, ms: int):
+        """Requests sent inside take up to `ms` on the probe (a run's timeout_ms, a dmi list's waits, an attach's
+        hold_ms, a capture's blocking, a save; core §6.1: the probe does not count the lease meanwhile). The link waits
+        at least that and a margin for each answer - also at a raised port_speed rate, where an ordinary request waits
+        a quarter of the lease. Nested: the longest holds."""
+        saved = self.expect_ms
+        self.expect_ms = max(saved, int(ms or 0))
+        try:
+            yield
+        finally:
+            self.expect_ms = saved
 
     def next_corr(self) -> int:
         self._corr = self._corr % 0xFFFF + 1
         return self._corr
 
-    def call(self, fn: int, op: int, payload: bytes = b"", *, locked: bool = True) -> m.Result:
+    def call(self, fn: int, op: int, payload: bytes = b"", *, locked: bool = True, expect_ms: int = 0) -> m.Result:
         """request() that also raises Failed unless the probe says it worked: what every operation wants."""
-        r = self.request(fn, op, payload, locked=locked)
+        with self.expecting(expect_ms):
+            r = self.request(fn, op, payload, locked=locked)
         if not r.succeeded:
             raise Failed(r)
         return r
@@ -212,11 +231,15 @@ class Host:
         self.require_v1()
         return self.session
 
-    def request(self, fn: int, op: int, payload: bytes = b"", *, locked: bool = True) -> m.Result:
+    def request(self, fn: int, op: int, payload: bytes = b"", *, locked: bool = True, expect_ms: int = 0) -> m.Result:
         """locked=True sends the session id (role 0x81) once a session is open; lock-free requests may leave it off.
-        Rejections raise; any other answer is returned (Result.succeeded / .ran say what it was)."""
+        expect_ms: how long this request may take on the probe (`expecting`). Rejections raise; any other answer is
+        returned (Result.succeeded / .ran say what it was)."""
+        if self.before_request is not None:
+            self.before_request()
         req = m.Request(self.next_corr(), fn, op, payload, self._session_for(locked))
-        result = m.Result.unpack(self.send(req.pack()))
+        with self.expecting(expect_ms):
+            result = m.Result.unpack(self.send(req.pack()))
         if result.corr != req.corr:
             raise ProtocolError(f"result for correlation {result.corr}, expected {req.corr}")
         if result.resolution == m.REJECTED:
@@ -253,6 +276,8 @@ class Host:
         """Several requests in flight (`exchange` keeps the probe's in-flight and window limits); results in
         order, rejects NOT raised - the caller looks at each result. Without `exchange`, one at a time."""
         session = self._session_for(locked)
+        if self.before_request is not None:
+            self.before_request()
         reqs = [m.Request(self.next_corr(), fn, op, payload, session) for fn, op, payload in requests]
         packed = [r.pack() for r in reqs]
         exchange = exchange or self.exchange

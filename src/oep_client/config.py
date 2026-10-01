@@ -292,6 +292,8 @@ class State:
     binds: list[BindState] = field(default_factory=list)
 
 
+SAVE_EXPECT_MS = 2000   # a save writes the probe's flash: the link waits at least this (Host.expecting)
+
 class ProbeConfig(Interface):
     NAME = "oep.probe.config"
     REVISION = 1
@@ -346,7 +348,7 @@ class ProbeConfig(Interface):
 
     def save(self) -> int:
         """Save the current settings (a probe with storage; the whole is replaced). -> the hash saved."""
-        return self._hash_answer(self._call(self.SAVE))
+        return self._hash_answer(self._call(self.SAVE, expect_ms=SAVE_EXPECT_MS))
 
     def erase(self) -> None:
         self._call(self.ERASE)

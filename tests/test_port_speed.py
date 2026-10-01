@@ -362,6 +362,46 @@ def test_no_answer_at_a_raised_rate_falls_back_well_inside_the_lease():
     assert again.trials[0].why.startswith("stepped down") and lk.baud == 115200
 
 
+def test_a_long_run_at_a_raised_rate_waits_its_timeout_ms_without_a_step_down():
+    from oep_client import riscv
+    ep, hst, lk, report = raised_in_use(lease=3000)
+    lk.timeout = 3.0                                     # the default: an ordinary request waits 0.75 s (lease / 4)
+    stream, held, late = lk.stream, {}, []
+    pull = stream._pull
+
+    def answer(n, result):                               # the run's answer (and any repeat of it) comes 2 s later
+        corr = result[1] | result[2] << 8
+        if late or corr in held:
+            held.setdefault(corr, time.monotonic() + 2.0)
+            late.clear()
+            stream._held.append((held[corr], cobs.frame(result)))
+            return None
+        return cobs.frame(result)
+
+    def pull_late():
+        pull()
+        now = time.monotonic()
+        stream._rx += b"".join(w for at, w in stream._held if at <= now)
+        stream._held[:] = [(at, w) for at, w in stream._held if at > now]
+    stream._held = []
+    stream._pull = pull_late
+    stream.port.answer_filter = answer
+    wire = riscv.Wire(hst, "oep.wire.swio")
+    conn, _ = wire.attach()
+    dm = riscv.RiscvDm(hst, conn)
+    dm.halt()
+    ep.target.run_hook = lambda pc, regs: (late.append(1), (True, pc + 4, 1_900_000))[1]
+    t0 = time.monotonic()
+    r = dm.run(0x20000000, [], timeout_ms=2000)
+    assert r.stopped and 1.9 < time.monotonic() - t0 < 3.0
+    assert lk.baud == 921600 and not report.stepped_down and lk.retries == 0 and not lk.strikes
+    assert ep.holder == hst.session
+    hst.keepalive()                                      # after 2 s of quiet: the link's keepalive first, a lower corr
+    corrs = [q.corr for q in ep.requests[-2:]]
+    assert corrs == sorted(corrs) and [q.op for q in ep.requests[-2:]] == [m.OP_KEEPALIVE] * 2
+    assert link.EXPECT_MARGIN_S < 1 and hst.expect_ms == 0      # only that request waited longer
+
+
 def second_host(ep):
     lk = link.SerialLink.on_stream(fake_serial.FakeSerialStream(ep, 0), "cobs", 0.5)
     lk.transport = "serial"

@@ -4,6 +4,8 @@ entry, and calls that raise unless they worked)."""
 
 from __future__ import annotations
 
+import contextlib
+
 import struct
 
 from . import catalog, host as h, message as m, registry as reg
@@ -196,12 +198,20 @@ class Interface:
                 raise UnsupportedRevision(f"{self.name} (fn {self.fn}) is revision {rev} on this probe; this client "
                                           f"speaks revision {self.REVISION} only")
 
-    def _call(self, op: int, body: bytes = b"", *, locked: bool = True) -> m.Result:
-        return self.host.call(self.fn, op, self.prefix + body, locked=locked)
+    def _expecting(self, ms: int):
+        """Host.expecting(ms) when the host has it (a stand-in host may not)."""
+        expecting = getattr(self.host, "expecting", None) if ms else None
+        return expecting(ms) if expecting else contextlib.nullcontext()
 
-    def _request(self, op: int, body: bytes = b"", *, locked: bool = True) -> m.Result:
-        """Rejections raise; completed results of any outcome come back for the caller to decode."""
-        return self.host.request(self.fn, op, self.prefix + body, locked=locked)
+    def _call(self, op: int, body: bytes = b"", *, locked: bool = True, expect_ms: int = 0) -> m.Result:
+        with self._expecting(expect_ms):
+            return self.host.call(self.fn, op, self.prefix + body, locked=locked)
+
+    def _request(self, op: int, body: bytes = b"", *, locked: bool = True, expect_ms: int = 0) -> m.Result:
+        """Rejections raise; completed results of any outcome come back for the caller to decode. expect_ms: how
+        long it may take on the probe (Host.expecting)."""
+        with self._expecting(expect_ms):
+            return self.host.request(self.fn, op, self.prefix + body, locked=locked)
 
     def request(self, op: int, body: bytes = b"") -> tuple[int, int, bytes]:
         """The raw (fn, op, payload) of one operation, for Host.pipeline / pipeline_calls."""
