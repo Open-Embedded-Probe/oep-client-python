@@ -10,6 +10,7 @@
   oep config disable <probe> 3 4           (channels the probe never uses or touches; remove disable CH re-enables)
   oep config remove <probe> bind 1        oep config save <probe>        oep config erase <probe>
   oep speed <probe> 1500000,921600,500000 (port_speed, core §3.5: try the rates in order on a UART bridge, report)
+  oep linktest <probe> --rates now,921600 --patterns in,out,duplex --inflight 1,2 --sizes 128,496 --frames 300
 
 <probe>: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]. A change takes the lock (owner "oep config") and
 ends the session after it; it takes effect at once, and stays over a restart only after `save` (or --save).
@@ -38,6 +39,19 @@ def main(argv=None) -> int:
     sp.add_argument("--verify-s", type=float, default=1.0)
     sp.add_argument("--duplex-s", type=float, default=1.0, help="both ways at once for this long (default 1)")
     sp.add_argument("--json", action="store_true")
+    lt = sub.add_parser("linktest", help="measure the link: traffic patterns at rates the host asks for, what breaks")
+    lt.add_argument("probe", help="a probe: a serial port, tcp://HOST:PORT or usb[:VID:PID]")
+    lt.add_argument("--rates", default="", help="comma-separated rates to switch to with port_speed and measure at "
+                    "(each on its own; 0 or 'now' = the speed in force). Default: only the speed in force")
+    lt.add_argument("--patterns", default="in,out,duplex", help="in (probe->host), out (host->probe), duplex")
+    lt.add_argument("--inflight", default="1", help="comma-separated in-flight counts (above the probe's max: skipped)")
+    lt.add_argument("--sizes", default="", help="comma-separated frame payload sizes (default: a whole frame)")
+    lt.add_argument("--frames", type=int, default=300, help="frames per cell (default 300)")
+    lt.add_argument("--seconds", type=float, default=None, help="per cell for this long instead of --frames")
+    lt.add_argument("--timeout", type=float, default=0.3, help="seconds to wait for one answer (default 0.3)")
+    lt.add_argument("--baud", type=int, default=link.BASE_BAUD, help="the boot speed to open at (default 115200)")
+    lt.add_argument("--low-latency", choices=("on", "off"), default="on", help="the serial driver's low-latency mode")
+    lt.add_argument("--json", action="store_true", help="one JSON object per cell")
     d = sub.add_parser("dump", help="list and describe every interface a probe offers")
     src = d.add_mutually_exclusive_group(required=True)
     src.add_argument("--fake", choices=sorted(fake.PROFILES), help="in-process example probe")
@@ -50,6 +64,8 @@ def main(argv=None) -> int:
         return _config(args)
     if args.command == "speed":
         return _speed(args)
+    if args.command == "linktest":
+        return _linktest(args)
 
     if args.fake:
         call = fake.PROFILES[args.fake]().call
@@ -58,6 +74,44 @@ def main(argv=None) -> int:
         call = lambda fn, op, payload: hst.request(fn, op, payload, locked=False).payload   # noqa: E731
     caps = dump.collect(call, args.prefix, args.exact)
     sys.stdout.write(dump.to_json(caps) + "\n" if args.json else dump.to_text(caps))
+    return 0
+
+
+# ---- oep linktest -------------------------------------------------------------------------------------------------
+
+def _linktest(args) -> int:
+    """Every parameter on the command line: no fixed numbers in the measurement."""
+    import dataclasses
+    import json
+    from . import linktest
+    ints = lambda text: [int(v) for v in text.split(",") if v.strip()]   # noqa: E731
+    rates = [None if v.strip() in ("0", "now") else int(v) for v in args.rates.split(",") if v.strip()] or [None]
+    hst = link.open_host(args.probe, baud=args.baud) if args.probe.startswith("/") or ":" not in args.probe \
+        else link.open_host(args.probe)
+    stream = getattr(hst.link, "stream", None)
+    if hasattr(stream, "set_low_latency_mode"):
+        try:
+            stream.set_low_latency_mode(args.low_latency == "on")
+        except (OSError, ValueError, NotImplementedError):
+            pass
+    try:
+        core.take(hst, 30000, owner="oep linktest")
+        for result in linktest.matrix(hst, rates=rates, patterns=[p for p in args.patterns.split(",") if p],
+                                      inflight=ints(args.inflight), sizes=ints(args.sizes) or None,
+                                      frames=args.frames, seconds=args.seconds, timeout=args.timeout):
+            if args.json:
+                for c in result.cells:
+                    print(json.dumps({**dataclasses.asdict(c), "actual": result.actual, "low_latency": args.low_latency}))
+                if result.why:
+                    print(json.dumps({"rate": result.rate, "why": result.why}))
+            else:
+                print(result.text(), flush=True)
+        try:
+            hst.end()
+        except Exception:
+            pass
+    finally:
+        hst.link.close()
     return 0
 
 
