@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.21
 - (EN) Breaking: a bind's streams carry a length each (oep-spec probe.config §1.2, freeze decision 1, missed until now): `n × (len, kind, id)`, len 3 today; the fake skips a longer one's tail and refuses one under 3 as malformed.
 - (JA) 破壊的変更: bind のストリームの並びの各要素の前に長さを置く（oep-spec probe.config §1.2。凍結の決定 1 で漏れていた）: `n × (len、kind、id)`、今の len は 3。fake は長い要素の後ろを飛ばし、3 未満は malformed で断る。
 - (EN) `usb:X` is always a unit id, whatever its length (a 4-character unit id was read as a VID); a VID comes with its PID, `usb:VID:PID[:SERIAL]`.
