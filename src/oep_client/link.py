@@ -143,6 +143,7 @@ class SerialLink:
         self.timeout = timeout
         self.resend = True                         # a lost reply: the request once more with the same corr (core §5.2)
         self.retries = 0
+        self.inflight_cap = 0                      # port_speed: the in-flight requests the raised rate verified with
         self.corrupt = 0
         self.stale = 0                             # replies that answered another request
         self.noise = 0                             # serial ports: bytes that were not a frame (the probe's raw side)
@@ -371,6 +372,7 @@ class SerialLink:
             self.stream.baudrate = rate
         self.baud = rate
         if self.framing == "cobs":
+            time.sleep(SWITCH_SETTLE_S)               # the probe switches once its answer is out: let both ends settle
             self._buf.clear()
             self.stream.reset_input_buffer()
 
@@ -391,6 +393,7 @@ class SerialLink:
     def back_to_base(self, wait_s: float = 3.0) -> bool:
         """The host at the boot speed again, and the probe confirmed there: confirms every 0.25 s up to `wait_s` (a
         probe still trying waits out its verify_ms; one committed reverts at the broken candidates these make)."""
+        self.inflight_cap = 0
         if self.base_baud is None:
             return False
         self.set_baud(self.base_baud)
@@ -443,7 +446,7 @@ class SerialLink:
 
     def bind(self, limits: dict):
         """This link's exchange with the probe's limits (core confirm), for Host(exchange=...)."""
-        return lambda msgs: self.exchange(msgs, limits["max_inflight"], limits["window"])
+        return lambda msgs: self.exchange(msgs, min(limits["max_inflight"], self.inflight_cap or 255), limits["window"])
 
     def attach_host(self, hst) -> None:
         """Bind to a host: its correlation counter and blind stops for the resync, and after a confirm, the probe's
@@ -611,6 +614,7 @@ class SpeedTrial:
     broken_out: int = 0
     committed: bool = False
     why: str = ""
+    inflight: int = 0          # the requests kept in flight the verify passed with (0: none passed)
 
 
 @dataclass
@@ -647,7 +651,8 @@ class SpeedReport:
         for t in self.trials:
             kb = lambda v: f"{v:8.1f}" if v is not None else f"{'-':>8}"   # noqa: E731
             lines.append(f"{t.rate:>9} {t.actual if t.actual else '-':>9} {kb(t.in_kb_s)} {kb(t.out_kb_s)} "
-                         f"{f'{t.broken_in}/{t.broken_out}':>13}  {'committed' if t.committed else t.why}")
+                         f"{f'{t.broken_in}/{t.broken_out}':>13}  "
+                         f"{(f'committed (in flight {t.inflight})' if t.committed else t.why)}")
         lines.append(f"in force: {self.rate}" + (" (raised)" if self.chosen else " (the boot speed)"))
         return "\n".join(lines) + "\n"
 
@@ -664,11 +669,14 @@ def _speed_port(hst) -> tuple[int | None, str]:
     return bridges[0], ""
 
 
-def _verify(hst, lk: SerialLink, rate: int, trial: SpeedTrial, verify_bytes: int, verify_s: float) -> bool:
-    """Both ways with max_frame-sized frames, pipelined as the probe allows: up to half of verify_bytes or verify_s
-    each (in first, then out). Stops at the first frame that breaks (lost, or its content wrong)."""
+def _verify(hst, lk: SerialLink, rate: int, trial: SpeedTrial, verify_bytes: int, verify_s: float,
+            inflight: int | None = None) -> bool:
+    """Both ways with max_frame-sized frames, pipelined as `inflight` (default: as the probe allows): up to half of
+    verify_bytes or verify_s each (in first, then out). Stops at the first frame that breaks (lost, or its content
+    wrong)."""
     limits = hst.limits or hst.confirm()
-    max_frame, inflight, window = limits["max_frame"], max(1, limits["max_inflight"]), limits["window"]
+    max_frame, window = limits["max_frame"], limits["window"]
+    inflight = max(1, inflight or limits["max_inflight"])
     n_in = max_frame - m.RESULT_HEADER                    # link_source: a whole result frame
     n_out = max_frame - 6                                 # link_sink: a whole request frame (no session)
     wire = (max_frame + 8) * 10 / rate                    # one frame on the line, seconds
@@ -714,6 +722,9 @@ def _verify(hst, lk: SerialLink, rate: int, trial: SpeedTrial, verify_bytes: int
         return True
     finally:
         lk.timeout, lk.resend = saved
+
+
+SWITCH_SETTLE_S = 0.02   # after a baud change, before the first byte at the new rate (the ATOM's FTDI lost it at once)
 
 
 def raise_speed(hst, rates: list[int], *, verify_bytes: int = 32768, verify_s: float = 1.0,
@@ -775,17 +786,32 @@ def _raise(hst, lk, report, rates, port, base, wait, verify_bytes, verify_s, idl
             continue
         trial.actual = m.Reader(r.payload).u32()
         lk.set_baud(rate)
-        ok = _verify(hst, lk, rate, trial, verify_bytes, verify_s)
+        # the switch-over itself may cost the first frame (bytes in flight while both ends change): one confirm, sent
+        # again a couple of times, finds the new rate before anything is measured (oep-core §3.5)
+        ok = any(lk.confirm_raw(0.2) for _ in range(3))
+        heard = ok
+        # pipelined first (what the host will use); a link that loses bytes while both ways carry at once (an FTDI at
+        # 500 kbaud and up behind usbip, 2026-10-01) gets a second verify with one request at a time
+        full = max(1, (hst.limits or hst.confirm())["max_inflight"])
+        tries = [full] if full == 1 else [full, 1]
+        for n in tries if ok else []:
+            trial.broken_in = trial.broken_out = 0
+            ok = _verify(hst, lk, rate, trial, verify_bytes, verify_s, n)
+            if ok:
+                trial.inflight = n
+                break
+            any(lk.confirm_raw(0.2) for _ in range(3))     # the broken frames' leftovers read past
         if ok:
             try:
                 hst.call(m.CORE_FN, OP_PORT_SPEED, struct.pack("<BIBHI", port, rate, SPEED_STEP["commit"], 0, idle_ms))
                 trial.committed = True
                 report.rate, report.chosen = rate, rate
+                lk.inflight_cap = trial.inflight if trial.inflight < full else 0
                 return report
             except (TimeoutError, _host.Rejected) as e:
                 trial.why = f"the commit failed: {e}"
         else:
-            trial.why = "frames broke"
+            trial.why = "frames broke" if heard else "no confirm at the new rate"
             saved = lk.timeout, lk.resend
             lk.timeout, lk.resend = 0.3, False
             try:

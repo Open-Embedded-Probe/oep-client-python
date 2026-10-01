@@ -209,7 +209,7 @@ def test_a_broken_rate_reverts_and_the_next_one_is_committed():
     report = link.raise_speed(hst, [230400, 1000000, 9_000_000, 500000], **FAST)
     a, b, c, d = report.trials
     assert not a.committed and a.why == "frames broke" and a.broken_in > 0
-    assert not b.committed and b.broken_in > 0
+    assert not b.committed and b.why == "no confirm at the new rate"   # its answers to the confirm never arrive
     assert c.why.startswith("unsupported")
     assert d.committed and report.chosen == 500000 and lk.baud == 500000
     assert ep.speed_state == "committed" and ep.port_baud(0) == 500000
