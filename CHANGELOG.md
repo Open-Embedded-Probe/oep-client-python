@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.23
 - (EN) `link.open_host("tcp://…")` waits 15 s for a reply and does not send a request again by itself (`resend=False`): behind ch32rv's broker, the broker retries towards the probe, and a second copy from the client only raced it (V003 jig, 2026-10-01). `open_host(..., timeout=, resend=)` set both explicitly; serial and USB keep 3 s and one resend.
 - (JA) `link.open_host("tcp://…")` は応答を 15 秒待ち、自分では送り直さない（`resend=False`）。ch32rv のブローカーの後ろでは、ブローカーが probe に送り直すので、client からの 2 通目は競合するだけだった（V003 ジグ、2026-10-01）。`open_host(..., timeout=, resend=)` で明示できる。シリアルと USB は 3 秒と 1 回の送り直しのまま。
 
