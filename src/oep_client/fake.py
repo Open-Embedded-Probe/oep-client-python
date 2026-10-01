@@ -103,7 +103,13 @@ class FakeProbe:
 _CORE_TAGS = reg.CORE.tlv["describe"]
 CORE_FIRMWARE, CORE_MODEL, CORE_UNIT_ID, CORE_CHANNELS = (_CORE_TAGS[k] for k in ("firmware", "model", "unit_id", "channels"))
 CORE_RESERVED, CORE_PROFILE, CORE_LABEL = _CORE_TAGS["reserved"], _CORE_TAGS["profile"], _CORE_TAGS["label"]
-CORE_RESETS_ON_OPEN, CORE_TRANSPORT, CORE_OEP_PID = _CORE_TAGS["resets_on_open"], _CORE_TAGS["transport"], _CORE_TAGS["oep_pid"]
+CORE_RESETS_ON_OPEN, CORE_TRANSPORT = _CORE_TAGS["resets_on_open"], _CORE_TAGS["transport"]
+CORE_DISCOVERABLE, CORE_PLAN_ROLES, CORE_MAX_OP_MS = _CORE_TAGS["discoverable"], _CORE_TAGS["plan_roles"], _CORE_TAGS["max_op_ms"]
+MAX_OP_MS = reg.LIMITS["max_op_ms_reference"]     # what the fake declares: the longest one request may take (core §7.5)
+PLAN_ROLES = 32                                   # role assignments the fake's plan holds at once (core §8)
+GPIO_MODES = reg.FIXTURE_GPIO.tlv["describe"]["modes"]
+UART_FORMATS = reg.FIXTURE_UART.tlv["describe"]["formats"]
+FORMATS_8 = (0x00, 0x04, 0x08, 0x10, 0x14, 0x18)   # 8N1 8E1 8O1 8N2 8E2 8O2: the formats the fake UARTs take
 TRANSPORT = reg.CORE.enum["transport_kind"]
 SERIAL_KINDS = {TRANSPORT["uart_bridge"], TRANSPORT["usb_cdc"], TRANSPORT["usb_serial_jtag"]}
 NS = "io.github.ch32-riscv-ug"
@@ -120,15 +126,17 @@ def _analog_decl(frontends: list[tuple[int, int, int, int]], max_samples: int) -
     out = tuple(catalog.tlv(_ANAD["mode"], struct.pack("<BBII", _CAPM[k], 1, max_samples, 8 if k == "repeat" else 1))
                 for k in ("one_shot", "repeat", "streaming"))
     out += tuple(catalog.tlv(_ANAD["frontend"], struct.pack("<BiiI", *f)) for f in frontends)
-    return out + (catalog.tlv(_ANAD["channels"], bytes([4, 1 << 4])),                   # s 16 (bit i = 2^i)
-                  catalog.tlv(_ANAD["trigger"], struct.pack("<BI", 0b11001, max_samples - 1)),   # immediate, cross up / down
+    return out + (catalog.tlv(_ANAD["channels"], struct.pack("<BI", 4, 1 << 4)),      # s 16 (layouts u32: bit i = 2^i)
+                  catalog.tlv(_ANAD["trigger"], struct.pack("<II", 0b11001, max_samples - 1)),   # immediate, cross up / down
                   catalog.u32(_ANAD["max_read"], 4096), catalog.u16(_ANAD["segment_ring"], 8),
-                  catalog.u32(FEATURES, 0b001))
+                  catalog.u32(FEATURES, 0b111))     # query, force, notify
 
 
 def _group_decl(tracks: list[int], budgets: list[tuple[int, list[int]]], skews: dict[int, int]) -> tuple[bytes, ...]:
-    return ((catalog.tlv(_GRPD["tracks"], struct.pack(f"<{len(tracks)}H", *tracks)), catalog.u8(_GRPD["max_tracks"], len(tracks)))
-            + tuple(catalog.tlv(_GRPD["budget"], struct.pack(f"<I{len(f)}H", most, *f)) for most, f in budgets)
+    """oep.fixture.capture-group's declarations (§4.3): tracks n x fn, max_tracks, budget max_sps n x fn, start_skew."""
+    return ((catalog.tlv(_GRPD["tracks"], struct.pack(f"<B{len(tracks)}H", len(tracks), *tracks)),
+             catalog.u8(_GRPD["max_tracks"], len(tracks)), catalog.u32(FEATURES, 0b110))
+            + tuple(catalog.tlv(_GRPD["budget"], struct.pack(f"<IB{len(f)}H", most, len(f), *f)) for most, f in budgets)
             + tuple(catalog.tlv(_GRPD["start_skew"], struct.pack("<HI", fn, ns)) for fn, ns in skews.items()))
 _CAPM = reg.FIXTURE_LOGIC.enum["mode"]
 
@@ -140,10 +148,10 @@ def _capture_decl(modes: list[str], max_channels: int, widths: list[int], max_sa
     out = tuple(catalog.tlv(_CAPD["mode"], struct.pack("<BBII", _CAPM[k], 1, max_samples, ring if k == "repeat" else 1))
                 for k in modes)
     bits = sum(1 << (w.bit_length() - 1) for w in widths)
-    return out + (catalog.tlv(_CAPD["channels"], bytes([max_channels, bits])),
-                  catalog.tlv(_CAPD["trigger"], struct.pack("<BI", 0b111, max_samples - 1)),
+    return out + (catalog.tlv(_CAPD["channels"], struct.pack("<BI", max_channels, bits)),    # layouts: u32 bit set
+                  catalog.tlv(_CAPD["trigger"], struct.pack("<II", 0b111, max_samples - 1)),   # types u32, max_pretrigger
                   catalog.u32(_CAPD["max_read"], max_read), catalog.u16(_CAPD["segment_ring"], ring),
-                  catalog.u32(FEATURES, 0b001))
+                  catalog.u32(FEATURES, 0b111))     # query, force, notify
 MAX_CONNECTIONS = reg.WIRE_RVSWD.tlv["describe"]["max_connections"]
 _CFG = reg.PROBE_CONFIG.tlv["describe"]
 
@@ -154,11 +162,23 @@ def _transports(kinds: list[tuple[int, int]]) -> tuple[bytes, ...]:
 
 
 def _config(fn: int, instance: int, slots_max: int, modes: int = 0b111, storage: int = 4096) -> Offered:
-    """oep.probe.config's static declarations; slot_state / bind_state are added live by the endpoint."""
+    """oep.probe.config's declarations (probe.config §4: declarations only; the state is the endpoint's op state)."""
     return Offered(fn, instance, "oep.probe.config", (
-        catalog.tlv(_CFG["storage"], struct.pack("<IBIIB", storage, 0, 0, 20, 0)),
+        catalog.u32(_CFG["storage"], storage),
         catalog.tlv(_CFG["items"], bytes(reg.PROBE_CONFIG.tlv["item"].values())),
-        catalog.u8(_CFG["slots_max"], slots_max), catalog.u8(_CFG["bind_modes"], modes)))
+        catalog.u8(_CFG["slots_max"], slots_max), catalog.u32(_CFG["bind_modes"], modes)))
+
+
+def _gpio(fn: int, channels: list[int], modes: int = 0xFF) -> Offered:
+    """oep.fixture.gpio: role 1 on `channels`, the modes it drives (u32 bit set, fixture §1)."""
+    return Offered(fn, 0, "oep.fixture.gpio", _roles({1: channels}) + (catalog.u32(GPIO_MODES, modes),))
+
+
+def _uart(fn: int, instance: int, channels: list[int], max_hz: int, formats=FORMATS_8) -> Offered:
+    """oep.fixture.uart: RX / TX on `channels`, the formats it takes (n(u8) n x u8; 8N1 always, fixture §2)."""
+    return Offered(fn, instance, "oep.fixture.uart", _roles({1: channels, 2: channels}) + (
+        catalog.u32(MAX_CLOCK_HZ, max_hz), catalog.u8(IMPLEMENTATION, 2),
+        catalog.tlv(UART_FORMATS, bytes([len(formats)]) + bytes(formats))))
 
 
 def _roles(assign: dict[int, list[int]]) -> tuple[bytes, ...]:
@@ -171,10 +191,13 @@ def _label(channel: int, name: str) -> bytes:
 
 def _core(firmware: str, model: str, unit_id: str, channels: int, reserved: list[int], profile: str,
           labels: dict[int, str], extra: tuple[bytes, ...] = ()) -> Offered:
+    """oep.core's declarations (core §7.5): the required unit_id, transport (in `extra`) and max_op_ms, plan_roles, the
+    firmware's fixed labels."""
     base, bits = catalog.channels_to_bitmap(reserved)
     return Offered(0, 0, "oep.core", (
         catalog.text(CORE_FIRMWARE, firmware), catalog.text(CORE_MODEL, model), catalog.text(CORE_UNIT_ID, unit_id),
         catalog.u16(CORE_CHANNELS, channels), catalog.tlv(CORE_RESERVED, struct.pack("<H", base) + bits),
+        catalog.u32(CORE_MAX_OP_MS, MAX_OP_MS), catalog.u32(CORE_PLAN_ROLES, PLAN_ROLES),
         ) + ((catalog.text(CORE_PROFILE, profile),) if profile else ()) + tuple(_label(c, n) for c, n in labels.items())
         + extra)
 
@@ -190,18 +213,16 @@ def p4_x035() -> FakeProbe:
               {2: "SWDIO", 54: "SWCLK", 51: "LED"},
               _transports([(TRANSPORT["usb_serial_jtag"], 0xFF), (TRANSPORT["vendor_bulk"], 0),
                            (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)])
-              + (catalog.u8(CORE_OEP_PID, 1), catalog.text(CORE_CHIP, "esp32p4 v1.0"))),
+              + (catalog.u8(CORE_DISCOVERABLE, 1), catalog.text(CORE_CHIP, "esp32p4 v1.0"))),
         Offered(1, 0, "oep.wire.rvswd", (
             catalog.channel_group(1, [(1, 2), (2, 54)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(IMPLEMENTATION, 1),
             catalog.u8(MAX_CONNECTIONS, 1))),
         Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
                                               catalog.u16(MAX_LENGTH, 1000))),
         Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
-        Offered(4, 0, "oep.fixture.gpio", _roles({1: pins})),
-        Offered(5, 0, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
-            catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
-        Offered(6, 1, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
-            catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
+        _gpio(4, pins),
+        _uart(5, 0, pins, 3_000_000),
+        _uart(6, 1, pins, 3_000_000),
         # the P4's PARLIO: w 1-16, one-shot / repeat / streaming
         Offered(7, 0, "oep.fixture.logic", _roles({k: pins for k in range(16)}) + (
             catalog.u32(MAX_CLOCK_HZ, 20_000_000), catalog.u32(MIN_CLOCK_HZ, 1_000),
@@ -236,9 +257,8 @@ def esp32_v003() -> FakeProbe:
         Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b0111), catalog.u8(IMPLEMENTATION, 1),
                                               catalog.u16(MAX_LENGTH, 40))),
         Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
-        Offered(4, 0, "oep.fixture.gpio", _roles({1: wired + [23]})),
-        Offered(5, 0, "oep.fixture.uart", _roles({1: wired, 2: wired}) + (
-            catalog.u32(MAX_CLOCK_HZ, 115_200), catalog.u8(IMPLEMENTATION, 2))),
+        _gpio(4, wired + [23], modes=0x7F),                      # no mode 7 (both pulls): unsupported there
+        _uart(5, 0, wired, 115_200),
         # the classic ESP32's GPIO sampler: a byte a sample (w 8), one-shot
         Offered(6, 0, "oep.fixture.logic", _roles({k: wired for k in range(4)}) + (
             catalog.u32(MAX_CLOCK_HZ, 2_000_000), catalog.u32(MIN_CLOCK_HZ, 400_000), catalog.u8(IMPLEMENTATION, 1))
@@ -263,7 +283,7 @@ def p4_bench() -> FakeProbe:
         _core("3.0.0", "esp32p4", "30eda0e3b001", 55, reserved, f"{NS}.p4-bench",
               {2: "A SWDIO", 3: "A SWCLK", 4: "B SWDIO", 5: "B SWCLK", 6: "C SWDIO", 7: "C SWCLK"},
               _transports([(TRANSPORT["usb_serial_jtag"], 0xFF), (TRANSPORT["vendor_bulk"], 0),
-                           (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)]) + (catalog.u8(CORE_OEP_PID, 1),)),
+                           (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)]) + (catalog.u8(CORE_DISCOVERABLE, 1),)),
         Offered(1, 0, "oep.wire.rvswd", (
             catalog.channel_group(1, [(1, 2), (2, 3)]), catalog.channel_group(2, [(1, 4), (2, 5)]),
             catalog.channel_group(3, [(1, 6), (2, 7)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000),
@@ -271,9 +291,8 @@ def p4_bench() -> FakeProbe:
         Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
                                               catalog.u16(MAX_LENGTH, 1000))),
         Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
-        Offered(4, 0, "oep.fixture.gpio", _roles({1: pins})),
-        Offered(5, 0, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
-            catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
+        _gpio(4, pins),
+        _uart(5, 0, pins, 3_000_000),
         _config(6, 0, slots_max=4),
     ])
 
@@ -292,9 +311,8 @@ def rp2350_pins() -> FakeProbe:
         Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
                                               catalog.u16(MAX_LENGTH, 1000))),
         Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
-        Offered(4, 0, "oep.fixture.gpio", _roles({1: pins})),
-        Offered(5, 0, "oep.fixture.uart", _roles({1: pins, 2: pins}) + (
-            catalog.u32(MAX_CLOCK_HZ, 3_000_000), catalog.u8(IMPLEMENTATION, 2))),
+        _gpio(4, pins),
+        _uart(5, 0, pins, 3_000_000),
     ])
 
 
