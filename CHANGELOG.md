@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `link.open_host("tcp://…")` waits 15 s for a reply and does not send a request again by itself (`resend=False`): behind ch32rv's broker, the broker retries towards the probe, and a second copy from the client only raced it (V003 jig, 2026-10-01). `open_host(..., timeout=, resend=)` set both explicitly; serial and USB keep 3 s and one resend.
+- (JA) `link.open_host("tcp://…")` は応答を 15 秒待ち、自分では送り直さない（`resend=False`）。ch32rv のブローカーの後ろでは、ブローカーが probe に送り直すので、client からの 2 通目は競合するだけだった（V003 ジグ、2026-10-01）。`open_host(..., timeout=, resend=)` で明示できる。シリアルと USB は 3 秒と 1 回の送り直しのまま。
 
 ## 0.0.22
 - (EN) Breaking: the wire follows oep-spec's zero-base rewrite of 2026-10-01 (docs/v1-zero-base-proposal.ja.md §3 / §7; registry synced). Every answer that ended in data or a list now carries its length and may be followed by TLVs: read answers `start flags len data [TLV]` (console, fixture UART; capture `len` u32), gpio read `n n×level`, dmi `done status nvals values`, arm-adi transfer `done status ack nvals values`, run `status stopped dpc elapsed_us nvals values` (stopped 2 = the hart could not be halted: `RunResult.not_halted`), data frames `position len data [TLV]`, events `kind fixed-part [TLV]`. TLVs have a long form (`tag 0xFF len(u16) value` for 255 bytes and more; `message.tlv` / `split_tlvs`, the long form with a short value is `message.BadTlv`). confirm answers the probe's `boot_id`; subscribe's `max_delay_ms` is u32; `rejected unsupported` is always `tag [TLV]` (0x00 = a fixed-part value: `Unsupported.tag` None, `.tlvs`).
