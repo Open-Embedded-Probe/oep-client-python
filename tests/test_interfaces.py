@@ -330,7 +330,7 @@ def test_uart_configure_format_and_reads_that_do_not_consume(bench):
         io.uart.configure(50_000_000)                             # more than 5 % off what the probe can do
     assert e.value.tag is None
     st = io.uart.status()
-    assert st.configured and st.baud == io.baud and st.format == 0b010100
+    assert st.configured == "session" and st.baud == io.baud and st.format == 0b010100
     ep.uart_accept = 2
     assert io.uart.write(b"abc") == 2
     io.uart.mark(7)
@@ -380,10 +380,10 @@ def test_uart_stream_is_the_plans_and_its_position_never_goes_back(bench):
     assert e.value.cause == "wrong_state"
     with pytest.raises(host.Unavailable):
         uart.read()
-    assert not uart.status().configured
+    assert uart.status().configured == "default"
     core.plan_apply(hst, [(UART, 1, 20)])                        # RX only: the stream is there, 115200 8N1 by default
     ep.uart_rx(UART, b"before configure")
-    assert uart.read().data == b"before configure" and uart.status() == fixture.UartStatus(configured=False, baud=115200, format=0)
+    assert uart.read().data == b"before configure" and uart.status() == fixture.UartStatus(configured="default", baud=115200, format=0)
     uart.mark(1)
     core.plan_release(hst, [UART])
     with pytest.raises(host.Unavailable):

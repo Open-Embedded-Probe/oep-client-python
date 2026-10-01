@@ -70,18 +70,29 @@ def test_uart_item_is_applied_when_the_plan_gives_the_uart_pins():
     uart = fixture.FixtureUart(hst, 5)
     cfg.set([config.Uart(fn=5, baud=9600, format=0x04)])             # no plan yet: the set goes through
     assert cfg.items() == [config.Uart(fn=5, baud=9600, format=0x04)]
-    assert not uart.status().configured
+    assert uart.status().configured == "default"
     core.plan_apply(hst, [(5, 1, 20), (5, 2, 21)])
-    assert uart.status() == fixture.UartStatus(configured=True, baud=9600, format=0x04)
+    assert uart.status() == fixture.UartStatus(configured="item", baud=9600, format=0x04)
     actual = uart.configure(115200)                                  # the session's configure wins
     assert abs(actual - 115200) <= 115200 // 20 and uart.status().baud == actual
     cfg.set([config.Uart(fn=5, baud=20000, format=0)])
     assert uart.status().baud == actual                              # ... until the plan goes
     core.plan_release(hst, [5])
     cfg.set([config.Plan(fn=5, role=1, channel=20)])                 # the settings' plan: the item applies
-    assert uart.status() == fixture.UartStatus(configured=True, baud=20000, format=0)
+    assert uart.status() == fixture.UartStatus(configured="item", baud=20000, format=0)
+    assert uart.status().configured == "item" and not uart.status().is_default
+    cfg.set([config.remove("uart", 5)])
+    assert uart.status() == fixture.UartStatus(configured="default", baud=115200, format=0)   # the item went
+    # the item's baud is checked by range at set; the divider is made when the plan runs the UART: too far off, the
+    # default applies and status says item_fallback (fixture §2)
+    core.plan_release(hst)
+    cfg.set([config.remove("plan", 5), config.Uart(fn=5, baud=230400, format=0x04)])
+    ep.uart_clock_hz = 1_000_000                                     # a coarse divider: 230400 -> 250000, 8.5 % off
+    core.plan_apply(hst, [(5, 1, 20)])
+    assert uart.status() == fixture.UartStatus(configured="item_fallback", baud=115200, format=0)
+    assert uart.status().is_default
     with pytest.raises(h.Unsupported):
-        cfg.set([config.Uart(fn=5, baud=50_000_000)])                # more than 5 % off what the probe can do
+        cfg.set([config.Uart(fn=5, baud=50_000_000)])                # over the UART's max_clock_hz (the range at set)
     with pytest.raises(h.Rejected, match="malformed"):
         cfg.set([config.Uart(fn=5, baud=9600, format=0x80)])         # an undefined format bit
     with pytest.raises(h.Unsupported):
