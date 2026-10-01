@@ -1,0 +1,5 @@
+# Only the small result JSONs are kept; anything else here (logs, images, caches) stays out.
+*
+!.gitignore
+!*.json
+fake-*.json
