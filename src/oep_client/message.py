@@ -41,7 +41,7 @@ NO_CONNECTION = _R["no_connection"]        # the probe does not know the request
 UNSUPPORTED = _R["unsupported"]            # a critical TLV (payload: its tag) or a fixed-part value it cannot handle
 RESULT_LOST = _R["result_lost"]            # a request sent again whose result the probe did not keep: read the state again
 CORR_REUSED = _R["corr_reused"]            # a request sent again with the same corr but another fn, op or payload
-EXPIRED = _R["expired"]                    # this session's lock lapsed or was taken by force, its resources swept: open again
+EXPIRED = _R["expired"]                    # this session's lock lapsed (lease expiry), its resources swept: open again
 
 REJECT_NAMES = {v: k.replace("_", " ") for k, v in _R.items()}
 REJECT_NAMES[MALFORMED] = "malformed payload"

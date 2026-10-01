@@ -8,8 +8,8 @@ define:
   in the v0 shape and drops role 0x81 requests unanswered
 - the lock (core §6): a host-chosen session id, extended by every request of its holder and counted from when that
   request completed; the last id is remembered with how its lock ended: after an end it resumes (resumed 1), after a
-  lapse or a force its first request is rejected expired and its open answers resumed 2 (the resources were swept,
-  core §9); lease 0 = the probe default, 1000-60000 ms taken as asked, longer ones cut to `lease_max_ms`; the open's
+  lapse its first request is rejected expired and its open answers resumed 2 (the resources were swept, core §9; an id
+  forced out sees locked, then no_session: the last id is the forcing one); lease 0 = the probe default, 1000-60000 ms taken as asked, longer ones cut to `lease_max_ms`; the open's
   owner TLV shown by lock_state and by rejected locked (never the session id); subscriptions survive a same-id open
   while held
 - the resend table (core §5.2): the last session's recent requests with their results (results longer than
@@ -75,6 +75,7 @@ SLOT_NAME = re.compile(r"[a-z0-9_-]{1,32}")
 NO_SLOT, NEVER_NS = 0xFF, 0xFFFFFFFFFFFFFFFF
 PIN_ROLE_RESET = reg.WIRE_RVSWD.enum["pin_role"]["reset"]   # the channels an attach's reset TLV may take
 TARGET_ID_LEN = reg.WIRE_RVSWD.enum["target_id_len"]["wch_dmi_7f"]
+TARGET_ID_SCHEMES = set(reg.WIRE_RVSWD.enum["target_id_scheme"].values()) | set(reg.WIRE_SWD.enum["target_id_scheme"].values())
 UART_FORMAT_MASK = 0x1F                                    # the defined format bits (fixture §2)
 _T_SCAN, _T_ATTACH, _T_DETACH, _T_ATTACH_ANSWER = (reg.WIRE_RVSWD.tlv[k] for k in ("scan", "attach", "detach", "attach_answer"))
 
@@ -388,7 +389,7 @@ class Endpoint:
     def _boot(self) -> None:
         self.holder: int | None = None
         self.last: int | None = None
-        self.last_swept = False              # the last id's lock ended by a lapse or a force: its next request is expired
+        self.last_swept = False              # the last id's lock lapsed: its next request is expired (core §6.2)
         self.owner: bytes | None = None
         self.lease_ms = self.lease_default_ms
         self.expires_ms = 0
@@ -412,6 +413,7 @@ class Endpoint:
         self.streams: dict[int, Stream] = {}           # console stream id -> stream
         self.stream_keys: dict[tuple[int, int], int] = {}   # (connection, mechanism) -> stream id
         self.stream_places: dict[int, tuple[int, tuple[int, int]]] = {}   # stream id -> (wire fn, pin pair) it was on
+        self.stream_order: dict[int, int] = {}         # stream id -> creation order (the streams list's order)
         self.gpio_modes: dict[int, int] = {}
         self.gpio_inputs: dict[int, int] = {}
         self.gpio_log: list[tuple[int, int]] = []
@@ -781,7 +783,8 @@ class Endpoint:
 
     def _release_lock(self, taken: bool) -> None:
         """end (taken False) keeps the session's resources for the next open; a lapse or force (taken True) sweeps
-        them (core §9) and makes the id's next request expired."""
+        them (core §9). After a lapse the id's next request is expired; after a force the forcing id is the last one,
+        so the old id meets locked, then no_session (core §4.3 0x0E)."""
         self.holder = None
         self.last_swept = taken
         self.subscribed.clear()                                    # subscriptions end with the lock
@@ -810,7 +813,7 @@ class Endpoint:
             return m.REJECTED, m.SESSION_REQUIRED, b""
         if self.holder is None:
             if session == self.last:
-                if self.last_swept:                                # a lapse or a force swept it: open again (core §6.2)
+                if self.last_swept:                                # its lease lapsed and swept it: open again (core §6.2)
                     return m.REJECTED, m.EXPIRED, b""
                 self.holder = session                              # resume: nobody else came in between
                 self.expires_ms = self.now() + self.lease_ms       # the lease of its last open
@@ -1188,18 +1191,29 @@ class Endpoint:
                 self._close_conn(cid, MARK["detach"])
             self._refresh()
             return m.COMPLETED, m.SUCCESS, b""
-        if op == 0x05:                                             # connections (lock-free)
+        if op == 0x05:                                             # connections (lock-free, paged by first: debug §2.1)
+            first = t.take("B")
             t.tail()
             mine = sorted((c.order, cid) for cid, c in self.conns.items() if c.fn == fn)
-            out = bytearray([len(mine)])
+            rows = []
             for _, cid in mine:
                 c = self.conns[cid]
                 users = (1 if "host" in c.users else 0) | (2 if any(u != "host" for u in c.users) else 0)
                 slot = next((n for n, s in self.slots.items() if s.wire_fn == fn and s.pair == c.pair), NO_SLOT)
                 tid = b"" if c.tid is None else struct.pack("<I", c.tid)
-                out += m.element(struct.pack("<HHHIBBBB", cid, *c.pair, c.speed, users, slot, 1 if tid else 0, len(tid)) + tid)
-            return m.COMPLETED, m.SUCCESS, bytes(out)
+                rows.append(m.element(struct.pack("<HHHIBBBB", cid, *c.pair, c.speed, users, slot, 1 if tid else 0, len(tid)) + tid))
+            return m.COMPLETED, m.SUCCESS, self._paged(rows, first)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
+
+    def _paged(self, rows: list[bytes], first: int) -> bytes:
+        """more(u8) count(u8) the rows from `first` that fit the frame (connections, streams: core §2.3's lists)."""
+        budget = self.probe.max_frame - m.RESULT_HEADER - 2
+        out: list[bytes] = []
+        for row in rows[first:]:
+            if out and sum(map(len, out)) + len(row) > budget:
+                break
+            out.append(row)
+        return bytes([int(first + len(out) < len(rows)), len(out)]) + b"".join(out)
 
     def _pick_pair(self, fn: int, got: dict[int, bytes]) -> tuple[int, int]:
         if 0x03 in got:
@@ -1483,16 +1497,17 @@ class Endpoint:
                 raise Reject(m.UNSUPPORTED)                        # not a mechanism this probe opens (0xFF included)
             sid, existing = self._open_stream(conn, mech, "host")
             return self._answer(struct.pack("<HB", sid, int(existing)), ignored)
-        if op == _CON.op["streams"]:                               # lock-free: every stream, live or still readable
+        if op == _CON.op["streams"]:                               # lock-free, paged by first: every stream, live or readable
+            first = t.take("B")
             t.tail()
             rows = []
-            for sid in sorted(self.streams):
+            for sid in sorted(self.streams, key=lambda k: self.stream_order.get(k, 0)):
                 s = self.streams[sid]
                 users = (STREAM_USERS["host_session"] if "host" in s.users else 0) | \
                         (STREAM_USERS["slot"] if any(u != "host" for u in s.users) else 0)
                 rows.append(m.element(struct.pack("<HHBBB", sid, s.conn, s.mechanism, users,
                                                   STREAM_STATE["closed"] if s.closed else STREAM_STATE["open"])))
-            return m.COMPLETED, m.SUCCESS, bytes([len(rows)]) + b"".join(rows)
+            return m.COMPLETED, m.SUCCESS, self._paged(rows, first)
         sid = t.take("H")
         s = self._stream(sid)                                      # no_connection, or unavailable 6 for a connection's
         if op == _CON.op["close"]:
@@ -1530,6 +1545,8 @@ class Endpoint:
         else:
             sid = self._new_resource("stream")                     # one u16 space with the connections (core §9)
             s = self.streams[sid] = Stream()
+            self._order += 1
+            self.stream_order[sid] = self._order                   # streams lists them in the order they were made
         s.conn, s.mechanism = conn, mech
         s.users = {user}
         self.stream_keys[(conn, mech)] = sid
@@ -1941,9 +1958,14 @@ class Endpoint:
         lock = None
         if lock_len:
             half = (lock_len - 1) // 2
-            if lock_part[0] != 1 or half != TARGET_ID_LEN:
+            scheme = lock_part[0]
+            if scheme not in TARGET_ID_SCHEMES:
+                raise Reject(m.MALFORMED)                          # not a defined scheme (§1.1)
+            if scheme != reg.WIRE_RVSWD.enum["target_id_scheme"]["wch_dmi_7f"]:
+                raise Reject(m.UNSUPPORTED)                        # defined, but not this wire's (swd's targetsel)
+            if half != TARGET_ID_LEN:
                 raise Reject(m.MALFORMED)                          # the lock's length is the scheme's value's (§1.1)
-            lock = (lock_part[0], lock_part[1:1 + half], lock_part[1 + half:])
+            lock = (scheme, lock_part[1:1 + half], lock_part[1 + half:])
         return Slot(n, wire_fn, (swdio, swclk), attach, retry_ms, max_speed, idle_clock, mech, name.decode(), lock)
 
     def _parse_bind(self, v: bytes, slots: dict[int, Slot]) -> Bind:

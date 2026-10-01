@@ -184,9 +184,10 @@ def test_at_boot_slots_attach_and_say_so_without_the_lock():
     assert states[0][1] == STATE["connected"] and struct.unpack_from("<I", states[0], 14)[0] == 0x035E0601
     assert states[1][1] == STATE["absent"] and struct.unpack_from("<Q", states[1], 4)[0] == 0   # tried at 0 ns
     assert len(states[0]) == 18 and len(states[1]) == 14                        # slot state conn last_try_at_ns scheme len tid
-    listed = h.raw(1, 0x05, session=False).payload                  # connections, lock-free
-    assert listed[0] == 1 and listed[1] >= 14                       # count, then len(u8) of the entry (core §2.3)
-    assert listed[2 + 10] == 0b10 and listed[2 + 11] == 0            # used by slot 0 only
+    listed = h.raw(1, 0x05, b"\x00", session=False).payload        # connections, lock-free, from the first
+    assert listed[0] == 0 and listed[1] == 1 and listed[2] >= 14    # more, count, then len(u8) of the entry (core §2.3)
+    assert listed[3 + 10] == 0b10 and listed[3 + 11] == 0            # used by slot 0 only
+    assert h.raw(1, 0x05, b"\x01", session=False).payload[:2] == b"\x00\x00"   # past the end: nothing more
 
 
 def test_a_lock_that_does_not_match_lets_go():
@@ -198,6 +199,10 @@ def test_a_lock_that_does_not_match_lets_go():
     st = state(ep)[4][0]
     assert st[1] == STATE["lock_mismatch"] and not ep.conns
     assert h.raw(6, 0x02, slot_item(1, 1, ep.pairs[1][1], lock=(b"\xff\xff", b"\x00\x00"))).detail == m.MALFORMED   # not the scheme's 4 bytes
+    bare = slot_item(1, 1, ep.pairs[1][1])[2:-1]                      # the item's value up to lock_len
+    other = lambda scheme: m.tlv(ITEM["slot"], bare + bytes([9, scheme]) + lock[0] + lock[1])
+    assert h.raw(6, 0x02, other(2)).detail == m.UNSUPPORTED        # swd's targetsel: defined, not this wire's
+    assert h.raw(6, 0x02, other(7)).detail == m.MALFORMED          # not a defined scheme
 
 
 def test_the_seat_rule_closes_the_oldest_slot_only_connection():
@@ -415,8 +420,10 @@ def test_a_closed_console_stays_readable_and_the_same_place_opens_it_again_under
     a3 = attach(p[0])
     h.ok(3, 0x01, struct.pack("<HB", a3, 1))                         # another mechanism there: the old one goes
     assert h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).detail == m.NO_CONNECTION
-    rd = m.Reader(h.raw(3, 0x08, session=False).payload)             # streams: the live ones (b's and a3's), lock-free
-    rows = [rd.element().take("HHBBB") for _ in range(rd.u8())]
+    rd = m.Reader(h.raw(3, 0x08, b"\x00", session=False).payload)   # streams: the live ones (b's and a3's), lock-free
+    more, count = rd.take("BB")
+    rows = [rd.element().take("HHBBB") for _ in range(count)]
+    assert more == 0
     (row,) = [r for r in rows if r[1] == a3]
     assert len(rows) == 2 and row[2:] == (1, 1, 0) and row[0] not in (sa, a, a2, a3, b)   # stream connection mechanism users state
 
@@ -433,8 +440,8 @@ def test_a_stream_lives_while_anything_uses_it():
     conn = ep._conn_at(1, p[0])
     sid, flags = m.Reader(h.ok(3, 0x01, struct.pack("<HB", conn, 2))).take("HB")
     assert flags == 1 and ep.streams[sid].users == {"host", ("slot", 0)}
-    rd = m.Reader(h.raw(3, 0x08, session=False).payload)
-    assert rd.u8() == 1 and rd.element().take("HHBBB") == (sid, conn, 2, 0b11, 0)   # users: session and slot
+    rd = m.Reader(h.raw(3, 0x08, b"\x00", session=False).payload)
+    assert rd.take("BB") == (0, 1) and rd.element().take("HHBBB") == (sid, conn, 2, 0b11, 0)   # users: session and slot
     h.ok(3, 0x07, struct.pack("<H", sid))                            # close: the slot still uses it
     assert ep.streams[sid].users == {("slot", 0)} and not ep.streams[sid].closed
     h.ok(3, 0x01, struct.pack("<HB", conn, 2))

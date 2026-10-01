@@ -33,7 +33,7 @@ oep-client-python X.Y.Z (until the v1 freeze every release may break the wire; t
 
 | Module | Contents |
 |---|---|
-| `host` | requests and results, the session id and the lock, `call()` (raises unless it worked), pipelining, the errors (`OepError` / `Rejected` / `Failed`; `Expired` when the lease lapsed or a force took the lock - the session is never re-opened behind the caller's back, `Host.epoch` moves) |
+| `host` | requests and results, the session id and the lock, `call()` (raises unless it worked), pipelining, the errors (`OepError` / `Rejected` / `Failed`; `Expired` when the lease lapsed - the session is never re-opened behind the caller's back, `Host.epoch` moves) |
 | `link` | transports: serial ports (always COBS + CRC as `0x00 <COBS> 0x00`, bytes outside frames skipped as noise, opened exclusively), USB vendor bulk / HID and TCP (length frames, the §5.1 resync); matching by corr and resending; `open_host(target)` |
 | `core` | interfaces by name (cached), confirm (with the probe's `boot_id`), the probe's describe (declarations only, cached per boot: labels, the transport list, `max_op_ms`), taking the lock (`take`), the pin plan, the `Interface` base |
 | `riscv` | `oep.wire.rvswd` / `oep.wire.swio` (scan, attach - `max_speed` always sent, `reset=(channel, hold_ms)` for an attach under reset -, detach, connections), `oep.target.riscv-dm` (answers count their values; `RunResult.not_halted`), finding the reset line, attach through GPIO |
