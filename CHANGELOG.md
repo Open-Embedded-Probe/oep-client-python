@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.24
 - (EN) A serial link whose port a session holds sends a request again as soon as a broken frame arrives, instead of after the timeout: the probe sends no raw bytes on a held port (oep-core §3.4), so the broken frame was the reply, and the repeat is answered from the probe's retry table. A 60 KB logic capture read on an M5Stack ATOM went from 4.0 to 8.3 KB/s at 115200 and runs at 76 KB/s at 1.5 Mbaud (dogfooding port_speed, 2026-10-01).
 - (JA) セッションが口を持っているシリアルの経路では、壊れたフレームが来たら時間切れを待たずにすぐ送り直す: 持たれている口には probe が生のバイトを送らない（oep-core §3.4）ので、壊れたフレームは応答で、送り直しには probe の送り直しの表が答える。M5Stack ATOM で 60 KB のロジックのキャプチャの読み出しが 115200 で 4.0 → 8.3 KB/s、1.5 Mbaud で 76 KB/s になった（port_speed のドッグフーディング、2026-10-01）。
 - (EN) `raise_speed` (used on an M5Stack ATOM, 2026-10-01): waits 20 ms after a baud change and finds the new rate with a confirm before measuring; verifies pipelined first and, when frames break with both ways busy (the ATOM's FTDI at 500 kbaud and up), once more one request at a time, then keeps that limit on the link (`SpeedTrial.inflight`, `link.inflight_cap`); a rate whose confirm never comes back says so. The ATOM now commits 1.5 Mbaud at 76 / 58 KB/s (in flight 1) where the first version rejected every rate.
