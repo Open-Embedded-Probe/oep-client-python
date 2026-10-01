@@ -95,7 +95,8 @@ print(hst.link.speed.to_text())             # 試した速さごとに、実際�
 
 速さごとに順に: `試す`（今の速さで応答してから probe が切り替える）→ host も切り替える → 両方向に max_frame の大きさのフレームで
 （link_source / link_sink、パイプライン）`verify_bytes` か `verify_s` の分だけ確かめ、壊れたフレームを数え、それぞれの向きの KB/s を
-測る → 何も壊れなければ `決める`、壊れれば戻して起動時の速さに戻り、そこで confirm し直す（戻すが届かなかった probe は `verify_ms`
+測る → 通った同時の数で両方向を同時に（link_source と link_sink を交互に、約 1 秒、64 フレーム以上。`duplex_kb_s`。向きごとには
+通っても同時に流すと壊れる線がある。921600 の CH340 がそうだった）流す → 何も壊れなければ `決める`、壊れれば戻して起動時の速さに戻り、そこで confirm し直す（戻すが届かなかった probe は `verify_ms`
 を待って戻る）。最初に通った速さを使う。probe の UART が作れない速さは飛ばす。通る速さは変換チップとドライバで決まる（FTDI は
 3 MHz ÷ n だけ、CH340 は 921600 は通り 1500000 は probe → host が壊れた: oep-spec docs/uart-speed-negotiation.ja.md）ので、速さは
 host が選ぶ。結果（`link.speed`: `rate`、`chosen`、`in_kb_s` / `out_kb_s`、`trials`）はキャプチャや書き込みの予算を立てるのに使う。
@@ -104,7 +105,9 @@ probe はセッションが終わったとき（`end`、lease の期限切れ、
 `port_speed_idle_max_ms` = 3 秒。落ちた host の速さもそれより長くは残らない）に自分で起動時の速さに戻る: 上げている間、link は
 1 秒黙っていれば要求の前に keepalive を送り、長く黙る呼び出し側は `hst.link.keep_alive()` で同じことをする。シリアルの口を開くと
 最初の confirm を約 4 秒繰り返して、残った速さが戻るのを待つ。link は `end` にはすぐ合わせ、上げた速さで応答の来ない要求（送り直しも）があれば、起動時の速さに戻って
-confirm し、そこでもう一度送る（固まらない）。機能の無い probe は `not supported` で、速さは変わらない。ブローカー（TCP）の後ろでは
+confirm し、そこでもう一度送る（固まらない）。上げている間は応答を待つ 1 回が lease の 4 分の 1 までなので、lease の内に十分収まる。
+使っている間に 5 秒の内に 3 回フレームが壊れるか送り直すと、上げた速さで port_speed の戻すを送り、起動時の速さに戻って confirm し、
+要求をそこで送る。どちらで離れた速さもそのセッションの間は使わない（`speed.stepped_down`、`speed.down_why`）。機能の無い probe は `not supported` で、速さは変わらない。ブローカー（TCP）の後ろでは
 client ではなくブローカーが行う。シリアルの口は、ドライバにあれば low-latency のモードで開く（FTDI の latency timer 16 → 1 ms で
 UART bridge の速度が 3 倍になった）。ボードの起動時の速さが 115200 でなければ `open_host(..., baud=)` で渡す。
 

@@ -23,9 +23,12 @@ throughput of a UART bridge, oep-spec docs/uart-speed-negotiation.ja.md §3b), w
 port_speed (oep-core §3.5, optional, opt-in): `raise_speed` (or `open_host(..., port_speed=[rates])`) asks a probe that
 declares it for faster rates on the UART bridge this host opened: try a rate, switch the port, verify it with a sized
 transfer both ways (link_source / link_sink with max_frame-sized frames) that counts broken frames and measures the
-throughput, then commit it, or revert and wait the probe out and re-confirm at the boot speed. The report stays on the
+throughput, then both ways at once (the two interleaved, pipelined as the in/out passes did), then commit it, or revert and wait the probe out and re-confirm at the boot speed. The report stays on the
 link (`link.speed`). Once raised, a request whose answer never comes even after its resend sends the link back to the
-boot speed (the probe reverts by itself) and goes once more there: the link never wedges at a rate the probe left.
+boot speed (the probe reverts by itself) and goes once more there: the link never wedges at a rate the probe left;
+while raised each wait is at most a quarter of the lease, so this ends inside it. In use, STRIKE_MAX (3) broken frames
+or resends within STRIKE_WINDOW_S (5 s) step down: port_speed revert at the raised rate, the boot speed, a confirm.
+Either way the rate is not used again in that session (`link.speed.stepped_down`, `down_why`).
 The probe also goes back after port_speed_idle_max_ms (3 s) with no good frame, so while raised the link sends a
 keepalive before a request when it has been quiet for 1 s, and `keep_alive()` does the same for a caller that sits
 idle for long. A host opening a serial port retries its first confirm for that maximum and a little (4 s in all): a
@@ -63,6 +66,10 @@ IDLE_MAX_MS = reg.TIMING["port_speed_idle_max_ms"]   # a committed rate goes bac
 KEEPALIVE_S = 1.0    # raised: a keepalive once the link has been quiet this long (well inside IDLE_MAX_MS)
 OPEN_RETRY_S = IDLE_MAX_MS / 1000 + 1.0   # opening a serial port: confirm retried this long (a raised rate left over)
 OPEN_TRY_S = 0.5     # each of those confirms waits this long (at most the link's timeout)
+STRIKE_MAX, STRIKE_WINDOW_S = 3, 5.0   # raised, in use: this many broken frames / resends within the window step down
+STEP_DOWN_WAIT_S = 0.2   # the step down's revert (step 2) at the raised rate waits this long, never sent again
+RAISED_WAIT_MIN_S = 0.3  # raised, in use: each wait for an answer is a quarter of the lease, at least this
+LINK_ERRORS = (cobs.CorruptFrame, TimeoutError, FramingLost)
 
 
 def open_serial(port: str, baud: int = BASE_BAUD):
@@ -164,7 +171,14 @@ class SerialLink:
         self.baud = self.base_baud                 # the rate the host side runs at now
         self.speed: SpeedReport | None = None      # port_speed: the last raise_speed's report (rate in force, KB/s)
         self.speed_lost = 0                        # times a raised rate was found gone (back to the boot speed)
-        self.fallback = True                       # a raised rate that stops answering: back to the boot speed
+        self.fallback = True                       # a raised rate in use (not raise_speed's own trial): fall back
+        self.strikes: list[float] = []             # raised, in use: when frames broke / requests went again (window)
+        self.step_due = ""                         # raised, in use: why the link steps down at the next safe point
+        self.speed_port: int | None = None         # the transport index the raised rate is on (the revert names it)
+        self.unusable: dict[int, str] = {}         # rates stepped down from in this session -> why (not tried again)
+        self.unusable_session: int | None = None   # the session `unusable` belongs to
+        self.session_frame = None                  # (op, payload) -> a core request in the session, once bound
+        self.lease_s = lambda: None                # the session's lease, once bound (raised: bounds every wait)
         self.corr_source = self._own_corr          # the host's correlation counter once bound (open_host)
         self.keepalive_frame = None                # raised: a keepalive request in the session, once bound (attach_host)
         self.last_tx = time.monotonic()            # when the link last wrote (raised: quiet for KEEPALIVE_S = keepalive)
@@ -196,7 +210,7 @@ class SerialLink:
             if reply is None:
                 raise TimeoutError("no result from the probe")
             return reply
-        deadline = time.monotonic() + self.timeout
+        deadline = time.monotonic() + self._wait()
         while True:
             end = self._buf.find(0)
             if end >= 0:
@@ -277,8 +291,9 @@ class SerialLink:
                     self.timeout = saved
                     self.resync()
                     return n
-                except cobs.CorruptFrame:
+                except cobs.CorruptFrame as e:
                     self.corrupt += 1
+                    self._strike(e)
                     continue
                 n += 1
                 if not self._route(frame):
@@ -287,6 +302,7 @@ class SerialLink:
                     return n
         finally:
             self.timeout = saved
+            self._step_down_if_due()
 
     def resync(self, tries: int = 3) -> None:
         """oep-core §5.1: read and discard until the input is quiet for 50 ms, then prove the link with a confirm (a read,
@@ -328,14 +344,15 @@ class SerialLink:
         self._keep_raised()
         try:
             reply = self._send(message)
-        except TimeoutError:
-            if not self._speed_fallback():
+        except LINK_ERRORS as e:
+            if not self._speed_fallback(e):
                 raise
             reply = self._send(message)            # once more at the boot speed (the probe answers a repeat from what it kept)
         if self.baud != self.base_baud and self._reverts(message, reply):
             self.set_baud(self.base_baud)          # the probe went back right after this answer (core §3.5)
             if self.speed is not None:
                 self.speed.rate, self.speed.chosen = self.base_baud, None
+        self._step_down_if_due()
         return reply
 
     @staticmethod
@@ -358,6 +375,7 @@ class SerialLink:
             except (cobs.CorruptFrame, TimeoutError, FramingLost) as e:
                 if isinstance(e, cobs.CorruptFrame):
                     self.corrupt += 1
+                self._strike(e)
                 self._recover()
                 if attempt or not self.resend or (message[0] & m.ROLE_SESSION and self.ended_blind):
                     raise
@@ -377,20 +395,24 @@ class SerialLink:
         self._keep_raised()
         replies: list[bytes] = []
         try:
-            return self._exchange_once(messages, max_inflight, window_bytes, replies)
-        except (cobs.CorruptFrame, TimeoutError, FramingLost):
+            out = self._exchange_once(messages, max_inflight, window_bytes, replies)
+        except LINK_ERRORS as e:
+            self._strike(e)
             if self.ended_blind or not self.resend:
                 raise
             self.retries += 1
             rest = messages[len(replies):]
             more: list[bytes] = []
             try:
-                return replies + self._exchange_once(rest, max_inflight, window_bytes, more)
-            except TimeoutError:
-                if not self._speed_fallback():
+                out = replies + self._exchange_once(rest, max_inflight, window_bytes, more)
+            except LINK_ERRORS as e2:
+                self._strike(e2)
+                if not self._speed_fallback(e2):
                     raise
                 rest = rest[len(more):]
-                return replies + more + self._exchange_once(rest, max_inflight, window_bytes, [])
+                out = replies + more + self._exchange_once(rest, max_inflight, window_bytes, [])
+        self._step_down_if_due()
+        return out
 
     # ---- port_speed (core §3.5) ------------------------------------------------------------------
     def set_baud(self, rate: int) -> None:
@@ -459,18 +481,82 @@ class SerialLink:
         except (TimeoutError, cobs.CorruptFrame, FramingLost):
             pass
 
-    def _speed_fallback(self) -> bool:
-        """A request went unanswered (its resend too) while the link ran above the boot speed: the probe went back
-        (idle_ms, broken candidates, a lapse). Back to the boot speed, confirmed: True = send again there."""
-        if not self.fallback or self.base_baud is None or self.baud == self.base_baud:
+    def _in_use(self) -> bool:
+        """A raised rate in force outside raise_speed's own trial (where every failure is handled there)."""
+        return self.fallback and self._raised()
+
+    def _wait(self) -> float:
+        """How long one answer is waited for: the link's timeout; raised and in use, at most a quarter of the
+        session's lease (at least RAISED_WAIT_MIN_S) - a probe that went back by itself (broken candidates, core §3.5
+        item 5) hears nothing at the raised rate, and the fallback (both waits, the confirm at the boot speed, the
+        request again there) must end well inside the lease."""
+        if not self._in_use():
+            return self.timeout
+        lease = self.lease_s()
+        return self.timeout if lease is None else min(self.timeout, max(RAISED_WAIT_MIN_S, lease / 4))
+
+    def _strike(self, e: Exception) -> None:
+        """Raised and in use: a frame broke or a request is sent again (`e`). STRIKE_MAX within STRIKE_WINDOW_S: the
+        link steps down at the next safe point (core §3.5 item 7)."""
+        if not self._in_use():
+            return
+        now = time.monotonic()
+        self.strikes = [t for t in self.strikes if now - t < STRIKE_WINDOW_S] + [now]
+        if len(self.strikes) >= STRIKE_MAX and not self.step_due:
+            self.step_due = (f"{len(self.strikes)} broken frames / resends within {STRIKE_WINDOW_S:g} s at {self.baud} "
+                             f"(the last: {type(e).__name__})")
+
+    def _step_down_if_due(self) -> None:
+        if self.step_due and self._in_use():
+            self._step_down(self.step_due)
+
+    def _step_down(self, why: str) -> None:
+        """Leave the raised rate for the rest of the session: port_speed step 2 at it (STEP_DOWN_WAIT_S, never sent
+        again: a probe that already went back cannot hear it, and a committed one reverts at the broken candidates
+        the confirms make), the host at the boot speed, a confirm there. ConnectionError when none is answered."""
+        rate = self.baud
+        self.step_due = ""
+        self.strikes.clear()
+        if self.session_frame is not None and self.speed_port is not None:
+            saved = self.timeout, self.resend, self.fallback
+            self.timeout, self.resend, self.fallback = STEP_DOWN_WAIT_S, False, False
+            try:
+                self._send(self.session_frame(OP_PORT_SPEED, struct.pack("<BIBHI", self.speed_port, 0,
+                                                                         SPEED_STEP["revert"], 0, 0)))
+            except LINK_ERRORS:
+                pass
+            finally:
+                self.timeout, self.resend, self.fallback = saved
+        if not self.back_to_base():
+            raise ConnectionError(f"the probe answers neither at {rate} nor at the boot speed {self.base_baud}")
+        self._stepped(rate, why)
+
+    def _stepped(self, rate: int, why: str) -> None:
+        """`rate` is not used again in this session (raise_speed skips it), and the report says so."""
+        self.unusable[rate] = why
+        if self.speed is not None:
+            self.speed.rate, self.speed.chosen = self.base_baud, None
+            self.speed.stepped_down, self.speed.down_why = True, why
+
+    def _speed_fallback(self, e: Exception | None = None) -> bool:
+        """A request failed (its resend too) while a raised rate was in use. Broken frames (the probe still answers
+        at that rate) or a step down already due: step down (`_step_down`). No answer at all: the probe went back
+        (idle_ms, broken candidates, a lapse) - back to the boot speed, confirmed. Either way the rate is not used
+        again in this session. True = send again there."""
+        if not self._in_use() or self.base_baud is None:
             return False
+        rate = self.baud
+        if self.step_due or not isinstance(e, TimeoutError):
+            self._step_down(self.step_due or f"frames kept breaking at {rate} ({type(e).__name__})")
+            return True
         if not self.back_to_base():
             raise ConnectionError(f"the probe answers neither at {self.baud} nor at the boot speed {self.base_baud}")
         self.speed_lost += 1
+        self.step_due = ""
+        self.strikes.clear()
         if self.speed is not None:
-            self.speed.rate = self.base_baud
-            self.speed.chosen = None
             self.speed.lost = True
+        self._stepped(rate, f"no answer at {rate} (the probe went back by itself)")
         return True
 
     def _exchange_once(self, messages: list[bytes], max_inflight: int, window_bytes: int,
@@ -509,7 +595,9 @@ class SerialLink:
         self.corr_source = hst.next_corr
         self.blind = hst.blind_stop
         self.held = lambda: hst.session is not None
-        self.keepalive_frame = lambda: m.Request(hst.next_corr(), m.CORE_FN, m.OP_KEEPALIVE, b"", hst.session).pack()
+        self.session_frame = lambda op, payload: m.Request(hst.next_corr(), m.CORE_FN, op, payload, hst.session).pack()
+        self.keepalive_frame = lambda: self.session_frame(m.OP_KEEPALIVE, b"")
+        self.lease_s = lambda: hst.lease_ms / 1000 if hst.session is not None and hst.lease_ms else None
         hst.link = self
         if self.framing == "cobs" and getattr(self, "transport", None) == "serial":
             self.wait_boot_speed()
@@ -670,7 +758,7 @@ UART_BRIDGE = reg.CORE.enum["transport_kind"]["uart_bridge"]
 @dataclass
 class SpeedTrial:
     """One rate tried: what the probe said it runs at, the verify's bytes, KB/s (1000 B/s) and broken frames each way
-    (in = probe to host, link_source; out = host to probe, link_sink), and whether it was committed (why not)."""
+    (in = probe to host, link_source; out = host to probe, link_sink; duplex = both at once), and whether it was committed (why not)."""
     rate: int
     actual: int | None = None
     in_bytes: int = 0
@@ -679,6 +767,9 @@ class SpeedTrial:
     out_kb_s: float | None = None
     broken_in: int = 0
     broken_out: int = 0
+    duplex_bytes: int = 0      # both ways at once (link_source and link_sink interleaved), at the in-flight that passed
+    duplex_kb_s: float | None = None
+    broken_duplex: int = 0
     committed: bool = False
     why: str = ""
     inflight: int = 0          # the requests kept in flight the verify passed with (0: none passed)
@@ -688,8 +779,10 @@ class SpeedTrial:
 class SpeedReport:
     """raise_speed's answer, kept as `link.speed`: the boot speed, the rate in force now (`rate`), the committed one
     (`chosen`, None: the boot speed), every trial in order, and why nothing was tried (`supported` False).
-    `lost`: a raised rate was later found gone (the link went back to the boot speed). in_kb_s / out_kb_s: the chosen
-    rate's measured throughput (None at the boot speed) - for budgeting a transfer."""
+    `lost`: a raised rate was later found gone (the link went back to the boot speed). `stepped_down`: in use, the
+    link left the raised rate for the rest of the session (frames kept breaking, or no answer came), `down_why` says
+    why. in_kb_s / out_kb_s / duplex_kb_s: the chosen rate's measured throughput (None at the boot speed) - for
+    budgeting a transfer."""
     base: int
     supported: bool
     rate: int
@@ -697,6 +790,8 @@ class SpeedReport:
     trials: list[SpeedTrial] = field(default_factory=list)
     why: str = ""
     lost: bool = False
+    stepped_down: bool = False     # in use, the raised rate was left for the rest of the session (`down_why`)
+    down_why: str = ""
 
     def _chosen(self) -> SpeedTrial | None:
         return next((t for t in self.trials if t.committed), None) if self.chosen else None
@@ -711,15 +806,23 @@ class SpeedReport:
         t = self._chosen()
         return t.out_kb_s if t else None
 
+    @property
+    def duplex_kb_s(self) -> float | None:
+        t = self._chosen()
+        return t.duplex_kb_s if t else None
+
     def to_text(self) -> str:
         if not self.supported:
             return f"port_speed not supported: {self.why} (stays at {self.rate})\n"
-        lines = [f"{'rate':>9} {'actual':>9} {'in KB/s':>8} {'out KB/s':>8} {'broken in/out':>13}  result"]
+        lines = [f"{'rate':>9} {'actual':>9} {'in KB/s':>8} {'out KB/s':>8} {'duplex KB/s':>11} "
+                 f"{'broken in/out/duplex':>20}  result"]
         for t in self.trials:
-            kb = lambda v: f"{v:8.1f}" if v is not None else f"{'-':>8}"   # noqa: E731
+            kb = lambda v, w=8: f"{v:{w}.1f}" if v is not None else f"{'-':>{w}}"   # noqa: E731
             lines.append(f"{t.rate:>9} {t.actual if t.actual else '-':>9} {kb(t.in_kb_s)} {kb(t.out_kb_s)} "
-                         f"{f'{t.broken_in}/{t.broken_out}':>13}  "
+                         f"{kb(t.duplex_kb_s, 11)} {f'{t.broken_in}/{t.broken_out}/{t.broken_duplex}':>20}  "
                          f"{(f'committed (in flight {t.inflight})' if t.committed else t.why)}")
+        if self.stepped_down:
+            lines.append(f"stepped down: {self.down_why} - the boot speed for the rest of the session")
         lines.append(f"in force: {self.rate}" + (" (raised)" if self.chosen else " (the boot speed)"))
         return "\n".join(lines) + "\n"
 
@@ -737,10 +840,12 @@ def _speed_port(hst) -> tuple[int | None, str]:
 
 
 def _verify(hst, lk: SerialLink, rate: int, trial: SpeedTrial, verify_bytes: int, verify_s: float,
-            inflight: int | None = None) -> bool:
-    """Both ways with max_frame-sized frames, pipelined as `inflight` (default: as the probe allows): up to half of
-    verify_bytes or verify_s each (in first, then out). Stops at the first frame that breaks (lost, or its content
-    wrong)."""
+            inflight: int | None = None, ways: tuple[str, ...] = ("in", "out"), duplex_s: float = 1.0,
+            duplex_frames: int = 64) -> bool:
+    """Max_frame-sized frames, pipelined as `inflight` (default: as the probe allows), for each of `ways`: "in"
+    (link_source) and "out" (link_sink) up to half of verify_bytes or verify_s each; "duplex" both interleaved
+    (link_source, link_sink, ...) for duplex_s and at least duplex_frames, so frames go both ways at once. Stops at
+    the first frame that breaks (lost, or its content wrong)."""
     limits = hst.limits or hst.confirm()
     max_frame, window = limits["max_frame"], limits["window"]
     inflight = max(1, inflight or limits["max_inflight"])
@@ -750,41 +855,48 @@ def _verify(hst, lk: SerialLink, rate: int, trial: SpeedTrial, verify_bytes: int
     saved = lk.timeout, lk.resend
     lk.timeout, lk.resend = max(0.3, 4 * wire * inflight + 0.1), False
     pattern = bytes(k & 0xFF for k in range(n_in))
+    sink_body = bytes((k * 7) & 0xFF for k in range(n_out))
+
+    def request(k: int, way: str) -> tuple[bytes, bool]:
+        source = way == "in" or (way == "duplex" and k % 2 == 0)
+        body, op = (struct.pack("<I", n_in), m.OP_LINK_SOURCE) if source else (sink_body, m.OP_LINK_SINK)
+        return m.Request(hst.next_corr(), m.CORE_FN, op, body).pack(), source
+
+    def more(way: str, moved: int, frames: int, t0: float) -> bool:
+        if way == "duplex":
+            return time.perf_counter() - t0 < duplex_s or frames < duplex_frames
+        return moved < verify_bytes / 2 and time.perf_counter() - t0 < verify_s / 2
+
     try:
-        for way in ("in", "out"):
-            moved, t0 = 0, time.perf_counter()
-            while moved < verify_bytes / 2 and time.perf_counter() - t0 < verify_s / 2:
-                if way == "in":
-                    body, op = struct.pack("<I", n_in), m.OP_LINK_SOURCE
-                else:
-                    body, op = bytes((k * 7) & 0xFF for k in range(n_out)), m.OP_LINK_SINK
-                msgs = [m.Request(hst.next_corr(), m.CORE_FN, op, body).pack() for _ in range(inflight * 2)]
+        for way in ways:
+            moved, frames, broken, t0 = 0, 0, 0, time.perf_counter()
+            while more(way, moved, frames, t0):
+                batch = [request(k, way) for k in range(inflight * 2)]
                 replies: list[bytes] = []
                 try:
-                    lk._exchange_once(msgs, inflight, window, replies)
+                    lk._exchange_once([msg for msg, _ in batch], inflight, window, replies)
                 except (cobs.CorruptFrame, TimeoutError, FramingLost):
                     pass                                  # the frames not answered are the broken ones
                 good = 0
-                for r in replies:
+                for r, (_, source) in zip(replies, batch):
                     res = m.Result.unpack(r)
-                    if not (res.succeeded and (res.payload == pattern if way == "in"
+                    if not (res.succeeded and (res.payload == pattern if source
                                                else res.payload[:4] == struct.pack("<I", n_out))):
                         break
                     good += 1
-                moved += good * (n_in if way == "in" else n_out)
-                if good == len(msgs):
-                    continue
-                if way == "in":
-                    trial.broken_in += len(msgs) - good
-                else:
-                    trial.broken_out += len(msgs) - good
-                break
-            seconds = max(time.perf_counter() - t0, 1e-6)
+                    moved += n_in if source else n_out
+                frames += good
+                if good < len(batch):
+                    broken = len(batch) - good
+                    break
+            kb_s = moved / max(time.perf_counter() - t0, 1e-6) / 1000
             if way == "in":
-                trial.in_bytes, trial.in_kb_s = moved, moved / seconds / 1000
+                trial.in_bytes, trial.in_kb_s, trial.broken_in = moved, kb_s, broken
+            elif way == "out":
+                trial.out_bytes, trial.out_kb_s, trial.broken_out = moved, kb_s, broken
             else:
-                trial.out_bytes, trial.out_kb_s = moved, moved / seconds / 1000
-            if trial.broken_in or trial.broken_out:
+                trial.duplex_bytes, trial.duplex_kb_s, trial.broken_duplex = moved, kb_s, broken
+            if broken:
                 return False
         return True
     finally:
@@ -795,18 +907,23 @@ SWITCH_SETTLE_S = 0.02   # after a baud change, before the first byte at the new
 
 
 def raise_speed(hst, rates: list[int], *, verify_bytes: int = 32768, verify_s: float = 1.0,
-                verify_ms: int | None = None, idle_ms: int = IDLE_MAX_MS, port: int | None = None) -> SpeedReport:
+                verify_ms: int | None = None, idle_ms: int = IDLE_MAX_MS, port: int | None = None,
+                duplex_s: float = 1.0, duplex_frames: int = 64) -> SpeedReport:
     """port_speed (oep-core §3.5), opt-in: try `rates` in order on the UART bridge this host opened, and commit the
     first that passes. Each: try (answered at the speed now) -> the host switches -> verify both ways with
-    max_frame-sized frames for verify_bytes or verify_s in all (broken frames counted, KB/s measured each way) ->
-    commit at the new speed when nothing broke; else revert (step 2, at the new speed) and back to the boot speed,
+    max_frame-sized frames for verify_bytes or verify_s in all (broken frames counted, KB/s measured each way),
+    pipelined as the probe allows and, when that breaks, one at a time -> both ways at once at the in-flight that
+    passed (link_source and link_sink interleaved, duplex_s and at least duplex_frames; a broken frame fails the rate:
+    "broke both ways at once") -> commit at the new speed when nothing broke; else revert (step 2, at the new speed) and back to the boot speed,
     re-confirmed there (waiting out the probe's verify_ms when the revert was lost), and the next rate. A rate the
     probe's UART cannot make is skipped (unsupported). The session must be open (the rate lasts as long as it does).
 
     verify_ms: how long the probe waits for the commit (default: verify_s + 1.5 s, at most 65535). idle_ms: once
     committed, the probe reverts after this long with no good frame (default and at most port_speed_idle_max_ms,
-    3000; 0 and anything longer mean that maximum). The link keeps the line alive meanwhile (`keep_alive`).
-    port: the transport index (default: the probe's first UART bridge). -> the report, also kept as `hst.link.speed`."""
+    3000; 0 and anything longer mean that maximum). The link keeps the line alive meanwhile (`keep_alive`), and
+    steps down to the boot speed for the rest of the session when frames break or requests go again STRIKE_MAX times
+    within STRIKE_WINDOW_S, or an answer does not come at all (`report.stepped_down`); a rate stepped down from in
+    this session is not tried again. port: the transport index (default: the probe's first UART bridge). -> the report, also kept as `hst.link.speed`."""
     lk = getattr(hst, "link", None)
     base = getattr(lk, "base_baud", None)
     report = SpeedReport(base or 0, False, getattr(lk, "baud", None) or 0)
@@ -824,19 +941,26 @@ def raise_speed(hst, rates: list[int], *, verify_bytes: int = 32768, verify_s: f
         raise _host.OepError("raise_speed needs an open session (the rate lasts as long as the session)")
     port = where if port is None else port
     report.supported = True
-    wait = (verify_ms if verify_ms is not None else min(65535, int(verify_s * 1000) + 1500))
+    wait = (verify_ms if verify_ms is not None
+            else min(65535, int((verify_s + duplex_s) * 1000) + 1500))
+    if lk.unusable_session != hst.session:
+        lk.unusable, lk.unusable_session = {}, hst.session
     lk.fallback = False                                     # every failure here is handled here
     idle_ms = idle_ms if 0 < idle_ms <= IDLE_MAX_MS else IDLE_MAX_MS
     try:
-        return _raise(hst, lk, report, rates, port, base, wait, verify_bytes, verify_s, idle_ms)
+        return _raise(hst, lk, report, rates, port, base, wait, verify_bytes, verify_s, idle_ms, duplex_s, duplex_frames)
     finally:
         lk.fallback = True
 
 
-def _raise(hst, lk, report, rates, port, base, wait, verify_bytes, verify_s, idle_ms) -> SpeedReport:
+def _raise(hst, lk, report, rates, port, base, wait, verify_bytes, verify_s, idle_ms, duplex_s,
+           duplex_frames) -> SpeedReport:
     for rate in rates:
         trial = SpeedTrial(rate)
         report.trials.append(trial)
+        if rate in lk.unusable:
+            trial.why = f"stepped down from earlier in this session ({lk.unusable[rate]})"
+            continue
         try:
             r = hst.call(m.CORE_FN, OP_PORT_SPEED, struct.pack("<BIBHI", port, rate, SPEED_STEP["try"], wait, 0))
         except TimeoutError:
@@ -863,24 +987,35 @@ def _raise(hst, lk, report, rates, port, base, wait, verify_bytes, verify_s, idl
         # 500 kbaud and up behind usbip, 2026-10-01) gets a second verify with one request at a time
         full = max(1, (hst.limits or hst.confirm())["max_inflight"])
         tries = [full] if full == 1 else [full, 1]
+        broke = "frames broke"
         for n in tries if ok else []:
-            trial.broken_in = trial.broken_out = 0
             ok = _verify(hst, lk, rate, trial, verify_bytes, verify_s, n)
             if ok:
                 trial.inflight = n
                 break
             any(lk.confirm_raw(0.2) for _ in range(3))     # the broken frames' leftovers read past
         if ok:
+            # both ways at once at the in-flight that passed: a line that carries each way alone can still break
+            # under sustained duplex use (a CH340 at 921600 broke a frame every ~0.5 s, 2026-10-01)
+            ok = _verify(hst, lk, rate, trial, verify_bytes, verify_s, trial.inflight, ("duplex",), duplex_s,
+                         duplex_frames)
+            if not ok:
+                broke, trial.inflight = "broke both ways at once", 0
+                any(lk.confirm_raw(0.2) for _ in range(3))
+        if ok:
             try:
                 hst.call(m.CORE_FN, OP_PORT_SPEED, struct.pack("<BIBHI", port, rate, SPEED_STEP["commit"], 0, idle_ms))
                 trial.committed = True
                 report.rate, report.chosen = rate, rate
                 lk.inflight_cap = trial.inflight if trial.inflight < full else 0
+                lk.speed_port = port
+                lk.strikes.clear()
+                lk.step_due = ""
                 return report
             except (TimeoutError, _host.Rejected) as e:
                 trial.why = f"the commit failed: {e}"
         else:
-            trial.why = "frames broke" if heard else "no confirm at the new rate"
+            trial.why = broke if heard else "no confirm at the new rate"
             saved = lk.timeout, lk.resend
             lk.timeout, lk.resend = 0.3, False
             try:

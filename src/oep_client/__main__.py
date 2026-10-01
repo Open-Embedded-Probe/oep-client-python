@@ -36,6 +36,7 @@ def main(argv=None) -> int:
     sp.add_argument("--baud", type=int, default=link.BASE_BAUD, help="the boot speed (default 115200)")
     sp.add_argument("--verify-bytes", type=int, default=32768)
     sp.add_argument("--verify-s", type=float, default=1.0)
+    sp.add_argument("--duplex-s", type=float, default=1.0, help="both ways at once for this long (default 1)")
     sp.add_argument("--json", action="store_true")
     d = sub.add_parser("dump", help="list and describe every interface a probe offers")
     src = d.add_mutually_exclusive_group(required=True)
@@ -69,7 +70,8 @@ def _speed(args) -> int:
     hst = link.open_host(args.probe, baud=args.baud)
     try:
         core.take(hst, 5000, owner="oep speed")
-        report = link.raise_speed(hst, rates, verify_bytes=args.verify_bytes, verify_s=args.verify_s)
+        report = link.raise_speed(hst, rates, verify_bytes=args.verify_bytes, verify_s=args.verify_s,
+                                   duplex_s=args.duplex_s)
         if args.json:
             sys.stdout.write(json.dumps(dataclasses.asdict(report), indent=2) + "\n")
         else:
