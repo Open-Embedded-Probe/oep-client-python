@@ -5,7 +5,7 @@ import struct
 
 import pytest
 
-from oep_client import arm, host as h, message as m, riscv as target
+from oep_client import arm, catalog, host as h, message as m, riscv as target
 
 FNS = {"oep.wire.rvswd": 1, "oep.target.riscv-dm": 2, "oep.fixture.gpio": 3, "oep.wire.swd": 4,
        "oep.target.arm-adi": 5}
@@ -14,15 +14,23 @@ FNS = {"oep.wire.rvswd": 1, "oep.target.riscv-dm": 2, "oep.fixture.gpio": 3, "oe
 class ScriptedHost(h.Host):
     """A Host whose requests go to handlers: (fn, op) -> (resolution, detail, payload); records every request.
     Interface names resolve through the host's fn cache, filled in advance; describes answer nothing (an attach then
-    sends the client's DEFAULT_MAX_SPEED)."""
+    sends the client's DEFAULT_MAX_SPEED) but for the block-op interfaces (riscv-dm, arm-adi), which declare
+    max_length MAX_LENGTH (oep-if-debug §4.5 / §6: mandatory there; `max_length=None` leaves it out)."""
 
-    def __init__(self, handlers, revisions=None):
+    def __init__(self, handlers, revisions=None, max_length=1000):
         super().__init__(send=None)
         self.handlers, self.log = handlers, []
         self.handlers.setdefault((0, m.OP_CONFIRM), lambda p: ok(CONFIRM))
-        self.handlers.setdefault((0, m.OP_DESCRIBE), lambda p: ok(b"\x00"))
+        self.handlers.setdefault((0, m.OP_DESCRIBE), lambda p: ok(self._describe(p, max_length)))
         self._fns.update(FNS)
         self._revisions.update({fn: 1 for fn in FNS.values()} if revisions is None else revisions)
+
+    @staticmethod
+    def _describe(p, max_length):
+        fn = struct.unpack_from("<H", p)[0]
+        if max_length is not None and fn in (FNS["oep.target.riscv-dm"], FNS["oep.target.arm-adi"]):
+            return b"\x00" + catalog.u16(catalog.MAX_LENGTH, max_length)
+        return b"\x00"
 
     def request(self, fn, op, payload=b"", *, locked=True):
         self.log.append((fn, op, payload))
@@ -214,9 +222,31 @@ def test_mem_ap_sets_csw_from_the_caller_and_chunks_blocks(adi_bench):
     words = mem.read_block(0x1000, 500)
     assert words == [0x1000 + 4 * i for i in range(500)]
     blocks = [p for fn, op, p in hst.log if op == arm.ArmAdi.READ_BLOCK]
-    assert [struct.unpack("<IH", p[2:])[1] for p in blocks] == [251, 249]   # (1024 - 18) // 4 words per block
+    assert [struct.unpack("<IH", p[2:])[1] for p in blocks] == [250, 250]   # the declared max_length 1000 / 4 words
+    assert adi.max_length == 1000 and adi.max_words == 250 == mem.chunk
     mem.write_block(0x2007F3F0, list(range(16)))
     assert mem.read_block(0x2007F3F0, 16) == list(range(16))
+
+
+def test_block_length_comes_from_the_declared_max_length_only():
+    """oep-if-debug §4.5 / §6: the host takes max_length from describe and never computes it from max_frame; a probe
+    with block ops that declares none is an error, named."""
+    fake = FakeAdi()
+    handlers = {(5, arm.ArmAdi.TRANSFER): fake.transfer, (5, arm.ArmAdi.READ_BLOCK): fake.read_block}
+    hst = ScriptedHost(dict(handlers), max_length=96)
+    adi = arm.ArmAdi(hst, 1, adiv6=True)
+    assert adi.max_length == 96 and adi.max_words == 24
+    assert arm.MemAp(adi, 0x2000).chunk == 24
+    assert target.RiscvDm(ScriptedHost({}, max_length=42), 1).max_length == 40         # rounded down to a word
+    hst = ScriptedHost(dict(handlers), max_length=None)
+    adi = arm.ArmAdi(hst, 1, adiv6=True)
+    with pytest.raises(target.NoMaxLength, match="oep.target.arm-adi \\(fn 5\\) declares no usable max_length"):
+        arm.MemAp(adi, 0x2000)
+    dm = target.RiscvDm(ScriptedHost({}, max_length=None), 1)
+    with pytest.raises(target.NoMaxLength, match="riscv-dm"):
+        dm.max_words
+    with pytest.raises(target.NoMaxLength):
+        target.RiscvDm(ScriptedHost({}, max_length=2), 1).max_length                 # less than one word: none
 
 
 def test_transfer_fault_raises_with_the_step_count(adi_bench):

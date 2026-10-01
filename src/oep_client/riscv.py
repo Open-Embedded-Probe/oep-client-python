@@ -38,6 +38,47 @@ def status_name(status: int) -> str:
     return STATUS_NAMES.get(status, f"unknown status 0x{status:02x}")
 
 
+class NoMaxLength(h.OepError):
+    """The probe declares no max_length for an interface with read_block / write_block. oep-if-debug §4.5 / §6 make it
+    mandatory there, and the host takes its block size from it alone - never from max_frame."""
+
+
+def declared_max_length(hst: h.Host, fn: int, name: str) -> int:
+    """The describe common tag max_length (core §7.4) of interface `fn`, in bytes, rounded down to a word. The probe
+    declares it so that both a read_block answer and a write_block request fit its max_frame (oep-if-debug §4.5).
+    NoMaxLength when the probe does not declare it (or declares less than one word)."""
+    for tag, value in describe(hst, fn):
+        if tag & 0x7F == catalog.MAX_LENGTH and len(value) >= 2:
+            length = struct.unpack_from("<H", value)[0] // 4 * 4
+            if length >= 4:
+                return length
+            break
+    raise NoMaxLength(f"{name} (fn {fn}) declares no usable max_length: read_block / write_block need it "
+                      f"(oep-if-debug §4.5; the host does not compute a block size from max_frame)")
+
+
+class BlockLength:
+    """`max_length` (bytes one read_block / write_block may move, from the probe's describe) and `max_words`, for the
+    interfaces with block operations. Read once per instance, on first use."""
+    host: h.Host
+    fn: int
+    name: str
+    _max_length: int | None = None
+
+    @property
+    def max_length(self) -> int:
+        """Bytes one block operation may move (describe max_length, oep-if-debug §4.5): what the probe declared, never
+        a value computed from max_frame. NoMaxLength when the probe declares none."""
+        if self._max_length is None:
+            self._max_length = declared_max_length(self.host, self.fn, self.name)
+        return self._max_length
+
+    @property
+    def max_words(self) -> int:
+        """Words (u32) one block operation may move: max_length / 4."""
+        return self.max_length // 4
+
+
 class TargetError(h.OepError):
     """A wire or target operation that did not get through: `status` (§5.4), `done` (steps / words completed, where
     the op has it), `values` (what it did read), `result` (the probe's answer)."""
@@ -362,8 +403,9 @@ def dmi_value_count(kinds: list[int], done: int, status: int) -> int:
     return n
 
 
-class RiscvDm(Interface):
-    """oep.target.riscv-dm on one connection (every request starts with the connection, u16)."""
+class RiscvDm(Interface, BlockLength):
+    """oep.target.riscv-dm on one connection (every request starts with the connection, u16). `max_length` /
+    `max_words` bound read_block / write_block (from the probe's describe)."""
     NAME = "oep.target.riscv-dm"
     REVISION = 1
     DMI, HALT, RESUME, RESET, READ_BLOCK, WRITE_BLOCK, RUN, STEP = (
@@ -376,6 +418,7 @@ class RiscvDm(Interface):
     def __init__(self, hst: h.Host, conn: int, name: str = "oep.target.riscv-dm"):
         super().__init__(hst, name, prefix=struct.pack("<H", conn))
         self.conn = conn
+        self._max_length = None
 
     def _status_only(self, what: str, op: int) -> None:
         r = self._request(op)

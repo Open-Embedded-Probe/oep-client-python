@@ -10,7 +10,7 @@ import struct
 
 from . import host as h, message as m, registry as reg
 from .core import Interface
-from .riscv import OK, TargetError, WireBase, check, ran, status_name  # noqa: F401
+from .riscv import OK, BlockLength, TargetError, WireBase, check, ran, status_name  # noqa: F401
 
 DP_DPIDR = DP_ABORT = 0x0
 DP_CTRL_STAT = 0x4
@@ -60,7 +60,9 @@ def transfer_reads(steps: bytes) -> list[bool]:
     return out
 
 
-class ArmAdi(Interface):
+class ArmAdi(Interface, BlockLength):
+    """oep.target.arm-adi on one connection. `max_length` / `max_words` bound read_block / write_block (from the
+    probe's describe, oep-if-debug §6: mandatory there)."""
     NAME = "oep.target.arm-adi"
     REVISION = 1
     TRANSFER, READ_BLOCK, WRITE_BLOCK = _ADI.op["transfer"], _ADI.op["read_block"], _ADI.op["write_block"]
@@ -70,6 +72,7 @@ class ArmAdi(Interface):
         self.conn = conn
         self.adiv6 = adiv6
         self._select: int | None = None
+        self._max_length = None
 
     # ---- raw transfers ----
     @staticmethod
@@ -140,10 +143,8 @@ class MemAp:
         csw = adi.ap_read(ap, self.base)
         adi.ap_write(ap, self.base, (((csw & ~0x37) | 0x12) | csw_set) & ~csw_clear)   # 32 bits, AddrInc single
         adi._ap_select(ap, self.base)                        # the bank the block operations assume
-        # Words per block operation, from the probe's frame limit: request header 6 + session 4 + connection 2 +
-        # address 4 + count 2 on the way in (the answer's 5 + done 2 + status 1 is smaller).
-        from .core import confirm
-        self.chunk = max(1, (confirm(adi.host)["max_frame"] - 18) // 4)
+        # Words per block operation: the probe's declared max_length (oep-if-debug §6), never computed from max_frame
+        self.chunk = adi.max_words
 
     def write_many(self, pairs: list[tuple[int, int]]) -> None:
         """Scattered single-word writes in one transfer list (TAR, DRW per word, RDBUFF at the end so the last one
