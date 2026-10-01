@@ -71,3 +71,8 @@ def unframe(raw: bytes) -> bytes:
     if crc16(body) != got:
         raise CorruptFrame("CRC mismatch")
     return body
+
+def frame_max(message_len: int) -> int:
+    """The longest frame a message of this length makes: CRC16, a COBS code per 254 bytes and one more, the delimiter."""
+    n = message_len + 2
+    return n + (n + 253) // 254 + 1 + 1
