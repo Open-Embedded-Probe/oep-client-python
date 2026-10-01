@@ -108,7 +108,12 @@ def build(repo: pathlib.Path, profile: str, out: pathlib.Path | None = None) -> 
     state = checkout_state(repo)
     out = out or CACHE / "build" / f"{state.get('commit') or 'nocommit'}{'-dirty' if state.get('dirty') else ''}" / profile
     out.mkdir(parents=True, exist_ok=True)
-    cmd = ["arduino-cli", "compile", "--profile", profile, "--output-dir", str(out), str(SKETCH)]
+    # One build directory per profile: arduino-cli keys its sketch cache by sketch path, so two profiles (an xtensa and a
+    # RISC-V ESP32, say) built in turn or at once would link each other's objects ("relocations in generic ELF").
+    build_path = CACHE / "build-path" / profile
+    build_path.mkdir(parents=True, exist_ok=True)
+    cmd = ["arduino-cli", "compile", "--profile", profile, "--build-path", str(build_path), "--output-dir", str(out),
+           str(SKETCH)]
     t0 = time.monotonic()
     proc = subprocess.run(cmd, cwd=str(repo), capture_output=True, text=True)
     fw = Firmware({"kind": "local", **state, "profile": profile, "command": " ".join(cmd),
