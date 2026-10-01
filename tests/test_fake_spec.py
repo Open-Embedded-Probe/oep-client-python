@@ -606,3 +606,34 @@ def test_dmi_and_run_answers_count_their_values_and_rejects_follow_the_order():
     r = h.raw(2, 0x05, struct.pack("<HIH", conn, 0x20000000, 2))   # read_block on a running hart
     assert r.detail == m.FAILED and r.payload == struct.pack("<HB", 0, 5)
     assert h.raw(2, 0x05, struct.pack("<HIH", conn, 0x20000001, 2)).detail == m.MALFORMED
+
+
+@pytest.mark.parametrize("profile", sorted(fake.PROFILES))
+def test_max_length_fits_a_read_answer_and_a_write_request_in_max_frame(profile):
+    """oep-if-debug §4.5: a probe with block ops declares max_length (bytes, a multiple of 4) so that read_block's answer
+    (5 + 2 + 1 + words) and write_block's request (10 + 2 + 4 + 2 + words) both fit max_frame: max_frame - 24 at most."""
+    probe = fake.PROFILES[profile]()
+    ep = endpoint.Endpoint(probe, Clock())
+    fns = [fn for fn, name in ep.names.items() if name == "oep.target.riscv-dm"]
+    assert fns
+    for fn in fns:
+        declared = ep.block_max[fn]
+        assert declared == fake.block_max_length(probe.max_frame) == (probe.max_frame - 24) // 4 * 4
+        assert declared % 4 == 0 and 8 + declared <= probe.max_frame and 18 + declared <= probe.max_frame
+    assert fake.block_max_length(64) == 40 and fake.block_max_length(512) == 488 and fake.block_max_length(1024) == 1000
+
+
+def test_a_block_past_max_length_is_unsupported_not_malformed():
+    """oep-if-debug §4.5 / §6: count x 4 over the declared max_length -> rejected unsupported with payload 0x00 (a
+    fixed-part value); an odd address stays malformed (core §4.3 order 5 before 6)."""
+    ep, h = bench()
+    conn = struct.unpack_from("<H", h.ok(1, 0x02, b"\x00" + SPEED + m.tlv(0x03, struct.pack("<HH", *ep.pairs[1][0]), critical=True)))[0]
+    ep.targets[(1, ep.pairs[1][0])].halted = True
+    words = ep.block_max[2] // 4
+    assert h.raw(2, 0x05, struct.pack("<HIH", conn, 0x20000000, words)).succeeded
+    r = h.raw(2, 0x05, struct.pack("<HIH", conn, 0x20000000, words + 1))
+    assert r.detail == m.UNSUPPORTED and r.payload == b"\x00"
+    r = h.raw(2, 0x06, struct.pack("<HIH", conn, 0x20000000, words + 1) + bytes(4 * (words + 1)))
+    assert r.detail == m.UNSUPPORTED and r.payload == b"\x00"
+    assert h.raw(2, 0x06, struct.pack("<HIH", conn, 0x20000002, words + 1) + bytes(4 * (words + 1))).detail == m.MALFORMED
+    assert h.raw(2, 0x06, struct.pack("<HIH", conn, 0x20000000, words) + bytes(4 * words)).succeeded

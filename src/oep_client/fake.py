@@ -157,6 +157,16 @@ MAX_CONNECTIONS = reg.WIRE_RVSWD.tlv["describe"]["max_connections"]
 _CFG = reg.PROBE_CONFIG.tlv["describe"]
 
 
+BLOCK_HEADERS = 24   # read_block's answer (5 + done 2 + status 1) and write_block's request (10 + connection 2 + address 4 + count 2) both fit
+
+
+def block_max_length(max_frame: int) -> int:
+    """The max_length (bytes, a multiple of 4) a probe with read_block / write_block declares for its max_frame
+    (oep-if-debug §4.5): max_frame - 24 rounded down to a word, so a read's answer and a write's request both fit one
+    frame. The host takes this value; it never computes a block size from max_frame."""
+    return max(0, (max_frame - BLOCK_HEADERS) // 4 * 4)
+
+
 def _transports(kinds: list[tuple[int, int]]) -> tuple[bytes, ...]:
     """(kind, USB interface or 0xFF) per transport, index = position (core §7.5)."""
     return tuple(catalog.tlv(CORE_TRANSPORT, bytes([i, k, itf])) for i, (k, itf) in enumerate(kinds))
@@ -219,7 +229,7 @@ def p4_x035() -> FakeProbe:
             catalog.channel_group(1, [(1, 2), (2, 54)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(IMPLEMENTATION, 1),
             catalog.u8(MAX_CONNECTIONS, 1))),
         Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
-                                              catalog.u16(MAX_LENGTH, 1000))),
+                                              catalog.u16(MAX_LENGTH, block_max_length(1024)))),
         Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
         _gpio(4, pins),
         _uart(5, 0, pins, 3_000_000),
@@ -256,7 +266,7 @@ def esp32_v003() -> FakeProbe:
         Offered(1, 0, "oep.wire.swio", (catalog.channel_group(1, [(1, 16)]), catalog.role_channels(3, [23]),
                                         catalog.u8(IMPLEMENTATION, 1), catalog.u8(MAX_CONNECTIONS, 1))),
         Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b0111), catalog.u8(IMPLEMENTATION, 1),
-                                              catalog.u16(MAX_LENGTH, 40))),
+                                              catalog.u16(MAX_LENGTH, block_max_length(64)))),
         Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
         _gpio(4, wired + [23], modes=0x7F),                      # no mode 7 (both pulls): unsupported there
         _uart(5, 0, wired, 115_200),
@@ -290,7 +300,7 @@ def p4_bench() -> FakeProbe:
             catalog.channel_group(3, [(1, 6), (2, 7)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000),
             catalog.u8(IMPLEMENTATION, 1), catalog.u8(MAX_CONNECTIONS, 2))),
         Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
-                                              catalog.u16(MAX_LENGTH, 1000))),
+                                              catalog.u16(MAX_LENGTH, block_max_length(1024)))),
         Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
         _gpio(4, pins),
         _uart(5, 0, pins, 3_000_000),
@@ -310,7 +320,7 @@ def rp2350_pins() -> FakeProbe:
         Offered(1, 0, "oep.wire.rvswd", _roles({1: pins, 2: pins, 3: pins}) + (
             catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(IMPLEMENTATION, 1), catalog.u8(MAX_CONNECTIONS, 1))),
         Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
-                                              catalog.u16(MAX_LENGTH, 1000))),
+                                              catalog.u16(MAX_LENGTH, block_max_length(1024)))),
         Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
         _gpio(4, pins),
         _uart(5, 0, pins, 3_000_000),

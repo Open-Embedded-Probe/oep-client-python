@@ -35,10 +35,12 @@ define:
   session ends, then resumes from the session's last host reset. The byte framing itself is `fake_serial`.
 - port_speed (core §3.5, optional): on when the profile's describe declares it (`port_speed_base`, the boot speed;
   None = off: the op is unknown_operation). try / commit / revert on the UART bridge the request came in on (else
-  unavailable cause 6), a rate the fake UART cannot make (outside 300..5000000) unsupported; a try reverts after
-  verify_ms without a commit or at a broken candidate, a commit after idle_ms (at most port_speed_idle_max_ms, 3000;
-  0 and anything longer count as that maximum) with no good frame or 3 broken
-  candidates within 1 s, the session's end reverts after its answer. The line itself is modelled by `broken_rates`
+  unavailable cause 6), a step that does not fit the port's state (commit at the boot speed or when committed,
+  revert at the boot speed, try while trying or committed) unavailable cause 6, a step above 2 malformed, a rate the
+  fake UART cannot make (outside 300..5000000) unsupported; a try reverts after verify_ms without a commit or at a
+  broken candidate once a good frame came at the new speed, a commit after idle_ms (at most port_speed_idle_max_ms,
+  3000; 0 and anything longer count as that maximum) with no good frame or at 3 broken candidates in a row with no
+  good frame between, the session's end reverts after its answer. The line itself is modelled by `broken_rates`
   (rate -> BrokenRate): frames at such a rate break, from a size and in the directions given, only both ways at once
   (`duplex`), only every Nth (`every`) (`fake_serial` applies it).
 
@@ -334,7 +336,7 @@ PORT_SPEED_TAG = reg.CORE.tlv["describe"]["port_speed"]
 OP_PORT_SPEED = reg.CORE.op["port_speed"]
 SPEED_STEP = reg.CORE.enum["port_speed_step"]
 SPEED_IDLE_MAX_MS = reg.TIMING["port_speed_idle_max_ms"]   # committed: idle_ms at most this (0 and longer: this)
-SPEED_BAD_MAX, SPEED_BAD_WINDOW_MS = 3, 1000       # committed: this many broken candidates within the window revert
+SPEED_BAD_MAX = 3                                  # committed: this many broken candidates in a row (no good frame between) revert
 SPEED_RATES = (300, 5_000_000)                     # what the fake's UART makes (anything between, exactly)
 
 
@@ -487,7 +489,8 @@ class Endpoint:
         self.speed_until_ms = 0                        # try: the commit's deadline (verify_ms)
         self.speed_idle_ms = 0                         # committed: revert after this long with no good frame
         self.speed_good_ms = 0                         # the last good frame on that port
-        self.speed_bad: list[int] = []                 # committed: the times of the recent broken candidates
+        self.speed_heard = False                       # try: a good frame came at the new speed (before it, no broken counts)
+        self.speed_bad = 0                             # committed: broken candidates in a row since the last good frame
         self.speed_pending: tuple | None = None        # ("switch", port, baud, verify_ms) / ("revert",): after the answer
         self.speed_log: list[tuple[int, int]] = []     # (port, rate) every switch, reverts included
         if self.saved is not None:
@@ -1203,23 +1206,28 @@ class Endpoint:
         port, baud, step, verify_ms, idle_ms = t.take("BIBHI")
         _, ignored = t.tail()
         if step not in SPEED_STEP.values():
-            raise unsupported_fixed()
+            raise Reject(m.MALFORMED)                              # not a defined step (core §4.3 order 5)
         if port != self._transport or port >= len(self.transports) or \
                 self.transports[port] != fake.TRANSPORT["uart_bridge"]:
             raise unavailable("wrong_state")                       # only the UART bridge the request came in on
+        # the port's state (boot speed / trying / committed) decides which step fits (core §3.5): any other is cause 6
         if step == SPEED_STEP["try"]:
+            if self.speed_state != "base":
+                raise unavailable("wrong_state")                   # already trying or committed
             if not SPEED_RATES[0] <= baud <= SPEED_RATES[1]:
                 raise unsupported_fixed()                          # a baud this UART cannot make
             self.speed_pending = ("switch", port, baud, verify_ms)
             return self._answer(struct.pack("<I", baud), ignored)
         if step == SPEED_STEP["commit"]:
-            if self.speed_state == "base" or port != self.speed_port or baud != self.speed_asked:
-                raise unavailable("wrong_state")                   # nothing tried, or another baud
+            if self.speed_state != "try" or port != self.speed_port or baud != self.speed_asked:
+                raise unavailable("wrong_state")                   # nothing tried, committed already, or another baud
             self.speed_state = "committed"
             self.speed_idle_ms = idle_ms if 0 < idle_ms <= SPEED_IDLE_MAX_MS else SPEED_IDLE_MAX_MS
             self.speed_good_ms = self.now()
-            self.speed_bad.clear()
+            self.speed_bad = 0
             return self._answer(struct.pack("<I", self.speed_rate), ignored)
+        if self.speed_state == "base":
+            raise unavailable("wrong_state")                       # a revert at the boot speed: nothing to go back from
         self.speed_pending = ("revert",)
         return self._answer(struct.pack("<I", self.port_speed_base), ignored)
 
@@ -1255,7 +1263,8 @@ class Endpoint:
         self.speed_state, self.speed_port, self.speed_rate, self.speed_asked = "try", port, baud, baud
         self.speed_until_ms = self.now() + verify_ms
         self.speed_good_ms = self.now()
-        self.speed_bad.clear()
+        self.speed_heard = False
+        self.speed_bad = 0
         self.speed_log.append((port, baud))
 
     def _speed_revert(self) -> None:
@@ -1263,24 +1272,32 @@ class Endpoint:
             return
         self.speed_log.append((self.speed_port, self.port_speed_base))
         self.speed_state, self.speed_port, self.speed_rate, self.speed_asked = "base", None, 0, 0
-        self.speed_bad.clear()
+        self.speed_heard, self.speed_bad = False, 0
 
     def speed_frame(self, port: int, good: bool) -> None:
-        """A candidate closed on serial port `port`: a frame (good) or not (a broken candidate)."""
+        """A candidate closed on serial port `port`: a frame (good) or not (a broken candidate). core §3.5's conditions
+        2 (trying: one broken candidate after the first good frame at the new speed; the ones before it are the
+        switch-over's leftovers and do not count) and 4 (committed: SPEED_BAD_MAX broken candidates in a row with no
+        good frame between)."""
         if self.speed_state == "base" or port != self.speed_port:
             return
         if good:
             self.speed_good_ms = self.now()
+            self.speed_heard = True
+            self.speed_bad = 0
             return
         if self.speed_state == "try":
-            self._speed_revert()                                   # the new speed breaks frames: not this one
+            if self.speed_heard:
+                self._speed_revert()                               # the new speed breaks frames: not this one
             return
-        now = self.now()
-        self.speed_bad = [t for t in self.speed_bad if now - t < SPEED_BAD_WINDOW_MS] + [now]
-        if len(self.speed_bad) >= SPEED_BAD_MAX:
+        self.speed_bad += 1
+        if self.speed_bad >= SPEED_BAD_MAX:
             self._speed_revert()
 
     def _speed_tick(self) -> None:
+        # Condition 3 (committed, idle_ms with no good frame) is not counted while a request executes (core §3.5, as
+        # the lease, §6.1). The fake handles every request within one call and its clock does not move meanwhile, so
+        # there is nothing to pause here: a long-running request would need `speed_good_ms` set when its answer goes out.
         if self.speed_pending and self.speed_pending[0] == "revert":
             self.speed_after_answer()
         now = self.now()
@@ -1573,8 +1590,10 @@ class Endpoint:
         if op == _RV.op["read_block"]:
             address, count = t.take("IH")
             t.tail()
-            if 4 * count > self.block_max.get(fn, 1 << 16) or address % 4:
-                raise Reject(m.MALFORMED)                          # past the declared max_length (bytes), or not a word
+            if address % 4:
+                raise Reject(m.MALFORMED)                          # not a word address (core §4.3 order 5)
+            if 4 * count > self.block_max.get(fn, 1 << 16):
+                raise unsupported_fixed()                          # past the declared max_length (bytes; debug §4.5)
             if not tg.halted:
                 return m.COMPLETED, m.FAILED, struct.pack("<HB", 0, STATE)   # a running hart (debug §4.5)
             words, status = [], OK
@@ -1587,8 +1606,10 @@ class Endpoint:
                     struct.pack(f"<HB{len(words)}I", len(words), status, *words))
         if op == _RV.op["write_block"]:
             address, count = t.take("IH")
-            if 4 * count > self.block_max.get(fn, 1 << 16) or address % 4:
+            if address % 4:
                 raise Reject(m.MALFORMED)
+            if 4 * count > self.block_max.get(fn, 1 << 16):
+                raise unsupported_fixed()                          # past the declared max_length (debug §4.5)
             words = struct.unpack(f"<{count}I", t.bytes(4 * count))
             t.tail()
             if not tg.halted:
