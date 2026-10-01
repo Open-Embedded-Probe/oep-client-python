@@ -1,10 +1,12 @@
 """The oep command: what a probe offers (dump) and its settings (config).
 
   oep dump --port /run/board-identify/by-id/<probe>        oep dump --fake p4-x035 --prefix oep.target --json
-  oep config show <probe>
+  oep config show <probe>                 (the settings and what the probe declares; lock-free)
+  oep config state <probe>                (the live slot / bind / storage state; lock-free)
   oep config slot <probe> --name x035 --wire rvswd --pins 2,54 --attach at-boot --retry 1 --mechanism dmseq
   oep config bind <probe> --port 1 --mode last-reset --stream slot:x035
   oep config plan <probe> oep.fixture.uart#1 rx=48 tx=49       (the fn's whole plan; fn number or name#instance)
+  oep config uart <probe> oep.fixture.uart#1 115200 --format 8N1
   oep config remove <probe> bind 1        oep config save <probe>        oep config erase <probe>
 
 <probe>: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]. A change takes the lock (owner "oep config") and
@@ -52,9 +54,12 @@ def main(argv=None) -> int:
 def _config_parser(sub) -> None:
     c = sub.add_parser("config", help="the probe's settings (oep.probe.config): slots, binds, save")
     cs = c.add_subparsers(dest="action", required=True)
-    show = cs.add_parser("show", help="the settings and the live slot / bind state")
+    show = cs.add_parser("show", help="the settings, what the probe declares, and the live slot / bind state")
     show.add_argument("probe")
     show.add_argument("--json", action="store_true")
+    state = cs.add_parser("state", help="the live slot / bind / storage state (op state, lock-free)")
+    state.add_argument("probe")
+    state.add_argument("--json", action="store_true")
     slot = cs.add_parser("slot", help="register a slot (a place a target is wired to)")
     slot.add_argument("probe")
     slot.add_argument("--slot", type=int, default=0, help="the slot number (default 0)")
@@ -62,8 +67,9 @@ def _config_parser(sub) -> None:
     slot.add_argument("--wire", help="rvswd or swio (or an fn); default: the probe's only wire")
     slot.add_argument("--pins", help="swdio,swclk (one pin on swio); default: the wire's only pin set")
     slot.add_argument("--attach", choices=sorted(config.ATTACH), default="host")
-    slot.add_argument("--retry", type=int, default=0, help="at-boot: try again every N s while absent (0: never)")
-    slot.add_argument("--mechanism", choices=sorted(config.MECHANISM), default="dmseq")
+    slot.add_argument("--retry", type=float, default=0, help="at-boot: try again every N s while absent (0: never)")
+    slot.add_argument("--mechanism", choices=sorted(config.MECHANISM), default="dmseq",
+                      help="the console's mechanism, or none (no console on this slot)")
     slot.add_argument("--max-speed", type=int, default=0,
                       help="the line's ceiling in Hz for the probe's own attach (0: none); the target's, e.g. 1000000")
     slot.add_argument("--idle-clock", choices=sorted(config.IDLE_CLOCK), default="high",
@@ -92,9 +98,15 @@ def _config_parser(sub) -> None:
     idle.add_argument("channel", type=int)
     idle.add_argument("mode", choices=sorted(config.IDLE))
     idle.add_argument("--save", action="store_true")
-    rm = cs.add_parser("remove", help="remove one item: slot N, bind PORT, plan FN, label CH, idle CH")
+    uart = cs.add_parser("uart", help="a fixture UART's baud / format, applied whenever its plan has RX or TX")
+    uart.add_argument("probe")
+    uart.add_argument("fn", help="an fn, or name#instance of the oep.fixture.uart")
+    uart.add_argument("baud", type=int)
+    uart.add_argument("--format", default="8N1", help="data bits, parity, stop bits: 8N1 (default), 8E1, 7O2 ...")
+    uart.add_argument("--save", action="store_true")
+    rm = cs.add_parser("remove", help="remove one item (unset): slot N, bind PORT, plan FN, label CH, idle CH, uart FN")
     rm.add_argument("probe")
-    rm.add_argument("kind", choices=["slot", "bind", "plan", "label", "idle"])
+    rm.add_argument("kind", choices=sorted(config.ITEM))
     rm.add_argument("key", type=int)
     rm.add_argument("--save", action="store_true")
     for name in ("save", "erase"):
@@ -108,7 +120,7 @@ def _pins(hst, fn: int, text: str | None, wire: str) -> tuple[int, int]:
     groups = []
     for tag, v in core.describe(hst, fn):
         if tag & 0x7F == catalog.CHANNEL_GROUP:
-            roles = {v[1 + 3 * i]: struct.unpack_from("<H", v, 2 + 3 * i)[0] for i in range((len(v) - 1) // 3)}
+            roles = dict(catalog.unpack_channel_group(v)[1])
             groups.append((roles.get(1, 0xFFFF), roles.get(2, 0xFFFF)))
     if len(groups) != 1:
         raise SystemExit(f"{wire}: {len(groups)} pin sets on this probe - name one with --pins")
@@ -180,6 +192,8 @@ def _config(args) -> int:
         cfg = config.ProbeConfig(hst)
         if args.action == "show":
             return _show(hst, cfg, args.json)
+        if args.action == "state":
+            return _state(cfg, args.json)
         if args.action == "slot":
             fn = _wire_fn(hst, args.wire)
             args.wire = args.wire or str(fn)
@@ -208,6 +222,15 @@ def _config(args) -> int:
                     raise SystemExit(f"{role}: not a role of fn {fn} (roles: {', '.join(sorted(roles)) or 'numbers only'})")
                 items.append(config.Plan(fn=fn, role=number, channel=int(ch, 0)))
             _change(hst, cfg, items, args.save)
+        elif args.action == "uart":
+            fn, _ = _plan_fn(hst, args.fn)
+            from .fixture import FixtureUart
+            fmt = args.format.upper()
+            try:
+                byte = FixtureUart.format_byte(int(fmt[0]), fmt[1], int(fmt[2]))
+            except (KeyError, ValueError, IndexError):
+                raise SystemExit(f"--format {args.format}: want <data bits><parity><stop bits>, e.g. 8N1, 8E2, 7O1") from None
+            _change(hst, cfg, [config.Uart(fn=fn, baud=args.baud, format=byte)], args.save)
         elif args.action == "label":
             _change(hst, cfg, [config.Label(channel=args.channel, text=args.text)], args.save)
         elif args.action == "idle":
@@ -232,42 +255,66 @@ def _config(args) -> int:
         hst.link.close()
 
 
+def _plain(o):
+    return {k: (v.hex() if isinstance(v, bytes) else v) for k, v in vars(o).items()} if hasattr(o, "__dict__") \
+        else list(o)
+
+
+def _state_dict(st) -> dict:
+    return {**{k: v for k, v in vars(st).items() if k not in ("slots", "binds")},
+            "slots": [_plain(s) for s in st.slots], "binds": [_plain(b) for b in st.binds]}
+
+
+def _state(cfg, as_json: bool) -> int:
+    """The live state alone (op state, lock-free): what a monitor polls."""
+    st = cfg.state()
+    if as_json:
+        print(json.dumps(_state_dict(st), indent=2, default=lambda o: o.hex() if isinstance(o, bytes) else str(o)))
+        return 0
+    why = f" ({st.unreadable})" if st.unreadable else ""
+    print(f"storage: {st.storage}{why}, saved hash 0x{st.saved_hash:08x}")
+    for s in st.slots:
+        print(f"  slot {s.slot}: {s.state}" + (f", connection {s.connection}" if s.connection else "")
+              + (f", tried at {s.last_try_at_ns / 1e9:.3f} s" if s.last_try_at_ns is not None else "")
+              + (f", target_id {s.target_id[::-1].hex()}" if s.target_id else ""))
+    for b in st.binds:
+        print(f"  port {b.port}: {b.mode}, {b.flow}" + (f", carrying {b.selected}" if b.selected is not None else ""))
+    return 0
+
+
 def _show(hst, cfg, as_json: bool) -> int:
     h, _ = cfg.get()
     items = cfg.items()
+    decl = cfg.describe()
     st = cfg.state()
     kinds = {i: _name(k) for i, k, _ in core.transports(hst)}
     if as_json:
-        def plain(o):
-            return {k: (v.hex() if isinstance(v, bytes) else v) for k, v in vars(o).items()} if hasattr(o, "__dict__") \
-                else list(o)
-        out = {"hash": h, "items": [dict(type=type(i).__name__, **plain(i)) if hasattr(i, "__dict__") else plain(i)
+        out = {"hash": h, "items": [dict(type=type(i).__name__, **_plain(i)) if hasattr(i, "__dict__") else _plain(i)
                                      for i in items],
-               "state": {**{k: v for k, v in vars(st).items() if k not in ("slots", "binds")},
-                         "slots": [plain(s) for s in st.slots], "binds": [plain(b) for b in st.binds]},
-               "transports": kinds}
+               "declared": _plain(decl), "state": _state_dict(st), "transports": kinds}
         print(json.dumps(out, indent=2, default=lambda o: o.hex() if isinstance(o, bytes) else str(o)))
         return 0
-    print(f"storage: {st.storage} ({st.storage_bytes} bytes), saved hash 0x{st.saved_hash:08x}; now 0x{h:08x}")
+    why = f" ({st.unreadable})" if st.unreadable else ""
+    print(f"storage: {st.storage}{why} ({decl.storage_bytes} bytes), saved hash 0x{st.saved_hash:08x}; now 0x{h:08x}")
     print("transports: " + ", ".join(f"{i} {k}" for i, k in kinds.items()))
     by_slot = {s.slot: s for s in st.slots}
-    print(f"slots (up to {st.slots_max}):")
+    print(f"slots (up to {decl.slots_max}):")
     for it in items:
         if isinstance(it, config.Slot):
             s = by_slot.get(it.slot)
             pins = f"{it.pins[0]}" if it.pins[1] == 0xFFFF else f"{it.pins[0]},{it.pins[1]}"
-            retry = f" retry {it.retry_s} s" if it.attach == "at-boot" else ""
+            retry = f" retry {it.retry_s:g} s" if it.attach == "at-boot" else ""
             retry += (f" max {it.max_speed} Hz" if it.max_speed else "") + (" idle-low" if it.idle_clock == "low" else "")
             lock = (f" lock {int.from_bytes(it.lock[1], 'little'):08x}:{int.from_bytes(it.lock[2], 'little'):08x}"
                     if it.lock else "")
             live = ""
             if s:
-                tried = "never tried" if s.last_try_ms is None else f"tried {s.last_try_ms} ms ago"
+                tried = "never tried" if s.last_try_at_ns is None else f"tried at {s.last_try_at_ns / 1e9:.3f} s"
                 tid = f" target_id {s.target_id[::-1].hex()}" if s.target_id else ""
                 live = f"  -> {s.state}" + (f" (connection {s.connection})" if s.connection else f" ({tried})") + tid
             print(f"  {it.slot} {it.name}: fn {it.wire_fn} pins {pins} {it.attach}{retry} {it.mechanism}{lock}{live}")
     by_port = {b.port: b for b in st.binds}
-    print(f"binds (modes: {', '.join(st.bind_modes) or '-'}):")
+    print(f"binds (modes: {', '.join(decl.bind_modes) or '-'}):")
     names = {it.slot: it.name for it in items if isinstance(it, config.Slot)}
     for it in items:
         if isinstance(it, config.Bind):
