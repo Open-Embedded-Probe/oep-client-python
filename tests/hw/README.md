@@ -51,7 +51,7 @@ file; the `verdict` is pytest's outcome.
 | `wire` | only with `OEP_HW_TARGET=<name>[@swdio[,swclk]]`: scan (the pair named, or every pair), attach with the reset TLV when `OEP_HW_RESET=<channel>`, then 50× (`OEP_HW_LOOPS`) halt → s0 / s1 / a0 / a1 via dmi → read_block (8 words at `OEP_HW_TARGET_ADDR`, default 0x20000000) → the four registers again, unchanged → resume | scan result, connection, DMSTATUS, speed, target_id, dpc, loops and seconds, any register change |
 | `gpio` | `oep.fixture.gpio` on the table's two free channels (`OEP_HW_GPIO=a,b`): output_high reads 1, output_low 0, input_pullup 1, input_pulldown 0 | every level read |
 | `uart` | `oep.fixture.uart` on the table's RX / TX (`OEP_HW_UART=rx,tx`): configure 115200 8N1 within 5 %, status says `session` with that rate and format, configure 9600; with `OEP_HW_UART_LOOP=rx,tx` (the two wired together) a write is read back | the actual rates, the status, the loopback bytes |
-| `port_speed` | UART bridge probes only: `oep_client.linktest.matrix` at the speed in force and the table's candidates (`OEP_HW_RATES`), patterns in / out / duplex, in flight 1 and the probe's max, one frame (`max_frame - 16`), `OEP_HW_FRAMES` (100) frames a cell. **Verdict**: every one-at-a-time cell that ran has (broken + lost) / frames ≤ 1 % (`OEP_HW_ERROR_MAX`); a candidate rate the probe refuses or that gives no confirm is recorded, not failed | every cell (ok / broken / lost, KB/s, seconds), the rates' actual values, the link's counters |
+| `port_speed` | UART bridge probes only: `oep_client.linktest.matrix` at the speed in force and the table's candidates (`OEP_HW_RATES`), patterns in / out / duplex, in flight 1 and the probe's max, one frame (`max_frame - 16`), `OEP_HW_FRAMES` (100) frames a cell. **Verdict** (host guide §7.3.2): a one-at-a-time cell at a raised rate fails when broken + lost ≥ 3 and its ratio is over max(2 × the same cell's ratio at the boot speed, 5 % `OEP_HW_ERROR_MAX`); a candidate rate the probe refuses or that gives no confirm is recorded, not failed | every cell (ok / broken / lost, KB/s, seconds), the rates' actual values, the link's counters |
 | `session` | a 1000 ms lease lapses → `Expired`; the same id re-opened says resumed 2 (swept); a force takeover with a new id → the old id is `Locked` out | the lease, the resumed codes, the refusals' texts |
 
 The results file also carries the client's version and commit, the firmware source (checkout + commit + dirty flag, or
@@ -88,7 +88,7 @@ the bench's permission**: ask first, every time; never flash or reset a device y
 | `OEP_PROBE_DIR` / `OEP_PROBE_VERSION` / `OEP_HW_NOFLASH` | the firmware source (one of them) |
 | `OEP_HW_TARGET`, `OEP_HW_RESET`, `OEP_HW_TARGET_ADDR`, `OEP_HW_LOOPS` | the wire test: a target is wired (and where), its reset line, the block address, the loop count |
 | `OEP_HW_GPIO`, `OEP_HW_DISABLE`, `OEP_HW_UART`, `OEP_HW_UART_LOOP` | channel overrides for the fixture tests |
-| `OEP_HW_RATES`, `OEP_HW_FRAMES`, `OEP_HW_LT_TIMEOUT`, `OEP_HW_ERROR_MAX` | the port_speed test's candidates, frames a cell, answer wait, verdict threshold |
+| `OEP_HW_RATES`, `OEP_HW_FRAMES`, `OEP_HW_LT_TIMEOUT`, `OEP_HW_ERROR_MAX` | the port_speed test's candidates, frames a cell, answer wait, the verdict's floor (default 5 %) |
 | `OEP_HW_PICOTOOL`, `OEP_HW_UF2_DRIVE`, `OEP_HW_USBIP_BUSID`, `OEP_HW_CACHE` | tool and platform details |
 
 Tools: `arduino-cli` (a local build), `esptool` (classic ESP32), `picotool` (RP2); pyusb for DFU and the boot ROM lookup
