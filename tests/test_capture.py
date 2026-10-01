@@ -41,8 +41,8 @@ def test_one_channel_packs_eight_samples_per_byte_lsb_first():
 
 
 def test_segment_without_trigger():
-    s = c.Segment.unpack(struct.pack("<IQIQIIB", 0, 0, 200192, 123000, 50, 0xFFFFFFFF, 0))
-    assert s.trigger_index is None and s.samples == 200192
+    s = c.Segment.unpack(struct.pack("<IQIQIIBI", 0, 0, 200192, 123000, 50, 0xFFFFFFFF, 0, 3))
+    assert s.trigger_index is None and s.samples == 200192 and s.generation == 3 and c.SEGMENT_BYTES == 37
 
 
 class FakeLink:
@@ -58,8 +58,10 @@ class FakeLink:
         return 0
 
 
-def push(fn, seq, position, data):
-    return bytes([0x06]) + struct.pack("<HHQ", fn, seq, position) + data   # core header + position(u64)
+def push(fn, seq, position, data, generation=None):
+    """A data frame (core §11.2): role fn seq position(u64) len(u16) data [TLV generation]."""
+    tail = b"" if generation is None else struct.pack("<BBI", c.DATA_GENERATION, 4, generation)
+    return bytes([0x06]) + struct.pack("<HHQH", fn, seq, position, len(data)) + data + tail
 
 
 def test_stream_follows_positions_and_counts_gaps_and_lost_frames():
@@ -90,17 +92,33 @@ def test_stream_does_not_count_the_fns_events_as_lost():
     assert got.seq_lost == 0 and len(link.events) == 1
 
 
+def test_stream_drops_pushes_of_another_generation():
+    """oep-if-capture §3.4: a streaming data frame carries its generation; one left over from the start before is not
+    this capture's (the frame's len keeps the TLV apart from the data)."""
+    cap = c.LogicCapture.__new__(c.LogicCapture)
+    cap.fn, cap.generation = 2, 5
+    link = FakeLink([[push(2, 0, 90, b"old", generation=4), push(2, 1, 0, b"ab", generation=5)],
+                     [push(2, 2, 2, b"cd", generation=5) + b"\x55\x01\x00"]])    # an unknown TLV after it: skipped
+    got = cap.stream(link, nbytes=4)
+    assert bytes(got.data) == b"abcd" and got.start == 0 and got.stale == 1 and got.gaps == [] and got.seq_lost == 0
+    assert c.unpack_push(push(9, 3, 7, b"x", 2)) == (9, 3, 7, b"x", 2)
+
+
 def test_read_spans_frames_without_the_header_leaking_into_the_data():
-    """read() splits a long read into frame-sized ones; each answer is position(u64) flags(u8) data."""
+    """read() splits a long read into frame-sized ones, each naming the generation; an answer is position(u64) flags(u8)
+    len(u32) data [TLV]."""
     from test_target_parts import ScriptedHost, ok
     stream = bytes(range(256)) * 12                                   # 3072 bytes: more than one 1024-byte frame
     def read(p):
-        pos, n = struct.unpack("<QI", p[:12])
-        return ok(struct.pack("<QB", pos, 0) + stream[pos:pos + n])
+        g, pos, n = struct.unpack("<IQI", p[:16])
+        assert g == 7
+        data = stream[pos:pos + n]
+        return ok(struct.pack("<QBI", pos, 0, len(data)) + data + b"\x44\x01\x00")   # a TLV after the data
     hst = ScriptedHost({(21, c.LogicCapture.READ): read})
     hst._fns[c.LogicCapture.NAME] = 21
     hst._revisions[21] = 1
     lc = c.LogicCapture(hst)
+    lc.generation = 7
     assert lc.read(100, 2500) == stream[100:2600]
 
 

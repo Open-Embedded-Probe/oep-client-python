@@ -71,7 +71,7 @@ class FakeCh32:
                 else:
                     off = addr - cf.PROFILES["v003"].base
                     self.flash[off:off + length] = self.read(cf.V003_INPUT, length)
-                return ok(struct.pack("<BBIII", 0, 1, cf.V003_EBREAK, 100, 0))
+                return ok(struct.pack("<BBIIBI", 0, 1, cf.V003_EBREAK, 100, 1, 0))     # ... nvals 1, a0
             addr, buf = regs[0x100A], regs[0x100B]
             off = addr - cf.PROFILES["x035"].base
             data = self.read(buf, 256)
@@ -79,7 +79,7 @@ class FakeCh32:
                 self.garble.discard(off)
                 data = bytes(b ^ 0x5A for b in data)
             self.flash[off:off + 256] = data
-            return ok(struct.pack("<BBIII", 0, 1, cf.FAST_DONE, 100, 0))
+            return ok(struct.pack("<BBIIBI", 0, 1, cf.FAST_DONE, 100, 1, 0))
 
         return {(DM, riscv.RiscvDm.READ_BLOCK): read_block, (DM, riscv.RiscvDm.WRITE_BLOCK): write_block,
                 (DM, riscv.RiscvDm.RUN): run}
@@ -119,7 +119,7 @@ def test_run_payload_detaches_even_when_the_payload_does_not_read_back():
         count = struct.unpack("<IH", p[2:])[1]
         return ok(struct.pack("<HB", count, 0) + b"\0" * 4 * count)
 
-    hst = ScriptedHost({(WIRE, riscv.Wire.ATTACH): lambda p: ok(struct.pack("<HIBI", 1, 0x382, 0, 1_000_000)),
+    hst = ScriptedHost({(WIRE, riscv.Wire.ATTACH): lambda p: ok(struct.pack("<HIBI", 1, 0x382, 0x08, 1_000_000)),
                         (WIRE, riscv.Wire.DETACH): lambda p: detached.append(p) or ok(),
                         (DM, riscv.RiscvDm.WRITE_BLOCK): lambda p: ok(struct.pack("<HB", (len(p) - 8) // 4, 0)),
                         (DM, riscv.RiscvDm.READ_BLOCK): read_block})
@@ -133,7 +133,7 @@ def test_console_io_counts_what_the_ring_dropped():
 
     def read(p):
         start, data, flags = next(reads)
-        return ok(struct.pack("<QB", start, flags) + data)
+        return ok(struct.pack("<QBH", start, flags, len(data)) + data + b"\x50\x01\x00")   # start flags len data [TLV]
 
     hst = ScriptedHost({(CONSOLE, console.Console.READ): read})
     io = console.ConsoleIO(console.Console(hst), start=100)

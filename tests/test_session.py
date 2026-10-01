@@ -113,14 +113,38 @@ def test_watchdog_counts_from_the_last_request(bench):
     b.open()
 
 
-def test_a_lapsed_lock_resumes_with_the_same_id_and_proves_nobody_came(bench):
+def test_a_lapsed_lock_is_expired_and_open_says_the_resources_went(bench):
+    """core §6.2 / §9: after the lease lapsed the same id's request is rejected expired (never resumed silently: the
+    probe swept its plan and connections); its open answers resumed 2 and the host counts the loss."""
     clock, ep = bench
     a = new_host(ep, 1)
     a.open(lease_ms=1000)
     write(a, 1)
-    clock.ms = 5000                            # lapsed; the last id is remembered
-    write(a, 2)                                # same id on a free lock: re-locked, goes through
-    assert ep.holder == a.session
+    epoch = a.epoch
+    clock.ms = 5000                            # lapsed; the last id is remembered as swept
+    with pytest.raises(host.Expired) as e:
+        write(a, 2)
+    assert e.value.lease_ms == 1000 and "1000 ms" in str(e.value) and a.epoch == epoch + 1
+    assert ep.holder is None
+    with pytest.raises(host.Expired):
+        write(a, 2)                            # still: nothing re-opens by itself
+    opened = a.open(session=a.session)
+    assert opened.resumed == 2 and opened.swept
+    write(a, 3)
+    assert ep.holder == a.session and read(a) == 3
+
+
+def test_end_then_resume_keeps_the_lease_and_a_lapse_after_it_expires(bench):
+    clock, ep = bench
+    a = new_host(ep, 1)
+    a.open(lease_ms=2000)
+    a.end()
+    clock.ms = 100
+    write(a, 1)                                # resumed after end: the lock is back with the lease of the open
+    assert ep.holder == a.session and ep.expires_ms == 2100
+    clock.ms = 5000
+    with pytest.raises(host.Expired):
+        write(a, 2)
 
 
 def test_end_then_resume_is_allowed_until_someone_else_opens(bench):
@@ -146,18 +170,45 @@ def test_force_takes_the_lock_and_the_old_holder_is_refused(bench):
     with pytest.raises(host.Locked):
         write(a, 1)
     write(b, 1)
+    b.end()
+    with pytest.raises(host.NoSession):        # the forcing session is the last one now: a's id is not it
+        write(a, 1)
 
 
 def test_a_probe_reboot_forgets_the_last_id_and_boot_id_says_so(bench):
     clock, ep = bench
     a = new_host(ep, 1)
     first = a.open()
+    assert first.boot_id == ep.boot_id == a.confirmed()["boot_id"]   # confirm tells it too (core §7.1)
     rebooted = endpoint.Endpoint(fake.esp32_v003(), clock, boot_id=0x5555AAAA)
     a.send = rebooted.handle
     with pytest.raises(host.NoSession):
         write(a, 1)
     again = a.open(session=a.session)
     assert again.boot_id != first.boot_id and not again.resumed
+
+
+def test_subscriptions_survive_a_same_id_open_while_held_and_go_with_the_lock(bench):
+    """core §6.2 / §11.3: an open of the id that holds the lock keeps the subscriptions; fn 0 is always subscribable
+    (its heartbeat is boot_id uptime_ns); an fn that emits nothing is unsupported; unsubscribing nothing is ok."""
+    clock, ep = bench
+    a = new_host(ep, 1)
+    a.open(lease_ms=2000)
+    a.subscribe(0, max_delay_ms=500)
+    assert ep.subscribed == {0} and a.subscriptions == {0}
+    a.open(session=a.session).resumed == 1
+    assert ep.subscribed == {0} and a.subscriptions == {0}
+    clock.ms = 500
+    (hb,) = ep.pushes()
+    assert hb[0] == m.ROLE_EVENT and hb[5] == 1 and hb[6:] == struct.pack("<IQ", ep.boot_id, 500_000_000)
+    with pytest.raises(host.Unsupported):
+        a.subscribe(TOY)                                                            # the toy fn emits nothing
+    with pytest.raises(host.Rejected, match="unknown function"):
+        a.subscribe(99)
+    a.unsubscribe(5)                                                                # nothing subscribed: ok
+    assert ep.requests[-3].payload == struct.pack("<HHI", TOY, 0, 0)                # max_delay_ms is u32
+    a.end()
+    assert ep.subscribed == set() and a.subscriptions == set()
 
 
 def test_pipeline_keeps_order_and_reports_rejects_per_result(bench):
@@ -221,17 +272,42 @@ def test_the_first_session_request_confirms_first(bench):
 
 def test_the_host_skips_tlvs_it_does_not_know_after_every_result(bench):
     clock, _ = bench
-    ep = endpoint.Endpoint(fake.esp32_v003(), clock, tail=m.tlv(0x55, b"new!") + m.tlv(0x56, b""))
+    ep = endpoint.Endpoint(fake.esp32_v003(), clock, tail=m.tlv(0x6D, b"new!") + m.tlv(0x6E, b""))
     a = new_host(ep, 1)
-    assert a.confirm()["tail"].get(0x55) == b"new!"
+    assert a.confirm()["tail"].get(0x6D) == b"new!"
     opened = a.open(lease_ms=1000)
     assert opened.lease_ms == 1000 and not opened.resumed
     write(a, 9)
     assert read(a) == 9 and a.lock_state() == (True, 1000)
-    from oep_client import riscv
+    from oep_client import capture, config, console, core, fixture, riscv
     wire = riscv.Wire(a, "oep.wire.swio")
     conn, _ = wire.attach()
-    riscv.RiscvDm(a, conn).halt()
+    dm = riscv.RiscvDm(a, conn)
+    dm.halt()
+    assert dm.dmi([dm.step_read(0x11)])[0] == 1                 # dmi: done status nvals values [TLV]
+    dm.write_block(0x20000000, bytes(8))
+    assert dm.read_block(0x20000000, 2) == bytes(8)              # done status done x word [TLV]
+    assert dm.run(0x20000000, []).stopped                        # ... nvals values [TLV]
+    assert wire.connections()[0].connection == conn
+    con = console.Console(a)
+    con.open(conn)
+    ep.emit(con.stream, b"hi")
+    assert con.read().data == b"hi" and con.marks()[0].kind == 3 and con.streams()[0].stream == con.stream
+    assert con.write(b"x") == 1
+    gpio = fixture.Gpio(a, core.find(a, "oep.fixture.gpio"))
+    core.plan_apply(a, [(gpio.fn, 1, 4), (5, 1, 21)])
+    assert gpio.read([4]) == [0]                                 # n(u8) n x level [TLV]
+    uart = fixture.FixtureUart(a, 5)
+    assert uart.configure(9600) == 9600 and uart.status().baud == 9600 and uart.read().data == b""
+    lc = capture.LogicCapture(a)
+    core.plan_apply(a, [(lc.fn, 0, 5)])
+    lc.configure(rate=1_000_000, samples=64)
+    lc.start()
+    (seg,) = lc.wait()
+    assert len(lc.read_segment(seg)) == 64 and lc.status().state == capture.STATE["done"]
+    cfg = config.ProbeConfig(a)
+    assert cfg.set([config.Label(channel=4, text="x")]) == cfg.get()[0] and cfg.state().storage == "none"
+    assert cfg.describe().slots_max == 1
 
 
 def test_request_tails_critical_refused_non_critical_ignored(bench):
@@ -252,6 +328,28 @@ def test_request_tails_critical_refused_non_critical_ignored(bench):
         m.tlv(0x7F, b"")                                                 # 0x7F is the ignored list
 
 
+def test_tlv_long_form_round_trip_and_the_one_encoding():
+    """core §2.2: a value of 255 bytes or more goes as tag 0xFF len(u16) value; under 255 the short form - the long
+    form with a short value is malformed (BadTlv here, rejected malformed by the probe)."""
+    big = bytes(range(256)) * 2
+    t = m.tlv(0x41, big)
+    assert t[:4] == bytes([0x41, 0xFF, 0x00, 0x02]) and m.split_tlvs(t + m.tlv(0x42, b"x")) == [(0x41, big), (0x42, b"x")]
+    assert m.tlv(0x41, bytes(254))[1] == 254 and len(m.tlv(0x41, bytes(255))) == 255 + 4
+    with pytest.raises(m.BadTlv):
+        m.split_tlvs(bytes([0x41, 0xFF, 3, 0]) + b"abc")
+    with pytest.raises(m.ShortPayload):
+        m.split_tlvs(bytes([0x41, 0xFF, 0x00, 0x02]) + bytes(100))
+    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())
+    a = new_host(ep, 1)
+    a.open()
+    r = a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 5) + m.tlv(0x21, big))   # a long non-critical TLV: ignored
+    assert m.Reader(r.payload).tail().ignored == [0x21]
+    with pytest.raises(host.Rejected, match="malformed"):
+        a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 5) + bytes([0x21, 0xFF, 1, 0, 9]))
+    with pytest.raises(host.Rejected, match="malformed"):
+        a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 5) + bytes([0x00, 0]))        # tag 0x00 is reserved
+
+
 def test_a_result_shorter_than_its_fixed_part_is_broken():
     def send(raw):
         req = m.Request.unpack(raw)
@@ -269,7 +367,9 @@ def test_serial_arithmetic_on_wrapping_values():
 
 # ---- §3: connections and the plan lost ----------------------------------------------------------------------
 
-def test_no_session_from_a_probe_without_a_boot_id_means_everything_is_lost(bench):
+def test_no_session_means_this_sessions_resources_are_gone(bench):
+    """core §9: no_session = another session came in between (and took the resources over), or the probe rebooted
+    (boot_id 0 is an ordinary value now): either way nothing of this session is left."""
     clock, _ = bench
     ep = endpoint.Endpoint(fake.esp32_v003(), clock, boot_id=0)
     a = new_host(ep, 1)

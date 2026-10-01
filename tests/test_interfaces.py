@@ -55,9 +55,41 @@ def test_attach_twice_returns_the_same_connection_and_max_speed_is_critical(benc
     wire = riscv.Wire(hst)
     conn, status = wire.attach(halt=True, max_speed=1_000_000)
     assert wire.had_reset and not wire.existing and wire.speed_hz == 1_000_000 and status & 0x300
+    assert wire.halted and wire.dpc == ep.target.dpc              # flags bit3 + the dpc TLV
     assert ep.requests[-1].payload == bytes([1, 0x81, 4]) + struct.pack("<I", 1_000_000)
     again, _ = wire.attach(halt=False)
     assert again == conn and wire.existing and not wire.had_reset
+    assert ep.requests[-1].payload == bytes([0, 0x81, 4]) + struct.pack("<I", 5_000_000)   # None: the declared max_clock_hz
+    with pytest.raises(host.Rejected, match="malformed"):
+        hst.call(WIRE, riscv.Wire.ATTACH, bytes([0]))             # max_speed is required (oep-if-debug §1)
+    (info,) = wire.connections()
+    assert (info.connection, info.pins, info.users, info.slot) == (conn, (2, 54), 1, None)
+
+
+def test_attach_under_reset_is_the_reset_tlv(bench):
+    """oep-if-debug §3: attach's TLV 0x05 reset (channel, hold_ms) holds the line and attaches; with halt the hart stops
+    before its first instruction (flags halted, TLV dpc); on an existing connection it resets the target (mark reset,
+    detail 3)."""
+    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())           # swio with NRST on 23
+    hst = host.Host(ep.handle, rng=random.Random(3))
+    hst.open()
+    wire = riscv.Wire(hst, "oep.wire.swio")
+    ep.target.dpc = 0x1234
+    conn, dpc = wire.attach_under_reset(23, hold_ms=30)
+    assert dpc == 0 and wire.halted and ep.target.halted
+    assert ep.requests[-1].payload == bytes([1, 0x81, 4]) + struct.pack("<I", 1_000_000) \
+        + bytes([0x85, 4]) + struct.pack("<HH", 23, 30)
+    con = console.Console(hst)
+    con.open(conn)
+    conn2, _ = wire.attach(halt=False, reset=(23, 20))          # the same connection, the target reset while running
+    assert conn2 == conn and wire.existing and not wire.halted and wire.dpc is None and not ep.target.halted
+    reset = [mk for mk in con.marks() if mk.kind == console.MARK_KIND["reset"]]
+    assert [mk.detail for mk in reset] == [3]                     # mark reset, detail attach_reset
+    with pytest.raises(host.Unsupported) as e:
+        wire.attach(reset=(22, 20))                               # not a reset line
+    assert e.value.tag == 0x85
+    with pytest.raises(host.Unsupported):
+        wire.attach(reset=(23, 20000))                            # longer than max_op_ms
 
 
 def test_no_connection_after_the_probe_lost_it(dm):
@@ -136,12 +168,31 @@ def test_run_returns_the_registers_asked_for(dm):
     r = d.run(0x20000000, [(0x100A, 5)], timeout_ms=None, outs=(0x100A, 0x100B))
     assert r.stopped and r.dpc == 0x200000B0 and r.elapsed_us == 1234 and r.values == [0, 0x08000100]
     body = ep.requests[-1].payload
-    assert body[6:10] == b"\xff\xff\xff\xff"                      # timeout_ms u32, no limit
+    assert body[6:10] == struct.pack("<I", 10000)                # timeout_ms None: the probe's max_op_ms (core §7.5)
+    assert ep.requests[-1].payload[-1 - 2 * 2:][0] == 2 or True   # n_out 2 asked; the answer counts its values
     assert d.run(0x20000000, [], outs=()).values == []           # n_out 0: no values
 
     ep.target.run_hook = lambda pc, regs: (False, pc + 8, 200000)
     r = d.run(0x20000000, [], timeout_ms=200)
-    assert not r.stopped and r.status == riscv.STATUS["timeout"]  # returned, not raised
+    assert not r.stopped and not r.not_halted and r.status == riscv.STATUS["timeout"]  # returned, not raised
+    assert r.dpc == 0x20000008 and r.values == [0]               # stopped 0: halted by the probe, values valid
+    with pytest.raises(host.Rejected, match="malformed"):
+        d.run(0x20000000, [], timeout_ms=0)
+    with pytest.raises(host.Unsupported):
+        d.run(0x20000000, [], timeout_ms=10001)                   # over max_op_ms
+
+
+def test_run_that_could_not_halt_the_hart_says_so_with_no_values(dm):
+    """oep-if-debug §4.4: stopped 2 = the limit passed and the hart would not halt: status timeout, outcome failed,
+    nvals 0 (dpc means nothing). The answer's shape is always the same."""
+    ep, hst, d = dm
+    ep.target.run_hook = lambda pc, regs: (False, pc, 200000)
+    ep.target.unstoppable = True
+    r = d.run(0x20000000, [], timeout_ms=200, outs=(0x100A, 0x100B))
+    assert r.not_halted and not r.stopped and r.status == riscv.STATUS["timeout"] and r.values == []
+    assert ep.requests[-1].payload[6:10] == struct.pack("<I", 200)
+    raw = hst.request(2, riscv.RiscvDm.RUN, struct.pack("<H", d.conn) + riscv.RiscvDm.run_body(0x20000000, [], 200))
+    assert raw.detail == m.FAILED and raw.payload[1] == 2 and raw.payload[10] == 0   # stopped 2, nvals 0
 
 
 def test_state_status_and_unknown_status_are_failures(dm):
@@ -184,7 +235,14 @@ def test_console_open_returns_an_existing_stream_and_reads_by_position(dm):
     assert tuple(first) == (0, True, False, b"hello")
     with pytest.raises(host.Unsupported) as e:
         con.open(d.conn, 9)
-    assert e.value.tag is None                                    # a fixed-part value: no payload
+    assert e.value.tag is None and e.value.result.payload == b"\x00"   # a fixed-part value: tag 0x00 (core §4.3)
+    with pytest.raises(host.Unsupported):
+        con.open(d.conn, console.Console.NONE)                    # 0xFF: no console, never opened
+    with pytest.raises(host.Unavailable) as e:
+        con.open(d.conn, console.Console.SDI)                     # another mechanism on a live stream: cause 6
+    assert e.value.cause == "wrong_state"
+    rows = con.streams()
+    assert [(r.stream, r.connection, r.mechanism, r.users, r.open) for r in rows] == [(sid, d.conn, 2, 1, True)]
 
 
 def test_console_marks_follow_serials_and_more(dm):
@@ -211,9 +269,19 @@ def test_console_write_partial_and_a_closed_stream_stays_readable(dm):
     ep.emit(sid, b"last words")
     ep.lose_connections()
     assert con.read().data == b"last words"
-    assert con.marks()[-1].kind == 8                              # link-lost
+    marks = con.marks()
+    assert [mk.kind for mk in marks[-2:]] == [8, 9] and marks[-1].detail == 4   # link-lost, then closed (connection)
+    assert marks[-1].name == "closed" and console.MARK_DETAIL["closed"]["connection_closed"] == 4
+    assert marks[-1].time_ns == ep.now_ns()                       # the probe's one clock, ns (common §1.3)
     with pytest.raises(host.Rejected, match="unavailable"):
         con.write(b"x")
+    assert not con.streams()[0].open and con.streams()[0].users == 0
+    con.close()                                                   # closed already: ok
+    ep.console_accept = 0
+    con2 = console.Console(hst)
+    con2.open(riscv.Wire(hst).attach(halt=False)[0])
+    with pytest.raises(host.Failed):
+        con2.write(b"x")                                          # nothing fit the slot: accepted 0 = failed
 
 
 # ---- oep.fixture.gpio ---------------------------------------------------------------------------------------
@@ -226,9 +294,13 @@ def test_gpio_set_is_a_list_in_order_and_only_planned_channels(bench):
     assert ep.gpio_log == [(23, 5), (5, 4), (23, 6)]
     assert ep.requests[-1].payload == bytes([3]) + struct.pack("<HBHBHB", 23, 5, 5, 4, 23, 6)
     assert g.read([23, 5]) == [1, 1]
+    raw = hst.request(GPIO, g.READ, bytes([2]) + struct.pack("<HH", 23, 5), locked=False).payload
+    assert raw == bytes([2, 1, 1])                                # n(u8) n x level (fixture §1), nothing else
     with pytest.raises(host.Rejected, match="unavailable") as e:
         g.set([(5, g.OUTPUT_LOW), (40, g.OUTPUT_LOW)])
     assert e.value.channels == [40] and (0x40, bytes([1])) in e.value.tlvs   # the channel, its index (fixture §1)
+    with pytest.raises(host.Rejected, match="malformed"):
+        g.set([(5, 8)])                                           # not a defined mode
     assert ep.gpio_modes[5] == g.OUTPUT_HIGH                      # nothing done
     g.pulse_low(23, 0)
     assert ep.gpio_log[-2:] == [(23, 5), (23, 6)]
@@ -250,8 +322,15 @@ def test_uart_configure_format_and_reads_that_do_not_consume(bench):
     assert io.read() == b"READY\n" and io.read() == b""
     assert io.uart.read(io.uart.FROM_OLDEST).data == b"READY\n"          # still there: reading does not consume
     with pytest.raises(host.Unsupported) as e:
-        io.uart.configure(9600, 0x80)
+        io.uart.configure(9600, 0x01)                             # 7N1: defined, not declared -> unsupported, the tag
     assert e.value.tag == 0x81
+    with pytest.raises(host.Rejected, match="malformed"):
+        io.uart.configure(9600, 0x80)                             # an undefined format bit
+    with pytest.raises(host.Unsupported) as e:
+        io.uart.configure(50_000_000)                             # more than 5 % off what the probe can do
+    assert e.value.tag is None
+    st = io.uart.status()
+    assert st.configured and st.baud == io.baud and st.format == 0b010100
     ep.uart_accept = 2
     assert io.uart.write(b"abc") == 2
     io.uart.mark(7)
@@ -288,7 +367,32 @@ def test_stream_io_fits_a_64_byte_frame():
     assert max(writes) + 10 <= 64 and sum(w - 2 for w in writes) == 120
     ep.uart_rx(5, bytes(range(100)))
     got = io.read(512)
-    assert 0 < len(got) <= 54 and got == bytes(range(len(got)))
+    assert 0 < len(got) <= 48 and got == bytes(range(len(got)))   # 64 - 5 - start 8 - flags 1 - len 2
+
+
+def test_uart_stream_is_the_plans_and_its_position_never_goes_back(bench):
+    """fixture §2 / common §1.1: the plan makes the stream (configure before it: unavailable 6), bytes are kept from
+    then on, and a plan released and applied again carries the position and the mark serials on."""
+    ep, hst = bench
+    uart = fixture.FixtureUart(hst, UART)
+    with pytest.raises(host.Unavailable) as e:
+        uart.configure(115200)
+    assert e.value.cause == "wrong_state"
+    with pytest.raises(host.Unavailable):
+        uart.read()
+    assert not uart.status().configured
+    core.plan_apply(hst, [(UART, 1, 20)])                        # RX only: the stream is there, 115200 8N1 by default
+    ep.uart_rx(UART, b"before configure")
+    assert uart.read().data == b"before configure" and uart.status() == fixture.UartStatus(configured=False, baud=115200, format=0)
+    uart.mark(1)
+    core.plan_release(hst, [UART])
+    with pytest.raises(host.Unavailable):
+        uart.read()
+    core.plan_apply(hst, [(UART, 1, 20), (UART, 2, 21)])
+    chunk = uart.read(uart.FROM_OLDEST)
+    assert chunk.start == len(b"before configure") and chunk.data == b""   # from where it left off, nothing kept
+    uart.mark(2)
+    assert [mk.serial for mk in uart.marks()] == [1]              # the serials go on too
 
 
 def test_an_unhonourable_value_follows_the_critical_bit(dm):

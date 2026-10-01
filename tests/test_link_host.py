@@ -55,7 +55,7 @@ def result(corr, payload=b"", res=m.COMPLETED, detail=m.SUCCESS):
     return m.Result(corr, res, detail, payload).pack()
 
 
-CONFIRM_V1 = struct.pack("<4sBBHIB", b"OEP!", 1, 0, 1024, 65536, 4)
+CONFIRM_V1 = struct.pack("<4sBBHIBI", b"OEP!", 1, 0, 1024, 65536, 4, 0x11)   # ... boot_id (core §7.1)
 
 
 def answering(by_op=None):
@@ -199,6 +199,7 @@ def test_attach_host_binds_limits_and_max_frame():
     hst = h.Host(lk.send)
     lk.attach_host(hst)
     assert hst.revision == 1 and hst.limits["window"] == 65536 and lk.frames.max_frame == 1024
+    assert hst.limits["boot_id"] == 0x11 and hst._boot_id == 0x11                # confirm tells the boot (core §6.5)
     assert lk.corr_source == hst.next_corr and hst.link is lk
 
 

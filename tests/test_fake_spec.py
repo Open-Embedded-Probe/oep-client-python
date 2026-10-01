@@ -16,6 +16,8 @@ from oep_client import cobs, endpoint, fake, fake_serial, message as m, registry
 CFG = reg.PROBE_CONFIG
 ITEM, ATTACH, MODE, KIND = CFG.tlv["item"], CFG.enum["slot_attach"], CFG.enum["bind_mode"], CFG.enum["bind_stream"]
 STATE = CFG.enum["slot_state"]
+SPEED = m.tlv(0x01, struct.pack("<I", 4_000_000), critical=True)    # attach's required max_speed TLV
+MARK_KIND = reg.COMMON.enum["mark_kind"]
 
 
 class Clock:
@@ -50,9 +52,10 @@ class Host:
 
 
 def slot_item(n, wire, pair, attach=ATTACH["at_boot"], retry=1, mech=2, name=None, lock=None, max_speed=0, idle=0):
+    """A slot item (probe.config §1.1): ... retry_ms(u32) max_speed_hz(u32) ...; `retry` in seconds here."""
     raw = (name or f"s{n}").encode()
-    value = struct.pack("<BHHHBHIBBB", n, wire, *pair, attach, retry if attach == ATTACH["at_boot"] else 0, max_speed,
-                        idle, mech, len(raw)) + raw
+    value = struct.pack("<BHHHBIIBBB", n, wire, *pair, attach, 1000 * retry if attach == ATTACH["at_boot"] else 0,
+                        max_speed, idle, mech, len(raw)) + raw
     value += b"\x00" if lock is None else bytes([1 + 2 * len(lock[0]), 1]) + lock[0] + lock[1]   # lock_len, scheme 1
     return m.tlv(ITEM["slot"], value)
 
@@ -66,6 +69,20 @@ def describe(ep, fn):
     h = Host(ep)
     r = h.raw(0, m.OP_DESCRIBE, struct.pack("<HH", fn, 0), session=False)
     return m.split_tlvs(r.payload[1:])
+
+
+def state(ep, fn=6, first_slot=0, first_bind=0):
+    """probe.config's state op (lock-free): -> (more, storage_state, storage_hash, reason, {slot: raw slot_state},
+    [raw bind_state])."""
+    rd = m.Reader(Host(ep).raw(fn, CFG.op["state"], bytes([first_slot, first_bind]), session=False).payload)
+    more, storage, h, why = rd.take("BBIB")
+    slots = {}
+    for _ in range(rd.u8()):
+        e = rd.element()
+        slots[e.data[0]] = e.data
+    binds = [rd.element().data for _ in range(rd.u8())]
+    rd.tail()
+    return more, storage, h, why, slots, binds
 
 
 # ---- the resend table (core §5.2) --------------------------------------------------------------------
@@ -92,7 +109,7 @@ def test_a_long_result_is_not_remembered():
     h = Host(ep)
     h.open()
     wire = 1
-    r = h.raw(wire, 0x02, bytes([0]))                                # attach
+    r = h.raw(wire, 0x02, bytes([0]) + SPEED)                        # attach
     conn = struct.unpack_from("<H", r.payload)[0]
     ep.target.halted = True
     big = h.raw(2, 0x05, struct.pack("<HIH", conn, 0x20000000, 32))  # read_block: 32 words, over 72 bytes
@@ -134,12 +151,18 @@ def test_lease(asked, given):
 
 # ---- describe ------------------------------------------------------------------------------------------
 
-def test_core_describe_lists_the_transports_and_the_oep_pid():
+def test_core_describe_lists_the_transports_discoverable_and_max_op_ms():
     tlvs = describe(endpoint.Endpoint(fake.p4_x035(), Clock()), 0)
     tags = reg.CORE.tlv["describe"]
     kinds = [v[1] for t, v in tlvs if t == tags["transport"]]
-    assert kinds == [3, 4, 5, 2] and (tags["oep_pid"], b"\x01") in tlvs
+    assert kinds == [3, 4, 5, 2] and (tags["discoverable"], b"\x01") in tlvs
+    assert (tags["max_op_ms"], struct.pack("<I", 10000)) in tlvs and (tags["plan_roles"], struct.pack("<I", 32)) in tlvs
     assert any(t == tags["unit_id"] for t, _ in tlvs) and 0x48 not in [t for t, _ in tlvs]
+    # declarations only (core §7.3): a label the settings give is not in the describe
+    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    Host(ep).open()
+    Host(ep).ok(10, 0x02, m.tlv(ITEM["label"], struct.pack("<H", 20) + b"DUT"))
+    assert all(v[2:] != b"DUT" for t, v in describe(ep, 0) if t == tags["label"])
 
 
 # ---- slots, connections and the seat rule --------------------------------------------------------------
@@ -157,9 +180,10 @@ def test_at_boot_slots_attach_and_say_so_without_the_lock():
     ep.targets[(1, pairs[1])].present = False
     ep.targets[(1, pairs[0])].target_id = 0x035E0601
     h.ok(6, 0x02, slot_item(0, 1, pairs[0], name="x035") + slot_item(1, 1, pairs[1], name="l103"))
-    states = {v[0]: v for t, v in describe(ep, 6) if t == CFG.tlv["describe"]["slot_state"]}
-    assert states[0][1] == STATE["connected"] and struct.unpack_from("<I", states[0], 10)[0] == 0x035E0601
-    assert states[1][1] == STATE["absent"] and struct.unpack_from("<I", states[1], 4)[0] < 10
+    _, _, _, _, states, _ = state(ep)
+    assert states[0][1] == STATE["connected"] and struct.unpack_from("<I", states[0], 14)[0] == 0x035E0601
+    assert states[1][1] == STATE["absent"] and struct.unpack_from("<Q", states[1], 4)[0] == 0   # tried at 0 ns
+    assert len(states[0]) == 18 and len(states[1]) == 14                        # slot state conn last_try_at_ns scheme len tid
     listed = h.raw(1, 0x05, session=False).payload                  # connections, lock-free
     assert listed[0] == 1 and listed[1] >= 14                       # count, then len(u8) of the entry (core §2.3)
     assert listed[2 + 10] == 0b10 and listed[2 + 11] == 0            # used by slot 0 only
@@ -171,20 +195,21 @@ def test_a_lock_that_does_not_match_lets_go():
     ep.targets[(1, pair)].target_id = 0x035E0601
     lock = (struct.pack("<I", 0xFFFFFF0F), struct.pack("<I", 0x00300500))   # another family
     h.ok(6, 0x02, slot_item(0, 1, pair, lock=lock))
-    state = next(v for t, v in describe(ep, 6) if t == CFG.tlv["describe"]["slot_state"])
-    assert state[1] == STATE["lock_mismatch"] and not ep.conns
+    st = state(ep)[4][0]
+    assert st[1] == STATE["lock_mismatch"] and not ep.conns
+    assert h.raw(6, 0x02, slot_item(1, 1, ep.pairs[1][1], lock=(b"\xff\xff", b"\x00\x00"))).detail == m.MALFORMED   # not the scheme's 4 bytes
 
 
 def test_the_seat_rule_closes_the_oldest_slot_only_connection():
     ep, h = bench()
     p = ep.pairs[1]
     h.ok(6, 0x02, slot_item(0, 1, p[0]) + slot_item(1, 1, p[1]))  # two seats, both taken by the slots
-    r = h.raw(1, 0x02, bytes([0]) + m.tlv(0x03, struct.pack("<HH", *p[2]), critical=True))
+    r = h.raw(1, 0x02, bytes([0]) + SPEED + m.tlv(0x03, struct.pack("<HH", *p[2]), critical=True))
     assert r.succeeded                                              # slot 0's connection gave way
     assert {c.pair for c in ep.conns.values()} == {p[1], p[2]}
     ep.tick()
     assert ep._conn_at(1, p[0]) is None                             # evicted: no retry until a new cue
-    r2 = h.raw(1, 0x02, bytes([0]) + m.tlv(0x03, struct.pack("<HH", *p[0]), critical=True))
+    r2 = h.raw(1, 0x02, bytes([0]) + SPEED + m.tlv(0x03, struct.pack("<HH", *p[0]), critical=True))
     assert r2.succeeded                                             # slot 1's connection goes the same way
 
 
@@ -199,7 +224,25 @@ def test_too_many_at_boot_slots_are_refused():
 def test_slot_names_are_url_safe(name):
     ep, h = bench()
     assert h.raw(6, 0x02, slot_item(0, 1, ep.pairs[1][0], name=name or None) if name else
-                 m.tlv(ITEM["slot"], struct.pack("<BHHHBHIBBB", 0, 1, *ep.pairs[1][0], 1, 1, 0, 0, 2, 0) + b"\x00")).detail == m.MALFORMED
+                 m.tlv(ITEM["slot"], struct.pack("<BHHHBIIBBB", 0, 1, *ep.pairs[1][0], 1, 1000, 0, 0, 2, 0) + b"\x00")).detail == m.MALFORMED
+
+
+def test_slot_refusals_follow_the_reason_table():
+    """probe.config §2's table: a pair the wire does not offer -> unsupported, two slots on one place -> malformed,
+    a bind to a slot without a console -> malformed, a port that is no serial port -> unsupported, the mechanism
+    none -> a slot that opens no console."""
+    ep, h = bench()
+    p = ep.pairs[1]
+    assert h.raw(6, 0x02, slot_item(0, 1, (9, 10))).detail == m.UNSUPPORTED
+    assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + slot_item(1, 1, p[0])).detail == m.MALFORMED
+    assert h.raw(6, 0x02, slot_item(0, 1, p[0], mech=0xFF) + bind_item(0, MODE["manual"], [(KIND["slot_console"], 0)])).detail == m.MALFORMED
+    assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + bind_item(1, MODE["manual"], [(KIND["slot_console"], 0)])).detail == m.UNSUPPORTED
+    assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + bind_item(0, MODE["manual"], [(KIND["fixture_uart"], 4)])).detail == m.UNSUPPORTED
+    assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + bind_item(0, MODE["manual"], [(KIND["fixture_uart"], 99)])).detail == m.UNKNOWN_FUNCTION
+    host_retry = m.tlv(ITEM["slot"], struct.pack("<BHHHBIIBBB", 0, 1, *p[0], ATTACH["host"], 1000, 0, 0, 2, 2) + b"s0\x00")
+    assert h.raw(6, 0x02, host_retry).detail == m.MALFORMED         # retry_ms on a host slot
+    h.ok(6, 0x02, slot_item(0, 1, p[0], mech=0xFF))
+    assert ep._conn_at(1, p[0]) is not None and not ep.streams      # attached, no console opened
 
 
 # ---- binds and the serial port ---------------------------------------------------------------------------
@@ -233,7 +276,7 @@ def test_raw_console_flows_until_a_session_and_resumes_from_its_last_reset():
     ep.target_says(b"held\n", ep.targets[(1, p[0])])
     assert port.output() == b""                                     # the session holds this port
     conn = ep._conn_at(1, p[0])
-    port.feed(framed(m.Request(2, 2, 0x04, struct.pack("<HB", conn, 0), 9)))   # riscv-dm reset
+    port.feed(framed(m.Request(2, 2, 0x04, struct.pack("<HB", conn, 0), 9)))   # riscv-dm reset (mark reset detail 1)
     port.output()
     ep.target_says(b"after reset\n", ep.targets[(1, p[0])])
     port.feed(framed(m.Request(3, 0, m.OP_END, b"", 9)))
@@ -292,8 +335,8 @@ def test_last_reset_follows_the_target_the_host_reset():
     ep.target_says(b"from a\n", ep.targets[(1, p[0])])
     port = fake_serial.FakeSerialPort(ep, 0)
     assert port.output() == b"from b\n"
-    state = next(v for t, v in describe(ep, 6) if t == CFG.tlv["describe"]["bind_state"])
-    assert state == bytes([0, MODE["last_reset"], 1, CFG.enum["bind_flow"]["streaming"]])
+    (bind_state,) = state(ep)[5]
+    assert bind_state == bytes([0, MODE["last_reset"], 1, CFG.enum["bind_flow"]["streaming"]])
 
 
 # ---- fake_serve on a pty -----------------------------------------------------------------------------------
@@ -341,21 +384,69 @@ def test_fake_serve_run_hook_from_a_file(tmp_path):
     assert ep.target.run_hook(0x2000, {0x100A: 5}) == (True, 0x2004, 7) and ep.target.mem[0x100] == 5
 
 
-def test_a_closed_console_stays_readable_until_the_same_place_opens_again():
+def test_a_closed_console_stays_readable_and_the_same_place_opens_it_again_under_its_number():
+    """console §2: a closed stream reads until its place is opened again; the same mechanism there brings it back under
+    its number (flags bit0, mark attach), another mechanism makes it go. Connections and streams share one number
+    space; a connection's number where a stream goes is unavailable cause 6."""
     ep, h = bench()
     p = ep.pairs[1]
     def attach(pair):
-        r = h.raw(1, 0x02, bytes([0]) + m.tlv(0x03, struct.pack("<HH", *pair), critical=True))
+        r = h.raw(1, 0x02, bytes([0]) + SPEED + m.tlv(0x03, struct.pack("<HH", *pair), critical=True))
         return struct.unpack_from("<H", r.payload)[0]
     a = attach(p[0])
     sa = struct.unpack_from("<H", h.ok(3, 0x01, struct.pack("<HB", a, 2)))[0]
+    assert a == 1 and sa == 2                                        # one space, from 1 (core §9)
+    assert h.raw(3, 0x02, struct.pack("<HBQH", a, 1, 0, 16), session=False).detail == m.UNAVAILABLE   # a connection's number
+    assert h.raw(2, 0x02, struct.pack("<H", sa)).detail == m.UNAVAILABLE                               # a stream's number
+    assert h.raw(3, 0x02, struct.pack("<HBQH", 77, 1, 0, 16), session=False).detail == m.NO_CONNECTION  # unknown
+    ep.emit(sa, b"bye")
     h.ok(1, 0x03, struct.pack("<H", a))                              # detach: the stream closes, stays readable
     b = attach(p[1])
     h.ok(3, 0x01, struct.pack("<HB", b, 2))                          # the same mechanism on another place
     assert h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).succeeded
     a2 = attach(p[0])
-    h.ok(3, 0x01, struct.pack("<HB", a2, 2))                         # the same place again: the old one goes
-    assert h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).detail == m.NO_CONNECTION   # the old number is gone (core §4.3)
+    again = m.Reader(h.ok(3, 0x01, struct.pack("<HB", a2, 2)))
+    assert again.take("HB") == (sa, 1)                               # the same place, mechanism: the same number, bit0
+    rd = m.Reader(h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).payload)
+    assert rd.take("QB") == (0, 0) and rd.counted("H") == b"bye"     # position and bytes carried on
+    kinds = [mk[2] for mk in ep.streams[sa].marks]
+    assert kinds == [MARK_KIND["attach"], MARK_KIND["detach"], MARK_KIND["closed"], MARK_KIND["attach"]]
+    h.ok(1, 0x03, struct.pack("<H", a2))
+    a3 = attach(p[0])
+    h.ok(3, 0x01, struct.pack("<HB", a3, 1))                         # another mechanism there: the old one goes
+    assert h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).detail == m.NO_CONNECTION
+    rd = m.Reader(h.raw(3, 0x08, session=False).payload)             # streams: the live ones (b's and a3's), lock-free
+    rows = [rd.element().take("HHBBB") for _ in range(rd.u8())]
+    (row,) = [r for r in rows if r[1] == a3]
+    assert len(rows) == 2 and row[2:] == (1, 1, 0) and row[0] not in (sa, a, a2, a3, b)   # stream connection mechanism users state
+
+
+def test_a_stream_lives_while_anything_uses_it():
+    """console §2: the stream's users are the session that opened it and the bound slot; close and a lease lapse take
+    one share each (mark closed 1 / 2 when the last goes), a slot's removal takes its share (3)."""
+    clock = Clock()
+    ep = endpoint.Endpoint(fake.p4_bench(), clock)
+    p = ep.pairs[1]
+    ep.load_config([slot_item(0, 1, p[0], name="x035"), bind_item(0, MODE["manual"], [(KIND["slot_console"], 0)])])
+    h = Host(ep, transport=1)
+    h.open(lease=1000)
+    conn = ep._conn_at(1, p[0])
+    sid, flags = m.Reader(h.ok(3, 0x01, struct.pack("<HB", conn, 2))).take("HB")
+    assert flags == 1 and ep.streams[sid].users == {"host", ("slot", 0)}
+    rd = m.Reader(h.raw(3, 0x08, session=False).payload)
+    assert rd.u8() == 1 and rd.element().take("HHBBB") == (sid, conn, 2, 0b11, 0)   # users: session and slot
+    h.ok(3, 0x07, struct.pack("<H", sid))                            # close: the slot still uses it
+    assert ep.streams[sid].users == {("slot", 0)} and not ep.streams[sid].closed
+    h.ok(3, 0x01, struct.pack("<HB", conn, 2))
+    clock.t = 5000
+    ep.tick()                                                        # the lease lapsed: the session's share goes
+    assert ep.streams[sid].users == {("slot", 0)} and not ep.streams[sid].closed
+    h2 = Host(ep, 0x99, transport=1)
+    h2.open()
+    assert h2.raw(6, 0x05, bytes([1, 2, ITEM["slot"], 0])).detail == m.MALFORMED   # the bind would point at nothing
+    h2.ok(6, 0x05, bytes([2, 2, ITEM["slot"], 0, 2, ITEM["bind"], 0]))   # unset slot and bind: the share goes, it closes
+    assert ep.streams[sid].closed and ep.streams[sid].marks[-1][2:5:2] == (MARK_KIND["closed"], 3)
+    h2.ok(3, 0x07, struct.pack("<H", sid))                           # closing a closed stream: ok
 
 
 def test_fake_serve_uart_plan_and_rx():
@@ -399,38 +490,45 @@ def test_the_closing_0x00_of_a_frame_is_not_raw_after_the_gap():
 def test_read_from_a_last_mark_that_is_not_there_is_from_now():
     ep, h = bench()
     p = ep.pairs[1][0]
-    r = h.raw(1, 0x02, bytes([0]) + m.tlv(0x03, struct.pack("<HH", *p), critical=True))
+    r = h.raw(1, 0x02, bytes([0]) + SPEED + m.tlv(0x03, struct.pack("<HH", *p), critical=True))
     uart_fn = 5
     h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", uart_fn, 1, 20)) + m.tlv(0x90, struct.pack("<HBH", uart_fn, 2, 21)))
     h.ok(uart_fn, 0x01, struct.pack("<I", 115200))
     ep.uart_rx(uart_fn, b"old output")
-    reset = reg.TARGET_CONSOLE.enum["mark_kind"]["reset"]
-    got = h.raw(uart_fn, 0x02, struct.pack("<BQH", 3, reset, 64), session=False).payload
-    assert struct.unpack_from("<Q", got)[0] == 10 and got[9:] == b""   # no reset mark: from now, not the old bytes
+    rd = m.Reader(h.raw(uart_fn, 0x02, struct.pack("<BQH", 3, MARK_KIND["reset"], 64), session=False).payload)
+    assert rd.take("QB") == (10, 0) and rd.counted("H") == b""      # no reset mark: from now, not the old bytes
 
 
 def test_no_default_reset_line_only_the_declared_channels():
-    """oep-if-debug §3: attach_under_reset names its channel; the probe takes only role 3 (reset) channels, and not
-    one a plan holds."""
+    """oep-if-debug §3: the attach's reset TLV names its channel; the probe takes only role 3 (reset) channels
+    (unsupported, tag 0x85 otherwise), and not one a plan holds (unavailable). Op 0x04 is gone."""
     ep = endpoint.Endpoint(fake.esp32_v003(), Clock())
     h = Host(ep)
     h.open()
     assert ep.reset_channels[1] == {23}
+    reset = lambda ch, hold=20: m.tlv(0x05, struct.pack("<HH", ch, hold), critical=True)
     for channel in (0xFFFF, 22):                                    # no default; 22 is not a reset line
-        assert h.raw(1, 0x04, struct.pack("<HH", channel, 20)).detail == m.UNAVAILABLE
-    h.ok(1, 0x04, struct.pack("<HH", 23, 20))
+        r = h.raw(1, 0x02, b"\x01" + SPEED + reset(channel))
+        assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([0x85]))
+    rd = m.Reader(h.ok(1, 0x02, b"\x01" + SPEED + reset(23)))
+    conn, _, flags, _ = rd.take("HIBI")
+    assert flags & 0x08 and rd.tail().get(0x11) == struct.pack("<I", 0)   # halted at the reset vector: TLV dpc
+    assert h.raw(1, 0x04, struct.pack("<HH", 23, 20)).detail == m.UNKNOWN_OPERATION
+    assert h.raw(1, 0x02, b"\x01" + SPEED + reset(23, 20000)).detail == m.UNSUPPORTED   # hold_ms over max_op_ms
     h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 23)))   # fixture.gpio takes NRST
-    assert h.raw(1, 0x04, struct.pack("<HH", 23, 20)).detail == m.UNAVAILABLE
+    assert h.raw(1, 0x02, b"\x01" + SPEED + reset(23)).detail == m.UNAVAILABLE
+    assert h.raw(1, 0x02, b"\x01").detail == m.MALFORMED             # no max_speed
 
 
 def test_idle_clock_is_rvswd_s_and_a_slot_carries_the_line_settings():
     ep, h = bench()
     pair = ep.pairs[1][0]
     idle_low = m.tlv(0x04, b"\x01", critical=True)
-    h.ok(1, 0x02, b"\x01" + m.tlv(0x03, struct.pack("<HH", *pair), critical=True) + idle_low)
+    h.ok(1, 0x02, b"\x01" + SPEED + m.tlv(0x03, struct.pack("<HH", *pair), critical=True) + idle_low)
     assert ep.conns[ep._conn_at(1, pair)].idle_clock == 1
-    assert h.raw(1, 0x02, b"\x01" + m.tlv(0x03, struct.pack("<HH", *pair), critical=True)
+    assert h.raw(1, 0x02, b"\x01" + SPEED + m.tlv(0x03, struct.pack("<HH", *pair), critical=True)
                  + m.tlv(0x04, b"\x02", critical=True)).detail == m.MALFORMED
+    assert h.raw(1, 0x01, b"\x00" + m.tlv(0x04, b"\x01", critical=True) + m.tlv(0x01, SPEED[2:], critical=True)).succeeded   # scan takes them too
     ep2, h2 = bench()
     p2 = ep2.pairs[1][1]
     h2.ok(6, 0x02, slot_item(0, 1, p2, name="l103", max_speed=1_000_000, idle=1))
@@ -439,8 +537,8 @@ def test_idle_clock_is_rvswd_s_and_a_slot_carries_the_line_settings():
     v003 = endpoint.Endpoint(fake.esp32_v003(), Clock())
     hv = Host(v003)
     hv.open()
-    assert hv.raw(9, 0x02, slot_item(0, 1, v003.pairs[1][0], idle=1)).detail == m.MALFORMED   # swio has no idle_clock
-    r = hv.raw(1, 0x02, b"\x01" + idle_low)
+    assert hv.raw(9, 0x02, slot_item(0, 1, v003.pairs[1][0], idle=1)).detail == m.UNSUPPORTED   # swio has no idle_clock
+    r = hv.raw(1, 0x02, b"\x01" + SPEED + idle_low)
     assert r.resolution == m.REJECTED and r.detail == m.UNSUPPORTED  # an unknown critical TLV on swio
 
 
@@ -458,24 +556,24 @@ def test_a_wire_takes_any_free_pair_the_host_names():
     r = m.Reader(h.ok(1, 0x01, b"\x00"))                              # count 0: the first 255 free pairs
     tried, count = r.take("BB")
     assert tried == 255 and count == 1 and r.element().take("BHHI")[1:3] == (0, 1)
-    skip = lambda n: m.tlv(0x01, struct.pack("<H", n))
+    skip = lambda n: m.tlv(0x02, struct.pack("<H", n))               # scan's skip is TLV 0x02 (0x01 is max_speed)
     assert m.Reader(h.ok(1, 0x01, b"\x00" + skip(29 * 28 - 10))).take("B") == 10   # the last ten
     assert m.Reader(h.ok(1, 0x01, b"\x00" + skip(29 * 28))).take("B") == 0         # the end
     assert h.raw(1, 0x01, b"\x01" + struct.pack("<HH", 0, 1) + skip(1)).detail == m.MALFORMED
-    conn = struct.unpack_from("<H", h.ok(1, 0x02, b"\x01" + pins(0, 1)))[0]
-    assert h.raw(1, 0x02, b"\x01" + pins(1, 2)).detail == m.UNAVAILABLE    # GP1 is the live connection's
+    conn = struct.unpack_from("<H", h.ok(1, 0x02, b"\x01" + SPEED + pins(0, 1)))[0]
+    assert h.raw(1, 0x02, b"\x01" + SPEED + pins(1, 2)).detail == m.UNAVAILABLE    # GP1 is the live connection's
     assert h.raw(0, m.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 0))).detail == m.UNAVAILABLE
     assert m.Reader(h.ok(1, 0x01, b"\x00")).take("B") == 1           # its one seat is taken: the live pair only
-    assert struct.unpack_from("<H", h.ok(1, 0x02, b"\x00"))[0] == conn   # no pins: the one live connection
+    assert struct.unpack_from("<H", h.ok(1, 0x02, b"\x00" + SPEED))[0] == conn   # no pins: the one live connection
     assert h.raw(1, 0x01, b"\x01" + struct.pack("<HH", 2, 3)).detail == m.UNAVAILABLE
     h.ok(1, 0x03, struct.pack("<H", conn) + m.tlv(0x01, b""))       # detach (force): the pins go back
     h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 5)))
     assert h.raw(1, 0x01, b"\x01" + struct.pack("<HH", 5, 6)).detail == m.UNAVAILABLE   # GP5 is the plan's
-    assert h.raw(1, 0x02, b"\x01" + pins(3, 3)).detail == m.UNAVAILABLE                 # one channel twice
-    assert h.raw(1, 0x02, b"\x01" + pins(19, 3)).detail == m.UNAVAILABLE                # not offered (PSRAM CS)
-    assert h.raw(1, 0x02, b"\x01").detail == m.UNAVAILABLE          # no pins, no live connection: the host chooses
-    r = h.raw(1, 0x02, b"\x01" + pins(7, 8))                        # a free pair nothing answers on
-    assert r.resolution == m.COMPLETED and not r.succeeded
+    assert h.raw(1, 0x02, b"\x01" + SPEED + pins(3, 3)).detail == m.UNSUPPORTED         # one channel twice: no such pair
+    assert h.raw(1, 0x02, b"\x01" + SPEED + pins(19, 3)).detail == m.UNSUPPORTED        # not offered (PSRAM CS)
+    assert h.raw(1, 0x02, b"\x01" + SPEED).detail == m.UNAVAILABLE  # no pins, no live connection: the host chooses
+    r = h.raw(1, 0x02, b"\x01" + SPEED + pins(7, 8))                # a free pair nothing answers on
+    assert r.resolution == m.COMPLETED and not r.succeeded and r.payload == bytes([2])   # failed: status line [TLV]
 
 
 def test_the_client_scan_walks_the_whole_count_0_list():
@@ -484,5 +582,20 @@ def test_the_client_scan_walks_the_whole_count_0_list():
     hst = hh.Host(lambda b: ep.handle(b, 0))
     hst.open(3000)
     ep._target(1, (28, 29)).present = True                        # the last pair of the list
-    found = target.Wire(hst).scan()
+    found = target.Wire(hst).scan(max_speed=1_000_000)
     assert [f.pins for f in found] == [(0, 1), (28, 29)]
+    assert ep.requests[-1].payload.endswith(m.tlv(0x01, struct.pack("<I", 1_000_000), critical=True))
+
+
+def test_dmi_and_run_answers_count_their_values_and_rejects_follow_the_order():
+    """oep-if-debug §4: dmi answers done status nvals values; run answers ... nvals values; waits over max_op_ms are
+    unsupported, a running hart's read_block is status state, an odd address malformed."""
+    ep, h = bench()
+    conn = struct.unpack_from("<H", h.ok(1, 0x02, b"\x00" + SPEED + m.tlv(0x03, struct.pack("<HH", *ep.pairs[1][0]), critical=True)))[0]
+    ep.targets[(1, ep.pairs[1][0])].dmi[0x11] = 0x382
+    r = h.ok(2, 0x01, struct.pack("<HH", conn, 2) + bytes([2, 0x11]) + bytes([2, 0x11]))
+    assert r == struct.pack("<HBH", 2, 0, 2) + struct.pack("<II", 0x382, 0x382)
+    assert h.raw(2, 0x01, struct.pack("<HH", conn, 1) + struct.pack("<BI", 4, 20_000_000)).detail == m.UNSUPPORTED
+    r = h.raw(2, 0x05, struct.pack("<HIH", conn, 0x20000000, 2))   # read_block on a running hart
+    assert r.detail == m.FAILED and r.payload == struct.pack("<HB", 0, 5)
+    assert h.raw(2, 0x05, struct.pack("<HIH", conn, 0x20000001, 2)).detail == m.MALFORMED

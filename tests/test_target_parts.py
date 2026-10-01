@@ -13,12 +13,14 @@ FNS = {"oep.wire.rvswd": 1, "oep.target.riscv-dm": 2, "oep.fixture.gpio": 3, "oe
 
 class ScriptedHost(h.Host):
     """A Host whose requests go to handlers: (fn, op) -> (resolution, detail, payload); records every request.
-    Interface names resolve through the host's fn cache, filled in advance."""
+    Interface names resolve through the host's fn cache, filled in advance; describes answer nothing (an attach then
+    sends the client's DEFAULT_MAX_SPEED)."""
 
     def __init__(self, handlers, revisions=None):
         super().__init__(send=None)
         self.handlers, self.log = handlers, []
         self.handlers.setdefault((0, m.OP_CONFIRM), lambda p: ok(CONFIRM))
+        self.handlers.setdefault((0, m.OP_DESCRIBE), lambda p: ok(b"\x00"))
         self._fns.update(FNS)
         self._revisions.update({fn: 1 for fn in FNS.values()} if revisions is None else revisions)
 
@@ -43,25 +45,37 @@ def ok(body=b""):
     return m.COMPLETED, m.SUCCESS, body
 
 
-CONFIRM = struct.pack("<4sBBHIB", b"OEP!", 1, 0, 1024, 4096, 8)
+CONFIRM = struct.pack("<4sBBHIBI", b"OEP!", 1, 0, 1024, 4096, 8, 0x1234)
+MAX_SPEED = bytes([0x81, 4]) + struct.pack("<I", target.WireBase.DEFAULT_MAX_SPEED)   # attach's required TLV
+
+
+def attach_answer(conn, id_, flags, speed, dpc=None):
+    """connection id flags speed_hz [TLV dpc] (oep-if-debug §3)."""
+    tail = b"" if dpc is None else bytes([0x11, 4]) + struct.pack("<I", dpc)
+    return struct.pack("<HIBI", conn, id_, flags, speed) + tail
 
 
 # ---- reset-line search ----------------------------------------------------------------------------
 
 def test_find_reset_line_hits_the_vector_skips_disallowed_and_retries_failures():
+    """The attach under reset is attach(halt) with the reset TLV (channel, hold_ms); the halted hart's dpc comes in
+    the answer's TLV 0x11 with flags halted (oep-if-debug §3)."""
     tries = {}
 
     def aur(p):
-        channel, _ = struct.unpack("<HH", p)
+        assert p[0] == 1 and p[1:7] == MAX_SPEED                       # method halt, max_speed required
+        reset = dict(m.split_tlvs(p[1:]))[0x85]                        # the reset TLV, critical
+        channel, hold = struct.unpack("<HH", reset)
+        assert hold == 20
         tries[channel] = tries.get(channel, 0) + 1
         if channel == 9:
-            return m.REJECTED, m.UNAVAILABLE, b""                      # not allowed on this probe
+            return m.REJECTED, m.UNSUPPORTED, bytes([0x85])            # not a reset line on this probe
         if channel == 5 and tries[5] == 1:
-            return m.COMPLETED, m.FAILED, b""                          # the attach itself failed once
+            return m.COMPLETED, m.FAILED, bytes([2])                   # the attach itself failed once: status line
         dpc = 0 if channel == 2 and tries[2] == 2 else 0x1300 + channel  # the real line, caught on its second try
-        return ok(struct.pack("<HII", 1, dpc, 1_000_000))
+        return ok(attach_answer(1, 0x382, 0x08, 1_000_000, dpc))
 
-    hst = ScriptedHost({(1, target.Wire.ATTACH_UNDER_RESET): aur,
+    hst = ScriptedHost({(1, target.Wire.ATTACH): aur,
                         (2, target.RiscvDm.RESUME): lambda p: (m.COMPLETED, m.FAILED, bytes([5])),   # an L103: state
                         (2, target.RiscvDm.RESET): lambda p: ok(struct.pack("<BBBI", 0, 3, 1, 0x1234)),
                         (1, target.Wire.DETACH): lambda p: ok()})
@@ -80,21 +94,21 @@ def test_attach_after_gpio_reset_pipelines_release_with_attach_and_retries():
 
     def attach(p):
         attaches.append(p)
-        return (ok(struct.pack("<HIBI", 1, 0xc82, 0, 1_000_000)) if len(attaches) == 3 else (m.COMPLETED, m.FAILED, b""))
+        return (ok(attach_answer(1, 0xc82, 0, 1_000_000)) if len(attaches) == 3 else (m.COMPLETED, m.FAILED, bytes([2])))
 
     hst = ScriptedHost({(3, 0x01): lambda p: ok(), (1, target.Wire.ATTACH): attach})
     wire = target.Wire(hst)
     conn, status = target.attach_after_gpio_reset(hst, wire, 3, 23, exchange=None, tries=5, low_s=0)
     assert (conn, status) == (1, 0xc82)
-    assert len(attaches) == 3 and attaches[0] == b"\x01"                # attach with halt
-    ops = [(fn, op) for fn, op, _ in hst.log]
-    assert ops[:3] == [(3, 0x01), (3, 0x01), (1, target.Wire.ATTACH)]   # low, then release + attach together
-    assert hst.log[0][2] == bytes([1]) + struct.pack("<HB", 23, 5)       # set: n=1, channel 23 open-drain low
-    assert hst.log[1][2] == bytes([1]) + struct.pack("<HB", 23, 6)       # ... then released
+    assert len(attaches) == 3 and attaches[0] == b"\x01" + MAX_SPEED    # attach with halt, max_speed always
+    log = [(fn, op, p) for fn, op, p in hst.log if fn != 0]              # the describe (the default max_speed) aside
+    assert [(fn, op) for fn, op, _ in log][:3] == [(3, 0x01), (3, 0x01), (1, target.Wire.ATTACH)]   # low, then release + attach together
+    assert log[0][2] == bytes([1]) + struct.pack("<HB", 23, 5)           # set: n=1, channel 23 open-drain low
+    assert log[1][2] == bytes([1]) + struct.pack("<HB", 23, 6)           # ... then released
 
 
 def test_attach_after_gpio_reset_gives_up():
-    hst = ScriptedHost({(3, 0x01): lambda p: ok(), (1, target.Wire.ATTACH): lambda p: (m.COMPLETED, m.FAILED, b"")})
+    hst = ScriptedHost({(3, 0x01): lambda p: ok(), (1, target.Wire.ATTACH): lambda p: (m.COMPLETED, m.FAILED, bytes([4]))})
     with pytest.raises(h.Failed):
         target.attach_after_gpio_reset(hst, target.Wire(hst), 3, 23, exchange=None, tries=2, low_s=0)
 
@@ -144,10 +158,10 @@ class FakeAdi:
                     if read: out += struct.pack("<I", self.posted); self.posted = self.csw
                     else: self.csw = value
                 elif addr == 0xE000:
-                    return m.COMPLETED, m.FAILED, struct.pack("<HBB", done, 3, 4) + out     # status fault, ACK FAULT
+                    return m.COMPLETED, m.FAILED, struct.pack("<HBBH", done, 3, 4, len(out) // 4) + out   # fault, ACK FAULT
             done += 1
         assert done == n
-        return ok(struct.pack("<HBB", done, 0, 1) + out)
+        return ok(struct.pack("<HBBH", done, 0, 1, len(out) // 4) + out)        # done status ack nvals values
 
     def read_block(self, p):
         address, count = struct.unpack("<IH", p[2:])
@@ -168,18 +182,19 @@ def adi_bench():
     fake = FakeAdi()
     hst = ScriptedHost({(5, arm.ArmAdi.TRANSFER): fake.transfer, (5, arm.ArmAdi.READ_BLOCK): fake.read_block,
                         (5, arm.ArmAdi.WRITE_BLOCK): fake.write_block,
-                        (4, target.Wire.ATTACH): lambda p: ok(struct.pack("<HIBI", 1, 0x4c013477, 1, 2_000_000))})
+                        (4, target.Wire.ATTACH): lambda p: ok(attach_answer(1, 0x4c013477, 0x04, 2_000_000))})
     return fake, hst
 
 
 def test_swd_attach_decodes_dpidr_and_dormant(adi_bench):
     fake, hst = adi_bench
-    assert arm.SwdWire(hst).attach() == (1, 0x4c013477, True)
+    assert arm.SwdWire(hst).attach() == (1, 0x4c013477, True)                          # flags bit2: dormant woken
+    assert hst.log[-1][2] == b"\x00" + MAX_SPEED                                        # method 0, max_speed required
     wire = arm.SwdWire(hst)
     wire.attach(targetsel=0x01002927, max_speed=1_000_000)
-    assert hst.log[-1][2] == (bytes([0x81, 4]) + struct.pack("<I", 1_000_000)          # critical TLVs
+    assert hst.log[-1][2] == (b"\x00" + bytes([0x81, 4]) + struct.pack("<I", 1_000_000)          # critical TLVs
                               + bytes([0x82, 4]) + struct.pack("<I", 0x01002927))
-    assert wire.speed_hz == 2_000_000
+    assert wire.speed_hz == 2_000_000 and not wire.existing
 
 
 def test_ap_read_uses_adiv6_select_and_the_posted_value(adi_bench):
