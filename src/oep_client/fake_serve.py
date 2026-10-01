@@ -21,7 +21,7 @@ Options:
   --console FMT         what the targets write to their consoles, %d = a counter, {t} = the target's index
   --every MS            how often (default 100; "100ms" works too)
   --slot NAME           register a slot at boot (repeatable; the n-th on the n-th pin pair of the first wire, at boot,
-                        retry 1 s, mechanism dmseq), as if saved
+                        retry 1000 ms, mechanism dmseq), as if saved
   --bind MODE           bind the serial port to every --slot: last-reset, manual or mixed
   --target-id HEX       the target_id every target's attach reports (wch_dmi_7f)
   --absent N            the N-th pin pair of the first wire has no target (repeatable)
@@ -79,8 +79,8 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
         swdio, swclk = ep.pairs[wire][n]
         mech = 2 if 2 in ep.mechanisms else min(ep.mechanisms)
         raw = name.encode()
-        value = struct.pack("<BHHHBHIBBB", n, wire, swdio, swclk, reg.PROBE_CONFIG.enum["slot_attach"]["at_boot"], 1,
-                            0, 0, mech, len(raw)) + raw + b"\x00"       # no speed ceiling, rests high, no lock
+        value = struct.pack("<BHHHBIIBBB", n, wire, swdio, swclk, reg.PROBE_CONFIG.enum["slot_attach"]["at_boot"], 1000,
+                            0, 0, mech, len(raw)) + raw + b"\x00"       # retry 1 s, no speed ceiling, rests high, no lock
         items.append(bytes([_ITEM["slot"], len(value)]) + value)
     if a.bind:
         streams = b"".join(struct.pack("<BBH", 3, reg.PROBE_CONFIG.enum["bind_stream"]["slot_console"], n)
