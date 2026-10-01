@@ -177,7 +177,7 @@ def test_wire(run: record.Run):
         pytest.skip("no target wired (OEP_HW_TARGET=<name>[@swdio[,swclk]] says one is)")
     hst = run.take()
     name, _, pins_text = spec.partition("@")
-    wires = [e.name for e in core.list_entries(hst, "oep.wire.")]
+    wires = [e.name for e in core.list_entries(hst, "oep.wire")]
     assert wires, "the probe offers no oep.wire.* interface"
     wire = riscv.Wire(hst, wires[0])
     pairs = None
@@ -187,7 +187,7 @@ def test_wire(run: record.Run):
     rec = run.record("wire", target=name, wire=wires[0], pairs_asked=pairs)
     t0 = time.monotonic()
     found = wire.scan(pairs)
-    rec["scan"] = [{"kind": f.kind, "pins": list(f.pins), "status": f.status} for f in found]
+    rec["scan"] = [{"kind": f.kind, "pins": list(f.pins), "dmstatus": f"{f.dmstatus:#010x}"} for f in found]
     rec["scan_seconds"] = round(time.monotonic() - t0, 2)
     assert found, "scan found no target"
     reset = os.environ.get("OEP_HW_RESET")
@@ -263,7 +263,19 @@ def test_uart(run: record.Run):
     rx, tx = (int(v) for v in loop.split(",")) if loop else run.board.uart
     u = fixture.FixtureUart(hst)
     rec = run.record("uart", rx=rx, tx=tx, loopback=bool(loop))
-    core.plan_apply(hst, [(u.fn, UART_RX, rx), (u.fn, UART_TX, tx)])
+    planned_here = True
+    try:
+        core.plan_apply(hst, [(u.fn, UART_RX, rx), (u.fn, UART_TX, tx)])
+    except h.Unavailable:
+        # The probe's settings may already give this UART its pins (a jig's plan items): then the test runs on those
+        # and leaves the plan alone (planning it twice is what the probe refuses).
+        plans = [it for it in config.ProbeConfig(hst).items() if isinstance(it, config.Plan) and it.fn == u.fn]
+        if not plans:
+            raise
+        rx = next((it.channel for it in plans if it.role == UART_RX), rx)
+        tx = next((it.channel for it in plans if it.role == UART_TX), tx)
+        rec.update(rx=rx, tx=tx, settings_plan=True)
+        planned_here = False
     try:
         actual = u.configure(115200, fixture.FixtureUart.EIGHT_N_1)
         st = u.status()
@@ -284,7 +296,8 @@ def test_uart(run: record.Run):
             rec.update(loop_sent=len(payload), loop_received=len(got))
             assert got == payload, f"loopback: sent {payload!r}, got {got!r}"
     finally:
-        core.plan_release(hst, [u.fn])
+        if planned_here:
+            core.plan_release(hst, [u.fn])
 
 
 # ---- 7. port_speed (UART bridge) ---------------------------------------------------------------------------------------------
