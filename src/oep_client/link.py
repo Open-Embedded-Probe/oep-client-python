@@ -160,6 +160,7 @@ class SerialLink:
         self.resend = True                         # a lost reply: the request once more with the same corr (core §5.2)
         self.retries = 0
         self.inflight_cap = 0                      # port_speed: the in-flight requests the raised rate verified with
+        self.answer_burst = self.ANSWER_BURST_MAX  # serial ports: answer bytes in flight at most (0: no bound)
         self.corrupt = 0
         self.stale = 0                             # replies that answered another request
         self.noise = 0                             # serial ports: bytes that were not a frame (the probe's raw side)
@@ -603,9 +604,22 @@ class SerialLink:
             raise
         return replies
 
+    # A serial port on an OS CDC driver loses data when the probe's answers burst past what the driver buffers (Linux
+    # cdc_acm, HS: 16 x 512 B URBs; 8 x 1008 B frames in flight lost 20-30 % on an ESP32-P4, 7 lost none - oep-spec
+    # docs/link-measurements.ja.md §1.1). The expected answer bytes in flight stay under this on COBS links; 0 = no cap.
+    ANSWER_BURST_MAX = 6144
+
+    def inflight_for(self, limits: dict) -> int:
+        """How many requests this link keeps in flight: the probe's max_inflight, the port_speed verify's cap, and on a
+        serial port the answer-burst bound (ANSWER_BURST_MAX over a whole COBS frame of max_frame bytes)."""
+        n = min(limits["max_inflight"], self.inflight_cap or 255)
+        if self.framing == "cobs" and self.answer_burst and limits.get("max_frame"):
+            n = min(n, max(1, self.answer_burst // cobs.frame_max(limits["max_frame"])))
+        return max(1, n)
+
     def bind(self, limits: dict):
         """This link's exchange with the probe's limits (core confirm), for Host(exchange=...)."""
-        return lambda msgs: self.exchange(msgs, min(limits["max_inflight"], self.inflight_cap or 255), limits["window"])
+        return lambda msgs: self.exchange(msgs, self.inflight_for(limits), limits["window"])
 
     def attach_host(self, hst) -> None:
         """Bind to a host: its correlation counter and blind stops for the resync, and after a confirm, the probe's
