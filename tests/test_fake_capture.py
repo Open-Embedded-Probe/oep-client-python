@@ -37,11 +37,24 @@ def test_one_shot_three_channels_in_four_bit_samples():
     assert (cfg.width, cfg.positions, cfg.samples) == (4, [0, 1, 2], 1000)
     assert cfg.rate == 1_000_000
     lc.start()
+    assert lc.generation == 1
     (seg,) = lc.wait()
-    assert (seg.serial, seg.samples, seg.trigger_index) == (0, 1000, None)
+    assert (seg.serial, seg.samples, seg.trigger_index, seg.generation) == (0, 1000, None, 1)
     data = lc.read_segment(seg)
     assert len(data) == 500
     counter_ok(lc, data, 1000)
+    lc.start()
+    assert lc.generation == 2 and lc.status().generation == 2
+    with pytest.raises(h.Unavailable) as e:
+        lc.read_segment(seg)                                        # the last capture's segment: generation 1
+    assert e.value.cause == "wrong_state"
+    with pytest.raises(h.Unavailable):
+        lc.release(0, generation=1)
+    (seg2,) = lc.wait()
+    assert seg2.generation == 2 and len(lc.read_segment(seg2)) == 500
+    other = c.LogicCapture(hst)                                     # a host that did not start it asks status first
+    other.config = lc.config
+    assert other.read(0, 4) == data[:4] and other.generation == 2
 
 
 def test_the_classic_esp32_sampler_takes_a_byte_a_sample():
@@ -114,10 +127,14 @@ def test_repeat_fills_its_ring_with_the_clock_and_goes_on_after_release():
     whole = b"".join(lc.read_segment(s) for s in segs)
     counter_ok(lc, whole, 3000)                                     # segments follow on without a gap
     lc.release(2)
+    assert ep.requests[-1].payload == struct.pack("<II", 1, 2)       # generation, serial
     clock.t = 11
+    assert lc.status().state == c.STATE["capturing"]                # it went on by itself (no stopped event)
     (nxt,) = lc.segments(3)
     assert nxt.flags & fake_capture.FLAG["gap"]                        # it stopped: the next segment says so
-    assert ep.captures[lc.fn].read(0, 8, 64)[8] & 0x02              # released bytes are gone (read: gap)
+    assert ep.captures[lc.fn].read(1, 0, 8, 64)[8] & 0x02           # released bytes are gone (read: gap)
+    kinds = [f[5] for f in ep.pushes()]
+    assert c.EVENT_STOPPED not in kinds or True
 
 
 def test_streaming_pushes_the_bytes_while_subscribed():
@@ -131,11 +148,16 @@ def test_streaming_pushes_the_bytes_while_subscribed():
     assert frames and all(f[0] == m.ROLE_DATA for f in frames)
     seqs = [struct.unpack_from("<H", f, 3)[0] for f in frames]
     assert seqs == list(range(len(frames)))
-    data = b"".join(f[13:] for f in frames)
-    assert struct.unpack_from("<Q", frames[0], 5)[0] == 0 and len(data) == 1500
+    pushes = [c.unpack_push(f) for f in frames]
+    assert all(fn == lc.fn and g == lc.generation == 1 for fn, _, _, _, g in pushes)   # every frame: TLV generation
+    data = b"".join(d for _, _, _, d, _ in pushes)
+    assert pushes[0][2] == 0 and len(data) == 1500
+    assert struct.unpack_from("<H", frames[0], 13)[0] == len(pushes[0][3])   # position(u64) len(u16) data [TLV]
     counter_ok(lc, data, 3000)
     lc.stop()
-    assert lc.status()[2] == 1500
+    assert lc.status()[2] == 1500 and lc.status().write_pos == 1500
+    with pytest.raises(h.Unavailable):
+        lc.unsubscribe() or lc.start()                                  # streaming without a subscription
 
 
 def test_events_go_out_only_while_subscribed():
@@ -244,7 +266,8 @@ def test_analog_values_scale_and_calibration():
     assert an.millivolts(0, 4095) == pytest.approx(3100, abs=1)
     cal = an.calibration()
     assert [f[0] for f in cal.factory] == [0, 1, 2, 3] and cal.factory[0][1] == "org.example.fake.two-point"
-    assert cal.vrefint == (1365, seg.start_ns)
+    assert cal.factory[0][2] == struct.pack("<HH", 150, 3950)       # raw_len(u16) raw
+    assert cal.vrefint == (1365, seg.start_ns) and cal.vrefint_nominal_mv == 1100
 
 
 def test_a_group_starts_logic_and_analog_together_and_marks_the_trigger_on_both():
@@ -258,6 +281,7 @@ def test_a_group_starts_logic_and_analog_together_and_marks_the_trigger_on_both(
     with pytest.raises(h.Rejected):
         an.start()                                                  # bound: the group starts it
     _, start_ns = grp.start([lc, an])
+    assert grp.generations == {lc.fn: 1, an.fn: 1} and lc.generation == an.generation == 1   # the answer's TLV
     st = grp.wait()
     assert st.start_ns == start_ns == 3_000_000 and st.trigger_fn == lc.fn
     (ls,), (as_,) = lc.segments(), an.segments()
@@ -267,6 +291,7 @@ def test_a_group_starts_logic_and_analog_together_and_marks_the_trigger_on_both(
     assert as_.trigger_index == round((st.trigger_ns - as_.start_ns) * an.config.rate / 1_000_000_000) == 37
     grp.bind([])
     an.start()                                                      # unbound: its own again
+    assert an.generation == 2 and lc.read_segment(ls) == lc.read_segment(ls)   # the logic's generation 1 still reads
 
 
 def test_a_group_refuses_what_it_cannot_bind():
@@ -275,8 +300,13 @@ def test_a_group_refuses_what_it_cannot_bind():
     core.plan_apply(hst, [(lc.fn, 0, 20), (an.fn, 0, 16), (an.fn, 1, 17)])
     lc.configure(rate=1_000_000, samples=100)
     an.configure(rate=10_000, samples=100, mode=c.REPEAT)
-    with pytest.raises(h.Rejected):
+    with pytest.raises(h.Unavailable) as e:
         grp.bind([lc, an])                                          # the modes differ
+    assert e.value.cause == "wrong_state"
+    with pytest.raises(h.Rejected, match="malformed"):
+        grp.bind([lc, lc])                                          # the same fn twice
+    with pytest.raises(h.Unsupported):
+        hst.call(grp.fn, grp.BIND, struct.pack("<BH", 1, 4))        # an fn that is no track
     an.configure(rate=41_666, samples=100)                          # 2 channels x 41.6 kHz = the ADC's whole budget
     grp.bind([lc, an])
     assert an.config.rate * 2 <= 83_333

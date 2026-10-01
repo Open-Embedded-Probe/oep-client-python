@@ -4,7 +4,7 @@ import struct
 
 import pytest
 
-from oep_client import __main__ as cli, config, endpoint, fake, host as h, message as m
+from oep_client import __main__ as cli, config, core, endpoint, fake, host as h, message as m
 
 
 class Clock:
@@ -32,14 +32,86 @@ def test_slots_and_binds_round_trip_and_show_their_state():
     items = cfg.items()
     assert [type(i).__name__ for i in items] == ["Slot", "Bind"]
     assert items[0].name == "x035" and items[0].lock == lock and items[1].streams == [("slot", 0), ("uart", 5)]
+    decl = cfg.describe()
+    assert decl.slots_max == 4 and decl.bind_modes == ["last-reset", "manual", "mixed"] and decl.storage_bytes == 4096
     st = cfg.state()
-    assert st.slots_max == 4 and st.bind_modes == ["last-reset", "manual", "mixed"]
     assert st.slots[0].state == "connected" and st.slots[0].target_id == struct.pack("<I", 0x035E0601)
-    assert st.binds[0].port == 3 and st.binds[0].flow == "streaming"
+    assert st.slots[0].last_try_at_ns == 0 and st.binds[0].port == 3 and st.binds[0].flow == "streaming"
     saved = cfg.save()
     assert cfg.state().saved_hash == saved and cfg.state().storage == "applied"
-    cfg.set([config.remove("bind", 3)])
+    assert saved == config.hash_of(items) == cfg.get()[0]           # the canonical form's CRC-32 (probe.config §2)
+    cfg.set([config.remove("bind", 3)])                              # a removal in a set: an unset (op 0x05)
+    assert ep.requests[-1].op == config.ProbeConfig.UNSET and ep.requests[-1].payload == bytes([1, 2, 5, 3])
     assert [type(i).__name__ for i in cfg.items()] == ["Slot"]
+    assert cfg.unset([("slot", 0), ("slot", 7)]) == config.hash_of([]) and cfg.items() == []   # a missing key: nothing
+
+
+def test_unset_is_atomic_and_checks_the_whole():
+    """probe.config §2: unset validates the result as set does - a bind left pointing at a removed slot refuses the
+    whole (malformed) and nothing changes."""
+    ep, hst = open_bench()
+    cfg = config.ProbeConfig(hst)
+    pair = ep.pairs[1][0]
+    cfg.set([config.Slot(slot=0, wire_fn=1, pins=pair, name="x035"),
+             config.Bind(port=3, mode="manual", streams=[("slot", 0)])])
+    with pytest.raises(h.Rejected, match="malformed"):
+        cfg.unset([("slot", 0)])
+    assert len(cfg.items()) == 2
+    cfg.unset([("slot", 0), ("bind", 3)])
+    assert cfg.items() == []
+
+
+def test_uart_item_is_applied_when_the_plan_gives_the_uart_pins():
+    """probe.config §1 uart: the item sets baud / format whenever the fn's plan gets RX or TX (the settings' plan or a
+    session's); a session's configure wins until the plan is released; a bad baud or format is refused."""
+    from oep_client import fixture
+    ep, hst = open_bench()
+    cfg = config.ProbeConfig(hst)
+    uart = fixture.FixtureUart(hst, 5)
+    cfg.set([config.Uart(fn=5, baud=9600, format=0x04)])             # no plan yet: the set goes through
+    assert cfg.items() == [config.Uart(fn=5, baud=9600, format=0x04)]
+    assert not uart.status().configured
+    core.plan_apply(hst, [(5, 1, 20), (5, 2, 21)])
+    assert uart.status() == fixture.UartStatus(configured=True, baud=9600, format=0x04)
+    actual = uart.configure(115200)                                  # the session's configure wins
+    assert abs(actual - 115200) <= 115200 // 20 and uart.status().baud == actual
+    cfg.set([config.Uart(fn=5, baud=20000, format=0)])
+    assert uart.status().baud == actual                              # ... until the plan goes
+    core.plan_release(hst, [5])
+    cfg.set([config.Plan(fn=5, role=1, channel=20)])                 # the settings' plan: the item applies
+    assert uart.status() == fixture.UartStatus(configured=True, baud=20000, format=0)
+    with pytest.raises(h.Unsupported):
+        cfg.set([config.Uart(fn=5, baud=50_000_000)])                # more than 5 % off what the probe can do
+    with pytest.raises(h.Rejected, match="malformed"):
+        cfg.set([config.Uart(fn=5, baud=9600, format=0x80)])         # an undefined format bit
+    with pytest.raises(h.Unsupported):
+        cfg.set([config.Uart(fn=4, baud=9600)])                      # not a UART
+    with pytest.raises(h.Rejected, match="unknown function"):
+        cfg.set([config.Uart(fn=99, baud=9600)])
+
+
+def test_state_is_paged_and_describe_is_declarations_only():
+    """probe.config §3.3 / §4: state (op 0x06, lock-free) pages its slots and binds by first_slot / first_bind; the
+    describe has no state in it."""
+    probe = fake.p4_bench()
+    small = fake.FakeProbe("small", 64, probe.offered)               # 64-byte frames: one slot state a page
+    ep = endpoint.Endpoint(small, Clock())
+    hst = h.Host(lambda b: ep.handle(b, 1))
+    hst.open(3000)
+    cfg = config.ProbeConfig(hst)
+    pairs = ep.pairs[1]
+    for n in range(3):
+        ep.targets[(1, pairs[n])].target_id = 0x035E0600 + n         # a tid in every slot state: 19 bytes each
+    cfg.set([config.Slot(slot=n, wire_fn=1, pins=pairs[n], name=f"s{n}", attach="at-boot") for n in range(2)]
+            + [config.Slot(slot=2, wire_fn=1, pins=pairs[2], name="s2")]
+            + [config.Bind(port=3, mode="mixed", streams=[("slot", 0), ("slot", 1)])])
+    before = len(ep.requests)
+    st = cfg.state()
+    assert [s.slot for s in st.slots] == [0, 1, 2] and [b.port for b in st.binds] == [3]
+    pages = [r for r in ep.requests[before:] if r.op == config.ProbeConfig.STATE]
+    assert len(pages) >= 2 and pages[0].payload == b"\x00\x00" and pages[1].payload[0] >= 1   # first_slot moved on
+    tags = {t & 0x7F for t, _ in core.describe(hst, cfg.fn)}
+    assert tags == {0x40, 0x41, 0x42, 0x43}                          # storage items slots_max bind_modes: no state
 
 
 def test_a_refused_set_changes_nothing():
@@ -132,8 +204,29 @@ def test_reset_channels_and_a_named_reset_line():
     hst.open(3000)
     wire = riscv.Wire(hst, "oep.wire.swio")
     assert wire.reset_channels() == [23]
-    conn, _dpc = wire.attach_under_reset(23)
-    assert conn in ep.conns
+    conn, dpc = wire.attach_under_reset(23)
+    assert conn in ep.conns and dpc == 0 and ep.conns[conn].users == {"host"}
+
+
+def test_the_state_command(capsys, monkeypatch):
+    ep, hst = open_bench()
+
+    class FakeLink:
+        def close(self):
+            pass
+    hst.link = FakeLink()
+    hst.end()
+    monkeypatch.setattr(cli.link, "open_host", lambda target: hst)
+    assert cli.main(["config", "slot", "x", "--name", "x035", "--pins", "2,3", "--attach", "at-boot", "--retry", "0.5"]) == 0
+    assert cli.main(["config", "uart", "x", "oep.fixture.uart", "9600", "--format", "8E1"]) == 0
+    assert cli.main(["config", "state", "x"]) == 0
+    out = capsys.readouterr().out
+    assert "slot 0: connected, connection" in out and "storage: none" in out
+    assert config.Uart(fn=5, baud=9600, format=0x04) in config.ProbeConfig(hst).items()
+    assert cli.main(["config", "remove", "x", "uart", "5"]) == 0
+    assert not any(isinstance(i, config.Uart) for i in config.ProbeConfig(hst).items())
+    assert cli.main(["config", "state", "x", "--json"]) == 0
+    assert '"retry_s": 0.5' not in capsys.readouterr().out       # the state has no settings in it
 
 
 def test_slot_line_settings_from_the_command(capsys, monkeypatch):

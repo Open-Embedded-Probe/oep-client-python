@@ -123,10 +123,10 @@ def test_every_segment_read_goes_to_the_record_hook():
     hst._revisions[5] = 1
     cap = capture.LogicCapture(hst, fn=5)
     cap.config = capture.Config(width=8, positions=list(range(8)), samples=4)
-    cap.read = lambda position, length: bytes(range(length))        # the probe's bytes
+    cap.read = lambda position, length, generation=None: bytes(range(length))   # the probe's bytes
     records = []
     hst.on_capture.append(records.append)
-    seg = capture.Segment(1, 0, 4, 1234000, 50, None, capture.SEGMENT_SLIPPED)
+    seg = capture.Segment(1, 0, 4, 1234000, 50, None, capture.SEGMENT_SLIPPED, 2)
     assert cap.read_segment(seg) == b"\x00\x01\x02\x03"
     (r,) = records
     assert r.fn == 5 and r.data == b"\x00\x01\x02\x03" and r.segment.slipped and r.config.width == 8
