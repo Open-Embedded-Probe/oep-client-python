@@ -87,8 +87,22 @@ def test_try_then_commit_answered_at_the_old_speed():
     assert r.detail == m.UNAVAILABLE and r.payload[:3] == bytes([0x01, 1, 6])
     r = p.send(0, PS, ps(0, 1500000, COMMIT), sid)
     assert r.succeeded and p.ep.speed_state == "committed"
-    p.tick(10_000)                                                              # idle_ms 0: no idle revert
+    p.tick(endpoint.SPEED_IDLE_MAX_MS - 1)                                      # idle_ms 0: the maximum, not never
     assert p.ep.port_baud(0) == 1500000
+    p.tick(1)
+    assert p.ep.port_baud(0) == 115200
+
+
+def test_a_long_idle_ms_is_clamped_to_the_maximum():
+    p = Port()
+    sid = opened(p)
+    p.send(0, PS, ps(0, 500000, TRY), sid)
+    assert p.send(0, PS, ps(0, 500000, COMMIT, 0, 600_000), sid).succeeded
+    assert p.ep.speed_idle_ms == endpoint.SPEED_IDLE_MAX_MS == 3000
+    p.tick(2999)
+    assert p.ep.port_baud(0) == 500000
+    p.tick(1)
+    assert p.ep.port_baud(0) == 115200
 
 
 def test_try_times_out_and_a_late_commit_is_wrong_state():
@@ -233,6 +247,67 @@ def test_a_revert_seen_as_a_timeout_goes_back_to_the_boot_speed():
     assert ep.port_baud(0) == 115200 and lk.baud == 750000
     hst.keepalive()                                        # times out at 750000, then once more at the boot speed
     assert lk.baud == 115200 and lk.speed_lost == 1 and lk.speed.lost and lk.speed.rate == 115200
+
+
+def test_raise_speed_commits_the_idle_maximum_by_default():
+    ep, hst, lk = in_process()
+    link.raise_speed(hst, [750000], **FAST)
+    assert ep.speed_idle_ms == link.IDLE_MAX_MS == 3000
+    link.raise_speed(hst, [500000], idle_ms=0, **FAST)          # 0: the maximum too
+    assert ep.speed_idle_ms == 3000
+
+
+def test_a_raised_link_keeps_the_line_alive_when_quiet():
+    ep, hst, lk = in_process()
+    link.raise_speed(hst, [750000], **FAST)
+    sent = []
+    frame = lk.keepalive_frame
+    lk.keepalive_frame = lambda: sent.append(1) or frame()
+    assert not lk.keep_alive()                                  # just spoke: nothing to do
+    for _ in range(3):                                          # 3.6 s in all, past the probe's idle limit
+        time.sleep(1.2)
+        assert lk.keep_alive()
+    ep.tick()
+    assert ep.port_baud(0) == 750000 and len(sent) == 3
+    time.sleep(1.2)
+    hst.request(0, m.OP_LOCK_STATE, locked=False)               # a request after 1 s of quiet: a keepalive first
+    assert len(sent) == 4 and lk.baud == 750000 and lk.speed_lost == 0
+    hst.end()
+    time.sleep(1.2)
+    assert not lk.keep_alive()                                  # back at the boot speed: none
+
+
+def second_host(ep):
+    lk = link.SerialLink.on_stream(fake_serial.FakeSerialStream(ep, 0), "cobs", 0.5)
+    lk.transport = "serial"
+    hst = h.Host(lk.send)
+    t0 = time.monotonic()
+    lk.attach_host(hst)
+    return hst, lk, time.monotonic() - t0
+
+
+def test_open_waits_out_a_raised_rate_a_host_that_died_left():
+    ep, hst, lk = in_process()
+    link.raise_speed(hst, [750000], **FAST)                     # this host dies here, its lease long
+    hst2, lk2, took = second_host(ep)                           # the confirms at 115200 are broken candidates: reverts
+    assert ep.port_baud(0) == 115200 and lk2.baud == 115200 and took < link.OPEN_RETRY_S
+    hst2.confirm()
+
+
+def test_open_waits_for_the_idle_limit_when_broken_candidates_do_not_revert():
+    ep, hst, lk = in_process()
+    link.raise_speed(hst, [750000], **FAST)
+    heard = ep.speed_frame
+    ep.speed_frame = lambda port, good: heard(port, good) if good else None   # only the idle limit takes it back
+    hst2, lk2, took = second_host(ep)
+    assert ep.port_baud(0) == 115200 and 2.5 < took < link.OPEN_RETRY_S + 1.5
+    ep2, hst3, lk3 = in_process()
+    link.raise_speed(hst3, [750000], **FAST)
+    ep2._speed_revert = lambda: None                            # never comes back: the open gives up
+    lk4 = link.SerialLink.on_stream(fake_serial.FakeSerialStream(ep2, 0), "cobs", 0.5)
+    lk4.corr_source = lambda: 7
+    with pytest.raises(TimeoutError):
+        lk4.wait_boot_speed(0.6)
 
 
 def test_an_off_probe_is_not_supported_and_stays_at_the_boot_speed(monkeypatch):

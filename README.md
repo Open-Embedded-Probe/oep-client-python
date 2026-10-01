@@ -107,7 +107,10 @@ but not 1500000 towards the host: oep-spec docs/uart-speed-negotiation.ja.md), s
 (`link.speed`: `rate`, `chosen`, `in_kb_s` / `out_kb_s`, `trials`) is there to budget a capture or a write.
 
 The probe goes back to the boot speed by itself when the session ends (`end`, a lapse, a force), when frames break or the
-line goes quiet (`idle_ms`): the link follows an `end` at once, and a request that goes unanswered at a raised rate (its
+line goes quiet (`idle_ms`, at most `port_speed_idle_max_ms` = 3 s; a host that died leaves the rate no longer than
+that): while raised the link sends a keepalive before a request when it has been quiet for 1 s, and `hst.link.keep_alive()`
+does the same for a caller that sits idle for long; opening a serial port retries its first confirm for about 4 s to
+wait out a rate left over. The link follows an `end` at once, and a request that goes unanswered at a raised rate (its
 resend too) takes the link back to the boot speed, confirmed, and goes once more there - it never wedges. A probe
 without the feature answers `not supported` and stays at its speed. Behind a broker (TCP) the broker does this, not the
 client. Serial ports are also opened in the driver's low-latency mode where it has one (an FTDI's latency timer 16 -> 1 ms

@@ -26,6 +26,10 @@ transfer both ways (link_source / link_sink with max_frame-sized frames) that co
 throughput, then commit it, or revert and wait the probe out and re-confirm at the boot speed. The report stays on the
 link (`link.speed`). Once raised, a request whose answer never comes even after its resend sends the link back to the
 boot speed (the probe reverts by itself) and goes once more there: the link never wedges at a rate the probe left.
+The probe also goes back after port_speed_idle_max_ms (3 s) with no good frame, so while raised the link sends a
+keepalive before a request when it has been quiet for 1 s, and `keep_alive()` does the same for a caller that sits
+idle for long. A host opening a serial port retries its first confirm for that maximum and a little (4 s in all): a
+host that raised the speed and died leaves the probe at its rate until then.
 """
 
 from __future__ import annotations
@@ -55,6 +59,10 @@ class PortBusy(OSError):
 
 
 BASE_BAUD = 115200   # the boot speed of every reference UART bridge (the board's profile decides; core §3.5)
+IDLE_MAX_MS = reg.TIMING["port_speed_idle_max_ms"]   # a committed rate goes back after this with no good frame (§3.5)
+KEEPALIVE_S = 1.0    # raised: a keepalive once the link has been quiet this long (well inside IDLE_MAX_MS)
+OPEN_RETRY_S = IDLE_MAX_MS / 1000 + 1.0   # opening a serial port: confirm retried this long (a raised rate left over)
+OPEN_TRY_S = 0.5     # each of those confirms waits this long (at most the link's timeout)
 
 
 def open_serial(port: str, baud: int = BASE_BAUD):
@@ -158,6 +166,8 @@ class SerialLink:
         self.speed_lost = 0                        # times a raised rate was found gone (back to the boot speed)
         self.fallback = True                       # a raised rate that stops answering: back to the boot speed
         self.corr_source = self._own_corr          # the host's correlation counter once bound (open_host)
+        self.keepalive_frame = None                # raised: a keepalive request in the session, once bound (attach_host)
+        self.last_tx = time.monotonic()            # when the link last wrote (raised: quiet for KEEPALIVE_S = keepalive)
         self.held = lambda: False                  # a session holds the port (its raw transfer stopped): broken = resend
         self.blind = lambda: []                    # the host's blind stops (unsubscribe / end) once bound
         self._corr_n = 0x8000
@@ -178,6 +188,7 @@ class SerialLink:
             self.frames.send_many(messages)
         else:
             self.stream.write(b"".join(cobs.frame(msg) for msg in messages))
+        self.last_tx = time.monotonic()
 
     def _recv(self) -> bytes:
         if self.framing == "length":
@@ -250,10 +261,17 @@ class SerialLink:
         n = 0
         try:
             while True:
+                if self._raised():                 # a long pump at a raised rate keeps the line alive (core §3.5)
+                    self.timeout = saved
+                    self._keep_raised()
                 self.timeout = max(0.0, deadline - time.monotonic())
+                if self._raised():
+                    self.timeout = min(self.timeout, KEEPALIVE_S)
                 try:
                     frame = self._recv()
                 except TimeoutError:
+                    if self._raised() and time.monotonic() < deadline:
+                        continue
                     return n
                 except FramingLost:
                     self.timeout = saved
@@ -307,6 +325,7 @@ class SerialLink:
             self.resync()
 
     def send(self, message: bytes) -> bytes:
+        self._keep_raised()
         try:
             reply = self._send(message)
         except TimeoutError:
@@ -355,6 +374,7 @@ class SerialLink:
         answered go once more with the same corr (oep-core §5.2: the probe answers a repeat from what it kept); a second
         failure is raised.
         """
+        self._keep_raised()
         replies: list[bytes] = []
         try:
             return self._exchange_once(messages, max_inflight, window_bytes, replies)
@@ -397,6 +417,15 @@ class SerialLink:
         finally:
             self.timeout = saved
 
+    def _confirm_within(self, wait_s: float, each_s: float) -> bool:
+        """Confirms, each waiting `each_s`, until one is answered (True) or `wait_s` has passed (False)."""
+        deadline = time.monotonic() + wait_s
+        while True:
+            if self.confirm_raw(each_s):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+
     def back_to_base(self, wait_s: float = 3.0) -> bool:
         """The host at the boot speed again, and the probe confirmed there: confirms every 0.25 s up to `wait_s` (a
         probe still trying waits out its verify_ms; one committed reverts at the broken candidates these make)."""
@@ -404,12 +433,31 @@ class SerialLink:
         if self.base_baud is None:
             return False
         self.set_baud(self.base_baud)
-        deadline = time.monotonic() + wait_s
-        while True:
-            if self.confirm_raw(0.25):
-                return True
-            if time.monotonic() >= deadline:
-                return False
+        return self._confirm_within(wait_s, 0.25)
+
+    def _raised(self) -> bool:
+        return self.base_baud is not None and self.baud != self.base_baud
+
+    def keep_alive(self) -> bool:
+        """While a raised rate is in force and a session holds the port: a keepalive when the link has been quiet for
+        KEEPALIVE_S (1 s). The probe goes back to the boot speed after port_speed_idle_max_ms (3 s) with no good frame
+        (core §3.5); every request already does this before it goes out, so only a caller that sits idle for long
+        (waiting on a person, a sleep between requests) calls it - often is fine, it sends nothing otherwise.
+        True when a keepalive went out."""
+        if not self._raised() or self.keepalive_frame is None or not self.held():
+            return False
+        if time.monotonic() - self.last_tx < KEEPALIVE_S:
+            return False
+        self.last_tx = time.monotonic()            # before sending: send() asks again and must not recurse
+        self.send(self.keepalive_frame())
+        return True
+
+    def _keep_raised(self) -> None:
+        """keep_alive before a request; a keepalive that fails is left to the request itself to find out."""
+        try:
+            self.keep_alive()
+        except (TimeoutError, cobs.CorruptFrame, FramingLost):
+            pass
 
     def _speed_fallback(self) -> bool:
         """A request went unanswered (its resend too) while the link ran above the boot speed: the probe went back
@@ -461,11 +509,22 @@ class SerialLink:
         self.corr_source = hst.next_corr
         self.blind = hst.blind_stop
         self.held = lambda: hst.session is not None
+        self.keepalive_frame = lambda: m.Request(hst.next_corr(), m.CORE_FN, m.OP_KEEPALIVE, b"", hst.session).pack()
         hst.link = self
+        if self.framing == "cobs" and getattr(self, "transport", None) == "serial":
+            self.wait_boot_speed()
         limits = hst.confirm()
         hst.exchange = self.bind(limits)
         if self.framing == "length" and limits.get("max_frame"):
             self.frames.max_frame = limits["max_frame"]
+
+    def wait_boot_speed(self, wait_s: float | None = None) -> None:
+        """A serial port just opened: confirm at the boot speed, retried for OPEN_RETRY_S (port_speed_idle_max_ms and
+        a second; at least the link's timeout) - a host that raised the speed and died leaves the probe at that rate
+        until its idle limit runs out (core §3.5 item 6). TimeoutError when none was answered."""
+        wait_s = max(OPEN_RETRY_S, self.timeout) if wait_s is None else wait_s
+        if not self._confirm_within(wait_s, min(self.timeout, OPEN_TRY_S)):
+            raise TimeoutError(f"no answer to confirm at {self.baud} for {wait_s:.1f} s")
 
     def close(self) -> None:
         self.stream.close()
@@ -736,7 +795,7 @@ SWITCH_SETTLE_S = 0.02   # after a baud change, before the first byte at the new
 
 
 def raise_speed(hst, rates: list[int], *, verify_bytes: int = 32768, verify_s: float = 1.0,
-                verify_ms: int | None = None, idle_ms: int = 0, port: int | None = None) -> SpeedReport:
+                verify_ms: int | None = None, idle_ms: int = IDLE_MAX_MS, port: int | None = None) -> SpeedReport:
     """port_speed (oep-core §3.5), opt-in: try `rates` in order on the UART bridge this host opened, and commit the
     first that passes. Each: try (answered at the speed now) -> the host switches -> verify both ways with
     max_frame-sized frames for verify_bytes or verify_s in all (broken frames counted, KB/s measured each way) ->
@@ -745,7 +804,8 @@ def raise_speed(hst, rates: list[int], *, verify_bytes: int = 32768, verify_s: f
     probe's UART cannot make is skipped (unsupported). The session must be open (the rate lasts as long as it does).
 
     verify_ms: how long the probe waits for the commit (default: verify_s + 1.5 s, at most 65535). idle_ms: once
-    committed, the probe reverts after this long with no good frame (0: never; it reverts at the session's end anyway).
+    committed, the probe reverts after this long with no good frame (default and at most port_speed_idle_max_ms,
+    3000; 0 and anything longer mean that maximum). The link keeps the line alive meanwhile (`keep_alive`).
     port: the transport index (default: the probe's first UART bridge). -> the report, also kept as `hst.link.speed`."""
     lk = getattr(hst, "link", None)
     base = getattr(lk, "base_baud", None)
@@ -766,6 +826,7 @@ def raise_speed(hst, rates: list[int], *, verify_bytes: int = 32768, verify_s: f
     report.supported = True
     wait = (verify_ms if verify_ms is not None else min(65535, int(verify_s * 1000) + 1500))
     lk.fallback = False                                     # every failure here is handled here
+    idle_ms = idle_ms if 0 < idle_ms <= IDLE_MAX_MS else IDLE_MAX_MS
     try:
         return _raise(hst, lk, report, rates, port, base, wait, verify_bytes, verify_s, idle_ms)
     finally:
