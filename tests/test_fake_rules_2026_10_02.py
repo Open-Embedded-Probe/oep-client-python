@@ -565,3 +565,15 @@ def test_c05_c07_fake_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_le
     finally:
         proc.stdin.close()
         proc.wait(timeout=10)
+
+
+def test_swio_swclk_other_than_0xffff_is_an_undeclared_combination_in_scan_and_attach():
+    """oep-if-debug §3 (oep-spec e9cd891): a swio pair whose swclk is not 0xFFFF is unsupported, as §1 says."""
+    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())
+    h = Host(ep)
+    h.open()
+    swio = ep.pairs[1][0][0]
+    r = h.raw(1, 0x01, b"\x01" + struct.pack("<HH", swio, 5))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00" + m.tlv(0x40, b"\x00"))
+    r = h.raw(1, 0x02, b"\x00" + SPEED + pins(swio, 5))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x83")

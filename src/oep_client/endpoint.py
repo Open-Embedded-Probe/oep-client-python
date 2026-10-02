@@ -1785,8 +1785,6 @@ class Endpoint:
         if op == 0x01:                                             # scan: count(u8) pairs -> tried count found...
             count = t.take("B")
             pairs = [t.take("HH") for _ in range(count)]
-            if not rvswd and any(p[1] != 0xFFFF for p in pairs):
-                raise Reject(m.MALFORMED)                          # swio: one wire (debug §3)
             known = {_T_SCAN["max_speed"], _T_SCAN["skip"]} | ({_T_SCAN["idle_clock"]} if rvswd else set())
             got, _ = t.tail(known, defer=True)
             skip_tlv = t.fixed(got, _T_SCAN["skip"], 2)
