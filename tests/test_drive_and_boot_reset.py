@@ -414,3 +414,55 @@ def test_slot_and_idle_from_the_command(capsys, monkeypatch):
     assert ep.parked_drive[21] == 1
     with pytest.raises(SystemExit, match="output-low / output-high"):
         cli.main(["config", "idle", "x", "21", "pull-up", "--drive-level", "1"])
+
+
+# ---- fake_serve's options for other hosts' tests ----------------------------------------------------------------
+
+def serve(*argv):
+    from oep_client import fake_serve
+    ep = fake_serve.build(fake_serve.parse(["--tcp", "0", *argv]))
+    return ep, h.Host(lambda b: ep.handle(b, 1))
+
+
+def test_fake_serve_no_drive_levels():
+    ep, hst = serve("--profile", "p4-bench", "--no-drive-levels")
+    assert ep.drive_levels is None
+    hst.open(3000)
+    g = gpio_of(ep, hst)
+    assert g.drive_levels() is None
+    assert g.set([(20, g.OUTPUT_HIGH, 1)]) == [DRIVE]              # the drive: ignored and listed
+    assert g.read_state([20]).drive is None
+    ep, hst = serve("--profile", "p4-bench")                     # without the option: the profile's levels
+    assert fixture.Gpio(hst, ep.fns["oep.fixture.gpio"]).drive_levels() == LEVELS
+
+
+def test_fake_serve_retry_with_reset_at_start():
+    ep, hst = serve("--profile", "esp32-v003", "--slot", "v003", "--boot-reset", "--silent-until-reset", "0",
+                    "--label", "23=v003.nrst")
+    assert ep.slots[0].boot_reset == 1 and ep.saved                # saved, as if the probe booted with them
+    assert ep.slot_reset_log == [(0, NRST, 20)]
+    st = config.ProbeConfig(hst).state().slots[0]
+    assert st.state == "connected" and st.reset_at_ns is not None
+    assert not ep.targets[(1, V003_PAIR)].silent_until_reset
+
+
+@pytest.mark.parametrize("argv", [
+    ("--boot-reset",),                                            # no nrst label
+    ("--boot-reset", "--label", "23=v003.nrst", "--label", "22=V003.NRST"),   # two at one step: no line
+    ("--label", "23=v003.nrst"),                                  # the slot does not ask for it
+])
+def test_fake_serve_no_retry_with_reset(argv):
+    ep, hst = serve("--profile", "esp32-v003", "--slot", "v003", "--silent-until-reset", "0", *argv)
+    assert ep.slot_reset_log == []
+    st = config.ProbeConfig(hst).state().slots[0]
+    assert st.state == "absent" and st.reset_at_ns is None
+    assert ep.targets[(1, V003_PAIR)].silent_until_reset
+
+
+def test_fake_serve_label_wants_ch_eq_text(capsys):
+    from oep_client import fake_serve
+    with pytest.raises(SystemExit):
+        fake_serve.parse(["--label", "nrst"])
+    assert "CH=TEXT" in capsys.readouterr().err
+    ep, _ = serve("--label", "0x14=t.nrst")
+    assert ep.line_for("t", "nrst") == 0x14

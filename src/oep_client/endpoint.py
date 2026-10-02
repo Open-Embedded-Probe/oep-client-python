@@ -19,8 +19,8 @@ define:
   unavailable (+ cause), no connection; a resource number of the wrong kind (a stream where a connection goes) is
   unavailable cause 6 - connections and streams share one u16 space that wraps (core §9)
 - request tails: unknown critical -> rejected unsupported, unknown non-critical -> listed in the result's ignored TLV
-  (0x7F) for every op (`Take` keeps them, `_dispatch` appends them); a TLV in a describe or probe.config get request is
-  malformed (core §7.3); `tail=` appends TLVs to every result that may carry them, so hosts can be checked to skip what they do not
+  (0x7F) for every op, on every completed answer, failed and partial ones too (`Take` keeps them, `_dispatch` appends
+  them); a TLV in a describe or probe.config get request is malformed (core §7.3); `tail=` appends TLVs to every result that may carry them, so hosts can be checked to skip what they do not
   know. Every answer ending in data or a list carries its length (core §2.3), so every answer may carry TLVs
 - the plan (plan_apply / plan_release; the session's plan goes when the lease lapses; plan_roles), subscriptions
   (fn 0's heartbeat `boot_id uptime_ns`; an fn that emits nothing is unsupported), and simulations of the
@@ -947,8 +947,8 @@ class Endpoint:
         return m.COMPLETED, detail, payload
 
     def _dispatch(self, req: m.Request) -> tuple[int, int, bytes]:
-        """Routes a request; a completed answer gets the ignored TLV (0x7F) of the tags its request's tail ignored
-        (core §2.3), for every op in one place."""
+        """Routes a request; a completed answer - failed and partial ones too - gets the ignored TLV (0x7F) of the tags
+        its request's tail ignored (core §2.3), for every op in one place."""
         t = Take(req.payload)
         res, detail, payload = self._route(req, t)
         if res == m.COMPLETED and t.ignored:

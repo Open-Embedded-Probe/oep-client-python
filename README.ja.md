@@ -220,7 +220,9 @@ uv run python -m oep_client.fake_serve --pty --profile p4-bench --slot x035 --bi
 pty がシリアルの口（host が TIOCEXCL を掛けて開く）、`--tcp PORT` は `--framing cobs`（シリアルの口）か `--framing length`
 （vendor bulk / TCP の形）。故障の注入は `--drop N`（N 番目の答えを 1 回出さない。要求は実行済みなので送り直しは覚えた答えを
 受ける）、`--noise TEXT`（答えの前に雑音）、`--corrupt N`（N 番目の答えの CRC を 1 回壊す）。`--capture-slipped` は capture の
-区画すべてに flags bit2 を立てる。port_speed: `esp32-v003` は持つ（`--no-port-speed` で外す）。
+区画すべてに flags bit2 を立てる。`--no-drive-levels` は gpio の drive_levels を外す（出力の強さを切り替えられない probe）。
+`--silent-until-reset N` は N 番目のピンの組の target を、その線でリセットされるまで何も答えないようにする。`--boot-reset`（どの
+`--slot` も起動直後のリセットでのやり直しを求める）と `--label CH=TEXT`（例 `23=v003.nrst`）と合わせると、起動時にリセットでのやり直しが起きる。port_speed: `esp32-v003` は持つ（`--no-port-speed` で外す）。
 `--broken-rate RATE[:MIN_SIZE][:in|out]` はその速さでフレームを壊す（同じプロセスの `fake_serial.FakeSerialStream` は、host の速さが
 probe の速さと違う間、両方向のバイトをすべて壊す）。出来事とデータの push は pty にも TCP（両方の framing）にも出る。ほかは `--help`。
 

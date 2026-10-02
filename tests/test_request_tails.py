@@ -269,3 +269,55 @@ def test_config_set_refuses_an_unknown_item_with_the_tag_as_received():
         with pytest.raises(h.Unsupported) as e:
             hst.call(fn, reg.PROBE_CONFIG.op["set"], m.tlv(tag, b"\x01"))
         assert e.value.result.payload[:1] == bytes([tag])
+
+
+class Failing:
+    """A transport that appends the unknown TLV to every request and collects the completed answers whose outcome is
+    failed or partial: (interface name, op) -> the answer's payload."""
+
+    def __init__(self, ep: endpoint.Endpoint):
+        self.ep, self.failed = ep, {}
+
+    def __call__(self, data: bytes) -> bytes | None:
+        req = m.Request.unpack(data)
+        key = (CORE_NAME if req.fn == m.CORE_FN else self.ep.names.get(req.fn, ""), req.op)
+        if key in NO_TAIL:
+            return self.ep.handle(data, 1)
+        out = self.ep.handle(dataclasses.replace(req, payload=req.payload + m.tlv(UNKNOWN, b"\x01")).pack(), 1)
+        res = m.Result.unpack(out)
+        if res.resolution == m.COMPLETED and res.detail != m.SUCCESS:
+            self.failed[key] = res.payload
+        return out
+
+
+def test_a_failed_or_partial_answer_lists_the_unknown_tlv_too():
+    """core §2.3 (oep-spec 9ed53e7): ignored goes on every completed answer, also when the op's status is a failure."""
+    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    tag = Failing(ep)
+    hst = h.Host(tag)
+    hst.open(3000)
+    wire = riscv.Wire(hst, "oep.wire.rvswd")
+    tg = ep.targets[(wire.fn, ep.pairs[wire.fn][0])]
+    tg.silent_until_reset = True
+    with pytest.raises(h.Failed):
+        wire.attach()                                              # failed, status line
+    tg.silent_until_reset = False
+    conn, _ = wire.attach(halt=False)
+    dm = riscv.RiscvDm(hst, conn)
+    tg.halted, tg.resume_misses, tg.fail_write = False, 1, {0x10}
+    for call in (dm.step, lambda: dm.read_block(0x20000000, 4), lambda: dm.write_block(0x20000000, b"\0" * 4),
+                 lambda: dm.run(0x20000000, [], timeout_ms=10), dm.resume,
+                 lambda: dm.dmi([dm.step_read(0x11), dm.step_write(0x10, 1)])):
+        try:
+            call()
+        except h.OepError:
+            pass
+    ep.console_accept = 0
+    con = console.Console(hst)
+    con.open(conn)
+    with pytest.raises(h.OepError):
+        con.write(b"x")                                            # nothing fit: failed
+    assert len(tag.failed) == 8 and ("oep.wire.rvswd", wire.ATTACH) in tag.failed, tag.failed   # attach, 6 dm, write
+    for key, payload in tag.failed.items():
+        assert payload.endswith(IGNORED), (key, payload.hex())
+        assert not payload[:-len(IGNORED)].endswith(IGNORED), (key, "listed twice")

@@ -27,6 +27,16 @@ Options:
   --bind MODE           bind the serial port to every --slot: last-reset, manual or mixed
   --target-id HEX       the target_id every target's attach reports (wch_dmi_7f)
   --absent N            the N-th pin pair of the first wire has no target (repeatable)
+  --silent-until-reset N
+                        the N-th pin pair of the first wire has a target that answers nothing on the wire until a
+                        reset through its line (repeatable): a host's attach with the reset TLV, or the retry with reset
+  --boot-reset          every --slot asks for the at-boot retry with reset (boot_reset 1, probe.config §1.1): when
+                        its attach at boot gets no answer, the probe tries once more through the slot's nrst line (§3.1)
+  --label CH=TEXT       a label item on channel CH at boot, as if saved (repeatable; e.g. 23=v003.nrst names slot
+                        v003's reset line, probe.config §1.3). The saved items go in at once, so a --boot-reset slot
+                        on a --silent-until-reset target with its nrst label is retried with reset at start
+  --no-drive-levels     the profile's oep.fixture.gpio without drive_levels (fixture §1.1): a probe that cannot switch
+                        the output strength (describe has no levels, read has no drive TLV, set's drives are ignored)
   --capture-slipped     every oep.fixture.logic segment says flags bit2 (slipped: a pace that fell behind)
   --uart-plan           the first oep.fixture.uart gets its RX / TX plan at boot, as if saved (the jig's "DUT TX" /
                         "DUT RX" labels when the profile has them, else the first free channels); configure then works
@@ -68,10 +78,24 @@ def _ms(text: str) -> int:
     return int(re.fullmatch(r"(\d+)\s*(ms)?", text.strip()).group(1))
 
 
+def _label(text: str) -> str:
+    channel, sep, _ = text.partition("=")
+    try:
+        int(channel, 0)
+    except ValueError:
+        sep = ""
+    if not sep:
+        raise argparse.ArgumentTypeError(f"{text}: want CH=TEXT")
+    return text
+
+
 def build(a: argparse.Namespace) -> endpoint.Endpoint:
     profile = fake.PROFILES.get(a.profile) or fake.PROFILES[a.profile.replace("_", "-")]
+    probe = profile()
+    if getattr(a, "no_drive_levels", False):
+        probe = fake.without_drive_levels(probe)
     start = time.monotonic()
-    ep = endpoint.Endpoint(profile(), lambda: int((time.monotonic() - start) * 1000))
+    ep = endpoint.Endpoint(probe, lambda: int((time.monotonic() - start) * 1000))
     wire = min(ep.pairs) if ep.pairs else None
     if a.target_id is not None:
         for tg in ep.targets.values():
@@ -93,19 +117,26 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
                                                          duplex="duplex" in rest, every=every, after=after)
     for n in a.absent:
         ep.targets[(wire, ep.pairs[wire][n])].present = False
+    for n in getattr(a, "silent_until_reset", []):
+        ep.targets[(wire, ep.pairs[wire][n])].silent_until_reset = True
+    boot_reset = b"\x01" if getattr(a, "boot_reset", False) else b""   # after the lock's part (probe.config §1.1)
     items = []
     for n, name in enumerate(a.slot):
         swdio, swclk = ep.pairs[wire][n]
         mech = 2 if 2 in ep.mechanisms else min(ep.mechanisms)
         raw = name.encode()
         value = struct.pack("<BHHHBIIBBB", n, wire, swdio, swclk, reg.PROBE_CONFIG.enum["slot_attach"]["at_boot"], 1000,
-                            0, 0, mech, len(raw)) + raw + b"\x00"       # retry 1 s, no speed ceiling, rests high, no lock
-        items.append(bytes([_ITEM["slot"], len(value)]) + value)
+                            0, 0, mech, len(raw)) + raw + b"\x00" + boot_reset
+        items.append(bytes([_ITEM["slot"], len(value)]) + value)  # retry 1 s, no speed ceiling, rests high, no lock
     if a.bind:
         streams = b"".join(struct.pack("<BBH", 3, reg.PROBE_CONFIG.enum["bind_stream"]["slot_console"], n)
                            for n in range(len(a.slot)))
         value = struct.pack("<BBBB", a.port_index, _MODES[a.bind.replace("-", "_")], 0, len(a.slot)) + streams
         items.append(bytes([_ITEM["bind"], len(value)]) + value)
+    for spec in getattr(a, "label", []):
+        channel, _, text = spec.partition("=")
+        value = struct.pack("<H", int(channel, 0)) + text.encode()
+        items.append(bytes([_ITEM["label"], len(value)]) + value)
     if a.uart_plan:
         fn = uart_fn(ep)
         rx, tx = _uart_channels(ep, fn)
@@ -386,7 +417,8 @@ def _serve_conn(a, ep, console, conn, watch_stdin) -> bool:
                 conn.setblocking(False)
 
 
-def main(argv: list[str] | None = None) -> None:
+def parse(argv: list[str] | None = None) -> argparse.Namespace:
+    """The command line -> the options `build` takes (the port index filled in)."""
     ap = argparse.ArgumentParser(prog="python -m oep_client.fake_serve", description=__doc__.split("\n\n")[0])
     where = ap.add_mutually_exclusive_group()
     where.add_argument("--pty", action="store_true")
@@ -403,6 +435,10 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--bind", choices=["last-reset", "manual", "mixed"])
     ap.add_argument("--target-id")
     ap.add_argument("--absent", type=int, action="append", default=[])
+    ap.add_argument("--silent-until-reset", type=int, action="append", default=[], metavar="N")
+    ap.add_argument("--boot-reset", action="store_true")
+    ap.add_argument("--label", action="append", default=[], type=_label, metavar="CH=TEXT")
+    ap.add_argument("--no-drive-levels", action="store_true")
     ap.add_argument("--uart-plan", action="store_true")
     ap.add_argument("--uart-rx")
     ap.add_argument("--run-hook")
@@ -419,6 +455,11 @@ def main(argv: list[str] | None = None) -> None:
     if a.port_index is None:
         probe_ep = endpoint.Endpoint(profile(), lambda: 0)
         a.port_index = min(probe_ep.serial_ports) if probe_ep.serial_ports else 0
+    return a
+
+
+def main(argv: list[str] | None = None) -> None:
+    a = parse(argv)
     ep = build(a)
     console = Console(ep, a.console, _ms(a.every), a.uart_rx, uart_fn(ep) if a.uart_rx else None)
     try:
