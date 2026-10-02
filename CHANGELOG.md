@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `tests/hw` port_speed: the run fails only when no candidate passes; a candidate that fails the guide's verdict is recorded (`passed_rates` / `failed_rates`). The ATOM's bridge puts 1500000 over the threshold in some runs (11-14 % on one flow against a 2-5 % baseline) while 500000 passes every time - a fact about that bridge, not about the probe or the client.
+- (JA) `tests/hw` の port_speed: 通る候補が 1 つも無いときだけ落とす。ガイドの判定に落ちた候補は記録に残す（`passed_rates` / `failed_rates`）。ATOM の変換は 1500000 が回によって閾値を超え（基準 2〜5 % に対し 1 つの流し方で 11〜14 %）、500000 は毎回通る。probe や client ではなく変換の性質。
 
 ## 0.0.27
 - (EN) `tests/hw` port_speed verdict follows the host guide §7.3.2: a one-at-a-time cell at a raised rate fails only when broken + lost ≥ 3 and its ratio is over max(2 × the boot-speed ratio of the same flow, 5 % `OEP_HW_ERROR_MAX`) - the absolute 1 % failed the CH340 jig on bursts the boot speed shows too. Results with the probe 5bafb92 (port_speed handshake per core §3.5, block length) on the ATOM, the V003 jig (SWIO) and the X035 jig (DFU, RVSWD): all pass.

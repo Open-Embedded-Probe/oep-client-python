@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "board": {
+    "id": "esp32-pico-d4-50029191fe34",
+    "kind": "esp32",
+    "profile": "esp32",
+    "model": "esp32",
+    "port": "/run/board-identify/by-id/esp32-pico-d4-50029191fe34",
+    "flash_port": "/run/board-identify/by-id/esp32-pico-d4-50029191fe34",
+    "rates": [
+      1500000,
+      921600,
+      500000
+    ],
+    "gpio": [
+      25,
+      26
+    ],
+    "disable": 33,
+    "uart": [
+      32,
+      21
+    ],
+    "notes": "M5Stack ATOM (ESP32-PICO-D4), FTDI bridge; free for OEP tests"
+  },
+  "client": {
+    "version": "0.0.26",
+    "python": "3.13.3",
+    "commit": "6cd18a4",
+    "dirty": false
+  },
+  "firmware": {
+    "before": {
+      "boot_id": 2871947582,
+      "revision": 1,
+      "max_frame": 512,
+      "max_inflight": 2,
+      "window": 1024,
+      "firmware": "0.0.26",
+      "model": "esp32",
+      "unit_id": "50029191fe34",
+      "chip": "esp32picod4 v1.0",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 1
+        }
+      ],
+      "max_op_ms": 10000,
+      "port_speed": true
+    }
+  },
+  "started": "2026-10-02T09:36:27+09:00",
+  "seconds": 0.8,
+  "host": {
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2+-x86_64-with-glibc2.39",
+    "python": "3.13.3"
+  },
+  "environment": {
+    "OEP_PROBE_VERSION": "0.0.27",
+    "OEP_HW_BOARDS": "esp32-pico-d4-50029191fe34"
+  },
+  "tests": {
+    "flash": {
+      "port": "/run/board-identify/by-id/esp32-pico-d4-50029191fe34",
+      "error": "could not fetch firmware-0.0.27.json from https://github.com/Open-Embedded-Probe/oep-probe-arduino/releases/download/v0.0.27: HTTP Error 404: Not Found",
+      "verdict": "failed",
+      "why": "tests/hw/test_probe.py:53: Failed"
+    },
+    "identity": {
+      "verdict": "skipped",
+      "why": "Skipped: flashing failed: firmware: could not fetch firmware-0.0.27.json from https://github.com/Open-Embedded-Probe/oep-probe-arduino/releases/download/v0.0.27: HTTP Error 404: Not Found"
+    },
+    "config": {
+      "verdict": "skipped",
+      "why": "Skipped: flashing failed: firmware: could not fetch firmware-0.0.27.json from https://github.com/Open-Embedded-Probe/oep-probe-arduino/releases/download/v0.0.27: HTTP Error 404: Not Found"
+    },
+    "wire": {
+      "verdict": "skipped",
+      "why": "Skipped: no target wired (OEP_HW_TARGET=<name>[@swdio[,swclk]] says one is)"
+    },
+    "gpio": {
+      "verdict": "skipped",
+      "why": "Skipped: flashing failed: firmware: could not fetch firmware-0.0.27.json from https://github.com/Open-Embedded-Probe/oep-probe-arduino/releases/download/v0.0.27: HTTP Error 404: Not Found"
+    },
+    "uart": {
+      "verdict": "skipped",
+      "why": "Skipped: flashing failed: firmware: could not fetch firmware-0.0.27.json from https://github.com/Open-Embedded-Probe/oep-probe-arduino/releases/download/v0.0.27: HTTP Error 404: Not Found"
+    },
+    "port_speed": {
+      "verdict": "skipped",
+      "why": "Skipped: flashing failed: firmware: could not fetch firmware-0.0.27.json from https://github.com/Open-Embedded-Probe/oep-probe-arduino/releases/download/v0.0.27: HTTP Error 404: Not Found"
+    },
+    "session": {
+      "verdict": "skipped",
+      "why": "Skipped: flashing failed: firmware: could not fetch firmware-0.0.27.json from https://github.com/Open-Embedded-Probe/oep-probe-arduino/releases/download/v0.0.27: HTTP Error 404: Not Found"
+    }
+  }
+}
