@@ -11,9 +11,9 @@ import struct
 import time
 from dataclasses import dataclass
 
-from . import host as h, message as m, registry as reg
+from . import catalog, host as h, message as m, registry as reg
 from .console import PositionStream, StreamIO
-from .core import Interface
+from .core import Interface, describe
 
 _GPIO, _UART, _I2C, _SPI = reg.FIXTURE_GPIO, reg.FIXTURE_UART, reg.FIXTURE_I2C_TARGET, reg.FIXTURE_SPI_TARGET
 _MODE = _GPIO.enum["mode"]
@@ -160,7 +160,44 @@ class I2cStatus:
     errors: int
 
 
-class I2cTarget(Interface):
+class _TargetDeclarations:
+    """The describe declarations of a fixture target (oep-if-fixture §3 / §4), read once per instance (describe is
+    cached on the host): max_length, max_clock_hz, queue_depth (None when the probe does not declare them) and
+    features (0 when not declared)."""
+    host: h.Host
+    fn: int
+    _decl: dict[int, bytes] | None = None
+
+    def _declared(self, tag: int, fmt: str) -> int | None:
+        if self._decl is None:
+            self._decl = {}
+            for t, value in describe(self.host, self.fn):
+                self._decl.setdefault(t & ~catalog.CRITICAL, value)
+        value = self._decl.get(tag)
+        return struct.unpack_from("<" + fmt, value)[0] if value is not None and len(value) >= struct.calcsize(fmt) else None
+
+    @property
+    def max_length(self) -> int | None:
+        """Bytes one frame / transfer may hold (describe max_length)."""
+        return self._declared(catalog.MAX_LENGTH, "H")
+
+    @property
+    def max_clock_hz(self) -> int | None:
+        """The verified upper limit of the bus clock (describe max_clock_hz)."""
+        return self._declared(catalog.MAX_CLOCK_HZ, "I")
+
+    @property
+    def features(self) -> int:
+        """The describe features bits (0 when not declared)."""
+        return self._declared(catalog.FEATURES, "I") or 0
+
+    @property
+    def queue_depth(self) -> int | None:
+        """Frames / transfers the queue holds (describe tag 0x40, u8; i2c mode 3: also the most unread preload slots)."""
+        return self._declared(self.TAG_QUEUE_DEPTH, "B")
+
+
+class I2cTarget(_TargetDeclarations, Interface):
     """oep.fixture.i2c-target (oep-if-fixture §3): the probe as an I2C target. Mode 1 fixed rx (arm_rx with the exact
     length), 2 framed rx (a 1-byte length write, then the payload), 3 preloaded tx (slots the controller reads)."""
     NAME = _I2C.name
@@ -169,6 +206,8 @@ class I2cTarget(Interface):
         _I2C.op[k] for k in ("configure", "arm_rx", "read_rx", "preload_tx", "status", "reset", "stretch"))
     MODE_FIXED_RX, MODE_FRAMED_RX, MODE_PRELOADED_TX = (_I2C.enum["mode"][k] for k in ("fixed_rx", "framed_rx", "preloaded_tx"))
     ROLE_SDA, ROLE_SCL = _I2C.enum["role"]["sda"], _I2C.enum["role"]["scl"]
+    FEATURE_PRELOADED_TX, FEATURE_STRETCH = _I2C.enum["features"]["preloaded_tx"], _I2C.enum["features"]["stretch"]
+    TAG_QUEUE_DEPTH, TAG_MAX_STRETCH_US = _I2C.tlv["describe"]["queue_depth"], _I2C.tlv["describe"]["max_stretch_us"]
 
     def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
         super().__init__(hst, name, fn=fn)
@@ -211,8 +250,16 @@ class I2cTarget(Interface):
     def reset(self) -> None:
         self._call(self.RESET)
 
+    @property
+    def max_stretch_us(self) -> int | None:
+        """The largest stretch_us stretch() accepts (describe tag 0x41, u32); None when the probe does not declare it
+        (it does exactly when features has bit1)."""
+        return self._declared(self.TAG_MAX_STRETCH_US, "I")
+
     def stretch(self, stretch_us: int) -> None:
-        """Hold SCL low for stretch_us after each received byte (0 = off); probes declaring features bit1 only."""
+        """Hold SCL low for stretch_us after each received byte (0 = off); probes declaring features bit1 only. Above
+        max_stretch_us: host.Unsupported. Accepted in any state; configure and reset keep it, the plan's release
+        clears it."""
         self._call(self.STRETCH, struct.pack("<I", stretch_us))
 
 
@@ -227,7 +274,7 @@ class SpiStatus:
     errors: int
 
 
-class SpiTarget(Interface):
+class SpiTarget(_TargetDeclarations, Interface):
     """oep.fixture.spi-target (oep-if-fixture §4): one CS-framed transaction at a time - arm() with the MISO bytes,
     then read_rx() after the controller raised CS."""
     NAME = _SPI.name
@@ -235,6 +282,8 @@ class SpiTarget(Interface):
     CONFIGURE, ARM, READ_RX, STATUS, RESET = (_SPI.op[k] for k in ("configure", "arm", "read_rx", "status", "reset"))
     ROLE_SCK, ROLE_MOSI, ROLE_MISO, ROLE_CS = (_SPI.enum["role"][k] for k in ("sck", "mosi", "miso", "cs"))
     MSB_FIRST, LSB_FIRST = 0, 1
+    FEATURE_LSB_FIRST = _SPI.enum["features"]["lsb_first"]
+    TAG_QUEUE_DEPTH = _SPI.tlv["describe"]["queue_depth"]
 
     def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
         super().__init__(hst, name, fn=fn)
