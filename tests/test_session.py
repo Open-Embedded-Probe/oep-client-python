@@ -6,7 +6,7 @@ import pytest
 
 from oep_client import endpoint, fake, host, message as m
 
-TOY = 7          # a fn the fake does not simulate (esp32_v003: the i2c-target) has the stand-in operations
+TOY = 10         # a fn the fake does not simulate (fake.with_stand_in(esp32_v003)) has the stand-in operations
 
 
 class Clock:
@@ -20,7 +20,7 @@ class Clock:
 @pytest.fixture
 def bench():
     clock = Clock()
-    ep = endpoint.Endpoint(fake.esp32_v003(), clock, lease_default_ms=1000)
+    ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), clock, lease_default_ms=1000)
     return clock, ep
 
 
@@ -181,7 +181,7 @@ def test_a_probe_reboot_forgets_the_last_id_and_boot_id_says_so(bench):
     a = new_host(ep, 1)
     first = a.open()
     assert first.boot_id == ep.boot_id == a.confirmed()["boot_id"]   # confirm tells it too (core §7.1)
-    rebooted = endpoint.Endpoint(fake.esp32_v003(), clock, boot_id=0x5555AAAA)
+    rebooted = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), clock, boot_id=0x5555AAAA)
     a.send = rebooted.handle
     with pytest.raises(host.NoSession):
         write(a, 1)
@@ -240,7 +240,7 @@ def test_confirm_sends_a_range_and_reads_the_v1_answer(bench):
 
 def test_no_role_0x81_to_a_v0_probe(bench):
     clock, _ = bench
-    ep = endpoint.Endpoint(fake.esp32_v003(), clock, revision=0)
+    ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), clock, revision=0)
     a = new_host(ep, 1)
     with pytest.raises(host.NotV1):
         a.open()
@@ -273,7 +273,7 @@ def test_the_first_session_request_confirms_first(bench):
 
 def test_the_host_skips_tlvs_it_does_not_know_after_every_result(bench):
     clock, _ = bench
-    ep = endpoint.Endpoint(fake.esp32_v003(), clock, tail=m.tlv(0x6D, b"new!") + m.tlv(0x6E, b""))
+    ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), clock, tail=m.tlv(0x6D, b"new!") + m.tlv(0x6E, b""))
     a = new_host(ep, 1)
     assert a.confirm()["tail"].get(0x6D) == b"new!"
     opened = a.open(lease_ms=1000)
@@ -340,7 +340,7 @@ def test_tlv_long_form_round_trip_and_the_one_encoding():
         m.split_tlvs(bytes([0x41, 0xFF, 3, 0]) + b"abc")
     with pytest.raises(m.ShortPayload):
         m.split_tlvs(bytes([0x41, 0xFF, 0x00, 0x02]) + bytes(100))
-    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())
+    ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), Clock())
     a = new_host(ep, 1)
     a.open()
     r = a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 5) + m.tlv(0x21, big))   # a long non-critical TLV: ignored
@@ -372,7 +372,7 @@ def test_no_session_means_this_sessions_resources_are_gone(bench):
     """core §9: no_session = another session came in between (and took the resources over), or the probe rebooted
     (boot_id 0 is an ordinary value now): either way nothing of this session is left."""
     clock, _ = bench
-    ep = endpoint.Endpoint(fake.esp32_v003(), clock, boot_id=0)
+    ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), clock, boot_id=0)
     a = new_host(ep, 1)
     a.open()
     epoch = a.epoch

@@ -138,6 +138,10 @@ PARLIO と同じ w 1〜16、3 本なら w 4。`esp32-v003`: classic ESP32 の sa
 frontend、作り物の 2 点の較正と Vrefint）と、ロジックとアナログを束ねる `oep.fixture.capture-group` もある（一緒に始まり、
 アナログは 5 µs 遅れ（±2 µs）、片方のトリガが両方に印される）。時刻は probe の 1 本の時計の ns。
 
+`oep.fixture.i2c-target` と `oep.fixture.spi-target`（`p4-x035`、`esp32-v003`）は plan で役割を受け（SDA / SCL、SCK / MOSI / MISO / CS。
+`esp32-v003` の SPI は 2 つの channel_group のどれかに完全に一致）、fixture §3 / §4 の op にすべて答える。バスの controller は無い:
+試験が endpoint の hook（`i2c_write` / `i2c_read` / `spi_transfer`: バス上の 1 回のトランザクション）を呼ぶまで、arm は待ったままで何も受けない。
+
 外のプログラムの試験には `fake_serve` を子プロセスで使う:
 
 ```sh

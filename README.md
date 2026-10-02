@@ -151,6 +151,11 @@ period 64 (k // 2 + 1) samples, 12-bit values in 16-bit slots; ESP32-style front
 Vrefint) and `oep.fixture.capture-group` binding the logic and the analog: started together, the analog 5 us later
 (+-2 us), the trigger of one marked on both. Times are ns on the probe's one clock.
 
+`oep.fixture.i2c-target` and `oep.fixture.spi-target` (`p4-x035`, `esp32-v003`) take their roles from the plan (SDA / SCL;
+SCK / MOSI / MISO / CS - on `esp32-v003` one of two fixed channel_groups exactly) and answer every op of fixture §3 / §4.
+There is no bus controller: an arm stays armed and nothing is received until a test calls a hook on the endpoint
+(`i2c_write` / `i2c_read` / `spi_transfer`: one transaction on the bus).
+
 Other programs' tests run `fake_serve` as a child process:
 
 ```sh
