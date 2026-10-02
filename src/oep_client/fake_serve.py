@@ -4,7 +4,9 @@
 
 --pty (the default) opens a pseudo terminal that is the probe's serial port (oep-core §3.4): COBS frames
 0x00 <COBS> 0x00 and the raw bytes of the port's bind on one line. The host opens the printed path itself (and
-should set TIOCEXCL on it, as on a real port; this program never opens the slave side). --tcp PORT (0 = any free
+should set TIOCEXCL on it, as on a real port). On Linux this program keeps a slave fd of its own and watches the
+path's opens and closes (inotify): when the last host closes it - or ends without closing it - TIOCEXCL is cleared
+and the unread input dropped, as a real port's last close does, so the next host's open succeeds. --tcp PORT (0 = any free
 one) serves one connection at a time: --framing cobs is the serial port again, --framing length is
 length(u16) message as on vendor bulk / TCP (no raw bytes).
 
@@ -203,19 +205,84 @@ def _stdin_closed(readable) -> bool:
     return False
 
 
+class _Openers:
+    """Who has the pty's slave open, from inotify's open / close events on its path (Linux). The slave's tty lives on
+    while the master is open, so a TIOCEXCL its last host left set (a program that ended without closing the port)
+    would refuse every later opener with EBUSY, where a real port's tty clears it at its last close. This keeps one
+    slave fd of its own (`keeper`), opened before any host, and when the last host's close comes: TIOCNXCL on it and the
+    unread input dropped, as a real port does. Without inotify (not Linux): keeper None, nothing is tracked."""
+
+    IN_OPEN, IN_CLOSE_WRITE, IN_CLOSE_NOWRITE, IN_Q_OVERFLOW = 0x20, 0x08, 0x10, 0x4000
+
+    def __init__(self, path: str, keeper: int):
+        self.fd, self.keeper, self.count = -1, None, 0
+        try:
+            import ctypes
+            libc = ctypes.CDLL(None, use_errno=True)
+            fd = libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
+            if fd < 0:
+                return
+            events = self.IN_OPEN | self.IN_CLOSE_WRITE | self.IN_CLOSE_NOWRITE
+            if libc.inotify_add_watch(fd, os.fsencode(path), events) < 0:
+                os.close(fd)
+                return
+        except (OSError, AttributeError):
+            return
+        self.fd, self.keeper = fd, keeper
+
+    @property
+    def present(self) -> bool:
+        return self.keeper is None or self.count > 0     # untracked: as before, writes are tried
+
+    def poll(self) -> None:
+        if self.fd < 0:
+            return
+        while True:
+            try:
+                data = os.read(self.fd, 4096)
+            except BlockingIOError:
+                return
+            i = 0
+            while i + 16 <= len(data):
+                _wd, mask, _cookie, length = struct.unpack_from("iIII", data, i)
+                i += 16 + length
+                if mask & self.IN_OPEN:
+                    self.count += 1
+                if mask & (self.IN_CLOSE_WRITE | self.IN_CLOSE_NOWRITE):
+                    self.count = max(0, self.count - 1)
+                    if self.count == 0:
+                        self.let_go()
+                if mask & self.IN_Q_OVERFLOW:
+                    self.count = 0                       # lost track: the next close / write tells again
+                    self.let_go()
+
+    def let_go(self) -> None:
+        import fcntl
+        import termios
+        try:
+            fcntl.ioctl(self.keeper, termios.TIOCNXCL)   # exclusive mode off: the next opener gets the port
+            termios.tcflush(self.keeper, termios.TCIFLUSH)   # what the last host left unread goes with it
+        except OSError:
+            pass
+
+
 def serve_pty(a, ep, console) -> None:
     master, slave = os.openpty()
     tty.setraw(slave)                                    # no echo, no line discipline between host and probe
-    print(f"PTY {os.ttyname(slave)}", flush=True)
-    os.close(slave)
+    path = os.ttyname(slave)
+    openers = _Openers(path, slave)
+    if openers.keeper is None:
+        os.close(slave)
+    print(f"PTY {path}", flush=True)
     os.set_blocking(master, False)
     port = fake_serial.FakeSerialPort(ep, a.port_index, _filter(a))
     pending = bytearray()
-    watch = [master] + ([sys.stdin] if not sys.stdin.closed else [])
+    watch = [master] + ([openers.fd] if openers.fd >= 0 else []) + ([sys.stdin] if not sys.stdin.closed else [])
     while True:
         readable, _, _ = select.select(watch, [], [], 0.005)
         if _stdin_closed(readable):
             return
+        openers.poll()
         if master in readable:
             try:
                 data = os.read(master, 65536)
@@ -227,7 +294,7 @@ def serve_pty(a, ep, console) -> None:
         port.tick()
         if len(pending) < 1024:
             pending += port.output()
-        if pending:
+        if pending and openers.present:
             try:
                 pending = pending[os.write(master, pending):]
             except (BlockingIOError, OSError):
