@@ -1209,17 +1209,21 @@ class Endpoint:
         return out
 
     def _replace_plans(self, fns: set[int], got) -> None:
-        """The plans of `fns` become `got`: their old channels are released to the idle state first (core §8, a
-        replacement too), then taken. A gpio line taken keeps the state it was in - an output idle keeps driving - until
-        the first set (fixture §1); the idle modes 0-4 are the gpio modes of the same numbers."""
-        released = {a[2] for a in self.plan if a[0] in fns}
-        for ch in released:
+        """The plans of `fns` become `got` as one change (core §8): a channel leaving goes to its idle state, one in
+        both the old and the new plan of a gpio keeps its state and drive, and a new gpio line keeps the state it was
+        in - an output idle keeps driving - until the first set (fixture §1); the idle modes 0-4 are the gpio modes of
+        the same numbers."""
+        old = {a for a in self.plan if a[0] in fns}
+        kept = {ch for f, _, ch in old if self.names.get(f) == "oep.fixture.gpio"} & \
+               {ch for f, _, ch in got if self.names.get(f) == "oep.fixture.gpio"}
+        released = {a[2] for a in old} - {a[2] for a in got}
+        for ch in {a[2] for a in old} - kept:
             self.gpio_modes.pop(ch, None)
         self.plan = {a for a in self.plan if a[0] not in fns}
         self._park(released)
         self.plan |= set(got)
         for fn, _, ch in got:
-            if self.names.get(fn) == "oep.fixture.gpio" and self.parked.get(ch, 0):
+            if ch not in kept and self.names.get(fn) == "oep.fixture.gpio" and self.parked.get(ch, 0):
                 self.gpio_modes[ch] = self.parked[ch]
 
     def _drop_plan(self, fn: int) -> None:
