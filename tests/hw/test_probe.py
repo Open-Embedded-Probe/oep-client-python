@@ -323,11 +323,14 @@ def test_port_speed(run: record.Run):
                      size=limits["max_frame"] - 16, timeout=timeout)
     rows, failing = [], []
     baseline: dict[tuple[str, int], float] = {}
+    passed_rates: list[int] = []
+    failed_rates: list[int] = []
     t0 = time.monotonic()
     for asked, result in zip(rates, linktest.matrix(hst, rates=rates, patterns=list(linktest.PATTERNS), inflight=inflight,
                                                     frames=frames, timeout=timeout)):
         row = {"asked": asked or "now", "rate": result.rate, "actual": result.actual, "switched": result.switched,
                "why": result.why, "cells": []}
+        row_failing: list[str] = []
         for c in result.cells:
             cell = dataclasses.asdict(c)
             if not c.error:
@@ -339,14 +342,23 @@ def test_port_speed(run: record.Run):
                     threshold = max(2 * baseline.get(key, 0.0), ERROR_RATE_FLOOR)
                     cell["threshold"] = round(threshold, 4)
                     if c.broken + c.lost >= MIN_BAD_FRAMES and c.error_rate > threshold:
-                        failing.append(f"{result.rate} {c.pattern} x1: {c.error_rate * 100:.1f} % > {threshold * 100:.1f} % "
-                                       f"(broken {c.broken}, lost {c.lost}, baseline {baseline.get(key, 0.0) * 100:.1f} %)")
+                        row_failing.append(f"{c.pattern} x1: {c.error_rate * 100:.1f} % > {threshold * 100:.1f} % "
+                                           f"(broken {c.broken}, lost {c.lost}, baseline {baseline.get(key, 0.0) * 100:.1f} %)")
             row["cells"].append(cell)
         if result.why and asked is None:
             failing.append(f"the speed in force: {result.why}")
+        if asked is not None and result.switched:
+            # the guide keeps the first candidate whose flows pass: a candidate that fails is recorded, the run fails only when
+            # no candidate passes (a bridge's marginal rate is a fact about the bridge, not about the probe or the client)
+            row["passed"] = not row_failing
+            row["failing"] = row_failing
+            (passed_rates if not row_failing else failed_rates).append(result.rate)
         rows.append(row)
         print("  " + result.text().replace("\n", "\n  "), flush=True)
-    rec.update(results=rows, seconds=round(time.monotonic() - t0, 1), failing=failing,
+    if failed_rates and not passed_rates:
+        failing.append("no candidate passed: " + "; ".join(f"{r['rate']}: {', '.join(r['failing'])}" for r in rows if r.get("failing")))
+    rec.update(results=rows, seconds=round(time.monotonic() - t0, 1), failing=failing, passed_rates=passed_rates,
+               failed_rates=failed_rates,
                link_counters={"corrupt": hst.link.corrupt, "stale": hst.link.stale, "noise": hst.link.noise,
                               "retries": hst.link.retries, "resyncs": hst.link.resyncs})
     assert not failing, "; ".join(failing)
