@@ -56,7 +56,7 @@ from . import cobs, host as _host, message as m, registry as reg
 from .frames import FramingLost, LengthFrames
 
 RESYNC_QUIET_S = reg.TIMING["resync_quiet_ms"] / 1000
-USB_VID, USB_PID = 0x303A, 0x0002   # the reference P4 probe until the OEP PID is taken (probe guide §3.8)
+USB_VID, USB_PID = 0x303A, 0x0002   # the reference P4 probe's: the board's default, a temporary USB ID (probe guide §3.8)
 
 
 class CorrMismatch(FramingLost):
@@ -752,9 +752,6 @@ def open_usb_host(vid: int = USB_VID, pid: int = USB_PID, serial: str | None = N
         lk.attach_host(hst)
         return hst
     raise FileNotFoundError(f"no way in to {vid:04x}:{pid:04x}: " + "; ".join(errors))
-
-
-OEP_VID_PID = (reg.USB["reference_vid"], reg.USB["reference_pid"])   # the reference firmware's; never a way to tell a probe
 
 
 def is_oep_device(vid: int, pid: int, product: str | None) -> bool:
