@@ -627,8 +627,9 @@ class Endpoint:
 
     def _park(self, channels) -> None:
         """Free pins go to their idle state (the idle item, else Hi-Z) at boot and whenever released (probe.config §1);
-        a disabled channel stays as the reset left it (never parked), a held one is not free."""
-        busy = self._held()
+        a disabled channel stays as the reset left it (never parked), one a plan or a connection holds is not free (a
+        slot's pins without a connection are: the idle is the state of a pin neither uses, probe.config §1)."""
+        busy = {a[2] for a in self.plan if not self._listens(a[0])} | {p for c in self.conns.values() for p in c.pair}
         for ch in channels:
             if ch == 0xFFFF or ch in self.disabled or ch in busy:
                 continue
@@ -1137,7 +1138,7 @@ class Endpoint:
             fn, first = t.take("HH")
             t.no_tail()                                            # no TLV in a describe request (core §7.3)
             if fn not in self.names:
-                return m.REJECTED, m.MALFORMED, b""
+                return m.REJECTED, m.UNKNOWN_FUNCTION, b""         # an fn the probe does not offer (core §4.3)
             return m.COMPLETED, m.SUCCESS, self._page(self._declarations(fn), first)
         if op == m.OP_LOCK_STATE:
             t.tail()
@@ -2785,6 +2786,7 @@ class Endpoint:
             return False
         self.reset_retried.add(n)
         rt.reset_at_ms = self.now()                                # the time it starts pulling the line
+        rt.last_try_ms = rt.reset_at_ms + RETRY_RESET_HOLD_MS      # the retry is an attempt too (§3.3), after the hold
         self.slot_reset_log.append((n, ch, RETRY_RESET_HOLD_MS))
         tg = self._target(s.wire_fn, s.pair)
         if tg.resets_through(ch):
