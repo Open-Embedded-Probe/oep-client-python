@@ -149,3 +149,16 @@ def test_find_line_reads_the_probe():
     ep, hst = open_bench()
     config.ProbeConfig(hst).set([config.Label(channel=20, text="power_hi")])
     assert config.find_line(hst, "power_hi") == 20
+
+
+def test_replacing_a_gpio_plan_keeps_the_channels_in_both():
+    """A power line in both the old and the new plan keeps its drive (core §8; probe 0.0.27 blinked it off)."""
+    ep, hst = open_bench()
+    gpio_fn = ep.fns["oep.fixture.gpio"]
+    config.ProbeConfig(hst).set([config.Idle(channel=23, mode="output-low")])
+    gpio = fixture.Gpio(hst, gpio_fn)
+    core.plan_apply(hst, [(gpio_fn, 1, 20), (gpio_fn, 1, 21)])
+    gpio.set([(20, gpio.OUTPUT_HIGH), (21, gpio.OUTPUT_HIGH)])
+    core.plan_apply(hst, [(gpio_fn, 1, 20), (gpio_fn, 1, 23)])
+    assert gpio.read([20, 23]) == [1, 0]                              # 20 kept driving, 23 new in its idle
+    assert 21 not in ep.gpio_modes and ep.parked[21] == 0            # left the plan: its idle state
