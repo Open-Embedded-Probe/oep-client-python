@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) The project's USB VID:PID is not settled: the registry synced from oep-spec 2bbd7d1 drops `USB["reference_vid"]` / `USB["reference_pid"]`, and `link.OEP_VID_PID` (built from them, used nowhere) is gone. Probes are still found by iProduct `OEP` (`is_oep_device`) and by USB serial = unit id (`find_usb`, `usb:UNIT_ID`); a bare `usb` target still opens the reference P4's board-default `303a:0002` (`USB_VID` / `USB_PID`), a temporary USB ID.
+- (JA) プロジェクトの USB の VID:PID は決まっていない: oep-spec 2bbd7d1 から写した registry から `USB["reference_vid"]` / `USB["reference_pid"]` が消え、それから作っていた `link.OEP_VID_PID`（どこも使っていない）を消した。probe は今も iProduct の `OEP`（`is_oep_device`）と USB の serial = unit id（`find_usb`、`usb:UNIT_ID`）で見つける。`usb` だけの target は今も参照の P4 のボードの既定 `303a:0002`（`USB_VID` / `USB_PID`。仮の USB の ID）を開く。
 
 ## 0.0.28
 - (EN) `oep pins` suggests the lines it found as probe.config labels (`<slot>.nrst`, `<slot>.power_hi`, host-development-guide §8.1) and an output idle for the power channel, instead of a slot reset_channel (not adopted: oep-spec v1-open-proposals §10); `--save` writes the slot and the labels.
