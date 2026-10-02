@@ -12,6 +12,8 @@
   oep speed <probe> [--candidates 921600,500000] [--verify [--flows in:2,out:2]] (port_speed, core §3.5 and the host
                                            guide §7: try the candidates in order on a UART bridge, report)
   oep linktest <probe> --rates now,921600 --patterns in,out,duplex --inflight 1,2 --sizes 128,496 --frames 300
+  oep pins <probe> --power 5 --wire swio  (find the target's debug pins and reset line: classify the channels, scan,
+                                           identify, hold-low + attach under reset; prints a slot, --save writes it)
 
 <probe>: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]. A change takes the lock (owner "oep config") and
 ends the session after it; it takes effect at once, and stays over a restart only after `save` (or --save).
@@ -63,6 +65,19 @@ def main(argv=None) -> int:
     lt.add_argument("--baud", type=int, default=link.BASE_BAUD, help="the boot speed to open at (default 115200)")
     lt.add_argument("--low-latency", choices=("on", "off"), default="on", help="the serial driver's low-latency mode")
     lt.add_argument("--json", action="store_true", help="one JSON object per cell")
+    pn = sub.add_parser("pins", help="find where a target is wired: classify the channels, scan the wire, find the "
+                        "reset line, suggest a slot (writes nothing without --save)")
+    pn.add_argument("probe", help="a probe: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]")
+    pn.add_argument("--power", type=int, help="the gpio channel that powers the target: switched off, then on, to "
+                    "see which channels follow it (never touched without this)")
+    pn.add_argument("--exclude", default="", help="channels never to read, scan or hold, comma-separated")
+    pn.add_argument("--wire", choices=("swio", "rvswd", "swd"), default="swio")
+    pn.add_argument("--steps", default="classify,hold,scan,identify,reset,slot",
+                    help="the steps to run, comma-separated (default all: classify, hold, scan, identify, reset, slot)")
+    pn.add_argument("--save", action="store_true", help="write the suggested slot (config set, then save)")
+    pn.add_argument("--slot", type=int, default=0, help="--save: the slot number (default 0)")
+    pn.add_argument("--name", help="--save: the slot's name (default: the target family, else 'target')")
+    pn.add_argument("--json", action="store_true", help="the report as JSON (the steps' lines go to stderr)")
     d = sub.add_parser("dump", help="list and describe every interface a probe offers")
     src = d.add_mutually_exclusive_group(required=True)
     src.add_argument("--fake", choices=sorted(fake.PROFILES), help="in-process example probe")
@@ -77,6 +92,8 @@ def main(argv=None) -> int:
         return _speed(args)
     if args.command == "linktest":
         return _linktest(args)
+    if args.command == "pins":
+        return _pins_cmd(args)
 
     if args.fake:
         call = fake.PROFILES[args.fake]().call
@@ -86,6 +103,33 @@ def main(argv=None) -> int:
     caps = dump.collect(call, args.prefix, args.exact)
     sys.stdout.write(dump.to_json(caps) + "\n" if args.json else dump.to_text(caps))
     return 0
+
+
+# ---- oep pins -----------------------------------------------------------------------------------------------------
+
+def _pins_cmd(args) -> int:
+    from . import pins
+    exclude = [int(x, 0) for x in args.exclude.replace(" ", "").split(",") if x]
+    say = (lambda t: print(t, file=sys.stderr, flush=True)) if args.json else (lambda t: print(t, flush=True))  # noqa: E731
+    hst = link.open_host(args.probe)
+    try:
+        core.take(hst, 10000, owner="oep pins")
+        finder = pins.PinFinder(hst, wire=args.wire, power=args.power, exclude=exclude, say=say, probe=args.probe,
+                                save=args.save, slot=args.slot, name=args.name)
+        report = finder.run(steps=tuple(s for s in args.steps.split(",") if s))
+        say(f"done in {report.elapsed_s:.1f} s")
+        if args.json:
+            print(json.dumps(report.as_dict(), indent=2))
+        try:
+            hst.end()
+        except host.OepError:
+            pass
+    except host.Rejected as e:
+        print(f"refused: {e}", file=sys.stderr)
+        return 2
+    finally:
+        hst.link.close()
+    return 0 if report.found else 1
 
 
 # ---- oep linktest -------------------------------------------------------------------------------------------------

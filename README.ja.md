@@ -33,7 +33,9 @@ X.Y.Z（v1 の凍結までは、どのリリースも wire を壊しうるので
 | `host` | 要求と結果、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`。lease 切れなら `Expired`。黙って open し直さず、`Host.epoch` が進む） |
 | `link` | transport: シリアルの口（常に COBS + CRC、`0x00 <COBS> 0x00`、フレームの外は雑音として捨てる、排他で開く）、USB vendor bulk / HID と TCP（長さつきフレーム、§5.1 の立て直し）、corr による照合と送り直し、`open_host(target)` |
 | `core` | インターフェースを名前で探す（キャッシュつき）、confirm（probe の `boot_id` つき）、probe の describe（宣言だけ。起動の間 cache: ラベル、transport の一覧、`max_op_ms`）、ロックの取り方（`take`）、ピンの割り当て（plan）、`Interface` の土台 |
-| `riscv` | `oep.wire.rvswd` / `oep.wire.swio`（scan、attach: `max_speed` は常に送る、`reset=(channel, hold_ms)` でリセットをかけながら attach、detach、connections）、`oep.target.riscv-dm`（応答は値の数を持つ。`RunResult.not_halted`）、リセット線の探索、GPIO 経由の attach |
+| `riscv` | `oep.wire.rvswd` / `oep.wire.swio`（scan、attach: `max_speed` は常に送る、`reset=(channel, hold_ms)` でリセットをかけながら attach、detach、connections）、`oep.target.riscv-dm`（応答は値の数を持つ。`RunResult.not_halted`）、リセット線の探索（`find_reset_line(candidates, pins=...)`）、GPIO 経由の attach |
+| `targets` | host が target の系統ごとに知っていることを 1 つの表に（`FAMILIES`: 線、target_id の照合、リセットのベクタ、NRST を option で読む関数、max_speed / idle_clock）。`identify(target_id)` |
+| `pins` | `oep pins`: channel の分類、low に保つ探索、scan、識別、リセットの線の確かめ、スロットの提案（`PinFinder`） |
 | `console` | `oep.target.console`（位置つきのストリーム: read の応答は長さを持ち、マークは `time_ns`、ロック不要の `streams()`）と、バイト列として読む `ConsoleIO` |
 | `fixture` | `oep.fixture.gpio` / `uart`（ストリームは plan が作る。`status()`）/ `i2c-target` / `spi-target`（revision 1） |
 | `config` | `oep.probe.config`（スロット、bind、plan / label / idle / uart の項目、get / set / unset / save / erase。`describe()` = 宣言、`state()` = 保存・スロット・bind の今の状態、`hash_of(items)` = probe と同じ hash） |
@@ -77,11 +79,66 @@ oep config bind <probe> --port 1 --mode last-reset --stream slot:x035
 oep config uart <probe> oep.fixture.uart 115200 --format 8N1   # その UART の plan に RX / TX が付くたびに掛かる
 oep config save <probe>                      # 再起動の後も残す（remove = unset、erase もある）
 oep speed <probe> [--candidates 921600,500000] [--verify [--flows out:2]]  # port_speed: 速い速さを試し、結果を出す（下）
+oep pins <probe> --power 5 --wire swio       # target のつながり方: debug のピン、リセットの線、スロット（下）
 ```
 
 `<probe>` はシリアルの口、`tcp://HOST:PORT`、`usb[:VID:PID[:SERIAL]]`。変更はロックを取り（owner "oep config"）、終わったら
 セッションを閉じる。変更はすぐ効き、`save` の後は再起動しても残る。
 実機での一通りの確認は ArduinoCore-CH32 の `tests/manual/oep_smoke/`（`oep_smoke.py`、`oep_probe_checks.py`）。
+
+## ピンを探す（`oep pins`）
+
+`oep pins <probe> [--power CH] [--exclude CH,...] [--wire swio|rvswd|swd] [--steps ...] [--save] [--json]` は、ピンを host
+が選ぶ probe で、target がどこにつながっているかを探します。各段は何をしたかを出し、全体は 1 分以内に終わり、最後に plan を
+すべて解きます。手順とその理由は oep-spec の host 開発ガイド（「ピンの探し方（参考）」）にあります。target の系統ごとに要る
+こと（線、リセットのベクタ、リセットの線の有無を読む option の読み方、max_speed / idle_clock）は 1 つの表 `targets.FAMILIES`
+にまとめ、その出典は oep-spec の `docs/target-scan-notes.ja.md` に記録します。
+
+1. **classify**: `oep.fixture.gpio` が許すすべての channel を、pull-up、両方の pull、pull-down の順に 16 回ずつ読む: floating、
+   pulled-up（両方の pull でも 1: リセットの線のような弱い pull-up）、driven-high / driven-low（どちらの pull でも同じレベル:
+   push-pull か強い pull。idle-high の UART の線はこう見える）、active（読むたびに変わる）。`--power CH` では先に target の
+   電源を切って読み、違って読めた channel が電源に従う。どれも候補を出すだけ。
+2. **hold**: floating / pulled-up の channel を 1 本ずつオープンドレインで low に保ち、active の channel を見る。止まれば
+   リセットの線の候補。
+3. **scan**: floating / pulled-up の channel で線を scan する（rvswd / swd は組で、600 組まで）。driven / active の channel、
+   電源の channel、`--exclude` は scan しない。
+4. **identify**: 答えた線に attach（halt）し、target_id で系統を見る。CH32V00x は option bytes で NRST の有無を見る（読むだけ、
+   書かない）。その後 resume。
+5. **reset**: 候補ごとにリセットをかけながら attach する。本物の線なら hart はリセットのベクタで止まる。
+6. **slot**: `oep config slot` の行を勧める（`config.Slot` に `reset_channel` が無い間、リセットの channel はコメント）。
+   `--save` で書く（set + save）。`--save` が無ければ何も書かない。
+
+安全: driven / active の channel は駆動も scan も保持もしない。電源の channel は `--power` のときだけ触る。low に保つのは
+オープンドレインだけ。gpio の plan を新しくすると、probe は前の plan のピンを（電源の channel も）いったん離すので、`--power`
+では新しい plan のたびにきれいに電源を入れ直す（報告の `power_cycles`）。
+
+ESP32-P4 と CH32V003（電源は GPIO5）、2026-10-02:
+
+```
+$ oep pins /run/board-identify/by-id/esp32-series-30eda0ea068b --power 5 --wire swio
+power: channel 5 low 300 ms (target off: read), then high 400 ms before the reads
+classify: 52 channels, 16 reads each under pull-up, both pulls, pull-down
+  floating     0-3,6,9-20,26-34,36-50,52-54
+  pulled-up    4
+  driven-high  7-8,22-23,35  (never scanned or held)
+  driven-low   51  (never scanned or held)
+  active       21  (21: 8 changes under pull-up)
+  follow power 4,6,9-11,13,15-16,19-23,32-33  (read otherwise with the target off: wired to it; candidates only)
+reset line (hold low): 45 candidates, each held low (open drain) up to 390 ms while watching 21 (105 changes in 1.0 s running, longest lull 130 ms)
+  hold 4 low: 21 stopped
+  45 held in 3.4 s: stopped by 4
+scan swio: 45 channels (0-4,6,9-20,26-34,36-50,52-54; not 7-8,21-23,35,51: driven / active) in 0.14 s -> 19
+attach swio 19: target_id 00310510 (WCH DMI 0x7F) -> ch32v00x, halted at dpc 0x108
+  option bytes (read only): RST_MODE 10 (USER 0xf7): NRST on PD7, 12 ms ignore window
+  attach under reset through 4 (held 20 ms): dpc 0x0 -> the reset line
+slot: oep config slot ... --name ch32v00x --wire swio --pins 19   (not written; --save writes it)
+  # reset_channel 4 (probe.config §1.1; this client's slot has no reset_channel yet: name it in the attach's reset TLV)
+released every plan (channel 5 is back to its idle state: the target is powered only while something drives it)
+done in 7.3 s
+```
+
+19 が SWIO、4 が NRST（hold で 21 が止まり、リセットをかけながらの attach で dpc 0）。22 / 23 は target の UART（idle high
+なので driven として scan も保持もしない）、21 はアプリが動かす出力。
 
 ## UART bridge を速くする（port_speed、使うときだけ）
 

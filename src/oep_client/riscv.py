@@ -301,28 +301,51 @@ class Wire(WireBase):
         return conn, self.dpc
 
     def find_reset_line(self, candidates: list[int], reset_vector: int = 0, hold_ms: int = 20,
-                        tries: int = 3) -> list[int]:
+                        tries: int = 3, pins: tuple[int, int] | None = None) -> list[int]:
         """Which of `candidates` resets the target: attach under reset through each, and see where the hart stops.
         The real line stops it before its first instruction (dpc = reset_vector); any other channel leaves the
         target running, so the halt lands somewhere in its code. A channel counts once any of `tries` lands on the
         vector: the CH32L103 is caught by polling right after the release (it keeps no haltreq through NRST), which
         misses now and then (1 in 60 after the probe fix of 2026-09-24), while landing on the vector by chance is
-        not a worry. Channels the probe does not allow (rejected) are skipped; a failed attach
-        counts as a miss and is tried again. Each try pulls one channel
-        low (open drain) for hold_ms. The target is left running (or halted, where resume is not acknowledged)."""
+        not a worry. Each try pulls one channel low (open drain) for hold_ms. The target is left running (or halted,
+        where resume is not acknowledged).
+
+        pins: the debug pins to attach on (a scan result's .pins). Name them on a probe whose wire takes its pins
+        from the host (role_channels): without pins such a probe attaches only to the wire's one live connection, so
+        once the first try's detach closed it every later attach was refused (rejected unavailable) - and was taken
+        for "not a reset line" (2026-10-02, ESP32-P4 + CH32V003: [] with the real line at channel 4). None takes the
+        pins of the wire's one live connection, if there is one. A connection that was there before the search
+        (attach flags existing) is left open.
+
+        Skipped: a channel the probe does not offer as a reset line (rejected unsupported) and one something else
+        holds (rejected unavailable naming that channel); `last_search[channel]` keeps the rejection. Any other
+        rejection is about the pins or the wire, not the channel, and is raised. A failed attach counts as a miss and
+        is tried again (the first attach under reset of a session failed once in 7 on the P4)."""
+        if pins is None:
+            live = self.connections()
+            if len(live) == 1:
+                pins = live[0].pins
         hits = []
         self.last_search = {}   # channel -> list of dpc values (None: attach failed), or the rejection
         for channel in candidates:
             seen = []
             for _ in range(tries):
                 try:
-                    conn, dpc = self.attach_under_reset(channel, hold_ms)
-                except h.Rejected as e:                    # not a channel this probe allows
-                    seen = e
+                    conn, dpc = self.attach_under_reset(channel, hold_ms, pins=pins)
+                except h.Unavailable as e:
+                    if channel not in e.channels:          # the pins or the wire, not this channel: no search
+                        raise
+                    seen = e                               # held by something else (a plan, a slot)
+                    break
+                except h.Rejected as e:
+                    if e.result.detail != m.UNSUPPORTED:
+                        raise
+                    seen = e                               # not a channel this probe offers as a reset line
                     break
                 except h.Failed:
                     seen.append(None)                      # the attach itself failed: try again
                     continue
+                existing = self.existing
                 seen.append(dpc)
                 dm = RiscvDm(self.host, conn)
                 try:
@@ -336,7 +359,8 @@ class Wire(WireBase):
                 except h.OepError:
                     pass   # a CH32L103 raises no allresumeack; a hart left halted mid-code still lands off the vector
                 finally:
-                    self.detach(conn)
+                    if not existing:
+                        self.detach(conn)                  # the caller's own connection stays
                 if dpc == reset_vector:
                     hits.append(channel)
                     break
