@@ -753,10 +753,15 @@ def test_spi_target(run: record.Run):
         t.arm(4, b"\xa5\x5a")
         st2 = t.status()
         rec["status_armed"] = dataclasses.asdict(st2)
-        # SCK and CS float (no controller): the ATOM's target sees phantom transactions (transactions 1-2 right after the
-        # arm, 2026-10-02), one of which may end the armed one - so the arm must have armed or been consumed, and the
-        # "one at a time" refusal of a second arm is not something floating pins let a test rely on
-        assert st2.armed or st2.queued or st2.transactions, f"arm did not arm: {st2}"
+        # No controller is wired: no transfer happens, so the arm stays armed (a CS edge without SCK is no transfer, fixture
+        # §4; the probe counted such edges as transactions before oep-probe-arduino a3dcabd), and a second arm is refused
+        assert st2.armed and st2.queued == 0 and st2.transactions == 0 and st2.errors == 0, f"arm did not arm: {st2}"
+        try:
+            t.arm(4, b"\x01")
+        except h.Unavailable as e:
+            rec["second_arm"] = f"refused: {e}"
+        else:
+            raise AssertionError("a second arm while armed was accepted (fixture §4: one at a time, unavailable)")
         pending, bits, data = t.read_rx()
         rec["read_rx"] = [pending, bits, data.hex()]
         t.reset()
