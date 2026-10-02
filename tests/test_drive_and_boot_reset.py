@@ -194,6 +194,7 @@ def test_idle_drive_accepted_forms():
     cfg = config.ProbeConfig(hst)
     cfg.set([_idle(20, 4, 0, 3, 0), _idle(21, 3, 1, 1, 0), _idle(22, 4, 1, 0xFF, 0xFF), _idle(23, 4, 0, 1, 0, 0xAA)])
     assert ep.parked_drive == {20: 3, 21: 0, 22: 3, 23: 1}        # a ceiling below every level: level 0; a tail skipped
+    assert ep.config[(config.ITEM["idle"], 23)] == bytes([23, 0, 4, 0, 1, 0, 0xAA])   # ... and kept, not cut (§2)
 
 
 def test_a_probe_without_drive_levels_keeps_the_idle_drive_and_drives_at_its_default():
@@ -293,7 +294,7 @@ def test_retry_with_reset_found_by_the_bare_name_any_case():
 
 @pytest.mark.parametrize("kw", [
     dict(boot_reset=False),                                       # not asked for
-    dict(labels=()),                                              # no nrst line
+    dict(labels=()),                                              # no nrst line (describe's 23 "NRST" is not, §1.3)
     dict(labels=((NRST, "v003.nrst"), (22, "V003.NRST"))),        # two at one step: no line
     dict(labels=((22, "v003.nrst"),)),                            # not a reset channel of the wire (role 3)
 ])
