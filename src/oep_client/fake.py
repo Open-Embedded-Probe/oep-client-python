@@ -108,6 +108,9 @@ CORE_DISCOVERABLE, CORE_PLAN_ROLES, CORE_MAX_OP_MS = _CORE_TAGS["discoverable"],
 MAX_OP_MS = reg.LIMITS["max_op_ms_reference"]     # what the fake declares: the longest one request may take (core §7.5)
 PLAN_ROLES = 32                                   # role assignments the fake's plan holds at once (core §8)
 GPIO_MODES = reg.FIXTURE_GPIO.tlv["describe"]["modes"]
+GPIO_DRIVE_LEVELS = reg.FIXTURE_GPIO.tlv["describe"]["drive_levels"]
+DRIVE_LEVELS_MA = (5, 10, 20, 40)     # the fake's selectable output strengths (fixture §1.1), approximate mA, ascending
+DRIVE_DEFAULT = 2                     # ... and the default level (about 20 mA)
 UART_FORMATS = reg.FIXTURE_UART.tlv["describe"]["formats"]
 I2C_QUEUE_DEPTH = reg.FIXTURE_I2C_TARGET.tlv["describe"]["queue_depth"]
 I2C_MAX_STRETCH_US = reg.FIXTURE_I2C_TARGET.tlv["describe"]["max_stretch_us"]
@@ -183,9 +186,16 @@ def _config(fn: int, instance: int, slots_max: int, modes: int = 0b111, storage:
         catalog.u8(_CFG["slots_max"], slots_max), catalog.u32(_CFG["bind_modes"], modes)))
 
 
-def _gpio(fn: int, channels: list[int], modes: int = 0xFF) -> Offered:
-    """oep.fixture.gpio: role 1 on `channels`, the modes it drives (u32 bit set, fixture §1)."""
-    return Offered(fn, 0, "oep.fixture.gpio", _roles({1: channels}) + (catalog.u32(GPIO_MODES, modes),))
+def drive_levels_tlv(default: int = DRIVE_DEFAULT, ma=DRIVE_LEVELS_MA) -> bytes:
+    """oep.fixture.gpio's drive_levels (fixture §1.1, tag 0x41): default(u8) n(u8) n x ma(u16), ascending."""
+    return catalog.tlv(GPIO_DRIVE_LEVELS, struct.pack(f"<BB{len(ma)}H", default, len(ma), *ma))
+
+
+def _gpio(fn: int, channels: list[int], modes: int = 0xFF, drive: bool = True) -> Offered:
+    """oep.fixture.gpio: role 1 on `channels`, the modes it drives (u32 bit set, fixture §1), and the output strengths
+    it can select (drive_levels, fixture §1.1: DRIVE_LEVELS_MA, default DRIVE_DEFAULT) unless `drive` is False."""
+    return Offered(fn, 0, "oep.fixture.gpio", _roles({1: channels}) + (catalog.u32(GPIO_MODES, modes),)
+                   + ((drive_levels_tlv(),) if drive else ()))
 
 
 def _uart(fn: int, instance: int, channels: list[int], max_hz: int, formats=FORMATS_8) -> Offered:
@@ -357,6 +367,14 @@ def with_stand_in(probe: FakeProbe) -> FakeProbe:
     operations (endpoint.TOY_WRITE / TOY_READ), for tests of the session rules. FAKE ONLY."""
     fn = max(o.fn for o in probe.offered) + 1
     return FakeProbe(probe.label, probe.max_frame, list(probe.offered) + [Offered(fn, 0, STAND_IN)])
+
+
+def without_drive_levels(probe: FakeProbe) -> FakeProbe:
+    """The profile with no drive_levels on its oep.fixture.gpio fns: a probe that cannot switch the output strength
+    (fixture §1.1). FAKE ONLY."""
+    offered = [Offered(o.fn, o.instance, o.name, tuple(t for t in o.tlvs if t[0] != GPIO_DRIVE_LEVELS), o.revision,
+                       o.flags) if o.name == "oep.fixture.gpio" else o for o in probe.offered]
+    return FakeProbe(probe.label, probe.max_frame, offered)
 
 
 PROFILES = {"p4-x035": p4_x035, "esp32-v003": esp32_v003, "p4-bench": p4_bench, "rp2350-pins": rp2350_pins}

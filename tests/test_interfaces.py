@@ -296,7 +296,7 @@ def test_gpio_set_is_a_list_in_order_and_only_planned_channels(bench):
     assert ep.requests[-1].payload == bytes([3]) + struct.pack("<HBHBHB", 23, 5, 5, 4, 23, 6)
     assert g.read([23, 5]) == [1, 1]
     raw = hst.request(GPIO, g.READ, bytes([2]) + struct.pack("<HH", 23, 5), locked=False).payload
-    assert raw == bytes([2, 1, 1])                                # n(u8) n x level (fixture §1), nothing else
+    assert raw == bytes([2, 1, 1, 0x01, 2, 0xFF, 2])              # n(u8) n x level, TLV drive (fixture §1 / §1.1)
     with pytest.raises(host.Rejected, match="unavailable") as e:
         g.set([(5, g.OUTPUT_LOW), (40, g.OUTPUT_LOW)])
     assert e.value.channels == [40] and (0x40, bytes([1])) in e.value.tlvs   # the channel, its index (fixture §1)

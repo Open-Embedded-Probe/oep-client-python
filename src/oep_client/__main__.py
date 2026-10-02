@@ -235,6 +235,9 @@ def _config_parser(sub) -> None:
     slot.add_argument("--idle-clock", choices=sorted(config.IDLE_CLOCK), default="high",
                       help="rvswd: SWCLK while the line rests (the target's: low on CH32L103 / V203)")
     slot.add_argument("--lock", help="MASK:VALUE (hex u32) the target_id (WCH DMI 0x7F) must match, e.g. ffffff0f:035e0600")
+    slot.add_argument("--boot-reset", action="store_true",
+                      help="at-boot: when the automatic attach gets no answer, try once more with the slot's nrst line "
+                           "(label <name>.nrst; before any session took the lock this boot)")
     slot.add_argument("--save", action="store_true", help="save after the change")
     bind = cs.add_parser("bind", help="what a serial port carries")
     bind.add_argument("probe")
@@ -257,6 +260,10 @@ def _config_parser(sub) -> None:
     idle.add_argument("probe")
     idle.add_argument("channel", type=int)
     idle.add_argument("mode", choices=sorted(config.IDLE))
+    drive = idle.add_mutually_exclusive_group()
+    drive.add_argument("--drive-ma", type=int, help="output modes: the strongest drive level of about this many mA or "
+                                                    "less (the levels: the gpio's describe drive_levels)")
+    drive.add_argument("--drive-level", type=int, help="output modes: a drive level number of this probe")
     idle.add_argument("--save", action="store_true")
     dis = cs.add_parser("disable", help="channels the probe never uses or touches (not on this board)")
     dis.add_argument("probe")
@@ -359,6 +366,8 @@ def _config(args) -> int:
         if args.action == "state":
             return _state(cfg, args.json)
         if args.action == "slot":
+            if args.boot_reset and args.attach != "at-boot":
+                raise SystemExit("--boot-reset goes with --attach at-boot")
             fn = _wire_fn(hst, args.wire)
             args.wire = args.wire or str(fn)
             lock = None
@@ -367,7 +376,7 @@ def _config(args) -> int:
                 lock = (1, struct.pack("<I", int(mask, 16)), struct.pack("<I", int(value, 16)))
             it = config.Slot(slot=args.slot, wire_fn=fn, pins=_pins(hst, fn, args.pins, args.wire), name=args.name,
                              attach=args.attach, retry_s=args.retry, mechanism=args.mechanism, lock=lock,
-                             max_speed=args.max_speed, idle_clock=args.idle_clock)
+                             max_speed=args.max_speed, idle_clock=args.idle_clock, boot_reset=args.boot_reset)
             _change(hst, cfg, [it], args.save)
         elif args.action == "bind":
             slots = {it.name: it.slot for it in cfg.items() if isinstance(it, config.Slot)}
@@ -398,7 +407,12 @@ def _config(args) -> int:
         elif args.action == "label":
             _change(hst, cfg, [config.Label(channel=args.channel, text=args.text)], args.save)
         elif args.action == "idle":
-            _change(hst, cfg, [config.Idle(channel=args.channel, mode=args.mode)], args.save)
+            from .fixture import Drive
+            drive = (Drive.max_ma(args.drive_ma) if args.drive_ma is not None else
+                     Drive.level(args.drive_level) if args.drive_level is not None else None)
+            if drive is not None and args.mode not in ("output-low", "output-high"):
+                raise SystemExit(f"--drive-ma / --drive-level go with output-low / output-high, not {args.mode}")
+            _change(hst, cfg, [config.Idle(channel=args.channel, mode=args.mode, drive=drive)], args.save)
         elif args.action == "disable":
             _change(hst, cfg, [config.Disable(channel=ch) for ch in args.channels], args.save)
         elif args.action == "remove":
@@ -442,7 +456,8 @@ def _state(cfg, as_json: bool) -> int:
     for s in st.slots:
         print(f"  slot {s.slot}: {s.state}" + (f", connection {s.connection}" if s.connection else "")
               + (f", tried at {s.last_try_at_ns / 1e9:.3f} s" if s.last_try_at_ns is not None else "")
-              + (f", target_id {s.target_id[::-1].hex()}" if s.target_id else ""))
+              + (f", target_id {s.target_id[::-1].hex()}" if s.target_id else "")
+              + (f", reset retried at {s.reset_at_ns / 1e9:.3f} s" if s.reset_at_ns is not None else ""))
     for b in st.binds:
         print(f"  port {b.port}: {b.mode}, {b.flow}" + (f", carrying {b.selected}" if b.selected is not None else ""))
     return 0
@@ -471,6 +486,7 @@ def _show(hst, cfg, as_json: bool) -> int:
             pins = f"{it.pins[0]}" if it.pins[1] == 0xFFFF else f"{it.pins[0]},{it.pins[1]}"
             retry = f" retry {it.retry_s:g} s" if it.attach == "at-boot" else ""
             retry += (f" max {it.max_speed} Hz" if it.max_speed else "") + (" idle-low" if it.idle_clock == "low" else "")
+            retry += " boot-reset" if it.boot_reset else ""
             lock = (f" lock {int.from_bytes(it.lock[1], 'little'):08x}:{int.from_bytes(it.lock[2], 'little'):08x}"
                     if it.lock else "")
             live = ""

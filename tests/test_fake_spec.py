@@ -183,7 +183,8 @@ def test_at_boot_slots_attach_and_say_so_without_the_lock():
     _, _, _, _, states, _ = state(ep)
     assert states[0][1] == STATE["connected"] and struct.unpack_from("<I", states[0], 14)[0] == 0x035E0601
     assert states[1][1] == STATE["absent"] and struct.unpack_from("<Q", states[1], 4)[0] == 0   # tried at 0 ns
-    assert len(states[0]) == 18 and len(states[1]) == 14                        # slot state conn last_try_at_ns scheme len tid
+    assert len(states[0]) == 26 and len(states[1]) == 22    # slot state conn last_try_at_ns scheme len tid reset_at_ns
+    assert states[0][-8:] == states[1][-8:] == b"\xff" * 8                      # no retry with reset (§3.3)
     listed = h.raw(1, 0x05, b"\x00", session=False).payload        # connections, lock-free, from the first
     assert listed[0] == 0 and listed[1] == 1 and listed[2] >= 14    # more, count, then len(u8) of the entry (core §2.3)
     assert listed[3 + 10] == 0b10 and listed[3 + 11] == 0            # used by slot 0 only
