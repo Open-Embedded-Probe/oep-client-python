@@ -26,12 +26,12 @@
   "client": {
     "version": "0.0.27",
     "python": "3.13.3",
-    "commit": "29390bf",
-    "dirty": true
+    "commit": "a8dde73",
+    "dirty": false
   },
   "firmware": {
     "before": {
-      "boot_id": 1815686019,
+      "boot_id": 241324478,
       "revision": 1,
       "max_frame": 512,
       "max_inflight": 2,
@@ -56,7 +56,7 @@
     "expected": null,
     "flashed": false,
     "after": {
-      "boot_id": 1815686019,
+      "boot_id": 241324478,
       "revision": 1,
       "max_frame": 512,
       "max_inflight": 2,
@@ -75,8 +75,8 @@
       "port_speed": true
     }
   },
-  "started": "2026-10-02T09:52:06+09:00",
-  "seconds": 64.2,
+  "started": "2026-10-02T09:55:06+09:00",
+  "seconds": 41.5,
   "host": {
     "platform": "Linux-6.18.40.1-microsoft-standard-WSL2+-x86_64-with-glibc2.39",
     "python": "3.13.3"
@@ -94,7 +94,7 @@
       "verdict": "passed"
     },
     "identity": {
-      "boot_id": 1815686019,
+      "boot_id": 241324478,
       "firmware": "0.0.27",
       "model": "esp32",
       "unit_id": "50029191fe34",
@@ -131,8 +131,8 @@
       "storage": "applied",
       "saved_hash": 1955047637,
       "reboot": {
-        "boot_id_before": 1815686019,
-        "boot_id_after": 241324478,
+        "boot_id_before": 241324478,
+        "boot_id_after": 1297341956,
         "seconds": 0.74
       },
       "storage_after_reboot": "applied",
@@ -209,8 +209,8 @@
               "ok": 100,
               "broken": 0,
               "lost": 0,
-              "seconds": 4.824380642035976,
-              "kb_s": 10.281112474381354,
+              "seconds": 4.818691305932589,
+              "kb_s": 10.293251186050115,
               "error": "",
               "error_rate": 0.0
             },
@@ -220,13 +220,13 @@
               "inflight": 2,
               "size": 496,
               "frames": 100,
-              "ok": 96,
+              "ok": 92,
               "broken": 0,
-              "lost": 4,
-              "seconds": 4.540648995083757,
-              "kb_s": 10.486606661636852,
+              "lost": 8,
+              "seconds": 4.508914244943298,
+              "kb_s": 10.1203965125697,
               "error": "",
-              "error_rate": 0.04
+              "error_rate": 0.08
             },
             {
               "rate": 115200,
@@ -237,8 +237,8 @@
               "ok": 100,
               "broken": 0,
               "lost": 0,
-              "seconds": 5.406326468917541,
-              "kb_s": 9.174436705804588,
+              "seconds": 4.924601802951656,
+              "kb_s": 10.071880323455039,
               "error": "",
               "error_rate": 0.0
             },
@@ -248,13 +248,13 @@
               "inflight": 2,
               "size": 496,
               "frames": 100,
-              "ok": 93,
+              "ok": 90,
               "broken": 0,
-              "lost": 7,
-              "seconds": 4.701858737040311,
-              "kb_s": 9.810588233247579,
+              "lost": 10,
+              "seconds": 4.562650654930621,
+              "kb_s": 9.783786525878297,
               "error": "",
-              "error_rate": 0.07
+              "error_rate": 0.1
             },
             {
               "rate": 115200,
@@ -262,13 +262,13 @@
               "inflight": 1,
               "size": 496,
               "frames": 100,
-              "ok": 56,
+              "ok": 100,
               "broken": 0,
-              "lost": 44,
-              "seconds": 7.823797772987746,
-              "kb_s": 3.550194011391596,
+              "lost": 0,
+              "seconds": 4.877870120108128,
+              "kb_s": 10.168372420481855,
               "error": "",
-              "error_rate": 0.44
+              "error_rate": 0.0
             },
             {
               "rate": 115200,
@@ -276,13 +276,13 @@
               "inflight": 2,
               "size": 496,
               "frames": 100,
-              "ok": 14,
+              "ok": 42,
               "broken": 0,
-              "lost": 86,
-              "seconds": 2.6556119300657883,
-              "kb_s": 2.614839887327955,
+              "lost": 58,
+              "seconds": 2.086453156080097,
+              "kb_s": 9.984408199768986,
               "error": "",
-              "error_rate": 0.86
+              "error_rate": 0.58
             }
           ]
         },
@@ -299,13 +299,13 @@
               "inflight": 1,
               "size": 496,
               "frames": 100,
-              "ok": 45,
+              "ok": 96,
               "broken": 0,
-              "lost": 55,
-              "seconds": 5.895987899042666,
-              "kb_s": 3.7856251373284038,
+              "lost": 4,
+              "seconds": 0.9227408750448376,
+              "kb_s": 51.60278609927869,
               "error": "",
-              "error_rate": 0.55,
+              "error_rate": 0.04,
               "threshold": 0.05
             },
             {
@@ -314,13 +314,13 @@
               "inflight": 2,
               "size": 496,
               "frames": 100,
-              "ok": 12,
+              "ok": 37,
               "broken": 0,
-              "lost": 88,
-              "seconds": 4.539439333952032,
-              "kb_s": 1.3111751390712372,
+              "lost": 63,
+              "seconds": 0.35178833396639675,
+              "kb_s": 52.16773334431552,
               "error": "",
-              "error_rate": 0.88
+              "error_rate": 0.63
             },
             {
               "rate": 1500000,
@@ -331,8 +331,8 @@
               "ok": 100,
               "broken": 0,
               "lost": 0,
-              "seconds": 1.4194488150533289,
-              "kb_s": 34.943140938926014,
+              "seconds": 0.7853109349962324,
+              "kb_s": 63.15969610207702,
               "error": "",
               "error_rate": 0.0,
               "threshold": 0.05
@@ -343,13 +343,13 @@
               "inflight": 2,
               "size": 496,
               "frames": 100,
-              "ok": 40,
+              "ok": 18,
               "broken": 0,
-              "lost": 60,
-              "seconds": 0.7062599930213764,
-              "kb_s": 28.09163791810518,
+              "lost": 82,
+              "seconds": 0.4384488370269537,
+              "kb_s": 20.36269513346012,
               "error": "",
-              "error_rate": 0.6
+              "error_rate": 0.82
             },
             {
               "rate": 1500000,
@@ -357,14 +357,14 @@
               "inflight": 1,
               "size": 496,
               "frames": 100,
-              "ok": 90,
+              "ok": 100,
               "broken": 0,
-              "lost": 10,
-              "seconds": 1.4519030310912058,
-              "kb_s": 30.745854953171317,
+              "lost": 0,
+              "seconds": 0.677931688958779,
+              "kb_s": 73.16371370127216,
               "error": "",
-              "error_rate": 0.1,
-              "threshold": 0.88
+              "error_rate": 0.0,
+              "threshold": 0.05
             },
             {
               "rate": 1500000,
@@ -375,16 +375,14 @@
               "ok": 0,
               "broken": 0,
               "lost": 100,
-              "seconds": 2.0865542240208015,
+              "seconds": 0.23566304496489465,
               "kb_s": 0.0,
               "error": "",
               "error_rate": 1.0
             }
           ],
-          "passed": false,
-          "failing": [
-            "in x1: 55.0 % > 5.0 % (broken 0, lost 55, baseline 0.0 %)"
-          ]
+          "passed": true,
+          "failing": []
         },
         {
           "asked": 921600,
@@ -407,13 +405,13 @@
               "inflight": 1,
               "size": 496,
               "frames": 100,
-              "ok": 90,
+              "ok": 100,
               "broken": 0,
-              "lost": 10,
-              "seconds": 3.177592020947486,
-              "kb_s": 14.048373644483586,
+              "lost": 0,
+              "seconds": 1.3963887470308691,
+              "kb_s": 35.52019457723654,
               "error": "",
-              "error_rate": 0.1,
+              "error_rate": 0.0,
               "threshold": 0.05
             },
             {
@@ -422,13 +420,13 @@
               "inflight": 2,
               "size": 496,
               "frames": 100,
-              "ok": 46,
+              "ok": 77,
               "broken": 0,
-              "lost": 54,
-              "seconds": 1.5047602150589228,
-              "kb_s": 15.162548671654362,
+              "lost": 23,
+              "seconds": 1.0835711170220748,
+              "kb_s": 35.24641751707188,
               "error": "",
-              "error_rate": 0.54
+              "error_rate": 0.23
             },
             {
               "rate": 500000,
@@ -439,8 +437,8 @@
               "ok": 100,
               "broken": 0,
               "lost": 0,
-              "seconds": 1.9238120809895918,
-              "kb_s": 25.782143947493147,
+              "seconds": 1.5602338429307565,
+              "kb_s": 31.790106479699826,
               "error": "",
               "error_rate": 0.0,
               "threshold": 0.05
@@ -451,13 +449,13 @@
               "inflight": 2,
               "size": 496,
               "frames": 100,
-              "ok": 73,
+              "ok": 63,
               "broken": 0,
-              "lost": 27,
-              "seconds": 1.416318032075651,
-              "kb_s": 25.56487962448394,
+              "lost": 37,
+              "seconds": 1.1752941039158031,
+              "kb_s": 26.5873876980145,
               "error": "",
-              "error_rate": 0.27
+              "error_rate": 0.37
             },
             {
               "rate": 500000,
@@ -465,14 +463,14 @@
               "inflight": 1,
               "size": 496,
               "frames": 100,
-              "ok": 78,
+              "ok": 100,
               "broken": 0,
-              "lost": 22,
-              "seconds": 4.180215912987478,
-              "kb_s": 9.255024334939392,
+              "lost": 0,
+              "seconds": 1.4750261229928583,
+              "kb_s": 33.62652310140825,
               "error": "",
-              "error_rate": 0.22,
-              "threshold": 0.88
+              "error_rate": 0.0,
+              "threshold": 0.05
             },
             {
               "rate": 500000,
@@ -483,36 +481,31 @@
               "ok": 0,
               "broken": 0,
               "lost": 100,
-              "seconds": 0.5098928409861401,
+              "seconds": 0.4845342820044607,
               "kb_s": 0.0,
               "error": "",
               "error_rate": 1.0
             }
           ],
-          "passed": false,
-          "failing": [
-            "in x1: 10.0 % > 5.0 % (broken 0, lost 10, baseline 0.0 %)"
-          ]
+          "passed": true,
+          "failing": []
         }
       ],
-      "seconds": 61.2,
-      "failing": [
-        "no candidate passed: 1500000: in x1: 55.0 % > 5.0 % (broken 0, lost 55, baseline 0.0 %); 500000: in x1: 10.0 % > 5.0 % (broken 0, lost 10, baseline 0.0 %)"
-      ],
-      "passed_rates": [],
-      "failed_rates": [
+      "seconds": 38.6,
+      "failing": [],
+      "passed_rates": [
         1500000,
         500000
       ],
+      "failed_rates": [],
       "link_counters": {
-        "corrupt": 168,
-        "stale": 107,
-        "noise": 84443,
+        "corrupt": 143,
+        "stale": 125,
+        "noise": 59760,
         "retries": 2,
         "resyncs": 0
       },
-      "verdict": "failed",
-      "why": "tests/hw/test_probe.py:364: AssertionError"
+      "verdict": "passed"
     },
     "session": {
       "lease_ms": 1000,

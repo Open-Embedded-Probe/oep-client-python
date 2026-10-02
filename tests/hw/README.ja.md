@@ -66,6 +66,8 @@ URL + sha256）、ホストの platform、その回の `OEP_*` の環境変数�
 | `esp32-series-30eda0e31108` X035 のジグ（ESP32-P4）、`esp32-series-30eda0e343c6` 2 枚目の P4 | esp32p4 | esp32p4 | 動いている probe へ app の `.bin` を USB DFU 1.1 で（pyusb。`dfu-util -D` と同じ: DFU の interface を class FE/01 で探し、wTransferSize は functional descriptor から、DNLOAD をブロックごと、長さ 0 の DNLOAD で manifest）、device が消えて戻るのを待つ。WSL では `usbipd.exe attach --wsl --busid <busid>`（表の `usbip_busid`） | **済**（X035 治具、main の 0.0.26、2026-10-02: DFU は interface 4 / 4096 B で 8 s。RVSWD 越しの wire 50 往復 pass。uart は治具の設定の plan rx 12 / tx 6 で試す）。2 枚目の P4 は手で DFU（旧 firmware では interface 7 / 1024 B）で焼けたが、USB serial が変わり Windows の usbipd の再 bind が要る |
 | `9489dd2ae0953650` SparkFun Pro Micro RP2350（1b4f:0026。unit id が鍵） | rp2 | promicrorp2350 | CDC の口へ 1200 baud のタッチ（BOOTSEL）、boot ROM の USB device（`RP2350 Boot` / `RP2 Boot`。product と serial で選ぶので、ホストのほかの RP2 には触れない）を待ち、`picotool load -x <uf2> --bus --address`（`OEP_HW_PICOTOOL`、既定は PATH の `picotool`。[picotool 2.3.1 Linux x86_64](https://github.com/raspberrypi/pico-sdk-tools/releases/download/v2.3.1-0/picotool-2.3.1-x86_64-lin.tar.gz)）、CDC の口が戻るのを 45 秒まで待つ。`OEP_HW_UF2_DRIVE=<mount>` なら代わりにその BOOTSEL のドライブへ `.uf2` を置く（ドライブをマウントできるホスト）。どちらもできなければ焼かずに、入っている firmware で試験を続ける | **済**（picotool、2026-10-02。最初の一巡は UART が使えないピンで `uart` の途中に probe が固まった → oep-probe-arduino 654b06a で修正、そのビルドでは全部 pass）|
 
+ATOM の変換（CH552 の FTDI 互換）は probe→host をまとめて落とす（ある分は 0 %、次の分は 10〜55 %、2026-10-02）: ATOM での port_speed の失敗は 1 回やり直してから数える。port_speed の門としては CH340 の治具のほうが安定している。
+
 `OEP_HW_NOFLASH=1` はどのボードでも焼かずに、入っている firmware を試す（"on-board" として記録。firmware の文字列は記録する
 だけで照合しない）。
 
