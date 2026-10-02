@@ -594,9 +594,13 @@ class PinFinder:
                  and not (isinstance(it, config.Slot) and (it.slot == self.slot_no or it.name == name))]
         after += [config.Slot(slot=self.slot_no, wire_fn=self.wire.fn, pins=self.pins, name=name)]
         after += [config.Label(channel=ch, text=text) for ch, text in labels]
+        try:
+            fixed = core.firmware_labels(self.hst)
+        except h.OepError:
+            fixed = []
         for ch, text in labels:
             line = text.rpartition(".")[2]
-            found = config.find_line(after, name, line)
+            found = config.find_line(after, name, line, fixed)
             if found != ch:
                 clash = sorted(it.channel for it in after if isinstance(it, config.Label) and it.channel != ch
                                and config.fold_name(it.text) == config.fold_name(text))

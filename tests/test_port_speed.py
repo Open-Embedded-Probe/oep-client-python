@@ -107,8 +107,11 @@ def test_a_step_that_does_not_fit_the_boot_state_is_cause_6():
         r = p.send(0, PS, ps(0, 500000, step), sid)
         assert r.detail == m.UNAVAILABLE and r.payload[:3] == bytes([0x01, 1, 6])
     assert p.ep.speed_state == "base" and p.ep.speed_log == []
-    assert p.send(0, PS, ps(0, 500000, 3), sid).detail == m.MALFORMED          # not a defined step
-    assert p.send(0, PS, ps(0, 500000, 0xFF), sid).detail == m.MALFORMED
+    r = p.send(0, PS, ps(0, 500000, 3), sid)                  # a step a later revision may define (core §2.5)
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00")
+    assert p.send(0, PS, ps(0, 500000, 0xFF), sid).detail == m.UNSUPPORTED
+    assert p.send(0, PS, ps(0, 500000, TRY, 0), sid).detail == m.MALFORMED   # verify_ms 0 in a try (C-32)
+    assert p.ep.speed_state == "base"
 
 
 def test_a_long_idle_ms_is_clamped_to_the_maximum():
@@ -685,7 +688,7 @@ def test_the_probation_fails_a_rate_that_passes_the_quick_verify_and_breaks_late
     rec.path = None
     notes = []
     rec.note = lambda port, unit, rate, passed, phase="": notes.append((rate, passed, phase))
-    ep.broken_rates[921600] = endpoint.BrokenRate(min_size=30, to_probe=False, after=3000)   # past the verify's bytes
+    ep.broken_rates[921600] = endpoint.BrokenRate(min_size=40, to_probe=False, after=3000)   # past the verify's bytes
     report = link.raise_speed(hst, [921600, 500000], flows=[("in", 1)], record=rec, probation_bytes=4096,
                               probation_s=0.3, **FAST)
     t = report.trials[0]
@@ -705,7 +708,7 @@ def test_the_probation_fails_a_rate_that_passes_the_quick_verify_and_breaks_late
 
 def test_without_the_probation_the_same_rate_breaks_only_in_use():
     ep, hst, lk = in_process()
-    ep.broken_rates[921600] = endpoint.BrokenRate(min_size=30, to_probe=False, after=3000, every=3)
+    ep.broken_rates[921600] = endpoint.BrokenRate(min_size=40, to_probe=False, after=3000, every=3)
     report = link.raise_speed(hst, [921600, 500000], flows=[("in", 1)], **FAST, **NO_PROBATION)
     assert report.trials[0].committed and report.trials[0].probation == "off"
     move(hst, lambda: lk.baud != 921600)
@@ -718,8 +721,8 @@ def test_a_failure_soon_after_a_breakdown_at_another_rate_is_noted_unknown(tmp_p
     from oep_client import speed_record
     path = tmp_path / "link-speed.json"
     ep, hst, lk = in_process()
-    ep.broken_rates[921600] = endpoint.BrokenRate(min_size=30, to_probe=False)
-    ep.broken_rates[500000] = endpoint.BrokenRate(min_size=30, to_probe=False)
+    ep.broken_rates[921600] = endpoint.BrokenRate(min_size=40, to_probe=False)
+    ep.broken_rates[500000] = endpoint.BrokenRate(min_size=40, to_probe=False)
     report = link.raise_speed(hst, [921600, 500000], flows=[("in", 1)], record=str(path), **FAST)
     a, b = report.trials
     assert not a.settling and b.settling and report.chosen is None

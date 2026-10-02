@@ -272,6 +272,22 @@ def element(body: bytes) -> bytes:
     return bytes([len(body)]) + body
 
 
+def shown(raw: bytes) -> str:
+    """Text from an answer, made safe to show (core §2.1): invalid UTF-8 replaced, and every C0 control character
+    (0x00-0x1F) and 0x7F replaced by U+FFFD - an owner or a label can never move a terminal's cursor or colour it."""
+    text = bytes(raw).decode("utf-8", "replace")
+    return "".join("\ufffd" if ord(c) < 0x20 or ord(c) == 0x7F else c for c in text)
+
+
+def valid_text(raw: bytes) -> bool:
+    """Text a request may carry (core §2.1): valid UTF-8 without C0 control characters or 0x7F."""
+    try:
+        text = bytes(raw).decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return not any(ord(c) < 0x20 or ord(c) == 0x7F for c in text)
+
+
 def serial_diff(a: int, b: int, bits: int = 32) -> int:
     """a - b for values that wrap (serials u32, seq u16, resource numbers u16): the difference as a signed number of
     `bits` (core §2.6)."""

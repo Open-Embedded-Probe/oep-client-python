@@ -1,7 +1,8 @@
 """Interface names (oep-spec docs/capability-identification-comparison.ja.md, draft).
 
-A name is dot-separated labels of lowercase ASCII letters, digits and '-', at most 48 bytes. The
-first label says which kind of namespace it is:
+A name is dot-separated labels of lowercase ASCII letters, digits and '-' - each label 1 or more of them, not starting
+or ending with '-', at least two labels - 1 to 64 bytes (core §7.2, §13 rule 1). The first label says which kind of
+namespace it is:
 
   oep.                      the OEP standard (reserved; `oep` is not a real top-level domain)
   local.                    bench-only experiments, never published, no interoperability promise
@@ -14,8 +15,10 @@ from __future__ import annotations
 
 import re
 
-MAX_NAME = 48
-_LABEL = re.compile(r"[a-z0-9-]+\Z")
+from . import registry as reg
+
+MAX_NAME = reg.LIMITS["interface_name_max_bytes"]   # 64 (core §7.2)
+_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\Z")   # no '-' at either end (core §13 rule 1)
 _TLD = re.compile(r"[a-z]{2,63}\Z")
 _UUID = re.compile(r"[0-9a-f]{32}\Z")
 
@@ -42,7 +45,7 @@ def validate(name: str) -> str:
         raise InvalidName(f"{name!r}: needs a namespace and at least one more label")
     for label in labels:
         if not _LABEL.match(label):
-            raise InvalidName(f"{name!r}: label {label!r} is not [a-z0-9-]+")
+            raise InvalidName(f"{name!r}: label {label!r} is not [a-z0-9-]+ without '-' at either end")
     first = labels[0]
     if first == "uuid":
         if len(labels) < 3 or not _UUID.match(labels[1]):

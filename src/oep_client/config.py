@@ -434,7 +434,7 @@ class ProbeConfig(Interface):
 
 # The line names of the label convention (probe.config §1.3): `nrst` a target's reset, `power_hi` high powers it,
 # `power_lo` low powers it. Per slot `<slot name>.<name>`; the bare name on settings with at most one slot.
-LINE_NAMES = ("nrst", "power_hi", "power_lo")
+LINE_NAMES = tuple(_CFG.line_names)                 # the registry's standard names; private ones start with x- (PC-2)
 _ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 
 
@@ -443,14 +443,18 @@ def fold_name(text: str) -> str:
     return text.translate(_ASCII_LOWER)
 
 
-def line_from_labels(labels, n_slots: int, slot_name: str | None, name: str) -> int | None:
-    """probe.config §1.3 on bare data: labels as (channel, text), n_slots the settings' slot items. The channel whose
-    label equals `<slot_name>.<name>`; if none, and only with at most one slot item, the one equal to `name`; two or
-    more at one step: none (no fall-through). slot_name None (settings without slot items): the bare name only.
-    The probe's retry with reset (fake) and the host share this."""
-    steps = ([f"{slot_name}.{name}"] if slot_name is not None else []) + ([name] if n_slots <= 1 else [])
-    for text in steps:
-        found = {ch for ch, t in labels if fold_name(t) == fold_name(text)}
+def line_from_labels(labels, n_slots: int, slot_name: str | None, name: str, firmware=()) -> int | None:
+    """probe.config §1.3 on bare data: labels as (channel, text) - the settings' label items - n_slots the settings'
+    slot items, firmware the firmware's fixed labels (fn 0 describe 0x46) as (channel, text). In order, stopping at
+    the first step that finds exactly one channel: (a) a settings label equal to `<slot_name>.<name>`; (b) only with at
+    most one slot item, a settings label equal to `name`; (c) only with at most one slot item, a firmware label equal
+    to `name`. A step that finds two or more ends the search with none (no fall-through). Texts compare ignoring ASCII
+    case. slot_name None (settings without slot items): steps (b) and (c). The probe's retry with reset (fake) and the
+    host share this."""
+    steps = ([(labels, f"{slot_name}.{name}")] if slot_name is not None else []) + (
+        [(labels, name), (firmware, name)] if n_slots <= 1 else [])
+    for source, text in steps:
+        found = {ch for ch, t in source if fold_name(t) == fold_name(text)}
         if len(found) > 1:
             return None                                            # ambiguous at this step: no such line
         if found:
@@ -458,16 +462,22 @@ def line_from_labels(labels, n_slots: int, slot_name: str | None, name: str) -> 
     return None
 
 
-def find_line(config, slot_name: str | int | None, name: str) -> int | None:
+def find_line(config, slot_name: str | int | None, name: str, firmware=None) -> int | None:
     """The channel of the line `name` (nrst, power_hi, power_lo: LINE_NAMES) of a slot by the label convention
     (probe.config §1.3), or None when that slot has no such line. config: a Host (its settings are read with
     `ProbeConfig.items()`, no lock) or the decoded items. slot_name: the slot's name or number; None on settings with
     no slot item (the target connected to the probe) or one (that slot).
 
     `<slot>.<name>` first, ignoring ASCII case; then the bare `name`, only when the settings hold at most one slot item;
-    two or more channels matching at one step mean no such line. Raises ValueError for slot_name None with several
+    then (PC-1) the firmware's fixed label equal to `name` (fn 0 describe 0x46), on the same condition; two or more
+    channels matching at one step mean no such line. firmware: the fixed labels as (channel, text) - read from the
+    probe's describe when `config` is a Host, none when it is a list of items and this is not given. Raises ValueError for slot_name None with several
     slots, LookupError for a slot number not in the settings."""
-    items = config if isinstance(config, (list, tuple)) else ProbeConfig(config).items()
+    if isinstance(config, (list, tuple)):
+        items, fixed = config, list(firmware or ())
+    else:
+        items = ProbeConfig(config).items()
+        fixed = list(firmware) if firmware is not None else core.firmware_labels(config)
     labels = [(it.channel, it.text) for it in items if isinstance(it, Label)]
     slots = [it for it in items if isinstance(it, Slot)]
     if isinstance(slot_name, int):
@@ -479,4 +489,4 @@ def find_line(config, slot_name: str | int | None, name: str) -> int | None:
         raise ValueError(f"{name}: the settings hold {len(slots)} slots; name the slot")
     if slot_name is None and slots:
         slot_name = slots[0].name
-    return line_from_labels(labels, len(slots), slot_name, name)
+    return line_from_labels(labels, len(slots), slot_name, name, fixed)

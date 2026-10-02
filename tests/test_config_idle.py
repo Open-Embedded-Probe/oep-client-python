@@ -66,13 +66,15 @@ def test_replacing_and_lapsing_release_to_the_idle_state():
 
 def test_output_idle_on_an_input_only_channel_is_unsupported():
     ep, hst = open_bench()
-    ep.input_only = {24}
+    ep.input_only = {26}
     cfg = config.ProbeConfig(hst)
-    with pytest.raises(h.Rejected, match="unsupported"):
-        cfg.set([config.Idle(channel=24, mode="output-high")])
-    cfg.set([config.Idle(channel=24, mode="pull-up")])                # the input modes still are
-    with pytest.raises(h.Rejected, match="malformed"):
-        cfg.set([bytes([config.ITEM["idle"], 3, 24, 0, 5])])          # no mode 5
+    with pytest.raises(h.Unsupported) as e:
+        cfg.set([config.Idle(channel=26, mode="output-high")])
+    assert e.value.tag == config.ITEM["idle"]                          # the item's tag as received (probe.config §1)
+    cfg.set([config.Idle(channel=26, mode="pull-up")])                # the input modes still are
+    with pytest.raises(h.Unsupported) as e:
+        cfg.set([bytes([config.ITEM["idle"] | 0x80, 3, 26, 0, 5])])   # mode 5: a later revision may define it (C-02)
+    assert e.value.tag == config.ITEM["idle"] | 0x80
 
 
 def test_boot_applies_idle_before_the_plan_and_the_at_boot_attach():

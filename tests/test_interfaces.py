@@ -300,8 +300,9 @@ def test_gpio_set_is_a_list_in_order_and_only_planned_channels(bench):
     with pytest.raises(host.Rejected, match="unavailable") as e:
         g.set([(5, g.OUTPUT_LOW), (40, g.OUTPUT_LOW)])
     assert e.value.channels == [40] and (0x40, bytes([1])) in e.value.tlvs   # the channel, its index (fixture §1)
-    with pytest.raises(host.Rejected, match="malformed"):
-        g.set([(5, 8)])                                           # not a defined mode
+    with pytest.raises(host.Unsupported) as e:
+        g.set([(5, 8)])                                           # a mode a later revision may define (core §2.5)
+    assert e.value.tag is None and e.value.tlvs == [(0x02, struct.pack("<H", 5)), (0x40, b"\x00")]
     assert ep.gpio_modes[5] == g.OUTPUT_HIGH                      # nothing done
     g.pulse_low(23, 0)
     assert ep.gpio_log[-2:] == [(23, 5), (23, 6)]
@@ -325,8 +326,9 @@ def test_uart_configure_format_and_reads_that_do_not_consume(bench):
     with pytest.raises(host.Unsupported) as e:
         io.uart.configure(9600, 0x01)                             # 7N1: defined, not declared -> unsupported, the tag
     assert e.value.tag == 0x81
-    with pytest.raises(host.Rejected, match="malformed"):
-        io.uart.configure(9600, 0x80)                             # an undefined format bit
+    with pytest.raises(host.Unsupported) as e:
+        io.uart.configure(9600, 0x80)                             # a reserved format bit (core §2.5, C-02): the tag
+    assert e.value.tag == 0x81
     with pytest.raises(host.Unsupported) as e:
         io.uart.configure(50_000_000)                             # more than 5 % off what the probe can do
     assert e.value.tag is None

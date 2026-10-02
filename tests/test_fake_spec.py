@@ -143,7 +143,7 @@ def test_owner_is_named_by_lock_state_and_by_locked_but_never_the_session():
     assert m.Tail.parse(b.raw(0, m.OP_LOCK_STATE, session=False).payload[5:]).get(0x01) == b"ch32rv monitor pid 1234"
 
 
-@pytest.mark.parametrize("asked,given", [(0, 3000), (1000, 1000), (60000, 60000), (700000, 600000)])
+@pytest.mark.parametrize("asked,given", [(0, 3000), (1000, 1000), (60000, 60000), (700000, 60000), (1, 1000)])
 def test_lease(asked, given):
     ep = endpoint.Endpoint(fake.esp32_v003(), Clock())
     assert struct.unpack_from("<I", Host(ep).open(lease=asked).payload)[0] == given
@@ -240,8 +240,8 @@ def test_a_lock_that_does_not_match_lets_go():
     assert h.raw(6, 0x02, slot_item(1, 1, ep.pairs[1][1], lock=(b"\xff\xff", b"\x00\x00"))).detail == m.MALFORMED   # not the scheme's 4 bytes
     bare = slot_item(1, 1, ep.pairs[1][1])[2:-1]                      # the item's value up to lock_len
     other = lambda scheme: m.tlv(ITEM["slot"], bare + bytes([9, scheme]) + lock[0] + lock[1])
-    assert h.raw(6, 0x02, other(2)).detail == m.UNSUPPORTED        # swd's targetsel: defined, not this wire's
-    assert h.raw(6, 0x02, other(7)).detail == m.MALFORMED          # not a defined scheme
+    assert h.raw(6, 0x02, other(2)).payload == bytes([ITEM["slot"]])   # swd's targetsel: defined, not this wire's
+    assert h.raw(6, 0x02, other(7)).payload == bytes([ITEM["slot"]])   # undefined: unsupported too, the item's tag (C-02)
 
 
 def test_the_seat_rule_closes_the_oldest_slot_only_connection():
@@ -573,7 +573,7 @@ def test_idle_clock_is_rvswd_s_and_a_slot_carries_the_line_settings():
     h.ok(1, 0x02, b"\x01" + SPEED + m.tlv(0x03, struct.pack("<HH", *pair), critical=True) + idle_low)
     assert ep.conns[ep._conn_at(1, pair)].idle_clock == 1
     assert h.raw(1, 0x02, b"\x01" + SPEED + m.tlv(0x03, struct.pack("<HH", *pair), critical=True)
-                 + m.tlv(0x04, b"\x02", critical=True)).detail == m.MALFORMED
+                 + m.tlv(0x04, b"\x02", critical=True)).payload == b"\x84"   # a value a later revision may define
     assert h.raw(1, 0x01, b"\x00" + m.tlv(0x04, b"\x01", critical=True) + m.tlv(0x01, SPEED[2:], critical=True)).succeeded   # scan takes them too
     ep2, h2 = bench()
     p2 = ep2.pairs[1][1]

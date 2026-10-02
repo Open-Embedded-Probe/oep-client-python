@@ -89,11 +89,18 @@ def describe(hst: h.Host, fn: int = 0) -> list[tuple[int, bytes]]:
     return list(out)
 
 
+def firmware_labels(hst: h.Host) -> list[tuple[int, str]]:
+    """The firmware's fixed channel labels from oep.core's describe (tag 0x46) as (channel, text), in describe order -
+    every one, two channels with the same text included (probe.config §1.3 step (c) finds none then). Text shown as
+    core §2.1 says (`m.shown`)."""
+    return [(struct.unpack_from("<H", value)[0], m.shown(value[2:]))
+            for tag, value in describe(hst) if tag & 0x7F == CORE_LABEL and len(value) >= 2]
+
+
 def probe_labels(hst: h.Host) -> dict[str, int]:
     """The firmware's fixed channel labels from oep.core's describe (tag 0x46): {"NRST": 23, ...}. Labels the
     settings gave are read from oep.probe.config (config.ProbeConfig.items(), Label)."""
-    return {value[2:].decode("ascii", "replace"): struct.unpack_from("<H", value)[0]
-            for tag, value in describe(hst) if tag & 0x7F == CORE_LABEL and len(value) >= 2}
+    return {text: ch for ch, text in firmware_labels(hst)}
 
 
 def max_op_ms(hst: h.Host) -> int:

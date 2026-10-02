@@ -93,8 +93,8 @@ def test_uart_item_is_applied_when_the_plan_gives_the_uart_pins():
     assert uart.status().is_default
     with pytest.raises(h.Unsupported):
         cfg.set([config.Uart(fn=5, baud=50_000_000)])                # over the UART's max_clock_hz (the range at set)
-    with pytest.raises(h.Rejected, match="malformed"):
-        cfg.set([config.Uart(fn=5, baud=9600, format=0x80)])         # an undefined format bit
+    with pytest.raises(h.Unsupported):
+        cfg.set([config.Uart(fn=5, baud=9600, format=0x80)])         # a reserved format bit (core §2.5, C-02)
     with pytest.raises(h.Unsupported):
         cfg.set([config.Uart(fn=4, baud=9600)])                      # not a UART
     with pytest.raises(h.Rejected, match="unknown function"):

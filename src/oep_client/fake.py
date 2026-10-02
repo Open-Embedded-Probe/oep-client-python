@@ -11,6 +11,7 @@ entry, describe first u16).
 
 from __future__ import annotations
 
+import re
 import struct
 from dataclasses import dataclass
 
@@ -44,8 +45,21 @@ class FakeProbe:
         for o in self.offered:
             names.validate(o.name)
 
+    def instance_errors(self) -> list[str]:
+        """Where the offered instances break core §7.2 (C-30): numbered from 0 per (name, revision) in ascending fn
+        order. Empty for every profile; a test may make a probe that breaks it on purpose."""
+        count: dict[tuple[str, int], int] = {}
+        out = []
+        for o in self.offered:
+            k = (o.name, o.revision)
+            if o.instance != count.get(k, 0):
+                out.append(f"fn {o.fn} {o.name} rev {o.revision} is instance {o.instance}, not {count.get(k, 0)}")
+            count[k] = o.instance + 1
+        return out
+
     # The one entry point a transport would call: (fn, op, payload) -> result payload.
-    def call(self, fn: int, op: int, payload: bytes = b"") -> bytes:
+    def call(self, fn: int, op: int, payload: bytes = b"", reserve: int = 0) -> bytes:
+        """`reserve`: bytes the answer keeps free (for its ignored TLV, core §2.3)."""
         self.requests += 1
         if fn != CORE_FN:
             raise ValueError(f"fake: fn {fn} has no operations here")
@@ -56,7 +70,7 @@ class FakeProbe:
                 raise LookupError(f"fake: no revision in {payload[4]}..{payload[5]}")
             return struct.pack("<4sBBHIB", m.CONFIRM_RESULT, REVISION, 0, self.max_frame, WINDOW, MAX_INFLIGHT)
         if op == OP_LIST:
-            return self._list(*catalog.unpack_list_request(payload)[:3])
+            return self._list(*catalog.unpack_list_request(payload)[:3], reserve=reserve)
         if op == OP_DESCRIBE:
             if len(payload) < 4:
                 raise ValueError("fake: describe needs fn(u16) first(u16)")
@@ -64,9 +78,9 @@ class FakeProbe:
             return self._describe(target, first)
         raise ValueError(f"fake: core op 0x{op:02x} unknown")
 
-    def _list(self, prefix: str, exact: bool, first: int) -> bytes:
+    def _list(self, prefix: str, exact: bool, first: int, reserve: int = 0) -> bytes:
         hits = [o for o in self.offered if names.matches(o.name, prefix, exact)]
-        budget = self.max_frame - RESULT_HEADER - 3
+        budget = self.max_frame - RESULT_HEADER - 3 - reserve
         page, used = [], 0
         for o in hits[first:]:
             size = 1 + len(catalog.pack_entry(self._entry(o)))
@@ -125,6 +139,9 @@ _ANAD = reg.FIXTURE_ANALOG.tlv["describe"]
 _GRPD = reg.FIXTURE_CAPTURE_GROUP.tlv["describe"]
 CORE_CHIP = reg.CORE.tlv["describe"]["chip"]
 CORE_PORT_SPEED = reg.CORE.tlv["describe"]["port_speed"]   # the optional port_speed is on (core §3.5)
+MODEL = re.compile(r"[a-z0-9-]{1,32}")                      # core §7.5 (the project's own models: no maker prefix)
+UNIT_ID = re.compile(r"[a-z0-9-]{1,32}")                    # an x- unit_id is not unique (core §7.5, C-24)
+CHIP = re.compile(r"[a-z0-9]{1,24}( v[0-9]+(\.[0-9]+)*)?")  # <part> v<revision>, or the part alone (core §7.5)
 
 
 def _analog_decl(frontends: list[tuple[int, int, int, int]], max_samples: int) -> tuple[bytes, ...]:
@@ -238,6 +255,10 @@ def _core(firmware: str, model: str, unit_id: str, channels: int, reserved: list
     """oep.core's declarations (core §7.5): the required unit_id, transport (in `extra`) and max_op_ms, plan_roles, the
     firmware's fixed labels."""
     base, bits = catalog.channels_to_bitmap(reserved)
+    assert MODEL.fullmatch(model) and UNIT_ID.fullmatch(unit_id), "core §7.5: model / unit_id grammar"
+    for t in extra:
+        if t[0] == CORE_CHIP:
+            assert CHIP.fullmatch(t[2:2 + t[1]].decode()), "core §7.5: chip is <part> v<revision>"
     return Offered(0, 0, "oep.core", (
         catalog.text(CORE_FIRMWARE, firmware), catalog.text(CORE_MODEL, model), catalog.text(CORE_UNIT_ID, unit_id),
         catalog.u16(CORE_CHANNELS, channels), catalog.tlv(CORE_RESERVED, struct.pack("<H", base) + bits),
@@ -250,8 +271,8 @@ def p4_x035() -> FakeProbe:
     """ESP32-P4 development probe on the CH32X035F8U6 jig (as wired on 2026-09-24), in the recommended USB shape
     (probe guide §3.8): USB-Serial/JTAG (serial port 0), and on the HS port vendor bulk, HID and a CDC (serial port 3)
     on the board's default VID:PID (no discoverable: that is the project's VID:PID only, core §7.5)."""
-    reserved = [2, 24, 25, 54]                      # RVSWD SWDIO/SWCLK, USB-Serial/JTAG
-    pins = [p for p in range(55) if p not in reserved]
+    reserved = [24, 25]                             # USB-Serial/JTAG (the probe's own: never an interface's)
+    pins = [p for p in range(55) if p not in reserved + [2, 54]]   # the fixtures' pins: all but the RVSWD pair
     return FakeProbe("p4-x035", 1024, [
         _core("3.0.0", "esp32p4", "fafe00000035", 55, reserved, f"{NS}.p4-x035",
               {2: "SWDIO", 54: "SWCLK", 51: "LED"},
@@ -289,7 +310,7 @@ def p4_x035() -> FakeProbe:
 def esp32_v003() -> FakeProbe:
     """A small probe with 64-byte frames over a 115200 bps UART bridge (its only transport, serial port 0):
     classic ESP32 on a CH32V003 (SWIO) jig. port_speed on (core §3.5), as the reference classic ESP32 firmware."""
-    reserved = [0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15, 16]
+    reserved = [0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15]   # UART0, strapping, flash: the probe's own (SWIO 16 is the wire's)
     wired = [4, 5, 13, 14, 17, 18, 19, 21, 22, 25, 26, 27, 32, 33]
     return FakeProbe("esp32-v003", 64, [
         _core("3.0.0", "esp32", "fafe00000003", 40, reserved, f"{NS}.esp32-v003",
@@ -320,8 +341,8 @@ def p4_bench() -> FakeProbe:
     """A made-up bench probe with three RVSWD places and two seats (slots, the seat rule and the bind modes can be
     exercised): USB-Serial/JTAG (serial port 0), vendor bulk, HID and a CDC (serial port 3) on the board's default
     VID:PID (no discoverable: that is the project's VID:PID only, core §7.5)."""
-    reserved = [2, 3, 4, 5, 6, 7, 24, 25]
-    pins = [p for p in range(55) if p not in reserved]
+    reserved = [24, 25]                             # USB-Serial/JTAG (the wires' pins 2-7 are interfaces')
+    pins = [p for p in range(55) if p not in reserved + list(range(2, 8))]
     return FakeProbe("p4-bench", 1024, [
         _core("3.0.0", "esp32p4", "30eda0e3b001", 55, reserved, f"{NS}.p4-bench",
               {2: "A SWDIO", 3: "A SWCLK", 4: "B SWDIO", 5: "B SWCLK", 6: "C SWDIO", 7: "C SWCLK"},
@@ -362,11 +383,42 @@ def rp2350_pins() -> FakeProbe:
 STAND_IN = f"{NS}.stand-in"
 
 
+def with_unit_id(probe: FakeProbe, unit_id: str) -> FakeProbe:
+    """The profile with another unit_id in fn 0's describe - an `x-` one is a probe with neither a unique number nor
+    storage (core §7.5, C-24: hosts key nothing kept across sessions by it). FAKE ONLY."""
+    offered = []
+    for o in probe.offered:
+        if o.fn == CORE_FN:
+            o = Offered(o.fn, o.instance, o.name, tuple(catalog.text(CORE_UNIT_ID, unit_id) if t[0] == CORE_UNIT_ID else t
+                                                        for t in o.tlvs), o.revision, o.flags)
+        offered.append(o)
+    return FakeProbe(probe.label, probe.max_frame, offered)
+
+
 def with_stand_in(probe: FakeProbe) -> FakeProbe:
     """The profile plus one fn (the next number) the endpoint does not simulate: it answers only the two stand-in
     operations (endpoint.TOY_WRITE / TOY_READ), for tests of the session rules. FAKE ONLY."""
     fn = max(o.fn for o in probe.offered) + 1
     return FakeProbe(probe.label, probe.max_frame, list(probe.offered) + [Offered(fn, 0, STAND_IN)])
+
+
+I2C_PULLUP_OHMS = reg.FIXTURE_I2C_TARGET.tlv["describe"]["pullup_ohms"]
+I2C_INTERNAL_PULLUPS = reg.FIXTURE_I2C_TARGET.enum["features"]["internal_pullups"]
+
+
+def with_i2c_pullups(probe: FakeProbe, ohms: int = 45_000) -> FakeProbe:
+    """The profile with its oep.fixture.i2c-target enabling pull-ups of its own on SDA / SCL while configured,
+    declared as fixture §3 says: features bit2 and pullup_ohms (tag 0x42, u32, approximate). FAKE ONLY (the profiles
+    declare none)."""
+    def decl(o: Offered) -> Offered:
+        tlvs = []
+        for t in o.tlvs:
+            if t[0] == FEATURES:
+                t = catalog.u32(FEATURES, struct.unpack_from("<I", t, 2)[0] | I2C_INTERNAL_PULLUPS)
+            tlvs.append(t)
+        return Offered(o.fn, o.instance, o.name, tuple(tlvs) + (catalog.u32(I2C_PULLUP_OHMS, ohms),), o.revision, o.flags)
+    return FakeProbe(probe.label, probe.max_frame,
+                     [decl(o) if o.name == "oep.fixture.i2c-target" else o for o in probe.offered])
 
 
 def without_drive_levels(probe: FakeProbe) -> FakeProbe:

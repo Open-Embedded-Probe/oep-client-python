@@ -82,10 +82,11 @@ def test_i2c_refusals_before_configure_and_in_order():
     with pytest.raises(host.Unavailable) as e:
         t.configure(0x42, t.MODE_FIXED_RX)                          # before the plan
     assert e.value.cause == "wrong_state"
-    for address, mode in ((0x80, 1), (0x42, 0), (0x42, 4)):
-        with pytest.raises(host.Rejected) as e:                     # malformed comes before the missing plan
+    for address, mode, why in ((0x80, 1, m.MALFORMED), (0x80, 4, m.MALFORMED), (0x42, 0, m.UNSUPPORTED),
+                               (0x42, 4, m.UNSUPPORTED)):
+        with pytest.raises(host.Rejected) as e:                     # malformed, then unsupported, before the missing plan
             t.configure(address, mode)
-        assert detail(e) == m.MALFORMED
+        assert detail(e) == why                                     # mode 0 / 4+: a later revision may define it (C-02)
     assert i2c_status(t) == (0, 0, False, 0, 0, 0, 0)
     with pytest.raises(host.Unavailable):
         t.reset()                                                   # state 0

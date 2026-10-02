@@ -111,7 +111,6 @@ def test_take_and_release_use_the_idle_state_strength():
 @pytest.mark.parametrize("tail", [
     drive_tlv(3, 0, 0),                                           # index n or more
     drive_tlv(0, 0, 0) + drive_tlv(0, 0, 1),                      # the same index twice
-    drive_tlv(0, 2, 0),                                           # kind undefined
     drive_tlv(1, 0, 0),                                           # its element is not mode 3 / 4
     m.tlv(DRIVE, bytes([0, 0, 0])),                               # not index kind value
     drive_tlv(0, 0, 9) + drive_tlv(5, 0, 0),                      # malformed comes first, even after an ignored one
@@ -178,7 +177,7 @@ def _idle(ch, *rest):
 @pytest.mark.parametrize("value, reason", [
     ((4, 0), "malformed"),                                        # 4 bytes
     ((4, 0, 1), "malformed"),                                     # 5 bytes
-    ((4, 2, 0, 0), "malformed"),                                  # drive_kind undefined
+    ((4, 2, 0, 0), "unsupported"),                                # drive_kind undefined: a later revision's (C-02)
     ((1, 0, 0, 0), "malformed"),                                  # a drive on a mode other than 3 / 4
     ((0, 1, 10, 0), "malformed"),
     ((4, 0, 4, 0), "unsupported"),                                # level number = the number of levels
@@ -204,6 +203,8 @@ def test_a_probe_without_drive_levels_keeps_the_idle_drive_and_drives_at_its_def
     assert config.Idle(channel=20, mode="output-high", drive=Drive.level(9)) in cfg.items()
     assert ep.parked[20] == 4 and ep.parked_drive == {}
     with pytest.raises(h.Rejected, match="malformed"):            # the form rules still hold
+        cfg.set([_idle(21, 4, 0, 0)])
+    with pytest.raises(h.Rejected, match="unsupported"):          # an undefined drive_kind (C-02)
         cfg.set([_idle(21, 4, 2, 0, 0)])
 
 
@@ -294,7 +295,6 @@ def test_retry_with_reset_found_by_the_bare_name_any_case():
 
 @pytest.mark.parametrize("kw", [
     dict(boot_reset=False),                                       # not asked for
-    dict(labels=()),                                              # no nrst line (describe's 23 "NRST" is not, §1.3)
     dict(labels=((NRST, "v003.nrst"), (22, "V003.NRST"))),        # two at one step: no line
     dict(labels=((22, "v003.nrst"),)),                            # not a reset channel of the wire (role 3)
 ])
@@ -304,6 +304,22 @@ def test_no_retry_with_reset(kw):
     assert ep.slot_reset_log == []
     st = slot_state(ep)
     assert st.state == "absent" and st.reset_at_ns is None
+
+
+def test_retry_with_reset_finds_the_firmware_label_as_step_c():
+    """PC-1 (probe.config §1.3 step (c)): with no settings label, the firmware's fixed label NRST (describe 0x46,
+    channel 23 on this profile) is the slot's line - only while the settings hold at most one slot item."""
+    ep, _, _ = v003()
+    ep.load_config(items(labels=()))
+    assert ep.slot_reset_log == [(0, NRST, 20)] and slot_state(ep).state == "connected"
+    assert ep.line_for("v003", "nrst") == NRST
+    ep, _, _ = v003()
+    ep.load_config(items(labels=((22, "NRST"),)))                 # step (b) finds the settings' one first
+    assert ep.line_for("v003", "nrst") == 22
+    two = config.Slot(slot=1, wire_fn=1, pins=V003_PAIR, name="other")
+    assert ep.line_for("v003", "nrst") == 22
+    ep.config[(config.ITEM["slot"], 1)] = config.item(two)[2:]   # two slot items: (b) and (c) are not searched
+    assert ep.line_for("v003", "nrst") is None
 
 
 def test_no_retry_with_reset_through_a_disabled_or_planned_line():
@@ -447,7 +463,6 @@ def test_fake_serve_retry_with_reset_at_start():
 
 
 @pytest.mark.parametrize("argv", [
-    ("--boot-reset",),                                            # no nrst label
     ("--boot-reset", "--label", "23=v003.nrst", "--label", "22=V003.NRST"),   # two at one step: no line
     ("--label", "23=v003.nrst"),                                  # the slot does not ask for it
 ])

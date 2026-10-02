@@ -95,6 +95,7 @@ class FakeCapture:
     ring: int = 8                      # segment_ring
     max_read: int = 4096
     frontends: dict[int, tuple[int, int, int]] = field(default_factory=dict)   # analog: n -> (min_mv, max_mv, mdb)
+    max_samples: dict[int, int] = field(default_factory=dict)   # mode -> describe's max_samples (one segment)
     slipped: bool = False
     state: int = STATE["unconfigured"]
     mode: int = MODE["one_shot"]
@@ -133,42 +134,49 @@ class FakeCapture:
         return 2000 if self.analog else 50
 
     # ---- configure ------------------------------------------------------------------------------------------------
-    def settle(self, got: dict[int, bytes], critical: set[int], channels: int, frontends: list[tuple[int, int]]) -> dict:
-        """The actual values for a configure / query request (nothing changed). `frontends`: (role, frontend) asked."""
+    def settle(self, got: dict[int, bytes], t, channels: int, frontends: list[tuple[int, int]]) -> dict:
+        """The actual values for a configure / query request (nothing changed). `t`: the request's tail reader
+        (endpoint.Take: `fixed`, `refuse`). `frontends`: (role, frontend) asked."""
         if self.group is not None:
             raise Reject(m.UNAVAILABLE, m.tlv(reg.CORE.tlv["unavailable_payload"]["cause"],
                                               bytes([reg.CORE.enum["unavailable_cause"]["bound_in_group"]])))
         if self.state in (STATE["waiting"], STATE["capturing"]):
             raise wrong_state()                                    # §3.2: not while it captures
-        mode = got[TLV["mode"]][0] if TLV["mode"] in got else MODE["one_shot"]
-        if mode not in MODE.values():
-            raise Reject(m.MALFORMED)
-        if mode not in self.modes:
-            raise Reject(m.UNSUPPORTED, bytes([TLV["mode"] | (m.TAG_CRITICAL if TLV["mode"] in critical else 0)]))
-        if TLV["rate"] not in got or len(got[TLV["rate"]]) != 4:
-            raise Reject(m.MALFORMED)
+        # every TLV's form first (core §2.3: shorter -> malformed, longer -> unsupported / ignored), then what this
+        # probe cannot handle: sent critical (mode, rate, trigger, pretrigger, frontend always are, §3.3) unsupported
+        # with the tag as received, else ignored (t.refuse)
+        for tag, size in ((TLV["mode"], 1), (TLV["rate"], 4), (TLV["samples"], 4), (TLV["segments"], 4),
+                          (TLV["trigger"], 6), (TLV["pretrigger"], 4)):
+            t.fixed(got, tag, size)
+        if TLV["rate"] not in got:
+            raise Reject(m.MALFORMED)                              # rate is required
         asked = struct.unpack("<I", got[TLV["rate"]])[0]
         if not asked:
             raise Reject(m.MALFORMED)
+        if TLV["mode"] in got and got[TLV["mode"]][0] not in self.modes:
+            t.refuse(TLV["mode"], got)                             # undefined (a later revision's) or not declared
+        mode = got[TLV["mode"]][0] if TLV["mode"] in got else MODE["one_shot"]
+        if not self.min_hz <= asked <= self.max_hz:
+            t.refuse(TLV["rate"], got)                             # out of the declared range (§3.3)
+            raise Reject(m.MALFORMED)                              # ... and without it nothing says the rate
+        if TLV["trigger"] in got:
+            kind, role, _ = struct.unpack("<BBI", got[TLV["trigger"]])   # type role value(u32)
+            allowed = (TRIGGER["cross_up"], TRIGGER["cross_down"]) if self.analog else (TRIGGER["level"], TRIGGER["edge"])
+            if (kind and kind not in allowed) or (kind and channels and role >= channels):
+                t.refuse(TLV["trigger"], got)                      # a type not declared (or undefined), a role it lacks
         if not channels:
             raise wrong_state()                                    # no plan (§3.2)
-        if not self.min_hz <= asked <= self.max_hz:
-            raise Reject(m.UNSUPPORTED, bytes([TLV["rate"] | (m.TAG_CRITICAL if TLV["rate"] in critical else 0)]))
         top = self.max_hz // channels if self.analog else self.max_hz   # an ADC's rate is shared by its channels
         div = max(1, -(-self.max_hz // min(max(asked, self.min_hz), top)))
-        rate = Fraction(self.max_hz, div)
-        samples = struct.unpack("<I", got[TLV["samples"]])[0] if TLV["samples"] in got else 4096
-        samples = max(1, min(samples, MAX_SAMPLES))
+        rate = Fraction(self.max_hz, div)                          # the nearest it can make within the range
+        most = self.max_samples.get(mode, MAX_SAMPLES)
+        samples = struct.unpack("<I", got[TLV["samples"]])[0] if TLV["samples"] in got else min(4096, most)
+        samples = max(1, min(samples, most, MAX_SAMPLES))          # rounded down to its limit; the answer says (§3.3)
         segs = struct.unpack("<I", got[TLV["segments"]])[0] if TLV["segments"] in got else self.ring
         segs = max(1, min(segs, self.ring)) if mode == MODE["repeat"] else 1
         trigger = None
         if TLV["trigger"] in got:
-            if len(got[TLV["trigger"]]) != 6:
-                raise Reject(m.MALFORMED)
-            kind, role, value = struct.unpack("<BBI", got[TLV["trigger"]])   # type role value(u32)
-            allowed = (TRIGGER["cross_up"], TRIGGER["cross_down"]) if self.analog else (TRIGGER["level"], TRIGGER["edge"])
-            if (kind and kind not in allowed) or (kind and role >= channels):
-                raise Reject(m.UNSUPPORTED, bytes([TLV["trigger"] | m.TAG_CRITICAL]))
+            kind, role, value = struct.unpack("<BBI", got[TLV["trigger"]])
             trigger = (kind, role, value) if kind else None
         pre = struct.unpack("<I", got[TLV["pretrigger"]])[0] if TLV["pretrigger"] in got else 0
         chosen = {}
@@ -455,7 +463,15 @@ class FakeGroup:
         """-> (each track's events, the group's events). Every track gets a new generation (the answer's TLV lists
         them, §4.1)."""
         if not self.tracks:
-            raise wrong_state()
+            raise wrong_state()                                    # nothing bound (§4.1)
+        for fn in self.tracks:                                     # every track checked before any starts (§4.1)
+            c = caps[fn]
+            if c.state in (STATE["unconfigured"], STATE["waiting"], STATE["capturing"], STATE["paused"]):
+                raise Reject(m.UNAVAILABLE, WRONG_STATE + m.tlv(reg.CORE.tlv["unavailable_payload"]["fn"],
+                                                                struct.pack("<H", fn)))
+            if c.mode == MODE["streaming"] and not subscribed(fn):
+                raise Reject(m.UNAVAILABLE, WRONG_STATE + m.tlv(reg.CORE.tlv["unavailable_payload"]["fn"],
+                                                                struct.pack("<H", fn)))   # no subscription for it
         self.start_ns, self.trigger_ns = now_ms * 1_000_000, NO_TIME
         per, own = [], []
         trigger_ns = None
@@ -480,15 +496,24 @@ class FakeGroup:
         per = [(fn, caps[fn].stop()) for fn in self.tracks]
         return per, [bytes([GRP.event["stopped"], STOPPED["host"], 0])] if any(e for _, e in per) else []
 
-    def status(self, caps: dict[int, FakeCapture]) -> bytes:
+    def state(self, caps: dict[int, FakeCapture]) -> int:
+        """The group's state from its tracks' (§4.1): 0 with none bound; 6 if any is 6; else 4 if started and every
+        one is 4; else 2 if trigger_track is set, has not fired, and one is 2 or 3; else 3 if one is 2, 3 or 5; else 1."""
         states = [caps[fn].state for fn in self.tracks]
         if not states:
-            state = STATE["unconfigured"]
-        elif all(s == STATE["done"] for s in states):
-            state = STATE["done"]
-        elif any(s in (STATE["capturing"], STATE["paused"]) for s in states):
-            state = STATE["capturing"]
-        else:
-            state = STATE["configured"]
+            return STATE["unconfigured"]
+        if STATE["error"] in states:
+            return STATE["error"]
+        if self.start_ns != NO_TIME and all(s == STATE["done"] for s in states):
+            return STATE["done"]
+        busy = (STATE["waiting"], STATE["capturing"])
+        if self.trigger_fn and self.trigger_ns == NO_TIME and any(s in busy for s in states):
+            return STATE["waiting"]
+        if any(s in busy + (STATE["paused"],) for s in states):
+            return STATE["capturing"]
+        return STATE["configured"]
+
+    def status(self, caps: dict[int, FakeCapture]) -> bytes:
+        state = self.state(caps)
         return struct.pack("<BQQH", state, self.start_ns, self.trigger_ns,
                            self.trigger_fn if self.trigger_ns != NO_TIME else 0)

@@ -8,7 +8,9 @@ should set TIOCEXCL on it, as on a real port). On Linux this program keeps a sla
 path's opens and closes (inotify): when the last host closes it - or ends without closing it - TIOCEXCL is cleared
 and the unread input dropped, as a real port's last close does, so the next host's open succeeds. --tcp PORT (0 = any free
 one) serves one connection at a time: --framing cobs is the serial port again, --framing length is
-length(u16) message as on vendor bulk / TCP (no raw bytes).
+length(u16) message as on vendor bulk / TCP (no raw bytes): the listening socket is then a TCP transport of the
+probe (kind 6, listed in fn 0's describe, its index in every confirm's transport TLV; core §3.1), no pause inside a
+frame restarts the reader (core §3.2), and a length over max_frame closes the connection.
 
 The first line on stdout says where to open: `PTY /dev/pts/N` or `PORT n`. The program ends when stdin closes
 (so a test's child never stays behind), or with --once when the first TCP connection closes.
@@ -362,7 +364,10 @@ def _serve_conn(a, ep, console, conn, watch_stdin) -> bool:
     if a.framing == "cobs":
         port = fake_serial.FakeSerialPort(ep, a.port_index, _filter(a))
     else:
-        index = next((i for i in sorted(ep.transports) if i not in ep.serial_ports), 0)
+        # the listening socket is a TCP transport of its own (core §3.1, C-05): listed in describe, named by confirm
+        index = getattr(ep, "tcp_index", None)
+        if index is None:
+            index = ep.tcp_index = ep.add_transport(fake.TRANSPORT["tcp"])
         buf, answers, filt = bytearray(), 0, _filter(a)
     while True:
         readable, _, _ = select.select([conn] + watch_stdin, [], [], 0.005)
@@ -387,6 +392,8 @@ def _serve_conn(a, ep, console, conn, watch_stdin) -> bool:
                         if n == 0:
                             del buf[:2]
                             continue
+                        if n > ep.probe.max_frame:
+                            return False                           # over max_frame on TCP: the probe closes (core §3.1)
                         if len(buf) < 2 + n:
                             break
                         msg = bytes(buf[2:2 + n])
