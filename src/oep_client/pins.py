@@ -75,6 +75,7 @@ class Report:
     nrst: str | None = None           # what the option bytes say
     nrst_enabled: bool | None = None
     reset_channel: int | None = None
+    labels: list = dataclasses.field(default_factory=list)
     reset_dpc: int | None = None
     reset_how: str = ""
     slot: str = ""
@@ -554,9 +555,18 @@ class PinFinder:
             parts.append(f"--reset-channel {r.reset_channel}")
         r.slot = " ".join(parts)
         self.say("slot: " + r.slot + ("" if self.save else "   (not written; --save writes it)"))
-        if r.reset_channel is not None and not has_reset:
-            self.say(f"  # reset_channel {r.reset_channel} (probe.config §1.1; this client's slot has no "
-                     f"reset_channel yet: name it in the attach's reset TLV)")
+        # the lines a host looks up by label (oep-spec host-development-guide §8.1): `<slot>.nrst`, `<slot>.power_hi`
+        labels = []
+        if r.reset_channel is not None:
+            labels.append((r.reset_channel, f"{name}.nrst"))
+        if self.power is not None:
+            labels.append((self.power, f"{name}.power_hi"))
+        r.labels = labels
+        for ch, text in labels:
+            self.say(f"label: oep config label {self.probe} {ch} {text}" + ("" if self.save else "   (not written)"))
+        if self.power is not None:
+            self.say(f"idle:  oep config idle {self.probe} {self.power} output-high   (keeps the target powered while no "
+                     f"plan holds channel {self.power}; not written by this tool)")
         if self.save:
             kw = dict(slot=self.slot_no, wire_fn=self.wire.fn, pins=self.pins, name=name,
                       max_speed=(fam.max_speed or 0) if fam else 0,
@@ -566,7 +576,7 @@ class PinFinder:
             core.plan_release(self.hst)                    # a slot's pins must be free of this run's plans
             self.planned = []
             cfg = config.ProbeConfig(self.hst)
-            cfg.set([config.Slot(**kw)])
+            cfg.set([config.Slot(**kw)] + [config.Label(channel=ch, text=text) for ch, text in labels])
             cfg.save()
             r.saved = True
             self.say(f"  written to slot {self.slot_no} and saved")

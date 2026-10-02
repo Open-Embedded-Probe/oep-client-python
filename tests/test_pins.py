@@ -108,7 +108,8 @@ def test_finds_the_swio_pin_and_the_reset_line_without_being_told():
     assert r.family == "ch32v00x" and r.target_id.startswith("00310510") and r.nrst_enabled is True
     assert r.reset_channel == 4 and r.reset_dpc == 0
     assert "--wire swio --pins 19" in r.slot and not r.saved
-    assert any("reset_channel 4" in line for line in lines)  # as a comment while config.Slot has none
+    assert any("label" in line and " 4 " in line and ".nrst" in line for line in lines)   # the reset line as a label
+    assert any(".power_hi" in line for line in lines) and any("output-high" in line for line in lines)
     assert r.elapsed_s < 60
 
 
