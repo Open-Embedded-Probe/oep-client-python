@@ -36,6 +36,14 @@ define:
   is refused everywhere with unavailable cause 5 and never parked: `parked` records the free pins' states it set -
   idle modes 3 / 4 drive their level, refused unsupported on `input_only` channels; every release goes there, and a
   gpio line taken keeps that state until its first set)
+- the output strength (fixture §1.1): the profiles' gpio declare drive_levels (`fake.DRIVE_LEVELS_MA`, default
+  `fake.DRIVE_DEFAULT`; `fake.without_drive_levels` makes a probe without them); set's drive TLVs per element (the
+  malformed and ignored rules), the effective strength (`gpio_drive`: the set's drive, else the idle item's, else the
+  default; taken and released lines at the idle state's, `parked_drive`), read's drive TLV; the idle item's drive
+- the slot's boot_reset and the retry with reset (probe.config §1.1 / §3.1): after an automatic attach got no answer
+  (a `FakeTarget.silent_until_reset` target answers nothing until a reset through its line), once per boot and only
+  before any session took the lock, through the `nrst` line found by §1.3 (`line_for`), hold
+  slot_retry_reset_hold_ms; `slot_reset_log`, slot_state's reset_at_ns
 - the serial ports' raw side (core §3.4, probe.config §1.2): `port_input` / `port_output` carry the bytes outside
   the frames for each serial port by its bind; a port the lock holder's requests came in on is held until the
   session ends, then resumes from the session's last host reset. The byte framing itself is `fake_serial`.
@@ -64,7 +72,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Callable
 
-from . import catalog, fake, fake_capture, message as m, registry as reg
+from . import catalog, config as cfgmod, fake, fake_capture, message as m, registry as reg
 
 TOY_WRITE, TOY_READ = 0x01, 0x02
 OK, WAIT, LINE, FAULT, TIMEOUT, STATE = (reg.STATUS[k] for k in ("ok", "wait", "line", "fault", "timeout", "state"))
@@ -102,6 +110,12 @@ TARGET_ROLES = {"oep.fixture.gpio": {1}, "oep.fixture.uart": {1, 2}, _I2C.name: 
 UART_FORMAT_MASK = 0x1F                                    # the defined format bits (fixture §2)
 UART_CONFIGURED = _UART.enum["uart_configured"]            # status's configured byte: default / session / item / item_fallback
 _T_SCAN, _T_ATTACH, _T_DETACH, _T_ATTACH_ANSWER = (reg.WIRE_RVSWD.tlv[k] for k in ("scan", "attach", "detach", "attach_answer"))
+GPIO_SET_DRIVE, GPIO_READ_DRIVE = _GPIO.tlv["set"]["drive"], _GPIO.tlv["read_answer"]["drive"]
+DRIVE_KIND = _GPIO.enum["drive_kind"]                      # 0 a level number, 1 an mA ceiling (fixture §1.1)
+NOT_DRIVEN = _GPIO.enum["drive_read"]["not_driven"]
+OUTPUT_MODES = (_GPIO.enum["mode"]["output_low"], _GPIO.enum["mode"]["output_high"])   # the modes a strength applies to
+SLOT_BOOT_RESET = _CFG.enum["slot_boot_reset"]
+RETRY_RESET_HOLD_MS = reg.TIMING["slot_retry_reset_hold_ms"]   # the retry with reset's hold (probe.config §3.1)
 
 
 class Reject(Exception):
@@ -167,6 +181,7 @@ class Take:
         """-> (known tags without the critical bit -> value, ignored non-critical tags)."""
         rest, at, got, ignored = self.data[self.at:], 0, {}, []
         self.critical = set()                                      # known tags that came with the critical bit
+        self.repeated: list[tuple[int, bytes]] = []                # every known TLV in order, critical bit kept (got: the last)
         while at < len(rest):
             if at + 2 > len(rest):
                 raise Reject(m.MALFORMED)
@@ -187,6 +202,7 @@ class Take:
                 raise Reject(m.MALFORMED)
             if tag & 0x7F in known:
                 got[tag & 0x7F] = value
+                self.repeated.append((tag, value))
                 if tag & m.TAG_CRITICAL:
                     self.critical.add(tag & 0x7F)
             elif tag & m.TAG_CRITICAL:
@@ -225,6 +241,15 @@ class FakeTarget:
     run_hook: Callable | None = None
     unstoppable: bool = False                          # run: the limit passes and the hart cannot be halted (stopped 2)
     reset_line: int | None = None                      # the channel wired to its reset (None: any reset channel resets it)
+    silent_until_reset: bool = False                   # answers nothing on the wire until a reset through its line
+
+    @property
+    def answers(self) -> bool:
+        """Something answers on the wire now (scan, attach): present, and not stuck until a reset."""
+        return self.present and not self.silent_until_reset
+
+    def resets_through(self, channel: int) -> bool:
+        return self.reset_line in (None, channel)
 
     def dmstatus(self) -> int:
         return 0x82 | ((0x300 if self.halted else 0xC00)) | (0xC0000 if self.havereset else 0)
@@ -314,6 +339,7 @@ class Slot:
     mechanism: int
     name: str
     lock: tuple[int, bytes, bytes] | None              # (scheme, mask, value)
+    boot_reset: int = 0                                # 1: the at-boot attach retries once with the reset line (§3.1)
 
 
 def _bind_streams(v: bytes) -> list[int]:
@@ -341,6 +367,7 @@ class SlotRuntime:
     evicted: bool = False                              # the seat rule closed its connection: no retry until a new cue
     mismatch_tid: int | None = None                    # what the last automatic attach saw when the lock did not match
     no_tid: bool = False                               # ... or it saw no target_id to check a lock against
+    reset_at_ms: int | None = None                     # when the retry with reset started pulling the line (§3.1)
 
 
 @dataclass
@@ -460,6 +487,14 @@ class Endpoint:
         self.gpio_allowed = {fn: next((struct.unpack_from("<I", t, 2)[0] for t in self.static[fn]
                                        if t[0] == fake.GPIO_MODES), 0xFF)
                              for fn, name in self.names.items() if name == "oep.fixture.gpio"}
+        # the output strengths (fixture §1.1, drive_levels): (default level, [approximate mA per level]) or None - one
+        # declaration for the whole probe (every gpio fn declares the same)
+        self.drive_levels: tuple[int, list[int]] | None = None
+        for fn, name in sorted(self.names.items()):
+            for t in self.static[fn] if name == "oep.fixture.gpio" else ():
+                if t[0] == fake.GPIO_DRIVE_LEVELS:
+                    default, n = t[2], t[3]
+                    self.drive_levels = (default, list(struct.unpack_from(f"<{n}H", t, 4)))
         self.uart_formats = {fn: next((set(t[3:3 + t[2]]) for t in self.static[fn] if t[0] == fake.UART_FORMATS), {0})
                              for fn, name in self.names.items() if name == "oep.fixture.uart"}
         self.uart_max_hz = {fn: next((struct.unpack_from("<I", t, 2)[0] for t in self.static[fn] if t[0] == catalog.MAX_CLOCK_HZ),
@@ -520,6 +555,11 @@ class Endpoint:
         self.gpio_modes: dict[int, int] = {}
         self.gpio_inputs: dict[int, int] = {}
         self.gpio_log: list[tuple[int, int]] = []
+        self.gpio_drive: dict[int, int] = {}           # channel -> the level it is driven at in mode 3 / 4 (fixture §1.1)
+        self.parked_drive: dict[int, int] = {}         # channel -> the level a free pin's output idle drives at
+        self.lock_taken = False                        # a session has taken the lock since boot (probe.config §3.1)
+        self.reset_retried: set[int] = set()           # slots that had their retry with reset this boot
+        self.slot_reset_log: list[tuple[int, int, int]] = []   # (slot, channel, hold_ms) of every retry with reset
         self.uarts: dict[int, Stream] = {}             # fn -> stream (while its plan has RX or TX)
         self.uart_carry: dict[int, tuple[int, int]] = {}   # fn -> (position, mark serial) a released stream left off at
         self.uart_baud: dict[int, tuple[int, int, int]] = {}   # fn -> (baud, format, uart_configured) in force
@@ -584,6 +624,31 @@ class Endpoint:
                 continue
             item = self.config.get((ITEM["idle"], ch))
             self.parked[ch] = item[2] if item else 0               # 0 = Hi-Z
+            level = self._idle_level(ch)
+            if level is None:
+                self.parked_drive.pop(ch, None)
+            else:
+                self.parked_drive[ch] = level                      # an output idle drives at the idle's strength
+
+    def _drive_level(self, kind: int, value: int) -> int | None:
+        """The level a strength specification (fixture §1.1) picks: kind 0 the level number (None: not a level),
+        kind 1 the strongest level of value mA or less (level 0 when every level is stronger)."""
+        default, ma = self.drive_levels
+        if kind == DRIVE_KIND["level"]:
+            return value if value < len(ma) else None
+        return max((i for i, x in enumerate(ma) if x <= value), default=0)
+
+    def _idle_level(self, ch: int) -> int | None:
+        """The level the idle state of `ch` drives at: None when it is not an output idle (or the probe declares no
+        drive_levels); the idle's drive when it has one, else the default level (fixture §1.1)."""
+        item = self.config.get((ITEM["idle"], ch))
+        if self.drive_levels is None or not item or item[2] not in OUTPUT_MODES:
+            return None
+        if len(item) >= 6:
+            level = self._drive_level(item[3], struct.unpack_from("<H", item, 4)[0])
+            if level is not None:
+                return level
+        return self.drive_levels[0]
 
     @property
     def target_id(self) -> int | None:
@@ -1005,6 +1070,7 @@ class Endpoint:
             self.owner = owner
         self.holder = self.last = session
         self.last_swept = False
+        self.lock_taken = True                                     # no retry with reset after this, this boot (§3.1)
         self.resend.clear()
         self.newest_corr = None
         if lease == 0:
@@ -1224,17 +1290,21 @@ class Endpoint:
         released = {a[2] for a in old} - {a[2] for a in got}
         for ch in {a[2] for a in old} - kept:
             self.gpio_modes.pop(ch, None)
+            self.gpio_drive.pop(ch, None)
         self.plan = {a for a in self.plan if a[0] not in fns}
         self._park(released)
         self.plan |= set(got)
         for fn, _, ch in got:
             if ch not in kept and self.names.get(fn) == "oep.fixture.gpio" and self.parked.get(ch, 0):
                 self.gpio_modes[ch] = self.parked[ch]
+                if ch in self.parked_drive:                        # taken: the idle state's strength until a set
+                    self.gpio_drive[ch] = self.parked_drive[ch]
 
     def _drop_plan(self, fn: int) -> None:
         released = set()
         for a in [a for a in self.plan if a[0] == fn]:
             self.gpio_modes.pop(a[2], None)
+            self.gpio_drive.pop(a[2], None)
             self.plan.discard(a)
             released.add(a[2])
         self.plan_from_config.discard(fn)
@@ -1463,7 +1533,7 @@ class Endpoint:
             found = []
             for p in pairs:
                 tg = self._target(fn, p)
-                if tg.present:                                     # a live connection's pair: read over it, no restart
+                if tg.answers or self._conn_at(fn, p) is not None:   # a live connection's pair: read over it, no restart
                     found.append(m.element(struct.pack("<BHHI", 1, *p, tg.dmstatus())))
             return m.COMPLETED, m.SUCCESS, struct.pack("<BB", len(pairs), len(found)) + b"".join(found)
         if op == 0x02:                                             # attach: method(u8) [TLV] (oep-if-debug §3)
@@ -1497,8 +1567,10 @@ class Endpoint:
             speed = min(4_000_000, struct.unpack("<I", got[_T_ATTACH["max_speed"]])[0])
             cid = self._conn_at(fn, pair)
             flags = 0
+            if reset is not None and tg.resets_through(channel):
+                tg.silent_until_reset = False                      # held in reset and let go: it answers again
             if cid is None:
-                if not tg.present:
+                if not tg.answers:
                     return m.COMPLETED, m.FAILED, bytes([LINE])    # failed: status [TLV] (common §3)
                 cid = self._seat(fn, pair, tg, speed)              # a failed attach consumed no number
                 if tg.havereset:
@@ -1583,13 +1655,6 @@ class Endpoint:
         if live or len(allowed) != 1:
             raise Reject(m.UNAVAILABLE)                            # the host chooses among several
         return allowed[0]
-
-    def _channel_named(self, name: str) -> int | None:
-        labels = dict(self.static_labels)
-        for (tag, key), value in self.config.items():
-            if tag == ITEM["label"]:
-                labels[key] = value[2:].decode("utf-8", "replace")
-        return next((ch for ch, n in labels.items() if n == name), None)
 
     def _conn_at(self, fn: int, pair: tuple[int, int]) -> int | None:
         return next((cid for cid, c in self.conns.items() if c.fn == fn and c.pair == pair), None)
@@ -1941,11 +2006,13 @@ class Endpoint:
         if op == _GPIO.op["set"]:
             n = t.take("B")
             pairs = [t.take("HB") for _ in range(n)]
-            t.tail()
+            # drive (fixture §1.1): a probe without drive_levels does not know the tag (all of them ignored)
+            got, ignored = t.tail({GPIO_SET_DRIVE} if self.drive_levels is not None else set())
             index_tag = _GPIO.tlv["unavailable_payload"]["index"]
             for i, (ch, mode) in enumerate(pairs):                 # core §4.3's order: malformed, unsupported, unavailable
                 if mode > 7:
                     raise Reject(m.MALFORMED)
+            drives = self._set_drives(t, pairs, ignored)
             for i, (ch, mode) in enumerate(pairs):
                 if not self.gpio_allowed.get(fn, 0xFF) >> mode & 1:   # a mode it does not drive (fixture §1)
                     raise unsupported_fixed(m.tlv(_UNA["channel"], struct.pack("<H", ch)), m.tlv(index_tag, bytes([i])))
@@ -1953,10 +2020,17 @@ class Endpoint:
                 self._refuse_disabled([ch], m.tlv(index_tag, bytes([i])))   # disabled: cause 5 (probe.config §1)
                 if ch not in mine:                                 # the position as the gpio's TLV (fixture §1)
                     raise unavailable(channel=ch, extra=m.tlv(index_tag, bytes([i])))
-            for ch, mode in pairs:
+            for i, (ch, mode) in enumerate(pairs):
                 self.gpio_modes[ch] = mode
                 self.gpio_log.append((ch, mode))
-            return m.COMPLETED, m.SUCCESS, b""
+                if mode in OUTPUT_MODES and self.drive_levels is not None:   # the effective strength (fixture §1.1)
+                    level = drives.get(i)
+                    if level is None:
+                        level = self._idle_level(ch)
+                    self.gpio_drive[ch] = self.drive_levels[0] if level is None else level
+                else:
+                    self.gpio_drive.pop(ch, None)
+            return self._answer(b"", ignored)
         if op == _GPIO.op["read"]:
             n = t.take("B")
             chans = [t.take("H") for _ in range(n)]
@@ -1971,8 +2045,38 @@ class Endpoint:
                 outside = self.gpio_world(ch, mode) if self.gpio_world and mode in (0, 1, 2, 6, 7) else None
                 levels.append(outside if outside is not None else
                               {1: 1, 3: 0, 4: 1, 5: 0, 6: 1}.get(mode, self.gpio_inputs.get(ch, 0)))
-            return self._answer(bytes([len(levels)]) + bytes(levels), ignored)   # n(u8) n x level (fixture §1)
+            drive = b""
+            if self.drive_levels is not None:                      # read's drive: the level in mode 3 / 4, else 0xFF
+                drive = m.tlv(GPIO_READ_DRIVE, bytes(self.gpio_drive.get(ch, NOT_DRIVEN)
+                                                     if self.gpio_modes.get(ch, 0) in OUTPUT_MODES else NOT_DRIVEN
+                                                     for ch in chans))
+            return self._answer(bytes([len(levels)]) + bytes(levels) + drive, ignored)   # n(u8) n x level [TLV] (fixture §1)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
+
+    def _set_drives(self, t: Take, pairs: list[tuple[int, int]], ignored: list[int]) -> dict[int, int]:
+        """set's drive TLVs (fixture §1.1) -> {element index: level}. malformed (the whole request): a value that is not
+        4 bytes, index n or more, the same index twice, an undefined kind, an element whose mode is not 3 / 4; kind 0
+        with a level number past the levels is ignored (listed in `ignored`; critical: unsupported, core §2.3)."""
+        out, seen, drives = {}, set(), []
+        for tag, value in getattr(t, "repeated", []):
+            if tag & 0x7F != GPIO_SET_DRIVE:
+                continue
+            if len(value) != 4:
+                raise Reject(m.MALFORMED)
+            index, kind, v = struct.unpack("<BBH", value)
+            if index >= len(pairs) or index in seen or kind not in DRIVE_KIND.values() or pairs[index][1] not in OUTPUT_MODES:
+                raise Reject(m.MALFORMED)
+            seen.add(index)
+            drives.append((tag, index, kind, v))
+        for tag, index, kind, v in drives:                         # every form checked first (core §4.3's order)
+            level = self._drive_level(kind, v)
+            if level is None:
+                if tag & m.TAG_CRITICAL:
+                    raise Reject(m.UNSUPPORTED, bytes([tag]))
+                ignored.append(GPIO_SET_DRIVE)                     # one entry per ignored drive
+                continue
+            out[index] = level
+        return out
 
     # ---- oep.fixture.uart -----------------------------------------------------------------------
     def _uart(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
@@ -2423,10 +2527,18 @@ class Endpoint:
                 if key not in self.names or key == m.CORE_FN:
                     raise Reject(m.UNKNOWN_FUNCTION if key else m.MALFORMED)
             elif tag == ITEM["idle"]:
-                if len(value) != 3 or value[2] > IDLE_MODE["output_high"]:
+                # channel mode [drive_kind drive_value] (probe.config §1): 4 or 5 bytes, an undefined kind, a drive on
+                # a mode other than 3 / 4 are malformed; past the drive, later fields (skipped)
+                if len(value) < 3 or len(value) in (4, 5) or value[2] > IDLE_MODE["output_high"]:
                     raise Reject(m.MALFORMED)
-                if value[2] in (IDLE_MODE["output_low"], IDLE_MODE["output_high"]) and key in self.input_only:
+                output = value[2] in (IDLE_MODE["output_low"], IDLE_MODE["output_high"])
+                if len(value) >= 6 and (not output or value[3] not in DRIVE_KIND.values()):
+                    raise Reject(m.MALFORMED)
+                if output and key in self.input_only:
                     raise unsupported_fixed(m.tlv(_UNA["channel"], struct.pack("<H", key)))   # cannot drive it (§1)
+                if (len(value) >= 6 and self.drive_levels is not None and value[3] == DRIVE_KIND["level"]
+                        and struct.unpack_from("<H", value, 4)[0] >= len(self.drive_levels[1])):
+                    raise unsupported_fixed(m.tlv(_UNA["channel"], struct.pack("<H", key)))   # no such level (§1)
             elif tag == ITEM["disable"] and key not in self._all_channels():
                 # a channel the firmware does not declare: unsupported, as idle (probe.config §1)
                 raise unsupported_fixed(m.tlv(_UNA["channel"], struct.pack("<H", key)))
@@ -2521,9 +2633,14 @@ class Endpoint:
         n, wire_fn, swdio, swclk, attach, retry_ms, max_speed, idle_clock, mech, name_len = t.take("BHHHBIIBBB")
         name = t.bytes(name_len)
         lock_len = t.take("B")                                     # the lock's part; 0 = none (probe.config §1.1)
-        lock_part = t.bytes(lock_len)                              # what follows is for later fields: skipped (core §2.3)
+        lock_part = t.bytes(lock_len)
+        boot_reset = t.take("B") if t.at < len(v) else SLOT_BOOT_RESET["off"]   # optional; then later fields, skipped
         if n >= self.slots_max or attach not in SLOT_ATTACH.values():
             raise Reject(m.MALFORMED)
+        if boot_reset not in SLOT_BOOT_RESET.values():
+            raise Reject(m.MALFORMED)                              # 2 or more (probe.config §1.1)
+        if boot_reset and attach != SLOT_ATTACH["at_boot"]:
+            raise Reject(m.MALFORMED)                              # boot_reset 1 on a slot that is not at boot
         if retry_ms and attach != SLOT_ATTACH["at_boot"]:
             raise Reject(m.MALFORMED)
         if idle_clock > 1:
@@ -2553,7 +2670,8 @@ class Endpoint:
             if half != TARGET_ID_LEN:
                 raise Reject(m.MALFORMED)                          # the lock's length is the scheme's value's (§1.1)
             lock = (scheme, lock_part[1:1 + half], lock_part[1 + half:])
-        return Slot(n, wire_fn, (swdio, swclk), attach, retry_ms, max_speed, idle_clock, mech, name.decode(), lock)
+        return Slot(n, wire_fn, (swdio, swclk), attach, retry_ms, max_speed, idle_clock, mech, name.decode(), lock,
+                    boot_reset)
 
     def _parse_bind(self, v: bytes, slots: dict[int, Slot]) -> Bind:
         if len(v) < 4:
@@ -2608,8 +2726,9 @@ class Endpoint:
         tg = self._target(s.wire_fn, s.pair)
         cid = self._conn_at(s.wire_fn, s.pair)
         if cid is None:
-            if not tg.present:
-                return
+            if not tg.answers:                                     # completed failed, status line
+                if not self._retry_with_reset(n):
+                    return
             try:
                 speed = min(4_000_000, s.max_speed) if s.max_speed else 4_000_000   # the slot's line settings
                 cid = self._seat(s.wire_fn, s.pair, tg, speed, evict=False)   # automatic: never evicts
@@ -2627,6 +2746,35 @@ class Endpoint:
             rt.mismatch_tid = c.tid                                # found, wrong chip (or no id): let go of it
             if not c.users:
                 self._close_conn(cid, MARK["detach"])
+
+    def _retry_with_reset(self, n: int) -> bool:
+        """probe.config §3.1: after an automatic attach of a boot_reset slot failed with status line, once per boot and
+        only while no session has taken the lock since boot, the same attach again with the reset line (`nrst` by the
+        §1.3 search, usable for that wire's reset TLV: role 3, not disabled, not held by a plan or a connection), held
+        slot_retry_reset_hold_ms. -> True when the target answers after it."""
+        s, rt = self.slots[n], self.slot_rt[n]
+        if s.boot_reset != SLOT_BOOT_RESET["retry_with_reset"] or self.lock_taken or n in self.reset_retried:
+            return False
+        ch = self.line_for(s.name, "nrst")
+        if (ch is None or ch not in self.reset_channels.get(s.wire_fn, set()) or ch in self.disabled
+                or any(a[2] == ch for a in self.plan) or any(ch in c.pair for c in self.conns.values())):
+            return False
+        self.reset_retried.add(n)
+        rt.reset_at_ms = self.now()                                # the time it starts pulling the line
+        self.slot_reset_log.append((n, ch, RETRY_RESET_HOLD_MS))
+        tg = self._target(s.wire_fn, s.pair)
+        if tg.resets_through(ch):
+            tg.silent_until_reset = False
+            if tg.present:
+                tg.halted, tg.dpc, tg.havereset = False, tg.reset_vector + 0x200, True   # method 0: running from reset
+        return tg.answers                                          # the bind selection stays (the probe's own attach)
+
+    def line_for(self, slot_name: str | None, name: str) -> int | None:
+        """The channel of a line by the label convention (probe.config §1.3) over the settings' label items."""
+        labels = [(key, value[2:].decode("utf-8", "replace")) for (tag, key), value in self.config.items()
+                  if tag == ITEM["label"]]
+        n_slots = sum(1 for tag, _ in self.config if tag == ITEM["slot"])
+        return cfgmod.line_from_labels(labels, n_slots, slot_name, name)
 
     def _refresh(self) -> None:
         """Make what the slots use match the config: a bound slot rides any connection on its place (lock
@@ -2690,8 +2838,9 @@ class Endpoint:
             state = (SLOT_STATE["no_target_id"] if rt.no_tid else
                      SLOT_STATE["lock_mismatch"] if rt.mismatch_tid is not None else SLOT_STATE["absent"])
         tried = NEVER_NS if rt.last_try_ms is None else rt.last_try_ms * 1_000_000   # when (the probe's clock, ns)
+        reset_at = NEVER_NS if rt.reset_at_ms is None else rt.reset_at_ms * 1_000_000   # the retry with reset (§3.1)
         raw = b"" if tid is None else struct.pack("<I", tid)
-        return struct.pack("<BBHQBB", n, state, cid or 0, tried, 1 if raw else 0, len(raw)) + raw
+        return struct.pack("<BBHQBB", n, state, cid or 0, tried, 1 if raw else 0, len(raw)) + raw + struct.pack("<Q", reset_at)
 
     def _bind_state(self, port: int) -> bytes:
         b = self.binds[port]

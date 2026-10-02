@@ -123,32 +123,45 @@ def S(n, name):
 
 def test_find_line_slot_name_first_then_the_bare_name_on_one_slot():
     items = [S(0, "x035"), L(5, "nrst"), L(6, "x035.nrst"), L(7, "power_hi")]
-    assert config.find_line(items, "nrst") == 6                      # <slot>.<name> first
-    assert config.find_line(items, "nrst", slot="x035") == 6
-    assert config.find_line(items, "nrst", slot=0) == 6
-    assert config.find_line(items, "power_hi") == 7                  # then the bare name (one slot)
-    assert config.find_line(items, "power_lo") is None
-    assert config.find_line([L(7, "power_lo")], "power_lo") == 7      # no slot at all: the bare name
+    assert config.find_line(items, "x035", "nrst") == 6               # <slot>.<name> first (probe.config §1.3)
+    assert config.find_line(items, None, "nrst") == 6                 # None: the one slot
+    assert config.find_line(items, 0, "nrst") == 6                    # or its number
+    assert config.find_line(items, "x035", "power_hi") == 7           # then the bare name (one slot)
+    assert config.find_line(items, "x035", "power_lo") is None
+    assert config.find_line([L(7, "power_lo")], None, "power_lo") == 7   # no slot item: the bare name
     with pytest.raises(LookupError, match="no slot 3"):
-        config.find_line(items, "nrst", slot=3)
+        config.find_line(items, 3, "nrst")
+
+
+def test_find_line_ignores_ascii_case():
+    items = [S(0, "x035"), L(6, "X035.NRST"), L(7, "Power_Hi")]
+    assert config.find_line(items, "x035", "nrst") == 6
+    assert config.find_line(items, "x035", "POWER_HI") == 7
+    assert config.find_line([L(4, "nrst\u0130")], None, "nrst\u0069") is None   # only A-Z fold
 
 
 def test_find_line_several_slots():
     items = [S(0, "a"), S(1, "b"), L(5, "a.nrst"), L(6, "b.nrst"), L(7, "power_hi")]
-    assert config.find_line(items, "nrst", slot="b") == 6
-    assert config.find_line(items, "power_hi", slot="a") is None     # no bare name on a probe with several slots
-    with pytest.raises(config.AmbiguousLine, match="a.nrst \\(channel 5\\), b.nrst \\(channel 6\\)") as e:
-        config.find_line(items, "nrst")
-    assert e.value.candidates == [("a.nrst", 5), ("b.nrst", 6)]
-    assert config.find_line(items, "power_lo") is None
-    with pytest.raises(config.AmbiguousLine):
-        config.find_line([L(5, "nrst"), L(6, "nrst")], "nrst")       # one name on two channels
+    assert config.find_line(items, "b", "nrst") == 6
+    assert config.find_line(items, "a", "power_hi") is None           # no bare name with two or more slot items
+    assert config.find_line(items, "c", "power_hi") is None
+    with pytest.raises(ValueError, match="name the slot"):
+        config.find_line(items, None, "nrst")
+
+
+def test_find_line_ambiguous_is_none_without_falling_through():
+    two = [S(0, "a"), L(5, "a.nrst"), L(6, "A.Nrst"), L(7, "nrst")]
+    assert config.find_line(two, "a", "nrst") is None                 # two at the <slot>.<name> step: none (not 7)
+    assert config.find_line([S(0, "a"), L(5, "nrst"), L(6, "NRST")], "a", "nrst") is None   # two bare ones
+    assert config.find_line([L(5, "nrst"), L(6, "nrst")], None, "nrst") is None            # no slot items
+    assert config.line_from_labels([(5, "a.nrst"), (6, "nrst")], 2, "a", "nrst") == 5
+    assert config.line_from_labels([(6, "nrst")], 2, "a", "nrst") is None
 
 
 def test_find_line_reads_the_probe():
     ep, hst = open_bench()
     config.ProbeConfig(hst).set([config.Label(channel=20, text="power_hi")])
-    assert config.find_line(hst, "power_hi") == 20
+    assert config.find_line(hst, None, "power_hi") == 20
 
 
 def test_replacing_a_gpio_plan_keeps_the_channels_in_both():

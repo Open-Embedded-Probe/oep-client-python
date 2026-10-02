@@ -37,8 +37,8 @@ X.Y.Z（v1 の凍結までは、どのリリースも wire を壊しうるので
 | `targets` | host が target の系統ごとに知っていることを 1 つの表に（`FAMILIES`: 線、target_id の照合、リセットのベクタ、NRST を option で読む関数、max_speed / idle_clock）。`identify(target_id)` |
 | `pins` | `oep pins`: channel の分類、low に保つ探索、scan、識別、リセットの線の確かめ、スロットの提案（`PinFinder`） |
 | `console` | `oep.target.console`（位置つきのストリーム: read の応答は長さを持ち、マークは `time_ns`、ロック不要の `streams()`）と、バイト列として読む `ConsoleIO` |
-| `fixture` | `oep.fixture.gpio` / `uart`（ストリームは plan が作る。`status()`）/ `i2c-target` / `spi-target`（revision 1） |
-| `config` | `oep.probe.config`（スロット、bind、plan / label / idle / uart の項目、get / set / unset / save / erase。`describe()` = 宣言、`state()` = 保存・スロット・bind の今の状態、`hash_of(items)` = probe と同じ hash） |
+| `fixture` | `oep.fixture.gpio`（出力の強さを要素ごとに: `set([(ch, mode, Drive.max_ma(10))])`。`drive_levels()`、`read_state()` = level といま効いている段）/ `uart`（ストリームは plan が作る。`status()`）/ `i2c-target` / `spi-target`（revision 1） |
+| `config` | `oep.probe.config`（スロット - `boot_reset` -、bind、plan / label / idle - その `drive` - / uart の項目、get / set / unset / save / erase。`describe()` = 宣言、`state()` = 保存・スロット・bind の今の状態（`reset_at_ns` も）、`hash_of(items)` = probe と同じ hash、`find_line(cfg, slot, "nrst")` = probe.config §1.3 の線の探し方） |
 | `capture` | `oep.fixture.logic` / `analog` / `capture-group`（revision 1、oep-spec の oep-if-capture）。start ごとに世代（`LogicCapture.generation`）が進み、read と release はそれを付ける（`read_segment(segment)` は自分で付ける）。`status()` は `Status` を返す。読んだ区画は `Host.on_capture` の callback に `CaptureRecord` で渡る（記録の受け口。wireskein には依存しない） |
 | `decode` | キャプチャのチャネルの復号（I2C） |
 | `registry` | oep-spec の番号の表から生成したモジュール（編集しない。oep-spec から写し直す）。名前からインターフェースの番号を引く公開の入口は `registry.INTERFACES[name]`（`.revision`、`.op`、`.tlv`、`.enum`。例 `INTERFACES["oep.fixture.uart"].enum["role"]`）。`FIXTURE_UART` などのモジュールの名前は同じもの |
@@ -106,7 +106,8 @@ oep pins <probe> --power 5 --wire swio       # target のつながり方: debug 
 4. **identify**: 答えた線に attach（halt）し、target_id で系統を見る。CH32V00x は option bytes で NRST の有無を見る（読むだけ、
    書かない）。その後 resume。
 5. **reset**: 候補ごとにリセットをかけながら attach する。本物の線なら hart はリセットのベクタで止まる。
-6. **slot**: `oep config slot` の行を勧める（`config.Slot` に `reset_channel` が無い間、リセットの channel はコメント）。
+6. **slot**: `oep config slot` の行と、label `<スロット>.nrst` / `<スロット>.power_hi` を勧める。label は probe の設定に対して
+   `config.find_line` で確かめる（別の channel がもうその名前を持っていれば、線が見つからなくなるので note で言う）。
    `--save` で書く（set + save）。`--save` が無ければ何も書かない。
 
 安全: driven / active の channel は駆動も scan も保持もしない。電源の channel は `--power` のときだけ触る。low に保つのは

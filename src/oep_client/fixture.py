@@ -17,15 +17,81 @@ from .core import Interface, describe
 
 _GPIO, _UART, _I2C, _SPI = reg.FIXTURE_GPIO, reg.FIXTURE_UART, reg.FIXTURE_I2C_TARGET, reg.FIXTURE_SPI_TARGET
 _MODE = _GPIO.enum["mode"]
+DRIVE_KIND = _GPIO.enum["drive_kind"]
+NOT_DRIVEN = _GPIO.enum["drive_read"]["not_driven"]
+
+
+@dataclass(frozen=True)
+class Drive:
+    """An output strength (oep-if-fixture §1.1), for gpio set and the settings' idle: a level number of the probe's
+    drive_levels (kind 0), or an mA ceiling (kind 1: the strongest level of about that many mA or less, level 0 when
+    every level is stronger). A ceiling carries over between probes; a level number is one probe's list."""
+    kind: int
+    value: int
+
+    @classmethod
+    def level(cls, n: int) -> "Drive":
+        return cls(DRIVE_KIND["level"], n)
+
+    @classmethod
+    def max_ma(cls, ma: int) -> "Drive":
+        return cls(DRIVE_KIND["max_ma"], ma)
+
+    @classmethod
+    def of(cls, drive: "Drive | int") -> "Drive":
+        """A Drive as it is, an int as a level number."""
+        return drive if isinstance(drive, Drive) else cls.level(int(drive))
+
+    def pack(self) -> bytes:
+        """kind(u8) value(u16), the form both places use."""
+        if self.kind not in DRIVE_KIND.values() or not 0 <= self.value <= 0xFFFF:
+            raise ValueError(f"drive kind {self.kind} value {self.value}: kind 0 (level) or 1 (max_ma), value u16")
+        return struct.pack("<BH", self.kind, self.value)
+
+    @classmethod
+    def unpack(cls, data: bytes) -> "Drive":
+        kind, value = struct.unpack_from("<BH", data)
+        return cls(kind, value)
+
+    def __str__(self) -> str:
+        return f"level {self.value}" if self.kind == DRIVE_KIND["level"] else f"<= {self.value} mA"
+
+
+@dataclass(frozen=True)
+class DriveLevels:
+    """describe drive_levels (fixture §1.1): the strengths the probe selects, approximate mA per level in ascending
+    order (a level's number is its position), and the default level."""
+    default: int
+    ma: tuple[int, ...]
+
+    def pick(self, drive: "Drive | int") -> int | None:
+        """The level a Drive selects here (None: a level number past the list - the probe ignores that drive)."""
+        d = Drive.of(drive)
+        if d.kind == DRIVE_KIND["level"]:
+            return d.value if d.value < len(self.ma) else None
+        return max((i for i, x in enumerate(self.ma) if x <= d.value), default=0)
+
+
+@dataclass(frozen=True)
+class GpioRead:
+    """read's answer: a level (0 / 1) per channel, and - from a probe that declares drive_levels - the level each
+    channel is driven at in mode 3 / 4 (None when it is not driven so); `drive` is None from a probe without them."""
+    levels: list[int]
+    drive: list[int | None] | None
 
 
 class Gpio(Interface):
     """oep.fixture.gpio. `set` applies (channel, mode) pairs in order in one request (pull NRST, then release it); a
     channel the plan did not assign or a mode the probe lacks rejects the whole list as unavailable (host.Unavailable:
-    .channels, and its position as TLV 0x40). The open-drain modes never drive a line high: the way to move a target's reset line."""
+    .channels, and its position as TLV 0x40). The open-drain modes never drive a line high: the way to move a target's reset line.
+    An output element (mode 3 / 4) may carry a strength (`Drive`, or an int level number) on a probe that declares
+    drive_levels (`drive_levels()`); without one it is driven at the idle item's strength, else the default."""
     NAME = "oep.fixture.gpio"
     REVISION = 1
     SET, READ = _GPIO.op["set"], _GPIO.op["read"]
+    TAG_DRIVE = _GPIO.tlv["set"]["drive"]                  # set's drive TLV (non-critical, one per element)
+    TAG_READ_DRIVE = _GPIO.tlv["read_answer"]["drive"]
+    TAG_MODES, TAG_DRIVE_LEVELS = _GPIO.tlv["describe"]["modes"], _GPIO.tlv["describe"]["drive_levels"]
     INPUT, INPUT_PULLUP, INPUT_PULLDOWN = _MODE["input"], _MODE["input_pullup"], _MODE["input_pulldown"]
     OUTPUT_LOW, OUTPUT_HIGH = _MODE["output_low"], _MODE["output_high"]
     OPEN_DRAIN_LOW, OPEN_DRAIN_RELEASE = _MODE["open_drain_low"], _MODE["open_drain_release"]
@@ -34,24 +100,53 @@ class Gpio(Interface):
     def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
         super().__init__(hst, name, fn=fn)
 
-    @staticmethod
-    def set_body(pairs: list[tuple[int, int]]) -> bytes:
-        return struct.pack("<B", len(pairs)) + b"".join(struct.pack("<HB", ch, mode) for ch, mode in pairs)
+    @classmethod
+    def set_body(cls, pairs: list[tuple]) -> bytes:
+        """n(u8) n x (channel(u16) mode(u8)), then a drive TLV (index kind value, non-critical) for each element that
+        carries a third item (a Drive or an int level number; None: none)."""
+        body = struct.pack("<B", len(pairs)) + b"".join(struct.pack("<HB", p[0], p[1]) for p in pairs)
+        for i, p in enumerate(pairs):
+            if len(p) > 2 and p[2] is not None:
+                body += m.tlv(cls.TAG_DRIVE, bytes([i]) + Drive.of(p[2]).pack())
+        return body
 
-    def set(self, pairs: list[tuple[int, int]]) -> None:
-        """[(channel, mode)], applied in order."""
-        self._call(self.SET, self.set_body(pairs))
+    def set(self, pairs: list[tuple]) -> list[int]:
+        """[(channel, mode)] or [(channel, mode, drive)], applied in order; drive only on mode 3 / 4 (anything else is
+        rejected malformed). -> the ignored list of the answer (core §2.3): one TAG_DRIVE per drive the probe did not
+        apply (a level number past its list, or a probe without drive_levels). `read_state` shows the level in force."""
+        r = self._call(self.SET, self.set_body(pairs))
+        return m.Reader(r.payload).tail().ignored
+
+    def drive_levels(self) -> DriveLevels | None:
+        """describe drive_levels (fixture §1.1): None when the probe cannot switch the output strength."""
+        for tag, v in describe(self.host, self.fn):
+            if tag & ~catalog.CRITICAL == self.TAG_DRIVE_LEVELS and len(v) >= 2 and len(v) >= 2 + 2 * v[1]:
+                return DriveLevels(v[0], struct.unpack_from(f"<{v[1]}H", v, 2))
+        return None
+
+    def modes(self) -> int:
+        """describe modes: a u32 bit set, bit n = mode n (0xFF when not declared)."""
+        for tag, v in describe(self.host, self.fn):
+            if tag & ~catalog.CRITICAL == self.TAG_MODES and len(v) >= 4:
+                return struct.unpack_from("<I", v)[0]
+        return 0xFF
 
     def configure(self, channel: int, mode: int) -> None:
         self.set([(channel, mode)])
 
     def read(self, channels: list[int]) -> list[int]:
         """-> one level (0 / 1) per channel. Lock-free. The answer is n(u8) n x level [TLV] (fixture §1)."""
+        return self.read_state(channels).levels
+
+    def read_state(self, channels: list[int]) -> GpioRead:
+        """-> the levels and, from a probe that declares drive_levels, the level each channel is driven at in mode 3 /
+        4 (read's answer TLV drive, fixture §1.1; the level's mA is in `drive_levels()`). Lock-free."""
         rd = m.Reader(self._call(self.READ, struct.pack("<B", len(channels))
                                  + b"".join(struct.pack("<H", c) for c in channels), locked=False).payload)
         levels = list(rd.counted("B"))
-        rd.tail()
-        return levels
+        raw = rd.tail().get(self.TAG_READ_DRIVE)
+        drive = None if raw is None else [None if b == NOT_DRIVEN else b for b in raw]
+        return GpioRead(levels, drive)
 
     def pull_low(self, channel: int) -> None:
         self.set([(channel, self.OPEN_DRAIN_LOW)])

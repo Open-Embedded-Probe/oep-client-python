@@ -564,6 +564,7 @@ class PinFinder:
         r.labels = labels
         for ch, text in labels:
             self.say(f"label: oep config label {self.probe} {ch} {text}" + ("" if self.save else "   (not written)"))
+        self._check_lines(name, labels)
         if self.power is not None:
             self.say(f"idle:  oep config idle {self.probe} {self.power} output-high   (keeps the target powered while no "
                      f"plan holds channel {self.power}; not written by this tool)")
@@ -580,6 +581,28 @@ class PinFinder:
             cfg.save()
             r.saved = True
             self.say(f"  written to slot {self.slot_no} and saved")
+
+    def _check_lines(self, name: str, labels: list[tuple[int, str]]) -> None:
+        """Would the suggested labels find their lines (probe.config §1.3, config.find_line) in the probe's settings
+        as they would be after them - the slot in place, each labelled channel relabelled? Another channel already
+        carrying the same name (any case) makes the line not found at all; say so, naming those channels."""
+        try:
+            items = config.ProbeConfig(self.hst).items()
+        except (LookupError, h.OepError):
+            items = []                                     # no oep.probe.config: nothing else to meet
+        relabelled = {ch for ch, _ in labels}
+        after = [it for it in items if not (isinstance(it, config.Label) and it.channel in relabelled)
+                 and not (isinstance(it, config.Slot) and (it.slot == self.slot_no or it.name == name))]
+        after += [config.Slot(slot=self.slot_no, wire_fn=self.wire.fn, pins=self.pins, name=name)]
+        after += [config.Label(channel=ch, text=text) for ch, text in labels]
+        for ch, text in labels:
+            line = text.rpartition(".")[2]
+            found = config.find_line(after, name, line)
+            if found != ch:
+                clash = sorted(it.channel for it in after if isinstance(it, config.Label) and it.channel != ch
+                               and config.fold_name(it.text) == config.fold_name(text))
+                self.note(f"label {text}: the settings already name channel(s) {clash} the same way - a host (and "
+                          f"the probe) would find no {line} line for slot {name}; relabel or remove those first")
 
     # ---- the run ----
     def run(self, steps=STEPS) -> Report:

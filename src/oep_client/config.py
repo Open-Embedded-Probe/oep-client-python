@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 
 from . import catalog, core, message as m, registry as reg
 from .core import Interface
+from .fixture import Drive
 
 _CFG = reg.PROBE_CONFIG
 ITEM = _CFG.tlv["item"]
@@ -36,7 +37,8 @@ IDLE = {k.replace("_", "-"): v for k, v in _CFG.enum["idle_mode"].items()}
 IDLE_CLOCK = dict(reg.WIRE_RVSWD.enum["idle_clock"])            # a slot's idle_clock (oep-if-debug §3)
 STORAGE_STATE = {v: k for k, v in _CFG.enum["storage_state"].items()}
 UNREADABLE = {1: "unreadable form", 2: "an interface it names is gone or of another revision", 3: "refused when applied"}
-NEVER_NS = 0xFFFFFFFFFFFFFFFF                                   # last_try_at_ns: never tried
+NEVER_NS = 0xFFFFFFFFFFFFFFFF                                   # last_try_at_ns: never tried; reset_at_ns: never done
+BOOT_RESET = _CFG.enum["slot_boot_reset"]
 SLOT_HEAD = struct.Struct("<BHHHBIIBBB")   # slot wire_fn swdio swclk attach retry_ms max_speed_hz idle_clock mechanism name_len
 
 
@@ -76,13 +78,19 @@ class Idle:
     """The state of a channel no plan or connection uses (probe.config §1): at boot and after every release. mode:
     hi-z, pull-up, pull-down, output-low, output-high (output_low / output_high too). An output mode keeps driving that
     level while the channel is free - a target's power switch kept on - and a gpio plan that takes the channel keeps
-    it until its first set (fixture §1); a probe that cannot drive the channel refuses it unsupported."""
+    it until its first set (fixture §1); a probe that cannot drive the channel refuses it unsupported.
+    drive (output modes only): the strength it drives at (`fixture.Drive`, or an int level number; fixture §1.1) -
+    also what a gpio set without its own drive uses on that channel. None: the default level. A probe without
+    drive_levels keeps it and drives at its default."""
     channel: int
     mode: str = "pull-up"          # hi-z, pull-up, pull-down, output-low, output-high
+    drive: Drive | int | None = None
     TAG = ITEM["idle"]
 
     def __post_init__(self):
         self.mode = self.mode.replace("_", "-")
+        if self.drive is not None:
+            self.drive = Drive.of(self.drive)
 
     def key(self) -> tuple:
         return (self.channel,)
@@ -90,7 +98,12 @@ class Idle:
     def value(self) -> bytes:
         if self.mode not in IDLE:
             raise ValueError(f"idle mode {self.mode!r}: one of {', '.join(IDLE)}")
-        return struct.pack("<HB", self.channel, IDLE[self.mode])
+        v = struct.pack("<HB", self.channel, IDLE[self.mode])
+        if self.drive is None:
+            return v
+        if self.mode not in ("output-low", "output-high"):
+            raise ValueError(f"idle mode {self.mode}: a drive goes with output-low / output-high only")
+        return v + self.drive.pack()                                # drive_kind(u8) drive_value(u16)
 
 
 @dataclass(kw_only=True)
@@ -123,6 +136,8 @@ class Slot:
     lock: tuple[int, bytes, bytes] | None = None
     max_speed: int = 0             # the line's ceiling in Hz for the probe's own attach (0: none) - the target's
     idle_clock: str = "high"       # rvswd: SWCLK while the line rests, high / low - the target's (oep-if-debug §3)
+    boot_reset: bool = False       # at-boot only: an automatic attach that got no answer is tried once more with the
+                                   # `nrst` line (probe.config §3.1), before any session took the lock this boot
     TAG = ITEM["slot"]
 
     def key(self) -> tuple:
@@ -133,12 +148,15 @@ class Slot:
         retry_ms = round(self.retry_s * 1000) if self.attach == "at-boot" else 0
         v = SLOT_HEAD.pack(self.slot, self.wire_fn, *self.pins, ATTACH[self.attach], retry_ms, self.max_speed,
                            IDLE_CLOCK[self.idle_clock], MECHANISM[self.mechanism], len(name)) + name
+        if self.boot_reset and self.attach != "at-boot":
+            raise ValueError("boot_reset goes with attach at-boot only")
+        tail = bytes([BOOT_RESET["retry_with_reset"]]) if self.boot_reset else b""   # after the lock; absent = 0
         if self.lock is None:
-            return v + b"\x00"                                    # lock_len 0: no lock
+            return v + b"\x00" + tail                             # lock_len 0: no lock
         scheme, mask, value = self.lock
         if len(mask) != len(value) or not mask or not scheme:
             raise ValueError("a lock has a scheme and a mask and value of the same length, at least 1 byte")
-        return v + bytes([1 + 2 * len(mask), scheme]) + mask + value
+        return v + bytes([1 + 2 * len(mask), scheme]) + mask + value + tail
 
 
 @dataclass(kw_only=True)
@@ -209,7 +227,8 @@ def decode(tag: int, v: bytes):
     if tag == ITEM["label"] and len(v) >= 2:
         return Label(channel=struct.unpack_from("<H", v)[0], text=v[2:].decode("utf-8", "replace"))
     if tag == ITEM["idle"] and len(v) >= 3:
-        return Idle(channel=struct.unpack_from("<H", v)[0], mode=_name(IDLE, v[2]))
+        return Idle(channel=struct.unpack_from("<H", v)[0], mode=_name(IDLE, v[2]),
+                    drive=Drive.unpack(v[3:6]) if len(v) >= 6 else None)
     if tag == ITEM["disable"] and len(v) >= 2:
         return Disable(channel=struct.unpack_from("<H", v)[0])
     if tag == ITEM["slot"] and len(v) >= SLOT_HEAD.size + 1:
@@ -218,7 +237,9 @@ def decode(tag: int, v: bytes):
         name = v[at:at + name_len].decode("ascii", "replace")
         at += name_len
         lock_len = v[at] if at < len(v) else 0
-        part = v[at + 1:at + 1 + lock_len]                         # after it: later fields (core §2.3), skipped
+        part = v[at + 1:at + 1 + lock_len]
+        at += 1 + lock_len
+        boot_reset = v[at] if at < len(v) else 0                   # optional; after it: later fields, skipped
         lock = None
         if lock_len >= 3:
             half = (lock_len - 1) // 2
@@ -226,7 +247,8 @@ def decode(tag: int, v: bytes):
         retry_s = retry_ms / 1000
         return Slot(slot=n, wire_fn=wire_fn, pins=(swdio, swclk), name=name, attach=_name(ATTACH, attach),
                     retry_s=int(retry_s) if retry_s == int(retry_s) else retry_s, mechanism=_name(MECHANISM, mech),
-                    lock=lock, max_speed=max_speed, idle_clock=_name(IDLE_CLOCK, idle))
+                    lock=lock, max_speed=max_speed, idle_clock=_name(IDLE_CLOCK, idle),
+                    boot_reset=boot_reset == BOOT_RESET["retry_with_reset"])
     if tag == ITEM["bind"] and len(v) >= 4:
         port, mode, selected, n = struct.unpack_from("<BBBB", v)
         streams, at = [], 4
@@ -271,6 +293,7 @@ class SlotState:
     connection: int
     last_try_at_ns: int | None     # the probe's clock when it last tried an automatic attach (None: never tried)
     target_id: bytes | None
+    reset_at_ns: int | None = None  # when the retry with reset (boot_reset, §3.1) started pulling the line (None: not done)
 
 
 @dataclass
@@ -392,8 +415,11 @@ class ProbeConfig(Interface):
             for _ in range(n_slots):
                 e = rd.element()
                 n, state, conn, tried, _scheme, tlen = e.take("BBHQBB")
+                tid = bytes(e.bytes(tlen)) or None
+                reset_at = e.u64()
                 st.slots.append(SlotState(n, SLOT_STATE.get(state, str(state)), conn,
-                                          None if tried == NEVER_NS else tried, bytes(e.bytes(tlen)) or None))
+                                          None if tried == NEVER_NS else tried, tid,
+                                          None if reset_at == NEVER_NS else reset_at))
             n_binds = rd.u8()
             for _ in range(n_binds):
                 port, mode, sel, flow = rd.element().take("BBBB")
@@ -406,48 +432,51 @@ class ProbeConfig(Interface):
             first_bind += n_binds
 
 
-# The label names of a target's power and reset lines (host-development-guide §8.1): `nrst` its reset, `power_hi` high
-# powers it, `power_lo` low powers it. On a probe with several slots they are `<slot name>.<name>`.
+# The line names of the label convention (probe.config §1.3): `nrst` a target's reset, `power_hi` high powers it,
+# `power_lo` low powers it. Per slot `<slot name>.<name>`; the bare name on settings with at most one slot.
 LINE_NAMES = ("nrst", "power_hi", "power_lo")
+_ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 
 
-class AmbiguousLine(LookupError):
-    """find_line could not tell which channel is meant; `candidates` holds (label text, channel)."""
-
-    def __init__(self, message: str, candidates: list[tuple[str, int]]):
-        super().__init__(message)
-        self.candidates = candidates
+def fold_name(text: str) -> str:
+    """ASCII case folded (only A-Z: probe.config §1.3 compares ignoring ASCII case)."""
+    return text.translate(_ASCII_LOWER)
 
 
-def find_line(hst_or_items, name: str, slot: int | str | None = None) -> int | None:
-    """The channel labelled for `name` (nrst, power_hi, power_lo: host-development-guide §8.1), or None when there is
-    none. hst_or_items: a Host (its settings are read: `ProbeConfig.items()`, no lock) or the decoded items. slot: the
-    slot's name or number; None picks the probe's one slot.
-
-    `<slot>.<name>` first, then the bare `name` - the bare name only when the settings hold at most one slot (a bare
-    name is for a one-slot probe). With several slots and no `slot`, or two channels with the same label, it raises
-    AmbiguousLine listing the candidates."""
-    items = hst_or_items if isinstance(hst_or_items, (list, tuple)) else ProbeConfig(hst_or_items).items()
-    labels = [(it.text, it.channel) for it in items if isinstance(it, Label)]
-    slots = [it for it in items if isinstance(it, Slot)]
-    if isinstance(slot, int):
-        named = [s.name for s in slots if s.slot == slot]
-        if not named:
-            raise LookupError(f"no slot {slot} in the probe's settings")
-        slot = named[0]
-    if slot is None and len(slots) > 1:
-        candidates = sorted((t, c) for t, c in labels if t == name or t.endswith("." + name))
-        if candidates:
-            listed = ", ".join(f"{t} (channel {c})" for t, c in candidates)
-            raise AmbiguousLine(f"{name}: {len(slots)} slots and no slot given; candidates: {listed}", candidates)
-        return None
-    if slot is None and slots:
-        slot = slots[0].name
-    texts = ([f"{slot}.{name}"] if slot is not None else []) + ([name] if len(slots) <= 1 else [])
-    for text in texts:
-        found = sorted(c for t, c in labels if t == text)
+def line_from_labels(labels, n_slots: int, slot_name: str | None, name: str) -> int | None:
+    """probe.config §1.3 on bare data: labels as (channel, text), n_slots the settings' slot items. The channel whose
+    label equals `<slot_name>.<name>`; if none, and only with at most one slot item, the one equal to `name`; two or
+    more at one step: none (no fall-through). slot_name None (settings without slot items): the bare name only.
+    The probe's retry with reset (fake) and the host share this."""
+    steps = ([f"{slot_name}.{name}"] if slot_name is not None else []) + ([name] if n_slots <= 1 else [])
+    for text in steps:
+        found = {ch for ch, t in labels if fold_name(t) == fold_name(text)}
         if len(found) > 1:
-            raise AmbiguousLine(f"{text}: on {len(found)} channels", [(text, c) for c in found])
+            return None                                            # ambiguous at this step: no such line
         if found:
-            return found[0]
+            return found.pop()
     return None
+
+
+def find_line(config, slot_name: str | int | None, name: str) -> int | None:
+    """The channel of the line `name` (nrst, power_hi, power_lo: LINE_NAMES) of a slot by the label convention
+    (probe.config §1.3), or None when that slot has no such line. config: a Host (its settings are read with
+    `ProbeConfig.items()`, no lock) or the decoded items. slot_name: the slot's name or number; None on settings with
+    no slot item (the target connected to the probe) or one (that slot).
+
+    `<slot>.<name>` first, ignoring ASCII case; then the bare `name`, only when the settings hold at most one slot item;
+    two or more channels matching at one step mean no such line. Raises ValueError for slot_name None with several
+    slots, LookupError for a slot number not in the settings."""
+    items = config if isinstance(config, (list, tuple)) else ProbeConfig(config).items()
+    labels = [(it.channel, it.text) for it in items if isinstance(it, Label)]
+    slots = [it for it in items if isinstance(it, Slot)]
+    if isinstance(slot_name, int):
+        named = [s.name for s in slots if s.slot == slot_name]
+        if not named:
+            raise LookupError(f"no slot {slot_name} in the probe's settings")
+        slot_name = named[0]
+    if slot_name is None and len(slots) > 1:
+        raise ValueError(f"{name}: the settings hold {len(slots)} slots; name the slot")
+    if slot_name is None and slots:
+        slot_name = slots[0].name
+    return line_from_labels(labels, len(slots), slot_name, name)

@@ -41,8 +41,8 @@ oep-client-python X.Y.Z (until the v1 freeze every release may break the wire; t
 | `targets` | what the host knows per target family, in one table (`FAMILIES`: wire, target_id match, reset vector, option-byte NRST reader, max_speed / idle_clock); `identify(target_id)` |
 | `pins` | `oep pins`: classify the channels, hold-low search, scan, identify, confirm the reset line, suggest a slot (`PinFinder`) |
 | `console` | `oep.target.console` (position streams: read answers carry their length, marks are `time_ns`, the lock-free `streams()` list) and `ConsoleIO`, read as bytes |
-| `fixture` | `oep.fixture.gpio` / `uart` (its stream is the plan's; `status()`) / `i2c-target` / `spi-target` (revision 1) |
-| `config` | `oep.probe.config` (slots, binds, plan / label / idle / uart items, get / set / unset / save / erase; `describe()` = the declarations, `state()` = the live storage / slot / bind state; `hash_of(items)` = the probe's hash) |
+| `fixture` | `oep.fixture.gpio` (an output's strength per element: `set([(ch, mode, Drive.max_ma(10))])`; `drive_levels()`, `read_state()` = levels and the level in force) / `uart` (its stream is the plan's; `status()`) / `i2c-target` / `spi-target` (revision 1) |
+| `config` | `oep.probe.config` (slots - `boot_reset` -, binds, plan / label / idle - its `drive` - / uart items, get / set / unset / save / erase; `describe()` = the declarations, `state()` = the live storage / slot / bind state, `reset_at_ns` included; `hash_of(items)` = the probe's hash; `find_line(cfg, slot, "nrst")` = probe.config §1.3's line lookup) |
 | `capture` | `oep.fixture.logic` / `analog` / `capture-group` (revision 1, oep-spec oep-if-capture). Every start is a generation (`LogicCapture.generation`) that read and release name - `read_segment(segment)` does it by itself; `status()` returns a `Status`. Every segment read goes to the `Host.on_capture` callbacks as a `CaptureRecord` (the hook for run recorders; no wireskein dependency) |
 | `decode` | decoding capture channels (I2C) |
 | `registry` | generated from oep-spec's number table (never edited; copied again from oep-spec). The public way to reach an interface by name is `registry.INTERFACES[name]` (`.revision`, `.op`, `.tlv`, `.enum`, e.g. `INTERFACES["oep.fixture.uart"].enum["role"]`); the module-level names (`FIXTURE_UART`, ...) are the same objects |
@@ -112,8 +112,9 @@ for the reset line, max_speed / idle_clock), which oep-spec `docs/target-scan-no
 4. **identify**: attach (halt) on what answered; the target_id names the family; a CH32V00x's option bytes say whether
    NRST exists (read only, never written); then resume.
 5. **reset**: attach under reset through each candidate - the real line stops the hart at the reset vector.
-6. **slot**: a suggested `oep config slot` line (the reset channel as a comment while `config.Slot` has no
-   `reset_channel`); `--save` writes it (set + save). Nothing is written without `--save`.
+6. **slot**: a suggested `oep config slot` line and the labels `<slot>.nrst` / `<slot>.power_hi`, checked with
+   `config.find_line` against the probe's settings (a note when another channel already carries the name: the line
+   would not be found); `--save` writes them (set + save). Nothing is written without `--save`.
 
 Safety: a driven or active channel is never driven, scanned or held; the power channel is touched only with `--power`;
 holding low is open drain only. A new gpio plan lets every pin of the old one go first - the power channel too - so with

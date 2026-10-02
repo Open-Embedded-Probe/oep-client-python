@@ -186,3 +186,16 @@ def test_target_table():
     assert st.enabled and "12 ms" in st.detail
     assert not targets.v00x_nrst_from_word(OPTION_OFF).enabled
     assert not targets.v00x_nrst_from_word(0x00F75AA5).enabled        # USER / nUSER not complements
+
+
+def test_suggested_labels_are_checked_by_the_line_lookup():
+    """The suggested <slot>.nrst / .power_hi are looked up by config.find_line (probe.config §1.3) in the settings as
+    they would be: another channel already named so (any case) would make the line not found - said in a note."""
+    ep, hst, t = bench()
+    r = finder(hst, t, [], power=5).run()
+    assert not any("would find no" in n for n in r.notes)        # nothing else named so: found as suggested
+    ep, hst, t = bench()
+    config.ProbeConfig(hst).set([config.Label(channel=9, text="CH32V00X.NRST"), config.Label(channel=4, text="ch32v00x.nrst")])
+    r = finder(hst, t, [], power=5).run()
+    notes = [n for n in r.notes if "would find no" in n]
+    assert len(notes) == 1 and "ch32v00x.nrst" in notes[0] and "[9]" in notes[0]   # 4 itself is relabelled: no clash
