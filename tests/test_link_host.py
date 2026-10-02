@@ -110,6 +110,31 @@ def test_a_reply_for_another_request_resyncs_and_a_read_is_sent_once_more():
     assert lk.stale == 1 and lk.resyncs == 1 and lk.retries == 1
 
 
+def confirm_ranges(stream):
+    """(min_rev, max_rev) of every confirm written."""
+    out = []
+    for w in stream.writes:
+        at = 0
+        while at < len(w):
+            n = struct.unpack_from("<H", w, at)[0]
+            req = m.Request.unpack(w[at + 2:at + 2 + n])
+            if req.fn == 0 and req.op == m.OP_CONFIRM:
+                out.append((req.payload[4], req.payload[5]))
+            at += 2 + n
+    return out
+
+
+def test_the_links_own_confirms_ask_for_the_revisions_the_client_handles():
+    """core §7.1: the host sends the range of protocol revisions it can handle - the resync's confirm (§5.1) and
+    confirm_raw too, not 0..0xFF."""
+    s = Stream(answering())
+    lk = make_link(s)
+    s.rx += frame(result(99))
+    lk.send(m.Request(7, 0, m.OP_LOCK_STATE, b"").pack())
+    assert lk.confirm_raw(0.2)
+    assert confirm_ranges(s) == [(h.MIN_REVISION, h.MAX_REVISION)] * 2 == [(1, 1)] * 2
+
+
 def test_a_state_changing_request_is_sent_again_with_the_same_corr_after_a_resync():
     s = Stream(answering())
     lk = make_link(s)

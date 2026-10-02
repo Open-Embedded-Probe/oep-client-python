@@ -362,7 +362,7 @@ def _serve_conn(a, ep, console, conn, watch_stdin) -> bool:
     if a.framing == "cobs":
         port = fake_serial.FakeSerialPort(ep, a.port_index, _filter(a))
     else:
-        index = next((i for i, k in enumerate(ep.transports) if i not in ep.serial_ports), 0)
+        index = next((i for i in sorted(ep.transports) if i not in ep.serial_ports), 0)
         buf, answers, filt = bytearray(), 0, _filter(a)
     while True:
         readable, _, _ = select.select([conn] + watch_stdin, [], [], 0.005)

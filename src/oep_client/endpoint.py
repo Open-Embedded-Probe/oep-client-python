@@ -445,19 +445,19 @@ class Endpoint:
         self.static_labels: dict[int, str] = {}
         # channels the probe can only read (a test sets them): an idle of mode 3 / 4 there is unsupported (probe.config §1)
         self.input_only: set[int] = set()
-        self.transports: list[int] = []
+        self.transports: dict[int, int] = {}            # index -> kind, by the TLV's own index (core §7.5), not its order
         self.max_op_ms = reg.LIMITS["max_op_ms_reference"]
         self.plan_roles: int | None = None
         for t in self.static.get(0, ()):
             if t[0] == fake.CORE_LABEL:
                 self.static_labels[struct.unpack_from("<H", t, 2)[0]] = t[4:2 + t[1]].decode()
             if t[0] == fake.CORE_TRANSPORT:
-                self.transports.append(t[3])
+                self.transports[t[2]] = t[3]
             if t[0] == fake.CORE_MAX_OP_MS:
                 self.max_op_ms = struct.unpack_from("<I", t, 2)[0]
             if t[0] == fake.CORE_PLAN_ROLES:
                 self.plan_roles = struct.unpack_from("<I", t, 2)[0]
-        self.serial_ports = {i for i, k in enumerate(self.transports) if k in fake.SERIAL_KINDS}
+        self.serial_ports = {i for i, k in self.transports.items() if k in fake.SERIAL_KINDS}
         self.pairs: dict[int, list[tuple[int, int]]] = {}  # wire fn -> allowed (swdio, swclk), declared order
         self.max_connections: dict[int, int] = {}
         self.reset_channels: dict[int, set[int]] = {}     # wire fn -> channels an attach's reset TLV may take (role 3)
@@ -1412,8 +1412,7 @@ class Endpoint:
         t.tail()
         if step not in SPEED_STEP.values():
             raise Reject(m.MALFORMED)                              # not a defined step (core §4.3 order 5)
-        if port != self._transport or port >= len(self.transports) or \
-                self.transports[port] != fake.TRANSPORT["uart_bridge"]:
+        if port != self._transport or self.transports.get(port) != fake.TRANSPORT["uart_bridge"]:
             raise unavailable("wrong_state")                       # only the UART bridge the request came in on
         # the port's state (boot speed / trying / committed) decides which step fits (core §3.5): any other is cause 6
         if step == SPEED_STEP["try"]:

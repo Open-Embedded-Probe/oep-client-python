@@ -64,6 +64,10 @@ import serial
 from . import cobs, host as _host, message as m, registry as reg
 from .frames import FramingLost, LengthFrames
 
+# the link's own confirms (resync §5.1, confirm_raw) ask for the revisions this client handles, as every confirm does
+# (core §7.1: the host sends the range it can handle), never 0..0xFF
+_OWN_CONFIRM = m.CONFIRM_REQUEST + bytes([_host.MIN_REVISION, _host.MAX_REVISION])
+
 RESYNC_QUIET_S = reg.TIMING["resync_quiet_ms"] / 1000
 USB_VID, USB_PID = 0x303A, 0x0002   # the reference P4 probe's: the board's default, a temporary USB ID (probe guide §3.8)
 # The project's own USB VID:PID pairs (core §3.3): the only automatic identification of an OEP probe. The registry lists
@@ -419,7 +423,7 @@ class SerialLink:
                     self._write(stops)
                     self.ended_blind = True     # the session ended: a request sent again would only meet no_session
             corr = self.corr_source()
-            self._write([m.Request(corr, m.CORE_FN, m.OP_CONFIRM, m.CONFIRM_REQUEST + bytes([0, 0xFF])).pack()])
+            self._write([m.Request(corr, m.CORE_FN, m.OP_CONFIRM, _OWN_CONFIRM).pack()])
             try:
                 while True:
                     reply = self._recv()
@@ -547,7 +551,7 @@ class SerialLink:
         reads past the broken leftovers of the lost frames it follows: it keeps reading until its own answer or the
         deadline, not giving up on the first broken one."""
         corr = self.corr_source()
-        self._write([m.Request(corr, m.CORE_FN, m.OP_CONFIRM, m.CONFIRM_REQUEST + bytes([0, 0xFF])).pack()])
+        self._write([m.Request(corr, m.CORE_FN, m.OP_CONFIRM, _OWN_CONFIRM).pack()])
         saved = self.timeout
         deadline = time.monotonic() + timeout
         self._own += 1

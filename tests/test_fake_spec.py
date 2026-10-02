@@ -165,6 +165,44 @@ def test_core_describe_lists_the_transports_and_max_op_ms_without_discoverable()
     assert all(v[2:] != b"DUT" for t, v in describe(ep, 0) if t == tags["label"])
 
 
+def _with_transports(probe, entries):
+    """`probe` with its fn 0 transport TLVs replaced by `entries` [(index, kind, interface)], in that TLV order."""
+    core0 = next(o for o in probe.offered if o.fn == 0)
+    tlvs = tuple(t for t in core0.tlvs if t[0] != fake.CORE_TRANSPORT) + tuple(
+        fake.catalog.tlv(fake.CORE_TRANSPORT, bytes(e)) for e in entries)
+    offered = [fake.Offered(0, core0.instance, core0.name, tlvs, core0.revision, core0.flags) if o.fn == 0 else o
+               for o in probe.offered]
+    return fake.FakeProbe(probe.label, probe.max_frame, offered)
+
+
+@pytest.mark.parametrize("entries, bridge, other", [
+    ([(1, fake.TRANSPORT["vendor_bulk"], 0), (0, fake.TRANSPORT["uart_bridge"], 0xFF)], 0, 1),   # out of TLV order
+    ([(7, fake.TRANSPORT["vendor_bulk"], 0), (3, fake.TRANSPORT["uart_bridge"], 0xFF)], 3, 7),   # not from 0, gaps
+])
+def test_transport_list_follows_the_index_byte_not_the_tlv_order(entries, bridge, other):
+    """core §7.5: index is the number designating a transport (port_speed's port, a bind's port), whatever order the
+    TLVs come in. port_speed is accepted on the UART bridge it came on and refused on the vendor bulk."""
+    for port, ok in ((bridge, True), (other, False)):
+        ep = endpoint.Endpoint(_with_transports(fake.esp32_v003(), entries), Clock())
+        assert ep.transports == {i: k for i, k, _ in entries} and ep.serial_ports == {bridge}
+        h = Host(ep, transport=port)
+        assert h.open().succeeded
+        r = h.raw(0, endpoint.OP_PORT_SPEED, struct.pack("<BIBHI", port, 230400, 0, 500, 0))
+        assert r.succeeded if ok else r.detail == m.UNAVAILABLE
+
+
+def test_bind_port_is_the_transport_index_not_the_tlv_position():
+    """probe.config §1.2: a bind's port is the transport index of core §7.5. The serial port declared second in TLV
+    order but with index 0 is bindable; the vendor bulk with index 1 is not a serial port (unsupported)."""
+    probe = _with_transports(fake.p4_bench(), [(1, fake.TRANSPORT["vendor_bulk"], 0), (0, fake.TRANSPORT["usb_cdc"], 2)])
+    ep = endpoint.Endpoint(probe, Clock())
+    h = Host(ep)
+    h.open()
+    p = ep.pairs[1][0]
+    assert h.raw(6, 0x02, slot_item(0, 1, p) + bind_item(0, MODE["manual"], [(KIND["slot_console"], 0)])).succeeded
+    assert h.raw(6, 0x02, slot_item(0, 1, p) + bind_item(1, MODE["manual"], [(KIND["slot_console"], 0)])).detail == m.UNSUPPORTED
+
+
 # ---- slots, connections and the seat rule --------------------------------------------------------------
 
 def bench(clock=None):
