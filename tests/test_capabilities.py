@@ -117,7 +117,7 @@ def test_the_probe_itself_is_described_by_core():
     row = dump.describe_offer(dump.collect(fake.esp32_v003().call).offers[0])
     assert row["name"] == "oep.core"
     d = row["declares"]
-    assert d["unit id"] == "0070070d9394" and d["transport"] == "0 = UART bridge"
+    assert d["unit id"] == "fafe00000003" and d["transport"] == "0 = UART bridge"
     assert "16 = SWIO" in d["label"] and "23 = NRST" in d["label"]    # repeated tags all kept
 
 

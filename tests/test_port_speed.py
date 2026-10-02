@@ -222,7 +222,7 @@ def in_process(profile=fake.esp32_v003, lease=10000):
     return ep, hst, lk
 
 
-UNIT = "0070070d9394"   # the fake esp32-v003's unit_id
+UNIT = "fafe00000003"   # the fake esp32-v003's unit_id
 FAST = dict(verify_ms=900)   # the probe's try state ends soon: a failed candidate costs under a second
 
 
@@ -775,7 +775,7 @@ def test_the_record_puts_passed_rates_first_skips_failed_ones_and_expires(tmp_pa
     ep.broken_rates[230400] = endpoint.BrokenRate(to_probe=False)            # no confirm there
     report = link.raise_speed(hst, [230400, 500000], record=rec, **FAST)
     assert report.chosen == 500000 and report.skipped == []
-    unit = "0070070d9394"                                                    # the fake esp32-v003's unit_id
+    unit = "fafe00000003"                                                    # the fake esp32-v003's unit_id
     assert rec.lookup("<stream>", unit) == ([500000], [230400]) and lk.record_key == ("<stream>", unit)
     saved = json.loads(path.read_text())
     assert saved[f"<stream>|{unit}"]["rates"]["500000"]["passed"] is True
@@ -880,7 +880,7 @@ def test_oep_speed_cli_prints_the_report_and_keeps_the_record(capsys, tmp_path, 
         out = capsys.readouterr().out
         assert "in@1" in out and "failed" in out and "committed" in out and "in force: 750000 (raised)" in out
         record = json.loads((tmp_path / "oep-client" / "link-speed.json").read_text())
-        rates = record[f"{where[1]}|0070070d9394"]["rates"]
+        rates = record[f"{where[1]}|fafe00000003"]["rates"]
         assert rates["230400"]["passed"] is False and rates["750000"]["passed"] is True
         assert cli.main(["speed", where[1], "230400,750000", "--minimal", "--json"]) == 0   # the record skips 230400
         out = json.loads(capsys.readouterr().out)

@@ -15,8 +15,8 @@ guide §7.4), `passed` true / false / null (the same, for a reader of the older 
 `passed`. Not a released format: oep-client-js's speedrecord.js reads and writes the same.
 
   rec = SpeedRecord()                              # or SpeedRecord(path) - tests pass a temporary file
-  passed, failed = rec.lookup("/dev/ttyUSB0", "0070070d9394")
-  rec.note("/dev/ttyUSB0", "0070070d9394", 921600, passed=True, phase="verify")
+  passed, failed = rec.lookup("/dev/ttyUSB0", "fafe00000003")
+  rec.note("/dev/ttyUSB0", "fafe00000003", 921600, passed=True, phase="verify")
 
 `link.raise_speed(..., record=True)` (the `oep speed` CLI's default) reads and writes it; the library default is off.
 """
