@@ -239,7 +239,7 @@ def _core(firmware: str, model: str, unit_id: str, channels: int, reserved: list
 def p4_x035() -> FakeProbe:
     """ESP32-P4 development probe on the CH32X035F8U6 jig (as wired on 2026-09-24), in the recommended USB shape
     (probe guide §3.8): USB-Serial/JTAG (serial port 0), and on the HS port vendor bulk, HID and a CDC (serial port 3)
-    under the OEP VID:PID."""
+    on the board's default VID:PID (no discoverable: that is the project's VID:PID only, core §7.5)."""
     reserved = [2, 24, 25, 54]                      # RVSWD SWDIO/SWCLK, USB-Serial/JTAG
     pins = [p for p in range(55) if p not in reserved]
     return FakeProbe("p4-x035", 1024, [
@@ -247,7 +247,7 @@ def p4_x035() -> FakeProbe:
               {2: "SWDIO", 54: "SWCLK", 51: "LED"},
               _transports([(TRANSPORT["usb_serial_jtag"], 0xFF), (TRANSPORT["vendor_bulk"], 0),
                            (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)])
-              + (catalog.u8(CORE_DISCOVERABLE, 1), catalog.text(CORE_CHIP, "esp32p4 v1.0"))),
+              + (catalog.text(CORE_CHIP, "esp32p4 v1.0"),)),
         Offered(1, 0, "oep.wire.rvswd", (
             catalog.channel_group(1, [(1, 2), (2, 54)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(IMPLEMENTATION, 1),
             catalog.u8(MAX_CONNECTIONS, 1))),
@@ -308,14 +308,15 @@ def esp32_v003() -> FakeProbe:
 
 def p4_bench() -> FakeProbe:
     """A made-up bench probe with three RVSWD places and two seats (slots, the seat rule and the bind modes can be
-    exercised): USB-Serial/JTAG (serial port 0), vendor bulk, HID and a CDC (serial port 3) under the OEP VID:PID."""
+    exercised): USB-Serial/JTAG (serial port 0), vendor bulk, HID and a CDC (serial port 3) on the board's default
+    VID:PID (no discoverable: that is the project's VID:PID only, core §7.5)."""
     reserved = [2, 3, 4, 5, 6, 7, 24, 25]
     pins = [p for p in range(55) if p not in reserved]
     return FakeProbe("p4-bench", 1024, [
         _core("3.0.0", "esp32p4", "30eda0e3b001", 55, reserved, f"{NS}.p4-bench",
               {2: "A SWDIO", 3: "A SWCLK", 4: "B SWDIO", 5: "B SWCLK", 6: "C SWDIO", 7: "C SWCLK"},
               _transports([(TRANSPORT["usb_serial_jtag"], 0xFF), (TRANSPORT["vendor_bulk"], 0),
-                           (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)]) + (catalog.u8(CORE_DISCOVERABLE, 1),)),
+                           (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)])),
         Offered(1, 0, "oep.wire.rvswd", (
             catalog.channel_group(1, [(1, 2), (2, 3)]), catalog.channel_group(2, [(1, 4), (2, 5)]),
             catalog.channel_group(3, [(1, 6), (2, 7)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000),

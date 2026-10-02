@@ -70,7 +70,8 @@ PROJECT_VID_PIDS: tuple[tuple[int, int], ...] = ()
 # Temporary clues until the project's VID:PID exists (host guide §1.7, not normative; gone once it does). A device that
 # fits one is only a candidate: it is probed by the confirm-only rule (SerialLink.probe) before anything else is sent.
 TEMPORARY_IPRODUCT_PREFIX = "OEP"
-TEMPORARY_VENDOR_INTERFACE = (reg.USB["vendor_bulk_class"], reg.USB["vendor_bulk_subclass"], reg.USB["vendor_bulk_protocol"])
+TEMPORARY_VENDOR_INTERFACE = (reg.USB["vendor_bulk_class"], reg.USB["vendor_bulk_subclass"],
+                              reg.USB["vendor_bulk_protocol"])
 TEMPORARY_HID_USAGE_PAGE = reg.USB["hid_usage_page"]
 PROBE_WAIT_S = reg.TIMING["host_wait_add_ms"] / 1000   # the probing rule's wait for confirm's answer (core §3.3, §4.4)
 

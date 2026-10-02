@@ -151,11 +151,11 @@ def test_lease(asked, given):
 
 # ---- describe ------------------------------------------------------------------------------------------
 
-def test_core_describe_lists_the_transports_discoverable_and_max_op_ms():
+def test_core_describe_lists_the_transports_and_max_op_ms_without_discoverable():
     tlvs = describe(endpoint.Endpoint(fake.p4_x035(), Clock()), 0)
     tags = reg.CORE.tlv["describe"]
     kinds = [v[1] for t, v in tlvs if t == tags["transport"]]
-    assert kinds == [3, 4, 5, 2] and (tags["discoverable"], b"\x01") in tlvs
+    assert kinds == [3, 4, 5, 2] and tags["discoverable"] not in [t for t, _ in tlvs]   # 0: no project VID:PID yet
     assert (tags["max_op_ms"], struct.pack("<I", 10000)) in tlvs and (tags["plan_roles"], struct.pack("<I", 32)) in tlvs
     assert any(t == tags["unit_id"] for t, _ in tlvs) and 0x48 not in [t for t, _ in tlvs]
     # declarations only (core §7.3): a label the settings give is not in the describe
