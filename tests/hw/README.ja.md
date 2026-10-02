@@ -51,11 +51,21 @@ OEP_HW_BOARDS=fake-esp32-v003 uv run pytest tests/hw -m hw
 | `wire` | `OEP_HW_TARGET=<name>[@swdio[,swclk]]` のときだけ: scan（名指しの組か全部）、`OEP_HW_RESET=<channel>` なら reset TLV 付きで attach、そのあと 50 回（`OEP_HW_LOOPS`）halt → dmi で s0 / s1 / a0 / a1 → read_block（`OEP_HW_TARGET_ADDR`、既定 0x20000000 から 8 語）→ 同じ 4 本をもう一度、変わっていない → resume | scan の結果、connection、DMSTATUS、速さ、target_id、dpc、回数と秒数、変わったレジスタ |
 | `gpio` | 表の空き 2 チャネル（`OEP_HW_GPIO=a,b`）で `oep.fixture.gpio`: output_high を読むと 1、output_low は 0、input_pullup は 1、input_pulldown は 0 | 読んだ値すべて |
 | `uart` | 表の RX / TX（`OEP_HW_UART=rx,tx`）で `oep.fixture.uart`: configure 115200 8N1 が 5 % 以内、status が `session` でその速さと形式、configure 9600。`OEP_HW_UART_LOOP=rx,tx`（2 本を結線）なら write したものが read で戻る | 実際の速さ、status、ループバックのバイト数 |
+| `capture` | 表の空き 2 チャネルで `oep.fixture.logic` を、同じピンの `oep.fixture.gpio` と一緒に plan する（ロジックのキャプチャは聞くだけ、oep-if-capture §1.2。共有を断る probe では、代わりに設定の idle 項目で解放したチャネルを引く）: 宣言の最低のレート（1 kHz 以上）で 10 ms の窓（16 サンプル以上。16 KB を超える区画は縮める）のワンショットを、pull-up で 1 回、pull-down で 1 回 → 全チャネルの全サンプルが 1、次に 0。区画のサンプル数が configure の値に等しい、窓（宣言のレートの不確かさを引いた分）より早く終わらず、窓の後 1 秒以内に終わる、status が done で dropped / slipped の flag 無し、start ごとに世代が 1 進む | 宣言（rate_range、mode、layout、max_read、segment_ring）、実際のレート、layout（w、pos）、サンプル数、バイト数、timing（jitter、ppm、blocking）、キャプチャごとに start → done の秒数、読み出しの秒数、start_ns とその不確かさ、世代、チャネルごとの 1 の数 |
+| `capture_analog` | `oep.fixture.analog`（list にあれば）を、役割 0 が許す空きチャネル（`OEP_HW_ANALOG=<channel>`）で: 最低のレート、10 ms、いちばん広い frontend のワンショット。layout（s / o / b、order）、frontend_used、scale / zero / reference が返り、値が b ビットに収まる。pull-up / pull-down の帯（平均がフルスケールの 80 % 以上 / 20 % 以下）は probe が gpio とピンを共有させるときだけ判定する。参照の ESP32 firmware は共有させない（アナログのチャネルは何とも共有しない）ので、浮いたピンの値を記録する | 宣言（frontend も）、configure の応答、値の最小 / 最大 / 平均（生の値と mV）、calibration（scheme、vrefint） |
+| `capture_group` | `oep.fixture.capture-group`（両方のトラックを宣言していれば）: 上と同じ設定のロジックとアナログを bind して一緒に start → start の応答に両方の世代、各トラックに configure どおりのサンプル数の区画が 1 つ、各 start_ns が組の start_ns 以降（1 秒以内）、両方読み出す、解く | 組の宣言、start_ns、各トラックのそこからのずれ、世代、done までの秒数 |
+| `i2c_target` | `oep.fixture.i2c-target`（list にあれば）を、役割が許す空きチャネルの SDA / SCL（`OEP_HW_I2C=sda,scl`）で: configure 前は state 0。address 0x42 mode 3（宣言があれば）で configure → state 1、tx を 3 つ preload → 1、2、3 と数え tx_slots 3。mode 1 で configure、arm_rx 4 → armed。read_rx。reset → armed が消え、列と累計が 0。バスに controller は無く線は浮いているので、グリッチによる誤りやフレームは記録して判定しない | 宣言（queue_depth、max_clock_hz、max_length、features）、各 status、read_rx |
+| `spi_target` | `oep.fixture.spi-target`（list にあれば）を、空き 4 チャネルの SCK / MOSI / MISO / CS（`OEP_HW_SPI=sck,mosi,miso,cs`。固定のピンの組で来る interface は最初の channel_group）で: configure 前は state 0。mode 0 MSB 先で configure → state 1。4 byte を MISO 2 byte 付きで arm → armed、または消費済み（SCK / CS が浮いていて、ATOM の target は arm の直後に 1〜2 の幻の転送を数える。2 つ目の arm の「1 回に 1 つ」の拒否はそのため当てにしない）。read_rx。reset → armed が消え、列と累計が 0 | 宣言、各 status（transactions = 幻の転送）、read_rx |
+| `console` | `OEP_HW_TARGET` のときだけ: scan、走らせたまま attach（halt も reset も無し）、その connection に `oep.target.console` を mechanism dmseq（無ければ probe が宣言する最初のもの）で open、open 時の位置から 1 秒間届くものを読む、streams の一覧にそのストリームが出る、close、detach | mechanism の一覧、stream、existing、溜まっていたバイト数、見えたバイト数（0 もある）、lost、mark の数、streams の一覧、先頭 64 byte |
 | `port_speed` | UART bridge の probe だけ: `oep_client.linktest.matrix` を今の速さと表の候補（`OEP_HW_RATES`）で、in / out / duplex、同時 1 と probe の最大、1 フレーム（`max_frame - 16`）、1 条件 `OEP_HW_FRAMES`（100）フレーム。**判定**（host 開発ガイド §7.3.2）: 上げた速さの 1 つずつの条件で、broken + lost が 3 以上かつ割合が max(起動時の速さの同じ条件の割合 × 2, 5 %（`OEP_HW_ERROR_MAX`）) を超えたら落とす。通る候補が 1 つも無いときだけ落とす（落ちた候補、probe が断った候補、confirm が返らない候補は記録する） | 条件ごとの ok / broken / lost、KB/s、秒数、速さの実際の値、link のカウンタ |
 | `session` | 1000 ms の lease が切れる → `Expired`。同じ id で open し直すと resumed 2（swept）。新しい id の force → 古い id は `Locked` | lease、resumed の値、拒否の文 |
 
 結果のファイルにはほかに、クライアントの版と commit、firmware の出所（checkout + commit + dirty か、リリースの版 + json の
 URL + sha256）、ホストの platform、その回の `OEP_*` の環境変数すべてが入る。1 画面の要約は pytest の最後に出る。
+
+偽の probe（`fake-esp32-v003`）では `capture` はレベルを記録するだけで判定しない（偽の probe はピンではなくカウンタを取り、
+ワンショットは start の応答と同時に終わる）。`i2c_target` / `spi_target` は落ちる（偽の probe は 2 つの interface を宣言する
+だけで、plan も操作も実装していない）。
 
 ## ボードと焼き方
 
@@ -88,6 +98,7 @@ V003 のジグ、2 枚の ESP32-P4 のジグ、WCH-Link はこのホストでは
 | `OEP_PROBE_DIR` / `OEP_PROBE_VERSION` / `OEP_HW_NOFLASH` | firmware の出所（どれか 1 つ） |
 | `OEP_HW_TARGET`、`OEP_HW_RESET`、`OEP_HW_TARGET_ADDR`、`OEP_HW_LOOPS` | wire の試験: target が繋がっている（どこに）、reset の線、block の番地、回数 |
 | `OEP_HW_GPIO`、`OEP_HW_DISABLE`、`OEP_HW_UART`、`OEP_HW_UART_LOOP` | fixture の試験のチャネルの上書き |
+| `OEP_HW_ANALOG`、`OEP_HW_I2C`、`OEP_HW_SPI` | アナログのキャプチャのチャネル、i2c-target の `sda,scl`、spi-target の `sck,mosi,miso,cs`（既定: 表の空きチャネル（gpio の 2 本、disable、UART の 2 本）のうち describe が許すもの） |
 | `OEP_HW_RATES`、`OEP_HW_FRAMES`、`OEP_HW_LT_TIMEOUT`、`OEP_HW_ERROR_MAX` | port_speed の候補、1 条件のフレーム数、答えの待ち、判定の床（既定 5 %） |
 | `OEP_HW_PICOTOOL`、`OEP_HW_UF2_DRIVE`、`OEP_HW_USBIP_BUSID`、`OEP_HW_CACHE` | ツールと環境の細部 |
 

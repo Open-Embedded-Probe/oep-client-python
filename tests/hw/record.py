@@ -16,13 +16,14 @@ import time
 from dataclasses import dataclass, field
 
 import oep_client
-from oep_client import core, host as h, link, registry as reg
+from oep_client import catalog, core, host as h, link, registry as reg
 
 from . import boards
 
 HERE = pathlib.Path(__file__).resolve().parent
 RESULTS = HERE / "results"
 DESCRIBE = reg.CORE.tlv["describe"]
+COMMON = reg.DESCRIBE_COMMON
 WRITE_TIMEOUT_S = 5.0
 
 
@@ -73,6 +74,38 @@ def probe_info(hst: h.Host) -> dict:
         elif t == DESCRIBE["max_op_ms"] and len(v) >= 4:
             info["max_op_ms"] = struct.unpack_from("<I", v)[0]
     return info
+
+
+def declared(hst: h.Host, fn: int) -> dict:
+    """An interface's describe (core §7.4), the common tags decoded: role_channels {role: [channels]}, channel_groups
+    [(group, [(role, channel)])], max_clock_hz, min_clock_hz, max_length, features, implementation; `own`: the
+    interface's own tags (0x40 and up) raw, {tag: [value, ...]} in the order declared."""
+    out: dict = {"role_channels": {}, "channel_groups": [], "own": {}}
+    for tag, v in core.describe(hst, fn):
+        t = tag & 0x7F
+        if t == COMMON["role_channels"] and len(v) >= 3:
+            base = struct.unpack_from("<H", v, 1)[0]
+            out["role_channels"].setdefault(v[0], []).extend(catalog.bitmap_to_channels(base, v[3:]))
+        elif t == COMMON["channel_group"] and len(v) >= 2:
+            out["channel_groups"].append(catalog.unpack_channel_group(v))
+        elif t in (COMMON["max_clock_hz"], COMMON["min_clock_hz"], COMMON["features"]) and len(v) >= 4:
+            name = next(k for k, c in COMMON.items() if c == t)
+            out[name] = struct.unpack_from("<I", v)[0]
+        elif t == COMMON["max_length"] and len(v) >= 2:
+            out["max_length"] = struct.unpack_from("<H", v)[0]
+        elif t == COMMON["implementation"] and v:
+            out["implementation"] = v[0]
+        elif t >= 0x40:
+            out["own"].setdefault(t, []).append(v)
+    return out
+
+
+def own_u(decl: dict, tag: int, fmt: str = "<I"):
+    """The first value of the interface's own tag `tag`, unpacked as `fmt` (a single number); None when not declared."""
+    values = decl["own"].get(tag)
+    if not values or len(values[0]) < struct.calcsize(fmt):
+        return None
+    return struct.unpack_from(fmt, values[0])[0]
 
 
 @dataclass

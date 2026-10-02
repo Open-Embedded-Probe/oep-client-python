@@ -7,6 +7,13 @@
                with s0 / s1 / a0 / a1 read before and after each block op       (only with OEP_HW_TARGET)
   gpio         fixture gpio set / read on two free channels (outputs read back, pull-up / pull-down levels)
   uart         fixture uart configure / status (a loopback write / read with OEP_HW_UART_LOOP=rx,tx)
+  capture      fixture logic: a one-shot at the lowest declared rate over a 10 ms window on the two free channels,
+               pulled up then down through fixture gpio on the same pins -> all ones, then all zeros
+  capture_analog  fixture analog (when listed): a one-shot on a free ADC channel at the lowest rate, the widest frontend
+  capture_group   fixture capture-group (when listed): logic + analog bound and started together, both read back
+  i2c_target   fixture i2c-target (when listed): configure 0x42 / status / preload a queue / reset / release
+  spi_target   fixture spi-target (when listed): configure / status / arm one transaction / reset / release
+  console      target console on the wire connection, mechanism dmseq: open, read for 1 s, close   (only with OEP_HW_TARGET)
   port_speed   linktest.matrix at the speed in force and the board's candidate rates (OEP_HW_RATES), in / out /
                duplex, in flight 1 and the probe's max, one frame size; verdict: one at a time <= 1 % broken + lost
   session      lease expiry -> Expired, the same id resumed as swept (2), a force takeover locks the old id out
@@ -16,11 +23,12 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import struct
 import time
 
 import pytest
 
-from oep_client import config, core, fixture, host as h, linktest, registry as reg, riscv
+from oep_client import capture, config, console as console_mod, core, fixture, host as h, linktest, registry as reg, riscv
 
 from . import firmware as fwmod, flash, record
 
@@ -28,6 +36,10 @@ pytestmark = pytest.mark.hw
 
 GPIO_ROLE_LINE = reg.FIXTURE_GPIO.enum["role"]["line"]
 UART_RX, UART_TX = reg.FIXTURE_UART.enum["role"]["rx"], reg.FIXTURE_UART.enum["role"]["tx"]
+CAPTURE_WINDOW_S = 0.01          # the capture tests' window: samples = rate x this (at least CAPTURE_MIN_SAMPLES)
+CAPTURE_MIN_SAMPLES = 16
+CAPTURE_BYTES_MAX = 16384        # a segment longer than this is cut (a 115200 bps link reads 11 KB/s)
+I2C_ADDRESS = 0x42
 # port_speed verdict (host guide §7.3.2): a one-at-a-time cell at a raised rate fails when broken + lost >= 3 and its ratio is
 # over max(2 x the same cell's ratio at the boot speed, this floor). The floor is the guide's measured 5 %.
 ERROR_RATE_FLOOR = float(os.environ.get("OEP_HW_ERROR_MAX", "") or 0.05)
@@ -303,7 +315,512 @@ def test_uart(run: record.Run):
             core.plan_release(hst, [u.fn])
 
 
-# ---- 7. port_speed (UART bridge) ---------------------------------------------------------------------------------------------
+# ---- 7. fixture capture: logic, analog, the group --------------------------------------------------------------------------
+
+_LOGIC_D, _ANALOG_D, _GROUP_D = (reg.FIXTURE_LOGIC.tlv["describe"], reg.FIXTURE_ANALOG.tlv["describe"],
+                                 reg.FIXTURE_CAPTURE_GROUP.tlv["describe"])
+
+
+def _listed(hst: h.Host, name: str) -> bool:
+    return bool(core.list_entries(hst, name, True))
+
+
+def _free_channels(board) -> list[int]:
+    """The table's channels wired to nothing, most preferred first: the gpio pair, the disable channel, the UART pair."""
+    out: list[int] = []
+    for ch in (*board.gpio, board.disable, *board.uart):
+        if ch and ch not in out:
+            out.append(ch)
+    return out
+
+
+def _capture_declared(decl: dict) -> dict:
+    """The capture declarations (oep-if-capture §3.5) a test plans by: rate_range, the one-shot's max_samples, max_read,
+    segment_ring, channels (max, the layouts), the frontends (analog)."""
+    out: dict = {"features": decl.get("features")}
+    for v in decl["own"].get(_LOGIC_D["mode"], ()):
+        mode, background, max_samples, max_segments = struct.unpack_from("<BBII", v)
+        out.setdefault("modes", {})[mode] = {"background": background, "max_samples": max_samples, "max_segments": max_segments}
+    rr = decl["own"].get(_LOGIC_D["rate_range"])
+    if rr:
+        lo, hi, exact = struct.unpack_from("<IIB", rr[0])
+        out["rate_range"] = {"min_hz": lo, "max_hz": hi, "exact": bool(exact)}
+    elif decl.get("min_clock_hz") and decl.get("max_clock_hz"):      # the common tags instead (the fake's esp32 profile)
+        out["rate_range"] = {"min_hz": decl["min_clock_hz"], "max_hz": decl["max_clock_hz"], "exact": False}
+    rates: list[int] = []
+    for v in decl["own"].get(_LOGIC_D["rate_list"], ()):
+        rates += list(struct.unpack_from(f"<{v[0]}I", v, 1))
+    if rates:
+        out["rate_list"] = rates
+    ch = decl["own"].get(_LOGIC_D["channels"])
+    if ch:
+        out["channels"] = {"max": ch[0][0], "layouts": [1 << i for i in range(32) if struct.unpack_from("<I", ch[0], 1)[0] >> i & 1]}
+    out["max_read"] = record.own_u(decl, _LOGIC_D["max_read"])
+    out["segment_ring"] = record.own_u(decl, _LOGIC_D["segment_ring"], "<H")
+    for v in decl["own"].get(_ANALOG_D["frontend"], ()):
+        fe, lo, hi, att = struct.unpack_from("<BiiI", v)
+        out.setdefault("frontends", {})[fe] = {"min_mv": lo, "max_mv": hi, "attenuation_mdb": att}
+    return out
+
+
+def _capture_rate_samples(declared: dict) -> tuple[int, int]:
+    """The lowest declared rate (at least 1 kHz) and the samples of a CAPTURE_WINDOW_S window at it, within the
+    one-shot's max_samples."""
+    rr = declared.get("rate_range")
+    if rr:
+        rate = min(max(rr["min_hz"], 1000), rr["max_hz"])
+    elif declared.get("rate_list"):
+        rate = min(declared["rate_list"])
+    else:
+        rate = 1000
+    samples = max(CAPTURE_MIN_SAMPLES, round(rate * CAPTURE_WINDOW_S))
+    max_samples = (declared.get("modes", {}).get(capture.ONE_SHOT) or {}).get("max_samples")
+    if max_samples:
+        samples = min(samples, max_samples)
+    return rate, samples
+
+
+def _configure(cap: capture.LogicCapture, rate: int, samples: int, **kw) -> capture.Config:
+    """configure a one-shot, cut to CAPTURE_BYTES_MAX when the probe's layout makes the segment longer."""
+    cfg = cap.configure(rate=rate, samples=samples, **kw)
+    if cfg.bytes > CAPTURE_BYTES_MAX:
+        cfg = cap.configure(rate=rate, samples=max(CAPTURE_MIN_SAMPLES, CAPTURE_BYTES_MAX * samples // cfg.bytes), **kw)
+    return cfg
+
+
+def _one_shot(cap: capture.LogicCapture, cfg: capture.Config, fake: bool = False) -> tuple[capture.Segment, bytes, dict]:
+    """start -> done -> the one segment read back, with the host's timing: the capture may not finish before its window
+    (samples / actual_rate, less the declared rate uncertainty; not asked of the fake, whose one-shot is done as start
+    answers), and finishes within a second after it."""
+    window_s = float(cfg.samples / cfg.rate)
+    t0 = time.monotonic()
+    blocking = cap.start()
+    segs = cap.wait(timeout=max(5.0, window_s + 5.0))
+    done_s = time.monotonic() - t0
+    assert len(segs) == 1, f"a one-shot gave {len(segs)} segments"
+    seg = segs[0]
+    assert seg.generation == cap.generation and seg.serial == 0 and seg.position == 0, f"segment {seg}"
+    assert seg.samples == cfg.samples, f"segment has {seg.samples} samples, configure said {cfg.samples}"
+    t1 = time.monotonic()
+    data = cap.read_segment(seg)
+    read_s = time.monotonic() - t1
+    assert len(data) == cfg.bytes, f"read {len(data)} bytes of a {cfg.bytes}-byte segment"
+    tolerance = max(cfg.rate_ppm / 1e6, 0.01)
+    assert fake or done_s >= window_s * (1 - tolerance), f"done {done_s * 1e3:.1f} ms after start, the window is {window_s * 1e3:.1f} ms"
+    assert done_s <= window_s + 1.0, f"done {done_s:.2f} s after start, the window is {window_s * 1e3:.1f} ms"
+    st = cap.status()
+    assert st.state == capture.STATE["done"] and st.serial_done == 1 and st.write_pos == cfg.bytes and not st.flags, f"status {st}"
+    timing = {"blocking_ms": blocking, "done_s": round(done_s, 4), "read_s": round(read_s, 3), "window_s": round(window_s, 5),
+              "start_ns": seg.start_ns, "start_uncertainty_ns": seg.start_uncertainty_ns, "flags": seg.flags,
+              "generation": seg.generation}
+    return seg, data, timing
+
+
+def _config_record(cfg: capture.Config) -> dict:
+    out = {"actual_rate": float(cfg.rate), "samples": cfg.samples, "segments": cfg.segments, "bytes": cfg.bytes,
+           "jitter_kind": cfg.jitter_kind, "jitter_ns": cfg.jitter_ns, "rate_measured": cfg.rate_measured,
+           "rate_ppm": cfg.rate_ppm, "blocking_ms": cfg.blocking_ms, "ignored": cfg.ignored}
+    if cfg.width:
+        out["layout"] = {"w": cfg.width, "pos": cfg.positions}
+    else:
+        out["layout"] = {"s": cfg.slot, "o": cfg.offset, "b": cfg.bits, "order": cfg.order}
+        out.update(zero=cfg.zero, scale_nv=cfg.scale_nv, frontend_used=cfg.frontend, skew_ns=cfg.skew_ns,
+                   reference=list(cfg.reference) if cfg.reference else None)
+    return out
+
+
+class _Pull:
+    """How a capture test sets the level of a channel wired to nothing: fixture gpio's pull-up / pull-down on the same
+    channel when the probe lets the capture share its pins (a logic capture listens only, oep-if-capture §1.2), else
+    (logic only) the settings' idle item on the released channel, set before the capture's plan - or nothing: then the
+    levels are recorded, not checked. The analog gets no idle fallback: an analog pad drops the pulls when it is planned
+    (the ESP32's: 137 mV mean, 0 to 2575 of 4095, under an idle pull-up, 2026-10-02)."""
+
+    def __init__(self, hst: h.Host, cap: capture.LogicCapture, assignments: list[tuple[int, int, int]], channels: list[int],
+                 rec: dict, idle_fallback: bool = True):
+        self.hst, self.cap, self.assignments, self.channels = hst, cap, assignments, channels
+        self.gpio = fixture.Gpio(hst)
+        self.cfg: config.ProbeConfig | None = None
+        self.idle_set = False
+        try:
+            core.plan_apply(hst, assignments + [(self.gpio.fn, GPIO_ROLE_LINE, ch) for ch in channels])
+            self.how = "gpio on the same channel"
+        except h.Rejected as e:
+            rec["shared_with_gpio"] = f"refused: {type(e).__name__}: {e}"
+            if idle_fallback and _listed(hst, "oep.probe.config"):
+                self.cfg = config.ProbeConfig(hst)
+                self.how = "idle item on the released channel"
+            else:
+                self.how = None
+                core.plan_apply(hst, assignments)
+        rec["pull"] = self.how
+
+    @property
+    def checks(self) -> bool:
+        return self.how is not None
+
+    def set(self, up: bool) -> None:
+        if self.cfg is not None:
+            core.plan_release(self.hst, [self.cap.fn])
+            self.cfg.set([config.Idle(channel=ch, mode="pull-up" if up else "pull-down") for ch in self.channels])
+            self.idle_set = True
+            core.plan_apply(self.hst, self.assignments)
+        elif self.how:
+            self.gpio.set([(ch, self.gpio.INPUT_PULLUP if up else self.gpio.INPUT_PULLDOWN) for ch in self.channels])
+        time.sleep(0.005)
+
+    def release(self) -> None:
+        core.plan_release(self.hst, [self.cap.fn] + ([self.gpio.fn] if self.how and self.cfg is None else []))
+        if self.idle_set:
+            self.cfg.unset([("idle", ch) for ch in self.channels])
+
+
+def test_capture(run: record.Run):
+    hst = run.take()
+    if not _listed(hst, capture.LogicCapture.NAME):
+        pytest.skip("the probe does not list oep.fixture.logic")
+    cap = capture.LogicCapture(hst)
+    decl = record.declared(hst, cap.fn)
+    declared = _capture_declared(decl)
+    chans = list(run.board.gpio)
+    allowed = decl["role_channels"]
+    for role, ch in enumerate(chans):
+        if role in allowed and ch not in allowed[role]:
+            pytest.skip(f"channel {ch} is not one the logic capture's role {role} allows ({allowed[role]})")
+    rate, samples = _capture_rate_samples(declared)
+    rec = run.record("capture", channels=chans, rate=rate, samples_asked=samples, declared=declared)
+    pull = _Pull(hst, cap, [(cap.fn, role, ch) for role, ch in enumerate(chans)], chans, rec)
+    wrong, levels, generations, captures = [], {}, [], []
+    judged = pull.checks and run.board.kind != "fake"            # the fake captures a counter, not its pins
+    if not judged:
+        rec["levels_judged"] = False
+    try:
+        for name, up in (("pull-up", True), ("pull-down", False)):
+            pull.set(up)
+            cfg = _configure(cap, rate, samples)
+            rec["configured"] = _config_record(cfg)
+            assert cfg.width and len(cfg.positions) == len(chans), f"layout w {cfg.width} pos {cfg.positions} for {len(chans)} channels"
+            assert len(set(cfg.positions)) == len(cfg.positions) and all(p < cfg.width for p in cfg.positions), f"layout {cfg.positions}"
+            seg, data, timing = _one_shot(cap, cfg, run.board.kind == "fake")
+            captures.append(timing)
+            generations.append(seg.generation)
+            for k, ch in enumerate(chans):
+                ones = sum(cap.channel(data, k, seg.samples))
+                levels[f"{ch}:{name}"] = {"ones": ones, "samples": seg.samples}
+                want = seg.samples if up else 0
+                if judged and ones != want:
+                    wrong.append(f"channel {ch} {name}: {ones} of {seg.samples} samples read 1, expected {want}")
+    finally:
+        pull.release()
+        rec.update(levels=levels, captures=captures, generations=generations,
+                   actual_rate=rec.get("configured", {}).get("actual_rate"), layout=rec.get("configured", {}).get("layout"),
+                   samples=rec.get("configured", {}).get("samples"), seconds=captures[-1]["window_s"] if captures else None)
+    assert len(generations) == 2 and generations[1] == generations[0] + 1, f"generations {generations}: not +1 per start"
+    assert not wrong, "; ".join(wrong)
+
+
+def _analog_channel(hst: h.Host, board, decl: dict) -> int:
+    """The free channel the analog capture's role 0 allows (OEP_HW_ANALOG=<channel> names one)."""
+    env = os.environ.get("OEP_HW_ANALOG")
+    if env:
+        return int(env)
+    allowed = decl["role_channels"].get(0)
+    for ch in _free_channels(board):
+        if allowed is None or ch in allowed:
+            return ch
+    pytest.skip(f"no free channel of the table is one the analog capture allows ({allowed}); OEP_HW_ANALOG=<channel> names one")
+
+
+def _widest_frontend(declared: dict) -> int | None:
+    fes = declared.get("frontends")
+    if not fes:
+        return None
+    return max(fes, key=lambda fe: fes[fe]["max_mv"] - fes[fe]["min_mv"])
+
+
+def _analog_stats(ana: capture.AnalogCapture, data: bytes, samples: int) -> dict:
+    vals = ana.values(data, 0, samples)
+    mean = sum(vals) / len(vals)
+    return {"min": min(vals), "max": max(vals), "mean": round(mean, 1), "mean_mv": round(ana.millivolts(0, mean), 1),
+            "full_scale": (1 << ana.config.bits) - 1}
+
+
+def test_capture_analog(run: record.Run):
+    hst = run.take()
+    if not _listed(hst, capture.AnalogCapture.NAME):
+        pytest.skip("the probe does not list oep.fixture.analog")
+    ana = capture.AnalogCapture(hst)
+    decl = record.declared(hst, ana.fn)
+    declared = _capture_declared(decl)
+    ch = _analog_channel(hst, run.board, decl)
+    rate, samples = _capture_rate_samples(declared)
+    fe = _widest_frontend(declared)
+    rec = run.record("capture_analog", channel=ch, rate=rate, samples_asked=samples, frontend=fe, declared=declared)
+    pull = _Pull(hst, ana, [(ana.fn, 0, ch)], [ch], rec, idle_fallback=False)
+    kw = {"frontends": {0: fe}} if fe is not None else {}
+    wrong, values, captures = [], {}, []
+    try:
+        rounds = (("pull-up", True), ("pull-down", False)) if pull.checks else (("idle", None),)
+        for name, up in rounds:
+            if up is not None:
+                pull.set(up)
+            cfg = _configure(ana, rate, samples, **kw)
+            rec["configured"] = _config_record(cfg)
+            assert cfg.slot in (8, 16, 32) and 1 <= cfg.bits <= 31 and cfg.offset + cfg.bits <= cfg.slot, f"layout {rec['configured']['layout']}"
+            assert cfg.order == [0], f"order {cfg.order} for one channel"
+            if fe is not None:
+                assert cfg.frontend.get(0) == fe, f"frontend_used {cfg.frontend}, asked {fe}"
+            seg, data, timing = _one_shot(ana, cfg, run.board.kind == "fake")
+            captures.append(timing)
+            stats = _analog_stats(ana, data, seg.samples)
+            values[name] = stats
+            assert 0 <= stats["min"] and stats["max"] <= stats["full_scale"]
+            if up is not None:
+                # the bands: pulled up the pin sits at the supply, over every frontend's range (full scale); pulled down at 0
+                band_ok = stats["mean"] >= 0.8 * stats["full_scale"] if up else stats["mean"] <= 0.2 * stats["full_scale"]
+                if not band_ok:
+                    wrong.append(f"{name}: mean {stats['mean']} of {stats['full_scale']} ({stats['mean_mv']} mV)")
+        cal = ana.calibration()
+        rec["calibration"] = {"factory": [(fe_, scheme, len(raw)) for fe_, scheme, raw in cal.factory], "vrefint": cal.vrefint,
+                              "vrefint_nominal_mv": cal.vrefint_nominal_mv}
+    finally:
+        pull.release()
+        rec.update(values=values, captures=captures, actual_rate=rec.get("configured", {}).get("actual_rate"),
+                   layout=rec.get("configured", {}).get("layout"), samples=rec.get("configured", {}).get("samples"),
+                   seconds=captures[-1]["window_s"] if captures else None)
+    if not pull.checks:
+        rec["bands"] = "not checked: the probe shares an analog channel with nothing (oep-if-capture §1.2), so no pull reaches it"
+    assert not wrong, "; ".join(wrong)
+
+
+def test_capture_group(run: record.Run):
+    hst = run.take()
+    for name in (capture.CaptureGroup.NAME, capture.LogicCapture.NAME, capture.AnalogCapture.NAME):
+        if not _listed(hst, name):
+            pytest.skip(f"the probe does not list {name}")
+    grp, cap, ana = capture.CaptureGroup(hst), capture.LogicCapture(hst), capture.AnalogCapture(hst)
+    decl = record.declared(hst, grp.fn)
+    tracks_v = decl["own"].get(_GROUP_D["tracks"])
+    tracks = list(struct.unpack_from(f"<{tracks_v[0][0]}H", tracks_v[0], 1)) if tracks_v else []
+    declared = {"tracks": tracks, "max_tracks": record.own_u(decl, _GROUP_D["max_tracks"], "<B"), "features": decl.get("features"),
+                "budget": [(struct.unpack_from("<I", v)[0], list(struct.unpack_from(f"<{v[4]}H", v, 5)))
+                           for v in decl["own"].get(_GROUP_D["budget"], ())],
+                "start_skew_ns": {fn: ns for fn, ns in (struct.unpack_from("<HI", v) for v in decl["own"].get(_GROUP_D["start_skew"], ()))}}
+    if cap.fn not in tracks or ana.fn not in tracks:
+        pytest.skip(f"the group binds tracks {tracks}, not logic {cap.fn} + analog {ana.fn}")
+    chans = list(run.board.gpio)
+    a_ch = _analog_channel(hst, run.board, record.declared(hst, ana.fn))
+    l_rate, l_samples = _capture_rate_samples(_capture_declared(record.declared(hst, cap.fn)))
+    a_decl = _capture_declared(record.declared(hst, ana.fn))
+    a_rate, a_samples = _capture_rate_samples(a_decl)
+    fe = _widest_frontend(a_decl)
+    rec = run.record("capture_group", logic_channels=chans, analog_channel=a_ch, declared=declared)
+    core.plan_apply(hst, [(cap.fn, k, ch) for k, ch in enumerate(chans)] + [(ana.fn, 0, a_ch)])
+    bound = False
+    try:
+        l_cfg = _configure(cap, l_rate, l_samples)
+        a_cfg = _configure(ana, a_rate, a_samples, **({"frontends": {0: fe}} if fe is not None else {}))
+        rec.update(logic=_config_record(l_cfg), analog=_config_record(a_cfg))
+        grp.bind([cap, ana])
+        bound = True
+        t0 = time.monotonic()
+        blocking, start_ns = grp.start([cap, ana])
+        st = grp.wait(timeout=10.0)
+        done_s = time.monotonic() - t0
+        rec.update(blocking_ms=blocking, start_ns=start_ns, generations=grp.generations, done_s=round(done_s, 4),
+                   state=st.state, trigger_ns=st.trigger_ns, trigger_fn=st.trigger_fn)
+        assert set(grp.generations) == {cap.fn, ana.fn}, f"the start answer names generations for {list(grp.generations)}"
+        offsets = {}
+        for track, cfg in ((cap, l_cfg), (ana, a_cfg)):
+            segs = track.segments()
+            assert len(segs) == 1 and segs[0].samples == cfg.samples, f"{track.name}: segments {segs}"
+            assert segs[0].generation == grp.generations[track.fn], f"{track.name}: segment generation {segs[0].generation}, start said {grp.generations[track.fn]}"
+            data = track.read_segment(segs[0])
+            assert len(data) == cfg.bytes
+            offsets[track.name] = segs[0].start_ns - start_ns
+            assert 0 <= offsets[track.name] <= 1_000_000_000, f"{track.name} started {offsets[track.name]} ns from the group's start"
+        rec["track_offset_ns"] = offsets
+        window_s = max(float(l_cfg.samples / l_cfg.rate), float(a_cfg.samples / a_cfg.rate))
+        rec["window_s"] = round(window_s, 5)
+        assert done_s <= window_s + 1.0
+    finally:
+        if bound:
+            try:
+                grp.bind([])
+            except h.OepError as e:
+                rec["unbind_error"] = str(e)
+        core.plan_release(hst, [cap.fn, ana.fn])
+
+
+# ---- 8. fixture i2c-target / spi-target ------------------------------------------------------------------------------------
+
+_I2C_QUEUE_DEPTH = reg.FIXTURE_I2C_TARGET.tlv["describe"]["queue_depth"]
+_SPI_QUEUE_DEPTH = reg.FIXTURE_SPI_TARGET.tlv["describe"]["queue_depth"]
+
+
+def _target_declared(decl: dict, queue_tag: int) -> dict:
+    return {"queue_depth": record.own_u(decl, queue_tag, "<B"), "max_clock_hz": decl.get("max_clock_hz"),
+            "max_length": decl.get("max_length"), "features": decl.get("features"), "implementation": decl.get("implementation")}
+
+
+def _plan_roles(board, decl: dict, roles: list[int], env: str) -> dict[int, int]:
+    """A free channel for each role (role_channels says which it may take; distinct channels; env `name=ch,ch,...`
+    overrides), or the first channel_group when the interface comes as fixed pin sets. Skips when the table has too few."""
+    text = os.environ.get(env, "")
+    if text:
+        chans = [int(v) for v in text.split(",")]
+        assert len(chans) == len(roles), f"{env} needs {len(roles)} channels"
+        return dict(zip(roles, chans))
+    allowed = decl["role_channels"]
+    if not allowed and decl["channel_groups"]:
+        _, pins = decl["channel_groups"][0]
+        return {role: ch for role, ch in pins if role in roles}
+    out: dict[int, int] = {}
+    for role in roles:
+        for ch in _free_channels(board):
+            if ch not in out.values() and (role not in allowed or ch in allowed[role]):
+                out[role] = ch
+                break
+        else:
+            pytest.skip(f"no free channel of the table for role {role} (allowed {allowed.get(role)}); {env}=<channels> names them")
+    return out
+
+
+def test_i2c_target(run: record.Run):
+    hst = run.take()
+    if not _listed(hst, fixture.I2cTarget.NAME):
+        pytest.skip("the probe does not list oep.fixture.i2c-target")
+    t = fixture.I2cTarget(hst)
+    decl = record.declared(hst, t.fn)
+    roles = _plan_roles(run.board, decl, [t.ROLE_SDA, t.ROLE_SCL], "OEP_HW_I2C")
+    rec = run.record("i2c_target", sda=roles[t.ROLE_SDA], scl=roles[t.ROLE_SCL], address=I2C_ADDRESS,
+                     declared=_target_declared(decl, _I2C_QUEUE_DEPTH))
+    features = decl.get("features") or 0
+    core.plan_apply(hst, t.assignments(roles[t.ROLE_SDA], roles[t.ROLE_SCL]))
+    try:
+        st0 = t.status()
+        rec["status_unconfigured"] = dataclasses.asdict(st0)
+        assert st0.state == 0, f"state {st0.state} before configure"
+        if features & reg.FIXTURE_I2C_TARGET.enum["features"]["preloaded_tx"]:
+            t.configure(I2C_ADDRESS, t.MODE_PRELOADED_TX)
+            st1 = t.status()
+            rec["status_configured"] = dataclasses.asdict(st1)
+            assert st1.state == 1 and st1.mode == t.MODE_PRELOADED_TX and st1.tx_slots == 0 and st1.queued == 0, f"status {st1}"
+            depth = rec["declared"]["queue_depth"] or 2
+            slots = [t.preload_tx(bytes([0xA0 + i, i])) for i in range(min(depth, 3))]
+            st2 = t.status()
+            rec.update(preloaded=slots, status_preloaded=dataclasses.asdict(st2))
+            assert slots == list(range(1, len(slots) + 1)), f"preload_tx counted {slots}"
+            assert st2.tx_slots == len(slots), f"status after {len(slots)} preloads: {st2}"
+        else:
+            rec["preloaded"] = "mode 3 not declared"
+        t.configure(I2C_ADDRESS, t.MODE_FIXED_RX)
+        t.arm_rx(4)
+        st3 = t.status()
+        rec["status_armed"] = dataclasses.asdict(st3)
+        assert st3.state == 1 and st3.mode == t.MODE_FIXED_RX and st3.tx_slots == 0, f"status armed: {st3}"
+        # the lines float (no controller, no pull-ups): a glitch may count as an error or a frame - recorded, not judged
+        assert st3.armed or st3.queued, f"arm_rx did not arm: {st3}"
+        pending, data = t.read_rx()
+        rec["read_rx"] = [pending, data.hex()]
+        t.reset()
+        st4 = t.status()
+        rec["status_reset"] = dataclasses.asdict(st4)
+        assert st4.state == 1 and st4.mode == t.MODE_FIXED_RX and not st4.armed and st4.queued == 0 and st4.errors == 0 \
+            and st4.rx_frames == 0, f"status after reset: {st4}"
+    finally:
+        core.plan_release(hst, [t.fn])
+
+
+def test_spi_target(run: record.Run):
+    hst = run.take()
+    if not _listed(hst, fixture.SpiTarget.NAME):
+        pytest.skip("the probe does not list oep.fixture.spi-target")
+    t = fixture.SpiTarget(hst)
+    decl = record.declared(hst, t.fn)
+    roles = _plan_roles(run.board, decl, [t.ROLE_SCK, t.ROLE_MOSI, t.ROLE_MISO, t.ROLE_CS], "OEP_HW_SPI")
+    rec = run.record("spi_target", sck=roles[t.ROLE_SCK], mosi=roles[t.ROLE_MOSI], miso=roles[t.ROLE_MISO], cs=roles[t.ROLE_CS],
+                     declared=_target_declared(decl, _SPI_QUEUE_DEPTH))
+    core.plan_apply(hst, t.assignments(roles[t.ROLE_SCK], roles[t.ROLE_MOSI], roles[t.ROLE_MISO], roles[t.ROLE_CS]))
+    try:
+        st0 = t.status()
+        rec["status_unconfigured"] = dataclasses.asdict(st0)
+        assert st0.state == 0, f"state {st0.state} before configure"
+        t.configure(0, t.MSB_FIRST)
+        st1 = t.status()
+        rec["status_configured"] = dataclasses.asdict(st1)
+        assert st1.state == 1 and st1.mode == 0 and st1.bit_order == 0 and not st1.armed, f"status {st1}"
+        t.arm(4, b"\xa5\x5a")
+        st2 = t.status()
+        rec["status_armed"] = dataclasses.asdict(st2)
+        # SCK and CS float (no controller): the ATOM's target sees phantom transactions (transactions 1-2 right after the
+        # arm, 2026-10-02), one of which may end the armed one - so the arm must have armed or been consumed, and the
+        # "one at a time" refusal of a second arm is not something floating pins let a test rely on
+        assert st2.armed or st2.queued or st2.transactions, f"arm did not arm: {st2}"
+        pending, bits, data = t.read_rx()
+        rec["read_rx"] = [pending, bits, data.hex()]
+        t.reset()
+        st3 = t.status()
+        rec["status_reset"] = dataclasses.asdict(st3)
+        assert st3.state == 1 and st3.mode == 0 and st3.bit_order == 0 and not st3.armed and st3.queued == 0 \
+            and st3.transactions == 0 and st3.errors == 0, f"status after reset: {st3}"
+    finally:
+        core.plan_release(hst, [t.fn])
+
+
+# ---- 9. the target's console -------------------------------------------------------------------------------------------------
+
+_MECHANISMS = reg.TARGET_CONSOLE.tlv["describe"]["mechanisms"]
+
+
+def test_console(run: record.Run):
+    spec = os.environ.get("OEP_HW_TARGET", "")
+    if not spec:
+        pytest.skip("no target wired (OEP_HW_TARGET=<name>[@swdio[,swclk]] says one is): the console needs a wire connection")
+    hst = run.take()
+    if not _listed(hst, console_mod.Console.NAME):
+        pytest.skip("the probe does not list oep.target.console")
+    name, _, pins_text = spec.partition("@")
+    wires = [e.name for e in core.list_entries(hst, "oep.wire")]
+    assert wires, "the probe offers no oep.wire.* interface"
+    wire = riscv.Wire(hst, wires[0])
+    pairs = None
+    if pins_text:
+        nums = [int(v, 0) for v in pins_text.split(",")]
+        pairs = [(nums[0], nums[1] if len(nums) > 1 else 0xFFFF)]
+    con = console_mod.Console(hst)
+    decl = record.declared(hst, con.fn)
+    mechanisms = list(decl["own"].get(_MECHANISMS, [b""])[0])
+    mechanism = con.DMSEQ if con.DMSEQ in mechanisms or not mechanisms else mechanisms[0]
+    rec = run.record("console", target=name, wire=wires[0], mechanisms=mechanisms, mechanism=mechanism)
+    found = wire.scan(pairs)
+    assert found, "scan found no target"
+    conn, status = wire.attach(halt=False, pins=found[0].pins)        # running: whatever it prints is what arrives
+    rec.update(connection=conn, dmstatus=f"{status:#010x}")
+    seen = bytearray()
+    try:
+        stream = con.open(conn, mechanism)
+        rec.update(stream=stream, existing=con.existing)
+        backlog = con.read(con.FROM_OLDEST, 0, 1000)
+        rec["backlog_bytes"] = len(backlog.data)
+        io = console_mod.ConsoleIO(con)
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline:
+            seen += io.read(512)
+            time.sleep(0.02)
+        rec.update(bytes_seen=len(seen), lost=io.lost, marks=len(con.marks()),
+                   streams=[dataclasses.asdict(s) for s in con.streams()], sample=bytes(seen[:64]).decode("ascii", "replace"))
+        assert any(s.stream == stream and s.connection == conn and s.mechanism == mechanism for s in con.streams()), \
+            "the streams list does not show the stream just opened"
+        con.close()
+    finally:
+        try:
+            wire.detach(conn)
+        except h.OepError as e:
+            rec["detach_error"] = str(e)
+
+
+# ---- 10. port_speed (UART bridge) --------------------------------------------------------------------------------------------
 
 def test_port_speed(run: record.Run):
     board = run.board
@@ -364,7 +881,7 @@ def test_port_speed(run: record.Run):
     assert not failing, "; ".join(failing)
 
 
-# ---- 8. the session ---------------------------------------------------------------------------------------------------------
+# ---- 11. the session --------------------------------------------------------------------------------------------------------
 
 def test_session(run: record.Run):
     hst = run.require()
