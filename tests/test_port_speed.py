@@ -222,6 +222,7 @@ def in_process(profile=fake.esp32_v003, lease=10000):
     return ep, hst, lk
 
 
+UNIT = "0070070d9394"   # the fake esp32-v003's unit_id
 FAST = dict(verify_ms=900)   # the probe's try state ends soon: a failed candidate costs under a second
 
 
@@ -256,8 +257,8 @@ def test_minimal_form_falls_back_when_the_confirm_does_not_come_and_goes_on():
     ep, hst, lk = in_process()
     ep.broken_rates[1000000] = endpoint.BrokenRate(to_probe=False)   # probe -> host only: the probe sees nothing wrong
     t0 = time.monotonic()
-    report = link.raise_speed(hst, [1000000, 9_000_000, 500000], **FAST)
-    a, b, c = report.trials
+    report = link.raise_speed(hst, [9_000_000, 1000000, 500000], **FAST)
+    b, a, c = report.trials
     assert not a.committed and a.why == "no confirm at the new rate" and a.actual == 1000000
     assert b.why.startswith("unsupported") and b.actual is None
     assert c.committed and report.chosen == 500000 and lk.baud == 500000
@@ -398,9 +399,12 @@ def test_a_raised_link_keeps_the_line_alive_when_quiet():
     assert not lk.keep_alive()                                  # back at the boot speed: none
 
 
+NO_PROBATION = dict(probation_bytes=0, probation_s=0)   # the window alone (the probation has its own tests)
+
+
 def raised_in_use(lease=10000, **kw):
     ep, hst, lk = in_process(lease=lease)
-    report = link.raise_speed(hst, [921600], **FAST, **kw)
+    report = link.raise_speed(hst, [921600], **{**FAST, **NO_PROBATION, **kw})
     assert report.chosen == 921600
     return ep, hst, lk, report
 
@@ -420,7 +424,7 @@ def test_in_use_the_3_s_window_over_10_percent_steps_down_for_the_session():
     assert ep.holder is not None and ep.holder == hst.session                # the lease held throughout
     hst.keepalive()
     again = link.raise_speed(hst, [921600], **FAST)                          # not again in this session
-    assert again.trials[0].why.startswith("stepped down") and again.chosen is None and lk.baud == 115200
+    assert again.trials[0].why.startswith("broke in use earlier") and again.chosen is None and lk.baud == 115200
     hst.end()
     core.take(hst, 10000)                                                    # a new session may try it again
     del ep.broken_rates[921600]
@@ -478,7 +482,7 @@ def test_no_answer_at_a_raised_rate_falls_back_well_inside_the_lease():
     assert report.lost and report.stepped_down and "no answer" in report.down_why
     assert report.step_downs[0].ratio is None and ep.holder == hst.session
     again = link.raise_speed(hst, [921600], **FAST)
-    assert again.trials[0].why.startswith("stepped down") and lk.baud == 115200
+    assert again.trials[0].why.startswith("broke in use earlier") and lk.baud == 115200
 
 
 def test_no_answer_and_no_confirm_at_the_boot_speed_is_a_link_error():
@@ -622,6 +626,145 @@ def test_not_a_serial_port_of_its_own():
     assert not report.supported and "serial port" in report.why
 
 
+# ---- step downs, the probation, max_tries (host guide §7.3.2 item 4) ----------------------------------------------------
+
+def move(hst, until, size=40, limit_s=3.0):
+    """In-use traffic: link_source answers of `size` bytes until `until()` (at most `limit_s`)."""
+    deadline = time.monotonic() + limit_s
+    while not until() and time.monotonic() < deadline:
+        hst.request(0, m.OP_LINK_SOURCE, struct.pack("<I", size))
+
+
+def test_in_use_a_breakdown_steps_down_to_the_next_lower_candidate_not_at_or_above_a_failed_one():
+    """Rule: the next lower candidate that has not failed in this session gets a fresh try -> confirm -> commit; a rate
+    that broke is not tried again, nor anything above it; none left: the boot speed."""
+    ep, hst, lk = in_process()
+    ep.broken_rates[1500000] = endpoint.BrokenRate(to_probe=False)              # no confirm there
+    report = link.raise_speed(hst, [1500000, 921600, 500000, 230400], **FAST, **NO_PROBATION)
+    assert report.chosen == 921600 and lk.failed.keys() == {1500000} and lk.unusable == {}
+    ep.broken_rates[921600] = endpoint.BrokenRate(to_probe=False, every=3)
+    n = len(ep.requests)
+    for _ in range(60):
+        hst.request(0, m.OP_LOCK_STATE)
+    s, = report.step_downs
+    assert s.rate == 921600 and s.to == 500000 and not s.probation and "within 3 s" in s.why
+    assert lk.baud == 500000 and ep.port_baud(0) == 500000 and report.chosen == report.rate == 500000
+    assert (PS, TRY) in ops(ep, n) and (PS, COMMIT) in ops(ep, n)                # a fresh try and commit at 500000
+    assert [t.rate for t in report.trials if t.committed] == [921600, 500000] and report.stepped_down
+    assert "-> 500000" in report.to_text() and "in force: 500000 (raised)" in report.to_text()
+    ep.broken_rates[500000] = endpoint.BrokenRate(to_probe=False, every=3)
+    for _ in range(60):
+        hst.request(0, m.OP_LOCK_STATE)
+    assert [(s.rate, s.to) for s in report.step_downs] == [(921600, 500000), (500000, 230400)]
+    assert lk.baud == 230400 and lk.unusable.keys() == {921600, 500000}
+    again = link.raise_speed(hst, [921600, 750000, 230400], **FAST, **NO_PROBATION)   # later in the session: no up
+    assert again.trials[0].why.startswith("broke in use earlier") and again.trials[1].why.startswith("above 500000")
+    hst.keepalive()
+
+
+def test_in_use_no_step_down_to_a_rate_above_one_that_failed_its_verify():
+    ep, hst, lk = in_process()
+    ep.broken_rates[230400] = endpoint.BrokenRate(to_probe=False)              # fails first (an odd order)
+    report = link.raise_speed(hst, [230400, 921600, 500000], **FAST, **NO_PROBATION)
+    assert report.chosen == 921600
+    ep.broken_rates[921600] = endpoint.BrokenRate(to_probe=False, every=3)
+    for _ in range(60):
+        hst.request(0, m.OP_LOCK_STATE)
+    s, = report.step_downs
+    assert s.to == 115200 and lk.baud == 115200 and report.chosen is None    # 500000 is above 230400, which failed
+    assert [t.rate for t in report.trials] == [230400, 921600]
+    assert "the boot speed for the rest of the session" in report.to_text()
+
+
+def test_the_probation_fails_a_rate_that_passes_the_quick_verify_and_breaks_later():
+    """The field case modelled: a rate passes the 16-frame verify, breaks after some kilobytes. In its probation that is
+    a verify failure: a step down at once to the next lower candidate, whose probation then passes."""
+    from oep_client import speed_record
+    ep, hst, lk = in_process()
+    rec = speed_record.SpeedRecord(None)
+    rec.path = None
+    notes = []
+    rec.note = lambda port, unit, rate, passed, phase="": notes.append((rate, passed, phase))
+    ep.broken_rates[921600] = endpoint.BrokenRate(min_size=30, to_probe=False, after=3000)   # past the verify's bytes
+    report = link.raise_speed(hst, [921600, 500000], flows=[("in", 1)], record=rec, probation_bytes=4096,
+                              probation_s=0.3, **FAST)
+    t = report.trials[0]
+    assert t.committed and all(f.passed for f in t.flows) and t.probation == "running"
+    assert notes == [(921600, True, "verify")]
+    move(hst, lambda: lk.baud != 921600)
+    s, = report.step_downs
+    assert s.rate == 921600 and s.probation and s.to == 500000 and s.why.startswith("in probation")
+    assert t.probation == "failed" and 0 < t.probation_bytes < 4096 and (921600, False, "probation") in notes
+    t2 = report.trials[-1]
+    assert t2.rate == 500000 and t2.committed and t2.flows and t2.probation == "running" and t2.settling
+    move(hst, lambda: t2.probation != "running")
+    assert t2.probation == "passed" and t2.probation_bytes >= 4096 and lk.probation is None
+    assert notes[-2:] == [(500000, True, "verify"), (500000, True, "probation")]
+    assert lk.baud == 500000 and "probation passed" in report.to_text() and "(in probation)" in report.to_text()
+
+
+def test_without_the_probation_the_same_rate_breaks_only_in_use():
+    ep, hst, lk = in_process()
+    ep.broken_rates[921600] = endpoint.BrokenRate(min_size=30, to_probe=False, after=3000, every=3)
+    report = link.raise_speed(hst, [921600, 500000], flows=[("in", 1)], **FAST, **NO_PROBATION)
+    assert report.trials[0].committed and report.trials[0].probation == "off"
+    move(hst, lambda: lk.baud != 921600)
+    s, = report.step_downs
+    assert not s.probation and "within 3 s" in s.why and s.to == 500000
+
+
+def test_a_failure_soon_after_a_breakdown_at_another_rate_is_noted_unknown(tmp_path):
+    """Record rule: results measured within settle_s of a breakdown (or a step down) at another rate are unknown."""
+    from oep_client import speed_record
+    path = tmp_path / "link-speed.json"
+    ep, hst, lk = in_process()
+    ep.broken_rates[921600] = endpoint.BrokenRate(min_size=30, to_probe=False)
+    ep.broken_rates[500000] = endpoint.BrokenRate(min_size=30, to_probe=False)
+    report = link.raise_speed(hst, [921600, 500000], flows=[("in", 1)], record=str(path), **FAST)
+    a, b = report.trials
+    assert not a.settling and b.settling and report.chosen is None
+    rec = speed_record.SpeedRecord(path)
+    assert rec.results("<stream>", UNIT) == {921600: "failed", 500000: "unknown"}
+    assert rec.lookup("<stream>", UNIT) == ([], [921600])                    # an unknown is in neither list
+    saved = json.loads(path.read_text())[f"<stream>|{UNIT}"]["rates"]
+    assert saved["500000"] == {**saved["500000"], "result": "unknown", "passed": None, "phase": "verify"}
+    assert "unknown" in report.to_text()
+    hst.end()
+    core.take(hst, 10000)
+    report = link.raise_speed(hst, [921600, 500000], flows=[("in", 1)], record=str(path), settle_s=0, **FAST)
+    assert [t.rate for t in report.trials] == [500000] and report.skipped == [921600]
+    assert speed_record.SpeedRecord(path).results("<stream>", UNIT)[500000] == "failed"
+
+
+def test_when_the_record_marks_every_candidate_failed_the_slowest_is_tried_once(tmp_path):
+    from oep_client import speed_record
+    rec = speed_record.SpeedRecord(tmp_path / "r.json")
+    for rate in (1500000, 921600, 500000):
+        rec.note("<stream>", UNIT, rate, False, "verify")
+    ep, hst, lk = in_process()
+    report = link.raise_speed(hst, [1500000, 921600, 500000], record=rec, max_tries=1, **FAST)
+    assert report.retried == 500000 and report.skipped == [1500000, 921600] and report.chosen == 500000
+    assert [t.rate for t in report.trials] == [500000] and "500000 (the slowest) tried once" in report.to_text()
+    assert rec.lookup("<stream>", UNIT) == ([500000], [1500000, 921600])
+
+
+def test_max_tries_bounds_the_candidates_tried_and_the_step_downs():
+    ep, hst, lk = in_process()
+    ep.broken_rates[1500000] = endpoint.BrokenRate(to_probe=False)
+    report = link.raise_speed(hst, [1500000, 921600, 500000], max_tries=2, **FAST, **NO_PROBATION)
+    assert [t.rate for t in report.trials] == [1500000, 921600] and report.capped == [500000]
+    assert report.chosen == 921600 and lk.speed_plan.rates == [1500000, 921600]
+    assert "left out (max_tries): 500000" in report.to_text()
+    ep.broken_rates[921600] = endpoint.BrokenRate(to_probe=False, every=3)
+    for _ in range(60):
+        hst.request(0, m.OP_LOCK_STATE)
+    assert report.step_downs[0].to == 115200 and lk.baud == 115200          # 500000 is not in this call's tries
+    ep2, hst2, lk2 = in_process()
+    ep2.broken_rates[1500000] = endpoint.BrokenRate(to_probe=False)
+    report = link.raise_speed(hst2, [1500000, 921600], max_tries=1, **FAST)
+    assert [t.rate for t in report.trials] == [1500000] and report.capped == [921600] and report.chosen is None
+
+
 # ---- the record (host guide §7.4) --------------------------------------------------------------------------------------
 
 def test_the_record_puts_passed_rates_first_skips_failed_ones_and_expires(tmp_path):
@@ -656,6 +799,31 @@ def test_the_record_puts_passed_rates_first_skips_failed_ones_and_expires(tmp_pa
     rec2.save()
     assert "230400" not in path.read_text()
     assert speed_record.SpeedRecord(path).lookup("/dev/other", unit) == ([], [])     # another port: nothing known
+
+
+def test_the_record_keeps_a_failure_a_day_and_a_pass_30_days(tmp_path):
+    import datetime as dt
+    from oep_client import speed_record
+    path = tmp_path / "r.json"
+    rec = speed_record.SpeedRecord(path)
+    for rate, passed in ((1500000, False), (921600, None), (500000, True), (230400, True)):
+        rec.note("p", "u", rate, passed, "verify")
+    assert rec.lookup("p", "u") == ([500000, 230400], [1500000])
+    data = json.loads(path.read_text())
+    ago = lambda **kw: (dt.datetime.now(dt.timezone.utc) - dt.timedelta(**kw)).isoformat(timespec="seconds")
+    rates = data["p|u"]["rates"]
+    rates["1500000"]["at"] = ago(hours=25)                                  # a failure: past 1 day
+    rates["921600"]["at"] = ago(hours=23)                                   # an unknown: within it
+    rates["500000"]["at"] = ago(days=29)                                    # a pass: within 30 days
+    rates["230400"]["at"] = ago(days=31)
+    rates["115201"] = {"passed": False, "at": ago(hours=1)}                 # the older shape: no result, no phase
+    path.write_text(json.dumps(data))
+    rec = speed_record.SpeedRecord(path)
+    assert rec.results("p", "u") == {921600: "unknown", 500000: "passed", 115201: "failed"}
+    assert rec.lookup("p", "u") == ([500000], [115201])
+    assert speed_record.FAIL_TTL_S == 86400 and speed_record.PASS_TTL_S == 30 * 86400
+    rec = speed_record.SpeedRecord(path, fail_ttl=3600 * 26)
+    assert rec.lookup("p", "u") == ([500000], [1500000, 115201])
 
 
 def test_the_record_is_a_cache_an_unreadable_file_is_not_an_error(tmp_path):
@@ -717,6 +885,10 @@ def test_oep_speed_cli_prints_the_report_and_keeps_the_record(capsys, tmp_path, 
         assert cli.main(["speed", where[1], "230400,750000", "--minimal", "--json"]) == 0   # the record skips 230400
         out = json.loads(capsys.readouterr().out)
         assert out["skipped"] == [230400] and [t["rate"] for t in out["trials"]] == [750000] and out["chosen"] == 750000
+        assert cli.main(["speed", where[1], "750000,500000", "--minimal", "--json", "--max-tries", "1"]) == 0
+        out = json.loads(capsys.readouterr().out)
+        assert [t["rate"] for t in out["trials"]] == [750000] and out["capped"] == [500000]
+        assert out["trials"][0]["probation"] == "running"
         assert cli.main(["speed", where[1], "--no-record"]) == 0                 # the default candidate, 500000
         assert "in force: 500000 (raised)" in capsys.readouterr().out
     finally:

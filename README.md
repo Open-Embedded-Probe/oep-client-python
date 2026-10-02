@@ -178,12 +178,18 @@ that): while raised the link sends a keepalive before a request when it has been
 first confirm for about 4 s to wait out a rate left over. The link follows an `end` or a revert at once, and a request
 that goes unanswered at a raised rate (its resend too) takes the link back to the boot speed, confirmed, and goes once
 more there - it never wedges; while raised each wait for an answer is at most a quarter of the lease, so this ends well
-inside it. In use the link judges the frames of the last 3 s (none under 50): over max(2 x baseline, 10 %) broken or
-lost steps the link down - port_speed revert at the raised rate, the boot speed, a confirm - and the rate is not raised
-again in that session (`speed.stepped_down`, `speed.down_why`, `speed.step_downs`). `record=True` (a bool, a path, or a
-`speed_record.SpeedRecord`; the `oep speed` CLI's default, off in the library) keeps passed / failed rates per (port,
-unit_id) under `~/.cache/oep-client/link-speed.json` for 30 days, putting a passed rate first and leaving failed ones
-out. A probe without the feature answers `not supported` and stays at its speed. Behind a broker (TCP) the broker does
+inside it. In use, a committed rate's first 32 KiB and 1 s (`probation_bytes`, `probation_s`) are its probation: 3 or
+more broken or lost frames over max(2 x baseline, 5 %), or a missed answer, there count as a verify failure and step
+down at once (the 16-frame verify stays the quick gate). After it the link judges the frames of the last 3 s (none
+under 50): over max(2 x baseline, 10 %) broken or lost steps the link down. A step down is port_speed revert at the
+raised rate, the boot speed, a confirm, then the next lower candidate of that call that has not failed in the session
+(a fresh try -> confirm -> verify -> commit; none left: the boot speed); a rate that broke is not used again in that
+session, nor any rate above it (`speed.stepped_down`, `speed.down_why`, `speed.step_downs` with `to` and
+`probation`). `max_tries=` bounds the candidates one call tries (a capture host wants 2). `record=True` (a bool, a
+path, or a `speed_record.SpeedRecord`; the `oep speed` CLI's default, off in the library) keeps passed / failed rates
+per (port, unit_id) under `~/.cache/oep-client/link-speed.json` - a pass for 30 days, a failure for 1 day, a failure
+measured within 2 s (`settle_s`) of a breakdown at another rate as unknown - putting a passed rate first and leaving
+failed ones out; when every candidate is marked failed the slowest is tried once (`speed.retried`). A probe without the feature answers `not supported` and stays at its speed. Behind a broker (TCP) the broker does
 this, not the client. Serial ports are also opened in the driver's low-latency mode where it has one (an FTDI's latency
 timer 16 -> 1 ms tripled a UART bridge's throughput). `open_host(..., baud=)` names the boot speed when the board's
 profile is not 115200.

@@ -48,7 +48,8 @@ define:
   3000; 0 and anything longer count as that maximum) with no good frame or at 3 broken candidates in a row with no
   good frame between, the session's end reverts after its answer. The line itself is modelled by `broken_rates`
   (rate -> BrokenRate): frames at such a rate break, from a size and in the directions given, only both ways at once
-  (`duplex`), only every Nth (`every`) (`fake_serial` applies it).
+  (`duplex`), only every Nth (`every`), only once `after` bytes have passed at the rate since the switch to it
+  (`fake_serial` applies it).
 
 Every other non-core fn gets two stand-in operations so the session rules can be exercised - FAKE ONLY, they mean
 nothing on a real probe:  0x01 write(u32) changes state, 0x02 read -> u32 needs no lock.
@@ -364,6 +365,10 @@ class BrokenRate:
                                # the unread answer breaks (to_host)
     every: int = 1             # of the frames that would break, only every Nth does (1: all)
     seen: int = 0              # the frames that would have broken so far (`every` counts these)
+    after: int = 0             # none breaks until this many bytes (every frame on the wire, both ways) have passed at
+                               # the rate since the port last switched to it: a rate that passes a short verify and
+                               # breaks later in use
+    carried: int = 0           # the bytes passed at the rate since that switch (`after` counts these)
 
     def hit(self) -> bool:
         """One more frame that would break: True when this one does (`every`)."""
@@ -1347,7 +1352,12 @@ class Endpoint:
         way carries a frame of the rate's min_size or more at the same time (a BrokenRate with `duplex` breaks only
         then)."""
         b = self.broken_rates.get(self.port_baud(port))
-        if b is None or size < b.min_size or not (b.to_host if to_host else b.to_probe) or (b.duplex and not duplex):
+        if b is None:
+            return False
+        if b.carried < b.after:
+            b.carried += size
+            return False
+        if size < b.min_size or not (b.to_host if to_host else b.to_probe) or (b.duplex and not duplex):
             return False
         return b.hit()
 
@@ -1366,6 +1376,8 @@ class Endpoint:
             return
         _, port, baud, verify_ms = pending
         self.speed_state, self.speed_port, self.speed_rate, self.speed_asked = "try", port, baud, baud
+        if baud in self.broken_rates:
+            self.broken_rates[baud].carried = 0                    # `after` counts from this switch
         self.speed_until_ms = self.now() + verify_ms
         self.speed_good_ms = self.now()
         self.speed_heard = False

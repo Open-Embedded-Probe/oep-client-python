@@ -169,11 +169,17 @@ probe はセッションが終わったとき（`end`、lease の期限切れ、
 `idle_ms` の半分より短く黙れば要求の前に keepalive を送り、長く黙る呼び出し側は `hst.link.keep_alive()` で同じことをする。
 シリアルの口を開くと最初の confirm を約 4 秒繰り返して、残った速さが戻るのを待つ。link は `end` と戻すにはすぐ合わせ、上げた速さで
 応答の来ない要求（送り直しも）があれば起動時の速さに戻って confirm し、そこでもう一度送る（固まらない）。上げている間は応答を待つ
-1 回が lease の 4 分の 1 までなので、lease の内に十分収まる。使っている間は直近 3 秒のフレーム（50 未満なら判定しない）を見て、
-max(基準 × 2, 10 %) を超えて壊れ・失われたら、上げた速さで port_speed の戻すを送り、起動時の速さに戻って confirm し、その速さは
-そのセッションの間は使わない（`speed.stepped_down`、`speed.down_why`、`speed.step_downs`）。`record=True`（真偽値・パス・
-`speed_record.SpeedRecord`。`oep speed` CLI は既定で ON、ライブラリは OFF）は、通った / 通らなかった速さを（口、unit_id）ごとに
-`~/.cache/oep-client/link-speed.json` に 30 日残し、通った速さを先頭に、通らなかった速さを外す。機能の無い probe は `not supported`
+1 回が lease の 4 分の 1 までなので、lease の内に十分収まる。使っている間、決めた速さの最初の 32 KiB と 1 秒（`probation_bytes`、
+`probation_s`）は試用期間で、そこで壊れ・失われが 3 以上かつ max(基準 × 2, 5 %) 超、または応答が来なければ、確かめの失敗として
+すぐ下げる（16 フレームの確かめは素早い関門として残す）。その後は直近 3 秒のフレーム（50 未満なら判定しない）を見て、
+max(基準 × 2, 10 %) を超えて壊れ・失われたら下げる。下げるのは、上げた速さで port_speed の戻すを送り、起動時の速さに戻って confirm
+し、その呼び出しの候補のうちこのセッションで通らなかったものより下の次の候補を新しく試す → confirm → 確かめ → 決める（残って
+いなければ起動時の速さ）。壊れた速さとそれより上はそのセッションの間は使わない（`speed.stepped_down`、`speed.down_why`、
+`to` と `probation` を持つ `speed.step_downs`）。`max_tries=` は 1 回の呼び出しで試す候補の数の上限（キャプチャの host は 2）。
+`record=True`（真偽値・パス・`speed_record.SpeedRecord`。`oep speed` CLI は既定で ON、ライブラリは OFF）は、通った / 通らなかった
+速さを（口、unit_id）ごとに `~/.cache/oep-client/link-speed.json` に残し（通ったは 30 日、通らなかったは 1 日、別の速さの破綻から
+2 秒（`settle_s`）以内に測った失敗は「不明」）、通った速さを先頭に、通らなかった速さを外す。全部の候補が通らなかったとあれば、
+いちばん遅い候補を 1 回だけ試す（`speed.retried`）。機能の無い probe は `not supported`
 で、速さは変わらない。ブローカー（TCP）の後ろでは client ではなくブローカーが行う。シリアルの口は、ドライバにあれば low-latency の
 モードで開く（FTDI の latency timer 16 → 1 ms で UART bridge の速度が 3 倍になった）。ボードの起動時の速さが 115200 でなければ
 `open_host(..., baud=)` で渡す。

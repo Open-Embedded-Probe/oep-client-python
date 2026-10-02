@@ -29,16 +29,22 @@ out = link_sink, duplex = both, each with its in-flight n) for 16 frames at max_
 lost >= 3 and a ratio over max(2 x baseline, 5 %), once more at n = 1 before giving up on it (then n = 1 is the cap),
 commit when every flow passed. A failed candidate: revert (step 2, at the new rate), the boot speed, confirms up to
 port_speed_idle_max_ms + 1 s. The report (`link.speed`) records the baseline, every candidate's flows and the step
-downs. In use: the frames of the last 3 s (none judged under 50) over max(2 x baseline, 10 %) broken or lost step the
-link down - revert at the raised rate, the boot speed, a confirm - and the rate is not raised again in the session; a
-request whose answer never comes at the raised rate takes the link back to the boot speed, confirmed within that same
-bound, and goes once more there (never again at the raised rate; no confirm = ConnectionError). A revert's or an
-end's answer puts the link back at the boot speed at once (obligation 6). The probe also goes back after idle_ms (at
+downs. In use: the first period at a committed rate is its probation (32 KiB both ways and 1 s), judged as the verify
+judges a flow - 3 or more broken or lost over max(2 x baseline, 5 %), or a missed answer, is a verify failure and
+steps down at once; after it the frames of the last 3 s (none judged under 50) over max(2 x baseline, 10 %) broken or
+lost step the link down. A step down: revert at the raised rate, the boot speed, a confirm, then the next lower
+candidate of that raise_speed call that has not failed in this session gets a fresh try -> confirm -> verify ->
+commit (none left: the boot speed); a rate that broke is not used again in the session, nor any above it. A request
+whose answer never comes at the raised rate takes the link back to the boot speed, confirmed within that same bound,
+steps down the same way and goes once more (never again at the raised rate; no confirm = ConnectionError). A revert's
+or an end's answer puts the link back at the boot speed at once (obligation 6). The probe also goes back after idle_ms (at
 most 3 s) with no good frame, so while raised the link sends a keepalive before a request when it has been quiet for
 less than half of idle_ms (1 s), and `keep_alive()` does the same for a caller that sits idle for long. A host
 opening a serial port retries its first confirm for that maximum and a little (4 s in all): a host that raised the
 speed and died leaves the probe at its rate until then. `record=True` keeps passed / failed rates per (port, unit_id)
-in `speed_record` (30 days) and puts passed rates first, failed ones out.
+in `speed_record` (a pass 30 days, a failure 1 day; a failure within 2 s of a breakdown at another rate is unknown)
+and puts passed rates first, failed ones out (all failed: the slowest is tried once); `max_tries` bounds the
+candidates one call tries.
 """
 
 from __future__ import annotations
@@ -48,6 +54,7 @@ import select
 import socket
 import struct
 import time
+from typing import Callable
 from dataclasses import dataclass, field
 
 import serial
@@ -57,10 +64,28 @@ from .frames import FramingLost, LengthFrames
 
 RESYNC_QUIET_S = reg.TIMING["resync_quiet_ms"] / 1000
 USB_VID, USB_PID = 0x303A, 0x0002   # the reference P4 probe's: the board's default, a temporary USB ID (probe guide §3.8)
+# The project's own USB VID:PID pairs (core §3.3): the only automatic identification of an OEP probe. The registry lists
+# them once obtained; none yet, so this stays empty and nothing is identified automatically.
+PROJECT_VID_PIDS: tuple[tuple[int, int], ...] = ()
+# Temporary clues until the project's VID:PID exists (host guide §1.7, not normative; gone once it does). A device that
+# fits one is only a candidate: it is probed by the confirm-only rule (SerialLink.probe) before anything else is sent.
+TEMPORARY_IPRODUCT_PREFIX = "OEP"
+TEMPORARY_VENDOR_INTERFACE = (reg.USB["vendor_bulk_class"], reg.USB["vendor_bulk_subclass"], reg.USB["vendor_bulk_protocol"])
+TEMPORARY_HID_USAGE_PAGE = reg.USB["hid_usage_page"]
+PROBE_WAIT_S = reg.TIMING["host_wait_add_ms"] / 1000   # the probing rule's wait for confirm's answer (core §3.3, §4.4)
 
 
 class CorrMismatch(FramingLost):
     """A result for a request other than the one waited for."""
+
+
+class NotOepProbe(ConnectionError):
+    """A device or port this host had not identified gave no valid confirm answer (core §3.3 probing rule): it was
+    closed and nothing else was sent to it."""
+
+
+class UnitIdMismatch(ConnectionError):
+    """The device found by the named unit_id (its USB serial) says another unit_id in describe (core §3.3): closed."""
 
 
 class PortBusy(OSError):
@@ -194,7 +219,12 @@ class SerialLink:
         self.record = None                         # a speed_record.SpeedRecord and its key, once raise_speed used one
         self.record_key: tuple[str, str] | None = None
         self.speed_port: int | None = None         # the transport index the raised rate is on (the revert names it)
-        self.unusable: dict[int, str] = {}         # rates stepped down from in this session -> why (not tried again)
+        self.unusable: dict[int, str] = {}         # rates that broke in use in this session -> why (none at or above again)
+        self.failed: dict[int, str] = {}           # every rate the line failed in this session (a step down goes below)
+        self.probation: Probation | None = None    # raised, in use: the first period at a new rate (guide §7.3.2 item 4)
+        self.speed_plan: SpeedPlan | None = None   # the candidates a step down in use may go to (the lower ones)
+        self.broke_at: float | None = None         # when the link was last back after a breakdown (monotonic) ...
+        self.broke_rate: int | None = None         # ... at this rate (settle_s: results soon after are unknown)
         self.unusable_session: int | None = None   # the session `unusable` belongs to
         self.session_frame = None                  # (op, payload) -> a core request in the session, once bound
         self.lease_s = lambda: None                # the session's lease, once bound (raised: bounds every wait)
@@ -222,7 +252,9 @@ class SerialLink:
         if self.framing == "length":
             self.frames.send_many(messages)
         else:
-            self.stream.write(b"".join(cobs.frame(msg) for msg in messages))
+            data = b"".join(cobs.frame(msg) for msg in messages)
+            self.stream.write(data)
+            self._moved(len(data))
         self.last_tx = time.monotonic()
 
     def _recv(self) -> bytes:
@@ -251,6 +283,7 @@ class SerialLink:
                         self._count("broken")
                         raise
                     continue
+                self._moved(len(raw) + 2)
                 self._count("good")                  # a result or a notification that decoded (host guide §7.3.2)
                 return frame
             if time.monotonic() > deadline:
@@ -362,8 +395,9 @@ class SerialLink:
 
     def _recover(self) -> None:
         """After a lost, broken or missing reply: leave the link in step for the next request. A serial port needs
-        nothing (a late answer is read past by its corr)."""
-        if self.framing == "length":
+        nothing (a late answer is read past by its corr). While probing (core §3.3) there is no resync: its confirms
+        would be more than the one resend the probing rule allows."""
+        if self.framing == "length" and not getattr(self, "_probing", False):
             self.resync()
 
     def send(self, message: bytes) -> bytes:
@@ -570,7 +604,10 @@ class SerialLink:
         """One frame the host side saw while a session holds the port: `kind` good / broken / lost. At the boot speed
         it goes into this session's baseline (`base_counts`); raised and in use into the 3 s window, judged on every
         bad one (host guide §7.3.2 item 4): IN_USE_MIN_FRAMES or more in the window and a ratio over
-        max(2 x baseline, IN_USE_FLOOR) make the link step down at the next safe point."""
+        max(2 x baseline, IN_USE_FLOOR) make the link step down at the next safe point. While the rate is in its
+        probation (`probation`), its frames are also judged as the verify judges a flow: FLOW_FAIL_MIN or more broken
+        or lost and a ratio over max(2 x baseline, VERIFY_FLOOR) step down at once (a verify failure, not an in-use
+        one); a good frame once probation_bytes have moved and probation_s have passed ends the probation."""
         if self.base_baud is None or not self.held():
             return
         if self.baud == self.base_baud:
@@ -579,6 +616,18 @@ class SerialLink:
         if not self._in_use():
             return
         now = time.monotonic()
+        p = self.probation
+        if p is not None and p.rate == self.baud:
+            p.frames += 1
+            if kind != "good":
+                p.bad += 1
+                ratio = p.bad / p.frames
+                if not self.step_due and p.bad >= FLOW_FAIL_MIN and ratio > p.threshold:
+                    self.step_ratio = ratio
+                    self.step_due = (f"in probation: {p.bad} of {p.frames} frames broken or lost at {self.baud} after "
+                                     f"{p.moved} bytes ({ratio:.1%}, over {p.threshold:.0%})")
+            elif p.moved >= p.bytes and now - p.started >= p.seconds:
+                self._probation_passed(p)
         self.window.append((now, kind != "good"))
         while self.window and now - self.window[0][0] > IN_USE_WINDOW_S:
             self.window.popleft()
@@ -591,14 +640,29 @@ class SerialLink:
             self.step_due = (f"{bad} of {len(self.window)} frames broken or lost within {IN_USE_WINDOW_S:g} s at "
                              f"{self.baud} ({ratio:.1%}, over {threshold:.0%})")
 
+    def _moved(self, n: int) -> None:
+        """Bytes on the line at a raised rate in use (both ways): the probation counts them."""
+        p = self.probation
+        if p is not None and self._in_use() and p.rate == self.baud:
+            p.moved += n
+            p.trial.probation_bytes = p.moved
+
+    def _probation_passed(self, p: Probation) -> None:
+        self.probation = None
+        p.trial.probation = "passed"
+        p.trial.probation_bytes = p.moved
+        if self.record is not None and self.record_key is not None:
+            self.record.note(*self.record_key, p.rate, passed=True, phase="probation")
+
     def _step_down_if_due(self) -> None:
         if self.step_due and self._in_use():
             self._step_down(self.step_due)
 
     def _step_down(self, why: str) -> None:
-        """Leave the raised rate for the rest of the session: port_speed step 2 at it (STEP_DOWN_WAIT_S, never sent
-        again: a probe that already went back cannot hear it, and a committed one reverts at the broken candidates
-        the confirms make), the host at the boot speed, a confirm there. ConnectionError when none is answered."""
+        """Leave the raised rate: port_speed step 2 at it (STEP_DOWN_WAIT_S, never sent again: a probe that already
+        went back cannot hear it, and a committed one reverts at the broken candidates the confirms make), the host at
+        the boot speed, a confirm there (ConnectionError when none is answered), then the next lower candidate
+        (`_step_lower`)."""
         rate = self.baud
         self.step_due = ""
         self.window.clear()
@@ -617,23 +681,58 @@ class SerialLink:
         if not self.back_to_base():
             raise ConnectionError(f"the probe answers neither at {rate} nor at the boot speed {self.base_baud}")
         self._stepped(rate, why)
+        self._step_lower()
 
     def _stepped(self, rate: int, why: str) -> None:
-        """`rate` is not used again in this session (raise_speed skips it); the report and the record say so."""
-        self.unusable[rate] = why
+        """`rate` broke (in its probation or later in use): not used again in this session, nor anything at or above it
+        (raise_speed and the step down skip them); the report and the record say so. A probation's failure is a verify
+        failure (phase "probation"), a later one an in-use failure (phase "in_use"); either measured within settle_s
+        of a breakdown at another rate is written unknown."""
+        p, self.probation = self.probation, None
+        in_probation = p is not None and p.rate == rate
+        if in_probation and not why.startswith("in probation"):
+            why = f"in probation: {why}"
+        self.unusable[rate] = self.failed[rate] = why
         if self.speed is not None:
             self.speed.rate, self.speed.chosen = self.base_baud, None
             self.speed.stepped_down, self.speed.down_why = True, why
-            self.speed.step_downs.append(StepDown(time.time(), rate, why, self.step_ratio))
+            self.speed.step_downs.append(StepDown(time.time(), rate, why, self.step_ratio, self.base_baud,
+                                                  in_probation))
+        if in_probation:
+            p.trial.probation = "failed"
         self.step_ratio = None
         if self.record is not None and self.record_key is not None:
-            self.record.note(*self.record_key, rate, passed=False)
+            self.record.note(*self.record_key, rate, passed=None if in_probation and p.settling else False,
+                             phase="probation" if in_probation else "in_use")
+        self.broke_at, self.broke_rate = time.monotonic(), rate
+
+    def _step_lower(self) -> None:
+        """After a breakdown in use, back at the boot speed: the next lower candidate of the last raise_speed's plan
+        that has not failed in this session (below every rate that has) gets a fresh try -> confirm -> verify ->
+        commit, the next after it if that fails; none left (or none passes): the boot speed for the rest of the
+        session. The report's last step down says where the link went (`to`)."""
+        plan = self.speed_plan
+        if plan is None or plan.session != self.unusable_session or not self.unusable:
+            return
+        ceiling = min(self.unusable.keys() | self.failed.keys())
+        lower = sorted({r for r in plan.rates if r < ceiling}, reverse=True)
+        if lower:
+            saved = self.fallback
+            self.fallback = False                  # every failure there is handled there
+            self._own += 1
+            try:
+                plan.go(lower)
+            finally:
+                self.fallback = saved
+                self._own -= 1
+        if self.speed is not None and self.speed.step_downs:
+            self.speed.step_downs[-1].to = self.baud
 
     def _speed_fallback(self, e: Exception | None = None) -> bool:
         """A request failed (its resend too) while a raised rate was in use. Broken frames (the probe still answers
         at that rate) or a step down already due: step down (`_step_down`). No answer at all: the probe went back
-        (idle_ms, broken candidates, a lapse) - back to the boot speed, confirmed. Either way the rate is not used
-        again in this session. True = send again there."""
+        (idle_ms, broken candidates, a lapse) - back to the boot speed, confirmed, then the next lower candidate.
+        Either way the rate (and anything above it) is not used again in this session. True = send again there."""
         if not self._in_use() or self.base_baud is None:
             return False
         rate = self.baud
@@ -648,6 +747,7 @@ class SerialLink:
         if self.speed is not None:
             self.speed.lost = True
         self._stepped(rate, f"no answer at {rate} (the probe went back by itself)")
+        self._step_lower()
         return True
 
     def _exchange_once(self, messages: list[bytes], max_inflight: int, window_bytes: int,
@@ -705,12 +805,40 @@ class SerialLink:
         hst.before_request = self._keep_raised      # the keepalive before the request's corr is taken (core §4.1)
         self.expected_s = lambda: hst.expect_ms / 1000
         hst.link = self
-        if self.framing == "cobs" and getattr(self, "transport", None) == "serial":
-            self.wait_boot_speed()
-        limits = hst.confirm()
+        limits = self.probe(hst)
         hst.exchange = self.bind(limits)
         if self.framing == "length" and limits.get("max_frame"):
             self.frames.max_frame = limits["max_frame"]
+
+    def probe(self, hst) -> dict:
+        """The probing rule (core §3.3): every device or port this client opens is one it has not identified (no
+        project VID:PID is listed yet), so the first thing sent is a confirm, and nothing else until a valid answer
+        (completed, the same corr, a payload starting OEP!) came back. None: the link is closed and NotOepProbe raised.
+        Vendor bulk / HID: one confirm and its one §5.2 resend, each waiting PROBE_WAIT_S (1000 ms, §4.4). A serial
+        port first runs wait_boot_speed's confirms (core §3.5 host obligation 7: repeated for port_speed_idle_max_ms +
+        1 s at the boot speed, a previous host's raised rate running out), then the checked confirm. TCP (a host-side
+        broker, which opens the probe itself) keeps the link's timeout. -> confirm's limits."""
+        transport = getattr(self, "transport", None)
+        saved = self.timeout, self.resend
+        self._probing = True
+        try:
+            if self.framing == "cobs" and transport == "serial":
+                self.wait_boot_speed()
+            elif transport != "tcp":
+                self.timeout, self.resend = PROBE_WAIT_S, True
+            return hst.confirm()
+        except Exception as e:
+            self.timeout, self.resend = saved
+            try:
+                self.close()
+            except Exception:
+                pass
+            where = self.port_path or transport or "the link"
+            raise NotOepProbe(f"{where}: no valid confirm answer ({type(e).__name__}: {e}); closed, nothing else "
+                              "sent (core §3.3)") from e
+        finally:
+            self.timeout, self.resend = saved
+            self._probing = False
 
     def wait_boot_speed(self, wait_s: float | None = None) -> None:
         """A serial port just opened: confirm at the boot speed, retried for OPEN_RETRY_S (port_speed_idle_max_ms and
@@ -734,9 +862,11 @@ def open_usb_host(vid: int = USB_VID, pid: int = USB_PID, serial: str | None = N
                   transports: tuple[str, ...] = ("vendor", "hid")):
     """A Host on the probe's USB device (the P4's HS OTG port), trying its ways in in the oep-core §3.3 order: vendor bulk,
     then vendor-defined HID (when raw USB is not permitted or the probe offers no vendor interface). A CDC port is
-    opened by path (open_host). Length-prefixed frames on all of them."""
+    opened by path (open_host). Length-prefixed frames on all of them. The device is one the caller chose (or named),
+    not one identified: each way in is probed by the confirm-only rule (SerialLink.probe); one that gives no valid
+    answer is closed and the next tried. NotOepProbe when every opened way in failed that way."""
     from . import host
-    errors = []
+    errors, probed = [], []
     for kind in transports:
         try:
             stream = _open_usb_stream(kind, vid, pid, serial)
@@ -749,20 +879,59 @@ def open_usb_host(vid: int = USB_VID, pid: int = USB_PID, serial: str | None = N
         lk = SerialLink.on_stream(stream, "length", timeout)
         lk.transport = kind
         hst = host.Host(lk.send)
-        lk.attach_host(hst)
+        try:
+            lk.attach_host(hst)
+        except NotOepProbe as e:
+            errors.append(f"{kind}: {e}")
+            probed.append(kind)
+            continue
         return hst
-    raise FileNotFoundError(f"no way in to {vid:04x}:{pid:04x}: " + "; ".join(errors))
+    message = f"no way in to {vid:04x}:{pid:04x}: " + "; ".join(errors)
+    if probed:
+        raise NotOepProbe(message)
+    raise FileNotFoundError(message)
 
 
-def is_oep_device(vid: int, pid: int, product: str | None) -> bool:
-    """core §3.3: an OEP probe is a USB device whose iProduct starts with "OEP" (registry usb.iproduct_prefix); the
-    VID:PID tells nothing (vid and pid are taken for the callers that have them)."""
-    return (product or "").startswith(reg.USB["iproduct_prefix"])
+def is_project_device(vid: int, pid: int) -> bool:
+    """core §3.3: the only automatic identification of an OEP probe - the project's own USB VID:PID (PROJECT_VID_PIDS,
+    from the registry once listed; empty now, so always False)."""
+    return (vid, pid) in PROJECT_VID_PIDS
+
+
+def temporary_clue(product: str | None = None, interfaces=(), hid_usage_pages=()) -> bool:
+    """A temporary clue that a USB device may be an OEP probe, until the project's VID:PID exists (host guide §1.7; not
+    normative, and removed once that VID:PID is listed): iProduct starting "OEP", a vendor interface class 0xFF /
+    subclass 0x4F / protocol 0x45 (`interfaces`: (class, subclass, protocol) per interface), or a HID with usage page
+    0xFF4F (`hid_usage_pages`). Never an identification: a candidate is opened and probed by the confirm-only rule
+    (SerialLink.probe) before anything else goes to it."""
+    return ((product or "").startswith(TEMPORARY_IPRODUCT_PREFIX)
+            or any(tuple(i) == TEMPORARY_VENDOR_INTERFACE for i in interfaces)
+            or TEMPORARY_HID_USAGE_PAGE in hid_usage_pages)
+
+
+def check_unit_id(hst, unit_id: str) -> None:
+    """A device opened by its named unit_id (core §3.3): after confirm, fn 0's describe must say that unit_id; otherwise
+    the link is closed and UnitIdMismatch raised (nothing else is sent)."""
+    from . import core
+    said = None
+    try:
+        for tag, value in core.describe(hst, 0):
+            if tag & 0x7F == reg.CORE.tlv["describe"]["unit_id"] and value:
+                said = value.decode("ascii", "replace")
+                break
+    except Exception as e:
+        hst.link.close()
+        raise UnitIdMismatch(f"unit id {unit_id}: describe failed ({type(e).__name__}: {e}); closed") from e
+    if said is None or said.lower() != unit_id.lower():
+        hst.link.close()
+        raise UnitIdMismatch(f"the device with USB serial {unit_id} says unit_id {said!r} in describe; closed")
 
 
 def find_usb(unit_id: str) -> tuple[int, int]:
-    """The VID:PID of the OEP probe whose USB serial number is `unit_id` (core §3.3, §7.5) - how a host that kept a
-    probe's unit_id (oep://<unit_id>/<slot>) finds it again whatever VID:PID it enumerates with."""
+    """The VID:PID of the USB device whose serial number is `unit_id` (core §3.3, §7.5) - how a host that kept a probe's
+    unit_id (oep://<unit_id>/<slot>, usb:<unit_id>) finds it again whatever VID:PID it enumerates with. The serial alone
+    decides (no iProduct or class check): the device is a named one, opened without identification, probed by confirm
+    and checked by describe's unit_id (open_host does both, check_unit_id)."""
     want = unit_id.lower()
     try:
         import usb1
@@ -773,8 +942,7 @@ def find_usb(unit_id: str) -> tuple[int, int]:
                 except Exception:                            # no access to this one: not ours to judge
                     continue
                 try:
-                    if (h.getSerialNumber() or "").lower() == want and \
-                            is_oep_device(dev.getVendorID(), dev.getProductID(), h.getProduct()):
+                    if (h.getSerialNumber() or "").lower() == want:
                         return dev.getVendorID(), dev.getProductID()
                 except Exception:
                     pass
@@ -786,12 +954,11 @@ def find_usb(unit_id: str) -> tuple[int, int]:
         for dev in usb.core.find(find_all=True):
             try:
                 serial = usb.util.get_string(dev, dev.iSerialNumber) or ""
-                product = usb.util.get_string(dev, dev.iProduct) or ""
             except Exception:
                 continue
-            if serial.lower() == want and is_oep_device(dev.idVendor, dev.idProduct, product):
+            if serial.lower() == want:
                 return dev.idVendor, dev.idProduct
-    raise FileNotFoundError(f"no OEP probe with unit id (USB serial) {unit_id}")
+    raise FileNotFoundError(f"no USB device with serial number (unit id) {unit_id}")
 
 
 def _open_usb_stream(kind: str, vid: int, pid: int, serial: str | None):
@@ -810,14 +977,16 @@ TCP_TIMEOUT = 15.0   # behind a broker: outlast its own 3 s retry towards the pr
 
 
 def open_host(target: str, timeout: float | None = None, resend: bool | None = None, *, baud: int = BASE_BAUD,
-              port_speed=None, flows=None, verify: bool | None = None, record=False, lease_ms: int = 3000,
-              owner: str | None = None):
+              port_speed=None, flows=None, verify: bool | None = None, record=False, max_tries: int | None = None,
+              lease_ms: int = 3000, owner: str | None = None):
     """A Host on `target`, with the link's pipelining bound to the probe's limits (core confirm): Host.pipeline and
     everything built on it (flash, capture reads) then keep several requests in flight.
 
     target: a serial port path (COM3 on Windows); tcp://HOST:PORT for a local broker (length frames); usb[:VID:PID[:SERIAL]]
-    (hex) for the probe's USB device, vendor bulk then HID (oep-core §3.3); usb:UNIT_ID for the OEP probe whose USB
-    serial is that unit id, whatever its VID:PID.
+    (hex) for the probe's USB device, vendor bulk then HID (oep-core §3.3); usb:UNIT_ID for the device whose USB serial
+    is that unit id, whatever its VID:PID (fn 0's describe must then say the same unit_id, or it is closed:
+    UnitIdMismatch). Every target is probed first by the confirm-only rule (core §3.3): no valid confirm answer, the link
+    is closed and NotOepProbe raised (a serial port retries its confirms for port_speed_idle_max_ms + 1 s first).
 
     timeout: seconds to wait for a reply (default 3; TCP 15). resend: send a request once more with the same corr when
     its reply was lost (default on; off for TCP, where a broker retries towards the probe itself and a second copy from
@@ -826,7 +995,8 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
     baud: a serial port's boot speed (the board's profile; every port_speed revert goes back to it). port_speed: the
     candidates to try in order (opt-in, core §3.5; True = raise_speed's default, 500000): the session is taken
     (core.take, `lease_ms`, `owner`) and left open for the caller - who goes on in it, never opening another (a new
-    session would end this one, and the rate with it) - and `raise_speed(hst, candidates, flows=, verify=, record=)`
+    session would end this one, and the rate with it) - and `raise_speed(hst, candidates, flows=, verify=, record=,
+    max_tries=)`
     runs (the minimal form unless `verify` / `flows` ask for the full one; `record` off by default); its report is
     `hst.link.speed`. A probe without port_speed, or a link that is not a serial port this host opened, stays at its
     speed (the report says why)."""
@@ -842,7 +1012,9 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
         parts = target.split(":")[1:]
         if len(parts) == 1:                                   # usb:UNIT_ID (any length: a VID comes with its PID)
             vid, pid = find_usb(parts[0])
-            return open_usb_host(vid, pid, parts[0], timeout)
+            hst = open_usb_host(vid, pid, parts[0], timeout)
+            check_unit_id(hst, parts[0])
+            return hst
         vid = int(parts[0], 16) if parts else USB_VID
         pid = int(parts[1], 16) if len(parts) > 1 else USB_PID
         return open_usb_host(vid, pid, parts[2] if len(parts) > 2 else None, timeout)
@@ -857,7 +1029,7 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
         from . import core
         core.take(hst, lease_ms, owner=owner)
         raise_speed(hst, DEFAULT_CANDIDATES if port_speed is True else port_speed, flows=flows, verify=verify,
-                    record=record)
+                    record=record, max_tries=max_tries)
     return hst
 
 
@@ -879,6 +1051,9 @@ VERIFY_FLOOR = 0.05        # ... and a ratio over max(2 x baseline, this) (item 
 BASELINE_FRAMES = 60       # the boot speed's ratio: this session's frames, or this many measured per flow (item 2)
 BASELINE_MAX = 0.10        # a flow whose baseline is over this is measured again at n = 1; still over: not raised
 SWITCH_SETTLE_S = 0.02     # after a baud change, before the first byte at the new rate (obligation 2: 20 ms or more)
+PROBATION_BYTES = 32 * 1024   # in use, a new rate's first period (guide §7.3.2 item 4): this many bytes both ways ...
+PROBATION_S = 1.0             # ... and this long since the commit, judged as the verify judges a flow
+SETTLE_S = 2.0             # results measured this soon after a breakdown at another rate are not failures (unknown)
 
 
 @dataclass
@@ -913,6 +1088,9 @@ class SpeedTrial:
     committed: bool = False
     why: str = ""
     n_cap: int = 0             # the in-flight cap the rate passed with (1 when a flow needed n = 1; 0: none)
+    probation: str = ""        # committed: "running", "passed" or "failed" (in use, its first period); "off": none
+    probation_bytes: int = 0   # the bytes moved at the rate in its probation so far
+    settling: bool = False     # measured within settle_s of a breakdown at another rate: a failure is noted unknown
 
     def flow(self, name: str) -> FlowResult | None:
         """The last result of flow `name` ("in" / "out" / "duplex")."""
@@ -937,11 +1115,41 @@ class SpeedTrial:
 
 @dataclass
 class StepDown:
-    """A step down in use (guide §7.3.2 item 5: when, from which rate, why, the window's ratio if that decided it)."""
+    """A step down in use (guide §7.3.2 item 5): when, from which rate, why, the ratio that decided it (the window's or
+    the probation's; None: no answer), the rate the link went to (`to`: the next lower candidate that passed, or the
+    boot speed), and whether the rate was still in its probation (then it counts as a verify failure)."""
     at: float
     rate: int
     why: str
     ratio: float | None = None
+    to: int | None = None
+    probation: bool = False
+
+
+@dataclass
+class Probation:
+    """A committed rate's first period in use (guide §7.3.2 item 4): ends (passed) at a good frame once `bytes` have
+    moved both ways and `seconds` have passed since `started`; FLOW_FAIL_MIN or more of its frames broken or lost and a
+    ratio over `threshold` (max(2 x baseline, VERIFY_FLOOR)) fail it."""
+    rate: int
+    trial: SpeedTrial
+    bytes: int
+    seconds: float
+    threshold: float
+    started: float
+    settling: bool = False
+    moved: int = 0
+    frames: int = 0
+    bad: int = 0
+
+
+@dataclass
+class SpeedPlan:
+    """What a step down in use may go to: the candidates the last raise_speed would try (after the record and
+    max_tries), for the session it ran in, and how to try some of them (`go`, raise_speed's own procedure)."""
+    rates: list[int]
+    session: int | None
+    go: Callable[[list[int]], object]
 
 
 @dataclass
@@ -950,9 +1158,11 @@ class SpeedReport:
     (`chosen`, None: the boot speed), every candidate in order, and why nothing was tried (`supported` False).
     `verified`: the full form ran (flows measured); `baseline`: flow -> the boot speed's ratio (from this session's
     `baseline_frames` frames, or measured: `baseline_flows`). `lost`: a raised rate was later found gone (the link went
-    back to the boot speed). `stepped_down`: in use, the link left the raised rate for the rest of the session
-    (`down_why`; every one in `step_downs`). `skipped`: candidates the record left out as failed. in_kb_s / out_kb_s /
-    duplex_kb_s: the chosen rate's measured throughput (None without a measurement) - for budgeting a transfer."""
+    back to the boot speed). `stepped_down`: in use, the link left a raised rate (`down_why`; every one in
+    `step_downs`, each with the rate it went to - the next lower candidate, or the boot speed). `skipped`: candidates
+    the record left out as failed; `retried`: the slowest candidate, tried although the record marks every one failed;
+    `capped`: candidates max_tries left out. in_kb_s / out_kb_s / duplex_kb_s: the chosen rate's measured throughput
+    (None without a measurement) - for budgeting a transfer."""
     base: int
     supported: bool
     rate: int
@@ -968,9 +1178,11 @@ class SpeedReport:
     baseline_flows: list[FlowResult] = field(default_factory=list)
     step_downs: list[StepDown] = field(default_factory=list)
     skipped: list[int] = field(default_factory=list)
+    retried: int | None = None     # the record marks every candidate failed: this one (the slowest) tried once anyway
+    capped: list[int] = field(default_factory=list)   # candidates max_tries left out
 
     def _chosen(self) -> SpeedTrial | None:
-        return next((t for t in self.trials if t.committed), None) if self.chosen else None
+        return next((t for t in reversed(self.trials) if t.committed and t.rate == self.chosen), None)
 
     @property
     def in_kb_s(self) -> float | None:
@@ -998,11 +1210,19 @@ class SpeedReport:
                 f"{k} {v:.1%}" for k, v in self.baseline.items()) if self.baseline else f"baseline at {self.base}: none")
         if self.skipped:
             lines.append("skipped (the record says failed): " + ", ".join(str(r) for r in self.skipped))
+        if self.retried:
+            lines.append(f"the record says every candidate failed: {self.retried} (the slowest) tried once")
+        if self.capped:
+            lines.append("left out (max_tries): " + ", ".join(str(r) for r in self.capped))
         lines.append(f"{'rate':>9} {'actual':>9}  {'flow':<9} {'frames':>6} {'broken':>6} {'lost':>5} {'ratio':>6} "
                      f"{'KB/s':>7}  result")
         for t in self.trials:
             head = f"{t.rate:>9} {t.actual if t.actual else '-':>9}  "
-            result = (f"committed{f' (in flight {t.n_cap})' if t.n_cap else ''}" if t.committed else t.why)
+            result = (f"committed{f' (in flight {t.n_cap})' if t.n_cap else ''}"
+                      f"{f', probation {t.probation} after {t.probation_bytes} bytes' if t.probation in ('passed', 'failed') else ''}"
+                      f"{f'; then {t.why}' if t.why else ''}" if t.committed else t.why)
+            if t.settling and not t.committed:
+                result += " (soon after a breakdown: unknown)"
             if not t.flows:
                 lines.append(head + f"{'-':<9} {'-':>6} {'-':>6} {'-':>5} {'-':>6} {'-':>7}  {result}")
                 continue
@@ -1011,8 +1231,9 @@ class SpeedReport:
                              f"{f.lost:>5} {f.ratio:>6.1%} {f.kb_s:>7.1f}  {'passed' if f.passed else 'failed'}")
             lines.append(" " * len(head) + f"-> {result}")
         for s in self.step_downs:
-            lines.append(f"stepped down from {s.rate}: {s.why}")
-        if self.stepped_down:
+            lines.append(f"stepped down from {s.rate}{' (in probation)' if s.probation else ''}: {s.why}"
+                         f"{f' -> {s.to}' if s.to else ''}")
+        if self.stepped_down and not self.chosen:
             lines.append("the boot speed for the rest of the session")
         lines.append(f"in force: {self.rate}" + (" (raised)" if self.chosen else " (the boot speed)"))
         return "\n".join(lines) + "\n"
@@ -1173,7 +1394,9 @@ def _verify_flows(hst, lk: SerialLink, rate: int, trial: SpeedTrial, flows: list
 
 def raise_speed(hst, candidates=DEFAULT_CANDIDATES, *, flows=None, verify: bool | None = None,
                 baseline: float | None = None, frames: int = FLOW_FRAMES, verify_ms: int | None = None,
-                idle_ms: int = IDLE_MAX_MS, port: int | None = None, record=False) -> SpeedReport:
+                idle_ms: int = IDLE_MAX_MS, port: int | None = None, record=False, max_tries: int | None = None,
+                probation_bytes: int = PROBATION_BYTES, probation_s: float = PROBATION_S,
+                settle_s: float = SETTLE_S) -> SpeedReport:
     """port_speed (oep-core §3.5) on the UART bridge this host opened, by the host guide's §7 procedure: try
     `candidates` in order and commit the first that passes. The session must be open (the rate lasts as long as it does).
 
@@ -1181,21 +1404,33 @@ def raise_speed(hst, candidates=DEFAULT_CANDIDATES, *, flows=None, verify: bool 
     probe's answer only when the OS refuses it) -> 20 ms -> confirm (100 ms, up to 3) -> commit. The full form
     (`verify=True`, or `flows` given; §7.3): first the boot speed's baseline per flow (`baseline` given, this session's
     frames at the boot speed when 60 or more, else 60 frames measured per flow at its n - over 10 % again at n = 1,
-    still over: not raised), then per candidate every flow for `frames` (16) frames of max_frame - 16 bytes; a flow
-    fails on broken + lost >= 3 and a ratio over max(2 x baseline, 5 %), runs again at n = 1 first (then n = 1 is the
-    link's cap), and one failed flow fails the candidate. `flows`: ("in" | "out" | "duplex", n) pairs (n 0 = the most
-    this link keeps in flight; default: all three at that n) - verify only what the session will use (§7.3.1).
+    still over: not raised), then per candidate every flow for `frames` (16) frames of max_frame - 16 bytes - the quick
+    gate; a flow fails on broken + lost >= 3 and a ratio over max(2 x baseline, 5 %), runs again at n = 1 first (then
+    n = 1 is the link's cap), and one failed flow fails the candidate. `flows`: ("in" | "out" | "duplex", n) pairs (n 0
+    = the most this link keeps in flight; default: all three at that n) - verify only what the session will use (§7.3.1).
 
     A failed candidate: revert (step 2, at the new rate; its answer need not come), the boot speed, confirms up to
     port_speed_idle_max_ms + 1 s (ConnectionError when none is answered). verify_ms: how long the probe waits for the
     commit (default VERIFY_MS 2000, kept a second under the lease). idle_ms: once committed, the probe reverts after this
     long with no good frame (default and at most 3000; 0 and more mean that); the link's keepalive interval is set
-    under half of it. In use the link judges the last 3 s (none under 50 frames): over max(2 x baseline, 10 %) broken or
-    lost -> revert and the boot speed for the rest of the session; a missed answer -> the boot speed, confirmed within
-    the same bound. A rate stepped down from is not tried again in the session. `record`: True = the default
-    `speed_record` file, or a path, or a SpeedRecord - passed rates go first, failed ones are skipped
-    (`report.skipped`), and this run's outcomes are written (off by default in the library; on in `oep speed`).
-    port: the transport index (default: the probe's first UART bridge). -> the report, also kept as `hst.link.speed`."""
+    under half of it.
+
+    In use (§7.3.2 item 4): the first period at a committed rate is its probation - until `probation_bytes` (32 KiB,
+    both ways) have moved and `probation_s` (1 s) have passed; 0 and 0: none - judged as the verify judges a flow
+    (3 or more broken or lost over max(2 x baseline, 5 %)) or a missed answer: either steps down at once and counts as
+    a verify failure. After it the last 3 s are judged (none under 50 frames): over max(2 x baseline, 10 %) broken or
+    lost, or a missed answer, steps down. A step down: revert, the boot speed, then the next lower candidate of this
+    call that has not failed in this session gets a fresh try -> confirm -> verify -> commit (the boot speed when none
+    is left). A rate that failed in this session (verify, probation or in use) is not tried again in it, nor any rate
+    above it (`report.step_downs` says where each step went).
+
+    `record`: True = the default `speed_record` file, or a path, or a SpeedRecord - passed rates go first, failed ones
+    are skipped (`report.skipped`; when every candidate is marked failed, the slowest is tried once anyway:
+    `report.retried`), and this run's outcomes are written; a failure measured within `settle_s` (2 s) of a breakdown
+    at another rate is written unknown (off by default in the library; on in `oep speed`). max_tries: the most
+    candidates tried in this call after the record ordered and filtered them (None = all; the rest:
+    `report.capped`; a step down in use goes only to these). port: the transport index (default: the probe's first
+    UART bridge). -> the report, also kept as `hst.link.speed`."""
     lk = getattr(hst, "link", None)
     base = getattr(lk, "base_baud", None)
     report = SpeedReport(base or 0, False, getattr(lk, "baud", None) or 0)
@@ -1220,38 +1455,101 @@ def raise_speed(hst, candidates=DEFAULT_CANDIDATES, *, flows=None, verify: bool 
     wait = min(65535, wait)
     idle_ms = idle_ms if 0 < idle_ms <= IDLE_MAX_MS else IDLE_MAX_MS
     if lk.unusable_session != hst.session:
-        lk.unusable, lk.unusable_session = {}, hst.session
+        lk.unusable, lk.failed, lk.unusable_session = {}, {}, hst.session
+        lk.broke_at = lk.broke_rate = None
     rec = None
     if record:
         from .speed_record import SpeedRecord
         rec = record if isinstance(record, SpeedRecord) else SpeedRecord(None if record is True else record)
         lk.record, lk.record_key = rec, (lk.port_path or "<stream>", _unit_id(hst))
+    run = _Run(flows, verify, frames, wait, idle_ms, port, rec, max(0, int(probation_bytes)), max(0.0, probation_s),
+               settle_s)
     lk.fallback = False                                     # every failure here is handled here
     try:
-        return _raise(hst, lk, report, list(candidates), flows, verify, baseline, frames, wait, idle_ms, port, rec)
+        return _raise(hst, lk, report, list(candidates), run, baseline, max_tries)
     finally:
         lk.fallback = True
 
 
-def _raise(hst, lk: SerialLink, report: SpeedReport, candidates: list[int], flows, verify: bool,
-           baseline: float | None, frames: int, wait: int, idle_ms: int, port: int, rec) -> SpeedReport:
-    base = lk.base_baud
+@dataclass
+class _Run:
+    """One raise_speed call's settings, kept for its step downs in use."""
+    flows: object
+    verify: bool
+    frames: int
+    wait: int
+    idle_ms: int
+    port: int
+    rec: object
+    probation_bytes: int
+    probation_s: float
+    settle_s: float
+    size: int = 0
+
+
+def _barred(lk: SerialLink, rate: int) -> str:
+    """Why `rate` is not tried in this session: it broke in use in it, or it is above a rate that did (no up and
+    down)."""
+    if rate in lk.unusable:
+        return f"broke in use earlier in this session ({lk.unusable[rate]})"
+    ceiling = min(lk.unusable, default=None)
+    if ceiling is not None and rate > ceiling:
+        return f"above {ceiling}, which broke in use in this session"
+    return ""
+
+
+def _raise(hst, lk: SerialLink, report: SpeedReport, candidates: list[int], run: _Run, baseline: float | None,
+           max_tries: int | None) -> SpeedReport:
     limits = hst.limits or hst.confirm()
-    size = limits["max_frame"] - 16
+    run.size = limits["max_frame"] - 16
     n_max = lk.inflight_for(limits)
-    if rec is not None:
-        passed, failed = rec.lookup(*lk.record_key)
-        report.skipped = [r for r in candidates if r in failed]
-        candidates = [r for r in candidates if r in passed] + [r for r in candidates if r not in passed and r not in failed]
-    if verify:
-        flows = resolve_flows(flows, n_max)
-        report.why = _baseline(hst, lk, report, flows, baseline, size)
+    if run.rec is not None:
+        passed, failed = run.rec.lookup(*lk.record_key)
+        if candidates and all(r in failed for r in candidates):
+            report.retried = min(candidates)                # every one marked failed: the slowest once more
+            report.skipped = [r for r in candidates if r != report.retried]
+            candidates = [report.retried]
+        else:
+            report.skipped = [r for r in candidates if r in failed]
+            candidates = ([r for r in candidates if r in passed] +
+                          [r for r in candidates if r not in passed and r not in failed])
+    rates = []
+    for rate in candidates:
+        why = _barred(lk, rate)
+        if why:
+            report.trials.append(SpeedTrial(rate, why=why))
+        else:
+            rates.append(rate)
+    if max_tries is not None and len(rates) > max(0, max_tries):
+        report.capped, rates = rates[max(0, max_tries):], rates[:max(0, max_tries)]
+    if not rates:
+        return report
+    if run.verify:
+        run.flows = resolve_flows(run.flows, n_max)
+        report.why = _baseline(hst, lk, report, run.flows, baseline, run.size)
         if report.why:
             return report
+    session = hst.session
+    lk.speed_plan = SpeedPlan(list(rates), session,
+                              lambda lower: _try(hst, lk, report, lower, run) if hst.session == session else None)
+    return _try(hst, lk, report, rates, run)
 
-    def note(rate: int, passed: bool) -> None:
+
+def _try(hst, lk: SerialLink, report: SpeedReport, rates: list[int], run: _Run) -> SpeedReport:
+    """Each of `rates` in order until one is committed (raise_speed's own loop, also a step down's in use)."""
+    base = lk.base_baud
+    rec, port, wait, idle_ms = run.rec, run.port, run.wait, run.idle_ms
+
+    def note(trial: SpeedTrial, passed: bool, phase: str) -> None:
         if rec is not None:
-            rec.note(*lk.record_key, rate, passed)
+            rec.note(*lk.record_key, trial.rate, None if trial.settling and not passed else passed, phase)
+
+    def failed(trial: SpeedTrial, phase: str) -> None:
+        """A candidate the line failed: not again in this session (nor above it), the record says so (unknown when
+        measured soon after a breakdown at another rate), and the next results settle from now."""
+        lk.failed[trial.rate] = trial.why
+        note(trial, False, phase)
+        lk.broke_at, lk.broke_rate = time.monotonic(), trial.rate
 
     def back(rate: int, revert: bool) -> None:
         """A candidate that did not pass: revert at the rate now (its answer need not come), the boot speed, confirmed
@@ -1269,12 +1567,14 @@ def _raise(hst, lk: SerialLink, report: SpeedReport, candidates: list[int], flow
             raise ConnectionError(f"after trying {rate}: no answer at the boot speed {base}")
         report.rate = base
 
-    for rate in candidates:
+    for rate in rates:
         trial = SpeedTrial(rate)
         report.trials.append(trial)
-        if rate in lk.unusable:
-            trial.why = f"stepped down from earlier in this session ({lk.unusable[rate]})"
+        trial.why = _barred(lk, rate)
+        if trial.why:
             continue
+        trial.settling = (lk.broke_at is not None and lk.broke_rate != rate
+                          and time.monotonic() - lk.broke_at < run.settle_s)
         try:
             r = hst.call(m.CORE_FN, OP_PORT_SPEED, struct.pack("<BIBHI", port, rate, SPEED_STEP["try"], wait, idle_ms))
         except TimeoutError:
@@ -1290,7 +1590,7 @@ def _raise(hst, lk: SerialLink, report: SpeedReport, candidates: list[int], flow
                 trial.why = str(e)
                 break                                       # wrong port, locked, ...: nothing else will do better
             trial.why = "unsupported: the probe's UART cannot make it"
-            note(rate, False)
+            note(trial, False, "try")
             continue
         trial.actual = m.Reader(r.payload).u32()
         try:
@@ -1300,16 +1600,16 @@ def _raise(hst, lk: SerialLink, report: SpeedReport, candidates: list[int], flow
             lk.baud = rate                                  # wait the probe out (verify_ms), then the boot speed
             time.sleep(wait / 1000)
             back(rate, False)
-            note(rate, False)
+            note(trial, False, "try")
             continue
         if not any(lk.confirm_raw(CONFIRM_WAIT_S) for _ in range(CONFIRM_TRIES)):
             trial.why = "no confirm at the new rate"
             back(rate, True)
-            note(rate, False)
+            failed(trial, "confirm")
             continue
-        if verify and not _verify_flows(hst, lk, rate, trial, flows, report.baseline, frames, size):
+        if run.verify and not _verify_flows(hst, lk, rate, trial, run.flows, report.baseline, run.frames, run.size):
             back(rate, True)
-            note(rate, False)
+            failed(trial, "verify")
             continue
         try:
             hst.call(m.CORE_FN, OP_PORT_SPEED, struct.pack("<BIBHI", port, rate, SPEED_STEP["commit"], 0, idle_ms))
@@ -1325,6 +1625,12 @@ def _raise(hst, lk: SerialLink, report: SpeedReport, candidates: list[int], flow
         lk.keepalive_s = min(KEEPALIVE_S, idle_ms / 1000 / 2.5)   # under half of idle_ms (core §3.5 obligation 4)
         lk.window.clear()
         lk.step_due = ""
-        note(rate, True)
+        note(trial, True, "verify" if run.verify else "confirm")
+        if run.probation_bytes or run.probation_s:
+            trial.probation = "running"
+            lk.probation = Probation(rate, trial, run.probation_bytes, run.probation_s,
+                                     max(2 * lk.baseline_ratio, VERIFY_FLOOR), time.monotonic(), trial.settling)
+        else:
+            trial.probation, lk.probation = "off", None
         return report
     return report
