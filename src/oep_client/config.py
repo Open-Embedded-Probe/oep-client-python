@@ -73,14 +73,23 @@ class Label:
 
 @dataclass(kw_only=True)
 class Idle:
+    """The state of a channel no plan or connection uses (probe.config §1): at boot and after every release. mode:
+    hi-z, pull-up, pull-down, output-low, output-high (output_low / output_high too). An output mode keeps driving that
+    level while the channel is free - a target's power switch kept on - and a gpio plan that takes the channel keeps
+    it until its first set (fixture §1); a probe that cannot drive the channel refuses it unsupported."""
     channel: int
-    mode: str = "pull-up"          # hi-z, pull-up, pull-down
+    mode: str = "pull-up"          # hi-z, pull-up, pull-down, output-low, output-high
     TAG = ITEM["idle"]
+
+    def __post_init__(self):
+        self.mode = self.mode.replace("_", "-")
 
     def key(self) -> tuple:
         return (self.channel,)
 
     def value(self) -> bytes:
+        if self.mode not in IDLE:
+            raise ValueError(f"idle mode {self.mode!r}: one of {', '.join(IDLE)}")
         return struct.pack("<HB", self.channel, IDLE[self.mode])
 
 
@@ -395,3 +404,50 @@ class ProbeConfig(Interface):
                 return st
             first_slot += n_slots
             first_bind += n_binds
+
+
+# The label names of a target's power and reset lines (host-development-guide §8.1): `nrst` its reset, `power_hi` high
+# powers it, `power_lo` low powers it. On a probe with several slots they are `<slot name>.<name>`.
+LINE_NAMES = ("nrst", "power_hi", "power_lo")
+
+
+class AmbiguousLine(LookupError):
+    """find_line could not tell which channel is meant; `candidates` holds (label text, channel)."""
+
+    def __init__(self, message: str, candidates: list[tuple[str, int]]):
+        super().__init__(message)
+        self.candidates = candidates
+
+
+def find_line(hst_or_items, name: str, slot: int | str | None = None) -> int | None:
+    """The channel labelled for `name` (nrst, power_hi, power_lo: host-development-guide §8.1), or None when there is
+    none. hst_or_items: a Host (its settings are read: `ProbeConfig.items()`, no lock) or the decoded items. slot: the
+    slot's name or number; None picks the probe's one slot.
+
+    `<slot>.<name>` first, then the bare `name` - the bare name only when the settings hold at most one slot (a bare
+    name is for a one-slot probe). With several slots and no `slot`, or two channels with the same label, it raises
+    AmbiguousLine listing the candidates."""
+    items = hst_or_items if isinstance(hst_or_items, (list, tuple)) else ProbeConfig(hst_or_items).items()
+    labels = [(it.text, it.channel) for it in items if isinstance(it, Label)]
+    slots = [it for it in items if isinstance(it, Slot)]
+    if isinstance(slot, int):
+        named = [s.name for s in slots if s.slot == slot]
+        if not named:
+            raise LookupError(f"no slot {slot} in the probe's settings")
+        slot = named[0]
+    if slot is None and len(slots) > 1:
+        candidates = sorted((t, c) for t, c in labels if t == name or t.endswith("." + name))
+        if candidates:
+            listed = ", ".join(f"{t} (channel {c})" for t, c in candidates)
+            raise AmbiguousLine(f"{name}: {len(slots)} slots and no slot given; candidates: {listed}", candidates)
+        return None
+    if slot is None and slots:
+        slot = slots[0].name
+    texts = ([f"{slot}.{name}"] if slot is not None else []) + ([name] if len(slots) <= 1 else [])
+    for text in texts:
+        found = sorted(c for t, c in labels if t == text)
+        if len(found) > 1:
+            raise AmbiguousLine(f"{text}: on {len(found)} channels", [(text, c) for c in found])
+        if found:
+            return found[0]
+    return None
