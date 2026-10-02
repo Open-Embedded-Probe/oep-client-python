@@ -94,7 +94,6 @@ _I2C, _SPI = reg.FIXTURE_I2C_TARGET, reg.FIXTURE_SPI_TARGET
 I2C_MODE, I2C_FEATURES, SPI_FEATURES = _I2C.enum["mode"], _I2C.enum["features"], _SPI.enum["features"]
 TARGET_ROLES = {"oep.fixture.gpio": {1}, "oep.fixture.uart": {1, 2}, _I2C.name: set(_I2C.enum["role"].values()),
                 _SPI.name: set(_SPI.enum["role"].values())}   # the plan roles each fixture takes
-STRETCH_MAX_US = 10_000                                    # the clock stretch the fake's I2C target makes (0 = off)
 UART_FORMAT_MASK = 0x1F                                    # the defined format bits (fixture §2)
 UART_CONFIGURED = _UART.enum["uart_configured"]            # status's configured byte: default / session / item / item_fallback
 _T_SCAN, _T_ATTACH, _T_DETACH, _T_ATTACH_ANSWER = (reg.WIRE_RVSWD.tlv[k] for k in ("scan", "attach", "detach", "attach_answer"))
@@ -455,9 +454,11 @@ class Endpoint:
                                      3_000_000) for fn, name in self.names.items() if name == "oep.fixture.uart"}
         def own(fn: int, tag: int, fmt: str, default: int) -> int:
             return next((struct.unpack_from("<" + fmt, t, 2)[0] for t in self.static[fn] if t[0] == tag), default)
-        # the fixture targets' declarations (fixture §3 / §4): max_length, features, queue_depth
+        # the fixture targets' declarations (fixture §3 / §4): max_length, features, queue_depth, max_stretch_us
+        # (i2c-target only; 0 when not declared)
         self.target_decl = {fn: (own(fn, catalog.MAX_LENGTH, "H", 1), own(fn, catalog.FEATURES, "I", 0),
-                                 own(fn, _I2C.tlv["describe"]["queue_depth"], "B", 1))
+                                 own(fn, _I2C.tlv["describe"]["queue_depth"], "B", 1),
+                                 own(fn, _I2C.tlv["describe"]["max_stretch_us"], "I", 0) if name == _I2C.name else 0)
                             for fn, name in self.names.items() if name in (_I2C.name, _SPI.name)}
         cfg_fn = self.fns.get("oep.probe.config")
         cfg = {t[0]: t[2:2 + t[1]] for t in self.static.get(cfg_fn, ())}
@@ -1092,6 +1093,7 @@ class Endpoint:
             named = {fn for fn, _, _ in got}
             if any(fn not in self.names for fn in named):
                 raise Reject(m.UNKNOWN_FUNCTION)
+            self._check_target_roles(got)                          # malformed before held_by_settings (core §4.3)
             if named & self.plan_from_config:                       # the settings' plan is the settings' (core §8)
                 raise unavailable("held_by_settings", holder_fn=min(named & self.plan_from_config),
                                   holder_kind="settings_plan")
@@ -1117,8 +1119,19 @@ class Endpoint:
         their analog function, cutting their digital input and output (oep-if-capture §1.2), as on this library's ESP32s."""
         return fn in self.captures and not self.captures[fn].analog
 
+    def _check_target_roles(self, got: list[tuple[int, int, int]]) -> None:
+        """An i2c-target / spi-target plan holds each of its roles exactly once, on distinct channels (fixture §3 /
+        §4): a missing role, a role twice or two roles on one channel -> malformed. A role the fn does not define is
+        left to the declaration check (unsupported)."""
+        for fn in {f for f, _, _ in got if f in self.i2c or f in self.spi}:
+            roles = TARGET_ROLES[self.names[fn]]
+            mine = [(role, ch) for f, role, ch in got if f == fn and role in roles]
+            if sorted(r for r, _ in mine) != sorted(roles) or len({ch for _, ch in mine}) != len(mine):
+                raise Reject(m.MALFORMED)
+
     def _check_plan(self, got: list[tuple[int, int, int]]) -> None:
         """plan_apply's all-or-nothing check: the roles each fn has, and no pin another fn (or a slot) holds."""
+        self._check_target_roles(got)
         named = {fn for fn, _, _ in got}
         others = {a for a in self.plan if a[0] not in named}
         kept = {a for a in others if not self._listens(a[0])}
@@ -1955,7 +1968,7 @@ class Endpoint:
 
     # ---- oep.fixture.i2c-target (fixture §3) ------------------------------------------------------
     def _i2c_op(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
-        st, (max_length, features, depth) = self.i2c[fn], self.target_decl[fn]
+        st, (max_length, features, depth, max_stretch) = self.i2c[fn], self.target_decl[fn]
         ops = _I2C.op
         planned = any(a[0] == fn for a in self.plan)
         if op == ops["configure"]:                                 # core §4.3's order: malformed, unsupported, unavailable
@@ -1982,6 +1995,8 @@ class Endpoint:
             return self._answer(b"", ignored)
         if op == ops["read_rx"]:
             _, ignored = t.tail()
+            if st.state == 0:
+                raise unavailable("wrong_state")                   # cause 6
             if not st.queue:
                 return self._answer(struct.pack("<BH", 0, 0), ignored)
             frame, ns = st.queue.pop(0)
@@ -2016,9 +2031,9 @@ class Endpoint:
         if op == ops["stretch"] and features & I2C_FEATURES["stretch"]:
             us = t.take("I")
             _, ignored = t.tail()
-            if us > STRETCH_MAX_US:
-                raise unsupported_fixed()
-            st.stretch_us = us
+            if us > max_stretch:
+                raise unsupported_fixed()                          # past describe's max_stretch_us
+            st.stretch_us = us                                     # any state; configure / reset keep it
             return self._answer(b"", ignored)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
@@ -2031,20 +2046,22 @@ class Endpoint:
 
     def i2c_write(self, fn: int, data: bytes, address: int | None = None) -> bool:
         """TEST HOOK: a bus controller writes `data` to i2c-target `fn` in one transaction (START, address + W, data,
-        STOP). -> whether the target ACKed its address (configured, and `address` None or its own). Mode 1: the
-        armed length exactly is a frame and ends the wait; another length is a receive error (the wait stays); no wait
+        STOP). -> whether the target ACKed its address (configured, and `address` None or its own). An address-only
+        write (empty data) counts nothing in any mode. Mode 1: the armed length exactly is a frame and the wait goes on
+        (armed until the next arm_rx / reset / configure / plan release); another length is a receive error; no wait
         -> ACKed, dropped, an error. Mode 2: the first byte is the length of the rest, the rest a frame (a length that
         does not match is a receive error). Mode 3 takes no writes: ACKed, dropped, an error."""
-        st, (max_length, _, depth) = self.i2c[fn], self.target_decl[fn]
+        st, (max_length, _, depth, _) = self.i2c[fn], self.target_decl[fn]
         if st.state == 0 or (address is not None and address != st.address):
             return False
-        if st.mode == I2C_MODE["fixed_rx"] and st.armed:
+        if not data:
+            pass                                                   # address only: nothing counts
+        elif st.mode == I2C_MODE["fixed_rx"] and st.armed:
             if len(data) == st.armed:
-                st.armed = 0
                 self._i2c_frame(st, data, depth)
             else:
                 st.errors += 1
-        elif st.mode == I2C_MODE["framed_rx"] and data and 0 < data[0] == len(data) - 1 <= max_length:
+        elif st.mode == I2C_MODE["framed_rx"] and 0 < data[0] == len(data) - 1 <= max_length:
             self._i2c_frame(st, data[1:], depth)
         else:
             st.errors += 1
@@ -2064,7 +2081,7 @@ class Endpoint:
 
     # ---- oep.fixture.spi-target (fixture §4) ------------------------------------------------------
     def _spi_op(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
-        st, (max_length, features, _) = self.spi[fn], self.target_decl[fn]
+        st, (max_length, features, _, _) = self.spi[fn], self.target_decl[fn]
         ops = _SPI.op
         if op == ops["configure"]:
             mode, order = t.take("BB")
@@ -2091,6 +2108,8 @@ class Endpoint:
             return self._answer(b"", ignored)
         if op == ops["read_rx"]:
             _, ignored = t.tail()
+            if st.state == 0:
+                raise unavailable("wrong_state")                   # cause 6
             if not st.queue:
                 return self._answer(struct.pack("<BIH", 0, 0, 0), ignored)
             bits, data, ns = st.queue.pop(0)
@@ -2110,13 +2129,15 @@ class Endpoint:
 
     def spi_transfer(self, fn: int, mosi: bytes, bits: int | None = None) -> bytes:
         """TEST HOOK: a bus controller runs one transaction on spi-target `fn` (CS low, `bits` clocks - 8 a MOSI byte
-        by default - CS high). -> the MISO bytes: the armed tx, 0 past it and when not armed. Armed: the MOSI bytes up
-        to the armed length (more is an error) and the bits are queued, the wait ends; a full queue drops them (an
-        error). Not armed: MOSI dropped, an error. Every transaction of a configured target counts; a target not
-        configured sees nothing."""
-        st, (_, _, depth) = self.spi[fn], self.target_decl[fn]
+        by default - CS high). -> the MISO bytes: the armed tx, 0 past it and when not armed. Armed: the MOSI bytes
+        (bits / 8 rounded up) up to the armed length (more is an error) and the bits are queued, the wait ends; a full
+        queue drops them (an error). Not armed: MOSI dropped, an error. Every transaction of a configured target
+        counts; a target not configured sees nothing. 0 bits (CS edges without SCK) is no transaction: nothing counts,
+        an arm keeps waiting."""
+        st, (_, _, depth, _) = self.spi[fn], self.target_decl[fn]
         n = len(mosi)
-        if st.state == 0:
+        bits = 8 * n if bits is None else bits
+        if st.state == 0 or bits == 0:
             return bytes(n)
         st.transactions += 1
         if st.armed is None:
@@ -2124,12 +2145,13 @@ class Endpoint:
             return bytes(n)
         length, tx = st.armed
         st.armed = None
-        if n > length:
+        got = (bits + 7) // 8
+        if got > length:
             st.errors += 1                                         # past the armed length: dropped
         if len(st.queue) >= depth:
             st.errors += 1
         else:
-            st.queue.append((8 * n if bits is None else bits, bytes(mosi[:length]), self.now_ns()))
+            st.queue.append((bits, bytes(mosi[:min(got, length)]), self.now_ns()))
         return (tx + bytes(n))[:n]
 
     # ---- oep.probe.config -----------------------------------------------------------------------

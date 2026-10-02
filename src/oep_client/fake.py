@@ -110,6 +110,7 @@ PLAN_ROLES = 32                                   # role assignments the fake's 
 GPIO_MODES = reg.FIXTURE_GPIO.tlv["describe"]["modes"]
 UART_FORMATS = reg.FIXTURE_UART.tlv["describe"]["formats"]
 I2C_QUEUE_DEPTH = reg.FIXTURE_I2C_TARGET.tlv["describe"]["queue_depth"]
+I2C_MAX_STRETCH_US = reg.FIXTURE_I2C_TARGET.tlv["describe"]["max_stretch_us"]
 SPI_QUEUE_DEPTH = reg.FIXTURE_SPI_TARGET.tlv["describe"]["queue_depth"]
 FORMATS_8 = (0x00, 0x04, 0x08, 0x10, 0x14, 0x18)   # 8N1 8E1 8O1 8N2 8E2 8O2: the formats the fake UARTs take
 TRANSPORT = reg.CORE.enum["transport_kind"]
@@ -194,12 +195,17 @@ def _uart(fn: int, instance: int, channels: list[int], max_hz: int, formats=FORM
         catalog.tlv(UART_FORMATS, bytes([len(formats)]) + bytes(formats))))
 
 
-def _i2c_target(fn: int, channels: list[int], max_length: int, max_hz: int, features: int, queue_depth: int) -> Offered:
+def _i2c_target(fn: int, channels: list[int], max_length: int, max_hz: int, features: int, queue_depth: int,
+                max_stretch_us: int = 0) -> Offered:
     """oep.fixture.i2c-target (fixture §3): SDA / SCL on `channels`, max_length (bytes a frame), max_clock_hz, features
-    (bit0 mode 3, bit1 stretch; modes 1 and 2 always), queue_depth (frames it keeps, tag 0x40 u8)."""
+    (bit0 mode 3, bit1 stretch; modes 1 and 2 always), queue_depth (frames it keeps, tag 0x40 u8), max_stretch_us
+    (tag 0x41 u32: the most stretch accepts; declared exactly when features has bit1)."""
+    assert bool(features & 0b10) == (max_stretch_us > 0), "max_stretch_us goes with features bit1"
     return Offered(fn, 0, "oep.fixture.i2c-target", _roles({1: channels, 2: channels}) + (
         catalog.u16(MAX_LENGTH, max_length), catalog.u32(MAX_CLOCK_HZ, max_hz), catalog.u32(FEATURES, features),
-        catalog.u8(I2C_QUEUE_DEPTH, queue_depth), catalog.u8(IMPLEMENTATION, 2)))
+        catalog.u8(I2C_QUEUE_DEPTH, queue_depth))
+        + ((catalog.u32(I2C_MAX_STRETCH_US, max_stretch_us),) if max_stretch_us else ())
+        + (catalog.u8(IMPLEMENTATION, 2),))
 
 
 def _spi_decl(max_length: int, max_hz: int, features: int, queue_depth: int) -> tuple[bytes, ...]:
@@ -256,7 +262,8 @@ def p4_x035() -> FakeProbe:
             catalog.u32(MAX_CLOCK_HZ, 20_000_000), catalog.u32(MIN_CLOCK_HZ, 1_000),
             catalog.u16(MAX_LENGTH, 65000), catalog.u8(IMPLEMENTATION, 3))
             + _capture_decl(["one_shot", "repeat", "streaming"], 16, [1, 2, 4, 8, 16], 1 << 20, 8, 4096)),
-        _i2c_target(8, pins, max_length=128, max_hz=1_000_000, features=0b11, queue_depth=8),   # mode 3, stretch
+        _i2c_target(8, pins, max_length=128, max_hz=1_000_000, features=0b11, queue_depth=8,
+                    max_stretch_us=100_000),                                                       # mode 3, stretch
         Offered(9, 0, "oep.fixture.spi-target", _roles({1: pins, 2: pins, 3: pins, 4: pins})
                 + _spi_decl(max_length=64, max_hz=3_000_000, features=0b1, queue_depth=8)),             # LSB first
         _config(10, 0, slots_max=1),

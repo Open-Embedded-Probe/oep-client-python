@@ -694,7 +694,7 @@ def test_i2c_target(run: record.Run):
     decl = record.declared(hst, t.fn)
     roles = _plan_roles(run.board, decl, [t.ROLE_SDA, t.ROLE_SCL], "OEP_HW_I2C")
     rec = run.record("i2c_target", sda=roles[t.ROLE_SDA], scl=roles[t.ROLE_SCL], address=I2C_ADDRESS,
-                     declared=_target_declared(decl, _I2C_QUEUE_DEPTH))
+                     declared=_target_declared(decl, _I2C_QUEUE_DEPTH) | {"max_stretch_us": t.max_stretch_us})
     features = decl.get("features") or 0
     core.plan_apply(hst, t.assignments(roles[t.ROLE_SDA], roles[t.ROLE_SCL]))
     try:
