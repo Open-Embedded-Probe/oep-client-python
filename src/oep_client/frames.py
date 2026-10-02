@@ -1,6 +1,7 @@
-"""Length-prefixed frames on a reliable byte stream (USB CDC, USB-Serial/JTAG, USB vendor bulk): u16 length, then the
-message (oep-spec oep-core §3). No CRC: a length that cannot be right, or a frame that stops half way, means
-the boundaries are lost - FramingLost, and the link resyncs."""
+"""Length-prefixed frames on a reliable byte stream (USB vendor bulk, HID, TCP): u16 length, then the message (oep-spec
+oep-core §3). No CRC: a length that cannot be right, or a frame that stops half way, means the boundaries are lost -
+FramingLost, and the link resyncs. Not on TCP (core §5.1, C-07): a pause inside a frame is normal there and the
+frame is read on; a stream that keeps its boundaries says so with `keeps_boundaries = True`."""
 
 from __future__ import annotations
 
@@ -23,6 +24,8 @@ class LengthFrames:
         self._buffer = bytearray()
         self._last_rx = time.monotonic()
         self.max_frame = max_frame
+        # TCP keeps the boundaries: a frame that pauses is read on, never taken for a lost one (core §5.1)
+        self.stall_s: float | None = None if getattr(stream, "keeps_boundaries", False) else STALL_S
 
     def send_many(self, messages) -> None:
         """Several frames in one write (each frame whole in one write: the probe restarts its reader when a frame
@@ -52,7 +55,8 @@ class LengthFrames:
 
     def recv(self, timeout: float) -> bytes | None:
         """The next message, or None when nothing arrived by the timeout. Raises FramingLost for a length above
-        max_frame or a frame whose bytes stopped for STALL_S (length 0 is the reserved keepalive: skipped)."""
+        max_frame or a frame whose bytes stopped for STALL_S (length 0 is the reserved keepalive: skipped). With no
+        stall rule (TCP) a frame still coming at the timeout is kept for the next call and None returned."""
         deadline = time.monotonic() + timeout
         while True:
             if len(self._buffer) >= 2:
@@ -67,7 +71,11 @@ class LengthFrames:
                     del self._buffer[:2 + length]
                     return message
             if not self._fill(deadline):
-                if self._buffer and time.monotonic() - self._last_rx >= STALL_S:
+                if self.stall_s is None:
+                    if time.monotonic() >= deadline:
+                        return None                                # TCP: the rest comes later, the buffer is kept
+                    continue
+                if self._buffer and time.monotonic() - self._last_rx >= self.stall_s:
                     raise FramingLost(f"a frame stopped after {len(self._buffer)} bytes")
                 if time.monotonic() >= deadline:
                     if self._buffer:

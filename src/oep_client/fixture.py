@@ -113,7 +113,9 @@ class Gpio(Interface):
     def set(self, pairs: list[tuple]) -> list[int]:
         """[(channel, mode)] or [(channel, mode, drive)], applied in order; drive only on mode 3 / 4 (anything else is
         rejected malformed). -> the ignored list of the answer (core §2.3): one TAG_DRIVE per drive the probe did not
-        apply (a level number past its list, or a probe without drive_levels). `read_state` shows the level in force."""
+        apply (a level number past its list, an undefined kind, or a probe without drive_levels), at most 16 - a 0x00
+        last means more were ignored than listed (C-04: any drive may not have taken). `read_state` shows the level
+        in force."""
         r = self._call(self.SET, self.set_body(pairs))
         return m.Reader(r.payload).tail().ignored
 
@@ -303,6 +305,8 @@ class I2cTarget(_TargetDeclarations, Interface):
     ROLE_SDA, ROLE_SCL = _I2C.enum["role"]["sda"], _I2C.enum["role"]["scl"]
     FEATURE_PRELOADED_TX, FEATURE_STRETCH = _I2C.enum["features"]["preloaded_tx"], _I2C.enum["features"]["stretch"]
     TAG_QUEUE_DEPTH, TAG_MAX_STRETCH_US = _I2C.tlv["describe"]["queue_depth"], _I2C.tlv["describe"]["max_stretch_us"]
+    FEATURE_INTERNAL_PULLUPS = _I2C.enum["features"]["internal_pullups"]
+    TAG_PULLUP_OHMS = _I2C.tlv["describe"]["pullup_ohms"]
 
     def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
         super().__init__(hst, name, fn=fn)
@@ -350,6 +354,15 @@ class I2cTarget(_TargetDeclarations, Interface):
         """The largest stretch_us stretch() accepts (describe tag 0x41, u32); None when the probe does not declare it
         (it does exactly when features has bit1)."""
         return self._declared(self.TAG_MAX_STRETCH_US, "I")
+
+    @property
+    def pullup_ohms(self) -> int | None:
+        """The approximate resistance of the pull-ups the probe enables on SDA / SCL while configured (describe tag
+        0x42, u32; fixture §3, P2-★3), None when it declares none (features bit2 clear): it then enables none, and the
+        bus needs its own. A host may warn that the probe's pull-ups shift the levels of a bus that has them."""
+        if not self.features & self.FEATURE_INTERNAL_PULLUPS:
+            return None
+        return self._declared(self.TAG_PULLUP_OHMS, "I")
 
     def stretch(self, stretch_us: int) -> None:
         """Hold SCL low for stretch_us after each received byte (0 = off); probes declaring features bit1 only. Above

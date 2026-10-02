@@ -39,6 +39,7 @@ STORAGE_STATE = {v: k for k, v in _CFG.enum["storage_state"].items()}
 UNREADABLE = {1: "unreadable form", 2: "an interface it names is gone or of another revision", 3: "refused when applied"}
 NEVER_NS = 0xFFFFFFFFFFFFFFFF                                   # last_try_at_ns: never tried; reset_at_ns: never done
 BOOT_RESET = _CFG.enum["slot_boot_reset"]
+LABEL_MAX = reg.LIMITS["label_max_bytes"]                       # a label's text (probe.config §1, PC-5)
 SLOT_HEAD = struct.Struct("<BHHHBIIBBB")   # slot wire_fn swdio swclk attach retry_ms max_speed_hz idle_clock mechanism name_len
 
 
@@ -70,7 +71,11 @@ class Label:
         return (self.channel,)
 
     def value(self) -> bytes:
-        return struct.pack("<H", self.channel) + self.text.encode()
+        raw = self.text.encode()
+        if not 1 <= len(raw) <= LABEL_MAX or not m.valid_text(raw):
+            # probe.config §1 (PC-5): 1 to 32 bytes of UTF-8 without control characters - the probe refuses others
+            raise ValueError(f"label {self.text!r}: 1 to {LABEL_MAX} bytes of text without control characters")
+        return struct.pack("<H", self.channel) + raw
 
 
 @dataclass(kw_only=True)

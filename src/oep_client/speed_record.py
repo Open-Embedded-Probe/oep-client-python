@@ -19,6 +19,8 @@ guide §7.4), `passed` true / false / null (the same, for a reader of the older 
   rec.note("/dev/ttyUSB0", "fafe00000003", 921600, passed=True, phase="verify")
 
 `link.raise_speed(..., record=True)` (the `oep speed` CLI's default) reads and writes it; the library default is off.
+A unit_id starting with `x-` names no unit (core §7.5, C-24: a probe with neither a unique number nor storage): nothing
+is kept or found under it, so another unit on the same port inherits nothing.
 """
 
 from __future__ import annotations
@@ -91,9 +93,16 @@ class SpeedRecord:
                 continue
         return out
 
+    @staticmethod
+    def names_a_unit(unit_id: str) -> bool:
+        """False for an `x-` unit_id (core §7.5): it names no unit, and nothing is keyed by it."""
+        return not unit_id.startswith("x-")
+
     def lookup(self, port: str, unit_id: str) -> tuple[list[int], list[int]]:
         """-> (rates that passed, rates that failed) on this port with this probe, within their expiry; each rate is in
-        one list only (its latest note), fastest first. An unknown is in neither."""
+        one list only (its latest note), fastest first. An unknown is in neither. An `x-` unit_id: nothing."""
+        if not self.names_a_unit(unit_id):
+            return [], []
         rates = self._fresh(self.data.get(self.key(port, unit_id), {}))
         passed = sorted((r for r, v in rates.items() if v == "passed"), reverse=True)
         failed = sorted((r for r, v in rates.items() if v == "failed"), reverse=True)
@@ -101,11 +110,15 @@ class SpeedRecord:
 
     def results(self, port: str, unit_id: str) -> dict[int, str]:
         """Every rate within its expiry -> "passed" / "failed" / "unknown"."""
+        if not self.names_a_unit(unit_id):
+            return {}
         return self._fresh(self.data.get(self.key(port, unit_id), {}))
 
     def note(self, port: str, unit_id: str, rate: int, passed: bool | None, phase: str = "") -> None:
         """Remember that `rate` passed (True), failed (False) or is unknown (None: measured while the line was still
-        settling) now, decided at `phase`, and save."""
+        settling) now, decided at `phase`, and save. An `x-` unit_id: nothing is kept (core §7.5)."""
+        if not self.names_a_unit(unit_id):
+            return
         entry = self.data.setdefault(self.key(port, unit_id), {"port": port, "unit_id": unit_id, "rates": {}})
         entry["port"], entry["unit_id"] = port, unit_id
         result = "unknown" if passed is None else "passed" if passed else "failed"

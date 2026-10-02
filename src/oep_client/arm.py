@@ -37,10 +37,12 @@ class SwdWire(WireBase):
         body = bytes([0]) + self._speed_tlv(self._speed_or_default(max_speed)) + self._pins_tlv(pins) + self._reset_tlv(reset)
         if targetsel is not None:
             body += m.tlv(self.TAG_TARGETSEL, struct.pack("<I", targetsel), critical=True)
-        rd = m.Reader(self._call(self.ATTACH, body, expect_ms=reset[1] if reset else 0).payload)
+        rd = m.Reader(self._call(self.ATTACH, body, expect_ms=self.attach_ms(reset)).payload)
         conn, dpidr, self.flags, self.speed_hz = rd.take("HIBI")
         self.existing = bool(self.flags & self.FLAGS["existing"])
-        rd.tail()
+        tail = rd.tail()
+        tries = tail.get(reg.WIRE_SWD.tlv["attach_answer"]["search_retries"])   # oep-if-debug §1 (optional)
+        self.search_retries = struct.unpack_from("<H", tries)[0] if tries and len(tries) >= 2 else None
         return conn, dpidr, bool(self.flags & self.FLAGS["dormant_woken"])
 
 

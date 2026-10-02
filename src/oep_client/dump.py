@@ -10,7 +10,7 @@ import json
 import struct
 from dataclasses import dataclass, field
 
-from . import catalog, interfaces, message as m, names
+from . import catalog, interfaces, message as m, names, registry as reg
 
 CORE_FN, OP_CONFIRM, OP_LIST, OP_DESCRIBE = 0, 0x01, 0x02, 0x03
 
@@ -27,10 +27,31 @@ class Capabilities:
     max_frame: int
     offers: list[Offer] = field(default_factory=list)
     requests: dict[str, int] = field(default_factory=dict)
+    missing: list[str] = field(default_factory=list)   # what core §1.2 requires and the probe did not give (C-10)
 
 
-def collect(call, prefix: str = "", exact: bool = False) -> Capabilities:
-    p = call(CORE_FN, OP_CONFIRM, m.CONFIRM_REQUEST + bytes([0, 1]))     # v0 and v1 both answer
+_REQUIRED_CORE_TAGS = {reg.CORE.tlv["describe"][k]: k for k in ("unit_id", "transport", "max_op_ms")}
+
+
+def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, bytes]]) -> list[str]:
+    """core §1.2 (C-10) as far as a lock-free look shows it: confirm's answer carries TLV transport (§7.1), fn 0's
+    describe carries unit_id, transport and max_op_ms. -> what is missing (empty: nothing seen missing)."""
+    out = []
+    if len(confirm_payload) > 4 and confirm_payload[4] >= 1:
+        try:
+            if m.Tail.parse(confirm_payload[17:]).get(reg.CORE.tlv["confirm_answer"]["transport"]) is None:
+                out.append("confirm's transport TLV")
+        except m.ProtocolError:
+            out.append("confirm's transport TLV (the answer's tail is broken)")
+    have = {tag & 0x7F for tag, _ in core_describe}
+    out += [f"describe of fn 0: {name}" for tag, name in _REQUIRED_CORE_TAGS.items() if tag not in have]
+    return out
+
+
+def collect(call, prefix: str = "", exact: bool = False, confirm: tuple[int, int] = (0, 1)) -> Capabilities:
+    """`confirm`: the revision range the confirm asks for - a host that confirmed already passes the revision in use
+    (core §7.1, C-15: every later confirm on a transport asks for it alone)."""
+    p = call(CORE_FN, OP_CONFIRM, m.CONFIRM_REQUEST + bytes(confirm))   # v0 and v1 both answer (0..1)
     magic, revision = struct.unpack_from("<4sB", p)
     if magic != m.CONFIRM_RESULT:
         raise ValueError("not an OEP endpoint")
@@ -55,6 +76,8 @@ def collect(call, prefix: str = "", exact: bool = False) -> Capabilities:
             if not more or not chunk:
                 break
         caps.offers.append(Offer(e, catalog.decode_description(data)))
+        if e.fn == CORE_FN and revision >= 1:
+            caps.missing = required_missing(p, catalog.split_tlv(data))
     return caps
 
 
@@ -107,6 +130,7 @@ def describe_offer(o: Offer) -> dict:
 
 def to_json(caps: Capabilities) -> str:
     return json.dumps({"revision": caps.revision, "max_frame": caps.max_frame, "requests": caps.requests,
+                       "missing_required": caps.missing,
                        "interfaces": [describe_offer(o) for o in caps.offers]}, indent=2)
 
 
@@ -115,6 +139,8 @@ def to_text(caps: Capabilities) -> str:
     lines = [f"OEP revision {caps.revision}, max frame {caps.max_frame} bytes; "
              f"{len(rows)} interfaces in {caps.requests['list']} list and "
              f"{caps.requests['describe']} describe requests", ""]
+    if caps.missing:
+        lines[1:1] = ["MISSING what every probe must give (core §1.2): " + ", ".join(caps.missing)]
     by_instance: dict[int, list[dict]] = {}
     for r in rows:
         by_instance.setdefault(r["instance"], []).append(r)

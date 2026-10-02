@@ -195,7 +195,19 @@ class Tail:
     ignored: list[int] = field(default_factory=list)
 
     def get(self, tag: int) -> bytes | None:
+        """The first TLV of `tag` (core §2.3: a tag twice in an answer - the host uses the first)."""
         return next((v for t, v in self.tlvs if t == tag), None)
+
+    @property
+    def more_ignored(self) -> bool:
+        """The probe ignored more than it lists (core §2.3, C-04: 0x00 as the last of at most 16 entries): every TLV of
+        the request not listed may have been ignored too."""
+        return TAG_FIXED in self.ignored
+
+    def may_have_ignored(self, tag: int) -> bool:
+        """Whether the request's TLV `tag` (its number, bit 7 cleared) may not have taken effect: listed, or not
+        listed but the list ends in 0x00 ("more were ignored")."""
+        return (tag & 0x7F) in self.ignored or self.more_ignored
 
     @classmethod
     def parse(cls, data: bytes) -> Tail:

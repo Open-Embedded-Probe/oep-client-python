@@ -11,7 +11,13 @@ client keeps it (`LogicCapture.generation`, from start / status / the group's st
 takes the segment's own.
 
 configure: a TLV the probe cannot honour is refused (rejected unsupported, 0x0B, payload = the tag) when the host marked
-it critical, and otherwise ignored and listed in the answer's ignored TLV (0x7F, oep-core §2.3)."""
+it critical, and otherwise ignored and listed in the answer's ignored TLV (0x7F, oep-core §2.3). mode, rate, trigger,
+pretrigger and frontend always go critical (oep-if-capture §3.3, P2-○8); samples and segments go critical only when
+asked: the probe rounds samples down to its limit and the answer (Config.samples / .segments) is what holds.
+
+blocking_ms (P2-○9): a start whose answer says blocking_ms > 0 is followed by nothing on any transport for that long
+(`blocked`), then - on a length-prefixed link - the resync of core §5.1; neither the lease nor the answer's wait counts
+it."""
 
 from __future__ import annotations
 
@@ -43,6 +49,7 @@ GROUP_GENERATIONS = _GRP.tlv["start_answer"]["generations"]
 REFERENCE_SOURCE = {v: k for k, v in _ANA.enum["reference_source"].items()}
 IGNORED = m.TAG_IGNORED
 CRITICAL = m.TAG_CRITICAL
+ALWAYS_CRITICAL = frozenset({MODE, RATE, TRIGGER, PRETRIGGER, FRONTEND})   # oep-if-capture §3.3 "sent critical"
 ONE_SHOT, REPEAT, STREAMING = (_CAP.enum["mode"][k] for k in ("one_shot", "repeat", "streaming"))
 IMMEDIATE, LEVEL, EDGE, CROSS_UP, CROSS_DOWN = range(5)
 STATE = _CAP.enum["state"]
@@ -55,6 +62,18 @@ EVENT_SEGMENT, EVENT_STOPPED, EVENT_TRIGGERED = (_CAP.event[k] for k in ("segmen
 
 def tlvs(payload: bytes) -> list[tuple[int, bytes]]:
     return m.split_tlvs(payload)
+
+
+def blocked(hst: h.Host, blocking_ms: int, sleep=time.sleep) -> None:
+    """oep-if-capture §3.2 (P2-○9): from the start answer for blocking_ms the probe may not process frames on any
+    transport, so this host sends nothing for that long; afterwards a length-prefixed link begins with the resync of
+    core §5.1, a serial port simply goes on. Neither the lease nor the host's wait counts blocking_ms."""
+    if blocking_ms <= 0:
+        return
+    sleep(blocking_ms / 1000)
+    link = getattr(hst, "link", None)
+    if link is not None and getattr(link, "framing", None) == "length":
+        link.resync()
 
 
 SEGMENT_BYTES = 37   # serial u32, position u64, samples u32, start_ns u64, start_uncertainty_ns u32, trigger_index u32,
@@ -242,8 +261,11 @@ class LogicCapture(Interface):
     def configure(self, *, rate: int, mode: int = ONE_SHOT, samples: int | None = None, segments: int | None = None,
                   trigger: tuple[int, int, int] | None = None, pretrigger: int | None = None, query: bool = False,
                   critical: set[int] = frozenset(), frontends: dict[int, int] | None = None) -> Config:
-        """-> the probe's actual values (Config.ignored: tags the probe ignored). `critical`: tags the probe must honour
-        or reject (host.Unsupported, .tag = the one it cannot)."""
+        """-> the probe's actual values (Config.ignored: tags the probe ignored). mode, rate, trigger, pretrigger and
+        frontend always go critical (§3.3); `critical`: more tags the probe must honour or reject (samples, segments;
+        host.Unsupported, .tag = the one it cannot). Read Config.samples / .segments: the probe rounds samples down."""
+        critical = ALWAYS_CRITICAL | set(critical)
+
         def tlv(tag: int, value: bytes) -> bytes:
             return bytes([tag | (CRITICAL if tag in critical else 0), len(value)]) + value
         body = tlv(MODE, bytes([mode])) + tlv(RATE, struct.pack("<I", rate))
@@ -334,11 +356,13 @@ class LogicCapture(Interface):
         return got
 
     def start(self) -> int:
-        """-> blocking_ms (0: the probe keeps answering while it captures). self.generation: the new capture's."""
-        rd = m.Reader(self._call(self.START, expect_ms=self.config.blocking_ms if self.config else 0).payload)
+        """-> blocking_ms (0: the probe keeps answering while it captures). self.generation: the new capture's. With
+        blocking_ms > 0 the call returns after it (`blocked`): nothing goes to the probe meanwhile (P2-○9)."""
+        rd = m.Reader(self._call(self.START).payload)             # the answer comes before the blocking (§3.2)
         blocking, self.generation = rd.take("II")
         rd.tail()
         self.armed_s = time.monotonic()
+        blocked(self.host, blocking)
         return blocking
 
     def stop(self) -> None:
@@ -576,8 +600,7 @@ class CaptureGroup(Interface):
     def start(self, tracks: list[LogicCapture] = ()) -> tuple[int, int]:
         """-> (blocking_ms, the group's start_ns). `tracks`: whose armed_s and generation to set (the answer's TLV
         generations names each track's new generation; self.generations keeps them by fn)."""
-        rd = m.Reader(self._call(self.START, expect_ms=max([t.config.blocking_ms for t in tracks if t.config] or [0]))
-                      .payload)
+        rd = m.Reader(self._call(self.START).payload)             # the answer comes before any blocking (§3.2)
         blocking, start_ns = rd.take("IQ")
         gens = rd.tail().get(GROUP_GENERATIONS) or b""
         self.generations = {fn: g for fn, g in struct.iter_unpack("<HI", gens[:len(gens) // 6 * 6])}
@@ -586,6 +609,7 @@ class CaptureGroup(Interface):
             t.armed_s = now
             if t.fn in self.generations:
                 t.generation = self.generations[t.fn]
+        blocked(self.host, blocking)
         return blocking, start_ns
 
     def stop(self) -> None:

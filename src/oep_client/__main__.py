@@ -98,12 +98,14 @@ def main(argv=None) -> int:
     if args.command == "pins":
         return _pins_cmd(args)
 
+    confirm = (0, 1)
     if args.fake:
         call = fake.PROFILES[args.fake]().call
     else:
         hst = link.open_host(args.port)
         call = lambda fn, op, payload: hst.request(fn, op, payload, locked=False).payload   # noqa: E731
-    caps = dump.collect(call, args.prefix, args.exact)
+        confirm = hst.confirm_range()                    # confirmed already: the revision in use (core §7.1)
+    caps = dump.collect(call, args.prefix, args.exact, confirm)
     sys.stdout.write(dump.to_json(caps) + "\n" if args.json else dump.to_text(caps))
     return 0
 

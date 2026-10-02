@@ -24,6 +24,7 @@ OP_CONFIRM, OP_LIST, OP_DESCRIBE = 0x01, 0x02, 0x03
 RESULT_HEADER = 5            # role(1) correlation(2) resolution(1) detail(1) in front of every payload
 REVISION = 1                 # the protocol revision confirm reports
 WINDOW, MAX_INFLIGHT = 4096, 4
+BOOT_ID = 0x0EB00001          # the bare fake's boot_id (endpoint.Endpoint keeps its own)
 
 
 @dataclass(frozen=True)
@@ -68,7 +69,9 @@ class FakeProbe:
                 raise ValueError("fake: confirm needs \"OEP?\" min_rev max_rev")
             if not payload[4] <= REVISION <= payload[5]:
                 raise LookupError(f"fake: no revision in {payload[4]}..{payload[5]}")
-            return struct.pack("<4sBBHIB", m.CONFIRM_RESULT, REVISION, 0, self.max_frame, WINDOW, MAX_INFLIGHT)
+            # boot_id, then TLV transport: the index it came on (core §7.1; this bare fake: transport 0)
+            return (struct.pack("<4sBBHIBI", m.CONFIRM_RESULT, REVISION, 0, self.max_frame, WINDOW, MAX_INFLIGHT, BOOT_ID)
+                    + catalog.tlv(reg.CORE.tlv["confirm_answer"]["transport"], b"\x00"))
         if op == OP_LIST:
             return self._list(*catalog.unpack_list_request(payload)[:3], reserve=reserve)
         if op == OP_DESCRIBE:

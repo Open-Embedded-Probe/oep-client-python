@@ -219,6 +219,7 @@ def in_process(profile=fake.esp32_v003, lease=10000):
     stream = fake_serial.FakeSerialStream(ep, 0)
     lk = link.SerialLink.on_stream(stream, "cobs", 0.5)
     lk.transport = "serial"
+    lk.wait_add_s = 0.0          # the in-process fake answers at once: the floor's 1000 ms would only slow the losses
     hst = h.Host(lk.send)
     lk.attach_host(hst)
     core.take(hst, lease)

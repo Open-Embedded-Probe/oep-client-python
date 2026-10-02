@@ -18,6 +18,9 @@ from dataclasses import dataclass, field
 
 from . import catalog, host as h, message as m, registry as reg
 from .core import Interface, describe, max_op_ms
+
+ATTACH_BUDGET_MS = reg.LIMITS["attach_budget_ms"]   # one attach answer at most (oep-if-debug §1): argument time (§4.4)
+SCAN_BUDGET_MS = reg.LIMITS["scan_budget_ms"]       # no scan combination starts later than this; + one attach
 from .fixture import Gpio
 
 STATUS = reg.STATUS
@@ -91,6 +94,16 @@ class TargetError(h.OepError):
         self.status, self.result, self.done, self.values, self.data = status, result, done, values or [], data
 
 
+class StepError(TargetError):
+    """step did not get the hart back to debug mode (oep-if-debug §4.2): `step_left` - the probe could not halt it
+    again (the hart runs, dcsr.step may still be set: halt it and clear dcsr.step); otherwise it is halted again with
+    `dpc_after` valid."""
+
+    def __init__(self, status: int, result: m.Result, dpc_before: int, dpc_after: int, step_left: bool):
+        super().__init__("step", status, result)
+        self.dpc_before, self.dpc_after, self.step_left = dpc_before, dpc_after, step_left
+
+
 def ran(result: m.Result) -> m.Reader:
     """The payload of a result the probe ran (success, failed or partial: all in the success shape); an unknown
     resolution or outcome raises Failed (§0)."""
@@ -139,6 +152,22 @@ class WireBase(Interface):
                 return struct.unpack_from("<I", v)[0]
         return self.DEFAULT_MAX_SPEED
 
+    def _budget(self, ms: int) -> int:
+        """An argument time, capped at the probe's max_op_ms (core §4.4)."""
+        try:
+            return min(ms, max_op_ms(self.host))
+        except (h.OepError, AttributeError, TypeError):
+            return ms
+
+    def attach_ms(self, reset: tuple[int, int] | None = None) -> int:
+        """attach's argument time (core §4.4, C-06 / P2-★4): attach_budget_ms plus the reset TLV's hold_ms, at most
+        max_op_ms - the host's wait for its answer adds host_wait_add_ms and the transfer time."""
+        return self._budget(ATTACH_BUDGET_MS + (reset[1] if reset else 0))
+
+    def scan_ms(self) -> int:
+        """scan's argument time: scan_budget_ms + attach_budget_ms (one combination's try), at most max_op_ms."""
+        return self._budget(SCAN_BUDGET_MS + ATTACH_BUDGET_MS)
+
     def _reset_tlv(self, reset: tuple[int, int] | None) -> bytes:
         # (channel, hold_ms), critical: hold the reset line (open drain, low) that long, then attach (oep-if-debug §3)
         return b"" if reset is None else m.tlv(self.TAG_RESET, struct.pack("<HH", *reset), critical=True)
@@ -164,7 +193,7 @@ class WireBase(Interface):
             body = bytes([len(chunk)]) + b"".join(struct.pack("<HH", d, c) for d, c in chunk)
             if not pairs and skip:
                 body += m.tlv(self.TAG_SKIP, struct.pack("<H", skip))
-            rd = m.Reader(self._call(self.SCAN, body + extra).payload)
+            rd = m.Reader(self._call(self.SCAN, body + extra, expect_ms=self.scan_ms()).payload)
             tried, count = rd.take("BB")
             for _ in range(count):
                 kind, dio, clk, status = rd.element().take("BHHI")
@@ -235,6 +264,7 @@ class Wire(WireBase):
     SCHEME_WCH_DMI_7F = reg.COMMON.enum["target_id_scheme"]["wch_dmi_7f"]
 
     TAG_DPC = reg.WIRE_RVSWD.tlv["attach_answer"]["dpc"]
+    TAG_SEARCH_RETRIES = reg.WIRE_RVSWD.tlv["attach_answer"]["search_retries"]
 
     def __init__(self, hst: h.Host, name: str = "oep.wire.rvswd"):
         super().__init__(hst, name)
@@ -244,6 +274,7 @@ class Wire(WireBase):
         self.dpc: int | None = None                        # the halted hart's dpc (attach flags bit3), else None
         self.ignored: list[int] = []
         self.target_id: tuple[int, bytes] | None = None   # (scheme, value) the last attach read, or None
+        self.search_retries: int | None = None           # the last attach's failed speed-search tries (None: not said)
 
     def _take_target_id(self, tail: m.Tail) -> None:
         v = tail.get(self.TAG_TARGET_ID)
@@ -280,7 +311,7 @@ class Wire(WireBase):
         that turns the debug pins into GPIOs. self.target_id: (scheme, value) of the target's identity when the probe
         could read one."""
         rd = m.Reader(self._call(self.ATTACH, self.attach_body(halt, max_speed, pins, idle_clock, reset),
-                                 expect_ms=reset[1] if reset else 0).payload)
+                                 expect_ms=self.attach_ms(reset)).payload)
         conn, status, self.flags, self.speed_hz = rd.take("HIBI")
         self.had_reset = bool(self.flags & self.FLAGS["havereset_acked"])
         self.existing = bool(self.flags & self.FLAGS["existing"])
@@ -290,6 +321,8 @@ class Wire(WireBase):
         self._take_target_id(tail)
         dpc = tail.get(self.TAG_DPC)
         self.dpc = int.from_bytes(dpc, "little") if self.halted and dpc else None
+        tries = tail.get(self.TAG_SEARCH_RETRIES)                 # 0xFFFF = 65535 or more (oep-if-debug §1)
+        self.search_retries = struct.unpack_from("<H", tries)[0] if tries and len(tries) >= 2 else None
         return conn, status
 
     def attach_under_reset(self, channel: int, hold_ms: int = 20, max_speed: int | None = None,
@@ -438,6 +471,7 @@ class RiscvDm(Interface, BlockLength):
     METHOD_DEFAULT, METHOD_NDMRESET, METHOD_SYSTEM = (_RV.enum["reset_method"][k]
                                                       for k in ("probe_default", "ndmreset", "system_reset"))
     TAG_RESET_METHOD = _RV.tlv["reset"]["method"]
+    TAG_STEP_LEFT = _RV.tlv["step_answer"]["step_left"]
 
     def __init__(self, hst: h.Host, conn: int, name: str = "oep.target.riscv-dm"):
         super().__init__(hst, name, prefix=struct.pack("<H", conn))
@@ -494,12 +528,16 @@ class RiscvDm(Interface, BlockLength):
         return self._reset(self.RESET_HALT, method)[2]
 
     def step(self) -> tuple[bool, int, int]:
-        """One instruction (dcsr.step, one resume, privilege kept). -> (moved, dpc before, dpc after)"""
+        """One instruction (dcsr.step, one resume, privilege kept). -> (moved, dpc before, dpc after). A hart that did
+        not come back raises StepError (oep-if-debug §4.2, P2-○4): `step_left` False - the probe halted it with
+        haltreq and restored it, dpc_after valid; True (answer TLV step_left) - it could not halt it again: the hart
+        runs and dcsr.step may still be set, so the host halts it and clears dcsr.step."""
         r = self._request(self.STEP)
         rd = ran(r)
         status, moved, before, after = rd.take("BBII")
-        rd.tail()
-        check("step", r, status)
+        tail = rd.tail()
+        if status != OK or not r.succeeded:
+            raise StepError(status, r, before, after, tail.get(self.TAG_STEP_LEFT) is not None)
         return bool(moved), before, after
 
     def read_block(self, address: int, count: int) -> bytes:
@@ -624,7 +662,8 @@ def attach_after_gpio_reset(hst: h.Host, wire_: Wire, gpio_fn: int, channel: int
     for _ in range(tries):
         gpio.pull_low(channel)
         time.sleep(low_s)
-        release, last = hst.pipeline([gpio.request_release(channel), attach], exchange=exchange)
+        with hst.expecting(wire_.attach_ms()):            # the attach's budget is its argument time (core §4.4)
+            release, last = hst.pipeline([gpio.request_release(channel), attach], exchange=exchange)
         if not release.succeeded:
             raise h.Failed(release)                       # never leave the reset line held
         if last.succeeded:

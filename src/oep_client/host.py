@@ -58,7 +58,7 @@ class Locked(Rejected):
     def owner(self) -> str | None:
         """The holder's owner text, when its open gave one (oep-core §6.4)."""
         value = m.Tail.parse(self.result.payload[4:]).get(OWNER)
-        return value.decode("utf-8", "replace") if value is not None else None
+        return m.shown(value) if value is not None else None      # control characters replaced (core §2.1)
 
     def __str__(self) -> str:
         who = f" by {self.owner}" if self.owner else ""
@@ -113,6 +113,19 @@ class Unsupported(Rejected):
         except ValueError:
             return []
 
+    @property
+    def supported(self) -> tuple[int, int] | None:
+        """confirm's refusal (core §7.1, C-15): (min, max) of the protocol revisions the probe handles (TLV 0x01
+        supported after tag 0x00); None for any other refusal."""
+        if self.tag is not None:
+            return None
+        v = next((v for t, v in self.tlvs if t == SUPPORTED), None)
+        return (v[0], v[1]) if v is not None and len(v) >= 2 else None
+
+
+SUPPORTED = reg.CORE.tlv["unsupported_payload"]["supported"]
+CONFIRM_TRANSPORT = reg.CORE.tlv["confirm_answer"]["transport"]
+
 
 class Unavailable(Rejected):
     """rejected unavailable (core §4.3): the payload's TLVs say why (each may be missing): cause, the channels it met,
@@ -159,6 +172,22 @@ def rejection(result: m.Result, lease_ms: int | None = None) -> Rejected:
     if result.detail == m.EXPIRED:
         return Expired(result, lease_ms)
     return _REJECTS.get(result.detail, Rejected)(result)
+
+
+OWNER_MAX = reg.LIMITS["owner_max_bytes"]
+
+
+def owner_text(owner: str) -> bytes:
+    """open's owner as it may go (core §2.1, §6.4): control characters replaced by '?', then cut to 32 bytes on a
+    character boundary (never half a UTF-8 sequence). An owner with nothing left is refused here."""
+    clean = "".join("?" if ord(c) < 0x20 or ord(c) == 0x7F else c for c in owner)
+    raw = clean.encode("utf-8")
+    while len(raw) > OWNER_MAX:
+        clean = clean[:-1]
+        raw = clean.encode("utf-8")
+    if not raw:
+        raise ValueError("owner: 1 to 32 bytes of text (core §6.4)")
+    return raw
 
 
 RESUMED = reg.CORE.enum["resumed"]       # open's resumed: 0 new, 1 resumed (resources kept), 2 swept (core §6.4)
@@ -302,12 +331,29 @@ class Host:
         return results
 
     # ---- confirm (§5, §2) -----------------------------------------------------------------------
-    def confirm(self, min_rev: int = MIN_REVISION, max_rev: int = MAX_REVISION) -> dict:
-        """Ask for a revision in [min_rev, max_rev]. -> {"revision", "flags", "max_frame", "window", "max_inflight",
-        "boot_id"}. The boot_id is the probe's for this boot (core §6.5, §7.1): a host without the lock learns of a
-        restart from it. A v0 probe answers revision 0 in the v0 shape; one that refuses the ranged confirm as malformed
-        is not v1 either (revision 0 is recorded and the rejection raised). No revision in the range: rejected
-        unsupported."""
+    def confirm_range(self) -> tuple[int, int]:
+        """The revisions a confirm asks for (core §7.1, C-15): the range this client handles before the first confirm,
+        then min_rev = max_rev = the revision in use, in every later confirm (a resync, probing again) - so a later
+        probe never switches the revision in the middle of a session."""
+        if self.revision:
+            return self.revision, self.revision
+        return MIN_REVISION, MAX_REVISION
+
+    def confirm_body(self) -> bytes:
+        """The confirm request's payload with `confirm_range()` (what the link's own confirms send)."""
+        return m.CONFIRM_REQUEST + bytes(self.confirm_range())
+
+    def confirm(self, min_rev: int | None = None, max_rev: int | None = None) -> dict:
+        """Ask for a revision in [min_rev, max_rev] (default `confirm_range()`). -> {"revision", "flags", "max_frame",
+        "window", "max_inflight", "boot_id", "transport", "tail"}. The boot_id is the probe's for this boot (core §6.5,
+        §7.1): a host without the lock learns of a restart from it. transport: the index (fn 0's describe) of the
+        transport this confirm came on (core §7.1, C-05; 0xFF from a relaying broker; None when the probe sent none).
+        A v0 probe answers revision 0 in the v0 shape; one that refuses the ranged confirm as malformed is not v1 either
+        (revision 0 is recorded and the rejection raised). No revision in the range: rejected unsupported (Unsupported:
+        `.supported` says the probe's range)."""
+        lo, hi = self.confirm_range()
+        min_rev = lo if min_rev is None else min_rev
+        max_rev = hi if max_rev is None else max_rev
         try:
             r = self.request(m.CORE_FN, m.OP_CONFIRM, m.CONFIRM_REQUEST + bytes([min_rev, max_rev]), locked=False)
         except Rejected as e:
@@ -332,8 +378,10 @@ class Host:
             tail = rd.tail()
             self.boot_id_seen(boot_id)
         self.revision = revision
+        where = tail.get(CONFIRM_TRANSPORT)
         self.limits = {"magic": magic, "revision": revision, "flags": flags, "max_frame": max_frame, "window": window,
-                       "max_inflight": inflight, "boot_id": boot_id, "tail": tail}
+                       "max_inflight": inflight, "boot_id": boot_id, "transport": where[0] if where else None,
+                       "tail": tail}
         return self.limits
 
     def confirmed(self) -> dict:
@@ -360,8 +408,10 @@ class Host:
         Opened.resumed: 0 a new session, 1 the same id with its resources kept, 2 the same id after its lease lapsed
         swept them (core §6.4: the host rebuilds its plan and connections; `epoch` moved)."""
         self.require_v1()
-        sid = session if session is not None else self.rng.randrange(1, 1 << 32)
-        tail = m.tlv(OWNER, owner.encode()[:32]) if owner else b""
+        sid = session if session is not None else self.rng.randrange(1, 1 << 32)   # random, never 0 (core §6.1)
+        if sid == 0:
+            raise ValueError("session_id 0 is not a session (core §6.1)")
+        tail = m.tlv(OWNER, owner_text(owner)) if owner else b""
         r = self.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IIB", sid, lease_ms, int(force)) + tail, locked=False)
         if sid != self.session:
             self.subscriptions.clear()
@@ -395,7 +445,7 @@ class Host:
         p = self.request(m.CORE_FN, m.OP_LOCK_STATE, locked=False).payload
         locked, remaining = m.Reader(p).take("BI")
         value = m.Tail.parse(p[5:]).get(OWNER)
-        return bool(locked), remaining, value.decode("utf-8", "replace") if value is not None else None
+        return bool(locked), remaining, m.shown(value) if value is not None else None
 
     def take(self, lease_ms: int = 3000, *, owner: str | None = None, only_way_in: bool = False,
              wait_s: float = 5.0, force: bool = False) -> Opened:

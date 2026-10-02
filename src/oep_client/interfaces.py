@@ -12,7 +12,7 @@ import struct
 from dataclasses import dataclass, field
 from typing import Callable
 
-from . import catalog
+from . import catalog, message as m
 
 
 def _u16(v: bytes) -> str:
@@ -28,7 +28,7 @@ def _u32v(v: bytes) -> int:
 
 
 def _text(v: bytes) -> str:
-    return v.decode("ascii", "replace")
+    return m.shown(v)                                      # control characters and bad UTF-8 replaced (core §2.1)
 
 
 def _channels(v: bytes) -> str:
@@ -41,7 +41,18 @@ def _hex(v: bytes) -> str:
 
 
 def _label(v: bytes) -> str:
-    return f"{struct.unpack_from('<H', v)[0]} = {v[2:].decode('ascii', 'replace')}"
+    return f"{struct.unpack_from('<H', v)[0]} = {m.shown(v[2:])}"
+
+
+_BACKGROUND = {0: "blocks while capturing", 1: "answers while capturing"}   # capture §3.5 (P2-★6)
+
+
+def _capture_mode(v: bytes) -> str:
+    """capture describe's mode: mode(u8) background(u8) max_samples(u32) max_segments(u32) (oep-if-capture §3.5)."""
+    mode, background, most, segments = struct.unpack_from("<BBII", v)
+    name = {1: "one-shot", 2: "repeat", 3: "streaming"}.get(mode, f"mode {mode}")
+    return (f"{name}, {_BACKGROUND.get(background, f'background {background}')}, max {most} samples"
+            f" x {segments} segments")
 
 
 def _u32_list(v: bytes) -> str:
@@ -74,13 +85,16 @@ KNOWN: dict[str, Known] = {
               0x43: ("channels", _u16), 0x44: ("reserved", _channels), 0x45: ("profile", _text),
               0x46: ("label", _label), 0x47: ("resets on open", lambda v: "yes"),
               0x49: ("transport", _transport), 0x4A: ("discoverable", lambda v: "yes" if v[:1] == b"\x01" else "no"),
-              0x4B: ("plan roles", _u32), 0x4C: ("chip", _text), 0x4D: ("max op ms", _u32)}),
+              0x4B: ("plan roles", _u32), 0x4C: ("chip", _text), 0x4D: ("max op ms", _u32),
+              0x4E: ("port speed", lambda v: "yes" if v[:1] == b"\x01" else "no")}),
     "oep.wire.rvswd": Known("scan, attach, detach over RVSWD (attach returns a connection)",
-                            roles={1: "SWDIO", 2: "SWCLK", 3: "reset"}, tags={0x40: ("max connections", lambda v: str(v[0]))}),
+                            roles={1: "SWDIO", 2: "SWCLK", 3: "reset"}, features={0: "attach writes unbounded"},
+                            tags={0x40: ("max connections", lambda v: str(v[0]))}),
     "oep.wire.swio": Known("scan, attach, detach over SWIO, one wire (attach returns a connection)",
-                           roles={1: "SWIO", 3: "reset"}, tags={0x40: ("max connections", lambda v: str(v[0]))}),
+                           roles={1: "SWIO", 3: "reset"}, features={0: "attach writes unbounded"},
+                           tags={0x40: ("max connections", lambda v: str(v[0]))}),
     "oep.wire.swd": Known("scan, attach, detach over ARM SWD", roles={1: "SWDIO", 2: "SWCLK"},
-                          tags={0x40: ("max connections", lambda v: str(v[0]))}),
+                          features={0: "attach writes unbounded"}, tags={0x40: ("max connections", lambda v: str(v[0]))}),
     "oep.target.riscv-dm": Known(
         "RISC-V Debug Module over DMI: step lists, block read/write, run until halt, halt/resume",
         features={0: "block read/write", 1: "run until halt", 2: "reset", 3: "step"}),
@@ -98,10 +112,15 @@ KNOWN: dict[str, Known] = {
                               tags={0x40: ("modes", lambda v: ", ".join(str(b) for b in range(32) if _u32v(v) >> b & 1))}),
     "oep.fixture.uart": Known("a UART (USART, asynchronous) on probe pins", roles={1: "RX", 2: "TX"},
                               tags={0x40: ("formats", lambda v: ", ".join(f"0x{b:02x}" for b in v[1:1 + v[0]]))}),
-    "oep.fixture.logic": Known("sampled logic capture", roles={k: f"line{k}" for k in range(8)}),
+    "oep.fixture.logic": Known("sampled logic capture", roles={k: f"line{k}" for k in range(8)},
+                               tags={0x40: ("mode", _capture_mode)}),
+    "oep.fixture.analog": Known("sampled analog capture", roles={k: f"ch{k}" for k in range(8)},
+                                tags={0x40: ("mode", _capture_mode)}),
     "oep.fixture.i2c-target": Known(
-        "an I2C target the DUT can address (ESP-IDF slave driver)",
-        roles={1: "SDA", 2: "SCL"}, features={0: "preloaded tx", 1: "clock stretching"}),
+        "an I2C target the DUT can address (open-drain only, fixture §3)",
+        roles={1: "SDA", 2: "SCL"}, features={0: "preloaded tx", 1: "clock stretching", 2: "internal pull-ups"},
+        tags={0x40: ("queue depth", lambda v: str(v[0])), 0x41: ("max stretch us", _u32),
+              0x42: ("pull-ups ohms", _u32)}),
     "oep.fixture.spi-target": Known(
         "an SPI target the DUT can clock (ESP-IDF slave driver)",
         roles={1: "SCK", 2: "MOSI", 3: "MISO", 4: "CS"}, features={0: "LSB first"}),

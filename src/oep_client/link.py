@@ -64,11 +64,14 @@ import serial
 from . import cobs, host as _host, message as m, registry as reg
 from .frames import FramingLost, LengthFrames
 
-# the link's own confirms (resync §5.1, confirm_raw) ask for the revisions this client handles, as every confirm does
-# (core §7.1: the host sends the range it can handle), never 0..0xFF
+# the link's own confirms (resync §5.1, confirm_raw) ask for the revisions this client handles before the first
+# confirm, and for the revision in use after it (core §7.1, C-15) - never 0..0xFF
 _OWN_CONFIRM = m.CONFIRM_REQUEST + bytes([_host.MIN_REVISION, _host.MAX_REVISION])
 
 RESYNC_QUIET_S = reg.TIMING["resync_quiet_ms"] / 1000
+RESYNC_WAIT_S = reg.TIMING["host_resync_wait_ms"] / 1000   # since the host's last write, before a resync's confirm (§5.1)
+WAIT_ADD_S = reg.TIMING["host_wait_add_ms"] / 1000      # the wait's floor: argument time + this + the transfer time (§4.4)
+NOTIFY_PENDING = reg.TIMING["notify_pending_max_frames"]   # max_frame x this of notifications may come first (§11.4)
 USB_VID, USB_PID = 0x303A, 0x0002   # the reference P4 probe's: the board's default, a temporary USB ID (probe guide §3.8)
 # The project's own USB VID:PID pairs (core §3.3): the only automatic identification of an OEP probe. The registry lists
 # them once obtained; none yet, so this stays empty and nothing is identified automatically.
@@ -99,7 +102,7 @@ class PortBusy(OSError):
     """Another program holds the serial port (it was opened exclusively): only one host at a time on a serial port."""
 
 
-BASE_BAUD = 115200   # the boot speed of every reference UART bridge (the board's profile decides; core §3.5)
+BASE_BAUD = reg.TIMING["uart_bridge_boot_baud"]   # every UART bridge boots at 115200 8N1 (core §3.4, C-09)
 IDLE_MAX_MS = reg.TIMING["port_speed_idle_max_ms"]   # a committed rate goes back after this with no good frame (§3.5)
 KEEPALIVE_S = 1.0    # raised: a keepalive once the link has been quiet this long (under half of idle_ms, core §3.5 ob. 4)
 OPEN_RETRY_S = IDLE_MAX_MS / 1000 + 1.0   # port_speed_idle_max_ms + 1 s: the confirm bound at the boot speed (ob. 5 and 7)
@@ -114,10 +117,18 @@ LINK_ERRORS = (cobs.CorruptFrame, TimeoutError, FramingLost)
 
 
 def open_serial(port: str, baud: int = BASE_BAUD):
-    """The port opened exclusively (flock and TIOCEXCL): a second open by anyone fails with PortBusy. The driver's
-    low-latency mode on where it has one (the FTDI latency timer 16 -> 1 ms; a pty or a driver without it: ignored)."""
+    """The port opened exclusively (flock and TIOCEXCL): a second open by anyone fails with PortBusy. 8 data bits, no
+    parity, 1 stop bit, no flow control, DTR and RTS asserted from the open on and while it stays open (core §3.4,
+    C-09: a UART bridge may wire them to the probe's reset; what a probe does with DTR deasserted is not defined). The
+    driver's low-latency mode on where it has one (the FTDI latency timer 16 -> 1 ms; a pty or a driver without it:
+    ignored)."""
     try:
-        stream = _ExclusiveSerial(port, baud, timeout=0.05, exclusive=True)
+        stream = _ExclusiveSerial(None, baud, timeout=0.05, exclusive=True, bytesize=serial.EIGHTBITS,
+                                  parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, xonxoff=False,
+                                  rtscts=False, dsrdtr=False)
+        stream.dtr = stream.rts = True                     # asserted when the port opens (pyserial applies them then)
+        stream.port = port
+        stream.open()
     except serial.SerialException as e:
         if "busy" in str(e).lower() or "lock" in str(e).lower() or getattr(e, "errno", None) == 16:
             raise PortBusy(f"{port} is open in another program: {e}") from e
@@ -173,6 +184,8 @@ def _close_serials_at_exit() -> None:
 class TcpStream:
     """A TCP connection shaped like the part of a pyserial port the link uses (read with a timeout, write,
     in_waiting): a local broker in the spec's TCP form, length(u16) message (oep-core §3.1)."""
+
+    keeps_boundaries = True    # TCP: a pause inside a frame is normal, never a lost boundary (core §3.2, §5.1)
 
     def __init__(self, host: str, port: int, connect_timeout: float = 3.0):
         self.sock = socket.create_connection((host, port), timeout=connect_timeout)
@@ -275,6 +288,11 @@ class SerialLink:
         self.corr_source = self._own_corr          # the host's correlation counter once bound (open_host)
         self.keepalive_frame = None                # raised: a keepalive request in the session, once bound (attach_host)
         self.last_tx = time.monotonic()            # when the link last wrote (raised: quiet for KEEPALIVE_S = keepalive)
+        self.last_write: float | None = None       # when this host last wrote to the port (None: never; core §5.1)
+        self.max_frame = reg.MIN_MAX_FRAME         # the probe's max_frame once confirmed (the wait's transfer time)
+        self.wait_add_s = WAIT_ADD_S               # the floor's host_wait_add_ms (a test of an in-process fake shortens it)
+        self.tx_len = 0                            # the longest frame on the wire of the last write
+        self.confirm_body = lambda: _OWN_CONFIRM   # the link's own confirm: the revision in use once bound (C-15)
         self.held = lambda: False                  # a session holds the port (its raw transfer stopped): broken = resend
         self.blind = lambda: []                    # the host's blind stops (unsubscribe / end) once bound
         self._corr_n = 0x8000
@@ -293,11 +311,39 @@ class SerialLink:
     def _write(self, messages: list[bytes]) -> None:
         if self.framing == "length":
             self.frames.send_many(messages)
+            self.tx_len = max((len(msg) + 2 for msg in messages), default=0)
         else:
-            data = b"".join(cobs.frame(msg) for msg in messages)
+            frames = [cobs.frame(msg) for msg in messages]
+            data = b"".join(frames)
             self.stream.write(data)
             self._moved(len(data))
-        self.last_tx = time.monotonic()
+            self.tx_len = max((len(f) for f in frames), default=0)
+        self.last_tx = self.last_write = time.monotonic()
+
+    def transfer_s(self) -> float:
+        """core §4.4's transfer time of one answer on this port: (L + max_frame x (1 + notify_pending_max_frames)) x 10
+        / baud on a port with a line speed (a serial port; 0 elsewhere), L the request's frame on the wire. The rule
+        asks it of a UART bridge only; counting it on every serial port only waits longer, which it allows."""
+        if self.framing != "cobs" or not self.baud:
+            return 0.0
+        return (self.tx_len + self.max_frame * (1 + NOTIFY_PENDING)) * 10 / self.baud
+
+    def wait_floor_s(self) -> float:
+        """The least a request's answer is waited for (core §4.4, C-06): the time its arguments set (Host.expecting:
+        run's timeout_ms, dmi's waits, attach / scan budgets, a save) + host_wait_add_ms + the transfer time; counted
+        from the write, or from the answer before it while several are outstanding (each reply's wait starts when it is
+        read). The link's own short requests (its confirms, port_speed's procedure, a measurement) are the host guide's
+        and keep their own waits."""
+        return self.expected_s() + self.wait_add_s + self.transfer_s()
+
+    def _settle_before_confirm(self) -> None:
+        """core §5.1: before a resync's confirm, and the first confirm on a length-prefixed port, host_resync_wait_ms
+        (250 ms = probe_frame_gap_ms + 50) since this host last wrote there - a frame it left half written is then
+        dropped by the probe's own gap, not completed by the confirm."""
+        if self.last_write is not None:
+            left = self.last_write + RESYNC_WAIT_S - time.monotonic()
+            if left > 0:
+                time.sleep(left)
 
     def _recv(self) -> bytes:
         if self.framing == "length":
@@ -422,8 +468,9 @@ class SerialLink:
                 if stops:
                     self._write(stops)
                     self.ended_blind = True     # the session ended: a request sent again would only meet no_session
+            self._settle_before_confirm()
             corr = self.corr_source()
-            self._write([m.Request(corr, m.CORE_FN, m.OP_CONFIRM, _OWN_CONFIRM).pack()])
+            self._write([m.Request(corr, m.CORE_FN, m.OP_CONFIRM, self.confirm_body()).pack()])
             try:
                 while True:
                     reply = self._recv()
@@ -551,7 +598,7 @@ class SerialLink:
         reads past the broken leftovers of the lost frames it follows: it keeps reading until its own answer or the
         deadline, not giving up on the first broken one."""
         corr = self.corr_source()
-        self._write([m.Request(corr, m.CORE_FN, m.OP_CONFIRM, _OWN_CONFIRM).pack()])
+        self._write([m.Request(corr, m.CORE_FN, m.OP_CONFIRM, self.confirm_body()).pack()])
         saved = self.timeout
         deadline = time.monotonic() + timeout
         self._own += 1
@@ -633,8 +680,9 @@ class SerialLink:
             lease = self.lease_s()
             if lease is not None:
                 wait = min(self.timeout, max(RAISED_WAIT_MIN_S, lease / 4))
-        expected = 0.0 if self._own else self.expected_s()
-        return max(wait, expected + EXPECT_MARGIN_S) if expected > 0 else wait
+        if self._own:
+            return wait
+        return max(wait, self.wait_floor_s())                     # never under core §4.4's floor (C-06)
 
     def _strike(self, e: Exception) -> None:
         """A request's answer did not come (`e`): a lost frame (host guide §7.3.2: counted at the boot speed for the
@@ -846,11 +894,14 @@ class SerialLink:
         self.lease_s = lambda: hst.lease_ms / 1000 if hst.session is not None and hst.lease_ms else None
         hst.before_request = self._keep_raised      # the keepalive before the request's corr is taken (core §4.1)
         self.expected_s = lambda: hst.expect_ms / 1000
+        self.confirm_body = hst.confirm_body        # the revision in use after the first confirm (core §7.1, C-15)
         hst.link = self
         limits = self.probe(hst)
         hst.exchange = self.bind(limits)
-        if self.framing == "length" and limits.get("max_frame"):
-            self.frames.max_frame = limits["max_frame"]
+        if limits.get("max_frame"):
+            self.max_frame = limits["max_frame"]
+            if self.framing == "length":
+                self.frames.max_frame = limits["max_frame"]
 
     def probe(self, hst) -> dict:
         """The probing rule (core §3.3): every device or port this client opens is one it has not identified (no
@@ -867,7 +918,12 @@ class SerialLink:
             if self.framing == "cobs" and transport == "serial":
                 self.wait_boot_speed()
             elif transport != "tcp":
-                self.timeout, self.resend = PROBE_WAIT_S, True
+                self.timeout, self.resend = PROBE_WAIT_S + self.transfer_s(), True
+            if self.framing == "length":
+                # core §5.1: the first confirm on a length-prefixed port waits for 50 ms of quiet input and for
+                # host_resync_wait_ms since this host last wrote there
+                self.frames.discard_until_quiet(RESYNC_QUIET_S, self.NOISY_S)
+                self._settle_before_confirm()
             return hst.confirm()
         except Exception as e:
             self.timeout, self.resend = saved
@@ -1048,6 +1104,8 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
         timeout = 3.0 if timeout is None else timeout
         parts = target.split(":")[1:]
         if len(parts) == 1:                                   # usb:UNIT_ID (any length: a VID comes with its PID)
+            if parts[0].lower().startswith("x-"):
+                raise ValueError(f"usb:{parts[0]}: an x- unit_id names no unit (core §7.5), so no probe is found by it")
             vid, pid = find_usb(parts[0])
             hst = open_usb_host(vid, pid, parts[0], timeout)
             check_unit_id(hst, parts[0])
@@ -1076,6 +1134,7 @@ SPEED_STEP = reg.CORE.enum["port_speed_step"]
 PORT_SPEED_TAG = reg.CORE.tlv["describe"]["port_speed"]
 UNIT_ID_TAG = reg.CORE.tlv["describe"]["unit_id"]
 UART_BRIDGE = reg.CORE.enum["transport_kind"]["uart_bridge"]
+RELAYING_BROKER = 0xFF       # confirm's transport from a broker that answers the session ops itself (core §3.1)
 
 
 DEFAULT_CANDIDATES = (500000,)   # host guide §7.2: one candidate that passed the measured bridges in small duplex use
@@ -1277,15 +1336,21 @@ class SpeedReport:
 
 
 def _speed_port(hst) -> tuple[int | None, str]:
-    """The probe's UART bridge (its transport index) when it declares port_speed; else None and why not."""
+    """The port this host's requests come in on (the transport TLV of confirm's answer, core §7.1, C-05) when the probe
+    declares port_speed and that transport is a UART bridge; else None and why not."""
     from . import core
     tlvs = core.describe(hst, 0)
     if not any(tag == PORT_SPEED_TAG and value[:1] == b"\x01" for tag, value in tlvs):
         return None, "the probe does not declare port_speed"
-    bridges = [index for index, kind, _ in core.transports(hst) if kind == UART_BRIDGE]
-    if not bridges:
-        return None, "the probe has no UART bridge"
-    return bridges[0], ""
+    index = (hst.limits or hst.confirm()).get("transport")
+    if index is None:
+        return None, "the probe's confirm names no transport (core §7.1 requires it)"
+    if index == RELAYING_BROKER:
+        return None, "a relaying broker answers the confirm (transport 0xFF): no port of this probe to raise"
+    kind = next((k for i, k, _ in core.transports(hst) if i == index), None)
+    if kind != UART_BRIDGE:
+        return None, f"this host's transport (index {index}) is not a UART bridge"
+    return index, ""
 
 
 def _unit_id(hst) -> str:
@@ -1498,7 +1563,12 @@ def raise_speed(hst, candidates=DEFAULT_CANDIDATES, *, flows=None, verify: bool 
     if record:
         from .speed_record import SpeedRecord
         rec = record if isinstance(record, SpeedRecord) else SpeedRecord(None if record is True else record)
-        lk.record, lk.record_key = rec, (lk.port_path or "<stream>", _unit_id(hst))
+        unit = _unit_id(hst)
+        if rec.names_a_unit(unit):
+            lk.record, lk.record_key = rec, (lk.port_path or "<stream>", unit)
+        else:                                               # an x- unit_id names no unit: nothing kept (C-24)
+            rec = None
+            report.why = f"unit_id {unit} names no unit (core §7.5): no speed record"
     run = _Run(flows, verify, frames, wait, idle_ms, port, rec, max(0, int(probation_bytes)), max(0.0, probation_s),
                settle_s)
     lk.fallback = False                                     # every failure here is handled here
