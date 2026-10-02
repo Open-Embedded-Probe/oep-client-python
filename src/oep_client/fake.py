@@ -243,7 +243,7 @@ def p4_x035() -> FakeProbe:
     reserved = [2, 24, 25, 54]                      # RVSWD SWDIO/SWCLK, USB-Serial/JTAG
     pins = [p for p in range(55) if p not in reserved]
     return FakeProbe("p4-x035", 1024, [
-        _core("3.0.0", "esp32p4", "30eda0e31108", 55, reserved, f"{NS}.p4-x035",
+        _core("3.0.0", "esp32p4", "fafe00000035", 55, reserved, f"{NS}.p4-x035",
               {2: "SWDIO", 54: "SWCLK", 51: "LED"},
               _transports([(TRANSPORT["usb_serial_jtag"], 0xFF), (TRANSPORT["vendor_bulk"], 0),
                            (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)])
@@ -282,7 +282,7 @@ def esp32_v003() -> FakeProbe:
     reserved = [0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15, 16]
     wired = [4, 5, 13, 14, 17, 18, 19, 21, 22, 25, 26, 27, 32, 33]
     return FakeProbe("esp32-v003", 64, [
-        _core("3.0.0", "esp32", "0070070d9394", 40, reserved, f"{NS}.esp32-v003",
+        _core("3.0.0", "esp32", "fafe00000003", 40, reserved, f"{NS}.esp32-v003",
               {16: "SWIO", 23: "NRST", 22: "DUT TX", 21: "DUT RX"},
               _transports([(TRANSPORT["uart_bridge"], 0xFF)]) + (catalog.u8(CORE_PORT_SPEED, 1),)),
         Offered(1, 0, "oep.wire.swio", (catalog.channel_group(1, [(1, 16)]), catalog.role_channels(3, [23]),
