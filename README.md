@@ -235,7 +235,10 @@ The pty is a serial port (the host opens it with TIOCEXCL); `--tcp PORT` is `--f
 `--framing length` (the vendor bulk / TCP form). Faults: `--drop N` (the N-th answer is not sent, once; the request did run,
 so a resend gets the remembered result), `--noise TEXT` (noise before every answer), `--corrupt N` (the N-th answer's CRC
 broken once). `--uart-plan` / `--uart-rx` give the first fixture UART a plan and RX bytes, `--run-hook` a host's own model of
-riscv-dm run, `--capture-slipped` flags bit2 on every capture segment. port_speed: `esp32-v003` has it
+riscv-dm run, `--capture-slipped` flags bit2 on every capture segment. `--no-drive-levels` takes the gpio's
+drive_levels away (a probe that cannot switch the output strength). `--silent-until-reset N` makes the N-th pair's target
+answer nothing until a reset through its line; with `--boot-reset` (every `--slot` asks for the at-boot retry with reset)
+and `--label CH=TEXT` (e.g. `23=v003.nrst`) the retry with reset happens at start. port_speed: `esp32-v003` has it
 (`--no-port-speed` turns it off), and `--broken-rate RATE[:MIN_SIZE][:in|out]` makes a rate break frames (in process,
 `fake_serial.FakeSerialStream` also garbles everything while the host's own rate differs from the probe's). Events and data pushes go out on the pty and on TCP
 (both framings). The rest: `--help`.
