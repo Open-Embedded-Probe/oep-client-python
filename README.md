@@ -18,7 +18,8 @@ uv run pytest                     # in a checkout (the fake probe; no hardware)
 OEP_HW_BOARDS=<board id> OEP_PROBE_DIR=<oep-probe-arduino checkout> uv run pytest tests/hw -m hw   # a real probe: tests/hw/README.md
 ```
 
-`import oep_client` is all it takes. The registry is copied from oep-spec with `tools/sync_registry.sh`. PyPI's
+`import oep_client` is all it takes. The registry and oep-spec's test vectors (`tests/vectors/*.json`, checked by
+`tests/test_vectors.py` against this client and the fake) are copied from oep-spec with `tools/sync_registry.sh`. PyPI's
 `oep-client` is another project, so the distribution is named `oep-client-python`.
 
 Releases: run the GitHub Actions workflow Release (workflow_dispatch, version X.Y.Z or X.Y.ZbN). `tools/prepare_release.py`
@@ -35,15 +36,15 @@ oep-client-python X.Y.Z (until the v1 freeze every release may break the wire; t
 | Module | Contents |
 |---|---|
 | `host` | requests and results, the session id and the lock, `call()` (raises unless it worked), pipelining, the errors (`OepError` / `Rejected` / `Failed`; `Expired` when the lease lapsed - the session is never re-opened behind the caller's back, `Host.epoch` moves) |
-| `link` | transports: serial ports (always COBS + CRC as `0x00 <COBS> 0x00`, bytes outside frames skipped as noise, opened exclusively), USB vendor bulk / HID and TCP (length frames, the §5.1 resync); matching by corr and resending; `open_host(target)` |
-| `core` | interfaces by name (cached), confirm (with the probe's `boot_id`), the probe's describe (declarations only, cached per boot: labels, the transport list, `max_op_ms`), taking the lock (`take`), the pin plan, the `Interface` base |
-| `riscv` | `oep.wire.rvswd` / `oep.wire.swio` (scan, attach - `max_speed` always sent, `reset=(channel, hold_ms)` for an attach under reset -, detach, connections), `oep.target.riscv-dm` (answers count their values; `RunResult.not_halted`), finding the reset line (`find_reset_line(candidates, pins=...)`), attach through GPIO |
+| `link` | transports: serial ports (always COBS + CRC as `0x00 <COBS> 0x00`, bytes outside frames skipped as noise, opened exclusively, 8N1 with DTR / RTS asserted), USB vendor bulk / HID and TCP (length frames, the §5.1 resync - waiting 250 ms after the host's last write; on TCP a pause inside a frame is read on); matching by corr and resending; every answer waited at least core §4.4's floor (argument time + 1000 ms + a serial port's transfer time, `wait_floor_s`); `open_host(target)` |
+| `core` | interfaces by name (cached), confirm (with the probe's `boot_id` and `transport`, the index this host came in on; later confirms ask for the revision in use), the probe's describe (declarations only, cached per boot: labels, the transport list, `max_op_ms`), taking the lock (`take`), the pin plan, the `Interface` base |
+| `riscv` | `oep.wire.rvswd` / `oep.wire.swio` (scan, attach - `max_speed` always sent, `reset=(channel, hold_ms)` for an attach under reset -, detach, connections), `oep.target.riscv-dm` (answers count their values; `RunResult.not_halted`; a step that could not halt the hart again raises `StepError` with `step_left`), `Wire.search_retries` (the attach answer's failed speed-search tries), attach and scan wait their budgets, finding the reset line (`find_reset_line(candidates, pins=...)`), attach through GPIO |
 | `targets` | what the host knows per target family, in one table (`FAMILIES`: wire, target_id match, reset vector, option-byte NRST reader, max_speed / idle_clock); `identify(target_id)` |
 | `pins` | `oep pins`: classify the channels, hold-low search, scan, identify, confirm the reset line, suggest a slot (`PinFinder`) |
 | `console` | `oep.target.console` (position streams: read answers carry their length, marks are `time_ns`, the lock-free `streams()` list) and `ConsoleIO`, read as bytes |
-| `fixture` | `oep.fixture.gpio` (an output's strength per element: `set([(ch, mode, Drive.max_ma(10))])`; `drive_levels()`, `read_state()` = levels and the level in force) / `uart` (its stream is the plan's; `status()`) / `i2c-target` / `spi-target` (revision 1) |
-| `config` | `oep.probe.config` (slots - `boot_reset` -, binds, plan / label / idle - its `drive` - / uart items, get / set / unset / save / erase; `describe()` = the declarations, `state()` = the live storage / slot / bind state, `reset_at_ns` included; `hash_of(items)` = the probe's hash; `find_line(cfg, slot, "nrst")` = probe.config §1.3's line lookup) |
-| `capture` | `oep.fixture.logic` / `analog` / `capture-group` (revision 1, oep-spec oep-if-capture). Every start is a generation (`LogicCapture.generation`) that read and release name - `read_segment(segment)` does it by itself; `status()` returns a `Status`. Every segment read goes to the `Host.on_capture` callbacks as a `CaptureRecord` (the hook for run recorders; no wireskein dependency) |
+| `fixture` | `oep.fixture.gpio` (an output's strength per element: `set([(ch, mode, Drive.max_ma(10))])`; `drive_levels()`, `read_state()` = levels and the level in force) / `uart` (its stream is the plan's; `status()`) / `i2c-target` (`pullup_ohms`: the pull-ups it enables, None when it declares none) / `spi-target` (revision 1) |
+| `config` | `oep.probe.config` (slots - `boot_reset` -, binds, plan / label / idle - its `drive` - / uart items, get / set / unset / save / erase; `describe()` = the declarations, `state()` = the live storage / slot / bind state, `reset_at_ns` included; `hash_of(items)` = the probe's hash; `find_line(cfg, slot, "nrst")` = probe.config §1.3's line lookup, the firmware's fixed labels as its step (c)) |
+| `capture` | `oep.fixture.logic` / `analog` / `capture-group` (revision 1, oep-spec oep-if-capture). mode, rate, trigger, pretrigger and frontend go critical, the answer's samples hold; a start's blocking_ms is waited out with nothing sent (then a resync on length frames). Every start is a generation (`LogicCapture.generation`) that read and release name - `read_segment(segment)` does it by itself; `status()` returns a `Status`. Every segment read goes to the `Host.on_capture` callbacks as a `CaptureRecord` (the hook for run recorders; no wireskein dependency) |
 | `decode` | decoding capture channels (I2C) |
 | `registry` | generated from oep-spec's number table (never edited; copied again from oep-spec). The public way to reach an interface by name is `registry.INTERFACES[name]` (`.revision`, `.op`, `.tlv`, `.enum`, e.g. `INTERFACES["oep.fixture.uart"].enum["role"]`); the module-level names (`FIXTURE_UART`, ...) are the same objects |
 | `arm` | `oep.wire.swd`, `oep.target.arm-adi`, MEM-AP, halting and calling functions on a Cortex-M |
@@ -181,8 +182,8 @@ that): while raised the link sends a keepalive before a request when it has been
 (1 s), and `hst.link.keep_alive()` does the same for a caller that sits idle for long; opening a serial port retries its
 first confirm for about 4 s to wait out a rate left over. The link follows an `end` or a revert at once, and a request
 that goes unanswered at a raised rate (its resend too) takes the link back to the boot speed, confirmed, and goes once
-more there - it never wedges; while raised each wait for an answer is at most a quarter of the lease, so this ends well
-inside it. In use, a committed rate's first 32 KiB and 1 s (`probation_bytes`, `probation_s`) are its probation: 3 or
+more there - it never wedges; while raised each wait for an answer is a quarter of the lease, never under core §4.4's
+floor, so this ends inside it. In use, a committed rate's first 32 KiB and 1 s (`probation_bytes`, `probation_s`) are its probation: 3 or
 more broken or lost frames over max(2 x baseline, 5 %), or a missed answer, there count as a verify failure and step
 down at once (the 16-frame verify stays the quick gate). After it the link judges the frames of the last 3 s (none
 under 50): over max(2 x baseline, 10 %) broken or lost steps the link down. A step down is port_speed revert at the
@@ -193,7 +194,9 @@ session, nor any rate above it (`speed.stepped_down`, `speed.down_why`, `speed.s
 path, or a `speed_record.SpeedRecord`; the `oep speed` CLI's default, off in the library) keeps passed / failed rates
 per (port, unit_id) under `~/.cache/oep-client/link-speed.json` - a pass for 30 days, a failure for 1 day, a failure
 measured within 2 s (`settle_s`) of a breakdown at another rate as unknown - putting a passed rate first and leaving
-failed ones out; when every candidate is marked failed the slowest is tried once (`speed.retried`). A probe without the feature answers `not supported` and stays at its speed. Behind a broker (TCP) the broker does
+failed ones out; when every candidate is marked failed the slowest is tried once (`speed.retried`). An `x-` unit_id (a probe with neither a unique number nor storage, core §7.5) keys nothing: no record is kept or read
+for it. The port raised is the one this host came in on - the transport TLV of confirm's answer (core §7.1) - when that
+is a UART bridge. A probe without the feature answers `not supported` and stays at its speed. Behind a broker (TCP) the broker does
 this, not the client. Serial ports are also opened in the driver's low-latency mode where it has one (an FTDI's latency
 timer 16 -> 1 ms tripled a UART bridge's throughput). `open_host(..., baud=)` names the boot speed when the board's
 profile is not 115200.
@@ -223,6 +226,19 @@ SCK / MOSI / MISO / CS - on `esp32-v003` one of two fixed channel_groups exactly
 There is no bus controller: an arm stays armed and nothing is received until a test calls a hook on the endpoint
 (`i2c_write` / `i2c_read` / `spi_transfer`: one transaction on the bus).
 
+The rule changes of 2026-10-02 (oep-spec `docs/v1-rule-change-proposal-2026-10-02.md`) are in: a value a later revision
+may define is unsupported, a request is checked form first, then values, then state; a non-repeating request TLV twice,
+a short one malformed, a longer one unsupported (critical) or ignored; ignored at most 16 entries with 0x00 as the 16th;
+confirm names its transport and refuses an unknown revision with the range it handles; rejected answers are remembered;
+lease 1000-60000; session_id 0, booleans and text checked; count = 0 leaves out channels with an idle item, a named
+output idle is unavailable cause 5 holder_kind 7; undeclared combinations unsupported with their index; found =
+DMSTATUS.version >= 2 and not 15 (`FakeTarget.version`); halt / step failures (`halt_stuck`, `step_stuck`);
+`search_retries`; the line search's step (c) over the firmware's labels; an idle pull a channel lacks (`no_pull`); an
+item's channel below `channels` and not reserved; label text; a saved bind on a port that is no serial port. What the
+probe does to a pin is `pin_state(ch)` (MISO driven only while CS is active - `spi_select` -, an i2c-target open-drain
+with the pull-ups it declares - `fake.with_i2c_pullups` -, a plan changing no pin until use, a closed connection's pins
+back to idle). `fake.with_unit_id(probe, "x-...")` makes a probe with an `x-` unit_id.
+
 Other programs' tests run `fake_serve` as a child process:
 
 ```sh
@@ -232,13 +248,15 @@ python -m oep_client.fake_serve --pty --profile p4-bench --slot x035 --bind last
 ```
 
 The pty is a serial port (the host opens it with TIOCEXCL); `--tcp PORT` is `--framing cobs` (a serial port) or
-`--framing length` (the vendor bulk / TCP form). Faults: `--drop N` (the N-th answer is not sent, once; the request did run,
+`--framing length` (the TCP form: the listener is a TCP transport of the probe, listed in describe and named by every
+confirm; a length over max_frame closes the connection). Faults: `--drop N` (the N-th answer is not sent, once; the request did run,
 so a resend gets the remembered result), `--noise TEXT` (noise before every answer), `--corrupt N` (the N-th answer's CRC
 broken once). `--uart-plan` / `--uart-rx` give the first fixture UART a plan and RX bytes, `--run-hook` a host's own model of
 riscv-dm run, `--capture-slipped` flags bit2 on every capture segment. `--no-drive-levels` takes the gpio's
 drive_levels away (a probe that cannot switch the output strength). `--silent-until-reset N` makes the N-th pair's target
 answer nothing until a reset through its line; with `--boot-reset` (every `--slot` asks for the at-boot retry with reset)
-and `--label CH=TEXT` (e.g. `23=v003.nrst`) the retry with reset happens at start. port_speed: `esp32-v003` has it
+the retry with reset happens at start through the slot's `nrst` line - a `--label CH=TEXT` (e.g. `23=v003.nrst`), or
+the firmware's fixed `NRST` label (probe.config §1.3 step (c)). port_speed: `esp32-v003` has it
 (`--no-port-speed` turns it off), and `--broken-rate RATE[:MIN_SIZE][:in|out]` makes a rate break frames (in process,
 `fake_serial.FakeSerialStream` also garbles everything while the host's own rate differs from the probe's). Events and data pushes go out on the pty and on TCP
 (both framings). The rest: `--help`.

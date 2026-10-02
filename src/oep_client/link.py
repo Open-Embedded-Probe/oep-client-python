@@ -112,7 +112,6 @@ IN_USE_MIN_FRAMES = 50     # ... none under this many in the window ...
 IN_USE_FLOOR = 0.10        # ... broken + lost over max(2 x baseline, this) steps down for the rest of the session
 STEP_DOWN_WAIT_S = 0.2   # the step down's revert (step 2) at the raised rate waits this long, never sent again
 RAISED_WAIT_MIN_S = 0.3  # raised, in use: each wait for an answer is a quarter of the lease, at least this
-EXPECT_MARGIN_S = 0.5    # a request that may take long on the probe (Host.expecting): waited that long and this
 LINK_ERRORS = (cobs.CorruptFrame, TimeoutError, FramingLost)
 
 
@@ -674,7 +673,8 @@ class SerialLink:
         item 5) hears nothing at the raised rate, and the fallback (both waits, the confirm at the boot speed, the
         request again there) must end well inside the lease. A request that may take longer on the probe
         (Host.expecting: a run's timeout_ms, a dmi list's waits, ...; the probe does not count the lease meanwhile,
-        core §6.1) waits at least that and EXPECT_MARGIN_S, at any rate; the link's own requests never do."""
+        core §6.1) waits at least that. Every wait but the link's own is at least core §4.4's floor (C-06,
+        `wait_floor_s`: argument time + host_wait_add_ms + the transfer time), at a raised rate too."""
         wait = self.timeout
         if self._in_use():
             lease = self.lease_s()

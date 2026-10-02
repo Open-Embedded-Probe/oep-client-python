@@ -538,7 +538,7 @@ def test_a_long_run_at_a_raised_rate_waits_its_timeout_ms_without_a_step_down():
     hst.keepalive()                                      # after 2 s of quiet: the link's keepalive first, a lower corr
     corrs = [q.corr for q in ep.requests[-2:]]
     assert corrs == sorted(corrs) and [q.op for q in ep.requests[-2:]] == [m.OP_KEEPALIVE] * 2
-    assert link.EXPECT_MARGIN_S < 1 and hst.expect_ms == 0      # only that request waited longer
+    assert hst.expect_ms == 0                            # only that request waited longer
 
 
 class RefusingStream:
