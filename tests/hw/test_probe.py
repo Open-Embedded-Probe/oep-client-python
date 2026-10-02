@@ -72,6 +72,8 @@ def test_flash(run: record.Run):
         try:
             if board.kind == "esp32":
                 rec.update(flash.flash_esp32(board.flash_port or run.port, fw.image_for("esp32")))
+            elif board.kind == "esp32p4-usj":                       # the P4's own USB-Serial/JTAG: esptool, as a bridge
+                rec.update(flash.flash_esp32_app(board.flash_port or run.port, fw.image_for("esp32p4")))
             elif board.kind == "esp32p4":
                 rec.update(flash.flash_p4(board.unit_id, fw.image_for("esp32p4"), board.usbip_busid))
             elif board.kind == "rp2":
@@ -186,22 +188,48 @@ def test_config(run: record.Run):
 
 # ---- 4. the wire -----------------------------------------------------------------------------------------------------------
 
+def _scan_settled(wire, pairs, rec: dict, settle_s: float = 2.0):
+    """scan, again every 0.1 s for up to settle_s while it finds nothing: a target the probe powers from an output idle
+    (the third P4's CH32V003) is switched on at the probe's boot and answered nothing for about 0.1 s after a flash
+    (2026-10-02). The tries are recorded."""
+    t0 = time.monotonic()
+    tries = 0
+    while True:
+        tries += 1
+        found = wire.scan(pairs)
+        if found or time.monotonic() - t0 >= settle_s:
+            rec["scan_tries"] = tries
+            return found
+        time.sleep(0.1)
+
+
+def _wire_for(hst, pins_text: str):
+    """The wires the probe offers (the one to use first) and the pair OEP_HW_TARGET names: one pin (swdio alone) is a
+    one-wire link, so oep.wire.swio goes first when the probe offers it (OEP_HW_WIRE=<name> picks one by name)."""
+    wires = [e.name for e in core.list_entries(hst, "oep.wire")]
+    assert wires, "the probe offers no oep.wire.* interface"
+    pairs = None
+    if pins_text:
+        nums = [int(v, 0) for v in pins_text.split(",")]
+        pairs = [(nums[0], nums[1] if len(nums) > 1 else 0xFFFF)]
+    want = os.environ.get("OEP_HW_WIRE") or ("oep.wire.swio" if pairs and pairs[0][1] == 0xFFFF else "")
+    if want:
+        assert want in wires, f"the probe does not offer {want} ({wires})"
+        wires = [want] + [w for w in wires if w != want]
+    return wires, pairs
+
+
 def test_wire(run: record.Run):
     spec = os.environ.get("OEP_HW_TARGET", "")
     if not spec:
         pytest.skip("no target wired (OEP_HW_TARGET=<name>[@swdio[,swclk]] says one is)")
     hst = run.take()
     name, _, pins_text = spec.partition("@")
-    wires = [e.name for e in core.list_entries(hst, "oep.wire")]
-    assert wires, "the probe offers no oep.wire.* interface"
+    wires, pairs = _wire_for(hst, pins_text)
     wire = riscv.Wire(hst, wires[0])
-    pairs = None
-    if pins_text:
-        nums = [int(v, 0) for v in pins_text.split(",")]
-        pairs = [(nums[0], nums[1] if len(nums) > 1 else 0xFFFF)]
     rec = run.record("wire", target=name, wire=wires[0], pairs_asked=pairs)
     t0 = time.monotonic()
-    found = wire.scan(pairs)
+    found = _scan_settled(wire, pairs, rec)
     rec["scan"] = [{"kind": f.kind, "pins": list(f.pins), "dmstatus": f"{f.dmstatus:#010x}"} for f in found]
     rec["scan_seconds"] = round(time.monotonic() - t0, 2)
     assert found, "scan found no target"
@@ -786,25 +814,31 @@ def test_console(run: record.Run):
     if not _listed(hst, console_mod.Console.NAME):
         pytest.skip("the probe does not list oep.target.console")
     name, _, pins_text = spec.partition("@")
-    wires = [e.name for e in core.list_entries(hst, "oep.wire")]
-    assert wires, "the probe offers no oep.wire.* interface"
+    wires, pairs = _wire_for(hst, pins_text)
     wire = riscv.Wire(hst, wires[0])
-    pairs = None
-    if pins_text:
-        nums = [int(v, 0) for v in pins_text.split(",")]
-        pairs = [(nums[0], nums[1] if len(nums) > 1 else 0xFFFF)]
     con = console_mod.Console(hst)
-    decl = record.declared(hst, con.fn)
-    mechanisms = list(decl["own"].get(_MECHANISMS, [b""])[0])
-    mechanism = con.DMSEQ if con.DMSEQ in mechanisms or not mechanisms else mechanisms[0]
-    rec = run.record("console", target=name, wire=wires[0], mechanisms=mechanisms, mechanism=mechanism)
-    found = wire.scan(pairs)
+    rec = run.record("console", target=name, wire=wires[0])
+    found = _scan_settled(wire, pairs, rec)
     assert found, "scan found no target"
     conn, status = wire.attach(halt=False, pins=found[0].pins)        # running: whatever it prints is what arrives
     rec.update(connection=conn, dmstatus=f"{status:#010x}")
     seen = bytearray()
     try:
-        stream = con.open(conn, mechanism)
+        # A probe with several wires may have a console per wire (instances): the one that serves this connection is
+        # the one whose open does not answer no_connection.
+        for fn in core.find_all(hst, console_mod.Console.NAME):
+            con.fn = fn
+            decl = record.declared(hst, con.fn)
+            mechanisms = list(decl["own"].get(_MECHANISMS, [b""])[0])
+            mechanism = con.DMSEQ if con.DMSEQ in mechanisms or not mechanisms else mechanisms[0]
+            rec.update(console_fn=fn, mechanisms=mechanisms, mechanism=mechanism)
+            try:
+                stream = con.open(conn, mechanism)
+                break
+            except h.NoConnection:
+                rec.setdefault("no_connection_on", []).append(fn)
+        else:
+            pytest.fail(f"no oep.target.console serves connection {conn} of {wires[0]}")
         rec.update(stream=stream, existing=con.existing)
         backlog = con.read(con.FROM_OLDEST, 0, 1000)
         rec["backlog_bytes"] = len(backlog.data)

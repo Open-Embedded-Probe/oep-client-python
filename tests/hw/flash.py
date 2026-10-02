@@ -2,6 +2,9 @@
 bridge board for the config test:
 
   esp32    esptool --chip esp32 -p PORT -b 115200 write-flash 0x0 <merged.bin>   (esptool on PATH; 115200: an ATOM's FTDI)
+  esp32p4-usj  esptool --chip esp32p4 through the P4's USB-Serial/JTAG port (a P4 whose only USB is that port; esptool
+           resets it into the ROM download mode and back through the port's RTS / DTR): otadata erased, the app image
+           at 0x10000 - the app alone, as DFU writes it, so the saved settings stay
   esp32p4  USB DFU 1.1 of the app image to the running probe (pyusb; what dfu-util -D does), then the probe reboots into
            it. On a WSL bench usbipd drops the device at the reboot: `usbipd.exe attach --wsl --busid <busid>` when the
            board table has one.                                                                        [UNTESTED here]
@@ -70,6 +73,29 @@ def flash_esp32(port: str, merged: pathlib.Path, baud: int = 115200, chip: str =
         raise FlashError(f"esptool failed ({proc.returncode}) after {dt:.0f} s:\n" + "\n".join(tail))
     log(f"esptool: done in {dt:.1f} s")
     return {"tool": "esptool", "command": " ".join(cmd), "seconds": round(dt, 1), "tail": tail}
+
+
+def flash_esp32_app(port: str, app: pathlib.Path, chip: str = "esp32p4", log=_log) -> dict:
+    """The app image alone through esptool, as the DFU path writes it: otadata erased first (the boot goes to app0,
+    whichever slot an earlier OTA / DFU left selected), then the app at 0x10000. NVS - the saved settings - stays, so a
+    board whose wiring needs its settings (a target powered from an output idle) keeps them across the flash."""
+    dash = esptool_major() >= 5
+    base = esptool_command() + ["--chip", chip, "-p", port]
+    erase = base + ["--after", "no-reset" if dash else "no_reset", "erase-region" if dash else "erase_region",
+                    "0xe000", "0x2000"]
+    write = base + ["--after", "hard-reset" if dash else "hard_reset", "write-flash" if dash else "write_flash",
+                    "0x10000", str(app)]
+    log(f"esptool: {app.name} ({app.stat().st_size} bytes) -> {port} at 0x10000 (otadata erased)")
+    t0 = time.monotonic()
+    tail: list[str] = []
+    for cmd in (erase, write):
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        tail = (proc.stdout + proc.stderr).strip().splitlines()[-8:]
+        if proc.returncode != 0:
+            raise FlashError(f"esptool failed ({proc.returncode}) after {time.monotonic() - t0:.0f} s:\n" + "\n".join(tail))
+    dt = time.monotonic() - t0
+    log(f"esptool: done in {dt:.1f} s")
+    return {"tool": "esptool", "command": " ".join(erase) + " && " + " ".join(write), "seconds": round(dt, 1), "tail": tail}
 
 
 def hard_reset(stream, settle_s: float = 0.1) -> None:

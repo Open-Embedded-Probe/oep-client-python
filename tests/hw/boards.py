@@ -24,7 +24,8 @@ BY_ID = "/run/board-identify/by-id"
 @dataclass(frozen=True)
 class Board:
     id: str                              # board-identify id, or the unit id
-    kind: str                            # esp32 (esptool merged.bin) | esp32p4 (USB DFU app.bin) | rp2 (BOOTSEL uf2) | fake
+    kind: str                            # esp32 (esptool merged.bin) | esp32p4 (USB DFU app.bin) | esp32p4-usj (esptool
+                                         # merged.bin over the P4's USB-Serial/JTAG) | rp2 (BOOTSEL uf2) | fake
     profile: str                         # sketch.yaml profile in examples/Firmware/OepProbe
     model: str                           # describe's model
     port: str                            # the OEP port after flashing (forms above)
@@ -74,6 +75,10 @@ TABLE: dict[str, Board] = {b.id: b for b in (
     Board("esp32-series-30eda0e343c6", "esp32p4", "esp32p4", "esp32p4", "usb:30eda0e343c6", unit_id="30eda0e343c6",
           usbip_busid="11-4", notes="second P4 jig (an older firmware's USB serial is 30eda0e343c6-hs): the bench's; ask first",
           **_P4),
+    Board("esp32-series-30eda0ea068b", "esp32p4-usj", "esp32p4", "esp32p4", f"{BY_ID}/esp32-series-30eda0ea068b",
+          unit_id="30eda0ea068b", flash_port=f"{BY_ID}/esp32-series-30eda0ea068b",
+          notes="third P4 (ESP32-P4, FS USB-Serial/JTAG port only), ours: a CH32V003 on SWIO 19, NRST 4, power from 5 "
+                "(the idle output-high its settings keep), its UART on 22 / 23, its app's output on 21", **_P4),
     Board("9489dd2ae0953650", "rp2", "promicrorp2350", "rp2350", "cdc:9489dd2ae0953650", unit_id="9489dd2ae0953650",
           notes="SparkFun Pro Micro RP2350 (1b4f:0026, iProduct 'OEP probe (RP2350)'); no board-identify id: keyed by unit id",
           **_RP2350),
