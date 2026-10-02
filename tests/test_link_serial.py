@@ -130,3 +130,61 @@ def test_every_segment_read_goes_to_the_record_hook():
     assert cap.read_segment(seg) == b"\x00\x01\x02\x03"
     (r,) = records
     assert r.fn == 5 and r.data == b"\x00\x01\x02\x03" and r.segment.slipped and r.config.width == 8
+
+
+_END_WITHOUT_CLOSE = """
+import os, sys
+from oep_client import core, link
+hst = link.open_host(sys.argv[1], timeout=1.0)
+core.take(hst, 3000, owner="child")
+hst.end()                                  # the session ends; the link is never closed
+if sys.argv[2] == "hard":
+    os._exit(0)                            # no atexit: only the fake can let the port go
+"""
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="pty and TIOCEXCL as on Linux")
+@pytest.mark.parametrize("exit_mode", ["normal", "hard"])
+def test_a_host_that_ends_without_closing_leaves_the_pty_free_for_the_next(exit_mode):
+    """A pty slave's tty lives on while fake_serve holds the master, so a TIOCEXCL left set refused every later open
+    (EBUSY) - a real port clears it at its last close. Now the client clears it at exit, and fake_serve at the last
+    close of its slave (also after an exit that skipped atexit)."""
+    proc, where = serve("--pty", "--profile", "esp32-v003")
+    try:
+        for _ in range(2):
+            child = subprocess.run([sys.executable, "-c", _END_WITHOUT_CLOSE, where[1], exit_mode],
+                                   capture_output=True, text=True, timeout=30)
+            assert child.returncode == 0, child.stderr               # the second child: the next process
+        import time
+        deadline = time.monotonic() + (1.0 if exit_mode == "hard" else 0)
+        while True:                                                   # the fake sees the hard exit's close a few
+            try:                                                      # ms later; the client's own exit at once
+                hst = link.open_host(where[1], timeout=1.0)
+                break
+            except link.PortBusy:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.01)
+        core.take(hst, 3000, owner="test")
+        hst.end()
+        hst.link.close()
+    finally:
+        proc.stdin.close()
+        proc.wait(timeout=5)
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="pty and TIOCEXCL as on Linux")
+def test_a_port_left_open_at_exit_has_its_exclusive_mode_cleared():
+    """On a bare pty (nobody clears the flag for it) a program that opened the port and ended without closing it
+    leaves it openable: open_serial's ports get TIOCNXCL and close at interpreter exit."""
+    master, slave = os.openpty()
+    path = os.ttyname(slave)
+    os.close(slave)
+    try:
+        child = subprocess.run([sys.executable, "-c", "import sys; from oep_client import link; "
+                                "link.open_serial(sys.argv[1])", path], capture_output=True, text=True, timeout=30)
+        assert child.returncode == 0, child.stderr
+        if os.geteuid() != 0:
+            os.close(os.open(path, os.O_RDWR | os.O_NOCTTY))        # was EBUSY: the flag outlived the process
+    finally:
+        os.close(master)

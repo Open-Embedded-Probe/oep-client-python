@@ -49,11 +49,13 @@ candidates one call tries.
 
 from __future__ import annotations
 
+import atexit
 import collections
 import select
 import socket
 import struct
 import time
+import weakref
 from typing import Callable
 from dataclasses import dataclass, field
 
@@ -111,7 +113,7 @@ def open_serial(port: str, baud: int = BASE_BAUD):
     """The port opened exclusively (flock and TIOCEXCL): a second open by anyone fails with PortBusy. The driver's
     low-latency mode on where it has one (the FTDI latency timer 16 -> 1 ms; a pty or a driver without it: ignored)."""
     try:
-        stream = serial.Serial(port, baud, timeout=0.05, exclusive=True)
+        stream = _ExclusiveSerial(port, baud, timeout=0.05, exclusive=True)
     except serial.SerialException as e:
         if "busy" in str(e).lower() or "lock" in str(e).lower() or getattr(e, "errno", None) == 16:
             raise PortBusy(f"{port} is open in another program: {e}") from e
@@ -126,7 +128,42 @@ def open_serial(port: str, baud: int = BASE_BAUD):
         fcntl.ioctl(stream.fileno(), termios.TIOCEXCL)
     except (ImportError, AttributeError, OSError):
         pass                                        # Windows opens a COM port exclusively by itself
+    _open_serials.add(stream)
     return stream
+
+
+def _exclusive_off(stream) -> None:
+    try:
+        import fcntl
+        import termios
+        fcntl.ioctl(stream.fileno(), termios.TIOCNXCL)   # exclusive mode off: the next opener gets the port
+    except Exception:
+        pass
+
+
+class _ExclusiveSerial(serial.Serial):
+    """A port whose every close turns TIOCEXCL off first - SerialLink.close, a garbage-collected stream, the exit. A
+    real port's tty clears TIOCEXCL at its last close by itself; a pty slave's tty lives on while its master is open,
+    so a flag left set would refuse every later opener (EBUSY)."""
+
+    def close(self) -> None:
+        _open_serials.discard(self)
+        if self.is_open:
+            _exclusive_off(self)
+        super().close()
+
+
+_open_serials: "weakref.WeakSet" = weakref.WeakSet()   # every port open_serial opened, until it is closed
+
+
+@atexit.register
+def _close_serials_at_exit() -> None:
+    """A program that ends without closing its link (Host.end() ends the session only) still lets the port go."""
+    for stream in list(_open_serials):
+        try:
+            stream.close()
+        except Exception:
+            pass
 
 
 class TcpStream:
@@ -850,12 +887,7 @@ class SerialLink:
             raise TimeoutError(f"no answer to confirm at {self.baud} for {wait_s:.1f} s")
 
     def close(self) -> None:
-        try:
-            import fcntl
-            import termios
-            fcntl.ioctl(self.stream.fileno(), termios.TIOCNXCL)   # exclusive mode off: the next opener gets the port
-        except Exception:
-            pass
+        _exclusive_off(self.stream)                      # (a stream open_serial did not open: off here too)
         self.stream.close()
 
 
