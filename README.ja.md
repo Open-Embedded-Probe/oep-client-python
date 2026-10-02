@@ -134,7 +134,9 @@ attach swio 19: target_id 00310510 (WCH DMI 0x7F) -> ch32v00x, halted at dpc 0x1
   option bytes (read only): RST_MODE 10 (USER 0xf7): NRST on PD7, 12 ms ignore window
   attach under reset through 4 (held 20 ms): dpc 0x0 -> the reset line
 slot: oep config slot ... --name ch32v00x --wire swio --pins 19   (not written; --save writes it)
-  # reset_channel 4 (probe.config §1.1; this client's slot has no reset_channel yet: name it in the attach's reset TLV)
+label: oep config label ... 4 ch32v00x.nrst   (not written)
+label: oep config label ... 5 ch32v00x.power_hi   (not written)
+idle:  oep config idle ... 5 output-high   (keeps the target powered while no plan holds channel 5; not written by this tool)
 released every plan (channel 5 is back to its idle state: the target is powered only while something drives it)
 done in 7.3 s
 ```

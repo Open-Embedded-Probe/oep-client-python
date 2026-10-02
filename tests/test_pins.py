@@ -148,12 +148,16 @@ def test_nothing_active_the_attach_under_reset_decides():
     assert any("attach under reset alone decides" in line for line in lines)
 
 
-def test_save_writes_the_slot():
+def test_save_writes_the_slot_and_the_lines_as_labels():
     ep, hst, t = bench()
     r = finder(hst, t, [], power=5, save=True, slot=1, name="v003").run()
-    assert r.saved
-    slots = [it for it in config.ProbeConfig(hst).items() if isinstance(it, config.Slot)]
+    assert r.saved and "reset" not in r.slot                   # a slot has no reset field: the line is a label (§1.3)
+    items = config.ProbeConfig(hst).items()
+    slots = [it for it in items if isinstance(it, config.Slot)]
     assert [(s.slot, s.name, s.wire_fn, s.pins) for s in slots] == [(1, "v003", WIRE, (19, 0xFFFF))]
+    labels = {(it.channel, it.text) for it in items if isinstance(it, config.Label)}
+    assert labels == {(4, "v003.nrst"), (5, "v003.power_hi")}
+    assert config.find_line(items, "v003", "nrst") == 4
 
 
 def test_steps_are_optional():

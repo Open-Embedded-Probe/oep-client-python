@@ -21,7 +21,10 @@ Steps, each optional and each saying what it did:
    whose option bytes say whether the reset line exists (CH32V00x), read them (read-only), then resume.
 5. reset line, confirmed: attach under reset through each channel that stopped the activity (or, with nothing
    active, through each candidate) - the real line stops the hart at the reset vector.
-6. print a suggested slot; --save writes it (config set + save). Nothing is written otherwise.
+6. print a suggested slot and the labels that name the lines found (probe.config §1.3): `<slot>.nrst` on the reset
+   line (5) - a slot has no reset field; a host's attach and the probe's retry with reset look the line up by this
+   label - and `<slot>.power_hi` on --power; --save writes the slot and the labels (config set + save). Nothing is
+   written otherwise.
 
 Everything is bounded in time (the whole run under a minute) and every plan is released at the end. A plan_apply
 replaces the gpio's whole plan, and the probe lets every pin of the old plan go first (oep-core §8) - the power
@@ -550,12 +553,10 @@ class PinFinder:
             parts.append(f"--max-speed {fam.max_speed}")
         if fam and fam.idle_clock and r.wire == "rvswd":
             parts.append(f"--idle-clock {fam.idle_clock}")
-        has_reset = "reset_channel" in {f.name for f in dataclasses.fields(config.Slot)}
-        if r.reset_channel is not None and has_reset:
-            parts.append(f"--reset-channel {r.reset_channel}")
         r.slot = " ".join(parts)
         self.say("slot: " + r.slot + ("" if self.save else "   (not written; --save writes it)"))
-        # the lines a host looks up by label (oep-spec host-development-guide §8.1): `<slot>.nrst`, `<slot>.power_hi`
+        # the lines found are named by label (probe.config §1.3; a slot has no reset field): `<slot>.nrst` - the reset
+        # line the host's attach and the probe's retry with reset look up - and `<slot>.power_hi`
         labels = []
         if r.reset_channel is not None:
             labels.append((r.reset_channel, f"{name}.nrst"))
@@ -572,8 +573,6 @@ class PinFinder:
             kw = dict(slot=self.slot_no, wire_fn=self.wire.fn, pins=self.pins, name=name,
                       max_speed=(fam.max_speed or 0) if fam else 0,
                       idle_clock=(fam.idle_clock or "high") if fam and r.wire == "rvswd" else "high")
-            if has_reset and r.reset_channel is not None:
-                kw["reset_channel"] = r.reset_channel
             core.plan_release(self.hst)                    # a slot's pins must be free of this run's plans
             self.planned = []
             cfg = config.ProbeConfig(self.hst)
