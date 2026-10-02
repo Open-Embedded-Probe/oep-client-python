@@ -33,7 +33,9 @@ define:
   status, reset, stretch when declared; no bus controller of its own - the test hooks `i2c_write` / `i2c_read` /
   `spi_transfer` are one transaction on the bus), and oep.probe.config (plan / label / idle / slot / bind / uart
   / disable items, get / set / unset / save / erase, the state op - describe is declarations only; a disabled channel
-  is refused everywhere with unavailable cause 5 and never parked: `parked` records the free pins' states it set)
+  is refused everywhere with unavailable cause 5 and never parked: `parked` records the free pins' states it set -
+  idle modes 3 / 4 drive their level, refused unsupported on `input_only` channels; every release goes there, and a
+  gpio line taken keeps that state until its first set)
 - the serial ports' raw side (core §3.4, probe.config §1.2): `port_input` / `port_output` carry the bytes outside
   the frames for each serial port by its bind; a port the lock holder's requests came in on is held until the
   session ends, then resumes from the session's last host reset. The byte framing itself is `fake_serial`.
@@ -78,6 +80,7 @@ STREAM_STATE, STREAM_USERS = _CON.enum["stream_state"], _CON.enum["stream_users"
 ATTACH_FLAGS = reg.WIRE_RVSWD.enum["attach_flags"]
 RUN_STOPPED = _RV.enum["run_stopped"]
 ITEM = _CFG.tlv["item"]
+IDLE_MODE = _CFG.enum["idle_mode"]
 CFG_DESCRIBE = _CFG.tlv["describe"]
 SLOT_ATTACH = _CFG.enum["slot_attach"]
 SLOT_STATE = _CFG.enum["slot_state"]
@@ -398,6 +401,8 @@ class Endpoint:
         self.fns = {name: fn for fn, name in sorted(self.names.items(), reverse=True)}   # first fn of each name
         self.static = {o.fn: o.tlvs for o in probe.offered}
         self.static_labels: dict[int, str] = {}
+        # channels the probe can only read (a test sets them): an idle of mode 3 / 4 there is unsupported (probe.config §1)
+        self.input_only: set[int] = set()
         self.transports: list[int] = []
         self.max_op_ms = reg.LIMITS["max_op_ms_reference"]
         self.plan_roles: int | None = None
@@ -1106,7 +1111,7 @@ class Endpoint:
             self._refuse_disabled(ch for _, _, ch in got)          # a disabled channel (probe.config §1): cause 5
             if self.plan_roles is not None and len([a for a in self.plan if a[0] not in named]) + len(got) > self.plan_roles:
                 raise unavailable("limit")                          # plan_roles (core §8)
-            self.plan = {a for a in self.plan if a[0] not in named} | set(got)
+            self._replace_plans(named, got)
             for fn in named:
                 self._uart_plan_changed(fn)
             return m.COMPLETED, m.SUCCESS, b""
@@ -1202,6 +1207,20 @@ class Endpoint:
             elif t[0] == catalog.CHANNEL_GROUP:
                 out.update(c for _, c in catalog.unpack_channel_group(t[2:2 + t[1]])[1])
         return out
+
+    def _replace_plans(self, fns: set[int], got) -> None:
+        """The plans of `fns` become `got`: their old channels are released to the idle state first (core §8, a
+        replacement too), then taken. A gpio line taken keeps the state it was in - an output idle keeps driving - until
+        the first set (fixture §1); the idle modes 0-4 are the gpio modes of the same numbers."""
+        released = {a[2] for a in self.plan if a[0] in fns}
+        for ch in released:
+            self.gpio_modes.pop(ch, None)
+        self.plan = {a for a in self.plan if a[0] not in fns}
+        self._park(released)
+        self.plan |= set(got)
+        for fn, _, ch in got:
+            if self.names.get(fn) == "oep.fixture.gpio" and self.parked.get(ch, 0):
+                self.gpio_modes[ch] = self.parked[ch]
 
     def _drop_plan(self, fn: int) -> None:
         released = set()
@@ -2388,8 +2407,10 @@ class Endpoint:
                 if key not in self.names or key == m.CORE_FN:
                     raise Reject(m.UNKNOWN_FUNCTION if key else m.MALFORMED)
             elif tag == ITEM["idle"]:
-                if len(value) != 3 or value[2] > 2:
+                if len(value) != 3 or value[2] > IDLE_MODE["output_high"]:
                     raise Reject(m.MALFORMED)
+                if value[2] in (IDLE_MODE["output_low"], IDLE_MODE["output_high"]) and key in self.input_only:
+                    raise unsupported_fixed(m.tlv(_UNA["channel"], struct.pack("<H", key)))   # cannot drive it (§1)
             elif tag == ITEM["disable"] and key not in self._all_channels():
                 # a channel the firmware does not declare: unsupported, as idle (probe.config §1)
                 raise unsupported_fixed(m.tlv(_UNA["channel"], struct.pack("<H", key)))
@@ -2421,10 +2442,13 @@ class Endpoint:
         old_idle = {key: v for (tag, key), v in self.config.items() if tag == ITEM["idle"]}
         repark = (self.disabled - disabled) | {key for key in idles | set(old_idle) if new.get((ITEM["idle"], key)) != old_idle.get(key)}
         self.config = new                                          # the disable items first: a dropped plan's pins
+        # idle before the plans (probe.config §2: idle, plan, uart, the at-boot attach): at boot every free channel,
+        # later the ones whose idle changed (or enabled again); a gpio plan then takes a line in that state
+        self._park(self._all_channels() if boot else repark)
         for fn in old_plan_fns - set(plans):                       # are not parked when the same set disables them
             self._drop_plan(fn)
         for fn, assigned in plans.items():
-            self.plan = {a for a in self.plan if a[0] != fn} | set(assigned)
+            self._replace_plans({fn}, assigned)
             self.plan_from_config.add(fn)
             self._uart_plan_changed(fn)
         for fn in self.uarts:                                      # the uart item (or its going) on the planned UARTs no session set
@@ -2442,8 +2466,6 @@ class Endpoint:
                     self.flows.pop((port, key), None)
                 self.mixed_out.pop(port, None)
         self.binds = binds
-        if not boot:
-            self._park(repark)                                     # an idle item set, or a channel enabled again: now
         for n, s in slots.items():
             if s.attach == SLOT_ATTACH["at_boot"] and (boot or changed_slots is None or n in changed_slots):
                 self.slot_rt[n].evicted = False
