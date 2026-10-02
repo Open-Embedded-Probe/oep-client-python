@@ -86,7 +86,8 @@ def test_find_reset_line_hits_the_vector_skips_disallowed_and_retries_failures()
     hst = ScriptedHost({(1, target.Wire.ATTACH): aur,
                         (2, target.RiscvDm.RESUME): lambda p: (m.COMPLETED, m.FAILED, bytes([5])),   # an L103: state
                         (2, target.RiscvDm.RESET): lambda p: ok(struct.pack("<BBBI", 0, 3, 1, 0x1234)),
-                        (1, target.Wire.DETACH): lambda p: ok()})
+                        (1, target.Wire.DETACH): lambda p: ok(),
+                        (1, target.Wire.CONNECTIONS): lambda p: ok(bytes([0, 0]))})
     wire = target.Wire(hst)
     assert wire.find_reset_line([3, 9, 2, 5], tries=3) == [2]
     assert isinstance(wire.last_search[9], h.Rejected)
@@ -95,6 +96,70 @@ def test_find_reset_line_hits_the_vector_skips_disallowed_and_retries_failures()
     assert wire.last_search[3] == [0x1303] * 3
     resets = [p for fn, op, p in hst.log if (fn, op) == (2, target.RiscvDm.RESET)]
     assert resets == [struct.pack("<HB", 1, target.RiscvDm.RESET_RUN_CONFIRM)]   # only after the hit: off the vector for real
+
+
+def _pin_choice_wire():
+    """A wire that takes its pins from the host, as the firmware does (2026-10-02, ESP32-P4): an attach without pins
+    joins the one live connection, else it is rejected unavailable (no channel named); the reset line 6 is held by a
+    plan (unavailable naming it); 4 is the real line."""
+    state = {"live": None, "detached": []}
+    unavailable = (m.REJECTED, m.UNAVAILABLE, b"")
+
+    def attach(p):
+        tlvs = dict(m.split_tlvs(p[1:]))
+        pins = struct.unpack("<HH", tlvs[0x83]) if 0x83 in tlvs else None
+        channel = struct.unpack("<HH", tlvs[0x85])[0] if 0x85 in tlvs else None
+        if pins is None and state["live"] is None:
+            return unavailable
+        if channel == 6:
+            return m.REJECTED, m.UNAVAILABLE, bytes([0x02, 2]) + struct.pack("<H", 6)   # the channel TLV
+        existing = state["live"] is not None
+        state["live"] = 7
+        dpc = None if channel is None else (0 if channel == 4 else 0x2f8)
+        return ok(attach_answer(7, 0x382, (0x02 if existing else 0) | (0x08 if dpc is not None else 0), 1_000_000, dpc))
+
+    def detach(p):
+        state["detached"].append(struct.unpack_from("<H", p)[0])
+        state["live"] = None
+        return ok()
+
+    def connections(p):
+        if state["live"] is None:
+            return ok(bytes([0, 0]))
+        row = struct.pack("<HHHIBBBB", 7, 19, 0xFFFF, 1_000_000, 1, 0xFF, 0, 0)
+        return ok(bytes([0, 1, len(row)]) + row)
+
+    hst = ScriptedHost({(1, target.Wire.ATTACH): attach, (1, target.Wire.DETACH): detach,
+                        (1, target.Wire.CONNECTIONS): connections,
+                        (2, target.RiscvDm.RESUME): lambda p: ok(bytes([0])),
+                        (2, target.RiscvDm.RESET): lambda p: ok(struct.pack("<BBBI", 0, 3, 1, 0x1234))})
+    return hst, state
+
+
+def test_find_reset_line_names_the_pins_on_a_wire_whose_pins_the_host_chooses():
+    """2026-10-02: without pins, the first try's detach closed the caller's connection and every later attach was
+    refused unavailable, read as 'not a reset line' -> []. With pins every try attaches on its own."""
+    hst, state = _pin_choice_wire()
+    wire = target.Wire(hst)
+    assert wire.find_reset_line([0, 6, 4], tries=2, pins=(19, 0xFFFF)) == [4]
+    assert wire.last_search[0] == [0x2f8, 0x2f8] and isinstance(wire.last_search[6], h.Unavailable)
+    assert state["live"] is None                                   # its own connections closed again
+
+
+def test_find_reset_line_keeps_the_callers_connection_and_takes_its_pins():
+    hst, state = _pin_choice_wire()
+    wire = target.Wire(hst)
+    wire.attach(halt=False, pins=(19, 0xFFFF))                     # the caller's plain attach first
+    assert wire.find_reset_line([0, 1, 4], tries=1) == [4]         # pins None: the live connection's
+    assert state["detached"] == [] and state["live"] == 7          # left open: it was there before
+    attaches = [p for fn, op, p in hst.log if (fn, op) == (1, target.Wire.ATTACH)][1:]
+    assert all(dict(m.split_tlvs(p[1:]))[0x83] == struct.pack("<HH", 19, 0xFFFF) for p in attaches)
+
+
+def test_find_reset_line_raises_a_refusal_that_is_not_about_the_channel():
+    hst, state = _pin_choice_wire()
+    with pytest.raises(h.Unavailable):
+        target.Wire(hst).find_reset_line([0, 4])                   # no pins, no live connection: nothing to search with
 
 
 def test_attach_after_gpio_reset_pipelines_release_with_attach_and_retries():

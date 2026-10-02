@@ -26,7 +26,8 @@ define:
   interfaces the profiles offer: oep.wire.rvswd / swio (scan with its TLVs, attach on declared pin pairs with the
   reset TLV, several connections up to max_connections, the seat rule, connections), oep.target.riscv-dm on one
   `FakeTarget` per pin pair (dmi / run answers count their values; run's stopped 2), oep.target.console streams (one
-  live stream per connection, lifetime by its users, the streams list), oep.fixture.gpio, oep.fixture.uart (its stream
+  live stream per connection, lifetime by its users, the streams list), oep.fixture.gpio (the lines outside through
+  the test hook `gpio_world`; a target's `reset_line` makes the other reset channels reset nothing), oep.fixture.uart (its stream
   made by the plan, status, the settings' uart item), oep.fixture.i2c-target / spi-target (fixture §3 / §4: the plan's
   SDA / SCL and SCK / MOSI / MISO / CS, role_channels and an exact channel_group; configure, arm, preload, read_rx,
   status, reset, stretch when declared; no bus controller of its own - the test hooks `i2c_write` / `i2c_read` /
@@ -219,6 +220,7 @@ class FakeTarget:
     # run(pc, regs) -> (stopped, dpc, elapsed_us); default: halts 0x10 past the start
     run_hook: Callable | None = None
     unstoppable: bool = False                          # run: the limit passes and the hart cannot be halted (stopped 2)
+    reset_line: int | None = None                      # the channel wired to its reset (None: any reset channel resets it)
 
     def dmstatus(self) -> int:
         return 0x82 | ((0x300 if self.halted else 0xC00)) | (0xC0000 if self.havereset else 0)
@@ -472,6 +474,9 @@ class Endpoint:
         self.port_speed_base: int | None = 115200 if any(t[0] == PORT_SPEED_TAG for t in self.static.get(0, ())) else None
         self.broken_rates: dict[int, BrokenRate] = {}   # the line: rates that break frames (fake_serial applies it)
         self._transport = 0                             # the transport the request being handled came in on
+        # the lines outside (a test hook): gpio_world(channel, mode) -> the level an input mode reads (None: the
+        # default - gpio_inputs, a pull-up 1); reads see the world as the modes set it (gpio_modes)
+        self.gpio_world: Callable[[int, int], int | None] | None = None
         self._boot()
 
     def _boot(self) -> None:
@@ -1472,7 +1477,10 @@ class Endpoint:
             for n, s in self.slots.items():                        # a new connection for an evicted slot: a new cue
                 if s.wire_fn == fn and s.pair == pair:
                     self.slot_rt[n].evicted = False
-            if reset is not None:                                  # the reset line held, then let go: a host reset
+            if reset is not None and tg.reset_line not in (None, channel):
+                if method == 1:                                    # a line that resets nothing: halted where it ran
+                    tg.halted, tg.dpc = True, tg.reset_vector + 0x2f8
+            elif reset is not None:                                # the reset line held, then let go: a host reset
                 tg.halted = method == 1
                 tg.dpc = tg.reset_vector if method == 1 else tg.reset_vector + 0x200
                 self._host_reset(cid, MARK_RESET["attach_reset"])
@@ -1925,7 +1933,9 @@ class Endpoint:
             levels = []
             for ch in chans:
                 mode = self.gpio_modes.get(ch, 0)
-                levels.append({1: 1, 3: 0, 4: 1, 5: 0, 6: 1}.get(mode, self.gpio_inputs.get(ch, 0)))
+                outside = self.gpio_world(ch, mode) if self.gpio_world and mode in (0, 1, 2, 6, 7) else None
+                levels.append(outside if outside is not None else
+                              {1: 1, 3: 0, 4: 1, 5: 0, 6: 1}.get(mode, self.gpio_inputs.get(ch, 0)))
             return self._answer(bytes([len(levels)]) + bytes(levels), ignored)   # n(u8) n x level (fixture §1)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 

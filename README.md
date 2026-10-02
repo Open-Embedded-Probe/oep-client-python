@@ -37,7 +37,9 @@ oep-client-python X.Y.Z (until the v1 freeze every release may break the wire; t
 | `host` | requests and results, the session id and the lock, `call()` (raises unless it worked), pipelining, the errors (`OepError` / `Rejected` / `Failed`; `Expired` when the lease lapsed - the session is never re-opened behind the caller's back, `Host.epoch` moves) |
 | `link` | transports: serial ports (always COBS + CRC as `0x00 <COBS> 0x00`, bytes outside frames skipped as noise, opened exclusively), USB vendor bulk / HID and TCP (length frames, the §5.1 resync); matching by corr and resending; `open_host(target)` |
 | `core` | interfaces by name (cached), confirm (with the probe's `boot_id`), the probe's describe (declarations only, cached per boot: labels, the transport list, `max_op_ms`), taking the lock (`take`), the pin plan, the `Interface` base |
-| `riscv` | `oep.wire.rvswd` / `oep.wire.swio` (scan, attach - `max_speed` always sent, `reset=(channel, hold_ms)` for an attach under reset -, detach, connections), `oep.target.riscv-dm` (answers count their values; `RunResult.not_halted`), finding the reset line, attach through GPIO |
+| `riscv` | `oep.wire.rvswd` / `oep.wire.swio` (scan, attach - `max_speed` always sent, `reset=(channel, hold_ms)` for an attach under reset -, detach, connections), `oep.target.riscv-dm` (answers count their values; `RunResult.not_halted`), finding the reset line (`find_reset_line(candidates, pins=...)`), attach through GPIO |
+| `targets` | what the host knows per target family, in one table (`FAMILIES`: wire, target_id match, reset vector, option-byte NRST reader, max_speed / idle_clock); `identify(target_id)` |
+| `pins` | `oep pins`: classify the channels, hold-low search, scan, identify, confirm the reset line, suggest a slot (`PinFinder`) |
 | `console` | `oep.target.console` (position streams: read answers carry their length, marks are `time_ns`, the lock-free `streams()` list) and `ConsoleIO`, read as bytes |
 | `fixture` | `oep.fixture.gpio` / `uart` (its stream is the plan's; `status()`) / `i2c-target` / `spi-target` (revision 1) |
 | `config` | `oep.probe.config` (slots, binds, plan / label / idle / uart items, get / set / unset / save / erase; `describe()` = the declarations, `state()` = the live storage / slot / bind state; `hash_of(items)` = the probe's hash) |
@@ -81,12 +83,67 @@ oep config bind <probe> --port 1 --mode last-reset --stream slot:x035
 oep config uart <probe> oep.fixture.uart 115200 --format 8N1   # applied whenever that UART's plan has RX or TX
 oep config save <probe>                      # kept over a restart (also: remove = unset, erase)
 oep speed <probe> 1500000,921600,500000      # port_speed: try faster rates on a UART bridge, print the report (below)
+oep pins <probe> --power 5 --wire swio       # where the target is wired: debug pins, reset line, a slot (below)
 ```
 
 `<probe>` is a serial port, `tcp://HOST:PORT` or `usb[:VID:PID[:SERIAL]]`. A change takes the lock (owner "oep config") and
 ends the session after it; it takes effect at once and, after `save`, stays over a restart.
 
 A run on hardware: ArduinoCore-CH32's `tests/manual/oep_smoke/` (`oep_smoke.py`, `oep_probe_checks.py`).
+
+## Finding the pins (`oep pins`)
+
+`oep pins <probe> [--power CH] [--exclude CH,...] [--wire swio|rvswd|swd] [--steps ...] [--save] [--json]` finds where a
+target is wired to a probe whose pins the host chooses. Each step says what it did; the whole run stays under a minute and
+every plan is released at the end. The procedure and its reasons are in oep-spec's host development guide (「ピンの探し方
+（参考）」); what each target family needs is in one table, `targets.FAMILIES` (wire, reset vector, the option-byte reader
+for the reset line, max_speed / idle_clock), which oep-spec `docs/target-scan-notes.ja.md` records the sources of.
+
+1. **classify**: every channel `oep.fixture.gpio` allows is read 16 times under pull-up, both pulls, then pull-down:
+   floating, pulled-up (both pulls still read 1: a weak pull-up such as a reset line's), driven-high / driven-low (the same
+   level under both pulls: push-pull or a strong pull - an idle-high UART line looks like this), active (changes between
+   reads). With `--power CH` the target is first read switched off: the channels that read otherwise follow its power.
+   These are candidates only.
+2. **hold**: each floating / pulled-up channel is held low (open drain) while an active channel is watched; a channel
+   that stops it is a reset-line candidate.
+3. **scan**: the wire over the floating / pulled-up channels (rvswd / swd: pairs, at most 600) - never over a driven or
+   active channel, the power channel or `--exclude`.
+4. **identify**: attach (halt) on what answered; the target_id names the family; a CH32V00x's option bytes say whether
+   NRST exists (read only, never written); then resume.
+5. **reset**: attach under reset through each candidate - the real line stops the hart at the reset vector.
+6. **slot**: a suggested `oep config slot` line (the reset channel as a comment while `config.Slot` has no
+   `reset_channel`); `--save` writes it (set + save). Nothing is written without `--save`.
+
+Safety: a driven or active channel is never driven, scanned or held; the power channel is touched only with `--power`;
+holding low is open drain only. A new gpio plan lets every pin of the old one go first - the power channel too - so with
+`--power` each new plan is followed by a clean power cycle (`power_cycles` in the report).
+
+ESP32-P4 with a CH32V003 (power on GPIO5), 2026-10-02:
+
+```
+$ oep pins /run/board-identify/by-id/esp32-series-30eda0ea068b --power 5 --wire swio
+power: channel 5 low 300 ms (target off: read), then high 400 ms before the reads
+classify: 52 channels, 16 reads each under pull-up, both pulls, pull-down
+  floating     0-3,6,9-20,26-34,36-50,52-54
+  pulled-up    4
+  driven-high  7-8,22-23,35  (never scanned or held)
+  driven-low   51  (never scanned or held)
+  active       21  (21: 8 changes under pull-up)
+  follow power 4,6,9-11,13,15-16,19-23,32-33  (read otherwise with the target off: wired to it; candidates only)
+reset line (hold low): 45 candidates, each held low (open drain) up to 390 ms while watching 21 (105 changes in 1.0 s running, longest lull 130 ms)
+  hold 4 low: 21 stopped
+  45 held in 3.4 s: stopped by 4
+scan swio: 45 channels (0-4,6,9-20,26-34,36-50,52-54; not 7-8,21-23,35,51: driven / active) in 0.14 s -> 19
+attach swio 19: target_id 00310510 (WCH DMI 0x7F) -> ch32v00x, halted at dpc 0x108
+  option bytes (read only): RST_MODE 10 (USER 0xf7): NRST on PD7, 12 ms ignore window
+  attach under reset through 4 (held 20 ms): dpc 0x0 -> the reset line
+slot: oep config slot ... --name ch32v00x --wire swio --pins 19   (not written; --save writes it)
+  # reset_channel 4 (probe.config §1.1; this client's slot has no reset_channel yet: name it in the attach's reset TLV)
+released every plan (channel 5 is back to its idle state: the target is powered only while something drives it)
+done in 7.3 s
+```
+
+22 / 23 are the target's UART (idle high: driven, so neither scanned nor held); 21 is an output its app toggles.
 
 ## A faster UART bridge (port_speed, opt-in)
 
