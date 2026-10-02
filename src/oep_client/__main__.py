@@ -49,7 +49,10 @@ def main(argv=None) -> int:
                       "commit, no measurement")
     sp.add_argument("--frames", type=int, default=link.FLOW_FRAMES, help="frames per flow when verifying (default 16)")
     sp.add_argument("--no-record", action="store_true", help="do not read or write the record of passed / failed rates "
-                    "(~/.cache/oep-client/link-speed.json, 30 days; on by default here, off in the library)")
+                    "(~/.cache/oep-client/link-speed.json: a pass 30 days, a failure 1 day; on by default here, off "
+                    "in the library)")
+    sp.add_argument("--max-tries", type=int, default=None, help="the most candidates tried after the record ordered "
+                    "them (default: all)")
     sp.add_argument("--baud", type=int, default=link.BASE_BAUD, help="the boot speed (default 115200)")
     sp.add_argument("--json", action="store_true")
     lt = sub.add_parser("linktest", help="measure the link: traffic patterns at rates the host asks for, what breaks")
@@ -195,7 +198,7 @@ def _speed(args) -> int:
     try:
         core.take(hst, 5000, owner="oep speed")
         report = link.raise_speed(hst, candidates, flows=flows, verify=verify, frames=args.frames,
-                                   record=not args.no_record)
+                                   record=not args.no_record, max_tries=args.max_tries)
         if args.json:
             sys.stdout.write(json.dumps(dataclasses.asdict(report), indent=2) + "\n")
         else:

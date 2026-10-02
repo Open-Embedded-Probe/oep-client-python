@@ -31,9 +31,10 @@ Options:
   --uart-rx TEXT        what arrives on that UART's RX every --every ms once it is configured (%d = a counter)
   --no-port-speed       the profile's port_speed (core §3.5; esp32-v003 has it) off: the op is unknown_operation
   --broken-rate SPEC    port_speed's line model: frames at RATE break (repeatable). SPEC is
-                        RATE[:MIN_SIZE][:in|out][:duplex][:everyN]: only frames of MIN_SIZE bytes and more on the wire
+                        RATE[:MIN_SIZE][:in|out][:duplex][:everyN][:afterB]: only frames of MIN_SIZE bytes and more on the wire
                         (default every frame), only towards the host (in) or the probe (out) (default both), only
-                        while both ways carry such frames at once (duplex), only every Nth of them (everyN). The fake cannot see the host's own rate (a pty,
+                        while both ways carry such frames at once (duplex), only every Nth of them (everyN), only once
+                        B bytes have passed at RATE since the switch to it (afterB). The fake cannot see the host's own rate (a pty,
                         TCP): only the probe's rate decides
   --run-hook SPEC       what riscv-dm run does on every target: SPEC is module:function or path/file.py:function,
                         called as function(target, pc, regs) -> (stopped, dpc, elapsed_us). `target` is the
@@ -85,8 +86,9 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
         size = next((int(x) for x in rest if x.isdigit()), 0)
         way = next((x for x in rest if x in ("in", "out")), None)
         every = next((int(x[5:]) for x in rest if x.startswith("every") and x[5:].isdigit()), 1)
+        after = next((int(x[5:]) for x in rest if x.startswith("after") and x[5:].isdigit()), 0)
         ep.broken_rates[int(rate)] = endpoint.BrokenRate(size, to_host=way != "out", to_probe=way != "in",
-                                                         duplex="duplex" in rest, every=every)
+                                                         duplex="duplex" in rest, every=every, after=after)
     for n in a.absent:
         ep.targets[(wire, ep.pairs[wire][n])].present = False
     items = []
