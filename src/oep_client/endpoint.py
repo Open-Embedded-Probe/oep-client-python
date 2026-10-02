@@ -27,7 +27,10 @@ define:
   reset TLV, several connections up to max_connections, the seat rule, connections), oep.target.riscv-dm on one
   `FakeTarget` per pin pair (dmi / run answers count their values; run's stopped 2), oep.target.console streams (one
   live stream per connection, lifetime by its users, the streams list), oep.fixture.gpio, oep.fixture.uart (its stream
-  made by the plan, status, the settings' uart item), and oep.probe.config (plan / label / idle / slot / bind / uart
+  made by the plan, status, the settings' uart item), oep.fixture.i2c-target / spi-target (fixture §3 / §4: the plan's
+  SDA / SCL and SCK / MOSI / MISO / CS, role_channels and an exact channel_group; configure, arm, preload, read_rx,
+  status, reset, stretch when declared; no bus controller of its own - the test hooks `i2c_write` / `i2c_read` /
+  `spi_transfer` are one transaction on the bus), and oep.probe.config (plan / label / idle / slot / bind / uart
   / disable items, get / set / unset / save / erase, the state op - describe is declarations only; a disabled channel
   is refused everywhere with unavailable cause 5 and never parked: `parked` records the free pins' states it set)
 - the serial ports' raw side (core §3.4, probe.config §1.2): `port_input` / `port_output` carry the bytes outside
@@ -87,6 +90,11 @@ NO_SLOT, NEVER_NS = 0xFF, 0xFFFFFFFFFFFFFFFF
 PIN_ROLE_RESET = reg.WIRE_RVSWD.enum["pin_role"]["reset"]   # the channels an attach's reset TLV may take
 TARGET_ID_LEN = reg.WIRE_RVSWD.enum["target_id_len"]["wch_dmi_7f"]
 TARGET_ID_SCHEMES = set(reg.WIRE_RVSWD.enum["target_id_scheme"].values()) | set(reg.WIRE_SWD.enum["target_id_scheme"].values())
+_I2C, _SPI = reg.FIXTURE_I2C_TARGET, reg.FIXTURE_SPI_TARGET
+I2C_MODE, I2C_FEATURES, SPI_FEATURES = _I2C.enum["mode"], _I2C.enum["features"], _SPI.enum["features"]
+TARGET_ROLES = {"oep.fixture.gpio": {1}, "oep.fixture.uart": {1, 2}, _I2C.name: set(_I2C.enum["role"].values()),
+                _SPI.name: set(_SPI.enum["role"].values())}   # the plan roles each fixture takes
+STRETCH_MAX_US = 10_000                                    # the clock stretch the fake's I2C target makes (0 = off)
 UART_FORMAT_MASK = 0x1F                                    # the defined format bits (fixture §2)
 UART_CONFIGURED = _UART.enum["uart_configured"]            # status's configured byte: default / session / item / item_fallback
 _T_SCAN, _T_ATTACH, _T_DETACH, _T_ATTACH_ANSWER = (reg.WIRE_RVSWD.tlv[k] for k in ("scan", "attach", "detach", "attach_answer"))
@@ -221,6 +229,33 @@ class FakeTarget:
         if queue:
             self.dmi[address] = queue.pop(0)
         return self.dmi.get(address, 0)
+
+
+@dataclass
+class I2cState:
+    """One oep.fixture.i2c-target (fixture §3): what configure made, the frames waiting for read_rx, the tx slots."""
+    state: int = 0                       # 0 not configured, 1 running
+    address: int = 0
+    mode: int = 0
+    armed: int = 0                       # mode 1: the length arm_rx waits for (0 = not armed)
+    queue: list = field(default_factory=list)   # (frame, ns)
+    rx_frames: int = 0
+    errors: int = 0
+    slots: int = 0                       # preload_tx's running count (u8, wraps)
+    tx: list = field(default_factory=list)      # preloaded, unread
+    stretch_us: int = 0
+
+
+@dataclass
+class SpiState:
+    """One oep.fixture.spi-target (fixture §4): what configure made, the armed transaction, the finished ones."""
+    state: int = 0
+    mode: int = 0
+    bit_order: int = 0
+    armed: tuple[int, bytes] | None = None      # (length, MISO bytes) of the one transaction it waits for
+    queue: list = field(default_factory=list)   # (bits, MOSI bytes, ns)
+    transactions: int = 0
+    errors: int = 0
 
 
 @dataclass
@@ -418,6 +453,12 @@ class Endpoint:
                              for fn, name in self.names.items() if name == "oep.fixture.uart"}
         self.uart_max_hz = {fn: next((struct.unpack_from("<I", t, 2)[0] for t in self.static[fn] if t[0] == catalog.MAX_CLOCK_HZ),
                                      3_000_000) for fn, name in self.names.items() if name == "oep.fixture.uart"}
+        def own(fn: int, tag: int, fmt: str, default: int) -> int:
+            return next((struct.unpack_from("<" + fmt, t, 2)[0] for t in self.static[fn] if t[0] == tag), default)
+        # the fixture targets' declarations (fixture §3 / §4): max_length, features, queue_depth
+        self.target_decl = {fn: (own(fn, catalog.MAX_LENGTH, "H", 1), own(fn, catalog.FEATURES, "I", 0),
+                                 own(fn, _I2C.tlv["describe"]["queue_depth"], "B", 1))
+                            for fn, name in self.names.items() if name in (_I2C.name, _SPI.name)}
         cfg_fn = self.fns.get("oep.probe.config")
         cfg = {t[0]: t[2:2 + t[1]] for t in self.static.get(cfg_fn, ())}
         self.slots_max = cfg[CFG_DESCRIBE["slots_max"]][0] if CFG_DESCRIBE["slots_max"] in cfg else 0
@@ -469,6 +510,8 @@ class Endpoint:
         self.uart_clock_hz = 80_000_000                # the UARTs' divider clock (a test lowers it: the item's fallback)
         self.uart_session_cfg: set[int] = set()        # fns a session's configure set (it beats the uart item)
         self.uart_tx: dict[int, bytearray] = {}        # what a serial port's raw bytes sent out on a fixture UART
+        self.i2c: dict[int, I2cState] = {fn: I2cState() for fn, n in self.names.items() if n == _I2C.name}
+        self.spi: dict[int, SpiState] = {fn: SpiState() for fn, n in self.names.items() if n == _SPI.name}
         self.config: dict[tuple[int, int], bytes | list[bytes]] = {}   # (item tag, key) -> value (plan: list)
         self.saved: dict | None = getattr(self, "saved", None)
         self.saved_ids: dict[int, tuple] = getattr(self, "saved_ids", {})   # saved fn -> (name, instance, revision)
@@ -822,6 +865,8 @@ class Endpoint:
             return m.REJECTED, m.UNKNOWN_FUNCTION, b""
         if req.fn == m.CORE_FN and req.op == OP_PORT_SPEED and self.port_speed_base is None:
             return m.REJECTED, m.UNKNOWN_OPERATION, b""            # the optional feature off (core §3.5)
+        if req.fn in self.i2c and req.op == _I2C.op["stretch"] and not self.target_decl[req.fn][1] & I2C_FEATURES["stretch"]:
+            return m.REJECTED, m.UNKNOWN_OPERATION, b""            # stretch is features bit1's (fixture §3)
         if not self._lock_free(req.fn, req.op):
             refused = self._check(req.session)
             if refused:
@@ -1105,16 +1150,30 @@ class Endpoint:
                 if role not in self._declared_roles(fn, ch):
                     raise not_declared(ch)
                 continue
-            roles = {"oep.fixture.gpio": {1}, "oep.fixture.uart": {1, 2}}.get(self.names.get(fn, ""), set())
+            roles = TARGET_ROLES.get(self.names.get(fn, ""), set())
             if role not in roles or ch not in self._declared_channels(fn):
                 raise not_declared(ch)
+            if fn in self.i2c or fn in self.spi:                   # role_channels binds the roles it lists (core §7.4)
+                listed = self._listed_roles(fn)
+                if role in listed and role not in self._declared_roles(fn, ch):
+                    raise not_declared(ch)
             if any(k[2] == ch for k in kept) or ch in slot_pins:
                 raise held(ch, next((k[0] for k in kept if k[2] == ch), None))
+        for fn in {f for f, _, _ in got if f in self.i2c or f in self.spi}:
+            groups = [set(catalog.unpack_channel_group(t[2:2 + t[1]])[1]) for t in self.static[fn]
+                      if t[0] == catalog.CHANNEL_GROUP]
+            mine = {(role, ch) for f, role, ch in got if f == fn}
+            if groups and mine not in groups:                      # one channel_group exactly (core §7.4)
+                raise not_declared(min(ch for _, ch in mine))
 
     def _declared_roles(self, fn: int, channel: int) -> set[int]:
         """The roles fn's describe offers on `channel` (role_channels)."""
         return {t[2] for t in self.static[fn] if t[0] == catalog.ROLE_CHANNELS
                 and channel in catalog.bitmap_to_channels(struct.unpack_from("<H", t, 3)[0], t[5:2 + t[1]])}
+
+    def _listed_roles(self, fn: int) -> set[int]:
+        """The roles fn's role_channels name (the only ones it binds, core §7.4)."""
+        return {t[2] for t in self.static[fn] if t[0] == catalog.ROLE_CHANNELS}
 
     def _declared_channels(self, fn: int) -> set[int]:
         """Every channel fn's describe offers in any role (role_channels and channel_group)."""
@@ -1139,7 +1198,12 @@ class Endpoint:
     # ---- oep.fixture.uart's stream: made by the plan, gone with it (fixture §2) ---------------------
     def _uart_plan_changed(self, fn: int) -> None:
         """fn's plan moved: a fixture UART with RX or TX gets its stream (carrying on from where the last one ended,
-        common §1.1) and the settings' uart item unless a session's configure holds; one without loses it."""
+        common §1.1) and the settings' uart item unless a session's configure holds; one without loses it. A fixture
+        I2C / SPI target goes back to not configured (state 0): its configure is made on the plan's pins."""
+        if fn in self.i2c:
+            self.i2c[fn] = I2cState()
+        if fn in self.spi:
+            self.spi[fn] = SpiState()
         if self.names.get(fn) != "oep.fixture.uart":
             return
         planned = any(a[0] == fn for a in self.plan)
@@ -1889,6 +1953,185 @@ class Endpoint:
         """Bytes arrive on fixture UART `fn`'s RX."""
         self.uarts[fn].data += data
 
+    # ---- oep.fixture.i2c-target (fixture §3) ------------------------------------------------------
+    def _i2c_op(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
+        st, (max_length, features, depth) = self.i2c[fn], self.target_decl[fn]
+        ops = _I2C.op
+        planned = any(a[0] == fn for a in self.plan)
+        if op == ops["configure"]:                                 # core §4.3's order: malformed, unsupported, unavailable
+            address, mode = t.take("BB")
+            _, ignored = t.tail()
+            if address > 0x7F or mode not in I2C_MODE.values():
+                raise Reject(m.MALFORMED)
+            if mode == I2C_MODE["preloaded_tx"] and not features & I2C_FEATURES["preloaded_tx"]:
+                raise unsupported_fixed()                          # mode 3 without features bit0
+            if not planned:
+                raise unavailable("wrong_state")                   # before the plan (cause 6)
+            self.i2c[fn] = I2cState(state=1, address=address, mode=mode, stretch_us=st.stretch_us)   # made anew
+            return self._answer(b"", ignored)
+        if op == ops["arm_rx"]:
+            length = t.take("H")
+            _, ignored = t.tail()
+            if length == 0:
+                raise Reject(m.MALFORMED)
+            if length > max_length:
+                raise unsupported_fixed()
+            if st.state == 0 or st.mode != I2C_MODE["fixed_rx"]:
+                raise unavailable("wrong_state")                   # mode 1 only
+            st.armed = length                                      # an earlier wait is dropped for this one
+            return self._answer(b"", ignored)
+        if op == ops["read_rx"]:
+            _, ignored = t.tail()
+            if not st.queue:
+                return self._answer(struct.pack("<BH", 0, 0), ignored)
+            frame, ns = st.queue.pop(0)
+            return self._answer(struct.pack("<BH", min(len(st.queue), 255), len(frame)) + frame
+                                + m.tlv(_I2C.tlv["read_rx_answer"]["ns"], struct.pack("<Q", ns)), ignored)
+        if op == ops["preload_tx"]:
+            count = t.take("H")
+            data = t.bytes(count)
+            _, ignored = t.tail()
+            if count == 0:
+                raise Reject(m.MALFORMED)
+            if count > max_length:
+                raise unsupported_fixed()
+            if st.state == 0 or st.mode != I2C_MODE["preloaded_tx"]:
+                raise unavailable("wrong_state")                   # mode 3 only
+            if len(st.tx) >= depth:
+                raise unavailable("limit")                         # every slot holds an unread preload
+            st.tx.append(data)
+            st.slots = (st.slots + 1) & 0xFF
+            return self._answer(bytes([st.slots]), ignored)
+        if op == ops["status"]:                                    # lock-free
+            _, ignored = t.tail()
+            return self._answer(struct.pack("<BBBBIBI", st.state, st.mode, int(st.armed > 0), min(len(st.queue), 255),
+                                            st.rx_frames, len(st.tx) if st.mode == I2C_MODE["preloaded_tx"] else 0,
+                                            st.errors), ignored)
+        if op == ops["reset"]:
+            _, ignored = t.tail()
+            if st.state == 0:
+                raise unavailable("wrong_state")
+            self.i2c[fn] = I2cState(state=1, address=st.address, mode=st.mode, stretch_us=st.stretch_us)
+            return self._answer(b"", ignored)
+        if op == ops["stretch"] and features & I2C_FEATURES["stretch"]:
+            us = t.take("I")
+            _, ignored = t.tail()
+            if us > STRETCH_MAX_US:
+                raise unsupported_fixed()
+            st.stretch_us = us
+            return self._answer(b"", ignored)
+        return m.REJECTED, m.UNKNOWN_OPERATION, b""
+
+    def _i2c_frame(self, st: I2cState, frame: bytes, depth: int) -> None:
+        if len(st.queue) >= depth:
+            st.errors += 1                                         # the queue overflows: the new frame goes
+            return
+        st.queue.append((bytes(frame), self.now_ns()))
+        st.rx_frames += 1
+
+    def i2c_write(self, fn: int, data: bytes, address: int | None = None) -> bool:
+        """TEST HOOK: a bus controller writes `data` to i2c-target `fn` in one transaction (START, address + W, data,
+        STOP). -> whether the target ACKed its address (configured, and `address` None or its own). Mode 1: the
+        armed length exactly is a frame and ends the wait; another length is a receive error (the wait stays); no wait
+        -> ACKed, dropped, an error. Mode 2: the first byte is the length of the rest, the rest a frame (a length that
+        does not match is a receive error). Mode 3 takes no writes: ACKed, dropped, an error."""
+        st, (max_length, _, depth) = self.i2c[fn], self.target_decl[fn]
+        if st.state == 0 or (address is not None and address != st.address):
+            return False
+        if st.mode == I2C_MODE["fixed_rx"] and st.armed:
+            if len(data) == st.armed:
+                st.armed = 0
+                self._i2c_frame(st, data, depth)
+            else:
+                st.errors += 1
+        elif st.mode == I2C_MODE["framed_rx"] and data and 0 < data[0] == len(data) - 1 <= max_length:
+            self._i2c_frame(st, data[1:], depth)
+        else:
+            st.errors += 1
+        return True
+
+    def i2c_read(self, fn: int, n: int, address: int | None = None) -> bytes | None:
+        """TEST HOOK: a bus controller reads n bytes from i2c-target `fn` in one transaction. -> the bytes, or None
+        when the address is not ACKed. Mode 3 answers from the oldest preloaded slot (cut or padded with 0xFF to n:
+        the next read starts at the next slot); an empty slot list, mode 1 and mode 2 answer 0xFF."""
+        st = self.i2c[fn]
+        if st.state == 0 or (address is not None and address != st.address):
+            return None
+        if st.mode == I2C_MODE["preloaded_tx"] and st.tx:
+            slot = st.tx.pop(0)
+            return (slot + b"\xff" * n)[:n]
+        return b"\xff" * n
+
+    # ---- oep.fixture.spi-target (fixture §4) ------------------------------------------------------
+    def _spi_op(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
+        st, (max_length, features, _) = self.spi[fn], self.target_decl[fn]
+        ops = _SPI.op
+        if op == ops["configure"]:
+            mode, order = t.take("BB")
+            _, ignored = t.tail()
+            if mode > 3 or order > 1:
+                raise Reject(m.MALFORMED)
+            if order == 1 and not features & SPI_FEATURES["lsb_first"]:
+                raise unsupported_fixed()
+            if not any(a[0] == fn for a in self.plan):
+                raise unavailable("wrong_state")                   # before the plan (cause 6)
+            self.spi[fn] = SpiState(state=1, mode=mode, bit_order=order)
+            return self._answer(b"", ignored)
+        if op == ops["arm"]:
+            length, count = t.take("HH")
+            tx = t.bytes(count)
+            _, ignored = t.tail()
+            if length == 0 or count > length:
+                raise Reject(m.MALFORMED)
+            if length > max_length:
+                raise unsupported_fixed()
+            if st.state == 0 or st.armed is not None:
+                raise unavailable("wrong_state")                   # not configured, or one is armed already
+            st.armed = (length, tx)
+            return self._answer(b"", ignored)
+        if op == ops["read_rx"]:
+            _, ignored = t.tail()
+            if not st.queue:
+                return self._answer(struct.pack("<BIH", 0, 0, 0), ignored)
+            bits, data, ns = st.queue.pop(0)
+            return self._answer(struct.pack("<BIH", min(len(st.queue), 255), bits, len(data)) + data
+                                + m.tlv(_SPI.tlv["read_rx_answer"]["ns"], struct.pack("<Q", ns)), ignored)
+        if op == ops["status"]:                                    # lock-free
+            _, ignored = t.tail()
+            return self._answer(struct.pack("<BBBBBII", st.state, st.mode, st.bit_order, int(st.armed is not None),
+                                            min(len(st.queue), 255), st.transactions, st.errors), ignored)
+        if op == ops["reset"]:
+            _, ignored = t.tail()
+            if st.state == 0:
+                raise unavailable("wrong_state")
+            self.spi[fn] = SpiState(state=1, mode=st.mode, bit_order=st.bit_order)
+            return self._answer(b"", ignored)
+        return m.REJECTED, m.UNKNOWN_OPERATION, b""
+
+    def spi_transfer(self, fn: int, mosi: bytes, bits: int | None = None) -> bytes:
+        """TEST HOOK: a bus controller runs one transaction on spi-target `fn` (CS low, `bits` clocks - 8 a MOSI byte
+        by default - CS high). -> the MISO bytes: the armed tx, 0 past it and when not armed. Armed: the MOSI bytes up
+        to the armed length (more is an error) and the bits are queued, the wait ends; a full queue drops them (an
+        error). Not armed: MOSI dropped, an error. Every transaction of a configured target counts; a target not
+        configured sees nothing."""
+        st, (_, _, depth) = self.spi[fn], self.target_decl[fn]
+        n = len(mosi)
+        if st.state == 0:
+            return bytes(n)
+        st.transactions += 1
+        if st.armed is None:
+            st.errors += 1
+            return bytes(n)
+        length, tx = st.armed
+        st.armed = None
+        if n > length:
+            st.errors += 1                                         # past the armed length: dropped
+        if len(st.queue) >= depth:
+            st.errors += 1
+        else:
+            st.queue.append((8 * n if bits is None else bits, bytes(mosi[:length]), self.now_ns()))
+        return (tx + bytes(n))[:n]
+
     # ---- oep.probe.config -----------------------------------------------------------------------
     def _config_op(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         if op == _CFG.op["get"]:
@@ -2509,4 +2752,4 @@ class Endpoint:
 SIMS = {"oep.wire.rvswd": "wire", "oep.wire.swio": "wire", "oep.target.riscv-dm": "dm",
         "oep.target.console": "console", "oep.fixture.gpio": "gpio", "oep.fixture.uart": "uart",
         "oep.probe.config": "config_op", "oep.fixture.logic": "capture", "oep.fixture.analog": "capture",
-        "oep.fixture.capture-group": "group"}
+        "oep.fixture.capture-group": "group", "oep.fixture.i2c-target": "i2c_op", "oep.fixture.spi-target": "spi_op"}

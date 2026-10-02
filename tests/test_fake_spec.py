@@ -88,10 +88,10 @@ def state(ep, fn=6, first_slot=0, first_bind=0):
 # ---- the resend table (core §5.2) --------------------------------------------------------------------
 
 def test_a_resent_request_gets_its_remembered_result_and_runs_once():
-    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())
+    ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), Clock())
     h = Host(ep)
     h.open()
-    toy = 7                                                         # a stand-in fn: 0x01 write(u32)
+    toy = 10                                                        # a stand-in fn: 0x01 write(u32)
     first = h.raw(toy, 0x01, struct.pack("<I", 5))
     ep.values[toy] = 99                                             # the state moved on
     again = h.raw(toy, 0x01, struct.pack("<I", 5), corr=h.corr)
@@ -118,12 +118,12 @@ def test_a_long_result_is_not_remembered():
 
 
 def test_open_empties_the_table():
-    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())
+    ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), Clock())
     h = Host(ep)
     h.open()
-    h.raw(7, 0x01, struct.pack("<I", 5))
+    h.raw(10, 0x01, struct.pack("<I", 5))                           # the stand-in fn
     h.open()                                                        # resume: the table goes
-    assert h.raw(7, 0x01, struct.pack("<I", 5), corr=h.corr - 1).succeeded   # an old corr is new again
+    assert h.raw(10, 0x01, struct.pack("<I", 5), corr=h.corr - 1).succeeded   # an old corr is new again
 
 
 # ---- the lock: owner and lease (core §6.4) -----------------------------------------------------------

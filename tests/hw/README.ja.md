@@ -64,8 +64,7 @@ OEP_HW_BOARDS=fake-esp32-v003 uv run pytest tests/hw -m hw
 URL + sha256）、ホストの platform、その回の `OEP_*` の環境変数すべてが入る。1 画面の要約は pytest の最後に出る。
 
 偽の probe（`fake-esp32-v003`）では `capture` はレベルを記録するだけで判定しない（偽の probe はピンではなくカウンタを取り、
-ワンショットは start の応答と同時に終わる）。`i2c_target` / `spi_target` は落ちる（偽の probe は 2 つの interface を宣言する
-だけで、plan も操作も実装していない）。
+ワンショットは start の応答と同時に終わる）。
 
 ## ボードと焼き方
 

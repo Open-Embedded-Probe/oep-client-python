@@ -65,8 +65,7 @@ release version + manifest URL + sha256s), the host platform and every `OEP_*` v
 is printed at the end of the pytest run.
 
 On the fake (`fake-esp32-v003`) `capture` records its levels without judging them (the fake captures a counter, not its
-pins, and its one-shot is done as start answers), and `i2c_target` / `spi_target` fail: the fake declares the two
-interfaces but plans and runs neither.
+pins, and its one-shot is done as start answers).
 
 ## Boards and flashers
 
