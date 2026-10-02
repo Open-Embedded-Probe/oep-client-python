@@ -232,7 +232,7 @@ class Wire(WireBase):
     IDLE_CLOCK = reg.WIRE_RVSWD.enum["idle_clock"]
     RUN, HALT = reg.WIRE_RVSWD.enum["attach_method"]["run"], reg.WIRE_RVSWD.enum["attach_method"]["halt"]
     TAG_TARGET_ID = reg.WIRE_RVSWD.tlv["attach_answer"]["target_id"]
-    SCHEME_WCH_DMI_7F = reg.WIRE_RVSWD.enum["target_id_scheme"]["wch_dmi_7f"]
+    SCHEME_WCH_DMI_7F = reg.COMMON.enum["target_id_scheme"]["wch_dmi_7f"]
 
     TAG_DPC = reg.WIRE_RVSWD.tlv["attach_answer"]["dpc"]
 

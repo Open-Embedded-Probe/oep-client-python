@@ -11,7 +11,7 @@ import struct
 from . import catalog, host as h, message as m, registry as reg
 
 OP_PLAN_APPLY, OP_PLAN_RELEASE = m.OP_PLAN_APPLY, m.OP_PLAN_RELEASE
-TAG_ROLE_ASSIGNMENT = reg.CORE.tlv["plan_apply"]["role_assignment"]     # already critical (0x90)
+TAG_ROLE_ASSIGNMENT = reg.CORE.tlv["plan_apply"]["role_assignment"]     # the number 0x10; always sent critical (0x90)
 CORE_LABEL = reg.CORE.tlv["describe"]["label"]
 CORE_TRANSPORT = reg.CORE.tlv["describe"]["transport"]
 CORE_MAX_OP_MS = reg.CORE.tlv["describe"]["max_op_ms"]
@@ -103,7 +103,7 @@ def max_op_ms(hst: h.Host) -> int:
     for tag, value in describe(hst):
         if tag & 0x7F == CORE_MAX_OP_MS and len(value) >= 4:
             return struct.unpack_from("<I", value)[0]
-    return reg.LIMITS["max_op_ms_reference"]
+    return reg.REFERENCE["max_op_ms"]
 
 
 def transports(hst: h.Host) -> list[tuple[int, int, int]]:
@@ -128,7 +128,7 @@ def plan_apply(hst: h.Host, assignments: list[tuple[int, int, int]]) -> None:
     """assignments: (fn, role, channel). The fns named get these plans, every other fn keeps its own (oep-core §8);
     all interfaces accept their roles or nothing changes. The plan is the
     session's resource: kept over an explicit end, released at a lease lapse or a force takeover (oep-core §9)."""
-    tlv = b"".join(bytes([TAG_ROLE_ASSIGNMENT, 5]) + struct.pack("<HBH", fn, role, ch) for fn, role, ch in assignments)
+    tlv = b"".join(bytes([TAG_ROLE_ASSIGNMENT | m.TAG_CRITICAL, 5]) + struct.pack("<HBH", fn, role, ch) for fn, role, ch in assignments)
     try:
         hst.call(m.CORE_FN, OP_PLAN_APPLY, tlv)
     except h.Rejected as e:

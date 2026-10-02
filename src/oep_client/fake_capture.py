@@ -36,7 +36,8 @@ from . import message as m, registry as reg
 CAP, ANA, GRP = reg.FIXTURE_LOGIC, reg.FIXTURE_ANALOG, reg.FIXTURE_CAPTURE_GROUP
 OP = CAP.op
 TLV, ANSWER = CAP.tlv["configure"], ANA.tlv["configure_answer"]
-MODE, STATE, TRIGGER = CAP.enum["mode"], CAP.enum["state"], ANA.enum["trigger"]   # the analog's triggers: all of them
+MODE, STATE = CAP.enum["mode"], CAP.enum["state"]
+TRIGGER = {**CAP.enum["trigger"], **ANA.enum["trigger"]}   # logic: level / edge; analog: cross up / down (§3.3)
 STOPPED, FLAG = CAP.enum["stopped_reason"], CAP.enum["segment_flag"]
 EVENT = CAP.event
 CALIBRATION = ANA.tlv["calibration_answer"]

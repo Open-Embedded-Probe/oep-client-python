@@ -99,11 +99,12 @@ BIND_STREAM = _CFG.enum["bind_stream"]
 BIND_FLOW = _CFG.enum["bind_flow"]
 WIRES = ("oep.wire.rvswd", "oep.wire.swio")
 OWNER = reg.CORE.tlv["open"]["owner"]
+ROLE_ASSIGNMENT = reg.CORE.tlv["plan_apply"]["role_assignment"]   # the tag number (0x10); hosts send it critical
 SLOT_NAME = re.compile(r"[a-z0-9_-]{1,32}")
 NO_SLOT, NEVER_NS = 0xFF, 0xFFFFFFFFFFFFFFFF
 PIN_ROLE_RESET = reg.WIRE_RVSWD.enum["pin_role"]["reset"]   # the channels an attach's reset TLV may take
-TARGET_ID_LEN = reg.WIRE_RVSWD.enum["target_id_len"]["wch_dmi_7f"]
-TARGET_ID_SCHEMES = set(reg.WIRE_RVSWD.enum["target_id_scheme"].values()) | set(reg.WIRE_SWD.enum["target_id_scheme"].values())
+TARGET_ID_SCHEME = reg.COMMON.enum["target_id_scheme"]     # one space for the whole probe (oep-if-debug §1)
+TARGET_ID_LEN = reg.COMMON.enum["target_id_len"]
 _I2C, _SPI = reg.FIXTURE_I2C_TARGET, reg.FIXTURE_SPI_TARGET
 I2C_MODE, I2C_FEATURES, SPI_FEATURES = _I2C.enum["mode"], _I2C.enum["features"], _SPI.enum["features"]
 TARGET_ROLES = {"oep.fixture.gpio": {1}, "oep.fixture.uart": {1, 2}, _I2C.name: set(_I2C.enum["role"].values()),
@@ -446,7 +447,7 @@ class Endpoint:
         # channels the probe can only read (a test sets them): an idle of mode 3 / 4 there is unsupported (probe.config §1)
         self.input_only: set[int] = set()
         self.transports: dict[int, int] = {}            # index -> kind, by the TLV's own index (core §7.5), not its order
-        self.max_op_ms = reg.LIMITS["max_op_ms_reference"]
+        self.max_op_ms = reg.REFERENCE["max_op_ms"]
         self.plan_roles: int | None = None
         for t in self.static.get(0, ()):
             if t[0] == fake.CORE_LABEL:
@@ -1184,7 +1185,7 @@ class Endpoint:
             except m.ProtocolError:
                 raise Reject(m.MALFORMED) from None
             for tag, value in tlvs:
-                if tag == reg.CORE.tlv["plan_apply"]["role_assignment"]:
+                if tag & 0x7F == ROLE_ASSIGNMENT:                  # the number; sent critical as 0x90 (core §8)
                     if len(value) != 5:
                         raise Reject(m.MALFORMED)
                     got.append(struct.unpack_from("<HBH", value))
@@ -1246,7 +1247,7 @@ class Endpoint:
         analog = {fn for fn, cap in self.captures.items() if cap.analog}
         def not_declared(ch: int) -> Reject:
             # a role or channel the describe does not offer: unsupported, tag 0x90 + the channel (core §8)
-            return Reject(m.UNSUPPORTED, bytes([reg.CORE.tlv["plan_apply"]["role_assignment"]])
+            return Reject(m.UNSUPPORTED, bytes([ROLE_ASSIGNMENT | m.TAG_CRITICAL])
                           + m.tlv(_UNA["channel"], struct.pack("<H", ch)))
 
         def held(ch: int, holder: int | None) -> Reject:
@@ -2687,11 +2688,11 @@ class Endpoint:
         if lock_len:
             half = (lock_len - 1) // 2
             scheme = lock_part[0]
-            if scheme not in TARGET_ID_SCHEMES:
+            if scheme not in TARGET_ID_SCHEME.values():
                 raise Reject(m.MALFORMED)                          # not a defined scheme (§1.1)
-            if scheme != reg.WIRE_RVSWD.enum["target_id_scheme"]["wch_dmi_7f"]:
+            if scheme != TARGET_ID_SCHEME["wch_dmi_7f"]:
                 raise Reject(m.UNSUPPORTED)                        # defined, but not this wire's (swd's targetsel)
-            if half != TARGET_ID_LEN:
+            if half != TARGET_ID_LEN["wch_dmi_7f"]:
                 raise Reject(m.MALFORMED)                          # the lock's length is the scheme's value's (§1.1)
             lock = (scheme, lock_part[1:1 + half], lock_part[1 + half:])
         return Slot(n, wire_fn, (swdio, swclk), attach, retry_ms, max_speed, idle_clock, mech, name.decode(), lock,

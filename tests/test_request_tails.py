@@ -252,7 +252,7 @@ def test_plan_apply_lists_an_unknown_tlv_and_refuses_tag_0x7f():
     hst = h.Host(lambda b: ep.handle(b, 1))
     hst.open(3000)
     gpio = ep.fns["oep.fixture.gpio"]
-    ra = m.tlv(reg.CORE.tlv["plan_apply"]["role_assignment"], struct.pack("<HBH", gpio, 1, 30))
+    ra = m.tlv(reg.CORE.tlv["plan_apply"]["role_assignment"], struct.pack("<HBH", gpio, 1, 30), critical=True)
     r = hst.request(m.CORE_FN, reg.CORE.op["plan_apply"], ra + m.tlv(UNKNOWN, b""))
     assert r.succeeded and r.payload == IGNORED
     for bad in (m.TAG_IGNORED, m.TAG_INVALID, m.TAG_FIXED):
