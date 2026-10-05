@@ -1,5 +1,6 @@
 """oep-spec's test vectors (tests/vectors/*.json, copied here by tools/sync_registry.sh, never edited) against this
-client's own code: COBS and serial frames (cobs), headers and TLVs (message), confirm (host and the fake), the CRCs,
+client's own code: COBS and serial frames (cobs), headers and TLVs (message), confirm (host and the fake), discovery
+(list, describe and the header refusals of the smallest probe: the fake's answers and the host's reading), the CRCs,
 probe.config's canonical form and hash (config and the fake), and the refusals - each request sent to the fake probe
 with the vector's fn numbers, its answer compared byte for byte. Where a vector and this code disagree, the spec's text
 decides (core §0 rule 4) and the vector is the one the spec corrects."""
@@ -11,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from oep_client import catalog, cobs, config, endpoint, fake, host as h, message as m, registry as reg
+from oep_client import catalog, cobs, config, core, endpoint, fake, host as h, message as m, registry as reg
 
 HERE = Path(__file__).resolve().parent / "vectors"
 SPEC = Path(__file__).resolve().parents[2] / "oep-spec" / "tests" / "vectors"
@@ -163,6 +164,81 @@ def test_confirm_answer_from_the_fake_and_read_by_the_host(case):
         assert {k: limits[k] for k in ("revision", "flags", "max_frame", "window", "max_inflight", "boot_id",
                                        "transport")} == {k: a[k] for k in ("revision", "flags", "max_frame", "window",
                                                                          "max_inflight", "boot_id", "transport")}
+
+
+# ---- discovery: list, describe and the header refusals of the smallest probe (core §7.2, §7.3, §4.3 order 1) -------
+
+DISCOVERY = load("discovery.json")
+
+
+def smallest_probe() -> endpoint.Endpoint:
+    """The vectors' smallest probe (discovery.json about): only fn 0, one UART bridge (index 0, interface 0xFF),
+    unit_id "a1b2c3d4", max_op_ms 1000 - its describe in that order, nothing else."""
+    t = reg.CORE.tlv["describe"]
+    core = fake.Offered(0, 0, "oep.core", (catalog.text(t["unit_id"], "a1b2c3d4"),
+                                           catalog.tlv(t["transport"], bytes([0, fake.TRANSPORT["uart_bridge"], 0xFF])),
+                                           catalog.u32(t["max_op_ms"], 1000)))
+    return endpoint.Endpoint(fake.FakeProbe("smallest", 64, [core]), Clock())
+
+
+def test_discovery_from_the_fake_byte_for_byte():
+    """Every exchange and refusal in order on one smallest probe (no session: list and describe are lock-free, and the
+    refusals come at order 1, before the session check)."""
+    ep = smallest_probe()
+    for case in DISCOVERY["exchanges"] + DISCOVERY["refusals"]:
+        out = ep.handle(hx(case["request_hex"]), 0)
+        assert out.hex() == case["answer_hex"], case["name"]
+        if "answer_serial_frame_hex" in case:
+            assert cobs.frame(out).hex() == case["answer_serial_frame_hex"], case["name"]
+
+
+@pytest.mark.parametrize("case", DISCOVERY["exchanges"], ids=lambda c: c["name"])
+def test_discovery_requests_as_the_host_sends_them(case):
+    q = case["request"]
+    if "prefix" in q:
+        payload = catalog.pack_list_request(q["prefix"], bool(q["flags"] & catalog.LIST_EXACT), q["first"])
+        assert q["flags"] == (catalog.LIST_EXACT if q["flags"] & catalog.LIST_EXACT else 0)
+        op = m.OP_LIST
+    else:
+        payload, op = catalog.pack_describe_request(q["fn"], q["first"]), m.OP_DESCRIBE
+    req = m.Request(q["corr"], 0, op, payload)
+    assert req.pack().hex() == case["request_hex"]
+    if "request_serial_frame_hex" in case:
+        assert cobs.frame(req.pack()).hex() == case["request_serial_frame_hex"]
+
+
+@pytest.mark.parametrize("case", DISCOVERY["exchanges"], ids=lambda c: c["name"])
+def test_discovery_answers_as_the_host_reads_them(case):
+    a = case["answer"]
+    res = m.Result.unpack(hx(case["answer_hex"]))
+    assert (res.corr, res.succeeded) == (a["corr"], True)
+    if "entries" in a:
+        total, entries = catalog.unpack_list_result(res.payload)
+        assert total == a["total"]
+        assert [(e.fn, e.instance, e.revision, e.flags, e.name) for e in entries] == [
+            (e["fn"], e["instance"], e["revision"], e["flags"], e["name"]) for e in a["entries"]]
+        return
+    assert res.payload[0] == a["more"]
+    tlvs = m.split_tlvs(res.payload[1:])
+    if "unit_id" not in a:
+        assert tlvs == []                                              # past the end: more 0 and no TLVs (core §7.3)
+        return
+    hst = h.Host(lambda b: hx(case["answer_hex"]))
+    hst._corr = a["corr"] - 1
+    t = reg.CORE.tlv["describe"]
+    with_core = {k: v for k, v in tlvs}
+    assert with_core[t["unit_id"]].decode() == a["unit_id"]
+    assert core.transports(hst) == [(x["index"], x["kind"], x["interface"]) for x in a["transports"]]
+    hst._corr = a["corr"] - 1
+    hst._describes.clear()
+    assert core.max_op_ms(hst) == a["max_op_ms"]
+
+
+@pytest.mark.parametrize("case", DISCOVERY["refusals"], ids=lambda c: c["name"])
+def test_discovery_refusals_as_the_host_reads_them(case):
+    res = m.Result.unpack(hx(case["answer_hex"]))
+    assert res.resolution == m.REJECTED and res.payload == b""
+    assert res.detail == reg.REJECT_REASONS[case["answer"]]
 
 
 # ---- probe.config's canonical form and hash (probe-config §2) -------------------------------------------------------
