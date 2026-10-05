@@ -433,13 +433,13 @@ class FakeGroup:
     def bind(self, caps: dict[int, FakeCapture], fns: list[int], trigger_fn: int) -> None:
         """§4.1's refusals in core §4.3's order: the same fn twice -> malformed; an fn not in tracks -> unsupported;
         not configured, modes apart, a trigger off the trigger track, over the budget -> unavailable."""
-        if any(caps[fn].state == STATE["capturing"] for fn in self.tracks):
-            raise wrong_state()
         if len(set(fns)) != len(fns):
             raise Reject(m.MALFORMED)
         if any(fn not in self.tracks_allowed for fn in fns):
             raise Reject(m.UNSUPPORTED, bytes([m.TAG_FIXED]) + m.tlv(          # 0x00 + TLV fn (core §4.3)
                 reg.CORE.tlv["unsupported_payload"]["fn"], struct.pack("<H", next(fn for fn in fns if fn not in self.tracks_allowed))))
+        if any(caps[fn].state == STATE["capturing"] for fn in self.tracks):
+            raise wrong_state()                                    # the state after the form and the values (order 7)
         for fn in self.tracks:
             caps[fn].group = None
         self.tracks, self.trigger_fn, self.start_ns, self.trigger_ns = [], 0, NO_TIME, NO_TIME

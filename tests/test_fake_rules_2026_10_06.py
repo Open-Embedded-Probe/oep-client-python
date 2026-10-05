@@ -437,3 +437,21 @@ def test_cs_setup_ns_is_declared_by_a_probe_that_drives_miso_in_software():
     assert [struct.unpack("<I", t[2:])[0] for t in ep.static[spi] if t[0] == tag] == [4000]
     ep = endpoint.Endpoint(fake.p4_x035(), Clock())
     assert not [t for t in ep.static[fn_of(ep, "oep.fixture.spi-target")] if t[0] == tag]   # MISO at once: left out
+
+
+def test_c21_group_bind_checks_its_form_before_the_state():
+    ep, h = bench(fake.p4_x035())
+    group = fn_of(ep, "oep.fixture.capture-group")
+    ep.groups[group].tracks = [7]                                             # a bound track that is capturing
+    ep.captures[7].state = reg.FIXTURE_LOGIC.enum["state"]["capturing"]
+    assert h.raw(group, GROUP.op["bind"], struct.pack("<BHH", 2, 7, 7)).detail == m.MALFORMED   # the same fn twice
+    assert h.raw(group, GROUP.op["bind"], struct.pack("<BH", 1, 4)).detail == m.UNSUPPORTED      # not a track
+    assert h.raw(group, GROUP.op["bind"], struct.pack("<BH", 1, 7)).detail == m.UNAVAILABLE
+
+
+def test_c21_a_bound_tracks_start_checks_its_tail_before_the_group():
+    ep, h = bench(fake.p4_x035())
+    ep.captures[7].group = ep.groups[fn_of(ep, "oep.fixture.capture-group")]
+    bad = b"\x01"                                                             # a TLV cut short
+    assert h.raw(7, LOGIC.op["start"], bad).detail == m.MALFORMED
+    assert h.raw(7, LOGIC.op["start"]).detail == m.UNAVAILABLE

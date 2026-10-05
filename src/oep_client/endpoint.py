@@ -946,8 +946,11 @@ class Endpoint:
                     cap.apply(settled)
                     cap.slipped = self.capture_slipped
                 return self._answer(cap.answer(settled))
-            if op in (O["start"], O["stop"], O["force"]) and cap.group is not None:
-                raise unavailable("bound_in_group", holder_fn=next(g for g, grp in self.groups.items() if grp is cap.group))
+            if op in (O["start"], O["stop"], O["force"]):
+                t.tail()                                           # the request's form before the state (core §4.3)
+                if cap.group is not None:
+                    raise unavailable("bound_in_group",
+                                      holder_fn=next(g for g, grp in self.groups.items() if grp is cap.group))
             if op == O["start"]:
                 t.tail()
                 self._events(fn, cap.start(self.uptime_ms(), subscribed=fn in self.subscribed))
