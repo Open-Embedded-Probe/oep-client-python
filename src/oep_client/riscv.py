@@ -472,11 +472,20 @@ class RiscvDm(Interface, BlockLength):
                                                       for k in ("probe_default", "ndmreset", "system_reset"))
     TAG_RESET_METHOD = _RV.tlv["reset"]["method"]
     TAG_STEP_LEFT = _RV.tlv["step_answer"]["step_left"]
+    FEATURE = _RV.enum["features"]                 # the optional ops' bits of describe features (debug §4)
 
     def __init__(self, hst: h.Host, conn: int, name: str = "oep.target.riscv-dm"):
         super().__init__(hst, name, prefix=struct.pack("<H", conn))
         self.conn = conn
         self._max_length = None
+
+    def declared(self) -> set[str]:
+        """The optional ops this probe offers, from describe's features (debug §4, core §1.2): "block" (read_block /
+        write_block), "run", "reset", "step". dmi, halt and resume are always there; an op not declared here is
+        answered unknown_operation, and the host builds the same thing from dmi."""
+        bits = next((struct.unpack_from("<I", v)[0] for tag, v in describe(self.host, self.fn)
+                     if tag & ~m.TAG_CRITICAL == catalog.FEATURES and len(v) >= 4), 0)
+        return {name for name, bit in self.FEATURE.items() if bits & bit}
 
     def _status_only(self, what: str, op: int) -> None:
         r = self._request(op)
@@ -519,8 +528,9 @@ class RiscvDm(Interface, BlockLength):
         return flags, attempts, pc
 
     def reset(self, confirm: bool = True, method: int | None = None) -> tuple[int, int, int]:
-        """Reset and let it run (confirm: seen running). method: METHOD_* (critical; None: the probe chooses).
-        -> (flags, attempts, pc)"""
+        """Reset and let it run (confirm: seen running). method: METHOD_* (critical; None or METHOD_DEFAULT: the
+        probe's default, ndmreset in revision 1). The reset op never drives a reset line (debug §4.3): a line moves only
+        through attach's reset TLV (`Wire.attach_under_reset`) or a fixture. -> (flags, attempts, pc)"""
         return self._reset(self.RESET_RUN_CONFIRM if confirm else self.RESET_RUN, method)
 
     def reset_halt(self, method: int | None = None) -> int:

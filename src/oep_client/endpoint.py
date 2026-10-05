@@ -1077,20 +1077,46 @@ class Endpoint:
         return out
 
     def _header(self, req: m.Request) -> int | None:
-        """core §4.3 order 1 (the header): unknown_function, unknown_operation where the fn alone decides it,
-        session_required - before the resend table, so these are neither remembered nor restart the lease."""
+        """core §4.3 order 1 (the header): unknown_function, unknown_operation (an op the interface does not define,
+        or an optional op this probe does not offer: core §1.2, `offers`), session_required - in that order and before
+        the resend table, so these are neither remembered nor restart the lease."""
         if req.fn != m.CORE_FN and req.fn not in self.names:
             return m.UNKNOWN_FUNCTION
-        if req.fn == m.CORE_FN and req.op == OP_PORT_SPEED and self.port_speed_base is None:
-            return m.UNKNOWN_OPERATION                             # the optional feature off (core §3.5)
-        if req.fn == m.CORE_FN and req.op in (m.OP_PLAN_APPLY, m.OP_PLAN_RELEASE) and not self._has_plan_roles():
-            return m.UNKNOWN_OPERATION                             # no interface has plan roles (core §1.2)
-        if req.fn in self.i2c and req.op == _I2C.op["stretch"] and not self.target_decl[req.fn][1] & I2C_FEATURES["stretch"]:
-            return m.UNKNOWN_OPERATION                             # stretch is features bit1's (fixture §3)
+        if not self.offers(req.fn, req.op):
+            return m.UNKNOWN_OPERATION
         if req.session is None and not self._lock_free(req.fn, req.op) and not (
                 req.fn == m.CORE_FN and req.op in (m.OP_CONFIRM, m.OP_OPEN)):
             return m.SESSION_REQUIRED
         return None
+
+    def features(self, fn: int) -> int:
+        """fn's describe features (common tag 0x06, u32), 0 without one."""
+        return next((struct.unpack_from("<I", t, 2)[0] for t in self.static.get(fn, ()) if t[0] == catalog.FEATURES), 0)
+
+    def offers(self, fn: int, op: int) -> bool:
+        """core §1.2: every op of an interface's table is required unless its document marks it optional, and an
+        optional op is offered exactly when its declaration is made - fn 0's port_speed (describe tag 0x4E, core §3.5)
+        and plan_apply / plan_release (an interface with plan roles); riscv-dm's read_block / write_block, run, reset
+        and step (features bits 0-3, debug §4); capture's query and force (bits 0 / 1, capture §3.2) and the group's
+        force (bit 1, §4.1); i2c-target's stretch (bit 1, fixture §3); probe.config's save and erase (storage
+        max_bytes above 0, probe-config §2). The stand-in fns have their two stand-in ops."""
+        if fn == m.CORE_FN:
+            if op not in reg.CORE.op.values():
+                return False
+            if op == OP_PORT_SPEED:
+                return self.port_speed_base is not None
+            if op in (m.OP_PLAN_APPLY, m.OP_PLAN_RELEASE):
+                return self._has_plan_roles()
+            return True
+        name = self.names[fn]
+        if name not in SIMS:
+            return op in (TOY_WRITE, TOY_READ)
+        if op not in reg.INTERFACES[name].op.values():
+            return False
+        if name == "oep.probe.config" and op in (_CFG.op["save"], _CFG.op["erase"]):
+            return self.storage_max > 0
+        bit = OPTIONAL_OPS.get(name, {}).get(op)
+        return bit is None or bool(self.features(fn) & bit)
 
     def _has_plan_roles(self) -> bool:
         """Whether any interface of this probe takes plan roles (core §1.2: plan_apply / plan_release are required
@@ -3396,3 +3422,14 @@ SIMS = {"oep.wire.rvswd": "wire", "oep.wire.swio": "wire", "oep.target.riscv-dm"
         "oep.target.console": "console", "oep.fixture.gpio": "gpio", "oep.fixture.uart": "uart",
         "oep.probe.config": "config_op", "oep.fixture.logic": "capture", "oep.fixture.analog": "capture",
         "oep.fixture.capture-group": "group", "oep.fixture.i2c-target": "i2c_op", "oep.fixture.spi-target": "spi_op"}
+
+# The optional ops declared by a features bit (core §1.2): interface -> op -> the bit of describe's features
+_RVF, _CAPF = _RV.enum["features"], reg.FIXTURE_LOGIC.enum["features"]
+OPTIONAL_OPS = {
+    _RV.name: {_RV.op["read_block"]: _RVF["block"], _RV.op["write_block"]: _RVF["block"], _RV.op["run"]: _RVF["run"],
+               _RV.op["reset"]: _RVF["reset"], _RV.op["step"]: _RVF["step"]},
+    "oep.fixture.logic": {fake_capture.OP["query"]: _CAPF["query"], fake_capture.OP["force"]: _CAPF["force"]},
+    "oep.fixture.analog": {fake_capture.OP["query"]: _CAPF["query"], fake_capture.OP["force"]: _CAPF["force"]},
+    "oep.fixture.capture-group": {fake_capture.GRP.op["force"]: reg.FIXTURE_CAPTURE_GROUP.enum["features"]["force"]},
+    _I2C.name: {_I2C.op["stretch"]: I2C_FEATURES["stretch"]},
+}

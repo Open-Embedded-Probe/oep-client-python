@@ -83,9 +83,7 @@ def every_op(ep: endpoint.Endpoint) -> set[tuple[str, int]]:
         if i is None:
             out |= {(name, endpoint.TOY_WRITE), (name, endpoint.TOY_READ)}
         elif fn != m.CORE_FN:
-            out |= {(name, op) for op in i.op.values()}
-            if name == reg.FIXTURE_I2C_TARGET.name and not ep.target_decl[fn][1] & endpoint.I2C_FEATURES["stretch"]:
-                out.discard((name, i.op["stretch"]))
+            out |= {(name, op) for op in i.op.values() if ep.offers(fn, op)}   # optional ops when declared (core §1.2)
     return out - NO_TAIL
 
 
@@ -115,7 +113,8 @@ def drive_wire_dm_console(hst, wire_name):
     dm.read_block(0x20000000, 4)
     dm.run(0x20000000, [(10, 1)], timeout_ms=10)
     dm.halt()
-    dm.step()
+    if "step" in dm.declared():
+        dm.step()                                                     # optional: features bit3 (debug §4)
     dm.reset_halt()
     dm.resume()
     con = console.Console(hst)

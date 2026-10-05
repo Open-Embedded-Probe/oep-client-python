@@ -120,8 +120,9 @@ def vector_probe(fns: dict, max_frame: int = 1024) -> fake.FakeProbe:
                                                       catalog.u32(catalog.MAX_CLOCK_HZ, 4_000_000))))
         elif name == "oep.fixture.uart":
             offered.append(fake._uart(fn, 0, chans, 3_000_000))
-        elif name == "oep.target.riscv-dm":
-            offered.append(fake.Offered(fn, 0, name, (catalog.u16(catalog.MAX_LENGTH, 256),)))
+        elif name == "oep.target.riscv-dm":                            # every optional op declared (core §1.2)
+            offered.append(fake.Offered(fn, 0, name, (catalog.u32(catalog.FEATURES, 0b1111),
+                                                      catalog.u16(catalog.MAX_LENGTH, 256))))
         else:
             raise AssertionError(f"a vector names {name}: add it here")
     return fake.FakeProbe("vectors", max_frame, offered)
