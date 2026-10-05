@@ -80,7 +80,7 @@ TABLE: dict[str, Board] = {b.id: b for b in (
           notes="third P4 (ESP32-P4, FS USB-Serial/JTAG port only), ours: a CH32V003 on SWIO 19, NRST 4, power from 5 "
                 "(the idle output-high its settings keep), its UART on 22 / 23, its app's output on 21", **_P4),
     Board("9489dd2ae0953650", "rp2", "promicrorp2350", "rp2350", "cdc:9489dd2ae0953650", unit_id="9489dd2ae0953650",
-          notes="SparkFun Pro Micro RP2350 (1b4f:0026, iProduct 'OEP probe (RP2350)'); no board-identify id: keyed by unit id",
+          notes="SparkFun Pro Micro RP2350 (the firmware enumerates as the project's 1209:4F45); no board-identify id: keyed by unit id",
           **_RP2350),
     # No hardware: the fake probe on a pty (oep_client.fake_serve). A dry run of the test logic, never a release test.
     Board("fake-esp32-v003", "fake", "esp32", "esp32", "", fake_profile="esp32-v003", gpio=(25, 26), disable=33,
