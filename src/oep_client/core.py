@@ -126,7 +126,7 @@ def transports(hst: h.Host) -> list[tuple[int, int, int]]:
 
 def take(hst: h.Host, lease_ms: int = 3000, *, owner: str | None = None, wait_s: float = 5.0,
          force: bool = False) -> h.Opened:
-    """Take the lock as host guide §2 says: when the probe's only transport is a serial port and this host opened it
+    """Take the lock as host guide §6 says: when the probe's only transport is a serial port and this host opened it
     exclusively, the previous holder cannot be there any more - force at once; otherwise wait out the holder's lease
     (up to wait_s), and name it (InUse) if it keeps it going. force: the user asked for it."""
     link = getattr(hst, "link", None)

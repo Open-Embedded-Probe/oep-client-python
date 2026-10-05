@@ -10,7 +10,7 @@
   oep config disable <probe> 3 4           (channels the probe never uses or touches; remove disable CH re-enables)
   oep config remove <probe> bind 1        oep config save <probe>        oep config erase <probe>
   oep speed <probe> [--candidates 921600,500000] [--verify [--flows in:2,out:2]] (port_speed, core §3.5 and the host
-                                           guide §7: try the candidates in order on a UART bridge, report)
+                                           guide §17: try the candidates in order on a UART bridge, report)
   oep linktest <probe> --rates now,921600 --patterns in,out,duplex --inflight 1,2 --sizes 128,496 --frames 300
   oep pins <probe> --power 5 --wire swio  (find the target's debug pins and reset line: classify the channels, scan,
                                            identify, hold-low + attach under reset; prints a slot, --save writes it)
@@ -34,7 +34,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="oep", description="Open Embedded Probe: what a probe offers, its settings")
     sub = parser.add_subparsers(dest="command", required=True)
     _config_parser(sub)
-    sp = sub.add_parser("speed", help="port_speed (core §3.5, host guide §7): try faster rates on a UART bridge, "
+    sp = sub.add_parser("speed", help="port_speed (core §3.5, host guide §17): try faster rates on a UART bridge, "
                         "print the report")
     sp.add_argument("probe", help="the probe's serial port (a UART bridge this host opens)")
     sp.add_argument("rates", nargs="?", default="", help="the candidates, comma-separated, in order of preference "
@@ -43,9 +43,9 @@ def main(argv=None) -> int:
     sp.add_argument("--flows", default="", help="the flows to verify, comma-separated FLOW[:N] (in, out, duplex; N in "
                     "flight, 0 = the most the link keeps; default: all three at that N). Selects --verify")
     form = sp.add_mutually_exclusive_group()
-    form.add_argument("--verify", action="store_true", help="the full form (guide §7.3): baseline, the flows measured "
+    form.add_argument("--verify", action="store_true", help="the full form (guide §17.3): baseline, the flows measured "
                       "at every candidate, a failed flow run again one at a time")
-    form.add_argument("--minimal", action="store_true", help="the minimal form (guide §7.2, the default): try, confirm, "
+    form.add_argument("--minimal", action="store_true", help="the minimal form (guide §17.2, the default): try, confirm, "
                       "commit, no measurement")
     sp.add_argument("--frames", type=int, default=link.FLOW_FRAMES, help="frames per flow when verifying (default 16)")
     sp.add_argument("--no-record", action="store_true", help="do not read or write the record of passed / failed rates "

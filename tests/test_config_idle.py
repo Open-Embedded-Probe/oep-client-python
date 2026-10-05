@@ -1,6 +1,6 @@
 """Idle modes 3 / 4 (probe.config §1, oep-spec 5013ffb), the idle state on every release (core §8), a gpio line taken
 by a plan keeping its idle level until the first set (fixture §1, 7b3c319), the boot order (idle before the at-boot
-attach, probe.config §2), and find_line (host-development-guide §8.1) - against the fake probe."""
+attach, probe.config §2), and find_line (host-development-guide §18.1) - against the fake probe."""
 
 import pytest
 

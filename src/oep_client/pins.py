@@ -1,6 +1,5 @@
 """oep pins: find where a target is wired to a probe whose pins the host chooses - its debug pins and its reset line -
-from what worked and what misled on 2026-10-02 (ESP32-P4 probe, CH32V003 target; oep-spec host guide 「ピンの探し方
-（参考）」 and docs/target-scan-notes.ja.md).
+from what worked and what misled on 2026-10-02 (ESP32-P4 probe, CH32V003 target; oep-spec host guide §19, finding pins and docs/target-scan-notes.ja.md).
 
 Steps, each optional and each saying what it did:
 

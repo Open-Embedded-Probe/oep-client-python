@@ -1,4 +1,4 @@
-"""The port_speed record (host guide §7.4): which rates passed or failed on a serial port with a probe, so the next
+"""The port_speed record (host guide §17.4): which rates passed or failed on a serial port with a probe, so the next
 session puts a passed rate first and leaves failed ones out until they expire.
 
 Keyed by the port (the OS device path) and the probe's unit_id: the bridge chip belongs to the port, the probe to the
@@ -10,7 +10,7 @@ record is a cache (`SpeedRecord.error` says what went wrong).
 
 The file: {"<port>|<unit_id>": {"port", "unit_id", "rates": {"<rate>": {"result", "passed", "phase", "at"}}}} -
 `result` "passed" / "failed" / "unknown" (measured within settle_s of a breakdown at another rate: neither, host
-guide §7.4), `passed` true / false / null (the same, for a reader of the older shape), `phase` where it was decided
+guide §17.4), `passed` true / false / null (the same, for a reader of the older shape), `phase` where it was decided
 ("try", "confirm", "verify", "probation", "in_use"), `at` ISO 8601 UTC. An entry without `result` is read from
 `passed`. Not a released format: oep-client-js's speedrecord.js reads and writes the same.
 

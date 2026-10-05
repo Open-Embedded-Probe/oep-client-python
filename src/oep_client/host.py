@@ -510,7 +510,7 @@ class Host:
 
     def take(self, lease_ms: int = 3000, *, owner: str | None = None, only_way_in: bool = False,
              wait_s: float = 5.0, force: bool = False) -> Opened:
-        """open() the way host guide §2 takes the lock. only_way_in: this link is the probe's only transport and a
+        """open() the way host guide §6 takes the lock. only_way_in: this link is the probe's only transport and a
         serial port opened exclusively - whoever held the lock cannot be there any more, so it is taken by force at
         once. Otherwise the holder's lease is waited out (up to wait_s); a holder that keeps it going raises InUse,
         naming it. force: take it anyway (the user said so)."""

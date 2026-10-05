@@ -211,7 +211,7 @@ def test_only_the_uart_bridge_the_request_came_in_on_and_rates_it_can_make():
     assert q.send(0, PS, ps(0, 500000, TRY), sid).detail == m.UNAVAILABLE
 
 
-# ---- the client: raise_speed (host guide §7) -----------------------------------------------------------------------------
+# ---- the client: raise_speed (host guide §17) -----------------------------------------------------------------------------
 
 def in_process(profile=fake.esp32_v003, lease=10000):
     start = time.monotonic()
@@ -235,7 +235,7 @@ def ops(ep, since=0):
 
 
 def test_the_minimal_form_tries_confirms_and_commits_without_a_measurement():
-    """Host guide §7.2: one candidate, switch, 20 ms, a confirm, commit - no flows, no baseline."""
+    """Host guide §17.2: one candidate, switch, 20 ms, a confirm, commit - no flows, no baseline."""
     ep, hst, lk = in_process()
     n = len(ep.requests)
     report = link.raise_speed(hst, [1500000], **FAST)
@@ -272,7 +272,7 @@ def test_minimal_form_falls_back_when_the_confirm_does_not_come_and_goes_on():
 
 
 def test_the_full_form_measures_every_flow_and_fails_a_rate_whose_frames_break():
-    """Host guide §7.3.2: a baseline per flow at the boot speed, then 16 frames per flow at each candidate; a flow fails
+    """Host guide §17.3.2: a baseline per flow at the boot speed, then 16 frames per flow at each candidate; a flow fails
     on broken + lost >= 3 over max(2 x baseline, 5 %), and one failed flow fails the candidate."""
     ep, hst, lk = in_process()
     ep.broken_rates[230400] = endpoint.BrokenRate(min_size=40, to_probe=False)   # the confirm passes, full answers break
@@ -414,7 +414,7 @@ def raised_in_use(lease=10000, **kw):
 
 
 def test_in_use_the_3_s_window_over_10_percent_steps_down_for_the_session():
-    """Host guide §7.3.2 item 4: the last 3 s judged once 50 frames are in them; over max(2 x baseline, 10 %) broken
+    """Host guide §17.3.2 item 4: the last 3 s judged once 50 frames are in them; over max(2 x baseline, 10 %) broken
     or lost -> revert, the boot speed, never raised again in this session."""
     ep, hst, lk, report = raised_in_use()
     ep.broken_rates[921600] = endpoint.BrokenRate(to_probe=False, every=4)   # answers only: the probe sees nothing
@@ -630,7 +630,7 @@ def test_not_a_serial_port_of_its_own():
     assert not report.supported and "serial port" in report.why
 
 
-# ---- step downs, the probation, max_tries (host guide §7.3.2 item 4) ----------------------------------------------------
+# ---- step downs, the probation, max_tries (host guide §17.3.2 item 4) ----------------------------------------------------
 
 def move(hst, until, size=40, limit_s=3.0):
     """In-use traffic: link_source answers of `size` bytes until `until()` (at most `limit_s`)."""
@@ -769,7 +769,7 @@ def test_max_tries_bounds_the_candidates_tried_and_the_step_downs():
     assert [t.rate for t in report.trials] == [1500000] and report.capped == [921600] and report.chosen is None
 
 
-# ---- the record (host guide §7.4) --------------------------------------------------------------------------------------
+# ---- the record (host guide §17.4) --------------------------------------------------------------------------------------
 
 def test_the_record_puts_passed_rates_first_skips_failed_ones_and_expires(tmp_path):
     from oep_client import speed_record

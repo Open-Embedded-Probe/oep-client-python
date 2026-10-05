@@ -40,7 +40,7 @@ CAPTURE_WINDOW_S = 0.01          # the capture tests' window: samples = rate x t
 CAPTURE_MIN_SAMPLES = 16
 CAPTURE_BYTES_MAX = 16384        # a segment longer than this is cut (a 115200 bps link reads 11 KB/s)
 I2C_ADDRESS = 0x42
-# port_speed verdict (host guide §7.3.2): a one-at-a-time cell at a raised rate fails when broken + lost >= 3 and its ratio is
+# port_speed verdict (host guide §17.3.2): a one-at-a-time cell at a raised rate fails when broken + lost >= 3 and its ratio is
 # over max(2 x the same cell's ratio at the boot speed, this floor). The floor is the guide's measured 5 %.
 ERROR_RATE_FLOOR = float(os.environ.get("OEP_HW_ERROR_MAX", "") or 0.05)
 MIN_BAD_FRAMES = 3

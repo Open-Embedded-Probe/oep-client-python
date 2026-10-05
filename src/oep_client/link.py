@@ -4,7 +4,7 @@ host-side broker), all under one Host.
 Framing follows the kind of transport, never the VID:PID. A serial port (USB CDC, USB-Serial/JTAG, a UART bridge) is
 COBS + CRC-16 sent as 0x00 <COBS> 0x00, and the probe's raw bytes (a target's console, its bind) share the line: every
 span between 0x00s (and from the open to the first 0x00) is a candidate, and one that does not decode, fails its CRC or
-answers another request is noise, skipped without a resend (oep-core §3.1, host guide §1.6). A missing answer is seen
+answers another request is noise, skipped without a resend (oep-core §3.1, host guide §2). A missing answer is seen
 by the timeout only, and the request goes once more with the same corr. Vendor bulk, HID and TCP are length(u16) message;
 lost boundaries there are recovered by the §5.1 resync: on a result for another request, an impossible length or a
 frame that stops half way, read and discard until the input is quiet for 50 ms, prove the link with a confirm, and go
@@ -24,16 +24,16 @@ bytes, or an event or data frame shorter than its header, is a broken frame; a r
 (core §2.4, C-36). The transfer time of the wait counts min_max_frame (64) until a confirm answer came on the
 transport, then the latest one's max_frame (core §4.4, N-1).
 
-A serial port is opened exclusively (host guide §2): pyserial's `exclusive=True` (flock, advisory) and, on Linux and
+A serial port is opened exclusively (host guide §6): pyserial's `exclusive=True` (flock, advisory) and, on Linux and
 macOS, TIOCEXCL, so a second open fails at once (EBUSY) instead of sharing the answers. The port opens with pyserial's
 defaults - DTR and RTS asserted - which reset none of the measured probes (host guide §1). No sleep after open. The port
 asks for the driver's low-latency mode (pyserial `set_low_latency_mode`; an FTDI's latency timer 16 -> 1 ms tripled the
 throughput of a UART bridge, oep-spec docs/uart-speed-negotiation.ja.md §3b), where the driver has it.
 
-port_speed (oep-core §3.5 is the handshake; the host's procedure is the host guide §7, followed here): `raise_speed`
+port_speed (oep-core §3.5 is the handshake; the host's procedure is the host guide §17, followed here): `raise_speed`
 (or `open_host(..., port_speed=...)`) asks a probe that declares it for a faster rate on the UART bridge this host
-opened. The minimal form (§7.2, the default): try a candidate, switch to the requested baud, settle 20 ms, confirm
-(100 ms, 3 tries), commit - about 50 ms, no measurement. The full form (`verify=True`, §7.3): a baseline at the boot
+opened. The minimal form (§17.2, the default): try a candidate, switch to the requested baud, settle 20 ms, confirm
+(100 ms, 3 tries), commit - about 50 ms, no measurement. The full form (`verify=True`, §17.3): a baseline at the boot
 speed (this session's frames, or 60 per flow), then per candidate every flow the caller will use (`flows`: in = link_source,
 out = link_sink, duplex = both, each with its in-flight n) for 16 frames at max_frame - 16, failing a flow on broken +
 lost >= 3 and a ratio over max(2 x baseline, 5 %), once more at n = 1 before giving up on it (then n = 1 is the cap),
@@ -82,11 +82,11 @@ RESYNC_QUIET_S = reg.TIMING["resync_quiet_ms"] / 1000
 RESYNC_WAIT_S = reg.TIMING["host_resync_wait_ms"] / 1000   # since the host's last write, before a resync's confirm (§5.1)
 WAIT_ADD_S = reg.TIMING["host_wait_add_ms"] / 1000      # the wait's floor: argument time + this + the transfer time (§4.4)
 NOTIFY_PENDING = reg.TIMING["notify_pending_max_frames"]   # max_frame x this of notifications may come first (§11.4)
-USB_VID, USB_PID = 0x303A, 0x0002   # the reference P4 probe's: the board's default, a temporary USB ID (probe guide §3.8)
+USB_VID, USB_PID = 0x303A, 0x0002   # the reference P4 probe's: the board's default, a temporary USB ID (probe guide §8)
 # The project's own USB VID:PID pairs (core §3.3): the only automatic identification of an OEP probe. The registry lists
 # them once obtained; none yet, so this stays empty and nothing is identified automatically.
 PROJECT_VID_PIDS: tuple[tuple[int, int], ...] = ()
-# Temporary clues until the project's VID:PID exists (host guide §1.7, not normative; gone once it does). A device that
+# Temporary clues until the project's VID:PID exists (host guide §4, not normative; gone once it does). A device that
 # fits one is only a candidate: it is probed by the confirm-only rule (SerialLink.probe) before anything else is sent.
 TEMPORARY_IPRODUCT_PREFIX = "OEP"
 TEMPORARY_VENDOR_INTERFACE = (reg.USB["vendor_bulk_class"], reg.USB["vendor_bulk_subclass"],
@@ -128,7 +128,7 @@ IDLE_MAX_MS = reg.TIMING["port_speed_idle_max_ms"]   # a committed rate goes bac
 KEEPALIVE_S = 1.0    # raised: a keepalive once the link has been quiet this long (under half of idle_ms, core §3.5 ob. 4)
 OPEN_RETRY_S = IDLE_MAX_MS / 1000 + 1.0   # port_speed_idle_max_ms + 1 s: the confirm bound at the boot speed (ob. 5 and 7)
 OPEN_TRY_S = 0.5     # each of those confirms waits this long (at most the link's timeout)
-IN_USE_WINDOW_S = 3.0      # raised, in use: the frames of the last 3 s are judged (host guide §7.3.2 item 4) ...
+IN_USE_WINDOW_S = 3.0      # raised, in use: the frames of the last 3 s are judged (host guide §17.3.2 item 4) ...
 IN_USE_MIN_FRAMES = 50     # ... none under this many in the window ...
 IN_USE_FLOOR = 0.10        # ... broken + lost over max(2 x baseline, this) steps down for the rest of the session
 STEP_DOWN_WAIT_S = 0.2   # the step down's revert (step 2) at the raised rate waits this long, never sent again
@@ -296,7 +296,7 @@ class SerialLink:
         self.speed_port: int | None = None         # the transport index the raised rate is on (the revert names it)
         self.unusable: dict[int, str] = {}         # rates that broke in use in this session -> why (none at or above again)
         self.failed: dict[int, str] = {}           # every rate the line failed in this session (a step down goes below)
-        self.probation: Probation | None = None    # raised, in use: the first period at a new rate (guide §7.3.2 item 4)
+        self.probation: Probation | None = None    # raised, in use: the first period at a new rate (guide §17.3.2 item 4)
         self.speed_plan: SpeedPlan | None = None   # the candidates a step down in use may go to (the lower ones)
         self.broke_at: float | None = None         # when the link was last back after a breakdown (monotonic) ...
         self.broke_rate: int | None = None         # ... at this rate (settle_s: results soon after are unknown)
@@ -397,7 +397,7 @@ class SerialLink:
                         raise
                     continue
                 self._moved(len(raw) + 2)
-                self._count("good")                  # a result or a notification that decoded (host guide §7.3.2)
+                self._count("good")                  # a result or a notification that decoded (host guide §17.3.2)
                 return frame
             if time.monotonic() > deadline:
                 raise TimeoutError("no result from the probe")
@@ -816,7 +816,7 @@ class SerialLink:
         return max(wait, self.wait_floor_s())                     # never under core §4.4's floor (C-06)
 
     def _strike(self, e: Exception) -> None:
-        """A request's answer did not come (`e`): a lost frame (host guide §7.3.2: counted at the boot speed for the
+        """A request's answer did not come (`e`): a lost frame (host guide §17.3.2: counted at the boot speed for the
         baseline, raised and in use for the window). Broken frames are counted where they are read (`_recv`)."""
         if isinstance(e, TimeoutError):
             self._count("lost")
@@ -824,7 +824,7 @@ class SerialLink:
     def _count(self, kind: str) -> None:
         """One frame the host side saw while a session holds the port: `kind` good / broken / lost. At the boot speed
         it goes into this session's baseline (`base_counts`); raised and in use into the 3 s window, judged on every
-        bad one (host guide §7.3.2 item 4): IN_USE_MIN_FRAMES or more in the window and a ratio over
+        bad one (host guide §17.3.2 item 4): IN_USE_MIN_FRAMES or more in the window and a ratio over
         max(2 x baseline, IN_USE_FLOOR) make the link step down at the next safe point. While the rate is in its
         probation (`probation`), its frames are also judged as the verify judges a flow: FLOW_FAIL_MIN or more broken
         or lost and a ratio over max(2 x baseline, VERIFY_FLOOR) step down at once (a verify failure, not an in-use
@@ -1130,7 +1130,7 @@ def is_project_device(vid: int, pid: int) -> bool:
 
 
 def temporary_clue(product: str | None = None, interfaces=(), hid_usage_pages=()) -> bool:
-    """A temporary clue that a USB device may be an OEP probe, until the project's VID:PID exists (host guide §1.7; not
+    """A temporary clue that a USB device may be an OEP probe, until the project's VID:PID exists (host guide §4; not
     normative, and removed once that VID:PID is listed): iProduct starting "OEP", a vendor interface class 0xFF /
     subclass 0x4F / protocol 0x45 (`interfaces`: (class, subclass, protocol) per interface), or a HID with usage page
     0xFF4F (`hid_usage_pages`). Never an identification: a candidate is opened and probed by the confirm-only rule
@@ -1275,24 +1275,24 @@ UART_BRIDGE = reg.CORE.enum["transport_kind"]["uart_bridge"]
 RELAYING_BROKER = 0xFF       # confirm's transport from a broker that answers the session ops itself (core §3.1)
 
 
-DEFAULT_CANDIDATES = (500000,)   # host guide §7.2: one candidate that passed the measured bridges in small duplex use
+DEFAULT_CANDIDATES = (500000,)   # host guide §17.2: one candidate that passed the measured bridges in small duplex use
 FLOWS = ("in", "out", "duplex")  # probe -> host (link_source), host -> probe (link_sink), both interleaved
-VERIFY_MS = 2000           # the probe waits this long for the commit (guide §7.2 / §7.3.2: 2000)
+VERIFY_MS = 2000           # the probe waits this long for the commit (guide §17.2 / §17.3.2: 2000)
 CONFIRM_TRIES, CONFIRM_WAIT_S = 3, 0.1   # after the switch: confirm, 100 ms each, up to 3 (core §3.5 obligation 2)
-FLOW_FRAMES = 16           # full form: at least this many frames per flow (guide §7.3.2 item 3-3)
+FLOW_FRAMES = 16           # full form: at least this many frames per flow (guide §17.3.2 item 3-3)
 FLOW_FAIL_MIN = 3          # ... a flow fails only on broken + lost of at least this ...
 VERIFY_FLOOR = 0.05        # ... and a ratio over max(2 x baseline, this) (item 3-4)
 BASELINE_FRAMES = 60       # the boot speed's ratio: this session's frames, or this many measured per flow (item 2)
 BASELINE_MAX = 0.10        # a flow whose baseline is over this is measured again at n = 1; still over: not raised
 SWITCH_SETTLE_S = 0.02     # after a baud change, before the first byte at the new rate (obligation 2: 20 ms or more)
-PROBATION_BYTES = 32 * 1024   # in use, a new rate's first period (guide §7.3.2 item 4): this many bytes both ways ...
+PROBATION_BYTES = 32 * 1024   # in use, a new rate's first period (guide §17.3.2 item 4): this many bytes both ways ...
 PROBATION_S = 1.0             # ... and this long since the commit, judged as the verify judges a flow
 SETTLE_S = 2.0             # results measured this soon after a breakdown at another rate are not failures (unknown)
 
 
 @dataclass
 class FlowResult:
-    """One flow run at one rate (guide §7.5 record): the flow, its in-flight n, frames, broken, lost, KB/s, pass."""
+    """One flow run at one rate (guide §17.3.2 item 5, the records): the flow, its in-flight n, frames, broken, lost, KB/s, pass."""
     flow: str
     n: int
     frames: int = 0
@@ -1349,7 +1349,7 @@ class SpeedTrial:
 
 @dataclass
 class StepDown:
-    """A step down in use (guide §7.3.2 item 5): when, from which rate, why, the ratio that decided it (the window's or
+    """A step down in use (guide §17.3.2 item 5): when, from which rate, why, the ratio that decided it (the window's or
     the probation's; None: no answer), the rate the link went to (`to`: the next lower candidate that passed, or the
     boot speed), and whether the rate was still in its probation (then it counts as a verify failure)."""
     at: float
@@ -1362,7 +1362,7 @@ class StepDown:
 
 @dataclass
 class Probation:
-    """A committed rate's first period in use (guide §7.3.2 item 4): ends (passed) at a good frame once `bytes` have
+    """A committed rate's first period in use (guide §17.3.2 item 4): ends (passed) at a good frame once `bytes` have
     moved both ways and `seconds` have passed since `started`; FLOW_FAIL_MIN or more of its frames broken or lost and a
     ratio over `threshold` (max(2 x baseline, VERIFY_FLOOR)) fail it."""
     rate: int
@@ -1523,7 +1523,7 @@ def _keep(hst, lk: SerialLink) -> None:
 
 def _flow_run(hst, lk: SerialLink, flow: str, n: int, size: int, frames: int, rate: int) -> FlowResult:
     """`frames` of one flow at the rate in force, `n` in flight, `size` bytes each, counted as the guide counts
-    (§7.3.2): broken = an answer came but its content is wrong, lost = no answer (a broken COBS frame on the held port
+    (§17.3.2): broken = an answer came but its content is wrong, lost = no answer (a broken COBS frame on the held port
     is read as one: the link drops it). After lost frames the link is put in step again with a confirm; when none is
     answered the probe is not at this rate any more (it went back) and the flow stops there, the frames not sent
     counted lost (`gone`). The same pattern as linktest.run, whose numbers this matches."""
@@ -1580,7 +1580,7 @@ def resolve_flows(flows, n_max: int) -> list[tuple[str, int]]:
 
 def _baseline(hst, lk: SerialLink, report: SpeedReport, flows: list[tuple[str, int]], given: float | None,
               size: int) -> str:
-    """The boot speed's ratio per flow (guide §7.3.2 item 2): `given`, or this session's frames at the boot speed when
+    """The boot speed's ratio per flow (guide §17.3.2 item 2): `given`, or this session's frames at the boot speed when
     BASELINE_FRAMES or more were exchanged and under BASELINE_MAX, else BASELINE_FRAMES measured per flow at its n (over
     BASELINE_MAX: again at n = 1, which then caps that flow). -> "" or why the port is not raised at all."""
     if given is not None:
@@ -1609,7 +1609,7 @@ def _baseline(hst, lk: SerialLink, report: SpeedReport, flows: list[tuple[str, i
 
 def _verify_flows(hst, lk: SerialLink, rate: int, trial: SpeedTrial, flows: list[tuple[str, int]],
                   baseline: dict[str, float], frames: int, size: int) -> bool:
-    """Every flow at the new rate (guide §7.3.2 items 3-3 / 3-4): `frames` or more, failing on broken + lost of
+    """Every flow at the new rate (guide §17.3.2 items 3-3 / 3-4): `frames` or more, failing on broken + lost of
     FLOW_FAIL_MIN or more and a ratio over max(2 x baseline, VERIFY_FLOOR); a failed flow at n > 1 runs again at n = 1
     (then the trial's n_cap is 1). One failed flow fails the candidate (trial.why says which)."""
     for flow, n in flows:
@@ -1637,17 +1637,17 @@ def raise_speed(hst, candidates=DEFAULT_CANDIDATES, *, flows=None, verify: bool 
                 idle_ms: int = IDLE_MAX_MS, port: int | None = None, record=False, max_tries: int | None = None,
                 probation_bytes: int = PROBATION_BYTES, probation_s: float = PROBATION_S,
                 settle_s: float = SETTLE_S) -> SpeedReport:
-    """port_speed (oep-core §3.5) on the UART bridge this host opened, by the host guide's §7 procedure: try
+    """port_speed (oep-core §3.5) on the UART bridge this host opened, by the host guide's §17 procedure: try
     `candidates` in order and commit the first that passes. The session must be open (the rate lasts as long as it does).
 
-    The minimal form (§7.2, the default; about 50 ms, no measurement): try -> switch to the requested baud (the
+    The minimal form (§17.2, the default; about 50 ms, no measurement): try -> switch to the requested baud (the
     probe's answer only when the OS refuses it) -> 20 ms -> confirm (100 ms, up to 3) -> commit. The full form
-    (`verify=True`, or `flows` given; §7.3): first the boot speed's baseline per flow (`baseline` given, this session's
+    (`verify=True`, or `flows` given; §17.3): first the boot speed's baseline per flow (`baseline` given, this session's
     frames at the boot speed when 60 or more, else 60 frames measured per flow at its n - over 10 % again at n = 1,
     still over: not raised), then per candidate every flow for `frames` (16) frames of max_frame - 16 bytes - the quick
     gate; a flow fails on broken + lost >= 3 and a ratio over max(2 x baseline, 5 %), runs again at n = 1 first (then
     n = 1 is the link's cap), and one failed flow fails the candidate. `flows`: ("in" | "out" | "duplex", n) pairs (n 0
-    = the most this link keeps in flight; default: all three at that n) - verify only what the session will use (§7.3.1).
+    = the most this link keeps in flight; default: all three at that n) - verify only what the session will use (§17.3.1).
 
     A failed candidate: revert (step 2, at the new rate; its answer need not come), the boot speed, confirms up to
     port_speed_idle_max_ms + 1 s (ConnectionError when none is answered). verify_ms: how long the probe waits for the
@@ -1655,7 +1655,7 @@ def raise_speed(hst, candidates=DEFAULT_CANDIDATES, *, flows=None, verify: bool 
     long with no good frame (default and at most 3000; 0 and more mean that); the link's keepalive interval is set
     under half of it.
 
-    In use (§7.3.2 item 4): the first period at a committed rate is its probation - until `probation_bytes` (32 KiB,
+    In use (§17.3.2 item 4): the first period at a committed rate is its probation - until `probation_bytes` (32 KiB,
     both ways) have moved and `probation_s` (1 s) have passed; 0 and 0: none - judged as the verify judges a flow
     (3 or more broken or lost over max(2 x baseline, 5 %)) or a missed answer: either steps down at once and counts as
     a verify failure. After it the last 3 s are judged (none under 50 frames): over max(2 x baseline, 10 %) broken or

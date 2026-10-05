@@ -555,7 +555,7 @@ SPEED_RATES = (300, 5_000_000)                     # what the fake's UART makes 
 
 class Endpoint:
     MARKS_PER_ANSWER = 3                     # small, so hosts must follow `more`
-    CHUNK = 64                               # raw bytes a serial port takes at a time (probe guide §3.6)
+    CHUNK = 64                               # raw bytes a serial port takes at a time (probe guide §6)
     MIXED_LINE_MAX, MIXED_QUIET_MS = 128, 100
 
     def __init__(self, probe: fake.FakeProbe, now_ms: Callable[[], int], boot_id: int = 0x1234ABCD,

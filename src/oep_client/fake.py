@@ -281,7 +281,7 @@ def _core(firmware: str, model: str, unit_id: str, channels: int, reserved: list
 
 def p4_x035() -> FakeProbe:
     """ESP32-P4 development probe on the CH32X035F8U6 jig (as wired on 2026-09-24), in the recommended USB shape
-    (probe guide §3.8): USB-Serial/JTAG (serial port 0), and on the HS port vendor bulk, HID and a CDC (serial port 3)
+    (probe guide §8): USB-Serial/JTAG (serial port 0), and on the HS port vendor bulk, HID and a CDC (serial port 3)
     on the board's default VID:PID (no discoverable: that is the project's VID:PID only, core §7.5)."""
     reserved = [24, 25]                             # USB-Serial/JTAG (the probe's own: never an interface's)
     pins = [p for p in range(55) if p not in reserved + [2, 54]]   # the fixtures' pins: all but the RVSWD pair

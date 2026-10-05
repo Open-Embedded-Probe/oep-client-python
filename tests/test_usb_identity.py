@@ -1,4 +1,4 @@
-"""USB identification and the probing rule (oep-core §3.3, host guide §1.7): no automatic identification but the
+"""USB identification and the probing rule (oep-core §3.3, host guide §4): no automatic identification but the
 project's VID:PID (none listed), temporary clues, a named unit_id found by serial alone and checked by describe, and
 confirm-only probing that closes a device giving no valid answer."""
 
