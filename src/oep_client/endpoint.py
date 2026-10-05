@@ -85,6 +85,18 @@ define:
   channel lacks (`no_pull`, PC-3), an item's channel below `channels` and not reserved (PC-4), label text (PC-5), a
   saved bind on a port that is no serial port (reason 2, PC-8); an item's unsupported names its tag as received
 
+- the rules of oep-spec 2e70f40 .. 40291a4 (required and optional ops, the 2026-10-06 rule changes): an op the
+  interface does not define, or an optional op the probe does not declare (`offers`), is unknown_operation at order 1
+  before session_required; plan_apply and probe.config set / unset check the whole request's form, then the fns it
+  names, then what the probe lacks, then the state (C-21); non-request roles and short requests are discarded (C-36);
+  the clock is ns since boot at the resolution given (`now_ns`), never back, from 0 at a reboot (C-31); reboot() draws
+  a boot_id (C-19); confirm's limits and max_op_ms are checked at construction (C-20, C-47); every channel not reserved
+  is parked at boot (△12). Debug: a target op whose exchanges go unanswered fails with status line and leaves the
+  connection's lines undriven until one succeeds (`pin_state` "wire-free"); an attach reset TLV on an output-idle
+  channel is unavailable cause 5 holder_kind 7; search_retries only when a bring-up ran. Fixture: i2c-target's
+  reserved addresses unsupported (△5), uart write without TX unavailable cause 6 (△6), spi-target's cs_setup_ns
+  (esp32-v003 declares one)
+
 Every other non-core fn gets two stand-in operations so the session rules can be exercised - FAKE ONLY, they mean
 nothing on a real probe:  0x01 write(u32) changes state, 0x02 read -> u32 needs no lock.
 """
@@ -153,6 +165,13 @@ OUTPUT_MODES = (_GPIO.enum["mode"]["output_low"], _GPIO.enum["mode"]["output_hig
 SLOT_BOOT_RESET = _CFG.enum["slot_boot_reset"]
 RETRY_RESET_HOLD_MS = reg.TIMING["slot_retry_reset_hold_ms"]   # the retry with reset's hold (probe.config §3.1)
 REQUEST_HEADER, REQUEST_HEADER_SESSION = 6, 10            # a request's header without / with session_id (core §4.1)
+
+
+class _Unanswered(Exception):
+    """A target op's exchange got no answer from the wire (debug §2)."""
+
+    def __init__(self, conn):
+        self.conn = conn
 
 
 class Reject(Exception):
@@ -353,7 +372,8 @@ class FakeTarget:
     reset_line: int | None = None                      # the channel wired to its reset (None: any reset channel resets it)
     silent_until_reset: bool = False                   # answers nothing on the wire until a reset through its line
     version: int = 2                                   # DMSTATUS.version: "found" is 2 or more and not 15 (debug §1)
-    search_retries: int | None = 0                     # attach answer's search_retries (debug §1; None: not sent)
+    search_retries: int | None = 0                     # the bring-up's extra attempts an attach answer reports (debug §1;
+                                                       # None: not sent; sent only when a bring-up ran)
     halt_stuck: bool = False                           # halt: allhalted never comes (status timeout, haltreq cleared)
     step_stuck: str | None = None                      # step: the hart does not come back - "halts" (to haltreq) / "runs"
     haltreq: bool = False                              # what the probe left in DMCONTROL.haltreq
@@ -446,6 +466,7 @@ class Connection:
     tid: int | None = None
     users: set = field(default_factory=set)            # "host" and/or ("slot", n)
     idle_clock: int = 0                                # rvswd: SWCLK while the line rests, 0 high / 1 low
+    free: bool = False                                 # an exchange went unanswered: the lines rest undriven (debug §2)
 
 
 @dataclass(frozen=True)
@@ -1632,7 +1653,9 @@ class Endpoint:
 
     def pin_state(self, ch: int) -> str:
         """TEST HOOK: the electrical state the probe gives channel `ch` now, as a word a test can compare:
-        "reset" (disabled: never touched), "wire" (a live connection's pin), "idle <mode>" (the idle item's, hi-z
+        "reset" (disabled: never touched), "wire" (a live connection's pin at its rest state between exchanges),
+        "wire-free" (the same after an exchange went unanswered, until one succeeds: undriven, no pull - never a pull-up
+        on a clock resting low; debug §2, swio §3.2), "idle <mode>" (the idle item's, hi-z
         without one), "gpio <mode>" (after a set, or taken in its idle state), "uart-tx-high" / "input" (a fixture
         UART's TX at the plan, its RX), "open-drain" / "open-drain pull-up" (an i2c-target from configure: pulls low or
         releases, never drives high; pull-up only when it declares internal pull-ups), "miso-driven" / "miso-hi-z" /
@@ -1640,8 +1663,9 @@ class Endpoint:
         plan changes nothing until the interface starts to use the pin (core §8), and a logic capture only listens."""
         if ch in self.disabled:
             return "reset"
-        if any(ch in c.pair for c in self.conns.values()):
-            return "wire"
+        conn = next((c for c in self.conns.values() if ch in c.pair), None)
+        if conn is not None:
+            return "wire-free" if conn.free else "wire"
         idle = f"idle {self.IDLE_NAMES.get(self.parked.get(ch, 0), 'hi-z')}"
         for fn, role, c in sorted(self.plan):
             if c != ch or self._listens(fn):
@@ -1939,6 +1963,8 @@ class Endpoint:
             pair = self._pick_pair(fn, pins, t)
             if reset is not None:
                 self._refuse_disabled([channel])                   # a disabled reset line: cause 5 (probe.config §1)
+                if self._output_idle(channel):                     # its idle drives it: nothing executed (debug §1)
+                    raise unavailable("held_by_settings", channel, holder_kind="settings_idle")
                 if any(a[2] == channel for a in self.plan):
                     raise unavailable("pin_in_use", channel, next(a[0] for a in self.plan if a[2] == channel), "plan")
             tg = self._target(fn, pair)
@@ -1947,6 +1973,7 @@ class Endpoint:
             flags = 0
             if reset is not None and tg.resets_through(channel):
                 tg.silent_until_reset = False                      # held in reset and let go: it answers again
+            bring_up = cid is None or reset is not None            # a new connection, or the reset TLV (debug §1)
             if cid is None:
                 if not tg.answers:
                     return m.COMPLETED, m.FAILED, bytes([LINE])    # failed: status [TLV] (common §3)
@@ -1955,6 +1982,7 @@ class Endpoint:
                     tg.havereset, flags = False, flags | ATTACH_FLAGS["havereset_acked"]
             else:
                 flags |= ATTACH_FLAGS["existing"]
+                bring_up |= speed < self.conns[cid].speed          # lowered for max_speed: brought up again
                 self.conns[cid].speed = min(self.conns[cid].speed, speed)
             c = self.conns[cid]
             if idle_clock is not None:
@@ -1976,8 +2004,9 @@ class Endpoint:
             if tg.halted:
                 flags |= ATTACH_FLAGS["halted"]
                 tail += m.tlv(_T_ATTACH_ANSWER["dpc"], struct.pack("<I", tg.dpc))
-            if tg.search_retries is not None:                      # the failed tries of the speed search (debug §1)
-                tail += m.tlv(_T_ATTACH_ANSWER["search_retries"], struct.pack("<H", min(tg.search_retries, 0xFFFF)))
+            if tg.search_retries is not None and bring_up:         # the bring-up's extra attempts (debug §1): only when
+                tail += m.tlv(_T_ATTACH_ANSWER["search_retries"],  # one ran; saturating at 0xFFFF
+                              struct.pack("<H", min(tg.search_retries, 0xFFFF)))
             self._refresh()
             return self._answer(struct.pack("<HIBI", cid, tg.dmstatus(), flags, c.speed) + tail)
         if op == 0x03:                                             # detach
@@ -2120,10 +2149,31 @@ class Endpoint:
         return m.SUCCESS if status == OK else (m.PARTIAL if done else m.FAILED)
 
     def _dm(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
-        """oep.target.riscv-dm (debug §4). Each op reads and checks its whole request first - malformed, then
-        unsupported (core §4.3 orders 5 / 6) - and only then looks up the connection (no_connection, order 8)."""
+        """oep.target.riscv-dm (debug §4); `_dm_op` does the op. An op whose connection's target does not answer
+        on the wire (`FakeTarget.answers` False) fails with status line and nothing done: its exchanges went unanswered,
+        and from then until an exchange succeeds the probe rests the connection's lines in the free state (debug §2,
+        `Connection.free`, `pin_state` "wire-free")."""
+        try:
+            return self._dm_op(fn, op, t)
+        except _Unanswered as e:
+            e.conn.free = True
+            return m.COMPLETED, m.FAILED, DM_LINE_FAILED[op]
+
+    def _exchange(self, cid: int) -> FakeTarget:
+        """A target op's exchanges on connection `cid` (after the request's checks): the target, or _Unanswered.
+        A success after failures restores the connection's rest state (debug §2: rvswd §3.1, swio §3.2)."""
+        c = self._connection(cid)
+        tg = self._target_of(cid)
+        if not tg.answers:
+            raise _Unanswered(c)
+        c.free = False
+        return tg
+
+    def _dm_op(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
+        """Each op reads and checks its whole request first - malformed, then unsupported (core §4.3 orders 5 / 6) -
+        and only then looks up the connection (no_connection, order 8)."""
         conn = t.take("H")
-        target = lambda: (self._connection(conn), self._target_of(conn))[1]
+        target = lambda: self._exchange(conn)
         if op == _RV.op["dmi"]:
             n = t.take("H")
             steps = []
@@ -2591,6 +2641,9 @@ class Endpoint:
         s = self.uarts.get(fn)
         if s is None:
             raise unavailable("wrong_state")                       # the plan makes the stream (fixture §2)
+        if op == _UART.op["write"] and not any(
+                a[0] == fn and a[1] == _UART.enum["role"]["tx"] for a in self.plan):
+            raise unavailable("wrong_state")                       # a plan without TX: nothing to write on (△6)
         return self._stream_op(s, op, args, t, self.uart_accept)
 
     def uart_rx(self, fn: int, data: bytes) -> None:
@@ -2607,6 +2660,8 @@ class Endpoint:
             t.tail()
             if address > 0x7F:
                 raise Reject(m.MALFORMED)                          # a 7-bit address (excluded for every revision)
+            if address <= 0x07 or address >= 0x78:
+                raise unsupported_fixed()                          # reserved by I2C: general call, 10-bit, ... (△5)
             if mode not in I2C_MODE.values():
                 raise unsupported_fixed()                          # 0, 4 or more: a later revision may define it (§2.5)
             if mode == I2C_MODE["preloaded_tx"] and not features & I2C_FEATURES["preloaded_tx"]:
@@ -3538,6 +3593,13 @@ SIMS = {"oep.wire.rvswd": "wire", "oep.wire.swio": "wire", "oep.target.riscv-dm"
         "oep.target.console": "console", "oep.fixture.gpio": "gpio", "oep.fixture.uart": "uart",
         "oep.probe.config": "config_op", "oep.fixture.logic": "capture", "oep.fixture.analog": "capture",
         "oep.fixture.capture-group": "group", "oep.fixture.i2c-target": "i2c_op", "oep.fixture.spi-target": "spi_op"}
+
+# A riscv-dm op whose exchanges got no answer from the wire: completed failed, status line, nothing done (debug §4)
+DM_LINE_FAILED = {_RV.op["dmi"]: struct.pack("<HBH", 0, LINE, 0), _RV.op["halt"]: bytes([LINE]),
+                  _RV.op["resume"]: bytes([LINE]), _RV.op["reset"]: struct.pack("<BBBI", LINE, 0, 1, 0),
+                  _RV.op["step"]: struct.pack("<BBII", LINE, 0, 0, 0), _RV.op["read_block"]: struct.pack("<HB", 0, LINE),
+                  _RV.op["write_block"]: struct.pack("<HB", 0, LINE),
+                  _RV.op["run"]: struct.pack("<BBIIB", LINE, RUN_STOPPED["not_halted"], 0, 0, 0)}
 
 # The optional ops declared by a features bit (core §1.2): interface -> op -> the bit of describe's features
 _RVF, _CAPF = _RV.enum["features"], reg.FIXTURE_LOGIC.enum["features"]

@@ -312,3 +312,128 @@ def test_c21_a_plan_item_on_a_channel_the_fn_does_not_offer_names_the_item():
     plan = m.tlv(ITEM["plan"], struct.pack("<HBH", 4, 1, 24), critical=True)  # 24 is reserved: no fn offers it
     r = cfg_set(h, 10, plan)
     assert r.detail == m.UNSUPPORTED and r.payload[0] == ITEM["plan"] | 0x80
+
+
+# ---- 975d88c / 598bb26 / 8d91db0: the lines while the wire does not answer, the rest state ------------------------
+
+def test_lines_rest_undriven_from_an_unanswered_exchange_until_one_succeeds():
+    ep, h = bench()
+    pair = ep.pairs[1][0]
+    cid = attached(ep, h, pair=pair)
+    tg = ep._target(1, pair)
+    assert ep.pin_state(pair[0]) == ep.pin_state(pair[1]) == "wire"           # the rest state (rvswd §3.1)
+    tg.present = False                                                        # the target lost power
+    r = h.raw(2, RV.op["dmi"], struct.pack("<HHB", cid, 1, 2) + b"\x11")
+    assert (r.resolution, r.detail, r.payload) == (m.COMPLETED, m.FAILED, struct.pack("<HBH", 0, endpoint.LINE, 0))
+    assert ep.pin_state(pair[0]) == ep.pin_state(pair[1]) == "wire-free"      # undriven between exchanges (debug §2)
+    r = h.raw(2, RV.op["halt"], struct.pack("<H", cid))
+    assert r.payload == bytes([endpoint.LINE]) and ep.pin_state(pair[0]) == "wire-free"   # each retry fails the same
+    tg.present = True
+    assert h.raw(2, RV.op["halt"], struct.pack("<H", cid)).succeeded
+    assert ep.pin_state(pair[0]) == "wire"                                    # a success: the rest state again
+
+
+@pytest.mark.parametrize("op, body", [
+    ("reset", b"\x00"), ("step", b""), ("read_block", struct.pack("<IH", 0x20000000, 1)),
+    ("write_block", struct.pack("<IH", 0x20000000, 1) + bytes(4)), ("run", struct.pack("<IIBB", 0x20000000, 10, 0, 0)),
+    ("resume", b""),
+])
+def test_every_target_op_fails_with_status_line_when_nothing_answers(op, body):
+    ep, h = bench()
+    cid = attached(ep, h)
+    ep._target(1, (2, 3)).present = False
+    r = h.raw(2, RV.op[op], struct.pack("<H", cid) + body)
+    assert (r.resolution, r.detail, r.payload[:1]) in {(m.COMPLETED, m.FAILED, bytes([endpoint.LINE])),
+                                                      (m.COMPLETED, m.FAILED, b"\x00")}   # done(u16) 0 first
+    assert endpoint.LINE in r.payload[:3]
+
+
+# ---- 975d88c: the reset TLV of attach on a channel whose idle is an output -------------------------------------------
+
+def test_attach_reset_tlv_on_an_output_idle_channel_is_unavailable_and_runs_nothing():
+    ep, h = bench(fake.esp32_v003())
+    swio = ep.pairs[1][0]
+    tg = ep._target(1, swio)
+    tg.silent_until_reset = True
+    assert h.raw(9, CFG.op["set"], m.tlv(ITEM["idle"], struct.pack("<HB", 23, 4))).succeeded   # NRST idles high
+    reset = m.tlv(0x05, struct.pack("<HH", 23, 20), critical=True)
+    r = h.raw(1, 0x02, b"\x00" + SPEED + reset)
+    assert r.detail == m.UNAVAILABLE
+    assert una(r) == {UNA["cause"]: bytes([CORE.enum["unavailable_cause"]["held_by_settings"]]),
+                      UNA["channel"]: struct.pack("<H", 23), UNA["holder_kind"]: bytes([CORE.enum["holder_kind"]["settings_idle"]])}
+    assert tg.silent_until_reset                                              # the line was never pulled
+
+
+# ---- 73a0c37: search_retries only when a bring-up ran ----------------------------------------------------------------
+
+def search_retries(r):
+    return m.Tail.parse(r.payload[11:]).get(reg.WIRE_RVSWD.tlv["attach_answer"]["search_retries"])
+
+
+def test_search_retries_only_when_a_bring_up_ran():
+    ep, h = bench(fake.esp32_v003())
+    swio = ep.pairs[1][0]
+    ep._target(1, swio).search_retries = 0x12345                              # saturates
+    attach = lambda extra=b"", speed=4_000_000: h.raw(1, 0x02, b"\x00" + m.tlv(0x01, struct.pack("<I", speed),
+                                                                               critical=True) + extra)
+    assert search_retries(attach()) == b"\xff\xff"                            # a new connection
+    assert search_retries(attach()) is None                                   # joined without a bring-up
+    assert search_retries(attach(speed=1_000_000)) == b"\xff\xff"             # lowered for max_speed
+    assert search_retries(attach(m.tlv(0x05, struct.pack("<HH", 23, 20), critical=True))) == b"\xff\xff"   # reset
+
+
+# ---- ○2: the reset op is ndmreset and drives no line --------------------------------------------------------------
+
+def test_o2_reset_method_0_is_ndmreset_and_moves_no_line():
+    ep, h = bench(fake.esp32_v003())
+    cid = attached(ep, h, pair=ep.pairs[1][0])
+    sid = struct.unpack_from("<H", h.ok(3, reg.TARGET_CONSOLE.op["open"], struct.pack("<HB", cid, 2)))[0]
+    method = RV.tlv["reset"]["method"]
+    for body in (b"\x00", b"\x00" + m.tlv(method, b"\x00", critical=True), b"\x00" + m.tlv(method, b"\x01", critical=True)):
+        assert h.raw(2, RV.op["reset"], struct.pack("<H", cid) + body).succeeded
+    marks = [mk for mk in ep.streams[sid].marks if mk[2] == reg.COMMON.enum["mark_kind"]["reset"]]
+    assert [mk[4] for mk in marks] == [reg.COMMON.enum["mark_detail_reset"]["ndmreset"]] * 3
+    assert "nrst" not in reg.COMMON.enum["mark_detail_reset"] and ep.gpio_log == [] and ep.slot_reset_log == []
+
+
+# ---- △5 / △6: i2c-target's reserved addresses; uart write without TX; spi arm count > length -----------------------
+
+@pytest.mark.parametrize("address, detail", [(0x00, m.UNSUPPORTED), (0x07, m.UNSUPPORTED), (0x78, m.UNSUPPORTED),
+                                             (0x7F, m.UNSUPPORTED), (0x80, m.MALFORMED), (0x08, None), (0x77, None)])
+def test_t5_i2c_target_refuses_the_reserved_addresses(address, detail):
+    ep, h = bench(fake.p4_x035())
+    assert h.raw(0, m.OP_PLAN_APPLY, assignment(8, 1, 20) + assignment(8, 2, 21)).succeeded
+    r = h.raw(8, I2C.op["configure"], bytes([address, 1]))
+    if detail is None:
+        assert r.succeeded
+    else:
+        assert r.detail == detail and (detail != m.UNSUPPORTED or r.payload == b"\x00")
+
+
+def test_t6_uart_write_without_tx_is_unavailable_cause_6():
+    ep, h = bench(fake.p4_x035())
+    uart = reg.FIXTURE_UART
+    assert h.raw(0, m.OP_PLAN_APPLY, assignment(5, uart.enum["role"]["rx"], 20)).succeeded   # RX only
+    r = h.raw(5, uart.op["write"], struct.pack("<H", 1) + b"x")
+    assert r.detail == m.UNAVAILABLE and una(r)[UNA["cause"]] == bytes([CORE.enum["unavailable_cause"]["wrong_state"]])
+    assert h.raw(5, uart.op["read"], struct.pack("<BQH", 2, 0, 16), session=False).succeeded
+    assert h.raw(0, m.OP_PLAN_APPLY, assignment(5, uart.enum["role"]["rx"], 20)
+                 + assignment(5, uart.enum["role"]["tx"], 21)).succeeded
+    assert h.raw(5, uart.op["write"], struct.pack("<H", 1) + b"x").succeeded
+
+
+def test_t6_spi_arm_count_over_length_is_malformed():
+    ep, h = bench(fake.p4_x035())
+    spi = reg.FIXTURE_SPI_TARGET
+    assert h.raw(9, spi.op["arm"], struct.pack("<HH", 4, 8) + bytes(8)).detail == m.MALFORMED
+
+
+# ---- 73a0c37: spi-target's cs_setup_ns ------------------------------------------------------------------------------
+
+def test_cs_setup_ns_is_declared_by_a_probe_that_drives_miso_in_software():
+    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())
+    spi = fn_of(ep, "oep.fixture.spi-target")
+    tag = reg.FIXTURE_SPI_TARGET.tlv["describe"]["cs_setup_ns"]
+    assert [struct.unpack("<I", t[2:])[0] for t in ep.static[spi] if t[0] == tag] == [4000]
+    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    assert not [t for t in ep.static[fn_of(ep, "oep.fixture.spi-target")] if t[0] == tag]   # MISO at once: left out
