@@ -35,7 +35,7 @@ Repository = "https://github.com/Open-Embedded-Probe/oep-client-python"
 packages = ["src/oep_client"]
 
 [tool.hatch.build.targets.sdist]
-only-include = ["src/oep_client", "tests", "README.md", "README.ja.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
+only-include = ["src/oep_client", "tests", "udev", "README.md", "README.ja.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
 
 [dependency-groups]
 dev = ["pytest>=8"]

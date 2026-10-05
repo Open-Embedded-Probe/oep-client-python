@@ -1,0 +1,5 @@
+# OEP probes: the project's USB VID:PID 1209:4F45 (oep-spec registry usb, core §3.3).
+# The USB node carries the vendor bulk pair and the DFU interface (libusb / WebUSB); hidraw carries the OEP HID.
+# The CDC ports (ttyACM*) need no rule beyond the usual dialout group.
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="1209", ATTR{idProduct}=="4f45", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="4f45", MODE="0660", GROUP="plugdev", TAG+="uaccess"
