@@ -37,15 +37,15 @@ X.Y.Z（v1 の凍結までは、どのリリースも wire を壊しうるので
 
 | モジュール | 中身 |
 |---|---|
-| `host` | 要求と結果、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`。lease 切れなら `Expired`。黙って open し直さず、`Host.epoch` が進む） |
-| `link` | transport: シリアルの口（常に COBS + CRC、`0x00 <COBS> 0x00`、フレームの外は雑音として捨てる、排他で開く、8N1 で DTR / RTS を立てる）、USB vendor bulk / HID と TCP（長さつきフレーム、§5.1 の立て直し: host の最後の書き込みから 250 ms 待つ。TCP ではフレームの途中の休みもそのまま読み続ける）、corr による照合と送り直し、応答はどれも core §4.4 の下限（引数の時間 + 1000 ms + シリアルの口の転送時間、`wait_floor_s`）以上待つ、`open_host(target)` |
+| `host` | 要求と結果、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`。lease 切れなら `Expired`。黙って open し直さず、`Host.epoch` が進む。confirm が core §7.1 の範囲の外か、`max_op_ms` が 1〜600000 の外の probe は `NotUsable` で、それ以上何も送らない）。boot_id が変わったとき（confirm、open、heartbeat）と、前に使った id の open が resumed = 0 だったときは名前 → fn の cache を捨て、list し直す |
+| `link` | transport: シリアルの口（常に COBS + CRC、`0x00 <COBS> 0x00`、フレームの外は雑音として捨てる、排他で開く、8N1 で DTR / RTS を立てる）、USB vendor bulk / HID と TCP（長さつきフレーム、§5.1 の立て直し: host の最後の書き込みから 250 ms 待つ。TCP ではフレームの途中の休みもそのまま読み続ける）、corr による照合と送り直し。送り直しにも応答が無ければ `TransportFailed` を上げ、次の要求の前に confirm で立て直す（入力が静かになるのを待ち、自分の corr の confirm。シリアルの口でも）。立て直せなければ ConnectionError。応答はどれも core §4.4 の下限（引数の時間 + 1000 ms + シリアルの口の転送時間。confirm の応答が来るまでは min_max_frame で数える、`wait_floor_s`）以上待つ。fn 0 の heartbeat を読む。短い応答は壊れたフレーム。`open_host(target)` |
 | `core` | インターフェースを名前で探す（キャッシュつき）、confirm（probe の `boot_id` と、この host が来た経路の番号 `transport` つき。2 回目からは使っている revision を求める）、probe の describe（宣言だけ。起動の間 cache: ラベル、transport の一覧、`max_op_ms`）、ロックの取り方（`take`）、ピンの割り当て（plan）、`Interface` の土台 |
-| `riscv` | `oep.wire.rvswd` / `oep.wire.swio`（scan、attach: `max_speed` は常に送る、`reset=(channel, hold_ms)` でリセットをかけながら attach、detach、connections）、`oep.target.riscv-dm`（応答は値の数を持つ。`RunResult.not_halted`。hart を止め直せなかった step は `step_left` つきの `StepError`）、`Wire.search_retries`（attach の応答の、速さ探しで失敗した回数）、attach と scan はその予算の分も待つ、リセット線の探索（`find_reset_line(candidates, pins=...)`）、GPIO 経由の attach |
+| `riscv` | `oep.wire.rvswd` / `oep.wire.swio`（scan、attach: `max_speed` は常に送る、`reset=(channel, hold_ms)` でリセットをかけながら attach、detach、connections）、`oep.target.riscv-dm`（応答は値の数を持つ。`RunResult.not_halted`。hart を止め直せなかった step は `step_left` つきの `StepError`）、`RiscvDm.declared()`（probe が出している任意の op。ほかは unknown_operation）、`Wire.search_retries`（attach の立ち上げで余分にかかった試みの数。立ち上げをしたときだけ来る）、attach と scan はその予算の分も待つ、リセット線の探索（`find_reset_line(candidates, pins=...)`）、GPIO 経由の attach |
 | `targets` | host が target の系統ごとに知っていることを 1 つの表に（`FAMILIES`: 線、target_id の照合、リセットのベクタ、NRST を option で読む関数、max_speed / idle_clock）。`identify(target_id)` |
 | `pins` | `oep pins`: channel の分類、low に保つ探索、scan、識別、リセットの線の確かめ、スロットの提案（`PinFinder`） |
 | `console` | `oep.target.console`（位置つきのストリーム: read の応答は長さを持ち、マークは `time_ns`、ロック不要の `streams()`）と、バイト列として読む `ConsoleIO` |
-| `fixture` | `oep.fixture.gpio`（出力の強さを要素ごとに: `set([(ch, mode, Drive.max_ma(10))])`。`drive_levels()`、`read_state()` = level といま効いている段）/ `uart`（ストリームは plan が作る。`status()`）/ `i2c-target`（`pullup_ohms`: 自分で入れる pull-up。宣言しなければ None）/ `spi-target`（revision 1） |
-| `config` | `oep.probe.config`（スロット - `boot_reset` -、bind、plan / label / idle - その `drive` - / uart の項目、get / set / unset / save / erase。`describe()` = 宣言、`state()` = 保存・スロット・bind の今の状態（`reset_at_ns` も）、`hash_of(items)` = probe と同じ hash、`find_line(cfg, slot, "nrst")` = probe.config §1.3 の線の探し方。firmware の固定のラベルが手順 (c)） |
+| `fixture` | `oep.fixture.gpio`（出力の強さを要素ごとに: `set([(ch, mode, Drive.max_ma(10))])`。`drive_levels()`、`read_state()` = level といま効いている段）/ `uart`（ストリームは plan が作る。`status()`）/ `i2c-target`（`pullup_ohms`: 自分で入れる pull-up。宣言しなければ None。予約のアドレス 0x00〜0x07 / 0x78〜0x7F は送る前に断る）/ `spi-target`（`cs_setup_ns`: CS の後、最初のビットが確かになるまでの時間。`oep dump` が出す） |
+| `config` | `oep.probe.config`（スロット - `boot_reset` -、bind、plan / label / idle - その `drive` - / uart の項目、get / set / unset / save / erase。`describe()` = 宣言、`state()` = 保存・スロット・bind の今の状態（`reset_at_ns` も。保存の状態は最後のページのもの）、`hash_of(items)` = probe と同じ hash、`find_line(cfg, slot, "nrst")` = probe.config §1.3 の線の探し方。firmware の固定のラベルが手順 (c)） |
 | `capture` | `oep.fixture.logic` / `analog` / `capture-group`（revision 1、oep-spec の oep-if-capture）。mode・rate・trigger・pretrigger・frontend は critical で送り、samples は応答の値が正しい。start の blocking_ms の間は何も送らずに待つ（長さつきフレームなら後で立て直す）。start ごとに世代（`LogicCapture.generation`）が進み、read と release はそれを付ける（`read_segment(segment)` は自分で付ける）。`status()` は `Status` を返す。読んだ区画は `Host.on_capture` の callback に `CaptureRecord` で渡る（記録の受け口。wireskein には依存しない） |
 | `decode` | キャプチャのチャネルの復号（I2C） |
 | `registry` | oep-spec の番号の表から生成したモジュール（編集しない。oep-spec から写し直す）。名前からインターフェースの番号を引く公開の入口は `registry.INTERFACES[name]`（`.revision`、`.op`、`.tlv`、`.enum`。例 `INTERFACES["oep.fixture.uart"].enum["role"]`）。`FIXTURE_UART` などのモジュールの名前は同じもの |
@@ -229,6 +229,17 @@ DMSTATUS.version が 2 以上で 15 でない（`FakeTarget.version`）。halt /
 `pin_state(ch)`（MISO は CS が有効な間だけ駆動 - `spi_select` -、i2c-target はオープンドレインで、宣言した pull-up だけ -
 `fake.with_i2c_pullups` -、plan を取っても使い始めるまでピンは変わらない、閉じた connection のピンは idle に戻る）。
 `fake.with_unit_id(probe, "x-...")` は `x-` の unit_id の probe を作る。
+
+その後の規則（oep-spec 2e70f40〜40291a4、`docs/v1-rule-change-proposal-2026-10-06.ja.md`）も入っている: インターフェースが定めない
+op と、probe が宣言しない任意の op（riscv-dm の block / run / reset / step は features、capture の query / force、保存の無い
+probe.config の save / erase）は session_required より先に unknown_operation（`offers`）。plan_apply と probe.config の set / unset
+は要求全体の形、名指しの fn、probe に無いもの、状態の順に調べる。要求でない role と短い要求は捨てる。時計は起動からの ns
+（分解能は `now_ns=`。fake_serve は `time.monotonic_ns` で、boot_id も引く）で戻らず、`reboot()` で 0 から。confirm の範囲と
+max_op_ms は `Endpoint` を作るときに調べる。reserved でない channel は起動で全部空きの状態に置く。target が答えない riscv-dm の
+op は status line で失敗し、成功するまで線を駆動しない（`pin_state` は `wire-free`）。出力の idle の channel を attach の reset
+TLV が名指せば unavailable cause 5 holder_kind 7。`search_retries` は立ち上げをしたときだけ。i2c-target は予約のアドレスを断り、
+TX の無い uart の write は unavailable cause 6、`esp32-v003` の spi-target は `cs_setup_ns` を宣言する。ピンの無い wire の
+profile は無いので、ピンの無い scan は試していない。
 
 外のプログラムの試験には `fake_serve` を子プロセスで使う:
 
