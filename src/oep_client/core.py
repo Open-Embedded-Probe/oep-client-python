@@ -85,6 +85,11 @@ def describe(hst: h.Host, fn: int = 0) -> list[tuple[int, bytes]]:
         if not more or not chunk:
             break
     out = catalog.split_tlv(data)
+    if fn == m.CORE_FN:
+        value = next((v for tag, v in out if tag & 0x7F == CORE_MAX_OP_MS and len(v) >= 4), None)
+        why = h.check_max_op_ms(struct.unpack_from("<I", value)[0]) if value is not None else ""
+        if why:
+            hst.not_usable(why)                                    # not conforming: not used (core §4.4, C-47)
     hst._describes[fn] = out
     return list(out)
 

@@ -190,7 +190,8 @@ class FixtureUart(PositionStream):
     """oep.fixture.uart: one position stream per fn, like the console without a stream byte. The stream exists while
     the plan gives the fn RX or TX; received bytes are kept from then on, whatever the session, and the position never
     goes back within one boot (a plan released and applied again carries on). Reads are lock-free and do not consume.
-    TX idles high while planned, before configure too."""
+    TX idles high while planned, before configure too; write on an fn whose plan has no TX is rejected unavailable
+    (cause 6, fixture §2)."""
     NAME = "oep.fixture.uart"
     REVISION = 1
     CONFIGURE, STATUS = _UART.op["configure"], _UART.op["status"]
@@ -315,7 +316,13 @@ class I2cTarget(_TargetDeclarations, Interface):
     def assignments(self, sda: int, scl: int) -> list[tuple[int, int, int]]:
         return [(self.fn, self.ROLE_SDA, sda), (self.fn, self.ROLE_SCL, scl)]
 
+    RESERVED_ADDRESSES = (range(0x00, 0x08), range(0x78, 0x80))   # I2C's own (general call, 10-bit prefix, ...)
+
     def configure(self, address: int, mode: int) -> None:
+        """address: 7 bits; 0x00-0x07 and 0x78-0x7F are the I2C specification's reserved addresses, which a probe
+        refuses unsupported (fixture §3, △5) - refused here before anything is sent."""
+        if any(address in r for r in self.RESERVED_ADDRESSES):
+            raise ValueError(f"I2C address 0x{address:02x} is reserved (0x00-0x07, 0x78-0x7F; fixture §3)")
         self._call(self.CONFIGURE, struct.pack("<BB", address, mode))
 
     def arm_rx(self, length: int) -> None:
@@ -392,10 +399,18 @@ class SpiTarget(_TargetDeclarations, Interface):
     MSB_FIRST, LSB_FIRST = 0, 1
     FEATURE_LSB_FIRST = _SPI.enum["features"]["lsb_first"]
     TAG_QUEUE_DEPTH = _SPI.tlv["describe"]["queue_depth"]
+    TAG_CS_SETUP_NS = _SPI.tlv["describe"]["cs_setup_ns"]
 
     def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
         super().__init__(hst, name, fn=fn)
         self.last_ns: int | None = None
+
+    @property
+    def cs_setup_ns(self) -> int:
+        """The shortest CS-active-to-first-SCK time (ns) for which the probe guarantees MISO carries the first bit,
+        under its normal load (describe tag 0x43, fixture §4); 0 when not declared (MISO is driven at once). A master
+        that starts SCK sooner cannot rely on the first bit: show it to the user."""
+        return self._declared(self.TAG_CS_SETUP_NS, "I") or 0
 
     def assignments(self, sck: int, mosi: int, miso: int, cs: int) -> list[tuple[int, int, int]]:
         return [(self.fn, self.ROLE_SCK, sck), (self.fn, self.ROLE_MOSI, mosi), (self.fn, self.ROLE_MISO, miso),

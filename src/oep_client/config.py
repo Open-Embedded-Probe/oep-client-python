@@ -408,7 +408,9 @@ class ProbeConfig(Interface):
 
     def state(self) -> State:
         """The storage's state and the live slot_state / bind_state (op state, lock-free, paged by first_slot /
-        first_bind)."""
+        first_bind). Each page carries storage_state, storage_hash and unreadable_reason as they were when it was
+        answered: the last page's are kept (probe-config §3.3, PC-9). The slots and binds may change between pages
+        too; a caller that needs them to stay the same pages while it holds the lock."""
         st = State()
         first_slot = first_bind = 0
         while True:

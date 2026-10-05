@@ -6,11 +6,17 @@ through with the same id proves nobody else operated the probe in between (oep-s
 
 oep-core §4.1: role 0x81 (a session id in the header) goes only to a probe whose confirm answered revision 1 or more; a
 v0 probe drops the unknown role without an answer. The host confirms before its first open or session request.
-oep-core §6.5 / §9: when the probe's boot_id changes (confirm, open, heartbeat), when the lease lapsed (rejected
-expired, open answering resumed = 2) and when another session came in between, by force or not (rejected no_session), every
-connection, stream and the plan this session had are gone: `epoch` counts those losses, so a client holding a
-connection can tell. An expired session is never re-opened behind the caller's back: `Expired` is raised and the caller
-opens again (host guide §2.5).
+oep-core §6.5 / §9: when the probe's boot_id changes (confirm, open, a heartbeat the link read), when the lease lapsed
+(rejected expired, open answering resumed = 2), when another session came in between, by force or not (rejected
+no_session), and when an open with the session_id this host used last is answered resumed = 0 (the probe no longer knows
+it: a reboot that may have repeated its boot_id, or another host in between; core §6.5, C-19), every connection, stream
+and the plan this session had are gone: `epoch` counts those losses, so a client holding a connection can tell. A
+reboot also drops the remembered name -> fn mapping and the describes, so they are listed again. An expired session is
+never re-opened behind the caller's back: `Expired` is raised and the caller opens again (host guide §9).
+
+A probe whose confirm answer is outside core §7.1's bounds (max_frame under 64, window under max_frame, max_inflight 0;
+C-20), or whose fn 0 describe declares a max_op_ms outside 1..600000 (core §4.4, §7.5; C-47), is not used: `NotUsable`
+is raised with the values, and nothing more is sent through this host.
 """
 
 from __future__ import annotations
@@ -47,6 +53,30 @@ class Failed(OepError):
 
 class NotV1(OepError):
     """The probe does not speak v1 (confirm answered revision 0, or refused the ranged confirm as malformed)."""
+
+
+class NotUsable(OepError):
+    """The probe declared values a conforming probe never does (core §7.1 confirm's bounds, C-20; §7.5 max_op_ms,
+    C-47): this host sends nothing more to it. The message reports the values."""
+
+
+MAX_OP_MS_MAX = reg.LIMITS["max_op_ms_max"]   # fn 0 describe max_op_ms is 1 to this (core §7.5)
+
+
+def check_confirm(max_frame: int, window: int, max_inflight: int) -> str:
+    """core §7.1 (C-20): max_frame >= min_max_frame (64), window >= max_frame, max_inflight >= 1. -> "" or why not."""
+    if max_frame < reg.MIN_MAX_FRAME or window < max_frame or max_inflight < 1:
+        return (f"confirm answered max_frame {max_frame}, window {window}, max_inflight {max_inflight}: outside core "
+                f"§7.1 (max_frame >= {reg.MIN_MAX_FRAME}, window >= max_frame, max_inflight >= 1); the transport is not used")
+    return ""
+
+
+def check_max_op_ms(value: int) -> str:
+    """core §4.4 / §7.5 (C-47): max_op_ms is 1 to max_op_ms_max (600000). -> "" or why the probe is not used."""
+    if not 1 <= value <= MAX_OP_MS_MAX:
+        return (f"describe of fn 0 declares max_op_ms {value}: outside 1..{MAX_OP_MS_MAX} (core §7.5), so the probe "
+                "does not conform and is not used")
+    return ""
 
 
 class Locked(Rejected):
@@ -228,6 +258,10 @@ class Host:
     # Called before a request takes its corr (the link's keepalive at a raised port_speed rate): what it sends first
     # must carry the lower corr, or the probe takes the request for an old one (core §4.1)
     before_request: Callable[[], None] | None = None
+    # Called with confirm's limits after every confirm answer (the link's max_frame for the transfer time, core §4.4)
+    on_limits: Callable[[dict], None] | None = None
+    unusable: str = ""                     # why this probe is not used (C-20, C-47): set, nothing more is sent
+    uptime_ns: int | None = None           # the last heartbeat's uptime (core §11.2, fn 0 kind 0x01)
 
     @contextlib.contextmanager
     def expecting(self, ms: int):
@@ -264,6 +298,7 @@ class Host:
         """locked=True sends the session id (role 0x81) once a session is open; lock-free requests may leave it off.
         expect_ms: how long this request may take on the probe (`expecting`). Rejections raise; any other answer is
         returned (Result.succeeded / .ran say what it was)."""
+        self.require_usable()
         if self.before_request is not None:
             self.before_request()
         req = m.Request(self.next_corr(), fn, op, payload, self._session_for(locked))
@@ -300,10 +335,26 @@ class Host:
             self._lost()
         self._boot_id = boot_id
 
+    def heartbeat_seen(self, boot_id: int, uptime_ns: int) -> None:
+        """fn 0's heartbeat event (core §11.2: boot_id, uptime_ns), as the link reads it: the boot_id is watched like
+        confirm's and open's, the uptime kept (`uptime_ns`)."""
+        self.boot_id_seen(boot_id)
+        self.uptime_ns = uptime_ns
+
+    def not_usable(self, why: str) -> None:
+        """Stop using this probe (C-20, C-47): every later request raises NotUsable with `why`."""
+        self.unusable = why
+        raise NotUsable(why)
+
+    def require_usable(self) -> None:
+        if self.unusable:
+            raise NotUsable(self.unusable)
+
     def pipeline(self, requests: list[tuple[int, int, bytes]], exchange: Callable[[list[bytes]], list[bytes]] | None = None,
                  *, locked: bool = True) -> list[m.Result]:
         """Several requests in flight (`exchange` keeps the probe's in-flight and window limits); results in
         order, rejects NOT raised - the caller looks at each result. Without `exchange`, one at a time."""
+        self.require_usable()
         session = self._session_for(locked)
         if self.before_request is not None:
             self.before_request()
@@ -376,12 +427,17 @@ class Host:
                 raise ProtocolError(f"confirm answered revision {revision}, outside the {min_rev}..{max_rev} asked")
             flags, max_frame, window, inflight, boot_id = rd.take("BHIBI")
             tail = rd.tail()
+            why = check_confirm(max_frame, window, inflight)
+            if why:
+                self.not_usable(why)                        # sends nothing more and reports the values (C-20)
             self.boot_id_seen(boot_id)
         self.revision = revision
         where = tail.get(CONFIRM_TRANSPORT)
         self.limits = {"magic": magic, "revision": revision, "flags": flags, "max_frame": max_frame, "window": window,
                        "max_inflight": inflight, "boot_id": boot_id, "transport": where[0] if where else None,
                        "tail": tail}
+        if self.on_limits is not None:
+            self.on_limits(self.limits)
         return self.limits
 
     def confirmed(self) -> dict:
@@ -412,6 +468,7 @@ class Host:
         if sid == 0:
             raise ValueError("session_id 0 is not a session (core §6.1)")
         tail = m.tlv(OWNER, owner_text(owner)) if owner else b""
+        last = self.session if session is None else session   # the id this host used last (C-19)
         r = self.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IIB", sid, lease_ms, int(force)) + tail, locked=False)
         if sid != self.session:
             self.subscriptions.clear()
@@ -425,6 +482,10 @@ class Host:
             self._swept()
         elif resumed != RESUMED["resumed"]:
             self.subscriptions.clear()
+            if sid == last:
+                # the probe no longer knows the id this host used last: a reboot (its boot_id may have repeated) or
+                # another session in between - list again before a remembered fn is used (core §6.5, C-19)
+                self._lost()
         return Opened(lease, boot_id, resumed)
 
     def end(self) -> None:

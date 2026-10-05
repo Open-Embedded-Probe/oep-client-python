@@ -12,7 +12,17 @@ on. When pushes keep the input from going quiet, the host's unsubscribe and end 
 
 A request is sent once more after a missing (or, on length frames, broken) reply, with the same corr: the probe keeps
 the lock holder's recent results and answers the repeat from them, so a state-changing request is not run twice
-(oep-core §5.2).
+(oep-core §5.2). When the resend gets no answer either, the transport has failed (core §5.2, C-38; host guide §8):
+`TransportFailed` is raised (the outcome of that request, and of every request outstanding with it, is unknown), and
+before anything else goes out the link recovers with the §5.1 confirm - quiet input, then a confirm until the answer
+with its own corr - on a serial port too (`recover_transport`; ConnectionError when none is answered: reopen). A changed
+boot_id in that confirm reaches the host as a reboot; read the state before repeating a state-changing request.
+
+Frames the probe sends by itself are routed: data pushes and events are kept (`pushes`, `events`), and fn 0's
+heartbeat goes to the host, which watches its boot_id like confirm's (core §6.5, §11.2). A result shorter than 5
+bytes, or an event or data frame shorter than its header, is a broken frame; a request role from the probe is dropped
+(core §2.4, C-36). The transfer time of the wait counts min_max_frame (64) until a confirm answer came on the
+transport, then the latest one's max_frame (core §4.4, N-1).
 
 A serial port is opened exclusively (host guide §2): pyserial's `exclusive=True` (flock, advisory) and, on Linux and
 macOS, TIOCEXCL, so a second open fails at once (EBUSY) instead of sharing the answers. The port opens with pyserial's
@@ -83,6 +93,17 @@ TEMPORARY_VENDOR_INTERFACE = (reg.USB["vendor_bulk_class"], reg.USB["vendor_bulk
                               reg.USB["vendor_bulk_protocol"])
 TEMPORARY_HID_USAGE_PAGE = reg.USB["hid_usage_page"]
 PROBE_WAIT_S = reg.TIMING["host_wait_add_ms"] / 1000   # the probing rule's wait for confirm's answer (core §3.3, §4.4)
+
+
+RESULT_HEADER, DATA_HEADER, EVENT_HEADER = 5, 5, 6   # the shortest result, data and event frames (core §4.2, §11.1)
+HEARTBEAT = reg.CORE.event["heartbeat"]
+
+
+class TransportFailed(TimeoutError):
+    """core §5.2 (C-38): a request's resend got no answer either. Its outcome is unknown and the requests outstanding
+    on the transport failed with it; the link sends nothing else there until it has recovered with the §5.1 confirm
+    (done before the next request; ConnectionError when no confirm is answered). After that, read the state before
+    repeating a state-changing request."""
 
 
 class CorrMismatch(FramingLost):
@@ -288,7 +309,12 @@ class SerialLink:
         self.keepalive_frame = None                # raised: a keepalive request in the session, once bound (attach_host)
         self.last_tx = time.monotonic()            # when the link last wrote (raised: quiet for KEEPALIVE_S = keepalive)
         self.last_write: float | None = None       # when this host last wrote to the port (None: never; core §5.1)
-        self.max_frame = reg.MIN_MAX_FRAME         # the probe's max_frame once confirmed (the wait's transfer time)
+        self.max_frame = reg.MIN_MAX_FRAME         # min_max_frame until a confirm answer, then its max_frame (§4.4, N-1)
+        self.on_heartbeat = lambda boot_id, uptime_ns: None   # fn 0's heartbeat read off the line (core §11.2)
+        self.on_boot_id = lambda boot_id: None     # the boot_id of the link's own confirms (resync, recovery)
+        self.failed_transport = ""                 # why: a resend went unanswered (core §5.2, C-38); recover first
+        self.recoveries = 0                        # failed-transport recoveries made (a confirm answered)
+        self.heartbeats = 0                        # fn 0 heartbeats read
         self.wait_add_s = WAIT_ADD_S               # the floor's host_wait_add_ms (a test of an in-process fake shortens it)
         self.tx_len = 0                            # the longest frame on the wire of the last write
         self.confirm_body = lambda: _OWN_CONFIRM   # the link's own confirm: the revision in use once bound (C-15)
@@ -383,17 +409,39 @@ class SerialLink:
         return message[1] | message[2] << 8          # request and result both carry it right after the role byte
 
     def _route(self, frame: bytes) -> bool:
-        """Frames that are not results: data pushes and events are kept, other roles dropped. True if `frame` was one
-        of them. Only a result (role 0x02) carries a correlation id; matching anything else by its bytes 1-2 would take
-        a push for a reply whenever its fn happened to equal the id."""
+        """Frames that are not results: data pushes and events are kept, other roles (a request echoed back among them)
+        dropped (core §2.4). True if `frame` was one of them. Only a result (role 0x02) carries a correlation id;
+        matching anything else by its bytes 1-2 would take a push for a reply whenever its fn happened to equal the id.
+        fn 0's heartbeat (kind 0x01: boot_id, uptime_ns) goes to `on_heartbeat` - the host watches its boot_id - and
+        is kept with the other events. A result shorter than 5 bytes, or an event / data frame shorter than its header,
+        is a broken frame (core §2.4, C-36): `_broken`."""
         if frame and frame[0] == m.ROLE_RESULT:
-            return False
+            return len(frame) < RESULT_HEADER and self._broken(frame, "a result shorter than its header")
         if frame and frame[0] == m.ROLE_DATA:
+            if len(frame) < DATA_HEADER:
+                return self._broken(frame, "a data frame shorter than its header")
             self.pushes.append(frame)
         elif frame and frame[0] == m.ROLE_EVENT:
+            if len(frame) < EVENT_HEADER:
+                return self._broken(frame, "an event shorter than its header")
+            if frame[1:3] == b"\x00\x00" and frame[5] == HEARTBEAT and len(frame) >= EVENT_HEADER + 12:
+                self.heartbeats += 1
+                self.on_heartbeat(*struct.unpack_from("<IQ", frame, EVENT_HEADER))
             self.events.append(frame)
         else:
             self.dropped += 1
+        return True
+
+    def _broken(self, frame: bytes, why: str) -> bool:
+        """A frame that decoded but cannot be read (C-36): on a length-framed link the boundaries are in doubt (the
+        §5.1 resync follows); on a serial port it is a broken frame like a bad CRC - the awaited answer while a session
+        holds the port (resent at once, §5.2), noise skipped otherwise (-> True)."""
+        if self.framing == "length":
+            raise FramingLost(why)
+        if self.held():
+            self._count("broken")
+            raise cobs.CorruptFrame(why)
+        self.noise += len(frame)
         return True
 
     def _recv_for(self, corr: int) -> bytes:
@@ -476,6 +524,7 @@ class SerialLink:
                     if self._route(reply):
                         continue
                     if len(reply) >= 3 and self._corr(reply) == corr:
+                        self._confirmed(reply)  # its boot_id: a reboot shows (core §5.2, §6.5)
                         return                  # any result with our correlation proves the boundaries again
             except (FramingLost, TimeoutError):
                 continue
@@ -488,13 +537,89 @@ class SerialLink:
         if self.framing == "length" and not getattr(self, "_probing", False):
             self.resync()
 
+    def _fail_transport(self, e: Exception) -> None:
+        """core §5.2 (C-38): the resend went unanswered too - the transport failed. Its outcome is unknown, so are the
+        requests outstanding with it; nothing else goes out before `recover_transport` (the next request runs it)."""
+        if getattr(self, "_probing", False):
+            raise e                                        # probing: the probe() caller closes the link (core §3.3)
+        why = f"a request and its resend got no answer ({type(e).__name__}: {e})"
+        if self.framing != "length":                       # a length-framed link has just resynced with a confirm
+            self.failed_transport = why                    # (`_recover`): recovered; a serial port recovers next
+        raise TransportFailed(why) from e
+
+    def recover_transport(self, tries: int = 3) -> None:
+        """core §5.2 / §5.1 (C-38), on every kind of frame, COBS included: read and discard until the input is quiet,
+        wait host_resync_wait_ms since this host's last write, then a confirm until the answer with its own corr comes
+        (other frames read past). A changed boot_id in it goes to the host (a reboot, core §6.5). ConnectionError when
+        no confirm is answered in `tries`: the transport stays failed (close and open it again)."""
+        if self.framing == "length":
+            self.resync(tries)
+        else:
+            saved = self.timeout
+            self._own += 1
+            try:
+                for _ in range(tries):
+                    self._quiet_serial(RESYNC_QUIET_S, self.NOISY_S)
+                    self._settle_before_confirm()
+                    corr = self.corr_source()
+                    self._write([m.Request(corr, m.CORE_FN, m.OP_CONFIRM, self.confirm_body()).pack()])
+                    deadline = time.monotonic() + max(saved, self.wait_add_s + self.transfer_s())
+                    try:
+                        while True:
+                            self.timeout = max(0.0, deadline - time.monotonic())
+                            try:
+                                self._confirmed(self._recv_for(corr))
+                                break
+                            except cobs.CorruptFrame:
+                                if time.monotonic() >= deadline:
+                                    raise TimeoutError("no confirm") from None
+                        break
+                    except TimeoutError:
+                        continue
+                else:
+                    raise ConnectionError(f"the transport failed ({self.failed_transport}) and no confirm came back "
+                                          f"in {tries} tries: close and open it again")
+            finally:
+                self.timeout = saved
+                self._own -= 1
+        self.failed_transport = ""
+        self.recoveries += 1
+
+    def _quiet_serial(self, quiet_s: float, most_s: float) -> None:
+        """A serial port: drop what was read and read on until nothing arrives for `quiet_s` (at most `most_s`)."""
+        self._buf.clear()
+        end = time.monotonic() + most_s
+        last = time.monotonic()
+        while time.monotonic() < end and time.monotonic() - last < quiet_s:
+            data = self.stream.read(max(1, self.stream.in_waiting))
+            if data:
+                last = time.monotonic()
+            else:
+                time.sleep(0.005)
+        self._buf.clear()
+
+    def _confirmed(self, reply: bytes) -> None:
+        """A confirm answer the link read for itself (resync, recovery): its boot_id to the host (`on_boot_id`; a
+        change means a reboot, core §6.5) and its max_frame for the transfer time (core §4.4)."""
+        try:
+            r = m.Result.unpack(reply)
+        except m.ProtocolError:
+            return
+        p = r.payload
+        if r.succeeded and len(p) >= 17 and p[:4] == m.CONFIRM_RESULT and p[4] >= 1:
+            self.max_frame = max(reg.MIN_MAX_FRAME, struct.unpack_from("<H", p, 6)[0])
+            self.on_boot_id(struct.unpack_from("<I", p, 13)[0])
+
     def send(self, message: bytes) -> bytes:
+        if self.failed_transport:
+            self.recover_transport()                       # nothing else goes out before (core §5.2, C-38)
         self._keep_raised()
         try:
             reply = self._send(message)
         except LINK_ERRORS as e:
             if not self._speed_fallback(e):
                 raise
+            self.failed_transport = ""             # the fallback confirmed the probe at the boot speed: recovered
             reply = self._send(message)            # once more at the boot speed (the probe answers a repeat from what it kept)
         if self.baud != self.base_baud and self._reverts(message, reply):
             self.set_baud(self.base_baud)          # the probe went back right after this answer (core §3.5 ob. 6)
@@ -534,7 +659,9 @@ class SerialLink:
                     self.corrupt += 1
                 self._strike(e)
                 self._recover()
-                if attempt or not self.resend or (message[0] & m.ROLE_SESSION and self.ended_blind):
+                if attempt:
+                    self._fail_transport(e)                # the resend got no answer either (core §5.2, C-38)
+                if not self.resend or (message[0] & m.ROLE_SESSION and self.ended_blind):
                     raise
                 # sent once more with the same corr, state-changing ones too: the probe keeps the lock holder's recent
                 # results and answers a repeat from them instead of running it twice (v1-open-proposals §4). A result
@@ -549,6 +676,8 @@ class SerialLink:
         answered go once more with the same corr (oep-core §5.2: the probe answers a repeat from what it kept); a second
         failure is raised.
         """
+        if self.failed_transport:
+            self.recover_transport()                       # nothing else goes out before (core §5.2, C-38)
         self._keep_raised()
         replies: list[bytes] = []
         try:
@@ -565,7 +694,8 @@ class SerialLink:
             except LINK_ERRORS as e2:
                 self._strike(e2)
                 if not self._speed_fallback(e2):
-                    raise
+                    self._fail_transport(e2)               # the resends went unanswered: every one outstanding fails
+                self.failed_transport = ""
                 rest = rest[len(more):]
                 out = replies + more + self._exchange_once(rest, max_inflight, window_bytes, [])
         self._step_down_if_due()
@@ -605,7 +735,8 @@ class SerialLink:
             while True:
                 self.timeout = max(0.0, deadline - time.monotonic())
                 try:
-                    self._recv_for(corr)
+                    self._confirmed(self._recv_for(corr))
+                    self.failed_transport = ""             # a confirm answered: the transport is in step (§5.1)
                     return True
                 except cobs.CorruptFrame:
                     if time.monotonic() >= deadline:
@@ -895,9 +1026,16 @@ class SerialLink:
         hst.before_request = self._keep_raised      # the keepalive before the request's corr is taken (core §4.1)
         self.expected_s = lambda: hst.expect_ms / 1000
         self.confirm_body = hst.confirm_body        # the revision in use after the first confirm (core §7.1, C-15)
+        self.on_heartbeat = hst.heartbeat_seen      # fn 0's heartbeats: the boot_id watched (core §6.5, §11.2)
+        self.on_boot_id = hst.boot_id_seen          # the link's own confirms (resync, recovery): a reboot shows (C-38)
+        hst.on_limits = self._limits                # every confirm answer: max_frame for the transfer time (N-1)
         hst.link = self
         limits = self.probe(hst)
         hst.exchange = self.bind(limits)
+
+    def _limits(self, limits: dict) -> None:
+        """confirm's answer on this transport: until the first one the transfer time counts min_max_frame (64), then
+        the max_frame of the latest (core §4.4, N-1); a length-framed reader bounds frames by it."""
         if limits.get("max_frame"):
             self.max_frame = limits["max_frame"]
             if self.framing == "length":
