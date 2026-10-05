@@ -282,7 +282,7 @@ def _core(firmware: str, model: str, unit_id: str, channels: int, reserved: list
 def p4_x035() -> FakeProbe:
     """ESP32-P4 development probe on the CH32X035F8U6 jig (as wired on 2026-09-24), in the recommended USB shape
     (probe guide §8): USB-Serial/JTAG (serial port 0), and on the HS port vendor bulk, HID and a CDC (serial port 3)
-    on the board's default VID:PID (no discoverable: that is the project's VID:PID only, core §7.5)."""
+    on the project's VID:PID (discoverable, core §7.5)."""
     reserved = [24, 25]                             # USB-Serial/JTAG (the probe's own: never an interface's)
     pins = [p for p in range(55) if p not in reserved + [2, 54]]   # the fixtures' pins: all but the RVSWD pair
     return FakeProbe("p4-x035", 1024, [
@@ -290,7 +290,7 @@ def p4_x035() -> FakeProbe:
               {2: "SWDIO", 54: "SWCLK", 51: "LED"},
               _transports([(TRANSPORT["usb_serial_jtag"], 0xFF), (TRANSPORT["vendor_bulk"], 0),
                            (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)])
-              + (catalog.text(CORE_CHIP, "esp32p4 v1.0"),)),
+              + (catalog.u8(CORE_DISCOVERABLE, 1), catalog.text(CORE_CHIP, "esp32p4 v1.0"))),
         Offered(1, 0, "oep.wire.rvswd", (
             catalog.channel_group(1, [(1, 2), (2, 54)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(IMPLEMENTATION, 1),
             catalog.u8(MAX_CONNECTIONS, 1))),
@@ -351,15 +351,15 @@ def esp32_v003() -> FakeProbe:
 
 def p4_bench() -> FakeProbe:
     """A made-up bench probe with three RVSWD places and two seats (slots, the seat rule and the bind modes can be
-    exercised): USB-Serial/JTAG (serial port 0), vendor bulk, HID and a CDC (serial port 3) on the board's default
-    VID:PID (no discoverable: that is the project's VID:PID only, core §7.5)."""
+    exercised): USB-Serial/JTAG (serial port 0), vendor bulk, HID and a CDC (serial port 3) on the project's VID:PID
+    (discoverable, core §7.5)."""
     reserved = [24, 25]                             # USB-Serial/JTAG (the wires' pins 2-7 are interfaces')
     pins = [p for p in range(55) if p not in reserved + list(range(2, 8))]
     return FakeProbe("p4-bench", 1024, [
         _core("3.0.0", "esp32p4", "30eda0e3b001", 55, reserved, f"{NS}.p4-bench",
               {2: "A SWDIO", 3: "A SWCLK", 4: "B SWDIO", 5: "B SWCLK", 6: "C SWDIO", 7: "C SWCLK"},
               _transports([(TRANSPORT["usb_serial_jtag"], 0xFF), (TRANSPORT["vendor_bulk"], 0),
-                           (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)])),
+                           (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)]) + (catalog.u8(CORE_DISCOVERABLE, 1),)),
         Offered(1, 0, "oep.wire.rvswd", (
             catalog.channel_group(1, [(1, 2), (2, 3)]), catalog.channel_group(2, [(1, 4), (2, 5)]),
             catalog.channel_group(3, [(1, 6), (2, 7)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000),
@@ -375,13 +375,14 @@ def p4_bench() -> FakeProbe:
 
 def rp2350_pins() -> FakeProbe:
     """A board firmware whose wire takes its pins from the host (oep-if-debug §1, role_channels): any two of GP0-GP29
-    but GP19 (the Pro Micro RP2350's PSRAM CS) are an RVSWD pair, a reset line or fixture pins. USB CDC (serial port 0).
+    but GP19 (the Pro Micro RP2350's PSRAM CS) are an RVSWD pair, a reset line or fixture pins. USB CDC (serial port 0)
+    on the project's VID:PID (discoverable, core §7.5).
     The fake target answers on (0, 1), the first pair."""
     reserved = [19]
     pins = [p for p in range(30) if p not in reserved]
     return FakeProbe("rp2350-pins", 1024, [
         _core("3.0.0", "rp2350", "e66138935f2b1f2c", 30, reserved, "",
-              {}, _transports([(TRANSPORT["usb_cdc"], 0)])),
+              {}, _transports([(TRANSPORT["usb_cdc"], 0)]) + (catalog.u8(CORE_DISCOVERABLE, 1),)),
         Offered(1, 0, "oep.wire.rvswd", _roles({1: pins, 2: pins, 3: pins}) + (
             catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(IMPLEMENTATION, 1), catalog.u8(MAX_CONNECTIONS, 1))),
         Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
