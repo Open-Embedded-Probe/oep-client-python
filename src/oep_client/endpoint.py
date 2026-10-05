@@ -1430,6 +1430,8 @@ class Endpoint:
         if op == m.OP_UNSUBSCRIBE:
             fn = t.take("H")
             t.tail()
+            if fn != m.CORE_FN and fn not in self.names:
+                return m.REJECTED, m.UNKNOWN_FUNCTION, b""         # an fn inside the payload (core §4.3 order 5, C-21)
             self.subscribed.discard(fn)
             return m.COMPLETED, m.SUCCESS, b""
         if op == m.OP_PLAN_APPLY:
@@ -1458,12 +1460,13 @@ class Endpoint:
                     t.ignored.append(tag)                          # unknown non-critical: listed (core §2.3)
             if len(set(got)) != len(got) or any(fn == m.CORE_FN for fn, _, _ in got):
                 raise Reject(m.MALFORMED)                          # the same (fn, role, channel) twice, or fn 0 (core §8)
-            if refused is not None:
-                raise Reject(m.UNSUPPORTED, bytes([refused]))      # the tag as received (core §2.3)
+            self._check_target_roles(got)                          # the whole form first (core §4.3 order 5) ...
             named = {fn for fn, _, _ in got}
             if any(fn not in self.names for fn in named):
-                raise Reject(m.UNKNOWN_FUNCTION)
-            self._check_target_roles(got)                          # malformed before held_by_settings (core §4.3)
+                raise Reject(m.UNKNOWN_FUNCTION)                   # ... then its fns, at the end of order 5 (C-21)
+            if refused is not None:
+                raise Reject(m.UNSUPPORTED, bytes([refused]))      # order 6: the tag as received (core §2.3)
+            self._check_plan(got, held=False)                      # order 6: roles and channels not declared
             if named & self.plan_from_config:                       # the settings' plan is the settings' (core §8)
                 raise unavailable("held_by_settings", holder_fn=min(named & self.plan_from_config),
                                   holder_kind="settings_plan")
@@ -1499,57 +1502,79 @@ class Endpoint:
             if sorted(r for r, _ in mine) != sorted(roles) or len({ch for _, ch in mine}) != len(mine):
                 raise Reject(m.MALFORMED)
 
-    def _check_plan(self, got: list[tuple[int, int, int]]) -> None:
-        """plan_apply's all-or-nothing check: the roles each fn has, and no pin another fn (or a slot) holds."""
+    def _check_plan(self, got: list[tuple[int, int, int]], held: bool = True, tag_of=None) -> None:
+        """plan_apply's all-or-nothing check, in core §4.3's order over the whole request: the roles and channels each
+        fn declares (unsupported, order 6) for every assignment, then - `held` - no pin another fn, a slot or a
+        connection holds (unavailable, order 7). `tag_of(fn)`: the tag an unsupported names (probe.config's plan item
+        as received; default the role_assignment's 0x90)."""
         self._check_target_roles(got)
+        for declared in (True, False) if held else (True,):
+            self._check_plan_pass(got, declared, tag_of)
+
+    def _check_plan_pass(self, got: list[tuple[int, int, int]], declared: bool, tag_of) -> None:
         named = {fn for fn, _, _ in got}
         others = {a for a in self.plan if a[0] not in named}
         kept = {a for a in others if not self._listens(a[0])}
         slot_pins = {p for s in self.slots.values() for p in s.pair if p != 0xFFFF}
         slot_pins |= {p for c in self.conns.values() for p in c.pair if p != 0xFFFF}   # a live connection's pins too
         analog = {fn for fn, cap in self.captures.items() if cap.analog}
-        def not_declared(ch: int) -> Reject:
-            # a role or channel the describe does not offer: unsupported, tag 0x90 + the channel (core §8)
-            return Reject(m.UNSUPPORTED, bytes([ROLE_ASSIGNMENT | m.TAG_CRITICAL])
-                          + m.tlv(_UNA["channel"], struct.pack("<H", ch)))
+        current = [None]                                           # the fn of the assignment being checked
 
-        def held(ch: int, holder: int | None) -> Reject:
+        def not_declared(ch: int) -> Reject | None:
+            # a role or channel the describe does not offer: unsupported, tag 0x90 + the channel (core §8); this pass
+            # raises only its own kind (None: the other pass's)
+            if not declared:
+                return None
+            tag = tag_of(current[0]) if tag_of else ROLE_ASSIGNMENT | m.TAG_CRITICAL
+            return Reject(m.UNSUPPORTED, bytes([tag]) + m.tlv(_UNA["channel"], struct.pack("<H", ch)))
+
+        def held(ch: int, holder: int | None) -> Reject | None:
+            if declared:
+                return None
             if holder is not None:
                 return unavailable("pin_in_use", ch, holder, "plan")
             slot = next((n for n, s in self.slots.items() if ch in s.pair), None)
             conn = next((c.fn for c in self.conns.values() if ch in c.pair), None)
             return unavailable("pin_in_use", ch, conn, "slot" if slot is not None else "connection")
+        def check(r: Reject | None) -> None:
+            if r is not None:
+                raise r
         for fn, role, ch in got:
+            current[0] = fn
             beside = [f for f, _, c in got if c == ch and f != fn] + [a[0] for a in others if a[2] == ch]
             if fn in analog:   # the analog shares its pin with nothing: another fn's plan, a slot, a connection
                 if role not in self._declared_roles(fn, ch):
-                    raise not_declared(ch)
+                    check(not_declared(ch))
+                    continue
                 if beside or ch in slot_pins:
-                    raise held(ch, beside[0] if beside else None)
-                if self._output_idle(ch):                          # its pad would leave an output idle (capture §1.2)
+                    check(held(ch, beside[0] if beside else None))
+                if self._output_idle(ch) and not declared:         # its pad would leave an output idle (capture §1.2)
                     raise unavailable("held_by_settings", ch, holder_kind="settings_idle")
                 continue
             if any(f in analog for f in beside):   # nor may anything come onto an analog pin
-                raise held(ch, next(f for f in beside if f in analog))
+                check(held(ch, next(f for f in beside if f in analog)))
             if fn in self.captures:
                 if role not in self._declared_roles(fn, ch):
-                    raise not_declared(ch)
+                    check(not_declared(ch))
                 continue
             roles = TARGET_ROLES.get(self.names.get(fn, ""), set())
             if role not in roles or ch not in self._declared_channels(fn):
-                raise not_declared(ch)
+                check(not_declared(ch))
+                continue
             if fn in self.i2c or fn in self.spi:                   # role_channels binds the roles it lists (core §7.4)
                 listed = self._listed_roles(fn)
                 if role in listed and role not in self._declared_roles(fn, ch):
-                    raise not_declared(ch)
+                    check(not_declared(ch))
+                    continue
             if any(k[2] == ch for k in kept) or ch in slot_pins:
-                raise held(ch, next((k[0] for k in kept if k[2] == ch), None))
+                check(held(ch, next((k[0] for k in kept if k[2] == ch), None)))
         for fn in {f for f, _, _ in got if f in self.i2c or f in self.spi}:
+            current[0] = fn
             groups = [set(catalog.unpack_channel_group(t[2:2 + t[1]])[1]) for t in self.static[fn]
                       if t[0] == catalog.CHANNEL_GROUP]
             mine = {(role, ch) for f, role, ch in got if f == fn}
             if groups and mine not in groups:                      # one channel_group exactly (core §7.4)
-                raise not_declared(min(ch for _, ch in mine))
+                check(not_declared(min(ch for _, ch in mine)))
 
     def _declared_roles(self, fn: int, channel: int) -> set[int]:
         """The roles fn's describe offers on `channel` (role_channels)."""
@@ -2792,12 +2817,14 @@ class Endpoint:
             except m.ProtocolError:
                 raise Reject(m.MALFORMED) from None
             as_sent = {}
+            undeclared = None                                      # the first item this probe does not handle (order 6)
             for received, value in tlvs:
                 tag = received & 0x7F                              # kept without the critical bit
                 if tag in (m.TAG_FIXED, m.TAG_IGNORED):
                     raise Reject(m.MALFORMED)
                 if tag not in self.items:
-                    raise Reject(m.UNSUPPORTED, bytes([received]))  # the tag as received (core §2.3)
+                    undeclared = undeclared if undeclared is not None else received   # the tag as received (§2.3)
+                    continue                                       # refused after every item's form (core §4.3)
                 if tag != ITEM["plan"] and len(value) >= self._key_len(tag):
                     as_sent[(tag, self._item_key(tag, value))] = received
                 if tag == ITEM["plan"]:                            # one item per assignment, key (fn, role, channel)
@@ -2808,6 +2835,7 @@ class Endpoint:
                         raise Reject(m.MALFORMED)
                     seen.add((tag, key))
                     plans.setdefault(key[0], []).append(value)
+                    as_sent.setdefault((tag, key[0]), received)
                     continue
                 key = self._item_key(tag, value)
                 if (tag, key) in seen:
@@ -2816,18 +2844,22 @@ class Endpoint:
                 new[(tag, key)] = value
             for fn, values in plans.items():
                 new[(ITEM["plan"], fn)] = values
-            self._apply_config(new, changed_slots={k for t_, k in seen if t_ == ITEM["slot"]}, received=as_sent)
+            self._apply_config(new, changed_slots={k for t_, k in seen if t_ == ITEM["slot"]}, received=as_sent,
+                               undeclared=undeclared)
             return m.COMPLETED, m.SUCCESS, struct.pack("<I", self._hash(self.config))
         if op == _CFG.op["unset"]:                                 # n(u8) n x (len(u8) tag(u8) key)
             n = t.take("B")
-            keys = []
+            keys, undeclared = [], None
             for _ in range(n):
                 row = Take(t.bytes(t.take("B")))
                 tag = row.take("B")
                 if tag not in self.items:
-                    raise Reject(m.UNSUPPORTED, bytes([tag]))
+                    undeclared = tag if undeclared is None else undeclared   # after the whole form (core §4.3)
+                    continue
                 keys.append((tag, self._item_key(tag, row.data[row.at:])))
             t.tail()
+            if undeclared is not None:
+                raise Reject(m.UNSUPPORTED, bytes([undeclared]))
             new = dict(self.config)
             for tag, key in keys:
                 new.pop((tag, key), None)                          # a key that is not there: nothing
@@ -2967,44 +2999,29 @@ class Endpoint:
             self.saved_ids = {fn: self.identity[fn] for fn in self._referenced(self.config) if fn in self.identity}
 
     def _apply_config(self, new: dict, changed_slots: set[int] | None = None, boot: bool = False,
-                      received: dict | None = None) -> None:
+                      received: dict | None = None, undeclared: int | None = None) -> None:
         """Check the whole config, then make it the current one (set is all-or-nothing up to reserving resources);
         automatic attaches and console opens follow (and are not rolled back). `received`: (tag, key) -> the item's
-        tag as the set sent it (the critical bit kept), for the unsupported payloads that name it."""
+        tag as the set sent it (the critical bit kept; a plan's key is its fn), for the unsupported payloads that name
+        it. `undeclared`: the first item tag of the set this probe does not handle.
+
+        The checks run in core §4.3's order over every item at once (C-21): the form of each item and the
+        contradictions between items (malformed, order 5), then the fns the items name (unknown_function, the end of
+        order 5), then what this probe does not handle (unsupported, order 6), then the state and the resources
+        (unavailable, order 7). Items are visited in the canonical order (tag, key)."""
         received = received or {}
-        slots, binds = {}, {}
-        for (tag, key), value in new.items():
+        items = sorted(new.items(), key=lambda kv: kv[0])
+        # order 5: each item's form, then the contradictions between items
+        slots: dict[int, Slot] = {}
+        for (tag, key), value in items:
             if tag == ITEM["slot"]:
-                slots[key] = self._item_refusal(received, tag, key, self._parse_slot, value)
-        names = [s.name for s in slots.values()]
-        if len(set(names)) != len(names):
-            raise Reject(m.MALFORMED)
-        places = [(s.wire_fn, s.pair) for s in slots.values()]
-        if len(set(places)) != len(places):
-            raise Reject(m.MALFORMED)                              # two slots on one place: the settings contradict
-        disabled = {key for tag, key in new if tag == ITEM["disable"]}
-        idles = {key for tag, key in new if tag == ITEM["idle"]}
-        if disabled & idles:
-            raise Reject(m.MALFORMED)                              # idle and disable for one channel (probe.config §1)
-        for fn in self.pairs:                                      # every wire (pin_roles wires have an empty list)
-            if sum(1 for s in slots.values() if s.wire_fn == fn and s.attach == SLOT_ATTACH["at_boot"]) > \
-                    self.max_connections.get(fn, 1):
-                raise unavailable("limit")
-        for (tag, key), value in new.items():
-            if tag == ITEM["bind"]:
-                binds[key] = self._item_refusal(received, tag, key, self._parse_bind, value, slots)
-        plans: dict[int, list[tuple[int, int, int]]] = {}
-        uarts: dict[int, tuple[int, int]] = {}
-        for (tag, key), value in new.items():
-            if tag == ITEM["plan"]:
-                if any(len(v) != 5 for v in value):
-                    raise Reject(m.MALFORMED)
-                plans[key] = [struct.unpack_from("<HBH", v) for v in value]
-                if key not in self.names or key == m.CORE_FN:
-                    raise Reject(m.UNKNOWN_FUNCTION if key else m.MALFORMED)
+                slots[key] = self._parse_slot(value, "form")
+            elif tag == ITEM["plan"]:
+                if any(len(v) != 5 for v in value) or key == m.CORE_FN:
+                    raise Reject(m.MALFORMED)                      # fn 0 holds no plan (core §8)
             elif tag == ITEM["idle"]:
                 # channel mode [drive_kind drive_value] (probe.config §1): 4 or 5 bytes, a drive on a mode other than
-                # 3 / 4 are malformed; past the drive, later fields (skipped)
+                # 3 / 4 are malformed (not checked when the mode is undefined, core §4.3); past the drive, later fields
                 if len(value) < 3 or len(value) in (4, 5):
                     raise Reject(m.MALFORMED)
                 output = value[2] in (IDLE_MODE["output_low"], IDLE_MODE["output_high"])
@@ -3015,15 +3032,47 @@ class Endpoint:
                 if not 3 <= len(value) <= 2 + reg.LIMITS["label_max_bytes"] or not valid_text(value[2:]):
                     raise Reject(m.MALFORMED)
             elif tag == ITEM["uart"]:
-                if len(value) < 7:
-                    raise Reject(m.MALFORMED)
-        for (tag, key), value in sorted(new.items(), key=lambda kv: kv[0]):   # what this probe cannot handle
+                if len(value) < 7 or struct.unpack_from("<I", value, 2)[0] == 0:
+                    raise Reject(m.MALFORMED)                      # short, or baud 0 (fixture §2)
+        names = [s.name for s in slots.values()]
+        if len(set(names)) != len(names):
+            raise Reject(m.MALFORMED)
+        places = [(s.wire_fn, s.pair) for s in slots.values()]
+        if len(set(places)) != len(places):
+            raise Reject(m.MALFORMED)                              # two slots on one place: the settings contradict
+        disabled = {key for tag, key in new if tag == ITEM["disable"]}
+        idles = {key for tag, key in new if tag == ITEM["idle"]}
+        if disabled & idles:
+            raise Reject(m.MALFORMED)                              # idle and disable for one channel (probe.config §1)
+        for (tag, key), value in items:
+            if tag == ITEM["bind"]:
+                self._parse_bind(value, slots, "form")
+        # the end of order 5: the fns the items name
+        for (tag, key), value in items:
+            if tag == ITEM["plan"] and key not in self.names:
+                raise Reject(m.UNKNOWN_FUNCTION)
+            if tag == ITEM["slot"]:
+                self._parse_slot(value, "fn")
+            elif tag == ITEM["bind"]:
+                self._parse_bind(value, slots, "fn")
+            elif tag == ITEM["uart"] and struct.unpack_from("<H", value)[0] not in self.names:
+                raise Reject(m.UNKNOWN_FUNCTION)
+        # order 6: what this probe does not handle
+        if undeclared is not None:
+            raise Reject(m.UNSUPPORTED, bytes([undeclared]))       # an item it does not declare, the tag as received
+        binds: dict[int, Bind] = {}
+        uarts: dict[int, tuple[int, int]] = {}
+        for (tag, key), value in items:
             as_received = bytes([received.get((tag, key), tag)])  # the item's tag as received (probe.config §1)
             channel = m.tlv(_UNA["channel"], struct.pack("<H", key)) if tag in CHANNEL_ITEMS else b""
             if tag in CHANNEL_ITEMS and not self._channel_ok(key):
                 # at or past `channels`, or reserved (probe.config §1, the channel of an item)
                 raise Reject(m.UNSUPPORTED, as_received + channel)
-            if tag == ITEM["idle"]:
+            if tag == ITEM["slot"]:
+                slots[key] = self._item_refusal(received, tag, key, self._parse_slot, value, "values")
+            elif tag == ITEM["bind"]:
+                binds[key] = self._item_refusal(received, tag, key, self._parse_bind, value, slots, "values")
+            elif tag == ITEM["idle"]:
                 mode = value[2]
                 if mode not in IDLE_MODE.values():
                     raise Reject(m.UNSUPPORTED, as_received + channel)   # 5 or more: a later revision may define it
@@ -3038,20 +3087,27 @@ class Endpoint:
                     raise Reject(m.UNSUPPORTED, as_received + channel)   # no such level (§1)
             elif tag == ITEM["uart"]:
                 fn, baud, fmt = struct.unpack_from("<HIB", value)
-                if fn not in self.names:
-                    raise Reject(m.UNKNOWN_FUNCTION)
                 if self.names[fn] != "oep.fixture.uart":
                     raise Reject(m.UNSUPPORTED, as_received)
                 uarts[fn] = (self._item_refusal(received, tag, key, self._uart_check, baud, fmt, fn, None, divide=False),
                              fmt)                                  # the range now, the divider at plan time
+        plans = {key: [struct.unpack_from("<HBH", v) for v in value] for (tag, key), value in items
+                 if tag == ITEM["plan"]}
         want = [a for fn in plans for a in plans[fn]]
+        plan_tag = lambda fn: received.get((ITEM["plan"], fn), ITEM["plan"])   # noqa: E731
+        self._check_plan(want, held=False, tag_of=plan_tag)        # roles and channels the fns do not declare
+        # order 7: the state and the resources
+        for fn in self.pairs:                                      # every wire (pin_roles wires have an empty list)
+            if sum(1 for s in slots.values() if s.wire_fn == fn and s.attach == SLOT_ATTACH["at_boot"]) > \
+                    self.max_connections.get(fn, 1):
+                raise unavailable("limit")
         if len(want) + len([a for a in self.plan if a[0] not in plans and a[0] not in self.plan_from_config]) > \
                 (self.plan_roles if self.plan_roles is not None else 1 << 30):
             raise unavailable("limit")
         old_plan_fns = {k[1] for k in self.config if k[0] == ITEM["plan"]}
         self.slots = slots                                         # the pin check below sees the new slots
         try:
-            self._check_plan(want)
+            self._check_plan(want, tag_of=plan_tag)
             self._check_disabled(new, disabled, plans, want, slots)
         except Reject:
             self.slots = {k: self._parse_slot(v) for (t, k), v in self.config.items() if t == ITEM["slot"]}
@@ -3127,76 +3183,84 @@ class Endpoint:
             if ch != 0xFFFF and ch in disabled:
                 raise unavailable("held_by_settings", ch, holder_kind="disabled")
 
-    def _parse_slot(self, v: bytes) -> Slot:
-        """probe.config §1.1, refused in core §4.3's order: the form (malformed), then what this probe lacks
-        (unsupported), then unknown fns."""
+    def _parse_slot(self, v: bytes, stage: str | None = None) -> Slot:
+        """probe.config §1.1, refused in core §4.3's order: the form ("form": malformed), the fn it names ("fn":
+        unknown_function), then what this probe lacks ("values": unsupported); `stage` None runs all three. A
+        contradiction that involves an undefined value (attach 2 or more) is not checked (core §4.3)."""
         t = Take(v)
         n, wire_fn, swdio, swclk, attach, retry_ms, max_speed, idle_clock, mech, name_len = t.take("BHHHBIIBBB")
         name = t.bytes(name_len)
         lock_len = t.take("B")                                     # the lock's part; 0 = none (probe.config §1.1)
         lock_part = t.bytes(lock_len)
         boot_reset = t.take("B") if t.at < len(v) else SLOT_BOOT_RESET["off"]   # optional; then later fields, skipped
-        if n >= self.slots_max:
-            raise Reject(m.MALFORMED)
-        if boot_reset not in SLOT_BOOT_RESET.values():
-            raise Reject(m.MALFORMED)                              # 2 or more (probe.config §1.1)
-        if boot_reset and attach != SLOT_ATTACH["at_boot"]:
-            raise Reject(m.MALFORMED)                              # boot_reset 1 on a slot that is not at boot
-        if retry_ms and attach != SLOT_ATTACH["at_boot"]:
-            raise Reject(m.MALFORMED)
-        if not SLOT_NAME.fullmatch(name.decode("ascii", "replace")):
-            raise Reject(m.MALFORMED)
-        if lock_len and (lock_len < 3 or lock_len % 2 == 0 or lock_part[0] == 0):
-            raise Reject(m.MALFORMED)
+        defined = attach in SLOT_ATTACH.values()
         scheme = lock_part[0] if lock_len else None
-        known_len = {TARGET_ID_SCHEME[k]: n_ for k, n_ in TARGET_ID_LEN.items()}.get(scheme)
-        if known_len is not None and (lock_len - 1) // 2 != known_len:
-            raise Reject(m.MALFORMED)                              # the lock's length is the scheme's value's (§1.1)
-        if attach not in SLOT_ATTACH.values() or idle_clock not in reg.WIRE_RVSWD.enum["idle_clock"].values():
-            raise Reject(m.UNSUPPORTED)                            # values a later revision may define (core §2.5)
-        if wire_fn not in self.names:
+        if stage in (None, "form"):
+            if n >= self.slots_max:
+                raise Reject(m.MALFORMED)
+            if boot_reset not in SLOT_BOOT_RESET.values():
+                raise Reject(m.MALFORMED)                          # 2 or more: a boolean (probe.config §1.1)
+            if defined and boot_reset and attach != SLOT_ATTACH["at_boot"]:
+                raise Reject(m.MALFORMED)                          # boot_reset 1 on a slot that is not at boot
+            if defined and retry_ms and attach != SLOT_ATTACH["at_boot"]:
+                raise Reject(m.MALFORMED)
+            if not SLOT_NAME.fullmatch(name.decode("ascii", "replace")):
+                raise Reject(m.MALFORMED)
+            if lock_len and (lock_len < 3 or lock_len % 2 == 0 or lock_part[0] == 0):
+                raise Reject(m.MALFORMED)
+            known_len = {TARGET_ID_SCHEME[k]: n_ for k, n_ in TARGET_ID_LEN.items()}.get(scheme)
+            if known_len is not None and (lock_len - 1) // 2 != known_len:
+                raise Reject(m.MALFORMED)                          # the lock's length is the scheme's value's (§1.1)
+        if stage in (None, "fn") and wire_fn not in self.names:
             raise Reject(m.UNKNOWN_FUNCTION)
-        if self.names[wire_fn] not in WIRES:
-            raise Reject(m.UNSUPPORTED)                            # a wire without a target_id scheme (swd)
-        if not self._allows(wire_fn, (swdio, swclk)):
-            raise Reject(m.UNSUPPORTED)                            # not a pair that wire offers
-        if idle_clock and self.names[wire_fn] != "oep.wire.rvswd":
-            raise Reject(m.UNSUPPORTED)                            # as attach's idle_clock (debug §3)
-        if mech != MECHANISM_NONE and mech not in self.mechanisms:
-            raise Reject(m.UNSUPPORTED)
+        if stage in (None, "values"):
+            if not defined or idle_clock not in reg.WIRE_RVSWD.enum["idle_clock"].values():
+                raise Reject(m.UNSUPPORTED)                        # values a later revision may define (core §2.5)
+            if self.names[wire_fn] not in WIRES:
+                raise Reject(m.UNSUPPORTED)                        # a wire without a target_id scheme (swd)
+            if not self._allows(wire_fn, (swdio, swclk)):
+                raise Reject(m.UNSUPPORTED)                        # not a pair that wire offers
+            if idle_clock and self.names[wire_fn] != "oep.wire.rvswd":
+                raise Reject(m.UNSUPPORTED)                        # as attach's idle_clock (debug §3)
+            if mech != MECHANISM_NONE and mech not in self.mechanisms:
+                raise Reject(m.UNSUPPORTED)
+            if lock_len and scheme != TARGET_ID_SCHEME["wch_dmi_7f"]:
+                raise Reject(m.UNSUPPORTED)                        # a scheme these wires do not have, defined or not
         lock = None
         if lock_len:
             half = (lock_len - 1) // 2
-            if scheme != TARGET_ID_SCHEME["wch_dmi_7f"]:
-                raise Reject(m.UNSUPPORTED)                        # a scheme these wires do not have, defined or not
             lock = (scheme, lock_part[1:1 + half], lock_part[1 + half:])
-        return Slot(n, wire_fn, (swdio, swclk), attach, retry_ms, max_speed, idle_clock, mech, name.decode(), lock,
-                    boot_reset)
+        return Slot(n, wire_fn, (swdio, swclk), attach, retry_ms, max_speed, idle_clock, mech, name.decode("ascii", "replace"),
+                    lock, boot_reset)
 
-    def _parse_bind(self, v: bytes, slots: dict[int, Slot]) -> Bind:
+    def _parse_bind(self, v: bytes, slots: dict[int, Slot], stage: str | None = None) -> Bind:
+        """probe.config §1.2 in core §4.3's order, as `_parse_slot` (stages "form", "fn", "values"; None: all)."""
         if len(v) < 4:
             raise Reject(m.MALFORMED)
         port, mode, selected, n = v[:4]
         streams = tuple((v[at], struct.unpack_from("<H", v, at + 1)[0]) for at in _bind_streams(v))
-        if n == 0:                                                 # after the streams: later fields, skipped
-            raise Reject(m.MALFORMED)
-        if mode == BIND_MODE["manual"] and selected >= n:
-            raise Reject(m.MALFORMED)
-        for kind, i in streams:
-            if kind == BIND_STREAM["slot_console"]:
-                if i not in slots or slots[i].mechanism == MECHANISM_NONE:
+        if stage in (None, "form"):
+            if n == 0:                                             # after the streams: later fields, skipped
+                raise Reject(m.MALFORMED)
+            if mode == BIND_MODE["manual"] and selected >= n:
+                raise Reject(m.MALFORMED)
+            for kind, i in streams:
+                if kind == BIND_STREAM["slot_console"] and (i not in slots or slots[i].mechanism == MECHANISM_NONE):
                     raise Reject(m.MALFORMED)                      # a slot that is not there, or has no console
-            elif kind != BIND_STREAM["fixture_uart"]:
-                raise Reject(m.UNSUPPORTED)                        # a kind a later revision may define (core §2.5)
-        if port not in self.serial_ports:
-            raise Reject(m.UNSUPPORTED)                            # not a serial port (§1.2)
-        if mode not in BIND_MODE.values() or not self.bind_modes & (1 << mode):
-            raise Reject(m.UNSUPPORTED)
-        for kind, i in streams:
-            if kind == BIND_STREAM["fixture_uart"]:
-                if i not in self.names:
+        if stage in (None, "fn"):
+            for kind, i in streams:
+                if kind == BIND_STREAM["fixture_uart"] and i not in self.names:
                     raise Reject(m.UNKNOWN_FUNCTION)
-                if self.names[i] != "oep.fixture.uart":
+        if stage in (None, "values"):
+            for kind, i in streams:
+                if kind not in (BIND_STREAM["slot_console"], BIND_STREAM["fixture_uart"]):
+                    raise Reject(m.UNSUPPORTED)                    # a kind a later revision may define (core §2.5)
+            if port not in self.serial_ports:
+                raise Reject(m.UNSUPPORTED)                        # not a serial port (§1.2)
+            if mode not in BIND_MODE.values() or not self.bind_modes & (1 << mode):
+                raise Reject(m.UNSUPPORTED)
+            for kind, i in streams:
+                if kind == BIND_STREAM["fixture_uart"] and self.names[i] != "oep.fixture.uart":
                     raise Reject(m.UNSUPPORTED)
         return Bind(port, mode, selected if mode == BIND_MODE["manual"] else 0, streams)
 

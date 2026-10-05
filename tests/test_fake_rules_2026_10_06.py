@@ -229,3 +229,86 @@ def test_t12_every_channel_not_reserved_is_parked_at_boot():
     ep = endpoint.Endpoint(fake.p4_x035(), Clock())
     assert set(ep.parked) == set(range(55)) - {24, 25}                        # channels 55, reserved 24 / 25
     assert set(ep.parked.values()) == {0}                                     # Hi-Z without settings
+
+
+# ---- C-21 (rest): an fn inside the payload is checked at the end of order 5 ----------------------------------------
+
+def assignment(fn, role, ch, critical=True):
+    return m.tlv(CORE.tlv["plan_apply"]["role_assignment"], struct.pack("<HBH", fn, role, ch), critical=critical)
+
+
+def test_c21_plan_apply_malformed_before_unknown_function_before_unsupported():
+    ep, h = bench(fake.p4_x035())
+    # fn 99 does not exist; the i2c-target (fn 8) misses its SCL: the form wins
+    r = h.raw(0, m.OP_PLAN_APPLY, assignment(99, 1, 20) + assignment(8, 1, 21))
+    assert r.detail == m.MALFORMED
+    # fn 99 and an unknown critical TLV: the fn first (order 5), the TLV after (order 6)
+    r = h.raw(0, m.OP_PLAN_APPLY, m.tlv(0x3E, b"", critical=True) + assignment(4, 1, 20) + assignment(99, 1, 21))
+    assert r.detail == m.UNKNOWN_FUNCTION
+    r = h.raw(0, m.OP_PLAN_APPLY, m.tlv(0x3E, b"", critical=True) + assignment(4, 1, 20))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\xbe")
+
+
+def test_c21_plan_apply_unsupported_for_every_assignment_before_unavailable():
+    ep, h = bench(fake.p4_x035())
+    assert h.raw(0, m.OP_PLAN_APPLY, assignment(5, 1, 20)).succeeded         # the uart holds channel 20
+    # the gpio's first assignment meets that hold (order 7), its second names a channel it does not offer (order 6)
+    r = h.raw(0, m.OP_PLAN_APPLY, assignment(4, 1, 20) + assignment(4, 1, 24))
+    assert r.detail == m.UNSUPPORTED and una(m.Result(0, 0, 0, r.payload[1:]))[UNA["channel"]] == struct.pack("<H", 24)
+
+
+def test_c21_unsubscribe_of_an_fn_that_does_not_exist_is_unknown_function():
+    ep, h = bench()
+    assert h.raw(0, m.OP_UNSUBSCRIBE, struct.pack("<H", 99)).detail == m.UNKNOWN_FUNCTION
+    assert h.raw(0, m.OP_UNSUBSCRIBE, struct.pack("<H", 4)).succeeded         # not subscribed: nothing, ok
+
+
+def cfg_set(h, fn, *items):
+    return h.raw(fn, CFG.op["set"], b"".join(items))
+
+
+def uart_item(fn, baud=115200, fmt=0):
+    return m.tlv(ITEM["uart"], struct.pack("<HIB", fn, baud, fmt))
+
+
+def idle(ch, mode):
+    return m.tlv(ITEM["idle"], struct.pack("<HB", ch, mode))
+
+
+def test_c21_probe_config_set_checks_every_items_form_first():
+    without_disable = with_tlvs(fake.p4_bench(), "oep.probe.config", lambda tlvs: [
+        catalog.tlv(CFG.tlv["describe"]["items"], bytes(v for v in ITEM.values() if v != ITEM["disable"]))
+        if t[0] == CFG.tlv["describe"]["items"] else t for t in tlvs])
+    ep, h = bench(without_disable)
+    disable = m.tlv(ITEM["disable"], struct.pack("<H", 20), critical=True)
+    r = cfg_set(h, 6, disable, m.tlv(ITEM["idle"], struct.pack("<HBB", 21, 0, 0)))   # an idle of 4 bytes: malformed
+    assert r.detail == m.MALFORMED
+    r = cfg_set(h, 6, disable, idle(21, 0))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([ITEM["disable"] | 0x80]))
+    r = h.raw(6, CFG.op["unset"], b"\x02" + bytes([3, ITEM["disable"], 20, 0]) + bytes([5, ITEM["idle"], 21]))
+    assert r.detail == m.MALFORMED                                            # the second row is cut short
+
+
+def test_c21_probe_config_set_fns_before_what_the_probe_lacks():
+    ep, h = bench()
+    r = cfg_set(h, 6, idle(21, 9), uart_item(99))                             # mode 9 (order 6), fn 99 (order 5)
+    assert r.detail == m.UNKNOWN_FUNCTION
+    r = cfg_set(h, 6, uart_item(99, baud=0))                                  # baud 0 is the form's
+    assert r.detail == m.MALFORMED
+    r = cfg_set(h, 6, slot_item(0, 1, (2, 3), attach=5), slot_item(1, 99, (4, 5)))
+    assert r.detail == m.UNKNOWN_FUNCTION                                     # the second slot's wire_fn first
+
+
+def test_c21_an_undefined_attach_is_unsupported_and_its_contradictions_are_not_checked():
+    ep, h = bench()
+    item = slot_item(0, 1, (2, 3), attach=5)
+    value = m.split_tlvs(item)[0][1][:-1] + b"\x00\x01"                       # lock_len 0, boot_reset 1
+    r = cfg_set(h, 6, m.tlv(ITEM["slot"], value))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([ITEM["slot"]]))
+
+
+def test_c21_a_plan_item_on_a_channel_the_fn_does_not_offer_names_the_item():
+    ep, h = bench(fake.p4_x035())
+    plan = m.tlv(ITEM["plan"], struct.pack("<HBH", 4, 1, 24), critical=True)  # 24 is reserved: no fn offers it
+    r = cfg_set(h, 10, plan)
+    assert r.detail == m.UNSUPPORTED and r.payload[0] == ITEM["plan"] | 0x80
