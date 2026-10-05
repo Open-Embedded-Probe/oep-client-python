@@ -1,6 +1,6 @@
-"""USB identification and the probing rule (oep-core §3.3, host guide §4): no automatic identification but the
-project's VID:PID (none listed), temporary clues, a named unit_id found by serial alone and checked by describe, and
-confirm-only probing that closes a device giving no valid answer."""
+"""USB identification and the probing rule (oep-core §3.3): no automatic identification but the project's VID:PID
+(1209:4F45, registry usb), a named unit_id found by serial alone and checked by describe, and confirm-only probing that
+closes a device giving no valid answer."""
 
 import dataclasses
 import struct
@@ -74,18 +74,62 @@ def ops(sent):
     return [msg[5] for msg in sent]
 
 
-def test_no_automatic_identification_without_the_project_vid_pid():
-    assert link.PROJECT_VID_PIDS == ()
-    assert not link.is_project_device(0x303A, 0x0002)
-    assert "iproduct_prefix" not in reg.USB
+def test_only_the_project_vid_pid_identifies_a_probe():
+    assert (reg.USB["project_vid"], reg.USB["project_pid"]) == (0x1209, 0x4F45)
+    assert link.PROJECT_VID_PIDS == ((0x1209, 0x4F45),)
+    assert (link.USB_VID, link.USB_PID) == (0x1209, 0x4F45)
+    assert link.is_project_device(0x1209, 0x4F45)
+    assert not link.is_project_device(0x303A, 0x0002)          # a board's default: never identified
+    assert not link.is_project_device(0x1209, 0x0001)
+    assert "iproduct_prefix" not in reg.USB and not hasattr(link, "temporary_clue")
+    assert not any(n.startswith("TEMPORARY_") for n in dir(link))
 
 
-def test_temporary_clues():
-    assert link.temporary_clue("OEP probe (ESP32-P4)")
-    assert not link.temporary_clue("Some probe", [(0xFF, 0x00, 0x00)], [0xFF00])
-    assert link.temporary_clue(None, [(0xFF, 0x4F, 0x45)])
-    assert link.temporary_clue(None, (), [0xFF4F])
-    assert not link.temporary_clue()
+def test_a_bare_usb_target_opens_the_project_vid_pid(monkeypatch):
+    s, seen = LengthStream(fake_ep()), []
+
+    def opened(kind, vid, pid, serial):
+        seen.append((kind, vid, pid, serial))
+        return s
+
+    monkeypatch.setattr(link, "_open_usb_stream", opened)
+    link.open_host("usb")
+    assert seen == [("vendor", 0x1209, 0x4F45, None)] and ops(s.sent)[0] == m.OP_CONFIRM
+
+
+def test_a_bare_usb_target_without_vendor_or_hid_takes_the_project_cdc_port(monkeypatch):
+    def none(kind, vid, pid, serial):
+        raise FileNotFoundError(f"no USB device {vid:04x}:{pid:04x}")
+
+    class Opened(Exception):
+        pass
+
+    def serial_link(path, timeout, baud):
+        raise Opened(path)
+
+    monkeypatch.setattr(link, "_open_usb_stream", none)
+    monkeypatch.setattr(link, "project_serial_ports", lambda: [("/dev/ttyACM7", "9489dd2ae0953650")])
+    monkeypatch.setattr(link, "SerialLink", serial_link)
+    with pytest.raises(Opened, match="/dev/ttyACM7"):
+        link.open_host("usb")
+    with pytest.raises(FileNotFoundError):                    # a VID:PID named: no CDC fallback
+        link.open_host("usb:1209:4f45")
+    monkeypatch.setattr(link, "project_serial_ports", lambda: [])
+    with pytest.raises(FileNotFoundError):                    # none
+        link.open_host("usb")
+    monkeypatch.setattr(link, "project_serial_ports", lambda: [("/dev/ttyACM7", "a"), ("/dev/ttyACM8", "b")])
+    with pytest.raises(FileNotFoundError):                    # several: the user names the port
+        link.open_host("usb")
+
+
+def test_project_serial_ports_lists_the_project_vid_pid_only(monkeypatch):
+    import serial.tools.list_ports as lp
+
+    P = dataclasses.make_dataclass("P", ["device", "vid", "pid", "serial_number"])
+    ports = [P("/dev/ttyACM0", 0x1209, 0x4F45, "abc"), P("/dev/ttyUSB0", 0x1A86, 0x7523, None),
+             P("/dev/ttyS0", None, None, None), P("/dev/ttyACM1", 0x303A, 0x0002, "def")]
+    monkeypatch.setattr(lp, "comports", lambda: ports)
+    assert link.project_serial_ports() == [("/dev/ttyACM0", "abc")]
 
 
 def test_open_usb_host_probes_with_confirm_first(monkeypatch):

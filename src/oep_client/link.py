@@ -82,16 +82,10 @@ RESYNC_QUIET_S = reg.TIMING["resync_quiet_ms"] / 1000
 RESYNC_WAIT_S = reg.TIMING["host_resync_wait_ms"] / 1000   # since the host's last write, before a resync's confirm (§5.1)
 WAIT_ADD_S = reg.TIMING["host_wait_add_ms"] / 1000      # the wait's floor: argument time + this + the transfer time (§4.4)
 NOTIFY_PENDING = reg.TIMING["notify_pending_max_frames"]   # max_frame x this of notifications may come first (§11.4)
-USB_VID, USB_PID = 0x303A, 0x0002   # the reference P4 probe's: the board's default, a temporary USB ID (probe guide §8)
-# The project's own USB VID:PID pairs (core §3.3): the only automatic identification of an OEP probe. The registry lists
-# them once obtained; none yet, so this stays empty and nothing is identified automatically.
-PROJECT_VID_PIDS: tuple[tuple[int, int], ...] = ()
-# Temporary clues until the project's VID:PID exists (host guide §4, not normative; gone once it does). A device that
-# fits one is only a candidate: it is probed by the confirm-only rule (SerialLink.probe) before anything else is sent.
-TEMPORARY_IPRODUCT_PREFIX = "OEP"
-TEMPORARY_VENDOR_INTERFACE = (reg.USB["vendor_bulk_class"], reg.USB["vendor_bulk_subclass"],
-                              reg.USB["vendor_bulk_protocol"])
-TEMPORARY_HID_USAGE_PAGE = reg.USB["hid_usage_page"]
+# The project's own USB VID:PID, 1209:4F45 (registry usb, core §3.3): the only automatic identification of an OEP probe,
+# and what a bare `usb` target opens.
+USB_VID, USB_PID = reg.USB["project_vid"], reg.USB["project_pid"]
+PROJECT_VID_PIDS: tuple[tuple[int, int], ...] = ((USB_VID, USB_PID),)
 PROBE_WAIT_S = reg.TIMING["host_wait_add_ms"] / 1000   # the probing rule's wait for confirm's answer (core §3.3, §4.4)
 
 
@@ -1042,8 +1036,8 @@ class SerialLink:
                 self.frames.max_frame = limits["max_frame"]
 
     def probe(self, hst) -> dict:
-        """The probing rule (core §3.3): every device or port this client opens is one it has not identified (no
-        project VID:PID is listed yet), so the first thing sent is a confirm, and nothing else until a valid answer
+        """The probing rule (core §3.3): every device or port this client opens - one it has not identified, and a
+        project VID:PID device too - gets a confirm first, and nothing else until a valid answer
         (completed, the same corr, a payload starting OEP!) came back. None: the link is closed and NotOepProbe raised.
         Vendor bulk / HID: one confirm and its one §5.2 resend, each waiting PROBE_WAIT_S (1000 ms, §4.4). A serial
         port first runs wait_boot_speed's confirms (core §3.5 host obligation 7: repeated for port_speed_idle_max_ms +
@@ -1125,19 +1119,17 @@ def open_usb_host(vid: int = USB_VID, pid: int = USB_PID, serial: str | None = N
 
 def is_project_device(vid: int, pid: int) -> bool:
     """core §3.3: the only automatic identification of an OEP probe - the project's own USB VID:PID (PROJECT_VID_PIDS,
-    from the registry once listed; empty now, so always False)."""
+    from the registry's usb). Nothing else (iProduct, interface class values) identifies one."""
     return (vid, pid) in PROJECT_VID_PIDS
 
 
-def temporary_clue(product: str | None = None, interfaces=(), hid_usage_pages=()) -> bool:
-    """A temporary clue that a USB device may be an OEP probe, until the project's VID:PID exists (host guide §4; not
-    normative, and removed once that VID:PID is listed): iProduct starting "OEP", a vendor interface class 0xFF /
-    subclass 0x4F / protocol 0x45 (`interfaces`: (class, subclass, protocol) per interface), or a HID with usage page
-    0xFF4F (`hid_usage_pages`). Never an identification: a candidate is opened and probed by the confirm-only rule
-    (SerialLink.probe) before anything else goes to it."""
-    return ((product or "").startswith(TEMPORARY_IPRODUCT_PREFIX)
-            or any(tuple(i) == TEMPORARY_VENDOR_INTERFACE for i in interfaces)
-            or TEMPORARY_HID_USAGE_PAGE in hid_usage_pages)
+def project_serial_ports() -> list[tuple[str, str | None]]:
+    """The serial ports (a probe's USB CDC) of devices with the project's VID:PID (core §3.3: every CDC of an OEP probe
+    is a serial port), as (port path, USB serial = unit id), from pyserial's list. A probe with no vendor bulk or HID
+    (CDC only, as an RP2040 / RP2350 one) is found this way."""
+    from serial.tools import list_ports
+    return [(p.device, p.serial_number) for p in list_ports.comports()
+            if p.vid is not None and is_project_device(p.vid, p.pid)]
 
 
 def check_unit_id(hst, unit_id: str) -> None:
@@ -1214,7 +1206,9 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
     everything built on it (flash, capture reads) then keep several requests in flight.
 
     target: a serial port path (COM3 on Windows); tcp://HOST:PORT for a local broker (length frames); usb[:VID:PID[:SERIAL]]
-    (hex) for the probe's USB device, vendor bulk then HID (oep-core §3.3); usb:UNIT_ID for the device whose USB serial
+    (hex) for the probe's USB device, vendor bulk then HID (oep-core §3.3) - a bare `usb` is the project's VID:PID,
+    and when no such device has a vendor bulk or HID way in, its one CDC port (project_serial_ports; several: name the
+    port); usb:UNIT_ID for the device whose USB serial
     is that unit id, whatever its VID:PID (fn 0's describe must then say the same unit_id, or it is closed:
     UnitIdMismatch). Every target is probed first by the confirm-only rule (core §3.3): no valid confirm answer, the link
     is closed and NotOepProbe raised (a serial port retries its confirms for port_speed_idle_max_ms + 1 s first).
@@ -1250,7 +1244,16 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
             return hst
         vid = int(parts[0], 16) if parts else USB_VID
         pid = int(parts[1], 16) if len(parts) > 1 else USB_PID
-        return open_usb_host(vid, pid, parts[2] if len(parts) > 2 else None, timeout)
+        try:
+            return open_usb_host(vid, pid, parts[2] if len(parts) > 2 else None, timeout)
+        except FileNotFoundError:
+            if parts:
+                raise
+            ports = project_serial_ports()                   # a probe on the project's VID:PID with CDC only
+            if len(ports) != 1:
+                raise
+            lk = SerialLink(ports[0][0], timeout, baud)
+            lk.transport = "serial"
     else:
         lk = SerialLink(target, 3.0 if timeout is None else timeout, baud)
         lk.transport = "serial"
