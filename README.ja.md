@@ -2,9 +2,15 @@
 
 [English](README.md)
 
-Open Embedded Probe の host 側。v1（oep-spec の `docs/oep-core.ja.md` と `docs/oep-if-*.ja.md`、固める候補の形）を話す。番号は oep-spec の
+Open Embedded Probe の host 側。v1（oep-spec の `docs/oep-core.ja.md` と `docs/oep-if-*.ja.md`）を話す。凍結の前の v1 で、凍結までは仕様が壊れることがある。番号は oep-spec の
 `generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.registry` から取る。破壊的変更を前提とする
-実験段階で、互換 API は約束しない。OEP を初めて読む人は oep-spec の `docs/review-guide.ja.md`（どこに何が書いてあるか）から。
+実験段階で、互換 API は約束しない。
+
+仕様は英語の本文が正で、`.ja.md` はその訳（食い違えば英語が正しい）。OEP を初めて読む人は oep-spec の
+[README](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/README.ja.md) と [レビューの手引き](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/review-guide.ja.md)（どこに何が書いてあるか）から。
+[使い始める](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/getting-started.ja.md) が最小の probe と host を作り、
+[docs/oep-core.ja.md](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/oep-core.ja.md) がプロトコルの本体、[docs/conformance.ja.md](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/conformance.ja.md)
+が host の適合に要ることを書く。
 
 target の知識は host にある、という OEP の分担に従う。probe は線と DMI / DP・AP の転送しか知らず、CH32 の flash
 コントローラ、RAM ローダー、RP2350 の boot ROM、Cortex-M の debug レジスタなどはここに置く。
@@ -92,7 +98,7 @@ oep pins <probe> --power 5 --wire swio       # target のつながり方: debug 
 
 `oep pins <probe> [--power CH] [--exclude CH,...] [--wire swio|rvswd|swd] [--steps ...] [--save] [--json]` は、ピンを host
 が選ぶ probe で、target がどこにつながっているかを探します。各段は何をしたかを出し、全体は 1 分以内に終わり、最後に plan を
-すべて解きます。手順とその理由は oep-spec の host 開発ガイド（「ピンの探し方（参考）」）にあります。target の系統ごとに要る
+すべて解きます。手順とその理由は oep-spec の host 開発ガイド（§19「ピンの探し方（参考）」）にあります。target の系統ごとに要る
 こと（線、リセットのベクタ、リセットの線の有無を読む option の読み方、max_speed / idle_clock）は 1 つの表 `targets.FAMILIES`
 にまとめ、その出典は oep-spec の `docs/target-scan-notes.ja.md` に記録します。
 
@@ -157,7 +163,7 @@ print(hst.link.speed.to_text())             # 候補ごとに、基準、流し�
 report = link.raise_speed(hst, [921600, 500000], verify=True, flows=[("out", 2)], record=True)
 ```
 
-手順は oep-spec の host 開発ガイド §7（core §3.5 は握手だけ）。**最小の形**（既定、約 50 ms、計測なし）: 候補ごとに順に
+手順は oep-spec の host 開発ガイド §17（core §3.5 は握手だけ）。**最小の形**（既定、約 50 ms、計測なし）: 候補ごとに順に
 `試す`（今の速さで応答してから probe が切り替える）→ host は要求した baud に切り替える → 20 ms → `confirm`（100 ms、3 回まで）→
 `決める`。**完全な形**（`verify=True` か `flows=` を渡す）: 起動時の速さの基準を流し方ごとに取り（このセッションのフレーム、
 無ければ 60 フレーム）、候補ごとに使う流し方だけ流す。流し方 = `("in"|"out"|"duplex", n)`（in = link_source probe → host、

@@ -3,10 +3,15 @@
 [日本語](README.ja.md)
 
 The host side of Open Embedded Probe (OEP). It speaks the v1 protocol of
-[oep-spec](https://github.com/Open-Embedded-Probe/oep-spec) (`docs/oep-core.ja.md` and the standard interfaces
-`docs/oep-if-*.ja.md`, a candidate being settled). The wire numbers come from `oep_client.registry`, a verbatim copy of
+[oep-spec](https://github.com/Open-Embedded-Probe/oep-spec) (`docs/oep-core.md` and the standard interfaces
+`docs/oep-if-*.md`), v1 before the freeze: until the freeze the spec may still break. The wire numbers come from `oep_client.registry`, a verbatim copy of
 oep-spec's generated `generated/oep-v1/oep_v1_registry.py`. This is an experimental stage: breaking changes are expected and
-no compatible API is promised. For a map of the specification, start with oep-spec's `docs/review-guide.ja.md`.
+no compatible API is promised.
+
+The specification's English text is authoritative. Start with oep-spec's [README](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/README.md) and
+[review guide](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/review-guide.md) (what is where); [getting started](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/getting-started.md)
+builds the smallest probe and host, [docs/oep-core.md](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/oep-core.md) is the protocol core, and
+[docs/conformance.md](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/conformance.md) says what a host must do to conform.
 
 It follows OEP's division of work: the knowledge of the target lives in the host. The probe knows only its wires and DMI /
 DP-AP transfers; the CH32 flash controller, the RAM loader, the RP2350 boot ROM, the Cortex-M debug registers and so on are
@@ -97,8 +102,8 @@ A run on hardware: ArduinoCore-CH32's `tests/manual/oep_smoke/` (`oep_smoke.py`,
 
 `oep pins <probe> [--power CH] [--exclude CH,...] [--wire swio|rvswd|swd] [--steps ...] [--save] [--json]` finds where a
 target is wired to a probe whose pins the host chooses. Each step says what it did; the whole run stays under a minute and
-every plan is released at the end. The procedure and its reasons are in oep-spec's host development guide (「ピンの探し方
-（参考）」); what each target family needs is in one table, `targets.FAMILIES` (wire, reset vector, the option-byte reader
+every plan is released at the end. The procedure and its reasons are in oep-spec's host development guide (§19
+"Finding pins"); what each target family needs is in one table, `targets.FAMILIES` (wire, reset vector, the option-byte reader
 for the reset line, max_speed / idle_clock), which oep-spec `docs/target-scan-notes.ja.md` records the sources of.
 
 1. **classify**: every channel `oep.fixture.gpio` allows is read 16 times under pull-up, both pulls, then pull-down:
@@ -162,7 +167,7 @@ print(hst.link.speed.to_text())             # every candidate tried, the baselin
 report = link.raise_speed(hst, [921600, 500000], verify=True, flows=[("out", 2)], record=True)
 ```
 
-The host's procedure is the oep-spec host guide §7 (core §3.5 is the handshake). The **minimal form** (the default, about
+The host's procedure is the oep-spec host guide §17 (core §3.5 is the handshake). The **minimal form** (the default, about
 50 ms, no measurement): each candidate in order - `try` (answered at the speed now, then the probe switches) -> the host
 switches to the requested baud -> 20 ms -> a `confirm` (100 ms, up to 3) -> `commit`. The **full form** (`verify=True`,
 or `flows=` given): a baseline at the boot speed per flow (this session's frames, or 60 measured), then for each
