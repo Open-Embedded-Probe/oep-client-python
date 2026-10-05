@@ -120,3 +120,112 @@ def test_c21_order_1_refusals_are_not_remembered_and_do_not_restart_the_lease():
     r = h.raw(dm, RV.op["step"], struct.pack("<H", 1))
     assert r.detail == m.UNKNOWN_OPERATION and h.corr not in ep.resend
     assert ep.expires_ms == 3000                                              # the open's lease, not restarted
+
+
+# ---- C-31 / C-19: the clock since boot, never back; the boot_id ---------------------------------------------------
+
+def heartbeat(ep, h):
+    assert h.raw(0, m.OP_SUBSCRIBE, struct.pack("<HHI", 0, 0, 1000)).succeeded
+    ep.now.t += 1000
+    ev = next(p for p in ep.pushes() if p[0] == m.ROLE_EVENT)
+    return struct.unpack_from("<IQ", ev, 6)                                   # boot_id uptime_ns
+
+
+def test_c31_the_clock_has_the_resolution_it_is_given_and_never_goes_back():
+    ns = [5_123_456]
+    ep = endpoint.Endpoint(fake.p4_bench(), Clock(), now_ns=lambda: ns[0])
+    assert ep.now_ns() == 5_123_456                                           # not cut to ms
+    ns[0] = 5_000_000                                                         # a counter read out of order
+    assert ep.now_ns() == 5_123_456                                           # does not decrease (core §2.6a)
+    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+    ep.now.t = 7
+    assert ep.now_ns() == 7_000_000                                           # ms clock: in ns
+
+
+def test_c31_a_reboot_starts_the_clock_again_and_the_heartbeat_says_so():
+    ep, h = bench()
+    ep.now.t = 50_000
+    assert h.open().succeeded                                                 # the lease had lapsed: again
+    boot, up = heartbeat(ep, h)
+    assert (boot, up) == (ep.boot_id, 51_000_000_000)
+    old = ep.boot_id
+    ep.reboot()                                                               # a new boot_id, drawn (C-19)
+    assert ep.boot_id != old and ep.now_ns() == 0
+    h = Host(ep, session=0x77)
+    assert h.open().succeeded
+    boot, up = heartbeat(ep, h)
+    assert boot == ep.boot_id and up == 1_000_000_000                         # since this boot
+
+
+def test_c19_a_repeated_boot_id_still_shows_as_resumed_0():
+    ep, h = bench()
+    ep.reboot(ep.boot_id)                                                     # a probe whose only source repeated it
+    r = h.open()
+    assert struct.unpack_from("<IIB", r.payload)[1:] == (ep.boot_id, reg.CORE.enum["resumed"]["new"])
+
+
+def test_c19_fake_serve_draws_its_boot_id_and_counts_in_ns():
+    from oep_client import fake_serve
+    a, b = (fake_serve.build(fake_serve.parse([])) for _ in range(2))
+    assert len({a.boot_id, b.boot_id, 0x1234ABCD}) == 3                       # drawn, not the fixed default
+    assert a.now_ns() % 1_000_000 or a.now_ns() != a.now_ns()                 # ns, not ms in ns (almost always)
+
+
+# ---- C-20 / C-47 / C-41: the values a probe declares --------------------------------------------------------------
+
+@pytest.mark.parametrize("max_frame, window, inflight", [(63, 4096, 4), (1024, 1023, 4), (1024, 4096, 0)])
+def test_c20_confirms_bounds_are_the_fakes_too(max_frame, window, inflight):
+    probe = fake.FakeProbe("x", max_frame, fake.p4_bench().offered)
+    with pytest.raises(ValueError):
+        endpoint.Endpoint(probe, Clock(), window=window, max_inflight=inflight)
+
+
+@pytest.mark.parametrize("value", [0, reg.LIMITS["max_op_ms_max"] + 1])
+def test_c47_max_op_ms_outside_1_to_600000_is_not_a_probe(value):
+    probe = with_tlvs(fake.p4_bench(), "oep.core",
+                      lambda tlvs: [catalog.u32(fake.CORE_MAX_OP_MS, value) if t[0] == fake.CORE_MAX_OP_MS else t
+                                    for t in tlvs])
+    with pytest.raises(ValueError):
+        endpoint.Endpoint(probe, Clock())
+    assert reg.LIMITS["max_op_ms_max"] == 600_000
+
+
+def test_c41_a_uart_bridge_and_tcp_name_no_usb_interface():
+    with pytest.raises(AssertionError):
+        fake._transports([(fake.TRANSPORT["uart_bridge"], 0)])
+    ep = endpoint.Endpoint(fake.rp2350_pins(), Clock())
+    index = ep.add_transport(fake.TRANSPORT["tcp"])
+    rows = {t[2]: (t[3], t[4]) for t in ep.static[0] if t[0] == fake.CORE_TRANSPORT}
+    assert rows == {0: (fake.TRANSPORT["usb_cdc"], 0), index: (fake.TRANSPORT["tcp"], 0xFF)}
+
+
+# ---- C-36: short messages and roles in the wrong direction --------------------------------------------------------
+
+@pytest.mark.parametrize("data", [
+    m.Result(1, m.COMPLETED, m.SUCCESS).pack(),                               # an answer echoed back
+    bytes([m.ROLE_EVENT]) + struct.pack("<HHB", 0, 0, 1),                     # an event
+    bytes([m.ROLE_REQUEST, 1, 0, 0, 0]),                                      # 5 bytes: no op
+    bytes([m.ROLE_REQUEST | m.ROLE_SESSION, 1, 0, 0, 0, m.OP_KEEPALIVE, 0x51, 0, 0]),   # 9: no whole session_id
+    b"",
+])
+def test_c36_the_probe_discards_what_is_not_a_whole_request(data):
+    ep, h = bench()
+    assert ep.handle(data, 0) is None and ep.discarded == 1
+    assert h.raw(0, m.OP_KEEPALIVE).succeeded                                 # and goes on
+
+
+# ---- C-39: list is fixed for the boot; first beyond the matches -------------------------------------------------
+
+def test_c39_list_from_beyond_the_matches_gives_the_total_and_count_0():
+    ep, h = bench()
+    r = h.raw(0, m.OP_LIST, catalog.pack_list_request("", False, 50), session=False)
+    total, entries = catalog.unpack_list_result(r.payload)
+    assert (total, entries) == (len(ep.names), [])
+
+
+# ---- △12: every channel that is not reserved is in its idle state from boot ----------------------------------------
+
+def test_t12_every_channel_not_reserved_is_parked_at_boot():
+    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    assert set(ep.parked) == set(range(55)) - {24, 25}                        # channels 55, reserved 24 / 25
+    assert set(ep.parked.values()) == {0}                                     # Hi-Z without settings

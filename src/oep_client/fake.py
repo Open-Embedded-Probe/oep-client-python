@@ -194,7 +194,11 @@ def block_max_length(max_frame: int) -> int:
 
 
 def _transports(kinds: list[tuple[int, int]]) -> tuple[bytes, ...]:
-    """(kind, USB interface or 0xFF) per transport, index = position (core §7.5)."""
+    """(kind, interface) per transport, index = position (core §7.5, C-41): a USB CDC names its communication
+    interface (the first of the function), built-in USB serial the number the hardware presents or 0xFF, vendor bulk
+    and HID their interface; a UART bridge and TCP 0xFF."""
+    for k, itf in kinds:
+        assert itf == 0xFF or k not in (TRANSPORT["uart_bridge"], TRANSPORT["tcp"]), "core §7.5: 0xFF for a UART bridge / TCP"
     return tuple(catalog.tlv(CORE_TRANSPORT, bytes([i, k, itf])) for i, (k, itf) in enumerate(kinds))
 
 

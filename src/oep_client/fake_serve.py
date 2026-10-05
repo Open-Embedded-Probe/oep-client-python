@@ -63,6 +63,7 @@ import importlib
 import importlib.util
 import os
 import re
+import secrets
 import select
 import socket
 import struct
@@ -96,8 +97,10 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
     probe = profile()
     if getattr(a, "no_drive_levels", False):
         probe = fake.without_drive_levels(probe)
-    start = time.monotonic()
-    ep = endpoint.Endpoint(probe, lambda: int((time.monotonic() - start) * 1000))
+    start = time.monotonic_ns()
+    # the clock in ns since this start (core §2.6a), and a boot_id from the OS's random source (core §6.5, C-19)
+    ep = endpoint.Endpoint(probe, lambda: (time.monotonic_ns() - start) // 1_000_000, boot_id=secrets.randbits(32),
+                           now_ns=lambda: time.monotonic_ns() - start)
     wire = min(ep.pairs) if ep.pairs else None
     if a.target_id is not None:
         for tg in ep.targets.values():

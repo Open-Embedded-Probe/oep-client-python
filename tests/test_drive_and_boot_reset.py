@@ -359,7 +359,9 @@ def test_retry_with_reset_once_per_boot_then_plain_retries():
     tg.silent_until_reset = True
     ep.reboot(0x5678)                                             # a new boot: once more
     assert len(ep.slot_reset_log) == 1 and ep.slot_reset_log == [(0, NRST, 20)]   # the log is the boot's
-    assert slot_state(ep).reset_at_ns == 4_007_000_000
+    assert slot_state(ep).reset_at_ns == 0                        # the probe's clock starts again at the reboot
+    clock.t = 4010
+    assert slot_state(ep).last_try_at_ns == 20_000_000            # after the 20 ms hold, on this boot's clock
 
 
 def test_no_retry_with_reset_once_a_session_took_the_lock():

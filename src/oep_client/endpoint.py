@@ -92,6 +92,7 @@ nothing on a real probe:  0x01 write(u32) changes state, 0x02 read -> u32 needs 
 from __future__ import annotations
 
 import re
+import secrets
 import struct
 import zlib
 from collections import OrderedDict
@@ -151,6 +152,7 @@ NOT_DRIVEN = _GPIO.enum["drive_read"]["not_driven"]
 OUTPUT_MODES = (_GPIO.enum["mode"]["output_low"], _GPIO.enum["mode"]["output_high"])   # the modes a strength applies to
 SLOT_BOOT_RESET = _CFG.enum["slot_boot_reset"]
 RETRY_RESET_HOLD_MS = reg.TIMING["slot_retry_reset_hold_ms"]   # the retry with reset's hold (probe.config §3.1)
+REQUEST_HEADER, REQUEST_HEADER_SESSION = 6, 10            # a request's header without / with session_id (core §4.1)
 
 
 class Reject(Exception):
@@ -537,9 +539,21 @@ class Endpoint:
 
     def __init__(self, probe: fake.FakeProbe, now_ms: Callable[[], int], boot_id: int = 0x1234ABCD,
                  lease_default_ms: int = 3000, lease_max_ms: int = 60000, revision: int = 1, tail: bytes = b"",
-                 window: int = 1 << 18, max_inflight: int = 4, remember_max: int = 72):
+                 window: int = 1 << 18, max_inflight: int = 4, remember_max: int = 72,
+                 now_ns: Callable[[], int] | None = None):
+        """`now_ms`: the clock the timers run on (leases, retries, port_speed), since this boot. `now_ns`: the same clock
+        in ns when it has that resolution (fake_serve: time.monotonic_ns); without it the probe's clock (core §2.6a)
+        is `now_ms` in ns. confirm's limits are checked against core §7.1 (max_frame 64 or more, window max_frame or
+        more, max_inflight 1 or more, C-20) and the declared max_op_ms against core §7.5 (1 to max_op_ms_max, C-47):
+        a probe outside them is not built."""
+        if probe.max_frame < reg.MIN_MAX_FRAME or window < probe.max_frame or max_inflight < 1:
+            raise ValueError(f"confirm's limits out of core §7.1's bounds: max_frame {probe.max_frame}, window {window}, "
+                             f"max_inflight {max_inflight}")
         self.probe = probe
         self.now = now_ms
+        self._clock_ns = now_ns
+        self._origin_ns = 0                               # the probe clock's 0: this boot's start (core §2.6a)
+        self._last_ns = 0                                 # the clock never goes back while the boot_id stays (C-31)
         self.boot_id = boot_id
         self.lease_default_ms = lease_default_ms
         self.lease_max_ms = lease_max_ms
@@ -575,6 +589,8 @@ class Endpoint:
                 self.channels = struct.unpack_from("<H", t, 2)[0]
             if t[0] == fake.CORE_RESERVED:
                 self.reserved = set(catalog.bitmap_to_channels(struct.unpack_from("<H", t, 2)[0], t[4:2 + t[1]]))
+        if not 1 <= self.max_op_ms <= reg.LIMITS["max_op_ms_max"]:
+            raise ValueError(f"max_op_ms {self.max_op_ms}: core §7.5 wants 1 to {reg.LIMITS['max_op_ms_max']}")
         self.serial_ports = {i for i, k in self.transports.items() if k in fake.SERIAL_KINDS}
         self.pairs: dict[int, list[tuple[int, int]]] = {}  # wire fn -> allowed (swdio, swclk), declared order
         self.max_connections: dict[int, int] = {}
@@ -666,6 +682,7 @@ class Endpoint:
         self.expires_ms = 0
         self.values: dict[int, int] = {}
         self.dropped = 0                     # requests a v0 endpoint dropped (role 0x81)
+        self.discarded = 0                   # messages discarded unanswered: not a request role, or short (core §2.4)
         self.requests: list[m.Request] = []
         self.subscribed: set[int] = set()
         self.heartbeat_ms = reg.TIMING["heartbeat_default_ms"]   # fn 0's subscription period
@@ -728,7 +745,7 @@ class Endpoint:
         self.speed_log: list[tuple[int, int]] = []     # (port, rate) every switch, reverts included
         if self.saved is not None:
             self._apply_saved()                        # the saved disable items first: those pins are never parked
-        self._park(self._all_channels())               # then the free pins' idle state (probe.config §2 boot order)
+        self._park(self._boot_channels())              # then the free pins' idle state (probe.config §2 boot order)
 
     def _channel_ok(self, ch: int) -> bool:
         """An item's channel (probe.config §1): below fn 0's `channels` and not `reserved`."""
@@ -760,6 +777,13 @@ class Endpoint:
         out |= {ch for chs in self.reset_channels.values() for ch in chs}
         out.discard(0xFFFF)
         return out
+
+    def _boot_channels(self) -> set[int]:
+        """What the probe parks at boot, before its first answer (core §8, △12): every channel that is not reserved -
+        below fn 0's `channels` when it declares them, else every channel an interface offers."""
+        if any(t[0] == fake.CORE_CHANNELS for t in self.static.get(0, ())):
+            return set(range(self.channels)) - self.reserved
+        return self._all_channels()
 
     def _park(self, channels) -> None:
         """Free pins go to their idle state (the idle item, else Hi-Z) at boot and whenever released (probe.config §1);
@@ -872,7 +896,7 @@ class Endpoint:
 
     def _capture(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         cap, O = self.captures[fn], fake_capture.OP
-        self._events(fn, cap.tick(self.now()))                     # what the clock captured up to this request
+        self._events(fn, cap.tick(self.uptime_ms()))               # what the clock captured up to this request
         roles = sorted(a[1] for a in self.plan if a[0] == fn)
         budget = self.probe.max_frame - m.RESULT_HEADER
         try:
@@ -905,7 +929,7 @@ class Endpoint:
                 raise unavailable("bound_in_group", holder_fn=next(g for g, grp in self.groups.items() if grp is cap.group))
             if op == O["start"]:
                 t.tail()
-                self._events(fn, cap.start(self.now(), subscribed=fn in self.subscribed))
+                self._events(fn, cap.start(self.uptime_ms(), subscribed=fn in self.subscribed))
                 return m.COMPLETED, m.SUCCESS, struct.pack("<II", 0, cap.generation)   # blocking_ms generation
             if op == O["stop"]:
                 t.tail()
@@ -928,7 +952,7 @@ class Endpoint:
             if op == O["release"]:
                 generation, serial = t.take("II")
                 t.tail()
-                cap.release(generation, serial, self.now())
+                cap.release(generation, serial, self.uptime_ms())
                 return m.COMPLETED, m.SUCCESS, b""
             if op == fake_capture.ANA.op["calibration"] and cap.analog:
                 t.tail()
@@ -949,7 +973,7 @@ class Endpoint:
                 return self._answer(b"")
             if op == O["start"]:
                 t.tail()
-                per, own = grp.start(self.captures, self.now(), lambda track: track in self.subscribed)
+                per, own = grp.start(self.captures, self.uptime_ms(), lambda track: track in self.subscribed)
                 for track, events in per:
                     self._events(track, events)
                 self._events(fn, own)
@@ -967,7 +991,7 @@ class Endpoint:
             if op == O["status"]:
                 t.tail()
                 for track in grp.tracks:
-                    self._events(track, self.captures[track].tick(self.now()))
+                    self._events(track, self.captures[track].tick(self.uptime_ms()))
                 return m.COMPLETED, m.SUCCESS, grp.status(self.captures)
         except fake_capture.Reject as e:
             raise Reject(e.reason, e.payload)
@@ -1010,9 +1034,22 @@ class Endpoint:
         roles = dict(catalog.unpack_channel_group(t[2:2 + t[1]])[1])
         return roles.get(1, 0xFFFF), roles.get(2, 0xFFFF) if name != "oep.wire.swio" else 0xFFFF
 
+    def _raw_ns(self) -> int:
+        return int(self._clock_ns()) if self._clock_ns is not None else int(self.now() * 1_000_000)
+
     def now_ns(self) -> int:
-        """The probe's one clock (core §2.6a): ns since boot."""
-        return self.now() * 1_000_000
+        """The probe's one clock (core §2.6a): ns since boot, at the resolution of `now_ns` when the endpoint has one
+        (else ms). It never decreases while the boot_id is the same (C-31), and starts again at a reboot."""
+        self._last_ns = max(self._last_ns, self._raw_ns() - self._origin_ns)
+        return self._last_ns
+
+    def uptime_ms(self) -> int:
+        """The probe's clock in ms (what the captures count their times from)."""
+        return self.now_ns() // 1_000_000
+
+    def _clock_ns_of(self, ms: int) -> int:
+        """A time of the timers' clock (`now_ms`, e.g. a slot's last attempt) on the probe's clock (ns since boot)."""
+        return max(0, ms * 1_000_000 - self._origin_ns)
 
     def _new_resource(self, kind: str) -> int:
         """The next free resource number (core §9): one u16 space for connections and streams, 1 .. 65535 then 1 again,
@@ -1043,6 +1080,10 @@ class Endpoint:
         """A request from transport `transport` (the index in the describe's transport list) -> its result."""
         if self.revision == 0 and data and data[0] & m.ROLE_SESSION:
             self.dropped += 1                                     # a v0 probe: unknown role, no answer
+            return None
+        if not data or data[0] not in (m.ROLE_REQUEST, m.ROLE_REQUEST | m.ROLE_SESSION) or \
+                len(data) < (REQUEST_HEADER_SESSION if data[0] & m.ROLE_SESSION else REQUEST_HEADER):
+            self.discarded += 1                                   # not a request, or shorter than its header (C-36)
             return None
         req = m.Request.unpack(data)
         self.requests.append(req)
@@ -1294,10 +1335,21 @@ class Endpoint:
         self.expires_ms = self.now() + self.lease_ms
         return self._answer(struct.pack("<IIB", self.lease_ms, self.boot_id, resumed))
 
-    def reboot(self, boot_id: int) -> None:
-        """The probe restarts: lock, last id, connections, streams, the unsaved config and the plan are gone; the
-        saved config comes back."""
+    def reboot(self, boot_id: int | None = None) -> None:
+        """The probe restarts: lock, last id, connections, streams, captures, the unsaved config and the plan are gone;
+        the saved config comes back, and the clock starts again from 0 (ns since boot, core §2.6a). `boot_id` None
+        draws a new one, as from a hardware random source (core §6.5, C-19); passing the current one plays a probe
+        whose only source repeated it - its hosts learn of the reboot from open's resumed = 0 instead (C-19)."""
+        if boot_id is None:
+            boot_id = self.boot_id
+            while boot_id == self.boot_id:
+                boot_id = secrets.randbits(32)
         self.boot_id = boot_id
+        self._origin_ns, self._last_ns = self._raw_ns(), 0
+        for fn in self.captures:
+            self.captures[fn] = self._capture_from(self.static[fn])
+        for fn in self.groups:
+            self.groups[fn] = self._group_from(self.static[fn])
         self._boot()
 
     def lose_connections(self) -> None:
@@ -3010,7 +3062,7 @@ class Endpoint:
         self.config = new                                          # the disable items first: a dropped plan's pins
         # idle before the plans (probe.config §2: idle, plan, uart, the at-boot attach): at boot every free channel,
         # later the ones whose idle changed (or enabled again); a gpio plan then takes a line in that state
-        self._park(self._all_channels() if boot else repark)
+        self._park(self._boot_channels() if boot else repark)
         for fn in old_plan_fns - set(plans):                       # are not parked when the same set disables them
             self._drop_plan(fn)
         for fn, assigned in plans.items():
@@ -3267,7 +3319,7 @@ class Endpoint:
         self._speed_tick()
         now = self.now()
         for fn, cap in self.captures.items():
-            self._events(fn, cap.tick(now))
+            self._events(fn, cap.tick(self.uptime_ms()))
         for n, s in self.slots.items():
             rt = self.slot_rt[n]
             if (s.attach == SLOT_ATTACH["at_boot"] and s.retry_ms and not rt.evicted
@@ -3287,8 +3339,8 @@ class Endpoint:
         else:
             state = (SLOT_STATE["no_target_id"] if rt.no_tid else
                      SLOT_STATE["lock_mismatch"] if rt.mismatch_tid is not None else SLOT_STATE["absent"])
-        tried = NEVER_NS if rt.last_try_ms is None else rt.last_try_ms * 1_000_000   # when (the probe's clock, ns)
-        reset_at = NEVER_NS if rt.reset_at_ms is None else rt.reset_at_ms * 1_000_000   # the retry with reset (§3.1)
+        tried = NEVER_NS if rt.last_try_ms is None else self._clock_ns_of(rt.last_try_ms)   # when (the probe's clock)
+        reset_at = NEVER_NS if rt.reset_at_ms is None else self._clock_ns_of(rt.reset_at_ms)   # the retry with reset (§3.1)
         raw = b"" if tid is None else struct.pack("<I", tid)
         return struct.pack("<BBHQBB", n, state, cid or 0, tried, 1 if raw else 0, len(raw)) + raw + struct.pack("<Q", reset_at)
 
