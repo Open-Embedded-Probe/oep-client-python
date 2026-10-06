@@ -243,7 +243,9 @@ profile is not 115200.
 TLVs may follow anything, one resource number space, describe = declarations and `state` for the rest, capture
 generations); ch32rv, this client and the probe firmware are checked against it (when the
 spec changes, this is brought in line before the firmware). `fake` holds example declarations (profiles
-`p4-x035`, `esp32-v003`, `p4-bench` = a made-up jig with three slots and two seats, `rp2350-pins` = a wire whose pins the host
+`p4-x035`, `esp32-v003` = the classic ESP32 firmware's frame limits - max_frame 512, riscv-dm max_length 488 -,
+`esp32-v003-64` = the same at the smallest max_frame a probe may declare, 64 (max_length 40, list / describe paged),
+`p4-bench` = a made-up jig with three slots and two seats, `rp2350-pins` = a wire whose pins the host
 chooses), `fake_serial` the byte side of a serial port (COBS candidates, raw bytes and binds, held during a session and
 resumed after it).
 

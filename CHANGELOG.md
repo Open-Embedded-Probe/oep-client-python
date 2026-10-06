@@ -1,6 +1,24 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) The fake's `esp32-v003` profile has the classic ESP32 firmware's frame limits: max_frame 512 and
+  oep.target.riscv-dm max_length 488 (`block_max_length(512)`), as that firmware declares (oep-probe-arduino
+  0.0.29-dev+526a881's describe on the V003 jig) - it had 64 and 40, and a host reproducing an upload on it split its
+  block ops as no real classic ESP32 does (ch32rv's upload of a 9168-byte CH32V003 image: 244 write_blocks and 245
+  read_blocks of up to 10 words, where the real probe takes 42 and 24 of up to 122). The smallest max_frame a probe may declare (64, `reg.MIN_MAX_FRAME`) keeps its profile:
+  `esp32-v003-64` (`fake.esp32_v003_64()`, the same probe; max_length 40, list / describe paged). `fake.esp32_v003`
+  takes `max_frame`. Tests follow: paging, C-04's room for ignored, stream I/O in a 64-byte frame and port_speed's
+  probation cases (a rate that breaks after 3000 bytes) on `esp32-v003-64`; confirm and dump read 512 on
+  `esp32-v003`. README (EN / JA), fake_serve's help.
+- (JA) 偽物の `esp32-v003` の profile は classic ESP32 の firmware と同じフレームの上限を持つ: max_frame 512 と
+  oep.target.riscv-dm の max_length 488（`block_max_length(512)`）。その firmware が宣言するとおり（oep-probe-arduino
+  0.0.29-dev+526a881 の V003 治具での describe）。前は 64 と 40 で、これで書き込みを再現した host は本物の classic ESP32 では
+  ありえない分け方で block op を出した（ch32rv による 9168 バイトの CH32V003 のイメージの書き込み: 10 語までの write_block 244 個と
+  read_block 245 個。本物の probe では 122 語までの 42 個と 24 個）。probe が宣言できる最小の max_frame（64、`reg.MIN_MAX_FRAME`）は別の profile に残す: `esp32-v003-64`
+  （`fake.esp32_v003_64()`、同じ probe。max_length 40、list / describe は分けて読む）。`fake.esp32_v003` は `max_frame` を取る。
+  試験もそれに合わせる: 分けて読む list / describe、C-04 の ignored の余地、64 バイトのフレームでのストリームの入出力、port_speed の
+  probation（3000 バイトの後で壊れる速さ）は `esp32-v003-64` で、confirm と dump は `esp32-v003` で 512 を読む。README（EN / JA）、
+  fake_serve の help。
 - (EN) riscv-dm read_register / write_register take cmderr 6 for a failed try, not an error: QingKe's "parity bit error"
   - the module took one of the group's frames for a bad one and ignored it, a missed access with the link up again at
   once (bench, oep-probe-arduino 0.0.29-dev+f594f04, tests/hw test_wire on a CH32L103 through an RVSWD probe:

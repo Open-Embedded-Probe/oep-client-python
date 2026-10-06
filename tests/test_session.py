@@ -237,7 +237,7 @@ def test_confirm_sends_a_range_and_reads_the_v1_answer(bench):
     a = new_host(ep, 1)
     limits = a.confirm()
     assert ep.requests[-1].payload == b"OEP?\x01\x01"
-    assert limits["revision"] == 1 and limits["flags"] == 0 and limits["max_frame"] == 64
+    assert limits["revision"] == 1 and limits["flags"] == 0 and limits["max_frame"] == 512
     assert limits["window"] == 1 << 18 and limits["max_inflight"] == 4            # window is u32 now
     with pytest.raises(host.Unsupported):
         a.confirm(2, 3)                                                             # nothing in the range

@@ -84,7 +84,7 @@ def test_the_core_is_never_listed_and_dump_shows_it_first():
     assert (first.fn, first.name, first.revision) == (0, "", 1)
     assert dump.describe_offer(caps.offers[0])["name"] == "(core)"
     assert caps.offers[0].description.ops == set(fake.reg.CORE.op.values())     # the eight, every one mandatory
-    assert caps.revision == 1 and caps.max_frame == 64
+    assert caps.revision == 1 and caps.max_frame == 512                              # the classic ESP32 firmware's
 
 
 def test_channel_bitmap_round_trip():
@@ -138,7 +138,7 @@ def test_the_probe_itself_is_described_by_core():
 
 
 def test_paging_does_not_change_what_is_seen():
-    small = fake.esp32_v003()
+    small = fake.esp32_v003_64()                                    # max_frame 64: list and describe paged
     big = fake.FakeProbe("big", 1024, small.offered)
     a, b = dump.collect(small.call), dump.collect(big.call)
     assert [dump.describe_offer(o) for o in a.offers] == [dump.describe_offer(o) for o in b.offers]

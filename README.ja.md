@@ -226,7 +226,9 @@ max(基準 × 2, 10 %) を超えて壊れ・失われたら下げる。下げる
 `endpoint.Endpoint` は oep-spec の規範どおりに答える偽の probe で（応答のデータと並びは長さを持ち、どの応答にも TLV が
 続けられる、資源番号は 1 つの空間、describe は宣言だけで状態は `state`、キャプチャの世代）、
 ch32rv・この client・probe の firmware を突き合わせる「動く spec」として使う（spec が変わったら、probe の firmware より先にここを合わせる）。`fake` は宣言の例（profile:
-`p4-x035`、`esp32-v003`、`p4-bench` = スロット 3 か所と席 2 つの架空の治具、`rp2350-pins` = host がピンを選ぶ wire）、`fake_serial` は
+`p4-x035`、`esp32-v003` = classic ESP32 の firmware と同じフレームの上限 - max_frame 512、riscv-dm の max_length 488 -、
+`esp32-v003-64` = 同じ probe を宣言できる最小の max_frame 64 で（max_length 40、list / describe は分けて読む）、
+`p4-bench` = スロット 3 か所と席 2 つの架空の治具、`rp2350-pins` = host がピンを選ぶ wire）、`fake_serial` は
 シリアルの口のバイトの側（COBS の候補、生のバイトと bind、セッション中の停止と再開）。
 
 `fake_capture` は `oep.fixture.logic`（ロジック）: ワンショット、リピート（実際のレートで時計どおりに区画ができ、リング、release）、

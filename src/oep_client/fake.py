@@ -399,20 +399,23 @@ def p4_x035() -> FakeProbe:
     ])
 
 
-def esp32_v003() -> FakeProbe:
-    """A small probe with 64-byte frames over a 115200 bps UART bridge (its only transport, serial port 0):
-    classic ESP32 on a CH32V003 (SWIO) jig. oep.probe.link with port_speed (oep-if-link §3), as the reference classic ESP32
-    firmware."""
+def esp32_v003(max_frame: int = 512) -> FakeProbe:
+    """A classic ESP32 on a CH32V003 (SWIO) jig over a UART bridge (its only transport, serial port 0), with the reference
+    classic ESP32 firmware's frame limits: max_frame 512 and oep.target.riscv-dm's max_length 488 (max_frame - 24 rounded
+    down to a word, oep-if-debug §4.5), so a host splits its block ops as it does on that probe (a 9168-byte image: 19
+    write_blocks of up to 122 words, not 230 of 10). oep.probe.link with port_speed (oep-if-link §3), as that firmware.
+    Its channels and the other interfaces' limits are this profile's own. `max_frame`: the same probe at another frame
+    size (esp32_v003_64: the smallest a probe may declare)."""
     reserved = [0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15]   # UART0, strapping, flash: the probe's own (SWIO 16 is the wire's)
     wired = [4, 5, 13, 14, 17, 18, 19, 21, 22, 25, 26, 27, 32, 33]
-    return FakeProbe("esp32-v003", 64, [
+    return FakeProbe("esp32-v003" if max_frame == 512 else f"esp32-v003-{max_frame}", max_frame, [
         _core("3.0.0", "esp32", "fafe00000003", 40, reserved, f"{NS}.esp32-v003",
               {16: "SWIO", 23: "NRST", 22: "DUT TX", 21: "DUT RX"},
               _transports([(TRANSPORT["uart_bridge"], 0xFF)])),
         Offered(1, 0, "oep.wire.swio", (catalog.channel_group(1, [(1, 16)]), catalog.role_channels(3, [23]),
                                         catalog.u8(IMPLEMENTATION, 1), catalog.u8(MAX_CONNECTIONS, 1))),
         Offered(2, 0, "oep.target.riscv-dm", ops_of("oep.target.riscv-dm", "step") + (    # no step
-            catalog.u8(IMPLEMENTATION, 1), catalog.u16(MAX_LENGTH, block_max_length(64)))),
+            catalog.u8(IMPLEMENTATION, 1), catalog.u16(MAX_LENGTH, block_max_length(max_frame)))),
         _console(3),
         _gpio(4, wired + [23], modes=0x7F),                      # no mode 7 (both pulls): unsupported there
         _uart(5, 0, wired, 115_200),
@@ -431,6 +434,12 @@ def esp32_v003() -> FakeProbe:
         _plan(11),
         _restart(12),
     ])
+
+
+def esp32_v003_64() -> FakeProbe:
+    """esp32-v003 at the smallest max_frame a probe may declare (64, reg.MIN_MAX_FRAME): list and describe paged, a
+    riscv-dm max_length of 40, every answer cut to 64 bytes - what a host must still work with."""
+    return esp32_v003(reg.MIN_MAX_FRAME)
 
 
 def p4_bench() -> FakeProbe:
@@ -539,4 +548,5 @@ def without_drive_levels(probe: FakeProbe) -> FakeProbe:
     return FakeProbe(probe.label, probe.max_frame, offered)
 
 
-PROFILES = {"p4-x035": p4_x035, "esp32-v003": esp32_v003, "p4-bench": p4_bench, "rp2350-pins": rp2350_pins}
+PROFILES = {"p4-x035": p4_x035, "esp32-v003": esp32_v003, "esp32-v003-64": esp32_v003_64, "p4-bench": p4_bench,
+            "rp2350-pins": rp2350_pins}

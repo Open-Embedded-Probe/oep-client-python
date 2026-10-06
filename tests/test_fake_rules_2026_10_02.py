@@ -165,7 +165,7 @@ def test_c04_more_than_16_ignored_lists_15_and_0x00():
 
 
 def test_c04_an_answer_keeps_room_for_ignored_and_never_drops_it():
-    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())            # 64-byte frames
+    ep = endpoint.Endpoint(fake.esp32_v003_64(), Clock())         # 64-byte frames
     h = Host(ep)
     h.open()
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 5, 1, 21), critical=True))

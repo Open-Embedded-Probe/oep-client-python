@@ -401,7 +401,7 @@ def test_capture_critical_tag_it_cannot_honour_is_unsupported():
 
 
 def test_stream_io_fits_a_64_byte_frame():
-    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())          # max_frame 64
+    ep = endpoint.Endpoint(fake.esp32_v003_64(), Clock())       # max_frame 64
     hst = host.Host(ep.handle, rng=random.Random(2))
     hst.open()
     core.plan_apply(hst, [(5, 1, 21), (5, 2, 22)])

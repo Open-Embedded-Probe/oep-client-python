@@ -34,7 +34,7 @@ and confirms: the boot_id is new. Its describe declares restart_max_ms 2000 (oep
 probe without the optional interface: list does not show oep.probe.restart, and its fn is unknown_function.
 
 Options:
-  --profile NAME        p4-x035 (default), esp32-v003, p4-bench or rp2350-pins (p4_x035 style names work too)
+  --profile NAME        p4-x035 (default), esp32-v003, esp32-v003-64, p4-bench or rp2350-pins (p4_x035 style names work too)
   --port-index N        which serial port of the profile the pty / cobs TCP is (default: the first one)
   --noise TEXT          raw bytes written in front of every answer (the host must skip them)
   --drop N              the N-th answer (1-based) is not sent, once (the request did run: a resend gets the

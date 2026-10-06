@@ -78,7 +78,7 @@ def test_open_host_on_a_serial_port_with_console_bytes_and_tiocexcl():
                         "--console", "uptime %d\\r\\n", "--every", "5")
     try:
         hst = link.open_host(where[1], timeout=1.0)
-        assert hst.limits["max_frame"] == 64
+        assert hst.limits["max_frame"] == 512
         if os.geteuid() != 0:
             with pytest.raises(link.PortBusy):
                 link.open_host(where[1])                              # exclusive: one host at a time

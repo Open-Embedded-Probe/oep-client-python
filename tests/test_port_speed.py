@@ -694,7 +694,7 @@ def test_the_probation_fails_a_rate_that_passes_the_quick_verify_and_breaks_late
     """The field case modelled: a rate passes the 16-frame verify, breaks after some kilobytes. In its probation that is
     a verify failure: a step down at once to the next lower candidate, whose probation then passes."""
     from oep_client import speed_record
-    ep, hst, lk = in_process()
+    ep, hst, lk = in_process(fake.esp32_v003_64)         # 64-byte frames: the 16-frame verify stays under 3000 bytes
     rec = speed_record.SpeedRecord(None)
     rec.path = None
     notes = []
@@ -718,7 +718,7 @@ def test_the_probation_fails_a_rate_that_passes_the_quick_verify_and_breaks_late
 
 
 def test_without_the_probation_the_same_rate_breaks_only_in_use():
-    ep, hst, lk = in_process()
+    ep, hst, lk = in_process(fake.esp32_v003_64)         # 64-byte frames: the verify stays under `after`
     ep.broken_rates[921600] = endpoint.BrokenRate(min_size=40, to_probe=False, after=3000, every=3)
     report = link.raise_speed(hst, [921600, 500000], flows=[("in", 1)], **FAST, **NO_PROBATION)
     assert report.trials[0].committed and report.trials[0].probation == "off"
