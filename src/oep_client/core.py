@@ -94,6 +94,36 @@ def describe(hst: h.Host, fn: int = 0) -> list[tuple[int, bytes]]:
     return list(out)
 
 
+def ops(hst: h.Host, fn: int = 0) -> set[int] | None:
+    """The ops fn's describe declares in its ops tag (core §1.2, §7.4: the one declaration of every op an fn offers,
+    the optional ones included); None when the describe carries no ops tag (a probe that does not conform: the host
+    sends and lets the probe answer)."""
+    found = None
+    for tag, value in describe(hst, fn):
+        if tag & 0x7F == m.TAG_OPS:
+            found = (found or set()) | catalog.unpack_ops(value)
+    return found
+
+
+def offers(hst: h.Host, fn: int, op: int) -> bool:
+    """Whether fn offers op by its ops tag (True when the describe declares no ops: unknown, the probe decides)."""
+    declared = ops(hst, fn)
+    return declared is None or op in declared
+
+
+def not_offered(fn: int, op: int) -> h.Rejected:
+    """What a request for an op the fn's ops tag does not set gets from the probe (core §1.2, §4.3 order 1): the same
+    Rejected with detail unknown_operation as `Host.request` raises for that answer - a host that checks ops before
+    sending raises this instead of sending."""
+    return h.rejection(m.Result(0, m.REJECTED, m.UNKNOWN_OPERATION))
+
+
+def require(hst: h.Host, fn: int, op: int) -> None:
+    """Raise `not_offered` when fn's ops tag does not set op (nothing is sent then)."""
+    if not offers(hst, fn, op):
+        raise not_offered(fn, op)
+
+
 def firmware_labels(hst: h.Host) -> list[tuple[int, str]]:
     """The firmware's fixed channel labels from oep.core's describe (tag 0x46) as (channel, text), in describe order -
     every one, two channels with the same text included (probe.config §1.3 step (c) finds none then). Text shown as
@@ -138,9 +168,10 @@ def take(hst: h.Host, lease_ms: int = 3000, *, owner: str | None = None, wait_s:
 
 def plan_apply(hst: h.Host, assignments: list[tuple[int, int, int]]) -> None:
     """assignments: (fn, role, channel). The fns named get these plans, every other fn keeps its own (oep-core §8);
-    all interfaces accept their roles or nothing changes. The plan is the
-    session's resource: kept over an explicit end, released at a lease lapse or a force takeover (oep-core §9)."""
-    tlv = b"".join(bytes([TAG_ROLE_ASSIGNMENT | m.TAG_CRITICAL, 5]) + struct.pack("<HBH", fn, role, ch) for fn, role, ch in assignments)
+    all interfaces accept their roles or nothing changes. The plan is the session's resource: released when the
+    session's lock ends, by end, lease expiry or force (oep-core §9)."""
+    tlv = b"".join(m.tlv(TAG_ROLE_ASSIGNMENT, struct.pack("<HBH", fn, role, ch), critical=True)
+                   for fn, role, ch in assignments)
     try:
         hst.call(m.CORE_FN, OP_PLAN_APPLY, tlv)
     except h.Rejected as e:
@@ -229,26 +260,65 @@ class Interface:
         """The raw (fn, op, payload) of one operation, for Host.pipeline / pipeline_calls."""
         return self.fn, op, self.prefix + body
 
+    def ops(self) -> set[int] | None:
+        """The ops this fn's describe declares (core §1.2, §7.4; None: no ops tag)."""
+        return ops(self.host, self.fn)
 
-LINK_SOURCE, LINK_SINK = m.OP_LINK_SOURCE, m.OP_LINK_SINK   # core, lock-free
+    def offers(self, op: int) -> bool:
+        """Whether this fn offers op by its ops tag (an optional op is offered exactly when set)."""
+        return offers(self.host, self.fn, op)
+
+
+# ---- oep.link (oep-if-link): the link test and port_speed, an optional interface ------------------------------------
+_LINK = reg.LINK
+LINK_NAME = _LINK.name
+LINK_SOURCE, LINK_SINK, LINK_PORT_SPEED = (_LINK.op[k] for k in ("source", "sink", "port_speed"))
+
+
+def link_fn(hst: h.Host) -> int:
+    """The fn of the probe's oep.link (LookupError: the probe offers none - the link test and port_speed are optional,
+    oep-if-link)."""
+    return find(hst, LINK_NAME)
+
+
+def link_source_request(size: int) -> bytes:
+    """source's request: length(u32) (oep-if-link §2)."""
+    return struct.pack("<I", size)
+
+
+def link_sink_request(data: bytes) -> bytes:
+    """sink's request: count(u16) data (oep-if-link §2)."""
+    return struct.pack("<H", len(data)) + bytes(data)
+
+
+def link_source_data(payload: bytes) -> bytes:
+    """source's answer: len(u16) data [TLV] -> data (byte k = k & 0xFF; ShortPayload when len passes the end)."""
+    rd = m.Reader(payload)
+    data = rd.counted("H")
+    rd.tail()
+    return data
 
 
 def link_speed(hst: h.Host, *, size: int | None = None, inflight: int | None = None, seconds: float = 1.0) -> dict:
-    """The link's request/response throughput both ways, as a repeat read or a write sees it: `inflight` requests of
-    `size` bytes kept going in batches for `seconds` (defaults: one full frame, the probe's in-flight limit).
-    -> {"in_mb_s", "out_mb_s", "size", "inflight"} (in = probe to host)."""
+    """The link's request/response throughput both ways through oep.link source / sink (oep-if-link §2), as a repeat
+    read or a write sees it: `inflight` requests of `size` bytes kept going in batches for `seconds` (defaults: one
+    full frame, the probe's in-flight limit). -> {"in_mb_s", "out_mb_s", "size", "inflight"} (in = probe to host).
+    LookupError when the probe offers no oep.link."""
     import time
+    fn = link_fn(hst)
     limits = confirm(hst)
     size = size or limits["max_frame"] - 16
     inflight = min(inflight or limits["max_inflight"], limits["max_inflight"])
-    first = hst.call(m.CORE_FN, LINK_SOURCE, struct.pack("<I", size), locked=False).payload
-    if len(first) != size or any(b != (k & 0xFF) for k, b in enumerate(first[:256])):
-        raise h.ProtocolError(f"link_source answered {len(first)} bytes, not the {size} asked (or a wrong pattern)")
+    first = link_source_data(hst.call(fn, LINK_SOURCE, link_source_request(size), locked=False).payload)
+    if len(first) > size or any(b != (k & 0xFF) for k, b in enumerate(first[:256])):
+        raise h.ProtocolError(f"source answered {len(first)} bytes for the {size} asked (or a wrong pattern)")
+    size = len(first)                                     # what one frame carries (oep-if-link §2)
     out = {"size": size, "inflight": inflight}
-    for key, op, body in (("in_mb_s", LINK_SOURCE, struct.pack("<I", size)), ("out_mb_s", LINK_SINK, bytes(size))):
+    for key, op, body in (("in_mb_s", LINK_SOURCE, link_source_request(size)),
+                          ("out_mb_s", LINK_SINK, link_sink_request(bytes(size)))):
         moved, t0 = 0, time.perf_counter()
         while time.perf_counter() - t0 < seconds:
-            for r in hst.pipeline_calls([(m.CORE_FN, op, body)] * inflight, locked=False):
-                moved += len(r.payload) if op == LINK_SOURCE else m.Reader(r.payload).u32()
+            for r in hst.pipeline_calls([(fn, op, body)] * inflight, locked=False):
+                moved += len(link_source_data(r.payload)) if op == LINK_SOURCE else size
         out[key] = moved / (time.perf_counter() - t0) / 1e6
     return out

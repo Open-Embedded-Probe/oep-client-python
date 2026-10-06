@@ -1,10 +1,12 @@
-"""Draft wire forms for capability discovery by name (oep-spec docs/capability-declaration-model.ja.md).
+"""The wire forms of discovery by name (oep-spec docs/oep-core.ja.md §7).
 
 list request : flags(u8) first(u16) prefix_len(u8) prefix     flags bit0 = exact
-list result  : total(u16) count(u8) count x (len(u8) entry) [TLV tail]   oep.core (fn 0) is the first entry
+list result  : total(u16) count(u8) count x entry [TLV tail]  oep.core (fn 0) is the first entry
 list entry   : fn(u16) instance(u16) revision(u8) flags(u8) name_len(u8) name
-describe     : request fn(u16) first(u16); result more(u8) then TLV bytes (tag u8, len u8 or 0xFF + u16, value;
-               tag bit 7 = critical). more = 1: TLVs remain after this page, ask again from first + count
+describe     : request fn(u16) first(u16); result more(u8) then TLV bytes (tag u8, len u16, value; tag bit 7 =
+               critical). more = 1: TLVs remain after this page, ask again from first + count
+ops          : the common describe tag 0x09 every fn carries, base(u8) bitmap: bit i set = op base + i is offered
+               (core §1.2, §7.4) - the one declaration of an fn's ops, the optional ones included
 (oep-spec oep-core §7.2; the entry revision decides the interface's payload shapes, §2.7). A describe is declarations
 only (§7.3): it may be cached while the probe's boot_id stays the same.
 
@@ -17,7 +19,7 @@ import struct
 from dataclasses import dataclass, field
 
 from . import message as m
-from .message import Reader, element, split_tlvs
+from .message import Reader, split_tlvs
 
 LIST_EXACT = 0x01
 
@@ -29,6 +31,7 @@ MIN_CLOCK_HZ = 0x05      # u32
 FEATURES = 0x06          # u32, bits defined by the interface
 IMPLEMENTATION = 0x07    # u8: 0 unspecified, 1 software, 2 peripheral, 3 peripheral + DMA/PIO
 CHANNEL_GROUP = 0x08     # group(u8) n(u8) then n x (role(u8), channel(u16)): a fixed pin set
+OPS = m.TAG_OPS          # base(u8) bitmap: the ops this fn offers (core §1.2, §7.4)
 CRITICAL = 0x80
 INTERFACE_TAG_FIRST = 0x40
 
@@ -67,7 +70,7 @@ def pack_entry(e: ListEntry) -> bytes:
 
 
 def pack_list_result(total: int, entries: list[ListEntry]) -> bytes:
-    return struct.pack("<HB", total, len(entries)) + b"".join(element(pack_entry(e)) for e in entries)
+    return struct.pack("<HB", total, len(entries)) + b"".join(pack_entry(e) for e in entries)
 
 
 def unpack_list_result(payload: bytes) -> tuple[int, list[ListEntry]]:
@@ -76,9 +79,8 @@ def unpack_list_result(payload: bytes) -> tuple[int, list[ListEntry]]:
     total, count = rd.take("HB")
     out = []
     for _ in range(count):
-        e = rd.element()
-        fn, instance, revision, flags, n = e.take("HHBBB")
-        out.append(ListEntry(fn, instance, revision, flags, e.bytes(n).decode("ascii", "replace")))
+        fn, instance, revision, flags, n = rd.take("HHBBB")
+        out.append(ListEntry(fn, instance, revision, flags, rd.bytes(n).decode("ascii", "replace")))
     rd.tail()
     return total, out
 
@@ -90,8 +92,36 @@ def pack_describe_request(fn: int, first: int) -> bytes:
 # ---- describe TLVs -------------------------------------------------------
 
 def tlv(tag: int, value: bytes) -> bytes:
-    """A describe TLV (the short form up to 254 bytes, the long form from 255 on - core §2.2)."""
+    """A describe TLV: tag(u8) len(u16) value (core §2.2)."""
     return m.tlv(tag, value)
+
+
+def pack_ops(ops) -> bytes:
+    """The ops tag's value (core §7.4): base = the lowest op, then the bitmap, as short as it can be. No op: base 0 and
+    no bitmap byte."""
+    ops = sorted(set(ops))
+    if not ops:
+        return b"\x00"
+    if ops[0] < 0 or ops[-1] > 0xFF:
+        raise ValueError("an op is u8")
+    base = ops[0]
+    bits = bytearray((ops[-1] - base) // 8 + 1)
+    for op in ops:
+        bits[(op - base) // 8] |= 1 << ((op - base) % 8)
+    return bytes([base]) + bytes(bits)
+
+
+def ops_tlv(ops) -> bytes:
+    return tlv(OPS, pack_ops(ops))
+
+
+def unpack_ops(value: bytes) -> set[int]:
+    """The ops an ops value declares (bit i of the bitmap = op base + i; bits past 0xFF mean nothing)."""
+    if not value:
+        return set()
+    base = value[0]
+    return {base + i * 8 + b for i, byte in enumerate(value[1:]) for b in range(8)
+            if byte >> b & 1 and base + i * 8 + b <= 0xFF}
 
 
 def split_tlv(data: bytes) -> list[tuple[int, bytes]]:
@@ -155,6 +185,7 @@ class Description:
     max_length: int | None = None
     features: int | None = None
     implementation: int | None = None
+    ops: set[int] | None = None       # the ops tag (core §7.4); None when the describe carries none
     specific: list[tuple[int, bytes]] = field(default_factory=list)
     unknown_critical: list[int] = field(default_factory=list)
 
@@ -179,6 +210,8 @@ def decode_description(data: bytes) -> Description:
             d.features = struct.unpack("<I", value)[0]
         elif t == IMPLEMENTATION:
             d.implementation = value[0]
+        elif t == OPS:
+            d.ops = (d.ops or set()) | unpack_ops(value)
         elif t >= INTERFACE_TAG_FIRST:
             d.specific.append((tag, value))
         elif tag & CRITICAL:

@@ -1,18 +1,21 @@
 """Host side of the v1 session rules, over any `send(request bytes) -> result bytes` transport.
 
-The host picks a random u32 session id for every open (never a counter: after a probe reboot a counter would
-start again and match an old process's id). A one-shot CLI keeps the id between commands; a request that goes
-through with the same id proves nobody else operated the probe in between (oep-spec session-and-exclusivity).
+The host picks a random u32 session id for every open (never a counter: after a probe reboot a counter would start
+again and match an old process's id). Every request carries a session_id in its header (core §4.1): this session's
+id for an op that needs the lock (and for any request while a session is open and `locked` is asked), 0 for a
+lock-free request sent outside a session.
 
-oep-core §4.1: role 0x81 (a session id in the header) goes only to a probe whose confirm answered revision 1 or more; a
-v0 probe drops the unknown role without an answer. The host confirms before its first open or session request.
-oep-core §6.5 / §9: when the probe's boot_id changes (confirm, open, a heartbeat the link read), when the lease lapsed
-(rejected expired, open answering resumed = 2), when another session came in between, by force or not (rejected
-no_session), and when an open with the session_id this host used last is answered resumed = 0 (the probe no longer knows
-it: a reboot that may have repeated its boot_id, or another host in between; core §6.5, C-19), every connection, stream
-and the plan this session had are gone: `epoch` counts those losses, so a client holding a connection can tell. A
-reboot also drops the remembered name -> fn mapping and the describes, so they are listed again. An expired session is
-never re-opened behind the caller's back: `Expired` is raised and the caller opens again (host guide §9).
+No resume (core §6.2, §6.4, §9): when a session's lock ends - by end, by lease expiry, or by another session's
+force - the probe releases everything the session created (its plan, its shares of connections and streams, its
+subscriptions); nothing passes to the next session and an ended session never continues. A request of an ended
+session is rejected no_session (`NoSession`) while the lock is free, locked while another holds it: the caller opens a
+new session and builds again. What lasts between sessions is the probe's settings (oep.probe.config) and what the
+interfaces keep readable: an attach on a live combination returns the slot's connection, a console open on the same
+place and mechanism returns its stream with position and marks.
+
+`epoch` counts the losses of everything this host's session had (core §6.5, §9): an end, a no_session, a boot_id
+that changed (confirm, open, a heartbeat the link read) - a client holding a connection can tell. A reboot also drops
+the remembered name -> fn mapping and the describes, so they are listed again.
 
 A probe whose confirm answer is outside core §7.1's bounds (max_frame under 64, window under max_frame, max_inflight 0;
 C-20), or whose fn 0 describe declares a max_op_ms outside 1..600000 (core §4.4, §7.5; C-47), is not used: `NotUsable`
@@ -100,22 +103,9 @@ class InUse(OepError):
 
 
 class NoSession(Rejected):
-    pass
-
-
-class Expired(Rejected):
-    """rejected expired (core §6.2, §9): this session's lease lapsed and the probe swept its resources (plan,
-    connections, streams). Nothing is re-opened silently: the caller opens again (resumed = 2 then) and rebuilds what
-    it had. `lease_ms`: the lease the session had (None when unknown). A session whose lock another id took by force
-    sees locked while that one holds it, then no_session (the probe remembers the last id only) - never expired."""
-
-    def __init__(self, result: m.Result, lease_ms: int | None = None):
-        super().__init__(result)
-        self.lease_ms = lease_ms
-
-    def __str__(self) -> str:
-        lease = f" (lease {self.lease_ms} ms)" if self.lease_ms is not None else ""
-        return f"session expired{lease}: the lease lapsed and the probe swept this session's resources - open again"
+    """rejected no_session (core §6.2): the request carries a session_id while no session holds the lock - this
+    session ended (end, lease expiry, another session's force and then its end) and the probe released everything it
+    created. Nothing is re-opened silently: the caller opens a new session and builds again (host guide §9)."""
 
 
 class Busy(Rejected):
@@ -195,12 +185,10 @@ class Unavailable(Rejected):
 
 
 _REJECTS = {m.LOCKED: Locked, m.NO_SESSION: NoSession, m.BUSY: Busy, m.NO_CONNECTION: NoConnection,
-            m.UNSUPPORTED: Unsupported, m.UNAVAILABLE: Unavailable, m.EXPIRED: Expired}
+            m.UNSUPPORTED: Unsupported, m.UNAVAILABLE: Unavailable}
 
 
-def rejection(result: m.Result, lease_ms: int | None = None) -> Rejected:
-    if result.detail == m.EXPIRED:
-        return Expired(result, lease_ms)
+def rejection(result: m.Result) -> Rejected:
     return _REJECTS.get(result.detail, Rejected)(result)
 
 
@@ -220,19 +208,11 @@ def owner_text(owner: str) -> bytes:
     return raw
 
 
-RESUMED = reg.CORE.enum["resumed"]       # open's resumed: 0 new, 1 resumed (resources kept), 2 swept (core §6.4)
-
-
 @dataclass
 class Opened:
+    """open's answer (core §6.4): the lease the probe gave and its boot_id."""
     lease_ms: int
     boot_id: int
-    resumed: int                 # 0 a new session, 1 the same id with its resources, 2 the same id after a sweep
-
-    @property
-    def swept(self) -> bool:
-        """The same session id came back after its lease lapsed: its resources are gone (core §9)."""
-        return self.resumed == RESUMED["swept"]
 
 
 @dataclass
@@ -244,7 +224,7 @@ class Host:
     exchange: Callable[[list[bytes]], list[bytes]] | None = None
     revision: int | None = None            # confirm's answer; None until asked
     limits: dict | None = None             # confirm's answer as a dict
-    lease_ms: int | None = None            # the lease the last open gave (named by Expired)
+    lease_ms: int | None = None            # the lease the last open gave
     epoch: int = 0                         # +1 whenever every connection and the plan are lost (core §6.5, §9)
     subscriptions: set = field(default_factory=set)   # fns subscribed in this session (a resync stops them blind)
     # Called with every capture segment read (capture.CaptureRecord): the hook a run recorder hangs on.
@@ -288,33 +268,39 @@ class Host:
             raise Failed(r)
         return r
 
-    def _session_for(self, locked: bool) -> int | None:
+    def _session_for(self, locked: bool) -> int:
+        """The header's session_id (core §4.1): this session's id for a request sent `locked` while one is open, else
+        0 (a lock-free request outside the session: no session check, the lease untouched)."""
         if not locked or self.session is None:
-            return None
+            return m.NO_SESSION_ID
         self.require_v1()
         return self.session
 
-    def request(self, fn: int, op: int, payload: bytes = b"", *, locked: bool = True, expect_ms: int = 0) -> m.Result:
-        """locked=True sends the session id (role 0x81) once a session is open; lock-free requests may leave it off.
-        expect_ms: how long this request may take on the probe (`expecting`). Rejections raise; any other answer is
-        returned (Result.succeeded / .ran say what it was)."""
+    def request(self, fn: int, op: int, payload: bytes = b"", *, locked: bool = True, expect_ms: int = 0,
+                session: int | None = None) -> m.Result:
+        """locked=True sends this session's id once a session is open; locked=False sends session_id 0 (a lock-free op
+        only). `session`: the id to send instead (open: the id it opens). expect_ms: how long this request may take on
+        the probe (`expecting`). Rejections raise; any other answer is returned (Result.succeeded / .ran say what it
+        was)."""
         self.require_usable()
         if self.before_request is not None:
             self.before_request()
-        req = m.Request(self.next_corr(), fn, op, payload, self._session_for(locked))
+        sid = session if session is not None else self._session_for(locked)
+        req = m.Request(self.next_corr(), fn, op, payload, sid)
         with self.expecting(expect_ms):
             result = m.Result.unpack(self.send(req.pack()))
         if result.corr != req.corr:
             raise ProtocolError(f"result for correlation {result.corr}, expected {req.corr}")
         if result.resolution == m.REJECTED:
             self._rejected(result)
-            raise rejection(result, self.lease_ms)
+            raise rejection(result)
         return result
 
     def _rejected(self, result: m.Result) -> None:
-        if result.detail in (m.NO_SESSION, m.EXPIRED):
-            # expired: the lease lapsed and the probe swept this session's resources (core §9). no_session: another
-            # session opened in between (a force among them) and took them over. Either way they are not ours.
+        if result.detail == m.NO_SESSION and self.session is not None:
+            # no session holds the lock: this one ended (lease expiry, or a force and then the forcing session's end)
+            # and the probe released what it created (core §6.2, §9). The host is out of a session.
+            self.session = None
             self._swept()
 
     def _swept(self) -> None:
@@ -376,7 +362,7 @@ class Host:
         results = self.pipeline(requests, locked=locked)
         for r in results:
             if r.resolution == m.REJECTED:
-                raise rejection(r, self.lease_ms)
+                raise rejection(r)
             if not r.succeeded:
                 raise Failed(r)
         return results
@@ -445,7 +431,7 @@ class Host:
         return self.limits if self.limits is not None else self.confirm()
 
     def require_v1(self) -> None:
-        """Before anything in the v1 shapes (role 0x81, open): the probe must have confirmed revision >= 1."""
+        """Before anything in the v1 shapes (a session's requests, open): the probe must have confirmed revision >= 1."""
         if self.revision is None:
             try:
                 self.confirm()
@@ -457,40 +443,35 @@ class Host:
             raise NotV1(f"the probe speaks OEP revision {self.revision}; session requests need revision 1 or more")
 
     # ---- session --------------------------------------------------------------------------------
-    def open(self, lease_ms: int = 0, *, force: bool = False, session: int | None = None,
-             owner: str | None = None) -> Opened:
-        """A new random id unless `session` is given (a one-shot CLI resuming its saved id). lease_ms 0 = the probe's
-        default; 1000..60000 are taken as asked. owner: who holds the lock (1-32 bytes), shown to other hosts.
-        Opened.resumed: 0 a new session, 1 the same id with its resources kept, 2 the same id after its lease lapsed
-        swept them (core §6.4: the host rebuilds its plan and connections; `epoch` moved)."""
+    def open(self, lease_ms: int = 0, *, force: bool = False, owner: str | None = None) -> Opened:
+        """Open a new session under a new random id (core §6.4; the id goes in the header, never 0). lease_ms 0 = the
+        probe's default; 1000..60000 are taken as asked. owner: who holds the lock (1-32 bytes), shown to other hosts.
+        force: take the lock from another session (its resources are released first). A session this host had open
+        is left behind: it ended, or the probe refuses this open locked while it holds the lock - end it first. The
+        answer's boot_id is watched (core §6.5: a reboot drops the fn mapping)."""
         self.require_v1()
-        sid = session if session is not None else self.rng.randrange(1, 1 << 32)   # random, never 0 (core §6.1)
-        if sid == 0:
-            raise ValueError("session_id 0 is not a session (core §6.1)")
+        sid = self.rng.randrange(1, 1 << 32)                # random, never 0 (core §6.1)
         tail = m.tlv(OWNER, owner_text(owner)) if owner else b""
-        last = self.session if session is None else session   # the id this host used last (C-19)
-        r = self.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IIB", sid, lease_ms, int(force)) + tail, locked=False)
-        if sid != self.session:
-            self.subscriptions.clear()
-        self.session = sid
+        r = self.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IB", lease_ms, int(force)) + tail, session=sid)
         rd = m.Reader(r.payload)
-        lease, boot_id, resumed = rd.take("IIB")
+        lease, boot_id = rd.take("II")
         rd.tail()
-        self.boot_id_seen(boot_id)
+        rebooted = self._boot_id is not None and boot_id != self._boot_id
+        if self.session is not None and not rebooted:
+            self._swept()                                   # nothing of the last session is ours (core §9)
+        self.subscriptions.clear()
+        self.session = sid
+        self.boot_id_seen(boot_id)                          # a reboot: one loss, and the names listed again
         self.lease_ms = lease
-        if resumed == RESUMED["swept"]:
-            self._swept()
-        elif resumed != RESUMED["resumed"]:
-            self.subscriptions.clear()
-            if sid == last:
-                # the probe no longer knows the id this host used last: a reboot (its boot_id may have repeated) or
-                # another session in between - list again before a remembered fn is used (core §6.5, C-19)
-                self._lost()
-        return Opened(lease, boot_id, resumed)
+        return Opened(lease, boot_id)
 
     def end(self) -> None:
+        """End the session: the probe releases the lock and everything the session created (core §6.4, §9) - its
+        plan, its shares of connections and streams, its subscriptions. A resent end is answered from the probe's
+        resend table (core §5.2)."""
         self.request(m.CORE_FN, m.OP_END)
-        self.subscriptions.clear()
+        self.session = None
+        self._swept()
 
     def keepalive(self) -> None:
         self.request(m.CORE_FN, m.OP_KEEPALIVE)
@@ -549,5 +530,7 @@ class Host:
                for fn in sorted(self.subscriptions)]
         out.append(m.Request(self.next_corr(), m.CORE_FN, m.OP_END, b"", self.session).pack())
         self.subscriptions.clear()
+        self.session = None                                 # the blind end ends it: nothing of it lasts (core §9)
+        self.epoch += 1
         return out
 

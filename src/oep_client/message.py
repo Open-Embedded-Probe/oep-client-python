@@ -1,15 +1,15 @@
-"""v1 messages (oep-spec docs/oep-core.ja.md §2-§5): the v0 request/result headers plus the session flag,
-and the §0 rules for what follows a payload's fixed part.
+"""v1 messages (oep-spec docs/oep-core.ja.md §2-§5): one request header, the result header, and the §2.3 rules for
+what follows a payload's fixed part.
 
-  request : role(0x01) corr(u16) fn(u16) op(u8) payload
-            role(0x81) corr(u16) fn(u16) op(u8) session_id(u32) payload     role bit 7 = session_id present
+  request : role(0x01) corr(u16) fn(u16) op(u8) session_id(u32) payload     10 bytes; session_id 0 = no session
   result  : role(0x02) corr(u16) resolution(u8) detail(u8) payload
 
-§2.3 tails: after a result's fixed part (and any counted list) come TLVs (tag u8, len u8, value; a len byte of 0xFF means
-a u16 len follows, for values of 255 bytes and more - core §2.2); the host skips tags it does not know and never rejects a
-longer result. A request may end with TLVs too; tag bit 7 = critical (the probe honours it or answers rejected unsupported
-with the tag), and the probe lists the non-critical tags it ignored in a result TLV 0x7F. Numbers come from `registry`
-(generated from oep-spec registry/oep-v1.toml).
+§2.3: every fixed form (a fixed part, a TLV's value, a sequence's element, a probe.config item) is fixed by (name,
+revision) and never extended at its end; a sequence is count x element with no element length. After a result's fixed
+part (and any counted list) come TLVs (tag u8, len u16, value - core §2.2, one form whatever the length); the host skips
+tags it does not know. A request may end with TLVs too; tag bit 7 = critical (the probe honours it or answers rejected
+unsupported with the tag), and the probe lists the non-critical tags it ignored in a result TLV 0x7F. Numbers come from
+`registry` (generated from oep-spec registry/oep-v1.toml).
 """
 
 from __future__ import annotations
@@ -21,8 +21,9 @@ from . import registry as reg
 
 ROLE_REQUEST, ROLE_RESULT = reg.ROLES["request"], reg.ROLES["result"]
 ROLE_EVENT, ROLE_DATA = reg.ROLES["event"], reg.ROLES["data"]
-ROLE_SESSION = reg.ROLE_SESSION_FLAG
-REQUEST_HEADER, RESULT_HEADER, SESSION_BYTES = 6, 5, 4
+REQUEST_HEADER, RESULT_HEADER = 10, 5           # core §4.1 / §4.2
+NO_SESSION_ID = 0                                 # a request's session_id when it belongs to no session (core §4.1)
+TLV_HEADER = 3                                    # tag(u8) len(u16) (core §2.2)
 
 REJECTED, COMPLETED, ACCEPTED = (reg.RESOLUTIONS[k] for k in ("rejected", "completed", "accepted"))
 SUCCESS, FAILED, PARTIAL = (reg.OUTCOMES[k] for k in ("success", "failed", "partial"))
@@ -34,22 +35,20 @@ MALFORMED = _R["malformed"]
 UNAVAILABLE = _R["unavailable"]
 BUSY = _R["busy"]                          # a long operation is running: answered at once
 WINDOW_EXCEEDED = _R["window_exceeded"]
-NO_SESSION = _R["no_session"]              # lock free, but this is not the last session id: open again
+NO_SESSION = _R["no_session"]              # a session_id while no session holds the lock: open a new session
 LOCKED = _R["locked"]                      # another session holds the lock; payload = remaining ms (u32)
-SESSION_REQUIRED = _R["session_required"]  # a state-changing request came without a session id
+SESSION_REQUIRED = _R["session_required"]  # an op that needs the lock came with session_id 0
 NO_CONNECTION = _R["no_connection"]        # the probe does not know the request's connection: attach again
 UNSUPPORTED = _R["unsupported"]            # a critical TLV (payload: its tag) or a fixed-part value it cannot handle
 RESULT_LOST = _R["result_lost"]            # a request sent again whose result the probe did not keep: read the state again
 CORR_REUSED = _R["corr_reused"]            # a request sent again with the same corr but another fn, op or payload
-EXPIRED = _R["expired"]                    # this session's lock lapsed (lease expiry), its resources swept: open again
 
 REJECT_NAMES = {v: k.replace("_", " ") for k, v in _R.items()}
 REJECT_NAMES[MALFORMED] = "malformed payload"
 
 TAG_CRITICAL, TAG_IGNORED, TAG_INVALID = reg.TAG_CRITICAL, reg.TAG_IGNORED, reg.TAG_INVALID
 TAG_FIXED = reg.TAG_RESERVED_ZERO          # the rejected unsupported payload's first byte for a fixed-part value (core §4.3)
-TLV_LEN_LONG = reg.TLV_LEN_LONG            # the len byte that says a u16 len follows (core §2.2)
-TLV_SHORT_MAX = TLV_LEN_LONG - 1           # the longest value the short form carries (254)
+TAG_OPS = reg.DESCRIBE_COMMON["ops"]       # every fn's describe: base(u8) bitmap - the ops it offers (core §1.2, §7.4)
 
 # core (fn 0) operations
 CORE_FN = 0
@@ -58,7 +57,6 @@ OP_CONFIRM, OP_LIST, OP_DESCRIBE = _OP["confirm"], _OP["list"], _OP["describe"]
 OP_PLAN_APPLY, OP_PLAN_RELEASE = _OP["plan_apply"], _OP["plan_release"]
 OP_OPEN, OP_END, OP_KEEPALIVE, OP_LOCK_STATE = _OP["open"], _OP["end"], _OP["keepalive"], _OP["lock_state"]
 OP_SUBSCRIBE, OP_UNSUBSCRIBE = _OP["subscribe"], _OP["unsubscribe"]
-OP_LINK_SOURCE, OP_LINK_SINK = _OP["link_source"], _OP["link_sink"]
 
 CONFIRM_REQUEST = reg.CONFIRM_REQUEST_MAGIC.encode()
 CONFIRM_RESULT = reg.CONFIRM_RESULT_MAGIC.encode()
@@ -76,37 +74,31 @@ class ShortPayload(ProtocolError):
     """A payload shorter than its fixed part, or a truncated TLV (a broken result, core §2.3)."""
 
 
-class BadTlv(ProtocolError):
-    """A TLV that is not encoded the one way core §2.2 allows (a value under 255 bytes in the long form)."""
-
-
 @dataclass(frozen=True)
 class Request:
+    """One request (core §4.1). `session`: the session_id in the header - 0 (None is taken as 0) for a request that
+    belongs to no session, which only an op that needs no lock may be."""
     corr: int
     fn: int
     op: int
     payload: bytes = b""
-    session: int | None = None
+    session: int = NO_SESSION_ID
+
+    def __post_init__(self):
+        if self.session is None:
+            object.__setattr__(self, "session", NO_SESSION_ID)
 
     def pack(self) -> bytes:
-        if self.session is None:
-            return struct.pack("<BHHB", ROLE_REQUEST, self.corr, self.fn, self.op) + self.payload
-        return (struct.pack("<BHHBI", ROLE_REQUEST | ROLE_SESSION, self.corr, self.fn, self.op, self.session)
-                + self.payload)
+        return struct.pack("<BHHBI", ROLE_REQUEST, self.corr, self.fn, self.op, self.session) + self.payload
 
     @classmethod
     def unpack(cls, data: bytes) -> Request:
         if len(data) < REQUEST_HEADER:
             raise ValueError("request shorter than its header")
-        role, corr, fn, op = struct.unpack_from("<BHHB", data)
-        if role & ~ROLE_SESSION != ROLE_REQUEST:
+        role, corr, fn, op, session = struct.unpack_from("<BHHBI", data)
+        if role != ROLE_REQUEST:
             raise ValueError(f"not a request: role 0x{role:02x}")
-        if role & ROLE_SESSION:
-            if len(data) < REQUEST_HEADER + SESSION_BYTES:
-                raise ValueError("session flag set but no session id")
-            (session,) = struct.unpack_from("<I", data, REQUEST_HEADER)
-            return cls(corr, fn, op, data[REQUEST_HEADER + SESSION_BYTES:], session)
-        return cls(corr, fn, op, data[REQUEST_HEADER:], None)
+        return cls(corr, fn, op, data[REQUEST_HEADER:], session)
 
 
 @dataclass(frozen=True)
@@ -152,34 +144,24 @@ class Result:
 # ---- §0 TLV tails ------------------------------------------------------------------------------------------
 
 def tlv(tag: int, value: bytes, critical: bool = False) -> bytes:
-    """One TLV in the one encoding core §2.2 allows: `tag len(u8) value` up to 254 bytes, `tag 0xFF len(u16) value` from
-    255 on. `critical` sets tag bit 7 (a request argument the probe must honour or refuse)."""
+    """One TLV, `tag(u8) len(u16) value` (core §2.2: one form for every length). `critical` sets tag bit 7 (a request
+    argument the probe must honour or refuse)."""
     if len(value) > 0xFFFF:
         raise ValueError(f"TLV 0x{tag:02x}: value of {len(value)} bytes does not fit a u16 length")
     if tag & 0x7F == TAG_IGNORED or tag == TAG_FIXED:
         raise ValueError("tags 0x00 and 0x7F are reserved (the unsupported marker, the ignored list)")
-    head = bytes((tag | (TAG_CRITICAL if critical else 0),))
-    if len(value) <= TLV_SHORT_MAX:
-        return head + bytes((len(value),)) + value
-    return head + bytes((TLV_LEN_LONG,)) + struct.pack("<H", len(value)) + value
+    return struct.pack("<BH", tag | (TAG_CRITICAL if critical else 0), len(value)) + value
 
 
 def split_tlvs(data: bytes) -> list[tuple[int, bytes]]:
-    """TLVs in order, both forms (core §2.2). A truncated TLV raises ShortPayload (the result is broken); the long form
-    carrying a value the short form would hold raises BadTlv (not the one encoding)."""
+    """TLVs in order (core §2.2). A truncated TLV - a header cut short, or a len past the end - raises ShortPayload
+    (the result is broken)."""
     pos, out = 0, []
     while pos < len(data):
-        if pos + 2 > len(data):
+        if pos + TLV_HEADER > len(data):
             raise ShortPayload("TLV: truncated header")
-        tag, n = data[pos], data[pos + 1]
-        pos += 2
-        if n == TLV_LEN_LONG:
-            if pos + 2 > len(data):
-                raise ShortPayload(f"TLV 0x{tag:02x}: truncated long length")
-            n = struct.unpack_from("<H", data, pos)[0]
-            pos += 2
-            if n <= TLV_SHORT_MAX:
-                raise BadTlv(f"TLV 0x{tag:02x}: a {n}-byte value in the long form")
+        tag, n = struct.unpack_from("<BH", data, pos)
+        pos += TLV_HEADER
         if pos + n > len(data):
             raise ShortPayload(f"TLV 0x{tag:02x}: truncated value")
         out.append((tag, data[pos:pos + n]))
@@ -222,8 +204,7 @@ class Tail:
 
 class Reader:
     """Reads a result payload's fixed part front to back; too short -> ShortPayload. `tail()` then reads the rest as
-    core §2.3 TLVs; `rest()` takes the rest as bytes (fn 0's link_source only: the one answer that ends with a list
-    of unknown length, core §12)."""
+    core §2.3 TLVs; `rest()` takes the rest as bytes (an answer that is a TLV list itself: probe.config get)."""
 
     def __init__(self, payload: bytes):
         self.data, self.at = payload, 0
@@ -270,18 +251,6 @@ class Reader:
 
     def tail(self) -> Tail:
         return Tail.parse(self.rest())
-
-    def element(self) -> "Reader":
-        """One element of an answer's list: len(u8) then the element (core §2.3). The element's own Reader: read what
-        you know of it; what follows (fields added later) is skipped with it."""
-        return Reader(self.bytes(self.u8()))
-
-
-def element(body: bytes) -> bytes:
-    """An answer list's element as sent: len(u8) then the element (core §2.3)."""
-    if len(body) > 255:
-        raise ValueError("a list element is at most 255 bytes")
-    return bytes([len(body)]) + body
 
 
 def shown(raw: bytes) -> str:
