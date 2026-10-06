@@ -58,12 +58,19 @@ class NotV1(OepError):
     """The probe does not speak v1 (confirm answered revision 0, or refused the ranged confirm as malformed)."""
 
 
+class NotRestarted(OepError):
+    """restart_probe (core §6.6): after the restart the probe confirmed the boot_id it had before - the restart did not
+    happen as far as this host can tell (a probe whose boot_id source repeated is told apart by nothing else)."""
+
+
 class NotUsable(OepError):
     """The probe declared values a conforming probe never does (core §7.1 confirm's bounds, C-20; §7.5 max_op_ms,
     C-47): this host sends nothing more to it. The message reports the values."""
 
 
 MAX_OP_MS_MAX = reg.LIMITS["max_op_ms_max"]   # fn 0 describe max_op_ms is 1 to this (core §7.5)
+RESTART_AFTER_ANSWER_S = reg.LIMITS["restart_after_answer_ms"] / 1000   # restart: the probe begins within this (core §6.6)
+RESTART_WAIT_S = 10.0                          # restart_probe: how long the probe may take to answer a confirm again
 
 
 def check_confirm(max_frame: int, window: int, max_inflight: int) -> str:
@@ -508,6 +515,59 @@ class Host:
                     who = e.owner or "another session"
                     raise InUse(f"the probe is in use by {who} (lease {e.remaining_ms} ms left, kept going)") from e
                 time.sleep(min(left, e.remaining_ms / 1000 + 0.05))
+
+    # ---- restart (core §6.6) --------------------------------------------------------------------------------------
+    def request_restart(self) -> None:
+        """fn 0's restart, the request alone (core §6.6): sent in this session (the op needs the lock: without a
+        session it goes with session_id 0 and is refused session_required); completed success = the probe restarts
+        once the answer is out. A probe without it in fn 0's ops answers unknown_operation (Rejected). Afterwards
+        nothing of this session lasts: the session, its resources, the fn numbers. `restart_probe` also waits for the
+        probe and confirms its new boot_id."""
+        self.call(m.CORE_FN, m.OP_RESTART)
+        self.session = None
+        self._lost()
+
+    def restart_probe(self, wait_s: float = RESTART_WAIT_S) -> int:
+        """Restart the probe and wait until it is back (core §6.6, host guide §5.2) -> its new boot_id. The session
+        must hold the lock. After the answer nothing more goes out; the link (`link.reopen_after_restart`, when this
+        host has one) closes, waits restart_after_answer_ms and opens again as a new open - the confirm first, a serial
+        port at its boot speed, a USB device found again once it has re-enumerated - retried for `wait_s`; a host on a
+        bare `send` waits and confirms. When the answer is lost, the same: a resend the restarted probe refused
+        no_session counts as the restart having happened. The confirm's boot_id must differ from the one before
+        (NotRestarted otherwise); everything this host remembered of the old boot is dropped (core §6.5)."""
+        import time
+        self.require_v1()
+        before = self._boot_id if self._boot_id is not None else self.confirm()["boot_id"]
+        epoch = self.epoch
+        try:
+            self.call(m.CORE_FN, m.OP_RESTART)
+        except NoSession:
+            pass                                            # the resend reached the new boot: it restarted (§6.6)
+        except (TimeoutError, ConnectionError, OSError):
+            pass                                            # no answer: the confirm below tells
+        self.session = None
+        self._lost()
+        self.epoch = epoch + 1                              # one loss, however the answer came (a no_session too)
+        self._boot_id = None                                # the boot_id below is compared with `before` here
+        self.limits = None
+        reopen = getattr(getattr(self, "link", None), "reopen_after_restart", None)
+        if reopen is not None:
+            reopen(self, wait_s)
+        else:
+            deadline = time.monotonic() + wait_s
+            time.sleep(RESTART_AFTER_ANSWER_S)
+            while True:
+                try:
+                    self.confirm()
+                    break
+                except (TimeoutError, ConnectionError, OSError, ProtocolError):
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.05)
+        after = self.limits["boot_id"]
+        if after == before:
+            raise NotRestarted(f"the probe confirmed boot_id 0x{after:08X} after the restart, the same as before")
+        return after
 
     # ---- notifications (§4.5) -------------------------------------------------------------------
     def subscribe(self, fn: int, min_bytes: int = 0, max_delay_ms: int = 0) -> None:

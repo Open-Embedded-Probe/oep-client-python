@@ -40,15 +40,16 @@ class Offered:
 PLAN_ROLE_INTERFACES = {"oep.fixture.gpio", "oep.fixture.uart", "oep.fixture.i2c-target", "oep.fixture.spi-target",
                         "oep.fixture.logic", "oep.fixture.analog"}     # the interfaces with plan roles (core §8)
 STAND_IN_OPS = (0x01, 0x02)          # the endpoint's two stand-in ops of an fn it does not simulate (FAKE ONLY)
-_CORE_REQUIRED = ("confirm", "list", "describe", "open", "end", "keepalive", "lock_state", "subscribe", "unsubscribe")
+CORE_REQUIRED = ("confirm", "list", "describe", "open", "end", "keepalive", "lock_state", "subscribe", "unsubscribe")
+CORE_OPTIONAL = ("restart",)                      # fn 0's optional ops the fake offers (core §1.2, §6.6)
 
 
 def default_ops(name: str, all_names) -> set[int]:
-    """The ops an fn of interface `name` offers when its profile says nothing (core §1.2): fn 0 its required ops,
-    plan_apply / plan_release when an interface has plan roles; any other interface every op of its table, the
-    optional ones included; one the registry does not know the stand-in ops."""
+    """The ops an fn of interface `name` offers when its profile says nothing (core §1.2): fn 0 its required ops and
+    its optional restart (§6.6), plan_apply / plan_release when an interface has plan roles; any other interface every
+    op of its table, the optional ones included; one the registry does not know the stand-in ops."""
     if name == "oep.core":
-        ops = {reg.CORE.op[k] for k in _CORE_REQUIRED}
+        ops = {reg.CORE.op[k] for k in CORE_REQUIRED + CORE_OPTIONAL}
         if PLAN_ROLE_INTERFACES & set(all_names):
             ops |= {reg.CORE.op["plan_apply"], reg.CORE.op["plan_release"]}
         return ops

@@ -15,7 +15,8 @@
 bytes to send, or None to send nothing (fault injection for tests).
 
 port_speed (oep-if-link §3): every closed candidate tells the endpoint whether it was a frame (`Endpoint.speed_frame`), a
-switch or revert a request asked for happens once its answer is queued (at the old speed), and the endpoint's
+switch or revert a request asked for happens once its answer is queued (at the old speed) - so does the restart fn 0's
+restart asks for (core §6.6: the answer stays queued, the bytes read behind the request are dropped) - and the endpoint's
 `broken_rates` break frames at the port's rate now: a candidate from the host is then not a frame, an answer or push
 goes out with a spoiled CRC (a `duplex` one only while a request of its size comes in with such an answer still
 unread: the request, or that answer, breaks). `FakeSerialStream` is the port as a pyserial-shaped stream for an in-process host, with
@@ -47,10 +48,17 @@ class FakeSerialPort:
         now = self.ep.now()
         self._gap(now)
         raw = bytearray()
+        boots = self.ep.reboots
         for b in data:
             if b == 0:
                 if self.cand is not None:
                     self._close(raw)
+                    if self.ep.reboots != boots:
+                        # the frame was a restart (core §6.6): its answer is queued, the probe restarted after it, and
+                        # what came behind it on the line is lost with the old boot (as `reboot` drops)
+                        self.cand = None
+                        self.last_ms = now
+                        return
                 self.cand = bytearray(b"\x00")
             elif self.cand is not None:
                 self.cand.append(b)
@@ -92,7 +100,7 @@ class FakeSerialPort:
             wire = self.answer_filter(self.answers, result)
         if wire:
             self.frames.append(self._line(wire))
-        self.ep.speed_after_answer()                 # port_speed: switch (or revert) now the answer is out
+        self.ep.after_answer()                       # now the answer is out: a port_speed switch or revert, a restart
 
     def reboot(self) -> None:
         """The probe behind the port restarted (`Endpoint.reboot`): the candidate it was reading and the answers it had

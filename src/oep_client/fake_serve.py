@@ -26,6 +26,12 @@ Lines on stdin are commands, read between requests (the serving never waits for 
                         "fake_serve: rebooted, boot_id 0x........"
 A line that is no command is ignored with a message on stderr.
 
+fn 0's restart (core §6.6; every profile offers it) does the same from a request: the answer (completed success, no
+payload) goes out first, then the probe reboots as above. The pty or TCP connection stays open, as the `reboot` command
+leaves it; what the probe had read behind the restart request is dropped. A host waits restart_after_answer_ms, may
+close and open again (the pty and the TCP listener take a new open), and confirms: the boot_id is new. --no-restart
+leaves restart out of fn 0's ops (unknown_operation).
+
 Options:
   --profile NAME        p4-x035 (default), esp32-v003, p4-bench or rp2350-pins (p4_x035 style names work too)
   --port-index N        which serial port of the profile the pty / cobs TCP is (default: the first one)
@@ -55,6 +61,7 @@ Options:
                         "DUT RX" labels when the profile has them, else the first free channels); configure then works
   --uart-rx TEXT        what arrives on that UART's RX every --every ms once it is configured (%d = a counter)
   --no-port-speed       the profile's port_speed (oep.link, oep-if-link §3; esp32-v003 has it) off: not in the ops, unknown_operation
+  --no-restart          fn 0's restart (core §6.6) off: not in fn 0's ops, unknown_operation
   --broken-rate SPEC    port_speed's line model: frames at RATE break (repeatable). SPEC is
                         RATE[:MIN_SIZE][:in|out][:duplex][:everyN][:afterB]: only frames of MIN_SIZE bytes and more on the wire
                         (default every frame), only towards the host (in) or the probe (out) (default both), only
@@ -122,6 +129,8 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
         for tg in ep.targets.values():
             tg.run_hook = (lambda t: lambda pc, regs: hook(t, pc, regs))(tg)
     ep.capture_slipped = getattr(a, "capture_slipped", False)
+    if getattr(a, "no_restart", False):
+        ep.restart_offered = False                       # fn 0's ops without restart (core §1.2, §6.6)
     if getattr(a, "no_port_speed", False):
         ep.port_speed_base = None
     for spec in getattr(a, "broken_rate", []):
@@ -454,6 +463,7 @@ def _serve_conn(a, ep, console, conn, commands: Commands) -> bool:
                             break
                         msg = bytes(buf[2:2 + n])
                         del buf[:2 + n]
+                        boots = ep.reboots
                         try:
                             result = ep.handle(msg, index)
                         except ValueError:
@@ -461,9 +471,11 @@ def _serve_conn(a, ep, console, conn, commands: Commands) -> bool:
                         if result is None:
                             continue
                         answers += 1
-                        if a.drop == answers and filt(answers, result) is None:
-                            continue
-                        conn.sendall(a.noise.encode() + struct.pack("<H", len(result)) + result)
+                        if not (a.drop == answers and filt(answers, result) is None):
+                            conn.sendall(a.noise.encode() + struct.pack("<H", len(result)) + result)
+                        if ep.reboots != boots:
+                            buf.clear()                            # a restart (core §6.6): what came behind it is lost
+                            break
         console.tick()
         if a.framing == "cobs":
             port.tick()
@@ -509,6 +521,7 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--keep-on-eof", action="store_true")
     ap.add_argument("--capture-slipped", action="store_true")
     ap.add_argument("--no-port-speed", action="store_true")
+    ap.add_argument("--no-restart", action="store_true")
     ap.add_argument("--broken-rate", action="append", default=[])
     a = ap.parse_args(argv)
     if a.tcp is None and a.framing == "length":

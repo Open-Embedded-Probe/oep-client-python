@@ -119,6 +119,8 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None) -> f
     chans = list(range(16))
     offered = [core]
     for fn, name in sorted(((int(k), v) for k, v in fns.items())):
+        if name == "oep.core":
+            continue                                                   # fn 0 above (its ops: the profiles' default)
         if name == "oep.fixture.gpio":
             o = fake._gpio(fn, chans, drive=False)
         elif name == "oep.fixture.i2c-target":
@@ -196,7 +198,7 @@ def smallest_probe() -> endpoint.Endpoint:
     bridge (index 0, interface 0xFF), unit_id "a1b2c3d4", discoverable 0, max_op_ms 1000 - its describe in that order
     (ops first), nothing else."""
     t = reg.CORE.tlv["describe"]
-    core = fake.Offered(0, 0, "oep.core", (catalog.ops_tlv(fake.default_ops("oep.core", ["oep.core"])),
+    core = fake.Offered(0, 0, "oep.core", (catalog.ops_tlv(reg.CORE.op[k] for k in fake.CORE_REQUIRED),
                                            catalog.text(t["unit_id"], "a1b2c3d4"),
                                            catalog.tlv(t["transport"], bytes([0, fake.TRANSPORT["uart_bridge"], 0xFF])),
                                            catalog.u8(t["discoverable"], 0),
@@ -445,7 +447,11 @@ def setup_case(case):
     ep = endpoint.Endpoint(vector_probe(fns, ops=ops), clock, boot_id=EXAMPLE_BOOT_ID)
     wire = next((int(k) for k, v in fns.items() if v == "oep.wire.rvswd"), None)
     name, state = case["name"], case["state"]
-    if name.startswith("gpio"):
+    if name.startswith("core restart"):
+        ep.restart_offered = "without restart" not in state          # fn 0's ops (core §1.2, §6.6)
+        if "holds the lock" in state:
+            held(ep)
+    elif name.startswith("gpio"):
         held(ep)
         req(ep, 2, 0, m.OP_PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 2, 1, 3), critical=True))   # channel 3 only
         if "after the set" in state:
@@ -510,6 +516,16 @@ def _on_client(case):
     from oep_client import capture as cap, config as cfg, console as con, fixture as fix, riscv as rv
     name = case["name"]
     a = m.Result.unpack(hx(case["answer_hex"]))
+    if name.startswith("core restart"):
+        hst, sent = client(case, None if "without a session" in name else S)
+        if a.resolution == m.COMPLETED:
+            hst.request_restart()
+            assert hst.session is None and hst._fns == {}                # nothing of the old boot lasts (core §6.6)
+        else:
+            with pytest.raises(h.Rejected) as e:
+                hst.request_restart()
+            assert e.value.result.detail == a.detail
+        return sent
     if name.startswith("link source"):
         hst, sent = client(case)
         n = struct.unpack_from("<I", m.Request.unpack(hx(case["request_hex"])).payload)[0]

@@ -8,7 +8,7 @@ Open Embedded Probe の host 側。v1（oep-spec の `docs/oep-core.ja.md`、`do
 
 **実装する仕様: oep-spec の commit `59dd028`**（`v0.x` のタグはまだ無い。oep-spec versioning §6: 凍結の前は revision 1 だけでは
 形が決まらないので、実装は自分が実装する仕様を名乗る）。2026-10-06 の単純化（10 byte の要求の見出し 1 つ、TLV の len は u16、
-閉じた固定の形、describe の `ops` tag、再開なし、`oep.link`）、コンソールの送りの列と reset の後の待ち（f0c68bf）、定義より長い probe.config の項目（d34dafa）、oep.link の source の len（4bd3a87）、既存の connection に加わる attach（59dd028）を含む。
+閉じた固定の形、describe の `ops` tag、再開なし、`oep.link`）、コンソールの送りの列と reset の後の待ち（f0c68bf）、定義より長い probe.config の項目（d34dafa）、oep.link の source の len（4bd3a87）、既存の connection に加わる attach（59dd028）を含み、`ecd1ab9` の fn 0 の任意の restart（core §6.6）も実装する。
 
 凍結までは日本語の文（`.ja.md`）が仕様の作業の文で、英語の文書は凍結のときにそこから作り直し、そのときから英語が正になる。OEP を初めて読む人は oep-spec の
 [README](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/README.ja.md) と [レビューの手引き](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/review-guide.ja.md)（どこに何が書いてあるか）から。
@@ -41,7 +41,7 @@ X.Y.Z（v1 の凍結までは、どのリリースも wire を壊しうるので
 
 | モジュール | 中身 |
 |---|---|
-| `host` | 要求と結果（見出しは 10 byte の 1 つ: セッションの中で送る要求はそのセッションの id、セッションの外のロックなしの要求は 0）、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`。セッションが終わった（end、lease の期限切れ、ほかのセッションの force）なら `NoSession`: probe はそのセッションが作ったものをすべて解放している。再開は無く、黙って open し直さず、`Host.session` は None に、`Host.epoch` が進む。confirm が core §7.1 の範囲の外か、`max_op_ms` が 1〜600000 の外の probe は `NotUsable` で、それ以上何も送らない）。`open(lease_ms, force=, owner=)` はいつも新しい乱数の id で新しいセッションを開き、`Opened(lease_ms, boot_id)` を返す。`end()` はすべてを解放し、host はセッションの外に出る。boot_id が変わったとき（confirm、open、heartbeat）は名前 → fn の cache を捨て、list し直す |
+| `host` | 要求と結果（見出しは 10 byte の 1 つ: セッションの中で送る要求はそのセッションの id、セッションの外のロックなしの要求は 0）、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`。セッションが終わった（end、lease の期限切れ、ほかのセッションの force）なら `NoSession`: probe はそのセッションが作ったものをすべて解放している。再開は無く、黙って open し直さず、`Host.session` は None に、`Host.epoch` が進む。confirm が core §7.1 の範囲の外か、`max_op_ms` が 1〜600000 の外の probe は `NotUsable` で、それ以上何も送らない）。`open(lease_ms, force=, owner=)` はいつも新しい乱数の id で新しいセッションを開き、`Opened(lease_ms, boot_id)` を返す。`end()` はすべてを解放し、host はセッションの外に出る。boot_id が変わったとき（confirm、open、heartbeat）は名前 → fn の cache を捨て、list し直す。`restart_probe(wait_s=10)` は fn 0 の任意の restart（core §6.6、host ガイド §5.2。セッションがロックを持つこと）で probe を再起動する: 応答の後、link は閉じ、`restart_after_answer_ms`（100 ms）待ち、新しく開くのと同じに開き直し（最初は confirm。シリアルの口は起動時の速さ、USB の device は列挙し直した後に探し直し、TCP は接続し直す）、新しい boot_id を返す。同じなら `NotRestarted`。応答が失われ、送り直しが再起動した probe に no_session で断られたときも済んだとみなす。`request_restart()` は要求だけを送る。fn 0 の ops に restart の無い probe は unknown_operation で答える |
 | `link` | transport: シリアルの口（常に COBS + CRC、`0x00 <COBS> 0x00`、フレームの外は雑音として捨てる、排他で開く、8N1 で DTR / RTS を立てる）、USB vendor bulk / HID と TCP（長さつきフレーム、transports §5 の立て直し: host の最後の書き込みから 250 ms 待つ。TCP ではフレームの途中の休みもそのまま読み続ける）、corr による照合と送り直し。送り直しにも応答が無ければ `TransportFailed` を上げ、次の要求の前に confirm で立て直す（入力が静かになるのを待ち、自分の corr の confirm。シリアルの口でも）。立て直せなければ ConnectionError。応答はどれも core §4.4 の下限（引数の時間 + 1000 ms + シリアルの口の転送時間。confirm の応答が来るまでは min_max_frame で数える、`wait_floor_s`）以上待つ。fn 0 の heartbeat を読む。短い応答は壊れたフレーム。`open_host(target)` |
 | `core` | インターフェースを名前で探す（キャッシュつき）、confirm（probe の `boot_id` と、この host が来た経路の番号 `transport` つき。2 回目からは使っている revision を求める）、probe の describe（宣言だけ。起動の間 cache: ラベル、transport の一覧、`max_op_ms`）、どの fn の `ops` も（describe の ops tag、core §7.4: `ops(hst, fn)`、`offers(hst, fn, op)`、`Interface.offers(op)`。`require` / `not_offered` は送らずに、probe が答えるのと同じ `Rejected`（detail unknown_operation）を上げる）、ロックの取り方（`take`）、ピンの割り当て（plan）、`Interface` の土台。`oep.link`（oep-if-link）: `link_fn`、`link_speed`、source / sink の要求と応答の部品 |
 | `riscv` | `oep.wire.rvswd` / `oep.wire.swio`（scan、attach: `max_speed` は常に送る、`reset=(channel, hold_ms)` でリセットをかけながら attach、detach、connections）、`oep.target.riscv-dm`（応答は値の数を持つ。`RunResult.not_halted`。hart を止め直せなかった step は `step_left` つきの `StepError`）、`RiscvDm.declared()`（probe が ops tag で出している任意の op。ほかは unknown_operation）、`Wire.search_retries`（attach の立ち上げで余分にかかった試みの数。立ち上げをしたときだけ来る）、attach と scan はその予算の分も待つ、リセット線の探索（`find_reset_line(candidates, pins=...)`）、GPIO 経由の attach |
@@ -290,7 +290,7 @@ uv run python -m oep_client.fake_serve --pty --profile p4-bench --slot x035 --bi
 stdin に `reboot` の 1 行を書くと、セッションの途中で probe が新しい乱数の boot_id で再起動する（`Endpoint.reboot`）。
 セッションの表、送り直しの表、接続、ストリーム、購読、plan、保存していない設定は消え、保存した設定（`--slot`、`--bind`、
 `--label`、`--uart-plan`）がもう一度当たる。古いセッションでの要求は no_session になり、confirm と open は新しい boot_id を返す。
-pty や TCP の接続は開いたまま。stderr に `fake_serve: rebooted, boot_id 0x........` を出す。ほかの行は stderr に一言出して無視する:
+pty や TCP の接続は開いたまま。stderr に `fake_serve: rebooted, boot_id 0x........` を出す。ほかの行は stderr に一言出して無視する。fn 0 の restart（core §6.6。どの profile も持ち、`--no-restart` で fn 0 の ops から外す）は要求で同じことをする: 応答を先に送り、それから probe が再起動し、要求の後ろに読んでいたものは捨てる:
 
 ```python
 # 試験は子プロセスを stdin=PIPE で持ち、その行を書く

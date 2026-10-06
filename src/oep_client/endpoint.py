@@ -739,6 +739,10 @@ class Endpoint:
         self.port_speed_base: int | None = (115200 if self.link_fn is not None and OP_PORT_SPEED in self.ops[self.link_fn]
                                             else None)
         self.broken_rates: dict[int, BrokenRate] = {}   # the line: rates that break frames (fake_serial applies it)
+        # fn 0's optional restart (core §6.6): on when fn 0's ops set it (the profiles do); a test turns it off or on
+        self.restart_offered = m.OP_RESTART in self.ops.get(m.CORE_FN, set())
+        self.reboots = 0                                # restarts so far (the restart op and reboot()): a transport
+                                                        # drops what it had read for the old boot when this moves
         self._transport = 0                             # the transport the request being handled came in on
         # what the simulation is, not the probe's state (a reboot keeps them):
         self.capture_slipped = False                    # every capture segment says flags bit2 (a pace that fell behind)
@@ -749,6 +753,8 @@ class Endpoint:
         self._boot()
 
     def _boot(self) -> None:
+        self.restarting = False              # restart answered (core §6.6): nothing more is processed until reboot()
+        self.unanswered = 0                  # requests that came while restarting (no answer, core §6.6)
         self.holder: int | None = None
         self.last: int | None = None         # S: the id that holds or last held the lock (the resend table's, §5.2)
         self.owner: bytes | None = None      # the holder's owner, while the lock is held (core §6.4)
@@ -958,7 +964,10 @@ class Endpoint:
 
     def pushes(self) -> list[bytes]:
         """The frames the probe sends by itself now (core §11): fn 0's heartbeat, events, and a streaming capture's
-        data. A serving loop frames and sends them; a test takes them from here."""
+        data. A serving loop frames and sends them; a test takes them from here. None once a restart was answered
+        (core §6.6)."""
+        if self.restarting:
+            return []
         self.tick()
         if m.CORE_FN in self.subscribed and self.now() >= self.next_heartbeat_ms:
             self.next_heartbeat_ms = self.now() + self.heartbeat_ms
@@ -1159,6 +1168,9 @@ class Endpoint:
         if not data or data[0] != m.ROLE_REQUEST or len(data) < REQUEST_HEADER:
             self.discarded += 1                                   # not a request, or shorter than its header (C-36)
             return None
+        if self.restarting:
+            self.unanswered += 1                                  # the restart's answer is out: nothing more (§6.6)
+            return None
         req = m.Request.unpack(data)
         if self.revision == 0 and req.session:
             self.dropped += 1                                     # a v0 probe: no sessions in its shapes, no answer
@@ -1193,7 +1205,7 @@ class Endpoint:
         if req.session and req.session == self.last and past_header and not is_open:
             self._remember(req, out)                               # rejected answers too; open is not (core §5.2)
         if transport not in self.serial_ports:
-            self.speed_after_answer()                              # the answer is not on a port whose speed changes
+            self.after_answer()                                    # the answer is not on a port whose speed changes
         return out
 
     def _header(self, req: m.Request) -> int | None:
@@ -1216,11 +1228,13 @@ class Endpoint:
         """core §1.2: an fn offers exactly the ops its describe's ops tag sets (§7.4) - every required op, and an
         optional one when the probe has it; any other op is unknown_operation (§4.3 order 1). The profiles say which
         optional ops they have (fake.FakeProbe fills in the ops tag of an interface that gives none: all of its ops).
-        oep.link's port_speed follows `port_speed_base` (a test turns it off or on)."""
+        oep.link's port_speed follows `port_speed_base`, fn 0's restart `restart_offered` (a test turns them off or on)."""
         if fn not in self.ops:
             return False
         if fn == self.link_fn and op == OP_PORT_SPEED:
             return self.port_speed_base is not None
+        if fn == m.CORE_FN and op == m.OP_RESTART:
+            return self.restart_offered
         return op in self.ops[fn]
 
     def _interface(self, fn: int):
@@ -1392,6 +1406,7 @@ class Endpoint:
             while boot_id == self.boot_id:
                 boot_id = secrets.randbits(32)
         self.boot_id = boot_id
+        self.reboots += 1
         self._origin_ns, self._last_ns = self._raw_ns(), 0
         for fn in self.captures:
             self.captures[fn] = self._capture_from(self.decl[fn])
@@ -1453,6 +1468,12 @@ class Endpoint:
             return m.COMPLETED, m.SUCCESS, b""
         if op == m.OP_KEEPALIVE:
             t.tail()
+            return self._answer(b"")
+        if op == m.OP_RESTART:
+            # core §6.6: no fixed part; the lock was checked (session_required / no_session / locked). The answer goes
+            # first; once it is out (`after_answer`) the probe restarts, and until then nothing more is processed
+            t.tail()
+            self.restarting = True
             return self._answer(b"")
         if op == m.OP_SUBSCRIBE:
             fn, _min_bytes, max_delay_ms = t.take("HHI")           # max_delay_ms u32 (core §11.3)
@@ -1874,6 +1895,16 @@ class Endpoint:
         """The rate `port` runs at now when it breaks only both ways at once (fake_serial checks the unread answers)."""
         b = self.broken_rates.get(self.port_baud(port))
         return b if b is not None and b.duplex else None
+
+    def after_answer(self) -> None:
+        """The answer just handled is out (its transport calls this once the answer has left - at the old speed): a
+        port_speed switch or revert it asked for happens now (`speed_after_answer`), and a restart it answered
+        (core §6.6) restarts the probe now (`reboot`: a new boot_id, the saved settings, no session; the pins in their
+        free state, nothing driven before). A test calling `handle` itself on a serial port index calls this as
+        FakeSerialPort does."""
+        self.speed_after_answer()
+        if self.restarting:
+            self.reboot()
 
     def speed_after_answer(self) -> None:
         """The answer that asked for a switch or a revert is out (at the old speed): now do it."""

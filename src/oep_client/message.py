@@ -57,6 +57,7 @@ OP_CONFIRM, OP_LIST, OP_DESCRIBE = _OP["confirm"], _OP["list"], _OP["describe"]
 OP_PLAN_APPLY, OP_PLAN_RELEASE = _OP["plan_apply"], _OP["plan_release"]
 OP_OPEN, OP_END, OP_KEEPALIVE, OP_LOCK_STATE = _OP["open"], _OP["end"], _OP["keepalive"], _OP["lock_state"]
 OP_SUBSCRIBE, OP_UNSUBSCRIBE = _OP["subscribe"], _OP["unsubscribe"]
+OP_RESTART = _OP["restart"]                  # optional, declared in fn 0's ops (core §6.6)
 
 CONFIRM_REQUEST = reg.CONFIRM_REQUEST_MAGIC.encode()
 CONFIRM_RESULT = reg.CONFIRM_RESULT_MAGIC.encode()

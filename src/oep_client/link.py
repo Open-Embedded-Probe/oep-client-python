@@ -252,6 +252,7 @@ class SerialLink:
     def __init__(self, port: str, timeout: float = 3.0, baud: int = BASE_BAUD):
         self._setup(open_serial(port, baud), "cobs", timeout)
         self.port_path = port
+        self.reopener = lambda: open_serial(port, baud)    # the same port again, at the boot speed (a restart, §6.6)
 
     @classmethod
     def on_stream(cls, stream, framing: str = "length", timeout: float = 3.0) -> SerialLink:
@@ -261,6 +262,7 @@ class SerialLink:
         lk._setup(stream, framing, timeout)
         name = getattr(stream, "name", None)
         lk.port_path = name if isinstance(name, str) else None
+        lk.reopener = None                         # how to open the stream again (open_host sets it); None: it stays
         return lk
 
     def _setup(self, stream, framing: str, timeout: float) -> None:
@@ -645,9 +647,9 @@ class SerialLink:
         return cls._completed(message, reply)
 
     def _reverts(self, message: bytes, reply: bytes) -> bool:
-        """A completed end, or port_speed's revert (oep.link): the probe is back at its boot speed once this answer
-        is out (oep-if-link §3 host obligation 6)."""
-        if self._core_completed(message, reply) == m.OP_END:
+        """A completed end or restart (core §6.6: the probe starts again at its boot speed), or port_speed's revert
+        (oep.link): the probe is back at its boot speed once this answer is out (oep-if-link §3 host obligation 6)."""
+        if self._core_completed(message, reply) in (m.OP_END, m.OP_RESTART):
             return True
         at = m.REQUEST_HEADER + 5                                   # port(u8) baud(u32) step(u8)
         return (self._completed(message, reply, self.speed_fn) == OP_PORT_SPEED and len(message) > at
@@ -1023,6 +1025,11 @@ class SerialLink:
     def attach_host(self, hst) -> None:
         """Bind to a host: its correlation counter and blind stops for the resync, and after a confirm, the probe's
         limits (in-flight, window, max_frame) for pipelining and the framing check."""
+        self._bind_host(hst)
+        limits = self.probe(hst)
+        hst.exchange = self.bind(limits)
+
+    def _bind_host(self, hst) -> None:
         self.corr_source = hst.next_corr
         self.blind = hst.blind_stop
         self.held = lambda: hst.session is not None
@@ -1037,8 +1044,43 @@ class SerialLink:
         self.on_boot_id = hst.boot_id_seen          # the link's own confirms (resync, recovery): a reboot shows (C-38)
         hst.on_limits = self._limits                # every confirm answer: max_frame for the transfer time (N-1)
         hst.link = self
-        limits = self.probe(hst)
-        hst.exchange = self.bind(limits)
+
+    def reopen_after_restart(self, hst, wait_s: float) -> dict:
+        """After fn 0's restart (core §6.6, host guide §5.2; Host.restart_probe): the link closes, waits
+        restart_after_answer_ms and opens again as a new open - the probing rule's confirm first (a serial port at its
+        boot speed, retried as wait_boot_speed does; a USB device found again by its serial once it has re-enumerated;
+        a TCP connection made again) - retried until `wait_s` has passed. A link on a stream it cannot open again
+        (`reopener` None: an in-process fake) keeps the stream, drops what it had read and confirms. Everything the link
+        held for the old boot (a raised rate, a failed transport, the read buffer) starts again. -> confirm's limits."""
+        deadline = time.monotonic() + wait_s
+        if self._raised():
+            self.set_baud(self.base_baud)                  # the probe starts at its boot speed (oep-if-link §3 ob. 6)
+        keep = {k: getattr(self, k) for k in ("transport", "port_path", "reopener", "resend", "wait_add_s")
+                if hasattr(self, k)}
+        if self.reopener is not None:
+            try:
+                self.close()
+            except Exception:
+                pass
+        time.sleep(_host.RESTART_AFTER_ANSWER_S)
+        while True:
+            try:
+                stream = self.reopener() if self.reopener is not None else self.stream
+                self._setup(stream, self.framing, self.timeout)
+                for k, v in keep.items():
+                    setattr(self, k, v)
+                self._bind_host(hst)
+                if self.reopener is not None:
+                    limits = self.probe(hst)               # closes the stream again when no valid confirm came
+                else:
+                    limits = hst.confirm()
+                hst.exchange = self.bind(limits)
+                return limits
+            except Exception as e:                         # not there yet: no device, no port, no answer
+                if time.monotonic() >= deadline:
+                    raise ConnectionError(f"the probe did not come back within {wait_s:.1f} s of its restart "
+                                          f"({type(e).__name__}: {e})") from e
+                time.sleep(0.1)
 
     def _limits(self, limits: dict) -> None:
         """confirm's answer on this transport: until the first one the transfer time counts min_max_frame (64), then
@@ -1116,6 +1158,7 @@ def open_usb_host(vid: int = USB_VID, pid: int = USB_PID, serial: str | None = N
             continue
         lk = SerialLink.on_stream(stream, "length", timeout)
         lk.transport = kind
+        lk.reopener = lambda kind=kind: _open_usb_stream(kind, vid, pid, serial)   # re-enumerated after a restart
         hst = host.Host(lk.send)
         try:
             lk.attach_host(hst)
@@ -1397,6 +1440,7 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
                                   TCP_TIMEOUT if timeout is None else timeout)
         lk.resend = False if resend is None else resend
         lk.transport = "tcp"
+        lk.reopener = lambda: TcpStream(addr or "127.0.0.1", int(port))
     elif target == "usb" or target.startswith("usb:"):
         timeout = 3.0 if timeout is None else timeout
         parts = target.split(":")[1:]

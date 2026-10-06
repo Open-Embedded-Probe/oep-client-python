@@ -101,6 +101,12 @@ def drive_core(hst, ep):
     hst.call(link, core.LINK_SINK, core.link_sink_request(b"abc"), locked=False)
 
 
+def drive_restart(hst):
+    """fn 0's optional restart (core §6.6), last: the probe restarts once the answer is out."""
+    hst.open(3000)
+    hst.request_restart()
+
+
 def drive_wire_dm_console(hst, wire_name):
     wire = riscv.Wire(hst, wire_name)
     wire.scan()
@@ -214,6 +220,7 @@ def test_every_op_lists_an_unknown_tlv_and_refuses_it_critical_p4_x035():
     drive_captures(hst, ep)
     drive_config(hst)
     hst.end()
+    drive_restart(hst)
     assert every_op(ep) - tag.seen == set()
 
 
@@ -229,6 +236,7 @@ def test_every_op_lists_an_unknown_tlv_and_refuses_it_critical_esp32_v003():
     hst.call(toy, endpoint.TOY_WRITE, struct.pack("<I", 5))
     hst.request(toy, endpoint.TOY_READ, locked=False)
     hst.end()
+    drive_restart(hst)
     assert every_op(ep) - tag.seen == set()
 
 
