@@ -37,11 +37,42 @@ class Offered:
     flags: int = 0
 
 
+PLAN_ROLE_INTERFACES = {"oep.fixture.gpio", "oep.fixture.uart", "oep.fixture.i2c-target", "oep.fixture.spi-target",
+                        "oep.fixture.logic", "oep.fixture.analog"}     # the interfaces with plan roles (core §8)
+STAND_IN_OPS = (0x01, 0x02)          # the endpoint's two stand-in ops of an fn it does not simulate (FAKE ONLY)
+_CORE_REQUIRED = ("confirm", "list", "describe", "open", "end", "keepalive", "lock_state", "subscribe", "unsubscribe")
+
+
+def default_ops(name: str, all_names) -> set[int]:
+    """The ops an fn of interface `name` offers when its profile says nothing (core §1.2): fn 0 its required ops,
+    plan_apply / plan_release when an interface has plan roles; any other interface every op of its table, the
+    optional ones included; one the registry does not know the stand-in ops."""
+    if name == "oep.core":
+        ops = {reg.CORE.op[k] for k in _CORE_REQUIRED}
+        if PLAN_ROLE_INTERFACES & set(all_names):
+            ops |= {reg.CORE.op["plan_apply"], reg.CORE.op["plan_release"]}
+        return ops
+    i = reg.INTERFACES.get(name)
+    return set(i.op.values()) if i is not None else set(STAND_IN_OPS)
+
+
+def ops_of(name: str, *without: str) -> tuple[bytes, ...]:
+    """The ops tag of an fn of interface `name` with every op of its table but the optional ones named in `without`
+    (core §1.2, §7.4)."""
+    i = reg.INTERFACES[name]
+    return (catalog.ops_tlv(v for k, v in i.op.items() if k not in without),)
+
+
 class FakeProbe:
-    def __init__(self, label: str, max_frame: int, offered: list[Offered]):
+    def __init__(self, label: str, max_frame: int, offered: list[Offered], fill_ops: bool = True):
+        """Every offered fn's describe carries the ops tag (core §7.4): one that gives none gets `default_ops`, first
+        (`fill_ops` False: left without one - a probe that does not conform, for tests)."""
         self.label = label
         self.max_frame = max_frame
-        self.offered = sorted(offered, key=lambda o: o.fn)
+        all_names = [o.name for o in offered]
+        self.offered = sorted((o if not fill_ops or any(t[0] == catalog.OPS for t in o.tlvs) else
+                               Offered(o.fn, o.instance, o.name, (catalog.ops_tlv(default_ops(o.name, all_names)),) + o.tlvs,
+                                       o.revision, o.flags) for o in offered), key=lambda o: o.fn)
         self.requests = 0
         for o in self.offered:
             names.validate(o.name)
@@ -142,7 +173,6 @@ _CAPD = reg.FIXTURE_LOGIC.tlv["describe"]
 _ANAD = reg.FIXTURE_ANALOG.tlv["describe"]
 _GRPD = reg.FIXTURE_CAPTURE_GROUP.tlv["describe"]
 CORE_CHIP = reg.CORE.tlv["describe"]["chip"]
-CORE_PORT_SPEED = reg.CORE.tlv["describe"]["port_speed"]   # the optional port_speed is on (core §3.5)
 MODEL = re.compile(r"[a-z0-9-]{1,32}")                      # core §7.5 (the project's own models: no maker prefix)
 UNIT_ID = re.compile(r"[a-z0-9-]{1,32}")                    # an x- unit_id is not unique (core §7.5, C-24)
 CHIP = re.compile(r"[a-z0-9]{1,24}( v[0-9]+(\.[0-9]+)*)?")  # <part> v<revision>, or the part alone (core §7.5)
@@ -157,13 +187,13 @@ def _analog_decl(frontends: list[tuple[int, int, int, int]], max_samples: int) -
     return out + (catalog.tlv(_ANAD["channels"], struct.pack("<BI", 4, 1 << 4)),      # s 16 (layouts u32: bit i = 2^i)
                   catalog.tlv(_ANAD["trigger"], struct.pack("<II", 0b11001, max_samples - 1)),   # immediate, cross up / down
                   catalog.u32(_ANAD["max_read"], 4096), catalog.u16(_ANAD["segment_ring"], 8),
-                  catalog.u32(FEATURES, 0b111))     # query, force, notify
+                  catalog.u32(FEATURES, 0b100))     # notify (query and force: every op offered, the ops tag)
 
 
 def _group_decl(tracks: list[int], budgets: list[tuple[int, list[int]]], skews: dict[int, int]) -> tuple[bytes, ...]:
     """oep.fixture.capture-group's declarations (§4.3): tracks n x fn, max_tracks, budget max_sps n x fn, start_skew."""
     return ((catalog.tlv(_GRPD["tracks"], struct.pack(f"<B{len(tracks)}H", len(tracks), *tracks)),
-             catalog.u8(_GRPD["max_tracks"], len(tracks)), catalog.u32(FEATURES, 0b110))
+             catalog.u8(_GRPD["max_tracks"], len(tracks)), catalog.u32(FEATURES, 0b100))   # notify; force: ops
             + tuple(catalog.tlv(_GRPD["budget"], struct.pack(f"<IB{len(f)}H", most, len(f), *f)) for most, f in budgets)
             + tuple(catalog.tlv(_GRPD["start_skew"], struct.pack("<HI", fn, ns)) for fn, ns in skews.items()))
 _CAPM = reg.FIXTURE_LOGIC.enum["mode"]
@@ -179,7 +209,7 @@ def _capture_decl(modes: list[str], max_channels: int, widths: list[int], max_sa
     return out + (catalog.tlv(_CAPD["channels"], struct.pack("<BI", max_channels, bits)),    # layouts: u32 bit set
                   catalog.tlv(_CAPD["trigger"], struct.pack("<II", 0b111, max_samples - 1)),   # types u32, max_pretrigger
                   catalog.u32(_CAPD["max_read"], max_read), catalog.u16(_CAPD["segment_ring"], ring),
-                  catalog.u32(FEATURES, 0b111))     # query, force, notify
+                  catalog.u32(FEATURES, 0b100))     # notify (query and force: every op offered, the ops tag)
 MAX_CONNECTIONS = reg.WIRE_RVSWD.tlv["describe"]["max_connections"]
 _CFG = reg.PROBE_CONFIG.tlv["describe"]
 
@@ -204,9 +234,11 @@ def _transports(kinds: list[tuple[int, int]]) -> tuple[bytes, ...]:
 
 
 def _config(fn: int, instance: int, slots_max: int, modes: int = 0b111, storage: int = 4096) -> Offered:
-    """oep.probe.config's declarations (probe.config §4: declarations only; the state is the endpoint's op state)."""
+    """oep.probe.config's declarations (probe.config §4: declarations only; the state is the endpoint's op state):
+    storage 0 = none - no storage tag, and save / erase not in its ops (probe.config §2)."""
     return Offered(fn, instance, "oep.probe.config", (
-        catalog.u32(_CFG["storage"], storage),
+        ops_of("oep.probe.config") if storage else ops_of("oep.probe.config", "save", "erase"))
+        + ((catalog.u32(_CFG["storage"], storage),) if storage else ()) + (
         catalog.tlv(_CFG["items"], bytes(reg.PROBE_CONFIG.tlv["item"].values())),
         catalog.u8(_CFG["slots_max"], slots_max), catalog.u32(_CFG["bind_modes"], modes)))
 
@@ -233,10 +265,12 @@ def _uart(fn: int, instance: int, channels: list[int], max_hz: int, formats=FORM
 def _i2c_target(fn: int, channels: list[int], max_length: int, max_hz: int, features: int, queue_depth: int,
                 max_stretch_us: int = 0) -> Offered:
     """oep.fixture.i2c-target (fixture §3): SDA / SCL on `channels`, max_length (bytes a frame), max_clock_hz, features
-    (bit0 mode 3, bit1 stretch; modes 1 and 2 always), queue_depth (frames it keeps, tag 0x40 u8), max_stretch_us
-    (tag 0x41 u32: the most stretch accepts; declared exactly when features has bit1)."""
-    assert bool(features & 0b10) == (max_stretch_us > 0), "max_stretch_us goes with features bit1"
-    return Offered(fn, 0, "oep.fixture.i2c-target", _roles({1: channels, 2: channels}) + (
+    (bit0 mode 3, bit2 internal pull-ups; modes 1 and 2 always), queue_depth (frames it keeps, tag 0x40 u8),
+    max_stretch_us (tag 0x41 u32: the most stretch accepts) - declared exactly when the optional op stretch is offered
+    (its ops tag)."""
+    assert not features & 0b10, "features bit1 is reserved: stretch is an op, declared by ops"
+    ops = ops_of("oep.fixture.i2c-target") if max_stretch_us else ops_of("oep.fixture.i2c-target", "stretch")
+    return Offered(fn, 0, "oep.fixture.i2c-target", ops + _roles({1: channels, 2: channels}) + (
         catalog.u16(MAX_LENGTH, max_length), catalog.u32(MAX_CLOCK_HZ, max_hz), catalog.u32(FEATURES, features),
         catalog.u8(I2C_QUEUE_DEPTH, queue_depth))
         + ((catalog.u32(I2C_MAX_STRETCH_US, max_stretch_us),) if max_stretch_us else ())
@@ -252,6 +286,11 @@ def _spi_decl(max_length: int, max_hz: int, features: int, queue_depth: int,
     return ((catalog.u16(MAX_LENGTH, max_length), catalog.u32(MAX_CLOCK_HZ, max_hz), catalog.u32(FEATURES, features),
              catalog.u8(SPI_QUEUE_DEPTH, queue_depth), catalog.u8(IMPLEMENTATION, 2))
             + ((catalog.u32(SPI_CS_SETUP_NS, cs_setup_ns),) if cs_setup_ns else ()))
+
+
+def _link(fn: int, port_speed: bool = False) -> Offered:
+    """oep.link (oep-if-link): source and sink, and port_speed when `port_speed` (a probe on a UART bridge)."""
+    return Offered(fn, 0, "oep.link", ops_of("oep.link") if port_speed else ops_of("oep.link", "port_speed"))
 
 
 def _roles(assign: dict[int, list[int]]) -> tuple[bytes, ...]:
@@ -271,7 +310,7 @@ def _core(firmware: str, model: str, unit_id: str, channels: int, reserved: list
     assert MODEL.fullmatch(model) and UNIT_ID.fullmatch(unit_id), "core §7.5: model / unit_id grammar"
     for t in extra:
         if t[0] == CORE_CHIP:
-            assert CHIP.fullmatch(t[2:2 + t[1]].decode()), "core §7.5: chip is <part> v<revision>"
+            assert CHIP.fullmatch(m.split_tlvs(t)[0][1].decode()), "core §7.5: chip is <part> v<revision>"
     return Offered(0, 0, "oep.core", (
         catalog.text(CORE_FIRMWARE, firmware), catalog.text(CORE_MODEL, model), catalog.text(CORE_UNIT_ID, unit_id),
         catalog.u16(CORE_CHANNELS, channels), catalog.tlv(CORE_RESERVED, struct.pack("<H", base) + bits),
@@ -296,7 +335,7 @@ def p4_x035() -> FakeProbe:
         Offered(1, 0, "oep.wire.rvswd", (
             catalog.channel_group(1, [(1, 2), (2, 54)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(IMPLEMENTATION, 1),
             catalog.u8(MAX_CONNECTIONS, 1))),
-        Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
+        Offered(2, 0, "oep.target.riscv-dm", (catalog.u8(IMPLEMENTATION, 1),            # every op: the default ops
                                               catalog.u16(MAX_LENGTH, block_max_length(1024)))),
         Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
         _gpio(4, pins),
@@ -307,7 +346,7 @@ def p4_x035() -> FakeProbe:
             catalog.u32(MAX_CLOCK_HZ, 20_000_000), catalog.u32(MIN_CLOCK_HZ, 1_000),
             catalog.u16(MAX_LENGTH, 65000), catalog.u8(IMPLEMENTATION, 3))
             + _capture_decl(["one_shot", "repeat", "streaming"], 16, [1, 2, 4, 8, 16], 1 << 20, 8, 4096)),
-        _i2c_target(8, pins, max_length=128, max_hz=1_000_000, features=0b11, queue_depth=8,
+        _i2c_target(8, pins, max_length=128, max_hz=1_000_000, features=0b01, queue_depth=8,
                     max_stretch_us=100_000),                                                       # mode 3, stretch
         Offered(9, 0, "oep.fixture.spi-target", _roles({1: pins, 2: pins, 3: pins, 4: pins})
                 + _spi_decl(max_length=64, max_hz=3_000_000, features=0b1, queue_depth=8)),             # LSB first
@@ -318,22 +357,24 @@ def p4_x035() -> FakeProbe:
             + _analog_decl([(0, 0, 950, 0), (1, 0, 1250, 2500), (2, 0, 1750, 6000), (3, 0, 3100, 12000)], 65536)),
         # the logic (fn 7) and the analog (fn 11) together; the ADC's 83.3 kHz is shared by its channels
         Offered(12, 0, "oep.fixture.capture-group", _group_decl([7, 11], [(83_333, [11])], {11: 5000})),
+        _link(13),
     ])
 
 
 def esp32_v003() -> FakeProbe:
     """A small probe with 64-byte frames over a 115200 bps UART bridge (its only transport, serial port 0):
-    classic ESP32 on a CH32V003 (SWIO) jig. port_speed on (core §3.5), as the reference classic ESP32 firmware."""
+    classic ESP32 on a CH32V003 (SWIO) jig. oep.link with port_speed (oep-if-link §3), as the reference classic ESP32
+    firmware."""
     reserved = [0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15]   # UART0, strapping, flash: the probe's own (SWIO 16 is the wire's)
     wired = [4, 5, 13, 14, 17, 18, 19, 21, 22, 25, 26, 27, 32, 33]
     return FakeProbe("esp32-v003", 64, [
         _core("3.0.0", "esp32", "fafe00000003", 40, reserved, f"{NS}.esp32-v003",
               {16: "SWIO", 23: "NRST", 22: "DUT TX", 21: "DUT RX"},
-              _transports([(TRANSPORT["uart_bridge"], 0xFF)]) + (catalog.u8(CORE_PORT_SPEED, 1),)),
+              _transports([(TRANSPORT["uart_bridge"], 0xFF)])),
         Offered(1, 0, "oep.wire.swio", (catalog.channel_group(1, [(1, 16)]), catalog.role_channels(3, [23]),
                                         catalog.u8(IMPLEMENTATION, 1), catalog.u8(MAX_CONNECTIONS, 1))),
-        Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b0111), catalog.u8(IMPLEMENTATION, 1),
-                                              catalog.u16(MAX_LENGTH, block_max_length(64)))),
+        Offered(2, 0, "oep.target.riscv-dm", ops_of("oep.target.riscv-dm", "step") + (    # no step
+            catalog.u8(IMPLEMENTATION, 1), catalog.u16(MAX_LENGTH, block_max_length(64)))),
         Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
         _gpio(4, wired + [23], modes=0x7F),                      # no mode 7 (both pulls): unsupported there
         _uart(5, 0, wired, 115_200),
@@ -348,6 +389,7 @@ def esp32_v003() -> FakeProbe:
             catalog.channel_group(2, [(1, 14), (2, 13), (3, 27), (4, 26)]))
             + _spi_decl(max_length=32, max_hz=3_000_000, features=0, queue_depth=4, cs_setup_ns=4000)),   # MISO in software
         _config(9, 0, slots_max=1, modes=0b011, storage=1024),
+        _link(10, port_speed=True),
     ])
 
 
@@ -366,12 +408,13 @@ def p4_bench() -> FakeProbe:
             catalog.channel_group(1, [(1, 2), (2, 3)]), catalog.channel_group(2, [(1, 4), (2, 5)]),
             catalog.channel_group(3, [(1, 6), (2, 7)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000),
             catalog.u8(IMPLEMENTATION, 1), catalog.u8(MAX_CONNECTIONS, 2))),
-        Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
+        Offered(2, 0, "oep.target.riscv-dm", (catalog.u8(IMPLEMENTATION, 1),
                                               catalog.u16(MAX_LENGTH, block_max_length(1024)))),
         Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
         _gpio(4, pins),
         _uart(5, 0, pins, 3_000_000),
         _config(6, 0, slots_max=4),
+        _link(7),
     ])
 
 
@@ -387,11 +430,12 @@ def rp2350_pins() -> FakeProbe:
               {}, _transports([(TRANSPORT["usb_cdc"], 0)]), discoverable=1),
         Offered(1, 0, "oep.wire.rvswd", _roles({1: pins, 2: pins, 3: pins}) + (
             catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(IMPLEMENTATION, 1), catalog.u8(MAX_CONNECTIONS, 1))),
-        Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
+        Offered(2, 0, "oep.target.riscv-dm", (catalog.u8(IMPLEMENTATION, 1),
                                               catalog.u16(MAX_LENGTH, block_max_length(1024)))),
         Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
         _gpio(4, pins),
         _uart(5, 0, pins, 3_000_000),
+        _link(6),
     ])
 
 
@@ -429,7 +473,7 @@ def with_i2c_pullups(probe: FakeProbe, ohms: int = 45_000) -> FakeProbe:
         tlvs = []
         for t in o.tlvs:
             if t[0] == FEATURES:
-                t = catalog.u32(FEATURES, struct.unpack_from("<I", t, 2)[0] | I2C_INTERNAL_PULLUPS)
+                t = catalog.u32(FEATURES, struct.unpack_from("<I", t, 3)[0] | I2C_INTERNAL_PULLUPS)
             tlvs.append(t)
         return Offered(o.fn, o.instance, o.name, tuple(tlvs) + (catalog.u32(I2C_PULLUP_OHMS, ohms),), o.revision, o.flags)
     return FakeProbe(probe.label, probe.max_frame,

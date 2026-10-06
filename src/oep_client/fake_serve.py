@@ -2,15 +2,15 @@
 
     python -m oep_client.fake_serve [--pty | --tcp PORT] [options]
 
---pty (the default) opens a pseudo terminal that is the probe's serial port (oep-core §3.4): COBS frames
+--pty (the default) opens a pseudo terminal that is the probe's serial port (transports §4): COBS frames
 0x00 <COBS> 0x00 and the raw bytes of the port's bind on one line. The host opens the printed path itself (and
 should set TIOCEXCL on it, as on a real port). On Linux this program keeps a slave fd of its own and watches the
 path's opens and closes (inotify): when the last host closes it - or ends without closing it - TIOCEXCL is cleared
 and the unread input dropped, as a real port's last close does, so the next host's open succeeds. --tcp PORT (0 = any free
 one) serves one connection at a time: --framing cobs is the serial port again, --framing length is
 length(u16) message as on vendor bulk / TCP (no raw bytes): the listening socket is then a TCP transport of the
-probe (kind 6, listed in fn 0's describe, its index in every confirm's transport TLV; core §3.1), no pause inside a
-frame restarts the reader (core §3.2), and a length over max_frame closes the connection.
+probe (kind 6, listed in fn 0's describe, its index in every confirm's transport TLV; transports §1), no pause inside a
+frame restarts the reader (transports §2), and a length over max_frame closes the connection.
 
 The first line on stdout says where to open: `PTY /dev/pts/N` or `PORT n`. The program ends when stdin closes
 (so a test's child never stays behind), or with --once when the first TCP connection closes. With --keep-on-eof the
@@ -54,7 +54,7 @@ Options:
   --uart-plan           the first oep.fixture.uart gets its RX / TX plan at boot, as if saved (the jig's "DUT TX" /
                         "DUT RX" labels when the profile has them, else the first free channels); configure then works
   --uart-rx TEXT        what arrives on that UART's RX every --every ms once it is configured (%d = a counter)
-  --no-port-speed       the profile's port_speed (core §3.5; esp32-v003 has it) off: the op is unknown_operation
+  --no-port-speed       the profile's port_speed (oep.link, oep-if-link §3; esp32-v003 has it) off: not in the ops, unknown_operation
   --broken-rate SPEC    port_speed's line model: frames at RATE break (repeatable). SPEC is
                         RATE[:MIN_SIZE][:in|out][:duplex][:everyN][:afterB]: only frames of MIN_SIZE bytes and more on the wire
                         (default every frame), only towards the host (in) or the probe (out) (default both), only
@@ -83,7 +83,7 @@ import sys
 import time
 import tty
 
-from . import catalog, endpoint, fake, fake_serial, registry as reg
+from . import catalog, endpoint, fake, fake_serial, message as m, registry as reg
 
 _ITEM = reg.PROBE_CONFIG.tlv["item"]
 _MODES = reg.PROBE_CONFIG.enum["bind_mode"]
@@ -136,29 +136,29 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
         ep.targets[(wire, ep.pairs[wire][n])].present = False
     for n in getattr(a, "silent_until_reset", []):
         ep.targets[(wire, ep.pairs[wire][n])].silent_until_reset = True
-    boot_reset = b"\x01" if getattr(a, "boot_reset", False) else b""   # after the lock's part (probe.config §1.1)
+    boot_reset = 1 if getattr(a, "boot_reset", False) else 0   # after attach (probe.config §1.1)
     items = []
     for n, name in enumerate(a.slot):
         swdio, swclk = ep.pairs[wire][n]
         mech = 2 if 2 in ep.mechanisms else min(ep.mechanisms)
         raw = name.encode()
-        value = struct.pack("<BHHHBIIBBB", n, wire, swdio, swclk, reg.PROBE_CONFIG.enum["slot_attach"]["at_boot"], 1000,
-                            0, 0, mech, len(raw)) + raw + b"\x00" + boot_reset
-        items.append(bytes([_ITEM["slot"], len(value)]) + value)  # retry 1 s, no speed ceiling, rests high, no lock
+        value = struct.pack("<BHHHBBIIBBB", n, wire, swdio, swclk, reg.PROBE_CONFIG.enum["slot_attach"]["at_boot"],
+                            boot_reset, 1000, 0, 0, mech, len(raw)) + raw + b"\x00"
+        items.append(m.tlv(_ITEM["slot"], value))                 # retry 1 s, no speed ceiling, rests high, no lock
     if a.bind:
-        streams = b"".join(struct.pack("<BBH", 3, reg.PROBE_CONFIG.enum["bind_stream"]["slot_console"], n)
+        streams = b"".join(struct.pack("<BH", reg.PROBE_CONFIG.enum["bind_stream"]["slot_console"], n)
                            for n in range(len(a.slot)))
         value = struct.pack("<BBBB", a.port_index, _MODES[a.bind.replace("-", "_")], 0, len(a.slot)) + streams
-        items.append(bytes([_ITEM["bind"], len(value)]) + value)
+        items.append(m.tlv(_ITEM["bind"], value))
     for spec in getattr(a, "label", []):
         channel, _, text = spec.partition("=")
         value = struct.pack("<H", int(channel, 0)) + text.encode()
-        items.append(bytes([_ITEM["label"], len(value)]) + value)
+        items.append(m.tlv(_ITEM["label"], value))
     if a.uart_plan:
         fn = uart_fn(ep)
         rx, tx = _uart_channels(ep, fn)
         for role, ch in ((1, rx), (2, tx)):
-            items.append(bytes([_ITEM["plan"], 5]) + struct.pack("<HBH", fn, role, ch))
+            items.append(m.tlv(_ITEM["plan"], struct.pack("<HBH", fn, role, ch)))
     if items:
         ep.load_config(items, saved=True)
     return ep
@@ -177,10 +177,9 @@ def _uart_channels(ep: endpoint.Endpoint, fn: int) -> tuple[int, int]:
     if "DUT TX" in labels and "DUT RX" in labels:
         return labels["DUT TX"], labels["DUT RX"]
     allowed = []
-    for t in ep.static[fn]:
-        if t[0] == catalog.ROLE_CHANNELS and t[2] == 1:
-            base = struct.unpack_from("<H", t, 3)[0]
-            allowed = catalog.bitmap_to_channels(base, t[5:2 + t[1]])
+    for tag, v in ep.decl[fn]:
+        if tag == catalog.ROLE_CHANNELS and v[0] == 1:
+            allowed = catalog.bitmap_to_channels(struct.unpack_from("<H", v, 1)[0], v[3:])
     taken = {p for s in ep.slots.values() for p in s.pair} | {a[2] for a in ep.plan}
     free = [ch for ch in allowed if ch not in taken]
     if len(free) < 2:
@@ -421,7 +420,7 @@ def _serve_conn(a, ep, console, conn, commands: Commands) -> bool:
     if a.framing == "cobs":
         port = commands.port = fake_serial.FakeSerialPort(ep, a.port_index, _filter(a))
     else:
-        # the listening socket is a TCP transport of its own (core §3.1, C-05): listed in describe, named by confirm
+        # the listening socket is a TCP transport of its own (transports §1, C-05): listed in describe, named by confirm
         index = getattr(ep, "tcp_index", None)
         if index is None:
             index = ep.tcp_index = ep.add_transport(fake.TRANSPORT["tcp"])
@@ -450,7 +449,7 @@ def _serve_conn(a, ep, console, conn, commands: Commands) -> bool:
                             del buf[:2]
                             continue
                         if n > ep.probe.max_frame:
-                            return False                           # over max_frame on TCP: the probe closes (core §3.1)
+                            return False                           # over max_frame on TCP: the probe closes (transports §1)
                         if len(buf) < 2 + n:
                             break
                         msg = bytes(buf[2:2 + n])

@@ -1,4 +1,4 @@
-"""The byte side of a fake probe's serial port (oep-core §3.1, §3.4): COBS frames and raw bytes on one port.
+"""The byte side of a fake probe's serial port (transports §1, §4): COBS frames and raw bytes on one port.
 
 `FakeSerialPort(endpoint, index)` is serial port `index` of an `endpoint.Endpoint`. Bytes from the host go to
 `feed`; what the probe sends comes from `output`. It does what a probe does:
@@ -14,7 +14,7 @@
 `answer_filter(n, message) -> bytes | None` may change how the n-th answer (1-based) goes on the wire: the framed
 bytes to send, or None to send nothing (fault injection for tests).
 
-port_speed (core §3.5): every closed candidate tells the endpoint whether it was a frame (`Endpoint.speed_frame`), a
+port_speed (oep-if-link §3): every closed candidate tells the endpoint whether it was a frame (`Endpoint.speed_frame`), a
 switch or revert a request asked for happens once its answer is queued (at the old speed), and the endpoint's
 `broken_rates` break frames at the port's rate now: a candidate from the host is then not a frame, an answer or push
 goes out with a spoiled CRC (a `duplex` one only while a request of its size comes in with such an answer still

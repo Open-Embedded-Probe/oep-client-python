@@ -205,8 +205,7 @@ class FakeCapture:
         self._clear()
 
     def answer(self, s: dict) -> bytes:
-        def tlv(tag: int, v: bytes) -> bytes:
-            return bytes([tag, len(v)]) + v
+        tlv = m.tlv
         c = s["channels"]
         out = tlv(ANSWER["actual_rate"], struct.pack("<II", s["rate"].numerator, s["rate"].denominator))
         if self.analog:
@@ -383,9 +382,9 @@ class FakeCapture:
         return struct.pack("<QBI", position, flags, len(data)) + data   # position flags len(u32) data (§3.2)
 
     def segment_list(self, first: int, budget: int) -> bytes:
-        """more(u8) count(u8) count x (len(u8) record) (§3.2)."""
-        rows = [m.element(s.pack()) for s in self.segs if s.serial >= first]   # len(u8) then the info (core §2.3)
-        out = rows[:max(0, (budget - 2) // (1 + SEGMENT.size))][:255]
+        """more(u8) count(u8) count x record (§3.2; no element length, core §2.3)."""
+        rows = [s.pack() for s in self.segs if s.serial >= first]
+        out = rows[:max(0, (budget - 2) // SEGMENT.size)][:255]
         return bytes([int(len(out) < len(rows)), len(out)]) + b"".join(out)
 
     def release(self, generation: int, serial: int, now_ms: int) -> None:
@@ -457,6 +456,14 @@ class FakeGroup:
         self.tracks, self.trigger_fn = list(fns), trigger_fn
         for c in chosen:
             c.group = self
+
+    def release_session(self, caps: dict[int, FakeCapture]) -> None:
+        """The session's lock ended (end, lease expiry, force): its bind goes (capture §4.1: a session's resource,
+        core §9); the tracks stay as they are, each on its own."""
+        for fn in self.tracks:
+            if fn in caps:
+                caps[fn].group = None
+        self.tracks, self.trigger_fn, self.start_ns, self.trigger_ns = [], 0, NO_TIME, NO_TIME
 
     def start(self, caps: dict[int, FakeCapture], now_ms: int,
               subscribed=lambda fn: True) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
