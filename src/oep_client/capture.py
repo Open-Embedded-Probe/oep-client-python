@@ -551,11 +551,46 @@ class AnalogCapture(LogicCapture):
         return [(int.from_bytes(data[i * frame + m_ * width:i * frame + (m_ + 1) * width], "little") >> c.offset) & mask
                 for i in range(n)]
 
-    def millivolts(self, k: int, value: int) -> float:
+    CLIP_LOW, CLIP_HIGH = -1, 1
+
+    def millivolts(self, k: int, value: float) -> float | None:
         """The probe's own 1st-order reading of a raw value of channel k, (value - zero) x scale_nv (a nominal
-        reference: see reference and calibration() for others)."""
+        reference: see reference and calibration() for others). None for a clipped value (§1.2 rule 6: 0 or 2^b - 1,
+        the input's voltage is not known): see clipped() and ends_millivolts()."""
+        if self.clipped(k, value):
+            return None
+        return self._linear_mv(k, value)
+
+    def _linear_mv(self, k: int, value: float) -> float:
         c = self.config
         return (value - c.zero.get(k, 0)) * c.scale_nv.get(k, 0) / 1_000_000
+
+    def clipped(self, k: int, value: float) -> int:
+        """§1.2 rule 6: 0 when the value is a voltage; CLIP_LOW (-1) when it is the converter's code that means the input
+        was at or below the low end of the frontend's range, CLIP_HIGH (+1) at or above the high end. Codes 0 and
+        2^b - 1 are the ends; with a negative scale_nv (an inverting frontend) code 0 is the high end."""
+        if value == 0:
+            end = self.CLIP_LOW
+        elif value == (1 << self.config.bits) - 1:
+            end = self.CLIP_HIGH
+        else:
+            return 0
+        return -end if self.config.scale_nv.get(k, 0) < 0 else end
+
+    def ends_millivolts(self, k: int) -> tuple[float, float]:
+        """(low end, high end) of channel k in mV: rule 4 applied to codes 0 and 2^b - 1, what a clipped value is shown
+        against ("<= low", ">= high")."""
+        a, b = self._linear_mv(k, 0), self._linear_mv(k, (1 << self.config.bits) - 1)
+        return (min(a, b), max(a, b))
+
+    def clip_mask(self, k: int, values: list[int]) -> list[int]:
+        """clipped() of each value: 0, CLIP_LOW or CLIP_HIGH. The values themselves stay raw."""
+        return [self.clipped(k, v) for v in values]
+
+    def clip_counts(self, k: int, values: list[int]) -> tuple[int, int]:
+        """(how many values are clipped low, how many high)."""
+        mask = self.clip_mask(k, values)
+        return mask.count(self.CLIP_LOW), mask.count(self.CLIP_HIGH)
 
     def calibration(self) -> Calibration:
         out = Calibration()

@@ -263,7 +263,16 @@ def test_analog_values_scale_and_calibration():
     data = an.read_segment(seg)
     assert an.values(data, 0, 256) == [fake_capture.analog_value(0, i) for i in range(256)]   # a square
     assert an.values(data, 1, 256) == [fake_capture.analog_value(1, i) for i in range(256)]   # a sine
-    assert an.millivolts(0, 4095) == pytest.approx(3100, abs=1)
+    assert an.millivolts(0, 2048) == pytest.approx(3100 * 2048 / 4095, abs=1)
+    assert an.millivolts(0, 4095) is None and an.millivolts(0, 0) is None    # clipped (§1.2 rule 6)
+    assert an.ends_millivolts(0) == (0, pytest.approx(3100, abs=1))
+    assert (an.clipped(0, 0), an.clipped(0, 1), an.clipped(0, 4094), an.clipped(0, 4095)) == (an.CLIP_LOW, 0, 0, an.CLIP_HIGH)
+    square, sine = an.values(data, 0, 256), an.values(data, 1, 256)
+    assert an.clip_counts(0, square) == (128, 128) and an.clip_counts(1, sine) == (sine.count(0), sine.count(4095)) == (4, 0)   # the sine's troughs round to 0
+    assert an.clip_mask(0, square[30:34]) == [an.CLIP_HIGH, an.CLIP_HIGH, an.CLIP_LOW, an.CLIP_LOW]
+    an.config.scale_nv[0] = -an.config.scale_nv[0]                  # an inverting frontend: code 0 is the high end
+    assert (an.clipped(0, 0), an.clipped(0, 4095)) == (an.CLIP_HIGH, an.CLIP_LOW)
+    assert an.ends_millivolts(0) == (pytest.approx(-3100, abs=1), 0)
     cal = an.calibration()
     assert [f[0] for f in cal.factory] == [0, 1, 2, 3] and cal.factory[0][1] == "org.example.fake.two-point"
     assert cal.factory[0][2] == struct.pack("<HH", 150, 3950)       # raw_len(u16) raw

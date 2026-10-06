@@ -569,8 +569,9 @@ def _widest_frontend(declared: dict) -> int | None:
 def _analog_stats(ana: capture.AnalogCapture, data: bytes, samples: int) -> dict:
     vals = ana.values(data, 0, samples)
     mean = sum(vals) / len(vals)
-    return {"min": min(vals), "max": max(vals), "mean": round(mean, 1), "mean_mv": round(ana.millivolts(0, mean), 1),
-            "full_scale": (1 << ana.config.bits) - 1}
+    mv = ana.millivolts(0, mean)                                    # None: every value clipped at one end
+    return {"min": min(vals), "max": max(vals), "mean": round(mean, 1), "mean_mv": None if mv is None else round(mv, 1),
+            "full_scale": (1 << ana.config.bits) - 1, "clipped": ana.clip_counts(0, vals)}
 
 
 def test_capture_analog(run: record.Run):
