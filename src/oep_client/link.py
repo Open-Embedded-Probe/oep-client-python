@@ -1127,9 +1127,160 @@ def project_serial_ports() -> list[tuple[str, str | None]]:
     """The serial ports (a probe's USB CDC) of devices with the project's VID:PID (core §3.3: every CDC of an OEP probe
     is a serial port), as (port path, USB serial = unit id), from pyserial's list. A probe with no vendor bulk or HID
     (CDC only, as an RP2040 / RP2350 one) is found this way."""
+    return [(path, serial) for path, serial, _ in _project_port_infos()]
+
+
+def _project_port_infos() -> list[tuple[str, str | None, str | None]]:
+    """project_serial_ports with each port's USB location (pyserial's, without the interface part: "1-2.3")."""
     from serial.tools import list_ports
-    return [(p.device, p.serial_number) for p in list_ports.comports()
-            if p.vid is not None and is_project_device(p.vid, p.pid)]
+    return [(p.device, p.serial_number, (getattr(p, "location", None) or "").split(":")[0] or None)
+            for p in list_ports.comports() if p.vid is not None and is_project_device(p.vid, p.pid)]
+
+
+WAYS_IN = ("vendor", "hid", "cdc")   # a device's ways in, in the order a bare usb tries them (core §3.3)
+
+
+@dataclass
+class UsbProbe:
+    """One USB device on the project's VID:PID, whatever ways in it has: its USB serial (the unit id, None when it could
+    not be read), its ways in (WAYS_IN order), its CDC serial ports, and its USB location (bus-ports) when known."""
+    unit_id: str | None
+    ways: list[str] = field(default_factory=list)
+    ports: list[str] = field(default_factory=list)
+    location: str | None = None
+
+    def __str__(self) -> str:
+        who = self.unit_id or f"no USB serial (at {self.location or 'an unknown place'})"
+        ways = [f"cdc {' '.join(self.ports)}" if w == "cdc" and self.ports else w for w in self.ways]
+        return f"{who}: {', '.join(ways) or 'no way in'}"
+
+
+class SeveralProbes(ValueError):
+    """A bare usb target found more than one probe on the project's VID:PID and does not guess which: name one
+    (usb:<unit_id>, or its serial port). `probes` lists them (UsbProbe)."""
+
+    def __init__(self, message: str, probes: list[UsbProbe]):
+        super().__init__(message)
+        self.probes = probes
+
+
+def _libusb_devices(vid: int, pid: int) -> list[dict]:
+    """The USB devices on vid:pid as libusb sees them: {serial, location, ways}. Empty without python-libusb1 and pyusb.
+    A HID interface counts as the way in hid (its report descriptor is not read here); a CDC (class 2 or 0x0A) as cdc."""
+    vendor = tuple(reg.USB[k] for k in ("vendor_bulk_class", "vendor_bulk_subclass", "vendor_bulk_protocol"))
+
+    def way(cls, sub, proto):
+        return "vendor" if (cls, sub, proto) == vendor else "hid" if cls == 3 else "cdc" if cls in (2, 0x0A) else None
+
+    out = []
+    try:
+        import usb1
+    except ImportError:
+        try:
+            import usb.core
+            import usb.util
+        except ImportError:
+            return []
+        try:
+            devices = list(usb.core.find(find_all=True, idVendor=vid, idProduct=pid))
+        except Exception:                                    # no libusb backend
+            return []
+        for dev in devices:
+            try:
+                serial = usb.util.get_string(dev, dev.iSerialNumber) or None
+            except Exception:
+                serial = None
+            ways = set()
+            try:
+                for cfg in dev:
+                    for intf in cfg:
+                        ways.add(way(intf.bInterfaceClass, intf.bInterfaceSubClass, intf.bInterfaceProtocol))
+            except Exception:
+                pass
+            ports = getattr(dev, "port_numbers", None)
+            out.append({"serial": serial, "location": f"{dev.bus}-{'.'.join(map(str, ports))}" if ports else None,
+                        "ways": ways - {None}})
+        return out
+    try:
+        with usb1.USBContext() as ctx:
+            for dev in ctx.getDeviceIterator(skip_on_error=True):
+                if dev.getVendorID() != vid or dev.getProductID() != pid:
+                    continue
+                serial = None
+                try:
+                    h = dev.open()
+                    try:
+                        serial = h.getSerialNumber() or None
+                    finally:
+                        h.close()
+                except Exception:                            # no access: the serial is left unknown
+                    pass
+                ways = set()
+                try:
+                    for s in dev.iterSettings():
+                        ways.add(way(s.getClass(), s.getSubClass(), s.getProtocol()))
+                except Exception:
+                    pass
+                try:
+                    ports = dev.getPortNumberList()
+                    location = f"{dev.getBusNumber()}-{'.'.join(map(str, ports))}" if ports else None
+                except Exception:
+                    location = None
+                out.append({"serial": serial, "location": location, "ways": ways - {None}})
+    except Exception:                                        # no libusb at all
+        return out
+    return out
+
+
+def _hidapi_devices(vid: int, pid: int) -> list[dict]:
+    """The vendor-defined HID interfaces on vid:pid as hidapi sees them (the OS's HID driver): {serial, location: None,
+    ways: {hid}}. Empty without hidapi."""
+    try:
+        import hid
+        infos = hid.enumerate(vid, pid)
+    except Exception:
+        return []
+    return [{"serial": i.get("serial_number") or None, "location": None, "ways": {"hid"}} for i in infos
+            if not (i.get("usage_page", 0) and i["usage_page"] < 0xFF00)]
+
+
+def _merge_probes(usb: list[dict], hid: list[dict], ports: list[tuple[str, str | None, str | None]]) -> list[UsbProbe]:
+    """One UsbProbe per device: entries of the three lists are the same device when their USB serials match (case
+    aside), or, when one has no serial, when their locations match. A device's ways in are counted once, however many
+    interfaces or lists show them. A HID entry with no serial is left out when libusb listed devices (it saw the HID
+    interfaces itself)."""
+    probes: list[UsbProbe] = []
+
+    def add(serial, location, ways, port=None):
+        for p in probes:
+            same = (serial and p.unit_id and serial.lower() == p.unit_id.lower()) or \
+                (location and p.location == location and not (serial and p.unit_id))
+            if same:
+                break
+        else:
+            p = UsbProbe(None)
+            probes.append(p)
+        p.unit_id = p.unit_id or serial
+        p.location = p.location or location
+        p.ways = [w for w in WAYS_IN if w in p.ways or w in ways]
+        if port and port not in p.ports:
+            p.ports.append(port)
+
+    for d in usb:
+        add(d["serial"], d["location"], d["ways"])
+    for d in hid:
+        if d["serial"] or not usb:
+            add(d["serial"], d["location"], d["ways"])
+    for path, serial, location in ports:
+        add(serial, location, {"cdc"}, path)
+    return probes
+
+
+def usb_probes(vid: int = USB_VID, pid: int = USB_PID) -> list[UsbProbe]:
+    """Every USB device on vid:pid (by default the project's, core §3.3), each once whatever ways in it has: vendor
+    bulk and HID from libusb (and hidapi), CDC serial ports from pyserial's list."""
+    ports = _project_port_infos() if (vid, pid) in PROJECT_VID_PIDS else []
+    return _merge_probes(_libusb_devices(vid, pid), _hidapi_devices(vid, pid), ports)
 
 
 def check_unit_id(hst, unit_id: str) -> None:
@@ -1206,9 +1357,10 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
     everything built on it (flash, capture reads) then keep several requests in flight.
 
     target: a serial port path (COM3 on Windows); tcp://HOST:PORT for a local broker (length frames); usb[:VID:PID[:SERIAL]]
-    (hex) for the probe's USB device, vendor bulk then HID (oep-core §3.3) - a bare `usb` is the project's VID:PID,
-    and when no such device has a vendor bulk or HID way in, its one CDC port (project_serial_ports; several: name the
-    port); usb:UNIT_ID for the device whose USB serial
+    (hex) for the probe's USB device, vendor bulk then HID (oep-core §3.3) - a bare `usb` looks at every device on the
+    project's VID:PID (usb_probes; one device counts once whatever ways in it has): exactly one -> it is opened, vendor
+    bulk then HID, else its CDC port; several -> SeveralProbes listing them (unit id, ways in), nothing opened: name one;
+    none -> FileNotFoundError; usb:UNIT_ID for the device whose USB serial
     is that unit id, whatever its VID:PID (fn 0's describe must then say the same unit_id, or it is closed:
     UnitIdMismatch). Every target is probed first by the confirm-only rule (core §3.3): no valid confirm answer, the link
     is closed and NotOepProbe raised (a serial port retries its confirms for port_speed_idle_max_ms + 1 s first).
@@ -1242,21 +1394,27 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
             hst = open_usb_host(vid, pid, parts[0], timeout)
             check_unit_id(hst, parts[0])
             return hst
-        vid = int(parts[0], 16) if parts else USB_VID
-        pid = int(parts[1], 16) if len(parts) > 1 else USB_PID
-        try:
+        if parts:
+            vid, pid = int(parts[0], 16), int(parts[1], 16) if len(parts) > 1 else USB_PID
             return open_usb_host(vid, pid, parts[2] if len(parts) > 2 else None, timeout)
-        except FileNotFoundError as e:
-            if parts:
-                raise
-            ports = project_serial_ports()                   # a probe on the project's VID:PID with CDC only
-            if len(ports) > 1:
-                raise FileNotFoundError(f"{e}; cdc: {len(ports)} serial ports on {vid:04x}:{pid:04x} "
-                                        f"({', '.join(p for p, _ in ports)}): name one") from None
-            if not ports:
-                raise FileNotFoundError(f"{e}; cdc: no serial port on {vid:04x}:{pid:04x}") from None
-            lk = SerialLink(ports[0][0], timeout, baud)
-            lk.transport = "serial"
+        vid, pid = USB_VID, USB_PID
+        probes = usb_probes(vid, pid)                        # every device on the project's VID:PID, each once
+        if len(probes) > 1:
+            raise SeveralProbes(f"{len(probes)} probes on {vid:04x}:{pid:04x} ({'; '.join(map(str, probes))}); not "
+                                "choosing one: name one with usb:<unit_id> or its serial port", probes)
+        one = probes[0] if probes else None
+        if one is None or "vendor" in one.ways or "hid" in one.ways:
+            try:
+                return open_usb_host(vid, pid, one.unit_id if one else None, timeout)
+            except FileNotFoundError as e:
+                if one is None or not one.ports:
+                    raise FileNotFoundError(f"{e}; cdc: no serial port on {vid:04x}:{pid:04x}") from None
+        if len(one.ports) > 1:
+            raise ValueError(f"the probe on {vid:04x}:{pid:04x} ({one}) has {len(one.ports)} serial ports: name one")
+        if not one.ports:
+            raise FileNotFoundError(f"the probe on {vid:04x}:{pid:04x} ({one}) has no serial port this host can open")
+        lk = SerialLink(one.ports[0], timeout, baud)
+        lk.transport = "serial"
     else:
         lk = SerialLink(target, 3.0 if timeout is None else timeout, baud)
         lk.transport = "serial"

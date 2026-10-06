@@ -85,6 +85,23 @@ def test_only_the_project_vid_pid_identifies_a_probe():
     assert not any(n.startswith("TEMPORARY_") for n in dir(link))
 
 
+def probes(*devices):
+    """A fake usb_probes: each device is (unit_id, ways, ports)."""
+    return lambda vid=0x1209, pid=0x4F45: [link.UsbProbe(u, list(w), list(p)) for u, w, p in devices]
+
+
+class Opened(Exception):
+    pass
+
+
+def serial_link(path, timeout, baud):
+    raise Opened(path)
+
+
+def no_stream(kind, vid, pid, serial):
+    raise FileNotFoundError(f"no USB device {vid:04x}:{pid:04x}")
+
+
 def test_a_bare_usb_target_opens_the_project_vid_pid(monkeypatch):
     s, seen = LengthStream(fake_ep()), []
 
@@ -93,33 +110,107 @@ def test_a_bare_usb_target_opens_the_project_vid_pid(monkeypatch):
         return s
 
     monkeypatch.setattr(link, "_open_usb_stream", opened)
+    monkeypatch.setattr(link, "usb_probes", probes(("30eda0e343c6", ["vendor"], [])))
     link.open_host("usb")
-    assert seen == [("vendor", 0x1209, 0x4F45, None)] and ops(s.sent)[0] == m.OP_CONFIRM
+    assert seen == [("vendor", 0x1209, 0x4F45, "30eda0e343c6")] and ops(s.sent)[0] == m.OP_CONFIRM
 
 
-def test_a_bare_usb_target_without_vendor_or_hid_takes_the_project_cdc_port(monkeypatch):
-    def none(kind, vid, pid, serial):
-        raise FileNotFoundError(f"no USB device {vid:04x}:{pid:04x}")
+def test_a_bare_usb_target_with_one_probe_of_all_three_ways_opens_vendor(monkeypatch):
+    s, seen = LengthStream(fake_ep()), []
 
-    class Opened(Exception):
-        pass
+    def opened(kind, vid, pid, serial):
+        seen.append((kind, serial))
+        return s
 
-    def serial_link(path, timeout, baud):
-        raise Opened(path)
+    monkeypatch.setattr(link, "_open_usb_stream", opened)
+    monkeypatch.setattr(link, "usb_probes", probes(("30eda0e343c6", ["vendor", "hid", "cdc"], ["/dev/ttyACM0"])))
+    link.open_host("usb")
+    assert seen == [("vendor", "30eda0e343c6")]
+    monkeypatch.setattr(link, "SerialLink", serial_link)
+    monkeypatch.setattr(link, "_open_usb_stream", no_stream)  # vendor and HID not openable: its CDC port
+    with pytest.raises(Opened, match="/dev/ttyACM0"):
+        link.open_host("usb")
 
-    monkeypatch.setattr(link, "_open_usb_stream", none)
-    monkeypatch.setattr(link, "project_serial_ports", lambda: [("/dev/ttyACM7", "9489dd2ae0953650")])
+
+def test_a_bare_usb_target_with_one_cdc_only_probe_takes_its_port(monkeypatch):
+    tried = []
+    monkeypatch.setattr(link, "_open_usb_stream", lambda *a: tried.append(a))
+    monkeypatch.setattr(link, "usb_probes", probes(("9489dd2ae0953650", ["cdc"], ["/dev/ttyACM7"])))
     monkeypatch.setattr(link, "SerialLink", serial_link)
     with pytest.raises(Opened, match="/dev/ttyACM7"):
         link.open_host("usb")
-    with pytest.raises(FileNotFoundError):                    # a VID:PID named: no CDC fallback
+    assert not tried                                          # no vendor / HID tried on a CDC-only probe
+    monkeypatch.setattr(link, "usb_probes", probes(("9489dd2ae0953650", ["cdc"], ["/dev/ttyACM7", "/dev/ttyACM8"])))
+    with pytest.raises(ValueError, match="2 serial ports: name one"):
+        link.open_host("usb")
+
+
+def test_a_bare_usb_target_with_no_probe_says_none(monkeypatch):
+    monkeypatch.setattr(link, "_open_usb_stream", no_stream)
+    monkeypatch.setattr(link, "usb_probes", probes())
+    with pytest.raises(FileNotFoundError, match="no way in to 1209:4f45.*cdc: no serial port on 1209:4f45"):
+        link.open_host("usb")
+
+
+def test_a_named_vid_pid_has_no_cdc_fallback_and_no_listing(monkeypatch):
+    monkeypatch.setattr(link, "_open_usb_stream", no_stream)
+    monkeypatch.setattr(link, "usb_probes", lambda *a: pytest.fail("listed"))
+    with pytest.raises(FileNotFoundError):
         link.open_host("usb:1209:4f45")
-    monkeypatch.setattr(link, "project_serial_ports", lambda: [])
-    with pytest.raises(FileNotFoundError):                    # none
+
+
+@pytest.mark.parametrize("devices", [
+    [("30eda0e343c6", ["vendor", "hid", "cdc"], ["/dev/ttyACM0"]), ("9489dd2ae0953650", ["cdc"], ["/dev/ttyACM1"])],
+    [("9489dd2ae0953650", ["cdc"], ["/dev/ttyACM1"]), ("30eda0e343c6", ["vendor"], [])],
+    [("a1", ["vendor"], []), ("a2", ["hid"], []), ("a3", ["cdc"], ["/dev/ttyACM3"]),
+     ("a4", ["vendor", "hid"], [])],
+])
+def test_a_bare_usb_target_with_several_probes_opens_none_and_lists_them(monkeypatch, devices):
+    tried = []
+    monkeypatch.setattr(link, "_open_usb_stream", lambda *a: tried.append(a))
+    monkeypatch.setattr(link, "SerialLink", serial_link)
+    monkeypatch.setattr(link, "usb_probes", probes(*devices))
+    with pytest.raises(link.SeveralProbes) as e:
         link.open_host("usb")
-    monkeypatch.setattr(link, "project_serial_ports", lambda: [("/dev/ttyACM7", "a"), ("/dev/ttyACM8", "b")])
-    with pytest.raises(FileNotFoundError, match="/dev/ttyACM7, /dev/ttyACM8.*name one"):   # several: the user names one
-        link.open_host("usb")
+    assert not tried and len(e.value.probes) == len(devices)
+    text = str(e.value)
+    assert text.startswith(f"{len(devices)} probes on 1209:4f45 (") and "name one with usb:<unit_id> or its serial port" in text
+    for unit_id, ways, ports in devices:
+        assert f"{unit_id}: " in text
+    if devices[0][0] == "30eda0e343c6":
+        assert "(30eda0e343c6: vendor, hid, cdc /dev/ttyACM0; 9489dd2ae0953650: cdc /dev/ttyACM1)" in text
+
+
+def test_the_oep_command_lists_several_usb_probes_in_one_line(monkeypatch):
+    from oep_client import __main__ as cli
+    monkeypatch.setattr(link, "_open_usb_stream", lambda *a: pytest.fail("opened"))
+    monkeypatch.setattr(link, "usb_probes", probes(("30eda0e343c6", ["vendor", "hid", "cdc"], ["/dev/ttyACM0"]),
+                                                   ("9489dd2ae0953650", ["cdc"], ["/dev/ttyACM1"])))
+    with pytest.raises(SystemExit) as e:
+        cli.main(["dump", "--port", "usb"])
+    assert str(e.value.code) == ("oep: cannot open usb: 2 probes on 1209:4f45 (30eda0e343c6: vendor, hid, cdc "
+                                 "/dev/ttyACM0; 9489dd2ae0953650: cdc /dev/ttyACM1); not choosing one: name one with "
+                                 "usb:<unit_id> or its serial port.")
+
+
+def test_usb_probes_counts_each_device_once_whatever_its_ways_in():
+    usb = [{"serial": "30EDA0E343C6", "location": "1-2", "ways": {"vendor", "hid", "cdc"}},
+           {"serial": None, "location": "1-3", "ways": {"cdc"}},
+           {"serial": None, "location": "1-4", "ways": {"vendor"}}]
+    hid = [{"serial": "30eda0e343c6", "location": None, "ways": {"hid"}},
+           {"serial": None, "location": None, "ways": {"hid"}}]          # no serial, libusb listed: left out
+    ports = [("/dev/ttyACM0", "30eda0e343c6", "1-2"), ("/dev/ttyACM1", "9489dd2ae0953650", "1-3"),
+             ("/dev/ttyACM2", "abc", "1-5")]
+    got = link._merge_probes(usb, hid, ports)
+    assert [(p.unit_id, p.ways, p.ports) for p in got] == [
+        ("30EDA0E343C6", ["vendor", "hid", "cdc"], ["/dev/ttyACM0"]),
+        ("9489dd2ae0953650", ["cdc"], ["/dev/ttyACM1"]),               # merged by location
+        (None, ["vendor"], []),
+        ("abc", ["cdc"], ["/dev/ttyACM2"])]
+    assert str(got[2]) == "no USB serial (at 1-4): vendor"
+    assert link._merge_probes([], [], []) == []
+    one = link._merge_probes([], [{"serial": None, "location": None, "ways": {"hid"}}], [])
+    assert [(p.unit_id, p.ways) for p in one] == [(None, ["hid"])]
 
 
 @pytest.mark.parametrize("command", [["dump", "--port", "usb"], ["config", "show", "usb"], ["linktest", "usb"],
@@ -135,7 +226,7 @@ def test_the_oep_command_says_in_one_line_that_no_usb_probe_is_there(monkeypatch
         raise FileNotFoundError(f"no USB device {vid:04x}:{pid:04x}")
 
     monkeypatch.setattr(link, "_open_usb_stream", none)
-    monkeypatch.setattr(link, "project_serial_ports", lambda: [])
+    monkeypatch.setattr(link, "usb_probes", probes())
     with pytest.raises(SystemExit) as e:
         cli.main(command)
     text = str(e.value.code)

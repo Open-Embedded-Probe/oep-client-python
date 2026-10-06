@@ -63,7 +63,8 @@ from oep_client import core, link, riscv, ch32_flash
 
 hst = link.open_host("/run/board-identify/by-id/esp32-series-30eda0e31108")   # pipelining つき
 # a serial port (always COBS), "tcp://127.0.0.1:PORT" (a broker), "usb:<unit id>" (the device whose USB serial it is;
-# describe's unit_id must match), "usb" (the project's VID:PID 1209:4F45: vendor, then HID, else its one CDC port) /
+# describe's unit_id must match), "usb" (every device on the project's VID:PID 1209:4F45, each counted once: exactly
+# one -> vendor, then HID, else its CDC port; several -> link.SeveralProbes lists them, name one) /
 # "usb:VID:PID[:SERIAL]" (vendor, then HID). Each is probed first with a
 # confirm only (core §3.3): no valid answer -> closed, link.NotOepProbe
 core.take(hst, 30000, owner="flash script")   # the only way in: force; else wait out the lease, name the holder
