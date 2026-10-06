@@ -1,5 +1,5 @@
 """Link measurement: run traffic patterns over a probe's link and count what breaks, at the speed in force or at rates
-the host asks for with port_speed (oep-core §3.5). Every parameter is the caller's - rates (or none: the speed in
+the host asks for with port_speed - both through the probe's optional oep.link (oep-if-link). Every parameter is the caller's - rates (or none: the speed in
 force), patterns, in-flight counts, frame sizes, how long - so the limits of a bridge, a cable or a probe can be found
 case by case instead of with fixed numbers.
 
@@ -10,7 +10,7 @@ case by case instead of with fixed numbers.
                              inflight=[1, 2], sizes=[128, 496], frames=300):
       print(row.text())
 
-Patterns: "in" link_source (probe -> host), "out" link_sink (host -> probe), "duplex" the two alternating (both ways at
+Patterns: "in" oep.link source (probe -> host), "out" oep.link sink (host -> probe), "duplex" the two alternating (both ways at
 once when more than one is in flight). A frame is "ok" when its answer came whole and right, "broken" when an answer
 came but its content was wrong, "lost" when no good answer came (a broken frame on a held serial port counts here:
 the link drops it as noise). After a lost frame the link is resynchronised with a confirm before going on.
@@ -23,9 +23,9 @@ import time
 from dataclasses import dataclass, field
 
 from . import cobs, core, message as m
-from .link import FramingLost
+from .link import FramingLost, _link_answer_good, _link_request
 
-LINK_SOURCE, LINK_SINK, PORT_SPEED = 0x40, 0x41, 0x14
+LINK_SOURCE, LINK_SINK, PORT_SPEED = core.LINK_SOURCE, core.LINK_SINK, core.LINK_PORT_SPEED
 PATTERNS = ("in", "out", "duplex")
 
 
@@ -70,9 +70,11 @@ class RateResult:
 
 def run(hst, pattern: str, inflight: int, size: int, *, frames: int = 300, seconds: float | None = None,
         timeout: float = 0.3, rate: int = 0) -> Cell:
-    """One pattern at the speed in force: `frames` requests (or for `seconds`), `inflight` at a time, `size` bytes each."""
+    """One pattern at the speed in force: `frames` requests (or for `seconds`), `inflight` at a time, `size` bytes each
+    (LookupError: the probe offers no oep.link)."""
     if pattern not in PATTERNS:
         raise ValueError(f"pattern {pattern!r}: one of {PATTERNS}")
+    fn = core.link_fn(hst)
     lk = hst.link
     cell = Cell(rate or getattr(lk, "baud", 0) or 0, pattern, inflight, size)
     data = bytes(k & 0xFF for k in range(size))
@@ -87,18 +89,15 @@ def run(hst, pattern: str, inflight: int, size: int, *, frames: int = 300, secon
             batch = inflight * 2 if seconds is not None else min(inflight * 2, frames - cell.frames)
             kinds = [pattern if pattern != "duplex" else ("in" if (cell.frames + k) % 2 == 0 else "out")
                      for k in range(batch)]
-            msgs = [m.Request(hst.next_corr(), m.CORE_FN, LINK_SOURCE if k == "in" else LINK_SINK,
-                              struct.pack("<I", size) if k == "in" else data).pack() for k in kinds]
+            msgs = [m.Request(hst.next_corr(), fn, LINK_SOURCE if k == "in" else LINK_SINK,
+                              _link_request(k, size, data)).pack() for k in kinds]
             replies: list[bytes] = []
             try:
                 lk._exchange_once(msgs, inflight, window, replies)
             except (cobs.CorruptFrame, TimeoutError, FramingLost):
                 pass
             for kind, raw in zip(kinds, replies):
-                res = m.Result.unpack(raw)
-                good = res.succeeded and (res.payload == data if kind == "in"
-                                          else res.payload[:4] == struct.pack("<I", size))
-                if good:
+                if _link_answer_good(kind, raw, data):
                     cell.ok += 1
                 else:
                     cell.broken += 1
@@ -121,7 +120,7 @@ VERIFY_MS = 2000   # the probe's try state lasts this long without a commit: a b
 
 
 def _speed(hst, port: int, rate: int, step: int, verify_ms: int = VERIFY_MS, idle_ms: int = 3000) -> int:
-    r = hst.call(m.CORE_FN, PORT_SPEED, struct.pack("<BIBHI", port, rate, step, verify_ms, idle_ms))
+    r = hst.call(core.link_fn(hst), PORT_SPEED, struct.pack("<BIBHI", port, rate, step, verify_ms, idle_ms))
     return m.Reader(r.payload).u32()
 
 

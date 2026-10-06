@@ -18,7 +18,7 @@ import time
 
 from . import registry as reg
 
-# the vendor bulk transport's interface: class 0xFF, subclass 'O', protocol 'E' (oep-core §3.3); one per probe
+# the vendor bulk transport's interface: class 0xFF, subclass 'O', protocol 'E' (transports §3); one per probe
 VENDOR_CLASS, VENDOR_SUBCLASS, VENDOR_PROTOCOL = (reg.USB[k] for k in ("vendor_bulk_class", "vendor_bulk_subclass",
                                                                        "vendor_bulk_protocol"))
 
@@ -155,7 +155,7 @@ class UsbAsyncStream:
                 continue
             for setting in dev.iterSettings():
                 if (setting.getClass(), setting.getSubClass(), setting.getProtocol()) != \
-                        (VENDOR_CLASS, VENDOR_SUBCLASS, VENDOR_PROTOCOL):   # the OEP vendor interface (core §3.3)
+                        (VENDOR_CLASS, VENDOR_SUBCLASS, VENDOR_PROTOCOL):   # the OEP vendor interface (transports §3)
                     continue
                 eps = [(e.getAddress(), e.getAttributes()) for e in setting]
                 ins = [a for a, attr in eps if attr & 3 == 2 and a & 0x80]

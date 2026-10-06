@@ -91,7 +91,7 @@ class PositionStream(Interface):
         """One answer's marks with serial >= from_serial (in serial order). -> (marks, more)."""
         rd = m.Reader(self._call(self.MARKS, self._stream_prefix() + struct.pack("<I", from_serial), locked=False).payload)
         more, count = rd.take("BB")
-        marks = [Mark(*rd.element().take("IQBQB")) for _ in range(count)]
+        marks = [Mark(*rd.take("IQBQB")) for _ in range(count)]   # count x mark, no element length (core §2.3)
         rd.tail()
         return marks, bool(more)
 
@@ -113,8 +113,10 @@ class PositionStream(Interface):
         self._call(self.MARK, self._stream_prefix() + bytes([value]))
 
     def write(self, data: bytes) -> int:
-        """-> bytes accepted: what fit the mechanism's send slot (common §1.4; delivery is not implied). Fewer than
-        asked is completed partial, not an error; nothing accepted is completed failed (raised as Failed)."""
+        """-> bytes accepted: what fit the mechanism's send slot (common §1.4; delivery is not implied) - a console takes
+        at most its mechanism's slot (DMDATA 3 bytes, dmseq 2, SDI none) and nothing while the bytes it took last are
+        still in the slot (console §2, §3). Fewer than asked is completed partial, not an error; nothing accepted is
+        completed failed (raised as Failed): `StreamIO.write` loops on it."""
         r = self._request(self.WRITE, self._stream_prefix() + struct.pack("<H", len(data)) + data)
         if r.resolution != m.COMPLETED or r.detail not in (m.SUCCESS, m.PARTIAL):
             raise h.Failed(r)
@@ -165,15 +167,19 @@ class Console(PositionStream):
         while True:
             rd = m.Reader(self._call(self.STREAMS, bytes([len(out)]), locked=False).payload)
             more, count = rd.take("BB")
-            out += [StreamInfo(*rd.element().take("HHBBB")) for _ in range(count)]
+            out += [StreamInfo(*rd.take("HHBBB")) for _ in range(count)]
             rd.tail()
             if not more or not count or len(out) > 0xFF:
                 return out
 
 
 class StreamIO:
-    """A position stream read from a position onwards, as a plain byte stream (console or fixture UART)."""
+    """A position stream read from a position onwards, as a plain byte stream (console or fixture UART). `write`
+    sends in chunks and goes on from what each answer accepted (a console's slot takes 2 or 3 bytes at a time);
+    `stall_s`: how long it waits with nothing accepted before it gives up (TimeoutError) - an SDI console accepts
+    nothing ever (console §3.1)."""
     MAX_READ, MAX_WRITE = 1000, 64
+    STALL_S = 2.0
 
     def __init__(self, source: PositionStream, start: int | None = None):
         self.source = source
@@ -181,9 +187,9 @@ class StreamIO:
         self.lost = 0
 
     def _limits(self) -> tuple[int, int]:
-        """(read, write) chunk sizes that fit the probe's frame: a write is request header 6 + session 4 + the stream's
-        prefix (the console's stream u16, none on a fixture UART) + count 2; a read's result is header 5 + start 8 +
-        flags 1 + len 2."""
+        """(read, write) chunk sizes that fit the probe's frame: a write is request header 10 (session_id included) + the
+        stream's prefix (the console's stream u16, none on a fixture UART) + count 2; a read's result is header 5 +
+        start 8 + flags 1 + len 2."""
         frame = self.source.host.confirmed()["max_frame"]
         write = frame - 12 - len(self.source._stream_prefix())
         return max(1, min(self.MAX_READ, frame - 16)), max(1, min(self.MAX_WRITE, write))
@@ -195,8 +201,13 @@ class StreamIO:
         self.position = c.start + len(c.data)
         return c.data
 
-    def write(self, data: bytes) -> None:
+    def write(self, data: bytes, stall_s: float | None = None) -> None:
+        """Every byte of `data`, chunk by chunk, each next one from where the last answer's accepted left off. Nothing
+        accepted (the slot still holds earlier bytes, common §1.4): a short pause and again, at most `stall_s`
+        (default STALL_S) with nothing accepted - then TimeoutError, saying how many bytes went."""
         chunk = self._limits()[1]
+        stall = self.STALL_S if stall_s is None else stall_s
+        total, since = len(data), time.monotonic()
         while data:
             try:
                 took = self.source.write(data[:chunk])
@@ -205,7 +216,12 @@ class StreamIO:
                     raise
                 took = 0                           # accepted 0: the slot was full
             data = data[took:]
-            if not took:
+            if took:
+                since = time.monotonic()
+            elif time.monotonic() - since > stall:
+                raise TimeoutError(f"the stream accepted nothing for {stall} s ({total - len(data)} of {total} bytes "
+                                   "went): the target is not taking input (an SDI console never does)")
+            else:
                 time.sleep(0.005)   # the target has not taken the last chunk yet
 
 

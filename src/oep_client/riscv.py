@@ -196,7 +196,7 @@ class WireBase(Interface):
             rd = m.Reader(self._call(self.SCAN, body + extra, expect_ms=self.scan_ms()).payload)
             tried, count = rd.take("BB")
             for _ in range(count):
-                kind, dio, clk, status = rd.element().take("BHHI")
+                kind, dio, clk, status = rd.take("BHHI")         # 9 bytes, no element length (core §2.3)
                 out.append(Found(kind, (dio, clk), status))
             rd.tail()
             if tried == 0:
@@ -224,10 +224,10 @@ class WireBase(Interface):
             rd = m.Reader(self._call(self.CONNECTIONS, bytes([len(out)]), locked=False).payload)
             more, count = rd.take("BB")
             for _ in range(count):
-                e = rd.element()
-                conn, swdio, swclk, speed, users, slot, scheme, n = e.take("HHHIBBBB")
+                conn, swdio, swclk, speed, users, slot, scheme, n = rd.take("HHHIBBBB")
+                tid = rd.bytes(n)
                 out.append(ConnectionInfo(conn, (swdio, swclk), speed, users, None if slot == 0xFF else slot,
-                                          (scheme, e.bytes(n)) if scheme else None))
+                                          (scheme, tid) if scheme else None))
             rd.tail()
             if not more or not count or len(out) > 0xFF:
                 return out
@@ -472,7 +472,8 @@ class RiscvDm(Interface, BlockLength):
                                                       for k in ("probe_default", "ndmreset", "system_reset"))
     TAG_RESET_METHOD = _RV.tlv["reset"]["method"]
     TAG_STEP_LEFT = _RV.tlv["step_answer"]["step_left"]
-    FEATURE = _RV.enum["features"]                 # the optional ops' bits of describe features (debug §4)
+    OPTIONAL = {"block": (_RV.op["read_block"], _RV.op["write_block"]), "run": (_RV.op["run"],),
+                "reset": (_RV.op["reset"],), "step": (_RV.op["step"],)}   # the optional ops (debug §4), by name
 
     def __init__(self, hst: h.Host, conn: int, name: str = "oep.target.riscv-dm"):
         super().__init__(hst, name, prefix=struct.pack("<H", conn))
@@ -480,12 +481,12 @@ class RiscvDm(Interface, BlockLength):
         self._max_length = None
 
     def declared(self) -> set[str]:
-        """The optional ops this probe offers, from describe's features (debug §4, core §1.2): "block" (read_block /
-        write_block), "run", "reset", "step". dmi, halt and resume are always there; an op not declared here is
-        answered unknown_operation, and the host builds the same thing from dmi."""
-        bits = next((struct.unpack_from("<I", v)[0] for tag, v in describe(self.host, self.fn)
-                     if tag & ~m.TAG_CRITICAL == catalog.FEATURES and len(v) >= 4), 0)
-        return {name for name, bit in self.FEATURE.items() if bits & bit}
+        """The optional ops this probe offers, from its describe's ops tag (debug §4, core §1.2, §7.4): "block"
+        (read_block / write_block, offered as a pair), "run", "reset", "step". dmi, halt and resume are always there;
+        an op not offered is answered unknown_operation, and the host builds the same thing from dmi. A describe
+        without an ops tag (not a conforming probe) declares none."""
+        offered = self.ops() or set()
+        return {name for name, ops in self.OPTIONAL.items() if all(op in offered for op in ops)}
 
     def _status_only(self, what: str, op: int) -> None:
         r = self._request(op)

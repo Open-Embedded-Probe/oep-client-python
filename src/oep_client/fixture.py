@@ -24,8 +24,9 @@ NOT_DRIVEN = _GPIO.enum["drive_read"]["not_driven"]
 @dataclass(frozen=True)
 class Drive:
     """An output strength (oep-if-fixture §1.1), for gpio set and the settings' idle: a level number of the probe's
-    drive_levels (kind 0), or an mA ceiling (kind 1: the strongest level of about that many mA or less, level 0 when
-    every level is stronger). A ceiling carries over between probes; a level number is one probe's list."""
+    drive_levels (kind 0), an mA ceiling (kind 1: the strongest level of about that many mA or less, level 0 when
+    every level is stronger), or the default level (kind 2, value 0: drive_levels' default). A ceiling carries over
+    between probes; a level number is one probe's list."""
     kind: int
     value: int
 
@@ -38,6 +39,15 @@ class Drive:
         return cls(DRIVE_KIND["max_ma"], ma)
 
     @classmethod
+    def default(cls) -> "Drive":
+        """The default level of drive_levels (kind 2, value 0)."""
+        return cls(DRIVE_KIND["default"], 0)
+
+    @property
+    def is_default(self) -> bool:
+        return self.kind == DRIVE_KIND["default"]
+
+    @classmethod
     def of(cls, drive: "Drive | int") -> "Drive":
         """A Drive as it is, an int as a level number."""
         return drive if isinstance(drive, Drive) else cls.level(int(drive))
@@ -45,7 +55,10 @@ class Drive:
     def pack(self) -> bytes:
         """kind(u8) value(u16), the form both places use."""
         if self.kind not in DRIVE_KIND.values() or not 0 <= self.value <= 0xFFFF:
-            raise ValueError(f"drive kind {self.kind} value {self.value}: kind 0 (level) or 1 (max_ma), value u16")
+            raise ValueError(f"drive kind {self.kind} value {self.value}: kind 0 (level), 1 (max_ma) or 2 (default), "
+                             "value u16")
+        if self.is_default and self.value:
+            raise ValueError("drive kind 2 (the default level) carries value 0")
         return struct.pack("<BH", self.kind, self.value)
 
     @classmethod
@@ -54,6 +67,8 @@ class Drive:
         return cls(kind, value)
 
     def __str__(self) -> str:
+        if self.is_default:
+            return "default"
         return f"level {self.value}" if self.kind == DRIVE_KIND["level"] else f"<= {self.value} mA"
 
 
@@ -67,6 +82,8 @@ class DriveLevels:
     def pick(self, drive: "Drive | int") -> int | None:
         """The level a Drive selects here (None: a level number past the list - the probe ignores that drive)."""
         d = Drive.of(drive)
+        if d.is_default:
+            return self.default
         if d.kind == DRIVE_KIND["level"]:
             return d.value if d.value < len(self.ma) else None
         return max((i for i, x in enumerate(self.ma) if x <= d.value), default=0)
@@ -304,7 +321,7 @@ class I2cTarget(_TargetDeclarations, Interface):
         _I2C.op[k] for k in ("configure", "arm_rx", "read_rx", "preload_tx", "status", "reset", "stretch"))
     MODE_FIXED_RX, MODE_FRAMED_RX, MODE_PRELOADED_TX = (_I2C.enum["mode"][k] for k in ("fixed_rx", "framed_rx", "preloaded_tx"))
     ROLE_SDA, ROLE_SCL = _I2C.enum["role"]["sda"], _I2C.enum["role"]["scl"]
-    FEATURE_PRELOADED_TX, FEATURE_STRETCH = _I2C.enum["features"]["preloaded_tx"], _I2C.enum["features"]["stretch"]
+    FEATURE_PRELOADED_TX = _I2C.enum["features"]["preloaded_tx"]   # stretch is an optional op, declared by ops
     TAG_QUEUE_DEPTH, TAG_MAX_STRETCH_US = _I2C.tlv["describe"]["queue_depth"], _I2C.tlv["describe"]["max_stretch_us"]
     FEATURE_INTERNAL_PULLUPS = _I2C.enum["features"]["internal_pullups"]
     TAG_PULLUP_OHMS = _I2C.tlv["describe"]["pullup_ohms"]
@@ -359,7 +376,7 @@ class I2cTarget(_TargetDeclarations, Interface):
     @property
     def max_stretch_us(self) -> int | None:
         """The largest stretch_us stretch() accepts (describe tag 0x41, u32); None when the probe does not declare it
-        (it does exactly when features has bit1)."""
+        (it does exactly when its ops offer stretch: `offers(STRETCH)`)."""
         return self._declared(self.TAG_MAX_STRETCH_US, "I")
 
     @property
@@ -372,8 +389,8 @@ class I2cTarget(_TargetDeclarations, Interface):
         return self._declared(self.TAG_PULLUP_OHMS, "I")
 
     def stretch(self, stretch_us: int) -> None:
-        """Hold SCL low for stretch_us after each received byte (0 = off); probes declaring features bit1 only. Above
-        max_stretch_us: host.Unsupported. Accepted in any state; configure and reset keep it, the plan's release
+        """Hold SCL low for stretch_us after each received byte (0 = off); an optional op, offered when the describe's
+        ops set it (`offers(STRETCH)`; otherwise rejected unknown_operation). Above max_stretch_us: host.Unsupported. Accepted in any state; configure and reset keep it, the plan's release
         clears it."""
         self._call(self.STRETCH, struct.pack("<I", stretch_us))
 

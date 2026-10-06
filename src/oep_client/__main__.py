@@ -9,7 +9,7 @@
   oep config uart <probe> oep.fixture.uart#1 115200 --format 8N1
   oep config disable <probe> 3 4           (channels the probe never uses or touches; remove disable CH re-enables)
   oep config remove <probe> bind 1        oep config save <probe>        oep config erase <probe>
-  oep speed <probe> [--candidates 921600,500000] [--verify [--flows in:2,out:2]] (port_speed, core §3.5 and the host
+  oep speed <probe> [--candidates 921600,500000] [--verify [--flows in:2,out:2]] (port_speed, oep-if-link §3 and the host
                                            guide §17: try the candidates in order on a UART bridge, report)
   oep linktest <probe> --rates now,921600 --patterns in,out,duplex --inflight 1,2 --sizes 128,496 --frames 300
   oep pins <probe> --power 5 --wire swio  (find the target's debug pins and reset line: classify the channels, scan,
@@ -50,7 +50,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="oep", description="Open Embedded Probe: what a probe offers, its settings")
     sub = parser.add_subparsers(dest="command", required=True)
     _config_parser(sub)
-    sp = sub.add_parser("speed", help="port_speed (core §3.5, host guide §17): try faster rates on a UART bridge, "
+    sp = sub.add_parser("speed", help="port_speed (oep-if-link §3, host guide §17): try faster rates on a UART bridge, "
                         "print the report")
     sp.add_argument("probe", help="the probe's serial port (a UART bridge this host opens)")
     sp.add_argument("rates", nargs="?", default="", help="the candidates, comma-separated, in order of preference "

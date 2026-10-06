@@ -1,4 +1,4 @@
-"""Serial-port framing (oep-core §3.1): message + CRC-16 little endian, COBS-encoded, sent as 0x00 <COBS> 0x00.
+"""Serial-port framing (transports §1): message + CRC-16 little endian, COBS-encoded, sent as 0x00 <COBS> 0x00.
 
 CRC-16/CCITT-FALSE: poly 0x1021, init 0xFFFF, no reflection, no final xor ("123456789" -> 0x29B1).
 Mirrors oep-probe-arduino OepFrame (CobsReader / writeCobsFrame).
@@ -21,7 +21,7 @@ def crc16(data: bytes, crc: int = 0xFFFF) -> int:
 
 def encode(data: bytes) -> bytes:
     """Standard COBS (no delimiter): blocks of length+1 and up to 254 non-zero bytes; a full block implies no
-    zero. When the data ends right after a full block no empty block follows (oep-core §3.1: the sender leaves it
+    zero. When the data ends right after a full block no empty block follows (transports §1: the sender leaves it
     out, a receiver takes both forms)."""
     out = bytearray()
     i, n = 0, len(data)
@@ -57,7 +57,7 @@ def decode(raw: bytes) -> bytes:
 
 def frame(message: bytes) -> bytes:
     """0x00 <COBS(message + CRC)> 0x00: the leading delimiter too, so a receiver that saw raw bytes before starts
-    the frame clean (oep-core §3.1, §3.4)."""
+    the frame clean (transports §1, §4)."""
     crc = crc16(message)
     return b"\x00" + encode(message + bytes([crc & 0xFF, crc >> 8])) + b"\x00"
 

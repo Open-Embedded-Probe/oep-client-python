@@ -32,8 +32,8 @@ class Capabilities:
 
 _REQUIRED_CORE_TAGS = {reg.CORE.tlv["describe"][k]: k for k in ("unit_id", "transport", "max_op_ms", "discoverable")}
 _TRANSPORT_TAG = reg.CORE.tlv["describe"]["transport"]
-_RELAYING_BROKER = 0xFF          # confirm's transport from a relaying broker (core §3.1, §7.1)
-MISSING_HEADING = "MISSING what every probe must give (core §1.2, §7.1, §7.5)"
+_RELAYING_BROKER = 0xFF          # confirm's transport from a relaying broker (transports §1, core §7.1)
+MISSING_HEADING = "MISSING what every probe must give (core §1.2, §7.1, §7.4, §7.5)"
 
 
 def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, bytes]]) -> list[str]:
@@ -56,6 +56,8 @@ def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, byte
             elif where[0] != _RELAYING_BROKER and _TRANSPORT_TAG in have and where[0] not in indexes:
                 out.append(f"describe of fn 0: the transport confirm names (index {where[0]})")
     out += [f"describe of fn 0: {name}" for tag, name in _REQUIRED_CORE_TAGS.items() if tag not in have]
+    if m.TAG_OPS not in have:
+        out.append("describe of fn 0: ops")                    # every fn's describe carries it (core §1.2, §7.4)
     return out
 
 
@@ -88,7 +90,9 @@ def collect(call, prefix: str = "", exact: bool = False, confirm: tuple[int, int
                 break
         caps.offers.append(Offer(e, catalog.decode_description(data)))
         if e.fn == CORE_FN and revision >= 1:
-            caps.missing = required_missing(p, catalog.split_tlv(data))
+            caps.missing = required_missing(p, catalog.split_tlv(data)) + caps.missing
+        elif revision >= 1 and caps.offers[-1].description.ops is None:
+            caps.missing.append(f"describe of fn {e.fn}: ops")   # every listed fn's describe (core §1.2, §7.4)
     return caps
 
 
@@ -134,6 +138,8 @@ def describe_offer(o: Offer) -> dict:
     for key in ("max_clock_hz", "min_clock_hz", "max_length"):
         if getattr(d, key) is not None:
             out[key] = getattr(d, key)
+    if d.ops is not None:
+        out["ops"] = interfaces.op_names(name, d.ops)
     if d.features is not None:
         out["features"] = _features(d.features, known.features if known else {})
     if d.implementation is not None:
@@ -193,6 +199,8 @@ def to_text(caps: Capabilities) -> str:
                 limits.append(f"max length {r['max_length']}")
             if limits:
                 lines.append(f"{pad}  " + ", ".join(limits))
+            if "ops" in r:
+                lines.append(f"{pad}  ops: " + (", ".join(r["ops"]) or "none"))
             if r.get("features"):
                 lines.append(f"{pad}  features: " + ", ".join(r["features"]))
             if "implementation" in r:

@@ -16,7 +16,7 @@ pretrigger and frontend always go critical (oep-if-capture §3.3, P2-○8); samp
 asked: the probe rounds samples down to its limit and the answer (Config.samples / .segments) is what holds.
 
 blocking_ms (P2-○9): a start whose answer says blocking_ms > 0 is followed by nothing on any transport for that long
-(`blocked`), then - on a length-prefixed link - the resync of core §5.1; neither the lease nor the answer's wait counts
+(`blocked`), then - on a length-prefixed link - the resync of transports §5; neither the lease nor the answer's wait counts
 it."""
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ def tlvs(payload: bytes) -> list[tuple[int, bytes]]:
 def blocked(hst: h.Host, blocking_ms: int, sleep=time.sleep) -> None:
     """oep-if-capture §3.2 (P2-○9): from the start answer for blocking_ms the probe may not process frames on any
     transport, so this host sends nothing for that long; afterwards a length-prefixed link begins with the resync of
-    core §5.1, a serial port simply goes on. Neither the lease nor the host's wait counts blocking_ms."""
+    transports §5, a serial port simply goes on. Neither the lease nor the host's wait counts blocking_ms."""
     if blocking_ms <= 0:
         return
     sleep(blocking_ms / 1000)
@@ -267,7 +267,7 @@ class LogicCapture(Interface):
         critical = ALWAYS_CRITICAL | set(critical)
 
         def tlv(tag: int, value: bytes) -> bytes:
-            return bytes([tag | (CRITICAL if tag in critical else 0), len(value)]) + value
+            return m.tlv(tag, value, critical=tag in critical)
         body = tlv(MODE, bytes([mode])) + tlv(RATE, struct.pack("<I", rate))
         if samples is not None:
             body += tlv(SAMPLES, struct.pack("<I", samples))
@@ -397,7 +397,7 @@ class LogicCapture(Interface):
         """One answer's segment records from `from_serial` on. -> (segments, more)."""
         rd = m.Reader(self._call(self.SEGMENTS, struct.pack("<I", from_serial), locked=False).payload)
         more, count = rd.take("BB")
-        out = [Segment.unpack(rd.element().bytes(SEGMENT_BYTES)) for _ in range(count)]
+        out = [Segment.unpack(rd.bytes(SEGMENT_BYTES)) for _ in range(count)]
         rd.tail()
         return out, bool(more)
 

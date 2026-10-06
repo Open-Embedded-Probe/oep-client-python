@@ -1,4 +1,5 @@
-"""What the host knows about interfaces, for display: role names, feature bits, specific tags.
+"""What the host knows about interfaces, for display: role names, feature bits, specific tags (the ops every describe
+carries are named from the registry's op tables: `op_names`).
 
 EXAMPLES ONLY. Which capabilities become the BASIC standard under `oep.` is not decided
 (oep-spec docs/capability-declaration-model.ja.md); these entries exist so that `dump` can show
@@ -85,8 +86,8 @@ KNOWN: dict[str, Known] = {
               0x43: ("channels", _u16), 0x44: ("reserved", _channels), 0x45: ("profile", _text),
               0x46: ("label", _label), 0x47: ("resets on open", lambda v: "yes"),
               0x49: ("transport", _transport), 0x4A: ("discoverable", lambda v: "yes" if v[:1] == b"\x01" else "no"),
-              0x4B: ("plan roles", _u32), 0x4C: ("chip", _text), 0x4D: ("max op ms", _u32),
-              0x4E: ("port speed", lambda v: "yes" if v[:1] == b"\x01" else "no")}),
+              0x4B: ("plan roles", _u32), 0x4C: ("chip", _text), 0x4D: ("max op ms", _u32)}),
+    "oep.link": Known("the link test (source, sink) and, when its ops offer it, port_speed on a UART bridge"),
     "oep.wire.rvswd": Known("scan, attach, detach over RVSWD (attach returns a connection)",
                             roles={1: "SWDIO", 2: "SWCLK", 3: "reset"}, features={0: "attach writes unbounded"},
                             tags={0x40: ("max connections", lambda v: str(v[0]))}),
@@ -96,8 +97,7 @@ KNOWN: dict[str, Known] = {
     "oep.wire.swd": Known("scan, attach, detach over ARM SWD", roles={1: "SWDIO", 2: "SWCLK"},
                           features={0: "attach writes unbounded"}, tags={0x40: ("max connections", lambda v: str(v[0]))}),
     "oep.target.riscv-dm": Known(
-        "RISC-V Debug Module over DMI: step lists, block read/write, run until halt, halt/resume",
-        features={0: "block read/write", 1: "run until halt", 2: "reset", 3: "step"}),
+        "RISC-V Debug Module over DMI: step lists, block read/write, run until halt, halt/resume (optional ops: ops)"),
     "oep.target.arm-adi": Known("ARM Debug Interface: DP/AP transfer lists, block transfers"),
     "oep.target.console": Known(
         "console streams on a debug connection (position-addressed, marks)",
@@ -113,12 +113,13 @@ KNOWN: dict[str, Known] = {
     "oep.fixture.uart": Known("a UART (USART, asynchronous) on probe pins", roles={1: "RX", 2: "TX"},
                               tags={0x40: ("formats", lambda v: ", ".join(f"0x{b:02x}" for b in v[1:1 + v[0]]))}),
     "oep.fixture.logic": Known("sampled logic capture", roles={k: f"line{k}" for k in range(8)},
-                               tags={0x40: ("mode", _capture_mode)}),
+                               features={2: "notify"}, tags={0x40: ("mode", _capture_mode)}),
     "oep.fixture.analog": Known("sampled analog capture", roles={k: f"ch{k}" for k in range(8)},
-                                tags={0x40: ("mode", _capture_mode)}),
+                                features={2: "notify"}, tags={0x40: ("mode", _capture_mode)}),
+    "oep.fixture.capture-group": Known("captures started and stopped together", features={2: "notify"}),
     "oep.fixture.i2c-target": Known(
         "an I2C target the DUT can address (open-drain only, fixture §3)",
-        roles={1: "SDA", 2: "SCL"}, features={0: "preloaded tx", 1: "clock stretching", 2: "internal pull-ups"},
+        roles={1: "SDA", 2: "SCL"}, features={0: "preloaded tx", 2: "internal pull-ups"},
         tags={0x40: ("queue depth", lambda v: str(v[0])), 0x41: ("max stretch us", _u32),
               0x42: ("pull-ups ohms", _u32)}),
     "oep.fixture.spi-target": Known(
@@ -127,6 +128,13 @@ KNOWN: dict[str, Known] = {
         tags={0x40: ("queue depth", lambda v: str(v[0])),
               0x43: ("CS setup ns", lambda v: f"{_u32(v)} (SCK sooner after CS: the first bit is not sure)")}),
 }
+
+
+def op_names(name: str, ops) -> list[str]:
+    """The ops of an ops tag by the registry's names for interface `name` (an op it does not name: 0x.. hex)."""
+    from . import registry as reg
+    known = {v: k for k, v in getattr(reg.INTERFACES.get(name), "op", {}).items()}
+    return [known.get(op, f"0x{op:02x}") for op in sorted(ops)]
 
 
 def ranges(channels: list[int]) -> str:

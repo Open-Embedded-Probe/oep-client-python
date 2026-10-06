@@ -10,8 +10,8 @@ the live slot / bind / storage state as its own lock-free operation (describe is
     cfg.unset([("bind", 1)])          # or cfg.set([config.remove("bind", 1)])
 
 An item goes as its TLV; a set replaces the keys it carries and keeps the others; the probe checks the whole and changes
-nothing on a refusal. The probe keeps each item's bytes as sent and hashes the canonical form (tag order, key order, the
-one TLV encoding): `hash_of(items)` computes the same value here.
+nothing on a refusal. Every item has one form per tag (probe.config §1); the probe hashes the canonical form (tag order,
+key order, each item a TLV): `hash_of(items)` computes the same value here.
 """
 
 from __future__ import annotations
@@ -40,7 +40,8 @@ UNREADABLE = {1: "unreadable form", 2: "an interface it names is gone or of anot
 NEVER_NS = 0xFFFFFFFFFFFFFFFF                                   # last_try_at_ns: never tried; reset_at_ns: never done
 BOOT_RESET = _CFG.enum["slot_boot_reset"]
 LABEL_MAX = reg.LIMITS["label_max_bytes"]                       # a label's text (probe.config §1, PC-5)
-SLOT_HEAD = struct.Struct("<BHHHBIIBBB")   # slot wire_fn swdio swclk attach retry_ms max_speed_hz idle_clock mechanism name_len
+# slot wire_fn swdio swclk attach boot_reset retry_ms max_speed_hz idle_clock mechanism name_len (probe.config §1.1)
+SLOT_HEAD = struct.Struct("<BHHHBBIIBBB")
 
 
 def _name(table: dict[str, int], value: int) -> str:
@@ -85,8 +86,9 @@ class Idle:
     level while the channel is free - a target's power switch kept on - and a gpio plan that takes the channel keeps
     it until its first set (fixture §1); a probe that cannot drive the channel refuses it unsupported.
     drive (output modes only): the strength it drives at (`fixture.Drive`, or an int level number; fixture §1.1) -
-    also what a gpio set without its own drive uses on that channel. None: the default level. A probe without
-    drive_levels keeps it and drives at its default."""
+    also what a gpio set without its own drive uses on that channel. None: the default level (sent as drive_kind 2,
+    value 0: the item is always 6 bytes, probe.config §1). A probe without drive_levels keeps it and drives at its
+    default."""
     channel: int
     mode: str = "pull-up"          # hi-z, pull-up, pull-down, output-low, output-high
     drive: Drive | int | None = None
@@ -101,14 +103,14 @@ class Idle:
         return (self.channel,)
 
     def value(self) -> bytes:
+        """channel(u16) mode(u8) drive_kind(u8) drive_value(u16): 6 bytes (probe.config §1)."""
         if self.mode not in IDLE:
             raise ValueError(f"idle mode {self.mode!r}: one of {', '.join(IDLE)}")
         v = struct.pack("<HB", self.channel, IDLE[self.mode])
-        if self.drive is None:
-            return v
-        if self.mode not in ("output-low", "output-high"):
+        drive = self.drive if self.drive is not None else Drive.default()
+        if not drive.is_default and self.mode not in ("output-low", "output-high"):
             raise ValueError(f"idle mode {self.mode}: a drive goes with output-low / output-high only")
-        return v + self.drive.pack()                                # drive_kind(u8) drive_value(u16)
+        return v + drive.pack()                                     # drive_kind(u8) drive_value(u16)
 
 
 @dataclass(kw_only=True)
@@ -149,19 +151,20 @@ class Slot:
         return (self.slot,)
 
     def value(self) -> bytes:
+        """The fixed fields, the name, then lock_len and the lock's part (the item ends there, probe.config §1.1)."""
         name = self.name.encode()
         retry_ms = round(self.retry_s * 1000) if self.attach == "at-boot" else 0
-        v = SLOT_HEAD.pack(self.slot, self.wire_fn, *self.pins, ATTACH[self.attach], retry_ms, self.max_speed,
-                           IDLE_CLOCK[self.idle_clock], MECHANISM[self.mechanism], len(name)) + name
         if self.boot_reset and self.attach != "at-boot":
             raise ValueError("boot_reset goes with attach at-boot only")
-        tail = bytes([BOOT_RESET["retry_with_reset"]]) if self.boot_reset else b""   # after the lock; absent = 0
+        boot_reset = BOOT_RESET["retry_with_reset"] if self.boot_reset else BOOT_RESET["off"]
+        v = SLOT_HEAD.pack(self.slot, self.wire_fn, *self.pins, ATTACH[self.attach], boot_reset, retry_ms,
+                           self.max_speed, IDLE_CLOCK[self.idle_clock], MECHANISM[self.mechanism], len(name)) + name
         if self.lock is None:
-            return v + b"\x00" + tail                             # lock_len 0: no lock
+            return v + b"\x00"                                    # lock_len 0: no lock
         scheme, mask, value = self.lock
         if len(mask) != len(value) or not mask or not scheme:
             raise ValueError("a lock has a scheme and a mask and value of the same length, at least 1 byte")
-        return v + bytes([1 + 2 * len(mask), scheme]) + mask + value + tail
+        return v + bytes([1 + 2 * len(mask), scheme]) + mask + value
 
 
 @dataclass(kw_only=True)
@@ -180,7 +183,7 @@ class Bind:
     def value(self) -> bytes:
         v = struct.pack("<BBBB", self.port, MODE[self.mode], self.selected if self.mode == "manual" else 0,
                         len(self.streams))
-        return v + b"".join(struct.pack("<BBH", 3, STREAM[kind], i) for kind, i in self.streams)   # len, kind, id
+        return v + b"".join(struct.pack("<BH", STREAM[kind], i) for kind, i in self.streams)   # kind, id: 3 bytes each
 
 
 @dataclass(kw_only=True)
@@ -231,20 +234,19 @@ def decode(tag: int, v: bytes):
         return Plan(fn=fn, role=role, channel=channel)
     if tag == ITEM["label"] and len(v) >= 2:
         return Label(channel=struct.unpack_from("<H", v)[0], text=v[2:].decode("utf-8", "replace"))
-    if tag == ITEM["idle"] and len(v) >= 3:
+    if tag == ITEM["idle"] and len(v) >= 6:
+        drive = Drive.unpack(v[3:6])
         return Idle(channel=struct.unpack_from("<H", v)[0], mode=_name(IDLE, v[2]),
-                    drive=Drive.unpack(v[3:6]) if len(v) >= 6 else None)
+                    drive=None if drive.is_default else drive)
     if tag == ITEM["disable"] and len(v) >= 2:
         return Disable(channel=struct.unpack_from("<H", v)[0])
     if tag == ITEM["slot"] and len(v) >= SLOT_HEAD.size + 1:
-        n, wire_fn, swdio, swclk, attach, retry_ms, max_speed, idle, mech, name_len = SLOT_HEAD.unpack_from(v)
+        n, wire_fn, swdio, swclk, attach, boot_reset, retry_ms, max_speed, idle, mech, name_len = SLOT_HEAD.unpack_from(v)
         at = SLOT_HEAD.size
         name = v[at:at + name_len].decode("ascii", "replace")
         at += name_len
         lock_len = v[at] if at < len(v) else 0
         part = v[at + 1:at + 1 + lock_len]
-        at += 1 + lock_len
-        boot_reset = v[at] if at < len(v) else 0                   # optional; after it: later fields, skipped
         lock = None
         if lock_len >= 3:
             half = (lock_len - 1) // 2
@@ -257,11 +259,11 @@ def decode(tag: int, v: bytes):
     if tag == ITEM["bind"] and len(v) >= 4:
         port, mode, selected, n = struct.unpack_from("<BBBB", v)
         streams, at = [], 4
-        for _ in range(n):                                         # len, kind, id: a longer one's tail skipped
-            if at >= len(v) or v[at] < 3 or at + 1 + v[at] > len(v):
+        for _ in range(n):                                         # kind(u8) id(u16), 3 bytes each
+            if at + 3 > len(v):
                 return (tag, v)
-            streams.append((_name(STREAM, v[at + 1]), struct.unpack_from("<H", v, at + 2)[0]))
-            at += 1 + v[at]
+            streams.append((_name(STREAM, v[at]), struct.unpack_from("<H", v, at + 1)[0]))
+            at += 3
         return Bind(port=port, mode=_name(MODE, mode), streams=streams, selected=selected)
     if tag == ITEM["uart"] and len(v) >= 7:
         fn, baud, fmt = struct.unpack_from("<HIB", v)
@@ -419,17 +421,15 @@ class ProbeConfig(Interface):
             st.storage = STORAGE_STATE.get(storage, str(storage))
             st.unreadable = UNREADABLE.get(why, str(why)) if why else None
             n_slots = rd.u8()
-            for _ in range(n_slots):
-                e = rd.element()
-                n, state, conn, tried, _scheme, tlen = e.take("BBHQBB")
-                tid = bytes(e.bytes(tlen)) or None
-                reset_at = e.u64()
+            for _ in range(n_slots):                               # count x slot_state, no element length (§2.3)
+                n, state, conn, tried, reset_at, _scheme, tlen = rd.take("BBHQQBB")
+                tid = bytes(rd.bytes(tlen)) or None
                 st.slots.append(SlotState(n, SLOT_STATE.get(state, str(state)), conn,
                                           None if tried == NEVER_NS else tried, tid,
                                           None if reset_at == NEVER_NS else reset_at))
             n_binds = rd.u8()
             for _ in range(n_binds):
-                port, mode, sel, flow = rd.element().take("BBBB")
+                port, mode, sel, flow = rd.take("BBBB")
                 st.binds.append(BindState(port, _name(MODE, mode), None if sel == 0xFF else sel,
                                           BIND_FLOW.get(flow, str(flow))))
             rd.tail()
