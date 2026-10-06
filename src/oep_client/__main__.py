@@ -14,6 +14,9 @@
   oep linktest <probe> --rates now,921600 --patterns in,out,duplex --inflight 1,2 --sizes 128,496 --frames 300
   oep pins <probe> --power 5 --wire swio  (find the target's debug pins and reset line: classify the channels, scan,
                                            identify, hold-low + attach under reset; prints a slot, --save writes it)
+  oep clock <probe> [-n 8] [--json]       (fn 0's clock, core §7.7: the probe's uptime_ns and boot_id against this
+                                           host's time - the reading with the shortest round trip of n)
+  oep restart <probe>                     (oep.probe.restart: the probe restarts; waits until it is back, its new boot_id)
 
 <probe>: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]. A change takes the lock (owner "oep config") and
 ends the session after it; it takes effect at once, and stays over a restart only after `save` (or --save).
@@ -97,6 +100,13 @@ def main(argv=None) -> int:
     pn.add_argument("--slot", type=int, default=0, help="--save: the slot number (default 0)")
     pn.add_argument("--name", help="--save: the slot's name (default: the target family, else 'target')")
     pn.add_argument("--json", action="store_true", help="the report as JSON (the steps' lines go to stderr)")
+    ck = sub.add_parser("clock", help="the probe's clock (fn 0 clock, core §7.7) against this host's: lock-free")
+    ck.add_argument("probe", help="a probe: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]")
+    ck.add_argument("-n", type=int, default=8, help="readings; the one with the shortest round trip is kept (default 8)")
+    ck.add_argument("--json", action="store_true")
+    rs = sub.add_parser("restart", help="restart the probe (oep.probe.restart, optional) and wait until it is back")
+    rs.add_argument("probe", help="a probe: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]")
+    rs.add_argument("--force", action="store_true", help="take the lock from its holder")
     d = sub.add_parser("dump", help="list and describe every interface a probe offers")
     src = d.add_mutually_exclusive_group(required=True)
     src.add_argument("--fake", choices=sorted(fake.PROFILES), help="in-process example probe")
@@ -113,6 +123,10 @@ def main(argv=None) -> int:
         return _linktest(args)
     if args.command == "pins":
         return _pins_cmd(args)
+    if args.command == "clock":
+        return _clock_cmd(args)
+    if args.command == "restart":
+        return _restart_cmd(args)
 
     confirm = (0, 1)
     if args.fake:
@@ -123,6 +137,36 @@ def main(argv=None) -> int:
         confirm = hst.confirm_range()                    # confirmed already: the revision in use (core §7.1)
     caps = dump.collect(call, args.prefix, args.exact, confirm)
     sys.stdout.write(dump.to_json(caps) + "\n" if args.json else dump.to_text(caps))
+    return 0
+
+
+# ---- oep clock / oep restart ---------------------------------------------------------------------------------------
+
+def _clock_cmd(args) -> int:
+    """The shortest round trip of n clock readings (host guide §12): the probe's uptime_ns stands for the midpoint of
+    this host's send and receive times (time.monotonic_ns), within half the round trip."""
+    hst = _open_host(args.probe)
+    r = hst.clock_best(max(1, args.n))
+    out = {"boot_id": r.boot_id, "uptime_ns": r.uptime_ns, "host_before_ns": r.before_ns, "host_after_ns": r.after_ns,
+           "round_trip_ns": r.round_trip_ns, "host_ns": r.host_ns, "uncertainty_ns": r.uncertainty_ns}
+    if args.json:
+        print(json.dumps(out))
+    else:
+        print(f"boot_id 0x{r.boot_id:08X}, uptime {r.uptime_ns / 1e9:.6f} s at host monotonic {r.host_ns / 1e9:.6f} s "
+              f"+/- {r.uncertainty_ns / 1e3:.1f} us (round trip {r.round_trip_ns / 1e3:.1f} us, best of {args.n})")
+    return 0
+
+
+def _restart_cmd(args) -> int:
+    hst = _open_host(args.probe)
+    try:
+        core.restart_fn(hst)
+    except LookupError:
+        raise SystemExit("oep: the probe offers no oep.probe.restart (an optional interface)") from None
+    core.take(hst, owner="oep restart", force=args.force)
+    before = hst.limits["boot_id"] if hst.limits else None
+    after = hst.restart_probe()
+    print(f"restarted: boot_id 0x{before:08X} -> 0x{after:08X}" if before is not None else f"restarted: boot_id 0x{after:08X}")
     return 0
 
 
@@ -269,7 +313,7 @@ def _config_parser(sub) -> None:
     plan.add_argument("fn", help="an fn, or name#instance (the list instance, 0 = the first; #0 may be left out, core §7.2)")
     plan.add_argument("roles", nargs="+", help="ROLE=CHANNEL, ROLE a number or the interface's role name (rx, tx, line...)")
     plan.add_argument("--save", action="store_true")
-    label = cs.add_parser("label", help="name a channel (shown in oep.core's describe)")
+    label = cs.add_parser("label", help="name a channel (a setting, read with config get)")
     label.add_argument("probe")
     label.add_argument("channel", type=int)
     label.add_argument("text")

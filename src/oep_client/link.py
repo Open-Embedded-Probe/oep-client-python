@@ -18,8 +18,8 @@ before anything else goes out the link recovers with the §5.1 confirm - quiet i
 with its own corr - on a serial port too (`recover_transport`; ConnectionError when none is answered: reopen). A changed
 boot_id in that confirm reaches the host as a reboot; read the state before repeating a state-changing request.
 
-Frames the probe sends by itself are routed: data pushes and events are kept (`pushes`, `events`), and fn 0's
-heartbeat goes to the host, which watches its boot_id like confirm's (core §6.5, §11.2). A result shorter than 5
+Frames the probe sends by itself are routed: data pushes and events are kept (`pushes`, `events`) for the clients
+of the interfaces that sent them (fn 0 sends none, core §11.2). A result shorter than 5
 bytes, or an event or data frame shorter than its header, is a broken frame; a request role from the probe is dropped
 (core §2.4, C-36). The transfer time of the wait counts min_max_frame (64) until a confirm answer came on the
 transport, then the latest one's max_frame (core §4.4, N-1).
@@ -34,8 +34,8 @@ port_speed (oep-if-link §3 is the handshake; the host's procedure is the host g
 (or `open_host(..., port_speed=...)`) asks a probe that declares it for a faster rate on the UART bridge this host
 opened. The minimal form (§17.2, the default): try a candidate, switch to the requested baud, settle 20 ms, confirm
 (100 ms, 3 tries), commit - about 50 ms, no measurement. The full form (`verify=True`, §17.3): a baseline at the boot
-speed (this session's frames, or 60 per flow), then per candidate every flow the caller will use (`flows`: in = oep.link source,
-out = oep.link sink, duplex = both, each with its in-flight n) for 16 frames at max_frame - 26, failing a flow on broken +
+speed (this session's frames, or 60 per flow), then per candidate every flow the caller will use (`flows`: in = oep.probe.link source,
+out = oep.probe.link sink, duplex = both, each with its in-flight n) for 16 frames at max_frame - 26, failing a flow on broken +
 lost >= 3 and a ratio over max(2 x baseline, 5 %), once more at n = 1 before giving up on it (then n = 1 is the cap),
 commit when every flow passed. A failed candidate: revert (step 2, at the new rate), the boot speed, confirms up to
 port_speed_idle_max_ms + 1 s. The report (`link.speed`) records the baseline, every candidate's flows and the step
@@ -90,7 +90,6 @@ PROBE_WAIT_S = reg.TIMING["host_wait_add_ms"] / 1000   # the probing rule's wait
 
 
 RESULT_HEADER, DATA_HEADER, EVENT_HEADER = 5, 5, 6   # the shortest result, data and event frames (core §4.2, §11.1)
-HEARTBEAT = reg.CORE.event["heartbeat"]
 
 
 def _session_of(message: bytes) -> int:
@@ -252,7 +251,7 @@ class SerialLink:
     def __init__(self, port: str, timeout: float = 3.0, baud: int = BASE_BAUD):
         self._setup(open_serial(port, baud), "cobs", timeout)
         self.port_path = port
-        self.reopener = lambda: open_serial(port, baud)    # the same port again, at the boot speed (a restart, §6.6)
+        self.reopener = lambda: open_serial(port, baud)    # the same port again, at the boot speed (a restart)
 
     @classmethod
     def on_stream(cls, stream, framing: str = "length", timeout: float = 3.0) -> SerialLink:
@@ -295,7 +294,8 @@ class SerialLink:
         self.record = None                         # a speed_record.SpeedRecord and its key, once raise_speed used one
         self.record_key: tuple[str, str] | None = None
         self.speed_port: int | None = None         # the transport index the raised rate is on (the revert names it)
-        self.speed_fn: int | None = None           # the probe's oep.link fn, once raise_speed found it (oep-if-link)
+        self.speed_fn: int | None = None           # the probe's oep.probe.link fn, once raise_speed found it (oep-if-link)
+        self.restart_fn: int | None = None         # the probe's oep.probe.restart fn, once a restart went out (oep-if-restart)
         self.unusable: dict[int, str] = {}         # rates that broke in use in this session -> why (none at or above again)
         self.failed: dict[int, str] = {}           # every rate the line failed in this session (a step down goes below)
         self.probation: Probation | None = None    # raised, in use: the first period at a new rate (guide §17.3.2 item 4)
@@ -312,11 +312,9 @@ class SerialLink:
         self.last_tx = time.monotonic()            # when the link last wrote (raised: quiet for KEEPALIVE_S = keepalive)
         self.last_write: float | None = None       # when this host last wrote to the port (None: never; transports §5)
         self.max_frame = reg.MIN_MAX_FRAME         # min_max_frame until a confirm answer, then its max_frame (§4.4, N-1)
-        self.on_heartbeat = lambda boot_id, uptime_ns: None   # fn 0's heartbeat read off the line (core §11.2)
         self.on_boot_id = lambda boot_id: None     # the boot_id of the link's own confirms (resync, recovery)
         self.failed_transport = ""                 # why: a resend went unanswered (core §5.2, C-38); recover first
         self.recoveries = 0                        # failed-transport recoveries made (a confirm answered)
-        self.heartbeats = 0                        # fn 0 heartbeats read
         self.wait_add_s = WAIT_ADD_S               # the floor's host_wait_add_ms (a test of an in-process fake shortens it)
         self.tx_len = 0                            # the longest frame on the wire of the last write
         self.confirm_body = lambda: _OWN_CONFIRM   # the link's own confirm: the revision in use once bound (C-15)
@@ -414,8 +412,7 @@ class SerialLink:
         """Frames that are not results: data pushes and events are kept, other roles (a request echoed back among them)
         dropped (core §2.4). True if `frame` was one of them. Only a result (role 0x02) carries a correlation id;
         matching anything else by its bytes 1-2 would take a push for a reply whenever its fn happened to equal the id.
-        fn 0's heartbeat (kind 0x01: boot_id, uptime_ns) goes to `on_heartbeat` - the host watches its boot_id - and
-        is kept with the other events. A result shorter than 5 bytes, or an event / data frame shorter than its header,
+        A result shorter than 5 bytes, or an event / data frame shorter than its header,
         is a broken frame (core §2.4, C-36): `_broken`."""
         if frame and frame[0] == m.ROLE_RESULT:
             return len(frame) < RESULT_HEADER and self._broken(frame, "a result shorter than its header")
@@ -426,9 +423,6 @@ class SerialLink:
         elif frame and frame[0] == m.ROLE_EVENT:
             if len(frame) < EVENT_HEADER:
                 return self._broken(frame, "an event shorter than its header")
-            if frame[1:3] == b"\x00\x00" and frame[5] == HEARTBEAT and len(frame) >= EVENT_HEADER + 12:
-                self.heartbeats += 1
-                self.on_heartbeat(*struct.unpack_from("<IQ", frame, EVENT_HEADER))
             self.events.append(frame)
         else:
             self.dropped += 1
@@ -647,9 +641,12 @@ class SerialLink:
         return cls._completed(message, reply)
 
     def _reverts(self, message: bytes, reply: bytes) -> bool:
-        """A completed end or restart (core §6.6: the probe starts again at its boot speed), or port_speed's revert
-        (oep.link): the probe is back at its boot speed once this answer is out (oep-if-link §3 host obligation 6)."""
-        if self._core_completed(message, reply) in (m.OP_END, m.OP_RESTART):
+        """A completed end, a completed restart (oep.probe.restart: the probe starts again at its boot speed), or
+        port_speed's revert (oep.probe.link): the probe is back at its boot speed once this answer is out (oep-if-link
+        §3 host obligation 6)."""
+        if self._core_completed(message, reply) == m.OP_END:
+            return True
+        if self._completed(message, reply, self.restart_fn) == reg.PROBE_RESTART.op["restart"]:
             return True
         at = m.REQUEST_HEADER + 5                                   # port(u8) baud(u32) step(u8)
         return (self._completed(message, reply, self.speed_fn) == OP_PORT_SPEED and len(message) > at
@@ -1040,13 +1037,12 @@ class SerialLink:
         hst.before_request = self._keep_raised      # the keepalive before the request's corr is taken (core §4.1)
         self.expected_s = lambda: hst.expect_ms / 1000
         self.confirm_body = hst.confirm_body        # the revision in use after the first confirm (core §7.1, C-15)
-        self.on_heartbeat = hst.heartbeat_seen      # fn 0's heartbeats: the boot_id watched (core §6.5, §11.2)
         self.on_boot_id = hst.boot_id_seen          # the link's own confirms (resync, recovery): a reboot shows (C-38)
         hst.on_limits = self._limits                # every confirm answer: max_frame for the transfer time (N-1)
         hst.link = self
 
     def reopen_after_restart(self, hst, wait_s: float) -> dict:
-        """After fn 0's restart (core §6.6, host guide §5.2; Host.restart_probe): the link closes, waits
+        """After oep.probe.restart's restart (oep-if-restart §3, host guide §5.2; Host.restart_probe): the link closes, waits
         restart_after_answer_ms and opens again as a new open - the probing rule's confirm first (a serial port at its
         boot speed, retried as wait_boot_speed does; a USB device found again by its serial once it has re-enumerated;
         a TCP connection made again) - retried until `wait_s` has passed. A link on a stream it cannot open again
@@ -1488,16 +1484,16 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
 
 
 # ---- port_speed (oep-if-link §3) ----------------------------------------------------------------------------------------
-OP_PORT_SPEED = reg.LINK.op["port_speed"]
-OP_SOURCE, OP_SINK = reg.LINK.op["source"], reg.LINK.op["sink"]
-SPEED_STEP = reg.LINK.enum["port_speed_step"]
+OP_PORT_SPEED = reg.PROBE_LINK.op["port_speed"]
+OP_SOURCE, OP_SINK = reg.PROBE_LINK.op["source"], reg.PROBE_LINK.op["sink"]
+SPEED_STEP = reg.PROBE_LINK.enum["port_speed_step"]
 UNIT_ID_TAG = reg.CORE.tlv["describe"]["unit_id"]
 UART_BRIDGE = reg.CORE.enum["transport_kind"]["uart_bridge"]
 RELAYING_BROKER = 0xFF       # confirm's transport from a broker that answers the session ops itself (transports §1)
 
 
 DEFAULT_CANDIDATES = (500000,)   # host guide §17.2: one candidate that passed the measured bridges in small duplex use
-FLOWS = ("in", "out", "duplex")  # probe -> host (oep.link source), host -> probe (sink), both interleaved
+FLOWS = ("in", "out", "duplex")  # probe -> host (oep.probe.link source), host -> probe (sink), both interleaved
 VERIFY_MS = 2000           # the probe waits this long for the commit (guide §17.2 / §17.3.2: 2000)
 CONFIRM_TRIES, CONFIRM_WAIT_S = 3, 0.1   # after the switch: confirm, 100 ms each, up to 3 (oep-if-link §3 obligation 2)
 FLOW_FRAMES = 16           # full form: at least this many frames per flow (guide §17.3.2 item 3-3)
@@ -1695,16 +1691,16 @@ class SpeedReport:
 
 
 def _speed_port(hst) -> tuple[int | None, int | None, str]:
-    """(the probe's oep.link fn, the port this host's requests come in on - the transport TLV of confirm's answer, core
-    §7.1, C-05) when the probe offers oep.link with port_speed set in its ops (oep-if-link §1) and that transport is a
+    """(the probe's oep.probe.link fn, the port this host's requests come in on - the transport TLV of confirm's answer, core
+    §7.1, C-05) when the probe offers oep.probe.link with port_speed set in its ops (oep-if-link §1) and that transport is a
     UART bridge; else Nones and why not."""
     from . import core
     try:
         fn = core.link_fn(hst)
     except LookupError:
-        return None, None, "the probe does not offer oep.link"
+        return None, None, "the probe does not offer oep.probe.link"
     if not core.offers(hst, fn, OP_PORT_SPEED):
-        return None, None, "the probe's oep.link does not offer port_speed (its ops)"
+        return None, None, "the probe's oep.probe.link does not offer port_speed (its ops)"
     index = (hst.limits or hst.confirm()).get("transport")
     if index is None:
         return None, None, "the probe's confirm names no transport (core §7.1 requires it)"
@@ -1747,7 +1743,7 @@ def _keep(hst, lk: SerialLink) -> None:
 
 
 def _link_request(kind: str, size: int, data: bytes) -> bytes:
-    """oep.link source's request (length u32) for "in", sink's (count u16, data) for "out" (oep-if-link §2)."""
+    """oep.probe.link source's request (length u32) for "in", sink's (count u16, data) for "out" (oep-if-link §2)."""
     return struct.pack("<I", size) if kind == "in" else struct.pack("<H", len(data)) + data
 
 

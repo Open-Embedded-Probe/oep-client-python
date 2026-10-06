@@ -1,8 +1,13 @@
 """A fake probe endpoint that speaks OEP v1, answering whole messages (no hardware).
 
 This is the spec side's "working spec": ch32rv, this client and the probe firmware are checked against it. It wraps
-a `fake.FakeProbe` (the static declarations) and does what oep-spec docs/oep-core.ja.md and docs/oep-if-*.ja.md
-define:
+a `fake.FakeProbe` (the static declarations) and does what oep-spec docs/oep-core.ja.md, docs/oep-transports.ja.md
+and interfaces/*.ja.md define:
+
+- the core (fn 0) has no name and is never listed (core §0, §7.2); its ops are exactly the eight mandatory ones:
+  confirm, list, describe, clock, open, end, keepalive, lock_state (core §1.2, §12). clock (core §7.7) answers boot_id
+  and uptime_ns, the clock read while handling the request (never an earlier value) - lock-free, and with session_id 0 it touches no
+  session, lock or lease (a session's id goes through the session check like any lock-free op of the holder)
 
 - one request header of 10 bytes with session_id (0 = no session; core §4.1), TLVs as tag(u8) len(u16) value (§2.2),
   every sequence count x element with no element length and every fixed form closed (§2.3: an item or a request TLV
@@ -30,8 +35,12 @@ define:
   (0x7F) for every op, on every completed answer, failed and partial ones too (`Take` keeps them, `_dispatch` appends
   them); a TLV in a describe or probe.config get request is malformed (core §7.3); `tail=` appends TLVs to every result that may carry them, so hosts can be checked to skip what they do not
   know. Every answer ending in data or a list carries its length (core §2.3), so every answer may carry TLVs
-- the plan (plan_apply / plan_release; the session's plan goes when the lease lapses; plan_roles), subscriptions
-  (fn 0's heartbeat `boot_id uptime_ns`; an fn that emits nothing is unsupported), and simulations of the
+- oep.probe.plan (oep-if-plan: plan_apply / plan_release, plan_roles in its describe; the session's plan goes when
+  the lease lapses), oep.probe.restart (oep-if-restart: restart answers, then the probe restarts once the answer is
+  out; restart_max_ms in its describe), notifications (core §11: subscribe 0x30 / unsubscribe 0x32 are ops of the
+  emitting interface itself - logic, analog and capture-group set them in their ops, every other fn answers
+  unknown_operation; min_bytes / max_delay_ms batch the data only, events go at once; fn 0 sends nothing), and
+  simulations of the
   interfaces the profiles offer: oep.wire.rvswd / swio (scan with its TLVs, attach on declared pin pairs with the
   reset TLV, several connections up to max_connections, the seat rule, connections; an attach that joins a live
   connection keeps its setting for every setting TLV it does not carry - idle_clock absent keeps the current rest, the
@@ -68,8 +77,8 @@ define:
   (`FakeTarget.restart_ms`) leaves the DM silent; riscv-dm reset and attach's reset TLV wait for it up to
   reset_settle_ms (capped by max_op_ms), then answer completed failed status line (no flags bit2; an existing connection
   kept, its streams marked reset detail 3) - `settle_log` keeps each wait
-- oep.link (oep-if-link): source (len(u16) data, at most max_frame - 26), sink (count(u16) data, an empty
-  answer), and port_speed (§3, optional): offered when the profile's oep.link sets it in its ops (`port_speed_base`,
+- oep.probe.link (oep-if-link): source (len(u16) data, at most max_frame - 26), sink (count(u16) data, an empty
+  answer), and port_speed (§3, optional): offered when the profile's oep.probe.link sets it in its ops (`port_speed_base`,
   the boot speed; None = off: not in the ops, unknown_operation). try / commit / revert on the UART bridge the request came in on (else
   unavailable cause 6), a step that does not fit the port's state (commit at the boot speed or when committed,
   revert at the boot speed, try while trying or committed) unavailable cause 6, a step above 2 malformed, a rate the
@@ -92,8 +101,8 @@ define:
   revision is kept per transport, min_rev > max_rev is malformed and no revision in range is unsupported with TLV
   supported (C-15); rejected answers go into the resend table, order-1 refusals do not, and the lease restarts at
   every answer to the holder that passed order 3 (C-16, C-17); lease_ms 1000-60000, an open with session_id 0 /
-  a boolean not 0 or 1 / text with control characters or bad UTF-8 malformed (C-17, C-18, C-22); plan_apply /
-  plan_release not in fn 0's ops without plan roles (C-10); a TCP listener of fake_serve is a transport of its own
+  a boolean not 0 or 1 / text with control characters or bad UTF-8 malformed (C-17, C-18, C-22); a TCP listener of
+  fake_serve is a transport of its own
   (C-05). Debug: count = 0 leaves out idle-item channels, a named output-idle channel is unavailable cause 5
   holder_kind 7 (P2-★1); an undeclared scan combination is unsupported with its index, attach's pins tag as received,
   a held channel unavailable with its cause and channel (P2-★5); found = DMSTATUS.version >= 2 and != 15 (P2-○1);
@@ -162,7 +171,9 @@ BIND_STREAM = _CFG.enum["bind_stream"]
 BIND_FLOW = _CFG.enum["bind_flow"]
 WIRES = ("oep.wire.rvswd", "oep.wire.swio")
 OWNER = reg.CORE.tlv["open"]["owner"]
-ROLE_ASSIGNMENT = reg.CORE.tlv["plan_apply"]["role_assignment"]   # the tag number (0x10); hosts send it critical
+ROLE_ASSIGNMENT = reg.PROBE_PLAN.tlv["plan_apply"]["role_assignment"]   # the tag number (0x10); hosts send it critical
+OP_PLAN_APPLY, OP_PLAN_RELEASE = reg.PROBE_PLAN.op["plan_apply"], reg.PROBE_PLAN.op["plan_release"]
+OP_RESTART = reg.PROBE_RESTART.op["restart"]
 CONFIRM_TRANSPORT = reg.CORE.tlv["confirm_answer"]["transport"]   # confirm's answer: the transport it came on (§7.1)
 UNSUPPORTED_SUPPORTED = reg.CORE.tlv["unsupported_payload"]["supported"]   # confirm's refusal: the revisions handled
 SLOT_NAME = re.compile(r"[a-z0-9_-]{1,32}")
@@ -189,6 +200,13 @@ RESET_SETTLE_MS = reg.LIMITS["reset_settle_ms"]            # the most a reset wa
 CON_SEND_QUEUE = reg.TARGET_CONSOLE.tlv["describe"]["send_queue"]   # u16: each stream's send queue (console §1)
 LINK_SOURCE_OVERHEAD = reg.LIMITS["link_source_overhead_bytes"]   # source's len <= max_frame - this (oep-if-link §2)
 REQUEST_HEADER = m.REQUEST_HEADER                          # role corr fn op session_id: 10 bytes (core §4.1)
+
+
+def _any_ops(v: bytes) -> set[int]:
+    """The ops an ops value's bits name, whatever its encoding (the fake serves a test's broken value as given)."""
+    if not v:
+        return set()
+    return {v[0] + i * 8 + b for i, byte in enumerate(v[1:]) for b in range(8) if byte >> b & 1 and v[0] + i * 8 + b <= 0xFF}
 
 
 def _role_channels(v: bytes) -> list[int]:
@@ -676,7 +694,7 @@ class BrokenRate:
         return self.seen % max(1, self.every) == 0
 
 
-_LINK = reg.LINK
+_LINK = reg.PROBE_LINK
 OP_PORT_SPEED = _LINK.op["port_speed"]
 SPEED_STEP = _LINK.enum["port_speed_step"]
 SPEED_IDLE_MAX_MS = reg.TIMING["port_speed_idle_max_ms"]   # committed: idle_ms at most this (0 and longer: this)
@@ -728,7 +746,10 @@ class Endpoint:
         self.reserved: set[int] = set()
         self.transports: dict[int, int] = {}            # index -> kind, by the TLV's own index (core §7.5), not its order
         self.max_op_ms = reg.REFERENCE["max_op_ms"]
-        self.plan_roles: int | None = None
+        # oep.probe.plan's plan_roles (oep-if-plan §1): the most role assignments at once (None: no limit declared)
+        self.plan_roles: int | None = next((struct.unpack_from("<I", v)[0] for fn, name in self.names.items()
+                                            if name == fake.PLAN for tag, v in self.decl[fn] if tag == fake.PLAN_ROLES_TAG),
+                                           None)
         for tag, v in self.decl.get(0, ()):
             if tag == fake.CORE_LABEL:
                 self.static_labels[struct.unpack_from("<H", v)[0]] = v[2:].decode()
@@ -736,8 +757,6 @@ class Endpoint:
                 self.transports[v[0]] = v[1]
             if tag == fake.CORE_MAX_OP_MS:
                 self.max_op_ms = struct.unpack_from("<I", v)[0]
-            if tag == fake.CORE_PLAN_ROLES:
-                self.plan_roles = struct.unpack_from("<I", v)[0]
             if tag == fake.CORE_CHANNELS:
                 self.channels = struct.unpack_from("<H", v)[0]
             if tag == fake.CORE_RESERVED:
@@ -818,19 +837,22 @@ class Endpoint:
         self.settle_log: list[int] = []                 # every reset settle wait (ms): riscv-dm reset, attach's reset TLV
         self.uart_accept = 256
         # the ops each fn's describe declares (core §1.2, §7.4): what `offers` answers (an fn without the tag: none)
-        self.ops = {fn: set().union(*(catalog.unpack_ops(v) for tag, v in decl if tag == catalog.OPS))
+        self.ops = {fn: set().union(*(_any_ops(v) for tag, v in decl if tag == catalog.OPS))
                     for fn, decl in self.decl.items()}
-        # port_speed (oep-if-link §3): on when the profile's oep.link offers it (its ops); the boot speed every revert
+        # an ops tag a test gave outside core §7.4's encoding (a probe that does not conform): served as given
+        self.broken_ops = {fn: v for fn, decl in self.decl.items() for tag, v in decl
+                           if tag == catalog.OPS and catalog.check_ops(v)}
+        # port_speed (oep-if-link §3): on when the profile's oep.probe.link offers it (its ops); the boot speed every revert
         # goes back to. A test turns it off (None) or on: the link fn's ops follow (`offers`, `_declarations`)
         self.link_fn = self.fns.get(_LINK.name)
         self.port_speed_base: int | None = (115200 if self.link_fn is not None and OP_PORT_SPEED in self.ops[self.link_fn]
                                             else None)
         self.broken_rates: dict[int, BrokenRate] = {}   # the line: rates that break frames (fake_serial applies it)
-        # fn 0's optional restart (core §6.6): on when fn 0's ops set it (the profiles do); a test turns it off or on
-        self.restart_offered = m.OP_RESTART in self.ops.get(m.CORE_FN, set())
-        # ... and the restart_max_ms its describe declares with it (core §7.5; only while restart is offered)
-        self.restart_max_ms = next((struct.unpack_from("<I", v)[0] for tag, v in self.decl.get(0, ())
-                                    if tag == fake.CORE_RESTART_MAX_MS), fake.RESTART_MAX_MS)
+        # oep.probe.restart (oep-if-restart, optional): the fn the profile lists it at (None: the probe has none -
+        # `fake.without(probe, fake.RESTART)`), and the restart_max_ms its describe declares (a test may change it)
+        self.restart_fn = self.fns.get(fake.RESTART)
+        self.restart_max_ms = next((struct.unpack_from("<I", v)[0] for tag, v in self.decl.get(self.restart_fn, ())
+                                    if tag == fake.RESTART_MAX_MS_TAG), fake.RESTART_MAX_MS)
         self.reboots = 0                                # restarts so far (the restart op and reboot()): a transport
                                                         # drops what it had read for the old boot when this moves
         self._transport = 0                             # the transport the request being handled came in on
@@ -843,8 +865,8 @@ class Endpoint:
         self._boot()
 
     def _boot(self) -> None:
-        self.restarting = False              # restart answered (core §6.6): nothing more is processed until reboot()
-        self.unanswered = 0                  # requests that came while restarting (no answer, core §6.6)
+        self.restarting = False              # restart answered (oep-if-restart §2): nothing more until reboot()
+        self.unanswered = 0                  # requests that came while restarting (no answer, oep-if-restart §2)
         self.holder: int | None = None
         self.last: int | None = None         # S: the id that holds or last held the lock (the resend table's, §5.2)
         self.owner: bytes | None = None      # the holder's owner, while the lock is held (core §6.4)
@@ -855,9 +877,9 @@ class Endpoint:
         self.revision_in_use: dict[int, int] = {}   # transport -> the revision its last confirm chose (core §7.1)
         self.discarded = 0                   # messages discarded unanswered: not a request role, or short (core §2.4)
         self.requests: list[m.Request] = []
-        self.subscribed: set[int] = set()
-        self.heartbeat_ms = reg.TIMING["heartbeat_default_ms"]   # fn 0's subscription period
-        self.next_heartbeat_ms = 0
+        # fn -> (min_bytes, max_delay_ms) of its subscription (core §11.3); ends with the lock
+        self.subscribed: dict[int, tuple[int, int]] = {}
+        self.data_since_ms: dict[int, int] = {}         # fn -> when its oldest data not sent yet was there (max_delay_ms)
         self.push_seq: dict[int, int] = {}              # fn -> the next event / data seq (core §11.2)
         self.outbox: list[bytes] = []                   # events and data frames waiting to go out (pushes())
         self.plan: set[tuple[int, int, int]] = set()   # (fn, role, channel), from plan_apply and the config
@@ -1053,18 +1075,28 @@ class Endpoint:
                 self.outbox.append(bytes([m.ROLE_EVENT]) + struct.pack("<HH", fn, self._next_seq(fn)) + e)
 
     def pushes(self) -> list[bytes]:
-        """The frames the probe sends by itself now (core §11): fn 0's heartbeat, events, and a streaming capture's
-        data. A serving loop frames and sends them; a test takes them from here. None once a restart was answered
-        (core §6.6)."""
+        """The frames the probe sends by itself now (core §11): events (at once: never batched, core §11.3) and a
+        streaming capture's data - held back while its subscription's batching says so: until min_bytes bytes wait, or
+        max_delay_ms has passed since the oldest of them was there (0 = that condition unused; both 0: at once). fn 0
+        sends nothing. A serving loop frames and sends them; a test takes them from here. None once a restart was
+        answered (oep-if-restart §2)."""
         if self.restarting:
             return []
         self.tick()
-        if m.CORE_FN in self.subscribed and self.now() >= self.next_heartbeat_ms:
-            self.next_heartbeat_ms = self.now() + self.heartbeat_ms
-            self._events(m.CORE_FN, [bytes([reg.CORE.event["heartbeat"]]) + struct.pack("<IQ", self.boot_id, self.now_ns())])
         for fn, cap in self.captures.items():
-            if fn in self.subscribed:
+            if fn not in self.subscribed:
+                continue
+            waiting = cap.unsent()
+            if not waiting:
+                self.data_since_ms.pop(fn, None)
+                continue
+            since = self.data_since_ms.setdefault(fn, self.now())
+            min_bytes, max_delay_ms = self.subscribed[fn]
+            due = (not min_bytes and not max_delay_ms) or (min_bytes and waiting >= min_bytes) or (
+                max_delay_ms and self.now() - since >= max_delay_ms)
+            if due:
                 self.outbox += cap.pushes(fn, lambda fn=fn: self._next_seq(fn), self.probe.max_frame)
+                self.data_since_ms.pop(fn, None)
         out, self.outbox = self.outbox, []
         return out
 
@@ -1259,7 +1291,7 @@ class Endpoint:
             self.discarded += 1                                   # not a request, or shorter than its header (C-36)
             return None
         if self.restarting:
-            self.unanswered += 1                                  # the restart's answer is out: nothing more (§6.6)
+            self.unanswered += 1                                  # the restart's answer is out: nothing more (oep-if-restart §2)
             return None
         req = m.Request.unpack(data)
         if self.revision == 0 and req.session:
@@ -1318,13 +1350,11 @@ class Endpoint:
         """core §1.2: an fn offers exactly the ops its describe's ops tag sets (§7.4) - every required op, and an
         optional one when the probe has it; any other op is unknown_operation (§4.3 order 1). The profiles say which
         optional ops they have (fake.FakeProbe fills in the ops tag of an interface that gives none: all of its ops).
-        oep.link's port_speed follows `port_speed_base`, fn 0's restart `restart_offered` (a test turns them off or on)."""
+        oep.probe.link's port_speed follows `port_speed_base` (a test turns it off or on)."""
         if fn not in self.ops:
             return False
         if fn == self.link_fn and op == OP_PORT_SPEED:
             return self.port_speed_base is not None
-        if fn == m.CORE_FN and op == m.OP_RESTART:
-            return self.restart_offered
         return op in self.ops[fn]
 
     def _interface(self, fn: int):
@@ -1372,6 +1402,8 @@ class Endpoint:
             return self._confirm(t)
         if req.fn == m.CORE_FN:
             return self._core(req, t)
+        if req.op in (m.OP_SUBSCRIBE, m.OP_UNSUBSCRIBE) and (req.fn in self.captures or req.fn in self.groups):
+            return self._subscription(req.fn, req.op, t)          # the emitting interface's own ops (core §11.3)
         sim = SIMS.get(self.names[req.fn])
         if sim is not None:
             return getattr(self, f"_{sim}")(req.fn, req.op, t)
@@ -1559,43 +1591,55 @@ class Endpoint:
         if op == m.OP_KEEPALIVE:
             t.tail()
             return self._answer(b"")
-        if op == m.OP_RESTART:
-            # core §6.6: no fixed part; the lock was checked (session_required / no_session / locked). The answer goes
-            # first; once it is out (`after_answer`) the probe restarts, and until then nothing more is processed
+        if op == m.OP_CLOCK:
+            # core §7.7: no fixed part; lock-free (session_id 0 touches no session, lock or lease, §4.1). The clock is
+            # read while handling this request, never a value read earlier
+            t.tail()
+            return self._answer(struct.pack("<IQ", self.boot_id, self.now_ns()))
+        return m.REJECTED, m.UNKNOWN_OPERATION, b""
+
+    # ---- oep.probe.restart (oep-if-restart) ------------------------------------------------------
+    def _restart(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
+        """restart (oep-if-restart §2): no fixed part; the lock was checked (session_required / no_session / locked).
+        The answer goes first; once it is out (`after_answer`) the probe restarts, and until then nothing more is
+        processed."""
+        if op == OP_RESTART:
             t.tail()
             self.restarting = True
             return self._answer(b"")
+        return m.REJECTED, m.UNKNOWN_OPERATION, b""
+
+    # ---- notifications: the emitting interface's own subscribe / unsubscribe (core §11.3) --------------------
+    def _subscription(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
+        """subscribe: min_bytes(u16) max_delay_ms(u32) [TLV] - replaces the fn's subscription atomically (the batching,
+        the transport, seq from 0); unsubscribe: [TLV] - none to end succeeds doing nothing."""
         if op == m.OP_SUBSCRIBE:
-            fn, _min_bytes, max_delay_ms = t.take("HHI")           # max_delay_ms u32 (core §11.3)
+            min_bytes, max_delay_ms = t.take("HI")
             t.tail()
-            if fn != m.CORE_FN and fn not in self.names:
-                return m.REJECTED, m.UNKNOWN_FUNCTION, b""
-            if fn != m.CORE_FN and fn not in self.captures and fn not in self.groups:
-                raise Reject(m.UNSUPPORTED)                        # an fn that emits nothing (core §11.3)
-            self.subscribed.add(fn)
+            self.subscribed[fn] = (min_bytes, max_delay_ms)
             self.push_seq[fn] = 0                                  # seq from 0 at every subscribe (core §11.2)
-            if fn == m.CORE_FN:
-                self.heartbeat_ms = max_delay_ms or reg.TIMING["heartbeat_default_ms"]
-                self.next_heartbeat_ms = self.now() + self.heartbeat_ms
+            self.data_since_ms.pop(fn, None)
             return m.COMPLETED, m.SUCCESS, b""
-        if op == m.OP_UNSUBSCRIBE:
-            fn = t.take("H")
-            t.tail()
-            if fn != m.CORE_FN and fn not in self.names:
-                return m.REJECTED, m.UNKNOWN_FUNCTION, b""         # an fn inside the payload (core §4.3 order 5, C-21)
-            self.subscribed.discard(fn)
-            return m.COMPLETED, m.SUCCESS, b""
-        if op == m.OP_PLAN_APPLY:
+        t.tail()
+        self.subscribed.pop(fn, None)
+        self.data_since_ms.pop(fn, None)
+        return m.COMPLETED, m.SUCCESS, b""
+
+    # ---- oep.probe.plan (oep-if-plan) ------------------------------------------------------------
+    def _plan_op(self, plan_fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
+        """plan_apply: role_assignment TLVs (oep-if-plan §2.1), checked in core §4.3's order (§2.5); plan_release:
+        n(u8) n x fn(u16) (§2.2)."""
+        if op == OP_PLAN_APPLY:
             got = []
             try:
-                tlvs = m.split_tlvs(req.payload) if req.payload else []
+                tlvs = m.split_tlvs(t.data) if t.data else []
             except m.ProtocolError:
                 raise Reject(m.MALFORMED) from None
             refused = None                                         # the first value / tag this probe cannot handle
             for tag, value in tlvs:
                 if tag & 0x7F in (m.TAG_IGNORED, m.TAG_FIXED):
                     raise Reject(m.MALFORMED)                      # as in every tail (core §2.3)
-                if tag & 0x7F == ROLE_ASSIGNMENT:                  # the number; sent critical as 0x90 (core §8), repeats
+                if tag & 0x7F == ROLE_ASSIGNMENT:                  # the number; sent critical as 0x90 (oep-if-plan §2.1), repeats
                     if len(value) < 5:
                         raise Reject(m.MALFORMED)
                     if len(value) > 5:                             # never extended (core §2.3)
@@ -1610,7 +1654,7 @@ class Endpoint:
                 else:
                     t.ignored.append(tag)                          # unknown non-critical: listed (core §2.3)
             if len(set(got)) != len(got) or any(fn == m.CORE_FN for fn, _, _ in got):
-                raise Reject(m.MALFORMED)                          # the same (fn, role, channel) twice, or fn 0 (core §8)
+                raise Reject(m.MALFORMED)                          # the same (fn, role, channel) twice, or fn 0 (oep-if-plan §2.5)
             self._check_target_roles(got)                          # the whole form first (core §4.3 order 5) ...
             named = {fn for fn, _, _ in got}
             if any(fn not in self.names for fn in named):
@@ -1618,23 +1662,23 @@ class Endpoint:
             if refused is not None:
                 raise Reject(m.UNSUPPORTED, bytes([refused]))      # order 6: the tag as received (core §2.3)
             self._check_plan(got, held=False)                      # order 6: roles and channels not declared
-            if named & self.plan_from_config:                       # the settings' plan is the settings' (core §8)
+            if named & self.plan_from_config:                       # the settings' plan is the settings' (oep-if-plan §2.3)
                 raise unavailable("held_by_settings", holder_fn=min(named & self.plan_from_config),
                                   holder_kind="settings_plan")
             self._check_plan(got)
             self._refuse_disabled(ch for _, _, ch in got)          # a disabled channel (probe.config §1): cause 5
             if self.plan_roles is not None and len([a for a in self.plan if a[0] not in named]) + len(got) > self.plan_roles:
-                raise unavailable("limit")                          # plan_roles (core §8)
+                raise unavailable("limit")                          # plan_roles (oep-if-plan §2.1)
             self._replace_plans(named, got)
             for fn in named:
                 self._uart_plan_changed(fn)
             return m.COMPLETED, m.SUCCESS, b""
-        if op == m.OP_PLAN_RELEASE:                                 # n(u8) n x fn(u16); n = 0: every fn
+        if op == OP_PLAN_RELEASE:                                 # n(u8) n x fn(u16); n = 0: every fn
             n = t.take("B")
             fns = {t.take("H") for _ in range(n)}
             t.tail()
             for fn in {a[0] for a in self.plan if not fns or a[0] in fns} - self.plan_from_config:
-                self._drop_plan(fn)                                 # the settings' plans stay, n = 0 too (core §8)
+                self._drop_plan(fn)                                 # the settings' plans stay, n = 0 too (oep-if-plan §2.3)
             return m.COMPLETED, m.SUCCESS, b""
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
@@ -1672,7 +1716,7 @@ class Endpoint:
         current = [None]                                           # the fn of the assignment being checked
 
         def not_declared(ch: int) -> Reject | None:
-            # a role or channel the describe does not offer: unsupported, tag 0x90 + the channel (core §8); this pass
+            # a role or channel the describe does not offer: unsupported, tag 0x90 + the channel (oep-if-plan §2.5); this pass
             # raises only its own kind (None: the other pass's)
             if not declared:
                 return None
@@ -1746,7 +1790,7 @@ class Endpoint:
         return out
 
     def _replace_plans(self, fns: set[int], got) -> None:
-        """The plans of `fns` become `got` as one change (core §8): a channel leaving goes to its idle state, one in
+        """The plans of `fns` become `got` as one change (oep-if-plan §2.1): a channel leaving goes to its idle state, one in
         both the old and the new plan of a gpio keeps its state and drive, and a new gpio line keeps the state it was
         in - an output idle keeps driving - until the first set (fixture §1); the idle modes 0-4 are the gpio modes of
         the same numbers."""
@@ -1906,16 +1950,20 @@ class Endpoint:
     def _declarations(self, fn: int) -> list[bytes]:
         """describe: the profile's declarations as they are (core §7.3: nothing that changes - the firmware's labels
         only, the settings' are read by get; probe.config's state is its op state), the ops tag first and as `offers`
-        answers (oep.link's port_speed follows `port_speed_base`: a test turns it off or on). fn 0 carries
-        restart_max_ms exactly while restart is offered (core §6.6, §7.5)."""
+        answers (oep.probe.link's port_speed follows `port_speed_base`: a test turns it off or on); oep.probe.restart's
+        restart_max_ms is `restart_max_ms` (oep-if-restart §1)."""
         ops = {op for op in range(256) if self.offers(fn, op)}
-        out = [catalog.ops_tlv(ops)] + [t for t in self.static[fn]
-                                        if t[0] != catalog.OPS and not (fn == m.CORE_FN and t[0] == fake.CORE_RESTART_MAX_MS)]
-        if fn == m.CORE_FN and m.OP_RESTART in ops:
-            out.append(catalog.u32(fake.CORE_RESTART_MAX_MS, self.restart_max_ms))
+        if fn in self.broken_ops:
+            head = [catalog.tlv(catalog.OPS, self.broken_ops[fn])]
+        else:
+            head = [catalog.ops_tlv(ops)] if ops else []           # no op at all: no ops tag (a test's probe)
+        out = head + [t for t in self.static[fn] if t[0] != catalog.OPS]
+        if fn == self.restart_fn:                                  # restart_max_ms as the endpoint has it now
+            out = [catalog.u32(fake.RESTART_MAX_MS_TAG, self.restart_max_ms) if t[0] == fake.RESTART_MAX_MS_TAG else t
+                   for t in out]
         return out
 
-    # ---- oep.link (oep-if-link): the link test and port_speed -------------------------------------
+    # ---- oep.probe.link (oep-if-link): the link test and port_speed -------------------------------------
     def _link(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         """source: length(u32) [TLV] -> len(u16) data [TLV], byte k = k & 0xFF, at most max_frame -
         link_source_overhead_bytes (26: header, len and the ignored room, kept whatever the request's TLVs); sink: count(u16) data [TLV] -> empty, a count past the bytes that follow
@@ -1994,7 +2042,7 @@ class Endpoint:
     def after_answer(self) -> None:
         """The answer just handled is out (its transport calls this once the answer has left - at the old speed): a
         port_speed switch or revert it asked for happens now (`speed_after_answer`), and a restart it answered
-        (core §6.6) restarts the probe now (`reboot`: a new boot_id, the saved settings, no session; the pins in their
+        (oep-if-restart §2) restarts the probe now (`reboot`: a new boot_id, the saved settings, no session; the pins in their
         free state, nothing driven before). A test calling `handle` itself on a serial port index calls this as
         FakeSerialPort does."""
         self.speed_after_answer()
@@ -3300,7 +3348,7 @@ class Endpoint:
                 slots[key] = self._parse_slot(value, "form")
             elif tag == ITEM["plan"]:
                 if any(len(v) != 5 for v in value) or key == m.CORE_FN:
-                    raise Reject(m.MALFORMED)                      # fn 0 holds no plan (core §8)
+                    raise Reject(m.MALFORMED)                      # fn 0 holds no plan (oep-if-plan §2.5)
             elif tag == ITEM["idle"]:
                 # channel mode drive_kind drive_value, 6 bytes (probe.config §1): kind 2 (the default) carries value 0;
                 # an input idle (mode 0-2) carries kind 2 and value 0 - not checked when the mode or the kind is
@@ -3822,7 +3870,7 @@ class Endpoint:
         self.session_resets.clear()
 
 
-SIMS = {"oep.link": "link", "oep.wire.rvswd": "wire", "oep.wire.swio": "wire", "oep.target.riscv-dm": "dm",
+SIMS = {"oep.probe.link": "link", "oep.probe.plan": "plan_op", "oep.probe.restart": "restart", "oep.wire.rvswd": "wire", "oep.wire.swio": "wire", "oep.target.riscv-dm": "dm",
         "oep.target.console": "console", "oep.fixture.gpio": "gpio", "oep.fixture.uart": "uart",
         "oep.probe.config": "config_op", "oep.fixture.logic": "capture", "oep.fixture.analog": "capture",
         "oep.fixture.capture-group": "group", "oep.fixture.i2c-target": "i2c_op", "oep.fixture.spi-target": "spi_op"}

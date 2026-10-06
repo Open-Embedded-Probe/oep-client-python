@@ -10,7 +10,7 @@ from oep_client import catalog, dump, fake, names
 # ---- names ---------------------------------------------------------------
 
 @pytest.mark.parametrize("name", [
-    "oep.core", "oep.fixture.i2c-target", "io.github.ch32-riscv-ug.p4.i2c-target",
+    "oep.probe.plan", "oep.fixture.i2c-target", "io.github.ch32-riscv-ug.p4.i2c-target",
     "local.bench.thing", "uuid.0123456789abcdef0123456789abcdef.tool", "jp.example.probe",
     "oep." + "a" * 60,                                              # 64 bytes (core §7.2)
 ])
@@ -45,7 +45,7 @@ def test_hosting_names_are_linted_not_rejected():
 
 def test_github_hosted_names_use_io_github():
     assert names.kind("io.github.ch32-riscv-ug.ch32rv") == "domain"
-    assert names.kind("oep.target.flash") == "standard"
+    assert names.kind("oep.target.flash") == "oep"
 
 
 def test_prefix_matches_on_label_boundaries():
@@ -74,10 +74,16 @@ def test_list_total_is_u16_and_a_longer_answer_is_not_rejected():
     assert catalog.unpack_list_result(packed + bytes([0x55, 2, 0, 9, 9])) == (300, entries)   # a TLV tail is skipped
 
 
-def test_oep_core_is_the_first_list_entry():
-    caps = dump.collect(fake.esp32_v003().call)
+def test_the_core_is_never_listed_and_dump_shows_it_first():
+    """fn 0 has no name and list never returns it (core §0, §7.2): dump describes it first as the core."""
+    probe = fake.esp32_v003()
+    total, entries = catalog.unpack_list_result(probe.call(0, 0x02, catalog.pack_list_request("", False, 0)))
+    assert total == 12 and all(e.fn != 0 for e in entries)
+    caps = dump.collect(probe.call)
     first = caps.offers[0].entry
-    assert (first.fn, first.name, first.revision) == (0, "oep.core", 1)
+    assert (first.fn, first.name, first.revision) == (0, "", 1)
+    assert dump.describe_offer(caps.offers[0])["name"] == "(core)"
+    assert caps.offers[0].description.ops == set(fake.reg.CORE.op.values())     # the eight, every one mandatory
     assert caps.revision == 1 and caps.max_frame == 64
 
 
@@ -106,9 +112,12 @@ def test_description_keeps_what_it_does_not_know():
 def test_p4_follows_the_agreed_names():
     caps = dump.collect(fake.p4_x035().call)
     by_name = {o.entry.name: o for o in caps.offers}
-    assert len(caps.offers) == 14                    # oep.link the last (oep-if-link)
-    assert caps.requests["list"] == 1 and caps.requests["describe"] == 14
-    assert by_name["oep.link"].description.ops == {1, 2}                    # source and sink: no UART bridge here
+    assert len(caps.offers) == 16                    # fn 0 and 15 listed: link, plan and restart the last three
+    assert [o.entry.name for o in caps.offers[-3:]] == ["oep.probe.link", "oep.probe.plan", "oep.probe.restart"]
+    assert caps.requests["list"] == 1 and caps.requests["describe"] == 16
+    assert by_name["oep.probe.link"].description.ops == {1, 2}              # source and sink: no UART bridge here
+    assert by_name["oep.fixture.logic"].description.ops >= {0x30, 0x32}     # it sends notifications (core §11.3)
+    assert not by_name["oep.fixture.gpio"].description.ops & {0x30, 0x32}   # it sends none
     assert all(o.description.ops for o in caps.offers) and not caps.missing  # every fn's describe carries ops
     # the debug port: wire, riscv-dm and console are the first instance of each
     assert {by_name[n].entry.instance for n in ("oep.wire.rvswd", "oep.target.riscv-dm", "oep.target.console")} == {0}
@@ -122,7 +131,7 @@ def test_p4_follows_the_agreed_names():
 
 def test_the_probe_itself_is_described_by_core():
     row = dump.describe_offer(dump.collect(fake.esp32_v003().call).offers[0])
-    assert row["name"] == "oep.core"
+    assert row["name"] == "(core)" and row["namespace"] == "core"
     d = row["declares"]
     assert d["unit id"] == "fafe00000003" and d["transport"] == "0 = UART bridge"
     assert "16 = SWIO" in d["label"] and "23 = NRST" in d["label"]    # repeated tags all kept
@@ -139,15 +148,16 @@ def test_paging_does_not_change_what_is_seen():
 def test_filters():
     probe = fake.esp32_v003()
     fixture = dump.collect(probe.call, "oep.fixture")
-    assert {o.entry.name for o in fixture.offers} == {"oep.fixture.gpio", "oep.fixture.uart", "oep.fixture.logic",
+    assert fixture.offers[0].entry.fn == 0                          # the core first, whatever the prefix
+    assert {o.entry.name for o in fixture.offers[1:]} == {"oep.fixture.gpio", "oep.fixture.uart", "oep.fixture.logic",
                                                     "oep.fixture.i2c-target", "oep.fixture.spi-target"}
     one = dump.collect(probe.call, "oep.fixture.spi-target", exact=True)
-    assert [o.entry.name for o in one.offers] == ["oep.fixture.spi-target"]
-    assert one.offers[0].description.groups[2][0] == (1, 14)
+    assert [o.entry.name for o in one.offers[1:]] == ["oep.fixture.spi-target"]
+    assert one.offers[1].description.groups[2][0] == (1, 14)
 
 
 def test_a_describe_without_ops_is_named_missing():
-    probe = fake.FakeProbe("x", 256, [fake.Offered(0, 0, "oep.core"), fake.Offered(1, 0, "oep.fixture.gpio")])
+    probe = fake.FakeProbe("x", 256, [fake.Offered(0, 0, ""), fake.Offered(1, 0, "oep.fixture.gpio")])
     bare = fake.FakeProbe("x", 256, [fake.Offered(o.fn, o.instance, o.name, tuple(t for t in o.tlvs if t[0] != catalog.OPS))
                                      for o in probe.offered], fill_ops=False)
     caps = dump.collect(bare.call)
@@ -155,20 +165,46 @@ def test_a_describe_without_ops_is_named_missing():
 
 
 
-def test_restart_in_ops_without_restart_max_ms_is_named_missing():
-    """core §1.2, §6.6, §7.5: restart in fn 0's ops needs restart_max_ms in its describe; the profiles carry it."""
+def test_restart_without_restart_max_ms_is_named_missing():
+    """oep-if-restart §1: oep.probe.restart's describe carries restart_max_ms; the profiles do, and dump names it."""
     full = fake.p4_x035()
-    assert not dump.collect(full.call).missing
-    core0 = next(o for o in full.offered if o.fn == 0)
-    assert any(t[0] == fake.CORE_RESTART_MAX_MS for t in core0.tlvs)
+    caps = dump.collect(full.call)
+    assert not caps.missing
+    row = dump.describe_offer(next(o for o in caps.offers if o.entry.name == "oep.probe.restart"))
+    assert row["declares"] == {"restart max ms": "2000"}
+    assert "restart max ms: 2000" in dump.to_text(caps)
     bare = fake.FakeProbe("x", 256, [fake.Offered(o.fn, o.instance, o.name,
-                                                  tuple(t for t in o.tlvs if t[0] != fake.CORE_RESTART_MAX_MS))
+                                                  tuple(t for t in o.tlvs if not (o.name == fake.RESTART
+                                                                                  and t[0] == fake.RESTART_MAX_MS_TAG)))
                                      for o in full.offered], fill_ops=False)
-    assert dump.collect(bare.call).missing == ["describe of fn 0: restart_max_ms (restart is in ops)"]
+    assert dump.collect(bare.call).missing == ["describe of fn 15 (oep.probe.restart): restart_max_ms"]
+    assert dump.required_of(bare.call) == ["describe of fn 15 (oep.probe.restart): restart_max_ms"]
+    assert dump.required_of(full.call) == []
+
+
+def test_fn0_ops_lacking_a_core_op_or_broken_are_named_missing():
+    """fn 0's ops: every core op (all mandatory, core §1.2, §12), in core §7.4's one encoding."""
+    def with_core_ops(value: bytes):
+        offered = [fake.Offered(0, 0, "", (catalog.tlv(catalog.OPS, value),) + tuple(
+            t for t in o.tlvs if t[0] != catalog.OPS)) if o.fn == 0 else o for o in fake.esp32_v003().offered]
+        return dump.collect(fake.FakeProbe("x", 64, offered, fill_ops=False).call).missing
+    assert with_core_ops(catalog.pack_ops({1, 2, 3, 0x10, 0x11, 0x12, 0x13})) == ["describe of fn 0: ops clock"]
+    (why,) = with_core_ops(bytes.fromhex("0100"))
+    assert why.startswith("describe of fn 0: ops in core §7.4's encoding")
+
+
+def test_an_fn_with_broken_ops_is_named_and_unusable():
+    offered = [fake.Offered(o.fn, o.instance, o.name, (catalog.tlv(catalog.OPS, b"\x01\x01\x00"),) + tuple(
+        t for t in o.tlvs if t[0] != catalog.OPS)) if o.name == "oep.fixture.gpio" else o
+        for o in fake.esp32_v003().offered]
+    caps = dump.collect(fake.FakeProbe("x", 64, offered).call)
+    assert caps.missing == ["describe of fn 4: ops in core §7.4's encoding (ops ending in a zero byte; the fn is not used)"]
+    row = dump.describe_offer(next(o for o in caps.offers if o.entry.fn == 4))
+    assert row["unusable"].startswith("ops outside core §7.4's encoding")
 
 def test_unknown_interfaces_are_shown_raw():
     probe = fake.FakeProbe("x", 256, [
-        fake.Offered(0, 0, "oep.core"),
+        fake.Offered(0, 0, ""),
         fake.Offered(1, 1, "local.bench.widget", (catalog.role_channels(3, [7]), catalog.u32(catalog.FEATURES, 0b10),
                                                    catalog.u8(0x41, 9)))])
     row = dump.describe_offer(dump.collect(probe.call).offers[1])
@@ -183,5 +219,6 @@ def test_text_and_json_outputs():
     assert "instance 0" in text and "oep.fixture.i2c-target" in text
     assert "features: preloaded tx" in text and "clock stretching" not in text   # stretch is an op (its ops tag)
     assert "ops: configure, arm_rx, read_rx, preload_tx, status, reset, stretch" in text
+    assert "15 interfaces in 1 list and 16 describe requests" in text
     data = json.loads(dump.to_json(caps))
-    assert data["max_frame"] == 1024 and len(data["interfaces"]) == 14
+    assert data["max_frame"] == 1024 and len(data["interfaces"]) == 16

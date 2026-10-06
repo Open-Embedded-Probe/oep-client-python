@@ -18,6 +18,7 @@ ITEM, ATTACH, MODE, KIND = CFG.tlv["item"], CFG.enum["slot_attach"], CFG.enum["b
 STATE = CFG.enum["slot_state"]
 SPEED = m.tlv(0x01, struct.pack("<I", 4_000_000), critical=True)    # attach's required max_speed TLV
 MARK_KIND = reg.COMMON.enum["mark_kind"]
+PLAN_APPLY, PLAN_RELEASE = reg.PROBE_PLAN.op["plan_apply"], reg.PROBE_PLAN.op["plan_release"]   # oep.probe.plan
 
 
 class Clock:
@@ -45,6 +46,11 @@ class Host:
         """open: lease_ms(u32) force(u8) [TLV owner], the session_id in the header (core §4.1, §6.4)."""
         tail = m.tlv(reg.CORE.tlv["open"]["owner"], owner) if owner else b""
         return self.raw(0, m.OP_OPEN, struct.pack("<IB", lease, force) + tail)
+
+    @property
+    def plan_fn(self):
+        """The endpoint's oep.probe.plan fn (oep-if-plan)."""
+        return self.ep.fns["oep.probe.plan"]
 
     def ok(self, fn, op, payload=b""):
         r = self.raw(fn, op, payload)
@@ -130,9 +136,9 @@ def test_open_empties_the_table():
     ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), Clock())
     h = Host(ep)
     h.open()
-    h.raw(11, 0x01, struct.pack("<I", 5))                           # the stand-in fn
+    h.raw(13, 0x01, struct.pack("<I", 5))                           # the stand-in fn
     h.open()                                                        # a new open: the table goes
-    assert h.raw(11, 0x01, struct.pack("<I", 5), corr=h.corr - 1).succeeded   # an old corr is new again
+    assert h.raw(13, 0x01, struct.pack("<I", 5), corr=h.corr - 1).succeeded   # an old corr is new again
 
 
 # ---- the lock: owner and lease (core §6.4) -----------------------------------------------------------
@@ -170,7 +176,8 @@ def test_core_describe_lists_the_transports_max_op_ms_and_discoverable():
     tags = reg.CORE.tlv["describe"]
     kinds = [v[1] for t, v in tlvs if t == tags["transport"]]
     assert kinds == [3, 4, 5, 2] and (tags["discoverable"], b"\x01") in tlvs   # the HS port is on the project's VID:PID
-    assert (tags["max_op_ms"], struct.pack("<I", 10000)) in tlvs and (tags["plan_roles"], struct.pack("<I", 32)) in tlvs
+    assert (tags["max_op_ms"], struct.pack("<I", 10000)) in tlvs
+    assert (fake.PLAN_ROLES_TAG, struct.pack("<I", 32)) in describe(endpoint.Endpoint(fake.p4_x035(), Clock()), 14)
     assert any(t == tags["unit_id"] for t, _ in tlvs) and 0x48 not in [t for t, _ in tlvs]
     # declarations only (core §7.3): a label the settings give is not in the describe
     ep = endpoint.Endpoint(fake.p4_x035(), Clock())
@@ -568,7 +575,7 @@ def test_read_from_a_last_mark_that_is_not_there_is_from_now():
     p = ep.pairs[1][0]
     r = h.raw(1, 0x02, bytes([0]) + SPEED + m.tlv(0x03, struct.pack("<HH", *p), critical=True))
     uart_fn = 5
-    h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", uart_fn, 1, 20)) + m.tlv(0x90, struct.pack("<HBH", uart_fn, 2, 21)))
+    h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", uart_fn, 1, 20)) + m.tlv(0x90, struct.pack("<HBH", uart_fn, 2, 21)))
     h.ok(uart_fn, 0x01, struct.pack("<I", 115200))
     ep.uart_rx(uart_fn, b"old output")
     rd = m.Reader(h.raw(uart_fn, 0x02, struct.pack("<BQH", 3, MARK_KIND["reset"], 64), session=False).payload)
@@ -591,7 +598,7 @@ def test_no_default_reset_line_only_the_declared_channels():
     assert flags & 0x08 and rd.tail().get(0x11) == struct.pack("<I", 0)   # halted at the reset vector: TLV dpc
     assert h.raw(1, 0x04, struct.pack("<HH", 23, 20)).detail == m.UNKNOWN_OPERATION
     assert h.raw(1, 0x02, b"\x01" + SPEED + reset(23, 20000)).detail == m.UNSUPPORTED   # hold_ms over max_op_ms
-    h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 23)))   # fixture.gpio takes NRST
+    h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 23)))   # fixture.gpio takes NRST
     assert h.raw(1, 0x02, b"\x01" + SPEED + reset(23)).detail == m.UNAVAILABLE
     assert h.raw(1, 0x02, b"\x01").detail == m.MALFORMED             # no max_speed
 
@@ -638,12 +645,12 @@ def test_a_wire_takes_any_free_pair_the_host_names():
     assert h.raw(1, 0x01, b"\x01" + struct.pack("<HH", 0, 1) + skip(1)).detail == m.MALFORMED
     conn = struct.unpack_from("<H", h.ok(1, 0x02, b"\x01" + SPEED + pins(0, 1)))[0]
     assert h.raw(1, 0x02, b"\x01" + SPEED + pins(1, 2)).detail == m.UNAVAILABLE    # GP1 is the live connection's
-    assert h.raw(0, m.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 0))).detail == m.UNAVAILABLE
+    assert h.raw(h.plan_fn, PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 0))).detail == m.UNAVAILABLE
     assert m.Reader(h.ok(1, 0x01, b"\x00")).take("B") == 1           # its one seat is taken: the live pair only
     assert struct.unpack_from("<H", h.ok(1, 0x02, b"\x00" + SPEED))[0] == conn   # no pins: the one live connection
     assert h.raw(1, 0x01, b"\x01" + struct.pack("<HH", 2, 3)).detail == m.UNAVAILABLE
     h.ok(1, 0x03, struct.pack("<H", conn) + m.tlv(0x01, b""))       # detach (force): the pins go back
-    h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 5)))
+    h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 5)))
     assert h.raw(1, 0x01, b"\x01" + struct.pack("<HH", 5, 6)).detail == m.UNAVAILABLE   # GP5 is the plan's
     assert h.raw(1, 0x02, b"\x01" + SPEED + pins(3, 3)).detail == m.UNSUPPORTED         # one channel twice: no such pair
     assert h.raw(1, 0x02, b"\x01" + SPEED + pins(19, 3)).detail == m.UNSUPPORTED        # not offered (PSRAM CS)

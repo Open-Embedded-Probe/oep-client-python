@@ -1,5 +1,5 @@
 """Link measurement: run traffic patterns over a probe's link and count what breaks, at the speed in force or at rates
-the host asks for with port_speed - both through the probe's optional oep.link (oep-if-link). Every parameter is the caller's - rates (or none: the speed in
+the host asks for with port_speed - both through the probe's optional oep.probe.link (oep-if-link). Every parameter is the caller's - rates (or none: the speed in
 force), patterns, in-flight counts, frame sizes, how long - so the limits of a bridge, a cable or a probe can be found
 case by case instead of with fixed numbers.
 
@@ -10,7 +10,7 @@ case by case instead of with fixed numbers.
                              inflight=[1, 2], sizes=[128, 496], frames=300):
       print(row.text())
 
-Patterns: "in" oep.link source (probe -> host), "out" oep.link sink (host -> probe), "duplex" the two alternating (both ways at
+Patterns: "in" oep.probe.link source (probe -> host), "out" oep.probe.link sink (host -> probe), "duplex" the two alternating (both ways at
 once when more than one is in flight). A frame is "ok" when its answer came whole and right, "broken" when an answer
 came but its content was wrong, "lost" when no good answer came (a broken frame on a held serial port counts here:
 the link drops it as noise). After a lost frame the link is resynchronised with a confirm before going on.
@@ -71,7 +71,7 @@ class RateResult:
 def run(hst, pattern: str, inflight: int, size: int, *, frames: int = 300, seconds: float | None = None,
         timeout: float = 0.3, rate: int = 0) -> Cell:
     """One pattern at the speed in force: `frames` requests (or for `seconds`), `inflight` at a time, `size` bytes each
-    (LookupError: the probe offers no oep.link)."""
+    (LookupError: the probe offers no oep.probe.link)."""
     if pattern not in PATTERNS:
         raise ValueError(f"pattern {pattern!r}: one of {PATTERNS}")
     fn = core.link_fn(hst)

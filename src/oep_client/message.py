@@ -50,14 +50,15 @@ TAG_CRITICAL, TAG_IGNORED, TAG_INVALID = reg.TAG_CRITICAL, reg.TAG_IGNORED, reg.
 TAG_FIXED = reg.TAG_RESERVED_ZERO          # the rejected unsupported payload's first byte for a fixed-part value (core §4.3)
 TAG_OPS = reg.DESCRIBE_COMMON["ops"]       # every fn's describe: base(u8) bitmap - the ops it offers (core §1.2, §7.4)
 
-# core (fn 0) operations
+# the core's operations (fn 0: the core has no name and is never listed, core §0, §7.2)
 CORE_FN = 0
 _OP = reg.CORE.op
-OP_CONFIRM, OP_LIST, OP_DESCRIBE = _OP["confirm"], _OP["list"], _OP["describe"]
-OP_PLAN_APPLY, OP_PLAN_RELEASE = _OP["plan_apply"], _OP["plan_release"]
+OP_CONFIRM, OP_LIST, OP_DESCRIBE, OP_CLOCK = _OP["confirm"], _OP["list"], _OP["describe"], _OP["clock"]
 OP_OPEN, OP_END, OP_KEEPALIVE, OP_LOCK_STATE = _OP["open"], _OP["end"], _OP["keepalive"], _OP["lock_state"]
-OP_SUBSCRIBE, OP_UNSUBSCRIBE = _OP["subscribe"], _OP["unsubscribe"]
-OP_RESTART = _OP["restart"]                  # optional, declared in fn 0's ops (core §6.6)
+CORE_OPS = frozenset(_OP.values())           # every op fn 0 has: all mandatory (core §1.2, §12)
+# subscribe / unsubscribe: ops of the interface that sends notifications, at the same numbers in every interface's op
+# space (core §11.3) - sent to that fn itself, never to fn 0
+OP_SUBSCRIBE, OP_UNSUBSCRIBE = reg.OP_SUBSCRIBE, reg.OP_UNSUBSCRIBE
 
 CONFIRM_REQUEST = reg.CONFIRM_REQUEST_MAGIC.encode()
 CONFIRM_RESULT = reg.CONFIRM_RESULT_MAGIC.encode()

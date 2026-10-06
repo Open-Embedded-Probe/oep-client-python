@@ -7,7 +7,7 @@ import pytest
 
 from oep_client import endpoint, fake, host, message as m
 
-TOY = 11         # a fn the fake does not simulate (fake.with_stand_in(esp32_v003)) has the stand-in operations
+TOY = 13         # a fn the fake does not simulate (fake.with_stand_in(esp32_v003)) has the stand-in operations
 
 
 class Clock:
@@ -52,7 +52,7 @@ def test_every_request_carries_a_session_id_and_0_is_none():
 def test_a_48_byte_name_fits_a_64_byte_frame():
     name = "io.github.ch32-riscv-ug." + "x" * 24
     assert len(name) == 48
-    probe = fake.FakeProbe("tiny", 64, [fake.Offered(0, 0, "oep.core"), fake.Offered(1, 1, name)])
+    probe = fake.FakeProbe("tiny", 64, [fake.Offered(0, 0, ""), fake.Offered(1, 1, name)])
     ep = endpoint.Endpoint(probe, Clock())
     from oep_client import catalog
     result = ep.handle(m.Request(1, 0, m.OP_LIST, catalog.pack_list_request(name, True, 0)).pack())
@@ -187,27 +187,34 @@ def test_a_probe_reboot_forgets_the_last_id_and_boot_id_says_so(bench):
 
 
 def test_subscriptions_survive_a_same_id_open_while_held_and_go_with_the_lock(bench):
-    """core §6.2 / §11.3: an open of the id that holds the lock keeps the subscriptions; fn 0 is always subscribable
-    (its heartbeat is boot_id uptime_ns); an fn that emits nothing is unsupported; unsubscribing nothing is ok."""
+    """core §6.2 / §11.3: subscribe is the emitting interface's own op (0x30, no target fn); an open of the id that
+    holds the lock keeps the subscriptions; an fn that sends nothing (the toy, fn 0) has no subscribe -
+    unknown_operation; unsubscribing nothing is ok; the subscriptions go with the lock."""
     clock, ep = bench
+    logic = 6                                                                       # esp32-v003's oep.fixture.logic
     a = new_host(ep, 1)
     a.open(lease_ms=2000)
-    a.subscribe(0, max_delay_ms=500)
-    assert ep.subscribed == {0} and a.subscriptions == {0}
+    a.subscribe(logic, max_delay_ms=500)
+    assert ep.subscribed == {logic: (0, 500)} and a.subscriptions == {logic}
+    assert ep.requests[-1].fn == logic and ep.requests[-1].op == m.OP_SUBSCRIBE
+    assert ep.requests[-1].payload == struct.pack("<HI", 0, 500)                    # max_delay_ms is u32
     resent = m.Request(a.next_corr(), 0, m.OP_OPEN, struct.pack("<IB", 2000, 0), a.session).pack()
     assert m.Result.unpack(ep.handle(resent)).succeeded                            # the holder's open again: kept
-    assert ep.subscribed == {0} and a.subscriptions == {0}
+    assert ep.subscribed == {logic: (0, 500)} and a.subscriptions == {logic}
     clock.ms = 500
-    (hb,) = ep.pushes()
-    assert hb[0] == m.ROLE_EVENT and hb[5] == 1 and hb[6:] == struct.pack("<IQ", ep.boot_id, 500_000_000)
-    with pytest.raises(host.Unsupported):
-        a.subscribe(TOY)                                                            # the toy fn emits nothing
+    assert ep.pushes() == []                                                        # fn 0 sends nothing (no heartbeat)
+    for fn in (TOY, 0, 4):                                                          # the toy, the core, gpio
+        with pytest.raises(host.Rejected) as e:
+            a.subscribe(fn)
+        assert type(e.value) is host.Rejected and e.value.result.detail == m.UNKNOWN_OPERATION
     with pytest.raises(host.Rejected, match="unknown function"):
         a.subscribe(99)
-    a.unsubscribe(5)                                                                # nothing subscribed: ok
-    assert ep.requests[-3].payload == struct.pack("<HHI", TOY, 0, 0)                # max_delay_ms is u32
+    a.unsubscribe(logic)
+    a.unsubscribe(logic)                                                            # nothing subscribed: ok
+    assert ep.requests[-1].payload == b"" and ep.subscribed == {}
+    a.subscribe(logic)
     a.end()
-    assert ep.subscribed == set() and a.subscriptions == set()
+    assert ep.subscribed == {} and a.subscriptions == set()
 
 
 def test_pipeline_keeps_order_and_reports_rejects_per_result(bench):

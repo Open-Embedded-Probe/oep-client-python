@@ -196,14 +196,15 @@ def test_a_plan_refused_for_a_saved_plan_names_the_holder():
 
 
 def test_a_settings_plan_is_not_the_sessions():
-    """core §8: plan_release leaves a plan the settings put in (n = 0 too); plan_apply naming its fn is refused."""
+    """oep-if-plan §2.3: plan_release leaves a plan the settings put in (n = 0 too); plan_apply naming its fn is
+    refused."""
     ep, hst = open_bench()
     config.ProbeConfig(hst).set([config.Plan(fn=5, role=1, channel=20), config.Plan(fn=5, role=2, channel=21)])
     assert 5 in ep.plan_from_config
     with pytest.raises(h.Rejected) as e:
-        hst.call(m.CORE_FN, m.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 5, 1, 22)))
+        hst.call(core.plan_fn(hst), core.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 5, 1, 22)))
     assert e.value.result.detail == m.UNAVAILABLE
-    hst.call(m.CORE_FN, m.OP_PLAN_RELEASE, b"\x00")
+    hst.call(core.plan_fn(hst), core.OP_PLAN_RELEASE, b"\x00")
     assert {(5, 1, 20), (5, 2, 21)} <= ep.plan and 5 in ep.plan_from_config
 
 

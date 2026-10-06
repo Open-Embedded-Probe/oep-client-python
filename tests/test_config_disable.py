@@ -38,7 +38,7 @@ def test_a_plan_naming_a_disabled_channel_is_held_by_settings():
     ep, hst = open_bench()
     config.ProbeConfig(hst).set([config.Disable(channel=20)])
     with pytest.raises(h.Rejected) as e:
-        hst.call(m.CORE_FN, m.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 20)))
+        hst.call(core.plan_fn(hst), core.OP_PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 20)))
     assert _cause(e) == ("held_by_settings", [20])
     with pytest.raises(core.PinsTaken) as e2:                                 # the client names the setting
         core.plan_apply(hst, [(4, 1, 20)])

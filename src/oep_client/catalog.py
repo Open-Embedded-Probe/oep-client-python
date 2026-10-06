@@ -1,12 +1,14 @@
 """The wire forms of discovery by name (oep-spec docs/oep-core.ja.md §7).
 
 list request : flags(u8) first(u16) prefix_len(u8) prefix     flags bit0 = exact
-list result  : total(u16) count(u8) count x entry [TLV tail]  oep.core (fn 0) is the first entry
+list result  : total(u16) count(u8) count x entry [TLV tail]  fn 0 (the core) has no name and is never an entry
 list entry   : fn(u16) instance(u16) revision(u8) flags(u8) name_len(u8) name
 describe     : request fn(u16) first(u16); result more(u8) then TLV bytes (tag u8, len u16, value; tag bit 7 =
                critical). more = 1: TLVs remain after this page, ask again from first + count
 ops          : the common describe tag 0x09 every fn carries, base(u8) bitmap: bit i set = op base + i is offered
-               (core §1.2, §7.4) - the one declaration of an fn's ops, the optional ones included
+               (core §1.2, §7.4) - the one declaration of an fn's ops, the optional ones included. One encoding per
+               op set: 2-33 bytes, base + 8 x bitmap bytes <= 256, bit 0 set, the last byte not 0 (`check_ops`); a
+               host does not use an fn whose ops break it (fn 0's: not the probe)
 (oep-spec oep-core §7.2; the entry revision decides the interface's payload shapes, §2.7). A describe is declarations
 only (§7.3): it may be cached while the probe's boot_id stays the same.
 
@@ -97,11 +99,11 @@ def tlv(tag: int, value: bytes) -> bytes:
 
 
 def pack_ops(ops) -> bytes:
-    """The ops tag's value (core §7.4): base = the lowest op, then the bitmap, as short as it can be. No op: base 0 and
-    no bitmap byte."""
+    """The ops tag's value (core §7.4): base = the lowest op, then the bitmap, as short as it can be - the one encoding
+    of the set. An fn always has an op: an empty set has no encoding (ValueError)."""
     ops = sorted(set(ops))
     if not ops:
-        return b"\x00"
+        raise ValueError("ops: an empty set has no encoding (core §7.4)")
     if ops[0] < 0 or ops[-1] > 0xFF:
         raise ValueError("an op is u8")
     base = ops[0]
@@ -115,13 +117,35 @@ def ops_tlv(ops) -> bytes:
     return tlv(OPS, pack_ops(ops))
 
 
+OPS_MAX_BYTES = 33                   # base and a bitmap of at most 32 bytes (core §7.4)
+
+
+def check_ops(value: bytes) -> str:
+    """Why an ops value breaks core §7.4's one encoding ("" when it keeps it): 2-33 bytes, base + 8 x bitmap bytes
+    <= 256 (no bit past op 0xFF), bit 0 set (base is the lowest op), the last bitmap byte not 0."""
+    if not 2 <= len(value) <= OPS_MAX_BYTES:
+        return f"ops of {len(value)} bytes (2 to {OPS_MAX_BYTES})"
+    if value[0] + 8 * (len(value) - 1) > 256:
+        return f"ops past op 0xFF (base 0x{value[0]:02x} with a {len(value) - 1}-byte bitmap)"
+    if not value[1] & 1:
+        return f"ops with bit 0 clear (base 0x{value[0]:02x} is not the lowest op)"
+    if value[-1] == 0:
+        return "ops ending in a zero byte"
+    return ""
+
+
+class InvalidOps(ValueError):
+    """An ops value outside core §7.4's one encoding: the host does not use that fn (fn 0: the probe)."""
+
+
 def unpack_ops(value: bytes) -> set[int]:
-    """The ops an ops value declares (bit i of the bitmap = op base + i; bits past 0xFF mean nothing)."""
-    if not value:
-        return set()
+    """The ops an ops value declares (bit i of the bitmap = op base + i). A value outside core §7.4's encoding
+    (`check_ops`) raises InvalidOps."""
+    why = check_ops(value)
+    if why:
+        raise InvalidOps(why)
     base = value[0]
-    return {base + i * 8 + b for i, byte in enumerate(value[1:]) for b in range(8)
-            if byte >> b & 1 and base + i * 8 + b <= 0xFF}
+    return {base + i * 8 + b for i, byte in enumerate(value[1:]) for b in range(8) if byte >> b & 1}
 
 
 def split_tlv(data: bytes) -> list[tuple[int, bytes]]:
@@ -185,7 +209,8 @@ class Description:
     max_length: int | None = None
     features: int | None = None
     implementation: int | None = None
-    ops: set[int] | None = None       # the ops tag (core §7.4); None when the describe carries none
+    ops: set[int] | None = None       # the ops tag (core §7.4); None when the describe carries none or a broken one
+    ops_invalid: str = ""             # why the ops tag breaks core §7.4's encoding (the fn is not used)
     specific: list[tuple[int, bytes]] = field(default_factory=list)
     unknown_critical: list[int] = field(default_factory=list)
 
@@ -211,7 +236,11 @@ def decode_description(data: bytes) -> Description:
         elif t == IMPLEMENTATION:
             d.implementation = value[0]
         elif t == OPS:
-            d.ops = (d.ops or set()) | unpack_ops(value)
+            why = check_ops(value)
+            if why:
+                d.ops_invalid = why
+            else:
+                d.ops = (d.ops or set()) | unpack_ops(value)
         elif t >= INTERFACE_TAG_FIRST:
             d.specific.append((tag, value))
         elif tag & CRITICAL:
@@ -219,4 +248,6 @@ def decode_description(data: bytes) -> Description:
         # an unknown non-critical common tag is skipped
     for role in d.roles:
         d.roles[role] = sorted(set(d.roles[role]))
+    if d.ops_invalid:
+        d.ops = None
     return d

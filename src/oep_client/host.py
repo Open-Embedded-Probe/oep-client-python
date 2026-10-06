@@ -14,12 +14,18 @@ interfaces keep readable: an attach on a live combination returns the slot's con
 place and mechanism returns its stream with position and marks.
 
 `epoch` counts the losses of everything this host's session had (core §6.5, §9): an end, a no_session, a boot_id
-that changed (confirm, open, a heartbeat the link read) - a client holding a connection can tell. A reboot also drops
+that changed (confirm, clock, open) - a client holding a connection can tell. A reboot also drops
 the remembered name -> fn mapping and the describes, so they are listed again.
 
 A probe whose confirm answer is outside core §7.1's bounds (max_frame under 64, window under max_frame, max_inflight 0;
 C-20), or whose fn 0 describe declares a max_op_ms outside 1..600000 (core §4.4, §7.5; C-47), is not used: `NotUsable`
 is raised with the values, and nothing more is sent through this host.
+
+The probe's time (core §7.7, host guide §12): `clock` reads fn 0's clock - lock-free and session-free - with this
+host's time just before the request went out and just after its answer came back (`ClockReading`); the probe read its
+clock after the request arrived and before its answer was sent, so the midpoint stands for its uptime_ns within half
+the round trip - through a relaying broker too, which relays clock (transports §1). `clock_best` keeps the reading with
+the shortest round trip of several.
 """
 
 from __future__ import annotations
@@ -27,8 +33,9 @@ from __future__ import annotations
 import contextlib
 import random
 import struct
+import time
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, NamedTuple
 
 from . import message as m, registry as reg
 from .message import OepError, ProtocolError, ShortPayload  # noqa: F401  (re-exported: callers use host.*)
@@ -59,7 +66,7 @@ class NotV1(OepError):
 
 
 class NotRestarted(OepError):
-    """restart_probe (core §6.6): after the restart the probe confirmed the boot_id it had before - the restart did not
+    """restart_probe (oep-if-restart §3): after the restart the probe confirmed the boot_id it had before - the restart did not
     happen as far as this host can tell (a probe whose boot_id source repeated is told apart by nothing else)."""
 
 
@@ -69,7 +76,9 @@ class NotUsable(OepError):
 
 
 MAX_OP_MS_MAX = reg.LIMITS["max_op_ms_max"]   # fn 0 describe max_op_ms is 1 to this (core §7.5)
-RESTART_AFTER_ANSWER_S = reg.LIMITS["restart_after_answer_ms"] / 1000   # restart: the probe begins within this (core §6.6)
+RESTART_AFTER_ANSWER_S = reg.LIMITS["restart_after_answer_ms"] / 1000   # restart: the probe begins within this (oep-if-restart §2)
+RESTART_NAME = reg.PROBE_RESTART.name
+OP_RESTART = reg.PROBE_RESTART.op["restart"]   # oep.probe.restart's restart (oep-if-restart §2)
 RESTART_WAIT_S = 10.0                          # restart_probe: the wait for a probe that declares no restart_max_ms
 
 
@@ -222,6 +231,29 @@ class Opened:
     boot_id: int
 
 
+class ClockReading(NamedTuple):
+    """One clock (core §7.7): this host's time just before the request went out (`before_ns`) and just after its answer
+    came back (`after_ns`), on the host clock `Host.clock` was given (time.monotonic_ns by default); the probe's
+    `uptime_ns` (ns since its boot, core §2.6a) read between the two; its `boot_id`; and the round trip
+    (after - before). The probe's time stands for the host time `host_ns` (the midpoint) within `uncertainty_ns` (half
+    the round trip). A changed boot_id between readings: the probe restarted, its clock started again (core §6.5)."""
+    before_ns: int
+    after_ns: int
+    uptime_ns: int
+    boot_id: int
+    round_trip_ns: int
+
+    @property
+    def host_ns(self) -> int:
+        """The host time the probe's uptime_ns stands for: the midpoint of before and after."""
+        return (self.before_ns + self.after_ns) // 2
+
+    @property
+    def uncertainty_ns(self) -> int:
+        """How far `host_ns` may be from the moment the probe read its clock: half the round trip."""
+        return (self.round_trip_ns + 1) // 2
+
+
 @dataclass
 class Host:
     send: Callable[[bytes], bytes]
@@ -248,7 +280,6 @@ class Host:
     # Called with confirm's limits after every confirm answer (the link's max_frame for the transfer time, core §4.4)
     on_limits: Callable[[dict], None] | None = None
     unusable: str = ""                     # why this probe is not used (C-20, C-47): set, nothing more is sent
-    uptime_ns: int | None = None           # the last heartbeat's uptime (core §11.2, fn 0 kind 0x01)
 
     @contextlib.contextmanager
     def expecting(self, ms: int):
@@ -296,6 +327,10 @@ class Host:
         req = m.Request(self.next_corr(), fn, op, payload, sid)
         with self.expecting(expect_ms):
             result = m.Result.unpack(self.send(req.pack()))
+        return self._answered(req, result)
+
+    def _answered(self, req: m.Request, result: m.Result) -> m.Result:
+        """The answer to `req`: its corr checked, a rejection raised (after the session bookkeeping)."""
         if result.corr != req.corr:
             raise ProtocolError(f"result for correlation {result.corr}, expected {req.corr}")
         if result.resolution == m.REJECTED:
@@ -323,16 +358,10 @@ class Host:
         self._describes.clear()
 
     def boot_id_seen(self, boot_id: int) -> None:
-        """A boot_id from confirm, an open result or a heartbeat: a change means the probe restarted (core §6.5)."""
+        """A boot_id from confirm, clock or an open result: a change means the probe restarted (core §6.5)."""
         if self._boot_id is not None and boot_id != self._boot_id:
             self._lost()
         self._boot_id = boot_id
-
-    def heartbeat_seen(self, boot_id: int, uptime_ns: int) -> None:
-        """fn 0's heartbeat event (core §11.2: boot_id, uptime_ns), as the link reads it: the boot_id is watched like
-        confirm's and open's, the uptime kept (`uptime_ns`)."""
-        self.boot_id_seen(boot_id)
-        self.uptime_ns = uptime_ns
 
     def not_usable(self, why: str) -> None:
         """Stop using this probe (C-20, C-47): every later request raises NotUsable with `why`."""
@@ -502,7 +531,6 @@ class Host:
         serial port opened exclusively - whoever held the lock cannot be there any more, so it is taken by force at
         once. Otherwise the holder's lease is waited out (up to wait_s); a holder that keeps it going raises InUse,
         naming it. force: take it anyway (the user said so)."""
-        import time
         if force or only_way_in:
             return self.open(lease_ms, force=True, owner=owner)
         deadline = time.monotonic() + wait_s
@@ -516,40 +544,87 @@ class Host:
                     raise InUse(f"the probe is in use by {who} (lease {e.remaining_ms} ms left, kept going)") from e
                 time.sleep(min(left, e.remaining_ms / 1000 + 0.05))
 
-    # ---- restart (core §6.6) --------------------------------------------------------------------------------------
+    # ---- the probe's time (core §7.7) ----------------------------------------------------------------------------------
+    def clock(self, now: Callable[[], int] = time.monotonic_ns) -> ClockReading:
+        """fn 0's clock (core §7.7): lock-free and session-free (session_id 0: no session, lock or lease touched, §4.1).
+        -> ClockReading(before_ns, after_ns, uptime_ns, boot_id, round_trip_ns): `now` (this host's clock in ns) read
+        just before the request goes out and just after its answer is in; the probe's clock was read between them. The
+        boot_id is watched like confirm's (core §6.5: a change drops what this host remembered of the old boot)."""
+        self.require_usable()
+        if self.before_request is not None:
+            self.before_request()
+        req = m.Request(self.next_corr(), m.CORE_FN, m.OP_CLOCK, b"", m.NO_SESSION_ID)
+        packed = req.pack()
+        before = now()
+        raw = self.send(packed)
+        after = now()
+        r = self._answered(req, m.Result.unpack(raw))
+        if not r.succeeded:
+            raise Failed(r)
+        rd = m.Reader(r.payload)
+        boot_id, uptime_ns = rd.take("IQ")
+        rd.tail()
+        self.boot_id_seen(boot_id)
+        return ClockReading(before, after, uptime_ns, boot_id, after - before)
+
+    def clock_best(self, n: int = 8, now: Callable[[], int] = time.monotonic_ns) -> ClockReading:
+        """`n` clock readings, the one with the shortest round trip kept (host guide §12: the tightest bound on the host
+        time the probe's uptime_ns stands for). A boot_id that changed between readings: the readings after it only
+        (the probe restarted, its clock began again)."""
+        if n < 1:
+            raise ValueError("clock_best: n >= 1")
+        best: ClockReading | None = None
+        for _ in range(n):
+            r = self.clock(now)
+            if best is None or r.boot_id != best.boot_id or r.round_trip_ns < best.round_trip_ns:
+                best = r
+        return best
+
+    # ---- restart (oep.probe.restart, oep-if-restart) --------------------------------------------------------------
+    def _restart_fn(self) -> int:
+        """The probe's oep.probe.restart fn (LookupError: it offers none - the interface is optional); the link is told,
+        so a completed restart sends it back to the boot speed (oep-if-link §3 host obligation 6)."""
+        from . import core                              # core imports host: here, not at the top
+        fn = core.restart_fn(self)
+        link = getattr(self, "link", None)
+        if link is not None:
+            link.restart_fn = fn
+        return fn
+
     def request_restart(self) -> None:
-        """fn 0's restart, the request alone (core §6.6): sent in this session (the op needs the lock: without a
-        session it goes with session_id 0 and is refused session_required); completed success = the probe restarts
-        once the answer is out. A probe without it in fn 0's ops answers unknown_operation (Rejected). Afterwards
+        """oep.probe.restart's restart, the request alone (oep-if-restart §2; LookupError when the probe offers no
+        oep.probe.restart): sent in this session (the op needs the lock: without a session it goes with session_id 0
+        and is refused session_required); completed success = the probe restarts once the answer is out. Afterwards
         nothing of this session lasts: the session, its resources, the fn numbers. `restart_probe` also waits for the
         probe and confirms its new boot_id."""
-        self.call(m.CORE_FN, m.OP_RESTART)
+        self.call(self._restart_fn(), OP_RESTART)
         self.session = None
         self._lost()
 
     def restart_probe(self, wait_s: float | None = None) -> int:
-        """Restart the probe and wait until it is back (core §6.6, host guide §5.2) -> its new boot_id. The session
-        must hold the lock. After the answer nothing more goes out; the link (`link.reopen_after_restart`, when this
-        host has one) closes, waits restart_after_answer_ms and opens again as a new open - the confirm first, a serial
-        port at its boot speed, a USB device found again once it has re-enumerated - retried for `wait_s`; a host on a
-        bare `send` waits and confirms. `wait_s` None: the probe's restart_max_ms (fn 0 describe, core §7.5, read
-        before the restart), or RESTART_WAIT_S (10 s) when it declares none (a probe that does not conform); a confirm
-        sent before then is waited for as core §4.4 says. No valid confirm by then: ConnectionError / TimeoutError - the
-        probe is gone (core §6.6). When the answer is lost, the same: a resend the restarted probe refused
-        no_session counts as the restart having happened. The confirm's boot_id must differ from the one before
-        (NotRestarted otherwise); everything this host remembered of the old boot is dropped (core §6.5)."""
-        import time
+        """Restart the probe through oep.probe.restart and wait until it is back (oep-if-restart §3, host guide §5.2)
+        -> its new boot_id. LookupError when the probe offers no oep.probe.restart. The session must hold the lock.
+        After the answer nothing more goes out; the link (`link.reopen_after_restart`, when this host has one) closes,
+        waits restart_after_answer_ms and opens again as a new open - the confirm first, a serial port at its boot
+        speed, a USB device found again once it has re-enumerated - retried for `wait_s`; a host on a bare `send` waits
+        and confirms. `wait_s` None: the probe's restart_max_ms (oep.probe.restart's describe, read before the restart),
+        or RESTART_WAIT_S (10 s) when it declares none (a probe that does not conform); a confirm sent before then is
+        waited for as core §4.4 says. No valid confirm by then: ConnectionError / TimeoutError - the probe is gone. When
+        the answer is lost, the same: a resend the restarted probe refused no_session counts as the restart having
+        happened. The confirm's boot_id must differ from the one before (NotRestarted otherwise); everything this host
+        remembered of the old boot is dropped (core §6.5)."""
         self.require_v1()
         before = self._boot_id if self._boot_id is not None else self.confirm()["boot_id"]
+        fn = self._restart_fn()
         if wait_s is None:
-            from . import core                              # core imports host: here, not at the top
+            from . import core
             ms = core.restart_max_ms(self)
             wait_s = ms / 1000 if ms is not None else RESTART_WAIT_S
         epoch = self.epoch
         try:
-            self.call(m.CORE_FN, m.OP_RESTART)
+            self.call(fn, OP_RESTART)
         except NoSession:
-            pass                                            # the resend reached the new boot: it restarted (§6.6)
+            pass                                            # the resend reached the new boot: it restarted (§3)
         except (TimeoutError, ConnectionError, OSError):
             pass                                            # no answer: the confirm below tells
         self.session = None
@@ -576,16 +651,18 @@ class Host:
             raise NotRestarted(f"the probe confirmed boot_id 0x{after:08X} after the restart, the same as before")
         return after
 
-    # ---- notifications (§4.5) -------------------------------------------------------------------
+    # ---- notifications (core §11) ---------------------------------------------------------------------------------
     def subscribe(self, fn: int, min_bytes: int = 0, max_delay_ms: int = 0) -> None:
-        """Events and data pushes from `fn` (fn 0: heartbeats every max_delay_ms, 0 = 1000 ms). Send when min_bytes are
-        ready or max_delay_ms (u32) after the first byte (0, 0: as soon as there is anything). Ends with the lock; an fn
-        that emits nothing is rejected unsupported (core §11.3)."""
-        self.call(m.CORE_FN, m.OP_SUBSCRIBE, struct.pack("<HHI", fn, min_bytes, max_delay_ms))
+        """Events and data pushes from interface `fn`: its own subscribe op (0x30, core §11.3: the request carries no
+        target fn). The data goes when min_bytes are ready or max_delay_ms (u32) after its first byte (0, 0: as soon as
+        there is anything); events go at once, whatever these say. Ends with the lock. An fn that sends no
+        notifications has no subscribe: rejected unknown_operation."""
+        self.call(fn, m.OP_SUBSCRIBE, struct.pack("<HI", min_bytes, max_delay_ms))
         self.subscriptions.add(fn)
 
     def unsubscribe(self, fn: int) -> None:
-        self.call(m.CORE_FN, m.OP_UNSUBSCRIBE, struct.pack("<H", fn))
+        """Interface `fn`'s own unsubscribe op (0x32, core §11.3); one without a subscription succeeds doing nothing."""
+        self.call(fn, m.OP_UNSUBSCRIBE)
         self.subscriptions.discard(fn)
 
     def blind_stop(self) -> list[bytes]:
@@ -593,7 +670,7 @@ class Host:
         - both harmless when run twice - for when pushes keep the input from going quiet."""
         if self.session is None or not self.revision:
             return []
-        out = [m.Request(self.next_corr(), m.CORE_FN, m.OP_UNSUBSCRIBE, struct.pack("<H", fn), self.session).pack()
+        out = [m.Request(self.next_corr(), fn, m.OP_UNSUBSCRIBE, b"", self.session).pack()
                for fn in sorted(self.subscriptions)]
         out.append(m.Request(self.next_corr(), m.CORE_FN, m.OP_END, b"", self.session).pack())
         self.subscriptions.clear()

@@ -35,7 +35,7 @@ def new_host(ep, seed):
 
 @pytest.mark.parametrize("how", ["end", "lapse", "force"])
 def test_a_session_end_of_any_kind_releases_what_it_created(how):
-    clock, ep = bench()
+    clock, ep = bench(fake.p4_x035)                                           # with a logic capture to subscribe to
     a, b = new_host(ep, 1), new_host(ep, 2)
     a.open(1000)
     gpio = core.find(a, "oep.fixture.gpio")
@@ -44,7 +44,8 @@ def test_a_session_end_of_any_kind_releases_what_it_created(how):
     conn, _ = riscv.Wire(a).attach(halt=False, pins=ep.pairs[1][0])
     con = console.Console(a)
     sid = con.open(conn)
-    a.subscribe(0)
+    a.subscribe(core.find(a, "oep.fixture.logic"))                            # its own subscribe (core §11.3)
+    assert ep.subscribed
     ep.emit(sid, b"last words")
     if how == "end":
         a.end()
@@ -54,7 +55,7 @@ def test_a_session_end_of_any_kind_releases_what_it_created(how):
     else:
         b.open(1000, force=True)
     assert not any(fn == gpio for fn, _, _ in ep.plan) and ep.parked[20] == 0   # the pin back to its idle state
-    assert conn not in ep.conns and ep.subscribed == set()
+    assert conn not in ep.conns and ep.subscribed == {}
     s = ep.streams[sid]
     assert s.closed and s.marks[-1][2] == CLOSED and s.marks[-1][4] == SESSION_ENDED   # closed before the connection
     reader = new_host(ep, 3)                                                  # no session: lock-free reads go on

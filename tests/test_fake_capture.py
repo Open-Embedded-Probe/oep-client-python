@@ -160,6 +160,32 @@ def test_streaming_pushes_the_bytes_while_subscribed():
         lc.unsubscribe() or lc.start()                                  # streaming without a subscription
 
 
+def test_min_bytes_and_max_delay_batch_the_data_and_never_the_events():
+    """core §11.3: the data (role 0x06) waits for min_bytes bytes or max_delay_ms since its oldest byte was there
+    (0 = that condition unused); an event (role 0x05) goes at once, and its bytes do not count."""
+    ep, hst, lc, clock = bench()
+    core.plan_apply(hst, [(lc.fn, 0, 20), (lc.fn, 1, 21), (lc.fn, 2, 22)])
+    lc.configure(rate=1_000_000, mode=c.STREAMING)
+    lc.subscribe(min_bytes=1000)
+    assert hst.subscriptions == {lc.fn} and ep.subscribed[lc.fn] == (1000, 0)
+    lc.start()
+    clock.t = 1                                                     # 500 bytes: held
+    assert [f for f in ep.pushes() if f[0] == m.ROLE_DATA] == []
+    clock.t = 2                                                     # 1000 bytes: out
+    assert sum(len(c.unpack_push(f)[3]) for f in ep.pushes() if f[0] == m.ROLE_DATA) == 1000
+    lc.subscribe(max_delay_ms=5)                                    # replaces it: the delay alone
+    clock.t = 3
+    assert [f for f in ep.pushes() if f[0] == m.ROLE_DATA] == []    # the oldest byte waits from now
+    clock.t = 8
+    assert sum(len(c.unpack_push(f)[3]) for f in ep.pushes() if f[0] == m.ROLE_DATA) == 3000
+    lc.subscribe(min_bytes=60000, max_delay_ms=60000)               # data held for long ...
+    clock.t = 9
+    lc.stop()
+    frames = ep.pushes()
+    assert [f[5] for f in frames if f[0] == m.ROLE_EVENT] == [c.EVENT_STOPPED]   # ... the event goes at once
+    assert not [f for f in frames if f[0] == m.ROLE_DATA]
+
+
 def test_events_go_out_only_while_subscribed():
     ep, hst, lc, _ = bench()
     core.plan_apply(hst, [(lc.fn, 0, 20)])

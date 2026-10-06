@@ -3,17 +3,20 @@
 [日本語](README.ja.md)
 
 The host side of Open Embedded Probe (OEP). It speaks the v1 protocol of
-[oep-spec](https://github.com/Open-Embedded-Probe/oep-spec) (`docs/oep-core.ja.md`, `docs/oep-transports.ja.md` and the
-standard interfaces `docs/oep-if-*.ja.md`), v1 before the freeze: until the freeze the spec may still break. The wire numbers come from `oep_client.registry`, a verbatim copy of
+[oep-spec](https://github.com/Open-Embedded-Probe/oep-spec) (the core `docs/oep-core.ja.md`, `docs/oep-transports.ja.md`
+and the interfaces `interfaces/*.ja.md`), v1 before the freeze: until the freeze the spec may still break. The wire numbers come from `oep_client.registry`, a verbatim copy of
 oep-spec's generated `generated/oep-v1/oep_v1_registry.py`. This is an experimental stage: breaking changes are expected and
 no compatible API is promised.
 
-**The spec this implements: oep-spec commit `59dd028`** (no `v0.x` tag yet; oep-spec versioning §6 - before the freeze,
+**The spec this implements: oep-spec commit `498ae95`** (no `v0.x` tag yet; oep-spec versioning §6 - before the freeze,
 revision 1 alone does not fix the forms, so an implementation names the spec it implements). That is the 2026-10-06
-simplification (one 10-byte request header, TLV len u16, closed fixed forms, the `ops` describe tag, no resume,
-`oep.link`), the console's send queue and the reset settle wait (f0c68bf), a longer probe.config item (d34dafa),
-oep.link source's len (4bd3a87) and an attach joining a connection (59dd028), with fn 0's optional restart from
-`ecd1ab9` (core §6.6) and its describe value restart_max_ms from `3c96daf` (core §7.5).
+simplification (one 10-byte request header, TLV len u16, closed fixed forms, the `ops` describe tag, no resume), the
+console's send queue and the reset settle wait (f0c68bf), a longer probe.config item (d34dafa), the link source's len
+(4bd3a87), an attach joining a connection (59dd028), and the 2026-10-06 structure (289bde0 .. 498ae95): the core has no
+name (fn 0, never listed; its ops are the eight mandatory ones, fn 0's clock among them), the optional parts are
+interfaces found by name - `oep.probe.plan` (plan_apply / plan_release, plan_roles), `oep.probe.restart` (restart,
+restart_max_ms), `oep.probe.link` (was `oep.probe.link`) -, subscribe / unsubscribe are ops 0x30 / 0x32 of the interface that
+sends the notifications (no heartbeat), and the ops encoding of core §7.4 is checked.
 
 Until the freeze the Japanese text (`.ja.md`) is the specification's working text; the English documents are regenerated
 from it at the freeze and become authoritative then. Start with oep-spec's [README](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/README.md) and
@@ -48,9 +51,9 @@ oep-client-python X.Y.Z (until the v1 freeze every release may break the wire; t
 
 | Module | Contents |
 |---|---|
-| `host` | requests and results (one 10-byte header: the session's id on a request sent in the session, 0 on a lock-free one outside it), the session id and the lock, `call()` (raises unless it worked), pipelining, the errors (`OepError` / `Rejected` / `Failed`; `NoSession` when the session ended - end, lease expiry, another session's force - and the probe released everything it created: no resume, the session is never re-opened behind the caller's back, `Host.session` goes to None and `Host.epoch` moves; `NotUsable` for a probe whose confirm is outside core §7.1's bounds or whose `max_op_ms` is outside 1..600000 - nothing more is sent to it). `open(lease_ms, force=, owner=)` always opens a new session under a new random id and answers `Opened(lease_ms, boot_id)`; `end()` releases everything and leaves the host out of a session. A changed boot_id (confirm, open, heartbeats) drops the name -> fn cache, so interfaces are listed again. `restart_probe(wait_s=None)` restarts the probe through fn 0's optional restart (core §6.6, host guide §5.2; the session must hold the lock): after the answer the link closes, waits `restart_after_answer_ms` (100 ms), opens again as a new open (confirm first; a serial port at its boot speed, a USB device found again once it re-enumerated, a TCP connection made again), retried until the probe's restart_max_ms (fn 0 describe, read before the restart; `core.restart_max_ms`) or 10 s when it declares none - then the probe is gone (ConnectionError / TimeoutError) - and the new boot_id is returned - `NotRestarted` if it stayed the same; a lost answer whose resend the restarted probe refuses no_session counts as done. `request_restart()` sends the request alone. A probe without restart in fn 0's ops answers unknown_operation |
-| `link` | transports: serial ports (always COBS + CRC as `0x00 <COBS> 0x00`, bytes outside frames skipped as noise, opened exclusively, 8N1 with DTR / RTS asserted), USB vendor bulk / HID and TCP (length frames, the transports §5 resync - waiting 250 ms after the host's last write; on TCP a pause inside a frame is read on); matching by corr and resending; a resend that gets no answer either raises `TransportFailed`, and the next request first recovers with a confirm (quiet input, then a confirm with its own corr; serial ports too) or raises ConnectionError; every answer waited at least core §4.4's floor (argument time + 1000 ms + a serial port's transfer time with min_max_frame until a confirm answer, `wait_floor_s`); fn 0 heartbeats read; short answers are broken frames; `open_host(target)` |
-| `core` | interfaces by name (cached), confirm (with the probe's `boot_id` and `transport`, the index this host came in on; later confirms ask for the revision in use), the probe's describe (declarations only, cached per boot: labels, the transport list, `max_op_ms`), every fn's `ops` (the describe's ops tag, core §7.4: `ops(hst, fn)`, `offers(hst, fn, op)`, `Interface.offers(op)`; `require` / `not_offered` raise without sending the same `Rejected` (detail unknown_operation) the probe would answer), taking the lock (`take`), the pin plan, the `Interface` base; `oep.link` (oep-if-link): `link_fn`, `link_speed`, source / sink request and answer helpers |
+| `host` | requests and results (one 10-byte header: the session's id on a request sent in the session, 0 on a lock-free one outside it), the session id and the lock, `call()` (raises unless it worked), pipelining, the errors (`OepError` / `Rejected` / `Failed`; `NoSession` when the session ended - end, lease expiry, another session's force - and the probe released everything it created: no resume, the session is never re-opened behind the caller's back, `Host.session` goes to None and `Host.epoch` moves; `NotUsable` for a probe whose confirm is outside core §7.1's bounds or whose `max_op_ms` is outside 1..600000 - nothing more is sent to it). `open(lease_ms, force=, owner=)` always opens a new session under a new random id and answers `Opened(lease_ms, boot_id)`; `end()` releases everything and leaves the host out of a session. A changed boot_id (confirm, clock, open) drops the name -> fn cache, so interfaces are listed again. `clock()` reads fn 0's clock (core §7.7, lock-free and session-free) as `ClockReading(before_ns, after_ns, uptime_ns, boot_id, round_trip_ns)` - this host's time (`time.monotonic_ns`, or `now=`) just before the request went out and just after the answer came in, the probe's uptime read between them; `.host_ns` is the midpoint and `.uncertainty_ns` half the round trip (host guide §12) - and `clock_best(n=8)` keeps the shortest round trip of n readings. `subscribe(fn, min_bytes, max_delay_ms)` / `unsubscribe(fn)` send the interface's own ops 0x30 / 0x32 (core §11.3; min_bytes / max_delay_ms batch the data only, events come at once; an fn that sends nothing answers unknown_operation). `restart_probe(wait_s=None)` restarts the probe through `oep.probe.restart`, found by name (oep-if-restart, host guide §5.2; LookupError when the probe lists none; the session must hold the lock): after the answer the link closes, waits `restart_after_answer_ms` (100 ms), opens again as a new open (confirm first; a serial port at its boot speed, a USB device found again once it re-enumerated, a TCP connection made again), retried until the probe's restart_max_ms (oep.probe.restart's describe, read before the restart; `core.restart_max_ms`) or 10 s when it declares none - then the probe is gone (ConnectionError / TimeoutError) - and the new boot_id is returned - `NotRestarted` if it stayed the same; a lost answer whose resend the restarted probe refuses no_session counts as done. `request_restart()` sends the request alone. |
+| `link` | transports: serial ports (always COBS + CRC as `0x00 <COBS> 0x00`, bytes outside frames skipped as noise, opened exclusively, 8N1 with DTR / RTS asserted), USB vendor bulk / HID and TCP (length frames, the transports §5 resync - waiting 250 ms after the host's last write; on TCP a pause inside a frame is read on); matching by corr and resending; a resend that gets no answer either raises `TransportFailed`, and the next request first recovers with a confirm (quiet input, then a confirm with its own corr; serial ports too) or raises ConnectionError; every answer waited at least core §4.4's floor (argument time + 1000 ms + a serial port's transfer time with min_max_frame until a confirm answer, `wait_floor_s`); short answers are broken frames; `open_host(target)` |
+| `core` | interfaces by name (cached), confirm (with the probe's `boot_id` and `transport`, the index this host came in on; later confirms ask for the revision in use), the probe's describe (declarations only, cached per boot: labels, the transport list, `max_op_ms`), every fn's `ops` (the describe's ops tag, core §7.4, its one encoding checked: an fn whose ops break it is not used - `UnusableFunction` -, fn 0's makes the probe `NotUsable`; `ops(hst, fn)`, `offers(hst, fn, op)`, `Interface.offers(op)`; `require` / `not_offered` raise without sending the same `Rejected` (detail unknown_operation) the probe would answer), taking the lock (`take`), the pin plan through `oep.probe.plan` (`plan_fn`, `plan_apply`, `plan_release`, `plan_roles`), `oep.probe.restart` (`restart_fn`, `restart_max_ms`), the `Interface` base; a list entry with fn 0 is left out (the core is never listed); `oep.probe.link` (oep-if-link): `link_fn`, `link_speed`, source / sink request and answer helpers |
 | `riscv` | `oep.wire.rvswd` / `oep.wire.swio` (scan, attach - `max_speed` always sent, `reset=(channel, hold_ms)` for an attach under reset -, detach, connections), `oep.target.riscv-dm` (answers count their values; `RunResult.not_halted`; a step that could not halt the hart again raises `StepError` with `step_left`), `RiscvDm.declared()` (the optional ops the probe offers by its ops tag; the others answer unknown_operation), `Wire.search_retries` (the extra attempts of the attach's bring-up, sent only when one ran), attach and scan wait their budgets (an attach with the reset TLV attach_budget_ms + hold_ms + reset_settle_ms, a riscv-dm reset reset_settle_ms: `attach_ms`, `reset_ms`), finding the reset line (`find_reset_line(candidates, pins=...)`), attach through GPIO |
 | `targets` | what the host knows per target family, in one table (`FAMILIES`: wire, target_id match, reset vector, option-byte NRST reader, max_speed / idle_clock); `identify(target_id)` |
 | `pins` | `oep pins`: classify the channels, hold-low search, scan, identify, confirm the reset line, suggest a slot (`PinFinder`) |
@@ -115,6 +118,8 @@ oep config uart <probe> oep.fixture.uart 115200 --format 8N1   # applied wheneve
 oep config save <probe>                      # kept over a restart (also: remove = unset, erase)
 oep speed <probe> 1500000,921600,500000      # port_speed: try faster rates on a UART bridge, print the report (below)
 oep pins <probe> --power 5 --wire swio       # where the target is wired: debug pins, reset line, a slot (below)
+oep clock <probe> [-n 8] [--json]            # fn 0's clock: uptime_ns and boot_id against this host's time (shortest of n)
+oep restart <probe>                          # oep.probe.restart: restart the probe, wait until it is back (new boot_id)
 ```
 
 `<probe>` is a serial port, `tcp://HOST:PORT` or `usb[:VID:PID[:SERIAL]]`. A change takes the lock (owner "oep config") and
@@ -181,7 +186,7 @@ done in 7.3 s
 
 ## A faster UART bridge (port_speed, opt-in)
 
-A probe whose optional `oep.link` offers `port_speed` in its ops (oep-if-link §3; the classic ESP32 reference firmware
+A probe whose optional `oep.probe.link` offers `port_speed` in its ops (oep-if-link §3; the classic ESP32 reference firmware
 does) lets the host
 run its UART bridge faster than the boot speed (115200) for one session. Nothing changes unless the host asks:
 
@@ -196,9 +201,9 @@ The host's procedure is the oep-spec host guide §17 (oep-if-link §3 is the han
 50 ms, no measurement): each candidate in order - `try` (answered at the speed now, then the probe switches) -> the host
 switches to the requested baud -> 20 ms -> a `confirm` (100 ms, up to 3) -> `commit`. The **full form** (`verify=True`,
 or `flows=` given): a baseline at the boot speed per flow (this session's frames, or 60 measured), then for each
-candidate every flow the session will use - `flows` of `("in"|"out"|"duplex", n)` (in = oep.link source probe -> host, out =
-oep.link sink host -> probe, duplex = both interleaved; `n` in flight, 0 = the most the link keeps) - 16 frames at
-max_frame - 26 (what one oep.link source answer carries), counting broken and lost and measuring KB/s; a flow fails on broken + lost >= 3 over max(2 x baseline,
+candidate every flow the session will use - `flows` of `("in"|"out"|"duplex", n)` (in = oep.probe.link source probe -> host, out =
+oep.probe.link sink host -> probe, duplex = both interleaved; `n` in flight, 0 = the most the link keeps) - 16 frames at
+max_frame - 26 (what one oep.probe.link source answer carries), counting broken and lost and measuring KB/s; a flow fails on broken + lost >= 3 over max(2 x baseline,
 5 %), runs once more at n = 1 first (then n = 1 is the link's cap), and one failed flow fails the candidate. A failed
 candidate reverts (step 2) and goes back to the boot speed, confirmed there. The first candidate that passes is kept; a
 rate the probe's UART cannot make is skipped. Which rates pass depends on the bridge chip and its driver (an FTDI took
@@ -226,8 +231,8 @@ per (port, unit_id) under `~/.cache/oep-client/link-speed.json` - a pass for 30 
 measured within 2 s (`settle_s`) of a breakdown at another rate as unknown - putting a passed rate first and leaving
 failed ones out; when every candidate is marked failed the slowest is tried once (`speed.retried`). An `x-` unit_id (a probe with neither a unique number nor storage, core §7.5) keys nothing: no record is kept or read
 for it. The port raised is the one this host came in on - the transport TLV of confirm's answer (core §7.1) - when that
-is a UART bridge. A probe without `oep.link`, or whose `oep.link` does not offer port_speed, answers `not supported`
-and stays at its speed; the link test (`linktest`, `core.link_speed`) needs `oep.link` too. Behind a broker (TCP) the broker does
+is a UART bridge. A probe without `oep.probe.link`, or whose `oep.probe.link` does not offer port_speed, answers `not supported`
+and stays at its speed; the link test (`linktest`, `core.link_speed`) needs `oep.probe.link` too. Behind a broker (TCP) the broker does
 this, not the client. Serial ports are also opened in the driver's low-latency mode where it has one (an FTDI's latency
 timer 16 -> 1 ms tripled a UART bridge's throughput). `open_host(..., baud=)` names the boot speed when the board's
 profile is not 115200.
@@ -292,17 +297,30 @@ interface's table when a profile gives none; `fake.ops_of(name, *without)` leave
 unknown_operation; no resume - end, a lapse and force release everything the session created, a request of an ended
 session is no_session, the open answer is lease_ms and boot_id, the resend table answers a resent end; console streams
 stay the probe's per place and mechanism (closed and readable until the next open there, which returns the number with
-its position and marks); `oep.link` (every profile has it as its last fn; `esp32-v003`'s offers port_speed): source
+its position and marks); `oep.probe.link` (every profile has it; `esp32-v003`'s offers port_speed): source
 answers len(u16) data, sink takes count(u16) data. Since f0c68bf a console stream has a send queue of
 the describe's send_queue (256 here): a write takes min(count, the free space), 0 only when it is full, SDI nothing;
 the probe hands its head to the target 2 (dmseq) or 3 (DMDATA) bytes a poll, one poll per ms of the timers' clock
 while the hart runs (`console_take(sid)` hands all of it); it stays over resets and restarts and goes when the stream
 closes. A reset (riscv-dm reset, attach's reset TLV) waits out a target that restarts by itself
 (`FakeTarget.restart_ms`) up to reset_settle_ms, then answers status line (`settle_log`). An item longer than its form
-is ignored or, critical, unsupported (d34dafa); oep.link source answers at most max_frame - 26 (4bd3a87). An attach
+is ignored or, critical, unsupported (d34dafa); oep.probe.link source answers at most max_frame - 26 (4bd3a87). An attach
 that joins a live connection keeps the settings it does not carry (idle_clock absent keeps the current rest; max_speed
 only lowers the speed), and a scan leaves a live connection's settings (59dd028). `tests/test_vectors.py` runs
 sessions.json step by step and every ops.json case on the fake in the state it names.
+
+And the 2026-10-06 structure (oep-spec 289bde0 .. 498ae95): fn 0 is the core - no name, never in list (p4-x035 lists
+15 interfaces, so a whole dump makes 16 describe requests) - and its ops are exactly the eight mandatory ones (confirm,
+list, describe, clock, open, end, keepalive, lock_state); clock answers boot_id and uptime_ns, the clock read while
+handling the request, with session_id 0 touching no session, lock or lease. Every profile lists `oep.probe.plan`
+(plan_apply / plan_release, plan_roles 32 in its describe; a probe made with an interface that has plan roles and no
+plan gets one at the next fn) and `oep.probe.restart` (restart, restart_max_ms 2000) after the fns it had before them,
+so no earlier fn number moved: p4-x035 plan 14 / restart 15, esp32-v003 11 / 12, p4-bench 8 / 9, rp2350-pins 7 / 8.
+`fake.without(probe, name)` leaves an interface out (`fake.without(p, fake.RESTART)` is a probe without restart).
+logic, analog and capture-group set subscribe / unsubscribe (0x30 / 0x32) in their ops; every other fn, fn 0 included,
+answers them unknown_operation. A subscription's min_bytes / max_delay_ms hold a streaming capture's data (until min_bytes
+bytes wait, or max_delay_ms since the oldest of them; both 0: at once), never an event; no heartbeat, the captures
+declare no features. A profile's ops tag outside core §7.4's encoding (a test's, `fill_ops=False`) is served as given.
 
 Other programs' tests run `fake_serve` as a child process:
 
@@ -316,8 +334,9 @@ A line `reboot` on its stdin reboots the probe mid-session (`Endpoint.reboot`) w
 table, the resend table, connections, streams, subscriptions, the plan and the unsaved settings go, the saved
 settings (`--slot`, `--bind`, `--label`, `--uart-plan`) apply again, and a request with the old session gets
 no_session; confirm and open show the new boot_id. The pty or TCP connection stays open. stderr says
-`fake_serve: rebooted, boot_id 0x........`; any other line is ignored with a message on stderr. fn 0's restart (core §6.6,
-offered by every profile with restart_max_ms 2000 in fn 0's describe; `--no-restart` leaves both out) does the same from a request: the answer goes out
+`fake_serve: rebooted, boot_id 0x........`; any other line is ignored with a message on stderr. oep.probe.restart's
+restart (oep-if-restart; every profile lists the interface with restart_max_ms 2000 in its describe; `--no-restart`
+makes a probe without it - not listed, its fn unknown_function) does the same from a request: the answer goes out
 first, then the probe reboots, and what it had read behind the request is dropped:
 
 ```python
@@ -334,7 +353,7 @@ riscv-dm run, `--capture-slipped` flags bit2 on every capture segment. `--no-dri
 drive_levels away (a probe that cannot switch the output strength). `--silent-until-reset N` makes the N-th pair's target
 answer nothing until a reset through its line; with `--boot-reset` (every `--slot` asks for the at-boot retry with reset)
 the retry with reset happens at start through the slot's `nrst` line - a `--label CH=TEXT` (e.g. `23=v003.nrst`), or
-the firmware's fixed `NRST` label (probe.config §1.3 step (c)). port_speed: `esp32-v003`'s `oep.link` offers it
+the firmware's fixed `NRST` label (probe.config §1.3 step (c)). port_speed: `esp32-v003`'s `oep.probe.link` offers it
 (`--no-port-speed` takes it out of the ops), and `--broken-rate RATE[:MIN_SIZE][:in|out]` makes a rate break frames (in process,
 `fake_serial.FakeSerialStream` also garbles everything while the host's own rate differs from the probe's). Events and data pushes go out on the pty and on TCP
 (both framings). The rest: `--help`.

@@ -120,7 +120,7 @@ def test_the_same_host_over_tcp_length_frames_and_a_holder_that_keeps_its_lease_
 
 def test_every_segment_read_goes_to_the_record_hook():
     hst = h.Host(lambda b: b)
-    hst._revisions[5] = 1
+    hst._revisions[5], hst._describes[5] = 1, []
     cap = capture.LogicCapture(hst, fn=5)
     cap.config = capture.Config(width=8, positions=list(range(8)), samples=4)
     cap.read = lambda position, length, generation=None: bytes(range(length))   # the probe's bytes

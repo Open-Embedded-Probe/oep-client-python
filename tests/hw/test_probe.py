@@ -1,9 +1,11 @@
 """The pre-release hardware test (oep-spec docs/release-testing.ja.md §3), per board in OEP_HW_BOARDS, in this order:
 
   flash        the firmware (OEP_PROBE_DIR build or OEP_PROBE_VERSION release) onto the board, wait for its boot
-  identity     confirm / list / describe: a new boot_id, the expected firmware string, the expected model
+  identity     confirm / list / describe: a new boot_id, the expected firmware string, the expected model; no list entry
+               is fn 0 (the core has no name); clock (core §7.7): its boot_id, the shortest of 4 round trips recorded
   required     what every probe must give and a lock-free look can check (core §1.2, §7.1, §7.5): dump's MISSING
-  config       probe.config set / get / save / state / unset with a disable item, a reboot in between (bridge boards)
+  config       probe.config set / get / save / state / unset with a disable item, a reboot in between (oep.probe.restart
+               when the probe lists it, else a bridge board's EN line)
   wire         scan, attach (with the reset TLV when OEP_HW_RESET names the line), halt -> read_block -> resume 50x
                with s0 / s1 / a0 / a1 read before and after each block op       (only with OEP_HW_TARGET)
   gpio         fixture gpio set / read on two free channels (outputs read back, pull-up / pull-down levels)
@@ -17,7 +19,7 @@
   console      target console on the wire connection, mechanism dmseq: open, read for 1 s, close   (only with OEP_HW_TARGET)
   port_speed   linktest.matrix at the speed in force and the board's candidate rates (OEP_HW_RATES), in / out /
                duplex, in flight 1 and the probe's max, one frame size; verdict: one at a time <= 1 % broken + lost
-               (a UART bridge whose oep.link sets port_speed in its ops)
+               (a UART bridge whose oep.probe.link sets port_speed in its ops)
   session      lease expiry -> no_session (released, no resume), a force takeover locks the old id out, its end
                leaves both ids no_session
 
@@ -32,7 +34,8 @@ import time
 
 import pytest
 
-from oep_client import capture, config, console as console_mod, core, dump, fixture, host as h, linktest, registry as reg, riscv
+from oep_client import (capture, catalog, config, console as console_mod, core, dump, fixture, host as h, linktest,
+                        message as m, registry as reg, riscv)
 
 from . import firmware as fwmod, flash, record
 
@@ -114,7 +117,12 @@ def test_identity(run: record.Run):
                      max_frame=limits["max_frame"], max_inflight=limits["max_inflight"],
                      interfaces=[f"{e.fn}:{e.name}@{e.revision}" for e in entries])
     assert limits["revision"] >= 1, "not a v1 probe"
-    assert entries and entries[0].name == "oep.core"
+    total, raw = catalog.unpack_list_result(hst.request(m.CORE_FN, m.OP_LIST, catalog.pack_list_request(),
+                                                        locked=False).payload)
+    assert all(e.fn != m.CORE_FN for e in raw), "list returned fn 0 (the core has no name, core §7.2)"
+    clock = hst.clock_best(4)
+    rec.update(clock_uptime_ns=clock.uptime_ns, clock_round_trip_us=round(clock.round_trip_ns / 1000, 1))
+    assert clock.boot_id == info["boot_id"], "clock's boot_id is not confirm's"
     assert info.get("model") == run.board.model, f"model {info.get('model')!r}, expected {run.board.model!r}"
     before = run.firmware.get("before") or {}
     if run.firmware.get("flashed") and before.get("boot_id") is not None:
@@ -172,11 +180,20 @@ def test_config(run: record.Run):
     st = cfg.state()
     rec.update(hash_saved=h_saved, storage=st.storage, saved_hash=st.saved_hash)
     assert h_saved == h1 and st.storage == "applied" and st.saved_hash == h_saved, f"state after save: {st}"
-    # reboot: a bridge board's EN line through DTR / RTS (esptool's hard reset); a USB probe or the fake: skipped
-    if board.resettable:
-        flash.hard_reset(hst.link.stream)
-        reboot = run.wait_reboot()
-        rec["reboot"] = reboot
+    # reboot: oep.probe.restart when the probe lists it (oep-if-restart: answers, then restarts; restart_probe waits up to
+    # its restart_max_ms and confirms the new boot_id), else a bridge board's EN line through DTR / RTS (esptool's hard
+    # reset); neither: skipped
+    restart = core.find_all(hst, core.RESTART_NAME)
+    if restart or board.resettable:
+        if restart:
+            before = hst.limits["boot_id"] if hst.limits else None
+            t0 = time.monotonic()
+            after = hst.restart_probe()
+            rec["reboot"] = {"how": "oep.probe.restart", "boot_id_before": before, "boot_id_after": after,
+                             "restart_max_ms": core.restart_max_ms(hst), "seconds": round(time.monotonic() - t0, 2)}
+        else:
+            flash.hard_reset(hst.link.stream)
+            rec["reboot"] = dict(run.wait_reboot(), how="EN line")
         cfg = config.ProbeConfig(hst)                 # fns found again on the new boot
         st2 = cfg.state()
         h2, items2 = cfg.get()
@@ -187,7 +204,8 @@ def test_config(run: record.Run):
         assert any(isinstance(it, config.Label) and it.channel == label_ch for it in decoded2)
         hst = run.take()
     else:
-        rec["reboot"] = "skipped: " + ("the fake probe" if board.kind == "fake" else "no reset line from the host (a USB probe)")
+        rec["reboot"] = "skipped: no oep.probe.restart and " + ("the fake probe" if board.kind == "fake"
+                                                                else "no reset line from the host (a USB probe)")
     # unset both, save: back to what was there
     h3 = cfg.unset([("label", label_ch), ("disable", disable_ch)])
     _, items3 = cfg.get()
@@ -915,7 +933,7 @@ def test_port_speed(run: record.Run):
             or getattr(hst.link, "framing", "") != "cobs":
         pytest.skip("port_speed is for a UART bridge probe only")
     if not info.get("port_speed"):
-        pytest.skip("the probe offers no oep.link, or its oep.link's ops do not set port_speed")
+        pytest.skip("the probe offers no oep.probe.link, or its oep.probe.link's ops do not set port_speed")
     inflight = sorted({1, limits["max_inflight"]})
     frames = _env_int("OEP_HW_FRAMES", 100)
     timeout = float(os.environ.get("OEP_HW_LT_TIMEOUT", "") or 0.3)

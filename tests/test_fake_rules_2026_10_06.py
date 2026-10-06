@@ -9,7 +9,7 @@ import pytest
 
 from oep_client import catalog, endpoint, fake, message as m, registry as reg
 
-from test_fake_spec import ITEM, SPEED, Clock, Host, slot_item
+from test_fake_spec import ITEM, PLAN_APPLY, PLAN_RELEASE, SPEED, Clock, Host, slot_item
 
 CORE = reg.CORE
 RV, CFG = reg.TARGET_RISCV_DM, reg.PROBE_CONFIG
@@ -126,11 +126,11 @@ def test_c21_order_1_refusals_are_not_remembered_and_do_not_restart_the_lease():
 
 # ---- C-31 / C-19: the clock since boot, never back; the boot_id ---------------------------------------------------
 
-def heartbeat(ep, h):
-    assert h.raw(0, m.OP_SUBSCRIBE, struct.pack("<HHI", 0, 0, 1000)).succeeded
-    ep.now.t += 1000
-    ev = next(p for p in ep.pushes() if p[0] == m.ROLE_EVENT)
-    return struct.unpack_from("<IQ", ev, 6)                                   # boot_id uptime_ns
+def clock(h, session=False):
+    """fn 0's clock (core §7.7) -> (boot_id, uptime_ns)."""
+    r = h.raw(0, m.OP_CLOCK, session=session)
+    assert r.succeeded, r.describe()
+    return struct.unpack("<IQ", r.payload)
 
 
 def test_c31_the_clock_has_the_resolution_it_is_given_and_never_goes_back():
@@ -144,19 +144,40 @@ def test_c31_the_clock_has_the_resolution_it_is_given_and_never_goes_back():
     assert ep.now_ns() == 7_000_000                                           # ms clock: in ns
 
 
-def test_c31_a_reboot_starts_the_clock_again_and_the_heartbeat_says_so():
+def test_c31_a_reboot_starts_the_clock_again_and_clock_says_so():
     ep, h = bench()
-    ep.now.t = 50_000
-    assert h.open().succeeded                                                 # the lease had lapsed: again
-    boot, up = heartbeat(ep, h)
-    assert (boot, up) == (ep.boot_id, 51_000_000_000)
+    ep.now.t = 51_000
+    assert clock(h) == (ep.boot_id, 51_000_000_000)                           # no session needed (core §7.7)
     old = ep.boot_id
     ep.reboot()                                                               # a new boot_id, drawn (C-19)
     assert ep.boot_id != old and ep.now_ns() == 0
-    h = Host(ep, session=0x77)
-    assert h.open().succeeded
-    boot, up = heartbeat(ep, h)
+    ep.now.t += 1000
+    boot, up = clock(h)
     assert boot == ep.boot_id and up == 1_000_000_000                         # since this boot
+
+
+def test_clock_touches_no_session_lock_or_lease():
+    """clock with session_id 0 is answered whoever holds the lock, and moves neither the lease nor the resend table;
+    with the holder's id it is a lock-free op of the session (core §4.1, §6.3, §7.7)."""
+    ep, h = bench()
+    expires, newest = ep.expires_ms, ep.newest_corr
+    ep.now.t = 500
+    other = Host(ep, session=0x99)
+    assert clock(other)[0] == ep.boot_id and other.raw(0, m.OP_CLOCK).detail == m.LOCKED
+    assert (ep.expires_ms, ep.newest_corr, ep.holder) == (expires, newest, 0x51)
+    assert clock(h, session=True)[1] == 500_000_000 and ep.expires_ms == 500 + ep.lease_ms
+    r = h.raw(0, m.OP_CLOCK, m.tlv(0x3D, b"\x01"), session=False)               # no fixed part: a TLV ignored, listed
+    assert r.succeeded and r.payload[12:] == bytes([m.TAG_IGNORED, 1, 0, 0x3D])
+    assert h.raw(0, m.OP_CLOCK, b"\x01", session=False).detail == m.MALFORMED  # a broken tail
+
+
+def test_fn_0_has_exactly_the_eight_core_ops_and_no_subscribe():
+    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    assert ep.ops[0] == set(CORE.op.values()) == {0x01, 0x02, 0x03, 0x04, 0x10, 0x11, 0x12, 0x13}
+    h = Host(ep)
+    h.open()
+    for op in (0x05, 0x14, m.OP_SUBSCRIBE, m.OP_UNSUBSCRIBE):                 # old plan_release, restart, subscribe
+        assert h.raw(0, op, b"\x00\x00\x00\x00\x00\x00").detail == m.UNKNOWN_OPERATION
 
 
 def test_c19_after_a_reboot_with_a_repeated_boot_id_the_old_session_is_gone():
@@ -185,7 +206,7 @@ def test_c20_confirms_bounds_are_the_fakes_too(max_frame, window, inflight):
 
 @pytest.mark.parametrize("value", [0, reg.LIMITS["max_op_ms_max"] + 1])
 def test_c47_max_op_ms_outside_1_to_600000_is_not_a_probe(value):
-    probe = with_tlvs(fake.p4_bench(), "oep.core",
+    probe = with_tlvs(fake.p4_bench(), fake.CORE_NAME,
                       lambda tlvs: [catalog.u32(fake.CORE_MAX_OP_MS, value) if t[0] == fake.CORE_MAX_OP_MS else t
                                     for t in tlvs])
     with pytest.raises(ValueError):
@@ -224,7 +245,7 @@ def test_c39_list_from_beyond_the_matches_gives_the_total_and_count_0():
     ep, h = bench()
     r = h.raw(0, m.OP_LIST, catalog.pack_list_request("", False, 50), session=False)
     total, entries = catalog.unpack_list_result(r.payload)
-    assert (total, entries) == (len(ep.names), [])
+    assert (total, entries) == (len(ep.names) - 1, [])                       # fn 0 is never listed (core §7.2)
 
 
 # ---- △12: every channel that is not reserved is in its idle state from boot ----------------------------------------
@@ -238,33 +259,43 @@ def test_t12_every_channel_not_reserved_is_parked_at_boot():
 # ---- C-21 (rest): an fn inside the payload is checked at the end of order 5 ----------------------------------------
 
 def assignment(fn, role, ch, critical=True):
-    return m.tlv(CORE.tlv["plan_apply"]["role_assignment"], struct.pack("<HBH", fn, role, ch), critical=critical)
+    return m.tlv(reg.PROBE_PLAN.tlv["plan_apply"]["role_assignment"], struct.pack("<HBH", fn, role, ch), critical=critical)
 
 
 def test_c21_plan_apply_malformed_before_unknown_function_before_unsupported():
     ep, h = bench(fake.p4_x035())
     # fn 99 does not exist; the i2c-target (fn 8) misses its SCL: the form wins
-    r = h.raw(0, m.OP_PLAN_APPLY, assignment(99, 1, 20) + assignment(8, 1, 21))
+    r = h.raw(h.plan_fn, PLAN_APPLY, assignment(99, 1, 20) + assignment(8, 1, 21))
     assert r.detail == m.MALFORMED
     # fn 99 and an unknown critical TLV: the fn first (order 5), the TLV after (order 6)
-    r = h.raw(0, m.OP_PLAN_APPLY, m.tlv(0x3E, b"", critical=True) + assignment(4, 1, 20) + assignment(99, 1, 21))
+    r = h.raw(h.plan_fn, PLAN_APPLY, m.tlv(0x3E, b"", critical=True) + assignment(4, 1, 20) + assignment(99, 1, 21))
     assert r.detail == m.UNKNOWN_FUNCTION
-    r = h.raw(0, m.OP_PLAN_APPLY, m.tlv(0x3E, b"", critical=True) + assignment(4, 1, 20))
+    r = h.raw(h.plan_fn, PLAN_APPLY, m.tlv(0x3E, b"", critical=True) + assignment(4, 1, 20))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\xbe")
 
 
 def test_c21_plan_apply_unsupported_for_every_assignment_before_unavailable():
     ep, h = bench(fake.p4_x035())
-    assert h.raw(0, m.OP_PLAN_APPLY, assignment(5, 1, 20)).succeeded         # the uart holds channel 20
+    assert h.raw(h.plan_fn, PLAN_APPLY, assignment(5, 1, 20)).succeeded         # the uart holds channel 20
     # the gpio's first assignment meets that hold (order 7), its second names a channel it does not offer (order 6)
-    r = h.raw(0, m.OP_PLAN_APPLY, assignment(4, 1, 20) + assignment(4, 1, 24))
+    r = h.raw(h.plan_fn, PLAN_APPLY, assignment(4, 1, 20) + assignment(4, 1, 24))
     assert r.detail == m.UNSUPPORTED and una(m.Result(0, 0, 0, r.payload[1:]))[UNA["channel"]] == struct.pack("<H", 24)
 
 
-def test_c21_unsubscribe_of_an_fn_that_does_not_exist_is_unknown_function():
-    ep, h = bench()
-    assert h.raw(0, m.OP_UNSUBSCRIBE, struct.pack("<H", 99)).detail == m.UNKNOWN_FUNCTION
-    assert h.raw(0, m.OP_UNSUBSCRIBE, struct.pack("<H", 4)).succeeded         # not subscribed: nothing, ok
+def test_subscribe_is_the_emitting_interfaces_own_op():
+    """core §11.3: subscribe / unsubscribe go to the fn that sends notifications (no target fn in the payload);
+    logic, analog and capture-group set them in their ops, every other fn answers unknown_operation at order 1."""
+    ep, h = bench(fake.p4_x035())
+    for fn in (7, 11, 12):                                                    # logic, analog, capture-group
+        assert {m.OP_SUBSCRIBE, m.OP_UNSUBSCRIBE} <= ep.ops[fn]
+        assert h.raw(fn, m.OP_UNSUBSCRIBE).succeeded                          # not subscribed: nothing, ok
+        assert h.raw(fn, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0)).succeeded and fn in ep.subscribed
+    for fn in (0, 4, 13):                                                     # the core, gpio, link
+        assert not {m.OP_SUBSCRIBE, m.OP_UNSUBSCRIBE} & ep.ops[fn]
+        assert h.raw(fn, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0)).detail == m.UNKNOWN_OPERATION
+    assert h.raw(7, m.OP_SUBSCRIBE, struct.pack("<H", 0)).detail == m.MALFORMED   # min_bytes(u16) max_delay_ms(u32)
+    assert h.raw(7, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0), session=False).detail == m.SESSION_REQUIRED
+    assert h.raw(99, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0)).detail == m.UNKNOWN_FUNCTION
 
 
 def cfg_set(h, fn, *items):
@@ -405,7 +436,7 @@ def test_o2_reset_method_0_is_ndmreset_and_moves_no_line():
                                              (0x7F, m.UNSUPPORTED), (0x80, m.MALFORMED), (0x08, None), (0x77, None)])
 def test_t5_i2c_target_refuses_the_reserved_addresses(address, detail):
     ep, h = bench(fake.p4_x035())
-    assert h.raw(0, m.OP_PLAN_APPLY, assignment(8, 1, 20) + assignment(8, 2, 21)).succeeded
+    assert h.raw(h.plan_fn, PLAN_APPLY, assignment(8, 1, 20) + assignment(8, 2, 21)).succeeded
     r = h.raw(8, I2C.op["configure"], bytes([address, 1]))
     if detail is None:
         assert r.succeeded
@@ -416,11 +447,11 @@ def test_t5_i2c_target_refuses_the_reserved_addresses(address, detail):
 def test_t6_uart_write_without_tx_is_unavailable_cause_6():
     ep, h = bench(fake.p4_x035())
     uart = reg.FIXTURE_UART
-    assert h.raw(0, m.OP_PLAN_APPLY, assignment(5, uart.enum["role"]["rx"], 20)).succeeded   # RX only
+    assert h.raw(h.plan_fn, PLAN_APPLY, assignment(5, uart.enum["role"]["rx"], 20)).succeeded   # RX only
     r = h.raw(5, uart.op["write"], struct.pack("<H", 1) + b"x")
     assert r.detail == m.UNAVAILABLE and una(r)[UNA["cause"]] == bytes([CORE.enum["unavailable_cause"]["wrong_state"]])
     assert h.raw(5, uart.op["read"], struct.pack("<BQH", 2, 0, 16), session=False).succeeded
-    assert h.raw(0, m.OP_PLAN_APPLY, assignment(5, uart.enum["role"]["rx"], 20)
+    assert h.raw(h.plan_fn, PLAN_APPLY, assignment(5, uart.enum["role"]["rx"], 20)
                  + assignment(5, uart.enum["role"]["tx"], 21)).succeeded
     assert h.raw(5, uart.op["write"], struct.pack("<H", 1) + b"x").succeeded
 

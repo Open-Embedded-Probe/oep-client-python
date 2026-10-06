@@ -4,7 +4,8 @@ A name is dot-separated labels of lowercase ASCII letters, digits and '-' - each
 or ending with '-', at least two labels - 1 to 64 bytes (core §7.2, §13 rule 1). The first label says which kind of
 namespace it is:
 
-  oep.                      the OEP standard (reserved; `oep` is not a real top-level domain)
+  oep.                      the project's own interfaces: the reserved short prefix in place of a reverse DNS name
+                            (core §13 rule 1; `oep` is not a real top-level domain) - nothing else sets them apart
   local.                    bench-only experiments, never published, no interoperability promise
   uuid.<32 hex>.            an author with no domain who still wants a unique namespace
   <tld>.<domain>...         reverse DNS of a domain the author owns, including hosting domains
@@ -28,9 +29,9 @@ class InvalidName(ValueError):
 
 
 def kind(name: str) -> str:
-    """'standard', 'local', 'uuid' or 'domain' - after validate()."""
+    """'oep', 'local', 'uuid' or 'domain' - after validate()."""
     first = name.split(".", 1)[0]
-    return {"oep": "standard", "local": "local", "uuid": "uuid"}.get(first, "domain")
+    return {"oep": "oep", "local": "local", "uuid": "uuid"}.get(first, "domain")
 
 
 def validate(name: str) -> str:

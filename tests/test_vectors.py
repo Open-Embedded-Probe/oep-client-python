@@ -16,6 +16,8 @@ import pytest
 
 from oep_client import catalog, cobs, config, core, endpoint, fake, fake_capture, host as h, message as m, registry as reg
 
+PLAN_APPLY, PLAN_RELEASE = core.OP_PLAN_APPLY, core.OP_PLAN_RELEASE
+
 HERE = Path(__file__).resolve().parent / "vectors"
 SPEC = Path(__file__).resolve().parents[2] / "oep-spec" / "tests" / "vectors"
 
@@ -119,8 +121,6 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None) -> f
     chans = list(range(16))
     offered = [core]
     for fn, name in sorted(((int(k), v) for k, v in fns.items())):
-        if name == "oep.core":
-            continue                                                   # fn 0 above (its ops: the profiles' default)
         if name == "oep.fixture.gpio":
             o = fake._gpio(fn, chans, drive=False)
         elif name == "oep.fixture.i2c-target":
@@ -134,8 +134,12 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None) -> f
             o = fake.Offered(fn, 0, name, (catalog.u16(catalog.MAX_LENGTH, 256),))
         elif name == "oep.target.console":
             o = fake._console(fn)
-        elif name == "oep.link":
+        elif name == "oep.probe.link":
             o = fake._link(fn)                                         # source and sink (no UART bridge speed)
+        elif name == "oep.probe.plan":
+            o = fake._plan(fn)
+        elif name == "oep.probe.restart":
+            o = fake._restart(fn)
         elif name == "oep.probe.config":
             o = fake._config(fn, 0, slots_max=2, storage=0)            # no storage: save / erase not in its ops
         elif name == "oep.fixture.logic":
@@ -193,12 +197,12 @@ DISCOVERY = load("discovery.json")
 
 
 def smallest_probe() -> endpoint.Endpoint:
-    """The vectors' smallest probe (discovery.json about): only fn 0 whose ops are every op core §1.2 requires (no plan
-    role, so no plan_apply / plan_release), one UART
+    """The vectors' smallest probe (discovery.json about): no interface, fn 0 whose ops are the core's eight (all
+    mandatory, core §1.2), one UART
     bridge (index 0, interface 0xFF), unit_id "a1b2c3d4", discoverable 0, max_op_ms 1000 - its describe in that order
     (ops first), nothing else."""
     t = reg.CORE.tlv["describe"]
-    core = fake.Offered(0, 0, "oep.core", (catalog.ops_tlv(reg.CORE.op[k] for k in fake.CORE_REQUIRED),
+    core = fake.Offered(0, 0, fake.CORE_NAME, (catalog.ops_tlv(reg.CORE.op[k] for k in fake.CORE_REQUIRED),
                                            catalog.text(t["unit_id"], "a1b2c3d4"),
                                            catalog.tlv(t["transport"], bytes([0, fake.TRANSPORT["uart_bridge"], 0xFF])),
                                            catalog.u8(t["discoverable"], 0),
@@ -308,7 +312,7 @@ def refusal_endpoint() -> endpoint.Endpoint:
     gpio = next((int(k) for k, v in fns.items() if v == "oep.fixture.gpio"), None)
     if gpio is not None:                                                # "channel 3 is in fn 2's plan"
         hst._corr = 0
-        ep.handle(m.Request(1, 0, m.OP_PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", gpio, 1, 3), critical=True),
+        ep.handle(m.Request(1, ep.fns[fake.PLAN], PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", gpio, 1, 3), critical=True),
                             SESSION).pack(), 0)
     return ep
 
@@ -345,8 +349,11 @@ EXAMPLE_BOOT_ID = 0x12345678                                            # confir
 
 @pytest.mark.parametrize("scenario", SESSIONS["scenarios"], ids=lambda c: c["name"])
 def test_session_scenarios_on_the_fake_step_by_step(scenario):
-    """Each scenario from a fresh probe, every step on one transport, the answer byte for byte (no time passes)."""
-    ep = endpoint.Endpoint(vector_probe({}), Clock(), boot_id=EXAMPLE_BOOT_ID)
+    """Each scenario from a fresh probe, every step on one transport, the answer byte for byte (no time passes on the
+    timers' clock; the probe's clock, which clock answers, reads 2 s and then 1 ms more at every read - the example
+    values of sessions.json)."""
+    reads = iter(range(2_000_000_000, 3_000_000_000, 1_000_000))
+    ep = endpoint.Endpoint(vector_probe({}), Clock(), boot_id=EXAMPLE_BOOT_ID, now_ns=lambda: next(reads))
     for step in scenario["steps"]:
         out = ep.handle(hx(step["request_hex"]), 0)
         assert out is not None and out.hex() == step["answer_hex"], step["note"]
@@ -371,6 +378,14 @@ def test_session_scenarios_as_the_host_reads_them(scenario):
             call = lambda: hst.open(lease, force=bool(force), owner=owner.decode() if owner else None)  # noqa: E731
         elif req.op == m.OP_LOCK_STATE:
             call = hst.lock_owner
+        elif req.op == m.OP_CLOCK:
+            if req.session:
+                continue                                               # the host's clock always goes with session_id 0
+            reading = hst.clock()
+            assert (reading.boot_id, reading.uptime_ns) == struct.unpack_from("<IQ", res.payload)
+            assert reading.round_trip_ns == reading.after_ns - reading.before_ns >= 0
+            assert sent[0] == hx(step["request_hex"]), step["note"]
+            continue
         else:
             hst.session = req.session or None
             call = {m.OP_KEEPALIVE: hst.keepalive, m.OP_END: hst.end}[req.op]
@@ -447,13 +462,18 @@ def setup_case(case):
     ep = endpoint.Endpoint(vector_probe(fns, ops=ops), clock, boot_id=EXAMPLE_BOOT_ID)
     wire = next((int(k) for k, v in fns.items() if v == "oep.wire.rvswd"), None)
     name, state = case["name"], case["state"]
-    if name.startswith("core restart"):
-        ep.restart_offered = "without restart" not in state          # fn 0's ops (core §1.2, §6.6)
+    plan = ep.fns.get(fake.PLAN)
+    if name.startswith("restart"):
         if "holds the lock" in state:
             held(ep)
+    elif name.startswith("plan_"):
+        if "without a session" not in name:
+            held(ep)
+        if "has the plan above" in state:
+            req(ep, 2, plan, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 2, 1, 3), critical=True))
     elif name.startswith("gpio"):
         held(ep)
-        req(ep, 2, 0, m.OP_PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 2, 1, 3), critical=True))   # channel 3 only
+        req(ep, 2, plan, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 2, 1, 3), critical=True))   # channel 3 only
         if "after the set" in state:
             req(ep, 3, 2, reg.FIXTURE_GPIO.op["set"], bytes([1]) + struct.pack("<HB", 3, 4))
     elif name.startswith("rvswd connections"):
@@ -483,6 +503,10 @@ def setup_case(case):
         held(ep)
     elif name.startswith("logic"):
         logic = int(next(k for k, v in fns.items() if v == "oep.fixture.logic"))
+        if "session S" in state:
+            held(ep)
+        if "fn 9 subscribed" in state:
+            req(ep, 2, logic, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0))
         cap = ep.captures[logic]
         cap.generation, cap.state = 1, fake_capture.STATE["done"]
         cap.segs = [fake_capture.Segment(0, 0, 1000, 5_000_000, 50, fake_capture.NONE, 0, 1)]
@@ -516,15 +540,48 @@ def _on_client(case):
     from oep_client import capture as cap, config as cfg, console as con, fixture as fix, riscv as rv
     name = case["name"]
     a = m.Result.unpack(hx(case["answer_hex"]))
-    if name.startswith("core restart"):
+    if name.startswith("restart"):
         hst, sent = client(case, None if "without a session" in name else S)
         if a.resolution == m.COMPLETED:
             hst.request_restart()
-            assert hst.session is None and hst._fns == {}                # nothing of the old boot lasts (core §6.6)
+            assert hst.session is None and hst._fns == {}                # nothing of the old boot lasts (core §6.5)
         else:
             with pytest.raises(h.Rejected) as e:
                 hst.request_restart()
             assert e.value.result.detail == a.detail
+        return sent
+    if name.startswith("plan_"):
+        if "n = 2 with one fn" in name:
+            return None                                                 # the client never sends a short list
+        hst, sent = client(case, None if "without a session" in name else S)
+        body = m.Request.unpack(hx(case["request_hex"])).payload
+        if name.startswith("plan_release"):
+            core.plan_release(hst, [2])
+            return sent
+        assignment = struct.unpack_from("<HBH", body, 3)
+        if a.resolution == m.COMPLETED:
+            core.plan_apply(hst, [assignment])
+        else:
+            with pytest.raises(h.Rejected) as e:
+                core.plan_apply(hst, [assignment])
+            assert e.value.result.detail == a.detail
+        return sent
+    if name.startswith("logic subscribe") or name.startswith("logic unsubscribe"):
+        hst, sent = client(case, None if "without a session" in name else S)
+        c = cap.LogicCapture(hst, 9)
+        if a.resolution == m.REJECTED:
+            with pytest.raises(h.Rejected, match="session required"):
+                c.subscribe()
+        elif "unsubscribe" in name:
+            c.unsubscribe()
+        else:
+            c.subscribe(1024, 20)
+        return sent
+    if name.startswith("gpio subscribe"):
+        hst, sent = client(case, S)
+        with pytest.raises(h.Rejected) as e:
+            hst.subscribe(2)
+        assert type(e.value) is h.Rejected and e.value.result.detail == m.UNKNOWN_OPERATION
         return sent
     if name.startswith("link source"):
         hst, sent = client(case)
@@ -651,3 +708,36 @@ def test_ops_vectors_as_the_client_sends_and_reads_them(case):
     if sent is None:
         pytest.skip("not a request this client makes")
     assert sent[0].hex() == case["request_hex"]
+
+
+# ---- the ops encoding (ops_encoding.json, core §7.4) -----------------------------------------------------------------
+
+@pytest.mark.parametrize("case", load("ops_encoding.json")["cases"], ids=lambda c: c["name"])
+def test_ops_encoding_as_the_host_reads_it(case):
+    """A valid value decodes to the case's set and is the one encoding of it (pack_ops gives the same bytes); an
+    invalid one is refused (check_ops says why, unpack_ops raises) - the host does not use that fn."""
+    value = hx(case["value_hex"])
+    if case["valid"]:
+        assert catalog.check_ops(value) == ""
+        assert sorted(catalog.unpack_ops(value)) == case["ops"]
+        assert catalog.pack_ops(case["ops"]) == value
+        assert catalog.decode_description(catalog.tlv(catalog.OPS, value)).ops == set(case["ops"])
+    else:
+        assert catalog.check_ops(value)
+        with pytest.raises(catalog.InvalidOps):
+            catalog.unpack_ops(value)
+        d = catalog.decode_description(catalog.tlv(catalog.OPS, value))
+        assert d.ops is None and d.ops_invalid
+
+
+def test_every_ops_in_the_fakes_and_the_vectors_is_canonical():
+    """Every describe the fake's profiles give, and the discovery vectors' ops, keep core §7.4's one encoding."""
+    for make in fake.PROFILES.values():
+        ep = endpoint.Endpoint(make(), Clock())
+        for fn in ep.names:
+            for t in ep._declarations(fn):
+                if t[0] == catalog.OPS:
+                    assert catalog.check_ops(t[3:]) == "", (make.__name__, fn)
+    for case in DISCOVERY["exchanges"]:
+        if "ops" in case["answer"]:
+            assert catalog.pack_ops(case["answer"]["ops"]) in hx(case["answer_hex"])

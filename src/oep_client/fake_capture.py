@@ -400,6 +400,12 @@ class FakeCapture:
             self.state, self.gap_next = STATE["capturing"], True
             self.started_ms = now_ms - int(self.produced * 1000 / self.rate)
 
+    def unsent(self) -> int:
+        """Streaming: the bytes captured and not pushed yet (what a subscription's min_bytes counts, core §11.3)."""
+        if self.mode != MODE["streaming"]:
+            return 0
+        return max(0, self.base + len(self.data) - self.sent)
+
     def pushes(self, fn: int, next_seq, budget: int) -> list[bytes]:
         """Streaming: the bytes not pushed yet, as data frames (core §11.2: position(u64) len(u16) data, then the TLV
         generation every streaming frame carries, §3.4)."""

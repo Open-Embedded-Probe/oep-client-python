@@ -1,7 +1,8 @@
-"""fn 0's restart (oep-spec core §6.6, op 0x14, optional): the fake answers completed success with no payload, then
-restarts once the answer is out (a new boot_id, no session, the saved settings again); its refusals are those of any
-op that needs the lock; a probe without it in fn 0's ops answers unknown_operation. The client's Host.restart_probe
-sends it, waits and confirms the new boot_id - on an in-process serial port, on fake_serve's pty and TCP."""
+"""oep.probe.restart (oep-spec interfaces/oep-if-restart, op 0x01, an optional interface): the fake answers completed
+success with no payload, then restarts once the answer is out (a new boot_id, no session, the saved settings again);
+its refusals are those of any op that needs the lock; a probe without the interface does not list it. The client's
+Host.restart_probe finds it by name, sends it, waits and confirms the new boot_id - on an in-process serial port, on
+fake_serve's pty and TCP."""
 
 import socket
 import struct
@@ -13,8 +14,9 @@ import pytest
 
 from oep_client import cobs, config, core, endpoint, fake, fake_serial, host as h, link, message as m, registry as reg
 
-RESTART = reg.CORE.op["restart"]
+RESTART = reg.PROBE_RESTART.op["restart"]
 VENDOR = 1                                       # p4-x035's transport 1: vendor bulk (not a serial port)
+FN = 15                                          # p4-x035's oep.probe.restart
 
 
 class Clock:
@@ -30,11 +32,12 @@ def bench(transport: int = VENDOR):
 
 
 def test_the_registry_and_the_fake_offer_it():
-    assert RESTART == m.OP_RESTART == 0x14 and RESTART not in reg.CORE.lock_free      # needs the lock (core §12)
+    assert RESTART == core.OP_RESTART == h.OP_RESTART == 0x01 and RESTART not in reg.PROBE_RESTART.lock_free  # the lock
+    assert "restart" not in reg.CORE.op                                 # not the core's any more
     assert reg.LIMITS["restart_after_answer_ms"] == 100
     ep, hst = bench()
-    assert core.offers(hst, 0, RESTART)                                 # set in fn 0's ops (core §1.2, §7.4)
-    assert RESTART not in {reg.CORE.op[k] for k in fake.CORE_REQUIRED}  # optional
+    assert core.restart_fn(hst) == FN and core.offers(hst, FN, RESTART)
+    assert core.ops(hst, 0) == set(reg.CORE.op.values())                # fn 0: the eight mandatory ops only
 
 
 def test_restart_answers_first_then_the_probe_restarts():
@@ -43,7 +46,7 @@ def test_restart_answers_first_then_the_probe_restarts():
     before = hst.confirm()["boot_id"]
     hst.open(3000)
     sid = hst.session
-    out = m.Result.unpack(ep.handle(m.Request(hst.next_corr(), 0, RESTART, b"", sid).pack(), VENDOR))
+    out = m.Result.unpack(ep.handle(m.Request(hst.next_corr(), FN, RESTART, b"", sid).pack(), VENDOR))
     assert (out.resolution, out.detail, out.payload) == (m.COMPLETED, m.SUCCESS, b"")
     assert ep.reboots == 1 and ep.boot_id != before and ep.holder is None and not ep.restarting
     with pytest.raises(h.NoSession):
@@ -66,17 +69,20 @@ def test_restart_needs_the_lock():
     assert ep.reboots == 0
 
 
-def test_a_probe_without_restart_in_its_ops():
-    ep, hst = bench()
-    ep.restart_offered = False
-    assert not core.offers(hst, 0, RESTART)
+def test_a_probe_without_oep_probe_restart():
+    """The interface is optional: a probe without it lists none, the host's restart raises LookupError and sends
+    nothing, and a restart sent to its old fn anyway is unknown_function."""
+    ep = endpoint.Endpoint(fake.without(fake.p4_x035(), fake.RESTART), Clock())
+    hst = h.Host(lambda b: ep.handle(b, VENDOR))
+    assert core.find_all(hst, fake.RESTART) == [] and core.restart_max_ms(hst) is None
     hst.open(3000)
-    with pytest.raises(h.Rejected) as e:
+    with pytest.raises(LookupError):
         hst.request_restart()
-    assert type(e.value) is h.Rejected and e.value.result.detail == m.UNKNOWN_OPERATION
-    with pytest.raises(h.Rejected) as e:
+    with pytest.raises(LookupError):
         hst.restart_probe(wait_s=1)
-    assert e.value.result.detail == m.UNKNOWN_OPERATION and ep.reboots == 0
+    with pytest.raises(h.Rejected) as e:
+        hst.request(FN, RESTART)
+    assert e.value.result.detail == m.UNKNOWN_FUNCTION and ep.reboots == 0
 
 
 def test_a_tlv_after_restart():
@@ -84,9 +90,9 @@ def test_a_tlv_after_restart():
     ep, hst = bench()
     hst.open(3000)
     with pytest.raises(h.Unsupported) as e:
-        hst.request(0, RESTART, m.tlv(0x3D, b"\x01", critical=True))
+        hst.request(FN, RESTART, m.tlv(0x3D, b"\x01", critical=True))
     assert e.value.tag == 0x3D | m.TAG_CRITICAL and ep.reboots == 0
-    r = hst.request(0, RESTART, m.tlv(0x3D, b"\x01"))
+    r = hst.request(FN, RESTART, m.tlv(0x3D, b"\x01"))
     assert r.succeeded and r.payload == bytes([m.TAG_IGNORED, 1, 0, 0x3D]) and ep.reboots == 1
 
 
@@ -122,14 +128,14 @@ def test_restart_probe_without_a_session():
 
 def test_requests_behind_the_restart_are_lost_with_the_old_boot():
     """On a serial port: the answer is queued, the probe restarts after it, and a request that came in the same write
-    behind it is never answered (core §6.6)."""
+    behind it is never answered (oep-if-restart §2)."""
     ep = endpoint.Endpoint(fake.p4_x035(), Clock())
     port = fake_serial.FakeSerialPort(ep, 0)
     sid = 0x11223344
     port.feed(cobs.frame(m.Request(1, 0, m.OP_OPEN, struct.pack("<IB", 3000, 0), sid).pack()))
     assert m.Result.unpack(cobs.unframe(port.output()[1:-1])).succeeded
     before = ep.boot_id
-    port.feed(cobs.frame(m.Request(2, 0, RESTART, b"", sid).pack())
+    port.feed(cobs.frame(m.Request(2, FN, RESTART, b"", sid).pack())
               + cobs.frame(m.Request(3, 0, m.OP_KEEPALIVE, b"", sid).pack()))
     out = port.output()
     assert out.count(0) == 2                                            # one frame: the restart's answer
@@ -190,17 +196,16 @@ def test_not_restarted_when_the_boot_id_stays():
 
 
 
-# ---- restart_max_ms (core §6.6, §7.5) -----------------------------------------------------------------------------
+# ---- restart_max_ms (oep-if-restart §1) ---------------------------------------------------------------------------
 
-def test_fn0_describe_declares_restart_max_ms_with_restart():
-    """restart in fn 0's ops = restart_max_ms in its describe (at least restart_after_answer_ms); without restart, none."""
+def test_the_restart_interface_declares_restart_max_ms():
+    """oep.probe.restart's describe carries restart_max_ms (tag 0x40, required, at least restart_after_answer_ms);
+    fn 0's carries none of it."""
     ep, hst = bench()
-    tags = [t & 0x7F for t, _ in core.describe(hst)]
-    assert tags.count(reg.CORE.tlv["describe"]["restart_max_ms"]) == 1 == tags.count(fake.CORE_RESTART_MAX_MS)
+    tags = [t & 0x7F for t, _ in core.describe(hst, FN)]
+    assert tags.count(reg.PROBE_RESTART.tlv["describe"]["restart_max_ms"]) == 1 == tags.count(fake.RESTART_MAX_MS_TAG)
     assert core.restart_max_ms(hst) == fake.RESTART_MAX_MS == 2000 >= reg.LIMITS["restart_after_answer_ms"]
-    ep, hst = bench()
-    ep.restart_offered = False
-    assert core.restart_max_ms(hst) is None and not core.offers(hst, 0, RESTART)
+    assert 0x4F not in [t & 0x7F for t, _ in core.describe(hst)]
 
 
 class _Reopen:
@@ -229,7 +234,7 @@ def test_restart_probe_waits_restart_max_ms_by_default(monkeypatch):
 
 
 def test_a_probe_that_does_not_come_back_within_restart_max_ms_is_gone():
-    """No confirm answered by restart_max_ms after the answer: the host gives up (core §6.6) - not after 10 s."""
+    """No confirm answered by restart_max_ms after the answer: the host gives up (oep-if-restart §3) - not after 10 s."""
     ep = endpoint.Endpoint(fake.p4_x035(), Clock())
     ep.restart_max_ms = 300
 
@@ -299,11 +304,13 @@ def test_fake_serve_without_restart():
     proc, where = _serve("--tcp", "0", "--framing", "length", "--profile", "p4-x035", "--no-restart")
     try:
         hst = link.open_host(f"tcp://127.0.0.1:{where[1]}", timeout=2.0)
-        assert not core.offers(hst, 0, RESTART)
+        assert fake.RESTART not in [e.name for e in core.list_entries(hst)]
         hst.open(3000)
-        with pytest.raises(h.Rejected) as e:
+        with pytest.raises(LookupError):
             hst.request_restart()
-        assert e.value.result.detail == m.UNKNOWN_OPERATION
+        with pytest.raises(h.Rejected) as e:
+            hst.request(FN, RESTART)
+        assert e.value.result.detail == m.UNKNOWN_FUNCTION
         hst.link.close()
     finally:
         _stop(proc)

@@ -1,6 +1,6 @@
 """The host side of the rules added since the 2026-10-02 rule changes: docs/v1-rule-change-proposal-2026-10-06.md
 (oep-spec b4b08f1, 40291a4) and 2e70f40 / 73a0c37 - confirm's bounds (C-20), max_op_ms's ceiling (C-47), the transfer
-time before the first confirm answer (N-1), resumed = 0 for the last session_id (C-19), the heartbeat's boot_id, short
+time before the first confirm answer (N-1), resumed = 0 for the last session_id (C-19), clock's boot_id and times, short
 answers and wrong-direction roles (C-36), an unanswered resend fails the transport (C-38), the last page's storage
 (PC-9), the optional ops (C-21), cs_setup_ns and i2c-target's reserved addresses."""
 
@@ -128,44 +128,60 @@ def test_c19_end_then_a_new_open_counts_the_loss_once_and_keeps_the_names():
     assert hst.epoch == epoch + 1 and hst._fns
 
 
-# ---- heartbeats: the boot_id watched (core §6.5, §11.2) ----------------------------------------------------------
+# ---- clock: the probe's time and its boot_id (core §6.5, §7.7) ---------------------------------------------------
 
-def heartbeat(boot_id, uptime_ns, seq=0):
-    return bytes([m.ROLE_EVENT]) + struct.pack("<HHB", 0, seq, reg.CORE.event["heartbeat"]) + struct.pack("<IQ", boot_id,
-                                                                                                         uptime_ns)
-
-
-def test_heartbeats_are_read_and_a_changed_boot_id_means_a_reboot():
+def test_clock_reads_the_probes_time_between_the_hosts_send_and_receive_and_watches_the_boot_id():
     boot = [0x11]
+    ticks = iter(range(1000, 10**9, 1000))
 
     def respond(msg):
         req = m.Request.unpack(msg)
         if req.op == m.OP_CONFIRM:
             return [result(req.corr, CONFIRM_V1)]
-        return [heartbeat(boot[0], 5_000_000_000), result(req.corr, b"")]
+        assert (req.fn, req.op, req.session, req.payload) == (0, m.OP_CLOCK, 0, b"")   # lock-free, session-free
+        return [result(req.corr, struct.pack("<IQ", boot[0], 5_000_000_000))]
     lk = make_link(Stream(respond))
     hst = h.Host(lk.send)
     lk.attach_host(hst)
-    hst.request(0, m.OP_KEEPALIVE, locked=False)
-    assert (lk.heartbeats, hst.uptime_ns, hst.epoch) == (1, 5_000_000_000, 0)
+    hst.session = 0x1234                                                      # a session open: clock still goes with 0
+    r = hst.clock(now=lambda: next(ticks))
+    assert (r.before_ns, r.after_ns, r.uptime_ns, r.boot_id, r.round_trip_ns) == (1000, 2000, 5_000_000_000, 0x11, 1000)
+    assert (r.host_ns, r.uncertainty_ns) == (1500, 500) and hst.epoch == 0
     hst._fns["oep.fixture.gpio"] = 4
     boot[0] = 0x22                                                            # the probe rebooted
-    hst.request(0, m.OP_KEEPALIVE, locked=False)
-    assert hst.epoch == 1 and hst._fns == {} and len(lk.events) == 2         # kept with the other events
+    assert hst.clock().boot_id == 0x22
+    assert hst.epoch == 1 and hst._fns == {}
 
 
-def test_heartbeats_from_the_fake_reach_the_host_through_pump():
+def test_clock_best_keeps_the_shortest_round_trip():
+    trips = iter([5000, 900, 3000, 1200])
+    t = [0]
+
+    def now():
+        t[0] += 1
+        return t[0]
+    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+
+    def send(b):
+        t[0] += next(trips) - 1                                               # the round trip of this one
+        return ep.handle(b, 1)
+    hst = h.Host(send)
+    best = hst.clock_best(4, now=now)
+    assert best.round_trip_ns == 900 and best.boot_id == ep.boot_id
+    with pytest.raises(ValueError):
+        hst.clock_best(0)
+
+
+def test_clock_from_the_fake_through_a_link_and_no_heartbeat_any_more():
     ep = endpoint.Endpoint(fake.p4_bench(), Clock())
     s = Stream(lambda msg: [r for r in [ep.handle(msg, 1)] if r] + ep.pushes())
     lk = make_link(s)
     hst = h.Host(lk.send)
     lk.attach_host(hst)
-    hst.open(3000)
-    hst.subscribe(0, 0, 1000)
-    ep.now.t += 1000
-    s.rx += frame(ep.pushes()[0])
-    lk.pump(0.05)
-    assert lk.heartbeats == 1 and hst.uptime_ns == 1_000_000_000
+    ep.now.t = 1000
+    r = hst.clock()
+    assert (r.boot_id, r.uptime_ns) == (ep.boot_id, 1_000_000_000) and r.before_ns <= r.after_ns
+    assert not hasattr(lk, "heartbeats") and "heartbeat_default_ms" not in reg.TIMING
 
 
 # ---- C-36: short answers, events and data; request roles ----------------------------------------------------------
@@ -335,3 +351,42 @@ def test_i2c_target_refuses_a_reserved_address_before_sending(address):
     with pytest.raises(ValueError):
         i2c.configure(address, 1)
     assert len(sent) == n
+
+
+# ---- the ops encoding (core §7.4): a broken ops is not used ------------------------------------------------------
+
+def _with_ops(name: str, value: bytes) -> fake.FakeProbe:
+    probe = fake.p4_bench()
+    return fake.FakeProbe(probe.label, probe.max_frame, [
+        fake.Offered(o.fn, o.instance, o.name, (catalog.tlv(catalog.OPS, value),) + tuple(
+            t for t in o.tlvs if t[0] != catalog.OPS)) if o.name == name else o for o in probe.offered], fill_ops=False)
+
+
+@pytest.mark.parametrize("value", ["0100", "010100", "0002", "f901", "01"])
+def test_an_fn_whose_ops_break_the_encoding_is_not_used(value):
+    ep = endpoint.Endpoint(_with_ops("oep.fixture.gpio", bytes.fromhex(value)), Clock())
+    hst = h.Host(lambda b: ep.handle(b, 1))
+    with pytest.raises(core.UnusableFunction, match="core §7.4"):
+        core.ops(hst, 4)
+    with pytest.raises(core.UnusableFunction):
+        fixture.Gpio(hst)                                                     # a client is never built on it
+    assert core.ops(hst, 0) == set(reg.CORE.op.values())                     # the rest of the probe is used
+    assert not hst.unusable
+
+
+def test_a_probe_whose_fn_0_ops_break_the_encoding_is_not_used():
+    broken = catalog.pack_ops(reg.CORE.op.values()) + b"\x00"                 # every core op, then a zero byte
+    ep = endpoint.Endpoint(_with_ops(fake.CORE_NAME, broken), Clock())
+    hst = h.Host(lambda b: ep.handle(b, 1))
+    with pytest.raises(h.NotUsable, match="core §7.4"):
+        core.describe(hst)
+    with pytest.raises(h.NotUsable):
+        hst.confirm()                                                         # nothing more is sent
+
+
+def test_a_list_entry_with_fn_0_is_left_out():
+    """The core is never listed (core §7.2): a probe that lists an fn 0 anyway is not taken at its word."""
+    entries = [catalog.ListEntry(0, 0, 1, 0, "oep.core"), catalog.ListEntry(3, 0, 1, 0, "oep.fixture.gpio")]
+    hst = h.Host(lambda b: m.Result(m.Request.unpack(b).corr, m.COMPLETED, m.SUCCESS,
+                                    catalog.pack_list_result(2, entries)).pack())
+    assert [e.fn for e in core.list_entries(hst)] == [3]

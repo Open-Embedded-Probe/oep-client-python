@@ -32,17 +32,20 @@ class Capabilities:
 
 _REQUIRED_CORE_TAGS = {reg.CORE.tlv["describe"][k]: k for k in ("unit_id", "transport", "max_op_ms", "discoverable")}
 _TRANSPORT_TAG = reg.CORE.tlv["describe"]["transport"]
-_RESTART_MAX_MS = reg.CORE.tlv["describe"]["restart_max_ms"]
+_RESTART = reg.PROBE_RESTART.name
+_RESTART_MAX_MS = reg.PROBE_RESTART.tlv["describe"]["restart_max_ms"]
 _RELAYING_BROKER = 0xFF          # confirm's transport from a relaying broker (transports §1, core §7.1)
-MISSING_HEADING = "MISSING what every probe must give (core §1.2, §7.1, §7.4, §7.5)"
+MISSING_HEADING = "MISSING what every probe must give (core §1.2, §7.1, §7.2, §7.4, §7.5)"
+CORE_NAME = "(core)"             # how fn 0 is shown: the core has no name (core §0)
 
 
 def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, bytes]]) -> list[str]:
     """What every probe must give, as far as a lock-free look on one transport shows it (core §1.2, C-10; oep-spec
     docs/conformance.md section 1): confirm's answer carries TLV transport, naming an entry of fn 0's describe or 0xFF
-    (§7.1); fn 0's describe carries unit_id, transport, max_op_ms (§1.2, §7.5) and discoverable (0 or 1, every probe
-    sends it, §7.5), and restart_max_ms when its ops set restart (§1.2, §6.6). -> what is missing (empty: nothing seen missing). The bounds of confirm's values and of max_op_ms
-    are checked by the host itself (host.check_confirm, host.check_max_op_ms: the probe is not used)."""
+    (§7.1); fn 0's describe carries unit_id, transport, max_op_ms (§1.2, §7.5), discoverable (0 or 1, every probe
+    sends it, §7.5) and ops in core §7.4's one encoding with every op of §12 set (a probe whose fn 0 ops break the
+    encoding is not used). -> what is missing (empty: nothing seen missing). The bounds of confirm's values and of
+    max_op_ms are checked by the host itself (host.check_confirm, host.check_max_op_ms: the probe is not used)."""
     out = []
     have = {tag & 0x7F for tag, _ in core_describe}
     if len(confirm_payload) > 4 and confirm_payload[4] >= 1:
@@ -57,17 +60,39 @@ def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, byte
             elif where[0] != _RELAYING_BROKER and _TRANSPORT_TAG in have and where[0] not in indexes:
                 out.append(f"describe of fn 0: the transport confirm names (index {where[0]})")
     out += [f"describe of fn 0: {name}" for tag, name in _REQUIRED_CORE_TAGS.items() if tag not in have]
-    if m.TAG_OPS not in have:
+    values = [v for tag, v in core_describe if tag & 0x7F == m.TAG_OPS]
+    if not values:
         out.append("describe of fn 0: ops")                    # every fn's describe carries it (core §1.2, §7.4)
-    elif _RESTART_MAX_MS not in have and any(
-            m.OP_RESTART in catalog.unpack_ops(v) for tag, v in core_describe if tag & 0x7F == m.TAG_OPS):
-        out.append("describe of fn 0: restart_max_ms (restart is in ops)")   # core §1.2, §6.6, §7.5
+    else:
+        bad = next((catalog.check_ops(v) for v in values if catalog.check_ops(v)), "")
+        if bad:
+            out.append(f"describe of fn 0: ops in core §7.4's encoding ({bad}; the probe is not used)")
+        else:
+            declared = set().union(*(catalog.unpack_ops(v) for v in values))
+            lacking = [k for k, op in reg.CORE.op.items() if op not in declared]
+            if lacking:
+                out.append("describe of fn 0: ops " + ", ".join(lacking))   # every core op is mandatory (§1.2, §12)
     return out
 
 
+def _describe_all(call, fn: int, caps: Capabilities) -> bytes:
+    data, first = b"", 0
+    while True:
+        result = call(CORE_FN, OP_DESCRIBE, catalog.pack_describe_request(fn, first))
+        caps.requests["describe"] += 1
+        more, chunk = result[0], result[1:]
+        data += chunk
+        first += len(catalog.split_tlv(chunk))
+        if not more or not chunk:
+            break
+    return data
+
+
 def collect(call, prefix: str = "", exact: bool = False, confirm: tuple[int, int] = (0, 1)) -> Capabilities:
-    """`confirm`: the revision range the confirm asks for - a host that confirmed already passes the revision in use
-    (core §7.1, C-15: every later confirm on a transport asks for it alone)."""
+    """confirm, then fn 0's describe (the core: no name, never listed, core §7.2) and every listed interface's (the
+    ones under `prefix`). `confirm`: the revision range the confirm asks for - a host that confirmed already passes the
+    revision in use (core §7.1, C-15: every later confirm on a transport asks for it alone). fn 0 is shown first, as
+    an Offer with fn 0 and no name."""
     p = call(CORE_FN, OP_CONFIRM, m.CONFIRM_REQUEST + bytes(confirm))   # v0 and v1 both answer (0..1)
     magic, revision = struct.unpack_from("<4sB", p)
     if magic != m.CONFIRM_RESULT:
@@ -82,32 +107,36 @@ def collect(call, prefix: str = "", exact: bool = False, confirm: tuple[int, int
         entries += page
         if len(entries) >= total or not page:
             break
+    if revision >= 1:
+        if any(e.fn == CORE_FN for e in entries):
+            caps.missing.append("list: an entry with fn 0 (the core has no name and is never listed, core §7.2)")
+        entries = [e for e in entries if e.fn != CORE_FN]
+        core_data = _describe_all(call, CORE_FN, caps)
+        caps.offers.append(Offer(catalog.ListEntry(CORE_FN, 0, revision, 0, interfaces.CORE_KEY),
+                                 catalog.decode_description(core_data)))
+        caps.missing = required_missing(p, catalog.split_tlv(core_data)) + caps.missing
     for e in entries:
-        data, first = b"", 0
-        while True:
-            result = call(CORE_FN, OP_DESCRIBE, catalog.pack_describe_request(e.fn, first))
-            caps.requests["describe"] += 1
-            more, chunk = result[0], result[1:]
-            data += chunk
-            first += len(catalog.split_tlv(chunk))
-            if not more or not chunk:
-                break
-        caps.offers.append(Offer(e, catalog.decode_description(data)))
-        if e.fn == CORE_FN and revision >= 1:
-            caps.missing = required_missing(p, catalog.split_tlv(data)) + caps.missing
-        elif revision >= 1 and caps.offers[-1].description.ops is None:
+        data = _describe_all(call, e.fn, caps)
+        d = catalog.decode_description(data)
+        caps.offers.append(Offer(e, d))
+        if revision < 1:
+            continue
+        if d.ops_invalid:
+            caps.missing.append(f"describe of fn {e.fn}: ops in core §7.4's encoding ({d.ops_invalid}; the fn is not used)")
+        elif d.ops is None:
             caps.missing.append(f"describe of fn {e.fn}: ops")   # every listed fn's describe (core §1.2, §7.4)
+        if e.name == _RESTART and not any(tag & 0x7F == _RESTART_MAX_MS for tag, _ in catalog.split_tlv(data)):
+            caps.missing.append(f"describe of fn {e.fn} ({_RESTART}): restart_max_ms")   # oep-if-restart §1
     return caps
 
 
 def required_of(call, confirm: tuple[int, int] = (0, 1)) -> list[str]:
-    """required_missing on a probe, lock-free: confirm, then list and describe of oep.core alone (fn 0). -> what is
-    missing, as dump's MISSING line says it (empty: nothing seen missing). The pre-release hardware test fails on it."""
-    caps = collect(call, "oep.core", True, confirm)
+    """required_missing on a probe, lock-free: confirm, fn 0's describe, and the describe of an oep.probe.restart when
+    the probe lists one (its restart_max_ms is required). -> what is missing, as dump's MISSING line says it (empty:
+    nothing seen missing). The pre-release hardware test fails on it."""
+    caps = collect(call, _RESTART, True, confirm)
     if caps.revision < 1:
         return [f"protocol revision 1 (confirm answered revision {caps.revision})"]
-    if not any(o.entry.fn == CORE_FN for o in caps.offers):
-        return ["list: oep.core as fn 0"]
     return caps.missing
 
 
@@ -129,8 +158,9 @@ def describe_offer(o: Offer) -> dict:
     name = o.entry.name
     known = interfaces.KNOWN.get(name)
     d = o.description
-    out = {"fn": o.entry.fn, "instance": o.entry.instance, "name": name, "revision": o.entry.revision,
-           "namespace": names.kind(name), "known": known is not None}
+    core = o.entry.fn == CORE_FN and name == interfaces.CORE_KEY
+    out = {"fn": o.entry.fn, "instance": o.entry.instance, "name": CORE_NAME if core else name,
+           "revision": o.entry.revision, "namespace": "core" if core else names.kind(name), "known": known is not None}
     if known:
         out["summary"] = known.summary
     if d.roles:
@@ -157,6 +187,8 @@ def describe_offer(o: Offer) -> dict:
         out["declares"] = specific
     if d.unknown_critical:
         out["unusable"] = f"unknown critical tags {[hex(t) for t in d.unknown_critical]}"
+    if d.ops_invalid:
+        out["unusable"] = f"ops outside core §7.4's encoding: {d.ops_invalid}"
     return out
 
 
@@ -169,7 +201,7 @@ def to_json(caps: Capabilities) -> str:
 def to_text(caps: Capabilities) -> str:
     rows = [describe_offer(o) for o in caps.offers]
     lines = [f"OEP revision {caps.revision}, max frame {caps.max_frame} bytes; "
-             f"{len(rows)} interfaces in {caps.requests['list']} list and "
+             f"{sum(1 for r in rows if r['namespace'] != 'core')} interfaces in {caps.requests['list']} list and "
              f"{caps.requests['describe']} describe requests", ""]
     if caps.missing:
         lines[1:1] = [MISSING_HEADING + ": " + ", ".join(caps.missing)]

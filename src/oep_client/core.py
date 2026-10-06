@@ -1,6 +1,8 @@
-"""The probe's core (fn 0) as the other clients need it: finding interfaces by name, confirm, the probe's own labels,
-the pin plan - and `Interface`, the base every interface client shares (its fn, its revision checked against the list
-entry, and calls that raise unless they worked)."""
+"""The probe's core (fn 0, which has no name and is never listed) as the other clients need it: finding interfaces by
+name, confirm, describe and the ops it declares (with core §7.4's one encoding checked), the probe's own labels - the
+pin plan (oep.probe.plan), restart_max_ms (oep.probe.restart) and the link test (oep.probe.link), each found by its
+name - and `Interface`, the base every interface client shares (its fn, its revision checked against the list entry,
+and calls that raise unless they worked)."""
 
 from __future__ import annotations
 
@@ -10,12 +12,18 @@ import struct
 
 from . import catalog, host as h, message as m, registry as reg
 
-OP_PLAN_APPLY, OP_PLAN_RELEASE = m.OP_PLAN_APPLY, m.OP_PLAN_RELEASE
-TAG_ROLE_ASSIGNMENT = reg.CORE.tlv["plan_apply"]["role_assignment"]     # the number 0x10; always sent critical (0x90)
+# oep.probe.plan (oep-if-plan): which channel each role of an interface uses; listed when an interface has plan roles
+PLAN_NAME = reg.PROBE_PLAN.name
+OP_PLAN_APPLY, OP_PLAN_RELEASE = reg.PROBE_PLAN.op["plan_apply"], reg.PROBE_PLAN.op["plan_release"]
+TAG_ROLE_ASSIGNMENT = reg.PROBE_PLAN.tlv["plan_apply"]["role_assignment"]   # the number 0x10; always sent critical (0x90)
+TAG_PLAN_ROLES = reg.PROBE_PLAN.tlv["describe"]["plan_roles"]
+# oep.probe.restart (oep-if-restart): the probe restarts itself, optional
+RESTART_NAME = reg.PROBE_RESTART.name
+OP_RESTART = reg.PROBE_RESTART.op["restart"]
+TAG_RESTART_MAX_MS = reg.PROBE_RESTART.tlv["describe"]["restart_max_ms"]
 CORE_LABEL = reg.CORE.tlv["describe"]["label"]
 CORE_TRANSPORT = reg.CORE.tlv["describe"]["transport"]
 CORE_MAX_OP_MS = reg.CORE.tlv["describe"]["max_op_ms"]
-CORE_RESTART_MAX_MS = reg.CORE.tlv["describe"]["restart_max_ms"]
 TRANSPORT_KIND = reg.CORE.enum["transport_kind"]
 SERIAL_KINDS = {TRANSPORT_KIND["uart_bridge"], TRANSPORT_KIND["usb_cdc"], TRANSPORT_KIND["usb_serial_jtag"]}
 
@@ -25,9 +33,15 @@ class UnsupportedRevision(h.OepError):
     a host never uses an interface revision it does not know)."""
 
 
+class UnusableFunction(h.OepError, LookupError):
+    """An fn whose describe breaks a rule that makes it unusable (core §7.4: its ops tag outside the one encoding): this
+    host does not use it. fn 0's own raise NotUsable instead - the probe is not used."""
+
+
 def list_entries(hst: h.Host, name: str = "", exact: bool = False) -> list[catalog.ListEntry]:
     """Every list entry under `name` (exact: that name only), paged by first (u16). The fn -> revision of each is
-    remembered on the host."""
+    remembered on the host. The core (fn 0) has no name and is never an entry (core §7.2): an entry with fn 0 from a
+    probe that lists one anyway is left out."""
     entries: list[catalog.ListEntry] = []
     while True:
         total, page = catalog.unpack_list_result(
@@ -35,6 +49,7 @@ def list_entries(hst: h.Host, name: str = "", exact: bool = False) -> list[catal
         entries += page
         if not page or len(entries) >= total:    # an empty page ends it too: no endless loop on a short answer
             break
+    entries = [e for e in entries if e.fn != m.CORE_FN]
     for e in entries:
         hst._revisions[e.fn] = e.revision
     return entries
@@ -73,7 +88,8 @@ def confirm(hst: h.Host) -> dict:
 
 def describe(hst: h.Host, fn: int = 0) -> list[tuple[int, bytes]]:
     """Every describe TLV of `fn` (0: the probe itself), paged by first. Declarations only (core §7.3): cached on the
-    host while the probe's boot_id stays the same."""
+    host while the probe's boot_id stays the same. fn 0's is checked as it comes: a max_op_ms outside 1..600000
+    (core §4.4, §7.5) or an ops tag outside core §7.4's encoding makes the probe not used (NotUsable)."""
     cached = hst._describes.get(fn)
     if cached is not None:
         return list(cached)
@@ -89,6 +105,9 @@ def describe(hst: h.Host, fn: int = 0) -> list[tuple[int, bytes]]:
     if fn == m.CORE_FN:
         value = next((v for tag, v in out if tag & 0x7F == CORE_MAX_OP_MS and len(v) >= 4), None)
         why = h.check_max_op_ms(struct.unpack_from("<I", value)[0]) if value is not None else ""
+        bad_ops = next((catalog.check_ops(v) for tag, v in out if tag & 0x7F == m.TAG_OPS and catalog.check_ops(v)), "")
+        if bad_ops and not why:
+            why = f"describe of fn 0: {bad_ops} - outside core §7.4's one encoding, so the probe is not used"
         if why:
             hst.not_usable(why)                                    # not conforming: not used (core §4.4, C-47)
     hst._describes[fn] = out
@@ -98,10 +117,14 @@ def describe(hst: h.Host, fn: int = 0) -> list[tuple[int, bytes]]:
 def ops(hst: h.Host, fn: int = 0) -> set[int] | None:
     """The ops fn's describe declares in its ops tag (core §1.2, §7.4: the one declaration of every op an fn offers,
     the optional ones included); None when the describe carries no ops tag (a probe that does not conform: the host
-    sends and lets the probe answer)."""
+    sends and lets the probe answer). An ops tag outside core §7.4's one encoding: the fn is not used -
+    UnusableFunction (fn 0: NotUsable from `describe`, the probe is not used)."""
     found = None
     for tag, value in describe(hst, fn):
         if tag & 0x7F == m.TAG_OPS:
+            why = catalog.check_ops(value)
+            if why:
+                raise UnusableFunction(f"fn {fn}: {why} - outside core §7.4's one encoding, so the fn is not used")
             found = (found or set()) | catalog.unpack_ops(value)
     return found
 
@@ -126,7 +149,7 @@ def require(hst: h.Host, fn: int, op: int) -> None:
 
 
 def firmware_labels(hst: h.Host) -> list[tuple[int, str]]:
-    """The firmware's fixed channel labels from oep.core's describe (tag 0x46) as (channel, text), in describe order -
+    """The firmware's fixed channel labels from fn 0's describe (tag 0x46) as (channel, text), in describe order -
     every one, two channels with the same text included (probe.config §1.3 step (c) finds none then). Text shown as
     core §2.1 says (`m.shown`)."""
     return [(struct.unpack_from("<H", value)[0], m.shown(value[2:]))
@@ -134,13 +157,13 @@ def firmware_labels(hst: h.Host) -> list[tuple[int, str]]:
 
 
 def probe_labels(hst: h.Host) -> dict[str, int]:
-    """The firmware's fixed channel labels from oep.core's describe (tag 0x46): {"NRST": 23, ...}. Labels the
+    """The firmware's fixed channel labels from fn 0's describe (tag 0x46): {"NRST": 23, ...}. Labels the
     settings gave are read from oep.probe.config (config.ProbeConfig.items(), Label)."""
     return {text: ch for ch, text in firmware_labels(hst)}
 
 
 def max_op_ms(hst: h.Host) -> int:
-    """The longest one request may take on this probe (oep.core describe max_op_ms, core §7.5): the ceiling of run's
+    """The longest one request may take on this probe (fn 0's describe max_op_ms, core §7.5): the ceiling of run's
     timeout_ms, a dmi list's waits, an attach's hold_ms. A probe that declares none (not v1-complete) is taken as the
     reference firmware's 10000 ms."""
     for tag, value in describe(hst):
@@ -149,18 +172,27 @@ def max_op_ms(hst: h.Host) -> int:
     return reg.REFERENCE["max_op_ms"]
 
 
+def restart_fn(hst: h.Host) -> int:
+    """The fn of the probe's oep.probe.restart (LookupError: the probe offers none - it is optional, oep-if-restart)."""
+    return find(hst, RESTART_NAME)
+
+
 def restart_max_ms(hst: h.Host) -> int | None:
-    """The longest the probe takes from restart's answer until it answers confirm again on the same transport (oep.core
-    describe restart_max_ms, core §6.6, §7.5; required when restart is in fn 0's ops). None: not declared (a probe
-    without restart, or one that does not conform)."""
-    for tag, value in describe(hst):
-        if tag & 0x7F == CORE_RESTART_MAX_MS and len(value) >= 4:
+    """The longest the probe takes from restart's answer until it answers confirm again on the same transport
+    (oep.probe.restart's describe restart_max_ms, oep-if-restart §1: required). None: the probe offers no
+    oep.probe.restart, or its describe declares none (it does not conform)."""
+    try:
+        fn = restart_fn(hst)
+    except LookupError:
+        return None
+    for tag, value in describe(hst, fn):
+        if tag & 0x7F == TAG_RESTART_MAX_MS and len(value) >= 4:
             return struct.unpack_from("<I", value)[0]
     return None
 
 
 def transports(hst: h.Host) -> list[tuple[int, int, int]]:
-    """The probe's transports from oep.core's describe (core §7.5): [(index, kind, usb interface or 0xFF)]."""
+    """The probe's transports from fn 0's describe (core §7.5): [(index, kind, usb interface or 0xFF)]."""
     return [(v[0], v[1], v[2] if len(v) > 2 else 0xFF) for tag, v in describe(hst) if tag & 0x7F == CORE_TRANSPORT
             and len(v) >= 2]
 
@@ -177,14 +209,34 @@ def take(hst: h.Host, lease_ms: int = 3000, *, owner: str | None = None, wait_s:
     return hst.take(lease_ms, owner=owner, only_way_in=only, wait_s=wait_s, force=force)
 
 
+def plan_fn(hst: h.Host) -> int:
+    """The fn of the probe's oep.probe.plan (LookupError: the probe offers none - it lists one exactly when an
+    interface has plan roles, oep-if-plan)."""
+    return find(hst, PLAN_NAME)
+
+
+def plan_roles(hst: h.Host) -> int | None:
+    """The most role assignments the probe's plan holds at once, every fn together and the settings' plan included
+    (oep.probe.plan's describe plan_roles, oep-if-plan §1). None: no oep.probe.plan, or no limit declared."""
+    try:
+        fn = plan_fn(hst)
+    except LookupError:
+        return None
+    for tag, value in describe(hst, fn):
+        if tag & 0x7F == TAG_PLAN_ROLES and len(value) >= 4:
+            return struct.unpack_from("<I", value)[0]
+    return None
+
+
 def plan_apply(hst: h.Host, assignments: list[tuple[int, int, int]]) -> None:
-    """assignments: (fn, role, channel). The fns named get these plans, every other fn keeps its own (oep-core §8);
-    all interfaces accept their roles or nothing changes. The plan is the session's resource: released when the
-    session's lock ends, by end, lease expiry or force (oep-core §9)."""
+    """assignments: (fn, role, channel), through oep.probe.plan (oep-if-plan §2.1; LookupError when the probe offers
+    none). The fns named get these plans, every other fn keeps its own; all interfaces accept their roles or nothing
+    changes. The plan is the session's resource: released when the session's lock ends, by end, lease expiry or force
+    (core §9)."""
     tlv = b"".join(m.tlv(TAG_ROLE_ASSIGNMENT, struct.pack("<HBH", fn, role, ch), critical=True)
                    for fn, role, ch in assignments)
     try:
-        hst.call(m.CORE_FN, OP_PLAN_APPLY, tlv)
+        hst.call(plan_fn(hst), OP_PLAN_APPLY, tlv)
     except h.Rejected as e:
         if e.result.detail != m.UNAVAILABLE:
             raise
@@ -229,8 +281,9 @@ def _pin_holders(hst: h.Host, assignments: list[tuple[int, int, int]]) -> list[t
 
 
 def plan_release(hst: h.Host, fns: list[int] | tuple[int, ...] = ()) -> None:
-    """Release the plan of these fns (none: every fn, oep-core §8)."""
-    hst.call(m.CORE_FN, OP_PLAN_RELEASE, bytes([len(fns)]) + b"".join(struct.pack("<H", f) for f in fns))
+    """Release the plan of these fns (none: every fn; the settings' plans stay), through oep.probe.plan (oep-if-plan
+    §2.2)."""
+    hst.call(plan_fn(hst), OP_PLAN_RELEASE, bytes([len(fns)]) + b"".join(struct.pack("<H", f) for f in fns))
 
 
 class Interface:
@@ -246,6 +299,7 @@ class Interface:
         self.name = name or self.NAME
         self.fn = fn if fn is not None else find(hst, self.name)
         self.prefix = prefix
+        ops(hst, self.fn)                          # an ops tag outside core §7.4's encoding: not used (UnusableFunction)
         if self.REVISION is not None:
             rev = revision(hst, self.name, self.fn)
             if rev != self.REVISION:
@@ -280,8 +334,8 @@ class Interface:
         return offers(self.host, self.fn, op)
 
 
-# ---- oep.link (oep-if-link): the link test and port_speed, an optional interface ------------------------------------
-_LINK = reg.LINK
+# ---- oep.probe.link (oep-if-link): the link test and port_speed, an optional interface ------------------------------
+_LINK = reg.PROBE_LINK
 LINK_NAME = _LINK.name
 LINK_SOURCE, LINK_SINK, LINK_PORT_SPEED = (_LINK.op[k] for k in ("source", "sink", "port_speed"))
 LINK_SOURCE_OVERHEAD = reg.LIMITS["link_source_overhead_bytes"]   # source's len <= max_frame - this (oep-if-link §2)
@@ -294,8 +348,8 @@ def link_size(max_frame: int) -> int:
 
 
 def link_fn(hst: h.Host) -> int:
-    """The fn of the probe's oep.link (LookupError: the probe offers none - the link test and port_speed are optional,
-    oep-if-link)."""
+    """The fn of the probe's oep.probe.link (LookupError: the probe offers none - the link test and port_speed are
+    optional, oep-if-link)."""
     return find(hst, LINK_NAME)
 
 
@@ -318,10 +372,10 @@ def link_source_data(payload: bytes) -> bytes:
 
 
 def link_speed(hst: h.Host, *, size: int | None = None, inflight: int | None = None, seconds: float = 1.0) -> dict:
-    """The link's request/response throughput both ways through oep.link source / sink (oep-if-link §2), as a repeat
+    """The link's request/response throughput both ways through oep.probe.link source / sink (oep-if-link §2), as a repeat
     read or a write sees it: `inflight` requests of `size` bytes kept going in batches for `seconds` (defaults: one
     full frame, the probe's in-flight limit). -> {"in_mb_s", "out_mb_s", "size", "inflight"} (in = probe to host).
-    LookupError when the probe offers no oep.link."""
+    LookupError when the probe offers no oep.probe.link."""
     import time
     fn = link_fn(hst)
     limits = confirm(hst)

@@ -1,10 +1,9 @@
 """What the host knows about interfaces, for display: role names, feature bits, specific tags (the ops every describe
 carries are named from the registry's op tables: `op_names`).
 
-EXAMPLES ONLY. Which capabilities become the BASIC standard under `oep.` is not decided
-(oep-spec docs/capability-declaration-model.ja.md); these entries exist so that `dump` can show
-what a declaration looks like. An interface missing from here is still listed and described -
-with raw role numbers, raw feature bits and raw tag bytes.
+These entries exist so that `dump` can show what a declaration looks like. An interface missing from here is still
+listed and described - with raw role numbers, raw feature bits and raw tag bytes. The core (fn 0) has no name and is
+never listed: it is shown under CORE_KEY ("").
 """
 
 from __future__ import annotations
@@ -78,16 +77,21 @@ class Known:
     tags: dict[int, tuple[str, Callable[[bytes], str]]] = field(default_factory=dict)
 
 
-# Names from oep-spec docs/capability-name-hierarchy.ja.md (provisional, 2026-09-24).
+CORE_KEY = ""                                   # the core (fn 0): no name (core §0)
+
 KNOWN: dict[str, Known] = {
-    "oep.core": Known(
-        "confirm, list, describe, open / end / keepalive, lock state, status, cancel; describe = the probe itself",
+    CORE_KEY: Known(
+        "the core: confirm, list, describe, clock, open / end / keepalive, lock state; describe = the probe itself",
         tags={0x40: ("firmware", _text), 0x41: ("model", _text), 0x42: ("unit id", _text),
               0x43: ("channels", _u16), 0x44: ("reserved", _channels), 0x45: ("profile", _text),
               0x46: ("label", _label), 0x47: ("resets on open", lambda v: "yes"),
               0x49: ("transport", _transport), 0x4A: ("discoverable", lambda v: "yes" if v[:1] == b"\x01" else "no"),
-              0x4B: ("plan roles", _u32), 0x4C: ("chip", _text), 0x4D: ("max op ms", _u32)}),
-    "oep.link": Known("the link test (source, sink) and, when its ops offer it, port_speed on a UART bridge"),
+              0x4C: ("chip", _text), 0x4D: ("max op ms", _u32)}),
+    "oep.probe.link": Known("the link test (source, sink) and, when its ops offer it, port_speed on a UART bridge"),
+    "oep.probe.plan": Known("the plan: which channel each role of an interface uses (plan_apply, plan_release)",
+                            tags={0x40: ("plan roles", _u32)}),
+    "oep.probe.restart": Known("the probe restarts itself, answering first",
+                               tags={0x40: ("restart max ms", _u32)}),
     "oep.wire.rvswd": Known("scan, attach, detach over RVSWD (attach returns a connection)",
                             roles={1: "SWDIO", 2: "SWCLK", 3: "reset"}, features={0: "attach writes unbounded"},
                             tags={0x40: ("max connections", lambda v: str(v[0]))}),
@@ -114,10 +118,10 @@ KNOWN: dict[str, Known] = {
     "oep.fixture.uart": Known("a UART (USART, asynchronous) on probe pins", roles={1: "RX", 2: "TX"},
                               tags={0x40: ("formats", lambda v: ", ".join(f"0x{b:02x}" for b in v[1:1 + v[0]]))}),
     "oep.fixture.logic": Known("sampled logic capture", roles={k: f"line{k}" for k in range(8)},
-                               features={2: "notify"}, tags={0x40: ("mode", _capture_mode)}),
+                               tags={0x40: ("mode", _capture_mode)}),
     "oep.fixture.analog": Known("sampled analog capture", roles={k: f"ch{k}" for k in range(8)},
-                                features={2: "notify"}, tags={0x40: ("mode", _capture_mode)}),
-    "oep.fixture.capture-group": Known("captures started and stopped together", features={2: "notify"}),
+                                tags={0x40: ("mode", _capture_mode)}),
+    "oep.fixture.capture-group": Known("captures started and stopped together"),
     "oep.fixture.i2c-target": Known(
         "an I2C target the DUT can address (open-drain only, fixture §3)",
         roles={1: "SDA", 2: "SCL"}, features={0: "preloaded tx", 2: "internal pull-ups"},
@@ -132,9 +136,11 @@ KNOWN: dict[str, Known] = {
 
 
 def op_names(name: str, ops) -> list[str]:
-    """The ops of an ops tag by the registry's names for interface `name` (an op it does not name: 0x.. hex)."""
+    """The ops of an ops tag by the registry's names for interface `name` (the core's for CORE_KEY; an op it does not
+    name: 0x.. hex)."""
     from . import registry as reg
-    known = {v: k for k, v in getattr(reg.INTERFACES.get(name), "op", {}).items()}
+    i = reg.CORE if name == CORE_KEY else reg.INTERFACES.get(name)
+    known = {v: k for k, v in getattr(i, "op", {}).items()}
     return [known.get(op, f"0x{op:02x}") for op in sorted(ops)]
 
 

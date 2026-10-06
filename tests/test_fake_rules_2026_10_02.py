@@ -10,7 +10,7 @@ import pytest
 
 from oep_client import endpoint, fake, fake_capture, message as m, registry as reg
 
-from test_fake_spec import ITEM, SPEED, Clock, Host, bind_item, slot_item, state
+from test_fake_spec import ITEM, PLAN_APPLY, PLAN_RELEASE, SPEED, Clock, Host, bind_item, slot_item, state
 
 CORE = reg.CORE
 UNA = CORE.tlv["unavailable_payload"]
@@ -87,7 +87,7 @@ def test_c02_read_from_4_unsupported_and_from_3_with_a_wide_arg_malformed():
 
 def test_c02_gpio_drive_of_an_undefined_kind_is_ignored_or_unsupported_when_critical():
     ep, h = bench()
-    h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 20), critical=True))
+    h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 20), critical=True))
     drive = reg.FIXTURE_GPIO.tlv["set"]["drive"]
     body = bytes([1]) + struct.pack("<HB", 20, 4)
     r = h.raw(4, reg.FIXTURE_GPIO.op["set"], body + m.tlv(drive, struct.pack("<BBH", 0, 3, 0)))
@@ -145,7 +145,7 @@ def test_c03_malformed_later_in_the_tail_beats_an_unknown_critical_before_it():
 def test_c03_role_assignment_and_gpio_drive_repeat():
     ep, h = bench()
     ra = lambda ch: m.tlv(0x10, struct.pack("<HBH", 4, 1, ch), critical=True)
-    assert h.raw(0, m.OP_PLAN_APPLY, ra(20) + ra(21)).succeeded
+    assert h.raw(h.plan_fn, PLAN_APPLY, ra(20) + ra(21)).succeeded
     drive = reg.FIXTURE_GPIO.tlv["set"]["drive"]
     body = bytes([2]) + struct.pack("<HBHB", 20, 4, 21, 4)
     r = h.raw(4, reg.FIXTURE_GPIO.op["set"], body + m.tlv(drive, struct.pack("<BBH", 0, 0, 1))
@@ -168,7 +168,7 @@ def test_c04_an_answer_keeps_room_for_ignored_and_never_drops_it():
     ep = endpoint.Endpoint(fake.esp32_v003(), Clock())            # 64-byte frames
     h = Host(ep)
     h.open()
-    h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 5, 1, 21), critical=True))
+    h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 5, 1, 21), critical=True))
     ep.uart_rx(5, bytes(range(1, 200)))
     tail = b"".join(m.tlv(0x30 + k, b"") for k in range(18))
     r = h.raw(5, reg.FIXTURE_UART.op["read"], struct.pack("<BQH", 1, 0, 1000) + tail, session=False)
@@ -206,18 +206,20 @@ def test_c15_no_revision_in_range_carries_the_supported_range_and_min_above_max_
     assert confirm(h, 2, 1).detail == m.MALFORMED
 
 
-# ---- C-10: plan_apply / plan_release on a probe without plan roles -----------------------------------------------
+# ---- C-10: a probe without plan roles has no oep.probe.plan ---------------------------------------------------------
 
-def test_c10_plan_ops_are_unknown_operation_without_plan_roles():
-    keep = ("oep.core", "oep.wire.rvswd", "oep.target.riscv-dm")
+def test_c10_a_probe_without_plan_roles_lists_no_plan():
+    """oep-if-plan: a probe lists oep.probe.plan exactly when an interface has plan roles; fn 0's old plan_release
+    number (0x05) is no core op (unknown_operation)."""
+    keep = (fake.CORE_NAME, "oep.wire.rvswd", "oep.target.riscv-dm")
     probe = fake.FakeProbe("bare", 256, [fake.Offered(o.fn, o.instance, o.name, tuple(t for t in o.tlvs if t[0] != 0x09))
                                          for o in fake.p4_bench().offered if o.name in keep])   # ops made anew
-    assert reg.CORE.op["plan_apply"] not in endpoint.Endpoint(probe, Clock()).ops[0]   # core §1.2: not in fn 0's ops
     ep = endpoint.Endpoint(probe, Clock())
+    assert "oep.probe.plan" not in ep.fns and ep.ops[0] == set(reg.CORE.op.values())
     h = Host(ep)
     h.open()
-    assert h.raw(0, m.OP_PLAN_APPLY, b"").detail == m.UNKNOWN_OPERATION
-    assert h.raw(0, m.OP_PLAN_RELEASE, b"\x00").detail == m.UNKNOWN_OPERATION
+    assert h.raw(0, 0x05, b"\x00").detail == m.UNKNOWN_OPERATION
+    assert "oep.probe.plan" in endpoint.Endpoint(fake.p4_bench(), Clock()).fns   # gpio, uart: plan roles
 
 
 # ---- C-16 / C-17 / C-18 / C-22: the session ----------------------------------------------------------------------
@@ -225,9 +227,9 @@ def test_c10_plan_ops_are_unknown_operation_without_plan_roles():
 def test_c16_a_rejected_answer_is_remembered_and_a_resend_replays_it():
     ep, h = bench()
     body = struct.pack("<HBH", 4, 1, 3)                           # channel 3: not the gpio's
-    first = h.raw(0, m.OP_PLAN_APPLY, m.tlv(0x10, body, critical=True), corr=50)
+    first = h.raw(h.plan_fn, PLAN_APPLY, m.tlv(0x10, body, critical=True), corr=50)
     assert first.detail == m.UNSUPPORTED
-    again = h.raw(0, m.OP_PLAN_APPLY, m.tlv(0x10, body, critical=True), corr=50)
+    again = h.raw(h.plan_fn, PLAN_APPLY, m.tlv(0x10, body, critical=True), corr=50)
     assert again == first and ep.newest_corr == 50                # from the table, not run again
     assert h.raw(0x77, 0x01, b"", corr=51).detail == m.UNKNOWN_FUNCTION   # order 1: not in the table
     assert 51 not in ep.resend
@@ -240,7 +242,7 @@ def test_c17_the_lease_is_rounded_into_1000_to_60000_and_restarts_on_rejected_an
     assert struct.unpack_from("<I", h.open(lease=100_000).payload)[0] == 60000
     h.open(lease=1000)
     ep.now = lambda: 900
-    assert h.raw(0, m.OP_PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 3), critical=True)).detail == m.UNSUPPORTED
+    assert h.raw(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 3), critical=True)).detail == m.UNSUPPORTED
     assert ep.expires_ms == 1900                                  # restarted by a rejected answer of the holder
     ep.now = lambda: 1000
     h.raw(0x77, 0x01, b"")                                        # unknown_function (order 1): no restart
@@ -275,7 +277,7 @@ def test_c22_a_utf8_owner_is_taken():
 def test_c30_every_profile_numbers_its_instances_per_name_and_revision():
     for name, profile in fake.PROFILES.items():
         assert profile().instance_errors() == [], name
-    bad = fake.FakeProbe("x", 256, [fake.Offered(0, 0, "oep.core"), fake.Offered(1, 1, "oep.fixture.gpio")])
+    bad = fake.FakeProbe("x", 256, [fake.Offered(0, 0, fake.CORE_NAME), fake.Offered(1, 1, "oep.fixture.gpio")])
     assert bad.instance_errors()
 
 
@@ -336,11 +338,11 @@ def test_p2_5_an_undeclared_combination_is_unsupported_scan_with_its_index():
     assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00" + m.tlv(0x40, b"\x01"))
     r = h.raw(1, 0x02, b"\x00" + SPEED + pins(a[0], b[1], critical=False))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x03")       # attach: the pins tag as received
-    h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 8), critical=True))
+    h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 8), critical=True))
     rp = endpoint.Endpoint(fake.rp2350_pins(), Clock())
     hp = Host(rp)
     hp.open()
-    hp.ok(0, m.OP_PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 1), critical=True))
+    hp.ok(hp.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 1), critical=True))
     r = hp.raw(1, 0x01, b"\x01" + struct.pack("<HH", 0, 1))       # a held channel: unavailable cause 1, the channel
     assert r.detail == m.UNAVAILABLE and una(r)[UNA["cause"]] == b"\x01" and una(r)[UNA["channel"]] == b"\x01\x00"
 
@@ -397,7 +399,7 @@ def test_p2_2_spi_target_drives_miso_only_while_cs_is_active():
     plan = b"".join(m.tlv(0x10, struct.pack("<HBH", spi, role, ch), critical=True)
                     for role, ch in ((1, 30), (2, 31), (3, 32), (4, 33)))
     h.ok(6 + 4, 0x02, idle_item(32, IDLE["pull_up"]))             # MISO's idle: a pull-up input
-    h.ok(0, m.OP_PLAN_APPLY, plan)
+    h.ok(h.plan_fn, PLAN_APPLY, plan)
     assert ep.pin_state(32) == "idle pull-up"                     # before configure: the idle state
     h.ok(spi, reg.FIXTURE_SPI_TARGET.op["configure"], b"\x00\x00")
     assert ep.pin_state(32) == "miso-hi-z" and ep.pin_state(30) == "input" and ep.pin_state(33) == "input"
@@ -413,7 +415,7 @@ def test_p2_3_i2c_target_open_drain_and_declared_pullups():
     r = h.raw(0, m.OP_DESCRIBE, struct.pack("<HH", i2c, 0), session=False)
     d = dict(m.split_tlvs(r.payload[1:]))
     assert struct.unpack("<I", d[0x06])[0] & 0x04 and struct.unpack("<I", d[0x42])[0] == 45000
-    h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", i2c, 1, 30), critical=True)
+    h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", i2c, 1, 30), critical=True)
          + m.tlv(0x10, struct.pack("<HBH", i2c, 2, 31), critical=True))
     assert ep.pin_state(30) == "idle hi-z"                        # state 0: released, nothing ACKed
     h.ok(i2c, reg.FIXTURE_I2C_TARGET.op["configure"], b"\x42\x01")
@@ -425,13 +427,13 @@ def test_p2_3_i2c_target_open_drain_and_declared_pullups():
 def test_p2_o13_taking_a_plan_changes_no_pin_and_an_analog_plan_on_an_output_idle_is_refused():
     ep, h = x035()
     h.ok(10, 0x02, idle_item(16, IDLE["output_high"]) + idle_item(20, IDLE["output_low"]) + idle_item(21, IDLE["output_high"]))
-    h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 20), critical=True)
+    h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 20), critical=True)
          + m.tlv(0x10, struct.pack("<HBH", 7, 0, 21), critical=True))
     assert ep.pin_state(20) == "gpio 3" and ep.gpio_log == []     # gpio: the idle's output low kept, no set yet
     assert ep.pin_state(21) == "idle output-high"                 # logic: it only listens
-    h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 5, 2, 22), critical=True))
+    h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 5, 2, 22), critical=True))
     assert ep.pin_state(22) == "uart-tx-high"                     # uart TX: from the plan
-    r = h.raw(0, m.OP_PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 11, 0, 16), critical=True))
+    r = h.raw(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 11, 0, 16), critical=True))
     t = una(r)
     assert r.detail == m.UNAVAILABLE and t[UNA["cause"]] == b"\x05" and t[UNA["holder_kind"]] == b"\x07"
 
@@ -445,7 +447,7 @@ def test_p2_o8_samples_rounded_down_and_the_critical_tlvs():
     ep = endpoint.Endpoint(fake.esp32_v003(), Clock())            # logic: max_samples 65536, one-shot only
     h = Host(ep)
     h.open()
-    h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 6, 0, 4), critical=True))
+    h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 6, 0, 4), critical=True))
     cfg = reg.FIXTURE_LOGIC.op["configure"]
     rate = m.tlv(CAP_TLV["rate"], struct.pack("<I", 1_000_000), critical=True)
     r = h.ok(6, cfg, rate + m.tlv(CAP_TLV["samples"], struct.pack("<I", 1 << 20)))
@@ -467,13 +469,13 @@ def test_p2_o10_capture_group_with_nothing_bound_and_the_checks_before_start():
     assert r.detail == m.UNAVAILABLE and una(r)[UNA["cause"]] == b"\x06"
     assert h.raw(12, grp["stop"]).succeeded and h.raw(12, grp["force"]).succeeded
     assert h.ok(12, grp["status"])[0] == 0
-    h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 7, 0, 30), critical=True)
+    h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 7, 0, 30), critical=True)
          + m.tlv(0x10, struct.pack("<HBH", 11, 0, 17), critical=True))
     for fn, hz in ((7, 1_000_000), (11, 1000)):
         h.ok(fn, reg.FIXTURE_LOGIC.op["configure"], m.tlv(CAP_TLV["mode"], b"\x03", critical=True)
              + m.tlv(CAP_TLV["rate"], struct.pack("<I", hz), critical=True))
     h.ok(12, grp["bind"], struct.pack("<BHH", 2, 7, 11))
-    h.ok(0, m.OP_SUBSCRIBE, struct.pack("<HHI", 7, 0, 0))         # fn 11 has no subscription
+    h.ok(7, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0))              # fn 11 has no subscription
     r = h.raw(12, grp["start"])
     assert r.detail == m.UNAVAILABLE and una(r)[UNA["fn"]] == struct.pack("<H", 11)
     assert ep.captures[7].state == fake_capture.STATE["configured"]   # nothing started
@@ -481,7 +483,7 @@ def test_p2_o10_capture_group_with_nothing_bound_and_the_checks_before_start():
 
 def test_p2_o11_a_read_past_the_write_position():
     ep, h = bench()
-    h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 5, 1, 20), critical=True))
+    h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 5, 1, 20), critical=True))
     ep.uart_rx(5, b"abc")
     r = h.raw(5, reg.FIXTURE_UART.op["read"], struct.pack("<BQH", 0, 100, 16), session=False)
     assert r.payload == struct.pack("<QBH", 3, 0, 0)

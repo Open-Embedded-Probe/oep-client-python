@@ -4,9 +4,10 @@ Each profile is a list of offered interfaces with their describe TLVs. The fake 
 operations - confirm, list, describe - by encoding real payloads and paging them to its max_frame,
 so what `dump` shows is what a host would decode from a probe of that shape.
 
-The profiles are EXAMPLES of declarations, not a decision about which capabilities are standard.
-Wire forms: oep-core §7 (confirm with a revision range, list first / total u16 with oep.core as the first
-entry, describe first u16).
+The profiles are EXAMPLES of declarations.
+Wire forms: oep-core §7 (confirm with a revision range, list first / total u16 - fn 0, the core, has no name and is
+never an entry - describe first u16). Every profile lists oep.probe.plan (its interfaces have plan roles) and
+oep.probe.restart after the fns it had before them.
 """
 
 from __future__ import annotations
@@ -37,22 +38,18 @@ class Offered:
     flags: int = 0
 
 
+CORE_NAME = ""                       # fn 0 is the core: it has no name and is never listed (core §0, §7.2)
 PLAN_ROLE_INTERFACES = {"oep.fixture.gpio", "oep.fixture.uart", "oep.fixture.i2c-target", "oep.fixture.spi-target",
-                        "oep.fixture.logic", "oep.fixture.analog"}     # the interfaces with plan roles (core §8)
+                        "oep.fixture.logic", "oep.fixture.analog"}   # the interfaces with plan roles (oep-if-plan)
 STAND_IN_OPS = (0x01, 0x02)          # the endpoint's two stand-in ops of an fn it does not simulate (FAKE ONLY)
-CORE_REQUIRED = ("confirm", "list", "describe", "open", "end", "keepalive", "lock_state", "subscribe", "unsubscribe")
-CORE_OPTIONAL = ("restart",)                      # fn 0's optional ops the fake offers (core §1.2, §6.6)
+CORE_REQUIRED = tuple(reg.CORE.op)   # fn 0's ops: every one mandatory, none optional (core §1.2, §12)
 
 
-def default_ops(name: str, all_names) -> set[int]:
-    """The ops an fn of interface `name` offers when its profile says nothing (core §1.2): fn 0 its required ops and
-    its optional restart (§6.6), plan_apply / plan_release when an interface has plan roles; any other interface every
-    op of its table, the optional ones included; one the registry does not know the stand-in ops."""
-    if name == "oep.core":
-        ops = {reg.CORE.op[k] for k in CORE_REQUIRED + CORE_OPTIONAL}
-        if PLAN_ROLE_INTERFACES & set(all_names):
-            ops |= {reg.CORE.op["plan_apply"], reg.CORE.op["plan_release"]}
-        return ops
+def default_ops(fn: int, name: str) -> set[int]:
+    """The ops an fn offers when its profile says nothing (core §1.2): fn 0 the core's (all mandatory); an interface
+    every op of its table, the optional ones included; one the registry does not know the stand-in ops."""
+    if fn == CORE_FN:
+        return {reg.CORE.op[k] for k in CORE_REQUIRED}
     i = reg.INTERFACES.get(name)
     return set(i.op.values()) if i is not None else set(STAND_IN_OPS)
 
@@ -67,24 +64,29 @@ def ops_of(name: str, *without: str) -> tuple[bytes, ...]:
 class FakeProbe:
     def __init__(self, label: str, max_frame: int, offered: list[Offered], fill_ops: bool = True):
         """Every offered fn's describe carries the ops tag (core §7.4): one that gives none gets `default_ops`, first;
-        fn 0 whose ops set restart carries restart_max_ms (RESTART_MAX_MS when it gives none, core §6.6, §7.5)
-        (`fill_ops` False: left as given - a probe that does not conform, for tests)."""
+        oep.probe.restart carries restart_max_ms (RESTART_MAX_MS when it gives none, oep-if-restart §1) (`fill_ops`
+        False: left as given - a probe that does not conform, for tests). A probe offering an interface with plan roles
+        and no oep.probe.plan gets one at the next free fn (oep-if-plan: it must list one). fn 0 is the core (no name,
+        never listed); every other fn has a name."""
         self.label = label
         self.max_frame = max_frame
-        all_names = [o.name for o in offered]
-        self.offered = sorted((o if not fill_ops else self._filled(o, all_names) for o in offered), key=lambda o: o.fn)
+        offered = list(offered)
+        if fill_ops and PLAN_ROLE_INTERFACES & {o.name for o in offered} and not any(o.name == PLAN for o in offered):
+            # an interface with plan roles: the probe lists oep.probe.plan too (oep-if-plan), at the next free fn
+            offered.append(_plan(max(o.fn for o in offered) + 1))
+        self.offered = sorted((o if not fill_ops else self._filled(o) for o in offered), key=lambda o: o.fn)
         self.requests = 0
         for o in self.offered:
-            names.validate(o.name)
+            if o.fn != CORE_FN:
+                names.validate(o.name)
 
     @staticmethod
-    def _filled(o: Offered, all_names) -> Offered:
+    def _filled(o: Offered) -> Offered:
         tlvs = o.tlvs
         if not any(t[0] == catalog.OPS for t in tlvs):
-            tlvs = (catalog.ops_tlv(default_ops(o.name, all_names)),) + tlvs
-        if o.fn == CORE_FN and not any(t[0] == CORE_RESTART_MAX_MS for t in tlvs) and any(
-                m.OP_RESTART in catalog.unpack_ops(t[3:]) for t in tlvs if t[0] == catalog.OPS):
-            tlvs = tlvs + (catalog.u32(CORE_RESTART_MAX_MS, RESTART_MAX_MS),)
+            tlvs = (catalog.ops_tlv(default_ops(o.fn, o.name)),) + tlvs
+        if o.name == RESTART and not any(t[0] == RESTART_MAX_MS_TAG for t in tlvs):
+            tlvs = tlvs + (catalog.u32(RESTART_MAX_MS_TAG, RESTART_MAX_MS),)
         return o if tlvs is o.tlvs else Offered(o.fn, o.instance, o.name, tlvs, o.revision, o.flags)
 
     def instance_errors(self) -> list[str]:
@@ -123,7 +125,7 @@ class FakeProbe:
         raise ValueError(f"fake: core op 0x{op:02x} unknown")
 
     def _list(self, prefix: str, exact: bool, first: int, reserve: int = 0) -> bytes:
-        hits = [o for o in self.offered if names.matches(o.name, prefix, exact)]
+        hits = [o for o in self.offered if o.fn != CORE_FN and names.matches(o.name, prefix, exact)]
         budget = self.max_frame - RESULT_HEADER - 3 - reserve
         page, used = [], 0
         for o in hits[first:]:
@@ -154,19 +156,21 @@ class FakeProbe:
 
 
 # ---- example profiles ----------------------------------------------------
-# Names follow oep-spec docs/capability-name-hierarchy.ja.md (provisional, 2026-09-24): probe-wide
-# declarations in oep.core's describe, oep.wire.<link> to scan and attach, oep.target.riscv-dm and
-# oep.target.console on the connection, fixtures gpio / uart / capture, the ESP-IDF I2C and SPI
-# targets under the project's own name. Probe-wide tags (oep.core, interface-specific 0x40..):
+# Probe-wide declarations in fn 0's describe (the core, 0x40..), oep.wire.<link> to scan and attach,
+# oep.target.riscv-dm and oep.target.console on the connection, fixtures gpio / uart / capture / i2c / spi targets,
+# oep.probe.config, oep.probe.link, and then oep.probe.plan and oep.probe.restart (appended: the fns before them keep
+# their numbers). Probe-wide tags:
 _CORE_TAGS = reg.CORE.tlv["describe"]
 CORE_FIRMWARE, CORE_MODEL, CORE_UNIT_ID, CORE_CHANNELS = (_CORE_TAGS[k] for k in ("firmware", "model", "unit_id", "channels"))
 CORE_RESERVED, CORE_PROFILE, CORE_LABEL = _CORE_TAGS["reserved"], _CORE_TAGS["profile"], _CORE_TAGS["label"]
 CORE_RESETS_ON_OPEN, CORE_TRANSPORT = _CORE_TAGS["resets_on_open"], _CORE_TAGS["transport"]
-CORE_DISCOVERABLE, CORE_PLAN_ROLES, CORE_MAX_OP_MS = _CORE_TAGS["discoverable"], _CORE_TAGS["plan_roles"], _CORE_TAGS["max_op_ms"]
+CORE_DISCOVERABLE, CORE_MAX_OP_MS = _CORE_TAGS["discoverable"], _CORE_TAGS["max_op_ms"]
 MAX_OP_MS = reg.REFERENCE["max_op_ms"]              # what the fake declares: the longest one request may take (core §7.5)
-CORE_RESTART_MAX_MS = _CORE_TAGS["restart_max_ms"]
-RESTART_MAX_MS = 2000                             # what the fake declares with restart: back on confirm within this (core §6.6, §7.5)
-PLAN_ROLES = 32                                   # role assignments the fake's plan holds at once (core §8)
+PLAN, RESTART, LINK = reg.PROBE_PLAN.name, reg.PROBE_RESTART.name, reg.PROBE_LINK.name
+RESTART_MAX_MS_TAG = reg.PROBE_RESTART.tlv["describe"]["restart_max_ms"]
+RESTART_MAX_MS = 2000                             # what the fake declares: back on confirm within this (oep-if-restart §1)
+PLAN_ROLES_TAG = reg.PROBE_PLAN.tlv["describe"]["plan_roles"]
+PLAN_ROLES = 32                                   # role assignments the fake's plan holds at once (oep-if-plan §1)
 GPIO_MODES = reg.FIXTURE_GPIO.tlv["describe"]["modes"]
 GPIO_DRIVE_LEVELS = reg.FIXTURE_GPIO.tlv["describe"]["drive_levels"]
 DRIVE_LEVELS_MA = (5, 10, 20, 40)     # the fake's selectable output strengths (fixture §1.1), approximate mA, ascending
@@ -198,14 +202,14 @@ def _analog_decl(frontends: list[tuple[int, int, int, int]], max_samples: int) -
     out += tuple(catalog.tlv(_ANAD["frontend"], struct.pack("<BiiI", *f)) for f in frontends)
     return out + (catalog.tlv(_ANAD["channels"], struct.pack("<BI", 4, 1 << 4)),      # s 16 (layouts u32: bit i = 2^i)
                   catalog.tlv(_ANAD["trigger"], struct.pack("<II", 0b11001, max_samples - 1)),   # immediate, cross up / down
-                  catalog.u32(_ANAD["max_read"], 4096), catalog.u16(_ANAD["segment_ring"], 8),
-                  catalog.u32(FEATURES, 0b100))     # notify (query and force: every op offered, the ops tag)
+                  catalog.u32(_ANAD["max_read"], 4096), catalog.u16(_ANAD["segment_ring"], 8))
+    # no features: revision 1 defines no bit (query, force, subscribe / unsubscribe: every op offered, the ops tag)
 
 
 def _group_decl(tracks: list[int], budgets: list[tuple[int, list[int]]], skews: dict[int, int]) -> tuple[bytes, ...]:
     """oep.fixture.capture-group's declarations (§4.3): tracks n x fn, max_tracks, budget max_sps n x fn, start_skew."""
     return ((catalog.tlv(_GRPD["tracks"], struct.pack(f"<B{len(tracks)}H", len(tracks), *tracks)),
-             catalog.u8(_GRPD["max_tracks"], len(tracks)), catalog.u32(FEATURES, 0b100))   # notify; force: ops
+             catalog.u8(_GRPD["max_tracks"], len(tracks)))   # force, subscribe / unsubscribe: the ops tag
             + tuple(catalog.tlv(_GRPD["budget"], struct.pack(f"<IB{len(f)}H", most, len(f), *f)) for most, f in budgets)
             + tuple(catalog.tlv(_GRPD["start_skew"], struct.pack("<HI", fn, ns)) for fn, ns in skews.items()))
 _CAPM = reg.FIXTURE_LOGIC.enum["mode"]
@@ -220,8 +224,8 @@ def _capture_decl(modes: list[str], max_channels: int, widths: list[int], max_sa
     bits = sum(1 << (w.bit_length() - 1) for w in widths)
     return out + (catalog.tlv(_CAPD["channels"], struct.pack("<BI", max_channels, bits)),    # layouts: u32 bit set
                   catalog.tlv(_CAPD["trigger"], struct.pack("<II", 0b111, max_samples - 1)),   # types u32, max_pretrigger
-                  catalog.u32(_CAPD["max_read"], max_read), catalog.u16(_CAPD["segment_ring"], ring),
-                  catalog.u32(FEATURES, 0b100))     # notify (query and force: every op offered, the ops tag)
+                  catalog.u32(_CAPD["max_read"], max_read), catalog.u16(_CAPD["segment_ring"], ring))
+    # no features: revision 1 defines no bit (query, force, subscribe / unsubscribe: every op offered, the ops tag)
 MAX_CONNECTIONS = reg.WIRE_RVSWD.tlv["describe"]["max_connections"]
 _CFG = reg.PROBE_CONFIG.tlv["describe"]
 
@@ -312,8 +316,18 @@ def _console(fn: int, mechanisms=(0, 1, 2), send_queue: int = CONSOLE_SEND_QUEUE
 
 
 def _link(fn: int, port_speed: bool = False) -> Offered:
-    """oep.link (oep-if-link): source and sink, and port_speed when `port_speed` (a probe on a UART bridge)."""
-    return Offered(fn, 0, "oep.link", ops_of("oep.link") if port_speed else ops_of("oep.link", "port_speed"))
+    """oep.probe.link (oep-if-link): source and sink, and port_speed when `port_speed` (a probe on a UART bridge)."""
+    return Offered(fn, 0, LINK, ops_of(LINK) if port_speed else ops_of(LINK, "port_speed"))
+
+
+def _plan(fn: int, plan_roles: int = PLAN_ROLES) -> Offered:
+    """oep.probe.plan (oep-if-plan): plan_apply, plan_release, and plan_roles - the most role assignments at once."""
+    return Offered(fn, 0, PLAN, (catalog.u32(PLAN_ROLES_TAG, plan_roles),))
+
+
+def _restart(fn: int, restart_max_ms: int = RESTART_MAX_MS) -> Offered:
+    """oep.probe.restart (oep-if-restart): restart, and restart_max_ms - back on confirm within this after the answer."""
+    return Offered(fn, 0, RESTART, (catalog.u32(RESTART_MAX_MS_TAG, restart_max_ms),))
 
 
 def _roles(assign: dict[int, list[int]]) -> tuple[bytes, ...]:
@@ -326,19 +340,18 @@ def _label(channel: int, name: str) -> bytes:
 
 def _core(firmware: str, model: str, unit_id: str, channels: int, reserved: list[int], profile: str,
           labels: dict[int, str], extra: tuple[bytes, ...] = (), discoverable: int = 0) -> Offered:
-    """oep.core's declarations (core §7.5): the required unit_id, transport (in `extra`) and max_op_ms, discoverable
-    (1 for a probe on the project's VID:PID, 0 otherwise: every probe sends it), plan_roles, the firmware's fixed
-    labels."""
+    """fn 0's declarations (core §7.5): the required unit_id, transport (in `extra`) and max_op_ms, discoverable
+    (1 for a probe on the project's VID:PID, 0 otherwise: every probe sends it), the firmware's fixed labels. fn 0 is
+    the core: no name, never listed."""
     base, bits = catalog.channels_to_bitmap(reserved)
     assert MODEL.fullmatch(model) and UNIT_ID.fullmatch(unit_id), "core §7.5: model / unit_id grammar"
     for t in extra:
         if t[0] == CORE_CHIP:
             assert CHIP.fullmatch(m.split_tlvs(t)[0][1].decode()), "core §7.5: chip is <part> v<revision>"
-    return Offered(0, 0, "oep.core", (
+    return Offered(0, 0, CORE_NAME, (
         catalog.text(CORE_FIRMWARE, firmware), catalog.text(CORE_MODEL, model), catalog.text(CORE_UNIT_ID, unit_id),
         catalog.u16(CORE_CHANNELS, channels), catalog.tlv(CORE_RESERVED, struct.pack("<H", base) + bits),
         catalog.u32(CORE_MAX_OP_MS, MAX_OP_MS), catalog.u8(CORE_DISCOVERABLE, discoverable),
-        catalog.u32(CORE_PLAN_ROLES, PLAN_ROLES),
         ) + ((catalog.text(CORE_PROFILE, profile),) if profile else ()) + tuple(_label(c, n) for c, n in labels.items())
         + extra)
 
@@ -381,12 +394,14 @@ def p4_x035() -> FakeProbe:
         # the logic (fn 7) and the analog (fn 11) together; the ADC's 83.3 kHz is shared by its channels
         Offered(12, 0, "oep.fixture.capture-group", _group_decl([7, 11], [(83_333, [11])], {11: 5000})),
         _link(13),
+        _plan(14),
+        _restart(15),
     ])
 
 
 def esp32_v003() -> FakeProbe:
     """A small probe with 64-byte frames over a 115200 bps UART bridge (its only transport, serial port 0):
-    classic ESP32 on a CH32V003 (SWIO) jig. oep.link with port_speed (oep-if-link §3), as the reference classic ESP32
+    classic ESP32 on a CH32V003 (SWIO) jig. oep.probe.link with port_speed (oep-if-link §3), as the reference classic ESP32
     firmware."""
     reserved = [0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15]   # UART0, strapping, flash: the probe's own (SWIO 16 is the wire's)
     wired = [4, 5, 13, 14, 17, 18, 19, 21, 22, 25, 26, 27, 32, 33]
@@ -413,6 +428,8 @@ def esp32_v003() -> FakeProbe:
             + _spi_decl(max_length=32, max_hz=3_000_000, features=0, queue_depth=4, cs_setup_ns=4000)),   # MISO in software
         _config(9, 0, slots_max=1, modes=0b011, storage=1024),
         _link(10, port_speed=True),
+        _plan(11),
+        _restart(12),
     ])
 
 
@@ -438,6 +455,8 @@ def p4_bench() -> FakeProbe:
         _uart(5, 0, pins, 3_000_000),
         _config(6, 0, slots_max=4),
         _link(7),
+        _plan(8),
+        _restart(9),
     ])
 
 
@@ -459,10 +478,19 @@ def rp2350_pins() -> FakeProbe:
         _gpio(4, pins),
         _uart(5, 0, pins, 3_000_000),
         _link(6),
+        _plan(7),
+        _restart(8),
     ])
 
 
 STAND_IN = f"{NS}.stand-in"
+
+
+def without(probe: FakeProbe, name: str) -> FakeProbe:
+    """The profile without its fns of interface `name` (`fake_serve --no-restart`: a probe without the optional
+    oep.probe.restart, which then lists none and answers unknown_function on its old fn). The other fns keep their
+    numbers. FAKE ONLY."""
+    return FakeProbe(probe.label, probe.max_frame, [o for o in probe.offered if o.name != name])
 
 
 def with_unit_id(probe: FakeProbe, unit_id: str) -> FakeProbe:

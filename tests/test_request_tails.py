@@ -14,7 +14,7 @@ from oep_client import (capture as c, config, console, core, endpoint, fake, fix
 
 UNKNOWN = 0x3D                                 # no context defines it
 IGNORED = bytes([m.TAG_IGNORED, 1, 0, UNKNOWN])           # 0x7F len(u16) the tag (core §2.2, §2.3)
-CORE_NAME = "oep.core"
+CORE_NAME = "(core)"                           # fn 0: the core has no name (core §0); a label for these tests
 # requests that take no TLV tail of this kind: describe / probe.config get (a TLV there is malformed, core §7.3),
 # probe.config set (its TLVs are the items: an unknown one is an undeclared item, rejected unsupported - probe.config §1)
 NO_TAIL = {(CORE_NAME, reg.CORE.op["describe"]), ("oep.probe.config", reg.PROBE_CONFIG.op["get"]),
@@ -75,6 +75,8 @@ def bench(probe, transport=1):
 def every_op(ep: endpoint.Endpoint) -> set[tuple[str, int]]:
     out = {(CORE_NAME, op) for op in reg.CORE.op.values() if ep.offers(m.CORE_FN, op)}
     for fn, name in ep.names.items():
+        if fn == m.CORE_FN:
+            continue
         i = reg.INTERFACES.get(name)
         if i is None:
             out |= {(name, endpoint.TOY_WRITE), (name, endpoint.TOY_READ)}
@@ -90,19 +92,22 @@ def drive_core(hst, ep):
     hst.open(3000, owner="tails")
     hst.lock_state()
     hst.keepalive()
-    hst.subscribe(m.CORE_FN, 0, 1000)
-    hst.unsubscribe(m.CORE_FN)
+    hst.clock()
+    for name in ("oep.fixture.logic", "oep.fixture.analog", "oep.fixture.capture-group"):   # their own ops (§11.3)
+        for fn in core.find_all(hst, name):
+            hst.subscribe(fn, 0, 1000)
+            hst.unsubscribe(fn)
     gpio = fixture.Gpio(hst)
     core.plan_apply(hst, [(gpio.fn, 1, CHANNELS[ep.probe.label]["gpio"])])
     core.plan_release(hst, [gpio.fn])
-    link = core.link_fn(hst)                                          # oep.link: the link test (oep-if-link §2)
+    link = core.link_fn(hst)                                          # oep.probe.link: the link test (oep-if-link §2)
     assert core.link_source_data(hst.call(link, core.LINK_SOURCE, core.link_source_request(8), locked=False).payload) \
         == bytes(range(8))
     hst.call(link, core.LINK_SINK, core.link_sink_request(b"abc"), locked=False)
 
 
 def drive_restart(hst):
-    """fn 0's optional restart (core §6.6), last: the probe restarts once the answer is out."""
+    """oep.probe.restart's restart (oep-if-restart), last: the probe restarts once the answer is out."""
     hst.open(3000)
     hst.request_restart()
 
@@ -259,12 +264,13 @@ def test_plan_apply_lists_an_unknown_tlv_and_refuses_tag_0x7f():
     hst = h.Host(lambda b: ep.handle(b, 1))
     hst.open(3000)
     gpio = ep.fns["oep.fixture.gpio"]
-    ra = m.tlv(reg.CORE.tlv["plan_apply"]["role_assignment"], struct.pack("<HBH", gpio, 1, 30), critical=True)
-    r = hst.request(m.CORE_FN, reg.CORE.op["plan_apply"], ra + m.tlv(UNKNOWN, b""))
+    ra = m.tlv(reg.PROBE_PLAN.tlv["plan_apply"]["role_assignment"], struct.pack("<HBH", gpio, 1, 30), critical=True)
+    plan = ep.fns["oep.probe.plan"]
+    r = hst.request(plan, core.OP_PLAN_APPLY, ra + m.tlv(UNKNOWN, b""))
     assert r.succeeded and r.payload == IGNORED
     for bad in (m.TAG_IGNORED, m.TAG_INVALID, m.TAG_FIXED):
         with pytest.raises(h.Rejected, match="malformed"):
-            hst.request(m.CORE_FN, reg.CORE.op["plan_apply"], ra + bytes([bad, 0]))
+            hst.request(plan, core.OP_PLAN_APPLY, ra + bytes([bad, 0]))
 
 
 def test_config_set_refuses_an_unknown_item_with_the_tag_as_received():

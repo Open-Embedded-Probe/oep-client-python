@@ -144,7 +144,7 @@ def test_reboot_resets_what_a_probe_loses_and_applies_the_saved_settings_again()
     cfg.set([config.Disable(channel=20)])                            # not saved
     core.plan_apply(hst, [(4, 1, 30)])
     riscv.Wire(hst, "oep.wire.rvswd").attach(pins=(4, 5))
-    hst.subscribe(0)
+    ep.subscribed[4] = (0, 0)                                        # (p4-bench has nothing that emits: a stand-in)
     hst.keepalive()
     saved = dict(ep.saved)
     assert ep.conns and ep.plan and ep.resend and ep.subscribed and ep.holder is not None and ep.disabled == {20}
@@ -156,7 +156,7 @@ def test_reboot_resets_what_a_probe_loses_and_applies_the_saved_settings_again()
     assert ep.holder is None and ep.last is None                      # the session table
     assert ep.conns == {} and ep.streams == {} and ep.resources == {}
     assert ep.plan == set() and ep.resend == {} and ep.newest_corr is None
-    assert ep.subscribed == set() and ep.outbox == []
+    assert ep.subscribed == {} and ep.outbox == []
     assert ep.revision_in_use == {} and ep.speed_state == "base"
     assert ep.disabled == set() and ep.config == saved and ep.parked[21] == 2   # the saved settings, applied again
     assert ep.capture_slipped and ep.uart_clock_hz == 1_000_000

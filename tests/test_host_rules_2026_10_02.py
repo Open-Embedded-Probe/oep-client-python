@@ -122,7 +122,7 @@ def test_c15_the_links_own_confirms_use_the_revision_in_use():
 def test_c05_the_confirm_names_the_transport_and_port_speed_takes_it():
     probe = fake.esp32_v003()
     core_fn = probe.offered[0]
-    two = fake.Offered(0, 0, "oep.core", tuple(t for t in core_fn.tlvs if t[0] != fake.CORE_TRANSPORT)
+    two = fake.Offered(0, 0, fake.CORE_NAME, tuple(t for t in core_fn.tlvs if t[0] != fake.CORE_TRANSPORT)
                        + fake._transports([(fake.TRANSPORT["uart_bridge"], 0xFF)] * 2))
     probe = fake.FakeProbe(probe.label, probe.max_frame, [two] + probe.offered[1:])
     ep, hst = in_process(lambda: probe, transport=1)
@@ -137,7 +137,7 @@ def test_c05_the_confirm_names_the_transport_and_port_speed_takes_it():
 def test_c05_a_relaying_brokers_0xff_and_a_confirm_without_the_tlv():
     hst = h.Host(lambda b: b)
     hst.limits = {"transport": 0xFF}
-    hst._fns["oep.link"] = 10                                          # oep.link offering port_speed (its ops)
+    hst._fns["oep.probe.link"] = 10                                    # oep.probe.link offering port_speed (its ops)
     hst._describes[10] = [(fake.catalog.OPS, fake.catalog.pack_ops({1, 2, 3}))]
     assert "broker" in link._speed_port(hst)[2]
     hst.limits = {"transport": None}
@@ -262,7 +262,7 @@ def test_c04_the_ignored_marker():
 def test_c10_dump_says_what_a_probe_must_give_and_did_not():
     caps = dump.collect(fake.esp32_v003().call)
     assert caps.missing == []
-    bare = fake.FakeProbe("bare", 256, [fake.Offered(0, 0, "oep.core")])
+    bare = fake.FakeProbe("bare", 256, [fake.Offered(0, 0, fake.CORE_NAME)])
     caps = dump.collect(bare.call)
     assert caps.missing == ["describe of fn 0: unit_id", "describe of fn 0: transport", "describe of fn 0: max_op_ms",
                             "describe of fn 0: discoverable"]
