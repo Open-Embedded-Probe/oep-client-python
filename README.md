@@ -116,7 +116,7 @@ oep config slot <probe> --name x035 --wire rvswd --pins 2,54 --attach at-boot --
 oep config bind <probe> --port 1 --mode last-reset --stream slot:x035
 oep config uart <probe> oep.fixture.uart 115200 --format 8N1   # applied whenever that UART's plan has RX or TX
 oep config save <probe>                      # kept over a restart (also: remove = unset, erase)
-oep speed <probe> 1500000,921600,500000      # port_speed: try faster rates on a UART bridge, print the report (below)
+oep speed <probe> [921600,500000]            # port_speed: raise a UART bridge (default 500000), print the report (below)
 oep pins <probe> --power 5 --wire swio       # where the target is wired: debug pins, reset line, a slot (below)
 oep clock <probe> [-n 8] [--json]            # fn 0's clock: uptime_ns and boot_id against this host's time (shortest of n)
 oep restart <probe>                          # oep.probe.restart: restart the probe, wait until it is back (new boot_id)
@@ -191,11 +191,25 @@ does) lets the host
 run its UART bridge faster than the boot speed (115200) for one session. Nothing changes unless the host asks:
 
 ```python
-hst = link.open_host("/dev/ttyUSB0", port_speed=[921600, 500000])    # takes the lock, keeps the session open
+hst = link.open_host("/dev/ttyUSB0", port_speed=True)    # 500000; takes the lock, keeps the session open
 print(hst.link.speed.to_text())             # every candidate tried, the baseline, the flows, the one in force
 # the full form (a baseline and the flows measured), in a session already taken:
-report = link.raise_speed(hst, [921600, 500000], verify=True, flows=[("out", 2)], record=True)
+report = link.raise_speed(hst, [500000], verify=True, flows=[("out", 2)], record=True)
+# a faster rate only because the user named it (e.g. `oep speed <probe> 921600,500000`): its 1 s verify first
+hst = link.open_host("/dev/ttyUSB0", port_speed=[921600, 500000])
 ```
+
+**The default ceiling is 500000** (oep-if-link §3 obligation 7): the default candidate is 500000 alone
+(`link.DEFAULT_CANDIDATES`), and a host does not try faster unless the user explicitly chose it - pass a rate above
+`link.DEFAULT_CEILING` in the candidates only when the user named it (`oep speed <probe> 921600,500000`, a setting). Such a
+rate, in the minimal and the full form alike, is committed only after its **1 s verify** (host guide §17.3.3): in the try
+state, full frames (max_frame - 26) of oep.probe.link source (in) and of sink (out), and of duplex too when the full
+form verifies it, each for at least 1 s (`link.FAST_VERIFY_S`) at its in-flight n, judged as a flow is (below), with no
+second run at n = 1; its try asks verify_ms 4000 (6000 with duplex) so it needs a lease of 5000 (7000) ms or more -
+`link.lease_for(candidates, flows, verify)`; `open_host` and `oep speed` take at least that, and a shorter lease skips
+the candidate. Committed, it has the probation and in-use judging of any rate. Why: on one bridge, 921600 passed
+a verify of 16 full frames each way and still broke 1-4 answers in every 9 KiB upload; 500000 was clean on every bridge
+measured (oep-spec host guide §17.5).
 
 The host's procedure is the oep-spec host guide §17 (oep-if-link §3 is the handshake). The **minimal form** (the default, about
 50 ms, no measurement): each candidate in order - `try` (answered at the speed now, then the probe switches) -> the host
@@ -206,9 +220,9 @@ oep.probe.link sink host -> probe, duplex = both interleaved; `n` in flight, 0 =
 max_frame - 26 (what one oep.probe.link source answer carries), counting broken and lost and measuring KB/s; a flow fails on broken + lost >= 3 over max(2 x baseline,
 5 %), runs once more at n = 1 first (then n = 1 is the link's cap), and one failed flow fails the candidate. A failed
 candidate reverts (step 2) and goes back to the boot speed, confirmed there. The first candidate that passes is kept; a
-rate the probe's UART cannot make is skipped. Which rates pass depends on the bridge chip and its driver (an FTDI took
-only 3 MHz / n, a CH340 921600 but not 1500000 towards the host: oep-spec docs/uart-speed-negotiation.ja.md), so the
-host chooses them. The report (`link.speed`: `base`, `rate`, `chosen`, `baseline`, `trials` of `SpeedTrial` with
+rate the probe's UART cannot make is skipped. Which rates pass depends on the bridge chip and its driver (some make
+only integer divisors of their clock; some break long bursts above 500000 though short checks pass), so the host chooses
+them within the ceiling. The report (`link.speed`: `base`, `rate`, `chosen`, `baseline`, `trials` of `SpeedTrial` with
 `flows`, `in_kb_s` / `out_kb_s` / `duplex_kb_s`) is there to budget a capture or a write.
 
 The probe goes back to the boot speed by itself when the session ends (`end`, a lapse, a force), when frames break or the

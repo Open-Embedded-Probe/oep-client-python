@@ -1,6 +1,40 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) port_speed's default ceiling is 500000 (oep-spec 32260e5, oep-if-link §3 host obligation 7, host guide
+  §17.3.3): the default candidate stays 500000 alone (`link.DEFAULT_CANDIDATES`), and a rate above `link.DEFAULT_CEILING`
+  (500000) is the user's explicit choice - named in `oep speed <probe> 921600,500000` / `--candidates`, or passed by a
+  caller only when its user named it. Such a rate, in the minimal and the full form alike, is committed only after its
+  1 s verify in the try state: full frames (max_frame - 26) of oep.probe.link source (in) and sink (out), and duplex
+  when the full form verifies it, each for at least `link.FAST_VERIFY_S` (1 s) at its in-flight n (the caller's, else
+  the most the link keeps), judged as a flow is (broken + lost >= 3 over max(2 x baseline, 5 %)), no second run at
+  n = 1 (`_flow_run` takes `min_s`). Its try asks verify_ms `link.fast_verify_ms(n)` (4000 for in and out, 6000 with
+  duplex); a session whose lease is shorter than that + 1 s skips the candidate (`trial.why` says so), and
+  `link.lease_for(candidates, flows, verify)` gives the lease to open with - `open_host(port_speed=...)` and `oep speed`
+  take at least it. Committed, the rate has the probation and in-use judging of any rate. Why: on a bridge, 921600
+  passed a verify of 16 full frames each way and still broke 1-4 answers in every 9 KiB upload; 500000 was clean on
+  every bridge measured. Tests: `test_port_speed` runs its procedure tests without the ceiling (an autouse fixture) and
+  the `ceiling` tests with it - the default (500000, no flows, verify_ms 2000), a faster rate's in / out for 1 s with
+  verify_ms 4000 before the commit, a rate that breaks past the 16 frames failing its 1 s verify (500000 then taken
+  with the quick verify), duplex and verify_ms 6000 in the full form, `lease_for` and a short lease skipping the rate,
+  `oep speed` on a pty (500000 by default, 921600 only when named, in and out verified). `linktest` and tests/hw's board
+  rates are unchanged (measurements at rates the caller names). README (EN / JA), `oep speed`'s help.
+- (JA) port_speed の既定の上限は 500000（oep-spec 32260e5、oep-if-link §3 の host の義務 7、host 開発ガイド §17.3.3）: 既定の
+  候補は 500000 だけのまま（`link.DEFAULT_CANDIDATES`）で、`link.DEFAULT_CEILING`（500000）より速い速さは利用者が明示して選ぶもの
+  - `oep speed <probe> 921600,500000` / `--candidates` で名指すか、呼ぶ側がその利用者に名指されたときだけ渡す。その速さは、最小の
+  形でも完全な形でも、試しの状態での 1 秒の確かめを通ってから決める: max_frame − 26 のフレームを oep.probe.link の source（in）と
+  sink（out）で、完全な形が duplex を確かめるなら duplex でも、それぞれ `link.FAST_VERIFY_S`（1 秒）以上、その同時数（呼ぶ側の
+  もの、無ければ link が出す最大）で流し、流し方と同じ基準（壊れ + 失われ 3 以上で max(基準 × 2, 5 %) 超）で判定し、n = 1 での
+  流し直しはしない（`_flow_run` が `min_s` を取る）。その試すは verify_ms `link.fast_verify_ms(n)`（in と out で 4000、duplex を
+  含めて 6000）を頼む。lease がそれ + 1 秒より短いセッションでは、その候補を飛ばし（`trial.why` に書く）、
+  `link.lease_for(candidates, flows, verify)` が開くときの lease を出す - `open_host(port_speed=...)` と `oep speed` は少なくとも
+  それで取る。決めた後は、ほかの速さと同じ試用期間と使用中の判定。理由: ある変換では 921600 が両方向 16 フレームずつの
+  確かめを通っても 9 KiB の書き込みのたびに応答が 1〜4 個壊れた。500000 は測ったどの変換でも壊れなかった。試験:
+  `test_port_speed` の手順の試験は上限なしで（autouse の fixture）、名前に `ceiling` を持つ試験は上限ありで回す - 既定（500000、
+  流し方なし、verify_ms 2000）、速い速さの in / out 1 秒と verify_ms 4000 の後の決める、16 フレームの後で壊れる速さが 1 秒の
+  確かめで落ちる（続く 500000 は素早い確かめで決まる）、完全な形での duplex と verify_ms 6000、`lease_for` と短い lease での
+  飛ばし、pty での `oep speed`（既定は 500000、921600 は名指したときだけ、in と out を確かめる）。`linktest` と tests/hw の板の
+  速さは変えない（呼ぶ側が名指す速さでの計測）。README（EN / JA）、`oep speed` の help。
 - (EN) The fake's `esp32-v003` profile has the classic ESP32 firmware's frame limits: max_frame 512 and
   oep.target.riscv-dm max_length 488 (`block_max_length(512)`), as that firmware declares (oep-probe-arduino
   0.0.29-dev+526a881's describe on the V003 jig) - it had 64 and 40, and a host reproducing an upload on it split its

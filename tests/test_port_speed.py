@@ -16,6 +16,15 @@ TRY, COMMIT, REVERT = 0, 1, 2
 PS = endpoint.OP_PORT_SPEED
 
 
+@pytest.fixture(autouse=True)
+def _ceiling(request, monkeypatch):
+    """Most tests here are about the procedure at any rate the fake makes (1500000, 921600 ... included): they run
+    without the default ceiling, so a rate above 500000 is not given the 1 s verify. The tests named `ceiling` keep
+    the real one (oep-if-link §3 obligation 7, host guide §17.3.3)."""
+    if "ceiling" not in request.node.name:
+        monkeypatch.setattr(link, "DEFAULT_CEILING", 10 ** 9)
+
+
 class Clock:
     def __init__(self):
         self.t = 1000
@@ -859,6 +868,73 @@ def test_the_record_is_a_cache_an_unreadable_file_is_not_an_error(tmp_path):
     assert speed_record.default_path().name == "link-speed.json" and speed_record.default_path().parent.name == "oep-client"
 
 
+# ---- the default ceiling (oep-if-link §3 obligation 7, host guide §17.3.3) -------------------------------------------------
+
+def try_verify_ms(ep, rate):
+    """verify_ms of the host's try at `rate`."""
+    q = next(q for q in ep.requests if q.fn == ep.link_fn and q.op == PS and q.payload[5] == TRY
+             and struct.unpack_from("<I", q.payload, 1)[0] == rate)
+    return struct.unpack_from("<H", q.payload, 6)[0]
+
+
+def test_ceiling_the_default_is_500000_alone_with_no_measurement():
+    ep, hst, lk = in_process()
+    assert link.DEFAULT_CANDIDATES == (500000,) and link.DEFAULT_CEILING == 500000
+    report = link.raise_speed(hst)
+    t, = report.trials
+    assert t.committed and t.flows == [] and lk.baud == 500000 and try_verify_ms(ep, 500000) == link.VERIFY_MS
+
+
+def test_ceiling_a_faster_rate_is_committed_only_after_full_frames_ran_1_s_each_way():
+    """The minimal form too: in (source) and out (sink) of max_frame - 26 bytes, each for at least 1 s at the link's
+    in-flight count, in the try state; the try asks verify_ms 4000 so the probe waits for it."""
+    ep, hst, lk = in_process()
+    report = link.raise_speed(hst, [921600])
+    t, = report.trials
+    assert t.committed and report.chosen == 921600 and not report.verified
+    assert [(f.flow, f.n) for f in t.flows] == [("in", lk.inflight_for(hst.limits)), ("out", lk.inflight_for(hst.limits))]
+    size = core.link_size(hst.limits["max_frame"])
+    for f in t.flows:
+        assert f.passed and f.frames > link.FLOW_FRAMES and f.frames * size / (f.kb_s * 1000) >= link.FAST_VERIFY_S
+    assert try_verify_ms(ep, 921600) == link.fast_verify_ms(2) == 4000
+    assert [o for o in ops(ep) if o[0] == PS][-2:] == [(PS, TRY), (PS, COMMIT)]       # the flows between them
+    assert t.probation == "running"                     # and the in-use judging as for any rate
+
+
+def test_ceiling_a_faster_rate_that_breaks_past_the_quick_verify_fails_its_1_s_verify():
+    """The field case: 16 frames would pass (the breakage starts past them), 1 s of full frames does not. The rate is
+    not committed; 500000 after it is, with no 1 s verify."""
+    ep, hst, lk = in_process()
+    size = core.link_size(hst.limits["max_frame"] if hst.limits else hst.confirm()["max_frame"])
+    ep.broken_rates[921600] = endpoint.BrokenRate(min_size=40, to_probe=False, after=20 * (size + 30), every=3)
+    report = link.raise_speed(hst, [921600, 500000], flows=[("in", 1)], **FAST)
+    a, b = report.trials
+    assert not a.committed and a.flows[0].flow == "in" and a.flows[0].frames > link.FLOW_FRAMES
+    assert "full frames in 1 s broken or lost" in a.why and lk.failed.keys() == {921600}
+    assert b.committed and report.chosen == 500000 and [f.flow for f in b.flows] == ["in"]
+    assert b.flows[0].frames == link.FLOW_FRAMES                                   # the quick verify at 500000
+
+
+def test_ceiling_the_full_form_adds_duplex_and_a_6_s_verify_ms():
+    ep, hst, lk = in_process()
+    report = link.raise_speed(hst, [921600], flows=[("in", 1), ("duplex", 1)])
+    t, = report.trials
+    assert t.committed and [(f.flow, f.n) for f in t.flows] == [("in", 1), ("out", lk.inflight_for(hst.limits)),
+                                                                ("duplex", 1)]
+    assert try_verify_ms(ep, 921600) == 6000
+
+
+def test_ceiling_a_lease_too_short_for_the_1_s_verify_skips_the_rate():
+    assert link.lease_for([500000, 230400]) == 0
+    assert link.lease_for([921600, 500000]) == 5000 and link.lease_for([921600], flows=[("out", 2)]) == 5000
+    assert link.lease_for([921600], verify=True) == 7000 and link.lease_for([921600], flows=["duplex"]) == 7000
+    ep, hst, lk = in_process(lease=3000)
+    report = link.raise_speed(hst, [921600, 500000], **FAST)
+    a, b = report.trials
+    assert not a.committed and "needs verify_ms 4000 and a lease of 5000 ms" in a.why and a.actual is None
+    assert b.committed and report.chosen == 500000 and lk.failed == {}
+
+
 # ---- a pty and the CLI -------------------------------------------------------------------------------------------------
 
 @pytest.mark.skipif(sys.platform != "linux", reason="a pty")
@@ -905,6 +981,26 @@ def test_oep_speed_cli_prints_the_report_and_keeps_the_record(capsys, tmp_path, 
         assert out["trials"][0]["probation"] == "running"
         assert cli.main(["speed", where[1], "--no-record"]) == 0                 # the default candidate, 500000
         assert "in force: 500000 (raised)" in capsys.readouterr().out
+    finally:
+        proc.stdin.close()
+        proc.wait(5)
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="a pty")
+def test_ceiling_oep_speed_tries_a_faster_rate_only_when_named_and_verifies_it_1_s_each_way(capsys):
+    from oep_client import __main__ as cli
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", "--pty", "--profile", "esp32-v003"],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    try:
+        where = proc.stdout.readline().split()
+        assert cli.main(["speed", where[1], "--no-record", "--json"]) == 0
+        out = json.loads(capsys.readouterr().out)
+        assert [t["rate"] for t in out["trials"]] == [500000] and out["trials"][0]["flows"] == []
+        assert cli.main(["speed", where[1], "921600,500000", "--no-record", "--json"]) == 0
+        out = json.loads(capsys.readouterr().out)
+        t = out["trials"][0]
+        assert out["chosen"] == 921600 and t["committed"] and [f["flow"] for f in t["flows"]] == ["in", "out"]
+        assert all(f["passed"] and f["frames"] > link.FLOW_FRAMES for f in t["flows"])
     finally:
         proc.stdin.close()
         proc.wait(5)

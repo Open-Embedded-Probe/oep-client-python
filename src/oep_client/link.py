@@ -32,7 +32,12 @@ throughput of a UART bridge, oep-spec docs/uart-speed-negotiation.ja.md §3b), w
 
 port_speed (oep-if-link §3 is the handshake; the host's procedure is the host guide §17, followed here): `raise_speed`
 (or `open_host(..., port_speed=...)`) asks a probe that declares it for a faster rate on the UART bridge this host
-opened. The minimal form (§17.2, the default): try a candidate, switch to the requested baud, settle 20 ms, confirm
+opened. The default candidate is 500000 alone (DEFAULT_CANDIDATES): a host does not try faster by default (obligation
+7). A rate above DEFAULT_CEILING (500000) is the user's choice - pass it in the candidates only when the user named it -
+and whatever the form, it is committed only after its 1 s verify (guide §17.3.3): in the try state, full frames
+(max_frame - 26) of source (in) and of sink (out), and of duplex too when the full form verifies it, each for at least
+FAST_VERIFY_S at its n, judged as a flow is (below); its try asks verify_ms 4000 (6000 with duplex), so it needs a
+lease of 5000 (7000) ms or more (`lease_for`; a shorter one skips the candidate). The minimal form (§17.2, the default): try a candidate, switch to the requested baud, settle 20 ms, confirm
 (100 ms, 3 tries), commit - about 50 ms, no measurement. The full form (`verify=True`, §17.3): a baseline at the boot
 speed (this session's frames, or 60 per flow), then per candidate every flow the caller will use (`flows`: in = oep.probe.link source,
 out = oep.probe.link sink, duplex = both, each with its in-flight n) for 16 frames at max_frame - 26, failing a flow on broken +
@@ -1428,7 +1433,8 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
     max_tries=)`
     runs (the minimal form unless `verify` / `flows` ask for the full one; `record` off by default); its report is
     `hst.link.speed`. A probe without port_speed, or a link that is not a serial port this host opened, stays at its
-    speed (the report says why)."""
+    speed (the report says why). A candidate above 500000 is the user's choice only (oep-if-link §3 obligation 7) and
+    gets raise_speed's 1 s verify; the session is then taken with at least `lease_for(candidates)` ms."""
     from . import host
     if target.startswith("tcp://"):
         addr, _, port = target[len("tcp://"):].rpartition(":")
@@ -1477,9 +1483,9 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
     lk.attach_host(hst)
     if port_speed:
         from . import core
-        core.take(hst, lease_ms, owner=owner)
-        raise_speed(hst, DEFAULT_CANDIDATES if port_speed is True else port_speed, flows=flows, verify=verify,
-                    record=record, max_tries=max_tries)
+        candidates = DEFAULT_CANDIDATES if port_speed is True else port_speed
+        core.take(hst, max(lease_ms, lease_for(candidates, flows, verify)), owner=owner)
+        raise_speed(hst, candidates, flows=flows, verify=verify, record=record, max_tries=max_tries)
     return hst
 
 
@@ -1492,7 +1498,9 @@ UART_BRIDGE = reg.CORE.enum["transport_kind"]["uart_bridge"]
 RELAYING_BROKER = 0xFF       # confirm's transport from a broker that answers the session ops itself (transports §1)
 
 
-DEFAULT_CANDIDATES = (500000,)   # host guide §17.2: one candidate that passed the measured bridges in small duplex use
+DEFAULT_CANDIDATES = (500000,)   # oep-if-link §3 obligation 7, host guide §17.3.1: the default is 500000 alone
+DEFAULT_CEILING = 500000   # obligation 7: never tried above this by default; a faster rate only on the user's choice ...
+FAST_VERIFY_S = 1.0        # ... committed only after full frames ran this long each way in the try state (guide §17.3.3)
 FLOWS = ("in", "out", "duplex")  # probe -> host (oep.probe.link source), host -> probe (sink), both interleaved
 VERIFY_MS = 2000           # the probe waits this long for the commit (guide §17.2 / §17.3.2: 2000)
 CONFIRM_TRIES, CONFIRM_WAIT_S = 3, 0.1   # after the switch: confirm, 100 ms each, up to 3 (oep-if-link §3 obligation 2)
@@ -1764,8 +1772,10 @@ def _link_answer_good(kind: str, raw: bytes, data: bytes) -> bool:
         return False
 
 
-def _flow_run(hst, lk: SerialLink, flow: str, n: int, size: int, frames: int, rate: int) -> FlowResult:
-    """`frames` of one flow at the rate in force, `n` in flight, `size` bytes each, counted as the guide counts
+def _flow_run(hst, lk: SerialLink, flow: str, n: int, size: int, frames: int, rate: int,
+              min_s: float = 0.0) -> FlowResult:
+    """`frames` of one flow (and on until `min_s` seconds have passed) at the rate in force, `n` in flight, `size`
+    bytes each, counted as the guide counts
     (§17.3.2): broken = an answer came but its content is wrong, lost = no answer (a broken COBS frame on the held port
     is read as one: the link drops it). After lost frames the link is put in step again with a confirm; when none is
     answered the probe is not at this rate any more (it went back) and the flow stops there, the frames not sent
@@ -1778,8 +1788,8 @@ def _flow_run(hst, lk: SerialLink, flow: str, n: int, size: int, frames: int, ra
     _keep(hst, lk)
     moved, t0 = 0, time.perf_counter()
     try:
-        while res.frames < frames:
-            batch = min(2 * n, frames - res.frames)
+        while res.frames < frames or time.perf_counter() - t0 < min_s:
+            batch = min(2 * n, frames - res.frames) if res.frames < frames else 2 * n
             kinds = [flow if flow != "duplex" else ("in" if (res.frames + k) % 2 == 0 else "out") for k in range(batch)]
             msgs = [m.Request(hst.next_corr(), lk.speed_fn, OP_SOURCE if k == "in" else OP_SINK,
                               _link_request(k, size, data)).pack() for k in kinds]
@@ -1796,8 +1806,8 @@ def _flow_run(hst, lk: SerialLink, flow: str, n: int, size: int, frames: int, ra
             res.lost += len(msgs) - len(replies)
             res.frames += len(msgs)
             if len(replies) < len(msgs) and not any(lk.confirm_raw(CONFIRM_WAIT_S) for _ in range(CONFIRM_TRIES)):
-                res.lost += frames - res.frames
-                res.frames, res.gone = frames, True
+                res.lost += max(0, frames - res.frames)
+                res.frames, res.gone = max(frames, res.frames), True
                 break
     finally:
         lk.timeout, lk.resend = saved
@@ -1874,6 +1884,55 @@ def _verify_flows(hst, lk: SerialLink, rate: int, trial: SpeedTrial, flows: list
     return True
 
 
+def _fast_flows(flows, verify: bool, n_max: int) -> list[tuple[str, int]]:
+    """The flows of the 1 s verify of a rate above DEFAULT_CEILING (oep-if-link §3 obligation 7, guide §17.3.3): in
+    (source) and out (sink) whatever the caller uses, each at the n the caller gave it (else the most this link keeps
+    in flight), and duplex too when the full form verifies it."""
+    given = dict(resolve_flows(flows, n_max)) if verify else {}
+    out = [("in", given.get("in", n_max)), ("out", given.get("out", n_max))]
+    if "duplex" in given:
+        out.append(("duplex", given["duplex"]))
+    return out
+
+
+def fast_verify_ms(n_flows: int) -> int:
+    """verify_ms for the 1 s verify of `n_flows` flows: twice the time they run (guide §17.3.3: 4000 for in and out,
+    6000 with duplex)."""
+    return int(2 * FAST_VERIFY_S * 1000 * n_flows)
+
+
+def lease_for(candidates, flows=None, verify: bool | None = None) -> int:
+    """The shortest lease (ms) a session needs for raise_speed(hst, candidates, flows=, verify=): 0 when no candidate is
+    above DEFAULT_CEILING; else the 1 s verify's verify_ms + 1000 (the probe goes back by verify_ms well before the
+    lease ends: 5000, or 7000 when the full form verifies duplex). open_host and `oep speed` open with at least this."""
+    if not any(int(r) > DEFAULT_CEILING for r in candidates):
+        return 0
+    verify = flows is not None if verify is None else verify
+    duplex = verify and (flows is None or any((f if isinstance(f, str) else f[0]) == "duplex" for f in flows))
+    return fast_verify_ms(3 if duplex else 2) + 1000
+
+
+def _verify_fast(hst, lk: SerialLink, rate: int, trial: SpeedTrial, flows: list[tuple[str, int]],
+                 baseline: dict[str, float], size: int) -> bool:
+    """A rate above DEFAULT_CEILING (oep-if-link §3 obligation 7, guide §17.3.3): every flow of `flows` (in, out, and
+    duplex when verified) with full frames (`size`, max_frame - 26) for at least FAST_VERIFY_S each, back to back at
+    its n, judged as a flow is judged (broken + lost >= FLOW_FAIL_MIN and a ratio over max(2 x baseline,
+    VERIFY_FLOOR)); no second run at n = 1. One failed flow fails the candidate."""
+    for flow, n in flows:
+        threshold = max(2 * baseline.get(flow, 0.0), VERIFY_FLOOR)
+        res = _flow_run(hst, lk, flow, n, size, FLOW_FRAMES, rate, min_s=FAST_VERIFY_S)
+        res.passed = not res.gone and not (res.broken + res.lost >= FLOW_FAIL_MIN and res.ratio > threshold)
+        trial.flows.append(res)
+        if res.gone:
+            trial.why = f"{res.name}: no answer at {rate} any more (the probe went back)"
+            return False
+        if not res.passed:
+            trial.why = (f"{res.name}: {res.broken + res.lost} of {res.frames} full frames in "
+                         f"{FAST_VERIFY_S:g} s broken or lost ({res.ratio:.0%}, over {threshold:.0%})")
+            return False
+    return True
+
+
 def raise_speed(hst, candidates=DEFAULT_CANDIDATES, *, flows=None, verify: bool | None = None,
                 baseline: float | None = None, frames: int = FLOW_FRAMES, verify_ms: int | None = None,
                 idle_ms: int = IDLE_MAX_MS, port: int | None = None, record=False, max_tries: int | None = None,
@@ -1912,7 +1971,14 @@ def raise_speed(hst, candidates=DEFAULT_CANDIDATES, *, flows=None, verify: bool 
     at another rate is written unknown (off by default in the library; on in `oep speed`). max_tries: the most
     candidates tried in this call after the record ordered and filtered them (None = all; the rest:
     `report.capped`; a step down in use goes only to these). port: the transport index (default: the probe's first
-    UART bridge). -> the report, also kept as `hst.link.speed`."""
+    UART bridge). -> the report, also kept as `hst.link.speed`.
+
+    A candidate above DEFAULT_CEILING (500000) is the user's explicit choice (oep-if-link §3 obligation 7: never one of
+    the host's own defaults): in either form it gets the 1 s verify (guide §17.3.3) in place of the 16 frames - in
+    (source) and out (sink) with full frames for FAST_VERIFY_S each at the caller's n (the most the link keeps when
+    not given), and duplex when the full form verifies it, no second run at n = 1 - with verify_ms raised to
+    `fast_verify_ms` (4000 / 6000). A session whose lease is shorter than that verify_ms + 1 s skips the candidate
+    (`lease_for` gives the lease to open with). Committed, it has the same probation and in-use judging as any rate."""
     lk = getattr(hst, "link", None)
     base = getattr(lk, "base_baud", None)
     report = SpeedReport(base or 0, False, getattr(lk, "baud", None) or 0)
@@ -1973,6 +2039,7 @@ class _Run:
     probation_s: float
     settle_s: float
     size: int = 0
+    n_max: int = 1
 
 
 def _barred(lk: SerialLink, rate: int) -> str:
@@ -1991,7 +2058,7 @@ def _raise(hst, lk: SerialLink, report: SpeedReport, candidates: list[int], run:
     limits = hst.limits or hst.confirm()
     from . import core
     run.size = core.link_size(limits["max_frame"])                 # what one source answer carries (oep-if-link §2)
-    n_max = lk.inflight_for(limits)
+    n_max = run.n_max = lk.inflight_for(limits)
     if run.rec is not None:
         passed, failed = run.rec.lookup(*lk.record_key)
         if candidates and all(r in failed for r in candidates):
@@ -2027,7 +2094,8 @@ def _raise(hst, lk: SerialLink, report: SpeedReport, candidates: list[int], run:
 def _try(hst, lk: SerialLink, report: SpeedReport, rates: list[int], run: _Run) -> SpeedReport:
     """Each of `rates` in order until one is committed (raise_speed's own loop, also a step down's in use)."""
     base = lk.base_baud
-    rec, port, wait, idle_ms = run.rec, run.port, run.wait, run.idle_ms
+    rec, port, idle_ms = run.rec, run.port, run.idle_ms
+    wait = run.wait                                         # this candidate's verify_ms (longer above the ceiling)
 
     def note(trial: SpeedTrial, passed: bool, phase: str) -> None:
         if rec is not None:
@@ -2064,6 +2132,13 @@ def _try(hst, lk: SerialLink, report: SpeedReport, rates: list[int], run: _Run) 
             continue
         trial.settling = (lk.broke_at is not None and lk.broke_rate != rate
                           and time.monotonic() - lk.broke_at < run.settle_s)
+        fast = rate > DEFAULT_CEILING                       # the user's choice: the 1 s verify each way (obligation 7)
+        fast_flows = _fast_flows(run.flows, run.verify, run.n_max) if fast else []
+        wait = min(65535, max(run.wait, fast_verify_ms(len(fast_flows)))) if fast else run.wait
+        if fast and hst.lease_ms and hst.lease_ms - 1000 < wait:
+            trial.why = (f"above {DEFAULT_CEILING}: its 1 s verify each way needs verify_ms {wait} and a lease of "
+                         f"{wait + 1000} ms or more (this session's: {hst.lease_ms} ms)")
+            continue
         try:
             r = hst.call(lk.speed_fn, OP_PORT_SPEED, struct.pack("<BIBHI", port, rate, SPEED_STEP["try"], wait, idle_ms))
         except TimeoutError:
@@ -2096,7 +2171,12 @@ def _try(hst, lk: SerialLink, report: SpeedReport, rates: list[int], run: _Run) 
             back(rate, True)
             failed(trial, "confirm")
             continue
-        if run.verify and not _verify_flows(hst, lk, rate, trial, run.flows, report.baseline, run.frames, run.size):
+        if fast:
+            verified = _verify_fast(hst, lk, rate, trial, fast_flows, report.baseline, run.size)
+        else:
+            verified = not run.verify or _verify_flows(hst, lk, rate, trial, run.flows, report.baseline, run.frames,
+                                                       run.size)
+        if not verified:
             back(rate, True)
             failed(trial, "verify")
             continue
@@ -2114,7 +2194,7 @@ def _try(hst, lk: SerialLink, report: SpeedReport, rates: list[int], run: _Run) 
         lk.keepalive_s = min(KEEPALIVE_S, idle_ms / 1000 / 2.5)   # under half of idle_ms (oep-if-link §3 obligation 4)
         lk.window.clear()
         lk.step_due = ""
-        note(trial, True, "verify" if run.verify else "confirm")
+        note(trial, True, "verify" if run.verify or fast else "confirm")
         if run.probation_bytes or run.probation_s:
             trial.probation = "running"
             lk.probation = Probation(rate, trial, run.probation_bytes, run.probation_s,

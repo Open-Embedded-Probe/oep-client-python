@@ -108,7 +108,7 @@ oep config slot <probe> --name x035 --wire rvswd --pins 2,54 --attach at-boot --
 oep config bind <probe> --port 1 --mode last-reset --stream slot:x035
 oep config uart <probe> oep.fixture.uart 115200 --format 8N1   # その UART の plan に RX / TX が付くたびに掛かる
 oep config save <probe>                      # 再起動の後も残す（remove = unset、erase もある）
-oep speed <probe> [--candidates 921600,500000] [--verify [--flows out:2]]  # port_speed: 速い速さを試し、結果を出す（下）
+oep speed <probe> [--candidates 921600,500000] [--verify [--flows out:2]]  # port_speed: 速さを上げ（既定 500000）、結果を出す（下）
 oep pins <probe> --power 5 --wire swio       # target のつながり方: debug のピン、リセットの線、スロット（下）
 oep clock <probe> [-n 8] [--json]            # fn 0 の clock: uptime_ns と boot_id をこの host の時刻に合わせて（n 回のうち往復が最短のもの）
 oep restart <probe>                          # oep.probe.restart: probe を再起動し、戻るまで待つ（新しい boot_id）
@@ -181,11 +181,24 @@ done in 7.3 s
 間、UART bridge を起動時の速さ（115200）より速くできます。host が頼まない限り何も変わりません:
 
 ```python
-hst = link.open_host("/dev/ttyUSB0", port_speed=[921600, 500000])    # ロックを取り、セッションを開いたままにする
+hst = link.open_host("/dev/ttyUSB0", port_speed=True)    # 500000。ロックを取り、セッションを開いたままにする
 print(hst.link.speed.to_text())             # 候補ごとに、基準、流し方、今の速さ
 # 完全な形（基準と流し方を測る）を取ってあるセッションの中で:
-report = link.raise_speed(hst, [921600, 500000], verify=True, flows=[("out", 2)], record=True)
+report = link.raise_speed(hst, [500000], verify=True, flows=[("out", 2)], record=True)
+# 利用者が選んだときだけ速い速さ（例: `oep speed <probe> 921600,500000`）: 先に 1 秒の確かめ
+hst = link.open_host("/dev/ttyUSB0", port_speed=[921600, 500000])
 ```
+
+**既定の上限は 500000**（oep-if-link §3 の義務 7）: 既定の候補は 500000 だけ（`link.DEFAULT_CANDIDATES`）で、利用者が明示して
+選ばない限り、それより速い速さは試しません。`link.DEFAULT_CEILING` より速い速さを候補に入れるのは、利用者がそれを選んだとき
+（`oep speed <probe> 921600,500000`、設定）だけにしてください。その速さは、最小の形でも完全な形でも、**1 秒の確かめ**（host 開発
+ガイド §17.3.3）を通ってから決めます: 試しの状態で、max_frame − 26 のフレームを oep.probe.link の source（in）と sink（out）で、
+完全な形が duplex を確かめるなら duplex でも、それぞれ 1 秒以上（`link.FAST_VERIFY_S`）その同時数で流し、流し方と同じ基準で判定
+します（n = 1 での流し直しはしない）。その試すは verify_ms 4000（duplex を含めば 6000）を頼むので、lease は 5000（7000）ms 以上が
+要ります（`link.lease_for(candidates, flows, verify)`。`open_host` と `oep speed` は少なくともそれで取り、短い lease ではその候補を
+飛ばす）。決めた後は、ほかの速さと同じ試用期間と使用中の判定を受けます。理由: ある変換では 921600 が両方向 16 フレームずつの
+確かめを通っても、9 KiB の書き込みのたびに応答が 1〜4 個壊れた。500000 は測ったどの変換でも壊れなかった（oep-spec の host 開発
+ガイド §17.5）。
 
 手順は oep-spec の host 開発ガイド §17（oep-if-link §3 は握手だけ）。**最小の形**（既定、約 50 ms、計測なし）: 候補ごとに順に
 `試す`（今の速さで応答してから probe が切り替える）→ host は要求した baud に切り替える → 20 ms → `confirm`（100 ms、3 回まで）→
@@ -194,8 +207,8 @@ report = link.raise_speed(hst, [921600, 500000], verify=True, flows=[("out", 2)]
 out = oep.probe.link の sink host → probe、duplex = 両方を交互。`n` は同時数、0 = link が出す最大）で、max_frame − 26（oep.probe.link の source の 1 つの応答が運ぶ最大）のフレームを 16 個流し、
 壊れと失われを数え KB/s を測る。壊れ + 失われが 3 以上で割合が max(基準 × 2, 5 %) を超えたら流し方は通らず、n = 1 で流し直し
 （通れば n = 1 が link の上限）、1 つでも通らなければ候補は通らない。通らない候補は戻して（step 2）起動時の速さに戻り confirm し直す。
-最初に通った候補を使う。probe の UART が作れない速さは飛ばす。通る速さは変換チップとドライバで決まる（FTDI は 3 MHz ÷ n だけ、
-CH340 は 921600 は通り 1500000 は probe → host が壊れた: oep-spec docs/uart-speed-negotiation.ja.md）ので、速さは host が選ぶ。
+最初に通った候補を使う。probe の UART が作れない速さは飛ばす。通る速さは変換チップとドライバで決まる（クロックの整数分周しか
+作れないもの、短い確かめは通るのに 500000 より速い速さで長い burst を壊すものがある）ので、速さは host が上限の内で選ぶ。
 結果（`link.speed`: `base`、`rate`、`chosen`、`baseline`、`trials` = `flows` と `in_kb_s` / `out_kb_s` / `duplex_kb_s` を持つ
 `SpeedTrial`）はキャプチャや書き込みの予算を立てるのに使う。
 

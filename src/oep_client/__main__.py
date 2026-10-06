@@ -10,7 +10,8 @@
   oep config disable <probe> 3 4           (channels the probe never uses or touches; remove disable CH re-enables)
   oep config remove <probe> bind 1        oep config save <probe>        oep config erase <probe>
   oep speed <probe> [--candidates 921600,500000] [--verify [--flows in:2,out:2]] (port_speed, oep-if-link §3 and the host
-                                           guide §17: try the candidates in order on a UART bridge, report)
+                                           guide §17: try the candidates in order on a UART bridge, report; default
+                                           500000 - a faster rate only when named, after its 1 s verify each way)
   oep linktest <probe> --rates now,921600 --patterns in,out,duplex --inflight 1,2 --sizes 128,496 --frames 300
   oep pins <probe> --power 5 --wire swio  (find the target's debug pins and reset line: classify the channels, scan,
                                            identify, hold-low + attach under reset; prints a slot, --save writes it)
@@ -58,7 +59,10 @@ def main(argv=None) -> int:
     sp.add_argument("probe", help="the probe's serial port (a UART bridge this host opens)")
     sp.add_argument("rates", nargs="?", default="", help="the candidates, comma-separated, in order of preference "
                     "(the first that passes is kept; default 500000). Same as --candidates")
-    sp.add_argument("--candidates", default="", help="the candidates, comma-separated (default 500000)")
+    sp.add_argument("--candidates", default="", help="the candidates, comma-separated (default 500000, the default "
+                    "ceiling of oep-if-link §3 obligation 7). A rate above 500000 is tried only when named here, and "
+                    "is committed only after full frames ran 1 s each way (in, out; duplex too with --verify's "
+                    "default flows) at it (host guide §17.3.3)")
     sp.add_argument("--flows", default="", help="the flows to verify, comma-separated FLOW[:N] (in, out, duplex; N in "
                     "flight, 0 = the most the link keeps; default: all three at that N). Selects --verify")
     form = sp.add_mutually_exclusive_group()
@@ -258,7 +262,7 @@ def _speed(args) -> int:
     verify = True if args.verify or flows else (False if args.minimal else None)
     hst = _open_host(args.probe, baud=args.baud)
     try:
-        core.take(hst, 5000, owner="oep speed")
+        core.take(hst, max(5000, link.lease_for(candidates, flows, verify)), owner="oep speed")
         report = link.raise_speed(hst, candidates, flows=flows, verify=verify, frames=args.frames,
                                    record=not args.no_record, max_tries=args.max_tries)
         if args.json:
