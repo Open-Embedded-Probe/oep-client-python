@@ -189,6 +189,61 @@ def test_not_restarted_when_the_boot_id_stays():
         hst.restart_probe(wait_s=1)
 
 
+
+# ---- restart_max_ms (core §6.6, §7.5) -----------------------------------------------------------------------------
+
+def test_fn0_describe_declares_restart_max_ms_with_restart():
+    """restart in fn 0's ops = restart_max_ms in its describe (at least restart_after_answer_ms); without restart, none."""
+    ep, hst = bench()
+    tags = [t & 0x7F for t, _ in core.describe(hst)]
+    assert tags.count(reg.CORE.tlv["describe"]["restart_max_ms"]) == 1 == tags.count(fake.CORE_RESTART_MAX_MS)
+    assert core.restart_max_ms(hst) == fake.RESTART_MAX_MS == 2000 >= reg.LIMITS["restart_after_answer_ms"]
+    ep, hst = bench()
+    ep.restart_offered = False
+    assert core.restart_max_ms(hst) is None and not core.offers(hst, 0, RESTART)
+
+
+class _Reopen:
+    """A link that records restart_probe's wait and confirms (Host.restart_probe calls link.reopen_after_restart)."""
+    def __init__(self):
+        self.waits = []
+
+    def reopen_after_restart(self, hst, wait_s):
+        self.waits.append(wait_s)
+        return hst.confirm()
+
+
+def test_restart_probe_waits_restart_max_ms_by_default(monkeypatch):
+    ep, hst = bench()
+    ep.restart_max_ms = 3500
+    hst.link = _Reopen()
+    hst.open(3000)
+    hst.restart_probe()
+    assert hst.link.waits == [3.5]                                      # the describe's value, read before the restart
+    hst.open(3000)
+    hst.restart_probe(wait_s=0.7)                                       # given: that one
+    monkeypatch.setattr(core, "restart_max_ms", lambda hst: None)       # a probe that declares none (not conforming)
+    hst.open(3000)
+    hst.restart_probe()
+    assert hst.link.waits == [3.5, 0.7, h.RESTART_WAIT_S] and h.RESTART_WAIT_S == 10.0
+
+
+def test_a_probe_that_does_not_come_back_within_restart_max_ms_is_gone():
+    """No confirm answered by restart_max_ms after the answer: the host gives up (core §6.6) - not after 10 s."""
+    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    ep.restart_max_ms = 300
+
+    def send(b):
+        if ep.reboots:
+            raise TimeoutError("silent")                                # the probe never answers again
+        return ep.handle(b, VENDOR)
+    hst = h.Host(send)
+    hst.open(3000)
+    start = time.monotonic()
+    with pytest.raises(TimeoutError):
+        hst.restart_probe()
+    assert 0.3 <= time.monotonic() - start < 2.0 and ep.reboots == 1
+
 # ---- fake_serve: the op over TCP and a pty -----------------------------------------------------------------------
 
 def _serve(*argv):

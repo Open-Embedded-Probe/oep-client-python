@@ -29,8 +29,9 @@ A line that is no command is ignored with a message on stderr.
 fn 0's restart (core §6.6; every profile offers it) does the same from a request: the answer (completed success, no
 payload) goes out first, then the probe reboots as above. The pty or TCP connection stays open, as the `reboot` command
 leaves it; what the probe had read behind the restart request is dropped. A host waits restart_after_answer_ms, may
-close and open again (the pty and the TCP listener take a new open), and confirms: the boot_id is new. --no-restart
-leaves restart out of fn 0's ops (unknown_operation).
+close and open again (the pty and the TCP listener take a new open), and confirms: the boot_id is new. fn 0's describe
+declares restart_max_ms 2000 with restart (core §7.5). --no-restart leaves restart out of fn 0's ops
+(unknown_operation) and restart_max_ms out of its describe.
 
 Options:
   --profile NAME        p4-x035 (default), esp32-v003, p4-bench or rp2350-pins (p4_x035 style names work too)

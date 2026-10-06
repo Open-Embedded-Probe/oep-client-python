@@ -154,6 +154,18 @@ def test_a_describe_without_ops_is_named_missing():
     assert "describe of fn 0: ops" in caps.missing and "describe of fn 1: ops" in caps.missing   # core §1.2, §7.4
 
 
+
+def test_restart_in_ops_without_restart_max_ms_is_named_missing():
+    """core §1.2, §6.6, §7.5: restart in fn 0's ops needs restart_max_ms in its describe; the profiles carry it."""
+    full = fake.p4_x035()
+    assert not dump.collect(full.call).missing
+    core0 = next(o for o in full.offered if o.fn == 0)
+    assert any(t[0] == fake.CORE_RESTART_MAX_MS for t in core0.tlvs)
+    bare = fake.FakeProbe("x", 256, [fake.Offered(o.fn, o.instance, o.name,
+                                                  tuple(t for t in o.tlvs if t[0] != fake.CORE_RESTART_MAX_MS))
+                                     for o in full.offered], fill_ops=False)
+    assert dump.collect(bare.call).missing == ["describe of fn 0: restart_max_ms (restart is in ops)"]
+
 def test_unknown_interfaces_are_shown_raw():
     probe = fake.FakeProbe("x", 256, [
         fake.Offered(0, 0, "oep.core"),

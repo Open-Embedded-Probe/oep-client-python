@@ -66,17 +66,26 @@ def ops_of(name: str, *without: str) -> tuple[bytes, ...]:
 
 class FakeProbe:
     def __init__(self, label: str, max_frame: int, offered: list[Offered], fill_ops: bool = True):
-        """Every offered fn's describe carries the ops tag (core §7.4): one that gives none gets `default_ops`, first
-        (`fill_ops` False: left without one - a probe that does not conform, for tests)."""
+        """Every offered fn's describe carries the ops tag (core §7.4): one that gives none gets `default_ops`, first;
+        fn 0 whose ops set restart carries restart_max_ms (RESTART_MAX_MS when it gives none, core §6.6, §7.5)
+        (`fill_ops` False: left as given - a probe that does not conform, for tests)."""
         self.label = label
         self.max_frame = max_frame
         all_names = [o.name for o in offered]
-        self.offered = sorted((o if not fill_ops or any(t[0] == catalog.OPS for t in o.tlvs) else
-                               Offered(o.fn, o.instance, o.name, (catalog.ops_tlv(default_ops(o.name, all_names)),) + o.tlvs,
-                                       o.revision, o.flags) for o in offered), key=lambda o: o.fn)
+        self.offered = sorted((o if not fill_ops else self._filled(o, all_names) for o in offered), key=lambda o: o.fn)
         self.requests = 0
         for o in self.offered:
             names.validate(o.name)
+
+    @staticmethod
+    def _filled(o: Offered, all_names) -> Offered:
+        tlvs = o.tlvs
+        if not any(t[0] == catalog.OPS for t in tlvs):
+            tlvs = (catalog.ops_tlv(default_ops(o.name, all_names)),) + tlvs
+        if o.fn == CORE_FN and not any(t[0] == CORE_RESTART_MAX_MS for t in tlvs) and any(
+                m.OP_RESTART in catalog.unpack_ops(t[3:]) for t in tlvs if t[0] == catalog.OPS):
+            tlvs = tlvs + (catalog.u32(CORE_RESTART_MAX_MS, RESTART_MAX_MS),)
+        return o if tlvs is o.tlvs else Offered(o.fn, o.instance, o.name, tlvs, o.revision, o.flags)
 
     def instance_errors(self) -> list[str]:
         """Where the offered instances break core §7.2 (C-30): numbered from 0 per (name, revision) in ascending fn
@@ -155,6 +164,8 @@ CORE_RESERVED, CORE_PROFILE, CORE_LABEL = _CORE_TAGS["reserved"], _CORE_TAGS["pr
 CORE_RESETS_ON_OPEN, CORE_TRANSPORT = _CORE_TAGS["resets_on_open"], _CORE_TAGS["transport"]
 CORE_DISCOVERABLE, CORE_PLAN_ROLES, CORE_MAX_OP_MS = _CORE_TAGS["discoverable"], _CORE_TAGS["plan_roles"], _CORE_TAGS["max_op_ms"]
 MAX_OP_MS = reg.REFERENCE["max_op_ms"]              # what the fake declares: the longest one request may take (core §7.5)
+CORE_RESTART_MAX_MS = _CORE_TAGS["restart_max_ms"]
+RESTART_MAX_MS = 2000                             # what the fake declares with restart: back on confirm within this (core §6.6, §7.5)
 PLAN_ROLES = 32                                   # role assignments the fake's plan holds at once (core §8)
 GPIO_MODES = reg.FIXTURE_GPIO.tlv["describe"]["modes"]
 GPIO_DRIVE_LEVELS = reg.FIXTURE_GPIO.tlv["describe"]["drive_levels"]

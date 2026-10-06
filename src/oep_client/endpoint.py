@@ -741,6 +741,9 @@ class Endpoint:
         self.broken_rates: dict[int, BrokenRate] = {}   # the line: rates that break frames (fake_serial applies it)
         # fn 0's optional restart (core §6.6): on when fn 0's ops set it (the profiles do); a test turns it off or on
         self.restart_offered = m.OP_RESTART in self.ops.get(m.CORE_FN, set())
+        # ... and the restart_max_ms its describe declares with it (core §7.5; only while restart is offered)
+        self.restart_max_ms = next((struct.unpack_from("<I", v)[0] for tag, v in self.decl.get(0, ())
+                                    if tag == fake.CORE_RESTART_MAX_MS), fake.RESTART_MAX_MS)
         self.reboots = 0                                # restarts so far (the restart op and reboot()): a transport
                                                         # drops what it had read for the old boot when this moves
         self._transport = 0                             # the transport the request being handled came in on
@@ -1816,9 +1819,14 @@ class Endpoint:
     def _declarations(self, fn: int) -> list[bytes]:
         """describe: the profile's declarations as they are (core §7.3: nothing that changes - the firmware's labels
         only, the settings' are read by get; probe.config's state is its op state), the ops tag first and as `offers`
-        answers (oep.link's port_speed follows `port_speed_base`: a test turns it off or on)."""
+        answers (oep.link's port_speed follows `port_speed_base`: a test turns it off or on). fn 0 carries
+        restart_max_ms exactly while restart is offered (core §6.6, §7.5)."""
         ops = {op for op in range(256) if self.offers(fn, op)}
-        return [catalog.ops_tlv(ops)] + [t for t in self.static[fn] if t[0] != catalog.OPS]
+        out = [catalog.ops_tlv(ops)] + [t for t in self.static[fn]
+                                        if t[0] != catalog.OPS and not (fn == m.CORE_FN and t[0] == fake.CORE_RESTART_MAX_MS)]
+        if fn == m.CORE_FN and m.OP_RESTART in ops:
+            out.append(catalog.u32(fake.CORE_RESTART_MAX_MS, self.restart_max_ms))
+        return out
 
     # ---- oep.link (oep-if-link): the link test and port_speed -------------------------------------
     def _link(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:

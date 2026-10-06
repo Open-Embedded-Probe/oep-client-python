@@ -15,6 +15,7 @@ TAG_ROLE_ASSIGNMENT = reg.CORE.tlv["plan_apply"]["role_assignment"]     # the nu
 CORE_LABEL = reg.CORE.tlv["describe"]["label"]
 CORE_TRANSPORT = reg.CORE.tlv["describe"]["transport"]
 CORE_MAX_OP_MS = reg.CORE.tlv["describe"]["max_op_ms"]
+CORE_RESTART_MAX_MS = reg.CORE.tlv["describe"]["restart_max_ms"]
 TRANSPORT_KIND = reg.CORE.enum["transport_kind"]
 SERIAL_KINDS = {TRANSPORT_KIND["uart_bridge"], TRANSPORT_KIND["usb_cdc"], TRANSPORT_KIND["usb_serial_jtag"]}
 
@@ -146,6 +147,16 @@ def max_op_ms(hst: h.Host) -> int:
         if tag & 0x7F == CORE_MAX_OP_MS and len(value) >= 4:
             return struct.unpack_from("<I", value)[0]
     return reg.REFERENCE["max_op_ms"]
+
+
+def restart_max_ms(hst: h.Host) -> int | None:
+    """The longest the probe takes from restart's answer until it answers confirm again on the same transport (oep.core
+    describe restart_max_ms, core §6.6, §7.5; required when restart is in fn 0's ops). None: not declared (a probe
+    without restart, or one that does not conform)."""
+    for tag, value in describe(hst):
+        if tag & 0x7F == CORE_RESTART_MAX_MS and len(value) >= 4:
+            return struct.unpack_from("<I", value)[0]
+    return None
 
 
 def transports(hst: h.Host) -> list[tuple[int, int, int]]:

@@ -70,7 +70,7 @@ class NotUsable(OepError):
 
 MAX_OP_MS_MAX = reg.LIMITS["max_op_ms_max"]   # fn 0 describe max_op_ms is 1 to this (core §7.5)
 RESTART_AFTER_ANSWER_S = reg.LIMITS["restart_after_answer_ms"] / 1000   # restart: the probe begins within this (core §6.6)
-RESTART_WAIT_S = 10.0                          # restart_probe: how long the probe may take to answer a confirm again
+RESTART_WAIT_S = 10.0                          # restart_probe: the wait for a probe that declares no restart_max_ms
 
 
 def check_confirm(max_frame: int, window: int, max_inflight: int) -> str:
@@ -527,17 +527,24 @@ class Host:
         self.session = None
         self._lost()
 
-    def restart_probe(self, wait_s: float = RESTART_WAIT_S) -> int:
+    def restart_probe(self, wait_s: float | None = None) -> int:
         """Restart the probe and wait until it is back (core §6.6, host guide §5.2) -> its new boot_id. The session
         must hold the lock. After the answer nothing more goes out; the link (`link.reopen_after_restart`, when this
         host has one) closes, waits restart_after_answer_ms and opens again as a new open - the confirm first, a serial
         port at its boot speed, a USB device found again once it has re-enumerated - retried for `wait_s`; a host on a
-        bare `send` waits and confirms. When the answer is lost, the same: a resend the restarted probe refused
+        bare `send` waits and confirms. `wait_s` None: the probe's restart_max_ms (fn 0 describe, core §7.5, read
+        before the restart), or RESTART_WAIT_S (10 s) when it declares none (a probe that does not conform); a confirm
+        sent before then is waited for as core §4.4 says. No valid confirm by then: ConnectionError / TimeoutError - the
+        probe is gone (core §6.6). When the answer is lost, the same: a resend the restarted probe refused
         no_session counts as the restart having happened. The confirm's boot_id must differ from the one before
         (NotRestarted otherwise); everything this host remembered of the old boot is dropped (core §6.5)."""
         import time
         self.require_v1()
         before = self._boot_id if self._boot_id is not None else self.confirm()["boot_id"]
+        if wait_s is None:
+            from . import core                              # core imports host: here, not at the top
+            ms = core.restart_max_ms(self)
+            wait_s = ms / 1000 if ms is not None else RESTART_WAIT_S
         epoch = self.epoch
         try:
             self.call(m.CORE_FN, m.OP_RESTART)

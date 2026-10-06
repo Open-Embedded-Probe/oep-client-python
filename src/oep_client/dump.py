@@ -32,6 +32,7 @@ class Capabilities:
 
 _REQUIRED_CORE_TAGS = {reg.CORE.tlv["describe"][k]: k for k in ("unit_id", "transport", "max_op_ms", "discoverable")}
 _TRANSPORT_TAG = reg.CORE.tlv["describe"]["transport"]
+_RESTART_MAX_MS = reg.CORE.tlv["describe"]["restart_max_ms"]
 _RELAYING_BROKER = 0xFF          # confirm's transport from a relaying broker (transports §1, core §7.1)
 MISSING_HEADING = "MISSING what every probe must give (core §1.2, §7.1, §7.4, §7.5)"
 
@@ -40,7 +41,7 @@ def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, byte
     """What every probe must give, as far as a lock-free look on one transport shows it (core §1.2, C-10; oep-spec
     docs/conformance.md section 1): confirm's answer carries TLV transport, naming an entry of fn 0's describe or 0xFF
     (§7.1); fn 0's describe carries unit_id, transport, max_op_ms (§1.2, §7.5) and discoverable (0 or 1, every probe
-    sends it, §7.5). -> what is missing (empty: nothing seen missing). The bounds of confirm's values and of max_op_ms
+    sends it, §7.5), and restart_max_ms when its ops set restart (§1.2, §6.6). -> what is missing (empty: nothing seen missing). The bounds of confirm's values and of max_op_ms
     are checked by the host itself (host.check_confirm, host.check_max_op_ms: the probe is not used)."""
     out = []
     have = {tag & 0x7F for tag, _ in core_describe}
@@ -58,6 +59,9 @@ def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, byte
     out += [f"describe of fn 0: {name}" for tag, name in _REQUIRED_CORE_TAGS.items() if tag not in have]
     if m.TAG_OPS not in have:
         out.append("describe of fn 0: ops")                    # every fn's describe carries it (core §1.2, §7.4)
+    elif _RESTART_MAX_MS not in have and any(
+            m.OP_RESTART in catalog.unpack_ops(v) for tag, v in core_describe if tag & 0x7F == m.TAG_OPS):
+        out.append("describe of fn 0: restart_max_ms (restart is in ops)")   # core §1.2, §6.6, §7.5
     return out
 
 
