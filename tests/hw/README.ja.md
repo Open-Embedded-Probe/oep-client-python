@@ -36,7 +36,7 @@ OEP_HW_BOARDS=fake-esp32-v003 uv run pytest tests/hw -m hw
 | `record.py` | 1 ボードの一巡: 接続、測ったもの、結果のファイル |
 | `test_probe.py` | 試験。この順に回る |
 | `conftest.py` | `hw` マーカーと `OEP_HW_BOARDS` 無しの skip、ボードごとのまとめ、1 画面の要約 |
-| `results/` | `<board>-<firmware>-<client>.json`。1 巡に 1 つ（小さな要約だけ。それ以外は `.gitignore` で入れない） |
+| `results/` | `<board>-<firmware>-<client>-<started>.json`。1 巡に 1 つ。名前に巡の開始時刻（`20261006T203121`）を入れ、後の巡が前の巡のファイルを上書きしない（小さな要約だけ。それ以外は `.gitignore` で入れない） |
 
 ## 各試験が確かめること
 
@@ -49,7 +49,7 @@ OEP_HW_BOARDS=fake-esp32-v003 uv run pytest tests/hw -m hw
 | `identity` | confirm の revision ≥ 1。list に fn 0 の項目が無い（本体は名前を持たない、core §7.2）。clock（core §7.7）の boot_id が confirm と同じ。describe の model が表のとおり。焼いたことで boot_id が変わった。firmware の文字列が焼いた版（ローカルのビルドは `library.properties`、リリースはその版）に等しい | boot_id、firmware、model、unit_id、chip、limits、interface の一覧、clock の uptime_ns と 4 回のうち最短の往復 |
 | `required` | どのプローブも出すべきもののうち、ロックなしで確かめられるもの（core §1.2、§7.1、§7.5。oep-spec `docs/conformance.md` 1 節）。`oep dump` が MISSING として出す一覧と同じ：confirm の transport TLV（fn 0 の describe の transport のどれか、または 0xFF を指す）、fn 0 の describe の unit_id、transport、max_op_ms、discoverable（0 でも出す）。欠けたものを名指しして失敗する | 一覧（欠けがなければ空） |
 | `config` | `oep.probe.config`: label（表の `label` のチャネル、無ければ gpio の 1 本目）と `disable`（`OEP_HW_DISABLE`）を set → get に出て `hash_of` が一致。disable したチャネルへの plan は拒否（unavailable / PinsTaken）。save → state が `applied` でその hash。**再起動**（probe が `oep.probe.restart` を出していればそれで: `Host.restart_probe` が restart_max_ms まで待つ。無ければ bridge の classic ESP32 を esptool の hard reset と同じく RTS から EN。どちらも無ければ飛ばす）→ 保存した項目が起動時に適用されている（state、get）。両方 unset して save → 試験前の hash に戻る。probe にあったほかの設定（bench の slot / bind）はそのまま残す | 各段階の hash、再起動のやり方、前後の boot_id と秒数（oep.probe.restart なら restart_max_ms） |
-| `wire` | `OEP_HW_TARGET=<name>[@swdio[,swclk]]` のときだけ: scan（名指しの組か全部）、`OEP_HW_RESET=<channel>` なら reset TLV 付きで attach、そのあと 50 回（`OEP_HW_LOOPS`）halt → dmi で s0 / s1 / a0 / a1 → read_block（`OEP_HW_TARGET_ADDR`、既定 0x20000000 から 8 語）→ 同じ 4 本をもう一度、変わっていない → resume | scan の結果、connection、DMSTATUS、速さ、target_id、dpc、回数と秒数、変わったレジスタ |
+| `wire` | `OEP_HW_TARGET=<name>[@swdio[,swclk]]` のときだけ: scan（名指しの組か全部）、`OEP_HW_RESET=<channel>` なら reset TLV 付きで attach、そのあと 50 回（`OEP_HW_LOOPS`）halt → dmi で s0 / s1 / a0 / a1 → read_block（`OEP_HW_TARGET_ADDR`、既定 0x20000000 から 8 語）→ 同じ 4 本をもう一度、変わっていない → resume | scan の結果、connection、DMSTATUS、速さ、target_id、dpc、回数と秒数、変わったレジスタ: 前、後、読み直し、block の直後の 2 語、dpc（失敗のメッセージにすべての変化を省かずに出す） |
 | `gpio` | 表の空き 2 チャネル（`OEP_HW_GPIO=a,b`）で `oep.fixture.gpio`: output_high を読むと 1、output_low は 0、input_pullup は 1、input_pulldown は 0。表がその board に空きを与えていなければ skip | 読んだ値すべて |
 | `uart` | 表の RX / TX（`OEP_HW_UART=rx,tx`）で、または probe の設定にその plan があるときや表がその board に組を与えていないときはその plan のピンで（どちらも無ければ skip）`oep.fixture.uart`: configure 115200 8N1 が 5 % 以内、status が `session` でその速さと形式、configure 9600。`OEP_HW_UART_LOOP=rx,tx`（2 本を結線）なら write したものが read で戻る | 実際の速さ、status、ループバックのバイト数 |
 | `capture` | 表の空き 2 チャネルで `oep.fixture.logic` を、同じピンの `oep.fixture.gpio` と一緒に plan する（ロジックのキャプチャは聞くだけ、oep-if-capture §1.2。共有を断る probe では、代わりに設定の idle 項目で解放したチャネルを引く）: 宣言の最低のレート（1 kHz 以上）で 10 ms の窓（16 サンプル以上。16 KB を超える区画は縮める）のワンショットを、pull-up で 1 回、pull-down で 1 回 → 全チャネルの全サンプルが 1、次に 0。区画のサンプル数が configure の値に等しい、窓（宣言のレートの不確かさを引いた分）より早く終わらず、窓の後 1 秒以内に終わる、status が done で dropped / slipped の flag 無し、start ごとに世代が 1 進む | 宣言（rate_range、mode、layout、max_read、segment_ring）、実際のレート、layout（w、pos）、サンプル数、バイト数、timing（jitter、ppm、blocking）、キャプチャごとに start → done の秒数、読み出しの秒数、start_ns とその不確かさ、世代、チャネルごとの 1 の数 |

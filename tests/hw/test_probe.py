@@ -34,6 +34,8 @@ import time
 
 import pytest
 
+import json
+
 from oep_client import (capture, catalog, config, console as console_mod, core, dump, fixture, host as h, linktest,
                         message as m, registry as reg, riscv)
 
@@ -309,7 +311,12 @@ def test_wire(run: record.Run):
             wire.detach(conn)
         except h.OepError as e:
             rec["detach_error"] = str(e)
-    assert not changed, f"s0 / s1 / a0 / a1 changed over a read_block in {len(changed)} of {loops} loops"
+    if changed:
+        # the whole record, every field of every change (pytest's repr of a long assert cuts it)
+        detail = "\n".join(json.dumps(c) for c in changed)
+        print(f"registers changed over a read_block (s0 s1 a0 a1):\n{detail}")
+        pytest.fail(f"s0 / s1 / a0 / a1 changed over a read_block in {len(changed)} of {loops} loops "
+                    f"(before, after, again, the words past the block, dpc):\n{detail}", pytrace=False)
 
 
 # ---- 5. fixture gpio -------------------------------------------------------------------------------------------------------

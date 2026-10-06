@@ -1,6 +1,6 @@
 """One board's run: the connection to its probe, what each test measured and decided, and the results file
-tests/hw/results/<board>-<firmware>-<client>.json (release-testing.ja.md §3: every measurement and verdict, small
-summaries only; the raw logs stay out)."""
+tests/hw/results/<board>-<firmware>-<client>-<started>.json, one per run - a later run never overwrites an earlier one
+(release-testing.ja.md §3: every measurement and verdict, small summaries only; the raw logs stay out)."""
 from __future__ import annotations
 
 import datetime as dt
@@ -276,7 +276,9 @@ class Run:
     def write(self, where: pathlib.Path = RESULTS) -> pathlib.Path:
         where.mkdir(parents=True, exist_ok=True)
         safe = lambda s: re.sub(r"[^A-Za-z0-9._+-]", "_", s)  # noqa: E731
-        path = where / f"{safe(self.board.id)}-{safe(self.firmware_tag())}-{safe(self.client['version'])}.json"
+        when = re.sub(r"[^0-9T]", "", self.started[:19])         # 2026-10-06T20:31:21+09:00 -> 20261006T203121
+        path = where / (f"{safe(self.board.id)}-{safe(self.firmware_tag())}-{safe(self.client['version'])}"
+                        f"-{when}.json")                       # the run's start: every run keeps its own file
         path.write_text(json.dumps(self.to_json(), indent=2, default=str) + "\n", encoding="utf-8")
         return path
 
