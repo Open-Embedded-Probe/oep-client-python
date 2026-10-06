@@ -168,10 +168,10 @@ def test_core_describe_lists_the_transports_max_op_ms_and_discoverable():
 @pytest.mark.parametrize("profile,said", [(fake.p4_x035, 1), (fake.p4_bench, 1), (fake.rp2350_pins, 1),
                                           (fake.esp32_v003, 0)])
 def test_discoverable_only_on_the_project_vid_pid(profile, said):
-    # core §7.5: 1 = the probe also enumerates with the project's USB VID:PID; a UART bridge alone does not (0: no TLV)
+    # core §7.5: 1 = the probe also enumerates with the project's USB VID:PID; a probe that does not sends 0
     tlvs = describe(endpoint.Endpoint(profile(), Clock()), 0)
     tag = reg.CORE.tlv["describe"]["discoverable"]
-    assert [v for t, v in tlvs if t == tag] == ([b"\x01"] if said else [])
+    assert [v for t, v in tlvs if t == tag] == [bytes([said])]
 
 
 def _with_transports(probe, entries):

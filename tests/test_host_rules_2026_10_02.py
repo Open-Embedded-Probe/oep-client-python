@@ -261,8 +261,45 @@ def test_c10_dump_says_what_a_probe_must_give_and_did_not():
     assert caps.missing == []
     bare = fake.FakeProbe("bare", 256, [fake.Offered(0, 0, "oep.core")])
     caps = dump.collect(bare.call)
-    assert caps.missing == ["describe of fn 0: unit_id", "describe of fn 0: transport", "describe of fn 0: max_op_ms"]
+    assert caps.missing == ["describe of fn 0: unit_id", "describe of fn 0: transport", "describe of fn 0: max_op_ms",
+                            "describe of fn 0: discoverable"]
     assert "MISSING" in dump.to_text(caps)
+
+
+def _confirm_tail(probe: fake.FakeProbe, tail: bytes):
+    """probe.call with confirm's answer tail replaced by `tail`."""
+    def call(fn, op, payload=b"", reserve=0):
+        out = probe.call(fn, op, payload, reserve)
+        return out[:17] + tail if (fn, op) == (dump.CORE_FN, dump.OP_CONFIRM) else out
+    return call
+
+
+def test_c10_confirm_transport_tlv_and_discoverable_0_are_required():
+    """A probe without confirm's transport TLV (core §7.1) and without discoverable (§7.5: 0 when it is not on the
+    project's VID:PID) is named as missing both, by dump and by the hardware test's check (dump.required_of)."""
+    probe = fake.esp32_v003()
+    core = probe.offered[0]
+    disc = reg.CORE.tlv["describe"]["discoverable"]
+    probe.offered[0] = fake.Offered(core.fn, core.instance, core.name, tuple(t for t in core.tlvs if t[0] != disc))
+    call = _confirm_tail(probe, b"")
+    want = ["confirm's transport TLV", "describe of fn 0: discoverable"]
+    assert dump.collect(call).missing == want
+    assert dump.required_of(call) == want
+    assert "MISSING what every probe must give" in dump.to_text(dump.collect(call))
+    # a transport index fn 0's describe does not declare; 0xFF (a relaying broker) names none and is fine
+    assert dump.required_of(_confirm_tail(fake.esp32_v003(), bytes([0x01, 1, 7]))) == \
+        ["describe of fn 0: the transport confirm names (index 7)"]
+    assert dump.required_of(_confirm_tail(fake.esp32_v003(), bytes([0x01, 1, 0xFF]))) == []
+    assert dump.required_of(_confirm_tail(fake.esp32_v003(), bytes([0x01, 2, 0]))) == ["confirm's transport TLV (the answer's tail is broken)"]
+
+
+@pytest.mark.parametrize("profile", sorted(fake.PROFILES))
+def test_c10_every_fake_profile_gives_what_is_required_on_every_transport(profile):
+    """The fake served on each of its transports (an Endpoint, as fake_serve and tests/hw's fake board use it)."""
+    for transport in endpoint.Endpoint(fake.PROFILES[profile](), Clock()).transports:
+        ep, hst = in_process(fake.PROFILES[profile], transport)
+        call = lambda fn, op, payload: hst.request(fn, op, payload, locked=False).payload   # noqa: E731
+        assert dump.required_of(call, hst.confirm_range()) == [], (profile, transport)
 
 
 # ---- the new answer TLVs in the API -------------------------------------------------------------------------------

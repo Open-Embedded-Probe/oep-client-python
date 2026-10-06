@@ -30,20 +30,31 @@ class Capabilities:
     missing: list[str] = field(default_factory=list)   # what core §1.2 requires and the probe did not give (C-10)
 
 
-_REQUIRED_CORE_TAGS = {reg.CORE.tlv["describe"][k]: k for k in ("unit_id", "transport", "max_op_ms")}
+_REQUIRED_CORE_TAGS = {reg.CORE.tlv["describe"][k]: k for k in ("unit_id", "transport", "max_op_ms", "discoverable")}
+_TRANSPORT_TAG = reg.CORE.tlv["describe"]["transport"]
+_RELAYING_BROKER = 0xFF          # confirm's transport from a relaying broker (core §3.1, §7.1)
+MISSING_HEADING = "MISSING what every probe must give (core §1.2, §7.1, §7.5)"
 
 
 def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, bytes]]) -> list[str]:
-    """core §1.2 (C-10) as far as a lock-free look shows it: confirm's answer carries TLV transport (§7.1), fn 0's
-    describe carries unit_id, transport and max_op_ms. -> what is missing (empty: nothing seen missing)."""
+    """What every probe must give, as far as a lock-free look on one transport shows it (core §1.2, C-10; oep-spec
+    docs/conformance.md section 1): confirm's answer carries TLV transport, naming an entry of fn 0's describe or 0xFF
+    (§7.1); fn 0's describe carries unit_id, transport, max_op_ms (§1.2, §7.5) and discoverable (0 or 1, every probe
+    sends it, §7.5). -> what is missing (empty: nothing seen missing). The bounds of confirm's values and of max_op_ms
+    are checked by the host itself (host.check_confirm, host.check_max_op_ms: the probe is not used)."""
     out = []
+    have = {tag & 0x7F for tag, _ in core_describe}
     if len(confirm_payload) > 4 and confirm_payload[4] >= 1:
         try:
-            if m.Tail.parse(confirm_payload[17:]).get(reg.CORE.tlv["confirm_answer"]["transport"]) is None:
-                out.append("confirm's transport TLV")
+            where = m.Tail.parse(confirm_payload[17:]).get(reg.CORE.tlv["confirm_answer"]["transport"])
         except m.ProtocolError:
             out.append("confirm's transport TLV (the answer's tail is broken)")
-    have = {tag & 0x7F for tag, _ in core_describe}
+        else:
+            indexes = {v[0] for tag, v in core_describe if tag & 0x7F == _TRANSPORT_TAG and v}
+            if not where:
+                out.append("confirm's transport TLV")
+            elif where[0] != _RELAYING_BROKER and _TRANSPORT_TAG in have and where[0] not in indexes:
+                out.append(f"describe of fn 0: the transport confirm names (index {where[0]})")
     out += [f"describe of fn 0: {name}" for tag, name in _REQUIRED_CORE_TAGS.items() if tag not in have]
     return out
 
@@ -79,6 +90,17 @@ def collect(call, prefix: str = "", exact: bool = False, confirm: tuple[int, int
         if e.fn == CORE_FN and revision >= 1:
             caps.missing = required_missing(p, catalog.split_tlv(data))
     return caps
+
+
+def required_of(call, confirm: tuple[int, int] = (0, 1)) -> list[str]:
+    """required_missing on a probe, lock-free: confirm, then list and describe of oep.core alone (fn 0). -> what is
+    missing, as dump's MISSING line says it (empty: nothing seen missing). The pre-release hardware test fails on it."""
+    caps = collect(call, "oep.core", True, confirm)
+    if caps.revision < 1:
+        return [f"protocol revision 1 (confirm answered revision {caps.revision})"]
+    if not any(o.entry.fn == CORE_FN for o in caps.offers):
+        return ["list: oep.core as fn 0"]
+    return caps.missing
 
 
 # ---- rendering -----------------------------------------------------------
@@ -140,7 +162,7 @@ def to_text(caps: Capabilities) -> str:
              f"{len(rows)} interfaces in {caps.requests['list']} list and "
              f"{caps.requests['describe']} describe requests", ""]
     if caps.missing:
-        lines[1:1] = ["MISSING what every probe must give (core §1.2): " + ", ".join(caps.missing)]
+        lines[1:1] = [MISSING_HEADING + ": " + ", ".join(caps.missing)]
     by_instance: dict[int, list[dict]] = {}
     for r in rows:
         by_instance.setdefault(r["instance"], []).append(r)

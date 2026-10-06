@@ -2,6 +2,7 @@
 
   flash        the firmware (OEP_PROBE_DIR build or OEP_PROBE_VERSION release) onto the board, wait for its boot
   identity     confirm / list / describe: a new boot_id, the expected firmware string, the expected model
+  required     what every probe must give and a lock-free look can check (core §1.2, §7.1, §7.5): dump's MISSING
   config       probe.config set / get / save / state / unset with a disable item, a reboot in between (bridge boards)
   wire         scan, attach (with the reset TLV when OEP_HW_RESET names the line), halt -> read_block -> resume 50x
                with s0 / s1 / a0 / a1 read before and after each block op       (only with OEP_HW_TARGET)
@@ -28,7 +29,7 @@ import time
 
 import pytest
 
-from oep_client import capture, config, console as console_mod, core, fixture, host as h, linktest, registry as reg, riscv
+from oep_client import capture, config, console as console_mod, core, dump, fixture, host as h, linktest, registry as reg, riscv
 
 from . import firmware as fwmod, flash, record
 
@@ -122,6 +123,16 @@ def test_identity(run: record.Run):
         assert info.get("firmware") == expected, f"firmware {info.get('firmware')!r}, expected {expected!r}"
     if run.board.unit_id:
         assert info.get("unit_id") == run.board.unit_id
+
+
+def test_required(run: record.Run):
+    """What every probe must give and this client can check without the lock (core §1.2, §7.1, §7.5; oep-spec
+    docs/conformance.md section 1) - the list `oep dump` prints as MISSING (dump.required_of): fails naming each."""
+    hst = run.require()
+    call = lambda fn, op, payload: hst.request(fn, op, payload, locked=False).payload   # noqa: E731
+    missing = dump.required_of(call, hst.confirm_range())
+    run.record("required", missing=missing)
+    assert not missing, f"{dump.MISSING_HEADING}: " + ", ".join(missing)
 
 
 # ---- 3. probe.config ------------------------------------------------------------------------------------------------------

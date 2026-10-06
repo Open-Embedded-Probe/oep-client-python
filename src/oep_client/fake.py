@@ -263,9 +263,10 @@ def _label(channel: int, name: str) -> bytes:
 
 
 def _core(firmware: str, model: str, unit_id: str, channels: int, reserved: list[int], profile: str,
-          labels: dict[int, str], extra: tuple[bytes, ...] = ()) -> Offered:
-    """oep.core's declarations (core §7.5): the required unit_id, transport (in `extra`) and max_op_ms, plan_roles, the
-    firmware's fixed labels."""
+          labels: dict[int, str], extra: tuple[bytes, ...] = (), discoverable: int = 0) -> Offered:
+    """oep.core's declarations (core §7.5): the required unit_id, transport (in `extra`) and max_op_ms, discoverable
+    (1 for a probe on the project's VID:PID, 0 otherwise: every probe sends it), plan_roles, the firmware's fixed
+    labels."""
     base, bits = catalog.channels_to_bitmap(reserved)
     assert MODEL.fullmatch(model) and UNIT_ID.fullmatch(unit_id), "core §7.5: model / unit_id grammar"
     for t in extra:
@@ -274,7 +275,8 @@ def _core(firmware: str, model: str, unit_id: str, channels: int, reserved: list
     return Offered(0, 0, "oep.core", (
         catalog.text(CORE_FIRMWARE, firmware), catalog.text(CORE_MODEL, model), catalog.text(CORE_UNIT_ID, unit_id),
         catalog.u16(CORE_CHANNELS, channels), catalog.tlv(CORE_RESERVED, struct.pack("<H", base) + bits),
-        catalog.u32(CORE_MAX_OP_MS, MAX_OP_MS), catalog.u32(CORE_PLAN_ROLES, PLAN_ROLES),
+        catalog.u32(CORE_MAX_OP_MS, MAX_OP_MS), catalog.u8(CORE_DISCOVERABLE, discoverable),
+        catalog.u32(CORE_PLAN_ROLES, PLAN_ROLES),
         ) + ((catalog.text(CORE_PROFILE, profile),) if profile else ()) + tuple(_label(c, n) for c, n in labels.items())
         + extra)
 
@@ -290,7 +292,7 @@ def p4_x035() -> FakeProbe:
               {2: "SWDIO", 54: "SWCLK", 51: "LED"},
               _transports([(TRANSPORT["usb_serial_jtag"], 0xFF), (TRANSPORT["vendor_bulk"], 0),
                            (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)])
-              + (catalog.u8(CORE_DISCOVERABLE, 1), catalog.text(CORE_CHIP, "esp32p4 v1.0"))),
+              + (catalog.text(CORE_CHIP, "esp32p4 v1.0"),), discoverable=1),
         Offered(1, 0, "oep.wire.rvswd", (
             catalog.channel_group(1, [(1, 2), (2, 54)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(IMPLEMENTATION, 1),
             catalog.u8(MAX_CONNECTIONS, 1))),
@@ -359,7 +361,7 @@ def p4_bench() -> FakeProbe:
         _core("3.0.0", "esp32p4", "30eda0e3b001", 55, reserved, f"{NS}.p4-bench",
               {2: "A SWDIO", 3: "A SWCLK", 4: "B SWDIO", 5: "B SWCLK", 6: "C SWDIO", 7: "C SWCLK"},
               _transports([(TRANSPORT["usb_serial_jtag"], 0xFF), (TRANSPORT["vendor_bulk"], 0),
-                           (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)]) + (catalog.u8(CORE_DISCOVERABLE, 1),)),
+                           (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)]), discoverable=1),
         Offered(1, 0, "oep.wire.rvswd", (
             catalog.channel_group(1, [(1, 2), (2, 3)]), catalog.channel_group(2, [(1, 4), (2, 5)]),
             catalog.channel_group(3, [(1, 6), (2, 7)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000),
@@ -382,7 +384,7 @@ def rp2350_pins() -> FakeProbe:
     pins = [p for p in range(30) if p not in reserved]
     return FakeProbe("rp2350-pins", 1024, [
         _core("3.0.0", "rp2350", "e66138935f2b1f2c", 30, reserved, "",
-              {}, _transports([(TRANSPORT["usb_cdc"], 0)]) + (catalog.u8(CORE_DISCOVERABLE, 1),)),
+              {}, _transports([(TRANSPORT["usb_cdc"], 0)]), discoverable=1),
         Offered(1, 0, "oep.wire.rvswd", _roles({1: pins, 2: pins, 3: pins}) + (
             catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(IMPLEMENTATION, 1), catalog.u8(MAX_CONNECTIONS, 1))),
         Offered(2, 0, "oep.target.riscv-dm", (catalog.u32(FEATURES, 0b1111), catalog.u8(IMPLEMENTATION, 1),
