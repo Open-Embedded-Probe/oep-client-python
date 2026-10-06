@@ -56,10 +56,16 @@ define:
 - the serial ports' raw side (transports §4, probe.config §1.2): `port_input` / `port_output` carry the bytes outside
   the frames for each serial port by its bind; a port the lock holder's requests came in on is held until the
   session ends, then resumes from the session's last host reset. The byte framing itself is `fake_serial`.
-- a console write takes at most its mechanism's send slot (console §2, §3: DMDATA 3 bytes, dmseq 2, SDI none) and
-  nothing while the slot still holds earlier bytes; the target takes them at the probe's next poll (a ms later, the
-  hart running) or at `console_take`
-- oep.link (oep-if-link): source (len(u16) data, as much as one answer carries), sink (count(u16) data, an empty
+- a console stream of a mechanism that carries host -> target bytes (DMDATA, dmseq) has a send queue of the describe's
+  send_queue bytes (console §1 tag 0x41, §2): a write puts min(count, the free space) at its end (accepted 0 only when
+  it is full; SDI takes nothing, §3.1); the probe hands the queue's head to the target, dmseq 2 bytes and DMDATA 3 a
+  poll - one poll per ms on the timers' clock while the hart runs and answers - or all of it at `console_take`; the
+  queue stays over the target's restarts and resets, clear leaves it, and it goes when the stream closes
+- the reset settle wait (debug §3, §4.3): after a reset's release a target that restarts by itself
+  (`FakeTarget.restart_ms`) leaves the DM silent; riscv-dm reset and attach's reset TLV wait for it up to
+  reset_settle_ms (capped by max_op_ms), then answer completed failed status line (no flags bit2; an existing connection
+  kept, its streams marked reset detail 3) - `settle_log` keeps each wait
+- oep.link (oep-if-link): source (len(u16) data, at most max_frame - 26), sink (count(u16) data, an empty
   answer), and port_speed (§3, optional): offered when the profile's oep.link sets it in its ops (`port_speed_base`,
   the boot speed; None = off: not in the ops, unknown_operation). try / commit / revert on the UART bridge the request came in on (else
   unavailable cause 6), a step that does not fit the port's state (commit at the boot speed or when committed,
@@ -176,6 +182,9 @@ NOT_DRIVEN = _GPIO.enum["drive_read"]["not_driven"]
 OUTPUT_MODES = (_GPIO.enum["mode"]["output_low"], _GPIO.enum["mode"]["output_high"])   # the modes a strength applies to
 SLOT_BOOT_RESET = _CFG.enum["slot_boot_reset"]
 RETRY_RESET_HOLD_MS = reg.TIMING["slot_retry_reset_hold_ms"]   # the retry with reset's hold (probe.config §3.1)
+RESET_SETTLE_MS = reg.LIMITS["reset_settle_ms"]            # the most a reset waits for a silent DM (debug §3, §4.3)
+CON_SEND_QUEUE = reg.TARGET_CONSOLE.tlv["describe"]["send_queue"]   # u16: each stream's send queue (console §1)
+LINK_SOURCE_OVERHEAD = reg.LIMITS["link_source_overhead_bytes"]   # source's len <= max_frame - this (oep-if-link §2)
 REQUEST_HEADER = m.REQUEST_HEADER                          # role corr fn op session_id: 10 bytes (core §4.1)
 
 
@@ -386,6 +395,8 @@ class FakeTarget:
                                                        # None: not sent; sent only when a bring-up ran)
     halt_stuck: bool = False                           # halt: allhalted never comes (status timeout, haltreq cleared)
     step_stuck: str | None = None                      # step: the hart does not come back - "halts" (to haltreq) / "runs"
+    restart_ms: int = 0                                # after a reset's release it restarts by itself: the DM is silent
+                                                       # this long (a bootloader on the way; debug §3, §4.3)
     haltreq: bool = False                              # what the probe left in DMCONTROL.haltreq
     dcsr_step: bool = False                            # what the probe left in dcsr.step
 
@@ -449,8 +460,8 @@ class Stream:
     serial: int = 0
     closed: bool = False
     written: bytearray = field(default_factory=bytearray)
-    slot: bytearray = field(default_factory=bytearray)  # console: accepted bytes the target has not taken yet
-    slot_ms: int = 0                                   # console: when they were put in the slot (timers' clock)
+    queue: bytearray = field(default_factory=bytearray)  # console: the send queue, accepted bytes not handed on yet
+    fed_ms: int = 0                                    # console: the last poll that handed queue bytes on (timers' clock)
     users: set = field(default_factory=set)
     conn: int = 0                                      # console: the connection it is on
     mechanism: int = 0
@@ -709,12 +720,12 @@ class Endpoint:
         self.items = set(cfg.get(CFG_DESCRIBE["items"], b""))
         self.storage_max = struct.unpack_from("<I", cfg[CFG_DESCRIBE["storage"]])[0] if CFG_DESCRIBE["storage"] in cfg else 0
         self.bind_modes = struct.unpack_from("<I", cfg[CFG_DESCRIBE["bind_modes"]])[0] if CFG_DESCRIBE["bind_modes"] in cfg else 0
-        # a console write takes at most its mechanism's send slot, and nothing while the slot still holds earlier bytes
-        # (console §2, §3: SDI has no host -> target way, DMDATA 3 bytes, dmseq 2); the target takes the slot's bytes
-        # (`Stream.written`) when the probe next polls it - a ms or more later on the timers' clock, the hart running -
-        # or at `console_take` (a test's hook)
-        self.console_slot = {_CON.enum["mechanism"]["sdi"]: 0, _CON.enum["mechanism"]["dmdata"]: 3,
-                             _CON.enum["mechanism"]["dmseq"]: 2}
+        # the console's send queue (console §1 describe tag 0x41, §2): its size; what a poll hands to the target per
+        # mechanism (dmseq 2 bytes, DMDATA 3; SDI carries nothing to the target, §3.1)
+        con_fn = self.fns.get(_CON.name)
+        self.send_queue = self._own(con_fn, CON_SEND_QUEUE, "H", 0) if con_fn is not None else 0
+        self.console_feed = {_CON.enum["mechanism"]["dmdata"]: 3, _CON.enum["mechanism"]["dmseq"]: 2}
+        self.settle_log: list[int] = []                 # every reset settle wait (ms): riscv-dm reset, attach's reset TLV
         self.uart_accept = 256
         # the ops each fn's describe declares (core §1.2, §7.4): what `offers` answers (an fn without the tag: none)
         self.ops = {fn: set().union(*(catalog.unpack_ops(v) for tag, v in decl if tag == catalog.OPS))
@@ -1787,13 +1798,13 @@ class Endpoint:
 
     # ---- oep.link (oep-if-link): the link test and port_speed -------------------------------------
     def _link(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
-        """source: length(u32) [TLV] -> len(u16) data [TLV], byte k = k & 0xFF, as much as fits one answer within
-        max_frame (the ignored TLV kept); sink: count(u16) data [TLV] -> empty, a count past the bytes that follow
+        """source: length(u32) [TLV] -> len(u16) data [TLV], byte k = k & 0xFF, at most max_frame -
+        link_source_overhead_bytes (26: header, len and the ignored room, kept whatever the request's TLVs); sink: count(u16) data [TLV] -> empty, a count past the bytes that follow
         malformed; port_speed (§3)."""
         if op == _LINK.op["source"]:
             length = t.take("I")
             t.tail()
-            n = min(length, self.probe.max_frame - m.RESULT_HEADER - 2 - t.room())
+            n = min(length, self.probe.max_frame - LINK_SOURCE_OVERHEAD)   # the ignored room kept always (§2)
             return self._answer(struct.pack("<H", n) + bytes(k & 0xFF for k in range(n)))
         if op == _LINK.op["sink"]:
             count = t.take("H")
@@ -1995,6 +2006,10 @@ class Endpoint:
             flags = 0
             if reset is not None and tg.resets_through(channel):
                 tg.silent_until_reset = False                      # held in reset and let go: it answers again
+                if not self._settled(tg):                          # silent past reset_settle_ms (debug §3)
+                    if cid is not None:                            # the connection kept, the target was reset
+                        self._host_reset(cid, MARK_RESET["attach_reset"])
+                    return m.COMPLETED, m.FAILED, bytes([LINE])
             bring_up = cid is None or reset is not None            # a new connection, or the reset TLV (debug §1)
             if cid is None:
                 if not tg.answers:
@@ -2265,11 +2280,13 @@ class Endpoint:
                 raise Reject(m.UNSUPPORTED)                        # a mode a later revision may define: 0x00 (§2.5)
             tg = target()
             tg.havereset = True
+            self._host_reset(conn, MARK_RESET["ndmreset"])
+            if not self._settled(tg):                              # the DM still silent at reset_settle_ms (§4.3)
+                return m.COMPLETED, m.FAILED, struct.pack("<BBBI", LINE, 0, 1, 0)   # no bit2; the connection kept
             tg.halted = mode == 2
             tg.dpc = tg.reset_vector if mode == 2 else tg.reset_vector + 0x200
             # debug §4.3: bit0 reached the mode's state, bit1 confirmed by the pc (mode 1), attempts 1
             flags, pc = (0b01, 0) if mode == 0 else ((0b11, tg.dpc) if mode == 1 else (0b01, tg.dpc))
-            self._host_reset(conn, MARK_RESET["ndmreset"])
             return self._answer(struct.pack("<BBBI", OK, flags, 1, pc))
         if op == _RV.op["step"]:
             t.tail()
@@ -2349,6 +2366,14 @@ class Endpoint:
                     struct.pack(f"<BBIIB{n_out}I", status, code, dpc, us, n_out, *values))   # ... nvals values
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
+    def _settled(self, tg: FakeTarget) -> bool:
+        """The wait after a reset's release for a target that restarts by itself (debug §3, §4.3): the DM answers after
+        tg.restart_ms; the probe waits at most reset_settle_ms (capped by max_op_ms). -> whether it answered in time
+        (the wait goes in `settle_log`)."""
+        cap = min(RESET_SETTLE_MS, self.max_op_ms)
+        self.settle_log.append(min(tg.restart_ms, cap))
+        return tg.restart_ms <= cap
+
     def _host_reset(self, cid: int, detail: int) -> None:
         """A reset last-reset counts (probe.config §1.2): riscv-dm reset (detail 1 ndmreset) or an attach's reset TLV
         (detail 3) on connection `cid`; its streams get mark reset."""
@@ -2405,7 +2430,7 @@ class Endpoint:
 
     def _stream_op(self, s: Stream, op: int, args, t: Take, accept: int | None) -> tuple[int, int, bytes]:
         """read / marks / clear / mark / write of a position stream (common §1). `accept`: what a write takes (a
-        fixture UART's queue); None: a console, its mechanism's slot (`console_slot`)."""
+        fixture UART's queue); None: a console, its send queue (`send_queue`)."""
         if op == _CON.op["read"]:
             frm, arg, mx = args
             if frm == 0:
@@ -2444,11 +2469,13 @@ class Endpoint:
             return m.COMPLETED, m.SUCCESS, b""
         if op == _CON.op["write"]:
             data, count = args, len(args)
-            if accept is None:                                     # a console: its mechanism's send slot (console §2)
-                took = 0 if s.slot else min(count, self.console_slot.get(s.mechanism, 0))
+            if accept is None:                                     # a console: its send queue (console §2)
+                carries = s.mechanism in self.console_feed         # SDI has no host -> target way (§3.1): 0
+                took = min(count, self.send_queue - len(s.queue)) if carries else 0
                 if took:
-                    s.slot += data[:took]
-                    s.slot_ms = self.now()
+                    if not s.queue:
+                        s.fed_ms = self.now()                      # the first poll that can take them: a ms on
+                    s.queue += data[:took]
             else:
                 took = min(count, accept)                          # what fit the UART's transmit queue
                 s.written += data[:took]
@@ -2537,26 +2564,29 @@ class Endpoint:
         s.add_mark(MARK["closed"], self.now_ns(), detail)
         s.closed = True
         s.users.clear()
+        s.queue.clear()                                            # the send queue goes with the stream (console §2)
 
     def console_take(self, sid: int | None = None) -> None:
-        """TEST HOOK: the target takes what console stream `sid`'s send slot holds (every stream when None), as when
-        the probe answers its next mailbox word (console §3)."""
+        """TEST HOOK: the target takes everything console stream `sid`'s send queue holds (every stream when None), as
+        after enough polls (console §2, §3)."""
         for k, st in self.streams.items():
-            if (sid is None or k == sid) and st.slot:
-                st.written += st.slot
-                st.slot.clear()
+            if (sid is None or k == sid) and st.queue:
+                st.written += st.queue
+                st.queue.clear()
 
     def _console_poll(self) -> None:
-        """The probe's polling of the console streams: a slot filled at least a ms ago on a running, answering target
-        is taken (console §3: the probe answers the target's slot with the bytes)."""
+        """The probe's polling of the console streams (console §2, §3): one poll per ms on the timers' clock while the
+        hart runs and answers, each handing the queue's head to the target - dmseq 2 bytes, DMDATA 3."""
         now = self.now()
         for st in self.streams.values():
-            if not st.slot or st.closed or now <= st.slot_ms or st.conn not in self.conns:
+            if not st.queue or st.closed or now <= st.fed_ms or st.conn not in self.conns:
                 continue
             tg = self._target_of(st.conn)
             if tg.answers and not tg.halted:
-                st.written += st.slot
-                st.slot.clear()
+                n = min(len(st.queue), (now - st.fed_ms) * self.console_feed.get(st.mechanism, 0))
+                st.written += st.queue[:n]
+                del st.queue[:n]
+            st.fed_ms = now
 
     def emit(self, sid: int, data: bytes) -> None:
         """The target writes to its console stream `sid`."""

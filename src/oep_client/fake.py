@@ -288,6 +288,17 @@ def _spi_decl(max_length: int, max_hz: int, features: int, queue_depth: int,
             + ((catalog.u32(SPI_CS_SETUP_NS, cs_setup_ns),) if cs_setup_ns else ()))
 
 
+SEND_QUEUE = reg.TARGET_CONSOLE.tlv["describe"]["send_queue"]
+CONSOLE_SEND_QUEUE = 256      # each console stream's send queue, bytes (console §1: at least console_send_queue_min_bytes)
+
+
+def _console(fn: int, mechanisms=(0, 1, 2), send_queue: int = CONSOLE_SEND_QUEUE) -> Offered:
+    """oep.target.console: the mechanisms it opens, and the send queue a stream of DMDATA / dmseq has (console §1)."""
+    carries = bool(set(mechanisms) & {1, 2})
+    return Offered(fn, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes(mechanisms)),)
+                   + ((catalog.u16(SEND_QUEUE, send_queue),) if carries else ()))
+
+
 def _link(fn: int, port_speed: bool = False) -> Offered:
     """oep.link (oep-if-link): source and sink, and port_speed when `port_speed` (a probe on a UART bridge)."""
     return Offered(fn, 0, "oep.link", ops_of("oep.link") if port_speed else ops_of("oep.link", "port_speed"))
@@ -337,7 +348,7 @@ def p4_x035() -> FakeProbe:
             catalog.u8(MAX_CONNECTIONS, 1))),
         Offered(2, 0, "oep.target.riscv-dm", (catalog.u8(IMPLEMENTATION, 1),            # every op: the default ops
                                               catalog.u16(MAX_LENGTH, block_max_length(1024)))),
-        Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
+        _console(3),
         _gpio(4, pins),
         _uart(5, 0, pins, 3_000_000),
         _uart(6, 1, pins, 3_000_000),
@@ -375,7 +386,7 @@ def esp32_v003() -> FakeProbe:
                                         catalog.u8(IMPLEMENTATION, 1), catalog.u8(MAX_CONNECTIONS, 1))),
         Offered(2, 0, "oep.target.riscv-dm", ops_of("oep.target.riscv-dm", "step") + (    # no step
             catalog.u8(IMPLEMENTATION, 1), catalog.u16(MAX_LENGTH, block_max_length(64)))),
-        Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
+        _console(3),
         _gpio(4, wired + [23], modes=0x7F),                      # no mode 7 (both pulls): unsupported there
         _uart(5, 0, wired, 115_200),
         # the classic ESP32's GPIO sampler: a byte a sample (w 8), one-shot
@@ -410,7 +421,7 @@ def p4_bench() -> FakeProbe:
             catalog.u8(IMPLEMENTATION, 1), catalog.u8(MAX_CONNECTIONS, 2))),
         Offered(2, 0, "oep.target.riscv-dm", (catalog.u8(IMPLEMENTATION, 1),
                                               catalog.u16(MAX_LENGTH, block_max_length(1024)))),
-        Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
+        _console(3),
         _gpio(4, pins),
         _uart(5, 0, pins, 3_000_000),
         _config(6, 0, slots_max=4),
@@ -432,7 +443,7 @@ def rp2350_pins() -> FakeProbe:
             catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(IMPLEMENTATION, 1), catalog.u8(MAX_CONNECTIONS, 1))),
         Offered(2, 0, "oep.target.riscv-dm", (catalog.u8(IMPLEMENTATION, 1),
                                               catalog.u16(MAX_LENGTH, block_max_length(1024)))),
-        Offered(3, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([0, 1, 2])),)),
+        _console(3),
         _gpio(4, pins),
         _uart(5, 0, pins, 3_000_000),
         _link(6),
