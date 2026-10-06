@@ -101,7 +101,8 @@ KNOWN: dict[str, Known] = {
     "oep.target.arm-adi": Known("ARM Debug Interface: DP/AP transfer lists, block transfers"),
     "oep.target.console": Known(
         "console streams on a debug connection (position-addressed, marks)",
-        tags={0x40: ("mechanisms", lambda v: ", ".join(_MECHANISMS.get(b, str(b)) for b in v))}),
+        tags={0x40: ("mechanisms", lambda v: ", ".join(_MECHANISMS.get(b, str(b)) for b in v)),
+              0x41: ("send queue", lambda v: f"{_u16(v[:2])} bytes")}),
     "oep.probe.config": Known(
         "the probe's configuration (plan, labels, idle pins, slots, binds, uart) and its storage; the state is op state",
         tags={0x40: ("storage", lambda v: f"{_u32(v[:4])} bytes"),

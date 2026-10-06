@@ -20,6 +20,8 @@ from . import catalog, host as h, message as m, registry as reg
 from .core import Interface, describe, max_op_ms
 
 ATTACH_BUDGET_MS = reg.LIMITS["attach_budget_ms"]   # one attach answer at most (oep-if-debug §1): argument time (§4.4)
+RESET_SETTLE_MS = reg.LIMITS["reset_settle_ms"]     # after a reset's release, the most a probe waits for a silent DM
+                                                    # (attach's reset TLV, riscv-dm reset; oep-if-debug §3, §4.3)
 SCAN_BUDGET_MS = reg.LIMITS["scan_budget_ms"]       # no scan combination starts later than this; + one attach
 from .fixture import Gpio
 
@@ -160,9 +162,10 @@ class WireBase(Interface):
             return ms
 
     def attach_ms(self, reset: tuple[int, int] | None = None) -> int:
-        """attach's argument time (core §4.4, C-06 / P2-★4): attach_budget_ms plus the reset TLV's hold_ms, at most
+        """attach's argument time (core §4.4, C-06 / P2-★4): attach_budget_ms, and with the reset TLV its hold_ms and
+        reset_settle_ms (the wait for a target that restarts by itself after the release, oep-if-debug §3), at most
         max_op_ms - the host's wait for its answer adds host_wait_add_ms and the transfer time."""
-        return self._budget(ATTACH_BUDGET_MS + (reset[1] if reset else 0))
+        return self._budget(ATTACH_BUDGET_MS + (reset[1] + RESET_SETTLE_MS if reset else 0))
 
     def scan_ms(self) -> int:
         """scan's argument time: scan_budget_ms + attach_budget_ms (one combination's try), at most max_op_ms."""
@@ -521,12 +524,21 @@ class RiscvDm(Interface, BlockLength):
         body = bytes([mode])
         if method is not None:
             body += m.tlv(self.TAG_RESET_METHOD, bytes([method]), critical=True)
-        r = self._request(self.RESET, body)
+        # its argument time: reset_settle_ms, the wait for a silent DM after the release (oep-if-debug §4.3, core §4.4)
+        r = self._request(self.RESET, body, expect_ms=self.reset_ms())
         rd = ran(r)
         status, flags, attempts, pc = rd.take("BBBI")
         rd.tail()
         check("reset", r, status)
         return flags, attempts, pc
+
+    def reset_ms(self) -> int:
+        """reset's argument time (core §4.4): reset_settle_ms - the wait for a DM that does not answer while the target
+        restarts by itself after ndmreset (oep-if-debug §4.3) - at most max_op_ms."""
+        try:
+            return min(RESET_SETTLE_MS, max_op_ms(self.host))
+        except (h.OepError, AttributeError, TypeError):
+            return RESET_SETTLE_MS
 
     def reset(self, confirm: bool = True, method: int | None = None) -> tuple[int, int, int]:
         """Reset and let it run (confirm: seen running). method: METHOD_* (critical; None or METHOD_DEFAULT: the

@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass, field
 
 from . import host as h, message as m, registry as reg
-from .core import Interface
+from .core import Interface, describe
 
 _CON = reg.TARGET_CONSOLE
 _COMMON = reg.COMMON.enum
@@ -113,10 +113,11 @@ class PositionStream(Interface):
         self._call(self.MARK, self._stream_prefix() + bytes([value]))
 
     def write(self, data: bytes) -> int:
-        """-> bytes accepted: what fit the mechanism's send slot (common §1.4; delivery is not implied) - a console takes
-        at most its mechanism's slot (DMDATA 3 bytes, dmseq 2, SDI none) and nothing while the bytes it took last are
-        still in the slot (console §2, §3). Fewer than asked is completed partial, not an error; nothing accepted is
-        completed failed (raised as Failed): `StreamIO.write` loops on it."""
+        """-> bytes accepted: what went into the probe's send queue from data's start, min(count, its free space)
+        (common §1.4; delivery is not implied) - a console's queue is its describe's send_queue bytes, handed to the
+        target 2 (dmseq) or 3 (DMDATA) bytes at a time; SDI takes nothing (console §2, §3). Fewer than asked is
+        completed partial, not an error; nothing accepted (the queue full) is completed failed (raised as Failed):
+        `StreamIO.write` loops on it."""
         r = self._request(self.WRITE, self._stream_prefix() + struct.pack("<H", len(data)) + data)
         if r.resolution != m.COMPLETED or r.detail not in (m.SUCCESS, m.PARTIAL):
             raise h.Failed(r)
@@ -144,6 +145,20 @@ class Console(PositionStream):
 
     def _stream_prefix(self) -> bytes:
         return struct.pack("<H", self.stream)
+
+    TAG_MECHANISMS, TAG_SEND_QUEUE = _CON.tlv["describe"]["mechanisms"], _CON.tlv["describe"]["send_queue"]
+
+    def mechanisms(self) -> list[int]:
+        """The mechanisms the probe opens (describe tag 0x40)."""
+        return [b for tag, v in describe(self.host, self.fn) if tag & 0x7F == self.TAG_MECHANISMS for b in v]
+
+    @property
+    def send_queue(self) -> int | None:
+        """The bytes of each stream's send queue that write fills (describe tag 0x41, u16, at least 64; console §1,
+        §2); None when the probe declares none (no mechanism of it carries host -> target bytes)."""
+        v = next((v for tag, v in describe(self.host, self.fn) if tag & 0x7F == self.TAG_SEND_QUEUE and len(v) >= 2),
+                 None)
+        return struct.unpack_from("<H", v)[0] if v is not None else None
 
     def open(self, conn: int, mechanism: int = DMSEQ) -> int:
         """-> the stream. An open stream of the same (connection, mechanism) comes back as it is (self.existing):
@@ -175,7 +190,7 @@ class Console(PositionStream):
 
 class StreamIO:
     """A position stream read from a position onwards, as a plain byte stream (console or fixture UART). `write`
-    sends in chunks and goes on from what each answer accepted (a console's slot takes 2 or 3 bytes at a time);
+    sends in chunks and goes on from what each answer accepted (a console's send queue empties 2 or 3 bytes a poll);
     `stall_s`: how long it waits with nothing accepted before it gives up (TimeoutError) - an SDI console accepts
     nothing ever (console §3.1)."""
     MAX_READ, MAX_WRITE = 1000, 64
@@ -192,7 +207,10 @@ class StreamIO:
         start 8 + flags 1 + len 2."""
         frame = self.source.host.confirmed()["max_frame"]
         write = frame - 12 - len(self.source._stream_prefix())
-        return max(1, min(self.MAX_READ, frame - 16)), max(1, min(self.MAX_WRITE, write))
+        return max(1, min(self.MAX_READ, frame - 16)), max(1, min(self._write_cap(), write))
+
+    def _write_cap(self) -> int:
+        return self.MAX_WRITE
 
     def read(self, n: int = 512) -> bytes:
         c = self.source.read_from(self.position, min(n, self._limits()[0]))
@@ -226,8 +244,14 @@ class StreamIO:
 
 
 class ConsoleIO(StreamIO):
-    """A console stream read from a position onwards (default: from now), as a plain byte stream."""
+    """A console stream read from a position onwards (default: from now), as a plain byte stream. A write chunk is the
+    probe's send_queue (`send_queue`, None when it declares none), at most what one frame carries."""
 
     def __init__(self, console: Console, start: int | None = None):
         super().__init__(console, start)
         self.console = console
+        self.send_queue = console.send_queue
+
+    def _write_cap(self) -> int:
+        """A whole send queue at a time (a line no longer than send_queue goes in one write; host guide §14)."""
+        return self.send_queue or self.MAX_WRITE

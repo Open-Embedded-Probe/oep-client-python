@@ -273,6 +273,13 @@ class Interface:
 _LINK = reg.LINK
 LINK_NAME = _LINK.name
 LINK_SOURCE, LINK_SINK, LINK_PORT_SPEED = (_LINK.op[k] for k in ("source", "sink", "port_speed"))
+LINK_SOURCE_OVERHEAD = reg.LIMITS["link_source_overhead_bytes"]   # source's len <= max_frame - this (oep-if-link §2)
+
+
+def link_size(max_frame: int) -> int:
+    """The most one source answer carries and one sink request may (oep-if-link §2): max_frame - 26, the answer's
+    header, len and the ignored room (a sink request's header 10 and count 2 fit in that too)."""
+    return max(1, max_frame - LINK_SOURCE_OVERHEAD)
 
 
 def link_fn(hst: h.Host) -> int:
@@ -307,7 +314,7 @@ def link_speed(hst: h.Host, *, size: int | None = None, inflight: int | None = N
     import time
     fn = link_fn(hst)
     limits = confirm(hst)
-    size = size or limits["max_frame"] - 16
+    size = size or link_size(limits["max_frame"])
     inflight = min(inflight or limits["max_inflight"], limits["max_inflight"])
     first = link_source_data(hst.call(fn, LINK_SOURCE, link_source_request(size), locked=False).payload)
     if len(first) > size or any(b != (k & 0xFF) for k, b in enumerate(first[:256])):

@@ -35,7 +35,7 @@ port_speed (oep-if-link §3 is the handshake; the host's procedure is the host g
 opened. The minimal form (§17.2, the default): try a candidate, switch to the requested baud, settle 20 ms, confirm
 (100 ms, 3 tries), commit - about 50 ms, no measurement. The full form (`verify=True`, §17.3): a baseline at the boot
 speed (this session's frames, or 60 per flow), then per candidate every flow the caller will use (`flows`: in = oep.link source,
-out = oep.link sink, duplex = both, each with its in-flight n) for 16 frames at max_frame - 16, failing a flow on broken +
+out = oep.link sink, duplex = both, each with its in-flight n) for 16 frames at max_frame - 26, failing a flow on broken +
 lost >= 3 and a ratio over max(2 x baseline, 5 %), once more at n = 1 before giving up on it (then n = 1 is the cap),
 commit when every flow passed. A failed candidate: revert (step 2, at the new rate), the boot speed, confirms up to
 port_speed_idle_max_ms + 1 s. The report (`link.speed`) records the baseline, every candidate's flows and the step
@@ -1846,7 +1846,7 @@ def raise_speed(hst, candidates=DEFAULT_CANDIDATES, *, flows=None, verify: bool 
     probe's answer only when the OS refuses it) -> 20 ms -> confirm (100 ms, up to 3) -> commit. The full form
     (`verify=True`, or `flows` given; §17.3): first the boot speed's baseline per flow (`baseline` given, this session's
     frames at the boot speed when 60 or more, else 60 frames measured per flow at its n - over 10 % again at n = 1,
-    still over: not raised), then per candidate every flow for `frames` (16) frames of max_frame - 16 bytes - the quick
+    still over: not raised), then per candidate every flow for `frames` (16) frames of max_frame - 26 bytes - the quick
     gate; a flow fails on broken + lost >= 3 and a ratio over max(2 x baseline, 5 %), runs again at n = 1 first (then
     n = 1 is the link's cap), and one failed flow fails the candidate. `flows`: ("in" | "out" | "duplex", n) pairs (n 0
     = the most this link keeps in flight; default: all three at that n) - verify only what the session will use (§17.3.1).
@@ -1949,7 +1949,8 @@ def _barred(lk: SerialLink, rate: int) -> str:
 def _raise(hst, lk: SerialLink, report: SpeedReport, candidates: list[int], run: _Run, baseline: float | None,
            max_tries: int | None) -> SpeedReport:
     limits = hst.limits or hst.confirm()
-    run.size = limits["max_frame"] - 16
+    from . import core
+    run.size = core.link_size(limits["max_frame"])                 # what one source answer carries (oep-if-link §2)
     n_max = lk.inflight_for(limits)
     if run.rec is not None:
         passed, failed = run.rec.lookup(*lk.record_key)

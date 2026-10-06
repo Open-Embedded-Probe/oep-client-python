@@ -132,7 +132,8 @@ def matrix(hst, *, rates: list[int | None] = (None,), patterns: list[str] = PATT
     RateResult per rate. Needs the lock. In-flight counts above the probe's max_inflight are skipped."""
     lk = hst.link
     limits = hst.limits or hst.confirm()
-    sizes = list(sizes or [limits["max_frame"] - 16])
+    most = core.link_size(limits["max_frame"])                      # max_frame - 26 (oep-if-link §2)
+    sizes = list(sizes or [most])
     base = getattr(lk, "base_baud", None) or getattr(lk, "baud", None)
     if port is None and any(r for r in rates):
         bridges = [index for index, kind, _ in core.transports(hst) if kind == 1]
@@ -158,9 +159,9 @@ def matrix(hst, *, rates: list[int | None] = (None,), patterns: list[str] = PATT
                     if n > limits["max_inflight"]:
                         continue
                     for size in sizes:
-                        if size > limits["max_frame"] - 16:       # a request or an answer would not fit one frame
+                        if size > most:                         # more than one source answer carries
                             result.cells.append(Cell(result.rate, pattern, n, size,
-                                                     error=f"over the probe's frame ({limits['max_frame']} - 16)"))
+                                                     error=f"over what one source answer carries ({limits['max_frame']} - 26)"))
                             continue
                         result.cells.append(run(hst, pattern, n, size, frames=frames, seconds=seconds,
                                                 timeout=timeout, rate=result.rate))
