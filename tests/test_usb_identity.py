@@ -118,8 +118,37 @@ def test_a_bare_usb_target_without_vendor_or_hid_takes_the_project_cdc_port(monk
     with pytest.raises(FileNotFoundError):                    # none
         link.open_host("usb")
     monkeypatch.setattr(link, "project_serial_ports", lambda: [("/dev/ttyACM7", "a"), ("/dev/ttyACM8", "b")])
-    with pytest.raises(FileNotFoundError):                    # several: the user names the port
+    with pytest.raises(FileNotFoundError, match="/dev/ttyACM7, /dev/ttyACM8.*name one"):   # several: the user names one
         link.open_host("usb")
+
+
+@pytest.mark.parametrize("command", [["dump", "--port", "usb"], ["config", "show", "usb"], ["linktest", "usb"],
+                                     ["pins", "usb"], ["speed", "usb"]])
+def test_the_oep_command_says_in_one_line_that_no_usb_probe_is_there(monkeypatch, capsys, command):
+    """No device on the project's VID:PID and no hid module: one line, no traceback, with the hint (extras, or name
+    the port)."""
+    from oep_client import __main__ as cli
+
+    def none(kind, vid, pid, serial):
+        if kind == "hid":
+            raise ImportError("No module named 'hid'")
+        raise FileNotFoundError(f"no USB device {vid:04x}:{pid:04x}")
+
+    monkeypatch.setattr(link, "_open_usb_stream", none)
+    monkeypatch.setattr(link, "project_serial_ports", lambda: [])
+    with pytest.raises(SystemExit) as e:
+        cli.main(command)
+    text = str(e.value.code)
+    assert "\n" not in text and text.startswith("oep: cannot open usb: no way in to 1209:4f45")
+    assert "No module named 'hid'" in text and "Hint: install the usb / hid extras" in text and "name the probe's port" in text
+
+
+def test_the_oep_command_says_in_one_line_that_a_port_is_not_there(capsys):
+    from oep_client import __main__ as cli
+    with pytest.raises(SystemExit) as e:
+        cli.main(["dump", "--port", "/dev/oep-no-such-port"])
+    text = str(e.value.code)
+    assert "\n" not in text and text.startswith("oep: cannot open /dev/oep-no-such-port:") and "Hint" not in text
 
 
 def test_project_serial_ports_lists_the_project_vid_pid_only(monkeypatch):

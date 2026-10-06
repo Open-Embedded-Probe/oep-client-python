@@ -1246,12 +1246,15 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
         pid = int(parts[1], 16) if len(parts) > 1 else USB_PID
         try:
             return open_usb_host(vid, pid, parts[2] if len(parts) > 2 else None, timeout)
-        except FileNotFoundError:
+        except FileNotFoundError as e:
             if parts:
                 raise
             ports = project_serial_ports()                   # a probe on the project's VID:PID with CDC only
-            if len(ports) != 1:
-                raise
+            if len(ports) > 1:
+                raise FileNotFoundError(f"{e}; cdc: {len(ports)} serial ports on {vid:04x}:{pid:04x} "
+                                        f"({', '.join(p for p, _ in ports)}): name one") from None
+            if not ports:
+                raise FileNotFoundError(f"{e}; cdc: no serial port on {vid:04x}:{pid:04x}") from None
             lk = SerialLink(ports[0][0], timeout, baud)
             lk.transport = "serial"
     else:

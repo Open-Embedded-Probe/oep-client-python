@@ -29,6 +29,22 @@ import struct
 
 from . import catalog, config, core, dump, fake, host, link
 
+USB_HINT = ("install the usb / hid extras (pip install 'oep-client-python[usb-async,hid]') so every way in to the USB "
+            "device can be tried, or name the probe's port (a serial port such as /dev/ttyACM0 or COM3, tcp://HOST:PORT)")
+
+
+def _open_host(target: str, **kw):
+    """link.open_host for a command: a probe that cannot be opened (no device, no port, not an OEP probe, a value the
+    host does not use) ends the command with one line on stderr instead of a traceback; for a usb target the line
+    says how to get another way in."""
+    try:
+        return link.open_host(target, **kw)
+    except (OSError, ValueError, ImportError, host.OepError) as e:
+        why = " ".join(str(e).split()).rstrip(".") or type(e).__name__
+        hint = f" Hint: {USB_HINT}." if isinstance(e, FileNotFoundError) and (target == "usb" or target.startswith("usb:")) \
+            else ""
+        raise SystemExit(f"oep: cannot open {target}: {why}.{hint}") from None
+
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="oep", description="Open Embedded Probe: what a probe offers, its settings")
@@ -102,7 +118,7 @@ def main(argv=None) -> int:
     if args.fake:
         call = fake.PROFILES[args.fake]().call
     else:
-        hst = link.open_host(args.port)
+        hst = _open_host(args.port)
         call = lambda fn, op, payload: hst.request(fn, op, payload, locked=False).payload   # noqa: E731
         confirm = hst.confirm_range()                    # confirmed already: the revision in use (core §7.1)
     caps = dump.collect(call, args.prefix, args.exact, confirm)
@@ -116,7 +132,7 @@ def _pins_cmd(args) -> int:
     from . import pins
     exclude = [int(x, 0) for x in args.exclude.replace(" ", "").split(",") if x]
     say = (lambda t: print(t, file=sys.stderr, flush=True)) if args.json else (lambda t: print(t, flush=True))  # noqa: E731
-    hst = link.open_host(args.probe)
+    hst = _open_host(args.probe)
     try:
         core.take(hst, 10000, owner="oep pins")
         finder = pins.PinFinder(hst, wire=args.wire, power=args.power, exclude=exclude, say=say, probe=args.probe,
@@ -146,8 +162,8 @@ def _linktest(args) -> int:
     from . import linktest
     ints = lambda text: [int(v) for v in text.split(",") if v.strip()]   # noqa: E731
     rates = [None if v.strip() in ("0", "now") else int(v) for v in args.rates.split(",") if v.strip()] or [None]
-    hst = link.open_host(args.probe, baud=args.baud) if args.probe.startswith("/") or ":" not in args.probe \
-        else link.open_host(args.probe)
+    hst = _open_host(args.probe, baud=args.baud) if args.probe.startswith("/") or ":" not in args.probe \
+        else _open_host(args.probe)
     stream = getattr(hst.link, "stream", None)
     if hasattr(stream, "set_low_latency_mode"):
         try:
@@ -196,7 +212,7 @@ def _speed(args) -> int:
     candidates = [int(r) for r in text.replace(" ", "").split(",") if r] or list(link.DEFAULT_CANDIDATES)
     flows = _flows(args.flows)
     verify = True if args.verify or flows else (False if args.minimal else None)
-    hst = link.open_host(args.probe, baud=args.baud)
+    hst = _open_host(args.probe, baud=args.baud)
     try:
         core.take(hst, 5000, owner="oep speed")
         report = link.raise_speed(hst, candidates, flows=flows, verify=verify, frames=args.frames,
@@ -360,7 +376,7 @@ def _change(hst, cfg, items, save: bool) -> None:
 
 
 def _config(args) -> int:
-    hst = link.open_host(args.probe)
+    hst = _open_host(args.probe)
     try:
         cfg = config.ProbeConfig(hst)
         if args.action == "show":
