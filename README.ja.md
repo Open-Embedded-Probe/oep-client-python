@@ -6,9 +6,9 @@ Open Embedded Probe の host 側。v1（oep-spec の `docs/oep-core.ja.md`、`do
 `generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.registry` から取る。破壊的変更を前提とする
 実験段階で、互換 API は約束しない。
 
-**実装する仕様: oep-spec の commit `4bd3a87`**（`v0.x` のタグはまだ無い。oep-spec versioning §6: 凍結の前は revision 1 だけでは
+**実装する仕様: oep-spec の commit `59dd028`**（`v0.x` のタグはまだ無い。oep-spec versioning §6: 凍結の前は revision 1 だけでは
 形が決まらないので、実装は自分が実装する仕様を名乗る）。2026-10-06 の単純化（10 byte の要求の見出し 1 つ、TLV の len は u16、
-閉じた固定の形、describe の `ops` tag、再開なし、`oep.link`）、コンソールの送りの列と reset の後の待ち（f0c68bf）、定義より長い probe.config の項目（d34dafa）、oep.link の source の len（4bd3a87）を含む。
+閉じた固定の形、describe の `ops` tag、再開なし、`oep.link`）、コンソールの送りの列と reset の後の待ち（f0c68bf）、定義より長い probe.config の項目（d34dafa）、oep.link の source の len（4bd3a87）、既存の connection に加わる attach（59dd028）を含む。
 
 凍結までは日本語の文（`.ja.md`）が仕様の作業の文で、英語の文書は凍結のときにそこから作り直し、そのときから英語が正になる。OEP を初めて読む人は oep-spec の
 [README](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/README.ja.md) と [レビューの手引き](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/review-guide.ja.md)（どこに何が書いてあるか）から。
@@ -275,7 +275,8 @@ open の応答は lease_ms と boot_id、送り直した end には表から答�
 hart が走っている間。`console_take(sid)` は全部渡す）。列は reset と再起動をまたいで残り、ストリームが閉じると消える。reset
 （riscv-dm の reset、attach の reset TLV）は自分で再起動する target（`FakeTarget.restart_ms`）を reset_settle_ms まで待ち、過ぎれば
 status line で答える（`settle_log`）。定義より長い項目は無視、critical なら unsupported（d34dafa）。oep.link の source は
-max_frame − 26 までを答える（4bd3a87）。`tests/test_vectors.py` は
+max_frame − 26 までを答える（4bd3a87）。生きている connection に加わる attach は、運ばない設定をそのまま保ち（idle_clock が
+無ければ今の休ませ方、max_speed は速さを下げるだけ）、scan は生きている connection の設定を変えない（59dd028）。`tests/test_vectors.py` は
 sessions.json を 1 段ずつ、ops.json の全部の場合を、それぞれが書く状態の偽の probe で走らせる。
 
 外のプログラムの試験には `fake_serve` を子プロセスで使う:

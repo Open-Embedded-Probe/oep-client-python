@@ -33,7 +33,10 @@ define:
 - the plan (plan_apply / plan_release; the session's plan goes when the lease lapses; plan_roles), subscriptions
   (fn 0's heartbeat `boot_id uptime_ns`; an fn that emits nothing is unsupported), and simulations of the
   interfaces the profiles offer: oep.wire.rvswd / swio (scan with its TLVs, attach on declared pin pairs with the
-  reset TLV, several connections up to max_connections, the seat rule, connections), oep.target.riscv-dm on one
+  reset TLV, several connections up to max_connections, the seat rule, connections; an attach that joins a live
+  connection keeps its setting for every setting TLV it does not carry - idle_clock absent keeps the current rest, the
+  absent value high is a new connection's only - and max_speed only lowers its speed; a scan never changes a live
+  connection's settings: debug §1, §3), oep.target.riscv-dm on one
   `FakeTarget` per pin pair (dmi / run answers count their values; run's stopped 2), oep.target.console streams (one
   live stream per connection, lifetime by its users, the streams list), oep.fixture.gpio (the lines outside through
   the test hook `gpio_world`; a target's `reset_line` makes the other reset channels reset nothing), oep.fixture.uart (its stream
@@ -1968,7 +1971,7 @@ class Endpoint:
                 skip = struct.unpack("<H", skip_tlv)[0] if skip_tlv is not None else 0
                 pairs = [p for p in self._allowed_pairs(fn) if self._candidate(fn, p) and (not full or p in live)][skip:]
             pairs = pairs[:255]                                    # tried is a u8
-            found = []
+            found = []                                             # a live pair keeps its speed and rest (debug §1)
             for p in pairs:
                 tg = self._target(fn, p)
                 if (tg.answers and tg.found) or self._conn_at(fn, p) is not None:   # a live pair: read over it
@@ -2022,8 +2025,8 @@ class Endpoint:
                 bring_up |= speed < self.conns[cid].speed          # lowered for max_speed: brought up again
                 self.conns[cid].speed = min(self.conns[cid].speed, speed)
             c = self.conns[cid]
-            if idle_clock is not None:
-                c.idle_clock = idle_clock                          # an existing connection takes the new rest level
+            if idle_clock is not None:                             # only a carried idle_clock changes the rest; a join
+                c.idle_clock = idle_clock                          # without it keeps the connection's (debug §1, §3)
             c.users.add("host")
             for n, s in self.slots.items():                        # a new connection for an evicted slot: a new cue
                 if s.wire_fn == fn and s.pair == pair:

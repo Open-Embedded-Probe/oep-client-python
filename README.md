@@ -8,11 +8,11 @@ standard interfaces `docs/oep-if-*.ja.md`), v1 before the freeze: until the free
 oep-spec's generated `generated/oep-v1/oep_v1_registry.py`. This is an experimental stage: breaking changes are expected and
 no compatible API is promised.
 
-**The spec this implements: oep-spec commit `4bd3a87`** (no `v0.x` tag yet; oep-spec versioning §6 - before the freeze,
+**The spec this implements: oep-spec commit `59dd028`** (no `v0.x` tag yet; oep-spec versioning §6 - before the freeze,
 revision 1 alone does not fix the forms, so an implementation names the spec it implements). That is the 2026-10-06
 simplification (one 10-byte request header, TLV len u16, closed fixed forms, the `ops` describe tag, no resume,
-`oep.link`), the console's send queue and the reset settle wait (f0c68bf), a longer probe.config item (d34dafa) and
-oep.link source's len (4bd3a87).
+`oep.link`), the console's send queue and the reset settle wait (f0c68bf), a longer probe.config item (d34dafa),
+oep.link source's len (4bd3a87) and an attach joining a connection (59dd028).
 
 Until the freeze the Japanese text (`.ja.md`) is the specification's working text; the English documents are regenerated
 from it at the freeze and become authoritative then. Start with oep-spec's [README](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/README.md) and
@@ -298,7 +298,9 @@ the probe hands its head to the target 2 (dmseq) or 3 (DMDATA) bytes a poll, one
 while the hart runs (`console_take(sid)` hands all of it); it stays over resets and restarts and goes when the stream
 closes. A reset (riscv-dm reset, attach's reset TLV) waits out a target that restarts by itself
 (`FakeTarget.restart_ms`) up to reset_settle_ms, then answers status line (`settle_log`). An item longer than its form
-is ignored or, critical, unsupported (d34dafa); oep.link source answers at most max_frame - 26 (4bd3a87). `tests/test_vectors.py` runs
+is ignored or, critical, unsupported (d34dafa); oep.link source answers at most max_frame - 26 (4bd3a87). An attach
+that joins a live connection keeps the settings it does not carry (idle_clock absent keeps the current rest; max_speed
+only lowers the speed), and a scan leaves a live connection's settings (59dd028). `tests/test_vectors.py` runs
 sessions.json step by step and every ops.json case on the fake in the state it names.
 
 Other programs' tests run `fake_serve` as a child process:

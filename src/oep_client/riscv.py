@@ -180,7 +180,8 @@ class WireBase(Interface):
         """Try `pairs` of (swdio, swclk); None = every pair the probe allows and nothing holds (describe's
         channel_group / role_channels, oep-if-debug §1). A pair the probe does not allow, or one whose pins something
         holds, refuses the whole scan (rejected unavailable). max_speed (critical; None: the probe's slowest) and
-        idle_clock ("high" / "low", rvswd only, critical) are the target's line settings (§3). The probe tries at most
+        idle_clock ("high" / "low", rvswd only, critical) are the target's line settings (§3); they do not change a
+        live connection's settings (a live pair is read over its connection, §1). The probe tries at most
         255 pairs a request and stops early when its answer would not fit one frame; this goes on until every pair is
         tried (count 0: with skip until tried = 0; the probe tries at least one pair while any remain)."""
         out = []
@@ -308,8 +309,11 @@ class Wire(WireBase):
         self.had_reset: a pending havereset was acknowledged first (a V00x's DMSTATUS halt / run bits stay frozen
         until then); self.halted / self.dpc: the hart is halted and where (attach flags bit3, TLV dpc); self.speed_hz:
         the speed the probe chose; max_speed: the ceiling the probe must keep (critical, required; None: the wire's
-        declared max_clock_hz); idle_clock: "high" / "low", how rvswd rests SWCLK (critical). Both are the target's,
-        known by the host (oep-if-debug §3). reset = (channel, hold_ms): hold that reset line (one of reset_channels())
+        declared max_clock_hz); idle_clock: "high" / "low", how rvswd rests SWCLK (critical; sent whenever given, high
+        included). Both are the target's, known by the host (oep-if-debug §3). An attach that joins a live connection
+        (a slot's, another session's) changes only what it carries: idle_clock None keeps the connection's current
+        rest (None means high only for a new connection), and max_speed only lowers its speed (§1) - a caller that
+        knows the target's rest (a slot's idle_clock) passes it, high included. reset = (channel, hold_ms): hold that reset line (one of reset_channels())
         low for hold_ms, then attach - halting before the first instruction with halt=True - the way back from firmware
         that turns the debug pins into GPIOs. self.target_id: (scheme, value) of the target's identity when the probe
         could read one."""
