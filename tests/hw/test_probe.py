@@ -268,13 +268,20 @@ def test_wire(run: record.Run):
     try:
         for i in range(loops):
             dm.halt()
-            # read_register is a held DMI group (riscv.RiscvDm.held): a read that met a dropped link (the CH32L103's
-            # after the halt) is tried again or raises LinkNotHeld, never compared as a stale DATA0
+            # read_register is a held DMI group (riscv.RiscvDm.held) that reads the register twice over two sentinels:
+            # a read that met a dropped link (the CH32L103's after the halt) or one missed access is tried again or
+            # raises LinkNotHeld, never compared as a stale DATA0
             before = [dm.read_register(r) for r in regs]
             data = dm.read_block(address, 8)
             after = [dm.read_register(r) for r in regs]
             if before != after:
-                changed.append({"loop": i, "before": [f"{v:#010x}" for v in before], "after": [f"{v:#010x}" for v in after]})
+                # read once more, and the words past the block (what the probe's reader loads last): a value that
+                # stays says the register changed in the target; one back as before, that a read was wrong
+                again = [dm.read_register(r) for r in regs]
+                past = dm.read_block(address + 32, 2)
+                changed.append({"loop": i, "before": [f"{v:#010x}" for v in before],
+                                "after": [f"{v:#010x}" for v in after], "again": [f"{v:#010x}" for v in again],
+                                "words_past_block": past.hex(), "dpc": f"{dm.read_register(dm.DPC):#010x}"})
             dm.resume()
             assert len(data) == 32
     finally:

@@ -118,9 +118,43 @@ def test_the_old_read_register_returned_a_stale_or_all_ones_value_as_the_registe
 
 def test_a_held_read_register_never_returns_a_value_it_could_not_confirm():
     got = sweep(lambda d, tg: d.read_register(S0), lambda tg, v: v == VALUE)
-    assert accesses(lambda d, tg: d.read_register(S0)) == 8  # look 2, cmderr clear, command, poll 1, DATA0, look 2
+    # look 2, cmderr clear, (DATA0 sentinel, command, poll 1, DATA0) twice with a DMSTATUS read before the second DATA0,
+    # look 2
+    assert accesses(lambda d, tg: d.read_register(S0)) == 14
     assert not got["wrong"] and not got["raised"]            # every drop met, and the next try got the register
-    assert len(got["right"]) == 8 * len(MODES)
+    assert len(got["right"]) == 14 * len(MODES)
+
+
+def held_once_read_register(d: riscv.RiscvDm, regno: int) -> int:
+    """read_register as af3789a had it: one command between the looks."""
+    cs, data0 = d.held(d._abstract(0x00220000 | regno) + d.step_read(riscv.DATA0), f"read_register {regno:#x}")
+    d._cmderr(cs, "read_register")
+    return data0
+
+
+def test_one_missed_access_between_passing_looks_never_gives_a_wrong_register():
+    """A link coming back from a drop through a flicker: one access missed - a write lost, or a read giving the value
+    read before it - with the looks around it passing (bench, oep-probe-arduino 0.0.29-dev+bd19b00, tests/hw test_wire
+    on a CH32L103 through an RVSWD probe: a0 read as s1's value after a read_block). The one-command group took the old
+    DATA0 or the poll's ABSTRACTCS for the register; reading it twice over two sentinels does not."""
+    old = sweep(lambda d, tg: held_once_read_register(d, S0), lambda tg, v: v == VALUE, modes=("glitch",))
+    assert {v for _, _, v in old["wrong"]} >= {STALE}         # the command lost: DATA0's old word, looks passing
+    new = sweep(lambda d, tg: d.read_register(S0), lambda tg, v: v == VALUE, modes=("glitch",))
+    assert not new["wrong"] and not new["raised"] and len(new["right"]) == 14
+    # two misses in one group, at every pair of accesses: never a wrong register (agreeing twice by chance aside -
+    # a sentinel and the register, or ABSTRACTCS and DMSTATUS, would have to be the same value)
+    wrong = []
+    for a in range(14):
+        for b in range(a + 1, 14):
+            ep, hst, tg, d = bench()
+            tg.drop_at = {a: "glitch", b: "glitch"}
+            try:
+                v = d.read_register(S0)
+            except (host.OepError, RuntimeError):
+                continue
+            if v != VALUE:
+                wrong.append((a, b, v))
+    assert not wrong
 
 
 def test_a_drop_that_does_not_end_raises_link_not_held():

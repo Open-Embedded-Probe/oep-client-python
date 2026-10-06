@@ -407,14 +407,16 @@ class FakeTarget:
     # lost and reads give the last value read ("stale"), all ones ("ones"), or all ones with a DMSTATUS read failing
     # on the line ("ones_line": the reference probe takes a DMSTATUS of all ones for no answer). The drop lasts until
     # drop_requests later dmi requests have begun (the probe brings an idle link back before its next transaction);
-    # within one request it never ends by itself.
-    drop_at: dict = field(default_factory=dict)        # access index -> "stale" / "ones" / "ones_line"
+    # within one request it never ends by itself. "glitch" is one access missed and the link up again at once (a link
+    # coming back from a drop through a flicker): that write lost, or that read giving the last value read.
+    drop_at: dict = field(default_factory=dict)        # access index -> "stale" / "ones" / "ones_line" / "glitch"
     drop_requests: int = 1
     dmi_accesses: int = 0
     dropped: str | None = None                         # the mode of the drop now in force (None: the link is up)
     drop_left: int = 0
     last_read: int = 0
     lost_writes: int = 0
+    glitch: bool = False                               # this access is a "glitch" one
 
     @property
     def answers(self) -> bool:
@@ -442,13 +444,16 @@ class FakeTarget:
     def _access(self) -> None:
         mode = self.drop_at.get(self.dmi_accesses)
         self.dmi_accesses += 1
-        if mode:
+        self.glitch = mode == "glitch"
+        if mode and not self.glitch:
             self.dropped, self.drop_left = mode, self.drop_requests
 
     def read_dmi(self, address: int) -> int | None:
         """One DMI read: the register's value, or what a dropped link gives (None: the read failed on the line).
         DMSTATUS and DMCONTROL read as the module has them unless a test set them in `dmi`."""
         self._access()
+        if self.glitch:
+            return self.last_read
         if self.dropped:
             if self.dropped == "stale":
                 return self.last_read
@@ -470,7 +475,7 @@ class FakeTarget:
         ABSTRACTCS's cmderr is write-1-to-clear; COMMAND runs an access-register command (32 bits) on regs / dpc,
         ignored while cmderr is set, cmderr 4 (halt/resume) on a running hart."""
         self._access()
-        if self.dropped:
+        if self.dropped or self.glitch:
             self.lost_writes += 1
             return
         if address == 0x10:

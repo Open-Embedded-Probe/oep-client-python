@@ -42,6 +42,7 @@ HELD_TRIES = 4             # tries of a held DMI group (RiscvDm.held) before it 
 HELD_RETRY_S = 0.005       # the pause before a held group's next try: past the 0.7 - 2.1 ms a dropped link has been
                            # seen to stay down, and long enough for the probe to bring an idle link back up
 HELD_RETRY_STATUSES = {STATUS["line"], STATUS["timeout"], STATUS["wait"]}   # what a drop can make a step list answer
+READ_SENTINELS = (0x00000000, 0xFFFFFFFF)   # DATA0 before each of read_register's two commands (they differ in every bit)
 
 
 def status_name(status: int) -> str:
@@ -544,16 +545,19 @@ class RiscvDm(Interface, BlockLength):
         """The steps of one look at the link: read DMSTATUS, read DMCONTROL (link_held judges the two values)."""
         return self.step_read(DMSTATUS) + self.step_read(DMCONTROL)
 
-    def held(self, steps: bytes | list[bytes], what: str = "DMI group", tries: int = HELD_TRIES) -> list[int]:
+    def held(self, steps: bytes | list[bytes], what: str = "DMI group", tries: int = HELD_TRIES,
+             agree=None) -> list[int]:
         """Run a DMI group with the link looked at around it, in one dmi request: look, the steps, look. -> the
         values of the steps (the looks' taken off). A debug link may drop for a while after a change of hart state (a
         CH32L103 behind an RVSWD probe, about 0.7 - 2 ms): writes are then lost and reads give the last value read or
         all ones, with nothing in the answer to say so - a stale DATA0 reads like a register. A drop lasts until the
-        probe brings the link up again, which it does before a later request, not inside one; so when the look after
-        the steps passes, every step met the link up. A try whose looks do not pass, or that stopped with a status a
-        drop can cause (line, timeout, wait), is run again after HELD_RETRY_S, `tries` times at most; then LinkNotHeld.
-        Any other stop raises StepListError at once. The group must be one that may run twice: it writes values fixed
-        before it and reads what nothing in it changes (a cmderr left by an earlier try is the group's to clear)."""
+        link is brought up again; when the look after the steps passes, every step met the link up - provided the
+        probe did not bring it up again between the looks (its revive after a rest), which a probe with the per-request
+        check (oep-probe-arduino 0.0.29-dev, the 2026-10-06 debug-link proposal P4) answers status line. A try whose
+        looks do not pass, whose values `agree` (when given) does not take, or that stopped with a status a drop can
+        cause (line, timeout, wait), is run again after HELD_RETRY_S, `tries` times at most; then LinkNotHeld. Any other
+        stop raises StepListError at once. The group must be one that may run twice: it writes values fixed before it
+        and reads what nothing in it changes (a cmderr left by an earlier try is the group's to clear)."""
         raw = b"".join(steps) if isinstance(steps, list) else steps
         look = self.look()
         last = None
@@ -567,9 +571,13 @@ class RiscvDm(Interface, BlockLength):
                     raise
                 last = e
                 continue
-            if link_held(*values[:2]) and link_held(*values[-2:]):
-                return values[2:-2]
-            last = "looks " + " ".join(f"{v:#010x}" for v in values[:2] + values[-2:])
+            if not (link_held(*values[:2]) and link_held(*values[-2:])):
+                last = "looks " + " ".join(f"{v:#010x}" for v in values[:2] + values[-2:])
+                continue
+            if agree is not None and not agree(values[2:-2]):
+                last = "values that do not agree: " + " ".join(f"{v:#010x}" for v in values[2:-2])
+                continue
+            return values[2:-2]
         raise LinkNotHeld(what, tries, last)
 
     def _abstract(self, command: int, before: bytes = b"") -> bytes:
@@ -586,12 +594,31 @@ class RiscvDm(Interface, BlockLength):
 
     def read_register(self, regno: int) -> int:
         """A GPR / CSR of the halted hart through an abstract command (access register, 32 bits) in plain DMI steps, so
-        any probe with dmi does it. The group is held (`held`): a value read over a dropped link is never returned -
-        the group is tried again, and LinkNotHeld raised when it could not be confirmed. A cmderr is cleared, then
-        raised (RuntimeError). DATA0 is left holding the value (the host's, debug §4)."""
+        any probe with dmi does it. The register is read twice in the group - DATA0 first set to READ_SENTINELS[0],
+        then to READ_SENTINELS[1], and before the second DATA0 read DMSTATUS is read - and taken only when the two
+        agree: a command lost on its own leaves its sentinel in DATA0, and a DATA0 read that gives the value of the read
+        before it gives ABSTRACTCS the first time and DMSTATUS the second, so one such miss between looks that pass
+        cannot make the two agree on anything but the register's value (bench, oep-probe-arduino 0.0.29-dev+bd19b00,
+        tests/hw test_wire on a CH32L103 through an RVSWD probe: a0 read as s1's value after a read_block, the looks
+        passing). The group is held (`held`): a value read over a dropped link is never returned - the group is tried
+        again, and LinkNotHeld raised when it could not be confirmed. A cmderr is cleared, then raised (RuntimeError).
+        DATA0 is left holding the value (the host's, debug §4); abstractauto is the host's and must be clear (writing
+        DATA0 would run the command again)."""
         what = f"read_register {regno:#x}"
-        cs, data0 = self.held(self._abstract(0x00220000 | regno) + self.step_read(DATA0), what)
-        self._cmderr(cs, what)
+        command = 0x00220000 | regno
+        poll = self.step_poll(ABSTRACTCS, 1 << 12, 0, 100)
+        steps = (self.step_write(ABSTRACTCS, 0x700)
+                 + self.step_write(DATA0, READ_SENTINELS[0]) + self.step_write(COMMAND, command) + poll
+                 + self.step_read(DATA0)
+                 + self.step_write(DATA0, READ_SENTINELS[1]) + self.step_write(COMMAND, command) + poll
+                 + self.step_read(DMSTATUS) + self.step_read(DATA0))
+
+        def agree(values: list[int]) -> bool:   # a cmderr is raised below whatever DATA0 says
+            cs1, first, cs2, _, second = values
+            return bool((cs1 | cs2) & 0x700) or first == second
+
+        cs1, data0, cs2, _, _ = self.held(steps, what, agree=agree)
+        self._cmderr(cs1 | cs2, what)
         return data0
 
     def write_register(self, regno: int, value: int) -> None:
