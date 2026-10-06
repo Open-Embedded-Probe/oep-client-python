@@ -123,7 +123,7 @@ def test_a_poll_that_gives_up_stops_the_list_with_its_last_value(dm):
     with pytest.raises(riscv.StepListError) as e:
         d.dmi([d.step_read(0x11), d.step_poll(0x16, 0x1000, 0, 3), d.step_read(0x11)])
     err = e.value
-    assert err.done == 1 and err.status == riscv.STATUS["timeout"] and err.values == [0, 0x1000]
+    assert err.done == 1 and err.status == riscv.STATUS["timeout"] and err.values == [ep.target.dmstatus(), 0x1000]
     assert err.result.detail == m.PARTIAL
 
 

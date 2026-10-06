@@ -37,6 +37,11 @@ STEP_SIZES = {STEP_WRITE: 6, STEP_READ: 2, STEP_POLL_READS: 12, STEP_WAIT_US: 5,
 VALUE_STEPS = {STEP_READ, STEP_POLL_READS, STEP_POLL_US}      # steps that add a value to the result
 POLL_STEPS = {STEP_POLL_READS, STEP_POLL_US}                  # ... and add their last value when they time out
 REG_A0, REG_A1 = 0x100A, 0x100B
+DATA0, DMCONTROL, DMSTATUS, ABSTRACTCS, COMMAND = 0x04, 0x10, 0x11, 0x16, 0x17   # DMI addresses (debug spec 0.13 / 1.0)
+HELD_TRIES = 4             # tries of a held DMI group (RiscvDm.held) before it is given up
+HELD_RETRY_S = 0.005       # the pause before a held group's next try: past the 0.7 - 2.1 ms a dropped link has been
+                           # seen to stay down, and long enough for the probe to bring an idle link back up
+HELD_RETRY_STATUSES = {STATUS["line"], STATUS["timeout"], STATUS["wait"]}   # what a drop can make a step list answer
 
 
 def status_name(status: int) -> str:
@@ -415,6 +420,28 @@ class StepListError(TargetError):
         super().__init__("step list", status, result, done=done, values=values)
 
 
+class LinkNotHeld(h.OepError):
+    """A held DMI group (RiscvDm.held) that never met the debug link up from its first transaction to its last in
+    `tries` tries: nothing it read can be trusted and any of its writes may be lost. `last` is the last try's
+    StepListError, or the looks (DMSTATUS, DMCONTROL before, then after) that did not pass."""
+
+    def __init__(self, what: str, tries: int, last):
+        super().__init__(f"{what}: no try of {tries} ran with the debug link held over the whole DMI group (a dropped "
+                         f"link loses writes and reads back stale values or all ones), so nothing it read is "
+                         f"confirmed; last: {last}")
+        self.what, self.tries, self.last = what, tries, last
+
+
+def link_held(dmstatus: int, dmcontrol: int) -> bool:
+    """One look at the link (two DMI reads): DMSTATUS a module's (a version scan finds: 2 or more, not 15) with
+    authenticated (bit 7) set, and DMCONTROL with dmactive set and hart 0 selected (hartsel / hasel, bits 6..26, clear).
+    A dropped link reads all ones, or the last value read, for both - one value cannot have bit 7 set and clear - so a
+    look that passes says the link was up for both reads."""
+    version = dmstatus & 0xF
+    return (2 <= version != 15 and bool(dmstatus & 0x80)
+            and bool(dmcontrol & 1) and not dmcontrol & 0x07FFFFC0)
+
+
 RUN_STOPPED = _RV.enum["run_stopped"]     # 0 the limit passed and the probe halted it, 1 stopped on its own, 2 not halted
 
 
@@ -513,16 +540,67 @@ class RiscvDm(Interface, BlockLength):
 
     DPC = 0x07B1
 
+    def look(self) -> bytes:
+        """The steps of one look at the link: read DMSTATUS, read DMCONTROL (link_held judges the two values)."""
+        return self.step_read(DMSTATUS) + self.step_read(DMCONTROL)
+
+    def held(self, steps: bytes | list[bytes], what: str = "DMI group", tries: int = HELD_TRIES) -> list[int]:
+        """Run a DMI group with the link looked at around it, in one dmi request: look, the steps, look. -> the
+        values of the steps (the looks' taken off). A debug link may drop for a while after a change of hart state (a
+        CH32L103 behind an RVSWD probe, about 0.7 - 2 ms): writes are then lost and reads give the last value read or
+        all ones, with nothing in the answer to say so - a stale DATA0 reads like a register. A drop lasts until the
+        probe brings the link up again, which it does before a later request, not inside one; so when the look after
+        the steps passes, every step met the link up. A try whose looks do not pass, or that stopped with a status a
+        drop can cause (line, timeout, wait), is run again after HELD_RETRY_S, `tries` times at most; then LinkNotHeld.
+        Any other stop raises StepListError at once. The group must be one that may run twice: it writes values fixed
+        before it and reads what nothing in it changes (a cmderr left by an earlier try is the group's to clear)."""
+        raw = b"".join(steps) if isinstance(steps, list) else steps
+        look = self.look()
+        last = None
+        for attempt in range(tries):
+            if attempt:
+                time.sleep(HELD_RETRY_S)
+            try:
+                _, values = self.dmi(look + raw + look)
+            except StepListError as e:
+                if e.status not in HELD_RETRY_STATUSES:
+                    raise
+                last = e
+                continue
+            if link_held(*values[:2]) and link_held(*values[-2:]):
+                return values[2:-2]
+            last = "looks " + " ".join(f"{v:#010x}" for v in values[:2] + values[-2:])
+        raise LinkNotHeld(what, tries, last)
+
+    def _abstract(self, command: int, before: bytes = b"") -> bytes:
+        """The steps of one access-register command with the link held around it: clear cmderr (a try's redo, or
+        one left behind, would have the command ignored), `before` (DATA0 for a write), the command, wait for it (the
+        poll adds ABSTRACTCS, cmderr in it)."""
+        return (self.step_write(ABSTRACTCS, 0x700) + before + self.step_write(COMMAND, command)
+                + self.step_poll(ABSTRACTCS, 1 << 12, 0, 100))
+
+    def _cmderr(self, cs: int, what: str) -> None:
+        if (cs >> 8) & 7:
+            self.held([self.step_write(ABSTRACTCS, 0x700)], f"{what}: clearing cmderr")
+            raise RuntimeError(f"{what} failed (cmderr {(cs >> 8) & 7})")
+
     def read_register(self, regno: int) -> int:
         """A GPR / CSR of the halted hart through an abstract command (access register, 32 bits) in plain DMI steps, so
-        any probe with dmi does it. A cmderr is cleared, then raised."""
-        _, values = self.dmi([self.step_write(0x17, 0x00220000 | regno), self.step_poll(0x16, 1 << 12, 0, 100),
-                              self.step_read(0x04)])
-        cs, data0 = values[0], values[1]
-        if (cs >> 8) & 7:
-            self.dmi([self.step_write(0x16, 0x700)])
-            raise RuntimeError(f"abstract command for register {regno:#x} failed (cmderr {(cs >> 8) & 7})")
+        any probe with dmi does it. The group is held (`held`): a value read over a dropped link is never returned -
+        the group is tried again, and LinkNotHeld raised when it could not be confirmed. A cmderr is cleared, then
+        raised (RuntimeError). DATA0 is left holding the value (the host's, debug §4)."""
+        what = f"read_register {regno:#x}"
+        cs, data0 = self.held(self._abstract(0x00220000 | regno) + self.step_read(DATA0), what)
+        self._cmderr(cs, what)
         return data0
+
+    def write_register(self, regno: int, value: int) -> None:
+        """Write a GPR / CSR of the halted hart through an abstract command (access register, 32 bits, DATA0 first),
+        held as read_register is: when it returns, every write met the link up and no cmderr came. Whether the
+        register took the value (read-only or WARL bits) is the caller's to read back."""
+        what = f"write_register {regno:#x}"
+        (cs,) = self.held(self._abstract(0x00230000 | regno, self.step_write(DATA0, value)), what)
+        self._cmderr(cs, what)
 
     def _reset(self, mode: int, method: int | None) -> tuple[int, int, int]:
         body = bytes([mode])

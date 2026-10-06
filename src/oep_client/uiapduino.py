@@ -27,7 +27,7 @@ GPIO_OPEN_DRAIN_LOW, GPIO_OPEN_DRAIN_RELEASE = Gpio.OPEN_DRAIN_LOW, Gpio.OPEN_DR
 
 PAYLOAD_BASE = 0x20000000
 RSTSCKR, PINRSTF = 0x40021024, 1 << 26
-DMCONTROL, ABSTRACTCS, COMMAND, DATA0 = 0x10, 0x16, 0x17, 0x04
+DMCONTROL = riscv.DMCONTROL
 MSTATUS, DPC = 0x0300, 0x07B1
 
 # kNormalizeUserReset: unlock FLASH, clear BOOT_MODE, PFIC SYSRST
@@ -56,10 +56,7 @@ PREPARE_BOOT = [
 ]
 
 
-def _write_register(dm: riscv.RiscvDm, regno: int, value: int) -> bytes:
-    """DMI steps of one abstract-command register write (aarsize 32, transfer, write), then wait for it."""
-    return (dm.step_write(DATA0, value) + dm.step_write(COMMAND, 0x00230000 | regno)
-            + dm.step_poll(ABSTRACTCS, 1 << 12, 0, 100))
+MSTATUS_MIE = 1 << 3
 
 
 def run_payload(hst: h.Host, wire: riscv.Wire, payload: list[int]) -> None:
@@ -72,12 +69,17 @@ def run_payload(hst: h.Host, wire: riscv.Wire, payload: list[int]) -> None:
         if dm.read_block(PAYLOAD_BASE, len(payload)) != data:
             raise RuntimeError("payload did not read back")
         # mstatus = 0 first: with MIE set the halted application's SysTick ran over the payload (2026-09-22).
-        # resumereq twice, then drop haltreq so the payload's own system reset is not halted again (E129).
-        # dmi() raises if an abstract-command poll gave up, so a register write that did not land stops here.
-        steps = (_write_register(dm, MSTATUS, 0) + _write_register(dm, DPC, PAYLOAD_BASE)
-                 + dm.step_write(DMCONTROL, 0x40000001) + dm.step_write(DMCONTROL, 0x40000001)
-                 + dm.step_write(DMCONTROL, 0x00000001))
-        dm.dmi(steps)
+        # Held register writes, read back: a debug link that drops after the attach's halt loses writes while a stale
+        # ABSTRACTCS read says the command is done, and the hart would resume into the application (or with MIE set).
+        dm.write_register(MSTATUS, 0)
+        dm.write_register(DPC, PAYLOAD_BASE)
+        mstatus, dpc = dm.read_register(MSTATUS), dm.read_register(DPC)
+        if mstatus & MSTATUS_MIE or dpc != PAYLOAD_BASE:
+            raise RuntimeError(f"the payload's registers did not take (mstatus {mstatus:#x}, dpc {dpc:#x})")
+        # resumereq twice, then drop haltreq so the payload's own system reset is not halted again (E129). Not held:
+        # the resume changes the hart's state, so the link may drop at it and no look after it could pass.
+        dm.dmi(dm.step_write(DMCONTROL, 0x40000001) + dm.step_write(DMCONTROL, 0x40000001)
+               + dm.step_write(DMCONTROL, 0x00000001))
         time.sleep(0.02)
     finally:
         wire.detach(conn)

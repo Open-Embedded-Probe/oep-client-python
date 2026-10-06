@@ -239,7 +239,9 @@ def resume(dm: riscv.RiscvDm, tries: int = 8) -> bool:
     resumereq, and a CH32L103 never raises allresumeack, so a hart that stops again at once (a breakpoint ahead) looks
     as if it never went. So: resume; when the probe saw it not go, read dpc - moved means it ran and stopped again,
     unchanged means ask again. -> True once it went. The hart must be halted first; a breakpoint on the instruction
-    dpc points at cannot be told from not running, so step off it first."""
+    dpc points at cannot be told from not running, so step off it first. dpc is read by RiscvDm.read_register, held:
+    right after a resume is where a CH32L103's link drops, and an all-ones or stale dpc read as "moved" would say it
+    went when it did not."""
     before = dm.read_register(dm.DPC)
     for _ in range(tries):
         try:

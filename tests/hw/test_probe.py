@@ -268,6 +268,8 @@ def test_wire(run: record.Run):
     try:
         for i in range(loops):
             dm.halt()
+            # read_register is a held DMI group (riscv.RiscvDm.held): a read that met a dropped link (the CH32L103's
+            # after the halt) is tried again or raises LinkNotHeld, never compared as a stale DATA0
             before = [dm.read_register(r) for r in regs]
             data = dm.read_block(address, 8)
             after = [dm.read_register(r) for r in regs]

@@ -402,6 +402,19 @@ class FakeTarget:
                                                        # this long (a bootloader on the way; debug §3, §4.3)
     haltreq: bool = False                              # what the probe left in DMCONTROL.haltreq
     dcsr_step: bool = False                            # what the probe left in dcsr.step
+    # A debug link that drops (a CH32L103 after a change of hart state, through an RVSWD probe): from the DMI access
+    # (each read and write of a dmi step, counted in dmi_accesses from 0) whose index is a key of drop_at, writes are
+    # lost and reads give the last value read ("stale"), all ones ("ones"), or all ones with a DMSTATUS read failing
+    # on the line ("ones_line": the reference probe takes a DMSTATUS of all ones for no answer). The drop lasts until
+    # drop_requests later dmi requests have begun (the probe brings an idle link back before its next transaction);
+    # within one request it never ends by itself.
+    drop_at: dict = field(default_factory=dict)        # access index -> "stale" / "ones" / "ones_line"
+    drop_requests: int = 1
+    dmi_accesses: int = 0
+    dropped: str | None = None                         # the mode of the drop now in force (None: the link is up)
+    drop_left: int = 0
+    last_read: int = 0
+    lost_writes: int = 0
 
     @property
     def answers(self) -> bool:
@@ -419,11 +432,80 @@ class FakeTarget:
     def dmstatus(self) -> int:
         return 0x80 | (self.version & 0xF) | ((0x300 if self.halted else 0xC00)) | (0xC0000 if self.havereset else 0)
 
-    def read_dmi(self, address: int) -> int:
+    def begin_dmi(self) -> None:
+        """A dmi request begins: a drop in force counts it, and ends once drop_requests requests have begun."""
+        if self.dropped:
+            self.drop_left -= 1
+            if self.drop_left <= 0:
+                self.dropped = None
+
+    def _access(self) -> None:
+        mode = self.drop_at.get(self.dmi_accesses)
+        self.dmi_accesses += 1
+        if mode:
+            self.dropped, self.drop_left = mode, self.drop_requests
+
+    def read_dmi(self, address: int) -> int | None:
+        """One DMI read: the register's value, or what a dropped link gives (None: the read failed on the line).
+        DMSTATUS and DMCONTROL read as the module has them unless a test set them in `dmi`."""
+        self._access()
+        if self.dropped:
+            if self.dropped == "stale":
+                return self.last_read
+            if self.dropped == "ones_line" and address == 0x11:
+                return None
+            return 0xFFFFFFFF
         queue = self.dmi_reads.get(address)
         if queue:
             self.dmi[address] = queue.pop(0)
-        return self.dmi.get(address, 0)
+        if address == 0x11 and address not in self.dmi:
+            value = self.dmstatus()
+        else:
+            value = self.dmi.get(address, 1 if address == 0x10 else 0)   # DMCONTROL: dmactive, hart 0
+        self.last_read = value
+        return value
+
+    def write_dmi(self, address: int, value: int) -> None:
+        """One DMI write: lost on a dropped link. DMCONTROL's haltreq / resumereq move the hart (and read back 0);
+        ABSTRACTCS's cmderr is write-1-to-clear; COMMAND runs an access-register command (32 bits) on regs / dpc,
+        ignored while cmderr is set, cmderr 4 (halt/resume) on a running hart."""
+        self._access()
+        if self.dropped:
+            self.lost_writes += 1
+            return
+        if address == 0x10:
+            if value & (1 << 31):
+                self.halted = True
+            elif value & (1 << 30):
+                self.halted = False
+            self.dmi[0x10] = value & ~0xD0000000                # haltreq, resumereq, ackhavereset read 0
+            return
+        if address == 0x16:
+            cs = self.dmi.get(0x16, 0)
+            self.dmi[0x16] = cs & ~(value & 0x700)
+            return
+        self.dmi[address] = value
+        if address == 0x17:
+            self.abstract(value)
+
+    def abstract(self, command: int) -> None:
+        cs = self.dmi.get(0x16, 0)
+        if (cs >> 8) & 7 or command >> 24:                     # cmderr set: ignored; only access register here
+            return
+        if not self.halted:
+            self.dmi[0x16] = cs | (4 << 8)
+            return
+        if not command & (1 << 17):                            # no transfer
+            return
+        regno = command & 0xFFFF
+        if command & (1 << 16):                                # write
+            value = self.dmi.get(0x04, 0)
+            if regno == 0x07B1:
+                self.dpc = value
+            else:
+                self.regs[regno] = value
+        else:
+            self.dmi[0x04] = self.dpc if regno == 0x07B1 else self.regs.get(regno, 0)
 
 
 @dataclass
@@ -2267,6 +2349,7 @@ class Endpoint:
             if waits_us > self.max_op_ms * 1000:
                 raise Reject(m.UNSUPPORTED)                        # longer than one request may take (debug §4.1)
             tg = target()
+            tg.begin_dmi()
             done, status, values = 0, OK, []
             for kind, args in steps:
                 if kind == STEP["write"]:
@@ -2274,18 +2357,23 @@ class Endpoint:
                     if address in tg.fail_write:
                         status = LINE
                         break
-                    tg.dmi[address] = value
-                    if address == 0x17 and value & 0xFFFF == 0x07B1:   # access register dpc: into DATA0, not busy
-                        tg.dmi[0x04], tg.dmi[0x16] = tg.dpc, 0
+                    tg.write_dmi(address, value)
                 elif kind == STEP["read"]:
-                    values.append(tg.read_dmi(args))
+                    v = tg.read_dmi(args)
+                    if v is None:
+                        status = LINE
+                        break
+                    values.append(v)
                 elif kind in (STEP["poll_reads"], STEP["poll_us"]):
                     address, mask, want, limit = args
                     tries = limit if kind == STEP["poll_reads"] else max(1, limit // 100)
                     for _ in range(max(1, tries)):
                         v = tg.read_dmi(address)
-                        if v & mask == want:
+                        if v is None or v & mask == want:
                             break
+                    if v is None:                                  # cut off by the line: no value (debug §4.1)
+                        status = LINE
+                        break
                     values.append(v)
                     if v & mask != want:
                         status = TIMEOUT
