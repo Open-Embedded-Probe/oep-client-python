@@ -1,4 +1,4 @@
-"""USB identification and the probing rule (oep-core §3.3): no automatic identification but the project's VID:PID
+"""USB identification and the probing rule (transports §3): no automatic identification but the project's VID:PID
 (1209:4F45, registry usb), a named unit_id found by serial alone and checked by describe, and confirm-only probing that
 closes a device giving no valid answer."""
 

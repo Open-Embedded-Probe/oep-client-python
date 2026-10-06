@@ -21,7 +21,7 @@ def _cause(e) -> tuple[str | None, list[int]]:
 def test_the_item_round_trips_and_hashes():
     ep, hst = open_bench()
     cfg = config.ProbeConfig(hst)
-    assert config.ITEM["disable"] == 0x07 and config.item(config.Disable(channel=40)) == bytes([0x07, 2, 40, 0])
+    assert config.ITEM["disable"] == 0x07 and config.item(config.Disable(channel=40)) == bytes([0x07, 2, 0, 40, 0])
     h1 = cfg.set([config.Disable(channel=41), config.Disable(channel=40), config.Label(channel=40, text="NC")])
     items = cfg.items()
     assert items == [config.Label(channel=40, text="NC"), config.Disable(channel=40), config.Disable(channel=41)]

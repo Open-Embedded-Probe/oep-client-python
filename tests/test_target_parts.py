@@ -54,12 +54,12 @@ def ok(body=b""):
 
 
 CONFIRM = struct.pack("<4sBBHIBI", b"OEP!", 1, 0, 1024, 4096, 8, 0x1234)
-MAX_SPEED = bytes([0x81, 4]) + struct.pack("<I", target.WireBase.DEFAULT_MAX_SPEED)   # attach's required TLV
+MAX_SPEED = bytes([0x81, 4, 0]) + struct.pack("<I", target.WireBase.DEFAULT_MAX_SPEED)   # attach's required TLV
 
 
 def attach_answer(conn, id_, flags, speed, dpc=None):
     """connection id flags speed_hz [TLV dpc] (oep-if-debug §3)."""
-    tail = b"" if dpc is None else bytes([0x11, 4]) + struct.pack("<I", dpc)
+    tail = b"" if dpc is None else bytes([0x11, 4, 0]) + struct.pack("<I", dpc)
     return struct.pack("<HIBI", conn, id_, flags, speed) + tail
 
 
@@ -71,7 +71,7 @@ def test_find_reset_line_hits_the_vector_skips_disallowed_and_retries_failures()
     tries = {}
 
     def aur(p):
-        assert p[0] == 1 and p[1:7] == MAX_SPEED                       # method halt, max_speed required
+        assert p[0] == 1 and p[1:8] == MAX_SPEED                       # method halt, max_speed required
         reset = dict(m.split_tlvs(p[1:]))[0x85]                        # the reset TLV, critical
         channel, hold = struct.unpack("<HH", reset)
         assert hold == 20
@@ -112,7 +112,7 @@ def _pin_choice_wire():
         if pins is None and state["live"] is None:
             return unavailable
         if channel == 6:
-            return m.REJECTED, m.UNAVAILABLE, bytes([0x02, 2]) + struct.pack("<H", 6)   # the channel TLV
+            return m.REJECTED, m.UNAVAILABLE, bytes([0x02, 2, 0]) + struct.pack("<H", 6)   # the channel TLV
         existing = state["live"] is not None
         state["live"] = 7
         dpc = None if channel is None else (0 if channel == 4 else 0x2f8)
@@ -127,7 +127,7 @@ def _pin_choice_wire():
         if state["live"] is None:
             return ok(bytes([0, 0]))
         row = struct.pack("<HHHIBBBB", 7, 19, 0xFFFF, 1_000_000, 1, 0xFF, 0, 0)
-        return ok(bytes([0, 1, len(row)]) + row)
+        return ok(bytes([0, 1]) + row)                                    # count x entry (core §2.3)
 
     hst = ScriptedHost({(1, target.Wire.ATTACH): attach, (1, target.Wire.DETACH): detach,
                         (1, target.Wire.CONNECTIONS): connections,
@@ -190,13 +190,13 @@ def test_attach_after_gpio_reset_gives_up():
 
 def test_reset_halt_and_step_decode():
     hst = ScriptedHost({(2, target.RiscvDm.RESET): lambda p: ok(struct.pack("<BBBI", 0, 0, 1, 0x0) if p[2] == 2 else b""),
-                        (2, target.RiscvDm.STEP): lambda p: ok(struct.pack("<BBII", 0, 1, 0x0, 0x17f0) + b"\x40\x01\x00")})
+                        (2, target.RiscvDm.STEP): lambda p: ok(struct.pack("<BBII", 0, 1, 0x0, 0x17f0) + b"\x40\x01\x00\x00")})
     dm = target.RiscvDm(hst, 1)
     assert dm.reset_halt() == 0
     assert hst.log[-1][2] == struct.pack("<HB", 1, 2)                   # connection(u16), mode 2
     assert dm.step() == (True, 0x0, 0x17f0)                             # an unknown TLV after the fixed part: skipped
     dm.reset_halt(method=target.RiscvDm.METHOD_SYSTEM)
-    assert hst.log[-1][2] == struct.pack("<HB", 1, 2) + bytes([0x81, 1, 2])   # method as a critical TLV
+    assert hst.log[-1][2] == struct.pack("<HB", 1, 2) + bytes([0x81, 1, 0, 2])   # method as a critical TLV
 
 
 # ---- ARM ADI / MEM-AP -----------------------------------------------------------------------------
@@ -265,8 +265,8 @@ def test_swd_attach_decodes_dpidr_and_dormant(adi_bench):
     assert hst.log[-1][2] == b"\x00" + MAX_SPEED                                        # method 0, max_speed required
     wire = arm.SwdWire(hst)
     wire.attach(targetsel=0x01002927, max_speed=1_000_000)
-    assert hst.log[-1][2] == (b"\x00" + bytes([0x81, 4]) + struct.pack("<I", 1_000_000)          # critical TLVs
-                              + bytes([0x82, 4]) + struct.pack("<I", 0x01002927))
+    assert hst.log[-1][2] == (b"\x00" + bytes([0x81, 4, 0]) + struct.pack("<I", 1_000_000)          # critical TLVs
+                              + bytes([0x82, 4, 0]) + struct.pack("<I", 0x01002927))
     assert wire.speed_hz == 2_000_000 and not wire.existing
 
 

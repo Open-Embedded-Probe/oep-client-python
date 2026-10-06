@@ -1,4 +1,4 @@
-"""port_speed (oep-core §3.5): the fake's state machine (try / commit / revert, the timers, broken candidates, the
+"""port_speed (oep-if-link §3, an op of the optional oep.link): the fake's state machine (try / commit / revert, the timers, broken candidates, the
 session's end, the wrong port, off), and the client's opt-in raise_speed against it - in process, where the fake
 also sees the host's own rate (`FakeSerialStream`), and on a pty through open_host(port_speed=...)."""
 
@@ -61,38 +61,44 @@ class Port:
 
 
 def opened(p, sid=5, lease=60000):
-    assert p.send(0, m.OP_OPEN, struct.pack("<IIB", sid, lease, 0)).succeeded
+    assert p.send(0, m.OP_OPEN, struct.pack("<IB", lease, 0), sid).succeeded   # the id in the header (core §4.1)
     return sid
 
 
 # ---- the fake's state machine ------------------------------------------------------------------------------------------
 
-def test_describe_declares_it_only_when_on_and_off_is_unknown_operation():
+def link_ops(p):
+    """The ops tag of the probe's oep.link describe (core §7.4)."""
+    tlvs = m.split_tlvs(b"".join(p.ep._declarations(p.ep.link_fn)))
+    return fake.catalog.unpack_ops(next(v for t, v in tlvs if t == fake.catalog.OPS))
+
+
+def test_the_ops_tag_offers_it_only_when_on_and_off_is_unknown_operation():
     p = Port()
-    assert any(t[0] == endpoint.PORT_SPEED_TAG for t in p.ep._declarations(0))
+    assert link_ops(p) == {1, 2, PS}                                            # source, sink, port_speed
     p.ep.port_speed_base = None
-    assert not any(t[0] == endpoint.PORT_SPEED_TAG for t in p.ep._declarations(0))
+    assert link_ops(p) == {1, 2}
     sid = opened(p)
-    r = p.send(0, PS, ps(0, 1500000, TRY), sid)
+    r = p.send(p.ep.link_fn, PS, ps(0, 1500000, TRY), sid)
     assert r.resolution == m.REJECTED and r.detail == m.UNKNOWN_OPERATION
 
 
 def test_try_then_commit_answered_at_the_old_speed():
     p = Port()
     sid = opened(p)
-    assert p.send(0, PS, ps(0, 1500000, TRY)).detail == m.SESSION_REQUIRED     # the lock is needed
-    r = p.send(0, PS, ps(0, 1500000, TRY, 800), sid)
+    assert p.send(p.ep.link_fn, PS, ps(0, 1500000, TRY)).detail == m.SESSION_REQUIRED     # the lock is needed
+    r = p.send(p.ep.link_fn, PS, ps(0, 1500000, TRY, 800), sid)
     assert r.succeeded and m.Reader(r.payload).u32() == 1500000
     assert p.ep.speed_state == "try" and p.ep.port_baud(0) == 1500000
-    r = p.send(0, PS, ps(0, 1000000, COMMIT), sid)                              # another baud: cause 6
-    assert r.detail == m.UNAVAILABLE and r.payload[:3] == bytes([0x01, 1, 6])
-    r = p.send(0, PS, ps(0, 1500000, TRY), sid)                                 # a try while trying: cause 6
-    assert r.detail == m.UNAVAILABLE and r.payload[:3] == bytes([0x01, 1, 6]) and p.ep.speed_state == "try"
-    r = p.send(0, PS, ps(0, 1500000, COMMIT), sid)
+    r = p.send(p.ep.link_fn, PS, ps(0, 1000000, COMMIT), sid)                              # another baud: cause 6
+    assert r.detail == m.UNAVAILABLE and r.payload[:4] == bytes([0x01, 1, 0, 6])
+    r = p.send(p.ep.link_fn, PS, ps(0, 1500000, TRY), sid)                                 # a try while trying: cause 6
+    assert r.detail == m.UNAVAILABLE and r.payload[:4] == bytes([0x01, 1, 0, 6]) and p.ep.speed_state == "try"
+    r = p.send(p.ep.link_fn, PS, ps(0, 1500000, COMMIT), sid)
     assert r.succeeded and p.ep.speed_state == "committed"
-    r = p.send(0, PS, ps(0, 1500000, COMMIT), sid)                              # committed already: cause 6
-    assert r.detail == m.UNAVAILABLE and r.payload[:3] == bytes([0x01, 1, 6]) and p.ep.speed_state == "committed"
-    r = p.send(0, PS, ps(0, 921600, TRY), sid)                                  # a try while committed: cause 6
+    r = p.send(p.ep.link_fn, PS, ps(0, 1500000, COMMIT), sid)                              # committed already: cause 6
+    assert r.detail == m.UNAVAILABLE and r.payload[:4] == bytes([0x01, 1, 0, 6]) and p.ep.speed_state == "committed"
+    r = p.send(p.ep.link_fn, PS, ps(0, 921600, TRY), sid)                                  # a try while committed: cause 6
     assert r.detail == m.UNAVAILABLE and p.ep.port_baud(0) == 1500000
     p.tick(endpoint.SPEED_IDLE_MAX_MS - 1)                                      # idle_ms 0: the maximum, not never
     assert p.ep.port_baud(0) == 1500000
@@ -104,21 +110,21 @@ def test_a_step_that_does_not_fit_the_boot_state_is_cause_6():
     p = Port()
     sid = opened(p)
     for step in (COMMIT, REVERT):
-        r = p.send(0, PS, ps(0, 500000, step), sid)
-        assert r.detail == m.UNAVAILABLE and r.payload[:3] == bytes([0x01, 1, 6])
+        r = p.send(p.ep.link_fn, PS, ps(0, 500000, step), sid)
+        assert r.detail == m.UNAVAILABLE and r.payload[:4] == bytes([0x01, 1, 0, 6])
     assert p.ep.speed_state == "base" and p.ep.speed_log == []
-    r = p.send(0, PS, ps(0, 500000, 3), sid)                  # a step a later revision may define (core §2.5)
+    r = p.send(p.ep.link_fn, PS, ps(0, 500000, 3), sid)                  # a step a later revision may define (core §2.5)
     assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00")
-    assert p.send(0, PS, ps(0, 500000, 0xFF), sid).detail == m.UNSUPPORTED
-    assert p.send(0, PS, ps(0, 500000, TRY, 0), sid).detail == m.MALFORMED   # verify_ms 0 in a try (C-32)
+    assert p.send(p.ep.link_fn, PS, ps(0, 500000, 0xFF), sid).detail == m.UNSUPPORTED
+    assert p.send(p.ep.link_fn, PS, ps(0, 500000, TRY, 0), sid).detail == m.MALFORMED   # verify_ms 0 in a try (C-32)
     assert p.ep.speed_state == "base"
 
 
 def test_a_long_idle_ms_is_clamped_to_the_maximum():
     p = Port()
     sid = opened(p)
-    p.send(0, PS, ps(0, 500000, TRY), sid)
-    assert p.send(0, PS, ps(0, 500000, COMMIT, 0, 600_000), sid).succeeded
+    p.send(p.ep.link_fn, PS, ps(0, 500000, TRY), sid)
+    assert p.send(p.ep.link_fn, PS, ps(0, 500000, COMMIT, 0, 600_000), sid).succeeded
     assert p.ep.speed_idle_ms == endpoint.SPEED_IDLE_MAX_MS == 3000
     p.tick(2999)
     assert p.ep.port_baud(0) == 500000
@@ -129,18 +135,18 @@ def test_a_long_idle_ms_is_clamped_to_the_maximum():
 def test_try_times_out_and_a_late_commit_is_wrong_state():
     p = Port()
     sid = opened(p)
-    p.send(0, PS, ps(0, 750000, TRY, 1000), sid)
+    p.send(p.ep.link_fn, PS, ps(0, 750000, TRY, 1000), sid)
     p.tick(999)
     assert p.ep.port_baud(0) == 750000
     p.tick(1)
     assert p.ep.port_baud(0) == 115200
-    assert p.send(0, PS, ps(0, 750000, COMMIT), sid).detail == m.UNAVAILABLE
+    assert p.send(p.ep.link_fn, PS, ps(0, 750000, COMMIT), sid).detail == m.UNAVAILABLE
 
 
 def test_a_broken_candidate_while_trying_reverts_once_a_good_frame_came_at_the_new_speed():
     p = Port()
     sid = opened(p)
-    p.send(0, PS, ps(0, 230400, TRY, 5000), sid)
+    p.send(p.ep.link_fn, PS, ps(0, 230400, TRY, 5000), sid)
     p.noise()                                                                    # the switch-over's leftovers: not counted
     p.noise()
     assert p.ep.speed_state == "try" and p.ep.speed_log == [(0, 230400)]
@@ -152,16 +158,16 @@ def test_a_broken_candidate_while_trying_reverts_once_a_good_frame_came_at_the_n
 def test_committed_reverts_when_idle_or_at_three_broken_candidates_in_a_row():
     p = Port()
     sid = opened(p)
-    p.send(0, PS, ps(0, 500000, TRY), sid)
-    p.send(0, PS, ps(0, 500000, COMMIT, 0, 1500), sid)
+    p.send(p.ep.link_fn, PS, ps(0, 500000, TRY), sid)
+    p.send(p.ep.link_fn, PS, ps(0, 500000, COMMIT, 0, 1500), sid)
     p.tick(1000)
     p.send(0, m.OP_LOCK_STATE)                                                  # a good frame restarts the count
     p.tick(1000)
     assert p.ep.port_baud(0) == 500000
     p.tick(600)
     assert p.ep.port_baud(0) == 115200
-    p.send(0, PS, ps(0, 500000, TRY), sid)
-    p.send(0, PS, ps(0, 500000, COMMIT), sid)
+    p.send(p.ep.link_fn, PS, ps(0, 500000, TRY), sid)
+    p.send(p.ep.link_fn, PS, ps(0, 500000, COMMIT), sid)
     p.noise()
     p.tick(300)
     p.noise()
@@ -178,22 +184,22 @@ def test_committed_reverts_when_idle_or_at_three_broken_candidates_in_a_row():
 def test_step_2_and_the_sessions_end_answer_at_the_speed_then_revert():
     p = Port()
     sid = opened(p)
-    p.send(0, PS, ps(0, 500000, TRY), sid)
-    p.send(0, PS, ps(0, 500000, COMMIT), sid)
+    p.send(p.ep.link_fn, PS, ps(0, 500000, TRY), sid)
+    p.send(p.ep.link_fn, PS, ps(0, 500000, COMMIT), sid)
     p.ep.broken_rates[115200] = endpoint.BrokenRate()    # an answer sent at the boot speed would come out broken
-    r = p.send(0, PS, ps(0, 0, REVERT), sid)
+    r = p.send(p.ep.link_fn, PS, ps(0, 0, REVERT), sid)
     assert r is not None and r.succeeded and m.Reader(r.payload).u32() == 115200   # it went out at 500000
     assert p.ep.port_baud(0) == 115200
     del p.ep.broken_rates[115200]
-    p.send(0, PS, ps(0, 500000, TRY), sid)
-    p.send(0, PS, ps(0, 500000, COMMIT), sid)
+    p.send(p.ep.link_fn, PS, ps(0, 500000, TRY), sid)
+    p.send(p.ep.link_fn, PS, ps(0, 500000, COMMIT), sid)
     p.ep.broken_rates[115200] = endpoint.BrokenRate()
     r = p.send(0, m.OP_END, b"", sid)
     assert r is not None and r.succeeded and p.ep.port_baud(0) == 115200
     del p.ep.broken_rates[115200]
     sid = opened(p, 6, 1000)                                                     # a lapse reverts too
-    p.send(0, PS, ps(0, 500000, TRY), sid)
-    p.send(0, PS, ps(0, 500000, COMMIT), sid)
+    p.send(p.ep.link_fn, PS, ps(0, 500000, TRY), sid)
+    p.send(p.ep.link_fn, PS, ps(0, 500000, COMMIT), sid)
     p.tick(1100)
     assert p.ep.holder is None and p.ep.port_baud(0) == 115200
 
@@ -201,14 +207,14 @@ def test_step_2_and_the_sessions_end_answer_at_the_speed_then_revert():
 def test_only_the_uart_bridge_the_request_came_in_on_and_rates_it_can_make():
     p = Port()
     sid = opened(p)
-    r = p.send(0, PS, ps(1, 500000, TRY), sid)                                  # not the port it came in on
-    assert r.detail == m.UNAVAILABLE and r.payload[:3] == bytes([0x01, 1, 6])
-    r = p.send(0, PS, ps(0, 9_000_000, TRY), sid)
+    r = p.send(p.ep.link_fn, PS, ps(1, 500000, TRY), sid)                                  # not the port it came in on
+    assert r.detail == m.UNAVAILABLE and r.payload[:4] == bytes([0x01, 1, 0, 6])
+    r = p.send(p.ep.link_fn, PS, ps(0, 9_000_000, TRY), sid)
     assert r.detail == m.UNSUPPORTED and r.payload[:1] == b"\x00"
     q = Port(fake.p4_x035)                                                      # USB-Serial/JTAG: no UART bridge
     q.ep.port_speed_base = 115200
     sid = opened(q)
-    assert q.send(0, PS, ps(0, 500000, TRY), sid).detail == m.UNAVAILABLE
+    assert q.send(q.ep.link_fn, PS, ps(0, 500000, TRY), sid).detail == m.UNAVAILABLE
 
 
 # ---- the client: raise_speed (host guide §17) -----------------------------------------------------------------------------
@@ -231,7 +237,9 @@ FAST = dict(verify_ms=900)   # the probe's try state ends soon: a failed candida
 
 
 def ops(ep, since=0):
-    return [(q.op, q.payload[5] if q.op == PS else None) for q in ep.requests[since:] if q.fn == 0]
+    """(op, port_speed's step or None) of fn 0's requests and oep.link's port_speed ones, in order."""
+    return [(q.op, q.payload[5] if q.fn == ep.link_fn else None) for q in ep.requests[since:]
+            if q.fn == 0 or (q.fn == ep.link_fn and q.op == PS)]
 
 
 def test_the_minimal_form_tries_confirms_and_commits_without_a_measurement():
@@ -244,7 +252,8 @@ def test_the_minimal_form_tries_confirms_and_commits_without_a_measurement():
     t, = report.trials
     assert t.committed and t.actual == t.switched == 1500000 and t.flows == [] and t.n_cap == 0
     assert report.in_kb_s is None and t.in_kb_s is None
-    assert ops(ep, n) == [(PS, TRY), (m.OP_CONFIRM, None), (PS, COMMIT)]
+    assert ops(ep, n) == [(m.OP_LIST, None), (m.OP_DESCRIBE, None),             # oep.link found, its ops read
+                          (PS, TRY), (m.OP_CONFIRM, None), (PS, COMMIT)]
     assert lk.speed is report and lk.baud == 1500000 and ep.speed_state == "committed"
     assert ep.speed_idle_ms == 3000 and lk.keepalive_s == link.KEEPALIVE_S == 1.0 and lk.inflight_cap == 0
     hst.keepalive()                                                              # the session goes on at the new rate
@@ -615,8 +624,8 @@ def test_an_off_probe_is_not_supported_and_stays_at_the_boot_speed(monkeypatch):
     ep.port_speed_base = None
     hst._describes.clear()
     report = link.raise_speed(hst, [1500000], **FAST)
-    assert not report.supported and "does not declare" in report.why and report.rate == 115200 and lk.baud == 115200
-    monkeypatch.setattr(link, "_speed_port", lambda hst: (0, ""))   # declared, but the op is unknown
+    assert not report.supported and "does not offer port_speed" in report.why and report.rate == 115200 and lk.baud == 115200
+    monkeypatch.setattr(link, "_speed_port", lambda hst: (ep.link_fn, 0, ""))   # taken as offered, the op is unknown
     report = link.raise_speed(hst, [1500000], **FAST)
     assert not report.supported and "unknown_operation" in report.why and not report.trials
     assert "not supported" in report.to_text() and lk.baud == 115200
@@ -633,10 +642,11 @@ def test_not_a_serial_port_of_its_own():
 # ---- step downs, the probation, max_tries (host guide §17.3.2 item 4) ----------------------------------------------------
 
 def move(hst, until, size=40, limit_s=3.0):
-    """In-use traffic: link_source answers of `size` bytes until `until()` (at most `limit_s`)."""
+    """In-use traffic: oep.link source answers of `size` bytes until `until()` (at most `limit_s`)."""
     deadline = time.monotonic() + limit_s
+    fn = core.link_fn(hst)
     while not until() and time.monotonic() < deadline:
-        hst.request(0, m.OP_LINK_SOURCE, struct.pack("<I", size))
+        hst.request(fn, core.LINK_SOURCE, core.link_source_request(size))
 
 
 def test_in_use_a_breakdown_steps_down_to_the_next_lower_candidate_not_at_or_above_a_failed_one():

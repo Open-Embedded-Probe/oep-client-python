@@ -13,13 +13,11 @@ from oep_client import (capture as c, config, console, core, endpoint, fake, fix
                         registry as reg, riscv)
 
 UNKNOWN = 0x3D                                 # no context defines it
-IGNORED = bytes([m.TAG_IGNORED, 1, UNKNOWN])
+IGNORED = bytes([m.TAG_IGNORED, 1, 0, UNKNOWN])           # 0x7F len(u16) the tag (core §2.2, §2.3)
 CORE_NAME = "oep.core"
 # requests that take no TLV tail of this kind: describe / probe.config get (a TLV there is malformed, core §7.3),
-# link_source / link_sink (no TLV follows, core §12), probe.config set (its TLVs are the items: an unknown one is an
-# undeclared item, rejected unsupported - probe.config §1)
-NO_TAIL = {(CORE_NAME, reg.CORE.op["describe"]), (CORE_NAME, reg.CORE.op["link_source"]),
-           (CORE_NAME, reg.CORE.op["link_sink"]), ("oep.probe.config", reg.PROBE_CONFIG.op["get"]),
+# probe.config set (its TLVs are the items: an unknown one is an undeclared item, rejected unsupported - probe.config §1)
+NO_TAIL = {(CORE_NAME, reg.CORE.op["describe"]), ("oep.probe.config", reg.PROBE_CONFIG.op["get"]),
            ("oep.probe.config", reg.PROBE_CONFIG.op["set"])}
 
 
@@ -75,15 +73,13 @@ def bench(probe, transport=1):
 
 
 def every_op(ep: endpoint.Endpoint) -> set[tuple[str, int]]:
-    out = {(CORE_NAME, op) for op in reg.CORE.op.values()}
-    if ep.port_speed_base is None:
-        out.discard((CORE_NAME, endpoint.OP_PORT_SPEED))
+    out = {(CORE_NAME, op) for op in reg.CORE.op.values() if ep.offers(m.CORE_FN, op)}
     for fn, name in ep.names.items():
         i = reg.INTERFACES.get(name)
         if i is None:
             out |= {(name, endpoint.TOY_WRITE), (name, endpoint.TOY_READ)}
         elif fn != m.CORE_FN:
-            out |= {(name, op) for op in i.op.values() if ep.offers(fn, op)}   # optional ops when declared (core §1.2)
+            out |= {(name, op) for op in i.op.values() if ep.offers(fn, op)}   # optional ops when offered (core §1.2)
     return out - NO_TAIL
 
 
@@ -99,6 +95,10 @@ def drive_core(hst, ep):
     gpio = fixture.Gpio(hst)
     core.plan_apply(hst, [(gpio.fn, 1, CHANNELS[ep.probe.label]["gpio"])])
     core.plan_release(hst, [gpio.fn])
+    link = core.link_fn(hst)                                          # oep.link: the link test (oep-if-link §2)
+    assert core.link_source_data(hst.call(link, core.LINK_SOURCE, core.link_source_request(8), locked=False).payload) \
+        == bytes(range(8))
+    hst.call(link, core.LINK_SINK, core.link_sink_request(b"abc"), locked=False)
 
 
 def drive_wire_dm_console(hst, wire_name):
@@ -114,7 +114,7 @@ def drive_wire_dm_console(hst, wire_name):
     dm.run(0x20000000, [(10, 1)], timeout_ms=10)
     dm.halt()
     if "step" in dm.declared():
-        dm.step()                                                     # optional: features bit3 (debug §4)
+        dm.step()                                                     # optional: in the ops (debug §4)
     dm.reset_halt()
     dm.resume()
     con = console.Console(hst)
@@ -220,7 +220,7 @@ def test_every_op_lists_an_unknown_tlv_and_refuses_it_critical_p4_x035():
 def test_every_op_lists_an_unknown_tlv_and_refuses_it_critical_esp32_v003():
     ep, tag, hst = bench(fake.with_stand_in(fake.esp32_v003()), transport=0)
     drive_core(hst, ep)
-    hst.call(m.CORE_FN, endpoint.OP_PORT_SPEED, struct.pack("<BIBHI", 0, 230400, 0, 500, 0))   # try
+    hst.call(ep.link_fn, endpoint.OP_PORT_SPEED, struct.pack("<BIBHI", 0, 230400, 0, 500, 0))   # try
     drive_wire_dm_console(hst, "oep.wire.swio")
     drive_fixtures(hst, ep)
     drive_captures(hst, ep)
@@ -311,7 +311,7 @@ def test_a_failed_or_partial_answer_lists_the_unknown_tlv_too():
             call()
         except h.OepError:
             pass
-    ep.console_accept = 0
+    ep.console_slot = dict.fromkeys(ep.console_slot, 0)           # no mechanism takes a byte now
     con = console.Console(hst)
     con.open(conn)
     with pytest.raises(h.OepError):

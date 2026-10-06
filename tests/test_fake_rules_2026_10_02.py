@@ -25,6 +25,11 @@ def bench(profile=fake.p4_bench, **kw):
     return ep, h
 
 
+def ign(*tags: int) -> bytes:
+    """An ignored TLV (core §2.3): 0x7F len(u16) the tags."""
+    return bytes([0x7F]) + struct.pack("<H", len(tags)) + bytes(tags)
+
+
 def tlvs(payload: bytes) -> list[tuple[int, bytes]]:
     return m.split_tlvs(payload)
 
@@ -38,7 +43,8 @@ def una(r) -> dict[int, bytes]:
 
 
 def idle_item(ch, mode, tag=ITEM["idle"]):
-    return bytes([tag, 3]) + struct.pack("<HB", ch, mode)
+    """An idle item (probe.config §1): channel mode drive_kind drive_value, the default drive (kind 2, value 0)."""
+    return m.tlv(tag & 0x7F, struct.pack("<HBBH", ch, mode, 2, 0), critical=bool(tag & 0x80))
 
 
 def label_item(ch, text: bytes, tag=ITEM["label"]):
@@ -84,18 +90,21 @@ def test_c02_gpio_drive_of_an_undefined_kind_is_ignored_or_unsupported_when_crit
     h.ok(0, m.OP_PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 20), critical=True))
     drive = reg.FIXTURE_GPIO.tlv["set"]["drive"]
     body = bytes([1]) + struct.pack("<HB", 20, 4)
-    r = h.raw(4, reg.FIXTURE_GPIO.op["set"], body + m.tlv(drive, struct.pack("<BBH", 0, 2, 0)))
-    assert r.succeeded and r.payload == bytes([0x7F, 1, drive])
-    r = h.raw(4, reg.FIXTURE_GPIO.op["set"], body + m.tlv(drive, struct.pack("<BBH", 0, 2, 0), critical=True))
+    r = h.raw(4, reg.FIXTURE_GPIO.op["set"], body + m.tlv(drive, struct.pack("<BBH", 0, 3, 0)))
+    assert r.succeeded and r.payload == ign(drive)
+    r = h.raw(4, reg.FIXTURE_GPIO.op["set"], body + m.tlv(drive, struct.pack("<BBH", 0, 3, 0), critical=True))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([drive | 0x80]))
+    r = h.raw(4, reg.FIXTURE_GPIO.op["set"], body + m.tlv(drive, struct.pack("<BBH", 0, 2, 0), critical=True))
+    assert r.succeeded and ep.gpio_drive[20] == fake.DRIVE_DEFAULT          # kind 2: the default level (fixture §1.1)
+    assert h.raw(4, reg.FIXTURE_GPIO.op["set"], body + m.tlv(drive, struct.pack("<BBH", 0, 2, 1))).detail == m.MALFORMED
 
 
 def test_c02_probe_config_enums_and_bits_a_later_revision_may_define():
     ep, h = bench()
     pair = ep.pairs[1][0]
     raw_slot = slot_item(0, 1, pair)                              # attach 1 at offset 7 of the value
-    v = bytearray(raw_slot[2:])
-    v[7], v[8:12] = 2, bytes(4)                                   # slot attach 2 (and no retry_ms)
+    v = bytearray(raw_slot[3:])
+    v[7], v[9:13] = 2, bytes(4)                                   # slot attach 2 (and no retry_ms, after boot_reset)
     r = h.raw(6, 0x02, m.tlv(ITEM["slot"], bytes(v)))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([ITEM["slot"]]))
     r = h.raw(6, 0x02, bind_item(0, 0, [(3, 0)]))                 # a stream kind 3
@@ -123,7 +132,7 @@ def test_c03_short_is_malformed_long_is_unsupported_critical_or_ignored():
     r = h.raw(1, 0x02, b"\x00" + SPEED + long_pins)
     assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x83")      # never extended: the tag as received
     r = h.raw(1, 0x02, b"\x00" + SPEED + pins(*pair) + m.tlv(0x04, b"\x00\x00"))   # idle_clock too long, not critical
-    assert r.succeeded and r.payload.endswith(bytes([0x7F, 1, 0x04]))
+    assert r.succeeded and r.payload.endswith(ign(0x04))
     assert ep.conns[ep._conn_at(1, pair)].idle_clock == 0         # ignored as a whole
 
 
@@ -150,9 +159,9 @@ def test_c04_more_than_16_ignored_lists_15_and_0x00():
     ep, h = bench()
     tail = b"".join(m.tlv(0x30 + k, b"") for k in range(20))
     r = h.raw(0, m.OP_KEEPALIVE, tail)
-    assert r.succeeded and r.payload == bytes([0x7F, 16]) + bytes(range(0x30, 0x30 + 15)) + b"\x00"
+    assert r.succeeded and r.payload == ign(*range(0x30, 0x30 + 15), 0)
     tail = b"".join(m.tlv(0x30 + k, b"") for k in range(16))
-    assert h.raw(0, m.OP_KEEPALIVE, tail).payload == bytes([0x7F, 16]) + bytes(range(0x30, 0x40))
+    assert h.raw(0, m.OP_KEEPALIVE, tail).payload == ign(*range(0x30, 0x40))
 
 
 def test_c04_an_answer_keeps_room_for_ignored_and_never_drops_it():
@@ -166,12 +175,12 @@ def test_c04_an_answer_keeps_room_for_ignored_and_never_drops_it():
     assert r.succeeded and len(r.payload) + m.RESULT_HEADER <= 64
     _, flags, n = struct.unpack_from("<QBH", r.payload)
     ignored = r.payload[11 + n:]
-    assert flags & 1 and ignored[:1] == b"\x7F" and ignored[-1] == 0 and len(ignored) == 18
+    assert flags & 1 and ignored[:1] == b"\x7F" and ignored[-1] == 0 and len(ignored) == 19   # at most 19 (§2.3)
 
 
 def test_c04_ignored_tlv_cut_to_fit_ends_in_0x00():
-    assert endpoint.ignored_tlv([0x31, 0x32, 0x33, 0x34], room=4) == bytes([0x7F, 2, 0x31, 0x00])
-    assert endpoint.ignored_tlv([0x31, 0x32], room=3) == bytes([0x7F, 1, 0x00])
+    assert endpoint.ignored_tlv([0x31, 0x32, 0x33, 0x34], room=5) == ign(0x31, 0x00)
+    assert endpoint.ignored_tlv([0x31, 0x32], room=4) == ign(0x00)                  # 7F 01 00 00 always fits
 
 
 # ---- C-05 / C-15: confirm ----------------------------------------------------------------------------------------
@@ -184,7 +193,7 @@ def test_c05_confirm_names_the_transport_it_came_on():
     ep = endpoint.Endpoint(fake.p4_x035(), Clock())
     for index in (0, 1, 3):
         r = confirm(Host(ep, transport=index))
-        assert r.succeeded and len(r.payload) == 17 + 3
+        assert r.succeeded and len(r.payload) == 17 + 4
         assert m.Tail.parse(r.payload[17:]).get(CORE.tlv["confirm_answer"]["transport"]) == bytes([index])
         assert ep.revision_in_use[index] == 1
 
@@ -200,8 +209,10 @@ def test_c15_no_revision_in_range_carries_the_supported_range_and_min_above_max_
 # ---- C-10: plan_apply / plan_release on a probe without plan roles -----------------------------------------------
 
 def test_c10_plan_ops_are_unknown_operation_without_plan_roles():
-    probe = fake.FakeProbe("bare", 256, [o for o in fake.p4_bench().offered
-                                         if o.name in ("oep.core", "oep.wire.rvswd", "oep.target.riscv-dm")])
+    keep = ("oep.core", "oep.wire.rvswd", "oep.target.riscv-dm")
+    probe = fake.FakeProbe("bare", 256, [fake.Offered(o.fn, o.instance, o.name, tuple(t for t in o.tlvs if t[0] != 0x09))
+                                         for o in fake.p4_bench().offered if o.name in keep])   # ops made anew
+    assert reg.CORE.op["plan_apply"] not in endpoint.Endpoint(probe, Clock()).ops[0]   # core §1.2: not in fn 0's ops
     ep = endpoint.Endpoint(probe, Clock())
     h = Host(ep)
     h.open()

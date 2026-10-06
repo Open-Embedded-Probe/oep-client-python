@@ -70,7 +70,8 @@ def test_list_total_is_u16_and_a_longer_answer_is_not_rejected():
     entries = [catalog.ListEntry(0, 0, 1, 0, "oep.core")]
     packed = catalog.pack_list_result(300, entries)
     assert packed[:3] == bytes([0x2C, 0x01, 1])                    # total u16, count u8
-    assert catalog.unpack_list_result(packed + bytes([0x55, 2, 9, 9])) == (300, entries)   # a TLV tail is skipped
+    assert packed[3:] == catalog.pack_entry(entries[0])          # count x entry, no element length (core §2.3)
+    assert catalog.unpack_list_result(packed + bytes([0x55, 2, 0, 9, 9])) == (300, entries)   # a TLV tail is skipped
 
 
 def test_oep_core_is_the_first_list_entry():
@@ -105,8 +106,10 @@ def test_description_keeps_what_it_does_not_know():
 def test_p4_follows_the_agreed_names():
     caps = dump.collect(fake.p4_x035().call)
     by_name = {o.entry.name: o for o in caps.offers}
-    assert len(caps.offers) == 13
-    assert caps.requests["list"] == 1 and caps.requests["describe"] == 13
+    assert len(caps.offers) == 14                    # oep.link the last (oep-if-link)
+    assert caps.requests["list"] == 1 and caps.requests["describe"] == 14
+    assert by_name["oep.link"].description.ops == {1, 2}                    # source and sink: no UART bridge here
+    assert all(o.description.ops for o in caps.offers) and not caps.missing  # every fn's describe carries ops
     # the debug port: wire, riscv-dm and console are the first instance of each
     assert {by_name[n].entry.instance for n in ("oep.wire.rvswd", "oep.target.riscv-dm", "oep.target.console")} == {0}
     assert by_name["oep.wire.rvswd"].description.groups[1] == [(1, 2), (2, 54)]
@@ -143,6 +146,14 @@ def test_filters():
     assert one.offers[0].description.groups[2][0] == (1, 14)
 
 
+def test_a_describe_without_ops_is_named_missing():
+    probe = fake.FakeProbe("x", 256, [fake.Offered(0, 0, "oep.core"), fake.Offered(1, 0, "oep.fixture.gpio")])
+    bare = fake.FakeProbe("x", 256, [fake.Offered(o.fn, o.instance, o.name, tuple(t for t in o.tlvs if t[0] != catalog.OPS))
+                                     for o in probe.offered], fill_ops=False)
+    caps = dump.collect(bare.call)
+    assert "describe of fn 0: ops" in caps.missing and "describe of fn 1: ops" in caps.missing   # core §1.2, §7.4
+
+
 def test_unknown_interfaces_are_shown_raw():
     probe = fake.FakeProbe("x", 256, [
         fake.Offered(0, 0, "oep.core"),
@@ -158,6 +169,7 @@ def test_text_and_json_outputs():
     caps = dump.collect(fake.p4_x035().call)
     text = dump.to_text(caps)
     assert "instance 0" in text and "oep.fixture.i2c-target" in text
-    assert "features: preloaded tx, clock stretching" in text
+    assert "features: preloaded tx" in text and "clock stretching" not in text   # stretch is an op (its ops tag)
+    assert "ops: configure, arm_rx, read_rx, preload_tx, status, reset, stretch" in text
     data = json.loads(dump.to_json(caps))
-    assert data["max_frame"] == 1024 and len(data["interfaces"]) == 13
+    assert data["max_frame"] == 1024 and len(data["interfaces"]) == 14

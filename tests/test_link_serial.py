@@ -1,4 +1,4 @@
-"""A serial port is always COBS with the probe's raw bytes on the same line (oep-core §3.1, §3.4; host guide §2, §6):
+"""A serial port is always COBS with the probe's raw bytes on the same line (transports §1, §4; host guide §2, §6):
 noise is skipped without a resend, a missing answer is sent once more by the timeout, the port is opened exclusively;
 the same Host over TCP (a broker's length frames); taking the lock (host guide §6); the capture record hook."""
 

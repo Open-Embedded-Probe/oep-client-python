@@ -3,11 +3,11 @@
 import struct
 from fractions import Fraction
 
-from oep_client import capture as c
+from oep_client import capture as c, message as m
 
 
 def answer(*items):
-    return b"".join(bytes([t, len(v)]) + v for t, v in items)
+    return b"".join(m.tlv(t, v) if t != m.TAG_IGNORED else bytes([t]) + struct.pack("<H", len(v)) + v for t, v in items)
 
 
 def test_configure_answer_is_read_into_actual_values():
@@ -60,7 +60,7 @@ class FakeLink:
 
 def push(fn, seq, position, data, generation=None):
     """A data frame (core §11.2): role fn seq position(u64) len(u16) data [TLV generation]."""
-    tail = b"" if generation is None else struct.pack("<BBI", c.DATA_GENERATION, 4, generation)
+    tail = b"" if generation is None else struct.pack("<BHI", c.DATA_GENERATION, 4, generation)
     return bytes([0x06]) + struct.pack("<HHQH", fn, seq, position, len(data)) + data + tail
 
 
@@ -98,7 +98,7 @@ def test_stream_drops_pushes_of_another_generation():
     cap = c.LogicCapture.__new__(c.LogicCapture)
     cap.fn, cap.generation = 2, 5
     link = FakeLink([[push(2, 0, 90, b"old", generation=4), push(2, 1, 0, b"ab", generation=5)],
-                     [push(2, 2, 2, b"cd", generation=5) + b"\x55\x01\x00"]])    # an unknown TLV after it: skipped
+                     [push(2, 2, 2, b"cd", generation=5) + b"\x55\x01\x00\x00"]])    # an unknown TLV after it: skipped
     got = cap.stream(link, nbytes=4)
     assert bytes(got.data) == b"abcd" and got.start == 0 and got.stale == 1 and got.gaps == [] and got.seq_lost == 0
     assert c.unpack_push(push(9, 3, 7, b"x", 2)) == (9, 3, 7, b"x", 2)
@@ -113,7 +113,7 @@ def test_read_spans_frames_without_the_header_leaking_into_the_data():
         g, pos, n = struct.unpack("<IQI", p[:16])
         assert g == 7
         data = stream[pos:pos + n]
-        return ok(struct.pack("<QBI", pos, 0, len(data)) + data + b"\x44\x01\x00")   # a TLV after the data
+        return ok(struct.pack("<QBI", pos, 0, len(data)) + data + b"\x44\x01\x00\x00")   # a TLV after the data
     hst = ScriptedHost({(21, c.LogicCapture.READ): read})
     hst._fns[c.LogicCapture.NAME] = 21
     hst._revisions[21] = 1

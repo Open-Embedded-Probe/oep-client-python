@@ -163,11 +163,16 @@ def test_idle_item_drive_encodes_and_decodes():
     assert it.value() == bytes([7, 0, 4, 1, 10, 0])
     assert config.decode(config.ITEM["idle"], it.value()) == it
     assert config.Idle(channel=7, mode="output-low", drive=2).value() == bytes([7, 0, 3, 0, 2, 0])
-    assert config.decode(config.ITEM["idle"], bytes([7, 0, 4])).drive is None
+    assert config.Idle(channel=7, mode="pull-up").value() == bytes([7, 0, 1, 2, 0, 0])   # 6 bytes: kind 2, value 0
+    assert config.Idle(channel=7, mode="output-high").value() == bytes([7, 0, 4, 2, 0, 0])
+    assert config.decode(config.ITEM["idle"], bytes([7, 0, 4, 2, 0, 0])).drive is None   # the default level
+    assert config.Idle(channel=7, mode="output-high", drive=Drive.default()).value() == bytes([7, 0, 4, 2, 0, 0])
     with pytest.raises(ValueError, match="output-low / output-high"):
         config.Idle(channel=7, mode="pull-up", drive=1).value()
     with pytest.raises(ValueError):
-        config.Idle(channel=7, mode="output-high", drive=Drive(2, 0)).value()
+        config.Idle(channel=7, mode="output-high", drive=Drive(3, 0)).value()     # kind 3: not defined
+    with pytest.raises(ValueError):
+        Drive(2, 1).pack()                                                     # kind 2 carries value 0
 
 
 def _idle(ch, *rest):
@@ -175,11 +180,14 @@ def _idle(ch, *rest):
 
 
 @pytest.mark.parametrize("value, reason", [
+    ((4,), "malformed"),                                          # 3 bytes: the idle is 6 (probe.config §1)
     ((4, 0), "malformed"),                                        # 4 bytes
     ((4, 0, 1), "malformed"),                                     # 5 bytes
-    ((4, 2, 0, 0), "unsupported"),                                # drive_kind undefined: a later revision's (C-02)
-    ((1, 0, 0, 0), "malformed"),                                  # a drive on a mode other than 3 / 4
+    ((4, 3, 0, 0), "unsupported"),                                # drive_kind undefined: a later revision's (C-02)
+    ((1, 0, 0, 0), "malformed"),                                  # a drive other than the default on mode 0-2
     ((0, 1, 10, 0), "malformed"),
+    ((4, 2, 1, 0), "malformed"),                                  # kind 2 with a value other than 0
+    ((1, 2, 0, 1), "malformed"),
     ((4, 0, 4, 0), "unsupported"),                                # level number = the number of levels
 ])
 def test_idle_drive_refusals(value, reason):
@@ -191,9 +199,16 @@ def test_idle_drive_refusals(value, reason):
 def test_idle_drive_accepted_forms():
     ep, hst, _ = open_probe()
     cfg = config.ProbeConfig(hst)
-    cfg.set([_idle(20, 4, 0, 3, 0), _idle(21, 3, 1, 1, 0), _idle(22, 4, 1, 0xFF, 0xFF), _idle(23, 4, 0, 1, 0, 0xAA)])
-    assert ep.parked_drive == {20: 3, 21: 0, 22: 3, 23: 1}        # a ceiling below every level: level 0; a tail skipped
-    assert ep.config[(config.ITEM["idle"], 23)] == bytes([23, 0, 4, 0, 1, 0, 0xAA])   # ... and kept, not cut (§2)
+    cfg.set([_idle(20, 4, 0, 3, 0), _idle(21, 3, 1, 1, 0), _idle(22, 4, 1, 0xFF, 0xFF), _idle(23, 4, 2, 0, 0),
+             _idle(26, 1, 2, 0, 0)])
+    assert ep.parked_drive == {20: 3, 21: 0, 22: 3, 23: fake.DRIVE_DEFAULT}   # a ceiling below every level: level 0
+    assert ep.parked[26] == 1 and 26 not in ep.parked_drive                    # an input idle: kind 2, value 0
+    r = hst.call(cfg.fn, cfg.SET, _idle(27, 4, 0, 1, 0, 0xAA))                 # 7 bytes: longer than its one form
+    assert m.Reader(r.payload[4:]).tail().ignored == [config.ITEM["idle"]] and (config.ITEM["idle"], 27) not in ep.config
+    with pytest.raises(h.Unsupported) as e:                                    # ... critical: unsupported (core §2.3)
+        hst.call(cfg.fn, cfg.SET, m.tlv(config.ITEM["idle"], struct.pack("<H", 27) + bytes([4, 0, 1, 0, 0xAA]),
+                                        critical=True))
+    assert e.value.tag == config.ITEM["idle"] | 0x80
 
 
 def test_a_probe_without_drive_levels_keeps_the_idle_drive_and_drives_at_its_default():
@@ -205,7 +220,7 @@ def test_a_probe_without_drive_levels_keeps_the_idle_drive_and_drives_at_its_def
     with pytest.raises(h.Rejected, match="malformed"):            # the form rules still hold
         cfg.set([_idle(21, 4, 0, 0)])
     with pytest.raises(h.Rejected, match="unsupported"):          # an undefined drive_kind (C-02)
-        cfg.set([_idle(21, 4, 2, 0, 0)])
+        cfg.set([_idle(21, 4, 3, 0, 0)])
 
 
 def test_a_probe_without_gpio_keeps_the_idle_drive():
@@ -218,24 +233,24 @@ def test_a_probe_without_gpio_keeps_the_idle_drive():
 
 # ---- slot boot_reset --------------------------------------------------------------------------------------------
 
-def test_slot_boot_reset_encodes_after_the_lock_and_decodes():
+def test_slot_boot_reset_encodes_after_attach_and_decodes():
     s = config.Slot(slot=0, wire_fn=1, pins=(16, 0xFFFF), name="v003", attach="at-boot", boot_reset=True)
-    assert s.value().endswith(b"\x00\x01")                        # lock_len 0, boot_reset 1
+    assert s.value()[7:9] == b"\x01\x01" and s.value().endswith(b"v003\x00")   # attach, boot_reset; the lock last
     assert config.decode(config.ITEM["slot"], s.value()) == s
     locked = config.Slot(slot=0, wire_fn=1, pins=(16, 0xFFFF), name="v003", attach="at-boot", boot_reset=True,
                          lock=(1, b"\xff" * 4, b"\x01\x02\x03\x04"))
-    assert locked.value().endswith(b"\x01\x02\x03\x04\x01") and config.decode(config.ITEM["slot"], locked.value()) == locked
+    assert locked.value().endswith(b"\x01\x02\x03\x04") and config.decode(config.ITEM["slot"], locked.value()) == locked
     plain = config.Slot(slot=0, wire_fn=1, pins=(16, 0xFFFF), name="v003", attach="at-boot")
-    assert plain.value().endswith(b"v003\x00")                   # not placed: 0
-    assert config.decode(config.ITEM["slot"], plain.value() + b"\x00").boot_reset is False
+    assert plain.value()[8] == 0 and plain.value().endswith(b"v003\x00")   # always there: 0
+    assert config.decode(config.ITEM["slot"], plain.value()).boot_reset is False
     with pytest.raises(ValueError, match="at-boot"):
         config.Slot(slot=0, wire_fn=1, pins=(16, 0xFFFF), name="v003", boot_reset=True).value()
 
 
 def _slot(attach, boot_reset, extra=b""):
     v = config.Slot(slot=0, wire_fn=1, pins=(16, 0xFFFF), name="v003", attach="at-boot").value()
-    v = v[:7] + bytes([attach]) + v[8:]
-    return m.tlv(config.ITEM["slot"], v + (bytes([boot_reset]) if boot_reset is not None else b"") + extra)
+    v = v[:7] + bytes([attach, boot_reset]) + v[9:]                    # attach, boot_reset (probe.config §1.1)
+    return m.tlv(config.ITEM["slot"], v + extra)
 
 
 def test_slot_boot_reset_malformed_rules():
@@ -245,8 +260,10 @@ def test_slot_boot_reset_malformed_rules():
         cfg.set([_slot(1, 2)])                                    # 2 or more
     with pytest.raises(h.Rejected, match="malformed"):
         cfg.set([_slot(0, 1)])                                    # 1 on a host slot (its retry_ms is 0 already)
-    cfg.set([_slot(0, 0)])                                        # 0 placed: fine on a host slot
-    cfg.set([_slot(1, 1, b"\x55\x66")])                           # later fields after it: skipped
+    cfg.set([_slot(0, 0)])                                        # 0: fine on a host slot
+    r = hst.call(cfg.fn, cfg.SET, _slot(1, 1, b"\x55\x66"))       # bytes after the lock: longer than its form
+    assert m.Reader(r.payload[4:]).tail().ignored == [config.ITEM["slot"]] and ep.slots[0].attach == 0   # not applied
+    cfg.set([_slot(1, 1)])
     assert ep.slots[0].boot_reset == 1
 
 

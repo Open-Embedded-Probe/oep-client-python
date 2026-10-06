@@ -96,28 +96,36 @@ def test_n1_the_transfer_time_counts_64_until_a_confirm_answer_then_the_latest()
     assert lk.max_frame == 512 and lk.frames.max_frame == 512
 
 
-# ---- C-19: resumed = 0 for the session_id used last ----------------------------------------------------------------
+# ---- C-19 under no resume (core §6.5, §9): the boot_id tells a reboot, no_session a session that ended ---------------
 
-def test_c19_resumed_0_for_the_last_session_id_lists_again():
+def test_c19_after_a_reboot_with_a_repeated_boot_id_the_session_is_no_session_and_open_starts_anew():
+    """core §6.5: open's boot_id is the host's sign of a reboot; a probe whose only source repeated it gives none, and
+    the host learns its session ended from no_session (§6.2) - the resources are gone (epoch), the names stay (only a
+    changed boot_id drops them)."""
     ep, hst, _ = in_process()
     hst.open(3000)
     gpio = core.find(hst, "oep.fixture.gpio")
-    core.describe(hst, gpio)
     epoch = hst.epoch
     ep.reboot(ep.boot_id)                                                     # its only source repeated the boot_id
-    opened = hst.open(3000, session=hst.session)                              # the id it used last
-    assert opened.resumed == 0 and hst.epoch == epoch + 1
-    assert hst._fns == {} and hst._describes == {}                            # listed again before use
+    with pytest.raises(h.NoSession):
+        hst.keepalive()
+    assert hst.epoch == epoch + 1 and hst.session is None and hst._fns
+    assert hst.open(3000).boot_id == ep.boot_id and hst.epoch == epoch + 1
     assert core.find(hst, "oep.fixture.gpio") == gpio
+    ep.reboot()                                                               # a new boot_id: names listed again
+    hst.confirm()
+    assert hst._fns == {} and hst._describes == {} and hst.epoch == epoch + 2
 
 
-def test_c19_a_new_random_id_answered_resumed_0_is_no_loss():
+def test_c19_end_then_a_new_open_counts_the_loss_once_and_keeps_the_names():
     ep, hst, _ = in_process()
     hst.open(3000)
     core.find(hst, "oep.fixture.gpio")
     epoch = hst.epoch
-    hst.end()
-    assert hst.open(3000).resumed == 0 and hst.epoch == epoch and hst._fns
+    hst.end()                                                                 # the probe released everything (§9)
+    assert hst.epoch == epoch + 1 and hst.session is None
+    hst.open(3000)
+    assert hst.epoch == epoch + 1 and hst._fns
 
 
 # ---- heartbeats: the boot_id watched (core §6.5, §11.2) ----------------------------------------------------------

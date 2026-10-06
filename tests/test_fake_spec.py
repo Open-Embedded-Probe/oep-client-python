@@ -42,8 +42,9 @@ class Host:
         return m.Result.unpack(self.ep.handle(req.pack(), self.transport))
 
     def open(self, lease=3000, force=0, owner=None):
+        """open: lease_ms(u32) force(u8) [TLV owner], the session_id in the header (core §4.1, §6.4)."""
         tail = m.tlv(reg.CORE.tlv["open"]["owner"], owner) if owner else b""
-        return self.raw(0, m.OP_OPEN, struct.pack("<IIB", self.session, lease, force) + tail, session=False)
+        return self.raw(0, m.OP_OPEN, struct.pack("<IB", lease, force) + tail)
 
     def ok(self, fn, op, payload=b""):
         r = self.raw(fn, op, payload)
@@ -51,24 +52,31 @@ class Host:
         return r.payload
 
 
-def slot_item(n, wire, pair, attach=ATTACH["at_boot"], retry=1, mech=2, name=None, lock=None, max_speed=0, idle=0):
-    """A slot item (probe.config §1.1): ... retry_ms(u32) max_speed_hz(u32) ...; `retry` in seconds here."""
+def slot_item(n, wire, pair, attach=ATTACH["at_boot"], retry=1, mech=2, name=None, lock=None, max_speed=0, idle=0,
+              boot_reset=0):
+    """A slot item (probe.config §1.1): slot wire_fn swdio swclk attach boot_reset retry_ms(u32) max_speed_hz(u32)
+    idle_clock mechanism name_len name lock_len [lock]; `retry` in seconds here."""
     raw = (name or f"s{n}").encode()
-    value = struct.pack("<BHHHBIIBBB", n, wire, *pair, attach, 1000 * retry if attach == ATTACH["at_boot"] else 0,
-                        max_speed, idle, mech, len(raw)) + raw
+    value = struct.pack("<BHHHBBIIBBB", n, wire, *pair, attach, boot_reset,
+                        1000 * retry if attach == ATTACH["at_boot"] else 0, max_speed, idle, mech, len(raw)) + raw
     value += b"\x00" if lock is None else bytes([1 + 2 * len(lock[0]), 1]) + lock[0] + lock[1]   # lock_len, scheme 1
     return m.tlv(ITEM["slot"], value)
 
 
 def bind_item(port, mode, streams, selected=0):
     return m.tlv(ITEM["bind"], struct.pack("<BBBB", port, mode, selected, len(streams))
-                 + b"".join(struct.pack("<BBH", 3, k, i) for k, i in streams))
+                 + b"".join(struct.pack("<BH", k, i) for k, i in streams))
 
 
 def describe(ep, fn):
-    h = Host(ep)
-    r = h.raw(0, m.OP_DESCRIBE, struct.pack("<HH", fn, 0), session=False)
-    return m.split_tlvs(r.payload[1:])
+    """Every describe TLV of `fn`, paged (core §7.3)."""
+    h, out = Host(ep), []
+    while True:
+        r = h.raw(0, m.OP_DESCRIBE, struct.pack("<HH", fn, len(out)), session=False)
+        page = m.split_tlvs(r.payload[1:])
+        out += page
+        if not r.payload[0] or not page:
+            return out
 
 
 def state(ep, fn=6, first_slot=0, first_bind=0):
@@ -77,10 +85,11 @@ def state(ep, fn=6, first_slot=0, first_bind=0):
     rd = m.Reader(Host(ep).raw(fn, CFG.op["state"], bytes([first_slot, first_bind]), session=False).payload)
     more, storage, h, why = rd.take("BBIB")
     slots = {}
-    for _ in range(rd.u8()):
-        e = rd.element()
-        slots[e.data[0]] = e.data
-    binds = [rd.element().data for _ in range(rd.u8())]
+    for _ in range(rd.u8()):                                        # count x slot_state, no element length
+        at = rd.at
+        tid_len = rd.data[at + 21]                                  # slot state conn tried(u64) reset_at(u64) scheme len
+        slots[rd.data[at]] = rd.bytes(22 + tid_len)
+    binds = [rd.bytes(4) for _ in range(rd.u8())]
     rd.tail()
     return more, storage, h, why, slots, binds
 
@@ -91,7 +100,7 @@ def test_a_resent_request_gets_its_remembered_result_and_runs_once():
     ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), Clock())
     h = Host(ep)
     h.open()
-    toy = 10                                                        # a stand-in fn: 0x01 write(u32)
+    toy = 11                                                        # a stand-in fn: 0x01 write(u32)
     first = h.raw(toy, 0x01, struct.pack("<I", 5))
     ep.values[toy] = 99                                             # the state moved on
     again = h.raw(toy, 0x01, struct.pack("<I", 5), corr=h.corr)
@@ -121,9 +130,9 @@ def test_open_empties_the_table():
     ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), Clock())
     h = Host(ep)
     h.open()
-    h.raw(10, 0x01, struct.pack("<I", 5))                           # the stand-in fn
-    h.open()                                                        # resume: the table goes
-    assert h.raw(10, 0x01, struct.pack("<I", 5), corr=h.corr - 1).succeeded   # an old corr is new again
+    h.raw(11, 0x01, struct.pack("<I", 5))                           # the stand-in fn
+    h.open()                                                        # a new open: the table goes
+    assert h.raw(11, 0x01, struct.pack("<I", 5), corr=h.corr - 1).succeeded   # an old corr is new again
 
 
 # ---- the lock: owner and lease (core §6.4) -----------------------------------------------------------
@@ -139,8 +148,13 @@ def test_owner_is_named_by_lock_state_and_by_locked_but_never_the_session():
     assert refused.detail == m.LOCKED and refused.payload[4:] == m.tlv(0x01, b"ch32rv monitor pid 1234")
     a.ok(0, m.OP_END)
     assert b.raw(0, m.OP_LOCK_STATE, session=False).payload == struct.pack("<BI", 0, 0)
-    assert a.open().succeeded                                       # resumed without an owner: the old one stays
-    assert m.Tail.parse(b.raw(0, m.OP_LOCK_STATE, session=False).payload[5:]).get(0x01) == b"ch32rv monitor pid 1234"
+    assert a.open().succeeded                                       # a new lock without an owner: none (core §6.4)
+    assert m.Tail.parse(b.raw(0, m.OP_LOCK_STATE, session=False).payload[5:]).get(0x01) is None
+    assert a.open(owner=b"later").succeeded                         # the holder's own open again: the lock's owner stays
+    assert m.Tail.parse(b.raw(0, m.OP_LOCK_STATE, session=False).payload[5:]).get(0x01) is None
+    a.ok(0, m.OP_END)
+    assert b.open(owner=b"next").succeeded                          # the owner comes from the open that takes the lock
+    assert m.Tail.parse(a.raw(0, m.OP_LOCK_STATE, session=False).payload[5:]).get(0x01) == b"next"
 
 
 @pytest.mark.parametrize("asked,given", [(0, 3000), (1000, 1000), (60000, 60000), (700000, 60000), (1, 1000)])
@@ -196,7 +210,7 @@ def test_transport_list_follows_the_index_byte_not_the_tlv_order(entries, bridge
         assert ep.transports == {i: k for i, k, _ in entries} and ep.serial_ports == {bridge}
         h = Host(ep, transport=port)
         assert h.open().succeeded
-        r = h.raw(0, endpoint.OP_PORT_SPEED, struct.pack("<BIBHI", port, 230400, 0, 500, 0))
+        r = h.raw(ep.link_fn, endpoint.OP_PORT_SPEED, struct.pack("<BIBHI", port, 230400, 0, 500, 0))
         assert r.succeeded if ok else r.detail == m.UNAVAILABLE
 
 
@@ -228,13 +242,13 @@ def test_at_boot_slots_attach_and_say_so_without_the_lock():
     ep.targets[(1, pairs[0])].target_id = 0x035E0601
     h.ok(6, 0x02, slot_item(0, 1, pairs[0], name="x035") + slot_item(1, 1, pairs[1], name="l103"))
     _, _, _, _, states, _ = state(ep)
-    assert states[0][1] == STATE["connected"] and struct.unpack_from("<I", states[0], 14)[0] == 0x035E0601
+    assert states[0][1] == STATE["connected"] and struct.unpack_from("<I", states[0], 22)[0] == 0x035E0601
     assert states[1][1] == STATE["absent"] and struct.unpack_from("<Q", states[1], 4)[0] == 0   # tried at 0 ns
-    assert len(states[0]) == 26 and len(states[1]) == 22    # slot state conn last_try_at_ns scheme len tid reset_at_ns
-    assert states[0][-8:] == states[1][-8:] == b"\xff" * 8                      # no retry with reset (§3.3)
+    assert len(states[0]) == 26 and len(states[1]) == 22    # slot state conn last_try_at_ns reset_at_ns scheme len tid
+    assert states[0][12:20] == states[1][12:20] == b"\xff" * 8                  # no retry with reset (§3.3)
     listed = h.raw(1, 0x05, b"\x00", session=False).payload        # connections, lock-free, from the first
-    assert listed[0] == 0 and listed[1] == 1 and listed[2] >= 14    # more, count, then len(u8) of the entry (core §2.3)
-    assert listed[3 + 10] == 0b10 and listed[3 + 11] == 0            # used by slot 0 only
+    assert listed[0] == 0 and listed[1] == 1 and len(listed) == 2 + 18   # more, count, the entry: no length (core §2.3)
+    assert listed[2 + 10] == 0b10 and listed[2 + 11] == 0            # used by slot 0 only
     assert h.raw(1, 0x05, b"\x01", session=False).payload[:2] == b"\x00\x00"   # past the end: nothing more
 
 
@@ -247,7 +261,7 @@ def test_a_lock_that_does_not_match_lets_go():
     st = state(ep)[4][0]
     assert st[1] == STATE["lock_mismatch"] and not ep.conns
     assert h.raw(6, 0x02, slot_item(1, 1, ep.pairs[1][1], lock=(b"\xff\xff", b"\x00\x00"))).detail == m.MALFORMED   # not the scheme's 4 bytes
-    bare = slot_item(1, 1, ep.pairs[1][1])[2:-1]                      # the item's value up to lock_len
+    bare = slot_item(1, 1, ep.pairs[1][1])[3:-1]                      # the item's value up to lock_len
     other = lambda scheme: m.tlv(ITEM["slot"], bare + bytes([9, scheme]) + lock[0] + lock[1])
     assert h.raw(6, 0x02, other(2)).payload == bytes([ITEM["slot"]])   # swd's targetsel: defined, not this wire's
     assert h.raw(6, 0x02, other(7)).payload == bytes([ITEM["slot"]])   # undefined: unsupported too, the item's tag (C-02)
@@ -292,7 +306,7 @@ def test_slot_refusals_follow_the_reason_table():
     assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + bind_item(1, MODE["manual"], [(KIND["slot_console"], 0)])).detail == m.UNSUPPORTED
     assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + bind_item(0, MODE["manual"], [(KIND["fixture_uart"], 4)])).detail == m.UNSUPPORTED
     assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + bind_item(0, MODE["manual"], [(KIND["fixture_uart"], 99)])).detail == m.UNKNOWN_FUNCTION
-    host_retry = m.tlv(ITEM["slot"], struct.pack("<BHHHBIIBBB", 0, 1, *p[0], ATTACH["host"], 1000, 0, 0, 2, 2) + b"s0\x00")
+    host_retry = m.tlv(ITEM["slot"], struct.pack("<BHHHBBIIBBB", 0, 1, *p[0], ATTACH["host"], 0, 1000, 0, 0, 2, 2) + b"s0\x00")
     assert h.raw(6, 0x02, host_retry).detail == m.MALFORMED         # retry_ms on a host slot
     h.ok(6, 0x02, slot_item(0, 1, p[0], mech=0xFF))
     assert ep._conn_at(1, p[0]) is not None and not ep.streams      # attached, no console opened
@@ -300,13 +314,20 @@ def test_slot_refusals_follow_the_reason_table():
 
 # ---- binds and the serial port ---------------------------------------------------------------------------
 
-def test_bind_streams_carry_a_len_and_a_longer_ones_tail_is_skipped():
+def test_bind_streams_are_3_bytes_and_a_longer_item_is_a_longer_request_tlv():
+    """probe.config §1.2: n x (kind, id), 3 bytes each, no element length (core §2.3). An item longer than its one form
+    is a request TLV longer than the probe knows (core §2.3): critical -> unsupported with the tag as received;
+    otherwise the item is ignored (not applied) and listed in the answer's ignored TLV."""
     ep, h = bench()
     head = struct.pack("<BBBB", 0, MODE["mixed"], 0, 1)
-    longer = m.tlv(ITEM["bind"], head + struct.pack("<BBHH", 5, KIND["slot_console"], 0, 0xBEEF))
-    assert h.raw(6, 0x02, slot_item(0, 1, ep.pairs[1][0]) + longer).succeeded
+    longer = head + struct.pack("<BHH", KIND["slot_console"], 0, 0xBEEF)
+    r = h.raw(6, 0x02, slot_item(0, 1, ep.pairs[1][0]) + m.tlv(ITEM["bind"], longer))
+    assert r.succeeded and m.Tail.parse(r.payload[4:]).ignored == [ITEM["bind"]] and not ep.binds
+    r = h.raw(6, 0x02, slot_item(0, 1, ep.pairs[1][0]) + m.tlv(ITEM["bind"], longer, critical=True))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([ITEM["bind"] | 0x80]))
+    assert h.raw(6, 0x02, slot_item(0, 1, ep.pairs[1][0]) + bind_item(0, MODE["mixed"], [(KIND["slot_console"], 0)])).succeeded
     assert ep.binds[0].streams == ((KIND["slot_console"], 0),)
-    short = m.tlv(ITEM["bind"], head + struct.pack("<BBH", 2, KIND["slot_console"], 0))
+    short = m.tlv(ITEM["bind"], head + struct.pack("<BB", KIND["slot_console"], 0))
     assert h.raw(6, 0x02, short).detail == m.MALFORMED
 
 
@@ -322,7 +343,7 @@ def test_raw_console_flows_until_a_session_and_resumes_from_its_last_reset():
     port = fake_serial.FakeSerialPort(ep, 0)
     ep.target_says(b"boot\n", ep.targets[(1, p[0])])
     assert port.output() == b"boot\n"
-    port.feed(framed(m.Request(1, 0, m.OP_OPEN, struct.pack("<IIB", 9, 3000, 0))))
+    port.feed(framed(m.Request(1, 0, m.OP_OPEN, struct.pack("<IB", 3000, 0), 9)))
     out = port.output()
     assert out.startswith(b"\x00") and out.endswith(b"\x00")        # the answer, framed both sides
     assert m.Result.unpack(cobs.unframe(out[1:-1])).succeeded
@@ -470,7 +491,7 @@ def test_a_closed_console_stays_readable_and_the_same_place_opens_it_again_under
     assert h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).detail == m.NO_CONNECTION
     rd = m.Reader(h.raw(3, 0x08, b"\x00", session=False).payload)   # streams: the live ones (b's and a3's), lock-free
     more, count = rd.take("BB")
-    rows = [rd.element().take("HHBBB") for _ in range(count)]
+    rows = [rd.take("HHBBB") for _ in range(count)]
     assert more == 0
     (row,) = [r for r in rows if r[1] == a3]
     assert len(rows) == 2 and row[2:] == (1, 1, 0) and row[0] not in (sa, a, a2, a3, b)   # stream connection mechanism users state
@@ -489,7 +510,7 @@ def test_a_stream_lives_while_anything_uses_it():
     sid, flags = m.Reader(h.ok(3, 0x01, struct.pack("<HB", conn, 2))).take("HB")
     assert flags == 1 and ep.streams[sid].users == {"host", ("slot", 0)}
     rd = m.Reader(h.raw(3, 0x08, b"\x00", session=False).payload)
-    assert rd.take("BB") == (0, 1) and rd.element().take("HHBBB") == (sid, conn, 2, 0b11, 0)   # users: session and slot
+    assert rd.take("BB") == (0, 1) and rd.take("HHBBB") == (sid, conn, 2, 0b11, 0)   # users: session and slot
     h.ok(3, 0x07, struct.pack("<H", sid))                            # close: the slot still uses it
     assert ep.streams[sid].users == {("slot", 0)} and not ep.streams[sid].closed
     h.ok(3, 0x01, struct.pack("<HB", conn, 2))
@@ -583,7 +604,7 @@ def test_idle_clock_is_rvswd_s_and_a_slot_carries_the_line_settings():
     assert ep.conns[ep._conn_at(1, pair)].idle_clock == 1
     assert h.raw(1, 0x02, b"\x01" + SPEED + m.tlv(0x03, struct.pack("<HH", *pair), critical=True)
                  + m.tlv(0x04, b"\x02", critical=True)).payload == b"\x84"   # a value a later revision may define
-    assert h.raw(1, 0x01, b"\x00" + m.tlv(0x04, b"\x01", critical=True) + m.tlv(0x01, SPEED[2:], critical=True)).succeeded   # scan takes them too
+    assert h.raw(1, 0x01, b"\x00" + m.tlv(0x04, b"\x01", critical=True) + m.tlv(0x01, SPEED[3:], critical=True)).succeeded   # scan takes them too
     ep2, h2 = bench()
     p2 = ep2.pairs[1][1]
     h2.ok(6, 0x02, slot_item(0, 1, p2, name="l103", max_speed=1_000_000, idle=1))
@@ -610,7 +631,7 @@ def test_a_wire_takes_any_free_pair_the_host_names():
     pins = lambda d, c: m.tlv(0x03, struct.pack("<HH", d, c), critical=True)
     r = m.Reader(h.ok(1, 0x01, b"\x00"))                              # count 0: the first 255 free pairs
     tried, count = r.take("BB")
-    assert tried == 255 and count == 1 and r.element().take("BHHI")[1:3] == (0, 1)
+    assert tried == 255 and count == 1 and r.take("BHHI")[1:3] == (0, 1)
     skip = lambda n: m.tlv(0x02, struct.pack("<H", n))               # scan's skip is TLV 0x02 (0x01 is max_speed)
     assert m.Reader(h.ok(1, 0x01, b"\x00" + skip(29 * 28 - 10))).take("B") == 10   # the last ten
     assert m.Reader(h.ok(1, 0x01, b"\x00" + skip(29 * 28))).take("B") == 0         # the end

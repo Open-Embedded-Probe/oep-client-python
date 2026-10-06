@@ -35,11 +35,10 @@ def with_tlvs(probe: fake.FakeProbe, name: str, change) -> fake.FakeProbe:
         for o in probe.offered])
 
 
-def features(value: int):
-    """change(): features set to `value` (added when missing)."""
+def ops_without(name: str, *without: str):
+    """change(): the ops tag (core §7.4) of interface `name` with every op but `without` (the optional ones left out)."""
     def change(tlvs):
-        out = [t for t in tlvs if t[0] != catalog.FEATURES]
-        return out + [catalog.u32(catalog.FEATURES, value)]
+        return [t for t in tlvs if t[0] != catalog.OPS] + list(fake.ops_of(name, *without))
     return change
 
 
@@ -75,12 +74,15 @@ def test_c21_an_op_an_interface_does_not_define_is_unknown_operation():
     assert h.raw(1, 0x04).detail == m.UNKNOWN_OPERATION                       # 0x04 is reserved on the wires
 
 
-def test_c21_riscv_dm_ops_are_gated_on_features():
-    ep, h = bench(fake.esp32_v003())                                          # features 0b0111: no step
+def test_c21_riscv_dm_ops_are_gated_on_the_ops_tag():
+    ep, h = bench(fake.esp32_v003())                                          # ops without step
     dm = fn_of(ep, "oep.target.riscv-dm")
     assert not ep.offers(dm, RV.op["step"]) and ep.offers(dm, RV.op["run"])
     assert h.raw(dm, RV.op["step"], struct.pack("<H", 1)).detail == m.UNKNOWN_OPERATION
-    ep, h = bench(with_tlvs(fake.p4_bench(), "oep.target.riscv-dm", features(0)))
+    ops = next(v for t, v in m.split_tlvs(b"".join(ep._declarations(dm))) if t == catalog.OPS)
+    assert ops == bytes([1, 0x7F])                                            # base 1: dmi .. run, no step (core §7.4)
+    ep, h = bench(with_tlvs(fake.p4_bench(), "oep.target.riscv-dm",
+                            ops_without(RV.name, "read_block", "write_block", "run", "reset", "step")))
     for op in ("read_block", "write_block", "run", "reset", "step"):
         assert h.raw(2, RV.op[op], struct.pack("<H", 1)).detail == m.UNKNOWN_OPERATION, op
     for op, body in (("dmi", struct.pack("<HH", 1, 0)), ("halt", b"\x01\x00"), ("resume", b"\x01\x00")):
@@ -88,10 +90,10 @@ def test_c21_riscv_dm_ops_are_gated_on_features():
 
 
 def test_c21_save_and_erase_without_storage_are_unknown_operation():
-    probe = with_tlvs(fake.p4_bench(), "oep.probe.config",
-                      lambda tlvs: [catalog.u32(CFG.tlv["describe"]["storage"], 0) if t[0] == CFG.tlv["describe"]["storage"]
-                                    else t for t in tlvs])
+    probe = fake.FakeProbe("x", 1024, [fake._config(6, 0, slots_max=4, storage=0) if o.name == CFG.name else o
+                                       for o in fake.p4_bench().offered])
     ep, h = bench(probe)
+    assert not [t for t in ep.static[6] if t[0] == CFG.tlv["describe"]["storage"]]   # no storage tag (probe.config §2)
     for op in ("save", "erase"):
         assert h.raw(6, CFG.op[op]).detail == m.UNKNOWN_OPERATION
     assert h.raw(6, CFG.op["get"], struct.pack("<H", 0), session=False).succeeded
@@ -99,16 +101,16 @@ def test_c21_save_and_erase_without_storage_are_unknown_operation():
     assert h.raw(6, CFG.op["save"]).succeeded and h.raw(6, CFG.op["erase"]).succeeded
 
 
-def test_c21_capture_query_and_force_need_their_features_bits():
-    ep, h = bench(with_tlvs(fake.p4_x035(), "oep.fixture.logic", features(0b100)))   # notifications only
+def test_c21_capture_query_and_force_need_their_ops():
+    ep, h = bench(with_tlvs(fake.p4_x035(), "oep.fixture.logic", ops_without(LOGIC.name, "query", "force")))
     logic = fn_of(ep, "oep.fixture.logic")
     assert h.raw(logic, LOGIC.op["query"], session=False).detail == m.UNKNOWN_OPERATION
     assert h.raw(logic, LOGIC.op["force"]).detail == m.UNKNOWN_OPERATION
     assert h.raw(logic, LOGIC.op["status"], session=False).succeeded
-    ep, h = bench(with_tlvs(fake.p4_x035(), "oep.fixture.capture-group", features(0b100)))
+    ep, h = bench(with_tlvs(fake.p4_x035(), "oep.fixture.capture-group", ops_without(GROUP.name, "force")))
     group = fn_of(ep, "oep.fixture.capture-group")
     assert h.raw(group, GROUP.op["force"]).detail == m.UNKNOWN_OPERATION
-    ep, h = bench(fake.p4_x035())                                             # both declared
+    ep, h = bench(fake.p4_x035())                                             # both offered
     assert h.raw(fn_of(ep, "oep.fixture.logic"), LOGIC.op["force"]).succeeded
     assert h.raw(fn_of(ep, "oep.fixture.capture-group"), GROUP.op["force"]).succeeded
 
@@ -157,11 +159,12 @@ def test_c31_a_reboot_starts_the_clock_again_and_the_heartbeat_says_so():
     assert boot == ep.boot_id and up == 1_000_000_000                         # since this boot
 
 
-def test_c19_a_repeated_boot_id_still_shows_as_resumed_0():
+def test_c19_after_a_reboot_with_a_repeated_boot_id_the_old_session_is_gone():
     ep, h = bench()
     ep.reboot(ep.boot_id)                                                     # a probe whose only source repeated it
+    assert h.raw(0, m.OP_KEEPALIVE).detail == m.NO_SESSION                    # nothing holds the lock (core §6.2)
     r = h.open()
-    assert struct.unpack_from("<IIB", r.payload)[1:] == (ep.boot_id, reg.CORE.enum["resumed"]["new"])
+    assert r.succeeded and struct.unpack("<II", r.payload) == (3000, ep.boot_id)   # lease_ms boot_id, no resumed
 
 
 def test_c19_fake_serve_draws_its_boot_id_and_counts_in_ns():
@@ -195,7 +198,7 @@ def test_c41_a_uart_bridge_and_tcp_name_no_usb_interface():
         fake._transports([(fake.TRANSPORT["uart_bridge"], 0)])
     ep = endpoint.Endpoint(fake.rp2350_pins(), Clock())
     index = ep.add_transport(fake.TRANSPORT["tcp"])
-    rows = {t[2]: (t[3], t[4]) for t in ep.static[0] if t[0] == fake.CORE_TRANSPORT}
+    rows = {v[0]: (v[1], v[2]) for t, v in ep.decl[0] if t == fake.CORE_TRANSPORT}
     assert rows == {0: (fake.TRANSPORT["usb_cdc"], 0), index: (fake.TRANSPORT["tcp"], 0xFF)}
 
 
@@ -205,7 +208,8 @@ def test_c41_a_uart_bridge_and_tcp_name_no_usb_interface():
     m.Result(1, m.COMPLETED, m.SUCCESS).pack(),                               # an answer echoed back
     bytes([m.ROLE_EVENT]) + struct.pack("<HHB", 0, 0, 1),                     # an event
     bytes([m.ROLE_REQUEST, 1, 0, 0, 0]),                                      # 5 bytes: no op
-    bytes([m.ROLE_REQUEST | m.ROLE_SESSION, 1, 0, 0, 0, m.OP_KEEPALIVE, 0x51, 0, 0]),   # 9: no whole session_id
+    bytes([m.ROLE_REQUEST, 1, 0, 0, 0, m.OP_KEEPALIVE, 0x51, 0, 0]),          # 9: no whole session_id
+    bytes([0x81, 1, 0, 0, 0, m.OP_KEEPALIVE, 0x51, 0, 0, 0]),                 # role 0x81: none any more (core §2.4)
     b"",
 ])
 def test_c36_the_probe_discards_what_is_not_a_whole_request(data):
@@ -271,8 +275,9 @@ def uart_item(fn, baud=115200, fmt=0):
     return m.tlv(ITEM["uart"], struct.pack("<HIB", fn, baud, fmt))
 
 
-def idle(ch, mode):
-    return m.tlv(ITEM["idle"], struct.pack("<HB", ch, mode))
+def idle(ch, mode, kind=2, value=0):
+    """An idle item: channel mode drive_kind drive_value, 6 bytes (probe.config §1); default the default drive."""
+    return m.tlv(ITEM["idle"], struct.pack("<HBBH", ch, mode, kind, value))
 
 
 def test_c21_probe_config_set_checks_every_items_form_first():
@@ -281,7 +286,7 @@ def test_c21_probe_config_set_checks_every_items_form_first():
         if t[0] == CFG.tlv["describe"]["items"] else t for t in tlvs])
     ep, h = bench(without_disable)
     disable = m.tlv(ITEM["disable"], struct.pack("<H", 20), critical=True)
-    r = cfg_set(h, 6, disable, m.tlv(ITEM["idle"], struct.pack("<HBB", 21, 0, 0)))   # an idle of 4 bytes: malformed
+    r = cfg_set(h, 6, disable, m.tlv(ITEM["idle"], struct.pack("<HBB", 21, 0, 2)))   # an idle of 4 bytes: malformed
     assert r.detail == m.MALFORMED
     r = cfg_set(h, 6, disable, idle(21, 0))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([ITEM["disable"] | 0x80]))
@@ -301,9 +306,7 @@ def test_c21_probe_config_set_fns_before_what_the_probe_lacks():
 
 def test_c21_an_undefined_attach_is_unsupported_and_its_contradictions_are_not_checked():
     ep, h = bench()
-    item = slot_item(0, 1, (2, 3), attach=5)
-    value = m.split_tlvs(item)[0][1][:-1] + b"\x00\x01"                       # lock_len 0, boot_reset 1
-    r = cfg_set(h, 6, m.tlv(ITEM["slot"], value))
+    r = cfg_set(h, 6, slot_item(0, 1, (2, 3), attach=5, boot_reset=1))      # boot_reset 1 off at boot: not checked
     assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([ITEM["slot"]]))
 
 
@@ -355,7 +358,7 @@ def test_attach_reset_tlv_on_an_output_idle_channel_is_unavailable_and_runs_noth
     swio = ep.pairs[1][0]
     tg = ep._target(1, swio)
     tg.silent_until_reset = True
-    assert h.raw(9, CFG.op["set"], m.tlv(ITEM["idle"], struct.pack("<HB", 23, 4))).succeeded   # NRST idles high
+    assert h.raw(9, CFG.op["set"], idle(23, 4)).succeeded                    # NRST idles high
     reset = m.tlv(0x05, struct.pack("<HH", 23, 20), critical=True)
     r = h.raw(1, 0x02, b"\x00" + SPEED + reset)
     assert r.detail == m.UNAVAILABLE
@@ -434,7 +437,7 @@ def test_cs_setup_ns_is_declared_by_a_probe_that_drives_miso_in_software():
     ep = endpoint.Endpoint(fake.esp32_v003(), Clock())
     spi = fn_of(ep, "oep.fixture.spi-target")
     tag = reg.FIXTURE_SPI_TARGET.tlv["describe"]["cs_setup_ns"]
-    assert [struct.unpack("<I", t[2:])[0] for t in ep.static[spi] if t[0] == tag] == [4000]
+    assert [struct.unpack("<I", v)[0] for t, v in ep.decl[spi] if t == tag] == [4000]
     ep = endpoint.Endpoint(fake.p4_x035(), Clock())
     assert not [t for t in ep.static[fn_of(ep, "oep.fixture.spi-target")] if t[0] == tag]   # MISO at once: left out
 

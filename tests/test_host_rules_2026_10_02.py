@@ -1,6 +1,6 @@
 """The host side of oep-spec docs/v1-rule-change-proposal-2026-10-02.md (applied 09622ef..536fc99): the wait's floor
 (C-06), the serial line (C-09), the revision in use (C-15), confirm's transport (C-05), x- unit_ids (C-24), TCP and the
-resync wait (C-07, core §5.1), the line search (PC-1), text shown and sent (C-22), ignored's marker (C-04), what a probe
+resync wait (C-07, transports §5), the line search (PC-1), text shown and sent (C-22), ignored's marker (C-04), what a probe
 must give (C-10), and the new answer TLVs in the API."""
 
 import os
@@ -125,20 +125,21 @@ def test_c05_the_confirm_names_the_transport_and_port_speed_takes_it():
     probe = fake.FakeProbe(probe.label, probe.max_frame, [two] + probe.offered[1:])
     ep, hst = in_process(lambda: probe, transport=1)
     assert hst.confirm()["transport"] == 1
-    assert link._speed_port(hst) == (1, "")                            # the second bridge, not bridges[0]
+    assert link._speed_port(hst) == (ep.link_fn, 1, "")                # the second bridge, not bridges[0]
     ep2, hst2 = in_process(fake.p4_x035, transport=1)                  # vendor bulk: not a UART bridge
     ep2.port_speed_base = 115200
     hst2.confirm()
-    assert link._speed_port(hst2)[0] is None
+    assert link._speed_port(hst2)[1] is None
 
 
 def test_c05_a_relaying_brokers_0xff_and_a_confirm_without_the_tlv():
     hst = h.Host(lambda b: b)
     hst.limits = {"transport": 0xFF}
-    hst._describes[0] = [(reg.CORE.tlv["describe"]["port_speed"], b"\x01")]
-    assert "broker" in link._speed_port(hst)[1]
+    hst._fns["oep.link"] = 10                                          # oep.link offering port_speed (its ops)
+    hst._describes[10] = [(fake.catalog.OPS, fake.catalog.pack_ops({1, 2, 3}))]
+    assert "broker" in link._speed_port(hst)[2]
     hst.limits = {"transport": None}
-    assert "names no transport" in link._speed_port(hst)[1]
+    assert "names no transport" in link._speed_port(hst)[2]
 
 
 # ---- C-24: an x- unit_id names no unit ------------------------------------------------------------------------------
@@ -171,7 +172,7 @@ def test_c24_usb_by_an_x_unit_id_is_refused():
         link.open_host("usb:x-esp32")
 
 
-# ---- C-07 / core §5.1: TCP and the resync wait ------------------------------------------------------------------------
+# ---- C-07 / transports §5: TCP and the resync wait ------------------------------------------------------------------------
 
 class Paused(Stream):
     """A TCP-like stream whose frame arrives in two parts 300 ms apart."""
@@ -250,9 +251,9 @@ def test_c22_the_owner_goes_as_valid_text_of_at_most_32_bytes():
 # ---- C-04 / C-10 ------------------------------------------------------------------------------------------------------
 
 def test_c04_the_ignored_marker():
-    t = m.Tail.parse(bytes([0x7F, 3, 0x31, 0x32, 0x00]))
+    t = m.Tail.parse(bytes([0x7F, 3, 0, 0x31, 0x32, 0x00]))
     assert t.more_ignored and t.may_have_ignored(0x40) and t.may_have_ignored(0x31)
-    t = m.Tail.parse(bytes([0x7F, 1, 0x31]))
+    t = m.Tail.parse(bytes([0x7F, 1, 0, 0x31]))
     assert not t.more_ignored and t.may_have_ignored(0x31) and not t.may_have_ignored(0x40)
 
 
@@ -287,10 +288,10 @@ def test_c10_confirm_transport_tlv_and_discoverable_0_are_required():
     assert dump.required_of(call) == want
     assert "MISSING what every probe must give" in dump.to_text(dump.collect(call))
     # a transport index fn 0's describe does not declare; 0xFF (a relaying broker) names none and is fine
-    assert dump.required_of(_confirm_tail(fake.esp32_v003(), bytes([0x01, 1, 7]))) == \
+    assert dump.required_of(_confirm_tail(fake.esp32_v003(), bytes([0x01, 1, 0, 7]))) == \
         ["describe of fn 0: the transport confirm names (index 7)"]
-    assert dump.required_of(_confirm_tail(fake.esp32_v003(), bytes([0x01, 1, 0xFF]))) == []
-    assert dump.required_of(_confirm_tail(fake.esp32_v003(), bytes([0x01, 2, 0]))) == ["confirm's transport TLV (the answer's tail is broken)"]
+    assert dump.required_of(_confirm_tail(fake.esp32_v003(), bytes([0x01, 1, 0, 0xFF]))) == []
+    assert dump.required_of(_confirm_tail(fake.esp32_v003(), bytes([0x01, 2, 0, 0]))) == ["confirm's transport TLV (the answer's tail is broken)"]
 
 
 @pytest.mark.parametrize("profile", sorted(fake.PROFILES))
@@ -364,6 +365,5 @@ def test_c18_the_session_id_is_random_and_never_0():
         hst.open(3000, force=True)
         ids.add(hst.session)
     assert 0 not in ids and len(ids) > 1
-    assert all(r.session is None for r in ep.requests if r.op == m.OP_OPEN)   # open goes as role 0x01
-    with pytest.raises(ValueError):
-        hst.open(3000, session=0)
+    opens = [r for r in ep.requests if r.fn == 0 and r.op == m.OP_OPEN]
+    assert len(opens) == 20 and {r.session for r in opens} == ids        # the id in the header (core §4.1, §6.4)

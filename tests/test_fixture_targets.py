@@ -19,7 +19,7 @@ def test_i2c_target_shapes():
     hst = host({(I2C, et.I2cTarget.CONFIGURE): lambda p: ok(),
                 (I2C, et.I2cTarget.PRELOAD_TX): lambda p: ok(bytes([2])),
                 (I2C, et.I2cTarget.READ_RX): lambda p: ok(bytes([1]) + struct.pack("<H", 3) + b"abc"
-                                                          + bytes([0x01, 8]) + struct.pack("<Q", 777)),   # TLV ns
+                                                          + m.tlv(0x01, struct.pack("<Q", 777))),   # TLV ns
                 (I2C, et.I2cTarget.STATUS): lambda p: ok(struct.pack("<BBBBIBI", 1, 3, 0, 1, 5, 2, 0x10000)),
                 (I2C, et.I2cTarget.STRETCH): lambda p: ok()})
     t = et.I2cTarget(hst)

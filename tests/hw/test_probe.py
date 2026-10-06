@@ -17,7 +17,8 @@
   console      target console on the wire connection, mechanism dmseq: open, read for 1 s, close   (only with OEP_HW_TARGET)
   port_speed   linktest.matrix at the speed in force and the board's candidate rates (OEP_HW_RATES), in / out /
                duplex, in flight 1 and the probe's max, one frame size; verdict: one at a time <= 1 % broken + lost
-  session      lease expiry -> Expired, the same id resumed as swept (2), a force takeover locks the old id out
+  session      lease expiry -> no_session (released, no resume), a force takeover locks the old id out, its end
+               leaves both ids no_session
 
 Every test skips when the flash step failed. Measurements go to the run's record (tests/hw/results/)."""
 from __future__ import annotations
@@ -949,26 +950,30 @@ def test_session(run: record.Run):
     hst.session = None
     rec = run.record("session")
     opened = hst.open(lease_ms=1000, owner="oep tests/hw lease")
-    rec.update(lease_ms=opened.lease_ms, resumed_first=opened.resumed)
-    assert opened.lease_ms == 1000 and opened.resumed == 0
+    rec.update(lease_ms=opened.lease_ms, boot_id=opened.boot_id)
+    assert opened.lease_ms == 1000
+    lapsed = hst.session
     hst.keepalive()
     time.sleep(1.6)
-    with pytest.raises(h.Expired) as e:
+    with pytest.raises(h.NoSession) as e:                          # released at the lapse, no resume (core §6.2, §9)
         hst.keepalive()
-    rec["expired"] = str(e.value)
-    again = hst.open(session=hst.session, lease_ms=3000)
-    rec["resumed_after_lapse"] = again.resumed
-    assert again.swept and again.resumed == 2, f"a lapsed id re-opened says resumed {again.resumed}, expected 2 (swept)"
+    rec["after_lapse"] = str(e.value)
+    assert hst.session is None
+    hst.open(lease_ms=3000)
     old = hst.session
-    hst.session = None
+    assert old != lapsed
     forced = hst.open(lease_ms=3000, force=True, owner="oep tests/hw force")
     new = hst.session
-    rec.update(forced_resumed=forced.resumed, forced_new_id=new != old)
-    assert new != old and forced.resumed == 0
+    rec.update(forced_new_id=new != old, forced_lease_ms=forced.lease_ms)
+    assert new != old
     hst.session = old
     with pytest.raises(h.Locked) as locked:
         hst.keepalive()
     rec["old_id_after_force"] = str(locked.value)
     hst.session = new
     hst.end()
+    hst.session = old
+    with pytest.raises(h.NoSession) as gone:                       # the lock free: every id is no_session
+        hst.keepalive()
+    rec["old_id_after_end"] = str(gone.value)
     hst.session = None

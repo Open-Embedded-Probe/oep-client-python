@@ -69,14 +69,14 @@ def answering(by_op=None):
 
 
 def sent(stream):
-    """Every request written, in order, as (role, corr, op)."""
+    """Every request written, in order, as (session_id, corr, op)."""
     out = []
     for w in stream.writes:
         at = 0
         while at < len(w):
             n = struct.unpack_from("<H", w, at)[0]
             msg = w[at + 2:at + 2 + n]
-            out.append((msg[0], msg[1] | msg[2] << 8, msg[5]))
+            out.append((struct.unpack_from("<I", msg, 6)[0], msg[1] | msg[2] << 8, msg[5]))
             at += 2 + n
     return out
 
@@ -188,8 +188,8 @@ def test_pushes_that_never_stop_are_stopped_blind_with_unsubscribe_and_end(monke
         lk.send(m.Request(hst.next_corr(), 5, 0x01, b"", session=0xABCD).pack())
     ops = sent(s)
     assert [op for _, _, op in ops][1:] == [m.OP_UNSUBSCRIBE, m.OP_END, m.OP_CONFIRM]
-    assert all(role == 0x81 for role, _, op in ops if op in (m.OP_UNSUBSCRIBE, m.OP_END))
-    assert hst.subscriptions == set()
+    assert all(sid == 0xABCD for sid, _, op in ops if op in (m.OP_UNSUBSCRIBE, m.OP_END))   # in the session (§4.1)
+    assert hst.subscriptions == set() and hst.session is None     # the blind end ended it: no resume (core §9)
 
 
 def test_each_frame_goes_out_in_one_write():
@@ -259,7 +259,7 @@ def test_find_is_cached_until_the_probe_reboots_and_an_empty_page_ends_the_searc
             page = [catalog.ListEntry(4, 1, 1, 0, name)] if name == "oep.wire.swd" else []
             return result(req.corr, catalog.pack_list_result(3 if not page else 1, page))   # claims 3, sends none
         if req.op == m.OP_OPEN:
-            return result(req.corr, struct.pack("<IIB", 1000, boot[0], 0))
+            return result(req.corr, struct.pack("<II", 1000, boot[0]))
         raise AssertionError(req.op)
 
     hst = h.Host(send)

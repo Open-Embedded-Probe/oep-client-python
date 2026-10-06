@@ -56,10 +56,10 @@ def test_attach_twice_returns_the_same_connection_and_max_speed_is_critical(benc
     conn, status = wire.attach(halt=True, max_speed=1_000_000)
     assert wire.had_reset and not wire.existing and wire.speed_hz == 1_000_000 and status & 0x300
     assert wire.halted and wire.dpc == ep.target.dpc              # flags bit3 + the dpc TLV
-    assert ep.requests[-1].payload == bytes([1, 0x81, 4]) + struct.pack("<I", 1_000_000)
+    assert ep.requests[-1].payload == bytes([1, 0x81, 4, 0]) + struct.pack("<I", 1_000_000)
     again, _ = wire.attach(halt=False)
     assert again == conn and wire.existing and not wire.had_reset
-    assert ep.requests[-1].payload == bytes([0, 0x81, 4]) + struct.pack("<I", 5_000_000)   # None: the declared max_clock_hz
+    assert ep.requests[-1].payload == bytes([0, 0x81, 4, 0]) + struct.pack("<I", 5_000_000)   # None: the declared max_clock_hz
     with pytest.raises(host.Rejected, match="malformed"):
         hst.call(WIRE, riscv.Wire.ATTACH, bytes([0]))             # max_speed is required (oep-if-debug §1)
     (info,) = wire.connections()
@@ -77,8 +77,8 @@ def test_attach_under_reset_is_the_reset_tlv(bench):
     ep.target.dpc = 0x1234
     conn, dpc = wire.attach_under_reset(23, hold_ms=30)
     assert dpc == 0 and wire.halted and ep.target.halted
-    assert ep.requests[-1].payload == bytes([1, 0x81, 4]) + struct.pack("<I", 1_000_000) \
-        + bytes([0x85, 4]) + struct.pack("<HH", 23, 30)
+    assert ep.requests[-1].payload == bytes([1, 0x81, 4, 0]) + struct.pack("<I", 1_000_000) \
+        + bytes([0x85, 4, 0]) + struct.pack("<HH", 23, 30)
     con = console.Console(hst)
     con.open(conn)
     conn2, _ = wire.attach(halt=False, reset=(23, 20))          # the same connection, the target reset while running
@@ -263,10 +263,14 @@ def test_console_marks_follow_serials_and_more(dm):
 def test_console_write_partial_and_a_closed_stream_stays_readable(dm):
     ep, hst, d = dm
     con = console.Console(hst)
-    sid = con.open(d.conn)
-    ep.console_accept = 3
-    assert con.write(b"PING\n") == 3                              # completed partial: not an error
-    assert bytes(ep.streams[sid].written) == b"PIN"
+    sid = con.open(d.conn)                                        # dmseq: a 2-byte send slot (console §2, §3)
+    assert con.write(b"PING\n") == 2                              # completed partial: not an error
+    assert bytes(ep.streams[sid].written) == b"" and bytes(ep.streams[sid].slot) == b"PI"   # in the slot, not taken yet
+    with pytest.raises(host.Failed) as e:
+        con.write(b"NG\n")                                        # the slot still holds them: accepted 0 = failed
+    assert m.Reader(e.value.result.payload).u16() == 0
+    ep.console_take(sid)                                          # the target takes them (the probe's next poll)
+    assert con.write(b"NG\n") == 2 and bytes(ep.streams[sid].written) == b"PI"
     ep.emit(sid, b"last words")
     ep.lose_connections()
     assert con.read().data == b"last words"
@@ -278,11 +282,41 @@ def test_console_write_partial_and_a_closed_stream_stays_readable(dm):
         con.write(b"x")
     assert not con.streams()[0].open and con.streams()[0].users == 0
     con.close()                                                   # closed already: ok
-    ep.console_accept = 0
     con2 = console.Console(hst)
-    con2.open(riscv.Wire(hst).attach(halt=False)[0])
+    con2.open(riscv.Wire(hst).attach(halt=False)[0], console.Console.SDI)
     with pytest.raises(host.Failed):
-        con2.write(b"x")                                          # nothing fit the slot: accepted 0 = failed
+        con2.write(b"x")                                          # SDI takes no input: accepted 0 = failed (§3.1)
+
+
+def test_console_io_writes_through_a_small_slot_and_gives_up_on_sdi():
+    """console §2 / §3 (oep-spec 4621eab): a write takes at most the mechanism's send slot - DMDATA 3 bytes, dmseq 2,
+    SDI none - and nothing while the bytes it took last are still there; ConsoleIO goes on from each answer's
+    accepted, and gives up (TimeoutError) when nothing is taken for stall_s."""
+    clock = Clock()
+
+    def tick(data):                                               # time passes between requests: the probe polls
+        clock.ms += 1
+        return ep.handle(data)
+    ep = endpoint.Endpoint(fake.p4_x035(), clock)
+    hst = host.Host(tick, rng=random.Random(5))
+    hst.open(lease_ms=10000)
+    conn, _ = riscv.Wire(hst).attach(halt=False)                 # a running hart: the probe answers its slots
+    for mech, slot in ((console.Console.DMDATA, 3), (console.Console.DMSEQ, 2)):
+        con = console.Console(hst)
+        sid = con.open(conn, mech)
+        n = len(ep.requests)
+        console.ConsoleIO(con).write(b"hello, target\n")
+        sizes = [struct.unpack_from("<H", r.payload, 2)[0] for r in ep.requests[n:] if r.op == con.WRITE]
+        assert sizes[:2] == [14, 14 - slot] and len(ep.streams[sid].slot) <= slot   # each from what was accepted
+        ep.console_take()                                         # the target takes the last slot
+        assert bytes(ep.streams[sid].written) == b"hello, target\n"
+        con.close()
+        riscv.Wire(hst).detach(conn, force=True)
+        conn, _ = riscv.Wire(hst).attach(halt=False)
+    con = console.Console(hst)
+    con.open(conn, console.Console.SDI)
+    with pytest.raises(TimeoutError, match="accepted nothing"):
+        console.ConsoleIO(con).write(b"x", stall_s=0.05)          # SDI has no host -> target way (console §3.1)
 
 
 # ---- oep.fixture.gpio ---------------------------------------------------------------------------------------
@@ -296,7 +330,7 @@ def test_gpio_set_is_a_list_in_order_and_only_planned_channels(bench):
     assert ep.requests[-1].payload == bytes([3]) + struct.pack("<HBHBHB", 23, 5, 5, 4, 23, 6)
     assert g.read([23, 5]) == [1, 1]
     raw = hst.request(GPIO, g.READ, bytes([2]) + struct.pack("<HH", 23, 5), locked=False).payload
-    assert raw == bytes([2, 1, 1, 0x01, 2, 0xFF, 2])              # n(u8) n x level, TLV drive (fixture §1 / §1.1)
+    assert raw == bytes([2, 1, 1, 0x01, 2, 0, 0xFF, 2])           # n(u8) n x level, TLV drive (fixture §1 / §1.1)
     with pytest.raises(host.Rejected, match="unavailable") as e:
         g.set([(5, g.OUTPUT_LOW), (40, g.OUTPUT_LOW)])
     assert e.value.channels == [40] and (0x40, bytes([1])) in e.value.tlvs   # the channel, its index (fixture §1)
@@ -319,7 +353,7 @@ def test_uart_configure_format_and_reads_that_do_not_consume(bench):
     io = fixture.FixtureUartIO(hst, UART)
     assert io.configure(115200, fixture.FixtureUart.format_byte(8, "E", 2)) == 80_000_000 // (80_000_000 // 115200)
     assert ep.uart_baud[UART][1] == 0b010100
-    assert ep.requests[-2].payload[4:] == bytes([0x81, 1, 0b010100])     # format: a critical TLV
+    assert ep.requests[-2].payload[4:] == bytes([0x81, 1, 0, 0b010100])     # format: a critical TLV
     ep.uart_rx(UART, b"READY\n")
     assert io.read() == b"READY\n" and io.read() == b""
     assert io.uart.read(io.uart.FROM_OLDEST).data == b"READY\n"          # still there: reading does not consume
@@ -347,7 +381,7 @@ def test_capture_critical_tag_it_cannot_honour_is_unsupported():
         for tag, _ in m.split_tlvs(p):
             if tag == capture.TRIGGER | capture.CRITICAL:
                 return m.REJECTED, m.UNSUPPORTED, bytes([tag])
-        return m.COMPLETED, m.SUCCESS, bytes([m.TAG_IGNORED, 1, capture.PRETRIGGER])
+        return m.COMPLETED, m.SUCCESS, bytes([m.TAG_IGNORED, 1, 0, capture.PRETRIGGER])
 
     hst = ScriptedHost({(7, capture.LogicCapture.CONFIGURE): configure}, revisions={7: 1})
     cap = capture.LogicCapture(hst, 7)
@@ -405,8 +439,8 @@ def test_an_unhonourable_value_follows_the_critical_bit(dm):
     method = riscv.reg.TARGET_RISCV_DM.tlv["reset"]["method"]
     body = struct.pack("<HB", rv.conn, 0)                          # connection(u16), mode 0 (run)
     with pytest.raises(host.Unsupported):
-        hst.call(DM, riscv.reg.TARGET_RISCV_DM.op["reset"], body + bytes([method | 0x80, 1, 9]))
-    r = hst.call(DM, riscv.reg.TARGET_RISCV_DM.op["reset"], body + bytes([method, 1, 9]))
+        hst.call(DM, riscv.reg.TARGET_RISCV_DM.op["reset"], body + m.tlv(method, bytes([9]), critical=True))
+    r = hst.call(DM, riscv.reg.TARGET_RISCV_DM.op["reset"], body + m.tlv(method, bytes([9])))
     tail = m.split_tlvs(r.payload[7:])
     assert (m.TAG_IGNORED, bytes([method])) in [(t, v) for t, v in tail]
 

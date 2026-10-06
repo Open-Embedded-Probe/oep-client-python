@@ -108,11 +108,12 @@ def test_i2c_refusals_before_configure_and_in_order():
 def test_i2c_declarations():
     _, hst, _ = bench(fake.p4_x035())
     t = fixture.I2cTarget(hst)
-    assert (t.max_length, t.max_clock_hz, t.features, t.queue_depth, t.max_stretch_us) == (128, 1_000_000, 0b11, 8, 100_000)
+    assert (t.max_length, t.max_clock_hz, t.features, t.queue_depth, t.max_stretch_us) == (128, 1_000_000, 0b01, 8, 100_000)
+    assert t.offers(t.STRETCH)                                      # stretch: an op, in the ops tag (fixture §3)
     _, hst, _ = bench(fake.esp32_v003())
     t = fixture.I2cTarget(hst)
     assert (t.max_length, t.max_clock_hz, t.features, t.queue_depth, t.max_stretch_us) == (16, 100_000, 0b01, 4, None)
-    assert not t.features & t.FEATURE_STRETCH
+    assert not t.offers(t.STRETCH) and t.offers(t.CONFIGURE)
 
 
 def test_i2c_mode_3_only_when_declared():
