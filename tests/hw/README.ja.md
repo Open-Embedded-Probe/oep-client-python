@@ -35,12 +35,13 @@ OEP_HW_BOARDS=fake-esp32-v003 uv run pytest tests/hw -m hw
 | `flash.py` | ボードの種類ごとの焼き方と、bridge のボードの DTR / RTS によるリセット |
 | `record.py` | 1 ボードの一巡: 接続、測ったもの、結果のファイル |
 | `test_probe.py` | 試験。この順に回る |
+| `test_harness.py` | ハーネス自身の後始末を、プロセス内の偽の probe で確かめる（`hw` の印が無いので普段の `uv run pytest` で回る）: 失敗した試験の後と、probe が無くなった後に設定を元に戻す |
 | `conftest.py` | `hw` マーカーと `OEP_HW_BOARDS` 無しの skip、ボードごとのまとめ、1 画面の要約 |
 | `results/` | `<board>-<firmware>-<client>-<started>.json`。1 巡に 1 つ。名前に巡の開始時刻（`20261006T203121`）を入れ、後の巡が前の巡のファイルを上書きしない（小さな要約だけ。それ以外は `.gitignore` で入れない） |
 
 ## 各試験が確かめること
 
-`flash` の後の試験は、firmware を焼けなかったら skip になる。それぞれ測ったものを結果のファイルに書き、`verdict` は pytest の
+`flash` の後の試験は、firmware を焼けなかったとき、また probe が無くなってまた答えないときは skip になる。それぞれ測ったものを結果のファイルに書き、`verdict` は pytest の
 結果。
 
 | 試験 | 確かめること | 記録 |
@@ -48,7 +49,7 @@ OEP_HW_BOARDS=fake-esp32-v003 uv run pytest tests/hw -m hw
 | `flash` | image が入る（esptool / DFU / picotool）。45 秒以内に起動して confirm に答える | 焼く前と後の firmware（describe）、焼いたコマンド、秒数、最後の数行 |
 | `identity` | confirm の revision ≥ 1。list に fn 0 の項目が無い（本体は名前を持たない、core §7.2）。clock（core §7.7）の boot_id が confirm と同じ。describe の model が表のとおり。焼いたことで boot_id が変わった。firmware の文字列が焼いた版（ローカルのビルドは `library.properties`、リリースはその版）に等しい | boot_id、firmware、model、unit_id、chip、limits、interface の一覧、clock の uptime_ns と 4 回のうち最短の往復 |
 | `required` | どのプローブも出すべきもののうち、ロックなしで確かめられるもの（core §1.2、§7.1、§7.5。oep-spec `docs/conformance.md` 1 節）。`oep dump` が MISSING として出す一覧と同じ：confirm の transport TLV（fn 0 の describe の transport のどれか、または 0xFF を指す）、fn 0 の describe の unit_id、transport、max_op_ms、discoverable（0 でも出す）。欠けたものを名指しして失敗する | 一覧（欠けがなければ空） |
-| `config` | `oep.probe.config`: label（表の `label` のチャネル、無ければ gpio の 1 本目）と `disable`（`OEP_HW_DISABLE`）を set → get に出て `hash_of` が一致。disable したチャネルへの plan は拒否（unavailable / PinsTaken）。save → state が `applied` でその hash。**再起動**（probe が `oep.probe.restart` を出していればそれで: `Host.restart_probe` が restart_max_ms まで待つ。USB の probe（P4、RP2）では `OEP_HW_RESTART=1` のときだけで、無ければ飛ばしてその理由を記録に書く。無ければ bridge の classic ESP32 を esptool の hard reset と同じく RTS から EN。どちらも無ければ飛ばす）→ 保存した項目が起動時に適用されている（state、get）。両方 unset して save → 試験前の hash に戻る。probe にあったほかの設定（bench の slot / bind）はそのまま残す | 各段階の hash、再起動のやり方、前後の boot_id と秒数（oep.probe.restart なら restart_max_ms） |
+| `config` | `oep.probe.config`: label（表の `label` のチャネル、無ければ gpio の 1 本目）と `disable`（`OEP_HW_DISABLE`）を set → get に出て `hash_of` が一致。disable したチャネルへの plan は拒否（unavailable / PinsTaken）。save → state が `applied` でその hash。**再起動**（probe が `oep.probe.restart` を出していればそれで: `Host.restart_probe` が restart_max_ms まで待ち、`OEP_HW_REOPEN_S` があればさらにその秒数（下）。USB の probe（P4、RP2）では `OEP_HW_RESTART=1` のときだけで、無ければ飛ばしてその理由を記録に書く。無ければ bridge の classic ESP32 を esptool の hard reset と同じく RTS から EN。どちらも無ければ飛ばす）→ 保存した項目が起動時に適用されている（state、get）。両方 unset して save → 試験前の hash に戻る。probe にあったほかの設定（bench の slot / bind）はそのまま残す。何が失敗しても、項目と保存は元に戻す（下） | 各段階の hash、再起動のやり方、前後の boot_id と秒数（oep.probe.restart なら restart_max_ms、reopen_s、開き直しが要ったか。戻らなければそのエラー） |
 | `wire` | `OEP_HW_TARGET=<name>[@swdio[,swclk]]` のときだけ: scan（名指しの組か全部）、`OEP_HW_RESET=<channel>` なら reset TLV 付きで attach、そのあと 50 回（`OEP_HW_LOOPS`）halt → dmi で s0 / s1 / a0 / a1 → read_block（`OEP_HW_TARGET_ADDR`、既定 0x20000000 から 8 語）→ 同じ 4 本をもう一度、変わっていない → resume | scan の結果、connection、DMSTATUS、速さ、target_id、dpc、回数と秒数、変わったレジスタ: 前、後、読み直し、block の直後の 2 語、dpc（失敗のメッセージにすべての変化を省かずに出す）。op が例外を出したとき: その回、例外、2 回読んだ DMSTATUS と DMCONTROL（生の dmi）、止まっていれば dpc |
 | `gpio` | 表の空き 2 チャネル（`OEP_HW_GPIO=a,b`）で `oep.fixture.gpio`: output_high を読むと 1、output_low は 0、input_pullup は 1、input_pulldown は 0。表がその board に空きを与えていなければ skip | 読んだ値すべて |
 | `uart` | 表の RX / TX（`OEP_HW_UART=rx,tx`）で、または probe の設定にその plan があるときや表がその board に組を与えていないときはその plan のピンで（どちらも無ければ skip）`oep.fixture.uart`: configure 115200 8N1 が 5 % 以内、status が `session` でその速さと形式、configure 9600。`OEP_HW_UART_LOOP=rx,tx`（2 本を結線）なら write したものが read で戻る | 実際の速さ、status、ループバックのバイト数 |
@@ -66,6 +67,39 @@ URL + sha256）、ホストの platform、その回の `OEP_*` の環境変数�
 
 偽の probe（`fake-esp32-v003`）では `capture` はレベルを記録するだけで判定しない（偽の probe はピンではなくカウンタを取り、
 ワンショットは start の応答と同時に終わる）。
+
+## 戻らない probe と、tests/hw が変える設定
+
+**再起動の待ち。** host が再起動した probe を待って繰り返すのは、restart_max_ms が過ぎるまでである（oep-if-restart §3）:
+`restart_probe` は自分からはそれより長く待たず、それまでに戻らない probe は無くなったものとして link を閉じる。WSL では、列挙し
+直した USB の probe は Windows では新しい device で、`usbipd attach --wsl` が付け直して初めて Linux に届く（手で、または
+Windows のシェルで `usbipd attach --wsl --auto-attach --busid <busid>` を動かしたままにしておく）。それは probe の
+restart_max_ms（RP2350 では 2.0 s）より長く掛かりうる。`OEP_HW_REOPEN_S=<秒>` は、そうした probe を利用者が開き直すことを前もって
+頼むもの: 待ちが過ぎた後、新しく開くのと同じに（最初は confirm）さらにその秒数まで開き直す（`restart_probe(reopen_s=...)`。
+記録の `reopened`）。無ければ config の試験はそれを書いて失敗し、後の試験は「the probe is gone」で skip になる - どれも最初に
+1 度開き直してみるので、走っている間に手で attach すれば残りは戻る。
+
+**設定。** 試験が probe の設定を変えるのは 2 か所で、何があっても（assert の失敗、例外、probe が無くなる）元に戻す:
+
+| 場所 | 変えるもの | 戻し方 |
+|---|---|---|
+| `config` | `label` と `disable` の項目（set）、保存（2 回 save） | 試験が両方 unset して save する。そのうえで `finally` が `Run.restore_settings` を呼ぶ: 項目は取り除くか、走る前の値に set し直し、保存はもう一度 save する（走る前に何も保存されていなければ erase） |
+| `capture`（logic。probe が capture の pin に gpio を重ねるのを断るとき） | 2 本のチャネルの `idle` 項目（set、保存しない） | `_Pull.release` が unset し、その `finally` で `restore_settings` |
+| `gpio`、`uart`、`capture*`、`i2c_target`、`spi_target` | plan（oep.probe.plan）、セッションの状態 | それぞれの `finally` で `plan_release`。plan はセッションのものなので、失敗で残ったものも走り終わりのセッションの終わりで解放される |
+| `wire`、`console` | connection、console のストリーム | `finally` で detach（と close）。これもセッションのもの |
+| `capture_group` | group の track の bind | `finally` で `bind([])`。これもセッションのもの |
+| `port_speed` | link の速さ | `linktest.matrix` が `finally` で起動時の速さに戻す。probe も何もしなければ自分で戻る |
+| `session` | lease、force での取り上げ | 自分のセッションで、終える |
+
+設定の slot、bind、uart、plan の項目にはどの試験も触れない: bench が持たせているものは変えない。probe が無くなったときは、
+`restore_settings` が開き直し（`OEP_HW_REOPEN_S`、少なくとも 5 s 待ち、無くなったセッションの lease を 35 s まで待つ）、
+走り終わりの後始末でもう 1 度試す。それでも戻せなかったものは結果のファイル（`_settings.left_on_probe`）に書き、まとめに
+**SETTINGS LEFT ON THE PROBE** として、probe が戻ってから打つコマンドと一緒に出す。例:
+
+```sh
+oep config remove <probe> disable 28
+oep config save <probe>        # 走る前に何も保存されていなければ `oep config erase <probe>`
+```
 
 ## ボードと焼き方
 
@@ -98,6 +132,7 @@ V003 のジグ、X035 のジグ（ESP32-P4）、WCH-Link はこのホストで�
 | `OEP_HW_BOARDS` | ボード id のコンマ区切り（必須。無ければ何も回らない） |
 | `OEP_PROBE_DIR` / `OEP_PROBE_VERSION` / `OEP_HW_NOFLASH` | firmware の出所（どれか 1 つ） |
 | `OEP_HW_TARGET`、`OEP_HW_RESET`、`OEP_HW_TARGET_ADDR`、`OEP_HW_LOOPS` | wire の試験: target が繋がっている（どこに）、reset の線、block の番地、回数 |
+| `OEP_HW_REOPEN_S` | 再起動した probe を、restart_max_ms が過ぎた後さらに何秒まで開き直すか（利用者が開き直す。上。WSL / usbipd）。既定 0: しない - restart_max_ms の後 probe は無くなったものとする |
 | `OEP_HW_RESTART=1` | config の試験で USB の probe（P4、RP2）を `oep.probe.restart` で再起動する（既定はしない: oep-probe-arduino 0.0.29-dev+3c0cd99 では RP2350 と P4 が再起動の後に列挙に失敗し、抜き差しが要った） |
 | `OEP_HW_WIRE` | wire / console の試験の wire の名前（既定: `OEP_HW_TARGET` が 1 本のピンを名指し、probe が `oep.wire.swio` を持てばそれ、無ければ最初の wire）。console の試験は、その connection の open を受ける `oep.target.console` の instance を使う |
 | `OEP_HW_GPIO`、`OEP_HW_DISABLE`、`OEP_HW_UART`、`OEP_HW_UART_LOOP` | fixture の試験のチャネルの上書き |

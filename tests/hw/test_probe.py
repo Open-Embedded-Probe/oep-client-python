@@ -159,6 +159,7 @@ def test_config(run: record.Run):
     hst = run.take()
     cfg = config.ProbeConfig(hst)
     declared = cfg.describe()
+    run.settings_before(cfg)                          # what restore_settings puts back, whatever happens below
     h0, items0 = cfg.get()
     rec = run.record("config", storage_bytes=declared.storage_bytes, slots_max=declared.slots_max,
                      items_before=len(items0), hash_before=h0)
@@ -167,7 +168,21 @@ def test_config(run: record.Run):
     label_ch, disable_ch = board.label or board.gpio[0], board.disable
     if not label_ch or not disable_ch:
         pytest.skip("the table gives this board no free channel to label and to disable (OEP_HW_DISABLE, OEP_HW_GPIO)")
+    try:
+        _config_steps(run, hst, cfg, rec, h0, label_ch, disable_ch)
+    finally:
+        # a failure, or a probe that did not come back: the label / disable items and the storage go back as they were
+        # (the probe opened again when it went away); what cannot be put back is recorded and printed with its commands
+        if not run.restore_settings("config"):
+            print(f"\n  config: settings left on the probe: {run.settings_left}")
+
+
+def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: dict, h0: int, label_ch: int,
+                  disable_ch: int) -> None:
+    board = run.board
     added = [config.Label(channel=label_ch, text="HW-A"), config.Disable(channel=disable_ch)]
+    run.settings_changing("config", "label", label_ch)
+    run.settings_changing("config", "disable", disable_ch)
     h1 = cfg.set(added)
     h_items, items1 = cfg.get()
     assert h_items == h1 == config.hash_of(items1), "set's hash is not the hash of what get returns"
@@ -182,6 +197,7 @@ def test_config(run: record.Run):
     rec["disabled_refused_as"] = type(e.value).__name__
     assert isinstance(e.value, (core.PinsTaken, h.Unavailable))
     # save, state
+    run.settings_saving()
     h_saved = cfg.save()
     st = cfg.state()
     rec.update(hash_saved=h_saved, storage=st.storage, saved_hash=st.saved_hash)
@@ -198,13 +214,30 @@ def test_config(run: record.Run):
     if restart or board.resettable:
         if restart:
             before = hst.limits["boot_id"] if hst.limits else None
+            max_ms, more_s = core.restart_max_ms(hst), record.reopen_s()
             t0 = time.monotonic()
-            after = hst.restart_probe()
+            try:
+                # restart_max_ms is all a host may retry for (oep-if-restart §3); OEP_HW_REOPEN_S opens a probe given up
+                # that way again for that much more (a WSL host: usbipd attaches the re-enumerated device later)
+                after = hst.restart_probe(reopen_s=more_s or None)
+            except Exception as e:
+                rec["reboot"] = {"how": "oep.probe.restart", "boot_id_before": before, "restart_max_ms": max_ms,
+                                 "reopen_s": more_s, "error": f"{type(e).__name__}: {e}",
+                                 "seconds": round(time.monotonic() - t0, 2)}
+                run.lost = (f"not back {time.monotonic() - t0:.1f} s after oep.probe.restart (restart_max_ms {max_ms}, "
+                            f"OEP_HW_REOPEN_S {more_s:g}): {e}")
+                raise
             rec["reboot"] = {"how": "oep.probe.restart", "boot_id_before": before, "boot_id_after": after,
-                             "restart_max_ms": core.restart_max_ms(hst), "seconds": round(time.monotonic() - t0, 2)}
+                             "restart_max_ms": max_ms, "reopen_s": more_s, "reopened": hst.restart_reopened,
+                             "seconds": round(time.monotonic() - t0, 2)}
         else:
             flash.hard_reset(hst.link.stream)
-            rec["reboot"] = dict(run.wait_reboot(), how="EN line")
+            try:
+                rec["reboot"] = dict(run.wait_reboot(), how="EN line")
+            except Exception as e:
+                rec["reboot"] = {"how": "EN line", "error": f"{type(e).__name__}: {e}"}
+                run.lost = f"no confirm after the EN line reset: {e}"
+                raise
         cfg = config.ProbeConfig(hst)                 # fns found again on the new boot
         st2 = cfg.state()
         h2, items2 = cfg.get()
@@ -227,6 +260,7 @@ def test_config(run: record.Run):
     decoded3 = [config.decode(t, v) for t, v in items3]
     assert not any(isinstance(it, (config.Label, config.Disable)) and it.channel in (label_ch, disable_ch) for it in decoded3)
     assert h3 == h0, f"after unset the hash is {h3:#x}, before the test it was {h0:#x}"
+    run.settings_saving()
     h_saved2 = cfg.save()
     st3 = cfg.state()
     rec.update(hash_after_unset=h3, saved_hash_final=st3.saved_hash)
@@ -562,9 +596,9 @@ class _Pull:
     levels are recorded, not checked. The analog gets no idle fallback: an analog pad drops the pulls when it is planned
     (the ESP32's: 137 mV mean, 0 to 2575 of 4095, under an idle pull-up, 2026-10-02)."""
 
-    def __init__(self, hst: h.Host, cap: capture.LogicCapture, assignments: list[tuple[int, int, int]], channels: list[int],
-                 rec: dict, idle_fallback: bool = True):
-        self.hst, self.cap, self.assignments, self.channels = hst, cap, assignments, channels
+    def __init__(self, run: record.Run, hst: h.Host, cap: capture.LogicCapture, assignments: list[tuple[int, int, int]],
+                 channels: list[int], rec: dict, idle_fallback: bool = True):
+        self.run, self.hst, self.cap, self.assignments, self.channels = run, hst, cap, assignments, channels
         self.gpio = fixture.Gpio(hst)
         self.cfg: config.ProbeConfig | None = None
         self.idle_set = False
@@ -588,6 +622,9 @@ class _Pull:
     def set(self, up: bool) -> None:
         if self.cfg is not None:
             core.plan_release(self.hst, [self.cap.fn])
+            self.run.settings_before(self.cfg)
+            for ch in self.channels:
+                self.run.settings_changing("capture", "idle", ch)
             self.cfg.set([config.Idle(channel=ch, mode="pull-up" if up else "pull-down") for ch in self.channels])
             self.idle_set = True
             core.plan_apply(self.hst, self.assignments)
@@ -596,9 +633,14 @@ class _Pull:
         time.sleep(0.005)
 
     def release(self) -> None:
-        core.plan_release(self.hst, [self.cap.fn] + ([self.gpio.fn] if self.how and self.cfg is None else []))
-        if self.idle_set:
-            self.cfg.unset([("idle", ch) for ch in self.channels])
+        """The plans released, the idle items removed - restore_settings puts the items back even when a step fails
+        (or the probe went away: opened again, or what is left recorded with its commands)."""
+        try:
+            core.plan_release(self.hst, [self.cap.fn] + ([self.gpio.fn] if self.how and self.cfg is None else []))
+            if self.idle_set:
+                self.cfg.unset([("idle", ch) for ch in self.channels])
+        finally:
+            self.run.restore_settings("capture")
 
 
 def test_capture(run: record.Run):
@@ -617,7 +659,7 @@ def test_capture(run: record.Run):
             pytest.skip(f"channel {ch} is not one the logic capture's role {role} allows ({allowed[role]})")
     rate, samples = _capture_rate_samples(declared)
     rec = run.record("capture", channels=chans, rate=rate, samples_asked=samples, declared=declared)
-    pull = _Pull(hst, cap, [(cap.fn, role, ch) for role, ch in enumerate(chans)], chans, rec)
+    pull = _Pull(run, hst, cap, [(cap.fn, role, ch) for role, ch in enumerate(chans)], chans, rec)
     wrong, levels, generations, captures = [], {}, [], []
     judged = pull.checks and run.board.kind != "fake"            # the fake captures a counter, not its pins
     if not judged:
@@ -685,7 +727,7 @@ def test_capture_analog(run: record.Run):
     rate, samples = _capture_rate_samples(declared)
     fe = _widest_frontend(declared)
     rec = run.record("capture_analog", channel=ch, rate=rate, samples_asked=samples, frontend=fe, declared=declared)
-    pull = _Pull(hst, ana, [(ana.fn, 0, ch)], [ch], rec, idle_fallback=False)
+    pull = _Pull(run, hst, ana, [(ana.fn, 0, ch)], [ch], rec, idle_fallback=False)
     kw = {"frontends": {0: fe}} if fe is not None else {}
     wrong, values, captures = [], {}, []
     try:

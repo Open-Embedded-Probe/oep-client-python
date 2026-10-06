@@ -17,7 +17,7 @@
                                            identify, hold-low + attach under reset; prints a slot, --save writes it)
   oep clock <probe> [-n 8] [--json]       (fn 0's clock, core §7.7: the probe's uptime_ns and boot_id against this
                                            host's time - the reading with the shortest round trip of n)
-  oep restart <probe>                     (oep.probe.restart: the probe restarts; waits until it is back, its new boot_id)
+  oep restart <probe> [--reopen-s S]      (oep.probe.restart: the probe restarts; waits until it is back, its new boot_id)
 
 <probe>: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]. A change takes the lock (owner "oep config") and
 ends the session after it; it takes effect at once, and stays over a restart only after `save` (or --save).
@@ -111,6 +111,9 @@ def main(argv=None) -> int:
     rs = sub.add_parser("restart", help="restart the probe (oep.probe.restart, optional) and wait until it is back")
     rs.add_argument("probe", help="a probe: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]")
     rs.add_argument("--force", action="store_true", help="take the lock from its holder")
+    rs.add_argument("--reopen-s", type=float, default=0.0, metavar="S",
+                    help="when the probe is not back within its restart_max_ms, open it again for up to S more seconds "
+                         "(your reopen: a host where the device returns late, e.g. WSL re-attaching it through usbipd)")
     d = sub.add_parser("dump", help="list and describe every interface a probe offers")
     src = d.add_mutually_exclusive_group(required=True)
     src.add_argument("--fake", choices=sorted(fake.PROFILES), help="in-process example probe")
@@ -169,7 +172,9 @@ def _restart_cmd(args) -> int:
         raise SystemExit("oep: the probe offers no oep.probe.restart (an optional interface)") from None
     core.take(hst, owner="oep restart", force=args.force)
     before = hst.limits["boot_id"] if hst.limits else None
-    after = hst.restart_probe()
+    after = hst.restart_probe(reopen_s=args.reopen_s)
+    if hst.restart_reopened:
+        print(f"not back within restart_max_ms; reopened within --reopen-s {args.reopen_s:g}")
     print(f"restarted: boot_id 0x{before:08X} -> 0x{after:08X}" if before is not None else f"restarted: boot_id 0x{after:08X}")
     return 0
 

@@ -249,6 +249,64 @@ def test_a_probe_that_does_not_come_back_within_restart_max_ms_is_gone():
         hst.restart_probe()
     assert 0.3 <= time.monotonic() - start < 2.0 and ep.reboots == 1
 
+def test_a_wait_longer_than_restart_max_ms_is_cut_to_it():
+    """oep-if-restart §3: the host retries only until restart_max_ms has passed - a longer wait_s is cut to it."""
+    ep, hst = bench()
+    ep.restart_max_ms = 1500
+    hst.link = _Reopen()
+    hst.open(3000)
+    hst.restart_probe(wait_s=9)
+    assert hst.link.waits == [1.5] and not hst.restart_reopened
+
+
+class _LateReopen(_Reopen):
+    """A link whose device is back only on the second try (the first, the restart_max_ms window, finds nothing)."""
+    def reopen_after_restart(self, hst, wait_s):
+        self.waits.append(wait_s)
+        if len(self.waits) == 1:
+            raise ConnectionError("not back yet")
+        return hst.confirm()
+
+
+def test_reopen_s_opens_a_probe_given_up_again():
+    """Not back within restart_max_ms: gone, and without reopen_s raised; with reopen_s (the user's reopen) a new
+    open for up to that much more, the new boot_id checked as ever, restart_reopened True."""
+    ep, hst = bench()
+    ep.restart_max_ms = 1200
+    hst.link = _LateReopen()
+    hst.open(3000)
+    with pytest.raises(ConnectionError):
+        hst.restart_probe()
+    assert hst.link.waits == [1.2] and hst.session is None
+    hst.link = _LateReopen()
+    before = hst.confirm()["boot_id"]
+    hst.open(3000)
+    after = hst.restart_probe(reopen_s=30)
+    assert hst.link.waits == [1.2, 30] and hst.restart_reopened and after == ep.boot_id != before
+    hst.link = _Reopen()
+    hst.open(3000)
+    hst.restart_probe(reopen_s=30)                                      # back in the window: no reopen
+    assert hst.link.waits == [1.2] and not hst.restart_reopened
+
+
+def test_reopen_s_on_a_bare_send():
+    """A host on a bare send: silent past restart_max_ms (300 ms), back at 0.6 s - found on reopen_s, not before."""
+    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    ep.restart_max_ms = 300
+    back = []
+
+    def send(b):
+        if ep.reboots and (not back or time.monotonic() < back[0]):
+            back[:] = back or [time.monotonic() + 0.6]
+            raise TimeoutError("silent")
+        return ep.handle(b, VENDOR)
+    hst = h.Host(send)
+    before = hst.confirm()["boot_id"]
+    hst.open(3000)
+    start = time.monotonic()
+    after = hst.restart_probe(reopen_s=3)
+    assert after != before and hst.restart_reopened and 0.5 <= time.monotonic() - start < 3.0
+
 # ---- fake_serve: the op over TCP and a pty -----------------------------------------------------------------------
 
 def _serve(*argv):

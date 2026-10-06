@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass, field
 
 import oep_client
-from oep_client import catalog, core, host as h, link, registry as reg
+from oep_client import catalog, config, core, host as h, link, message as m, registry as reg
 
 from . import boards
 
@@ -25,6 +25,26 @@ RESULTS = HERE / "results"
 DESCRIBE = reg.CORE.tlv["describe"]
 COMMON = reg.DESCRIBE_COMMON
 WRITE_TIMEOUT_S = 5.0
+RESTORE_CONNECT_S = 5.0          # putting the settings back: the wait for a probe that is not open (more with OEP_HW_REOPEN_S)
+RESTORE_LOCK_WAIT_S = 35.0       # ... and for the lock: a lost connection's session lapses within its 30 s lease
+_ITEM_KINDS = {config.Label: "label", config.Idle: "idle", config.Disable: "disable"}
+
+
+def reopen_s() -> float:
+    """OEP_HW_REOPEN_S: how long more a probe that is not back within its restart_max_ms is opened again for (the
+    user's reopen, Host.restart_probe's reopen_s; a WSL host where usbipd attaches the re-enumerated device). 0: none."""
+    return float(os.environ.get("OEP_HW_REOPEN_S", "") or 0)
+
+
+def _by_key(items) -> dict[tuple[str, int], tuple[int, bytes]]:
+    """The label / idle / disable items (what tests/hw sets) as {(kind, channel): (tag, value)}."""
+    out = {}
+    for tag, value in items:
+        it = config.decode(tag, value)
+        kind = _ITEM_KINDS.get(type(it))
+        if kind:
+            out[(kind, it.channel)] = (tag, value)
+    return out
 
 
 def _open_serial_with_write_timeout(port: str, baud: int = link.BASE_BAUD):
@@ -136,6 +156,13 @@ class Run:
     flash_failed: str | None = None                  # set when the firmware could not be put on: later tests skip
     fake: subprocess.Popen | None = None
     t0: float = field(default_factory=time.monotonic)
+    lost: str | None = None                          # the probe went away (not back after a restart): later tests skip
+    # The probe's settings: what they were before tests/hw changed any, the items a test set that are not put back yet
+    # ((kind, channel) -> the test), whether a test saved; what could not be put back (the summary prints how)
+    settings_baseline: dict | None = None
+    settings_pending: dict = field(default_factory=dict)
+    settings_saved: bool = False
+    settings_left: list = field(default_factory=list)
 
     # ---- the connection --------------------------------------------------------------------------------------------
     def peek(self, timeout_s: float = 4.0) -> dict | None:
@@ -213,6 +240,13 @@ class Run:
         import pytest
         if self.flash_failed:
             pytest.skip(f"flashing failed: {self.flash_failed.splitlines()[0]}")
+        if self.lost is not None:
+            try:                                     # back since (a usbipd attach by hand): put the settings back first
+                self.connect(timeout_s=1.0)
+                self.lost = None
+            except Exception:                        # noqa: BLE001
+                pytest.skip(f"the probe is gone: {self.lost}")
+            self.restore_settings("reconnected")
         if self.hst is None:
             pytest.skip("no connection to the probe (the flash step did not run or failed)")
         return self.hst
@@ -239,6 +273,96 @@ class Run:
                 time.sleep(0.2)
         finally:
             hst.link.timeout = saved
+
+    # ---- the probe's settings: put back whatever a test changed -------------------------------------------------
+    def settings_before(self, cfg: config.ProbeConfig) -> None:
+        """The probe's settings before tests/hw changes any (once a run): the label / idle / disable items and the
+        storage (state, saved hash) - what restore_settings puts back."""
+        if self.settings_baseline is None:
+            h0, items = cfg.get()
+            st = cfg.state()
+            self.settings_baseline = {"hash": h0, "items": _by_key(items), "storage": st.storage,
+                                      "saved_hash": st.saved_hash}
+
+    def settings_changing(self, test: str, kind: str, channel: int) -> None:
+        """A test is about to set this item: restore_settings puts it back (removes it, or the value it had)."""
+        self.settings_pending.setdefault((kind, channel), test)
+
+    def settings_saving(self) -> None:
+        """A test is about to save: restore_settings puts the storage back as it was."""
+        self.settings_saved = True
+
+    def _host_for_restore(self) -> h.Host:
+        """The host with the lock, for putting the settings back: the run's own, or the probe opened again (it went
+        away: not back after a restart) - waiting out a lost session's lease."""
+        hst = self.hst if self.lost is None else None
+        if hst is not None:
+            try:
+                if hst.session is not None:
+                    hst.keepalive()
+                    return hst
+                core.take(hst, 30000, owner="oep tests/hw", wait_s=RESTORE_LOCK_WAIT_S)
+                return hst
+            except Exception:                        # noqa: BLE001 - the link is gone: open it again below
+                pass
+        self.connect(timeout_s=max(reopen_s(), RESTORE_CONNECT_S))
+        self.lost = None
+        core.take(self.hst, 30000, owner="oep tests/hw", wait_s=RESTORE_LOCK_WAIT_S)
+        return self.hst
+
+    def restore_settings(self, where: str) -> bool:
+        """Put the probe's settings back as settings_before found them: every pending item removed (or its value from
+        before set again), and after a save the storage as it was (saved again, or erased when nothing was saved).
+        Runs in a test's finally and at the end of the run - also after a failure or a probe that went away (opened
+        again first). -> True when nothing is left; else what is left goes to settings_left (the summary prints the
+        commands that remove it) and a later call tries again."""
+        if not self.settings_pending and not self.settings_saved:
+            return True
+        entry = self.tests.setdefault("_settings", {})
+        base = self.settings_baseline or {"items": {}, "storage": None, "saved_hash": None}
+        try:
+            hst = self._host_for_restore()
+            cfg = config.ProbeConfig(hst)
+            now = _by_key(cfg.get()[1])
+            unsets = [key for key in self.settings_pending if key not in base["items"] and key in now]
+            sets = [m.tlv(*base["items"][key]) for key in self.settings_pending
+                    if key in base["items"] and now.get(key) != base["items"][key]]
+            if unsets:
+                cfg.unset(unsets)
+            if sets:
+                cfg.set(sets)
+            done = {"where": where, "removed": [f"{k} {c}" for k, c in unsets], "set_back": len(sets)}
+            if self.settings_saved:
+                st = cfg.state()
+                if base["storage"] == "applied" and st.saved_hash != base["saved_hash"]:
+                    done["saved"] = cfg.save()       # the live settings now: as before the tests, but for unsaved ones
+                elif base["storage"] == "none" and st.storage != "none":
+                    cfg.erase()
+                    done["erased"] = True
+            self.settings_pending.clear()
+            self.settings_saved = False
+            self.settings_left = []
+            entry.setdefault("restored", []).append(done)
+            return True
+        except Exception as e:                       # noqa: BLE001 - gone or refused: say what is left and how to clean up
+            self.settings_left = self._cleanup_steps(base)
+            entry.setdefault("not_restored", []).append({"where": where, "error": f"{type(e).__name__}: {e}"})
+            entry["left_on_probe"] = self.settings_left
+            return False
+
+    def _cleanup_steps(self, base: dict) -> list[str]:
+        """The `oep` commands that put the settings back by hand (the probe never came back during the run)."""
+        probe = self.port or self.board.port or "<probe>"
+        steps = []
+        for (kind, channel), test in self.settings_pending.items():
+            if (kind, channel) in base["items"]:
+                was = config.decode(*base["items"][(kind, channel)])
+                steps.append(f"{kind} {channel} (set by {test}) had {was} before: set it again with oep config")
+            else:
+                steps.append(f"oep config remove {probe} {kind} {channel}")
+        if self.settings_saved:
+            steps.append(f"oep config save {probe}" if base["storage"] != "none" else f"oep config erase {probe}")
+        return steps
 
     # ---- the record ------------------------------------------------------------------------------------------------
     def record(self, test: str, **values) -> dict:
@@ -299,6 +423,11 @@ class Run:
             lines.append(f"  {t.get('verdict', '?'):7} {name:12} {short}"[:118])
             if t.get("why"):
                 lines.append(f"          {str(t['why']).splitlines()[0][:100]}")
+        if self.lost:
+            lines.append(f"  PROBE GONE: {self.lost}"[:118])
+        if self.settings_left:
+            lines.append("  SETTINGS LEFT ON THE PROBE by tests/hw - once it is back, put them back:")
+            lines += [f"    {step}" for step in self.settings_left]
         return lines
 
 

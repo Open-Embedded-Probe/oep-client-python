@@ -1050,7 +1050,8 @@ class SerialLink:
         """After oep.probe.restart's restart (oep-if-restart §3, host guide §5.2; Host.restart_probe): the link closes, waits
         restart_after_answer_ms and opens again as a new open - the probing rule's confirm first (a serial port at its
         boot speed, retried as wait_boot_speed does; a USB device found again by its serial once it has re-enumerated;
-        a TCP connection made again) - retried until `wait_s` has passed. A link on a stream it cannot open again
+        a TCP connection made again) - retried until `wait_s` has passed, then closed (ConnectionError: the probe is
+        gone; Host.restart_probe's reopen_s calls this again as the user's reopen). A link on a stream it cannot open again
         (`reopener` None: an in-process fake) keeps the stream, drops what it had read and confirms. Everything the link
         held for the old boot (a raised rate, a failed transport, the read buffer) starts again. -> confirm's limits."""
         deadline = time.monotonic() + wait_s
@@ -1079,6 +1080,11 @@ class SerialLink:
                 return limits
             except Exception as e:                         # not there yet: no device, no port, no answer
                 if time.monotonic() >= deadline:
+                    if self.reopener is not None:
+                        try:
+                            self.close()                   # gone (oep-if-restart §3): nothing more goes to it
+                        except Exception:
+                            pass
                     raise ConnectionError(f"the probe did not come back within {wait_s:.1f} s of its restart "
                                           f"({type(e).__name__}: {e})") from e
                 time.sleep(0.1)

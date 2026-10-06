@@ -1,6 +1,40 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `Host.restart_probe(wait_s=None, reopen_s=None)`: oep-if-restart §3 lets a host retry a restarted probe only
+  until its restart_max_ms has passed - a `wait_s` longer than a declared restart_max_ms is now cut to it, and the link
+  (`reopen_after_restart`) is closed when the window passes (the probe is gone). `reopen_s` is the user's reopen of a
+  probe given up that way, asked for beforehand: once the window has passed it is opened again as a new open (confirm
+  first, the boot_id checked as ever) for up to that much more; `Host.restart_reopened` says it was needed. For a host on
+  which the device comes back later than the probe can know - WSL, where usbipd attaches the re-enumerated device again
+  (bench: an RP2350's restart worked, but its 2.0 s restart_max_ms passed before usbipd attached it, and the rest of
+  tests/hw failed). `oep restart --reopen-s S`. tests/hw: `OEP_HW_REOPEN_S` passes it to the config test's restart (the
+  record says reopen_s / reopened, or the error); a probe that did not come back is marked gone - later tests skip naming
+  it, each first trying once to open it again. tests/hw puts back every setting it changes whatever fails
+  (`Run.restore_settings`: the config test's label / disable items and its saves, the capture test's idle items; each
+  item removed or set back to its value from before the run, the storage saved again or erased; the probe opened again
+  when it went away, once more at the run's end) - the bench's run had left channel 28's disable on the probe. What
+  cannot be put back is recorded (`_settings.left_on_probe`) and printed in the summary with the `oep config` commands
+  that remove it. The hw conftest skips by the `hw` marker (not the package's keyword), so `tests/hw/test_harness.py`
+  (the restore on the in-process fake) runs in the ordinary suite. Tests: a long wait_s cut, reopen_s on a link and on
+  a bare send, the restore after a failed test, nothing saved before (erased), a probe that went away and came back.
+  README, tests/hw README (EN / JA: the WSL / usbipd note, where tests/hw changes probe state and how each is put back).
+- (JA) `Host.restart_probe(wait_s=None, reopen_s=None)`: oep-if-restart §3 で host が再起動した probe を待って繰り返せるのは
+  restart_max_ms が過ぎるまで - 宣言された restart_max_ms より長い `wait_s` はそれに切り、待ちが過ぎたら link
+  （`reopen_after_restart`）を閉じる（probe は無くなった）。`reopen_s` は、そうして無くなったものとした probe を利用者が
+  開き直すことを前もって頼むもの: 待ちが過ぎた後、新しく開くのと同じに（最初は confirm、boot_id はいつもどおり確かめる）
+  さらにその秒数まで開き直す。要ったかどうかは `Host.restart_reopened`。probe には分からない遅れで device が戻る host の
+  ため - WSL では列挙し直した device を usbipd が付け直す（bench: RP2350 の再起動はできたが、usbipd が付け直す前に
+  restart_max_ms の 2.0 s が過ぎ、tests/hw の残りが失敗した）。`oep restart --reopen-s S`。tests/hw: `OEP_HW_REOPEN_S` を
+  config の試験の再起動に渡す（記録に reopen_s / reopened、またはエラー）。戻らなかった probe は無くなったものとし、後の
+  試験はそれを書いて skip する（どれも最初に 1 度開き直してみる）。tests/hw は、何が失敗しても変えた設定をすべて元に戻す
+  （`Run.restore_settings`: config の試験の label / disable の項目と save、capture の試験の idle の項目。項目は取り除くか
+  走る前の値に set し直し、保存はもう一度 save するか erase する。probe が無くなっていれば開き直し、走り終わりにもう 1 度）
+  - bench の走りでは channel 28 の disable が probe に残っていた。戻せなかったものは記録し（`_settings.left_on_probe`）、
+  まとめにそれを取り除く `oep config` のコマンドと一緒に出す。hw の conftest は（パッケージ名の keyword でなく）`hw` の印で
+  skip するので、`tests/hw/test_harness.py`（偽の probe での戻し）は普段の試験で回る。試験: 長い wait_s を切る、link と
+  素の send での reopen_s、失敗した試験の後の戻し、走る前に保存が無い（erase）、無くなって戻った probe。README、tests/hw の
+  README（EN / JA: WSL / usbipd の注意、tests/hw が probe の状態を変える所とそれぞれの戻し方）。
 - (EN) port_speed's default ceiling is 500000 (oep-spec 32260e5, oep-if-link §3 host obligation 7, host guide
   §17.3.3): the default candidate stays 500000 alone (`link.DEFAULT_CANDIDATES`), and a rate above `link.DEFAULT_CEILING`
   (500000) is the user's explicit choice - named in `oep speed <probe> 921600,500000` / `--candidates`, or passed by a

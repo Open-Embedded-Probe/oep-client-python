@@ -280,6 +280,7 @@ class Host:
     # Called with confirm's limits after every confirm answer (the link's max_frame for the transfer time, core §4.4)
     on_limits: Callable[[dict], None] | None = None
     unusable: str = ""                     # why this probe is not used (C-20, C-47): set, nothing more is sent
+    restart_reopened: bool = False         # the last restart_probe came back only on its reopen_s (the user's reopen)
 
     @contextlib.contextmanager
     def expecting(self, ms: int):
@@ -601,25 +602,33 @@ class Host:
         self.session = None
         self._lost()
 
-    def restart_probe(self, wait_s: float | None = None) -> int:
+    def restart_probe(self, wait_s: float | None = None, reopen_s: float | None = None) -> int:
         """Restart the probe through oep.probe.restart and wait until it is back (oep-if-restart §3, host guide §5.2)
         -> its new boot_id. LookupError when the probe offers no oep.probe.restart. The session must hold the lock.
         After the answer nothing more goes out; the link (`link.reopen_after_restart`, when this host has one) closes,
         waits restart_after_answer_ms and opens again as a new open - the confirm first, a serial port at its boot
         speed, a USB device found again once it has re-enumerated - retried for `wait_s`; a host on a bare `send` waits
         and confirms. `wait_s` None: the probe's restart_max_ms (oep.probe.restart's describe, read before the restart),
-        or RESTART_WAIT_S (10 s) when it declares none (a probe that does not conform); a confirm sent before then is
-        waited for as core §4.4 says. No valid confirm by then: ConnectionError / TimeoutError - the probe is gone. When
-        the answer is lost, the same: a resend the restarted probe refused no_session counts as the restart having
-        happened. The confirm's boot_id must differ from the one before (NotRestarted otherwise); everything this host
-        remembered of the old boot is dropped (core §6.5)."""
+        or RESTART_WAIT_S (10 s) when it declares none (a probe that does not conform); a `wait_s` longer than a
+        declared restart_max_ms is cut to it - oep-if-restart §3 lets a host retry only until restart_max_ms has passed.
+        A confirm sent before then is waited for as core §4.4 says. No valid confirm by then: the probe is gone
+        (oep-if-restart §3) - the link is closed and, without `reopen_s`, ConnectionError / TimeoutError is raised.
+        `reopen_s` is the user's own reopen of a probe given up that way, asked for beforehand: once the window has
+        passed with the link closed, the probe is opened again as a new open (the confirm first; the same retries) for up
+        to `reopen_s` more - for a host on which the device comes back later than the probe can know, such as WSL, where
+        usbipd attaches the re-enumerated device again (`restart_reopened` then says True). When the answer is lost, the
+        same: a resend the restarted probe refused no_session counts as the restart having happened. The confirm's
+        boot_id must differ from the one before (NotRestarted otherwise); everything this host remembered of the old boot
+        is dropped (core §6.5)."""
         self.require_v1()
         before = self._boot_id if self._boot_id is not None else self.confirm()["boot_id"]
         fn = self._restart_fn()
-        if wait_s is None:
-            from . import core
-            ms = core.restart_max_ms(self)
-            wait_s = ms / 1000 if ms is not None else RESTART_WAIT_S
+        from . import core
+        ms = core.restart_max_ms(self)
+        window_s = ms / 1000 if ms is not None else RESTART_WAIT_S
+        if wait_s is None or (ms is not None and wait_s > window_s):
+            wait_s = window_s                               # never past restart_max_ms (oep-if-restart §3)
+        self.restart_reopened = False
         epoch = self.epoch
         try:
             self.call(fn, OP_RESTART)
@@ -632,24 +641,35 @@ class Host:
         self.epoch = epoch + 1                              # one loss, however the answer came (a no_session too)
         self._boot_id = None                                # the boot_id below is compared with `before` here
         self.limits = None
-        reopen = getattr(getattr(self, "link", None), "reopen_after_restart", None)
-        if reopen is not None:
-            reopen(self, wait_s)
-        else:
-            deadline = time.monotonic() + wait_s
-            time.sleep(RESTART_AFTER_ANSWER_S)
-            while True:
-                try:
-                    self.confirm()
-                    break
-                except (TimeoutError, ConnectionError, OSError, ProtocolError):
-                    if time.monotonic() >= deadline:
-                        raise
-                    time.sleep(0.05)
+        try:
+            self._back_after_restart(wait_s)
+        except (TimeoutError, ConnectionError, OSError, ProtocolError):
+            if not reopen_s or reopen_s <= 0:
+                raise                                       # gone: the link is closed, nothing more is sent
+            self.restart_reopened = True                    # the user's reopen (asked for beforehand), a new open
+            self._back_after_restart(reopen_s)
         after = self.limits["boot_id"]
         if after == before:
             raise NotRestarted(f"the probe confirmed boot_id 0x{after:08X} after the restart, the same as before")
         return after
+
+    def _back_after_restart(self, wait_s: float) -> None:
+        """restart_probe's wait: the link's reopen_after_restart (closed again when nothing came back), or on a bare
+        `send` confirms until `wait_s` has passed; raises the last error when the probe gave no valid confirm."""
+        reopen = getattr(getattr(self, "link", None), "reopen_after_restart", None)
+        if reopen is not None:
+            reopen(self, wait_s)
+            return
+        deadline = time.monotonic() + wait_s
+        time.sleep(RESTART_AFTER_ANSWER_S)
+        while True:
+            try:
+                self.confirm()
+                return
+            except (TimeoutError, ConnectionError, OSError, ProtocolError):
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.05)
 
     # ---- notifications (core §11) ---------------------------------------------------------------------------------
     def subscribe(self, fn: int, min_bytes: int = 0, max_delay_ms: int = 0) -> None:

@@ -23,7 +23,7 @@ def pytest_collection_modifyitems(config, items):
         return
     skip = pytest.mark.skip(reason="OEP_HW_BOARDS is not set: no hardware test (tests/hw/README.md)")
     for item in items:
-        if "hw" in item.keywords:
+        if item.get_closest_marker("hw") is not None:
             item.add_marker(skip)
 
 
@@ -52,6 +52,9 @@ def run(board_id):
             r.record("flash", port_lookup=str(e))
     _RUNS.append(r)
     yield r
+    # the probe's settings as they were before the run, whatever failed (each test puts back its own; this is the last
+    # try - the probe opened again if it went away); what stays is printed in the summary with its commands
+    r.restore_settings("end of run")
     r.close_host()
     if r.fake is not None:
         r.fake.stdin.close()

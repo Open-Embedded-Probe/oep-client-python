@@ -35,12 +35,13 @@ OEP_HW_BOARDS=fake-esp32-v003 uv run pytest tests/hw -m hw
 | `flash.py` | the flashers per board kind, and the DTR / RTS reset of a bridge board |
 | `record.py` | one board's run: the connection, the measurements, the results file |
 | `test_probe.py` | the tests, in order |
+| `test_harness.py` | the harness's own bookkeeping on the in-process fake (no `hw` marker: it runs in the ordinary `uv run pytest`): settings put back after a failed test and after a probe that went away |
 | `conftest.py` | the `hw` marker and the skip without `OEP_HW_BOARDS`; grouping per board; the one-screen summary |
 | `results/` | `<board>-<firmware>-<client>-<started>.json`, one per run - the run's start time (`20261006T203121`) in the name, so no run overwrites another (small summaries only; `.gitignore` keeps anything else out) |
 
 ## What each test checks
 
-Every test after `flash` skips when the firmware could not be put on. Each records its measurements in the results
+Every test after `flash` skips when the firmware could not be put on, or when the probe went away and does not answer again. Each records its measurements in the results
 file; the `verdict` is pytest's outcome.
 
 | Test | Checks | Records |
@@ -48,7 +49,7 @@ file; the `verdict` is pytest's outcome.
 | `flash` | the image goes on (esptool / DFU / picotool), the board boots and confirms within 45 s | the firmware before and after (describe), the flasher's command, seconds, last lines |
 | `identity` | confirm revision ≥ 1; no list entry is fn 0 (the core has no name, core §7.2); clock (core §7.7) gives confirm's boot_id; describe's model is the table's; boot_id changed over the flash; firmware string equals the version flashed (a local build's `library.properties`, or the release's) | boot_id, firmware, model, unit_id, chip, limits, the interface list, clock's uptime_ns and shortest round trip of 4 |
 | `required` | what every probe must give and a lock-free look can check (core §1.2, §7.1, §7.5; oep-spec `docs/conformance.md` section 1), the same list `oep dump` prints as MISSING: confirm's transport TLV, naming a transport of fn 0's describe (or 0xFF); fn 0's describe with unit_id, transport, max_op_ms and discoverable (0 too). Fails naming each one missing | the list (empty when nothing is missing) |
-| `config` | `oep.probe.config`: set a label (the table's `label` channel, else the first gpio one) and a `disable` item (`OEP_HW_DISABLE`) → get returns them and `hash_of` agrees; a plan on the disabled channel is refused (unavailable / PinsTaken); save → state `applied` with that hash; **reboot** (`oep.probe.restart` when the probe lists it - `Host.restart_probe`, waiting up to its restart_max_ms; on a USB probe (P4, RP2) only with `OEP_HW_RESTART=1`, else skipped with that reason in the record - else a classic ESP32 behind a bridge: EN through RTS as esptool's hard reset; neither: skipped) → the saved items are applied at boot (state, get); unset both, save → the hash from before the test. Other settings on the probe (a bench's slots / binds) are kept | hashes at each step, the reboot's way, boot_ids and time (restart_max_ms with oep.probe.restart) |
+| `config` | `oep.probe.config`: set a label (the table's `label` channel, else the first gpio one) and a `disable` item (`OEP_HW_DISABLE`) → get returns them and `hash_of` agrees; a plan on the disabled channel is refused (unavailable / PinsTaken); save → state `applied` with that hash; **reboot** (`oep.probe.restart` when the probe lists it - `Host.restart_probe`, waiting up to its restart_max_ms, then `OEP_HW_REOPEN_S` more when set (below); on a USB probe (P4, RP2) only with `OEP_HW_RESTART=1`, else skipped with that reason in the record - else a classic ESP32 behind a bridge: EN through RTS as esptool's hard reset; neither: skipped) → the saved items are applied at boot (state, get); unset both, save → the hash from before the test. Other settings on the probe (a bench's slots / binds) are kept; whatever fails, the items and the storage are put back (below) | hashes at each step, the reboot's way, boot_ids and time (restart_max_ms, reopen_s and whether the reopen was needed with oep.probe.restart; the error when the probe did not come back) |
 | `wire` | only with `OEP_HW_TARGET=<name>[@swdio[,swclk]]`: scan (the pair named, or every pair), attach with the reset TLV when `OEP_HW_RESET=<channel>`, then 50× (`OEP_HW_LOOPS`) halt → s0 / s1 / a0 / a1 via dmi → read_block (8 words at `OEP_HW_TARGET_ADDR`, default 0x20000000) → the four registers again, unchanged → resume | scan result, connection, DMSTATUS, speed, target_id, dpc, loops and seconds, any register change: before, after, read again, the two words past the block, dpc (the failure message prints every change in full); when an op raises: the loop, the error, DMSTATUS read twice and DMCONTROL (raw dmi), dpc when halted |
 | `gpio` | `oep.fixture.gpio` on the table's two free channels (`OEP_HW_GPIO=a,b`): output_high reads 1, output_low 0, input_pullup 1, input_pulldown 0. Skips when the table gives the board none | every level read |
 | `uart` | `oep.fixture.uart` on the table's RX / TX (`OEP_HW_UART=rx,tx`), or on the probe's settings plan for it when that is in force or the table gives the board no pair (none either: skips): configure 115200 8N1 within 5 %, status says `session` with that rate and format, configure 9600; with `OEP_HW_UART_LOOP=rx,tx` (the two wired together) a write is read back | the actual rates, the status, the loopback bytes |
@@ -67,6 +68,42 @@ is printed at the end of the pytest run.
 
 On the fake (`fake-esp32-v003`) `capture` records its levels without judging them (the fake captures a counter, not its
 pins, and its one-shot is done as start answers).
+
+## A probe that does not come back, and the settings tests/hw changes
+
+**The restart's wait.** A host retries a restarted probe only until its restart_max_ms has passed (oep-if-restart §3):
+`restart_probe` never waits longer by itself, and a probe not back by then is gone - its link closed. On WSL a USB probe
+that re-enumerates is a new device on Windows: it reaches Linux only once `usbipd attach --wsl` attaches it again (by hand,
+or `usbipd attach --wsl --auto-attach --busid <busid>` left running in a Windows shell), which can take longer than the
+probe's restart_max_ms (the RP2350's 2.0 s). `OEP_HW_REOPEN_S=<s>` is your reopen of such a probe, asked for beforehand:
+after the window it is opened again as a new open (confirm first) for up to that many more seconds
+(`restart_probe(reopen_s=...)`; the record says `reopened`). Without it the config test fails naming the loss, and the
+later tests skip with "the probe is gone" - each first tries to open it again once, so an attach by hand during the run
+brings the rest back.
+
+**Settings.** The tests change the probe's settings in two places, and put them back whatever happens - a failed
+assertion, an exception, a probe that went away:
+
+| Where | What it changes | Put back |
+|---|---|---|
+| `config` | a `label` item and a `disable` item (set), the storage (saved twice) | the test unsets both and saves; its `finally` then calls `Run.restore_settings`: each item removed, or set back to the value it had before the run, and the storage saved again (or erased when nothing was saved before) |
+| `capture` (logic, when the probe refuses gpio on the capture's pins) | `idle` items on the two channels (set, not saved) | `_Pull.release` unsets them, then `restore_settings` in its `finally` |
+| `gpio`, `uart`, `capture*`, `i2c_target`, `spi_target` | plans (oep.probe.plan), session state | `plan_release` in each test's `finally`; a plan is the session's, so the session's end at the end of the run releases what a failure left |
+| `wire`, `console` | a connection, a console stream | detach (and close) in `finally`; also the session's |
+| `capture_group` | a bind of the group's tracks | `bind([])` in `finally`; also the session's |
+| `port_speed` | the link's rate | `linktest.matrix` goes back to the boot speed in its `finally`; the probe also falls back by itself when idle |
+| `session` | leases, a force takeover | its own sessions, ended |
+
+No test touches slots, binds of the settings, uart or plan items: those a bench keeps are never changed. When the probe
+went away, `restore_settings` opens it again (waiting `OEP_HW_REOPEN_S`, at least 5 s, and up to 35 s for a lost
+session's lease), and the run's teardown tries once more. What still could not be put back is in the results file
+(`_settings.left_on_probe`) and the summary prints it under **SETTINGS LEFT ON THE PROBE** with the commands to run
+once the probe is back, e.g.:
+
+```sh
+oep config remove <probe> disable 28
+oep config save <probe>        # or `oep config erase <probe>` when nothing was saved before the run
+```
 
 ## Boards and flashers
 
@@ -100,6 +137,7 @@ the bench's permission**: ask first, every time; never flash or reset a device y
 | `OEP_HW_BOARDS` | comma list of board ids (required; nothing runs without it) |
 | `OEP_PROBE_DIR` / `OEP_PROBE_VERSION` / `OEP_HW_NOFLASH` | the firmware source (one of them) |
 | `OEP_HW_TARGET`, `OEP_HW_RESET`, `OEP_HW_TARGET_ADDR`, `OEP_HW_LOOPS` | the wire test: a target is wired (and where), its reset line, the block address, the loop count |
+| `OEP_HW_REOPEN_S` | seconds more to open a restarted probe again once its restart_max_ms has passed (the user's reopen, above; WSL / usbipd). Default 0: none - the probe is gone after restart_max_ms |
 | `OEP_HW_RESTART=1` | the config test reboots a USB probe (P4, RP2) through `oep.probe.restart` (default: not - a restart left an RP2350 and a P4 failing enumeration until a replug with oep-probe-arduino 0.0.29-dev+3c0cd99) |
 | `OEP_HW_WIRE` | the wire / console tests' wire by name (default: `oep.wire.swio` when `OEP_HW_TARGET` names one pin and the probe offers it, else the first wire); the console test uses the `oep.target.console` instance whose open takes that connection |
 | `OEP_HW_GPIO`, `OEP_HW_DISABLE`, `OEP_HW_UART`, `OEP_HW_UART_LOOP` | channel overrides for the fixture tests |
