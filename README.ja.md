@@ -6,9 +6,9 @@ Open Embedded Probe の host 側。v1（oep-spec の `docs/oep-core.ja.md`、`do
 `generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.registry` から取る。破壊的変更を前提とする
 実験段階で、互換 API は約束しない。
 
-**実装する仕様: oep-spec の commit `4621eab`**（`v0.x` のタグはまだ無い。oep-spec versioning §6: 凍結の前は revision 1 だけでは
+**実装する仕様: oep-spec の commit `4bd3a87`**（`v0.x` のタグはまだ無い。oep-spec versioning §6: 凍結の前は revision 1 だけでは
 形が決まらないので、実装は自分が実装する仕様を名乗る）。2026-10-06 の単純化（10 byte の要求の見出し 1 つ、TLV の len は u16、
-閉じた固定の形、describe の `ops` tag、再開なし、`oep.link`）と、コンソールの DMDATA の枠の規則を含む。
+閉じた固定の形、describe の `ops` tag、再開なし、`oep.link`）、コンソールの送りの列と reset の後の待ち（f0c68bf）、定義より長い probe.config の項目（d34dafa）、oep.link の source の len（4bd3a87）を含む。
 
 凍結までは日本語の文（`.ja.md`）が仕様の作業の文で、英語の文書は凍結のときにそこから作り直し、そのときから英語が正になる。OEP を初めて読む人は oep-spec の
 [README](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/README.ja.md) と [レビューの手引き](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/review-guide.ja.md)（どこに何が書いてあるか）から。
@@ -47,7 +47,7 @@ X.Y.Z（v1 の凍結までは、どのリリースも wire を壊しうるので
 | `riscv` | `oep.wire.rvswd` / `oep.wire.swio`（scan、attach: `max_speed` は常に送る、`reset=(channel, hold_ms)` でリセットをかけながら attach、detach、connections）、`oep.target.riscv-dm`（応答は値の数を持つ。`RunResult.not_halted`。hart を止め直せなかった step は `step_left` つきの `StepError`）、`RiscvDm.declared()`（probe が ops tag で出している任意の op。ほかは unknown_operation）、`Wire.search_retries`（attach の立ち上げで余分にかかった試みの数。立ち上げをしたときだけ来る）、attach と scan はその予算の分も待つ、リセット線の探索（`find_reset_line(candidates, pins=...)`）、GPIO 経由の attach |
 | `targets` | host が target の系統ごとに知っていることを 1 つの表に（`FAMILIES`: 線、target_id の照合、リセットのベクタ、NRST を option で読む関数、max_speed / idle_clock）。`identify(target_id)` |
 | `pins` | `oep pins`: channel の分類、low に保つ探索、scan、識別、リセットの線の確かめ、スロットの提案（`PinFinder`） |
-| `console` | `oep.target.console`（位置つきのストリーム: read の応答は長さを持ち、マークは `time_ns`、ロック不要の `streams()`。write が受けるのは mechanism の送り枠まで - DMDATA 3 byte、dmseq 2、SDI なし）と、バイト列として読み、応答の accepted の続きから書く `ConsoleIO`（`stall_s`: その間何も受けなければ TimeoutError） |
+| `console` | `oep.target.console`（位置つきのストリーム: read の応答は長さを持ち、マークは `time_ns`、ロック不要の `streams()`。write はストリームの送りの列に入る。`Console.send_queue` = describe の tag 0x41、accepted = count と列の空きの小さい方で、0 は列が満ちたときだけ。SDI は受けない）と、バイト列として読み、send_queue ずつ、応答の accepted の続きから書く `ConsoleIO`（`ConsoleIO.send_queue`。`stall_s`: その間何も受けなければ TimeoutError） |
 | `fixture` | `oep.fixture.gpio`（出力の強さを要素ごとに: `set([(ch, mode, Drive.max_ma(10))])`、`Drive.default()` = drive_kind 2。`drive_levels()`、`read_state()` = level といま効いている段）/ `uart`（ストリームは plan が作る。`status()`）/ `i2c-target`（`pullup_ohms`: 自分で入れる pull-up。宣言しなければ None。予約のアドレス 0x00〜0x07 / 0x78〜0x7F は送る前に断る）/ `spi-target`（`cs_setup_ns`: CS の後、最初のビットが確かになるまでの時間。`oep dump` が出す） |
 | `config` | `oep.probe.config`（スロット - `attach` の後の `boot_reset` -、3 byte のストリームの bind、plan / label / idle - 6 byte、その `drive` か既定（kind 2）- / uart の項目、get / set / unset / save / erase。`describe()` = 宣言、`state()` = 保存・スロット・bind の今の状態（`reset_at_ns` も。保存の状態は最後のページのもの）、`hash_of(items)` = probe と同じ hash、`find_line(cfg, slot, "nrst")` = probe.config §1.3 の線の探し方。firmware の固定のラベルが手順 (c)） |
 | `capture` | `oep.fixture.logic` / `analog` / `capture-group`（revision 1、oep-spec の oep-if-capture）。mode・rate・trigger・pretrigger・frontend は critical で送り、samples は応答の値が正しい。start の blocking_ms の間は何も送らずに待つ（長さつきフレームなら後で立て直す）。start ごとに世代（`LogicCapture.generation`）が進み、read と release はそれを付ける（`read_segment(segment)` は自分で付ける）。`status()` は `Status` を返す。読んだ区画は `Host.on_capture` の callback に `CaptureRecord` で渡る（記録の受け口。wireskein には依存しない） |
@@ -186,7 +186,7 @@ report = link.raise_speed(hst, [921600, 500000], verify=True, flows=[("out", 2)]
 `試す`（今の速さで応答してから probe が切り替える）→ host は要求した baud に切り替える → 20 ms → `confirm`（100 ms、3 回まで）→
 `決める`。**完全な形**（`verify=True` か `flows=` を渡す）: 起動時の速さの基準を流し方ごとに取り（このセッションのフレーム、
 無ければ 60 フレーム）、候補ごとに使う流し方だけ流す。流し方 = `("in"|"out"|"duplex", n)`（in = oep.link の source probe → host、
-out = oep.link の sink host → probe、duplex = 両方を交互。`n` は同時数、0 = link が出す最大）で、max_frame − 16 のフレームを 16 個流し、
+out = oep.link の sink host → probe、duplex = 両方を交互。`n` は同時数、0 = link が出す最大）で、max_frame − 26（oep.link の source の 1 つの応答が運ぶ最大）のフレームを 16 個流し、
 壊れと失われを数え KB/s を測る。壊れ + 失われが 3 以上で割合が max(基準 × 2, 5 %) を超えたら流し方は通らず、n = 1 で流し直し
 （通れば n = 1 が link の上限）、1 つでも通らなければ候補は通らない。通らない候補は戻して（step 2）起動時の速さに戻り confirm し直す。
 最初に通った候補を使う。probe の UART が作れない速さは飛ばす。通る速さは変換チップとドライバで決まる（FTDI は 3 MHz ÷ n だけ、
@@ -269,9 +269,13 @@ boot_reset、slot_state は tid の前に reset_at_ns）。どの fn の describ
 unknown_operation。再開は無い: end、期限切れ、force はセッションが作ったものをすべて解放し、終わったセッションの要求は no_session、
 open の応答は lease_ms と boot_id、送り直した end には表から答える。コンソールのストリームは場所と mechanism ごとの probe のもの
 （閉じても、そこで次に open されるまで読め、その open は番号を位置とマークごと返す）。`oep.link`（どの profile も最後の fn に持ち、
-`esp32-v003` のものは port_speed を持つ）: source は len(u16) data で答え、sink は count(u16) data を受ける。コンソールの write は
-mechanism の送り枠（DMDATA 3、dmseq 2、SDI 0）までしか受けず、前のバイトが枠に残る間は受けない。target は probe の次の poll
-（1 ms 以上後、hart が走っていれば）か `console_take(sid)` でそれを取る（oep-spec 4621eab、console §2 / §3）。`tests/test_vectors.py` は
+`esp32-v003` のものは port_speed を持つ）: source は len(u16) data で答え、sink は count(u16) data を受ける。f0c68bf からはコンソールの
+ストリームが describe の send_queue（ここでは 256）の送りの列を持つ: write は count と空きの小さい方を受け、0 は列が満ちたとき
+だけ、SDI は受けない。probe は列の先頭を poll ごとに dmseq は 2、DMDATA は 3 byte ずつ target に渡す（タイマーの時計で 1 ms に 1 回、
+hart が走っている間。`console_take(sid)` は全部渡す）。列は reset と再起動をまたいで残り、ストリームが閉じると消える。reset
+（riscv-dm の reset、attach の reset TLV）は自分で再起動する target（`FakeTarget.restart_ms`）を reset_settle_ms まで待ち、過ぎれば
+status line で答える（`settle_log`）。定義より長い項目は無視、critical なら unsupported（d34dafa）。oep.link の source は
+max_frame − 26 までを答える（4bd3a87）。`tests/test_vectors.py` は
 sessions.json を 1 段ずつ、ops.json の全部の場合を、それぞれが書く状態の偽の probe で走らせる。
 
 外のプログラムの試験には `fake_serve` を子プロセスで使う:
