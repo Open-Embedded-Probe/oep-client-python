@@ -311,9 +311,9 @@ def test_a_failed_or_partial_answer_lists_the_unknown_tlv_too():
             call()
         except h.OepError:
             pass
-    ep.console_slot = dict.fromkeys(ep.console_slot, 0)           # no mechanism takes a byte now
     con = console.Console(hst)
     con.open(conn)
+    ep.streams[con.stream].queue[:] = bytes(ep.send_queue)        # the send queue full (no time passes: no poll)
     with pytest.raises(h.OepError):
         con.write(b"x")                                            # nothing fit: failed
     assert len(tag.failed) == 8 and ("oep.wire.rvswd", wire.ATTACH) in tag.failed, tag.failed   # attach, 6 dm, write

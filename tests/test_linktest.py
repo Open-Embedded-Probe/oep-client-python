@@ -29,17 +29,17 @@ def pty_probe(pty):
 
 
 def test_run_counts_whole_frames(pty_probe):
-    cell = linktest.run(pty_probe, "duplex", 2, 48, frames=40)
+    cell = linktest.run(pty_probe, "duplex", 2, 38, frames=40)          # 64 - 26: what one source answer carries
     assert cell.frames == 40 and cell.ok == 40 and cell.broken == 0 and cell.lost == 0 and cell.kb_s > 0
     assert "duplex x2" in cell.text() and "0.00 %" in cell.text()
 
 
 def test_matrix_runs_at_the_speed_in_force_and_at_a_rate(pty_probe):
     results = list(linktest.matrix(pty_probe, rates=[None, 500000, 230400], patterns=["in", "out"], inflight=[1, 8],
-                                   sizes=[16, 48, 4096], frames=20))
+                                   sizes=[16, 38, 4096], frames=20))
     now, fast, bad = results
     assert now.rate == 115200 and not now.switched and len(now.cells) == 2 * 1 * 3   # in-flight 8 skipped (max 1)
-    assert any(c.error.startswith("over the probe's frame") for c in now.cells)
+    assert any(c.error.startswith("over what one source answer carries") for c in now.cells)   # oep-if-link §2
     assert fast.rate == 500000 and fast.switched and fast.actual == 500000 and all(c.ok == 20 for c in fast.cells if not c.error)
     assert bad.rate == 230400 and bad.why == "no confirm at the new rate" and not bad.cells
     assert pty_probe.link.baud == 115200

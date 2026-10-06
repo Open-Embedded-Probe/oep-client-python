@@ -894,7 +894,7 @@ def test_port_speed(run: record.Run):
     timeout = float(os.environ.get("OEP_HW_LT_TIMEOUT", "") or 0.3)
     rates = [None] + list(board.rates)
     rec = run.record("port_speed", rates=[r or "now" for r in rates], inflight=inflight, frames=frames,
-                     size=limits["max_frame"] - 16, timeout=timeout)
+                     size=core.link_size(limits["max_frame"]), timeout=timeout)
     rows, failing = [], []
     baseline: dict[tuple[str, int], float] = {}
     passed_rates: list[int] = []

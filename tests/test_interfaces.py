@@ -263,14 +263,18 @@ def test_console_marks_follow_serials_and_more(dm):
 def test_console_write_partial_and_a_closed_stream_stays_readable(dm):
     ep, hst, d = dm
     con = console.Console(hst)
-    sid = con.open(d.conn)                                        # dmseq: a 2-byte send slot (console §2, §3)
-    assert con.write(b"PING\n") == 2                              # completed partial: not an error
-    assert bytes(ep.streams[sid].written) == b"" and bytes(ep.streams[sid].slot) == b"PI"   # in the slot, not taken yet
+    sid = con.open(d.conn)                                        # dmseq; the hart halted: nothing is handed on
+    assert con.send_queue == 256                                  # describe tag 0x41 (console §1)
+    assert con.write(b"x" * 250) == 250                           # into the send queue (console §2)
+    assert con.write(b"PING\n" * 2) == 6                          # min(count, the free space): completed partial
+    assert bytes(ep.streams[sid].written) == b"" and len(ep.streams[sid].queue) == 256   # queued, not taken yet
     with pytest.raises(host.Failed) as e:
-        con.write(b"NG\n")                                        # the slot still holds them: accepted 0 = failed
+        con.write(b"NG\n")                                        # the queue full: accepted 0 = failed
     assert m.Reader(e.value.result.payload).u16() == 0
-    ep.console_take(sid)                                          # the target takes them (the probe's next poll)
-    assert con.write(b"NG\n") == 2 and bytes(ep.streams[sid].written) == b"PI"
+    con.clear()                                                   # clear leaves the queue (console §2)
+    assert len(ep.streams[sid].queue) == 256
+    ep.console_take(sid)                                          # the target takes them (the probe's polls)
+    assert con.write(b"NG\n") == 3 and bytes(ep.streams[sid].written) == b"x" * 250 + b"PING\nP"
     ep.emit(sid, b"last words")
     ep.lose_connections()
     assert con.read().data == b"last words"
@@ -280,6 +284,7 @@ def test_console_write_partial_and_a_closed_stream_stays_readable(dm):
     assert marks[-1].time_ns == ep.now_ns()                       # the probe's one clock, ns (common §1.3)
     with pytest.raises(host.Rejected, match="unavailable"):
         con.write(b"x")
+    assert ep.streams[sid].queue == b""                           # the queue went with the stream (console §2)
     assert not con.streams()[0].open and con.streams()[0].users == 0
     con.close()                                                   # closed already: ok
     con2 = console.Console(hst)
@@ -288,10 +293,10 @@ def test_console_write_partial_and_a_closed_stream_stays_readable(dm):
         con2.write(b"x")                                          # SDI takes no input: accepted 0 = failed (§3.1)
 
 
-def test_console_io_writes_through_a_small_slot_and_gives_up_on_sdi():
-    """console §2 / §3 (oep-spec 4621eab): a write takes at most the mechanism's send slot - DMDATA 3 bytes, dmseq 2,
-    SDI none - and nothing while the bytes it took last are still there; ConsoleIO goes on from each answer's
-    accepted, and gives up (TimeoutError) when nothing is taken for stall_s."""
+def test_console_io_writes_through_the_send_queue_and_gives_up_on_sdi():
+    """console §2 / §3 (oep-spec f0c68bf, R-A): a write takes min(count, the send queue's free space); the probe hands
+    the queue to the target 2 (dmseq) or 3 (DMDATA) bytes a poll; ConsoleIO writes a send_queue at a time, goes on from
+    each answer's accepted, and gives up (TimeoutError) when nothing is taken for stall_s - SDI takes nothing."""
     clock = Clock()
 
     def tick(data):                                               # time passes between requests: the probe polls
@@ -301,15 +306,19 @@ def test_console_io_writes_through_a_small_slot_and_gives_up_on_sdi():
     hst = host.Host(tick, rng=random.Random(5))
     hst.open(lease_ms=10000)
     conn, _ = riscv.Wire(hst).attach(halt=False)                 # a running hart: the probe answers its slots
-    for mech, slot in ((console.Console.DMDATA, 3), (console.Console.DMSEQ, 2)):
+    line = bytes(range(32, 127)) * 6                              # 570 bytes: more than one queue
+    for mech, per in ((console.Console.DMDATA, 3), (console.Console.DMSEQ, 2)):
         con = console.Console(hst)
         sid = con.open(conn, mech)
         n = len(ep.requests)
-        console.ConsoleIO(con).write(b"hello, target\n")
+        io = console.ConsoleIO(con)
+        assert io.send_queue == 256
+        io.write(line)
         sizes = [struct.unpack_from("<H", r.payload, 2)[0] for r in ep.requests[n:] if r.op == con.WRITE]
-        assert sizes[:2] == [14, 14 - slot] and len(ep.streams[sid].slot) <= slot   # each from what was accepted
-        ep.console_take()                                         # the target takes the last slot
-        assert bytes(ep.streams[sid].written) == b"hello, target\n"
+        assert sizes[:2] == [256, 256]                            # a whole queue a write, from where it left off
+        assert len(ep.streams[sid].written) % per == 0 or len(ep.streams[sid].queue) == 0   # handed on per poll
+        ep.console_take()                                         # the target takes the rest
+        assert bytes(ep.streams[sid].written) == line
         con.close()
         riscv.Wire(hst).detach(conn, force=True)
         conn, _ = riscv.Wire(hst).attach(halt=False)

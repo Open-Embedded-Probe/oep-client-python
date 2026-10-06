@@ -74,7 +74,9 @@ def test_c06_p2_4_attach_and_scan_wait_their_budgets():
     w.attach(pins=ep.pairs[1][0], reset=None)
     budgets = dict((op, ms) for op, ms in seen if op in (riscv.Wire.SCAN, riscv.Wire.ATTACH))
     assert budgets == {riscv.Wire.SCAN: 500 + 1000, riscv.Wire.ATTACH: 1000}
-    assert w.attach_ms((7, 20)) == 1020 and w.search_retries == 0
+    assert w.attach_ms((7, 20)) == 1000 + 20 + 700 and w.search_retries == 0   # + hold_ms + reset_settle_ms (§4.4)
+    dm = riscv.RiscvDm(hst, 1)
+    assert dm.reset_ms() == 700                                    # reset: reset_settle_ms (debug §4.3, core §4.4)
 
 
 # ---- C-09: the serial line ----------------------------------------------------------------------------------------

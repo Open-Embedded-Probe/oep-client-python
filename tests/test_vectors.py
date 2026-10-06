@@ -131,7 +131,7 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None) -> f
         elif name == "oep.target.riscv-dm":                            # every op offered: the default ops tag
             o = fake.Offered(fn, 0, name, (catalog.u16(catalog.MAX_LENGTH, 256),))
         elif name == "oep.target.console":
-            o = fake.Offered(fn, 0, name, (catalog.tlv(fake.MECHANISMS, bytes([0, 1, 2])),))
+            o = fake._console(fn)
         elif name == "oep.link":
             o = fake._link(fn)                                         # source and sink (no UART bridge speed)
         elif name == "oep.probe.config":
@@ -191,11 +191,12 @@ DISCOVERY = load("discovery.json")
 
 
 def smallest_probe() -> endpoint.Endpoint:
-    """The vectors' smallest probe (discovery.json about): only fn 0 whose ops are confirm, list and describe, one UART
+    """The vectors' smallest probe (discovery.json about): only fn 0 whose ops are every op core §1.2 requires (no plan
+    role, so no plan_apply / plan_release), one UART
     bridge (index 0, interface 0xFF), unit_id "a1b2c3d4", discoverable 0, max_op_ms 1000 - its describe in that order
     (ops first), nothing else."""
     t = reg.CORE.tlv["describe"]
-    core = fake.Offered(0, 0, "oep.core", (catalog.ops_tlv({m.OP_CONFIRM, m.OP_LIST, m.OP_DESCRIBE}),
+    core = fake.Offered(0, 0, "oep.core", (catalog.ops_tlv(fake.default_ops("oep.core", ["oep.core"])),
                                            catalog.text(t["unit_id"], "a1b2c3d4"),
                                            catalog.tlv(t["transport"], bytes([0, fake.TRANSPORT["uart_bridge"], 0xFF])),
                                            catalog.u8(t["discoverable"], 0),
@@ -407,11 +408,17 @@ def held(ep):
     req(ep, 1, 0, m.OP_OPEN, struct.pack("<IB", 3000, 0))
 
 
-def stream_one(ep, data=b"", marks=(), conn=1, users=("host",)):
-    """Console stream 1 as the case's state has it (put in place: the fake numbers resources as a probe does)."""
-    s = endpoint.Stream(data=bytearray(data), marks=list(marks), serial=len(marks), conn=conn, mechanism=2,
-                        users=set(users))
-    ep.streams[1], ep.resources[1], ep.stream_order[1] = s, "stream", 1
+def stream_two(ep, data=b"", marks=()):
+    """Console stream 2 on connection 1 as the cases' state has it (one number space, core §9: an attach made
+    connection 1, the open stream 2), its bytes and marks put in place."""
+    wire = next(fn for fn, name in ep.names.items() if name == "oep.wire.rvswd")
+    console_fn = next(fn for fn, name in ep.names.items() if name == "oep.target.console")
+    held(ep)
+    assert attach(ep, wire) == 1
+    sid = struct.unpack_from("<H", req(ep, 3, console_fn, 0x01, struct.pack("<HB", 1, 2)).payload)[0]
+    assert sid == 2
+    s = ep.streams[sid]
+    s.data, s.marks, s.serial = bytearray(data), list(marks), len(marks)
     return s
 
 
@@ -427,6 +434,7 @@ def setup_case(case):
     fns = dict(case["fns"])
     names = set(fns.values())
     if names & {"oep.target.riscv-dm", "oep.target.console", "oep.probe.config"} and "oep.wire.rvswd" not in names:
+        # a wire under the case's fns: the connection there is number 1 (core §9)
         fns["4" if "4" not in fns else "14"] = "oep.wire.rvswd"
     if "oep.probe.config" in names:
         fns.setdefault("7" if "7" not in fns else "17", "oep.target.console")
@@ -455,11 +463,11 @@ def setup_case(case):
             attach(ep, wire)
         ep._target(wire, (1, 2)).dmi[0x11] = 0x00400382
     elif name.startswith("console marks"):
-        stream_one(ep, marks=[(0, 0, reg.COMMON.enum["mark_kind"]["attach"], 1_000_000, 0)], conn=9)
+        stream_two(ep, marks=[(0, 0, reg.COMMON.enum["mark_kind"]["attach"], 1_000_000, 0)])
     elif name.startswith("console streams"):
-        stream_one(ep, conn=1)                                         # see test_ops_vector_states_core_9_allows
+        stream_two(ep)
     elif name.startswith("console read"):
-        stream_one(ep, data=b"hello", conn=9)
+        stream_two(ep, data=b"hello")
     elif name.startswith("probe.config state"):
         clock.t = 1                                                    # the slot's last try at 1 ms
         ep._target(wire, (1, 2)).target_id = 0x00203500
@@ -480,18 +488,6 @@ def test_ops_vectors_from_the_fake_byte_for_byte(case):
     ep = setup_case(case)
     out = ep.handle(hx(case["request_hex"]), 0)
     assert out is not None and out.hex() == case["answer_hex"]
-
-
-def test_ops_vector_states_core_9_allows():
-    """core §9: connections and streams are numbered in one space per probe, so "stream 1 on connection 1" (the
-    console streams case's state) is no state a probe reaches; the fake answers it only from a stream put in place.
-    The case's bytes still check the answer's layout. Every other case's state is reached by requests (or is a
-    stream / segment put in place with numbers a probe could give)."""
-    case = next(c for c in OPS if c["name"].startswith("console streams"))
-    rd = m.Reader(m.Result.unpack(hx(case["answer_hex"])).payload)
-    more, count = rd.take("BB")
-    stream, connection = rd.take("HH")[:2]
-    assert (more, count) == (0, 1) and stream == connection == 1
 
 
 def client(case, session=None):
@@ -518,7 +514,7 @@ def _on_client(case):
         hst, sent = client(case)
         n = struct.unpack_from("<I", m.Request.unpack(hx(case["request_hex"])).payload)[0]
         data = core.link_source_data(hst.call(1, core.LINK_SOURCE, core.link_source_request(n), locked=False).payload)
-        assert data == bytes(k & 0xFF for k in range(n))
+        assert data == bytes(k & 0xFF for k in range(min(n, core.link_size(1024))))   # max_frame - 26 (§2)
         return sent
     if name.startswith("link sink") or name.startswith("link port_speed"):
         hst, sent = client(case, S if "port_speed" in name else None)
@@ -592,13 +588,13 @@ def _on_client(case):
     if name.startswith("console"):
         hst, sent = client(case)
         c = con.Console(hst)
-        c.stream = 1
+        c.stream = 2
         if name.startswith("console marks"):
             marks, more = c.marks_page(0)
             assert not more and [(k.serial, k.position, k.kind, k.time_ns, k.detail) for k in marks] == \
                 [(0, 0, 3, 1_000_000, 0)]
         elif name.startswith("console streams"):
-            assert c.streams() == [con.StreamInfo(1, 1, 2, 1, 0)]
+            assert c.streams() == [con.StreamInfo(2, 1, 2, 1, 0)]
         elif "from 4" in name:
             return None                                                 # the client never sends from 4
         else:
