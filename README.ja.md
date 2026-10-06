@@ -2,11 +2,15 @@
 
 [English](README.md)
 
-Open Embedded Probe の host 側。v1（oep-spec の `docs/oep-core.ja.md` と `docs/oep-if-*.ja.md`）を話す。凍結の前の v1 で、凍結までは仕様が壊れることがある。番号は oep-spec の
+Open Embedded Probe の host 側。v1（oep-spec の `docs/oep-core.ja.md`、`docs/oep-transports.ja.md` と `docs/oep-if-*.ja.md`）を話す。凍結の前の v1 で、凍結までは仕様が壊れることがある。番号は oep-spec の
 `generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.registry` から取る。破壊的変更を前提とする
 実験段階で、互換 API は約束しない。
 
-仕様は英語の本文が正で、`.ja.md` はその訳（食い違えば英語が正しい）。OEP を初めて読む人は oep-spec の
+**実装する仕様: oep-spec の commit `4621eab`**（`v0.x` のタグはまだ無い。oep-spec versioning §6: 凍結の前は revision 1 だけでは
+形が決まらないので、実装は自分が実装する仕様を名乗る）。2026-10-06 の単純化（10 byte の要求の見出し 1 つ、TLV の len は u16、
+閉じた固定の形、describe の `ops` tag、再開なし、`oep.link`）と、コンソールの DMDATA の枠の規則を含む。
+
+凍結までは日本語の文（`.ja.md`）が仕様の作業の文で、英語の文書は凍結のときにそこから作り直し、そのときから英語が正になる。OEP を初めて読む人は oep-spec の
 [README](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/README.ja.md) と [レビューの手引き](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/review-guide.ja.md)（どこに何が書いてあるか）から。
 [使い始める](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/getting-started.ja.md) が最小の probe と host を作り、
 [docs/oep-core.ja.md](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/oep-core.ja.md) がプロトコルの本体、[docs/conformance.ja.md](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/conformance.ja.md)
@@ -37,15 +41,15 @@ X.Y.Z（v1 の凍結までは、どのリリースも wire を壊しうるので
 
 | モジュール | 中身 |
 |---|---|
-| `host` | 要求と結果、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`。lease 切れなら `Expired`。黙って open し直さず、`Host.epoch` が進む。confirm が core §7.1 の範囲の外か、`max_op_ms` が 1〜600000 の外の probe は `NotUsable` で、それ以上何も送らない）。boot_id が変わったとき（confirm、open、heartbeat）と、前に使った id の open が resumed = 0 だったときは名前 → fn の cache を捨て、list し直す |
-| `link` | transport: シリアルの口（常に COBS + CRC、`0x00 <COBS> 0x00`、フレームの外は雑音として捨てる、排他で開く、8N1 で DTR / RTS を立てる）、USB vendor bulk / HID と TCP（長さつきフレーム、§5.1 の立て直し: host の最後の書き込みから 250 ms 待つ。TCP ではフレームの途中の休みもそのまま読み続ける）、corr による照合と送り直し。送り直しにも応答が無ければ `TransportFailed` を上げ、次の要求の前に confirm で立て直す（入力が静かになるのを待ち、自分の corr の confirm。シリアルの口でも）。立て直せなければ ConnectionError。応答はどれも core §4.4 の下限（引数の時間 + 1000 ms + シリアルの口の転送時間。confirm の応答が来るまでは min_max_frame で数える、`wait_floor_s`）以上待つ。fn 0 の heartbeat を読む。短い応答は壊れたフレーム。`open_host(target)` |
-| `core` | インターフェースを名前で探す（キャッシュつき）、confirm（probe の `boot_id` と、この host が来た経路の番号 `transport` つき。2 回目からは使っている revision を求める）、probe の describe（宣言だけ。起動の間 cache: ラベル、transport の一覧、`max_op_ms`）、ロックの取り方（`take`）、ピンの割り当て（plan）、`Interface` の土台 |
-| `riscv` | `oep.wire.rvswd` / `oep.wire.swio`（scan、attach: `max_speed` は常に送る、`reset=(channel, hold_ms)` でリセットをかけながら attach、detach、connections）、`oep.target.riscv-dm`（応答は値の数を持つ。`RunResult.not_halted`。hart を止め直せなかった step は `step_left` つきの `StepError`）、`RiscvDm.declared()`（probe が出している任意の op。ほかは unknown_operation）、`Wire.search_retries`（attach の立ち上げで余分にかかった試みの数。立ち上げをしたときだけ来る）、attach と scan はその予算の分も待つ、リセット線の探索（`find_reset_line(candidates, pins=...)`）、GPIO 経由の attach |
+| `host` | 要求と結果（見出しは 10 byte の 1 つ: セッションの中で送る要求はそのセッションの id、セッションの外のロックなしの要求は 0）、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`。セッションが終わった（end、lease の期限切れ、ほかのセッションの force）なら `NoSession`: probe はそのセッションが作ったものをすべて解放している。再開は無く、黙って open し直さず、`Host.session` は None に、`Host.epoch` が進む。confirm が core §7.1 の範囲の外か、`max_op_ms` が 1〜600000 の外の probe は `NotUsable` で、それ以上何も送らない）。`open(lease_ms, force=, owner=)` はいつも新しい乱数の id で新しいセッションを開き、`Opened(lease_ms, boot_id)` を返す。`end()` はすべてを解放し、host はセッションの外に出る。boot_id が変わったとき（confirm、open、heartbeat）は名前 → fn の cache を捨て、list し直す |
+| `link` | transport: シリアルの口（常に COBS + CRC、`0x00 <COBS> 0x00`、フレームの外は雑音として捨てる、排他で開く、8N1 で DTR / RTS を立てる）、USB vendor bulk / HID と TCP（長さつきフレーム、transports §5 の立て直し: host の最後の書き込みから 250 ms 待つ。TCP ではフレームの途中の休みもそのまま読み続ける）、corr による照合と送り直し。送り直しにも応答が無ければ `TransportFailed` を上げ、次の要求の前に confirm で立て直す（入力が静かになるのを待ち、自分の corr の confirm。シリアルの口でも）。立て直せなければ ConnectionError。応答はどれも core §4.4 の下限（引数の時間 + 1000 ms + シリアルの口の転送時間。confirm の応答が来るまでは min_max_frame で数える、`wait_floor_s`）以上待つ。fn 0 の heartbeat を読む。短い応答は壊れたフレーム。`open_host(target)` |
+| `core` | インターフェースを名前で探す（キャッシュつき）、confirm（probe の `boot_id` と、この host が来た経路の番号 `transport` つき。2 回目からは使っている revision を求める）、probe の describe（宣言だけ。起動の間 cache: ラベル、transport の一覧、`max_op_ms`）、どの fn の `ops` も（describe の ops tag、core §7.4: `ops(hst, fn)`、`offers(hst, fn, op)`、`Interface.offers(op)`。`require` / `not_offered` は送らずに、probe が答えるのと同じ `Rejected`（detail unknown_operation）を上げる）、ロックの取り方（`take`）、ピンの割り当て（plan）、`Interface` の土台。`oep.link`（oep-if-link）: `link_fn`、`link_speed`、source / sink の要求と応答の部品 |
+| `riscv` | `oep.wire.rvswd` / `oep.wire.swio`（scan、attach: `max_speed` は常に送る、`reset=(channel, hold_ms)` でリセットをかけながら attach、detach、connections）、`oep.target.riscv-dm`（応答は値の数を持つ。`RunResult.not_halted`。hart を止め直せなかった step は `step_left` つきの `StepError`）、`RiscvDm.declared()`（probe が ops tag で出している任意の op。ほかは unknown_operation）、`Wire.search_retries`（attach の立ち上げで余分にかかった試みの数。立ち上げをしたときだけ来る）、attach と scan はその予算の分も待つ、リセット線の探索（`find_reset_line(candidates, pins=...)`）、GPIO 経由の attach |
 | `targets` | host が target の系統ごとに知っていることを 1 つの表に（`FAMILIES`: 線、target_id の照合、リセットのベクタ、NRST を option で読む関数、max_speed / idle_clock）。`identify(target_id)` |
 | `pins` | `oep pins`: channel の分類、low に保つ探索、scan、識別、リセットの線の確かめ、スロットの提案（`PinFinder`） |
-| `console` | `oep.target.console`（位置つきのストリーム: read の応答は長さを持ち、マークは `time_ns`、ロック不要の `streams()`）と、バイト列として読む `ConsoleIO` |
-| `fixture` | `oep.fixture.gpio`（出力の強さを要素ごとに: `set([(ch, mode, Drive.max_ma(10))])`。`drive_levels()`、`read_state()` = level といま効いている段）/ `uart`（ストリームは plan が作る。`status()`）/ `i2c-target`（`pullup_ohms`: 自分で入れる pull-up。宣言しなければ None。予約のアドレス 0x00〜0x07 / 0x78〜0x7F は送る前に断る）/ `spi-target`（`cs_setup_ns`: CS の後、最初のビットが確かになるまでの時間。`oep dump` が出す） |
-| `config` | `oep.probe.config`（スロット - `boot_reset` -、bind、plan / label / idle - その `drive` - / uart の項目、get / set / unset / save / erase。`describe()` = 宣言、`state()` = 保存・スロット・bind の今の状態（`reset_at_ns` も。保存の状態は最後のページのもの）、`hash_of(items)` = probe と同じ hash、`find_line(cfg, slot, "nrst")` = probe.config §1.3 の線の探し方。firmware の固定のラベルが手順 (c)） |
+| `console` | `oep.target.console`（位置つきのストリーム: read の応答は長さを持ち、マークは `time_ns`、ロック不要の `streams()`。write が受けるのは mechanism の送り枠まで - DMDATA 3 byte、dmseq 2、SDI なし）と、バイト列として読み、応答の accepted の続きから書く `ConsoleIO`（`stall_s`: その間何も受けなければ TimeoutError） |
+| `fixture` | `oep.fixture.gpio`（出力の強さを要素ごとに: `set([(ch, mode, Drive.max_ma(10))])`、`Drive.default()` = drive_kind 2。`drive_levels()`、`read_state()` = level といま効いている段）/ `uart`（ストリームは plan が作る。`status()`）/ `i2c-target`（`pullup_ohms`: 自分で入れる pull-up。宣言しなければ None。予約のアドレス 0x00〜0x07 / 0x78〜0x7F は送る前に断る）/ `spi-target`（`cs_setup_ns`: CS の後、最初のビットが確かになるまでの時間。`oep dump` が出す） |
+| `config` | `oep.probe.config`（スロット - `attach` の後の `boot_reset` -、3 byte のストリームの bind、plan / label / idle - 6 byte、その `drive` か既定（kind 2）- / uart の項目、get / set / unset / save / erase。`describe()` = 宣言、`state()` = 保存・スロット・bind の今の状態（`reset_at_ns` も。保存の状態は最後のページのもの）、`hash_of(items)` = probe と同じ hash、`find_line(cfg, slot, "nrst")` = probe.config §1.3 の線の探し方。firmware の固定のラベルが手順 (c)） |
 | `capture` | `oep.fixture.logic` / `analog` / `capture-group`（revision 1、oep-spec の oep-if-capture）。mode・rate・trigger・pretrigger・frontend は critical で送り、samples は応答の値が正しい。start の blocking_ms の間は何も送らずに待つ（長さつきフレームなら後で立て直す）。start ごとに世代（`LogicCapture.generation`）が進み、read と release はそれを付ける（`read_segment(segment)` は自分で付ける）。`status()` は `Status` を返す。読んだ区画は `Host.on_capture` の callback に `CaptureRecord` で渡る（記録の受け口。wireskein には依存しない） |
 | `decode` | キャプチャのチャネルの復号（I2C） |
 | `registry` | oep-spec の番号の表から生成したモジュール（編集しない。oep-spec から写し直す）。名前からインターフェースの番号を引く公開の入口は `registry.INTERFACES[name]`（`.revision`、`.op`、`.tlv`、`.enum`。例 `INTERFACES["oep.fixture.uart"].enum["role"]`）。`FIXTURE_UART` などのモジュールの名前は同じもの |
@@ -66,7 +70,7 @@ hst = link.open_host("/run/board-identify/by-id/esp32-series-30eda0e31108")   # 
 # describe's unit_id must match), "usb" (every device on the project's VID:PID 1209:4F45, each counted once: exactly
 # one -> vendor, then HID, else its CDC port; several -> link.SeveralProbes lists them, name one) /
 # "usb:VID:PID[:SERIAL]" (vendor, then HID). Each is probed first with a
-# confirm only (core §3.3): no valid answer -> closed, link.NotOepProbe
+# confirm only (transports §3): no valid answer -> closed, link.NotOepProbe
 core.take(hst, 30000, owner="flash script")   # the only way in: force; else wait out the lease, name the holder
 wire = riscv.Wire(hst, "oep.wire.rvswd")
 conn, _ = wire.attach(halt=True)
@@ -80,7 +84,7 @@ hst.end()
 
 ## Linux での USB の権限（udev）
 
-probe はプロジェクトの USB の VID:PID `1209:4F45`（core §3.3）で列挙される。その vendor bulk（libusb）や HID（hidraw）を
+probe はプロジェクトの USB の VID:PID `1209:4F45`（transports §3）で列挙される。その vendor bulk（libusb）や HID（hidraw）を
 普通の利用者で開くには udev の規則が要る: [`udev/70-oep-probe.rules`](https://github.com/Open-Embedded-Probe/oep-client-python/blob/main/udev/70-oep-probe.rules)（checkout と sdist にある）は、ログインしている
 利用者（`uaccess`）と `plugdev` グループに USB device とその hidraw を開かせる。入れるには管理者の権限が要る:
 
@@ -168,7 +172,7 @@ done in 7.3 s
 
 ## UART bridge を速くする（port_speed、使うときだけ）
 
-describe に `port_speed` を宣言する probe（oep-core §3.5。参照の classic ESP32 の firmware は宣言する）では、host は 1 つのセッションの
+任意の `oep.link` が ops に `port_speed` を立てる probe（oep-if-link §3。参照の classic ESP32 の firmware は立てる）では、host は 1 つのセッションの
 間、UART bridge を起動時の速さ（115200）より速くできます。host が頼まない限り何も変わりません:
 
 ```python
@@ -178,11 +182,11 @@ print(hst.link.speed.to_text())             # 候補ごとに、基準、流し�
 report = link.raise_speed(hst, [921600, 500000], verify=True, flows=[("out", 2)], record=True)
 ```
 
-手順は oep-spec の host 開発ガイド §17（core §3.5 は握手だけ）。**最小の形**（既定、約 50 ms、計測なし）: 候補ごとに順に
+手順は oep-spec の host 開発ガイド §17（oep-if-link §3 は握手だけ）。**最小の形**（既定、約 50 ms、計測なし）: 候補ごとに順に
 `試す`（今の速さで応答してから probe が切り替える）→ host は要求した baud に切り替える → 20 ms → `confirm`（100 ms、3 回まで）→
 `決める`。**完全な形**（`verify=True` か `flows=` を渡す）: 起動時の速さの基準を流し方ごとに取り（このセッションのフレーム、
-無ければ 60 フレーム）、候補ごとに使う流し方だけ流す。流し方 = `("in"|"out"|"duplex", n)`（in = link_source probe → host、
-out = link_sink host → probe、duplex = 両方を交互。`n` は同時数、0 = link が出す最大）で、max_frame − 16 のフレームを 16 個流し、
+無ければ 60 フレーム）、候補ごとに使う流し方だけ流す。流し方 = `("in"|"out"|"duplex", n)`（in = oep.link の source probe → host、
+out = oep.link の sink host → probe、duplex = 両方を交互。`n` は同時数、0 = link が出す最大）で、max_frame − 16 のフレームを 16 個流し、
 壊れと失われを数え KB/s を測る。壊れ + 失われが 3 以上で割合が max(基準 × 2, 5 %) を超えたら流し方は通らず、n = 1 で流し直し
 （通れば n = 1 が link の上限）、1 つでも通らなければ候補は通らない。通らない候補は戻して（step 2）起動時の速さに戻り confirm し直す。
 最初に通った候補を使う。probe の UART が作れない速さは飛ばす。通る速さは変換チップとドライバで決まる（FTDI は 3 MHz ÷ n だけ、
@@ -207,15 +211,15 @@ max(基準 × 2, 10 %) を超えて壊れ・失われたら下げる。下げる
 2 秒（`settle_s`）以内に測った失敗は「不明」）、通った速さを先頭に、通らなかった速さを外す。全部の候補が通らなかったとあれば、
 いちばん遅い候補を 1 回だけ試す（`speed.retried`）。`x-` で始まる unit_id（一意の番号も保存先も無い probe、core §7.5）では
 何も残さず何も読まない。上げるのは、この host が来た経路（confirm の応答の transport TLV、core §7.1）が UART bridge のときの
-その口。機能の無い probe は `not supported`
-で、速さは変わらない。ブローカー（TCP）の後ろでは client ではなくブローカーが行う。シリアルの口は、ドライバにあれば low-latency の
+その口。`oep.link` の無い probe、または `oep.link` が port_speed を持たない probe は `not supported`
+で、速さは変わらない。線の試験（`linktest`、`core.link_speed`）も `oep.link` を要る。ブローカー（TCP）の後ろでは client ではなくブローカーが行う。シリアルの口は、ドライバにあれば low-latency の
 モードで開く（FTDI の latency timer 16 → 1 ms で UART bridge の速度が 3 倍になった）。ボードの起動時の速さが 115200 でなければ
 `open_host(..., baud=)` で渡す。
 
 ## 偽の probe（動く spec）
 
-`endpoint.Endpoint` は oep-spec の規範どおりに答える偽の probe で（2026-10-01: 応答のデータと並びは長さを持ち、どの応答にも TLV が
-続けられる、期限切れ後の rejected `expired`、資源番号は 1 つの空間、describe は宣言だけで状態は `state`、キャプチャの世代）、
+`endpoint.Endpoint` は oep-spec の規範どおりに答える偽の probe で（応答のデータと並びは長さを持ち、どの応答にも TLV が
+続けられる、資源番号は 1 つの空間、describe は宣言だけで状態は `state`、キャプチャの世代）、
 ch32rv・この client・probe の firmware を突き合わせる「動く spec」として使う（spec が変わったら、probe の firmware より先にここを合わせる）。`fake` は宣言の例（profile:
 `p4-x035`、`esp32-v003`、`p4-bench` = スロット 3 か所と席 2 つの架空の治具、`rp2350-pins` = host がピンを選ぶ wire）、`fake_serial` は
 シリアルの口のバイトの側（COBS の候補、生のバイトと bind、セッション中の停止と再開）。
@@ -256,6 +260,20 @@ TLV が名指せば unavailable cause 5 holder_kind 7。`search_retries` は立�
 TX の無い uart の write は unavailable cause 6、`esp32-v003` の spi-target は `cs_setup_ns` を宣言する。ピンの無い wire の
 profile は無いので、ピンの無い scan は試していない。
 
+2026-10-06 の単純化（oep-spec b69ec26〜9d4baf9、`docs/v1-simplification-proposal-2026-10-06.ja.md`）も入っている: session_id を持つ
+10 byte の要求の見出し 1 つ（0 = なし。ロックの要る要求の 0 は session_required、ロックなしの要求はセッションの確かめなしに処理）。
+TLV は tag(u8) len(u16) value。どの並びも count × 要素で、要素に長さを置かない。固定の形は閉じている: 形より長い項目と要求の TLV は、
+critical なら unsupported、そうでなければ無視（probe.config の idle は 6 byte で drive_kind 2 = 既定、スロットは attach の後に
+boot_reset、slot_state は tid の前に reset_at_ns）。どの fn の describe も `ops` tag を持ち（profile が書かなければ `fake.FakeProbe` が
+そのインターフェースの表の op をすべて立てる。`fake.ops_of(name, *without)` で任意の op を外す）、立っていない op は
+unknown_operation。再開は無い: end、期限切れ、force はセッションが作ったものをすべて解放し、終わったセッションの要求は no_session、
+open の応答は lease_ms と boot_id、送り直した end には表から答える。コンソールのストリームは場所と mechanism ごとの probe のもの
+（閉じても、そこで次に open されるまで読め、その open は番号を位置とマークごと返す）。`oep.link`（どの profile も最後の fn に持ち、
+`esp32-v003` のものは port_speed を持つ）: source は len(u16) data で答え、sink は count(u16) data を受ける。コンソールの write は
+mechanism の送り枠（DMDATA 3、dmseq 2、SDI 0）までしか受けず、前のバイトが枠に残る間は受けない。target は probe の次の poll
+（1 ms 以上後、hart が走っていれば）か `console_take(sid)` でそれを取る（oep-spec 4621eab、console §2 / §3）。`tests/test_vectors.py` は
+sessions.json を 1 段ずつ、ops.json の全部の場合を、それぞれが書く状態の偽の probe で走らせる。
+
 外のプログラムの試験には `fake_serve` を子プロセスで使う:
 
 ```sh
@@ -280,7 +298,7 @@ pty がシリアルの口（host が TIOCEXCL を掛けて開く）、`--tcp POR
 区画すべてに flags bit2 を立てる。`--no-drive-levels` は gpio の drive_levels を外す（出力の強さを切り替えられない probe）。
 `--silent-until-reset N` は N 番目のピンの組の target を、その線でリセットされるまで何も答えないようにする。`--boot-reset`（どの
 `--slot` も起動直後のリセットでのやり直しを求める）と合わせると、スロットの `nrst` の線 - `--label CH=TEXT`（例 `23=v003.nrst`）か、
-firmware の固定のラベル `NRST`（probe.config §1.3 の手順 (c)）- で、起動時にリセットでのやり直しが起きる。port_speed: `esp32-v003` は持つ（`--no-port-speed` で外す）。
+firmware の固定のラベル `NRST`（probe.config §1.3 の手順 (c)）- で、起動時にリセットでのやり直しが起きる。port_speed: `esp32-v003` の `oep.link` は持つ（`--no-port-speed` で ops から外す）。
 `--broken-rate RATE[:MIN_SIZE][:in|out]` はその速さでフレームを壊す（同じプロセスの `fake_serial.FakeSerialStream` は、host の速さが
 probe の速さと違う間、両方向のバイトをすべて壊す）。出来事とデータの push は pty にも TCP（両方の framing）にも出る。ほかは `--help`。
 
