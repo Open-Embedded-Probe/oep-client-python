@@ -1,5 +1,5 @@
 {
-  "about": "list, describe and the header refusals of the smallest probe (docs/getting-started.md §2, §3): only fn 0 (oep.core, instance 0, revision 1), one UART bridge (transport index 0, interface 0xFF), unit_id \"a1b2c3d4\", discoverable 0 (it does not enumerate with the project's USB VID:PID), max_op_ms 1000. The corrs continue confirm.json's first exchange (corr 1): list 2, describe 3, describe past the end 4, the refusals 5 and 6. Those values are an example probe's.",
+  "about": "list, describe and the header refusals of the smallest probe (docs/getting-started.md §2, §3): only fn 0 (oep.core, instance 0, revision 1) whose ops are confirm, list and describe (describe common tag ops), one UART bridge (transport index 0, interface 0xFF), unit_id \"a1b2c3d4\", discoverable 0 (it does not enumerate with the project's USB VID:PID), max_op_ms 1000. The corrs continue confirm.json's first exchange (corr 1): list 2, describe 3, describe past the end 4, the refusals 5 and 6. Those values are an example probe's.",
   "exchanges": [
     {
       "name": "list everything from the first",
@@ -10,8 +10,8 @@
         "first": 0,
         "prefix": ""
       },
-      "request_hex": "01020000000200000000",
-      "request_serial_frame_hex": "000301020101020201010103980c00",
+      "request_hex": "0102000000020000000000000000",
+      "request_serial_frame_hex": "00030102010102020101010101010103aa9e00",
       "answer": {
         "corr": 2,
         "total": 1,
@@ -25,8 +25,8 @@
           }
         ]
       },
-      "answer_hex": "02020001000100010f000000000100086f65702e636f7265",
-      "answer_serial_frame_hex": "000302020201020103010f01010102010c086f65702e636f726516e300"
+      "answer_hex": "0202000100010001000000000100086f65702e636f7265",
+      "answer_serial_frame_hex": "0003020202010201020101010102010c086f65702e636f7265cb7000"
     },
     {
       "name": "describe fn 0 from the first",
@@ -36,11 +36,16 @@
         "fn": 0,
         "first": 0
       },
-      "request_hex": "01030000000300000000",
-      "request_serial_frame_hex": "000301030101020301010103ea4d00",
+      "request_hex": "0103000000030000000000000000",
+      "request_serial_frame_hex": "00030103010102030101010101010103ea3000",
       "answer": {
         "corr": 3,
         "more": 0,
+        "ops": [
+          1,
+          2,
+          3
+        ],
         "unit_id": "a1b2c3d4",
         "transports": [
           {
@@ -52,8 +57,8 @@
         "discoverable": 0,
         "max_op_ms": 1000
       },
-      "answer_hex": "0203000100004208613162326333643449030001ff4a01004d04e8030000",
-      "answer_serial_frame_hex": "000302030201010d4208613162326333643449030501ff4a01054d04e80301038aef00"
+      "answer_hex": "020300010000090200010742080061316232633364344903000001ff4a0100004d0400e8030000",
+      "answer_serial_frame_hex": "0003020302010103090205010742080b61316232633364344903010501ff4a0101034d0403e8030103e32400"
     },
     {
       "name": "describe fn 0 from beyond the last: more 0 and no TLVs",
@@ -61,9 +66,9 @@
       "request": {
         "corr": 4,
         "fn": 0,
-        "first": 4
+        "first": 5
       },
-      "request_hex": "01040000000300000400",
+      "request_hex": "0104000000030000000000000500",
       "answer": {
         "corr": 4,
         "more": 0
@@ -80,7 +85,7 @@
         "fn": 7,
         "op": 1
       },
-      "request_hex": "010500070001",
+      "request_hex": "01050007000100000000",
       "answer": "unknown_function",
       "answer_hex": "0205000001"
     },
@@ -92,7 +97,7 @@
         "fn": 0,
         "op": 80
       },
-      "request_hex": "010600000050",
+      "request_hex": "01060000005000000000",
       "answer": "unknown_operation",
       "answer_hex": "0206000002"
     }
