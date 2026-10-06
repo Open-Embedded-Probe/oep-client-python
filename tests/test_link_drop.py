@@ -1,7 +1,8 @@
 """Raw DMI groups over a debug link that drops (a CH32L103 behind an RVSWD probe, about 0.7 - 2 ms after a change of
 hart state): writes are lost and reads give the last value read or all ones, with nothing in the answer to say so.
 
-The fake drops the link at one DMI access (FakeTarget.drop_at) and keeps it down to the end of that request (or for
+The fake drops the link at one DMI access (FakeTarget.drop_at; "glitch" / "glitch_parity": one access missed, the link up
+again at once, a write missed with cmderr 6 set for "glitch_parity") and keeps it down to the end of that request (or for
 drop_requests requests). Every access of each helper is hit in turn, stale and all ones: the code before the held
 groups (copied here as old_*) returned a wrong value - or resumed into the application - without an error; the held
 groups (RiscvDm.held) return the right value or raise LinkNotHeld, never a wrong one."""
@@ -210,6 +211,78 @@ def test_a_group_that_keeps_failing_on_the_line_is_tried_then_raised():
     with pytest.raises(riscv.LinkNotHeld) as e:
         d.read_register(S0)
     assert isinstance(e.value.last, riscv.StepListError) and e.value.last.status == riscv.STATUS["line"]
+
+
+# ---- cmderr 6: a frame the module took for one with a bad parity (QingKe) - a missed access, not a failed command ----
+
+def old_cmderr_read_register(d: riscv.RiscvDm, regno: int) -> int:
+    """read_register before cmderr 6 counted as a failed try: any cmderr cleared and raised."""
+    what = f"read_register {regno:#x}"
+    command = 0x00220000 | regno
+    poll = d.step_poll(riscv.ABSTRACTCS, 1 << 12, 0, 100)
+    steps = (d.step_write(riscv.ABSTRACTCS, 0x700)
+             + d.step_write(riscv.DATA0, riscv.READ_SENTINELS[0]) + d.step_write(riscv.COMMAND, command) + poll
+             + d.step_read(riscv.DATA0)
+             + d.step_write(riscv.DATA0, riscv.READ_SENTINELS[1]) + d.step_write(riscv.COMMAND, command) + poll
+             + d.step_read(riscv.DMSTATUS) + d.step_read(riscv.DATA0))
+    cs1, data0, cs2, _, _ = d.held(steps, what, agree=lambda v: bool((v[0] | v[2]) & 0x700) or v[1] == v[4])
+    d._cmderr(cs1 | cs2, what)
+    return data0
+
+
+def _no_cmderr(tg) -> bool:
+    return not (tg.dmi.get(riscv.ABSTRACTCS, 0) >> 8) & 7
+
+
+def test_cmderr_6_is_a_failed_try_and_the_group_is_run_again():
+    """A write missed with cmderr 6 set (QingKe's "parity bit error": the module ignored the frame) at every access of
+    read_register and write_register (bench, oep-probe-arduino 0.0.29-dev+f594f04, tests/hw test_wire on a CH32L103
+    through an RVSWD probe: "read_register 0x100a / 0x1009 / 0x100b failed (cmderr 6)", 3 of 8 runs). It raised
+    RuntimeError; now the group is cleared and run again within the tries: the right value, no cmderr left."""
+    old = sweep(lambda d, tg: old_cmderr_read_register(d, S0), lambda tg, v: v == VALUE, modes=("glitch_parity",))
+    assert ("RuntimeError" in {name for _, _, name in old["raised"]})
+    new = sweep(lambda d, tg: (d.read_register(S0), _no_cmderr(tg)), lambda tg, v: v == (VALUE, True),
+                modes=("glitch_parity",))
+    assert not new["wrong"] and not new["raised"] and new["right"]
+
+    def write(d, tg):
+        d.write_register(S0, 0x13572468)
+        return tg.regs[S0], _no_cmderr(tg)
+    got = sweep(write, lambda tg, v: v == (0x13572468, True), modes=("glitch_parity",))
+    assert not got["wrong"] and not got["raised"] and got["right"]
+
+
+def test_cmderr_6_twice_in_a_read_never_gives_a_wrong_register():
+    n = accesses(lambda d, tg: d.read_register(S0))
+    wrong, raised = [], []
+    for a in range(n):
+        for b in range(a + 1, n):
+            ep, hst, tg, d = bench()
+            tg.drop_at = {a: "glitch_parity", b: "glitch_parity"}
+            try:
+                v = d.read_register(S0)
+            except (host.OepError, RuntimeError) as e:
+                raised.append((a, b, type(e).__name__))
+                continue
+            if v != VALUE:
+                wrong.append((a, b, v))
+    # never a wrong value nor an error (two misses may hide each other's cmderr 6 - a sentinel write lost and the poll
+    # after it read stale - with DATA0 still the first command's right value; the next group clears it first)
+    assert not wrong and not raised
+
+
+def test_cmderr_6_at_every_try_raises_link_not_held_and_leaves_no_cmderr():
+    ep, hst, tg, d = bench()
+
+    def parity(command):                                         # every command's frame taken for a bad one
+        tg.dmi[riscv.ABSTRACTCS] = tg.dmi.get(riscv.ABSTRACTCS, 0) | (riscv.CMDERR_PARITY << 8)
+    tg.abstract = parity
+    with pytest.raises(riscv.LinkNotHeld) as e:
+        d.read_register(S0)
+    assert e.value.tries == riscv.HELD_TRIES and _no_cmderr(tg)
+    with pytest.raises(riscv.LinkNotHeld):
+        d.write_register(S0, 1)
+    assert _no_cmderr(tg)
 
 
 # ---- write_register and uiapduino.run_payload's registers --------------------------------------------------------------

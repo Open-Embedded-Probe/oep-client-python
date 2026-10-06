@@ -268,6 +268,24 @@ def _wire_for(hst, pins_text: str):
     return wires, pairs
 
 
+def _dm_state(dm: riscv.RiscvDm) -> dict:
+    """DMSTATUS (twice, raw dmi) and dpc (read_register, when DMSTATUS says halted) as found, each read's error kept."""
+    out: dict = {}
+    try:
+        _, values = dm.dmi([dm.step_read(riscv.DMSTATUS), dm.step_read(riscv.DMCONTROL), dm.step_read(riscv.DMSTATUS)])
+        out["dmstatus"] = [f"{values[0]:#010x}", f"{values[2]:#010x}"]
+        out["dmcontrol"] = f"{values[1]:#010x}"
+        halted = values[0] == values[2] and values[0] & (1 << 9)
+    except Exception as e:                                       # noqa: BLE001 - recorded, the test fails anyway
+        out["dmstatus_error"] = f"{type(e).__name__}: {e}"
+        halted = False
+    try:
+        out["dpc"] = f"{dm.read_register(dm.DPC):#010x}" if halted else "not read: the hart is not halted"
+    except Exception as e:                                       # noqa: BLE001
+        out["dpc_error"] = f"{type(e).__name__}: {e}"
+    return out
+
+
 def test_wire(run: record.Run):
     spec = os.environ.get("OEP_HW_TARGET", "")
     if not spec:
@@ -298,6 +316,7 @@ def test_wire(run: record.Run):
     regs = (0x1008, 0x1009, riscv.REG_A0, riscv.REG_A1)          # s0, s1, a0, a1
     changed = []
     t0 = time.monotonic()
+    i = -1
     try:
         for i in range(loops):
             dm.halt()
@@ -317,6 +336,12 @@ def test_wire(run: record.Run):
                                 "words_past_block": past.hex(), "dpc": f"{dm.read_register(dm.DPC):#010x}"})
             dm.resume()
             assert len(data) == 32
+    except Exception as e:
+        # the state the failure left: DMSTATUS (read twice, raw) and dpc (when the hart is halted), with the loop and the
+        # error - which op met what (a cmderr, a link that did not hold, a hart that ran on)
+        rec["failure"] = dict(loop=i, error=f"{type(e).__name__}: {e}", **_dm_state(dm))
+        print(f"\n  wire: failed in loop {i}: {json.dumps(rec['failure'])}")
+        raise
     finally:
         rec.update(loops=loops, loop_seconds=round(time.monotonic() - t0, 2), registers_changed=changed,
                    block_address=f"{address:#010x}")

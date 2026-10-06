@@ -42,7 +42,12 @@ HELD_TRIES = 4             # tries of a held DMI group (RiscvDm.held) before it 
 HELD_RETRY_S = 0.005       # the pause before a held group's next try: past the 0.7 - 2.1 ms a dropped link has been
                            # seen to stay down, and long enough for the probe to bring an idle link back up
 HELD_RETRY_STATUSES = {STATUS["line"], STATUS["timeout"], STATUS["wait"]}   # what a drop can make a step list answer
+CMDERR_PARITY = 6          # QingKe's ABSTRACTCS cmderr 6, "parity bit error during communication": a frame it ignored
 READ_SENTINELS = (0x00000000, 0xFFFFFFFF)   # DATA0 before each of read_register's two commands (they differ in every bit)
+
+
+def _cmderr_of(abstractcs: int) -> int:
+    return (abstractcs >> 8) & 7
 
 
 def status_name(status: int) -> str:
@@ -592,6 +597,29 @@ class RiscvDm(Interface, BlockLength):
             self.held([self.step_write(ABSTRACTCS, 0x700)], f"{what}: clearing cmderr")
             raise RuntimeError(f"{what} failed (cmderr {(cs >> 8) & 7})")
 
+    def _held_abstract(self, steps: bytes, what: str, agree) -> list[int]:
+        """held() for a group of access-register commands that begins by clearing cmderr: a try that ends with cmderr 6
+        is a failed try - QingKe's "parity error": the module took one of the group's frames for a bad one and ignored
+        it, a missed access with the link up again at once (bench, oep-probe-arduino 0.0.29-dev+f594f04 / 4c310a2,
+        tests/hw test_wire on a CH32L103 through an RVSWD probe: "read_register ... failed (cmderr 6)") - and the group
+        is run again within the tries, as for a drop (it was: RuntimeError). Still cmderr 6 after every try: cmderr
+        cleared, LinkNotHeld."""
+        parity = []
+
+        def take(values: list[int]) -> bool:
+            if any(_cmderr_of(v) == CMDERR_PARITY for v in values):
+                parity.append(True)
+            return agree(values)
+        try:
+            return self.held(steps, what, agree=take)
+        except LinkNotHeld:
+            if parity:                            # leave no cmderr 6 behind (one try: the link did not hold)
+                try:
+                    self.held([self.step_write(ABSTRACTCS, 0x700)], f"{what}: clearing cmderr", tries=1)
+                except (LinkNotHeld, StepListError):
+                    pass
+            raise
+
     def read_register(self, regno: int) -> int:
         """A GPR / CSR of the halted hart through an abstract command (access register, 32 bits) in plain DMI steps, so
         any probe with dmi does it. The register is read twice in the group - DATA0 first set to READ_SENTINELS[0],
@@ -601,7 +629,9 @@ class RiscvDm(Interface, BlockLength):
         cannot make the two agree on anything but the register's value (bench, oep-probe-arduino 0.0.29-dev+bd19b00,
         tests/hw test_wire on a CH32L103 through an RVSWD probe: a0 read as s1's value after a read_block, the looks
         passing). The group is held (`held`): a value read over a dropped link is never returned - the group is tried
-        again, and LinkNotHeld raised when it could not be confirmed. A cmderr is cleared, then raised (RuntimeError).
+        again, and LinkNotHeld raised when it could not be confirmed. cmderr 6 (a frame the module took for a bad
+        parity: a missed access) is such a failed try too (`_held_abstract`); any other cmderr is cleared, then raised
+        (RuntimeError).
         DATA0 is left holding the value (the host's, debug §4); abstractauto is the host's and must be clear (writing
         DATA0 would run the command again)."""
         what = f"read_register {regno:#x}"
@@ -613,20 +643,25 @@ class RiscvDm(Interface, BlockLength):
                  + self.step_write(DATA0, READ_SENTINELS[1]) + self.step_write(COMMAND, command) + poll
                  + self.step_read(DMSTATUS) + self.step_read(DATA0))
 
-        def agree(values: list[int]) -> bool:   # a cmderr is raised below whatever DATA0 says
+        def agree(values: list[int]) -> bool:   # cmderr 6: tried again; another is raised below whatever DATA0 says
             cs1, first, cs2, _, second = values
-            return bool((cs1 | cs2) & 0x700) or first == second
+            err = _cmderr_of(cs2) or _cmderr_of(cs1)
+            if err == CMDERR_PARITY:
+                return False
+            return bool(err) or first == second
 
-        cs1, data0, cs2, _, _ = self.held(steps, what, agree=agree)
+        cs1, data0, cs2, _, _ = self._held_abstract(steps, what, agree)
         self._cmderr(cs1 | cs2, what)
         return data0
 
     def write_register(self, regno: int, value: int) -> None:
         """Write a GPR / CSR of the halted hart through an abstract command (access register, 32 bits, DATA0 first),
         held as read_register is: when it returns, every write met the link up and no cmderr came. Whether the
-        register took the value (read-only or WARL bits) is the caller's to read back."""
+        register took the value (read-only or WARL bits) is the caller's to read back. cmderr 6 is a failed try, the
+        write done again (the same value: a register write may be redone), as in read_register."""
         what = f"write_register {regno:#x}"
-        (cs,) = self.held(self._abstract(0x00230000 | regno, self.step_write(DATA0, value)), what)
+        (cs,) = self._held_abstract(self._abstract(0x00230000 | regno, self.step_write(DATA0, value)), what,
+                                    lambda values: _cmderr_of(values[0]) != CMDERR_PARITY)
         self._cmderr(cs, what)
 
     def _reset(self, mode: int, method: int | None) -> tuple[int, int, int]:

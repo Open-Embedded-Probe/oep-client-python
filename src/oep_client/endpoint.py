@@ -427,7 +427,10 @@ class FakeTarget:
     # drop_requests later dmi requests have begun (the probe brings an idle link back before its next transaction);
     # within one request it never ends by itself. "glitch" is one access missed and the link up again at once (a link
     # coming back from a drop through a flicker): that write lost, or that read giving the last value read.
-    drop_at: dict = field(default_factory=dict)        # access index -> "stale" / "ones" / "ones_line" / "glitch"
+    # "glitch_parity" is the same, a write lost with cmderr 6 set in ABSTRACTCS when none is (QingKe: the module took the
+    # frame for one with a bad parity).
+    drop_at: dict = field(default_factory=dict)        # access index -> "stale" / "ones" / "ones_line" / "glitch" /
+                                                       # "glitch_parity"
     drop_requests: int = 1
     dmi_accesses: int = 0
     dropped: str | None = None                         # the mode of the drop now in force (None: the link is up)
@@ -435,6 +438,7 @@ class FakeTarget:
     last_read: int = 0
     lost_writes: int = 0
     glitch: bool = False                               # this access is a "glitch" one
+    glitch_parity: bool = False                        # ... a "glitch_parity" one
 
     @property
     def answers(self) -> bool:
@@ -462,7 +466,8 @@ class FakeTarget:
     def _access(self) -> None:
         mode = self.drop_at.get(self.dmi_accesses)
         self.dmi_accesses += 1
-        self.glitch = mode == "glitch"
+        self.glitch = mode in ("glitch", "glitch_parity")
+        self.glitch_parity = mode == "glitch_parity"
         if mode and not self.glitch:
             self.dropped, self.drop_left = mode, self.drop_requests
 
@@ -495,6 +500,8 @@ class FakeTarget:
         self._access()
         if self.dropped or self.glitch:
             self.lost_writes += 1
+            if self.glitch_parity and not (self.dmi.get(0x16, 0) >> 8) & 7:
+                self.dmi[0x16] = self.dmi.get(0x16, 0) | (6 << 8)
             return
         if address == 0x10:
             if value & (1 << 31):

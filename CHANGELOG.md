@@ -1,6 +1,29 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) riscv-dm read_register / write_register take cmderr 6 for a failed try, not an error: QingKe's "parity bit error"
+  - the module took one of the group's frames for a bad one and ignored it, a missed access with the link up again at
+  once (bench, oep-probe-arduino 0.0.29-dev+f594f04, tests/hw test_wire on a CH32L103 through an RVSWD probe:
+  "read_register 0x100a / 0x1009 / 0x100b failed (cmderr 6)", 3 of 8 runs; a probe's own console write can set it
+  too). The group (which clears cmderr first) is run again within the held tries (`RiscvDm._held_abstract`; read twice
+  over the sentinels as before); still cmderr 6 after every try: cmderr cleared, LinkNotHeld. Any other cmderr is
+  cleared and raised (RuntimeError) as before. `riscv.CMDERR_PARITY`. The fake: `FakeTarget.drop_at` mode
+  "glitch_parity" (a write missed with cmderr 6 set). Tests (test_link_drop): a glitch_parity at every access of
+  read_register and write_register - the right value, no cmderr left, never raised (before: RuntimeError); two at every
+  pair of read_register's accesses - never a wrong value nor an error; cmderr 6 at every try - LinkNotHeld, cmderr
+  cleared. tests/hw test_wire: when an op raises, the record keeps the loop, the error, DMSTATUS read twice and DMCONTROL
+  (raw dmi) and dpc when halted (printed too). README (EN / JA).
+- (JA) riscv-dm の read_register / write_register は cmderr 6 を誤りでなく失敗した試みとして扱う: QingKe の「parity bit error」
+  - module がまとまりの frame の 1 つを悪いものと取って無視した、すぐにまた繋がる link の 1 回の取りこぼし（bench、
+  oep-probe-arduino 0.0.29-dev+f594f04、RVSWD の probe の先の CH32L103 での tests/hw test_wire: 「read_register 0x100a / 0x1009 /
+  0x100b failed (cmderr 6)」が 8 回中 3 回。probe 自身のコンソールの書き込みでも立ちうる）。まとまり（最初に cmderr を消す）を
+  held の試みの回数のうちでやり直す（`RiscvDm._held_abstract`。今までどおり 2 つの sentinel で 2 回読む）。どの試みでも cmderr 6
+  なら cmderr を消して LinkNotHeld。ほかの cmderr は今までどおり消してから RuntimeError。`riscv.CMDERR_PARITY`。偽物:
+  `FakeTarget.drop_at` の "glitch_parity"（書き込みを取りこぼし cmderr 6 を立てる）。試験（test_link_drop）: read_register と
+  write_register のすべてのアクセスに glitch_parity - 正しい値、cmderr は残らず、例外にならない（前: RuntimeError）。read_register
+  のアクセスのすべての組に 2 つ - 誤った値も例外も無い。どの試みでも cmderr 6 - LinkNotHeld で cmderr は消える。tests/hw
+  test_wire: op が例外を出したとき、記録にその回、例外、2 回読んだ DMSTATUS と DMCONTROL（生の dmi）、止まっていれば dpc を残す
+  （出力にも出す）。README（EN / JA）。
 - (EN) tests/hw: the config test's reboot through oep.probe.restart is opt-in on a USB probe (the P4s, the RP2s:
   `Board.usb`): only with `OEP_HW_RESTART=1`; without it the reboot is skipped and the record says why ("oep.probe.restart
   on a USB probe needs OEP_HW_RESTART=1 ..."), the rest of the config test runs (bench: with oep-probe-arduino
