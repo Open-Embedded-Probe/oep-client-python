@@ -837,7 +837,8 @@ def test_console(run: record.Run):
     seen = bytearray()
     try:
         # A probe with several wires may have a console per wire (instances): the one that serves this connection is
-        # the one whose open does not answer no_connection.
+        # the one whose open does not answer no_connection, nor unavailable wrong_state (another interface's
+        # connection, core §9).
         for fn in core.find_all(hst, console_mod.Console.NAME):
             con.fn = fn
             decl = record.declared(hst, con.fn)
@@ -849,6 +850,10 @@ def test_console(run: record.Run):
                 break
             except h.NoConnection:
                 rec.setdefault("no_connection_on", []).append(fn)
+            except h.Unavailable as e:
+                if e.cause != "wrong_state":
+                    raise
+                rec.setdefault("wrong_state_on", []).append(fn)
         else:
             pytest.fail(f"no oep.target.console serves connection {conn} of {wires[0]}")
         rec.update(stream=stream, existing=con.existing)
