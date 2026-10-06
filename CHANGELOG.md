@@ -1,6 +1,16 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) tests/hw: the config test's reboot through oep.probe.restart is opt-in on a USB probe (the P4s, the RP2s:
+  `Board.usb`): only with `OEP_HW_RESTART=1`; without it the reboot is skipped and the record says why ("oep.probe.restart
+  on a USB probe needs OEP_HW_RESTART=1 ..."), the rest of the config test runs (bench: with oep-probe-arduino
+  0.0.29-dev+3c0cd99 an RP2350 and an ESP32-P4 came back from a restart failing enumeration until a replug). A classic
+  ESP32 behind a bridge still reboots through EN; the fake through its oep.probe.restart. README (EN / JA).
+- (JA) tests/hw: config の試験の oep.probe.restart による再起動は、USB の probe（P4、RP2: `Board.usb`）では選んだときだけ:
+  `OEP_HW_RESTART=1` のときだけ行い、無ければ再起動を飛ばして記録に理由を書き（"oep.probe.restart on a USB probe needs
+  OEP_HW_RESTART=1 ..."）、config の試験の残りは行う（bench: oep-probe-arduino 0.0.29-dev+3c0cd99 では RP2350 と ESP32-P4 が
+  再起動の後に列挙に失敗し、抜き差しが要った）。bridge の classic ESP32 は今までどおり EN で、偽の probe はその oep.probe.restart
+  で再起動する。README（EN / JA）。
 - (EN) tests/hw: test_wire prints the whole change record when a register changes over a read_block - every change's before, after, the read again, the two words past the block and dpc, one JSON line each, in the failure message (pytest.fail, no repr cut) and on stdout - instead of an assert whose repr pytest cut. Each run keeps its own results file: tests/hw/results/<board>-<firmware>-<client>-<started>.json (the run's start, e.g. 20261006T203121), so a later run no longer overwrites an earlier one; README (EN / JA) says so
 - (JA) tests/hw: test_wire は read_block の間にレジスタが変わったとき、変化の記録をすべて出す - 変化ごとの前、後、読み直し、block の直後の 2 語、dpc を 1 行 1 つの JSON で、失敗のメッセージ（pytest.fail。repr で切られない）と stdout に。以前は pytest が repr を切る assert だった。巡ごとに結果のファイルを別に残す: tests/hw/results/<board>-<firmware>-<client>-<started>.json（巡の開始時刻、例 20261006T203121）。後の巡が前の巡のものを上書きしない。README（EN / JA）もそう書く
 - (EN) **Breaking (wire and API): oep-spec 289bde0 .. 498ae95, the 2026-10-06 structure.** README names `498ae95`. Registry and vectors synced (`tools/sync_registry.sh`; `ops_encoding.json` new).

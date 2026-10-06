@@ -48,6 +48,11 @@ class Board:
         return self.kind == "esp32"
 
     @property
+    def usb(self) -> bool:
+        """The probe is itself a USB device (its own restart takes it off the bus and back): the P4s and the RP2s."""
+        return self.kind in ("esp32p4", "esp32p4-usj", "rp2")
+
+    @property
     def shared(self) -> bool:
         """A jig of the ArduinoCore-CH32RV bench: running on it needs the bench's permission first (README)."""
         return "jig" in self.notes

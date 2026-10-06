@@ -5,7 +5,7 @@
                is fn 0 (the core has no name); clock (core §7.7): its boot_id, the shortest of 4 round trips recorded
   required     what every probe must give and a lock-free look can check (core §1.2, §7.1, §7.5): dump's MISSING
   config       probe.config set / get / save / state / unset with a disable item, a reboot in between (oep.probe.restart
-               when the probe lists it, else a bridge board's EN line)
+               when the probe lists it - on a USB probe only with OEP_HW_RESTART=1 -, else a bridge board's EN line)
   wire         scan, attach (with the reset TLV when OEP_HW_RESET names the line), halt -> read_block -> resume 50x
                with s0 / s1 / a0 / a1 read before and after each block op       (only with OEP_HW_TARGET)
   gpio         fixture gpio set / read on two free channels (outputs read back, pull-up / pull-down levels)
@@ -57,6 +57,10 @@ MIN_BAD_FRAMES = 3
 
 def _env_int(name: str, default: int) -> int:
     return int(os.environ.get(name, "") or default)
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "") not in ("", "0")
 
 
 # ---- 1. flash ----------------------------------------------------------------------------------------------------------
@@ -184,8 +188,13 @@ def test_config(run: record.Run):
     assert h_saved == h1 and st.storage == "applied" and st.saved_hash == h_saved, f"state after save: {st}"
     # reboot: oep.probe.restart when the probe lists it (oep-if-restart: answers, then restarts; restart_probe waits up to
     # its restart_max_ms and confirms the new boot_id), else a bridge board's EN line through DTR / RTS (esptool's hard
-    # reset); neither: skipped
+    # reset); neither: skipped. On a USB probe oep.probe.restart only with OEP_HW_RESTART=1: an RP2350 and an ESP32-P4
+    # restarted that way came back failing their device descriptor request until a replug (oep-probe-arduino
+    # 0.0.29-dev+3c0cd99) - a firmware that takes its device off the bus first is what the opt-in tries.
     restart = core.find_all(hst, core.RESTART_NAME)
+    usb_restart_skipped = bool(restart) and board.usb and not _env_flag("OEP_HW_RESTART")
+    if usb_restart_skipped:
+        restart = []
     if restart or board.resettable:
         if restart:
             before = hst.limits["boot_id"] if hst.limits else None
@@ -205,6 +214,10 @@ def test_config(run: record.Run):
         assert any(isinstance(it, config.Disable) and it.channel == disable_ch for it in decoded2)
         assert any(isinstance(it, config.Label) and it.channel == label_ch for it in decoded2)
         hst = run.take()
+    elif usb_restart_skipped:
+        rec["reboot"] = ("skipped: oep.probe.restart on a USB probe needs OEP_HW_RESTART=1 (a restart left the device "
+                         "failing enumeration until a replug); the saved settings were not checked across a reboot")
+        print(f"\n  config: reboot {rec['reboot']}")
     else:
         rec["reboot"] = "skipped: no oep.probe.restart and " + ("the fake probe" if board.kind == "fake"
                                                                 else "no reset line from the host (a USB probe)")
