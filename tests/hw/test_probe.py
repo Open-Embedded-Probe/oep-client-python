@@ -17,10 +17,12 @@
   console      target console on the wire connection, mechanism dmseq: open, read for 1 s, close   (only with OEP_HW_TARGET)
   port_speed   linktest.matrix at the speed in force and the board's candidate rates (OEP_HW_RATES), in / out /
                duplex, in flight 1 and the probe's max, one frame size; verdict: one at a time <= 1 % broken + lost
+               (a UART bridge whose oep.link sets port_speed in its ops)
   session      lease expiry -> no_session (released, no resume), a force takeover locks the old id out, its end
                leaves both ids no_session
 
-Every test skips when the flash step failed. Measurements go to the run's record (tests/hw/results/)."""
+Every test skips when the flash step failed, and a fixture test when the board table gives it no free channel (a jig
+whose pins all go to its target). Measurements go to the run's record (tests/hw/results/)."""
 from __future__ import annotations
 
 import dataclasses
@@ -148,7 +150,9 @@ def test_config(run: record.Run):
                      items_before=len(items0), hash_before=h0)
     assert config.ITEM["disable"] in declared.items, "the probe declares no disable item"
     assert declared.storage_bytes > 0, "the probe declares no storage: nothing to save"
-    label_ch, disable_ch = board.gpio[0], board.disable
+    label_ch, disable_ch = board.label or board.gpio[0], board.disable
+    if not label_ch or not disable_ch:
+        pytest.skip("the table gives this board no free channel to label and to disable (OEP_HW_DISABLE, OEP_HW_GPIO)")
     added = [config.Label(channel=label_ch, text="HW-A"), config.Disable(channel=disable_ch)]
     h1 = cfg.set(added)
     h_items, items1 = cfg.get()
@@ -285,8 +289,10 @@ def test_wire(run: record.Run):
 
 def test_gpio(run: record.Run):
     hst = run.take()
-    g = fixture.Gpio(hst)
     a, b = run.board.gpio
+    if not (a and b):
+        pytest.skip("the table gives this board no two free channels that can drive and pull (OEP_HW_GPIO=a,b names them)")
+    g = fixture.Gpio(hst)
     rec = run.record("gpio", channels=[a, b])
     core.plan_apply(hst, [(g.fn, GPIO_ROLE_LINE, a), (g.fn, GPIO_ROLE_LINE, b)])
     wrong = []
@@ -318,19 +324,26 @@ def test_uart(run: record.Run):
     rx, tx = (int(v) for v in loop.split(",")) if loop else run.board.uart
     u = fixture.FixtureUart(hst)
     rec = run.record("uart", rx=rx, tx=tx, loopback=bool(loop))
-    planned_here = True
-    try:
-        core.plan_apply(hst, [(u.fn, UART_RX, rx), (u.fn, UART_TX, tx)])
-    except h.Unavailable:
+    planned_here = bool(rx and tx)
+    refused = None
+    if planned_here:
+        try:
+            core.plan_apply(hst, [(u.fn, UART_RX, rx), (u.fn, UART_TX, tx)])
+        except h.Unavailable as e:
+            refused, planned_here = e, False
+    if not planned_here:
         # The probe's settings may already give this UART its pins (a jig's plan items): then the test runs on those
-        # and leaves the plan alone (planning it twice is what the probe refuses).
+        # and leaves the plan alone (planning it twice is what the probe refuses). So does a board the table gives no
+        # free pair (every channel that can drive TX goes to its target); without a settings plan it skips.
         plans = [it for it in config.ProbeConfig(hst).items() if isinstance(it, config.Plan) and it.fn == u.fn]
         if not plans:
-            raise
+            if refused is not None:
+                raise refused
+            pytest.skip("the table gives this board no free UART pair and the probe's settings plan none for "
+                        "the fixture UART (OEP_HW_UART=rx,tx names one)")
         rx = next((it.channel for it in plans if it.role == UART_RX), rx)
         tx = next((it.channel for it in plans if it.role == UART_TX), tx)
         rec.update(rx=rx, tx=tx, settings_plan=True)
-        planned_here = False
     try:
         actual = u.configure(115200, fixture.FixtureUart.EIGHT_N_1)
         st = u.status()
@@ -366,9 +379,10 @@ def _listed(hst: h.Host, name: str) -> bool:
 
 
 def _free_channels(board) -> list[int]:
-    """The table's channels wired to nothing, most preferred first: the gpio pair, the disable channel, the UART pair."""
+    """The table's channels wired to nothing, most preferred first: the gpio pair, the disable channel, the label
+    channel, the UART pair."""
     out: list[int] = []
-    for ch in (*board.gpio, board.disable, *board.uart):
+    for ch in (*board.gpio, board.disable, board.label, *board.uart):
         if ch and ch not in out:
             out.append(ch)
     return out
@@ -519,10 +533,12 @@ def test_capture(run: record.Run):
     hst = run.take()
     if not _listed(hst, capture.LogicCapture.NAME):
         pytest.skip("the probe does not list oep.fixture.logic")
+    chans = list(run.board.gpio)
+    if not all(chans):
+        pytest.skip("the table gives this board no two free channels that can pull (OEP_HW_GPIO=a,b names them)")
     cap = capture.LogicCapture(hst)
     decl = record.declared(hst, cap.fn)
     declared = _capture_declared(decl)
-    chans = list(run.board.gpio)
     allowed = decl["role_channels"]
     for role, ch in enumerate(chans):
         if role in allowed and ch not in allowed[role]:
@@ -650,6 +666,8 @@ def test_capture_group(run: record.Run):
     if cap.fn not in tracks or ana.fn not in tracks:
         pytest.skip(f"the group binds tracks {tracks}, not logic {cap.fn} + analog {ana.fn}")
     chans = list(run.board.gpio)
+    if not all(chans):
+        pytest.skip("the table gives this board no two free channels for the logic track (OEP_HW_GPIO=a,b names them)")
     a_ch = _analog_channel(hst, run.board, record.declared(hst, ana.fn))
     l_rate, l_samples = _capture_rate_samples(_capture_declared(record.declared(hst, cap.fn)))
     a_decl = _capture_declared(record.declared(hst, ana.fn))
@@ -888,7 +906,7 @@ def test_port_speed(run: record.Run):
             or getattr(hst.link, "framing", "") != "cobs":
         pytest.skip("port_speed is for a UART bridge probe only")
     if not info.get("port_speed"):
-        pytest.skip("the probe declares no port_speed")
+        pytest.skip("the probe offers no oep.link, or its oep.link's ops do not set port_speed")
     inflight = sorted({1, limits["max_inflight"]})
     frames = _env_int("OEP_HW_FRAMES", 100)
     timeout = float(os.environ.get("OEP_HW_LT_TIMEOUT", "") or 0.3)

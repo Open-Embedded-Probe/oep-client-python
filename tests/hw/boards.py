@@ -4,7 +4,8 @@ gives an id, its unit id = its USB serial). OEP_HW_BOARDS is a comma list of the
 Each entry says what the board is (kind: how it is flashed), which sketch.yaml profile of oep-probe-arduino's
 examples/Firmware/OepProbe builds its firmware, how to reach its OEP port after a flash, and the describe model the
 firmware reports. The defaults a test needs on that board (two free GPIO channels, a UART RX / TX pair, the port_speed
-candidates of a bridge) are here too; the environment overrides them (OEP_HW_GPIO, OEP_HW_UART, OEP_HW_RATES).
+candidates of a bridge) are here too; the environment overrides them (OEP_HW_GPIO, OEP_HW_UART, OEP_HW_RATES). A
+channel is free when the board wires it to nothing; 0 = none, and the tests that need one skip.
 
 Port forms (see oep_client.link.open_host):
   /run/board-identify/by-id/<id>   a serial port: a USB-UART bridge (classic ESP32) - also where esptool flashes
@@ -33,8 +34,9 @@ class Board:
     flash_port: str | None = None        # esp32: the bridge (esptool); rp2: the CDC port for the 1200-baud touch (None: = port)
     usbip_busid: str | None = None       # WSL: usbipd busid to attach again after a DFU reboot (p4)
     rates: tuple[int, ...] = ()          # port_speed candidates (UART bridge only)
-    gpio: tuple[int, int] = (0, 0)       # two free channels for the gpio set / read test
+    gpio: tuple[int, int] = (0, 0)       # two free channels for the gpio set / read test and the logic capture (drive, pull)
     disable: int = 0                     # a third free channel the config test disables, then enables again
+    label: int = 0                       # the channel the config test labels (0: gpio[0]); neither it nor disable is driven
     uart: tuple[int, int] = (0, 0)       # (rx, tx) channels for the uart configure test
     fake_profile: str | None = None      # kind fake: the oep_client.fake profile served on a pty
     notes: str = ""
@@ -51,15 +53,21 @@ class Board:
         return "jig" in self.notes
 
 
-# The classic ESP32 firmware's channels: 4-5, 13-14, 18-19, 21-23, 25-27, 32-36, 39 (a PICO-D4 loses 16 / 17 to its flash).
+# The classic ESP32 firmware's channels: 4-5, 13-14, 16-19, 21-23, 25-27, 32-36, 39 (a PICO-D4 loses 16 / 17 to its flash).
 # An M5Stack ATOM brings out G19, G21-23, G25, G26, G32, G33 (G27: its LED, G39: its button).
 _ESP32_ATOM = dict(gpio=(25, 26), disable=33, uart=(32, 21), rates=(1500000, 921600, 500000))
-# A DevKitC-style jig (ESP32-D0WD-V3 + CH340): the V003 jig's SWIO / NRST / DUT UART are on 16 / 23 / 21-22.
-_ESP32_DEVKIT = dict(gpio=(25, 26), disable=33, uart=(32, 27), rates=(921600, 500000))
-# ESP32-P4: GPIO 24 / 25 are the USB-Serial/JTAG; the X035 jig wires 2 / 54 (RVSWD) and its DUT UART; take high numbers.
+# The V003 jig (ESP32-D0WD-V3 + CH340; ArduinoCore-CH32RV tests/benches/v003-esp32.toml): SWIO 16, NRST 23, and every
+# other output-capable channel (4, 5, 13, 14, 17-19, 21, 22, 25-27, 32, 33) goes to a V003 pad. Left: 34-36 and 39, inputs
+# with no pulls - no gpio pair, no UART TX (gpio / capture / capture_group skip; uart runs on the jig's settings plan, or
+# skips). config labels 35 and disables 34 (neither driven); the analog capture reads 34.
+_ESP32_V003_JIG = dict(label=35, disable=34, rates=(921600, 500000))
+# ESP32-P4: GPIO 24 / 25 are the USB-Serial/JTAG. The X035 jig (tests/benches/x035-p4.toml) wires 2 / 54 (RVSWD), 4-6,
+# 9-15, 46-50, 52, 53; the third P4 4, 5, 19, 21-23: none of these. 34-38 are the P4 straps, read only at a chip
+# reset, when the probe drives no pin: disable 34 is never driven, TX 37 only while planned.
 _P4 = dict(gpio=(32, 33), disable=34, uart=(36, 37))
-# Pro Micro RP2350: GP19 is the PSRAM CS; GP0 / GP1 may carry a target (an L103 on the bench). The fixture UART is
-# Serial1 = UART0, whose pins arduino-pico accepts are TX 0 / 12 / 16 / 28, RX 1 / 13 / 17 / 29 (GP4 / GP5 hung the probe, 2026-10-02).
+# Pro Micro RP2350: GP19 is the PSRAM CS; GP0 / GP1 carry the bench's L103 (tests/benches/l103-rp2350.toml: nothing
+# else wired). The fixture UART is Serial1 = UART0, whose pins arduino-pico accepts are TX 0 / 12 / 16 / 28, RX 1 / 13 /
+# 17 / 29 (GP4 / GP5 hung the probe, 2026-10-02).
 _RP2350 = dict(gpio=(26, 27), disable=28, uart=(13, 12))
 
 TABLE: dict[str, Board] = {b.id: b for b in (
@@ -68,12 +76,13 @@ TABLE: dict[str, Board] = {b.id: b for b in (
           **_ESP32_ATOM),
     Board("esp32-d0wd-v3-0070070d9394", "esp32", "esp32", "esp32", f"{BY_ID}/esp32-d0wd-v3-0070070d9394",
           flash_port=f"{BY_ID}/esp32-d0wd-v3-0070070d9394", notes="V003 jig (classic ESP32 + CH340): the bench's; ask first",
-          **_ESP32_DEVKIT),
+          **_ESP32_V003_JIG),
     Board("esp32-series-30eda0e31108", "esp32p4", "esp32p4", "esp32p4", "usb:30eda0e31108", unit_id="30eda0e31108",
           usbip_busid=os.environ.get("TEST_BENCH_CH32X035_USBIP_BUSID", "12-4"),
           notes="X035 jig (ESP32-P4, HS USB): the bench's; ask first", **_P4),
     Board("esp32-series-30eda0e343c6", "esp32p4", "esp32p4", "esp32p4", "usb:30eda0e343c6", unit_id="30eda0e343c6",
-          usbip_busid="11-4", notes="second P4 jig (an older firmware's USB serial is 30eda0e343c6-hs): the bench's; ask first",
+          usbip_busid="11-4", notes="second P4 (ESP32-P4, HS USB), the user's: free for dev-oep, nothing wired but its LED "
+                "(an older firmware's USB serial is 30eda0e343c6-hs)",
           **_P4),
     Board("esp32-series-30eda0ea068b", "esp32p4-usj", "esp32p4", "esp32p4", f"{BY_ID}/esp32-series-30eda0ea068b",
           unit_id="30eda0ea068b", flash_port=f"{BY_ID}/esp32-series-30eda0ea068b",

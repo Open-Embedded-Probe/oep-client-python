@@ -53,7 +53,8 @@ def client_state() -> dict:
 
 
 def probe_info(hst: h.Host) -> dict:
-    """What oep.core's describe says the probe is: firmware, model, unit_id, chip (and the confirm's boot_id, limits)."""
+    """What oep.core's describe says the probe is: firmware, model, unit_id, chip, transports, max_op_ms (and the
+    confirm's boot_id, limits); link_fn and port_speed (True) when the probe offers oep.link and its ops set port_speed."""
     limits = hst.confirmed()
     info = {"boot_id": limits["boot_id"], "revision": limits["revision"], "max_frame": limits["max_frame"],
             "max_inflight": limits["max_inflight"], "window": limits["window"]}
@@ -69,10 +70,16 @@ def probe_info(hst: h.Host) -> dict:
             info["chip"] = v.decode("utf-8", "replace")
         elif t == DESCRIBE["transport"]:
             info.setdefault("transports", []).append({"index": v[0], "kind": v[1]})
-        elif t == DESCRIBE["port_speed"] and v:
-            info["port_speed"] = bool(v[0])
         elif t == DESCRIBE["max_op_ms"] and len(v) >= 4:
             info["max_op_ms"] = struct.unpack_from("<I", v)[0]
+    try:                                    # port_speed is an op of oep.link (oep-if-link §1), an optional interface
+        link_fn = core.link_fn(hst)
+    except LookupError:
+        link_fn = None
+    if link_fn is not None:
+        info["link_fn"] = link_fn
+        if core.LINK_PORT_SPEED in (core.ops(hst, link_fn) or ()):
+            info["port_speed"] = True       # absent: no oep.link, or its ops do not set port_speed
     return info
 
 
