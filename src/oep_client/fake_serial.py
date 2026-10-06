@@ -94,6 +94,13 @@ class FakeSerialPort:
             self.frames.append(self._line(wire))
         self.ep.speed_after_answer()                 # port_speed: switch (or revert) now the answer is out
 
+    def reboot(self) -> None:
+        """The probe behind the port restarted (`Endpoint.reboot`): the candidate it was reading and the answers it had
+        not sent yet are gone."""
+        self.cand = None
+        self.frames.clear()
+        self.spoiled.clear()
+
     def _both_ways(self, size: int) -> bool:
         """A request of `size` bytes came in: with a BrokenRate that breaks only both ways at once (`duplex`), whether
         an answer of its min_size or more is still unread (both ways busy) - and then that answer breaks if the rate

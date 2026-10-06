@@ -276,7 +276,18 @@ Other programs' tests run `fake_serve` as a child process:
 ```sh
 python -m oep_client.fake_serve --pty --profile p4-bench --slot x035 --bind last-reset \
     --console 'uptime %d\r\n' --every 100
-# first line: PTY /dev/pts/N (PORT n with --tcp 0); it ends when stdin closes
+# first line: PTY /dev/pts/N (PORT n with --tcp 0); it ends when stdin closes (not with --keep-on-eof)
+```
+
+A line `reboot` on its stdin reboots the probe mid-session (`Endpoint.reboot`) with a new random boot_id: the session
+table, the resend table, connections, streams, subscriptions, the plan and the unsaved settings go, the saved
+settings (`--slot`, `--bind`, `--label`, `--uart-plan`) apply again, and a request with the old session gets
+no_session; confirm and open show the new boot_id. The pty or TCP connection stays open. stderr says
+`fake_serve: rebooted, boot_id 0x........`; any other line is ignored with a message on stderr:
+
+```python
+# the test holds the child (stdin=PIPE) and writes the line
+proc.stdin.write(b"reboot\n"); proc.stdin.flush()
 ```
 
 The pty is a serial port (the host opens it with TIOCEXCL); `--tcp PORT` is `--framing cobs` (a serial port) or

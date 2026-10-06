@@ -688,7 +688,9 @@ class Endpoint:
         self.port_speed_base: int | None = 115200 if any(t[0] == PORT_SPEED_TAG for t in self.static.get(0, ())) else None
         self.broken_rates: dict[int, BrokenRate] = {}   # the line: rates that break frames (fake_serial applies it)
         self._transport = 0                             # the transport the request being handled came in on
-        self.revision_in_use: dict[int, int] = {}       # transport -> the revision its last confirm chose (core §7.1)
+        # what the simulation is, not the probe's state (a reboot keeps them):
+        self.capture_slipped = False                    # every capture segment says flags bit2 (a pace that fell behind)
+        self.uart_clock_hz = 80_000_000                # the UARTs' divider clock (a test lowers it: the item's fallback)
         # the lines outside (a test hook): gpio_world(channel, mode) -> the level an input mode reads (None: the
         # default - gpio_inputs, a pull-up 1); reads see the world as the modes set it (gpio_modes)
         self.gpio_world: Callable[[int, int], int | None] | None = None
@@ -703,6 +705,7 @@ class Endpoint:
         self.expires_ms = 0
         self.values: dict[int, int] = {}
         self.dropped = 0                     # requests a v0 endpoint dropped (role 0x81)
+        self.revision_in_use: dict[int, int] = {}   # transport -> the revision its last confirm chose (core §7.1)
         self.discarded = 0                   # messages discarded unanswered: not a request role, or short (core §2.4)
         self.requests: list[m.Request] = []
         self.subscribed: set[int] = set()
@@ -710,7 +713,6 @@ class Endpoint:
         self.next_heartbeat_ms = 0
         self.push_seq: dict[int, int] = {}              # fn -> the next event / data seq (core §11.2)
         self.outbox: list[bytes] = []                   # events and data frames waiting to go out (pushes())
-        self.capture_slipped = False                    # every capture segment says flags bit2 (a pace that fell behind)
         self.plan: set[tuple[int, int, int]] = set()   # (fn, role, channel), from plan_apply and the config
         self.plan_from_config: set[int] = set()        # fns whose plan came from the config (not a session's)
         self.resend: OrderedDict[int, tuple[int, int, int, bytes | None]] = OrderedDict()
@@ -734,7 +736,6 @@ class Endpoint:
         self.uarts: dict[int, Stream] = {}             # fn -> stream (while its plan has RX or TX)
         self.uart_carry: dict[int, tuple[int, int]] = {}   # fn -> (position, mark serial) a released stream left off at
         self.uart_baud: dict[int, tuple[int, int, int]] = {}   # fn -> (baud, format, uart_configured) in force
-        self.uart_clock_hz = 80_000_000                # the UARTs' divider clock (a test lowers it: the item's fallback)
         self.uart_session_cfg: set[int] = set()        # fns a session's configure set (it beats the uart item)
         self.uart_tx: dict[int, bytearray] = {}        # what a serial port's raw bytes sent out on a fixture UART
         self.i2c: dict[int, I2cState] = {fn: I2cState() for fn, n in self.names.items() if n == _I2C.name}
@@ -1360,8 +1361,9 @@ class Endpoint:
         return self._answer(struct.pack("<IIB", self.lease_ms, self.boot_id, resumed))
 
     def reboot(self, boot_id: int | None = None) -> None:
-        """The probe restarts: lock, last id, connections, streams, captures, the unsaved config and the plan are gone;
-        the saved config comes back, and the clock starts again from 0 (ns since boot, core §2.6a). `boot_id` None
+        """The probe restarts: lock, last id, the resend table, connections, streams, captures, subscriptions, the
+        revision in use, the port speed, the unsaved config and the plan are gone; the saved config comes back, and the
+        clock starts again from 0 (ns since boot, core §2.6a). `boot_id` None
         draws a new one, as from a hardware random source (core §6.5, C-19); passing the current one plays a probe
         whose only source repeated it - its hosts learn of the reboot from open's resumed = 0 instead (C-19)."""
         if boot_id is None:

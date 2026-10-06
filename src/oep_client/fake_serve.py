@@ -13,7 +13,18 @@ probe (kind 6, listed in fn 0's describe, its index in every confirm's transport
 frame restarts the reader (core §3.2), and a length over max_frame closes the connection.
 
 The first line on stdout says where to open: `PTY /dev/pts/N` or `PORT n`. The program ends when stdin closes
-(so a test's child never stays behind), or with --once when the first TCP connection closes.
+(so a test's child never stays behind), or with --once when the first TCP connection closes. With --keep-on-eof the
+end of stdin does not end it (stop it with a signal).
+
+Lines on stdin are commands, read between requests (the serving never waits for them):
+  reboot                the probe restarts with a new random boot_id (Endpoint.reboot, core §6.5): the session table,
+                        the resend table, connections, streams, subscriptions, the plan and the unsaved settings are
+                        gone, the saved settings (--slot, --bind, --label, --uart-plan) apply again, the clock starts
+                        from 0 and a serial port is back at its boot speed. A request with the old session gets
+                        no_session; confirm and open show the new boot_id. The pty or TCP connection stays open (on
+                        a serial port the half-read frame and the unsent answers are lost). stderr says
+                        "fake_serve: rebooted, boot_id 0x........"
+A line that is no command is ignored with a message on stderr.
 
 Options:
   --profile NAME        p4-x035 (default), esp32-v003, p4-bench or rp2350-pins (p4_x035 style names work too)
@@ -50,6 +61,7 @@ Options:
                         while both ways carry such frames at once (duplex), only every Nth of them (everyN), only once
                         B bytes have passed at RATE since the switch to it (afterB). The fake cannot see the host's own rate (a pty,
                         TCP): only the probe's rate decides
+  --keep-on-eof         the end of stdin does not end the program
   --run-hook SPEC       what riscv-dm run does on every target: SPEC is module:function or path/file.py:function,
                         called as function(target, pc, regs) -> (stopped, dpc, elapsed_us). `target` is the
                         endpoint.FakeTarget (mem = word address -> value, regs = regno -> value, halted, dpc), so a
@@ -232,13 +244,54 @@ class Console:
         self.count += 1
 
 
-def _stdin_closed(readable) -> bool:
-    if sys.stdin in readable:
+class Commands:
+    """The command lines on stdin (see the module's doc), read without blocking: `watch()` is what select waits on,
+    `poll(readable)` reads what came and runs every whole line; True = stdin ended and the program ends with it (not
+    with `keep_on_eof`, which then stops watching stdin). `port` is the serial port being served (a reboot drops its
+    half-read frame and unsent answers), None for the length framing."""
+
+    def __init__(self, ep: endpoint.Endpoint, keep_on_eof: bool = False):
+        self.ep, self.keep_on_eof = ep, keep_on_eof
+        self.port: fake_serial.FakeSerialPort | None = None
+        self.buf = b""
         try:
-            return not os.read(sys.stdin.fileno(), 4096)
+            self.fd = None if sys.stdin is None or sys.stdin.closed else sys.stdin.fileno()
+        except (OSError, ValueError):
+            self.fd = None
+
+    def watch(self) -> list:
+        return [] if self.fd is None else [self.fd]
+
+    def poll(self, readable) -> bool:
+        if self.fd is None or self.fd not in readable:
+            return False
+        try:
+            data = os.read(self.fd, 4096)
         except OSError:
-            return True
-    return False
+            data = b""
+        if data:
+            self.buf += data
+            while b"\n" in self.buf:
+                line, _, self.buf = self.buf.partition(b"\n")
+                self.run(line)
+            return False
+        if self.buf:
+            self.run(self.buf)                           # a last line without its newline
+            self.buf = b""
+        self.fd = None
+        return not self.keep_on_eof
+
+    def run(self, line: bytes) -> None:
+        text = line.decode(errors="replace").strip()
+        if not text:
+            return
+        if text == "reboot":
+            self.ep.reboot()
+            if self.port is not None:
+                self.port.reboot()
+            print(f"fake_serve: rebooted, boot_id 0x{self.ep.boot_id:08X}", file=sys.stderr, flush=True)
+        else:
+            print(f"fake_serve: unknown command {text!r} ignored (known: reboot)", file=sys.stderr, flush=True)
 
 
 class _Openers:
@@ -302,7 +355,7 @@ class _Openers:
             pass
 
 
-def serve_pty(a, ep, console) -> None:
+def serve_pty(a, ep, console, commands: Commands) -> None:
     master, slave = os.openpty()
     tty.setraw(slave)                                    # no echo, no line discipline between host and probe
     path = os.ttyname(slave)
@@ -311,12 +364,12 @@ def serve_pty(a, ep, console) -> None:
         os.close(slave)
     print(f"PTY {path}", flush=True)
     os.set_blocking(master, False)
-    port = fake_serial.FakeSerialPort(ep, a.port_index, _filter(a))
+    port = commands.port = fake_serial.FakeSerialPort(ep, a.port_index, _filter(a))
     pending = bytearray()
-    watch = [master] + ([openers.fd] if openers.fd >= 0 else []) + ([sys.stdin] if not sys.stdin.closed else [])
+    watch = [master] + ([openers.fd] if openers.fd >= 0 else [])
     while True:
-        readable, _, _ = select.select(watch, [], [], 0.005)
-        if _stdin_closed(readable):
+        readable, _, _ = select.select(watch + commands.watch(), [], [], 0.005)
+        if commands.poll(readable):
             return
         openers.poll()
         if master in readable:
@@ -337,16 +390,15 @@ def serve_pty(a, ep, console) -> None:
                 pass                                     # full or not open: keep it (the stream positions hold)
 
 
-def serve_tcp(a, ep, console) -> None:
+def serve_tcp(a, ep, console, commands: Commands) -> None:
     srv = socket.socket()
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("127.0.0.1", a.tcp))
     srv.listen(1)
     print(f"PORT {srv.getsockname()[1]}", flush=True)
-    watch_stdin = [sys.stdin] if not sys.stdin.closed else []
     while True:
-        readable, _, _ = select.select([srv] + watch_stdin, [], [], 0.05)
-        if _stdin_closed(readable):
+        readable, _, _ = select.select([srv] + commands.watch(), [], [], 0.05)
+        if commands.poll(readable):
             return
         console.tick()
         ep.tick()
@@ -354,18 +406,20 @@ def serve_tcp(a, ep, console) -> None:
             continue
         conn, _ = srv.accept()
         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        if _serve_conn(a, ep, console, conn, watch_stdin):
+        ended = _serve_conn(a, ep, console, conn, commands)
+        commands.port = None
+        if ended:
             return
         conn.close()
         if a.once:
             return
 
 
-def _serve_conn(a, ep, console, conn, watch_stdin) -> bool:
+def _serve_conn(a, ep, console, conn, commands: Commands) -> bool:
     """One TCP connection; True = stdin closed (end the program)."""
     conn.setblocking(False)
     if a.framing == "cobs":
-        port = fake_serial.FakeSerialPort(ep, a.port_index, _filter(a))
+        port = commands.port = fake_serial.FakeSerialPort(ep, a.port_index, _filter(a))
     else:
         # the listening socket is a TCP transport of its own (core §3.1, C-05): listed in describe, named by confirm
         index = getattr(ep, "tcp_index", None)
@@ -373,8 +427,8 @@ def _serve_conn(a, ep, console, conn, watch_stdin) -> bool:
             index = ep.tcp_index = ep.add_transport(fake.TRANSPORT["tcp"])
         buf, answers, filt = bytearray(), 0, _filter(a)
     while True:
-        readable, _, _ = select.select([conn] + watch_stdin, [], [], 0.005)
-        if _stdin_closed(readable):
+        readable, _, _ = select.select([conn] + commands.watch(), [], [], 0.005)
+        if commands.poll(readable):
             return True
         if conn in readable:
             try:
@@ -453,6 +507,7 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--uart-rx")
     ap.add_argument("--run-hook")
     ap.add_argument("--once", action="store_true")
+    ap.add_argument("--keep-on-eof", action="store_true")
     ap.add_argument("--capture-slipped", action="store_true")
     ap.add_argument("--no-port-speed", action="store_true")
     ap.add_argument("--broken-rate", action="append", default=[])
@@ -472,11 +527,12 @@ def main(argv: list[str] | None = None) -> None:
     a = parse(argv)
     ep = build(a)
     console = Console(ep, a.console, _ms(a.every), a.uart_rx, uart_fn(ep) if a.uart_rx else None)
+    commands = Commands(ep, a.keep_on_eof)
     try:
         if a.tcp is None:
-            serve_pty(a, ep, console)
+            serve_pty(a, ep, console, commands)
         else:
-            serve_tcp(a, ep, console)
+            serve_tcp(a, ep, console, commands)
     except KeyboardInterrupt:
         pass
 

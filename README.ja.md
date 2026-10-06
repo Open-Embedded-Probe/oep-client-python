@@ -260,7 +260,17 @@ profile は無いので、ピンの無い scan は試していない。
 ```sh
 uv run python -m oep_client.fake_serve --pty --profile p4-bench --slot x035 --bind last-reset \
     --console 'uptime %d\r\n' --every 100
-# 最初の行: PTY /dev/pts/N（--tcp 0 なら PORT n）。stdin を閉じると終わる
+# 最初の行: PTY /dev/pts/N（--tcp 0 なら PORT n）。stdin を閉じると終わる（--keep-on-eof なら終わらない）
+```
+
+stdin に `reboot` の 1 行を書くと、セッションの途中で probe が新しい乱数の boot_id で再起動する（`Endpoint.reboot`）。
+セッションの表、送り直しの表、接続、ストリーム、購読、plan、保存していない設定は消え、保存した設定（`--slot`、`--bind`、
+`--label`、`--uart-plan`）がもう一度当たる。古いセッションでの要求は no_session になり、confirm と open は新しい boot_id を返す。
+pty や TCP の接続は開いたまま。stderr に `fake_serve: rebooted, boot_id 0x........` を出す。ほかの行は stderr に一言出して無視する:
+
+```python
+# 試験は子プロセスを stdin=PIPE で持ち、その行を書く
+proc.stdin.write(b"reboot\n"); proc.stdin.flush()
 ```
 
 pty がシリアルの口（host が TIOCEXCL を掛けて開く）、`--tcp PORT` は `--framing cobs`（シリアルの口）か `--framing length`
