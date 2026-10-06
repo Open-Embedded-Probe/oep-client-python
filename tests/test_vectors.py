@@ -173,10 +173,11 @@ DISCOVERY = load("discovery.json")
 
 def smallest_probe() -> endpoint.Endpoint:
     """The vectors' smallest probe (discovery.json about): only fn 0, one UART bridge (index 0, interface 0xFF),
-    unit_id "a1b2c3d4", max_op_ms 1000 - its describe in that order, nothing else."""
+    unit_id "a1b2c3d4", discoverable 0, max_op_ms 1000 - its describe in that order, nothing else."""
     t = reg.CORE.tlv["describe"]
     core = fake.Offered(0, 0, "oep.core", (catalog.text(t["unit_id"], "a1b2c3d4"),
                                            catalog.tlv(t["transport"], bytes([0, fake.TRANSPORT["uart_bridge"], 0xFF])),
+                                           catalog.u8(t["discoverable"], 0),
                                            catalog.u32(t["max_op_ms"], 1000)))
     return endpoint.Endpoint(fake.FakeProbe("smallest", 64, [core]), Clock())
 
