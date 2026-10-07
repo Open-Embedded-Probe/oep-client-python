@@ -143,9 +143,10 @@ def test_state_is_paged_and_describe_is_declarations_only():
     hst = h.Host(lambda b: ep.handle(b, 1))
     hst.open(3000)
     cfg = config.ProbeConfig(hst)
-    cfg.set([config.Slot(slot=0, wire_fn=1, pins=(0, 1), name="s0", attach="at-boot")]
-            + [config.Slot(slot=n, wire_fn=1, pins=(2 * n, 2 * n + 1), name=f"s{n}") for n in range(1, 5)]
-            + [config.Bind(port=0, stream=("slot", 0))])
+    cfg.set([config.Slot(slot=0, wire_fn=1, pins=(0, 1), name="s0", attach="at-boot")])   # one set within max_frame
+    for n in range(1, 5):
+        cfg.set([config.Slot(slot=n, wire_fn=1, pins=(2 * n, 2 * n + 1), name=f"s{n}")])
+    cfg.set([config.Bind(port=0, stream=("slot", 0))])
     before = len(ep.requests)
     st = cfg.state()
     assert [s.slot for s in st.slots] == list(range(5)) and [b.port for b in st.binds] == [0]
@@ -326,3 +327,18 @@ def test_saved_settings_follow_their_interfaces_by_name_not_number():
     _, cfg3 = update(virtual_bench.VirtualProbe("gone", old.max_frame, gone))
     st = cfg3.state()
     assert st.storage == "unreadable" and "gone" in st.unreadable and cfg3.items() == []
+
+
+def test_a_set_longer_than_max_frame_is_refused_before_sending():
+    """A set request past the probe's max_frame could not be taken: ValueError, nothing sent."""
+    probe = virtual_bench.rp2350_pins()
+    small = virtual_bench.VirtualProbe("small", SMALL_FRAME, probe.offered + [virtual_bench._config(9, 0, slots_max=8)],
+                                       own_channels=probe.own_channels)
+    ep = endpoint.Endpoint(small, Clock())
+    hst = h.Host(lambda b: ep.handle(b, 1))
+    hst.open(3000)
+    cfg = config.ProbeConfig(hst)
+    before = len(ep.requests)
+    with pytest.raises(ValueError, match="exceeds this transport's max_frame"):
+        cfg.set([config.Slot(slot=n, wire_fn=1, pins=(2 * n, 2 * n + 1), name=f"s{n}") for n in range(5)])
+    assert len(ep.requests) == before

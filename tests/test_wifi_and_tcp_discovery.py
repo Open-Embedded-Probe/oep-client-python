@@ -342,3 +342,16 @@ def test_kept_session_at_interpreter_exit_prints_nothing(tmp_path):
             "ks._lock(fd); k.fd = fd; k.cycle = k\n")                     # a cycle: collected late at exit
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert r.returncode == 0 and "Exception ignored" not in r.stderr and "ImportError" not in r.stderr
+
+
+def test_a_probe_with_the_wifi_item_answers_max_frame_112_or_more():
+    """probe.config §1.4 (wifi_min_max_frame): esp32-v003 at 512 has the wifi item, at 64 it does not; a profile that
+    declares wifi below 112 is refused."""
+    from oep_client import config as cfg, registry as reg, virtual_bench as vb
+    assert reg.LIMITS["wifi_min_max_frame"] == 112
+    assert any(vb.VirtualProbe.has_wifi(o) for o in vb.esp32_v003().offered)
+    assert not any(vb.VirtualProbe.has_wifi(o) for o in vb.esp32_v003_64().offered)
+    assert any(vb.VirtualProbe.has_wifi(o) for o in vb.esp32_v003(112).offered)
+    with pytest.raises(ValueError, match="112"):
+        vb.VirtualProbe("x", 111, [vb._config(9, 0, slots_max=1, wifi_max=4)])
+    assert cfg.WIFI_MIN_MAX_FRAME == 112

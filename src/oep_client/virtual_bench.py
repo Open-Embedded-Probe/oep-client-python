@@ -41,6 +41,8 @@ class Offered:
 
 
 CORE_NAME = ""                       # fn 0 is the core: it has no name and is never listed (core §0, §7.2)
+WIFI_MAX_TAG = reg.PROBE_CONFIG.tlv["describe"]["wifi_max"]
+WIFI_MIN_MAX_FRAME = reg.LIMITS["wifi_min_max_frame"]   # a probe with the wifi item answers at least this (probe.config §1.4)
 PLAN_ROLE_INTERFACES = {"oep.fixture.gpio", "oep.fixture.uart", "oep.fixture.i2c-target", "oep.fixture.spi-target",
                         "oep.fixture.logic", "oep.fixture.analog"}   # the interfaces with plan roles (oep-if-plan)
 STAND_IN_OPS = (0x01, 0x02)          # the endpoint's two stand-in ops of an fn it does not simulate (VIRTUAL BENCH ONLY)
@@ -85,6 +87,14 @@ class VirtualProbe:
         for o in self.offered:
             if o.fn != CORE_FN:
                 names.validate(o.name)
+        if fill_ops and max_frame < WIFI_MIN_MAX_FRAME and any(self.has_wifi(o) for o in self.offered):
+            raise ValueError(f"{label}: a probe with the wifi item answers max_frame {WIFI_MIN_MAX_FRAME} or more on every "
+                             f"transport (probe.config §1.4), not {max_frame}")
+
+    @staticmethod
+    def has_wifi(o: Offered) -> bool:
+        """Whether this fn is oep.probe.config with the wifi item (its describe's wifi_max)."""
+        return o.name == "oep.probe.config" and any(t[0] & 0x7F == WIFI_MAX_TAG for t in o.tlvs)
 
     @staticmethod
     def _filled(o: Offered) -> Offered:
@@ -403,7 +413,8 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
     write_blocks of up to 122 words, not 230 of 10). oep.probe.link with port_speed (oep-if-link §3), as that firmware.
     Its channels and the other interfaces' limits are this profile's own. `max_frame`: the same probe at another frame
     size (esp32_v003_64: the smallest a probe may declare). oep.probe.config has the wifi item (wifi_max 4), as the
-    reference firmware on a classic ESP32 (its TCP transport is not part of this profile: `virtual_bench_serve --tcp`)."""
+    reference firmware on a classic ESP32 (its TCP transport is not part of this profile: `virtual_bench_serve --tcp`),
+    when max_frame is wifi_min_max_frame (112) or more (probe.config §1.4); below that, no wifi item."""
     own = [0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15]   # UART0, strapping, flash: the probe's own (SWIO 16 is the wire's)
     wired = [4, 5, 13, 14, 17, 18, 19, 21, 22, 25, 26, 27, 32, 33]
     return VirtualProbe("esp32-v003" if max_frame == 512 else f"esp32-v003-{max_frame}", max_frame, [
@@ -426,7 +437,9 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
             catalog.channel_group(1, [(1, 18), (2, 19), (3, 5), (4, 4)]),
             catalog.channel_group(2, [(1, 14), (2, 13), (3, 27), (4, 26)]))
             + _spi_decl(max_length=32, max_hz=3_000_000, features=0, queue_depth=4, cs_setup_ns=4000)),   # MISO in software
-        _config(9, 0, slots_max=1, storage=1024, wifi_max=4),     # the classic ESP32 joins Wi-Fi from its settings
+        # the classic ESP32 joins Wi-Fi from its settings - at a max_frame that carries the longest wifi set (112,
+        # probe.config §1.4); below that (esp32-v003-64) the same probe without the wifi item
+        _config(9, 0, slots_max=1, storage=1024, wifi_max=4 if max_frame >= WIFI_MIN_MAX_FRAME else 0),
         _link(10, port_speed=True),
         _plan(11),
         _restart(12),
@@ -435,7 +448,8 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
 
 def esp32_v003_64() -> VirtualProbe:
     """esp32-v003 at the smallest max_frame a probe may declare (64, reg.MIN_MAX_FRAME): list and describe paged, a
-    riscv-dm max_length of 40, every answer cut to 64 bytes - what a host must still work with."""
+    riscv-dm max_length of 40, every answer cut to 64 bytes - what a host must still work with. No wifi item: a probe
+    with it answers max_frame 112 or more (probe.config §1.4)."""
     return esp32_v003(reg.MIN_MAX_FRAME)
 
 

@@ -370,7 +370,7 @@ def find_unit(unit_id: str, timeout: float = 3.0, engine: str = "auto") -> Found
     hits = [f for f in browse(timeout, engine) if (f.unit_id or "").lower() == unit_id.lower() and f.target]
     if not hits:
         raise LookupError(f"no probe with unit_id {unit_id} announces {SERVICE.rstrip('.')} on this network (DNS-SD "
-                          f"over mDNS stays on the local link: behind a NAT name it as tcp://HOST:PORT)")
+                          f"over mDNS stays on the local link, and a probe need not advertise, transports §3: name it as tcp://HOST:PORT)")
     return hits[0]
 
 

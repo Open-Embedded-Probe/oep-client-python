@@ -8,14 +8,16 @@ and the interfaces `interfaces/*.ja.md`), v1 before the freeze: until the freeze
 oep-spec's generated `generated/oep-v1/oep_v1_registry.py`. This is an experimental stage: breaking changes are expected and
 no compatible API is promised.
 
-**The spec this implements: oep-spec commit `62c1988`** (no `v0.x` tag yet; oep-spec versioning §6 - before the freeze,
+**The spec this implements: oep-spec commit `9118dc0`** (no `v0.x` tag yet; oep-spec versioning §6 - before the freeze,
 revision 1 alone does not fix the forms, so an implementation names the spec it implements). That is the wifi item of
 probe.config and TCP discovery (c2b8007, 62c1988: below, "Wi-Fi and TCP"), the external review
 re-check of 2026-10-07 (af3d52b .. 283e5b5: a frame may be split over writes but no sender pauses probe_frame_gap_ms
 inside one off TCP; a closed transport does not end a session; describe TLVs and max_length fit the smallest max_frame;
 `channels` from a probe with channels, 0 .. channels - 1), the fixes after it (3759027 .. f8bb2de: no resend_max - the host
 decides its resends; interface names 1 to 48 bytes; i2c-target's errors at most 1 a write; the host guide's sink count
-max_frame - 12, as this client already sends; a restarting host keeps its session id, below) and the rule review of
+max_frame - 12, as this client already sends; a restarting host keeps its session id, below), the re-re-check of 764b110
+(29902a6 .. 9118dc0: a probe with the wifi item answers max_frame 112 or more on every transport, `wifi_min_max_frame`;
+a TCP probe may advertise itself as `_oep._tcp` or not) and the rule review of
 2026-10-07 (7688c49 .. 0f455a0, `docs/v1-rule-review-2026-10-07.ja.md` §2 / §7): no ignored TLV (an unknown non-critical
 request TLV is ignored silently, one the probe implements is checked the same with or without bit 7), one refusal
 order - the header, the resend table, the session, then any one reason that applies -, a resend table of corr and answer
@@ -339,7 +341,8 @@ TLVs may follow anything, one resource number space, describe = declarations and
 generations); ch32rv, this client and the probe firmware are checked against it (when the
 spec changes, this is brought in line before the firmware). `virtual_bench` holds example declarations (profiles
 `p4-x035`, `esp32-v003` = the classic ESP32 firmware's frame limits - max_frame 512, riscv-dm max_length 488 -,
-`esp32-v003-64` = the same at the smallest max_frame a probe may declare, 64 (max_length 40, list / describe paged),
+`esp32-v003-64` = the same at the smallest max_frame a probe may declare, 64 (max_length 40, list / describe paged,
+no wifi item: that needs max_frame 112),
 `p4-bench` = a made-up jig with three slots and two seats, `rp2350-pins` = a wire whose pins the host
 chooses; what a probe keeps to itself and does not declare - its own channels, the console's send queue of 256 bytes,
 a capture's widths, segment records and max_read, a group's budgets - is in `Offered.inner` and

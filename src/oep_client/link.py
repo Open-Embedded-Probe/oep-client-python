@@ -1519,7 +1519,8 @@ def tcp_address(target: str, timeout: float = 2.0) -> tuple[str, int]:
     found = discovery.port_of(addr, timeout)
     if found is None:
         raise LookupError(f"{target}: no port given and no _oep._tcp probe found on {addr} by DNS-SD; name it as "
-                          f"tcp://{addr}:PORT (the probe's port; the reference probe listens on 7450)")
+                          f"tcp://{addr}:PORT (the probe's port: a TCP probe need not advertise, transports §3; the reference probe "
+                          f"listens on 7450)")
     return addr, found
 
 

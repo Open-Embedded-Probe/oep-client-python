@@ -6,12 +6,14 @@ Open Embedded Probe の host 側。v1（oep-spec の本体 `docs/oep-core.ja.md`
 `generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.registry` から取る。破壊的変更を前提とする
 実験段階で、互換 API は約束しない。
 
-**実装する仕様: oep-spec の commit `62c1988`**（`v0.x` のタグはまだ無い。oep-spec versioning §6: 凍結の前は revision 1 だけでは
+**実装する仕様: oep-spec の commit `9118dc0`**（`v0.x` のタグはまだ無い。oep-spec versioning §6: 凍結の前は revision 1 だけでは
 形が決まらないので、実装は自分が実装する仕様を名乗る）。probe.config の wifi の項目と TCP の見つけ方（c2b8007、62c1988。下の「Wi-Fi と TCP」）、2026-10-07 の外部レビューの再確認（af3d52b〜283e5b5: フレームは書き込みに分けてよいが、
 TCP 以外では送る側はフレームの途中で probe_frame_gap_ms 止めない。経路が閉じてもセッションは終わらない。describe の TLV と max_length は
 いちばん小さい max_frame に収まる。channel を持つ probe は `channels` を付け、番号は 0〜channels − 1）、その後の直し（3759027〜f8bb2de:
 resend_max は無く、送り直しは host が決める。インターフェースの名前は 1〜48 byte。i2c-target の errors は書き込み 1 回に多くても 1。
 host ガイドの sink の count は max_frame − 12 でこの client が送っているのと同じ。走り直す host はセッションの id を残す、下）、
+764b110 の再々確認（29902a6〜9118dc0: wifi の項目を持つ probe はどの経路でも max_frame 112 以上を答える
+（`wifi_min_max_frame`）。TCP の probe は `_oep._tcp` で知らせても知らせなくてもよい）、
 2026-10-07 の規則の見直し（7688c49〜0f455a0、
 `docs/v1-rule-review-2026-10-07.ja.md` の §2 / §7）: ignored の TLV は無い（知らない非 critical の要求の TLV は黙って無視し、probe が
 実装する TLV は bit 7 によらず同じに確かめる）。断り方の順は 1 つ - 見出し、送り直しの表、セッション、その後は当たった理由のどれか 1 つ。
@@ -311,7 +313,8 @@ max(基準 × 2, 10 %) を超えて壊れ・失われたら下げる。下げる
 続けられる、資源番号は 1 つの空間、describe は宣言だけで状態は `state`、キャプチャの世代）、
 ch32rv・この client・probe の firmware を突き合わせる「動く spec」として使う（spec が変わったら、probe の firmware より先にここを合わせる）。`virtual_bench` は宣言の例（profile:
 `p4-x035`、`esp32-v003` = classic ESP32 の firmware と同じフレームの上限 - max_frame 512、riscv-dm の max_length 488 -、
-`esp32-v003-64` = 同じ probe を宣言できる最小の max_frame 64 で（max_length 40、list / describe は分けて読む）、
+`esp32-v003-64` = 同じ probe を宣言できる最小の max_frame 64 で（max_length 40、list / describe は分けて読む。wifi の項目は
+無い: それには max_frame 112 が要る）、
 `p4-bench` = スロット 3 か所と席 2 つの架空の治具、`rp2350-pins` = host がピンを選ぶ wire。probe が自分で持ち宣言しないもの - 自分の
 channel、コンソールの 256 byte の送りの列、キャプチャの幅・区画の記録・max_read、capture-group の budget - は `Offered.inner` と
 `VirtualProbe.own_channels` に置く）、`virtual_bench_serial` はシリアルの口のバイトの側（COBS の候補、生のバイトと、口の位置がセッションの間

@@ -203,7 +203,7 @@ def test_fn0_ops_lacking_a_core_op_or_broken_are_named_missing():
 def test_an_fn_with_broken_ops_is_named_and_unusable():
     offered = [virtual_bench.Offered(o.fn, o.instance, o.name, (catalog.tlv(catalog.OPS, b"\xf9\x01"),) + tuple(
         t for t in o.tlvs if t[0] != catalog.OPS)) if o.name == "oep.fixture.gpio" else o
-        for o in virtual_bench.esp32_v003().offered]
+        for o in virtual_bench.esp32_v003_64().offered]
     caps = dump.collect(virtual_bench.VirtualProbe("x", 64, offered).call)
     (why,) = caps.missing                                           # base 0xF9 + 8 > 256: past op 0xFF (core §7.4)
     assert why.startswith("describe of fn 4: ops in core §7.4") and "past op 0xFF" in why and why.endswith("not used)")

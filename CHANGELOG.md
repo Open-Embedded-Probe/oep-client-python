@@ -1,6 +1,31 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) **Follow oep-spec 2b17990 .. 9118dc0 (wifi_min_max_frame, optional TCP advertising).** Registry and vectors
+  synced; README names 9118dc0.
+  - probe.config §1.4: a probe with the wifi item answers max_frame 112 or more on every transport
+    (`wifi_min_max_frame`: one set of the longest wifi item, 10 + 3 + 3 + 32 + 64). The virtual bench complies:
+    `esp32-v003` keeps wifi (max_frame 512), `esp32-v003-64` has no wifi item, and a `VirtualProbe` that declares wifi
+    below 112 raises ValueError (`VirtualProbe.has_wifi`).
+  - `ProbeConfig.set` refuses a request longer than the transport's max_frame before sending (ValueError naming the size
+    and max_frame; for a wifi set on a probe below 112 it names the §1.4 rule; no passphrase in the message).
+    `config.WIFI_MIN_MAX_FRAME`.
+  - The new vector (the longest wifi set, 112 bytes, corr 0x7C) passes both ways; the wifi vector count is 9.
+  - transports §3: a TCP probe need not advertise; the not-found messages of `tcp:UNIT_ID` and `tcp://HOST` say to name
+    it as tcp://HOST:PORT.
+  - tests: test_config's paging test sets its slots one per request (the 64-byte frame); new tests for the refusal and
+    the profiles.
+- (JA) **oep-spec 2b17990〜9118dc0 に合わせた（wifi_min_max_frame、TCP の知らせは任意）。** registry と vector を同期し、
+  README は 9118dc0 を名乗る。
+  - probe.config §1.4: wifi の項目を持つ probe はどの経路でも max_frame 112 以上を答える（`wifi_min_max_frame`: いちばん長い
+    wifi の項目 1 つの set、10 + 3 + 3 + 32 + 64）。virtual bench を合わせた: `esp32-v003` は wifi を持つまま（max_frame 512）、
+    `esp32-v003-64` は wifi の項目を持たず、112 未満で wifi を宣言する `VirtualProbe` は ValueError（`VirtualProbe.has_wifi`）。
+  - `ProbeConfig.set` は経路の max_frame より長い要求を送る前に断る（大きさと max_frame を書いた ValueError。112 未満の probe への
+    wifi の set なら §1.4 の規則も書く。パスフレーズは入れない）。`config.WIFI_MIN_MAX_FRAME`。
+  - 新しい vector（いちばん長い wifi の set、112 byte、corr 0x7C）は両方向で通る。wifi の vector は 9 個。
+  - transports §3: TCP の probe は知らせなくてよい。`tcp:UNIT_ID` と `tcp://HOST` で見つからないときの文は tcp://HOST:PORT で
+    指すよう書く。
+  - テスト: test_config の分けて読むテストはスロットを 1 要求に 1 つずつ置く（64 byte のフレーム）。断りと profile のテストを足した。
 - (EN) **virtual_bench_serve --tcp serves several connections at once (length framing).**
   - Up to `--tcp-connections N` (default 3, as the reference probe, oep-probe-arduino implementation-limits §6);
     one more is accepted and closed at once. Each connection is a transport of its own (transports §1): its own confirm

@@ -470,6 +470,8 @@ def setup_case(case):
     elif wifi_max:
         # the probe's hash as the case names it (its own, probe.config §2): 0x5A5A0001 with settings, 0x5A5A0002 without
         ep.hash_fn = lambda config: 0x5A5A0001 if config else 0x5A5A0002
+        if "the probe's hash for the new settings is 0x5A5A0003" in state:
+            ep.hash_fn = lambda config: 0x5A5A0003
         if "session S" in state:
             held(ep)
         if "settings: the wifi entry" in state or "settings as above" in state or "connected through" in state:
@@ -549,6 +551,12 @@ def _wifi_on_client(case, name):
     p = cfg.ProbeConfig(hst, fn=8)
     if name.startswith("probe.config set: wifi entry 0"):
         assert p.set([cfg.Wifi(index=0, ssid="lab", passphrase="password1")]) == 0x5A5A0001
+    elif "the longest wifi item" in name:
+        # 32-byte ssid and 64 hex digits: a 112-byte request (wifi_min_max_frame), sent at a max_frame of 112
+        hst.limits["max_frame"] = reg.LIMITS["wifi_min_max_frame"]
+        w = cfg.Wifi(index=0, ssid="s" * cfg.SSID_MAX, passphrase="0123456789abcdef" * 4)
+        assert p.set([w]) == 0x5A5A0003
+        assert len(sent[0]) == cfg.WIFI_MIN_MAX_FRAME
     elif name.startswith("probe.config get"):
         hash_, items = p.get()
         (w,) = [cfg.decode(t, v) for t, v in items]
@@ -764,10 +772,10 @@ def test_ops_vectors_as_the_client_sends_and_reads_them(case):
 
 
 def test_every_wifi_vector_is_routed_to_the_wifi_checks():
-    """The 8 wifi vectors (corr 0x74-0x7B) all reach _wifi_on_client, none skipped."""
+    """The 9 wifi vectors (corr 0x74-0x7C) all reach _wifi_on_client, none skipped."""
     wifi = [c for c in OPS if is_wifi_vector(c)]
-    assert len(wifi) == 8
-    assert sorted(m.Request.unpack(hx(c["request_hex"])).corr for c in wifi) == list(range(0x74, 0x7C))
+    assert len(wifi) == 9
+    assert sorted(m.Request.unpack(hx(c["request_hex"])).corr for c in wifi) == list(range(0x74, 0x7D))
     assert all(_on_client(c) is not None for c in wifi)
 
 
@@ -802,3 +810,15 @@ def test_every_ops_in_the_virtual_bench_and_the_vectors_is_valid():
     for case in DISCOVERY["exchanges"]:
         if "ops" in case["answer"]:
             assert catalog.pack_ops(case["answer"]["ops"]) in hx(case["answer_hex"])
+
+
+def test_a_wifi_set_past_the_probes_max_frame_is_refused_before_sending():
+    """The longest wifi set is 112 bytes (probe.config §1.4); at a max_frame of 64 the client says so and sends nothing
+    (the passphrase never in the message)."""
+    from oep_client import config as cfg
+    case = next(c for c in OPS if "the longest wifi item" in c["name"])
+    hst, sent = client(case, S)
+    hst.limits["max_frame"] = reg.MIN_MAX_FRAME
+    with pytest.raises(ValueError) as e:
+        cfg.ProbeConfig(hst, fn=8).set([cfg.Wifi(index=0, ssid="s" * cfg.SSID_MAX, passphrase="0123456789abcdef" * 4)])
+    assert sent == [] and "max_frame 64" in str(e.value) and "112" in str(e.value) and "0123" not in str(e.value)

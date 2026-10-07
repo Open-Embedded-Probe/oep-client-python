@@ -47,6 +47,7 @@ BYTE_KEYED = (ITEM["slot"], ITEM["bind"], ITEM["wifi"])        # items keyed by 
 SSID_MAX = reg.LIMITS["wifi_ssid_max_bytes"]                    # a wifi item's ssid: 1 to 32 bytes (probe.config §1.4)
 PASS_MIN, PASS_MAX = reg.LIMITS["wifi_passphrase_min_bytes"], reg.LIMITS["wifi_passphrase_max_bytes"]
 PSK_HEX = reg.LIMITS["wifi_psk_hex_digits"]
+WIFI_MIN_MAX_FRAME = reg.LIMITS["wifi_min_max_frame"]  # a probe with the wifi item answers max_frame >= this (§1.4)
 PASS_SET = _CFG.enum["wifi_pass_len"]["hidden"]  # pass_len in get: a passphrase is set (none follows); in a set: keep it
 WIFI_STATE = dict(_CFG.enum["wifi_state"])                      # off, connecting, connected, waiting
 WIFI_REASON = {k.replace("_", "-"): v for k, v in _CFG.enum["wifi_reason"].items()}
@@ -485,10 +486,26 @@ class ProbeConfig(Interface):
         h = None
         if rest or not removals:
             body = b"".join(it if isinstance(it, (bytes, bytearray)) else item(it) for it in rest)
+            self._check_fits(body)
             h = self._hash_answer(self._call(self.SET, body))
         if removals:
             h = self.unset([(r.kind, r.key) for r in removals])
         return h
+
+    def _check_fits(self, body: bytes) -> None:
+        """A set request longer than the probe's max_frame is refused here, before anything is sent (ValueError): the
+        probe could not take it. One set of the longest wifi item is wifi_min_max_frame (112) bytes, and a probe with
+        the wifi item answers at least that on every transport (probe.config §1.4); several items may need several
+        sets."""
+        size = m.REQUEST_HEADER + len(self.prefix) + len(body)
+        limit = core.confirm(self.host)["max_frame"]
+        if size > limit:
+            wifi = any(t & 0x7F == ITEM["wifi"] for t, _ in catalog.split_tlv(body))
+            raise ValueError(
+                f"probe.config set of {size} bytes exceeds this transport's max_frame {limit}: "
+                + (f"a probe with the wifi item answers max_frame {WIFI_MIN_MAX_FRAME} or more on every transport "
+                   "(probe.config §1.4) - this one does not; " if wifi and limit < WIFI_MIN_MAX_FRAME else "")
+                + "send fewer items per set")
 
     def unset(self, keys: list[tuple[str, int]]) -> int:
         """Remove the items of these (kind, key) (probe.config §2 unset): a key that is not there is nothing; the
