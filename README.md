@@ -8,7 +8,7 @@ and the interfaces `interfaces/*.ja.md`), v1 before the freeze: until the freeze
 oep-spec's generated `generated/oep-v1/oep_v1_registry.py`. This is an experimental stage: breaking changes are expected and
 no compatible API is promised.
 
-**The spec this implements: oep-spec commit `dd5a886`** (no `v0.x` tag yet; oep-spec versioning §6 - before the freeze,
+**The spec this implements: oep-spec commit `c6ab5d9`** (no `v0.x` tag yet; oep-spec versioning §6 - before the freeze,
 revision 1 alone does not fix the forms, so an implementation names the spec it implements). That is the logic capture changes of 2026-10-07 (66c49e7 .. dd5a886: the layout's w is any integer 1-128, a
 segment not kept seamless is not handed out and stops the track in error, and multirate - per-channel reduction by
 sample / any_active / edge_latch in blocks of L base samples, `capture.Multirate` / `LogicCapture.decode_multirate`,

@@ -6,7 +6,7 @@ Open Embedded Probe の host 側。v1（oep-spec の本体 `docs/oep-core.ja.md`
 `generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.registry` から取る。破壊的変更を前提とする
 実験段階で、互換 API は約束しない。
 
-**実装する仕様: oep-spec の commit `dd5a886`**（`v0.x` のタグはまだ無い。oep-spec versioning §6: 凍結の前は revision 1 だけでは
+**実装する仕様: oep-spec の commit `c6ab5d9`**（`v0.x` のタグはまだ無い。oep-spec versioning §6: 凍結の前は revision 1 だけでは
 形が決まらないので、実装は自分が実装する仕様を名乗る）。2026-10-07 のロジックキャプチャの変更（66c49e7〜dd5a886: layout の w は
 1〜128 の任意の整数、連続に保てない区画は出さずにトラックをエラーで止める、multirate ― チャネルごとに sample / any_active /
 edge_latch で縮約し L base sample の block に詰める。`capture.Multirate` / `LogicCapture.decode_multirate`、仮想ベンチも答える）、
