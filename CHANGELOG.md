@@ -1,6 +1,33 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) **Follow oep-spec 66c49e7 .. dd5a886 (logic capture: any w, seamless segments, multirate).** Registry and vectors
+  synced (logic_layout.json, multirate.json); README names dd5a886.
+  - §1.1: w is any integer 1-128 - the client already read bit i*w + pos[k]; the virtual bench packs any w
+    (`virtual_bench_capture.pack_samples`) and ends segments on a whole byte for any w.
+  - §2.2: a segment the probe cannot keep seamless is not handed out; the track stops with state 6, stopped reason 3,
+    error 2 (1 for DMA / peripheral). The virtual bench models it: `Endpoint.capture_overflow(fn, error)` and
+    virtual_bench_serve's stdin command `capture-overflow FN [ERROR]`; its status now carries the TLV error in state 6;
+    a bound track's group stops the others.
+  - §5 multirate: new module `multirate` (`Multirate`, `Declared`, `Layout` with decode / encode, `check`, the policy
+    enum); `LogicCapture.configure(multirate=[Multirate(role, policy, d, param), ...])` sends TLV 0xE0 per role after
+    checking describe (`multirate_declared()`; d 1 sample always accepted, min_d / max_d bound d >= 2, dd5a886),
+    `Config.block` / `multirate_layout()` / `segment_bytes()`, `read_segment` and `decode_multirate(data, samples)`.
+    The virtual bench serves it on p4-x035's logic (describe 0x60, §5.2's refusals, block L, rounding, a lower base
+    rate for heavy combinations, one-shot / repeat / streaming as blocks, rate_range exact). `oep dump` shows it.
+- (JA) **oep-spec 66c49e7〜dd5a886（ロジックキャプチャ: 任意の w、連続な区画、multirate）に合わせた。** registry と vectors
+  （logic_layout.json、multirate.json）を同期し、README は dd5a886 を名乗る。
+  - §1.1: w は 1〜128 の任意の整数 ― client はもともとビット i·w + pos[k] を読んでいる。仮想ベンチは任意の w で詰め
+    （`virtual_bench_capture.pack_samples`）、どの w でも区画をバイトの境目で終える。
+  - §2.2: 連続に保てない区画は出さず、トラックは state 6、stopped reason 3、error 2（DMA / ペリフェラルなら 1）で止まる。仮想ベンチは
+    `Endpoint.capture_overflow(fn, error)` と virtual_bench_serve の stdin のコマンド `capture-overflow FN [ERROR]` でこれを再現し、
+    state 6 の status に TLV error を付け、束ねたトラックなら組がほかを止める。
+  - §5 multirate: 新しいモジュール `multirate`（`Multirate`、`Declared`、decode / encode を持つ `Layout`、`check`、方針の enum）。
+    `LogicCapture.configure(multirate=[Multirate(role, policy, d, param), ...])` は describe を確かめてから（`multirate_declared()`。
+    d 1 の sample はいつも扱い、min_d / max_d は d ≥ 2 だけを縛る、dd5a886）役割ごとに TLV 0xE0 を送る。`Config.block` /
+    `multirate_layout()` / `segment_bytes()`、`read_segment` と `decode_multirate(data, samples)`。仮想ベンチは p4-x035 のロジックで
+    答える（describe 0x60、§5.2 の断り、block L、丸め、重い組み合わせでの低い base rate、ワンショット / リピート / ストリーミングを
+    block で、rate_range の exact）。`oep dump` も表示する。
 - (EN) **Follow oep-spec 0098b56 .. 2c6d18d (the external review's interface re-check of 0991759).** Registry and
   vectors synced; README names 2c6d18d. Breaking (wire and API):
   - Capture §3.3 contract: `LogicCapture.configure` always sends mode and rate, requires `samples` in one-shot and
