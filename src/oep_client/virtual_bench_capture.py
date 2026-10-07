@@ -6,7 +6,8 @@ What it captures is known in advance, so a receiver can check it (sample i count
 segments):
 
 - logic: sample i is the counter i, channel k bit k of it - a square wave of period 2^(k+1) samples. The layout is the
-  probe's (§1.1): w is the smallest width it can make (its own list, not declared) that holds the channels, pos[k] = k.
+  probe's (§1.1): w is the smallest width it can make (its own list, not declared; any integer 1-128) that holds the
+  channels, pos[k] = k; with a w that is not a multiple of 8 a sample may cross a byte boundary.
 - analog: 12-bit values in 16-bit slots (s 16, o 0, b 12), channels in role order. Channel k's period is
   P = 64 (k // 2 + 1) samples: an even k is a square wave (4095 for the first half of the period, then 0), an odd k a sine
   round(2047.5 + 2047 sin(2 pi i / P)). zero 0, scale_nv = the frontend's range / 4095.
@@ -76,6 +77,28 @@ class Segment:
     def pack(self) -> bytes:
         return SEGMENT.pack(self.serial, self.position, self.samples, self.start_ns, self.start_uncertainty_ns,
                             self.trigger_index, self.flags, self.generation)
+
+
+def pack_samples(values: list[int], w: int) -> bytes:
+    """Logic samples of w bits (any w 1-128, capture §1.1): sample i at stream bits i*w .. i*w + w - 1, bit j of the
+    stream bit j mod 8 of byte j / 8 - a sample may cross a byte boundary; the last byte's bits past N*w are 0."""
+    if w % 8 == 0:
+        return b"".join(v.to_bytes(w // 8, "little") for v in values)
+    if w in (1, 2, 4):                                           # never across a byte
+        out = bytearray((len(values) * w + 7) // 8)
+        for i, v in enumerate(values):
+            out[(i * w) >> 3] |= v << ((i * w) & 7)
+        return bytes(out)
+    out = bytearray((len(values) * w + 7) // 8)
+    for i, v in enumerate(values):
+        bit = i * w
+        v <<= bit & 7
+        at = bit >> 3
+        while v:
+            out[at] |= v & 0xFF
+            v >>= 8
+            at += 1
+    return bytes(out)
 
 
 def analog_value(k: int, i: int) -> int:
@@ -207,8 +230,9 @@ class VirtualCapture:
             if width is None:
                 raise Reject(m.UNAVAILABLE, m.tlv(reg.CORE.tlv["unavailable_payload"]["cause"],
                                                   bytes([reg.CORE.enum["unavailable_cause"]["limit"]])))   # more than a sample holds
-            if mode != MODE["one_shot"] and width < 8:
-                samples = -(-samples // (8 // width)) * (8 // width)   # segments end on a byte
+            step = 8 // math.gcd(width, 8)                         # samples to a whole byte
+            if mode != MODE["one_shot"] and step > 1:
+                samples = -(-samples // step) * step               # segments end on a byte
         if pre > self.max_pretrigger or (mode != MODE["streaming"] and pre >= samples):
             raise t.refuse(TLV["pretrigger"])                      # past max_pretrigger, or not below samples (§3.3)
         return {"mode": mode, "rate": rate, "samples": samples, "segments": segs, "trigger": trigger,
@@ -268,15 +292,7 @@ class VirtualCapture:
         if self.analog:
             return b"".join(struct.pack(f"<{self.channels}H", *(analog_value(k, first + i) for k in range(self.channels)))
                             for i in range(n))
-        w = self.width                                             # logic: the counter, w bits a sample
-        mask = (1 << w) - 1
-        if w >= 8:
-            return b"".join(((first + i) & mask).to_bytes(w // 8, "little") for i in range(n))
-        out = bytearray((n * w + 7) // 8)
-        for i in range(n):
-            bit = i * w
-            out[bit >> 3] |= ((first + i) & mask) << (bit & 7)
-        return bytes(out)
+        return pack_samples([(first + i) & ((1 << self.width) - 1) for i in range(n)], self.width)   # the counter
 
     def value(self, k: int, i: int) -> int:
         return analog_value(k, i) if self.analog else (i >> k) & 1
@@ -365,7 +381,7 @@ class VirtualCapture:
                 seg = self._segment(self.samples)
                 events.append(bytes([EVENT["segment"]]) + seg.pack())
         elif self.mode == MODE["streaming"]:
-            per_byte = 8 // self.width if not self.analog and self.width < 8 else 1   # whole bytes only
+            per_byte = 1 if self.analog else 8 // math.gcd(self.width, 8)   # whole bytes only
             n = min((due - self.produced) // per_byte * per_byte, MAX_SAMPLES)
             if n > 0:
                 self.data += self._pack(self.produced, n)

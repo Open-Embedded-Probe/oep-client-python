@@ -426,3 +426,36 @@ def test_the_virtual_bench_clears_the_bits_that_did_not_come(order):
     ep.spi_transfer(fn, b"\xff\xff", bits=12)
     bits, data, _ = st.queue[0]
     assert bits == 12 and data == fixture.pack_wire_bits([1] * 12, order)
+
+
+# ---- oep-spec 66c49e7, capture §1.1: w is any integer 1-128 -------------------------------------------------------------
+
+import json   # noqa: E402
+from pathlib import Path   # noqa: E402
+
+VECTORS = Path(__file__).resolve().parent / "vectors"
+
+
+@pytest.mark.parametrize("case", json.loads((VECTORS / "logic_layout.json").read_text())["cases"], ids=lambda c: c["name"])
+def test_logic_layout_vectors_both_ways(case):
+    w, pos, n = case["w"], case["pos"], case["samples"]
+    lc = c.LogicCapture.__new__(c.LogicCapture)
+    lc.config = c.Config(width=w, positions=pos, samples=n)
+    data = bytes.fromhex(case["stream_hex"])
+    assert ["".join(map(str, lc.channel(data, k, n))) for k in range(len(pos))] == case["channels"]
+    values = [sum(int(case["channels"][k][i]) << pos[k] for k in range(len(pos))) for i in range(n)]
+    assert vbc.pack_samples(values, w).hex() == case["stream_hex"]
+
+
+@pytest.mark.parametrize("w", [3, 5, 7, 12, 13, 24, 100])
+def test_a_capture_with_any_w_reads_back(w):
+    ep, hst, lc, _ = bench()
+    ep.captures[lc.fn].widths = {w}
+    core.plan_apply(hst, [(lc.fn, 0, 20), (lc.fn, 1, 21), (lc.fn, 2, 22)])
+    cfg = lc.configure(rate=1_000_000, samples=101)
+    assert cfg.width == w and cfg.bytes == (101 * w + 7) // 8
+    lc.start()
+    (seg,) = lc.wait()
+    data = lc.read_segment(seg)
+    for k in range(3):
+        assert lc.channel(data, k, 101) == [(i >> k) & 1 for i in range(101)]
