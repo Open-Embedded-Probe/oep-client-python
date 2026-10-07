@@ -471,6 +471,11 @@ def setup_case(case):
         if "writing a0 fails" in state:
             tg = ep._target(wire, (1, 2))
             tg.halted, tg.fail_regs = True, {0x100A}                    # the hart halted; a0's write gets no answer
+    elif name.startswith("console marks") and "marks 5 to 8 kept" in state:
+        host_mark = reg.COMMON.enum["mark_kind"]["host"]               # marks 1 to 4 pushed out, 9 the next
+        st = stream_two(ep, data=bytes(80), marks=[(k, 10 * k, host_mark, 1_000_000 * k, k) for k in range(5, 9)])
+        st.serial = 9
+        ep.probe.max_frame = 64                                        # 2 marks an answer
     elif name.startswith("console marks"):
         stream_two(ep, marks=[(0, 0, reg.COMMON.enum["mark_kind"]["attach"], 1_000_000, 0)])
     elif name.startswith("console streams"):
@@ -755,10 +760,19 @@ def _on_client(case):
         hst, sent = client(case)
         c = con.Console(hst)
         c.stream = 2
-        if name.startswith("console marks"):
+        if name.startswith("console marks") and "marks 5 to 8 kept" in case["state"]:
+            frm = struct.unpack_from("<I", m.Request.unpack(hx(case["request_hex"])).payload, 2)[0]
+            marks, more = c.marks_page(frm)
+            want = {3: ([5, 6], True), 5: ([5, 6], True), 7: ([7, 8], False), 9: ([], False)}[frm]   # common §1.3
+            assert ([k.serial for k in marks], more) == want
+            assert all((k.position, k.time_ns, k.detail) == (10 * k.serial, 1_000_000 * k.serial, k.serial) for k in marks)
+        elif name.startswith("console marks"):
             marks, more = c.marks_page(0)
             assert not more and [(k.serial, k.position, k.kind, k.time_ns, k.detail) for k in marks] == \
                 [(0, 0, 3, 1_000_000, 0)]
+        elif name.startswith("console streams") and "beyond the count" in name:
+            rd = m.Reader(hst.request(7, con.Console.STREAMS, struct.pack("<H", 1), locked=False).payload)
+            assert rd.take("BB") == (0, 0)                              # first(u16) past the count: the last page
         elif name.startswith("console streams"):
             assert c.streams() == [con.StreamInfo(2, 1, 2, 1, 0)]
         elif "from 4" in name:

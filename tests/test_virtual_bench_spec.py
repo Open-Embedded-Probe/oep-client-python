@@ -483,7 +483,7 @@ def test_a_closed_console_stays_readable_and_the_same_place_opens_it_again_under
     a3 = attach(p[0])
     h.ok(3, 0x01, struct.pack("<HB", a3, 1))                         # another mechanism there: the old one goes
     assert h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).detail == m.NO_CONNECTION
-    rd = m.Reader(h.raw(3, 0x08, b"\x00", session=False).payload)   # streams: the live ones (b's and a3's), lock-free
+    rd = m.Reader(h.raw(3, 0x08, b"\x00\x00", session=False).payload)   # streams: the live ones (b's and a3's), lock-free
     more, count = rd.take("BB")
     rows = [rd.take("HHBBB") for _ in range(count)]
     assert more == 0
@@ -503,7 +503,7 @@ def test_a_stream_lives_while_anything_uses_it():
     conn = ep._conn_at(1, p[0])
     sid, flags = m.Reader(h.ok(3, 0x01, struct.pack("<HB", conn, 2))).take("HB")
     assert flags == 1 and ep.streams[sid].users == {"host", ("slot", 0)}
-    rd = m.Reader(h.raw(3, 0x08, b"\x00", session=False).payload)
+    rd = m.Reader(h.raw(3, 0x08, b"\x00\x00", session=False).payload)
     assert rd.take("BB") == (0, 1) and rd.take("HHBBB") == (sid, conn, 2, 0b11, 0)   # users: session and slot
     h.ok(3, 0x07, struct.pack("<H", sid))                            # close: the slot still uses it
     assert ep.streams[sid].users == {("slot", 0)} and not ep.streams[sid].closed

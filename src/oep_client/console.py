@@ -88,7 +88,9 @@ class PositionStream(Interface):
         return self.read(self.FROM_POSITION, position, maximum)
 
     def marks_page(self, from_serial: int = 0) -> tuple[list[Mark], bool]:
-        """One answer's marks with serial >= from_serial (in serial order). -> (marks, more)."""
+        """One answer's marks from `from_serial` on, in serial order (common §1.3: from_serial included; from the
+        serial the next mark gets, none and more 0; a serial no longer kept starts at the oldest kept - the serials then
+        jump by the marks lost). -> (marks, more)."""
         rd = m.Reader(self._call(self.MARKS, self._stream_prefix() + struct.pack("<I", from_serial), locked=False).payload)
         more, count = rd.take("BB")
         marks = [Mark(*rd.take("IQBQB")) for _ in range(count)]   # count x mark, no element length (core §2.3)
@@ -96,7 +98,8 @@ class PositionStream(Interface):
         return marks, bool(more)
 
     def marks(self, from_serial: int = 0) -> list[Mark]:
-        """Every mark from `from_serial` on, following `more` (no mark lost or repeated when several share a position)."""
+        """Every mark from `from_serial` on, following `more`: each next page from the last serial + 1 (mod 2^32), until
+        more 0 (no mark lost or repeated when several share a position)."""
         out: list[Mark] = []
         while True:
             page, more = self.marks_page(from_serial)
@@ -169,14 +172,15 @@ class Console(PositionStream):
 
     def streams(self) -> list[StreamInfo]:
         """The probe's console streams, live and closed-but-readable, in the order they were made (oep-if-console §1,
-        lock-free; paged by first(u8) / more like connections): how a host without the lock finds a stream's number."""
+        lock-free; paged by first(u16) / more like connections, each page from the number already read, until more 0):
+        how a host without the lock finds a stream's number."""
         out: list[StreamInfo] = []
         while True:
-            rd = m.Reader(self._call(self.STREAMS, bytes([len(out)]), locked=False).payload)
+            rd = m.Reader(self._call(self.STREAMS, struct.pack("<H", len(out)), locked=False).payload)
             more, count = rd.take("BB")
             out += [StreamInfo(*rd.take("HHBBB")) for _ in range(count)]
             rd.tail()
-            if not more or not count or len(out) > 0xFF:
+            if not more or not count or len(out) > 0xFFFF:
                 return out
 
 

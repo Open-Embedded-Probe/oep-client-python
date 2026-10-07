@@ -318,3 +318,53 @@ def test_the_vb_events_are_the_vectors_frames():
     grp = vbc.VirtualGroup([9, 13], 2, [])
     grp.generation = 5
     assert grp.stopped_event(vbc.STOPPED["complete"]) == bytes.fromhex("050c00010002000005000000")[5:]
+
+
+# ---- common §1.3: marks paged by serial; console streams' first(u16) (console §1) --------------------------------------
+
+from oep_client import console as con   # noqa: E402
+
+
+def marks_bench(serials, next_serial, max_frame=64):
+    ep, hst, _, _ = bench()
+    ep.probe.max_frame = max_frame
+    st = endpoint.Stream(data=bytearray(100))
+    st.marks = [(k, k & 0x3F, 7, 1000 * (k & 0xFF), k & 0xFF) for k in serials]
+    st.serial = next_serial
+    ep.streams[2] = st
+    c = con.Console(hst)
+    c.stream = 2
+    return ep, c
+
+
+def test_marks_page_from_the_serial_included_and_stop_at_more_0():
+    ep, c = marks_bench(range(5, 9), 9)
+    assert [k.serial for k in c.marks_page(6)[0]] == [6, 7]
+    assert c.marks_page(9) == ([], False)                                # next: none, more 0
+    assert [k.serial for k in c.marks_page(2)[0]] == [5, 6]              # pushed out: from the oldest kept
+    assert [k.serial for k in c.marks_page(100)[0]] == [5, 6]            # not given yet: the same
+    froms = [struct.unpack_from("<I", r.payload, 2)[0] for r in ep.requests[-4:]]
+    assert froms == [6, 9, 2, 100]
+    n = len(ep.requests)
+    assert [k.serial for k in c.marks(5)] == [5, 6, 7, 8]
+    assert [struct.unpack_from("<I", r.payload, 2)[0] for r in ep.requests[n:]] == [5, 7]   # last + 1, more 0 ends
+
+
+def test_marks_serials_wrap():
+    ep, c = marks_bench([0xFFFFFFFE, 0xFFFFFFFF, 0, 1], 2)
+    assert [k.serial for k in c.marks(0xFFFFFFFE)] == [0xFFFFFFFE, 0xFFFFFFFF, 0, 1]
+    assert c.marks_page(2) == ([], False)
+    _, none_kept = marks_bench([], 0)
+    assert none_kept.marks_page(0) == ([], False)                       # nothing kept: none, more 0
+
+
+def test_streams_first_is_u16_and_pages_past_255():
+    ep, hst, _, _ = bench()
+    for k in range(300):
+        ep.streams[1000 + k] = endpoint.Stream(conn=1)
+        ep.stream_order[1000 + k] = k
+    c = con.Console(hst)
+    got = c.streams()
+    assert [s.stream for s in got] == [1000 + k for k in range(300)]
+    firsts = [struct.unpack("<H", r.payload)[0] for r in ep.requests if r.op == con.Console.STREAMS]
+    assert firsts[0] == 0 and firsts[-1] > 255 and all(len(r.payload) == 2 for r in ep.requests if r.op == con.Console.STREAMS)

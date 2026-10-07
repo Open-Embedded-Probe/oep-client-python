@@ -2486,8 +2486,11 @@ class Endpoint:
                 flags |= 1
             return m.COMPLETED, m.SUCCESS, struct.pack("<QBH", pos, flags, len(data)) + data   # start flags len data
         if op == _CON.op["marks"]:
-            hits = [mk for mk in s.marks if m.serial_diff(mk[0], args) >= 0]
-            page = hits[:self.MARKS_PER_ANSWER]
+            # common §1.3: from from_serial inclusive; from next (s.serial) nothing and more 0; a serial not kept (pushed
+            # out, not given yet, an earlier boot's) from the oldest kept
+            hits = s.marks[m.serial_page_start([mk[0] for mk in s.marks], s.serial, args):]
+            fit = (self.probe.max_frame - m.RESULT_HEADER - 2) // 22             # more(u8) count(u8) 22 bytes a mark
+            page = hits[:max(1, min(self.MARKS_PER_ANSWER, fit))]
             body = struct.pack("<BB", int(len(hits) > len(page)), len(page))
             body += b"".join(struct.pack("<IQBQB", *mk) for mk in page)   # 22 bytes each, time_ns u64 (common §1.3)
             return self._answer(body)
@@ -2527,7 +2530,7 @@ class Endpoint:
             sid, existing = self._open_stream(conn, mech, "host")
             return self._answer(struct.pack("<HB", sid, int(existing)))
         if op == _CON.op["streams"]:                               # lock-free, paged by first: every stream, live or readable
-            first = t.take("B")
+            first = t.take("H")                                    # first(u16): no u8 bound on the streams (console §1)
             t.tail()
             rows = []
             for sid in sorted(self.streams, key=lambda k: self.stream_order.get(k, 0)):
