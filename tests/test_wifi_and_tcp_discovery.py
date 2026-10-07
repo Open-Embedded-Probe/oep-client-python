@@ -1,6 +1,7 @@
 """The wifi item (oep-spec probe.config §1.4, §3.3; host guide §15.1), `oep config wifi`, TCP discovery (transports §3,
 host guide §4.1: `discovery`, `oep find`, tcp://HOST and tcp:UNIT_ID), linktest's TCP wait and KeptSession at exit."""
 
+import json
 import re
 import socket
 import struct
@@ -257,7 +258,9 @@ def test_tcp_targets_without_a_port_and_by_unit_id(monkeypatch):
     assert link.tcp_address("tcp://[::1]:7450") == ("::1", 7450)
     with pytest.raises(LookupError, match="tcp://10.0.0.9:PORT"):
         link.tcp_address("tcp://10.0.0.9")                                # no port is fixed (transports §3)
-    assert discovery.find_unit("FAFE00000003").port == 7451
+    assert discovery.find_unit("FAFE00000003", verified=False).port == 7451
+    with pytest.raises(LookupError, match=r"is verified as that OEP probe .*tcp://127.0.0.1:7451 .*no TCP connection"):
+        discovery.find_unit("FAFE00000003")                                # nothing listens there (host guide §4.1)
     with pytest.raises(LookupError):
         discovery.find_unit("0000")
 
@@ -290,7 +293,11 @@ def test_tcp_unit_id_opens_the_probe_dns_sd_names_and_checks_describe(tcp_bench,
         hst.link.close()
     monkeypatch.setattr(discovery, "browse", lambda timeout=2.0, engine="auto":
                         [discovery.Found("OEP y", "0000aaaa", "oep-y.local.", port, ["127.0.0.1"])])
-    with pytest.raises(link.UnitIdMismatch):                               # TXT says 0000aaaa, describe does not
+    with pytest.raises(LookupError, match="says unit_id 'fafe00000003'"):  # TXT says 0000aaaa, describe does not:
+        link.open_host("tcp:0000aaaa", keep_session=False)                 # dropped by find_unit's verify
+    monkeypatch.setattr(discovery, "find_unit", lambda unit_id, *a, **k:   # and open_host checks it on its own link
+                        discovery.Found("OEP y", "0000aaaa", "oep-y.local.", port, ["127.0.0.1"]))
+    with pytest.raises(link.UnitIdMismatch):
         link.open_host("tcp:0000aaaa", keep_session=False)
     hst = link.open_host(f"tcp://127.0.0.1:{port}", keep_session=False)   # explicit address and port
     hst.link.close()
@@ -299,11 +306,21 @@ def test_tcp_unit_id_opens_the_probe_dns_sd_names_and_checks_describe(tcp_bench,
 def test_oep_find_lists_what_dns_sd_says(monkeypatch, capsys):
     found = [discovery.Found("OEP fafe00000003", "fafe00000003", "oep-fafe00000003.local.", 7450, ["192.168.1.23"])]
     monkeypatch.setattr(discovery, "browse", lambda timeout=2.0, engine="auto": found)
-    assert cli.main(["find"]) == 0
-    assert cli.main(["find", "--json"]) == 0
+    assert cli.main(["find", "--no-verify"]) == 0
+    assert cli.main(["find", "--json", "--no-verify"]) == 0
     out = capsys.readouterr().out
     assert "fafe00000003  oep-fafe00000003.local.  port 7450  192.168.1.23  tcp://192.168.1.23:7450" in out
     assert '"target": "tcp://192.168.1.23:7450"' in out
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    closed = s.getsockname()[1]
+    s.close()
+    found[:] = [discovery.Found("OEP fafe00000003", "fafe00000003", "oep-fafe00000003.local.", closed, ["127.0.0.1"])]
+    assert cli.main(["find"]) == 1                                         # verified by default: nothing listens there
+    err = capsys.readouterr().err
+    assert f"warning: dropped tcp://127.0.0.1:{closed} (OEP fafe00000003, TXT unit_id fafe00000003): not verified" in err
+    assert "no TCP connection" in err and "no verified probe: 1 instance(s)" in err
+    assert cli.main(["find", "--json"]) == 0 and json.loads(capsys.readouterr().out) == []
     monkeypatch.setattr(discovery, "browse", lambda timeout=2.0, engine="auto": [])
     assert cli.main(["find", "--timeout", "0.1"]) == 1
 

@@ -14,7 +14,9 @@
                                            printed; without either the entry keeps its passphrase)
   oep config wifi <probe> --from-env [--save]   (OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n>, n = the index)
   oep config wifi-unset <probe> --index 0 [--save]
-  oep find [--timeout 2] [--json]         (probes announcing _oep._tcp by DNS-SD over mDNS: unit_id, host, port, IP)
+  oep find [--timeout 2] [--json] [--no-verify]   (probes announcing _oep._tcp by DNS-SD over mDNS: unit_id, host,
+                                           port, IP; each verified first by confirm + describe's unit_id, host guide
+                                           §4.1 - one that fails is dropped with a warning)
   oep speed <probe> [--candidates 921600,500000] [--verify [--flows in:2,out:2]] (port_speed, oep-if-link §3 and the host
                                            guide §17: try the candidates in order on a UART bridge, report; default
                                            500000 - a faster rate only when named, after its 1 s verify each way)
@@ -127,6 +129,11 @@ def main(argv=None) -> int:
     fd.add_argument("--engine", choices=("auto", "zeroconf", "minimal"), default="auto",
                     help="python-zeroconf (the mdns extra) or this package's one-shot query; auto: zeroconf if installed")
     fd.add_argument("--json", action="store_true")
+    fd.add_argument("--no-verify", action="store_true",
+                    help="list every announced instance as it is (default: only those that answer confirm and whose "
+                         "describe unit_id is their TXT unit_id, host guide §4.1)")
+    fd.add_argument("--verify-timeout", type=float, default=1.0, metavar="S",
+                    help="seconds for each answer of the verify (default 1)")
     d = sub.add_parser("dump", help="list and describe every interface a probe offers")
     src = d.add_mutually_exclusive_group(required=True)
     src.add_argument("--virtual", choices=sorted(virtual_bench.PROFILES), help="an in-process virtual bench (no hardware)")
@@ -166,17 +173,27 @@ def main(argv=None) -> int:
 
 def _find_cmd(args) -> int:
     """DNS-SD browse for _oep._tcp (transports §3, host guide §4.1): what each instance says - its TXT unit_id, the SRV
-    host and port, the addresses. Nothing is opened (the unit_id is checked in describe when a probe is opened)."""
+    host and port, the addresses. Each is verified first (discovery.verify: confirm and describe's unit_id, all at
+    once; no session opened) and one that fails is dropped with a warning on stderr; --no-verify lists them raw."""
     from . import discovery
     try:
         found = discovery.browse(args.timeout, args.engine)
     except ImportError:
         raise SystemExit("oep find --engine zeroconf: install the mdns extra (pip install 'oep-client-python[mdns]')") \
             from None
+    dropped = []
+    if not args.no_verify:
+        found, dropped = discovery.verify(found, args.verify_timeout)
+        for f, why in dropped:
+            print(f"warning: dropped {f.target or f.host or '?'} ({f.instance}, TXT unit_id {f.unit_id or 'none'}): not "
+                  f"verified as an OEP probe - {why}", file=sys.stderr)
     if args.json:
         print(json.dumps([{"unit_id": f.unit_id, "instance": f.instance, "host": f.host, "port": f.port,
                            "addresses": f.addresses, "target": f.target} for f in found], indent=2))
         return 0
+    if not found and dropped:
+        print(f"no verified probe: {len(dropped)} instance(s) of _oep._tcp dropped (above)", file=sys.stderr)
+        return 1
     if not found:
         print(f"no probe announces _oep._tcp within {args.timeout:g} s (mDNS stays on the local link: behind a NAT or "
               "a router name the probe as tcp://HOST:PORT)", file=sys.stderr)

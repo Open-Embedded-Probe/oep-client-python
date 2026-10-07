@@ -1,6 +1,30 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) **`oep find` and `discovery.find_unit` verify what they find (oep-spec 0991759, host guide §4.1).** The DNS-SD
+  service name `oep` is not registered, so another service may advertise `_oep._tcp`. `discovery.verify(found)` checks
+  every instance at once (one thread each, 1 s per answer): a TCP connection, confirm (an `OEP!` answer, the probing
+  rule) and fn 0's describe, whose unit_id must be the TXT unit_id; no session is opened. `discovery.check(f)` is one
+  instance's check (None, or what it said). `oep find` lists only verified instances and warns on stderr for each
+  dropped one, naming its endpoint and what it said (none left: "no verified probe", exit 1); `--no-verify` lists them
+  raw, `--verify-timeout S` sets the wait.
+  `find_unit` (and so `tcp:UNIT_ID` and its reopen) takes the first verified instance with that TXT unit_id and passes
+  over the others (`verified=False`: the first announced one); `open_host` still checks confirm and describe's unit_id on the link it opens (checked: unchanged).
+  tests/test_virtual_bench_announce.py adds in-process responders announcing a non-OEP TCP service (under its own
+  unit_id and under the bench's) and the bench's port under a wrong TXT unit_id; tests/test_wifi_and_tcp_discovery.py
+  follows (its made-up instances use `--no-verify` / `verified=False`, a wrong TXT is now dropped by find_unit, and
+  open_host's own unit_id check is still tested).
+- (JA) **`oep find` と `discovery.find_unit` は見つけたものを確かめる（oep-spec 0991759、host ガイド §4.1）。** DNS-SD の
+  service の名前 `oep` は登録した名前ではないので、別のサービスが `_oep._tcp` を広告しうる。`discovery.verify(found)` はどの
+  instance もすべて同時に（1 つに 1 thread、答え 1 つあたり 1 秒）確かめる: TCP でつなぎ、confirm（`OEP!` の答え、探りの規則）と
+  fn 0 の describe を送り、describe の unit_id が TXT の unit_id と同じかを見る。session は開かない。`discovery.check(f)` は 1 つの
+  instance の確かめ（None か、言ったこと）。`oep find` は確かめたものだけを並べ、外したものはその接続先と言ったことを stderr に
+  警告する（1 つも残らなければ「no verified probe」、終了コード 1）。`--no-verify` はそのまま並べ、`--verify-timeout S` で待ちを変える。`find_unit`（つまり `tcp:UNIT_ID` と開き直し）は
+  その TXT の unit_id を持つ確かめた最初の instance を取り、ほかは飛ばす（`verified=False` なら広告された最初のもの）。`open_host` は開いた経路で confirm と describe の
+  unit_id を今までどおり確かめる（確認した: 変わらない）。tests/test_virtual_bench_announce.py に、同じ process の responder で
+  OEP でない TCP のサービス（自分の unit_id と bench の unit_id で）と、bench の port を違う TXT の unit_id で広告するものを足した。
+  tests/test_wifi_and_tcp_discovery.py も合わせた（作った instance は `--no-verify` / `verified=False` を使い、違う TXT は find_unit
+  の確かめで外れ、open_host 自身の unit_id の確かめも引き続き試す）。
 - (EN) **virtual_bench_serve --tcp speaks length frames by default** (as a probe's TCP transport, transports §1;
   ch32rv's tests had to pass `--framing length`). `--framing cobs` stays as an explicit option that emulates a serial
   port over the socket (COBS frames and the port's raw bytes, one connection at a time, as before); the pty is

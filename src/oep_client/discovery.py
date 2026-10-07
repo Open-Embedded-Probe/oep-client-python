@@ -8,7 +8,9 @@ A probe listening on TCP advertises a DNS-SD (RFC 6763) instance of `_oep._tcp` 
 (oep-spec transports §3): the port is the SRV record's (none is fixed), the TXT record carries `unit_id=<unit_id>`
 (fn 0's describe's; other keys are ignored here), the instance and host names are the probe's. A host uses a named
 probe only when describe's unit_id after opening is the one it named (`link.open_host("tcp:UNIT_ID")` checks it; host
-guide §4.1). The reference probe (oep-probe-arduino) announces host `oep-<unit_id>.local`, instance `OEP <unit_id>`,
+guide §4.1). The service name `oep` is not registered, so another service may advertise `_oep._tcp`: `verify` (and
+`find_unit`, `oep find` by default) connects to each instance found, sends confirm and describe, keeps those whose
+describe unit_id is their TXT unit_id and drops the rest (host guide §4.1). The reference probe (oep-probe-arduino) announces host `oep-<unit_id>.local`, instance `OEP <unit_id>`,
 port 7450 - an example, not a rule.
 
 Two ways to ask, the same answer:
@@ -365,13 +367,83 @@ def browse(timeout: float = 2.0, engine: str = "auto") -> list[Found]:
     return _browse_minimal(timeout)
 
 
-def find_unit(unit_id: str, timeout: float = 3.0, engine: str = "auto") -> Found:
-    """The probe whose TXT unit_id is `unit_id` (ASCII case ignored). LookupError when none answers within `timeout`."""
+VERIFY_TIMEOUT = 1.0     # seconds for each answer of a verify (connect, confirm, describe)
+
+
+def check(f: Found, timeout: float = VERIFY_TIMEOUT) -> str | None:
+    """Whether an instance is an OEP probe (host guide §4.1: the service name `oep` is not registered, so another
+    service may advertise `_oep._tcp`): a TCP connection to it, confirm (the probing rule, transports §3: an `OEP!`
+    answer) and fn 0's describe, whose unit_id must be the TXT unit_id; then closed (no session is opened).
+    -> None when it is, else what it said instead."""
+    if not f.unit_id:
+        return "no unit_id in its TXT record"
+    where = f.addresses[0] if f.addresses else f.host.rstrip(".")
+    if not (f.port and where):
+        return "no SRV port or address"
+    from . import host, link
+    try:
+        lk = link.SerialLink.on_stream(link.TcpStream(where, f.port, connect_timeout=timeout), "length", timeout)
+    except OSError as e:
+        return f"no TCP connection ({e})"
+    lk.resend, lk.transport = False, "tcp"
+    try:
+        hst = host.Host(lk.send)
+        lk.attach_host(hst)                              # confirm only; NotOepProbe (closed) without a valid answer
+        link.check_unit_id(hst, f.unit_id)               # UnitIdMismatch (closed) when describe says another unit_id
+    except Exception as e:
+        return str(e) or type(e).__name__
+    finally:
+        try:
+            lk.close()
+        except Exception:
+            pass
+    return None
+
+
+def verify(found: list[Found], timeout: float = VERIFY_TIMEOUT) -> tuple[list[Found], list[tuple[Found, str]]]:
+    """`check` on every instance at once (one thread each) -> (the verified ones in `found`'s order, the dropped ones
+    with why). An instance still unanswered after 4 x `timeout` is dropped too."""
+    import threading
+    why: dict[int, str | None] = {}
+
+    def run(i: int, f: Found) -> None:
+        try:
+            why[i] = check(f, timeout)
+        except Exception as e:                           # (check catches its own: a guard)
+            why[i] = f"{type(e).__name__}: {e}"
+
+    threads = [threading.Thread(target=run, args=(i, f), daemon=True) for i, f in enumerate(found)]
+    for t in threads:
+        t.start()
+    deadline = time.monotonic() + 4 * timeout
+    for t in threads:
+        t.join(max(0.0, deadline - time.monotonic()))
+    ok, dropped = [], []
+    for i, f in enumerate(found):
+        reason = why.get(i, f"no answer within {4 * timeout:g} s")
+        if reason is None:
+            ok.append(f)
+        else:
+            dropped.append((f, reason))
+    return ok, dropped
+
+
+def find_unit(unit_id: str, timeout: float = 3.0, engine: str = "auto", verify_timeout: float = VERIFY_TIMEOUT,
+              verified: bool = True) -> Found:
+    """The probe whose TXT unit_id is `unit_id` (ASCII case ignored), verified (`verify`: confirm and describe's
+    unit_id, host guide §4.1) - another service on `_oep._tcp` with that TXT is passed over; `verified=False`: the first
+    announced one. LookupError when none answers within `timeout` or none is verified."""
     hits = [f for f in browse(timeout, engine) if (f.unit_id or "").lower() == unit_id.lower() and f.target]
     if not hits:
         raise LookupError(f"no probe with unit_id {unit_id} announces {SERVICE.rstrip('.')} on this network (DNS-SD "
                           f"over mDNS stays on the local link, and a probe need not advertise, transports §3: name it as tcp://HOST:PORT)")
-    return hits[0]
+    if not verified:
+        return hits[0]
+    ok, dropped = verify(hits, verify_timeout)
+    if not ok:
+        raise LookupError(f"no announced instance with unit_id {unit_id} is verified as that OEP probe (host guide "
+                          "§4.1): " + "; ".join(f"{f.target} ({f.instance}): {why}" for f, why in dropped))
+    return ok[0]
 
 
 def port_of(host: str, timeout: float = 2.0, engine: str = "auto") -> int | None:

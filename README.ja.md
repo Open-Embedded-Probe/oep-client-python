@@ -59,7 +59,7 @@ X.Y.Z（v1 の凍結までは、どのリリースも wire を壊しうるので
 | `host` | 要求と結果（見出しは 10 byte の 1 つ: セッションの中で送る要求はそのセッションの id、セッションの外のロックなしの要求は 0）、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`。セッションが終わった（end、lease の期限切れ、ほかのセッションの force）なら `NoSession`: probe はそのセッションが作ったものをすべて解放している。再開は無く、黙って open し直さず、`Host.session` は None に、`Host.epoch` が進む。confirm が core §7.1 の範囲の外か、`max_op_ms` が 1〜600000 の外の probe は `NotUsable` で、それ以上何も送らない。`Unavailable` は payload の cause、channel、`fn`（断りが関わる fn）を読む）。`open(lease_ms, force=, owner=)` はいつも新しい乱数の id で新しいセッションを開き、`Opened(lease_ms, boot_id)` を返す。`end()` はすべてを解放し、host はセッションの外に出る。boot_id が変わったとき（confirm、clock、open）は名前 → fn の cache を捨て、list し直す。`clock()` は fn 0 の clock（core §7.7。ロックもセッションも要らない）を `ClockReading(before_ns, after_ns, uptime_ns, boot_id, round_trip_ns)` で返す: 要求を出す直前と応答を受けた直後のこの host の時刻（`time.monotonic_ns`、または `now=`）と、その間に probe が読んだ uptime。`.host_ns` は中点、`.uncertainty_ns` は往復の半分（host ガイド §12）。`clock_best(n=8)` は n 回のうち往復が最短のものを残す。`subscribe(fn, min_bytes, max_delay_ms)` / `unsubscribe(fn)` はそのインターフェース自身の op 0x30 / 0x32 を送る（core §11.3。min_bytes / max_delay_ms はデータだけをまとめ、出来事はすぐ来る。通知を送らない fn は unknown_operation で答える）。`restart_probe(wait_s=None, reopen_s=None)` は名前で探した `oep.probe.restart`（oep-if-restart、host ガイド §5.2。probe が出していなければ LookupError。セッションがロックを持つこと）で probe を再起動する: 応答の後、link は閉じ、少し（約 100 ms、`host.RESTART_AFTER_ANSWER_S`）待ち、新しく開くのと同じに開き直し（最初は confirm。シリアルの口は起動時の速さ、USB の device は列挙し直した後に探し直し、TCP は接続し直す）、probe の restart_max_ms（oep.probe.restart の describe。restart の前に読む。`core.restart_max_ms`）まで、宣言が無ければ 10 s まで繰り返し（それより長い `wait_s` は restart_max_ms に切る: host ガイド §5.2 で繰り返せるのはそこまで。過ぎれば probe は無くなったものとして link を閉じ、ConnectionError / TimeoutError）、新しい boot_id を返す。`reopen_s` は、そうして無くなったものとした probe を利用者が開き直すことを前もって頼むもの: 新しく開くのと同じに、さらにその秒数まで開き直す（probe には分からない遅れで device が戻る host のため - WSL では列挙し直した device を usbipd が付け直す。要ったかどうかは `Host.restart_reopened`）。同じなら `NotRestarted`。応答が失われ、送り直しが再起動した probe に no_session で断られたときも済んだとみなす。`request_restart()` は要求だけを送る |
 | `link` | transport: シリアルの口（常に COBS + CRC、`0x00 <COBS> 0x00`、フレームの外は雑音として捨てる、排他で開く、8N1 で DTR / RTS を立てる）、USB vendor bulk / HID と TCP（長さつきフレーム、transports §5 の立て直し: host の最後の書き込みから probe_frame_gap_ms より長く、250 ms 待つ。TCP ではフレームの途中の休みもそのまま読み続ける）、corr による照合と送り直し（セッションが持つシリアルの口で、答えを待つ間に壊れたフレームが来たらすぐ同じ corr で送り直す - フレームが届き続ける間 `BROKEN_RESENDS` = 3 回まで、host ガイド §8。何も来ない待ちの後は 1 回。上げた port_speed では先にその速さのまま送り直す、下）。送り直しにも応答が無ければ `TransportFailed` を上げ、次の要求の前に confirm で立て直す（入力が静かになるのを待ち、自分の corr の confirm。シリアルの口でも）。立て直せなければ ConnectionError。応答はどれも core §4.4 の下限（引数の時間 + 1000 ms + シリアルの口の転送時間。confirm の応答が来るまでは min_max_frame で数える、`wait_floor_s`）以上待つ。短い応答は壊れたフレーム。`open_host(target)` |
 | `kept_session` | host が次の実行のために probe ごとに残すセッションの id（`KeptSession`、`Host.kept`。open_host が置く。下） |
-| `discovery` | ネットワークの probe: mDNS の DNS-SD `_oep._tcp`（transports §3）- `browse(timeout)` -> `Found(instance, unit_id, host, port, addresses)`、`find_unit(unit_id)`、`port_of(host)`。python-zeroconf があればそれ（`mdns` の extra）、無ければ自前の最小の問い合わせ（下） |
+| `discovery` | ネットワークの probe: mDNS の DNS-SD `_oep._tcp`（transports §3）- `browse(timeout)` -> `Found(instance, unit_id, host, port, addresses)`、`verify(found)` / `check(f)`（confirm と describe の unit_id、host ガイド §4.1）、`find_unit(unit_id)`（確かめたもの）、`port_of(host)`。python-zeroconf があればそれ（`mdns` の extra）、無ければ自前の最小の問い合わせ（下） |
 | `core` | インターフェースを名前で探す（キャッシュつき）、confirm（probe の `boot_id` と、この host が来た経路の番号 `transport` つき。2 回目からは使っている revision を求める）、probe の describe（宣言だけ。起動の間 cache: ラベル、transport の一覧、`max_op_ms`）、どの fn の `ops` も（describe の ops tag、core §7.4 - base と 1 byte 以上の bitmap で op 0xFF を越えない - その形を確かめる: 破った fn は使わない（`UnusableFunction`）。fn 0 のものなら probe を使わない（`NotUsable`）。`ops(hst, fn)`、`offers(hst, fn, op)`、`Interface.offers(op)`。`require` / `not_offered` は送らずに、probe が答えるのと同じ `Rejected`（detail unknown_operation）を上げる）、ロックの取り方（`take`）、`oep.probe.plan` でのピンの割り当て（`plan_fn`、`plan_apply`、`plan_release`、`plan_roles`）、`oep.probe.restart`（`restart_fn`、`restart_max_ms`）、`Interface` の土台。`list_entries(hst, name, exact)` は list を first だけで読み進め、名前が合うものを host で残す（core §7.2）。fn 0 の list の項目は捨てる（本体は list に載らない）。`max_op_ms`（宣言の無い probe には `FALLBACK_MAX_OP_MS` 10000）。`oep.probe.link`（oep-if-link）: `link_fn`、`link_speed`、source / sink の要求と応答の部品（`link_size` = source の応答の max_frame − 7、`link_sink_size` = sink の要求の max_frame − 12） |
 | `riscv` | `oep.wire.rvswd` / `oep.wire.swio`（scan、attach: `max_speed` は常に送る、`reset=(channel, hold_ms)` でリセットをかけながら attach、detach、connections）、`oep.target.riscv-dm`（応答は値の数を持つ。`reset(confirm=True)` -> `(flags, pc)`（flags の bit0 到達、bit1 確認）、`reset_halt()` -> dpc。`RunResult.not_halted`、`RunResult.not_run`（準備が失敗し hart を走らせていない）。hart を止め直せなかった step は `step_left` つきの `StepError`。`read_register` / `write_register` は DATA0 を元のまま取っておき（`data_saved`）、`resume` / `step` / `run` は先に書き戻す（`restore_data`、debug §4））、`RiscvDm.declared()`（probe が ops tag で出している任意の op。ほかは unknown_operation）、`Wire.search_retries`（attach の立ち上げで余分にかかった試みの数。立ち上げをしたときだけ来る）、target_id の scheme は `dmi_7f`（`Wire.SCHEME_DMI_7F`）、attach、scan、riscv-dm の reset は引数の時間として max_op_ms 待つ（`attach_ms`、`scan_ms`、`reset_ms`。debug §1、§4.3）、リセット線の探索（`find_reset_line(candidates, pins=...)`）、GPIO 経由の attach |
 | `targets` | host が target の系統ごとに知っていることを 1 つの表に（`FAMILIES`: 線、target_id の照合、リセットのベクタ、NRST を option で読む関数、max_speed / idle_clock）。`identify(target_id)` |
@@ -130,7 +130,7 @@ oep restart <probe> [--reopen-s S]           # oep.probe.restart: probe を再�
 oep config wifi <probe> --index 0 --ssid LAB --pass-prompt [--save]   # Wi-Fi のネットワーク（下）。--pass-env VAR、--open
 oep config wifi <probe> --from-env [--save]  # OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n>
 oep config wifi-unset <probe> --index 0 [--save]
-oep find [--timeout 2] [--json]              # _oep._tcp を広告する probe: unit_id、host、port、アドレス
+oep find [--timeout 2] [--json] [--no-verify]  # _oep._tcp を広告する probe（確かめたもの）: unit_id、host、port、アドレス
 oep linktest <probe> ...                     # --timeout: 既定は応答 1 つに 0.3 秒、TCP では 3 秒
 ```
 
@@ -153,7 +153,13 @@ describe の items に wifi の項目（probe.config §1.4、項目 0x08。descr
 - `show` と `state` は state の wifi の TLV（probe.config §3.3）からつながりを出す: `connected, entry 0, rssi -55 dBm, ip 192.168.1.23`、
   `connecting, entry 0`、`waiting, reason auth`（not-found、auth、no-address、other）、`off`。
 - 使っている entry を、その entry でつながっている TCP の経路から変えると、応答の後でその経路が切れる（§1.4）: シリアルの口か USB から設定する。
-- `oep find` は `_oep._tcp` を browse し（transports §3、host ガイド §4.1）、unit_id、host、port、アドレスを並べる。port はいつも SRV
+- `oep find` は `_oep._tcp` を browse し（transports §3、host ガイド §4.1）、unit_id、host、port、アドレスを並べる。service の名前
+  `oep` は登録した名前ではないので、別のサービスが `_oep._tcp` を広告しうる: どの instance もまず確かめる（`discovery.verify`、
+  すべて同時に、答え 1 つあたり 1 秒、`--verify-timeout`）。TCP でつなぎ、confirm（`OEP!` の答え）と fn 0 の describe を送り、
+  describe の unit_id が TXT の unit_id と同じものだけを残す。session は開かない。確かめられないものは、その接続先と言ったことを
+  stderr に警告して外す。`--no-verify` は広告されたものをすべてそのまま並べる。`discovery.find_unit`（つまり `tcp:UNIT_ID`）も
+  同じく確かめ、確かめられない instance は飛ばす。そのあと `open_host` は開いた経路で confirm と describe の unit_id をもう一度
+  確かめる。port はいつも SRV
   のもの（決まった port は無い。参照の probe の 7450 は例）。python-zeroconf があれば（`pip install 'oep-client-python[mdns]'`）それで、
   無ければこのパッケージの最小の問い合わせ（QU、一時の port に答えを受け、5353 を共有できればそこでも聞く）で探す。python-zeroconf は
   すべてのインターフェース（InterfaceChoice.All）で、最小の問い合わせも IPv4 のインターフェースそれぞれから送る（インターフェースの
@@ -429,7 +435,8 @@ python -m oep_client.virtual_bench_serve --tcp 0 --announce --profile esp32-v003
 問い合わせの multicast は出ていったインターフェースでこの host に戻り、応答器はすべてのインターフェースで group に入っている。
 multicast の経路が無い host では `--announce-on 127.0.0.1` にし、問い合わせを IP_MULTICAST_IF 127.0.0.1 で送る。並んで動く job は
 `--unit-id` を変えれば分かれる（instance の名前にも port が入る）。コンテナや VM は自分のネットワークの中でだけ答える。
-tests/test_virtual_bench_announce.py がこれを `oep find`、`discovery.find_unit`、`tcp:UNIT_ID`（両方の engine）で試す。multicast が
+tests/test_virtual_bench_announce.py がこれを `oep find`、`discovery.find_unit`、`tcp:UNIT_ID`（両方の engine）で試す（同じ process の responder が、OEP でない TCP の
+サービスと違う TXT の unit_id を並べて広告し、確かめでそれが外れることも見る）。multicast が
 戻らない所では skip する。
 
 v0 の client（`oep_client.v0`）は 2026-09-26 に消した（git の履歴に残る）。v0 を話す probe はもう無い。

@@ -282,3 +282,116 @@ def test_the_minimal_query_reaches_a_probe_on_an_interface_off_the_default_route
     if default not in ("0.0.0.0",) and not default.startswith("127."):
         monkeypatch.setattr(discovery, "interface_addresses", lambda: [default])   # the old one send: not found
         assert all(f.unit_id != unit for f in discovery.browse(1.5, engine="minimal"))
+
+
+# ---- verifying what is found (host guide §4.1: `oep` is not a registered service name) ------------------------------
+
+class _NotOep:
+    """A TCP service that is no OEP probe: it answers whatever comes with an HTTP error line and closes."""
+
+    def __init__(self):
+        import threading
+        self.srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.srv.bind(("127.0.0.1", 0))
+        self.srv.listen(8)
+        self.port = self.srv.getsockname()[1]
+        threading.Thread(target=self._serve, daemon=True).start()
+
+    def _serve(self):
+        while True:
+            try:
+                c, _ = self.srv.accept()
+            except OSError:
+                return
+            try:
+                c.settimeout(2.0)
+                c.recv(512)
+                c.sendall(b"HTTP/1.0 400 Bad Request\r\n\r\n")
+            except OSError:
+                pass
+            finally:
+                c.close()
+
+    def close(self):
+        self.srv.close()
+
+
+@pytest.fixture(scope="module")
+def impostors(bench):
+    """Three more `_oep._tcp` instances on this host (minimal responders, in-process): a non-OEP service under a
+    unit_id of its own, one under the bench's unit_id, and the bench's own port under a TXT unit_id that describe
+    does not say."""
+    import threading
+    _, unit, port = bench
+    other = _NotOep()
+    alien, liar = secrets.token_hex(6), secrets.token_hex(6)
+    anns = [mdns.Announcement(alien, other.port, ["127.0.0.1"], instance=f"Not OEP {alien}"),
+            mdns.Announcement(unit, other.port, ["127.0.0.1"], instance=f"Not OEP {unit}"),
+            mdns.Announcement(liar, port, ["127.0.0.1"], instance=f"Wrong TXT {liar}")]
+    responders = [mdns.MinimalResponder(a) for a in anns]
+    stop = threading.Event()
+
+    def serve():
+        while not stop.is_set():
+            socks = [s for r in responders for s in r.watch()]
+            readable = select.select(socks, [], [], 0.05)[0]
+            for r in responders:
+                r.poll(readable)
+
+    t = threading.Thread(target=serve, daemon=True)
+    t.start()
+    try:
+        yield {"alien": alien, "liar": liar, "other_port": other.port}
+    finally:
+        stop.set()
+        t.join(2)
+        for r in responders:
+            r.close()
+        other.close()
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_oep_find_drops_what_it_cannot_verify(bench, impostors, engine, capsys):
+    _, unit, port = bench
+    assert cli.main(["find", "--engine", engine, "--timeout", "3", "--json"]) == 0
+    out, err = capsys.readouterr()
+    listed = {(f["unit_id"], f["port"]) for f in json.loads(out)}
+    assert (unit, port) in listed
+    assert not listed & {(impostors["alien"], impostors["other_port"]), (unit, impostors["other_port"]),
+                         (impostors["liar"], port)}
+    where = f"tcp://127.0.0.1:{impostors['other_port']}"
+    assert f"dropped {where} (Not OEP {impostors['alien']}" in err and "no valid confirm answer" in err
+    assert f"dropped tcp://127.0.0.1:{port} (Wrong TXT {impostors['liar']}" in err and repr(unit) in err
+    assert cli.main(["find", "--engine", engine, "--timeout", "3", "--json", "--no-verify"]) == 0
+    raw = {(f["unit_id"], f["port"]) for f in json.loads(capsys.readouterr().out)}
+    assert {(unit, port), (impostors["alien"], impostors["other_port"]), (unit, impostors["other_port"]),
+            (impostors["liar"], port)} <= raw
+
+
+def test_find_unit_and_tcp_unit_id_pass_over_an_impostor_with_the_same_txt(bench, impostors):
+    _, unit, port = bench
+    for _ in range(3):                                   # whichever instance the browse lists first
+        assert discovery.find_unit(unit, timeout=2.0).port == port
+    hst = link.open_host(f"tcp:{unit}", keep_session=False)
+    try:
+        assert hst.link.transport == "tcp"
+    finally:
+        hst.link.close()
+    with pytest.raises(LookupError, match="no announced instance with unit_id .* is verified"):
+        discovery.find_unit(impostors["alien"], timeout=2.0)
+
+
+def test_check_says_why(bench, impostors):
+    _, unit, port = bench
+    assert discovery.check(discovery.Found("b", unit, "h", port, ["127.0.0.1"])) is None
+    assert "no valid confirm answer" in discovery.check(
+        discovery.Found("x", unit, "h", impostors["other_port"], ["127.0.0.1"]))
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    closed = s.getsockname()[1]
+    s.close()
+    assert "no TCP connection" in discovery.check(discovery.Found("c", unit, "h", closed, ["127.0.0.1"]))
+    assert "no unit_id" in discovery.check(discovery.Found("n", None, "h", port, ["127.0.0.1"]))
+    ok, dropped = discovery.verify([discovery.Found("c", unit, "h", closed, ["127.0.0.1"]),
+                                    discovery.Found("b", unit, "h", port, ["127.0.0.1"])])
+    assert [f.instance for f in ok] == ["b"] and [f.instance for f, _ in dropped] == ["c"]
