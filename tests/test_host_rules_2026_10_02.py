@@ -336,17 +336,16 @@ def test_api_search_retries_step_left_internal_pullups_mode():
     assert "one-shot, max 1048576 samples x 1 segments" in text           # mode: mode max_samples max_segments
 
 
-def test_p2_o8_capture_configure_sends_mode_rate_trigger_pretrigger_critical():
-    """capture §3.3: an unhandled value is unsupported critical or not (core §2.3); the client still marks the TLVs
-    whose being ignored would make the capture meaningless."""
+def test_p2_o8_capture_configure_sends_the_table_tlvs_without_the_critical_bit():
+    """capture §3.3 (oep-spec c6ab5d9): every capture probe implements the table's TLVs, so the host sends them
+    without the critical bit; only multirate goes critical."""
     ep, hst = in_process(virtual_bench.esp32_v003)
     hst.open(3000)
     core.plan_apply(hst, [(6, 0, 4)])
     cap = capture.LogicCapture(hst, 6)
     c = cap.configure(rate=1_000_000, samples=1 << 20, trigger=(1, 0, 1), pretrigger=4)
     tags = {t: v for t, v in m.split_tlvs(ep.requests[-1].payload)}
-    assert {capture.MODE | 0x80, capture.RATE | 0x80, capture.TRIGGER | 0x80, capture.PRETRIGGER | 0x80,
-            capture.SAMPLES} <= set(tags)
+    assert set(tags) == {capture.MODE, capture.RATE, capture.TRIGGER, capture.PRETRIGGER, capture.SAMPLES}
     assert c.samples == 65536                                          # rounded down: the answer holds
 
 

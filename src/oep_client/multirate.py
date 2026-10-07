@@ -7,7 +7,7 @@ and the virtual bench alike.
   policy sample, d 1 - a **D = 1 channel**, laid out by the answer's layout as §1.1 does; any other role is a
   **reduced channel**. param is sample's phase (0 <= phase < d) or any_active / edge_latch's active level (0 / 1).
 - `Declared`: describe's 0x60 (policies, min_d, max_d, pow2). d = 1 sample is always accepted; min_d / max_d bound
-  d >= 2 only (2 <= min_d <= max_d, oep-spec dd5a886).
+  d >= 2 only (2 <= min_d <= max_d, oep-spec dd5a886); a broken one (`broken`, c6ab5d9) is not used.
 - `Layout(w, pos, L, reduced)`: the answer's layout of the D = 1 channels (C may be 0) and block L, with the reduced
   channels in role order: the stream of one segment is blocks of L base samples (the grid restarts at each segment),
   each the D = 1 part (r*w bits, 0 to a byte) then the reduced part (the values bit-packed in role order, 0 to a byte);
@@ -102,10 +102,16 @@ class Declared:
     @classmethod
     def unpack(cls, v: bytes) -> "Declared":
         policies, lo, hi, pow2 = struct.unpack_from("<IIIB", v)
-        return cls(policies, lo, hi, bool(pow2))
+        return cls(policies, lo, hi, pow2 if pow2 > 1 else bool(pow2))    # a pow2 past 1 stays visible (broken)
 
     def value(self) -> bytes:
         return struct.pack("<IIIB", self.policies, self.min_d, self.max_d, int(self.pow2))
+
+    @property
+    def broken(self) -> bool:
+        """policies bit 0 clear, min_d < 2, min_d > max_d or pow2 other than 0 / 1: not used, the fn is taken as not
+        declaring multirate (§5.1, oep-spec c6ab5d9)."""
+        return not self.policies & 1 or self.min_d < 2 or self.min_d > self.max_d or self.pow2 not in (0, 1)
 
     def accepts_policy(self, policy: int) -> bool:
         return policy in POLICY_NAME and bool(self.policies >> policy & 1)

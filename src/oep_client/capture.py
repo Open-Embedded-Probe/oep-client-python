@@ -15,12 +15,16 @@ and stopped carry the group's): an event of an earlier start may come after the 
 any). Segment serials wrap (core §2.6) and segments pages by common §1.3.
 
 configure (§3.3's contract, checked here before sending - ValueError): mode and rate always; samples in modes 1 and 2,
-never in mode 3; segments in mode 2 only; pretrigger only with a trigger (type other than 0). A value of one of its TLVs
-the probe cannot honour is refused (rejected unsupported, 0x0B, payload = the tag
-as sent; oep-core §2.3, oep-if-capture §3.3) - every capture probe implements these tags, so the critical bit changes
-nothing there; this host sends mode, rate, trigger, pretrigger and frontend critical anyway (its own choice, for a
-probe that does not know a tag). The probe rounds samples down to its limit and the answer (Config.samples /
-.segments) is what holds.
+never in mode 3; segments in mode 2 only; pretrigger only with a trigger (type other than 0); rate, samples and
+segments 1 or more; a type 0 trigger goes as role 0 value 0. The table's TLVs and trigger_track go without the critical
+bit (every probe of the interface implements them); only multirate is sent critical (oep-spec c6ab5d9). A value the
+probe cannot honour is refused unsupported with the tag as received (core §2.3) - which one, when several apply, is the
+probe's choice, so this client never relies on the order. The probe rounds samples down to its limit and the answer
+(Config.samples / .segments) is what holds.
+
+Errors (§2.2): a segment's bytes may arrive before the segment ends; when the track stops in error, status's write_pos
+is the start of the segment not kept and the bytes received at or past it are dropped (`Received.drop_from`,
+`LogicCapture.finish` does it).
 
 multirate (§5, a second definition of oep.fixture.logic): `configure(multirate=[Multirate(role, policy, d, param),
 ...])` sends one TLV 0xE0 per role (critical), after checking them against the fn's describe (`multirate_declared()`;
@@ -61,7 +65,6 @@ STATUS_ERROR = _CAP.tlv["status_answer"]["error"]          # status's TLV: why t
 DATA_GENERATION = _CAP.tlv["data"]["generation"]           # a data frame's TLV: its generation (always in streaming)
 REFERENCE_SOURCE = {v: k for k, v in _ANA.enum["reference_source"].items()}
 CRITICAL = m.TAG_CRITICAL
-ALWAYS_CRITICAL = frozenset({MODE, RATE, TRIGGER, PRETRIGGER, FRONTEND})   # this host sends these critical (its choice)
 ONE_SHOT, REPEAT, STREAMING = (_CAP.enum["mode"][k] for k in ("one_shot", "repeat", "streaming"))
 IMMEDIATE, LEVEL, EDGE, CROSS_UP, CROSS_DOWN = range(5)
 STATE = _CAP.enum["state"]
@@ -160,6 +163,7 @@ class Config:
     frontend: dict[int, int] = field(default_factory=dict)     # analog: the frontend each channel took
     reference: tuple[str, int, bool] | None = None             # analog: (source, mV, measured)
     blocking_ms: int = 0
+    pretrigger: int = 0                                        # what this host asked (a group's: the trigger_track's)
     block: int | None = None                                   # multirate: L, base samples a block (§5.3)
     multirate: list[Multirate] = field(default_factory=list)   # multirate: the reduced channels asked, role order
 
@@ -205,6 +209,22 @@ class Received:
     seq_lost: int = 0                                          # push frames missing by seq
     frames: int = 0
     stale: int = 0                                             # pushes of an earlier generation, dropped
+    dropped_after_error: int = 0                               # bytes at or past an error stop's write_pos, dropped
+
+    def drop_from(self, position: int) -> None:
+        """Drop every byte at stream position `position` or later (§2.2: after an error stop, status's write_pos)."""
+        if self.start is None:
+            return
+        keep, skipped, gaps = len(self.data), 0, sorted(self.gaps)
+        for k, (index, n) in enumerate(gaps + [(len(self.data), 0)]):
+            seg_from = (gaps[k - 1][0] if k else 0)              # data[seg_from:index] runs on without a gap
+            if position < self.start + index + skipped:
+                keep = max(seg_from, position - self.start - skipped)
+                break
+            skipped += n
+        self.dropped_after_error += len(self.data) - keep
+        del self.data[keep:]
+        self.gaps = [(i, n) for i, n in self.gaps if i < keep]
 
 
 def unpack_push(frame: bytes) -> tuple[int, int, int, bytes, int | None]:
@@ -349,8 +369,8 @@ class LogicCapture(Interface):
                   critical: set[int] = frozenset(), frontends: dict[int, int] | None = None,
                   multirate: list[Multirate] | None = None) -> Config:
         """-> the probe's actual values. A value the probe cannot honour is refused: host.Unsupported, .tag = the TLV as
-        sent (§3.3). mode, rate, trigger, pretrigger and frontend go critical; `critical`: more tags to send critical
-        (samples, segments). Read Config.samples / .segments: the probe rounds samples down.
+        sent (§3.3). The TLVs go without the critical bit (§3.3, oep-spec c6ab5d9); `critical` is accepted for older
+        callers and not used. Read Config.samples / .segments: the probe rounds samples down.
 
         §3.3's contract is checked before anything is sent (ValueError): `samples` is needed in one-shot and repeat
         and not taken in streaming, `segments` is repeat's only, `pretrigger` needs a trigger (type other than 0) - a
@@ -358,7 +378,12 @@ class LogicCapture(Interface):
 
         `multirate` (§5): one Multirate per role to reduce (a role left out is a D = 1 channel), checked against the
         fn's describe before sending (ValueError), each sent as TLV 0xE0; the answer's block L goes to Config.block."""
-        critical = ALWAYS_CRITICAL | set(critical)
+        del critical                                           # only multirate goes critical (§3.3)
+        for name, v in (("rate", rate), ("samples", samples), ("segments", segments)):
+            if v is not None and v < 1:
+                raise ValueError(f"capture configure: {name} {v} - 1 or more (oep-if-capture §3.3)")
+        if trigger is not None and trigger[0] == IMMEDIATE:
+            trigger = (IMMEDIATE, 0, 0)                        # a type 0 trigger's role and value are not used: 0 (§3.3)
         if mode in (ONE_SHOT, REPEAT) and samples is None:
             raise ValueError("capture configure: samples is required in one-shot and repeat (oep-if-capture §3.3)")
         if mode == STREAMING and samples is not None:
@@ -371,7 +396,7 @@ class LogicCapture(Interface):
             pretrigger = None
 
         def tlv(tag: int, value: bytes) -> bytes:
-            return m.tlv(tag, value, critical=tag in critical)
+            return m.tlv(tag, value)
         body = tlv(MODE, bytes([mode])) + tlv(RATE, struct.pack("<I", rate))
         if samples is not None:
             body += tlv(SAMPLES, struct.pack("<I", samples))
@@ -389,6 +414,7 @@ class LogicCapture(Interface):
         # query is its own operation: the lock is decided per operation, before the payload is looked at
         op = self.QUERY_OP if query else self.CONFIGURE
         c = _config(self._call(op, body, locked=not query).payload, self.ANALOG)
+        c.pretrigger = pretrigger or 0
         if mode == ONE_SHOT and not c.segments:
             c.segments = 1                                     # one-shot's answer has no actual_segments (§3.3)
         if specs:
@@ -406,12 +432,14 @@ class LogicCapture(Interface):
         return c
 
     def multirate_declared(self) -> mr.Declared | None:
-        """describe's multirate (§5.1), None when this fn does not declare it (analog never does)."""
+        """describe's multirate (§5.1), None when this fn does not declare it, or declares it broken (policies bit 0
+        clear, min_d < 2, min_d > max_d, pow2 not 0 / 1), or is analog."""
         if self.ANALOG:
             return None
         from .core import describe
         v = next((v for t, v in describe(self.host, self.fn) if t & 0x7F == mr.DECLARED), None)
-        return mr.Declared.unpack(v) if v is not None and len(v) >= 13 else None
+        decl = mr.Declared.unpack(v) if v is not None and len(v) >= 13 else None
+        return None if decl is None or decl.broken else decl          # a broken declaration is not used (§5.1)
 
     def decode_multirate(self, data: bytes, samples: int) -> mr.Decoded:
         """A multirate segment's stream (read_segment's bytes, or a stream's from a segment's start) -> its D = 1
@@ -495,9 +523,14 @@ class LogicCapture(Interface):
             link.pump(0.02, until_one=True)
 
     def finish(self, link, got: Received, timeout: float = 5.0) -> Received:
-        """Streaming, after stop(): collect the pushes still to come, up to the last byte captured (status's write
-        position), or until `timeout`."""
-        end = self.status().write_pos
+        """Streaming, after stop() or an error stop: collect the pushes still to come, up to the last byte captured
+        (status's write position), or until `timeout`. In state 6 the bytes at or past write_pos are dropped (§2.2)."""
+        st = self.status()
+        end = st.write_pos
+        if st.state == STATE["error"]:
+            self.stream(link, seconds=min(0.1, timeout), into=got)
+            got.drop_from(end)                                 # §2.2: nothing at or past write_pos is data
+            return got
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if got.start is not None:
@@ -783,11 +816,25 @@ class CaptureGroup(Interface):
     EVENT_TRIGGERED, EVENT_STOPPED = _GRP.event["triggered"], _GRP.event["stopped"]
     NO_TIME = 0xFFFFFFFFFFFFFFFF
 
+    @staticmethod
+    def pretrigger_of(track: LogicCapture, trigger: LogicCapture) -> int:
+        """P_k (§4.1): the samples before the trigger `track` keeps for the trigger_track's pretrigger P, the same time:
+        ceil(P * num_k * den_t / (den_k * num_t)) by the actual rates (base samples for multirate)."""
+        p, rk, rt = trigger.config.pretrigger, track.config.rate, trigger.config.rate
+        return -(-(p * rk.numerator * rt.denominator) // (rk.denominator * rt.numerator))
+
     def bind(self, tracks: list[LogicCapture], trigger: LogicCapture | None = None) -> None:
-        """Bind these (configured) tracks; [] unbinds. `trigger`: the track whose configure trigger starts them all."""
+        """Bind these (configured) tracks; [] unbinds. `trigger`: the track whose configure trigger starts them all;
+        its pretrigger is the group's, every other track keeping it as the same time (P_k, `pretrigger_of`). Only the
+        trigger track may have a pretrigger (ValueError before sending, §4.1). A track that cannot keep P_k is refused
+        host.Unavailable cause "limit" with `.fn` naming it."""
+        for t in tracks:
+            if t is not trigger and t.config is not None and t.config.pretrigger:
+                raise ValueError(f"capture-group bind: fn {t.fn} has a pretrigger of its own - the group's is the "
+                                 "trigger_track's alone (oep-if-capture §4.1)")
         body = struct.pack(f"<B{len(tracks)}H", len(tracks), *(t.fn for t in tracks))
         if trigger is not None:
-            body += m.tlv(self.TAG_TRIGGER_TRACK, struct.pack("<H", trigger.fn), critical=True)
+            body += m.tlv(self.TAG_TRIGGER_TRACK, struct.pack("<H", trigger.fn))   # not critical (§3.3, §4.1)
         self._call(self.BIND, body)
 
     generation: int | None = None     # the group's current generation (start / status, §4.1)

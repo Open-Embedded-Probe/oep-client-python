@@ -400,7 +400,7 @@ def test_capture_critical_tag_it_cannot_honour_is_unsupported():
 
     def configure(p):
         for tag, _ in m.split_tlvs(p):
-            if tag == capture.TRIGGER | capture.CRITICAL:
+            if tag == capture.TRIGGER:
                 return m.REJECTED, m.UNSUPPORTED, bytes([tag])
         return m.COMPLETED, m.SUCCESS, b""
 
@@ -408,7 +408,7 @@ def test_capture_critical_tag_it_cannot_honour_is_unsupported():
     cap = capture.LogicCapture(hst, 7)
     with pytest.raises(host.Unsupported) as e:
         cap.configure(rate=1_000_000, samples=100, trigger=(capture.EDGE, 0, 0), critical={capture.TRIGGER})
-    assert e.value.tag == capture.TRIGGER | capture.CRITICAL
+    assert e.value.tag == capture.TRIGGER                              # sent without the critical bit (§3.3)
     assert not hasattr(cap.configure(rate=1_000_000, samples=100), "ignored")   # no ignored list
 
 
