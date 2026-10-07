@@ -1,6 +1,40 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) **virtual_bench_serve --tcp serves several connections at once (length framing).**
+  - Up to `--tcp-connections N` (default 3, as the reference probe, oep-probe-arduino implementation-limits §6);
+    one more is accepted and closed at once. Each connection is a transport of its own (transports §1): its own confirm
+    and revision in use, answers on it, notifications only on the connection their fn's subscribe came on (core §11.4).
+    All share one probe (one Endpoint, transports §3): the session, lock and resend table - an open from another
+    connection while a session holds the lock is refused locked, lock_state shows it from every connection; a closed
+    connection leaves them, and an open with the same session id from another connection takes the session back and
+    its notifications with it. ch32rv found a second connection waiting behind the first.
+  - `--once` ends the program when no connection is left after one was served (with one connection: as before).
+    `--framing cobs` (a serial port) still serves one connection at a time; `--tcp-connections` with it is an error.
+    pty mode unchanged. A connection that takes nothing for 2 s while answers wait is closed; notifications past
+    2 x max_frame waiting on one are dropped (core §11.4). The `reboot` / `lose` / `wifi-air` stdin commands and
+    `--announce` work as before; the TCP transport is in describe from the start.
+  - `Endpoint.handle(..., link=)` names the connection a request came on (default: the transport index);
+    `Endpoint.pushes_to()` gives each notification with its connection; `revision_in_use` is kept per connection.
+  - New tests/test_virtual_bench_serve_tcp_connections.py: two clients at once (lock, locked, lock_state, end, the
+    other opens), a fourth connection closed (and `--tcp-connections 1`), one client dropping while another goes on, a
+    session resumed from a new connection, notifications routed and moved, `--once` with two, stdin commands.
+- (JA) **virtual_bench_serve --tcp は同時に複数の接続に答える（length の framing）。**
+  - 最大 `--tcp-connections N` 個（既定 3。参照の probe、oep-probe-arduino implementation-limits §6 と同じ）。それを超える接続は
+    受けてすぐ閉じる。どの接続も別の経路（transports §1）: confirm と使っている revision は接続ごと、応答はその接続に、通知は
+    その fn の subscribe が来た接続にだけ（core §11.4）。probe は 1 つ（1 つの Endpoint、transports §3）でセッション、ロック、
+    送り直しの表を共有する: セッションがロックを持つ間、別の接続の open は locked で断られ、lock_state はどの接続からも見える。
+    接続が閉じてもそれらは残り、別の接続からの同じ session id の open がセッションを取り戻し、通知もその接続に移る。ch32rv が、
+    2 つ目の接続が 1 つ目の後ろで待たされることを見つけた。
+  - `--once` は、接続を 1 つ受けた後に接続が 1 つも無くなったら終わる（接続が 1 つなら今までと同じ）。`--framing cobs`
+    （シリアルの口）は今も一度に 1 つの接続に答え、`--tcp-connections` と一緒なら誤り。pty は変わらない。応答が待っているのに
+    2 s 何も受け取らない接続は閉じる。1 つの接続で 2 x max_frame を超えて待つ通知は捨てる（core §11.4）。stdin の `reboot` /
+    `lose` / `wifi-air` と `--announce` は今までどおり。TCP の経路は始めから describe に載る。
+  - `Endpoint.handle(..., link=)` は要求が来た接続を名指す（既定は経路の index）。`Endpoint.pushes_to()` は通知をその接続と
+    組にして返す。`revision_in_use` は接続ごとに持つ。
+  - 新しい tests/test_virtual_bench_serve_tcp_connections.py: 同時の 2 つの client（ロック、locked、lock_state、end、もう一方の
+    open）、4 つ目の接続が閉じられる（と `--tcp-connections 1`）、1 つの client が落ちても別の client は続く、新しい接続からの
+    セッションの取り戻し、通知の行き先とその移動、2 つの接続での `--once`、stdin のコマンド。
 - (EN) **virtual_bench_serve announces itself (DNS-SD), discovery queries every interface, all 8 wifi vectors checked.**
   - `virtual_bench_serve --announce` (with `--tcp`; length framing, now the default with it) answers mDNS / DNS-SD
     queries for `_oep._tcp` (transports §3): PTR -> instance `OEP virtual <unit_id> <port>`, SRV (the port, host

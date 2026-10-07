@@ -71,7 +71,7 @@ def test_a_dropped_tcp_client_keeps_its_session_and_a_new_connection_takes_it_ba
     again.keepalive()                                                # requests of that session run
     again.end()
     again.link.close()
-    other = _raw_host(tcp_bench)                                     # (virtual_bench_serve: one connection at a time)
+    other = _raw_host(tcp_bench)
     other.open(3000)                                                 # ended: the lock is free
     other.end()
     other.link.close()

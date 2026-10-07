@@ -441,9 +441,15 @@ proc.stdin.write(b"reboot\n"); proc.stdin.flush()
 
 The pty is a serial port (the host opens it with TIOCEXCL); `--tcp PORT` is `--framing cobs` (a serial port) or
 `--framing length` (the TCP form: the listener is a TCP transport of the probe, listed in describe and named by every
-confirm; a length over max_frame closes the connection). TCP serves one connection at a time, and a closed one does not end
-its session (transports §3): the session, lock, subscriptions and resend table stay until the lease runs out, notifications
-meanwhile are dropped, and the next connection's open with the same id takes the session back (core §6.2). Faults: `--drop N` (the N-th answer is not sent, once; the request did run,
+confirm; a length over max_frame closes the connection). With length framing TCP serves up to `--tcp-connections N`
+connections at once (default 3, as the reference probe; one more is accepted and closed at once), each a transport of its
+own (transports §1: its confirm and revision in use, notifications on the connection their fn's subscribe came on) and
+all on one probe: an open from one connection while another's session holds the lock is refused locked, and lock_state
+shows it from each. `--framing cobs` (a serial port) still serves one connection at a time. A closed connection does not
+end its session (transports §3): the session, lock, subscriptions and resend table stay until the lease runs out,
+notifications for it are dropped, and an open with the same id from another connection takes the session back (core
+§6.2), its notifications with it. `--once` ends the program when no connection is left after one was served (with
+length framing: when the last of the overlapping connections closes). Faults: `--drop N` (the N-th answer is not sent, once; the request did run,
 so a resend gets the remembered result), `--noise TEXT` (noise before every answer), `--corrupt N` (the N-th answer's CRC
 broken once). `--uart-plan` / `--uart-rx` give the first fixture UART a plan and RX bytes, `--run-hook` a host's own model of
 riscv-dm run, `--capture-slipped` flags bit2 on every capture segment. `--no-drive-levels` takes the gpio's

@@ -37,7 +37,9 @@ define (oep-spec 0f455a0, the rule review of 2026-10-07):
   -> result_lost); result_lost for old corrs; open is never looked up; emptied by a successful open, kept over end
 - oep.probe.plan (oep-if-plan: role_assignment, plan_roles), oep.probe.restart (oep-if-restart §2: the answer first,
   then nothing on any transport until the probe has restarted; the target is not reset), notifications (core §11:
-  subscribe / unsubscribe are the emitting interface's ops; events at once, data batched by min_bytes / max_delay_ms),
+  subscribe / unsubscribe are the emitting interface's ops; events at once, data batched by min_bytes / max_delay_ms;
+  each fn's go to the connection its subscribe came on, and an open that takes the lock's session back from another
+  connection moves them there: `handle(..., link=)`, `pushes_to`),
   oep.probe.link (oep-if-link: source len <= max_frame - 7, sink, and port_speed when the profile's ops offer it)
 - port_speed (oep-if-link §3, the handshake): baud(u32) step(u8) verify_ms(u16) on the UART bridge the request came in
   on (another transport, or a try while a port is raised: unavailable cause 6); the nearest rate the virtual bench's UART makes
@@ -97,7 +99,7 @@ import struct
 import zlib
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, Hashable
 
 from . import catalog, config as cfgmod, virtual_bench, virtual_bench_capture, message as m, registry as reg
 
@@ -750,6 +752,7 @@ class Endpoint:
         self.reboots = 0                                # restarts so far (the restart op and reboot()): a transport
                                                         # drops what it had read for the old boot when this moves
         self._transport = 0                             # the transport the request being handled came in on
+        self._via: Hashable = 0                         # and the connection on it (a TCP listener's accepted ones differ)
         # what the simulation is, not the probe's state (a reboot keeps them):
         self.capture_slipped = False                    # every capture segment says flags bit2 (a pace that fell behind)
         self.uart_clock_hz = 80_000_000                # the UARTs' divider clock (a test lowers it: the item's fallback)
@@ -773,6 +776,7 @@ class Endpoint:
         self.requests: list[m.Request] = []
         # fn -> (min_bytes, max_delay_ms) of its subscription (core §11.3); ends with the lock
         self.subscribed: dict[int, tuple[int, int]] = {}
+        self.push_link: dict[int, Hashable] = {}        # fn -> the connection its notifications go to (core §11.4)
         self.data_since_ms: dict[int, int] = {}         # fn -> when its oldest data not sent yet was there (max_delay_ms)
         self.push_seq: dict[int, int] = {}              # fn -> the next event / data seq (core §11.2)
         self.outbox: list[bytes] = []                   # events and data frames waiting to go out (pushes())
@@ -956,6 +960,12 @@ class Endpoint:
         for e in events:
             if fn in self.subscribed:
                 self.outbox.append(bytes([m.ROLE_EVENT]) + struct.pack("<HH", fn, self._next_seq(fn)) + e)
+
+    def pushes_to(self) -> list[tuple[Hashable, bytes]]:
+        """`pushes`, each with the connection it goes to (core §11.4: where its fn's subscribe came, or where the
+        session was taken back to; `handle`'s `link`). A serving loop with several connections sends each to its own
+        and drops one whose connection is gone (transports §3)."""
+        return [(self.push_link.get(struct.unpack_from("<H", f, 1)[0]), f) for f in self.pushes()]
 
     def pushes(self) -> list[bytes]:
         """The frames the probe sends by itself now (core §11): events (at once: never batched, core §11.3) and a
@@ -1162,8 +1172,10 @@ class Endpoint:
         return s
 
     # ---- the one entry point: a request message in, a result message out ------------------------
-    def handle(self, data: bytes, transport: int = 0) -> bytes | None:
-        """A request from transport `transport` (the index in the describe's transport list) -> its result."""
+    def handle(self, data: bytes, transport: int = 0, link: Hashable = None) -> bytes | None:
+        """A request from transport `transport` (the index in the describe's transport list) -> its result. `link` names
+        the connection it came on when one transport has several (a TCP listener's accepted connections, transports §1:
+        each is a transport of its own for the revision in use and the notifications' target); None = the transport."""
         if not data or data[0] != m.ROLE_REQUEST or len(data) < REQUEST_HEADER:
             self.discarded += 1                                   # not a request, or shorter than its header (C-36)
             return None
@@ -1176,6 +1188,7 @@ class Endpoint:
             return None
         self.requests.append(req)
         self._transport = transport
+        self._via = transport if link is None else link
         header = self._header(req)                                 # core §4.3: the header, before the resend table
         if header is not None:
             return m.Result(req.corr, m.REJECTED, header).pack()
@@ -1330,6 +1343,7 @@ class Endpoint:
         self.holder = None
         self.owner = None
         self.subscribed.clear()                                    # subscriptions end with the lock
+        self.push_link.clear()
         for fn in {a[0] for a in self.plan} - self.plan_from_config:
             self._drop_plan(fn)
         for sid, st in list(self.streams.items()):
@@ -1377,7 +1391,12 @@ class Endpoint:
             self._release_lock()                                   # force: the old session is released first (§9)
         if session != self.holder:                                 # a new lock (a resent open keeps everything)
             self.subscribed.clear()
+            self.push_link.clear()
             self.owner = owner                                     # from the open that takes the lock, kept while held
+        else:
+            # the holder's open again - from another connection, it takes the session back there (transports §3):
+            # its notifications go to that connection from now on
+            self.push_link = {fn: self._via for fn in self.push_link}
         self.holder = self.last = session
         self.resend.clear()
         self.newest_corr = None
@@ -1436,7 +1455,7 @@ class Endpoint:
         if not lo <= self.revision <= hi:
             # no revision in the range: tag 0x00, then TLV supported (min, max) - the range this probe handles
             raise unsupported_fixed(m.tlv(UNSUPPORTED_SUPPORTED, bytes([self.revision, self.revision])))
-        self.revision_in_use[self._transport] = self.revision     # until the next confirm on this transport (§7.1)
+        self.revision_in_use[self._via] = self.revision           # until the next confirm on this connection (§7.1)
         return self._answer(struct.pack("<4sBBHIBI", m.CONFIRM_RESULT, self.revision, 0, self.probe.max_frame,
                                         self.window, self.max_inflight, self.boot_id)    # boot_id (core §7.1)
                             + m.tlv(CONFIRM_TRANSPORT, bytes([self._transport])))   # the transport it came on
@@ -1491,11 +1510,13 @@ class Endpoint:
             min_bytes, max_delay_ms = t.take("HI")
             t.tail()
             self.subscribed[fn] = (min_bytes, max_delay_ms)
+            self.push_link[fn] = self._via                         # sent where the subscribe came (core §11.4)
             self.push_seq[fn] = 0                                  # seq from 0 at every subscribe (core §11.2)
             self.data_since_ms.pop(fn, None)
             return m.COMPLETED, m.SUCCESS, b""
         t.tail()
         self.subscribed.pop(fn, None)
+        self.push_link.pop(fn, None)
         self.data_since_ms.pop(fn, None)
         return m.COMPLETED, m.SUCCESS, b""
 

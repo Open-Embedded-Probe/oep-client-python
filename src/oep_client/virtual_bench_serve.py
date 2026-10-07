@@ -7,13 +7,20 @@
 should set TIOCEXCL on it, as on a real port). On Linux this program keeps a slave fd of its own and watches the
 path's opens and closes (inotify): when the last host closes it - or ends without closing it - TIOCEXCL is cleared
 and the unread input dropped, as a real port's last close does, so the next host's open succeeds. --tcp PORT (0 = any free
-one) serves one connection at a time - a closed connection does not end the session (transports §3: the session, its
-lock, subscriptions and the resend table stay until the lease runs out or another core §9 event; answers and
-notifications meanwhile are dropped; the next connection's open with the same id takes it back, core §6.2) -
---framing cobs (the default without --announce) is the serial port again, --framing length (the default with
---announce) is length(u16) message as on vendor bulk / TCP (no raw bytes): the listening socket is then a TCP transport of the
-probe (kind 6, listed in fn 0's describe, its index in every confirm's transport TLV; transports §1), no pause inside a
-frame restarts the reader (transports §2), and a length over max_frame closes the connection.
+one): --framing cobs (the default without --announce) is the serial port again and serves one connection at a time (a
+second one waits until the first closes); --framing length (the default with --announce) is length(u16) message as on
+vendor bulk / TCP (no raw bytes): the listening socket is then a TCP transport of the probe (kind 6, listed in fn 0's
+describe, its index in every confirm's transport TLV; transports §1), no pause inside a frame restarts the reader
+(transports §2), and a length over max_frame closes the connection. The length framing serves up to --tcp-connections
+connections at once (default 3, as the reference probe); one more is accepted and closed at once. Each connection is a
+transport of its own (transports §1): its own confirm and revision in use, answers back on it, notifications on the
+connection their fn's subscribe came on (core §11.4) - none of the others'. The probe behind them is one: the
+session, its lock, subscriptions and the resend table are shared (an open from one connection while another's session
+holds the lock is refused locked; lock_state shows it from every connection), and a closed connection does not end
+them (transports §3: they stay until the lease runs out or another core §9 event; answers and notifications for a
+closed connection are dropped; an open with the same session id from another connection takes the session back,
+core §6.2, and its notifications go there from then on). A connection that takes nothing for 2 s while answers wait is
+closed as dead; notifications that would make more than 2 x max_frame wait on one are dropped (core §11.4).
 
 --announce (with --tcp, length framing) announces the port as a probe listening on TCP does (transports §3): DNS-SD
 `_oep._tcp` over mDNS - PTR `_oep._tcp.local.` -> instance `OEP virtual <unit_id> <port>`, its SRV (the port, host
@@ -35,8 +42,10 @@ route at all needs --announce-on 127.0.0.1 and the query sent with IP_MULTICAST_
 per job keeps parallel jobs apart. A container or VM sees the query only on its own network.
 
 The first line on stdout says where to open: `PTY /dev/pts/N` or `PORT n`. The program ends when stdin closes
-(so a test's child never stays behind), or with --once when the first TCP connection closes. With --keep-on-eof the
-end of stdin does not end it (stop it with a signal).
+(so a test's child never stays behind), or with --once when no TCP connection is left after one was served: with cobs
+framing when the first connection closes; with length framing when the last of those open closes (connections that
+overlap keep it running; a connection refused past --tcp-connections does not count). With --keep-on-eof the end of
+stdin does not end it (stop it with a signal).
 
 Lines on stdin are commands, read between requests (the serving never waits for them):
   reboot                the probe restarts with a new random boot_id (Endpoint.reboot, core §6.5): the session table,
@@ -103,6 +112,9 @@ Options:
                         (esp32-v003): the entries of probe.config's wifi item are tried against these in index order,
                         and state's wifi TLV shows connecting for --wifi-join-ms (default 500), then connected (rssi
                         -55, ip --wifi-ip, default 127.0.0.1 - where this program listens) or waiting with the reason
+  --tcp-connections N   with --tcp and length framing: connections served at once (default 3); one more is accepted
+                        and closed at once
+  --once                with --tcp: end when no connection is left after one was served (above)
   --listen ADDR         the address --tcp listens on (default 127.0.0.1; 0.0.0.0: every interface)
   --unit-id ID          fn 0's describe's unit_id instead of the profile's (core §7.5 grammar: [a-z0-9-], 1-32)
   --announce            with --tcp: DNS-SD `_oep._tcp` over mDNS for the port (above)
@@ -133,6 +145,7 @@ import tty
 from . import catalog, endpoint, virtual_bench, virtual_bench_serial, message as m, registry as reg
 
 _ITEM = reg.PROBE_CONFIG.tlv["item"]
+TCP_CONNECTIONS = 3                                      # --tcp-connections' default (length framing)
 
 
 def _ms(text: str) -> int:
@@ -473,12 +486,21 @@ def serve_tcp(a, ep, console, commands: Commands) -> None:
     srv = socket.socket()
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((a.listen, a.tcp))
-    srv.listen(1)
+    srv.listen(8)
     port = srv.getsockname()[1]
+    if a.framing == "length":
+        # the listening socket is a TCP transport of its own (transports §1, C-05): listed in describe, named by confirm
+        ep.tcp_index = ep.add_transport(virtual_bench.TRANSPORT["tcp"])
     if a.announce:
         commands.responder = announce(a, ep, port)
     print(f"PORT {port}", flush=True)
-    while True:
+    if a.framing == "length":
+        try:
+            _serve_length(a, ep, console, commands, srv)
+        finally:
+            srv.close()
+        return
+    while True:                                          # cobs: a serial port - one connection at a time
         readable, _, _ = select.select([srv] + commands.watch(), [], [], 0.05)
         if commands.poll(readable):
             return
@@ -495,6 +517,135 @@ def serve_tcp(a, ep, console, commands: Commands) -> None:
             return
         conn.close()
         if a.once:
+            return
+
+
+class _Client:
+    """One accepted TCP connection of the length framing: a transport of its own (transports §1) - its `link` names it to
+    the Endpoint (the revision in use, the notifications' target); the frame it is reading, and what the kernel did
+    not take yet."""
+
+    WRITE_WAIT_MS = 2000                                 # a connection that takes nothing for this long is closed
+
+    _numbers = iter(range(1, 1 << 62))
+
+    def __init__(self, sock: socket.socket, a):
+        self.sock, self.number = sock, next(self._numbers)
+        self.link = ("tcp", self.number)
+        self.buf, self.out = bytearray(), bytearray()
+        self.answers, self.filt = 0, _filter(a)
+        self.stalled_since: float | None = None
+
+    def send(self, data: bytes) -> None:
+        self.out += data
+        self.flush()
+
+    def flush(self) -> bool:
+        """Hand what waits to the kernel; False = the connection is dead (reset, or nothing taken for WRITE_WAIT_MS)."""
+        if not self.out:
+            self.stalled_since = None
+            return True
+        try:
+            n = self.sock.send(self.out)
+        except BlockingIOError:
+            n = 0
+        except OSError:
+            return False
+        del self.out[:n]
+        if n or not self.out:
+            self.stalled_since = None if not self.out else time.monotonic()
+            return True
+        if self.stalled_since is None:
+            self.stalled_since = time.monotonic()
+        return (time.monotonic() - self.stalled_since) * 1000 < self.WRITE_WAIT_MS
+
+
+def _serve_length(a, ep, console, commands: Commands, srv: socket.socket) -> None:
+    """The length framing: up to --tcp-connections connections at once, each a transport of its own (transports §1)
+    sharing the one probe (sessions, the lock, the resend table: transports §3). One more is accepted and closed at
+    once. Answers go back on the connection the request came on, notifications where their fn's subscribe came (core
+    §11.4); one whose connection is gone is dropped (transports §3)."""
+    index = ep.tcp_index
+    clients: list[_Client] = []
+    served = False                                       # --once: some connection was served
+    limit = 2 * ep.probe.max_frame                       # notifications waiting in a connection at most (core §11.4)
+
+    def drop(c: _Client) -> None:
+        clients.remove(c)
+        try:
+            c.sock.close()
+        except OSError:
+            pass
+
+    while True:
+        socks = [c.sock for c in clients]
+        writing = [c.sock for c in clients if c.out]
+        readable, writable, _ = select.select([srv] + socks + commands.watch(), writing, [], 0.005)
+        if commands.poll(readable):
+            return
+        if srv in readable:
+            try:
+                sock, _ = srv.accept()
+            except OSError:
+                sock = None
+            if sock is not None and len(clients) >= a.tcp_connections:
+                sock.close()                             # past --tcp-connections: accepted and closed at once
+            elif sock is not None:
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                sock.setblocking(False)
+                clients.append(_Client(sock, a))
+                served = True
+        boots = ep.reboots
+        for c in list(clients):
+            if c.sock not in readable or c not in clients:
+                continue
+            try:
+                data = c.sock.recv(65536)
+            except BlockingIOError:
+                continue
+            except OSError:
+                data = b""
+            if not data:
+                drop(c)                                  # closed: the session and its lock stay (transports §3)
+                continue
+            c.buf += data
+            while len(c.buf) >= 2 and c in clients:
+                n = struct.unpack_from("<H", c.buf)[0]
+                if n == 0:
+                    del c.buf[:2]
+                    continue
+                if n > ep.probe.max_frame:
+                    drop(c)                              # over max_frame on TCP: the probe closes it (transports §1)
+                    break
+                if len(c.buf) < 2 + n:
+                    break
+                msg = bytes(c.buf[2:2 + n])
+                del c.buf[:2 + n]
+                try:
+                    result = ep.handle(msg, index, link=c.link)
+                except ValueError:
+                    continue
+                if result is not None:
+                    c.answers += 1
+                    if not (a.drop == c.answers and c.filt(c.answers, result) is None):
+                        c.send(a.noise.encode() + struct.pack("<H", len(result)) + result)
+                if ep.reboots != boots:
+                    break                                # a restart (oep-if-restart §2): what came behind it is lost
+            if ep.reboots != boots:
+                for other in clients:
+                    other.buf.clear()                    # read for the old boot, on every connection
+                break
+        console.tick()
+        ep.tick()
+        live = {c.link: c for c in clients}
+        for link, f in ep.pushes_to():                   # events and data pushes (core §11), answers first (§11.4)
+            c = live.get(link)
+            if c is not None and len(c.out) <= limit:    # else dropped: its seq shows the gap (core §11.3)
+                c.send(struct.pack("<H", len(f)) + f)
+        for c in list(clients):
+            if (c.out or c.sock in writable) and not c.flush():
+                drop(c)                                  # dead: nothing taken for WRITE_WAIT_MS, or reset
+        if a.once and served and not clients:
             return
 
 
@@ -520,16 +671,9 @@ def announce(a, ep, port: int):
 
 
 def _serve_conn(a, ep, console, conn, commands: Commands) -> bool:
-    """One TCP connection; True = stdin closed (end the program)."""
+    """One TCP connection with the COBS framing (the serial port again); True = stdin closed (end the program)."""
     conn.setblocking(False)
-    if a.framing == "cobs":
-        port = commands.port = virtual_bench_serial.VirtualSerialPort(ep, a.port_index, _filter(a))
-    else:
-        # the listening socket is a TCP transport of its own (transports §1, C-05): listed in describe, named by confirm
-        index = getattr(ep, "tcp_index", None)
-        if index is None:
-            index = ep.tcp_index = ep.add_transport(virtual_bench.TRANSPORT["tcp"])
-        buf, answers, filt = bytearray(), 0, _filter(a)
+    port = commands.port = virtual_bench_serial.VirtualSerialPort(ep, a.port_index, _filter(a))
     while True:
         readable, _, _ = select.select([conn] + commands.watch(), [], [], 0.005)
         if commands.poll(readable):
@@ -544,48 +688,14 @@ def _serve_conn(a, ep, console, conn, commands: Commands) -> bool:
             if data == b"":
                 return False
             if data:
-                if a.framing == "cobs":
-                    port.feed(data)
-                else:
-                    buf += data
-                    while len(buf) >= 2:
-                        n = struct.unpack_from("<H", buf)[0]
-                        if n == 0:
-                            del buf[:2]
-                            continue
-                        if n > ep.probe.max_frame:
-                            return False                           # over max_frame on TCP: the probe closes (transports §1)
-                        if len(buf) < 2 + n:
-                            break
-                        msg = bytes(buf[2:2 + n])
-                        del buf[:2 + n]
-                        boots = ep.reboots
-                        try:
-                            result = ep.handle(msg, index)
-                        except ValueError:
-                            continue
-                        if result is None:
-                            continue
-                        answers += 1
-                        if not (a.drop == answers and filt(answers, result) is None):
-                            conn.sendall(a.noise.encode() + struct.pack("<H", len(result)) + result)
-                        if ep.reboots != boots:
-                            buf.clear()                            # a restart (oep-if-restart §2): what came behind it is lost
-                            break
+                port.feed(data)
         console.tick()
-        if a.framing == "cobs":
-            port.tick()
-            out = port.output()
-            if out:
-                conn.setblocking(True)
-                conn.sendall(out)
-                conn.setblocking(False)
-        else:
-            ep.tick()
-            for f in ep.pushes():                                  # events and data pushes (core §11)
-                conn.setblocking(True)
-                conn.sendall(struct.pack("<H", len(f)) + f)
-                conn.setblocking(False)
+        port.tick()
+        out = port.output()
+        if out:
+            conn.setblocking(True)
+            conn.sendall(out)
+            conn.setblocking(False)
 
 
 def parse(argv: list[str] | None = None) -> argparse.Namespace:
@@ -613,6 +723,7 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--uart-rx")
     ap.add_argument("--run-hook")
     ap.add_argument("--once", action="store_true")
+    ap.add_argument("--tcp-connections", type=int, metavar="N")
     ap.add_argument("--keep-on-eof", action="store_true")
     ap.add_argument("--capture-slipped", action="store_true")
     ap.add_argument("--no-port-speed", action="store_true")
@@ -635,6 +746,13 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
         ap.error("--announce: a host that finds the port speaks length frames (transports §1); drop --framing cobs")
     if a.framing is None:
         a.framing = "length" if a.announce else "cobs"
+    if a.tcp_connections is not None and (a.tcp is None or a.framing != "length"):
+        ap.error("--tcp-connections is for --tcp with length framing (cobs over TCP is a serial port: one connection "
+                 "at a time)")
+    if a.tcp_connections is None:
+        a.tcp_connections = TCP_CONNECTIONS
+    if a.tcp_connections < 1:
+        ap.error("--tcp-connections: 1 or more")
     if a.unit_id is not None and not virtual_bench.UNIT_ID.fullmatch(a.unit_id):
         ap.error(f"--unit-id {a.unit_id}: [a-z0-9-], 1 to 32 characters (core §7.5)")
     for ip in a.announce_on:
