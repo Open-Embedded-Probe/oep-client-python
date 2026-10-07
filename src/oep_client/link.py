@@ -1403,7 +1403,8 @@ def check_unit_id(hst, unit_id: str) -> None:
         raise UnitIdMismatch(f"unit id {unit_id}: describe failed ({type(e).__name__}: {e}); closed") from e
     if said is None or said.lower() != unit_id.lower():
         hst.link.close()
-        raise UnitIdMismatch(f"the device with USB serial {unit_id} says unit_id {said!r} in describe; closed")
+        raise UnitIdMismatch(f"the probe named as unit_id {unit_id} (its USB serial or its _oep._tcp TXT) says unit_id "
+                             f"{said!r} in describe; closed")
 
 
 def find_usb(unit_id: str) -> tuple[int, int]:
@@ -1461,7 +1462,10 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
     """A Host on `target`, with the link's pipelining bound to the probe's limits (core confirm): Host.pipeline and
     everything built on it (flash, capture reads) then keep several requests in flight.
 
-    target: a serial port path (COM3 on Windows); tcp://HOST:PORT for a local broker (length frames); usb[:VID:PID[:SERIAL]]
+    target: a serial port path (COM3 on Windows); tcp://HOST:PORT for a probe or a local broker listening on TCP (length
+    frames) - tcp://HOST without a port takes the port DNS-SD finds for that host, and tcp:UNIT_ID the probe whose
+    `_oep._tcp` TXT unit_id is that (`discovery`; describe's unit_id must then say the same, or it is closed:
+    UnitIdMismatch); usb[:VID:PID[:SERIAL]]
     (hex) for the probe's USB device, vendor bulk then HID (transports §3) - a bare `usb` looks at every device on the
     project's VID:PID (usb_probes; one device counts once whatever ways in it has): exactly one -> it is opened, vendor
     bulk then HID, else its CDC port; several -> SeveralProbes listing them (unit id, ways in), nothing opened: name one;
@@ -1497,6 +1501,28 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
     return hst
 
 
+def tcp_address(target: str, timeout: float = 2.0) -> tuple[str, int]:
+    """tcp://HOST:PORT -> (host, port); tcp://HOST without a port: the port of the probe DNS-SD finds on that host
+    (its SRV record, transports §3 - no port is fixed); none found -> LookupError. [v6]:PORT for an IPv6 address."""
+    rest = target[len("tcp://"):].rstrip("/")
+    if rest.startswith("["):
+        addr, _, tail = rest[1:].partition("]")
+        port = tail[1:] if tail.startswith(":") else ""
+    elif rest.count(":") == 1:
+        addr, _, port = rest.partition(":")
+    else:
+        addr, port = rest, ""
+    addr = addr or "127.0.0.1"
+    if port:
+        return addr, int(port)
+    from . import discovery
+    found = discovery.port_of(addr, timeout)
+    if found is None:
+        raise LookupError(f"{target}: no port given and no _oep._tcp probe found on {addr} by DNS-SD; name it as "
+                          f"tcp://{addr}:PORT (the probe's port; the reference probe listens on 7450)")
+    return addr, found
+
+
 def _kept(hst, keep_session: bool):
     if keep_session:
         from . import kept_session
@@ -1507,13 +1533,27 @@ def _kept(hst, keep_session: bool):
 def _open_host(target: str, timeout: float | None, resend: bool | None, *, baud: int, keep_session: bool):
     """open_host without its port_speed step."""
     from . import host
+    named_unit = None
+    if target.startswith("tcp:") and not target.startswith("tcp://"):   # tcp:UNIT_ID: found by DNS-SD (transports §3)
+        from . import discovery
+        named_unit = target[len("tcp:"):]
+        if not named_unit or named_unit.lower().startswith("x-"):
+            raise ValueError(f"{target}: name a unit_id (an x- unit_id names no unit, core §7.5)")
+        target = discovery.find_unit(named_unit).target
     if target.startswith("tcp://"):
-        addr, _, port = target[len("tcp://"):].rpartition(":")
-        lk = SerialLink.on_stream(TcpStream(addr or "127.0.0.1", int(port)), "length",
-                                  TCP_TIMEOUT if timeout is None else timeout)
+        addr, port = tcp_address(target)
+        lk = SerialLink.on_stream(TcpStream(addr, port), "length", TCP_TIMEOUT if timeout is None else timeout)
         lk.resend = False if resend is None else resend
         lk.transport = "tcp"
-        lk.reopener = lambda: TcpStream(addr or "127.0.0.1", int(port))
+        lk.reopener = lambda: TcpStream(addr, port)
+        if named_unit is not None:
+            from . import discovery, host
+            # after a restart or a new Wi-Fi link the address may change: browse again by unit_id (host guide §4.1)
+            lk.reopener = lambda: TcpStream(*tcp_address(discovery.find_unit(named_unit).target))
+            hst = host.Host(lk.send)
+            lk.attach_host(hst)
+            check_unit_id(hst, named_unit)                     # describe's unit_id must be the one named, else closed
+            return _kept(hst, keep_session)
     elif target == "usb" or target.startswith("usb:"):
         timeout = 3.0 if timeout is None else timeout
         parts = target.split(":")[1:]

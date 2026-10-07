@@ -20,6 +20,13 @@ OEP_HW_BOARDS=9489dd2ae0953650 OEP_HW_NOFLASH=1 uv run pytest tests/hw -m hw
 
 # 仮想ベンチ（pty）で試験の手順だけ通す（実機なし。リリースの試験にはならない）
 OEP_HW_BOARDS=virtual-esp32-v003 uv run pytest tests/hw -m hw
+
+# ATOM: bridge から焼き、ベンチの Wi-Fi を与える（環境変数から読み、表示も記録もしない）
+OEP_WIFI_SSID_0=lab OEP_WIFI_PASS_0="$LAB_PASS" OEP_HW_BOARDS=esp32-pico-d4-50029191fe34 OEP_PROBE_DIR=~/dev_oep/oep-probe-arduino uv run pytest tests/hw -m hw
+# 続けて同じボードを Wi-Fi / TCP で（DNS-SD で見つける。mDNS が届かないところでは OEP_HW_ATOM_TCP=tcp://HOST:PORT）
+OEP_HW_BOARDS=esp32-pico-d4-50029191fe34-tcp uv run pytest tests/hw -m hw
+# ネットワークのどの probe でも（表に無くてよい）
+OEP_HW_BOARDS=tcp://192.168.1.23:7450 uv run pytest tests/hw -m hw
 ```
 
 `-s` を付けると焼く進み具合と port_speed の表がその場で出る。1 ボードの一巡は 1.5〜2.5 分（ESP32 を 115200 で焼く約 40 秒を
@@ -50,6 +57,7 @@ OEP_HW_BOARDS=virtual-esp32-v003 uv run pytest tests/hw -m hw
 | `identity` | confirm の revision ≥ 1。list に fn 0 の項目が無い（本体は名前を持たない、core §7.2）。clock（core §7.7）の boot_id が confirm と同じ。describe の model が表のとおり。焼いたことで boot_id が変わった。firmware の文字列が焼いた版（ローカルのビルドは `library.properties`、リリースはその版）に等しい | boot_id、firmware、model、unit_id、chip、limits、interface の一覧、clock の uptime_ns と 4 回のうち最短の往復 |
 | `required` | どのプローブも出すべきもののうち、ロックなしで確かめられるもの（core §1.2、§7.1、§7.5。oep-spec `docs/conformance.md` 1 節）。`oep dump` が MISSING として出す一覧と同じ：confirm の transport TLV（fn 0 の describe の transport のどれか、または 0xFF を指す）、fn 0 の describe の unit_id、transport、max_op_ms。欠けたものを名指しして失敗する | 一覧（欠けがなければ空） |
 | `config` | `oep.probe.config`: label（表の `label` のチャネル、無ければ gpio の 1 本目）と `disable`（`OEP_HW_DISABLE`）を set → get に出て、get の hash が set の hash に等しく、前の hash とは違う（hash は probe 自身のもので、ここでは計算しない）。disable したチャネルへの plan は拒否（unavailable / PinsTaken）。save の前は `needs_save`、save → state が `applied` でその hash、その後は `needs_save` でない。**再起動**（probe が `oep.probe.restart` を出していればそれで: `Host.restart_probe` が restart_max_ms まで待ち、`OEP_HW_REOPEN_S` があればさらにその秒数（下）。USB の probe（P4、RP2）では `OEP_HW_RESTART=1` のときだけで、無ければ飛ばしてその理由を記録に書く。無ければ bridge の classic ESP32 を esptool の hard reset と同じく RTS から EN。どちらも無ければ飛ばす）→ 保存した項目が起動時に適用されている: storage_hash が get の hash に等しく、項目が保存したものと同じ（`same_items`）。両方 unset → 項目が試験前のものと項目ごとに同じ。save。probe にあったほかの設定（bench の slot / bind）はそのまま残す。何が失敗しても、項目と保存は元に戻す（下） | 各段階の hash、再起動のやり方、前後の boot_id と秒数（oep.probe.restart なら restart_max_ms、reopen_s、開き直しが要ったか。戻らなければそのエラー） |
+| `wifi` | `oep.probe.config` の wifi の項目（describe にあるとき。probe.config §1.4、§3.3）。`OEP_WIFI_SSID_<n>` / `OEP_WIFI_PASS_<n>`（n は index）があれば: ssid か passphrase の有無が probe のものと違う entry を set し（passphrase は比べられない、host ガイド §15.1）、save する - ベンチの設定なので probe に**残す** -。`OEP_HW_WIFI_WAIT_S`（30 秒）のうちに state のつながりが connected でアドレス付きになる。ほかの経路で試しているボードで DNS-SD が unit_id で見つけたら、`tcp:<unit_id>` で開ける（describe の unit_id を確かめる）。変数が無ければ state を記録するだけ | wifi_max、送った / 同じだった index、save したか、state（state、entry、reason、rssi、アドレスが来たか）、つながるまでの秒数、DNS-SD の port と instance。ssid、passphrase、アドレスは記録しない |
 | `wire` | `OEP_HW_TARGET=<name>[@swdio[,swclk]]` のときだけ: scan（名指しの組か全部）、`OEP_HW_RESET=<channel>` なら reset TLV 付きで attach、そのあと 50 回（`OEP_HW_LOOPS`）halt → dmi で s0 / s1 / a0 / a1 → read_block（`OEP_HW_TARGET_ADDR`、既定 0x20000000 から 8 語）→ 同じ 4 本をもう一度、変わっていない → resume | scan の結果、connection、DMSTATUS、速さ、target_id、dpc、回数と秒数、変わったレジスタ: 前、後、読み直し、block の直後の 2 語、dpc（失敗のメッセージにすべての変化を省かずに出す）。op が例外を出したとき: その回、例外、2 回読んだ DMSTATUS と DMCONTROL（生の dmi）、止まっていれば dpc |
 | `gpio` | 表の空き 2 チャネル（`OEP_HW_GPIO=a,b`）で `oep.fixture.gpio`: output_high を読むと 1、output_low は 0、input_pullup は 1、input_pulldown は 0。表がその board に空きを与えていなければ skip | 読んだ値すべて |
 | `uart` | 表の RX / TX（`OEP_HW_UART=rx,tx`）で、または probe の設定にその plan があるときや表がその board に組を与えていないときはその plan のピンで（どちらも無ければ skip）`oep.fixture.uart`: configure 115200 8N1 が 5 % 以内、status がいま効いている baud と形式（configure の実際の速さ、8N1）を出す、configure 9600。`OEP_HW_UART_LOOP=rx,tx`（2 本を結線）なら write したものが read で戻る | 実際の速さ、status、ループバックのバイト数 |
@@ -63,7 +71,7 @@ OEP_HW_BOARDS=virtual-esp32-v003 uv run pytest tests/hw -m hw
 | `session` | 1000 ms の lease が切れる → `NoSession`（解放され、再開は無い）。新しい id の force → 古い id は `Locked`。その end の後はどの id も `NoSession` | lease、boot_id、拒否の文 |
 
 結果のファイルにはほかに、クライアントの版と commit、firmware の出所（checkout + commit + dirty か、リリースの版 + json の
-URL + sha256）、ホストの platform、その回の `OEP_*` の環境変数すべてが入る。1 画面の要約は pytest の最後に出る。
+URL + sha256）、ホストの platform、その回の `OEP_*` の環境変数すべて（`OEP_WIFI_*` は `(set)` とだけ。値は入れない）が入る。1 画面の要約は pytest の最後に出る。
 
 仮想ベンチ（`virtual-esp32-v003`）では `capture` はレベルを記録するだけで判定しない（仮想ベンチはピンではなくカウンタを取り、
 ワンショットは start の応答と同時に終わる）。
@@ -83,6 +91,7 @@ restart_max_ms（RP2350 では 2.0 s）より長く掛かりうる。`OEP_HW_REO
 
 | 場所 | 変えるもの | 戻し方 |
 |---|---|---|
+| `wifi` | `OEP_WIFI_*` からの `wifi` の項目（set と save） | 戻さない: ベンチの設定（消すなら `oep config wifi-unset`） |
 | `config` | `label` と `disable` の項目（set）、保存（2 回 save） | 試験が両方 unset して save する。そのうえで `finally` が `Run.restore_settings` を呼ぶ: 項目は取り除くか、走る前の値に set し直し、保存はもう一度 save する（走る前に何も保存されていなければ erase） |
 | `capture`（logic。probe が capture の pin に gpio を重ねるのを断るとき） | 2 本のチャネルの `idle` 項目（set、保存しない） | `_Pull.release` が unset し、その `finally` で `restore_settings` |
 | `gpio`、`uart`、`capture*`、`i2c_target`、`spi_target` | plan（oep.probe.plan）、セッションの状態 | それぞれの `finally` で `plan_release`。plan はセッションのものなので、失敗で残ったものも走り終わりのセッションの終わりで解放される |
@@ -117,6 +126,13 @@ oep config save <probe>        # 走る前に何も保存されていなけれ�
 
 ATOM の変換（CH552 の FTDI 互換）は probe→host をまとめて落とす（ある分は 0 %、次の分は 10〜55 %、2026-10-02）: ATOM での port_speed の失敗は 1 回やり直してから数える。port_speed の門としては CH340 の治具のほうが安定している。
 
+**TCP のボード。** `esp32-pico-d4-50029191fe34-tcp` は Wi-Fi / TCP で見た ATOM（kind `tcp`、port は `tcp:50029191fe34` - unit_id で
+DNS-SD - か `OEP_HW_ATOM_TCP=tcp://HOST:PORT`）。`OEP_HW_BOARDS` はネットワークのどの probe も `tcp:<unit_id>` か `tcp://<host>[:<port>]`
+で名指せる（表に無い kind `tcp` のボード: model は照合せず、空きのチャネルは `OEP_HW_GPIO` / `OEP_HW_UART` / `OEP_HW_DISABLE` が
+与えなければ無い）。TCP のボードは焼かない（`flash` は "a TCP board" と記録）: 先にシリアル / USB の経路で走らせて焼き、ネットワーク
+（`OEP_WIFI_*`、`wifi` の試験）を与える。port_speed は飛ばす（この経路に UART bridge は無い）。`linktest` は TCP では応答を 3 秒待つ。
+mDNS は WSL 2 の既定の NAT を越えない: そこからはアドレスで名指す（ip は bridge からの `oep config state` に出る）。
+
 `OEP_HW_NOFLASH=1` はどのボードでも焼かずに、入っている firmware を試す（"on-board" として記録。firmware の文字列は記録する
 だけで照合しない）。
 
@@ -133,7 +149,10 @@ V003 のジグ、X035 のジグ（ESP32-P4）、WCH-Link はこのホストで�
 
 | 変数 | 意味 |
 |---|---|
-| `OEP_HW_BOARDS` | ボード id のコンマ区切り（必須。無ければ何も回らない） |
+| `OEP_HW_BOARDS` | ボード id のコンマ区切り（必須。無ければ何も回らない）。`tcp:<unit_id>` / `tcp://<host>[:<port>]` は表に無い TCP の probe |
+| `OEP_WIFI_SSID_<n>`、`OEP_WIFI_PASS_<n>` | `wifi` の試験が使うベンチの Wi-Fi（n は entry の index。PASS が無ければ開いたネットワーク）。環境変数から読み、表示せず、`(set)` とだけ記録する。`oep config wifi <probe> --from-env` も同じ変数を読む |
+| `OEP_HW_WIFI_WAIT_S` | `wifi` の試験がつながりを待つ秒数（既定 30） |
+| `OEP_HW_ATOM_TCP` | `esp32-pico-d4-50029191fe34-tcp` の TCP の行き先（既定 `tcp:50029191fe34`、DNS-SD） |
 | `OEP_PROBE_DIR` / `OEP_PROBE_VERSION` / `OEP_HW_NOFLASH` | firmware の出所（どれか 1 つ） |
 | `OEP_HW_TARGET`、`OEP_HW_RESET`、`OEP_HW_TARGET_ADDR`、`OEP_HW_LOOPS` | wire の試験: target が繋がっている（どこに）、reset の線、block の番地、回数 |
 | `OEP_HW_REOPEN_S` | 再起動した probe を、restart_max_ms が過ぎた後さらに何秒まで開き直すか（利用者が開き直す。上。WSL / usbipd）。既定 0: しない - restart_max_ms の後 probe は無くなったものとする |

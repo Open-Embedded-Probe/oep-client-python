@@ -68,10 +68,20 @@ class RateResult:
         return "\n".join([head] + ["  " + c.text() for c in self.cells])
 
 
+SERIAL_TIMEOUT = 0.3    # the wait for one answer on a serial port / USB
+TCP_TIMEOUT = 3.0       # over TCP: Wi-Fi retransmissions stall answers for 1-4 s now and then, and they still come
+
+
+def default_timeout(hst) -> float:
+    """The wait for one answer a measurement uses unless told: TCP_TIMEOUT on a TCP link, else SERIAL_TIMEOUT."""
+    return TCP_TIMEOUT if getattr(hst.link, "transport", "") == "tcp" else SERIAL_TIMEOUT
+
+
 def run(hst, pattern: str, inflight: int, size: int, *, frames: int = 300, seconds: float | None = None,
-        timeout: float = 0.3, rate: int = 0) -> Cell:
+        timeout: float | None = None, rate: int = 0) -> Cell:
     """One pattern at the speed in force: `frames` requests (or for `seconds`), `inflight` at a time, `size` bytes each
-    (LookupError: the probe offers no oep.probe.link)."""
+    (LookupError: the probe offers no oep.probe.link). timeout None: `default_timeout`."""
+    timeout = default_timeout(hst) if timeout is None else timeout
     if pattern not in PATTERNS:
         raise ValueError(f"pattern {pattern!r}: one of {PATTERNS}")
     fn = core.link_fn(hst)
@@ -128,11 +138,12 @@ def _speed(hst, rate: int, step: int, verify_ms: int = VERIFY_MS) -> int:
 
 def matrix(hst, *, rates: list[int | None] = (None,), patterns: list[str] = PATTERNS, inflight: list[int] = (1,),
            sizes: list[int] | None = None, frames: int = 300, seconds: float | None = None,
-           timeout: float = 0.3):
+           timeout: float | None = None):
     """For each rate (None: the speed in force, no port_speed), switch with port_speed try + commit (by hand, no verify
     of its own: this is the verify), run every (pattern, in-flight, size), then go back to the boot speed. Yields a
     RateResult per rate. Needs the lock; the rate changes on the UART bridge this host's requests come in on.
     In-flight counts above the probe's max_inflight are skipped."""
+    timeout = default_timeout(hst) if timeout is None else timeout
     lk = hst.link
     limits = hst.limits or hst.confirm()
     most = core.link_size(limits["max_frame"])                      # max_frame - 7 (oep-if-link §2)

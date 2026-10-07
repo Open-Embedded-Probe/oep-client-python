@@ -13,6 +13,14 @@ Port forms (see oep_client.link.open_host):
   cdc:<unit_id>                    the CDC serial port of the USB device whose serial is the unit id (RP2040 / RP2350),
                                    found with pyserial's list_ports (the kernel names it /dev/ttyACMn as it pleases);
                                    also the port the 1200-baud touch goes to before a flash
+  tcp:<unit_id>                    a probe on the network, found by DNS-SD (_oep._tcp, TXT unit_id; transports §3)
+  tcp://<host>:<port>              a probe on the network at that address (where mDNS does not reach: WSL 2's NAT, a
+                                   router between; tcp://<host> alone takes the port DNS-SD finds)
+
+A TCP board (kind tcp) is never flashed: put the firmware on through the board's serial / USB entry first (its own
+run), and give it its networks with OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n> on that run (the wifi test). OEP_HW_BOARDS
+may also name a TCP probe directly - `tcp:<unit_id>` or `tcp://<host>:<port>` - as a board of kind tcp with no table
+entry (no expected model, no free channels unless OEP_HW_GPIO / OEP_HW_UART / OEP_HW_DISABLE give them).
 """
 from __future__ import annotations
 
@@ -26,9 +34,10 @@ BY_ID = "/run/board-identify/by-id"
 class Board:
     id: str                              # board-identify id, or the unit id
     kind: str                            # esp32 (esptool merged.bin) | esp32p4 (USB DFU app.bin) | esp32p4-usj (esptool
-                                         # merged.bin over the P4's USB-Serial/JTAG) | rp2 (BOOTSEL uf2) | virtual
+                                         # merged.bin over the P4's USB-Serial/JTAG) | rp2 (BOOTSEL uf2) | virtual |
+                                         # tcp (on the network: never flashed here)
     profile: str                         # sketch.yaml profile in examples/Firmware/OepProbe
-    model: str                           # describe's model
+    model: str                           # describe's model ("": not checked)
     port: str                            # the OEP port after flashing (forms above)
     unit_id: str | None = None           # the USB serial (p4 / rp2); the bridge boards learn theirs from describe
     flash_port: str | None = None        # esp32: the bridge (esptool); rp2: the CDC port for the 1200-baud touch (None: = port)
@@ -51,6 +60,11 @@ class Board:
     def usb(self) -> bool:
         """The probe is itself a USB device (its own restart takes it off the bus and back): the P4s and the RP2s."""
         return self.kind in ("esp32p4", "esp32p4-usj", "rp2")
+
+    @property
+    def tcp(self) -> bool:
+        """Reached over TCP (Wi-Fi): flashed through its other entry, never here."""
+        return self.kind == "tcp"
 
     @property
     def shared(self) -> bool:
@@ -96,6 +110,12 @@ TABLE: dict[str, Board] = {b.id: b for b in (
     Board("9489dd2ae0953650", "rp2", "promicrorp2350", "rp2350", "cdc:9489dd2ae0953650", unit_id="9489dd2ae0953650",
           notes="SparkFun Pro Micro RP2350 (the firmware enumerates as the project's 1209:4F45); no board-identify id: keyed by unit id",
           **_RP2350),
+    # The ATOM over Wi-Fi / TCP: the same board and firmware as above, flashed and given its networks through its bridge
+    # entry (OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n> on that run); found by DNS-SD unless OEP_HW_ATOM_TCP names it
+    # (tcp://HOST:PORT - from WSL 2's NAT mDNS does not reach the board; `oep config state` over the bridge shows its ip)
+    Board("esp32-pico-d4-50029191fe34-tcp", "tcp", "esp32", "esp32", os.environ.get("OEP_HW_ATOM_TCP", "tcp:50029191fe34"),
+          unit_id="50029191fe34", notes="M5Stack ATOM over Wi-Fi / TCP (reference firmware: port 7450); free for OEP tests",
+          **{k: v for k, v in _ESP32_ATOM.items() if k != "rates"}),
     # No hardware: the virtual bench on a pty (oep_client.virtual_bench_serve). A dry run of the test logic, never a release test.
     Board("virtual-esp32-v003", "virtual", "esp32", "esp32", "", virtual_profile="esp32-v003", gpio=(25, 26), disable=33,
           uart=(21, 22), rates=(921600, 500000), notes="oep_client.virtual_bench esp32-v003 on a pty; flashing is a no-op"),
@@ -107,10 +127,21 @@ def selected() -> list[Board]:
     ids = [s.strip() for s in os.environ.get("OEP_HW_BOARDS", "").split(",") if s.strip()]
     out = []
     for i in ids:
+        if i not in TABLE and i.startswith("tcp:"):
+            out.append(_override(tcp_board(i)))
+            continue
         if i not in TABLE:
-            raise KeyError(f"OEP_HW_BOARDS: {i!r} is not in tests/hw/boards.py ({', '.join(TABLE)})")
+            raise KeyError(f"OEP_HW_BOARDS: {i!r} is not in tests/hw/boards.py ({', '.join(TABLE)}), nor tcp:<unit_id> / "
+                           "tcp://<host>:<port>")
         out.append(_override(TABLE[i]))
     return out
+
+
+def tcp_board(target: str) -> Board:
+    """A probe on the network named in OEP_HW_BOARDS (tcp:<unit_id> or tcp://<host>[:<port>]): kind tcp, nothing
+    expected of its model, no free channels but the environment's."""
+    unit = target[4:] if not target.startswith("tcp://") else None
+    return Board(target, "tcp", "", "", target, unit_id=unit, notes="a TCP probe named in OEP_HW_BOARDS")
 
 
 def _pair(text: str) -> tuple[int, int]:

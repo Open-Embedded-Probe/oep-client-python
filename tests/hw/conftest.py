@@ -9,6 +9,8 @@ import sys
 
 import pytest
 
+from oep_client import config
+
 from . import boards, record
 
 _RUNS: list[record.Run] = []
@@ -44,6 +46,12 @@ def run(board_id):
                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
         r.virtual_bench = proc
         r.port = re.search(r"/dev/pts/\d+", proc.stdout.readline()).group(0)
+        air = config.wifi_from_env(count=255)          # the bench's networks are in range of the virtual probe too
+        if air:
+            from urllib.parse import quote
+            words = [quote(w.ssid, safe="") + ("=" + quote(w.passphrase, safe="") if w.passphrase else "") for w in air]
+            proc.stdin.write("wifi-air " + " ".join(words) + "\n")   # stdin, not the command line
+            proc.stdin.flush()
     else:
         try:
             r.port = boards.resolve_port(board)

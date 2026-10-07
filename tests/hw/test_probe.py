@@ -6,6 +6,8 @@
   required     what every probe must give and a lock-free look can check (core §1.2, §7.1, §7.5): dump's MISSING
   config       probe.config set / get / save / state / unset with a disable item, a reboot in between (oep.probe.restart
                when the probe lists it - on a USB probe only with OEP_HW_RESTART=1 -, else a bridge board's EN line)
+  wifi         the wifi item (when declared): with OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n> the entries are set and saved,
+               the link must connect, and tcp:<unit_id> opens when DNS-SD finds it; never printed or recorded
   wire         scan, attach (with the reset TLV when OEP_HW_RESET names the line), halt -> read_block -> resume 50x
                with s0 / s1 / a0 / a1 read before and after each block op       (only with OEP_HW_TARGET)
   gpio         fixture gpio set / read on two free channels (outputs read back, pull-up / pull-down levels)
@@ -36,7 +38,7 @@ import pytest
 
 import json
 
-from oep_client import (capture, catalog, config, console as console_mod, core, dump, fixture, host as h, linktest,
+from oep_client import (capture, catalog, config, console as console_mod, core, dump, fixture, host as h, link, linktest,
                         message as m, registry as reg, riscv)
 
 from . import firmware as fwmod, flash, record
@@ -71,7 +73,12 @@ def test_flash(run: record.Run):
     if board.kind != "virtual":
         run.firmware["before"] = run.peek()
     try:
-        fw = fwmod.obtain(board.profile) if board.kind != "virtual" else fwmod.Firmware({"kind": "on-board", "why": "virtual bench"}, None)
+        if board.kind == "virtual":
+            fw = fwmod.Firmware({"kind": "on-board", "why": "virtual bench"}, None)
+        elif board.tcp:
+            fw = fwmod.Firmware({"kind": "on-board", "why": "a TCP board: flashed through its serial / USB entry"}, None)
+        else:
+            fw = fwmod.obtain(board.profile)
     except fwmod.FirmwareError as e:
         run.flash_failed = f"firmware: {e}"
         rec["error"] = str(e)
@@ -80,7 +87,7 @@ def test_flash(run: record.Run):
     run.firmware["expected"] = fw.version
     run.firmware["flashed"] = False
     if fw.source["kind"] == "on-board":
-        rec["skipped"] = "nothing flashed: " + ("the virtual bench" if board.kind == "virtual" else "OEP_HW_NOFLASH")
+        rec["skipped"] = "nothing flashed: " + fw.source["why"]
     else:
         try:
             if board.kind == "esp32":
@@ -129,7 +136,8 @@ def test_identity(run: record.Run):
     clock = hst.clock_best(4)
     rec.update(clock_uptime_ns=clock.uptime_ns, clock_round_trip_us=round(clock.round_trip_ns / 1000, 1))
     assert clock.boot_id == info["boot_id"], "clock's boot_id is not confirm's"
-    assert info.get("model") == run.board.model, f"model {info.get('model')!r}, expected {run.board.model!r}"
+    if run.board.model:                                             # "": a TCP probe named by address only
+        assert info.get("model") == run.board.model, f"model {info.get('model')!r}, expected {run.board.model!r}"
     before = run.firmware.get("before") or {}
     if run.firmware.get("flashed") and before.get("boot_id") is not None:
         rec["boot_id_before"] = before["boot_id"]
@@ -274,6 +282,72 @@ def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: di
     assert h_saved2 == h3 and st3.saved_hash == h3
     core.plan_apply(hst, [(gpio.fn, GPIO_ROLE_LINE, disable_ch)])      # enabled again
     core.plan_release(hst, [gpio.fn])
+
+
+# ---- 3a. Wi-Fi (the wifi item) ------------------------------------------------------------------------------------------
+
+def _wifi_wait_s() -> float:
+    return float(os.environ.get("OEP_HW_WIFI_WAIT_S", "") or 30)
+
+
+def test_wifi(run: record.Run):
+    """probe.config §1.4 / §3.3 on a probe with the wifi item. With OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n> set: the
+    entries that differ from the probe's (ssid and passphrase presence: the passphrase cannot be compared, host guide
+    §15.1) are set and saved - they are the bench's settings and stay -, then the link must reach connected within
+    OEP_HW_WIFI_WAIT_S (30 s) and, when DNS-SD finds the probe by its unit_id, tcp:<unit_id> must open it (describe's
+    unit_id checked). Without them only the state is recorded. Nothing of a network (ssid, passphrase, address) is
+    printed or recorded: the indexes, the state, the reason, the rssi and whether an address came."""
+    hst = run.require()
+    cfg = config.ProbeConfig(hst)
+    decl = cfg.describe()
+    if config.ITEM["wifi"] not in decl.items:
+        pytest.skip("the probe has no wifi item")
+    rec = run.record("wifi", wifi_max=decl.wifi_max)
+    wanted = config.wifi_from_env(count=decl.wifi_max)
+
+    def state() -> dict:
+        w = config.ProbeConfig(run.require()).state().wifi
+        assert w is not None, "a probe with the wifi item answers state without its wifi TLV (probe.config §3.3)"
+        return {"state": w.state, "entry": w.entry, "reason": w.reason, "rssi": w.rssi, "address": w.ipv4 is not None}
+
+    if not wanted:
+        rec.update(env="none: OEP_WIFI_SSID_<n> not set, nothing changed", now=state())
+        return
+    run.restore_settings("before wifi")              # a pending restore must not erase the storage after this save
+    hst = run.take()
+    cfg = config.ProbeConfig(hst)
+    have = {it.index: it for it in cfg.items() if isinstance(it, config.Wifi)}
+    send = [w for w in wanted if not config.same_items([have[w.index]] if w.index in have else [], [w])]
+    rec.update(sent=[w.index for w in send], unchanged=[w.index for w in wanted if w not in send])
+    if send:
+        cfg.set(send)                                # over TCP an entry in use that changes drops this link (§1.4)
+    if cfg.needs_save():
+        rec["saved"] = True
+        cfg.save()
+    deadline = time.monotonic() + _wifi_wait_s()
+    t0 = time.monotonic()
+    while True:
+        now = state()
+        if now["state"] == "connected" or time.monotonic() > deadline:
+            break
+        time.sleep(0.5)
+    rec.update(now=now, seconds=round(time.monotonic() - t0, 1))
+    assert now["state"] == "connected" and now["address"], f"not connected within {_wifi_wait_s():g} s: {now}"
+    unit = (run.firmware.get("after") or {}).get("unit_id") or record.probe_info(hst).get("unit_id")
+    if run.board.tcp or not unit:
+        return
+    from oep_client import discovery
+    try:
+        found = discovery.find_unit(unit, timeout=3.0)
+    except LookupError:
+        rec["dns_sd"] = "not found (mDNS does not reach this host: a NAT or a router between)"
+        return
+    rec["dns_sd"] = {"port": found.port, "instance": found.instance}
+    tcp = link.open_host(f"tcp:{unit}", keep_session=False)   # describe's unit_id checked (transports §3)
+    try:
+        rec["tcp_confirm"] = tcp.confirm()["revision"]
+    finally:
+        tcp.link.close()
 
 
 # ---- 4. the wire -----------------------------------------------------------------------------------------------------------
@@ -1011,7 +1085,7 @@ def test_port_speed(run: record.Run):
         pytest.skip("the probe offers no oep.probe.link, or its oep.probe.link's ops do not set port_speed")
     inflight = sorted({1, limits["max_inflight"]})
     frames = _env_int("OEP_HW_FRAMES", 100)
-    timeout = float(os.environ.get("OEP_HW_LT_TIMEOUT", "") or 0.3)
+    timeout = float(os.environ.get("OEP_HW_LT_TIMEOUT", "") or linktest.default_timeout(hst))   # 0.3, TCP 3
     rates = [None] + list(board.rates)
     rec = run.record("port_speed", rates=[r or "now" for r in rates], inflight=inflight, frames=frames,
                      size=core.link_size(limits["max_frame"]), timeout=timeout)

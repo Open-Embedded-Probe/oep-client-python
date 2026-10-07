@@ -51,7 +51,7 @@ def test_unset_of_an_undeclared_tag_is_unsupported_with_the_tag_as_received(tag)
     ep, hst = open_probe()
     cfg_fn = ep.fns["oep.probe.config"]
     assert tag & 0x7F not in ep.items
-    body = bytes([2, 3, config.ITEM["idle"], 20, 0, 3, tag, 1, 0])  # a declared key first, then the undeclared tag
+    body = bytes([2, 2, config.ITEM["idle"], 20, 0, 2, tag, 1, 0])  # a declared key first, then the undeclared tag
     r = rejected(lambda: hst.call(cfg_fn, config.ProbeConfig.UNSET, body))
     assert r.detail == m.UNSUPPORTED and r.payload == bytes([tag])
 

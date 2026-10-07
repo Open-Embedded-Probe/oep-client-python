@@ -251,14 +251,18 @@ def _transports(kinds: list[tuple[int, int]]) -> tuple[bytes, ...]:
     return tuple(catalog.tlv(CORE_TRANSPORT, bytes([i, k, itf])) for i, (k, itf) in enumerate(kinds))
 
 
-def _config(fn: int, instance: int, slots_max: int, storage: int = 4096) -> Offered:
+def _config(fn: int, instance: int, slots_max: int, storage: int = 4096, wifi_max: int = 0) -> Offered:
     """oep.probe.config's declarations (probe.config §4: declarations only; the state is the endpoint's op state):
-    storage 0 = none - no storage tag, and save / erase not in its ops (probe.config §2)."""
+    storage 0 = none - no storage tag, and save / erase not in its ops (probe.config §2). wifi_max > 0: the wifi item
+    too, with up to that many entries (describe wifi_max), and state's wifi TLV."""
+    from . import config as cfgmod
+    items = [v for k, v in cfgmod.ITEM.items() if k != "wifi" or wifi_max]
     return Offered(fn, instance, "oep.probe.config", (
         ops_of("oep.probe.config") if storage else ops_of("oep.probe.config", "save", "erase"))
         + ((catalog.u32(_CFG["storage"], storage),) if storage else ()) + (
-        catalog.tlv(_CFG["items"], bytes(reg.PROBE_CONFIG.tlv["item"].values())),
-        catalog.u8(_CFG["slots_max"], slots_max)))
+        catalog.tlv(_CFG["items"], bytes(items)),
+        catalog.u8(_CFG["slots_max"], slots_max))
+        + ((catalog.u8(cfgmod.DESCRIBE["wifi_max"], wifi_max),) if wifi_max else ()))
 
 
 def drive_levels_tlv(default: int = DRIVE_DEFAULT, ma=DRIVE_LEVELS_MA) -> bytes:
@@ -398,7 +402,8 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
     down to a word, oep-if-debug §4.5), so a host splits its block ops as it does on that probe (a 9168-byte image: 19
     write_blocks of up to 122 words, not 230 of 10). oep.probe.link with port_speed (oep-if-link §3), as that firmware.
     Its channels and the other interfaces' limits are this profile's own. `max_frame`: the same probe at another frame
-    size (esp32_v003_64: the smallest a probe may declare)."""
+    size (esp32_v003_64: the smallest a probe may declare). oep.probe.config has the wifi item (wifi_max 4), as the
+    reference firmware on a classic ESP32 (its TCP transport is not part of this profile: `virtual_bench_serve --tcp`)."""
     own = [0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15]   # UART0, strapping, flash: the probe's own (SWIO 16 is the wire's)
     wired = [4, 5, 13, 14, 17, 18, 19, 21, 22, 25, 26, 27, 32, 33]
     return VirtualProbe("esp32-v003" if max_frame == 512 else f"esp32-v003-{max_frame}", max_frame, [
@@ -421,7 +426,7 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
             catalog.channel_group(1, [(1, 18), (2, 19), (3, 5), (4, 4)]),
             catalog.channel_group(2, [(1, 14), (2, 13), (3, 27), (4, 26)]))
             + _spi_decl(max_length=32, max_hz=3_000_000, features=0, queue_depth=4, cs_setup_ns=4000)),   # MISO in software
-        _config(9, 0, slots_max=1, storage=1024),
+        _config(9, 0, slots_max=1, storage=1024, wifi_max=4),     # the classic ESP32 joins Wi-Fi from its settings
         _link(10, port_speed=True),
         _plan(11),
         _restart(12),

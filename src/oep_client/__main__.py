@@ -9,6 +9,12 @@
   oep config uart <probe> oep.fixture.uart#1 115200 --format 8N1
   oep config disable <probe> 3 4           (channels the probe never uses or touches; remove disable CH re-enables)
   oep config remove <probe> bind 1        oep config save <probe>        oep config erase <probe>
+  oep config wifi <probe> --index 0 --ssid LAB --pass-prompt [--save]   (a network the probe joins, probe.config §1.4;
+                                           the passphrase is asked without echo or read from --pass-env VAR, never
+                                           printed; without either the entry keeps its passphrase)
+  oep config wifi <probe> --from-env [--save]   (OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n>, n = the index)
+  oep config wifi-unset <probe> --index 0 [--save]
+  oep find [--timeout 2] [--json]         (probes announcing _oep._tcp by DNS-SD over mDNS: unit_id, host, port, IP)
   oep speed <probe> [--candidates 921600,500000] [--verify [--flows in:2,out:2]] (port_speed, oep-if-link §3 and the host
                                            guide §17: try the candidates in order on a UART bridge, report; default
                                            500000 - a faster rate only when named, after its 1 s verify each way)
@@ -19,7 +25,8 @@
                                            host's time - the reading with the shortest round trip of n)
   oep restart <probe> [--reopen-s S]      (oep.probe.restart: the probe restarts; waits until it is back, its new boot_id)
 
-<probe>: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]. A change takes the lock (owner "oep config") and
+<probe>: a serial port, tcp://HOST[:PORT] (no port: the one DNS-SD finds), tcp:UNIT_ID (found by DNS-SD) or
+usb[:VID:PID[:SERIAL]]. A change takes the lock (owner "oep config") and
 ends the session after it; it takes effect at once, and stays over a restart only after `save` (or --save).
 """
 
@@ -87,7 +94,8 @@ def main(argv=None) -> int:
     lt.add_argument("--sizes", default="", help="comma-separated frame payload sizes (default: a whole frame)")
     lt.add_argument("--frames", type=int, default=300, help="frames per cell (default 300)")
     lt.add_argument("--seconds", type=float, default=None, help="per cell for this long instead of --frames")
-    lt.add_argument("--timeout", type=float, default=0.3, help="seconds to wait for one answer (default 0.3)")
+    lt.add_argument("--timeout", type=float, default=None, help="seconds to wait for one answer (default 0.3; 3 over "
+                    "TCP, where Wi-Fi retransmissions stall answers for 1-4 s)")
     lt.add_argument("--baud", type=int, default=link.BASE_BAUD, help="the boot speed to open at (default 115200)")
     lt.add_argument("--low-latency", choices=("on", "off"), default="on", help="the serial driver's low-latency mode")
     lt.add_argument("--json", action="store_true", help="one JSON object per cell")
@@ -114,6 +122,11 @@ def main(argv=None) -> int:
     rs.add_argument("--reopen-s", type=float, default=0.0, metavar="S",
                     help="when the probe is not back within its restart_max_ms, open it again for up to S more seconds "
                          "(your reopen: a host where the device returns late, e.g. WSL re-attaching it through usbipd)")
+    fd = sub.add_parser("find", help="probes on the local network that announce _oep._tcp (DNS-SD over mDNS)")
+    fd.add_argument("--timeout", type=float, default=2.0, help="seconds to listen for answers (default 2)")
+    fd.add_argument("--engine", choices=("auto", "zeroconf", "minimal"), default="auto",
+                    help="python-zeroconf (the mdns extra) or this package's one-shot query; auto: zeroconf if installed")
+    fd.add_argument("--json", action="store_true")
     d = sub.add_parser("dump", help="list and describe every interface a probe offers")
     src = d.add_mutually_exclusive_group(required=True)
     src.add_argument("--virtual", choices=sorted(virtual_bench.PROFILES), help="an in-process virtual bench (no hardware)")
@@ -134,6 +147,8 @@ def main(argv=None) -> int:
         return _clock_cmd(args)
     if args.command == "restart":
         return _restart_cmd(args)
+    if args.command == "find":
+        return _find_cmd(args)
 
     confirm = (0, 1)
     if args.virtual:
@@ -144,6 +159,31 @@ def main(argv=None) -> int:
         confirm = hst.confirm_range()                    # confirmed already: the revision in use (core §7.1)
     caps = dump.collect(call, args.prefix, args.exact, confirm)
     sys.stdout.write(dump.to_json(caps) + "\n" if args.json else dump.to_text(caps))
+    return 0
+
+
+# ---- oep find ------------------------------------------------------------------------------------------------------
+
+def _find_cmd(args) -> int:
+    """DNS-SD browse for _oep._tcp (transports §3, host guide §4.1): what each instance says - its TXT unit_id, the SRV
+    host and port, the addresses. Nothing is opened (the unit_id is checked in describe when a probe is opened)."""
+    from . import discovery
+    try:
+        found = discovery.browse(args.timeout, args.engine)
+    except ImportError:
+        raise SystemExit("oep find --engine zeroconf: install the mdns extra (pip install 'oep-client-python[mdns]')") \
+            from None
+    if args.json:
+        print(json.dumps([{"unit_id": f.unit_id, "instance": f.instance, "host": f.host, "port": f.port,
+                           "addresses": f.addresses, "target": f.target} for f in found], indent=2))
+        return 0
+    if not found:
+        print(f"no probe announces _oep._tcp within {args.timeout:g} s (mDNS stays on the local link: behind a NAT or "
+              "a router name the probe as tcp://HOST:PORT)", file=sys.stderr)
+        return 1
+    for f in found:
+        print(f"{f.unit_id or '(no unit_id)'}  {f.host or '?'}  port {f.port or '?'}  "
+              f"{', '.join(f.addresses) or 'no address'}  {f.target}  ({f.instance})")
     return 0
 
 
@@ -345,6 +385,23 @@ def _config_parser(sub) -> None:
     rm.add_argument("kind", choices=sorted(config.ITEM))
     rm.add_argument("key", type=int)
     rm.add_argument("--save", action="store_true")
+    wifi = cs.add_parser("wifi", help="a Wi-Fi network the probe joins (the wifi item; the passphrase is never printed)")
+    wifi.add_argument("probe")
+    wifi.add_argument("--index", type=int, help="the entry (tried in index order; below the probe's wifi_max)")
+    wifi.add_argument("--ssid", help="the network's name (1-32 bytes)")
+    pw = wifi.add_mutually_exclusive_group()
+    pw.add_argument("--pass-prompt", action="store_true", help="ask for the passphrase (no echo)")
+    pw.add_argument("--pass-env", metavar="VAR", help="read the passphrase from environment variable VAR")
+    pw.add_argument("--open", action="store_true", help="no passphrase: an open network")
+    pw.add_argument("--from-env", action="store_true", help="every entry from OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n> "
+                    "(n = the index; no PASS: open); entries whose SSID and passphrase presence already match are not "
+                    "sent again (a passphrase cannot be compared: --force sends them)")
+    wifi.add_argument("--force", action="store_true", help="--from-env: send every entry, passphrases included")
+    wifi.add_argument("--save", action="store_true")
+    wun = cs.add_parser("wifi-unset", help="remove Wi-Fi entries (the wifi item of these indexes)")
+    wun.add_argument("probe")
+    wun.add_argument("--index", type=int, action="append", required=True, help="an entry's index (repeatable)")
+    wun.add_argument("--save", action="store_true")
     for name in ("save", "erase"):
         cs.add_parser(name, help=f"{name} the stored settings").add_argument("probe")
 
@@ -481,6 +538,10 @@ def _config(args) -> int:
             _change(hst, cfg, [config.Disable(channel=ch) for ch in args.channels], args.save)
         elif args.action == "remove":
             _change(hst, cfg, [config.remove(args.kind, args.key)], args.save)
+        elif args.action == "wifi":
+            _wifi_set(hst, cfg, args)
+        elif args.action == "wifi-unset":
+            _change(hst, cfg, [config.remove("wifi", i) for i in args.index], args.save)
         else:
             core.take(hst, 3000, owner="oep config")
             try:
@@ -499,14 +560,68 @@ def _config(args) -> int:
         hst.link.close()
 
 
+def _wifi_set(hst, cfg, args) -> None:
+    """oep config wifi (host guide §15.1): the passphrase from a prompt without echo or an environment variable, never
+    from the command line, never printed; without one the entry keeps its passphrase (pass_len 0xFF) - an entry that
+    does not exist yet needs --pass-prompt, --pass-env or --open."""
+    import os
+    decl = cfg.describe()
+    if config.ITEM["wifi"] not in decl.items:
+        raise SystemExit("this probe has no wifi item (describe's items)")
+    if args.from_env:
+        wanted = config.wifi_from_env(count=decl.wifi_max)
+        if not wanted:
+            raise SystemExit("--from-env: no OEP_WIFI_SSID_<n> set (n = 0 .. wifi_max - 1)")
+        have = {it.index: it for it in cfg.items() if isinstance(it, config.Wifi)}
+        send = [w for w in wanted if args.force or not config.same_items([have[w.index]] if w.index in have else [], [w])]
+        for w in wanted:
+            print(f"wifi {w.index}: " + ("sent" if w in send else "unchanged (ssid and passphrase presence match)"))
+        if send:
+            _change(hst, cfg, send, args.save)
+        elif args.save and cfg.needs_save():
+            core.take(hst, 3000, owner="oep config")
+            try:
+                print(f"saved: hash 0x{cfg.save():08x}")
+            finally:
+                hst.end()
+        return
+    if args.index is None or args.ssid is None:
+        raise SystemExit("oep config wifi: --index and --ssid (or --from-env)")
+    if not 0 <= args.index < max(decl.wifi_max, 1):
+        raise SystemExit(f"--index {args.index}: 0 to {decl.wifi_max - 1} (the probe's wifi_max is {decl.wifi_max})")
+    if args.pass_prompt:
+        import getpass
+        passphrase = getpass.getpass(f"passphrase for {args.ssid!r} (not shown): ")
+    elif args.pass_env:
+        passphrase = os.environ.get(args.pass_env)
+        if passphrase is None:
+            raise SystemExit(f"--pass-env {args.pass_env}: not set")
+    elif args.open:
+        passphrase = None
+    else:
+        if not any(isinstance(it, config.Wifi) and it.index == args.index for it in cfg.items()):
+            raise SystemExit(f"wifi entry {args.index} does not exist yet: give --pass-prompt, --pass-env VAR or --open")
+        passphrase = config.KEEP
+    it = config.Wifi(index=args.index, ssid=args.ssid, passphrase=passphrase)
+    try:
+        it.value()
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
+    _change(hst, cfg, [it], args.save)
+    print(f"wifi {args.index}: {it.shown()['ssid']!r}, passphrase {it.shown()['passphrase']}")
+
+
 def _plain(o):
+    if hasattr(o, "shown"):
+        return o.shown()                                           # a wifi item: never its passphrase
     return {k: (v.hex() if isinstance(v, bytes) else v) for k, v in vars(o).items()} if hasattr(o, "__dict__") \
         else list(o)
 
 
 def _state_dict(st) -> dict:
-    return {**{k: v for k, v in vars(st).items() if k not in ("slots", "binds")},
-            "slots": [_plain(s) for s in st.slots], "binds": [_plain(b) for b in st.binds]}
+    return {**{k: v for k, v in vars(st).items() if k not in ("slots", "binds", "wifi")},
+            "slots": [_plain(s) for s in st.slots], "binds": [_plain(b) for b in st.binds],
+            **({"wifi": vars(st.wifi)} if st.wifi is not None else {})}
 
 
 def _state(cfg, as_json: bool) -> int:
@@ -522,6 +637,8 @@ def _state(cfg, as_json: bool) -> int:
               + (f", tried at {s.last_try_at_ns / 1e9:.3f} s" if s.last_try_at_ns is not None else ""))
     for b in st.binds:
         print(f"  port {b.port}: {b.flow}")
+    if st.wifi is not None:
+        print(f"wifi: {st.wifi.text()}")
     return 0
 
 
@@ -581,8 +698,15 @@ def _show(hst, cfg, as_json: bool) -> int:
             stream = f"slot:{names.get(i, i)}" if k == "slot" else f"{k}:{i}"
             live = f"  -> {b.flow}" if b else ""
             print(f"  port {it.port} ({kinds.get(it.port, '?')}): {stream}{live}")
+    if config.ITEM["wifi"] in decl.items:
+        print(f"wifi (up to {decl.wifi_max}): " + (st.wifi.text() if st.wifi is not None else "no state"))
+        for it in items:
+            if isinstance(it, config.Wifi):
+                s = it.shown()
+                use = "  <- in use" if st.wifi is not None and st.wifi.entry == it.index else ""
+                print(f"  {s['index']} {s['ssid']!r}: passphrase {s['passphrase']}{use}")
     for it in items:
-        if not isinstance(it, (config.Slot, config.Bind)):
+        if not isinstance(it, (config.Slot, config.Bind, config.Wifi)):
             print(f"  {it}")
     return 0
 

@@ -46,7 +46,7 @@ def test_slots_and_binds_round_trip_and_show_their_state():
     assert not cfg.needs_save()
     assert not cfg.apply(wanted) and not cfg.apply(wanted, save=True)   # the same items: nothing sent
     cfg.set([config.remove("bind", 3)])                              # a removal in a set: an unset (op 0x05)
-    assert ep.requests[-1].op == config.ProbeConfig.UNSET and ep.requests[-1].payload == bytes([1, 2, 5, 3])
+    assert ep.requests[-1].op == config.ProbeConfig.UNSET and ep.requests[-1].payload == bytes([1, 1, 5, 3])
     assert [type(i).__name__ for i in cfg.items()] == ["Slot"]
     h1 = cfg.get()[0]
     assert h1 != saved and cfg.state().saved_hash == saved and cfg.needs_save()   # the settings moved since the save

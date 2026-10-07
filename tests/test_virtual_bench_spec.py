@@ -514,7 +514,7 @@ def test_a_stream_lives_while_anything_uses_it():
     h2 = Host(ep, 0x99, transport=1)
     h2.open()
     assert h2.raw(6, 0x05, bytes([1, 2, ITEM["slot"], 0])).detail == m.MALFORMED   # the bind would point at nothing
-    h2.ok(6, 0x05, bytes([2, 2, ITEM["slot"], 0, 2, ITEM["bind"], 0]))   # unset slot and bind: the share goes, it closes
+    h2.ok(6, 0x05, bytes([2, 1, ITEM["slot"], 0, 1, ITEM["bind"], 0]))   # unset slot and bind: the share goes, it closes
     assert ep.streams[sid].closed and ep.streams[sid].marks[-1][2:5:2] == (MARK_KIND["closed"], 3)
     h2.ok(3, 0x07, struct.pack("<H", sid))                           # closing a closed stream: ok
 

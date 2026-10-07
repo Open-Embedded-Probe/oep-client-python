@@ -32,6 +32,10 @@ Lines on stdin are commands, read between requests (the serving never waits for 
                         close with detail 4, and a request naming it is answered no_connection. An at-boot --slot on
                         its place attaches again by itself at its next retry (a new connection), its bound console
                         back under the same stream number. stderr says "virtual_bench_serve: lost connection(s) ..."
+  wifi-air [SSID[=PASS] ...]
+                        the Wi-Fi networks in range now (none: no network), as --wifi-air, each word %-decoded (a space
+                        is %20, = in an SSID %3D): the probe joins again. A passphrase given here is not in the process
+                        list
 A line that is no command is ignored with a message on stderr.
 
 oep.probe.restart's restart (oep-if-restart; every profile lists the interface, after its other fns) does the same
@@ -75,6 +79,11 @@ Options:
                         B bytes have passed at RATE since the switch to it (afterB). The virtual bench cannot see the host's own rate (a pty,
                         TCP): only the probe's rate decides
   --keep-on-eof         the end of stdin does not end the program
+  --wifi-air SSID[=PASS]
+                        a Wi-Fi network in range (repeatable; no =PASS: open) for a profile with the wifi item
+                        (esp32-v003): the entries of probe.config's wifi item are tried against these in index order,
+                        and state's wifi TLV shows connecting for --wifi-join-ms (default 500), then connected (rssi
+                        -55, ip --wifi-ip, default 127.0.0.1 - where this program listens) or waiting with the reason
   --run-hook SPEC       what riscv-dm run does on every target: SPEC is module:function or path/file.py:function,
                         called as function(target, pc, regs) -> (stopped, dpc, elapsed_us). `target` is the
                         endpoint.VirtualTarget (mem = word address -> value, regs = regno -> value, halted, dpc), so a
@@ -116,6 +125,15 @@ def _label(text: str) -> str:
     return text
 
 
+def _air(specs: list[str]) -> dict[str, str | None]:
+    """SSID[=PASS] ... -> {ssid: passphrase or None}."""
+    out = {}
+    for spec in specs:
+        ssid, eq, passphrase = spec.partition("=")
+        out[ssid] = passphrase if eq and passphrase else None
+    return out
+
+
 def build(a: argparse.Namespace) -> endpoint.Endpoint:
     profile = virtual_bench.PROFILES.get(a.profile) or virtual_bench.PROFILES[a.profile.replace("_", "-")]
     probe = profile()
@@ -136,6 +154,10 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
         for tg in ep.targets.values():
             tg.run_hook = (lambda t: lambda pc, regs: hook(t, pc, regs))(tg)
     ep.capture_slipped = getattr(a, "capture_slipped", False)
+    ep.wifi_join_ms = getattr(a, "wifi_join_ms", ep.wifi_join_ms)
+    ep.wifi_ip = getattr(a, "wifi_ip", ep.wifi_ip)
+    if getattr(a, "wifi_air", None):
+        ep.wifi_set_air(_air(a.wifi_air))
     if getattr(a, "no_port_speed", False):
         ep.port_speed_base = None
     for spec in getattr(a, "broken_rate", []):
@@ -312,9 +334,13 @@ class Commands:
                 return
             gone = self.ep.lose(cid)
             print(f"virtual_bench_serve: lost connection(s) {', '.join(map(str, gone)) or 'none'}", file=sys.stderr, flush=True)
+        elif text.split()[0] == "wifi-air":
+            from urllib.parse import unquote
+            self.ep.wifi_set_air(_air([unquote(w) for w in text.split()[1:]]))
+            print(f"virtual_bench_serve: wifi air now {len(self.ep.wifi_air)} network(s)", file=sys.stderr, flush=True)
         else:
-            print(f"virtual_bench_serve: unknown command {text!r} ignored (known: reboot, lose)", file=sys.stderr,
-                  flush=True)
+            print(f"virtual_bench_serve: unknown command {text!r} ignored (known: reboot, lose, wifi-air)",
+                  file=sys.stderr, flush=True)
 
 
 class _Openers:
@@ -538,6 +564,9 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--no-port-speed", action="store_true")
     ap.add_argument("--no-restart", action="store_true")
     ap.add_argument("--broken-rate", action="append", default=[])
+    ap.add_argument("--wifi-air", action="append", default=[])
+    ap.add_argument("--wifi-join-ms", type=int, default=500)
+    ap.add_argument("--wifi-ip", default="127.0.0.1")
     a = ap.parse_args(argv)
     if a.tcp is None and a.framing == "length":
         ap.error("--framing length is for --tcp")

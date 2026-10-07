@@ -29,7 +29,7 @@ def test_the_item_round_trips_and_moves_the_hash():
     assert config.decode(0x07, struct.pack("<H", 9)) == config.Disable(channel=9)
     assert ep.disabled == {40, 41}
     h2 = cfg.unset([("disable", 41)])
-    assert ep.requests[-1].payload == bytes([1, 3, 7, 41, 0])                 # len tag channel(u16)
+    assert ep.requests[-1].payload == bytes([1, 2, 7, 41, 0])                 # len (the key's) tag channel(u16)
     assert h2 == cfg.get()[0] != h1 and config.same_items(cfg.items(), items[:2])
     cfg.set([config.remove("disable", 40)])
     assert ep.disabled == set()

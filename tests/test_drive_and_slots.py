@@ -333,7 +333,8 @@ def test_slot_state_is_12_bytes_connected_or_absent():
     hst = h.Host(lambda b: ep.handle(b, 1))
     cfg = config.ProbeConfig(hst)
     p = hst.call(cfg.fn, cfg.STATE, bytes([0, 0]), locked=False).payload
-    assert p[7] == 1 and p[8:20] == struct.pack("<BBHQ", 0, 1, 0, 7_000_000) and p[20:] == b"\x00"
+    assert p[7] == 1 and p[8:20] == struct.pack("<BBHQ", 0, 1, 0, 7_000_000) and p[20:21] == b"\x00"
+    assert p[21:] == m.tlv(config.STATE_TLV["wifi"], bytes([0, 0xFF, 0, 0]) + bytes(4))   # the wifi TLV: off
     tg.silent_until_reset = False
     clock.t = 1007
     ep.tick()

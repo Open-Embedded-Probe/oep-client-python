@@ -1,6 +1,77 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) **oep-spec c2b8007 .. 62c1988: the wifi item and TCP discovery.** README names `62c1988`. Registry and vectors
+  synced (`tools/sync_registry.sh`; the wifi vectors, corr 0x74-0x7B, pass both ways).
+  - **Breaking (wire): unset's len is the key's length** (probe.config §2, as the new vector "unset: wifi entry 0" has
+    it: `01 01 08 00`); it counted the tag too. `config.Removal.encoded()` and the virtual bench (a len other than the
+    tag's key length is malformed) follow; oep-probe-arduino still counts the tag and key (OepConfig.cpp unset).
+  - probe.config §1.4 / §3.3: `config.Wifi(index, ssid, passphrase)` - passphrase None (open), `config.KEEP` (pass_len
+    0xFF: the entry's own; get's form) or 8-63 printable / 64 hex (else ValueError, without the passphrase); its repr and
+    `shown()` say set / none, never the passphrase. `Declared.wifi_max`, `State.wifi` = `WifiState(state, entry, reason,
+    rssi, ipv4)` (off / connecting / connected / waiting; reason none / not-found / auth / no-address / other).
+    `same_items` / `apply` compare a wifi item as get shows it (host guide §15.1). `config.wifi_from_env()` reads
+    `OEP_WIFI_SSID_<n>` / `OEP_WIFI_PASS_<n>`.
+  - `oep config wifi <probe> --index N --ssid S [--pass-prompt | --pass-env VAR | --open] [--save]` (neither: keep the
+    entry's passphrase), `--from-env [--force]`, `oep config wifi-unset <probe> --index N`; `show` / `state` print the
+    entries (passphrase set / none) and the link (state, entry, reason, rssi, ip), `--json` too. Nothing prints a
+    passphrase.
+  - The virtual bench: `esp32-v003` declares the wifi item (wifi_max 4); the passphrase write-only (get 0xFF, a set
+    with 0xFF keeps it, malformed without the entry), an index at or past wifi_max unsupported with the tag as
+    received, an SSID with 0x00 unsupported, the hash from get's form and a token that changes with a passphrase; a
+    simulated link (`Endpoint.wifi_set_air`, `wifi_join_ms`, `wifi_rssi`, `wifi_ip`): entries in index order against
+    the networks in range, the entry in use changing joins again, another change keeps the link.
+    `virtual_bench_serve --wifi-air SSID[=PASS] --wifi-join-ms --wifi-ip` and the stdin command `wifi-air`.
+    `Endpoint.hash_fn`: a test's own hash (the vectors name the probe's).
+  - transports §3 / host guide §4.1: new module `discovery` (DNS-SD `_oep._tcp` over mDNS: `browse`, `find_unit`,
+    `port_of`; python-zeroconf with the new `mdns` extra, else a minimal query of its own), `oep find [--json]`
+    (unit_id, host, port, address). `open_host("tcp://HOST")` without a port takes the SRV port DNS-SD finds for that
+    host (none: LookupError naming tcp://HOST:PORT - no port is fixed); `open_host("tcp:UNIT_ID")` opens the probe found
+    by its TXT unit_id, checks describe's (UnitIdMismatch) and browses again when it reopens.
+  - `oep linktest --timeout` defaults to 3 s over TCP (Wi-Fi retransmissions stall answers 1-4 s), 0.3 s elsewhere
+    (`linktest.default_timeout`); tests/hw's port_speed uses the same.
+  - `KeptSession.__del__` no longer raises ImportError at interpreter exit (fcntl / msvcrt imported with the module,
+    `__del__` swallows what a shutdown leaves).
+  - tests/hw: TCP boards - `esp32-pico-d4-50029191fe34-tcp` (the ATOM, `tcp:50029191fe34` or `OEP_HW_ATOM_TCP`) and
+    any `tcp:<unit_id>` / `tcp://<host>[:<port>]` in `OEP_HW_BOARDS` (kind tcp: never flashed, no model check). A new
+    `wifi` test sets and saves the entries from `OEP_WIFI_SSID_<n>` / `OEP_WIFI_PASS_<n>` (only those that differ),
+    waits for the link (`OEP_HW_WIFI_WAIT_S`) and opens `tcp:<unit_id>` when DNS-SD finds it; results record
+    `OEP_WIFI_*` as `(set)` and no SSID, passphrase or address. The virtual board gets the same networks in range
+    through the serve's stdin. New tests/test_wifi_and_tcp_discovery.py. README / tests/hw README (EN / JA).
+- (JA) **oep-spec c2b8007〜62c1988: wifi の項目と TCP の見つけ方。** README は `62c1988` を名乗る。registry とベクタを写した
+  （`tools/sync_registry.sh`。wifi のベクタ corr 0x74〜0x7B は両向きとも通る）。
+  - **破壊的（wire）: unset の len は key の長さ**（probe.config §2。新しいベクタ "unset: wifi entry 0" の `01 01 08 00` のとおり）。
+    これまでは tag も数えていた。`config.Removal.encoded()` と仮想ベンチ（tag の key の長さと違う len は malformed）が従う。
+    oep-probe-arduino はまだ tag と key を数えている（OepConfig.cpp の unset）。
+  - probe.config §1.4 / §3.3: `config.Wifi(index, ssid, passphrase)` - passphrase は None（開いたネットワーク）、`config.KEEP`（pass_len
+    0xFF: その entry のもの。get の形）、8〜63 の印字できる文字か 16 進 64 文字（ほかは ValueError。passphrase は載せない）。repr と
+    `shown()` は set / none と言うだけで passphrase を出さない。`Declared.wifi_max`、`State.wifi` = `WifiState(state, entry, reason,
+    rssi, ipv4)`（off / connecting / connected / waiting。reason は none / not-found / auth / no-address / other）。`same_items` /
+    `apply` は wifi の項目を get の見せる形で比べる（host ガイド §15.1）。`config.wifi_from_env()` は `OEP_WIFI_SSID_<n>` /
+    `OEP_WIFI_PASS_<n>` を読む。
+  - `oep config wifi <probe> --index N --ssid S [--pass-prompt | --pass-env VAR | --open] [--save]`（どれも無ければ entry の
+    passphrase を保つ）、`--from-env [--force]`、`oep config wifi-unset <probe> --index N`。`show` / `state` は entry（passphrase
+    set / none）とつながり（state、entry、reason、rssi、ip）を出す（`--json` も）。passphrase はどこにも出さない。
+  - 仮想ベンチ: `esp32-v003` が wifi の項目（wifi_max 4）を宣言する。passphrase は書くだけ（get は 0xFF、set の 0xFF は保つ、entry が
+    無ければ malformed）、wifi_max 以上の index は受け取ったままの tag で unsupported、0x00 を含む ssid は unsupported、hash は get の
+    形と passphrase が変わるたびに変わる token から作る。つながりの模擬（`Endpoint.wifi_set_air`、`wifi_join_ms`、`wifi_rssi`、
+    `wifi_ip`）: entry を index の順に届くネットワークと突き合わせ、使っている entry が変わればつなぎ直し、ほかの変更ではつながりを保つ。
+    `virtual_bench_serve --wifi-air SSID[=PASS] --wifi-join-ms --wifi-ip` と stdin の命令 `wifi-air`。`Endpoint.hash_fn`: 試験が
+    決める hash（ベクタは probe の hash を名指す）。
+  - transports §3 / host ガイド §4.1: 新しいモジュール `discovery`（mDNS の DNS-SD `_oep._tcp`: `browse`、`find_unit`、`port_of`。
+    新しい `mdns` の extra で python-zeroconf、無ければ自前の最小の問い合わせ）、`oep find [--json]`（unit_id、host、port、アドレス）。
+    port の無い `open_host("tcp://HOST")` はその host に DNS-SD が見つけた SRV の port を使う（無ければ tcp://HOST:PORT を示す
+    LookupError。決まった port は無い）。`open_host("tcp:UNIT_ID")` は TXT の unit_id で見つけた probe を開き、describe のものを
+    確かめ（UnitIdMismatch）、開き直すときは browse し直す。
+  - `oep linktest --timeout` の既定は TCP で 3 秒（Wi-Fi の再送で応答が 1〜4 秒止まる）、ほかは 0.3 秒（`linktest.default_timeout`）。
+    tests/hw の port_speed も同じ。
+  - `KeptSession.__del__` はインタプリタの終わりに ImportError を出さない（fcntl / msvcrt はモジュールと一緒に import し、
+    `__del__` は終わりぎわの例外を飲む）。
+  - tests/hw: TCP のボード - `esp32-pico-d4-50029191fe34-tcp`（ATOM。`tcp:50029191fe34` か `OEP_HW_ATOM_TCP`）と、`OEP_HW_BOARDS`
+    の `tcp:<unit_id>` / `tcp://<host>[:<port>]`（kind tcp: 焼かない、model を照合しない）。新しい `wifi` の試験は `OEP_WIFI_SSID_<n>`
+    / `OEP_WIFI_PASS_<n>` の entry（違うものだけ）を set と save し、つながりを待ち（`OEP_HW_WIFI_WAIT_S`）、DNS-SD が見つければ
+    `tcp:<unit_id>` で開く。結果は `OEP_WIFI_*` を `(set)` とだけ記録し、ssid、passphrase、アドレスを入れない。仮想のボードには
+    serve の stdin で同じネットワークを届かせる。新しい tests/test_wifi_and_tcp_discovery.py。README / tests/hw README（EN / JA）。
 - (EN) **oep-spec 283e5b5 .. f8bb2de** (the external review re-check of 2026-10-07 and the fixes after it). README names
   `f8bb2de`. Registry and vectors synced (`tools/sync_registry.sh`): `resend_max` is gone (the host decides its resends:
   this client's - once after the wait, at once up to 3 times after a broken frame on a held serial port - stay),

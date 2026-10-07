@@ -107,7 +107,7 @@ def test_the_dmseq_crc8_vectors_have_no_counterpart_here():
 
 # ---- confirm (core §7.1) ------------------------------------------------------------------------------------------
 
-def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None) -> virtual_bench.VirtualProbe:
+def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None, wifi_max: int = 0) -> virtual_bench.VirtualProbe:
     """A virtual bench whose fn numbers are a vector's: fn 0 with one UART bridge (index 0), then each named interface
     with channels 0-15 for its roles (the wire on pins 1 / 2; gpio without drive_levels). `ops`: fn -> the ops its
     ops tag sets instead of every op of its table (core §1.2, §7.4)."""
@@ -136,7 +136,7 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None) -> v
         elif name == "oep.probe.restart":
             o = virtual_bench._restart(fn)
         elif name == "oep.probe.config":
-            o = virtual_bench._config(fn, 0, slots_max=2, storage=0)            # no storage: save / erase not in its ops
+            o = virtual_bench._config(fn, 0, slots_max=2, storage=0, wifi_max=wifi_max)   # no storage: no save / erase
         elif name == "oep.fixture.logic":
             o = virtual_bench.Offered(fn, 0, name, virtual_bench._roles({k: chans for k in range(4)})
                              + virtual_bench._capture_decl(["one_shot"], 8, 4096, 1), inner=virtual_bench._capture_inner([8], 1, 480))
@@ -428,7 +428,8 @@ def setup_case(case):
     if "dmi, halt, resume" in case["state"]:
         ops[int(next(k for k, v in case["fns"].items() if v == "oep.target.riscv-dm"))] = {1, 2, 3}
     clock = type("Settable", (), {"t": 0, "__call__": lambda self: self.t})()
-    ep = endpoint.Endpoint(vector_probe(fns, ops=ops), clock, boot_id=EXAMPLE_BOOT_ID)
+    wifi_max = 4 if "items has wifi, wifi_max 4" in case["state"] else 0
+    ep = endpoint.Endpoint(vector_probe(fns, ops=ops, wifi_max=wifi_max), clock, boot_id=EXAMPLE_BOOT_ID)
     wire = next((int(k) for k, v in fns.items() if v == "oep.wire.rvswd"), None)
     name, state = case["name"], case["state"]
     plan = ep.fns.get(virtual_bench.PLAN)
@@ -466,6 +467,16 @@ def setup_case(case):
         stream_two(ep)
     elif name.startswith("console read"):
         stream_two(ep, data=b"hello")
+    elif wifi_max:
+        # the probe's hash as the case names it (its own, probe.config §2): 0x5A5A0001 with settings, 0x5A5A0002 without
+        ep.hash_fn = lambda config: 0x5A5A0001 if config else 0x5A5A0002
+        if "session S" in state:
+            held(ep)
+        if "settings: the wifi entry" in state or "settings as above" in state or "connected through" in state:
+            ep.load_config([WIFI_ENTRY], saved=False)
+        if "connected through entry 0 at -52 dBm, address 192.168.1.23" in state:
+            ep.wifi_set_air({b"lab": b"password1"})
+            ep.wifi_join_ms, ep.wifi_rssi, ep.wifi_ip = 0, -52, "192.168.1.23"
     elif name.startswith("probe.config state"):
         clock.t = 1                                                    # the slot's last try at 1 ms
         ep._target(wire, (1, 2)).target_id = 0x00203500
@@ -483,6 +494,10 @@ def setup_case(case):
         cap.generation, cap.state = 1, virtual_bench_capture.STATE["done"]
         cap.segs = [virtual_bench_capture.Segment(0, 0, 1000, 5_000_000, 50, virtual_bench_capture.NONE, 0, 1)]
     return ep
+
+
+# The wifi vectors' entry (probe.config §1.4): index 0, ssid "lab", passphrase "password1"
+WIFI_ENTRY = m.tlv(0x08, bytes([0, 3]) + b"lab" + bytes([9]) + b"password1")
 
 
 # Vectors the spec's text corrects (core §0 rule 4): name -> what the text says; the virtual bench answers as the text does.
@@ -513,6 +528,46 @@ def client(case, session=None):
         hst._fns[v], hst._revisions[int(k)], hst._describes[int(k)] = int(k), 1, []
     hst._describes[0] = []
     return hst, sent
+
+
+def _wifi_on_client(case, name):
+    """The wifi vectors (probe.config §1.4, §3.3) as this client sends and reads them; None for the refused forms it
+    never builds (a 7-byte passphrase: ValueError before sending; 0xFF for a missing entry and an index past wifi_max
+    are the probe's to refuse - the client sends them as asked)."""
+    from oep_client import config as cfg
+    a = m.Result.unpack(hx(case["answer_hex"]))
+    hst, sent = client(case, S if "session S" in case["state"] else None)
+    p = cfg.ProbeConfig(hst, fn=8)
+    if name.startswith("probe.config set: wifi entry 0"):
+        assert p.set([cfg.Wifi(index=0, ssid="lab", passphrase="password1")]) == 0x5A5A0001
+    elif name.startswith("probe.config get"):
+        hash_, items = p.get()
+        (w,) = [cfg.decode(t, v) for t, v in items]
+        assert hash_ == 0x5A5A0001 and w.passphrase is cfg.KEEP and w.ssid == "lab" and "password" not in repr(w)
+    elif "sent back" in name:
+        assert p.set([cfg.Wifi(index=0, ssid="lab", passphrase=cfg.KEEP)]) == 0x5A5A0001
+    elif "no entry" in name:
+        with pytest.raises(h.Rejected) as e:
+            p.set([cfg.Wifi(index=1, ssid="field", passphrase=cfg.KEEP)])
+        assert e.value.result.detail == a.detail == m.MALFORMED
+    elif "7-byte" in name:
+        with pytest.raises(ValueError) as e:
+            cfg.Wifi(index=1, ssid="field", passphrase="secret7").value()
+        assert "secret7" not in str(e.value)
+        return None
+    elif "at wifi_max" in name:
+        with pytest.raises(h.Rejected) as e:
+            p.set([cfg.Wifi(index=4, ssid="field")])
+        assert e.value.result.detail == m.UNSUPPORTED
+    elif name.startswith("probe.config state"):
+        st = p.state()
+        assert (st.slots, st.binds) == ([], [])
+        assert st.wifi == cfg.WifiState("connected", 0, "none", -52, "192.168.1.23")
+    elif name.startswith("probe.config unset"):
+        assert p.unset([("wifi", 0)]) == 0x5A5A0002
+    else:
+        raise AssertionError(f"a wifi vector this test does not know: {name}")
+    return sent
 
 
 def _on_client(case):
@@ -659,6 +714,8 @@ def _on_client(case):
         else:
             assert tuple(c.read(c.FROM_POSITION, 5, 64)) == (5, False, False, b"")
         return sent
+    if name.startswith("probe.config") and "wifi" in name:
+        return _wifi_on_client(case, name)
     if name.startswith("probe.config"):
         if "set" in name:
             return None                                                 # the client's Idle never sends these forms

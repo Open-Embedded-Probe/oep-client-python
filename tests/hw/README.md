@@ -20,6 +20,13 @@ OEP_HW_BOARDS=9489dd2ae0953650 OEP_HW_NOFLASH=1 uv run pytest tests/hw -m hw
 
 # a dry run of the test logic on the virtual bench (a pty; no hardware, never a release test)
 OEP_HW_BOARDS=virtual-esp32-v003 uv run pytest tests/hw -m hw
+
+# the ATOM: flash it over its bridge and give it the bench's Wi-Fi (read from the environment, never printed or recorded)
+OEP_WIFI_SSID_0=lab OEP_WIFI_PASS_0="$LAB_PASS" OEP_HW_BOARDS=esp32-pico-d4-50029191fe34 OEP_PROBE_DIR=~/dev_oep/oep-probe-arduino uv run pytest tests/hw -m hw
+# then the same board over Wi-Fi / TCP (found by DNS-SD; OEP_HW_ATOM_TCP=tcp://HOST:PORT where mDNS does not reach)
+OEP_HW_BOARDS=esp32-pico-d4-50029191fe34-tcp uv run pytest tests/hw -m hw
+# any probe on the network, no table entry
+OEP_HW_BOARDS=tcp://192.168.1.23:7450 uv run pytest tests/hw -m hw
 ```
 
 `-s` shows the flasher's progress and the port_speed table as they happen. A board's whole run takes 1.5-2.5 minutes
@@ -50,6 +57,7 @@ file; the `verdict` is pytest's outcome.
 | `identity` | confirm revision ≥ 1; no list entry is fn 0 (the core has no name, core §7.2); clock (core §7.7) gives confirm's boot_id; describe's model is the table's; boot_id changed over the flash; firmware string equals the version flashed (a local build's `library.properties`, or the release's) | boot_id, firmware, model, unit_id, chip, limits, the interface list, clock's uptime_ns and shortest round trip of 4 |
 | `required` | what every probe must give and a lock-free look can check (core §1.2, §7.1, §7.5; oep-spec `docs/conformance.md` section 1), the same list `oep dump` prints as MISSING: confirm's transport TLV, naming a transport of fn 0's describe (or 0xFF); fn 0's describe with unit_id, transport and max_op_ms. Fails naming each one missing | the list (empty when nothing is missing) |
 | `config` | `oep.probe.config`: set a label (the table's `label` channel, else the first gpio one) and a `disable` item (`OEP_HW_DISABLE`) → get returns them, get's hash equals set's and differs from the one before (the hash is the probe's own, never computed here); a plan on the disabled channel is refused (unavailable / PinsTaken); `needs_save` before the save, save → state `applied` with that hash and no `needs_save` after it; **reboot** (`oep.probe.restart` when the probe lists it - `Host.restart_probe`, waiting up to its restart_max_ms, then `OEP_HW_REOPEN_S` more when set (below); on a USB probe (P4, RP2) only with `OEP_HW_RESTART=1`, else skipped with that reason in the record - else a classic ESP32 behind a bridge: EN through RTS as esptool's hard reset; neither: skipped) → the saved items are applied at boot: storage_hash equals get's hash and the items are the ones saved (`same_items`); unset both → the items equal, item by item, those before the test; save. Other settings on the probe (a bench's slots / binds) are kept; whatever fails, the items and the storage are put back (below) | hashes at each step, the reboot's way, boot_ids and time (restart_max_ms, reopen_s and whether the reopen was needed with oep.probe.restart; the error when the probe did not come back) |
+| `wifi` | `oep.probe.config`'s wifi item (when describe lists it; probe.config §1.4, §3.3). With `OEP_WIFI_SSID_<n>` / `OEP_WIFI_PASS_<n>` (n = the index): the entries whose SSID or passphrase presence differ from the probe's are set (a passphrase cannot be compared, host guide §15.1) and saved - the bench's settings, they **stay** on the probe -, the state's link must be connected with an address within `OEP_HW_WIFI_WAIT_S` (30 s), and on a board reached otherwise, when DNS-SD finds it by its unit_id, `tcp:<unit_id>` must open it (describe's unit_id checked). Without the variables only the state is recorded | wifi_max, the indexes sent / unchanged, saved, the state (state, entry, reason, rssi, whether an address came), seconds to connect, DNS-SD's port and instance - never an SSID, passphrase or address |
 | `wire` | only with `OEP_HW_TARGET=<name>[@swdio[,swclk]]`: scan (the pair named, or every pair), attach with the reset TLV when `OEP_HW_RESET=<channel>`, then 50× (`OEP_HW_LOOPS`) halt → s0 / s1 / a0 / a1 via dmi → read_block (8 words at `OEP_HW_TARGET_ADDR`, default 0x20000000) → the four registers again, unchanged → resume | scan result, connection, DMSTATUS, speed, target_id, dpc, loops and seconds, any register change: before, after, read again, the two words past the block, dpc (the failure message prints every change in full); when an op raises: the loop, the error, DMSTATUS read twice and DMCONTROL (raw dmi), dpc when halted |
 | `gpio` | `oep.fixture.gpio` on the table's two free channels (`OEP_HW_GPIO=a,b`): output_high reads 1, output_low 0, input_pullup 1, input_pulldown 0. Skips when the table gives the board none | every level read |
 | `uart` | `oep.fixture.uart` on the table's RX / TX (`OEP_HW_UART=rx,tx`), or on the probe's settings plan for it when that is in force or the table gives the board no pair (none either: skips): configure 115200 8N1 within 5 %, status shows the baud and format in force (configure's actual rate, 8N1), configure 9600; with `OEP_HW_UART_LOOP=rx,tx` (the two wired together) a write is read back | the actual rates, the status, the loopback bytes |
@@ -63,8 +71,8 @@ file; the `verdict` is pytest's outcome.
 | `session` | a 1000 ms lease lapses → `NoSession` (released, no resume); a force takeover with a new id → the old id is `Locked` out; after its end every id is `NoSession` | the lease, the boot_id, the refusals' texts |
 
 The results file also carries the client's version and commit, the firmware source (checkout + commit + dirty flag, or
-release version + manifest URL + sha256s), the host platform and every `OEP_*` variable of the run. The one-screen summary
-is printed at the end of the pytest run.
+release version + manifest URL + sha256s), the host platform and every `OEP_*` variable of the run - `OEP_WIFI_*` as
+`(set)` only, never their values. The one-screen summary is printed at the end of the pytest run.
 
 On the virtual bench (`virtual-esp32-v003`) `capture` records its levels without judging them (the virtual bench captures a counter, not its
 pins, and its one-shot is done as start answers).
@@ -86,6 +94,7 @@ assertion, an exception, a probe that went away:
 
 | Where | What it changes | Put back |
 |---|---|---|
+| `wifi` | `wifi` items from `OEP_WIFI_*` (set and saved) | not put back: they are the bench's settings (remove them with `oep config wifi-unset`) |
 | `config` | a `label` item and a `disable` item (set), the storage (saved twice) | the test unsets both and saves; its `finally` then calls `Run.restore_settings`: each item removed, or set back to the value it had before the run, and the storage saved again (or erased when nothing was saved before) |
 | `capture` (logic, when the probe refuses gpio on the capture's pins) | `idle` items on the two channels (set, not saved) | `_Pull.release` unsets them, then `restore_settings` in its `finally` |
 | `gpio`, `uart`, `capture*`, `i2c_target`, `spi_target` | plans (oep.probe.plan), session state | `plan_release` in each test's `finally`; a plan is the session's, so the session's end at the end of the run releases what a failure left |
@@ -121,6 +130,14 @@ oep config save <probe>        # or `oep config erase <probe>` when nothing was 
 
 The ATOM's bridge (a CH552 posing as FTDI) loses probe→host frames in bursts (0 % one minute, 10-55 % the next, 2026-10-02): a port_speed failure there is re-run once before it counts; the CH340 jig is the steadier gate for port_speed.
 
+**TCP boards.** `esp32-pico-d4-50029191fe34-tcp` is the ATOM over Wi-Fi / TCP (kind `tcp`, port `tcp:50029191fe34` -
+DNS-SD by unit_id - or `OEP_HW_ATOM_TCP=tcp://HOST:PORT`), and `OEP_HW_BOARDS` may also name any probe on the network as
+`tcp:<unit_id>` or `tcp://<host>[:<port>]` (a board of kind `tcp` without a table entry: no model checked, no free
+channels unless `OEP_HW_GPIO` / `OEP_HW_UART` / `OEP_HW_DISABLE` give them). A TCP board is never flashed (`flash`
+records "a TCP board"): flash it and set its networks (`OEP_WIFI_*`, the `wifi` test) on a run through its serial / USB
+entry first. port_speed skips (no UART bridge on this link); `linktest` waits 3 s an answer over TCP. mDNS does not cross
+WSL 2's default NAT: from there name the board by address (its ip: `oep config state` over the bridge).
+
 `OEP_HW_NOFLASH=1` skips flashing on every board and tests the firmware found there (recorded as "on-board"; the firmware
 string is recorded, not compared).
 
@@ -138,7 +155,10 @@ the bench's permission**: ask first, every time; never flash or reset a device y
 
 | Variable | Meaning |
 |---|---|
-| `OEP_HW_BOARDS` | comma list of board ids (required; nothing runs without it) |
+| `OEP_HW_BOARDS` | comma list of board ids (required; nothing runs without it); `tcp:<unit_id>` / `tcp://<host>[:<port>]` names a TCP probe without a table entry |
+| `OEP_WIFI_SSID_<n>`, `OEP_WIFI_PASS_<n>` | the bench's Wi-Fi networks for the `wifi` test (n = the entry's index; no PASS: an open network). Read from the environment, never printed, recorded as `(set)`. The same variables feed `oep config wifi <probe> --from-env` |
+| `OEP_HW_WIFI_WAIT_S` | how long the `wifi` test waits for the link (default 30) |
+| `OEP_HW_ATOM_TCP` | the ATOM's TCP target for `esp32-pico-d4-50029191fe34-tcp` (default `tcp:50029191fe34`, by DNS-SD) |
 | `OEP_PROBE_DIR` / `OEP_PROBE_VERSION` / `OEP_HW_NOFLASH` | the firmware source (one of them) |
 | `OEP_HW_TARGET`, `OEP_HW_RESET`, `OEP_HW_TARGET_ADDR`, `OEP_HW_LOOPS` | the wire test: a target is wired (and where), its reset line, the block address, the loop count |
 | `OEP_HW_REOPEN_S` | seconds more to open a restarted probe again once its restart_max_ms has passed (the user's reopen, above; WSL / usbipd). Default 0: none - the probe is gone after restart_max_ms |

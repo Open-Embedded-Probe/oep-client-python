@@ -1,5 +1,6 @@
 """oep.probe.config revision 1 (oep-spec docs/oep-if-probe-config.ja.md): the probe's settings - plan, labels, idle
-pins, slots, binds, fixture UART settings, disabled channels - read and set as items, removed with unset, saved when the host says so, and
+pins, slots, binds, fixture UART settings, disabled channels, Wi-Fi networks (the passphrase write-only) - read and set
+as items, removed with unset, saved when the host says so, and
 the live slot / bind / storage state as its own lock-free operation (describe is declarations only, core §7.3).
 
     cfg = config.ProbeConfig(hst)
@@ -28,6 +29,7 @@ from .fixture import Drive
 _CFG = reg.PROBE_CONFIG
 ITEM = _CFG.tlv["item"]
 DESCRIBE = _CFG.tlv["describe"]
+STATE_TLV = _CFG.tlv["state_answer"]                            # the state answer's TLVs: wifi (probe.config §3.3)
 ATTACH = {k.replace("_", "-"): v for k, v in _CFG.enum["slot_attach"].items()}
 STREAM = {"slot": _CFG.enum["bind_stream"]["slot_console"], "uart": _CFG.enum["bind_stream"]["fixture_uart"]}
 MECHANISM = {k: v for k, v in reg.TARGET_CONSOLE.enum["mechanism"].items()}      # includes "none" = 0xFF: no console
@@ -41,6 +43,14 @@ NEVER_NS = 0xFFFFFFFFFFFFFFFF                                   # last_try_at_ns
 LABEL_MAX = reg.LIMITS["label_max_bytes"]                       # a label's text: 1 to 32 bytes (probe.config §1)
 # slot wire_fn swdio swclk attach retry_ms max_speed_hz idle_clock mechanism name_len, then the name (probe.config §1.1)
 SLOT_HEAD = struct.Struct("<BHHHBIIBBB")
+BYTE_KEYED = (ITEM["slot"], ITEM["bind"], ITEM["wifi"])        # items keyed by their first byte (slot, port, index)
+SSID_MAX = reg.LIMITS["wifi_ssid_max_bytes"]                    # a wifi item's ssid: 1 to 32 bytes (probe.config §1.4)
+PASS_MIN, PASS_MAX = reg.LIMITS["wifi_passphrase_min_bytes"], reg.LIMITS["wifi_passphrase_max_bytes"]
+PSK_HEX = reg.LIMITS["wifi_psk_hex_digits"]
+PASS_SET = _CFG.enum["wifi_pass_len"]["hidden"]  # pass_len in get: a passphrase is set (none follows); in a set: keep it
+WIFI_STATE = dict(_CFG.enum["wifi_state"])                      # off, connecting, connected, waiting
+WIFI_REASON = {k.replace("_", "-"): v for k, v in _CFG.enum["wifi_reason"].items()}
+NO_ENTRY = _CFG.enum["wifi_entry"]["none"]                      # the wifi state's entry: none
 
 
 def _name(table: dict[str, int], value: int) -> str:
@@ -185,6 +195,101 @@ class Uart:
         return struct.pack("<HIB", self.fn, self.baud, self.format)
 
 
+class _Keep:
+    """A wifi item's passphrase as get shows it: one is set, and a set carrying this keeps it (pass_len 0xFF)."""
+
+    def __repr__(self) -> str:
+        return "KEEP"
+
+    def __reduce__(self):
+        return "KEEP"
+
+
+KEEP = _Keep()
+
+
+def check_passphrase(raw: bytes) -> None:
+    """A passphrase as the wifi item takes it (probe.config §1.4): 8 to 63 bytes of 0x20-0x7E, or 64 hex digits. The
+    message never carries the passphrase."""
+    if len(raw) == PSK_HEX and all(chr(b) in "0123456789abcdefABCDEF" for b in raw):
+        return
+    if not PASS_MIN <= len(raw) <= PASS_MAX or any(b < 0x20 or b > 0x7E for b in raw):
+        raise ValueError(f"wifi passphrase ({len(raw)} bytes): 8 to 63 printable ASCII characters or 64 hex digits")
+
+
+@dataclass(kw_only=True, repr=False)
+class Wifi:
+    """A network the probe joins to serve OEP over TCP (the wifi item, key index; tried in index order). ssid: 1 to 32
+    bytes. passphrase: None for an open network, `KEEP` for the one the entry has already (get's form: a set with it
+    changes nothing of the passphrase), else 8-63 printable ASCII characters or 64 hex digits.
+
+    The passphrase is write-only: get never returns it (pass_len 0xFF: one is set, 0: none). Nothing here prints it:
+    repr and `shown()` say "set" or "none"."""
+    index: int
+    ssid: str | bytes
+    passphrase: str | bytes | _Keep | None = None
+    TAG = ITEM["wifi"]
+
+    def key(self) -> tuple:
+        return (self.index,)
+
+    @property
+    def ssid_bytes(self) -> bytes:
+        return self.ssid if isinstance(self.ssid, bytes) else self.ssid.encode()
+
+    @property
+    def has_passphrase(self) -> bool:
+        return self.passphrase is KEEP or bool(self.passphrase)
+
+    def shown(self) -> dict:
+        """What may be printed: index, ssid (safe text), passphrase "set" / "none"."""
+        return {"index": self.index, "ssid": m.shown(self.ssid_bytes),
+                "passphrase": "set" if self.has_passphrase else "none"}
+
+    def __repr__(self) -> str:
+        s = self.shown()
+        return f"Wifi(index={s['index']}, ssid={s['ssid']!r}, passphrase={s['passphrase']})"
+
+    def value(self) -> bytes:
+        """index(u8) ssid_len(u8) ssid pass_len(u8) passphrase (pass_len 0xFF and nothing after: keep it)."""
+        ssid = self.ssid_bytes
+        if not 1 <= len(ssid) <= SSID_MAX:
+            raise ValueError(f"wifi ssid {m.shown(ssid)!r}: 1 to {SSID_MAX} bytes")
+        if not 0 <= self.index < 0xFF:
+            raise ValueError(f"wifi index {self.index}: 0 to 254 (below the probe's wifi_max)")
+        head = bytes([self.index, len(ssid)]) + ssid
+        if self.passphrase is KEEP:
+            return head + bytes([PASS_SET])
+        if not self.passphrase:
+            return head + b"\x00"
+        raw = self.passphrase if isinstance(self.passphrase, bytes) else self.passphrase.encode()
+        check_passphrase(raw)
+        return head + bytes([len(raw)]) + raw
+
+
+def wifi_get_form(value: bytes) -> bytes:
+    """A wifi item's value as get shows it: the passphrase replaced by pass_len 0xFF when there is one (a value too
+    short for its counts is returned as it is)."""
+    if len(value) < 3 or len(value) < 3 + value[1]:
+        return bytes(value)
+    pass_len = value[2 + value[1]]
+    return bytes(value[:2 + value[1]]) + bytes([PASS_SET if pass_len else 0])
+
+
+def wifi_from_env(environ=None, count: int = 8) -> list[Wifi]:
+    """The wifi entries the environment gives: OEP_WIFI_SSID_<n> and OEP_WIFI_PASS_<n> (n = the index, 0 to count-1;
+    no PASS: an open network). Read for a bench's set-up (`oep config wifi --from-env`, tests/hw); the values are never
+    printed."""
+    import os
+    env = os.environ if environ is None else environ
+    out = []
+    for n in range(count):
+        ssid = env.get(f"OEP_WIFI_SSID_{n}")
+        if ssid:
+            out.append(Wifi(index=n, ssid=ssid, passphrase=env.get(f"OEP_WIFI_PASS_{n}") or None))
+    return out
+
+
 @dataclass(frozen=True)
 class Removal:
     """What `remove()` makes: one key for unset (op 0x05). `set()` sends these as an unset after its set."""
@@ -192,10 +297,11 @@ class Removal:
     key: int
 
     def encoded(self) -> bytes:
-        """len(u8) tag(u8) key: the key is fn(u16) for plan / uart, channel(u16) for label / idle / disable, slot(u8), port(u8)."""
+        """len(u8) tag(u8) key, len the key's length (probe.config §2): the key is fn(u16) for plan / uart, channel(u16)
+        for label / idle / disable, slot(u8), port(u8), index(u8) for wifi."""
         tag = ITEM[self.kind]
-        key = bytes([self.key]) if self.kind in ("slot", "bind") else struct.pack("<H", self.key)
-        return bytes([1 + len(key), tag]) + key
+        key = bytes([self.key]) if tag in BYTE_KEYED else struct.pack("<H", self.key)
+        return bytes([len(key), tag]) + key
 
 
 def item(it) -> bytes:
@@ -204,7 +310,7 @@ def item(it) -> bytes:
 
 def remove(kind: str, key: int) -> Removal:
     """The removal of the item of this key (for `unset`, or in a `set` list): kind plan (key fn: its whole plan), label
-    / idle / disable (channel), slot, bind (port), uart (fn)."""
+    / idle / disable (channel), slot, bind (port), uart (fn), wifi (index)."""
     if kind not in ITEM:
         raise ValueError(f"no item kind {kind!r}")
     return Removal(kind, key)
@@ -236,6 +342,11 @@ def decode(tag: int, v: bytes):
     if tag == ITEM["uart"] and len(v) >= 7:
         fn, baud, fmt = struct.unpack_from("<HIB", v)
         return Uart(fn=fn, baud=baud, format=fmt)
+    if tag == ITEM["wifi"] and len(v) >= 3 and len(v) >= 3 + v[1]:
+        pass_len = v[2 + v[1]]
+        # get carries no passphrase (pass_len 0xFF: set); one a probe sent anyway is kept, never shown
+        passphrase = KEEP if pass_len == PASS_SET else (bytes(v[3 + v[1]:3 + v[1] + pass_len]) or KEEP) if pass_len else None
+        return Wifi(index=v[0], ssid=bytes(v[2:2 + v[1]]).decode("utf-8", "replace"), passphrase=passphrase)
     return (tag, v)
 
 
@@ -244,14 +355,17 @@ def _sort_key(tag: int, value: bytes) -> tuple:
     channel, slot, port, uart fn."""
     if tag == ITEM["plan"] and len(value) >= 5:
         return (tag,) + struct.unpack_from("<HBH", value)
-    if tag in (ITEM["slot"], ITEM["bind"]):
-        return (tag, value[0])
+    if tag in BYTE_KEYED:
+        return (tag, value[0] if value else -1)
     return (tag, struct.unpack_from("<H", value)[0] if len(value) >= 2 else -1)
 
 
-def _pairs(items) -> list[tuple[int, bytes]]:
-    """Items (objects of the classes above, or (tag, value) pairs) as (tag without bit 7, value), in get's order."""
+def _pairs(items, as_get: bool = False) -> list[tuple[int, bytes]]:
+    """Items (objects of the classes above, or (tag, value) pairs) as (tag without bit 7, value), in get's order.
+    as_get: a wifi item's passphrase as get shows it (`wifi_get_form`)."""
     pairs = [(it[0] & 0x7F, bytes(it[1])) if isinstance(it, tuple) else (it.TAG, it.value()) for it in items]
+    if as_get:
+        pairs = [(t, wifi_get_form(v) if t == ITEM["wifi"] else v) for t, v in pairs]
     return sorted(pairs, key=lambda p: _sort_key(*p))
 
 
@@ -261,15 +375,17 @@ _KIND = {v: k for k, v in ITEM.items()}
 def _key_of(tag: int, value: bytes) -> tuple[str, int]:
     """The (kind, key) an unset names for an item (probe.config §2): plan and uart fn(u16), label / idle / disable
     channel(u16), slot and bind their first byte."""
-    if tag in (ITEM["slot"], ITEM["bind"]):
+    if tag in BYTE_KEYED:
         return _KIND[tag], value[0]
     return _KIND.get(tag, str(tag)), struct.unpack_from("<H", value)[0]
 
 
 def same_items(a, b) -> bool:
     """Whether two configurations hold the same items, item by item (host guide §15: a host compares what it wants with
-    get's items; the probe's hash is its own and is never computed here)."""
-    return _pairs(a) == _pairs(b)
+    get's items; the probe's hash is its own and is never computed here). A wifi item compares as get shows it: its
+    passphrase is write-only, so only whether one is set counts - a changed passphrase of the same entry is not seen
+    (set it with `set`)."""
+    return _pairs(a, as_get=True) == _pairs(b, as_get=True)
 
 
 @dataclass
@@ -291,10 +407,37 @@ class BindState:
 @dataclass
 class Declared:
     """What the probe's describe declares (fixed for one boot): the storage's size, the item tags it takes, how many
-    slots."""
+    slots, how many wifi entries (0: no wifi item)."""
     storage_bytes: int = 0
     items: list[int] = field(default_factory=list)
     slots_max: int = 0
+    wifi_max: int = 0
+
+
+@dataclass
+class WifiState:
+    """The probe's Wi-Fi link (the state answer's wifi TLV, probe.config §3.3): state off / connecting / connected /
+    waiting (every entry failed; it waits, then tries again), the entry (index) in use or being tried (None: none), why the last try failed (reason
+    none, not-found, auth, no-address, other), rssi in dBm and the IPv4 address while connected (None otherwise)."""
+    state: str
+    entry: int | None
+    reason: str
+    rssi: int | None
+    ipv4: str | None
+
+    @classmethod
+    def unpack(cls, v: bytes) -> WifiState:
+        state, entry, reason, rssi = struct.unpack_from("<BBBb", v)
+        ip = ".".join(str(b) for b in v[4:8])
+        connected = state == WIFI_STATE["connected"]
+        return cls(_name(WIFI_STATE, state), None if entry == NO_ENTRY else entry, _name(WIFI_REASON, reason),
+                   rssi if connected and rssi else None, ip if connected and ip != "0.0.0.0" else None)
+
+    def text(self) -> str:
+        out = self.state + (f", entry {self.entry}" if self.entry is not None else "")
+        out += f", reason {self.reason}" if self.reason != "none" else ""
+        out += f", rssi {self.rssi} dBm" if self.rssi is not None else ""
+        return out + (f", ip {self.ipv4}" if self.ipv4 else "")
 
 
 @dataclass
@@ -305,7 +448,7 @@ class State:
     unreadable: str | None = None  # why, when unreadable
     slots: list[SlotState] = field(default_factory=list)
     binds: list[BindState] = field(default_factory=list)
-
+    wifi: WifiState | None = None  # the Wi-Fi link, on a probe with the wifi item (the last page's)
 
 
 class ProbeConfig(Interface):
@@ -331,7 +474,7 @@ class ProbeConfig(Interface):
                     return h, out
 
     def items(self) -> list:
-        """The current settings, decoded (Plan, Label, Idle, Slot, Bind, Uart, Disable)."""
+        """The current settings, decoded (Plan, Label, Idle, Slot, Bind, Uart, Disable, Wifi)."""
         return [decode(t, v) for t, v in self.get()[1]]
 
     def set(self, items: list) -> int:
@@ -372,14 +515,20 @@ class ProbeConfig(Interface):
         return not (st.storage == "applied" and st.saved_hash == self.get()[0])
 
     def apply(self, wanted: list, save: bool = False) -> bool:
-        """Make the probe's settings `wanted` (host guide §15): get, compared item by item (`same_items`); when they
-        differ, set what is wanted and unset the keys get has and `wanted` does not; with `save`, save when
-        `needs_save`. -> whether anything was sent. Needs the lock when something changes."""
+        """Make the probe's settings `wanted` (host guide §15): get, compared item by item (`same_items`; a wifi item by
+        its ssid and whether it has a passphrase); when they differ, set what is wanted - a wifi entry the probe has as
+        wanted with pass_len 0xFF, so no passphrase is sent again - and unset the keys get has and `wanted` does not;
+        with `save`, save when `needs_save`. -> whether anything was sent. Needs the lock when something changes."""
         _, have = self.get()
         changed = False
         if not same_items(have, wanted):
             want = _pairs(wanted)
             keys = {_key_of(t, v) for t, v in want}
+            # a wifi entry the probe has as wanted (ssid, passphrase or none) goes in get's form: its passphrase is
+            # sent only for an entry that changes (host guide §15.1)
+            had = {_key_of(t, v): v for t, v in _pairs(have, as_get=True)}
+            want = [(t, wifi_get_form(v)) if t == ITEM["wifi"] and had.get(_key_of(t, v)) == wifi_get_form(v) else (t, v)
+                    for t, v in want]
             self.set([m.tlv(t, v) for t, v in want])
             gone = sorted({_key_of(t, v) for t, v in have} - keys)
             if gone:
@@ -404,11 +553,13 @@ class ProbeConfig(Interface):
                 d.items = list(v)
             elif tag == DESCRIBE["slots_max"] and v:
                 d.slots_max = v[0]
+            elif tag == DESCRIBE["wifi_max"] and v:
+                d.wifi_max = v[0]
         return d
 
     def state(self) -> State:
-        """The storage's state and the live slot_state / bind_state (op state, lock-free, paged by first_slot /
-        first_bind). Each page carries storage_state, storage_hash and unreadable_reason as they were when it was
+        """The storage's state, the live slot_state / bind_state (op state, lock-free, paged by first_slot /
+        first_bind) and, on a probe with the wifi item, the Wi-Fi link (`WifiState`). Each page carries storage_state, storage_hash and unreadable_reason as they were when it was
         answered: the last page's are kept (probe-config §3.3, PC-9). The slots and binds may change between pages
         too; a caller that needs them to stay the same pages while it holds the lock."""
         st = State()
@@ -427,7 +578,9 @@ class ProbeConfig(Interface):
             for _ in range(n_binds):
                 port, flow = rd.take("BB")
                 st.binds.append(BindState(port, BIND_FLOW.get(flow, str(flow))))
-            rd.tail()
+            wifi = rd.tail().get(STATE_TLV["wifi"])
+            if wifi is not None and len(wifi) >= 8:
+                st.wifi = WifiState.unpack(wifi)
             if not more or not (n_slots or n_binds):
                 return st
             first_slot += n_slots

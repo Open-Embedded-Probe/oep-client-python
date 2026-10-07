@@ -25,6 +25,15 @@ RESULTS = HERE / "results"
 DESCRIBE = reg.CORE.tlv["describe"]
 COMMON = reg.DESCRIBE_COMMON
 WRITE_TIMEOUT_S = 5.0
+SECRET_ENV = ("OEP_WIFI_",)       # the bench's Wi-Fi: recorded as "(set)", never the value (passphrases, network names)
+
+
+def recorded_environment(environ=None) -> dict:
+    """Every OEP_* variable of the run, the Wi-Fi ones (OEP_WIFI_SSID_<n>, OEP_WIFI_PASS_<n>) as "(set)" only."""
+    env = os.environ if environ is None else environ
+    return {k: "(set)" if k.startswith(SECRET_ENV) else v for k, v in env.items() if k.startswith("OEP_")}
+
+
 RESTORE_CONNECT_S = 5.0          # putting the settings back: the wait for a probe that is not open (more with OEP_HW_REOPEN_S)
 RESTORE_LOCK_WAIT_S = 35.0       # ... and for the lock: a lost connection's session lapses within its 30 s lease
 _ITEM_KINDS = {config.Label: "label", config.Idle: "idle", config.Disable: "disable"}
@@ -391,7 +400,7 @@ class Run:
             "started": self.started,
             "seconds": round(time.monotonic() - self.t0, 1),
             "host": {"platform": platform.platform(), "python": sys.version.split()[0]},
-            "environment": {k: v for k, v in os.environ.items() if k.startswith("OEP_")},
+            "environment": recorded_environment(),
             "tests": self.tests,
         }
 

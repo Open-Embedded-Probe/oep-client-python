@@ -26,6 +26,14 @@ from pathlib import Path
 
 from . import message as m, registry as reg
 
+# Imported here, not when a file is let go: __del__ may run at interpreter exit, when an import raises ImportError
+if sys.platform == "win32":
+    import msvcrt
+    fcntl = None
+else:
+    import fcntl
+    msvcrt = None
+
 ENV = "OEP_SESSION_DIR"
 _UNIT_ID = reg.CORE.tlv["describe"]["unit_id"]
 _SAFE = re.compile(r"[a-z0-9-]{1,32}")               # core §7.5's unit_id grammar: safe as a file name
@@ -46,15 +54,13 @@ def default_dir() -> Path:
 
 
 def _lock(fd: int) -> bool:
-    if sys.platform == "win32":
-        import msvcrt
+    if msvcrt is not None:
         os.lseek(fd, _WIN_LOCK_AT, os.SEEK_SET)
         try:
             msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
         except OSError:
             return False
         return True
-    import fcntl
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
@@ -64,12 +70,10 @@ def _lock(fd: int) -> bool:
 
 def _unlock(fd: int) -> None:
     try:
-        if sys.platform == "win32":
-            import msvcrt
+        if msvcrt is not None:
             os.lseek(fd, _WIN_LOCK_AT, os.SEEK_SET)
             msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
         else:
-            import fcntl
             fcntl.flock(fd, fcntl.LOCK_UN)
     except OSError:
         pass
@@ -150,5 +154,9 @@ class KeptSession:
         self.done = False
 
     def __del__(self):
-        self.release()
+        # at interpreter exit module globals may already be gone: the process's end drops the lock and the fd anyway
+        try:
+            self.release()
+        except Exception:      # noqa: BLE001
+            pass
 

@@ -75,7 +75,12 @@ define (oep-spec 0f455a0, the rule review of 2026-10-07):
   (a seeded CRC-32 of get's bytes: no host may compute it); storage_hash is get's hash when the saved settings became
   current; at boot disable and idle before any other item; slots without a lock (state 0 connected / 1 absent), binds
   of one stream whose port position stays during a session and carries on after it; a disabled channel is refused
-  everywhere with unavailable cause 5 and never parked; `parked` records the free pins' states
+  everywhere with unavailable cause 5 and never parked; `parked` records the free pins' states. The wifi item on a
+  profile that declares wifi_max: index ssid_len ssid pass_len passphrase, key index; the passphrase write-only (get
+  shows pass_len 0xFF, a set with 0xFF keeps the entry's; the hash covers a token that changes with any passphrase,
+  not the passphrase), and a simulated link in state's wifi TLV: the entries tried in index order against the networks
+  in range (`wifi_air`: ssid -> passphrase or None), `wifi_join_ms` connecting, then connected (rssi `wifi_rssi`, ipv4
+  `wifi_ip`) or waiting with the reason of the last entry tried
 - the serial ports' raw side (transports §4, probe.config §1.2): `port_input` / `port_output` carry the bytes outside
   the frames for each serial port by its bind; a port the lock holder's requests came in on is held until the session
   ends. The byte framing itself is `virtual_bench_serial`.
@@ -112,10 +117,11 @@ ATTACH_FLAGS = reg.WIRE_RVSWD.enum["attach_flags"]
 RUN_STOPPED = _RV.enum["run_stopped"]
 RESET_MODE = _RV.enum["reset_mode"]
 STEP_LEFT = _RV.tlv["step_answer"]["step_left"]            # step's answer: the hart could not be halted again (§4.2)
-ITEM = _CFG.tlv["item"]
+ITEM = cfgmod.ITEM                                         # the registry's items and the wifi item
 CHANNEL_ITEMS = (ITEM["label"], ITEM["idle"], ITEM["disable"])   # items keyed by a channel (probe.config §1)
 IDLE_MODE = _CFG.enum["idle_mode"]
-CFG_DESCRIBE = _CFG.tlv["describe"]
+CFG_DESCRIBE = cfgmod.DESCRIBE
+WIFI_STATE, WIFI_REASON = cfgmod.WIFI_STATE, cfgmod.WIFI_REASON
 SLOT_ATTACH = _CFG.enum["slot_attach"]
 SLOT_STATE = _CFG.enum["slot_state"]
 BIND_STREAM = _CFG.enum["bind_stream"]
@@ -523,10 +529,15 @@ SLOT_HEAD = struct.Struct("<BHHHBIIBBB")   # slot wire_fn swdio swclk attach ret
 
 def _item_size(tag: int, v: bytes) -> int | None:
     """The length of item `tag`'s one form as the value's own counts make it (probe.config §1: plan 5, idle 4, uart 7,
-    disable 2, bind 4, a slot by its name_len; a label is its text to the end: None). A slot too short for its head is
-    malformed (`Reject`)."""
+    disable 2, bind 4, a slot by its name_len, wifi by ssid_len and pass_len - none after 0xFF; a label is its text to
+    the end: None). A slot or wifi item too short for its counts is malformed (`Reject`)."""
     if tag in ITEM_SIZES:
         return ITEM_SIZES[tag]
+    if tag == ITEM["wifi"]:
+        if len(v) < 3 or len(v) < 3 + v[1]:
+            raise Reject(m.MALFORMED)
+        pass_len = v[2 + v[1]]
+        return 3 + v[1] + (0 if pass_len == cfgmod.PASS_SET else pass_len)
     if tag == ITEM["slot"]:
         if len(v) < SLOT_HEAD.size:
             raise Reject(m.MALFORMED)
@@ -710,6 +721,7 @@ class Endpoint:
         self.slots_max = cfg[CFG_DESCRIBE["slots_max"]][0] if CFG_DESCRIBE["slots_max"] in cfg else 0
         self.items = set(cfg.get(CFG_DESCRIBE["items"], b""))
         self.storage_max = struct.unpack_from("<I", cfg[CFG_DESCRIBE["storage"]])[0] if CFG_DESCRIBE["storage"] in cfg else 0
+        self.wifi_max = cfg[CFG_DESCRIBE["wifi_max"]][0] if CFG_DESCRIBE["wifi_max"] in cfg and ITEM["wifi"] in self.items else 0
         # the console's send queue (console §2): its size is the probe's (not declared); what a poll hands to the target
         # per mechanism (dmseq 2 bytes, DMDATA 3; SDI carries nothing to the target, §3.1)
         con_fn = self.fns.get(_CON.name)
@@ -790,6 +802,14 @@ class Endpoint:
         self.spi_selected: set[int] = set()            # spi-target fns whose CS is active now (spi_select)
         self.spi: dict[int, SpiState] = {fn: SpiState() for fn, n in self.names.items() if n == _SPI.name}
         self.config: dict[tuple[int, int], bytes | list[bytes]] = {}   # (item tag, key) -> value (plan: list)
+        # Wi-Fi (a profile with wifi_max): the networks in range stay over a reboot (the world's); the link joins anew
+        self.wifi_air: dict[bytes, bytes | None] = getattr(self, "wifi_air", {})   # ssid -> passphrase (None: open)
+        self.wifi_join_ms: int = getattr(self, "wifi_join_ms", 500)   # connecting this long after a change or boot
+        self.wifi_rssi: int = getattr(self, "wifi_rssi", -55)
+        self.wifi_ip: str = getattr(self, "wifi_ip", "127.0.0.1")   # the address state shows (this host's: serve --tcp)
+        self.wifi_token = secrets.randbits(32)                  # stands for the passphrases in the hash
+        self.wifi_since_ms = self.now()                         # when the probe last started joining
+        self.wifi_joined: int | None = None                     # the entry the link uses (None: not connected)
         self.saved: dict | None = getattr(self, "saved", None)
         self.saved_ids: dict[int, tuple] = getattr(self, "saved_ids", {})   # saved fn -> (name, instance, revision)
         self.saved_reason = 0                          # why the saved settings were not applied (probe.config §4)
@@ -2860,7 +2880,7 @@ class Endpoint:
         if op == _CFG.op["get"]:
             first = t.take("H")
             t.tail()
-            items = self._canonical(self.config)
+            items = self._canonical(self.config, shown=True)    # a wifi item without its passphrase
             budget = self.probe.max_frame - m.RESULT_HEADER - 5
             out, sent = b"", 0
             for item in items[first:]:
@@ -2901,22 +2921,29 @@ class Endpoint:
                 if (tag, key) in seen:
                     raise Reject(m.MALFORMED)                      # the same key twice in one set
                 seen.add((tag, key))
+                if tag == ITEM["wifi"] and value[2 + value[1]] == cfgmod.PASS_SET:
+                    have = self.config.get((tag, key))             # pass_len 0xFF: the passphrase the entry has
+                    if have is None:
+                        raise Reject(m.MALFORMED)                  # no such entry
+                    value = value[:2 + value[1]] + have[2 + have[1]:]
                 new[(tag, key)] = value
             for fn, values in plans.items():
                 new[(ITEM["plan"], fn)] = values
             self._apply_config(new, changed_slots={k for t_, k in seen if t_ == ITEM["slot"]}, received=as_sent,
                                undeclared=undeclared)
             return m.COMPLETED, m.SUCCESS, struct.pack("<I", self._hash(self.config))
-        if op == _CFG.op["unset"]:                                 # n(u8) n x (len(u8) tag(u8) key)
+        if op == _CFG.op["unset"]:                                 # n(u8) n x (len(u8) tag(u8) key), len the key's
             n = t.take("B")
             keys, undeclared = [], None
             for _ in range(n):
-                row = Take(t.bytes(t.take("B")))
-                tag = row.take("B")
+                klen, tag = t.take("BB")
+                key = t.bytes(klen)
                 if tag not in self.items:
                     undeclared = tag if undeclared is None else undeclared   # after the whole form (core §4.3)
                     continue
-                keys.append((tag, self._item_key(tag, row.data[row.at:])))
+                if klen != self._key_len(tag):
+                    raise Reject(m.MALFORMED)                      # the key's length is the tag's
+                keys.append((tag, self._item_key(tag, key)))
             t.tail()
             if undeclared is not None:
                 raise Reject(m.UNSUPPORTED, bytes([undeclared]))
@@ -2956,7 +2983,8 @@ class Endpoint:
         state = 0 if self.saved is None else 2 if self.saved_reason else 1
         slots = [self._slot_state(n) for n in sorted(self.slots)][first_slot:]   # count x element (core §2.3)
         binds = [self._bind_state(p) for p in sorted(self.binds)][first_bind:]
-        budget = self.probe.max_frame - m.RESULT_HEADER - 9
+        wifi = self._wifi_state_tlv()
+        budget = self.probe.max_frame - m.RESULT_HEADER - 9 - len(wifi)   # the wifi TLV on every page
         out_s, out_b = [], []
         for row in slots:
             if sum(map(len, out_s)) + len(row) > budget:
@@ -2968,11 +2996,79 @@ class Endpoint:
             out_b.append(row)
         more = int(len(out_s) < len(slots) or len(out_b) < len(binds))
         return (struct.pack("<BBIB", more, state, saved_hash, self.saved_reason)
-                + bytes([len(out_s)]) + b"".join(out_s) + bytes([len(out_b)]) + b"".join(out_b))
+                + bytes([len(out_s)]) + b"".join(out_s) + bytes([len(out_b)]) + b"".join(out_b) + wifi)
+
+    # ---- the wifi item and its simulated link ----
+    def _wifi_form(self, index: int, value: bytes) -> None:
+        """The wifi item's form (malformed otherwise, probe.config §1.4): ssid 1-32 bytes, the passphrase none, 8-63
+        bytes of 0x20-0x7E or 64 hex digits. (An index at or past wifi_max is unsupported: `_apply_config`.)"""
+        if not 1 <= value[1] <= cfgmod.SSID_MAX:
+            raise Reject(m.MALFORMED)
+        try:
+            raw = value[3 + value[1]:]
+            if raw:
+                cfgmod.check_passphrase(raw)
+        except ValueError:
+            raise Reject(m.MALFORMED) from None
+
+    def wifi_entries(self, config: dict | None = None) -> list[tuple[int, bytes, bytes | None]]:
+        """The settings' networks in index order: (index, ssid, passphrase or None)."""
+        out = []
+        for (tag, key), v in sorted((config if config is not None else self.config).items()):
+            if tag == ITEM["wifi"]:
+                out.append((key, bytes(v[2:2 + v[1]]), bytes(v[3 + v[1]:]) or None))
+        return out
+
+    def _wifi_link(self, config: dict) -> tuple[int, int, int]:
+        """Where the entries end up once joined: (state, entry, reason) - the first entry in range whose passphrase
+        the network takes is connected; none: waiting with the reason of the last one tried; no entry: off."""
+        entries = self.wifi_entries(config)
+        if not entries:
+            return WIFI_STATE["off"], cfgmod.NO_ENTRY, WIFI_REASON["none"]
+        reason = WIFI_REASON["none"]
+        for index, ssid, passphrase in entries:
+            if ssid not in self.wifi_air:
+                reason = WIFI_REASON["not-found"]
+            elif self.wifi_air[ssid] != passphrase:
+                reason = WIFI_REASON["auth"]
+            else:
+                return WIFI_STATE["connected"], index, WIFI_REASON["none"]
+        return WIFI_STATE["waiting"], cfgmod.NO_ENTRY, reason
+
+    def wifi_set_air(self, air: dict) -> None:
+        """The networks in range change (ssid -> passphrase or None, str or bytes): the probe joins again."""
+        enc = lambda v: v.encode() if isinstance(v, str) else v    # noqa: E731
+        self.wifi_air = {enc(k): (enc(v) if v else None) for k, v in air.items()}
+        self.wifi_joined, self.wifi_since_ms = None, self.now()
+
+    def wifi_status(self) -> tuple[int, int, int, int, bytes]:
+        """state entry reason rssi ipv4 now: `wifi_join_ms` connecting (on the first entry) after the entries or the
+        air changed, then `_wifi_link`'s outcome."""
+        entries = self.wifi_entries()
+        if not entries:
+            self.wifi_joined = None
+            return WIFI_STATE["off"], cfgmod.NO_ENTRY, WIFI_REASON["none"], 0, bytes(4)
+        if self.wifi_joined is None and self.now() - self.wifi_since_ms < self.wifi_join_ms:
+            return WIFI_STATE["connecting"], entries[0][0], WIFI_REASON["none"], 0, bytes(4)
+        if self.wifi_joined is not None:
+            state, entry, reason = WIFI_STATE["connected"], self.wifi_joined, WIFI_REASON["none"]
+        else:
+            state, entry, reason = self._wifi_link(self.config)
+            self.wifi_joined = entry if state == WIFI_STATE["connected"] else None
+        if state == WIFI_STATE["connected"]:
+            return state, entry, reason, self.wifi_rssi, bytes(int(x) for x in self.wifi_ip.split("."))
+        return state, entry, reason, 0, bytes(4)
+
+    def _wifi_state_tlv(self) -> bytes:
+        """state's wifi TLV (a probe with the wifi item): state(u8) entry(u8) reason(u8) rssi(i8) ipv4(4)."""
+        if not self.wifi_max:
+            return b""
+        state, entry, reason, rssi, ip = self.wifi_status()
+        return m.tlv(cfgmod.STATE_TLV["wifi"], struct.pack("<BBBb", state, entry, reason, rssi) + ip)
 
     @staticmethod
     def _key_len(tag: int) -> int:
-        return 1 if tag in (ITEM["slot"], ITEM["bind"]) else 2
+        return 1 if tag in cfgmod.BYTE_KEYED else 2
 
     def _item_key(self, tag: int, value: bytes) -> int:
         if len(value) < self._key_len(tag):
@@ -2980,22 +3076,31 @@ class Endpoint:
         return value[0] if self._key_len(tag) == 1 else struct.unpack_from("<H", value)[0]
 
     @staticmethod
-    def _canonical(config: dict) -> list[bytes]:
+    def _canonical(config: dict, shown: bool = False) -> list[bytes]:
         """get's order (probe.config §2): tag order, then key order (plan by (fn, role, channel)), the items' bytes as
-        the host sent them, each as its TLV (core §2.2)."""
+        the host sent them, each as its TLV (core §2.2). shown: as get shows them (a wifi item's passphrase left out,
+        pass_len 0xFF when it has one)."""
         rows = []
         for (tag, key), value in config.items():
+            if shown and tag == ITEM["wifi"]:
+                value = cfgmod.wifi_get_form(value)
             for v in (value if isinstance(value, list) else [value]):
                 sort_key = struct.unpack("<HBH", v[:5]) if isinstance(value, list) else (key,)
                 rows.append((tag, sort_key, m.tlv(tag, v)))
         return [r[2] for r in sorted(rows)]
 
+    hash_fn: Callable[[dict], int] | None = None            # a test's own hash (the vectors name the probe's hash)
     HASH_SEED = 0x4F45                                      # the virtual bench's own way to make the hash (the probe's choice, §2)
 
     def _hash(self, config: dict | None) -> int:
         """A u32 that changes with the settings (probe.config §2: how it is made is the probe's; a host never computes
-        it): here a CRC-32 of get's bytes, seeded so no host can take it for a rule."""
-        return zlib.crc32(b"".join(self._canonical(config or {})), self.HASH_SEED)
+        it): here a CRC-32 of get's bytes, seeded so no host can take it for a rule - and, with wifi items, of a token
+        that changes whenever a passphrase does (never the passphrase: a lock-free get must not let one be guessed)."""
+        config = config or {}
+        if self.hash_fn is not None:
+            return self.hash_fn(config)
+        token = struct.pack("<I", self.wifi_token) if any(t == ITEM["wifi"] for t, _ in config) else b""
+        return zlib.crc32(b"".join(self._canonical(config, shown=True)) + token, self.HASH_SEED)
 
     @staticmethod
     def _referenced(config: dict) -> set[int]:
@@ -3093,6 +3198,8 @@ class Endpoint:
             elif tag == ITEM["bind"]:
                 if len(value) != ITEM_SIZES[tag]:
                     raise Reject(m.MALFORMED)
+            elif tag == ITEM["wifi"]:
+                self._wifi_form(key, value)
         names = [s.name for s in slots.values()]
         if len(set(names)) != len(names):
             raise Reject(m.MALFORMED)
@@ -3142,6 +3249,9 @@ class Endpoint:
                         raise Reject(m.UNSUPPORTED, as_received + channel)   # no such level, or no drive_levels
                 if mode in (IDLE_MODE["pull_up"], IDLE_MODE["pull_down"]) and mode in self.no_pull.get(key, ()):
                     raise Reject(m.UNSUPPORTED, as_received + channel)   # the channel lacks that pull (PC-3)
+            elif tag == ITEM["wifi"] and (key >= self.wifi_max or 0 in value[2:2 + value[1]]):
+                # an index at or past wifi_max; an SSID with a 0x00 byte, which this probe cannot join (§1.4)
+                raise Reject(m.UNSUPPORTED, as_received)
             elif tag == ITEM["uart"]:
                 fn, baud, fmt = struct.unpack_from("<HIB", value)
                 if self.names[fn] != "oep.fixture.uart":
@@ -3162,6 +3272,9 @@ class Endpoint:
                 (self.plan_roles if self.plan_roles is not None else 1 << 30):
             raise unavailable("limit")
         old_plan_fns = {k[1] for k in self.config if k[0] == ITEM["plan"]}
+        old_wifi = {k: v for k, v in self.config.items() if k[0] == ITEM["wifi"]}
+        if self.wifi_max:
+            self.wifi_status()                                     # the link as it stands before the change
         self.slots = slots                                         # the pin check below sees the new slots
         try:
             self._check_plan(want, tag_of=plan_tag)
@@ -3173,6 +3286,15 @@ class Endpoint:
         old_idle = {key: v for (tag, key), v in self.config.items() if tag == ITEM["idle"]}
         repark = (self.disabled - disabled) | {key for key in idles | set(old_idle) if new.get((ITEM["idle"], key)) != old_idle.get(key)}
         self.config = new
+        new_wifi = {k: v for k, v in new.items() if k[0] == ITEM["wifi"]}
+        if new_wifi != old_wifi:
+            if {k: v[2 + v[1]:] for k, v in new_wifi.items()} != {k: v[2 + v[1]:] for k, v in old_wifi.items()}:
+                self.wifi_token = (self.wifi_token + (secrets.randbits(32) | 1)) & 0xFFFFFFFF   # always another value
+            k = (ITEM["wifi"], self.wifi_joined)
+            if self.wifi_joined is None or old_wifi.get(k) != new_wifi.get(k):
+                # the entry in use changed or went (or none was in use): after the answer the link drops and the probe
+                # starts over with the new list (§1.4); another change keeps the link
+                self.wifi_joined, self.wifi_since_ms = None, self.now()
         # at boot every free channel, later the ones whose idle changed (or enabled again); a gpio plan then takes a
         # line in that state
         self._park(self._boot_channels() if boot else repark)
