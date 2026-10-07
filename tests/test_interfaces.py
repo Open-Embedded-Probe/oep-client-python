@@ -407,7 +407,7 @@ def test_capture_critical_tag_it_cannot_honour_is_unsupported():
     hst = ScriptedHost({(7, capture.LogicCapture.CONFIGURE): configure}, revisions={7: 1})
     cap = capture.LogicCapture(hst, 7)
     with pytest.raises(host.Unsupported) as e:
-        cap.configure(rate=1_000_000, samples=100, trigger=(capture.EDGE, 0, 0), critical={capture.TRIGGER})
+        cap.configure(rate=1_000_000, samples=100, trigger=(capture.EDGE, 0, 0))
     assert e.value.tag == capture.TRIGGER                              # sent without the critical bit (§3.3)
     assert not hasattr(cap.configure(rate=1_000_000, samples=100), "ignored")   # no ignored list
 

@@ -366,11 +366,10 @@ class LogicCapture(Interface):
 
     def configure(self, *, rate: int, mode: int = ONE_SHOT, samples: int | None = None, segments: int | None = None,
                   trigger: tuple[int, int, int] | None = None, pretrigger: int | None = None, query: bool = False,
-                  critical: set[int] = frozenset(), frontends: dict[int, int] | None = None,
+                  frontends: dict[int, int] | None = None,
                   multirate: list[Multirate] | None = None) -> Config:
         """-> the probe's actual values. A value the probe cannot honour is refused: host.Unsupported, .tag = the TLV as
-        sent (§3.3). The TLVs go without the critical bit (§3.3, oep-spec c6ab5d9); `critical` is accepted for older
-        callers and not used. Read Config.samples / .segments: the probe rounds samples down.
+        sent (§3.3). The TLVs go without the critical bit (§3.3, oep-spec c6ab5d9). Read Config.samples / .segments: the probe rounds samples down.
 
         §3.3's contract is checked before anything is sent (ValueError): `samples` is needed in one-shot and repeat
         and not taken in streaming, `segments` is repeat's only, `pretrigger` needs a trigger (type other than 0) - a
@@ -378,7 +377,6 @@ class LogicCapture(Interface):
 
         `multirate` (§5): one Multirate per role to reduce (a role left out is a D = 1 channel), checked against the
         fn's describe before sending (ValueError), each sent as TLV 0xE0; the answer's block L goes to Config.block."""
-        del critical                                           # only multirate goes critical (§3.3)
         for name, v in (("rate", rate), ("samples", samples), ("segments", segments)):
             if v is not None and v < 1:
                 raise ValueError(f"capture configure: {name} {v} - 1 or more (oep-if-capture §3.3)")
