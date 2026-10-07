@@ -72,8 +72,8 @@ def test_a_missing_answer_goes_once_more_with_the_same_corr():
 
 def broken(corr):
     """The answer to `corr` as the line broke it: framed, its CRC spoiled."""
-    from oep_client import fake_serial
-    return fake_serial._spoil(cobs.frame(result(corr)))
+    from oep_client import virtual_bench_serial
+    return virtual_bench_serial._spoil(cobs.frame(result(corr)))
 
 
 def held_link(answers, timeout=2.0, held=True):
@@ -164,7 +164,7 @@ def test_pipelined_requests_resend_the_unanswered_ones_after_a_broken_frame():
 
 
 def serve(*args):
-    proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", *args],
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", *args],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     return proc, proc.stdout.readline().split()
 
@@ -235,15 +235,15 @@ hst = link.open_host(sys.argv[1], timeout=1.0)
 core.take(hst, 3000, owner="child")
 hst.end()                                  # the session ends; the link is never closed
 if sys.argv[2] == "hard":
-    os._exit(0)                            # no atexit: only the fake can let the port go
+    os._exit(0)                            # no atexit: only the virtual bench can let the port go
 """
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="pty and TIOCEXCL as on Linux")
 @pytest.mark.parametrize("exit_mode", ["normal", "hard"])
 def test_a_host_that_ends_without_closing_leaves_the_pty_free_for_the_next(exit_mode):
-    """A pty slave's tty lives on while fake_serve holds the master, so a TIOCEXCL left set refused every later open
-    (EBUSY) - a real port clears it at its last close. Now the client clears it at exit, and fake_serve at the last
+    """A pty slave's tty lives on while virtual_bench_serve holds the master, so a TIOCEXCL left set refused every later open
+    (EBUSY) - a real port clears it at its last close. Now the client clears it at exit, and virtual_bench_serve at the last
     close of its slave (also after an exit that skipped atexit)."""
     proc, where = serve("--pty", "--profile", "esp32-v003")
     try:
@@ -252,7 +252,7 @@ def test_a_host_that_ends_without_closing_leaves_the_pty_free_for_the_next(exit_
                                    capture_output=True, text=True, timeout=30)
             assert child.returncode == 0, child.stderr               # the second child: the next process
         deadline = time.monotonic() + (1.0 if exit_mode == "hard" else 0)
-        while True:                                                   # the fake sees the hard exit's close a few
+        while True:                                                   # the virtual bench sees the hard exit's close a few
             try:                                                      # ms later; the client's own exit at once
                 hst = link.open_host(where[1], timeout=1.0)
                 break

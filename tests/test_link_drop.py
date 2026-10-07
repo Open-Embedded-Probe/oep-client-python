@@ -1,7 +1,7 @@
 """Raw DMI groups over a debug link that drops (a CH32L103 behind an RVSWD probe, about 0.7 - 2 ms after a change of
 hart state): writes are lost and reads give the last value read or all ones, with nothing in the answer to say so.
 
-The fake drops the link at one DMI access (FakeTarget.drop_at; "glitch" / "glitch_parity": one access missed, the link up
+The virtual bench drops the link at one DMI access (VirtualTarget.drop_at; "glitch" / "glitch_parity": one access missed, the link up
 again at once, a write missed with cmderr 6 set for "glitch_parity") and keeps it down to the end of that request (or for
 drop_requests requests). Every access of each helper is hit in turn, stale and all ones: the code before the held
 groups (copied here as old_*) returned a wrong value - or resumed into the application - without an error; the held
@@ -11,7 +11,7 @@ import random
 
 import pytest
 
-from oep_client import ch32_flash, endpoint, fake, host, riscv, uiapduino
+from oep_client import ch32_flash, endpoint, virtual_bench, host, riscv, uiapduino
 
 S0 = 0x1008
 VALUE = 0x000EC8FE         # the register's value (the bench's a0)
@@ -29,7 +29,7 @@ class Clock:
 
 
 def bench():
-    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     hst = host.Host(ep.handle, rng=random.Random(1))
     hst.open(lease_ms=10000)
     conn, _ = riscv.Wire(hst).attach(halt=True)
@@ -322,7 +322,7 @@ def test_held_payload_registers_are_right_or_raise_at_every_drop():
     assert not got["wrong"] and {name for _, _, name in got["raised"]} == {"LinkNotHeld"}
 
 
-def test_run_payload_places_and_starts_the_payload_on_the_fake():
+def test_run_payload_places_and_starts_the_payload_on_the_virtual_bench():
     ep, hst, tg, d = bench()
     wire = riscv.Wire(hst)
     tg.regs[uiapduino.MSTATUS] = 0x88

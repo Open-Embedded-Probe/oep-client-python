@@ -1,6 +1,6 @@
-"""Serve a fake probe (`endpoint.Endpoint`) on a pty or a TCP port, for other programs' tests.
+"""Serve a virtual bench probe (`endpoint.Endpoint`) on a pty or a TCP port, for other programs' tests.
 
-    python -m oep_client.fake_serve [--pty | --tcp PORT] [options]
+    python -m oep_client.virtual_bench_serve [--pty | --tcp PORT] [options]
 
 --pty (the default) opens a pseudo terminal that is the probe's serial port (transports §4): COBS frames
 0x00 <COBS> 0x00 and the raw bytes of the port's bind on one line. The host opens the printed path itself (and
@@ -23,12 +23,12 @@ Lines on stdin are commands, read between requests (the serving never waits for 
                         from 0 and a serial port is back at its boot speed. A request with the old session gets
                         no_session; confirm and open show the new boot_id. The pty or TCP connection stays open (on
                         a serial port the half-read frame and the unsent answers are lost). stderr says
-                        "fake_serve: rebooted, boot_id 0x........"
+                        "virtual_bench_serve: rebooted, boot_id 0x........"
   lose [CONNECTION]     the line of that connection (every live connection without one) is lost for good
                         (Endpoint.lose, debug §2): the connection closes, its console streams get mark link-lost and
                         close with detail 4, and a request naming it is answered no_connection. An at-boot --slot on
                         its place attaches again by itself at its next retry (a new connection), its bound console
-                        back under the same stream number. stderr says "fake_serve: lost connection(s) ..."
+                        back under the same stream number. stderr says "virtual_bench_serve: lost connection(s) ..."
 A line that is no command is ignored with a message on stderr.
 
 oep.probe.restart's restart (oep-if-restart; every profile lists the interface, after its other fns) does the same
@@ -69,13 +69,13 @@ Options:
                         RATE[:MIN_SIZE][:in|out][:duplex][:everyN][:afterB]: only frames of MIN_SIZE bytes and more on the wire
                         (default every frame), only towards the host (in) or the probe (out) (default both), only
                         while both ways carry such frames at once (duplex), only every Nth of them (everyN), only once
-                        B bytes have passed at RATE since the switch to it (afterB). The fake cannot see the host's own rate (a pty,
+                        B bytes have passed at RATE since the switch to it (afterB). The virtual bench cannot see the host's own rate (a pty,
                         TCP): only the probe's rate decides
   --keep-on-eof         the end of stdin does not end the program
   --run-hook SPEC       what riscv-dm run does on every target: SPEC is module:function or path/file.py:function,
                         called as function(target, pc, regs) -> (stopped, dpc, elapsed_us). `target` is the
-                        endpoint.FakeTarget (mem = word address -> value, regs = regno -> value, halted, dpc), so a
-                        host's loader can be played by the host's own test code (the fake knows no loader).
+                        endpoint.VirtualTarget (mem = word address -> value, regs = regno -> value, halted, dpc), so a
+                        host's loader can be played by the host's own test code (the virtual bench knows no loader).
 """
 
 from __future__ import annotations
@@ -93,7 +93,7 @@ import sys
 import time
 import tty
 
-from . import catalog, endpoint, fake, fake_serial, message as m, registry as reg
+from . import catalog, endpoint, virtual_bench, virtual_bench_serial, message as m, registry as reg
 
 _ITEM = reg.PROBE_CONFIG.tlv["item"]
 
@@ -114,12 +114,12 @@ def _label(text: str) -> str:
 
 
 def build(a: argparse.Namespace) -> endpoint.Endpoint:
-    profile = fake.PROFILES.get(a.profile) or fake.PROFILES[a.profile.replace("_", "-")]
+    profile = virtual_bench.PROFILES.get(a.profile) or virtual_bench.PROFILES[a.profile.replace("_", "-")]
     probe = profile()
     if getattr(a, "no_drive_levels", False):
-        probe = fake.without_drive_levels(probe)
+        probe = virtual_bench.without_drive_levels(probe)
     if getattr(a, "no_restart", False):
-        probe = fake.without(probe, fake.RESTART)        # the optional oep.probe.restart left out (oep-if-restart)
+        probe = virtual_bench.without(probe, virtual_bench.RESTART)        # the optional oep.probe.restart left out (oep-if-restart)
     start = time.monotonic_ns()
     # the clock in ns since this start (core §2.6a), and a boot_id from the OS's random source (core §6.5, C-19)
     ep = endpoint.Endpoint(probe, lambda: (time.monotonic_ns() - start) // 1_000_000, boot_id=secrets.randbits(32),
@@ -203,7 +203,7 @@ def _load_hook(spec: str):
     if not where or not name:
         raise SystemExit(f"--run-hook {spec}: want module:function or file.py:function")
     if where.endswith(".py") or os.sep in where:
-        loader = importlib.util.spec_from_file_location("fake_run_hook", where)
+        loader = importlib.util.spec_from_file_location("virtual_bench_run_hook", where)
         module = importlib.util.module_from_spec(loader)
         loader.loader.exec_module(module)
     else:
@@ -262,7 +262,7 @@ class Commands:
 
     def __init__(self, ep: endpoint.Endpoint, keep_on_eof: bool = False):
         self.ep, self.keep_on_eof = ep, keep_on_eof
-        self.port: fake_serial.FakeSerialPort | None = None
+        self.port: virtual_bench_serial.VirtualSerialPort | None = None
         self.buf = b""
         try:
             self.fd = None if sys.stdin is None or sys.stdin.closed else sys.stdin.fileno()
@@ -299,18 +299,18 @@ class Commands:
             self.ep.reboot()
             if self.port is not None:
                 self.port.reboot()
-            print(f"fake_serve: rebooted, boot_id 0x{self.ep.boot_id:08X}", file=sys.stderr, flush=True)
+            print(f"virtual_bench_serve: rebooted, boot_id 0x{self.ep.boot_id:08X}", file=sys.stderr, flush=True)
         elif text.split()[0] == "lose" and len(text.split()) <= 2:
             args = text.split()[1:]
             try:
                 cid = int(args[0], 0) if args else None
             except ValueError:
-                print(f"fake_serve: lose {args[0]!r}: want a connection number", file=sys.stderr, flush=True)
+                print(f"virtual_bench_serve: lose {args[0]!r}: want a connection number", file=sys.stderr, flush=True)
                 return
             gone = self.ep.lose(cid)
-            print(f"fake_serve: lost connection(s) {', '.join(map(str, gone)) or 'none'}", file=sys.stderr, flush=True)
+            print(f"virtual_bench_serve: lost connection(s) {', '.join(map(str, gone)) or 'none'}", file=sys.stderr, flush=True)
         else:
-            print(f"fake_serve: unknown command {text!r} ignored (known: reboot, lose)", file=sys.stderr,
+            print(f"virtual_bench_serve: unknown command {text!r} ignored (known: reboot, lose)", file=sys.stderr,
                   flush=True)
 
 
@@ -384,7 +384,7 @@ def serve_pty(a, ep, console, commands: Commands) -> None:
         os.close(slave)
     print(f"PTY {path}", flush=True)
     os.set_blocking(master, False)
-    port = commands.port = fake_serial.FakeSerialPort(ep, a.port_index, _filter(a))
+    port = commands.port = virtual_bench_serial.VirtualSerialPort(ep, a.port_index, _filter(a))
     pending = bytearray()
     watch = [master] + ([openers.fd] if openers.fd >= 0 else [])
     while True:
@@ -439,12 +439,12 @@ def _serve_conn(a, ep, console, conn, commands: Commands) -> bool:
     """One TCP connection; True = stdin closed (end the program)."""
     conn.setblocking(False)
     if a.framing == "cobs":
-        port = commands.port = fake_serial.FakeSerialPort(ep, a.port_index, _filter(a))
+        port = commands.port = virtual_bench_serial.VirtualSerialPort(ep, a.port_index, _filter(a))
     else:
         # the listening socket is a TCP transport of its own (transports §1, C-05): listed in describe, named by confirm
         index = getattr(ep, "tcp_index", None)
         if index is None:
-            index = ep.tcp_index = ep.add_transport(fake.TRANSPORT["tcp"])
+            index = ep.tcp_index = ep.add_transport(virtual_bench.TRANSPORT["tcp"])
         buf, answers, filt = bytearray(), 0, _filter(a)
     while True:
         readable, _, _ = select.select([conn] + commands.watch(), [], [], 0.005)
@@ -506,7 +506,7 @@ def _serve_conn(a, ep, console, conn, commands: Commands) -> bool:
 
 def parse(argv: list[str] | None = None) -> argparse.Namespace:
     """The command line -> the options `build` takes (the port index filled in)."""
-    ap = argparse.ArgumentParser(prog="python -m oep_client.fake_serve", description=__doc__.split("\n\n")[0])
+    ap = argparse.ArgumentParser(prog="python -m oep_client.virtual_bench_serve", description=__doc__.split("\n\n")[0])
     where = ap.add_mutually_exclusive_group()
     where.add_argument("--pty", action="store_true")
     where.add_argument("--tcp", type=int, metavar="PORT")
@@ -537,9 +537,9 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     a = ap.parse_args(argv)
     if a.tcp is None and a.framing == "length":
         ap.error("--framing length is for --tcp")
-    profile = fake.PROFILES.get(a.profile) or fake.PROFILES.get(a.profile.replace("_", "-"))
+    profile = virtual_bench.PROFILES.get(a.profile) or virtual_bench.PROFILES.get(a.profile.replace("_", "-"))
     if profile is None:
-        ap.error(f"unknown profile {a.profile}; one of {', '.join(sorted(fake.PROFILES))}")
+        ap.error(f"unknown profile {a.profile}; one of {', '.join(sorted(virtual_bench.PROFILES))}")
     if a.port_index is None:
         probe_ep = endpoint.Endpoint(profile(), lambda: 0)
         a.port_index = min(probe_ep.serial_ports) if probe_ep.serial_ports else 0

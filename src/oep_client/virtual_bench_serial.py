@@ -1,6 +1,6 @@
-"""The byte side of a fake probe's serial port (transports §1, §4): COBS frames and raw bytes on one port.
+"""The byte side of a virtual bench probe's serial port (transports §1, §4): COBS frames and raw bytes on one port.
 
-`FakeSerialPort(endpoint, index)` is serial port `index` of an `endpoint.Endpoint`. Bytes from the host go to
+`VirtualSerialPort(endpoint, index)` is serial port `index` of an `endpoint.Endpoint`. Bytes from the host go to
 `feed`; what the probe sends comes from `output`. It does what a probe does:
 
 - a candidate runs from a 0x00 to the next 0x00; if it decodes and its CRC matches it is a request, otherwise it
@@ -19,7 +19,7 @@ switch or revert a request asked for happens once its answer is queued (at the o
 restart asks for (oep-if-restart §2: the answer stays queued, the bytes read behind the request are dropped) - and the endpoint's
 `broken_rates` break frames at the port's rate now: a candidate from the host is then not a frame, an answer or push
 goes out with a spoiled CRC (a `duplex` one only while a request of its size comes in with such an answer still
-unread: the request, or that answer, breaks). `FakeSerialStream` is the port as a pyserial-shaped stream for an in-process host, with
+unread: the request, or that answer, breaks). `VirtualSerialStream` is the port as a pyserial-shaped stream for an in-process host, with
 the host's own `baudrate`: while it differs from the probe's, every byte either way arrives garbled.
 """
 
@@ -32,7 +32,7 @@ from . import cobs, registry as reg
 GAP_MS = reg.TIMING["probe_frame_gap_ms"]
 
 
-class FakeSerialPort:
+class VirtualSerialPort:
     def __init__(self, ep, index: int, answer_filter: Callable[[int, bytes], bytes | None] | None = None):
         self.ep, self.index = ep, index
         self.answer_filter = answer_filter
@@ -179,7 +179,7 @@ def _garble(data: bytes) -> bytes:
     return bytes((b * 37 + 11) & 0xFF if b % 5 else 0 for b in data)
 
 
-class FakeSerialStream:
+class VirtualSerialStream:
     """Serial port `index` of an endpoint as a pyserial-shaped stream (read / write / in_waiting / baudrate /
     reset_input_buffer), for a host in the same process. Every read and write lets the probe run (`tick`). The host's
     `baudrate` (what it opened the port with, then set) is compared with the probe's rate on that port
@@ -187,7 +187,7 @@ class FakeSerialStream:
 
     def __init__(self, ep, index: int, baudrate: int = 115200, answer_filter=None):
         self.ep, self.index = ep, index
-        self.port = FakeSerialPort(ep, index, answer_filter)
+        self.port = VirtualSerialPort(ep, index, answer_filter)
         self.port.garble = lambda wire, rate: wire if rate == self.baudrate else _garble(wire)   # sent at that rate
         self.baudrate = baudrate
         self.timeout = 0.05

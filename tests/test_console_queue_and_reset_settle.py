@@ -7,9 +7,9 @@ import struct
 
 import pytest
 
-from oep_client import config, console, core, endpoint, fake, host as h, message as m, registry as reg, riscv
+from oep_client import config, console, core, endpoint, virtual_bench, host as h, message as m, registry as reg, riscv
 
-MAX_OP_MS = fake.MAX_OP_MS
+MAX_OP_MS = virtual_bench.MAX_OP_MS
 
 
 class Clock:
@@ -20,7 +20,7 @@ class Clock:
         return self.ms
 
 
-def bench(profile=fake.p4_x035):
+def bench(profile=virtual_bench.p4_x035):
     clock = Clock()
     ep = endpoint.Endpoint(profile(), clock)
     hst = h.Host(lambda b: ep.handle(b, 1), rng=random.Random(9))
@@ -33,12 +33,12 @@ def bench(profile=fake.p4_x035):
 def test_the_send_queue_is_not_declared():
     """console §1 / §2: describe carries mechanisms alone (0x41 reserved); the queue's size is the probe's."""
     assert "send_queue" not in reg.TARGET_CONSOLE.tlv["describe"]
-    assert [t[0] for t in fake._console(3).tlvs] == [reg.TARGET_CONSOLE.tlv["describe"]["mechanisms"]]
+    assert [t[0] for t in virtual_bench._console(3).tlvs] == [reg.TARGET_CONSOLE.tlv["describe"]["mechanisms"]]
     clock, ep, hst = bench()
     conn, _ = riscv.Wire(hst).attach(halt=False)
     con = console.Console(hst)
     con.open(conn, con.DMSEQ)
-    assert con.write(b"x" * 300) == fake.CONSOLE_SEND_QUEUE       # what the probe's own queue takes (partial)
+    assert con.write(b"x" * 300) == virtual_bench.CONSOLE_SEND_QUEUE       # what the probe's own queue takes (partial)
 
 
 def test_the_queue_is_handed_on_a_poll_at_a_time_and_survives_resets_and_restarts():
@@ -102,7 +102,7 @@ def test_reset_waits_out_a_self_restarting_target_within_max_op_ms(restart_ms, o
 
 
 def test_attach_with_the_reset_tlv_waits_too_and_keeps_an_existing_connection():
-    clock, ep, hst = bench(fake.esp32_v003)                        # swio, NRST on 23
+    clock, ep, hst = bench(virtual_bench.esp32_v003)                        # swio, NRST on 23
     wire = riscv.Wire(hst, "oep.wire.swio")
     ep.target.restart_ms = 300
     conn, dpc = wire.attach_under_reset(23, hold_ms=20)
@@ -120,7 +120,7 @@ def test_attach_with_the_reset_tlv_waits_too_and_keeps_an_existing_connection():
 def test_an_item_of_another_length_is_malformed_with_or_without_bit_7(critical):
     """probe-config §1, core §2.3: an implemented item whose value is longer or shorter than its form is malformed
     whatever bit 7 says - nothing applied."""
-    clock, ep, hst = bench(fake.p4_bench)
+    clock, ep, hst = bench(virtual_bench.p4_bench)
     cfg = config.ProbeConfig(hst)
     for value in (struct.pack("<HIB", 5, 115200, 0) + b"\x00", struct.pack("<HI", 5, 115200)):
         with pytest.raises(h.Rejected) as e:

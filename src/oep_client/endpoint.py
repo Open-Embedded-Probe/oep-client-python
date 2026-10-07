@@ -1,7 +1,7 @@
-"""A fake probe endpoint that speaks OEP v1, answering whole messages (no hardware).
+"""The virtual bench's probe endpoint that speaks OEP v1, answering whole messages (no hardware).
 
 This is the spec side's "working spec": ch32rv, the JS client, this client and the probe firmware are checked against
-it. It wraps a `fake.FakeProbe` (the static declarations, and what the probe keeps to itself: `own_channels`,
+it. It wraps a `virtual_bench.VirtualProbe` (the static declarations, and what the probe keeps to itself: `own_channels`,
 `Offered.inner`) and does what oep-spec docs/oep-core.ja.md, docs/oep-transports.ja.md and interfaces/*.ja.md
 define (oep-spec 0f455a0, the rule review of 2026-10-07):
 
@@ -19,7 +19,7 @@ define (oep-spec 0f455a0, the rule review of 2026-10-07):
   be checked to skip what they do not know
 - refusals (core §4.3): the header (unknown_function, unknown_operation, session_required), then the resend table,
   then the session (no_session / locked + remaining ms + owner); after that every check runs before anything changes
-  and the request is refused for one reason that applies (this fake's handlers check the form, then the fns named, then
+  and the request is refused for one reason that applies (this virtual bench's handlers check the form, then the fns named, then
   what they do not handle, then the state and the resources). unsupported is always `tag [TLV]` (0x00 for a fixed-part
   value); unavailable carries cause, channel and (capture-group) fn; a resource number of the wrong kind is unavailable
   cause 6 - connections and streams share one u16 space, +1 skipping numbers in use (core §9)
@@ -40,23 +40,23 @@ define (oep-spec 0f455a0, the rule review of 2026-10-07):
   subscribe / unsubscribe are the emitting interface's ops; events at once, data batched by min_bytes / max_delay_ms),
   oep.probe.link (oep-if-link: source len <= max_frame - 7, sink, and port_speed when the profile's ops offer it)
 - port_speed (oep-if-link §3, the handshake): baud(u32) step(u8) verify_ms(u16) on the UART bridge the request came in
-  on (another transport, or a try while a port is raised: unavailable cause 6); the nearest rate the fake's UART makes
+  on (another transport, or a try while a port is raised: unavailable cause 6); the nearest rate the virtual bench's UART makes
   (300..5000000 exactly, else the nearest end) within port_speed_tolerance_pct of the request, else unsupported; a try
   goes back after verify_ms without a commit, a commit after port_speed_idle_ms with no good frame (counted from a
   good frame or an answer sent), the session's end after its answer. The line is modelled by `broken_rates` (rate ->
   BrokenRate): frames at such a rate break, from a size and in the directions given, only both ways at once
-  (`duplex`), only every Nth (`every`), only once `after` bytes have passed since the switch (`fake_serial` applies it)
+  (`duplex`), only every Nth (`every`), only once `after` bytes have passed since the switch (`virtual_bench_serial` applies it)
 - oep.wire.rvswd / swio (debug §1-§3): scan (count = 0 pages the free pairs from `skip`; a count > 0 request's skip is
   not looked at; tried and found per frame), attach on declared pin pairs with the reset TLV (an output-idle or
   disabled reset line unavailable cause 5), several connections up to max_connections and the seat rule, connections;
-  attach and scan answer within max_op_ms - a target that restarts by itself after a reset (`FakeTarget.restart_ms`)
+  attach and scan answer within max_op_ms - a target that restarts by itself after a reset (`VirtualTarget.restart_ms`)
   is waited for up to max_op_ms, then status line with the connection kept (`settle_log`); an attach that joins a live
   connection keeps its settings but what it carries (idle_clock), max_speed only lowers its speed; target_id scheme
   dmi_7f; search_retries only when a bring-up ran; a target op whose exchanges go unanswered fails status line and
   leaves the lines undriven until one succeeds (`pin_state` "wire-free")
-- oep.target.riscv-dm (debug §4) on one `FakeTarget` per pin pair: dmi step lists, halt, resume, reset (status flags
+- oep.target.riscv-dm (debug §4) on one `VirtualTarget` per pin pair: dmi step lists, halt, resume, reset (status flags
   pc; ndmreset; within max_op_ms), read_block / write_block, run (stopped 0-3: 3 when the preparation fails -
-  `FakeTarget.fail_regs` - or the hart runs), step (step_left)
+  `VirtualTarget.fail_regs` - or the hart runs), step (step_left)
 - oep.target.console (console §1-§3): one live stream per connection, lifetime by its users, the streams list; a stream
   of a mechanism that carries host -> target bytes (DMDATA, dmseq) has a send queue of the probe's own size
   (`send_queue`, not declared): a write puts min(count, the free space) at its end (count 0: success; accepted 0 only
@@ -69,18 +69,18 @@ define (oep-spec 0f455a0, the rule review of 2026-10-07):
   oep.fixture.i2c-target (§3, one form: configure an address, a write with data is one frame cut at max_length, reads
   from preload_tx slots or 0xFF, stretch when the ops offer it; test hooks `i2c_write` / `i2c_read`) and
   oep.fixture.spi-target (§4: configure, arm, read_rx, status; errors at most 1 a transfer; `spi_transfer`),
-  oep.fixture.logic / analog / capture-group (`fake_capture`)
+  oep.fixture.logic / analog / capture-group (`virtual_bench_capture`)
 - oep.probe.config (probe.config §1-§3): plan / label / idle / slot / bind / uart / disable items (each of one form:
-  another length is malformed, critical or not), get / set / unset / save / erase / state; the hash is the fake's own
+  another length is malformed, critical or not), get / set / unset / save / erase / state; the hash is the virtual bench's own
   (a seeded CRC-32 of get's bytes: no host may compute it); storage_hash is get's hash when the saved settings became
   current; at boot disable and idle before any other item; slots without a lock (state 0 connected / 1 absent), binds
   of one stream whose port position stays during a session and carries on after it; a disabled channel is refused
   everywhere with unavailable cause 5 and never parked; `parked` records the free pins' states
 - the serial ports' raw side (transports §4, probe.config §1.2): `port_input` / `port_output` carry the bytes outside
   the frames for each serial port by its bind; a port the lock holder's requests came in on is held until the session
-  ends. The byte framing itself is `fake_serial`.
+  ends. The byte framing itself is `virtual_bench_serial`.
 
-Every other non-core fn gets two stand-in operations so the session rules can be exercised - FAKE ONLY, they mean
+Every other non-core fn gets two stand-in operations so the session rules can be exercised - VIRTUAL BENCH ONLY, they mean
 nothing on a real probe:  0x01 write(u32) changes state, 0x02 read -> u32 needs no lock.
 """
 
@@ -94,7 +94,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Callable
 
-from . import catalog, config as cfgmod, fake, fake_capture, message as m, registry as reg
+from . import catalog, config as cfgmod, virtual_bench, virtual_bench_capture, message as m, registry as reg
 
 TOY_WRITE, TOY_READ = 0x01, 0x02
 OK, WAIT, LINE, FAULT, TIMEOUT, STATE = (reg.STATUS[k] for k in ("ok", "wait", "line", "fault", "timeout", "state"))
@@ -148,7 +148,7 @@ REQUEST_HEADER = m.REQUEST_HEADER                          # role corr fn op ses
 
 
 def _any_ops(v: bytes) -> set[int]:
-    """The ops an ops value's bits name, whatever its encoding (the fake serves a test's broken value as given)."""
+    """The ops an ops value's bits name, whatever its encoding (the virtual bench serves a test's broken value as given)."""
     if not v:
         return set()
     return {v[0] + i * 8 + b for i, byte in enumerate(v[1:]) for b in range(8) if byte >> b & 1 and v[0] + i * 8 + b <= 0xFF}
@@ -289,7 +289,7 @@ class Take:
 
 
 @dataclass
-class FakeTarget:
+class VirtualTarget:
     """A RISC-V hart behind a debug module, as far as the riscv-dm operations see it."""
     halted: bool = False
     dpc: int = 0x100
@@ -555,7 +555,7 @@ class Flow:
 
 @dataclass
 class BrokenRate:
-    """How a line rate breaks frames in the fake (port_speed tests): frames of `min_size` bytes and more (on the wire)
+    """How a line rate breaks frames in the virtual bench (port_speed tests): frames of `min_size` bytes and more (on the wire)
     break, towards the host and / or towards the probe. A broken frame towards the probe is a candidate whose CRC does
     not match; towards the host its CRC is spoiled."""
     min_size: int = 0
@@ -582,7 +582,7 @@ OP_PORT_SPEED = _LINK.op["port_speed"]
 SPEED_STEP = _LINK.enum["port_speed_step"]
 SPEED_IDLE_MS = reg.TIMING["port_speed_idle_ms"]   # committed: back to the boot speed after this with no good frame
 SPEED_TOLERANCE_PCT = reg.LIMITS["port_speed_tolerance_pct"]   # the UART's nearest rate within this of the request (§3)
-SPEED_RATES = (300, 5_000_000)                     # what the fake's UART makes (anything between, exactly; outside it,
+SPEED_RATES = (300, 5_000_000)                     # what the virtual bench's UART makes (anything between, exactly; outside it,
                                                    # the nearest end of the range)
 
 
@@ -590,12 +590,12 @@ class Endpoint:
     MARKS_PER_ANSWER = 3                     # small, so hosts must follow `more`
     CHUNK = 64                               # raw bytes a serial port takes at a time (probe guide §6)
 
-    def __init__(self, probe: fake.FakeProbe, now_ms: Callable[[], int], boot_id: int = 0x1234ABCD,
+    def __init__(self, probe: virtual_bench.VirtualProbe, now_ms: Callable[[], int], boot_id: int = 0x1234ABCD,
                  lease_default_ms: int = 3000, lease_max_ms: int = 60000, revision: int = 1, tail: bytes = b"",
                  window: int = 1 << 18, max_inflight: int = 4, remember_max: int = 72,
                  now_ns: Callable[[], int] | None = None):
         """`now_ms`: the clock the timers run on (leases, retries, port_speed), since this boot. `now_ns`: the same clock
-        in ns when it has that resolution (fake_serve: time.monotonic_ns); without it the probe's clock (core §2.6a)
+        in ns when it has that resolution (virtual_bench_serve: time.monotonic_ns); without it the probe's clock (core §2.6a)
         is `now_ms` in ns. confirm's limits are checked against core §7.1 (max_frame 64 or more, window max_frame or
         more, max_inflight 1 or more, C-20) and the declared max_op_ms against core §7.5 (1 to max_op_ms_max, C-47):
         a probe outside them is not built."""
@@ -628,23 +628,23 @@ class Endpoint:
         self.channels = 0xFFFF                          # fn 0 describe 0x43: an item's channel is below it (probe.config §1)
         self.own_channels: set[int] = set(probe.own_channels)   # the probe's own (never an interface's; not declared)
         self.transports: dict[int, int] = {}            # index -> kind, by the TLV's own index (core §7.5), not its order
-        self.max_op_ms = fake.MAX_OP_MS
+        self.max_op_ms = virtual_bench.MAX_OP_MS
         # oep.probe.plan's plan_roles (oep-if-plan §1): the most role assignments at once (None: no limit declared)
         self.plan_roles: int | None = next((struct.unpack_from("<I", v)[0] for fn, name in self.names.items()
-                                            if name == fake.PLAN for tag, v in self.decl[fn] if tag == fake.PLAN_ROLES_TAG),
+                                            if name == virtual_bench.PLAN for tag, v in self.decl[fn] if tag == virtual_bench.PLAN_ROLES_TAG),
                                            None)
         for tag, v in self.decl.get(0, ()):
-            if tag == fake.CORE_LABEL:
+            if tag == virtual_bench.CORE_LABEL:
                 self.static_labels[struct.unpack_from("<H", v)[0]] = v[2:].decode()
-            if tag == fake.CORE_TRANSPORT:
+            if tag == virtual_bench.CORE_TRANSPORT:
                 self.transports[v[0]] = v[1]
-            if tag == fake.CORE_MAX_OP_MS:
+            if tag == virtual_bench.CORE_MAX_OP_MS:
                 self.max_op_ms = struct.unpack_from("<I", v)[0]
-            if tag == fake.CORE_CHANNELS:
+            if tag == virtual_bench.CORE_CHANNELS:
                 self.channels = struct.unpack_from("<H", v)[0]
         if not 1 <= self.max_op_ms <= reg.LIMITS["max_op_ms_max"]:
             raise ValueError(f"max_op_ms {self.max_op_ms}: core §7.5 wants 1 to {reg.LIMITS['max_op_ms_max']}")
-        self.serial_ports = {i for i, k in self.transports.items() if k in fake.SERIAL_KINDS}
+        self.serial_ports = {i for i, k in self.transports.items() if k in virtual_bench.SERIAL_KINDS}
         self.pairs: dict[int, list[tuple[int, int]]] = {}  # wire fn -> allowed (swdio, swclk), declared order
         self.max_connections: dict[int, int] = {}
         self.reset_channels: dict[int, set[int]] = {}     # wire fn -> channels an attach's reset TLV may take (role 3)
@@ -661,37 +661,37 @@ class Endpoint:
                 self.reset_channels[fn] = {
                     c for tag, v in self.decl[fn] if tag == catalog.ROLE_CHANNELS and v[0] == PIN_ROLE_RESET
                     for c in _role_channels(v)}
-                self.max_connections[fn] = next((v[0] for tag, v in self.decl[fn] if tag == fake.MAX_CONNECTIONS), 1)
-        self.targets: dict[tuple[int, tuple[int, int]], FakeTarget] = {
-            (fn, p): FakeTarget() for fn in sorted(self.pairs) for p in self.pairs[fn]}
+                self.max_connections[fn] = next((v[0] for tag, v in self.decl[fn] if tag == virtual_bench.MAX_CONNECTIONS), 1)
+        self.targets: dict[tuple[int, tuple[int, int]], VirtualTarget] = {
+            (fn, p): VirtualTarget() for fn in sorted(self.pairs) for p in self.pairs[fn]}
         for fn in sorted(self.pin_roles):                          # any pair: one target, on the first pair
             first = self._role_pairs(fn)[0]
-            self.targets[(fn, first)] = FakeTarget()
-        self.target = next(iter(self.targets.values()), FakeTarget())
+            self.targets[(fn, first)] = VirtualTarget()
+        self.target = next(iter(self.targets.values()), VirtualTarget())
         self.inner = {o.fn: dict(o.inner) for o in probe.offered}   # what each fn keeps to itself (not declared)
-        self.captures: dict[int, fake_capture.FakeCapture] = {
+        self.captures: dict[int, virtual_bench_capture.VirtualCapture] = {
             fn: self._capture_from(self.decl[fn], self.inner[fn]) for fn, name in self.names.items()
             if name in ("oep.fixture.logic", "oep.fixture.analog")}
-        self.groups: dict[int, fake_capture.FakeGroup] = {
+        self.groups: dict[int, virtual_bench_capture.VirtualGroup] = {
             fn: self._group_from(self.decl[fn], self.inner[fn]) for fn, name in self.names.items()
             if name == "oep.fixture.capture-group"}
         self.mechanisms = set()
         for fn, name in self.names.items():
             if name == "oep.target.console":
-                self.mechanisms |= {b for tag, v in self.decl[fn] if tag == fake.MECHANISMS for b in v}
+                self.mechanisms |= {b for tag, v in self.decl[fn] if tag == virtual_bench.MECHANISMS for b in v}
         self.block_max = {fn: self._own(fn, catalog.MAX_LENGTH, "H", 1 << 16)
                           for fn, name in self.names.items() if name == "oep.target.riscv-dm"}
-        self.gpio_allowed = {fn: self._own(fn, fake.GPIO_MODES, "I", 0xFF)
+        self.gpio_allowed = {fn: self._own(fn, virtual_bench.GPIO_MODES, "I", 0xFF)
                              for fn, name in self.names.items() if name == "oep.fixture.gpio"}
         # the output strengths (fixture §1.1, drive_levels): (default level, [approximate mA per level]) or None - one
         # declaration for the whole probe (every gpio fn declares the same)
         self.drive_levels: tuple[int, list[int]] | None = None
         for fn, name in sorted(self.names.items()):
             for tag, v in self.decl[fn] if name == "oep.fixture.gpio" else ():
-                if tag == fake.GPIO_DRIVE_LEVELS:
+                if tag == virtual_bench.GPIO_DRIVE_LEVELS:
                     default, n = v[0], v[1]
                     self.drive_levels = (default, list(struct.unpack_from(f"<{n}H", v, 2)))
-        self.uart_formats = {fn: next((set(v[1:1 + v[0]]) for tag, v in self.decl[fn] if tag == fake.UART_FORMATS), {0})
+        self.uart_formats = {fn: next((set(v[1:1 + v[0]]) for tag, v in self.decl[fn] if tag == virtual_bench.UART_FORMATS), {0})
                              for fn, name in self.names.items() if name == "oep.fixture.uart"}
         self.uart_max_hz = {fn: self._own(fn, catalog.MAX_CLOCK_HZ, "I", 3_000_000)
                             for fn, name in self.names.items() if name == "oep.fixture.uart"}
@@ -713,7 +713,7 @@ class Endpoint:
         # the console's send queue (console §2): its size is the probe's (not declared); what a poll hands to the target
         # per mechanism (dmseq 2 bytes, DMDATA 3; SDI carries nothing to the target, §3.1)
         con_fn = self.fns.get(_CON.name)
-        self.send_queue = self.inner[con_fn].get("send_queue", fake.CONSOLE_SEND_QUEUE) if con_fn is not None else 0
+        self.send_queue = self.inner[con_fn].get("send_queue", virtual_bench.CONSOLE_SEND_QUEUE) if con_fn is not None else 0
         self.console_feed = {_CON.enum["mechanism"]["dmdata"]: 3, _CON.enum["mechanism"]["dmseq"]: 2}
         self.settle_log: list[int] = []                 # every wait for a silent DM after a reset (ms): riscv-dm reset,
                                                         # attach's reset TLV - at most max_op_ms (debug §3, §4.3)
@@ -729,12 +729,12 @@ class Endpoint:
         self.link_fn = self.fns.get(_LINK.name)
         self.port_speed_base: int | None = (115200 if self.link_fn is not None and OP_PORT_SPEED in self.ops[self.link_fn]
                                             else None)
-        self.broken_rates: dict[int, BrokenRate] = {}   # the line: rates that break frames (fake_serial applies it)
+        self.broken_rates: dict[int, BrokenRate] = {}   # the line: rates that break frames (virtual_bench_serial applies it)
         # oep.probe.restart (oep-if-restart, optional): the fn the profile lists it at (None: the probe has none -
-        # `fake.without(probe, fake.RESTART)`), and the restart_max_ms its describe declares (a test may change it)
-        self.restart_fn = self.fns.get(fake.RESTART)
+        # `virtual_bench.without(probe, virtual_bench.RESTART)`), and the restart_max_ms its describe declares (a test may change it)
+        self.restart_fn = self.fns.get(virtual_bench.RESTART)
         self.restart_max_ms = next((struct.unpack_from("<I", v)[0] for tag, v in self.decl.get(self.restart_fn, ())
-                                    if tag == fake.RESTART_MAX_MS_TAG), fake.RESTART_MAX_MS)
+                                    if tag == virtual_bench.RESTART_MAX_MS_TAG), virtual_bench.RESTART_MAX_MS)
         self.reboots = 0                                # restarts so far (the restart op and reboot()): a transport
                                                         # drops what it had read for the old boot when this moves
         self._transport = 0                             # the transport the request being handled came in on
@@ -850,7 +850,7 @@ class Endpoint:
     def _boot_channels(self) -> set[int]:
         """What the probe parks at boot, before its first answer (core §8): every channel but its own - below fn 0's
         `channels` when it declares them, else every channel an interface offers."""
-        if any(tag == fake.CORE_CHANNELS for tag, _ in self.decl.get(0, ())):
+        if any(tag == virtual_bench.CORE_CHANNELS for tag, _ in self.decl.get(0, ())):
             return set(range(self.channels)) - self.own_channels
         return self._all_channels() - self.own_channels
 
@@ -898,7 +898,7 @@ class Endpoint:
         self.target.target_id = value
 
     @staticmethod
-    def _capture_from(decl: list[tuple[int, bytes]], inner: dict) -> fake_capture.FakeCapture:
+    def _capture_from(decl: list[tuple[int, bytes]], inner: dict) -> virtual_bench_capture.VirtualCapture:
         """A capture as its describe declares it (modes and their max_samples, the rate range, the frontends) and as it
         keeps to itself (`inner`: the w it can lay a sample out in, the segment records it keeps, how much a read
         returns at most - the probe's own choices, oep-if-capture §1.1, §2, §3.2)."""
@@ -915,18 +915,18 @@ class Endpoint:
                 lo = struct.unpack("<I", v)[0]
             elif tag == catalog.MAX_CLOCK_HZ:
                 hi = struct.unpack("<I", v)[0]
-        return fake_capture.FakeCapture(modes or {fake_capture.MODE["one_shot"]}, set(inner.get("widths", (8,))), lo, hi,
+        return virtual_bench_capture.VirtualCapture(modes or {virtual_bench_capture.MODE["one_shot"]}, set(inner.get("widths", (8,))), lo, hi,
                                         inner.get("ring", 8), inner.get("max_read", 4096), fronts,
                                         max_samples=most_samples)
 
     @staticmethod
-    def _group_from(decl: list[tuple[int, bytes]], inner: dict) -> fake_capture.FakeGroup:
+    def _group_from(decl: list[tuple[int, bytes]], inner: dict) -> virtual_bench_capture.VirtualGroup:
         d = reg.FIXTURE_CAPTURE_GROUP.tlv["describe"]
         tracks = []
         for tag, v in decl:
             if tag == d["tracks"]:                                 # n(u8) n x fn(u16)
                 tracks = list(struct.unpack_from(f"<{v[0]}H", v, 1))
-        return fake_capture.FakeGroup(tracks, inner.get("max_tracks", len(tracks)), list(inner.get("budgets", ())))
+        return virtual_bench_capture.VirtualGroup(tracks, inner.get("max_tracks", len(tracks)), list(inner.get("budgets", ())))
 
     def _next_seq(self, fn: int) -> int:
         seq = self.push_seq.get(fn, 0)
@@ -966,15 +966,15 @@ class Endpoint:
         return out
 
     def _capture(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
-        cap, O = self.captures[fn], fake_capture.OP
+        cap, O = self.captures[fn], virtual_bench_capture.OP
         self._events(fn, cap.tick(self.uptime_ms()))               # what the clock captured up to this request
         roles = sorted(a[1] for a in self.plan if a[0] == fn)
         budget = self.probe.max_frame - m.RESULT_HEADER
         try:
             if op in (O["configure"], O["query"]):
                 analog = self.names[fn] == "oep.fixture.analog"
-                frontend_tag = fake_capture.ANA.tlv["configure"]["frontend"]
-                known = set(fake_capture.TLV.values()) | ({frontend_tag} if analog else set())
+                frontend_tag = virtual_bench_capture.ANA.tlv["configure"]["frontend"]
+                known = set(virtual_bench_capture.TLV.values()) | ({frontend_tag} if analog else set())
                 # the frontend comes once per channel (capture §3.3): it repeats by its meaning
                 got = t.tail(known, repeats={frontend_tag})
                 fronts = []                                        # (role, frontend, the tag as received)
@@ -1022,21 +1022,21 @@ class Endpoint:
                 t.tail()
                 cap.release(generation, serial, self.uptime_ms())
                 return m.COMPLETED, m.SUCCESS, b""
-            if op == fake_capture.ANA.op["calibration"] and cap.analog:
+            if op == virtual_bench_capture.ANA.op["calibration"] and cap.analog:
                 t.tail()
                 return m.COMPLETED, m.SUCCESS, cap.calibration()
-        except fake_capture.Reject as e:
+        except virtual_bench_capture.Reject as e:
             raise Reject(e.reason, e.payload)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
     def _group(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
-        grp, O = self.groups[fn], fake_capture.GRP.op
+        grp, O = self.groups[fn], virtual_bench_capture.GRP.op
         try:
             if op == O["bind"]:
                 n = t.take("B")
                 fns = [t.take("H") for _ in range(n)]
-                got = t.tail({fake_capture.GRP.tlv["bind"]["trigger_track"]})
-                src = t.fixed(got, fake_capture.GRP.tlv["bind"]["trigger_track"], 2)
+                got = t.tail({virtual_bench_capture.GRP.tlv["bind"]["trigger_track"]})
+                src = t.fixed(got, virtual_bench_capture.GRP.tlv["bind"]["trigger_track"], 2)
                 grp.bind(self.captures, fns, struct.unpack("<H", src)[0] if src else 0)
                 return self._answer(b"")
             if op == O["start"]:
@@ -1061,7 +1061,7 @@ class Endpoint:
                 for track in grp.tracks:
                     self._events(track, self.captures[track].tick(self.uptime_ms()))
                 return m.COMPLETED, m.SUCCESS, grp.status(self.captures)
-        except fake_capture.Reject as e:
+        except virtual_bench_capture.Reject as e:
             raise Reject(e.reason, e.payload)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
@@ -1091,10 +1091,10 @@ class Endpoint:
         held |= {p for c in self.conns.values() for p in c.pair if p != 0xFFFF and not (c.fn == fn and c.pair == pair)}
         return held
 
-    def _target(self, fn: int, pair: tuple[int, int]) -> FakeTarget:
+    def _target(self, fn: int, pair: tuple[int, int]) -> VirtualTarget:
         tg = self.targets.get((fn, pair))
         if tg is None:                                             # a pair nothing is wired to
-            tg = self.targets[(fn, pair)] = FakeTarget(present=False)
+            tg = self.targets[(fn, pair)] = VirtualTarget(present=False)
         return tg
 
     @staticmethod
@@ -1209,7 +1209,7 @@ class Endpoint:
     def offers(self, fn: int, op: int) -> bool:
         """core §1.2: an fn offers exactly the ops its describe's ops tag sets (§7.4) - every required op, and an
         optional one when the probe has it; any other op is unknown_operation (§4.3, the header). The profiles say which
-        optional ops they have (fake.FakeProbe fills in the ops tag of an interface that gives none: all of its ops).
+        optional ops they have (virtual_bench.VirtualProbe fills in the ops tag of an interface that gives none: all of its ops).
         oep.probe.link's port_speed follows `port_speed_base` (a test turns it off or on)."""
         if fn not in self.ops:
             return False
@@ -1694,8 +1694,8 @@ class Endpoint:
                     return "miso-driven" if fn in self.spi_selected else "miso-hi-z"
                 return "input"
             if fn in self.captures:                                # the analog: its pad leaves the digital function at start
-                started = self.captures[fn].state not in (fake_capture.STATE["unconfigured"],
-                                                          fake_capture.STATE["configured"])
+                started = self.captures[fn].state not in (virtual_bench_capture.STATE["unconfigured"],
+                                                          virtual_bench_capture.STATE["configured"])
                 return "analog" if started or self.captures[fn].generation else idle
         return idle
 
@@ -1769,14 +1769,14 @@ class Endpoint:
         return actual
 
     def add_transport(self, kind: int, interface: int = 0xFF) -> int:
-        """A transport the fake also serves (fake_serve's TCP listener: kind 6, interface 0xFF): listed in fn 0's
+        """A transport the virtual bench also serves (virtual_bench_serve's TCP listener: kind 6, interface 0xFF): listed in fn 0's
         describe under the next unused index - an index is never reused (core §7.5) - which every confirm accepted on
         it reports (transports §1, core §7.1). -> its index."""
         index = max(self.transports, default=-1) + 1
         self.transports[index] = kind
-        self.static[0] = tuple(self.static.get(0, ())) + (catalog.tlv(fake.CORE_TRANSPORT, bytes([index, kind, interface])),)
-        self.decl[0] = self.decl.get(0, []) + [(fake.CORE_TRANSPORT, bytes([index, kind, interface]))]
-        if kind in fake.SERIAL_KINDS:
+        self.static[0] = tuple(self.static.get(0, ())) + (catalog.tlv(virtual_bench.CORE_TRANSPORT, bytes([index, kind, interface])),)
+        self.decl[0] = self.decl.get(0, []) + [(virtual_bench.CORE_TRANSPORT, bytes([index, kind, interface]))]
+        if kind in virtual_bench.SERIAL_KINDS:
             self.serial_ports.add(index)
         return index
 
@@ -1793,7 +1793,7 @@ class Endpoint:
             head = [catalog.ops_tlv(ops)] if ops else []           # no op at all: no ops tag (a test's probe)
         out = head + [t for t in self.static[fn] if t[0] != catalog.OPS]
         if fn == self.restart_fn:                                  # restart_max_ms as the endpoint has it now
-            out = [catalog.u32(fake.RESTART_MAX_MS_TAG, self.restart_max_ms) if t[0] == fake.RESTART_MAX_MS_TAG else t
+            out = [catalog.u32(virtual_bench.RESTART_MAX_MS_TAG, self.restart_max_ms) if t[0] == virtual_bench.RESTART_MAX_MS_TAG else t
                    for t in out]
         return out
 
@@ -1819,7 +1819,7 @@ class Endpoint:
     # ---- port_speed (oep-if-link §3) --------------------------------------------------------------
     @staticmethod
     def speed_actual(baud: int) -> int:
-        """The rate the fake's UART makes nearest `baud`: any rate in SPEED_RATES exactly, else the nearest end."""
+        """The rate the virtual bench's UART makes nearest `baud`: any rate in SPEED_RATES exactly, else the nearest end."""
         return min(max(baud, SPEED_RATES[0]), SPEED_RATES[1])
 
     def _port_speed(self, t: "Take") -> tuple[int, int, bytes]:
@@ -1832,7 +1832,7 @@ class Endpoint:
         if step not in SPEED_STEP.values():
             raise Reject(m.UNSUPPORTED)                            # a step the definition leaves unused (§2.5): 0x00
         port = self._transport
-        if self.transports.get(port) != fake.TRANSPORT["uart_bridge"]:
+        if self.transports.get(port) != virtual_bench.TRANSPORT["uart_bridge"]:
             raise unavailable("wrong_state")                       # only a UART bridge's port (oep-if-link §3)
         # the port's state (boot speed / trying / committed) decides which step fits (oep-if-link §3): any other is cause
         # 6, and so is a try on another port while one is raised
@@ -1876,7 +1876,7 @@ class Endpoint:
         return b.hit()
 
     def duplex_rate(self, port: int) -> BrokenRate | None:
-        """The rate `port` runs at now when it breaks only both ways at once (fake_serial checks the unread answers)."""
+        """The rate `port` runs at now when it breaks only both ways at once (virtual_bench_serial checks the unread answers)."""
         b = self.broken_rates.get(self.port_baud(port))
         return b if b is not None and b.duplex else None
 
@@ -1885,7 +1885,7 @@ class Endpoint:
         port_speed switch or revert it asked for happens now (`speed_after_answer`), and a restart it answered
         (oep-if-restart §2) restarts the probe now (`reboot`: a new boot_id, the saved settings, no session; the pins in their
         free state, nothing driven before). A test calling `handle` itself on a serial port index calls this as
-        FakeSerialPort does."""
+        VirtualSerialPort does."""
         self.speed_after_answer()
         if self.restarting:
             self.reboot()
@@ -1926,7 +1926,7 @@ class Endpoint:
 
     def _speed_tick(self) -> None:
         # Return condition 2 (committed, port_speed_idle_ms with no good frame) is not counted while a request executes
-        # (oep-if-link §3, as the lease, §6.1). The fake handles every request within one call and its clock does not
+        # (oep-if-link §3, as the lease, §6.1). The virtual bench handles every request within one call and its clock does not
         # move meanwhile, so there is nothing to pause here: the answer restarts it (`speed_answered`).
         if self.speed_pending and self.speed_pending[0] == "revert":
             self.speed_after_answer()
@@ -2149,7 +2149,7 @@ class Endpoint:
     def _conn_at(self, fn: int, pair: tuple[int, int]) -> int | None:
         return next((cid for cid, c in self.conns.items() if c.fn == fn and c.pair == pair), None)
 
-    def _seat(self, fn: int, pair: tuple[int, int], tg: FakeTarget, speed: int, evict: bool = True) -> int:
+    def _seat(self, fn: int, pair: tuple[int, int], tg: VirtualTarget, speed: int, evict: bool = True) -> int:
         """A new connection; a full wire gives up its oldest slot-only connection (debug §1), if `evict`."""
         mine = [(c.order, cid) for cid, c in self.conns.items() if c.fn == fn]
         if len(mine) >= self.max_connections.get(fn, 1):
@@ -2177,7 +2177,7 @@ class Endpoint:
                 self.streams[sid].add_mark(mark, self.now_ns())
                 self._close_stream(sid, MARK_CLOSED["connection_closed"])
 
-    def _target_of(self, cid: int) -> FakeTarget:
+    def _target_of(self, cid: int) -> VirtualTarget:
         c = self.conns[cid]
         return self._target(c.fn, c.pair)
 
@@ -2188,7 +2188,7 @@ class Endpoint:
 
     def _dm(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         """oep.target.riscv-dm (debug §4); `_dm_op` does the op. An op whose connection's target does not answer
-        on the wire (`FakeTarget.answers` False) fails with status line and nothing done: its exchanges went unanswered,
+        on the wire (`VirtualTarget.answers` False) fails with status line and nothing done: its exchanges went unanswered,
         and from then until an exchange succeeds the probe rests the connection's lines in the free state (debug §2,
         `Connection.free`, `pin_state` "wire-free")."""
         try:
@@ -2197,7 +2197,7 @@ class Endpoint:
             e.conn.free = True
             return m.COMPLETED, m.FAILED, DM_LINE_FAILED[op]
 
-    def _exchange(self, cid: int) -> FakeTarget:
+    def _exchange(self, cid: int) -> VirtualTarget:
         """A target op's exchanges on connection `cid` (after the request's checks): the target, or _Unanswered.
         A success after failures restores the connection's rest state (debug §2: rvswd §3.1, swio §3.2)."""
         c = self._connection(cid)
@@ -2376,7 +2376,7 @@ class Endpoint:
                     struct.pack(f"<BBIIB{n_out}I", status, code, dpc, us, n_out, *values))   # ... nvals values
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
-    def _settled(self, tg: FakeTarget) -> bool:
+    def _settled(self, tg: VirtualTarget) -> bool:
         """The wait after a reset's release for a target that restarts by itself (debug §3, §4.3): the DM answers after
         tg.restart_ms; the probe answers within max_op_ms. -> whether it answered in time (the wait goes in
         `settle_log`)."""
@@ -2583,7 +2583,7 @@ class Endpoint:
         """The target writes to its console stream `sid`."""
         self.streams[sid].data += data
 
-    def target_says(self, data: bytes, target: FakeTarget | None = None) -> None:
+    def target_says(self, data: bytes, target: VirtualTarget | None = None) -> None:
         """The target (the first one by default) writes to its console: every open stream on a connection to it."""
         target = target or self.target
         for (cid, _), sid in self.stream_keys.items():
@@ -2992,7 +2992,7 @@ class Endpoint:
                 rows.append((tag, sort_key, m.tlv(tag, v)))
         return [r[2] for r in sorted(rows)]
 
-    HASH_SEED = 0x4F45                                      # the fake's own way to make the hash (the probe's choice, §2)
+    HASH_SEED = 0x4F45                                      # the virtual bench's own way to make the hash (the probe's choice, §2)
 
     def _hash(self, config: dict | None) -> int:
         """A u32 that changes with the settings (probe.config §2: how it is made is the probe's; a host never computes

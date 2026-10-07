@@ -1,4 +1,4 @@
-"""The fake probe as the working spec (2026-09-29 revision): resend table, owner, lease, describe, slots and binds,
+"""The virtual bench as the working spec (2026-09-29 revision): resend table, owner, lease, describe, slots and binds,
 the seat rule, and a serial port shared by frames and raw bytes."""
 
 import fcntl
@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from oep_client import cobs, endpoint, fake, fake_serial, message as m, registry as reg
+from oep_client import cobs, endpoint, virtual_bench, virtual_bench_serial, message as m, registry as reg
 
 CFG = reg.PROBE_CONFIG
 ITEM, ATTACH, KIND = CFG.tlv["item"], CFG.enum["slot_attach"], CFG.enum["bind_stream"]
@@ -106,7 +106,7 @@ def state(ep, fn=6, first_slot=0, first_bind=0):
 # ---- the resend table (core §5.2) --------------------------------------------------------------------
 
 def test_a_resent_request_gets_its_remembered_result_and_runs_once():
-    ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), Clock())
+    ep = endpoint.Endpoint(virtual_bench.with_stand_in(virtual_bench.esp32_v003()), Clock())
     h = Host(ep)
     h.open()
     toy = 11                                                        # a stand-in fn: 0x01 write(u32)
@@ -124,7 +124,7 @@ def test_a_resent_request_gets_its_remembered_result_and_runs_once():
 
 
 def test_a_long_result_is_not_remembered():
-    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     h = Host(ep)
     h.open()
     wire = 1
@@ -137,7 +137,7 @@ def test_a_long_result_is_not_remembered():
 
 
 def test_open_empties_the_table():
-    ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), Clock())
+    ep = endpoint.Endpoint(virtual_bench.with_stand_in(virtual_bench.esp32_v003()), Clock())
     h = Host(ep)
     h.open()
     h.raw(13, 0x01, struct.pack("<I", 5))                           # the stand-in fn
@@ -149,7 +149,7 @@ def test_open_empties_the_table():
 
 def test_owner_is_named_by_lock_state_and_by_locked_but_never_the_session():
     clock = Clock()
-    ep = endpoint.Endpoint(fake.esp32_v003(), clock)
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), clock)
     a, b = Host(ep, 0xA), Host(ep, 0xB)
     a.open(owner=b"ch32rv monitor pid 1234")
     r = b.raw(0, m.OP_LOCK_STATE, session=False)
@@ -169,57 +169,57 @@ def test_owner_is_named_by_lock_state_and_by_locked_but_never_the_session():
 
 @pytest.mark.parametrize("asked,given", [(0, 3000), (1000, 1000), (60000, 60000), (700000, 60000), (1, 1000)])
 def test_lease(asked, given):
-    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
     assert struct.unpack_from("<I", Host(ep).open(lease=asked).payload)[0] == given
 
 
 # ---- describe ------------------------------------------------------------------------------------------
 
 def test_core_describe_lists_the_transports_and_max_op_ms():
-    tlvs = describe(endpoint.Endpoint(fake.p4_x035(), Clock()), 0)
+    tlvs = describe(endpoint.Endpoint(virtual_bench.p4_x035(), Clock()), 0)
     tags = reg.CORE.tlv["describe"]
     kinds = [v[1] for t, v in tlvs if t == tags["transport"]]
     assert kinds == [3, 4, 5, 2]
-    assert (tags["max_op_ms"], struct.pack("<I", fake.MAX_OP_MS)) in tlvs
-    assert (fake.PLAN_ROLES_TAG, struct.pack("<I", 32)) in describe(endpoint.Endpoint(fake.p4_x035(), Clock()), 14)
+    assert (tags["max_op_ms"], struct.pack("<I", virtual_bench.MAX_OP_MS)) in tlvs
+    assert (virtual_bench.PLAN_ROLES_TAG, struct.pack("<I", 32)) in describe(endpoint.Endpoint(virtual_bench.p4_x035(), Clock()), 14)
     assert any(t == tags["unit_id"] for t, _ in tlvs) and 0x48 not in [t for t, _ in tlvs]
     # declarations only (core §7.3): a label the settings give is not in the describe
-    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     Host(ep).open()
     Host(ep).ok(10, 0x02, m.tlv(ITEM["label"], struct.pack("<H", 20) + b"DUT"))
     assert all(v[2:] != b"DUT" for t, v in describe(ep, 0) if t == tags["label"])
 
 
-@pytest.mark.parametrize("profile", sorted(fake.PROFILES))
+@pytest.mark.parametrize("profile", sorted(virtual_bench.PROFILES))
 def test_core_describe_has_no_removed_tags(profile):
     """core §7.4 (rule review 2026-10-07): implementation (0x07), reserved (0x44), profile (0x45), resets_on_open
-    (0x47) and discoverable (0x4A) are gone - the registry names none of them and no fake describes them."""
+    (0x47) and discoverable (0x4A) are gone - the registry names none of them and no virtual bench profile describes them."""
     gone = {0x07, 0x44, 0x45, 0x47, 0x4A}
     tags = reg.CORE.tlv["describe"]
     assert not {"implementation", "reserved", "profile", "resets_on_open", "discoverable"} & set(tags)
     assert not gone & set(tags.values())
-    assert not gone & {t & 0x7F for t, _ in describe(endpoint.Endpoint(fake.PROFILES[profile](), Clock()), 0)}
+    assert not gone & {t & 0x7F for t, _ in describe(endpoint.Endpoint(virtual_bench.PROFILES[profile](), Clock()), 0)}
 
 
 def _with_transports(probe, entries):
     """`probe` with its fn 0 transport TLVs replaced by `entries` [(index, kind, interface)], in that TLV order."""
     core0 = next(o for o in probe.offered if o.fn == 0)
-    tlvs = tuple(t for t in core0.tlvs if t[0] != fake.CORE_TRANSPORT) + tuple(
-        fake.catalog.tlv(fake.CORE_TRANSPORT, bytes(e)) for e in entries)
-    offered = [fake.Offered(0, core0.instance, core0.name, tlvs, core0.revision, core0.flags) if o.fn == 0 else o
+    tlvs = tuple(t for t in core0.tlvs if t[0] != virtual_bench.CORE_TRANSPORT) + tuple(
+        virtual_bench.catalog.tlv(virtual_bench.CORE_TRANSPORT, bytes(e)) for e in entries)
+    offered = [virtual_bench.Offered(0, core0.instance, core0.name, tlvs, core0.revision, core0.flags) if o.fn == 0 else o
                for o in probe.offered]
-    return fake.FakeProbe(probe.label, probe.max_frame, offered)
+    return virtual_bench.VirtualProbe(probe.label, probe.max_frame, offered)
 
 
 @pytest.mark.parametrize("entries, bridge, other", [
-    ([(1, fake.TRANSPORT["vendor_bulk"], 0), (0, fake.TRANSPORT["uart_bridge"], 0xFF)], 0, 1),   # out of TLV order
-    ([(7, fake.TRANSPORT["vendor_bulk"], 0), (3, fake.TRANSPORT["uart_bridge"], 0xFF)], 3, 7),   # not from 0, gaps
+    ([(1, virtual_bench.TRANSPORT["vendor_bulk"], 0), (0, virtual_bench.TRANSPORT["uart_bridge"], 0xFF)], 0, 1),   # out of TLV order
+    ([(7, virtual_bench.TRANSPORT["vendor_bulk"], 0), (3, virtual_bench.TRANSPORT["uart_bridge"], 0xFF)], 3, 7),   # not from 0, gaps
 ])
 def test_transport_list_follows_the_index_byte_not_the_tlv_order(entries, bridge, other):
     """core §7.5: index is the number designating a transport (a bind's port), whatever order the TLVs come in.
     port_speed is accepted on the UART bridge it came on and refused on the vendor bulk (unavailable, oep-if-link §3)."""
     for port, ok in ((bridge, True), (other, False)):
-        ep = endpoint.Endpoint(_with_transports(fake.esp32_v003(), entries), Clock())
+        ep = endpoint.Endpoint(_with_transports(virtual_bench.esp32_v003(), entries), Clock())
         assert ep.transports == {i: k for i, k, _ in entries} and ep.serial_ports == {bridge}
         h = Host(ep, transport=port)
         assert h.open().succeeded
@@ -230,7 +230,7 @@ def test_transport_list_follows_the_index_byte_not_the_tlv_order(entries, bridge
 def test_bind_port_is_the_transport_index_not_the_tlv_position():
     """probe.config §1.2: a bind's port is the transport index of core §7.5. The serial port declared second in TLV
     order but with index 0 is bindable; the vendor bulk with index 1 is not a serial port (unsupported)."""
-    probe = _with_transports(fake.p4_bench(), [(1, fake.TRANSPORT["vendor_bulk"], 0), (0, fake.TRANSPORT["usb_cdc"], 2)])
+    probe = _with_transports(virtual_bench.p4_bench(), [(1, virtual_bench.TRANSPORT["vendor_bulk"], 0), (0, virtual_bench.TRANSPORT["usb_cdc"], 2)])
     ep = endpoint.Endpoint(probe, Clock())
     h = Host(ep)
     h.open()
@@ -242,7 +242,7 @@ def test_bind_port_is_the_transport_index_not_the_tlv_position():
 # ---- slots, connections and the seat rule --------------------------------------------------------------
 
 def bench(clock=None):
-    ep = endpoint.Endpoint(fake.p4_bench(), clock or Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), clock or Clock())
     h = Host(ep)
     h.open()
     return ep, h
@@ -350,11 +350,11 @@ def test_raw_console_stops_during_a_session_and_carries_on_where_it_stopped():
     """probe.config §1.2: during a session the port's position stays; afterwards it carries on where it stopped (a
     reset in between changes nothing)."""
     clock = Clock()
-    ep = endpoint.Endpoint(fake.p4_bench(), clock)
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), clock)
     p = ep.pairs[1]
     ep.load_config([slot_item(0, 1, p[0], name="x035"), bind_item(0, SLOT_CONSOLE, 0)])
-    port = fake_serial.FakeSerialPort(ep, 0)
-    assert port.output() == b""                                     # the fake starts the position when first read
+    port = virtual_bench_serial.VirtualSerialPort(ep, 0)
+    assert port.output() == b""                                     # the virtual bench starts the position when first read
     ep.target_says(b"boot\n", ep.targets[(1, p[0])])
     assert port.output() == b"boot\n"
     port.feed(framed(m.Request(1, 0, m.OP_OPEN, struct.pack("<IB", 3000, 0), 9)))
@@ -375,10 +375,10 @@ def test_raw_console_stops_during_a_session_and_carries_on_where_it_stopped():
 
 
 def test_raw_bytes_from_the_host_reach_the_selected_console_and_a_broken_frame_is_raw_too():
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     p = ep.pairs[1]
     ep.load_config([slot_item(0, 1, p[0]), bind_item(0, SLOT_CONSOLE, 0)])
-    port = fake_serial.FakeSerialPort(ep, 0)
+    port = virtual_bench_serial.VirtualSerialPort(ep, 0)
     port.feed(b"hi\x00zz\x00")
     sid = ep.stream_keys[(ep._conn_at(1, p[0]), 2)]
     assert bytes(ep.streams[sid].written) == b"hi\x00zz"            # the closing 0x00 starts the next candidate
@@ -386,10 +386,10 @@ def test_raw_bytes_from_the_host_reach_the_selected_console_and_a_broken_frame_i
 
 def test_a_candidate_that_stops_for_200_ms_is_raw():
     clock = Clock()
-    ep = endpoint.Endpoint(fake.p4_bench(), clock)
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), clock)
     p = ep.pairs[1]
     ep.load_config([slot_item(0, 1, p[0]), bind_item(0, SLOT_CONSOLE, 0)])
-    port = fake_serial.FakeSerialPort(ep, 0)
+    port = virtual_bench_serial.VirtualSerialPort(ep, 0)
     port.feed(b"\x00abc")
     clock.t += 250
     port.tick()
@@ -399,7 +399,7 @@ def test_a_candidate_that_stops_for_200_ms_is_raw():
 
 def test_bind_state_is_port_and_flow():
     """probe.config §3.3: bind_state is port(u8) flow(u8): 0 nothing to carry, 1 carrying (2 held: above)."""
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     p = ep.pairs[1]
     ep.targets[(1, p[1])].present = False
     ep.load_config([slot_item(0, 1, p[0]), slot_item(1, 1, p[1]), bind_item(0, SLOT_CONSOLE, 0),
@@ -407,11 +407,11 @@ def test_bind_state_is_port_and_flow():
     assert state(ep)[5] == [bytes([0, CFG.enum["bind_flow"]["streaming"]]), bytes([3, CFG.enum["bind_flow"]["idle"]])]
 
 
-# ---- fake_serve on a pty -----------------------------------------------------------------------------------
+# ---- virtual_bench_serve on a pty -----------------------------------------------------------------------------------
 
 @pytest.mark.skipif(sys.platform != "linux", reason="pty and TIOCEXCL as on Linux")
-def test_fake_serve_pty_speaks_cobs_with_console_bytes_and_honours_tiocexcl():
-    proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", "--pty", "--profile", "p4-bench",
+def test_virtual_bench_serve_pty_speaks_cobs_with_console_bytes_and_honours_tiocexcl():
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", "--pty", "--profile", "p4-bench",
                              "--slot", "x035", "--bind", "0", "--console", "tick %d\\n", "--every", "20"],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     try:
@@ -441,14 +441,14 @@ def test_fake_serve_pty_speaks_cobs_with_console_bytes_and_honours_tiocexcl():
         proc.wait(timeout=5)
 
 
-def test_fake_serve_run_hook_from_a_file(tmp_path):
-    from oep_client import fake_serve
+def test_virtual_bench_serve_run_hook_from_a_file(tmp_path):
+    from oep_client import virtual_bench_serve
     hook = tmp_path / "loader.py"
     hook.write_text("def run(target, pc, regs):\n    target.mem[0x100] = regs.get(0x100A, 0)\n    return True, pc + 4, 7\n")
-    a = fake_serve.main.__globals__["argparse"].Namespace(
+    a = virtual_bench_serve.main.__globals__["argparse"].Namespace(
         profile="p4-x035", target_id=None, absent=[], slot=[], bind=None, port_index=0, run_hook=f"{hook}:run",
         uart_plan=False)
-    ep = fake_serve.build(a)
+    ep = virtual_bench_serve.build(a)
     assert ep.target.run_hook(0x2000, {0x100A: 5}) == (True, 0x2004, 7) and ep.target.mem[0x100] == 5
 
 
@@ -495,7 +495,7 @@ def test_a_stream_lives_while_anything_uses_it():
     """console §2: the stream's users are the session that opened it and the bound slot; close and a lease lapse take
     one share each (mark closed 1 / 2 when the last goes), a slot's removal takes its share (3)."""
     clock = Clock()
-    ep = endpoint.Endpoint(fake.p4_bench(), clock)
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), clock)
     p = ep.pairs[1]
     ep.load_config([slot_item(0, 1, p[0], name="x035"), bind_item(0, SLOT_CONSOLE, 0)])
     h = Host(ep, transport=1)
@@ -519,10 +519,10 @@ def test_a_stream_lives_while_anything_uses_it():
     h2.ok(3, 0x07, struct.pack("<H", sid))                           # closing a closed stream: ok
 
 
-def test_fake_serve_uart_plan_and_rx():
+def test_virtual_bench_serve_uart_plan_and_rx():
     import time
     from oep_client import fixture, link
-    proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", "--tcp", "0", "--framing", "length",
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", "--tcp", "0", "--framing", "length",
                              "--profile", "esp32-v003", "--uart-plan", "--uart-rx", "rx %d\\n", "--every", "10"],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     try:
@@ -546,10 +546,10 @@ def test_fake_serve_uart_plan_and_rx():
 
 def test_the_closing_0x00_of_a_frame_is_not_raw_after_the_gap():
     clock = Clock()
-    ep = endpoint.Endpoint(fake.p4_bench(), clock)
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), clock)
     p = ep.pairs[1]
     ep.load_config([slot_item(0, 1, p[0]), bind_item(0, SLOT_CONSOLE, 0)])
-    port = fake_serial.FakeSerialPort(ep, 0)
+    port = virtual_bench_serial.VirtualSerialPort(ep, 0)
     port.feed(framed(m.Request(1, 0, m.OP_LOCK_STATE, b"")))       # lock-free: the port is not held
     clock.t += 250
     port.tick()
@@ -572,7 +572,7 @@ def test_read_from_a_last_mark_that_is_not_there_is_from_now():
 def test_no_default_reset_line_only_the_declared_channels():
     """oep-if-debug §3: the attach's reset TLV names its channel; the probe takes only role 3 (reset) channels
     (unsupported, tag 0x85 otherwise), and not one a plan holds (unavailable). Op 0x04 is gone."""
-    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
     h = Host(ep)
     h.open()
     assert ep.reset_channels[1] == {23}
@@ -604,7 +604,7 @@ def test_idle_clock_is_rvswd_s_and_a_slot_carries_the_line_settings():
     h2.ok(6, 0x02, slot_item(0, 1, p2, name="l103", max_speed=1_000_000, idle=1))
     c = ep2.conns[ep2._conn_at(1, p2)]
     assert (c.speed, c.idle_clock) == (1_000_000, 1)                 # the probe's own attach uses the slot's settings
-    v003 = endpoint.Endpoint(fake.esp32_v003(), Clock())
+    v003 = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
     hv = Host(v003)
     hv.open()
     assert hv.raw(9, 0x02, slot_item(0, 1, v003.pairs[1][0], idle=1)).detail == m.UNSUPPORTED   # swio has no idle_clock
@@ -613,7 +613,7 @@ def test_idle_clock_is_rvswd_s_and_a_slot_carries_the_line_settings():
 
 
 def pins_probe():
-    ep = endpoint.Endpoint(fake.rp2350_pins(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.rp2350_pins(), Clock())
     h = Host(ep)
     h.open()
     return ep, h
@@ -648,7 +648,7 @@ def test_a_wire_takes_any_free_pair_the_host_names():
 
 def test_the_client_scan_walks_the_whole_count_0_list():
     from oep_client import host as hh, riscv as target
-    ep = endpoint.Endpoint(fake.rp2350_pins(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.rp2350_pins(), Clock())
     hst = hh.Host(lambda b: ep.handle(b, 0))
     hst.open(3000)
     ep._target(1, (28, 29)).present = True                        # the last pair of the list
@@ -671,19 +671,19 @@ def test_dmi_and_run_answers_count_their_values_and_rejects_follow_the_order():
     assert h.raw(2, 0x05, struct.pack("<HIH", conn, 0x20000001, 2)).detail == m.MALFORMED
 
 
-@pytest.mark.parametrize("profile", sorted(fake.PROFILES))
+@pytest.mark.parametrize("profile", sorted(virtual_bench.PROFILES))
 def test_max_length_fits_a_read_answer_and_a_write_request_in_max_frame(profile):
     """oep-if-debug §4.5: a probe with block ops declares max_length (bytes, a multiple of 4) so that read_block's answer
     (5 + 2 + 1 + words) and write_block's request (10 + 2 + 4 + 2 + words) both fit max_frame: max_frame - 24 at most."""
-    probe = fake.PROFILES[profile]()
+    probe = virtual_bench.PROFILES[profile]()
     ep = endpoint.Endpoint(probe, Clock())
     fns = [fn for fn, name in ep.names.items() if name == "oep.target.riscv-dm"]
     assert fns
     for fn in fns:
         declared = ep.block_max[fn]
-        assert declared == fake.block_max_length(probe.max_frame) == (probe.max_frame - 24) // 4 * 4
+        assert declared == virtual_bench.block_max_length(probe.max_frame) == (probe.max_frame - 24) // 4 * 4
         assert declared % 4 == 0 and 8 + declared <= probe.max_frame and 18 + declared <= probe.max_frame
-    assert fake.block_max_length(64) == 40 and fake.block_max_length(512) == 488 and fake.block_max_length(1024) == 1000
+    assert virtual_bench.block_max_length(64) == 40 and virtual_bench.block_max_length(512) == 488 and virtual_bench.block_max_length(1024) == 1000
 
 
 def test_a_block_past_max_length_is_unsupported_not_malformed():

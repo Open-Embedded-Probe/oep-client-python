@@ -1,4 +1,4 @@
-"""oep pins against the fake endpoint: a probe whose pins the host chooses (an ESP32-P4 shape) with a CH32V003-like
+"""oep pins against the virtual bench endpoint: a probe whose pins the host chooses (an ESP32-P4 shape) with a CH32V003-like
 target outside it (the endpoint's gpio_world hook): power from channel 5, SWIO 19, NRST 4 (a weak pull-up), an idle-high
 UART on 22 / 23, an output the app toggles on 21, a board pull-up on 7 and a line held low on 3."""
 
@@ -6,7 +6,7 @@ import random
 
 import pytest
 
-from oep_client import catalog, config, endpoint, fake, host, pins, targets
+from oep_client import catalog, config, endpoint, virtual_bench, host, pins, targets
 from oep_client.fixture import Gpio
 
 PINS = [p for p in range(30) if p not in (24, 25)]
@@ -17,22 +17,22 @@ OPTION_ON = 0x08F75AA5                        # RDPR a5, nRDPR 5a, USER f7 (RST_
 OPTION_OFF = 0x00FF5AA5                       # USER ff: RST_MODE 11, PD7 is a GPIO
 
 
-def profile() -> fake.FakeProbe:
-    return fake.FakeProbe("p4-pins", 1024, [
-        fake._core("3.0.0", "esp32p4", "30eda0ea068b", 30, {},
-                   fake._transports([(fake.TRANSPORT["usb_serial_jtag"], 0xFF)])),
-        fake.Offered(WIRE, 0, "oep.wire.swio", (catalog.role_channels(1, PINS), catalog.role_channels(3, PINS),
-                                                catalog.u8(fake.MAX_CONNECTIONS, 1))),
-        fake.Offered(DM, 0, "oep.target.riscv-dm", (catalog.u32(catalog.FEATURES, 0b1111),
-                                                    catalog.u16(catalog.MAX_LENGTH, fake.block_max_length(1024)))),
-        fake.Offered(3, 0, "oep.target.console", (catalog.tlv(fake.MECHANISMS, bytes([0, 1, 2])),)),
-        fake._gpio(GPIO, PINS),
-        fake._config(CFG, 0, slots_max=2),
+def profile() -> virtual_bench.VirtualProbe:
+    return virtual_bench.VirtualProbe("p4-pins", 1024, [
+        virtual_bench._core("3.0.0", "esp32p4", "30eda0ea068b", 30, {},
+                   virtual_bench._transports([(virtual_bench.TRANSPORT["usb_serial_jtag"], 0xFF)])),
+        virtual_bench.Offered(WIRE, 0, "oep.wire.swio", (catalog.role_channels(1, PINS), catalog.role_channels(3, PINS),
+                                                catalog.u8(virtual_bench.MAX_CONNECTIONS, 1))),
+        virtual_bench.Offered(DM, 0, "oep.target.riscv-dm", (catalog.u32(catalog.FEATURES, 0b1111),
+                                                    catalog.u16(catalog.MAX_LENGTH, virtual_bench.block_max_length(1024)))),
+        virtual_bench.Offered(3, 0, "oep.target.console", (catalog.tlv(virtual_bench.MECHANISMS, bytes([0, 1, 2])),)),
+        virtual_bench._gpio(GPIO, PINS),
+        virtual_bench._config(CFG, 0, slots_max=2),
     ], own_channels=(24, 25))
 
 
 class World:
-    """The lines outside the probe, as the fake's gpio reads them (endpoint.gpio_world)."""
+    """The lines outside the probe, as the virtual bench's gpio reads them (endpoint.gpio_world)."""
 
     def __init__(self, ep, powered_by=5, active=True):
         self.ep, self.powered_by, self.active, self.reads = ep, powered_by, active, 0
@@ -76,8 +76,8 @@ def bench(option=OPTION_ON, powered_by=5, active=True):
     t = Time()
     ep = endpoint.Endpoint(profile(), lambda: int(t.s * 1000))
     ep.gpio_world = World(ep, powered_by, active)
-    ep.targets[(WIRE, (0, 0xFFFF))].present = False     # the fake's default target pair: nothing there
-    ep.targets[(WIRE, (19, 0xFFFF))] = endpoint.FakeTarget(target_id=V003_ID, reset_line=4,
+    ep.targets[(WIRE, (0, 0xFFFF))].present = False     # the virtual bench's default target pair: nothing there
+    ep.targets[(WIRE, (19, 0xFFFF))] = endpoint.VirtualTarget(target_id=V003_ID, reset_line=4,
                                                          mem={targets.V00X_OPTION: option})
     hst = host.Host(ep.handle, rng=random.Random(1))
     hst.open(lease_ms=60000)

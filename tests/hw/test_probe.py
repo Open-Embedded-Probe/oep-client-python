@@ -68,10 +68,10 @@ def _env_flag(name: str) -> bool:
 def test_flash(run: record.Run):
     board = run.board
     rec = run.record("flash", port=run.port)
-    if board.kind != "fake":
+    if board.kind != "virtual":
         run.firmware["before"] = run.peek()
     try:
-        fw = fwmod.obtain(board.profile) if board.kind != "fake" else fwmod.Firmware({"kind": "on-board", "why": "fake"}, None)
+        fw = fwmod.obtain(board.profile) if board.kind != "virtual" else fwmod.Firmware({"kind": "on-board", "why": "virtual bench"}, None)
     except fwmod.FirmwareError as e:
         run.flash_failed = f"firmware: {e}"
         rec["error"] = str(e)
@@ -80,7 +80,7 @@ def test_flash(run: record.Run):
     run.firmware["expected"] = fw.version
     run.firmware["flashed"] = False
     if fw.source["kind"] == "on-board":
-        rec["skipped"] = "nothing flashed: " + ("the fake probe" if board.kind == "fake" else "OEP_HW_NOFLASH")
+        rec["skipped"] = "nothing flashed: " + ("the virtual bench" if board.kind == "virtual" else "OEP_HW_NOFLASH")
     else:
         try:
             if board.kind == "esp32":
@@ -258,7 +258,7 @@ def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: di
                          "failing enumeration until a replug); the saved settings were not checked across a reboot")
         print(f"\n  config: reboot {rec['reboot']}")
     else:
-        rec["reboot"] = "skipped: no oep.probe.restart and " + ("the fake probe" if board.kind == "fake"
+        rec["reboot"] = "skipped: no oep.probe.restart and " + ("the virtual bench" if board.kind == "virtual"
                                                                 else "no reset line from the host (a USB probe)")
     # unset both, save: back to what was there
     h3 = cfg.unset([("label", label_ch), ("disable", disable_ch)])
@@ -512,7 +512,7 @@ def _capture_declared(decl: dict) -> dict:
     if rr:
         lo, hi, exact = struct.unpack_from("<IIB", rr[0])
         out["rate_range"] = {"min_hz": lo, "max_hz": hi, "exact": bool(exact)}
-    elif decl.get("min_clock_hz") and decl.get("max_clock_hz"):      # the common tags instead (the fake's esp32 profile)
+    elif decl.get("min_clock_hz") and decl.get("max_clock_hz"):      # the common tags instead (the virtual bench's esp32 profile)
         out["rate_range"] = {"min_hz": decl["min_clock_hz"], "max_hz": decl["max_clock_hz"], "exact": False}
     ch = decl["own"].get(_LOGIC_D["channels"])
     if ch:
@@ -543,9 +543,9 @@ def _configure(cap: capture.LogicCapture, rate: int, samples: int, **kw) -> capt
     return cfg
 
 
-def _one_shot(cap: capture.LogicCapture, cfg: capture.Config, fake: bool = False) -> tuple[capture.Segment, bytes, dict]:
+def _one_shot(cap: capture.LogicCapture, cfg: capture.Config, virtual: bool = False) -> tuple[capture.Segment, bytes, dict]:
     """start -> done -> the one segment read back, with the host's timing: the capture may not finish before its window
-    (samples / actual_rate, less the declared rate uncertainty; not asked of the fake, whose one-shot is done as start
+    (samples / actual_rate, less the declared rate uncertainty; not asked of the virtual bench, whose one-shot is done as start
     answers), and finishes within a second after it."""
     window_s = float(cfg.samples / cfg.rate)
     t0 = time.monotonic()
@@ -561,7 +561,7 @@ def _one_shot(cap: capture.LogicCapture, cfg: capture.Config, fake: bool = False
     read_s = time.monotonic() - t1
     assert len(data) == cfg.bytes, f"read {len(data)} bytes of a {cfg.bytes}-byte segment"
     tolerance = 0.01                                              # the rate's uncertainty is not declared any more
-    assert fake or done_s >= window_s * (1 - tolerance), f"done {done_s * 1e3:.1f} ms after start, the window is {window_s * 1e3:.1f} ms"
+    assert virtual or done_s >= window_s * (1 - tolerance), f"done {done_s * 1e3:.1f} ms after start, the window is {window_s * 1e3:.1f} ms"
     assert done_s <= window_s + 1.0, f"done {done_s:.2f} s after start, the window is {window_s * 1e3:.1f} ms"
     st = cap.status()
     assert st.state == capture.STATE["done"] and st.serial_done == 1 and st.write_pos == cfg.bytes and not st.flags, f"status {st}"
@@ -655,7 +655,7 @@ def test_capture(run: record.Run):
     rec = run.record("capture", channels=chans, rate=rate, samples_asked=samples, declared=declared)
     pull = _Pull(run, hst, cap, [(cap.fn, role, ch) for role, ch in enumerate(chans)], chans, rec)
     wrong, levels, generations, captures = [], {}, [], []
-    judged = pull.checks and run.board.kind != "fake"            # the fake captures a counter, not its pins
+    judged = pull.checks and run.board.kind != "virtual"            # the virtual bench captures a counter, not its pins
     if not judged:
         rec["levels_judged"] = False
     try:
@@ -665,7 +665,7 @@ def test_capture(run: record.Run):
             rec["configured"] = _config_record(cfg)
             assert cfg.width and len(cfg.positions) == len(chans), f"layout w {cfg.width} pos {cfg.positions} for {len(chans)} channels"
             assert len(set(cfg.positions)) == len(cfg.positions) and all(p < cfg.width for p in cfg.positions), f"layout {cfg.positions}"
-            seg, data, timing = _one_shot(cap, cfg, run.board.kind == "fake")
+            seg, data, timing = _one_shot(cap, cfg, run.board.kind == "virtual")
             captures.append(timing)
             generations.append(seg.generation)
             for k, ch in enumerate(chans):
@@ -735,7 +735,7 @@ def test_capture_analog(run: record.Run):
             assert cfg.order == [0], f"order {cfg.order} for one channel"
             if fe is not None:
                 assert cfg.frontend.get(0) == fe, f"frontend_used {cfg.frontend}, asked {fe}"
-            seg, data, timing = _one_shot(ana, cfg, run.board.kind == "fake")
+            seg, data, timing = _one_shot(ana, cfg, run.board.kind == "virtual")
             captures.append(timing)
             stats = _analog_stats(ana, data, seg.samples)
             values[name] = stats

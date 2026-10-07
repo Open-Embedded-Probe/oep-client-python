@@ -1,4 +1,4 @@
-"""Revision 1 interface shapes end to end against the fake endpoint (oep-spec oep-if-*): wire
+"""Revision 1 interface shapes end to end against the virtual bench endpoint (oep-spec oep-if-*): wire
 attach, riscv-dm (dmi n + poll values + the done rule, block done/status, run n_out), no connection, console rev 1,
 fixture.gpio / uart rev 1, and the interface revision check."""
 
@@ -7,7 +7,7 @@ import struct
 
 import pytest
 
-from oep_client import capture, console, core, endpoint, fake, fixture, host, message as m, riscv
+from oep_client import capture, console, core, endpoint, virtual_bench, fixture, host, message as m, riscv
 
 WIRE, DM, CONSOLE, GPIO, UART = 1, 2, 3, 4, 5          # p4_x035
 
@@ -22,7 +22,7 @@ class Clock:
 
 @pytest.fixture
 def bench():
-    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     hst = host.Host(ep.handle, rng=random.Random(1))
     hst.open(lease_ms=10000)
     return ep, hst
@@ -38,9 +38,9 @@ def dm(bench):
 # ---- revision check -----------------------------------------------------------------------------------------
 
 def test_an_interface_in_another_revision_is_not_used():
-    probe = fake.FakeProbe("old", 256, [fake.Offered(0, 0, "oep.core"),
-                                        fake.Offered(1, 1, "oep.wire.rvswd", revision=0),
-                                        fake.Offered(2, 1, "oep.target.console", revision=2)])
+    probe = virtual_bench.VirtualProbe("old", 256, [virtual_bench.Offered(0, 0, "oep.core"),
+                                        virtual_bench.Offered(1, 1, "oep.wire.rvswd", revision=0),
+                                        virtual_bench.Offered(2, 1, "oep.target.console", revision=2)])
     hst = host.Host(endpoint.Endpoint(probe, Clock()).handle)
     with pytest.raises(core.UnsupportedRevision, match="revision 0 on this probe"):
         riscv.Wire(hst)
@@ -70,7 +70,7 @@ def test_attach_under_reset_is_the_reset_tlv(bench):
     """oep-if-debug §3: attach's TLV 0x05 reset (channel, hold_ms) holds the line and attaches; with halt the hart stops
     before its first instruction (flags halted, TLV dpc); on an existing connection it resets the target (mark reset,
     detail 3)."""
-    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())           # swio with NRST on 23
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())           # swio with NRST on 23
     hst = host.Host(ep.handle, rng=random.Random(3))
     hst.open()
     wire = riscv.Wire(hst, "oep.wire.swio")
@@ -146,7 +146,7 @@ def test_dmi_value_count_rule():
 
 def test_block_access_reports_how_far_it_got(dm):
     ep, hst, d = dm
-    assert d.max_length == fake.block_max_length(1024) == 1000 and d.max_words == 250   # from describe, not max_frame
+    assert d.max_length == virtual_bench.block_max_length(1024) == 1000 and d.max_words == 250   # from describe, not max_frame
     d.write_block(0x20000000, struct.pack("<3I", 1, 2, 3))
     assert d.read_block(0x20000000, 3) == struct.pack("<3I", 1, 2, 3)
     assert ep.requests[-2].payload[2:8] == struct.pack("<IH", 0x20000000, 3)   # address, count
@@ -275,7 +275,7 @@ def test_console_write_partial_and_a_closed_stream_stays_readable(dm):
     ep, hst, d = dm
     con = console.Console(hst)
     sid = con.open(d.conn)                                        # dmseq; the hart halted: nothing is handed on
-    assert ep.send_queue == fake.CONSOLE_SEND_QUEUE == 256        # the probe's own size, not declared (console §2)
+    assert ep.send_queue == virtual_bench.CONSOLE_SEND_QUEUE == 256        # the probe's own size, not declared (console §2)
     assert con.write(b"x" * 250) == 250                           # into the send queue (console §2)
     assert con.write(b"PING\n" * 2) == 6                          # min(count, the free space): completed partial
     assert bytes(ep.streams[sid].written) == b"" and len(ep.streams[sid].queue) == 256   # queued, not taken yet
@@ -314,7 +314,7 @@ def test_console_io_writes_through_the_send_queue_and_gives_up_on_sdi():
     def tick(data):                                               # time passes between requests: the probe polls
         clock.ms += 1
         return ep.handle(data)
-    ep = endpoint.Endpoint(fake.p4_x035(), clock)
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), clock)
     hst = host.Host(tick, rng=random.Random(5))
     hst.open(lease_ms=10000)
     conn, _ = riscv.Wire(hst).attach(halt=False)                 # a running hart: the probe answers its slots
@@ -327,7 +327,7 @@ def test_console_io_writes_through_the_send_queue_and_gives_up_on_sdi():
         assert not hasattr(io, "send_queue") and not hasattr(con, "send_queue")
         io.write(line)
         sizes = [struct.unpack_from("<H", r.payload, 2)[0] for r in ep.requests[n:] if r.op == con.WRITE]
-        assert sizes[:2] == [len(line), len(line) - fake.CONSOLE_SEND_QUEUE]   # all that fits, then from accepted
+        assert sizes[:2] == [len(line), len(line) - virtual_bench.CONSOLE_SEND_QUEUE]   # all that fits, then from accepted
         assert len(ep.streams[sid].written) % per == 0 or len(ep.streams[sid].queue) == 0   # handed on per poll
         ep.console_take()                                         # the target takes the rest
         assert bytes(ep.streams[sid].written) == line
@@ -413,7 +413,7 @@ def test_capture_critical_tag_it_cannot_honour_is_unsupported():
 
 
 def test_stream_io_fits_a_64_byte_frame():
-    ep = endpoint.Endpoint(fake.esp32_v003_64(), Clock())       # max_frame 64
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003_64(), Clock())       # max_frame 64
     hst = host.Host(ep.handle, rng=random.Random(2))
     hst.open()
     core.plan_apply(hst, [(5, 1, 21), (5, 2, 22)])

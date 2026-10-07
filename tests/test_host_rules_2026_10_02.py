@@ -11,14 +11,14 @@ import time
 
 import pytest
 
-from oep_client import (capture, config, core, dump, endpoint, fake, fixture, frames, host as h, link, message as m,
+from oep_client import (capture, config, core, dump, endpoint, virtual_bench, fixture, frames, host as h, link, message as m,
                         registry as reg, riscv, speed_record)
 
-from test_fake_rules_2026_10_02 import Clock
+from test_virtual_bench_rules_2026_10_02 import Clock
 from test_link_host import CONFIRM_V1, Stream, frame, make_link, result
 
 
-def in_process(profile=fake.p4_bench, transport=0, **kw):
+def in_process(profile=virtual_bench.p4_bench, transport=0, **kw):
     ep = endpoint.Endpoint(profile(), Clock(), **kw)
     hst = h.Host(lambda b: ep.handle(b, transport))
     return ep, hst
@@ -76,14 +76,14 @@ def test_c06_attach_scan_and_reset_wait_max_op_ms():
     w.scan()
     w.attach(pins=ep.pairs[1][0], reset=None)
     budgets = dict((op, ms) for op, ms in seen if op in (riscv.Wire.SCAN, riscv.Wire.ATTACH))
-    assert budgets == {riscv.Wire.SCAN: fake.MAX_OP_MS, riscv.Wire.ATTACH: fake.MAX_OP_MS}
-    assert w.attach_ms((7, 20)) == w.attach_ms() == w.scan_ms() == fake.MAX_OP_MS and w.search_retries == 0
+    assert budgets == {riscv.Wire.SCAN: virtual_bench.MAX_OP_MS, riscv.Wire.ATTACH: virtual_bench.MAX_OP_MS}
+    assert w.attach_ms((7, 20)) == w.attach_ms() == w.scan_ms() == virtual_bench.MAX_OP_MS and w.search_retries == 0
     dm = riscv.RiscvDm(hst, 1)
-    assert dm.reset_ms() == fake.MAX_OP_MS
+    assert dm.reset_ms() == virtual_bench.MAX_OP_MS
     assert core.FALLBACK_MAX_OP_MS == 10000 and "reset_settle_ms" not in reg.TIMING
     seen.clear()
     dm.reset(confirm=False)
-    assert seen == [(riscv.RiscvDm.RESET, fake.MAX_OP_MS)]
+    assert seen == [(riscv.RiscvDm.RESET, virtual_bench.MAX_OP_MS)]
 
 
 # ---- C-09: the serial line ----------------------------------------------------------------------------------------
@@ -127,15 +127,15 @@ def test_c15_the_links_own_confirms_use_the_revision_in_use():
 
 
 def test_c05_the_confirm_names_the_transport_and_port_speed_takes_it():
-    probe = fake.esp32_v003()
+    probe = virtual_bench.esp32_v003()
     core_fn = probe.offered[0]
-    two = fake.Offered(0, 0, fake.CORE_NAME, tuple(t for t in core_fn.tlvs if t[0] != fake.CORE_TRANSPORT)
-                       + fake._transports([(fake.TRANSPORT["uart_bridge"], 0xFF)] * 2))
-    probe = fake.FakeProbe(probe.label, probe.max_frame, [two] + probe.offered[1:])
+    two = virtual_bench.Offered(0, 0, virtual_bench.CORE_NAME, tuple(t for t in core_fn.tlvs if t[0] != virtual_bench.CORE_TRANSPORT)
+                       + virtual_bench._transports([(virtual_bench.TRANSPORT["uart_bridge"], 0xFF)] * 2))
+    probe = virtual_bench.VirtualProbe(probe.label, probe.max_frame, [two] + probe.offered[1:])
     ep, hst = in_process(lambda: probe, transport=1)
     assert hst.confirm()["transport"] == 1
     assert link._speed_port(hst) == (ep.link_fn, 1, "")                # the second bridge, not bridges[0]
-    ep2, hst2 = in_process(fake.p4_x035, transport=1)                  # vendor bulk: not a UART bridge
+    ep2, hst2 = in_process(virtual_bench.p4_x035, transport=1)                  # vendor bulk: not a UART bridge
     ep2.port_speed_base = 115200
     hst2.confirm()
     assert link._speed_port(hst2)[1] is None
@@ -145,7 +145,7 @@ def test_c05_a_relaying_brokers_0xff_and_a_confirm_without_the_tlv():
     hst = h.Host(lambda b: b)
     hst.limits = {"transport": 0xFF}
     hst._fns["oep.probe.link"] = 10                                    # oep.probe.link offering port_speed (its ops)
-    hst._describes[10] = [(fake.catalog.OPS, fake.catalog.pack_ops({1, 2, 3}))]
+    hst._describes[10] = [(virtual_bench.catalog.OPS, virtual_bench.catalog.pack_ops({1, 2, 3}))]
     assert "broker" in link._speed_port(hst)[2]
     hst.limits = {"transport": None}
     assert "names no transport" in link._speed_port(hst)[2]
@@ -162,11 +162,11 @@ def test_c24_the_speed_record_keeps_nothing_under_an_x_unit_id(tmp_path):
 
 
 def test_c24_raise_speed_records_nothing_for_an_x_unit_id(tmp_path):
-    from oep_client import fake_serial
+    from oep_client import virtual_bench_serial
     start = time.monotonic()
-    ep = endpoint.Endpoint(fake.with_unit_id(fake.esp32_v003(), "x-esp32"),
+    ep = endpoint.Endpoint(virtual_bench.with_unit_id(virtual_bench.esp32_v003(), "x-esp32"),
                            lambda: int((time.monotonic() - start) * 1000))
-    lk = link.SerialLink.on_stream(fake_serial.FakeSerialStream(ep, 0), "cobs", 0.5)
+    lk = link.SerialLink.on_stream(virtual_bench_serial.VirtualSerialStream(ep, 0), "cobs", 0.5)
     lk.transport = "serial"
     hst = h.Host(lk.send)
     lk.attach_host(hst)
@@ -228,7 +228,7 @@ def test_pc1_find_line_takes_the_firmware_labels_as_step_c():
     assert config.find_line(items, "v003", "nrst", [(23, "NRST"), (24, "nrst")]) is None   # two at one step
     two = items + [config.Slot(slot=1, wire_fn=1, pins=(4, 0xFFFF), name="b")]
     assert config.find_line(two, "v003", "nrst", [(23, "NRST")]) is None   # two slots: (b) and (c) not searched
-    ep, hst = in_process(fake.esp32_v003)
+    ep, hst = in_process(virtual_bench.esp32_v003)
     assert config.find_line(hst, None, "nrst") == 23                   # a Host: describe's labels are read
     assert config.LINE_NAMES == ("nrst", "power_hi", "power_lo")       # from the registry (PC-2)
 
@@ -272,15 +272,15 @@ def test_no_ignored_marker_any_more():
 
 
 def test_c10_dump_says_what_a_probe_must_give_and_did_not():
-    caps = dump.collect(fake.esp32_v003().call)
+    caps = dump.collect(virtual_bench.esp32_v003().call)
     assert caps.missing == []
-    bare = fake.FakeProbe("bare", 256, [fake.Offered(0, 0, fake.CORE_NAME)])
+    bare = virtual_bench.VirtualProbe("bare", 256, [virtual_bench.Offered(0, 0, virtual_bench.CORE_NAME)])
     caps = dump.collect(bare.call)
     assert caps.missing == ["describe of fn 0: unit_id", "describe of fn 0: transport", "describe of fn 0: max_op_ms"]
     assert "MISSING" in dump.to_text(caps)
 
 
-def _confirm_tail(probe: fake.FakeProbe, tail: bytes):
+def _confirm_tail(probe: virtual_bench.VirtualProbe, tail: bytes):
     """probe.call with confirm's answer tail replaced by `tail`."""
     def call(fn, op, payload=b""):
         out = probe.call(fn, op, payload)
@@ -292,23 +292,23 @@ def test_c10_confirm_transport_tlv_is_required():
     """A probe without confirm's transport TLV (core §7.1) is named as missing it, by dump and by the hardware test's
     check (dump.required_of). describe has no discoverable any more (core §7.5, rule review 2026-10-07)."""
     assert "discoverable" not in reg.CORE.tlv["describe"]
-    call = _confirm_tail(fake.esp32_v003(), b"")
+    call = _confirm_tail(virtual_bench.esp32_v003(), b"")
     want = ["confirm's transport TLV"]
     assert dump.collect(call).missing == want
     assert dump.required_of(call) == want
     assert "MISSING what every probe must give" in dump.to_text(dump.collect(call))
     # a transport index fn 0's describe does not declare; 0xFF (a relaying broker) names none and is fine
-    assert dump.required_of(_confirm_tail(fake.esp32_v003(), bytes([0x01, 1, 0, 7]))) == \
+    assert dump.required_of(_confirm_tail(virtual_bench.esp32_v003(), bytes([0x01, 1, 0, 7]))) == \
         ["describe of fn 0: the transport confirm names (index 7)"]
-    assert dump.required_of(_confirm_tail(fake.esp32_v003(), bytes([0x01, 1, 0, 0xFF]))) == []
-    assert dump.required_of(_confirm_tail(fake.esp32_v003(), bytes([0x01, 2, 0, 0]))) == ["confirm's transport TLV (the answer's tail is broken)"]
+    assert dump.required_of(_confirm_tail(virtual_bench.esp32_v003(), bytes([0x01, 1, 0, 0xFF]))) == []
+    assert dump.required_of(_confirm_tail(virtual_bench.esp32_v003(), bytes([0x01, 2, 0, 0]))) == ["confirm's transport TLV (the answer's tail is broken)"]
 
 
-@pytest.mark.parametrize("profile", sorted(fake.PROFILES))
-def test_c10_every_fake_profile_gives_what_is_required_on_every_transport(profile):
-    """The fake served on each of its transports (an Endpoint, as fake_serve and tests/hw's fake board use it)."""
-    for transport in endpoint.Endpoint(fake.PROFILES[profile](), Clock()).transports:
-        ep, hst = in_process(fake.PROFILES[profile], transport)
+@pytest.mark.parametrize("profile", sorted(virtual_bench.PROFILES))
+def test_c10_every_virtual_profile_gives_what_is_required_on_every_transport(profile):
+    """The virtual bench served on each of its transports (an Endpoint, as virtual_bench_serve and tests/hw's virtual board use it)."""
+    for transport in endpoint.Endpoint(virtual_bench.PROFILES[profile](), Clock()).transports:
+        ep, hst = in_process(virtual_bench.PROFILES[profile], transport)
         call = lambda fn, op, payload: hst.request(fn, op, payload, locked=False).payload   # noqa: E731
         assert dump.required_of(call, hst.confirm_range()) == [], (profile, transport)
 
@@ -328,18 +328,18 @@ def test_api_search_retries_step_left_internal_pullups_mode():
     with pytest.raises(riscv.StepError) as e:
         dm.step()
     assert e.value.step_left and isinstance(e.value, riscv.TargetError)
-    ep2, hst2 = in_process(lambda: fake.with_i2c_pullups(fake.p4_x035()))
+    ep2, hst2 = in_process(lambda: virtual_bench.with_i2c_pullups(virtual_bench.p4_x035()))
     assert fixture.I2cTarget(hst2).internal_pullups is True               # features bit2 (fixture §3)
-    ep3, hst3 = in_process(fake.p4_x035)
+    ep3, hst3 = in_process(virtual_bench.p4_x035)
     assert fixture.I2cTarget(hst3).internal_pullups is False and not hasattr(fixture.I2cTarget, "pullup_ohms")
-    text = dump.to_text(dump.collect(fake.p4_x035().call, "oep.fixture.logic"))
+    text = dump.to_text(dump.collect(virtual_bench.p4_x035().call, "oep.fixture.logic"))
     assert "one-shot, max 1048576 samples x 1 segments" in text           # mode: mode max_samples max_segments
 
 
 def test_p2_o8_capture_configure_sends_mode_rate_trigger_pretrigger_critical():
     """capture §3.3: an unhandled value is unsupported critical or not (core §2.3); the client still marks the TLVs
     whose being ignored would make the capture meaningless."""
-    ep, hst = in_process(fake.esp32_v003)
+    ep, hst = in_process(virtual_bench.esp32_v003)
     hst.open(3000)
     core.plan_apply(hst, [(6, 0, 4)])
     cap = capture.LogicCapture(hst, 6)

@@ -1,4 +1,4 @@
-"""oep.fixture.logic in the fake probe, through oep_client.capture (oep-if-capture): the counter waveform, the layouts,
+"""oep.fixture.logic in the virtual bench, through oep_client.capture (oep-if-capture): the counter waveform, the layouts,
 triggers, repeat's ring and release, streaming pushes."""
 
 import dataclasses
@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-from oep_client import capture as c, core, endpoint, fake, fake_capture, host as h, message as m
+from oep_client import capture as c, core, endpoint, virtual_bench, virtual_bench_capture, host as h, message as m
 
 
 class Clock:
@@ -16,7 +16,7 @@ class Clock:
         return self.t
 
 
-def bench(profile=fake.p4_x035):
+def bench(profile=virtual_bench.p4_x035):
     clock = Clock()
     ep = endpoint.Endpoint(profile(), clock)
     hst = h.Host(lambda b: ep.handle(b, 0))
@@ -59,7 +59,7 @@ def test_one_shot_three_channels_in_four_bit_samples():
 
 
 def test_the_classic_esp32_sampler_takes_a_byte_a_sample():
-    ep, hst, lc, _ = bench(fake.esp32_v003)
+    ep, hst, lc, _ = bench(virtual_bench.esp32_v003)
     core.plan_apply(hst, [(lc.fn, 0, 4), (lc.fn, 1, 5)])
     cfg = lc.configure(rate=1_000_000, samples=300)
     assert (cfg.width, cfg.positions) == (8, [0, 1])
@@ -95,7 +95,7 @@ def test_force_is_accepted_and_wait_keeps_the_lock():
     core.plan_apply(hst, [(lc.fn, 0, 20), (lc.fn, 1, 21)])
     lc.configure(rate=1_000_000, samples=64, trigger=(c.EDGE, 1, 1))
     lc.start()
-    lc.force()                                  # the fake finds its trigger at start: nothing is waiting
+    lc.force()                                  # the virtual bench finds its trigger at start: nothing is waiting
     sent = []
     keepalive = hst.keepalive
     hst.keepalive = lambda: (sent.append(1), keepalive())
@@ -132,7 +132,7 @@ def test_repeat_fills_its_ring_with_the_clock_and_goes_on_after_release():
     clock.t = 11
     assert lc.status().state == c.STATE["capturing"]                # it went on by itself (no stopped event)
     (nxt,) = lc.segments(3)
-    assert nxt.flags & fake_capture.FLAG["gap"]                        # it stopped: the next segment says so
+    assert nxt.flags & virtual_bench_capture.FLAG["gap"]                        # it stopped: the next segment says so
     assert ep.captures[lc.fn].read(1, 0, 8, 64)[8] & 0x02           # released bytes are gone (read: gap)
     kinds = [f[5] for f in ep.pushes()]
     assert c.EVENT_STOPPED not in kinds or True
@@ -228,13 +228,13 @@ def test_an_analog_pin_is_shared_with_nothing():
     with pytest.raises(h.Rejected):
         core.plan_apply(hst, [(an.fn, 0, 18), (gpio, 1, 18)])      # in one request as well
 
-def test_fake_serve_streams_over_tcp_to_the_client():
+def test_virtual_bench_serve_streams_over_tcp_to_the_client():
     """The whole path wireskein takes: open_host, take, plan, configure, subscribe, start, stream, stop, finish."""
     import subprocess
     import sys
 
     from oep_client import link
-    proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", "--tcp", "0", "--framing", "length",
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", "--tcp", "0", "--framing", "length",
                              "--capture-slipped"],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     try:
@@ -287,8 +287,8 @@ def test_analog_values_scale_and_calibration():
     an.start()
     (seg,) = an.wait()
     data = an.read_segment(seg)
-    assert an.values(data, 0, 256) == [fake_capture.analog_value(0, i) for i in range(256)]   # a square
-    assert an.values(data, 1, 256) == [fake_capture.analog_value(1, i) for i in range(256)]   # a sine
+    assert an.values(data, 0, 256) == [virtual_bench_capture.analog_value(0, i) for i in range(256)]   # a square
+    assert an.values(data, 1, 256) == [virtual_bench_capture.analog_value(1, i) for i in range(256)]   # a sine
     assert an.millivolts(0, 2048) == pytest.approx(3100 * 2048 / 4095, abs=1)
     assert an.millivolts(0, 4095) is None and an.millivolts(0, 0) is None    # clipped (§1.2 rule 6)
     assert an.ends_millivolts(0) == (0, pytest.approx(3100, abs=1))
@@ -300,7 +300,7 @@ def test_analog_values_scale_and_calibration():
     assert (an.clipped(0, 0), an.clipped(0, 4095)) == (an.CLIP_HIGH, an.CLIP_LOW)
     assert an.ends_millivolts(0) == (pytest.approx(-3100, abs=1), 0)
     cal = an.calibration()
-    assert [f[0] for f in cal.factory] == [0, 1, 2, 3] and cal.factory[0][1] == "org.example.fake.two-point"
+    assert [f[0] for f in cal.factory] == [0, 1, 2, 3] and cal.factory[0][1] == "org.example.virtual_bench.two-point"
     assert cal.factory[0][2] == struct.pack("<HH", 150, 3950)       # raw_len(u16) raw
     assert cal.vrefint == (1365, seg.start_ns) and cal.vrefint_nominal_mv == 1100
 
@@ -375,7 +375,7 @@ def _configure_body(mode=c.ONE_SHOT, rate=1_000_000, critical=(), extra=b""):
 def test_configure_refuses_an_unhandled_value_unsupported_with_the_tag_as_received(what, body, tag, critical):
     """oep-if-capture §3.3 / core §2.3: configure's TLVs follow the general rule alone (no "always critical"): a value
     the probe does not handle is unsupported with the tag as received - bit 7 set or not - in configure and query."""
-    ep, hst, lc, _ = bench(fake.esp32_v003)                         # one-shot only, 400 kHz - 2 MHz
+    ep, hst, lc, _ = bench(virtual_bench.esp32_v003)                         # one-shot only, 400 kHz - 2 MHz
     core.plan_apply(hst, [(lc.fn, 0, 4)])
     if critical:                                                    # the same request with the refused TLV critical
         tlvs = [(t | (0x80 if t == tag else 0), v) for t, v in m.split_tlvs(body)]
@@ -429,8 +429,8 @@ def test_describe_declares_no_background_layouts_or_budgets():
 def test_a_bind_short_of_resources_is_unavailable_limit_naming_the_fn():
     """oep-if-capture §4: a bind whose tracks cannot take what they need together is unavailable cause 2 (limit) with
     TLV fn (core §4.3: no budget declared - the probe knows it); a refused bind changes nothing."""
-    probe = fake.p4_x035()
-    probe = fake.FakeProbe(probe.label, probe.max_frame, [
+    probe = virtual_bench.p4_x035()
+    probe = virtual_bench.VirtualProbe(probe.label, probe.max_frame, [
         o if o.name != "oep.fixture.capture-group"
         else dataclasses.replace(o, inner=(("max_tracks", 2), ("budgets", ((50_000, (11,)),))))
         for o in probe.offered], own_channels=probe.own_channels)

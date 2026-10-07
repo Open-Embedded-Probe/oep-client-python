@@ -26,7 +26,7 @@ BY_ID = "/run/board-identify/by-id"
 class Board:
     id: str                              # board-identify id, or the unit id
     kind: str                            # esp32 (esptool merged.bin) | esp32p4 (USB DFU app.bin) | esp32p4-usj (esptool
-                                         # merged.bin over the P4's USB-Serial/JTAG) | rp2 (BOOTSEL uf2) | fake
+                                         # merged.bin over the P4's USB-Serial/JTAG) | rp2 (BOOTSEL uf2) | virtual
     profile: str                         # sketch.yaml profile in examples/Firmware/OepProbe
     model: str                           # describe's model
     port: str                            # the OEP port after flashing (forms above)
@@ -38,13 +38,13 @@ class Board:
     disable: int = 0                     # a third free channel the config test disables, then enables again
     label: int = 0                       # the channel the config test labels (0: gpio[0]); neither it nor disable is driven
     uart: tuple[int, int] = (0, 0)       # (rx, tx) channels for the uart configure test
-    fake_profile: str | None = None      # kind fake: the oep_client.fake profile served on a pty
+    virtual_profile: str | None = None   # kind virtual: the oep_client.virtual_bench profile served on a pty
     notes: str = ""
 
     @property
     def resettable(self) -> bool:
         """A classic ESP32 behind a USB-UART bridge whose auto-reset circuit wires EN / IO0 to RTS / DTR: the host can
-        reboot it (flash.hard_reset). A USB probe has no such line from the host; the fake has nothing to reset."""
+        reboot it (flash.hard_reset). A USB probe has no such line from the host; the virtual bench has nothing to reset."""
         return self.kind == "esp32"
 
     @property
@@ -96,9 +96,9 @@ TABLE: dict[str, Board] = {b.id: b for b in (
     Board("9489dd2ae0953650", "rp2", "promicrorp2350", "rp2350", "cdc:9489dd2ae0953650", unit_id="9489dd2ae0953650",
           notes="SparkFun Pro Micro RP2350 (the firmware enumerates as the project's 1209:4F45); no board-identify id: keyed by unit id",
           **_RP2350),
-    # No hardware: the fake probe on a pty (oep_client.fake_serve). A dry run of the test logic, never a release test.
-    Board("fake-esp32-v003", "fake", "esp32", "esp32", "", fake_profile="esp32-v003", gpio=(25, 26), disable=33,
-          uart=(21, 22), rates=(921600, 500000), notes="oep_client.fake esp32-v003 on a pty; flashing is a no-op"),
+    # No hardware: the virtual bench on a pty (oep_client.virtual_bench_serve). A dry run of the test logic, never a release test.
+    Board("virtual-esp32-v003", "virtual", "esp32", "esp32", "", virtual_profile="esp32-v003", gpio=(25, 26), disable=33,
+          uart=(21, 22), rates=(921600, 500000), notes="oep_client.virtual_bench esp32-v003 on a pty; flashing is a no-op"),
 )}
 
 

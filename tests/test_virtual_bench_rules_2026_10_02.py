@@ -1,4 +1,4 @@
-"""The fake probe against the rule changes of oep-spec docs/v1-rule-change-proposal-2026-10-02.md (applied 09622ef..
+"""The virtual bench against the rule changes of oep-spec docs/v1-rule-change-proposal-2026-10-02.md (applied 09622ef..
 536fc99): each test names its item. The final text is the spec's (core, debug, fixture, capture, probe-config); the
 tests follow oep-spec 0f455a0 (rule review 2026-10-07 §2): no ignored TLV, any one reason after the session check,
 implemented TLVs checked alike with or without bit 7, list = first alone, the new item / drive / bind forms."""
@@ -10,7 +10,7 @@ import sys
 
 import pytest
 
-from oep_client import endpoint, fake, fake_capture, message as m, registry as reg
+from oep_client import endpoint, virtual_bench, virtual_bench_capture, message as m, registry as reg
 
 
 CORE = reg.CORE
@@ -87,7 +87,7 @@ IDLE = reg.PROBE_CONFIG.enum["idle_mode"]
 UNKNOWN = 0x3E                                                    # a tag no context defines
 
 
-def bench(profile=fake.p4_bench, **kw):
+def bench(profile=virtual_bench.p4_bench, **kw):
     ep = endpoint.Endpoint(profile(), Clock(), **kw)
     h = Host(ep)
     assert h.open().succeeded
@@ -193,7 +193,7 @@ def test_gpio_drive_is_a_level_checked_alike_with_or_without_bit_7(critical):
     tag = reg.FIXTURE_GPIO.tlv["set"]["drive"] | (0x80 if critical else 0)
     body = bytes([1]) + struct.pack("<HB", 20, 4)
     set_ = reg.FIXTURE_GPIO.op["set"]
-    r = h.raw(4, set_, body + gpio_drive(0, len(fake.DRIVE_LEVELS_MA), critical))
+    r = h.raw(4, set_, body + gpio_drive(0, len(virtual_bench.DRIVE_LEVELS_MA), critical))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([tag]))
     assert h.raw(4, set_, body + m.tlv(tag & 0x7F, b"\x00\x01\x00", critical=critical)).detail == m.MALFORMED
     assert h.raw(4, set_, body + m.tlv(tag & 0x7F, b"\x00", critical=critical)).detail == m.MALFORMED
@@ -202,14 +202,14 @@ def test_gpio_drive_is_a_level_checked_alike_with_or_without_bit_7(critical):
     assert h.raw(4, set_, low_in + gpio_drive(0, 0, critical)).detail == m.MALFORMED   # not mode 3 / 4
     assert not ep.gpio_drive
     r = h.raw(4, set_, body + gpio_drive(0, 0xFF, critical))
-    assert r.succeeded and r.payload == b"" and ep.gpio_drive[20] == fake.DRIVE_DEFAULT
+    assert r.succeeded and r.payload == b"" and ep.gpio_drive[20] == virtual_bench.DRIVE_DEFAULT
     assert h.raw(4, set_, body + gpio_drive(0, 0, critical)).succeeded and ep.gpio_drive[20] == 0
 
 
 def test_gpio_any_drive_on_a_probe_without_drive_levels_is_unsupported():
     """fixture §1.1: a drive on a probe that declares no drive_levels is unsupported (the tag as received), even
     0xFF."""
-    ep = endpoint.Endpoint(fake.without_drive_levels(fake.p4_bench()), Clock())
+    ep = endpoint.Endpoint(virtual_bench.without_drive_levels(virtual_bench.p4_bench()), Clock())
     h = Host(ep)
     h.open()
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 20), critical=True))
@@ -311,7 +311,7 @@ def test_c03_role_assignment_and_gpio_drive_repeat():
 
 def test_an_answer_that_fills_the_frame_has_no_ignored_list():
     """core §2.3: an unknown TLV is not listed in the answer, so the answer has the whole frame for its data."""
-    ep = endpoint.Endpoint(fake.esp32_v003_64(), Clock())         # 64-byte frames
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003_64(), Clock())         # 64-byte frames
     h = Host(ep)
     h.open()
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 5, 1, 21), critical=True))
@@ -330,7 +330,7 @@ def confirm(h, lo=1, hi=1, corr=None):
 
 
 def test_c05_confirm_names_the_transport_it_came_on():
-    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     for index in (0, 1, 3):
         r = confirm(Host(ep, transport=index))
         assert r.succeeded and len(r.payload) == 17 + 4
@@ -339,7 +339,7 @@ def test_c05_confirm_names_the_transport_it_came_on():
 
 
 def test_c15_no_revision_in_range_carries_the_supported_range_and_min_above_max_is_malformed():
-    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     h = Host(ep)
     r = confirm(h, 2, 3)
     assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00" + m.tlv(0x01, b"\x01\x01"))
@@ -351,15 +351,15 @@ def test_c15_no_revision_in_range_carries_the_supported_range_and_min_above_max_
 def test_c10_a_probe_without_plan_roles_lists_no_plan():
     """oep-if-plan: a probe lists oep.probe.plan exactly when an interface has plan roles; fn 0's old plan_release
     number (0x05) is no core op (unknown_operation)."""
-    keep = (fake.CORE_NAME, "oep.wire.rvswd", "oep.target.riscv-dm")
-    probe = fake.FakeProbe("bare", 256, [fake.Offered(o.fn, o.instance, o.name, tuple(t for t in o.tlvs if t[0] != 0x09))
-                                         for o in fake.p4_bench().offered if o.name in keep])   # ops made anew
+    keep = (virtual_bench.CORE_NAME, "oep.wire.rvswd", "oep.target.riscv-dm")
+    probe = virtual_bench.VirtualProbe("bare", 256, [virtual_bench.Offered(o.fn, o.instance, o.name, tuple(t for t in o.tlvs if t[0] != 0x09))
+                                         for o in virtual_bench.p4_bench().offered if o.name in keep])   # ops made anew
     ep = endpoint.Endpoint(probe, Clock())
     assert "oep.probe.plan" not in ep.fns and ep.ops[0] == set(reg.CORE.op.values())
     h = Host(ep)
     h.open()
     assert h.raw(0, 0x05, b"\x00").detail == m.UNKNOWN_OPERATION
-    assert "oep.probe.plan" in endpoint.Endpoint(fake.p4_bench(), Clock()).fns   # gpio, uart: plan roles
+    assert "oep.probe.plan" in endpoint.Endpoint(virtual_bench.p4_bench(), Clock()).fns   # gpio, uart: plan roles
 
 
 # ---- C-16 / C-17 / C-18 / C-22: the session ----------------------------------------------------------------------
@@ -376,7 +376,7 @@ def test_c16_a_rejected_answer_is_remembered_and_a_resend_replays_it():
 
 
 def test_c17_the_lease_is_rounded_into_1000_to_60000_and_restarts_on_rejected_answers():
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     h = Host(ep)
     assert struct.unpack_from("<I", h.open(lease=1).payload)[0] == 1000
     assert struct.unpack_from("<I", h.open(lease=100_000).payload)[0] == 60000
@@ -390,7 +390,7 @@ def test_c17_the_lease_is_rounded_into_1000_to_60000_and_restarts_on_rejected_an
 
 
 def test_c18_session_id_0_is_malformed():
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     h = Host(ep, session=0)
     assert h.open().detail == m.MALFORMED and ep.holder is None
 
@@ -399,7 +399,7 @@ def test_c18_session_id_0_is_malformed():
 def test_a_boolean_in_a_request_is_true_when_not_zero(force):
     """core §2.1 (rule review 2026-10-07): the reader takes every non-zero boolean as true - open's force 2 takes the
     lock like force 1, it is not malformed."""
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     assert Host(ep, session=0x99).open().succeeded
     r = Host(ep).open(force=force)
     assert r.succeeded and ep.holder == 0x51
@@ -410,7 +410,7 @@ def test_a_boolean_in_a_request_is_true_when_not_zero(force):
 def test_request_text_is_not_validated_but_owner_keeps_its_length(owner, ok):
     """core §2.1 / §6.4 (rule review 2026-10-07): a probe does not check request text (the host replaces what it
     shows); owner keeps its 1-32 byte length rule."""
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     r = Host(ep).open(owner=owner)
     if ok:
         assert r.succeeded and ep.owner == owner
@@ -419,7 +419,7 @@ def test_request_text_is_not_validated_but_owner_keeps_its_length(owner, ok):
 
 
 def test_c22_a_utf8_owner_is_taken():
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     h = Host(ep)
     assert h.open(owner="日本 bench".encode()).succeeded and ep.owner == "日本 bench".encode()
 
@@ -427,14 +427,14 @@ def test_c22_a_utf8_owner_is_taken():
 # ---- C-23 / C-30 / C-24: names, instances, unit_id --------------------------------------------------------------
 
 def test_c30_every_profile_numbers_its_instances_per_name_and_revision():
-    for name, profile in fake.PROFILES.items():
+    for name, profile in virtual_bench.PROFILES.items():
         assert profile().instance_errors() == [], name
-    bad = fake.FakeProbe("x", 256, [fake.Offered(0, 0, fake.CORE_NAME), fake.Offered(1, 1, "oep.fixture.gpio")])
+    bad = virtual_bench.VirtualProbe("x", 256, [virtual_bench.Offered(0, 0, virtual_bench.CORE_NAME), virtual_bench.Offered(1, 1, "oep.fixture.gpio")])
     assert bad.instance_errors()
 
 
 def test_c24_a_profile_with_an_x_unit_id():
-    probe = fake.with_unit_id(fake.esp32_v003(), "x-esp32")
+    probe = virtual_bench.with_unit_id(virtual_bench.esp32_v003(), "x-esp32")
     ep = endpoint.Endpoint(probe, Clock())
     r = Host(ep).raw(0, m.OP_DESCRIBE, struct.pack("<HH", 0, 0), session=False)
     assert (CORE.tlv["describe"]["unit_id"], b"x-esp32") in m.split_tlvs(r.payload[1:])
@@ -465,7 +465,7 @@ def test_p2_1_a_named_output_idle_channel_is_unavailable_cause_5_and_the_channel
 
 
 def test_p2_1_an_attach_without_pins_has_no_idle_item_candidate():
-    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())            # one SWIO pair
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())            # one SWIO pair
     h = Host(ep)
     h.open()
     swio = ep.pairs[1][0][0]
@@ -492,7 +492,7 @@ def test_p2_5_an_undeclared_combination_is_unsupported_scan_with_its_index():
     r = h.raw(1, 0x02, b"\x00" + SPEED + pins(a[0], b[1], critical=False))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x03")       # attach: the pins tag as received
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 8), critical=True))
-    rp = endpoint.Endpoint(fake.rp2350_pins(), Clock())
+    rp = endpoint.Endpoint(virtual_bench.rp2350_pins(), Clock())
     hp = Host(rp)
     hp.open()
     hp.ok(hp.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 1), critical=True))
@@ -540,7 +540,7 @@ def test_p2_4_the_attach_answer_carries_search_retries():
 # ---- fixture: P2-★2 / ★3 / ○13 ---------------------------------------------------------------------------------------
 
 def x035():
-    ep = endpoint.Endpoint(fake.with_i2c_pullups(fake.p4_x035()), Clock())
+    ep = endpoint.Endpoint(virtual_bench.with_i2c_pullups(virtual_bench.p4_x035()), Clock())
     h = Host(ep)
     h.open()
     return ep, h
@@ -569,16 +569,16 @@ def test_p2_3_i2c_target_open_drain_and_declared_pullups():
     i2c = 8
     r = h.raw(0, m.OP_DESCRIBE, struct.pack("<HH", i2c, 0), session=False)
     d = dict(m.split_tlvs(r.payload[1:]))
-    assert struct.unpack("<I", d[0x06])[0] & fake.I2C_INTERNAL_PULLUPS == 0x04 and 0x42 not in d
+    assert struct.unpack("<I", d[0x06])[0] & virtual_bench.I2C_INTERNAL_PULLUPS == 0x04 and 0x42 not in d
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", i2c, 1, 30), critical=True)
          + m.tlv(0x10, struct.pack("<HBH", i2c, 2, 31), critical=True))
     assert ep.pin_state(30) == "idle hi-z"                        # state 0: released, nothing ACKed
     h.ok(i2c, reg.FIXTURE_I2C_TARGET.op["configure"], b"\x42")
     assert ep.pin_state(30) == ep.pin_state(31) == "open-drain pull-up"
     assert h.raw(i2c, reg.FIXTURE_I2C_TARGET.op["configure"], b"\x42\x01").detail == m.MALFORMED   # no mode: a broken tail
-    plain = endpoint.Endpoint(fake.p4_x035(), Clock())
+    plain = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     d = dict(m.split_tlvs(Host(plain).raw(0, m.OP_DESCRIBE, struct.pack("<HH", i2c, 0), session=False).payload[1:]))
-    assert not struct.unpack("<I", d[0x06])[0] & fake.I2C_INTERNAL_PULLUPS   # the profiles declare none
+    assert not struct.unpack("<I", d[0x06])[0] & virtual_bench.I2C_INTERNAL_PULLUPS   # the profiles declare none
 
 
 def test_p2_o13_taking_a_plan_changes_no_pin_and_an_analog_plan_on_an_output_idle_is_refused():
@@ -597,13 +597,13 @@ def test_p2_o13_taking_a_plan_changes_no_pin_and_an_analog_plan_on_an_output_idl
 
 # ---- capture: P2-○8 / ○10 / ○11 ----------------------------------------------------------------------------------------
 
-CAP_TLV = fake_capture.TLV
+CAP_TLV = virtual_bench_capture.TLV
 
 
 def test_p2_o8_samples_rounded_down_and_the_configure_tlvs():
     """capture §3.3 (rule review 2026-10-07): configure's TLVs follow core §2.3 alone - an unhandled mode / rate /
     trigger is unsupported with the tag as received, critical or not."""
-    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())            # logic: max_samples 65536, one-shot only
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())            # logic: max_samples 65536, one-shot only
     h = Host(ep)
     h.open()
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 6, 0, 4), critical=True))
@@ -639,7 +639,7 @@ def test_p2_o10_capture_group_with_nothing_bound_and_the_checks_before_start():
     h.ok(7, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0))              # fn 11 has no subscription
     r = h.raw(12, grp["start"])
     assert r.detail == m.UNAVAILABLE and una(r)[UNA["fn"]] == struct.pack("<H", 11)
-    assert ep.captures[7].state == fake_capture.STATE["configured"]   # nothing started
+    assert ep.captures[7].state == virtual_bench_capture.STATE["configured"]   # nothing started
 
 
 def test_p2_o11_a_read_past_the_write_position():
@@ -692,25 +692,25 @@ def test_pc8_a_saved_bind_on_a_port_that_is_not_a_serial_port_makes_the_save_unr
     ep, h = bench()
     h.ok(6, 0x02, slot_item(0, 1, ep.pairs[1][0], attach=0, retry=0) + bind_item(0, STREAM["slot_console"], 0))
     h.ok(6, reg.PROBE_CONFIG.op["save"])
-    ep.transports[0] = fake.TRANSPORT["vendor_bulk"]              # "another firmware": index 0 is no serial port now
+    ep.transports[0] = virtual_bench.TRANSPORT["vendor_bulk"]              # "another firmware": index 0 is no serial port now
     ep.serial_ports.discard(0)
     ep.reboot(0x99)
     assert state(ep)[1] == 2 and state(ep)[3] == 2                # unreadable, reason 2
 
 
-def test_fake_serve_has_no_boot_reset_any_more():
-    """probe.config (rule review 2026-10-07): no boot_reset / retry with reset - fake_serve's --boot-reset is gone."""
-    from oep_client import fake_serve
+def test_virtual_bench_serve_has_no_boot_reset_any_more():
+    """probe.config (rule review 2026-10-07): no boot_reset / retry with reset - virtual_bench_serve's --boot-reset is gone."""
+    from oep_client import virtual_bench_serve
     with pytest.raises(SystemExit):
-        fake_serve.parse(["--tcp", "0", "--profile", "esp32-v003", "--slot", "v003", "--boot-reset"])
-    ep = fake_serve.build(fake_serve.parse(["--tcp", "0", "--profile", "esp32-v003", "--slot", "v003"]))
+        virtual_bench_serve.parse(["--tcp", "0", "--profile", "esp32-v003", "--slot", "v003", "--boot-reset"])
+    ep = virtual_bench_serve.build(virtual_bench_serve.parse(["--tcp", "0", "--profile", "esp32-v003", "--slot", "v003"]))
     assert not hasattr(ep, "slot_reset_log")
 
 
-# ---- C-07 / C-05 on fake_serve's TCP -----------------------------------------------------------------------------
+# ---- C-07 / C-05 on virtual_bench_serve's TCP -----------------------------------------------------------------------------
 
 def tcp_serve(*argv):
-    proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", "--tcp", "0", "--framing", "length",
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", "--tcp", "0", "--framing", "length",
                              *argv], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     port = int(proc.stdout.readline().split()[1])
     return proc, port
@@ -728,7 +728,7 @@ def exchange(sock, message: bytes) -> bytes:
     return body
 
 
-def test_c05_c07_fake_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_length():
+def test_c05_c07_virtual_bench_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_length():
     proc, port = tcp_serve("--profile", "p4-x035")
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=5) as s:
@@ -736,7 +736,7 @@ def test_c05_c07_fake_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_le
             index = m.Tail.parse(r.payload[17:]).get(0x01)[0]
             r = m.Result.unpack(exchange(s, m.Request(2, 0, m.OP_DESCRIBE, struct.pack("<HH", 0, 0)).pack()))
             transports = [v for t, v in m.split_tlvs(r.payload[1:]) if t == CORE.tlv["describe"]["transport"]]
-            assert bytes([index, fake.TRANSPORT["tcp"], 0xFF]) in transports and index == 4
+            assert bytes([index, virtual_bench.TRANSPORT["tcp"], 0xFF]) in transports and index == 4
             s.sendall(struct.pack("<H", 4000) + b"\x01" * 10)       # over max_frame 1024: the probe closes
             s.settimeout(5)
             assert s.recv(16) == b""
@@ -747,7 +747,7 @@ def test_c05_c07_fake_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_le
 
 def test_swio_swclk_other_than_0xffff_is_an_undeclared_combination_in_scan_and_attach():
     """oep-if-debug §3 (oep-spec e9cd891): a swio pair whose swclk is not 0xFFFF is unsupported, as §1 says."""
-    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
     h = Host(ep)
     h.open()
     swio = ep.pairs[1][0][0]

@@ -8,11 +8,11 @@ import time
 
 import pytest
 
-from oep_client import catalog, endpoint, fake, link, message as m, registry as reg
+from oep_client import catalog, endpoint, virtual_bench, link, message as m, registry as reg
 
 
 class LengthStream:
-    """A vendor bulk / HID way in as a stream of length(u16) message frames, answered by a fake endpoint (or by
+    """A vendor bulk / HID way in as a stream of length(u16) message frames, answered by a virtual bench endpoint (or by
     `answer`, or not at all); every message the host wrote is kept in `sent`."""
 
     def __init__(self, ep=None, answer=None, index=1):
@@ -60,8 +60,8 @@ class LengthStream:
 
 
 def fake_ep(unit_id=None):
-    """The fake p4-bench probe; `unit_id`: its describe says this unit_id instead."""
-    probe = fake.p4_bench()
+    """The virtual bench p4-bench probe; `unit_id`: its describe says this unit_id instead."""
+    probe = virtual_bench.p4_bench()
     if unit_id is not None:
         core = probe.offered[0]
         tag = reg.CORE.tlv["describe"]["unit_id"]
@@ -86,7 +86,7 @@ def test_only_the_project_vid_pid_identifies_a_probe():
 
 
 def probes(*devices):
-    """A fake usb_probes: each device is (unit_id, ways, ports)."""
+    """A stand-in usb_probes: each device is (unit_id, ways, ports)."""
     return lambda vid=0x1209, pid=0x4F45: [link.UsbProbe(u, list(w), list(p)) for u, w, p in devices]
 
 

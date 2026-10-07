@@ -9,7 +9,7 @@ import struct
 
 import pytest
 
-from oep_client import config, console, core, endpoint, fake, fixture, host as h, message as m, registry as reg, riscv
+from oep_client import config, console, core, endpoint, virtual_bench, fixture, host as h, message as m, registry as reg, riscv
 
 CLOSED = reg.COMMON.enum["mark_kind"]["closed"]
 SESSION_ENDED = reg.COMMON.enum["mark_detail_closed"]["session_ended"]
@@ -23,7 +23,7 @@ class Clock:
         return self.ms
 
 
-def bench(profile=fake.p4_bench):
+def bench(profile=virtual_bench.p4_bench):
     clock = Clock()
     ep = endpoint.Endpoint(profile(), clock)
     return clock, ep
@@ -35,7 +35,7 @@ def new_host(ep, seed):
 
 @pytest.mark.parametrize("how", ["end", "lapse", "force"])
 def test_a_session_end_of_any_kind_releases_what_it_created(how):
-    clock, ep = bench(fake.p4_x035)                                           # with a logic capture to subscribe to
+    clock, ep = bench(virtual_bench.p4_x035)                                           # with a logic capture to subscribe to
     a, b = new_host(ep, 1), new_host(ep, 2)
     a.open(1000)
     gpio = core.find(a, "oep.fixture.gpio")

@@ -1,8 +1,8 @@
-"""oep.probe.restart (oep-spec interfaces/oep-if-restart, op 0x01, an optional interface): the fake answers completed
+"""oep.probe.restart (oep-spec interfaces/oep-if-restart, op 0x01, an optional interface): the virtual bench answers completed
 success with no payload, then restarts once the answer is out (a new boot_id, no session, the saved settings again);
 its refusals are those of any op that needs the lock; a probe without the interface does not list it. The client's
 Host.restart_probe (host guide §5.2) finds it by name, sends it, waits and confirms the new boot_id - on an in-process
-serial port, on fake_serve's pty and TCP."""
+serial port, on virtual_bench_serve's pty and TCP."""
 
 import socket
 import struct
@@ -12,7 +12,7 @@ import time
 
 import pytest
 
-from oep_client import cobs, config, core, endpoint, fake, fake_serial, host as h, link, message as m, registry as reg
+from oep_client import cobs, config, core, endpoint, virtual_bench, virtual_bench_serial, host as h, link, message as m, registry as reg
 
 RESTART = reg.PROBE_RESTART.op["restart"]
 VENDOR = 1                                       # p4-x035's transport 1: vendor bulk (not a serial port)
@@ -27,11 +27,11 @@ class Clock:
 
 
 def bench(transport: int = VENDOR):
-    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     return ep, h.Host(lambda b: ep.handle(b, transport))
 
 
-def test_the_registry_and_the_fake_offer_it():
+def test_the_registry_and_the_virtual_bench_offer_it():
     assert RESTART == core.OP_RESTART == h.OP_RESTART == 0x01 and RESTART not in reg.PROBE_RESTART.lock_free  # the lock
     assert "restart" not in reg.CORE.op                                 # not the core's any more
     assert "restart_after_answer_ms" not in reg.LIMITS                  # the host's wait: host guide §5.2, not a limit
@@ -73,9 +73,9 @@ def test_restart_needs_the_lock():
 def test_a_probe_without_oep_probe_restart():
     """The interface is optional: a probe without it lists none, the host's restart raises LookupError and sends
     nothing, and a restart sent to its old fn anyway is unknown_function."""
-    ep = endpoint.Endpoint(fake.without(fake.p4_x035(), fake.RESTART), Clock())
+    ep = endpoint.Endpoint(virtual_bench.without(virtual_bench.p4_x035(), virtual_bench.RESTART), Clock())
     hst = h.Host(lambda b: ep.handle(b, VENDOR))
-    assert core.find_all(hst, fake.RESTART) == [] and core.restart_max_ms(hst) is None
+    assert core.find_all(hst, virtual_bench.RESTART) == [] and core.restart_max_ms(hst) is None
     hst.open(3000)
     with pytest.raises(LookupError):
         hst.request_restart()
@@ -131,8 +131,8 @@ def test_restart_probe_without_a_session():
 def test_requests_behind_the_restart_are_lost_with_the_old_boot():
     """On a serial port: the answer is queued, the probe restarts after it, and a request that came in the same write
     behind it is never answered (oep-if-restart §2)."""
-    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
-    port = fake_serial.FakeSerialPort(ep, 0)
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
+    port = virtual_bench_serial.VirtualSerialPort(ep, 0)
     sid = 0x11223344
     port.feed(cobs.frame(m.Request(1, 0, m.OP_OPEN, struct.pack("<IB", 3000, 0), sid).pack()))
     assert m.Result.unpack(cobs.unframe(port.output()[1:-1])).succeeded
@@ -148,8 +148,8 @@ def test_requests_behind_the_restart_are_lost_with_the_old_boot():
 
 def test_restart_probe_on_an_in_process_serial_port():
     start = time.monotonic()
-    ep = endpoint.Endpoint(fake.esp32_v003(), lambda: int((time.monotonic() - start) * 1000))
-    lk = link.SerialLink.on_stream(fake_serial.FakeSerialStream(ep, 0), "cobs", 0.5)
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), lambda: int((time.monotonic() - start) * 1000))
+    lk = link.SerialLink.on_stream(virtual_bench_serial.VirtualSerialStream(ep, 0), "cobs", 0.5)
     lk.transport = "serial"
     hst = h.Host(lk.send)
     lk.attach_host(hst)
@@ -165,7 +165,7 @@ def test_restart_probe_when_the_answer_is_lost():
     """The answer is dropped on the line: the link sends the restart once more with the same corr, the restarted probe
     refuses it no_session, and the confirm shows the new boot_id (host guide §5.2 item 7)."""
     start = time.monotonic()
-    ep = endpoint.Endpoint(fake.esp32_v003(), lambda: int((time.monotonic() - start) * 1000))
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), lambda: int((time.monotonic() - start) * 1000))
     drop = {}
 
     def answer_filter(n, result):
@@ -175,7 +175,7 @@ def test_restart_probe_when_the_answer_is_lost():
             return None                                                 # the restart's answer, lost once
         return cobs.frame(result)
 
-    lk = link.SerialLink.on_stream(fake_serial.FakeSerialStream(ep, 0, answer_filter=answer_filter), "cobs", 0.3)
+    lk = link.SerialLink.on_stream(virtual_bench_serial.VirtualSerialStream(ep, 0, answer_filter=answer_filter), "cobs", 0.3)
     lk.transport = "serial"
     lk.wait_add_s = 0.1
     hst = h.Host(lk.send)
@@ -205,8 +205,8 @@ def test_the_restart_interface_declares_restart_max_ms():
     §1); fn 0's carries none of it."""
     ep, hst = bench()
     tags = [t & 0x7F for t, _ in core.describe(hst, FN)]
-    assert tags.count(reg.PROBE_RESTART.tlv["describe"]["restart_max_ms"]) == 1 == tags.count(fake.RESTART_MAX_MS_TAG)
-    assert core.restart_max_ms(hst) == fake.RESTART_MAX_MS == 2000
+    assert tags.count(reg.PROBE_RESTART.tlv["describe"]["restart_max_ms"]) == 1 == tags.count(virtual_bench.RESTART_MAX_MS_TAG)
+    assert core.restart_max_ms(hst) == virtual_bench.RESTART_MAX_MS == 2000
     assert 0x4F not in [t & 0x7F for t, _ in core.describe(hst)]
 
 
@@ -237,7 +237,7 @@ def test_restart_probe_waits_restart_max_ms_by_default(monkeypatch):
 
 def test_a_probe_that_does_not_come_back_within_restart_max_ms_is_gone():
     """No confirm answered by restart_max_ms after the answer: the host gives up (host guide §5.2) - not after 10 s."""
-    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     ep.restart_max_ms = 300
 
     def send(b):
@@ -293,7 +293,7 @@ def test_reopen_s_opens_a_probe_given_up_again():
 
 def test_reopen_s_on_a_bare_send():
     """A host on a bare send: silent past restart_max_ms (300 ms), back at 0.6 s - found on reopen_s, not before."""
-    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     ep.restart_max_ms = 300
     back = []
 
@@ -309,10 +309,10 @@ def test_reopen_s_on_a_bare_send():
     after = hst.restart_probe(reopen_s=3)
     assert after != before and hst.restart_reopened and 0.5 <= time.monotonic() - start < 3.0
 
-# ---- fake_serve: the op over TCP and a pty -----------------------------------------------------------------------
+# ---- virtual_bench_serve: the op over TCP and a pty -----------------------------------------------------------------------
 
 def _serve(*argv):
-    proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", *argv], stdin=subprocess.PIPE,
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", *argv], stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     return proc, proc.stdout.readline().decode().split()
 
@@ -322,7 +322,7 @@ def _stop(proc):
     proc.wait(timeout=10)
 
 
-def test_fake_serve_restart_over_tcp_length_framing():
+def test_virtual_bench_serve_restart_over_tcp_length_framing():
     proc, where = _serve("--tcp", "0", "--framing", "length", "--profile", "p4-x035")
     try:
         hst = link.open_host(f"tcp://127.0.0.1:{where[1]}", timeout=2.0)
@@ -337,8 +337,8 @@ def test_fake_serve_restart_over_tcp_length_framing():
         _stop(proc)
 
 
-def test_fake_serve_restart_over_tcp_kept_open():
-    """The TCP connection stays (the fake does not close it): the session's id is no_session, confirm the new boot_id."""
+def test_virtual_bench_serve_restart_over_tcp_kept_open():
+    """The TCP connection stays (the virtual bench does not close it): the session's id is no_session, confirm the new boot_id."""
     proc, where = _serve("--tcp", "0", "--framing", "length", "--profile", "p4-x035")
     try:
         with socket.create_connection(("127.0.0.1", int(where[1])), timeout=5) as s:
@@ -360,11 +360,11 @@ def test_fake_serve_restart_over_tcp_kept_open():
         _stop(proc)
 
 
-def test_fake_serve_without_restart():
+def test_virtual_bench_serve_without_restart():
     proc, where = _serve("--tcp", "0", "--framing", "length", "--profile", "p4-x035", "--no-restart")
     try:
         hst = link.open_host(f"tcp://127.0.0.1:{where[1]}", timeout=2.0)
-        assert fake.RESTART not in [e.name for e in core.list_entries(hst)]
+        assert virtual_bench.RESTART not in [e.name for e in core.list_entries(hst)]
         hst.open(3000)
         with pytest.raises(LookupError):
             hst.request_restart()
@@ -377,7 +377,7 @@ def test_fake_serve_without_restart():
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="pty as on Linux")
-def test_fake_serve_restart_over_a_pty():
+def test_virtual_bench_serve_restart_over_a_pty():
     proc, where = _serve("--pty", "--profile", "esp32-v003")
     try:
         hst = link.open_host(where[1], timeout=1.0)

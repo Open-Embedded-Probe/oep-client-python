@@ -1,12 +1,12 @@
 """oep-spec's test vectors (tests/vectors/*.json, copied here by tools/sync_registry.sh, never edited) against this
-client's own code: COBS and serial frames (cobs), headers and TLVs (message), confirm (host and the fake), discovery
-(list, describe and the header refusals of the smallest probe: the fake's answers and the host's reading), the CRCs,
+client's own code: COBS and serial frames (cobs), headers and TLVs (message), confirm (host and the virtual bench), discovery
+(list, describe and the header refusals of the smallest probe: the virtual bench's answers and the host's reading), the CRCs,
 the refusals, the session scenarios (sessions.json:
-every step to the fake in order) and the per-op vectors (ops.json: the fake in the state each case names, and the
-client's request and reading of the answer where it has the op) - each request sent to the fake probe with the
+every step to the virtual bench in order) and the per-op vectors (ops.json: the virtual bench in the state each case names, and the
+client's request and reading of the answer where it has the op) - each request sent to the virtual bench with the
 vector's fn numbers, its answer compared byte for byte. Where a vector and this code disagree, the spec's text decides
 (core §0 rule 4) and the vector is the one the spec corrects: `TEXT_OVER_VECTOR` names each such case, with what the
-text says, and the test checks the fake against the text."""
+text says, and the test checks the virtual bench against the text."""
 
 import json
 import struct
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from oep_client import catalog, cobs, config, core, endpoint, fake, fake_capture, host as h, message as m, registry as reg
+from oep_client import catalog, cobs, config, core, endpoint, virtual_bench, virtual_bench_capture, host as h, message as m, registry as reg
 
 PLAN_APPLY, PLAN_RELEASE = core.OP_PLAN_APPLY, core.OP_PLAN_RELEASE
 
@@ -107,46 +107,46 @@ def test_the_dmseq_crc8_vectors_have_no_counterpart_here():
 
 # ---- confirm (core §7.1) ------------------------------------------------------------------------------------------
 
-def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None) -> fake.FakeProbe:
-    """A fake probe whose fn numbers are a vector's: fn 0 with one UART bridge (index 0), then each named interface
+def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None) -> virtual_bench.VirtualProbe:
+    """A virtual bench whose fn numbers are a vector's: fn 0 with one UART bridge (index 0), then each named interface
     with channels 0-15 for its roles (the wire on pins 1 / 2; gpio without drive_levels). `ops`: fn -> the ops its
     ops tag sets instead of every op of its table (core §1.2, §7.4)."""
-    core = fake._core("1.0.0", "vectors", "0123456789ab", 16, {},
-                      fake._transports([(fake.TRANSPORT["uart_bridge"], 0xFF)]))
+    core = virtual_bench._core("1.0.0", "vectors", "0123456789ab", 16, {},
+                      virtual_bench._transports([(virtual_bench.TRANSPORT["uart_bridge"], 0xFF)]))
     chans = list(range(16))
     offered = [core]
     for fn, name in sorted(((int(k), v) for k, v in fns.items())):
         if name == "oep.fixture.gpio":
-            o = fake._gpio(fn, chans, drive=False)
+            o = virtual_bench._gpio(fn, chans, drive=False)
         elif name == "oep.fixture.i2c-target":
-            o = fake._i2c_target(fn, chans, max_length=16, max_hz=100_000, features=0, queue_depth=4)
+            o = virtual_bench._i2c_target(fn, chans, max_length=16, max_hz=100_000, features=0, queue_depth=4)
         elif name == "oep.wire.rvswd":
-            o = fake.Offered(fn, 0, name, (catalog.channel_group(1, [(1, 1), (2, 2)]),
+            o = virtual_bench.Offered(fn, 0, name, (catalog.channel_group(1, [(1, 1), (2, 2)]),
                                            catalog.u32(catalog.MAX_CLOCK_HZ, 4_000_000)))
         elif name == "oep.fixture.uart":
-            o = fake._uart(fn, 0, chans, 3_000_000)
+            o = virtual_bench._uart(fn, 0, chans, 3_000_000)
         elif name == "oep.target.riscv-dm":                            # every op offered: the default ops tag
-            o = fake.Offered(fn, 0, name, (catalog.u16(catalog.MAX_LENGTH, 256),))
+            o = virtual_bench.Offered(fn, 0, name, (catalog.u16(catalog.MAX_LENGTH, 256),))
         elif name == "oep.target.console":
-            o = fake._console(fn)
+            o = virtual_bench._console(fn)
         elif name == "oep.probe.link":
-            o = fake._link(fn)                                         # source and sink (no UART bridge speed)
+            o = virtual_bench._link(fn)                                         # source and sink (no UART bridge speed)
         elif name == "oep.probe.plan":
-            o = fake._plan(fn)
+            o = virtual_bench._plan(fn)
         elif name == "oep.probe.restart":
-            o = fake._restart(fn)
+            o = virtual_bench._restart(fn)
         elif name == "oep.probe.config":
-            o = fake._config(fn, 0, slots_max=2, storage=0)            # no storage: save / erase not in its ops
+            o = virtual_bench._config(fn, 0, slots_max=2, storage=0)            # no storage: save / erase not in its ops
         elif name == "oep.fixture.logic":
-            o = fake.Offered(fn, 0, name, fake._roles({k: chans for k in range(4)})
-                             + fake._capture_decl(["one_shot"], 8, 4096, 1), inner=fake._capture_inner([8], 1, 480))
+            o = virtual_bench.Offered(fn, 0, name, virtual_bench._roles({k: chans for k in range(4)})
+                             + virtual_bench._capture_decl(["one_shot"], 8, 4096, 1), inner=virtual_bench._capture_inner([8], 1, 480))
         else:
             raise AssertionError(f"a vector names {name}: add it here")
         if ops and fn in ops:
-            o = fake.Offered(o.fn, o.instance, o.name, (catalog.ops_tlv(ops[fn]),) + tuple(
+            o = virtual_bench.Offered(o.fn, o.instance, o.name, (catalog.ops_tlv(ops[fn]),) + tuple(
                 t for t in o.tlvs if t[0] != catalog.OPS), inner=o.inner)
         offered.append(o)
-    return fake.FakeProbe("vectors", max_frame, offered)
+    return virtual_bench.VirtualProbe("vectors", max_frame, offered)
 
 
 CONFIRM = load("confirm.json")["exchanges"]
@@ -164,7 +164,7 @@ def test_confirm_request_bytes(case):
 
 
 @pytest.mark.parametrize("case", CONFIRM, ids=lambda c: c["name"])
-def test_confirm_answer_from_the_fake_and_read_by_the_host(case):
+def test_confirm_answer_from_the_virtual_bench_and_read_by_the_host(case):
     a = case["answer"]
     ep = endpoint.Endpoint(vector_probe({}, a.get("max_frame", 1024)), Clock(), boot_id=a.get("boot_id", 0),
                            window=a.get("window", 4096), max_inflight=a.get("max_inflight", 4))
@@ -196,14 +196,14 @@ def smallest_probe() -> endpoint.Endpoint:
     mandatory, core §1.2), one UART bridge (index 0, interface 0xFF), unit_id "a1b2c3d4", max_op_ms 1000 - its
     describe in that order (ops first), nothing else."""
     t = reg.CORE.tlv["describe"]
-    core = fake.Offered(0, 0, fake.CORE_NAME, (catalog.ops_tlv(reg.CORE.op[k] for k in fake.CORE_REQUIRED),
+    core = virtual_bench.Offered(0, 0, virtual_bench.CORE_NAME, (catalog.ops_tlv(reg.CORE.op[k] for k in virtual_bench.CORE_REQUIRED),
                                            catalog.text(t["unit_id"], "a1b2c3d4"),
-                                           catalog.tlv(t["transport"], bytes([0, fake.TRANSPORT["uart_bridge"], 0xFF])),
+                                           catalog.tlv(t["transport"], bytes([0, virtual_bench.TRANSPORT["uart_bridge"], 0xFF])),
                                            catalog.u32(t["max_op_ms"], 1000)))
-    return endpoint.Endpoint(fake.FakeProbe("smallest", 64, [core]), Clock())
+    return endpoint.Endpoint(virtual_bench.VirtualProbe("smallest", 64, [core]), Clock())
 
 
-def test_discovery_from_the_fake_byte_for_byte():
+def test_discovery_from_the_virtual_bench_byte_for_byte():
     """Every exchange and refusal in order on one smallest probe (no session: list and describe are lock-free, and the
     refusals come at order 1, before the session check)."""
     ep = smallest_probe()
@@ -283,13 +283,13 @@ def refusal_endpoint() -> endpoint.Endpoint:
     gpio = next((int(k) for k, v in fns.items() if v == "oep.fixture.gpio"), None)
     if gpio is not None:                                                # "channel 3 is in fn 2's plan"
         hst._corr = 0
-        ep.handle(m.Request(1, ep.fns[fake.PLAN], PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", gpio, 1, 3)),
+        ep.handle(m.Request(1, ep.fns[virtual_bench.PLAN], PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", gpio, 1, 3)),
                             SESSION).pack(), 0)
     return ep
 
 
-def test_refusals_from_the_fake_byte_for_byte():
-    """Every case in order on one fake probe (their corrs rise, as one session's do: core §5.2)."""
+def test_refusals_from_the_virtual_bench_byte_for_byte():
+    """Every case in order on one virtual bench (their corrs rise, as one session's do: core §5.2)."""
     ep = refusal_endpoint()
     for case in REFUSALS["cases"]:
         out = ep.handle(hx(case["request_hex"]), 0)
@@ -317,7 +317,7 @@ EXAMPLE_BOOT_ID = 0x12345678                                            # confir
 
 
 @pytest.mark.parametrize("scenario", SESSIONS["scenarios"], ids=lambda c: c["name"])
-def test_session_scenarios_on_the_fake_step_by_step(scenario):
+def test_session_scenarios_on_the_virtual_bench_step_by_step(scenario):
     """Each scenario from a fresh probe, every step on one transport, the answer byte for byte (no time passes on the
     timers' clock; the probe's clock, which clock answers, reads 2 s and then 1 ms more at every read - the example
     values of sessions.json)."""
@@ -377,7 +377,7 @@ def test_session_scenarios_as_the_host_reads_them(scenario):
             assert sent and sent[0] == hx(step["request_hex"]), step["note"]
 
 
-# ---- per-op vectors (ops.json): the fake in each case's state, and the client's side --------------------------------
+# ---- per-op vectors (ops.json): the virtual bench in each case's state, and the client's side --------------------------------
 
 OPS = load("ops.json")["cases"]
 S = SESSION                                                             # ops.json about: the lock holder's id
@@ -415,7 +415,7 @@ def attach(ep, wire, corr=2, method=0, speed=4_000_000):
 
 
 def setup_case(case):
-    """The fake in the state the case names (`state`), with every fn the case lists and a wire where a connection
+    """The virtual bench in the state the case names (`state`), with every fn the case lists and a wire where a connection
     is wanted. -> the endpoint."""
     fns = dict(case["fns"])
     names = set(fns.values())
@@ -431,7 +431,7 @@ def setup_case(case):
     ep = endpoint.Endpoint(vector_probe(fns, ops=ops), clock, boot_id=EXAMPLE_BOOT_ID)
     wire = next((int(k) for k, v in fns.items() if v == "oep.wire.rvswd"), None)
     name, state = case["name"], case["state"]
-    plan = ep.fns.get(fake.PLAN)
+    plan = ep.fns.get(virtual_bench.PLAN)
     if name.startswith("restart"):
         if "holds the lock" in state:
             held(ep)
@@ -480,18 +480,18 @@ def setup_case(case):
         if "fn 9 subscribed" in state:
             req(ep, 2, logic, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0))
         cap = ep.captures[logic]
-        cap.generation, cap.state = 1, fake_capture.STATE["done"]
-        cap.segs = [fake_capture.Segment(0, 0, 1000, 5_000_000, 50, fake_capture.NONE, 0, 1)]
+        cap.generation, cap.state = 1, virtual_bench_capture.STATE["done"]
+        cap.segs = [virtual_bench_capture.Segment(0, 0, 1000, 5_000_000, 50, virtual_bench_capture.NONE, 0, 1)]
     return ep
 
 
-# Vectors the spec's text corrects (core §0 rule 4): name -> what the text says; the fake answers as the text does.
+# Vectors the spec's text corrects (core §0 rule 4): name -> what the text says; the virtual bench answers as the text does.
 # Empty now: "rvswd scan: count > 0 with skip" (debug §1, b9b30ad) was corrected in oep-spec 85170c4.
 TEXT_OVER_VECTOR: dict[str, str] = {}
 
 
 @pytest.mark.parametrize("case", OPS, ids=lambda c: c["name"])
-def test_ops_vectors_from_the_fake_byte_for_byte(case):
+def test_ops_vectors_from_the_virtual_bench_byte_for_byte(case):
     ep = setup_case(case)
     out = ep.handle(hx(case["request_hex"]), 0)
     if case["name"] in TEXT_OVER_VECTOR:
@@ -715,9 +715,9 @@ def test_ops_encoding_as_the_host_reads_it(case):
         assert d.ops is None and d.ops_invalid
 
 
-def test_every_ops_in_the_fakes_and_the_vectors_is_valid():
-    """Every describe the fake's profiles give, and the discovery vectors' ops, keep core §7.4's form."""
-    for make in fake.PROFILES.values():
+def test_every_ops_in_the_virtual_bench_and_the_vectors_is_valid():
+    """Every describe the virtual bench's profiles give, and the discovery vectors' ops, keep core §7.4's form."""
+    for make in virtual_bench.PROFILES.values():
         ep = endpoint.Endpoint(make(), Clock())
         for fn in ep.names:
             for t in ep._declarations(fn):

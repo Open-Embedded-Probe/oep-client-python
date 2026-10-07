@@ -39,10 +39,10 @@ def run(board_id):
     when the board's tests are done."""
     board = next(b for b in boards.selected() if b.id == board_id)
     r = record.Run(board)
-    if board.kind == "fake":
-        proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", "--pty", "--profile", board.fake_profile],
+    if board.kind == "virtual":
+        proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", "--pty", "--profile", board.virtual_profile],
                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
-        r.fake = proc
+        r.virtual_bench = proc
         r.port = re.search(r"/dev/pts/\d+", proc.stdout.readline()).group(0)
     else:
         try:
@@ -56,9 +56,9 @@ def run(board_id):
     # try - the probe opened again if it went away); what stays is printed in the summary with its commands
     r.restore_settings("end of run")
     r.close_host()
-    if r.fake is not None:
-        r.fake.stdin.close()
-        r.fake.wait(5)
+    if r.virtual_bench is not None:
+        r.virtual_bench.stdin.close()
+        r.virtual_bench.wait(5)
     path = r.write()
     r.record("_results", path=str(path))
 

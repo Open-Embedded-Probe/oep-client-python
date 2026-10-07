@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-from oep_client import arm, catalog, endpoint, fake, host as h, message as m, riscv as target
+from oep_client import arm, catalog, endpoint, virtual_bench, host as h, message as m, riscv as target
 
 FNS = {"oep.wire.rvswd": 1, "oep.target.riscv-dm": 2, "oep.fixture.gpio": 3, "oep.wire.swd": 4,
        "oep.target.arm-adi": 5}
@@ -210,10 +210,10 @@ def test_reset_halt_and_step_decode():
 
 # ---- riscv-dm: DATA0 written back by the client (oep-if-debug §4) ---------------------------------------------
 
-def _dm_on_fake(data0):
-    """A halted hart on the fake (p4_x035) whose DATA0 holds `data0` (another user's: the console's mailbox), and a
+def _dm_on_virtual_bench(data0):
+    """A halted hart on the virtual bench (p4_x035) whose DATA0 holds `data0` (another user's: the console's mailbox), and a
     record of every DMI write the probe makes (address, value, the hart halted then)."""
-    ep = endpoint.Endpoint(fake.p4_x035(), lambda: 0)
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), lambda: 0)
     hst = h.Host(ep.handle, rng=random.Random(1))
     hst.open(lease_ms=10000)
     conn, _ = target.Wire(hst).attach(halt=True)
@@ -232,7 +232,7 @@ def _dm_on_fake(data0):
 def test_read_register_then_resume_writes_data0_back():
     """oep-if-debug §4: the client's read_register saves DATA0 first (data_saved) and resume writes it back - while the
     hart is still halted - before the resumereq."""
-    tg, dm, writes = _dm_on_fake(0x5A5A1234)
+    tg, dm, writes = _dm_on_virtual_bench(0x5A5A1234)
     assert dm.data_saved is None
     assert dm.read_register(0x1008) == 0x000EC8FE
     assert dm.data_saved == 0x5A5A1234 and tg.dmi[target.DATA0] != 0x5A5A1234     # the command left DATA0 changed
@@ -246,7 +246,7 @@ def test_read_register_then_resume_writes_data0_back():
 
 
 def test_resume_with_nothing_saved_sends_no_data0_write():
-    tg, dm, writes = _dm_on_fake(0x5A5A1234)
+    tg, dm, writes = _dm_on_virtual_bench(0x5A5A1234)
     dm.resume()
     assert not [w for w in writes if w[0] == target.DATA0] and dm.data_saved is None
     assert tg.dmi[target.DATA0] == 0x5A5A1234 and not tg.halted
@@ -261,7 +261,7 @@ def test_run_not_run_is_stopped_3():
     """oep-if-debug §4.4: a preparation that failed (a register write with no answer) answers stopped 3 not_run,
     status the failure, outcome failed, dpc 0, nvals 0 - the hart not run, still halted; a run on a running hart:
     stopped 3, status state."""
-    tg, dm, _ = _dm_on_fake(0)
+    tg, dm, _ = _dm_on_virtual_bench(0)
     tg.fail_regs = {0x100A}
     with pytest.raises(target.TargetError) as e:
         dm.run(0x20000000, [(0x100A, 1)], timeout_ms=50)
@@ -330,15 +330,15 @@ class FakeAdi:
 
 @pytest.fixture
 def adi_bench():
-    fake = FakeAdi()
-    hst = ScriptedHost({(5, arm.ArmAdi.TRANSFER): fake.transfer, (5, arm.ArmAdi.READ_BLOCK): fake.read_block,
-                        (5, arm.ArmAdi.WRITE_BLOCK): fake.write_block,
+    model = FakeAdi()
+    hst = ScriptedHost({(5, arm.ArmAdi.TRANSFER): model.transfer, (5, arm.ArmAdi.READ_BLOCK): model.read_block,
+                        (5, arm.ArmAdi.WRITE_BLOCK): model.write_block,
                         (4, target.Wire.ATTACH): lambda p: ok(attach_answer(1, 0x4c013477, 0x04, 2_000_000))})
-    return fake, hst
+    return model, hst
 
 
 def test_swd_attach_decodes_dpidr_and_dormant(adi_bench):
-    fake, hst = adi_bench
+    model, hst = adi_bench
     assert arm.SwdWire(hst).attach() == (1, 0x4c013477, True)                          # flags bit2: dormant woken
     assert hst.log[-1][2] == b"\x00" + MAX_SPEED                                        # method 0, max_speed required
     wire = arm.SwdWire(hst)
@@ -349,19 +349,19 @@ def test_swd_attach_decodes_dpidr_and_dormant(adi_bench):
 
 
 def test_ap_read_uses_adiv6_select_and_the_posted_value(adi_bench):
-    fake, hst = adi_bench
+    model, hst = adi_bench
     adi = arm.ArmAdi(hst, 1, adiv6=True)
     assert adi.ap_read(0x2000, 0xD00) == 0x43800052
-    assert fake.selects == [0x2D00]
+    assert model.selects == [0x2D00]
     adi.ap_read(0x2000, 0xD00)
-    assert fake.selects == [0x2D00]                                     # cached: no second SELECT write
+    assert model.selects == [0x2D00]                                     # cached: no second SELECT write
 
 
 def test_mem_ap_sets_csw_from_the_caller_and_chunks_blocks(adi_bench):
-    fake, hst = adi_bench
+    model, hst = adi_bench
     adi = arm.ArmAdi(hst, 1, adiv6=True)
     mem = arm.MemAp(adi, 0x2000, csw_clear=1 << 30)
-    assert fake.csw == (0x43800052 & ~0x37 | 0x12) & ~(1 << 30)
+    assert model.csw == (0x43800052 & ~0x37 | 0x12) & ~(1 << 30)
     words = mem.read_block(0x1000, 500)
     assert words == [0x1000 + 4 * i for i in range(500)]
     blocks = [p for fn, op, p in hst.log if op == arm.ArmAdi.READ_BLOCK]
@@ -374,8 +374,8 @@ def test_mem_ap_sets_csw_from_the_caller_and_chunks_blocks(adi_bench):
 def test_block_length_comes_from_the_declared_max_length_only():
     """oep-if-debug §4.5 / §6: the host takes max_length from describe and never computes it from max_frame; a probe
     with block ops that declares none is an error, named."""
-    fake = FakeAdi()
-    handlers = {(5, arm.ArmAdi.TRANSFER): fake.transfer, (5, arm.ArmAdi.READ_BLOCK): fake.read_block}
+    model = FakeAdi()
+    handlers = {(5, arm.ArmAdi.TRANSFER): model.transfer, (5, arm.ArmAdi.READ_BLOCK): model.read_block}
     hst = ScriptedHost(dict(handlers), max_length=96)
     adi = arm.ArmAdi(hst, 1, adiv6=True)
     assert adi.max_length == 96 and adi.max_words == 24
@@ -393,7 +393,7 @@ def test_block_length_comes_from_the_declared_max_length_only():
 
 
 def test_transfer_fault_raises_with_the_step_count(adi_bench):
-    fake, hst = adi_bench
+    model, hst = adi_bench
     adi = arm.ArmAdi(hst, 1, adiv6=True)
     adi.select(0xE000)
     with pytest.raises(arm.AdiError, match=r"ack 0x4\) stopped after 0: fault \(failed\)") as e:
@@ -401,11 +401,11 @@ def test_transfer_fault_raises_with_the_step_count(adi_bench):
     assert e.value.status == 3 and e.value.done == 0 and adi.last_ack == 4
 
 
-# ---- Cortex-M call primitive and the RP2350 ROM flash sequence, on a fake core --------------------------------
+# ---- Cortex-M call primitive and the RP2350 ROM flash sequence, on a model core --------------------------------
 
 class FakeCortexM:
     """A MemAp stand-in: DHCSR / DCRSR / DCRDR semantics, plus a ROM whose table lookup and flash functions are
-    modelled by what they do to the fake's registers and flash, so the host's sequence can be checked end to end."""
+    modelled by what they do to the model's registers and flash, so the host's sequence can be checked end to end."""
     ROM = {("I", "F"): 0xE3D, ("E", "X"): 0xF65, ("R", "E"): 0xF15, ("R", "P"): 0xEDD, ("F", "C"): 0x3801,
            ("C", "X"): 0x659, ("R", "B"): 0x6F3}
 
@@ -481,25 +481,25 @@ class FakeCortexM:
 
 
 def test_cortexm_call_returns_r0_and_clears_maskints():
-    fake = FakeCortexM()
-    core = arm.CortexM(fake, bkpt_at=0x20040000, stack_top=0x20080000)
+    model = FakeCortexM()
+    core = arm.CortexM(model, bkpt_at=0x20040000, stack_top=0x20080000)
     core.halt()
     assert core.call(0x8C, (ord("R") | ord("B") << 8, 4)) == 0x6F3
-    assert fake.ram[0x20040000] == 0xBE00BE00
-    assert not fake.dhcsr & 8                                          # C_MASKINTS cleared after the call
+    assert model.ram[0x20040000] == 0xBE00BE00
+    assert not model.dhcsr & 8                                          # C_MASKINTS cleared after the call
 
 
 def test_rp2350_flash_program_runs_the_sdk_sequence_and_verifies():
     from oep_client import rp2350
-    fake = FakeCortexM()
-    core = arm.CortexM(fake, bkpt_at=rp2350.BKPT_AT, stack_top=rp2350.STACK_TOP)
+    model = FakeCortexM()
+    core = arm.CortexM(model, bkpt_at=rp2350.BKPT_AT, stack_top=rp2350.STACK_TOP)
     core.halt()
     image = bytes(range(256)) * 70 + b"\x12\x34"                      # 17922 B: 70 pages + a partial one
     assert rp2350.program_and_verify(core, image, 0)
-    assert fake.log[:3] == ["connect", "exit_xip", "erase 0x0+20480"]  # erase rounded to 4 KiB sectors
-    assert fake.log[3:5] == ["program 0x0+16384", "program 0x4000+1792"]   # 16 KiB buffer, page-padded tail
-    assert fake.log[5:] == ["flush", "enter_cmd_xip"]
-    assert bytes(fake.flash[:len(image)]) == image and fake.flash[len(image):20480] == b"\xff" * (20480 - len(image))
+    assert model.log[:3] == ["connect", "exit_xip", "erase 0x0+20480"]  # erase rounded to 4 KiB sectors
+    assert model.log[3:5] == ["program 0x0+16384", "program 0x4000+1792"]   # 16 KiB buffer, page-padded tail
+    assert model.log[5:] == ["flush", "enter_cmd_xip"]
+    assert bytes(model.flash[:len(image)]) == image and model.flash[len(image):20480] == b"\xff" * (20480 - len(image))
     rp2350.Rom(core).reboot()
-    assert fake.log[-1] == "reboot flags 0 delay 10" and not fake.dhcsr & 8
+    assert model.log[-1] == "reboot flags 0 delay 10" and not model.dhcsr & 8
 

@@ -4,7 +4,7 @@
 
 oep-spec の [docs/release-testing.ja.md](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/release-testing.ja.md)
 のリリース前の試験。probe の firmware（oep-probe-arduino の `examples/Firmware/OepProbe`）を実機に焼き、このクライアントで
-一通り動かす。普段の試験（`uv run pytest`）は偽の probe に対して回り、実機には触れない。このディレクトリは `OEP_HW_BOARDS`
+一通り動かす。普段の試験（`uv run pytest`）は仮想ベンチに対して回り、実機には触れない。このディレクトリは `OEP_HW_BOARDS`
 でボードを名指ししない限り丸ごと skip になる。firmware のリリース前（main をビルドして手元のボード全部）とクライアントの
 リリース前（最新の firmware のリリース）の両方で回し、通らなければどちらもリリースしない。
 
@@ -18,8 +18,8 @@ OEP_HW_BOARDS=esp32-pico-d4-50029191fe34 OEP_PROBE_VERSION=0.0.25 uv run pytest 
 # ボードに入っている firmware をそのまま試す（焼かない）
 OEP_HW_BOARDS=9489dd2ae0953650 OEP_HW_NOFLASH=1 uv run pytest tests/hw -m hw
 
-# 偽の probe（pty）で試験の手順だけ通す（実機なし。リリースの試験にはならない）
-OEP_HW_BOARDS=fake-esp32-v003 uv run pytest tests/hw -m hw
+# 仮想ベンチ（pty）で試験の手順だけ通す（実機なし。リリースの試験にはならない）
+OEP_HW_BOARDS=virtual-esp32-v003 uv run pytest tests/hw -m hw
 ```
 
 `-s` を付けると焼く進み具合と port_speed の表がその場で出る。1 ボードの一巡は 1.5〜2.5 分（ESP32 を 115200 で焼く約 40 秒を
@@ -35,7 +35,7 @@ OEP_HW_BOARDS=fake-esp32-v003 uv run pytest tests/hw -m hw
 | `flash.py` | ボードの種類ごとの焼き方と、bridge のボードの DTR / RTS によるリセット |
 | `record.py` | 1 ボードの一巡: 接続、測ったもの、結果のファイル |
 | `test_probe.py` | 試験。この順に回る |
-| `test_harness.py` | ハーネス自身の後始末を、プロセス内の偽の probe で確かめる（`hw` の印が無いので普段の `uv run pytest` で回る）: 失敗した試験の後と、probe が無くなった後に設定を元に戻す |
+| `test_harness.py` | ハーネス自身の後始末を、プロセス内の仮想ベンチで確かめる（`hw` の印が無いので普段の `uv run pytest` で回る）: 失敗した試験の後と、probe が無くなった後に設定を元に戻す |
 | `conftest.py` | `hw` マーカーと `OEP_HW_BOARDS` 無しの skip、ボードごとのまとめ、1 画面の要約 |
 | `results/` | `<board>-<firmware>-<client>-<started>.json`。1 巡に 1 つ。名前に巡の開始時刻（`20261006T203121`）を入れ、後の巡が前の巡のファイルを上書きしない（小さな要約だけ。それ以外は `.gitignore` で入れない） |
 
@@ -65,7 +65,7 @@ OEP_HW_BOARDS=fake-esp32-v003 uv run pytest tests/hw -m hw
 結果のファイルにはほかに、クライアントの版と commit、firmware の出所（checkout + commit + dirty か、リリースの版 + json の
 URL + sha256）、ホストの platform、その回の `OEP_*` の環境変数すべてが入る。1 画面の要約は pytest の最後に出る。
 
-偽の probe（`fake-esp32-v003`）では `capture` はレベルを記録するだけで判定しない（偽の probe はピンではなくカウンタを取り、
+仮想ベンチ（`virtual-esp32-v003`）では `capture` はレベルを記録するだけで判定しない（仮想ベンチはピンではなくカウンタを取り、
 ワンショットは start の応答と同時に終わる）。
 
 ## 戻らない probe と、tests/hw が変える設定

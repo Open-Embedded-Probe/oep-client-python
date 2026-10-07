@@ -1,10 +1,10 @@
-"""oep.probe.config from the client (oep_client.config) and the `oep config` command, against the fake probe."""
+"""oep.probe.config from the client (oep_client.config) and the `oep config` command, against the virtual bench."""
 
 import struct
 
 import pytest
 
-from oep_client import __main__ as cli, config, core, endpoint, fake, host as h, message as m
+from oep_client import __main__ as cli, config, core, endpoint, virtual_bench, host as h, message as m
 
 
 class Clock:
@@ -15,7 +15,7 @@ class Clock:
 
 
 def open_bench():
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     hst = h.Host(lambda b: ep.handle(b, 1))                         # over vendor bulk
     hst.open(3000)
     return ep, hst
@@ -64,7 +64,7 @@ def test_a_bind_carries_one_stream_and_keeps_its_position_through_a_session():
     cfg.set([config.Plan(fn=5, role=1, channel=20), config.Bind(port=3, stream=("uart", 5))])
     assert config.decode(config.ITEM["bind"], bytes([3, 2, 5, 0])) == config.Bind(port=3, stream=("uart", 5))
     hst.end()
-    ep.port_output(3)                                               # the port reads (the fake starts its position here)
+    ep.port_output(3)                                               # the port reads (the virtual bench starts its position here)
     ep.uart_rx(5, b"abcd")
     assert ep.port_output(3, 2) == b"ab" and cfg.state().binds == [config.BindState(3, "streaming")]
     h3 = h.Host(lambda b: ep.handle(b, 3))                          # a session over that port: held
@@ -136,8 +136,8 @@ def test_uart_item_is_applied_when_the_plan_gives_the_uart_pins():
 def test_state_is_paged_and_describe_is_declarations_only():
     """probe.config §3.3 / §4: state (op 0x06, lock-free) pages its slots and binds by first_slot / first_bind; the
     describe has no state in it."""
-    probe = fake.rp2350_pins()                                     # a wire that takes any pair: many slots
-    small = fake.FakeProbe("small", SMALL_FRAME, probe.offered + [fake._config(9, 0, slots_max=8)],
+    probe = virtual_bench.rp2350_pins()                                     # a wire that takes any pair: many slots
+    small = virtual_bench.VirtualProbe("small", SMALL_FRAME, probe.offered + [virtual_bench._config(9, 0, slots_max=8)],
                            own_channels=probe.own_channels)
     ep = endpoint.Endpoint(small, Clock())
     hst = h.Host(lambda b: ep.handle(b, 1))
@@ -205,7 +205,7 @@ def test_plan_label_idle_from_the_command(capsys, monkeypatch):
 
 
 def test_slot_takes_the_only_wire_by_default(monkeypatch):
-    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())               # oep.wire.swio only
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())               # oep.wire.swio only
     hst = h.Host(lambda b: ep.handle(b, 0))
 
     class FakeLink:
@@ -245,7 +245,7 @@ def test_a_settings_plan_is_not_the_sessions():
 def test_reset_channels_and_a_named_reset_line():
     """oep-if-debug §3: the host reads the reset channels the probe allows and names one; there is no default."""
     from oep_client import riscv
-    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
     hst = h.Host(lambda b: ep.handle(b, 0))
     hst.open(3000)
     wire = riscv.Wire(hst, "oep.wire.swio")
@@ -313,16 +313,16 @@ def test_saved_settings_follow_their_interfaces_by_name_not_number():
         h2.open(3000)
         return new, config.ProbeConfig(h2)
 
-    old = fake.p4_bench()
+    old = virtual_bench.p4_bench()
     moved = [o if o.fn == 0 else dataclasses.replace(o, fn=o.fn + 1) for o in old.offered]
-    moved.insert(1, fake.Offered(1, 0, "io.github.test.new-first"))
-    new, cfg2 = update(fake.FakeProbe("moved", old.max_frame, moved))
+    moved.insert(1, virtual_bench.Offered(1, 0, "io.github.test.new-first"))
+    new, cfg2 = update(virtual_bench.VirtualProbe("moved", old.max_frame, moved))
     st = cfg2.state()
     assert st.storage == "applied" and st.unreadable is None
     slot, bind0, bind3 = cfg2.items()
     assert slot.wire_fn == 2 and bind0.stream == ("slot", 0) and bind3.stream == ("uart", uart + 1)   # renumbered
 
     gone = [o for o in old.offered if o.name != "oep.fixture.uart"]
-    _, cfg3 = update(fake.FakeProbe("gone", old.max_frame, gone))
+    _, cfg3 = update(virtual_bench.VirtualProbe("gone", old.max_frame, gone))
     st = cfg3.state()
     assert st.storage == "unreadable" and "gone" in st.unreadable and cfg3.items() == []

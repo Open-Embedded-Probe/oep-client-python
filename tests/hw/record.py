@@ -152,7 +152,7 @@ class Run:
     hst: h.Host | None = None
     port: str = ""
     flash_failed: str | None = None                  # set when the firmware could not be put on: later tests skip
-    fake: subprocess.Popen | None = None
+    virtual_bench: subprocess.Popen | None = None
     t0: float = field(default_factory=time.monotonic)
     lost: str | None = None                          # the probe went away (not back after a restart): later tests skip
     # The probe's settings: what they were before tests/hw changed any, the items a test set that are not put back yet
@@ -190,7 +190,7 @@ class Run:
         last = None
         while True:
             try:
-                self.port = boards.resolve_port(self.board) if self.board.kind != "fake" else self.port
+                self.port = boards.resolve_port(self.board) if self.board.kind != "virtual" else self.port
                 hst = link.open_host(self.port, timeout=1.0)
             except Exception as e:      # noqa: BLE001
                 last = e
@@ -230,7 +230,7 @@ class Run:
                 return hst
             except (h.Rejected, h.OepError):
                 hst.session = None
-        core.take(hst, lease_ms, owner="oep tests/hw", force=hst.session is None and self.board.kind == "fake")
+        core.take(hst, lease_ms, owner="oep tests/hw", force=hst.session is None and self.board.kind == "virtual")
         return hst
 
     def require(self) -> h.Host:

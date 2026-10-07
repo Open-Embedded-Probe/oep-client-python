@@ -2,4 +2,6 @@
 *
 !.gitignore
 !*.json
+# virtual bench dry runs (fake-*: the files of runs before the rename)
+virtual-*.json
 fake-*.json

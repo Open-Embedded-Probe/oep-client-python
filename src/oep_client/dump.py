@@ -1,7 +1,7 @@
 """Collect a probe's declared capabilities (list + describe, paged) and render them.
 
 Talks only through `call(fn, op, payload) -> payload`, so the same code runs against the in-process
-fake now and a real transport later.
+virtual bench and a real transport alike.
 """
 
 from __future__ import annotations

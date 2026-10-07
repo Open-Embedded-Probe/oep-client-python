@@ -9,10 +9,10 @@ import time
 
 import pytest
 
-from oep_client import catalog, cobs, config, core, endpoint, fake, fixture, host as h, link, message as m
+from oep_client import catalog, cobs, config, core, endpoint, virtual_bench, fixture, host as h, link, message as m
 from oep_client import registry as reg, riscv
 
-from test_fake_rules_2026_10_02 import Clock
+from test_virtual_bench_rules_2026_10_02 import Clock
 from test_link_host import CONFIRM_V1, Stream, answering, frame, make_link, result
 from test_link_serial import Scripted
 
@@ -22,7 +22,7 @@ def confirm_payload(max_frame=1024, window=65536, inflight=4, boot_id=0x11):
 
 
 def in_process(probe=None, transport=0, **kw):
-    ep = endpoint.Endpoint(probe or fake.p4_bench(), Clock(), **kw)
+    ep = endpoint.Endpoint(probe or virtual_bench.p4_bench(), Clock(), **kw)
     sent = []
 
     def send(b):
@@ -64,7 +64,7 @@ def test_c20_on_a_link_the_probe_is_closed_and_nothing_more_is_sent():
                                            (0xFFFFFFFF, False)])
 def test_c47_a_max_op_ms_outside_1_to_600000_is_a_probe_not_used(value, usable):
     ep, hst, sent = in_process()
-    ep.static[0] = tuple(catalog.u32(fake.CORE_MAX_OP_MS, value) if t[0] == fake.CORE_MAX_OP_MS else t
+    ep.static[0] = tuple(catalog.u32(virtual_bench.CORE_MAX_OP_MS, value) if t[0] == virtual_bench.CORE_MAX_OP_MS else t
                          for t in ep.static[0])
     hst.confirm()
     if usable:
@@ -160,7 +160,7 @@ def test_clock_best_keeps_the_shortest_round_trip():
     def now():
         t[0] += 1
         return t[0]
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
 
     def send(b):
         t[0] += next(trips) - 1                                               # the round trip of this one
@@ -172,8 +172,8 @@ def test_clock_best_keeps_the_shortest_round_trip():
         hst.clock_best(0)
 
 
-def test_clock_from_the_fake_through_a_link_and_no_heartbeat_any_more():
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+def test_clock_from_the_virtual_bench_through_a_link_and_no_heartbeat_any_more():
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     s = Stream(lambda msg: [r for r in [ep.handle(msg, 1)] if r] + ep.pushes())
     lk = make_link(s)
     hst = h.Host(lk.send)
@@ -319,7 +319,7 @@ def test_pc9_state_keeps_the_last_pages_storage():
 # ---- C-21: optional ops are used when declared ------------------------------------------------------------------
 
 def test_c21_riscv_dm_says_which_optional_ops_the_probe_offers():
-    ep, hst, _ = in_process(fake.esp32_v003())
+    ep, hst, _ = in_process(virtual_bench.esp32_v003())
     hst.open(3000)
     wire = riscv.Wire(hst, "oep.wire.swio")
     conn, _ = wire.attach(halt=True)
@@ -334,10 +334,10 @@ def test_c21_riscv_dm_says_which_optional_ops_the_probe_offers():
 
 def test_cs_setup_ns_is_read_and_shown():
     from oep_client import dump
-    ep, hst, _ = in_process(fake.esp32_v003())
+    ep, hst, _ = in_process(virtual_bench.esp32_v003())
     spi = fixture.SpiTarget(hst)
     assert spi.cs_setup_ns == 4000
-    ep2, hst2, _ = in_process(fake.p4_x035())
+    ep2, hst2, _ = in_process(virtual_bench.p4_x035())
     assert fixture.SpiTarget(hst2).cs_setup_ns == 0
     caps = dump.collect(lambda fn, op, p: hst.request(fn, op, p, locked=False).payload)
     assert "CS setup ns: 4000" in dump.to_text(caps)
@@ -345,7 +345,7 @@ def test_cs_setup_ns_is_read_and_shown():
 
 @pytest.mark.parametrize("address", [0x00, 0x07, 0x78, 0x7F])
 def test_i2c_target_refuses_a_reserved_address_before_sending(address):
-    ep, hst, sent = in_process(fake.p4_x035())
+    ep, hst, sent = in_process(virtual_bench.p4_x035())
     i2c = fixture.I2cTarget(hst)
     n = len(sent)
     with pytest.raises(ValueError):
@@ -355,10 +355,10 @@ def test_i2c_target_refuses_a_reserved_address_before_sending(address):
 
 # ---- the ops encoding (core §7.4): a broken ops is not used ------------------------------------------------------
 
-def _with_ops(name: str, value: bytes) -> fake.FakeProbe:
-    probe = fake.p4_bench()
-    return fake.FakeProbe(probe.label, probe.max_frame, [
-        fake.Offered(o.fn, o.instance, o.name, (catalog.tlv(catalog.OPS, value),) + tuple(
+def _with_ops(name: str, value: bytes) -> virtual_bench.VirtualProbe:
+    probe = virtual_bench.p4_bench()
+    return virtual_bench.VirtualProbe(probe.label, probe.max_frame, [
+        virtual_bench.Offered(o.fn, o.instance, o.name, (catalog.tlv(catalog.OPS, value),) + tuple(
             t for t in o.tlvs if t[0] != catalog.OPS)) if o.name == name else o for o in probe.offered], fill_ops=False)
 
 
@@ -387,14 +387,14 @@ def test_ops_encodings_the_old_one_encoding_rule_refused_are_read(value, ops):
 def test_a_probe_whose_fn_0_ops_break_the_encoding_is_not_used():
     core_ops = catalog.pack_ops(reg.CORE.op.values())
     broken = core_ops + bytes(33 - len(core_ops))                             # base 1 + 8 x 32 bytes: past op 0xFF
-    ep = endpoint.Endpoint(_with_ops(fake.CORE_NAME, broken), Clock())
+    ep = endpoint.Endpoint(_with_ops(virtual_bench.CORE_NAME, broken), Clock())
     hst = h.Host(lambda b: ep.handle(b, 1))
     with pytest.raises(h.NotUsable, match="core §7.4"):
         core.describe(hst)
     with pytest.raises(h.NotUsable):
         hst.confirm()                                                         # nothing more is sent
     padded = core_ops + bytes(32 - len(core_ops))                             # base 1 + 8 x 31 bytes = 249: valid
-    ep = endpoint.Endpoint(_with_ops(fake.CORE_NAME, padded), Clock())
+    ep = endpoint.Endpoint(_with_ops(virtual_bench.CORE_NAME, padded), Clock())
     hst = h.Host(lambda b: ep.handle(b, 1))
     assert core.ops(hst, 0) == set(reg.CORE.op.values())
 

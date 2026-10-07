@@ -1,4 +1,4 @@
-"""fake_serve's `reboot` line on stdin (Endpoint.reboot with a new boot_id, mid-session), and what a reboot resets."""
+"""virtual_bench_serve's `reboot` line on stdin (Endpoint.reboot with a new boot_id, mid-session), and what a reboot resets."""
 
 import os
 import select
@@ -16,7 +16,7 @@ from test_config import open_bench
 
 
 def _serve(*argv):
-    proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", *argv], stdin=subprocess.PIPE,
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", *argv], stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return proc, proc.stdout.readline().decode().split()
 
@@ -86,7 +86,7 @@ def _reboot_mid_session(proc, send):
     hst.keepalive()
 
     line = _command(proc, "reboot")
-    assert line.startswith("fake_serve: rebooted, boot_id 0x")
+    assert line.startswith("virtual_bench_serve: rebooted, boot_id 0x")
     printed = int(line.rsplit("0x", 1)[1], 16)
     assert printed != before
 
@@ -170,10 +170,10 @@ def test_reboot_resets_what_a_probe_loses_and_applies_the_saved_settings_again()
 # ---- `lose` on stdin: a connection's line lost for good (debug §2, P1) -------------------------------------------------
 
 def test_lose_closes_the_connection_its_streams_and_a_slot_attaches_again():
-    """Endpoint.lose (fake_serve's `lose`): the connection closes as lost - mark link-lost, then closed detail 4 on its
+    """Endpoint.lose (virtual_bench_serve's `lose`): the connection closes as lost - mark link-lost, then closed detail 4 on its
     streams - and a request naming it is no_connection; an at-boot slot on its place attaches again by itself at its
     next retry (a new connection) and its bound console comes back under the same stream number (console §2)."""
-    from oep_client import console, endpoint, fake, message as m, registry as reg
+    from oep_client import console, endpoint, virtual_bench, message as m, registry as reg
 
     class Clock:
         ms = 0
@@ -182,7 +182,7 @@ def test_lose_closes_the_connection_its_streams_and_a_slot_attaches_again():
             return self.ms
 
     clock = Clock()
-    ep = endpoint.Endpoint(fake.p4_bench(), clock)
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), clock)
     wire = 1
     pair = ep.pairs[wire][0]
     slot = struct.pack("<BHHHBIIBBB", 0, wire, *pair, reg.PROBE_CONFIG.enum["slot_attach"]["at_boot"], 100, 0, 0,
@@ -217,10 +217,10 @@ def test_lose_on_stdin_over_tcp():
             hst = h.Host(_tcp_send(s))
             hst.open(3000)
             conn, _ = riscv.Wire(hst, "oep.wire.rvswd").attach(halt=False, pins=(2, 3))
-            assert _command(proc, f"lose {conn}") == f"fake_serve: lost connection(s) {conn}"
+            assert _command(proc, f"lose {conn}") == f"virtual_bench_serve: lost connection(s) {conn}"
             with pytest.raises(h.NoConnection):
                 riscv.RiscvDm(hst, conn).halt()
-            assert _command(proc, "lose") == "fake_serve: lost connection(s) none"
+            assert _command(proc, "lose") == "virtual_bench_serve: lost connection(s) none"
             assert "want a connection number" in _command(proc, "lose x")
     finally:
         proc.stdin.close()

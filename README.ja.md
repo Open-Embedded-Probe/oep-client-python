@@ -29,12 +29,12 @@ target の知識は host にある、という OEP の分担に従う。probe �
 
 ```sh
 pip install oep-client-python     # PyPI (import oep_client); a checkout: pip install -e <checkout>
-uv run pytest                                                            # in a checkout（偽の probe。実機なし）
+uv run pytest                                                            # in a checkout（仮想ベンチ。実機なし）
 OEP_HW_BOARDS=<board id> OEP_PROBE_DIR=<oep-probe-arduino の checkout> uv run pytest tests/hw -m hw   # 実機: tests/hw/README.ja.md
 ```
 
 `import oep_client` だけで使える（`sys.path` に `src/` を足す使い方は不要になった）。番号の表と oep-spec の試験ベクタ
-（`tests/vectors/*.json`。`tests/test_vectors.py` がこのクライアントと偽の probe を突き合わせる）は `tools/sync_registry.sh` で
+（`tests/vectors/*.json`。`tests/test_vectors.py` がこのクライアントと仮想ベンチを突き合わせる）は `tools/sync_registry.sh` で
 oep-spec から写す。PyPI の `oep-client` は別のプロジェクトなので、配布名は `oep-client-python`。
 
 リリースは GitHub Actions の Release（workflow_dispatch、version = X.Y.Z か X.Y.ZbN）: `tools/prepare_release.py` が
@@ -66,7 +66,7 @@ X.Y.Z（v1 の凍結までは、どのリリースも wire を壊しうるので
 | `rp2350` | RP2350 の boot ROM 経由の flash と reboot |
 | `uiapduino` | UIAPduino のブートローダへの出入り |
 | `catalog` / `names` / `interfaces` / `dump` | 能力の一覧と describe の形、表示 |
-| `fake` / `endpoint` / `fake_serial` / `fake_serve` | 偽の probe（下の「偽の probe」） |
+| `virtual_bench` / `endpoint` / `virtual_bench_serial` / `virtual_bench_serve` | 仮想ベンチ（下の「仮想ベンチ」） |
 
 ## 使い方の例
 
@@ -106,7 +106,7 @@ probe の CDC の口（`/dev/ttyACM*`）は、いつもの `dialout` グルー�
 ## `oep` の命令
 
 ```sh
-oep dump --port <probe>                      # 能力の一覧（--fake p4-x035 でハードウェアなし）
+oep dump --port <probe>                      # 能力の一覧（--virtual p4-x035 でハードウェアなし）
 oep config show <probe>                      # 設定、宣言、今の状態
 oep config state <probe>                     # スロット / bind / 保存の今の状態だけ（ロック不要。監視用）
 oep config slot <probe> --name x035 --wire rvswd --pins 2,54 --attach at-boot --retry 1 --mechanism dmseq
@@ -243,19 +243,22 @@ max(基準 × 2, 10 %) を超えて壊れ・失われたら下げる。下げる
 モードで開く（FTDI の latency timer 16 → 1 ms で UART bridge の速度が 3 倍になった）。ボードの起動時の速さが 115200 でなければ
 `open_host(..., baud=)` で渡す。
 
-## 偽の probe（動く spec）
+## 仮想ベンチ（動く spec）
 
-`endpoint.Endpoint` は oep-spec の規範どおりに答える偽の probe で（応答のデータと並びは長さを持ち、どの応答にも TLV が
+仮想ベンチは、probe とその先の target、治具の配線を、実際の治具に合わせてソフトウェアで作ったもので、ハードウェアなしで host の
+ソフトウェアを試す環境である（この repo で「ベンチ」とだけ書けば実機の HIL の治具を指し、ソフトウェアのほうは常に「仮想ベンチ」と書く）。
+
+その probe、`endpoint.Endpoint` は oep-spec の規範どおりに答え（応答のデータと並びは長さを持ち、どの応答にも TLV が
 続けられる、資源番号は 1 つの空間、describe は宣言だけで状態は `state`、キャプチャの世代）、
-ch32rv・この client・probe の firmware を突き合わせる「動く spec」として使う（spec が変わったら、probe の firmware より先にここを合わせる）。`fake` は宣言の例（profile:
+ch32rv・この client・probe の firmware を突き合わせる「動く spec」として使う（spec が変わったら、probe の firmware より先にここを合わせる）。`virtual_bench` は宣言の例（profile:
 `p4-x035`、`esp32-v003` = classic ESP32 の firmware と同じフレームの上限 - max_frame 512、riscv-dm の max_length 488 -、
 `esp32-v003-64` = 同じ probe を宣言できる最小の max_frame 64 で（max_length 40、list / describe は分けて読む）、
 `p4-bench` = スロット 3 か所と席 2 つの架空の治具、`rp2350-pins` = host がピンを選ぶ wire。probe が自分で持ち宣言しないもの - 自分の
 channel、コンソールの 256 byte の送りの列、キャプチャの幅・区画の記録・max_read、capture-group の budget - は `Offered.inner` と
-`FakeProbe.own_channels` に置く）、`fake_serial` はシリアルの口のバイトの側（COBS の候補、生のバイトと、口の位置がセッションの間
+`VirtualProbe.own_channels` に置く）、`virtual_bench_serial` はシリアルの口のバイトの側（COBS の候補、生のバイトと、口の位置がセッションの間
 止まり、終われば続きから運ぶ bind）。
 
-`fake_capture` は `oep.fixture.logic`（ロジック）: ワンショット、リピート（実際のレートで時計どおりに区画ができ、リング、release）、
+`virtual_bench_capture` は `oep.fixture.logic`（ロジック）: ワンショット、リピート（実際のレートで時計どおりに区画ができ、リング、release）、
 ストリーミング（購読している間のデータの push）、レベル / エッジのトリガとプリトリガ、出来事。取れるものは決まっている: サンプル i は
 カウンタの値 i で、チャネル k はそのビット k（周期 2^(k+1) サンプルの方形波）。layout は profile が作れる幅（自分のもので宣言しない。
 `p4-x035`: P4 の PARLIO と同じ w 1〜16、3 本なら w 4。`esp32-v003`: classic ESP32 の sampler と同じ w 8、ワンショットだけ）。capture は聞くだけ
@@ -269,7 +272,7 @@ frontend、作り物の 2 点の較正と Vrefint）と、ロジックとアナ�
 試験が endpoint の hook（`i2c_write` / `i2c_read` / `spi_transfer`: バス上の 1 回のトランザクション）を呼ぶまで、何も受けない（spi の arm は待ったまま）。
 
 2026-10-07 の規則の見直し（oep-spec 7688c49〜0f455a0、`docs/v1-rule-review-2026-10-07.ja.md` の §2 / §7）は入っている。本体: 知らない
-非 critical の要求の TLV は黙って無視し、知らない critical のものは受け取ったままの tag で unsupported。偽物が実装する TLV は bit 7 に
+非 critical の要求の TLV は黙って無視し、知らない critical のものは受け取ったままの tag で unsupported。仮想ベンチが実装する TLV は bit 7 に
 よらず同じに確かめる（長さが違う - 長いのも - か除かれた値は malformed、使われていない値や扱わない値は受け取ったままの tag で
 unsupported）。繰り返さない tag が 2 つあれば最初のものを使う。真偽値は 0 でなければ真。要求の text は確かめない（owner の 1〜32 byte
 は残る）。断るのは見出し（unknown_function、unknown_operation、session_required）、送り直しの表（corr → 応答。corr_reused は無い）、
@@ -277,7 +280,7 @@ unsupported）。繰り返さない tag が 2 つあれば最初のものを使�
 fn 0 の describe に implementation、reserved、profile、resets_on_open、discoverable は無い。unavailable は cause、channel、fn を運ぶ。
 資源の番号は +1 で、使用中の番号を飛ばす。oep.probe.link の source は max_frame − 7 までを答える。debug: attach、scan、riscv-dm の
 reset は max_op_ms（10000。黙った DM を待つのも含む、`settle_log`）のうちに答える。reset は status、flags、pc で答える。timeout_ms 0
-の run はすぐ止める。準備の失敗（`FakeTarget.fail_regs`）と走っている hart は stopped 3 not_run。target_id の scheme は `dmi_7f`。
+の run はすぐ止める。準備の失敗（`VirtualTarget.fail_regs`）と走っている hart は stopped 3 not_run。target_id の scheme は `dmi_7f`。
 count > 0 の scan は skip を見ない。コンソールの送りの列は probe 自身の大きさ（describe に send_queue は無い）で、読みはその
 connection の riscv-dm の要求の間と hart が止まっている間は止まる。capture: configure の TLV は core §2.3 だけに従い、応答に timing /
 rate_accuracy は無い。describe の mode は mode max_samples max_segments、channels は max だけ、capture-group は tracks だけを宣言する。
@@ -285,41 +288,41 @@ bind された track の start / configure は unavailable cause 4、資源の�
 drive は u8 の段（0xFF が既定。drive_levels を越える段と、drive_levels の無いときの drive は unsupported）。uart の status は baud と
 format。i2c-target は 1 つの形（データのある書き込み 1 回が 1 フレームで max_length で切る。読み出しは preload_tx の置き場から、
 無ければ 0xFF。arm_rx、reset、mode は無い）。spi-target に reset は無い。probe.config: idle は 4 byte。長さが形と違う項目は
-malformed。スロットに錠も boot_reset も無く、slot_state は接続あり / いない。bind はストリーム 1 本。hash は偽物自身のもの（計算
+malformed。スロットに錠も boot_reset も無く、slot_state は接続あり / いない。bind はストリーム 1 本。hash は仮想ベンチ自身のもの（計算
 しないこと）。storage_hash は保存を今の設定にした時の get の hash。起動時は disable と idle が先。port_speed は要求が来た UART
-bridge の口への baud / step / verify_ms で、port_speed_tolerance_pct の内。偽物が戻るのは verify_ms の後、正常なフレームの無い
+bridge の口への baud / step / verify_ms で、port_speed_tolerance_pct の内。仮想ベンチが戻るのは verify_ms の後、正常なフレームの無い
 port_speed_idle_ms の後、セッションの終わり - 壊れたフレームでは戻らない。
 
 2026-10-07 の見直しは、下の前の規則のいくつか（ignored の TLV、corr_reused、断り方の順、debug の予算と reset_settle_ms、スロットの錠 /
 boot_reset と bind の mode、drive の種類、i2c-target の mode、コンソールの send_queue など）を置き換えた。下は履歴として残す:
 
 - 2026-10-02（`docs/v1-rule-change-proposal-2026-10-02.ja.md`）: confirm は来た経路を名指し、扱えない revision は扱える範囲を付けて
-  断る。断った応答も覚える。lease は 1000〜60000。見つかった = DMSTATUS.version が 2 以上で 15 でない（`FakeTarget.version`）。
+  断る。断った応答も覚える。lease は 1000〜60000。見つかった = DMSTATUS.version が 2 以上で 15 でない（`VirtualTarget.version`）。
   halt / step の失敗（`halt_stuck`、`step_stuck`）。線の探し方の手順 (c) で firmware のラベルも探す。channel に無い pull の idle
   （`no_pull`）。probe がピンに何をしているかは `pin_state(ch)`（MISO は CS が有効な間だけ駆動 - `spi_select` -、i2c-target は
-  オープンドレインで自分の pull-up だけ - `fake.with_i2c_pullups` -、plan を取っても使い始めるまでピンは変わらない、閉じた
-  connection のピンは idle に戻る）。`fake.with_unit_id(probe, "x-...")` は `x-` の unit_id の probe を作る。
+  オープンドレインで自分の pull-up だけ - `virtual_bench.with_i2c_pullups` -、plan を取っても使い始めるまでピンは変わらない、閉じた
+  connection のピンは idle に戻る）。`virtual_bench.with_unit_id(probe, "x-...")` は `x-` の unit_id の probe を作る。
 - 2026-10-06 の規則（2e70f40〜40291a4）: インターフェースが定めない op と、probe が宣言しない任意の op は unknown_operation
-  （`offers`）。時計は起動からの ns（`now_ns=`。fake_serve は `time.monotonic_ns` で、boot_id も引く）で戻らず、`reboot()` で 0 から。
+  （`offers`）。時計は起動からの ns（`now_ns=`。virtual_bench_serve は `time.monotonic_ns` で、boot_id も引く）で戻らず、`reboot()` で 0 から。
   confirm の範囲と max_op_ms は `Endpoint` を作るときに調べる。target が答えない riscv-dm の op は status line で失敗し、線を駆動
   しない（`pin_state` は `wire-free`）。`esp32-v003` の spi-target は `cs_setup_ns` を宣言する。ピンの無い wire の profile は無い。
 - 2026-10-06 の単純化（b69ec26〜9d4baf9）とその後（f0c68bf、d34dafa、4bd3a87、59dd028）: session_id を持つ 10 byte の要求の見出し
-  1 つ。TLV は tag(u8) len(u16) value。どの fn の describe も `ops` tag を持つ（profile が書かなければ `fake.FakeProbe` がその
-  インターフェースの表の op をすべて立てる。`fake.ops_of(name, *without)` で任意の op を外す）。再開は無い。コンソールのストリームは
+  1 つ。TLV は tag(u8) len(u16) value。どの fn の describe も `ops` tag を持つ（profile が書かなければ `virtual_bench.VirtualProbe` がその
+  インターフェースの表の op をすべて立てる。`virtual_bench.ops_of(name, *without)` で任意の op を外す）。再開は無い。コンソールのストリームは
   場所と mechanism ごとの probe のもので、送りの列は hart が走っている間 poll ごとに dmseq は 2、DMDATA は 3 byte ずつ target に渡す
   （`console_take(sid)` は全部渡す）。生きている connection に加わる attach は、運ばない設定をそのまま保つ。`tests/test_vectors.py` は
-  sessions.json を 1 段ずつ、ops.json の全部の場合を、それぞれが書く状態の偽の probe で走らせる。
+  sessions.json を 1 段ずつ、ops.json の全部の場合を、それぞれが書く状態の仮想ベンチで走らせる。
 - 2026-10-06 の構成（289bde0〜498ae95）: fn 0 は本体で list に載らず、ops は必須の 8 つ。どの profile も、前からあった fn の後ろに
   `oep.probe.plan`（plan_roles 32）と `oep.probe.restart`（restart_max_ms 2000）を並べる: p4-x035 は plan 14 / restart 15、
-  esp32-v003 は 11 / 12、p4-bench は 8 / 9、rp2350-pins は 7 / 8。`fake.without(probe, name)` はインターフェースを外す
-  （`fake.without(p, fake.RESTART)`）。logic、analog、capture-group は subscribe / unsubscribe（0x30 / 0x32）を立て、min_bytes /
+  esp32-v003 は 11 / 12、p4-bench は 8 / 9、rp2350-pins は 7 / 8。`virtual_bench.without(probe, name)` はインターフェースを外す
+  （`virtual_bench.without(p, virtual_bench.RESTART)`）。logic、analog、capture-group は subscribe / unsubscribe（0x30 / 0x32）を立て、min_bytes /
   max_delay_ms はストリーミングのキャプチャのデータを待たせ、出来事は待たせない。core §7.4 を破る ops（試験が `fill_ops=False` で
   与えたもの）は与えたとおりに出す。
 
-外のプログラムの試験には `fake_serve` を子プロセスで使う:
+外のプログラムの試験には `virtual_bench_serve` を子プロセスで使う:
 
 ```sh
-uv run python -m oep_client.fake_serve --pty --profile p4-bench --slot x035 --bind 0 \
+uv run python -m oep_client.virtual_bench_serve --pty --profile p4-bench --slot x035 --bind 0 \
     --console 'uptime %d\r\n' --every 100
 # 最初の行: PTY /dev/pts/N（--tcp 0 なら PORT n）。stdin を閉じると終わる（--keep-on-eof なら終わらない）
 ```
@@ -327,7 +330,7 @@ uv run python -m oep_client.fake_serve --pty --profile p4-bench --slot x035 --bi
 stdin に `reboot` の 1 行を書くと、セッションの途中で probe が新しい乱数の boot_id で再起動する（`Endpoint.reboot`）。
 セッションの表、送り直しの表、接続、ストリーム、購読、plan、保存していない設定は消え、保存した設定（`--slot`、`--bind N` - シリアルの口が N 番目の `--slot` のコンソールを運ぶ -、
 `--label`、`--uart-plan`）がもう一度当たる。古いセッションでの要求は no_session になり、confirm と open は新しい boot_id を返す。
-pty や TCP の接続は開いたまま。stderr に `fake_serve: rebooted, boot_id 0x........` を出す。`lose [CONNECTION]` はその connection（無ければ生きているすべて）の線をずっと失わせる（`Endpoint.lose`、debug §2）: 閉じ、コンソールのストリームに link-lost の印を付けて detail 4 で閉じ、以後それを名指す要求は no_connection。at boot の `--slot` は次のやり直しでまた attach し、コンソールは同じストリームの番号で戻る。stderr に `fake_serve: lost connection(s) ...` を出す。ほかの行は stderr に一言出して無視する。oep.probe.restart の restart（oep-if-restart。どの profile もこのインターフェースを並べ、describe に restart_max_ms 2000 を出す。`--no-restart` はそれを持たない probe にする: list に無く、その fn は unknown_function）は要求で同じことをする: 応答を先に送り、それから probe が再起動し、要求の後ろに読んでいたものは捨てる:
+pty や TCP の接続は開いたまま。stderr に `virtual_bench_serve: rebooted, boot_id 0x........` を出す。`lose [CONNECTION]` はその connection（無ければ生きているすべて）の線をずっと失わせる（`Endpoint.lose`、debug §2）: 閉じ、コンソールのストリームに link-lost の印を付けて detail 4 で閉じ、以後それを名指す要求は no_connection。at boot の `--slot` は次のやり直しでまた attach し、コンソールは同じストリームの番号で戻る。stderr に `virtual_bench_serve: lost connection(s) ...` を出す。ほかの行は stderr に一言出して無視する。oep.probe.restart の restart（oep-if-restart。どの profile もこのインターフェースを並べ、describe に restart_max_ms 2000 を出す。`--no-restart` はそれを持たない probe にする: list に無く、その fn は unknown_function）は要求で同じことをする: 応答を先に送り、それから probe が再起動し、要求の後ろに読んでいたものは捨てる:
 
 ```python
 # 試験は子プロセスを stdin=PIPE で持ち、その行を書く
@@ -340,7 +343,7 @@ pty がシリアルの口（host が TIOCEXCL を掛けて開く）、`--tcp POR
 区画すべてに flags bit2 を立てる。`--no-drive-levels` は gpio の drive_levels を外す（出力の強さを切り替えられない probe: drive 付きの set は unsupported で断る）。
 `--silent-until-reset N` は N 番目のピンの組の target を、その線でリセットされるまで（host の reset TLV 付きの attach）何も答えない
 ようにする（`--label CH=TEXT`、例 `23=v003.nrst` はスロットの線を名付ける、probe.config §1.3）。port_speed: `esp32-v003` の `oep.probe.link` は持つ（`--no-port-speed` で ops から外す）。
-`--broken-rate RATE[:MIN_SIZE][:in|out]` はその速さでフレームを壊す（同じプロセスの `fake_serial.FakeSerialStream` は、host の速さが
+`--broken-rate RATE[:MIN_SIZE][:in|out]` はその速さでフレームを壊す（同じプロセスの `virtual_bench_serial.VirtualSerialStream` は、host の速さが
 probe の速さと違う間、両方向のバイトをすべて壊す）。出来事とデータの push は pty にも TCP（両方の framing）にも出る。ほかは `--help`。
 
 v0 の client（`oep_client.v0`）は 2026-09-26 に消した（git の履歴に残る）。v0 を話す probe はもう無い。

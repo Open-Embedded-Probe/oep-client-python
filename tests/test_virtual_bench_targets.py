@@ -1,13 +1,13 @@
-"""The fake's oep.fixture.i2c-target / spi-target (oep-spec oep-if-fixture §3 / §4) through the client classes: the
+"""The virtual bench's oep.fixture.i2c-target / spi-target (oep-spec oep-if-fixture §3 / §4) through the client classes: the
 plan roles, configure / arm / preload / read_rx / status, the refusals in core §4.3's order, and the bus side
-by the endpoint's test hooks (i2c_write / i2c_read / spi_transfer: the fake has no bus controller of its own)."""
+by the endpoint's test hooks (i2c_write / i2c_read / spi_transfer: the virtual bench has no bus controller of its own)."""
 
 import random
 import struct
 
 import pytest
 
-from oep_client import core, endpoint, fake, fixture, host, message as m, registry as reg
+from oep_client import core, endpoint, virtual_bench, fixture, host, message as m, registry as reg
 
 P4_I2C, P4_SPI = 8, 9                      # p4_x035: queue_depth 8, max_length 128 / 64, i2c stretch, spi features 0b1
 V003_I2C, V003_SPI = 7, 8                  # esp32_v003: queue_depth 4, max_length 16 / 32, no stretch, spi 0 (groups)
@@ -47,7 +47,7 @@ def spi_status(t):
 
 @pytest.fixture
 def i2c():
-    ep, hst, clock = bench(fake.p4_x035())
+    ep, hst, clock = bench(virtual_bench.p4_x035())
     t = fixture.I2cTarget(hst)
     assert t.fn == P4_I2C
     core.plan_apply(hst, t.assignments(20, 21))
@@ -55,7 +55,7 @@ def i2c():
 
 
 def test_i2c_plan_roles_and_channels():
-    ep, hst, _ = bench(fake.p4_x035())
+    ep, hst, _ = bench(virtual_bench.p4_x035())
     t = fixture.I2cTarget(hst)
     with pytest.raises(host.Unsupported):
         core.plan_apply(hst, t.assignments(20, 21) + [(t.fn, 3, 22)])   # no role 3
@@ -79,7 +79,7 @@ def test_i2c_plan_roles_and_channels():
 def test_i2c_refusals_before_configure_and_in_order():
     """fixture §3: configure is address(u8) alone; > 0x7F malformed, I2C's reserved addresses unsupported (fixed
     part), both before the missing plan (core §4.3: every check before any change)."""
-    ep, hst, _ = bench(fake.esp32_v003())
+    ep, hst, _ = bench(virtual_bench.esp32_v003())
     t = fixture.I2cTarget(hst)
     assert t.fn == V003_I2C
     with pytest.raises(host.Unavailable) as e:
@@ -112,7 +112,7 @@ def test_i2c_refusals_before_configure_and_in_order():
     assert ep.i2c_write(t.fn, b"\x01") is False and ep.i2c_read(t.fn, 1) is None   # state 0: no ACK
 
 
-@pytest.mark.parametrize("probe, sda, scl", [(fake.p4_x035, 20, 21), (fake.esp32_v003, 25, 26)])
+@pytest.mark.parametrize("probe, sda, scl", [(virtual_bench.p4_x035, 20, 21), (virtual_bench.esp32_v003, 25, 26)])
 def test_i2c_arm_rx_and_reset_are_gone(probe, sda, scl):
     """fixture §3: one form - ops 0x02 (was arm_rx) and 0x06 (was reset) are not i2c-target ops: unknown_operation,
     in any state; the describe's ops do not list them."""
@@ -133,17 +133,17 @@ def test_i2c_arm_rx_and_reset_are_gone(probe, sda, scl):
 
 
 def test_i2c_declarations():
-    _, hst, _ = bench(fake.p4_x035())
+    _, hst, _ = bench(virtual_bench.p4_x035())
     t = fixture.I2cTarget(hst)
     assert (t.max_length, t.max_clock_hz, t.features, t.queue_depth, t.max_stretch_us) == (128, 1_000_000, 0, 8,
                                                                                            100_000)
     assert t.offers(t.STRETCH) and not t.internal_pullups          # stretch: an optional op, in the ops tag (§3)
-    _, hst, _ = bench(fake.esp32_v003())
+    _, hst, _ = bench(virtual_bench.esp32_v003())
     t = fixture.I2cTarget(hst)
     assert (t.max_length, t.max_clock_hz, t.features, t.queue_depth, t.max_stretch_us) == (16, 100_000, 0, 4, None)
     assert not t.offers(t.STRETCH) and t.offers(t.CONFIGURE) and t.offers(t.PRELOAD_TX)
     assert "pullup_ohms" not in reg.FIXTURE_I2C_TARGET.tlv["describe"]   # no pullup_ohms (§3: features bit2 only)
-    ep, hst, _ = bench(fake.with_i2c_pullups(fake.p4_x035()))
+    ep, hst, _ = bench(virtual_bench.with_i2c_pullups(virtual_bench.p4_x035()))
     t = fixture.I2cTarget(hst)
     assert t.internal_pullups and t.features == t.FEATURE_INTERNAL_PULLUPS
     assert not [tag for tag, _ in core.describe(hst, t.fn) if tag & 0x7F == 0x42]
@@ -218,7 +218,7 @@ def test_i2c_preload_slots_answer_reads(i2c):
 
 def test_i2c_preload_tx_answers_nothing():
     """fixture §3: preload_tx's answer has no payload (no slot number)."""
-    ep, hst, _ = bench(fake.p4_x035())
+    ep, hst, _ = bench(virtual_bench.p4_x035())
     t = fixture.I2cTarget(hst)
     core.plan_apply(hst, t.assignments(20, 21))
     t.configure(0x42)
@@ -257,7 +257,7 @@ def test_i2c_status_is_lock_free(i2c):
 
 @pytest.fixture
 def spi():
-    ep, hst, clock = bench(fake.p4_x035())
+    ep, hst, clock = bench(virtual_bench.p4_x035())
     t = fixture.SpiTarget(hst)
     assert t.fn == P4_SPI
     core.plan_apply(hst, t.assignments(20, 21, 22, 23))
@@ -265,7 +265,7 @@ def spi():
 
 
 def test_spi_channel_groups_match_exactly():
-    ep, hst, _ = bench(fake.esp32_v003())
+    ep, hst, _ = bench(virtual_bench.esp32_v003())
     t = fixture.SpiTarget(hst)
     assert t.fn == V003_SPI
     with pytest.raises(host.Unsupported):
@@ -311,7 +311,7 @@ def test_spi_refusals_in_order(spi):
 
 
 def test_spi_plan_holds_each_role_once():
-    ep, hst, _ = bench(fake.p4_x035())
+    ep, hst, _ = bench(virtual_bench.p4_x035())
     t = fixture.SpiTarget(hst)
     for bad in (t.assignments(20, 21, 22, 23)[:3],                  # CS missing
                 t.assignments(20, 21, 22, 23) + [(t.fn, 4, 24)],    # CS twice

@@ -1,6 +1,28 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) **Breaking (API, CLI): the fake probe is the virtual bench**, with no aliases (pre-freeze). The virtual bench is a
+  probe, the targets behind it and the fixture wiring, modelled after the real jigs: the environment host software is
+  tested in. "Bench" alone still means the real HIL jigs. Renamed: module `oep_client.fake` -> `oep_client.virtual_bench`,
+  `fake_capture` -> `virtual_bench_capture`, `fake_serial` -> `virtual_bench_serial`, `fake_serve` ->
+  `virtual_bench_serve` (`python -m oep_client.virtual_bench_serve`, its stderr lines start `virtual_bench_serve:`);
+  `FakeProbe` -> `VirtualProbe`, `FakeTarget` -> `VirtualTarget`, `FakeCapture` -> `VirtualCapture`, `FakeGroup` ->
+  `VirtualGroup`, `FakeSerialPort` -> `VirtualSerialPort`, `FakeSerialStream` -> `VirtualSerialStream`; `oep dump
+  --fake <profile>` -> `oep dump --virtual <profile>`; tests/hw's board kind `fake` -> `virtual`, its board
+  `fake-esp32-v003` -> `virtual-esp32-v003` (`Board.fake_profile` -> `virtual_profile`, `Run.fake` -> `Run.virtual_bench`);
+  test files `tests/test_fake_*.py` -> `tests/test_virtual_bench_*.py`. README / tests/hw README (EN / JA) say virtual
+  bench / 仮想ベンチ. The entries below name the old names as they were then.
+- (JA) **破壊的（API、CLI）: 偽の probe は仮想ベンチになった**（凍結前なので別名は置かない）。仮想ベンチは、probe とその先の target、
+  治具の配線を実際の治具に合わせて作ったもので、host のソフトウェアを試す環境である。「ベンチ」とだけ書けば、今までどおり実機の HIL の
+  治具を指す。名前の変更: モジュール `oep_client.fake` -> `oep_client.virtual_bench`、`fake_capture` -> `virtual_bench_capture`、
+  `fake_serial` -> `virtual_bench_serial`、`fake_serve` -> `virtual_bench_serve`（`python -m oep_client.virtual_bench_serve`。
+  stderr の行は `virtual_bench_serve:` で始まる）。`FakeProbe` -> `VirtualProbe`、`FakeTarget` -> `VirtualTarget`、`FakeCapture` ->
+  `VirtualCapture`、`FakeGroup` -> `VirtualGroup`、`FakeSerialPort` -> `VirtualSerialPort`、`FakeSerialStream` ->
+  `VirtualSerialStream`。`oep dump --fake <profile>` -> `oep dump --virtual <profile>`。tests/hw の board の kind `fake` -> `virtual`、
+  board `fake-esp32-v003` -> `virtual-esp32-v003`（`Board.fake_profile` -> `virtual_profile`、`Run.fake` -> `Run.virtual_bench`）。
+  試験のファイル `tests/test_fake_*.py` -> `tests/test_virtual_bench_*.py`。README と tests/hw の README（EN / JA）は仮想ベンチと書く。
+  下の項目は、その時の古い名前のまま。
+
 - (EN) **Breaking (wire and API): oep-spec 7688c49 .. 0f455a0, the rule review of 2026-10-07 (§2 applied, §7).**
   README names `0f455a0`. Registry and vectors synced (`tools/sync_registry.sh`; `probe_config_hash.json` gone).
   The fake (`endpoint`, `fake`, `fake_capture`) answers as the new text says - other clients test against it:

@@ -337,7 +337,7 @@ class SerialLink:
         self.on_boot_id = lambda boot_id: None     # the boot_id of the link's own confirms (resync, recovery)
         self.failed_transport = ""                 # why: a resend went unanswered (core §5.2, C-38); recover first
         self.recoveries = 0                        # failed-transport recoveries made (a confirm answered)
-        self.wait_add_s = WAIT_ADD_S               # the floor's host_wait_add_ms (a test of an in-process fake shortens it)
+        self.wait_add_s = WAIT_ADD_S               # the floor's host_wait_add_ms (a test of an in-process virtual bench shortens it)
         self.tx_len = 0                            # the longest frame on the wire of the last write
         self.confirm_body = lambda: _OWN_CONFIRM   # the link's own confirm: the revision in use once bound (C-15)
         self.held = lambda: False                  # a session holds the port (its raw transfer stopped): broken = resend
@@ -1090,7 +1090,7 @@ class SerialLink:
         boot speed, retried as wait_boot_speed does; a USB device found again by its serial once it has re-enumerated;
         a TCP connection made again) - retried until `wait_s` has passed, then closed (ConnectionError: the probe is
         gone; Host.restart_probe's reopen_s calls this again as the user's reopen). A link on a stream it cannot open again
-        (`reopener` None: an in-process fake) keeps the stream, drops what it had read and confirms. Everything the link
+        (`reopener` None: an in-process virtual bench) keeps the stream, drops what it had read and confirms. Everything the link
         held for the old boot (a raised rate, a failed transport, the read buffer) starts again. -> confirm's limits."""
         deadline = time.monotonic() + wait_s
         if self._raised():

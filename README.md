@@ -33,12 +33,12 @@ here.
 
 ```sh
 pip install oep-client-python     # PyPI (import oep_client); a checkout: pip install -e <checkout>
-uv run pytest                     # in a checkout (the fake probe; no hardware)
+uv run pytest                     # in a checkout (the virtual bench; no hardware)
 OEP_HW_BOARDS=<board id> OEP_PROBE_DIR=<oep-probe-arduino checkout> uv run pytest tests/hw -m hw   # a real probe: tests/hw/README.md
 ```
 
 `import oep_client` is all it takes. The registry and oep-spec's test vectors (`tests/vectors/*.json`, checked by
-`tests/test_vectors.py` against this client and the fake) are copied from oep-spec with `tools/sync_registry.sh`. PyPI's
+`tests/test_vectors.py` against this client and the virtual bench) are copied from oep-spec with `tools/sync_registry.sh`. PyPI's
 `oep-client` is another project, so the distribution is named `oep-client-python`.
 
 Releases: run the GitHub Actions workflow Release (workflow_dispatch, version X.Y.Z or X.Y.ZbN). `tools/prepare_release.py`
@@ -71,7 +71,7 @@ oep-client-python X.Y.Z (until the v1 freeze every release may break the wire; t
 | `rp2350` | flash and reboot through the RP2350 boot ROM |
 | `uiapduino` | into and out of the UIAPduino bootloader |
 | `catalog` / `names` / `interfaces` / `dump` | the capability list and describe shapes, display |
-| `fake` / `endpoint` / `fake_serial` / `fake_serve` | the fake probe (below) |
+| `virtual_bench` / `endpoint` / `virtual_bench_serial` / `virtual_bench_serve` | the virtual bench (below) |
 
 ## Example
 
@@ -112,7 +112,7 @@ A probe's CDC ports (`/dev/ttyACM*`) need no rule beyond the usual `dialout` gro
 ## The `oep` command
 
 ```sh
-oep dump --port <probe>                      # what the probe offers (--fake p4-x035: no hardware)
+oep dump --port <probe>                      # what the probe offers (--virtual p4-x035: no hardware)
 oep config show <probe>                      # the settings, the declarations and the live state
 oep config state <probe>                     # the live slot / bind / storage state alone (lock-free, for polling)
 oep config slot <probe> --name x035 --wire rvswd --pins 2,54 --attach at-boot --retry 1 --mechanism dmseq
@@ -261,21 +261,25 @@ this, not the client. Serial ports are also opened in the driver's low-latency m
 timer 16 -> 1 ms tripled a UART bridge's throughput). `open_host(..., baud=)` names the boot speed when the board's
 profile is not 115200.
 
-## The fake probe (a working spec)
+## The virtual bench (a working spec)
 
-`endpoint.Endpoint` is a fake probe that answers as oep-spec says (every answer carries the length of its data or list,
+The virtual bench is a probe, the targets behind it and the fixture wiring, modelled in software after the real jigs:
+the environment host software is tested in, without hardware. ("Bench" alone in this repository means the real
+hardware-in-the-loop jigs; the software one is always "virtual bench".)
+
+Its probe, `endpoint.Endpoint`, answers as oep-spec says (every answer carries the length of its data or list,
 TLVs may follow anything, one resource number space, describe = declarations and `state` for the rest, capture
 generations); ch32rv, this client and the probe firmware are checked against it (when the
-spec changes, this is brought in line before the firmware). `fake` holds example declarations (profiles
+spec changes, this is brought in line before the firmware). `virtual_bench` holds example declarations (profiles
 `p4-x035`, `esp32-v003` = the classic ESP32 firmware's frame limits - max_frame 512, riscv-dm max_length 488 -,
 `esp32-v003-64` = the same at the smallest max_frame a probe may declare, 64 (max_length 40, list / describe paged),
 `p4-bench` = a made-up jig with three slots and two seats, `rp2350-pins` = a wire whose pins the host
 chooses; what a probe keeps to itself and does not declare - its own channels, the console's send queue of 256 bytes,
 a capture's widths, segment records and max_read, a group's budgets - is in `Offered.inner` and
-`FakeProbe.own_channels`), `fake_serial` the byte side of a serial port (COBS candidates, raw bytes and a bind whose
+`VirtualProbe.own_channels`), `virtual_bench_serial` the byte side of a serial port (COBS candidates, raw bytes and a bind whose
 position stays during a session and carries on after it).
 
-`fake_capture` is `oep.fixture.logic` (logic): one-shot, repeat (segments with the clock at the actual rate, a ring,
+`virtual_bench_capture` is `oep.fixture.logic` (logic): one-shot, repeat (segments with the clock at the actual rate, a ring,
 release) and streaming (data pushes while subscribed), level / edge triggers with a pretrigger, and events. What it
 captures is known: sample i is the counter i, channel k its bit k (a square wave of period 2^(k+1) samples), in a layout
 of the widths the profile can make (its own, not declared: `p4-x035` w 1-16 as the P4's PARLIO, three channels in w 4;
@@ -293,7 +297,7 @@ There is no bus controller: nothing is received (and an spi arm stays armed) unt
 
 The rule review of 2026-10-07 (oep-spec 7688c49 .. 0f455a0, `docs/v1-rule-review-2026-10-07.ja.md` §2 / §7) is in.
 Core: an unknown non-critical request TLV is ignored silently and an unknown critical one refused unsupported with its tag
-as received; a TLV the fake implements is checked the same with or without bit 7 (another length, longer too, or an
+as received; a TLV the virtual bench implements is checked the same with or without bit 7 (another length, longer too, or an
 excluded value: malformed; a value left unused or not handled: unsupported with the tag as received); a non-repeating
 tag twice: the first is used; booleans are non-zero = true; request text is not checked (owner keeps 1-32 bytes). It
 refuses by the header (unknown_function, unknown_operation, session_required), the resend table (corr -> answer, no
@@ -302,7 +306,7 @@ applies. list takes first alone; fn 0's describe has no implementation, reserved
 discoverable; unavailable carries cause, channel and fn; resource numbers go +1, skipping those in use; oep.probe.link
 source answers at most max_frame - 7. Debug: attach, scan and riscv-dm reset answer within max_op_ms (10000, the wait
 for a silent DM included, `settle_log`); reset answers status, flags and pc; run with timeout_ms 0 halts at once, a
-failed preparation (`FakeTarget.fail_regs`) or a running hart answers stopped 3 not_run; the target_id scheme is
+failed preparation (`VirtualTarget.fail_regs`) or a running hart answers stopped 3 not_run; the target_id scheme is
 `dmi_7f`; a count > 0 scan does not look at skip. The console's send queue is the probe's own (no send_queue in
 describe), and its reads stop while a riscv-dm request of that connection runs and while the hart is halted. Capture:
 configure's TLVs follow core §2.3 alone, its answer has no timing / rate_accuracy; describe's mode is mode max_samples
@@ -311,9 +315,9 @@ unavailable cause 4, a bind short of resources cause 2 with the fn. Fixture: gpi
 default; a level past drive_levels, or any drive without them, unsupported); uart status baud and format; i2c-target one
 form (a write with data one frame, cut at max_length; reads from preload_tx slots, else 0xFF; no arm_rx, reset or modes);
 spi-target without reset. probe.config: idle 4 bytes; an item of another length malformed; slots without lock /
-boot_reset, slot_state connected / absent; a bind of one stream; the hash is the fake's own (do not compute it);
+boot_reset, slot_state connected / absent; a bind of one stream; the hash is the virtual bench's own (do not compute it);
 storage_hash is get's hash when the saved settings became current; disable and idle go first at boot. port_speed is
-baud / step / verify_ms on the UART bridge the request came in on, within port_speed_tolerance_pct; the fake goes back
+baud / step / verify_ms on the UART bridge the request came in on, within port_speed_tolerance_pct; the virtual bench goes back
 after verify_ms, after port_speed_idle_ms with no good frame, or at the session's end - never on broken frames.
 
 The 2026-10-07 review replaced several of the earlier rules below (the ignored TLV, corr_reused, the refusal order, the
@@ -322,34 +326,34 @@ the console's send_queue, ...); they stay here as history:
 
 - 2026-10-02 (`docs/v1-rule-change-proposal-2026-10-02.md`): confirm names its transport and refuses an unknown revision
   with the range it handles; rejected answers are remembered; lease 1000-60000; found = DMSTATUS.version >= 2 and not
-  15 (`FakeTarget.version`); halt / step failures (`halt_stuck`, `step_stuck`); the line search's step (c) over the
+  15 (`VirtualTarget.version`); halt / step failures (`halt_stuck`, `step_stuck`); the line search's step (c) over the
   firmware's labels; an idle pull a channel lacks (`no_pull`). What the probe does to a pin is `pin_state(ch)` (MISO
   driven only while CS is active - `spi_select` -, an i2c-target open-drain with its own pull-ups -
-  `fake.with_i2c_pullups` -, a plan changing no pin until use, a closed connection's pins back to idle).
-  `fake.with_unit_id(probe, "x-...")` makes a probe with an `x-` unit_id.
+  `virtual_bench.with_i2c_pullups` -, a plan changing no pin until use, a closed connection's pins back to idle).
+  `virtual_bench.with_unit_id(probe, "x-...")` makes a probe with an `x-` unit_id.
 - 2026-10-06 rules (2e70f40 .. 40291a4): an op the interface does not define, or an optional op the probe does not
-  declare, is unknown_operation (`offers`); the clock is ns since boot (`now_ns=`; fake_serve uses `time.monotonic_ns`
+  declare, is unknown_operation (`offers`); the clock is ns since boot (`now_ns=`; virtual_bench_serve uses `time.monotonic_ns`
   and draws its boot_id), never back, from 0 at `reboot()`; confirm's bounds and max_op_ms are checked when an
   `Endpoint` is built; a riscv-dm op whose target does not answer fails with status line and leaves the lines undriven
   (`pin_state` says `wire-free`); `esp32-v003`'s spi-target declares a `cs_setup_ns`. No profile has a pinless wire.
 - 2026-10-06 simplification (b69ec26 .. 9d4baf9) and after (f0c68bf, d34dafa, 4bd3a87, 59dd028): one 10-byte request
-  header with session_id; TLVs as tag(u8) len(u16) value; every fn's describe carries the `ops` tag (`fake.FakeProbe`
-  fills in every op of the interface's table when a profile gives none; `fake.ops_of(name, *without)` leaves optional
+  header with session_id; TLVs as tag(u8) len(u16) value; every fn's describe carries the `ops` tag (`virtual_bench.VirtualProbe`
+  fills in every op of the interface's table when a profile gives none; `virtual_bench.ops_of(name, *without)` leaves optional
   ones out); no resume; console streams stay the probe's per place and mechanism, and a stream's send queue is handed
   to the target 2 (dmseq) or 3 (DMDATA) bytes a poll while the hart runs (`console_take(sid)` hands all of it); an
   attach that joins a live connection keeps the settings it does not carry. `tests/test_vectors.py` runs sessions.json
-  step by step and every ops.json case on the fake in the state it names.
+  step by step and every ops.json case on the virtual bench in the state it names.
 - 2026-10-06 structure (289bde0 .. 498ae95): fn 0 is the core, never in list, its ops the eight mandatory ones. Every
   profile lists `oep.probe.plan` (plan_roles 32) and `oep.probe.restart` (restart_max_ms 2000) after the fns it had:
-  p4-x035 plan 14 / restart 15, esp32-v003 11 / 12, p4-bench 8 / 9, rp2350-pins 7 / 8. `fake.without(probe, name)`
-  leaves an interface out (`fake.without(p, fake.RESTART)`). logic, analog and capture-group set subscribe /
+  p4-x035 plan 14 / restart 15, esp32-v003 11 / 12, p4-bench 8 / 9, rp2350-pins 7 / 8. `virtual_bench.without(probe, name)`
+  leaves an interface out (`virtual_bench.without(p, virtual_bench.RESTART)`). logic, analog and capture-group set subscribe /
   unsubscribe (0x30 / 0x32); min_bytes / max_delay_ms hold a streaming capture's data, never an event. A profile's ops
   tag outside core §7.4 (a test's, `fill_ops=False`) is served as given.
 
-Other programs' tests run `fake_serve` as a child process:
+Other programs' tests run `virtual_bench_serve` as a child process:
 
 ```sh
-python -m oep_client.fake_serve --pty --profile p4-bench --slot x035 --bind 0 \
+python -m oep_client.virtual_bench_serve --pty --profile p4-bench --slot x035 --bind 0 \
     --console 'uptime %d\r\n' --every 100
 # first line: PTY /dev/pts/N (PORT n with --tcp 0); it ends when stdin closes (not with --keep-on-eof)
 ```
@@ -358,7 +362,7 @@ A line `reboot` on its stdin reboots the probe mid-session (`Endpoint.reboot`) w
 table, the resend table, connections, streams, subscriptions, the plan and the unsaved settings go, the saved
 settings (`--slot`, `--bind N` - the serial port carries the N-th `--slot`'s console -, `--label`, `--uart-plan`) apply again, and a request with the old session gets
 no_session; confirm and open show the new boot_id. The pty or TCP connection stays open. stderr says
-`fake_serve: rebooted, boot_id 0x........`. `lose [CONNECTION]` loses that connection's line for good (every live connection without one; `Endpoint.lose`, debug §2): it closes, its console streams get mark link-lost and close with detail 4, a request naming it is no_connection, and an at-boot `--slot` attaches again at its next retry with its console back under the same stream number; stderr says `fake_serve: lost connection(s) ...`. Any other line is ignored with a message on stderr. oep.probe.restart's
+`virtual_bench_serve: rebooted, boot_id 0x........`. `lose [CONNECTION]` loses that connection's line for good (every live connection without one; `Endpoint.lose`, debug §2): it closes, its console streams get mark link-lost and close with detail 4, a request naming it is no_connection, and an at-boot `--slot` attaches again at its next retry with its console back under the same stream number; stderr says `virtual_bench_serve: lost connection(s) ...`. Any other line is ignored with a message on stderr. oep.probe.restart's
 restart (oep-if-restart; every profile lists the interface with restart_max_ms 2000 in its describe; `--no-restart`
 makes a probe without it - not listed, its fn unknown_function) does the same from a request: the answer goes out
 first, then the probe reboots, and what it had read behind the request is dropped:
@@ -378,5 +382,5 @@ drive_levels away (a probe that cannot switch the output strength: a set with a 
 `--silent-until-reset N` makes the N-th pair's target answer nothing until a reset through its line (a host's attach with
 the reset TLV; `--label CH=TEXT`, e.g. `23=v003.nrst`, names a slot's line, probe.config §1.3). port_speed: `esp32-v003`'s `oep.probe.link` offers it
 (`--no-port-speed` takes it out of the ops), and `--broken-rate RATE[:MIN_SIZE][:in|out]` makes a rate break frames (in process,
-`fake_serial.FakeSerialStream` also garbles everything while the host's own rate differs from the probe's). Events and data pushes go out on the pty and on TCP
+`virtual_bench_serial.VirtualSerialStream` also garbles everything while the host's own rate differs from the probe's). Events and data pushes go out on the pty and on TCP
 (both framings). The rest: `--help`.

@@ -1,6 +1,6 @@
 """The oep command: what a probe offers (dump) and its settings (config).
 
-  oep dump --port /run/board-identify/by-id/<probe>        oep dump --fake p4-x035 --prefix oep.target --json
+  oep dump --port /run/board-identify/by-id/<probe>        oep dump --virtual p4-x035 --prefix oep.target --json
   oep config show <probe>                 (the settings and what the probe declares; lock-free)
   oep config state <probe>                (the live slot / bind / storage state; lock-free)
   oep config slot <probe> --name x035 --wire rvswd --pins 2,54 --attach at-boot --retry 1 --mechanism dmseq
@@ -31,7 +31,7 @@ import sys
 import json
 import struct
 
-from . import catalog, config, core, dump, fake, host, link
+from . import catalog, config, core, dump, virtual_bench, host, link
 
 USB_HINT = ("install the usb / hid extras (pip install 'oep-client-python[usb-async,hid]') so every way in to the USB "
             "device can be tried, or name the probe's port (a serial port such as /dev/ttyACM0 or COM3, tcp://HOST:PORT)")
@@ -116,7 +116,7 @@ def main(argv=None) -> int:
                          "(your reopen: a host where the device returns late, e.g. WSL re-attaching it through usbipd)")
     d = sub.add_parser("dump", help="list and describe every interface a probe offers")
     src = d.add_mutually_exclusive_group(required=True)
-    src.add_argument("--fake", choices=sorted(fake.PROFILES), help="in-process example probe")
+    src.add_argument("--virtual", choices=sorted(virtual_bench.PROFILES), help="an in-process virtual bench (no hardware)")
     src.add_argument("--port", help="a probe: a serial port, tcp://HOST:PORT or usb[:VID:PID] (lock-free reads only)")
     d.add_argument("--prefix", default="", help="only names under this namespace (label boundaries)")
     d.add_argument("--exact", action="store_true", help="the prefix is a whole name")
@@ -136,8 +136,8 @@ def main(argv=None) -> int:
         return _restart_cmd(args)
 
     confirm = (0, 1)
-    if args.fake:
-        call = fake.PROFILES[args.fake]().call
+    if args.virtual:
+        call = virtual_bench.PROFILES[args.virtual]().call
     else:
         hst = _open_host(args.port)
         call = lambda fn, op, payload: hst.request(fn, op, payload, locked=False).payload   # noqa: E731

@@ -1,4 +1,4 @@
-"""The request-tail rules (oep-core §2.2, §2.3) on every op the fake serves.
+"""The request-tail rules (oep-core §2.2, §2.3) on every op the virtual bench serves.
 
 - An unknown TLV (a tag this probe does not implement in that (fn, op) context; 0x00 and 0x7F are never TLV tags) is
   ignored silently when it is not critical - the answer is the one the request gets without it - and refused rejected
@@ -17,7 +17,7 @@ import struct
 
 import pytest
 
-from oep_client import (capture as c, config, console, core, endpoint, fake, fixture, host as h, message as m,
+from oep_client import (capture as c, config, console, core, endpoint, virtual_bench, fixture, host as h, message as m,
                         registry as reg, riscv)
 
 UNKNOWN = 0x3D                                 # no context defines it
@@ -238,13 +238,13 @@ def drive_all_p4_x035(hst, ep):
 
 
 def test_every_op_ignores_an_unknown_tlv_and_refuses_it_critical_p4_x035():
-    ep, tag, hst = bench(fake.p4_x035())
+    ep, tag, hst = bench(virtual_bench.p4_x035())
     drive_all_p4_x035(hst, ep)
     assert every_op(ep) - tag.seen == set()
 
 
 def test_every_op_ignores_an_unknown_tlv_and_refuses_it_critical_esp32_v003():
-    ep, tag, hst = bench(fake.with_stand_in(fake.esp32_v003()), transport=0)
+    ep, tag, hst = bench(virtual_bench.with_stand_in(virtual_bench.esp32_v003()), transport=0)
     drive_core(hst, ep)
     hst.call(ep.link_fn, endpoint.OP_PORT_SPEED,
              struct.pack("<IBH", 230400, reg.PROBE_LINK.enum["port_speed_step"]["try"], 500))   # oep-if-link §3
@@ -264,7 +264,7 @@ def test_every_op_ignores_an_unknown_tlv_and_refuses_it_critical_esp32_v003():
 def test_tags_0x00_and_0x7f_are_unknown_tags_on_every_op(tag):
     """core §2.2 / §2.5: 0x00 and 0x7F are never TLV tags, so no probe implements them: a request carrying one is
     read like any unknown TLV - ignored plain, unsupported (the byte as received) critical."""
-    ep, tagging, hst = bench(fake.p4_x035(), tag=tag)
+    ep, tagging, hst = bench(virtual_bench.p4_x035(), tag=tag)
     drive_all_p4_x035(hst, ep)
     assert every_op(ep) - tagging.seen == set()
 
@@ -272,7 +272,7 @@ def test_tags_0x00_and_0x7f_are_unknown_tags_on_every_op(tag):
 @pytest.mark.parametrize("op", ["describe", "get"])
 def test_a_tlv_in_a_describe_or_get_request_follows_the_general_rule(op):
     """core §2.3: describe and probe.config get read their tail like any request (no malformed for a TLV there)."""
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     hst = h.Host(lambda b: ep.handle(b, 1))
     if op == "describe":
         fn, op, payload = m.CORE_FN, reg.CORE.op["describe"], struct.pack("<HH", 0, 0)
@@ -287,7 +287,7 @@ def test_a_tlv_in_a_describe_or_get_request_follows_the_general_rule(op):
 
 
 def test_config_set_refuses_an_unknown_item_with_the_tag_as_received():
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     hst = h.Host(lambda b: ep.handle(b, 1))
     hst.open(3000)
     fn = ep.fns["oep.probe.config"]
@@ -331,7 +331,7 @@ def refused(r: m.Result) -> tuple[int, int, bytes]:
 
 
 def recorded(probe=None):
-    ep = endpoint.Endpoint(probe or fake.p4_x035(), Clock())
+    ep = endpoint.Endpoint(probe or virtual_bench.p4_x035(), Clock())
     rec = Recorder(ep)
     hst = h.Host(rec)
     hst.open(3000)
@@ -477,7 +477,7 @@ def test_open_owner_length_checked_either_way(critical):
 @BITS
 def test_config_item_of_another_length_is_malformed_either_way(critical):
     """probe.config §1: an item the probe handles with a value of another length -> malformed, critical or not."""
-    ep, rec, hst = recorded(fake.p4_bench())
+    ep, rec, hst = recorded(virtual_bench.p4_bench())
     cfg = config.ProbeConfig(hst)
     cfg.set([config.Label(channel=30, text="t.nrst")])
     fn, op = ep.fns["oep.probe.config"], reg.PROBE_CONFIG.op["set"]
@@ -546,7 +546,7 @@ class Failing:
 
 def test_a_failed_or_partial_answer_ignores_the_unknown_tlv_too():
     """core §2.3: an unknown non-critical TLV changes nothing, also when the op's status is a failure."""
-    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     tag = Failing(ep)
     hst = h.Host(tag)
     hst.open(3000)

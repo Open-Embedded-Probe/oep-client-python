@@ -1,4 +1,4 @@
-"""The fake probe against the probe-side rules added since the 2026-10-02 rule changes: oep-spec 2e70f40 (required and
+"""The virtual bench against the probe-side rules added since the 2026-10-02 rule changes: oep-spec 2e70f40 (required and
 optional ops, C-21), 975d88c / 598bb26 / 8d91db0 (the lines while a wire does not answer, the rest states), 73a0c37
 (cs_setup_ns, search_retries, boot_reset), and docs/v1-rule-change-proposal-2026-10-06.md (b4b08f1, 40291a4). Each test
 names its item. Updated to oep-spec 0f455a0 (rule review 2026-10-07 §2: any one reason after the session check, no
@@ -8,9 +8,9 @@ import struct
 
 import pytest
 
-from oep_client import catalog, endpoint, fake, message as m, registry as reg
+from oep_client import catalog, endpoint, virtual_bench, message as m, registry as reg
 
-from test_fake_rules_2026_10_02 import ITEM, PLAN_APPLY, SPEED, Clock, Host, slot_item
+from test_virtual_bench_rules_2026_10_02 import ITEM, PLAN_APPLY, SPEED, Clock, Host, slot_item
 
 CORE = reg.CORE
 RV, CFG = reg.TARGET_RISCV_DM, reg.PROBE_CONFIG
@@ -19,7 +19,7 @@ UNA = CORE.tlv["unavailable_payload"]
 
 
 def bench(probe=None, **kw):
-    ep = endpoint.Endpoint(probe or fake.p4_bench(), Clock(), **kw)
+    ep = endpoint.Endpoint(probe or virtual_bench.p4_bench(), Clock(), **kw)
     h = Host(ep)
     assert h.open().succeeded
     return ep, h
@@ -29,17 +29,17 @@ def fn_of(ep, name):
     return ep.fns[name]
 
 
-def with_tlvs(probe: fake.FakeProbe, name: str, change) -> fake.FakeProbe:
+def with_tlvs(probe: virtual_bench.VirtualProbe, name: str, change) -> virtual_bench.VirtualProbe:
     """The profile with the describe TLVs of every `name` fn passed through change(tlvs) -> tlvs."""
-    return fake.FakeProbe(probe.label, probe.max_frame, [
-        fake.Offered(o.fn, o.instance, o.name, tuple(change(o.tlvs)), o.revision, o.flags) if o.name == name else o
+    return virtual_bench.VirtualProbe(probe.label, probe.max_frame, [
+        virtual_bench.Offered(o.fn, o.instance, o.name, tuple(change(o.tlvs)), o.revision, o.flags) if o.name == name else o
         for o in probe.offered])
 
 
 def ops_without(name: str, *without: str):
     """change(): the ops tag (core §7.4) of interface `name` with every op but `without` (the optional ones left out)."""
     def change(tlvs):
-        return [t for t in tlvs if t[0] != catalog.OPS] + list(fake.ops_of(name, *without))
+        return [t for t in tlvs if t[0] != catalog.OPS] + list(virtual_bench.ops_of(name, *without))
     return change
 
 
@@ -59,7 +59,7 @@ def attached(ep, h, wire=1, pair=(2, 3)):
 # ---- C-21 (2e70f40): required and optional ops; an undefined op is unknown_operation at order 1 ----------------
 
 def test_c21_an_op_fn_0_does_not_define_is_unknown_operation_not_session_required():
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     h = Host(ep)
     assert h.raw(0, 0x50, session=False).detail == m.UNKNOWN_OPERATION        # no session: still order 1's second
     assert h.raw(0, 0x50, session=False).detail == m.UNKNOWN_OPERATION
@@ -67,7 +67,7 @@ def test_c21_an_op_fn_0_does_not_define_is_unknown_operation_not_session_require
 
 
 def test_c21_an_op_an_interface_does_not_define_is_unknown_operation():
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     h = Host(ep)
     for fn in (1, 2, 3, 4, 5, 6):                                             # wire, dm, console, gpio, uart, config
         assert h.raw(fn, 0x7E, session=False).detail == m.UNKNOWN_OPERATION, fn
@@ -76,13 +76,13 @@ def test_c21_an_op_an_interface_does_not_define_is_unknown_operation():
 
 
 def test_c21_riscv_dm_ops_are_gated_on_the_ops_tag():
-    ep, h = bench(fake.esp32_v003())                                          # ops without step
+    ep, h = bench(virtual_bench.esp32_v003())                                          # ops without step
     dm = fn_of(ep, "oep.target.riscv-dm")
     assert not ep.offers(dm, RV.op["step"]) and ep.offers(dm, RV.op["run"])
     assert h.raw(dm, RV.op["step"], struct.pack("<H", 1)).detail == m.UNKNOWN_OPERATION
     ops = next(v for t, v in m.split_tlvs(b"".join(ep._declarations(dm))) if t == catalog.OPS)
     assert ops == bytes([1, 0x7F])                                            # base 1: dmi .. run, no step (core §7.4)
-    ep, h = bench(with_tlvs(fake.p4_bench(), "oep.target.riscv-dm",
+    ep, h = bench(with_tlvs(virtual_bench.p4_bench(), "oep.target.riscv-dm",
                             ops_without(RV.name, "read_block", "write_block", "run", "reset", "step")))
     for op in ("read_block", "write_block", "run", "reset", "step"):
         assert h.raw(2, RV.op[op], struct.pack("<H", 1)).detail == m.UNKNOWN_OPERATION, op
@@ -91,8 +91,8 @@ def test_c21_riscv_dm_ops_are_gated_on_the_ops_tag():
 
 
 def test_c21_save_and_erase_without_storage_are_unknown_operation():
-    probe = fake.FakeProbe("x", 1024, [fake._config(6, 0, slots_max=4, storage=0) if o.name == CFG.name else o
-                                       for o in fake.p4_bench().offered])
+    probe = virtual_bench.VirtualProbe("x", 1024, [virtual_bench._config(6, 0, slots_max=4, storage=0) if o.name == CFG.name else o
+                                       for o in virtual_bench.p4_bench().offered])
     ep, h = bench(probe)
     assert not [t for t in ep.static[6] if t[0] == CFG.tlv["describe"]["storage"]]   # no storage tag (probe.config §2)
     for op in ("save", "erase"):
@@ -103,21 +103,21 @@ def test_c21_save_and_erase_without_storage_are_unknown_operation():
 
 
 def test_c21_capture_query_and_force_need_their_ops():
-    ep, h = bench(with_tlvs(fake.p4_x035(), "oep.fixture.logic", ops_without(LOGIC.name, "query", "force")))
+    ep, h = bench(with_tlvs(virtual_bench.p4_x035(), "oep.fixture.logic", ops_without(LOGIC.name, "query", "force")))
     logic = fn_of(ep, "oep.fixture.logic")
     assert h.raw(logic, LOGIC.op["query"], session=False).detail == m.UNKNOWN_OPERATION
     assert h.raw(logic, LOGIC.op["force"]).detail == m.UNKNOWN_OPERATION
     assert h.raw(logic, LOGIC.op["status"], session=False).succeeded
-    ep, h = bench(with_tlvs(fake.p4_x035(), "oep.fixture.capture-group", ops_without(GROUP.name, "force")))
+    ep, h = bench(with_tlvs(virtual_bench.p4_x035(), "oep.fixture.capture-group", ops_without(GROUP.name, "force")))
     group = fn_of(ep, "oep.fixture.capture-group")
     assert h.raw(group, GROUP.op["force"]).detail == m.UNKNOWN_OPERATION
-    ep, h = bench(fake.p4_x035())                                             # both offered
+    ep, h = bench(virtual_bench.p4_x035())                                             # both offered
     assert h.raw(fn_of(ep, "oep.fixture.logic"), LOGIC.op["force"]).succeeded
     assert h.raw(fn_of(ep, "oep.fixture.capture-group"), GROUP.op["force"]).succeeded
 
 
 def test_c21_order_1_refusals_are_not_remembered_and_do_not_restart_the_lease():
-    ep, h = bench(fake.esp32_v003())
+    ep, h = bench(virtual_bench.esp32_v003())
     dm = fn_of(ep, "oep.target.riscv-dm")
     ep.now.t = 2000
     r = h.raw(dm, RV.op["step"], struct.pack("<H", 1))
@@ -136,11 +136,11 @@ def clock(h, session=False):
 
 def test_c31_the_clock_has_the_resolution_it_is_given_and_never_goes_back():
     ns = [5_123_456]
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock(), now_ns=lambda: ns[0])
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock(), now_ns=lambda: ns[0])
     assert ep.now_ns() == 5_123_456                                           # not cut to ms
     ns[0] = 5_000_000                                                         # a counter read out of order
     assert ep.now_ns() == 5_123_456                                           # does not decrease (core §2.6a)
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     ep.now.t = 7
     assert ep.now_ns() == 7_000_000                                           # ms clock: in ns
 
@@ -173,7 +173,7 @@ def test_clock_touches_no_session_lock_or_lease():
 
 
 def test_fn_0_has_exactly_the_eight_core_ops_and_no_subscribe():
-    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     assert ep.ops[0] == set(CORE.op.values()) == {0x01, 0x02, 0x03, 0x04, 0x10, 0x11, 0x12, 0x13}
     h = Host(ep)
     h.open()
@@ -189,9 +189,9 @@ def test_c19_after_a_reboot_with_a_repeated_boot_id_the_old_session_is_gone():
     assert r.succeeded and struct.unpack("<II", r.payload) == (3000, ep.boot_id)   # lease_ms boot_id, no resumed
 
 
-def test_c19_fake_serve_draws_its_boot_id_and_counts_in_ns():
-    from oep_client import fake_serve
-    a, b = (fake_serve.build(fake_serve.parse([])) for _ in range(2))
+def test_c19_virtual_bench_serve_draws_its_boot_id_and_counts_in_ns():
+    from oep_client import virtual_bench_serve
+    a, b = (virtual_bench_serve.build(virtual_bench_serve.parse([])) for _ in range(2))
     assert len({a.boot_id, b.boot_id, 0x1234ABCD}) == 3                       # drawn, not the fixed default
     assert a.now_ns() % 1_000_000 or a.now_ns() != a.now_ns()                 # ns, not ms in ns (almost always)
 
@@ -199,16 +199,16 @@ def test_c19_fake_serve_draws_its_boot_id_and_counts_in_ns():
 # ---- C-20 / C-47 / C-41: the values a probe declares --------------------------------------------------------------
 
 @pytest.mark.parametrize("max_frame, window, inflight", [(63, 4096, 4), (1024, 1023, 4), (1024, 4096, 0)])
-def test_c20_confirms_bounds_are_the_fakes_too(max_frame, window, inflight):
-    probe = fake.FakeProbe("x", max_frame, fake.p4_bench().offered)
+def test_c20_confirms_bounds_are_the_virtual_bench_s_too(max_frame, window, inflight):
+    probe = virtual_bench.VirtualProbe("x", max_frame, virtual_bench.p4_bench().offered)
     with pytest.raises(ValueError):
         endpoint.Endpoint(probe, Clock(), window=window, max_inflight=inflight)
 
 
 @pytest.mark.parametrize("value", [0, reg.LIMITS["max_op_ms_max"] + 1])
 def test_c47_max_op_ms_outside_1_to_600000_is_not_a_probe(value):
-    probe = with_tlvs(fake.p4_bench(), fake.CORE_NAME,
-                      lambda tlvs: [catalog.u32(fake.CORE_MAX_OP_MS, value) if t[0] == fake.CORE_MAX_OP_MS else t
+    probe = with_tlvs(virtual_bench.p4_bench(), virtual_bench.CORE_NAME,
+                      lambda tlvs: [catalog.u32(virtual_bench.CORE_MAX_OP_MS, value) if t[0] == virtual_bench.CORE_MAX_OP_MS else t
                                     for t in tlvs])
     with pytest.raises(ValueError):
         endpoint.Endpoint(probe, Clock())
@@ -217,11 +217,11 @@ def test_c47_max_op_ms_outside_1_to_600000_is_not_a_probe(value):
 
 def test_c41_a_uart_bridge_and_tcp_name_no_usb_interface():
     with pytest.raises(AssertionError):
-        fake._transports([(fake.TRANSPORT["uart_bridge"], 0)])
-    ep = endpoint.Endpoint(fake.rp2350_pins(), Clock())
-    index = ep.add_transport(fake.TRANSPORT["tcp"])
-    rows = {v[0]: (v[1], v[2]) for t, v in ep.decl[0] if t == fake.CORE_TRANSPORT}
-    assert rows == {0: (fake.TRANSPORT["usb_cdc"], 0), index: (fake.TRANSPORT["tcp"], 0xFF)}
+        virtual_bench._transports([(virtual_bench.TRANSPORT["uart_bridge"], 0)])
+    ep = endpoint.Endpoint(virtual_bench.rp2350_pins(), Clock())
+    index = ep.add_transport(virtual_bench.TRANSPORT["tcp"])
+    rows = {v[0]: (v[1], v[2]) for t, v in ep.decl[0] if t == virtual_bench.CORE_TRANSPORT}
+    assert rows == {0: (virtual_bench.TRANSPORT["usb_cdc"], 0), index: (virtual_bench.TRANSPORT["tcp"], 0xFF)}
 
 
 # ---- C-36: short messages and roles in the wrong direction --------------------------------------------------------
@@ -252,7 +252,7 @@ def test_c39_list_from_beyond_the_matches_gives_the_total_and_count_0():
 # ---- △12: every channel that is not the probe's own is in its idle state from boot------------------------------------
 
 def test_t12_every_channel_not_the_probes_own_is_parked_at_boot():
-    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     assert set(ep.parked) == set(range(55)) - {24, 25}                        # channels 55, its own 24 / 25
     assert set(ep.parked.values()) == {0}                                     # Hi-Z without settings
 
@@ -267,7 +267,7 @@ def test_plan_apply_any_one_reason_that_applies():
     """core §4.3 (rule review 2026-10-07): after the session check the probe checks everything before any change and
     answers with any one reason that applies - no order among malformed, unknown_function (an fn in the payload),
     unsupported and unavailable any more."""
-    ep, h = bench(fake.p4_x035())
+    ep, h = bench(virtual_bench.p4_x035())
     # fn 99 does not exist; the i2c-target (fn 8) misses its SCL (malformed)
     r = h.raw(h.plan_fn, PLAN_APPLY, assignment(99, 1, 20) + assignment(8, 1, 21))
     assert r.detail in (m.MALFORMED, m.UNKNOWN_FUNCTION)
@@ -280,7 +280,7 @@ def test_plan_apply_any_one_reason_that_applies():
 
 
 def test_plan_apply_unsupported_or_unavailable_and_nothing_changes():
-    ep, h = bench(fake.p4_x035())
+    ep, h = bench(virtual_bench.p4_x035())
     assert h.raw(h.plan_fn, PLAN_APPLY, assignment(5, 1, 20)).succeeded         # the uart holds channel 20
     # the gpio's first assignment meets that hold (unavailable), its second names a channel it does not offer
     r = h.raw(h.plan_fn, PLAN_APPLY, assignment(4, 1, 20) + assignment(4, 1, 24))
@@ -293,7 +293,7 @@ def test_plan_apply_unsupported_or_unavailable_and_nothing_changes():
 def test_subscribe_is_the_emitting_interfaces_own_op():
     """core §11.3: subscribe / unsubscribe go to the fn that sends notifications (no target fn in the payload);
     logic, analog and capture-group set them in their ops, every other fn answers unknown_operation at order 1."""
-    ep, h = bench(fake.p4_x035())
+    ep, h = bench(virtual_bench.p4_x035())
     for fn in (7, 11, 12):                                                    # logic, analog, capture-group
         assert {m.OP_SUBSCRIBE, m.OP_UNSUBSCRIBE} <= ep.ops[fn]
         assert h.raw(fn, m.OP_UNSUBSCRIBE).succeeded                          # not subscribed: nothing, ok
@@ -322,7 +322,7 @@ def idle(ch, mode, drive=0xFF):
 def test_probe_config_set_any_one_reason_and_nothing_changes():
     """core §4.3 (rule review 2026-10-07): an item the probe does not declare (unsupported, the item tag as received)
     and an item of another length (malformed, probe.config §1) in one set - either answers, nothing is applied."""
-    without_disable = with_tlvs(fake.p4_bench(), "oep.probe.config", lambda tlvs: [
+    without_disable = with_tlvs(virtual_bench.p4_bench(), "oep.probe.config", lambda tlvs: [
         catalog.tlv(CFG.tlv["describe"]["items"], bytes(v for v in ITEM.values() if v != ITEM["disable"]))
         if t[0] == CFG.tlv["describe"]["items"] else t for t in tlvs])
     ep, h = bench(without_disable)
@@ -357,7 +357,7 @@ def test_an_undefined_attach_is_unsupported():
 
 
 def test_c21_a_plan_item_on_a_channel_the_fn_does_not_offer_names_the_item():
-    ep, h = bench(fake.p4_x035())
+    ep, h = bench(virtual_bench.p4_x035())
     plan = m.tlv(ITEM["plan"], struct.pack("<HBH", 4, 1, 24), critical=True)  # 24 is the probe's own: no fn offers it
     r = cfg_set(h, 10, plan)
     assert r.detail == m.UNSUPPORTED and r.payload[0] == ITEM["plan"] | 0x80
@@ -400,7 +400,7 @@ def test_every_target_op_fails_with_status_line_when_nothing_answers(op, body):
 # ---- 975d88c: the reset TLV of attach on a channel whose idle is an output -------------------------------------------
 
 def test_attach_reset_tlv_on_an_output_idle_channel_is_unavailable_and_runs_nothing():
-    ep, h = bench(fake.esp32_v003())
+    ep, h = bench(virtual_bench.esp32_v003())
     swio = ep.pairs[1][0]
     tg = ep._target(1, swio)
     tg.silent_until_reset = True
@@ -420,7 +420,7 @@ def search_retries(r):
 
 
 def test_search_retries_only_when_a_bring_up_ran():
-    ep, h = bench(fake.esp32_v003())
+    ep, h = bench(virtual_bench.esp32_v003())
     swio = ep.pairs[1][0]
     ep._target(1, swio).search_retries = 0x12345                              # saturates
     attach = lambda extra=b"", speed=4_000_000: h.raw(1, 0x02, b"\x00" + m.tlv(0x01, struct.pack("<I", speed),
@@ -436,7 +436,7 @@ def test_search_retries_only_when_a_bring_up_ran():
 def test_o2_reset_is_ndmreset_and_moves_no_line():
     """debug §4.3 (rule review 2026-10-07): reset is mode(u8) alone (no method TLV) and uses ndmreset; it never moves
     the reset line. Its answer is status(u8) flags(u8) pc(u32)."""
-    ep, h = bench(fake.esp32_v003())
+    ep, h = bench(virtual_bench.esp32_v003())
     cid = attached(ep, h, pair=ep.pairs[1][0])
     sid = struct.unpack_from("<H", h.ok(3, reg.TARGET_CONSOLE.op["open"], struct.pack("<HB", cid, 2)))[0]
     for mode in (0, 1, 2):
@@ -455,7 +455,7 @@ def test_o2_reset_is_ndmreset_and_moves_no_line():
 @pytest.mark.parametrize("address, detail", [(0x00, m.UNSUPPORTED), (0x07, m.UNSUPPORTED), (0x78, m.UNSUPPORTED),
                                              (0x7F, m.UNSUPPORTED), (0x80, m.MALFORMED), (0x08, None), (0x77, None)])
 def test_t5_i2c_target_refuses_the_reserved_addresses(address, detail):
-    ep, h = bench(fake.p4_x035())
+    ep, h = bench(virtual_bench.p4_x035())
     assert h.raw(h.plan_fn, PLAN_APPLY, assignment(8, 1, 20) + assignment(8, 2, 21)).succeeded
     r = h.raw(8, I2C.op["configure"], bytes([address]))                       # address(u8) alone (fixture §3)
     if detail is None:
@@ -465,7 +465,7 @@ def test_t5_i2c_target_refuses_the_reserved_addresses(address, detail):
 
 
 def test_t6_uart_write_without_tx_is_unavailable_cause_6():
-    ep, h = bench(fake.p4_x035())
+    ep, h = bench(virtual_bench.p4_x035())
     uart = reg.FIXTURE_UART
     assert h.raw(h.plan_fn, PLAN_APPLY, assignment(5, uart.enum["role"]["rx"], 20)).succeeded   # RX only
     r = h.raw(5, uart.op["write"], struct.pack("<H", 1) + b"x")
@@ -477,7 +477,7 @@ def test_t6_uart_write_without_tx_is_unavailable_cause_6():
 
 
 def test_t6_spi_arm_count_over_length_is_malformed():
-    ep, h = bench(fake.p4_x035())
+    ep, h = bench(virtual_bench.p4_x035())
     spi = reg.FIXTURE_SPI_TARGET
     assert h.raw(9, spi.op["arm"], struct.pack("<HH", 4, 8) + bytes(8)).detail == m.MALFORMED
 
@@ -485,18 +485,18 @@ def test_t6_spi_arm_count_over_length_is_malformed():
 # ---- 73a0c37: spi-target's cs_setup_ns ------------------------------------------------------------------------------
 
 def test_cs_setup_ns_is_declared_by_a_probe_that_drives_miso_in_software():
-    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
     spi = fn_of(ep, "oep.fixture.spi-target")
     tag = reg.FIXTURE_SPI_TARGET.tlv["describe"]["cs_setup_ns"]
     assert [struct.unpack("<I", v)[0] for t, v in ep.decl[spi] if t == tag] == [4000]
-    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     assert not [t for t in ep.static[fn_of(ep, "oep.fixture.spi-target")] if t[0] == tag]   # MISO at once: left out
 
 
 def test_group_bind_any_one_reason_and_a_bound_tracks_configure_is_cause_4():
     """core §4.3 (rule review 2026-10-07): the form and the state are checked before any change, and any one reason
     that applies answers; a bound track's own configure / start is unavailable cause 4 (capture §4)."""
-    ep, h = bench(fake.p4_x035())
+    ep, h = bench(virtual_bench.p4_x035())
     group = fn_of(ep, "oep.fixture.capture-group")
     ep.groups[group].tracks = [7]                                             # a bound track that is capturing
     ep.captures[7].state = reg.FIXTURE_LOGIC.enum["state"]["capturing"]
@@ -507,7 +507,7 @@ def test_group_bind_any_one_reason_and_a_bound_tracks_configure_is_cause_4():
 
 
 def test_a_bound_tracks_start_any_one_reason():
-    ep, h = bench(fake.p4_x035())
+    ep, h = bench(virtual_bench.p4_x035())
     ep.captures[7].group = ep.groups[fn_of(ep, "oep.fixture.capture-group")]
     bad = b"\x01"                                                             # a TLV cut short
     assert h.raw(7, LOGIC.op["start"], bad).detail in (m.MALFORMED, m.UNAVAILABLE)

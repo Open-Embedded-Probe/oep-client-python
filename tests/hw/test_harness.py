@@ -1,4 +1,4 @@
-"""tests/hw's own bookkeeping on the in-process fake (no hardware, no `hw` marker: it runs in the ordinary suite):
+"""tests/hw's own bookkeeping on the in-process virtual bench (no hardware, no `hw` marker: it runs in the ordinary suite):
 Run.restore_settings puts the probe's settings back as they were before tests/hw changed any - after a test that
 failed half-way, and after a probe that went away (opened again; while it stays away, what is left is recorded and the
 summary prints the commands that remove it)."""
@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from oep_client import config, core, endpoint, fake, host as h
+from oep_client import config, core, endpoint, virtual_bench, host as h
 
 from . import boards, record
 
@@ -21,9 +21,9 @@ class Clock:
 
 
 def _bench():
-    ep = endpoint.Endpoint(fake.p4_x035(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     hst = h.Host(lambda b: ep.handle(b, VENDOR))
-    r = record.Run(boards.Board("fake-harness", "fake", "esp32", "esp32", ""), client={"version": "test"})
+    r = record.Run(boards.Board("virtual-harness", "virtual", "esp32", "esp32", ""), client={"version": "test"})
     r.hst, r.port = hst, "/dev/ttyTEST"
     core.take(hst, 30000, owner="oep tests/hw")
     return ep, hst, r

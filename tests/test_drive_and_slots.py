@@ -1,4 +1,4 @@
-"""oep-spec 0f455a0 against the fake: the gpio output strength (fixture §1.1: describe drive_levels, set's drive TLV
+"""oep-spec 0f455a0 against the virtual bench: the gpio output strength (fixture §1.1: describe drive_levels, set's drive TLV
 index(u8) level(u8), the effective strength; read carries no drive TLV), the idle item's drive (probe.config §1:
 4 bytes, drive(u8)), the slot item without boot_reset / lock (§1.1) and slot_state's 12-byte form, connected / absent
 (§3.3)."""
@@ -7,7 +7,7 @@ import struct
 
 import pytest
 
-from oep_client import config, core, endpoint, fake, fixture, host as h, message as m, registry as reg
+from oep_client import config, core, endpoint, virtual_bench, fixture, host as h, message as m, registry as reg
 from oep_client.fixture import Drive, DriveLevels
 
 DRIVE = 0x01                                   # set's drive TLV
@@ -23,7 +23,7 @@ class Clock:
 
 def open_probe(probe=None):
     clock = Clock()
-    ep = endpoint.Endpoint(probe or fake.p4_bench(), clock)
+    ep = endpoint.Endpoint(probe or virtual_bench.p4_bench(), clock)
     hst = h.Host(lambda b: ep.handle(b, 1))
     hst.open(3000)
     return ep, hst, clock
@@ -55,10 +55,10 @@ def test_describe_declares_the_levels_and_a_probe_without_them_does_not():
     ep, hst, _ = open_probe()
     assert fixture.Gpio(hst, ep.fns["oep.fixture.gpio"]).drive_levels() == LEVELS
     assert ep.drive_levels == (2, [5, 10, 20, 40])
-    ep2, hst2, _ = open_probe(fake.without_drive_levels(fake.p4_bench()))
+    ep2, hst2, _ = open_probe(virtual_bench.without_drive_levels(virtual_bench.p4_bench()))
     assert fixture.Gpio(hst2, ep2.fns["oep.fixture.gpio"]).drive_levels() is None
     assert ep2.drive_levels is None
-    for profile in fake.PROFILES.values():                        # every example profile declares them
+    for profile in virtual_bench.PROFILES.values():                        # every example profile declares them
         ep3, hst3, _ = open_probe(profile())
         assert fixture.Gpio(hst3, ep3.fns["oep.fixture.gpio"]).drive_levels() == LEVELS
 
@@ -183,7 +183,7 @@ def test_set_ignores_an_unknown_tlv_silently_and_refuses_an_unknown_critical_one
 def test_a_probe_without_drive_levels_refuses_every_drive():
     """fixture §1.1: on a probe without drive_levels any drive (0xFF too) is rejected unsupported, the tag as
     received; a set without one works."""
-    ep, hst, _ = open_probe(fake.without_drive_levels(fake.p4_bench()))
+    ep, hst, _ = open_probe(virtual_bench.without_drive_levels(virtual_bench.p4_bench()))
     g = gpio_of(ep, hst)
     for level in (0, 1, 0xFF):
         for critical in (False, True):
@@ -242,7 +242,7 @@ def test_idle_drive_accepted_forms():
     ep, hst, _ = open_probe()
     cfg = config.ProbeConfig(hst)
     cfg.set([_idle(20, 4, 3), _idle(21, 3, 0), _idle(22, 4, 0xFF), _idle(26, 1, 5), _idle(27, 2, 0xFF)])
-    assert ep.parked_drive == {20: 3, 21: 0, 22: fake.DRIVE_DEFAULT}
+    assert ep.parked_drive == {20: 3, 21: 0, 22: virtual_bench.DRIVE_DEFAULT}
     assert ep.parked[26] == 1 and ep.parked[27] == 2               # an input idle: drive not looked at
     assert 26 not in ep.parked_drive and 27 not in ep.parked_drive
 
@@ -250,7 +250,7 @@ def test_idle_drive_accepted_forms():
 def test_a_probe_without_drive_levels_refuses_an_output_idle_drive():
     """probe.config §1: on a probe without drive_levels a drive other than 0xFF on mode 3 / 4 is rejected unsupported;
     an input mode's drive is not looked at."""
-    ep, hst, _ = open_probe(fake.without_drive_levels(fake.p4_bench()))
+    ep, hst, _ = open_probe(virtual_bench.without_drive_levels(virtual_bench.p4_bench()))
     cfg = config.ProbeConfig(hst)
     with pytest.raises(h.Unsupported) as e:
         cfg.set([config.Idle(channel=20, mode="output-high", drive=Drive.level(0))])
@@ -262,8 +262,8 @@ def test_a_probe_without_drive_levels_refuses_an_output_idle_drive():
 
 
 def test_a_probe_without_gpio_refuses_an_output_idle_drive():
-    bench = fake.p4_bench()
-    probe = fake.FakeProbe(bench.label, bench.max_frame, [o for o in bench.offered if o.name != "oep.fixture.gpio"],
+    bench = virtual_bench.p4_bench()
+    probe = virtual_bench.VirtualProbe(bench.label, bench.max_frame, [o for o in bench.offered if o.name != "oep.fixture.gpio"],
                            own_channels=bench.own_channels)
     ep, hst, _ = open_probe(probe)
     cfg = config.ProbeConfig(hst)
@@ -281,7 +281,7 @@ V003_PAIR, NRST = (16, 0xFFFF), 23                                # esp32-v003: 
 def v003(silent=True, reset_line=None):
     clock = Clock()
     clock.t = 7
-    ep = endpoint.Endpoint(fake.esp32_v003(), clock)
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), clock)
     tg = ep.targets[(1, V003_PAIR)]
     tg.silent_until_reset, tg.reset_line = silent, reset_line
     return ep, clock, tg
@@ -312,7 +312,7 @@ def test_slot_item_form_has_no_boot_reset_or_lock():
 
 
 def test_slot_item_of_another_length_is_malformed_and_retry_ms_is_not_looked_at_on_a_host_slot():
-    ep, hst, _ = open_probe(fake.esp32_v003())
+    ep, hst, _ = open_probe(virtual_bench.esp32_v003())
     cfg = config.ProbeConfig(hst)
     v = config.Slot(slot=0, wire_fn=1, pins=V003_PAIR, name="v003").value()
     for bad in (v + b"\x55", v[:-1], v + b"\x01\x01\x02\x03\x04"):   # longer (an old boot_reset / lock) or shorter
@@ -357,7 +357,7 @@ def test_an_at_boot_slot_never_resets_its_target():
 
 
 def test_a_host_attach_with_reset_wakes_a_silent_target_and_scan_does_not_see_it():
-    ep, hst, _ = open_probe(fake.esp32_v003())
+    ep, hst, _ = open_probe(virtual_bench.esp32_v003())
     tg = ep.targets[(1, V003_PAIR)]
     tg.silent_until_reset = True
     assert hst.call(1, 0x01, struct.pack("<BHH", 1, *V003_PAIR)).payload[1] == 0   # scan: nothing found
@@ -385,7 +385,7 @@ def test_state_from_the_command_shows_the_last_try(capsys, monkeypatch):
 
 def test_slot_and_idle_from_the_command(capsys, monkeypatch):
     from oep_client import __main__ as cli
-    ep, hst, _ = open_probe(fake.esp32_v003())
+    ep, hst, _ = open_probe(virtual_bench.esp32_v003())
     hst.link = FakeLink()
     hst.end()
     monkeypatch.setattr(cli.link, "open_host", lambda target: hst)
@@ -401,15 +401,15 @@ def test_slot_and_idle_from_the_command(capsys, monkeypatch):
         cli.main(["config", "idle", "x", "21", "pull-up", "--drive-level", "1"])
 
 
-# ---- fake_serve's options for other hosts' tests ----------------------------------------------------------------
+# ---- virtual_bench_serve's options for other hosts' tests ----------------------------------------------------------------
 
 def serve(*argv):
-    from oep_client import fake_serve
-    ep = fake_serve.build(fake_serve.parse(["--tcp", "0", *argv]))
+    from oep_client import virtual_bench_serve
+    ep = virtual_bench_serve.build(virtual_bench_serve.parse(["--tcp", "0", *argv]))
     return ep, h.Host(lambda b: ep.handle(b, 1))
 
 
-def test_fake_serve_no_drive_levels():
+def test_virtual_bench_serve_no_drive_levels():
     ep, hst = serve("--profile", "p4-bench", "--no-drive-levels")
     assert ep.drive_levels is None
     hst.open(3000)
@@ -423,7 +423,7 @@ def test_fake_serve_no_drive_levels():
     assert fixture.Gpio(hst, ep.fns["oep.fixture.gpio"]).drive_levels() == LEVELS
 
 
-def test_fake_serve_slot_with_a_silent_target_stays_absent():
+def test_virtual_bench_serve_slot_with_a_silent_target_stays_absent():
     ep, hst = serve("--profile", "esp32-v003", "--slot", "v003", "--silent-until-reset", "0",
                     "--label", "23=v003.nrst")
     assert ep.slots[0].attach == 1 and ep.saved                   # saved, as if the probe booted with them
@@ -432,16 +432,16 @@ def test_fake_serve_slot_with_a_silent_target_stays_absent():
     assert ep.targets[(1, V003_PAIR)].silent_until_reset          # the probe resets nothing on its own
 
 
-def test_fake_serve_has_no_boot_reset(capsys):
-    from oep_client import fake_serve
+def test_virtual_bench_serve_has_no_boot_reset(capsys):
+    from oep_client import virtual_bench_serve
     with pytest.raises(SystemExit):
-        fake_serve.parse(["--slot", "v003", "--boot-reset"])
+        virtual_bench_serve.parse(["--slot", "v003", "--boot-reset"])
 
 
-def test_fake_serve_label_wants_ch_eq_text(capsys):
-    from oep_client import fake_serve
+def test_virtual_bench_serve_label_wants_ch_eq_text(capsys):
+    from oep_client import virtual_bench_serve
     with pytest.raises(SystemExit):
-        fake_serve.parse(["--label", "nrst"])
+        virtual_bench_serve.parse(["--label", "nrst"])
     assert "CH=TEXT" in capsys.readouterr().err
     ep, _ = serve("--label", "0x14=t.nrst")
     assert ep.line_for("t", "nrst") == 0x14

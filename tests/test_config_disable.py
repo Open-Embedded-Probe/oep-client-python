@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-from oep_client import __main__ as cli, config, core, endpoint, fake, fixture, host as h, message as m, riscv
+from oep_client import __main__ as cli, config, core, endpoint, virtual_bench, fixture, host as h, message as m, riscv
 
 from test_config import Clock, open_bench
 
@@ -68,7 +68,7 @@ def test_a_slot_or_an_attach_naming_a_disabled_channel():
 
 
 def test_an_attach_reset_on_a_disabled_channel():
-    ep = endpoint.Endpoint(fake.esp32_v003(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
     hst = h.Host(lambda b: ep.handle(b, 0))
     hst.open(3000)
     config.ProbeConfig(hst).set([config.Disable(channel=23)])

@@ -4,7 +4,7 @@
 
 The pre-release test of oep-spec's [docs/release-testing.md](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/release-testing.md):
 a probe firmware (oep-probe-arduino's `examples/Firmware/OepProbe`) is put on a real board and this client is run through
-it, end to end. The ordinary test suite (`uv run pytest`) runs against the fake probe and never touches hardware; this
+it, end to end. The ordinary test suite (`uv run pytest`) runs against the virtual bench and never touches hardware; this
 directory is skipped entirely unless `OEP_HW_BOARDS` names boards. Both the firmware release (built from main, every
 board at hand) and the client release (the latest firmware release) go through it; neither ships when it fails.
 
@@ -18,8 +18,8 @@ OEP_HW_BOARDS=esp32-pico-d4-50029191fe34 OEP_PROBE_VERSION=0.0.25 uv run pytest 
 # test what is on the board already (nothing is flashed)
 OEP_HW_BOARDS=9489dd2ae0953650 OEP_HW_NOFLASH=1 uv run pytest tests/hw -m hw
 
-# a dry run of the test logic on the fake probe (a pty; no hardware, never a release test)
-OEP_HW_BOARDS=fake-esp32-v003 uv run pytest tests/hw -m hw
+# a dry run of the test logic on the virtual bench (a pty; no hardware, never a release test)
+OEP_HW_BOARDS=virtual-esp32-v003 uv run pytest tests/hw -m hw
 ```
 
 `-s` shows the flasher's progress and the port_speed table as they happen. A board's whole run takes 1.5-2.5 minutes
@@ -35,7 +35,7 @@ OEP_HW_BOARDS=fake-esp32-v003 uv run pytest tests/hw -m hw
 | `flash.py` | the flashers per board kind, and the DTR / RTS reset of a bridge board |
 | `record.py` | one board's run: the connection, the measurements, the results file |
 | `test_probe.py` | the tests, in order |
-| `test_harness.py` | the harness's own bookkeeping on the in-process fake (no `hw` marker: it runs in the ordinary `uv run pytest`): settings put back after a failed test and after a probe that went away |
+| `test_harness.py` | the harness's own bookkeeping on the in-process virtual bench (no `hw` marker: it runs in the ordinary `uv run pytest`): settings put back after a failed test and after a probe that went away |
 | `conftest.py` | the `hw` marker and the skip without `OEP_HW_BOARDS`; grouping per board; the one-screen summary |
 | `results/` | `<board>-<firmware>-<client>-<started>.json`, one per run - the run's start time (`20261006T203121`) in the name, so no run overwrites another (small summaries only; `.gitignore` keeps anything else out) |
 
@@ -66,7 +66,7 @@ The results file also carries the client's version and commit, the firmware sour
 release version + manifest URL + sha256s), the host platform and every `OEP_*` variable of the run. The one-screen summary
 is printed at the end of the pytest run.
 
-On the fake (`fake-esp32-v003`) `capture` records its levels without judging them (the fake captures a counter, not its
+On the virtual bench (`virtual-esp32-v003`) `capture` records its levels without judging them (the virtual bench captures a counter, not its
 pins, and its one-shot is done as start answers).
 
 ## A probe that does not come back, and the settings tests/hw changes

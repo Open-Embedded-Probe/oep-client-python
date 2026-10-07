@@ -1,19 +1,19 @@
-"""oep-spec 59dd028 against the fake and the client: an attach that joins an existing connection keeps the connection's
+"""oep-spec 59dd028 against the virtual bench and the client: an attach that joins an existing connection keeps the connection's
 current setting for every setting TLV it does not carry - idle_clock absent on a join keeps the current rest, "absent
 = high" is for a new connection only; max_speed is always carried and a join only lowers the speed - and a scan never
 changes a live connection's settings (debug §1, §3; probe-config §1.1)."""
 
 import struct
 
-from oep_client import endpoint, fake, host as h, message as m, riscv
+from oep_client import endpoint, virtual_bench, host as h, message as m, riscv
 
-from test_fake_spec import SPEED, Clock, Host, slot_item
+from test_virtual_bench_spec import SPEED, Clock, Host, slot_item
 
 HIGH, LOW = m.tlv(0x04, b"\x00", critical=True), m.tlv(0x04, b"\x01", critical=True)
 
 
 def bench():
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     hv = Host(ep)
     assert hv.open().succeeded
     return ep, hv
@@ -102,7 +102,7 @@ def test_a_scan_over_a_live_pair_leaves_its_settings():
 # ---- the client: Wire.attach carries idle_clock when it is given, high included ------------------------------------
 
 def client():
-    ep = endpoint.Endpoint(fake.p4_bench(), Clock())
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     hst = h.Host(lambda b: ep.handle(b, 1))
     hst.open(3000)
     return ep, riscv.Wire(hst, "oep.wire.rvswd")

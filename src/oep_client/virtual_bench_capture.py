@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-"""oep.fixture.logic / oep.fixture.analog / oep.fixture.capture-group in the fake probe (oep-spec
+"""oep.fixture.logic / oep.fixture.analog / oep.fixture.capture-group in the virtual bench (oep-spec
 docs/oep-if-capture.ja.md, revision 1).
 
 What it captures is known in advance, so a receiver can check it (sample i counted from the track's start, across
@@ -43,7 +43,7 @@ EVENT = CAP.event
 CALIBRATION = ANA.tlv["calibration_answer"]
 NONE = 0xFFFFFFFF
 NO_TIME = 0xFFFFFFFFFFFFFFFF
-MAX_SAMPLES = 1 << 20                  # a fake keeps its captures in memory
+MAX_SAMPLES = 1 << 20                  # a virtual bench keeps its captures in memory
 SEGMENT = struct.Struct("<IQIQIIBI")   # serial position samples start_ns start_uncertainty_ns trigger_index flags generation (§2)
 FULL = 4095                            # the analog value's top (12 bits)
 WRONG_STATE = m.tlv(reg.CORE.tlv["unavailable_payload"]["cause"], bytes([reg.CORE.enum["unavailable_cause"]["wrong_state"]]))
@@ -77,7 +77,7 @@ class Segment:
 
 
 def analog_value(k: int, i: int) -> int:
-    """Channel k's value at sample i of the fake analog waveform."""
+    """Channel k's value at sample i of the virtual analog waveform."""
     period = 64 * (k // 2 + 1)
     if k % 2 == 0:
         return FULL if i % period < period // 2 else 0
@@ -85,7 +85,7 @@ def analog_value(k: int, i: int) -> int:
 
 
 @dataclass
-class FakeCapture:
+class VirtualCapture:
     """One capture track (logic, or analog when `frontends` is given). Times: the endpoint's clock in ms, the probe's in
     ns."""
     modes: set[int]                    # the modes the describe declares
@@ -116,7 +116,7 @@ class FakeCapture:
     produced: int = 0                  # samples produced since start
     sent: int = 0                      # streaming: the byte position pushed so far
     gap_next: bool = False             # repeat: the capture stopped for want of a segment; the next one says so
-    group: object | None = None        # the FakeGroup that binds it
+    group: object | None = None        # the VirtualGroup that binds it
     vrefint_ns: int = NO_TIME
     generation: int = 0                # +1 at every start (§3.2); 0 before the first
     flags: int = 0                     # status flags (dropped, slipped), reset at start
@@ -227,7 +227,7 @@ class FakeCapture:
         """The analog's calibration (§3.8): a made-up two-point value per frontend, and the reference measured at start."""
         if not self.analog:
             raise Reject(m.UNKNOWN_OPERATION)
-        scheme = b"org.example.fake.two-point"
+        scheme = b"org.example.virtual_bench.two-point"
         out = b""
         for fe in sorted(self.frontends):
             raw = struct.pack("<HH", 150, 3950)                     # raw at the range's 5 % / 95 %
@@ -420,7 +420,7 @@ class FakeCapture:
 
 
 @dataclass
-class FakeGroup:
+class VirtualGroup:
     """oep.fixture.capture-group (§4): tracks started together, one of them the trigger."""
     tracks_allowed: list[int]          # the fns it may bind (describe tracks)
     max_tracks: int                    # its own: the most tracks one bind holds (not declared)
@@ -430,7 +430,7 @@ class FakeGroup:
     start_ns: int = NO_TIME
     trigger_ns: int = NO_TIME
 
-    def bind(self, caps: dict[int, FakeCapture], fns: list[int], trigger_fn: int) -> None:
+    def bind(self, caps: dict[int, VirtualCapture], fns: list[int], trigger_fn: int) -> None:
         """§4.1's refusals, every one checked before anything changes: the same fn twice -> malformed; an fn not in
         tracks -> unsupported; not configured, modes apart, a trigger off the trigger track -> unavailable cause 6;
         more tracks or more samples than it can take together -> unavailable cause 2."""
@@ -462,13 +462,13 @@ class FakeGroup:
         for c in chosen:
             c.group = self
 
-    def _unbind(self, caps: dict[int, FakeCapture]) -> None:
+    def _unbind(self, caps: dict[int, VirtualCapture]) -> None:
         for fn in self.tracks:
             if fn in caps:
                 caps[fn].group = None
         self.tracks, self.trigger_fn, self.start_ns, self.trigger_ns = [], 0, NO_TIME, NO_TIME
 
-    def release_session(self, caps: dict[int, FakeCapture]) -> None:
+    def release_session(self, caps: dict[int, VirtualCapture]) -> None:
         """The session's lock ended (end, lease expiry, force): its bind goes (capture §4.1: a session's resource,
         core §9); the tracks stay as they are, each on its own."""
         for fn in self.tracks:
@@ -476,7 +476,7 @@ class FakeGroup:
                 caps[fn].group = None
         self.tracks, self.trigger_fn, self.start_ns, self.trigger_ns = [], 0, NO_TIME, NO_TIME
 
-    def start(self, caps: dict[int, FakeCapture], now_ms: int,
+    def start(self, caps: dict[int, VirtualCapture], now_ms: int,
               subscribed=lambda fn: True) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
         """-> (each track's events, the group's events). Every track gets a new generation (the answer's TLV lists
         them, §4.1)."""
@@ -505,16 +505,16 @@ class FakeGroup:
             own.append(bytes([GRP.event["stopped"], STOPPED["complete"], 0]))
         return per, own
 
-    def generations(self, caps: dict[int, FakeCapture]) -> bytes:
+    def generations(self, caps: dict[int, VirtualCapture]) -> bytes:
         """The start answer's TLV generations: n x (fn(u16) generation(u32))."""
         return m.tlv(GRP.tlv["start_answer"]["generations"],
                      b"".join(struct.pack("<HI", fn, caps[fn].generation) for fn in self.tracks))
 
-    def stop(self, caps: dict[int, FakeCapture]) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
+    def stop(self, caps: dict[int, VirtualCapture]) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
         per = [(fn, caps[fn].stop()) for fn in self.tracks]
         return per, [bytes([GRP.event["stopped"], STOPPED["host"], 0])] if any(e for _, e in per) else []
 
-    def state(self, caps: dict[int, FakeCapture]) -> int:
+    def state(self, caps: dict[int, VirtualCapture]) -> int:
         """The group's state from its tracks' (§4.1): 0 with none bound; 6 if any is 6; else 4 if started and every
         one is 4; else 2 if trigger_track is set, has not fired, and one is 2 or 3; else 3 if one is 2, 3 or 5; else 1."""
         states = [caps[fn].state for fn in self.tracks]
@@ -531,7 +531,7 @@ class FakeGroup:
             return STATE["capturing"]
         return STATE["configured"]
 
-    def status(self, caps: dict[int, FakeCapture]) -> bytes:
+    def status(self, caps: dict[int, VirtualCapture]) -> bytes:
         state = self.state(caps)
         return struct.pack("<BQQH", state, self.start_ns, self.trigger_ns,
                            self.trigger_fn if self.trigger_ns != NO_TIME else 0)

@@ -5,9 +5,9 @@ import struct
 
 import pytest
 
-from oep_client import endpoint, fake, host, message as m
+from oep_client import endpoint, virtual_bench, host, message as m
 
-TOY = 13         # a fn the fake does not simulate (fake.with_stand_in(esp32_v003)) has the stand-in operations
+TOY = 13         # a fn the virtual bench does not simulate (virtual_bench.with_stand_in(esp32_v003)) has the stand-in operations
 
 
 class Clock:
@@ -21,7 +21,7 @@ class Clock:
 @pytest.fixture
 def bench():
     clock = Clock()
-    ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), clock, lease_default_ms=1000)
+    ep = endpoint.Endpoint(virtual_bench.with_stand_in(virtual_bench.esp32_v003()), clock, lease_default_ms=1000)
     return clock, ep
 
 
@@ -52,7 +52,7 @@ def test_every_request_carries_a_session_id_and_0_is_none():
 def test_a_48_byte_name_fits_a_64_byte_frame():
     name = "io.github.ch32-riscv-ug." + "x" * 24
     assert len(name) == 48
-    probe = fake.FakeProbe("tiny", 64, [fake.Offered(0, 0, ""), fake.Offered(1, 1, name)])
+    probe = virtual_bench.VirtualProbe("tiny", 64, [virtual_bench.Offered(0, 0, ""), virtual_bench.Offered(1, 1, name)])
     ep = endpoint.Endpoint(probe, Clock())
     from oep_client import catalog
     result = ep.handle(m.Request(1, 0, m.OP_LIST, catalog.pack_list_request(0)).pack())
@@ -178,7 +178,7 @@ def test_a_probe_reboot_forgets_the_last_id_and_boot_id_says_so(bench):
     a = new_host(ep, 1)
     first = a.open()
     assert first.boot_id == ep.boot_id == a.confirmed()["boot_id"]   # confirm tells it too (core §7.1)
-    rebooted = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), clock, boot_id=0x5555AAAA)
+    rebooted = endpoint.Endpoint(virtual_bench.with_stand_in(virtual_bench.esp32_v003()), clock, boot_id=0x5555AAAA)
     a.send = rebooted.handle
     with pytest.raises(host.NoSession):
         write(a, 1)
@@ -245,7 +245,7 @@ def test_confirm_sends_a_range_and_reads_the_v1_answer(bench):
 
 def test_no_session_request_to_a_v0_probe(bench):
     clock, _ = bench
-    ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), clock, revision=0)
+    ep = endpoint.Endpoint(virtual_bench.with_stand_in(virtual_bench.esp32_v003()), clock, revision=0)
     a = new_host(ep, 1)
     with pytest.raises(host.NotV1):
         a.open()
@@ -278,7 +278,7 @@ def test_the_first_session_request_confirms_first(bench):
 
 def test_the_host_skips_tlvs_it_does_not_know_after_every_result(bench):
     clock, _ = bench
-    ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), clock, tail=m.tlv(0x6D, b"new!") + m.tlv(0x6E, b""))
+    ep = endpoint.Endpoint(virtual_bench.with_stand_in(virtual_bench.esp32_v003()), clock, tail=m.tlv(0x6D, b"new!") + m.tlv(0x6E, b""))
     a = new_host(ep, 1)
     assert a.confirm()["tail"].get(0x6D) == b"new!"
     opened = a.open(lease_ms=1000)
@@ -350,7 +350,7 @@ def test_tlv_one_form_round_trip():
         m.split_tlvs(bytes([0x41, 0x00, 0x02]) + bytes(100))           # len past the end
     with pytest.raises(m.ShortPayload):
         m.split_tlvs(bytes([0x41, 0x01]))                               # the header cut short
-    ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), Clock())
+    ep = endpoint.Endpoint(virtual_bench.with_stand_in(virtual_bench.esp32_v003()), Clock())
     a = new_host(ep, 1)
     a.open()
     plain = a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 4))
@@ -383,7 +383,7 @@ def test_no_session_means_this_sessions_resources_are_gone(bench):
     """core §9: no_session = no session holds the lock - this one ended (lapse, a force and the forcing session's
     end) or the probe rebooted (boot_id 0 is an ordinary value now): either way nothing of this session is left."""
     clock, _ = bench
-    ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), clock, boot_id=0)
+    ep = endpoint.Endpoint(virtual_bench.with_stand_in(virtual_bench.esp32_v003()), clock, boot_id=0)
     a = new_host(ep, 1)
     a.open()
     epoch = a.epoch

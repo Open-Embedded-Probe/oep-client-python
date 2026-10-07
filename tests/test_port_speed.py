@@ -1,9 +1,9 @@
-"""port_speed (oep-if-link §3, an op of the optional oep.probe.link; the handshake only): the fake's state machine (the
+"""port_speed (oep-if-link §3, an op of the optional oep.probe.link; the handshake only): the virtual bench's state machine (the
 request baud / step / verify_ms on the port it came on, try / commit / revert, port_speed_tolerance_pct, going back
 after verify_ms, after port_speed_idle_ms with no good frame or answer, or at the session's end - never on broken
 candidates - another port and off), and the client's opt-in raise_speed against it (host guide §17: the procedure, the
-first wait and the resend at the raised rate before the boot speed) - in process, where the fake also sees the host's
-own rate (`FakeSerialStream`), and on a pty through open_host(port_speed=...)."""
+first wait and the resend at the raised rate before the boot speed) - in process, where the virtual bench also sees the host's
+own rate (`VirtualSerialStream`), and on a pty through open_host(port_speed=...)."""
 
 import json
 import struct
@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from oep_client import cobs, core, endpoint, fake, fake_serial, host as h, link, message as m
+from oep_client import cobs, core, endpoint, virtual_bench, virtual_bench_serial, host as h, link, message as m
 
 TRY, COMMIT, REVERT = 0, 1, 2
 PS = endpoint.OP_PORT_SPEED
@@ -21,7 +21,7 @@ PS = endpoint.OP_PORT_SPEED
 
 @pytest.fixture(autouse=True)
 def _ceiling(request, monkeypatch):
-    """Most tests here are about the procedure at any rate the fake makes (1500000, 921600 ... included): they run
+    """Most tests here are about the procedure at any rate the virtual bench makes (1500000, 921600 ... included): they run
     without the default ceiling, so a rate above 500000 is not given the 1 s verify. The tests named `ceiling` keep
     the real one (host guide §17, §17.3.3)."""
     if "ceiling" not in request.node.name:
@@ -53,14 +53,14 @@ class Port:
     """An endpoint's serial port `index` (0: the profile's UART bridge) driven by whole requests, its answers decoded
     (a broken one: None)."""
 
-    def __init__(self, profile=fake.esp32_v003, peer=None, index=0):
+    def __init__(self, profile=virtual_bench.esp32_v003, peer=None, index=0):
         if peer is None:
             self.clock = Clock()
             self.ep = endpoint.Endpoint(profile(), self.clock)
             self.corrs = [0]
         else:                                            # another port of `peer`'s probe: one session, one corr count
             self.clock, self.ep, self.corrs = peer.clock, peer.ep, peer.corrs
-        self.port = fake_serial.FakeSerialPort(self.ep, index)
+        self.port = virtual_bench_serial.VirtualSerialPort(self.ep, index)
 
     def send(self, fn, op, payload=b"", session=None, raw=False):
         self.corrs[0] += 1
@@ -95,12 +95,12 @@ def committed(p, sid, baud=500000):
     assert p.send(p.ep.link_fn, PS, ps(baud, COMMIT), sid).succeeded and p.ep.speed_state == "committed"
 
 
-# ---- the fake's state machine (oep-if-link §3, the handshake) --------------------------------------------------------
+# ---- the virtual bench's state machine (oep-if-link §3, the handshake) --------------------------------------------------------
 
 def link_ops(p):
     """The ops tag of the probe's oep.link describe (core §7.4)."""
     tlvs = m.split_tlvs(b"".join(p.ep._declarations(p.ep.link_fn)))
-    return fake.catalog.unpack_ops(next(v for t, v in tlvs if t == fake.catalog.OPS))
+    return virtual_bench.catalog.unpack_ops(next(v for t, v in tlvs if t == virtual_bench.catalog.OPS))
 
 
 def test_the_ops_tag_offers_it_only_when_on_and_off_is_unknown_operation():
@@ -165,8 +165,8 @@ def test_a_step_that_does_not_fit_the_boot_state_is_cause_6():
 
 def test_the_nearest_rate_the_uart_makes_must_be_within_the_tolerance():
     """oep-if-link §3: the nearest rate the UART makes more than port_speed_tolerance_pct (2 %) from the request:
-    unsupported; else the answer's baud is the rate applied. The fake makes 300..5000000 exactly."""
-    assert endpoint.SPEED_TOLERANCE_PCT == fake.reg.LIMITS["port_speed_tolerance_pct"] == 2
+    unsupported; else the answer's baud is the rate applied. The virtual bench makes 300..5000000 exactly."""
+    assert endpoint.SPEED_TOLERANCE_PCT == virtual_bench.reg.LIMITS["port_speed_tolerance_pct"] == 2
     p = Port()
     sid = opened(p)
     for baud in (9_000_000, 5_103_000, 290):                             # 5000000 / 300: over 2 % off
@@ -271,7 +271,7 @@ def test_only_the_uart_bridge_the_request_came_in_on_and_one_port_at_a_time():
     """oep-if-link §3: the port is the one the request came on, a UART bridge only (else unavailable cause 6); a try
     on another port while one port is raised: cause 6."""
     p = Port()
-    two = p.ep.add_transport(fake.TRANSPORT["uart_bridge"])                     # a second UART bridge
+    two = p.ep.add_transport(virtual_bench.TRANSPORT["uart_bridge"])                     # a second UART bridge
     q = Port(peer=p, index=two)
     sid = opened(p)
     committed(p, sid)
@@ -282,7 +282,7 @@ def test_only_the_uart_bridge_the_request_came_in_on_and_one_port_at_a_time():
     assert p.send(p.ep.link_fn, PS, ps(0, REVERT, 0), sid).succeeded and p.ep.port_baud(0) == 115200
     r = q.send(p.ep.link_fn, PS, ps(230400, TRY), sid)                           # none raised: this one may
     assert r.succeeded and p.ep.speed_port == two and p.ep.port_baud(two) == 230400 and p.ep.port_baud(0) == 115200
-    u = Port(fake.p4_x035)                                                      # USB-Serial/JTAG: no UART bridge
+    u = Port(virtual_bench.p4_x035)                                                      # USB-Serial/JTAG: no UART bridge
     u.ep.port_speed_base = 115200
     sid = opened(u)
     r = u.send(u.ep.link_fn, PS, ps(500000, TRY), sid)
@@ -291,20 +291,20 @@ def test_only_the_uart_bridge_the_request_came_in_on_and_one_port_at_a_time():
 
 # ---- the client: raise_speed (host guide §17) -----------------------------------------------------------------------------
 
-def in_process(profile=fake.esp32_v003, lease=10000):
+def in_process(profile=virtual_bench.esp32_v003, lease=10000):
     start = time.monotonic()
     ep = endpoint.Endpoint(profile(), lambda: int((time.monotonic() - start) * 1000))
-    stream = fake_serial.FakeSerialStream(ep, 0)
+    stream = virtual_bench_serial.VirtualSerialStream(ep, 0)
     lk = link.SerialLink.on_stream(stream, "cobs", 0.5)
     lk.transport = "serial"
-    lk.wait_add_s = 0.0          # the in-process fake answers at once: the floor's 1000 ms would only slow the losses
+    lk.wait_add_s = 0.0          # the in-process virtual bench answers at once: the floor's 1000 ms would only slow the losses
     hst = h.Host(lk.send)
     lk.attach_host(hst)
     core.take(hst, lease)
     return ep, hst, lk
 
 
-UNIT = "fafe00000003"   # the fake esp32-v003's unit_id
+UNIT = "fafe00000003"   # the virtual bench esp32-v003's unit_id
 FAST = dict(verify_ms=900)   # the probe's try state ends soon: a failed candidate costs under a second
 
 
@@ -525,7 +525,7 @@ def test_in_use_the_3_s_window_over_10_percent_steps_down_for_the_session():
 
 def test_in_use_broken_requests_step_down_too_and_the_request_goes_on_at_base():
     ep, hst, lk, report = raised_in_use()
-    lk.timeout = 0.05                                                        # the fake answers within a millisecond
+    lk.timeout = 0.05                                                        # the virtual bench answers within a millisecond
     ep.broken_rates[921600] = endpoint.BrokenRate(to_host=False, every=3)    # the probe sees broken candidates: lost
     for _ in range(60):
         hst.request(0, m.OP_LOCK_STATE)
@@ -596,7 +596,7 @@ def test_raised_in_use_the_first_wait_is_at_most_a_third_of_the_idle_time_never_
 
 
 def answer_dropped(ep, lk, op):
-    """The fake's first answer to a core request `op` is lost on the line (once). -> the corrs dropped (a list)."""
+    """The virtual bench's first answer to a core request `op` is lost on the line (once). -> the corrs dropped (a list)."""
     dropped = []
 
     def answer(n, result):
@@ -739,7 +739,7 @@ def test_set_baud_switches_to_the_requested_rate_and_to_the_answer_only_when_the
 
 
 def second_host(ep):
-    lk = link.SerialLink.on_stream(fake_serial.FakeSerialStream(ep, 0), "cobs", 0.5)
+    lk = link.SerialLink.on_stream(virtual_bench_serial.VirtualSerialStream(ep, 0), "cobs", 0.5)
     lk.transport = "serial"
     hst = h.Host(lk.send)
     t0 = time.monotonic()
@@ -763,7 +763,7 @@ def test_open_gives_up_on_a_probe_that_never_comes_back():
     ep2, hst3, lk3 = in_process()
     link.raise_speed(hst3, [750000], **FAST)
     ep2._speed_revert = lambda: None                            # never comes back: the open gives up
-    lk4 = link.SerialLink.on_stream(fake_serial.FakeSerialStream(ep2, 0), "cobs", 0.5)
+    lk4 = link.SerialLink.on_stream(virtual_bench_serial.VirtualSerialStream(ep2, 0), "cobs", 0.5)
     lk4.corr_source = lambda: 7
     with pytest.raises(TimeoutError):
         lk4.wait_boot_speed(0.6)
@@ -844,7 +844,7 @@ def test_the_probation_fails_a_rate_that_passes_the_quick_verify_and_breaks_late
     """The field case modelled: a rate passes the 16-frame verify, breaks after some kilobytes. In its probation that is
     a verify failure: a step down at once to the next lower candidate, whose probation then passes."""
     from oep_client import speed_record
-    ep, hst, lk = in_process(fake.esp32_v003_64)         # 64-byte frames: the 16-frame verify stays under 3000 bytes
+    ep, hst, lk = in_process(virtual_bench.esp32_v003_64)         # 64-byte frames: the 16-frame verify stays under 3000 bytes
     rec = speed_record.SpeedRecord(None)
     rec.path = None
     notes = []
@@ -868,7 +868,7 @@ def test_the_probation_fails_a_rate_that_passes_the_quick_verify_and_breaks_late
 
 
 def test_without_the_probation_the_same_rate_breaks_only_in_use():
-    ep, hst, lk = in_process(fake.esp32_v003_64)         # 64-byte frames: the verify stays under `after`
+    ep, hst, lk = in_process(virtual_bench.esp32_v003_64)         # 64-byte frames: the verify stays under `after`
     ep.broken_rates[921600] = endpoint.BrokenRate(min_size=40, to_probe=False, after=3000, every=3)
     report = link.raise_speed(hst, [921600, 500000], flows=[("in", 1)], **FAST, **NO_PROBATION)
     assert report.trials[0].committed and report.trials[0].probation == "off"
@@ -939,7 +939,7 @@ def test_the_record_puts_passed_rates_first_skips_failed_ones_and_expires(tmp_pa
     ep.broken_rates[230400] = endpoint.BrokenRate(to_probe=False)            # no confirm there
     report = link.raise_speed(hst, [230400, 500000], record=rec, **FAST)
     assert report.chosen == 500000 and report.skipped == []
-    unit = "fafe00000003"                                                    # the fake esp32-v003's unit_id
+    unit = "fafe00000003"                                                    # the virtual bench esp32-v003's unit_id
     assert rec.lookup("<stream>", unit) == ([500000], [230400]) and lk.record_key == ("<stream>", unit)
     saved = json.loads(path.read_text())
     assert saved[f"<stream>|{unit}"]["rates"]["500000"]["passed"] is True
@@ -1080,7 +1080,7 @@ def test_ceiling_a_lease_too_short_for_the_1_s_verify_skips_the_rate():
 
 @pytest.mark.skipif(sys.platform != "linux", reason="a pty")
 def test_open_host_with_port_speed_on_a_pty():
-    proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", "--pty", "--profile", "esp32-v003",
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", "--pty", "--profile", "esp32-v003",
                              "--broken-rate", "230400"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     try:
         where = proc.stdout.readline().split()
@@ -1103,7 +1103,7 @@ def test_open_host_with_port_speed_on_a_pty():
 def test_oep_speed_cli_prints_the_report_and_keeps_the_record(capsys, tmp_path, monkeypatch):
     from oep_client import __main__ as cli
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", "--pty", "--profile", "esp32-v003",
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", "--pty", "--profile", "esp32-v003",
                              "--broken-rate", "230400:40:in"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     try:
         where = proc.stdout.readline().split()
@@ -1130,7 +1130,7 @@ def test_oep_speed_cli_prints_the_report_and_keeps_the_record(capsys, tmp_path, 
 @pytest.mark.skipif(sys.platform != "linux", reason="a pty")
 def test_ceiling_oep_speed_tries_a_faster_rate_only_when_named_and_verifies_it_1_s_each_way(capsys):
     from oep_client import __main__ as cli
-    proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", "--pty", "--profile", "esp32-v003"],
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", "--pty", "--profile", "esp32-v003"],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     try:
         where = proc.stdout.readline().split()

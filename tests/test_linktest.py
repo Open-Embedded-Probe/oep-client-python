@@ -10,7 +10,7 @@ from oep_client import core, link, linktest
 
 @pytest.fixture
 def pty():
-    proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", "--pty", "--profile", "esp32-v003",
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", "--pty", "--profile", "esp32-v003",
                              "--broken-rate", "230400:1:in"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     yield re.search(r"/dev/pts/\d+", proc.stdout.readline()).group(0)
     proc.stdin.close()

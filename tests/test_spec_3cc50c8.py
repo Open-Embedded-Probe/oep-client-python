@@ -1,4 +1,4 @@
-"""oep-spec 9ed53e7 / 3cc50c8 against the fake: describe of an fn not offered is unknown_function (core §4.3), unset of
+"""oep-spec 9ed53e7 / 3cc50c8 against the virtual bench: describe of an fn not offered is unknown_function (core §4.3), unset of
 an undeclared item tag is unsupported with the tag as received (probe.config §2), last_try_at_ns follows the at-boot
 slot's plain retries (§3.3; oep-spec 0f455a0 has no retry with reset), and an idle change takes effect at once on a
 free channel and at the next release on a held one (probe.config §1: the level and the drive)."""
@@ -7,7 +7,7 @@ import struct
 
 import pytest
 
-from oep_client import config, core, endpoint, fake, fixture, host as h, message as m, riscv
+from oep_client import config, core, endpoint, virtual_bench, fixture, host as h, message as m, riscv
 from oep_client.fixture import Drive
 
 from test_drive_and_slots import V003_PAIR, items, slot_state, v003
@@ -21,7 +21,7 @@ class Clock:
 
 
 def open_probe(probe=None):
-    ep = endpoint.Endpoint(probe or fake.p4_bench(), Clock())
+    ep = endpoint.Endpoint(probe or virtual_bench.p4_bench(), Clock())
     hst = h.Host(lambda b: ep.handle(b, 1))
     hst.open(3000)
     return ep, hst
