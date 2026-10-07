@@ -499,3 +499,113 @@ def test_a_bound_tracks_drop_stops_the_group():
     link.take(ep)
     (e,) = grp.events(link)
     assert (e.kind, e.reason_name, e.error) == ("stopped", "error", 1)
+
+
+# ---- oep-spec 59c5459 / dd5a886, capture §5: multirate ------------------------------------------------------------------
+
+from oep_client import multirate as mr   # noqa: E402
+
+A, S_, E = mr.ANY_ACTIVE, mr.SAMPLE, mr.EDGE_LATCH
+
+
+def multirate_bench(roles=4):
+    ep, hst, lc, clock = bench()
+    core.plan_apply(hst, [(lc.fn, k, 20 + k) for k in range(roles)])
+    return ep, hst, lc, clock
+
+
+def counter_levels(role, first, n):
+    return [((first + i) >> role) & 1 for i in range(n)]
+
+
+def test_the_virtual_bench_declares_multirate_and_d_1_is_always_accepted():
+    ep, hst, lc, _ = multirate_bench()
+    decl = lc.multirate_declared()
+    assert decl == mr.Declared(7, 2, 1024, False)
+    assert decl.accepts_d(1) and not decl.accepts_d(0) and decl.accepts_d(3)
+    assert mr.Declared(7, 2, 128, True).accepts_d(1) and not mr.Declared(7, 2, 128, True).accepts_d(3)   # d 1 always
+    assert c.AnalogCapture(hst).multirate_declared() is None
+    cfg = lc.configure(rate=1_000_000, samples=64, multirate=[mr.Multirate(1, S_, 1, 0), mr.Multirate(2, S_, 2, 1)])
+    assert cfg.positions == [0, 1, 2] and cfg.block == 32                  # role 1's d 1 sample: a D = 1 channel
+
+
+@pytest.mark.parametrize("mode", [c.ONE_SHOT, c.REPEAT])
+def test_a_multirate_capture_decodes_to_the_waveform(mode):
+    ep, hst, lc, clock = multirate_bench()
+    specs = [mr.Multirate(0, A, 8, 1), mr.Multirate(2, E, 4, 1), mr.Multirate(3, S_, 4, 3)]
+    extra = dict(segments=2) if mode == c.REPEAT else {}
+    cfg = lc.configure(rate=1_000_000, mode=mode, samples=100, multirate=specs, **extra)
+    assert cfg.block == 32 and cfg.samples == 128 and cfg.positions == [0]   # rounded up to L; role 1 is D = 1
+    lc.start()
+    if mode == c.REPEAT:
+        clock.t = 1
+        segs = lc.segments()
+    else:
+        segs = lc.wait()
+    assert segs and all(s.samples == 128 for s in segs)
+    for seg in segs:
+        data = lc.read_segment(seg)
+        assert len(data) == cfg.bytes == 4 * cfg.multirate_layout().block_bytes()
+        got = lc.decode_multirate(data, seg.samples)
+        first = seg.serial * 128
+        assert got.d1 == [counter_levels(1, first, 128)]
+        for s in specs:
+            assert got.reduced[s.role] == s.values(counter_levels(s.role, first, 128))
+
+
+def test_multirate_streaming_pushes_whole_blocks():
+    ep, hst, lc, clock = multirate_bench()
+    lc.configure(rate=1_000_000, mode=c.STREAMING, multirate=[mr.Multirate(3, A, 16, 0)])
+    lc.subscribe()
+    lc.start()
+    clock.t = 1                                                          # 1000 base samples: 31 blocks of 32
+    pushes = [c.unpack_push(f) for f in ep.pushes() if f[0] == m.ROLE_DATA]
+    data = b"".join(p[3] for p in pushes)
+    lay = lc.config.multirate_layout()
+    assert len(data) == 31 * lay.block_bytes()
+    got = lay.decode(data, 31 * 32)
+    assert got.reduced[3] == mr.Multirate(3, A, 16, 0).values(counter_levels(3, 0, 31 * 32))
+
+
+def test_multirate_refusals_on_the_virtual_bench():
+    ep, hst, lc, _ = multirate_bench()
+    base = m.tlv(c.MODE, bytes([1])) + m.tlv(c.RATE, struct.pack("<I", 1_000_000)) + m.tlv(c.SAMPLES, struct.pack("<I", 64))
+    def ask(*specs, critical=True):
+        return hst.request(lc.fn, lc.QUERY_OP, base + b"".join(m.tlv(mr.TAG, mr.TLV.pack(*x), critical=critical) for x in specs),
+                           locked=False)
+    for bad in [[(0, A, 0, 0)], [(0, S_, 4, 4)], [(0, E, 1, 1)], [(0, A, 4, 2)], [(1, S_, 2, 0), (1, S_, 4, 0)]]:
+        with pytest.raises(h.Rejected) as e:
+            ask(*bad)
+        assert e.value.result.detail == m.MALFORMED, bad
+    for bad, critical in [((0, 3, 4, 0), True), ((0, S_, 2000, 0), False)]:
+        with pytest.raises(h.Unsupported) as e:
+            ask(bad, critical=critical)
+        assert e.value.result.payload == bytes([mr.TAG | (0x80 if critical else 0)])
+    with pytest.raises(h.Unavailable) as e:
+        ask((9, S_, 4, 0))                                               # role 9 not in the plan
+    assert e.value.cause == "wrong_state"
+    ep.captures[lc.fn].min_hz = ep.captures[lc.fn].max_hz = 1_000_000   # one rate only: a heavy one cannot keep it
+    with pytest.raises(h.Unsupported) as e:
+        ask(*[(k, E, 2, 1) for k in range(4)])
+    assert e.value.result.payload == bytes([mr.TAG | 0x80])
+
+
+def test_the_client_checks_multirate_before_sending():
+    ep, hst, lc, _ = multirate_bench()
+    n = len(ep.requests)
+    for specs, words in [([mr.Multirate(0, A, 0, 0)], "d 0"), ([mr.Multirate(0, S_, 4, 4)], "phase"),
+                         ([mr.Multirate(0, E, 1, 0)], "edge_latch"), ([mr.Multirate(1, S_, 2), mr.Multirate(1, S_, 4)], "twice"),
+                         ([mr.Multirate(0, 3, 4, 0)], "policy 3"), ([mr.Multirate(0, S_, 2048, 0)], "d 2048")]:
+        with pytest.raises(ValueError, match=words):
+            lc.configure(rate=1_000_000, samples=64, multirate=specs)
+    an = c.AnalogCapture(hst)
+    with pytest.raises(ValueError, match="declares no multirate"):
+        an.configure(rate=10_000, samples=64, multirate=[mr.Multirate(0, S_, 2, 0)])
+    assert not [r for r in ep.requests[n:] if r.op in (c.LogicCapture.CONFIGURE, c.LogicCapture.QUERY_OP) and r.fn != 0]
+
+
+def test_a_multirate_track_heavy_combination_gets_a_lower_rate():
+    ep, hst, lc, _ = multirate_bench()
+    light = lc.configure(rate=20_000_000, samples=64, query=True, multirate=[mr.Multirate(0, A, 4, 0)])
+    heavy = lc.configure(rate=20_000_000, samples=64, query=True, multirate=[mr.Multirate(k, E, 2, 1) for k in range(4)])
+    assert light.rate == 20_000_000 and heavy.rate < 20_000_000 and heavy.positions == [] and heavy.width == 1

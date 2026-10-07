@@ -66,6 +66,13 @@ def _trigger(v: bytes) -> str:
     return ", ".join(n for b, n in _TRIGGERS.items() if types >> b & 1) + f"; pretrigger up to {pre}"
 
 
+def _multirate(v: bytes) -> str:
+    """logic describe's multirate (oep-if-capture §5.1): policies(u32 bit set) min_d(u32) max_d(u32) pow2(u8)."""
+    policies, lo, hi, pow2 = struct.unpack_from("<IIIB", v)
+    names = ", ".join(n for b, n in enumerate(("sample", "any_active", "edge_latch")) if policies >> b & 1)
+    return f"{names}; d 1 and {lo}-{hi}" + (" (powers of 2)" if pow2 else "")
+
+
 def _frontend(v: bytes) -> str:
     """analog describe's frontend: frontend(u8) range_min_mv(i32) range_max_mv(i32) attenuation_mdb(u32)."""
     fe, lo, hi, mdb = struct.unpack_from("<BiiI", v)
@@ -134,7 +141,8 @@ KNOWN: dict[str, Known] = {
                               tags={0x40: ("formats", lambda v: ", ".join(f"0x{b:02x}" for b in v[1:1 + v[0]]))}),
     "oep.fixture.logic": Known("sampled logic capture", roles={k: f"line{k}" for k in range(8)},
                                tags={0x40: ("mode", _capture_mode), 0x41: ("rate range", _rate_range),
-                                     0x44: ("channels", lambda v: str(v[0])), 0x45: ("trigger", _trigger)}),
+                                     0x44: ("channels", lambda v: str(v[0])), 0x45: ("trigger", _trigger),
+                                     0x60: ("multirate", _multirate)}),
     "oep.fixture.analog": Known("sampled analog capture", roles={k: f"ch{k}" for k in range(8)},
                                 tags={0x40: ("mode", _capture_mode), 0x41: ("rate range", _rate_range),
                                       0x44: ("channels", lambda v: str(v[0])), 0x45: ("trigger", _trigger),

@@ -928,6 +928,7 @@ class Endpoint:
         d = reg.FIXTURE_ANALOG.tlv["describe"]                     # the logic's tags are the same numbers
         modes, lo, hi, fronts, most_samples = set(), 1, 1_000_000, {}, {}
         max_pre = virtual_bench_capture.MAX_SAMPLES - 1
+        exact, mr_decl = False, None
         for tag, v in decl:
             if tag == d["frontend"]:                               # analog: frontend min_mv max_mv attenuation_mdb
                 fe, lo_mv, hi_mv, mdb = struct.unpack("<BiiI", v)
@@ -937,13 +938,18 @@ class Endpoint:
                 most_samples[v[0]] = struct.unpack_from("<I", v, 1)[0]   # mode max_samples max_segments
             elif tag == d["trigger"]:                              # types(u32) max_pretrigger(u32)
                 max_pre = struct.unpack_from("<I", v, 4)[0]
+            elif tag == d["rate_range"]:                           # min_hz(u32) max_hz(u32) exact(u8)
+                lo, hi, exact = struct.unpack_from("<IIB", v)
+            elif tag == reg.FIXTURE_LOGIC.tlv["describe"]["multirate"] and len(v) >= 13:
+                mr_decl = virtual_bench_capture.mr.Declared.unpack(v)
             elif tag == catalog.MIN_CLOCK_HZ:
                 lo = struct.unpack("<I", v)[0]
             elif tag == catalog.MAX_CLOCK_HZ:
                 hi = struct.unpack("<I", v)[0]
         return virtual_bench_capture.VirtualCapture(modes or {virtual_bench_capture.MODE["one_shot"]}, set(inner.get("widths", (8,))), lo, hi,
                                         inner.get("ring", 8), inner.get("max_read", 4096), fronts,
-                                        max_samples=most_samples, max_pretrigger=max_pre)
+                                        max_samples=most_samples, max_pretrigger=max_pre, exact=bool(exact),
+                                        multirate_decl=mr_decl)
 
     @staticmethod
     def _group_from(decl: list[tuple[int, bytes]], inner: dict) -> virtual_bench_capture.VirtualGroup:
@@ -1007,8 +1013,12 @@ class Endpoint:
                 analog = self.names[fn] == "oep.fixture.analog"
                 frontend_tag = virtual_bench_capture.ANA.tlv["configure"]["frontend"]
                 known = set(virtual_bench_capture.TLV.values()) | ({frontend_tag} if analog else set())
-                # the frontend comes once per channel (capture §3.3): it repeats by its meaning
-                got = t.tail(known, repeats={frontend_tag})
+                mr_tag = virtual_bench_capture.mr.TAG
+                known.discard(mr_tag)
+                if cap.multirate_decl is not None:
+                    known.add(mr_tag)                              # multirate only where describe declares it (§5.2)
+                # the frontend comes once per channel (capture §3.3), multirate once per role: they repeat
+                got = t.tail(known, repeats={frontend_tag, mr_tag})
                 fronts = []                                        # (role, frontend, the tag as received)
                 for tag, v in t.repeated:
                     if tag & 0x7F != frontend_tag:
@@ -1018,7 +1028,8 @@ class Endpoint:
                     fronts.append((v[0], v[1], tag))
                 if len({r for r, _, _ in fronts}) != len(fronts):
                     raise Reject(m.MALFORMED)                      # two frontends for one role (capture §3.3)
-                settled = cap.settle(got, t, len(roles), fronts)
+                multirate = [(tag, v) for tag, v in t.repeated if tag & 0x7F == mr_tag]
+                settled = cap.settle(got, t, len(roles), fronts, multirate)
                 if op == O["configure"]:
                     cap.apply(settled)
                     cap.slipped = self.capture_slipped

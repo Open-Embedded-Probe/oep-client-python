@@ -34,7 +34,7 @@ import struct
 from dataclasses import dataclass, field
 from fractions import Fraction
 
-from . import message as m, registry as reg
+from . import message as m, multirate as mr, registry as reg
 
 CAP, ANA, GRP = reg.FIXTURE_LOGIC, reg.FIXTURE_ANALOG, reg.FIXTURE_CAPTURE_GROUP
 OP = CAP.op
@@ -147,6 +147,10 @@ class VirtualCapture:
     generation: int = 0                # +1 at every start (§3.2); 0 before the first
     flags: int = 0                     # status flags (dropped, slipped), reset at start
     error: int = 0                     # state 6's reason (status TLV error, stopped reason 3)
+    exact: bool = False                # rate_range's exact: any rate in the range (else max_hz / a whole number)
+    multirate_decl: mr.Declared | None = None   # describe's multirate (§5.1), None: not offered
+    mr_layout: mr.Layout | None = None # the multirate configuration's block layout (§5.5)
+    mr_d1_roles: list[int] = field(default_factory=list)   # the layout's D = 1 channels' roles
 
     @property
     def analog(self) -> bool:
@@ -161,9 +165,14 @@ class VirtualCapture:
         return 2000 if self.analog else 50
 
     # ---- configure ------------------------------------------------------------------------------------------------
-    def settle(self, got: dict[int, bytes], t, channels: int, frontends: list[tuple[int, int, int]]) -> dict:
+    # the virtual bench's multirate budget (its own, §5.2): the reduced channels' work per base sample against 8 x max_hz
+    MR_WEIGHT = {mr.SAMPLE: 1, mr.ANY_ACTIVE: 2, mr.EDGE_LATCH: 5}
+
+    def settle(self, got: dict[int, bytes], t, channels: int, frontends: list[tuple[int, int, int]],
+               multirate: list[tuple[int, bytes]] = ()) -> dict:
         """The actual values for a configure / query request (nothing changed). `t`: the request's tail reader
-        (endpoint.Take: `fixed`, `refuse`). `frontends`: (role, frontend, the tag as received) asked."""
+        (endpoint.Take: `fixed`, `refuse`). `frontends`: (role, frontend, the tag as received) asked. `multirate`:
+        the multirate TLVs as received (tag, value), §5.2."""
         if self.group is not None:
             raise Reject(m.UNAVAILABLE, m.tlv(reg.CORE.tlv["unavailable_payload"]["cause"],
                                               bytes([reg.CORE.enum["unavailable_cause"]["bound_in_group"]])))
@@ -186,6 +195,17 @@ class VirtualCapture:
         for tag in (TLV["samples"], TLV["segments"]):
             if tag in got and not struct.unpack("<I", got[tag])[0]:
                 raise Reject(m.MALFORMED)                          # 1 or more (§3.3)
+        specs = []                                                 # multirate (§5.2): the malformed cases first
+        for tag, v in multirate:
+            if len(v) != mr.TLV.size:
+                raise Reject(m.MALFORMED)
+            spec = mr.Multirate.unpack(v)
+            if spec.malformed() or any(x.role == spec.role for x, _ in specs):
+                raise Reject(m.MALFORMED)                          # d 0, phase >= d, d 1 / param > 1, a role twice
+            specs.append((spec, tag))
+        for spec, tag in specs:
+            if self.multirate_decl.refuses(spec):
+                raise Reject(m.UNSUPPORTED, bytes([tag]))          # reserved / undeclared policy, undeclared d
         trigger = None
         if TLV["trigger"] in got:
             kind, role, value = struct.unpack("<BBI", got[TLV["trigger"]])   # type role value(u32)
@@ -209,9 +229,22 @@ class VirtualCapture:
             raise wrong_state()                                    # no plan (§3.2)
         if trigger is not None and trigger[1] >= channels:
             raise wrong_state()                                    # a role not in the fn's plan: cause 6 (§3.3)
+        if any(spec.role >= channels for spec, _ in specs):
+            raise wrong_state()                                    # a multirate role not in the plan: cause 6 (§5.2)
+        reduced = sorted((spec for spec, _ in specs if spec.reduced), key=lambda x: x.role)
+        if specs:
+            weight = sum(self.MR_WEIGHT[x.policy] for x in reduced)
+            kept = self.max_hz * 8 // max(8, weight)               # the highest base rate it keeps for this (§5.2)
+            if kept < self.min_hz:
+                raise Reject(m.UNSUPPORTED, bytes([specs[0][1]]))  # not even at min_hz: the multirate tag (§5.2)
         top = self.max_hz // channels if self.analog else self.max_hz   # an ADC's rate is shared by its channels
-        div = max(1, -(-self.max_hz // min(max(asked, self.min_hz), top)))
-        rate = Fraction(self.max_hz, div)                          # the nearest it can make within the range
+        if specs:
+            top = min(top, kept)
+        if self.exact:
+            rate = Fraction(min(max(asked, self.min_hz), top))     # any rate in the range (rate_range exact)
+        else:
+            div = max(1, -(-self.max_hz // min(max(asked, self.min_hz), top)))
+            rate = Fraction(self.max_hz, div)                      # the nearest it can make within the range
         most = self.max_samples.get(mode, MAX_SAMPLES)
         samples = struct.unpack("<I", got[TLV["samples"]])[0] if TLV["samples"] in got else min(4096, most)
         samples = max(1, min(samples, most, MAX_SAMPLES))          # rounded down to its limit; the answer says (§3.3)
@@ -227,22 +260,34 @@ class VirtualCapture:
                 chosen[role] = fe
             width = 2 * channels
         else:
-            width = min((w for w in self.widths if w >= channels), default=None)
+            d1 = [r for r in range(channels) if r not in {x.role for x in reduced}]   # D = 1 channels (§5.2)
+            width = min((w for w in self.widths if w >= max(1, len(d1))), default=None)
             if width is None:
                 raise Reject(m.UNAVAILABLE, m.tlv(reg.CORE.tlv["unavailable_payload"]["cause"],
                                                   bytes([reg.CORE.enum["unavailable_cause"]["limit"]])))   # more than a sample holds
             step = 8 // math.gcd(width, 8)                         # samples to a whole byte
-            if mode != MODE["one_shot"] and step > 1:
+            if specs:
+                block = mr.choose_block(reduced)
+                rounded = -(-samples // block) * block             # up to a multiple of L, down if past the most (§5.2)
+                samples = rounded if rounded <= min(most, MAX_SAMPLES) else min(most, MAX_SAMPLES) // block * block
+                if not samples:
+                    raise t.refuse(TLV["samples"])
+            elif mode != MODE["one_shot"] and step > 1:
                 samples = -(-samples // step) * step               # segments end on a byte
         if pre > self.max_pretrigger or (mode != MODE["streaming"] and pre >= samples):
             raise t.refuse(TLV["pretrigger"])                      # past max_pretrigger, or not below samples (§3.3)
+        layout = None
+        if specs:
+            layout = mr.Layout(width, list(range(len(d1))), mr.choose_block(reduced), reduced)
         return {"mode": mode, "rate": rate, "samples": samples, "segments": segs, "trigger": trigger,
-                "pretrigger": pre, "width": width, "channels": channels, "frontends": chosen}
+                "pretrigger": pre, "width": width, "channels": channels, "frontends": chosen,
+                "multirate": layout, "d1": d1 if specs else []}
 
     def apply(self, s: dict) -> None:
         self.mode, self.rate, self.samples, self.segments_max = s["mode"], s["rate"], s["samples"], s["segments"]
         self.trigger, self.pretrigger, self.width, self.channels = s["trigger"], s["pretrigger"], s["width"], s["channels"]
         self.frontend_of = s["frontends"]
+        self.mr_layout, self.mr_d1_roles = s["multirate"], s["d1"]
         self.state = STATE["configured"]
         self._clear()
 
@@ -252,6 +297,10 @@ class VirtualCapture:
         out = tlv(ANSWER["actual_rate"], struct.pack("<II", s["rate"].numerator, s["rate"].denominator))
         if self.analog:
             out += tlv(ANSWER["layout"], bytes([16, 0, 12, c]) + bytes(range(c)))
+        elif s["multirate"] is not None:                          # the D = 1 channels' layout, then block L (§5.3)
+            lay = s["multirate"]
+            out += tlv(ANSWER["layout"], bytes([lay.w, len(lay.pos)]) + bytes(lay.pos))
+            out += tlv(CAP.tlv["configure_answer"]["block"], struct.pack("<I", lay.L))
         else:
             out += tlv(ANSWER["layout"], bytes([s["width"], c]) + bytes(range(c)))
         if s["mode"] != MODE["streaming"]:                         # the rows of §3.3: actual_samples in modes 1 / 2,
@@ -289,7 +338,14 @@ class VirtualCapture:
         self.data, self.base, self.segs, self.serial_done = bytearray(), 0, [], 0
         self.produced, self.sent, self.gap_next = 0, 0, False
 
-    def _pack(self, first: int, n: int) -> bytes:
+    def _pack(self, first: int, n: int, segment: bool = True) -> bytes:
+        """The stream of samples first .. first + n - 1 of the track. Multirate: a segment's blocks (its grid from its
+        base sample 0), or - `segment` False, streaming - the blocks of one segment from the track's start."""
+        if self.mr_layout is not None:
+            lay, roles = self.mr_layout, self.mr_d1_roles
+            if segment:
+                return lay.encode(lambda role, i: self.value(role, first + i), n, roles)
+            return lay.encode(self.value, first + n, roles, range(first // lay.L, (first + n) // lay.L))
         if self.analog:
             return b"".join(struct.pack(f"<{self.channels}H", *(analog_value(k, first + i) for k in range(self.channels)))
                             for i in range(n))
@@ -383,9 +439,11 @@ class VirtualCapture:
                 events.append(bytes([EVENT["segment"]]) + seg.pack())
         elif self.mode == MODE["streaming"]:
             per_byte = 1 if self.analog else 8 // math.gcd(self.width, 8)   # whole bytes only
+            if self.mr_layout is not None:
+                per_byte = self.mr_layout.L                        # whole blocks (§5.5)
             n = min((due - self.produced) // per_byte * per_byte, MAX_SAMPLES)
             if n > 0:
-                self.data += self._pack(self.produced, n)
+                self.data += self._pack(self.produced, n, segment=False)
                 self.produced += n
         return events
 

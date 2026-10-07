@@ -22,6 +22,12 @@ nothing there; this host sends mode, rate, trigger, pretrigger and frontend crit
 probe that does not know a tag). The probe rounds samples down to its limit and the answer (Config.samples /
 .segments) is what holds.
 
+multirate (§5, a second definition of oep.fixture.logic): `configure(multirate=[Multirate(role, policy, d, param),
+...])` sends one TLV 0xE0 per role (critical), after checking them against the fn's describe (`multirate_declared()`;
+ValueError for a malformed TLV, a role twice, a policy or d not declared, or no multirate declared). The answer's block L
+and layout of the D = 1 channels go to Config.block / Config.multirate_layout(); `decode_multirate(data, samples)` reads
+a segment's blocks (module `multirate`). rate, samples, pretrigger and trigger_index count base samples.
+
 blocking_ms (P2-○9): a start whose answer says blocking_ms > 0 is followed by nothing on any transport for that long
 (`blocked`), then - on a length-prefixed link - the resync of transports §5; neither the lease nor the answer's wait counts
 it."""
@@ -34,7 +40,8 @@ import zipfile
 from dataclasses import dataclass, field
 from fractions import Fraction
 
-from . import cobs, host as h, message as m, registry as reg
+from . import cobs, host as h, message as m, multirate as mr, registry as reg
+from .multirate import ANY_ACTIVE, EDGE_LATCH, SAMPLE, Multirate
 from .frames import FramingLost
 from .core import Interface, confirm
 
@@ -153,13 +160,27 @@ class Config:
     frontend: dict[int, int] = field(default_factory=dict)     # analog: the frontend each channel took
     reference: tuple[str, int, bool] | None = None             # analog: (source, mV, measured)
     blocking_ms: int = 0
+    block: int | None = None                                   # multirate: L, base samples a block (§5.3)
+    multirate: list[Multirate] = field(default_factory=list)   # multirate: the reduced channels asked, role order
+
+    def multirate_layout(self) -> mr.Layout | None:
+        """The block layout of a multirate configuration (§5.5), else None."""
+        if self.block is None:
+            return None
+        return mr.Layout(self.width, list(self.positions), self.block, self.multirate)
+
+    def segment_bytes(self, samples: int) -> int:
+        """Length of a segment of `samples` (base) samples in the stream: §1.1 rule 4, or §5.5's blocks."""
+        if self.block is not None:
+            return self.multirate_layout().segment_bytes(samples)
+        if self.width:
+            return (samples * self.width + 7) // 8
+        return samples * len(self.order) * self.slot // 8
 
     @property
     def bytes(self) -> int:
-        """Length of one segment in the stream (§3.0 rule 4)."""
-        if self.width:
-            return (self.samples * self.width + 7) // 8
-        return self.samples * len(self.order) * self.slot // 8
+        """Length of one segment in the stream (§1.1 rule 4; multirate: §5.5)."""
+        return self.segment_bytes(self.samples)
 
 
 @dataclass
@@ -302,6 +323,8 @@ def _config(payload: bytes, analog: bool) -> Config:
             c.reference = (REFERENCE_SOURCE.get(source, str(source)), mv, how == 1)
         elif tag == BLOCKING:
             c.blocking_ms = struct.unpack("<I", v)[0]
+        elif tag == mr.BLOCK and not analog:
+            c.block = struct.unpack("<I", v)[0]
     return c
 
 
@@ -323,14 +346,18 @@ class LogicCapture(Interface):
 
     def configure(self, *, rate: int, mode: int = ONE_SHOT, samples: int | None = None, segments: int | None = None,
                   trigger: tuple[int, int, int] | None = None, pretrigger: int | None = None, query: bool = False,
-                  critical: set[int] = frozenset(), frontends: dict[int, int] | None = None) -> Config:
+                  critical: set[int] = frozenset(), frontends: dict[int, int] | None = None,
+                  multirate: list[Multirate] | None = None) -> Config:
         """-> the probe's actual values. A value the probe cannot honour is refused: host.Unsupported, .tag = the TLV as
         sent (§3.3). mode, rate, trigger, pretrigger and frontend go critical; `critical`: more tags to send critical
         (samples, segments). Read Config.samples / .segments: the probe rounds samples down.
 
         §3.3's contract is checked before anything is sent (ValueError): `samples` is needed in one-shot and repeat
         and not taken in streaming, `segments` is repeat's only, `pretrigger` needs a trigger (type other than 0) - a
-        pretrigger of 0 without one is simply not sent."""
+        pretrigger of 0 without one is simply not sent.
+
+        `multirate` (§5): one Multirate per role to reduce (a role left out is a D = 1 channel), checked against the
+        fn's describe before sending (ValueError), each sent as TLV 0xE0; the answer's block L goes to Config.block."""
         critical = ALWAYS_CRITICAL | set(critical)
         if mode in (ONE_SHOT, REPEAT) and samples is None:
             raise ValueError("capture configure: samples is required in one-shot and repeat (oep-if-capture §3.3)")
@@ -356,14 +383,43 @@ class LogicCapture(Interface):
             body += tlv(PRETRIGGER, struct.pack("<I", pretrigger))
         for role, fe in sorted((frontends or {}).items()):   # analog: the input range per channel (describe frontend)
             body += tlv(FRONTEND, bytes([role, fe]))
+        specs = mr.check(list(multirate), self.multirate_declared()) if multirate else []
+        for spec in specs:                                     # critical: a probe without multirate refuses (§5.2)
+            body += m.tlv(mr.TAG, spec.value(), critical=True)
         # query is its own operation: the lock is decided per operation, before the payload is looked at
         op = self.QUERY_OP if query else self.CONFIGURE
         c = _config(self._call(op, body, locked=not query).payload, self.ANALOG)
         if mode == ONE_SHOT and not c.segments:
             c.segments = 1                                     # one-shot's answer has no actual_segments (§3.3)
+        if specs:
+            if c.block is None or c.block < 1:
+                raise h.ProtocolError("a multirate configure answered without block L (oep-if-capture §5.3)")
+            c.multirate = [s for s in specs if s.reduced]
+            try:
+                c.multirate_layout()                           # L divisible by every d (§5.3)
+            except ValueError as e:
+                raise h.ProtocolError(str(e)) from e
+        elif c.block is not None:
+            c.block = None                                     # not asked: not this host's form
         if not query:
             self.config = c
         return c
+
+    def multirate_declared(self) -> mr.Declared | None:
+        """describe's multirate (§5.1), None when this fn does not declare it (analog never does)."""
+        if self.ANALOG:
+            return None
+        from .core import describe
+        v = next((v for t, v in describe(self.host, self.fn) if t & 0x7F == mr.DECLARED), None)
+        return mr.Declared.unpack(v) if v is not None and len(v) >= 13 else None
+
+    def decode_multirate(self, data: bytes, samples: int) -> mr.Decoded:
+        """A multirate segment's stream (read_segment's bytes, or a stream's from a segment's start) -> its D = 1
+        channels' levels (in role order, as the layout's pos) and each reduced role's values (§5.5)."""
+        layout = self.config.multirate_layout() if self.config else None
+        if layout is None:
+            raise ValueError("decode_multirate: not a multirate configuration")
+        return layout.decode(data, samples)
 
     def subscribe(self, min_bytes: int = 0, max_delay_ms: int = 0) -> None:
         """Events, and in streaming the data pushes (oep-core §11): send when min_bytes are ready or max_delay_ms after the
@@ -584,7 +640,7 @@ class LogicCapture(Interface):
         """The segment's bytes (of its generation); every Host.on_capture callback gets them as a CaptureRecord (a run
         recorder, e.g. pytest-embedded-wireskein, without this package knowing it)."""
         c = self.config
-        n = (segment.samples * c.width + 7) // 8 if c.width else segment.samples * len(c.order) * c.slot // 8
+        n = c.segment_bytes(segment.samples)
         data = self.read(segment.position, n, segment.generation or None)
         if self.host.on_capture:
             record = CaptureRecord(self.fn, self.name, c, segment, data, self.armed_s, time.monotonic())
@@ -597,6 +653,8 @@ class LogicCapture(Interface):
         """Channel k's values, one per sample (§1.1 rules 1-3: bit i*w + pos[k] of the stream, bit j being bit j mod 8
         of byte j / 8 - any w 1-128, a sample may cross a byte boundary)."""
         c = self.config
+        if c.block is not None:
+            raise ValueError("a multirate segment is blocks (§5.5): use decode_multirate")
         n = samples if samples is not None else len(data) * 8 // c.width
         bit0 = c.positions[k]
         return [(data[(i * c.width + bit0) >> 3] >> ((i * c.width + bit0) & 7)) & 1 for i in range(n)]

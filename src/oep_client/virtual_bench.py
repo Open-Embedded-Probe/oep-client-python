@@ -233,6 +233,13 @@ def _capture_decl(modes: list[str], max_channels: int, max_samples: int, ring: i
     # no features: revision 1 defines no bit (query, force, subscribe / unsubscribe: every op offered, the ops tag)
 
 
+def _multirate_decl(policies: int = 0b111, min_d: int = 2, max_d: int = 1024, pow2: bool = False) -> tuple[bytes, ...]:
+    """oep.fixture.logic's multirate (oep-if-capture §5.1): the policies (bit p: policy p), d 2 .. max_d (d 1 always),
+    every integer or powers of 2 only."""
+    from .multirate import Declared
+    return (catalog.tlv(_CAPD["multirate"], Declared(policies, min_d, max_d, pow2).value()),)
+
+
 def _capture_inner(widths: list[int], ring: int, max_read: int) -> tuple[tuple[str, object], ...]:
     """What a capture keeps to itself (oep-if-capture §1.1, §2, §3.2): the sample widths w it lays channels out in,
     the segment records it keeps, and the most one read returns."""
@@ -384,7 +391,7 @@ def p4_x035() -> VirtualProbe:
         Offered(7, 0, "oep.fixture.logic", _roles({k: pins for k in range(16)}) + (
             catalog.u32(MAX_CLOCK_HZ, 20_000_000), catalog.u32(MIN_CLOCK_HZ, 1_000),
             catalog.u16(MAX_LENGTH, 65000))
-            + _capture_decl(["one_shot", "repeat", "streaming"], 16, 1 << 20, 8),
+            + _capture_decl(["one_shot", "repeat", "streaming"], 16, 1 << 20, 8) + _multirate_decl(),
             inner=_capture_inner([1, 2, 4, 8, 16], 8, 4096)),
         _i2c_target(8, pins, max_length=128, max_hz=1_000_000, features=0, queue_depth=8,
                     max_stretch_us=100_000),                                                       # stretch

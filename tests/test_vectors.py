@@ -107,7 +107,21 @@ def test_the_dmseq_crc8_vectors_have_no_counterpart_here():
 
 # ---- confirm (core §7.1) ------------------------------------------------------------------------------------------
 
-def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None, wifi_max: int = 0) -> virtual_bench.VirtualProbe:
+# The multirate vectors' logic fn (capture §5, the describe vector): one-shot and repeat (max_samples 1000000, 8 segments),
+# rate_range 1 kHz-100 MHz exact, 4 channels, triggers immediate / level / edge with max_pretrigger 1000000, multirate
+# policies 7, d 2-128 powers of 2 only. Its roles come from the plan (role_channels: the virtual bench's own addition).
+MULTIRATE_LOGIC = (
+    catalog.tlv(0x40, struct.pack("<BII", 1, 1_000_000, 1)), catalog.tlv(0x40, struct.pack("<BII", 2, 1_000_000, 8)),
+    catalog.tlv(0x41, struct.pack("<IIB", 1000, 100_000_000, 1)), catalog.u8(0x44, 4),
+    catalog.tlv(0x45, struct.pack("<II", 7, 1_000_000)), catalog.tlv(0x60, struct.pack("<IIIB", 7, 2, 128, 1)))
+
+
+def is_multirate_vector(case) -> bool:
+    return "multirate policies 7" in case["state"] or "configured multirate" in case["state"]
+
+
+def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None, wifi_max: int = 0,
+                 multirate: bool = False) -> virtual_bench.VirtualProbe:
     """A virtual bench whose fn numbers are a vector's: fn 0 with one UART bridge (index 0), then each named interface
     with channels 0-15 for its roles (the wire on pins 1 / 2; gpio without drive_levels). `ops`: fn -> the ops its
     ops tag sets instead of every op of its table (core §1.2, §7.4)."""
@@ -137,6 +151,9 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None, wifi
             o = virtual_bench._restart(fn)
         elif name == "oep.probe.config":
             o = virtual_bench._config(fn, 0, slots_max=2, storage=0, wifi_max=wifi_max)   # no storage: no save / erase
+        elif name == "oep.fixture.logic" and multirate and fn == 9:
+            o = virtual_bench.Offered(fn, 0, name, virtual_bench._roles({k: chans for k in range(4)}) + MULTIRATE_LOGIC,
+                                      inner=virtual_bench._capture_inner([1, 2, 8], 8, 480))
         elif name == "oep.fixture.logic":                              # 80 MHz / 4 = 20 MHz exact; w 2 for two channels
             o = virtual_bench.Offered(fn, 0, name, virtual_bench._roles({k: chans for k in range(4)})
                              + (catalog.u32(catalog.MAX_CLOCK_HZ, 80_000_000),)
@@ -442,7 +459,8 @@ def setup_case(case):
         ops[int(next(k for k, v in case["fns"].items() if v == "oep.target.riscv-dm"))] = {1, 2, 3}
     clock = type("Settable", (), {"t": 0, "__call__": lambda self: self.t})()
     wifi_max = 4 if "items has wifi, wifi_max 4" in case["state"] else 0
-    ep = endpoint.Endpoint(vector_probe(fns, ops=ops, wifi_max=wifi_max), clock, boot_id=EXAMPLE_BOOT_ID)
+    ep = endpoint.Endpoint(vector_probe(fns, ops=ops, wifi_max=wifi_max, multirate=is_multirate_vector(case)), clock,
+                           boot_id=EXAMPLE_BOOT_ID)
     wire = next((int(k) for k, v in fns.items() if v == "oep.wire.rvswd"), None)
     name, state = case["name"], case["state"]
     plan = ep.fns.get(virtual_bench.PLAN)
@@ -514,6 +532,25 @@ def setup_case(case):
         ep.spi_ns = "no ns TLV" not in state
         wire = [1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1]                    # the case's 12 MOSI bits, in wire order
         ep.spi_transfer(14, fixture.pack_wire_bits(wire, order) + b"\xff", bits=12)   # junk past them: not kept
+    elif is_multirate_vector(case) or name.startswith("logic configure multirate on a fn"):
+        logic = int(next(k for k, v in fns.items() if v == "oep.fixture.logic"))
+        held(ep)                                                       # plan roles 0-3 of the logic (and the analog's 0)
+        req(ep, 2, plan, PLAN_APPLY, b"".join(m.tlv(0x10, struct.pack("<HBH", logic, r, r), critical=True) for r in range(4))
+            + (m.tlv(0x10, struct.pack("<HBH", 13, 0, 4), critical=True) if "13" in fns else b""))
+        example = (m.tlv(0x40, bytes([1])) + m.tlv(0x42, struct.pack("<I", 100_000_000)) + m.tlv(0x43, struct.pack("<I", 96))
+                   + m.tlv(0x60, struct.pack("<BBII", 0, 1, 32, 0), critical=True)
+                   + m.tlv(0x60, struct.pack("<BBII", 3, 0, 4, 1), critical=True))
+        trigger = m.tlv(0x45, struct.pack("<BBI", 2, 0, 1)) + m.tlv(0x46, struct.pack("<I", 13))   # edge, role 0, falling
+        if "configured as the configure vector plus trigger" in state or "configured multirate" in state:
+            req(ep, 3, logic, 0x01, example + trigger)
+        elif "configured as the configure vector" in state:
+            req(ep, 3, logic, 0x01, example)
+        if name.startswith("logic segments multirate"):              # stopped at base sample 72, fell at 13
+            cap = ep.captures[logic]
+            cap.generation, cap.state, cap.serial_done = 1, virtual_bench_capture.STATE["done"], 1
+            cap.segs = [virtual_bench_capture.Segment(0, 0, 72, 5_000_000, 10, 13, virtual_bench_capture.FLAG["short"], 1)]
+        if "13" in fns:                                                # the analog: one-shot, immediate
+            req(ep, 4, 13, 0x01, m.tlv(0x40, bytes([1])) + m.tlv(0x42, struct.pack("<I", 10_000)) + m.tlv(0x43, struct.pack("<I", 100)))
     elif name.startswith("capture-group"):
         held(ep)                                                       # fn 9 (logic) and fn 13 (analog), roles 0 and 1
         plan_apply = b"".join(m.tlv(0x10, struct.pack("<HBH", f, r, ch), critical=True)
@@ -550,12 +587,63 @@ def setup_case(case):
     return ep
 
 
-def _uncritical(frame: bytes) -> bytes:
+def _uncritical(frame: bytes, fixed: int = 0) -> bytes:
     """A request with bit 7 of its TLV tags cleared: this client sends mode and rate critical (its own choice,
-    capture §3.3), the vectors send them plain - the same request otherwise."""
+    capture §3.3), the vectors send them plain - the same request otherwise. multirate (0xE0) stays critical (§5.2)."""
     r = m.Request.unpack(frame)
-    body = b"".join(m.tlv(t & 0x7F, v) for t, v in m.split_tlvs(r.payload))
+    body = r.payload[:fixed] + b"".join(m.tlv(t & 0x7F, v, critical=t == 0xE0) for t, v in m.split_tlvs(r.payload[fixed:]))
     return m.Request(r.corr, r.fn, r.op, body, r.session).pack()
+
+
+def _multirate_on_client(case, name, a):
+    """The multirate vectors (capture §5) as this client sends and reads them: what describe declares, configure /
+    query with Multirate roles (checked against describe first - the malformed and undeclared forms are refused before
+    sending), the block layout, a multirate segment record, a bind of a multirate track."""
+    from oep_client import capture as cap
+    hst, sent = client(case, S if "session S" in case["state"] else None)
+    fn = m.Request.unpack(hx(case["request_hex"])).fn
+    if name.startswith("logic describe"):
+        hst._describes.pop(9, None)
+        assert cap.LogicCapture(hst, 9).multirate_declared() == cap.mr.Declared(7, 2, 128, True)
+        return sent
+    if "does not declare" not in name:
+        hst._describes[fn] = catalog.split_tlv(b"".join(MULTIRATE_LOGIC))   # its describe (the describe vector's)
+    lc = cap.LogicCapture(hst, fn)
+    A, S_, E = cap.ANY_ACTIVE, cap.SAMPLE, cap.EDGE_LATCH
+    example = [cap.Multirate(0, A, 32, 0), cap.Multirate(3, S_, 4, 1)]
+    forms = {"d 0": [cap.Multirate(0, A, 0, 0)], "phase = d": [cap.Multirate(3, S_, 4, 4)],
+             "param 2": [cap.Multirate(0, A, 32, 2)], "d 1, malformed": [cap.Multirate(0, E, 1, 1)],
+             "same role twice": [cap.Multirate(3, S_, 4, 1), cap.Multirate(3, S_, 8, 0)],
+             "reserved policy": [cap.Multirate(0, 3, 4, 0)], "d 3 where": [cap.Multirate(3, S_, 3, 0)],
+             "d 256": [cap.Multirate(3, S_, 256, 0)], "does not declare": example}
+    for key, specs in forms.items():
+        if key in name:
+            with pytest.raises(ValueError, match="multirate"):
+                lc.configure(rate=100_000_000, samples=96, multirate=specs)
+            assert sent == []
+            return REFUSED_BEFORE_SENDING
+    if "not in the plan" in name:
+        with pytest.raises(h.Unavailable) as e:
+            lc.configure(rate=100_000_000, samples=96, multirate=[cap.Multirate(4, S_, 4, 0)])
+        assert e.value.cause == "wrong_state"
+        return [_uncritical(sent[0])]
+    if name.startswith("logic segments multirate"):
+        (seg,), more = lc.segments_page(0)
+        assert not more and (seg.samples, seg.trigger_index, seg.flags, seg.generation) == (72, 13, 2, 1)   # short
+        return sent
+    if name.startswith("capture-group bind"):
+        logic = cap.LogicCapture(hst, 9)
+        cap.CaptureGroup(hst, fn=12).bind([logic, cap.AnalogCapture(hst, 13)], trigger=logic)
+        return [_uncritical(sent[0], fixed=5)]                         # trigger_track: critical here, plain there
+    query = "query" in name
+    if "heavy" in name:
+        c = lc.configure(rate=100_000_000, samples=96, query=True, multirate=[cap.Multirate(k, E, 2, 1) for k in range(4)])
+        assert (c.rate, c.width, c.positions, c.block, c.samples) == (40_000_000, 1, [], 32, 96)
+        return [_uncritical(sent[0])]
+    c = lc.configure(rate=100_000_000, samples=72 if "72" in name else 96, query=query, multirate=example)
+    assert (c.rate, c.width, c.positions, c.block, c.samples, c.blocking_ms) == (100_000_000, 2, [0, 1], 32, 96, 0)
+    assert c.multirate_layout().block_bytes() == 10 and c.bytes == 30          # B 10 (§5.7), 96 base samples
+    return [_uncritical(sent[0])]
 
 
 # The wifi vectors' entry (probe.config §1.4): index 0, ssid "lab", passphrase "password1"
@@ -568,10 +656,20 @@ TEXT_OVER_VECTOR: dict[str, str] = {}
 
 
 NOT_IN_THE_VIRTUAL_BENCH = {"oep.target.arm-adi"}                       # the client's side is checked below
+# The describe vector's logic declares no role_channels (its pins are not the point); the virtual bench's needs them for
+# its plan, so its describe is that one plus role_channels: its multirate TLV is checked instead (below).
+VB_DESCRIBE_DIFFERS = {"logic describe: multirate declared"}
 
 
 @pytest.mark.parametrize("case", OPS, ids=lambda c: c["name"])
 def test_ops_vectors_from_the_virtual_bench_byte_for_byte(case):
+    if case["name"] in VB_DESCRIBE_DIFFERS:
+        ep = setup_case(case)
+        out = m.Result.unpack(ep.handle(hx(case["request_hex"]), 0))
+        mine = sorted((t, v) for t, v in m.split_tlvs(out.payload[1:]) if t != catalog.ROLE_CHANNELS)
+        theirs = sorted(m.split_tlvs(m.Result.unpack(hx(case["answer_hex"])).payload[1:]))
+        assert mine == theirs                                          # the same declarations, role_channels aside
+        return
     if NOT_IN_THE_VIRTUAL_BENCH & set(case["fns"].values()):
         pytest.skip("the virtual bench has no " + ", ".join(sorted(NOT_IN_THE_VIRTUAL_BENCH & set(case["fns"].values()))))
     ep = setup_case(case)
@@ -658,6 +756,8 @@ def _on_client(case):
     from oep_client import capture as cap, config as cfg, console as con, fixture as fix, riscv as rv
     name = case["name"]
     a = m.Result.unpack(hx(case["answer_hex"]))
+    if is_multirate_vector(case) or name.startswith("logic configure multirate on a fn"):
+        return _multirate_on_client(case, name, a)
     if name.startswith("restart"):
         hst, sent = client(case, None if "without a session" in name else S)
         if a.resolution == m.COMPLETED:
@@ -987,3 +1087,25 @@ def test_events_as_the_client_reads_them(case):
 
 def test_every_event_vector_is_read():
     assert len(EVENTS) == 5 and {c["generation"] for c in EVENTS} == {1, 3, 4, 5}
+
+
+# ---- multirate streams (multirate.json, capture §5.5) ----------------------------------------------------------------
+
+MULTIRATE = load("multirate.json")["cases"]
+
+
+@pytest.mark.parametrize("case", MULTIRATE, ids=lambda c: c["name"])
+def test_multirate_streams_both_ways(case):
+    """multirate.Layout decodes each segment's stream into the D = 1 levels and the reduced values the levels give
+    (Multirate.values), and encodes the levels back into the stream byte for byte (the virtual bench's encoder)."""
+    from oep_client import multirate as mr
+    specs = [mr.Multirate(k, mr.POLICY[r["policy"]], r["d"], r["param"]) for k, r in enumerate(case["roles"]) if r]
+    d1_roles = [k for k, r in enumerate(case["roles"]) if r is None or (r["policy"] == "sample" and r["d"] == 1)]
+    lay = mr.Layout(case["layout"]["w"], case["layout"]["pos"], case["L"], specs)
+    for seg in case["segments"]:
+        ch, n, stream = seg["channels"], seg["samples"], hx(seg["stream_hex"])
+        assert lay.segment_bytes(n) == len(stream)
+        got = lay.decode(stream, n)
+        assert ["".join(map(str, v)) for v in got.d1] == [ch[r] for r in d1_roles]
+        assert got.reduced == {s.role: s.values(ch[s.role]) for s in specs if s.reduced}
+        assert lay.encode(lambda role, i: int(ch[role][i]), n, d1_roles) == stream
