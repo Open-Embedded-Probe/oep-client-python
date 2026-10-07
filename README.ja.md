@@ -6,8 +6,11 @@ Open Embedded Probe の host 側。v1（oep-spec の本体 `docs/oep-core.ja.md`
 `generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.registry` から取る。破壊的変更を前提とする
 実験段階で、互換 API は約束しない。
 
-**実装する仕様: oep-spec の commit `9118dc0`**（`v0.x` のタグはまだ無い。oep-spec versioning §6: 凍結の前は revision 1 だけでは
-形が決まらないので、実装は自分が実装する仕様を名乗る）。probe.config の wifi の項目と TCP の見つけ方（c2b8007、62c1988。下の「Wi-Fi と TCP」）、2026-10-07 の外部レビューの再確認（af3d52b〜283e5b5: フレームは書き込みに分けてよいが、
+**実装する仕様: oep-spec の commit `2c6d18d`**（`v0.x` のタグはまだ無い。oep-spec versioning §6: 凍結の前は revision 1 だけでは
+形が決まらないので、実装は自分が実装する仕様を名乗る）。0991759 のインターフェースの再確認（0098b56〜2c6d18d: marks とキャプチャの
+segments は from_serial を含めて通し番号でページングする、console の streams の first は u16、キャプチャの configure の契約、
+0xFFFFFFFF の次は 1 でどの出来事にも付く世代、capture-group の start の応答の固定部、step / run / transfer の細部、spi-target の
+ビットの詰め方）、probe.config の wifi の項目と TCP の見つけ方（c2b8007、62c1988。下の「Wi-Fi と TCP」）、2026-10-07 の外部レビューの再確認（af3d52b〜283e5b5: フレームは書き込みに分けてよいが、
 TCP 以外では送る側はフレームの途中で probe_frame_gap_ms 止めない。経路が閉じてもセッションは終わらない。describe の TLV と max_length は
 いちばん小さい max_frame に収まる。channel を持つ probe は `channels` を付け、番号は 0〜channels − 1）、その後の直し（3759027〜f8bb2de:
 resend_max は無く、送り直しは host が決める。インターフェースの名前は 1〜48 byte。i2c-target の errors は書き込み 1 回に多くても 1。

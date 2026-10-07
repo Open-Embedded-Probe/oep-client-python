@@ -1,6 +1,53 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) **Follow oep-spec 0098b56 .. 2c6d18d (the external review's interface re-check of 0991759).** Registry and
+  vectors synced; README names 2c6d18d. Breaking (wire and API):
+  - Capture §3.3 contract: `LogicCapture.configure` always sends mode and rate, requires `samples` in one-shot and
+    repeat, refuses it in streaming, sends `segments` in repeat only and `pretrigger` only with a trigger (ValueError
+    before sending; a pretrigger of 0 without a trigger is left out). One-shot's answer has no actual_segments
+    (Config.segments is 1).
+  - Generations (§3.4): 1 after 0xFFFFFFFF (`message.next_generation`), compared for equality. Every capture event
+    carries its generation: `capture.unpack_event` / `Event`, `LogicCapture.events(link)` and `CaptureGroup.events(link)`
+    take a fn's events off the link and drop those of an earlier start (`stale_events`).
+  - capture-group (§4): start's answer is blocking_ms, start_ns, the group's generation, n, n x (fn, generation) - the
+    TLV 0x01 and `capture.GROUP_GENERATIONS` are gone. `CaptureGroup.start` still returns (blocking_ms, start_ns) and
+    fills each track's `generation`; `CaptureGroup.generation` / `GroupStatus.generation` are the group's.
+  - Serial paging (common §1.3): marks and capture segments answer from from_serial inclusive, nothing and more 0 from
+    the next serial, the oldest kept for a serial not kept; `Console.marks` / `LogicCapture.segments` continue from the
+    last serial + 1 (mod 2^32) until more 0 (`message.serial_page_start` in the virtual bench). Console `streams` takes
+    first(u16).
+  - Debug: a step that is not status ok raises StepError with dpc_before / dpc_after None (the probe sends 0);
+    `RunResult.dpc_valid` / `where()` never show an invalid dpc (ch32_flash uses them); arm-adi transfer of n = 0
+    returns [].
+  - spi-target: `fixture.wire_bits` / `pack_wire_bits` (bit k in byte k / 8, MSB or LSB first, a partial last byte's
+    missing bits 0); read_rx's ns is when CS went inactive (I2C: the STOP or next START).
+  - Virtual bench: the configure contract and answer rows, wrapping generations and serials, generations on every
+    event and in the group's start answer / status, marks and segments paging, release by core §2.6, step's zeros,
+    spi-target masking and an optional ns (`Endpoint.spi_ns`). New tests/test_spec_2c6d18d.py; the new vectors and
+    ops.json `events` run both ways (arm-adi's probe side skipped: the virtual bench has no arm-adi).
+- (JA) **oep-spec 0098b56〜2c6d18d（0991759 の外部レビューのインターフェース再確認）に合わせた。** registry と vectors を同期し、
+  README は 2c6d18d を名乗る。壊れる変更（wire と API）:
+  - キャプチャ §3.3 の契約: `LogicCapture.configure` は mode と rate をいつも送り、ワンショットとリピートでは `samples` が必須、
+    ストリーミングでは断り、`segments` はリピートだけ、`pretrigger` はトリガがあるときだけ送る（送る前に ValueError。トリガ無しの
+    pretrigger 0 は送らない）。ワンショットの応答には actual_segments が無い（Config.segments は 1）。
+  - 世代（§3.4）: 0xFFFFFFFF の次は 1（`message.next_generation`）、等しいかだけを比べる。キャプチャの出来事はどれも世代を持つ:
+    `capture.unpack_event` / `Event`、`LogicCapture.events(link)` と `CaptureGroup.events(link)` はその fn の出来事を link から取り、
+    前の start のものは捨てる（`stale_events`）。
+  - capture-group（§4）: start の応答は blocking_ms、start_ns、組の世代、n、n × (fn, generation)。TLV 0x01 と
+    `capture.GROUP_GENERATIONS` は無くなった。`CaptureGroup.start` は今までどおり (blocking_ms, start_ns) を返し、各トラックの
+    `generation` を入れる。`CaptureGroup.generation` / `GroupStatus.generation` は組の世代。
+  - 通し番号のページング（共通部品 §1.3）: marks とキャプチャの segments は from_serial を含めて答え、次の番号からは 0 個で
+    more 0、残っていない番号は残っている一番古いものから。`Console.marks` / `LogicCapture.segments` は最後の serial + 1（2^32 の余り）
+    から more 0 まで続ける（仮想ベンチは `message.serial_page_start`）。console の `streams` は first(u16)。
+  - デバッグ: status ok でない step は dpc_before / dpc_after を None にして StepError（probe は 0 を送る）。`RunResult.dpc_valid` /
+    `where()` で無効な dpc を見せない（ch32_flash も使う）。arm-adi の n = 0 の transfer は [] を返す。
+  - spi-target: `fixture.wire_bits` / `pack_wire_bits`（ビット k は byte k / 8、MSB か LSB が先、最後の byte の来なかったビットは 0）。
+    read_rx の ns は CS が無効になった時刻（I2C は STOP か次の START）。
+  - 仮想ベンチ: configure の契約と応答の行、一周する世代と serial、どの出来事にも世代、組の start の応答と status の世代、marks と
+    segments のページング、core §2.6 での release、step の 0、spi-target のビットの消去と任意の ns（`Endpoint.spi_ns`）。
+    tests/test_spec_2c6d18d.py を足した。新しい vectors と ops.json の `events` を両側から通す（arm-adi の probe 側は飛ばす: 仮想ベンチに
+    arm-adi は無い）。
 - (EN) **`oep find` and `discovery.find_unit` verify what they find (oep-spec 0991759, host guide §4.1).** The DNS-SD
   service name `oep` is not registered, so another service may advertise `_oep._tcp`. `discovery.verify(found)` checks
   every instance at once (one thread each, 1 s per answer): a TCP connection, confirm (an `OEP!` answer, the probing

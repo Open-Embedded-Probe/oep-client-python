@@ -8,8 +8,11 @@ and the interfaces `interfaces/*.ja.md`), v1 before the freeze: until the freeze
 oep-spec's generated `generated/oep-v1/oep_v1_registry.py`. This is an experimental stage: breaking changes are expected and
 no compatible API is promised.
 
-**The spec this implements: oep-spec commit `9118dc0`** (no `v0.x` tag yet; oep-spec versioning §6 - before the freeze,
-revision 1 alone does not fix the forms, so an implementation names the spec it implements). That is the wifi item of
+**The spec this implements: oep-spec commit `2c6d18d`** (no `v0.x` tag yet; oep-spec versioning §6 - before the freeze,
+revision 1 alone does not fix the forms, so an implementation names the spec it implements). That is the interface re-check of 0991759 (0098b56 .. 2c6d18d: marks and capture segments page by serial
+from from_serial inclusive, console streams' first is u16, capture's configure contract, generations that wrap past
+0xFFFFFFFF to 1 and ride on every event, the capture-group start answer's fixed part, step / run / transfer details,
+spi-target bit packing), the wifi item of
 probe.config and TCP discovery (c2b8007, 62c1988: below, "Wi-Fi and TCP"), the external review
 re-check of 2026-10-07 (af3d52b .. 283e5b5: a frame may be split over writes but no sender pauses probe_frame_gap_ms
 inside one off TCP; a closed transport does not end a session; describe TLVs and max_length fit the smallest max_frame;
