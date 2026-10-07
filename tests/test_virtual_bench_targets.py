@@ -152,7 +152,8 @@ def test_i2c_declarations():
 def test_i2c_writes_are_frames_cut_at_max_length_and_overflow(i2c):
     """fixture §3: a controller write with data is one frame; bytes past max_length are cut (the frame keeps
     max_length bytes) and errors + 1; with queue_depth frames queued the next one is dropped, errors + 1 (not in
-    rx_frames); an address-only write counts nothing; another address is not ACKed."""
+    rx_frames); a write both over max_length and dropped counts 1 (at most 1 a write, oep-spec 4a4631a); an
+    address-only write counts nothing; another address is not ACKed."""
     ep, t, clock = i2c
     t.configure(0x42)
     assert i2c_status(t) == (1, 0, 0, 0, 0)
@@ -176,6 +177,11 @@ def test_i2c_writes_are_frames_cut_at_max_length_and_overflow(i2c):
         ep.i2c_write(t.fn, bytes([k]))
     assert i2c_status(t) == (1, 8, 12, 0, 2)                        # the dropped frame is not in rx_frames
     assert t.read_rx() == (7, b"\x00")                              # the oldest; the newest one went
+    ep.i2c_write(t.fn, b"\x09")                                     # the queue full again
+    ep.i2c_write(t.fn, bytes(130))                                  # over max_length and dropped: errors + 1, not 2
+    assert t.status().errors == 3
+    while t.read_rx()[1]:
+        pass
     assert ep.i2c_read(t.fn, 2) == b"\xff\xff"                      # no preload slot: 0xFF
     t.configure(0x42)
     assert i2c_status(t) == (1, 0, 0, 0, 0)                         # configure makes the target anew

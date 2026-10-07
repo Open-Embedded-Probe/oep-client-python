@@ -12,7 +12,7 @@ from oep_client import catalog, dump, virtual_bench, names
 @pytest.mark.parametrize("name", [
     "oep.probe.plan", "oep.fixture.i2c-target", "io.github.ch32-riscv-ug.p4.i2c-target",
     "local.bench.thing", "uuid.0123456789abcdef0123456789abcdef.tool", "jp.example.probe",
-    "oep." + "a" * 60,                                              # 64 bytes (core §7.2)
+    "oep." + "a" * 44,                                              # 48 bytes (core §7.2)
 ])
 def test_valid_names(name):
     assert names.validate(name) == name
@@ -25,7 +25,7 @@ def test_valid_names(name):
     ("1com.example.x", "top-level"),
     ("io.github", "reverse DNS"),
     ("uuid.1234.tool", "32 lowercase hex"),
-    ("oep." + "a" * 61, "bytes"),                                  # 65 bytes: over the 64 of core §7.2
+    ("oep." + "a" * 45, "bytes"),                                  # 49 bytes: over the 48 of core §7.2
     ("oep.-fixture", "label"),                                      # a label never starts or ends with '-' (C-23)
     ("oep.fixture-", "label"),
     ("oep..core", "label"),

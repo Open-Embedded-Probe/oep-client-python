@@ -91,6 +91,10 @@ restart_max_ms（RP2350 では 2.0 s）より長く掛かりうる。`OEP_HW_REO
 | `port_speed` | link の速さ | `linktest.matrix` が `finally` で起動時の速さに戻す。probe も何もしなければ自分で戻る |
 | `session` | lease、force での取り上げ | 自分のセッションで、終える |
 
+ハーネスは `link.open_host` で probe を開くので、probe ごとにセッションの id を残す（README の「走り直す host」）: 途中で止めた実行は
+probe にセッションを残す（経路が閉じてもセッションは終わらない、transports §3）が、次の実行の最初の open がそれを終え、30 s の lease
+が切れるのを待たない。
+
 設定の slot、bind、uart、plan の項目にはどの試験も触れない: bench が持たせているものは変えない。probe が無くなったときは、
 `restore_settings` が開き直し（`OEP_HW_REOPEN_S`、少なくとも 5 s 待ち、無くなったセッションの lease を 35 s まで待つ）、
 走り終わりの後始末でもう 1 度試す。それでも戻せなかったものは結果のファイル（`_settings.left_on_probe`）に書き、まとめに

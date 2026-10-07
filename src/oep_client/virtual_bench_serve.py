@@ -7,7 +7,10 @@
 should set TIOCEXCL on it, as on a real port). On Linux this program keeps a slave fd of its own and watches the
 path's opens and closes (inotify): when the last host closes it - or ends without closing it - TIOCEXCL is cleared
 and the unread input dropped, as a real port's last close does, so the next host's open succeeds. --tcp PORT (0 = any free
-one) serves one connection at a time: --framing cobs is the serial port again, --framing length is
+one) serves one connection at a time - a closed connection does not end the session (transports §3: the session, its
+lock, subscriptions and the resend table stay until the lease runs out or another core §9 event; answers and
+notifications meanwhile are dropped; the next connection's open with the same id takes it back, core §6.2) -
+--framing cobs is the serial port again, --framing length is
 length(u16) message as on vendor bulk / TCP (no raw bytes): the listening socket is then a TCP transport of the
 probe (kind 6, listed in fn 0's describe, its index in every confirm's transport TLV; transports §1), no pause inside a
 frame restarts the reader (transports §2), and a length over max_frame closes the connection.
@@ -422,6 +425,7 @@ def serve_tcp(a, ep, console, commands: Commands) -> None:
             return
         console.tick()
         ep.tick()
+        ep.pushes()                                      # no connection: notifications are dropped (transports §3)
         if srv not in readable:
             continue
         conn, _ = srv.accept()

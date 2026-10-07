@@ -28,8 +28,9 @@ class LengthFrames:
         self.stall_s: float | None = None if getattr(stream, "keeps_boundaries", False) else STALL_S
 
     def send_many(self, messages) -> None:
-        """Several frames in one write (each frame whole in one write: the probe restarts its reader when a frame
-        pauses, and separate writes over usbipd can be 100 ms apart)."""
+        """Several frames in one write. A frame may be split over writes (transports §2), but no sender pauses
+        probe_frame_gap_ms inside one off TCP - and separate writes over usbipd can be 100 ms apart - so this host
+        writes them whole, together."""
         chunk = bytearray()
         for message in messages:
             if not message or len(message) > self.max_frame:

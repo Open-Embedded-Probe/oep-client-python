@@ -625,7 +625,7 @@ class Endpoint:
         # channels without a pull (a test sets them): channel -> the idle modes (1 pull-up / 2 pull-down) it cannot
         # make; such an idle is unsupported (probe.config §1, PC-3)
         self.no_pull: dict[int, set[int]] = {}
-        self.channels = 0xFFFF                          # fn 0 describe 0x43: an item's channel is below it (probe.config §1)
+        self.channels = 0                               # fn 0 describe 0x43: channels 0 .. channels - 1; absent: none (core §7.5)
         self.own_channels: set[int] = set(probe.own_channels)   # the probe's own (never an interface's; not declared)
         self.transports: dict[int, int] = {}            # index -> kind, by the TLV's own index (core §7.5), not its order
         self.max_op_ms = virtual_bench.MAX_OP_MS
@@ -848,11 +848,9 @@ class Endpoint:
         return out
 
     def _boot_channels(self) -> set[int]:
-        """What the probe parks at boot, before its first answer (core §8): every channel but its own - below fn 0's
-        `channels` when it declares them, else every channel an interface offers."""
-        if any(tag == virtual_bench.CORE_CHANNELS for tag, _ in self.decl.get(0, ())):
-            return set(range(self.channels)) - self.own_channels
-        return self._all_channels() - self.own_channels
+        """What the probe parks at boot, before its first answer (core §8): every channel below fn 0's `channels` but
+        its own (a probe with channels declares them, core §7.5; none declared: no channel)."""
+        return set(range(self.channels)) - self.own_channels
 
     def _park(self, channels) -> None:
         """Free pins go to their idle state (the idle item, else Hi-Z) at boot and whenever released (probe.config §1);
@@ -2754,19 +2752,19 @@ class Endpoint:
     def i2c_write(self, fn: int, data: bytes, address: int | None = None) -> bool:
         """TEST HOOK: a bus controller writes `data` to i2c-target `fn` in one transaction (START, address + W, data,
         STOP). -> whether the target ACKed its address (configured, and `address` None or its own). A write with data
-        is one frame (fixture §3): more than max_length bytes are cut to max_length (errors + 1); a full queue drops the
-        frame (errors + 1). An address-only write (empty data) counts nothing."""
+        is one frame (fixture §3): more than max_length bytes are cut to max_length; a full queue drops the frame. errors
+        grows by 1 at most per write (cut and dropped alike: 1). An address-only write (empty data) counts nothing."""
         st, (max_length, _, depth, _) = self.i2c[fn], self.target_decl[fn]
         if st.state == 0 or (address is not None and address != st.address):
             return False
         if not data:
             return True                                            # address only: nothing counts
-        if len(data) > max_length:
-            data = data[:max_length]
-            st.errors += 1
+        over = len(data) > max_length
+        data = data[:max_length]
         if len(st.queue) >= depth:
-            st.errors += 1                                         # the queue overflows: the new frame goes
+            st.errors += 1                                         # the queue overflows: the new frame goes (once)
             return True
+        st.errors += over
         st.queue.append((bytes(data), self.now_ns()))
         st.rx_frames += 1
         return True

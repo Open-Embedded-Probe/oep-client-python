@@ -1,6 +1,59 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) **oep-spec 283e5b5 .. f8bb2de** (the external review re-check of 2026-10-07 and the fixes after it). README names
+  `f8bb2de`. Registry and vectors synced (`tools/sync_registry.sh`): `resend_max` is gone (the host decides its resends:
+  this client's - once after the wait, at once up to 3 times after a broken frame on a held serial port - stay),
+  `interface_name_max_bytes` 64 -> 48 (`names.MAX_NAME`, a list entry fits the smallest max_frame).
+  - transports §2: a frame may be split over writes, no sender pauses probe_frame_gap_ms inside one off TCP. Checked: the
+    client writes each batch of frames whole in one write (serial, vendor bulk; HID reports back to back; TCP sendall) and
+    its length-frame reader drops a frame stalled for probe_frame_gap_ms only off TCP; the virtual bench's serial port
+    takes a frame in any pieces and writes its answers whole. Nothing changed.
+  - transports §3: a closed transport does not end the session. The virtual bench's TCP (`virtual_bench_serve --tcp`)
+    already kept it; now also documented and tested (the session, lock and resend table stay until the lease runs out,
+    the next connection's open with the same id takes it back) and the notifications made while no connection is open
+    are dropped instead of going to the next connection.
+  - A host run again ends the session its previous run left (host guide §5, f8bb2de): `link.open_host(...,
+    keep_session=True)` (the default, so the `oep` command and tests/hw) keeps the session id in
+    `<dir>/<unit_id>.session` (`$OEP_SESSION_DIR`, else `$XDG_RUNTIME_DIR/oep-client`, else the user's cache directory),
+    locked while the host runs; the first open opens the kept id and ends it at once (`Host.end_previous`), then opens
+    as usual. A file another running host holds is left alone; an `x-` unit_id keeps nothing. New module
+    `kept_session` (`KeptSession`, `Host.kept`).
+  - core §7.5 / §1.2: a probe with channels declares `channels`, numbers 0 .. channels - 1, absent = none. The virtual
+    bench's endpoint reads an absent `channels` as 0 (it took every channel an interface named); every profile declares
+    it and names no channel past it (tested).
+  - fixture §3 (4a4631a): the virtual bench's i2c-target counts at most 1 error a write (over max_length into a full
+    queue: 1, was 2).
+  - oep-if-link / host guide §17 (44aa045): the sink count is max_frame - 12, which this client already sends
+    (`core.link_sink_size`); nothing changed.
+  - The tests run with `OEP_SESSION_DIR` in a temporary directory (tests/conftest.py; tests/hw keeps the real one).
+    New tests/test_spec_283e5b5.py. README / tests/hw README (EN / JA).
+- (JA) **oep-spec 283e5b5〜f8bb2de**（2026-10-07 の外部レビューの再確認と、その後の直し）。README は `f8bb2de` を名乗る。registry と
+  ベクタを写した（`tools/sync_registry.sh`）: `resend_max` は無くなった（送り直しは host が決める。この client の送り直し - 待ちの後に
+  1 回、持っているシリアルの口で壊れたフレームが来たらすぐ 3 回まで - はそのまま）。`interface_name_max_bytes` は 64 -> 48
+  （`names.MAX_NAME`。list の項目 1 つがいちばん小さい max_frame に収まる）。
+  - transports §2: フレームは書き込みに分けてよく、TCP 以外では送る側はフレームの途中で probe_frame_gap_ms 止めない。確かめた: client は
+    フレームのまとまりを 1 回の書き込みで丸ごと書き（シリアル、vendor bulk。HID は report を続けて、TCP は sendall）、長さつきフレームの
+    読み手が probe_frame_gap_ms 止まったフレームを捨てるのは TCP 以外だけ。仮想ベンチのシリアルの口はフレームをどう分けても受け、答えは
+    丸ごと書く。変更なし。
+  - transports §3: 経路が閉じてもセッションは終わらない。仮想ベンチの TCP（`virtual_bench_serve --tcp`）はもとから保っていた。それを
+    文書と試験にした（セッション、ロック、送り直しの表は lease が切れるまで残り、次の接続の同じ id の open が取り戻す）。接続が無い間の
+    通知は、次の接続に送らずに捨てるようにした。
+  - 走り直す host は、前の実行が残したセッションを終える（host ガイド §5、f8bb2de）: `link.open_host(..., keep_session=True)`（既定。
+    `oep` の命令と tests/hw も）は、セッションの id を `<dir>/<unit_id>.session`（`$OEP_SESSION_DIR`、無ければ
+    `$XDG_RUNTIME_DIR/oep-client`、無ければ利用者の cache の場所）に残し、host が動く間は錠を掛ける。最初の open は残した id で open
+    してすぐ end し（`Host.end_previous`）、それからふつうに開く。ほかの動いている host が持つファイルには触れない。`x-` の unit_id は
+    何も残さない。新しいモジュール `kept_session`（`KeptSession`、`Host.kept`）。
+  - core §7.5 / §1.2: channel を持つ probe は `channels` を付け、番号は 0〜channels − 1、無ければ 0 個。仮想ベンチの endpoint は
+    `channels` が無ければ 0 と読む（これまではインターフェースが名指す channel をすべて取っていた）。どの profile も付け、それを越える
+    channel を名指さない（試験した）。
+  - fixture §3（4a4631a）: 仮想ベンチの i2c-target は、書き込み 1 回に errors を多くても 1 数える（max_length を超えて列もあふれた書き込みは
+    1。これまでは 2）。
+  - oep-if-link / host ガイド §17（44aa045）: sink の count は max_frame − 12 で、この client はもとからそれを送る（`core.link_sink_size`）。
+    変更なし。
+  - 試験は `OEP_SESSION_DIR` を一時の場所にして走る（tests/conftest.py。tests/hw は本当の場所のまま）。新しい
+    tests/test_spec_283e5b5.py。README と tests/hw の README（EN / JA）。
+
 - (EN) **Breaking (API, CLI): the fake probe is the virtual bench**, with no aliases (pre-freeze). The virtual bench is a
   probe, the targets behind it and the fixture wiring, modelled after the real jigs: the environment host software is
   tested in. "Bench" alone still means the real HIL jigs. Renamed: module `oep_client.fake` -> `oep_client.virtual_bench`,

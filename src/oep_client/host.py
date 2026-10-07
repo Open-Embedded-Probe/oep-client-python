@@ -277,6 +277,8 @@ class Host:
     on_limits: Callable[[dict], None] | None = None
     unusable: str = ""                     # why this probe is not used (C-20, C-47): set, nothing more is sent
     restart_reopened: bool = False         # the last restart_probe came back only on its reopen_s (the user's reopen)
+    # The session id kept per probe for the next run (kept_session.KeptSession; link.open_host sets one): None = not kept
+    kept: object | None = None
 
     @contextlib.contextmanager
     def expecting(self, ms: int):
@@ -483,6 +485,8 @@ class Host:
         is left behind: it ended, or the probe refuses this open locked while it holds the lock - end it first. The
         answer's boot_id is watched (core §6.5: a reboot drops the fn mapping)."""
         self.require_v1()
+        if self.kept is not None and self.session is None:
+            self.kept.before_open(self, owner)              # once: the previous run's session ended (host guide §5)
         sid = self.rng.randrange(1, 1 << 32)                # random, never 0 (core §6.1)
         tail = m.tlv(OWNER, owner_text(owner)) if owner else b""
         r = self.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IB", lease_ms, int(force)) + tail, session=sid)
@@ -496,7 +500,30 @@ class Host:
         self.session = sid
         self.boot_id_seen(boot_id)                          # a reboot: one loss, and the names listed again
         self.lease_ms = lease
+        if self.kept is not None:
+            self.kept.opened(sid)
         return Opened(lease, boot_id)
+
+    def end_previous(self, sid: int, owner: str | None = None) -> bool:
+        """End session `sid` that a previous run of this host left open (host guide §5; transports §3: a closed
+        transport does not end a session): open it - taken as a resend of its open while it holds the lock (core §6.2:
+        nothing released, the resend table dropped; with the lock free, a session under that id) - and end it at once,
+        releasing what it held. -> True when it was ended; False when another session holds the lock (locked: not
+        this host's to end). This host's own session is not touched."""
+        tail = m.tlv(OWNER, owner_text(owner)) if owner else b""
+        try:
+            r = self.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IB", reg.LIMITS["lease_min_ms"], 0) + tail,
+                             session=sid)
+        except Rejected:
+            return False
+        rd = m.Reader(r.payload)
+        _lease, boot_id = rd.take("II")
+        self.boot_id_seen(boot_id)
+        try:
+            self.request(m.CORE_FN, m.OP_END, session=sid)
+        except Rejected:
+            return False
+        return True
 
     def end(self) -> None:
         """End the session: the probe releases the lock and everything the session created (core §6.4, §9) - its
@@ -505,6 +532,8 @@ class Host:
         self.request(m.CORE_FN, m.OP_END)
         self.session = None
         self._swept()
+        if self.kept is not None:
+            self.kept.ended()
 
     def keepalive(self) -> None:
         self.request(m.CORE_FN, m.OP_KEEPALIVE)

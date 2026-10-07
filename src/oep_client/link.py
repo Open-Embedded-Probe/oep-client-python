@@ -1070,6 +1070,7 @@ class SerialLink:
         hst.exchange = self.bind(limits)
 
     def _bind_host(self, hst) -> None:
+        self.bound_host = hst
         self.corr_source = hst.next_corr
         self.blind = hst.blind_stop
         self.held = lambda: hst.session is not None
@@ -1179,6 +1180,9 @@ class SerialLink:
             raise TimeoutError(f"no answer to confirm at {self.baud} for {wait_s:.1f} s")
 
     def close(self) -> None:
+        kept = getattr(getattr(self, "bound_host", None), "kept", None)
+        if kept is not None:
+            kept.release()                               # the kept session file goes back (its id stays for the next run)
         _exclusive_off(self.stream)                      # (a stream open_serial did not open: off here too)
         self.stream.close()
 
@@ -1453,7 +1457,7 @@ TCP_TIMEOUT = 15.0   # behind a broker: outlast its own 3 s retry towards the pr
 
 def open_host(target: str, timeout: float | None = None, resend: bool | None = None, *, baud: int = BASE_BAUD,
               port_speed=None, flows=None, verify: bool | None = None, record=False, max_tries: int | None = None,
-              lease_ms: int = 3000, owner: str | None = None):
+              lease_ms: int = 3000, owner: str | None = None, keep_session: bool = True):
     """A Host on `target`, with the link's pipelining bound to the probe's limits (core confirm): Host.pipeline and
     everything built on it (flash, capture reads) then keep several requests in flight.
 
@@ -1478,7 +1482,30 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
     runs (the minimal form unless `verify` / `flows` ask for the full one; `record` off by default); its report is
     `hst.link.speed`. A probe without port_speed, or a link that is not a serial port this host opened, stays at its
     speed (the report says why). A candidate above 500000 is the user's choice only (host guide §17) and
-    gets raise_speed's 1 s verify; the session is then taken with at least `lease_for(candidates)` ms."""
+    gets raise_speed's 1 s verify; the session is then taken with at least `lease_for(candidates)` ms.
+
+    keep_session (default on): the host keeps the id of the session it opens in a file per probe (`kept_session`,
+    keyed by unit_id), and its first open ends the session a previous run left there (host guide §5: a probe keeps a
+    session across a closed transport, transports §3) - so a host run again after a crash or a kill does not meet its
+    own old lock. Off: nothing is read or written."""
+    hst = _open_host(target, timeout, resend, baud=baud, keep_session=keep_session)
+    if port_speed:
+        from . import core
+        candidates = DEFAULT_CANDIDATES if port_speed is True else port_speed
+        core.take(hst, max(lease_ms, lease_for(candidates, flows, verify)), owner=owner)
+        raise_speed(hst, candidates, flows=flows, verify=verify, record=record, max_tries=max_tries)
+    return hst
+
+
+def _kept(hst, keep_session: bool):
+    if keep_session:
+        from . import kept_session
+        hst.kept = kept_session.KeptSession()
+    return hst
+
+
+def _open_host(target: str, timeout: float | None, resend: bool | None, *, baud: int, keep_session: bool):
+    """open_host without its port_speed step."""
     from . import host
     if target.startswith("tcp://"):
         addr, _, port = target[len("tcp://"):].rpartition(":")
@@ -1496,10 +1523,10 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
             vid, pid = find_usb(parts[0])
             hst = open_usb_host(vid, pid, parts[0], timeout)
             check_unit_id(hst, parts[0])
-            return hst
+            return _kept(hst, keep_session)
         if parts:
             vid, pid = int(parts[0], 16), int(parts[1], 16) if len(parts) > 1 else USB_PID
-            return open_usb_host(vid, pid, parts[2] if len(parts) > 2 else None, timeout)
+            return _kept(open_usb_host(vid, pid, parts[2] if len(parts) > 2 else None, timeout), keep_session)
         vid, pid = USB_VID, USB_PID
         probes = usb_probes(vid, pid)                        # every device on the project's VID:PID, each once
         if len(probes) > 1:
@@ -1508,7 +1535,7 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
         one = probes[0] if probes else None
         if one is None or "vendor" in one.ways or "hid" in one.ways:
             try:
-                return open_usb_host(vid, pid, one.unit_id if one else None, timeout)
+                return _kept(open_usb_host(vid, pid, one.unit_id if one else None, timeout), keep_session)
             except FileNotFoundError as e:
                 if one is None or not one.ports:
                     raise FileNotFoundError(f"{e}; cdc: no serial port on {vid:04x}:{pid:04x}") from None
@@ -1525,12 +1552,7 @@ def open_host(target: str, timeout: float | None = None, resend: bool | None = N
         lk.resend = resend
     hst = host.Host(lk.send)
     lk.attach_host(hst)
-    if port_speed:
-        from . import core
-        candidates = DEFAULT_CANDIDATES if port_speed is True else port_speed
-        core.take(hst, max(lease_ms, lease_for(candidates, flows, verify)), owner=owner)
-        raise_speed(hst, candidates, flows=flows, verify=verify, record=record, max_tries=max_tries)
-    return hst
+    return _kept(hst, keep_session)
 
 
 # ---- port_speed (oep-if-link §3) ----------------------------------------------------------------------------------------

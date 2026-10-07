@@ -94,6 +94,10 @@ assertion, an exception, a probe that went away:
 | `port_speed` | the link's rate | `linktest.matrix` goes back to the boot speed in its `finally`; the probe also falls back by itself when idle |
 | `session` | leases, a force takeover | its own sessions, ended |
 
+The harness opens the probe through `link.open_host`, so it keeps its session id per probe (README, "A host run again"):
+a run that was stopped half way leaves its session on the probe (a closed transport does not end it, transports §3), and
+the next run's first open ends it instead of waiting out its 30 s lease.
+
 No test touches slots, binds of the settings, uart or plan items: those a bench keeps are never changed. When the probe
 went away, `restore_settings` opens it again (waiting `OEP_HW_REOPEN_S`, at least 5 s, and up to 35 s for a lost
 session's lease), and the run's teardown tries once more. What still could not be put back is in the results file
