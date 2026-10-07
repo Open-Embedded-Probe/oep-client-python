@@ -108,13 +108,15 @@ class TargetError(h.OepError):
 
 
 class StepError(TargetError):
-    """step did not get the hart back to debug mode (oep-if-debug §4.2): `step_left` - the probe could not halt it
-    again (the hart runs, dcsr.step may still be set: halt it and clear dcsr.step); otherwise it is halted again with
-    `dpc_after` valid."""
+    """step did not succeed (oep-if-debug §4.2): `step_left` - the probe could not halt the hart again (it runs,
+    dcsr.step may still be set: halt it and clear dcsr.step); otherwise the hart is halted again (or was not halted to
+    begin with). The answer's moved, dpc_before and dpc_after mean something only with status ok - the probe sends 0
+    otherwise and they are not read: dpc_before / dpc_after are None; a halted hart's dpc is read with dmi."""
 
-    def __init__(self, status: int, result: m.Result, dpc_before: int, dpc_after: int, step_left: bool):
+    def __init__(self, status: int, result: m.Result, step_left: bool):
         super().__init__("step", status, result)
-        self.dpc_before, self.dpc_after, self.step_left = dpc_before, dpc_after, step_left
+        self.dpc_before = self.dpc_after = None
+        self.step_left = step_left
 
 
 def ran(result: m.Result) -> m.Reader:
@@ -454,12 +456,24 @@ RUN_STOPPED = _RV.enum["run_stopped"]     # 0 the limit passed and the probe hal
 class RunResult:
     status: int
     stopped: bool                 # the hart halted on its own (ebreak) before timeout_ms
-    dpc: int
-    elapsed_us: int
+    dpc: int                      # 0 when it means nothing (not_halted, not_run; debug §4.4): see dpc_valid
+    elapsed_us: int               # from the resumereq that started the hart to the halt seen, made or given up (the
+                                  # probe's measure, debug §4.4); 0 when the hart was not run
     values: list[int] = field(default_factory=list)   # the registers asked for in `outs`, in order
     not_halted: bool = False      # the limit passed and the probe could not halt the hart: dpc and values mean nothing
     not_run: bool = False         # the preparation (registers, dcsr, pc) failed: the hart was not run and is still
                                   # halted, the loader did not run (dpc means nothing; debug §4.4)
+
+    @property
+    def dpc_valid(self) -> bool:
+        """Whether dpc means something: the hart halted (on its own or at the limit)."""
+        return not (self.not_halted or self.not_run)
+
+    def where(self) -> str:
+        """The dpc for a message, never an invalid one."""
+        if self.not_run:
+            return "not run"
+        return f"dpc {self.dpc:#x}" if self.dpc_valid else "not halted, dpc unknown"
 
 
 def count_steps(steps: bytes) -> list[int]:
@@ -710,17 +724,17 @@ class RiscvDm(Interface, BlockLength):
 
     def step(self) -> tuple[bool, int, int]:
         """One instruction (dcsr.step, one resume, privilege kept). -> (moved, dpc before, dpc after). A hart that did
-        not come back raises StepError (oep-if-debug §4.2, P2-○4): `step_left` False - the probe halted it with
-        haltreq and restored it, dpc_after valid; True (answer TLV step_left) - it could not halt it again: the hart
-        runs and dcsr.step may still be set, so the host halts it and clears dcsr.step. DATA0 is written back first
-        (`restore_data`)."""
+        not come back, and any status but ok, raises StepError (oep-if-debug §4.2, P2-○4) without moved or the dpcs
+        (0 unless status ok, not read): `step_left` False - the probe halted it with haltreq and restored it (read its
+        dpc with dmi); True (answer TLV step_left) - it could not halt it again: the hart runs and dcsr.step may still
+        be set, so the host halts it and clears dcsr.step. DATA0 is written back first (`restore_data`)."""
         self.restore_data()
         r = self._request(self.STEP)
         rd = ran(r)
         status, moved, before, after = rd.take("BBII")
         tail = rd.tail()
         if status != OK or not r.succeeded:
-            raise StepError(status, r, before, after, tail.get(self.TAG_STEP_LEFT) is not None)
+            raise StepError(status, r, tail.get(self.TAG_STEP_LEFT) is not None)   # moved / dpcs: 0, not read (§4.2)
         return bool(moved), before, after
 
     def read_block(self, address: int, count: int) -> bytes:

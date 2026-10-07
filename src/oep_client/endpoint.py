@@ -2337,17 +2337,17 @@ class Endpoint:
         if op == _RV.op["step"]:
             t.tail()
             tg = target()
+            not_ok = struct.pack("<BBII", STATE, 0, 0, 0)            # moved and both dpc 0 unless status ok (§4.2)
             if not tg.halted:
-                return m.COMPLETED, m.FAILED, struct.pack("<BBII", STATE, 0, tg.dpc, tg.dpc)
+                return m.COMPLETED, m.FAILED, not_ok
             before = tg.dpc
             if tg.step_stuck is not None:
                 # not back in debug mode: haltreq, and a wait for the halt (debug §4.2)
                 if tg.step_stuck == "halts":                       # halted: dcsr.step cleared, DATA1 / DATA0 restored
                     tg.dpc, tg.haltreq, tg.dcsr_step = tg.dpc + 0x20, False, False
-                    return m.COMPLETED, m.FAILED, struct.pack("<BBII", STATE, 1, before, tg.dpc)
+                    return m.COMPLETED, m.FAILED, not_ok               # the host reads dpc with dmi
                 tg.halted, tg.haltreq, tg.dcsr_step = False, False, True   # runs on, dcsr.step may still be set
-                return (m.COMPLETED, m.FAILED, struct.pack("<BBII", STATE, 0, before, before)
-                        + m.tlv(STEP_LEFT, b""))
+                return m.COMPLETED, m.FAILED, not_ok + m.tlv(STEP_LEFT, b"")
             tg.dpc += 4
             return m.COMPLETED, m.SUCCESS, struct.pack("<BBII", OK, 1, before, tg.dpc)
         if op == _RV.op["read_block"]:

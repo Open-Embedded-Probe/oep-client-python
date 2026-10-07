@@ -201,7 +201,8 @@ def program(hst: h.Host, dm: riscv.RiscvDm, image: bytes, profile: FlashProfile)
                 a0 = run.values[0]
                 if not (r.succeeded and run.status == riscv.OK and run.stopped and run.dpc == done_pc
                         and (profile.method != "fast-page" or a0 == 0)):
-                    failures.append({"address": hex(profile.base + off), "dpc": hex(run.dpc)})
+                    failures.append({"address": hex(profile.base + off),
+                                     "dpc": hex(run.dpc) if run.dpc_valid else None})   # an invalid dpc is 0 (§4.4)
         return failures
 
     if profile.method == "fast-page":
@@ -214,7 +215,7 @@ def program(hst: h.Host, dm: riscv.RiscvDm, image: bytes, profile: FlashProfile)
             if not (run.stopped and run.dpc == LOADER):
                 break
         if not (run.stopped and run.dpc == V003_EBREAK):
-            raise RuntimeError(f"mass erase did not stop on the loader's ebreak (dpc {run.dpc:#x})")
+            raise RuntimeError(f"mass erase did not stop on the loader's ebreak ({run.where()})")
         failures = run_pages([(off, min(V003_RUN, len(image) - off), 0x09) for off in range(0, len(image), V003_RUN)])
     t["program"] = round(time.perf_counter() - t0, 3)
     t0 = time.perf_counter()

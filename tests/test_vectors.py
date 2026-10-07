@@ -547,8 +547,13 @@ WIFI_ENTRY = m.tlv(0x08, bytes([0, 3]) + b"lab" + bytes([9]) + b"password1")
 TEXT_OVER_VECTOR: dict[str, str] = {}
 
 
+NOT_IN_THE_VIRTUAL_BENCH = {"oep.target.arm-adi"}                       # the client's side is checked below
+
+
 @pytest.mark.parametrize("case", OPS, ids=lambda c: c["name"])
 def test_ops_vectors_from_the_virtual_bench_byte_for_byte(case):
+    if NOT_IN_THE_VIRTUAL_BENCH & set(case["fns"].values()):
+        pytest.skip("the virtual bench has no " + ", ".join(sorted(NOT_IN_THE_VIRTUAL_BENCH & set(case["fns"].values()))))
     ep = setup_case(case)
     out = ep.handle(hx(case["request_hex"]), 0)
     if case["name"] in TEXT_OVER_VECTOR:
@@ -753,8 +758,20 @@ def _on_client(case):
             assert run.not_run and not run.not_halted and e.value.status == reg.STATUS["line"]
         elif "n = 0" in name:
             assert dm.dmi([]) == (0, [])
+        elif "step on a running hart" in name:                         # debug §4.2: moved and the dpcs not read
+            with pytest.raises(rv.StepError) as e:
+                dm.step()
+            assert e.value.status == reg.STATUS["state"] and (e.value.dpc_before, e.value.dpc_after) == (None, None)
+            assert not e.value.step_left
+            return sent[-1:]                                            # restore_data writes nothing: DATA0 untouched
         else:
             assert dm.dmi([dm.step_read(0x11)]) == (1, [0x00400382])
+        return sent
+    if name.startswith("arm-adi transfer"):
+        from oep_client import arm
+        hst, sent = client(case, S)
+        adi = arm.ArmAdi(hst, 1)
+        assert adi.transfer(b"") == [] and adi.last_ack == 0           # n = 0: success, done 0, ack 0 (debug §6)
         return sent
     if name.startswith("console"):
         hst, sent = client(case)

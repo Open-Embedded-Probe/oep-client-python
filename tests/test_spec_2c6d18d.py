@@ -368,3 +368,37 @@ def test_streams_first_is_u16_and_pages_past_255():
     assert [s.stream for s in got] == [1000 + k for k in range(300)]
     firsts = [struct.unpack("<H", r.payload)[0] for r in ep.requests if r.op == con.Console.STREAMS]
     assert firsts[0] == 0 and firsts[-1] > 255 and all(len(r.payload) == 2 for r in ep.requests if r.op == con.Console.STREAMS)
+
+
+# ---- debug §4.2, §4.4: step's fields are 0 unless status ok; run's elapsed_us and an invalid dpc -------------------------
+
+from oep_client import riscv   # noqa: E402
+
+
+@pytest.mark.parametrize("stuck", [None, "halts", "runs"])
+def test_a_step_that_is_not_ok_answers_zeros_and_the_client_reads_none(stuck):
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
+    hst = h.Host(lambda b: ep.handle(b, 0))
+    hst.open(3000)
+    pair = ep.pairs[1][0]
+    conn, _ = riscv.Wire(hst).attach(halt=stuck is not None, pins=pair)
+    tg = ep._target(1, pair)
+    tg.dpc = 0x1234
+    if stuck is None:
+        tg.halted = False                                               # a running hart: status state
+    tg.step_stuck = stuck
+    dm = riscv.RiscvDm(hst, conn)
+    with pytest.raises(riscv.StepError) as e:
+        dm.step()
+    status, moved, before, after = struct.unpack_from("<BBII", e.value.result.payload)
+    assert (moved, before, after) == (0, 0, 0) and status == riscv.STATUS["state"]
+    assert (e.value.dpc_before, e.value.dpc_after, e.value.step_left) == (None, None, stuck == "runs")
+
+
+def test_a_run_result_never_shows_an_invalid_dpc():
+    halted = riscv.RunResult(riscv.STATUS["ok"], True, 0x20000010, 50)
+    not_halted = riscv.RunResult(riscv.STATUS["timeout"], False, 0, 1000, not_halted=True)
+    not_run = riscv.RunResult(riscv.STATUS["line"], False, 0, 0, not_run=True)
+    assert halted.dpc_valid and halted.where() == "dpc 0x20000010"
+    assert not not_halted.dpc_valid and "dpc unknown" in not_halted.where()
+    assert not not_run.dpc_valid and not_run.where() == "not run" and not_run.elapsed_us == 0
