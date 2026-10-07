@@ -19,7 +19,7 @@ OPTION_OFF = 0x00FF5AA5                       # USER ff: RST_MODE 11, PD7 is a G
 
 def profile() -> fake.FakeProbe:
     return fake.FakeProbe("p4-pins", 1024, [
-        fake._core("3.0.0", "esp32p4", "30eda0ea068b", 30, [24, 25], "", {},
+        fake._core("3.0.0", "esp32p4", "30eda0ea068b", 30, {},
                    fake._transports([(fake.TRANSPORT["usb_serial_jtag"], 0xFF)])),
         fake.Offered(WIRE, 0, "oep.wire.swio", (catalog.role_channels(1, PINS), catalog.role_channels(3, PINS),
                                                 catalog.u8(fake.MAX_CONNECTIONS, 1))),
@@ -28,7 +28,7 @@ def profile() -> fake.FakeProbe:
         fake.Offered(3, 0, "oep.target.console", (catalog.tlv(fake.MECHANISMS, bytes([0, 1, 2])),)),
         fake._gpio(GPIO, PINS),
         fake._config(CFG, 0, slots_max=2),
-    ])
+    ], own_channels=(24, 25))
 
 
 class World:
@@ -44,7 +44,7 @@ class World:
         return self.ep.gpio_modes.get(4) in (Gpio.OPEN_DRAIN_LOW, Gpio.INPUT_PULLDOWN)
 
     def __call__(self, ch: int, mode: int) -> int:
-        pull = {Gpio.INPUT_PULLUP: 1, Gpio.INPUT_PULLDOWN: 0, Gpio.INPUT_PULLUP_PULLDOWN: 0}.get(mode, 0)
+        pull = {Gpio.INPUT_PULLUP: 1, Gpio.INPUT_PULLDOWN: 0}.get(mode, 0)
         if ch == 7:
             return 1                                   # the probe board's own strong pull-up
         if ch == 3:
@@ -101,7 +101,9 @@ def test_finds_the_swio_pin_and_the_reset_line_without_being_told():
     r = finder(hst, t, lines, power=5).run()
     k = kinds(r)
     assert k[pins.DRIVEN_HIGH] == [7, 22, 23] and k[pins.DRIVEN_LOW] == [3] and k[pins.ACTIVE] == [21]
-    assert k[pins.PULLED_UP] == [4] and 19 in k[pins.FLOATING]
+    assert {4, 19} <= set(k[pins.FLOATING])                   # a weak pull-up reads as floating (host guide §19.1)
+    assert not hasattr(pins, "PULLED_UP") and pins.KINDS == (pins.FLOATING, pins.DRIVEN_HIGH, pins.DRIVEN_LOW,
+                                                              pins.ACTIVE)
     assert set(r.follows_power) == TARGET_PINS
     assert r.stopped == [4]                                   # held low, the app stopped
     assert r.found == [(19, 0xFFFF)] and not {3, 5, 7, 21, 22, 23} & set(r.scanned)
@@ -168,13 +170,21 @@ def test_steps_are_optional():
         finder(hst, t, [], power=5).run(steps=("bogus",))
 
 
-@pytest.mark.parametrize("pu, pd, both, kind", [
-    ([1] * 4, [0] * 4, [0] * 4, pins.FLOATING), ([1] * 4, [0] * 4, [1] * 4, pins.PULLED_UP),
-    ([1] * 4, [1] * 4, [1] * 4, pins.DRIVEN_HIGH), ([0] * 4, [0] * 4, [0] * 4, pins.DRIVEN_LOW),
-    ([1, 0, 1, 1], [0] * 4, [0] * 4, pins.ACTIVE), ([1] * 4, [0] * 4, None, pins.FLOATING),
+@pytest.mark.parametrize("pu, pd, kind", [
+    ([1] * 4, [0] * 4, pins.FLOATING), ([1] * 4, [1] * 4, pins.DRIVEN_HIGH), ([0] * 4, [0] * 4, pins.DRIVEN_LOW),
+    ([1, 0, 1, 1], [0] * 4, pins.ACTIVE), ([1] * 4, [0, 1, 0, 0], pins.ACTIVE), ([0] * 4, [1] * 4, pins.ACTIVE),
 ])
-def test_classify(pu, pd, both, kind):
-    assert pins.classify(pu, pd, both)[0] == kind
+def test_classify(pu, pd, kind):
+    """Host guide §19.1: reads under pull-up, then pull-down - no both-pulls mode; a weak pull-up is floating."""
+    assert pins.classify(pu, pd)[0] == kind
+
+
+def test_classify_never_uses_a_both_pulls_mode():
+    """gpio mode 7 is gone (oep-if-fixture gpio: modes 0-6): the classify reads never ask for it."""
+    ep, hst, t = bench()
+    finder(hst, t, [], power=5).run(steps=("classify",))
+    assert ep.gpio_log and all(m <= 6 for _, m in ep.gpio_log)
+    assert not hasattr(Gpio, "INPUT_PULLUP_PULLDOWN")
 
 
 def test_ranges():

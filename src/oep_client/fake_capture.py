@@ -6,7 +6,7 @@ What it captures is known in advance, so a receiver can check it (sample i count
 segments):
 
 - logic: sample i is the counter i, channel k bit k of it - a square wave of period 2^(k+1) samples. The layout is the
-  probe's (§1.1): w is the smallest width the describe allows (channels tag 0x44) that holds the channels, pos[k] = k.
+  probe's (§1.1): w is the smallest width it can make (its own list, not declared) that holds the channels, pos[k] = k.
 - analog: 12-bit values in 16-bit slots (s 16, o 0, b 12), channels in role order. Channel k's period is
   P = 64 (k // 2 + 1) samples: an even k is a square wave (4095 for the first half of the period, then 0), an odd k a sine
   round(2047.5 + 2047 sin(2 pi i / P)). zero 0, scale_nv = the frontend's range / 4095.
@@ -89,11 +89,11 @@ class FakeCapture:
     """One capture track (logic, or analog when `frontends` is given). Times: the endpoint's clock in ms, the probe's in
     ns."""
     modes: set[int]                    # the modes the describe declares
-    widths: set[int]                   # logic: the w the describe allows
+    widths: set[int]                   # logic: the w it can lay channels out in (its own, oep-if-capture §1.1)
     min_hz: int
     max_hz: int
-    ring: int = 8                      # segment_ring
-    max_read: int = 4096
+    ring: int = 8                      # the segment records it keeps (its own, §2)
+    max_read: int = 4096               # the most one read returns (its own, §3.2)
     frontends: dict[int, tuple[int, int, int]] = field(default_factory=dict)   # analog: n -> (min_mv, max_mv, mdb)
     max_samples: dict[int, int] = field(default_factory=dict)   # mode -> describe's max_samples (one segment)
     slipped: bool = False
@@ -134,17 +134,16 @@ class FakeCapture:
         return 2000 if self.analog else 50
 
     # ---- configure ------------------------------------------------------------------------------------------------
-    def settle(self, got: dict[int, bytes], t, channels: int, frontends: list[tuple[int, int]]) -> dict:
+    def settle(self, got: dict[int, bytes], t, channels: int, frontends: list[tuple[int, int, int]]) -> dict:
         """The actual values for a configure / query request (nothing changed). `t`: the request's tail reader
-        (endpoint.Take: `fixed`, `refuse`). `frontends`: (role, frontend) asked."""
+        (endpoint.Take: `fixed`, `refuse`). `frontends`: (role, frontend, the tag as received) asked."""
         if self.group is not None:
             raise Reject(m.UNAVAILABLE, m.tlv(reg.CORE.tlv["unavailable_payload"]["cause"],
                                               bytes([reg.CORE.enum["unavailable_cause"]["bound_in_group"]])))
         if self.state in (STATE["waiting"], STATE["capturing"]):
             raise wrong_state()                                    # §3.2: not while it captures
-        # every TLV's form first (core §2.3: shorter -> malformed, longer -> unsupported / ignored), then what this
-        # probe cannot handle: sent critical (mode, rate, trigger, pretrigger, frontend always are, §3.3) unsupported
-        # with the tag as received, else ignored (t.refuse)
+        # every TLV's form first (core §2.3: a value of another length is malformed, with or without bit 7), then what
+        # this probe does not handle: unsupported with the tag as received (core §2.3, capture §3.3)
         for tag, size in ((TLV["mode"], 1), (TLV["rate"], 4), (TLV["samples"], 4), (TLV["segments"], 4),
                           (TLV["trigger"], 6), (TLV["pretrigger"], 4)):
             t.fixed(got, tag, size)
@@ -152,18 +151,17 @@ class FakeCapture:
             raise Reject(m.MALFORMED)                              # rate is required
         asked = struct.unpack("<I", got[TLV["rate"]])[0]
         if not asked:
-            raise Reject(m.MALFORMED)
+            raise Reject(m.MALFORMED)                              # 1 Hz or more (§3.3)
         if TLV["mode"] in got and got[TLV["mode"]][0] not in self.modes:
-            t.refuse(TLV["mode"], got)                             # undefined (a later revision's) or not declared
+            raise t.refuse(TLV["mode"])                            # undefined (left unused) or not declared
         mode = got[TLV["mode"]][0] if TLV["mode"] in got else MODE["one_shot"]
         if not self.min_hz <= asked <= self.max_hz:
-            t.refuse(TLV["rate"], got)                             # out of the declared range (§3.3)
-            raise Reject(m.MALFORMED)                              # ... and without it nothing says the rate
+            raise t.refuse(TLV["rate"])                            # out of the declared range (§3.3)
         if TLV["trigger"] in got:
             kind, role, _ = struct.unpack("<BBI", got[TLV["trigger"]])   # type role value(u32)
             allowed = (TRIGGER["cross_up"], TRIGGER["cross_down"]) if self.analog else (TRIGGER["level"], TRIGGER["edge"])
             if (kind and kind not in allowed) or (kind and channels and role >= channels):
-                t.refuse(TLV["trigger"], got)                      # a type not declared (or undefined), a role it lacks
+                raise t.refuse(TLV["trigger"])                     # a type not declared (or undefined), a role it lacks
         if not channels:
             raise wrong_state()                                    # no plan (§3.2)
         top = self.max_hz // channels if self.analog else self.max_hz   # an ADC's rate is shared by its channels
@@ -182,9 +180,9 @@ class FakeCapture:
         chosen = {}
         if self.analog:
             chosen = {k: max(self.frontends) for k in range(channels)}   # the widest range unless asked
-            for role, fe in frontends:
+            for role, fe, tag in frontends:
                 if role >= channels or fe not in self.frontends:
-                    raise Reject(m.UNSUPPORTED, bytes([ANA.tlv["configure"]["frontend"] | m.TAG_CRITICAL]))
+                    raise Reject(m.UNSUPPORTED, bytes([tag]))      # the frontend's tag as received (core §2.3)
                 chosen[role] = fe
             width = 2 * channels
         else:
@@ -214,10 +212,7 @@ class FakeCapture:
             out += tlv(ANSWER["layout"], bytes([s["width"], c]) + bytes(range(c)))
         out += (tlv(ANSWER["actual_samples"], struct.pack("<I", s["samples"]))
                 + tlv(ANSWER["actual_segments"], struct.pack("<I", s["segments"]))
-                + tlv(ANSWER["timing"], struct.pack("<BI", 1 if s["rate"].denominator != 1 else 0, 0))
-                + tlv(ANSWER["blocking_ms"], struct.pack("<I", 0))
-                # the logic's rate is the divider's; the ADC's is off by some per mille, as the P4's (+0.15 %)
-                + tlv(ANSWER["rate_accuracy"], struct.pack("<BI", 1, 1500) if self.analog else struct.pack("<BI", 0, 0)))
+                + tlv(ANSWER["blocking_ms"], struct.pack("<I", 0)))
         if self.analog:
             step_ns = int(1e9 / (s["rate"] * c))                   # one ADC, the channels in turn
             for k in range(c):
@@ -428,40 +423,50 @@ class FakeCapture:
 class FakeGroup:
     """oep.fixture.capture-group (§4): tracks started together, one of them the trigger."""
     tracks_allowed: list[int]          # the fns it may bind (describe tracks)
-    max_tracks: int
-    budgets: list[tuple[int, list[int]]]   # (max channel-samples / s, the fns sharing it)
+    max_tracks: int                    # its own: the most tracks one bind holds (not declared)
+    budgets: list[tuple[int, list[int]]]   # its own: (max channel-samples / s, the fns sharing it) (not declared)
     tracks: list[int] = field(default_factory=list)
     trigger_fn: int = 0
     start_ns: int = NO_TIME
     trigger_ns: int = NO_TIME
 
     def bind(self, caps: dict[int, FakeCapture], fns: list[int], trigger_fn: int) -> None:
-        """§4.1's refusals in core §4.3's order: the same fn twice -> malformed; an fn not in tracks -> unsupported;
-        not configured, modes apart, a trigger off the trigger track, over the budget -> unavailable."""
+        """§4.1's refusals, every one checked before anything changes: the same fn twice -> malformed; an fn not in
+        tracks -> unsupported; not configured, modes apart, a trigger off the trigger track -> unavailable cause 6;
+        more tracks or more samples than it can take together -> unavailable cause 2."""
         if len(set(fns)) != len(fns):
             raise Reject(m.MALFORMED)
         if any(fn not in self.tracks_allowed for fn in fns):
             raise Reject(m.UNSUPPORTED, bytes([m.TAG_FIXED]) + m.tlv(          # 0x00 + TLV fn (core §4.3)
                 reg.CORE.tlv["unsupported_payload"]["fn"], struct.pack("<H", next(fn for fn in fns if fn not in self.tracks_allowed))))
         if any(caps[fn].state == STATE["capturing"] for fn in self.tracks):
-            raise wrong_state()                                    # the state after the form and the values (order 7)
-        for fn in self.tracks:
-            caps[fn].group = None
-        self.tracks, self.trigger_fn, self.start_ns, self.trigger_ns = [], 0, NO_TIME, NO_TIME
+            raise wrong_state()                                    # the state after the form and the values (core §4.3)
         if not fns:
+            self._unbind(caps)
             return
         chosen = [caps.get(fn) for fn in fns]
-        if (len(fns) > self.max_tracks or any(c is None or c.state == STATE["unconfigured"] for c in chosen)
+        if (any(c is None or c.state == STATE["unconfigured"] for c in chosen)
                 or len({c.mode for c in chosen}) != 1 or (trigger_fn and trigger_fn not in fns)
                 or any(c.trigger for fn, c in zip(fns, chosen) if fn != trigger_fn)):
             raise wrong_state()
+        limit = m.tlv(reg.CORE.tlv["unavailable_payload"]["cause"], bytes([reg.CORE.enum["unavailable_cause"]["limit"]]))
+        if len(fns) > self.max_tracks:
+            raise Reject(m.UNAVAILABLE, limit)                     # the resources to capture together are short
         for most, shared in self.budgets:
             if sum(caps[fn].channels * caps[fn].rate for fn in fns if fn in shared) > most:
-                raise Reject(m.UNAVAILABLE, m.tlv(reg.CORE.tlv["unavailable_payload"]["cause"],
-                                                  bytes([reg.CORE.enum["unavailable_cause"]["limit"]])))
+                over = next(fn for fn in fns if fn in shared)
+                raise Reject(m.UNAVAILABLE, limit + m.tlv(reg.CORE.tlv["unavailable_payload"]["fn"],
+                                                          struct.pack("<H", over)))
+        self._unbind(caps)                                         # refused above: nothing changed (§4.1)
         self.tracks, self.trigger_fn = list(fns), trigger_fn
         for c in chosen:
             c.group = self
+
+    def _unbind(self, caps: dict[int, FakeCapture]) -> None:
+        for fn in self.tracks:
+            if fn in caps:
+                caps[fn].group = None
+        self.tracks, self.trigger_fn, self.start_ns, self.trigger_ns = [], 0, NO_TIME, NO_TIME
 
     def release_session(self, caps: dict[int, FakeCapture]) -> None:
         """The session's lock ended (end, lease expiry, force): its bind goes (capture §4.1: a session's resource,

@@ -82,7 +82,8 @@ def run(hst, pattern: str, inflight: int, size: int, *, frames: int = 300, secon
     lk.timeout, lk.resend = timeout, False
     if saved[2] is not None:
         lk.fallback = False
-    window = (hst.limits or hst.confirm())["window"]
+    limits = hst.limits or hst.confirm()
+    window = limits["window"]
     t0 = time.perf_counter()
     try:
         while (cell.frames < frames) if seconds is None else (time.perf_counter() - t0 < seconds):
@@ -90,7 +91,7 @@ def run(hst, pattern: str, inflight: int, size: int, *, frames: int = 300, secon
             kinds = [pattern if pattern != "duplex" else ("in" if (cell.frames + k) % 2 == 0 else "out")
                      for k in range(batch)]
             msgs = [m.Request(hst.next_corr(), fn, LINK_SOURCE if k == "in" else LINK_SINK,
-                              _link_request(k, size, data)).pack() for k in kinds]
+                              _link_request(k, size, data, limits["max_frame"])).pack() for k in kinds]
             replies: list[bytes] = []
             try:
                 lk._exchange_once(msgs, inflight, window, replies)
@@ -119,40 +120,39 @@ def run(hst, pattern: str, inflight: int, size: int, *, frames: int = 300, secon
 VERIFY_MS = 2000   # the probe's try state lasts this long without a commit: a broken rate costs this much, then it is back
 
 
-def _speed(hst, port: int, rate: int, step: int, verify_ms: int = VERIFY_MS, idle_ms: int = 3000) -> int:
-    r = hst.call(core.link_fn(hst), PORT_SPEED, struct.pack("<BIBHI", port, rate, step, verify_ms, idle_ms))
+def _speed(hst, rate: int, step: int, verify_ms: int = VERIFY_MS) -> int:
+    """port_speed baud(u32) step(u8) verify_ms(u16) on the UART bridge this request comes in on (oep-if-link §3)."""
+    r = hst.call(core.link_fn(hst), PORT_SPEED, struct.pack("<IBH", rate, step, verify_ms))
     return m.Reader(r.payload).u32()
 
 
 def matrix(hst, *, rates: list[int | None] = (None,), patterns: list[str] = PATTERNS, inflight: list[int] = (1,),
            sizes: list[int] | None = None, frames: int = 300, seconds: float | None = None,
-           timeout: float = 0.3, port: int | None = None):
+           timeout: float = 0.3):
     """For each rate (None: the speed in force, no port_speed), switch with port_speed try + commit (by hand, no verify
     of its own: this is the verify), run every (pattern, in-flight, size), then go back to the boot speed. Yields a
-    RateResult per rate. Needs the lock. In-flight counts above the probe's max_inflight are skipped."""
+    RateResult per rate. Needs the lock; the rate changes on the UART bridge this host's requests come in on.
+    In-flight counts above the probe's max_inflight are skipped."""
     lk = hst.link
     limits = hst.limits or hst.confirm()
-    most = core.link_size(limits["max_frame"])                      # max_frame - 26 (oep-if-link §2)
+    most = core.link_size(limits["max_frame"])                      # max_frame - 7 (oep-if-link §2)
     sizes = list(sizes or [most])
     base = getattr(lk, "base_baud", None) or getattr(lk, "baud", None)
-    if port is None and any(r for r in rates):
-        bridges = [index for index, kind, _ in core.transports(hst) if kind == 1]
-        if not bridges:
-            raise ValueError("the probe has no UART bridge to change the speed of")
-        port = bridges[0]
+    if any(r for r in rates) and not any(kind == 1 for _, kind, _ in core.transports(hst)):
+        raise ValueError("the probe has no UART bridge to change the speed of")
     for rate in rates:
         result = RateResult(rate or getattr(lk, "baud", 0) or 0)
         switched = False
         try:
             if rate and rate != getattr(lk, "baud", None):
-                result.actual = _speed(hst, port, rate, 0)
+                result.actual = _speed(hst, rate, 0)
                 lk.set_baud(rate)
                 switched = True
                 if not any(lk.confirm_raw(timeout) for _ in range(3)):
                     result.why = "no confirm at the new rate"
                     yield result
                     continue
-                _speed(hst, port, rate, 1)
+                _speed(hst, rate, 1)
                 result.switched = True
             for pattern in patterns:
                 for n in inflight:
@@ -161,7 +161,7 @@ def matrix(hst, *, rates: list[int | None] = (None,), patterns: list[str] = PATT
                     for size in sizes:
                         if size > most:                         # more than one source answer carries
                             result.cells.append(Cell(result.rate, pattern, n, size,
-                                                     error=f"over what one source answer carries ({limits['max_frame']} - 26)"))
+                                                     error=f"over what one source answer carries ({limits['max_frame']} - 7)"))
                             continue
                         result.cells.append(run(hst, pattern, n, size, frames=frames, seconds=seconds,
                                                 timeout=timeout, rate=result.rate))
@@ -171,7 +171,7 @@ def matrix(hst, *, rates: list[int | None] = (None,), patterns: list[str] = PATT
             if switched:
                 try:
                     lk.timeout, saved = timeout, lk.timeout
-                    _speed(hst, port, rate, 2)
+                    _speed(hst, rate, 2)
                 except Exception:
                     pass
                 finally:

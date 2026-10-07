@@ -7,7 +7,12 @@ common §3: wire and target results carry a status (ok, wait, line, fault, timeo
 request the probe ran but that did not get through is completed failed (nothing done) or partial (some done) with the
 success shape, so `done` and `status` say how far it went: this module raises TargetError with them. Every block op is
 self-contained (oep-if-debug §4): the probe restores the GPRs, DATA0 / DATA1 and abstractauto before it answers, so
-nothing of the probe's own is left in the target between requests.
+nothing of the probe's own is left in the target between requests. DATA0 / DATA1 that this host's own dmi sequences
+change (read_register, write_register) are the host's to write back before the hart runs (debug §4): the console's
+mailbox lives there (`RiscvDm.data_saved`, `RiscvDm.restore_data`).
+
+The waits: attach, scan and riscv-dm's reset take as long as the probe needs, up to max_op_ms - their argument time
+(core §4.4, debug §1, §4.3).
 """
 
 from __future__ import annotations
@@ -17,12 +22,7 @@ import time
 from dataclasses import dataclass, field
 
 from . import catalog, host as h, message as m, registry as reg
-from .core import Interface, describe, max_op_ms
-
-ATTACH_BUDGET_MS = reg.LIMITS["attach_budget_ms"]   # one attach answer at most (oep-if-debug §1): argument time (§4.4)
-RESET_SETTLE_MS = reg.LIMITS["reset_settle_ms"]     # after a reset's release, the most a probe waits for a silent DM
-                                                    # (attach's reset TLV, riscv-dm reset; oep-if-debug §3, §4.3)
-SCAN_BUDGET_MS = reg.LIMITS["scan_budget_ms"]       # no scan combination starts later than this; + one attach
+from .core import FALLBACK_MAX_OP_MS, Interface, describe, max_op_ms
 from .fixture import Gpio
 
 STATUS = reg.STATUS
@@ -165,22 +165,22 @@ class WireBase(Interface):
                 return struct.unpack_from("<I", v)[0]
         return self.DEFAULT_MAX_SPEED
 
-    def _budget(self, ms: int) -> int:
-        """An argument time, capped at the probe's max_op_ms (core §4.4)."""
+    def _max_op_ms(self) -> int:
+        """The probe's max_op_ms (core §7.5), FALLBACK_MAX_OP_MS when it cannot be read."""
         try:
-            return min(ms, max_op_ms(self.host))
+            return max_op_ms(self.host)
         except (h.OepError, AttributeError, TypeError):
-            return ms
+            return FALLBACK_MAX_OP_MS
 
     def attach_ms(self, reset: tuple[int, int] | None = None) -> int:
-        """attach's argument time (core §4.4, C-06 / P2-★4): attach_budget_ms, and with the reset TLV its hold_ms and
-        reset_settle_ms (the wait for a target that restarts by itself after the release, oep-if-debug §3), at most
-        max_op_ms - the host's wait for its answer adds host_wait_add_ms and the transfer time."""
-        return self._budget(ATTACH_BUDGET_MS + (reset[1] + RESET_SETTLE_MS if reset else 0))
+        """attach's argument time (core §4.4, oep-if-debug §1): max_op_ms - the probe answers within it, its search,
+        retries, the reset TLV's hold and the wait for a silent DM included. The host's wait adds host_wait_add_ms and
+        the transfer time."""
+        return self._max_op_ms()
 
     def scan_ms(self) -> int:
-        """scan's argument time: scan_budget_ms + attach_budget_ms (one combination's try), at most max_op_ms."""
-        return self._budget(SCAN_BUDGET_MS + ATTACH_BUDGET_MS)
+        """scan's argument time: max_op_ms (oep-if-debug §1)."""
+        return self._max_op_ms()
 
     def _reset_tlv(self, reset: tuple[int, int] | None) -> bytes:
         # (channel, hold_ms), critical: hold the reset line (open drain, low) that long, then attach (oep-if-debug §3)
@@ -190,7 +190,7 @@ class WireBase(Interface):
              idle_clock: str | None = None) -> list[Found]:
         """Try `pairs` of (swdio, swclk); None = every pair the probe allows and nothing holds (describe's
         channel_group / role_channels, oep-if-debug §1). A pair the probe does not allow, or one whose pins something
-        holds, refuses the whole scan (rejected unavailable). max_speed (critical; None: the probe's slowest) and
+        holds, refuses the whole scan (rejected unavailable). max_speed (critical; None: the wire's slowest speed) and
         idle_clock ("high" / "low", rvswd only, critical) are the target's line settings (§3); they do not change a
         live connection's settings (a live pair is read over its connection, §1). The probe tries at most
         255 pairs a request and stops early when its answer would not fit one frame; this goes on until every pair is
@@ -276,7 +276,7 @@ class Wire(WireBase):
     IDLE_CLOCK = reg.WIRE_RVSWD.enum["idle_clock"]
     RUN, HALT = reg.WIRE_RVSWD.enum["attach_method"]["run"], reg.WIRE_RVSWD.enum["attach_method"]["halt"]
     TAG_TARGET_ID = reg.WIRE_RVSWD.tlv["attach_answer"]["target_id"]
-    SCHEME_WCH_DMI_7F = reg.COMMON.enum["target_id_scheme"]["wch_dmi_7f"]
+    SCHEME_DMI_7F = reg.COMMON.enum["target_id_scheme"]["dmi_7f"]   # the u32 at DMI 0x7F (oep-if-debug §3)
 
     TAG_DPC = reg.WIRE_RVSWD.tlv["attach_answer"]["dpc"]
     TAG_SEARCH_RETRIES = reg.WIRE_RVSWD.tlv["attach_answer"]["search_retries"]
@@ -287,7 +287,6 @@ class Wire(WireBase):
         self.flags = 0
         self.speed_hz = 0
         self.dpc: int | None = None                        # the halted hart's dpc (attach flags bit3), else None
-        self.ignored: list[int] = []
         self.target_id: tuple[int, bytes] | None = None   # (scheme, value) the last attach read, or None
         self.search_retries: int | None = None           # the last attach's failed speed-search tries (None: not said)
 
@@ -335,7 +334,6 @@ class Wire(WireBase):
         self.existing = bool(self.flags & self.FLAGS["existing"])
         self.halted = bool(self.flags & self.FLAGS["halted"])
         tail = rd.tail()
-        self.ignored = tail.ignored
         self._take_target_id(tail)
         dpc = tail.get(self.TAG_DPC)
         self.dpc = int.from_bytes(dpc, "little") if self.halted and dpc else None
@@ -448,7 +446,8 @@ def link_held(dmstatus: int, dmcontrol: int) -> bool:
             and bool(dmcontrol & 1) and not dmcontrol & 0x07FFFFC0)
 
 
-RUN_STOPPED = _RV.enum["run_stopped"]     # 0 the limit passed and the probe halted it, 1 stopped on its own, 2 not halted
+RUN_STOPPED = _RV.enum["run_stopped"]     # 0 the limit passed and the probe halted it, 1 stopped on its own, 2 not
+                                          # halted, 3 not run (debug §4.4)
 
 
 @dataclass
@@ -459,6 +458,8 @@ class RunResult:
     elapsed_us: int
     values: list[int] = field(default_factory=list)   # the registers asked for in `outs`, in order
     not_halted: bool = False      # the limit passed and the probe could not halt the hart: dpc and values mean nothing
+    not_run: bool = False         # the preparation (registers, dcsr, pc) failed: the hart was not run and is still
+                                  # halted, the loader did not run (dpc means nothing; debug §4.4)
 
 
 def count_steps(steps: bytes) -> list[int]:
@@ -508,9 +509,6 @@ class RiscvDm(Interface, BlockLength):
     DMI, HALT, RESUME, RESET, READ_BLOCK, WRITE_BLOCK, RUN, STEP = (
         _RV.op[k] for k in ("dmi", "halt", "resume", "reset", "read_block", "write_block", "run", "step"))
     RESET_RUN, RESET_RUN_CONFIRM, RESET_HALT = (_RV.enum["reset_mode"][k] for k in ("run", "run_verified", "halt_at_reset"))
-    METHOD_DEFAULT, METHOD_NDMRESET, METHOD_SYSTEM = (_RV.enum["reset_method"][k]
-                                                      for k in ("probe_default", "ndmreset", "system_reset"))
-    TAG_RESET_METHOD = _RV.tlv["reset"]["method"]
     TAG_STEP_LEFT = _RV.tlv["step_answer"]["step_left"]
     OPTIONAL = {"block": (_RV.op["read_block"], _RV.op["write_block"]), "run": (_RV.op["run"],),
                 "reset": (_RV.op["reset"],), "step": (_RV.op["step"],)}   # the optional ops (debug §4), by name
@@ -519,6 +517,7 @@ class RiscvDm(Interface, BlockLength):
         super().__init__(hst, name, prefix=struct.pack("<H", conn))
         self.conn = conn
         self._max_length = None
+        self.data_saved: int | None = None   # DATA0 as it was before this host's own abstract commands changed it
 
     def declared(self) -> set[str]:
         """The optional ops this probe offers, from its describe's ops tag (debug §4, core §1.2, §7.4): "block"
@@ -541,8 +540,23 @@ class RiscvDm(Interface, BlockLength):
 
     def resume(self) -> None:
         """One resumereq; ok = the hart left debug mode (status state if the probe saw it not go). Parts that need more
-        (the CH32 rule) are the host's: ch32_flash.resume."""
+        (the CH32 rule) are the host's: ch32_flash.resume. DATA0 is written back first (`restore_data`)."""
+        self.restore_data()
         self._status_only("resume", self.RESUME)
+
+    def _save_data(self) -> None:
+        """Before this host's first abstract command since the hart last ran: read DATA0 as it is (the console's
+        mailbox, console §3), to write it back before the hart runs again (debug §4)."""
+        if self.data_saved is None:
+            (self.data_saved,) = self.held([self.step_read(DATA0)], "saving DATA0")
+
+    def restore_data(self) -> None:
+        """Write DATA0 back as it was before this host's own abstract commands changed it (debug §4: before the hart
+        runs; read_register / write_register leave it changed). Nothing when they did not run since the hart last ran;
+        resume, step and run call it first."""
+        if self.data_saved is not None:
+            self.held([self.step_write(DATA0, self.data_saved)], "restoring DATA0")
+            self.data_saved = None
 
     DPC = 0x07B1
 
@@ -632,9 +646,11 @@ class RiscvDm(Interface, BlockLength):
         again, and LinkNotHeld raised when it could not be confirmed. cmderr 6 (a frame the module took for a bad
         parity: a missed access) is such a failed try too (`_held_abstract`); any other cmderr is cleared, then raised
         (RuntimeError).
-        DATA0 is left holding the value (the host's, debug §4); abstractauto is the host's and must be clear (writing
-        DATA0 would run the command again)."""
+        DATA0 is left holding the value; its value from before is kept (`data_saved`) and written back before the hart
+        runs (`restore_data`, debug §4). abstractauto is the host's and must be clear (writing DATA0 would run the
+        command again)."""
         what = f"read_register {regno:#x}"
+        self._save_data()
         command = 0x00220000 | regno
         poll = self.step_poll(ABSTRACTCS, 1 << 12, 0, 100)
         steps = (self.step_write(ABSTRACTCS, 0x700)
@@ -660,45 +676,45 @@ class RiscvDm(Interface, BlockLength):
         register took the value (read-only or WARL bits) is the caller's to read back. cmderr 6 is a failed try, the
         write done again (the same value: a register write may be redone), as in read_register."""
         what = f"write_register {regno:#x}"
+        self._save_data()
         (cs,) = self._held_abstract(self._abstract(0x00230000 | regno, self.step_write(DATA0, value)), what,
                                     lambda values: _cmderr_of(values[0]) != CMDERR_PARITY)
         self._cmderr(cs, what)
 
-    def _reset(self, mode: int, method: int | None) -> tuple[int, int, int]:
-        body = bytes([mode])
-        if method is not None:
-            body += m.tlv(self.TAG_RESET_METHOD, bytes([method]), critical=True)
-        # its argument time: reset_settle_ms, the wait for a silent DM after the release (oep-if-debug §4.3, core §4.4)
-        r = self._request(self.RESET, body, expect_ms=self.reset_ms())
+    def _reset(self, mode: int) -> tuple[int, int]:
+        # its argument time: max_op_ms - the probe answers within it, a DM silent after the release included (oep-if-debug
+        # §4.3, core §4.4)
+        r = self._request(self.RESET, bytes([mode]), expect_ms=self.reset_ms())
         rd = ran(r)
-        status, flags, attempts, pc = rd.take("BBBI")
+        status, flags, pc = rd.take("BBI")                 # status flags(bit0 reached, bit1 verified) pc (§4.3)
         rd.tail()
         check("reset", r, status)
-        return flags, attempts, pc
+        return flags, pc
 
     def reset_ms(self) -> int:
-        """reset's argument time (core §4.4): reset_settle_ms - the wait for a DM that does not answer while the target
-        restarts by itself after ndmreset (oep-if-debug §4.3) - at most max_op_ms."""
+        """reset's argument time (core §4.4): max_op_ms (oep-if-debug §4.3)."""
         try:
-            return min(RESET_SETTLE_MS, max_op_ms(self.host))
+            return max_op_ms(self.host)
         except (h.OepError, AttributeError, TypeError):
-            return RESET_SETTLE_MS
+            return FALLBACK_MAX_OP_MS
 
-    def reset(self, confirm: bool = True, method: int | None = None) -> tuple[int, int, int]:
-        """Reset and let it run (confirm: seen running). method: METHOD_* (critical; None or METHOD_DEFAULT: the
-        probe's default, ndmreset in revision 1). The reset op never drives a reset line (debug §4.3): a line moves only
-        through attach's reset TLV (`Wire.attach_under_reset`) or a fixture. -> (flags, attempts, pc)"""
-        return self._reset(self.RESET_RUN_CONFIRM if confirm else self.RESET_RUN, method)
+    def reset(self, confirm: bool = True) -> tuple[int, int]:
+        """Reset through ndmreset and let it run (confirm: seen running, the pc read). The reset op never drives a
+        reset line (debug §4.3): a line moves only through attach's reset TLV (`Wire.attach_under_reset`) or a
+        fixture. -> (flags, pc)"""
+        return self._reset(self.RESET_RUN_CONFIRM if confirm else self.RESET_RUN)
 
-    def reset_halt(self, method: int | None = None) -> int:
+    def reset_halt(self) -> int:
         """Reset and stop before the first instruction (haltreq held through the reset). -> dpc"""
-        return self._reset(self.RESET_HALT, method)[2]
+        return self._reset(self.RESET_HALT)[1]
 
     def step(self) -> tuple[bool, int, int]:
         """One instruction (dcsr.step, one resume, privilege kept). -> (moved, dpc before, dpc after). A hart that did
         not come back raises StepError (oep-if-debug §4.2, P2-○4): `step_left` False - the probe halted it with
         haltreq and restored it, dpc_after valid; True (answer TLV step_left) - it could not halt it again: the hart
-        runs and dcsr.step may still be set, so the host halts it and clears dcsr.step."""
+        runs and dcsr.step may still be set, so the host halts it and clears dcsr.step. DATA0 is written back first
+        (`restore_data`)."""
+        self.restore_data()
         r = self._request(self.STEP)
         rd = ran(r)
         status, moved, before, after = rd.take("BBII")
@@ -763,15 +779,18 @@ class RiscvDm(Interface, BlockLength):
         values = rd.words(nvals)
         rd.tail()
         return RunResult(status, stopped == RUN_STOPPED["stopped"], dpc, us, values,
-                         not_halted=stopped == RUN_STOPPED["not_halted"])
+                         not_halted=stopped == RUN_STOPPED["not_halted"], not_run=stopped == RUN_STOPPED["not_run"])
 
     def run(self, pc: int, regs: list[tuple[int, int]], timeout_ms: int | None = 200,
             outs: tuple[int, ...] = (REG_A0,)) -> RunResult:
         """Set registers and dpc (dcsr.ebreakm, prv = M), resume, wait for the hart's own ebreak (forced halt at the
         timeout: stopped False, status timeout - returned, not raised; not_halted when the probe could not even stop
-        it). timeout_ms None: the probe's max_op_ms (core §7.5), the most it allows. Other statuses raise TargetError."""
+        it). timeout_ms None: the probe's max_op_ms (core §7.5), the most it allows. Other statuses raise TargetError -
+        a preparation that failed (stopped 3, debug §4.4) too: the hart was not run, it is still halted, and the error's
+        `result` says so (`run_result(e.result).not_run`)."""
         if timeout_ms is None:
             timeout_ms = max_op_ms(self.host)
+        self.restore_data()
         r = self._request(self.RUN, self.run_body(pc, regs, timeout_ms, outs), expect_ms=timeout_ms)
         res = self.run_result(r)
         if res.status == STATUS["timeout"] and not res.stopped:

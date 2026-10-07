@@ -4,7 +4,7 @@ attach, probe.config §2), and find_line (host-development-guide §18.1) - again
 
 import pytest
 
-from oep_client import __main__ as cli, config, core, endpoint, fake, fixture, host as h
+from oep_client import __main__ as cli, config, core, endpoint, fake, fixture, host as h, message as m
 
 
 class Clock:
@@ -24,10 +24,10 @@ def open_bench():
 def test_idle_modes_have_names_both_spellings():
     assert config.IDLE["output-low"] == 3 and config.IDLE["output-high"] == 4
     assert config.Idle(channel=7, mode="output_high") == config.Idle(channel=7, mode="output-high")
-    assert config.Idle(channel=7, mode="output_low").value() == bytes([7, 0, 3, 2, 0, 0])   # drive_kind 2: the default
+    assert config.Idle(channel=7, mode="output_low").value() == bytes([7, 0, 3, 0xFF])   # drive 0xFF: the default level
     with pytest.raises(ValueError, match="output-high"):
         config.Idle(channel=7, mode="output-medium").value()
-    assert config.decode(config.ITEM["idle"], bytes([7, 0, 4, 2, 0, 0])) == config.Idle(channel=7, mode="output-high")
+    assert config.decode(config.ITEM["idle"], bytes([7, 0, 4, 0xFF])) == config.Idle(channel=7, mode="output-high")
 
 
 def test_output_idle_drives_and_survives_take_until_the_first_set():
@@ -73,8 +73,11 @@ def test_output_idle_on_an_input_only_channel_is_unsupported():
     assert e.value.tag == config.ITEM["idle"]                          # the item's tag as received (probe.config §1)
     cfg.set([config.Idle(channel=26, mode="pull-up")])                # the input modes still are
     with pytest.raises(h.Unsupported) as e:
-        cfg.set([bytes([config.ITEM["idle"] | 0x80, 6, 0, 26, 0, 5, 2, 0, 0])])   # mode 5: a later revision may define it
+        cfg.set([m.tlv(config.ITEM["idle"], bytes([26, 0, 5, 0xFF]), critical=True)])   # mode 5: left unused
     assert e.value.tag == config.ITEM["idle"] | 0x80
+    with pytest.raises(h.Unsupported) as e:                           # the same without bit 7 (core §2.3)
+        cfg.set([m.tlv(config.ITEM["idle"], bytes([26, 0, 5, 0xFF]))])
+    assert e.value.tag == config.ITEM["idle"]
 
 
 def test_boot_applies_idle_before_the_plan_and_the_at_boot_attach():

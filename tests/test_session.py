@@ -55,7 +55,7 @@ def test_a_48_byte_name_fits_a_64_byte_frame():
     probe = fake.FakeProbe("tiny", 64, [fake.Offered(0, 0, ""), fake.Offered(1, 1, name)])
     ep = endpoint.Endpoint(probe, Clock())
     from oep_client import catalog
-    result = ep.handle(m.Request(1, 0, m.OP_LIST, catalog.pack_list_request(name, True, 0)).pack())
+    result = ep.handle(m.Request(1, 0, m.OP_LIST, catalog.pack_list_request(0)).pack())
     assert len(result) == 63 and catalog.unpack_list_result(result[5:])[1][0].name == name   # no element length (§2.3)
 
 
@@ -97,7 +97,7 @@ def test_reads_need_no_lock_while_another_host_holds_it(bench):
     write(a, 42)
     assert read(b) == 42                       # lock-free read, no session
     assert b.lock_state()[0] is True
-    assert b.request(0, m.OP_LIST, b"\x00\x00\x00\x00", locked=False).succeeded
+    assert b.request(0, m.OP_LIST, struct.pack("<H", 0), locked=False).succeeded   # list: first(u16) (core §7.2)
 
 
 def test_watchdog_counts_from_the_last_request(bench):
@@ -317,21 +317,26 @@ def test_the_host_skips_tlvs_it_does_not_know_after_every_result(bench):
 
 
 def test_request_tails_critical_refused_non_critical_ignored(bench):
+    """core §2.3: an unknown non-critical TLV is ignored silently (the answer is the one without it); an unknown
+    critical one is rejected unsupported with the tag as received; 0x00 / 0x7F are never tags (so unknown ones)."""
     _, ep = bench
     a = new_host(ep, 1)
     a.open()
+    plain = a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 4))
     r = a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 5) + m.tlv(0x21, b"\x01") + m.tlv(0x22, b""))
-    assert r.succeeded and m.Reader(r.payload).tail().ignored == [0x21, 0x22]
+    assert r.succeeded and r.payload == plain.payload and read(a) == 5
     with pytest.raises(host.Unsupported) as e:
         a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 6) + m.tlv(0x21, b"\x01", critical=True))
     assert e.value.tag == 0xA1
     assert read(a) == 5                                                  # refused: nothing written
-    with pytest.raises(host.Rejected, match="malformed"):
-        a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 7) + bytes([0xFF, 0, 0]))   # tag 0xFF is invalid
+    with pytest.raises(host.Unsupported) as e:
+        a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 7) + bytes([0xFF, 0, 0]))   # 0x7F critical: unknown
+    assert e.value.tag == 0xFF and read(a) == 5
+    assert a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 7) + bytes([0x7F, 0, 0])).payload == plain.payload
     with pytest.raises(host.Rejected, match="malformed"):
         a.request(TOY, endpoint.TOY_WRITE, b"\x01\x02")                  # shorter than the fixed part
     with pytest.raises(ValueError):
-        m.tlv(0x7F, b"")                                                 # 0x7F is the ignored list
+        m.tlv(0x7F, b"")                                                 # 0x7F is never a TLV tag (core §2.2)
 
 
 def test_tlv_one_form_round_trip():
@@ -348,12 +353,13 @@ def test_tlv_one_form_round_trip():
     ep = endpoint.Endpoint(fake.with_stand_in(fake.esp32_v003()), Clock())
     a = new_host(ep, 1)
     a.open()
+    plain = a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 4))
     r = a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 5) + m.tlv(0x21, big))   # a long non-critical TLV: ignored
-    assert m.Reader(r.payload).tail().ignored == [0x21]
+    assert r.payload == plain.payload
     with pytest.raises(host.Rejected, match="malformed"):
         a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 5) + bytes([0x21, 5, 0, 9]))  # len past the request's end
-    with pytest.raises(host.Rejected, match="malformed"):
-        a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 5) + bytes([0x00, 0, 0]))     # tag 0x00 is reserved
+    assert a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 5) + bytes([0x00, 0, 0])).payload == plain.payload
+    # tag 0x00 is never a TLV tag: an unknown one, ignored when not critical (core §2.2, §2.3)
 
 
 def test_a_result_shorter_than_its_fixed_part_is_broken():

@@ -24,13 +24,18 @@ Lines on stdin are commands, read between requests (the serving never waits for 
                         no_session; confirm and open show the new boot_id. The pty or TCP connection stays open (on
                         a serial port the half-read frame and the unsent answers are lost). stderr says
                         "fake_serve: rebooted, boot_id 0x........"
+  lose [CONNECTION]     the line of that connection (every live connection without one) is lost for good
+                        (Endpoint.lose, debug §2): the connection closes, its console streams get mark link-lost and
+                        close with detail 4, and a request naming it is answered no_connection. An at-boot --slot on
+                        its place attaches again by itself at its next retry (a new connection), its bound console
+                        back under the same stream number. stderr says "fake_serve: lost connection(s) ..."
 A line that is no command is ignored with a message on stderr.
 
 oep.probe.restart's restart (oep-if-restart; every profile lists the interface, after its other fns) does the same
 from a request: the answer (completed success, no payload) goes out first, then the probe reboots as above. The pty or
 TCP connection stays open, as the `reboot` command leaves it; what the probe had read behind the restart request is
-dropped. A host waits restart_after_answer_ms, may close and open again (the pty and the TCP listener take a new open),
-and confirms: the boot_id is new. Its describe declares restart_max_ms 2000 (oep-if-restart §1). --no-restart makes a
+dropped. A host waits a moment (host guide §5.2), may close and open again (the pty and the TCP listener take a new
+open), and confirms: the boot_id is new. Its describe declares restart_max_ms 2000 (oep-if-restart §1). --no-restart makes a
 probe without the optional interface: list does not show oep.probe.restart, and its fn is unknown_function.
 
 Options:
@@ -44,19 +49,16 @@ Options:
   --every MS            how often (default 100; "100ms" works too)
   --slot NAME           register a slot at boot (repeatable; the n-th on the n-th pin pair of the first wire, at boot,
                         retry 1000 ms, mechanism dmseq), as if saved
-  --bind MODE           bind the serial port to every --slot: last-reset, manual or mixed
-  --target-id HEX       the target_id every target's attach reports (wch_dmi_7f)
+  --bind N              the serial port carries the console of the N-th --slot (0 = the first; probe.config §1.2)
+  --target-id HEX       the target_id every target's attach reports (scheme dmi_7f)
   --absent N            the N-th pin pair of the first wire has no target (repeatable)
   --silent-until-reset N
                         the N-th pin pair of the first wire has a target that answers nothing on the wire until a
-                        reset through its line (repeatable): a host's attach with the reset TLV, or the retry with reset
-  --boot-reset          every --slot asks for the at-boot retry with reset (boot_reset 1, probe.config §1.1): when
-                        its attach at boot gets no answer, the probe tries once more through the slot's nrst line (§3.1)
+                        reset through its line (repeatable): a host's attach with the reset TLV
   --label CH=TEXT       a label item on channel CH at boot, as if saved (repeatable; e.g. 23=v003.nrst names slot
-                        v003's reset line, probe.config §1.3). The saved items go in at once, so a --boot-reset slot
-                        on a --silent-until-reset target with its nrst label is retried with reset at start
+                        v003's reset line, probe.config §1.3)
   --no-drive-levels     the profile's oep.fixture.gpio without drive_levels (fixture §1.1): a probe that cannot switch
-                        the output strength (describe has no levels, read has no drive TLV, set's drives are ignored)
+                        the output strength (describe has no levels; a set with a drive is refused unsupported)
   --capture-slipped     every oep.fixture.logic segment says flags bit2 (slipped: a pace that fell behind)
   --uart-plan           the first oep.fixture.uart gets its RX / TX plan at boot, as if saved (the jig's "DUT TX" /
                         "DUT RX" labels when the profile has them, else the first free channels); configure then works
@@ -94,7 +96,6 @@ import tty
 from . import catalog, endpoint, fake, fake_serial, message as m, registry as reg
 
 _ITEM = reg.PROBE_CONFIG.tlv["item"]
-_MODES = reg.PROBE_CONFIG.enum["bind_mode"]
 
 
 def _ms(text: str) -> int:
@@ -146,20 +147,20 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
         ep.targets[(wire, ep.pairs[wire][n])].present = False
     for n in getattr(a, "silent_until_reset", []):
         ep.targets[(wire, ep.pairs[wire][n])].silent_until_reset = True
-    boot_reset = 1 if getattr(a, "boot_reset", False) else 0   # after attach (probe.config §1.1)
     items = []
     for n, name in enumerate(a.slot):
         swdio, swclk = ep.pairs[wire][n]
         mech = 2 if 2 in ep.mechanisms else min(ep.mechanisms)
         raw = name.encode()
-        value = struct.pack("<BHHHBBIIBBB", n, wire, swdio, swclk, reg.PROBE_CONFIG.enum["slot_attach"]["at_boot"],
-                            boot_reset, 1000, 0, 0, mech, len(raw)) + raw + b"\x00"
-        items.append(m.tlv(_ITEM["slot"], value))                 # retry 1 s, no speed ceiling, rests high, no lock
-    if a.bind:
-        streams = b"".join(struct.pack("<BH", reg.PROBE_CONFIG.enum["bind_stream"]["slot_console"], n)
-                           for n in range(len(a.slot)))
-        value = struct.pack("<BBBB", a.port_index, _MODES[a.bind.replace("-", "_")], 0, len(a.slot)) + streams
-        items.append(m.tlv(_ITEM["bind"], value))
+        value = struct.pack("<BHHHBIIBBB", n, wire, swdio, swclk, reg.PROBE_CONFIG.enum["slot_attach"]["at_boot"],
+                            1000, 0, 0, mech, len(raw)) + raw
+        items.append(m.tlv(_ITEM["slot"], value))                 # retry 1 s, no speed ceiling, rests high
+    if a.bind is not None:
+        if not 0 <= a.bind < len(a.slot):
+            raise SystemExit(f"--bind {a.bind}: no such --slot")
+        port = a.port_index if a.port_index is not None else min(ep.serial_ports)
+        value = struct.pack("<BBH", port, reg.PROBE_CONFIG.enum["bind_stream"]["slot_console"], a.bind)
+        items.append(m.tlv(_ITEM["bind"], value))                 # port kind id (probe.config §1.2)
     for spec in getattr(a, "label", []):
         channel, _, text = spec.partition("=")
         value = struct.pack("<H", int(channel, 0)) + text.encode()
@@ -299,8 +300,18 @@ class Commands:
             if self.port is not None:
                 self.port.reboot()
             print(f"fake_serve: rebooted, boot_id 0x{self.ep.boot_id:08X}", file=sys.stderr, flush=True)
+        elif text.split()[0] == "lose" and len(text.split()) <= 2:
+            args = text.split()[1:]
+            try:
+                cid = int(args[0], 0) if args else None
+            except ValueError:
+                print(f"fake_serve: lose {args[0]!r}: want a connection number", file=sys.stderr, flush=True)
+                return
+            gone = self.ep.lose(cid)
+            print(f"fake_serve: lost connection(s) {', '.join(map(str, gone)) or 'none'}", file=sys.stderr, flush=True)
         else:
-            print(f"fake_serve: unknown command {text!r} ignored (known: reboot)", file=sys.stderr, flush=True)
+            print(f"fake_serve: unknown command {text!r} ignored (known: reboot, lose)", file=sys.stderr,
+                  flush=True)
 
 
 class _Openers:
@@ -508,11 +519,10 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--console")
     ap.add_argument("--every", default="100")
     ap.add_argument("--slot", action="append", default=[])
-    ap.add_argument("--bind", choices=["last-reset", "manual", "mixed"])
+    ap.add_argument("--bind", type=int, metavar="N")
     ap.add_argument("--target-id")
     ap.add_argument("--absent", type=int, action="append", default=[])
     ap.add_argument("--silent-until-reset", type=int, action="append", default=[], metavar="N")
-    ap.add_argument("--boot-reset", action="store_true")
     ap.add_argument("--label", action="append", default=[], type=_label, metavar="CH=TEXT")
     ap.add_argument("--no-drive-levels", action="store_true")
     ap.add_argument("--uart-plan", action="store_true")

@@ -10,10 +10,11 @@ release name it, so a read sent for the last capture never returns the next one'
 client keeps it (`LogicCapture.generation`, from start / status / the group's start) and passes it on; `read_segment`
 takes the segment's own.
 
-configure: a TLV the probe cannot honour is refused (rejected unsupported, 0x0B, payload = the tag) when the host marked
-it critical, and otherwise ignored and listed in the answer's ignored TLV (0x7F, oep-core §2.3). mode, rate, trigger,
-pretrigger and frontend always go critical (oep-if-capture §3.3, P2-○8); samples and segments go critical only when
-asked: the probe rounds samples down to its limit and the answer (Config.samples / .segments) is what holds.
+configure: a value of one of its TLVs the probe cannot honour is refused (rejected unsupported, 0x0B, payload = the tag
+as sent; oep-core §2.3, oep-if-capture §3.3) - every capture probe implements these tags, so the critical bit changes
+nothing there; this host sends mode, rate, trigger, pretrigger and frontend critical anyway (its own choice, for a
+probe that does not know a tag). The probe rounds samples down to its limit and the answer (Config.samples /
+.segments) is what holds.
 
 blocking_ms (P2-○9): a start whose answer says blocking_ms > 0 is followed by nothing on any transport for that long
 (`blocked`), then - on a length-prefixed link - the resync of transports §5; neither the lease nor the answer's wait counts
@@ -38,18 +39,17 @@ _GRP = reg.FIXTURE_CAPTURE_GROUP
 MODE, RATE, SAMPLES, SEGMENTS, TRIGGER, PRETRIGGER = (
     _CAP.tlv["configure"][k] for k in ("mode", "rate", "samples", "segments", "trigger", "pretrigger"))
 FRONTEND = _ANA.tlv["configure"]["frontend"]             # analog only
-ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, TIMING, SCALE, BLOCKING, SKEW, FRONTEND_USED, REFERENCE, \
-    RATE_ACCURACY = (_ANA.tlv["configure_answer"][k] for k in (
-        "actual_rate", "layout", "actual_samples", "actual_segments", "timing", "scale", "blocking_ms", "skew",
-        "frontend_used", "reference", "rate_accuracy"))
+ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, SCALE, BLOCKING, SKEW, FRONTEND_USED, REFERENCE = (
+    _ANA.tlv["configure_answer"][k] for k in (
+        "actual_rate", "layout", "actual_samples", "actual_segments", "scale", "blocking_ms", "skew",
+        "frontend_used", "reference"))
 FACTORY, VREFINT = _ANA.tlv["calibration_answer"]["factory"], _ANA.tlv["calibration_answer"]["vrefint"]
 STATUS_ERROR = _CAP.tlv["status_answer"]["error"]          # status's TLV: why the state is 6
 DATA_GENERATION = _CAP.tlv["data"]["generation"]           # a data frame's TLV: its generation (always in streaming)
 GROUP_GENERATIONS = _GRP.tlv["start_answer"]["generations"]
 REFERENCE_SOURCE = {v: k for k, v in _ANA.enum["reference_source"].items()}
-IGNORED = m.TAG_IGNORED
 CRITICAL = m.TAG_CRITICAL
-ALWAYS_CRITICAL = frozenset({MODE, RATE, TRIGGER, PRETRIGGER, FRONTEND})   # oep-if-capture §3.3 "sent critical"
+ALWAYS_CRITICAL = frozenset({MODE, RATE, TRIGGER, PRETRIGGER, FRONTEND})   # this host sends these critical (its choice)
 ONE_SHOT, REPEAT, STREAMING = (_CAP.enum["mode"][k] for k in ("one_shot", "repeat", "streaming"))
 IMMEDIATE, LEVEL, EDGE, CROSS_UP, CROSS_DOWN = range(5)
 STATE = _CAP.enum["state"]
@@ -93,7 +93,8 @@ class Segment:
 
     @property
     def slipped(self) -> bool:
-        """flags bit2: the time base bent inside the segment (samples later than the timing answer, oep-if-capture §2)."""
+        """flags bit2: the time base bent inside the segment - a sample taken one sample period or more late
+        (oep-if-capture §2)."""
         return bool(self.flags & SEGMENT_SLIPPED)
 
     @classmethod
@@ -140,17 +141,12 @@ class Config:
     order: list[int] = field(default_factory=list)
     samples: int = 0
     segments: int = 0
-    jitter_kind: int = 0
-    jitter_ns: int = 0
-    rate_measured: bool = False                  # rate_accuracy: the rate was measured (else computed from a divider)
-    rate_ppm: int = 0                            # its uncertainty (0: unknown)
     skew_ns: dict[int, int] = field(default_factory=dict)      # analog, per channel (role)
     zero: dict[int, int] = field(default_factory=dict)         # analog, per channel
     scale_nv: dict[int, int] = field(default_factory=dict)     # analog, nV per value, per channel
     frontend: dict[int, int] = field(default_factory=dict)     # analog: the frontend each channel took
     reference: tuple[str, int, bool] | None = None             # analog: (source, mV, measured)
     blocking_ms: int = 0
-    ignored: list[int] = field(default_factory=list)
 
     @property
     def bytes(self) -> int:
@@ -220,10 +216,6 @@ def _config(payload: bytes, analog: bool) -> Config:
             c.samples = struct.unpack("<I", v)[0]
         elif tag == ACTUAL_SEGMENTS:
             c.segments = struct.unpack("<I", v)[0]
-        elif tag == TIMING:
-            c.jitter_kind, c.jitter_ns = v[0], struct.unpack_from("<I", v, 1)[0]
-        elif tag == RATE_ACCURACY:
-            c.rate_measured, c.rate_ppm = v[0] == 1, struct.unpack_from("<I", v, 1)[0]
         elif tag == SCALE and analog:
             role, zero, scale = struct.unpack("<Bii", v)            # signed: an inverting frontend (§3.3)
             c.zero[role], c.scale_nv[role] = zero, scale
@@ -237,8 +229,6 @@ def _config(payload: bytes, analog: bool) -> Config:
             c.reference = (REFERENCE_SOURCE.get(source, str(source)), mv, how == 1)
         elif tag == BLOCKING:
             c.blocking_ms = struct.unpack("<I", v)[0]
-        elif tag == IGNORED:
-            c.ignored = list(v)
     return c
 
 
@@ -261,9 +251,9 @@ class LogicCapture(Interface):
     def configure(self, *, rate: int, mode: int = ONE_SHOT, samples: int | None = None, segments: int | None = None,
                   trigger: tuple[int, int, int] | None = None, pretrigger: int | None = None, query: bool = False,
                   critical: set[int] = frozenset(), frontends: dict[int, int] | None = None) -> Config:
-        """-> the probe's actual values (Config.ignored: tags the probe ignored). mode, rate, trigger, pretrigger and
-        frontend always go critical (§3.3); `critical`: more tags the probe must honour or reject (samples, segments;
-        host.Unsupported, .tag = the one it cannot). Read Config.samples / .segments: the probe rounds samples down."""
+        """-> the probe's actual values. A value the probe cannot honour is refused: host.Unsupported, .tag = the TLV as
+        sent (§3.3). mode, rate, trigger, pretrigger and frontend go critical; `critical`: more tags to send critical
+        (samples, segments). Read Config.samples / .segments: the probe rounds samples down."""
         critical = ALWAYS_CRITICAL | set(critical)
 
         def tlv(tag: int, value: bytes) -> bytes:

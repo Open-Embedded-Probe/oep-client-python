@@ -17,35 +17,30 @@ from .core import Interface, describe
 
 _GPIO, _UART, _I2C, _SPI = reg.FIXTURE_GPIO, reg.FIXTURE_UART, reg.FIXTURE_I2C_TARGET, reg.FIXTURE_SPI_TARGET
 _MODE = _GPIO.enum["mode"]
-DRIVE_KIND = _GPIO.enum["drive_kind"]
-NOT_DRIVEN = _GPIO.enum["drive_read"]["not_driven"]
+DRIVE_DEFAULT = _GPIO.enum["drive_level"]["default"]      # 0xFF: drive_levels' default level (fixture §1.1)
 
 
 @dataclass(frozen=True)
 class Drive:
     """An output strength (oep-if-fixture §1.1), for gpio set and the settings' idle: a level number of the probe's
-    drive_levels (kind 0), an mA ceiling (kind 1: the strongest level of about that many mA or less, level 0 when
-    every level is stronger), or the default level (kind 2, value 0: drive_levels' default). A ceiling carries over
-    between probes; a level number is one probe's list."""
-    kind: int
+    drive_levels (0 the weakest, in its order), or the default level (0xFF). Levels are one probe's list: a host that
+    takes a setting to another probe picks the level again from that probe's drive_levels (`DriveLevels.at_most`)."""
     value: int
 
     @classmethod
     def level(cls, n: int) -> "Drive":
-        return cls(DRIVE_KIND["level"], n)
-
-    @classmethod
-    def max_ma(cls, ma: int) -> "Drive":
-        return cls(DRIVE_KIND["max_ma"], ma)
+        if not 0 <= n < DRIVE_DEFAULT:
+            raise ValueError(f"drive level {n}: 0 to {DRIVE_DEFAULT - 1} (0xFF is the default level)")
+        return cls(n)
 
     @classmethod
     def default(cls) -> "Drive":
-        """The default level of drive_levels (kind 2, value 0)."""
-        return cls(DRIVE_KIND["default"], 0)
+        """The default level of drive_levels (0xFF)."""
+        return cls(DRIVE_DEFAULT)
 
     @property
     def is_default(self) -> bool:
-        return self.kind == DRIVE_KIND["default"]
+        return self.value == DRIVE_DEFAULT
 
     @classmethod
     def of(cls, drive: "Drive | int") -> "Drive":
@@ -53,23 +48,17 @@ class Drive:
         return drive if isinstance(drive, Drive) else cls.level(int(drive))
 
     def pack(self) -> bytes:
-        """kind(u8) value(u16), the form both places use."""
-        if self.kind not in DRIVE_KIND.values() or not 0 <= self.value <= 0xFFFF:
-            raise ValueError(f"drive kind {self.kind} value {self.value}: kind 0 (level), 1 (max_ma) or 2 (default), "
-                             "value u16")
-        if self.is_default and self.value:
-            raise ValueError("drive kind 2 (the default level) carries value 0")
-        return struct.pack("<BH", self.kind, self.value)
+        """level(u8), the form both places use."""
+        if not 0 <= self.value <= 0xFF:
+            raise ValueError(f"drive {self.value}: a u8 level, 0xFF the default")
+        return bytes([self.value])
 
     @classmethod
     def unpack(cls, data: bytes) -> "Drive":
-        kind, value = struct.unpack_from("<BH", data)
-        return cls(kind, value)
+        return cls(data[0])
 
     def __str__(self) -> str:
-        if self.is_default:
-            return "default"
-        return f"level {self.value}" if self.kind == DRIVE_KIND["level"] else f"<= {self.value} mA"
+        return "default" if self.is_default else f"level {self.value}"
 
 
 @dataclass(frozen=True)
@@ -80,21 +69,16 @@ class DriveLevels:
     ma: tuple[int, ...]
 
     def pick(self, drive: "Drive | int") -> int | None:
-        """The level a Drive selects here (None: a level number past the list - the probe ignores that drive)."""
+        """The level a Drive selects here (None: a level number past the list - the probe refuses that drive)."""
         d = Drive.of(drive)
         if d.is_default:
             return self.default
-        if d.kind == DRIVE_KIND["level"]:
-            return d.value if d.value < len(self.ma) else None
-        return max((i for i, x in enumerate(self.ma) if x <= d.value), default=0)
+        return d.value if d.value < len(self.ma) else None
 
-
-@dataclass(frozen=True)
-class GpioRead:
-    """read's answer: a level (0 / 1) per channel, and - from a probe that declares drive_levels - the level each
-    channel is driven at in mode 3 / 4 (None when it is not driven so); `drive` is None from a probe without them."""
-    levels: list[int]
-    drive: list[int | None] | None
+    def at_most(self, ma: int) -> Drive:
+        """The strongest level of about `ma` mA or less (level 0 when every level is stronger): the host's way to carry
+        a strength between probes (host guide §18.5)."""
+        return Drive.level(max((i for i, x in enumerate(self.ma) if x <= ma), default=0))
 
 
 class Gpio(Interface):
@@ -102,39 +86,36 @@ class Gpio(Interface):
     channel the plan did not assign or a mode the probe lacks rejects the whole list as unavailable (host.Unavailable:
     .channels, and its position as TLV 0x40). The open-drain modes never drive a line high: the way to move a target's reset line.
     An output element (mode 3 / 4) may carry a strength (`Drive`, or an int level number) on a probe that declares
-    drive_levels (`drive_levels()`); without one it is driven at the idle item's strength, else the default."""
+    drive_levels (`drive_levels()`); without one it is driven at the idle item's strength, else the default. A level
+    past drive_levels, or any drive on a probe without them, is refused unsupported (host.Unsupported)."""
     NAME = "oep.fixture.gpio"
     REVISION = 1
     SET, READ = _GPIO.op["set"], _GPIO.op["read"]
-    TAG_DRIVE = _GPIO.tlv["set"]["drive"]                  # set's drive TLV (non-critical, one per element)
-    TAG_READ_DRIVE = _GPIO.tlv["read_answer"]["drive"]
+    TAG_DRIVE = _GPIO.tlv["set"]["drive"]                  # set's drive TLV: index(u8) level(u8), one per element
     TAG_MODES, TAG_DRIVE_LEVELS = _GPIO.tlv["describe"]["modes"], _GPIO.tlv["describe"]["drive_levels"]
     INPUT, INPUT_PULLUP, INPUT_PULLDOWN = _MODE["input"], _MODE["input_pullup"], _MODE["input_pulldown"]
     OUTPUT_LOW, OUTPUT_HIGH = _MODE["output_low"], _MODE["output_high"]
     OPEN_DRAIN_LOW, OPEN_DRAIN_RELEASE = _MODE["open_drain_low"], _MODE["open_drain_release"]
-    INPUT_PULLUP_PULLDOWN = _MODE["input_pullup_pulldown"]   # both pulls: a weak mid level
 
     def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
         super().__init__(hst, name, fn=fn)
 
     @classmethod
     def set_body(cls, pairs: list[tuple]) -> bytes:
-        """n(u8) n x (channel(u16) mode(u8)), then a drive TLV (index kind value, non-critical) for each element that
-        carries a third item (a Drive or an int level number; None: none)."""
+        """n(u8) n x (channel(u16) mode(u8)), then a drive TLV (index(u8) level(u8), critical: a strength that did not
+        take would drive the line otherwise) for each element that carries a third item (a Drive or an int level
+        number; None: none)."""
         body = struct.pack("<B", len(pairs)) + b"".join(struct.pack("<HB", p[0], p[1]) for p in pairs)
         for i, p in enumerate(pairs):
             if len(p) > 2 and p[2] is not None:
-                body += m.tlv(cls.TAG_DRIVE, bytes([i]) + Drive.of(p[2]).pack())
+                body += m.tlv(cls.TAG_DRIVE, bytes([i]) + Drive.of(p[2]).pack(), critical=True)
         return body
 
-    def set(self, pairs: list[tuple]) -> list[int]:
+    def set(self, pairs: list[tuple]) -> None:
         """[(channel, mode)] or [(channel, mode, drive)], applied in order; drive only on mode 3 / 4 (anything else is
-        rejected malformed). -> the ignored list of the answer (core §2.3): one TAG_DRIVE per drive the probe did not
-        apply (a level number past its list, an undefined kind, or a probe without drive_levels), at most 16 - a 0x00
-        last means more were ignored than listed (C-04: any drive may not have taken). `read_state` shows the level
-        in force."""
-        r = self._call(self.SET, self.set_body(pairs))
-        return m.Reader(r.payload).tail().ignored
+        rejected malformed). A level past the probe's drive_levels, or a drive on a probe without them: rejected
+        unsupported, nothing applied (fixture §1.1)."""
+        self._call(self.SET, self.set_body(pairs))
 
     def drive_levels(self) -> DriveLevels | None:
         """describe drive_levels (fixture §1.1): None when the probe cannot switch the output strength."""
@@ -155,17 +136,11 @@ class Gpio(Interface):
 
     def read(self, channels: list[int]) -> list[int]:
         """-> one level (0 / 1) per channel. Lock-free. The answer is n(u8) n x level [TLV] (fixture §1)."""
-        return self.read_state(channels).levels
-
-    def read_state(self, channels: list[int]) -> GpioRead:
-        """-> the levels and, from a probe that declares drive_levels, the level each channel is driven at in mode 3 /
-        4 (read's answer TLV drive, fixture §1.1; the level's mA is in `drive_levels()`). Lock-free."""
         rd = m.Reader(self._call(self.READ, struct.pack("<B", len(channels))
                                  + b"".join(struct.pack("<H", c) for c in channels), locked=False).payload)
         levels = list(rd.counted("B"))
-        raw = rd.tail().get(self.TAG_READ_DRIVE)
-        drive = None if raw is None else [None if b == NOT_DRIVEN else b for b in raw]
-        return GpioRead(levels, drive)
+        rd.tail()
+        return levels
 
     def pull_low(self, channel: int) -> None:
         self.set([(channel, self.OPEN_DRAIN_LOW)])
@@ -186,21 +161,11 @@ class Gpio(Interface):
             self.release(channel)
 
 
-UART_CONFIGURED = {v: k for k, v in _UART.enum["uart_configured"].items()}   # default, session, item, item_fallback
-
-
 @dataclass(frozen=True, kw_only=True)
 class UartStatus:
-    """oep.fixture.uart status (op 0x07, lock-free): what is in force - "default" (115200 8N1, nothing set),
-    "session" (a configure), "item" (the settings' uart item), "item_fallback" (the item's baud could not be made when
-    the plan ran the UART: the default applies) - and the baud / format it runs with."""
-    configured: str
+    """oep.fixture.uart status (op 0x07, lock-free): the baud and format the UART runs with now (fixture §2)."""
     baud: int
     format: int
-
-    @property
-    def is_default(self) -> bool:
-        return self.configured in ("default", "item_fallback")
 
 
 class FixtureUart(PositionStream):
@@ -225,8 +190,8 @@ class FixtureUart(PositionStream):
 
     def configure(self, baud: int, fmt: int | None = None) -> int:
         """-> the actual baud (within 5 % of the one asked, else the probe refuses unsupported). fmt (format_byte())
-        goes as a critical TLV: a probe that cannot set it refuses rather than running 8N1; None leaves the default
-        8N1. An fn whose plan has neither RX nor TX is rejected unavailable (cause 6)."""
+        goes as its TLV (critical: this host's choice); a format the probe cannot set is refused unsupported, never run
+        as 8N1. None leaves the default 8N1. An fn whose plan has neither RX nor TX is rejected unavailable (cause 6)."""
         body = struct.pack("<I", baud)
         if fmt is not None:
             body += m.tlv(self.TAG_FORMAT, bytes([fmt]), critical=True)
@@ -236,11 +201,11 @@ class FixtureUart(PositionStream):
         return actual
 
     def status(self) -> UartStatus:
-        """configured, baud, format as the UART runs now (lock-free)."""
+        """baud and format as the UART runs now (lock-free)."""
         rd = m.Reader(self._call(self.STATUS, locked=False).payload)
-        configured, baud, fmt = rd.take("BIB")
+        baud, fmt = rd.take("IB")
         rd.tail()
-        return UartStatus(configured=UART_CONFIGURED.get(configured, str(configured)), baud=baud, format=fmt)
+        return UartStatus(baud=baud, format=fmt)
 
 
 class FixtureUartIO(StreamIO):
@@ -267,12 +232,10 @@ class FixtureUartIO(StreamIO):
 @dataclass(frozen=True, kw_only=True)
 class I2cStatus:
     state: int          # 0 not configured, 1 running
-    mode: int           # the configure mode
-    armed: bool         # mode 1: waiting for a write
     queued: int         # frames waiting for read_rx
-    rx_frames: int
-    tx_slots: int
-    errors: int
+    rx_frames: int      # frames queued since configure (overflows not counted)
+    tx_slots: int       # preload_tx slots not read yet
+    errors: int         # overflows and writes past max_length
 
 
 class _TargetDeclarations:
@@ -308,23 +271,22 @@ class _TargetDeclarations:
 
     @property
     def queue_depth(self) -> int | None:
-        """Frames / transfers the queue holds (describe tag 0x40, u8; i2c mode 3: also the most unread preload slots)."""
+        """Frames / transfers the queue holds (describe tag 0x40, u8; i2c-target: also the most unread preload slots)."""
         return self._declared(self.TAG_QUEUE_DEPTH, "B")
 
 
 class I2cTarget(_TargetDeclarations, Interface):
-    """oep.fixture.i2c-target (oep-if-fixture §3): the probe as an I2C target. Mode 1 fixed rx (arm_rx with the exact
-    length), 2 framed rx (a 1-byte length write, then the payload), 3 preloaded tx (slots the controller reads)."""
+    """oep.fixture.i2c-target (oep-if-fixture §3): the probe as an I2C target at one address, one form: every
+    controller write with data is one frame in the queue (read_rx), every controller read is answered from the
+    preload_tx slots in order (0xFF when none is left). stretch (optional, `offers(STRETCH)`) holds SCL after each
+    byte."""
     NAME = _I2C.name
     REVISION = _I2C.revision
-    CONFIGURE, ARM_RX, READ_RX, PRELOAD_TX, STATUS, RESET, STRETCH = (
-        _I2C.op[k] for k in ("configure", "arm_rx", "read_rx", "preload_tx", "status", "reset", "stretch"))
-    MODE_FIXED_RX, MODE_FRAMED_RX, MODE_PRELOADED_TX = (_I2C.enum["mode"][k] for k in ("fixed_rx", "framed_rx", "preloaded_tx"))
+    CONFIGURE, READ_RX, PRELOAD_TX, STATUS, STRETCH = (
+        _I2C.op[k] for k in ("configure", "read_rx", "preload_tx", "status", "stretch"))
     ROLE_SDA, ROLE_SCL = _I2C.enum["role"]["sda"], _I2C.enum["role"]["scl"]
-    FEATURE_PRELOADED_TX = _I2C.enum["features"]["preloaded_tx"]   # stretch is an optional op, declared by ops
     TAG_QUEUE_DEPTH, TAG_MAX_STRETCH_US = _I2C.tlv["describe"]["queue_depth"], _I2C.tlv["describe"]["max_stretch_us"]
     FEATURE_INTERNAL_PULLUPS = _I2C.enum["features"]["internal_pullups"]
-    TAG_PULLUP_OHMS = _I2C.tlv["describe"]["pullup_ohms"]
 
     def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
         super().__init__(hst, name, fn=fn)
@@ -335,15 +297,13 @@ class I2cTarget(_TargetDeclarations, Interface):
 
     RESERVED_ADDRESSES = (range(0x00, 0x08), range(0x78, 0x80))   # I2C's own (general call, 10-bit prefix, ...)
 
-    def configure(self, address: int, mode: int) -> None:
-        """address: 7 bits; 0x00-0x07 and 0x78-0x7F are the I2C specification's reserved addresses, which a probe
-        refuses unsupported (fixture §3, △5) - refused here before anything is sent."""
+    def configure(self, address: int) -> None:
+        """Answer at `address` (7 bits), the target made anew (the queue, the slots and the counts emptied; stretch
+        kept). 0x00-0x07 and 0x78-0x7F are the I2C specification's reserved addresses, which a probe refuses
+        unsupported (fixture §3) - refused here before anything is sent."""
         if any(address in r for r in self.RESERVED_ADDRESSES):
             raise ValueError(f"I2C address 0x{address:02x} is reserved (0x00-0x07, 0x78-0x7F; fixture §3)")
-        self._call(self.CONFIGURE, struct.pack("<BB", address, mode))
-
-    def arm_rx(self, length: int) -> None:
-        self._call(self.ARM_RX, struct.pack("<H", length))
+        self._call(self.CONFIGURE, struct.pack("<B", address))
 
     TAG_NS = _I2C.tlv["read_rx_answer"]["ns"]
 
@@ -357,21 +317,16 @@ class I2cTarget(_TargetDeclarations, Interface):
         self.last_ns = struct.unpack("<Q", ns)[0] if ns is not None and len(ns) == 8 else None
         return pending, data
 
-    def preload_tx(self, data: bytes) -> int:
-        """-> the slots preloaded so far (u8, wraps)."""
-        rd = m.Reader(self._call(self.PRELOAD_TX, struct.pack("<H", len(data)) + data).payload)
-        slots = rd.u8()
-        rd.tail()
-        return slots
+    def preload_tx(self, data: bytes) -> None:
+        """One slot the controller's next read is answered from (1 to max_length bytes; at most queue_depth unread:
+        then rejected unavailable cause 2)."""
+        self._call(self.PRELOAD_TX, struct.pack("<H", len(data)) + data)
 
     def status(self) -> I2cStatus:
         rd = m.Reader(self._call(self.STATUS, locked=False).payload)
-        state, mode, armed, queued, rx, tx, errors = rd.take("BBBBIBI")
+        state, queued, rx, tx, errors = rd.take("BBIBI")
         rd.tail()
-        return I2cStatus(state=state, mode=mode, armed=bool(armed), queued=queued, rx_frames=rx, tx_slots=tx, errors=errors)
-
-    def reset(self) -> None:
-        self._call(self.RESET)
+        return I2cStatus(state=state, queued=queued, rx_frames=rx, tx_slots=tx, errors=errors)
 
     @property
     def max_stretch_us(self) -> int | None:
@@ -380,18 +335,15 @@ class I2cTarget(_TargetDeclarations, Interface):
         return self._declared(self.TAG_MAX_STRETCH_US, "I")
 
     @property
-    def pullup_ohms(self) -> int | None:
-        """The approximate resistance of the pull-ups the probe enables on SDA / SCL while configured (describe tag
-        0x42, u32; fixture §3, P2-★3), None when it declares none (features bit2 clear): it then enables none, and the
-        bus needs its own. A host may warn that the probe's pull-ups shift the levels of a bus that has them."""
-        if not self.features & self.FEATURE_INTERNAL_PULLUPS:
-            return None
-        return self._declared(self.TAG_PULLUP_OHMS, "I")
+    def internal_pullups(self) -> bool:
+        """Whether the probe enables pull-ups of its own on SDA / SCL while configured (describe features bit2, fixture
+        §3); without them the bus needs its own."""
+        return bool(self.features & self.FEATURE_INTERNAL_PULLUPS)
 
     def stretch(self, stretch_us: int) -> None:
         """Hold SCL low for stretch_us after each received byte (0 = off); an optional op, offered when the describe's
-        ops set it (`offers(STRETCH)`; otherwise rejected unknown_operation). Above max_stretch_us: host.Unsupported. Accepted in any state; configure and reset keep it, the plan's release
-        clears it."""
+        ops set it (`offers(STRETCH)`; otherwise rejected unknown_operation). Above max_stretch_us: host.Unsupported.
+        Accepted in any state; configure keeps it, the plan's release clears it."""
         self._call(self.STRETCH, struct.pack("<I", stretch_us))
 
 
@@ -411,7 +363,7 @@ class SpiTarget(_TargetDeclarations, Interface):
     then read_rx() after the controller raised CS."""
     NAME = _SPI.name
     REVISION = _SPI.revision
-    CONFIGURE, ARM, READ_RX, STATUS, RESET = (_SPI.op[k] for k in ("configure", "arm", "read_rx", "status", "reset"))
+    CONFIGURE, ARM, READ_RX, STATUS = (_SPI.op[k] for k in ("configure", "arm", "read_rx", "status"))
     ROLE_SCK, ROLE_MOSI, ROLE_MISO, ROLE_CS = (_SPI.enum["role"][k] for k in ("sck", "mosi", "miso", "cs"))
     MSB_FIRST, LSB_FIRST = 0, 1
     FEATURE_LSB_FIRST = _SPI.enum["features"]["lsb_first"]
@@ -457,6 +409,3 @@ class SpiTarget(_TargetDeclarations, Interface):
         rd.tail()
         return SpiStatus(state=state, mode=mode, bit_order=order, armed=bool(armed), queued=queued, transactions=n,
                          errors=errors)
-
-    def reset(self) -> None:
-        self._call(self.RESET)

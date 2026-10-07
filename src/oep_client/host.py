@@ -17,9 +17,9 @@ place and mechanism returns its stream with position and marks.
 that changed (confirm, clock, open) - a client holding a connection can tell. A reboot also drops
 the remembered name -> fn mapping and the describes, so they are listed again.
 
-A probe whose confirm answer is outside core §7.1's bounds (max_frame under 64, window under max_frame, max_inflight 0;
-C-20), or whose fn 0 describe declares a max_op_ms outside 1..600000 (core §4.4, §7.5; C-47), is not used: `NotUsable`
-is raised with the values, and nothing more is sent through this host.
+A probe whose confirm answer is outside core §7.1's bounds (max_frame under 64, window under max_frame, max_inflight 0),
+or whose fn 0 describe declares a max_op_ms outside 1..600000 (core §7.5), does not conform and is not used (host guide
+§5): `NotUsable` is raised with the values, and nothing more is sent through this host.
 
 The probe's time (core §7.7, host guide §12): `clock` reads fn 0's clock - lock-free and session-free - with this
 host's time just before the request went out and just after its answer came back (`ClockReading`); the probe read its
@@ -66,17 +66,17 @@ class NotV1(OepError):
 
 
 class NotRestarted(OepError):
-    """restart_probe (oep-if-restart §3): after the restart the probe confirmed the boot_id it had before - the restart did not
+    """restart_probe (host guide §5.2): after the restart the probe confirmed the boot_id it had before - the restart did not
     happen as far as this host can tell (a probe whose boot_id source repeated is told apart by nothing else)."""
 
 
 class NotUsable(OepError):
-    """The probe declared values a conforming probe never does (core §7.1 confirm's bounds, C-20; §7.5 max_op_ms,
-    C-47): this host sends nothing more to it. The message reports the values."""
+    """The probe declared values a conforming probe never does (core §7.1 confirm's bounds, §7.5 max_op_ms): this host
+    sends nothing more to it (host guide §5). The message reports the values."""
 
 
 MAX_OP_MS_MAX = reg.LIMITS["max_op_ms_max"]   # fn 0 describe max_op_ms is 1 to this (core §7.5)
-RESTART_AFTER_ANSWER_S = reg.LIMITS["restart_after_answer_ms"] / 1000   # restart: the probe begins within this (oep-if-restart §2)
+RESTART_AFTER_ANSWER_S = 0.1                   # restart: the short wait before the first reopen (host guide §5.2, about 100 ms)
 RESTART_NAME = reg.PROBE_RESTART.name
 OP_RESTART = reg.PROBE_RESTART.op["restart"]   # oep.probe.restart's restart (oep-if-restart §2)
 RESTART_WAIT_S = 10.0                          # restart_probe: the wait for a probe that declares no restart_max_ms
@@ -91,7 +91,7 @@ def check_confirm(max_frame: int, window: int, max_inflight: int) -> str:
 
 
 def check_max_op_ms(value: int) -> str:
-    """core §4.4 / §7.5 (C-47): max_op_ms is 1 to max_op_ms_max (600000). -> "" or why the probe is not used."""
+    """core §7.5: max_op_ms is 1 to max_op_ms_max (600000). -> "" or why the probe is not used (host guide §5)."""
     if not 1 <= value <= MAX_OP_MS_MAX:
         return (f"describe of fn 0 declares max_op_ms {value}: outside 1..{MAX_OP_MS_MAX} (core §7.5), so the probe "
                 "does not conform and is not used")
@@ -125,7 +125,7 @@ class NoSession(Rejected):
 
 
 class Busy(Rejected):
-    pass
+    """reason 0x05: reserved (core §4.3 defines none); a probe that sends it is refused like any unknown reason."""
 
 
 class NoConnection(Rejected):
@@ -165,9 +165,9 @@ CONFIRM_TRANSPORT = reg.CORE.tlv["confirm_answer"]["transport"]
 
 class Unavailable(Rejected):
     """rejected unavailable (core §4.3): the payload's TLVs say why (each may be missing): cause, the channels it met,
-    who holds them (holder_fn, holder_kind). `tlvs` has every TLV, the interface's own (0x40 and up) too."""
+    the fn it is about (capture-group's bind). `tlvs` has every TLV, the interface's own (0x40 and up) too. cause 5
+    (held_by_settings): the settings' plan, disable, output idle or slot hold it - probe.config's get says which."""
     CAUSES = {v: k for k, v in reg.CORE.enum["unavailable_cause"].items()}
-    KINDS = {v: k for k, v in reg.CORE.enum["holder_kind"].items()}
     _T = reg.CORE.tlv["unavailable_payload"]
 
     @property
@@ -190,14 +190,10 @@ class Unavailable(Rejected):
         return [struct.unpack_from("<H", v)[0] for t, v in self.tlvs if t & 0x7F == self._T["channel"] and len(v) >= 2]
 
     @property
-    def holder_fn(self) -> int | None:
-        v = self._first(self._T["holder_fn"])
+    def fn(self) -> int | None:
+        """TLV 0x05 fn: the fn the refusal is about (a track of a capture-group's bind or start)."""
+        v = self._first(self._T["fn"])
         return struct.unpack_from("<H", v)[0] if v and len(v) >= 2 else None
-
-    @property
-    def holder_kind(self) -> str | None:
-        v = self._first(self._T["holder_kind"])
-        return self.KINDS.get(v[0], str(v[0])) if v else None
 
 
 _REJECTS = {m.LOCKED: Locked, m.NO_SESSION: NoSession, m.BUSY: Busy, m.NO_CONNECTION: NoConnection,
@@ -584,7 +580,7 @@ class Host:
     # ---- restart (oep.probe.restart, oep-if-restart) --------------------------------------------------------------
     def _restart_fn(self) -> int:
         """The probe's oep.probe.restart fn (LookupError: it offers none - the interface is optional); the link is told,
-        so a completed restart sends it back to the boot speed (oep-if-link §3 host obligation 6)."""
+        so a completed restart sends it back to the boot speed (oep-if-link §3 host 2)."""
         from . import core                              # core imports host: here, not at the top
         fn = core.restart_fn(self)
         link = getattr(self, "link", None)
@@ -603,20 +599,21 @@ class Host:
         self._lost()
 
     def restart_probe(self, wait_s: float | None = None, reopen_s: float | None = None) -> int:
-        """Restart the probe through oep.probe.restart and wait until it is back (oep-if-restart §3, host guide §5.2)
+        """Restart the probe through oep.probe.restart and wait until it is back (host guide §5.2; oep-if-restart §2)
         -> its new boot_id. LookupError when the probe offers no oep.probe.restart. The session must hold the lock.
         After the answer nothing more goes out; the link (`link.reopen_after_restart`, when this host has one) closes,
-        waits restart_after_answer_ms and opens again as a new open - the confirm first, a serial port at its boot
+        waits a moment (about 100 ms) and opens again as a new open - the confirm first, a serial port at its boot
         speed, a USB device found again once it has re-enumerated - retried for `wait_s`; a host on a bare `send` waits
         and confirms. `wait_s` None: the probe's restart_max_ms (oep.probe.restart's describe, read before the restart),
         or RESTART_WAIT_S (10 s) when it declares none (a probe that does not conform); a `wait_s` longer than a
-        declared restart_max_ms is cut to it - oep-if-restart §3 lets a host retry only until restart_max_ms has passed.
+        declared restart_max_ms is cut to it - host guide §5.2: a host retries only until restart_max_ms has passed.
         A confirm sent before then is waited for as core §4.4 says. No valid confirm by then: the probe is gone
-        (oep-if-restart §3) - the link is closed and, without `reopen_s`, ConnectionError / TimeoutError is raised.
+        (host guide §5.2) - the link is closed and, without `reopen_s`, ConnectionError / TimeoutError is raised.
         `reopen_s` is the user's own reopen of a probe given up that way, asked for beforehand: once the window has
         passed with the link closed, the probe is opened again as a new open (the confirm first; the same retries) for up
         to `reopen_s` more - for a host on which the device comes back later than the probe can know, such as WSL, where
-        usbipd attaches the re-enumerated device again (`restart_reopened` then says True). When the answer is lost, the
+        usbipd attaches the re-enumerated device again (`restart_reopened` then says True; host guide §5.2: a reopen the user
+        asked for beforehand is the user reopening). When the answer is lost, the
         same: a resend the restarted probe refused no_session counts as the restart having happened. The confirm's
         boot_id must differ from the one before (NotRestarted otherwise); everything this host remembered of the old boot
         is dropped (core §6.5)."""
@@ -627,13 +624,13 @@ class Host:
         ms = core.restart_max_ms(self)
         window_s = ms / 1000 if ms is not None else RESTART_WAIT_S
         if wait_s is None or (ms is not None and wait_s > window_s):
-            wait_s = window_s                               # never past restart_max_ms (oep-if-restart §3)
+            wait_s = window_s                               # never past restart_max_ms (host guide §5.2)
         self.restart_reopened = False
         epoch = self.epoch
         try:
             self.call(fn, OP_RESTART)
         except NoSession:
-            pass                                            # the resend reached the new boot: it restarted (§3)
+            pass                                            # the resend reached the new boot: it restarted (guide §5.2 item 7)
         except (TimeoutError, ConnectionError, OSError):
             pass                                            # no answer: the confirm below tells
         self.session = None

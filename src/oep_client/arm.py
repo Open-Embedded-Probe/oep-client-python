@@ -21,6 +21,7 @@ _ADI = reg.TARGET_ARM_ADI
 
 class SwdWire(WireBase):
     NAME = "oep.wire.swd"
+    FLAGS = reg.WIRE_SWD.enum["attach_flags"]          # existing, dormant_woken (0x01 / 0x08 are riscv's only)
     TAG_TARGETSEL = reg.WIRE_SWD.tlv["attach"]["targetsel"]
 
     def __init__(self, hst: h.Host):

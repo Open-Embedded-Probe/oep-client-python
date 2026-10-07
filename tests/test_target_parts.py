@@ -1,11 +1,12 @@
 """Host-side parts added on 2026-09-24, against a scripted host (no hardware): the reset-line search, the gpio-reset
 fallback, reset-halt / step decoding, and the ARM ADI / MEM-AP helpers."""
 
+import random
 import struct
 
 import pytest
 
-from oep_client import arm, catalog, host as h, message as m, riscv as target
+from oep_client import arm, catalog, endpoint, fake, host as h, message as m, riscv as target
 
 FNS = {"oep.wire.rvswd": 1, "oep.target.riscv-dm": 2, "oep.fixture.gpio": 3, "oep.wire.swd": 4,
        "oep.target.arm-adi": 5}
@@ -85,7 +86,7 @@ def test_find_reset_line_hits_the_vector_skips_disallowed_and_retries_failures()
 
     hst = ScriptedHost({(1, target.Wire.ATTACH): aur,
                         (2, target.RiscvDm.RESUME): lambda p: (m.COMPLETED, m.FAILED, bytes([5])),   # an L103: state
-                        (2, target.RiscvDm.RESET): lambda p: ok(struct.pack("<BBBI", 0, 3, 1, 0x1234)),
+                        (2, target.RiscvDm.RESET): lambda p: ok(struct.pack("<BBI", 0, 3, 0x1234)),
                         (1, target.Wire.DETACH): lambda p: ok(),
                         (1, target.Wire.CONNECTIONS): lambda p: ok(bytes([0, 0]))})
     wire = target.Wire(hst)
@@ -132,7 +133,7 @@ def _pin_choice_wire():
     hst = ScriptedHost({(1, target.Wire.ATTACH): attach, (1, target.Wire.DETACH): detach,
                         (1, target.Wire.CONNECTIONS): connections,
                         (2, target.RiscvDm.RESUME): lambda p: ok(bytes([0])),
-                        (2, target.RiscvDm.RESET): lambda p: ok(struct.pack("<BBBI", 0, 3, 1, 0x1234))})
+                        (2, target.RiscvDm.RESET): lambda p: ok(struct.pack("<BBI", 0, 3, 0x1234))})
     return hst, state
 
 
@@ -189,14 +190,91 @@ def test_attach_after_gpio_reset_gives_up():
 # ---- riscv-dm decoding ----------------------------------------------------------------------------
 
 def test_reset_halt_and_step_decode():
-    hst = ScriptedHost({(2, target.RiscvDm.RESET): lambda p: ok(struct.pack("<BBBI", 0, 0, 1, 0x0) if p[2] == 2 else b""),
+    """oep-if-debug §4.3: reset is mode(u8) [TLV] (no method TLV); the answer is status(u8) flags(u8: bit0 reached,
+    bit1 verified) pc(u32) - no attempts byte."""
+    answers = {target.RiscvDm.RESET_HALT: (0, 0b01, 0x0), target.RiscvDm.RESET_RUN_CONFIRM: (0, 0b11, 0x2f8),
+               target.RiscvDm.RESET_RUN: (0, 0b01, 0)}
+    hst = ScriptedHost({(2, target.RiscvDm.RESET): lambda p: ok(struct.pack("<BBI", *answers[p[2]])),
                         (2, target.RiscvDm.STEP): lambda p: ok(struct.pack("<BBII", 0, 1, 0x0, 0x17f0) + b"\x40\x01\x00\x00")})
     dm = target.RiscvDm(hst, 1)
     assert dm.reset_halt() == 0
-    assert hst.log[-1][2] == struct.pack("<HB", 1, 2)                   # connection(u16), mode 2
+    assert hst.log[-1][2] == struct.pack("<HB", 1, 2)                   # connection(u16), mode 2, nothing more
+    assert dm.reset() == (0b11, 0x2f8) and hst.log[-1][2] == struct.pack("<HB", 1, 1)
+    assert dm.reset(confirm=False) == (0b01, 0) and hst.log[-1][2] == struct.pack("<HB", 1, 0)
     assert dm.step() == (True, 0x0, 0x17f0)                             # an unknown TLV after the fixed part: skipped
-    dm.reset_halt(method=target.RiscvDm.METHOD_SYSTEM)
-    assert hst.log[-1][2] == struct.pack("<HB", 1, 2) + bytes([0x81, 1, 0, 2])   # method as a critical TLV
+    assert not [k for k in vars(target.RiscvDm) if k.startswith("METHOD_")]
+    hst = ScriptedHost({(2, target.RiscvDm.RESET): lambda p: (m.COMPLETED, m.FAILED, struct.pack("<BBI", 2, 0, 0))})
+    with pytest.raises(target.TargetError, match="line"):
+        target.RiscvDm(hst, 1).reset_halt()                             # completed failed: same shape, status line
+
+
+# ---- riscv-dm: DATA0 written back by the client (oep-if-debug §4) ---------------------------------------------
+
+def _dm_on_fake(data0):
+    """A halted hart on the fake (p4_x035) whose DATA0 holds `data0` (another user's: the console's mailbox), and a
+    record of every DMI write the probe makes (address, value, the hart halted then)."""
+    ep = endpoint.Endpoint(fake.p4_x035(), lambda: 0)
+    hst = h.Host(ep.handle, rng=random.Random(1))
+    hst.open(lease_ms=10000)
+    conn, _ = target.Wire(hst).attach(halt=True)
+    tg = ep.target
+    tg.regs[0x1008] = 0x000EC8FE
+    tg.dmi[target.DATA0] = data0
+    writes, write = [], tg.write_dmi
+
+    def recorded(address, value):
+        writes.append((address, value, tg.halted))
+        write(address, value)
+    tg.write_dmi = recorded
+    return tg, target.RiscvDm(hst, conn), writes
+
+
+def test_read_register_then_resume_writes_data0_back():
+    """oep-if-debug §4: the client's read_register saves DATA0 first (data_saved) and resume writes it back - while the
+    hart is still halted - before the resumereq."""
+    tg, dm, writes = _dm_on_fake(0x5A5A1234)
+    assert dm.data_saved is None
+    assert dm.read_register(0x1008) == 0x000EC8FE
+    assert dm.data_saved == 0x5A5A1234 and tg.dmi[target.DATA0] != 0x5A5A1234     # the command left DATA0 changed
+    dm.read_register(0x1008)
+    assert dm.data_saved == 0x5A5A1234                                  # saved once: the value from before
+    writes.clear()
+    dm.resume()
+    data0 = [(v, halted) for a, v, halted in writes if a == target.DATA0]
+    assert data0 == [(0x5A5A1234, True)]                                # written back once, before the hart ran
+    assert tg.dmi[target.DATA0] == 0x5A5A1234 and not tg.halted and dm.data_saved is None
+
+
+def test_resume_with_nothing_saved_sends_no_data0_write():
+    tg, dm, writes = _dm_on_fake(0x5A5A1234)
+    dm.resume()
+    assert not [w for w in writes if w[0] == target.DATA0] and dm.data_saved is None
+    assert tg.dmi[target.DATA0] == 0x5A5A1234 and not tg.halted
+    tg.dmi[target.DATA0] = 0x11111111                                   # changed by someone else while it ran
+    dm.halt()
+    writes.clear()
+    dm.resume()                                                         # still nothing saved: no write
+    assert not [w for w in writes if w[0] == target.DATA0] and tg.dmi[target.DATA0] == 0x11111111
+
+
+def test_run_not_run_is_stopped_3():
+    """oep-if-debug §4.4: a preparation that failed (a register write with no answer) answers stopped 3 not_run,
+    status the failure, outcome failed, dpc 0, nvals 0 - the hart not run, still halted; a run on a running hart:
+    stopped 3, status state."""
+    tg, dm, _ = _dm_on_fake(0)
+    tg.fail_regs = {0x100A}
+    with pytest.raises(target.TargetError) as e:
+        dm.run(0x20000000, [(0x100A, 1)], timeout_ms=50)
+    res = target.RiscvDm.run_result(e.value.result)
+    assert (e.value.result.resolution, e.value.result.detail) == (m.COMPLETED, m.FAILED)
+    assert res.not_run and not res.stopped and not res.not_halted
+    assert res.status != target.OK and res.dpc == 0 and res.values == [] and tg.halted
+    tg.fail_regs = set()
+    dm.resume()
+    with pytest.raises(target.TargetError) as e:
+        dm.run(0x20000000, [], timeout_ms=50)                           # the hart runs: not run either
+    res = target.RiscvDm.run_result(e.value.result)
+    assert res.not_run and res.status == target.STATUS["state"]
 
 
 # ---- ARM ADI / MEM-AP -----------------------------------------------------------------------------

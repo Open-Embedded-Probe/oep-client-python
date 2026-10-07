@@ -114,8 +114,8 @@ class PositionStream(Interface):
 
     def write(self, data: bytes) -> int:
         """-> bytes accepted: what went into the probe's send queue from data's start, min(count, its free space)
-        (common §1.4; delivery is not implied) - a console's queue is its describe's send_queue bytes, handed to the
-        target 2 (dmseq) or 3 (DMDATA) bytes at a time; SDI takes nothing (console §2, §3). Fewer than asked is
+        (common §1.4; delivery is not implied) - a console's queue is the probe's own size (not declared), handed to
+        the target 2 (dmseq) or 3 (DMDATA) bytes at a time; SDI takes nothing (console §2, §3). Fewer than asked is
         completed partial, not an error; nothing accepted (the queue full) is completed failed (raised as Failed):
         `StreamIO.write` loops on it."""
         r = self._request(self.WRITE, self._stream_prefix() + struct.pack("<H", len(data)) + data)
@@ -146,19 +146,11 @@ class Console(PositionStream):
     def _stream_prefix(self) -> bytes:
         return struct.pack("<H", self.stream)
 
-    TAG_MECHANISMS, TAG_SEND_QUEUE = _CON.tlv["describe"]["mechanisms"], _CON.tlv["describe"]["send_queue"]
+    TAG_MECHANISMS = _CON.tlv["describe"]["mechanisms"]
 
     def mechanisms(self) -> list[int]:
         """The mechanisms the probe opens (describe tag 0x40)."""
         return [b for tag, v in describe(self.host, self.fn) if tag & 0x7F == self.TAG_MECHANISMS for b in v]
-
-    @property
-    def send_queue(self) -> int | None:
-        """The bytes of each stream's send queue that write fills (describe tag 0x41, u16, at least 64; console §1,
-        §2); None when the probe declares none (no mechanism of it carries host -> target bytes)."""
-        v = next((v for tag, v in describe(self.host, self.fn) if tag & 0x7F == self.TAG_SEND_QUEUE and len(v) >= 2),
-                 None)
-        return struct.unpack_from("<H", v)[0] if v is not None else None
 
     def open(self, conn: int, mechanism: int = DMSEQ) -> int:
         """-> the stream. An open stream of the same (connection, mechanism) comes back as it is (self.existing):
@@ -244,14 +236,13 @@ class StreamIO:
 
 
 class ConsoleIO(StreamIO):
-    """A console stream read from a position onwards (default: from now), as a plain byte stream. A write chunk is the
-    probe's send_queue (`send_queue`, None when it declares none), at most what one frame carries."""
+    """A console stream read from a position onwards (default: from now), as a plain byte stream. A write chunk is
+    at most what one frame carries; what the probe's send queue takes is its `accepted` (host guide §14: the rest goes
+    after a short wait)."""
 
     def __init__(self, console: Console, start: int | None = None):
         super().__init__(console, start)
         self.console = console
-        self.send_queue = console.send_queue
 
     def _write_cap(self) -> int:
-        """A whole send queue at a time (a line no longer than send_queue goes in one write; host guide §14)."""
-        return self.send_queue or self.MAX_WRITE
+        return 0xFFFF                              # the frame bounds it (`_limits`); the send queue takes what it can

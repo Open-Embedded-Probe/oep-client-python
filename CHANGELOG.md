@@ -1,6 +1,141 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) **Breaking (wire and API): oep-spec 7688c49 .. 0f455a0, the rule review of 2026-10-07 (§2 applied, §7).**
+  README names `0f455a0`. Registry and vectors synced (`tools/sync_registry.sh`; `probe_config_hash.json` gone).
+  The fake (`endpoint`, `fake`, `fake_capture`) answers as the new text says - other clients test against it:
+  - core: no ignored TLV - an unknown non-critical request TLV is ignored silently, an unknown critical one refused
+    unsupported (its tag as received); a TLV the probe implements is checked the same with or without bit 7 (another
+    length, longer too, or an excluded value: malformed; an unused or unhandled value: unsupported with the tag as
+    received); a non-repeating tag twice: the first is used; tags 0x00 / 0x7F are no tags; booleans read non-zero as
+    true (open's force); request text is not checked (owner keeps its 1-32 bytes). Refusals: the header, the resend
+    table, the session, then every check before any change and any one reason that applies. The resend table is
+    (corr, answer): no corr_reused, no CRC-32 (`m.CORR_REUSED`, `m.TAG_IGNORED`, `m.TAG_INVALID`, `Tail.ignored` /
+    `more_ignored` / `may_have_ignored`, `endpoint.ignored_tlv` gone). list takes first(u16) alone
+    (`catalog.pack_list_request(first)`; `core.list_entries(hst, name, exact)` filters on the host); fn 0's describe
+    loses implementation, reserved, profile, resets_on_open and discoverable (chip / model free text;
+    `catalog.IMPLEMENTATION`, `Description.implementation` gone); unavailable's payload is cause, channel, fn
+    (`Unavailable.holder_fn` / `holder_kind` gone, `Unavailable.fn` new); an ops value is base and a bitmap of 1 byte or
+    more not past op 0xFF; resource numbers +1, skipping those in use; link source len max_frame - 7
+    (`core.link_size`), a sink request at most max_frame - 12 (`core.link_sink_size`).
+  - debug: attach, scan and riscv-dm's reset answer within max_op_ms, which the host counts as their argument time
+    (`Wire.attach_ms()`, `scan_ms()`, `RiscvDm.reset_ms()`; the 13 debug limits are gone, `core.FALLBACK_MAX_OP_MS` for a
+    probe that declares none); riscv-dm reset answers status flags pc (no method, no attempts: `RiscvDm.reset(confirm)
+    -> (flags, pc)`, `reset_halt() -> dpc`); run: a preparation that fails answers stopped 3 not_run
+    (`RunResult.not_run`; the fake: `FakeTarget.fail_regs`, a running hart), timeout_ms 0 is not refused; DATA0 / DATA1
+    restore is riscv-dm's: `read_register` / `write_register` save DATA0 first (`RiscvDm.data_saved`) and `resume` /
+    `step` / `run` write it back first (`restore_data`); target_id scheme `dmi_7f` (`Wire.SCHEME_DMI_7F`,
+    `targets.SCHEME_DMI_7F`); a count > 0 scan's skip is not looked at. common: read from 3 with arg > 0xFF and write
+    count 0 are not refused. console: no send_queue (the queue is the probe's own size; `Console.send_queue` gone,
+    `ConsoleIO` writes frame-sized chunks); the console's reads follow the order rule (no 20 ms).
+  - capture: configure's TLVs follow core §2.3 alone; the answer loses timing and rate_accuracy (`Config.jitter_kind`,
+    `jitter_ns`, `rate_measured`, `rate_ppm`, `ignored` gone); describe's mode is mode max_samples max_segments,
+    channels max alone, no rate_list / rate_limit / max_read / segment_ring / frontend_shared, capture-group tracks
+    alone (the fake keeps widths, ring, max_read, max_tracks and budgets in `Offered.inner`).
+  - fixture: gpio mode 7 gone; drive is a u8 level (0xFF the default; `Drive.level(n)` / `Drive.default()`,
+    `DriveLevels.at_most(ma)`; `Drive.max_ma`, `Gpio.read_state`, `GpioRead`, `INPUT_PULLUP_PULLDOWN` gone; `Gpio.set`
+    returns None and sends the drive critical): a level past drive_levels, or any drive without them, is refused
+    unsupported; uart status is baud and format (`UartStatus(baud, format)`); i2c-target has one form -
+    `I2cTarget.configure(address)`, a write with data is one frame (cut at max_length, errors + 1), reads from
+    `preload_tx(data)` slots (it answers nothing) or 0xFF, `status()` -> `I2cStatus(state, queued, rx_frames,
+    tx_slots, errors)`, `internal_pullups` (`arm_rx`, `reset`, the modes, `pullup_ohms` gone; stretch stays optional);
+    spi-target has no reset (`SpiTarget.reset` gone) and counts errors once a transfer.
+  - probe.config: the idle item is 4 bytes, channel mode drive(u8); an item of another length is malformed whether
+    critical or not; label's rule is its length; slot without lock and boot_reset (`config.Slot` loses `lock` /
+    `boot_reset`; retry_ms not looked at on a host slot), slot_state 0 connected / 1 absent (`SlotState(slot, state,
+    connection, last_try_at_ns)`), a host checks the target with connections' tid (`oep config show` prints it); bind is
+    one stream - `config.Bind(port=, stream=("slot", n) | ("uart", fn))`, port kind id - whose port position stays
+    during a session and carries on after it (`BindState(port, flow)`; modes, mixed lines and `Declared.bind_modes`
+    gone); the hash is the probe's own (`config.hash_of` / `canonical` gone: `config.same_items`,
+    `ProbeConfig.needs_save()`, `ProbeConfig.apply(wanted, save)` - host guide §15); storage_hash is get's hash when the
+    saved settings became current; at boot disable and idle before any other item. `oep config bind --stream` takes
+    one stream (no `--mode` / `--select`), `oep config slot` loses `--lock` / `--boot-reset`, `--drive-ma` picks a
+    level from the probe's drive_levels; `fake_serve --bind N` (the N-th --slot), `--boot-reset` gone.
+  - link: port_speed is the handshake, baud step verify_ms (no port, no idle_ms: `raise_speed` loses `idle_ms` /
+    `port`, `linktest.matrix` loses `port`); the probe goes back after verify_ms, after port_speed_idle_ms with no good
+    frame, or at the session's end (the fake: no broken-candidate reverts; port_speed_tolerance_pct). Host guide §17.3.2
+    item 4 (Q8): at a raised rate in use the first wait ends well inside port_speed_idle_ms (`link.RAISED_FIRST_WAIT_S`,
+    never under core §4.4's floor) and the request goes again at the raised rate before the link falls back to the
+    boot speed (confirms up to port_speed_idle_ms + host_wait_add_ms). Host guide §8 (Q6): on a held serial port a
+    broken frame while an answer is awaited is resent at once with the same corr, up to `link.BROKEN_RESENDS` (3)
+    times while frames keep arriving; a wait with nothing allows the one resend. plan_apply sends role_assignment
+    plain. restart's host procedure is the host guide's §5.2 (behaviour kept; `host.RESTART_AFTER_ANSWER_S` = 0.1).
+  - `oep pins` reads under pull-up and pull-down only (host guide §19.1: `pins.PULLED_UP` gone, a weak pull-up is
+    floating). tests/hw: the config test compares items (`same_items`, `needs_save`) instead of computing the hash;
+    i2c / spi target tests configure again instead of reset; capture tests read the new declarations.
+  - The vectors are oep-spec 85170c4's (the registry is 0f455a0's, unchanged): "rvswd scan: count > 0 with skip" is
+    answered as the listed scan (debug §1). `tests/test_vectors.py` keeps `TEXT_OVER_VECTOR` (empty) for a vector the
+    text corrects. The fake also has `Endpoint.lose(connection=None)` and fake_serve's stdin line `lose [CONNECTION]`
+    (for ch32rv): the connection's line lost for good - closed, its streams marked link-lost and closed with detail 4,
+    no_connection afterwards; an at-boot slot attaches again at its next retry, its console back under the same
+    stream number. A new bind starts its port's position when it is set (a stream that comes later: from its start);
+    a refused capture-group bind changes nothing; `SwdWire.FLAGS` is the swd wire's.
+- (JA) **破壊的（wire と API）: oep-spec 7688c49〜0f455a0、2026-10-07 の規則の見直し（§2 の適用、§7）。** README は
+  `0f455a0` を名乗る。registry とベクタを同期（`tools/sync_registry.sh`。`probe_config_hash.json` は無くなった）。偽の
+  probe（`endpoint`、`fake`、`fake_capture`）は新しい文のとおりに答える（ほかのクライアントがこれで試験する）:
+  - 本体: ignored の TLV は無い - 知らない非 critical の要求の TLV は黙って無視し、知らない critical のものは unsupported
+    （受け取ったままの tag）で断る。probe が実装する TLV は bit 7 によらず同じに確かめる（長さが違う - 長いのも - か除かれた
+    値: malformed。使われていない値や扱わない値: 受け取ったままの tag で unsupported）。繰り返さない tag が 2 つあれば最初の
+    ものを使う。tag 0x00 / 0x7F は tag でない。真偽値は 0 でなければ真（open の force）。要求の text は確かめない（owner の
+    1〜32 byte は残る）。断り方: 見出し、送り直しの表、セッション、その後はどれも何も変える前に確かめ、当たった理由のどれか
+    1 つ。送り直しの表は (corr、応答): corr_reused も CRC-32 も無い（`m.CORR_REUSED`、`m.TAG_IGNORED`、`m.TAG_INVALID`、
+    `Tail.ignored` / `more_ignored` / `may_have_ignored`、`endpoint.ignored_tlv` は削除）。list は first(u16) だけ
+    （`catalog.pack_list_request(first)`。`core.list_entries(hst, name, exact)` は host で絞る）。fn 0 の describe から
+    implementation、reserved、profile、resets_on_open、discoverable が消える（chip / model は自由な text。
+    `catalog.IMPLEMENTATION`、`Description.implementation` は削除）。unavailable の payload は cause、channel、fn
+    （`Unavailable.holder_fn` / `holder_kind` は削除、`Unavailable.fn` を追加）。ops の値は base と 1 byte 以上の bitmap で op
+    0xFF を越えない。資源の番号は +1 で、使用中の番号を飛ばす。link の source の len は max_frame − 7（`core.link_size`）、
+    sink の要求は多くても max_frame − 12（`core.link_sink_size`）。
+  - debug: attach、scan、riscv-dm の reset は max_op_ms のうちに答え、host はそれを引数の時間として数える
+    （`Wire.attach_ms()`、`scan_ms()`、`RiscvDm.reset_ms()`。debug の 13 の限界の値は無い。宣言の無い probe には
+    `core.FALLBACK_MAX_OP_MS`）。riscv-dm の reset の応答は status flags pc（method も attempts も無い:
+    `RiscvDm.reset(confirm) -> (flags, pc)`、`reset_halt() -> dpc`）。run: 準備が失敗したら stopped 3 not_run
+    （`RunResult.not_run`。偽物: `FakeTarget.fail_regs`、走っている hart）、timeout_ms 0 は断らない。DATA0 / DATA1 の
+    書き戻しは riscv-dm の規則: `read_register` / `write_register` は先に DATA0 を取っておき（`RiscvDm.data_saved`）、
+    `resume` / `step` / `run` は先に書き戻す（`restore_data`）。target_id の scheme は `dmi_7f`（`Wire.SCHEME_DMI_7F`、
+    `targets.SCHEME_DMI_7F`）。count > 0 の scan の skip は見ない。common: from 3 で arg > 0xFF の read と count 0 の
+    write は断らない。console: send_queue は無い（列の大きさは probe が決める。`Console.send_queue` は削除、`ConsoleIO` は
+    フレームの大きさで書く）。コンソールの読みは順序の規則に従う（20 ms は無い）。
+  - capture: configure の TLV は core §2.3 だけに従う。応答から timing と rate_accuracy が消える（`Config.jitter_kind`、
+    `jitter_ns`、`rate_measured`、`rate_ppm`、`ignored` は削除）。describe の mode は mode max_samples max_segments、channels
+    は max だけ、rate_list / rate_limit / max_read / segment_ring / frontend_shared は無い。capture-group は tracks だけ（偽物は
+    幅、区画の記録、max_read、max_tracks、budget を `Offered.inner` に持つ）。
+  - fixture: gpio の mode 7 は無い。drive は u8 の段の番号（0xFF が既定。`Drive.level(n)` / `Drive.default()`、
+    `DriveLevels.at_most(ma)`。`Drive.max_ma`、`Gpio.read_state`、`GpioRead`、`INPUT_PULLUP_PULLDOWN` は削除。`Gpio.set` は
+    None を返し、drive を critical で送る）: drive_levels を越える段と、drive_levels の無い probe への drive は unsupported で
+    断られる。uart の status は baud と format（`UartStatus(baud, format)`）。i2c-target は 1 つの形 -
+    `I2cTarget.configure(address)`、データのある書き込み 1 回が 1 フレーム（max_length で切り、errors + 1）、読み出しは
+    `preload_tx(data)` の置き場から（応答は空）か 0xFF、`status()` -> `I2cStatus(state, queued, rx_frames, tx_slots,
+    errors)`、`internal_pullups`（`arm_rx`、`reset`、mode、`pullup_ohms` は削除。stretch は任意の op のまま）。spi-target に
+    reset は無く（`SpiTarget.reset` は削除）、errors は転送 1 回に 1 まで。
+  - probe.config: idle の項目は 4 byte、channel mode drive(u8)。長さが形と違う項目は critical によらず malformed。label の
+    規則は長さだけ。slot に錠も boot_reset も無い（`config.Slot` から `lock` / `boot_reset` を削除。host のスロットの retry_ms
+    は見ない）。slot_state は 0 接続あり / 1 いない（`SlotState(slot, state, connection, last_try_at_ns)`）。target の確かめは
+    host が connections の tid で行う（`oep config show` が出す）。bind はストリーム 1 本 - `config.Bind(port=, stream=("slot",
+    n) | ("uart", fn))`、port kind id -、口の位置はセッションの間進まず、終われば止めた所から続く（`BindState(port,
+    flow)`。mode、mixed の行、`Declared.bind_modes` は削除）。hash は probe が作る（`config.hash_of` / `canonical` は削除:
+    `config.same_items`、`ProbeConfig.needs_save()`、`ProbeConfig.apply(wanted, save)` - host ガイド §15）。storage_hash は
+    保存を今の設定にした時の get の hash。起動時は disable と idle をほかのどの項目より先に。`oep config bind --stream` は
+    1 本（`--mode` / `--select` は無い）、`oep config slot` から `--lock` / `--boot-reset` を削除、`--drive-ma` は probe の
+    drive_levels から段を選ぶ。`fake_serve --bind N`（N 番目の --slot）、`--boot-reset` は削除。
+  - link: port_speed は握手だけ、baud step verify_ms（port も idle_ms も無い: `raise_speed` から `idle_ms` / `port`、
+    `linktest.matrix` から `port` を削除）。probe が戻るのは verify_ms の後、正常なフレームの無い port_speed_idle_ms の後、
+    セッションの終わり（偽物: 壊れた候補では戻らない。port_speed_tolerance_pct）。host ガイド §17.3.2 の 4（Q8）: 上げた
+    速さで使っている間、最初の待ちは port_speed_idle_ms より十分短く終え（`link.RAISED_FIRST_WAIT_S`。core §4.4 の下限は
+    下回らない）、起動時の速さに戻る前に上げた速さのまま送り直す（戻った後の confirm は port_speed_idle_ms +
+    host_wait_add_ms まで）。host ガイド §8（Q6）: セッションが持つシリアルの口で、答えを待つ間に壊れたフレームが来たら
+    すぐ同じ corr で送り直す - フレームが届き続ける間 `link.BROKEN_RESENDS`（3）回まで。何も来ない待ちの後は 1 回。
+    plan_apply は role_assignment を critical の bit 無しで送る。restart の host の手順は host ガイド §5.2（動きは同じ。
+    `host.RESTART_AFTER_ANSWER_S` = 0.1）。
+  - `oep pins` は pull-up と pull-down だけで読む（host ガイド §19.1: `pins.PULLED_UP` は削除。弱い pull-up は浮いている
+    として扱う）。tests/hw: config の試験は hash を計算せず項目を比べる（`same_items`、`needs_save`）。i2c / spi target の
+    試験は reset の代わりに configure し直す。capture の試験は新しい宣言を読む。
+  - ベクタは oep-spec 85170c4 のもの（registry は 0f455a0 のまま変わらない）: 「rvswd scan: count > 0 with skip」は並べた組の
+    scan として答える（debug §1）。`tests/test_vectors.py` は文が直すベクタのための `TEXT_OVER_VECTOR`（空）を残す。偽物に
+    `Endpoint.lose(connection=None)` と fake_serve の stdin の行 `lose [CONNECTION]` を足した（ch32rv のため）: その connection の
+    線をずっと失う - 閉じ、ストリームに link-lost の印を付けて detail 4 で閉じ、以後は no_connection。at boot のスロットは次の
+    やり直しでまた attach し、コンソールは同じストリームの番号で戻る。新しい bind は set した時から口の位置を持つ（後から
+    来るストリームはその始めから）。断られた capture-group の bind は何も変えない。`SwdWire.FLAGS` は swd の wire のもの。
 - (EN) `Host.restart_probe(wait_s=None, reopen_s=None)`: oep-if-restart §3 lets a host retry a restarted probe only
   until its restart_max_ms has passed - a `wait_s` longer than a declared restart_max_ms is now cut to it, and the link
   (`reopen_after_restart`) is closed when the window passes (the probe is gone). `reopen_s` is the user's reopen of a

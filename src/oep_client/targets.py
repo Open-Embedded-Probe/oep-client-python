@@ -3,7 +3,8 @@ line (NRST) exists, the line settings to attach with. The probe knows none of it
 target). `oep pins` and anything else that meets a target by its target_id read it from here, and oep-spec
 docs/target-scan-notes.ja.md records where each fact comes from.
 
-A family is matched by the target_id an attach reports (scheme 1 = WCH DMI 0x7F, a u32 that equals the chip's ESIG ID):
+A family is matched by the target_id an attach reports (scheme 1 = dmi_7f: the u32 at DMI address 0x7F, which on these
+parts equals the chip's ESIG ID):
 `ids` are (mask, value) pairs on that u32. A family without ids is known by name only (its target_id is not recorded
 yet). Reading the option bytes is read-only here: nothing in this module writes them.
 """
@@ -14,7 +15,9 @@ import struct
 from dataclasses import dataclass, field
 from typing import Callable
 
-SCHEME_WCH_DMI_7F = 1
+from . import registry as reg
+
+SCHEME_DMI_7F = reg.COMMON.enum["target_id_scheme"]["dmi_7f"]   # the u32 at DMI 0x7F (oep-if-debug §3)
 
 
 @dataclass(frozen=True)
@@ -37,7 +40,7 @@ class Family:
     notes: str = ""
 
     def matches(self, target_id: tuple[int, bytes] | None) -> bool:
-        if not target_id or target_id[0] != SCHEME_WCH_DMI_7F or len(target_id[1]) != 4:
+        if not target_id or target_id[0] != SCHEME_DMI_7F or len(target_id[1]) != 4:
             return False
         value = struct.unpack("<I", target_id[1])[0]
         return any(value & mask == want for mask, want in self.ids)
@@ -92,6 +95,6 @@ def describe_id(target_id: tuple[int, bytes] | None) -> str:
     if not target_id:
         return "no target_id"
     scheme, value = target_id
-    if scheme == SCHEME_WCH_DMI_7F and len(value) == 4:
+    if scheme == SCHEME_DMI_7F and len(value) == 4:
         return f"{struct.unpack('<I', value)[0]:08x} (WCH DMI 0x7F)"
     return f"scheme {scheme} {value.hex()}"

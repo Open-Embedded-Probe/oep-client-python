@@ -62,8 +62,9 @@ def test_list_round_trip():
     entries = [catalog.ListEntry(5, 3, 0, 0, "oep.fixture.i2c-target"),
                catalog.ListEntry(6, 3, 1, 0, "io.github.ch32-riscv-ug.p4.i2c-target")]
     assert catalog.unpack_list_result(catalog.pack_list_result(7, entries)) == (7, entries)
-    assert catalog.unpack_list_request(catalog.pack_list_request("oep.fixture", True, 300)) == ("oep.fixture", True, 300, b"")
-    assert catalog.pack_list_request("oep.core", True, 0x1234)[:4] == bytes([1, 0x34, 0x12, 8])   # first is u16
+    assert catalog.unpack_list_request(catalog.pack_list_request(300)) == (300, b"")
+    assert catalog.pack_list_request(0x1234) == bytes([0x34, 0x12])   # first(u16) only, no prefix (core §7.2)
+    assert catalog.unpack_list_request(bytes([0x34, 0x12]) + catalog.tlv(0x3D, b"")) == (0x1234, catalog.tlv(0x3D, b""))
 
 
 def test_list_total_is_u16_and_a_longer_answer_is_not_rejected():
@@ -77,7 +78,7 @@ def test_list_total_is_u16_and_a_longer_answer_is_not_rejected():
 def test_the_core_is_never_listed_and_dump_shows_it_first():
     """fn 0 has no name and list never returns it (core §0, §7.2): dump describes it first as the core."""
     probe = fake.esp32_v003()
-    total, entries = catalog.unpack_list_result(probe.call(0, 0x02, catalog.pack_list_request("", False, 0)))
+    total, entries = catalog.unpack_list_result(probe.call(0, 0x02, catalog.pack_list_request(0)))
     assert total == 12 and all(e.fn != 0 for e in entries)
     caps = dump.collect(probe.call)
     first = caps.offers[0].entry
@@ -183,24 +184,31 @@ def test_restart_without_restart_max_ms_is_named_missing():
 
 
 def test_fn0_ops_lacking_a_core_op_or_broken_are_named_missing():
-    """fn 0's ops: every core op (all mandatory, core §1.2, §12), in core §7.4's one encoding."""
+    """fn 0's ops: every core op (all mandatory, core §1.2, §12), as a core §7.4 value: base + a bitmap of 1 byte or
+    more, base + 8 x bytes <= 256 (any such value that names the set - no one encoding)."""
     def with_core_ops(value: bytes):
         offered = [fake.Offered(0, 0, "", (catalog.tlv(catalog.OPS, value),) + tuple(
             t for t in o.tlvs if t[0] != catalog.OPS)) if o.fn == 0 else o for o in fake.esp32_v003().offered]
         return dump.collect(fake.FakeProbe("x", 64, offered, fill_ops=False).call).missing
     assert with_core_ops(catalog.pack_ops({1, 2, 3, 0x10, 0x11, 0x12, 0x13})) == ["describe of fn 0: ops clock"]
-    (why,) = with_core_ops(bytes.fromhex("0100"))
-    assert why.startswith("describe of fn 0: ops in core §7.4's encoding")
+    every = set(fake.reg.CORE.op.values())
+    assert with_core_ops(catalog.pack_ops(every) + b"\x00\x00") == []          # a longer bitmap: the same set
+    assert with_core_ops(bytes.fromhex("0100")) == ["describe of fn 0: ops " + ", ".join(
+        name for name, op in sorted(fake.reg.CORE.op.items(), key=lambda kv: kv[1]))]   # valid, names no op
+    for broken in (bytes.fromhex("01"), bytes.fromhex("f901"), bytes.fromhex("f0000000")):   # no bitmap; past 0xFF
+        (why,) = with_core_ops(broken)
+        assert why.startswith("describe of fn 0: ops in core §7.4"), why
 
 
 def test_an_fn_with_broken_ops_is_named_and_unusable():
-    offered = [fake.Offered(o.fn, o.instance, o.name, (catalog.tlv(catalog.OPS, b"\x01\x01\x00"),) + tuple(
+    offered = [fake.Offered(o.fn, o.instance, o.name, (catalog.tlv(catalog.OPS, b"\xf9\x01"),) + tuple(
         t for t in o.tlvs if t[0] != catalog.OPS)) if o.name == "oep.fixture.gpio" else o
         for o in fake.esp32_v003().offered]
     caps = dump.collect(fake.FakeProbe("x", 64, offered).call)
-    assert caps.missing == ["describe of fn 4: ops in core §7.4's encoding (ops ending in a zero byte; the fn is not used)"]
+    (why,) = caps.missing                                           # base 0xF9 + 8 > 256: past op 0xFF (core §7.4)
+    assert why.startswith("describe of fn 4: ops in core §7.4") and "past op 0xFF" in why and why.endswith("not used)")
     row = dump.describe_offer(next(o for o in caps.offers if o.entry.fn == 4))
-    assert row["unusable"].startswith("ops outside core §7.4's encoding")
+    assert row["unusable"].startswith("ops outside core §7.4")
 
 def test_unknown_interfaces_are_shown_raw():
     probe = fake.FakeProbe("x", 256, [
@@ -217,8 +225,8 @@ def test_text_and_json_outputs():
     caps = dump.collect(fake.p4_x035().call)
     text = dump.to_text(caps)
     assert "instance 0" in text and "oep.fixture.i2c-target" in text
-    assert "features: preloaded tx" in text and "clock stretching" not in text   # stretch is an op (its ops tag)
-    assert "ops: configure, arm_rx, read_rx, preload_tx, status, reset, stretch" in text
+    assert "preloaded tx" not in text and "clock stretching" not in text   # one form (fixture §3); stretch is an op
+    assert "ops: configure, read_rx, preload_tx, status, stretch" in text
     assert "15 interfaces in 1 list and 16 describe requests" in text
     data = json.loads(dump.to_json(caps))
     assert data["max_frame"] == 1024 and len(data["interfaces"]) == 16

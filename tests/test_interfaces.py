@@ -177,8 +177,10 @@ def test_run_returns_the_registers_asked_for(dm):
     r = d.run(0x20000000, [], timeout_ms=200)
     assert not r.stopped and not r.not_halted and r.status == riscv.STATUS["timeout"]  # returned, not raised
     assert r.dpc == 0x20000008 and r.values == [0]               # stopped 0: halted by the probe, values valid
-    with pytest.raises(host.Rejected, match="malformed"):
-        d.run(0x20000000, [], timeout_ms=0)
+    ep.target.run_hook = lambda pc, regs: (False, pc + 8, 200000)
+    r = d.run(0x20000000, [], timeout_ms=0)                     # not refused: the probe halts it at once (debug §4.4)
+    assert not r.stopped and not r.not_halted and not r.not_run and r.status == riscv.STATUS["timeout"]
+    assert r.dpc == 0x20000000                                   # stopped 0, dpc = the pc it was given
     with pytest.raises(host.Unsupported):
         d.run(0x20000000, [], timeout_ms=10001)                   # over max_op_ms
 
@@ -208,14 +210,23 @@ def test_state_status_and_unknown_status_are_failures(dm):
         riscv.check("halt", odd, 0x42)
 
 
-def test_reset_method_goes_critical_and_an_unknown_value_is_refused(dm):
+def test_reset_answers_status_flags_pc_and_takes_no_method(dm):
+    """oep-if-debug §4.3: reset is connection(u16) mode(u8), no request TLV (0x01, the old method, is reserved: an
+    unknown tag, core §2.3); the answer is status(u8) flags(u8: bit0 reached, bit1 verified) pc(u32) - no attempts."""
     ep, hst, d = dm
-    assert d.reset_halt(method=riscv.RiscvDm.METHOD_NDMRESET) == 0
+    assert d.reset_halt() == 0
+    flags, pc = d.reset(confirm=True)
+    assert flags & 2
+    op = riscv.reg.TARGET_RISCV_DM.op["reset"]
+    body = struct.pack("<HB", d.conn, d.RESET_HALT)
+    r = hst.call(DM, op, body + m.tlv(0x01, bytes([9])))          # not critical: ignored
+    assert len(r.payload) == 6 and r.payload[0] == riscv.STATUS["ok"]
     with pytest.raises(host.Unsupported) as e:
-        d.reset(method=9)
+        hst.call(DM, op, body + m.tlv(0x01, bytes([9]), critical=True))
     assert e.value.tag == 0x81
-    flags, attempts, pc = d.reset(confirm=True)
-    assert flags & 2 and attempts == 1
+    with pytest.raises(host.Unsupported) as e:
+        hst.call(DM, op, struct.pack("<HB", d.conn, 0x7E))         # a mode left unused: a fixed-part value, 0x00
+    assert e.value.result.payload == b"\x00"
 
 
 # ---- oep.target.console -------------------------------------------------------------------------------------
@@ -264,7 +275,7 @@ def test_console_write_partial_and_a_closed_stream_stays_readable(dm):
     ep, hst, d = dm
     con = console.Console(hst)
     sid = con.open(d.conn)                                        # dmseq; the hart halted: nothing is handed on
-    assert con.send_queue == 256                                  # describe tag 0x41 (console §1)
+    assert ep.send_queue == fake.CONSOLE_SEND_QUEUE == 256        # the probe's own size, not declared (console §2)
     assert con.write(b"x" * 250) == 250                           # into the send queue (console §2)
     assert con.write(b"PING\n" * 2) == 6                          # min(count, the free space): completed partial
     assert bytes(ep.streams[sid].written) == b"" and len(ep.streams[sid].queue) == 256   # queued, not taken yet
@@ -295,8 +306,9 @@ def test_console_write_partial_and_a_closed_stream_stays_readable(dm):
 
 def test_console_io_writes_through_the_send_queue_and_gives_up_on_sdi():
     """console §2 / §3 (oep-spec f0c68bf, R-A): a write takes min(count, the send queue's free space); the probe hands
-    the queue to the target 2 (dmseq) or 3 (DMDATA) bytes a poll; ConsoleIO writes a send_queue at a time, goes on from
-    each answer's accepted, and gives up (TimeoutError) when nothing is taken for stall_s - SDI takes nothing."""
+    the queue to the target 2 (dmseq) or 3 (DMDATA) bytes a poll; ConsoleIO writes what one frame carries, goes on from
+    each answer's accepted, and gives up (TimeoutError) when nothing is taken for stall_s - SDI takes nothing. The
+    queue's size is the probe's own (not declared: no describe send_queue)."""
     clock = Clock()
 
     def tick(data):                                               # time passes between requests: the probe polls
@@ -312,10 +324,10 @@ def test_console_io_writes_through_the_send_queue_and_gives_up_on_sdi():
         sid = con.open(conn, mech)
         n = len(ep.requests)
         io = console.ConsoleIO(con)
-        assert io.send_queue == 256
+        assert not hasattr(io, "send_queue") and not hasattr(con, "send_queue")
         io.write(line)
         sizes = [struct.unpack_from("<H", r.payload, 2)[0] for r in ep.requests[n:] if r.op == con.WRITE]
-        assert sizes[:2] == [256, 256]                            # a whole queue a write, from where it left off
+        assert sizes[:2] == [len(line), len(line) - fake.CONSOLE_SEND_QUEUE]   # all that fits, then from accepted
         assert len(ep.streams[sid].written) % per == 0 or len(ep.streams[sid].queue) == 0   # handed on per poll
         ep.console_take()                                         # the target takes the rest
         assert bytes(ep.streams[sid].written) == line
@@ -339,13 +351,14 @@ def test_gpio_set_is_a_list_in_order_and_only_planned_channels(bench):
     assert ep.requests[-1].payload == bytes([3]) + struct.pack("<HBHBHB", 23, 5, 5, 4, 23, 6)
     assert g.read([23, 5]) == [1, 1]
     raw = hst.request(GPIO, g.READ, bytes([2]) + struct.pack("<HH", 23, 5), locked=False).payload
-    assert raw == bytes([2, 1, 1, 0x01, 2, 0, 0xFF, 2])           # n(u8) n x level, TLV drive (fixture §1 / §1.1)
+    assert raw == bytes([2, 1, 1])                                # n(u8) n x level, no drive TLV (fixture §1)
     with pytest.raises(host.Rejected, match="unavailable") as e:
         g.set([(5, g.OUTPUT_LOW), (40, g.OUTPUT_LOW)])
     assert e.value.channels == [40] and (0x40, bytes([1])) in e.value.tlvs   # the channel, its index (fixture §1)
-    with pytest.raises(host.Unsupported) as e:
-        g.set([(5, 8)])                                           # a mode a later revision may define (core §2.5)
-    assert e.value.tag is None and e.value.tlvs == [(0x02, struct.pack("<H", 5)), (0x40, b"\x00")]
+    for mode in (7, 8):                                           # modes are 0-6: 7+ a later revision may define
+        with pytest.raises(host.Unsupported) as e:
+            g.set([(5, mode)])
+        assert e.value.tag is None and e.value.tlvs == [(0x02, struct.pack("<H", 5)), (0x40, b"\x00")]
     assert ep.gpio_modes[5] == g.OUTPUT_HIGH                      # nothing done
     g.pulse_low(23, 0)
     assert ep.gpio_log[-2:] == [(23, 5), (23, 6)]
@@ -375,8 +388,7 @@ def test_uart_configure_format_and_reads_that_do_not_consume(bench):
     with pytest.raises(host.Unsupported) as e:
         io.uart.configure(50_000_000)                             # more than 5 % off what the probe can do
     assert e.value.tag is None
-    st = io.uart.status()
-    assert st.configured == "session" and st.baud == io.baud and st.format == 0b010100
+    assert io.uart.status() == fixture.UartStatus(baud=io.baud, format=0b010100)   # baud format (fixture §2)
     ep.uart_accept = 2
     assert io.uart.write(b"abc") == 2
     io.uart.mark(7)
@@ -390,14 +402,14 @@ def test_capture_critical_tag_it_cannot_honour_is_unsupported():
         for tag, _ in m.split_tlvs(p):
             if tag == capture.TRIGGER | capture.CRITICAL:
                 return m.REJECTED, m.UNSUPPORTED, bytes([tag])
-        return m.COMPLETED, m.SUCCESS, bytes([m.TAG_IGNORED, 1, 0, capture.PRETRIGGER])
+        return m.COMPLETED, m.SUCCESS, b""
 
     hst = ScriptedHost({(7, capture.LogicCapture.CONFIGURE): configure}, revisions={7: 1})
     cap = capture.LogicCapture(hst, 7)
     with pytest.raises(host.Unsupported) as e:
         cap.configure(rate=1_000_000, samples=100, trigger=(capture.EDGE, 0, 0), critical={capture.TRIGGER})
     assert e.value.tag == capture.TRIGGER | capture.CRITICAL
-    assert cap.configure(rate=1_000_000, samples=100, pretrigger=10).ignored == [capture.PRETRIGGER]
+    assert not hasattr(cap.configure(rate=1_000_000, samples=100, pretrigger=10), "ignored")   # no ignored list
 
 
 def test_stream_io_fits_a_64_byte_frame():
@@ -426,10 +438,10 @@ def test_uart_stream_is_the_plans_and_its_position_never_goes_back(bench):
     assert e.value.cause == "wrong_state"
     with pytest.raises(host.Unavailable):
         uart.read()
-    assert uart.status().configured == "default"
+    assert uart.status() == fixture.UartStatus(baud=115200, format=0)
     core.plan_apply(hst, [(UART, 1, 20)])                        # RX only: the stream is there, 115200 8N1 by default
     ep.uart_rx(UART, b"before configure")
-    assert uart.read().data == b"before configure" and uart.status() == fixture.UartStatus(configured="default", baud=115200, format=0)
+    assert uart.read().data == b"before configure" and uart.status() == fixture.UartStatus(baud=115200, format=0)
     uart.mark(1)
     core.plan_release(hst, [UART])
     with pytest.raises(host.Unavailable):
@@ -441,17 +453,20 @@ def test_uart_stream_is_the_plans_and_its_position_never_goes_back(bench):
     assert [mk.serial for mk in uart.marks()] == [1]              # the serials go on too
 
 
-def test_an_unhonourable_value_follows_the_critical_bit(dm):
-    """§0: a known TLV whose value the probe cannot honour - critical: unsupported with the tag as received;
-    non-critical: dropped and listed in the ignored TLV (0x7F)."""
-    ep, hst, rv = dm
-    method = riscv.reg.TARGET_RISCV_DM.tlv["reset"]["method"]
-    body = struct.pack("<HB", rv.conn, 0)                          # connection(u16), mode 0 (run)
-    with pytest.raises(host.Unsupported):
-        hst.call(DM, riscv.reg.TARGET_RISCV_DM.op["reset"], body + m.tlv(method, bytes([9]), critical=True))
-    r = hst.call(DM, riscv.reg.TARGET_RISCV_DM.op["reset"], body + m.tlv(method, bytes([9])))
-    tail = m.split_tlvs(r.payload[7:])
-    assert (m.TAG_IGNORED, bytes([method])) in [(t, v) for t, v in tail]
+@pytest.mark.parametrize("critical", [False, True])
+def test_an_unhonourable_value_is_unsupported_with_or_without_the_critical_bit(bench, critical):
+    """core §2.3: a TLV the probe implements is checked the same with or without bit 7 - a value it does not handle
+    is unsupported with the tag as received (fixture §2's format), and nothing changes."""
+    ep, hst = bench
+    core.plan_apply(hst, [(UART, 1, 20), (UART, 2, 21)])
+    uart = fixture.FixtureUart(hst, UART)
+    uart.configure(9600)
+    fmt = uart.TAG_FORMAT
+    for value in (0x01, 0x80):                                     # 7N1 not declared; a bit left unused
+        with pytest.raises(host.Unsupported) as e:
+            hst.call(UART, uart.CONFIGURE, struct.pack("<I", 115200) + m.tlv(fmt, bytes([value]), critical=critical))
+        assert e.value.tag == fmt | (m.TAG_CRITICAL if critical else 0)
+    assert uart.status() == fixture.UartStatus(baud=ep.uart_baud[UART][0], format=0) and ep.uart_baud[UART][0] != 115200
 
 
 def test_scan_and_attach_take_the_pin_pair_and_refuse_one_not_allowed(bench):
@@ -480,7 +495,7 @@ def test_attach_reports_the_target_id_when_the_probe_reads_one(bench):
     riscv.Wire(hst).detach(1)
     ep.target_id = 0x035E0601
     conn, _ = wire.attach(halt=False)
-    assert wire.target_id == (riscv.Wire.SCHEME_WCH_DMI_7F, struct.pack("<I", 0x035E0601))
+    assert wire.target_id == (riscv.Wire.SCHEME_DMI_7F, struct.pack("<I", 0x035E0601))
 
 
 def test_a_plan_replaces_only_the_fns_it_names_and_release_takes_a_list(bench):

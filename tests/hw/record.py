@@ -112,7 +112,7 @@ def probe_info(hst: h.Host) -> dict:
 
 def declared(hst: h.Host, fn: int) -> dict:
     """An interface's describe (core §7.4), the common tags decoded: role_channels {role: [channels]}, channel_groups
-    [(group, [(role, channel)])], max_clock_hz, min_clock_hz, max_length, features, implementation, ops; `own`: the
+    [(group, [(role, channel)])], max_clock_hz, min_clock_hz, max_length, features, ops; `own`: the
     interface's own tags (0x40 and up) raw, {tag: [value, ...]} in the order declared."""
     out: dict = {"role_channels": {}, "channel_groups": [], "own": {}}
     for tag, v in core.describe(hst, fn):
@@ -127,8 +127,6 @@ def declared(hst: h.Host, fn: int) -> dict:
             out[name] = struct.unpack_from("<I", v)[0]
         elif t == COMMON["max_length"] and len(v) >= 2:
             out["max_length"] = struct.unpack_from("<H", v)[0]
-        elif t == COMMON["implementation"] and v:
-            out["implementation"] = v[0]
         elif t == COMMON["ops"]:
             out.setdefault("ops", []).extend(sorted(catalog.unpack_ops(v)))   # core §7.4
         elif t >= 0x40:

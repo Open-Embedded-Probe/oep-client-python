@@ -1,6 +1,7 @@
 """oep.fixture.logic in the fake probe, through oep_client.capture (oep-if-capture): the counter waveform, the layouts,
 triggers, repeat's ring and release, streaming pushes."""
 
+import dataclasses
 import struct
 
 import pytest
@@ -218,7 +219,7 @@ def test_an_analog_pin_is_shared_with_nothing():
     for other in ([(lc.fn, 0, 16)], [(gpio, 1, 16)]):             # logic that would read 0, a driver that would not drive
         with pytest.raises(h.Unavailable) as e:
             core.plan_apply(hst, other)
-        assert (e.value.cause, e.value.channels, e.value.holder_fn, e.value.holder_kind) == ("pin_in_use", [16], an.fn, "plan")
+        assert (e.value.cause, e.value.channels) == ("pin_in_use", [16])   # cause, channel (no holder: core §4.3)
     core.plan_apply(hst, [(lc.fn, 0, 17)])                          # another pad: fine
     core.plan_release(hst, [an.fn])
     core.plan_apply(hst, [(lc.fn, 0, 16)])
@@ -283,7 +284,6 @@ def test_analog_values_scale_and_calibration():
     assert cfg.rate == c.Fraction(83_333, 9)                        # the ADC's 83.3 kHz divided: at or under 10 kHz
     assert cfg.frontend == {0: 3, 1: 0} and cfg.skew_ns == {0: 0, 1: int(1e9 / (cfg.rate * 2))}   # one ADC, in turn
     assert cfg.scale_nv[0] == 3100 * 1_000_000 // 4095 and cfg.reference == ("internal", 1100, False)
-    assert cfg.rate_measured and cfg.rate_ppm == 1500
     an.start()
     (seg,) = an.wait()
     data = an.read_segment(seg)
@@ -313,8 +313,9 @@ def test_a_group_starts_logic_and_analog_together_and_marks_the_trigger_on_both(
     lc.configure(rate=1_000_000, samples=10_000, trigger=(c.EDGE, 1, 0), pretrigger=4000)
     an.configure(rate=10_000, samples=100)
     grp.bind([lc, an], trigger=lc)
-    with pytest.raises(h.Rejected):
+    with pytest.raises(h.Unavailable) as e:
         an.start()                                                  # bound: the group starts it
+    assert e.value.cause == "bound_in_group"
     _, start_ns = grp.start([lc, an])
     assert grp.generations == {lc.fn: 1, an.fn: 1} and lc.generation == an.generation == 1   # the answer's TLV
     st = grp.wait()
@@ -345,9 +346,103 @@ def test_a_group_refuses_what_it_cannot_bind():
     an.configure(rate=41_666, samples=100)                          # 2 channels x 41.6 kHz = the ADC's whole budget
     grp.bind([lc, an])
     assert an.config.rate * 2 <= 83_333
-    with pytest.raises(h.Rejected):
+    with pytest.raises(h.Unavailable) as e:
         lc.configure(rate=1_000_000, samples=100)                   # bound: configure again after unbinding
+    assert e.value.cause == "bound_in_group"                        # cause 4, nothing more (no holder_fn)
+    with pytest.raises(h.Unavailable) as e:
+        lc.start()                                                  # a bound track's start: the same
+    assert e.value.cause == "bound_in_group"
     grp.bind([])
     lc.configure(rate=1_000_000, samples=100, trigger=(c.EDGE, 0, 0))
     with pytest.raises(h.Rejected):
         grp.bind([lc, an], trigger=an)                              # only the trigger track may have a trigger
+
+
+# ---- what configure / describe say (oep-if-capture §3.3, §2; core §2.3) --------------------------------------------
+
+def _configure_body(mode=c.ONE_SHOT, rate=1_000_000, critical=(), extra=b""):
+    return (m.tlv(c.MODE, bytes([mode]), critical=c.MODE in critical)
+            + m.tlv(c.RATE, struct.pack("<I", rate), critical=c.RATE in critical) + extra)
+
+
+@pytest.mark.parametrize("what, body, tag", [
+    ("a mode not declared", _configure_body(mode=c.REPEAT), c.MODE),
+    ("a mode the definition leaves unused", _configure_body(mode=9), c.MODE),
+    ("a rate under rate_range", _configure_body(rate=1), c.RATE),
+    ("an unknown trigger type", _configure_body(extra=m.tlv(c.TRIGGER, struct.pack("<BBI", 99, 0, 0))), c.TRIGGER),
+])
+@pytest.mark.parametrize("critical", [False, True])
+def test_configure_refuses_an_unhandled_value_unsupported_with_the_tag_as_received(what, body, tag, critical):
+    """oep-if-capture §3.3 / core §2.3: configure's TLVs follow the general rule alone (no "always critical"): a value
+    the probe does not handle is unsupported with the tag as received - bit 7 set or not - in configure and query."""
+    ep, hst, lc, _ = bench(fake.esp32_v003)                         # one-shot only, 400 kHz - 2 MHz
+    core.plan_apply(hst, [(lc.fn, 0, 4)])
+    if critical:                                                    # the same request with the refused TLV critical
+        tlvs = [(t | (0x80 if t == tag else 0), v) for t, v in m.split_tlvs(body)]
+        body = b"".join(m.tlv(t & 0x7F, v, critical=bool(t & 0x80)) for t, v in tlvs)
+    for op in (lc.CONFIGURE, lc.QUERY_OP):
+        with pytest.raises(h.Unsupported) as e:
+            hst.request(lc.fn, op, body, locked=op == lc.CONFIGURE)
+        assert e.value.result.payload[0] == tag | (0x80 if critical else 0), what
+    assert lc.config is None
+
+
+def test_analog_frontend_past_the_declared_is_unsupported_critical_or_not():
+    ep, hst, lc, _ = bench()
+    an = c.AnalogCapture(hst)
+    core.plan_apply(hst, [(an.fn, 0, 16)])
+    for critical in (False, True):
+        body = _configure_body(rate=10_000) + m.tlv(c.FRONTEND, bytes([0, 9]), critical=critical)
+        with pytest.raises(h.Unsupported) as e:
+            hst.request(an.fn, an.CONFIGURE, body)
+        assert e.value.result.payload[0] == c.FRONTEND | (0x80 if critical else 0)
+
+
+def test_configure_answer_has_no_timing_rate_accuracy_or_ignored():
+    """The answer carries the actual values only: no timing (0x54), rate_accuracy (0x5A) or ignored (0x7F) - an
+    unknown non-critical request TLV is skipped silently (core §2.3)."""
+    ep, hst, lc, _ = bench()
+    an = c.AnalogCapture(hst)
+    core.plan_apply(hst, [(lc.fn, 0, 20), (an.fn, 0, 16)])
+    for fn, rate in ((lc.fn, 1_000_000), (an.fn, 10_000)):
+        r = hst.request(fn, c.LogicCapture.CONFIGURE, _configure_body(rate=rate) + m.tlv(0x7E, b"\x01"))
+        tags = {t for t, _ in m.split_tlvs(r.payload)}
+        assert c.ACTUAL_RATE in tags and not {0x54, 0x5A, 0x7F} & tags
+
+
+def test_describe_declares_no_background_layouts_or_budgets():
+    """oep-if-capture §2 / §4: mode is mode(u8) max_samples(u32) max_segments(u32); channels is max(u8) alone; no
+    rate_list / rate_limit / max_read / segment_ring / frontend_shared; a capture-group declares tracks only."""
+    ep, hst, lc, _ = bench()
+    an, grp = c.AnalogCapture(hst), c.CaptureGroup(hst)
+    for fn in (lc.fn, an.fn):
+        d = core.describe(hst, fn)
+        modes = [v for t, v in d if t & 0x7F == 0x40]
+        assert modes and all(len(v) == 9 for v in modes)
+        assert {v[0] for v in modes} == {c.ONE_SHOT, c.REPEAT, c.STREAMING}
+        assert [v for t, v in d if t & 0x7F == 0x44] == [bytes([16 if fn == lc.fn else 4])]
+        assert not {0x42, 0x43, 0x47, 0x48, 0x49} & {t & 0x7F for t, _ in d}
+    tags = {t & 0x7F for t, _ in core.describe(hst, grp.fn)}
+    assert 0x40 in tags and not {0x41, 0x42, 0x43} & tags
+
+
+def test_a_bind_short_of_resources_is_unavailable_limit_naming_the_fn():
+    """oep-if-capture §4: a bind whose tracks cannot take what they need together is unavailable cause 2 (limit) with
+    TLV fn (core §4.3: no budget declared - the probe knows it); a refused bind changes nothing."""
+    probe = fake.p4_x035()
+    probe = fake.FakeProbe(probe.label, probe.max_frame, [
+        o if o.name != "oep.fixture.capture-group"
+        else dataclasses.replace(o, inner=(("max_tracks", 2), ("budgets", ((50_000, (11,)),))))
+        for o in probe.offered], own_channels=probe.own_channels)
+    ep, hst, lc, _ = bench(lambda: probe)
+    an, grp = c.AnalogCapture(hst), c.CaptureGroup(hst)
+    core.plan_apply(hst, [(lc.fn, 0, 20), (an.fn, 0, 16), (an.fn, 1, 17)])
+    lc.configure(rate=1_000_000, samples=100)
+    an.configure(rate=20_000, samples=100)                          # 2 x 20 kHz: within 50 kHz
+    grp.bind([lc, an])
+    grp.bind([])
+    an.configure(rate=41_666, samples=100)                          # 2 x 41.6 kHz: past it
+    with pytest.raises(h.Unavailable) as e:
+        grp.bind([lc, an])
+    assert (e.value.cause, e.value.fn) == ("limit", an.fn)
+    lc.configure(rate=1_000_000, samples=100)                       # nothing bound: its own again

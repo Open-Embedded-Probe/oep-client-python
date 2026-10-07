@@ -7,9 +7,10 @@ what follows a payload's fixed part.
 §2.3: every fixed form (a fixed part, a TLV's value, a sequence's element, a probe.config item) is fixed by (name,
 revision) and never extended at its end; a sequence is count x element with no element length. After a result's fixed
 part (and any counted list) come TLVs (tag u8, len u16, value - core §2.2, one form whatever the length); the host skips
-tags it does not know. A request may end with TLVs too; tag bit 7 = critical (the probe honours it or answers rejected
-unsupported with the tag), and the probe lists the non-critical tags it ignored in a result TLV 0x7F. Numbers come from
-`registry` (generated from oep-spec registry/oep-v1.toml).
+tags it does not know. A request may end with TLVs too; tag bit 7 = critical: a probe that does not implement the tag
+refuses the request rejected unsupported (the tag as received) when it is set, and ignores the TLV when it is not; a
+TLV the probe implements is checked the same with or without the bit (core §2.3). Tags 0x00 and 0x7F are never TLV
+tags. Numbers come from `registry` (generated from oep-spec registry/oep-v1.toml).
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ UNKNOWN_FUNCTION = _R["unknown_function"]
 UNKNOWN_OPERATION = _R["unknown_operation"]
 MALFORMED = _R["malformed"]
 UNAVAILABLE = _R["unavailable"]
-BUSY = _R["busy"]                          # a long operation is running: answered at once
+BUSY = _R["busy"]                          # reserved: a host takes it as a failure (core §2.4)
 WINDOW_EXCEEDED = _R["window_exceeded"]
 NO_SESSION = _R["no_session"]              # a session_id while no session holds the lock: open a new session
 LOCKED = _R["locked"]                      # another session holds the lock; payload = remaining ms (u32)
@@ -41,12 +42,12 @@ SESSION_REQUIRED = _R["session_required"]  # an op that needs the lock came with
 NO_CONNECTION = _R["no_connection"]        # the probe does not know the request's connection: attach again
 UNSUPPORTED = _R["unsupported"]            # a critical TLV (payload: its tag) or a fixed-part value it cannot handle
 RESULT_LOST = _R["result_lost"]            # a request sent again whose result the probe did not keep: read the state again
-CORR_REUSED = _R["corr_reused"]            # a request sent again with the same corr but another fn, op or payload
 
 REJECT_NAMES = {v: k.replace("_", " ") for k, v in _R.items()}
 REJECT_NAMES[MALFORMED] = "malformed payload"
 
-TAG_CRITICAL, TAG_IGNORED, TAG_INVALID = reg.TAG_CRITICAL, reg.TAG_IGNORED, reg.TAG_INVALID
+TAG_CRITICAL = reg.TAG_CRITICAL
+TAG_RESERVED = 0x7F                        # never a TLV tag, in every context (core §2.2, §2.5)
 TAG_FIXED = reg.TAG_RESERVED_ZERO          # the rejected unsupported payload's first byte for a fixed-part value (core §4.3)
 TAG_OPS = reg.DESCRIBE_COMMON["ops"]       # every fn's describe: base(u8) bitmap - the ops it offers (core §1.2, §7.4)
 
@@ -150,8 +151,8 @@ def tlv(tag: int, value: bytes, critical: bool = False) -> bytes:
     argument the probe must honour or refuse)."""
     if len(value) > 0xFFFF:
         raise ValueError(f"TLV 0x{tag:02x}: value of {len(value)} bytes does not fit a u16 length")
-    if tag & 0x7F == TAG_IGNORED or tag == TAG_FIXED:
-        raise ValueError("tags 0x00 and 0x7F are reserved (the unsupported marker, the ignored list)")
+    if tag & 0x7F in (TAG_RESERVED, TAG_FIXED):
+        raise ValueError("tags 0x00 and 0x7F are never TLV tags (core §2.2)")
     return struct.pack("<BH", tag | (TAG_CRITICAL if critical else 0), len(value)) + value
 
 
@@ -173,35 +174,16 @@ def split_tlvs(data: bytes) -> list[tuple[int, bytes]]:
 
 @dataclass
 class Tail:
-    """The TLVs after a result's known part: `tlvs` in order (unknown tags included, for whoever knows them), and
-    `ignored`, the non-critical request tags the probe said it ignored (TLV 0x7F)."""
+    """The TLVs after a result's known part, in order (unknown tags included, for whoever knows them)."""
     tlvs: list[tuple[int, bytes]] = field(default_factory=list)
-    ignored: list[int] = field(default_factory=list)
 
     def get(self, tag: int) -> bytes | None:
         """The first TLV of `tag` (core §2.3: a tag twice in an answer - the host uses the first)."""
         return next((v for t, v in self.tlvs if t == tag), None)
 
-    @property
-    def more_ignored(self) -> bool:
-        """The probe ignored more than it lists (core §2.3, C-04: 0x00 as the last of at most 16 entries): every TLV of
-        the request not listed may have been ignored too."""
-        return TAG_FIXED in self.ignored
-
-    def may_have_ignored(self, tag: int) -> bool:
-        """Whether the request's TLV `tag` (its number, bit 7 cleared) may not have taken effect: listed, or not
-        listed but the list ends in 0x00 ("more were ignored")."""
-        return (tag & 0x7F) in self.ignored or self.more_ignored
-
     @classmethod
     def parse(cls, data: bytes) -> Tail:
-        t = cls()
-        for tag, value in split_tlvs(data):
-            if tag == TAG_IGNORED:
-                t.ignored += list(value)
-            else:
-                t.tlvs.append((tag, value))
-        return t
+        return cls(split_tlvs(data))
 
 
 class Reader:
@@ -263,7 +245,8 @@ def shown(raw: bytes) -> str:
 
 
 def valid_text(raw: bytes) -> bool:
-    """Text a request may carry (core §2.1): valid UTF-8 without C0 control characters or 0x7F."""
+    """Text this host puts in a request: valid UTF-8 without C0 control characters or 0x7F (what a host shows after
+    replacing them, core §2.1; the probe does not refuse other text)."""
     try:
         text = bytes(raw).decode("utf-8")
     except UnicodeDecodeError:

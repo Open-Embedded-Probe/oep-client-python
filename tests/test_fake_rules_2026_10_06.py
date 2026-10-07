@@ -1,7 +1,8 @@
 """The fake probe against the probe-side rules added since the 2026-10-02 rule changes: oep-spec 2e70f40 (required and
 optional ops, C-21), 975d88c / 598bb26 / 8d91db0 (the lines while a wire does not answer, the rest states), 73a0c37
 (cs_setup_ns, search_retries, boot_reset), and docs/v1-rule-change-proposal-2026-10-06.md (b4b08f1, 40291a4). Each test
-names its item."""
+names its item. Updated to oep-spec 0f455a0 (rule review 2026-10-07 §2: any one reason after the session check, no
+ignored TLV, no reset method / boot_reset, the new idle / slot forms)."""
 
 import struct
 
@@ -9,7 +10,7 @@ import pytest
 
 from oep_client import catalog, endpoint, fake, message as m, registry as reg
 
-from test_fake_spec import ITEM, PLAN_APPLY, PLAN_RELEASE, SPEED, Clock, Host, slot_item
+from test_fake_rules_2026_10_02 import ITEM, PLAN_APPLY, SPEED, Clock, Host, slot_item
 
 CORE = reg.CORE
 RV, CFG = reg.TARGET_RISCV_DM, reg.PROBE_CONFIG
@@ -166,8 +167,8 @@ def test_clock_touches_no_session_lock_or_lease():
     assert clock(other)[0] == ep.boot_id and other.raw(0, m.OP_CLOCK).detail == m.LOCKED
     assert (ep.expires_ms, ep.newest_corr, ep.holder) == (expires, newest, 0x51)
     assert clock(h, session=True)[1] == 500_000_000 and ep.expires_ms == 500 + ep.lease_ms
-    r = h.raw(0, m.OP_CLOCK, m.tlv(0x3D, b"\x01"), session=False)               # no fixed part: a TLV ignored, listed
-    assert r.succeeded and r.payload[12:] == bytes([m.TAG_IGNORED, 1, 0, 0x3D])
+    r = h.raw(0, m.OP_CLOCK, m.tlv(0x3D, b"\x01"), session=False)               # no fixed part: a TLV ignored silently
+    assert r.succeeded and r.payload[12:] == b""                              # (no ignored list, core §2.3)
     assert h.raw(0, m.OP_CLOCK, b"\x01", session=False).detail == m.MALFORMED  # a broken tail
 
 
@@ -243,43 +244,50 @@ def test_c36_the_probe_discards_what_is_not_a_whole_request(data):
 
 def test_c39_list_from_beyond_the_matches_gives_the_total_and_count_0():
     ep, h = bench()
-    r = h.raw(0, m.OP_LIST, catalog.pack_list_request("", False, 50), session=False)
+    r = h.raw(0, m.OP_LIST, catalog.pack_list_request(50), session=False)     # first(u16) alone (core §7.2)
     total, entries = catalog.unpack_list_result(r.payload)
     assert (total, entries) == (len(ep.names) - 1, [])                       # fn 0 is never listed (core §7.2)
 
 
-# ---- △12: every channel that is not reserved is in its idle state from boot ----------------------------------------
+# ---- △12: every channel that is not the probe's own is in its idle state from boot------------------------------------
 
-def test_t12_every_channel_not_reserved_is_parked_at_boot():
+def test_t12_every_channel_not_the_probes_own_is_parked_at_boot():
     ep = endpoint.Endpoint(fake.p4_x035(), Clock())
-    assert set(ep.parked) == set(range(55)) - {24, 25}                        # channels 55, reserved 24 / 25
+    assert set(ep.parked) == set(range(55)) - {24, 25}                        # channels 55, its own 24 / 25
     assert set(ep.parked.values()) == {0}                                     # Hi-Z without settings
 
 
-# ---- C-21 (rest): an fn inside the payload is checked at the end of order 5 ----------------------------------------
+# ---- C-21 (rest), core §4.3: after the session check, any one reason that applies --------------------------------
 
 def assignment(fn, role, ch, critical=True):
     return m.tlv(reg.PROBE_PLAN.tlv["plan_apply"]["role_assignment"], struct.pack("<HBH", fn, role, ch), critical=critical)
 
 
-def test_c21_plan_apply_malformed_before_unknown_function_before_unsupported():
+def test_plan_apply_any_one_reason_that_applies():
+    """core §4.3 (rule review 2026-10-07): after the session check the probe checks everything before any change and
+    answers with any one reason that applies - no order among malformed, unknown_function (an fn in the payload),
+    unsupported and unavailable any more."""
     ep, h = bench(fake.p4_x035())
-    # fn 99 does not exist; the i2c-target (fn 8) misses its SCL: the form wins
+    # fn 99 does not exist; the i2c-target (fn 8) misses its SCL (malformed)
     r = h.raw(h.plan_fn, PLAN_APPLY, assignment(99, 1, 20) + assignment(8, 1, 21))
-    assert r.detail == m.MALFORMED
-    # fn 99 and an unknown critical TLV: the fn first (order 5), the TLV after (order 6)
+    assert r.detail in (m.MALFORMED, m.UNKNOWN_FUNCTION)
+    # fn 99 and an unknown critical TLV
     r = h.raw(h.plan_fn, PLAN_APPLY, m.tlv(0x3E, b"", critical=True) + assignment(4, 1, 20) + assignment(99, 1, 21))
-    assert r.detail == m.UNKNOWN_FUNCTION
+    assert r.detail in (m.UNKNOWN_FUNCTION, m.UNSUPPORTED) and (r.detail != m.UNSUPPORTED or r.payload == b"\xbe")
     r = h.raw(h.plan_fn, PLAN_APPLY, m.tlv(0x3E, b"", critical=True) + assignment(4, 1, 20))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\xbe")
+    assert not [a for a in ep.plan if a[0] == 4]                              # nothing changed
 
 
-def test_c21_plan_apply_unsupported_for_every_assignment_before_unavailable():
+def test_plan_apply_unsupported_or_unavailable_and_nothing_changes():
     ep, h = bench(fake.p4_x035())
     assert h.raw(h.plan_fn, PLAN_APPLY, assignment(5, 1, 20)).succeeded         # the uart holds channel 20
-    # the gpio's first assignment meets that hold (order 7), its second names a channel it does not offer (order 6)
+    # the gpio's first assignment meets that hold (unavailable), its second names a channel it does not offer
     r = h.raw(h.plan_fn, PLAN_APPLY, assignment(4, 1, 20) + assignment(4, 1, 24))
-    assert r.detail == m.UNSUPPORTED and una(m.Result(0, 0, 0, r.payload[1:]))[UNA["channel"]] == struct.pack("<H", 24)
+    assert r.detail in (m.UNSUPPORTED, m.UNAVAILABLE)
+    detail = una(m.Result(0, 0, 0, r.payload[1:])) if r.detail == m.UNSUPPORTED else una(r)
+    assert detail[UNA["channel"]] == struct.pack("<H", 24 if r.detail == m.UNSUPPORTED else 20)
+    assert not [a for a in ep.plan if a[0] == 4]
 
 
 def test_subscribe_is_the_emitting_interfaces_own_op():
@@ -306,44 +314,51 @@ def uart_item(fn, baud=115200, fmt=0):
     return m.tlv(ITEM["uart"], struct.pack("<HIB", fn, baud, fmt))
 
 
-def idle(ch, mode, kind=2, value=0):
-    """An idle item: channel mode drive_kind drive_value, 6 bytes (probe.config §1); default the default drive."""
-    return m.tlv(ITEM["idle"], struct.pack("<HBBH", ch, mode, kind, value))
+def idle(ch, mode, drive=0xFF):
+    """An idle item: channel(u16) mode(u8) drive(u8), 4 bytes (probe.config §1); 0xFF the default level."""
+    return m.tlv(ITEM["idle"], struct.pack("<HBB", ch, mode, drive))
 
 
-def test_c21_probe_config_set_checks_every_items_form_first():
+def test_probe_config_set_any_one_reason_and_nothing_changes():
+    """core §4.3 (rule review 2026-10-07): an item the probe does not declare (unsupported, the item tag as received)
+    and an item of another length (malformed, probe.config §1) in one set - either answers, nothing is applied."""
     without_disable = with_tlvs(fake.p4_bench(), "oep.probe.config", lambda tlvs: [
         catalog.tlv(CFG.tlv["describe"]["items"], bytes(v for v in ITEM.values() if v != ITEM["disable"]))
         if t[0] == CFG.tlv["describe"]["items"] else t for t in tlvs])
     ep, h = bench(without_disable)
     disable = m.tlv(ITEM["disable"], struct.pack("<H", 20), critical=True)
-    r = cfg_set(h, 6, disable, m.tlv(ITEM["idle"], struct.pack("<HBB", 21, 0, 2)))   # an idle of 4 bytes: malformed
-    assert r.detail == m.MALFORMED
+    r = cfg_set(h, 6, disable, m.tlv(ITEM["idle"], struct.pack("<HB", 21, 0)))   # an idle of 3 bytes
+    assert r.detail in (m.MALFORMED, m.UNSUPPORTED) and (r.detail != m.UNSUPPORTED or r.payload == b"\x87")
     r = cfg_set(h, 6, disable, idle(21, 0))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([ITEM["disable"] | 0x80]))
-    r = h.raw(6, CFG.op["unset"], b"\x02" + bytes([3, ITEM["disable"], 20, 0]) + bytes([5, ITEM["idle"], 21]))
-    assert r.detail == m.MALFORMED                                            # the second row is cut short
-
-
-def test_c21_probe_config_set_fns_before_what_the_probe_lacks():
-    ep, h = bench()
-    r = cfg_set(h, 6, idle(21, 9), uart_item(99))                             # mode 9 (order 6), fn 99 (order 5)
-    assert r.detail == m.UNKNOWN_FUNCTION
-    r = cfg_set(h, 6, uart_item(99, baud=0))                                  # baud 0 is the form's
+    r = cfg_set(h, 6, idle(21, 0), m.tlv(ITEM["idle"], struct.pack("<HBBB", 22, 0, 0xFF, 0)))   # 5 bytes: too long
     assert r.detail == m.MALFORMED
-    r = cfg_set(h, 6, slot_item(0, 1, (2, 3), attach=5), slot_item(1, 99, (4, 5)))
-    assert r.detail == m.UNKNOWN_FUNCTION                                     # the second slot's wire_fn first
+    r = h.raw(6, CFG.op["unset"], b"\x02" + bytes([3, ITEM["disable"], 20, 0]) + bytes([5, ITEM["idle"], 21]))
+    assert r.detail in (m.MALFORMED, m.UNSUPPORTED)                          # the second row is cut short
+    assert not ep.config
 
 
-def test_c21_an_undefined_attach_is_unsupported_and_its_contradictions_are_not_checked():
+def test_probe_config_set_any_one_of_unknown_function_unsupported_malformed():
     ep, h = bench()
-    r = cfg_set(h, 6, slot_item(0, 1, (2, 3), attach=5, boot_reset=1))      # boot_reset 1 off at boot: not checked
+    r = cfg_set(h, 6, idle(21, 9), uart_item(99))                             # mode 9 unsupported, fn 99 unknown
+    assert r.detail in (m.UNKNOWN_FUNCTION, m.UNSUPPORTED)
+    r = cfg_set(h, 6, uart_item(99, baud=0))                                  # baud 0 is the form's; fn 99
+    assert r.detail in (m.MALFORMED, m.UNKNOWN_FUNCTION)
+    assert cfg_set(h, 6, uart_item(5, baud=0)).detail == m.MALFORMED
+    r = cfg_set(h, 6, slot_item(0, 1, (2, 3), attach=5), slot_item(1, 99, (4, 5)))
+    assert r.detail in (m.UNKNOWN_FUNCTION, m.UNSUPPORTED)
+    assert not ep.config
+
+
+def test_an_undefined_attach_is_unsupported():
+    ep, h = bench()
+    r = cfg_set(h, 6, slot_item(0, 1, (2, 3), attach=5))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([ITEM["slot"]]))
 
 
 def test_c21_a_plan_item_on_a_channel_the_fn_does_not_offer_names_the_item():
     ep, h = bench(fake.p4_x035())
-    plan = m.tlv(ITEM["plan"], struct.pack("<HBH", 4, 1, 24), critical=True)  # 24 is reserved: no fn offers it
+    plan = m.tlv(ITEM["plan"], struct.pack("<HBH", 4, 1, 24), critical=True)  # 24 is the probe's own: no fn offers it
     r = cfg_set(h, 10, plan)
     assert r.detail == m.UNSUPPORTED and r.payload[0] == ITEM["plan"] | 0x80
 
@@ -394,7 +409,7 @@ def test_attach_reset_tlv_on_an_output_idle_channel_is_unavailable_and_runs_noth
     r = h.raw(1, 0x02, b"\x00" + SPEED + reset)
     assert r.detail == m.UNAVAILABLE
     assert una(r) == {UNA["cause"]: bytes([CORE.enum["unavailable_cause"]["held_by_settings"]]),
-                      UNA["channel"]: struct.pack("<H", 23), UNA["holder_kind"]: bytes([CORE.enum["holder_kind"]["settings_idle"]])}
+                      UNA["channel"]: struct.pack("<H", 23)}                  # cause, channel, fn only (core §4.3)
     assert tg.silent_until_reset                                              # the line was never pulled
 
 
@@ -418,16 +433,21 @@ def test_search_retries_only_when_a_bring_up_ran():
 
 # ---- ○2: the reset op is ndmreset and drives no line --------------------------------------------------------------
 
-def test_o2_reset_method_0_is_ndmreset_and_moves_no_line():
+def test_o2_reset_is_ndmreset_and_moves_no_line():
+    """debug §4.3 (rule review 2026-10-07): reset is mode(u8) alone (no method TLV) and uses ndmreset; it never moves
+    the reset line. Its answer is status(u8) flags(u8) pc(u32)."""
     ep, h = bench(fake.esp32_v003())
     cid = attached(ep, h, pair=ep.pairs[1][0])
     sid = struct.unpack_from("<H", h.ok(3, reg.TARGET_CONSOLE.op["open"], struct.pack("<HB", cid, 2)))[0]
-    method = RV.tlv["reset"]["method"]
-    for body in (b"\x00", b"\x00" + m.tlv(method, b"\x00", critical=True), b"\x00" + m.tlv(method, b"\x01", critical=True)):
-        assert h.raw(2, RV.op["reset"], struct.pack("<H", cid) + body).succeeded
+    for mode in (0, 1, 2):
+        r = h.raw(2, RV.op["reset"], struct.pack("<HB", cid, mode))
+        assert r.succeeded and len(r.payload) == 6
+        status, flags, pc = struct.unpack("<BBI", r.payload)
+        assert status == 0 and flags & 1 and (flags & 2) == (2 if mode == 1 else 0)
     marks = [mk for mk in ep.streams[sid].marks if mk[2] == reg.COMMON.enum["mark_kind"]["reset"]]
     assert [mk[4] for mk in marks] == [reg.COMMON.enum["mark_detail_reset"]["ndmreset"]] * 3
-    assert "nrst" not in reg.COMMON.enum["mark_detail_reset"] and ep.gpio_log == [] and ep.slot_reset_log == []
+    assert "nrst" not in reg.COMMON.enum["mark_detail_reset"] and ep.gpio_log == []
+    assert "reset" not in RV.tlv
 
 
 # ---- △5 / △6: i2c-target's reserved addresses; uart write without TX; spi arm count > length -----------------------
@@ -437,7 +457,7 @@ def test_o2_reset_method_0_is_ndmreset_and_moves_no_line():
 def test_t5_i2c_target_refuses_the_reserved_addresses(address, detail):
     ep, h = bench(fake.p4_x035())
     assert h.raw(h.plan_fn, PLAN_APPLY, assignment(8, 1, 20) + assignment(8, 2, 21)).succeeded
-    r = h.raw(8, I2C.op["configure"], bytes([address, 1]))
+    r = h.raw(8, I2C.op["configure"], bytes([address]))                       # address(u8) alone (fixture §3)
     if detail is None:
         assert r.succeeded
     else:
@@ -473,19 +493,23 @@ def test_cs_setup_ns_is_declared_by_a_probe_that_drives_miso_in_software():
     assert not [t for t in ep.static[fn_of(ep, "oep.fixture.spi-target")] if t[0] == tag]   # MISO at once: left out
 
 
-def test_c21_group_bind_checks_its_form_before_the_state():
+def test_group_bind_any_one_reason_and_a_bound_tracks_configure_is_cause_4():
+    """core §4.3 (rule review 2026-10-07): the form and the state are checked before any change, and any one reason
+    that applies answers; a bound track's own configure / start is unavailable cause 4 (capture §4)."""
     ep, h = bench(fake.p4_x035())
     group = fn_of(ep, "oep.fixture.capture-group")
     ep.groups[group].tracks = [7]                                             # a bound track that is capturing
     ep.captures[7].state = reg.FIXTURE_LOGIC.enum["state"]["capturing"]
-    assert h.raw(group, GROUP.op["bind"], struct.pack("<BHH", 2, 7, 7)).detail == m.MALFORMED   # the same fn twice
-    assert h.raw(group, GROUP.op["bind"], struct.pack("<BH", 1, 4)).detail == m.UNSUPPORTED      # not a track
+    assert h.raw(group, GROUP.op["bind"], struct.pack("<BHH", 2, 7, 7)).detail in (m.MALFORMED, m.UNAVAILABLE)
+    assert h.raw(group, GROUP.op["bind"], struct.pack("<BH", 1, 4)).detail in (m.UNSUPPORTED, m.UNAVAILABLE)
     assert h.raw(group, GROUP.op["bind"], struct.pack("<BH", 1, 7)).detail == m.UNAVAILABLE
+    assert ep.groups[group].tracks == [7]
 
 
-def test_c21_a_bound_tracks_start_checks_its_tail_before_the_group():
+def test_a_bound_tracks_start_any_one_reason():
     ep, h = bench(fake.p4_x035())
     ep.captures[7].group = ep.groups[fn_of(ep, "oep.fixture.capture-group")]
     bad = b"\x01"                                                             # a TLV cut short
-    assert h.raw(7, LOGIC.op["start"], bad).detail == m.MALFORMED
-    assert h.raw(7, LOGIC.op["start"]).detail == m.UNAVAILABLE
+    assert h.raw(7, LOGIC.op["start"], bad).detail in (m.MALFORMED, m.UNAVAILABLE)
+    r = h.raw(7, LOGIC.op["start"])
+    assert r.detail == m.UNAVAILABLE and una(r) == {UNA["cause"]: b"\x04"}  # no holder_fn any more

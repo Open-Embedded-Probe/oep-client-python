@@ -1,15 +1,16 @@
 """The fake's oep.fixture.i2c-target / spi-target (oep-spec oep-if-fixture §3 / §4) through the client classes: the
-plan roles, configure / arm / preload / read_rx / status / reset, the refusals in core §4.3's order, and the bus side
+plan roles, configure / arm / preload / read_rx / status, the refusals in core §4.3's order, and the bus side
 by the endpoint's test hooks (i2c_write / i2c_read / spi_transfer: the fake has no bus controller of its own)."""
 
 import random
+import struct
 
 import pytest
 
-from oep_client import core, endpoint, fake, fixture, host, message as m
+from oep_client import core, endpoint, fake, fixture, host, message as m, registry as reg
 
-P4_I2C, P4_SPI = 8, 9                      # p4_x035: queue_depth 8, max_length 128 / 64, i2c features 0b11, spi 0b1
-V003_I2C, V003_SPI = 7, 8                  # esp32_v003: queue_depth 4, max_length 16 / 32, i2c 0b01, spi 0 (groups)
+P4_I2C, P4_SPI = 8, 9                      # p4_x035: queue_depth 8, max_length 128 / 64, i2c stretch, spi features 0b1
+V003_I2C, V003_SPI = 7, 8                  # esp32_v003: queue_depth 4, max_length 16 / 32, no stretch, spi 0 (groups)
 
 
 class Clock:
@@ -34,7 +35,7 @@ def detail(exc) -> int:
 
 def i2c_status(t):
     st = t.status()
-    return st.state, st.mode, st.armed, st.queued, st.rx_frames, st.tx_slots, st.errors
+    return st.state, st.queued, st.rx_frames, st.tx_slots, st.errors
 
 
 def spi_status(t):
@@ -76,139 +77,152 @@ def test_i2c_plan_roles_and_channels():
 
 
 def test_i2c_refusals_before_configure_and_in_order():
+    """fixture §3: configure is address(u8) alone; > 0x7F malformed, I2C's reserved addresses unsupported (fixed
+    part), both before the missing plan (core §4.3: every check before any change)."""
     ep, hst, _ = bench(fake.esp32_v003())
     t = fixture.I2cTarget(hst)
     assert t.fn == V003_I2C
     with pytest.raises(host.Unavailable) as e:
-        t.configure(0x42, t.MODE_FIXED_RX)                          # before the plan
+        t.configure(0x42)                                           # before the plan
     assert e.value.cause == "wrong_state"
-    for address, mode, why in ((0x80, 1, m.MALFORMED), (0x80, 4, m.MALFORMED), (0x42, 0, m.UNSUPPORTED),
-                               (0x42, 4, m.UNSUPPORTED)):
-        with pytest.raises(host.Rejected) as e:                     # malformed, then unsupported, before the missing plan
-            t.configure(address, mode)
-        assert detail(e) == why                                     # mode 0 / 4+: a later revision may define it (C-02)
-    assert i2c_status(t) == (0, 0, False, 0, 0, 0, 0)
-    with pytest.raises(host.Unavailable):
-        t.reset()                                                   # state 0
     with pytest.raises(host.Rejected) as e:
-        t.stretch(10)                                               # no features bit1 on this probe
+        t.configure(0x80)
+    assert detail(e) == m.MALFORMED
+    for address in (0x00, 0x07, 0x78, 0x7F):                        # the client refuses them before sending ...
+        with pytest.raises(ValueError):
+            t.configure(address)
+        with pytest.raises(host.Unsupported) as e:                  # ... and the probe answers unsupported (0x00)
+            hst.request(t.fn, t.CONFIGURE, bytes([address]))
+        assert e.value.tag is None
+    assert i2c_status(t) == (0, 0, 0, 0, 0)
+    with pytest.raises(host.Rejected) as e:
+        t.stretch(10)                                               # stretch not in this probe's ops
     assert detail(e) == m.UNKNOWN_OPERATION
     with pytest.raises(host.Rejected) as e:
-        t.arm_rx(0)
+        t.preload_tx(b"")
     assert detail(e) == m.MALFORMED
     with pytest.raises(host.Unsupported):
-        t.arm_rx(17)                                                # over max_length 16, before the state
-    with pytest.raises(host.Unavailable):
-        t.arm_rx(4)                                                 # not configured
+        t.preload_tx(bytes(17))                                     # over max_length 16, before the state
+    with pytest.raises(host.Unavailable) as e:
+        t.preload_tx(b"\x01")                                       # state 0
+    assert e.value.cause == "wrong_state"
     with pytest.raises(host.Unavailable) as e:
         t.read_rx()                                                 # state 0
     assert e.value.cause == "wrong_state"
+    assert ep.i2c_write(t.fn, b"\x01") is False and ep.i2c_read(t.fn, 1) is None   # state 0: no ACK
+
+
+@pytest.mark.parametrize("probe, sda, scl", [(fake.p4_x035, 20, 21), (fake.esp32_v003, 25, 26)])
+def test_i2c_arm_rx_and_reset_are_gone(probe, sda, scl):
+    """fixture §3: one form - ops 0x02 (was arm_rx) and 0x06 (was reset) are not i2c-target ops: unknown_operation,
+    in any state; the describe's ops do not list them."""
+    ep, hst, _ = bench(probe())
+    t = fixture.I2cTarget(hst)
+    assert not {0x02, 0x06} & set(reg.FIXTURE_I2C_TARGET.op.values())
+    assert not {0x02, 0x06} & t.ops()
+    for configured in (False, True):
+        if configured:
+            core.plan_apply(hst, t.assignments(sda, scl))
+            t.configure(0x42)
+        for op in (0x02, 0x06):
+            for body in (b"", struct.pack("<H", 4)):
+                with pytest.raises(host.Rejected) as e:
+                    hst.request(t.fn, op, body)
+                assert detail(e) == m.UNKNOWN_OPERATION
+    assert not hasattr(t, "arm_rx") and not hasattr(t, "reset")
 
 
 def test_i2c_declarations():
     _, hst, _ = bench(fake.p4_x035())
     t = fixture.I2cTarget(hst)
-    assert (t.max_length, t.max_clock_hz, t.features, t.queue_depth, t.max_stretch_us) == (128, 1_000_000, 0b01, 8, 100_000)
-    assert t.offers(t.STRETCH)                                      # stretch: an op, in the ops tag (fixture §3)
+    assert (t.max_length, t.max_clock_hz, t.features, t.queue_depth, t.max_stretch_us) == (128, 1_000_000, 0, 8,
+                                                                                           100_000)
+    assert t.offers(t.STRETCH) and not t.internal_pullups          # stretch: an optional op, in the ops tag (§3)
     _, hst, _ = bench(fake.esp32_v003())
     t = fixture.I2cTarget(hst)
-    assert (t.max_length, t.max_clock_hz, t.features, t.queue_depth, t.max_stretch_us) == (16, 100_000, 0b01, 4, None)
-    assert not t.offers(t.STRETCH) and t.offers(t.CONFIGURE)
-
-
-def test_i2c_mode_3_only_when_declared():
-    probe = fake.esp32_v003()
-    probe = fake.FakeProbe(probe.label, probe.max_frame, [
-        o if o.fn != V003_I2C else fake._i2c_target(V003_I2C, [25, 26], 16, 100_000, features=0, queue_depth=4)
-        for o in probe.offered])
-    ep, hst, _ = bench(probe)
+    assert (t.max_length, t.max_clock_hz, t.features, t.queue_depth, t.max_stretch_us) == (16, 100_000, 0, 4, None)
+    assert not t.offers(t.STRETCH) and t.offers(t.CONFIGURE) and t.offers(t.PRELOAD_TX)
+    assert "pullup_ohms" not in reg.FIXTURE_I2C_TARGET.tlv["describe"]   # no pullup_ohms (§3: features bit2 only)
+    ep, hst, _ = bench(fake.with_i2c_pullups(fake.p4_x035()))
     t = fixture.I2cTarget(hst)
-    core.plan_apply(hst, t.assignments(25, 26))
-    with pytest.raises(host.Unsupported):
-        t.configure(0x42, t.MODE_PRELOADED_TX)
-    t.configure(0x42, t.MODE_FRAMED_RX)
+    assert t.internal_pullups and t.features == t.FEATURE_INTERNAL_PULLUPS
+    assert not [tag for tag, _ in core.describe(hst, t.fn) if tag & 0x7F == 0x42]
 
 
-def test_i2c_fixed_rx_queued_consumed_and_overflow(i2c):
+def test_i2c_writes_are_frames_cut_at_max_length_and_overflow(i2c):
+    """fixture §3: a controller write with data is one frame; bytes past max_length are cut (the frame keeps
+    max_length bytes) and errors + 1; with queue_depth frames queued the next one is dropped, errors + 1 (not in
+    rx_frames); an address-only write counts nothing; another address is not ACKed."""
     ep, t, clock = i2c
-    t.configure(0x42, t.MODE_FIXED_RX)
-    assert i2c_status(t) == (1, 1, False, 0, 0, 0, 0)
-    assert ep.i2c_write(t.fn, b"\x01\x02\x03\x04", 0x42)            # not armed: ACKed, dropped, an error
+    t.configure(0x42)
+    assert i2c_status(t) == (1, 0, 0, 0, 0)
     assert not ep.i2c_write(t.fn, b"\x01", 0x43)                    # another address: not ACKed, not counted
-    assert i2c_status(t) == (1, 1, False, 0, 0, 0, 1)
-    t.arm_rx(2)
-    t.arm_rx(4)                                                     # the new length replaces the wait
-    assert t.status().armed
-    ep.i2c_write(t.fn, b"\xaa\xbb", 0x42)                           # not the armed length: a receive error, still armed
-    assert i2c_status(t) == (1, 1, True, 0, 0, 0, 2)
     assert ep.i2c_write(t.fn, b"", 0x42)                            # address only: ACKed, counts nothing
-    assert i2c_status(t) == (1, 1, True, 0, 0, 0, 2)
+    assert i2c_status(t) == (1, 0, 0, 0, 0)
     clock.ms = 5
-    ep.i2c_write(t.fn, b"\x10\x20\x30\x40", 0x42)                   # the frame: queued, the wait goes on
-    assert i2c_status(t) == (1, 1, True, 1, 1, 0, 2)
-    ep.i2c_write(t.fn, b"\x50\x60\x70\x80", 0x42)                   # a second frame of the same length
-    assert i2c_status(t) == (1, 1, True, 2, 2, 0, 2)
-    assert t.read_rx() == (1, b"\x10\x20\x30\x40") and t.last_ns == 5_000_000
-    assert t.read_rx() == (0, b"\x50\x60\x70\x80")
+    assert ep.i2c_write(t.fn, b"\x10\x20\x30\x40", 0x42)            # any length: one frame each
+    clock.ms = 6
+    ep.i2c_write(t.fn, b"\x50")
+    ep.i2c_write(t.fn, bytes(range(130)))                           # 2 past max_length 128: cut, an error
+    assert i2c_status(t) == (1, 3, 3, 0, 1)
+    assert t.read_rx() == (2, b"\x10\x20\x30\x40") and t.last_ns == 5_000_000
+    assert t.read_rx() == (1, b"\x50") and t.last_ns == 6_000_000
+    assert t.read_rx() == (0, bytes(range(128)))
     assert t.read_rx() == (0, b"") and t.last_ns is None            # nothing left: count 0
-    t.arm_rx(1)
-    for k in range(9):                                              # queue_depth 8: the 9th frame overflows
+    ep.i2c_write(t.fn, bytes(128))                                  # exactly max_length: no error
+    assert t.status().errors == 1
+    t.read_rx()
+    for k in range(9):                                              # queue_depth 8: the 9th frame is dropped
         ep.i2c_write(t.fn, bytes([k]))
-    assert i2c_status(t) == (1, 1, True, 8, 10, 0, 3)               # the dropped frame is not in rx_frames
+    assert i2c_status(t) == (1, 8, 12, 0, 2)                        # the dropped frame is not in rx_frames
     assert t.read_rx() == (7, b"\x00")                              # the oldest; the newest one went
-    assert ep.i2c_read(t.fn, 2) == b"\xff\xff"                      # mode 1 answers reads with 0xFF
-    t.reset()
-    assert i2c_status(t) == (1, 1, False, 0, 0, 0, 0)               # mode and address kept, the rest gone
-    assert ep.i2c_write(t.fn, b"")                                  # address only, not armed: still nothing
-    assert t.status().errors == 0
-    t.arm_rx(2)
-    t.configure(0x42, t.MODE_FIXED_RX)
-    assert not t.status().armed                                     # configure ends the wait
+    assert ep.i2c_read(t.fn, 2) == b"\xff\xff"                      # no preload slot: 0xFF
+    t.configure(0x42)
+    assert i2c_status(t) == (1, 0, 0, 0, 0)                         # configure makes the target anew
+    t.configure(0x21)
+    assert not ep.i2c_write(t.fn, b"\x01", 0x42) and ep.i2c_write(t.fn, b"\x01", 0x21)
 
 
-def test_i2c_framed_rx(i2c):
-    ep, t, _ = i2c
-    t.configure(0x42, t.MODE_FRAMED_RX)
-    with pytest.raises(host.Unavailable):
-        t.arm_rx(4)                                                 # mode 1 only
-    ep.i2c_write(t.fn, b"\x03abc")
-    ep.i2c_write(t.fn, b"\x05ab")                                   # the length does not match: an error
-    ep.i2c_write(t.fn, b"\x00")                                     # L = 0: an error
-    ep.i2c_write(t.fn, bytes([129]) + bytes(129))                   # L over max_length 128: an error
-    ep.i2c_write(t.fn, b"")                                         # address only: nothing
-    assert i2c_status(t) == (1, 2, False, 1, 1, 0, 3)
-    assert t.read_rx() == (0, b"abc")
-
-
-def test_i2c_preloaded_tx_slots(i2c):
+def test_i2c_preload_slots_answer_reads(i2c):
+    """fixture §3: reads are answered from the preload_tx slots in order (one slot a read, cut or 0xFF past it; the
+    next read takes the next slot), else 0xFF; at most queue_depth unread (then unavailable cause 2); preload_tx
+    answers nothing. Writes keep being frames while slots wait (one form)."""
     ep, t, _ = i2c
     with pytest.raises(host.Unavailable):
         t.preload_tx(b"\x01")                                       # not configured
-    t.configure(0x42, t.MODE_PRELOADED_TX)
+    t.configure(0x42)
+    assert ep.i2c_read(t.fn, 1) == b"\xff"
     with pytest.raises(host.Rejected) as e:
         t.preload_tx(b"")
     assert detail(e) == m.MALFORMED
     with pytest.raises(host.Unsupported):
         t.preload_tx(bytes(129))                                    # over max_length 128
-    assert [t.preload_tx(bytes([0xA0 + i, i])) for i in range(8)] == list(range(1, 9))
+    assert [t.preload_tx(bytes([0xA0 + i, i])) for i in range(8)] == [None] * 8
     with pytest.raises(host.Unavailable) as e:
         t.preload_tx(b"\x09")                                       # queue_depth slots unread
     assert e.value.cause == "limit"
-    assert i2c_status(t) == (1, 3, False, 0, 0, 8, 0)
+    assert i2c_status(t) == (1, 0, 0, 8, 0)
     assert ep.i2c_read(t.fn, 3) == b"\xa0\x00\xff"                  # past the slot: 0xFF
     assert ep.i2c_read(t.fn, 1) == b"\xa1"                          # shorter: the next read takes the next slot
     assert t.status().tx_slots == 6
-    assert t.preload_tx(b"\x77") == 9
-    ep.i2c_write(t.fn, b"\x01")                                     # mode 3 takes no writes: an error
-    ep.i2c_write(t.fn, b"")                                         # address only: nothing
-    assert t.status().errors == 1
-    t.reset()
-    assert i2c_status(t) == (1, 3, False, 0, 0, 0, 0)
-    assert t.preload_tx(b"\x01") == 1                               # the count starts again
-    t.configure(0x42, t.MODE_FIXED_RX)
-    with pytest.raises(host.Unavailable):
-        t.preload_tx(b"\x01")                                       # mode 3 only
-    assert t.status().tx_slots == 0
+    t.preload_tx(b"\x77")
+    ep.i2c_write(t.fn, b"\x01")                                     # a write is a frame, slots or not
+    assert i2c_status(t) == (1, 1, 1, 7, 0)
+    for k in range(2, 8):
+        assert ep.i2c_read(t.fn, 2) == bytes([0xA0 + k, k])
+    assert ep.i2c_read(t.fn, 1) == b"\x77" and ep.i2c_read(t.fn, 1) == b"\xff"   # the slots used up: 0xFF
+    t.preload_tx(b"\x01")
+    t.configure(0x42)
+    assert t.status().tx_slots == 0 and ep.i2c_read(t.fn, 1) == b"\xff"   # configure empties the slots
+
+
+def test_i2c_preload_tx_answers_nothing():
+    """fixture §3: preload_tx's answer has no payload (no slot number)."""
+    ep, hst, _ = bench(fake.p4_x035())
+    t = fixture.I2cTarget(hst)
+    core.plan_apply(hst, t.assignments(20, 21))
+    t.configure(0x42)
+    assert hst.request(t.fn, t.PRELOAD_TX, struct.pack("<H", 1) + b"\x01").payload == b""
 
 
 def test_i2c_stretch_and_plan_release(i2c):
@@ -219,18 +233,18 @@ def test_i2c_stretch_and_plan_release(i2c):
     with pytest.raises(host.Unsupported):
         t.stretch(t.max_stretch_us + 1)
     assert ep.i2c[t.fn].stretch_us == t.max_stretch_us
-    t.configure(0x42, t.MODE_FIXED_RX)
-    t.reset()
-    assert ep.i2c[t.fn].stretch_us == t.max_stretch_us              # configure and reset keep it
-    t.arm_rx(1)
+    t.configure(0x42)
+    assert ep.i2c[t.fn].stretch_us == t.max_stretch_us              # configure keeps it
+    ep.i2c_write(t.fn, b"\x01")
+    t.preload_tx(b"\x02")
     core.plan_release(t.host, [t.fn])
-    assert i2c_status(t) == (0, 0, False, 0, 0, 0, 0)               # the target goes with its plan
+    assert i2c_status(t) == (0, 0, 0, 0, 0)                         # the target goes with its plan
     assert ep.i2c[t.fn].stretch_us == 0                             # and the stretch with it
     with pytest.raises(host.Unavailable):
         t.read_rx()
     assert not ep.i2c_write(t.fn, b"\x01")
     with pytest.raises(host.Unavailable):
-        t.configure(0x42, t.MODE_FIXED_RX)
+        t.configure(0x42)
 
 
 def test_i2c_status_is_lock_free(i2c):
@@ -286,8 +300,10 @@ def test_spi_refusals_in_order(spi):
         t.arm(65)                                                   # over max_length 64
     with pytest.raises(host.Unavailable):
         t.arm(4)                                                    # not configured
-    with pytest.raises(host.Unavailable):
-        t.reset()
+    with pytest.raises(host.Rejected) as e:
+        t.host.request(t.fn, 0x05)                                  # fixture §4: no reset op (0x05 is no op)
+    assert detail(e) == m.UNKNOWN_OPERATION
+    assert not hasattr(t, "reset") and 0x05 not in t.ops()
     with pytest.raises(host.Unavailable) as e:
         t.read_rx()                                                 # state 0
     assert e.value.cause == "wrong_state"
@@ -339,8 +355,15 @@ def test_spi_armed_consumed_unarmed_and_overflow(spi):
         ep.spi_transfer(t.fn, bytes([k]))
     assert spi_status(t) == (1, 1, 1, False, 8, 13, 3)
     assert t.read_rx() == (7, 8, b"\x00")
-    t.reset()
-    assert spi_status(t) == (1, 1, 1, False, 0, 0, 0)               # mode and bit order kept
+    t.arm(1)
+    ep.spi_transfer(t.fn, b"\x09")                                  # the queue full again
+    t.arm(1)
+    ep.spi_transfer(t.fn, b"\x01\x02\x03")                          # past the length AND the queue full: errors + 1
+    assert spi_status(t) == (1, 1, 1, False, 8, 15, 4)              # at most 1 a transfer (fixture §4)
+    ep.spi_transfer(t.fn, b"\x01")                                  # not armed, the queue full: once again
+    assert spi_status(t) == (1, 1, 1, False, 8, 16, 5)
+    t.configure(2, t.MSB_FIRST)
+    assert spi_status(t) == (1, 2, 0, False, 0, 0, 0)               # configure makes the target anew (no reset op)
 
 
 def test_spi_release_ends_the_target(spi):

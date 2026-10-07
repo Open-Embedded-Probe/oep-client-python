@@ -2,6 +2,8 @@
 
 import struct
 
+import pytest
+
 from oep_client import decode, fixture as et, message as m
 from test_target_parts import ScriptedHost, ok
 
@@ -16,21 +18,28 @@ def host(handlers):
 
 
 def test_i2c_target_shapes():
+    """fixture §3 (one form): configure is address(u8) alone, preload_tx answers nothing, status is state queued
+    rx_frames tx_slots errors (no mode / armed)."""
     hst = host({(I2C, et.I2cTarget.CONFIGURE): lambda p: ok(),
-                (I2C, et.I2cTarget.PRELOAD_TX): lambda p: ok(bytes([2])),
+                (I2C, et.I2cTarget.PRELOAD_TX): lambda p: ok(),
                 (I2C, et.I2cTarget.READ_RX): lambda p: ok(bytes([1]) + struct.pack("<H", 3) + b"abc"
                                                           + m.tlv(0x01, struct.pack("<Q", 777))),   # TLV ns
-                (I2C, et.I2cTarget.STATUS): lambda p: ok(struct.pack("<BBBBIBI", 1, 3, 0, 1, 5, 2, 0x10000)),
+                (I2C, et.I2cTarget.STATUS): lambda p: ok(struct.pack("<BBIBI", 1, 3, 5, 2, 0x10000)),
                 (I2C, et.I2cTarget.STRETCH): lambda p: ok()})
     t = et.I2cTarget(hst)
-    t.configure(0x42, t.MODE_PRELOADED_TX)
-    assert hst.log[-1][2] == bytes([0x42, 3])
-    assert t.preload_tx(b"\x11\x22") == 2 and hst.log[-1][2] == struct.pack("<H", 2) + b"\x11\x22"
+    t.configure(0x42)
+    assert hst.log[-1][2] == bytes([0x42])
+    with pytest.raises(ValueError):
+        t.configure(0x78)                                               # I2C's reserved addresses: not sent
+    assert hst.log[-1][2] == bytes([0x42])
+    assert t.preload_tx(b"\x11\x22") is None and hst.log[-1][2] == struct.pack("<H", 2) + b"\x11\x22"
     assert t.read_rx() == (1, b"abc") and t.last_ns == 777
-    assert t.status() == et.I2cStatus(state=1, mode=3, armed=False, queued=1, rx_frames=5, tx_slots=2, errors=0x10000)
+    assert t.status() == et.I2cStatus(state=1, queued=3, rx_frames=5, tx_slots=2, errors=0x10000)
     t.stretch(50)
     assert hst.log[-1][2] == struct.pack("<I", 50)
     assert t.assignments(50, 52) == [(I2C, 1, 50), (I2C, 2, 52)]
+    for gone in ("arm_rx", "reset", "pullup_ohms", "MODE_FIXED_RX", "MODE_FRAMED_RX", "MODE_PRELOADED_TX"):
+        assert not hasattr(t, gone)
 
 
 def test_spi_target_shapes():
@@ -42,6 +51,7 @@ def test_spi_target_shapes():
     assert hst.log[-1][2] == struct.pack("<HH", 4, 2) + b"\x01\x02"
     assert t.read_rx() == (0, 32, bytes.fromhex("a55a0f01")) and t.last_ns is None
     assert t.status().errors == 0x20000                                 # errors u32 (fixture §4)
+    assert not hasattr(t, "reset")                                      # no reset op (fixture §4)
 
 
 def test_decode_i2c_reads_start_bytes_ack_and_stop():

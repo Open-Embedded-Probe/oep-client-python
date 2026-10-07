@@ -17,6 +17,7 @@ S0 = 0x1008
 VALUE = 0x000EC8FE         # the register's value (the bench's a0)
 STALE = 0x20000000         # what DATA0 held before (the value the bench read back for a0)
 MODES = ("stale", "ones", "ones_line")
+READ_ACCESSES = 19         # read_register's DMI accesses on a link that stays up, its DATA0 save included
 
 
 class Clock:
@@ -119,11 +120,11 @@ def test_the_old_read_register_returned_a_stale_or_all_ones_value_as_the_registe
 
 def test_a_held_read_register_never_returns_a_value_it_could_not_confirm():
     got = sweep(lambda d, tg: d.read_register(S0), lambda tg, v: v == VALUE)
-    # look 2, cmderr clear, (DATA0 sentinel, command, poll 1, DATA0) twice with a DMSTATUS read before the second DATA0,
-    # look 2
-    assert accesses(lambda d, tg: d.read_register(S0)) == 14
+    # DATA0 saved first, held (look 2, DATA0, look 2: debug §4, restored before the hart runs); then look 2, cmderr
+    # clear, (DATA0 sentinel, command, poll 1, DATA0) twice with a DMSTATUS read before the second DATA0, look 2
+    assert accesses(lambda d, tg: d.read_register(S0)) == READ_ACCESSES == 5 + 14
     assert not got["wrong"] and not got["raised"]            # every drop met, and the next try got the register
-    assert len(got["right"]) == 14 * len(MODES)
+    assert len(got["right"]) == READ_ACCESSES * len(MODES)
 
 
 def held_once_read_register(d: riscv.RiscvDm, regno: int) -> int:
@@ -141,12 +142,12 @@ def test_one_missed_access_between_passing_looks_never_gives_a_wrong_register():
     old = sweep(lambda d, tg: held_once_read_register(d, S0), lambda tg, v: v == VALUE, modes=("glitch",))
     assert {v for _, _, v in old["wrong"]} >= {STALE}         # the command lost: DATA0's old word, looks passing
     new = sweep(lambda d, tg: d.read_register(S0), lambda tg, v: v == VALUE, modes=("glitch",))
-    assert not new["wrong"] and not new["raised"] and len(new["right"]) == 14
+    assert not new["wrong"] and not new["raised"] and len(new["right"]) == READ_ACCESSES
     # two misses in one group, at every pair of accesses: never a wrong register (agreeing twice by chance aside -
     # a sentinel and the register, or ABSTRACTCS and DMSTATUS, would have to be the same value)
     wrong = []
-    for a in range(14):
-        for b in range(a + 1, 14):
+    for a in range(READ_ACCESSES):
+        for b in range(a + 1, READ_ACCESSES):
             ep, hst, tg, d = bench()
             tg.drop_at = {a: "glitch", b: "glitch"}
             try:
@@ -169,9 +170,17 @@ def test_link_not_held_says_what_and_how_often():
     tg.drop_at, tg.drop_requests = {0: "stale"}, 99
     with pytest.raises(riscv.LinkNotHeld) as e:
         d.read_register(S0)
+    assert e.value.tries == riscv.HELD_TRIES and "saving DATA0" in str(e.value)   # its first group: DATA0's save
+    ep, hst, tg, d = bench()
+    d.read_register(S0)                                          # DATA0 saved: the next read is the command group alone
+    tg.dmi_accesses = 0
+    tg.drop_at, tg.drop_requests = {0: "stale"}, 99
+    n = len(ep.requests)
+    with pytest.raises(riscv.LinkNotHeld) as e:
+        d.read_register(S0)
     assert e.value.tries == riscv.HELD_TRIES and "read_register 0x1008" in str(e.value)
-    dmi = [r for r in ep.requests if (r.fn, r.op) == (d.fn, riscv.RiscvDm.DMI)]
-    assert len(dmi) == 1 + riscv.HELD_TRIES                      # the bench's own read, then every try
+    dmi = [r for r in ep.requests[n:] if (r.fn, r.op) == (d.fn, riscv.RiscvDm.DMI)]
+    assert len(dmi) == riscv.HELD_TRIES                          # every try, nothing more
 
 
 def test_a_drop_lasting_fewer_requests_than_the_tries_is_ridden_out():

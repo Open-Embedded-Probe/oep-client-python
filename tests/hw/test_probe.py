@@ -14,8 +14,8 @@
                pulled up then down through fixture gpio on the same pins -> all ones, then all zeros
   capture_analog  fixture analog (when listed): a one-shot on a free ADC channel at the lowest rate, the widest frontend
   capture_group   fixture capture-group (when listed): logic + analog bound and started together, both read back
-  i2c_target   fixture i2c-target (when listed): configure 0x42 / status / preload a queue / reset / release
-  spi_target   fixture spi-target (when listed): configure / status / arm one transaction / reset / release
+  i2c_target   fixture i2c-target (when listed): configure 0x42 / status / preload a queue / configure again / release
+  spi_target   fixture spi-target (when listed): configure / status / arm one transaction / configure again / release
   console      target console on the wire connection, mechanism dmseq: open, read for 1 s, close   (only with OEP_HW_TARGET)
   port_speed   linktest.matrix at the speed in force and the board's candidate rates (OEP_HW_RATES), in / out /
                duplex, in flight 1 and the probe's max, one frame size; verdict: one at a time <= 1 % broken + lost
@@ -169,7 +169,7 @@ def test_config(run: record.Run):
     if not label_ch or not disable_ch:
         pytest.skip("the table gives this board no free channel to label and to disable (OEP_HW_DISABLE, OEP_HW_GPIO)")
     try:
-        _config_steps(run, hst, cfg, rec, h0, label_ch, disable_ch)
+        _config_steps(run, hst, cfg, rec, h0, items0, label_ch, disable_ch)
     finally:
         # a failure, or a probe that did not come back: the label / disable items and the storage go back as they were
         # (the probe opened again when it went away); what cannot be put back is recorded and printed with its commands
@@ -177,15 +177,16 @@ def test_config(run: record.Run):
             print(f"\n  config: settings left on the probe: {run.settings_left}")
 
 
-def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: dict, h0: int, label_ch: int,
-                  disable_ch: int) -> None:
+def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: dict, h0: int, items0: list,
+                  label_ch: int, disable_ch: int) -> None:
     board = run.board
     added = [config.Label(channel=label_ch, text="HW-A"), config.Disable(channel=disable_ch)]
     run.settings_changing("config", "label", label_ch)
     run.settings_changing("config", "disable", disable_ch)
     h1 = cfg.set(added)
     h_items, items1 = cfg.get()
-    assert h_items == h1 == config.hash_of(items1), "set's hash is not the hash of what get returns"
+    assert h_items == h1, "set's hash is not get's hash (probe.config §2: the probe's own u32 for the settings)"
+    assert h1 != h0, "the hash did not change with the settings (probe.config §2)"
     decoded = [config.decode(t, v) for t, v in items1]
     assert any(isinstance(it, config.Label) and it.channel == label_ch and it.text == "HW-A" for it in decoded)
     assert any(isinstance(it, config.Disable) and it.channel == disable_ch for it in decoded)
@@ -198,10 +199,13 @@ def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: di
     assert isinstance(e.value, (core.PinsTaken, h.Unavailable))
     # save, state
     run.settings_saving()
+    assert cfg.needs_save(), "storage_hash already equals the new settings' hash before a save"
     h_saved = cfg.save()
     st = cfg.state()
     rec.update(hash_saved=h_saved, storage=st.storage, saved_hash=st.saved_hash)
+    # storage_hash: get's hash when the saved settings became the current ones (probe.config §3.3)
     assert h_saved == h1 and st.storage == "applied" and st.saved_hash == h_saved, f"state after save: {st}"
+    assert not cfg.needs_save(), "a save right after a save would write again (host guide §15)"
     # reboot: oep.probe.restart when the probe lists it (oep-if-restart: answers, then restarts; restart_probe waits up to
     # its restart_max_ms and confirms the new boot_id), else a bridge board's EN line through DTR / RTS (esptool's hard
     # reset); neither: skipped. On a USB probe oep.probe.restart only with OEP_HW_RESTART=1: an RP2350 and an ESP32-P4
@@ -242,7 +246,9 @@ def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: di
         st2 = cfg.state()
         h2, items2 = cfg.get()
         rec.update(storage_after_reboot=st2.storage, saved_hash_after_reboot=st2.saved_hash, hash_after_reboot=h2)
-        assert st2.storage == "applied" and st2.saved_hash == h_saved, f"saved settings not applied at boot: {st2}"
+        # the saved settings became the current ones at boot: storage_hash is get's hash (probe.config §3.3)
+        assert st2.storage == "applied" and st2.saved_hash == h2, f"saved settings not applied at boot: {st2}"
+        assert config.same_items(items2, items1), "the settings after the reboot are not the ones saved"
         decoded2 = [config.decode(t, v) for t, v in items2]
         assert any(isinstance(it, config.Disable) and it.channel == disable_ch for it in decoded2)
         assert any(isinstance(it, config.Label) and it.channel == label_ch for it in decoded2)
@@ -259,7 +265,8 @@ def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: di
     _, items3 = cfg.get()
     decoded3 = [config.decode(t, v) for t, v in items3]
     assert not any(isinstance(it, (config.Label, config.Disable)) and it.channel in (label_ch, disable_ch) for it in decoded3)
-    assert h3 == h0, f"after unset the hash is {h3:#x}, before the test it was {h0:#x}"
+    # compared item by item (host guide §15): the hash is the probe's and need not repeat for equal settings
+    assert config.same_items(items3, items0), "after unset the settings are not the ones from before the test"
     run.settings_saving()
     h_saved2 = cfg.save()
     st3 = cfg.state()
@@ -453,9 +460,9 @@ def test_uart(run: record.Run):
     try:
         actual = u.configure(115200, fixture.FixtureUart.EIGHT_N_1)
         st = u.status()
-        rec.update(actual_115200=actual, status_configured=st.configured, status_baud=st.baud, status_format=st.format)
+        rec.update(actual_115200=actual, status_baud=st.baud, status_format=st.format)
         assert abs(actual - 115200) <= 115200 * 0.05, f"configure(115200) ran at {actual}"
-        assert st.configured == "session" and abs(st.baud - 115200) <= 115200 * 0.05 and st.format == 0, f"status {st}"
+        assert st.baud == actual and st.format == 0, f"status {st}"          # baud and format in force (fixture §2)
         rec["actual_9600"] = u.configure(9600, fixture.FixtureUart.format_byte(8, "N", 1))
         if loop:
             io = fixture.FixtureUartIO(hst)
@@ -495,28 +502,21 @@ def _free_channels(board) -> list[int]:
 
 
 def _capture_declared(decl: dict) -> dict:
-    """The capture declarations (oep-if-capture §3.5) a test plans by: rate_range, the one-shot's max_samples, max_read,
-    segment_ring, channels (max, the layouts), the frontends (analog)."""
+    """The capture declarations (oep-if-capture §3.5) a test plans by: rate_range, each mode's max_samples, channels
+    (max), the frontends (analog)."""
     out: dict = {"features": decl.get("features")}
     for v in decl["own"].get(_LOGIC_D["mode"], ()):
-        mode, background, max_samples, max_segments = struct.unpack_from("<BBII", v)
-        out.setdefault("modes", {})[mode] = {"background": background, "max_samples": max_samples, "max_segments": max_segments}
+        mode, max_samples, max_segments = struct.unpack_from("<BII", v)
+        out.setdefault("modes", {})[mode] = {"max_samples": max_samples, "max_segments": max_segments}
     rr = decl["own"].get(_LOGIC_D["rate_range"])
     if rr:
         lo, hi, exact = struct.unpack_from("<IIB", rr[0])
         out["rate_range"] = {"min_hz": lo, "max_hz": hi, "exact": bool(exact)}
     elif decl.get("min_clock_hz") and decl.get("max_clock_hz"):      # the common tags instead (the fake's esp32 profile)
         out["rate_range"] = {"min_hz": decl["min_clock_hz"], "max_hz": decl["max_clock_hz"], "exact": False}
-    rates: list[int] = []
-    for v in decl["own"].get(_LOGIC_D["rate_list"], ()):
-        rates += list(struct.unpack_from(f"<{v[0]}I", v, 1))
-    if rates:
-        out["rate_list"] = rates
     ch = decl["own"].get(_LOGIC_D["channels"])
     if ch:
-        out["channels"] = {"max": ch[0][0], "layouts": [1 << i for i in range(32) if struct.unpack_from("<I", ch[0], 1)[0] >> i & 1]}
-    out["max_read"] = record.own_u(decl, _LOGIC_D["max_read"])
-    out["segment_ring"] = record.own_u(decl, _LOGIC_D["segment_ring"], "<H")
+        out["channels"] = {"max": ch[0][0]}
     for v in decl["own"].get(_ANALOG_D["frontend"], ()):
         fe, lo, hi, att = struct.unpack_from("<BiiI", v)
         out.setdefault("frontends", {})[fe] = {"min_mv": lo, "max_mv": hi, "attenuation_mdb": att}
@@ -527,12 +527,7 @@ def _capture_rate_samples(declared: dict) -> tuple[int, int]:
     """The lowest declared rate (at least 1 kHz) and the samples of a CAPTURE_WINDOW_S window at it, within the
     one-shot's max_samples."""
     rr = declared.get("rate_range")
-    if rr:
-        rate = min(max(rr["min_hz"], 1000), rr["max_hz"])
-    elif declared.get("rate_list"):
-        rate = min(declared["rate_list"])
-    else:
-        rate = 1000
+    rate = min(max(rr["min_hz"], 1000), rr["max_hz"]) if rr else 1000
     samples = max(CAPTURE_MIN_SAMPLES, round(rate * CAPTURE_WINDOW_S))
     max_samples = (declared.get("modes", {}).get(capture.ONE_SHOT) or {}).get("max_samples")
     if max_samples:
@@ -565,7 +560,7 @@ def _one_shot(cap: capture.LogicCapture, cfg: capture.Config, fake: bool = False
     data = cap.read_segment(seg)
     read_s = time.monotonic() - t1
     assert len(data) == cfg.bytes, f"read {len(data)} bytes of a {cfg.bytes}-byte segment"
-    tolerance = max(cfg.rate_ppm / 1e6, 0.01)
+    tolerance = 0.01                                              # the rate's uncertainty is not declared any more
     assert fake or done_s >= window_s * (1 - tolerance), f"done {done_s * 1e3:.1f} ms after start, the window is {window_s * 1e3:.1f} ms"
     assert done_s <= window_s + 1.0, f"done {done_s:.2f} s after start, the window is {window_s * 1e3:.1f} ms"
     st = cap.status()
@@ -578,8 +573,7 @@ def _one_shot(cap: capture.LogicCapture, cfg: capture.Config, fake: bool = False
 
 def _config_record(cfg: capture.Config) -> dict:
     out = {"actual_rate": float(cfg.rate), "samples": cfg.samples, "segments": cfg.segments, "bytes": cfg.bytes,
-           "jitter_kind": cfg.jitter_kind, "jitter_ns": cfg.jitter_ns, "rate_measured": cfg.rate_measured,
-           "rate_ppm": cfg.rate_ppm, "blocking_ms": cfg.blocking_ms, "ignored": cfg.ignored}
+           "blocking_ms": cfg.blocking_ms}
     if cfg.width:
         out["layout"] = {"w": cfg.width, "pos": cfg.positions}
     else:
@@ -773,10 +767,7 @@ def test_capture_group(run: record.Run):
     decl = record.declared(hst, grp.fn)
     tracks_v = decl["own"].get(_GROUP_D["tracks"])
     tracks = list(struct.unpack_from(f"<{tracks_v[0][0]}H", tracks_v[0], 1)) if tracks_v else []
-    declared = {"tracks": tracks, "max_tracks": record.own_u(decl, _GROUP_D["max_tracks"], "<B"), "features": decl.get("features"),
-                "budget": [(struct.unpack_from("<I", v)[0], list(struct.unpack_from(f"<{v[4]}H", v, 5)))
-                           for v in decl["own"].get(_GROUP_D["budget"], ())],
-                "start_skew_ns": {fn: ns for fn, ns in (struct.unpack_from("<HI", v) for v in decl["own"].get(_GROUP_D["start_skew"], ()))}}
+    declared = {"tracks": tracks, "features": decl.get("features")}     # capture §4.3: tracks only
     if cap.fn not in tracks or ana.fn not in tracks:
         pytest.skip(f"the group binds tracks {tracks}, not logic {cap.fn} + analog {ana.fn}")
     chans = list(run.board.gpio)
@@ -833,7 +824,7 @@ _SPI_QUEUE_DEPTH = reg.FIXTURE_SPI_TARGET.tlv["describe"]["queue_depth"]
 
 def _target_declared(decl: dict, queue_tag: int) -> dict:
     return {"queue_depth": record.own_u(decl, queue_tag, "<B"), "max_clock_hz": decl.get("max_clock_hz"),
-            "max_length": decl.get("max_length"), "features": decl.get("features"), "implementation": decl.get("implementation")}
+            "max_length": decl.get("max_length"), "features": decl.get("features")}
 
 
 def _plan_roles(board, decl: dict, roles: list[int], env: str) -> dict[int, int]:
@@ -860,6 +851,9 @@ def _plan_roles(board, decl: dict, roles: list[int], env: str) -> dict[int, int]
 
 
 def test_i2c_target(run: record.Run):
+    """oep-if-fixture §3's one form: configure an address (the target made anew), preload_tx slots (tx_slots counts the
+    unread ones, at most queue_depth), read_rx (the lines float: a glitch may make a frame or an error - recorded, not
+    judged), configure again (the queue, the slots and the counts emptied), stretch when the ops offer it."""
     hst = run.take()
     if not _listed(hst, fixture.I2cTarget.NAME):
         pytest.skip("the probe does not list oep.fixture.i2c-target")
@@ -867,40 +861,34 @@ def test_i2c_target(run: record.Run):
     decl = record.declared(hst, t.fn)
     roles = _plan_roles(run.board, decl, [t.ROLE_SDA, t.ROLE_SCL], "OEP_HW_I2C")
     rec = run.record("i2c_target", sda=roles[t.ROLE_SDA], scl=roles[t.ROLE_SCL], address=I2C_ADDRESS,
-                     declared=_target_declared(decl, _I2C_QUEUE_DEPTH) | {"max_stretch_us": t.max_stretch_us})
-    features = decl.get("features") or 0
+                     declared=_target_declared(decl, _I2C_QUEUE_DEPTH) | {"max_stretch_us": t.max_stretch_us,
+                                                                         "internal_pullups": t.internal_pullups})
     core.plan_apply(hst, t.assignments(roles[t.ROLE_SDA], roles[t.ROLE_SCL]))
     try:
         st0 = t.status()
         rec["status_unconfigured"] = dataclasses.asdict(st0)
         assert st0.state == 0, f"state {st0.state} before configure"
-        if features & reg.FIXTURE_I2C_TARGET.enum["features"]["preloaded_tx"]:
-            t.configure(I2C_ADDRESS, t.MODE_PRELOADED_TX)
-            st1 = t.status()
-            rec["status_configured"] = dataclasses.asdict(st1)
-            assert st1.state == 1 and st1.mode == t.MODE_PRELOADED_TX and st1.tx_slots == 0 and st1.queued == 0, f"status {st1}"
-            depth = rec["declared"]["queue_depth"] or 2
-            slots = [t.preload_tx(bytes([0xA0 + i, i])) for i in range(min(depth, 3))]
-            st2 = t.status()
-            rec.update(preloaded=slots, status_preloaded=dataclasses.asdict(st2))
-            assert slots == list(range(1, len(slots) + 1)), f"preload_tx counted {slots}"
-            assert st2.tx_slots == len(slots), f"status after {len(slots)} preloads: {st2}"
-        else:
-            rec["preloaded"] = "mode 3 not declared"
-        t.configure(I2C_ADDRESS, t.MODE_FIXED_RX)
-        t.arm_rx(4)
-        st3 = t.status()
-        rec["status_armed"] = dataclasses.asdict(st3)
-        assert st3.state == 1 and st3.mode == t.MODE_FIXED_RX and st3.tx_slots == 0, f"status armed: {st3}"
-        # the lines float (no controller, no pull-ups): a glitch may count as an error or a frame - recorded, not judged
-        assert st3.armed or st3.queued, f"arm_rx did not arm: {st3}"
+        t.configure(I2C_ADDRESS)
+        st1 = t.status()
+        rec["status_configured"] = dataclasses.asdict(st1)
+        assert st1.state == 1 and st1.tx_slots == 0, f"status {st1}"
+        depth = rec["declared"]["queue_depth"] or 2
+        n = min(depth, 3)
+        for i in range(n):
+            t.preload_tx(bytes([0xA0 + i, i]))
+        st2 = t.status()
+        rec["status_preloaded"] = dataclasses.asdict(st2)
+        assert st2.tx_slots == n, f"status after {n} preloads: {st2}"
         pending, data = t.read_rx()
         rec["read_rx"] = [pending, data.hex()]
-        t.reset()
-        st4 = t.status()
-        rec["status_reset"] = dataclasses.asdict(st4)
-        assert st4.state == 1 and st4.mode == t.MODE_FIXED_RX and not st4.armed and st4.queued == 0 and st4.errors == 0 \
-            and st4.rx_frames == 0, f"status after reset: {st4}"
+        if t.offers(t.STRETCH):
+            t.stretch(0)                                            # off; any state (fixture §3)
+            rec["stretch"] = "0 accepted"
+        t.configure(I2C_ADDRESS)                                    # made anew (fixture §3)
+        st3 = t.status()
+        rec["status_configured_again"] = dataclasses.asdict(st3)
+        assert st3.state == 1 and st3.tx_slots == 0 and st3.queued == 0 and st3.errors == 0 and st3.rx_frames == 0, \
+            f"status after configure again: {st3}"
     finally:
         core.plan_release(hst, [t.fn])
 
@@ -937,11 +925,11 @@ def test_spi_target(run: record.Run):
             raise AssertionError("a second arm while armed was accepted (fixture §4: one at a time, unavailable)")
         pending, bits, data = t.read_rx()
         rec["read_rx"] = [pending, bits, data.hex()]
-        t.reset()
+        t.configure(0, t.MSB_FIRST)                                 # configure again: made anew (no reset op, fixture §4)
         st3 = t.status()
-        rec["status_reset"] = dataclasses.asdict(st3)
+        rec["status_configured_again"] = dataclasses.asdict(st3)
         assert st3.state == 1 and st3.mode == 0 and st3.bit_order == 0 and not st3.armed and st3.queued == 0 \
-            and st3.transactions == 0 and st3.errors == 0, f"status after reset: {st3}"
+            and st3.transactions == 0 and st3.errors == 0, f"status after configure again: {st3}"
     finally:
         core.plan_release(hst, [t.fn])
 

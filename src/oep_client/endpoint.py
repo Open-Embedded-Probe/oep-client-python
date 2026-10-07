@@ -1,131 +1,84 @@
 """A fake probe endpoint that speaks OEP v1, answering whole messages (no hardware).
 
-This is the spec side's "working spec": ch32rv, this client and the probe firmware are checked against it. It wraps
-a `fake.FakeProbe` (the static declarations) and does what oep-spec docs/oep-core.ja.md, docs/oep-transports.ja.md
-and interfaces/*.ja.md define:
+This is the spec side's "working spec": ch32rv, the JS client, this client and the probe firmware are checked against
+it. It wraps a `fake.FakeProbe` (the static declarations, and what the probe keeps to itself: `own_channels`,
+`Offered.inner`) and does what oep-spec docs/oep-core.ja.md, docs/oep-transports.ja.md and interfaces/*.ja.md
+define (oep-spec 0f455a0, the rule review of 2026-10-07):
 
 - the core (fn 0) has no name and is never listed (core §0, §7.2); its ops are exactly the eight mandatory ones:
-  confirm, list, describe, clock, open, end, keepalive, lock_state (core §1.2, §12). clock (core §7.7) answers boot_id
-  and uptime_ns, the clock read while handling the request (never an earlier value) - lock-free, and with session_id 0 it touches no
-  session, lock or lease (a session's id goes through the session check like any lock-free op of the holder)
-
+  confirm, list, describe, clock, open, end, keepalive, lock_state (core §1.2, §12). list takes first(u16) alone and
+  pages every interface (core §7.2); describe answers declarations only (§7.3). clock (core §7.7) answers boot_id and
+  uptime_ns, read while handling the request - lock-free, and with session_id 0 it touches no session, lock or lease
 - one request header of 10 bytes with session_id (0 = no session; core §4.1), TLVs as tag(u8) len(u16) value (§2.2),
-  every sequence count x element with no element length and every fixed form closed (§2.3: an item or a request TLV
-  longer than its form is a longer request TLV - unsupported when critical, else ignored)
-- confirm with a revision range (its answer carries the boot_id, core §7.1); `revision=0` makes a v0 probe that answers
-  in the v0 shape and drops requests with a session_id unanswered
-- the ops tag (core §1.2, §7.4): every fn's describe carries it (`fake.FakeProbe` fills one in), and an op it does not
-  set is unknown_operation at order 1 (`offers`)
-- the lock (core §6): a host-chosen session id, extended by every request of its holder and counted from when that
-  request completed. No resume (core §6.2, §9): end, a lapse and force all release everything the session created (its
-  plan, its shares of connections and streams - a stream it was the last user of closes with detail session_ended
-  before the connection - its subscriptions, its capture-group bind); a request with an id while the lock is free is
-  no_session, with another id while held locked; a resent open of the holder restarts the lease and keeps everything;
-  lease 0 = the probe default, 1000-60000 ms taken as asked, longer ones cut to `lease_max_ms`; the open's owner TLV,
-  taken from the open that takes the lock and forgotten with it, shown by lock_state and by rejected locked (never the
-  session id)
-- the resend table (core §5.2): the last session's recent requests with their results (results longer than
-  `remember_max` bytes are not kept -> result_lost), corr_reused, result_lost for old requests; open is never looked up;
-  emptied by a successful open, kept over end (a resent end is answered from it)
-- rejects in core §4.3's order: no session / locked (+ remaining ms), session required, malformed (short
-  fixed part, tag 0xFF, a TLV past the end), unsupported (always `tag [TLV]`, 0x00 for a fixed-part value),
-  unavailable (+ cause), no connection; a resource number of the wrong kind (a stream where a connection goes) is
-  unavailable cause 6 - connections and streams share one u16 space that wraps (core §9)
-- request tails: unknown critical -> rejected unsupported, unknown non-critical -> listed in the result's ignored TLV
-  (0x7F) for every op, on every completed answer, failed and partial ones too (`Take` keeps them, `_dispatch` appends
-  them); a TLV in a describe or probe.config get request is malformed (core §7.3); `tail=` appends TLVs to every result that may carry them, so hosts can be checked to skip what they do not
-  know. Every answer ending in data or a list carries its length (core §2.3), so every answer may carry TLVs
-- oep.probe.plan (oep-if-plan: plan_apply / plan_release, plan_roles in its describe; the session's plan goes when
-  the lease lapses), oep.probe.restart (oep-if-restart: restart answers, then the probe restarts once the answer is
-  out; restart_max_ms in its describe), notifications (core §11: subscribe 0x30 / unsubscribe 0x32 are ops of the
-  emitting interface itself - logic, analog and capture-group set them in their ops, every other fn answers
-  unknown_operation; min_bytes / max_delay_ms batch the data only, events go at once; fn 0 sends nothing), and
-  simulations of the
-  interfaces the profiles offer: oep.wire.rvswd / swio (scan with its TLVs, attach on declared pin pairs with the
-  reset TLV, several connections up to max_connections, the seat rule, connections; an attach that joins a live
-  connection keeps its setting for every setting TLV it does not carry - idle_clock absent keeps the current rest, the
-  absent value high is a new connection's only - and max_speed only lowers its speed; a scan never changes a live
-  connection's settings: debug §1, §3), oep.target.riscv-dm on one
-  `FakeTarget` per pin pair (dmi / run answers count their values; run's stopped 2), oep.target.console streams (one
-  live stream per connection, lifetime by its users, the streams list), oep.fixture.gpio (the lines outside through
-  the test hook `gpio_world`; a target's `reset_line` makes the other reset channels reset nothing), oep.fixture.uart (its stream
-  made by the plan, status, the settings' uart item), oep.fixture.i2c-target / spi-target (fixture §3 / §4: the plan's
-  SDA / SCL and SCK / MOSI / MISO / CS, role_channels and an exact channel_group; configure, arm, preload, read_rx,
-  status, reset, stretch when declared; no bus controller of its own - the test hooks `i2c_write` / `i2c_read` /
-  `spi_transfer` are one transaction on the bus), and oep.probe.config (plan / label / idle / slot / bind / uart
-  / disable items, get / set / unset / save / erase, the state op - describe is declarations only; a disabled channel
-  is refused everywhere with unavailable cause 5 and never parked: `parked` records the free pins' states it set -
-  idle modes 3 / 4 drive their level, refused unsupported on `input_only` channels; every release goes there, and a
-  gpio line taken keeps that state until its first set)
-- the output strength (fixture §1.1): the profiles' gpio declare drive_levels (`fake.DRIVE_LEVELS_MA`, default
-  `fake.DRIVE_DEFAULT`; `fake.without_drive_levels` makes a probe without them); set's drive TLVs per element (the
-  malformed and ignored rules), the effective strength (`gpio_drive`: the set's drive, else the idle item's, else the
-  default; taken and released lines at the idle state's, `parked_drive`), read's drive TLV; the idle item's drive
-- the slot's boot_reset and the retry with reset (probe.config §1.1 / §3.1): after an automatic attach got no answer
-  (a `FakeTarget.silent_until_reset` target answers nothing until a reset through its line), once per boot and only
-  before any session took the lock, through the `nrst` line found by §1.3 (`line_for`), hold
-  slot_retry_reset_hold_ms; `slot_reset_log`, slot_state's reset_at_ns
+  every sequence count x element with no element length and every fixed form closed (§2.3)
+- request tails (core §2.3, `Take`): a tag this probe does not implement in the op's context is ignored, or refused
+  unsupported (the tag as received) when critical; a tag it implements is checked the same with or without bit 7 - a
+  value of another length (longer too) or one the definition excludes is malformed, a value the definition leaves
+  unused or this probe does not handle is unsupported with the tag as received; a non-repeating tag sent twice: the
+  first is used; tags 0x00 / 0x7F are no tags. `tail=` appends TLVs to every result that may carry them, so hosts can
+  be checked to skip what they do not know
+- refusals (core §4.3): the header (unknown_function, unknown_operation, session_required), then the resend table,
+  then the session (no_session / locked + remaining ms + owner); after that every check runs before anything changes
+  and the request is refused for one reason that applies (this fake's handlers check the form, then the fns named, then
+  what they do not handle, then the state and the resources). unsupported is always `tag [TLV]` (0x00 for a fixed-part
+  value); unavailable carries cause, channel and (capture-group) fn; a resource number of the wrong kind is unavailable
+  cause 6 - connections and streams share one u16 space, +1 skipping numbers in use (core §9)
+- confirm with a revision range (its answer carries the boot_id and the transport it came on, core §7.1);
+  `revision=0` makes a v0 probe that answers in the v0 shape and drops requests with a session_id
+- the ops tag (core §1.2, §7.4): every fn's describe carries it, and an op it does not set is unknown_operation
+  (`offers`)
+- the lock (core §6): a host-chosen session id, extended by every answer to its holder that passed the session check
+  (rejected ones too), counted from when that request completed; no resume: end, a lapse and force release everything
+  the session created (its plan, its shares of connections and streams, its subscriptions, its capture-group bind);
+  lease 0 = the probe default, 1000-60000 ms taken as asked; open's force is a boolean (non-zero = true, §2.1); the
+  owner TLV (1-32 bytes) from the open that takes the lock, shown by lock_state and by rejected locked
+- the resend table (core §5.2): (corr, answer) of the last session's recent requests - a request is known by its corr
+  alone, a resend gets the remembered answer whatever it carries (answers longer than `remember_max` bytes are not kept
+  -> result_lost); result_lost for old corrs; open is never looked up; emptied by a successful open, kept over end
+- oep.probe.plan (oep-if-plan: role_assignment, plan_roles), oep.probe.restart (oep-if-restart §2: the answer first,
+  then nothing on any transport until the probe has restarted; the target is not reset), notifications (core §11:
+  subscribe / unsubscribe are the emitting interface's ops; events at once, data batched by min_bytes / max_delay_ms),
+  oep.probe.link (oep-if-link: source len <= max_frame - 7, sink, and port_speed when the profile's ops offer it)
+- port_speed (oep-if-link §3, the handshake): baud(u32) step(u8) verify_ms(u16) on the UART bridge the request came in
+  on (another transport, or a try while a port is raised: unavailable cause 6); the nearest rate the fake's UART makes
+  (300..5000000 exactly, else the nearest end) within port_speed_tolerance_pct of the request, else unsupported; a try
+  goes back after verify_ms without a commit, a commit after port_speed_idle_ms with no good frame (counted from a
+  good frame or an answer sent), the session's end after its answer. The line is modelled by `broken_rates` (rate ->
+  BrokenRate): frames at such a rate break, from a size and in the directions given, only both ways at once
+  (`duplex`), only every Nth (`every`), only once `after` bytes have passed since the switch (`fake_serial` applies it)
+- oep.wire.rvswd / swio (debug §1-§3): scan (count = 0 pages the free pairs from `skip`; a count > 0 request's skip is
+  not looked at; tried and found per frame), attach on declared pin pairs with the reset TLV (an output-idle or
+  disabled reset line unavailable cause 5), several connections up to max_connections and the seat rule, connections;
+  attach and scan answer within max_op_ms - a target that restarts by itself after a reset (`FakeTarget.restart_ms`)
+  is waited for up to max_op_ms, then status line with the connection kept (`settle_log`); an attach that joins a live
+  connection keeps its settings but what it carries (idle_clock), max_speed only lowers its speed; target_id scheme
+  dmi_7f; search_retries only when a bring-up ran; a target op whose exchanges go unanswered fails status line and
+  leaves the lines undriven until one succeeds (`pin_state` "wire-free")
+- oep.target.riscv-dm (debug §4) on one `FakeTarget` per pin pair: dmi step lists, halt, resume, reset (status flags
+  pc; ndmreset; within max_op_ms), read_block / write_block, run (stopped 0-3: 3 when the preparation fails -
+  `FakeTarget.fail_regs` - or the hart runs), step (step_left)
+- oep.target.console (console §1-§3): one live stream per connection, lifetime by its users, the streams list; a stream
+  of a mechanism that carries host -> target bytes (DMDATA, dmseq) has a send queue of the probe's own size
+  (`send_queue`, not declared): a write puts min(count, the free space) at its end (count 0: success; accepted 0 only
+  when full; SDI takes nothing); the probe hands the queue's head to the target, dmseq 2 bytes and DMDATA 3 a poll -
+  one poll per ms while the hart runs, none while it is halted or a riscv-dm request of the connection runs - or all of
+  it at `console_take`
+- oep.fixture.gpio (fixture §1: modes 0-6, the lines outside through `gpio_world`; the drive a u8 level, 0xFF the
+  default - a level past drive_levels, or any drive without them, unsupported; `gpio_drive` / `parked_drive` the
+  effective strength), oep.fixture.uart (its stream made by the plan; status baud / format; the settings' uart item),
+  oep.fixture.i2c-target (§3, one form: configure an address, a write with data is one frame cut at max_length, reads
+  from preload_tx slots or 0xFF, stretch when the ops offer it; test hooks `i2c_write` / `i2c_read`) and
+  oep.fixture.spi-target (§4: configure, arm, read_rx, status; errors at most 1 a transfer; `spi_transfer`),
+  oep.fixture.logic / analog / capture-group (`fake_capture`)
+- oep.probe.config (probe.config §1-§3): plan / label / idle / slot / bind / uart / disable items (each of one form:
+  another length is malformed, critical or not), get / set / unset / save / erase / state; the hash is the fake's own
+  (a seeded CRC-32 of get's bytes: no host may compute it); storage_hash is get's hash when the saved settings became
+  current; at boot disable and idle before any other item; slots without a lock (state 0 connected / 1 absent), binds
+  of one stream whose port position stays during a session and carries on after it; a disabled channel is refused
+  everywhere with unavailable cause 5 and never parked; `parked` records the free pins' states
 - the serial ports' raw side (transports §4, probe.config §1.2): `port_input` / `port_output` carry the bytes outside
-  the frames for each serial port by its bind; a port the lock holder's requests came in on is held until the
-  session ends, then resumes from the session's last host reset. The byte framing itself is `fake_serial`.
-- a console stream of a mechanism that carries host -> target bytes (DMDATA, dmseq) has a send queue of the describe's
-  send_queue bytes (console §1 tag 0x41, §2): a write puts min(count, the free space) at its end (accepted 0 only when
-  it is full; SDI takes nothing, §3.1); the probe hands the queue's head to the target, dmseq 2 bytes and DMDATA 3 a
-  poll - one poll per ms on the timers' clock while the hart runs and answers - or all of it at `console_take`; the
-  queue stays over the target's restarts and resets, clear leaves it, and it goes when the stream closes
-- the reset settle wait (debug §3, §4.3): after a reset's release a target that restarts by itself
-  (`FakeTarget.restart_ms`) leaves the DM silent; riscv-dm reset and attach's reset TLV wait for it up to
-  reset_settle_ms (capped by max_op_ms), then answer completed failed status line (no flags bit2; an existing connection
-  kept, its streams marked reset detail 3) - `settle_log` keeps each wait
-- oep.probe.link (oep-if-link): source (len(u16) data, at most max_frame - 26), sink (count(u16) data, an empty
-  answer), and port_speed (§3, optional): offered when the profile's oep.probe.link sets it in its ops (`port_speed_base`,
-  the boot speed; None = off: not in the ops, unknown_operation). try / commit / revert on the UART bridge the request came in on (else
-  unavailable cause 6), a step that does not fit the port's state (commit at the boot speed or when committed,
-  revert at the boot speed, try while trying or committed) unavailable cause 6, a step above 2 malformed, a rate the
-  fake UART cannot make (outside 300..5000000) unsupported; a try reverts after verify_ms without a commit or at a
-  broken candidate once a good frame came at the new speed, a commit after idle_ms (at most port_speed_idle_max_ms,
-  3000; 0 and anything longer count as that maximum) with no good frame or at 3 broken candidates in a row with no
-  good frame between, the session's end reverts after its answer. The line itself is modelled by `broken_rates`
-  (rate -> BrokenRate): frames at such a rate break, from a size and in the directions given, only both ways at once
-  (`duplex`), only every Nth (`every`), only once `after` bytes have passed at the rate since the switch to it
-  (`fake_serial` applies it).
-
-- the rule changes of oep-spec v1-rule-change-proposal-2026-10-02 (in the final text): a value a later revision may
-  define is unsupported (core §2.5, C-02: list's reserved flag bits, attach method, reset mode, read's from, gpio mode,
-  i2c-target mode, uart format bits, port_speed step, probe.config's idle mode / drive_kind / slot enums / bind stream
-  kind / lock scheme; an undefined gpio drive kind is ignored, unsupported when critical); a request's whole form is
-  checked before its values, and its values before the state and the resource (core §4.3); a non-repeating request
-  tag twice is malformed, a short value malformed, a longer one unsupported when critical and else ignored (C-03:
-  role_assignment, gpio's drive and capture's frontend repeat); ignored keeps request order, at most 16 entries with
-  0x00 as the 16th, never left out (C-04); confirm's answer names the transport it came on (TLV 0x01, C-05), the
-  revision is kept per transport, min_rev > max_rev is malformed and no revision in range is unsupported with TLV
-  supported (C-15); rejected answers go into the resend table, order-1 refusals do not, and the lease restarts at
-  every answer to the holder that passed order 3 (C-16, C-17); lease_ms 1000-60000, an open with session_id 0 /
-  a boolean not 0 or 1 / text with control characters or bad UTF-8 malformed (C-17, C-18, C-22); a TCP listener of
-  fake_serve is a transport of its own
-  (C-05). Debug: count = 0 leaves out idle-item channels, a named output-idle channel is unavailable cause 5
-  holder_kind 7 (P2-★1); an undeclared scan combination is unsupported with its index, attach's pins tag as received,
-  a held channel unavailable with its cause and channel (P2-★5); found = DMSTATUS.version >= 2 and != 15 (P2-○1);
-  halt's timeout clears haltreq, step's failure answers step_left (P2-○4); search_retries in the attach answer
-  (P2-★4). Fixture: `pin_state` says what the probe does to a pin (MISO driven only while CS is active, i2c-target
-  open-drain with its declared pull-ups, a plan changing no pin until use, an analog plan on an output idle refused;
-  P2-★2 / ★3 / ○13). Capture: samples rounded down to the mode's max_samples, mode / rate / trigger refused with the
-  tag as received, the group's state from its tracks and every track checked before start (P2-○8, ○10); a read past
-  the write position (P2-○11). probe.config: firmware labels as the line search's step (c) (PC-1), an idle pull the
-  channel lacks (`no_pull`, PC-3), an item's channel below `channels` and not reserved (PC-4), label text (PC-5), a
-  saved bind on a port that is no serial port (reason 2, PC-8); an item's unsupported names its tag as received
-
-- the rules of oep-spec 2e70f40 .. 40291a4 (required and optional ops, the 2026-10-06 rule changes): an op the
-  interface does not define, or an optional op the probe does not offer (`offers`), is unknown_operation at order 1
-  before session_required; plan_apply and probe.config set / unset check the whole request's form, then the fns it
-  names, then what the probe lacks, then the state (C-21); non-request roles and short requests are discarded (C-36);
-  the clock is ns since boot at the resolution given (`now_ns`), never back, from 0 at a reboot (C-31); reboot() draws
-  a boot_id (C-19); confirm's limits and max_op_ms are checked at construction (C-20, C-47); every channel not reserved
-  is parked at boot (△12). Debug: a target op whose exchanges go unanswered fails with status line and leaves the
-  connection's lines undriven until one succeeds (`pin_state` "wire-free"); an attach reset TLV on an output-idle
-  channel is unavailable cause 5 holder_kind 7; search_retries only when a bring-up ran. Fixture: i2c-target's
-  reserved addresses unsupported (△5), uart write without TX unavailable cause 6 (△6), spi-target's cs_setup_ns
-  (esp32-v003 declares one)
+  the frames for each serial port by its bind; a port the lock holder's requests came in on is held until the session
+  ends. The byte framing itself is `fake_serial`.
 
 Every other non-core fn gets two stand-in operations so the session rules can be exercised - FAKE ONLY, they mean
 nothing on a real probe:  0x01 write(u32) changes state, 0x02 read -> u32 needs no lock.
@@ -158,7 +111,6 @@ STREAM_STATE, STREAM_USERS = _CON.enum["stream_state"], _CON.enum["stream_users"
 ATTACH_FLAGS = reg.WIRE_RVSWD.enum["attach_flags"]
 RUN_STOPPED = _RV.enum["run_stopped"]
 RESET_MODE = _RV.enum["reset_mode"]
-RESET_METHOD = (0, 1)                                      # reset's method TLV: 0 the probe chooses, 1 ndmreset (2 reserved)
 STEP_LEFT = _RV.tlv["step_answer"]["step_left"]            # step's answer: the hart could not be halted again (§4.2)
 ITEM = _CFG.tlv["item"]
 CHANNEL_ITEMS = (ITEM["label"], ITEM["idle"], ITEM["disable"])   # items keyed by a channel (probe.config §1)
@@ -166,7 +118,6 @@ IDLE_MODE = _CFG.enum["idle_mode"]
 CFG_DESCRIBE = _CFG.tlv["describe"]
 SLOT_ATTACH = _CFG.enum["slot_attach"]
 SLOT_STATE = _CFG.enum["slot_state"]
-BIND_MODE = _CFG.enum["bind_mode"]
 BIND_STREAM = _CFG.enum["bind_stream"]
 BIND_FLOW = _CFG.enum["bind_flow"]
 WIRES = ("oep.wire.rvswd", "oep.wire.swio")
@@ -180,25 +131,19 @@ SLOT_NAME = re.compile(r"[a-z0-9_-]{1,32}")
 NO_SLOT, NEVER_NS = 0xFF, 0xFFFFFFFFFFFFFFFF
 PIN_ROLE_RESET = reg.WIRE_RVSWD.enum["pin_role"]["reset"]   # the channels an attach's reset TLV may take
 TARGET_ID_SCHEME = reg.COMMON.enum["target_id_scheme"]     # one space for the whole probe (oep-if-debug §1)
-TARGET_ID_LEN = reg.COMMON.enum["target_id_len"]
 _I2C, _SPI = reg.FIXTURE_I2C_TARGET, reg.FIXTURE_SPI_TARGET
-I2C_MODE, I2C_FEATURES, SPI_FEATURES = _I2C.enum["mode"], _I2C.enum["features"], _SPI.enum["features"]
+I2C_FEATURES, SPI_FEATURES = _I2C.enum["features"], _SPI.enum["features"]
 TARGET_ROLES = {"oep.fixture.gpio": {1}, "oep.fixture.uart": {1, 2}, _I2C.name: set(_I2C.enum["role"].values()),
                 _SPI.name: set(_SPI.enum["role"].values())}   # the plan roles each fixture takes
 UART_FORMAT_MASK = 0x1F                                    # the defined format bits (fixture §2)
-UART_CONFIGURED = _UART.enum["uart_configured"]            # status's configured byte: default / session / item / item_fallback
 _T_SCAN, _T_ATTACH, _T_DETACH, _T_ATTACH_ANSWER = (reg.WIRE_RVSWD.tlv[k] for k in ("scan", "attach", "detach", "attach_answer"))
 ATTACH_METHOD = reg.WIRE_RVSWD.enum["attach_method"]
 _UNSUP_INDEX = reg.CORE.tlv["unsupported_payload"]["index"]   # the position in the request's list (scan, gpio set)
-GPIO_SET_DRIVE, GPIO_READ_DRIVE = _GPIO.tlv["set"]["drive"], _GPIO.tlv["read_answer"]["drive"]
-DRIVE_KIND = _GPIO.enum["drive_kind"]                      # 0 a level number, 1 an mA ceiling (fixture §1.1)
-NOT_DRIVEN = _GPIO.enum["drive_read"]["not_driven"]
+GPIO_SET_DRIVE = _GPIO.tlv["set"]["drive"]                # index(u8) level(u8), repeats (fixture §1.1)
+DRIVE_DEFAULT = _GPIO.enum["drive_level"]["default"]       # 0xFF: drive_levels' default level (fixture §1.1)
+GPIO_MODE_MAX = max(_GPIO.enum["mode"].values())           # 6: the modes revision 1 defines are 0-6 (fixture §1)
 OUTPUT_MODES = (_GPIO.enum["mode"]["output_low"], _GPIO.enum["mode"]["output_high"])   # the modes a strength applies to
-SLOT_BOOT_RESET = _CFG.enum["slot_boot_reset"]
-RETRY_RESET_HOLD_MS = reg.TIMING["slot_retry_reset_hold_ms"]   # the retry with reset's hold (probe.config §3.1)
-RESET_SETTLE_MS = reg.LIMITS["reset_settle_ms"]            # the most a reset waits for a silent DM (debug §3, §4.3)
-CON_SEND_QUEUE = reg.TARGET_CONSOLE.tlv["describe"]["send_queue"]   # u16: each stream's send queue (console §1)
-LINK_SOURCE_OVERHEAD = reg.LIMITS["link_source_overhead_bytes"]   # source's len <= max_frame - this (oep-if-link §2)
+LINK_SOURCE_OVERHEAD = m.RESULT_HEADER + 2                 # source's len <= max_frame - 7: header and len (oep-if-link §2)
 REQUEST_HEADER = m.REQUEST_HEADER                          # role corr fn op session_id: 10 bytes (core §4.1)
 
 
@@ -236,21 +181,16 @@ def unsupported_fixed(*tlvs: bytes) -> Reject:
 
 
 _UNA = reg.CORE.tlv["unavailable_payload"]
-UNAVAILABLE_CAUSE, HOLDER_KIND = reg.CORE.enum["unavailable_cause"], reg.CORE.enum["holder_kind"]
+UNAVAILABLE_CAUSE = reg.CORE.enum["unavailable_cause"]
 
 
-def unavailable(cause: str | None = None, channel: int | None = None, holder_fn: int | None = None,
-                holder_kind: str | None = None, extra: bytes = b"") -> Reject:
-    """rejected unavailable with core §4.3's payload: why, the channel, who holds it (each optional)."""
+def unavailable(cause: str | None = None, channel: int | None = None, extra: bytes = b"") -> Reject:
+    """rejected unavailable with core §4.3's payload: why and the channel (each optional), then `extra`."""
     body = b""
     if cause:
         body += m.tlv(_UNA["cause"], bytes([UNAVAILABLE_CAUSE[cause]]))
     if channel is not None:
         body += m.tlv(_UNA["channel"], struct.pack("<H", channel))
-    if holder_fn is not None:
-        body += m.tlv(_UNA["holder_fn"], struct.pack("<H", holder_fn))
-    if holder_kind:
-        body += m.tlv(_UNA["holder_kind"], bytes([HOLDER_KIND[holder_kind]]))
     return Reject(m.UNAVAILABLE, body + extra)
 
 
@@ -259,51 +199,24 @@ def wrong_kind() -> Reject:
     return unavailable("wrong_state")
 
 
-valid_text = m.valid_text                                  # text a request may carry (core §2.1)
-
-
-IGNORED_MAX = reg.LIMITS["ignored_max_entries"]            # entries of the ignored TLV; 0x00 as the last = more (core §2.3)
-
-
-def ignored_tlv(tags: list[int], room: int | None = None) -> bytes:
-    """The ignored TLV (0x7F) of an answer (core §2.3): one entry per ignored TLV in request order, the numbers with
-    bit 7 cleared, at most 16 - more than 16 ignored: the first 15 and 0x00 ("more were ignored"). `room`: the bytes
-    the answer has left; fewer entries than that fit: as many as fit, 0x00 the last (4 bytes always fit)."""
-    if not tags:
-        return b""
-    entries = [t & 0x7F for t in tags]
-    if len(entries) > IGNORED_MAX:
-        entries = entries[:IGNORED_MAX - 1] + [m.TAG_FIXED]
-    if room is not None and m.TLV_HEADER + len(entries) > room:
-        fit = max(1, room - m.TLV_HEADER)
-        entries = entries[:fit - 1] + [m.TAG_FIXED]
-    return struct.pack("<BH", m.TAG_IGNORED, len(entries)) + bytes(entries)   # tag 0x7F len(u16) entries
-
-
 class Take:
     """Reads a request's fixed part; too short -> rejected malformed. `tail(known)` applies the request-tail rules of
-    core §2.3 and keeps the ignored tags in `ignored` (also what it returns, so `refuse` and the handlers add to the
-    same list): `Endpoint._dispatch` lists them in the answer's ignored TLV, so no handler attaches them itself.
+    core §2.3:
 
-    The tail's rules: the one encoding (malformed otherwise); a known tag twice that does not repeat (`repeats`) ->
-    malformed, critical or not; an unknown critical tag -> unsupported with the tag as received, raised once the whole
-    tail has been read (so a malformed one later in it wins, core §4.3), or kept for `check()` when `defer` (the handler
-    checks its own malformed cases first); unknown non-critical tags -> ignored. `fixed(got, tag, size)` then checks a
-    known TLV's length: shorter -> malformed; longer (a request TLV is never extended, core §2.3) -> unsupported when
-    critical, else the whole TLV ignored."""
+    - a TLV past the end of the request -> malformed;
+    - an unknown tag (one this probe does not implement in this (fn, op) context; 0x00 and 0x7F are never tags) ->
+      critical: unsupported with the tag as received, raised once the whole tail has been read (so a malformed one
+      later in it wins), or kept for `check()` when `defer` (the handler checks its own malformed cases first); not
+      critical: ignored;
+    - a known tag is the same with or without bit 7 (`critical` keeps which came with it, `received` gives it back):
+      a non-repeating one twice -> the first is used; `fixed(got, tag, size)` checks its length (a value of another
+      length -> malformed), `refuse(tag)` an unhandled value (-> unsupported with the tag as received)."""
 
     def __init__(self, payload: bytes):
         self.data, self.at = payload, 0
-        self.ignored: list[int] = []
         self.critical: set[int] = set()
         self.repeated: list[tuple[int, bytes]] = []
         self.unknown_critical: int | None = None
-
-    def no_tail(self) -> None:
-        """A request that takes no TLV (describe, probe.config get; core §7.3): anything after the fixed part is
-        rejected malformed."""
-        if self.at < len(self.data):
-            raise Reject(m.MALFORMED)
 
     def take(self, fmt: str):
         size = struct.calcsize("<" + fmt)
@@ -321,9 +234,9 @@ class Take:
         return out
 
     def tail(self, known: set[int] = frozenset(), repeats: set[int] = frozenset(),
-             defer: bool = False) -> tuple[dict[int, bytes], list[int]]:
-        """-> (known tags without the critical bit -> value, ignored non-critical tags)."""
-        rest, at, got, ignored = self.data[self.at:], 0, {}, self.ignored
+             defer: bool = False) -> dict[int, bytes]:
+        """-> known tags without the critical bit -> value (the first of a non-repeating tag sent twice)."""
+        rest, at, got = self.data[self.at:], 0, {}
         self.critical = set()                                      # known tags that came with the critical bit
         self.repeated = []                                         # every known TLV in order, critical bit kept
         while at < len(rest):
@@ -335,12 +248,10 @@ class Take:
                 raise Reject(m.MALFORMED)
             value = rest[at:at + n]
             at += n
-            if tag in (m.TAG_INVALID, m.TAG_IGNORED, m.TAG_FIXED) or tag & 0x7F in (m.TAG_IGNORED, m.TAG_FIXED):
-                raise Reject(m.MALFORMED)
             number = tag & 0x7F
             if number in known:
                 if number in got and number not in repeats:
-                    raise Reject(m.MALFORMED)                      # once, unless its definition repeats it (§2.3)
+                    continue                                       # the first is used (core §2.3)
                 got.setdefault(number, value)
                 self.repeated.append((tag, value))
                 if tag & m.TAG_CRITICAL:
@@ -348,12 +259,11 @@ class Take:
             elif tag & m.TAG_CRITICAL:
                 if self.unknown_critical is None:
                     self.unknown_critical = tag
-            else:
-                ignored.append(number)
+            # an unknown tag without the critical bit: ignored (core §2.3)
         self.at = len(self.data)
         if not defer:
             self.check()
-        return got, ignored
+        return got
 
     def check(self) -> None:
         """An unknown critical TLV the tail held: rejected unsupported, the tag as received (core §2.3)."""
@@ -365,29 +275,17 @@ class Take:
         return tag | (m.TAG_CRITICAL if tag in self.critical else 0)
 
     def fixed(self, got: dict[int, bytes], tag: int, size: int) -> bytes | None:
-        """A known TLV of a fixed `size`: shorter -> malformed; longer -> `refuse` (unsupported when critical, else
-        ignored and dropped from `got`); None when absent or dropped."""
+        """A known TLV of a fixed `size`: a value of another length -> malformed (core §2.3: an implemented TLV is
+        checked with or without bit 7); None when absent."""
         value = got.get(tag)
-        if value is None:
-            return None
-        if len(value) < size:
+        if value is not None and len(value) != size:
             raise Reject(m.MALFORMED)
-        if len(value) > size:
-            self.refuse(tag, got)
-            return None
         return value
 
-    def refuse(self, tag: int, got: dict[int, bytes]) -> None:
-        """A known TLV whose value cannot be honoured: critical -> unsupported with the tag as received, else it is
-        dropped and listed as ignored."""
-        if tag in self.critical:
-            raise Reject(m.UNSUPPORTED, bytes([tag | m.TAG_CRITICAL]))
-        got.pop(tag, None)
-        self.ignored.append(tag)
-
-    def room(self) -> int:
-        """The bytes an answer keeps for its ignored TLV (core §2.3: at most 19)."""
-        return m.TLV_HEADER + min(len(self.ignored), IGNORED_MAX) if self.ignored else 0
+    def refuse(self, tag: int, payload: bytes = b"") -> Reject:
+        """A known TLV whose value this probe does not handle (a value the definition left unused, or one this probe
+        does not declare): rejected unsupported with the tag as received (core §2.3), then `payload` (channel, index)."""
+        return Reject(m.UNSUPPORTED, bytes([self.received(tag)]) + payload)
 
 
 @dataclass
@@ -405,10 +303,12 @@ class FakeTarget:
     havereset: bool = True
     resume_misses: int = 0                             # resumes that do not take (status state, dpc unchanged)
     present: bool = True                               # something answers on this pin pair (scan, attach)
-    target_id: int | None = None                       # the wch_dmi_7f target_id attach reports (None: none)
+    target_id: int | None = None                       # the dmi_7f target_id attach reports (None: none)
     # run(pc, regs) -> (stopped, dpc, elapsed_us); default: halts 0x10 past the start
     run_hook: Callable | None = None
     unstoppable: bool = False                          # run: the limit passes and the hart cannot be halted (stopped 2)
+    fail_regs: set = field(default_factory=set)        # run: regnos whose write before the run fails on the line - the
+                                                       # preparation fails, the hart is not run (stopped 3, debug §4.4)
     reset_line: int | None = None                      # the channel wired to its reset (None: any reset channel resets it)
     silent_until_reset: bool = False                   # answers nothing on the wire until a reset through its line
     version: int = 2                                   # DMSTATUS.version: "found" is 2 or more and not 15 (debug §1)
@@ -543,12 +443,9 @@ class I2cState:
     """One oep.fixture.i2c-target (fixture §3): what configure made, the frames waiting for read_rx, the tx slots."""
     state: int = 0                       # 0 not configured, 1 running
     address: int = 0
-    mode: int = 0
-    armed: int = 0                       # mode 1: the length arm_rx waits for (0 = not armed)
     queue: list = field(default_factory=list)   # (frame, ns)
     rx_frames: int = 0
     errors: int = 0
-    slots: int = 0                       # preload_tx's running count (u8, wraps)
     tx: list = field(default_factory=list)      # preloaded, unread
     stretch_us: int = 0
 
@@ -618,54 +515,35 @@ class Slot:
     idle_clock: int
     mechanism: int
     name: str
-    lock: tuple[int, bytes, bytes] | None              # (scheme, mask, value)
-    boot_reset: int = 0                                # 1: the at-boot attach retries once with the reset line (§3.1)
 
 
-def _bind_streams(v: bytes) -> list[int]:
-    """Where each stream of a bind value starts (probe.config §1.2: n × (kind(u8), id(u16)), 3 bytes each)."""
-    if len(v) < 4 + 3 * v[3]:
-        raise Reject(m.MALFORMED)
-    return [4 + 3 * i for i in range(v[3])]
+ITEM_SIZES = {ITEM["plan"]: 5, ITEM["idle"]: 4, ITEM["uart"]: 7, ITEM["disable"]: 2, ITEM["bind"]: 4}
+SLOT_HEAD = struct.Struct("<BHHHBIIBBB")   # slot wire_fn swdio swclk attach retry_ms max_speed_hz idle_clock mechanism name_len
 
 
 def _item_size(tag: int, v: bytes) -> int | None:
-    """The length of item `tag`'s one form as the value's own counts make it (probe.config §1: plan 5, idle 6, uart
-    7, disable 2, a slot by its name_len and lock_len, a bind by its n; a label is its text to the end: None). A value
-    too short for the counts it carries is malformed (`Reject`)."""
-    fixed = {ITEM["plan"]: 5, ITEM["idle"]: 6, ITEM["uart"]: 7, ITEM["disable"]: 2}
-    if tag in fixed:
-        return fixed[tag]
+    """The length of item `tag`'s one form as the value's own counts make it (probe.config §1: plan 5, idle 4, uart 7,
+    disable 2, bind 4, a slot by its name_len; a label is its text to the end: None). A slot too short for its head is
+    malformed (`Reject`)."""
+    if tag in ITEM_SIZES:
+        return ITEM_SIZES[tag]
     if tag == ITEM["slot"]:
-        head = struct.calcsize("<BHHHBBIIBBB")
-        if len(v) < head:
+        if len(v) < SLOT_HEAD.size:
             raise Reject(m.MALFORMED)
-        at = head + v[head - 1]                                    # the name
-        if len(v) < at + 1:
-            raise Reject(m.MALFORMED)
-        return at + 1 + v[at]                                      # lock_len and the lock's part: the item ends there
-    if tag == ITEM["bind"]:
-        if len(v) < 4:
-            raise Reject(m.MALFORMED)
-        return 4 + 3 * v[3]
+        return SLOT_HEAD.size + v[SLOT_HEAD.size - 1]              # the name ends the item
     return None
 
 
 @dataclass(frozen=True)
 class Bind:
     port: int
-    mode: int
-    selected: int
-    streams: tuple[tuple[int, int], ...]               # (kind, id)
+    stream: tuple[int, int]                            # (kind, id): the one stream the port carries (probe.config §1.2)
 
 
 @dataclass
 class SlotRuntime:
     last_try_ms: int | None = None
     evicted: bool = False                              # the seat rule closed its connection: no retry until a new cue
-    mismatch_tid: int | None = None                    # what the last automatic attach saw when the lock did not match
-    no_tid: bool = False                               # ... or it saw no target_id to check a lock against
-    reset_at_ms: int | None = None                     # when the retry with reset started pulling the line (§3.1)
 
 
 @dataclass
@@ -673,8 +551,6 @@ class Flow:
     """One stream as a serial port's bind carries it: the stream id and the port's position in it."""
     sid: object = None
     pos: int = 0
-    line: bytearray = field(default_factory=bytearray)
-    last_ms: int = 0
 
 
 @dataclass
@@ -704,15 +580,15 @@ class BrokenRate:
 _LINK = reg.PROBE_LINK
 OP_PORT_SPEED = _LINK.op["port_speed"]
 SPEED_STEP = _LINK.enum["port_speed_step"]
-SPEED_IDLE_MAX_MS = reg.TIMING["port_speed_idle_max_ms"]   # committed: idle_ms at most this (0 and longer: this)
-SPEED_BAD_MAX = 3                                  # committed: this many broken candidates in a row (no good frame between) revert
-SPEED_RATES = (300, 5_000_000)                     # what the fake's UART makes (anything between, exactly)
+SPEED_IDLE_MS = reg.TIMING["port_speed_idle_ms"]   # committed: back to the boot speed after this with no good frame
+SPEED_TOLERANCE_PCT = reg.LIMITS["port_speed_tolerance_pct"]   # the UART's nearest rate within this of the request (§3)
+SPEED_RATES = (300, 5_000_000)                     # what the fake's UART makes (anything between, exactly; outside it,
+                                                   # the nearest end of the range)
 
 
 class Endpoint:
     MARKS_PER_ANSWER = 3                     # small, so hosts must follow `more`
     CHUNK = 64                               # raw bytes a serial port takes at a time (probe guide §6)
-    MIXED_LINE_MAX, MIXED_QUIET_MS = 128, 100
 
     def __init__(self, probe: fake.FakeProbe, now_ms: Callable[[], int], boot_id: int = 0x1234ABCD,
                  lease_default_ms: int = 3000, lease_max_ms: int = 60000, revision: int = 1, tail: bytes = b"",
@@ -749,10 +625,10 @@ class Endpoint:
         # channels without a pull (a test sets them): channel -> the idle modes (1 pull-up / 2 pull-down) it cannot
         # make; such an idle is unsupported (probe.config §1, PC-3)
         self.no_pull: dict[int, set[int]] = {}
-        self.channels = 0xFFFF                          # fn 0 describe 0x43 / 0x44: an item's channel (probe.config §1)
-        self.reserved: set[int] = set()
+        self.channels = 0xFFFF                          # fn 0 describe 0x43: an item's channel is below it (probe.config §1)
+        self.own_channels: set[int] = set(probe.own_channels)   # the probe's own (never an interface's; not declared)
         self.transports: dict[int, int] = {}            # index -> kind, by the TLV's own index (core §7.5), not its order
-        self.max_op_ms = reg.REFERENCE["max_op_ms"]
+        self.max_op_ms = fake.MAX_OP_MS
         # oep.probe.plan's plan_roles (oep-if-plan §1): the most role assignments at once (None: no limit declared)
         self.plan_roles: int | None = next((struct.unpack_from("<I", v)[0] for fn, name in self.names.items()
                                             if name == fake.PLAN for tag, v in self.decl[fn] if tag == fake.PLAN_ROLES_TAG),
@@ -766,8 +642,6 @@ class Endpoint:
                 self.max_op_ms = struct.unpack_from("<I", v)[0]
             if tag == fake.CORE_CHANNELS:
                 self.channels = struct.unpack_from("<H", v)[0]
-            if tag == fake.CORE_RESERVED:
-                self.reserved = set(catalog.bitmap_to_channels(struct.unpack_from("<H", v)[0], v[2:]))
         if not 1 <= self.max_op_ms <= reg.LIMITS["max_op_ms_max"]:
             raise ValueError(f"max_op_ms {self.max_op_ms}: core §7.5 wants 1 to {reg.LIMITS['max_op_ms_max']}")
         self.serial_ports = {i for i, k in self.transports.items() if k in fake.SERIAL_KINDS}
@@ -794,11 +668,13 @@ class Endpoint:
             first = self._role_pairs(fn)[0]
             self.targets[(fn, first)] = FakeTarget()
         self.target = next(iter(self.targets.values()), FakeTarget())
+        self.inner = {o.fn: dict(o.inner) for o in probe.offered}   # what each fn keeps to itself (not declared)
         self.captures: dict[int, fake_capture.FakeCapture] = {
-            fn: self._capture_from(self.decl[fn]) for fn, name in self.names.items()
+            fn: self._capture_from(self.decl[fn], self.inner[fn]) for fn, name in self.names.items()
             if name in ("oep.fixture.logic", "oep.fixture.analog")}
         self.groups: dict[int, fake_capture.FakeGroup] = {
-            fn: self._group_from(self.decl[fn]) for fn, name in self.names.items() if name == "oep.fixture.capture-group"}
+            fn: self._group_from(self.decl[fn], self.inner[fn]) for fn, name in self.names.items()
+            if name == "oep.fixture.capture-group"}
         self.mechanisms = set()
         for fn, name in self.names.items():
             if name == "oep.target.console":
@@ -826,27 +702,26 @@ class Endpoint:
                                  own(fn, _I2C.tlv["describe"]["queue_depth"], "B", 1),
                                  own(fn, _I2C.tlv["describe"]["max_stretch_us"], "I", 0) if name == _I2C.name else 0)
                             for fn, name in self.names.items() if name in (_I2C.name, _SPI.name)}
-        # i2c-target internal pull-ups (fixture §3): features bit2 with pullup_ohms (tag 0x42), else none
-        self.i2c_pullup_ohms = {fn: own(fn, _I2C.tlv["describe"]["pullup_ohms"], "I", 0)
-                                if self.target_decl[fn][1] & I2C_FEATURES["internal_pullups"] else 0
-                                for fn, name in self.names.items() if name == _I2C.name}
+        # i2c-target internal pull-ups (fixture §3): features bit2, else none
+        self.i2c_pullups = {fn: bool(self.target_decl[fn][1] & I2C_FEATURES["internal_pullups"])
+                            for fn, name in self.names.items() if name == _I2C.name}
         cfg_fn = self.fns.get("oep.probe.config")
         cfg = dict(self.decl.get(cfg_fn, ()))
         self.slots_max = cfg[CFG_DESCRIBE["slots_max"]][0] if CFG_DESCRIBE["slots_max"] in cfg else 0
         self.items = set(cfg.get(CFG_DESCRIBE["items"], b""))
         self.storage_max = struct.unpack_from("<I", cfg[CFG_DESCRIBE["storage"]])[0] if CFG_DESCRIBE["storage"] in cfg else 0
-        self.bind_modes = struct.unpack_from("<I", cfg[CFG_DESCRIBE["bind_modes"]])[0] if CFG_DESCRIBE["bind_modes"] in cfg else 0
-        # the console's send queue (console §1 describe tag 0x41, §2): its size; what a poll hands to the target per
-        # mechanism (dmseq 2 bytes, DMDATA 3; SDI carries nothing to the target, §3.1)
+        # the console's send queue (console §2): its size is the probe's (not declared); what a poll hands to the target
+        # per mechanism (dmseq 2 bytes, DMDATA 3; SDI carries nothing to the target, §3.1)
         con_fn = self.fns.get(_CON.name)
-        self.send_queue = self._own(con_fn, CON_SEND_QUEUE, "H", 0) if con_fn is not None else 0
+        self.send_queue = self.inner[con_fn].get("send_queue", fake.CONSOLE_SEND_QUEUE) if con_fn is not None else 0
         self.console_feed = {_CON.enum["mechanism"]["dmdata"]: 3, _CON.enum["mechanism"]["dmseq"]: 2}
-        self.settle_log: list[int] = []                 # every reset settle wait (ms): riscv-dm reset, attach's reset TLV
+        self.settle_log: list[int] = []                 # every wait for a silent DM after a reset (ms): riscv-dm reset,
+                                                        # attach's reset TLV - at most max_op_ms (debug §3, §4.3)
         self.uart_accept = 256
         # the ops each fn's describe declares (core §1.2, §7.4): what `offers` answers (an fn without the tag: none)
         self.ops = {fn: set().union(*(_any_ops(v) for tag, v in decl if tag == catalog.OPS))
                     for fn, decl in self.decl.items()}
-        # an ops tag a test gave outside core §7.4's encoding (a probe that does not conform): served as given
+        # an ops tag a test gave outside core §7.4's form (a probe that does not conform): served as given
         self.broken_ops = {fn: v for fn, decl in self.decl.items() for tag, v in decl
                            if tag == catalog.OPS and catalog.check_ops(v)}
         # port_speed (oep-if-link §3): on when the profile's oep.probe.link offers it (its ops); the boot speed every revert
@@ -891,7 +766,7 @@ class Endpoint:
         self.outbox: list[bytes] = []                   # events and data frames waiting to go out (pushes())
         self.plan: set[tuple[int, int, int]] = set()   # (fn, role, channel), from plan_apply and the config
         self.plan_from_config: set[int] = set()        # fns whose plan came from the config (not a session's)
-        self.resend: OrderedDict[int, tuple[int, int, int, bytes | None]] = OrderedDict()
+        self.resend: OrderedDict[int, bytes | None] = OrderedDict()   # corr -> its answer (None: too large to keep)
         self.newest_corr: int | None = None
         self.conns: dict[int, Connection] = {}
         self.resources: dict[int, str] = {}            # number -> "connection" / "stream": one u16 space (core §9)
@@ -906,12 +781,9 @@ class Endpoint:
         self.gpio_log: list[tuple[int, int]] = []
         self.gpio_drive: dict[int, int] = {}           # channel -> the level it is driven at in mode 3 / 4 (fixture §1.1)
         self.parked_drive: dict[int, int] = {}         # channel -> the level a free pin's output idle drives at
-        self.lock_taken = False                        # a session has taken the lock since boot (probe.config §3.1)
-        self.reset_retried: set[int] = set()           # slots that had their retry with reset this boot
-        self.slot_reset_log: list[tuple[int, int, int]] = []   # (slot, channel, hold_ms) of every retry with reset
         self.uarts: dict[int, Stream] = {}             # fn -> stream (while its plan has RX or TX)
         self.uart_carry: dict[int, tuple[int, int]] = {}   # fn -> (position, mark serial) a released stream left off at
-        self.uart_baud: dict[int, tuple[int, int, int]] = {}   # fn -> (baud, format, uart_configured) in force
+        self.uart_baud: dict[int, tuple[int, int]] = {}   # fn -> (baud, format) in force (absent: 115200 8N1)
         self.uart_session_cfg: set[int] = set()        # fns a session's configure set (it beats the uart item)
         self.uart_tx: dict[int, bytearray] = {}        # what a serial port's raw bytes sent out on a fixture UART
         self.i2c: dict[int, I2cState] = {fn: I2cState() for fn, n in self.names.items() if n == _I2C.name}
@@ -921,37 +793,32 @@ class Endpoint:
         self.saved: dict | None = getattr(self, "saved", None)
         self.saved_ids: dict[int, tuple] = getattr(self, "saved_ids", {})   # saved fn -> (name, instance, revision)
         self.saved_reason = 0                          # why the saved settings were not applied (probe.config §4)
+        self.saved_hash = getattr(self, "saved_hash", 0)   # storage_hash: get's hash when the saved ones became current
         self.slots: dict[int, Slot] = {}
         self.binds: dict[int, Bind] = {}
         self.slot_rt: dict[int, SlotRuntime] = {}
-        self.selected: dict[int, int] = {}            # port -> selected index (last-reset / manual)
         self.flows: dict[tuple[int, tuple[int, int]], Flow] = {}
-        self.mixed_out: dict[int, bytearray] = {}
         self.held_ports: set[int] = set()
-        self.session_resets: dict[tuple[int, int], tuple[object, int]] = {}   # stream key -> (sid, position)
         self.parked: dict[int, int] = {}               # channel -> the idle mode the probe put the free pin in
         self.speed_state = "base"                      # port_speed: "base", "try" or "committed" (oep-if-link §3)
         self.speed_port: int | None = None             # the port off its boot speed
         self.speed_rate = 0                            # the rate it runs at
         self.speed_asked = 0                           # the baud the try asked (the commit names it again)
         self.speed_until_ms = 0                        # try: the commit's deadline (verify_ms)
-        self.speed_idle_ms = 0                         # committed: revert after this long with no good frame
-        self.speed_good_ms = 0                         # the last good frame on that port
-        self.speed_heard = False                       # try: a good frame came at the new speed (before it, no broken counts)
-        self.speed_bad = 0                             # committed: broken candidates in a row since the last good frame
-        self.speed_pending: tuple | None = None        # ("switch", port, baud, verify_ms) / ("revert",): after the answer
+        self.speed_good_ms = 0                         # committed: the last good frame on that port or answer sent there
+        self.speed_pending: tuple | None = None        # ("switch", port, rate, asked, verify_ms) / ("revert",): after the answer
         self.speed_log: list[tuple[int, int]] = []     # (port, rate) every switch, reverts included
         if self.saved is not None:
-            self._apply_saved()                        # the saved disable items first: those pins are never parked
-        self._park(self._boot_channels())              # then the free pins' idle state (probe.config §2 boot order)
+            self._apply_saved()                        # disable and idle before any other item (probe.config §2)
+        self._park(self._boot_channels())              # every free pin's idle state before the first answer (core §8)
 
     def _own(self, fn: int, tag: int, fmt: str, default: int) -> int:
         """fn's describe value of `tag` as one number (`fmt`), else `default`."""
         return next((struct.unpack_from("<" + fmt, v)[0] for t, v in self.decl.get(fn, ()) if t == tag), default)
 
     def _channel_ok(self, ch: int) -> bool:
-        """An item's channel (probe.config §1): below fn 0's `channels` and not `reserved`."""
-        return ch < self.channels and ch not in self.reserved
+        """An item's channel (probe.config §1): below fn 0's `channels` and not one the probe uses itself."""
+        return ch < self.channels and ch not in self.own_channels
 
     def _idle_mode(self, ch: int) -> int | None:
         """The mode of channel `ch`'s idle item (probe.config §1), None without one."""
@@ -970,7 +837,7 @@ class Endpoint:
         """A request naming a disabled channel: rejected unavailable cause 5 (held by settings) with the channel."""
         for ch in channels:
             if ch != 0xFFFF and ch in self.disabled:
-                raise unavailable("held_by_settings", ch, holder_kind="disabled", extra=extra)
+                raise unavailable("held_by_settings", ch, extra=extra)
 
     def _all_channels(self) -> set[int]:
         """Every channel some fn's describe offers (role_channels, channel_group, the wires' pairs and reset lines)."""
@@ -981,11 +848,11 @@ class Endpoint:
         return out
 
     def _boot_channels(self) -> set[int]:
-        """What the probe parks at boot, before its first answer (core §8, △12): every channel that is not reserved -
-        below fn 0's `channels` when it declares them, else every channel an interface offers."""
+        """What the probe parks at boot, before its first answer (core §8): every channel but its own - below fn 0's
+        `channels` when it declares them, else every channel an interface offers."""
         if any(tag == fake.CORE_CHANNELS for tag, _ in self.decl.get(0, ())):
-            return set(range(self.channels)) - self.reserved
-        return self._all_channels()
+            return set(range(self.channels)) - self.own_channels
+        return self._all_channels() - self.own_channels
 
     def _park(self, channels) -> None:
         """Free pins go to their idle state (the idle item, else Hi-Z) at boot and whenever released (probe.config §1);
@@ -1003,24 +870,23 @@ class Endpoint:
             else:
                 self.parked_drive[ch] = level                      # an output idle drives at the idle's strength
 
-    def _drive_level(self, kind: int, value: int) -> int | None:
-        """The level a strength specification (fixture §1.1) picks: kind 0 the level number (None: not a level),
-        kind 1 the strongest level of value mA or less (level 0 when every level is stronger), kind 2 the default."""
+    def _drive_level(self, level: int) -> int | None:
+        """The level a strength specification (fixture §1.1: a level number, 0xFF the default level) picks; None: no
+        such level (past drive_levels) or no drive_levels at all."""
+        if self.drive_levels is None:
+            return None
         default, ma = self.drive_levels
-        if kind == DRIVE_KIND["default"]:
+        if level == DRIVE_DEFAULT:
             return default
-        if kind == DRIVE_KIND["level"]:
-            return value if value < len(ma) else None
-        return max((i for i, x in enumerate(ma) if x <= value), default=0)
+        return level if level < len(ma) else None
 
     def _idle_level(self, ch: int) -> int | None:
         """The level the idle state of `ch` drives at: None when it is not an output idle (or the probe declares no
-        drive_levels); the idle's drive when it has one, else the default level (fixture §1.1)."""
+        drive_levels); the idle's drive (fixture §1.1)."""
         item = self.config.get((ITEM["idle"], ch))
         if self.drive_levels is None or not item or item[2] not in OUTPUT_MODES:
             return None
-        level = self._drive_level(item[3], struct.unpack_from("<H", item, 4)[0]) if item[3] in DRIVE_KIND.values() \
-            else None
+        level = self._drive_level(item[3])
         return self.drive_levels[0] if level is None else level
 
     @property
@@ -1032,43 +898,35 @@ class Endpoint:
         self.target.target_id = value
 
     @staticmethod
-    def _capture_from(decl: list[tuple[int, bytes]]) -> fake_capture.FakeCapture:
-        """A capture as its describe declares it (modes, the w allowed, the rate range, max_read, the ring)."""
+    def _capture_from(decl: list[tuple[int, bytes]], inner: dict) -> fake_capture.FakeCapture:
+        """A capture as its describe declares it (modes and their max_samples, the rate range, the frontends) and as it
+        keeps to itself (`inner`: the w it can lay a sample out in, the segment records it keeps, how much a read
+        returns at most - the probe's own choices, oep-if-capture §1.1, §2, §3.2)."""
         d = reg.FIXTURE_ANALOG.tlv["describe"]                     # the logic's tags are the same numbers
-        modes, widths, lo, hi, ring, most, fronts, most_samples = set(), {8}, 1, 1_000_000, 1, 1024, {}, {}
+        modes, lo, hi, fronts, most_samples = set(), 1, 1_000_000, {}, {}
         for tag, v in decl:
             if tag == d["frontend"]:                               # analog: frontend min_mv max_mv attenuation_mdb
                 fe, lo_mv, hi_mv, mdb = struct.unpack("<BiiI", v)
                 fronts[fe] = (lo_mv, hi_mv, mdb)
             elif tag == d["mode"]:
                 modes.add(v[0])
-                most_samples[v[0]] = struct.unpack_from("<I", v, 2)[0]   # mode background max_samples max_segments
-            elif tag == d["channels"]:
-                layouts = struct.unpack_from("<I", v, 1)[0]        # max(u8) layouts(u32 bit set)
-                widths = {1 << i for i in range(8) if layouts >> i & 1}
+                most_samples[v[0]] = struct.unpack_from("<I", v, 1)[0]   # mode max_samples max_segments
             elif tag == catalog.MIN_CLOCK_HZ:
                 lo = struct.unpack("<I", v)[0]
             elif tag == catalog.MAX_CLOCK_HZ:
                 hi = struct.unpack("<I", v)[0]
-            elif tag == d["segment_ring"]:
-                ring = struct.unpack("<H", v)[0]
-            elif tag == d["max_read"]:
-                most = struct.unpack("<I", v)[0]
-        return fake_capture.FakeCapture(modes or {fake_capture.MODE["one_shot"]}, widths, lo, hi, ring, most, fronts,
+        return fake_capture.FakeCapture(modes or {fake_capture.MODE["one_shot"]}, set(inner.get("widths", (8,))), lo, hi,
+                                        inner.get("ring", 8), inner.get("max_read", 4096), fronts,
                                         max_samples=most_samples)
 
     @staticmethod
-    def _group_from(decl: list[tuple[int, bytes]]) -> fake_capture.FakeGroup:
+    def _group_from(decl: list[tuple[int, bytes]], inner: dict) -> fake_capture.FakeGroup:
         d = reg.FIXTURE_CAPTURE_GROUP.tlv["describe"]
-        tracks, most, budgets = [], 1, []
+        tracks = []
         for tag, v in decl:
             if tag == d["tracks"]:                                 # n(u8) n x fn(u16)
                 tracks = list(struct.unpack_from(f"<{v[0]}H", v, 1))
-            elif tag == d["max_tracks"]:
-                most = v[0]
-            elif tag == d["budget"]:                               # max_sps(u32) n(u8) n x fn(u16)
-                budgets.append((struct.unpack_from("<I", v)[0], list(struct.unpack_from(f"<{v[4]}H", v, 5))))
-        return fake_capture.FakeGroup(tracks, most, budgets)
+        return fake_capture.FakeGroup(tracks, inner.get("max_tracks", len(tracks)), list(inner.get("budgets", ())))
 
     def _next_seq(self, fn: int) -> int:
         seq = self.push_seq.get(fn, 0)
@@ -1114,25 +972,20 @@ class Endpoint:
         budget = self.probe.max_frame - m.RESULT_HEADER
         try:
             if op in (O["configure"], O["query"]):
-                rest = t.data[t.at:]
                 analog = self.names[fn] == "oep.fixture.analog"
                 frontend_tag = fake_capture.ANA.tlv["configure"]["frontend"]
                 known = set(fake_capture.TLV.values()) | ({frontend_tag} if analog else set())
                 # the frontend comes once per channel (capture §3.3): it repeats by its meaning
-                got, _ = t.tail(known, repeats={frontend_tag})
-                # the frontend TLV comes once per channel: read them all
-                fronts = []
-                for tag, v in (m.split_tlvs(rest) if analog else []):
+                got = t.tail(known, repeats={frontend_tag})
+                fronts = []                                        # (role, frontend, the tag as received)
+                for tag, v in t.repeated:
                     if tag & 0x7F != frontend_tag:
                         continue
-                    if len(v) < 2:
-                        raise Reject(m.MALFORMED)
-                    if len(v) > 2:                                 # never extended (core §2.3)
-                        if tag & m.TAG_CRITICAL:
-                            raise Reject(m.UNSUPPORTED, bytes([tag]))
-                        t.ignored.append(frontend_tag)
-                        continue
-                    fronts.append(tuple(v))
+                    if len(v) != 2:
+                        raise Reject(m.MALFORMED)                  # an implemented TLV of another length (core §2.3)
+                    fronts.append((v[0], v[1], tag))
+                if len({r for r, _, _ in fronts}) != len(fronts):
+                    raise Reject(m.MALFORMED)                      # two frontends for one role (capture §3.3)
                 settled = cap.settle(got, t, len(roles), fronts)
                 if op == O["configure"]:
                     cap.apply(settled)
@@ -1141,8 +994,7 @@ class Endpoint:
             if op in (O["start"], O["stop"], O["force"]):
                 t.tail()                                           # the request's form before the state (core §4.3)
                 if cap.group is not None:
-                    raise unavailable("bound_in_group",
-                                      holder_fn=next(g for g, grp in self.groups.items() if grp is cap.group))
+                    raise unavailable("bound_in_group")            # the group's ops run it (capture §4)
             if op == O["start"]:
                 t.tail()
                 self._events(fn, cap.start(self.uptime_ms(), subscribed=fn in self.subscribed))
@@ -1160,11 +1012,11 @@ class Endpoint:
             if op == O["read"]:
                 generation, position, most = t.take("IQI")           # generation position max (§3.2)
                 t.tail()
-                return m.COMPLETED, m.SUCCESS, cap.read(generation, position, most, budget - t.room())
+                return m.COMPLETED, m.SUCCESS, cap.read(generation, position, most, budget)
             if op == O["segments"]:
                 first = t.take("I")
                 t.tail()
-                return m.COMPLETED, m.SUCCESS, cap.segment_list(first, budget - t.room())
+                return m.COMPLETED, m.SUCCESS, cap.segment_list(first, budget)
             if op == O["release"]:
                 generation, serial = t.take("II")
                 t.tail()
@@ -1183,7 +1035,7 @@ class Endpoint:
             if op == O["bind"]:
                 n = t.take("B")
                 fns = [t.take("H") for _ in range(n)]
-                got, _ = t.tail({fake_capture.GRP.tlv["bind"]["trigger_track"]})
+                got = t.tail({fake_capture.GRP.tlv["bind"]["trigger_track"]})
                 src = t.fixed(got, fake_capture.GRP.tlv["bind"]["trigger_track"], 2)
                 grp.bind(self.captures, fns, struct.unpack("<H", src)[0] if src else 0)
                 return self._answer(b"")
@@ -1306,7 +1158,7 @@ class Endpoint:
             return None
         self.requests.append(req)
         self._transport = transport
-        header = self._header(req)                                 # core §4.3 order 1, before the resend table
+        header = self._header(req)                                 # core §4.3: the header, before the resend table
         if header is not None:
             return m.Result(req.corr, m.REJECTED, header).pack()
         remembered = self._resent(req)
@@ -1324,13 +1176,14 @@ class Endpoint:
                                                             m.SESSION_REQUIRED))
         is_open = req.fn == m.CORE_FN and req.op == m.OP_OPEN
         if req.session and req.session == self.holder and past_header:
-            # every answer to the holder's request that passed order 3, rejected ones too (core §6.1)
+            # every answer to the holder's request past the session check, rejected ones too (core §6.1)
             self.expires_ms = self.now() + self.lease_ms
         took_lock = is_open and res == m.COMPLETED
         if self.holder is not None and transport in self.serial_ports and (
                 took_lock or (req.session and req.session == self.holder)):
             self.held_ports.add(transport)                         # transports §4: the raw transfer holds here
         out = m.Result(req.corr, res, detail, payload).pack()
+        self.speed_answered(transport)                             # a committed rate's idle counts from here too
         if req.session and req.session == self.last and past_header and not is_open:
             self._remember(req, out)                               # rejected answers too; open is not (core §5.2)
         if transport not in self.serial_ports:
@@ -1338,7 +1191,7 @@ class Endpoint:
         return out
 
     def _header(self, req: m.Request) -> int | None:
-        """core §4.3 order 1 (the header): unknown_function, unknown_operation (an op the interface does not define,
+        """core §4.3, the header: unknown_function, unknown_operation (an op the interface does not define,
         or an optional op this probe does not offer: core §1.2, `offers`), session_required - in that order and before
         the resend table, so these are neither remembered nor restart the lease."""
         if req.fn != m.CORE_FN and req.fn not in self.names:
@@ -1355,7 +1208,7 @@ class Endpoint:
 
     def offers(self, fn: int, op: int) -> bool:
         """core §1.2: an fn offers exactly the ops its describe's ops tag sets (§7.4) - every required op, and an
-        optional one when the probe has it; any other op is unknown_operation (§4.3 order 1). The profiles say which
+        optional one when the probe has it; any other op is unknown_operation (§4.3, the header). The profiles say which
         optional ops they have (fake.FakeProbe fills in the ops tag of an interface that gives none: all of its ops).
         oep.probe.link's port_speed follows `port_speed_base` (a test turns it off or on)."""
         if fn not in self.ops:
@@ -1384,17 +1237,12 @@ class Endpoint:
 
     @staticmethod
     def _answer(payload: bytes, detail: int = m.SUCCESS) -> tuple[int, int, bytes]:
-        """A completed result (`_dispatch` appends the request's ignored tags)."""
+        """A completed result."""
         return m.COMPLETED, detail, payload
 
     def _dispatch(self, req: m.Request) -> tuple[int, int, bytes]:
-        """Routes a request; a completed answer - failed and partial ones too - gets the ignored TLV (0x7F) of the tags
-        its request's tail ignored (core §2.3), for every op in one place."""
-        t = Take(req.payload)
-        res, detail, payload = self._route(req, t)
-        if res == m.COMPLETED and t.ignored:
-            payload += ignored_tlv(t.ignored, self.probe.max_frame - m.RESULT_HEADER - len(payload))
-        return res, detail, payload
+        """Routes a request (its Take reads the payload as core §2.3 says)."""
+        return self._route(req, Take(req.payload))
 
     def _route(self, req: m.Request, t: Take) -> tuple[int, int, bytes]:
         self._lapse()
@@ -1418,23 +1266,20 @@ class Endpoint:
 
     # ---- the resend table (core §5.2) -----------------------------------------------------------
     def _resent(self, req: m.Request) -> bytes | None:
-        """A request of the last session seen before: its remembered result, corr_reused or result_lost; None = new.
+        """A request of the last session seen before: its remembered result or result_lost; None = new. The request is
+        known by its corr alone (core §5.2): a request with a remembered corr gets that result whatever it carries.
         An open is never looked up (core §5.2: a resent open is decided by §6.2)."""
         if not req.session or req.session != self.last or (req.fn == m.CORE_FN and req.op == m.OP_OPEN):
             return None
-        entry = self.resend.get(req.corr)
-        if entry is not None:
-            fn, op, crc, result = entry
-            if (fn, op, crc) != (req.fn, req.op, zlib.crc32(req.payload)):
-                return m.Result(req.corr, m.REJECTED, m.CORR_REUSED).pack()
+        if req.corr in self.resend:
+            result = self.resend[req.corr]
             return result if result is not None else m.Result(req.corr, m.REJECTED, m.RESULT_LOST).pack()
         if self.newest_corr is not None and m.serial_diff(req.corr, self.newest_corr, 16) <= 0:
             return m.Result(req.corr, m.REJECTED, m.RESULT_LOST).pack()
         return None
 
     def _remember(self, req: m.Request, result: bytes) -> None:
-        self.resend[req.corr] = (req.fn, req.op, zlib.crc32(req.payload),
-                                 result if len(result) <= self.remember_max else None)
+        self.resend[req.corr] = result if len(result) <= self.remember_max else None   # (corr, answer) (core §5.2)
         self.resend.move_to_end(req.corr)
         while len(self.resend) > 2 * max(self.max_inflight, 4):
             self.resend.popitem(last=False)
@@ -1498,15 +1343,16 @@ class Endpoint:
         return self._locked()
 
     def _open(self, t: Take, req: m.Request) -> tuple[int, int, bytes]:
-        """open (core §6.4): lease_ms(u32) force(u8) [TLV owner], the id in the header; the decision table of §6.2."""
+        """open (core §6.4): lease_ms(u32) force(u8) [TLV owner], the id in the header; the decision table of §6.2.
+        force is a boolean: any value but 0 is true (core §2.1)."""
         lease, force = t.take("IB")
-        got, _ = t.tail({OWNER})
+        got = t.tail({OWNER})
         session = req.session
-        if session == 0 or force > 1:
-            raise Reject(m.MALFORMED)                              # session_id 0, a boolean not 0 / 1 (§4.1, §2.1)
+        if session == 0:
+            raise Reject(m.MALFORMED)                              # session_id 0 (§4.1)
         owner = got.get(OWNER)
-        if owner is not None and not (1 <= len(owner) <= reg.LIMITS["owner_max_bytes"] and valid_text(owner)):
-            raise Reject(m.MALFORMED)                              # owner: text of 1-32 bytes (core §2.1, §6.4)
+        if owner is not None and not 1 <= len(owner) <= reg.LIMITS["owner_max_bytes"]:
+            raise Reject(m.MALFORMED)                              # owner: text of 1-32 bytes (core §6.4)
         if self.holder is not None and self.holder != session:
             if not force:
                 return self._locked()
@@ -1515,7 +1361,6 @@ class Endpoint:
             self.subscribed.clear()
             self.owner = owner                                     # from the open that takes the lock, kept while held
         self.holder = self.last = session
-        self.lock_taken = True                                     # no retry with reset after this, this boot (§3.1)
         self.resend.clear()
         self.newest_corr = None
         # 0: the probe's default; else rounded into lease_min_ms .. lease_max_ms (core §6.4)
@@ -1538,16 +1383,26 @@ class Endpoint:
         self.reboots += 1
         self._origin_ns, self._last_ns = self._raw_ns(), 0
         for fn in self.captures:
-            self.captures[fn] = self._capture_from(self.decl[fn])
+            self.captures[fn] = self._capture_from(self.decl[fn], self.inner[fn])
         for fn in self.groups:
-            self.groups[fn] = self._group_from(self.decl[fn])
+            self.groups[fn] = self._group_from(self.decl[fn], self.inner[fn])
         self._boot()
 
     def lose_connections(self) -> None:
         """A wire drops every connection; their console streams close with a link-lost mark."""
-        for cid in list(self.conns):
-            self._close_conn(cid, MARK["link_lost"])
+        self.lose()
+
+    def lose(self, cid: int | None = None) -> list[int]:
+        """TEST HOOK: the line of connection `cid` (every connection when None) is lost for good (debug §2): the
+        connection closes, its console streams get mark link-lost and close with detail 4 (connection closed), and a
+        request naming it is answered no_connection. An at-boot slot on its place attaches again by itself at its next
+        retry (probe.config §3.1), its bound console coming back under the same stream number (console §2). -> the
+        connections closed (an unknown `cid`: none)."""
+        gone = [c for c in (list(self.conns) if cid is None else [cid]) if c in self.conns]
+        for c in gone:
+            self._close_conn(c, MARK["link_lost"])
         self._refresh()
+        return gone
 
     # ---- core -----------------------------------------------------------------------------------
     def _confirm(self, t: Take) -> tuple[int, int, bytes]:
@@ -1570,19 +1425,13 @@ class Endpoint:
 
     def _core(self, req: m.Request, t: Take) -> tuple[int, int, bytes]:
         op = req.op
-        if op == m.OP_LIST:                                         # flags(u8) first(u16) prefix_len(u8) prefix [TLV]
-            flags, _ = t.take("BH")
-            t.bytes(t.take("B"))
+        if op == m.OP_LIST:                                         # first(u16) [TLV] (core §7.2)
+            first = t.take("H")
             t.tail()
-            if flags & ~catalog.LIST_EXACT & 0xFF:
-                raise Reject(m.UNSUPPORTED)                        # reserved flag bits (core §7.2, §2.5): payload 0x00
-            try:
-                return m.COMPLETED, m.SUCCESS, self.probe.call(m.CORE_FN, op, req.payload, reserve=t.room())
-            except ValueError:
-                return m.REJECTED, m.MALFORMED, b""
+            return m.COMPLETED, m.SUCCESS, self.probe.call(m.CORE_FN, op, struct.pack("<H", first))
         if op == m.OP_DESCRIBE:
             fn, first = t.take("HH")
-            t.no_tail()                                            # no TLV in a describe request (core §7.3)
+            t.tail()
             if fn not in self.names:
                 return m.REJECTED, m.UNKNOWN_FUNCTION, b""         # an fn the probe does not offer (core §4.3)
             return m.COMPLETED, m.SUCCESS, self._page(self._declarations(fn), first)
@@ -1634,45 +1483,29 @@ class Endpoint:
 
     # ---- oep.probe.plan (oep-if-plan) ------------------------------------------------------------
     def _plan_op(self, plan_fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
-        """plan_apply: role_assignment TLVs (oep-if-plan §2.1), checked in core §4.3's order (§2.5); plan_release:
-        n(u8) n x fn(u16) (§2.2)."""
+        """plan_apply: role_assignment TLVs (oep-if-plan §2.1; the tag the same with or without bit 7, core §2.3);
+        plan_release: n(u8) n x fn(u16) (§2.2). Every check runs before anything changes (core §4.3)."""
         if op == OP_PLAN_APPLY:
-            got = []
-            try:
-                tlvs = m.split_tlvs(t.data) if t.data else []
-            except m.ProtocolError:
-                raise Reject(m.MALFORMED) from None
-            refused = None                                         # the first value / tag this probe cannot handle
-            for tag, value in tlvs:
-                if tag & 0x7F in (m.TAG_IGNORED, m.TAG_FIXED):
-                    raise Reject(m.MALFORMED)                      # as in every tail (core §2.3)
-                if tag & 0x7F == ROLE_ASSIGNMENT:                  # the number; sent critical as 0x90 (oep-if-plan §2.1), repeats
-                    if len(value) < 5:
-                        raise Reject(m.MALFORMED)
-                    if len(value) > 5:                             # never extended (core §2.3)
-                        if tag & m.TAG_CRITICAL:
-                            refused = refused or tag
-                        else:
-                            t.ignored.append(tag & 0x7F)
-                        continue
-                    got.append(struct.unpack_from("<HBH", value))
-                elif tag & m.TAG_CRITICAL:
-                    refused = refused or tag
-                else:
-                    t.ignored.append(tag)                          # unknown non-critical: listed (core §2.3)
+            t.tail({ROLE_ASSIGNMENT}, repeats={ROLE_ASSIGNMENT}, defer=True)
+            got, tags = [], {}
+            for tag, value in t.repeated:
+                if len(value) != 5:
+                    raise Reject(m.MALFORMED)                      # fn(u16) role(u8) channel(u16) (oep-if-plan §2.1)
+                a = struct.unpack("<HBH", value)
+                got.append(a)
+                tags.setdefault(a[0], tag)                         # the tag as received, for unsupported (§2.5)
             if len(set(got)) != len(got) or any(fn == m.CORE_FN for fn, _, _ in got):
                 raise Reject(m.MALFORMED)                          # the same (fn, role, channel) twice, or fn 0 (oep-if-plan §2.5)
-            self._check_target_roles(got)                          # the whole form first (core §4.3 order 5) ...
+            self._check_target_roles(got)                          # the whole form first ...
             named = {fn for fn, _, _ in got}
             if any(fn not in self.names for fn in named):
-                raise Reject(m.UNKNOWN_FUNCTION)                   # ... then its fns, at the end of order 5 (C-21)
-            if refused is not None:
-                raise Reject(m.UNSUPPORTED, bytes([refused]))      # order 6: the tag as received (core §2.3)
-            self._check_plan(got, held=False)                      # order 6: roles and channels not declared
-            if named & self.plan_from_config:                       # the settings' plan is the settings' (oep-if-plan §2.3)
-                raise unavailable("held_by_settings", holder_fn=min(named & self.plan_from_config),
-                                  holder_kind="settings_plan")
-            self._check_plan(got)
+                raise Reject(m.UNKNOWN_FUNCTION)                   # ... then its fns ...
+            t.check()                                              # ... an unknown critical TLV ...
+            tag_of = lambda fn: tags.get(fn, ROLE_ASSIGNMENT)      # noqa: E731
+            self._check_plan(got, held=False, tag_of=tag_of)       # ... roles and channels not declared ...
+            if named & self.plan_from_config:                       # ... the settings' plan is the settings' (§2.3)
+                raise unavailable("held_by_settings")
+            self._check_plan(got, tag_of=tag_of)
             self._refuse_disabled(ch for _, _, ch in got)          # a disabled channel (probe.config §1): cause 5
             if self.plan_roles is not None and len([a for a in self.plan if a[0] not in named]) + len(got) > self.plan_roles:
                 raise unavailable("limit")                          # plan_roles (oep-if-plan §2.1)
@@ -1706,9 +1539,9 @@ class Endpoint:
 
     def _check_plan(self, got: list[tuple[int, int, int]], held: bool = True, tag_of=None) -> None:
         """plan_apply's all-or-nothing check, in core §4.3's order over the whole request: the roles and channels each
-        fn declares (unsupported, order 6) for every assignment, then - `held` - no pin another fn, a slot or a
-        connection holds (unavailable, order 7). `tag_of(fn)`: the tag an unsupported names (probe.config's plan item
-        as received; default the role_assignment's 0x90)."""
+        fn declares (unsupported) for every assignment, then - `held` - no pin another fn, a slot or a
+        connection holds (unavailable). `tag_of(fn)`: the tag an unsupported names (the role_assignment or
+        probe.config's plan item as received)."""
         self._check_target_roles(got)
         for declared in (True, False) if held else (True,):
             self._check_plan_pass(got, declared, tag_of)
@@ -1727,17 +1560,11 @@ class Endpoint:
             # raises only its own kind (None: the other pass's)
             if not declared:
                 return None
-            tag = tag_of(current[0]) if tag_of else ROLE_ASSIGNMENT | m.TAG_CRITICAL
+            tag = tag_of(current[0]) if tag_of else ROLE_ASSIGNMENT
             return Reject(m.UNSUPPORTED, bytes([tag]) + m.tlv(_UNA["channel"], struct.pack("<H", ch)))
 
         def held(ch: int, holder: int | None) -> Reject | None:
-            if declared:
-                return None
-            if holder is not None:
-                return unavailable("pin_in_use", ch, holder, "plan")
-            slot = next((n for n, s in self.slots.items() if ch in s.pair), None)
-            conn = next((c.fn for c in self.conns.values() if ch in c.pair), None)
-            return unavailable("pin_in_use", ch, conn, "slot" if slot is not None else "connection")
+            return None if declared else unavailable("pin_in_use", ch)
         def check(r: Reject | None) -> None:
             if r is not None:
                 raise r
@@ -1751,7 +1578,7 @@ class Endpoint:
                 if beside or ch in slot_pins:
                     check(held(ch, beside[0] if beside else None))
                 if self._output_idle(ch) and not declared:         # its pad would leave an output idle (capture §1.2)
-                    raise unavailable("held_by_settings", ch, holder_kind="settings_idle")
+                    raise unavailable("held_by_settings", ch)
                 continue
             if any(f in analog for f in beside):   # nor may anything come onto an analog pin
                 check(held(ch, next(f for f in beside if f in analog)))
@@ -1859,7 +1686,7 @@ class Endpoint:
             if fn in self.i2c:
                 if self.i2c[fn].state == 0:
                     return idle                                    # state 0: released, the idle state (fixture §3)
-                return "open-drain pull-up" if self.i2c_pullup_ohms.get(fn) else "open-drain"
+                return "open-drain pull-up" if self.i2c_pullups.get(fn) else "open-drain"
             if fn in self.spi:
                 if self.spi[fn].state == 0:
                     return idle                                    # before configure: the idle state (fixture §4)
@@ -1906,7 +1733,7 @@ class Endpoint:
 
     def _uart_apply_item(self, fn: int) -> None:
         """The settings' uart item on a UART whose plan runs (fixture §2): the divider is made now; a baud it cannot
-        make within 5 % falls back to the default 115200 8N1 with configured = item_fallback (3). No item: default."""
+        make within 5 % falls back to the default 115200 8N1 (status shows what runs). No item: default."""
         item = self.config.get((ITEM["uart"], fn))
         if item is None:
             self.uart_baud.pop(fn, None)
@@ -1914,9 +1741,9 @@ class Endpoint:
         _, baud, fmt = struct.unpack_from("<HIB", item)
         actual = self._uart_actual(baud)
         if abs(actual - baud) * 20 > baud:
-            self.uart_baud[fn] = (115200, 0, UART_CONFIGURED["item_fallback"])
+            self.uart_baud.pop(fn, None)                           # the default 115200 8N1 (fixture §2)
         else:
-            self.uart_baud[fn] = (actual, fmt, UART_CONFIGURED["item"])
+            self.uart_baud[fn] = (actual, fmt)
 
     def _uart_actual(self, baud: int) -> int:
         return self.uart_clock_hz // max(1, self.uart_clock_hz // baud)
@@ -1925,7 +1752,7 @@ class Endpoint:
         """fixture §2's refusals: baud 0 -> malformed; an undefined format value or bit, and a format the UART does not
         declare -> unsupported (the format TLV's tag as received, or 0x00 for the item); a baud off by more than 5 % ->
         unsupported 0x00. -> the actual baud. `divide` False (the settings' item at set time): the range alone
-        (1 .. the UART's max_clock_hz), the divider is made when the plan runs the UART (-> item_fallback)."""
+        (1 .. the UART's max_clock_hz), the divider is made when the plan runs the UART (the default when it misses)."""
         if baud == 0:
             raise Reject(m.MALFORMED)
         # undefined values (2 / 3 in bit0-1, 3 in bit2-3, bits 5-7: a later revision may define them, core §2.5) and a
@@ -1972,13 +1799,13 @@ class Endpoint:
 
     # ---- oep.probe.link (oep-if-link): the link test and port_speed -------------------------------------
     def _link(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
-        """source: length(u32) [TLV] -> len(u16) data [TLV], byte k = k & 0xFF, at most max_frame -
-        link_source_overhead_bytes (26: header, len and the ignored room, kept whatever the request's TLVs); sink: count(u16) data [TLV] -> empty, a count past the bytes that follow
-        malformed; port_speed (§3)."""
+        """source: length(u32) [TLV] -> len(u16) data [TLV], byte k = k & 0xFF, at most max_frame - 7 (the answer's
+        header and len); sink: count(u16) data [TLV] -> empty, a count past the bytes that follow malformed; port_speed
+        (§3)."""
         if op == _LINK.op["source"]:
             length = t.take("I")
             t.tail()
-            n = min(length, self.probe.max_frame - LINK_SOURCE_OVERHEAD)   # the ignored room kept always (§2)
+            n = min(length, self.probe.max_frame - LINK_SOURCE_OVERHEAD)   # oep-if-link §2
             return self._answer(struct.pack("<H", n) + bytes(k & 0xFF for k in range(n)))
         if op == _LINK.op["sink"]:
             count = t.take("H")
@@ -1990,33 +1817,40 @@ class Endpoint:
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
     # ---- port_speed (oep-if-link §3) --------------------------------------------------------------
+    @staticmethod
+    def speed_actual(baud: int) -> int:
+        """The rate the fake's UART makes nearest `baud`: any rate in SPEED_RATES exactly, else the nearest end."""
+        return min(max(baud, SPEED_RATES[0]), SPEED_RATES[1])
+
     def _port_speed(self, t: "Take") -> tuple[int, int, bytes]:
-        """port(u8) baud(u32) step(u8) verify_ms(u16) idle_ms(u32) [TLV] -> baud(u32): the rate that applies."""
-        port, baud, step, verify_ms, idle_ms = t.take("BIBHI")
+        """baud(u32) step(u8) verify_ms(u16) [TLV] -> baud(u32): the rate that applies. The port is the one the request
+        came on: only a UART bridge (else unavailable cause 6)."""
+        baud, step, verify_ms = t.take("IBH")
         t.tail()
         if step == SPEED_STEP["try"] and verify_ms == 0:
             raise Reject(m.MALFORMED)                              # verify_ms 0 in a try (oep-if-link §3)
         if step not in SPEED_STEP.values():
-            raise Reject(m.UNSUPPORTED)                            # a step a later revision may define (§2.5): 0x00
-        if port != self._transport or self.transports.get(port) != fake.TRANSPORT["uart_bridge"]:
-            raise unavailable("wrong_state")                       # only the UART bridge the request came in on
-        # the port's state (boot speed / trying / committed) decides which step fits (oep-if-link §3): any other is cause 6
+            raise Reject(m.UNSUPPORTED)                            # a step the definition leaves unused (§2.5): 0x00
+        port = self._transport
+        if self.transports.get(port) != fake.TRANSPORT["uart_bridge"]:
+            raise unavailable("wrong_state")                       # only a UART bridge's port (oep-if-link §3)
+        # the port's state (boot speed / trying / committed) decides which step fits (oep-if-link §3): any other is cause
+        # 6, and so is a try on another port while one is raised
         if step == SPEED_STEP["try"]:
             if self.speed_state != "base":
-                raise unavailable("wrong_state")                   # already trying or committed
-            if not SPEED_RATES[0] <= baud <= SPEED_RATES[1]:
-                raise unsupported_fixed()                          # a baud this UART cannot make
-            self.speed_pending = ("switch", port, baud, verify_ms)
-            return self._answer(struct.pack("<I", baud))
+                raise unavailable("wrong_state")                   # trying or committed (here or on another port)
+            actual = self.speed_actual(baud)
+            if abs(actual - baud) * 100 > baud * SPEED_TOLERANCE_PCT:
+                raise unsupported_fixed()                          # the nearest rate is more than 2 % off
+            self.speed_pending = ("switch", port, actual, baud, verify_ms)
+            return self._answer(struct.pack("<I", actual))
         if step == SPEED_STEP["commit"]:
             if self.speed_state != "try" or port != self.speed_port or baud != self.speed_asked:
                 raise unavailable("wrong_state")                   # nothing tried, committed already, or another baud
             self.speed_state = "committed"
-            self.speed_idle_ms = idle_ms if 0 < idle_ms <= SPEED_IDLE_MAX_MS else SPEED_IDLE_MAX_MS
             self.speed_good_ms = self.now()
-            self.speed_bad = 0
             return self._answer(struct.pack("<I", self.speed_rate))
-        if self.speed_state == "base":
+        if self.speed_state == "base" or port != self.speed_port:
             raise unavailable("wrong_state")                       # a revert at the boot speed: nothing to go back from
         self.speed_pending = ("revert",)
         return self._answer(struct.pack("<I", self.port_speed_base))
@@ -2064,54 +1898,43 @@ class Endpoint:
         if pending[0] == "revert":
             self._speed_revert()
             return
-        _, port, baud, verify_ms = pending
-        self.speed_state, self.speed_port, self.speed_rate, self.speed_asked = "try", port, baud, baud
-        if baud in self.broken_rates:
-            self.broken_rates[baud].carried = 0                    # `after` counts from this switch
+        _, port, rate, asked, verify_ms = pending
+        self.speed_state, self.speed_port, self.speed_rate, self.speed_asked = "try", port, rate, asked
+        if rate in self.broken_rates:
+            self.broken_rates[rate].carried = 0                    # `after` counts from this switch
         self.speed_until_ms = self.now() + verify_ms
         self.speed_good_ms = self.now()
-        self.speed_heard = False
-        self.speed_bad = 0
-        self.speed_log.append((port, baud))
+        self.speed_log.append((port, rate))
 
     def _speed_revert(self) -> None:
         if self.speed_state == "base":
             return
         self.speed_log.append((self.speed_port, self.port_speed_base))
         self.speed_state, self.speed_port, self.speed_rate, self.speed_asked = "base", None, 0, 0
-        self.speed_heard, self.speed_bad = False, 0
 
     def speed_frame(self, port: int, good: bool) -> None:
-        """A candidate closed on serial port `port`: a frame (good) or not (a broken candidate). oep-if-link §3's conditions
-        2 (trying: one broken candidate after the first good frame at the new speed; the ones before it are the
-        switch-over's leftovers and do not count) and 4 (committed: SPEED_BAD_MAX broken candidates in a row with no
-        good frame between)."""
-        if self.speed_state == "base" or port != self.speed_port:
+        """A candidate closed on serial port `port`: a frame (good) or not. A good frame restarts the committed rate's
+        port_speed_idle_ms (oep-if-link §3, return condition 2); a broken one changes nothing."""
+        if self.speed_state == "base" or port != self.speed_port or not good:
             return
-        if good:
+        self.speed_good_ms = self.now()
+
+    def speed_answered(self, port: int) -> None:
+        """An answer went out on `port`: the committed rate's port_speed_idle_ms counts from it too (oep-if-link §3)."""
+        if self.speed_state != "base" and port == self.speed_port:
             self.speed_good_ms = self.now()
-            self.speed_heard = True
-            self.speed_bad = 0
-            return
-        if self.speed_state == "try":
-            if self.speed_heard:
-                self._speed_revert()                               # the new speed breaks frames: not this one
-            return
-        self.speed_bad += 1
-        if self.speed_bad >= SPEED_BAD_MAX:
-            self._speed_revert()
 
     def _speed_tick(self) -> None:
-        # Condition 3 (committed, idle_ms with no good frame) is not counted while a request executes (oep-if-link §3, as
-        # the lease, §6.1). The fake handles every request within one call and its clock does not move meanwhile, so
-        # there is nothing to pause here: a long-running request would need `speed_good_ms` set when its answer goes out.
+        # Return condition 2 (committed, port_speed_idle_ms with no good frame) is not counted while a request executes
+        # (oep-if-link §3, as the lease, §6.1). The fake handles every request within one call and its clock does not
+        # move meanwhile, so there is nothing to pause here: the answer restarts it (`speed_answered`).
         if self.speed_pending and self.speed_pending[0] == "revert":
             self.speed_after_answer()
         now = self.now()
         if self.speed_state == "try" and now >= self.speed_until_ms:
-            self._speed_revert()                                   # no commit within verify_ms
-        elif self.speed_state == "committed" and now - self.speed_good_ms >= self.speed_idle_ms:
-            self._speed_revert()
+            self._speed_revert()                                   # no commit within verify_ms (return condition 1)
+        elif self.speed_state == "committed" and now - self.speed_good_ms >= SPEED_IDLE_MS:
+            self._speed_revert()                                   # return condition 2
 
     def _page(self, tlvs: list[bytes], first: int) -> bytes:
         budget = self.probe.max_frame - m.RESULT_HEADER - 1
@@ -2130,13 +1953,11 @@ class Endpoint:
             count = t.take("B")
             pairs = [t.take("HH") for _ in range(count)]
             known = {_T_SCAN["max_speed"], _T_SCAN["skip"]} | ({_T_SCAN["idle_clock"]} if rvswd else set())
-            got, _ = t.tail(known, defer=True)
-            skip_tlv = t.fixed(got, _T_SCAN["skip"], 2)
-            if skip_tlv is not None and count:
-                raise Reject(m.MALFORMED)                          # skip goes with count 0 only
+            got = t.tail(known, defer=True)
+            skip_tlv = t.fixed(got, _T_SCAN["skip"], 2) if not count else None   # a count > 0 request: not looked at (§1)
             max_speed = t.fixed(got, _T_SCAN["max_speed"], 4)
             self._idle_clock(t, got)
-            t.check()                                              # an unknown critical TLV (core §4.3 order 6)
+            t.check()                                              # an unknown critical TLV (core §2.3)
             if max_speed is not None:
                 self._check_min_speed(fn, t, struct.unpack("<I", max_speed)[0])
             for i, p in enumerate(pairs):                          # not a combination the declaration allows:
@@ -2161,7 +1982,7 @@ class Endpoint:
         if op == 0x02:                                             # attach: method(u8) [TLV] (oep-if-debug §3)
             method = t.take("B")
             known = {_T_ATTACH["max_speed"], _T_ATTACH["pins"], _T_ATTACH["reset"]} | ({_T_ATTACH["idle_clock"]} if rvswd else set())
-            got, _ = t.tail(known, defer=True)
+            got = t.tail(known, defer=True)
             max_speed = t.fixed(got, _T_ATTACH["max_speed"], 4)
             if max_speed is None:
                 raise Reject(m.MALFORMED)                          # max_speed is required (§1)
@@ -2181,16 +2002,16 @@ class Endpoint:
             if reset is not None:
                 self._refuse_disabled([channel])                   # a disabled reset line: cause 5 (probe.config §1)
                 if self._output_idle(channel):                     # its idle drives it: nothing executed (debug §1)
-                    raise unavailable("held_by_settings", channel, holder_kind="settings_idle")
+                    raise unavailable("held_by_settings", channel)
                 if any(a[2] == channel for a in self.plan):
-                    raise unavailable("pin_in_use", channel, next(a[0] for a in self.plan if a[2] == channel), "plan")
+                    raise unavailable("pin_in_use", channel)
             tg = self._target(fn, pair)
             speed = min(4_000_000, struct.unpack("<I", max_speed)[0])
             cid = self._conn_at(fn, pair)
             flags = 0
             if reset is not None and tg.resets_through(channel):
                 tg.silent_until_reset = False                      # held in reset and let go: it answers again
-                if not self._settled(tg):                          # silent past reset_settle_ms (debug §3)
+                if not self._settled(tg):                          # silent past max_op_ms (debug §3)
                     if cid is not None:                            # the connection kept, the target was reset
                         self._host_reset(cid, MARK_RESET["attach_reset"])
                     return m.COMPLETED, m.FAILED, bytes([LINE])
@@ -2221,7 +2042,8 @@ class Endpoint:
                 self._host_reset(cid, MARK_RESET["attach_reset"])
             elif method == 1:
                 tg.halted = True
-            tail = b"" if c.tid is None else m.tlv(_T_ATTACH_ANSWER["target_id"], bytes([1]) + struct.pack("<I", c.tid))
+            tail = b"" if c.tid is None else m.tlv(_T_ATTACH_ANSWER["target_id"],
+                                                   bytes([TARGET_ID_SCHEME["dmi_7f"]]) + struct.pack("<I", c.tid))
             if tg.halted:
                 flags |= ATTACH_FLAGS["halted"]
                 tail += m.tlv(_T_ATTACH_ANSWER["dpc"], struct.pack("<I", tg.dpc))
@@ -2232,8 +2054,8 @@ class Endpoint:
             return self._answer(struct.pack("<HIBI", cid, tg.dmstatus(), flags, c.speed) + tail)
         if op == 0x03:                                             # detach
             cid = t.take("H")
-            got, _ = t.tail({_T_DETACH["force"]})
-            t.fixed(got, _T_DETACH["force"], 0)                    # length 0; a longer one: unsupported / ignored
+            got = t.tail({_T_DETACH["force"]})
+            t.fixed(got, _T_DETACH["force"], 0)                    # length 0; another length: malformed (core §2.3)
             c = self._connection(cid)
             if c.fn != fn:
                 raise wrong_kind()                                 # another wire's connection
@@ -2253,13 +2075,12 @@ class Endpoint:
                 slot = next((n for n, s in self.slots.items() if s.wire_fn == fn and s.pair == c.pair), NO_SLOT)
                 tid = b"" if c.tid is None else struct.pack("<I", c.tid)
                 rows.append(struct.pack("<HHHIBBBB", cid, *c.pair, c.speed, users, slot, 1 if tid else 0, len(tid)) + tid)
-            return m.COMPLETED, m.SUCCESS, self._paged(rows, first, t.room())
+            return m.COMPLETED, m.SUCCESS, self._paged(rows, first)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
-    def _paged(self, rows: list[bytes], first: int, reserve: int = 0) -> bytes:
-        """more(u8) count(u8) the rows from `first` that fit the frame (connections, streams: core §2.3's lists),
-        `reserve` bytes kept for the ignored TLV (core §2.3)."""
-        budget = self.probe.max_frame - m.RESULT_HEADER - 2 - reserve
+    def _paged(self, rows: list[bytes], first: int) -> bytes:
+        """more(u8) count(u8) the rows from `first` that fit the frame (connections, streams: core §2.3's lists)."""
+        budget = self.probe.max_frame - m.RESULT_HEADER - 2
         out: list[bytes] = []
         for row in rows[first:]:
             if out and sum(map(len, out)) + len(row) > budget:
@@ -2274,7 +2095,7 @@ class Endpoint:
         if pins is not None:
             pair = struct.unpack("<HH", pins)
             if not self._allows(fn, pair):
-                raise Reject(m.UNSUPPORTED, bytes([t.received(_T_ATTACH["pins"])]))   # core §4.3 order 6
+                raise Reject(m.UNSUPPORTED, bytes([t.received(_T_ATTACH["pins"])]))   # core §2.3
             self._refuse_named(fn, pair)
             return pair
         live = [c.pair for c in self.conns.values() if c.fn == fn]
@@ -2297,30 +2118,26 @@ class Endpoint:
                     or any(self._idle_mode(ch) is not None for ch in chans))
 
     def _refuse_named(self, fn: int, pair: tuple[int, int], any_idle: bool = False) -> None:
-        """A pair a request names (scan's list, attach's pins): a disabled channel -> unavailable cause 5 holder_kind
-        6; an output idle (any idle with `any_idle`) -> cause 5 holder_kind 7; held by a plan, a slot or another
-        connection -> cause 1 (debug §1, core §8.1)."""
+        """A pair a request names (scan's list, attach's pins): a disabled channel or an output idle (any idle with
+        `any_idle`) -> unavailable cause 5; held by a plan, a slot or another connection -> cause 1 (debug §1, core
+        §8.1); each with the channel."""
         self._refuse_disabled(pair)
         for ch in pair:
             if ch != 0xFFFF and (self._output_idle(ch) or (any_idle and self._idle_mode(ch) is not None)):
-                raise unavailable("held_by_settings", ch, holder_kind="settings_idle")
+                raise unavailable("held_by_settings", ch)
         held = set(pair) & self._held(fn, pair)
         if held:
-            ch = min(held)
-            planned = next((a[0] for a in self.plan if a[2] == ch and not self._listens(a[0])), None)
-            slot = any(ch in s.pair for s in self.slots.values() if not (s.wire_fn == fn and s.pair == pair))
-            raise unavailable("pin_in_use", ch, planned, "plan" if planned is not None else "slot" if slot else "connection")
+            raise unavailable("pin_in_use", min(held))
 
     def _idle_clock(self, t: Take, got: dict[int, bytes]) -> int | None:
-        """rvswd's idle_clock TLV (u8 enum: 0 high, 1 low): another value is one a later revision may define ->
-        unsupported when critical, else ignored (core §2.3, §2.5)."""
+        """rvswd's idle_clock TLV (u8 enum: 0 high, 1 low): another value is one the definition leaves unused ->
+        unsupported with the tag as received, critical or not (core §2.3, §2.5)."""
         tag = _T_ATTACH["idle_clock"]
         value = t.fixed(got, tag, 1)
         if value is None:
             return None
         if value[0] not in reg.WIRE_RVSWD.enum["idle_clock"].values():
-            t.refuse(tag, got)
-            return None
+            raise t.refuse(tag)
         return value[0]
 
     def _check_min_speed(self, fn: int, t: Take, hz: int) -> None:
@@ -2392,7 +2209,7 @@ class Endpoint:
 
     def _dm_op(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         """Each op reads and checks its whole request first - malformed, then unsupported (core §4.3 orders 5 / 6) -
-        and only then looks up the connection (no_connection, order 8)."""
+        and only then looks up the connection (no_connection; every check before any change, core §4.3)."""
         conn = t.take("H")
         target = lambda: self._exchange(conn)
         if op == _RV.op["dmi"]:
@@ -2446,7 +2263,7 @@ class Endpoint:
             tg = target()
             if tg.halted:
                 return m.COMPLETED, m.SUCCESS, bytes([OK])         # already halted: nothing, ok (debug §4.2)
-            if tg.halt_stuck:                                      # allhalted not seen within 100 ms: haltreq cleared
+            if tg.halt_stuck:                                      # allhalted never seen: haltreq cleared (debug §4.2)
                 tg.haltreq = False
                 return m.COMPLETED, m.FAILED, bytes([TIMEOUT])
             tg.halted = True
@@ -2462,22 +2279,19 @@ class Endpoint:
             return m.COMPLETED, m.SUCCESS, bytes([OK])
         if op == _RV.op["reset"]:
             mode = t.take("B")
-            got, _ = t.tail({_RV.tlv["reset"]["method"]})
-            method = t.fixed(got, _RV.tlv["reset"]["method"], 1)
-            if method is not None and method[0] not in RESET_METHOD:
-                t.refuse(_RV.tlv["reset"]["method"], got)          # 2 is reserved, others undefined (debug §4.3)
+            t.tail()                                               # revision 1 defines no request TLV (0x01 reserved)
             if mode not in RESET_MODE.values():
-                raise Reject(m.UNSUPPORTED)                        # a mode a later revision may define: 0x00 (§2.5)
+                raise Reject(m.UNSUPPORTED)                        # a mode the definition leaves unused: 0x00 (§2.5)
             tg = target()
             tg.havereset = True
             self._host_reset(conn, MARK_RESET["ndmreset"])
-            if not self._settled(tg):                              # the DM still silent at reset_settle_ms (§4.3)
-                return m.COMPLETED, m.FAILED, struct.pack("<BBBI", LINE, 0, 1, 0)   # no bit2; the connection kept
+            if not self._settled(tg):                              # the DM still silent at max_op_ms (§4.3)
+                return m.COMPLETED, m.FAILED, struct.pack("<BBI", LINE, 0, 0)   # the connection kept
             tg.halted = mode == 2
             tg.dpc = tg.reset_vector if mode == 2 else tg.reset_vector + 0x200
-            # debug §4.3: bit0 reached the mode's state, bit1 confirmed by the pc (mode 1), attempts 1
+            # debug §4.3: status flags(bit0 reached the mode's state, bit1 confirmed by the pc - mode 1) pc
             flags, pc = (0b01, 0) if mode == 0 else ((0b11, tg.dpc) if mode == 1 else (0b01, tg.dpc))
-            return self._answer(struct.pack("<BBBI", OK, flags, 1, pc))
+            return self._answer(struct.pack("<BBI", OK, flags, pc))
         if op == _RV.op["step"]:
             t.tail()
             tg = target()
@@ -2485,7 +2299,7 @@ class Endpoint:
                 return m.COMPLETED, m.FAILED, struct.pack("<BBII", STATE, 0, tg.dpc, tg.dpc)
             before = tg.dpc
             if tg.step_stuck is not None:
-                # not back in debug mode within 100 ms: haltreq, up to 100 ms more (debug §4.2)
+                # not back in debug mode: haltreq, and a wait for the halt (debug §4.2)
                 if tg.step_stuck == "halts":                       # halted: dcsr.step cleared, DATA1 / DATA0 restored
                     tg.dpc, tg.haltreq, tg.dcsr_step = tg.dpc + 0x20, False, False
                     return m.COMPLETED, m.FAILED, struct.pack("<BBII", STATE, 1, before, tg.dpc)
@@ -2498,7 +2312,7 @@ class Endpoint:
             address, count = t.take("IH")
             t.tail()
             if address % 4:
-                raise Reject(m.MALFORMED)                          # not a word address (core §4.3 order 5)
+                raise Reject(m.MALFORMED)                          # not a word address (debug §4.5)
             if 4 * count > self.block_max.get(fn, 1 << 16):
                 raise unsupported_fixed()                          # past the declared max_length (bytes; debug §4.5)
             tg = target()
@@ -2537,14 +2351,20 @@ class Endpoint:
             n_out = t.take("B")
             outs = [t.take("H") for _ in range(n_out)]
             t.tail()
-            if timeout_ms == 0:
-                raise Reject(m.MALFORMED)                          # 1 .. max_op_ms (debug §4.4)
             if timeout_ms > self.max_op_ms:
-                raise Reject(m.UNSUPPORTED)
+                raise Reject(m.UNSUPPORTED)                        # longer than one request may take (debug §4.4)
             tg = target()
-            if not tg.halted:                                      # the answer's shape is always the same: nvals 0
-                return m.COMPLETED, m.FAILED, struct.pack("<BBIIB", STATE, 0, tg.dpc, 0, 0)
+            not_run = struct.pack("<BIIB", RUN_STOPPED["not_run"], 0, 0, 0)   # stopped 3, dpc invalid, nvals 0 (Q1)
+            if not tg.halted:                                      # nothing prepared on a running hart: not run
+                return m.COMPLETED, m.FAILED, bytes([STATE]) + not_run
+            if set(regs) & tg.fail_regs:                           # a register write before the run failed on the line
+                return m.COMPLETED, m.FAILED, bytes([LINE]) + not_run   # not run, still halted (debug §4.4)
             tg.regs.update(regs)
+            if timeout_ms == 0:                                    # the limit passes at once: halted where it began
+                tg.dpc = pc
+                values = [tg.regs.get(r, 0) for r in outs]
+                return (m.COMPLETED, m.FAILED, struct.pack(f"<BBIIB{n_out}I", TIMEOUT, RUN_STOPPED["timeout_halted"],
+                                                           pc, 0, n_out, *values))
             stopped, dpc, us = tg.run_hook(pc, tg.regs) if tg.run_hook else (True, pc + 0x10, 50)
             if not stopped and tg.unstoppable:                     # the limit passed and the hart would not halt
                 return m.COMPLETED, m.FAILED, struct.pack("<BBIIB", TIMEOUT, RUN_STOPPED["not_halted"], 0, us, 0)
@@ -2558,44 +2378,27 @@ class Endpoint:
 
     def _settled(self, tg: FakeTarget) -> bool:
         """The wait after a reset's release for a target that restarts by itself (debug §3, §4.3): the DM answers after
-        tg.restart_ms; the probe waits at most reset_settle_ms (capped by max_op_ms). -> whether it answered in time
-        (the wait goes in `settle_log`)."""
-        cap = min(RESET_SETTLE_MS, self.max_op_ms)
-        self.settle_log.append(min(tg.restart_ms, cap))
-        return tg.restart_ms <= cap
+        tg.restart_ms; the probe answers within max_op_ms. -> whether it answered in time (the wait goes in
+        `settle_log`)."""
+        self.settle_log.append(min(tg.restart_ms, self.max_op_ms))
+        return tg.restart_ms <= self.max_op_ms
 
     def _host_reset(self, cid: int, detail: int) -> None:
-        """A reset last-reset counts (probe.config §1.2): riscv-dm reset (detail 1 ndmreset) or an attach's reset TLV
-        (detail 3) on connection `cid`; its streams get mark reset."""
+        """A reset of the target on connection `cid` - riscv-dm reset (detail 1 ndmreset) or an attach's reset TLV
+        (detail 3): its streams get mark reset (common §1.3)."""
         now = self.now_ns()
-        slots = [n for n, s in self.slots.items() if (s.wire_fn, s.pair) == (self.conns[cid].fn, self.conns[cid].pair)]
         for (c, _), sid in self.stream_keys.items():
             if c == cid and not self.streams[sid].closed:
                 self.streams[sid].add_mark(MARK["reset"], now, detail)
-        for port, b in self.binds.items():
-            if b.mode == BIND_MODE["last_reset"]:
-                for i, key in enumerate(b.streams):
-                    if key[0] == BIND_STREAM["slot_console"] and key[1] in slots:
-                        self.selected[port] = i
-        if self.holder is not None:
-            for n in slots:
-                key = (BIND_STREAM["slot_console"], n)
-                sid, s = self._stream_for(key)
-                if s is not None:
-                    self.session_resets[key] = (sid, s.end)
-            for fn, s in self.uarts.items():
-                self.session_resets[(BIND_STREAM["fixture_uart"], fn)] = (("uart", fn), s.end)
 
     # ---- position streams (console, fixture.uart) -----------------------------------------------
     def _stream_args(self, op: int, t: Take):
-        """A position stream op's request (common §1), read and checked before anything is looked up (core §4.3:
-        format and values first, then the state and the resource): read's from 4 or more -> unsupported, from 3 with an
-        arg above 0xFF -> malformed; write's count 0 -> malformed."""
+        """A position stream op's request (common §1), read and checked before anything is looked up (core §4.3):
+        read's from 4 or more -> unsupported (a from 3 arg above 0xFF names no mark kind: from now); a write of count 0
+        takes nothing and succeeds (accepted = count)."""
         if op == _CON.op["read"]:
             frm, arg, mx = t.take("BQH")
             t.tail()
-            if frm == 3 and arg > 0xFF:
-                raise Reject(m.MALFORMED)                          # a mark kind is u8 (common §1.2)
             if frm > 3:
                 raise Reject(m.UNSUPPORTED)                        # a later revision may define it: 0x00 (§2.5)
             return frm, arg, mx
@@ -2611,8 +2414,6 @@ class Endpoint:
             count = t.take("H")
             data = t.bytes(count)
             t.tail()
-            if count == 0:
-                raise Reject(m.MALFORMED)
             return data
         if op in (_CON.op["clear"], _CON.op.get("close", -1)):
             t.tail()
@@ -2637,7 +2438,7 @@ class Endpoint:
                 pos, flags = s.base, 2
             if pos >= s.end:
                 return m.COMPLETED, m.SUCCESS, struct.pack("<QBH", s.end, 0, 0)   # at or past the write position
-            budget = self.probe.max_frame - m.RESULT_HEADER - 11 - t.room()   # within max_frame, ignored kept (§2.3)
+            budget = self.probe.max_frame - m.RESULT_HEADER - 11    # within max_frame (common §1.2)
             data = bytes(s.data[pos - s.base:pos - s.base + min(mx, budget)])
             if pos + len(data) < s.end:
                 flags |= 1
@@ -2669,8 +2470,8 @@ class Endpoint:
             else:
                 took = min(count, accept)                          # what fit the UART's transmit queue
                 s.written += data[:took]
-            return self._answer(struct.pack("<H", took),          # 0 = failed, fewer = partial (common §1.4)
-                                m.SUCCESS if took == count else m.PARTIAL if took else m.FAILED)
+            return self._answer(struct.pack("<H", took),          # all = success, fewer = partial, none = failed
+                                m.SUCCESS if took == count else m.PARTIAL if took else m.FAILED)   # (common §1.4)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
     # ---- oep.target.console ---------------------------------------------------------------------
@@ -2693,7 +2494,7 @@ class Endpoint:
                         (STREAM_USERS["slot"] if any(u != "host" for u in s.users) else 0)
                 rows.append(struct.pack("<HHBBB", sid, s.conn, s.mechanism, users,
                                         STREAM_STATE["closed"] if s.closed else STREAM_STATE["open"]))
-            return m.COMPLETED, m.SUCCESS, self._paged(rows, first, t.room())
+            return m.COMPLETED, m.SUCCESS, self._paged(rows, first)
         if op not in _CON.op.values():
             return m.REJECTED, m.UNKNOWN_OPERATION, b""
         sid = t.take("H")
@@ -2795,15 +2596,16 @@ class Endpoint:
         if op == _GPIO.op["set"]:
             n = t.take("B")
             pairs = [t.take("HB") for _ in range(n)]
-            # drive (fixture §1.1, repeats): a probe without drive_levels does not know the tag (all of them ignored)
-            got, _ = t.tail({GPIO_SET_DRIVE} if self.drive_levels is not None else set(), repeats={GPIO_SET_DRIVE})
+            # drive (fixture §1.1, repeats): gpio revision 1 defines it, so every probe implements the tag - one without
+            # drive_levels refuses it unsupported
+            t.tail({GPIO_SET_DRIVE}, repeats={GPIO_SET_DRIVE})
             index_tag = _GPIO.tlv["unavailable_payload"]["index"]
-            drives = self._drive_forms(t, pairs)                   # core §4.3's order: malformed, unsupported, unavailable
+            drives = self._drive_forms(t, pairs)                   # every check before anything changes (core §4.3)
             for i, (ch, mode) in enumerate(pairs):
-                # an undefined mode (8 or more, a later revision may define it) or one it does not drive (fixture §1)
-                if mode > 7 or not self.gpio_allowed.get(fn, 0xFF) >> mode & 1:
+                # a mode the definition leaves unused (7 or more) or one it does not drive (fixture §1)
+                if mode > GPIO_MODE_MAX or not self.gpio_allowed.get(fn, 0xFF) >> mode & 1:
                     raise unsupported_fixed(m.tlv(_UNA["channel"], struct.pack("<H", ch)), m.tlv(index_tag, bytes([i])))
-            drives = self._drive_levels_of(t, drives)
+            drives = self._drive_levels_of(drives)
             for i, (ch, mode) in enumerate(pairs):
                 self._refuse_disabled([ch], m.tlv(index_tag, bytes([i])))   # disabled: cause 5 (probe.config §1)
                 if ch not in mine:                                 # the position as the gpio's TLV (fixture §1)
@@ -2830,55 +2632,38 @@ class Endpoint:
             levels = []
             for ch in chans:
                 mode = self.gpio_modes.get(ch, 0)
-                outside = self.gpio_world(ch, mode) if self.gpio_world and mode in (0, 1, 2, 6, 7) else None
+                outside = self.gpio_world(ch, mode) if self.gpio_world and mode in (0, 1, 2, 6) else None
                 levels.append(outside if outside is not None else
                               {1: 1, 3: 0, 4: 1, 5: 0, 6: 1}.get(mode, self.gpio_inputs.get(ch, 0)))
-            drive = b""
-            if self.drive_levels is not None:                      # read's drive: the level in mode 3 / 4, else 0xFF
-                drive = m.tlv(GPIO_READ_DRIVE, bytes(self.gpio_drive.get(ch, NOT_DRIVEN)
-                                                     if self.gpio_modes.get(ch, 0) in OUTPUT_MODES else NOT_DRIVEN
-                                                     for ch in chans))
-            return self._answer(bytes([len(levels)]) + bytes(levels) + drive)   # n(u8) n x level [TLV] (fixture §1)
+            return self._answer(bytes([len(levels)]) + bytes(levels))   # n(u8) n x level [TLV] (fixture §1)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
-    def _drive_forms(self, t: Take, pairs: list[tuple[int, int]]) -> list[tuple[int, int, int, int]]:
-        """set's drive TLVs (fixture §1.1), their form: malformed (the whole request) for a value shorter than 4
-        bytes, index n or more, the same index twice, an element whose mode is not 3 / 4, kind 2 (the default) with a
-        value other than 0; a longer value is never an
-        extension (core §2.3): that TLV is unsupported when critical, else ignored. -> (tag, index, kind, value)."""
+    def _drive_forms(self, t: Take, pairs: list[tuple[int, int]]) -> list[tuple[int, int, int]]:
+        """set's drive TLVs (fixture §1.1), their form: malformed (the whole request) for a value of another length than
+        2, index n or more, the same index twice, an element whose mode is not 3 / 4. -> (tag as received, index,
+        level)."""
         seen, drives = set(), []
         for tag, value in t.repeated:
             if tag & 0x7F != GPIO_SET_DRIVE:
                 continue
-            if len(value) < 4:
+            if len(value) != 2:
                 raise Reject(m.MALFORMED)
-            if len(value) > 4:
-                if tag & m.TAG_CRITICAL:
-                    raise Reject(m.UNSUPPORTED, bytes([tag]))
-                t.ignored.append(GPIO_SET_DRIVE)
-                continue
-            index, kind, v = struct.unpack("<BBH", value)
+            index, level = value
             if index >= len(pairs) or index in seen or pairs[index][1] not in OUTPUT_MODES:
                 raise Reject(m.MALFORMED)
-            if kind == DRIVE_KIND["default"] and v:
-                raise Reject(m.MALFORMED)                          # kind 2 carries value 0 (fixture §1.1)
             seen.add(index)
-            drives.append((tag, index, kind, v))
+            drives.append((tag, index, level))
         return drives
 
-    def _drive_levels_of(self, t: Take, drives: list[tuple[int, int, int, int]]) -> dict[int, int]:
-        """-> {element index: level}. A drive this probe cannot handle - an undefined kind (3 or more, a later revision
-        may define it) or a level number past the levels - is ignored (one entry in `t.ignored` each); sent critical,
-        the request is rejected unsupported with its tag as received (core §2.3)."""
+    def _drive_levels_of(self, drives: list[tuple[int, int, int]]) -> dict[int, int]:
+        """-> {element index: level}. A level past drive_levels (0xFF, the default, aside), and any drive on a probe
+        without drive_levels: rejected unsupported with the tag as received (fixture §1.1)."""
         out = {}
-        for tag, index, kind, v in drives:
-            level = self._drive_level(kind, v) if kind in DRIVE_KIND.values() else None
-            if level is None:
-                if tag & m.TAG_CRITICAL:
-                    raise Reject(m.UNSUPPORTED, bytes([tag]))
-                t.ignored.append(GPIO_SET_DRIVE)                   # one entry per ignored drive
-                continue
-            out[index] = level
+        for tag, index, level in drives:
+            chosen = self._drive_level(level)
+            if chosen is None:
+                raise Reject(m.UNSUPPORTED, bytes([tag]))
+            out[index] = chosen
         return out
 
     # ---- oep.fixture.uart -----------------------------------------------------------------------
@@ -2886,28 +2671,19 @@ class Endpoint:
         fmt_tag = _UART.tlv["configure"]["format"]
         if op == _UART.op["configure"]:
             baud = t.take("I")
-            got, _ = t.tail({fmt_tag})
-            fmt = t.fixed(got, fmt_tag, 1)                         # shorter: malformed; longer: never an extension
+            got = t.tail({fmt_tag})
+            fmt = t.fixed(got, fmt_tag, 1)                         # another length: malformed (core §2.3)
             fmt = b"\0" if fmt is None else fmt
-            as_sent = fmt_tag | (m.TAG_CRITICAL if fmt_tag in t.critical else 0)
-            try:
-                actual = self._uart_check(baud, fmt[0], fn, as_sent)
-            except Reject as r:
-                if r.reason == m.UNSUPPORTED and r.payload[:1] == bytes([as_sent]) and fmt_tag not in t.critical:
-                    t.refuse(fmt_tag, got)                # non-critical: dropped, listed as ignored
-                    fmt = bytes(1)
-                    actual = self._uart_check(baud, 0, fn, None)
-                else:
-                    raise
+            actual = self._uart_check(baud, fmt[0], fn, t.received(fmt_tag))   # unhandled: unsupported, bit 7 or not
             if fn not in self.uarts:
                 raise unavailable("wrong_state")                   # no pins: the plan has neither RX nor TX (fixture §2)
-            self.uart_baud[fn] = (actual, fmt[0], UART_CONFIGURED["session"])
+            self.uart_baud[fn] = (actual, fmt[0])
             self.uart_session_cfg.add(fn)                          # a session's configure beats the uart item
             return self._answer(struct.pack("<I", actual))
-        if op == _UART.op["status"]:                               # lock-free: configured(uart_configured) baud format
+        if op == _UART.op["status"]:                               # lock-free: baud(u32) format(u8) (fixture §2)
             t.tail()
-            baud, fmt, how = self.uart_baud.get(fn, (115200, 0, UART_CONFIGURED["default"]))
-            return self._answer(struct.pack("<BIB", how, baud, fmt))
+            baud, fmt = self.uart_baud.get(fn, (reg.LIMITS["uart_default_baud"], 0))
+            return self._answer(struct.pack("<IB", baud, fmt))
         if op not in (_CON.op["read"], _CON.op["marks"], _CON.op["mark"], _CON.op["write"], _CON.op["clear"]):
             return m.REJECTED, m.UNKNOWN_OPERATION, b""
         args = self._stream_args(op, t)                            # the request first (core §4.3 orders 5 / 6)
@@ -2928,31 +2704,16 @@ class Endpoint:
         st, (max_length, features, depth, max_stretch) = self.i2c[fn], self.target_decl[fn]
         ops = _I2C.op
         planned = any(a[0] == fn for a in self.plan)
-        if op == ops["configure"]:                                 # core §4.3's order: malformed, unsupported, unavailable
-            address, mode = t.take("BB")
+        if op == ops["configure"]:                                 # address(u8) [TLV]; every check before any change
+            address = t.take("B")
             t.tail()
             if address > 0x7F:
                 raise Reject(m.MALFORMED)                          # a 7-bit address (excluded for every revision)
             if address <= 0x07 or address >= 0x78:
                 raise unsupported_fixed()                          # reserved by I2C: general call, 10-bit, ... (△5)
-            if mode not in I2C_MODE.values():
-                raise unsupported_fixed()                          # 0, 4 or more: a later revision may define it (§2.5)
-            if mode == I2C_MODE["preloaded_tx"] and not features & I2C_FEATURES["preloaded_tx"]:
-                raise unsupported_fixed()                          # mode 3 without features bit0
             if not planned:
                 raise unavailable("wrong_state")                   # before the plan (cause 6)
-            self.i2c[fn] = I2cState(state=1, address=address, mode=mode, stretch_us=st.stretch_us)   # made anew
-            return self._answer(b"")
-        if op == ops["arm_rx"]:
-            length = t.take("H")
-            t.tail()
-            if length == 0:
-                raise Reject(m.MALFORMED)
-            if length > max_length:
-                raise unsupported_fixed()
-            if st.state == 0 or st.mode != I2C_MODE["fixed_rx"]:
-                raise unavailable("wrong_state")                   # mode 1 only
-            st.armed = length                                      # an earlier wait is dropped for this one
+            self.i2c[fn] = I2cState(state=1, address=address, stretch_us=st.stretch_us)   # made anew, stretch kept
             return self._answer(b"")
         if op == ops["read_rx"]:
             t.tail()
@@ -2963,7 +2724,7 @@ class Endpoint:
             frame, ns = st.queue.pop(0)
             return self._answer(struct.pack("<BH", min(len(st.queue), 255), len(frame)) + frame
                                 + m.tlv(_I2C.tlv["read_rx_answer"]["ns"], struct.pack("<Q", ns)))
-        if op == ops["preload_tx"]:
+        if op == ops["preload_tx"]:                                # count(u16) data -> nothing (fixture §3)
             count = t.take("H")
             data = t.bytes(count)
             t.tail()
@@ -2971,71 +2732,53 @@ class Endpoint:
                 raise Reject(m.MALFORMED)
             if count > max_length:
                 raise unsupported_fixed()
-            if st.state == 0 or st.mode != I2C_MODE["preloaded_tx"]:
-                raise unavailable("wrong_state")                   # mode 3 only
+            if st.state == 0:
+                raise unavailable("wrong_state")                   # cause 6
             if len(st.tx) >= depth:
                 raise unavailable("limit")                         # every slot holds an unread preload
             st.tx.append(data)
-            st.slots = (st.slots + 1) & 0xFF
-            return self._answer(bytes([st.slots]))
-        if op == ops["status"]:                                    # lock-free
-            t.tail()
-            return self._answer(struct.pack("<BBBBIBI", st.state, st.mode, int(st.armed > 0), min(len(st.queue), 255),
-                                            st.rx_frames, len(st.tx) if st.mode == I2C_MODE["preloaded_tx"] else 0,
-                                            st.errors))
-        if op == ops["reset"]:
-            t.tail()
-            if st.state == 0:
-                raise unavailable("wrong_state")
-            self.i2c[fn] = I2cState(state=1, address=st.address, mode=st.mode, stretch_us=st.stretch_us)
             return self._answer(b"")
-        if op == ops["stretch"]:                                   # offered by the ops tag (`offers`, order 1)
+        if op == ops["status"]:                                    # lock-free: state queued rx_frames tx_slots errors
+            t.tail()
+            return self._answer(struct.pack("<BBIBI", st.state, min(len(st.queue), 255), st.rx_frames,
+                                            min(len(st.tx), 255), st.errors))
+        if op == ops["stretch"]:                                   # offered by the ops tag (`offers`, the header)
             us = t.take("I")
             t.tail()
             if us > max_stretch:
                 raise unsupported_fixed()                          # past describe's max_stretch_us
-            st.stretch_us = us                                     # any state; configure / reset keep it
+            st.stretch_us = us                                     # any state; configure keeps it
             return self._answer(b"")
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
-    def _i2c_frame(self, st: I2cState, frame: bytes, depth: int) -> None:
-        if len(st.queue) >= depth:
-            st.errors += 1                                         # the queue overflows: the new frame goes
-            return
-        st.queue.append((bytes(frame), self.now_ns()))
-        st.rx_frames += 1
-
     def i2c_write(self, fn: int, data: bytes, address: int | None = None) -> bool:
         """TEST HOOK: a bus controller writes `data` to i2c-target `fn` in one transaction (START, address + W, data,
-        STOP). -> whether the target ACKed its address (configured, and `address` None or its own). An address-only
-        write (empty data) counts nothing in any mode. Mode 1: the armed length exactly is a frame and the wait goes on
-        (armed until the next arm_rx / reset / configure / plan release); another length is a receive error; no wait
-        -> ACKed, dropped, an error. Mode 2: the first byte is the length of the rest, the rest a frame (a length that
-        does not match is a receive error). Mode 3 takes no writes: ACKed, dropped, an error."""
+        STOP). -> whether the target ACKed its address (configured, and `address` None or its own). A write with data
+        is one frame (fixture §3): more than max_length bytes are cut to max_length (errors + 1); a full queue drops the
+        frame (errors + 1). An address-only write (empty data) counts nothing."""
         st, (max_length, _, depth, _) = self.i2c[fn], self.target_decl[fn]
         if st.state == 0 or (address is not None and address != st.address):
             return False
         if not data:
-            pass                                                   # address only: nothing counts
-        elif st.mode == I2C_MODE["fixed_rx"] and st.armed:
-            if len(data) == st.armed:
-                self._i2c_frame(st, data, depth)
-            else:
-                st.errors += 1
-        elif st.mode == I2C_MODE["framed_rx"] and 0 < data[0] == len(data) - 1 <= max_length:
-            self._i2c_frame(st, data[1:], depth)
-        else:
+            return True                                            # address only: nothing counts
+        if len(data) > max_length:
+            data = data[:max_length]
             st.errors += 1
+        if len(st.queue) >= depth:
+            st.errors += 1                                         # the queue overflows: the new frame goes
+            return True
+        st.queue.append((bytes(data), self.now_ns()))
+        st.rx_frames += 1
         return True
 
     def i2c_read(self, fn: int, n: int, address: int | None = None) -> bytes | None:
         """TEST HOOK: a bus controller reads n bytes from i2c-target `fn` in one transaction. -> the bytes, or None
-        when the address is not ACKed. Mode 3 answers from the oldest preloaded slot (cut or padded with 0xFF to n:
-        the next read starts at the next slot); an empty slot list, mode 1 and mode 2 answer 0xFF."""
+        when the address is not ACKed. The oldest preloaded slot answers (cut or padded with 0xFF to n: the next read
+        starts at the next slot); no slot: 0xFF (fixture §3)."""
         st = self.i2c[fn]
         if st.state == 0 or (address is not None and address != st.address):
             return None
-        if st.mode == I2C_MODE["preloaded_tx"] and st.tx:
+        if st.tx:
             slot = st.tx.pop(0)
             return (slot + b"\xff" * n)[:n]
         return b"\xff" * n
@@ -3080,20 +2823,14 @@ class Endpoint:
             t.tail()
             return self._answer(struct.pack("<BBBBBII", st.state, st.mode, st.bit_order, int(st.armed is not None),
                                             min(len(st.queue), 255), st.transactions, st.errors))
-        if op == ops["reset"]:
-            t.tail()
-            if st.state == 0:
-                raise unavailable("wrong_state")
-            self.spi[fn] = SpiState(state=1, mode=st.mode, bit_order=st.bit_order)
-            return self._answer(b"")
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
     def spi_transfer(self, fn: int, mosi: bytes, bits: int | None = None) -> bytes:
         """TEST HOOK: a bus controller runs one transaction on spi-target `fn` (CS low, `bits` clocks - 8 a MOSI byte
         by default - CS high). -> the MISO bytes: the armed tx, 0 past it and when not armed. Armed: the MOSI bytes
         (bits / 8 rounded up) up to the armed length (more is an error) and the bits are queued, the wait ends; a full
-        queue drops them (an error). Not armed: MOSI dropped, an error. Every transaction of a configured target
-        counts; a target not configured sees nothing. 0 bits (CS edges without SCK) is no transaction: nothing counts,
+        queue drops them (an error). Not armed: MOSI dropped, an error. errors grows by 1 at most per transaction
+        (fixture §4). Every transaction of a configured target counts; a target not configured sees nothing. 0 bits (CS edges without SCK) is no transaction: nothing counts,
         an arm keeps waiting."""
         st, (_, _, depth, _) = self.spi[fn], self.target_decl[fn]
         n = len(mosi)
@@ -3114,11 +2851,9 @@ class Endpoint:
         length, tx = st.armed
         st.armed = None
         got = (bits + 7) // 8
-        if got > length:
-            st.errors += 1                                         # past the armed length: dropped
-        if len(st.queue) >= depth:
-            st.errors += 1
-        else:
+        if got > length or len(st.queue) >= depth:
+            st.errors += 1                                         # past the armed length, or the queue full: once
+        if len(st.queue) < depth:
             st.queue.append((bits, bytes(mosi[:min(got, length)]), self.now_ns()))
         return (tx + bytes(n))[:n]
 
@@ -3126,7 +2861,7 @@ class Endpoint:
     def _config_op(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         if op == _CFG.op["get"]:
             first = t.take("H")
-            t.no_tail()                                            # no TLV in a get request (core §7.3)
+            t.tail()
             items = self._canonical(self.config)
             budget = self.probe.max_frame - m.RESULT_HEADER - 5
             out, sent = b"", 0
@@ -3145,28 +2880,18 @@ class Endpoint:
             except m.ProtocolError:
                 raise Reject(m.MALFORMED) from None
             as_sent = {}
-            undeclared = None                                      # the first item this probe does not handle (order 6)
+            undeclared = None                                      # the first item this probe does not handle
             for received, value in tlvs:
                 tag = received & 0x7F                              # kept without the critical bit
-                if tag in (m.TAG_FIXED, m.TAG_IGNORED):
-                    raise Reject(m.MALFORMED)
                 if tag not in self.items:
-                    undeclared = undeclared if undeclared is not None else received   # the tag as received (§2.3)
+                    undeclared = undeclared if undeclared is not None else received   # the tag as received (§2)
                     continue                                       # refused after every item's form (core §4.3)
-                size = _item_size(tag, value)                      # shorter than its form: malformed
-                if size is not None and len(value) > size:
-                    # longer than its one form: a request TLV longer than this probe knows (core §2.3, probe.config
-                    # §1) - critical: unsupported with the tag as received (after every item's form); else ignored
-                    if received & m.TAG_CRITICAL:
-                        undeclared = undeclared if undeclared is not None else received
-                    else:
-                        t.ignored.append(tag)
-                    continue
-                if tag != ITEM["plan"] and len(value) >= self._key_len(tag):
+                size = _item_size(tag, value)
+                if size is not None and len(value) != size:
+                    raise Reject(m.MALFORMED)                      # a value of another length, bit 7 or not (§1)
+                if tag != ITEM["plan"]:
                     as_sent[(tag, self._item_key(tag, value))] = received
                 if tag == ITEM["plan"]:                            # one item per assignment, key (fn, role, channel)
-                    if len(value) != 5:
-                        raise Reject(m.MALFORMED)                  # core §2.3: a short value is a broken one
                     key = struct.unpack("<HBH", value)
                     if (tag, key) in seen:
                         raise Reject(m.MALFORMED)
@@ -3205,33 +2930,35 @@ class Endpoint:
         if op == _CFG.op["state"]:                                 # lock-free; §3.3, paged
             first_slot, first_bind = t.take("BB")
             t.tail()
-            return m.COMPLETED, m.SUCCESS, self._state_answer(first_slot, first_bind, t.room())
+            return m.COMPLETED, m.SUCCESS, self._state_answer(first_slot, first_bind)
         if op == _CFG.op["save"]:
             t.tail()
             if not self.storage_max:
                 raise Reject(m.UNSUPPORTED)                        # a probe without storage
             if len(b"".join(self._canonical(self.config))) > self.storage_max:
-                raise unavailable("storage_full")
+                raise unavailable("storage_full")                  # max_bytes: the items' TLV bytes (§2)
             self.saved = dict(self.config)
             self.saved_ids = {fn: self.identity[fn] for fn in self._referenced(self.config) if fn in self.identity}
             self.saved_reason = 0
+            self.saved_hash = self._hash(self.config)
             return m.COMPLETED, m.SUCCESS, struct.pack("<I", self._hash(self.config))
         if op == _CFG.op["erase"]:
             t.tail()
             if not self.storage_max:
                 raise Reject(m.UNSUPPORTED)
-            self.saved, self.saved_ids, self.saved_reason = None, {}, 0
+            self.saved, self.saved_ids, self.saved_reason, self.saved_hash = None, {}, 0, 0
             return m.COMPLETED, m.SUCCESS, b""
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
-    def _state_answer(self, first_slot: int, first_bind: int, reserve: int = 0) -> bytes:
+    def _state_answer(self, first_slot: int, first_bind: int) -> bytes:
         """probe.config §3.3: more storage_state storage_hash unreadable_reason, the slot states from first_slot and
-        the bind states from first_bind that fit the frame."""
-        saved_hash = self._hash(self.saved) if self.saved is not None and not self.saved_reason else 0
+        the bind states from first_bind that fit the frame. storage_hash: the hash the settings had when the saved ones
+        became the current ones (at boot or by save) - get's hash while nothing changed since (0: none or unreadable)."""
+        saved_hash = self.saved_hash if self.saved is not None and not self.saved_reason else 0
         state = 0 if self.saved is None else 2 if self.saved_reason else 1
         slots = [self._slot_state(n) for n in sorted(self.slots)][first_slot:]   # count x element (core §2.3)
         binds = [self._bind_state(p) for p in sorted(self.binds)][first_bind:]
-        budget = self.probe.max_frame - m.RESULT_HEADER - 9 - reserve
+        budget = self.probe.max_frame - m.RESULT_HEADER - 9
         out_s, out_b = [], []
         for row in slots:
             if sum(map(len, out_s)) + len(row) > budget:
@@ -3256,8 +2983,8 @@ class Endpoint:
 
     @staticmethod
     def _canonical(config: dict) -> list[bytes]:
-        """probe.config §2: tag order, then key order (plan by (fn, role, channel)), the items' bytes as the host sent
-        them, each in the one TLV encoding (core §2.2)."""
+        """get's order (probe.config §2): tag order, then key order (plan by (fn, role, channel)), the items' bytes as
+        the host sent them, each as its TLV (core §2.2)."""
         rows = []
         for (tag, key), value in config.items():
             for v in (value if isinstance(value, list) else [value]):
@@ -3265,8 +2992,12 @@ class Endpoint:
                 rows.append((tag, sort_key, m.tlv(tag, v)))
         return [r[2] for r in sorted(rows)]
 
+    HASH_SEED = 0x4F45                                      # the fake's own way to make the hash (the probe's choice, §2)
+
     def _hash(self, config: dict | None) -> int:
-        return zlib.crc32(b"".join(self._canonical(config or {})))
+        """A u32 that changes with the settings (probe.config §2: how it is made is the probe's; a host never computes
+        it): here a CRC-32 of get's bytes, seeded so no host can take it for a rule."""
+        return zlib.crc32(b"".join(self._canonical(config or {})), self.HASH_SEED)
 
     @staticmethod
     def _referenced(config: dict) -> set[int]:
@@ -3277,10 +3008,8 @@ class Endpoint:
                 fns.add(key)
             elif tag == ITEM["slot"]:
                 fns.add(struct.unpack_from("<H", value, 1)[0])
-            elif tag == ITEM["bind"]:
-                for at in _bind_streams(value):
-                    if value[at] == BIND_STREAM["fixture_uart"]:
-                        fns.add(struct.unpack_from("<H", value, at + 1)[0])
+            elif tag == ITEM["bind"] and value[1] == BIND_STREAM["fixture_uart"]:
+                fns.add(struct.unpack_from("<H", value, 2)[0])
         return fns
 
     def _apply_saved(self) -> None:
@@ -3297,19 +3026,15 @@ class Endpoint:
                 self.saved_reason = 2
                 return
             remap[fn] = now[ident]
-        pack = lambda fn: struct.pack("<H", remap.get(fn, fn))
+        pack = lambda fn: struct.pack("<H", remap.get(fn, fn))   # noqa: E731
         new = {}
         for (tag, key), value in self.saved.items():
             if tag == ITEM["plan"]:
                 new[(tag, remap.get(key, key))] = [pack(key) + v[2:] for v in value]
             elif tag == ITEM["slot"]:
                 new[(tag, key)] = value[:1] + pack(struct.unpack_from("<H", value, 1)[0]) + value[3:]
-            elif tag == ITEM["bind"]:
-                v = bytearray(value)
-                for at in _bind_streams(value):
-                    if v[at] == BIND_STREAM["fixture_uart"]:
-                        v[at + 1:at + 3] = pack(struct.unpack_from("<H", v, at + 1)[0])
-                new[(tag, key)] = bytes(v)
+            elif tag == ITEM["bind"] and value[1] == BIND_STREAM["fixture_uart"]:
+                new[(tag, key)] = value[:2] + pack(struct.unpack_from("<H", value, 2)[0])
             elif tag == ITEM["uart"]:
                 new[(tag, remap.get(key, key))] = pack(key) + value[2:]
             else:
@@ -3317,6 +3042,7 @@ class Endpoint:
         self.saved = new                                           # the saved items, read for this boot's fns
         try:
             self._apply_config(new, boot=True)
+            self.saved_hash = self._hash(self.config)              # the saved settings are the current ones now
         except Reject:
             self.saved_reason = 3
 
@@ -3334,6 +3060,7 @@ class Endpoint:
         if saved:
             self.saved = dict(self.config)
             self.saved_ids = {fn: self.identity[fn] for fn in self._referenced(self.config) if fn in self.identity}
+            self.saved_hash = self._hash(self.config)
 
     def _apply_config(self, new: dict, changed_slots: set[int] | None = None, boot: bool = False,
                       received: dict | None = None, undeclared: int | None = None) -> None:
@@ -3342,13 +3069,12 @@ class Endpoint:
         tag as the set sent it (the critical bit kept; a plan's key is its fn), for the unsupported payloads that name
         it. `undeclared`: the first item tag of the set this probe does not handle.
 
-        The checks run in core §4.3's order over every item at once (C-21): the form of each item and the
-        contradictions between items (malformed, order 5), then the fns the items name (unknown_function, the end of
-        order 5), then what this probe does not handle (unsupported, order 6), then the state and the resources
-        (unavailable, order 7). Items are visited in the canonical order (tag, key)."""
+        Every check runs before anything changes (core §4.3: any one reason that applies): the form of each item and
+        the contradictions between items (malformed), the fns the items name (unknown_function), what this probe does
+        not handle (unsupported), then the state and the resources (unavailable). Items are visited in get's order."""
         received = received or {}
         items = sorted(new.items(), key=lambda kv: kv[0])
-        # order 5: each item's form, then the contradictions between items
+        # the form of each item, then the contradictions between items
         slots: dict[int, Slot] = {}
         for (tag, key), value in items:
             if tag == ITEM["slot"]:
@@ -3357,24 +3083,18 @@ class Endpoint:
                 if any(len(v) != 5 for v in value) or key == m.CORE_FN:
                     raise Reject(m.MALFORMED)                      # fn 0 holds no plan (oep-if-plan §2.5)
             elif tag == ITEM["idle"]:
-                # channel mode drive_kind drive_value, 6 bytes (probe.config §1): kind 2 (the default) carries value 0;
-                # an input idle (mode 0-2) carries kind 2 and value 0 - not checked when the mode or the kind is
-                # undefined (core §4.3: an undefined value is refused unsupported, its contradictions not checked)
-                if len(value) != 6:
-                    raise Reject(m.MALFORMED)
-                mode, kind, drive = value[2], value[3], struct.unpack_from("<H", value, 4)[0]
-                if kind == DRIVE_KIND["default"] and drive:
-                    raise Reject(m.MALFORMED)
-                if (mode in IDLE_MODE.values() and mode not in (IDLE_MODE["output_low"], IDLE_MODE["output_high"])
-                        and kind in DRIVE_KIND.values() and kind != DRIVE_KIND["default"]):
-                    raise Reject(m.MALFORMED)
+                if len(value) != ITEM_SIZES[tag]:
+                    raise Reject(m.MALFORMED)                      # channel mode drive: 4 bytes (probe.config §1)
             elif tag == ITEM["label"]:
-                # channel(u16) text: 1-32 bytes of UTF-8 without control characters (probe.config §1, core §2.1)
-                if not 3 <= len(value) <= 2 + reg.LIMITS["label_max_bytes"] or not valid_text(value[2:]):
+                # channel(u16) text: 1-32 bytes (probe.config §1: the length is the rule)
+                if not 3 <= len(value) <= 2 + reg.LIMITS["label_max_bytes"]:
                     raise Reject(m.MALFORMED)
             elif tag == ITEM["uart"]:
-                if len(value) < 7 or struct.unpack_from("<I", value, 2)[0] == 0:
-                    raise Reject(m.MALFORMED)                      # short, or baud 0 (fixture §2)
+                if len(value) != ITEM_SIZES[tag] or struct.unpack_from("<I", value, 2)[0] == 0:
+                    raise Reject(m.MALFORMED)                      # baud 0 (fixture §2)
+            elif tag == ITEM["bind"]:
+                if len(value) != ITEM_SIZES[tag]:
+                    raise Reject(m.MALFORMED)
         names = [s.name for s in slots.values()]
         if len(set(names)) != len(names):
             raise Reject(m.MALFORMED)
@@ -3388,7 +3108,7 @@ class Endpoint:
         for (tag, key), value in items:
             if tag == ITEM["bind"]:
                 self._parse_bind(value, slots, "form")
-        # the end of order 5: the fns the items name
+        # the fns the items name
         for (tag, key), value in items:
             if tag == ITEM["plan"] and key not in self.names:
                 raise Reject(m.UNKNOWN_FUNCTION)
@@ -3398,7 +3118,7 @@ class Endpoint:
                 self._parse_bind(value, slots, "fn")
             elif tag == ITEM["uart"] and struct.unpack_from("<H", value)[0] not in self.names:
                 raise Reject(m.UNKNOWN_FUNCTION)
-        # order 6: what this probe does not handle
+        # what this probe does not handle
         if undeclared is not None:
             raise Reject(m.UNSUPPORTED, bytes([undeclared]))       # an item it does not declare, the tag as received
         binds: dict[int, Bind] = {}
@@ -3407,25 +3127,23 @@ class Endpoint:
             as_received = bytes([received.get((tag, key), tag)])  # the item's tag as received (probe.config §1)
             channel = m.tlv(_UNA["channel"], struct.pack("<H", key)) if tag in CHANNEL_ITEMS else b""
             if tag in CHANNEL_ITEMS and not self._channel_ok(key):
-                # at or past `channels`, or reserved (probe.config §1, the channel of an item)
+                # at or past `channels`, or one the probe uses itself (probe.config §1, the channel of an item)
                 raise Reject(m.UNSUPPORTED, as_received + channel)
             if tag == ITEM["slot"]:
                 slots[key] = self._item_refusal(received, tag, key, self._parse_slot, value, "values")
             elif tag == ITEM["bind"]:
                 binds[key] = self._item_refusal(received, tag, key, self._parse_bind, value, slots, "values")
             elif tag == ITEM["idle"]:
-                mode = value[2]
+                mode, drive = value[2], value[3]
                 if mode not in IDLE_MODE.values():
-                    raise Reject(m.UNSUPPORTED, as_received + channel)   # 5 or more: a later revision may define it
-                if value[3] not in DRIVE_KIND.values():
-                    raise Reject(m.UNSUPPORTED, as_received + channel)   # an undefined drive_kind (3 or more)
-                if mode in (IDLE_MODE["output_low"], IDLE_MODE["output_high"]) and key in self.input_only:
-                    raise Reject(m.UNSUPPORTED, as_received + channel)   # cannot drive it as an output (§1)
+                    raise Reject(m.UNSUPPORTED, as_received + channel)   # 5 or more: left unused by the definition
+                if mode in (IDLE_MODE["output_low"], IDLE_MODE["output_high"]):
+                    if key in self.input_only:
+                        raise Reject(m.UNSUPPORTED, as_received + channel)   # cannot drive it as an output (§1)
+                    if drive != DRIVE_DEFAULT and self._drive_level(drive) is None:
+                        raise Reject(m.UNSUPPORTED, as_received + channel)   # no such level, or no drive_levels
                 if mode in (IDLE_MODE["pull_up"], IDLE_MODE["pull_down"]) and mode in self.no_pull.get(key, ()):
                     raise Reject(m.UNSUPPORTED, as_received + channel)   # the channel lacks that pull (PC-3)
-                if (self.drive_levels is not None and value[3] == DRIVE_KIND["level"]
-                        and struct.unpack_from("<H", value, 4)[0] >= len(self.drive_levels[1])):
-                    raise Reject(m.UNSUPPORTED, as_received + channel)   # no such level (§1)
             elif tag == ITEM["uart"]:
                 fn, baud, fmt = struct.unpack_from("<HIB", value)
                 if self.names[fn] != "oep.fixture.uart":
@@ -3437,7 +3155,7 @@ class Endpoint:
         want = [a for fn in plans for a in plans[fn]]
         plan_tag = lambda fn: received.get((ITEM["plan"], fn), ITEM["plan"])   # noqa: E731
         self._check_plan(want, held=False, tag_of=plan_tag)        # roles and channels the fns do not declare
-        # order 7: the state and the resources
+        # the state and the resources
         for fn in self.pairs:                                      # every wire (pin_roles wires have an empty list)
             if sum(1 for s in slots.values() if s.wire_fn == fn and s.attach == SLOT_ATTACH["at_boot"]) > \
                     self.max_connections.get(fn, 1):
@@ -3453,14 +3171,14 @@ class Endpoint:
         except Reject:
             self.slots = {k: self._parse_slot(v) for (t, k), v in self.config.items() if t == ITEM["slot"]}
             raise
-        # accepted: make it current
+        # accepted: make it current - disable and idle before any other item (probe.config §2)
         old_idle = {key: v for (tag, key), v in self.config.items() if tag == ITEM["idle"]}
         repark = (self.disabled - disabled) | {key for key in idles | set(old_idle) if new.get((ITEM["idle"], key)) != old_idle.get(key)}
-        self.config = new                                          # the disable items first: a dropped plan's pins
-        # idle before the plans (probe.config §2: idle, plan, uart, the at-boot attach): at boot every free channel,
-        # later the ones whose idle changed (or enabled again); a gpio plan then takes a line in that state
+        self.config = new
+        # at boot every free channel, later the ones whose idle changed (or enabled again); a gpio plan then takes a
+        # line in that state
         self._park(self._boot_channels() if boot else repark)
-        for fn in old_plan_fns - set(plans):                       # are not parked when the same set disables them
+        for fn in old_plan_fns - set(plans):
             self._drop_plan(fn)
         for fn, assigned in plans.items():
             self._replace_plans({fn}, assigned)
@@ -3476,10 +3194,10 @@ class Endpoint:
             self.slot_rt.setdefault(n, SlotRuntime())
         for port, b in binds.items():
             if port not in self.binds or self.binds[port] != b:
-                self.selected[port] = b.selected if b.mode == BIND_MODE["manual"] else 0
-                for key in b.streams:
-                    self.flows.pop((port, key), None)
-                self.mixed_out.pop(port, None)
+                # a new bind: the port's position from here on (probe.config §1.2) - the stream's write position now,
+                # or the start of the stream that comes later (sid None)
+                sid, st = self._stream_for(b.stream)
+                self.flows[(port, b.stream)] = Flow(sid, st.end) if st is not None else Flow(None, 0)
         self.binds = binds
         for n, s in slots.items():
             if s.attach == SLOT_ATTACH["at_boot"] and (boot or changed_slots is None or n in changed_slots):
@@ -3507,122 +3225,82 @@ class Endpoint:
                     continue
                 if fn in self.plan_from_config:
                     if new.get((ITEM["plan"], fn)) == self.config.get((ITEM["plan"], fn)):
-                        raise unavailable("pin_in_use", ch, fn, "settings_plan")
+                        raise unavailable("pin_in_use", ch)
                 elif fn not in plans:                              # a session's plan this set does not replace
-                    raise unavailable("pin_in_use", ch, fn, "plan")
+                    raise unavailable("pin_in_use", ch)
             conn = next((c for c in self.conns.values() if ch in c.pair), None)
             if conn is not None:
-                raise unavailable("pin_in_use", ch, conn.fn, "connection")
+                raise unavailable("pin_in_use", ch)
             for (tag, key), value in self.config.items():
                 if tag == ITEM["slot"] and new.get((tag, key)) == value and ch in self._parse_slot(value).pair:
-                    raise unavailable("pin_in_use", ch, holder_kind="slot")
+                    raise unavailable("pin_in_use", ch)
         self._refuse_disabled_in(disabled, [c for _, _, c in want] + [p for s in slots.values() for p in s.pair])
 
     @staticmethod
     def _refuse_disabled_in(disabled: set[int], channels: list[int]) -> None:
         for ch in channels:
             if ch != 0xFFFF and ch in disabled:
-                raise unavailable("held_by_settings", ch, holder_kind="disabled")
+                raise unavailable("held_by_settings", ch)
 
     def _parse_slot(self, v: bytes, stage: str | None = None) -> Slot:
-        """probe.config §1.1, refused in core §4.3's order: the form ("form": malformed), the fn it names ("fn":
-        unknown_function), then what this probe lacks ("values": unsupported); `stage` None runs all three. A
-        contradiction that involves an undefined value (attach 2 or more) is not checked (core §4.3)."""
+        """probe.config §1.1, its checks by kind: the form ("form": malformed), the fn it names ("fn":
+        unknown_function), then what this probe lacks ("values": unsupported); `stage` None runs all three. retry_ms is
+        not looked at on a host slot."""
         t = Take(v)
-        n, wire_fn, swdio, swclk, attach, boot_reset, retry_ms, max_speed, idle_clock, mech, name_len = \
-            t.take("BHHHBBIIBBB")                                  # boot_reset after attach (probe.config §1.1)
-        name = t.bytes(name_len)
-        lock_len = t.take("B")                                     # the lock's part; 0 = none (probe.config §1.1)
-        lock_part = t.bytes(lock_len)                              # the item ends here
-        defined = attach in SLOT_ATTACH.values()
-        scheme = lock_part[0] if lock_len else None
+        n, wire_fn, swdio, swclk, attach, retry_ms, max_speed, idle_clock, mech, name_len = t.take("BHHHBIIBBB")
+        name = t.bytes(name_len)                                   # the item ends with the name
         if stage in (None, "form"):
             if n >= self.slots_max:
                 raise Reject(m.MALFORMED)
-            if boot_reset not in SLOT_BOOT_RESET.values():
-                raise Reject(m.MALFORMED)                          # 2 or more: a boolean (probe.config §1.1)
-            if defined and boot_reset and attach != SLOT_ATTACH["at_boot"]:
-                raise Reject(m.MALFORMED)                          # boot_reset 1 on a slot that is not at boot
-            if defined and retry_ms and attach != SLOT_ATTACH["at_boot"]:
-                raise Reject(m.MALFORMED)
             if not SLOT_NAME.fullmatch(name.decode("ascii", "replace")):
                 raise Reject(m.MALFORMED)
-            if lock_len and (lock_len < 3 or lock_len % 2 == 0 or lock_part[0] == 0):
-                raise Reject(m.MALFORMED)
-            known_len = {TARGET_ID_SCHEME[k]: n_ for k, n_ in TARGET_ID_LEN.items()}.get(scheme)
-            if known_len is not None and (lock_len - 1) // 2 != known_len:
-                raise Reject(m.MALFORMED)                          # the lock's length is the scheme's value's (§1.1)
         if stage in (None, "fn") and wire_fn not in self.names:
             raise Reject(m.UNKNOWN_FUNCTION)
         if stage in (None, "values"):
-            if not defined or idle_clock not in reg.WIRE_RVSWD.enum["idle_clock"].values():
-                raise Reject(m.UNSUPPORTED)                        # values a later revision may define (core §2.5)
+            if attach not in SLOT_ATTACH.values() or idle_clock not in reg.WIRE_RVSWD.enum["idle_clock"].values():
+                raise Reject(m.UNSUPPORTED)                        # values the definition leaves unused (core §2.5)
             if self.names[wire_fn] not in WIRES:
-                raise Reject(m.UNSUPPORTED)                        # a wire without a target_id scheme (swd)
+                raise Reject(m.UNSUPPORTED)                        # not a wire slots ride on (swd: debug §5)
             if not self._allows(wire_fn, (swdio, swclk)):
                 raise Reject(m.UNSUPPORTED)                        # not a pair that wire offers
             if idle_clock and self.names[wire_fn] != "oep.wire.rvswd":
                 raise Reject(m.UNSUPPORTED)                        # as attach's idle_clock (debug §3)
             if mech != MECHANISM_NONE and mech not in self.mechanisms:
                 raise Reject(m.UNSUPPORTED)
-            if lock_len and scheme != TARGET_ID_SCHEME["wch_dmi_7f"]:
-                raise Reject(m.UNSUPPORTED)                        # a scheme these wires do not have, defined or not
-        lock = None
-        if lock_len:
-            half = (lock_len - 1) // 2
-            lock = (scheme, lock_part[1:1 + half], lock_part[1 + half:])
-        return Slot(n, wire_fn, (swdio, swclk), attach, retry_ms, max_speed, idle_clock, mech, name.decode("ascii", "replace"),
-                    lock, boot_reset)
+        if attach != SLOT_ATTACH["at_boot"]:
+            retry_ms = 0                                           # a host slot is never retried (not looked at)
+        return Slot(n, wire_fn, (swdio, swclk), attach, retry_ms, max_speed, idle_clock, mech,
+                    name.decode("ascii", "replace"))
 
     def _parse_bind(self, v: bytes, slots: dict[int, Slot], stage: str | None = None) -> Bind:
-        """probe.config §1.2 in core §4.3's order, as `_parse_slot` (stages "form", "fn", "values"; None: all)."""
-        if len(v) < 4:
+        """probe.config §1.2 - port(u8) kind(u8) id(u16) - its checks by kind as `_parse_slot` (stages "form", "fn",
+        "values"; None: all)."""
+        if len(v) != ITEM_SIZES[ITEM["bind"]]:
             raise Reject(m.MALFORMED)
-        port, mode, selected, n = v[:4]
-        streams = tuple((v[at], struct.unpack_from("<H", v, at + 1)[0]) for at in _bind_streams(v))
+        port, kind = v[0], v[1]
+        i = struct.unpack_from("<H", v, 2)[0]
         if stage in (None, "form"):
-            if n == 0:
-                raise Reject(m.MALFORMED)
-            if mode == BIND_MODE["manual"] and selected >= n:
-                raise Reject(m.MALFORMED)
-            for kind, i in streams:
-                if kind == BIND_STREAM["slot_console"] and (i not in slots or slots[i].mechanism == MECHANISM_NONE):
-                    raise Reject(m.MALFORMED)                      # a slot that is not there, or has no console
+            if kind == BIND_STREAM["slot_console"] and (i not in slots or slots[i].mechanism == MECHANISM_NONE):
+                raise Reject(m.MALFORMED)                          # a slot that is not there, or has no console
         if stage in (None, "fn"):
-            for kind, i in streams:
-                if kind == BIND_STREAM["fixture_uart"] and i not in self.names:
-                    raise Reject(m.UNKNOWN_FUNCTION)
+            if kind == BIND_STREAM["fixture_uart"] and i not in self.names:
+                raise Reject(m.UNKNOWN_FUNCTION)
         if stage in (None, "values"):
-            for kind, i in streams:
-                if kind not in (BIND_STREAM["slot_console"], BIND_STREAM["fixture_uart"]):
-                    raise Reject(m.UNSUPPORTED)                    # a kind a later revision may define (core §2.5)
+            if kind not in (BIND_STREAM["slot_console"], BIND_STREAM["fixture_uart"]):
+                raise Reject(m.UNSUPPORTED)                        # a kind the definition leaves unused (core §2.5)
             if port not in self.serial_ports:
                 raise Reject(m.UNSUPPORTED)                        # not a serial port (§1.2)
-            if mode not in BIND_MODE.values() or not self.bind_modes & (1 << mode):
+            if kind == BIND_STREAM["fixture_uart"] and self.names[i] != "oep.fixture.uart":
                 raise Reject(m.UNSUPPORTED)
-            for kind, i in streams:
-                if kind == BIND_STREAM["fixture_uart"] and self.names[i] != "oep.fixture.uart":
-                    raise Reject(m.UNSUPPORTED)
-        return Bind(port, mode, selected if mode == BIND_MODE["manual"] else 0, streams)
+        return Bind(port, (kind, i))
 
-    # ---- slots: automatic attach, the lock check, what uses a connection ------------------------
-    @staticmethod
-    def _lock_ok(s: Slot, tid: int | None) -> bool | None:
-        """True / False; None = the slot has a lock and there is no target_id to check."""
-        if s.lock is None:
-            return True
-        if tid is None:
-            return None
-        scheme, mask, value = s.lock
-        raw = struct.pack("<I", tid)
-        if scheme != 1 or len(mask) != len(raw):
-            return False
-        return bytes(a & b for a, b in zip(raw, mask)) == value
-
+    # ---- slots: automatic attach, what uses a connection ----------------------------------------
     def _bound(self, n: int) -> bool:
-        return any((BIND_STREAM["slot_console"], n) in b.streams for b in self.binds.values())
+        return any(b.stream == (BIND_STREAM["slot_console"], n) for b in self.binds.values())
 
     def _auto_attach(self, n: int) -> None:
+        """An at-boot slot's automatic attach (probe.config §3.1): method 0 on the slot's pins with its line settings,
+        never evicting a connection; the probe checks no target (a host does, with connections' tid)."""
         s = self.slots[n]
         rt = self.slot_rt[n]
         rt.last_try_ms = self.now()
@@ -3631,9 +3309,8 @@ class Endpoint:
         tg = self._target(s.wire_fn, s.pair)
         cid = self._conn_at(s.wire_fn, s.pair)
         if cid is None:
-            if not tg.answers:                                     # completed failed, status line
-                if not self._retry_with_reset(n):
-                    return
+            if not tg.answers:                                     # completed failed, status line: absent
+                return
             try:
                 speed = min(4_000_000, s.max_speed) if s.max_speed else 4_000_000   # the slot's line settings
                 cid = self._seat(s.wire_fn, s.pair, tg, speed, evict=False)   # automatic: never evicts
@@ -3641,39 +3318,7 @@ class Endpoint:
             except Reject:
                 return
             tg.havereset = False
-        c = self.conns[cid]
-        ok = self._lock_ok(s, c.tid)
-        rt.no_tid = ok is None
-        if ok is True:
-            c.users.add(("slot", n))
-            rt.mismatch_tid = None
-        else:
-            rt.mismatch_tid = c.tid                                # found, wrong chip (or no id): let go of it
-            if not c.users:
-                self._close_conn(cid, MARK["detach"])
-
-    def _retry_with_reset(self, n: int) -> bool:
-        """probe.config §3.1: after an automatic attach of a boot_reset slot failed with status line, once per boot and
-        only while no session has taken the lock since boot, the same attach again with the reset line (`nrst` by the
-        §1.3 search, usable for that wire's reset TLV: role 3, not disabled, not held by a plan or a connection), held
-        slot_retry_reset_hold_ms. -> True when the target answers after it."""
-        s, rt = self.slots[n], self.slot_rt[n]
-        if s.boot_reset != SLOT_BOOT_RESET["retry_with_reset"] or self.lock_taken or n in self.reset_retried:
-            return False
-        ch = self.line_for(s.name, "nrst")
-        if (ch is None or ch not in self.reset_channels.get(s.wire_fn, set()) or ch in self.disabled
-                or any(a[2] == ch for a in self.plan) or any(ch in c.pair for c in self.conns.values())):
-            return False
-        self.reset_retried.add(n)
-        rt.reset_at_ms = self.now()                                # the time it starts pulling the line
-        rt.last_try_ms = rt.reset_at_ms + RETRY_RESET_HOLD_MS      # the retry is an attempt too (§3.3), after the hold
-        self.slot_reset_log.append((n, ch, RETRY_RESET_HOLD_MS))
-        tg = self._target(s.wire_fn, s.pair)
-        if tg.resets_through(ch):
-            tg.silent_until_reset = False
-            if tg.present:
-                tg.halted, tg.dpc, tg.havereset = False, tg.reset_vector + 0x200, True   # method 0: running from reset
-        return tg.answers                                          # the bind selection stays (the probe's own attach)
+        self.conns[cid].users.add(("slot", n))
 
     def line_for(self, slot_name: str | None, name: str) -> int | None:
         """The channel of a line by the label convention (probe.config §1.3): the settings' label items, then the
@@ -3684,42 +3329,37 @@ class Endpoint:
         return cfgmod.line_from_labels(labels, n_slots, slot_name, name, list(self.static_labels.items()))
 
     def _refresh(self) -> None:
-        """Make what the slots use match the config: a bound slot rides any connection on its place (lock
-        permitting) with its console open; an at-boot slot keeps its automatic connection; nothing else."""
+        """Make what the slots use match the config: a bound slot rides any connection on its place with its console
+        open; an at-boot slot keeps its automatic connection; nothing else."""
         for sid, st in list(self.streams.items()):                 # a slot's share of a console: while bound, same place
             for u in [u for u in st.users if u != "host"]:
                 s = self.slots.get(u[1])
                 c = self.conns.get(st.conn)
                 if (s is None or c is None or (s.wire_fn, s.pair) != (c.fn, c.pair) or s.mechanism != st.mechanism
-                        or self._lock_ok(s, c.tid) is not True or not self._bound(u[1])):
+                        or not self._bound(u[1])):
                     self._drop_stream_user(sid, u, MARK_CLOSED["slot_changed"])
         for cid, c in list(self.conns.items()):
             for u in [u for u in c.users if u != "host"]:
                 s = self.slots.get(u[1])
-                if (s is None or (s.wire_fn, s.pair) != (c.fn, c.pair) or self._lock_ok(s, c.tid) is not True
+                if (s is None or (s.wire_fn, s.pair) != (c.fn, c.pair)
                         or not (s.attach == SLOT_ATTACH["at_boot"] or self._bound(u[1]))):
                     c.users.discard(u)
             if not c.users:
                 self._close_conn(cid, MARK["detach"])
         for n, s in self.slots.items():
             cid = self._conn_at(s.wire_fn, s.pair)
-            if cid is None or self._lock_ok(s, self.conns[cid].tid) is not True or not self._bound(n):
+            if cid is None or not self._bound(n):
                 continue
             if s.mechanism == MECHANISM_NONE:
                 continue                                           # no console on this slot
             self.conns[cid].users.add(("slot", n))
             try:
-                sid, existing = self._open_stream(cid, s.mechanism, ("slot", n))
+                self._open_stream(cid, s.mechanism, ("slot", n))
             except Reject:
                 continue                                           # another mechanism's stream is live there
-            if not existing:
-                for port, b in self.binds.items():
-                    key = (BIND_STREAM["slot_console"], n)
-                    if key in b.streams:
-                        self.flows[(port, key)] = Flow(sid, 0)
 
     def tick(self) -> None:
-        """Time passes: the lease, at-boot retries, mixed lines closed by quiet, the captures, port_speed's timers."""
+        """Time passes: the lease, at-boot retries, the captures, port_speed's timers."""
         self._lapse()
         self._speed_tick()
         self._console_poll()
@@ -3735,32 +3375,23 @@ class Endpoint:
                 self._refresh()
 
     def _slot_state(self, n: int) -> bytes:
-        s, rt = self.slots[n], self.slot_rt[n]
+        """slot(u8) state(u8: 0 connected, 1 absent) connection(u16, 0 none) last_try_at_ns(u64, all ones: never)
+        (probe.config §3.3)."""
+        rt = self.slot_rt[n]
+        s = self.slots[n]
         cid = self._conn_at(s.wire_fn, s.pair)
-        tid = self.conns[cid].tid if cid is not None else rt.mismatch_tid
-        if cid is not None:
-            ok = self._lock_ok(s, tid)
-            state = SLOT_STATE["connected"] if ok else (SLOT_STATE["no_target_id"] if ok is None
-                                                        else SLOT_STATE["lock_mismatch"])
-        else:
-            state = (SLOT_STATE["no_target_id"] if rt.no_tid else
-                     SLOT_STATE["lock_mismatch"] if rt.mismatch_tid is not None else SLOT_STATE["absent"])
+        state = SLOT_STATE["connected"] if cid is not None else SLOT_STATE["absent"]
         tried = NEVER_NS if rt.last_try_ms is None else self._clock_ns_of(rt.last_try_ms)   # when (the probe's clock)
-        reset_at = NEVER_NS if rt.reset_at_ms is None else self._clock_ns_of(rt.reset_at_ms)   # the retry with reset (§3.1)
-        raw = b"" if tid is None else struct.pack("<I", tid)
-        # slot state connection last_try_at_ns reset_at_ns tid_scheme tid_len tid (probe.config §3.3)
-        return struct.pack("<BBHQQBB", n, state, cid or 0, tried, reset_at, 1 if raw else 0, len(raw)) + raw
+        return struct.pack("<BBHQ", n, state, cid or 0, tried)
 
     def _bind_state(self, port: int) -> bytes:
+        """port(u8) flow(u8: 0 nothing to carry, 1 carrying, 2 held by a session) (probe.config §3.3)."""
         b = self.binds[port]
-        mixed = b.mode == BIND_MODE["mixed"]
-        selected = 0xFF if mixed else self.selected.get(port, 0)
         if port in self.held_ports and self.holder is not None:
             flow = BIND_FLOW["held"]
         else:
-            keys = b.streams if mixed else (b.streams[selected],)
-            flow = BIND_FLOW["streaming"] if any(self._stream_for(k)[1] is not None for k in keys) else BIND_FLOW["idle"]
-        return struct.pack("<BBBB", port, b.mode, selected, flow)
+            flow = BIND_FLOW["streaming"] if self._stream_for(b.stream)[1] is not None else BIND_FLOW["idle"]
+        return struct.pack("<BB", port, flow)
 
     # ---- serial ports: the raw bytes outside the frames (transports §4, probe.config §1.2) ----------
     def _stream_for(self, key: tuple[int, int]) -> tuple[object, Stream | None]:
@@ -3778,12 +3409,16 @@ class Endpoint:
 
 
     def _flow(self, port: int, key: tuple[int, int]) -> tuple[Flow, Stream | None]:
+        """The port's position in its bind's stream: from now when first seen; after an overflow, the oldest byte left
+        (probe.config §1.2)."""
         sid, s = self._stream_for(key)
         f = self.flows.get((port, key))
         if s is None:
             return f or Flow(), None
-        if f is None or f.sid != sid:
-            f = self.flows[(port, key)] = Flow(sid, s.end, last_ms=self.now())   # first seen: from now
+        if f is None:
+            f = self.flows[(port, key)] = Flow(sid, s.end)         # no position yet: from now
+        elif f.sid != sid:
+            f = self.flows[(port, key)] = Flow(sid, s.base)        # a stream that came after the bind: from its start
         if f.pos < s.base:
             f.pos = s.base                                         # overflowed past the port: the oldest left
         return f, s
@@ -3792,89 +3427,39 @@ class Endpoint:
         return self.holder is not None and port in self.held_ports
 
     def port_output(self, port: int, room: int | None = None) -> bytes:
-        """The raw bytes serial port `port` sends now by its bind (empty while a session holds it)."""
+        """The raw bytes serial port `port` sends now by its bind (none while a session holds it: the position stays)."""
         room = self.CHUNK if room is None else room
         b = self.binds.get(port)
         if b is None or self.port_held(port) or room <= 0:
             return b""
-        if b.mode != BIND_MODE["mixed"]:
-            f, s = self._flow(port, b.streams[self.selected.get(port, 0)])
-            if s is None:
-                return b""
-            out = bytes(s.data[f.pos - s.base:f.pos - s.base + room])
-            f.pos += len(out)
-            return out
-        pending = self.mixed_out.setdefault(port, bytearray())
-        now = self.now()
-        for key in b.streams:
-            f, s = self._flow(port, key)
-            if s is None:
-                continue
-            new = bytes(s.data[f.pos - s.base:])
-            f.pos += len(new)
-            if new:
-                f.line += new
-                f.last_ms = now
-            while True:
-                cut = f.line.find(b"\n")
-                if cut < 0 and len(f.line) < self.MIXED_LINE_MAX and not (f.line and now - f.last_ms >= self.MIXED_QUIET_MS):
-                    break
-                if not f.line:
-                    break
-                end = cut + 1 if cut >= 0 else min(len(f.line), self.MIXED_LINE_MAX)
-                line = bytes(f.line[:end])
-                del f.line[:end]
-                pending += b"[" + self._mixed_name(key).encode() + b"] " + line + (b"" if line.endswith(b"\n") else b"\n")
-        out = bytes(pending[:room])
-        del pending[:room]
+        f, s = self._flow(port, b.stream)
+        if s is None:
+            return b""
+        out = bytes(s.data[f.pos - s.base:f.pos - s.base + room])
+        f.pos += len(out)
         return out
 
-    def _mixed_name(self, key: tuple[int, int]) -> str:
-        kind, i = key
-        if kind == BIND_STREAM["slot_console"]:
-            return self.slots[i].name
-        rx = next((ch for fn, role, ch in self.plan if fn == i and role == 1), None)
-        label = None
-        if rx is not None:
-            label = self.static_labels.get(rx)
-            v = self.config.get((ITEM["label"], rx))
-            if v is not None:
-                label = v[2:].decode("utf-8", "replace")
-        if not label:
-            return f"uart{i}"
-        return "".join("_" if c == "]" or ord(c) < 0x20 else c for c in label)
-
     def port_input(self, port: int, data: bytes) -> None:
-        """Raw bytes that came in on serial port `port` outside any frame."""
+        """Raw bytes that came in on serial port `port` outside any frame: to the bind's stream's other end (a console
+        write, a fixture UART's TX)."""
         b = self.binds.get(port)
-        if b is None or self.port_held(port) or b.mode == BIND_MODE["mixed"] or not data:
+        if b is None or self.port_held(port) or not data:
             return
-        key = b.streams[self.selected.get(port, 0)]
-        sid, s = self._stream_for(key)
+        sid, s = self._stream_for(b.stream)
         if s is None:
             return
-        if key[0] == BIND_STREAM["fixture_uart"]:
-            self.uart_tx.setdefault(key[1], bytearray()).extend(data)
+        if b.stream[0] == BIND_STREAM["fixture_uart"]:
+            self.uart_tx.setdefault(b.stream[1], bytearray()).extend(data)
         else:
             s.written += data
 
     def _session_over(self) -> None:
-        """The session ended (end, lapse, force): the ports it held resume from its last host reset (or now); a port
-        off its boot speed goes back after the answer (oep-if-link §3)."""
+        """The session ended (end, lapse, force): the ports it held carry on from where they stopped (probe.config
+        §1.2: the oldest byte left after an overflow); a port off its boot speed goes back after the answer
+        (oep-if-link §3)."""
         if self.speed_state != "base":
             self.speed_pending = ("revert",)
-        for port in self.held_ports:
-            b = self.binds.get(port)
-            if b is None:
-                continue
-            for key in b.streams:
-                sid, s = self._stream_for(key)
-                if s is None:
-                    continue
-                rsid, pos = self.session_resets.get(key, (sid, s.end))
-                self.flows[(port, key)] = Flow(sid, pos if rsid == sid else s.end, last_ms=self.now())
         self.held_ports.clear()
-        self.session_resets.clear()
 
 
 SIMS = {"oep.probe.link": "link", "oep.probe.plan": "plan_op", "oep.probe.restart": "restart", "oep.wire.rvswd": "wire", "oep.wire.swio": "wire", "oep.target.riscv-dm": "dm",
@@ -3884,7 +3469,7 @@ SIMS = {"oep.probe.link": "link", "oep.probe.plan": "plan_op", "oep.probe.restar
 
 # A riscv-dm op whose exchanges got no answer from the wire: completed failed, status line, nothing done (debug §4)
 DM_LINE_FAILED = {_RV.op["dmi"]: struct.pack("<HBH", 0, LINE, 0), _RV.op["halt"]: bytes([LINE]),
-                  _RV.op["resume"]: bytes([LINE]), _RV.op["reset"]: struct.pack("<BBBI", LINE, 0, 1, 0),
+                  _RV.op["resume"]: bytes([LINE]), _RV.op["reset"]: struct.pack("<BBI", LINE, 0, 0),
                   _RV.op["step"]: struct.pack("<BBII", LINE, 0, 0, 0), _RV.op["read_block"]: struct.pack("<HB", 0, LINE),
                   _RV.op["write_block"]: struct.pack("<HB", 0, LINE),
-                  _RV.op["run"]: struct.pack("<BBIIB", LINE, RUN_STOPPED["not_halted"], 0, 0, 0)}
+                  _RV.op["run"]: struct.pack("<BBIIB", LINE, RUN_STOPPED["not_run"], 0, 0, 0)}

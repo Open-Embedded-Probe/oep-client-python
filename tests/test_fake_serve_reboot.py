@@ -165,3 +165,63 @@ def test_reboot_resets_what_a_probe_loses_and_applies_the_saved_settings_again()
         hst.keepalive()
     hst.open(3000)
     assert config.ProbeConfig(hst).items() == [config.Idle(channel=21, mode="pull-down")]
+
+
+# ---- `lose` on stdin: a connection's line lost for good (debug §2, P1) -------------------------------------------------
+
+def test_lose_closes_the_connection_its_streams_and_a_slot_attaches_again():
+    """Endpoint.lose (fake_serve's `lose`): the connection closes as lost - mark link-lost, then closed detail 4 on its
+    streams - and a request naming it is no_connection; an at-boot slot on its place attaches again by itself at its
+    next retry (a new connection) and its bound console comes back under the same stream number (console §2)."""
+    from oep_client import console, endpoint, fake, message as m, registry as reg
+
+    class Clock:
+        ms = 0
+
+        def __call__(self):
+            return self.ms
+
+    clock = Clock()
+    ep = endpoint.Endpoint(fake.p4_bench(), clock)
+    wire = 1
+    pair = ep.pairs[wire][0]
+    slot = struct.pack("<BHHHBIIBBB", 0, wire, *pair, reg.PROBE_CONFIG.enum["slot_attach"]["at_boot"], 100, 0, 0,
+                       2, 1) + b"s"
+    ep.load_config([m.tlv(config.ITEM["slot"], slot), m.tlv(config.ITEM["bind"], struct.pack("<BBH", 3, 1, 0))],
+                   saved=False)
+    (cid,) = ep.conns
+    (sid,) = ep.streams
+    hst = h.Host(lambda b: ep.handle(b, 1))
+    hst.open(3000)
+    dm = riscv.RiscvDm(hst, cid)
+    assert ep.lose(cid) == [cid] and cid not in ep.conns
+    s = ep.streams[sid]
+    kinds = [(k, d) for _, _, k, _, d in s.marks]
+    assert s.closed and kinds[-2:] == [(reg.COMMON.enum["mark_kind"]["link_lost"], 0),
+                                       (reg.COMMON.enum["mark_kind"]["closed"],
+                                        reg.COMMON.enum["mark_detail_closed"]["connection_closed"])]
+    with pytest.raises(h.NoConnection):
+        dm.halt()
+    clock.ms = 100                                                    # the slot's retry_ms
+    ep.tick()
+    (again,) = ep.conns
+    assert again != cid and not ep.streams[sid].closed               # a new connection, the console under its number
+    assert ep.stream_keys[(again, console.Console.DMSEQ)] == sid
+    assert ep.lose(999) == [] and ep.lose() == [again]               # an unknown number: none; no number: every one
+
+
+def test_lose_on_stdin_over_tcp():
+    proc, where = _serve("--tcp", "0", "--framing", "length", "--profile", "p4-bench")
+    try:
+        with socket.create_connection(("127.0.0.1", int(where[1])), timeout=5) as s:
+            hst = h.Host(_tcp_send(s))
+            hst.open(3000)
+            conn, _ = riscv.Wire(hst, "oep.wire.rvswd").attach(halt=False, pins=(2, 3))
+            assert _command(proc, f"lose {conn}") == f"fake_serve: lost connection(s) {conn}"
+            with pytest.raises(h.NoConnection):
+                riscv.RiscvDm(hst, conn).halt()
+            assert _command(proc, "lose") == "fake_serve: lost connection(s) none"
+            assert "want a connection number" in _command(proc, "lose x")
+    finally:
+        proc.stdin.close()
+        assert proc.wait(timeout=10) == 0

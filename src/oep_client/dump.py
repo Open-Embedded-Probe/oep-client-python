@@ -30,7 +30,7 @@ class Capabilities:
     missing: list[str] = field(default_factory=list)   # what core §1.2 requires and the probe did not give (C-10)
 
 
-_REQUIRED_CORE_TAGS = {reg.CORE.tlv["describe"][k]: k for k in ("unit_id", "transport", "max_op_ms", "discoverable")}
+_REQUIRED_CORE_TAGS = {reg.CORE.tlv["describe"][k]: k for k in ("unit_id", "transport", "max_op_ms")}
 _TRANSPORT_TAG = reg.CORE.tlv["describe"]["transport"]
 _RESTART = reg.PROBE_RESTART.name
 _RESTART_MAX_MS = reg.PROBE_RESTART.tlv["describe"]["restart_max_ms"]
@@ -42,9 +42,8 @@ CORE_NAME = "(core)"             # how fn 0 is shown: the core has no name (core
 def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, bytes]]) -> list[str]:
     """What every probe must give, as far as a lock-free look on one transport shows it (core §1.2, C-10; oep-spec
     docs/conformance.md section 1): confirm's answer carries TLV transport, naming an entry of fn 0's describe or 0xFF
-    (§7.1); fn 0's describe carries unit_id, transport, max_op_ms (§1.2, §7.5), discoverable (0 or 1, every probe
-    sends it, §7.5) and ops in core §7.4's one encoding with every op of §12 set (a probe whose fn 0 ops break the
-    encoding is not used). -> what is missing (empty: nothing seen missing). The bounds of confirm's values and of
+    (§7.1); fn 0's describe carries unit_id, transport, max_op_ms (§1.2, §7.5) and ops in core §7.4's form with every
+    op of §12 set (a probe whose fn 0 ops break the form is not used). -> what is missing (empty: nothing seen missing). The bounds of confirm's values and of
     max_op_ms are checked by the host itself (host.check_confirm, host.check_max_op_ms: the probe is not used)."""
     out = []
     have = {tag & 0x7F for tag, _ in core_describe}
@@ -66,7 +65,7 @@ def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, byte
     else:
         bad = next((catalog.check_ops(v) for v in values if catalog.check_ops(v)), "")
         if bad:
-            out.append(f"describe of fn 0: ops in core §7.4's encoding ({bad}; the probe is not used)")
+            out.append(f"describe of fn 0: ops in core §7.4's form ({bad}; the probe is not used)")
         else:
             declared = set().union(*(catalog.unpack_ops(v) for v in values))
             lacking = [k for k, op in reg.CORE.op.items() if op not in declared]
@@ -90,7 +89,7 @@ def _describe_all(call, fn: int, caps: Capabilities) -> bytes:
 
 def collect(call, prefix: str = "", exact: bool = False, confirm: tuple[int, int] = (0, 1)) -> Capabilities:
     """confirm, then fn 0's describe (the core: no name, never listed, core §7.2) and every listed interface's (the
-    ones under `prefix`). `confirm`: the revision range the confirm asks for - a host that confirmed already passes the
+    ones under `prefix` on label boundaries, `exact`: that name only - list itself returns every one, core §7.2). `confirm`: the revision range the confirm asks for - a host that confirmed already passes the
     revision in use (core §7.1, C-15: every later confirm on a transport asks for it alone). fn 0 is shown first, as
     an Offer with fn 0 and no name."""
     p = call(CORE_FN, OP_CONFIRM, m.CONFIRM_REQUEST + bytes(confirm))   # v0 and v1 both answer (0..1)
@@ -102,11 +101,13 @@ def collect(call, prefix: str = "", exact: bool = False, confirm: tuple[int, int
     caps = Capabilities(revision, max_frame, requests={"confirm": 1, "list": 0, "describe": 0})
     entries: list[catalog.ListEntry] = []
     while True:
-        total, page = catalog.unpack_list_result(call(CORE_FN, OP_LIST, catalog.pack_list_request(prefix, exact, len(entries))))
+        total, page = catalog.unpack_list_result(call(CORE_FN, OP_LIST, catalog.pack_list_request(len(entries))))
         caps.requests["list"] += 1
         entries += page
         if len(entries) >= total or not page:
             break
+    if prefix:
+        entries = [e for e in entries if e.fn == CORE_FN or names.matches(e.name, prefix, exact)]
     if revision >= 1:
         if any(e.fn == CORE_FN for e in entries):
             caps.missing.append("list: an entry with fn 0 (the core has no name and is never listed, core §7.2)")
@@ -176,8 +177,6 @@ def describe_offer(o: Offer) -> dict:
         out["ops"] = interfaces.op_names(name, d.ops)
     if d.features is not None:
         out["features"] = _features(d.features, known.features if known else {})
-    if d.implementation is not None:
-        out["implementation"] = catalog.IMPLEMENTATIONS.get(d.implementation, str(d.implementation))
     specific = {}
     for tag, value in d.specific:
         label, decode = (known.tags.get(tag & 0x7F) if known else None) or (f"tag 0x{tag:02x}", lambda v: v.hex())
@@ -188,7 +187,7 @@ def describe_offer(o: Offer) -> dict:
     if d.unknown_critical:
         out["unusable"] = f"unknown critical tags {[hex(t) for t in d.unknown_critical]}"
     if d.ops_invalid:
-        out["unusable"] = f"ops outside core §7.4's encoding: {d.ops_invalid}"
+        out["unusable"] = f"ops outside core §7.4: {d.ops_invalid}"
     return out
 
 
@@ -239,8 +238,6 @@ def to_text(caps: Capabilities) -> str:
                 lines.append(f"{pad}  ops: " + (", ".join(r["ops"]) or "none"))
             if r.get("features"):
                 lines.append(f"{pad}  features: " + ", ".join(r["features"]))
-            if "implementation" in r:
-                lines.append(f"{pad}  implementation: {r['implementation']}")
             for k, v in r.get("declares", {}).items():
                 lines.append(f"{pad}  {k}: {v}")
             if "unusable" in r:

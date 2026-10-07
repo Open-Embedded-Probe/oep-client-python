@@ -1,15 +1,15 @@
 """oep-spec's test vectors (tests/vectors/*.json, copied here by tools/sync_registry.sh, never edited) against this
 client's own code: COBS and serial frames (cobs), headers and TLVs (message), confirm (host and the fake), discovery
 (list, describe and the header refusals of the smallest probe: the fake's answers and the host's reading), the CRCs,
-probe.config's canonical form and hash (config and the fake), the refusals, the session scenarios (sessions.json:
+the refusals, the session scenarios (sessions.json:
 every step to the fake in order) and the per-op vectors (ops.json: the fake in the state each case names, and the
 client's request and reading of the answer where it has the op) - each request sent to the fake probe with the
 vector's fn numbers, its answer compared byte for byte. Where a vector and this code disagree, the spec's text decides
-(core §0 rule 4) and the vector is the one the spec corrects."""
+(core §0 rule 4) and the vector is the one the spec corrects: `TEXT_OVER_VECTOR` names each such case, with what the
+text says, and the test checks the fake against the text."""
 
 import json
 import struct
-import zlib
 from pathlib import Path
 
 import pytest
@@ -85,11 +85,7 @@ def test_answer_headers(case):
 @pytest.mark.parametrize("case", load("headers.json")["tlvs"], ids=lambda c: c["name"])
 def test_tlvs(case):
     value = hx(case["value_hex"]) if "value_hex" in case else bytes([case["value_byte"]]) * case["value_len"]
-    if case["tag"] & 0x7F == m.TAG_IGNORED:                            # the probe's own list: a host never sends it
-        assert endpoint.ignored_tlv(list(value)).hex() == case["tlv_hex"]
-        assert m.Tail.parse(hx(case["tlv_hex"])).ignored == list(value)
-    else:
-        assert m.tlv(case["tag"] & 0x7F, value, critical=bool(case["tag"] & 0x80)).hex() == case["tlv_hex"]
+    assert m.tlv(case["tag"] & 0x7F, value, critical=bool(case["tag"] & 0x80)).hex() == case["tlv_hex"]
     assert m.split_tlvs(hx(case["tlv_hex"])) == [(case["tag"], value)]
 
 
@@ -99,15 +95,14 @@ def test_tlvs(case):
                          ids=lambda c: c["name"])
 def test_crc_check_values(case):
     data = hx(case["input_hex"])
-    got = cobs.crc16(data) if case["algorithm"] == "crc16-ccitt-false" else zlib.crc32(data)   # core §5.2: IEEE
-    assert got == case["crc"]
+    assert case["algorithm"] == "crc16-ccitt-false" and cobs.crc16(data) == case["crc"]   # transports §1
 
 
 def test_the_dmseq_crc8_vectors_have_no_counterpart_here():
     """The dmseq CRC-8 and DATA0 words (target-console-dmseq) are the probe's and the target's: this client reads a
     console's bytes, it never decodes dmseq words. Listed so a new algorithm in checks.json is not missed."""
     algos = {c["algorithm"] for c in load("checks.json")["cases"]}
-    assert algos == {"crc16-ccitt-false", "crc32-ieee", "crc8-dmseq"}
+    assert algos == {"crc16-ccitt-false", "crc8-dmseq"}                 # no CRC-32 any more (core §5.2: corr only)
 
 
 # ---- confirm (core §7.1) ------------------------------------------------------------------------------------------
@@ -116,7 +111,7 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None) -> f
     """A fake probe whose fn numbers are a vector's: fn 0 with one UART bridge (index 0), then each named interface
     with channels 0-15 for its roles (the wire on pins 1 / 2; gpio without drive_levels). `ops`: fn -> the ops its
     ops tag sets instead of every op of its table (core §1.2, §7.4)."""
-    core = fake._core("1.0.0", "vectors", "0123456789ab", 16, [], "", {},
+    core = fake._core("1.0.0", "vectors", "0123456789ab", 16, {},
                       fake._transports([(fake.TRANSPORT["uart_bridge"], 0xFF)]))
     chans = list(range(16))
     offered = [core]
@@ -144,12 +139,12 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None) -> f
             o = fake._config(fn, 0, slots_max=2, storage=0)            # no storage: save / erase not in its ops
         elif name == "oep.fixture.logic":
             o = fake.Offered(fn, 0, name, fake._roles({k: chans for k in range(4)})
-                             + fake._capture_decl(["one_shot"], 8, [8], 4096, 1, 480))
+                             + fake._capture_decl(["one_shot"], 8, 4096, 1), inner=fake._capture_inner([8], 1, 480))
         else:
             raise AssertionError(f"a vector names {name}: add it here")
         if ops and fn in ops:
             o = fake.Offered(o.fn, o.instance, o.name, (catalog.ops_tlv(ops[fn]),) + tuple(
-                t for t in o.tlvs if t[0] != catalog.OPS))
+                t for t in o.tlvs if t[0] != catalog.OPS), inner=o.inner)
         offered.append(o)
     return fake.FakeProbe("vectors", max_frame, offered)
 
@@ -198,14 +193,12 @@ DISCOVERY = load("discovery.json")
 
 def smallest_probe() -> endpoint.Endpoint:
     """The vectors' smallest probe (discovery.json about): no interface, fn 0 whose ops are the core's eight (all
-    mandatory, core §1.2), one UART
-    bridge (index 0, interface 0xFF), unit_id "a1b2c3d4", discoverable 0, max_op_ms 1000 - its describe in that order
-    (ops first), nothing else."""
+    mandatory, core §1.2), one UART bridge (index 0, interface 0xFF), unit_id "a1b2c3d4", max_op_ms 1000 - its
+    describe in that order (ops first), nothing else."""
     t = reg.CORE.tlv["describe"]
     core = fake.Offered(0, 0, fake.CORE_NAME, (catalog.ops_tlv(reg.CORE.op[k] for k in fake.CORE_REQUIRED),
                                            catalog.text(t["unit_id"], "a1b2c3d4"),
                                            catalog.tlv(t["transport"], bytes([0, fake.TRANSPORT["uart_bridge"], 0xFF])),
-                                           catalog.u8(t["discoverable"], 0),
                                            catalog.u32(t["max_op_ms"], 1000)))
     return endpoint.Endpoint(fake.FakeProbe("smallest", 64, [core]), Clock())
 
@@ -224,10 +217,8 @@ def test_discovery_from_the_fake_byte_for_byte():
 @pytest.mark.parametrize("case", DISCOVERY["exchanges"], ids=lambda c: c["name"])
 def test_discovery_requests_as_the_host_sends_them(case):
     q = case["request"]
-    if "prefix" in q:
-        payload = catalog.pack_list_request(q["prefix"], bool(q["flags"] & catalog.LIST_EXACT), q["first"])
-        assert q["flags"] == (catalog.LIST_EXACT if q["flags"] & catalog.LIST_EXACT else 0)
-        op = m.OP_LIST
+    if "fn" not in q:                                                   # list: first(u16) alone (core §7.2)
+        payload, op = catalog.pack_list_request(q["first"]), m.OP_LIST
     else:
         payload, op = catalog.pack_describe_request(q["fn"], q["first"]), m.OP_DESCRIBE
     req = m.Request(q["corr"], 0, op, payload)
@@ -275,27 +266,7 @@ def test_discovery_refusals_as_the_host_reads_them(case):
     assert res.detail == reg.REJECT_REASONS[case["answer"]]
 
 
-# ---- probe.config's canonical form and hash (probe-config §2) -------------------------------------------------------
-
-@pytest.mark.parametrize("case", load("probe_config_hash.json")["cases"], ids=lambda c: c["name"])
-def test_probe_config_canonical_form_and_hash(case):
-    items = [(it["tag"], hx(it["value_hex"])) for it in case["items_sent"]]
-    assert config.canonical(items).hex() == case["canonical_hex"]
-    assert config.hash_of(items) == case["hash"]
-    held: dict = {}                                                    # the fake's own: keys as a set keeps them
-    item = reg.PROBE_CONFIG.tlv["item"]
-    for tag, value in items:
-        tag &= 0x7F
-        if tag == item["plan"]:
-            held.setdefault((tag, struct.unpack_from("<H", value)[0]), []).append(value)
-        else:
-            held[(tag, endpoint.Endpoint._key_len(tag) == 1 and value[0] or struct.unpack_from("<H", value)[0])] = value
-    assert b"".join(endpoint.Endpoint._canonical(held)).hex() == case["canonical_hex"]
-    assert [(t, v.hex()) for t, v in m.split_tlvs(hx(case["canonical_hex"]))] == [
-        (it["tag"], it["value_hex"]) for it in case["canonical_order"]]
-
-
-# ---- refusals and the ignored list (core §4.3, §2.3) ----------------------------------------------------------------
+# ---- refusals and an ignored unknown TLV (core §4.3, §2.3) -------------------------------------------------------------
 
 REFUSALS = load("refusals.json")
 SESSION = 0x11223344                                                    # the vectors' lock holder (refusals.json about)
@@ -312,7 +283,7 @@ def refusal_endpoint() -> endpoint.Endpoint:
     gpio = next((int(k) for k, v in fns.items() if v == "oep.fixture.gpio"), None)
     if gpio is not None:                                                # "channel 3 is in fn 2's plan"
         hst._corr = 0
-        ep.handle(m.Request(1, ep.fns[fake.PLAN], PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", gpio, 1, 3), critical=True),
+        ep.handle(m.Request(1, ep.fns[fake.PLAN], PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", gpio, 1, 3)),
                             SESSION).pack(), 0)
     return ep
 
@@ -330,10 +301,8 @@ def test_refusals_as_the_host_reads_them(case):
     res = m.Result.unpack(hx(case["answer_hex"]))
     want = case["answer"]
     if want == "completed success":
-        assert res.succeeded
-        tail = m.Tail.parse(res.payload)                                # gpio set answers no fixed part (fixture §1)
-        assert tail.ignored and not tail.more_ignored
-        return
+        assert res.succeeded and res.payload == b""                      # gpio set answers no fixed part (fixture §1);
+        return                                                          # the unknown TLV is ignored without a trace
     assert want in ("malformed", "unsupported"), f"a new kind of answer in refusals.json: {want}"
     assert res.resolution == m.REJECTED and m.REJECT_NAMES[res.detail].split()[0] == want
     err = h.rejection(res)
@@ -488,6 +457,9 @@ def setup_case(case):
         if "connection 1" in state:
             attach(ep, wire)
         ep._target(wire, (1, 2)).dmi[0x11] = 0x00400382
+        if "writing a0 fails" in state:
+            tg = ep._target(wire, (1, 2))
+            tg.halted, tg.fail_regs = True, {0x100A}                    # the hart halted; a0's write gets no answer
     elif name.startswith("console marks"):
         stream_two(ep, marks=[(0, 0, reg.COMMON.enum["mark_kind"]["attach"], 1_000_000, 0)])
     elif name.startswith("console streams"):
@@ -497,8 +469,8 @@ def setup_case(case):
     elif name.startswith("probe.config state"):
         clock.t = 1                                                    # the slot's last try at 1 ms
         ep._target(wire, (1, 2)).target_id = 0x00203500
-        slot = struct.pack("<BHHHBBIIBBB", 0, wire, 1, 2, 1, 0, 0, 0, 0, 2, 1) + b"s" + b"\x00"
-        ep.load_config([m.tlv(0x04, slot), m.tlv(0x05, struct.pack("<BBBBBH", 0, 0, 0, 1, 1, 0))], saved=False)
+        slot = struct.pack("<BHHHBIIBBB", 0, wire, 1, 2, 1, 0, 0, 0, 2, 1) + b"s"   # at boot, dmseq, name "s"
+        ep.load_config([m.tlv(0x04, slot), m.tlv(0x05, struct.pack("<BBH", 0, 1, 0))], saved=False)   # port 0: slot 0
     elif name.startswith("probe.config"):
         held(ep)
     elif name.startswith("logic"):
@@ -513,10 +485,19 @@ def setup_case(case):
     return ep
 
 
+# Vectors the spec's text corrects (core §0 rule 4): name -> what the text says; the fake answers as the text does.
+# Empty now: "rvswd scan: count > 0 with skip" (debug §1, b9b30ad) was corrected in oep-spec 85170c4.
+TEXT_OVER_VECTOR: dict[str, str] = {}
+
+
 @pytest.mark.parametrize("case", OPS, ids=lambda c: c["name"])
 def test_ops_vectors_from_the_fake_byte_for_byte(case):
     ep = setup_case(case)
     out = ep.handle(hx(case["request_hex"]), 0)
+    if case["name"] in TEXT_OVER_VECTOR:
+        res = m.Result.unpack(out)
+        assert res.succeeded and res.payload[0] == 1, TEXT_OVER_VECTOR[case["name"]]   # tried 1: skip not looked at
+        return
     assert out is not None and out.hex() == case["answer_hex"]
 
 
@@ -587,13 +568,13 @@ def _on_client(case):
         hst, sent = client(case)
         n = struct.unpack_from("<I", m.Request.unpack(hx(case["request_hex"])).payload)[0]
         data = core.link_source_data(hst.call(1, core.LINK_SOURCE, core.link_source_request(n), locked=False).payload)
-        assert data == bytes(k & 0xFF for k in range(min(n, core.link_size(1024))))   # max_frame - 26 (§2)
+        assert data == bytes(k & 0xFF for k in range(min(n, core.link_size(1024))))   # max_frame - 7 (§2)
         return sent
     if name.startswith("link sink") or name.startswith("link port_speed"):
         hst, sent = client(case, S if "port_speed" in name else None)
         if "port_speed" in name:
             with pytest.raises(h.Rejected) as e:
-                hst.call(1, core.LINK_PORT_SPEED, struct.pack("<BIBHI", 0, 921600, 0, 2000, 3000))
+                hst.call(1, core.LINK_PORT_SPEED, struct.pack("<IBH", 921600, 0, 2000))   # baud step verify_ms (§3)
             assert type(e.value) is h.Rejected and e.value.result.detail == m.UNKNOWN_OPERATION   # WireSkein's check
             return sent
         body = m.Request.unpack(hx(case["request_hex"])).payload
@@ -632,7 +613,7 @@ def _on_client(case):
             assert info == []
         return sent
     if name.startswith("rvswd scan"):
-        if "count 0" in name or "with skip" in name:
+        if "count 0" in name or "skip" in name:
             return None                                                 # skip: the client's own loop sends it
         hst, sent = client(case, S)
         (found,) = rv.Wire(hst, "oep.wire.rvswd").scan([(1, 2)], max_speed=None)
@@ -653,6 +634,11 @@ def _on_client(case):
             with pytest.raises(h.Rejected) as e:
                 dm.run(0x20000000, [], timeout_ms=100, outs=())
             assert type(e.value) is h.Rejected and e.value.result.detail == m.UNKNOWN_OPERATION
+        elif "preparation fails" in name:                               # stopped 3: not run, still halted (§4.4)
+            with pytest.raises(rv.TargetError) as e:
+                dm.run(0x20000000, [(0x100A, 7)], timeout_ms=100, outs=())
+            run = rv.RiscvDm.run_result(e.value.result)
+            assert run.not_run and not run.not_halted and e.value.status == reg.STATUS["line"]
         elif "n = 0" in name:
             assert dm.dmi([]) == (0, [])
         else:
@@ -687,9 +673,8 @@ def _on_client(case):
         (slot,) = st.slots
         (bind,) = st.binds
         assert (st.storage, st.saved_hash, st.unreadable) == ("none", 0, None)
-        assert (slot.slot, slot.state, slot.connection, slot.last_try_at_ns, slot.reset_at_ns, slot.target_id) == \
-            (0, "connected", 1, 1_000_000, None, struct.pack("<I", 0x00203500))
-        assert (bind.port, bind.mode, bind.selected, bind.flow) == (0, "last-reset", 0, "streaming")
+        assert (slot.slot, slot.state, slot.connection, slot.last_try_at_ns) == (0, "connected", 1, 1_000_000)
+        assert (bind.port, bind.flow) == (0, "streaming")
         return sent
     if name.startswith("logic segments"):
         hst, sent = client(case)
@@ -714,13 +699,13 @@ def test_ops_vectors_as_the_client_sends_and_reads_them(case):
 
 @pytest.mark.parametrize("case", load("ops_encoding.json")["cases"], ids=lambda c: c["name"])
 def test_ops_encoding_as_the_host_reads_it(case):
-    """A valid value decodes to the case's set and is the one encoding of it (pack_ops gives the same bytes); an
-    invalid one is refused (check_ops says why, unpack_ops raises) - the host does not use that fn."""
+    """A valid value decodes to the case's set (one set may have several values; pack_ops gives one that decodes to the
+    same set); an invalid one is refused (check_ops says why, unpack_ops raises) - the host does not use that fn."""
     value = hx(case["value_hex"])
     if case["valid"]:
         assert catalog.check_ops(value) == ""
         assert sorted(catalog.unpack_ops(value)) == case["ops"]
-        assert catalog.pack_ops(case["ops"]) == value
+        assert sorted(catalog.unpack_ops(catalog.pack_ops(case["ops"]))) == case["ops"]
         assert catalog.decode_description(catalog.tlv(catalog.OPS, value)).ops == set(case["ops"])
     else:
         assert catalog.check_ops(value)
@@ -730,8 +715,8 @@ def test_ops_encoding_as_the_host_reads_it(case):
         assert d.ops is None and d.ops_invalid
 
 
-def test_every_ops_in_the_fakes_and_the_vectors_is_canonical():
-    """Every describe the fake's profiles give, and the discovery vectors' ops, keep core §7.4's one encoding."""
+def test_every_ops_in_the_fakes_and_the_vectors_is_valid():
+    """Every describe the fake's profiles give, and the discovery vectors' ops, keep core §7.4's form."""
     for make in fake.PROFILES.values():
         ep = endpoint.Endpoint(make(), Clock())
         for fn in ep.names:

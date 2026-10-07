@@ -4,7 +4,7 @@
   oep config show <probe>                 (the settings and what the probe declares; lock-free)
   oep config state <probe>                (the live slot / bind / storage state; lock-free)
   oep config slot <probe> --name x035 --wire rvswd --pins 2,54 --attach at-boot --retry 1 --mechanism dmseq
-  oep config bind <probe> --port 1 --mode last-reset --stream slot:x035
+  oep config bind <probe> --port 1 --stream slot:x035      (the one stream a serial port carries)
   oep config plan <probe> oep.fixture.uart#1 rx=48 tx=49       (the fn's whole plan; fn number or name#instance)
   oep config uart <probe> oep.fixture.uart#1 115200 --format 8N1
   oep config disable <probe> 3 4           (channels the probe never uses or touches; remove disable CH re-enables)
@@ -305,17 +305,11 @@ def _config_parser(sub) -> None:
                       help="the line's ceiling in Hz for the probe's own attach (0: none); the target's, e.g. 1000000")
     slot.add_argument("--idle-clock", choices=sorted(config.IDLE_CLOCK), default="high",
                       help="rvswd: SWCLK while the line rests (the target's: low on CH32L103 / V203)")
-    slot.add_argument("--lock", help="MASK:VALUE (hex u32) the target_id (WCH DMI 0x7F) must match, e.g. ffffff0f:035e0600")
-    slot.add_argument("--boot-reset", action="store_true",
-                      help="at-boot: when the automatic attach gets no answer, try once more with the slot's nrst line "
-                           "(label <name>.nrst; before any session took the lock this boot)")
     slot.add_argument("--save", action="store_true", help="save after the change")
-    bind = cs.add_parser("bind", help="what a serial port carries")
+    bind = cs.add_parser("bind", help="the one stream a serial port carries (set it again to change it)")
     bind.add_argument("probe")
     bind.add_argument("--port", type=int, required=True, help="the serial port (its transport index, see show)")
-    bind.add_argument("--mode", choices=sorted(config.MODE), default="last-reset")
-    bind.add_argument("--stream", action="append", required=True, help="slot:NAME, slot:N or uart:FN (repeatable)")
-    bind.add_argument("--select", type=int, default=0, help="manual: the stream it carries (index in --stream)")
+    bind.add_argument("--stream", required=True, help="slot:NAME, slot:N or uart:FN")
     bind.add_argument("--save", action="store_true")
     plan = cs.add_parser("plan", help="the pins an interface keeps (its whole plan, kept as a setting)")
     plan.add_argument("probe")
@@ -333,7 +327,7 @@ def _config_parser(sub) -> None:
     idle.add_argument("mode", choices=sorted(config.IDLE))
     drive = idle.add_mutually_exclusive_group()
     drive.add_argument("--drive-ma", type=int, help="output modes: the strongest drive level of about this many mA or "
-                                                    "less (the levels: the gpio's describe drive_levels)")
+                                                    "less, picked here from the gpio's describe drive_levels")
     drive.add_argument("--drive-level", type=int, help="output modes: a drive level number of this probe")
     idle.add_argument("--save", action="store_true")
     dis = cs.add_parser("disable", help="channels the probe never uses or touches (not on this board)")
@@ -423,7 +417,10 @@ def _change(hst, cfg, items, save: bool) -> None:
         h = cfg.set(items)
         print(f"set: hash 0x{h:08x}")
         if save:
-            print(f"saved: hash 0x{cfg.save():08x}")
+            if cfg.needs_save():
+                print(f"saved: hash 0x{cfg.save():08x}")
+            else:
+                print("saved already (storage_hash is the settings' hash): not written")
     finally:
         hst.end()
 
@@ -437,23 +434,15 @@ def _config(args) -> int:
         if args.action == "state":
             return _state(cfg, args.json)
         if args.action == "slot":
-            if args.boot_reset and args.attach != "at-boot":
-                raise SystemExit("--boot-reset goes with --attach at-boot")
             fn = _wire_fn(hst, args.wire)
             args.wire = args.wire or str(fn)
-            lock = None
-            if args.lock:
-                mask, _, value = args.lock.partition(":")
-                lock = (1, struct.pack("<I", int(mask, 16)), struct.pack("<I", int(value, 16)))
             it = config.Slot(slot=args.slot, wire_fn=fn, pins=_pins(hst, fn, args.pins, args.wire), name=args.name,
-                             attach=args.attach, retry_s=args.retry, mechanism=args.mechanism, lock=lock,
-                             max_speed=args.max_speed, idle_clock=args.idle_clock, boot_reset=args.boot_reset)
+                             attach=args.attach, retry_s=args.retry, mechanism=args.mechanism,
+                             max_speed=args.max_speed, idle_clock=args.idle_clock)
             _change(hst, cfg, [it], args.save)
         elif args.action == "bind":
             slots = {it.name: it.slot for it in cfg.items() if isinstance(it, config.Slot)}
-            it = config.Bind(port=args.port, mode=args.mode, streams=[_stream(s, slots) for s in args.stream],
-                             selected=args.select)
-            _change(hst, cfg, [it], args.save)
+            _change(hst, cfg, [config.Bind(port=args.port, stream=_stream(args.stream, slots))], args.save)
         elif args.action == "plan":
             fn, roles = _plan_fn(hst, args.fn)
             items = []
@@ -478,9 +467,13 @@ def _config(args) -> int:
         elif args.action == "label":
             _change(hst, cfg, [config.Label(channel=args.channel, text=args.text)], args.save)
         elif args.action == "idle":
-            from .fixture import Drive
-            drive = (Drive.max_ma(args.drive_ma) if args.drive_ma is not None else
-                     Drive.level(args.drive_level) if args.drive_level is not None else None)
+            from .fixture import Drive, Gpio
+            drive = Drive.level(args.drive_level) if args.drive_level is not None else None
+            if args.drive_ma is not None:
+                levels = Gpio(hst).drive_levels()
+                if levels is None:
+                    raise SystemExit("--drive-ma: this probe declares no drive_levels (its strength cannot be chosen)")
+                drive = levels.at_most(args.drive_ma)
             if drive is not None and args.mode not in ("output-low", "output-high"):
                 raise SystemExit(f"--drive-ma / --drive-level go with output-low / output-high, not {args.mode}")
             _change(hst, cfg, [config.Idle(channel=args.channel, mode=args.mode, drive=drive)], args.save)
@@ -526,12 +519,26 @@ def _state(cfg, as_json: bool) -> int:
     print(f"storage: {st.storage}{why}, saved hash 0x{st.saved_hash:08x}")
     for s in st.slots:
         print(f"  slot {s.slot}: {s.state}" + (f", connection {s.connection}" if s.connection else "")
-              + (f", tried at {s.last_try_at_ns / 1e9:.3f} s" if s.last_try_at_ns is not None else "")
-              + (f", target_id {s.target_id[::-1].hex()}" if s.target_id else "")
-              + (f", reset retried at {s.reset_at_ns / 1e9:.3f} s" if s.reset_at_ns is not None else ""))
+              + (f", tried at {s.last_try_at_ns / 1e9:.3f} s" if s.last_try_at_ns is not None else ""))
     for b in st.binds:
-        print(f"  port {b.port}: {b.mode}, {b.flow}" + (f", carrying {b.selected}" if b.selected is not None else ""))
+        print(f"  port {b.port}: {b.flow}")
     return 0
+
+
+def _tids(hst) -> dict[int, str]:
+    """connection -> its target_id as hex, from every wire's connections (the slot's target is the host's to check,
+    probe.config §1.1, debug §2.1); best effort."""
+    from . import riscv
+    out = {}
+    for e in core.list_entries(hst):
+        if e.name in ("oep.wire.rvswd", "oep.wire.swio"):
+            try:
+                for c in riscv.Wire(hst, e.name).connections():
+                    if c.target_id:
+                        out[c.connection] = c.target_id[1][::-1].hex()
+            except host.OepError:
+                pass
+    return out
 
 
 def _show(hst, cfg, as_json: bool) -> int:
@@ -550,6 +557,7 @@ def _show(hst, cfg, as_json: bool) -> int:
     print(f"storage: {st.storage}{why} ({decl.storage_bytes} bytes), saved hash 0x{st.saved_hash:08x}; now 0x{h:08x}")
     print("transports: " + ", ".join(f"{i} {k}" for i, k in kinds.items()))
     by_slot = {s.slot: s for s in st.slots}
+    tids = _tids(hst) if any(s.connection for s in st.slots) else {}
     print(f"slots (up to {decl.slots_max}):")
     for it in items:
         if isinstance(it, config.Slot):
@@ -557,25 +565,22 @@ def _show(hst, cfg, as_json: bool) -> int:
             pins = f"{it.pins[0]}" if it.pins[1] == 0xFFFF else f"{it.pins[0]},{it.pins[1]}"
             retry = f" retry {it.retry_s:g} s" if it.attach == "at-boot" else ""
             retry += (f" max {it.max_speed} Hz" if it.max_speed else "") + (" idle-low" if it.idle_clock == "low" else "")
-            retry += " boot-reset" if it.boot_reset else ""
-            lock = (f" lock {int.from_bytes(it.lock[1], 'little'):08x}:{int.from_bytes(it.lock[2], 'little'):08x}"
-                    if it.lock else "")
             live = ""
             if s:
                 tried = "never tried" if s.last_try_at_ns is None else f"tried at {s.last_try_at_ns / 1e9:.3f} s"
-                tid = f" target_id {s.target_id[::-1].hex()}" if s.target_id else ""
+                tid = f" target_id {tids[s.connection]}" if s.connection in tids else ""
                 live = f"  -> {s.state}" + (f" (connection {s.connection})" if s.connection else f" ({tried})") + tid
-            print(f"  {it.slot} {it.name}: fn {it.wire_fn} pins {pins} {it.attach}{retry} {it.mechanism}{lock}{live}")
+            print(f"  {it.slot} {it.name}: fn {it.wire_fn} pins {pins} {it.attach}{retry} {it.mechanism}{live}")
     by_port = {b.port: b for b in st.binds}
-    print(f"binds (modes: {', '.join(decl.bind_modes) or '-'}):")
+    print("binds:")
     names = {it.slot: it.name for it in items if isinstance(it, config.Slot)}
     for it in items:
         if isinstance(it, config.Bind):
             b = by_port.get(it.port)
-            streams = ", ".join(f"slot:{names.get(i, i)}" if k == "slot" else f"{k}:{i}" for k, i in it.streams)
-            sel = f" selected {it.selected}" if it.mode == "manual" else ""
-            live = f"  -> {b.flow}" + (f", carrying {b.selected}" if b and b.selected is not None else "") if b else ""
-            print(f"  port {it.port} ({kinds.get(it.port, '?')}): {it.mode} [{streams}]{sel}{live}")
+            k, i = it.stream
+            stream = f"slot:{names.get(i, i)}" if k == "slot" else f"{k}:{i}"
+            live = f"  -> {b.flow}" if b else ""
+            print(f"  port {it.port} ({kinds.get(it.port, '?')}): {stream}{live}")
     for it in items:
         if not isinstance(it, (config.Slot, config.Bind)):
             print(f"  {it}")

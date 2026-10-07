@@ -1,7 +1,7 @@
 """oep-spec 9ed53e7 / 3cc50c8 against the fake: describe of an fn not offered is unknown_function (core §4.3), unset of
-an undeclared item tag is unsupported with the tag as received (probe.config §2), the retry with reset counts in
-last_try_at_ns (§3.3), and an idle change takes effect at once on a free channel and at the next release on a held one
-(probe.config §1: the level and the drive)."""
+an undeclared item tag is unsupported with the tag as received (probe.config §2), last_try_at_ns follows the at-boot
+slot's plain retries (§3.3; oep-spec 0f455a0 has no retry with reset), and an idle change takes effect at once on a
+free channel and at the next release on a held one (probe.config §1: the level and the drive)."""
 
 import struct
 
@@ -10,7 +10,7 @@ import pytest
 from oep_client import config, core, endpoint, fake, fixture, host as h, message as m, riscv
 from oep_client.fixture import Drive
 
-from test_drive_and_boot_reset import NRST, V003_PAIR, items, slot_state, v003
+from test_drive_and_slots import V003_PAIR, items, slot_state, v003
 
 
 class Clock:
@@ -56,29 +56,27 @@ def test_unset_of_an_undeclared_tag_is_unsupported_with_the_tag_as_received(tag)
     assert r.detail == m.UNSUPPORTED and r.payload == bytes([tag])
 
 
-# ---- last_try_at_ns counts the retry with reset ---------------------------------------------------------------------
+# ---- last_try_at_ns follows the retries ------------------------------------------------------------------------------
 
-def test_the_retry_with_reset_updates_last_try_at():
-    ep, clock, _ = v003(reset_line=4)                              # the retry does not help: stays absent
+def test_last_try_at_follows_each_retry():
+    """probe.config §3.3: the probe's clock when it last tried an automatic attach; retry_ms counts from that try."""
+    ep, clock, _ = v003()                                          # silent: stays absent
+    ep.load_config(items())
+    assert slot_state(ep).last_try_at_ns == 7_000_000              # the first attempt, at boot
+    clock.t = 7 + 999
+    ep.tick()
+    assert slot_state(ep).last_try_at_ns == 7_000_000              # retry_ms 1000 not yet
+    clock.t = 7 + 1000
+    ep.tick()
+    assert slot_state(ep).last_try_at_ns == 1_007_000_000
+    assert slot_state(ep).state == "absent"
+
+
+def test_last_try_at_of_a_connected_slot_is_the_first_attempt():
+    ep, _, _ = v003(silent=False)
     ep.load_config(items())
     st = slot_state(ep)
-    assert st.reset_at_ns == 7_000_000
-    hold = endpoint.RETRY_RESET_HOLD_MS
-    assert st.last_try_at_ns == (7 + hold) * 1_000_000             # the retry's attach, after the hold
-    clock.t = 7 + 1000                                             # retry_ms 1000 counts from the retry, not before
-    ep.tick()
-    assert slot_state(ep).last_try_at_ns == (7 + hold) * 1_000_000
-    clock.t = 7 + hold + 1000
-    ep.tick()
-    assert slot_state(ep).last_try_at_ns == (7 + hold + 1000) * 1_000_000
-    assert len(ep.slot_reset_log) == 1
-
-
-def test_last_try_at_without_a_retry_with_reset_is_the_first_attempt():
-    ep, _, _ = v003()
-    ep.load_config(items(boot_reset=False))
-    st = slot_state(ep)
-    assert st.last_try_at_ns == 7_000_000 and st.reset_at_ns is None
+    assert st.state == "connected" and st.last_try_at_ns == 7_000_000
 
 
 # ---- an idle change: at once when free, at the next release when held ---------------------------------------------
@@ -103,8 +101,7 @@ def test_idle_change_on_a_channel_a_plan_holds_waits_for_the_release():
     g.set([(21, g.OUTPUT_HIGH, 3)])
     cfg.set([config.Idle(channel=20, mode="output-high", drive=Drive.level(2)),
              config.Idle(channel=21, mode="output-low", drive=Drive.level(1))])
-    st = g.read_state([20, 21])
-    assert st.levels == [0, 1] and st.drive == [0, 3]              # held: the lines stay as they were
+    assert g.read([20, 21]) == [0, 1] and ep.gpio_drive == {20: 0, 21: 3}   # held: the lines stay as they were
     assert ep.parked[20] == 3 and ep.parked_drive[20] == 0         # the old idle state, not yet the new one
     core.plan_release(hst, [g.fn])
     assert (ep.parked[20], ep.parked_drive[20]) == (4, 2)          # released: the new idle, level and drive
@@ -118,8 +115,7 @@ def test_idle_unset_on_a_held_channel_waits_for_the_release():
     g = fixture.Gpio(hst, ep.fns["oep.fixture.gpio"])
     core.plan_apply(hst, [(g.fn, 1, 20)])
     cfg.unset([("idle", 20)])
-    st = g.read_state([20])
-    assert st.levels == [1] and st.drive == [1]                    # taken in the old idle state, still so
+    assert g.read([20]) == [1] and ep.gpio_drive[20] == 1          # taken in the old idle state, still so
     core.plan_release(hst, [g.fn])
     assert ep.parked[20] == 0 and 20 not in ep.parked_drive        # released: Hi-Z
 
@@ -139,7 +135,7 @@ def test_idle_change_on_a_connection_pin_waits_for_the_detach():
 
 def test_idle_change_on_a_slot_pin_without_a_connection_applies_at_once():
     ep, clock, tg = v003(silent=True)                              # no answer: a slot, no connection on its pin
-    ep.load_config(items(boot_reset=False))
+    ep.load_config(items())
     swio = V003_PAIR[0]
     hst = h.Host(lambda b: ep.handle(b, 1))
     hst.open(3000)

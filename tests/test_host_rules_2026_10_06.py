@@ -12,7 +12,7 @@ import pytest
 from oep_client import catalog, cobs, config, core, endpoint, fake, fixture, host as h, link, message as m
 from oep_client import registry as reg, riscv
 
-from test_fake_spec import Clock
+from test_fake_rules_2026_10_02 import Clock
 from test_link_host import CONFIRM_V1, Stream, answering, frame, make_link, result
 from test_link_serial import Scripted
 
@@ -349,7 +349,7 @@ def test_i2c_target_refuses_a_reserved_address_before_sending(address):
     i2c = fixture.I2cTarget(hst)
     n = len(sent)
     with pytest.raises(ValueError):
-        i2c.configure(address, 1)
+        i2c.configure(address)
     assert len(sent) == n
 
 
@@ -362,8 +362,10 @@ def _with_ops(name: str, value: bytes) -> fake.FakeProbe:
             t for t in o.tlvs if t[0] != catalog.OPS)) if o.name == name else o for o in probe.offered], fill_ops=False)
 
 
-@pytest.mark.parametrize("value", ["0100", "010100", "0002", "f901", "01"])
+@pytest.mark.parametrize("value", ["f901", "f80100", "01", "ff0000"])
 def test_an_fn_whose_ops_break_the_encoding_is_not_used(value):
+    """core §7.4 (rule review 2026-10-07): base(u8) + a bitmap of at least 1 byte, base + 8 x bytes <= 256 - nothing
+    more (no bit-0 or last-byte rule)."""
     ep = endpoint.Endpoint(_with_ops("oep.fixture.gpio", bytes.fromhex(value)), Clock())
     hst = h.Host(lambda b: ep.handle(b, 1))
     with pytest.raises(core.UnusableFunction, match="core §7.4"):
@@ -374,14 +376,27 @@ def test_an_fn_whose_ops_break_the_encoding_is_not_used(value):
     assert not hst.unusable
 
 
+@pytest.mark.parametrize("value, ops", [("010300", {1, 2}), ("0003", {0, 1}), ("f801", {0xF8}), ("010100", {1})])
+def test_ops_encodings_the_old_one_encoding_rule_refused_are_read(value, ops):
+    """core §7.4: trailing zero bytes, bit 0 set, base 0xF8 with one byte - all valid encodings now."""
+    ep = endpoint.Endpoint(_with_ops("oep.fixture.gpio", bytes.fromhex(value)), Clock())
+    hst = h.Host(lambda b: ep.handle(b, 1))
+    assert core.ops(hst, 4) == ops
+
+
 def test_a_probe_whose_fn_0_ops_break_the_encoding_is_not_used():
-    broken = catalog.pack_ops(reg.CORE.op.values()) + b"\x00"                 # every core op, then a zero byte
+    core_ops = catalog.pack_ops(reg.CORE.op.values())
+    broken = core_ops + bytes(33 - len(core_ops))                             # base 1 + 8 x 32 bytes: past op 0xFF
     ep = endpoint.Endpoint(_with_ops(fake.CORE_NAME, broken), Clock())
     hst = h.Host(lambda b: ep.handle(b, 1))
     with pytest.raises(h.NotUsable, match="core §7.4"):
         core.describe(hst)
     with pytest.raises(h.NotUsable):
         hst.confirm()                                                         # nothing more is sent
+    padded = core_ops + bytes(32 - len(core_ops))                             # base 1 + 8 x 31 bytes = 249: valid
+    ep = endpoint.Endpoint(_with_ops(fake.CORE_NAME, padded), Clock())
+    hst = h.Host(lambda b: ep.handle(b, 1))
+    assert core.ops(hst, 0) == set(reg.CORE.op.values())
 
 
 def test_a_list_entry_with_fn_0_is_left_out():

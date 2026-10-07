@@ -12,24 +12,25 @@ from test_config import Clock, open_bench
 
 
 def _cause(e) -> tuple[str | None, list[int]]:
+    """The unavailable payload: cause, channel, fn (core §4.3; no holder_fn / holder_kind)."""
     assert isinstance(e.value, h.Unavailable), e.value
-    if e.value.cause == "held_by_settings":
-        assert e.value.holder_kind == "disabled"                            # holder_kind 6 next to the channel
+    assert not hasattr(e.value, "holder_kind") and not hasattr(e.value, "holder_fn")
     return e.value.cause, e.value.channels
 
 
-def test_the_item_round_trips_and_hashes():
+def test_the_item_round_trips_and_moves_the_hash():
     ep, hst = open_bench()
     cfg = config.ProbeConfig(hst)
     assert config.ITEM["disable"] == 0x07 and config.item(config.Disable(channel=40)) == bytes([0x07, 2, 0, 40, 0])
     h1 = cfg.set([config.Disable(channel=41), config.Disable(channel=40), config.Label(channel=40, text="NC")])
     items = cfg.items()
     assert items == [config.Label(channel=40, text="NC"), config.Disable(channel=40), config.Disable(channel=41)]
-    assert h1 == config.hash_of(items) == cfg.get()[0]
+    assert h1 == cfg.get()[0]                                                 # the probe's own u32 (probe.config §2)
     assert config.decode(0x07, struct.pack("<H", 9)) == config.Disable(channel=9)
     assert ep.disabled == {40, 41}
-    assert cfg.unset([("disable", 41)]) == config.hash_of(items[:2])
+    h2 = cfg.unset([("disable", 41)])
     assert ep.requests[-1].payload == bytes([1, 3, 7, 41, 0])                 # len tag channel(u16)
+    assert h2 == cfg.get()[0] != h1 and config.same_items(cfg.items(), items[:2])
     cfg.set([config.remove("disable", 40)])
     assert ep.disabled == set()
 

@@ -247,6 +247,7 @@ def test_an_unknown_resolution_or_outcome_is_a_failure(res, detail):
 
 
 def test_find_is_cached_until_the_probe_reboots_and_an_empty_page_ends_the_search():
+    """list pages by first(u16) alone (core §7.2): the host lists every entry and keeps the matching ones itself."""
     lists, boot = [], [0x11]
 
     def send(raw):
@@ -255,9 +256,10 @@ def test_find_is_cached_until_the_probe_reboots_and_an_empty_page_ends_the_searc
             return result(req.corr, CONFIRM_V1)
         if req.op == m.OP_LIST:
             lists.append(req.payload)
-            name = catalog.unpack_list_request(req.payload)[0]
-            page = [catalog.ListEntry(4, 1, 1, 0, name)] if name == "oep.wire.swd" else []
-            return result(req.corr, catalog.pack_list_result(3 if not page else 1, page))   # claims 3, sends none
+            first, tail = catalog.unpack_list_request(req.payload)
+            assert tail == b""
+            page = [catalog.ListEntry(4, 1, 1, 0, "oep.wire.swd")][first:]
+            return result(req.corr, catalog.pack_list_result(3, page))     # claims 3, sends one in all
         if req.op == m.OP_OPEN:
             return result(req.corr, struct.pack("<II", 1000, boot[0]))
         raise AssertionError(req.op)
@@ -265,12 +267,13 @@ def test_find_is_cached_until_the_probe_reboots_and_an_empty_page_ends_the_searc
     hst = h.Host(send)
     hst.open()
     assert core.find(hst, "oep.wire.swd") == 4 and core.find(hst, "oep.wire.swd") == 4
-    assert len(lists) == 1
+    assert lists == [catalog.pack_list_request(0), catalog.pack_list_request(1)]   # total 3 but an empty page: the end
     with pytest.raises(LookupError):
-        core.find(hst, "oep.fixture.gpio")                        # total 3 but an empty page: no endless loop
+        core.find(hst, "oep.fixture.gpio")                        # no endless loop either
+    assert len(lists) == 4
     epoch = hst.epoch
     boot[0] = 0x22
     hst.open()                                                    # rebooted: interfaces may be numbered anew
     assert hst.epoch == epoch + 1                                 # ... and every connection and the plan are gone
     core.find(hst, "oep.wire.swd")
-    assert len(lists) == 3
+    assert len(lists) == 6

@@ -1,8 +1,8 @@
 """oep.probe.restart (oep-spec interfaces/oep-if-restart, op 0x01, an optional interface): the fake answers completed
 success with no payload, then restarts once the answer is out (a new boot_id, no session, the saved settings again);
 its refusals are those of any op that needs the lock; a probe without the interface does not list it. The client's
-Host.restart_probe finds it by name, sends it, waits and confirms the new boot_id - on an in-process serial port, on
-fake_serve's pty and TCP."""
+Host.restart_probe (host guide §5.2) finds it by name, sends it, waits and confirms the new boot_id - on an in-process
+serial port, on fake_serve's pty and TCP."""
 
 import socket
 import struct
@@ -34,7 +34,8 @@ def bench(transport: int = VENDOR):
 def test_the_registry_and_the_fake_offer_it():
     assert RESTART == core.OP_RESTART == h.OP_RESTART == 0x01 and RESTART not in reg.PROBE_RESTART.lock_free  # the lock
     assert "restart" not in reg.CORE.op                                 # not the core's any more
-    assert reg.LIMITS["restart_after_answer_ms"] == 100
+    assert "restart_after_answer_ms" not in reg.LIMITS                  # the host's wait: host guide §5.2, not a limit
+    assert h.RESTART_AFTER_ANSWER_S == 0.1                              # the guide's "about 100 ms"
     ep, hst = bench()
     assert core.restart_fn(hst) == FN and core.offers(hst, FN, RESTART)
     assert core.ops(hst, 0) == set(reg.CORE.op.values())                # fn 0: the eight mandatory ops only
@@ -86,14 +87,15 @@ def test_a_probe_without_oep_probe_restart():
 
 
 def test_a_tlv_after_restart():
-    """No fixed part: a non-critical TLV is ignored and listed, a critical one refused unsupported (core §2.3)."""
+    """No fixed part: an unknown non-critical TLV is ignored silently, an unknown critical one refused unsupported with
+    the tag as received (core §2.3)."""
     ep, hst = bench()
     hst.open(3000)
     with pytest.raises(h.Unsupported) as e:
         hst.request(FN, RESTART, m.tlv(0x3D, b"\x01", critical=True))
     assert e.value.tag == 0x3D | m.TAG_CRITICAL and ep.reboots == 0
     r = hst.request(FN, RESTART, m.tlv(0x3D, b"\x01"))
-    assert r.succeeded and r.payload == bytes([m.TAG_IGNORED, 1, 0, 0x3D]) and ep.reboots == 1
+    assert r.succeeded and r.payload == b"" and ep.reboots == 1
 
 
 def test_the_saved_settings_come_back_the_unsaved_ones_do_not():
@@ -199,12 +201,12 @@ def test_not_restarted_when_the_boot_id_stays():
 # ---- restart_max_ms (oep-if-restart §1) ---------------------------------------------------------------------------
 
 def test_the_restart_interface_declares_restart_max_ms():
-    """oep.probe.restart's describe carries restart_max_ms (tag 0x40, required, at least restart_after_answer_ms);
-    fn 0's carries none of it."""
+    """oep.probe.restart's describe carries restart_max_ms (tag 0x40, required; the probe's own value, oep-if-restart
+    §1); fn 0's carries none of it."""
     ep, hst = bench()
     tags = [t & 0x7F for t, _ in core.describe(hst, FN)]
     assert tags.count(reg.PROBE_RESTART.tlv["describe"]["restart_max_ms"]) == 1 == tags.count(fake.RESTART_MAX_MS_TAG)
-    assert core.restart_max_ms(hst) == fake.RESTART_MAX_MS == 2000 >= reg.LIMITS["restart_after_answer_ms"]
+    assert core.restart_max_ms(hst) == fake.RESTART_MAX_MS == 2000
     assert 0x4F not in [t & 0x7F for t, _ in core.describe(hst)]
 
 
@@ -234,7 +236,7 @@ def test_restart_probe_waits_restart_max_ms_by_default(monkeypatch):
 
 
 def test_a_probe_that_does_not_come_back_within_restart_max_ms_is_gone():
-    """No confirm answered by restart_max_ms after the answer: the host gives up (oep-if-restart §3) - not after 10 s."""
+    """No confirm answered by restart_max_ms after the answer: the host gives up (host guide §5.2) - not after 10 s."""
     ep = endpoint.Endpoint(fake.p4_x035(), Clock())
     ep.restart_max_ms = 300
 
@@ -250,7 +252,7 @@ def test_a_probe_that_does_not_come_back_within_restart_max_ms_is_gone():
     assert 0.3 <= time.monotonic() - start < 2.0 and ep.reboots == 1
 
 def test_a_wait_longer_than_restart_max_ms_is_cut_to_it():
-    """oep-if-restart §3: the host retries only until restart_max_ms has passed - a longer wait_s is cut to it."""
+    """host guide §5.2: the host retries only until restart_max_ms has passed - a longer wait_s is cut to it."""
     ep, hst = bench()
     ep.restart_max_ms = 1500
     hst.link = _Reopen()

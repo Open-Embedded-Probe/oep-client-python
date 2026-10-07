@@ -4,25 +4,25 @@ from what worked and what misled on 2026-10-02 (ESP32-P4 probe, CH32V003 target;
 Steps, each optional and each saying what it did:
 
 1. classify every channel oep.fixture.gpio allows (less the power channel, --exclude and pins a live connection
-   holds): a short series of reads under the probe's pull-up, both pulls, then its pull-down. Something that changes
-   between reads is active (an output the target toggles); the same level under both pulls is driven (push-pull, or
-   a pull stronger than the probe's: an idle-high UART line looks like this); 1 under pull-up and 0 under pull-down is
-   floating, and pulled-up when both pulls together still read 1 (a weak pull-up such as a reset line's). A weak
-   pull-down reads as floating. Reading under a pull never drives a line - but a pull-down on the reset line holds the
-   target in reset, so the pull-down series comes last.
+   holds): a short series of reads under the probe's pull-up, then its pull-down (host guide §19.1). Something that
+   changes between reads is active (an output the target toggles); the same level under both pulls is driven
+   (push-pull, or a pull stronger than the probe's: an idle-high UART line looks like this); 1 under pull-up and 0
+   under pull-down is floating - a pull weaker than the probe's (a reset line's weak pull-up) included. Reading under a
+   pull never drives a line - but a pull-down on the reset line holds the target in reset, so the pull-down series
+   comes last.
 2. --power CH: the same reads with the target off first; the channels that read differently follow the target's
    power (an unpowered target sinks the probe's pull-up). Only candidates: idle-high UART lines follow too.
-3. reset line, by activity: hold each floating / pulled-up channel low (open drain only) and see whether the active
-   channels stop. Only candidates - the attach under reset (5) decides.
-4. scan the wire over the floating / pulled-up channels (swio: each; rvswd / swd: pairs, bounded) - never over a
+3. reset line, by activity: hold each floating channel low (open drain only) and see whether the active channels
+   stop. Only candidates - the attach under reset (5) decides.
+4. scan the wire over the floating channels (swio: each; rvswd / swd: pairs, bounded) - never over a
    driven or active channel (a scan drives the line: contention with a push-pull output), the power channel or
    --exclude. Then attach (halt) to what answered: its target_id names the family (targets.FAMILIES); for a family
    whose option bytes say whether the reset line exists (CH32V00x), read them (read-only), then resume.
 5. reset line, confirmed: attach under reset through each channel that stopped the activity (or, with nothing
    active, through each candidate) - the real line stops the hart at the reset vector.
 6. print a suggested slot and the labels that name the lines found (probe.config §1.3): `<slot>.nrst` on the reset
-   line (5) - a slot has no reset field; a host's attach and the probe's retry with reset look the line up by this
-   label - and `<slot>.power_hi` on --power; --save writes the slot and the labels (config set + save). Nothing is
+   line (5) - a slot has no reset field; a host's attach looks the line up by this label - and `<slot>.power_hi` on
+   --power; --save writes the slot and the labels (config set + save). Nothing is
    written otherwise.
 
 Everything is bounded in time (the whole run under a minute) and every plan is released at the end. A plan_apply
@@ -41,9 +41,9 @@ from typing import Callable
 from . import arm, catalog, config, core, host as h, registry as reg, riscv, targets
 from .fixture import Gpio
 
-FLOATING, PULLED_UP, DRIVEN_HIGH, DRIVEN_LOW, ACTIVE = "floating", "pulled-up", "driven-high", "driven-low", "active"
-KINDS = (FLOATING, PULLED_UP, DRIVEN_HIGH, DRIVEN_LOW, ACTIVE)
-SAFE = (FLOATING, PULLED_UP)          # the only kinds a scan, a hold or an attach may move
+FLOATING, DRIVEN_HIGH, DRIVEN_LOW, ACTIVE = "floating", "driven-high", "driven-low", "active"
+KINDS = (FLOATING, DRIVEN_HIGH, DRIVEN_LOW, ACTIVE)
+SAFE = (FLOATING,)                    # the only kind a scan, a hold or an attach may move
 GPIO_MODES_TAG = reg.FIXTURE_GPIO.tlv["describe"]["modes"]
 ROLE_LINE, ROLE_SWDIO, ROLE_SWCLK, ROLE_RESET = 1, 1, 2, 3
 MAX_PAIRS = 600                       # rvswd / swd: the most pairs one run scans
@@ -56,10 +56,9 @@ class Channel:
     kind: str
     pullup: str                       # the reads under each mode, oldest first ("1111...")
     pulldown: str
-    both: str = ""                    # both pulls ("" when the probe lacks the mode)
     off: str = ""                     # --power: "pull-up/pull-down" levels with the target off, e.g. "0/0"
     follows_power: bool = False
-    active_mode: str = ""             # the mode its changes showed under: pull-up / pull-down / both
+    active_mode: str = ""             # the mode its changes showed under: pull-up / pull-down
 
 
 @dataclass
@@ -116,9 +115,9 @@ def changes(series) -> int:
     return sum(1 for a, b in zip(series, series[1:]) if a != b)
 
 
-def classify(pu: list[int], pd: list[int], both: list[int] | None) -> tuple[str, str]:
+def classify(pu: list[int], pd: list[int]) -> tuple[str, str]:
     """-> (kind, the mode its activity showed under, or "")."""
-    moved = {"pull-up": changes(pu), "pull-down": changes(pd), "both": changes(both) if both else 0}
+    moved = {"pull-up": changes(pu), "pull-down": changes(pd)}
     busiest = max(moved, key=moved.get)
     if moved[busiest]:
         return ACTIVE, busiest
@@ -129,7 +128,7 @@ def classify(pu: list[int], pd: list[int], both: list[int] | None) -> tuple[str,
         return DRIVEN_LOW, ""
     if not hi and lo:
         return ACTIVE, ""                 # against both pulls: something drives it the other way - leave it alone
-    return (PULLED_UP if both and both[0] else FLOATING), ""
+    return FLOATING, ""
 
 
 class PinFinder:
@@ -151,7 +150,6 @@ class PinFinder:
         self.gpio = Gpio(hst)
         self.modes = next((struct.unpack_from("<I", v)[0] for t, v in core.describe(hst, self.gpio.fn)
                            if t & 0x7F == GPIO_MODES_TAG and len(v) >= 4), 0xFF)
-        self.has_both = bool(self.modes >> Gpio.INPUT_PULLUP_PULLDOWN & 1)
         self.wire = arm.SwdWire(hst) if wire == "swd" else riscv.Wire(hst, f"oep.wire.{wire}")
         self.riscv = wire != "swd"
         self.kinds: dict[int, Channel] = {}
@@ -254,19 +252,17 @@ class PinFinder:
             self.say(f"power: channel {self.power} low {self.OFF_S * 1000:.0f} ms (target off: read), then high "
                      f"{self.BOOT_S * 1000:.0f} ms before the reads")
         pu = self._series(chans, g.INPUT_PULLUP)
-        both = self._series(chans, g.INPUT_PULLUP_PULLDOWN) if self.has_both else None
         pd = self._series(chans, g.INPUT_PULLDOWN)        # last: a pull-down on the reset line resets the target
         g.set([(c, g.INPUT) for c in chans])
         for c in chans:
-            kind, mode = classify(pu[c], pd[c], both[c] if both else None)
-            ch = Channel(c, kind, "".join(map(str, pu[c])), "".join(map(str, pd[c])),
-                         "".join(map(str, both[c])) if both else "", active_mode=mode)
+            kind, mode = classify(pu[c], pd[c])
+            ch = Channel(c, kind, "".join(map(str, pu[c])), "".join(map(str, pd[c])), active_mode=mode)
             if off_pu is not None:
                 ch.off = f"{off_pu[c]}/{off_pd[c]}"
                 ch.follows_power = (off_pu[c], off_pd[c]) != (int(any(pu[c])), int(any(pd[c])))
             self.kinds[c] = ch
         self.report.channels = list(self.kinds.values())
-        modes = "pull-up, " + ("both pulls, " if both else "") + "pull-down"
+        modes = "pull-up, pull-down"
         self.say(f"classify: {len(chans)} channels, {self.SAMPLES} reads each under {modes}")
         for kind in KINDS:
             these = [c for c, k in self.kinds.items() if k.kind == kind]
@@ -287,10 +283,10 @@ class PinFinder:
 
     def _mode_series(self, c: int) -> str:
         k = self.kinds[c]
-        return {"pull-up": k.pullup, "pull-down": k.pulldown, "both": k.both}.get(k.active_mode, k.pullup)
+        return {"pull-up": k.pullup, "pull-down": k.pulldown}.get(k.active_mode, k.pullup)
 
     def candidates(self) -> list[int]:
-        """The channels a scan or a hold may move (floating / pulled-up): those that follow the power first."""
+        """The channels a scan or a hold may move (floating): those that follow the power first."""
         safe = [c for c, k in self.kinds.items() if k.kind in SAFE]
         return sorted(safe, key=lambda c: (not self.kinds[c].follows_power, c))
 
@@ -305,9 +301,8 @@ class PinFinder:
             self.say("reset line (hold low): nothing active to watch - the attach under reset alone decides")
             return []
         g = self.gpio
-        mode = {"pull-up": g.INPUT_PULLUP, "pull-down": g.INPUT_PULLDOWN, "both": g.INPUT_PULLUP_PULLDOWN}
+        mode = {"pull-up": g.INPUT_PULLUP, "pull-down": g.INPUT_PULLDOWN}
         cands = self.candidates()
-        cands.sort(key=lambda c: (self.kinds[c].kind != PULLED_UP, not self.kinds[c].follows_power, c))
         planned = set(self.planned)                       # the classify plan holds them all: no new plan
         g.set([(a, mode[self.kinds[a].active_mode]) for a in active if a in planned]
               + [(c, g.OPEN_DRAIN_RELEASE) for c in cands if c in planned])
@@ -509,7 +504,7 @@ class PinFinder:
                 return stopped[0]
             return None
         rest = [c for c in self.candidates() if c in allowed and c not in pins and c not in stopped]
-        rest.sort(key=lambda c: (self.kinds[c].kind != PULLED_UP, not self.kinds[c].follows_power, c))
+        rest.sort(key=lambda c: (not self.kinds[c].follows_power, c))
         self.say(f"reset line: attach under reset through each of {len(rest)} candidates (dpc = {vector:#x})")
         t0 = self.clock()
         for c in rest:

@@ -1,7 +1,8 @@
 """The host side of oep-spec docs/v1-rule-change-proposal-2026-10-02.md (applied 09622ef..536fc99): the wait's floor
 (C-06), the serial line (C-09), the revision in use (C-15), confirm's transport (C-05), x- unit_ids (C-24), TCP and the
-resync wait (C-07, transports §5), the line search (PC-1), text shown and sent (C-22), ignored's marker (C-04), what a probe
-must give (C-10), and the new answer TLVs in the API."""
+resync wait (C-07, transports §5), the line search (PC-1), text shown and sent (C-22), no ignored marker (C-04, gone in
+the rule review 2026-10-07), what a probe must give (C-10), and the new answer TLVs in the API. Updated to oep-spec
+0f455a0."""
 
 import os
 import struct
@@ -13,7 +14,7 @@ import pytest
 from oep_client import (capture, config, core, dump, endpoint, fake, fixture, frames, host as h, link, message as m,
                         registry as reg, riscv, speed_record)
 
-from test_fake_spec import Clock
+from test_fake_rules_2026_10_02 import Clock
 from test_link_host import CONFIRM_V1, Stream, frame, make_link, result
 
 
@@ -63,7 +64,9 @@ def test_c06_no_transfer_time_on_length_frames():
     assert lk.transfer_s() == 0 and lk._wait() == pytest.approx(1.0)
 
 
-def test_c06_p2_4_attach_and_scan_wait_their_budgets():
+def test_c06_attach_scan_and_reset_wait_max_op_ms():
+    """debug §1 / §4.3 (rule review 2026-10-07): attach, scan and riscv-dm's reset answer within max_op_ms, and the host
+    counts max_op_ms as their argument time (core §4.4) - no hold_ms or reset_settle_ms on top any more."""
     ep, hst = in_process()
     seen = []
     send = hst.send
@@ -73,10 +76,14 @@ def test_c06_p2_4_attach_and_scan_wait_their_budgets():
     w.scan()
     w.attach(pins=ep.pairs[1][0], reset=None)
     budgets = dict((op, ms) for op, ms in seen if op in (riscv.Wire.SCAN, riscv.Wire.ATTACH))
-    assert budgets == {riscv.Wire.SCAN: 500 + 1000, riscv.Wire.ATTACH: 1000}
-    assert w.attach_ms((7, 20)) == 1000 + 20 + 700 and w.search_retries == 0   # + hold_ms + reset_settle_ms (§4.4)
+    assert budgets == {riscv.Wire.SCAN: fake.MAX_OP_MS, riscv.Wire.ATTACH: fake.MAX_OP_MS}
+    assert w.attach_ms((7, 20)) == w.attach_ms() == w.scan_ms() == fake.MAX_OP_MS and w.search_retries == 0
     dm = riscv.RiscvDm(hst, 1)
-    assert dm.reset_ms() == 700                                    # reset: reset_settle_ms (debug §4.3, core §4.4)
+    assert dm.reset_ms() == fake.MAX_OP_MS
+    assert core.FALLBACK_MAX_OP_MS == 10000 and "reset_settle_ms" not in reg.TIMING
+    seen.clear()
+    dm.reset(confirm=False)
+    assert seen == [(riscv.RiscvDm.RESET, fake.MAX_OP_MS)]
 
 
 # ---- C-09: the serial line ----------------------------------------------------------------------------------------
@@ -226,7 +233,9 @@ def test_pc1_find_line_takes_the_firmware_labels_as_step_c():
     assert config.LINE_NAMES == ("nrst", "power_hi", "power_lo")       # from the registry (PC-2)
 
 
-def test_pc5_a_label_the_probe_would_refuse_is_not_sent():
+def test_pc5_a_label_the_probe_would_refuse_or_a_host_would_not_show_is_not_sent():
+    """probe.config §1: a probe refuses a label outside 1-32 bytes; it no longer checks the characters (core §2.1), but
+    this client still sends only text it would show unchanged (m.valid_text)."""
     for text in ("", "x" * 33, "a\tb"):
         with pytest.raises(ValueError):
             config.Label(channel=1, text=text).value()
@@ -252,11 +261,14 @@ def test_c22_the_owner_goes_as_valid_text_of_at_most_32_bytes():
 
 # ---- C-04 / C-10 ------------------------------------------------------------------------------------------------------
 
-def test_c04_the_ignored_marker():
-    t = m.Tail.parse(bytes([0x7F, 3, 0, 0x31, 0x32, 0x00]))
-    assert t.more_ignored and t.may_have_ignored(0x40) and t.may_have_ignored(0x31)
-    t = m.Tail.parse(bytes([0x7F, 1, 0, 0x31]))
-    assert not t.more_ignored and t.may_have_ignored(0x31) and not t.may_have_ignored(0x40)
+def test_no_ignored_marker_any_more():
+    """core §2.3 (rule review 2026-10-07): an answer carries no ignored TLV - 0x7F is never a TLV tag, and the Tail has
+    no ignored list."""
+    t = m.Tail.parse(bytes([0x01, 1, 0, 0x31]))
+    assert t.tlvs == [(0x01, b"\x31")] and not hasattr(t, "ignored") and not hasattr(t, "more_ignored")
+    assert m.TAG_RESERVED == 0x7F and not hasattr(m, "TAG_IGNORED")
+    with pytest.raises(ValueError):
+        m.tlv(0x7F, b"")
 
 
 def test_c10_dump_says_what_a_probe_must_give_and_did_not():
@@ -264,28 +276,24 @@ def test_c10_dump_says_what_a_probe_must_give_and_did_not():
     assert caps.missing == []
     bare = fake.FakeProbe("bare", 256, [fake.Offered(0, 0, fake.CORE_NAME)])
     caps = dump.collect(bare.call)
-    assert caps.missing == ["describe of fn 0: unit_id", "describe of fn 0: transport", "describe of fn 0: max_op_ms",
-                            "describe of fn 0: discoverable"]
+    assert caps.missing == ["describe of fn 0: unit_id", "describe of fn 0: transport", "describe of fn 0: max_op_ms"]
     assert "MISSING" in dump.to_text(caps)
 
 
 def _confirm_tail(probe: fake.FakeProbe, tail: bytes):
     """probe.call with confirm's answer tail replaced by `tail`."""
-    def call(fn, op, payload=b"", reserve=0):
-        out = probe.call(fn, op, payload, reserve)
+    def call(fn, op, payload=b""):
+        out = probe.call(fn, op, payload)
         return out[:17] + tail if (fn, op) == (dump.CORE_FN, dump.OP_CONFIRM) else out
     return call
 
 
-def test_c10_confirm_transport_tlv_and_discoverable_0_are_required():
-    """A probe without confirm's transport TLV (core §7.1) and without discoverable (§7.5: 0 when it is not on the
-    project's VID:PID) is named as missing both, by dump and by the hardware test's check (dump.required_of)."""
-    probe = fake.esp32_v003()
-    core = probe.offered[0]
-    disc = reg.CORE.tlv["describe"]["discoverable"]
-    probe.offered[0] = fake.Offered(core.fn, core.instance, core.name, tuple(t for t in core.tlvs if t[0] != disc))
-    call = _confirm_tail(probe, b"")
-    want = ["confirm's transport TLV", "describe of fn 0: discoverable"]
+def test_c10_confirm_transport_tlv_is_required():
+    """A probe without confirm's transport TLV (core §7.1) is named as missing it, by dump and by the hardware test's
+    check (dump.required_of). describe has no discoverable any more (core §7.5, rule review 2026-10-07)."""
+    assert "discoverable" not in reg.CORE.tlv["describe"]
+    call = _confirm_tail(fake.esp32_v003(), b"")
+    want = ["confirm's transport TLV"]
     assert dump.collect(call).missing == want
     assert dump.required_of(call) == want
     assert "MISSING what every probe must give" in dump.to_text(dump.collect(call))
@@ -307,7 +315,7 @@ def test_c10_every_fake_profile_gives_what_is_required_on_every_transport(profil
 
 # ---- the new answer TLVs in the API -------------------------------------------------------------------------------
 
-def test_api_search_retries_step_left_pullup_ohms_background():
+def test_api_search_retries_step_left_internal_pullups_mode():
     ep, hst = in_process()
     hst.open(3000)
     w = riscv.Wire(hst)
@@ -320,15 +328,17 @@ def test_api_search_retries_step_left_pullup_ohms_background():
     with pytest.raises(riscv.StepError) as e:
         dm.step()
     assert e.value.step_left and isinstance(e.value, riscv.TargetError)
-    ep2, hst2 = in_process(lambda: fake.with_i2c_pullups(fake.p4_x035(), 47000))
-    assert fixture.I2cTarget(hst2).pullup_ohms == 47000
+    ep2, hst2 = in_process(lambda: fake.with_i2c_pullups(fake.p4_x035()))
+    assert fixture.I2cTarget(hst2).internal_pullups is True               # features bit2 (fixture §3)
     ep3, hst3 = in_process(fake.p4_x035)
-    assert fixture.I2cTarget(hst3).pullup_ohms is None
+    assert fixture.I2cTarget(hst3).internal_pullups is False and not hasattr(fixture.I2cTarget, "pullup_ohms")
     text = dump.to_text(dump.collect(fake.p4_x035().call, "oep.fixture.logic"))
-    assert "one-shot, answers while capturing" in text
+    assert "one-shot, max 1048576 samples x 1 segments" in text           # mode: mode max_samples max_segments
 
 
 def test_p2_o8_capture_configure_sends_mode_rate_trigger_pretrigger_critical():
+    """capture §3.3: an unhandled value is unsupported critical or not (core §2.3); the client still marks the TLVs
+    whose being ignored would make the capture meaningless."""
     ep, hst = in_process(fake.esp32_v003)
     hst.open(3000)
     core.plan_apply(hst, [(6, 0, 4)])

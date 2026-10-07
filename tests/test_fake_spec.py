@@ -14,7 +14,7 @@ import pytest
 from oep_client import cobs, endpoint, fake, fake_serial, message as m, registry as reg
 
 CFG = reg.PROBE_CONFIG
-ITEM, ATTACH, MODE, KIND = CFG.tlv["item"], CFG.enum["slot_attach"], CFG.enum["bind_mode"], CFG.enum["bind_stream"]
+ITEM, ATTACH, KIND = CFG.tlv["item"], CFG.enum["slot_attach"], CFG.enum["bind_stream"]
 STATE = CFG.enum["slot_state"]
 SPEED = m.tlv(0x01, struct.pack("<I", 4_000_000), critical=True)    # attach's required max_speed TLV
 MARK_KIND = reg.COMMON.enum["mark_kind"]
@@ -58,20 +58,24 @@ class Host:
         return r.payload
 
 
-def slot_item(n, wire, pair, attach=ATTACH["at_boot"], retry=1, mech=2, name=None, lock=None, max_speed=0, idle=0,
-              boot_reset=0):
-    """A slot item (probe.config §1.1): slot wire_fn swdio swclk attach boot_reset retry_ms(u32) max_speed_hz(u32)
-    idle_clock mechanism name_len name lock_len [lock]; `retry` in seconds here."""
+def slot_value(n, wire, pair, attach=ATTACH["at_boot"], retry=1, mech=2, name=None, max_speed=0, idle=0):
+    """A slot item's value (probe.config §1.1): slot wire_fn swdio swclk attach retry_ms(u32) max_speed_hz(u32)
+    idle_clock mechanism name_len name; `retry` in seconds here."""
     raw = (name or f"s{n}").encode()
-    value = struct.pack("<BHHHBBIIBBB", n, wire, *pair, attach, boot_reset,
-                        1000 * retry if attach == ATTACH["at_boot"] else 0, max_speed, idle, mech, len(raw)) + raw
-    value += b"\x00" if lock is None else bytes([1 + 2 * len(lock[0]), 1]) + lock[0] + lock[1]   # lock_len, scheme 1
-    return m.tlv(ITEM["slot"], value)
+    return struct.pack("<BHHHBIIBBB", n, wire, *pair, attach, 1000 * retry if attach == ATTACH["at_boot"] else 0,
+                       max_speed, idle, mech, len(raw)) + raw
 
 
-def bind_item(port, mode, streams, selected=0):
-    return m.tlv(ITEM["bind"], struct.pack("<BBBB", port, mode, selected, len(streams))
-                 + b"".join(struct.pack("<BH", k, i) for k, i in streams))
+def slot_item(n, wire, pair, **kw):
+    return m.tlv(ITEM["slot"], slot_value(n, wire, pair, **kw))
+
+
+def bind_item(port, kind, ident):
+    """A bind item (probe.config §1.2): port(u8) kind(u8) id(u16) - one stream."""
+    return m.tlv(ITEM["bind"], struct.pack("<BBH", port, kind, ident))
+
+
+SLOT_CONSOLE = KIND["slot_console"]
 
 
 def describe(ep, fn):
@@ -86,16 +90,15 @@ def describe(ep, fn):
 
 
 def state(ep, fn=6, first_slot=0, first_bind=0):
-    """probe.config's state op (lock-free): -> (more, storage_state, storage_hash, reason, {slot: raw slot_state},
-    [raw bind_state])."""
+    """probe.config's state op (lock-free, §3.3): -> (more, storage_state, storage_hash, reason, {slot: raw
+    slot_state}, [raw bind_state])."""
     rd = m.Reader(Host(ep).raw(fn, CFG.op["state"], bytes([first_slot, first_bind]), session=False).payload)
     more, storage, h, why = rd.take("BBIB")
     slots = {}
-    for _ in range(rd.u8()):                                        # count x slot_state, no element length
-        at = rd.at
-        tid_len = rd.data[at + 21]                                  # slot state conn tried(u64) reset_at(u64) scheme len
-        slots[rd.data[at]] = rd.bytes(22 + tid_len)
-    binds = [rd.bytes(4) for _ in range(rd.u8())]
+    for _ in range(rd.u8()):                                        # slot state connection(u16) last_try_at_ns(u64)
+        raw = rd.bytes(12)
+        slots[raw[0]] = raw
+    binds = [rd.bytes(2) for _ in range(rd.u8())]                   # port flow
     rd.tail()
     return more, storage, h, why, slots, binds
 
@@ -111,7 +114,8 @@ def test_a_resent_request_gets_its_remembered_result_and_runs_once():
     ep.values[toy] = 99                                             # the state moved on
     again = h.raw(toy, 0x01, struct.pack("<I", 5), corr=h.corr)
     assert again == first and ep.values[toy] == 99                  # not executed a second time
-    assert h.raw(toy, 0x01, struct.pack("<I", 6), corr=h.corr).detail == m.CORR_REUSED
+    # core §5.2: the table is corr -> answer; the same corr with another payload gets the remembered answer too
+    assert h.raw(toy, 0x01, struct.pack("<I", 6), corr=h.corr) == first and ep.values[toy] == 99
     h.raw(toy, 0x01, struct.pack("<I", 1))
     h.raw(toy, 0x01, struct.pack("<I", 2))
     for _ in range(10):
@@ -171,12 +175,12 @@ def test_lease(asked, given):
 
 # ---- describe ------------------------------------------------------------------------------------------
 
-def test_core_describe_lists_the_transports_max_op_ms_and_discoverable():
+def test_core_describe_lists_the_transports_and_max_op_ms():
     tlvs = describe(endpoint.Endpoint(fake.p4_x035(), Clock()), 0)
     tags = reg.CORE.tlv["describe"]
     kinds = [v[1] for t, v in tlvs if t == tags["transport"]]
-    assert kinds == [3, 4, 5, 2] and (tags["discoverable"], b"\x01") in tlvs   # the HS port is on the project's VID:PID
-    assert (tags["max_op_ms"], struct.pack("<I", 10000)) in tlvs
+    assert kinds == [3, 4, 5, 2]
+    assert (tags["max_op_ms"], struct.pack("<I", fake.MAX_OP_MS)) in tlvs
     assert (fake.PLAN_ROLES_TAG, struct.pack("<I", 32)) in describe(endpoint.Endpoint(fake.p4_x035(), Clock()), 14)
     assert any(t == tags["unit_id"] for t, _ in tlvs) and 0x48 not in [t for t, _ in tlvs]
     # declarations only (core §7.3): a label the settings give is not in the describe
@@ -186,13 +190,15 @@ def test_core_describe_lists_the_transports_max_op_ms_and_discoverable():
     assert all(v[2:] != b"DUT" for t, v in describe(ep, 0) if t == tags["label"])
 
 
-@pytest.mark.parametrize("profile,said", [(fake.p4_x035, 1), (fake.p4_bench, 1), (fake.rp2350_pins, 1),
-                                          (fake.esp32_v003, 0)])
-def test_discoverable_only_on_the_project_vid_pid(profile, said):
-    # core §7.5: 1 = the probe also enumerates with the project's USB VID:PID; a probe that does not sends 0
-    tlvs = describe(endpoint.Endpoint(profile(), Clock()), 0)
-    tag = reg.CORE.tlv["describe"]["discoverable"]
-    assert [v for t, v in tlvs if t == tag] == [bytes([said])]
+@pytest.mark.parametrize("profile", sorted(fake.PROFILES))
+def test_core_describe_has_no_removed_tags(profile):
+    """core §7.4 (rule review 2026-10-07): implementation (0x07), reserved (0x44), profile (0x45), resets_on_open
+    (0x47) and discoverable (0x4A) are gone - the registry names none of them and no fake describes them."""
+    gone = {0x07, 0x44, 0x45, 0x47, 0x4A}
+    tags = reg.CORE.tlv["describe"]
+    assert not {"implementation", "reserved", "profile", "resets_on_open", "discoverable"} & set(tags)
+    assert not gone & set(tags.values())
+    assert not gone & {t & 0x7F for t, _ in describe(endpoint.Endpoint(fake.PROFILES[profile](), Clock()), 0)}
 
 
 def _with_transports(probe, entries):
@@ -210,14 +216,14 @@ def _with_transports(probe, entries):
     ([(7, fake.TRANSPORT["vendor_bulk"], 0), (3, fake.TRANSPORT["uart_bridge"], 0xFF)], 3, 7),   # not from 0, gaps
 ])
 def test_transport_list_follows_the_index_byte_not_the_tlv_order(entries, bridge, other):
-    """core §7.5: index is the number designating a transport (port_speed's port, a bind's port), whatever order the
-    TLVs come in. port_speed is accepted on the UART bridge it came on and refused on the vendor bulk."""
+    """core §7.5: index is the number designating a transport (a bind's port), whatever order the TLVs come in.
+    port_speed is accepted on the UART bridge it came on and refused on the vendor bulk (unavailable, oep-if-link §3)."""
     for port, ok in ((bridge, True), (other, False)):
         ep = endpoint.Endpoint(_with_transports(fake.esp32_v003(), entries), Clock())
         assert ep.transports == {i: k for i, k, _ in entries} and ep.serial_ports == {bridge}
         h = Host(ep, transport=port)
         assert h.open().succeeded
-        r = h.raw(ep.link_fn, endpoint.OP_PORT_SPEED, struct.pack("<BIBHI", port, 230400, 0, 500, 0))
+        r = h.raw(ep.link_fn, endpoint.OP_PORT_SPEED, struct.pack("<IBH", 230400, 0, 500))   # try (oep-if-link §3)
         assert r.succeeded if ok else r.detail == m.UNAVAILABLE
 
 
@@ -229,8 +235,8 @@ def test_bind_port_is_the_transport_index_not_the_tlv_position():
     h = Host(ep)
     h.open()
     p = ep.pairs[1][0]
-    assert h.raw(6, 0x02, slot_item(0, 1, p) + bind_item(0, MODE["manual"], [(KIND["slot_console"], 0)])).succeeded
-    assert h.raw(6, 0x02, slot_item(0, 1, p) + bind_item(1, MODE["manual"], [(KIND["slot_console"], 0)])).detail == m.UNSUPPORTED
+    assert h.raw(6, 0x02, slot_item(0, 1, p) + bind_item(0, SLOT_CONSOLE, 0)).succeeded
+    assert h.raw(6, 0x02, slot_item(0, 1, p) + bind_item(1, SLOT_CONSOLE, 0)).detail == m.UNSUPPORTED
 
 
 # ---- slots, connections and the seat rule --------------------------------------------------------------
@@ -249,29 +255,31 @@ def test_at_boot_slots_attach_and_say_so_without_the_lock():
     ep.targets[(1, pairs[0])].target_id = 0x035E0601
     h.ok(6, 0x02, slot_item(0, 1, pairs[0], name="x035") + slot_item(1, 1, pairs[1], name="l103"))
     _, _, _, _, states, _ = state(ep)
-    assert states[0][1] == STATE["connected"] and struct.unpack_from("<I", states[0], 22)[0] == 0x035E0601
-    assert states[1][1] == STATE["absent"] and struct.unpack_from("<Q", states[1], 4)[0] == 0   # tried at 0 ns
-    assert len(states[0]) == 26 and len(states[1]) == 22    # slot state conn last_try_at_ns reset_at_ns scheme len tid
-    assert states[0][12:20] == states[1][12:20] == b"\xff" * 8                  # no retry with reset (§3.3)
+    conn = ep._conn_at(1, pairs[0])
+    # slot state connection(u16) last_try_at_ns(u64), 12 bytes (probe.config §3.3)
+    assert struct.unpack("<BBHQ", states[0])[:3] == (0, STATE["connected"], conn)
+    assert struct.unpack("<BBHQ", states[1]) == (1, STATE["absent"], 0, 0)       # no connection, tried at 0 ns
     listed = h.raw(1, 0x05, b"\x00", session=False).payload        # connections, lock-free, from the first
     assert listed[0] == 0 and listed[1] == 1 and len(listed) == 2 + 18   # more, count, the entry: no length (core §2.3)
     assert listed[2 + 10] == 0b10 and listed[2 + 11] == 0            # used by slot 0 only
+    assert listed[2 + 14:] == struct.pack("<I", 0x035E0601)         # which target: the host reads the tid (§1.1)
     assert h.raw(1, 0x05, b"\x01", session=False).payload[:2] == b"\x00\x00"   # past the end: nothing more
 
 
-def test_a_lock_that_does_not_match_lets_go():
+def test_a_slot_has_one_form_without_a_lock_and_the_probe_checks_no_target():
+    """probe.config §1, §1.1, §3.2: the slot item has no lock - a value one byte longer (the old lock_len) is another
+    length, malformed critical or not (core §2.3); the probe attaches whatever answers at the slot's pins (the host
+    checks the tid); slot_state is 0 connected / 1 absent only."""
     ep, h = bench()
     pair = ep.pairs[1][0]
-    ep.targets[(1, pair)].target_id = 0x035E0601
-    lock = (struct.pack("<I", 0xFFFFFF0F), struct.pack("<I", 0x00300500))   # another family
-    h.ok(6, 0x02, slot_item(0, 1, pair, lock=lock))
-    st = state(ep)[4][0]
-    assert st[1] == STATE["lock_mismatch"] and not ep.conns
-    assert h.raw(6, 0x02, slot_item(1, 1, ep.pairs[1][1], lock=(b"\xff\xff", b"\x00\x00"))).detail == m.MALFORMED   # not the scheme's 4 bytes
-    bare = slot_item(1, 1, ep.pairs[1][1])[3:-1]                      # the item's value up to lock_len
-    other = lambda scheme: m.tlv(ITEM["slot"], bare + bytes([9, scheme]) + lock[0] + lock[1])
-    assert h.raw(6, 0x02, other(2)).payload == bytes([ITEM["slot"]])   # swd's targetsel: defined, not this wire's
-    assert h.raw(6, 0x02, other(7)).payload == bytes([ITEM["slot"]])   # undefined: unsupported too, the item's tag (C-02)
+    ep.targets[(1, pair)].target_id = 0x00300500                     # any target
+    value = slot_value(0, 1, pair)
+    for critical in (False, True):
+        r = h.raw(6, 0x02, m.tlv(ITEM["slot"], value + b"\x00", critical=critical))
+        assert (r.detail, r.payload) == (m.MALFORMED, b"") and not ep.slots
+    h.ok(6, 0x02, m.tlv(ITEM["slot"], value, critical=True))
+    assert state(ep)[4][0][1] == STATE["connected"] and ep._conn_at(1, pair) is not None
+    assert STATE == {"connected": 0, "absent": 1}
 
 
 def test_the_seat_rule_closes_the_oldest_slot_only_connection():
@@ -298,56 +306,55 @@ def test_too_many_at_boot_slots_are_refused():
 def test_slot_names_are_url_safe(name):
     ep, h = bench()
     assert h.raw(6, 0x02, slot_item(0, 1, ep.pairs[1][0], name=name or None) if name else
-                 m.tlv(ITEM["slot"], struct.pack("<BHHHBIIBBB", 0, 1, *ep.pairs[1][0], 1, 1000, 0, 0, 2, 0) + b"\x00")).detail == m.MALFORMED
+                 m.tlv(ITEM["slot"], struct.pack("<BHHHBIIBBB", 0, 1, *ep.pairs[1][0], 1, 1000, 0, 0, 2, 0))).detail == m.MALFORMED
 
 
 def test_slot_refusals_follow_the_reason_table():
-    """probe.config §2's table: a pair the wire does not offer -> unsupported, two slots on one place -> malformed,
-    a bind to a slot without a console -> malformed, a port that is no serial port -> unsupported, the mechanism
-    none -> a slot that opens no console."""
+    """probe.config §1.1 / §1.2: a pair the wire does not offer -> unsupported, two slots on one place -> malformed,
+    a bind to a slot without a console -> malformed, a port that is no serial port -> unsupported, a host slot's
+    retry_ms is not looked at, the mechanism none -> a slot that opens no console."""
     ep, h = bench()
     p = ep.pairs[1]
     assert h.raw(6, 0x02, slot_item(0, 1, (9, 10))).detail == m.UNSUPPORTED
     assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + slot_item(1, 1, p[0])).detail == m.MALFORMED
-    assert h.raw(6, 0x02, slot_item(0, 1, p[0], mech=0xFF) + bind_item(0, MODE["manual"], [(KIND["slot_console"], 0)])).detail == m.MALFORMED
-    assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + bind_item(1, MODE["manual"], [(KIND["slot_console"], 0)])).detail == m.UNSUPPORTED
-    assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + bind_item(0, MODE["manual"], [(KIND["fixture_uart"], 4)])).detail == m.UNSUPPORTED
-    assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + bind_item(0, MODE["manual"], [(KIND["fixture_uart"], 99)])).detail == m.UNKNOWN_FUNCTION
-    host_retry = m.tlv(ITEM["slot"], struct.pack("<BHHHBBIIBBB", 0, 1, *p[0], ATTACH["host"], 0, 1000, 0, 0, 2, 2) + b"s0\x00")
-    assert h.raw(6, 0x02, host_retry).detail == m.MALFORMED         # retry_ms on a host slot
+    assert h.raw(6, 0x02, slot_item(0, 1, p[0], mech=0xFF) + bind_item(0, SLOT_CONSOLE, 0)).detail == m.MALFORMED
+    assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + bind_item(1, SLOT_CONSOLE, 0)).detail == m.UNSUPPORTED
+    assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + bind_item(0, KIND["fixture_uart"], 4)).detail == m.UNSUPPORTED
+    assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + bind_item(0, KIND["fixture_uart"], 99)).detail == m.UNKNOWN_FUNCTION
+    host_retry = m.tlv(ITEM["slot"], struct.pack("<BHHHBIIBBB", 0, 1, *p[0], ATTACH["host"], 1000, 0, 0, 2, 2) + b"s0")
+    assert h.raw(6, 0x02, host_retry).succeeded                     # retry_ms on a host slot: not looked at
+    assert ep._conn_at(1, p[0]) is None                             # a host slot: the probe does not attach
     h.ok(6, 0x02, slot_item(0, 1, p[0], mech=0xFF))
     assert ep._conn_at(1, p[0]) is not None and not ep.streams      # attached, no console opened
 
 
-# ---- binds and the serial port ---------------------------------------------------------------------------
-
-def test_bind_streams_are_3_bytes_and_a_longer_item_is_a_longer_request_tlv():
-    """probe.config §1.2: n x (kind, id), 3 bytes each, no element length (core §2.3). An item longer than its one form
-    is a request TLV longer than the probe knows (core §2.3): critical -> unsupported with the tag as received;
-    otherwise the item is ignored (not applied) and listed in the answer's ignored TLV."""
+def test_a_bind_is_one_stream_and_another_length_is_malformed():
+    """probe.config §1, §1.2: port(u8) kind(u8) id(u16), one stream. An item the probe handles with a value of another
+    length - the old n x streams form, a short one - is malformed with or without bit 7 (core §2.3)."""
     ep, h = bench()
-    head = struct.pack("<BBBB", 0, MODE["mixed"], 0, 1)
-    longer = head + struct.pack("<BHH", KIND["slot_console"], 0, 0xBEEF)
-    r = h.raw(6, 0x02, slot_item(0, 1, ep.pairs[1][0]) + m.tlv(ITEM["bind"], longer))
-    assert r.succeeded and m.Tail.parse(r.payload[4:]).ignored == [ITEM["bind"]] and not ep.binds
-    r = h.raw(6, 0x02, slot_item(0, 1, ep.pairs[1][0]) + m.tlv(ITEM["bind"], longer, critical=True))
-    assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([ITEM["bind"] | 0x80]))
-    assert h.raw(6, 0x02, slot_item(0, 1, ep.pairs[1][0]) + bind_item(0, MODE["mixed"], [(KIND["slot_console"], 0)])).succeeded
-    assert ep.binds[0].streams == ((KIND["slot_console"], 0),)
-    short = m.tlv(ITEM["bind"], head + struct.pack("<BB", KIND["slot_console"], 0))
-    assert h.raw(6, 0x02, short).detail == m.MALFORMED
+    slot = slot_item(0, 1, ep.pairs[1][0])
+    good = struct.pack("<BBH", 0, SLOT_CONSOLE, 0)
+    for value in (struct.pack("<BBBB", 0, 0, 0, 1) + struct.pack("<BH", SLOT_CONSOLE, 0), good + b"\x00", good[:3]):
+        for critical in (False, True):
+            r = h.raw(6, 0x02, slot + m.tlv(ITEM["bind"], value, critical=critical))
+            assert (r.detail, r.payload) == (m.MALFORMED, b"") and not ep.binds
+    assert h.raw(6, 0x02, slot + m.tlv(ITEM["bind"], good, critical=True)).succeeded
+    assert ep.binds[0].stream == (SLOT_CONSOLE, 0)
 
 
 def framed(req):
     return cobs.frame(req.pack())
 
 
-def test_raw_console_flows_until_a_session_and_resumes_from_its_last_reset():
+def test_raw_console_stops_during_a_session_and_carries_on_where_it_stopped():
+    """probe.config §1.2: during a session the port's position stays; afterwards it carries on where it stopped (a
+    reset in between changes nothing)."""
     clock = Clock()
     ep = endpoint.Endpoint(fake.p4_bench(), clock)
     p = ep.pairs[1]
-    ep.load_config([slot_item(0, 1, p[0], name="x035"), bind_item(0, MODE["last_reset"], [(KIND["slot_console"], 0)])])
+    ep.load_config([slot_item(0, 1, p[0], name="x035"), bind_item(0, SLOT_CONSOLE, 0)])
     port = fake_serial.FakeSerialPort(ep, 0)
+    assert port.output() == b""                                     # the fake starts the position when first read
     ep.target_says(b"boot\n", ep.targets[(1, p[0])])
     assert port.output() == b"boot\n"
     port.feed(framed(m.Request(1, 0, m.OP_OPEN, struct.pack("<IB", 3000, 0), 9)))
@@ -356,19 +363,21 @@ def test_raw_console_flows_until_a_session_and_resumes_from_its_last_reset():
     assert m.Result.unpack(cobs.unframe(out[1:-1])).succeeded
     ep.target_says(b"held\n", ep.targets[(1, p[0])])
     assert port.output() == b""                                     # the session holds this port
+    assert state(ep)[5] == [bytes([0, CFG.enum["bind_flow"]["held"]])]
     conn = ep._conn_at(1, p[0])
-    port.feed(framed(m.Request(2, 2, 0x04, struct.pack("<HB", conn, 0), 9)))   # riscv-dm reset (mark reset detail 1)
+    port.feed(framed(m.Request(2, 2, 0x04, struct.pack("<HB", conn, 0), 9)))   # riscv-dm reset
     port.output()
     ep.target_says(b"after reset\n", ep.targets[(1, p[0])])
     port.feed(framed(m.Request(3, 0, m.OP_END, b"", 9)))
     out = port.output()
-    assert out.endswith(b"\x00after reset\n")                      # the end's answer, then from the reset
+    assert out.endswith(b"\x00held\nafter reset\n")                # the end's answer, then from where it stopped
+    assert state(ep)[5] == [bytes([0, CFG.enum["bind_flow"]["streaming"]])]
 
 
 def test_raw_bytes_from_the_host_reach_the_selected_console_and_a_broken_frame_is_raw_too():
     ep = endpoint.Endpoint(fake.p4_bench(), Clock())
     p = ep.pairs[1]
-    ep.load_config([slot_item(0, 1, p[0]), bind_item(0, MODE["manual"], [(KIND["slot_console"], 0)])])
+    ep.load_config([slot_item(0, 1, p[0]), bind_item(0, SLOT_CONSOLE, 0)])
     port = fake_serial.FakeSerialPort(ep, 0)
     port.feed(b"hi\x00zz\x00")
     sid = ep.stream_keys[(ep._conn_at(1, p[0]), 2)]
@@ -379,7 +388,7 @@ def test_a_candidate_that_stops_for_200_ms_is_raw():
     clock = Clock()
     ep = endpoint.Endpoint(fake.p4_bench(), clock)
     p = ep.pairs[1]
-    ep.load_config([slot_item(0, 1, p[0]), bind_item(0, MODE["manual"], [(KIND["slot_console"], 0)])])
+    ep.load_config([slot_item(0, 1, p[0]), bind_item(0, SLOT_CONSOLE, 0)])
     port = fake_serial.FakeSerialPort(ep, 0)
     port.feed(b"\x00abc")
     clock.t += 250
@@ -388,36 +397,14 @@ def test_a_candidate_that_stops_for_200_ms_is_raw():
     assert bytes(ep.streams[sid].written) == b"\x00abc"
 
 
-def test_mixed_marks_lines_with_the_slot_name_and_takes_no_input():
-    clock = Clock()
-    ep = endpoint.Endpoint(fake.p4_bench(), clock)
-    p = ep.pairs[1]
-    ep.load_config([slot_item(0, 1, p[0], name="x035"), slot_item(1, 1, p[1], name="l103"),
-                    bind_item(3, MODE["mixed"], [(KIND["slot_console"], 0), (KIND["slot_console"], 1)])])
-    port = fake_serial.FakeSerialPort(ep, 3)
-    ep.target_says(b"one\ntw", ep.targets[(1, p[0])])
-    ep.target_says(b"two\n", ep.targets[(1, p[1])])
-    assert port.output() == b"[x035] one\n[l103] two\n"
-    clock.t += 150
-    assert port.output() == b"[x035] tw\n"                          # closed by quiet
-    port.feed(b"typed")
-    assert all(not s.written for s in ep.streams.values())
-
-
-def test_last_reset_follows_the_target_the_host_reset():
+def test_bind_state_is_port_and_flow():
+    """probe.config §3.3: bind_state is port(u8) flow(u8): 0 nothing to carry, 1 carrying (2 held: above)."""
     ep = endpoint.Endpoint(fake.p4_bench(), Clock())
     p = ep.pairs[1]
-    ep.load_config([slot_item(0, 1, p[0]), slot_item(1, 1, p[1]),
-                    bind_item(0, MODE["last_reset"], [(KIND["slot_console"], 0), (KIND["slot_console"], 1)])])
-    h = Host(ep, transport=1)                                       # over vendor bulk: port 0 is not held
-    h.open()
-    h.ok(2, 0x04, struct.pack("<HB", ep._conn_at(1, p[1]), 0))
-    ep.target_says(b"from b\n", ep.targets[(1, p[1])])
-    ep.target_says(b"from a\n", ep.targets[(1, p[0])])
-    port = fake_serial.FakeSerialPort(ep, 0)
-    assert port.output() == b"from b\n"
-    (bind_state,) = state(ep)[5]
-    assert bind_state == bytes([0, MODE["last_reset"], 1, CFG.enum["bind_flow"]["streaming"]])
+    ep.targets[(1, p[1])].present = False
+    ep.load_config([slot_item(0, 1, p[0]), slot_item(1, 1, p[1]), bind_item(0, SLOT_CONSOLE, 0),
+                    bind_item(3, SLOT_CONSOLE, 1)])
+    assert state(ep)[5] == [bytes([0, CFG.enum["bind_flow"]["streaming"]]), bytes([3, CFG.enum["bind_flow"]["idle"]])]
 
 
 # ---- fake_serve on a pty -----------------------------------------------------------------------------------
@@ -425,7 +412,7 @@ def test_last_reset_follows_the_target_the_host_reset():
 @pytest.mark.skipif(sys.platform != "linux", reason="pty and TIOCEXCL as on Linux")
 def test_fake_serve_pty_speaks_cobs_with_console_bytes_and_honours_tiocexcl():
     proc = subprocess.Popen([sys.executable, "-m", "oep_client.fake_serve", "--pty", "--profile", "p4-bench",
-                             "--slot", "x035", "--bind", "last-reset", "--console", "tick %d\\n", "--every", "20"],
+                             "--slot", "x035", "--bind", "0", "--console", "tick %d\\n", "--every", "20"],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     try:
         where = proc.stdout.readline().split()
@@ -510,7 +497,7 @@ def test_a_stream_lives_while_anything_uses_it():
     clock = Clock()
     ep = endpoint.Endpoint(fake.p4_bench(), clock)
     p = ep.pairs[1]
-    ep.load_config([slot_item(0, 1, p[0], name="x035"), bind_item(0, MODE["manual"], [(KIND["slot_console"], 0)])])
+    ep.load_config([slot_item(0, 1, p[0], name="x035"), bind_item(0, SLOT_CONSOLE, 0)])
     h = Host(ep, transport=1)
     h.open(lease=1000)
     conn = ep._conn_at(1, p[0])
@@ -561,7 +548,7 @@ def test_the_closing_0x00_of_a_frame_is_not_raw_after_the_gap():
     clock = Clock()
     ep = endpoint.Endpoint(fake.p4_bench(), clock)
     p = ep.pairs[1]
-    ep.load_config([slot_item(0, 1, p[0]), bind_item(0, MODE["manual"], [(KIND["slot_console"], 0)])])
+    ep.load_config([slot_item(0, 1, p[0]), bind_item(0, SLOT_CONSOLE, 0)])
     port = fake_serial.FakeSerialPort(ep, 0)
     port.feed(framed(m.Request(1, 0, m.OP_LOCK_STATE, b"")))       # lock-free: the port is not held
     clock.t += 250
@@ -642,7 +629,7 @@ def test_a_wire_takes_any_free_pair_the_host_names():
     skip = lambda n: m.tlv(0x02, struct.pack("<H", n))               # scan's skip is TLV 0x02 (0x01 is max_speed)
     assert m.Reader(h.ok(1, 0x01, b"\x00" + skip(29 * 28 - 10))).take("B") == 10   # the last ten
     assert m.Reader(h.ok(1, 0x01, b"\x00" + skip(29 * 28))).take("B") == 0         # the end
-    assert h.raw(1, 0x01, b"\x01" + struct.pack("<HH", 0, 1) + skip(1)).detail == m.MALFORMED
+    assert h.raw(1, 0x01, b"\x01" + struct.pack("<HH", 0, 1) + skip(1)).succeeded   # count > 0: skip not looked at (§1)
     conn = struct.unpack_from("<H", h.ok(1, 0x02, b"\x01" + SPEED + pins(0, 1)))[0]
     assert h.raw(1, 0x02, b"\x01" + SPEED + pins(1, 2)).detail == m.UNAVAILABLE    # GP1 is the live connection's
     assert h.raw(h.plan_fn, PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 0))).detail == m.UNAVAILABLE

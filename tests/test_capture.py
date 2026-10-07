@@ -3,18 +3,33 @@
 import struct
 from fractions import Fraction
 
-from oep_client import capture as c, message as m
+from oep_client import capture as c, message as m, registry as reg
 
 
 def answer(*items):
-    return b"".join(m.tlv(t, v) if t != m.TAG_IGNORED else bytes([t]) + struct.pack("<H", len(v)) + v for t, v in items)
+    return b"".join(m.tlv(t, v) for t, v in items)
 
 
 def test_configure_answer_is_read_into_actual_values():
+    """oep-if-capture: the answer's TLVs are the actual values; an unknown one (here 0x7E) is skipped (core §2.3)."""
     cfg = c._config(answer((c.ACTUAL_RATE, struct.pack("<II", 7000000, 1)), (c.LAYOUT, bytes([4, 3, 0, 1, 2])),
-                           (c.ACTUAL_SAMPLES, struct.pack("<I", 1000)), (c.IGNORED, bytes([c.TRIGGER]))), analog=False)
+                           (c.ACTUAL_SAMPLES, struct.pack("<I", 1000)), (0x7E, b"\x01\x02")), analog=False)
     assert cfg.rate == Fraction(7000000) and cfg.width == 4 and cfg.positions == [0, 1, 2]
-    assert cfg.samples == 1000 and cfg.bytes == 500 and cfg.ignored == [c.TRIGGER]
+    assert cfg.samples == 1000 and cfg.bytes == 500
+
+
+def test_configure_answer_has_no_timing_or_rate_accuracy():
+    """The configure answer has no timing (0x54) or rate_accuracy (0x5A), and there is no ignored TLV (core §2.3): the
+    client keeps no jitter / measured rate / ignored list."""
+    for i in (reg.FIXTURE_LOGIC, reg.FIXTURE_ANALOG):
+        assert not {"timing", "rate_accuracy"} & set(i.tlv["configure_answer"])
+        assert not {0x54, 0x5A} & set(i.tlv["configure_answer"].values())
+    cfg = c._config(answer((0x54, bytes(8)), (0x5A, bytes(8)), (c.ACTUAL_RATE, struct.pack("<II", 1000, 1))),
+                    analog=True)                                       # unknown to this client now: skipped
+    assert cfg.rate == Fraction(1000)
+    for gone in ("jitter_ns", "jitter_max_ns", "rate_measured", "rate_ppm", "ignored"):
+        assert not hasattr(cfg, gone)
+    assert not hasattr(c, "IGNORED") and not hasattr(m, "TAG_IGNORED")
 
 
 def logic(width, positions):
