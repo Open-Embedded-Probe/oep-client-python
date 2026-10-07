@@ -7,9 +7,7 @@
 should set TIOCEXCL on it, as on a real port). On Linux this program keeps a slave fd of its own and watches the
 path's opens and closes (inotify): when the last host closes it - or ends without closing it - TIOCEXCL is cleared
 and the unread input dropped, as a real port's last close does, so the next host's open succeeds. --tcp PORT (0 = any free
-one): --framing cobs (the default without --announce) is the serial port again and serves one connection at a time (a
-second one waits until the first closes); --framing length (the default with --announce) is length(u16) message as on
-vendor bulk / TCP (no raw bytes): the listening socket is then a TCP transport of the probe (kind 6, listed in fn 0's
+one): --framing length (the default) is length(u16) message as a probe's TCP transport speaks it (no raw bytes): the listening socket is then a TCP transport of the probe (kind 6, listed in fn 0's
 describe, its index in every confirm's transport TLV; transports §1), no pause inside a frame restarts the reader
 (transports §2), and a length over max_frame closes the connection. The length framing serves up to --tcp-connections
 connections at once (default 3, as the reference probe); one more is accepted and closed at once. Each connection is a
@@ -21,6 +19,8 @@ them (transports §3: they stay until the lease runs out or another core §9 eve
 closed connection are dropped; an open with the same session id from another connection takes the session back,
 core §6.2, and its notifications go there from then on). A connection that takes nothing for 2 s while answers wait is
 closed as dead; notifications that would make more than 2 x max_frame wait on one are dropped (core §11.4).
+--framing cobs, only when asked for, is the serial port again over the socket (emulating a serial port, COBS frames and
+the port's raw bytes): it serves one connection at a time (a second one waits until the first closes).
 
 --announce (with --tcp, length framing) announces the port as a probe listening on TCP does (transports §3): DNS-SD
 `_oep._tcp` over mDNS - PTR `_oep._tcp.local.` -> instance `OEP virtual <unit_id> <port>`, its SRV (the port, host
@@ -745,7 +745,7 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     if a.announce and a.framing == "cobs":
         ap.error("--announce: a host that finds the port speaks length frames (transports §1); drop --framing cobs")
     if a.framing is None:
-        a.framing = "length" if a.announce else "cobs"
+        a.framing = "length" if a.tcp is not None else "cobs"   # TCP: length frames as a probe's TCP transport (transports §1)
     if a.tcp_connections is not None and (a.tcp is None or a.framing != "length"):
         ap.error("--tcp-connections is for --tcp with length framing (cobs over TCP is a serial port: one connection "
                  "at a time)")

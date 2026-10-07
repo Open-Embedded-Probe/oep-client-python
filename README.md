@@ -442,9 +442,10 @@ first, then the probe reboots, and what it had read behind the request is droppe
 proc.stdin.write(b"reboot\n"); proc.stdin.flush()
 ```
 
-The pty is a serial port (the host opens it with TIOCEXCL); `--tcp PORT` is `--framing cobs` (a serial port) or
-`--framing length` (the TCP form: the listener is a TCP transport of the probe, listed in describe and named by every
-confirm; a length over max_frame closes the connection). With length framing TCP serves up to `--tcp-connections N`
+The pty is a serial port (the host opens it with TIOCEXCL); `--tcp PORT` speaks length frames by default, as a
+probe's TCP transport does (`--framing length`: the listener is a TCP transport of the probe, listed in describe and
+named by every confirm; a length over max_frame closes the connection); `--framing cobs`, only when asked for, emulates
+a serial port over the socket (COBS frames and the port's raw bytes, one connection at a time). With length framing TCP serves up to `--tcp-connections N`
 connections at once (default 3, as the reference probe; one more is accepted and closed at once), each a transport of its
 own (transports §1: its confirm and revision in use, notifications on the connection their fn's subscribe came on) and
 all on one probe: an open from one connection while another's session holds the lock is refused locked, and lock_state

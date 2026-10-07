@@ -142,7 +142,8 @@ def test_tcp_connections_sets_the_limit():
 
 
 def test_tcp_connections_is_for_the_length_framing():
-    run = subprocess.run([sys.executable, "-m", "oep_client.virtual_bench_serve", "--tcp", "0", "--tcp-connections", "2"],
+    run = subprocess.run([sys.executable, "-m", "oep_client.virtual_bench_serve", "--tcp", "0", "--framing", "cobs",
+                          "--tcp-connections", "2"],
                          stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
     assert run.returncode == 2 and "--tcp-connections" in run.stderr
 

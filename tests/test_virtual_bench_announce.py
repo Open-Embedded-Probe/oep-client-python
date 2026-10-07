@@ -205,7 +205,9 @@ def test_the_records_and_the_two_answer_forms():
 def test_announce_options_are_checked():
     from oep_client import virtual_bench_serve as vbs
     assert vbs.parse(["--tcp", "0", "--announce"]).framing == "length"         # announcing: length frames
-    assert vbs.parse(["--tcp", "0"]).framing == "cobs"
+    assert vbs.parse(["--tcp", "0"]).framing == "length"                         # TCP: length frames by default
+    assert vbs.parse(["--tcp", "0", "--framing", "cobs"]).framing == "cobs"    # a serial port over the socket, asked for
+    assert vbs.parse([]).framing == "cobs"                                     # the pty
     for argv in (["--announce"], ["--tcp", "0", "--announce", "--framing", "cobs"], ["--tcp", "0", "--unit-id", "UP"],
                  ["--tcp", "0", "--announce", "--announce-on", "eth0"]):
         with pytest.raises(SystemExit):

@@ -1,6 +1,17 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) **virtual_bench_serve --tcp speaks length frames by default** (as a probe's TCP transport, transports §1;
+  ch32rv's tests had to pass `--framing length`). `--framing cobs` stays as an explicit option that emulates a serial
+  port over the socket (COBS frames and the port's raw bytes, one connection at a time, as before); the pty is
+  unchanged. Breaking for a caller that relied on COBS from a bare `--tcp`: pass `--framing cobs`. Help text and
+  README (EN / JA) follow; tests that named the old default updated (oep-client-js's test/virtual-bench.js already
+  names its framing).
+- (JA) **virtual_bench_serve --tcp は既定で length のフレームを話す**（probe の TCP の経路と同じ、transports §1。ch32rv のテストは
+  `--framing length` を付ける必要があった）。`--framing cobs` は指定したときだけの選択肢として残り、socket の上でシリアルの口を
+  まねる（COBS のフレームと口の生のバイト、今までどおり一度に 1 つの接続）。pty は変わらない。`--tcp` だけで COBS を当てにしていた
+  呼び手には壊れる変更: `--framing cobs` を付ける。help と README（EN / JA）を合わせ、古い既定を名指ししていたテストを直した
+  （oep-client-js の test/virtual-bench.js は framing を常に指定している）。
 - (EN) **Follow oep-spec 2b17990 .. 9118dc0 (wifi_min_max_frame, optional TCP advertising).** Registry and vectors
   synced; README names 9118dc0.
   - probe.config §1.4: a probe with the wifi item answers max_frame 112 or more on every transport
