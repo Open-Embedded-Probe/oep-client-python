@@ -525,7 +525,8 @@ def test_p2_o4_a_halt_that_times_out_clears_haltreq_and_a_step_that_cannot_halt_
     tg.halted, tg.step_stuck = True, "halts"
     r = h.raw(2, reg.TARGET_RISCV_DM.op["step"], struct.pack("<H", cid))
     status, moved, before, after = struct.unpack_from("<BBII", r.payload)
-    assert status == endpoint.STATE and after != before and tg.halted and not tg.dcsr_step
+    assert status == endpoint.STATE and (moved, before, after) == (0, 0, 0)   # not ok: all 0 (debug §4.2, a168c34)
+    assert tg.halted and not tg.dcsr_step and tg.dpc != 0                  # halted again; its dpc is read with dmi
     assert m.Tail.parse(r.payload[10:]).get(0x01) is None
 
 
