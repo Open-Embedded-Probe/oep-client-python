@@ -1,0 +1,320 @@
+"""oep-spec 0098b56 .. 2c6d18d (the external review's interface re-check, 2026-10-07), in the client and the virtual
+bench: capture §3.3's configure contract, §3.4's generations (wrap, events carry them, a host drops another start's),
+§3.2's segments paged by common §1.3, §4's capture-group start answer, status and events with the group's generation."""
+
+import collections
+import struct
+
+import pytest
+
+from oep_client import capture as c, core, endpoint, virtual_bench, virtual_bench_capture as vbc, host as h, message as m
+
+
+class Clock:
+    t = 0
+
+    def __call__(self):
+        return self.t
+
+
+class Link:
+    """What a link keeps of the notifications: the events, the data pushes (filled from the endpoint here)."""
+
+    def __init__(self):
+        self.events, self.pushes = collections.deque(), collections.deque()
+
+    def take(self, ep):
+        for f in ep.pushes():
+            (self.events if f[0] == m.ROLE_EVENT else self.pushes).append(f)
+
+
+def bench(profile=virtual_bench.p4_x035):
+    clock = Clock()
+    ep = endpoint.Endpoint(profile(), clock)
+    hst = h.Host(lambda b: ep.handle(b, 0))
+    hst.open(3000)
+    return ep, hst, c.LogicCapture(hst), clock
+
+
+def body(mode=None, rate=None, samples=None, segments=None, trigger=None, pretrigger=None):
+    out = b""
+    for tag, fmt, v in ((c.MODE, "<B", mode), (c.RATE, "<I", rate), (c.SAMPLES, "<I", samples),
+                        (c.SEGMENTS, "<I", segments), (c.TRIGGER, "<BBI", trigger), (c.PRETRIGGER, "<I", pretrigger)):
+        if v is not None:
+            out += m.tlv(tag, struct.pack(fmt, *(v if isinstance(v, tuple) else (v,))))
+    return out
+
+
+# ---- capture §3.3: the configure / query contract ------------------------------------------------------------------
+
+@pytest.mark.parametrize("what, payload", [
+    ("no mode", body(rate=1_000_000, samples=100)),
+    ("no rate", body(mode=c.ONE_SHOT, samples=100)),
+    ("one-shot without samples", body(mode=c.ONE_SHOT, rate=1_000_000)),
+    ("repeat without samples", body(mode=c.REPEAT, rate=1_000_000, segments=2)),
+])
+def test_a_required_tlv_missing_is_malformed(what, payload):
+    ep, hst, lc, _ = bench()
+    core.plan_apply(hst, [(lc.fn, 0, 20)])
+    for op in (lc.CONFIGURE, lc.QUERY_OP):
+        with pytest.raises(h.Rejected) as e:
+            hst.request(lc.fn, op, payload, locked=op == lc.CONFIGURE)
+        assert e.value.result.detail == m.MALFORMED, what
+
+
+@pytest.mark.parametrize("what, payload, tag", [
+    ("streaming with samples", body(mode=c.STREAMING, rate=1_000_000, samples=1000), c.SAMPLES),
+    ("one-shot with segments", body(mode=c.ONE_SHOT, rate=1_000_000, samples=100, segments=1), c.SEGMENTS),
+    ("streaming with segments", body(mode=c.STREAMING, rate=1_000_000, segments=2), c.SEGMENTS),
+    ("pretrigger without a trigger", body(mode=c.ONE_SHOT, rate=1_000_000, samples=100, pretrigger=0), c.PRETRIGGER),
+    ("pretrigger with type 0", body(mode=c.ONE_SHOT, rate=1_000_000, samples=100, trigger=(0, 0, 0), pretrigger=10),
+     c.PRETRIGGER),
+    ("pretrigger not below samples", body(mode=c.ONE_SHOT, rate=1_000_000, samples=100, trigger=(c.EDGE, 0, 0),
+                                          pretrigger=100), c.PRETRIGGER),
+])
+def test_what_the_contract_rules_out_is_unsupported_with_its_tag(what, payload, tag):
+    ep, hst, lc, _ = bench()
+    core.plan_apply(hst, [(lc.fn, 0, 20)])
+    for op in (lc.CONFIGURE, lc.QUERY_OP):
+        with pytest.raises(h.Unsupported) as e:
+            hst.request(lc.fn, op, payload, locked=op == lc.CONFIGURE)
+        assert e.value.result.payload == bytes([tag]), what
+    assert ep.captures[lc.fn].state == c.STATE["unconfigured"]          # nothing changed
+
+
+def test_a_pretrigger_past_max_pretrigger_is_unsupported():
+    ep, hst, lc, _ = bench(virtual_bench.esp32_v003)
+    cap = ep.captures[lc.fn]
+    core.plan_apply(hst, [(lc.fn, 0, 4)])
+    cap.max_pretrigger = 50
+    with pytest.raises(h.Unsupported) as e:
+        lc.configure(rate=1_000_000, samples=100, trigger=(c.EDGE, 0, 0), pretrigger=51)
+    assert e.value.result.payload[0] & 0x7F == c.PRETRIGGER
+    lc.configure(rate=1_000_000, samples=100, trigger=(c.EDGE, 0, 0), pretrigger=50)
+
+
+def test_a_trigger_role_not_in_the_plan_is_unavailable_wrong_state():
+    ep, hst, lc, _ = bench()
+    core.plan_apply(hst, [(lc.fn, 0, 20)])
+    with pytest.raises(h.Unavailable) as e:
+        lc.configure(rate=1_000_000, samples=100, trigger=(c.EDGE, 3, 0))
+    assert e.value.cause == "wrong_state"
+
+
+def test_the_answer_rows_follow_the_mode():
+    ep, hst, lc, _ = bench()
+    core.plan_apply(hst, [(lc.fn, 0, 20)])
+    rows = {}
+    for mode, extra in ((c.ONE_SHOT, dict(samples=100)), (c.REPEAT, dict(samples=100, segments=2)),
+                        (c.STREAMING, {})):
+        r = hst.request(lc.fn, lc.QUERY_OP, body(mode=mode, rate=1_000_000, **extra), locked=False)
+        rows[mode] = [t for t, _ in m.split_tlvs(r.payload)]
+    assert rows[c.ONE_SHOT] == [c.ACTUAL_RATE, c.LAYOUT, c.ACTUAL_SAMPLES, c.BLOCKING]
+    assert rows[c.REPEAT] == [c.ACTUAL_RATE, c.LAYOUT, c.ACTUAL_SAMPLES, c.ACTUAL_SEGMENTS, c.BLOCKING]
+    assert rows[c.STREAMING] == [c.ACTUAL_RATE, c.LAYOUT, c.BLOCKING]
+    assert lc.configure(rate=1_000_000, samples=100).segments == 1      # one-shot: one segment, no row for it
+
+
+@pytest.mark.parametrize("kw, words", [
+    (dict(samples=None), "samples is required"),
+    (dict(mode=c.REPEAT, samples=None), "samples is required"),
+    (dict(mode=c.STREAMING, samples=10), "streaming takes no samples"),
+    (dict(segments=2), "segments is for repeat only"),
+    (dict(mode=c.STREAMING, samples=None, segments=2), "segments is for repeat only"),
+    (dict(pretrigger=5), "a pretrigger needs a trigger"),
+    (dict(trigger=(c.IMMEDIATE, 0, 0), pretrigger=5), "a pretrigger needs a trigger"),
+])
+def test_the_client_keeps_the_contract_before_sending(kw, words):
+    ep, hst, lc, _ = bench()
+    core.plan_apply(hst, [(lc.fn, 0, 20)])
+    n = len(ep.requests)
+    args = dict(rate=1_000_000, samples=100) | kw
+    with pytest.raises(ValueError, match=words):
+        lc.configure(**{k: v for k, v in args.items() if v is not None or k != "samples"})
+    assert len(ep.requests) == n                                        # nothing sent
+
+
+def test_a_pretrigger_of_0_without_a_trigger_is_left_out():
+    ep, hst, lc, _ = bench()
+    core.plan_apply(hst, [(lc.fn, 0, 20)])
+    lc.configure(rate=1_000_000, samples=100, pretrigger=0)
+    assert c.PRETRIGGER not in {t & 0x7F for t, _ in m.split_tlvs(ep.requests[-1].payload)}
+
+
+# ---- capture §3.4: generations wrap, events carry them --------------------------------------------------------------
+
+def test_the_generation_after_0xffffffff_is_1():
+    assert m.next_generation(0) == 1 and m.next_generation(0xFFFFFFFF) == 1 and m.next_generation(41) == 42
+    ep, hst, lc, _ = bench()
+    core.plan_apply(hst, [(lc.fn, 0, 20)])
+    lc.configure(rate=1_000_000, samples=64)
+    ep.captures[lc.fn].generation = 0xFFFFFFFF
+    lc.start()
+    assert lc.generation == 1 and lc.status().generation == 1
+    (seg,) = lc.wait()
+    assert seg.generation == 1 and len(lc.read_segment(seg)) == 8
+
+
+def test_track_events_carry_the_generation():
+    ep, hst, lc, _ = bench()
+    core.plan_apply(hst, [(lc.fn, 0, 20), (lc.fn, 1, 21)])
+    lc.configure(rate=1_000_000, samples=64, trigger=(c.EDGE, 1, 0))
+    lc.subscribe()
+    lc.start()
+    link = Link()
+    link.take(ep)
+    got = lc.events(link)
+    assert [e.kind for e in got] == ["triggered", "segment", "stopped"] and not link.events
+    trig, seg, stop = got
+    assert {e.generation for e in got} == {1} and stop.reason_name == "complete" and stop.error == 0
+    assert (trig.serial, trig.trigger_index) == (0, seg.segment.trigger_index)
+    assert trig.trigger_ns == seg.segment.start_ns + trig.trigger_index * 1000
+
+
+def test_an_event_of_an_earlier_start_is_dropped():
+    """The stop of generation 1 is still on the link when generation 2's start has answered (core §11.4): the host
+    does not take it for the current capture's (§3.4)."""
+    ep, hst, lc, clock = bench()
+    core.plan_apply(hst, [(lc.fn, 0, 20)])
+    lc.configure(rate=1_000_000, mode=c.REPEAT, samples=1000, segments=3)
+    lc.subscribe()
+    lc.start()
+    lc.stop()
+    link = Link()
+    link.take(ep)                                                        # generation 1's stopped, not read yet
+    lc.start()
+    clock.t = 1
+    lc.status()                                                          # generation 2's first segment
+    link.take(ep)
+    got = lc.events(link)
+    assert [(e.kind, e.generation) for e in got] == [("segment", 2)] and lc.stale_events == 1
+    other = c.LogicCapture(hst)                                          # a host that did not start it: status first
+    link.events.append(bytes([m.ROLE_EVENT]) + struct.pack("<HHB", lc.fn, 9, c.EVENT_STOPPED) + bytes([1, 0])
+                       + struct.pack("<I", 1))
+    assert other.events(link) == [] and other.generation == 2 and other.stale_events == 1
+
+
+def test_a_short_event_is_a_protocol_error():
+    with pytest.raises(h.ProtocolError):
+        c.unpack_event(bytes([m.ROLE_EVENT]) + struct.pack("<HHB", 9, 0, c.EVENT_STOPPED) + bytes([1, 0]))   # no generation
+
+
+# ---- capture §3.2: segments paged by common §1.3, serials wrap, release ----------------------------------------------
+
+def repeat(ring=8, max_frame=None):
+    ep, hst, lc, clock = bench()
+    if max_frame:
+        ep.probe.max_frame = max_frame
+    core.plan_apply(hst, [(lc.fn, 0, 20)])
+    lc.configure(rate=1_000_000, mode=c.REPEAT, samples=1000, segments=ring)
+    return ep, hst, lc, clock
+
+
+def test_segments_from_serial_done_is_empty_with_more_0():
+    ep, hst, lc, clock = repeat()
+    lc.start()
+    clock.t = 3
+    assert lc.status().serial_done == 3
+    assert lc.segments_page(3) == ([], False)
+    assert [s.serial for s in lc.segments_page(1)[0]] == [1, 2]          # from_serial included
+    lc.release(1)
+    assert [s.serial for s in lc.segments_page(0)[0]] == [2]             # released: from the oldest kept
+    assert [s.serial for s in lc.segments_page(77)[0]] == [2]            # not given yet: the same
+
+
+def test_segments_page_by_the_last_serial_plus_1_and_stop_at_more_0():
+    ep, hst, lc, clock = repeat(max_frame=64 + 37)                      # 2 records an answer
+    lc.start()
+    clock.t = 5
+    lc.status()
+    pages = []
+    real = lc.segments_page
+    lc.segments_page = lambda f=0: pages.append(f) or real(f)
+    assert [s.serial for s in lc.segments()] == [0, 1, 2, 3, 4] and pages == [0, 2, 4]
+
+
+def test_segment_serials_wrap():
+    ep, hst, lc, clock = repeat(ring=4)
+    lc.start()
+    ep.captures[lc.fn].serial_done = 0xFFFFFFFE
+    clock.t = 3
+    assert lc.status().serial_done == 1
+    assert [s.serial for s in lc.segments(0xFFFFFFFE)] == [0xFFFFFFFE, 0xFFFFFFFF, 0]
+    assert lc.segments_page(1) == ([], False)                            # serial_done
+    lc.release(0xFFFFFFFF)                                               # at or before it, by core §2.6
+    assert [s.serial for s in lc.segments()] == [0]
+
+
+def test_release_never_frees_a_segment_not_finished():
+    ep, hst, lc, clock = repeat(ring=3)
+    lc.start()
+    clock.t = 1
+    lc.status()
+    lc.release(5)                                                        # serial 5 is not finished: only 0 goes
+    assert lc.segments() == []
+    clock.t = 2
+    assert [s.serial for s in lc.segments()] == [1]
+
+
+# ---- capture §4: the group's start answer, status and events -----------------------------------------------------------
+
+def group(clock_t=7):
+    ep, hst, lc, clock = bench()
+    an, grp = c.AnalogCapture(hst), c.CaptureGroup(hst)
+    clock.t = clock_t
+    core.plan_apply(hst, [(lc.fn, 0, 20), (lc.fn, 1, 21), (an.fn, 0, 16)])
+    lc.configure(rate=1_000_000, samples=10_000, trigger=(c.EDGE, 1, 0), pretrigger=4000)
+    an.configure(rate=10_000, samples=100)
+    return ep, hst, lc, an, grp, clock
+
+
+def test_the_group_start_answer_has_the_groups_and_each_tracks_generation():
+    ep, hst, lc, an, grp, clock = group()
+    grp.bind([an, lc], trigger=lc)                                       # bind order: analog first
+    ep.groups[grp.fn].generation, ep.captures[lc.fn].generation, ep.captures[an.fn].generation = 4, 3, 1
+    blocking, start_ns = grp.start([lc, an])
+    assert (blocking, start_ns, grp.generation) == (0, 7_000_000, 5)
+    assert grp.generations == {an.fn: 2, lc.fn: 4} and (lc.generation, an.generation) == (4, 2)
+    raw = hst.request(grp.fn, grp.STATUS, b"", locked=False).payload
+    assert struct.unpack_from("<I", raw, 19)[0] == 5 and grp.status().generation == 5
+    grp.bind([lc, an], trigger=lc)                                       # bound again: the group's generation goes on
+    grp.start([lc, an])
+    assert grp.generation == 6 and list(grp.generations) == [lc.fn, an.fn]
+
+
+def test_the_start_answer_fixed_part_on_the_wire():
+    ep, hst, lc, an, grp, clock = group()
+    grp.bind([lc, an], trigger=lc)
+    r = hst.request(grp.fn, grp.START, b"")
+    blocking, start_ns, generation, n = struct.unpack_from("<IQIB", r.payload)
+    assert (blocking, start_ns, generation, n) == (0, 7_000_000, 1, 2) and len(r.payload) == 17 + 6 * n
+    assert [struct.unpack_from("<HI", r.payload, 17 + 6 * k) for k in range(n)] == [(lc.fn, 1), (an.fn, 1)]
+    assert not m.split_tlvs(r.payload[17 + 6 * n:])                     # no TLV 0x01 generations any more
+
+
+def test_the_groups_events_carry_its_generation_and_wrap():
+    ep, hst, lc, an, grp, clock = group()
+    grp.bind([lc, an], trigger=lc)
+    ep.groups[grp.fn].generation = 0xFFFFFFFF
+    hst.subscribe(grp.fn)
+    grp.start([lc, an])
+    assert grp.generation == 1
+    link = Link()
+    link.take(ep)
+    got = grp.events(link)
+    assert [(e.kind, e.generation) for e in got] == [("triggered", 1), ("stopped", 1)]
+    assert got[0].trigger_fn == lc.fn and got[0].trigger_ns == grp.status().trigger_ns
+    link.events.append(bytes([m.ROLE_EVENT]) + struct.pack("<HHB", grp.fn, 7, c.EVENT_STOPPED) + bytes([1, 0])
+                       + struct.pack("<I", 0xFFFFFFFF))                  # the start before's
+    assert grp.events(link) == [] and grp.stale_events == 1
+
+
+def test_the_vb_events_are_the_vectors_frames():
+    """ops.json's `events` built by the virtual bench: a logic stopped (host) of generation 3, the group's stopped
+    (complete) of generation 5 - the kind and fixed part after the header."""
+    cap = vbc.VirtualCapture({1, 2}, {8}, 1, 1_000_000)
+    cap.generation = 3
+    assert cap.stopped_event(vbc.STOPPED["host"]) == bytes.fromhex("050900070002010003000000")[5:]
+    grp = vbc.VirtualGroup([9, 13], 2, [])
+    grp.generation = 5
+    assert grp.stopped_event(vbc.STOPPED["complete"]) == bytes.fromhex("050c00010002000005000000")[5:]

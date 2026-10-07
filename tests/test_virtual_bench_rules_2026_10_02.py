@@ -609,7 +609,8 @@ def test_p2_o8_samples_rounded_down_and_the_configure_tlvs():
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 6, 0, 4), critical=True))
     cfg = reg.FIXTURE_LOGIC.op["configure"]
     rate = m.tlv(CAP_TLV["rate"], struct.pack("<I", 1_000_000), critical=True)
-    r = h.ok(6, cfg, rate + m.tlv(CAP_TLV["samples"], struct.pack("<I", 1 << 20)))
+    one_shot = m.tlv(CAP_TLV["mode"], b"\x01") + m.tlv(CAP_TLV["samples"], struct.pack("<I", 100))   # §3.3: required
+    r = h.ok(6, cfg, rate + m.tlv(CAP_TLV["mode"], b"\x01") + m.tlv(CAP_TLV["samples"], struct.pack("<I", 1 << 20)))
     assert m.Tail.parse(r).get(reg.FIXTURE_ANALOG.tlv["configure_answer"]["actual_samples"]) == struct.pack("<I", 65536)
     r = h.raw(6, cfg, rate + m.tlv(CAP_TLV["mode"], b"\x03", critical=True))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([CAP_TLV["mode"] | 0x80]))
@@ -617,9 +618,9 @@ def test_p2_o8_samples_rounded_down_and_the_configure_tlvs():
     assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([CAP_TLV["mode"]]))
     r = h.raw(6, cfg, rate + m.tlv(CAP_TLV["mode"], b"\x03"))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([CAP_TLV["mode"]]))
-    r = h.raw(6, cfg, m.tlv(CAP_TLV["rate"], struct.pack("<I", 9_000_000), critical=True))
+    r = h.raw(6, cfg, m.tlv(CAP_TLV["rate"], struct.pack("<I", 9_000_000), critical=True) + one_shot)
     assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([CAP_TLV["rate"] | 0x80]))
-    r = h.raw(6, cfg, rate + m.tlv(CAP_TLV["trigger"], struct.pack("<BBI", 3, 0, 0), critical=True))
+    r = h.raw(6, cfg, rate + one_shot + m.tlv(CAP_TLV["trigger"], struct.pack("<BBI", 3, 0, 0), critical=True))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([CAP_TLV["trigger"] | 0x80]))   # cross up: the analog's
 
 

@@ -409,7 +409,7 @@ def test_capture_critical_tag_it_cannot_honour_is_unsupported():
     with pytest.raises(host.Unsupported) as e:
         cap.configure(rate=1_000_000, samples=100, trigger=(capture.EDGE, 0, 0), critical={capture.TRIGGER})
     assert e.value.tag == capture.TRIGGER | capture.CRITICAL
-    assert not hasattr(cap.configure(rate=1_000_000, samples=100, pretrigger=10), "ignored")   # no ignored list
+    assert not hasattr(cap.configure(rate=1_000_000, samples=100), "ignored")   # no ignored list
 
 
 def test_stream_io_fits_a_64_byte_frame():

@@ -71,7 +71,7 @@ def test_the_classic_esp32_sampler_takes_a_byte_a_sample():
 def test_a_rate_is_the_source_divided_by_a_whole_number():
     ep, hst, lc, _ = bench()
     core.plan_apply(hst, [(lc.fn, 0, 20)])
-    assert lc.configure(rate=3_000_000, query=True).rate == c.Fraction(20_000_000, 7)   # at or under the one asked
+    assert lc.configure(rate=3_000_000, samples=100, query=True).rate == c.Fraction(20_000_000, 7)   # at or under the one asked
     assert lc.config is None                                        # query changes nothing
 
 
@@ -360,9 +360,13 @@ def test_a_group_refuses_what_it_cannot_bind():
 
 # ---- what configure / describe say (oep-if-capture §3.3, §2; core §2.3) --------------------------------------------
 
-def _configure_body(mode=c.ONE_SHOT, rate=1_000_000, critical=(), extra=b""):
-    return (m.tlv(c.MODE, bytes([mode]), critical=c.MODE in critical)
-            + m.tlv(c.RATE, struct.pack("<I", rate), critical=c.RATE in critical) + extra)
+def _configure_body(mode=c.ONE_SHOT, rate=1_000_000, critical=(), extra=b"", samples=100):
+    """mode, rate and - in modes 1 and 2, which require it (§3.3) - samples."""
+    body = (m.tlv(c.MODE, bytes([mode]), critical=c.MODE in critical)
+            + m.tlv(c.RATE, struct.pack("<I", rate), critical=c.RATE in critical))
+    if mode in (c.ONE_SHOT, c.REPEAT) and samples is not None:
+        body += m.tlv(c.SAMPLES, struct.pack("<I", samples))
+    return body + extra
 
 
 @pytest.mark.parametrize("what, body, tag", [

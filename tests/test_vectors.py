@@ -137,9 +137,17 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None, wifi
             o = virtual_bench._restart(fn)
         elif name == "oep.probe.config":
             o = virtual_bench._config(fn, 0, slots_max=2, storage=0, wifi_max=wifi_max)   # no storage: no save / erase
-        elif name == "oep.fixture.logic":
+        elif name == "oep.fixture.logic":                              # 80 MHz / 4 = 20 MHz exact; w 2 for two channels
             o = virtual_bench.Offered(fn, 0, name, virtual_bench._roles({k: chans for k in range(4)})
-                             + virtual_bench._capture_decl(["one_shot"], 8, 4096, 1), inner=virtual_bench._capture_inner([8], 1, 480))
+                             + (catalog.u32(catalog.MAX_CLOCK_HZ, 80_000_000),)
+                             + virtual_bench._capture_decl(["one_shot"], 8, 1 << 20, 1),
+                             inner=virtual_bench._capture_inner([2, 8], 1, 480))
+        elif name == "oep.fixture.analog":
+            o = virtual_bench.Offered(fn, 0, name, virtual_bench._roles({k: chans for k in range(4)})
+                             + virtual_bench._analog_decl([(0, 0, 3300, 0)], 4096), inner=virtual_bench._capture_inner([16], 1, 480))
+        elif name == "oep.fixture.capture-group":
+            tracks = sorted(int(k) for k, v in fns.items() if v in ("oep.fixture.logic", "oep.fixture.analog"))
+            o = virtual_bench.Offered(fn, 0, name, virtual_bench._group_decl(tracks))
         else:
             raise AssertionError(f"a vector names {name}: add it here")
         if ops and fn in ops:
@@ -424,6 +432,8 @@ def setup_case(case):
         fns["4" if "4" not in fns else "14"] = "oep.wire.rvswd"
     if "oep.probe.config" in names:
         fns.setdefault("7" if "7" not in fns else "17", "oep.target.console")
+    if names & {"oep.fixture.logic", "oep.fixture.analog"} and "oep.probe.plan" not in names:
+        fns["3"] = "oep.probe.plan"                                    # the capture vectors' plans (roles 0 and 1)
     ops = {}
     if "dmi, halt, resume" in case["state"]:
         ops[int(next(k for k, v in case["fns"].items() if v == "oep.target.riscv-dm"))] = {1, 2, 3}
@@ -486,16 +496,41 @@ def setup_case(case):
         ep.load_config([m.tlv(0x04, slot), m.tlv(0x05, struct.pack("<BBH", 0, 1, 0))], saved=False)   # port 0: slot 0
     elif name.startswith("probe.config"):
         held(ep)
+    elif name.startswith("capture-group"):
+        held(ep)                                                       # fn 9 (logic) and fn 13 (analog), roles 0 and 1
+        plan_apply = b"".join(m.tlv(0x10, struct.pack("<HBH", f, r, ch), critical=True)
+                              for f, r, ch in ((9, 0, 0), (9, 1, 1), (13, 0, 2)))
+        req(ep, 2, plan, PLAN_APPLY, plan_apply)
+        one_shot = lambda rate: (m.tlv(0x40, bytes([1])) + m.tlv(0x42, struct.pack("<I", rate))   # noqa: E731
+                                 + m.tlv(0x43, struct.pack("<I", 100)))
+        req(ep, 3, 9, 0x01, one_shot(1_000_000))
+        req(ep, 4, 13, 0x01, one_shot(10_000))
+        req(ep, 5, 12, 0x01, struct.pack("<BHH", 2, 9, 13))            # bind fn 9 then fn 13, no trigger_track
+        ep.groups[12].generation, ep.captures[9].generation, ep.captures[13].generation = 4, 3, 1
+        clock.t = 7                                                    # acquisition starts at 7 ms
     elif name.startswith("logic"):
         logic = int(next(k for k, v in fns.items() if v == "oep.fixture.logic"))
         if "session S" in state:
             held(ep)
         if "fn 9 subscribed" in state:
             req(ep, 2, logic, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0))
+        if "roles 0 and 1 in fn 9's plan" in state or "as above" in state:
+            if "session S" not in state:
+                held(ep)
+            req(ep, 2, plan, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", logic, 0, 0), critical=True)
+                + m.tlv(0x10, struct.pack("<HBH", logic, 1, 1), critical=True))
         cap = ep.captures[logic]
-        cap.generation, cap.state = 1, virtual_bench_capture.STATE["done"]
+        cap.generation, cap.state, cap.serial_done = 1, virtual_bench_capture.STATE["done"], 1
         cap.segs = [virtual_bench_capture.Segment(0, 0, 1000, 5_000_000, 50, virtual_bench_capture.NONE, 0, 1)]
     return ep
+
+
+def _uncritical(frame: bytes) -> bytes:
+    """A request with bit 7 of its TLV tags cleared: this client sends mode and rate critical (its own choice,
+    capture §3.3), the vectors send them plain - the same request otherwise."""
+    r = m.Request.unpack(frame)
+    body = b"".join(m.tlv(t & 0x7F, v) for t, v in m.split_tlvs(r.payload))
+    return m.Request(r.corr, r.fn, r.op, body, r.session).pack()
 
 
 # The wifi vectors' entry (probe.config §1.4): index 0, ssid "lab", passphrase "password1"
@@ -752,9 +787,34 @@ def _on_client(case):
         return sent
     if name.startswith("logic segments"):
         hst, sent = client(case)
-        (seg,), more = cap.LogicCapture(hst, 9).segments_page(0)
+        frm = struct.unpack_from("<I", m.Request.unpack(hx(case["request_hex"])).payload)[0]
+        segs, more = cap.LogicCapture(hst, 9).segments_page(frm)
+        if "from_serial = serial_done" in name:
+            assert (segs, more) == ([], False)                          # common §1.3 paging 2
+            return sent
+        (seg,) = segs
         assert not more and (seg.serial, seg.position, seg.samples, seg.start_ns, seg.generation) == \
             (0, 0, 1000, 5_000_000, 1)
+        return sent
+    if name.startswith("logic configure without rate"):
+        return None                                                     # the client always sends mode and rate
+    if name.startswith("logic configure") or name.startswith("logic query"):
+        hst, sent = client(case, S if "session S" in case["state"] else None)
+        lc = cap.LogicCapture(hst, 9)
+        if "streaming with samples" in name:
+            with pytest.raises(ValueError, match="streaming takes no samples"):
+                lc.configure(rate=1_000_000, mode=cap.STREAMING, samples=1000, query=True)
+            assert sent == []
+            return REFUSED_BEFORE_SENDING
+        c = lc.configure(rate=20_000_000, samples=200_000)
+        assert (c.rate, c.width, c.positions, c.samples, c.segments, c.blocking_ms) == (20_000_000, 2, [0, 1], 200_000, 1, 0)
+        return [_uncritical(sent[0])]
+    if name.startswith("capture-group start"):
+        hst, sent = client(case, S)
+        logic, analog = cap.LogicCapture(hst, 9), cap.AnalogCapture(hst, 13)
+        grp = cap.CaptureGroup(hst, fn=12)
+        assert grp.start([logic, analog]) == (0, 7_000_000)
+        assert (grp.generation, grp.generations, logic.generation, analog.generation) == (5, {9: 4, 13: 2}, 4, 2)
         return sent
     return None
 
@@ -822,3 +882,38 @@ def test_a_wifi_set_past_the_probes_max_frame_is_refused_before_sending():
     with pytest.raises(ValueError) as e:
         cfg.ProbeConfig(hst, fn=8).set([cfg.Wifi(index=0, ssid="s" * cfg.SSID_MAX, passphrase="0123456789abcdef" * 4)])
     assert sent == [] and "max_frame 64" in str(e.value) and "112" in str(e.value) and "0123" not in str(e.value)
+
+
+# ---- notification frames (ops.json events): capture events carry their generation (capture §3.4, §4.2) -------------
+
+EVENTS = load("ops.json")["events"]
+
+
+@pytest.mark.parametrize("case", EVENTS, ids=lambda c: c["name"])
+def test_events_as_the_client_reads_them(case):
+    """Each event read by the client: its kind and generation; taken as the current one only when its generation is
+    the current one (the logic's start answered generation 4, the group is at 5)."""
+    import collections
+    from oep_client import capture as cap
+    frame = hx(case["event_hex"])
+    fn = struct.unpack_from("<H", frame, 1)[0]
+    group = case["fns"][str(fn)] == "oep.fixture.capture-group"
+    e = cap.unpack_event(frame, group=group)
+    assert (e.fn, e.generation) == (fn, case["generation"])
+    hst, _ = client({"request_hex": m.Request(1, 0, 1, b"").pack().hex(), "answer_hex": "", "fns": case["fns"]})
+    track = cap.CaptureGroup(hst, fn=fn) if group else cap.LogicCapture(hst, fn)
+    track.generation = 5 if group else 4
+    link = type("Link", (), {"events": collections.deque([frame])})()
+    current = track.events(link)
+    if "previous generation" in case["name"]:
+        assert e.kind == "stopped" and e.reason_name == "host" and current == [] and track.stale_events == 1
+    elif e.kind == "triggered" and group:
+        assert (e.trigger_fn, e.trigger_ns) == (9, 7_050_000) and current == [e]
+    elif e.kind == "triggered":
+        assert (e.serial, e.trigger_index, e.trigger_ns) == (0, 1000, 7_050_000) and current == [e]
+    else:
+        assert e.kind == "stopped" and e.reason_name == "complete" and e.error == 0 and current == [e]
+
+
+def test_every_event_vector_is_read():
+    assert len(EVENTS) == 4 and {c["generation"] for c in EVENTS} == {3, 4, 5}

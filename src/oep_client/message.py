@@ -259,3 +259,22 @@ def serial_diff(a: int, b: int, bits: int = 32) -> int:
     `bits` (core §2.6)."""
     d = (a - b) & ((1 << bits) - 1)
     return d - (1 << bits) if d >> (bits - 1) else d
+
+
+def serial_page_start(kept: list[int], next_serial: int, from_serial: int) -> int:
+    """Where an answer of a list paged by serial starts (common §1.3: marks, capture's segments), as an index into
+    `kept` (the serials still kept, oldest first; `next_serial` the one the next element gets): from_serial itself
+    when it is kept (inclusive); nothing (len(kept)) when from_serial = next_serial or nothing is kept; the oldest kept
+    (0) for any other serial - pushed out, not given yet, an earlier boot's."""
+    if from_serial == next_serial or not kept:
+        return len(kept)
+    try:
+        return kept.index(from_serial)
+    except ValueError:
+        return 0
+
+
+def next_generation(generation: int) -> int:
+    """The generation after `generation` (oep-if-capture §3.4: u32, the first start gives 1, 0xFFFFFFFF is followed by
+    1; 0 only means "before the first start"). Generations are compared for equality only."""
+    return (generation + 1) & 0xFFFFFFFF or 1

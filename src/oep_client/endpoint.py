@@ -926,6 +926,7 @@ class Endpoint:
         returns at most - the probe's own choices, oep-if-capture §1.1, §2, §3.2)."""
         d = reg.FIXTURE_ANALOG.tlv["describe"]                     # the logic's tags are the same numbers
         modes, lo, hi, fronts, most_samples = set(), 1, 1_000_000, {}, {}
+        max_pre = virtual_bench_capture.MAX_SAMPLES - 1
         for tag, v in decl:
             if tag == d["frontend"]:                               # analog: frontend min_mv max_mv attenuation_mdb
                 fe, lo_mv, hi_mv, mdb = struct.unpack("<BiiI", v)
@@ -933,13 +934,15 @@ class Endpoint:
             elif tag == d["mode"]:
                 modes.add(v[0])
                 most_samples[v[0]] = struct.unpack_from("<I", v, 1)[0]   # mode max_samples max_segments
+            elif tag == d["trigger"]:                              # types(u32) max_pretrigger(u32)
+                max_pre = struct.unpack_from("<I", v, 4)[0]
             elif tag == catalog.MIN_CLOCK_HZ:
                 lo = struct.unpack("<I", v)[0]
             elif tag == catalog.MAX_CLOCK_HZ:
                 hi = struct.unpack("<I", v)[0]
         return virtual_bench_capture.VirtualCapture(modes or {virtual_bench_capture.MODE["one_shot"]}, set(inner.get("widths", (8,))), lo, hi,
                                         inner.get("ring", 8), inner.get("max_read", 4096), fronts,
-                                        max_samples=most_samples)
+                                        max_samples=most_samples, max_pretrigger=max_pre)
 
     @staticmethod
     def _group_from(decl: list[tuple[int, bytes]], inner: dict) -> virtual_bench_capture.VirtualGroup:
@@ -1073,7 +1076,7 @@ class Endpoint:
                 for track, events in per:
                     self._events(track, events)
                 self._events(fn, own)
-                return m.COMPLETED, m.SUCCESS, struct.pack("<IQ", 0, grp.start_ns) + grp.generations(self.captures)
+                return m.COMPLETED, m.SUCCESS, grp.start_answer(self.captures)
             if op == O["stop"]:
                 t.tail()
                 per, own = grp.stop(self.captures)

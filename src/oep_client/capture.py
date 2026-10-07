@@ -5,12 +5,18 @@ Times are the probe's one clock (ns since its boot, comparable within one boot_i
 probe's known corrections applied. Analog values are always raw; the probe's 1st-order scale, its calibration data and
 its reference are for the host to choose from.
 
-Every start begins a new generation (u32, from 1): segment serials and positions count from 0 inside it, and read and
-release name it, so a read sent for the last capture never returns the next one's bytes (oep-if-capture §3.2). The
-client keeps it (`LogicCapture.generation`, from start / status / the group's start) and passes it on; `read_segment`
-takes the segment's own.
+Every start begins a new generation (u32: 1 at the first start after boot, 0xFFFFFFFF followed by 1, 0 only before the
+first start; compared for equality only): segment serials and positions count from 0 inside it, and read and release
+name it, so a read sent for the last capture never returns the next one's bytes (oep-if-capture §3.2, §3.4). The client
+keeps it (`LogicCapture.generation`, from start / status / the group's start) and passes it on; `read_segment` takes the
+segment's own. Every event carries the generation it was made in (segment, stopped, triggered; the group's triggered
+and stopped carry the group's): an event of an earlier start may come after the start's answer (core §11.4), so
+`LogicCapture.events` / `CaptureGroup.events` drop one whose generation is not the current one (`unpack_event` reads
+any). Segment serials wrap (core §2.6) and segments pages by common §1.3.
 
-configure: a value of one of its TLVs the probe cannot honour is refused (rejected unsupported, 0x0B, payload = the tag
+configure (§3.3's contract, checked here before sending - ValueError): mode and rate always; samples in modes 1 and 2,
+never in mode 3; segments in mode 2 only; pretrigger only with a trigger (type other than 0). A value of one of its TLVs
+the probe cannot honour is refused (rejected unsupported, 0x0B, payload = the tag
 as sent; oep-core §2.3, oep-if-capture §3.3) - every capture probe implements these tags, so the critical bit changes
 nothing there; this host sends mode, rate, trigger, pretrigger and frontend critical anyway (its own choice, for a
 probe that does not know a tag). The probe rounds samples down to its limit and the answer (Config.samples /
@@ -46,7 +52,6 @@ ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, SCALE, BLOCKING, SKEW, FRO
 FACTORY, VREFINT = _ANA.tlv["calibration_answer"]["factory"], _ANA.tlv["calibration_answer"]["vrefint"]
 STATUS_ERROR = _CAP.tlv["status_answer"]["error"]          # status's TLV: why the state is 6
 DATA_GENERATION = _CAP.tlv["data"]["generation"]           # a data frame's TLV: its generation (always in streaming)
-GROUP_GENERATIONS = _GRP.tlv["start_answer"]["generations"]
 REFERENCE_SOURCE = {v: k for k, v in _ANA.enum["reference_source"].items()}
 CRITICAL = m.TAG_CRITICAL
 ALWAYS_CRITICAL = frozenset({MODE, RATE, TRIGGER, PRETRIGGER, FRONTEND})   # this host sends these critical (its choice)
@@ -56,8 +61,9 @@ STATE = _CAP.enum["state"]
 SEGMENT_SLIPPED = _CAP.enum["segment_flag"]["slipped"]
 STATUS_FLAGS = _CAP.enum["status_flag"]                    # dropped, slipped (reset at start)
 ERRORS = {v: k for k, v in _CAP.enum["error"].items()}     # state 6's reason
-# events (oep-core §11, role 0x05)
+# events (oep-core §11, role 0x05); the group's are numbered as the tracks' (§4.2)
 EVENT_SEGMENT, EVENT_STOPPED, EVENT_TRIGGERED = (_CAP.event[k] for k in ("segment", "stopped", "triggered"))
+EVENT_HEADER = 6                                           # role(u8) fn(u16) seq(u16) kind(u8) (core §11.1)
 
 
 def tlvs(payload: bytes) -> list[tuple[int, bytes]]:
@@ -200,6 +206,73 @@ def take_pushes(link, fn: int) -> list[tuple[int, int, bytes, int | None]]:
     return [unpack_push(f)[1:] for f in mine]
 
 
+@dataclass
+class Event:
+    """A capture event (oep-if-capture §3.4, §4.2; core §11.1 role 0x05). `generation`: the start it was made in - a
+    track's for a track's event, the group's for the group's. kind "segment" has `segment`; "stopped" has `reason` and
+    `error`; a track's "triggered" has `serial`, `trigger_index` and `trigger_ns`, the group's `trigger_fn` (None on a
+    force) and `trigger_ns`. An event of another kind keeps its fixed part in `raw` and generation None."""
+    fn: int
+    seq: int
+    kind: str
+    generation: int | None
+    segment: Segment | None = None
+    reason: int | None = None
+    error: int | None = None
+    serial: int | None = None
+    trigger_index: int | None = None
+    trigger_ns: int | None = None
+    trigger_fn: int | None = None
+    raw: bytes = b""
+
+    @property
+    def reason_name(self) -> str | None:
+        return None if self.reason is None else STOPPED_REASONS.get(self.reason, f"reason {self.reason}")
+
+
+STOPPED_REASONS = {v: k for k, v in _CAP.enum["stopped_reason"].items()}
+
+
+def unpack_event(frame: bytes, group: bool = False) -> Event:
+    """An event frame (role fn seq kind, then the kind's fixed part and TLVs) -> Event. `group`: the frame is a
+    capture-group's (its triggered is trigger_fn(u16) trigger_ns(u64) generation(u32), §4.2). A fixed part shorter than
+    its kind's raises ProtocolError."""
+    if len(frame) < EVENT_HEADER or frame[0] != m.ROLE_EVENT:
+        raise h.ProtocolError(f"not an event frame: {frame.hex()}")
+    fn, seq = struct.unpack_from("<HH", frame, 1)
+    kind, body = frame[5], frame[EVENT_HEADER:]
+    rd = m.Reader(body)
+    try:
+        if kind == EVENT_SEGMENT and not group:
+            seg = Segment.unpack(rd.bytes(SEGMENT_BYTES))
+            e = Event(fn, seq, "segment", seg.generation, segment=seg)
+        elif kind == EVENT_STOPPED:
+            reason, error, generation = rd.take("BBI")
+            e = Event(fn, seq, "stopped", generation, reason=reason, error=error)
+        elif kind == EVENT_TRIGGERED and group:
+            trigger_fn, trigger_ns, generation = rd.take("HQI")
+            e = Event(fn, seq, "triggered", generation, trigger_fn=trigger_fn or None, trigger_ns=trigger_ns)
+        elif kind == EVENT_TRIGGERED:
+            serial, index, trigger_ns, generation = rd.take("IIQI")
+            e = Event(fn, seq, "triggered", generation, serial=serial, trigger_index=index, trigger_ns=trigger_ns)
+        else:
+            return Event(fn, seq, f"kind 0x{kind:02x}", None, raw=bytes(body))
+    except m.ShortPayload as err:
+        raise h.ProtocolError(f"capture event kind {kind} too short: {frame.hex()}") from err
+    rd.tail()
+    return e
+
+
+def take_events(link, fn: int) -> list[bytes]:
+    """Remove this fn's event frames (role 0x05) from the link, oldest first."""
+    mine, rest = [], []
+    for f in link.events:
+        (mine if struct.unpack_from("<H", f, 1)[0] == fn else rest).append(f)
+    link.events.clear()
+    link.events.extend(rest)
+    return mine
+
+
 def _config(payload: bytes, analog: bool) -> Config:
     c = Config()
     for tag, v in tlvs(payload):
@@ -253,8 +326,22 @@ class LogicCapture(Interface):
                   critical: set[int] = frozenset(), frontends: dict[int, int] | None = None) -> Config:
         """-> the probe's actual values. A value the probe cannot honour is refused: host.Unsupported, .tag = the TLV as
         sent (§3.3). mode, rate, trigger, pretrigger and frontend go critical; `critical`: more tags to send critical
-        (samples, segments). Read Config.samples / .segments: the probe rounds samples down."""
+        (samples, segments). Read Config.samples / .segments: the probe rounds samples down.
+
+        §3.3's contract is checked before anything is sent (ValueError): `samples` is needed in one-shot and repeat
+        and not taken in streaming, `segments` is repeat's only, `pretrigger` needs a trigger (type other than 0) - a
+        pretrigger of 0 without one is simply not sent."""
         critical = ALWAYS_CRITICAL | set(critical)
+        if mode in (ONE_SHOT, REPEAT) and samples is None:
+            raise ValueError("capture configure: samples is required in one-shot and repeat (oep-if-capture §3.3)")
+        if mode == STREAMING and samples is not None:
+            raise ValueError("capture configure: streaming takes no samples (oep-if-capture §3.3)")
+        if segments is not None and mode != REPEAT:
+            raise ValueError("capture configure: segments is for repeat only (oep-if-capture §3.3)")
+        if pretrigger is not None and (trigger is None or trigger[0] == IMMEDIATE):
+            if pretrigger:
+                raise ValueError("capture configure: a pretrigger needs a trigger (oep-if-capture §3.3)")
+            pretrigger = None
 
         def tlv(tag: int, value: bytes) -> bytes:
             return m.tlv(tag, value, critical=tag in critical)
@@ -272,6 +359,8 @@ class LogicCapture(Interface):
         # query is its own operation: the lock is decided per operation, before the payload is looked at
         op = self.QUERY_OP if query else self.CONFIGURE
         c = _config(self._call(op, body, locked=not query).payload, self.ANALOG)
+        if mode == ONE_SHOT and not c.segments:
+            c.segments = 1                                     # one-shot's answer has no actual_segments (§3.3)
         if not query:
             self.config = c
         return c
@@ -283,6 +372,23 @@ class LogicCapture(Interface):
 
     def unsubscribe(self) -> None:
         self.host.unsubscribe(self.fn)
+
+    stale_events: int = 0                 # events of an earlier generation that events() dropped
+
+    def events(self, link) -> list[Event]:
+        """This track's events waiting on the link (taken off it), the current generation's only: one of another
+        generation belongs to an earlier start (it may come after the start's answer, core §11.4) and is dropped,
+        counted in `stale_events` (oep-if-capture §3.4). A host that did not start the capture learns the generation
+        from status first."""
+        frames = take_events(link, self.fn)
+        if frames and self.generation is None:
+            self.status()
+        return self._current([unpack_event(f) for f in frames])
+
+    def _current(self, events: list[Event]) -> list[Event]:
+        out = [e for e in events if e.generation is None or e.generation == self.generation]
+        self.stale_events += len(events) - len(out)
+        return out
 
     def stream(self, link, *, seconds: float | None = None, nbytes: int | None = None,
                into: Received | None = None, keepalive_s: float = 1.0) -> Received:
@@ -384,7 +490,8 @@ class LogicCapture(Interface):
         return self.generation
 
     def segments_page(self, from_serial: int = 0) -> tuple[list[Segment], bool]:
-        """One answer's segment records from `from_serial` on. -> (segments, more)."""
+        """One answer's segment records from `from_serial` on (common §1.3: from_serial included; from serial_done,
+        nothing and more 0; a serial no longer kept starts at the oldest kept - the serials jump). -> (segments, more)."""
         rd = m.Reader(self._call(self.SEGMENTS, struct.pack("<I", from_serial), locked=False).payload)
         more, count = rd.take("BB")
         out = [Segment.unpack(rd.bytes(SEGMENT_BYTES)) for _ in range(count)]
@@ -392,14 +499,15 @@ class LogicCapture(Interface):
         return out, bool(more)
 
     def segments(self, from_serial: int = 0) -> list[Segment]:
-        """Every segment record from `from_serial` on, following `more`."""
+        """Every segment record from `from_serial` on, following `more` (each next page from the last serial + 1,
+        until more 0)."""
         out: list[Segment] = []
         while True:
             page, more = self.segments_page(from_serial)
             out += page
             if not more or not page:
                 return out
-            from_serial = page[-1].serial + 1
+            from_serial = (page[-1].serial + 1) & 0xFFFFFFFF   # the last serial + 1 (common §1.3, core §2.6)
 
     def wait(self, timeout: float = 5.0, keepalive_s: float = 1.0) -> list[Segment]:
         """Poll status until the one-shot is done (or failed). -> its segments. Waiting for a trigger may take longer
@@ -602,6 +710,7 @@ class GroupStatus:
     start_ns: int | None
     trigger_ns: int | None
     trigger_fn: int | None
+    generation: int = 0              # the group's (§4.1; 0 before its first start)
 
 
 class CaptureGroup(Interface):
@@ -622,13 +731,18 @@ class CaptureGroup(Interface):
             body += m.tlv(self.TAG_TRIGGER_TRACK, struct.pack("<H", trigger.fn), critical=True)
         self._call(self.BIND, body)
 
+    generation: int | None = None     # the group's current generation (start / status, §4.1)
+    stale_events: int = 0             # the group's events of an earlier generation that events() dropped
+
     def start(self, tracks: list[LogicCapture] = ()) -> tuple[int, int]:
-        """-> (blocking_ms, the group's start_ns). `tracks`: whose armed_s and generation to set (the answer's TLV
-        generations names each track's new generation; self.generations keeps them by fn)."""
+        """-> (blocking_ms, the group's start_ns). The answer's fixed part: blocking_ms start_ns generation(the
+        group's) n, then n x (fn, generation) - each bound track's new generation, in bind order (§4.1).
+        self.generation: the group's; self.generations: the tracks' by fn. `tracks`: whose armed_s and generation to
+        set."""
         rd = m.Reader(self._call(self.START).payload)             # the answer comes before any blocking (§3.2)
-        blocking, start_ns = rd.take("IQ")
-        gens = rd.tail().get(GROUP_GENERATIONS) or b""
-        self.generations = {fn: g for fn, g in struct.iter_unpack("<HI", gens[:len(gens) // 6 * 6])}
+        blocking, start_ns, self.generation, n = rd.take("IQIB")
+        self.generations = dict(rd.take("HI") for _ in range(n))
+        rd.tail()
         now = time.monotonic()
         for t in tracks:
             t.armed_s = now
@@ -645,10 +759,24 @@ class CaptureGroup(Interface):
 
     def status(self) -> GroupStatus:
         rd = m.Reader(self._call(self.STATUS, locked=False).payload)
-        state, start, trig, fn = rd.take("BQQH")
+        state, start, trig, fn, generation = rd.take("BQQHI")
         rd.tail()
+        self.generation = generation
         none = self.NO_TIME
-        return GroupStatus(state, None if start == none else start, None if trig == none else trig, fn or None)
+        return GroupStatus(state, None if start == none else start, None if trig == none else trig, fn or None,
+                           generation)
+
+    def events(self, link) -> list[Event]:
+        """The group's own events waiting on the link (taken off it; triggered and stopped, §4.2), the current group
+        generation's only - one of another generation is an earlier start's, dropped and counted in `stale_events`.
+        The tracks' events stay for each track's events()."""
+        frames = take_events(link, self.fn)
+        if frames and self.generation is None:
+            self.status()
+        got = [unpack_event(f, group=True) for f in frames]
+        out = [e for e in got if e.generation is None or e.generation == self.generation]
+        self.stale_events += len(got) - len(out)
+        return out
 
     def wait(self, timeout: float = 5.0, keepalive_s: float = 1.0) -> GroupStatus:
         """Poll until every track is done (one-shot). The lock is kept alive every `keepalive_s` while it waits (a

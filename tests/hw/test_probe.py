@@ -753,7 +753,8 @@ def test_capture(run: record.Run):
         rec.update(levels=levels, captures=captures, generations=generations,
                    actual_rate=rec.get("configured", {}).get("actual_rate"), layout=rec.get("configured", {}).get("layout"),
                    samples=rec.get("configured", {}).get("samples"), seconds=captures[-1]["window_s"] if captures else None)
-    assert len(generations) == 2 and generations[1] == generations[0] + 1, f"generations {generations}: not +1 per start"
+    assert len(generations) == 2 and generations[1] == m.next_generation(generations[0]), \
+        f"generations {generations}: not +1 per start (1 after 0xFFFFFFFF, oep-if-capture §3.4)"
     assert not wrong, "; ".join(wrong)
 
 
@@ -865,7 +866,7 @@ def test_capture_group(run: record.Run):
         blocking, start_ns = grp.start([cap, ana])
         st = grp.wait(timeout=10.0)
         done_s = time.monotonic() - t0
-        rec.update(blocking_ms=blocking, start_ns=start_ns, generations=grp.generations, done_s=round(done_s, 4),
+        rec.update(blocking_ms=blocking, start_ns=start_ns, group_generation=grp.generation, generations=grp.generations, done_s=round(done_s, 4),
                    state=st.state, trigger_ns=st.trigger_ns, trigger_fn=st.trigger_fn)
         assert set(grp.generations) == {cap.fn, ana.fn}, f"the start answer names generations for {list(grp.generations)}"
         offsets = {}
