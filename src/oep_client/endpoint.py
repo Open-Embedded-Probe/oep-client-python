@@ -1061,6 +1061,21 @@ class Endpoint:
             raise Reject(e.reason, e.payload)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
+    def capture_overflow(self, fn: int, error: int = virtual_bench_capture.CAP.enum["error"]["storage"]) -> None:
+        """TEST HOOK: capture `fn` drops data inside the segment it is taking (capture §2.2): what the clock captured up
+        to now is kept, that segment is not handed out, the track stops in error (state 6, stopped reason 3, `error`).
+        A bound track's group stops its other tracks and says stopped reason 3 too (capture §4.1)."""
+        cap = self.captures[fn]
+        self._events(fn, cap.tick(self.uptime_ms()))
+        self._events(fn, cap.overflow(error))
+        grp = cap.group
+        if grp is not None:
+            gfn = next(g for g, v in self.groups.items() if v is grp)
+            for track in grp.tracks:
+                if track != fn:
+                    self._events(track, self.captures[track].stop())
+            self._events(gfn, [grp.stopped_event(virtual_bench_capture.STOPPED["error"], error)])
+
     def _group(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         grp, O = self.groups[fn], virtual_bench_capture.GRP.op
         try:

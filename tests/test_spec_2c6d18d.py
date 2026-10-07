@@ -459,3 +459,43 @@ def test_a_capture_with_any_w_reads_back(w):
     data = lc.read_segment(seg)
     for k in range(3):
         assert lc.channel(data, k, 101) == [(i >> k) & 1 for i in range(101)]
+
+
+# ---- oep-spec 0b9a058, capture §2.2: a segment not kept seamless is not handed out ----------------------------------------
+
+def test_data_dropped_inside_a_segment_stops_the_track_in_error():
+    ep, hst, lc, clock = bench()
+    core.plan_apply(hst, [(lc.fn, 0, 20)])
+    lc.configure(rate=1_000_000, mode=c.REPEAT, samples=1000, segments=8)
+    lc.subscribe()
+    lc.start()
+    clock.t = 2.5                                                         # serials 0 and 1 done, 2 under way
+    ep.capture_overflow(lc.fn)
+    st = lc.status()
+    assert (st.state, st.serial_done, st.dropped, st.error_name) == (c.STATE["error"], 2, True, "storage")
+    assert st.write_pos == 2 * lc.config.bytes                            # the start of the dropped segment
+    assert [s.serial for s in lc.segments()] == [0, 1]
+    link = Link()
+    link.take(ep)
+    got = lc.events(link)
+    assert [(e.kind, e.reason_name, e.error) for e in got][-1] == ("stopped", "error", 2)
+    assert "segment" not in [e.kind for e in got[2:]]
+    with pytest.raises(h.Failed, match="storage"):
+        lc.wait()
+    lc.start()                                                            # a new start clears the error
+    assert lc.status().error is None
+
+
+def test_a_bound_tracks_drop_stops_the_group():
+    ep, hst, lc, an, grp, clock = group()
+    lc.configure(rate=1_000_000, mode=c.REPEAT, samples=1000, segments=4)
+    an.configure(rate=10_000, mode=c.REPEAT, samples=100, segments=4)
+    grp.bind([lc, an])
+    hst.subscribe(grp.fn)
+    grp.start([lc, an])
+    ep.capture_overflow(an.fn, 1)                                         # a DMA failure on the analog
+    assert grp.status().state == c.STATE["error"] and lc.status().state == c.STATE["configured"]
+    link = Link()
+    link.take(ep)
+    (e,) = grp.events(link)
+    assert (e.kind, e.reason_name, e.error) == ("stopped", "error", 1)

@@ -526,6 +526,13 @@ def setup_case(case):
         req(ep, 5, 12, 0x01, struct.pack("<BHH", 2, 9, 13))            # bind fn 9 then fn 13, no trigger_track
         ep.groups[12].generation, ep.captures[9].generation, ep.captures[13].generation = 4, 3, 1
         clock.t = 7                                                    # acquisition starts at 7 ms
+    elif name.startswith("logic") and "overflowed inside serial 2" in state:
+        cap = ep.captures[9]                                           # repeat, 1 channel w 1, 1 MHz from 5 ms
+        cap.mode, cap.rate, cap.width, cap.channels, cap.samples = virtual_bench_capture.MODE["repeat"], 1_000_000, 1, 1, 8000
+        cap.generation, cap.state, cap.serial_done, cap.data = 1, virtual_bench_capture.STATE["capturing"], 2, bytearray(2000)
+        cap.segs = [virtual_bench_capture.Segment(k, 1000 * k, 8000, 5_000_000 + 8_000_000 * k, 50, virtual_bench_capture.NONE, 0, 1)
+                    for k in range(2)]
+        cap.overflow()                                                 # inside serial 2 (capture §2.2)
     elif name.startswith("logic"):
         logic = int(next(k for k, v in fns.items() if v == "oep.fixture.logic"))
         if "session S" in state:
@@ -843,9 +850,19 @@ def _on_client(case):
         if "from_serial = serial_done" in name:
             assert (segs, more) == ([], False)                          # common §1.3 paging 2
             return sent
+        if "dropped segment" in name:                                  # capture §2.2: serial 2 is not handed out
+            assert not more and [(g.serial, g.position, g.samples, g.start_ns) for g in segs] == \
+                [(0, 0, 8000, 5_000_000), (1, 1000, 8000, 13_000_000)]
+            return sent
         (seg,) = segs
         assert not more and (seg.serial, seg.position, seg.samples, seg.start_ns, seg.generation) == \
             (0, 0, 1000, 5_000_000, 1)
+        return sent
+    if name.startswith("logic status"):
+        hst, sent = client(case)
+        st = cap.LogicCapture(hst, 9).status()
+        assert (st.state, st.serial_done, st.write_pos, st.dropped, st.generation, st.error_name) == \
+            (cap.STATE["error"], 2, 2000, True, 1, "storage")              # capture §2.2
         return sent
     if name.startswith("logic configure without rate"):
         return None                                                     # the client always sends mode and rate
@@ -953,10 +970,12 @@ def test_events_as_the_client_reads_them(case):
     assert (e.fn, e.generation) == (fn, case["generation"])
     hst, _ = client({"request_hex": m.Request(1, 0, 1, b"").pack().hex(), "answer_hex": "", "fns": case["fns"]})
     track = cap.CaptureGroup(hst, fn=fn) if group else cap.LogicCapture(hst, fn)
-    track.generation = 5 if group else 4
+    track.generation = 5 if group else 1 if "dropped" in case["name"] else 4
     link = type("Link", (), {"events": collections.deque([frame])})()
     current = track.events(link)
-    if "previous generation" in case["name"]:
+    if "dropped inside a segment" in case["name"]:                    # capture §2.2: reason 3, error 2
+        assert (e.kind, e.reason_name, e.error, current) == ("stopped", "error", 2, [e])
+    elif "previous generation" in case["name"]:
         assert e.kind == "stopped" and e.reason_name == "host" and current == [] and track.stale_events == 1
     elif e.kind == "triggered" and group:
         assert (e.trigger_fn, e.trigger_ns) == (9, 7_050_000) and current == [e]
@@ -967,4 +986,4 @@ def test_events_as_the_client_reads_them(case):
 
 
 def test_every_event_vector_is_read():
-    assert len(EVENTS) == 4 and {c["generation"] for c in EVENTS} == {3, 4, 5}
+    assert len(EVENTS) == 5 and {c["generation"] for c in EVENTS} == {1, 3, 4, 5}

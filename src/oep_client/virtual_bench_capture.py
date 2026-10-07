@@ -146,6 +146,7 @@ class VirtualCapture:
     vrefint_ns: int = NO_TIME
     generation: int = 0                # +1 at every start (§3.2); 0 before the first
     flags: int = 0                     # status flags (dropped, slipped), reset at start
+    error: int = 0                     # state 6's reason (status TLV error, stopped reason 3)
 
     @property
     def analog(self) -> bool:
@@ -346,7 +347,7 @@ class VirtualCapture:
             raise wrong_state()
         self._clear()
         self.generation = m.next_generation(self.generation)     # 0xFFFFFFFF is followed by 1 (§3.4)
-        self.flags = 0
+        self.flags, self.error = 0, 0
         self.started_ms = now_ms
         self.t0_ns = (group_ns if group_ns is not None else now_ms * 1_000_000) + self.start_offset_ns
         self.vrefint_ns = self.t0_ns if self.analog else NO_TIME
@@ -395,13 +396,27 @@ class VirtualCapture:
         self.state = STATE["configured"]
         return [self.stopped_event(STOPPED["host"])]
 
+    def overflow(self, error: int = CAP.enum["error"]["storage"]) -> list[bytes]:
+        """TEST HOOK: the probe dropped data inside the segment it is taking (§2.2: a capture queue or ring overflow,
+        error 2; a DMA / peripheral failure, error 1). That segment is never handed out - no record, no segment event,
+        its bytes neither read nor streamed (this bench adds a segment whole, so its bytes were never kept; write_pos
+        stays at its start) - and the track stops in error: state 6, status flags bit0, stopped reason 3. -> events."""
+        if self.state not in (STATE["waiting"], STATE["capturing"], STATE["paused"]):
+            return []
+        self.state, self.error = STATE["error"], error
+        self.flags |= CAP.enum["status_flag"]["dropped"]
+        return [self.stopped_event(STOPPED["error"], error)]
+
     def stopped_event(self, reason: int, error: int = 0) -> bytes:
         """kind stopped: reason(u8) error(u8) generation(u32) (§3.4: every event carries the generation it was made
         in)."""
         return bytes([EVENT["stopped"], reason, error]) + struct.pack("<I", self.generation)
 
     def status(self) -> bytes:
-        return struct.pack("<BIQBI", self.state, self.serial_done, self.base + len(self.data), self.flags, self.generation)
+        out = struct.pack("<BIQBI", self.state, self.serial_done, self.base + len(self.data), self.flags, self.generation)
+        if self.state == STATE["error"]:
+            out += m.tlv(CAP.tlv["status_answer"]["error"], bytes([self.error]))   # why (§3.2)
+        return out
 
     def check_generation(self, generation: int) -> None:
         if generation != self.generation:

@@ -64,6 +64,10 @@ Lines on stdin are commands, read between requests (the serving never waits for 
                         the Wi-Fi networks in range now (none: no network), as --wifi-air, each word %-decoded (a space
                         is %20, = in an SSID %3D): the probe joins again. A passphrase given here is not in the process
                         list
+  capture-overflow FN [ERROR]
+                        capture FN drops data inside the segment it is taking (capture §2.2, Endpoint.capture_overflow):
+                        that segment is not handed out and the track stops in error - state 6, stopped reason 3, error
+                        ERROR (default 2, storage; 1 for a DMA / peripheral failure)
 A line that is no command is ignored with a message on stderr.
 
 oep.probe.restart's restart (oep-if-restart; every profile lists the interface, after its other fns) does the same
@@ -381,8 +385,16 @@ class Commands:
             from urllib.parse import unquote
             self.ep.wifi_set_air(_air([unquote(w) for w in text.split()[1:]]))
             print(f"virtual_bench_serve: wifi air now {len(self.ep.wifi_air)} network(s)", file=sys.stderr, flush=True)
+        elif text.split()[0] == "capture-overflow" and 2 <= len(text.split()) <= 3:
+            try:
+                fn, *err = (int(w, 0) for w in text.split()[1:])
+                self.ep.capture_overflow(fn, *err)
+            except (ValueError, KeyError):
+                print(f"virtual_bench_serve: {text!r}: want a capture fn and an optional error", file=sys.stderr, flush=True)
+                return
+            print(f"virtual_bench_serve: capture fn {fn} dropped data inside a segment", file=sys.stderr, flush=True)
         else:
-            print(f"virtual_bench_serve: unknown command {text!r} ignored (known: reboot, lose, wifi-air)",
+            print(f"virtual_bench_serve: unknown command {text!r} ignored (known: reboot, lose, wifi-air, capture-overflow)",
                   file=sys.stderr, flush=True)
 
 
