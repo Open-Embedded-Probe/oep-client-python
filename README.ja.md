@@ -73,7 +73,7 @@ X.Y.Z（v1 の凍結までは、どのリリースも wire を壊しうるので
 | `rp2350` | RP2350 の boot ROM 経由の flash と reboot |
 | `uiapduino` | UIAPduino のブートローダへの出入り |
 | `catalog` / `names` / `interfaces` / `dump` | 能力の一覧と describe の形、表示 |
-| `virtual_bench` / `endpoint` / `virtual_bench_serial` / `virtual_bench_serve` | 仮想ベンチ（下の「仮想ベンチ」） |
+| `virtual_bench` / `endpoint` / `virtual_bench_serial` / `virtual_bench_serve` / `virtual_bench_mdns` | 仮想ベンチ（下の「仮想ベンチ」） |
 
 ## 使い方の例
 
@@ -153,7 +153,10 @@ describe の items に wifi の項目（probe.config §1.4、項目 0x08。descr
 - 使っている entry を、その entry でつながっている TCP の経路から変えると、応答の後でその経路が切れる（§1.4）: シリアルの口か USB から設定する。
 - `oep find` は `_oep._tcp` を browse し（transports §3、host ガイド §4.1）、unit_id、host、port、アドレスを並べる。port はいつも SRV
   のもの（決まった port は無い。参照の probe の 7450 は例）。python-zeroconf があれば（`pip install 'oep-client-python[mdns]'`）それで、
-  無ければこのパッケージの最小の問い合わせ（QU、一時の port に答えを受け、5353 を共有できればそこでも聞く）で探す。mDNS は同じリンクの
+  無ければこのパッケージの最小の問い合わせ（QU、一時の port に答えを受け、5353 を共有できればそこでも聞く）で探す。python-zeroconf は
+  すべてのインターフェース（InterfaceChoice.All）で、最小の問い合わせも IPv4 のインターフェースそれぞれから送る（インターフェースの
+  アドレスごとに IP_MULTICAST_IF。`discovery.interface_addresses`: ifaddr があればそれ、無ければ Linux は各インターフェースのアドレス、
+  ほかは host 名のアドレス）。一度の送信は 1 つのインターフェースからしか出ず（Windows ではよく仮想アダプタ）、別のアダプタの probe には届かない。mDNS は同じリンクの
   中だけ: WSL 2 の既定の NAT、VM、ルーターの向こうからは見つからない。そのときは `tcp://HOST:PORT` で名指す（アドレスはシリアルの口からの
   `oep config state` に出る）。
 - `tcp:UNIT_ID` はその unit_id で DNS-SD が見つけた probe を開き、describe の unit_id を確かめる（違えば UnitIdMismatch で閉じる）。
@@ -401,5 +404,28 @@ pty がシリアルの口（host が TIOCEXCL を掛けて開く）、`--tcp POR
 ようにする（`--label CH=TEXT`、例 `23=v003.nrst` はスロットの線を名付ける、probe.config §1.3）。port_speed: `esp32-v003` の `oep.probe.link` は持つ（`--no-port-speed` で ops から外す）。
 `--broken-rate RATE[:MIN_SIZE][:in|out]` はその速さでフレームを壊す（同じプロセスの `virtual_bench_serial.VirtualSerialStream` は、host の速さが
 probe の速さと違う間、両方向のバイトをすべて壊す）。出来事とデータの push は pty にも TCP（両方の framing）にも出る。ほかは `--help`。
+
+**自分を広告する（DNS-SD、1 台の上の CI）。** `--announce`（`--tcp` と。length の framing）は、TCP で待ち受ける probe と同じく
+`_oep._tcp` の mDNS / DNS-SD の問い合わせに答える（transports §3）: PTR `_oep._tcp.local.` -> instance `OEP virtual <unit_id> <port>`、
+その SRV（port と host `oep-virtual-<unit_id>-<port>.local.`）、その TXT `unit_id=<unit_id>`（fn 0 の describe のもの。`--unit-id ID`
+で決める）、host の A の record: `--listen` のアドレス（既定 127.0.0.1。`--listen 0.0.0.0` なら広告するインターフェースすべてのアドレス、
+loopback は最後）。`mdns` の extra があれば python-zeroconf が答え、無ければこのパッケージの最小の応答器（`virtual_bench_mdns`。IPv4）:
+5353 以外の port からの問い合わせ（legacy unicast、RFC 6762 §6.7）には、送り手のアドレスと port へ、その ID と問いを付けて TTL 10 で
+答え、5353 からの問い合わせには group に答える。`--announce-on ADDR`（繰り返せる）はインターフェースを IPv4 アドレスで選ぶ（既定は
+すべてで、OS が group に入れるなら loopback も。Linux は入れる）。`--announce-engine auto|zeroconf|minimal`。1 台の上の CI は、
+問い合わせる側と答える側を同じ host で動かす:
+
+```sh
+python -m oep_client.virtual_bench_serve --tcp 0 --announce --profile esp32-v003 --unit-id 0123456789ab
+# stdout: PORT n（このときには広告が出ている）。stderr: virtual_bench_serve: announcing ...
+# それから: _oep._tcp.local. の PTR を一度だけ、一時の port から 224.0.0.251:5353 へ問う（IPv4）- 答えはその port に戻る:
+# PTR、SRV（port n）、TXT unit_id=0123456789ab、A 127.0.0.1 - そして tcp://127.0.0.1:n を開く
+```
+
+問い合わせの multicast は出ていったインターフェースでこの host に戻り、応答器はすべてのインターフェースで group に入っている。
+multicast の経路が無い host では `--announce-on 127.0.0.1` にし、問い合わせを IP_MULTICAST_IF 127.0.0.1 で送る。並んで動く job は
+`--unit-id` を変えれば分かれる（instance の名前にも port が入る）。コンテナや VM は自分のネットワークの中でだけ答える。
+tests/test_virtual_bench_announce.py がこれを `oep find`、`discovery.find_unit`、`tcp:UNIT_ID`（両方の engine）で試す。multicast が
+戻らない所では skip する。
 
 v0 の client（`oep_client.v0`）は 2026-09-26 に消した（git の履歴に残る）。v0 を話す probe はもう無い。

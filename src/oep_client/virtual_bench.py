@@ -511,6 +511,16 @@ def with_unit_id(probe: VirtualProbe, unit_id: str) -> VirtualProbe:
                           if o.fn == CORE_FN else o for o in probe.offered])
 
 
+def unit_id_of(probe: VirtualProbe) -> str:
+    """The unit_id fn 0's describe declares (core §7.5)."""
+    for o in probe.offered:
+        if o.fn == CORE_FN:
+            for t in o.tlvs:
+                if t[0] == CORE_UNIT_ID:
+                    return t[3:].decode("ascii")
+    raise LookupError("no unit_id in fn 0's describe")
+
+
 def with_stand_in(probe: VirtualProbe) -> VirtualProbe:
     """The profile plus one fn (the next number) the endpoint does not simulate: it answers only the two stand-in
     operations (endpoint.TOY_WRITE / TOY_READ), for tests of the session rules. VIRTUAL BENCH ONLY."""

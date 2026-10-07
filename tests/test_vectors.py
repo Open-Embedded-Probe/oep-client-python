@@ -530,10 +530,19 @@ def client(case, session=None):
     return hst, sent
 
 
+def is_wifi_vector(case) -> bool:
+    """A wifi vector (probe.config §1.4, §3.3): its probe declares the wifi item - routed by the case's state, not its
+    name (some names say no "wifi": a pass_len 0xFF for a missing entry, a 7-byte passphrase)."""
+    return case["name"].startswith("probe.config") and "items has wifi" in case["state"]
+
+
+REFUSED_BEFORE_SENDING = "the client refuses this form before sending (checked, nothing sent)"
+
+
 def _wifi_on_client(case, name):
-    """The wifi vectors (probe.config §1.4, §3.3) as this client sends and reads them; None for the refused forms it
-    never builds (a 7-byte passphrase: ValueError before sending; 0xFF for a missing entry and an index past wifi_max
-    are the probe's to refuse - the client sends them as asked)."""
+    """The wifi vectors (probe.config §1.4, §3.3) as this client sends and reads them; REFUSED_BEFORE_SENDING for the
+    form it never builds (a 7-byte passphrase: ValueError before sending, and the vector's answer is malformed). 0xFF
+    for a missing entry and an index past wifi_max are the probe's to refuse - the client sends them as asked."""
     from oep_client import config as cfg
     a = m.Result.unpack(hx(case["answer_hex"]))
     hst, sent = client(case, S if "session S" in case["state"] else None)
@@ -553,8 +562,8 @@ def _wifi_on_client(case, name):
     elif "7-byte" in name:
         with pytest.raises(ValueError) as e:
             cfg.Wifi(index=1, ssid="field", passphrase="secret7").value()
-        assert "secret7" not in str(e.value)
-        return None
+        assert "secret7" not in str(e.value) and a.detail == m.MALFORMED
+        return REFUSED_BEFORE_SENDING
     elif "at wifi_max" in name:
         with pytest.raises(h.Rejected) as e:
             p.set([cfg.Wifi(index=4, ssid="field")])
@@ -714,7 +723,7 @@ def _on_client(case):
         else:
             assert tuple(c.read(c.FROM_POSITION, 5, 64)) == (5, False, False, b"")
         return sent
-    if name.startswith("probe.config") and "wifi" in name:
+    if is_wifi_vector(case):
         return _wifi_on_client(case, name)
     if name.startswith("probe.config"):
         if "set" in name:
@@ -749,7 +758,17 @@ def test_ops_vectors_as_the_client_sends_and_reads_them(case):
     sent = _on_client(case)
     if sent is None:
         pytest.skip("not a request this client makes")
+    if sent is REFUSED_BEFORE_SENDING:
+        return
     assert sent[0].hex() == case["request_hex"]
+
+
+def test_every_wifi_vector_is_routed_to_the_wifi_checks():
+    """The 8 wifi vectors (corr 0x74-0x7B) all reach _wifi_on_client, none skipped."""
+    wifi = [c for c in OPS if is_wifi_vector(c)]
+    assert len(wifi) == 8
+    assert sorted(m.Request.unpack(hx(c["request_hex"])).corr for c in wifi) == list(range(0x74, 0x7C))
+    assert all(_on_client(c) is not None for c in wifi)
 
 
 # ---- the ops encoding (ops_encoding.json, core §7.4) -----------------------------------------------------------------

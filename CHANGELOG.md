@@ -1,6 +1,45 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) **virtual_bench_serve announces itself (DNS-SD), discovery queries every interface, all 8 wifi vectors checked.**
+  - `virtual_bench_serve --announce` (with `--tcp`; length framing, now the default with it) answers mDNS / DNS-SD
+    queries for `_oep._tcp` (transports §3): PTR -> instance `OEP virtual <unit_id> <port>`, SRV (the port, host
+    `oep-virtual-<unit_id>-<port>.local.`), TXT `unit_id=<unit_id>`, A (the `--listen` address, 127.0.0.1 by default;
+    0.0.0.0: every announcing interface's). python-zeroconf with the `mdns` extra, else new module `virtual_bench_mdns`'s
+    minimal responder: legacy unicast queries (source port not 5353) answered to the sender with their ID and question,
+    TTL 10; queries from 5353 answered on the group; one announcement at start, a goodbye at the end. New options
+    `--listen ADDR`, `--unit-id ID` (`virtual_bench.unit_id_of`), `--announce-on ADDR` (default every interface,
+    loopback where it can join), `--announce-engine`. `PORT n` comes once the announcement is up. README: how a CI on one
+    host uses it (the querier and the responder on one machine).
+  - discovery's minimal engine sends its query out of every IPv4 interface (IP_MULTICAST_IF per address,
+    `discovery.interface_addresses`, `send_query`) and its 5353 socket joins the group on each: a query sent once left by
+    one adapter only (ch32rv on Windows: WSL's vEthernet), and a probe on the Wi-Fi adapter never heard it. The zeroconf
+    engine names InterfaceChoice.All (its default).
+  - tests/test_vectors.py routes the wifi vectors by the state's "items has wifi", not the name: "pass_len 0xFF for an
+    index with no entry" and "a 7-byte passphrase" are now checked (the latter: ValueError before sending, the answer
+    malformed); a test asserts the 8 vectors, corr 0x74-0x7B.
+  - New tests/test_virtual_bench_announce.py: `oep find` and `discovery.find_unit` (both engines) and `tcp:UNIT_ID` find
+    the announcing virtual bench on this host (each responder engine), the raw legacy unicast and multicast answers, a
+    responder on loopback only found by the per-interface query and not by one send by the default route; skipped where
+    multicast does not loop back.
+- (JA) **virtual_bench_serve が自分を広告する（DNS-SD）、discovery はすべてのインターフェースで問う、wifi のベクタ 8 本をすべて確かめる。**
+  - `virtual_bench_serve --announce`（`--tcp` と。framing は length、これと一緒なら既定）は `_oep._tcp` の mDNS / DNS-SD の問い合わせに
+    答える（transports §3）: PTR -> instance `OEP virtual <unit_id> <port>`、SRV（port と host `oep-virtual-<unit_id>-<port>.local.`）、
+    TXT `unit_id=<unit_id>`、A（`--listen` のアドレス、既定 127.0.0.1。0.0.0.0 なら広告するインターフェースすべてのもの）。`mdns` の
+    extra があれば python-zeroconf、無ければ新しいモジュール `virtual_bench_mdns` の最小の応答器: legacy unicast の問い合わせ（送り元の
+    port が 5353 でない）には送り手へ ID と問いを付けて TTL 10 で答え、5353 からの問い合わせには group に答える。始めに一度広告し、
+    終わりに goodbye を出す。新しいオプション `--listen ADDR`、`--unit-id ID`（`virtual_bench.unit_id_of`）、`--announce-on ADDR`
+    （既定はすべてのインターフェース、入れるなら loopback も）、`--announce-engine`。`PORT n` は広告が出てから出る。README: 1 台の上の
+    CI での使い方（問う側と答える側が同じ機械）。
+  - discovery の最小の engine は問い合わせを IPv4 のインターフェースそれぞれから送り（アドレスごとに IP_MULTICAST_IF、
+    `discovery.interface_addresses`、`send_query`）、5353 のソケットもそれぞれで group に入る: 一度の送信は 1 つのアダプタからしか
+    出ず（Windows の ch32rv: WSL の vEthernet）、Wi-Fi のアダプタの probe には届かなかった。zeroconf の engine は InterfaceChoice.All
+    （既定）を明示する。
+  - tests/test_vectors.py は wifi のベクタを名前でなく state の「items has wifi」で振り分ける: 「pass_len 0xFF for an index with no
+    entry」と「a 7-byte passphrase」も確かめる（後者は送る前に ValueError、答えは malformed）。8 本（corr 0x74〜0x7B）あることを試験で確かめる。
+  - 新しい tests/test_virtual_bench_announce.py: `oep find` と `discovery.find_unit`（両方の engine）と `tcp:UNIT_ID` が、この host で
+    広告する仮想ベンチを見つける（応答器の engine ごと）。生の legacy unicast と multicast の答え。loopback だけで答える応答器は
+    インターフェースごとの問い合わせで見つかり、既定の経路への一度の送信では見つからない。multicast が戻らない所では skip。
 - (EN) **oep-spec c2b8007 .. 62c1988: the wifi item and TCP discovery.** README names `62c1988`. Registry and vectors
   synced (`tools/sync_registry.sh`; the wifi vectors, corr 0x74-0x7B, pass both ways).
   - **Breaking (wire): unset's len is the key's length** (probe.config §2, as the new vector "unset: wifi entry 0" has

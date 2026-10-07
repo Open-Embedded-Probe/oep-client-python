@@ -79,7 +79,7 @@ oep-client-python X.Y.Z (until the v1 freeze every release may break the wire; t
 | `rp2350` | flash and reboot through the RP2350 boot ROM |
 | `uiapduino` | into and out of the UIAPduino bootloader |
 | `catalog` / `names` / `interfaces` / `dump` | the capability list and describe shapes, display |
-| `virtual_bench` / `endpoint` / `virtual_bench_serial` / `virtual_bench_serve` | the virtual bench (below) |
+| `virtual_bench` / `endpoint` / `virtual_bench_serial` / `virtual_bench_serve` / `virtual_bench_mdns` | the virtual bench (below) |
 
 ## Example
 
@@ -183,8 +183,11 @@ change nothing.
 - Setting it over the TCP link it changes drops that link after the answer (§1.4): set it over a serial port or USB.
 - `oep find` browses `_oep._tcp` (transports §3, host guide §4.1) and lists unit_id, host, port and address; the port
   is always the SRV record's (none is fixed - the reference probe's 7450 is an example). With python-zeroconf installed
-  (`pip install 'oep-client-python[mdns]'`) it browses with it, else with a minimal query of this package's own (QU,
-  answers to an ephemeral port, a shared 5353 socket when it can bind one). mDNS stays on the local link: from WSL 2's
+  (`pip install 'oep-client-python[mdns]'`) it browses with it (every interface: InterfaceChoice.All), else with a
+  minimal query of this package's own (QU, answers to an ephemeral port, a shared 5353 socket when it can bind one),
+  sent out of every IPv4 interface (IP_MULTICAST_IF per interface address; `discovery.interface_addresses`: ifaddr when
+  installed, else each interface's address on Linux, else the host name's addresses) - one send leaves by one
+  interface only, on Windows often a virtual adapter's, and a probe on another adapter never hears it. mDNS stays on the local link: from WSL 2's
   default NAT network, a VM or across a router nothing is found - name the probe as `tcp://HOST:PORT` (its address is
   in `oep config state` over the serial port).
 - `tcp:UNIT_ID` opens the probe DNS-SD finds by that unit_id and checks describe's (UnitIdMismatch, closed, otherwise);
@@ -450,3 +453,27 @@ the reset TLV; `--label CH=TEXT`, e.g. `23=v003.nrst`, names a slot's line, prob
 (`--no-port-speed` takes it out of the ops), and `--broken-rate RATE[:MIN_SIZE][:in|out]` makes a rate break frames (in process,
 `virtual_bench_serial.VirtualSerialStream` also garbles everything while the host's own rate differs from the probe's). Events and data pushes go out on the pty and on TCP
 (both framings). The rest: `--help`.
+
+**Announcing itself (DNS-SD, a CI on one host).** `--announce` (with `--tcp`; length framing) answers mDNS / DNS-SD
+queries for `_oep._tcp` as a probe listening on TCP does (transports §3): PTR `_oep._tcp.local.` -> instance
+`OEP virtual <unit_id> <port>`, its SRV (the port, host `oep-virtual-<unit_id>-<port>.local.`), its TXT
+`unit_id=<unit_id>` (fn 0's describe's; `--unit-id ID` sets it) and the host's A record: the `--listen` address
+(127.0.0.1 by default; `--listen 0.0.0.0`: every announcing interface's address, loopback last). python-zeroconf answers
+when the `mdns` extra is installed, else a minimal responder of this package (`virtual_bench_mdns`; IPv4): a query from
+a port other than 5353 (legacy unicast, RFC 6762 §6.7) is answered to its sender's address and port with its ID and
+question and TTL 10; a query from 5353 is answered on the group. `--announce-on ADDR` (repeatable) picks the interfaces
+by IPv4 address (default: every one, loopback included where the OS lets it join the group - Linux does);
+`--announce-engine auto|zeroconf|minimal`. A CI on one machine runs the querier and the responder on the same host:
+
+```sh
+python -m oep_client.virtual_bench_serve --tcp 0 --announce --profile esp32-v003 --unit-id 0123456789ab
+# stdout: PORT n (the announcement is up by then); stderr: virtual_bench_serve: announcing ...
+# then: a one-shot PTR query for _oep._tcp.local. from an ephemeral port to 224.0.0.251:5353 (IPv4) - the answer comes
+# back to that port: PTR, SRV (port n), TXT unit_id=0123456789ab, A 127.0.0.1 - and open tcp://127.0.0.1:n
+```
+
+The query's multicast loops back to this host on the interface it left by, and the responder has joined the group on
+every interface. A host with no multicast route needs `--announce-on 127.0.0.1` and the query sent with
+IP_MULTICAST_IF 127.0.0.1. A different `--unit-id` per job keeps parallel jobs apart (the port is in the instance
+name too). A container or VM answers only on its own network. tests/test_virtual_bench_announce.py does this with
+`oep find`, `discovery.find_unit` and `tcp:UNIT_ID` (both engines), skipped where multicast does not loop back.

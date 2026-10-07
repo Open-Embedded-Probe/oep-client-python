@@ -16,7 +16,9 @@ Two ways to ask, the same answer:
 - otherwise a minimal one-shot query of this module's own: PTR `_oep._tcp.local` (then SRV / TXT / A for what the
   answers left out), sent to 224.0.0.251:5353 from an ephemeral port with the unicast-response bit, so responders
   answer this socket directly (RFC 6762 §5.4, §6.7); a second socket on 5353 also listens for multicast answers when the
-  port can be shared. IPv4 only.
+  port can be shared. The query goes out of every IPv4 interface (IP_MULTICAST_IF per interface address,
+  `interface_addresses`): a multicast sent once leaves by one interface only (on Windows often a virtual adapter's, and
+  a probe on the Wi-Fi adapter never hears it). The 5353 socket joins the group on each of them. IPv4 only.
 
 mDNS stays on the local link: behind a NAT (WSL 2's default network, a VM) or across subnets nothing is found - name the
 probe as tcp://HOST:PORT then (the address is also in `oep config state` over another transport: the wifi state's ip).
@@ -28,6 +30,7 @@ import secrets
 import select
 import socket
 import struct
+import sys
 import time
 from dataclasses import dataclass, field
 
@@ -186,13 +189,79 @@ class Browser:
         return out
 
 
-def _sockets() -> list[socket.socket]:
+_SIOCGIFADDR = 0x8915                      # Linux
+
+
+def interface_addresses() -> list[str]:
+    """This machine's IPv4 interface addresses, loopback included (one per interface where it can tell): ifaddr when
+    installed (python-zeroconf's dependency: the mdns extra), else on Linux each interface's address (SIOCGIFADDR over
+    socket.if_nameindex), else the addresses the host name resolves to (Windows lists every adapter's there) and
+    127.0.0.1."""
+    out: list[str] = []
+
+    def add(ip: str) -> None:
+        if ip and ip not in out and not ip.startswith("169.254."):   # link-local fallback: no DHCP, nothing there
+            out.append(ip)
+    try:
+        import ifaddr
+        for adapter in ifaddr.get_adapters():
+            for ip in adapter.ips:
+                if ip.is_IPv4:
+                    add(ip.ip)
+    except ImportError:
+        pass
+    if not out and sys.platform.startswith("linux"):
+        import fcntl
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            for _, name in socket.if_nameindex():
+                try:
+                    raw = fcntl.ioctl(s.fileno(), _SIOCGIFADDR, struct.pack("256s", name.encode()[:15]))
+                except OSError:
+                    continue                                   # no IPv4 address
+                add(socket.inet_ntoa(raw[20:24]))
+        finally:
+            s.close()
+    if not out:
+        try:
+            for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
+                add(ip)
+            for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+                add(info[4][0])
+        except OSError:
+            pass
+    add("127.0.0.1")
+    return out
+
+
+def send_query(sock: socket.socket, packet: bytes, interfaces: list[str]) -> int:
+    """`packet` to the mDNS group out of each interface (IP_MULTICAST_IF = its address); how many sends went out. An
+    interface that refuses (no multicast, down) is skipped; with none at all, one send by the default route."""
+    sent = 0
+    for ip in interfaces:
+        try:
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(ip))
+            sock.sendto(packet, (MDNS_GROUP, MDNS_PORT))
+            sent += 1
+        except OSError:
+            pass
+    if not sent:
+        try:
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton("0.0.0.0"))
+            sock.sendto(packet, (MDNS_GROUP, MDNS_PORT))
+            sent = 1
+        except OSError:
+            pass                                               # no route for multicast: nothing to find
+    return sent
+
+
+def _sockets(interfaces: list[str]) -> list[socket.socket]:
     """The query socket (ephemeral port: legacy unicast answers come here) and, when 5353 can be shared, one on the
     group for multicast answers."""
     q = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     q.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 255)
     q.bind(("", 0))
-    socks = [q]
+    socks, g = [q], None
     try:
         g = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         g.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -202,17 +271,27 @@ def _sockets() -> list[socket.socket]:
             except OSError:
                 pass
         g.bind(("", MDNS_PORT))
-        g.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP,
-                     socket.inet_aton(MDNS_GROUP) + socket.inet_aton("0.0.0.0"))
+        joined = 0
+        for ip in interfaces or ["0.0.0.0"]:
+            try:
+                g.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP,
+                             socket.inet_aton(MDNS_GROUP) + socket.inet_aton(ip))
+                joined += 1
+            except OSError:
+                pass
+        if not joined:
+            raise OSError("no interface joined the group")
         socks.append(g)
-    except OSError:
-        pass                                                   # 5353 taken (avahi without sharing): unicast answers only
+    except OSError:                                            # 5353 taken (avahi without sharing): unicast answers only
+        if g is not None:
+            g.close()
     return socks
 
 
 def _browse_minimal(timeout: float, service: str = SERVICE) -> list[Found]:
     b = Browser(service)
-    socks = _sockets()
+    interfaces = interface_addresses()
+    socks = _sockets(interfaces)
     try:
         deadline = time.monotonic() + timeout
         next_send, gap = 0.0, 0.25
@@ -221,10 +300,7 @@ def _browse_minimal(timeout: float, service: str = SERVICE) -> list[Found]:
             if now >= deadline:
                 break
             if now >= next_send:
-                try:
-                    socks[0].sendto(query(b.questions(), secrets.randbits(16)), (MDNS_GROUP, MDNS_PORT))
-                except OSError:
-                    pass                                       # no route for multicast: nothing to find
+                send_query(socks[0], query(b.questions(), secrets.randbits(16)), interfaces)
                 next_send, gap = now + gap, min(gap * 2, 1.0)
             ready, _, _ = select.select(socks, [], [], max(0.0, min(next_send, deadline) - time.monotonic()))
             for s in ready:
@@ -240,7 +316,8 @@ def _browse_minimal(timeout: float, service: str = SERVICE) -> list[Found]:
 
 def _browse_zeroconf(timeout: float, service: str = SERVICE) -> list[Found]:
     import zeroconf as zc_mod
-    zc = zc_mod.Zeroconf(ip_version=zc_mod.IPVersion.V4Only)
+    # every interface (InterfaceChoice.All, ifaddr's list): zeroconf joins and queries on each
+    zc = zc_mod.Zeroconf(interfaces=zc_mod.InterfaceChoice.All, ip_version=zc_mod.IPVersion.V4Only)
     names: set[str] = set()
 
     class Listener(zc_mod.ServiceListener):

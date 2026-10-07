@@ -10,10 +10,29 @@ and the unread input dropped, as a real port's last close does, so the next host
 one) serves one connection at a time - a closed connection does not end the session (transports §3: the session, its
 lock, subscriptions and the resend table stay until the lease runs out or another core §9 event; answers and
 notifications meanwhile are dropped; the next connection's open with the same id takes it back, core §6.2) -
---framing cobs is the serial port again, --framing length is
-length(u16) message as on vendor bulk / TCP (no raw bytes): the listening socket is then a TCP transport of the
+--framing cobs (the default without --announce) is the serial port again, --framing length (the default with
+--announce) is length(u16) message as on vendor bulk / TCP (no raw bytes): the listening socket is then a TCP transport of the
 probe (kind 6, listed in fn 0's describe, its index in every confirm's transport TLV; transports §1), no pause inside a
 frame restarts the reader (transports §2), and a length over max_frame closes the connection.
+
+--announce (with --tcp, length framing) announces the port as a probe listening on TCP does (transports §3): DNS-SD
+`_oep._tcp` over mDNS - PTR `_oep._tcp.local.` -> instance `OEP virtual <unit_id> <port>`, its SRV (the port, host
+`oep-virtual-<unit_id>-<port>.local.`), its TXT `unit_id=<unit_id>` (fn 0's describe's; --unit-id changes it) and the
+host's A record(s): the --listen address (127.0.0.1 by default), or for --listen 0.0.0.0 every announcing interface's
+address, loopback last. python-zeroconf answers when the mdns extra is installed, else a minimal responder of this
+package (virtual_bench_mdns: legacy unicast queries - from a port other than 5353 - are answered to their sender,
+queries from 5353 on the group; IPv4). stderr says "virtual_bench_serve: announcing ...".
+
+A CI on one machine (the querying host and the virtual bench on the same host):
+
+    python -m oep_client.virtual_bench_serve --tcp 0 --announce --profile esp32-v003 --unit-id 0123456789ab
+
+then, once `PORT n` is on stdout (the announcement is up by then), query `_oep._tcp.local.` PTR - from an ephemeral
+port to 224.0.0.251:5353 (legacy unicast: the answer comes back to that port) or as a full mDNS querier - and open
+the SRV port at the A address (127.0.0.1), checking describe's unit_id. The query's multicast loops back to this host:
+every interface joins the group, and loopback does too where the OS lets it (Linux does; a host with no multicast
+route at all needs --announce-on 127.0.0.1 and the query sent with IP_MULTICAST_IF 127.0.0.1). A different --unit-id
+per job keeps parallel jobs apart. A container or VM sees the query only on its own network.
 
 The first line on stdout says where to open: `PTY /dev/pts/N` or `PORT n`. The program ends when stdin closes
 (so a test's child never stays behind), or with --once when the first TCP connection closes. With --keep-on-eof the
@@ -84,6 +103,12 @@ Options:
                         (esp32-v003): the entries of probe.config's wifi item are tried against these in index order,
                         and state's wifi TLV shows connecting for --wifi-join-ms (default 500), then connected (rssi
                         -55, ip --wifi-ip, default 127.0.0.1 - where this program listens) or waiting with the reason
+  --listen ADDR         the address --tcp listens on (default 127.0.0.1; 0.0.0.0: every interface)
+  --unit-id ID          fn 0's describe's unit_id instead of the profile's (core §7.5 grammar: [a-z0-9-], 1-32)
+  --announce            with --tcp: DNS-SD `_oep._tcp` over mDNS for the port (above)
+  --announce-on ADDR    an interface, by its IPv4 address, to answer on (repeatable; default every interface with an
+                        IPv4 address, loopback included where the OS lets it join the group)
+  --announce-engine E   auto (default: zeroconf when installed), zeroconf or minimal
   --run-hook SPEC       what riscv-dm run does on every target: SPEC is module:function or path/file.py:function,
                         called as function(target, pc, regs) -> (stopped, dpc, elapsed_us). `target` is the
                         endpoint.VirtualTarget (mem = word address -> value, regs = regno -> value, halted, dpc), so a
@@ -139,6 +164,8 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
     probe = profile()
     if getattr(a, "no_drive_levels", False):
         probe = virtual_bench.without_drive_levels(probe)
+    if getattr(a, "unit_id", None):
+        probe = virtual_bench.with_unit_id(probe, a.unit_id)
     if getattr(a, "no_restart", False):
         probe = virtual_bench.without(probe, virtual_bench.RESTART)        # the optional oep.probe.restart left out (oep-if-restart)
     start = time.monotonic_ns()
@@ -287,6 +314,7 @@ class Commands:
 
     def __init__(self, ep: endpoint.Endpoint, keep_on_eof: bool = False):
         self.ep, self.keep_on_eof = ep, keep_on_eof
+        self.responder = None                             # --announce's mDNS responder: served in the same select
         self.port: virtual_bench_serial.VirtualSerialPort | None = None
         self.buf = b""
         try:
@@ -295,9 +323,11 @@ class Commands:
             self.fd = None
 
     def watch(self) -> list:
-        return [] if self.fd is None else [self.fd]
+        return ([] if self.fd is None else [self.fd]) + (self.responder.watch() if self.responder else [])
 
     def poll(self, readable) -> bool:
+        if self.responder is not None:
+            self.responder.poll(readable)
         if self.fd is None or self.fd not in readable:
             return False
         try:
@@ -442,9 +472,12 @@ def serve_pty(a, ep, console, commands: Commands) -> None:
 def serve_tcp(a, ep, console, commands: Commands) -> None:
     srv = socket.socket()
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind(("127.0.0.1", a.tcp))
+    srv.bind((a.listen, a.tcp))
     srv.listen(1)
-    print(f"PORT {srv.getsockname()[1]}", flush=True)
+    port = srv.getsockname()[1]
+    if a.announce:
+        commands.responder = announce(a, ep, port)
+    print(f"PORT {port}", flush=True)
     while True:
         readable, _, _ = select.select([srv] + commands.watch(), [], [], 0.05)
         if commands.poll(readable):
@@ -463,6 +496,27 @@ def serve_tcp(a, ep, console, commands: Commands) -> None:
         conn.close()
         if a.once:
             return
+
+
+def announce(a, ep, port: int):
+    """--announce: the mDNS responder for this port (virtual_bench_mdns), its records said on stderr."""
+    from . import virtual_bench_mdns as mdns
+    interfaces = a.announce_on or None
+    addresses = mdns.reachable_addresses(a.listen, a.announce_on or mdns.interface_addresses())
+    ann = mdns.Announcement(virtual_bench.unit_id_of(ep.probe), port, addresses)
+    try:
+        r = mdns.start(ann, a.announce_engine, interfaces)
+    except ImportError:
+        raise SystemExit("virtual_bench_serve: --announce-engine zeroconf: install the mdns extra "
+                         "(pip install 'oep-client-python[mdns]')") from None
+    except OSError as e:
+        raise SystemExit(f"virtual_bench_serve: --announce: {e}") from None
+    print(f"virtual_bench_serve: announcing {ann.instance} unit_id={ann.unit_id} host {ann.host} port {port} "
+          f"A {', '.join(addresses)} ({r.engine}, on {', '.join(r.joined)})", file=sys.stderr, flush=True)
+    if a.listen.startswith("127.") and any(not ip.startswith("127.") for ip in r.joined):
+        print(f"virtual_bench_serve: listening on {a.listen}: only this machine can connect (--listen 0.0.0.0 for "
+              "others)", file=sys.stderr, flush=True)
+    return r
 
 
 def _serve_conn(a, ep, console, conn, commands: Commands) -> bool:
@@ -540,7 +594,7 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     where = ap.add_mutually_exclusive_group()
     where.add_argument("--pty", action="store_true")
     where.add_argument("--tcp", type=int, metavar="PORT")
-    ap.add_argument("--framing", choices=["cobs", "length"], default="cobs")
+    ap.add_argument("--framing", choices=["cobs", "length"])
     ap.add_argument("--profile", default="p4-x035")
     ap.add_argument("--port-index", type=int)
     ap.add_argument("--noise", default="")
@@ -567,9 +621,27 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--wifi-air", action="append", default=[])
     ap.add_argument("--wifi-join-ms", type=int, default=500)
     ap.add_argument("--wifi-ip", default="127.0.0.1")
+    ap.add_argument("--listen", default="127.0.0.1", metavar="ADDR")
+    ap.add_argument("--unit-id", metavar="ID")
+    ap.add_argument("--announce", action="store_true")
+    ap.add_argument("--announce-on", action="append", default=[], metavar="ADDR")
+    ap.add_argument("--announce-engine", choices=["auto", "zeroconf", "minimal"], default="auto")
     a = ap.parse_args(argv)
     if a.tcp is None and a.framing == "length":
         ap.error("--framing length is for --tcp")
+    if a.announce and a.tcp is None:
+        ap.error("--announce is for --tcp")
+    if a.announce and a.framing == "cobs":
+        ap.error("--announce: a host that finds the port speaks length frames (transports §1); drop --framing cobs")
+    if a.framing is None:
+        a.framing = "length" if a.announce else "cobs"
+    if a.unit_id is not None and not virtual_bench.UNIT_ID.fullmatch(a.unit_id):
+        ap.error(f"--unit-id {a.unit_id}: [a-z0-9-], 1 to 32 characters (core §7.5)")
+    for ip in a.announce_on:
+        try:
+            socket.inet_aton(ip)
+        except OSError:
+            ap.error(f"--announce-on {ip}: an interface's IPv4 address")
     profile = virtual_bench.PROFILES.get(a.profile) or virtual_bench.PROFILES.get(a.profile.replace("_", "-"))
     if profile is None:
         ap.error(f"unknown profile {a.profile}; one of {', '.join(sorted(virtual_bench.PROFILES))}")
@@ -591,6 +663,9 @@ def main(argv: list[str] | None = None) -> None:
             serve_tcp(a, ep, console, commands)
     except KeyboardInterrupt:
         pass
+    finally:
+        if commands.responder is not None:
+            commands.responder.close()
 
 
 if __name__ == "__main__":
