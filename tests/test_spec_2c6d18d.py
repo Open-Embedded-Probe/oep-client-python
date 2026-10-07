@@ -23,6 +23,9 @@ class Link:
     def __init__(self):
         self.events, self.pushes = collections.deque(), collections.deque()
 
+    def pump(self, *_, **__):
+        pass
+
     def take(self, ep):
         for f in ep.pushes():
             (self.events if f[0] == m.ROLE_EVENT else self.pushes).append(f)
@@ -609,3 +612,72 @@ def test_a_multirate_track_heavy_combination_gets_a_lower_rate():
     light = lc.configure(rate=20_000_000, samples=64, query=True, multirate=[mr.Multirate(0, A, 4, 0)])
     heavy = lc.configure(rate=20_000_000, samples=64, query=True, multirate=[mr.Multirate(k, E, 2, 1) for k in range(4)])
     assert light.rate == 20_000_000 and heavy.rate < 20_000_000 and heavy.positions == [] and heavy.width == 1
+
+
+# ---- oep-spec d801f02 .. c6ab5d9: the probe's and the client's questions ---------------------------------------------------
+
+def test_only_multirate_goes_critical_and_type_0_sends_role_0():
+    ep, hst, lc, _ = multirate_bench()
+    lc.configure(rate=1_000_000, samples=64, trigger=(c.IMMEDIATE, 3, 7), multirate=[mr.Multirate(0, A, 8, 0)])
+    tags = [t for t, _ in m.split_tlvs(ep.requests[-1].payload)]
+    assert [t for t in tags if t & 0x80] == [mr.TAG | 0x80]
+    assert dict(m.split_tlvs(ep.requests[-1].payload))[c.TRIGGER] == bytes(6)
+
+
+@pytest.mark.parametrize("raw", [(6, 2, 128, 1), (7, 1, 128, 0), (7, 8, 4, 0), (7, 2, 128, 2)])
+def test_a_broken_multirate_declaration_is_not_used(raw):
+    ep, hst, lc, _ = multirate_bench()
+    hst._describes[lc.fn] = [(mr.DECLARED, struct.pack("<IIIB", *raw))]
+    assert lc.multirate_declared() is None
+    with pytest.raises(ValueError, match="declares no multirate"):
+        lc.configure(rate=1_000_000, samples=64, multirate=[mr.Multirate(0, A, 8, 0)])
+
+
+def test_a_group_pretrigger_is_the_trigger_tracks_and_bind_refuses_a_track_that_cannot_keep_it():
+    ep, hst, lc, an, grp, clock = group()                              # lc: pretrigger 4000 at 1 MHz
+    an.configure(rate=10_000, samples=30)                               # P_k = ceil(4000 x rate_an / 1 MHz) > 30
+    assert c.CaptureGroup.pretrigger_of(an, lc) == -(-4000 * an.config.rate // 1_000_000) == 38
+    with pytest.raises(h.Unavailable) as e:
+        grp.bind([lc, an], trigger=lc)
+    assert (e.value.cause, e.value.fn) == ("limit", an.fn)
+    an.configure(rate=10_000, samples=100)
+    grp.bind([lc, an], trigger=lc)
+    lc2 = c.LogicCapture(hst, lc.fn)
+    lc2.config = c.Config(pretrigger=5)
+    with pytest.raises(ValueError, match="trigger_track's alone"):
+        grp.bind([an, lc2], trigger=an)
+
+
+def test_streaming_error_moves_write_pos_back_and_the_host_drops_what_came_past_it():
+    ep, hst, lc, clock = bench()
+    core.plan_apply(hst, [(lc.fn, 0, 20)])
+    lc.configure(rate=1_000_000, mode=c.STREAMING)
+    lc.subscribe()
+    link = Link()
+    lc.start()
+    clock.t = 5                                                         # 5000 samples: one whole segment of 4096 and more
+    link.take(ep)
+    got = c.Received()
+    lc.stream(link, seconds=0, into=got)
+    assert len(got.data) == 625                                         # w 1: 5000 samples
+    ep.capture_overflow(lc.fn)
+    st = lc.status()
+    assert (st.state, st.serial_done, st.write_pos) == (c.STATE["error"], 1, 512)
+    lc.finish(link, got, timeout=0.05)
+    assert len(got.data) == 512 and got.dropped_after_error == 113
+
+
+def test_a_group_error_carries_the_tracks_error_and_stops_the_others_with_reason_1():
+    ep, hst, lc, an, grp, clock = group()
+    lc.configure(rate=1_000_000, mode=c.REPEAT, samples=1000, segments=4)
+    an.configure(rate=10_000, mode=c.REPEAT, samples=100, segments=4)
+    grp.bind([lc, an])
+    lc.subscribe()
+    hst.subscribe(grp.fn)
+    grp.start([lc, an])
+    ep.capture_overflow(an.fn, 2)
+    link = Link()
+    link.take(ep)
+    (g,) = grp.events(link)
+    (t,) = lc.events(link)
+    assert (g.reason_name, g.error, t.reason_name) == ("error", 2, "host")   # reason 1: stop (the group's)

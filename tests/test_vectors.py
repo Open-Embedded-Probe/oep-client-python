@@ -109,7 +109,8 @@ def test_the_dmseq_crc8_vectors_have_no_counterpart_here():
 
 # The multirate vectors' logic fn (capture §5, the describe vector): one-shot and repeat (max_samples 1000000, 8 segments),
 # rate_range 1 kHz-100 MHz exact, 4 channels, triggers immediate / level / edge with max_pretrigger 1000000, multirate
-# policies 7, d 2-128 powers of 2 only. Its roles come from the plan (role_channels: the virtual bench's own addition).
+# policies 7, d 2-128 powers of 2 only, each role 0-3 on channels 20-23 (role_channels first, as the vector).
+MULTIRATE_ROLES = virtual_bench._roles({k: [20, 21, 22, 23] for k in range(4)})
 MULTIRATE_LOGIC = (
     catalog.tlv(0x40, struct.pack("<BII", 1, 1_000_000, 1)), catalog.tlv(0x40, struct.pack("<BII", 2, 1_000_000, 8)),
     catalog.tlv(0x41, struct.pack("<IIB", 1000, 100_000_000, 1)), catalog.u8(0x44, 4),
@@ -125,7 +126,7 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None, wifi
     """A virtual bench whose fn numbers are a vector's: fn 0 with one UART bridge (index 0), then each named interface
     with channels 0-15 for its roles (the wire on pins 1 / 2; gpio without drive_levels). `ops`: fn -> the ops its
     ops tag sets instead of every op of its table (core §1.2, §7.4)."""
-    core = virtual_bench._core("1.0.0", "vectors", "0123456789ab", 16, {},
+    core = virtual_bench._core("1.0.0", "vectors", "0123456789ab", 24 if multirate else 16, {},
                       virtual_bench._transports([(virtual_bench.TRANSPORT["uart_bridge"], 0xFF)]))
     chans = list(range(16))
     offered = [core]
@@ -152,7 +153,7 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None, wifi
         elif name == "oep.probe.config":
             o = virtual_bench._config(fn, 0, slots_max=2, storage=0, wifi_max=wifi_max)   # no storage: no save / erase
         elif name == "oep.fixture.logic" and multirate and fn == 9:
-            o = virtual_bench.Offered(fn, 0, name, virtual_bench._roles({k: chans for k in range(4)}) + MULTIRATE_LOGIC,
+            o = virtual_bench.Offered(fn, 0, name, MULTIRATE_ROLES + MULTIRATE_LOGIC,
                                       inner=virtual_bench._capture_inner([1, 2, 8], 8, 480))
         elif name == "oep.fixture.logic":                              # 80 MHz / 4 = 20 MHz exact; w 2 for two channels
             o = virtual_bench.Offered(fn, 0, name, virtual_bench._roles({k: chans for k in range(4)})
@@ -535,7 +536,7 @@ def setup_case(case):
     elif is_multirate_vector(case) or name.startswith("logic configure multirate on a fn"):
         logic = int(next(k for k, v in fns.items() if v == "oep.fixture.logic"))
         held(ep)                                                       # plan roles 0-3 of the logic (and the analog's 0)
-        req(ep, 2, plan, PLAN_APPLY, b"".join(m.tlv(0x10, struct.pack("<HBH", logic, r, r), critical=True) for r in range(4))
+        req(ep, 2, plan, PLAN_APPLY, b"".join(m.tlv(0x10, struct.pack("<HBH", logic, r, (20 if logic == 9 else 0) + r), critical=True) for r in range(4))
             + (m.tlv(0x10, struct.pack("<HBH", 13, 0, 4), critical=True) if "13" in fns else b""))
         example = (m.tlv(0x40, bytes([1])) + m.tlv(0x42, struct.pack("<I", 100_000_000)) + m.tlv(0x43, struct.pack("<I", 96))
                    + m.tlv(0x60, struct.pack("<BBII", 0, 1, 32, 0), critical=True)
@@ -551,6 +552,16 @@ def setup_case(case):
             cap.segs = [virtual_bench_capture.Segment(0, 0, 72, 5_000_000, 10, 13, virtual_bench_capture.FLAG["short"], 1)]
         if "13" in fns:                                                # the analog: one-shot, immediate
             req(ep, 4, 13, 0x01, m.tlv(0x40, bytes([1])) + m.tlv(0x42, struct.pack("<I", 10_000)) + m.tlv(0x43, struct.pack("<I", 100)))
+    elif name.startswith("capture-group") and "cannot keep" in name:
+        held(ep)                                                       # P_k = ceil(100000 x 48000 / 20000000) = 240
+        req(ep, 2, plan, PLAN_APPLY, b"".join(m.tlv(0x10, struct.pack("<HBH", f, r, ch), critical=True)
+                                              for f, r, ch in ((9, 0, 0), (9, 1, 1), (13, 0, 2))))
+        an = ep.captures[13]
+        an.exact, an.max_pretrigger = True, 128                       # 48000 exact, max_pretrigger 128
+        req(ep, 3, 9, 0x01, m.tlv(0x40, bytes([1])) + m.tlv(0x42, struct.pack("<I", 20_000_000))
+            + m.tlv(0x43, struct.pack("<I", 200_000)) + m.tlv(0x45, struct.pack("<BBI", 2, 0, 0))
+            + m.tlv(0x46, struct.pack("<I", 100_000)))
+        req(ep, 4, 13, 0x01, m.tlv(0x40, bytes([1])) + m.tlv(0x42, struct.pack("<I", 48_000)) + m.tlv(0x43, struct.pack("<I", 4800)))
     elif name.startswith("capture-group"):
         held(ep)                                                       # fn 9 (logic) and fn 13 (analog), roles 0 and 1
         plan_apply = b"".join(m.tlv(0x10, struct.pack("<HBH", f, r, ch), critical=True)
@@ -563,6 +574,12 @@ def setup_case(case):
         req(ep, 5, 12, 0x01, struct.pack("<BHH", 2, 9, 13))            # bind fn 9 then fn 13, no trigger_track
         ep.groups[12].generation, ep.captures[9].generation, ep.captures[13].generation = 4, 3, 1
         clock.t = 7                                                    # acquisition starts at 7 ms
+    elif name.startswith("logic") and "streaming, 1 channel w 8" in state:
+        cap = ep.captures[9]                                           # the probe's segments 16 samples, bytes 0-39 taken
+        cap.mode, cap.rate, cap.width, cap.channels, cap.samples = virtual_bench_capture.MODE["streaming"], 1000, 8, 1, 16
+        cap.generation, cap.state, cap.serial_done = 1, virtual_bench_capture.STATE["capturing"], 2
+        cap.data, cap.produced, cap.sent = bytearray(range(40)), 40, 40
+        cap.overflow()                                                 # inside serial 2: write_pos back to 32 (§2.2)
     elif name.startswith("logic") and "overflowed inside serial 2" in state:
         cap = ep.captures[9]                                           # repeat, 1 channel w 1, 1 MHz from 5 ms
         cap.mode, cap.rate, cap.width, cap.channels, cap.samples = virtual_bench_capture.MODE["repeat"], 1_000_000, 1, 1, 8000
@@ -607,7 +624,7 @@ def _multirate_on_client(case, name, a):
         assert cap.LogicCapture(hst, 9).multirate_declared() == cap.mr.Declared(7, 2, 128, True)
         return sent
     if "does not declare" not in name:
-        hst._describes[fn] = catalog.split_tlv(b"".join(MULTIRATE_LOGIC))   # its describe (the describe vector's)
+        hst._describes[fn] = catalog.split_tlv(b"".join(MULTIRATE_ROLES + MULTIRATE_LOGIC))   # the describe vector's
     lc = cap.LogicCapture(hst, fn)
     A, S_, E = cap.ANY_ACTIVE, cap.SAMPLE, cap.EDGE_LATCH
     example = [cap.Multirate(0, A, 32, 0), cap.Multirate(3, S_, 4, 1)]
@@ -656,9 +673,7 @@ TEXT_OVER_VECTOR: dict[str, str] = {}
 
 
 NOT_IN_THE_VIRTUAL_BENCH = {"oep.target.arm-adi"}                       # the client's side is checked below
-# The describe vector's logic declares no role_channels (its pins are not the point); the virtual bench's needs them for
-# its plan, so its describe is that one plus role_channels: its multirate TLV is checked instead (below).
-VB_DESCRIBE_DIFFERS = {"logic describe: multirate declared"}
+VB_DESCRIBE_DIFFERS: set[str] = set()                                   # none since oep-spec c6ab5d9
 
 
 @pytest.mark.parametrize("case", OPS, ids=lambda c: c["name"])
@@ -958,6 +973,23 @@ def _on_client(case):
         assert not more and (seg.serial, seg.position, seg.samples, seg.start_ns, seg.generation) == \
             (0, 0, 1000, 5_000_000, 1)
         return sent
+    if name.startswith("logic query: an immediate trigger"):
+        hst, sent = client(case)
+        cap.LogicCapture(hst, 9).configure(rate=20_000_000, samples=200_000, trigger=(cap.IMMEDIATE, 5, 9), query=True)
+        mine = dict(m.split_tlvs(m.Request.unpack(sent[0]).payload))
+        assert mine[cap.TRIGGER] == bytes(6)                           # type 0 goes as role 0 value 0 (§3.3)
+        return None                                                     # the vector's role 5 is the probe's side
+    if name.startswith("logic query: samples 0"):
+        hst, sent = client(case)
+        with pytest.raises(ValueError, match="1 or more"):
+            cap.LogicCapture(hst, 9).configure(rate=20_000_000, samples=0, query=True)
+        assert sent == []
+        return REFUSED_BEFORE_SENDING
+    if name.startswith("logic status") and "streaming" in name:
+        hst, sent = client(case)
+        st = cap.LogicCapture(hst, 9).status()
+        assert (st.state, st.serial_done, st.write_pos, st.dropped, st.error_name) == (cap.STATE["error"], 2, 32, True, "storage")
+        return sent
     if name.startswith("logic status"):
         hst, sent = client(case)
         st = cap.LogicCapture(hst, 9).status()
@@ -977,6 +1009,13 @@ def _on_client(case):
         c = lc.configure(rate=20_000_000, samples=200_000)
         assert (c.rate, c.width, c.positions, c.samples, c.segments, c.blocking_ms) == (20_000_000, 2, [0, 1], 200_000, 1, 0)
         return [_uncritical(sent[0])]
+    if name.startswith("capture-group bind: a track cannot keep"):
+        hst, sent = client(case, S)
+        logic, analog = cap.LogicCapture(hst, 9), cap.AnalogCapture(hst, 13)
+        with pytest.raises(h.Unavailable) as e:
+            cap.CaptureGroup(hst, fn=12).bind([logic, analog], trigger=logic)
+        assert (e.value.cause, e.value.fn) == ("limit", 13)            # cause 2 and TLV fn (§4.1)
+        return sent
     if name.startswith("capture-group start"):
         hst, sent = client(case, S)
         logic, analog = cap.LogicCapture(hst, 9), cap.AnalogCapture(hst, 13)
@@ -1109,3 +1148,17 @@ def test_multirate_streams_both_ways(case):
         assert ["".join(map(str, v)) for v in got.d1] == [ch[r] for r in d1_roles]
         assert got.reduced == {s.role: s.values(ch[s.role]) for s in specs if s.reduced}
         assert lay.encode(lambda role, i: int(ch[role][i]), n, d1_roles) == stream
+
+
+# ---- data frames (ops.json data): what the host keeps after an error stop (capture §2.2) -------------------------------
+
+@pytest.mark.parametrize("case", load("ops.json")["data"], ids=lambda c: c["name"])
+def test_data_frames_and_what_the_host_keeps(case):
+    """The frame read as a push of its generation; after the error stop status says write_pos 32 (the status vector),
+    and the host keeps `keep` bytes of it."""
+    from oep_client import capture as cap
+    fn, seq, position, data, generation = cap.unpack_push(hx(case["frame_hex"]))
+    assert generation == case["generation"]
+    got = cap.Received(data=bytearray(data), start=position)
+    got.drop_from(32)
+    assert bytes(got.data) == data[:case["keep"]] and got.dropped_after_error == len(data) - case["keep"]

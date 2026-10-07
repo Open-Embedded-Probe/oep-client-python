@@ -445,6 +445,7 @@ class VirtualCapture:
             if n > 0:
                 self.data += self._pack(self.produced, n, segment=False)
                 self.produced += n
+                self.serial_done = (self.produced // self.samples) & 0xFFFFFFFF   # the probe's own segments (§2.1)
         return events
 
     def stop(self) -> list[bytes]:
@@ -461,9 +462,22 @@ class VirtualCapture:
         stays at its start) - and the track stops in error: state 6, status flags bit0, stopped reason 3. -> events."""
         if self.state not in (STATE["waiting"], STATE["capturing"], STATE["paused"]):
             return []
+        if self.mode == MODE["streaming"]:                         # its bytes ran on: write_pos back to the start of
+            keep = self.serial_done * self.segment_bytes()         # the segment not kept (§2.2; serials from start)
+            if keep < self.base + len(self.data):
+                del self.data[max(0, keep - self.base):]
+                self.base = min(self.base, keep)                   # bytes already sent past it stay sent
         self.state, self.error = STATE["error"], error
         self.flags |= CAP.enum["status_flag"]["dropped"]
         return [self.stopped_event(STOPPED["error"], error)]
+
+    def segment_bytes(self) -> int:
+        """The bytes of one whole segment of this configuration."""
+        if self.mr_layout is not None:
+            return self.mr_layout.segment_bytes(self.samples)
+        if self.analog:
+            return self.samples * self.width
+        return (self.samples * self.width + 7) // 8
 
     def stopped_event(self, reason: int, error: int = 0) -> bytes:
         """kind stopped: reason(u8) error(u8) generation(u32) (§3.4: every event carries the generation it was made
@@ -577,6 +591,17 @@ class VirtualGroup:
                 over = next(fn for fn in fns if fn in shared)
                 raise Reject(m.UNAVAILABLE, limit + m.tlv(reg.CORE.tlv["unavailable_payload"]["fn"],
                                                           struct.pack("<H", over)))
+        src = caps.get(trigger_fn) if trigger_fn else None
+        if src is not None and src.pretrigger:                    # the group's pretrigger, the same time on every track
+            for fn in fns:
+                if fn == trigger_fn:
+                    continue
+                c = caps[fn]
+                p_k = -(-(src.pretrigger * c.rate.numerator * src.rate.denominator)
+                        // (c.rate.denominator * src.rate.numerator))   # P_k (§4.1)
+                if p_k > c.max_pretrigger or (c.mode != MODE["streaming"] and p_k >= c.samples):
+                    raise Reject(m.UNAVAILABLE, limit + m.tlv(reg.CORE.tlv["unavailable_payload"]["fn"],
+                                                              struct.pack("<H", fn)))   # it cannot keep P_k
         self._unbind(caps)                                         # refused above: nothing changed (§4.1)
         self.tracks, self.trigger_fn = list(fns), trigger_fn
         for c in chosen:
