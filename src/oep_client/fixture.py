@@ -308,7 +308,8 @@ class I2cTarget(_TargetDeclarations, Interface):
     TAG_NS = _I2C.tlv["read_rx_answer"]["ns"]
 
     def read_rx(self) -> tuple[int, bytes]:
-        """-> (frames still queued after this one, the oldest frame or b""). self.last_ns: when the probe received it
+        """-> (frames still queued after this one, the oldest frame or b""). self.last_ns: the STOP or the next START that
+        ended the frame (fixture §3), on the probe's clock, when the probe says - else None. (Was: when the probe received it
         (its clock, ns) when the probe says (TLV ns), else None."""
         rd = m.Reader(self._call(self.READ_RX).payload)
         pending = rd.u8()
@@ -358,6 +359,22 @@ class SpiStatus:
     errors: int
 
 
+def wire_bits(data: bytes, bits: int, bit_order: int = 0) -> list[int]:
+    """The wire bits of an spi-target transaction in the order they came (fixture §4): wire bit k is in byte k // 8, at
+    bit 7 - k % 8 MSB first (bit_order 0) or k % 8 LSB first (1). At most the bits `data` holds (it stops at length)."""
+    n = min(bits, 8 * len(data))
+    return [(data[k >> 3] >> (k & 7 if bit_order else 7 - (k & 7))) & 1 for k in range(n)]
+
+
+def pack_wire_bits(seq: list[int], bit_order: int = 0) -> bytes:
+    """The inverse of wire_bits: the bytes a probe answers for these wire bits (a partial last byte's missing bits 0)."""
+    out = bytearray((len(seq) + 7) // 8)
+    for k, b in enumerate(seq):
+        if b:
+            out[k >> 3] |= 1 << (k & 7 if bit_order else 7 - (k & 7))
+    return bytes(out)
+
+
 class SpiTarget(_TargetDeclarations, Interface):
     """oep.fixture.spi-target (oep-if-fixture §4): one CS-framed transaction at a time - arm() with the MISO bytes,
     then read_rx() after the controller raised CS."""
@@ -395,7 +412,9 @@ class SpiTarget(_TargetDeclarations, Interface):
 
     def read_rx(self) -> tuple[int, int, bytes]:
         """-> (transactions still queued, bits clocked, the MOSI bytes) of the oldest finished transaction. self.last_ns:
-        when it ended on the probe's clock (TLV ns) when the probe says, else None."""
+        when CS went inactive, ending it, on the probe's clock (TLV ns) when the probe says, else None. The bytes hold
+        the wire bits as `wire_bits` reads them (fixture §4: bit k in byte k / 8, MSB or LSB first by bit_order, the
+        missing bits of a partial last byte 0); bits saturates at 0xFFFFFFFF."""
         rd = m.Reader(self._call(self.READ_RX).payload)
         pending, bits = rd.take("BI")
         data = rd.counted("H")

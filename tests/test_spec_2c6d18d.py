@@ -402,3 +402,27 @@ def test_a_run_result_never_shows_an_invalid_dpc():
     assert halted.dpc_valid and halted.where() == "dpc 0x20000010"
     assert not not_halted.dpc_valid and "dpc unknown" in not_halted.where()
     assert not not_run.dpc_valid and not_run.where() == "not run" and not_run.elapsed_us == 0
+
+
+# ---- fixture §4: SPI target data bit packing --------------------------------------------------------------------------
+
+from oep_client import fixture   # noqa: E402
+
+
+@pytest.mark.parametrize("order, packed", [(0, "c0b0"), (1, "030d")])
+def test_spi_wire_bits_pack_msb_or_lsb_first_with_a_partial_last_byte(order, packed):
+    wire = [1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1]
+    assert fixture.pack_wire_bits(wire, order).hex() == packed
+    assert fixture.wire_bits(bytes.fromhex(packed), 12, order) == wire
+    assert fixture.wire_bits(bytes.fromhex(packed), 99, order)[:12] == wire   # never past the bytes there are
+
+
+@pytest.mark.parametrize("order", [0, 1])
+def test_the_virtual_bench_clears_the_bits_that_did_not_come(order):
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
+    fn = next(f for f, n in ep.names.items() if n == "oep.fixture.spi-target")
+    st = ep.spi[fn]
+    st.state, st.bit_order, st.armed = 1, order, (4, b"")
+    ep.spi_transfer(fn, b"\xff\xff", bits=12)
+    bits, data, _ = st.queue[0]
+    assert bits == 12 and data == fixture.pack_wire_bits([1] * 12, order)

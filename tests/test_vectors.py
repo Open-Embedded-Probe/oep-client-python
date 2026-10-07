@@ -142,6 +142,9 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None, wifi
                              + (catalog.u32(catalog.MAX_CLOCK_HZ, 80_000_000),)
                              + virtual_bench._capture_decl(["one_shot"], 8, 1 << 20, 1),
                              inner=virtual_bench._capture_inner([2, 8], 1, 480))
+        elif name == "oep.fixture.spi-target":                         # LSB first offered (features bit0)
+            o = virtual_bench.Offered(fn, 0, name, virtual_bench._roles({k: chans for k in (1, 2, 3, 4)})
+                             + virtual_bench._spi_decl(max_length=16, max_hz=1_000_000, features=1, queue_depth=4))
         elif name == "oep.fixture.analog":
             o = virtual_bench.Offered(fn, 0, name, virtual_bench._roles({k: chans for k in range(4)})
                              + virtual_bench._analog_decl([(0, 0, 3300, 0)], 4096), inner=virtual_bench._capture_inner([16], 1, 480))
@@ -432,7 +435,7 @@ def setup_case(case):
         fns["4" if "4" not in fns else "14"] = "oep.wire.rvswd"
     if "oep.probe.config" in names:
         fns.setdefault("7" if "7" not in fns else "17", "oep.target.console")
-    if names & {"oep.fixture.logic", "oep.fixture.analog"} and "oep.probe.plan" not in names:
+    if names & {"oep.fixture.logic", "oep.fixture.analog", "oep.fixture.spi-target"} and "oep.probe.plan" not in names:
         fns["3"] = "oep.probe.plan"                                    # the capture vectors' plans (roles 0 and 1)
     ops = {}
     if "dmi, halt, resume" in case["state"]:
@@ -501,6 +504,16 @@ def setup_case(case):
         ep.load_config([m.tlv(0x04, slot), m.tlv(0x05, struct.pack("<BBH", 0, 1, 0))], saved=False)   # port 0: slot 0
     elif name.startswith("probe.config"):
         held(ep)
+    elif name.startswith("spi-target"):
+        from oep_client import fixture
+        held(ep)                                                       # SCK MOSI MISO CS on channels 1-4
+        req(ep, 2, plan, PLAN_APPLY, b"".join(m.tlv(0x10, struct.pack("<HBH", 14, r, r), critical=True) for r in (1, 2, 3, 4)))
+        order = 1 if "bit_order 1" in state else 0
+        req(ep, 3, 14, 0x01, bytes([0, order]))                        # configure mode 0
+        req(ep, 4, 14, 0x02, struct.pack("<HH", 16, 0))                # arm, nothing to send
+        ep.spi_ns = "no ns TLV" not in state
+        wire = [1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1]                    # the case's 12 MOSI bits, in wire order
+        ep.spi_transfer(14, fixture.pack_wire_bits(wire, order) + b"\xff", bits=12)   # junk past them: not kept
     elif name.startswith("capture-group"):
         held(ep)                                                       # fn 9 (logic) and fn 13 (analog), roles 0 and 1
         plan_apply = b"".join(m.tlv(0x10, struct.pack("<HBH", f, r, ch), critical=True)
@@ -766,6 +779,13 @@ def _on_client(case):
             return sent[-1:]                                            # restore_data writes nothing: DATA0 untouched
         else:
             assert dm.dmi([dm.step_read(0x11)]) == (1, [0x00400382])
+        return sent
+    if name.startswith("spi-target read_rx"):
+        from oep_client import fixture
+        hst, sent = client(case, S)
+        order = 1 if "LSB first" in name else 0
+        pending, bits, data = fixture.SpiTarget(hst, fn=14).read_rx()
+        assert (pending, bits) == (0, 12) and fixture.wire_bits(data, bits, order) == [1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1]
         return sent
     if name.startswith("arm-adi transfer"):
         from oep_client import arm

@@ -804,6 +804,7 @@ class Endpoint:
         self.uart_tx: dict[int, bytearray] = {}        # what a serial port's raw bytes sent out on a fixture UART
         self.i2c: dict[int, I2cState] = {fn: I2cState() for fn, n in self.names.items() if n == _I2C.name}
         self.spi_selected: set[int] = set()            # spi-target fns whose CS is active now (spi_select)
+        self.spi_ns = True                              # read_rx carries the optional TLV ns (fixture §4)
         self.spi: dict[int, SpiState] = {fn: SpiState() for fn, n in self.names.items() if n == _SPI.name}
         self.config: dict[tuple[int, int], bytes | list[bytes]] = {}   # (item tag, key) -> value (plan: list)
         # Wi-Fi (a profile with wifi_max): the networks in range stay over a reboot (the world's); the link joins anew
@@ -2862,8 +2863,8 @@ class Endpoint:
             if not st.queue:
                 return self._answer(struct.pack("<BIH", 0, 0, 0))
             bits, data, ns = st.queue.pop(0)
-            return self._answer(struct.pack("<BIH", min(len(st.queue), 255), bits, len(data)) + data
-                                + m.tlv(_SPI.tlv["read_rx_answer"]["ns"], struct.pack("<Q", ns)))
+            tail = m.tlv(_SPI.tlv["read_rx_answer"]["ns"], struct.pack("<Q", ns)) if self.spi_ns else b""   # optional
+            return self._answer(struct.pack("<BIH", min(len(st.queue), 255), bits, len(data)) + data + tail)
         if op == ops["status"]:                                    # lock-free
             t.tail()
             return self._answer(struct.pack("<BBBBBII", st.state, st.mode, st.bit_order, int(st.armed is not None),
@@ -2875,11 +2876,17 @@ class Endpoint:
         by default - CS high). -> the MISO bytes: the armed tx, 0 past it and when not armed. Armed: the MOSI bytes
         (bits / 8 rounded up) up to the armed length (more is an error) and the bits are queued, the wait ends; a full
         queue drops them (an error). Not armed: MOSI dropped, an error. errors grows by 1 at most per transaction
-        (fixture §4). Every transaction of a configured target counts; a target not configured sees nothing. 0 bits (CS edges without SCK) is no transaction: nothing counts,
+        (fixture §4). `mosi`: the wire bits packed in the configured bit order (fixture.pack_wire_bits); the bits of a
+        partial last byte past `bits` are cleared. Every transaction of a configured target counts; a target not
+        configured sees nothing. 0 bits (CS edges without SCK) is no transaction: nothing counts,
         an arm keeps waiting."""
         st, (_, _, depth, _) = self.spi[fn], self.target_decl[fn]
         n = len(mosi)
         bits = 8 * n if bits is None else bits
+        if bits % 8 and bits <= 8 * n:                             # the last byte's bits that did not come are 0 (§4)
+            keep = (1 << (bits % 8)) - 1 if st.bit_order else (0xFF << (8 - bits % 8)) & 0xFF
+            last = (bits - 1) // 8
+            mosi = mosi[:last] + bytes([mosi[last] & keep]) + mosi[last + 1:]
         self.spi_select(fn, True)                                  # CS active: MISO driven for this transaction
         try:
             return self._spi_transaction(fn, st, depth, mosi, n, bits)
@@ -2898,8 +2905,8 @@ class Endpoint:
         got = (bits + 7) // 8
         if got > length or len(st.queue) >= depth:
             st.errors += 1                                         # past the armed length, or the queue full: once
-        if len(st.queue) < depth:
-            st.queue.append((bits, bytes(mosi[:min(got, length)]), self.now_ns()))
+        if len(st.queue) < depth:                                  # bits saturates; ns: when CS went inactive (§4)
+            st.queue.append((min(bits, 0xFFFFFFFF), bytes(mosi[:min(got, length)]), self.now_ns()))
         return (tx + bytes(n))[:n]
 
     # ---- oep.probe.config -----------------------------------------------------------------------
