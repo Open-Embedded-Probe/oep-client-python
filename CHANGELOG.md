@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.0.30
+- (EN) No user-facing changes recorded.
+- (JA) ユーザー向け変更の記録はありません。
+
 ## 0.0.29
 - (EN) **Follow oep-spec d801f02 .. c6ab5d9 (capture: the probe's and the clients' questions).** Registry and vectors synced;
   README names c6ab5d9. configure sends the §3.3 table's TLVs and trigger_track without the critical bit, only multirate
