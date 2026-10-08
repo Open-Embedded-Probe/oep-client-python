@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.0.31
+- (EN) No user-facing changes recorded.
+- (JA) ユーザー向け変更の記録はありません。
+
 ## 0.0.30
 - (EN) No user-facing changes recorded.
 - (JA) ユーザー向け変更の記録はありません。
