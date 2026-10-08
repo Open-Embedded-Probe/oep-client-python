@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.29
 - (EN) **Follow oep-spec d801f02 .. c6ab5d9 (capture: the probe's and the clients' questions).** Registry and vectors synced;
   README names c6ab5d9. configure sends the §3.3 table's TLVs and trigger_track without the critical bit, only multirate
   critical; rate / samples / segments of 0 and a type 0 trigger's role and value (sent 0) are handled before sending;
@@ -346,7 +348,6 @@
     変更なし。
   - 試験は `OEP_SESSION_DIR` を一時の場所にして走る（tests/conftest.py。tests/hw は本当の場所のまま）。新しい
     tests/test_spec_283e5b5.py。README と tests/hw の README（EN / JA）。
-
 - (EN) **Breaking (API, CLI): the fake probe is the virtual bench**, with no aliases (pre-freeze). The virtual bench is a
   probe, the targets behind it and the fixture wiring, modelled after the real jigs: the environment host software is
   tested in. "Bench" alone still means the real HIL jigs. Renamed: module `oep_client.fake` -> `oep_client.virtual_bench`,
@@ -368,7 +369,6 @@
   board `fake-esp32-v003` -> `virtual-esp32-v003`（`Board.fake_profile` -> `virtual_profile`、`Run.fake` -> `Run.virtual_bench`）。
   試験のファイル `tests/test_fake_*.py` -> `tests/test_virtual_bench_*.py`。README と tests/hw の README（EN / JA）は仮想ベンチと書く。
   下の項目は、その時の古い名前のまま。
-
 - (EN) **Breaking (wire and API): oep-spec 7688c49 .. 0f455a0, the rule review of 2026-10-07 (§2 applied, §7).**
   README names `0f455a0`. Registry and vectors synced (`tools/sync_registry.sh`; `probe_config_hash.json` gone).
   The fake (`endpoint`, `fake`, `fake_capture`) answers as the new text says - other clients test against it:
@@ -717,7 +717,6 @@
 - (JA) 破壊的変更: USB での見分け方と探りの規則を oep-spec 2108125（core §3.3）の定めに揃えた。registry を写し直し、`USB["iproduct_prefix"]` が消えた。`link.is_oep_device` を削除。`link.temporary_clue(product, interfaces, hid_usage_pages)` は host 開発ガイド §1.7 の暫定の手がかり（iProduct が `OEP` で始まる = `TEMPORARY_IPRODUCT_PREFIX`、vendor の interface 0xFF / 0x4F / 0x45、usage page 0xFF4F の HID）を見る（規範ではなく、見分けにはしない）。`link.is_project_device(vid, pid)` はプロジェクトの VID:PID の一覧 `link.PROJECT_VID_PIDS`（registry に載るまで空）を見る。`find_usb(unit_id)`（と `usb:<unit_id>`）は USB の serial だけで探し、iProduct は見ない。confirm の後、`open_host` は fn 0 の describe の unit_id が同じことを確かめ（`link.check_unit_id`）、違えば閉じて `link.UnitIdMismatch` を上げる。どの開き方（シリアルの口、`usb` / `usb:VID:PID[:SERIAL]`、`usb:<unit_id>`、`tcp://`）も `SerialLink.probe` を通る: 最初に送るのは confirm で、正しい応答（completed、同じ corr、`OEP!`）が来るまでほかは送らない。来なければ閉じて `link.NotOepProbe`（ConnectionError）を上げる。vendor bulk / HID では confirm 1 回とその再送 1 回、それぞれ 1000 ms（`PROBE_WAIT_S`）で、その間に §5.1 の resync の confirm は送らない。`open_usb_host` は次の口（HID）を試し、全部がそうして失敗したら NotOepProbe。シリアルの口は先に起動時の速さの confirm を port_speed_idle_max_ms + 1 秒まで繰り返す（core §3.5 host の義務 7。confirm だけ）。開くのに失敗した link は閉じるようになった（これまでは開いたままだった）。偽の probe の describe に `discoverable` は無い（0: 1 はプロジェクトの VID:PID のときだけ、core §7.5）。新しいテスト `tests/test_usb_identity.py`。
 - (EN) The project's USB VID:PID is not settled: the registry synced from oep-spec 2bbd7d1 drops `USB["reference_vid"]` / `USB["reference_pid"]`, and `link.OEP_VID_PID` (built from them, used nowhere) is gone. Probes are still found by iProduct `OEP` (`is_oep_device`) and by USB serial = unit id (`find_usb`, `usb:UNIT_ID`); a bare `usb` target still opens the reference P4's board-default `303a:0002` (`USB_VID` / `USB_PID`), a temporary USB ID.
 - (JA) プロジェクトの USB の VID:PID は決まっていない: oep-spec 2bbd7d1 から写した registry から `USB["reference_vid"]` / `USB["reference_pid"]` が消え、それから作っていた `link.OEP_VID_PID`（どこも使っていない）を消した。probe は今も iProduct の `OEP`（`is_oep_device`）と USB の serial = unit id（`find_usb`、`usb:UNIT_ID`）で見つける。`usb` だけの target は今も参照の P4 のボードの既定 `303a:0002`（`USB_VID` / `USB_PID`。仮の USB の ID）を開く。
-
 - (EN) port_speed policy from a bench report (a classic ESP32 behind a CH340: 921600 passed the 16-frame verify and broke during a 65 KB capture read-back; only an explicit 500000 held). In use, a breakdown (the 3 s window or a missed answer) now steps down to the next lower candidate of that `raise_speed` call that has not failed in the session - a fresh try -> confirm -> verify -> commit - and to the boot speed only when none is left; a rate that broke is not used again in the session, nor any rate above it. A committed rate's first `probation_bytes` (32 KiB, both ways) and `probation_s` (1 s) are its probation, judged as the verify judges a flow (3 or more broken or lost over max(2 x baseline, 5 %)) or by a missed answer: a breakage there is a verify failure and steps down at once (`probation_bytes=0, probation_s=0`: none). `raise_speed(..., max_tries=)` (also `open_host`, `oep speed --max-tries`) bounds the candidates one call tries after the record ordered them; a step down goes only to those. `SpeedTrial.probation` / `probation_bytes` / `settling`, `StepDown.to` / `probation`, `SpeedReport.retried` / `capped`. The record (`speed_record`): a pass kept 30 days (`pass_ttl`), a failure 1 day (`fail_ttl`); a failure measured within `settle_s` (2 s) of a breakdown at another rate is written `unknown`; when every candidate is marked failed the slowest is tried once. Its entries gain `result` ("passed" / "failed" / "unknown") and `phase`; `passed` may be null; `SpeedRecord(expiry_days=)` is gone, `note(..., passed, phase)` and `results()` are new. The fake's `BrokenRate(after=)` (`--broken-rate RATE:afterB`) breaks frames only once B bytes have passed at the rate.
 - (JA) 治具での報告（CH340 の後ろの classic ESP32: 921600 は 16 フレームの確かめを通り、65 KB のキャプチャの読み出しの途中で壊れた。明示した 500000 だけが保った）による port_speed の方針。使用中の破綻（3 秒の窓、または応答が来ない）は、その `raise_speed` の呼び出しの候補のうち、このセッションで通らなかったものより下の次の候補へ下げる（新しく試す → confirm → 確かめ → 決める）。残っていなければ起動時の速さ。壊れた速さとそれより上はそのセッションの間は使わない。決めた速さの最初の `probation_bytes`（32 KiB、両方向）と `probation_s`（1 秒）は試用期間で、確かめと同じ基準（壊れ・失われが 3 以上かつ max(基準 × 2, 5 %) 超）か応答が来ないことで判定し、そこでの破綻は確かめの失敗としてすぐ下げる（`probation_bytes=0, probation_s=0` で無し）。`raise_speed(..., max_tries=)`（`open_host`、`oep speed --max-tries` も）は記録で並べ替えた後に 1 回で試す候補の数の上限で、下げる先もその中だけ。`SpeedTrial.probation` / `probation_bytes` / `settling`、`StepDown.to` / `probation`、`SpeedReport.retried` / `capped` を足した。記録（`speed_record`）: 通ったは 30 日（`pass_ttl`）、通らなかったは 1 日（`fail_ttl`）。別の速さの破綻から `settle_s`（2 秒）以内に測った失敗は `unknown` と書く。全部の候補が通らなかったとあれば、いちばん遅い候補を 1 回試す。記録の項目に `result`（"passed" / "failed" / "unknown"）と `phase` が付き、`passed` は null もある。`SpeedRecord(expiry_days=)` は無くなり、`note(..., passed, phase)` と `results()` が増えた。偽の probe の `BrokenRate(after=)`（`--broken-rate RATE:afterB`）は、その速さで B バイト流れてからだけフレームを壊す。
 
