@@ -1,37 +1,30 @@
-# Hardware integration test (`tests/hw`)
+# Hardware integration tests (`tests/hw`)
 
 [日本語](README.ja.md)
 
-The pre-release test of oep-spec's [docs/release-testing.md](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/release-testing.md):
-a probe firmware (oep-probe-arduino's `examples/Firmware/OepProbe`) is put on a real board and this client is run through
-it, end to end. The ordinary test suite (`uv run pytest`) runs against the virtual bench and never touches hardware; this
-directory is skipped entirely unless `OEP_HW_BOARDS` names boards. Both the firmware release (built from main, every
-board at hand) and the client release (the latest firmware release) go through it; neither ships when it fails.
+This describes the current Python hardware harness. The shared [testing policy](../../docs/testing-policy.ja.md) and [guide for projects using OEP](../../docs/testing-consumers.ja.md) distinguish firmware-provider checks from consumer checks. Each owner makes its own release decision; releases are not coupled automatically.
+
+Ordinary `uv run pytest` runs hardware-free checks. Hardware tests skip unless `OEP_HW_BOARDS` is set. **The new hardware TOML loader and `OEP_HW_CONFIG` are not implemented.** The `.env.example` and input/resolved TOML examples describe the proposed [configuration format](../../docs/hardware-schema.ja.md), not a working runner interface.
+
+Run the current entry point from the repository root. Replace `PROBE_ID` with an explicit ID accepted by the current `boards.py`. Commands other than the virtual example operate hardware.
 
 ```sh
-# build the firmware from a checkout (main against main: before a firmware release)
-OEP_HW_BOARDS=esp32-pico-d4-50029191fe34 OEP_PROBE_DIR=~/dev_oep/oep-probe-arduino uv run pytest tests/hw -m hw
+# Use installed firmware. This skips firmware flashing, not all mutations.
+OEP_HW_BOARDS="$PROBE_ID" OEP_HW_NOFLASH=1 uv run pytest tests/hw -m hw
 
-# the GitHub release's images (before a client release, a reproduction, CI with a board)
-OEP_HW_BOARDS=esp32-pico-d4-50029191fe34 OEP_PROBE_VERSION=0.0.25 uv run pytest tests/hw -m hw
+# Provider checks with an explicitly selected candidate checkout and update target.
+OEP_HW_BOARDS="$PROBE_ID" OEP_PROBE_DIR=/path/to/oep-probe-arduino uv run pytest tests/hw -m hw
 
-# test what is on the board already (nothing is flashed)
-OEP_HW_BOARDS=9489dd2ae0953650 OEP_HW_NOFLASH=1 uv run pytest tests/hw -m hw
+# Provider checks for an explicitly selected release image.
+OEP_HW_BOARDS="$PROBE_ID" OEP_PROBE_VERSION="$PROBE_VERSION" uv run pytest tests/hw -m hw
 
-# a dry run of the test logic on the virtual bench (a pty; no hardware, never a release test)
+# Virtual harness exercise; this does not establish hardware quality.
 OEP_HW_BOARDS=virtual-esp32-v003 uv run pytest tests/hw -m hw
-
-# the ATOM: flash it over its bridge and give it the bench's Wi-Fi (read from the environment, never printed or recorded)
-OEP_WIFI_SSID_0=lab OEP_WIFI_PASS_0="$LAB_PASS" OEP_HW_BOARDS=esp32-pico-d4-50029191fe34 OEP_PROBE_DIR=~/dev_oep/oep-probe-arduino uv run pytest tests/hw -m hw
-# then the same board over Wi-Fi / TCP (found by DNS-SD; OEP_HW_ATOM_TCP=tcp://HOST:PORT where mDNS does not reach)
-OEP_HW_BOARDS=esp32-pico-d4-50029191fe34-tcp uv run pytest tests/hw -m hw
-# any probe on the network, no table entry
-OEP_HW_BOARDS=tcp://192.168.1.23:7450 uv run pytest tests/hw -m hw
 ```
 
-`-s` shows the flasher's progress and the port_speed table as they happen. A board's whole run takes 1.5-2.5 minutes
-(about 40 s of it the ESP32 flash at 115200); a local build adds about a minute the first time per profile (cached under
-`~/.cache/oep-hw/`, `OEP_HW_CACHE`). Several boards: `OEP_HW_BOARDS=a,b`; the tests run board by board.
+`OEP_HW_NOFLASH=1` records the installed firmware without flashing it. The config test changes, saves and restores settings; the Wi-Fi test saves the requested networks. Review the lifecycle below and arrange access to shared equipment. The proposed host-wide lock is not integrated into this harness yet.
+
+`OEP_HW_BOARDS=a,b` runs boards in sequence. Record candidate and installed-firmware checks separately. A firmware string alone does not establish compatibility, and a skipped required contract leaves release verification incomplete.
 
 ## Files
 
@@ -118,38 +111,18 @@ oep config remove <probe> disable 28
 oep config save <probe>        # or `oep config erase <probe>` when nothing was saved before the run
 ```
 
-## Boards and flashers
+## Targets and update paths
 
-| Board (`OEP_HW_BOARDS` id) | Kind | Profile | Flasher | Exercised |
-|---|---|---|---|---|
-| `esp32-pico-d4-50029191fe34` M5Stack ATOM (ESP32-PICO-D4, FTDI) | esp32 | esp32 | `esptool --chip esp32 -p <port> -b 115200 write-flash 0x0 <merged.bin>` (the ATOM's bridge takes 115200) | **yes** (0.0.26 main build and release 0.0.25, 2026-10-01) |
-| `esp32-d0wd-v3-0070070d9394` V003 jig (ESP32-D0WD-V3, CH340) | esp32 | esp32 | the same | **yes** (0.0.26 main build, 2026-10-02, with the CH32V003 over SWIO: wire 50 loops pass; port_speed flaky on the CH340's bursty loss). Every output-capable channel but SWIO / NRST goes to a V003 pad (ArduinoCore-CH32RV `tests/benches/v003-esp32.toml`): the table gives it only the input-only 34 / 35 (config's disable / label, the analog capture), so gpio / capture / capture_group skip and uart runs on the jig's settings plan |
-| `esp32-series-30eda0e31108` X035 jig (ESP32-P4), `esp32-series-30eda0e343c6` second P4 | esp32p4 | esp32p4 | USB DFU 1.1 of the app `.bin` to the running probe (pyusb, what `dfu-util -D` does: the DFU interface found by class FE/01, wTransferSize from its functional descriptor, DNLOAD blocks, a zero-length DNLOAD to manifest), wait for the device to drop and return; on WSL `usbipd.exe attach --wsl --busid <busid>` (the table's `usbip_busid`) | **yes** (X035 jig, 0.0.26 main build, 2026-10-02: DFU on interface 4 / 4096 B in 8 s; wire over RVSWD 50 loops pass; the uart test runs on the jig's settings plan rx 12 / tx 6). The second P4 was flashed by hand over DFU (interface 7 / 1024 B on its old firmware); its new USB serial needs a Windows usbipd re-bind before a run |
-| `esp32-series-30eda0ea068b` third P4 (ESP32-P4, FS USB-Serial/JTAG port only; ours): a CH32V003 on SWIO 19, NRST 4, powered from GPIO5 (its settings keep idle 5 output-high) | esp32p4-usj | esp32p4 | through that port: `esptool --chip esp32p4 -p <port> erase-region 0xe000 0x2000` (otadata: boot app0), then `write-flash 0x10000 <app.bin>` - the app alone, as DFU writes it, so the saved settings (the target's power) stay | **yes** (main 0f013b7, 2026-10-02: `OEP_HW_TARGET=ch32v003@19 OEP_HW_RESET=4 OEP_HW_ANALOG=20`; 13 passed, port_speed skipped. The V003 answers nothing for about 0.1 s after the probe's boot powers it: the wire / console scans retry for up to 2 s) |
-| `9489dd2ae0953650` SparkFun Pro Micro RP2350 (1209:4F45, keyed by unit id) | rp2 | promicrorp2350 | the 1200-baud touch on the CDC port (BOOTSEL), wait for the boot ROM's USB device (`RP2350 Boot` / `RP2 Boot`, matched by product and serial so another RP2 on the host is never touched), `picotool load -x <uf2> --bus --address` (`OEP_HW_PICOTOOL`, default `picotool` on PATH; [picotool 2.3.1 Linux x86_64](https://github.com/raspberrypi/pico-sdk-tools/releases/download/v2.3.1-0/picotool-2.3.1-x86_64-lin.tar.gz)), wait up to 45 s for the CDC port to return. With `OEP_HW_UF2_DRIVE=<mount>` the `.uf2` is copied to that BOOTSEL drive instead (a host that mounts it); neither possible → the flash is skipped and the tests run on the firmware already there | **yes** (picotool, 2026-10-02; the first run froze the probe at `uart` on pins its UART cannot use - fixed in oep-probe-arduino 654b06a; the run with that build passes) |
+The current `boards.py` is a legacy table combining physical devices, profiles and wiring defaults. Moving physical devices to explicit external configuration is pending; a generic TOML cannot be supplied yet. Equipment managers keep physical inventory, serials, USB topology and historical measurements separately.
 
-The ATOM's bridge (a CH552 posing as FTDI) loses probe→host frames in bursts (0 % one minute, 10-55 % the next, 2026-10-02): a port_speed failure there is re-run once before it counts; the CH340 jig is the steadier gate for port_speed.
+| Kind | Current update path |
+|---|---|
+| Classic ESP32 | esptool and a merged image |
+| ESP32-P4 | USB DFU app image, or an explicitly selected USB-Serial/JTAG path |
+| RP2040 / RP2350 | BOOTSEL with picotool, or an explicit UF2 drive |
+| TCP | No update through this entry; test installed firmware over the explicit network path |
 
-**TCP boards.** `esp32-pico-d4-50029191fe34-tcp` is the ATOM over Wi-Fi / TCP (kind `tcp`, port `tcp:50029191fe34` -
-DNS-SD by unit_id - or `OEP_HW_ATOM_TCP=tcp://HOST:PORT`), and `OEP_HW_BOARDS` may also name any probe on the network as
-`tcp:<unit_id>` or `tcp://<host>[:<port>]` (a board of kind `tcp` without a table entry: no model checked, no free
-channels unless `OEP_HW_GPIO` / `OEP_HW_UART` / `OEP_HW_DISABLE` give them). A TCP board is never flashed (`flash`
-records "a TCP board"): flash it and set its networks (`OEP_WIFI_*`, the `wifi` test) on a run through its serial / USB
-entry first. port_speed skips (no UART bridge on this link); `linktest` waits 3 s an answer over TCP. mDNS does not cross
-WSL 2's default NAT: from there name the board by address (its ip: `oep config state` over the bridge).
-
-`OEP_HW_NOFLASH=1` skips flashing on every board and tests the firmware found there (recorded as "on-board"; the firmware
-string is recorded, not compared).
-
-The `rp2040` / `rp2350` (Pico) profiles use the same rp2 flasher; a board entry is all they need.
-
-## Shared jigs: the permission rule
-
-The V003 jig, the X035 jig (ESP32-P4) and the WCH-Links on this host belong to the ArduinoCore-CH32RV bench (another
-session's hardware). The board table has them so that a release test can cover them, but **running on a jig waits for
-the bench's permission**: ask first, every time; never flash or reset a device you were not given. The ATOM
-(`/dev/ttyUSB1`) and the second P4 (`esp32-series-30eda0e343c6`) are free for OEP tests. A `jig` in a board's `notes` marks the shared ones
-(`Board.shared`).
+`OEP_HW_BOARDS=tcp:<unit_id>` or `tcp://<host>:<port>` explicitly selects a TCP probe. Generic TCP entries have no expected model or free channel defaults. Confirm wiring before specifying fixture channels. `OEP_HW_NOFLASH` selects installed firmware; it does not prohibit settings or power operations.
 
 ## Environment
 

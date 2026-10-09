@@ -1,0 +1,73 @@
+# 架空の設備入力。操作可能な電圧・channel は実設備で確認して記入する。
+schema_version = 1
+kind = "input"
+example = true # コピー後に設備を記入して false にするまで実機操作を禁止。
+configuration_id = "example-pair"
+generation = 1
+
+[[probes]]
+id = "probe-a"
+[probes.identity]
+method = "oep-unit-id"
+value = "EXAMPLE-NOT-A-REAL-PROBE"
+[probes.transport]
+kind = "serial"
+path = "/dev/serial/by-id/EXAMPLE-NOT-A-REAL-PORT"
+
+[[targets]]
+id = "target-a"
+chip = "CH32V203"
+board = "user-board-a"
+[targets.identity]
+method = "manual-label"
+value = "EXAMPLE-TARGET-A"
+reason = "探索で UID が得られた場合は、その結果を確定構成に保存する"
+
+[[targets]]
+id = "target-b"
+chip = "CH32X035"
+board = "user-board-b"
+[targets.identity]
+method = "manual-label"
+value = "EXAMPLE-TARGET-B"
+reason = "USB peer の例。配置済み設備を意味しない"
+
+[[power_domains]]
+id = "power-a"
+members = ["probe-a", "target-a", "target-b"]
+control = "manual"
+signal_voltage_v = 3.3
+ground = "shared-confirmed-manually"
+evidence = ["power-note"]
+
+[[evidence]]
+id = "power-note"
+kind = "manual"
+description = "例示のみ。実設備では電圧・GND・給電元と確認日を記入する"
+
+[[discovery_requests]]
+id = "debug-a"
+kind = "debug"
+probe = "probe-a"
+target = "target-a"
+protocol = "rvswd"
+power_domain = "power-a"
+allowed_channels = [4, 5, 6, 7]
+excluded_channels = [0, 1, 2, 3]
+allowed_target_pads = ["DEBUG_DATA_PAD", "DEBUG_CLOCK_PAD"]
+allow_target_flash = false
+
+[[discovery_requests]]
+id = "debug-b"
+kind = "debug"
+probe = "probe-a"
+target = "target-b"
+protocol = "rvswd"
+power_domain = "power-a"
+allowed_channels = [8, 9, 10, 11]
+excluded_channels = [0, 1, 2, 3]
+allowed_target_pads = ["DEBUG_DATA_PAD", "DEBUG_CLOCK_PAD"]
+allow_target_flash = false
+
+# GPIO 診断は debug 確定後、対象 image と操作条件を別途明示して行う。
+# USB data/VBUS は debug 探索から推定せず、既知配線として入力する。

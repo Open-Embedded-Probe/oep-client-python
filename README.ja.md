@@ -43,7 +43,7 @@ target の知識は host にある、という OEP の分担に従う。probe �
 ```sh
 pip install oep-client-python     # PyPI (import oep_client); a checkout: pip install -e <checkout>
 uv run pytest                                                            # in a checkout（仮想ベンチ。実機なし）
-OEP_HW_BOARDS=<board id> OEP_PROBE_DIR=<oep-probe-arduino の checkout> uv run pytest tests/hw -m hw   # 実機: tests/hw/README.ja.md
+OEP_HW_BOARDS=<board id> OEP_HW_NOFLASH=1 uv run pytest tests/hw -m hw   # 実機: tests/hw/README.ja.md
 ```
 
 `import oep_client` だけで使える（`sys.path` に `src/` を足す使い方は不要になった）。番号の表と oep-spec の試験ベクタ
@@ -54,11 +54,12 @@ oep-spec から写す。PyPI の `oep-client` は別のプロジェクトなの�
 pyproject.toml、uv.lock、`oep_client.__version__` を書き換え、CHANGELOG.md の Unreleased をその版にし、試験と build の後に commit と tag、
 GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md の Unreleased に (EN) / (JA) で書き足しておく。
 
+テストの責任と保証対象は [全体テスト方針](docs/testing-policy.ja.md)、OEP を使うプロジェクトの手順は [利用者ガイド](docs/testing-consumers.ja.md)。実機設定の新形式は [構成設計](docs/hardware-configuration.ja.md)と[設定形式・雛形](docs/hardware-schema.ja.md)にまとめる（loader は実装前）。
+
 ## モジュール（`oep_client`）
 
 下の表のモジュールが公開の API です。直接 import します（`from oep_client import riscv`）。表に無いものと、`_` で始まる名前は
-変わることがあります。probe の firmware とこのクライアントは版で組になります: OpenEmbeddedProbe X.Y.Z と oep-client-python
-X.Y.Z（v1 の凍結までは、どのリリースも wire を壊しうるので、版を一緒に動かします）。
+変わることがあります。probe と client の互換性は、実装する SPEC の版、protocol/interface revision、必要な宣言機能と結合試験で確認します。firmware と client の版はそれぞれ記録し、同じ版番号だけで互換性を判断しません。v1 の凍結までは wire が変更されうるため、対応する SPEC と確認した組合せを明記します。
 
 | モジュール | 中身 |
 |---|---|

@@ -1,0 +1,120 @@
+# 架空の確定構成。現在の firmware の複数接続対応を保証するものではない。
+schema_version = 1
+kind = "resolved"
+example = true
+configuration_id = "example-pair"
+generation = 2
+confirmed_at = "2026-10-09T00:00:00+09:00"
+
+[[probes]]
+id = "probe-a"
+[probes.identity]
+method = "oep-unit-id"
+value = "EXAMPLE-NOT-A-REAL-PROBE"
+[probes.transport]
+kind = "serial"
+path = "/dev/serial/by-id/EXAMPLE-NOT-A-REAL-PORT"
+
+[[targets]]
+id = "target-a"
+chip = "CH32V203"
+board = "user-board-a"
+[targets.identity]
+method = "manual-label"
+value = "EXAMPLE-TARGET-A"
+reason = "例示。実設備では UID または手動識別の根拠を記録する"
+
+[[targets]]
+id = "target-b"
+chip = "CH32X035"
+board = "user-board-b"
+[targets.identity]
+method = "manual-label"
+value = "EXAMPLE-TARGET-B"
+reason = "例示。実設備では UID または手動識別の根拠を記録する"
+
+[[power_domains]]
+id = "power-a"
+members = ["probe-a", "target-a", "target-b"]
+control = "manual"
+signal_voltage_v = 3.3
+ground = "shared-confirmed-manually"
+evidence = ["manual-wiring"]
+
+[[debug_links]]
+id = "control-a"
+probe = "probe-a"
+target = "target-a"
+protocol = "rvswd"
+power_domain = "power-a"
+state = "confirmed"
+evidence = ["debug-discovery"]
+[debug_links.channels]
+data = 4
+clock = 5
+[debug_links.target_pads]
+data = "DEBUG_DATA_PAD"
+clock = "DEBUG_CLOCK_PAD"
+
+[[debug_links]]
+id = "control-b"
+probe = "probe-a"
+target = "target-b"
+protocol = "rvswd"
+power_domain = "power-a"
+state = "confirmed"
+evidence = ["debug-discovery"]
+[debug_links.channels]
+data = 8
+clock = 9
+[debug_links.target_pads]
+data = "DEBUG_DATA_PAD"
+clock = "DEBUG_CLOCK_PAD"
+
+# 任意の論理信号。試験側は pad/channel 番号ではなくこの種類を要求する。
+[[signal_nets]]
+id = "observe-a-output"
+signal = "digital"
+power_domain = "power-a"
+state = "confirmed"
+evidence = ["gpio-diagnostic"]
+[[signal_nets.endpoints]]
+node = "target-a"
+pad = "PA1"
+mode = "bidirectional"
+[[signal_nets.endpoints]]
+node = "probe-a"
+channel = 12
+mode = "input-only"
+
+[[usb_links]]
+id = "usb-a-b"
+state = "confirmed"
+evidence = ["manual-wiring"]
+host = { target = "target-a", connector = "usb-test" }
+device = { target = "target-b", connector = "usb-test" }
+vbus_source = "target-a"
+vbus_voltage_v = 5.0
+ground_confirmed = true
+# host/device はこの配線の許可方向。逆向き試験は給電条件も再確認して別途定義。
+
+[[evidence]]
+id = "manual-wiring"
+kind = "manual"
+description = "架空の例。USB data、VBUS、GND、電圧を別々に確認する"
+
+[[evidence]]
+id = "debug-discovery"
+kind = "observation"
+tool = "example-discovery-tool"
+tool_revision = "EXAMPLE"
+artifact = "./evidence/example-debug.json"
+description = "架空の例。全候補と選択根拠、probe 宣言、identity を保存する"
+
+[[evidence]]
+id = "gpio-diagnostic"
+kind = "observation"
+tool = "example-diagnostic-tool"
+tool_revision = "EXAMPLE"
+artifact = "./evidence/example-gpio.json"
+description = "架空の例。診断 image の hash、条件と観測波形を保存する"

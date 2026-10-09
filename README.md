@@ -48,7 +48,7 @@ here.
 ```sh
 pip install oep-client-python     # PyPI (import oep_client); a checkout: pip install -e <checkout>
 uv run pytest                     # in a checkout (the virtual bench; no hardware)
-OEP_HW_BOARDS=<board id> OEP_PROBE_DIR=<oep-probe-arduino checkout> uv run pytest tests/hw -m hw   # a real probe: tests/hw/README.md
+OEP_HW_BOARDS=<board id> OEP_HW_NOFLASH=1 uv run pytest tests/hw -m hw   # a real probe: tests/hw/README.md
 ```
 
 `import oep_client` is all it takes. The registry and oep-spec's test vectors (`tests/vectors/*.json`, checked by
@@ -60,11 +60,12 @@ sets the version in pyproject.toml, uv.lock and `oep_client.__version__` and tur
 the tests and the build it commits, tags, makes the GitHub Release and publishes to PyPI (Trusted Publishing). Record changes
 under Unreleased in CHANGELOG.md, (EN) and (JA).
 
+See the shared [testing policy](docs/testing-policy.ja.md) and [guide for projects using OEP](docs/testing-consumers.ja.md). The [hardware design](docs/hardware-configuration.ja.md) and [configuration examples](docs/hardware-schema.ja.md) describe the planned format; its loader is not implemented yet. These working documents are in Japanese.
+
 ## Modules (`oep_client`)
 
 The modules below are the public API; import them directly (`from oep_client import riscv`). Anything not listed, and
-names starting with `_`, may change. A probe firmware and this client go together by version: OpenEmbeddedProbe X.Y.Z with
-oep-client-python X.Y.Z (until the v1 freeze every release may break the wire; the versions move together).
+names starting with `_`, may change. Check probe/client compatibility using the implemented SPEC version, protocol/interface revisions, required declarations and integration tests. Record firmware and client versions separately; matching version strings alone do not establish compatibility. Before the v1 freeze the wire may change, so name the implemented SPEC and tested combinations.
 
 | Module | Contents |
 |---|---|

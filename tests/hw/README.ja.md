@@ -2,36 +2,29 @@
 
 [English](README.md)
 
-oep-spec の [docs/release-testing.ja.md](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/release-testing.ja.md)
-のリリース前の試験。probe の firmware（oep-probe-arduino の `examples/Firmware/OepProbe`）を実機に焼き、このクライアントで
-一通り動かす。普段の試験（`uv run pytest`）は仮想ベンチに対して回り、実機には触れない。このディレクトリは `OEP_HW_BOARDS`
-でボードを名指ししない限り丸ごと skip になる。firmware のリリース前（main をビルドして手元のボード全部）とクライアントの
-リリース前（最新の firmware のリリース）の両方で回し、通らなければどちらもリリースしない。
+現在の Python 実機ハーネスの手順です。共通の責任と保証対象は [全体テスト方針](../../docs/testing-policy.ja.md)、OEP を利用する任意のプロジェクト向けの進め方は [利用者ガイド](../../docs/testing-consumers.ja.md)を参照してください。プローブ更新の検証は firmware 所有側、クライアントの動作は client 側が判定します。両方のリリースを一律に連動させません。
+
+通常の `uv run pytest` は仮想ベンチ等のボード不要検査を行います。このディレクトリの実機検査は `OEP_HW_BOARDS` を指定しない限り skip します。**新しい設備 TOML と `OEP_HW_CONFIG` の loader は未実装です。** `.env.example`、`hardware.example.toml`、`hardware.resolved.example.toml` は [設定形式案](../../docs/hardware-schema.ja.md)の雛形で、現在はその形式の動作を約束しません。
+
+現行入口は repository root で実行します。`PROBE_ID` は現在の `boards.py` が受理する明示 ID に置き換えます。仮想例以外のコマンドは実機を操作します。
 
 ```sh
-# checkout をビルドして焼く（main どうし: firmware のリリース前）
-OEP_HW_BOARDS=esp32-pico-d4-50029191fe34 OEP_PROBE_DIR=~/dev_oep/oep-probe-arduino uv run pytest tests/hw -m hw
+# 設置済み firmware を使う。firmware 書込みを省く指定で、read-only 試験ではない。
+OEP_HW_BOARDS="$PROBE_ID" OEP_HW_NOFLASH=1 uv run pytest tests/hw -m hw
 
-# GitHub のリリースの image（クライアントのリリース前、再現、ボードのある CI）
-OEP_HW_BOARDS=esp32-pico-d4-50029191fe34 OEP_PROBE_VERSION=0.0.25 uv run pytest tests/hw -m hw
+# probe 所有側が候補 checkout と更新対象を明示して検証する場合。
+OEP_HW_BOARDS="$PROBE_ID" OEP_PROBE_DIR=/path/to/oep-probe-arduino uv run pytest tests/hw -m hw
 
-# ボードに入っている firmware をそのまま試す（焼かない）
-OEP_HW_BOARDS=9489dd2ae0953650 OEP_HW_NOFLASH=1 uv run pytest tests/hw -m hw
+# probe 所有側が明示した配布 image の更新を検証する場合。
+OEP_HW_BOARDS="$PROBE_ID" OEP_PROBE_VERSION="$PROBE_VERSION" uv run pytest tests/hw -m hw
 
-# 仮想ベンチ（pty）で試験の手順だけ通す（実機なし。リリースの試験にはならない）
+# 仮想環境でハーネスの手順を確認する。実機の品質保証とは別。
 OEP_HW_BOARDS=virtual-esp32-v003 uv run pytest tests/hw -m hw
-
-# ATOM: bridge から焼き、ベンチの Wi-Fi を与える（環境変数から読み、表示も記録もしない）
-OEP_WIFI_SSID_0=lab OEP_WIFI_PASS_0="$LAB_PASS" OEP_HW_BOARDS=esp32-pico-d4-50029191fe34 OEP_PROBE_DIR=~/dev_oep/oep-probe-arduino uv run pytest tests/hw -m hw
-# 続けて同じボードを Wi-Fi / TCP で（DNS-SD で見つける。mDNS が届かないところでは OEP_HW_ATOM_TCP=tcp://HOST:PORT）
-OEP_HW_BOARDS=esp32-pico-d4-50029191fe34-tcp uv run pytest tests/hw -m hw
-# ネットワークのどの probe でも（表に無くてよい）
-OEP_HW_BOARDS=tcp://192.168.1.23:7450 uv run pytest tests/hw -m hw
 ```
 
-`-s` を付けると焼く進み具合と port_speed の表がその場で出る。1 ボードの一巡は 1.5〜2.5 分（ESP32 を 115200 で焼く約 40 秒を
-含む）。ローカルのビルドは profile ごとに初回だけ約 1 分足す（`~/.cache/oep-hw/` に残る。`OEP_HW_CACHE`）。複数のボードは
-`OEP_HW_BOARDS=a,b` で、ボードごとに順に回る。
+`OEP_HW_NOFLASH=1` は firmware 書込みを省き、使用した firmware 文字列を記録します。config 試験は設定変更・保存・復元を行い、Wi-Fi 試験は指定したネットワーク設定を保存します。下記の副作用と終了状態を確認し、設備管理者と共有資源の利用を調整してください。現行ハーネスには新設計のホスト共通ロックは未接続です。
+
+複数ボードは `OEP_HW_BOARDS=a,b` でボードごとに順次処理します。候補 source と設置済み firmware の試験を別の結果として残し、使用版の文字列だけで互換性を判定しません。必須契約の skip はリリース確認の未完了です。
 
 ## ファイル
 
@@ -114,36 +107,18 @@ oep config remove <probe> disable 28
 oep config save <probe>        # 走る前に何も保存されていなければ `oep config erase <probe>`
 ```
 
-## ボードと焼き方
+## 対象と更新経路
 
-| ボード（`OEP_HW_BOARDS` の id） | 種類 | profile | 焼き方 | 実施 |
-|---|---|---|---|---|
-| `esp32-pico-d4-50029191fe34` M5Stack ATOM（ESP32-PICO-D4、FTDI） | esp32 | esp32 | `esptool --chip esp32 -p <port> -b 115200 write-flash 0x0 <merged.bin>`（ATOM の bridge は 115200） | **済**（main の 0.0.26 ビルドとリリース 0.0.25、2026-10-01） |
-| `esp32-d0wd-v3-0070070d9394` V003 のジグ（ESP32-D0WD-V3、CH340） | esp32 | esp32 | 同上 | **済**（main の 0.0.26、2026-10-02。SWIO 越しの CH32V003 で wire 50 往復 pass。port_speed は CH340 のまとまった落ちで判定が揺れる）。出力できるチャネルは SWIO / NRST 以外すべて V003 のパッドにつながる（ArduinoCore-CH32RV の `tests/benches/v003-esp32.toml`）: 表が与えるのは入力専用の 34 / 35（config の disable / label、アナログのキャプチャ）だけなので、gpio / capture / capture_group は skip、uart はジグの設定の plan で走る |
-| `esp32-series-30eda0e31108` X035 のジグ（ESP32-P4）、`esp32-series-30eda0e343c6` 2 枚目の P4 | esp32p4 | esp32p4 | 動いている probe へ app の `.bin` を USB DFU 1.1 で（pyusb。`dfu-util -D` と同じ: DFU の interface を class FE/01 で探し、wTransferSize は functional descriptor から、DNLOAD をブロックごと、長さ 0 の DNLOAD で manifest）、device が消えて戻るのを待つ。WSL では `usbipd.exe attach --wsl --busid <busid>`（表の `usbip_busid`） | **済**（X035 治具、main の 0.0.26、2026-10-02: DFU は interface 4 / 4096 B で 8 s。RVSWD 越しの wire 50 往復 pass。uart は治具の設定の plan rx 12 / tx 6 で試す）。2 枚目の P4 は手で DFU（旧 firmware では interface 7 / 1024 B）で焼けたが、USB serial が変わり Windows の usbipd の再 bind が要る |
-| `esp32-series-30eda0ea068b` 3 枚目の P4（ESP32-P4、FS の USB-Serial/JTAG の口だけ。こちらのもの）: CH32V003 が SWIO 19、NRST 4、電源は GPIO5（設定の idle 5 output-high が保つ） | esp32p4-usj | esp32p4 | その口から `esptool --chip esp32p4 -p <port> erase-region 0xe000 0x2000`（otadata: app0 で起動）、次に `write-flash 0x10000 <app.bin>`。DFU と同じく app だけを書くので、保存した設定（target の電源）が残る | **済**（main 0f013b7、2026-10-02: `OEP_HW_TARGET=ch32v003@19 OEP_HW_RESET=4 OEP_HW_ANALOG=20`。13 pass、port_speed は skip。probe の起動で電源が入った V003 は 0.1 秒ほど何も答えない: wire / console の scan は 2 秒までやり直す）|
-| `9489dd2ae0953650` SparkFun Pro Micro RP2350（1209:4F45。unit id が鍵） | rp2 | promicrorp2350 | CDC の口へ 1200 baud のタッチ（BOOTSEL）、boot ROM の USB device（`RP2350 Boot` / `RP2 Boot`。product と serial で選ぶので、ホストのほかの RP2 には触れない）を待ち、`picotool load -x <uf2> --bus --address`（`OEP_HW_PICOTOOL`、既定は PATH の `picotool`。[picotool 2.3.1 Linux x86_64](https://github.com/raspberrypi/pico-sdk-tools/releases/download/v2.3.1-0/picotool-2.3.1-x86_64-lin.tar.gz)）、CDC の口が戻るのを 45 秒まで待つ。`OEP_HW_UF2_DRIVE=<mount>` なら代わりにその BOOTSEL のドライブへ `.uf2` を置く（ドライブをマウントできるホスト）。どちらもできなければ焼かずに、入っている firmware で試験を続ける | **済**（picotool、2026-10-02。最初の一巡は UART が使えないピンで `uart` の途中に probe が固まった → oep-probe-arduino 654b06a で修正、そのビルドでは全部 pass）|
+現行の `boards.py` は個体と profile・配線既定値を束ねた legacy 表です。個体表は外部設定へ移す改修対象であり、新規利用者が汎用 TOML を渡せる状態にはまだなっていません。実設備の配置、観測結果、serial、USB topology は各設備管理者が別に管理します。
 
-ATOM の変換（CH552 の FTDI 互換）は probe→host をまとめて落とす（ある分は 0 %、次の分は 10〜55 %、2026-10-02）: ATOM での port_speed の失敗は 1 回やり直してから数える。port_speed の門としては CH340 の治具のほうが安定している。
+| 種類 | 現行の更新経路 |
+|---|---|
+| classic ESP32 | esptool と merged image |
+| ESP32-P4 | USB DFU の app image、または明示した USB-Serial/JTAG 経路 |
+| RP2040 / RP2350 | BOOTSEL と picotool、または明示した UF2 drive |
+| TCP | この入口では更新しない。指定されたネットワーク経路で設置済み firmware を検証 |
 
-**TCP のボード。** `esp32-pico-d4-50029191fe34-tcp` は Wi-Fi / TCP で見た ATOM（kind `tcp`、port は `tcp:50029191fe34` - unit_id で
-DNS-SD - か `OEP_HW_ATOM_TCP=tcp://HOST:PORT`）。`OEP_HW_BOARDS` はネットワークのどの probe も `tcp:<unit_id>` か `tcp://<host>[:<port>]`
-で名指せる（表に無い kind `tcp` のボード: model は照合せず、空きのチャネルは `OEP_HW_GPIO` / `OEP_HW_UART` / `OEP_HW_DISABLE` が
-与えなければ無い）。TCP のボードは焼かない（`flash` は "a TCP board" と記録）: 先にシリアル / USB の経路で走らせて焼き、ネットワーク
-（`OEP_WIFI_*`、`wifi` の試験）を与える。port_speed は飛ばす（この経路に UART bridge は無い）。`linktest` は TCP では応答を 3 秒待つ。
-mDNS は WSL 2 の既定の NAT を越えない: そこからはアドレスで名指す（ip は bridge からの `oep config state` に出る）。
-
-`OEP_HW_NOFLASH=1` はどのボードでも焼かずに、入っている firmware を試す（"on-board" として記録。firmware の文字列は記録する
-だけで照合しない）。
-
-`rp2040` / `rp2350`（Pico）の profile も同じ rp2 の焼き方で、ボードの表に行を足せばよい。
-
-## 共有のジグ: 使うときの決まり
-
-V003 のジグ、X035 のジグ（ESP32-P4）、WCH-Link はこのホストでは ArduinoCore-CH32RV の bench（別のセッションの機材）のもの。
-リリースの試験で網羅できるようボードの表には載せてあるが、**ジグで回すのは bench の許可を待ってから**: 毎回まず聞く。渡されて
-いない device は焼かない、リセットしない。ATOM（`/dev/ttyUSB1`）と 2 枚目の P4（`esp32-series-30eda0e343c6`）が OEP の試験に自由に使えるボード。表の `notes` に `jig` と
-あるものが共有（`Board.shared`）。
+TCP は `OEP_HW_BOARDS=tcp:<unit_id>` または `tcp://<host>:<port>` を明示できます。汎用 TCP 指定では期待 model や空き channel が未設定です。配線確認なく fixture の channel を追加しません。`OEP_HW_NOFLASH` は設置済み firmware の試験を選び、設定や power 操作の禁止を意味しません。
 
 ## 環境変数
 

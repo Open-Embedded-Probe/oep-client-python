@@ -4,3 +4,7 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+.env
+.env.generated
+*.local.toml
+.pytest-results/
