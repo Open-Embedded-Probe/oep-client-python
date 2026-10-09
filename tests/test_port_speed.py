@@ -738,6 +738,46 @@ def test_set_baud_switches_to_the_requested_rate_and_to_the_answer_only_when_the
         lk.set_baud(1500000, 1500000)
 
 
+def test_set_baud_handles_native_posix_driver_refusal():
+    termios = pytest.importorskip("termios")
+
+    class PosixRefusingStream(RefusingStream):
+        @RefusingStream.baudrate.setter
+        def baudrate(self, rate):
+            if rate in self.refuse:
+                raise termios.error(22, "Invalid argument")
+            self._baud = rate
+
+    lk = link.SerialLink.on_stream(PosixRefusingStream({1500000}), "cobs", 0.1)
+    assert lk.set_baud(1500000, 1499250) == 1499250
+    assert lk.baud == lk.stream.baudrate == 1499250
+    with pytest.raises(termios.error):
+        lk.set_baud(1500000, 1500000)
+
+
+def test_native_driver_refusal_is_recorded_and_next_candidate_is_tried(monkeypatch):
+    termios = pytest.importorskip("termios")
+    ep, hst, lk = in_process()
+    set_baud = lk.set_baud
+
+    def refuse(rate, fallback=None):
+        if rate == 750000:
+            raise termios.error(22, "Invalid argument")
+        return set_baud(rate, fallback)
+
+    monkeypatch.setattr(lk, "set_baud", refuse)
+    try:
+        report = link.raise_speed(hst, [750000, 500000], **FAST)
+        assert report.chosen == 500000
+        refused, accepted = report.trials
+        assert not refused.committed and "the OS refuses" in refused.why
+        assert accepted.committed and lk.baud == 500000
+        hst.keepalive()
+    finally:
+        hst.end()
+    assert lk.baud == 115200
+
+
 def second_host(ep):
     lk = link.SerialLink.on_stream(virtual_bench_serial.VirtualSerialStream(ep, 0), "cobs", 0.5)
     lk.transport = "serial"
@@ -1107,18 +1147,18 @@ def test_oep_speed_cli_prints_the_report_and_keeps_the_record(capsys, tmp_path, 
                              "--broken-rate", "230400:40:in"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     try:
         where = proc.stdout.readline().split()
-        assert cli.main(["speed", where[1], "--candidates", "230400,750000", "--flows", "in:1"]) == 0
+        assert cli.main(["speed", where[1], "--candidates", "230400,921600", "--flows", "in:1"]) == 0
         out = capsys.readouterr().out
-        assert "in@1" in out and "failed" in out and "committed" in out and "in force: 750000 (raised)" in out
+        assert "in@1" in out and "failed" in out and "committed" in out and "in force: 921600 (raised)" in out
         record = json.loads((tmp_path / "oep-client" / "link-speed.json").read_text())
         rates = record[f"{where[1]}|fafe00000003"]["rates"]
-        assert rates["230400"]["passed"] is False and rates["750000"]["passed"] is True
-        assert cli.main(["speed", where[1], "230400,750000", "--minimal", "--json"]) == 0   # the record skips 230400
+        assert rates["230400"]["passed"] is False and rates["921600"]["passed"] is True
+        assert cli.main(["speed", where[1], "230400,921600", "--minimal", "--json"]) == 0   # the record skips 230400
         out = json.loads(capsys.readouterr().out)
-        assert out["skipped"] == [230400] and [t["rate"] for t in out["trials"]] == [750000] and out["chosen"] == 750000
-        assert cli.main(["speed", where[1], "750000,500000", "--minimal", "--json", "--max-tries", "1"]) == 0
+        assert out["skipped"] == [230400] and [t["rate"] for t in out["trials"]] == [921600] and out["chosen"] == 921600
+        assert cli.main(["speed", where[1], "921600,500000", "--minimal", "--json", "--max-tries", "1"]) == 0
         out = json.loads(capsys.readouterr().out)
-        assert [t["rate"] for t in out["trials"]] == [750000] and out["capped"] == [500000]
+        assert [t["rate"] for t in out["trials"]] == [921600] and out["capped"] == [500000]
         assert out["trials"][0]["probation"] == "running"
         assert cli.main(["speed", where[1], "--no-record"]) == 0                 # the default candidate, 500000
         assert "in force: 500000 (raised)" in capsys.readouterr().out

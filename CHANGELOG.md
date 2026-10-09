@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- (EN) Handle native POSIX baud-rate refusal in port-speed fallback and candidate reporting. Use a standard baud rate for the PTY CLI/report test and cover rejected rates separately.
+- (JA) port_speed の速度設定で POSIX の例外も扱い、fallback と候補の失敗記録へ接続。PTY の CLI 検査は標準速度を使い、OS の拒否は独立に検証する。
+
 - (EN) Add explicit hardware TOML validation, connected-role planning and a hardware-free virtual OEP smoke command (`oep-hardware`). Document shared test ownership and a generic consumer guide; physical execution remains separate.
 - (JA) 明示 TOML の検証、接続に基づく役割計画、実機を使わない仮想 OEP smoke の `oep-hardware` を追加。全体テスト責任と汎用利用者ガイドを整備し、実機実行は別工程とする。
 

@@ -154,6 +154,14 @@ IN_USE_FLOOR = 0.10        # ... broken + lost over max(2 x baseline, this) step
 STEP_DOWN_WAIT_S = 0.2   # the step down's revert (step 2) at the raised rate waits this long, never sent again
 RAISED_WAIT_MIN_S = 0.3  # raised, in use: each wait for an answer is a quarter of the lease, at least this
 LINK_ERRORS = (cobs.CorruptFrame, TimeoutError, FramingLost)
+BAUD_ERRORS = (ValueError, OSError, serial.SerialException)
+try:
+    import termios as _termios
+except ImportError:  # Windows
+    pass
+else:
+    # pyserial can let tcsetattr's native exception escape; it is not an OSError.
+    BAUD_ERRORS += (_termios.error,)
 
 
 def open_serial(port: str, baud: int = BASE_BAUD):
@@ -753,7 +761,7 @@ class SerialLink:
         if hasattr(self.stream, "baudrate"):
             try:
                 self.stream.baudrate = rate
-            except (ValueError, OSError, serial.SerialException):
+            except BAUD_ERRORS:
                 if fallback is None or fallback == rate:
                     raise
                 self.stream.baudrate = fallback
@@ -2269,7 +2277,7 @@ def _try(hst, lk: SerialLink, report: SpeedReport, rates: list[int], run: _Run) 
         trial.actual = m.Reader(r.payload).u32()
         try:
             trial.switched = lk.set_baud(rate, trial.actual)   # the requested baud; the probe's only if the OS refuses
-        except (ValueError, OSError, serial.SerialException) as e:
+        except BAUD_ERRORS as e:
             trial.why = f"the OS refuses {rate} and {trial.actual}: {e}"
             lk.baud = rate                                  # wait the probe out (verify_ms), then the boot speed
             time.sleep(wait / 1000)
