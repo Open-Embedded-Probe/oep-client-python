@@ -36,7 +36,20 @@ jobs:
         run: uv run python tools/prepare_release.py --version "${{ github.event.inputs.version }}"
 
       - name: Run tests
-        run: uv run pytest tests
+        run: uv run --locked pytest tests
+
+      - name: Verify explicit virtual equipment contract
+        env:
+          OEP_HW_CONFIG: tests/fixtures/hardware.virtual.toml
+          OEP_HW_RESULTS: .pytest-results/equipment
+        run: uv run --locked pytest tests/equipment --junitxml=.pytest-results/equipment.xml -o junit_family=legacy
+
+      - name: Upload equipment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: virtual-equipment-evidence
+          path: .pytest-results/
 
       - name: Build package
         run: uv build

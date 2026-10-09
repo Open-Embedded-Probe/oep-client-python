@@ -158,3 +158,119 @@ def test_cleanup_failure_is_preserved(monkeypatch):
     assert observed['cleanup_error'] == 'end transport failure'
     assert observed['session_released'] is False
     assert result['client_version'] and result['virtual_bench_version'] and result['registry_hash']
+
+
+def physical_equipment():
+    data = copy.deepcopy(hardware.load(VIRTUAL).data)
+    data['example'] = False
+    data['probes'][0]['transport'] = {'kind': 'serial', 'path': './explicit-port'}
+    return equipment(data)
+
+
+def simulated_transport(monkeypatch):
+    from oep_client import endpoint, host, link
+    from types import SimpleNamespace
+    ep = endpoint.Endpoint(virtual_bench.PROFILES['esp32-v003'](), lambda: 0)
+    hst = host.Host(ep.handle)
+    hst.confirm()
+    closed = []
+    hst.link = SimpleNamespace(close=lambda: closed.append(True))
+    calls = []
+    def open_host(address, **kwargs):
+        calls.append((address, kwargs))
+        return hst
+    monkeypatch.setattr(link, 'open_host', open_host)
+    return hst, calls, closed
+
+
+def test_physical_preflight_uses_explicit_path_and_releases(monkeypatch, tmp_path):
+    hst, calls, closed = simulated_transport(monkeypatch)
+    lock = tmp_path / 'shared.lock'
+    lock.touch()
+    report = hardware.physical_preflight(physical_equipment(), lock_path=lock)
+    assert report['status'] == 'passed'
+    assert calls == [('/tmp/equipment/explicit-port', {'keep_session': False})]
+    assert report['probes'][0]['firmware']
+    assert report['probes'][0]['session_released'] and closed == [True]
+    assert hst.session is None
+    assert report['finished_at'] and report['configuration_sha256']
+
+
+def test_preflight_identity_failure_closes_without_session(monkeypatch, tmp_path):
+    hst, calls, closed = simulated_transport(monkeypatch)
+    monkeypatch.setattr(hst, 'open', lambda **kw: pytest.fail('opened wrong device session'))
+    config = physical_equipment()
+    config.data['probes'][0]['identity']['value'] = 'wrong-unit'
+    lock = tmp_path / 'shared.lock'
+    lock.touch()
+    result = hardware.physical_preflight(config, lock_path=lock)
+    assert result['status'] == 'failed' and 'identity' in result['probes'][0]['error']
+    assert closed == [True]
+
+
+@pytest.mark.parametrize('case', ['example', 'virtual', 'manual', 'selector', 'missing-lock', 'busy-lock'])
+def test_preflight_guards_before_transport(monkeypatch, tmp_path, case):
+    from oep_client import link
+    monkeypatch.setattr(link, 'open_host', lambda *a, **kw: pytest.fail('guard opened transport'))
+    config = physical_equipment()
+    lock = tmp_path / 'shared.lock'
+    lock.touch()
+    if case == 'example':
+        config.data['example'] = True
+    elif case == 'virtual':
+        config.data['probes'][0]['transport'] = {'kind': 'virtual', 'profile': 'esp32-v003'}
+    elif case == 'manual':
+        config.data['probes'][0]['identity'] = {'method': 'manual-label', 'value': 'x', 'reason': 'label'}
+    elif case == 'selector':
+        config.data['probes'][0]['transport']['path'] = 'usb:auto'
+    elif case == 'missing-lock':
+        lock.unlink()
+    if case == 'busy-lock':
+        with hardware.equipment_lock(lock):
+            with pytest.raises(hardware.ConfigurationError, match='in use'):
+                hardware.physical_preflight(config, lock_path=lock)
+    else:
+        with pytest.raises((hardware.ConfigurationError, OSError)):
+            hardware.physical_preflight(config, lock_path=lock)
+
+
+def test_preflight_cleanup_error_still_closes_transport(monkeypatch, tmp_path):
+    hst, calls, closed = simulated_transport(monkeypatch)
+    monkeypatch.setattr(hst, 'end', lambda: (_ for _ in ()).throw(RuntimeError('end failed')))
+    lock = tmp_path / 'shared.lock'
+    lock.touch()
+    report = hardware.physical_preflight(physical_equipment(), lock_path=lock)
+    assert report['status'] == 'failed' and closed == [True]
+    assert report['probes'][0]['cleanup_error'] == 'end failed'
+
+
+def test_cli_reserves_evidence_before_hardware(monkeypatch, tmp_path):
+    monkeypatch.setattr(hardware, 'physical_preflight', lambda *a, **kw: pytest.fail('opened hardware'))
+    out = tmp_path / 'old.json'
+    out.write_text('previous')
+    assert hardware.main(['preflight', '--config', str(VIRTUAL), '--out', str(out)]) == 2
+    assert out.read_text() == 'previous'
+    monkeypatch.delenv('OEP_HW_RESULTS', raising=False)
+    assert hardware.main(['preflight', '--config', str(VIRTUAL)]) == 2
+
+
+def test_results_env_produces_distinct_artifacts(monkeypatch, tmp_path):
+    monkeypatch.setenv('OEP_HW_RESULTS', str(tmp_path / 'results'))
+    for _ in range(2):
+        assert hardware.main(['smoke', '--config', str(VIRTUAL)]) == 0
+    reports = list((tmp_path / 'results').glob('smoke-*.json'))
+    assert len(reports) == 2
+    assert all(json.loads(p.read_text())['status'] == 'passed' for p in reports)
+
+
+def test_usb_requires_complete_matching_identity():
+    config = physical_equipment()
+    node = config.data['probes'][0]
+    node['transport'] = {'kind': 'usb', 'unit_id': 'fafe00000003'}
+    hardware.validate(config.data)
+    node['transport']['unit_id'] = 'fafe'
+    with pytest.raises(hardware.ConfigurationError, match='complete'):
+        hardware.validate(config.data)
+    node['transport']['unit_id'] = 'fafe00000004'
+    with pytest.raises(hardware.ConfigurationError, match='match'):
+        hardware.validate(config.data)

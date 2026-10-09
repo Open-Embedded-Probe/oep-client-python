@@ -43,4 +43,5 @@ only-include = ["src/oep_client", "tests", "docs", "udev", "README.md", "README.
 dev = ["pytest>=8"]
 
 [tool.pytest.ini_options]
-markers = ["hw: needs a probe board (OEP_HW_BOARDS=<board-identify ids>); skipped otherwise (tests/hw/README.md)"]
+markers = ["hw: needs a probe board (OEP_HW_BOARDS=<board-identify ids>); skipped otherwise (tests/hw/README.md)",
+           "equipment: explicit OEP_HW_CONFIG contract; skipped without equipment configuration"]

@@ -144,4 +144,4 @@ OEP_HW_RESULTS=./.pytest-results
 | 共通 schema の保守 | oep-client-python を保守窓口として schema と雛形を同期する。設備固有の台帳に正本を置かない |
 | platform ごとの複数接続 | 採用 platform と必要 connection/console 数を決め、実装差分と試験契約へ落とす |
 
-具体的なキー、選択と判定、処理の入口を [実機設定形式 v1 の提案](hardware-schema.ja.md)へまとめた。`.env.example` と input/resolved の TOML 雛形も同時に管理する。これはレビュー用の案で、offline CLI と loader は実装済みで、実機 adapter は未実装である。読込みと役割解決を実機なしで検証済みで、export と変更検出は今後追加する。
+具体的なキー、選択と判定、処理の入口を [実機設定形式 v1 の提案](hardware-schema.ja.md)へまとめた。`.env.example` と input/resolved の TOML 雛形も同時に管理する。これはレビュー用の案で、offline CLI と loader は実装済みで、probe preflight・共通ロック・結果保存と明示 pytest 入口も実装済みである。target/peer runner adapter と配線診断の確定・変更検出は今後追加する。

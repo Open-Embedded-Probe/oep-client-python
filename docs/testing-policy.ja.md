@@ -182,7 +182,7 @@ log、readback、waveform、capture layout/rate、時刻不確かさ、双方の
 
 | 所有側 | 現在確認できた構造 | あるべき姿への改修 |
 |---|---|---|
-| Python 配線探索 | pins.py は debug/reset 探索を持つが、複数 found の先頭で後段を続ける | 候補の全列挙・個体照合・曖昧性の明示・確定結果の保存。GPIO/UART の機能配線探索は別工程として追加 |
+| Python 配線探索 | pins.py は debug/reset 探索を持つ。複数候補・探索上限超過では停止するよう修正済み | 候補の全列挙・個体照合・曖昧性の明示・確定結果の保存。GPIO/UART の機能配線探索は別工程として追加 |
 | Arduino probe | DebugPort は単一 connection。Config の place は wire と console を一つ持つ | platform の必要能力に応じて複数 connection/console/slot を実装し、資源上限と分離を検証 |
 | Python 実機試験 | boards.py の個体表と GPIO/UART の既定値、環境変数の個別上書き | 個体と確定構成を外部入力へ移し、契約から対象を選ぶ。model/profile と設備個体を分離 |
 | ch32rv | 仮想 OEP、flash/monitor、複数 slot の拒否試験あり。broker が probe を所有 | 同じ probe の複数 target の control/log を分離し、pair 起動と target 間の混線防止を検証 |
@@ -205,7 +205,7 @@ log、readback、waveform、capture layout/rate、時刻不確かさ、双方の
 7. USB role 別の API と peer を実装し、両側 READY/start/stop と独立 control を確立する。同 stack の回帰と独立 stack の相互運用を別々に追加する。
 8. 採用範囲の API/route/controller の差分、異常系、更新・復旧、リリース gate と CI を埋める。所有側の旧テストと文書を置換する。
 
-各段階で schema、interface、改修対象、検証結果をレビューする。現在は方針と設定設計を文書化した段階で、以下の runner 改修は完了していない。
+各段階で schema、interface、改修対象、検証結果をレビューする。offline 検証・plan・仮想 smoke、共通ロック付き probe preflight、明示 pytest 入口、uv/pytest による probe 転送まで実装した。target の新形式 adapter、配線診断の確定 export、複数 connection/broker、USB peer の整備は継続する。
 
 ## 11. 調査した正本と実装
 

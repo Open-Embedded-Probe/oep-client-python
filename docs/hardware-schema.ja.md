@@ -1,6 +1,6 @@
 # 実機設定形式 v1 の提案
 
-状態: v1 の初期実装あり。offline validate/plan と virtual smoke が使用可能。実機の discovery/preflight/runner adapter は未実装。2026-10-09。[全体テスト方針](testing-policy.ja.md)と[構成管理方針](hardware-configuration.ja.md)を具体化する。現行の legacy 実機 runner はこの形式を読まない。最小入口は [動作確認手順](hardware-quickstart.ja.md)。OEP の wire protocol や SPEC を変更する提案ではない。
+状態: v1 の初期実装あり。offline validate/plan と virtual smoke が使用可能。実機の probe 単体 preflight と明示 pytest 入口も使用可能。配線 discovery/target runner adapter は未実装。2026-10-09。[全体テスト方針](testing-policy.ja.md)と[構成管理方針](hardware-configuration.ja.md)を具体化する。現行の legacy 実機 runner はこの形式を読まない。最小入口は [動作確認手順](hardware-quickstart.ja.md)。OEP の wire protocol や SPEC を変更する提案ではない。
 
 ## 所有と境界
 
@@ -42,7 +42,7 @@ node の ID は probe/target 全体で重複禁止。各種類の接続 ID と e
 
 identity は probe の `oep-unit-id`、target の `chip-uid` を優先する。`manual-label` は `reason` を必須とし、preflight で人の確認が必要な識別として扱う。serial port、chip family、slot label だけで物理個体の一致を判断しない。観測できない UID を生成しない。
 
-v1 の transport は OEP `serial`、明示指定 `tcp`、実機を使わない `virtual`（既存仮想 profile を指定）、debug は `swio` / `rvswd` / `swd` を扱う。serial は path、tcp は host/port を持つ。channel 対応は `data`、`clock`、任意の `reset` を共通キーとし、protocol ごとの本数を offline validator で検証し、profile/pad 機能と予約 pin は今後の preflight で検証する。WCH-Link は別 backend であり OEP probe を装わない。**WCH-Link、計測器、自動電源 switch の具体キーは今回の v1 雛形の対象外**。全体計画から外すのでなく、それらの実機契約を採用する前に追加例と validator を揃える作業として残す。
+v1 の transport は OEP `serial`、unit ID で名指す `usb`、明示指定 `tcp`、実機を使わない `virtual`（既存仮想 profile を指定）、debug は `swio` / `rvswd` / `swd` を扱う。serial は path、tcp は host/port、usb は完全な hexadecimal unit_id を持つ。usb selector と identity の一致を validator で検証し、接続後も OEP describe の unit_id を照合する。channel 対応は `data`、`clock`、任意の `reset` を共通キーとし、protocol ごとの本数を offline validator で検証し、profile/pad 機能と予約 pin は今後の preflight で検証する。WCH-Link は別 backend であり OEP probe を装わない。**WCH-Link、計測器、自動電源 switch の具体キーは今回の v1 雛形の対象外**。全体計画から外すのでなく、それらの実機契約を採用する前に追加例と validator を揃える作業として残す。
 
 signal endpoint は target の pad または probe の非負 channel のいずれかを持つ。mode は `input-only` / `output-only` / `bidirectional` / `open-drain`。共有 bus の同時駆動条件、pull-up、アナログ値等は契約に必要な詳細を追加してからその試験を採用する。`digital` の接続だけで I2C、PWM 精度、電圧精度を保証しない。
 
@@ -104,4 +104,6 @@ OEP の経路は resolved から adapter が解決する。既存 Arduino plugin
 
 `smoke` は明示 virtual transport だけを受理し、COBS/CRC と OEP の confirm、list/describe、identity、session open/end をプロセス内で確認する。`example = true` でも実機を使わない仮想 smoke は可能とする。結果はこの限定した確認範囲の成功であり、PROBE-DECLARE の全適合、実 transport、複数 target、USB 通信を保証しない。
 
-`--config` が環境変数より優先し、`OEP_HW_CONFIG` を読める。validate は config が指定されなければ `OEP_HW_INPUT` も使える。`--out` は新規 JSON のみを作り、既存ファイルを上書きしない。`OEP_HW_RESULTS` の自動採番と `OEP_HW_LOCK` の実機連携は未実装。実機操作を持たないこれらの入口では共通設備ロックを取得しない。
+`--config` が環境変数より優先し、`OEP_HW_CONFIG` を読める。validate は config が指定されなければ `OEP_HW_INPUT` も使える。`--out` は新規 JSON のみを作り、既存ファイルを上書きしない。smoke/preflight は `OEP_HW_RESULTS` に新規 JSON を自動採番できる。preflight は `--lock` または `OEP_HW_LOCK` が指す既存ロックを POSIX flock で取得し、全 probe の cleanup まで保持する。ロックを新規作成・交換しない。`--out` または結果保存先を接続前に用意し、既存結果を指定した場合は実機操作前に拒否する。validate/plan/smoke は実設備のロックを取得しない。
+
+`preflight` は non-example の resolved、観測可能な OEP unit identity、明示 physical transport のみ受理する。confirm、unit ID、firmware/model/chip、list/describe と必須宣言、session open/end と transport close を記録する。session の force 取得や他 runner の remembered session 回収はしない。target の attach/flash、設定・電源変更、配線診断は含まず、他の契約への実行承認にも使わない。firmware 最低版は設けない。`tests/equipment/test_preflight.py` は設定未指定時のみ skip、明示設定の不正や失敗を成功・skip へ変換しない。
