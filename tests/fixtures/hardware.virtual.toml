@@ -1,0 +1,16 @@
+# 実機を使わない最小 smoke 構成。配線探索や実機適合の証明ではない。
+schema_version = 1
+kind = "resolved"
+example = true
+configuration_id = "virtual-smoke"
+generation = 1
+confirmed_at = "2026-10-09T00:00:00+09:00"
+
+[[probes]]
+id = "virtual-probe"
+[probes.identity]
+method = "oep-unit-id"
+value = "fafe00000003"
+[probes.transport]
+kind = "virtual"
+profile = "esp32-v003"

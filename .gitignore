@@ -8,3 +8,4 @@ dist/
 .env.generated
 *.local.toml
 .pytest-results/
+.env.virtual

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- (EN) Add explicit hardware TOML validation, connected-role planning and a hardware-free virtual OEP smoke command (`oep-hardware`). Document shared test ownership and a generic consumer guide; physical execution remains separate.
+- (JA) 明示 TOML の検証、接続に基づく役割計画、実機を使わない仮想 OEP smoke の `oep-hardware` を追加。全体テスト責任と汎用利用者ガイドを整備し、実機実行は別工程とする。
+
 ## 0.0.31
 - (EN) No user-facing changes recorded.
 - (JA) ユーザー向け変更の記録はありません。

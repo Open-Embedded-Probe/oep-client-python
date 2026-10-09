@@ -4,7 +4,7 @@
 
 This describes the current Python hardware harness. The shared [testing policy](../../docs/testing-policy.ja.md) and [guide for projects using OEP](../../docs/testing-consumers.ja.md) distinguish firmware-provider checks from consumer checks. Each owner makes its own release decision; releases are not coupled automatically.
 
-Ordinary `uv run pytest` runs hardware-free checks. Hardware tests skip unless `OEP_HW_BOARDS` is set. **The new hardware TOML loader and `OEP_HW_CONFIG` are not implemented.** The `.env.example` and input/resolved TOML examples describe the proposed [configuration format](../../docs/hardware-schema.ja.md), not a working runner interface.
+Ordinary `uv run pytest` runs hardware-free checks. Hardware tests skip unless `OEP_HW_BOARDS` is set. **The new offline TOML validator/planner is available via `oep-hardware`; integration with this legacy hardware runner is pending.** The `.env.example` and input/resolved TOML examples describe the proposed [configuration format](../../docs/hardware-schema.ja.md), with offline validation/planning available; they are not inputs to this legacy hardware runner.
 
 Run the current entry point from the repository root. Replace `PROBE_ID` with an explicit ID accepted by the current `boards.py`. Commands other than the virtual example operate hardware.
 

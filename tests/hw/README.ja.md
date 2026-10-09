@@ -4,7 +4,7 @@
 
 現在の Python 実機ハーネスの手順です。共通の責任と保証対象は [全体テスト方針](../../docs/testing-policy.ja.md)、OEP を利用する任意のプロジェクト向けの進め方は [利用者ガイド](../../docs/testing-consumers.ja.md)を参照してください。プローブ更新の検証は firmware 所有側、クライアントの動作は client 側が判定します。両方のリリースを一律に連動させません。
 
-通常の `uv run pytest` は仮想ベンチ等のボード不要検査を行います。このディレクトリの実機検査は `OEP_HW_BOARDS` を指定しない限り skip します。**新しい設備 TOML と `OEP_HW_CONFIG` の loader は未実装です。** `.env.example`、`hardware.example.toml`、`hardware.resolved.example.toml` は [設定形式案](../../docs/hardware-schema.ja.md)の雛形で、現在はその形式の動作を約束しません。
+通常の `uv run pytest` は仮想ベンチ等のボード不要検査を行います。このディレクトリの実機検査は `OEP_HW_BOARDS` を指定しない限り skip します。**新しい設備 TOML は `oep-hardware` で offline 検査・plan に使用できますが、現行実機 runner への接続は未実装です。** `.env.example`、`hardware.example.toml`、`hardware.resolved.example.toml` は [設定形式案](../../docs/hardware-schema.ja.md)の雛形で、offline 検査と plan には使えますが、この実機 suite が読み込むものではありません。
 
 現行入口は repository root で実行します。`PROBE_ID` は現在の `boards.py` が受理する明示 ID に置き換えます。仮想例以外のコマンドは実機を操作します。
 

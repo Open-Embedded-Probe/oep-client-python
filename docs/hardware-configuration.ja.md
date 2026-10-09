@@ -1,6 +1,6 @@
 # 実機構成と配線を探索して確定する設計
 
-状態: [全体テスト方針](testing-policy.ja.md)から導く構成管理の設計案。2026-10-09（Asia/Tokyo）。ここに記した schema、環境変数、コマンドの役割は実装前の案である。現行 runner が読み込める設定の説明ではない。
+状態: [全体テスト方針](testing-policy.ja.md)から導く構成管理の設計案。2026-10-09（Asia/Tokyo）。ここに記した schema と処理境界の設計、および初期 offline 実装を示す。現行 runner が読み込める設定の説明ではない。
 
 一つの probe に一つの target を束ねた設定をやめ、物理個体、接続、探索候補、確定情報、試験時の役割を分ける。テスト本体は固定 channel や個体名を持たず、論理信号と必要な能力を要求する。設定を読み込んだだけで探索、書込み、firmware 更新が始まる構成にはしない。
 
@@ -110,7 +110,7 @@ tests/hw/
 環境変数の案:
 
 ```dotenv
-# tests/hw/ から実行する想定。以下は実装前の設定名の案。
+# tests/hw/ から実行する想定。offline CLI の設定と、今後の実機 adapter の設定。
 OEP_HW_CONFIG=./hardware.resolved.local.toml
 OEP_HW_RESULTS=./.pytest-results
 ```
@@ -144,4 +144,4 @@ OEP_HW_RESULTS=./.pytest-results
 | 共通 schema の保守 | oep-client-python を保守窓口として schema と雛形を同期する。設備固有の台帳に正本を置かない |
 | platform ごとの複数接続 | 採用 platform と必要 connection/console 数を決め、実装差分と試験契約へ落とす |
 
-具体的なキー、選択と判定、処理の入口を [実機設定形式 v1 の提案](hardware-schema.ja.md)へまとめた。`.env.example` と input/resolved の TOML 雛形も同時に管理する。これはレビュー用の案で、CLI と公開側 loader はまだ実装していない。schema の実装時に読込み・export・変更検出を実機なしで検証する。
+具体的なキー、選択と判定、処理の入口を [実機設定形式 v1 の提案](hardware-schema.ja.md)へまとめた。`.env.example` と input/resolved の TOML 雛形も同時に管理する。これはレビュー用の案で、offline CLI と loader は実装済みで、実機 adapter は未実装である。読込みと役割解決を実機なしで検証済みで、export と変更検出は今後追加する。

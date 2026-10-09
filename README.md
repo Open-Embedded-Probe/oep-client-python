@@ -60,7 +60,7 @@ sets the version in pyproject.toml, uv.lock and `oep_client.__version__` and tur
 the tests and the build it commits, tags, makes the GitHub Release and publishes to PyPI (Trusted Publishing). Record changes
 under Unreleased in CHANGELOG.md, (EN) and (JA).
 
-See the shared [testing policy](docs/testing-policy.ja.md) and [guide for projects using OEP](docs/testing-consumers.ja.md). The [hardware design](docs/hardware-configuration.ja.md) and [configuration examples](docs/hardware-schema.ja.md) describe the planned format; its loader is not implemented yet. These working documents are in Japanese.
+See the shared [testing policy](docs/testing-policy.ja.md) and [guide for projects using OEP](docs/testing-consumers.ja.md). The [hardware design](docs/hardware-configuration.ja.md) and [configuration examples](docs/hardware-schema.ja.md) describe the planned format; its offline validator/planner is available; integration with the hardware runner is pending. These working documents are in Japanese.
 
 ## Modules (`oep_client`)
 

@@ -54,7 +54,7 @@ oep-spec から写す。PyPI の `oep-client` は別のプロジェクトなの�
 pyproject.toml、uv.lock、`oep_client.__version__` を書き換え、CHANGELOG.md の Unreleased をその版にし、試験と build の後に commit と tag、
 GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md の Unreleased に (EN) / (JA) で書き足しておく。
 
-テストの責任と保証対象は [全体テスト方針](docs/testing-policy.ja.md)、OEP を使うプロジェクトの手順は [利用者ガイド](docs/testing-consumers.ja.md)。実機設定の新形式は [構成設計](docs/hardware-configuration.ja.md)と[設定形式・雛形](docs/hardware-schema.ja.md)にまとめる（loader は実装前）。
+最小構成の確認は [動作確認手順](docs/hardware-quickstart.ja.md)。テストの責任と保証対象は [全体テスト方針](docs/testing-policy.ja.md)、OEP を使うプロジェクトの手順は [利用者ガイド](docs/testing-consumers.ja.md)。実機設定の新形式は [構成設計](docs/hardware-configuration.ja.md)と[設定形式・雛形](docs/hardware-schema.ja.md)にまとめる（offline 実装あり、実機連携は未実装）。
 
 ## モジュール（`oep_client`）
 

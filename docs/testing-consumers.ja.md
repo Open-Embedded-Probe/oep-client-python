@@ -2,7 +2,7 @@
 
 OEP プローブを使って、自分のクライアント、tool、組込みソフトウェアを検証するプロジェクト向けのガイドです。言語、target family、Arduino の利用有無を限定しません。テスト本体と合否基準は利用プロジェクトで管理し、通常は設置済みのプローブを使います。
 
-責任と保証範囲の正本は [全体テスト方針](testing-policy.ja.md)。設備設定の新形式は [実機設定形式](hardware-schema.ja.md)と[配線の確定手順](hardware-configuration.ja.md)を参照してください。**新形式の loader、planner、共有 session adapter は実装前です。** 同梱の `.env` / TOML 雛形を置くだけで現行 runner が対応するわけではありません。現在の実行方法は利用プロジェクトの既存 runner に従い、以下の責任と判定を適用します。
+責任と保証範囲の正本は [全体テスト方針](testing-policy.ja.md)。設備設定の新形式は [実機設定形式](hardware-schema.ja.md)と[配線の確定手順](hardware-configuration.ja.md)を参照してください。**offline loader/planner と仮想 smoke は使用可能ですが、実機 runner adapter と共有 session は未実装です。** 同梱の `.env` / TOML 雛形を置くだけで現行 runner が対応するわけではありません。現在の実行方法は利用プロジェクトの既存 runner に従い、以下の責任と判定を適用します。
 
 ## 1. 自分のプロジェクトで保証すること
 
