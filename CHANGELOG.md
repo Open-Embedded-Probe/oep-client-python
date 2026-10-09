@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- (EN) Refresh copied shared vectors from oep-spec b80555a. Only explanatory state text changes from fake to virtual bench; request/response bytes and the registry are unchanged.
+- (JA) oep-spec b80555a から共有ベクタを同期。説明文の fake を virtual bench に合わせる変更だけで、要求・応答のバイト列と registry は変更なし。
+
 - (EN) Handle native POSIX baud-rate refusal in port-speed fallback and candidate reporting. Use a standard baud rate for the PTY CLI/report test and cover rejected rates separately.
 - (JA) port_speed の速度設定で POSIX の例外も扱い、fallback と候補の失敗記録へ接続。PTY の CLI 検査は標準速度を使い、OS の拒否は独立に検証する。
 
