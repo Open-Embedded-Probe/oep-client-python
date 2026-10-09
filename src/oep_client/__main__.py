@@ -260,7 +260,7 @@ def _pins_cmd(args) -> int:
         return 2
     finally:
         hst.link.close()
-    return 0 if report.found else 1
+    return 0 if report.resolution == 'unique-candidate' else 1
 
 
 # ---- oep linktest -------------------------------------------------------------------------------------------------

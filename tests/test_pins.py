@@ -95,6 +95,32 @@ def kinds(report) -> dict[str, list[int]]:
     return out
 
 
+def test_multiple_candidates_are_all_preserved_without_attach_or_save(monkeypatch):
+    ep, hst, t = bench(powered_by=None)
+    ep.targets[(WIRE, (18, 0xFFFF))] = endpoint.VirtualTarget(target_id=V003_ID)
+    f = finder(hst, t, [], save=True)
+    monkeypatch.setattr(f.wire, 'attach', lambda *a, **kw: pytest.fail('attached ambiguous candidate'))
+    report = f.run(steps=('classify', 'scan', 'identify', 'reset', 'slot'))
+    assert set(report.found) == {(18, 0xFFFF), (19, 0xFFFF)}
+    assert report.resolution == 'ambiguous' and f.pins is None
+    assert not report.saved and not report.slot and not ep.plan
+    assert report.target_id is None
+
+
+def test_pair_budget_does_not_scan_a_prefix(monkeypatch):
+    ep, hst, t = bench(powered_by=None)
+    f = finder(hst, t, [])
+    f.report.wire = 'rvswd'
+    f.kinds = {c: pins.Channel(c, pins.FLOATING, '1', '0') for c in range(30)}
+    # Power-following candidates cannot silently narrow the requested pool either.
+    f.kinds[0].follows_power = f.kinds[1].follows_power = True
+    monkeypatch.setattr(pins, 'role_channels', lambda *a: list(range(30)))
+    monkeypatch.setattr(f.wire, 'scan', lambda *a: pytest.fail('partial scan can hide ambiguity'))
+    assert f.scan() == []
+    assert f.report.resolution == 'limit-exceeded' and not f.report.scanned
+    assert f.pins is None
+
+
 def test_finds_the_swio_pin_and_the_reset_line_without_being_told():
     ep, hst, t = bench()
     lines = []

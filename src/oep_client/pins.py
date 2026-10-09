@@ -71,6 +71,7 @@ class Report:
     stopped: list[int] = field(default_factory=list)      # holding these low stopped the activity
     scanned: list[int] = field(default_factory=list)
     found: list[tuple[int, int]] = field(default_factory=list)
+    resolution: str = 'not-scanned'  # unique-candidate is not target individual identity confirmation
     target_id: str | None = None
     family: str | None = None
     nrst: str | None = None           # what the option bytes say
@@ -377,6 +378,9 @@ class PinFinder:
 
     # ---- 4: scan, identify ----
     def scan(self) -> list[riscv.Found]:
+        self.pins = None
+        self.report.found = []
+        self.report.scanned = []
         cands = self.candidates()
         self._plan([])                                     # nothing of the gpio's on the pins scanned (power stays)
         name = self.report.wire
@@ -390,15 +394,12 @@ class PinFinder:
             clk = set(role_channels(self.hst, self.wire.fn, ROLE_SWCLK))
             if dio or clk:
                 pool = cands
-                follow = [c for c in cands if self.kinds[c].follows_power]
-                if len(pool) * (len(pool) - 1) > MAX_PAIRS and len(follow) >= 2:
-                    pool = follow
-                    self.say(f"scan: {len(cands)} candidates make too many pairs: only those that follow the power")
                 pairs = [(d, c) for d in pool for c in pool if d != c and d in dio and c in clk]
                 if len(pairs) > MAX_PAIRS:
-                    self.note(f"{len(pairs)} pairs: only the first {MAX_PAIRS} scanned (narrow with --exclude or "
-                              f"--power)")
-                    pairs = pairs[:MAX_PAIRS]
+                    self.report.resolution = 'limit-exceeded'
+                    self.note(f"{len(pairs)} pairs exceed {MAX_PAIRS}; nothing scanned; narrow with --exclude or "
+                              f"--power")
+                    return []
             else:                                          # fixed pairs (channel_group): those wholly safe
                 pairs = []
                 for tag, v in core.describe(self.hst, self.wire.fn):
@@ -428,10 +429,13 @@ class PinFinder:
                  f"in {self.clock() - t0:.2f} s -> "
                  + (", ".join(self._pins_text(f.pins) for f in found) or "nothing answered"))
         self.report.found = [f.pins for f in found]
-        if found:
+        self.report.resolution = 'no-match'
+        if len(found) == 1:
             self.pins = found[0].pins
-            if len(found) > 1:
-                self.note(f"{len(found)} answered; the rest of this run uses {self._pins_text(self.pins)}")
+            self.report.resolution = 'unique-candidate'
+        elif found:
+            self.report.resolution = 'ambiguous'
+            self.note(f"{len(found)} answered; no candidate selected; identify/reset/slot are disabled")
         return found
 
     def identify(self) -> None:
