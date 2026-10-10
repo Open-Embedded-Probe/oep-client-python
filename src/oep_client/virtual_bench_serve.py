@@ -78,7 +78,7 @@ open), and confirms: the boot_id is new. Its describe declares restart_max_ms 20
 probe without the optional interface: list does not show oep.probe.restart, and its fn is unknown_function.
 
 Options:
-  --profile NAME        p4-x035 (default), esp32-v003, esp32-v003-64, p4-bench or rp2350-pins (p4_x035 style names work too)
+  --profile NAME        core-v1 (current core only; no targets), p4-x035 (default), esp32-v003, esp32-v003-64, p4-bench or rp2350-pins (p4_x035 style names work too)
   --port-index N        which serial port of the profile the pty / cobs TCP is (default: the first one)
   --noise TEXT          raw bytes written in front of every answer (the host must skip them)
   --drop N              the N-th answer (1-based) is not sent, once (the request did run: a resend gets the
@@ -176,8 +176,13 @@ def _air(specs: list[str]) -> dict[str, str | None]:
     return out
 
 
+def _profile(name):
+    name = name.replace("_", "-")
+    return virtual_bench.CORE_PROFILES.get(name) or virtual_bench.PROFILES.get(name)
+
+
 def build(a: argparse.Namespace) -> endpoint.Endpoint:
-    profile = virtual_bench.PROFILES.get(a.profile) or virtual_bench.PROFILES[a.profile.replace("_", "-")]
+    profile = _profile(a.profile)
     probe = profile()
     if getattr(a, "no_drive_levels", False):
         probe = virtual_bench.without_drive_levels(probe)
@@ -772,9 +777,9 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
             socket.inet_aton(ip)
         except OSError:
             ap.error(f"--announce-on {ip}: an interface's IPv4 address")
-    profile = virtual_bench.PROFILES.get(a.profile) or virtual_bench.PROFILES.get(a.profile.replace("_", "-"))
+    profile = _profile(a.profile)
     if profile is None:
-        ap.error(f"unknown profile {a.profile}; one of {', '.join(sorted(virtual_bench.PROFILES))}")
+        ap.error(f"unknown profile {a.profile}; one of {', '.join(sorted(virtual_bench.PROFILES | virtual_bench.CORE_PROFILES))}")
     if a.port_index is None:
         probe_ep = endpoint.Endpoint(profile(), lambda: 0)
         a.port_index = min(probe_ep.serial_ports) if probe_ep.serial_ports else 0

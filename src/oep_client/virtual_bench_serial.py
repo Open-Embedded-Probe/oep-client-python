@@ -40,6 +40,7 @@ class VirtualSerialPort:
         self.last_ms = 0
         self.limit = 2 * ep.probe.max_frame + 16     # longer than any COBS frame of max_frame: raw
         self.frames: list[bytes] = []                # framed answers waiting to go out
+        self.discarding = False
         self.answers = 0
         self.garble: Callable[[bytes, int], bytes] | None = None   # (frame, the rate it goes at) -> what arrives
         self.spoiled: set[int] = set()               # the waiting answers a duplex BrokenRate already broke
@@ -47,12 +48,18 @@ class VirtualSerialPort:
     def feed(self, data: bytes) -> None:
         now = self.ep.now()
         self._gap(now)
+        if self.discarding:
+            self.last_ms = now
+            return
         raw = bytearray()
         boots = self.ep.reboots
         for b in data:
             if b == 0:
                 if self.cand is not None:
                     self._close(raw)
+                    if self.discarding:
+                        self.last_ms = now
+                        return
                     if self.ep.reboots != boots:
                         # the frame was a restart (oep-if-restart §2): its answer is queued, the probe restarted after it, and
                         # what came behind it on the line is lost with the old boot (as `reboot` drops)
@@ -63,6 +70,9 @@ class VirtualSerialPort:
             elif self.cand is not None:
                 self.cand.append(b)
                 if len(self.cand) > self.limit:
+                    if self.ep.probe.core_contract:
+                        self.discarding, self.cand, self.last_ms = True, None, now
+                        return
                     raw += self.cand
                     self.cand = None
             else:
@@ -85,6 +95,9 @@ class VirtualSerialPort:
             raw += b"\x00" + body                    # not a frame: raw, the leading 0x00 too
             self.ep.speed_frame(self.index, False)
             return
+        if self.ep.probe.core_contract and len(msg) > self.ep.probe.max_frame:
+            self.discarding, self.cand = True, None
+            return
         self.ep.speed_frame(self.index, True)
         self._raw(raw)                               # the raw bytes before the frame go first
         raw.clear()
@@ -106,6 +119,7 @@ class VirtualSerialPort:
         """The probe behind the port restarted (`Endpoint.reboot`): the candidate it was reading and the answers it had
         not sent yet are gone."""
         self.cand = None
+        self.discarding = False
         self.frames.clear()
         self.spoiled.clear()
 
@@ -126,13 +140,15 @@ class VirtualSerialPort:
         return True
 
     def _gap(self, now: int) -> None:
+        if self.discarding and now - self.last_ms >= GAP_MS:
+            self.discarding = False
         if self.cand is not None and now - self.last_ms >= GAP_MS:
             raw, self.cand = bytes(self.cand), None
             if len(raw) > 1:                         # only its 0x00: a delimiter (a frame's closing 0x00), not raw
                 self._raw(bytearray(raw))
 
     def _raw(self, raw: bytearray) -> None:
-        if raw:
+        if raw and not self.ep.probe.core_contract:
             self.ep.port_input(self.index, bytes(raw))
 
     def tick(self) -> None:

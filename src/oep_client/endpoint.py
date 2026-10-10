@@ -615,11 +615,13 @@ class Endpoint:
         if probe.max_frame < reg.MIN_MAX_FRAME or window < probe.max_frame or max_inflight < 1:
             raise ValueError(f"confirm's limits out of core §7.1's bounds: max_frame {probe.max_frame}, window {window}, "
                              f"max_inflight {max_inflight}")
+        self.current_core = None
         self.probe = probe
         self.now = now_ms
         self._clock_ns = now_ns
         self._origin_ns = 0                               # the probe clock's 0: this boot's start (core §2.6a)
         self._last_ns = 0                                 # the clock never goes back while the boot_id stays (C-31)
+        self.current_core = None
         self.boot_id = boot_id
         self.lease_default_ms = lease_default_ms
         self.lease_max_ms = lease_max_ms
@@ -1206,6 +1208,11 @@ class Endpoint:
         """A request from transport `transport` (the index in the describe's transport list) -> its result. `link` names
         the connection it came on when one transport has several (a TCP listener's accepted connections, transports §1:
         each is a transport of its own for the revision in use and the notifications' target); None = the transport."""
+        if self.probe.core_contract:
+            from .virtual_core import Core
+            if self.current_core is None:
+                self.current_core = Core(self)
+            return self.current_core.handle(data, transport)
         if not data or data[0] != m.ROLE_REQUEST or len(data) < REQUEST_HEADER:
             self.discarded += 1                                   # not a request, or shorter than its header (C-36)
             return None
@@ -1446,6 +1453,7 @@ class Endpoint:
             boot_id = self.boot_id
             while boot_id == self.boot_id:
                 boot_id = secrets.randbits(32)
+        self.current_core = None
         self.boot_id = boot_id
         self.reboots += 1
         self._origin_ns, self._last_ns = self._raw_ns(), 0
@@ -3540,6 +3548,8 @@ class Endpoint:
 
     def tick(self) -> None:
         """Time passes: the lease, at-boot retries, the captures, port_speed's timers."""
+        if self.current_core is not None:
+            self.current_core.tick()
         self._lapse()
         self._speed_tick()
         self._console_poll()

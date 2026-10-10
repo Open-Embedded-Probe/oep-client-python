@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- (JA) 新コア仕様4681d22の最小バーチャルprofile `core-v1` を追加。既存のvirtual-bench CLIでPTY/TCPとして提供し、コアの拒否順・session・要求全体の再送照合・終了後の履歴とシリアルの過大frame破棄を実装。target/interfaceは持たず、旧profileと旧clientの期待値は固定したまま。独立したTCP length検査器と7項目のfault検査も追加。
+
 - (JA) transport宣言・describeサイズ・ロック中の発見・confirm後の履歴を個別検査。serial port再接続後のsession/lock・再送・終了履歴・leaseを検査し、boot/個体変化は後続を止める。個体照合は仕様に従い大文字小文字を区別しない。
 
 - (JA) コアの独立検査を47項目へ拡張し、独立したシリアルCOBS/CRC検査8項目とport再接続検査4項目を追加。拒否順、未知/破損TLV、owner、拒否結果の再送とlease、自分のsession間のforceを検査。固定部後の応答TLVを許容し、失敗したconfirmの後は他の要求を送らない。raw送受信と各検査器moduleのhashも保存。

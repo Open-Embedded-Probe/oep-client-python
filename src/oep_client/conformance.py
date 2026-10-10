@@ -69,6 +69,14 @@ RECONNECT_CASES = tuple(('CORE-RECONNECT-' + kind.upper(), kind) for kind in
                         ('session', 'replay', 'ended', 'lease'))
 
 
+TCP_CASES = tuple(('CORE-TCP-' + kind.upper(), kind) for kind in
+                  ('split', 'coalesce', 'zero', 'short', 'role', 'partial-gap', 'oversized'))
+
+
+class NotApplicable(Exception):
+    pass
+
+
 class Violation(ValueError):
     pass
 
@@ -128,6 +136,7 @@ class Checks:
         self.abort = False
         self.wire = None
         self.reopen = None
+        self.tcp_wire = None
 
     def request(self, op, payload=b'', *, session=0, corr=None, fn=0):
         if corr is None:
@@ -151,6 +160,8 @@ class Checks:
             record['response_hex'] = reply.hex()
             if self.wire is not None:
                 record['serial_wire'] = self.wire.last_exchange
+            if self.tcp_wire is not None:
+                record['tcp_wire'] = self.tcp_wire.last_exchange
             require(5 <= len(reply) <= self.max_frame, 'result length outside negotiated bounds')
             role, corr, resolution, detail = struct.unpack_from('<BHBB', reply)
             require(role == self.reg['roles']['result'], 'unexpected result role')
@@ -206,6 +217,8 @@ class Checks:
             try:
                 function()
                 row['status'] = 'passed'
+            except NotApplicable as exc:
+                row.update(status='not_applicable', reason=str(exc))
             except Exception as exc:
                 row.update(status='failed', error=f'{type(exc).__name__}: {exc}')
         row['exchanges'] = self.trace[start:]
@@ -224,6 +237,8 @@ class Checks:
         self.boot, self.max_frame, self.confirm_transport = boot, frame, values[0][0]
         if self.wire is not None:
             self.wire.max_frame = frame
+        if self.tcp_wire is not None:
+            self.tcp_wire.max_frame = frame
         self.observed['confirm'] = dict(revision=revision, max_frame=frame, window=window,
                                         max_inflight=inflight, boot_id=boot, transport=self.confirm_transport)
 
@@ -284,6 +299,8 @@ class Checks:
         selected = next(v for v in transports if v[0] == self.confirm_transport)
         if self.wire is not None:
             require(selected[1] in (1, 2, 3), 'serial endpoint declares a non-serial kind')
+        if self.tcp_wire is not None:
+            require(selected[1] == 6, 'TCP endpoint declares a non-TCP kind')
 
     def describe_size(self):
         rows = [(x['tag'], bytes.fromhex(x['value_hex'])) for x in self.observed['core_describe']]
@@ -745,6 +762,55 @@ class Checks:
             finally:
                 record['serial_wire'] = self.wire.last_exchange
 
+    def tcp_case(self, kind):
+        from .conformance_tcp import frame
+        from .conformance_serial import WireError
+        req = self.request(self.core['clock'])  # no session or target mutations
+        good = frame(req)
+        pause, close = 0, False
+        if kind == 'split':
+            chunks = [bytes((byte,)) for byte in good]
+        elif kind == 'coalesce':
+            chunks = [frame(bytes((3,)) + req[1:]) + good]
+        elif kind == 'zero':
+            chunks = [b'\0\0' * 3 + good]
+        elif kind == 'short':
+            chunks = [frame(req[:9]) + good]
+        elif kind == 'role':
+            chunks = [frame(bytes((0,)) + req[1:]) + good]
+        elif kind == 'partial-gap':
+            gap = self.reg.get('timing', {}).get('probe_frame_gap_ms', 200) / 1000
+            chunks, pause = [good[:1], good[1:]], gap + 0.1
+        elif kind == 'oversized':
+            if self.max_frame == 65535:
+                raise NotApplicable('u16 length cannot express max_frame + 1')
+            chunks, close = [(self.max_frame + 1).to_bytes(2, 'little')], True
+        else:
+            raise ValueError(kind)
+        record = {'tcp_stimulus': kind}
+        self.trace.append(record)
+        try:
+            replies = self.tcp_wire.exchange(chunks, 0 if close else 1, pause=pause, expect_close=close)
+            record['responses_hex'] = [reply.hex() for reply in replies]
+            if close:
+                require(not replies, 'oversized TCP frame produced a response')
+                return  # deliberately closed; all request-bearing tests precede this case
+            require(len(replies) == 1, 'ignored input produced a response or duplicate')
+            original_send = self.send
+            try:
+                self.send = lambda _: replies[0]
+                payload = self.success(req)
+                require(len(payload) >= 12 and int.from_bytes(payload[:4], 'little') == self.boot,
+                        'TCP clock result')
+                tlvs(payload[12:])
+            finally:
+                self.send = original_send
+        except (TimeoutError, OSError, WireError):
+            self.abort = True
+            raise
+        finally:
+            record['tcp_wire'] = self.tcp_wire.last_exchange
+
     def run(self):
         self.check('CORE-CONFIRM', 'core §7.1', self.confirm)
         if self.results[-1]['status'] != 'passed':
@@ -783,17 +849,22 @@ class Checks:
         if self.reopen is not None:
             for name, kind in RECONNECT_CASES:
                 self.check(name, 'transports §3; core §5.2/6.1/9', lambda kind=kind: self.reconnect(kind))
-        return {'status': 'passed' if all(x['status'] == 'passed' for x in self.results) else 'failed',
+        if self.tcp_wire is not None:
+            for name, kind in TCP_CASES:
+                self.check(name, 'transports §1/2; core §2.4', lambda kind=kind: self.tcp_case(kind))
+        return {'status': 'passed' if all(x['status'] in ('passed', 'not_applicable') for x in self.results) else 'failed',
                 'scope': 'selected core and common interface checks on selected transport; no target operations',
                 'full_conformance': False,
                 'levels': {'core': 'partial coverage', 'interface': 'declarations only',
                            'oep-interface': 'not executed'},
-                'framing_backend': 'independent serial' if self.wire is not None else 'client',
-                'unchecked': ['non-serial transport faults and alternate routes', 'alternate-route session retention',
+                'framing_backend': 'independent serial' if self.wire is not None else
+                                   'independent TCP' if self.tcp_wire is not None else 'client',
+                'unchecked': ['bulk/HID transport faults and alternate routes', 'alternate-route session retention',
                               'target resource lifetime', 'multi-target isolation',
                               'interface operation behavior', 'electrical behavior'] +
                              ([] if self.wire is not None else ['independent serial framing/faults']) +
-                             ([] if self.reopen is not None else ['reconnect/session retention']),
+                             ([] if self.reopen is not None else ['reconnect/session retention']) +
+                             ([] if self.tcp_wire is not None else ['independent TCP framing/faults']),
                 'observed': self.observed, 'checks': self.results}
 
 
@@ -802,7 +873,7 @@ def main(argv=None):
     for name, env in [('address', 'OEP_CONFORMANCE_ADDRESS'), ('unit', 'OEP_CONFORMANCE_UNIT_ID'),
                       ('spec', 'OEP_CONFORMANCE_SPEC'), ('out', 'OEP_CONFORMANCE_OUT'), ('lock', 'OEP_HW_LOCK')]:
         parser.add_argument('--' + name, default=os.environ.get(env))
-    parser.add_argument('--framing', choices=('client', 'serial'),
+    parser.add_argument('--framing', choices=('client', 'serial', 'tcp'),
                         default=os.environ.get('OEP_CONFORMANCE_FRAMING', 'client'))
     args = parser.parse_args(argv)
     if not all(vars(args).values()):
@@ -812,7 +883,7 @@ def main(argv=None):
     report = {'status': 'failed', 'spec': spec, 'client_version': __version__,
               'checker_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
               'checker_sources_sha256': {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
-                                        for name in ('conformance.py', 'conformance_serial.py', 'pytest_conformance.py')},
+                                        for name in ('conformance.py', 'conformance_serial.py', 'conformance_tcp.py', 'pytest_conformance.py')},
               'address': args.address, 'expected_unit': args.unit,
               'started_at': datetime.now(timezone.utc).isoformat()}
     # Reserve a new artifact before any device operation. Never overwrite evidence.
@@ -839,6 +910,15 @@ def main(argv=None):
                         finally:
                             link._exclusive_off(wire.stream)
                             wire.stream.close()
+                    elif args.framing == 'tcp':
+                        from .conformance_tcp import TcpWire
+                        wire = TcpWire.open(args.address)
+                        try:
+                            checks = Checks(wire.send, registry, args.unit)
+                            checks.tcp_wire = wire
+                            report.update(checks.run())
+                        finally:
+                            wire.close()
                     else:
                         hst = link.open_host(args.address, keep_session=False, resend=False, port_speed=None)
                         report.update(Checks(hst.link.send, registry, args.unit).run())

@@ -67,7 +67,7 @@ def ops_of(name: str, *without: str) -> tuple[bytes, ...]:
 
 class VirtualProbe:
     def __init__(self, label: str, max_frame: int, offered: list[Offered], fill_ops: bool = True,
-                 own_channels=()):
+                 own_channels=(), core_contract=False):
         """Every offered fn's describe carries the ops tag (core §7.4): one that gives none gets `default_ops`, first;
         oep.probe.restart carries restart_max_ms (RESTART_MAX_MS when it gives none, oep-if-restart §1) (`fill_ops`
         False: left as given - a probe that does not conform, for tests). A probe offering an interface with plan roles
@@ -75,6 +75,7 @@ class VirtualProbe:
         never listed); every other fn has a name. `own_channels`: the channels the probe uses itself (its own UART,
         USB, strapping pins): never an interface's, never parked, not an item's channel (core §8, probe.config §1) -
         not declared."""
+        self.core_contract = core_contract
         self.label = label
         self.max_frame = max_frame
         self.own_channels = tuple(own_channels)
@@ -82,6 +83,8 @@ class VirtualProbe:
         if fill_ops and PLAN_ROLE_INTERFACES & {o.name for o in offered} and not any(o.name == PLAN for o in offered):
             # an interface with plan roles: the probe lists oep.probe.plan too (oep-if-plan), at the next free fn
             offered.append(_plan(max(o.fn for o in offered) + 1))
+        if core_contract and any(o.fn != 0 for o in offered):
+            raise ValueError('core-v1 profile cannot expose legacy interfaces')
         self.offered = sorted((o if not fill_ops else self._filled(o) for o in offered), key=lambda o: o.fn)
         self.requests = 0
         for o in self.offered:
@@ -511,7 +514,8 @@ STAND_IN = f"{NS}.stand-in"
 
 def _again(probe: VirtualProbe, offered: list[Offered]) -> VirtualProbe:
     """The same probe (label, max_frame, own channels) with other fns."""
-    return VirtualProbe(probe.label, probe.max_frame, offered, own_channels=probe.own_channels)
+    return VirtualProbe(probe.label, probe.max_frame, offered, fill_ops=not probe.core_contract,
+                        own_channels=probe.own_channels, core_contract=probe.core_contract)
 
 
 def _with(o: Offered, tlvs) -> Offered:
@@ -567,6 +571,20 @@ def without_drive_levels(probe: VirtualProbe) -> VirtualProbe:
     return _again(probe, [_with(o, (t for t in o.tlvs if t[0] != GPIO_DRIVE_LEVELS)) if o.name == "oep.fixture.gpio"
                           else o for o in probe.offered])
 
+
+def core_v1() -> VirtualProbe:
+    """Current core only; no target/fixture interfaces. Legacy profiles stay pinned."""
+    def field(tag, value):
+        return bytes((tag,)) + struct.pack('<H', len(value)) + value
+    return VirtualProbe('core-v1', 64, [Offered(0, 0, '', (
+        field(7, b'\0\x1e\0\x0f'),
+        field(64, b'virtual-core-1'), field(65, b'virtual-core'),
+        field(66, b'virtual-core-1'), field(73, b'\0\x02\0'),
+        field(77, struct.pack('<I', 10000)),
+    ))], fill_ops=False, core_contract=True)
+
+
+CORE_PROFILES = {"core-v1": core_v1}
 
 PROFILES = {"p4-x035": p4_x035, "esp32-v003": esp32_v003, "esp32-v003-64": esp32_v003_64, "p4-bench": p4_bench,
             "rp2350-pins": rp2350_pins}

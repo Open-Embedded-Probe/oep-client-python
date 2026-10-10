@@ -218,3 +218,10 @@ log、readback、waveform、capture layout/rate、時刻不確かさ、双方の
 - [ArduinoCore の計画](https://github.com/ch32-riscv-ug/ArduinoCore-CH32RV/blob/main/tests/TEST_PLAN.ja.md)、[実装との照合](https://github.com/ch32-riscv-ug/ArduinoCore-CH32RV/blob/main/docs/test-coverage.ja.md)、[現在の構成 loader](https://github.com/ch32-riscv-ug/ArduinoCore-CH32RV/blob/main/tests/harness/bench.py)、[TinyUSB の現状](https://github.com/ch32-riscv-ug/ArduinoCore-CH32RV/blob/main/libraries/TinyUSB/README.ja.md)。
 - [pytest Arduino 基礎](https://github.com/tanakamasayuki/pytest-embedded-arduino-cli/blob/main/TESTING_BASICS.ja.md)、[詳細と peer の原則](https://github.com/tanakamasayuki/pytest-embedded-arduino-cli/blob/main/TESTING_ADVANCED.ja.md)、[peer lifecycle の例](https://github.com/tanakamasayuki/pytest-embedded-arduino-cli/blob/main/examples/12_peer_host_core/README.ja.md)。
 - [WireSkein の取得試験](https://github.com/Open-Embedded-Probe/wireskein/blob/main/tests/test_oep_virtual_bench.py)、[capture の照合](https://github.com/Open-Embedded-Probe/wireskein/blob/main/docs/capture-test-guide.ja.md)、[pytest 記録統合](https://github.com/Open-Embedded-Probe/pytest-embedded-wireskein/blob/main/tests/test_plugin.py)、[JS client のリリース確認](https://github.com/Open-Embedded-Probe/oep-client-js/blob/main/docs/release.ja.md)、[web viewer のリリース確認](https://github.com/Open-Embedded-Probe/wireskein-web/blob/main/docs/release.ja.md)。
+
+
+## 仕様と検査を固める区切り
+
+各段階で、仕様 → 独立検査 → バーチャルでの実装追従 → 実機実装の追従・検証を一巡する。検査器の誤りや規範の曖昧さは見つけ次第修正する。旧実装の仕様不一致は証拠として保持し、期待値を旧実装へ合わせない。全3段階の検査完成まで実装修正を待つ必要はないが、まだ固めているコアに合わせて全interfaceやfirmwareを同時に変更しない。
+
+コアではまず最小バーチャル端点 `core-v1` を同じ公開検査器で通し、正常系の基準を得る。これはコアの現行検査範囲の成功であり、全コアの凍結や既存target付きprofile・実機の適合ではない。残るtransport/複数経路/資源寿命も揃えてコアの区切りを判断し、共通interface、OEP固有へ進める。

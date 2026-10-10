@@ -5,12 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from .conformance import main, CORE_CASES, SERIAL_CASES, RECONNECT_CASES
+from .conformance import main, CORE_CASES, SERIAL_CASES, RECONNECT_CASES, TCP_CASES
 
 if os.environ.get("OEP_CONFORMANCE_FRAMING") == "serial":
     CORE_CASES += tuple(name for name, _ in SERIAL_CASES + RECONNECT_CASES)
 
-
+elif os.environ.get('OEP_CONFORMANCE_FRAMING') == 'tcp':
+    CORE_CASES += tuple(name for name, _ in TCP_CASES)
 
 
 @pytest.fixture(scope='module')
@@ -35,6 +36,8 @@ def assert_case(report, case, record_property):
     record_property('oep_spec_commit', report['spec']['commit'])
     record_property('oep_level', 'interface' if case.startswith('IF-') else 'core')
     assert len(rows) == 1, f'missing or duplicate contract result: {case}'
+    if rows[0]['status'] == 'not_applicable':
+        pytest.skip('not applicable: ' + rows[0]['reason'])
     assert rows[0]['status'] == 'passed', rows[0].get('error', rows[0]['status'])
 
 
