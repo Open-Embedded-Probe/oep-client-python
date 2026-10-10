@@ -121,7 +121,8 @@ CHECKER_SOURCES = ('conformance.py', 'conformance_serial.py', 'conformance_tcp.p
                    'conformance_pipeline.py', 'conformance_pipeline_sample.py',
                    'conformance_replay_pressure.py', 'conformance_lease.py', 'conformance_lease_sample.py',
                    'conformance_retention.py', 'conformance_retention_sample.py',
-                   'conformance_retention_lifecycle.py', 'conformance_retention_lifecycle_sample.py')
+                   'conformance_retention_lifecycle.py', 'conformance_retention_lifecycle_sample.py',
+                   'conformance_corr.py')
 
 
 def checker_sources_sha256():
@@ -164,14 +165,17 @@ class Checks:
         self.tcp_reopen = None
 
     def request(self, op, payload=b'', *, session=0, corr=None, fn=0):
+        automatic = corr is None
         if corr is None:
-            if session:
-                self.corr += 1
-                corr = self.corr
-            else:
-                self.zero_corr += 1
-                corr = self.zero_corr
-        return struct.pack('<BHHBI', self.reg['roles']['request'], corr, fn, op, session) + payload
+            corr = (self.corr if session else self.zero_corr) + 1
+            if corr > 65535:
+                raise ValueError('corr exhausted; ' + ('end before exhaustion and open a different session ID'
+                                                     if session else 'choose an explicit free-session corr after draining requests'))
+        request = struct.pack('<BHHBI', self.reg['roles']['request'], corr, fn, op, session) + payload
+        if automatic:
+            if session: self.corr = corr
+            else: self.zero_corr = corr
+        return request
 
     def exchange(self, request):
         record = {'request_hex': request.hex(), 'started_monotonic_ns': time.monotonic_ns()}

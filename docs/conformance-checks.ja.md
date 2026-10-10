@@ -91,3 +91,5 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 [再送cacheの保持上限](retention-conformance.ja.md)は明示した16 byte / 8件のfixtureで11項目。要求/応答それぞれの境界、欠落marker、追い出しと未使用の古いcorr、拒否/end/同session openでの保持を確認する。要求が保持されていれば同一性を先に比較し、変更要求のmalformedを応答欠落のresult_lostと区別する。
 
 [保持欠落とsession/boot寿命](retention-lifecycle-conformance.ja.md)はretentionを含む19項目。期限切れでは履歴を残し、異なるsessionでは置換し、新bootでは履歴/資源/送信待ちを無効にする。明示logical-model resetだけを許し、物理設備の再起動は行わない。
+
+[corr u16の境界](corr-conformance.ja.md)はretentionを含む17項目。通常の大小比較、半周の前後と上限、古い番号の拒否、SID 0の独立性、65535をendに残して別sessionへ切り替える手順を検査する。
