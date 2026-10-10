@@ -87,3 +87,5 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 [混雑時のsession再送・拒否cache](replay-pressure-conformance.ja.md)はpipelineを含む15項目。再送/見出し/session判定を混雑より先に適用し、拒否結果の再送とpeerのsession 0照会が共有履歴を壊さないことを確認する。Sはprimaryに固定し、別ID Tのforceで共有cacheが置換されることも確認する。
 
 [応答送信とlease](lease-conformance.ja.md)はpressureを含む22項目。論理writerの全応答完了で更新し、部分送信/再送/前段の拒否では更新しない。送信待ちでの失効と、end/force後の古い応答での復活・誤更新を検査する。物理的な送信完了は未検査。
+
+[再送cacheの保持上限](retention-conformance.ja.md)は明示した16 byte / 8件のfixtureで11項目。要求/応答それぞれの境界、欠落marker、追い出しと未使用の古いcorr、拒否/end/同session openでの保持を確認する。要求が保持されていれば同一性を先に比較し、変更要求のmalformedを応答欠落のresult_lostと区別する。

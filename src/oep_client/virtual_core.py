@@ -109,9 +109,11 @@ class Core:
         if sid and sid == self.last:
             if corr in self.cache:
                 request, result = self.cache[corr]
-                if request is None or result is None:
+                if request is None:
                     return answer(12)
-                return result if request == data else answer(3)
+                if request != data:
+                    return answer(3)
+                return answer(12) if result is None else result
             if corr <= self.high:
                 return answer(12)
 
