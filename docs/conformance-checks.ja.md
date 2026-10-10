@@ -137,3 +137,7 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 [wireのattachオプション](wire-options-conformance.ja.md)は40項目。reset channel/hold/競合とDM復帰、idle_clock、SWD targetselの同一性とdetach/endでのピン解放を第三段階で検査する。scanオプションと電気的適合は未検査。
 
 [scanのidle_clock/targetsel](scan-options-conformance.ja.md)は29項目。単一の明示targetsel、候補全体の事前検査、探索中のidle levelsと候補ごとのピン解放を第三段階で確認する。物理waveform/時間は未検査。
+
+線の再試行の[論理検査](retry-conformance.ja.md)では、host DMIの曖昧配送後の非再送、
+busy、probe内部の読み、失敗後の駆動解放と正常idle復帰を分けて確認する。
+第二段階41項目、第三段階14項目。応答後の線切れ解放と物理波形は未検査。
