@@ -111,3 +111,5 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 [採用を明示したwrite受付とdebug完了結果](outcome-conformance.ja.md)は19項目。accepted/doneとsuccess/partial/failed、未知statusの失敗分類、再送時の副作用非重複を検査する。独自sampleの容量・payloadを明示し、物理配送やOEP固有debug opの適合とは分ける。
 
 [資源を指定するstreamとdebug connectionの寿命](dependency-conformance.ja.md)は19項目。解放の依存順、resource addressing、buffer/queue保持、session終了、解放後のhistorical replayを検査する。標準consoleのmechanism制約や物理解放とは分ける。
+
+[標準wire／console固有の宣言](oep-declaration-conformance.ja.md)は選択4 fnで13項目。標準必須op・固有describe・SWIO clockを第三段階`oep-interface`で報告し、共通準拠やop動作の結果と分ける。

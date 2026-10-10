@@ -129,7 +129,7 @@ CHECKER_SOURCES = ('conformance.py', 'conformance_serial.py', 'conformance_tcp.p
                    'conformance_exhausted.py', 'conformance_exhausted_sample.py', 'conformance_interfaces.py',
                    'conformance_stream.py', 'conformance_stream_sample.py',
                    'conformance_outcomes.py', 'conformance_outcome_sample.py',
-                   'conformance_dependencies.py', 'conformance_dependency_sample.py')
+                   'conformance_dependencies.py', 'conformance_dependency_sample.py', 'conformance_oep_declarations.py')
 
 
 def checker_sources_sha256():
@@ -254,7 +254,7 @@ class Checks:
     def check(self, name, clause, function):
         start = len(self.trace)
         row = {'id': name, 'clause': clause,
-               'level': 'interface' if name.startswith('IF-') else 'core'}
+               'level': 'oep-interface' if name.startswith('OEP-') else ('interface' if name.startswith('IF-') else 'core')}
         if self.abort:
             row.update(status='blocked', error='endpoint, transport or cleanup failure; remaining checks not executed')
         else:
