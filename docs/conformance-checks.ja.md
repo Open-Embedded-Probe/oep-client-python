@@ -157,3 +157,7 @@ consoleのlink-lost/closed、成功後の履歴消去と他connectionの保持�
 [選択したdescribe metadata](selected-metadata-conformance.ja.md)はrestart/config/RISC-V/ARM-ADIの4 fnで10項目。
 必須tag、固定幅、条件付きstorage、block上限と全経路のframe収容、ARM-ADIのfeatures禁止を検査する。
 他のmetadataと広告opの実動作は別途検査が必要。
+
+[fixture系describe metadata](fixture-metadata-conformance.ja.md)はGPIO/UART/I2C/SPIを明示して検査する。
+GPIO入力とdrive、UART formats、I2C/SPIの固定形とframe上限、任意stretch/cs_setupの条件を確認する。
+広告opの動作とpin/plan lifetimeは別途検査が必要。
