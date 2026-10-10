@@ -129,3 +129,5 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 [optional blockと状態復元](block-conformance.ja.md)は20項目。長さ・alignment・hart前提、bus値/進捗、GPR/DATA/abstractautoの復元とconsole保持を第三段階で確認する。物理abstract commandや復元失敗は未検査。
 
 [optional stepと再停止](step-conformance.ja.md)は22項目。PC/movedの成功時と失敗時、prvとDATAの保持、再停止とstep_left、console調停と再送を第三段階で確認する。物理命令・CSR操作と待ち時間は未検査。
+
+[optional resetとDM復帰](reset-conformance.ja.md)は32項目。modeごとの成功条件、DM応答待ち、havereset、reset/restart markとdmseq再同期を第三段階で確認する。物理ndmresetと実行確認の手順は未検査。
