@@ -93,3 +93,5 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 [保持欠落とsession/boot寿命](retention-lifecycle-conformance.ja.md)はretentionを含む19項目。期限切れでは履歴を残し、異なるsessionでは置換し、新bootでは履歴/資源/送信待ちを無効にする。明示logical-model resetだけを許し、物理設備の再起動は行わない。
 
 [corr u16の境界](corr-conformance.ja.md)はretentionを含む17項目。通常の大小比較、半周の前後と上限、古い番号の拒否、SID 0の独立性、65535をendに残して別sessionへ切り替える手順を検査する。
+
+[result_lost後の状態読み直し](recovery-conformance.ja.md)はretentionを含む22項目。sample hostがwireだけでboot/sessionと現在の資源を確認し、結果不明の変更要求を新corrで再実行しないことを検査する。元のoutcomeはunknownのままとする。
