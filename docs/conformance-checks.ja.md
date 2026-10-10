@@ -161,3 +161,6 @@ consoleのlink-lost/closed、成功後の履歴消去と他connectionの保持�
 [fixture系describe metadata](fixture-metadata-conformance.ja.md)はGPIO/UART/I2C/SPIを明示して検査する。
 GPIO入力とdrive、UART formats、I2C/SPIの固定形とframe上限、任意stretch/cs_setupの条件を確認する。
 広告opの動作とpin/plan lifetimeは別途検査が必要。
+
+[capture/configのdescribe](capture-metadata-conformance.ja.md)は4 fnを明示し、繰り返しmetadataの形、
+予約features、multirate条件、config items/slots/wifi条件を検査する。opの実動作は別途必要。
