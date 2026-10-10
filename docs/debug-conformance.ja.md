@@ -5,7 +5,7 @@
 `Checks(send, registry, unit)`と`SampleDebugAdapter(source)`を明示して
 `DebugChecks(checks, adapter).run()`を呼ぶ。設備や私的ベンチは公開コードから探索しない。
 
-前提1項目＋動作21項目。明示fixtureのfn 5は標準riscv-dmの必須dmi/halt/resumeを提供する。
+前提1項目＋動作27項目。明示fixtureのfn 5は標準riscv-dmの必須dmi/halt/resumeを提供する。
 全5 fnの共通宣言は`InterfaceChecks`で別に検査し、第二段階の結果と分ける。
 
 - dmiのn=0、write/read/waitの混在、異なる値の順序、done/status/nvalsと途中失敗のsuffix非実行。
@@ -27,13 +27,19 @@ max_op_msは1、DMIアクセスの論理コストは10 us。poll_readsで要求�
 `debug_state()`で資源・アクセス・console pollの調停・buffer/pendingを観測する。
 各caseは新bootでlogical restartする。targetや実機を操作しない。
 
-単体35件には18種類の誤動作注入、前提不足、不正刺激、全5 fnの共通宣言検査を含む。
+単体38件には21種類の誤動作注入、前提不足、不正刺激、全5 fnの共通宣言検査を含む。
 `full_conformance`はfalse。optional reset/step/run/block操作と状態復元、hartsel、
 物理DMI/timeout/線の再試行、別connectionのschedule、実応答writerの順序、production Host統合は未検査。
 同じconnection内の論理調停が通っただけで、全debug操作や実機適合とは扱わない。
 
-応答長の境界検査を追加した（合計22項目）。値配列だけでもmax_frameを超える要求は、
+応答長の境界を1項目で検査する。値配列だけでもmax_frameを超える要求は、
 先頭に書き込みがあってもtargetへ触れる前にunsupported/固定部分0で拒否する。
 境界内ではすべての値を返す。省略可能な補助TLVを付ける余裕が無ければ省く。
 単体では64 byte経路のDebug/Block/Step/Reset/Run/Retry/Cutモデルを確認し、
 過大応答、拒否前書き込み、補助TLVによる境界超過も誤動作注入で検出する。
+
+高水準halt/resumeのhartsel検査を6項目追加した（合計28項目）。成功/失敗、すでにhalt済みの
+haltでもhartselを0にして返す。resumeとhalt timeoutはhaltreqを下ろす。raw DMIはhost指定を
+自動で消さない。別connectionの状態は保持する。失敗時にDMCONTROL以外のレジスタを
+変えないことも確認する。これはDMCONTROLの論理状態の検査であり、複数実hartの選択を
+物理的に観測したものではない。optional opのhartselは引き続き別の検査範囲として扱う。

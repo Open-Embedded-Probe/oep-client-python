@@ -16,7 +16,7 @@ def setup():
 def test_mandatory_debug_contracts_pass():
     _,c,a=setup();r=DebugChecks(c,a).run()
     assert r['status']=='passed',[(row['id'],row.get('error')) for row in r['checks'] if row['status']!='passed']
-    assert len(r['checks'])==22 and not r['full_conformance']
+    assert len(r['checks'])==28 and not r['full_conformance']
 
 
 import pytest
@@ -31,7 +31,7 @@ from oep_client.virtual_core import Completed, Reject
     ('busy_left','ARBITRATION'),('resume_twice','HALT-RESUME'),
     ('halt_not_stop','HALT-RESUME'),('halt_failure_left','HALT-FAILURE'),
     ('line_has_value','POLL-LINE'),('timeout_no_value','POLL-TIMEOUT'),
-    ('zero_us_twice','POLL-US'),('oversized','OUTPUT-BOUND'),('boundary_effect','OUTPUT-BOUND'),('boundary_tail','OUTPUT-BOUND'),
+    ('zero_us_twice','POLL-US'),('oversized','OUTPUT-BOUND'),('boundary_effect','OUTPUT-BOUND'),('boundary_tail','OUTPUT-BOUND'),('hartsel_left','HARTSEL-HALT'),('resume_req_left','HARTSEL-RESUME'),('halt_req_left','HARTSEL-HALT-FAIL'),
 ])
 def test_debug_checker_detects_independent_faults(fault,case):
     model,c,a=setup();install=model.install
@@ -71,7 +71,10 @@ def test_debug_checker_detects_independent_faults(fault,case):
                 elif fault=='line_has_value' and data[2]==2:data=data[:3]+b'\x01\0'+struct.pack('<I',123)+data[5:]
                 elif fault=='timeout_no_value' and data[2]==4:data=data[:3]+b'\0\0'+data[9:]
                 elif fault=='zero_us_twice' and len(payload)>=18 and payload[4]==5 and payload[14:18]==b'\0'*4:e.access.append(('dmi-read',parent,payload[5],e.readreg(parent,payload[5])))
-            elif op==18 and fault=='resume_twice':e.access.append(('resume',parent))
+            if op in (17,18) and fault=='hartsel_left':e.writereg(parent,0x10,e.readreg(parent,0x10)|((0x3ff<<6)|(0x3ff<<16)))
+            if op==18 and fault=='resume_req_left':e.writereg(parent,0x10,e.readreg(parent,0x10)|0x80000000)
+            if op==17 and outcome and fault=='halt_req_left':e.writereg(parent,0x10,e.readreg(parent,0x10)|0x80000000)
+            if op==18 and fault=='resume_twice':e.access.append(('resume',parent))
             elif op==17 and fault=='halt_not_stop':e.targets[parent]['halted']=False
             elif op==17 and fault=='halt_failure_left' and outcome:e.targets[parent]['haltreq']=True
             return Completed(data,outcome)

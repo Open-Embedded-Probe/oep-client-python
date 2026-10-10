@@ -5,6 +5,8 @@ from .virtual_dmseq_model import Dmseq, DmseqModel
 from .virtual_core import Core, Completed, Reject, tlv
 
 
+HARTSEL=(0x3ff<<6)|(0x3ff<<16)
+
 SIZES={1:6,2:2,3:12,4:5,5:14}
 
 def fixed_dmi(payload):
@@ -55,11 +57,14 @@ class Debug(Dmseq):
         if self.connections[parent]['fn']==3:raise Reject(4,tlv(1,b'\x06'))
         target=self.targets[parent]
         if op in (17,18):
+            control=target['registers'].get(0x10,0)&~HARTSEL
+            self.writereg(parent,0x10,control if op==17 else control&~0x80000000)
             if op==17:
                 if not target['halted']:
                     self.access.append(('halt',parent))
-                    if self.hart_failure:target['haltreq']=False;return Completed(b'\x04'+tlv(127,b'x'),1)
-                    target.update(halted=True,haltreq=True)
+                    if self.hart_failure:
+                        target['haltreq']=False;self.writereg(parent,0x10,control&~0x80000000);return Completed(b'\x04'+tlv(127,b'x'),1)
+                    target.update(halted=True,haltreq=True);self.writereg(parent,0x10,control|0x80000000)
             else:
                 target['haltreq']=False;self.access.append(('resume',parent))
                 if self.hart_failure:return Completed(b'\x05'+tlv(127,b'x'),1)

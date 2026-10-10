@@ -112,8 +112,28 @@ class DebugChecks(DmseqChecks):
             frame=self.c.exchange(self.request(5,name,sid,struct.pack('<H',parent)))
             require(frame[3:6]==bytes((1,1,5 if resume else 4)),'halt/resume failure status/outcome');tlvs(frame[6:])
             after=self.a.state();require(not after['targets'][parent]['haltreq'],'failed halt/resume left haltreq set')
-            require(after['targets'][parent]['registers']==before['targets'][parent]['registers'],'failed halt/resume changed mailbox registers')
+            require({k:v for k,v in after['targets'][parent]['registers'].items() if k!=0x10}=={k:v for k,v in before['targets'][parent]['registers'].items() if k!=0x10},'failed halt/resume changed registers other than DMCONTROL')
+            require(not after['targets'][parent]['registers'].get(0x10,0)&(0x80000000|(0x3ff<<6)|(0x3ff<<16)),'failed halt/resume left haltreq/hartsel in DMCONTROL')
             if resume:require(sum(row[0]=='resume' for row in after['access'])==1,'failed resume repeated resumereq')
+    def hart_selection(self,resume=False,failed=False,raw=False,already=False):
+        self.fresh()
+        with self.c.holding(3000) as sid:
+            parent,_=self.attach(sid);other,_=self.attach(sid,pair=self.a.pairs[1][1])
+            mask=(0x3ff<<6)|(0x3ff<<16);control=mask|0x80000001
+            if resume or already:self.c.success(self.request(5,'halt',sid,struct.pack('<H',parent)))
+            self.a.registers(parent,{0x10:control});self.a.registers(other,{0x10:control});before=self.a.state()
+            if raw:
+                self.dmi(sid,parent,[self.write_reg(0x10,control)],1,0,[])
+                require(self.a.state()['targets'][parent]['registers'][0x10]==control,'raw host DMI hartsel was silently cleared')
+            else:
+                self.a.hart_failure(failed);frame=self.c.exchange(self.request(5,'resume' if resume else 'halt',sid,struct.pack('<H',parent)))
+                require(len(frame)>=6 and frame[3:5]==bytes((1,1 if failed else 0)),'high-level hart operation resolution/outcome')
+                value=frame[5:];require(value[0]==((5 if resume else 4) if failed else 0),'high-level hart operation status');tlvs(value[1:])
+                state=self.a.state();actual=state['targets'][parent]['registers'][0x10]
+                require(not actual&mask,'high-level op returned with nonzero hartsel')
+                if already:require(state['targets'][parent]['halted'] and state['access']==before['access'],'already halted hart was halted again')
+                if resume or failed:require(not actual&0x80000000 and not state['targets'][parent]['haltreq'],'resume/failed halt left haltreq asserted')
+            require(self.a.state()['targets'][other]==before['targets'][other],'high-level hart selection affected another connection')
     def output_bound(self):
         self.fresh()
         with self.c.holding(3000) as sid:
@@ -139,10 +159,11 @@ class DebugChecks(DmseqChecks):
         cases += [('POLL-'+kind,lambda kind=kind:self.polling(kind)) for kind in ('READS','US')]
         cases += [(kind,lambda kind=kind:self.rejection(kind)) for kind in ('UNKNOWN-LATE','TRUNCATED','TIME-SUM','CRITICAL','TLV-STRUCTURE')]
         cases += [('RESOURCES',self.resources),('SESSION',self.session),('ARBITRATION',self.arbitration),('HALT-RESUME',self.halt_resume),('REPLAY',self.replay)]
+        cases += [('HARTSEL-HALT',self.hart_selection),('HARTSEL-HALT-ALREADY',lambda:self.hart_selection(already=True)),('HARTSEL-RESUME',lambda:self.hart_selection(True)),('HARTSEL-HALT-FAIL',lambda:self.hart_selection(failed=True)),('HARTSEL-RESUME-FAIL',lambda:self.hart_selection(True,True)),('HARTSEL-RAW',lambda:self.hart_selection(raw=True))]
         cases += [('OUTPUT-BOUND',self.output_bound),('OVERALL-TIMEOUT',self.overall_timeout),('HALT-FAILURE',lambda:self.hart_failed(False)),('RESUME-FAILURE',lambda:self.hart_failed(True))]
         cases += [('POLL-LINE',lambda:self.poll_failure(2)),('POLL-TIMEOUT',lambda:self.poll_failure(4))]
         for name,case in cases:
             first=len(self.a.trace);self.c.check('OEP-DEBUG-'+name,'debug §4.1/4.2; console §3; core §5/9',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]
         return {'status':'passed' if all(r['status']=='passed' for r in rows) else 'failed','checks':rows,'adapter_trace':self.a.trace,'observed':self.c.observed,'full_conformance':False,
-                'scope':'logical mandatory dmi/halt/resume and same-connection console arbitration','unchecked':['optional reset/step/run/block operations and state restoration','hartsel handling','physical DMI/timeouts/line retry','other-connection scheduling','actual response writer ordering','production Host integration']}
+                'scope':'logical mandatory dmi/halt/resume and same-connection console arbitration','unchecked':['optional reset/step/run/block operations and state restoration','hartsel of optional operations and physical hart selection','physical DMI/timeouts/line retry','other-connection scheduling','actual response writer ordering','production Host integration']}
