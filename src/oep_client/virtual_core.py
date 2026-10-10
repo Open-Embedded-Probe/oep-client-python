@@ -56,8 +56,11 @@ class Core:
         self.holder, self.last, self.owner = None, None, b''
         self.lease, self.deadline, self.high = 3000, 0, 0
         self.cache = OrderedDict()
+        self.generation = 0
+        self.renewal = None
 
     def release(self):
+        self.generation += 1
         if self.extension is not None:
             self.extension.release()
         self.holder, self.owner = None, b''
@@ -70,8 +73,19 @@ class Core:
         remaining = max(1, self.deadline - self.ep.now())
         return struct.pack('<I', remaining) + (tlv(1, self.owner) if self.owner else b'')
 
-    def handle(self, data, transport, *, admission_reason=None):
+    def response_sent(self, token, *, check_expiry=True):
+        if check_expiry:
+            self.tick()
+        if token is not None and token == (self.holder, self.generation):
+            self.deadline = self.ep.now() + self.lease
+
+    def handle(self, data, transport, *, admission_reason=None, defer_send=False):
+        self.renewal = None
+        return self._handle(data, transport, admission_reason=admission_reason, defer_send=defer_send)
+
+    def _handle(self, data, transport, *, admission_reason=None, defer_send=False):
         self.tick()
+        started = self.ep.now()
         if len(data) < 10 or data[0] != 1:
             return None
         _, corr, fn, op, sid = struct.unpack_from('<BHHBI', data)
@@ -160,6 +174,7 @@ class Core:
                     self.holder, self.last, self.owner = sid, sid, tags.get(1, b'')
                     self.high = 0
                     self.cache.clear()
+                    self.deadline = started + self.lease
                 passed_session = True
                 value = struct.pack('<II', self.lease, self.ep.boot_id)
             elif op == 17:
@@ -176,7 +191,13 @@ class Core:
         except Reject as exc:
             result = answer(exc.reason, exc.payload)
         if passed_session and sid == self.holder:
-            self.deadline = self.ep.now() + self.lease
+            self.renewal = (sid, self.generation)
+            if defer_send:
+                # Pause only for actual execution. Waiting to write is idle time.
+                self.deadline += self.ep.now() - started
+            else:
+                # Synchronous model API hands over the whole reply here.
+                self.response_sent(self.renewal, check_expiry=False)
         if sid and sid == self.last:
             cap = self.ep.remember_max
             self.cache[corr] = (data if len(data) <= cap else None, result if len(result) <= cap else None)

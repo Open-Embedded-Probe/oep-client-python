@@ -30,7 +30,7 @@ def test_replay_pressure_mutants_fail(defect):
     model, adapter, runner = build()
     core = model.ep.current_core
     handle = core.handle
-    def altered(data, transport, *, admission_reason=None):
+    def altered(data, transport, *, admission_reason=None, defer_send=False):
         _, corr, fn, op, sid = struct.unpack_from('<BHHBI', data)
         if defect == 'pre_core' and admission_reason is not None:
             return struct.pack('<BHBB', 2, corr, 0, admission_reason)
@@ -38,7 +38,7 @@ def test_replay_pressure_mutants_fail(defect):
         if defect == 'reexecute' and cached and fn and op == 16:
             core.cache.pop(corr); core.high = corr - 1
         old_cache = core.cache.copy()
-        value = handle(data, transport, admission_reason=admission_reason)
+        value = handle(data, transport, admission_reason=admission_reason, defer_send=defer_send)
         if defect == 'uncached' and admission_reason == 6 and not cached:
             core.cache.pop(corr, None)
         if defect == 'renew' and cached:

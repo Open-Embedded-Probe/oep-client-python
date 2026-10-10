@@ -85,3 +85,5 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 [経路別受付と回復の補助検査](pipeline-conformance.ja.md)は明示したreject-overflowモデルで9項目。count/byte境界を分離し、別接続の独立性と応答送信後の回復を確認する。超過拒否はSPEC上任意で、一般実機の必須条件に追加しない。
 
 [混雑時のsession再送・拒否cache](replay-pressure-conformance.ja.md)はpipelineを含む15項目。再送/見出し/session判定を混雑より先に適用し、拒否結果の再送とpeerのsession 0照会が共有履歴を壊さないことを確認する。Sはprimaryに固定し、別ID Tのforceで共有cacheが置換されることも確認する。
+
+[応答送信とlease](lease-conformance.ja.md)はpressureを含む22項目。論理writerの全応答完了で更新し、部分送信/再送/前段の拒否では更新しない。送信待ちでの失効と、end/force後の古い応答での復活・誤更新を検査する。物理的な送信完了は未検査。

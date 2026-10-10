@@ -36,4 +36,4 @@ assert report['status'] == 'passed', report
 
 既存`.env.example`のSPEC/共有lockを明示する。公開テストから私的ベンチを探索しない。raw交換・全制御・時刻・宣言・SPEC/検査器/モデルhashを新規artifactへ保存する。常に`full_conformance=false`。
 
-実TCP/USB、silent lossからの回復、並行実行、再起動、host scheduler、大きな要求/応答の保持上限は未検査。leaseを物理的な送信完了から数え始める検査も別途必要。このsampleのcoreは処理完了時にleaseを更新するため、送りかけ結果が残る間のleaseタイミングの適合を今回の結果から主張しない。
+実TCP/USB、silent lossからの回復、並行実行、再起動、host scheduler、大きな要求/応答の保持上限は未検査。[論理writerのlease検査](lease-conformance.ja.md)で応答全体の完了を基準にする処理を追加した。物理的な送信完了から数え始める検査は引き続き別途必要。

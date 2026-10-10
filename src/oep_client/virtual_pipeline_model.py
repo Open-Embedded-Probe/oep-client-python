@@ -4,6 +4,7 @@ Overflow rejection is an explicit sample policy, not mandatory probe behavior.
 Only the sample uses different route limits; no public firmware or socket changes.
 """
 import struct
+from collections import deque
 from .virtual_route_model import RouteModel
 
 
@@ -12,6 +13,7 @@ class PipelineModel(RouteModel):
         super().__init__(now_ms, boot_id)
         self.limits = {'primary': (80, 3), 'peer': (96, 2)}
         self.unresolved = {route: [] for route in self.pipes}
+        self.completions = {route: deque() for route in self.pipes}
 
     def pending(self, route):
         return list(self.unresolved[route])
@@ -38,11 +40,12 @@ class PipelineModel(RouteModel):
             previous = self.ep.window, self.ep.max_inflight
             self.ep.window, self.ep.max_inflight = self.limits[route]
             try:
-                response = self.ep.current_core.handle(request, 0, admission_reason=reason)
+                response = self.ep.current_core.handle(request, 0, admission_reason=reason, defer_send=True)
             finally:
                 self.ep.window, self.ep.max_inflight = previous
             if response is not None and self.pipes[route]['open']:
                 self.pipes[route]['result'].append(response)
+                self.completions[route].append(self.ep.current_core.renewal)
         self.extension.pump()
         for route in self.pipes:
             self.write(route)
@@ -53,6 +56,7 @@ class PipelineModel(RouteModel):
         for frame in self.pipes[route]['out'][first:]:
             if frame[0] != 2:
                 continue
+            self.ep.current_core.response_sent(self.completions[route].popleft())
             corr = struct.unpack_from('<H', frame, 1)[0]
             for index, request in enumerate(self.unresolved[route]):
                 if struct.unpack_from('<H', request, 1)[0] == corr:
@@ -62,10 +66,16 @@ class PipelineModel(RouteModel):
     def close(self, route):
         super().close(route)
         self.unresolved[route].clear()
+        self.completions[route].clear()
         self.requests = type(self.requests)(row for row in self.requests if row[0] != route)
 
     def state(self):
         value = super().state()
         core = self.ep.current_core
         value.update(last=core.last, high=core.high, deadline=core.deadline)
+        return value
+
+    def timing_state(self):
+        value = self.state()
+        value.update(now_ms=self.ep.now())
         return value
