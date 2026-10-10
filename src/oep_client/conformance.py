@@ -129,7 +129,7 @@ CHECKER_SOURCES = ('conformance.py', 'conformance_serial.py', 'conformance_tcp.p
                    'conformance_exhausted.py', 'conformance_exhausted_sample.py', 'conformance_interfaces.py',
                    'conformance_stream.py', 'conformance_stream_sample.py',
                    'conformance_outcomes.py', 'conformance_outcome_sample.py',
-                   'conformance_dependencies.py', 'conformance_dependency_sample.py', 'conformance_oep_declarations.py', 'conformance_attach.py', 'conformance_attach_sample.py', 'conformance_scan.py', 'conformance_scan_sample.py', 'conformance_mailbox.py', 'conformance_mailbox_sample.py', 'conformance_dmseq.py', 'conformance_dmseq_sample.py', 'conformance_dmseq_target.py', 'conformance_dmseq_target_sample.py', 'conformance_debug.py', 'conformance_debug_sample.py', 'conformance_blocks.py', 'conformance_block_sample.py')
+                   'conformance_dependencies.py', 'conformance_dependency_sample.py', 'conformance_oep_declarations.py', 'conformance_attach.py', 'conformance_attach_sample.py', 'conformance_scan.py', 'conformance_scan_sample.py', 'conformance_mailbox.py', 'conformance_mailbox_sample.py', 'conformance_dmseq.py', 'conformance_dmseq_sample.py', 'conformance_dmseq_target.py', 'conformance_dmseq_target_sample.py', 'conformance_debug.py', 'conformance_debug_sample.py', 'conformance_blocks.py', 'conformance_block_sample.py', 'conformance_step.py', 'conformance_step_sample.py')
 
 
 def checker_sources_sha256():
