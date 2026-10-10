@@ -3,6 +3,8 @@
 | 文書 | 対象と状態 |
 |---|---|
 | [最小構成の動作確認](hardware-quickstart.ja.md) | 現在動く validate/plan/仮想 smoke と `.env` の実行手順 |
+| [SPECからの適合検査](conformance-checks.ja.md) | core / interfaceの公開検査器と実行範囲 |
+| [raw USB検査](usb-conformance.ja.md) | bulk/HIDの独立検査器と最小ソフトウェアモデル。実機raw adapterは未実装 |
 | [全体テスト方針](testing-policy.ja.md) | OEP と利用プロジェクトの保証対象、責任、改修計画 |
 | [利用プロジェクト向けガイド](testing-consumers.ja.md) | 任意の言語・target・framework で OEP を使う側のテスト手順 |
 | [構成と配線の確定](hardware-configuration.ja.md) | 個体、探索、確認済み接続、役割、共有制御の設計 |

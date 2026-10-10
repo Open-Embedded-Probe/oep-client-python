@@ -2,7 +2,7 @@
 
 No private equipment repository imports, target driving, settings or flash.
 Force is tested only between sessions acquired by this runner.
-Serial framing can be inspected independently; other transports use the client backend.
+Serial/TCP have independent CLI inspectors; raw USB adapters also have an independent API.
 """
 from __future__ import annotations
 
@@ -111,6 +111,17 @@ def ops(value):
             if value[1 + i // 8] & (1 << (i % 8))}
 
 
+
+CHECKER_SOURCES = ('conformance.py', 'conformance_serial.py', 'conformance_tcp.py',
+                   'conformance_tcp_peers.py', 'conformance_usb.py', 'conformance_usb_cases.py',
+                   'pytest_conformance.py')
+
+
+def checker_sources_sha256():
+    return {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
+            for name in CHECKER_SOURCES}
+
+
 def spec_identity(path):
     path = Path(path).resolve(strict=True)
     raw = (path / 'registry/oep-v1.toml').read_bytes()
@@ -141,6 +152,7 @@ class Checks:
         self.wire = None
         self.reopen = None
         self.tcp_wire = None
+        self.usb_wire = None
         self.tcp_peer_open = None
         self.tcp_reopen = None
 
@@ -168,6 +180,8 @@ class Checks:
                 record['serial_wire'] = self.wire.last_exchange
             if self.tcp_wire is not None:
                 record['tcp_wire'] = self.tcp_wire.last_exchange
+            if self.usb_wire is not None:
+                record['usb_wire'] = self.usb_wire.last_exchange
             require(5 <= len(reply) <= self.max_frame, 'result length outside negotiated bounds')
             role, corr, resolution, detail = struct.unpack_from('<BHBB', reply)
             require(role == self.reg['roles']['result'], 'unexpected result role')
@@ -245,6 +259,8 @@ class Checks:
             self.wire.max_frame = frame
         if self.tcp_wire is not None:
             self.tcp_wire.max_frame = frame
+        if self.usb_wire is not None:
+            self.usb_wire.max_frame = frame
         self.observed['confirm'] = dict(revision=revision, max_frame=frame, window=window,
                                         max_inflight=inflight, boot_id=boot, transport=self.confirm_transport)
 
@@ -307,6 +323,9 @@ class Checks:
             require(selected[1] in (1, 2, 3), 'serial endpoint declares a non-serial kind')
         if self.tcp_wire is not None:
             require(selected[1] == 6, 'TCP endpoint declares a non-TCP kind')
+        if self.usb_wire is not None:
+            require(selected[1] == (4 if self.usb_wire.kind == 'bulk' else 5),
+                    'USB endpoint declares a different transport kind')
 
     def describe_size(self):
         rows = [(x['tag'], bytes.fromhex(x['value_hex'])) for x in self.observed['core_describe']]
@@ -855,6 +874,11 @@ class Checks:
         if self.reopen is not None:
             for name, kind in RECONNECT_CASES:
                 self.check(name, 'transports §3; core §5.2/6.1/9', lambda kind=kind: self.reconnect(kind))
+        if self.usb_wire is not None:
+            from .conformance_usb_cases import USB_CASES, HID_CASES, run
+            cases = USB_CASES + (HID_CASES if self.usb_wire.kind == 'hid' else ())
+            for name, kind in cases:
+                self.check(name, 'transports §1/2/3; core §2.4', lambda kind=kind: run(self, kind))
         if self.tcp_peer_open is not None:
             from .conformance_tcp_peers import Peers
             peers = Peers(self)
@@ -868,16 +892,20 @@ class Checks:
                 'full_conformance': False,
                 'levels': {'core': 'partial coverage', 'interface': 'declarations only',
                            'oep-interface': 'not executed'},
-                'framing_backend': 'independent serial' if self.wire is not None else
+                'framing_backend': 'independent USB ' + self.usb_wire.kind if self.usb_wire is not None else
+                                   'independent serial' if self.wire is not None else
                                    'independent TCP' if self.tcp_wire is not None else 'client',
-                'unchecked': ['bulk/HID transport faults and alternate transport types',
+                'unchecked': ['USB descriptors, packet termination and physical USB behavior',
+                              'alternate transport types and mixed-route isolation',
                               'TCP same-session migration/replay on a new connection',
                               'target resource lifetime', 'multi-target isolation',
                               'interface operation behavior', 'electrical behavior'] +
                              ([] if self.wire is not None else ['independent serial framing/faults']) +
                              ([] if self.reopen is not None else ['reconnect/session retention']) +
                              ([] if self.tcp_wire is not None else ['independent TCP framing/faults']) +
-                             ([] if self.tcp_peer_open is not None else ['two-connection TCP isolation and close retention']),
+                             ([] if self.tcp_peer_open is not None else ['two-connection TCP isolation and close retention']) +
+                             ([] if self.usb_wire is not None and self.usb_wire.kind == 'bulk' else ['independent bulk framing/faults']) +
+                             ([] if self.usb_wire is not None and self.usb_wire.kind == 'hid' else ['independent HID framing/faults']),
                 'observed': self.observed, 'checks': self.results}
 
 
@@ -898,8 +926,7 @@ def main(argv=None):
     from . import __version__, link
     report = {'status': 'failed', 'spec': spec, 'client_version': __version__,
               'checker_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-              'checker_sources_sha256': {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
-                                        for name in ('conformance.py', 'conformance_serial.py', 'conformance_tcp.py', 'conformance_tcp_peers.py', 'pytest_conformance.py')},
+              'checker_sources_sha256': checker_sources_sha256(),
               'address': args.address, 'tcp_peer_address': args.tcp_peer, 'expected_unit': args.unit,
               'started_at': datetime.now(timezone.utc).isoformat()}
     # Reserve a new artifact before any device operation. Never overwrite evidence.
