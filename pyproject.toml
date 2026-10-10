@@ -27,6 +27,7 @@ mdns = ["zeroconf>=0.131"]   # DNS-SD browsing through python-zeroconf (oep find
 
 [project.scripts]
 oep = "oep_client.__main__:main"
+oep-conformance = "oep_client.conformance:main"
 oep-hardware = "oep_client.hardware:main"
 
 [project.urls]

@@ -8,6 +8,8 @@
 
 利用側の入口は [OEP を使うプロジェクトのテストガイド](testing-consumers.ja.md)。基盤の設計は [構成と配線の確定](hardware-configuration.ja.md)と[実機設定形式](hardware-schema.ja.md)。現行の Python 実機ハーネスの手順は [tests/hw](../tests/hw/README.ja.md)に分ける。
 
+適合検査は「core」「interface共通」「OEPインターフェース固有」の3段階に分ける。最初の2段階は独自拡張にも使い、3段階目は各規範の検査と独自拡張向けの雛形を持つ。定義は [SPEC の適合ガイド](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/conformance.ja.md)、検査器の実行範囲は [適合検査入口](conformance-checks.ja.md)を参照する。仕様 → テスト → コアの確定 → 共通インターフェース → OEP固有 → 実装追従の順で進める。
+
 ## 1. 保証する単位
 
 試験単位は「契約 × 実装 × 条件 × 観測方法」である。契約には ID、保証対象、刺激、期待結果と許容差、必要な役割・接続・機能、対応範囲、終了状態を持たせる。契約 ID は物理個体、probe model、固定 channel、実験日を含めない。個体の入れ替えは実行条件の変更として扱う。
@@ -209,7 +211,7 @@ log、readback、waveform、capture layout/rate、時刻不確かさ、双方の
 
 ## 11. 調査した正本と実装
 
-- [OEP 適合](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/conformance.ja.md)、[debug wire と connection](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/interfaces/oep-if-debug.ja.md)、[probe config](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/interfaces/oep-if-probe-config.ja.md)。規範は変更しない。
+- [OEP 適合](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/conformance.ja.md)、[debug wire と connection](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/interfaces/oep-if-debug.ja.md)、[probe config](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/interfaces/oep-if-probe-config.ja.md)。規範の正本は oep-spec に置き、この方針では新しい通信規則を定義しない。
 - [Python の pins 探索](https://github.com/Open-Embedded-Probe/oep-client-python/blob/main/src/oep_client/pins.py)、[実機試験](https://github.com/Open-Embedded-Probe/oep-client-python/blob/main/tests/hw/README.ja.md)、[個体表](https://github.com/Open-Embedded-Probe/oep-client-python/blob/main/tests/hw/boards.py)。
 - [probe DebugPort](https://github.com/Open-Embedded-Probe/oep-probe-arduino/blob/main/src/OepTarget.h)、[Config](https://github.com/Open-Embedded-Probe/oep-probe-arduino/blob/main/src/OepConfig.h)、[実装制約](https://github.com/Open-Embedded-Probe/oep-probe-arduino/blob/main/docs/implementation-limits.ja.md)、[C++ 単体試験](https://github.com/Open-Embedded-Probe/oep-probe-arduino/blob/main/tests/host/run.sh)、[CI](https://github.com/Open-Embedded-Probe/oep-probe-arduino/blob/main/.github/workflows/tests.yml)。
 - [ch32rv の OEP と broker](https://github.com/ch32-riscv-ug/ch32rv/blob/main/docs/oep-host.ja.md)、[仮想 OEP](https://github.com/ch32-riscv-ug/ch32rv/blob/main/crates/oep/tests/virtual_bench.rs)、[仮想環境取得](https://github.com/ch32-riscv-ug/ch32rv/blob/main/crates/oep/tests/virtual_bench/uv.rs)、[flash E2E](https://github.com/ch32-riscv-ug/ch32rv/blob/main/cli/tests/oep_flash.rs)、[monitor E2E](https://github.com/ch32-riscv-ug/ch32rv/blob/main/cli/tests/oep_monitor.rs)。

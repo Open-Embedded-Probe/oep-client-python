@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- (JA) 指定した SPEC checkout に対する独立した raw-message 適合検査器と項目別 pytest 入口を追加。コアと共通インターフェースの結果、送受信 byte、SPEC commit/dirty/hash、未検査範囲を保存する。旧実装の成功を新仕様の適合として扱わない。プロトコル実装の追従は別段階。既存ベクタ検査は取り込んだ SPEC commit と hash を固定し、明示した checkout の同じ commit と比較する。隣接 HEAD への暗黙依存を除去。
+
 - (EN) Refresh copied shared vectors from oep-spec b80555a. Only explanatory state text changes from fake to virtual bench; request/response bytes and the registry are unchanged.
 - (JA) oep-spec b80555a から共有ベクタを同期。説明文の fake を virtual bench に合わせる変更だけで、要求・応答のバイト列と registry は変更なし。
 

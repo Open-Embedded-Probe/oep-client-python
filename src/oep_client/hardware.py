@@ -443,6 +443,9 @@ def physical_preflight(equipment: Equipment, probes=(), *, lock_path=None):
     report = {**selected, 'status': 'passed', 'client_version': __version__,
               'registry_hash': registry.REGISTRY_HASH,
               'scope': 'physical identity/declarations/session; no target or settings writes',
+              'full_conformance': False,
+              'unchecked': ['replay identity/history', 'corr boundaries', 'lease expiry',
+                            'transport faults', 'resource lifetime', 'interface behavior'],
               'capabilities': 'observed probe declarations; target contracts not checked',
               'started_at': datetime.now(timezone.utc).isoformat(), 'probes': []}
     with equipment_lock(lock_path):

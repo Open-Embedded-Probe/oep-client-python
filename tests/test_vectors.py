@@ -9,6 +9,10 @@ vector's fn numbers, its answer compared byte for byte. Where a vector and this 
 text says, and the test checks the virtual bench against the text."""
 
 import json
+import hashlib
+import os
+import re
+import subprocess
 import struct
 from pathlib import Path
 
@@ -19,7 +23,7 @@ from oep_client import catalog, cobs, config, core, endpoint, virtual_bench, vir
 PLAN_APPLY, PLAN_RELEASE = core.OP_PLAN_APPLY, core.OP_PLAN_RELEASE
 
 HERE = Path(__file__).resolve().parent / "vectors"
-SPEC = Path(__file__).resolve().parents[2] / "oep-spec" / "tests" / "vectors"
+SPEC_COMMIT = (HERE / "SPEC_COMMIT").read_text().strip()
 
 
 def load(name: str) -> dict:
@@ -35,13 +39,32 @@ class Clock:
         return 0
 
 
+def test_copied_inputs_have_recorded_provenance():
+    """Every vendored input is pinned, even in an isolated checkout without SPEC."""
+    assert re.fullmatch(r'[0-9a-f]{40}', SPEC_COMMIT)
+    root = HERE.parents[1]
+    manifest = dict(line.split('  ', 1)[::-1] for line in (HERE / 'SPEC_SHA256').read_text().splitlines())
+    expected = {str(p.relative_to(root)) for p in HERE.glob('*.json')} | {'src/oep_client/registry.py'}
+    assert set(manifest) == expected
+    for name, digest in manifest.items():
+        assert hashlib.sha256((root / name).read_bytes()).hexdigest() == digest, name
+
+
 def test_the_copy_is_the_specs():
-    """The synced copy matches the sibling oep-spec checkout when there is one (tools/sync_registry.sh)."""
-    if not SPEC.is_dir():
-        pytest.skip("no sibling oep-spec checkout")
-    mine = {p.name: p.read_bytes() for p in HERE.glob("*.json")}
-    theirs = {p.name: p.read_bytes() for p in SPEC.glob("*.json")}
-    assert mine == theirs, "run tools/sync_registry.sh"
+    """Compare against the pinned commit in an explicitly supplied checkout, never HEAD."""
+    spec = os.environ.get('OEP_SPEC_DIR')
+    if not spec:
+        pytest.skip('OEP_SPEC_DIR not set: optional upstream snapshot verification')
+    paths = subprocess.check_output(['git', '-C', spec, 'ls-tree', '--name-only',
+                                     SPEC_COMMIT + ':tests/vectors'], text=True).splitlines()
+    mine = {p.name: p.read_bytes() for p in HERE.glob('*.json')}
+    theirs = {name: subprocess.check_output(['git', '-C', spec, 'show',
+                                            SPEC_COMMIT + ':tests/vectors/' + name])
+              for name in paths if name.endswith('.json')}
+    assert mine == theirs, 'vendored vectors differ from recorded SPEC_COMMIT'
+    registry = subprocess.check_output(['git', '-C', spec, 'show',
+                                       SPEC_COMMIT + ':generated/oep-v1/oep_v1_registry.py'])
+    assert (HERE.parents[1] / 'src/oep_client/registry.py').read_bytes() == registry
 
 
 # ---- COBS and serial frames (transports §1) --------------------------------------------------------------------------
