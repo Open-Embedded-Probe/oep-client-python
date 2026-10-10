@@ -153,3 +153,7 @@ consoleのlink-lost/closed、成功後の履歴消去と他connectionの保持�
 [登録標準opの検査](registered-ops-conformance.ja.md)は明示した17 interfaceの必須opと任意opの組を
 第三段階で確認する。実動作を呼ばず、宣言だけのfixtureを完全probeと扱わない。
 必須describe metadataと固有payload/副作用は追加検査が必要。
+
+[選択したdescribe metadata](selected-metadata-conformance.ja.md)はrestart/config/RISC-V/ARM-ADIの4 fnで10項目。
+必須tag、固定幅、条件付きstorage、block上限と全経路のframe収容、ARM-ADIのfeatures禁止を検査する。
+他のmetadataと広告opの実動作は別途検査が必要。
