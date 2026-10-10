@@ -115,3 +115,5 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 [標準wire／console固有の宣言](oep-declaration-conformance.ja.md)は選択4 fnで13項目。標準必須op・固有describe・SWIO clockを第三段階`oep-interface`で報告し、共通準拠やop動作の結果と分ける。
 
 [標準wire attachとconsole open](attach-conformance.ja.md)は22項目。critical TLV・副作用前の拒否・方式/資源の制約と再送を第三段階で確認する。論理targetアクセスと電気的bringup/配送を分ける。
+
+[標準wireの有限scan](scan-conformance.ja.md)は21項目。明示候補の先頭からの探索、全候補の事前検証、pin解放、識別子の基準と再送を第三段階で確認する。任意scanを明示提供する論理fixtureに限定する。
