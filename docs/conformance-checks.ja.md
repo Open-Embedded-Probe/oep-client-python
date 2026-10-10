@@ -123,3 +123,5 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 [probe側dmseq framing](dmseq-conformance.ja.md)は29項目。CRC・通番・SYN/TO・pendingの再送とack、検出済みtarget reset、connection間の独立性とcloseを第三段階で確認する。target側timeoutや物理配送は未検査。
 
 [target側dmseq](dmseq-target-conformance.ja.md)は18項目。再送、入力Hの重複抑止/空き不足、timeoutと遅いackを論理時計で確認する。独立probeとのmailbox往復も検査し、実時間下限・firmware統合とは分ける。
+
+[必須riscv-dmとconsole調停](debug-conformance.ja.md)は21項目。dmiの構文・進捗・poll、halt/resume、同じconnectionのmailbox停止/復帰を第三段階で確認する。追加fnを含む全5 fnの共通宣言は第二段階で別に検査する。
