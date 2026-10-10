@@ -106,3 +106,20 @@ def test_maximum_u16_length_cannot_have_an_oversize_length_stimulus():
     check.check('tcp', 'transports', lambda: check.tcp_case('oversized'))
     assert check.results[-1]['status'] == 'not_applicable'
     assert 'u16' in check.results[-1]['reason']
+
+
+@pytest.mark.parametrize('incoming', [[], [frame(RESULT)], [b"\0\0"]])
+def test_receive_only_observation_waits_full_silence_window(monkeypatch, incoming):
+    stream = Socket(incoming, monkeypatch)
+    wire = TcpWire(stream)
+    replies = wire.exchange([], 0, silence=0.1)
+    assert wire.last_exchange['silence_ms'] == 100
+    assert wire.last_exchange['ended_monotonic_ns'] >= wire.last_exchange['started_monotonic_ns']
+    assert stream.now >= 0.1
+    assert replies == ([RESULT] if incoming == [frame(RESULT)] else [])
+    assert stream.writes == []
+
+
+def test_receive_only_partial_output_is_not_silence(monkeypatch):
+    with pytest.raises(WireError, match='partial'):
+        TcpWire(Socket([b"\x05"], monkeypatch)).exchange([], 0, silence=0.1)

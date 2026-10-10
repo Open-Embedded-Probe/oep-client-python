@@ -73,6 +73,10 @@ TCP_CASES = tuple(('CORE-TCP-' + kind.upper(), kind) for kind in
                   ('split', 'coalesce', 'zero', 'short', 'role', 'partial-gap', 'oversized'))
 
 
+TCP_PEER_CASES = tuple(('CORE-TCP-PEER-' + kind.upper(), kind) for kind in
+                       ('identity', 'lock', 'route', 'partial', 'close', 'oversized'))
+
+
 class NotApplicable(Exception):
     pass
 
@@ -137,6 +141,8 @@ class Checks:
         self.wire = None
         self.reopen = None
         self.tcp_wire = None
+        self.tcp_peer_open = None
+        self.tcp_reopen = None
 
     def request(self, op, payload=b'', *, session=0, corr=None, fn=0):
         if corr is None:
@@ -849,6 +855,11 @@ class Checks:
         if self.reopen is not None:
             for name, kind in RECONNECT_CASES:
                 self.check(name, 'transports §3; core §5.2/6.1/9', lambda kind=kind: self.reconnect(kind))
+        if self.tcp_peer_open is not None:
+            from .conformance_tcp_peers import Peers
+            peers = Peers(self)
+            for name, kind in TCP_PEER_CASES:
+                self.check(name, 'transports §1/3; core §4.2/4.4/6', lambda kind=kind: getattr(peers, kind)())
         if self.tcp_wire is not None:
             for name, kind in TCP_CASES:
                 self.check(name, 'transports §1/2; core §2.4', lambda kind=kind: self.tcp_case(kind))
@@ -859,12 +870,14 @@ class Checks:
                            'oep-interface': 'not executed'},
                 'framing_backend': 'independent serial' if self.wire is not None else
                                    'independent TCP' if self.tcp_wire is not None else 'client',
-                'unchecked': ['bulk/HID transport faults and alternate routes', 'alternate-route session retention',
+                'unchecked': ['bulk/HID transport faults and alternate transport types',
+                              'TCP same-session migration/replay on a new connection',
                               'target resource lifetime', 'multi-target isolation',
                               'interface operation behavior', 'electrical behavior'] +
                              ([] if self.wire is not None else ['independent serial framing/faults']) +
                              ([] if self.reopen is not None else ['reconnect/session retention']) +
-                             ([] if self.tcp_wire is not None else ['independent TCP framing/faults']),
+                             ([] if self.tcp_wire is not None else ['independent TCP framing/faults']) +
+                             ([] if self.tcp_peer_open is not None else ['two-connection TCP isolation and close retention']),
                 'observed': self.observed, 'checks': self.results}
 
 
@@ -875,16 +888,19 @@ def main(argv=None):
         parser.add_argument('--' + name, default=os.environ.get(env))
     parser.add_argument('--framing', choices=('client', 'serial', 'tcp'),
                         default=os.environ.get('OEP_CONFORMANCE_FRAMING', 'client'))
+    parser.add_argument('--tcp-peer', default=os.environ.get('OEP_CONFORMANCE_TCP_PEER'))
     args = parser.parse_args(argv)
-    if not all(vars(args).values()):
+    if not all(getattr(args, name) for name in ('address', 'unit', 'spec', 'out', 'lock')):
         parser.error('explicit address, unit, SPEC checkout, new output file and existing shared lock required')
+    if args.tcp_peer and args.framing != 'tcp':
+        parser.error('explicit TCP peer requires framing=tcp')
     registry, spec = spec_identity(args.spec)
     from . import __version__, link
     report = {'status': 'failed', 'spec': spec, 'client_version': __version__,
               'checker_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
               'checker_sources_sha256': {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
-                                        for name in ('conformance.py', 'conformance_serial.py', 'conformance_tcp.py', 'pytest_conformance.py')},
-              'address': args.address, 'expected_unit': args.unit,
+                                        for name in ('conformance.py', 'conformance_serial.py', 'conformance_tcp.py', 'conformance_tcp_peers.py', 'pytest_conformance.py')},
+              'address': args.address, 'tcp_peer_address': args.tcp_peer, 'expected_unit': args.unit,
               'started_at': datetime.now(timezone.utc).isoformat()}
     # Reserve a new artifact before any device operation. Never overwrite evidence.
     with Path(args.out).open('x') as artifact:
@@ -916,6 +932,12 @@ def main(argv=None):
                         try:
                             checks = Checks(wire.send, registry, args.unit)
                             checks.tcp_wire = wire
+                            if args.tcp_peer:
+                                checks.tcp_peer_open = lambda: TcpWire.open(args.tcp_peer)
+                                def reopen_tcp():
+                                    fresh = TcpWire.open(args.address)
+                                    wire.stream = fresh.stream
+                                checks.tcp_reopen = reopen_tcp
                             report.update(checks.run())
                         finally:
                             wire.close()

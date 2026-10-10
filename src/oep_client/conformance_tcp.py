@@ -39,8 +39,10 @@ class TcpWire:
             raise WireError(f'expected one result, observed {len(replies)}')
         return replies[0]
 
-    def exchange(self, chunks, count, pause=0, expect_close=False):
-        record = self.last_exchange = {'writes': [], 'reads': [], 'settle_ms': self.settle * 1000}
+    def exchange(self, chunks, count, pause=0, expect_close=False, silence=0):
+        record = self.last_exchange = {'writes': [], 'reads': [], 'settle_ms': self.settle * 1000,
+                                       'silence_ms': silence * 1000,
+                                       'started_monotonic_ns': time.monotonic_ns()}
         pending, replies = bytearray(), []
         try:
             for index, chunk in enumerate(chunks):
@@ -48,7 +50,8 @@ class TcpWire:
                 self.stream.sendall(chunk)
                 if pause and index + 1 < len(chunks):
                     time.sleep(pause)
-            deadline, quiet = time.monotonic() + self.timeout, None
+            deadline = time.monotonic() + max(self.timeout, silence + self.settle)
+            quiet = time.monotonic() + silence if count == 0 and not expect_close else None
             while time.monotonic() < deadline:
                 self.stream.settimeout(min(0.01, max(0, deadline - time.monotonic())))
                 try:
@@ -76,7 +79,7 @@ class TcpWire:
                             replies.append(bytes(pending[2:2 + size]))
                         del pending[:2 + size]
                     if len(replies) >= count and not expect_close:
-                        quiet = time.monotonic() + self.settle
+                        quiet = max(quiet or 0, time.monotonic() + self.settle)
                 elif not expect_close and quiet is not None and time.monotonic() >= quiet:
                     if pending:
                         raise WireError('partial trailing TCP frame')
@@ -86,3 +89,5 @@ class TcpWire:
         except Exception as exc:
             record['error'] = f'{type(exc).__name__}: {exc}'
             raise
+        finally:
+            record['ended_monotonic_ns'] = time.monotonic_ns()

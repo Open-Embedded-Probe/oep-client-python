@@ -5,20 +5,22 @@ from pathlib import Path
 
 import pytest
 
-from .conformance import main, CORE_CASES, SERIAL_CASES, RECONNECT_CASES, TCP_CASES
+from .conformance import main, CORE_CASES, SERIAL_CASES, RECONNECT_CASES, TCP_CASES, TCP_PEER_CASES
 
 if os.environ.get("OEP_CONFORMANCE_FRAMING") == "serial":
     CORE_CASES += tuple(name for name, _ in SERIAL_CASES + RECONNECT_CASES)
 
 elif os.environ.get('OEP_CONFORMANCE_FRAMING') == 'tcp':
     CORE_CASES += tuple(name for name, _ in TCP_CASES)
+    if os.environ.get('OEP_CONFORMANCE_TCP_PEER'):
+        CORE_CASES += tuple(name for name, _ in TCP_PEER_CASES)
 
 
 @pytest.fixture(scope='module')
 def oep_conformance_report():
     keys = ('OEP_CONFORMANCE_ADDRESS', 'OEP_CONFORMANCE_UNIT_ID', 'OEP_CONFORMANCE_SPEC',
             'OEP_CONFORMANCE_OUT', 'OEP_HW_LOCK')
-    if not any(os.environ.get(key) for key in keys[:-1] + ('OEP_CONFORMANCE_FRAMING',)):
+    if not any(os.environ.get(key) for key in keys[:-1] + ('OEP_CONFORMANCE_FRAMING', 'OEP_CONFORMANCE_TCP_PEER')):
         pytest.skip('no explicit OEP conformance equipment/settings supplied')
     missing = [key for key in keys if not os.environ.get(key)]
     if missing:
