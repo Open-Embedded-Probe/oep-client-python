@@ -164,3 +164,6 @@ GPIO入力とdrive、UART formats、I2C/SPIの固定形とframe上限、任意st
 
 [capture/configのdescribe](capture-metadata-conformance.ja.md)は4 fnを明示し、繰り返しmetadataの形、
 予約features、multirate条件、config items/slots/wifi条件を検査する。opの実動作は別途必要。
+
+[GPIOとplanの動作](gpio-conformance.ja.md)は明示fixtureで、事前拒否、fn別原子置換、駆動順序、
+drive/read、再送とidle復元を第三段階で確認する。物理pin/他fixture/永続configは未検査。
