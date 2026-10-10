@@ -77,3 +77,5 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 資源寿命には[明示adapterによる補助検査](resource-conformance.ja.md)を追加した。最小サンプルは14資源契約＋2宣言検査を実行する。通常CLIへ自動追加せず、購読・route切断・依存順・電気的idleを未検査として残す。
 
 購読・出来事の寿命には[外部刺激adapterの補助検査](subscription-conformance.ja.md)を追加した。サンプルはidentity＋15動作契約＋2宣言の18項目。raw通知と観測窓を保存する。data、応答優先、route、queue上限は未検査で、通常CLIには自動追加しない。
+
+[data/eventとまとめ送りの補助検査](data-conformance.ja.md)は購読18項目＋data前提検証＋14データ契約の33項目。外部byte位置とloss-freeな刺激条件を明示し、閾値・first-byte delay・共通seq・分割・再送/同session openでの未送信データ保持を検査する。seq一周は単体で65,538個を実際に生成して検証し、実時計・実機の結果と分ける。
