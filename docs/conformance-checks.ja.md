@@ -101,3 +101,5 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 [corr枯渇前のsession切替](rollover-conformance.ja.md)はcorrを含む23項目。end用番号を残し、未解決要求の処理・boot/reader確認を経て別IDのopen 1へ切り替える。旧資源を無効にし、結果不明の旧操作はunknownのまま保持する。
 
 [end/openの結果喪失からの回復](session-loss-conformance.ja.md)は保持検査を含む21項目。同一要求を再送し、現在のsession状態も確認する。保存されたopenの成功を取得しても、期限切れなら利用を再開しない。result_lostから成功やlease値を推測しない。
+
+[番号枯渇時の複数pending放棄と新経路での回復](exhausted-conformance.ja.md)は保持検査を含む13項目を3条件で実施する。旧Sを移さず、解放をSID 0で確認してから別IDでopenする。旧要求のunknownと受信済み結果を保持する。
