@@ -133,3 +133,5 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 [optional resetとDM復帰](reset-conformance.ja.md)は32項目。modeごとの成功条件、DM応答待ち、havereset、reset/restart markとdmseq再同期を第三段階で確認する。物理ndmresetと実行確認の手順は未検査。
 
 [optional runとloader状態](run-conformance.ja.md)は29項目。stopped/status/PC/値と経過時間、host変更の保持、scratch復元、事前拒否とprogram後のbus値を第三段階で確認する。物理CPU実行と実時間は未検査。
+
+[wireのattachオプション](wire-options-conformance.ja.md)は40項目。reset channel/hold/競合とDM復帰、idle_clock、SWD targetselの同一性とdetach/endでのピン解放を第三段階で検査する。scanオプションと電気的適合は未検査。
