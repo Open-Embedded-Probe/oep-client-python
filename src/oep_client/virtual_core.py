@@ -70,7 +70,7 @@ class Core:
         remaining = max(1, self.deadline - self.ep.now())
         return struct.pack('<I', remaining) + (tlv(1, self.owner) if self.owner else b'')
 
-    def handle(self, data, transport):
+    def handle(self, data, transport, *, admission_reason=None):
         self.tick()
         if len(data) < 10 or data[0] != 1:
             return None
@@ -118,6 +118,10 @@ class Core:
                 if sid != self.holder:
                     raise Reject(8, self.locked())
                 passed_session = True
+            # Explicit admission models inject state refusals only after header,
+            # replay and session checks. Rejected results use the same cache path.
+            if admission_reason is not None:
+                raise Reject(admission_reason)
             if len(payload) < fixed[op]:
                 raise Reject(3)
             tags = tail(payload[fixed[op]:], owner=opening)

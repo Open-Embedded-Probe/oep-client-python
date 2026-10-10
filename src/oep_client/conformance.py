@@ -118,7 +118,8 @@ CHECKER_SOURCES = ('conformance.py', 'conformance_serial.py', 'conformance_tcp.p
                    'conformance_subscriptions.py', 'conformance_subscription_sample.py',
                    'conformance_data.py', 'conformance_data_sample.py',
                    'conformance_routes.py', 'conformance_route_sample.py',
-                   'conformance_pipeline.py', 'conformance_pipeline_sample.py')
+                   'conformance_pipeline.py', 'conformance_pipeline_sample.py',
+                   'conformance_replay_pressure.py')
 
 
 def checker_sources_sha256():

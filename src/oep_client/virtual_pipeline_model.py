@@ -38,10 +38,7 @@ class PipelineModel(RouteModel):
             previous = self.ep.window, self.ep.max_inflight
             self.ep.window, self.ep.max_inflight = self.limits[route]
             try:
-                if reason is not None:
-                    response = struct.pack('<BHBB', 2, struct.unpack_from('<H', request, 1)[0], 0, reason)
-                else:
-                    response = self.ep.handle(request)
+                response = self.ep.current_core.handle(request, 0, admission_reason=reason)
             finally:
                 self.ep.window, self.ep.max_inflight = previous
             if response is not None and self.pipes[route]['open']:
@@ -66,3 +63,9 @@ class PipelineModel(RouteModel):
         super().close(route)
         self.unresolved[route].clear()
         self.requests = type(self.requests)(row for row in self.requests if row[0] != route)
+
+    def state(self):
+        value = super().state()
+        core = self.ep.current_core
+        value.update(last=core.last, high=core.high, deadline=core.deadline)
+        return value
