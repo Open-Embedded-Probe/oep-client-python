@@ -167,3 +167,6 @@ GPIO入力とdrive、UART formats、I2C/SPIの固定形とframe上限、任意st
 
 [GPIOとplanの動作](gpio-conformance.ja.md)は明示fixtureで、事前拒否、fn別原子置換、駆動順序、
 drive/read、再送とidle復元を第三段階で確認する。物理pin/他fixture/永続configは未検査。
+
+[GPIO planでのcore寿命](gpio-lifecycle-conformance.ja.md)は第一段階11項目。
+明示時計で期限切れ、force、同じIDのopen、再送履歴、lease更新/非更新とpin/plan解放を確認する。
