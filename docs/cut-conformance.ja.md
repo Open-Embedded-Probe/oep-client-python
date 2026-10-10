@@ -40,3 +40,6 @@ uv run --project tests --with-editable /path/to/oep-client-python pytest -c test
 ここでのresponse-writeは論理writerへの引き渡しであり、USB/TCPの実配送や物理pinを証明しない。
 SWIO/SWD固有の切断経路、writer並行性、writer待ち中のlease期限、他の閾値/予算、resync/TO/framing、poll/wait内packet失敗、
 storeを起こす内部書き込みとproduction Host統合は未検査。
+
+writer待ち中のlease境界は、追加の[明示logical clock検査](writer-lease-conformance.ja.md)で扱う。
+session終了によるcloseはsession-ended 2、通常のconnection切断はconnection-closed 4として区別する。

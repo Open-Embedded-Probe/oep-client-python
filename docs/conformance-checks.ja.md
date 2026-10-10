@@ -145,3 +145,7 @@ busy、probe内部の読み、失敗後の駆動解放と正常idle復帰を分�
 線切れの[論理検査](cut-conformance.ja.md)では、要求応答の書き出し後の依存資源解放、
 consoleのlink-lost/closed、成功後の履歴消去と他connectionの保持を確認する。
 第二段階41項目、第三段階9項目。実transport配送とwriter並行性は未検査。
+
+[標準資源のwriter lease検査](writer-lease-conformance.ja.md)は第一段階7項目。
+実行中の停止、送信時の再開始、writer待ち中の期限切れ、古いtokenによる所有権復活防止を
+明示logical clockで確認する。新fixtureの共通宣言と既存cut検査は第二/第三段階へ分ける。

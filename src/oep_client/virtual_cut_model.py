@@ -12,7 +12,7 @@ from .virtual_core import Core
 
 class Cut(Retry):
     def __init__(self,ep):
-        super().__init__(ep);self.streak={};self.pending=set();self.lifecycle=[];self.archives={};self.closed_targets={};self.freed_pins={}
+        super().__init__(ep);self.streak={};self.pending=set();self.lifecycle=[];self.archives={};self.closed_targets={};self.freed_pins={};self.releasing=False
     def observe(self,parent,status):
         if status==2:self.streak[parent]=self.streak.get(parent,0)+1
         elif status==0:self.streak[parent]=0
@@ -26,10 +26,15 @@ class Cut(Retry):
             parent=struct.unpack_from('<H',payload)[0];self.observe(parent,result[2])
             if result[2]==2:self.decide(parent,'request')
         return result
+    def release(self):
+        self.releasing=True
+        try:super().release()
+        finally:self.releasing=False
     def close_stream(self,rid):
         parent,stream=self.streams[rid]
-        if parent in self.pending:
-            stream.mark(9,4);self.lifecycle.append(('mark',rid,9,4))
+        if parent in self.pending or self.releasing:
+            detail=2 if self.releasing else 4
+            stream.mark(9,detail);self.lifecycle.append(('mark',rid,9,detail))
             self.archives[rid]=dict(parent=parent,position=stream.position,data=bytes(stream.data),tx=bytes(stream.tx),marks=list(stream.marks))
         super().close_stream(rid);self.lifecycle.append(('stream-close',rid,parent))
     def close_connection(self,parent):
