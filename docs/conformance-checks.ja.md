@@ -117,3 +117,5 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 [標準wire attachとconsole open](attach-conformance.ja.md)は22項目。critical TLV・副作用前の拒否・方式/資源の制約と再送を第三段階で確認する。論理targetアクセスと電気的bringup/配送を分ける。
 
 [標準wireの有限scan](scan-conformance.ja.md)は21項目。明示候補の先頭からの探索、全候補の事前検証、pin解放、識別子の基準と再送を第三段階で確認する。任意scanを明示提供する論理fixtureに限定する。
+
+[標準consoleのSDI/DMDATA mailbox](mailbox-conformance.ja.md)は23項目。枠の境界、DATA0/DATA1の順序、sender queue、SDIゼロ長write、halt/debug中停止を第三段階で確認する。dmseq・実debug要求との調停・物理配送は未検査。
