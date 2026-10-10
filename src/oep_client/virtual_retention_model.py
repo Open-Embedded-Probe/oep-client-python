@@ -32,5 +32,13 @@ class RetentionModel(PipelineModel):
 
     def state(self):
         value = super().state()
-        value.update(next_resource_id=self.extension.next_id)
+        value.update(next_resource_id=self.extension.next_id, boot_id=self.ep.boot_id)
         return value
+
+    def restart(self, boot_id):
+        if type(boot_id) is not int or not 0 <= boot_id <= 0xffffffff or boot_id == self.ep.boot_id:
+            raise ValueError('explicit different u32 boot_id required for logical restart')
+        old_boot = self.ep.boot_id
+        clock, origin = self.ep.now, self.ep.now()
+        self.__init__(lambda: clock() - origin, boot_id=boot_id)
+        return {'old_boot': old_boot, 'new_boot': boot_id, 'scope': 'logical-model'}
