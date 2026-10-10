@@ -8,7 +8,7 @@
 `DmseqChecks(checks, adapter).run()`を呼ぶ。公開コードは設備や私的ベンチを探索しない。
 adapterのmailbox word・poll・reset刺激と状態、各検査のraw交換を報告に保存する。
 
-前提1項目＋動作28項目。選択したconsoleはmechanism 2を宣言することを前提にする。
+前提1項目＋動作34項目。選択したconsoleはmechanism 2を宣言することを前提にする。
 
 - CRC-8の規範検査値FB/F3とword例3298/F300、payload長0〜6、DATA1を読む境界3を確認する。
   検査側のCRCは整数多項式の除算で計算し、モデル側のbit逐次計算を利用しない。
@@ -29,7 +29,16 @@ synced/last_s/last_syn/h/pendingをstreamごとに持つ。`reset_target(connect
 検出済みtarget resetの論理刺激で、実機をresetしたりhaveresetを実際に観測したりしない。
 各caseはlogical restartし、mailboxの全アクセスをpollごとのsnapshotで保存する。
 
-単体23件は正常系・規範CRC例・前提不足と15種類の誤動作注入を含む。
-`full_conformance`はfalse。target側の再送/timeoutアルゴリズム、resync/TO/framing markの条件、
+単体31件は正常系・規範CRC例・前提不足と15種類の誤動作注入を含む。
+`full_conformance`はfalse。target側の再送/timeoutアルゴリズム、
 実riscv-dm要求との調停、物理DMI/timing/配送、production Host統合、別容量と並行pollerは未検査。
 probe側のframing検査だけでtarget側や全consoleの適合とは扱わない。
+
+
+承認されたconsole §2のmark条件を6項目で確認する。
+同期後の新しいSYN（同じS/異なるS）はrestart/detail 2、有効TO（新規/重複）はlost/detail 4、
+CRC不一致はlost/detail 2を要求し、marks opで読み返す。
+CRC不一致やN=7、host所有wordのSYN/TOからrestart/resync・lost/TOを出す誤動作を検出する。
+初回同期のrestartは要求せず、繰り返し観測のmark数も固定しない。
+単体ではmark欠落5種、無効flag誤通知2種、同じフレームのmarkを集約するモデルも確認する。
+仮想モデルは各観測でmarkを追加する。集約用の履歴やwireの変更は必要ない。

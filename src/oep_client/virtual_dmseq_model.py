@@ -37,10 +37,13 @@ class Dmseq(Mailboxes):
         if n>=3:m['events'].append(('read',5,m['data1']))
         if n>6:return
         raw=struct.pack('<II',d0,m['data1'])
-        if checksum(raw[:1+n])!=raw[1+n]:return
+        if checksum(raw[:1+n])!=raw[1+n]:
+            stream.mark(5,2);return
         s=(d0>>5)&1;a=(d0>>4)&1;syn=bool(d0&8)
+        if d0&64:stream.mark(5,4)
         duplicate=p['synced'] and s==p['last_s'] and (not syn or p['last_syn'])
         if not duplicate:
+            if p['synced'] and syn:stream.mark(2,2)
             if not p['synced'] or syn:p.update(synced=True,last_s=1-s,h=1-a,pending=b'')
             if s!=p['last_s']:stream.feed(raw[1:1+n]);p.update(last_s=s,last_syn=syn)
         if p['pending'] and a==p['h']:p.update(h=1-p['h'],pending=b'')

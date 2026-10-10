@@ -120,7 +120,7 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 
 [標準consoleのSDI/DMDATA mailbox](mailbox-conformance.ja.md)は23項目。枠の境界、DATA0/DATA1の順序、sender queue、SDIゼロ長write、halt/debug中停止を第三段階で確認する。dmseq・実debug要求との調停・物理配送は未検査。
 
-[probe側dmseq framing](dmseq-conformance.ja.md)は29項目。CRC・通番・SYN/TO・pendingの再送とack、検出済みtarget reset、connection間の独立性とcloseを第三段階で確認する。target側timeoutや物理配送は未検査。
+[probe側dmseq framing](dmseq-conformance.ja.md)は35項目。CRC・通番・SYN/TO・pendingの再送とack、検出済みtarget reset、connection間の独立性とcloseを第三段階で確認する。target側timeoutや物理配送は未検査。
 
 [target側dmseq](dmseq-target-conformance.ja.md)は18項目。再送、入力Hの重複抑止/空き不足、timeoutと遅いackを論理時計で確認する。独立probeとのmailbox往復も検査し、実時間下限・firmware統合とは分ける。
 
@@ -174,3 +174,5 @@ drive/read、再送とidle復元を第三段階で確認する。物理pin/他fi
 [UART固有動作](uart-conformance.ja.md)は第三段階28項目。
 configure、受信/送信、TX idle、再送、plan再作成とend/expiry/forceを確認する。
 [UARTへの共通stream適用](uart-stream-conformance.ja.md)は第二段階15項目で、既存assertをplan所有の寿命に合わせて使う。
+
+dmseq検査は35項目。console §2に従うresync/TO/CRCのmarkと無効flagの誤通知を追加した。繰り返し観測のmark数は固定しない。

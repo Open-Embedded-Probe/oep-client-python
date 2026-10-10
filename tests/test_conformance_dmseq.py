@@ -9,14 +9,14 @@ from test_conformance_mailbox import setup as mailbox_setup
 def setup():
     _,c,_=mailbox_setup();model=DmseqModel(lambda:0,boot_id=17)
     c.reg['interface'][3]['enum']['mechanism']['dmseq']=2
-    c.reg['common']={'enum':{'mark_kind':{'restart':2},'mark_detail_restart':{'havereset':1}}}
+    c.reg['common']={'enum':{'mark_kind':{'restart':2,'lost':5},'mark_detail_restart':{'havereset':1,'resync':2},'mark_detail_lost':{'framing':2,'target_timeout':4}}}
     return model,Checks(model.handle,c.reg,'virtual-resource-1'),SampleDmseqAdapter(model)
 
 
 def test_logical_probe_dmseq_contracts_pass():
     _,c,a=setup();r=DmseqChecks(c,a).run()
     assert r['status']=='passed',[(x['id'],x.get('error')) for x in r['checks'] if x['status']!='passed']
-    assert len(r['checks'])==29 and not r['full_conformance']
+    assert len(r['checks'])==35 and not r['full_conformance']
     assert all(x['level']=='oep-interface' for x in r['checks'])
 
 
@@ -99,3 +99,46 @@ def test_dmseq_preflight_blocks(invalid):
     assert r['checks'][0]['status']=='failed'
     assert all(x['status']=='blocked' for x in r['checks'][1:])
     assert not a.trace
+
+
+@pytest.mark.parametrize('kind,detail,case',[(2,2,'RESYNC-SAME'),(2,2,'RESYNC-NEW'),(5,4,'TO-NEW'),(5,4,'TO-DUP'),(5,2,'CRC-FLAGS')])
+def test_event_checker_detects_missing_mark(kind,detail,case):
+    model,c,a=setup();install=model.install
+    def faulty_install():
+        install();poll=model.extension.poll
+        def broken(rid):
+            poll(rid);stream=model.extension.streams[rid][1]
+            stream.marks[:]=[m for m in stream.marks if (m[2],m[4])!=(kind,detail)]
+        model.extension.poll=broken
+    model.install=faulty_install
+    report=DmseqChecks(c,a).run()
+    assert next(r for r in report['checks'] if r['id']=='OEP-DMSEQ-MARK-'+case)['status']=='failed'
+
+@pytest.mark.parametrize('invalid_case', ['CRC-FLAGS','INVALID-FLAGS'])
+def test_invalid_flags_do_not_trigger_resync_or_to(invalid_case):
+    model,c,a=setup();install=model.install
+    def faulty_install():
+        install();poll=model.extension.poll
+        def broken(rid):
+            frame=model.extension.mailboxes[rid]['data0'];poll(rid)
+            if frame&8:model.extension.streams[rid][1].mark(2,2)
+            if frame&64:model.extension.streams[rid][1].mark(5,4)
+        model.extension.poll=broken
+    model.install=faulty_install
+    report=DmseqChecks(c,a).run()
+    assert next(r for r in report['checks'] if r['id']=='OEP-DMSEQ-MARK-'+invalid_case)['status']=='failed'
+
+
+def test_repeated_mark_coalescing_is_allowed():
+    model,c,a=setup();install=model.install
+    def coalescing_install():
+        install();e=model.extension;poll=e.poll;last={}
+        def coalesced(rid):
+            frame=(e.mailboxes[rid]['data0'],e.mailboxes[rid]['data1']);stream=e.streams[rid][1]
+            old_marks=list(stream.marks);old_serial=stream.serial;poll(rid)
+            if last.get(rid)==frame:stream.marks[:]=old_marks;stream.serial=old_serial
+            last[rid]=frame
+        e.poll=coalesced
+    model.install=coalescing_install
+    report=DmseqChecks(c,a).run()
+    assert report['status']=='passed',report['checks']

@@ -156,6 +156,40 @@ class DmseqChecks(MailboxChecks):
             require(self.c.exchange(req)==original and self.a.state()==state,'historical write replay recreated dmseq state')
             new=self.opened_new(sid);protocol=self.a.state()['protocols'][new]
             require(new>rid and not protocol['synced'] and not protocol['pending'],'reopened dmseq reused state or ID')
+    def mark_event(self,kind):
+        self.fresh()
+        with self.c.holding(3000) as sid:
+            rid=self.opened(sid,2)
+            self.step(rid,target_frame(data=b'x'),b'x',reply_word(0,0),b'',self.protocol())
+            if kind in ('RESYNC-SAME','RESYNC-NEW'):
+                bit=int(kind=='RESYNC-NEW');frame=target_frame(bit,syn=True,data=b'y');expected=(2,2)
+                received=b'y';answer=reply_word(bit,0)
+            elif kind in ('TO-NEW','TO-DUP'):
+                bit=int(kind=='TO-NEW');frame=target_frame(bit,to=True,data=b'y' if bit else b'x');expected=(5,4)
+                received=b'y' if bit else b'';answer=reply_word(bit,0)
+            else:
+                valid=target_frame(1,syn=True,to=True,data=b'y');frame=(valid[0]^(1<<16),valid[1]);expected=(5,2)
+                received=b'';answer=None
+            before=self.a.state()['streams'][rid];self.step(rid,frame,received,answer,b'')
+            marks=self.a.state()['streams'][rid]['marks'];new=[m for m in marks if m not in before['marks']]
+            require(any((m[2],m[4])==expected for m in new),'dmseq required event mark missing/wrong detail')
+            if kind=='CRC-FLAGS':require(not any((m[2],m[4]) in ((2,2),(5,4)) for m in new),'invalid CRC SYN/TO emitted valid-frame mark')
+            for m in new:
+                page=self.c.success(self.request(4,'marks',0,struct.pack('<HI',rid,m[0])))
+                require(page[1]>=1 and struct.unpack_from('<IQBQB',page,2)==m,'dmseq event mark wire readback');tlvs(page[2+22*page[1]:])
+            # A repeated observation may coalesce or append; payload/queue must not repeat.
+            self.step(rid,frame,b'',answer,b'')
+            after=self.a.state()['streams'][rid]['marks']
+            if kind=='CRC-FLAGS':require(not any((m[2],m[4]) in ((2,2),(5,4)) for m in after),'invalid repeated CRC SYN/TO mark')
+    def invalid_flags(self):
+        self.fresh()
+        with self.c.holding(3000) as sid:
+            rid=self.opened(sid,2)
+            self.step(rid,target_frame(data=b'x'),b'x',reply_word(0,0),b'',self.protocol())
+            for frame in ((0xff,0xffffffff),(0x78,0xffffffff)):
+                before=self.a.state()['streams'][rid]['marks'];self.step(rid,frame,b'',None,b'')
+                new=[m for m in self.a.state()['streams'][rid]['marks'] if m not in before]
+                require(not any((m[2],m[4]) in ((2,2),(5,4)) for m in new),'invalid N/host word SYN/TO emitted valid-frame mark')
     def run(self):
         start=len(self.c.results)
         def context():
@@ -164,6 +198,8 @@ class DmseqChecks(MailboxChecks):
             self.operations={fn:{op['name']:op['code'] for op in spec['op']} for fn,spec in self.specs.items()}
             require(self.specs[4]['enum']['mechanism']['dmseq']==2 and 2 in self.a.mechanisms,'selected SPEC/mechanism mismatch')
             require(self.c.reg['common']['enum']['mark_kind']['restart']==2 and self.c.reg['common']['enum']['mark_detail_restart']['havereset']==1,'reset mark SPEC mismatch')
+            enums=self.c.reg['common']['enum']
+            require(enums['mark_kind']['lost']==5 and enums['mark_detail_restart']['resync']==2 and enums['mark_detail_lost']['framing']==2 and enums['mark_detail_lost']['target_timeout']==4,'dmseq event mark SPEC mismatch')
             self.c.confirm();self.c.identity();self.c.declarations()
             require(2 in dict(reversed(self.c.describe(4)))[64],'probe did not declare dmseq')
         self.c.check('OEP-DMSEQ-CONTEXT','dmseq host rules; console §1/2/3',context)
@@ -175,9 +211,11 @@ class DmseqChecks(MailboxChecks):
         cases += [('QUEUE-'+str(n),lambda n=n:self.queue(n)) for n in range(6)]
         cases += [('HALTED',lambda:self.stopped(False)),('DEBUG',lambda:self.stopped(True)),('RESET',self.reset),('CLEAR',self.clear)]
         cases += [('INDEPENDENT',self.independent),('CLOSE-REPLAY',self.close_replay)]
+        cases += [('MARK-'+k,lambda k=k:self.mark_event(k)) for k in ('RESYNC-SAME','RESYNC-NEW','TO-NEW','TO-DUP','CRC-FLAGS')]
+        cases += [('MARK-INVALID-FLAGS',self.invalid_flags)]
         for name,case in cases:
             first=len(self.a.trace);self.c.check('OEP-DMSEQ-'+name,'dmseq host rules 1..5; debug §4.6',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]
         return {'status':'passed' if all(r['status']=='passed' for r in rows) else 'failed','checks':rows,'adapter_trace':self.a.trace,'observed':self.c.observed,'full_conformance':False,
                 'scope':'logical probe-side dmseq framing, pending queue and detected target reset',
-                'unchecked':['target-side retransmission/timeout algorithm','resync/TO/framing mark policy','actual riscv-dm wire requests/arbitration','physical DMI/timing/delivery','production Host integration','other capacities and concurrent pollers']}
+                'unchecked':['target-side retransmission/timeout algorithm','actual riscv-dm wire requests/arbitration','physical DMI/timing/delivery','production Host integration','other capacities and concurrent pollers']}
