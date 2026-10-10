@@ -121,3 +121,5 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 [標準consoleのSDI/DMDATA mailbox](mailbox-conformance.ja.md)は23項目。枠の境界、DATA0/DATA1の順序、sender queue、SDIゼロ長write、halt/debug中停止を第三段階で確認する。dmseq・実debug要求との調停・物理配送は未検査。
 
 [probe側dmseq framing](dmseq-conformance.ja.md)は29項目。CRC・通番・SYN/TO・pendingの再送とack、検出済みtarget reset、connection間の独立性とcloseを第三段階で確認する。target側timeoutや物理配送は未検査。
+
+[target側dmseq](dmseq-target-conformance.ja.md)は18項目。再送、入力Hの重複抑止/空き不足、timeoutと遅いackを論理時計で確認する。独立probeとのmailbox往復も検査し、実時間下限・firmware統合とは分ける。
