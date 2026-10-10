@@ -105,3 +105,5 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 [番号枯渇時の複数pending放棄と新経路での回復](exhausted-conformance.ja.md)は保持検査を含む13項目を3条件で実施する。旧Sを移さず、解放をSID 0で確認してから別IDでopenする。旧要求のunknownと受信済み結果を保持する。
 
 [全インターフェイスの宣言検査](interface-conformance.ja.md)は前提1項目＋各fn 8項目。名前のlabel、ops、共通タグ固定幅、channel、各位置のページング、session前後の不変性、未宣言op、instanceを分けて報告する。標準opやcommon部品の採用を名前から推測しない。
+
+[採用を明示した位置付きストリーム](stream-conformance.ja.md)は15項目。readの非消費性・u64位置・gapと、marksのinclusiveページング・eviction・u32一周・時刻を検査する。persistent-fnの条件に限定し、資源型streamやcaptureへ自動適用しない。
