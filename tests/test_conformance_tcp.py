@@ -123,3 +123,17 @@ def test_receive_only_observation_waits_full_silence_window(monkeypatch, incomin
 def test_receive_only_partial_output_is_not_silence(monkeypatch):
     with pytest.raises(WireError, match='partial'):
         TcpWire(Socket([b"\x05"], monkeypatch)).exchange([], 0, silence=0.1)
+
+
+
+def test_decode_failure_keeps_raw_bytes_in_message_evidence(monkeypatch):
+    from oep_client.conformance import Checks
+    from test_conformance import REG
+    wire = TcpWire(Socket([b"\x41\0"], monkeypatch))
+    check = Checks(wire.send, REG, 'unit')
+    check.tcp_wire = wire
+    report = check.run()
+    exchange = report['checks'][0]['exchanges'][0]
+    assert exchange['tcp_wire']['reads'][0]['hex'] == '4100'
+    assert exchange['tcp_wire']['writes'] and exchange['tcp_wire']['error']
+    assert all(r['status'] == 'blocked' for r in report['checks'][1:])

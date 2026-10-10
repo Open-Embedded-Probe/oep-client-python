@@ -169,6 +169,9 @@ class Checks:
     def exchange(self, request):
         record = {'request_hex': request.hex(), 'started_monotonic_ns': time.monotonic_ns()}
         self.trace.append(record)
+        wire_records = [(name, wire, wire.last_exchange) for name, wire in
+                        (('serial_wire', self.wire), ('tcp_wire', self.tcp_wire), ('usb_wire', self.usb_wire))
+                        if wire is not None]
         try:
             try:
                 reply = self.send(request)
@@ -213,6 +216,9 @@ class Checks:
                 self.abort = True
             raise
         finally:
+            for name, wire, previous in wire_records:
+                if wire.last_exchange is not previous:
+                    record[name] = wire.last_exchange  # include bytes even when send/decode failed
             record['elapsed_ns'] = time.monotonic_ns() - record['started_monotonic_ns']
 
     def success(self, request):

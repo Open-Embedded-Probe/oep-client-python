@@ -64,7 +64,7 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 | reconnect（serial） | OS portを閉じて同じportを開き、confirm/個体/bootを再照合。sessionとlock、再送履歴、終了したsessionの履歴、close中のlease失効を検査。再起動や個体の不一致はFAILとして後続を止め、異なる端点へendを送らない |
 | interface 共通 | 各 fn を独立に describe/ops/不変性/instance 検査。独自インターフェースにも同じ検査 |
 
-各項目に条項、PASS/FAIL/BLOCKED、要求と応答 hex、経過時間を保存する。timeout/transport切断やcleanup失敗の後は回復を隠さず BLOCKED にし、実行全体は FAIL。設定が全くない任意の pytest 実機入口だけ SKIP。TCPのmax_frameが65535なら、u16でそれ以上のlengthを送れないため過大lengthの項目だけnot_applicableとし、その理由をpytestのskipに残す。設備不備のskipとは区別する。不完全な設定、アクセス権不足、個体違い、仕様違反は FAIL。
+各項目に条項、PASS/FAIL/BLOCKED、要求と応答 hex、経過時間を保存する。wireの復号・読み出し自体が失敗しても、今回のraw送受信とerrorを保存する。過去のwire記録を今回の失敗へ転記しない。timeout/transport切断やcleanup失敗の後は回復を隠さず BLOCKED にし、実行全体は FAIL。設定が全くない任意の pytest 実機入口だけ SKIP。TCPのmax_frameが65535なら、u16でそれ以上のlengthを送れないため過大lengthの項目だけnot_applicableとし、その理由をpytestのskipに残す。設備不備のskipとは区別する。不完全な設定、アクセス権不足、個体違い、仕様違反は FAIL。
 
 `result_lost` は仕様が許す保持サイズ上限を考慮して受ける。履歴の古い clock を送り直したとき、新しい時計値で completed を返せば再実行として失敗する。cacheの容量を実装固有の固定値と決めつけない。
 

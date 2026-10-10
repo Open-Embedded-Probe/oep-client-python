@@ -186,11 +186,19 @@ def test_raw_usb_transport_errors_block_followups():
     assert report['checks'][0]['status'] == 'failed'
     assert all(r['status'] == 'blocked' for r in report['checks'][1:])
     assert 'device disconnected' in report['checks'][0]['error']
+    raw = report['checks'][0]['exchanges'][0]['usb_wire']
+    assert raw['writes'] and 'device disconnected' in raw['error']
 
 
 @pytest.mark.parametrize('kind,kwargs', [('tcp', {}), ('bulk', {}), ('bulk', {'out_packet_size': 0}),
                                         ('hid', {'input_size': 2, 'output_size': 8}),
-                                        ('hid', {'input_size': 8, 'output_size': 2})])
+                                        ('hid', {'input_size': 8, 'output_size': 2}),
+                                        ('bulk', {'out_packet_size': False}),
+                                        ('bulk', {'out_packet_size': 1.5}),
+                                        ('bulk', {'out_packet_size': 65536}),
+                                        ('hid', {'input_size': 8.5, 'output_size': 8}),
+                                        ('hid', {'input_size': 8, 'output_size': 8, 'report_id': True}),
+                                        ('hid', {'input_size': 8, 'output_size': 8, 'report_id': 256})])
 def test_raw_backend_requires_explicit_valid_shape(kind, kwargs):
     with pytest.raises(ValueError):
         UsbWire(Raw(Clock()), kind, **kwargs)
@@ -265,9 +273,16 @@ def test_hid_count_uses_both_bytes_and_sender_zero_padding():
 def test_software_model_cli_passes_explicit_settings_to_reserved_runner(monkeypatch, kind, report_id):
     from oep_client import conformance_usb_model
     calls = []
+    boots = iter((17, 18))
+    from types import SimpleNamespace
+    monkeypatch.setattr(conformance_usb_model, 'secrets', SimpleNamespace(randbits=lambda width: next(boots)))
     def inspect(factory, **kwargs):
         calls.append(kwargs)
         model = factory()
+        assert model.endpoint.boot_id == 17
+        another = factory()
+        assert another.endpoint.boot_id == 18
+        another.close()
         assert model.kind == kind and model.endpoint.probe.core_contract
         assert model.endpoint.transports[model.transport] == (4 if kind == 'bulk' else 5)
         if kind == 'hid':

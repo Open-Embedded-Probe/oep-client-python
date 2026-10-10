@@ -19,13 +19,13 @@ class UsbWire:
                  out_packet_size=None, timeout=3, settle=0.03, clock=time.monotonic, sleep=time.sleep):
         if kind not in ('bulk', 'hid'):
             raise ValueError('raw USB kind must be bulk or hid')
-        if not 0 <= report_id <= 255:
+        if type(report_id) is not int or not 0 <= report_id <= 255:
             raise ValueError('report ID must be u8')
         header = 2 + bool(report_id)
-        if kind == 'hid' and (input_size is None or output_size is None or
+        if kind == 'hid' and (type(input_size) is not int or type(output_size) is not int or
                               not header < input_size <= 65535 or not header < output_size <= 65535):
             raise ValueError('explicit HID report sizes must leave room after count/ID')
-        if kind == 'bulk' and (out_packet_size is None or out_packet_size < 1):
+        if kind == 'bulk' and (type(out_packet_size) is not int or not 1 <= out_packet_size <= 65535):
             raise ValueError('explicit bulk OUT packet size required')
         self.backend, self.kind = backend, kind
         self.input_size, self.output_size, self.report_id = input_size, output_size, report_id

@@ -281,3 +281,16 @@ def test_framing_only_configuration_is_incomplete_not_equipment_skip(monkeypatch
     monkeypatch.setenv('OEP_CONFORMANCE_FRAMING', 'serial')
     with pytest.raises(pytest.fail.Exception, match='incomplete'):
         oep_conformance_report.__wrapped__()
+
+
+@pytest.mark.parametrize('attribute,key', [('wire','serial_wire'), ('tcp_wire','tcp_wire'), ('usb_wire','usb_wire')])
+def test_sender_failure_does_not_attach_previous_wire_exchange(attribute, key):
+    from types import SimpleNamespace
+    def fail_before_wire(req):
+        raise OSError('failed before any transfer')
+    check = Checks(fail_before_wire, REG, 'unit')
+    setattr(check, attribute, SimpleNamespace(last_exchange={'writes': [{'hex': 'previous'}]}))
+    check.check('failure', 'core', lambda: check.exchange(check.request(4)))
+    exchange = check.results[0]['exchanges'][0]
+    assert check.abort and 'failed before any transfer' in exchange['error']
+    assert key not in exchange

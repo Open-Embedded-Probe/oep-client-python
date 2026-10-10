@@ -5,6 +5,7 @@ This model preserves transfer/report boundaries but is not a USB gadget.
 """
 import argparse
 import os
+import secrets
 import time
 
 from .conformance_usb import inspect
@@ -29,7 +30,8 @@ def main(argv=None):
         from .virtual_bench import core_v1
         from .virtual_bench_usb import Usb
         origin = time.monotonic()
-        ep = Endpoint(core_v1(), lambda: int((time.monotonic() - origin) * 1000))
+        ep = Endpoint(core_v1(), lambda: int((time.monotonic() - origin) * 1000),
+                      boot_id=secrets.randbits(32))
         return Usb(ep, args.kind, **shape)
     report = inspect(factory, kind=args.kind, unit=args.unit, spec=args.spec, out=args.out,
                      lock=args.lock, adapter='core-v1 software USB model; no physical USB', **shape)

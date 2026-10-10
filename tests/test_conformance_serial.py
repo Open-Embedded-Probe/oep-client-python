@@ -120,3 +120,18 @@ def test_silent_discard_interval_is_observed_without_waiting_for_a_reply(monkeyp
     wire = SerialWire(stream)
     assert wire.exchange([b'bad-input'], 0, silence=0.3) == []
     assert stream.now >= 0.3
+
+
+
+def test_decode_failure_keeps_raw_bytes_in_message_evidence(monkeypatch):
+    from oep_client.conformance import Checks
+    from test_conformance import REG
+    corrupt = frame(RESULT, corrupt_crc=True)
+    wire = SerialWire(Stream([corrupt], monkeypatch))
+    check = Checks(wire.send, REG, 'unit')
+    check.wire = wire
+    report = check.run()
+    exchange = report['checks'][0]['exchanges'][0]
+    assert exchange['serial_wire']['reads'][0]['hex'] == corrupt.hex()
+    assert exchange['serial_wire']['writes'] and exchange['serial_wire']['error']
+    assert all(r['status'] == 'blocked' for r in report['checks'][1:])
