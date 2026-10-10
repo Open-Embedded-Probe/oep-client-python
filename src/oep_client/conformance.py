@@ -128,7 +128,8 @@ CHECKER_SOURCES = ('conformance.py', 'conformance_serial.py', 'conformance_tcp.p
                    'conformance_session_loss.py', 'conformance_session_loss_sample.py',
                    'conformance_exhausted.py', 'conformance_exhausted_sample.py', 'conformance_interfaces.py',
                    'conformance_stream.py', 'conformance_stream_sample.py',
-                   'conformance_outcomes.py', 'conformance_outcome_sample.py')
+                   'conformance_outcomes.py', 'conformance_outcome_sample.py',
+                   'conformance_dependencies.py', 'conformance_dependency_sample.py')
 
 
 def checker_sources_sha256():
