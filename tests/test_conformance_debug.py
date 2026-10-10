@@ -16,7 +16,7 @@ def setup():
 def test_mandatory_debug_contracts_pass():
     _,c,a=setup();r=DebugChecks(c,a).run()
     assert r['status']=='passed',[(row['id'],row.get('error')) for row in r['checks'] if row['status']!='passed']
-    assert len(r['checks'])==21 and not r['full_conformance']
+    assert len(r['checks'])==22 and not r['full_conformance']
 
 
 import pytest
@@ -31,7 +31,7 @@ from oep_client.virtual_core import Completed, Reject
     ('busy_left','ARBITRATION'),('resume_twice','HALT-RESUME'),
     ('halt_not_stop','HALT-RESUME'),('halt_failure_left','HALT-FAILURE'),
     ('line_has_value','POLL-LINE'),('timeout_no_value','POLL-TIMEOUT'),
-    ('zero_us_twice','POLL-US'),
+    ('zero_us_twice','POLL-US'),('oversized','OUTPUT-BOUND'),('boundary_effect','OUTPUT-BOUND'),('boundary_tail','OUTPUT-BOUND'),
 ])
 def test_debug_checker_detects_independent_faults(fault,case):
     model,c,a=setup();install=model.install
@@ -47,14 +47,19 @@ def test_debug_checker_detects_independent_faults(fault,case):
             if fault=='status_not_reread' and e.mailboxes[rid]['events']:e.mailboxes[rid]['events']=e.mailboxes[rid]['events'][1:]
         def broken_dispatch(fn,op,payload,tags):
             before={p:dict(t['registers']) for p,t in e.targets.items()}
+            limit=e.ep.probe.max_frame
+            if fault=='oversized' and fn==5 and op==16:e.ep.probe.max_frame=1000
             try:value=dispatch(fn,op,payload,tags)
             except Reject:
                 if fault=='reject_access' and fn==5:e.access.append(('invalid-access',))
+                if fault=='boundary_effect' and fn==5 and op==16 and struct.unpack_from('<H',payload,2)[0]>13:e.writereg(struct.unpack_from('<H',payload)[0],4,123)
                 raise
+            finally:e.ep.probe.max_frame=limit
             if fn!=5:return value
             parent=struct.unpack_from('<H',payload)[0];data=bytes(value);outcome=getattr(value,'outcome',0)
             if op==16:
-                if fault=='done_wrong':data=b'\0\0'+data[2:]
+                if fault=='boundary_tail' and len(data)+5>limit-4:data+=b'\x7f\x01\0x'
+                elif fault=='done_wrong':data=b'\0\0'+data[2:]
                 elif fault=='values_reverse' and data[3:5]==b'\x02\0':data=data[:5]+data[9:13]+data[5:9]+data[13:]
                 elif fault=='timeout_fault' and data[2]==4:data=data[:2]+b'\x03'+data[3:]
                 elif fault=='nvals_wrong':data=data[:3]+b'\xff\xff'+data[5:]
@@ -100,3 +105,15 @@ def test_debug_fixture_all_five_functions_pass_common_declarations():
     _,c,_=setup();r=InterfaceChecks(c).run()
     assert r['status']=='passed',r['checks']
     assert len(r['checks'])==41 and all(row['level']=='interface' for row in r['checks'])
+
+
+@pytest.mark.parametrize('model_name',['Debug','Block','Step','Reset','Run','Retry','Cut'])
+def test_dmi_response_boundary_at_minimum_frame(model_name):
+    import importlib
+    modules={'Debug':'debug','Block':'block','Step':'step','Reset':'reset','Run':'run','Retry':'retry','Cut':'cut'}
+    model=getattr(importlib.import_module('oep_client.virtual_'+modules[model_name]+'_model'),model_name+'Model')(lambda:0,boot_id=17)
+    model.ep.probe.max_frame=64
+    _,original,_=setup();c=Checks(model.handle,original.reg,'virtual-resource-1');a=SampleDebugAdapter(model)
+    checker=DebugChecks(c,a);checker.specs={fn:next(s for s in c.reg['interface'] if s['name']==name and s['revision']==1) for fn,name in {**a.selection,5:'oep.target.riscv-dm'}.items()}
+    checker.operations={fn:{r['name']:r['code'] for r in s['op']} for fn,s in checker.specs.items()}
+    c.confirm();checker.output_bound()

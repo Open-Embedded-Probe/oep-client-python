@@ -114,6 +114,14 @@ class DebugChecks(DmseqChecks):
             after=self.a.state();require(not after['targets'][parent]['haltreq'],'failed halt/resume left haltreq set')
             require(after['targets'][parent]['registers']==before['targets'][parent]['registers'],'failed halt/resume changed mailbox registers')
             if resume:require(sum(row[0]=='resume' for row in after['access'])==1,'failed resume repeated resumereq')
+    def output_bound(self):
+        self.fresh()
+        with self.c.holding(3000) as sid:
+            parent,_=self.attach(sid);count=(self.c.max_frame-10)//4
+            require(20+2*(count+1)<=self.c.max_frame and (count+1)*10<1000,'selected frame does not fit logical boundary fixture')
+            # Include a write before too many reads; refusal must precede it.
+            self.refused(self.dmi_request(sid,parent,[self.write_reg(4,123)]+[self.read(4)]*(count+1)),'unsupported',b'\0')
+            self.a.registers(parent,{4:17});self.dmi(sid,parent,[self.read(4)]*count,count,0,[17]*count)
     def run(self):
         start=len(self.c.results)
         def context():
@@ -131,7 +139,7 @@ class DebugChecks(DmseqChecks):
         cases += [('POLL-'+kind,lambda kind=kind:self.polling(kind)) for kind in ('READS','US')]
         cases += [(kind,lambda kind=kind:self.rejection(kind)) for kind in ('UNKNOWN-LATE','TRUNCATED','TIME-SUM','CRITICAL','TLV-STRUCTURE')]
         cases += [('RESOURCES',self.resources),('SESSION',self.session),('ARBITRATION',self.arbitration),('HALT-RESUME',self.halt_resume),('REPLAY',self.replay)]
-        cases += [('OVERALL-TIMEOUT',self.overall_timeout),('HALT-FAILURE',lambda:self.hart_failed(False)),('RESUME-FAILURE',lambda:self.hart_failed(True))]
+        cases += [('OUTPUT-BOUND',self.output_bound),('OVERALL-TIMEOUT',self.overall_timeout),('HALT-FAILURE',lambda:self.hart_failed(False)),('RESUME-FAILURE',lambda:self.hart_failed(True))]
         cases += [('POLL-LINE',lambda:self.poll_failure(2)),('POLL-TIMEOUT',lambda:self.poll_failure(4))]
         for name,case in cases:
             first=len(self.a.trace);self.c.check('OEP-DEBUG-'+name,'debug §4.1/4.2; console §3; core §5/9',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]

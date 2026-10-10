@@ -74,6 +74,8 @@ class Debug(Dmseq):
             steps.append(row);cursor+=size
         if cursor!=len(payload):raise Reject(3)
         if time_sum>self.ep.max_op_ms*1000:raise Reject(11,b'\0')
+        max_values=sum(row[0] in (2,3,5) for row in steps)
+        if 10+4*max_values>self.ep.probe.max_frame:raise Reject(11,b'\0')
         related=[rid for rid,(connection,_) in self.streams.items() if connection==parent]
         for rid in related:self.mailboxes[rid]['debug_busy']=True
         values=[];done=0;status=0;elapsed=0
@@ -103,7 +105,10 @@ class Debug(Dmseq):
                     values.append(value)
                     if not matched:status=4;break
                 done+=1
-            return Completed(struct.pack('<HBH',done,status,len(values))+b''.join(struct.pack('<I',v) for v in values)+tlv(127,b'x'),0 if not status else (2 if done else 1))
+            body=struct.pack('<HBH',done,status,len(values))+b''.join(struct.pack('<I',v) for v in values)
+            extra=tlv(127,b'x')
+            if 5+len(body)+len(extra)<=self.ep.probe.max_frame:body+=extra
+            return Completed(body,0 if not status else (2 if done else 1))
         finally:
             for rid in related:self.mailboxes[rid]['debug_busy']=False
 
