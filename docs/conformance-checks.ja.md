@@ -95,3 +95,5 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 [corr u16の境界](corr-conformance.ja.md)はretentionを含む17項目。通常の大小比較、半周の前後と上限、古い番号の拒否、SID 0の独立性、65535をendに残して別sessionへ切り替える手順を検査する。
 
 [result_lost後の状態読み直し](recovery-conformance.ja.md)はretentionを含む22項目。sample hostがwireだけでboot/sessionと現在の資源を確認し、結果不明の変更要求を新corrで再実行しないことを検査する。元のoutcomeはunknownのままとする。
+
+[回復中のforceと経路単位の結果不明化](recovery-races-conformance.ja.md)は条件ごとに27項目。読み出し前/途中/最後のsession差し替えを検出し、全応答喪失・先頭だけ受信・全件未実行の3条件で、その経路の未解決要求だけをunknownにする。
