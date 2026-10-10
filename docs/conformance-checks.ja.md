@@ -141,3 +141,7 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 線の再試行の[論理検査](retry-conformance.ja.md)では、host DMIの曖昧配送後の非再送、
 busy、probe内部の読み、失敗後の駆動解放と正常idle復帰を分けて確認する。
 第二段階41項目、第三段階14項目。応答後の線切れ解放と物理波形は未検査。
+
+線切れの[論理検査](cut-conformance.ja.md)では、要求応答の書き出し後の依存資源解放、
+consoleのlink-lost/closed、成功後の履歴消去と他connectionの保持を確認する。
+第二段階41項目、第三段階9項目。実transport配送とwriter並行性は未検査。
