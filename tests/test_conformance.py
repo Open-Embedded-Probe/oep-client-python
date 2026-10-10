@@ -136,3 +136,148 @@ def test_replay_accepts_cached_or_lost_result_but_catches_reexecution(monkeypatc
     check.check('replay', 'core §5.2', lambda: check.replay(across_open))
     assert check.results[0]['status'] == ('failed' if changed else 'passed')
     assert check.session is None
+
+
+@pytest.mark.parametrize('mode, fn, op, sid, corr, payload, reason, response_tail', [
+    ('revision-order', 0, 1, 0, 1001, b'OEP?\x02\x01', 3, b''),
+    ('confirm-short', 0, 1, 0, 1001, b'OEP?\x01', 3, b''),
+    ('confirm-magic', 0, 1, 0, 1001, b'BAD?\x01\x01', 3, b''),
+    ('tlv-header', 0, 1, 0, 1001, b'OEP?\x01\x01\x7f\0', 3, b''),
+    ('tlv-value', 0, 1, 0, 1001, b'OEP?\x01\x01\x7f\x02\0x', 3, b''),
+    ('tlv-critical-zero', 0, 1, 0, 1001, b'OEP?\x01\x01\x80\0\0', 3, b''),
+    ('unknown-critical', 0, 1, 0, 1001, b'OEP?\x01\x01\xff\x01\0x', 11, b'\xff'),
+    ('zero-priority', 65535, 255, 0xffffffff, 0, b'x', 3, b''),
+    ('fn-priority', 65535, 255, 0xffffffff, 1, b'x', 1, b''),
+    ('op-priority', 0, 0, 0xffffffff, 1, b'x', 2, b''),
+    ('session-priority', 0, 18, 0, 1001, b'x', 9, b''),
+    ('session-before-payload', 0, 18, 42, 1, b'x', 7, b''),
+])
+@pytest.mark.parametrize('wrong', [False, True])
+def test_core_negative_predicates_use_spec_request_and_reason(monkeypatch, mode, fn, op, sid, corr, payload, reason, response_tail, wrong):
+    monkeypatch.setattr('oep_client.conformance.secrets.randbelow', lambda _: 41)
+    expected = struct.pack('<BHHBI', 1, corr, fn, op, sid) + payload
+
+    def send(req):
+        assert req == expected
+        if wrong:
+            return struct.pack('<BHBB', 2, corr, 1, 0)
+        return struct.pack('<BHBB', 2, corr, 0, reason) + response_tail
+
+    check = Checks(send, REG, 'unit')
+    check.check('predicate', 'core', lambda: check.invalid_request(mode))
+    assert check.results[0]['status'] == ('failed' if wrong else 'passed')
+
+
+def test_all_core_predicates_have_individual_results(monkeypatch):
+    from oep_client.conformance import CORE_CASES
+    ep, unit = legacy(monkeypatch)
+    report = Checks(ep.handle, REG, unit).run()
+    ids = [r['id'] for r in report['checks'] if r['level'] == 'core']
+    assert set(ids) == set(CORE_CASES)
+    assert len(ids) == len(set(ids))
+
+
+def test_valid_open_end_keepalive_response_extensions_are_accepted(monkeypatch):
+    monkeypatch.setattr('oep_client.conformance.time.sleep', lambda _: None)
+    extension = b'\x7f\x01\0x'
+
+    def send(req):
+        p = extension
+        if req[5] == 16:
+            p = struct.pack('<II', 3000, 17) + extension
+        elif req[5] == 19:
+            p = b'\0' * 5 + extension
+        return struct.pack('<BHBB', 2, struct.unpack_from('<H', req, 1)[0], 1, 0) + p
+
+    check = Checks(send, REG, 'unit')
+    check.boot = 17
+    with check.holding() as sid:
+        check.success(check.request(18, session=sid))
+    assert check.session is None
+
+
+def test_force_is_not_sent_when_initial_acquisition_is_denied():
+    sent = []
+
+    def send(req):
+        sent.append(req)
+        return struct.pack('<BHBBI', 2, struct.unpack_from('<H', req, 1)[0], 0, 8, 1000)
+
+    check = Checks(send, REG, 'unit')
+    check.check('force', 'core', check.force_owned)
+    assert check.results[0]['status'] == 'failed'
+    assert len(sent) == 1 and sent[0][14] == 0
+
+
+def test_bad_confirm_never_sends_discovery_or_session_requests():
+    sent = []
+
+    def send(req):
+        sent.append(req)
+        return struct.pack('<BHBB', 2, struct.unpack_from('<H', req, 1)[0], 1, 0) + b'NOT-OEP'
+
+    report = Checks(send, REG, 'unit').run()
+    assert len(sent) == 1 and sent[0][5] == 1
+    assert report['checks'][0]['status'] == 'failed'
+    assert all(row['status'] == 'blocked' for row in report['checks'][1:])
+
+
+@pytest.mark.parametrize('changed', [False, True])
+def test_list_stability_checks_fields_without_repeating_interface_case_ids(changed):
+    expected = dict(fn=1, instance=0, revision=1, name='x.y')
+
+    def send(req):
+        first = struct.unpack_from('<H', req, 10)[0]
+        p = struct.pack('<HB', 1, 0 if first else 1)
+        if not first:
+            p += struct.pack('<HHBBB', 2 if changed else 1, 0, 1, 0, 3) + b'x.y'
+        return struct.pack('<BHBB', 2, struct.unpack_from('<H', req, 1)[0], 1, 0) + p
+
+    check = Checks(send, REG, 'unit')
+    check.observed['interfaces'] = [{**expected, 'describe': []}]
+    check.check('list', 'core §7.2', check.list_stability)
+    assert check.results[0]['status'] == ('failed' if changed else 'passed')
+    assert len(check.results) == 1
+
+
+@pytest.mark.parametrize('reexecuted', [False, True])
+def test_old_unseen_corr_is_result_lost_not_a_new_operation(monkeypatch, reexecuted):
+    def send(req):
+        corr = struct.unpack_from('<H', req, 1)[0]
+        if req[5] == 4 and corr == 2 and not reexecuted:
+            return struct.pack('<BHBB', 2, corr, 0, 12)
+        p = b''
+        if req[5] == 16:
+            p = struct.pack('<II', 3000, 17)
+        elif req[5] == 4:
+            p = struct.pack('<IQ', 17, 100)
+        elif req[5] == 19:
+            p = b'\0' * 5
+        return struct.pack('<BHBB', 2, corr, 1, 0) + p
+
+    check = Checks(send, REG, 'unit')
+    check.boot = 17
+    check.check('old', 'core §5.2', check.unseen_old)
+    assert check.results[0]['status'] == ('failed' if reexecuted else 'passed')
+    assert check.session is None
+
+
+def test_interface_failures_are_reported_together_not_stopped_at_first(monkeypatch):
+    from oep_client.pytest_conformance import assert_interfaces
+    monkeypatch.setenv('OEP_CONFORMANCE_OUT', 'evidence.json')
+    report = {'spec': {'commit': 'test'}, 'checks': [
+        {'id': 'IF-1', 'level': 'interface', 'status': 'failed', 'error': 'one'},
+        {'id': 'IF-2', 'level': 'interface', 'status': 'failed', 'error': 'two'},
+        {'id': 'CORE-LIST', 'level': 'core', 'status': 'passed'}]}
+    with pytest.raises(AssertionError) as failure:
+        assert_interfaces(report, lambda *_: None)
+    assert 'IF-1: one' in str(failure.value) and 'IF-2: two' in str(failure.value)
+
+
+def test_framing_only_configuration_is_incomplete_not_equipment_skip(monkeypatch):
+    from oep_client.pytest_conformance import oep_conformance_report
+    for key in ('OEP_CONFORMANCE_ADDRESS', 'OEP_CONFORMANCE_UNIT_ID', 'OEP_CONFORMANCE_SPEC', 'OEP_CONFORMANCE_OUT', 'OEP_HW_LOCK'):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv('OEP_CONFORMANCE_FRAMING', 'serial')
+    with pytest.raises(pytest.fail.Exception, match='incomplete'):
+        oep_conformance_report.__wrapped__()

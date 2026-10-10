@@ -1,7 +1,8 @@
 """Independent raw-message checks against an explicitly selected SPEC checkout.
 
-No private equipment repository imports; no target driving, force, settings or flash.
-The selected transport's framing is supplied by the client, not certified here.
+No private equipment repository imports, target driving, settings or flash.
+Force is tested only between sessions acquired by this runner.
+Serial framing can be inspected independently; other transports use the client backend.
 """
 from __future__ import annotations
 
@@ -18,6 +19,46 @@ import subprocess
 import time
 
 from .hardware import equipment_lock, tomllib
+
+
+CORE_CASES = (
+    'CORE-CONFIRM', 'CORE-IDENTITY', 'CORE-DECLARE', 'CORE-LIST', 'CORE-CLOCK',
+    'CORE-ZERO-CORR', 'CORE-ZERO-SESSION', 'CORE-SESSION-REQUIRED', 'CORE-TLV-ZERO',
+    'CORE-KEEPALIVE-LOCK', 'CORE-LEASE-MIN', 'CORE-LEASE-MAX', 'CORE-OPEN-AFTER-END',
+    'CORE-REPLAY', 'CORE-OPEN-HISTORY', 'CORE-ALTERED-REPLAY', 'CORE-CORR-U16',
+    'CORE-CORR-MAX', 'CORE-END', 'CORE-LEASE', 'CORE-REPLAY-LEASE',
+)
+
+EXTRA_CHECKS = (
+    ('CORE-REVISION-ORDER', 'core §7.1', 'invalid_request', 'revision-order'),
+    ('CORE-CONFIRM-SHORT', 'core §7.1', 'invalid_request', 'confirm-short'),
+    ('CORE-CONFIRM-MAGIC', 'core §7.1', 'invalid_request', 'confirm-magic'),
+    ('CORE-TLV-HEADER', 'core §2.2/4.3', 'invalid_request', 'tlv-header'),
+    ('CORE-TLV-VALUE', 'core §2.2/4.3', 'invalid_request', 'tlv-value'),
+    ('CORE-TLV-CRITICAL-ZERO', 'core §2.2/4.3', 'invalid_request', 'tlv-critical-zero'),
+    ('CORE-TLV-OPTIONAL', 'core §2.3', 'invalid_request', 'unknown-optional'),
+    ('CORE-TLV-CRITICAL', 'core §2.3/4.3', 'invalid_request', 'unknown-critical'),
+    ('CORE-ZERO-PRIORITY', 'core §4.3', 'invalid_request', 'zero-priority'),
+    ('CORE-FN-PRIORITY', 'core §4.3', 'invalid_request', 'fn-priority'),
+    ('CORE-OP-PRIORITY', 'core §4.3', 'invalid_request', 'op-priority'),
+    ('CORE-SESSION-PRIORITY', 'core §4.3', 'invalid_request', 'session-priority'),
+    ('CORE-SESSION-BEFORE-PAYLOAD', 'core §4.3/6.2', 'invalid_request', 'session-before-payload'),
+    ('CORE-UNSEEN-OLD', 'core §5.2', 'unseen_old', None),
+    ('CORE-REJECTED-REPLAY', 'core §5.2', 'replay_rejected', False),
+    ('CORE-HEADER-BEFORE-REPLAY', 'core §4.3/5.2', 'replay_rejected', True),
+    ('CORE-OWNER', 'core §2.3/6.4', 'owners', None),
+    ('CORE-HEADER-LEASE', 'core §4.3/6.1', 'lease_rejections', True),
+    ('CORE-REJECTED-LEASE', 'core §4.3/6.1', 'lease_rejections', False),
+    ('CORE-FORCE-OWNED', 'core §6.2/6.4', 'force_owned', None),
+    ('CORE-LIST-STABILITY', 'core §7.2', 'list_stability', None),
+    ('CORE-LEASE-DEFAULT', 'core §6.4', 'lease_clamp', 0),
+)
+
+CORE_CASES += tuple(row[0] for row in EXTRA_CHECKS)
+
+
+SERIAL_CASES = tuple(('CORE-SERIAL-' + kind.upper(), kind) for kind in
+                     ('split', 'coalesce', 'crc', 'cobs', 'short', 'role', 'truncated', 'oversized'))
 
 
 class Violation(ValueError):
@@ -77,6 +118,7 @@ class Checks:
         self.trace = []
         self.results = []
         self.abort = False
+        self.wire = None
 
     def request(self, op, payload=b'', *, session=0, corr=None, fn=0):
         if corr is None:
@@ -98,6 +140,8 @@ class Checks:
                 self.abort = True
                 raise
             record['response_hex'] = reply.hex()
+            if self.wire is not None:
+                record['serial_wire'] = self.wire.last_exchange
             require(5 <= len(reply) <= self.max_frame, 'result length outside negotiated bounds')
             role, corr, resolution, detail = struct.unpack_from('<BHBB', reply)
             require(role == self.reg['roles']['result'], 'unexpected result role')
@@ -112,7 +156,7 @@ class Checks:
                 reason = next((k for k, v in self.reasons.items() if v == detail), None)
                 if reason in {'unknown_function', 'unknown_operation', 'malformed', 'window_exceeded',
                               'no_session', 'session_required', 'no_resource', 'result_lost'}:
-                    require(len(reply) == 5, 'rejected reason must have empty payload')
+                    tlvs(reply[5:])
                 elif reason == 'locked':
                     require(len(reply) >= 9 and int.from_bytes(reply[5:9], 'little') > 0, 'locked remaining time')
                     tlvs(reply[9:])
@@ -169,6 +213,8 @@ class Checks:
         values = [v for t, v in rows if t == tag]
         require(values and len(values[0]) == 1, 'confirm transport required, u8')
         self.boot, self.max_frame, self.confirm_transport = boot, frame, values[0][0]
+        if self.wire is not None:
+            self.wire.max_frame = frame
         self.observed['confirm'] = dict(revision=revision, max_frame=frame, window=window,
                                         max_inflight=inflight, boot_id=boot, transport=self.confirm_transport)
 
@@ -220,7 +266,7 @@ class Checks:
         require(len(channels) == 2, 'channels must be u16')
         require(rows == self.describe(0), 'core describe changed within same boot')
 
-    def interfaces(self):
+    def list_snapshot(self):
         first, total, entries = 0, None, []
         while True:
             p = self.success(self.request(self.core['list'], struct.pack('<H', first)))
@@ -234,6 +280,7 @@ class Checks:
                 fn, instance, revision, flags, length = struct.unpack_from('<HHBBB', p, at)
                 at += 7
                 require(fn and 1 <= length <= 48 and len(p) >= at + length, 'list fn/name length')
+                require(revision >= 1 and flags == 0, 'interface revision/flags')
                 name = p[at:at + length].decode('ascii')
                 require(all(c in 'abcdefghijklmnopqrstuvwxyz0123456789-.' for c in name), 'interface name format')
                 entries.append(dict(fn=fn, instance=instance, revision=revision, name=name))
@@ -246,10 +293,19 @@ class Checks:
         require(len({x['fn'] for x in entries}) == len(entries), 'duplicate fn')
         end = self.success(self.request(self.core['list'], struct.pack('<H', 65535)))
         require(end == struct.pack('<HB', total, 0), 'list past end')
+        return entries
+
+    def interfaces(self):
+        entries = self.list_snapshot()
         self.observed['interfaces'] = entries
         for entry in entries:
             self.check('IF-DESCRIBE-' + str(entry['fn']), 'core §1.2/7.2/7.3/7.4',
                        lambda entry=entry: self.interface(entry, entries))
+
+    def list_stability(self):
+        expected = [{key: value for key, value in row.items() if key != 'describe'}
+                    for row in self.observed.get('interfaces', [])]
+        require(self.list_snapshot() == expected, 'interface list changed within one boot')
 
     def interface(self, entry, entries):
         rows = self.describe(entry['fn'])
@@ -266,22 +322,24 @@ class Checks:
         require(entry['instance'] == peers.index(entry), 'interface instance numbering')
 
     @contextmanager
-    def holding(self, lease=3000):
+    def holding(self, lease=3000, tail=b''):
         sid = secrets.randbelow(0xffffffff) + 1
         self.corr = 0
-        p = self.success(self.request(self.core['open'], struct.pack('<IB', lease, 0), session=sid))
+        p = self.success(self.request(self.core['open'], struct.pack('<IB', lease, 0) + tail, session=sid))
         self.session = sid  # cleanup even if the successful open payload is malformed
         try:
-            require(len(p) == 8, 'open payload length')
-            actual, boot = struct.unpack('<II', p)
-            require(actual == min(60000, max(1000, lease)), 'open lease clamp')
+            require(len(p) >= 8, 'open payload length')
+            actual, boot = struct.unpack_from('<II', p)
+            tlvs(p[8:])
+            require((1000 <= actual <= 60000) if lease == 0 else
+                    actual == min(60000, max(1000, lease)), 'open lease clamp')
             require(boot == self.boot, 'open boot differs from confirm')
             yield sid
         finally:
             try:
                 if self.session is not None:
-                    p = self.success(self.request(self.core['end'], session=sid))
-                    require(not p, 'end must have empty payload')
+                    p = self.success(self.request(self.core['end'], session=self.session))
+                    tlvs(p)
                     self.session = None
                     state = self.success(self.request(self.core['lock_state']))
                     require(len(state) >= 5 and struct.unpack_from('<BI', state) == (0, 0),
@@ -338,17 +396,18 @@ class Checks:
     def corr_maximum(self):
         with self.holding() as sid:
             self.corr = 65533
-            require(not self.success(self.request(self.core['keepalive'], session=sid)), 'keepalive payload')
-            require(not self.success(self.request(self.core['end'], session=sid)), 'end payload')
+            tlvs(self.success(self.request(self.core['keepalive'], session=sid)))
+            tlvs(self.success(self.request(self.core['end'], session=sid)))
             self.session = None  # the end used corr 65535; do not wrap this session
 
     def ended(self):
         with self.holding() as sid:
             end = self.request(self.core['end'], session=sid)
-            self.success(end)
+            original = self.success(end)
+            tlvs(original)
             self.session = None
             reply = self.exchange(end)
-            require(reply[3:] == b'\x01\0' or reply[3:5] == bytes((0, self.reasons['result_lost'])),
+            require((reply[3:5] == b'\x01\0' and reply[5:] == original) or reply[3:5] == bytes((0, self.reasons['result_lost'])),
                     'end replay changed')
             self.rejected(self.request(self.core['keepalive'], session=sid), 'no_session')
             self.must_not_reopen(sid)
@@ -378,7 +437,7 @@ class Checks:
 
     def keepalive(self):
         with self.holding() as sid:
-            require(not self.success(self.request(self.core['keepalive'], session=sid)), 'keepalive payload')
+            tlvs(self.success(self.request(self.core['keepalive'], session=sid)))
             p = self.success(self.request(self.core['lock_state']))
             require(len(p) >= 5, 'lock_state fixed payload')
             locked, remaining = struct.unpack_from('<BI', p)
@@ -412,8 +471,179 @@ class Checks:
         with self.holding(lease):
             pass
 
+    def absent_fn(self):
+        present = {entry['fn'] for entry in self.observed.get('interfaces', [])} | {0}
+        return next(fn for fn in range(65535, 0, -1) if fn not in present)
+
+    def invalid_request(self, mode):
+        if mode == 'revision-order':
+            self.rejected(self.request(self.core['confirm'], b'OEP?\x02\x01'), 'malformed')
+        elif mode == 'confirm-short':
+            self.rejected(self.request(self.core['confirm'], b'OEP?\x01'), 'malformed')
+        elif mode == 'confirm-magic':
+            self.rejected(self.request(self.core['confirm'], b'BAD?\x01\x01'), 'malformed')
+        elif mode == 'tlv-header':
+            self.rejected(self.request(self.core['confirm'], b'OEP?\x01\x01\x7f\x00'), 'malformed')
+        elif mode == 'tlv-value':
+            self.rejected(self.request(self.core['confirm'], b'OEP?\x01\x01\x7f\x02\x00x'), 'malformed')
+        elif mode == 'tlv-critical-zero':
+            self.rejected(self.request(self.core['confirm'], b'OEP?\x01\x01\x80\x00\x00'), 'malformed')
+        elif mode == 'unknown-optional':
+            p = self.success(self.request(self.core['confirm'], b'OEP?\x01\x01\x7f\x01\x00x'))
+            require(len(p) >= 17 and p[:5] == b'OEP!\x01', 'ignored TLV broke confirm')
+        elif mode == 'unknown-critical':
+            p = self.rejected(self.request(self.core['confirm'], b'OEP?\x01\x01\xff\x01\x00x'), 'unsupported')
+            require(p and p[0] == 255, 'unsupported did not echo critical tag')
+        elif mode == 'zero-priority':
+            self.rejected(self.request(255, b'x', fn=self.absent_fn(), session=0xffffffff, corr=0), 'malformed')
+        elif mode == 'fn-priority':
+            self.rejected(self.request(255, b'x', fn=self.absent_fn(), session=0xffffffff), 'unknown_function')
+        elif mode == 'op-priority':
+            self.rejected(self.request(0, b'x', session=0xffffffff), 'unknown_operation')
+        elif mode == 'session-priority':
+            self.rejected(self.request(self.core['keepalive'], b'x'), 'session_required')
+        elif mode == 'session-before-payload':
+            self.rejected(self.request(self.core['keepalive'], b'x', session=secrets.randbelow(0xffffffff)+1), 'no_session')
+        else:
+            raise ValueError(mode)
+
+    def unseen_old(self):
+        with self.holding() as sid:
+            self.corr = 100
+            self.clock(sid)
+            self.rejected(self.request(self.core['clock'], session=sid, corr=2), 'result_lost')
+
+    def replay_rejected(self, header=False):
+        with self.holding() as sid:
+            req = self.request(self.core['keepalive'], b'\x7f\x01\x00', session=sid)
+            self.rejected(req, 'malformed')
+            reply = self.exchange(req)
+            require(reply[3:5] in (bytes((0, self.reasons['malformed'])), bytes((0, self.reasons['result_lost']))),
+                    'rejected result replay changed')
+            if header:
+                changed = bytearray(req)
+                changed[5] = 0  # even a cached corr must pass header validation first
+                self.rejected(bytes(changed), 'unknown_operation')
+            else:
+                changed = req[:10]  # fixing payload must not execute under the same corr
+                reply = self.exchange(changed)
+                require(reply[3:5] in (bytes((0, self.reasons['malformed'])), bytes((0, self.reasons['result_lost']))),
+                        'corrected rejected request reused corr')
+
+    def owners(self):
+        owner = b'conformance-first'
+        tail = b'\x01' + struct.pack('<H', len(owner)) + owner
+        tail += b'\x81\x06\x00second'  # same tag, critical flag, first occurrence wins
+        with self.holding(tail=tail) as sid:
+            def observed_owner():
+                p = self.success(self.request(self.core['lock_state']))
+                require(len(p) >= 5 and p[0] == 1, 'owner lock state')
+                values = dict(reversed(tlvs(p[5:])))
+                require(values.get(1) == owner, 'owner changed or first duplicate not used')
+            observed_owner()
+            self.success(self.request(self.core['open'], struct.pack('<IB', 3000, 0) + b'\x01\x06\x00second', session=sid))
+            observed_owner()
+            tlvs(self.success(self.request(self.core['end'], session=sid)))
+            self.session = None
+            state = self.success(self.request(self.core['lock_state']))
+            if len(state) >= 5 and state[0]:
+                self.session = sid
+            require(len(state) >= 5 and struct.unpack_from('<BI', state) == (0, 0), 'owner end left lock held')
+            require(1 not in dict(tlvs(state[5:])), 'ended session retained owner')
+
+    def lease_rejections(self, header):
+        with self.holding(1000) as sid:
+            for _ in range(3):
+                time.sleep(0.4)
+                if header:
+                    self.rejected(self.request(0, session=sid), 'unknown_operation')
+                else:
+                    self.rejected(self.request(self.core['keepalive'], b'\x7f\x01\x00', session=sid), 'malformed')
+            p = self.success(self.request(self.core['lock_state']))
+            require(len(p) >= 5, 'lock_state shape')
+            if header:
+                if p[0] == 0:
+                    self.session = None
+                require(struct.unpack_from('<BI', p) == (0, 0), 'header refusal renewed lease')
+            else:
+                require(p[0] == 1 and int.from_bytes(p[1:5], 'little') > 0, 'payload refusal did not renew lease')
+
+    def force_owned(self):
+        # Force only a session acquired by this runner while holding the shared equipment lock.
+        with self.holding() as old:
+            new = secrets.randbelow(0xffffffff)+1
+            while new == old:
+                new = secrets.randbelow(0xffffffff)+1
+            p = self.success(self.request(self.core['open'], struct.pack('<IB', 3000, 1), session=new, corr=1))
+            self.session, self.corr = new, 1
+            require(len(p) >= 8 and struct.unpack_from('<II', p) == (3000, self.boot), 'force open shape')
+            tlvs(p[8:])
+            self.rejected(self.request(self.core['keepalive'], session=old, corr=2), 'locked')
+            tlvs(self.success(self.request(self.core['keepalive'], session=new)))
+
+    def serial_case(self, kind):
+        from .conformance_serial import frame, WireError
+        with self.holding(60000):
+            req = self.request(self.core['clock'])
+            good = frame(req)
+            pause = 0
+            if kind == 'split':
+                chunks = [bytes((byte,)) for byte in good]
+            elif kind == 'coalesce':
+                bad = bytes((3,)) + req[1:]
+                chunks = [frame(bad) + good]
+            elif kind == 'crc':
+                chunks = [frame(self.request(self.core['clock']), corrupt_crc=True) + good]
+            elif kind == 'cobs':
+                chunks = [b'\0\x05\x01\0' + good]
+            elif kind == 'short':
+                chunks = [frame(req[:9]) + good]
+            elif kind == 'role':
+                chunks = [frame(bytes((0,)) + req[1:]) + good]
+            elif kind == 'truncated':
+                chunks, pause = [good[:4], good], 0.35
+            elif kind == 'oversized':
+                chunks = [frame(req + b'x' * (self.max_frame + 1 - len(req)))]
+            else:
+                raise ValueError(kind)
+            record = {'serial_stimulus': kind}
+            self.trace.append(record)
+            try:
+                if kind == 'oversized':
+                    # Oversize discards input through a frame gap: never append the recovery
+                    # request immediately and demand that it be accepted.
+                    gap = self.reg.get('timing', {}).get('probe_frame_gap_ms', 200) / 1000
+                    discarded = self.wire.exchange(chunks, 0, silence=gap + 0.1)
+                    record['oversize_wire'] = self.wire.last_exchange
+                    record['oversize_results_hex'] = [r.hex() for r in discarded]
+                    require(not discarded, 'oversized request produced a response')
+                    chunks = [good]
+                replies = self.wire.exchange(chunks, 1, pause=pause)
+                record['responses_hex'] = [r.hex() for r in replies]
+                if kind == 'split':
+                    writes = self.wire.last_exchange['writes']
+                    gap_ms = self.reg.get('timing', {}).get('probe_frame_gap_ms', 200)
+                    require(all((b['monotonic_ns'] - a['monotonic_ns']) < gap_ms * 1000000
+                                for a, b in zip(writes, writes[1:])), 'tester exceeded frame gap while splitting')
+                require(len(replies) == 1, 'ignored/corrupt input produced a response or duplicate')
+                original_send = self.send
+                try:
+                    self.send = lambda _: replies[0]
+                    p = self.success(req)
+                    require(len(p) >= 12 and int.from_bytes(p[:4], 'little') == self.boot, 'serial clock result')
+                    tlvs(p[12:])
+                finally:
+                    self.send = original_send
+            except (TimeoutError, OSError, WireError):
+                self.abort = True
+                raise
+            finally:
+                record['serial_wire'] = self.wire.last_exchange
+
     def run(self):
         self.check('CORE-CONFIRM', 'core §7.1', self.confirm)
+        if self.results[-1]['status'] != 'passed':
+            self.abort = True  # confirm-only discovery: never describe a failed handshake
         self.check('CORE-IDENTITY', 'core §7.3/7.5', self.identity)
         if self.results[-1]['status'] != 'passed' or self.results[0]['status'] != 'passed':
             self.abort = True  # no session mutations on an unidentified endpoint
@@ -439,13 +669,22 @@ class Checks:
         self.check('CORE-END', 'core §5.2/6.2', self.ended)
         self.check('CORE-LEASE', 'core §6.1', self.lease_expiry)
         self.check('CORE-REPLAY-LEASE', 'core §5.2/6.1', lambda: self.lease_expiry(True))
+        for name, clause, method, argument in EXTRA_CHECKS:
+            self.check(name, clause, lambda method=method, argument=argument:
+                       getattr(self, method)(argument) if argument is not None else getattr(self, method)())
+        if self.wire is not None:
+            for name, kind in SERIAL_CASES:
+                self.check(name, 'transports §1/2; core §2.4', lambda kind=kind: self.serial_case(kind))
         return {'status': 'passed' if all(x['status'] == 'passed' for x in self.results) else 'failed',
                 'scope': 'selected core and common interface checks on selected transport; no target operations',
                 'full_conformance': False,
                 'levels': {'core': 'partial coverage', 'interface': 'declarations only',
                            'oep-interface': 'not executed'},
-                'unchecked': ['transport fault injection and alternate routes', 'target resource lifetime',
-                              'multi-target isolation', 'interface operation behavior', 'electrical behavior'],
+                'framing_backend': 'independent serial' if self.wire is not None else 'client',
+                'unchecked': ['non-serial transport faults and alternate routes', 'reconnect/session retention',
+                              'target resource lifetime', 'multi-target isolation',
+                              'interface operation behavior', 'electrical behavior'] +
+                             ([] if self.wire is not None else ['independent serial framing/faults']),
                 'observed': self.observed, 'checks': self.results}
 
 
@@ -454,6 +693,8 @@ def main(argv=None):
     for name, env in [('address', 'OEP_CONFORMANCE_ADDRESS'), ('unit', 'OEP_CONFORMANCE_UNIT_ID'),
                       ('spec', 'OEP_CONFORMANCE_SPEC'), ('out', 'OEP_CONFORMANCE_OUT'), ('lock', 'OEP_HW_LOCK')]:
         parser.add_argument('--' + name, default=os.environ.get(env))
+    parser.add_argument('--framing', choices=('client', 'serial'),
+                        default=os.environ.get('OEP_CONFORMANCE_FRAMING', 'client'))
     args = parser.parse_args(argv)
     if not all(vars(args).values()):
         parser.error('explicit address, unit, SPEC checkout, new output file and existing shared lock required')
@@ -461,6 +702,8 @@ def main(argv=None):
     from . import __version__, link
     report = {'status': 'failed', 'spec': spec, 'client_version': __version__,
               'checker_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+              'checker_sources_sha256': {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
+                                        for name in ('conformance.py', 'conformance_serial.py', 'pytest_conformance.py')},
               'address': args.address, 'expected_unit': args.unit,
               'started_at': datetime.now(timezone.utc).isoformat()}
     # Reserve a new artifact before any device operation. Never overwrite evidence.
@@ -469,8 +712,22 @@ def main(argv=None):
             with equipment_lock(args.lock):
                 hst = None
                 try:
-                    hst = link.open_host(args.address, keep_session=False, resend=False, port_speed=None)
-                    report.update(Checks(hst.link.send, registry, args.unit).run())
+                    if args.framing == 'serial':
+                        if args.address.startswith(('usb:', 'tcp:', 'tcp://')):
+                            raise ValueError('serial framing needs an explicit serial port')
+                        from .conformance_serial import SerialWire
+                        stream = link.open_serial(args.address)
+                        try:
+                            wire = SerialWire(stream)
+                            checks = Checks(wire.send, registry, args.unit)
+                            checks.wire = wire
+                            report.update(checks.run())
+                        finally:
+                            link._exclusive_off(stream)
+                            stream.close()
+                    else:
+                        hst = link.open_host(args.address, keep_session=False, resend=False, port_speed=None)
+                        report.update(Checks(hst.link.send, registry, args.unit).run())
                 finally:
                     if hst is not None:
                         hst.link.close()
