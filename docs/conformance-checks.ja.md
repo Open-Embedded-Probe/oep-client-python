@@ -97,3 +97,5 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 [result_lost後の状態読み直し](recovery-conformance.ja.md)はretentionを含む22項目。sample hostがwireだけでboot/sessionと現在の資源を確認し、結果不明の変更要求を新corrで再実行しないことを検査する。元のoutcomeはunknownのままとする。
 
 [回復中のforceと経路単位の結果不明化](recovery-races-conformance.ja.md)は条件ごとに27項目。読み出し前/途中/最後のsession差し替えを検出し、全応答喪失・先頭だけ受信・全件未実行の3条件で、その経路の未解決要求だけをunknownにする。
+
+[corr枯渇前のsession切替](rollover-conformance.ja.md)はcorrを含む23項目。end用番号を残し、未解決要求の処理・boot/reader確認を経て別IDのopen 1へ切り替える。旧資源を無効にし、結果不明の旧操作はunknownのまま保持する。
