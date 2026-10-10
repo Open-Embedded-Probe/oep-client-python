@@ -182,3 +182,6 @@ RX/TX FIFO、ACK、overflow、stretch/configure、再送の非重複、plan寿�
 
 [SPI targetの固有検査](spi-conformance.ja.md)は第三段階40項目。
 mode/bit順/CS、部分byte、arm/overflow/FIFO、再送、CS有効時を含むplan寿命を2構成で確認する。
+
+[logic captureの固有検査](logic-conformance.ja.md)は第三段階33項目。
+query/configure、one-shot/repeat、世代、read/区画/release、short/error、plan寿命を明示sampleで確認する。
