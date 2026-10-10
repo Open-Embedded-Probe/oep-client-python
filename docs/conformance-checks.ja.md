@@ -81,3 +81,5 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 [data/eventとまとめ送りの補助検査](data-conformance.ja.md)は購読18項目＋data前提検証＋14データ契約の33項目。外部byte位置とloss-freeな刺激条件を明示し、閾値・first-byte delay・共通seq・分割・再送/同session openでの未送信データ保持を検査する。seq一周は単体で65,538個を実際に生成して検証し、実時計・実機の結果と分ける。
 
 [経路・writerの補助検査](route-conformance.ja.md)はinstrumentationを持つ論理モデルで9項目。応答/通知の経路、優先順位、未送信suffixのqueue上限、dropのseq、切断後のsession/資源/購読/履歴保持を確認する。実際のframing/OS buffer、経路別window/max_inflight、並行実行と実機切断は未検査。
+
+[経路別受付と回復の補助検査](pipeline-conformance.ja.md)は明示したreject-overflowモデルで9項目。count/byte境界を分離し、別接続の独立性と応答送信後の回復を確認する。超過拒否はSPEC上任意で、一般実機の必須条件に追加しない。
