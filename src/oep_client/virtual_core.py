@@ -17,6 +17,16 @@ def tlv(tag, value):
     return bytes((tag,)) + struct.pack('<H', len(value)) + value
 
 
+class Completed(bytes):
+    """Extension completion payload whose outcome is retained with the whole reply."""
+    def __new__(cls, payload, outcome=0):
+        if type(outcome) is not int or outcome not in (0,1,2):
+            raise ValueError('completed outcome must be success, failed or partial')
+        result=super().__new__(cls,payload)
+        result.outcome=outcome
+        return result
+
+
 class Reject(Exception):
     def __init__(self, reason, payload=b''):
         self.reason, self.payload = reason, payload
@@ -92,7 +102,8 @@ class Core:
         payload = data[10:]
 
         def answer(reason=None, value=b''):
-            return struct.pack('<BHBB', 2, corr, int(reason is None), reason or 0) + value
+            return struct.pack('<BHBB', 2, corr, int(reason is None),
+                               reason if reason is not None else getattr(value,'outcome',0)) + value
 
         # Header refusals precede replay, session and payload checks.
         if corr == 0:
