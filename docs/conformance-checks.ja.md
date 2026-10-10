@@ -170,3 +170,7 @@ drive/read、再送とidle復元を第三段階で確認する。物理pin/他fi
 
 [GPIO planでのcore寿命](gpio-lifecycle-conformance.ja.md)は第一段階11項目。
 明示時計で期限切れ、force、同じIDのopen、再送履歴、lease更新/非更新とpin/plan解放を確認する。
+
+[UART固有動作](uart-conformance.ja.md)は第三段階28項目。
+configure、受信/送信、TX idle、再送、plan再作成とend/expiry/forceを確認する。
+[UARTへの共通stream適用](uart-stream-conformance.ja.md)は第二段階15項目で、既存assertをplan所有の寿命に合わせて使う。
