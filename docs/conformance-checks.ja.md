@@ -180,7 +180,7 @@ dmseq検査は35項目。console §2に従うresync/TO/CRCのmarkと無効flag�
 [I2C targetの固有検査](i2c-conformance.ja.md)は第三段階34項目。
 RX/TX FIFO、ACK、overflow、stretch/configure、再送の非重複、plan寿命を4構成で確認する。
 
-[SPI targetの固有検査](spi-conformance.ja.md)は第三段階40項目。
+[SPI targetの固有検査](spi-conformance.ja.md)は第三段階41項目。
 mode/bit順/CS、部分byte、arm/overflow/FIFO、再送、CS有効時を含むplan寿命を2構成で確認する。
 
 [logic captureの固有検査](logic-conformance.ja.md)は第三段階33項目。

@@ -20,7 +20,7 @@ def setup(**kwargs):
 def test_spi_contract(lsb):
     model,c=setup(lsb=lsb);r=SpiChecks(c,SampleSpiAdapter(model)).run()
     assert r['status']=='passed',[(row['id'],row.get('error')) for row in r['checks'] if row['status']!='passed']
-    assert len(r['checks'])==40 and not r['full_conformance']
+    assert len(r['checks'])==41 and not r['full_conformance']
 
 
 def test_common_declarations():
@@ -177,3 +177,24 @@ def test_empty_rx_bits_field_is_not_specified():
         if int.from_bytes(req[3:5],'little')==2 and req[5]==18 and reply[3:5]==b'\1\0' and reply[10:12]==b'\0\0':reply=reply[:6]+b'\xef\xbe\xad\xde'+reply[10:]
         return reply
     c.send=unused_bits;r=SpiChecks(c,SampleSpiAdapter(model)).run();assert r['status']=='passed',r['checks']
+
+
+@pytest.mark.parametrize('fault',['failed','missing_cause','wrong_cause','arms'])
+@pytest.mark.parametrize('planned',[False,True])
+def test_state0_arm_refusal_faults(fault,planned):
+    from oep_client.virtual_core import Reject, Completed
+    model,c=setup();install=model.install
+    def faulty_install():
+        install();e=model.extension;dispatch=e.dispatch_request
+        def broken(fn,op,payload,tags):
+            if fn==2 and op==17 and not e.configured and (2 in e.plans)==planned:
+                if fault=='failed':return Completed(b'',1)
+                if fault=='missing_cause':raise Reject(4)
+                if fault=='wrong_cause':raise Reject(4,b'\x01\x01\x00\x05')
+                e.armed=(1,b'x')
+            return dispatch(fn,op,payload,tags)
+        e.dispatch_request=broken
+    model.install=faulty_install
+    checker=SpiChecks(c,SampleSpiAdapter(model));checker.cases=('ARM-STATE0',)
+    r=checker.run()
+    assert next(row for row in r['checks'] if row['id']=='OEP-SPI-ARM-STATE0')['status']=='failed'

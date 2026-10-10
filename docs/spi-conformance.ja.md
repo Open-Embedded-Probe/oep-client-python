@@ -3,7 +3,7 @@
 `SpiChecks(checks, adapter).run()` は選択SPECのfixture §4、plan §2、core §6/8/9を第三段階で検査する。
 `Checks(send, registry, unit)` と `SampleSpiAdapter(source)` を明示して渡す。
 公開checkerは私的ベンチや隣接リポジトリ、設備設定を探索しない。
-前提と標準op宣言を含む40項目。共通宣言17項目とSPI metadata5項目は別に適用する。
+前提と標準op宣言を含む41項目。共通宣言17項目とSPI metadata5項目は別に適用する。
 
 - state 0、plan開始前configure、未設定read_rx、role 1〜4の各1つ/別pin、拒否前不変を確認する。
 - configureのmode/bit_order幅、LSB featureの有無、未知TLV/raw tag、mode/statusを確認する。
@@ -29,12 +29,14 @@ channel 0〜3、idle入力の論理fixture。LSBを宣言する/しない2構成
 clockは取り込みedgeで実際のlogical MISO pinを読む。readyはarmを準備できない場合の刺激であり、
 その理由を規範へ追加しない。CS開始/終了、clock edge、pin駆動、queue/state、wire交換をtraceに保存する。
 
-単体77件は正常2構成、共通宣言/metadata、caseごとのwire故障、FIFO/arm/bit順/phase/未取得bit、
+単体86件は正常2構成、共通宣言/metadata、caseごとのwire故障、FIFO/arm/bit順/phase/未取得bit、
 二重errors・counter/初期化/駆動/timestampの誤り、再送の二重副作用、CS取得中の解放漏れ、
 任意timestamp/setup省略、空readの未使用bits、前提不足と不正刺激を確認する。
 `full_conformance`はfalse。物理波形・負荷下のcs_setup_ns保証、255 queue/u32 bits/counter上限、
 他pin/channel_group、永続config、並行controller/writer/deferred response、production Hostは未検査。
-state 0でのarmの断り方は本文が明示しておらず、checkerで決めない。
+state 0への有効なarmはplanの有無にかかわらずunavailable・cause 6で状態を変えない。
+拒否した要求の再送はconfigure後も拒否を保ち、新しい要求だけがarmできる。
+設定済みの準備不可はcompleted failedと区別する。未設定と不正length等が重なる場合の優先順は追加していない。
 
 ```sh
 uv run pytest -q tests/test_conformance_spi.py

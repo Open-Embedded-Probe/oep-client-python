@@ -6,7 +6,7 @@ from .conformance_registered_ops import RegisteredOpsChecks
 
 
 class SpiChecks:
-    cases=('STATE0','PLAN-SHAPE','PLAN-TAGS','CONFIGURE','FORMAT','LSB-FEATURE','TLV','MODES','PARTIAL','EMPTY-TX','UNARMED','ZERO-BITS','TRUNCATE','OVERFLOW','DOUBLE-ERROR','FIFO','TIMESTAMP','ARM-LIMIT','ARM-BUSY','ARM-READY','RECONFIGURE','MISO-GATE','REPLAY-RX','REPLAY-ARM','REPLAY-CONFIG','REPLACE','RELEASE','END','EXPIRY','FORCE','ACTIVE-RELEASE','ACTIVE-END','ACTIVE-EXPIRY','ACTIVE-FORCE','SESSION','COUNTS')
+    cases=('STATE0','ARM-STATE0','PLAN-SHAPE','PLAN-TAGS','CONFIGURE','FORMAT','LSB-FEATURE','TLV','MODES','PARTIAL','EMPTY-TX','UNARMED','ZERO-BITS','TRUNCATE','OVERFLOW','DOUBLE-ERROR','FIFO','TIMESTAMP','ARM-LIMIT','ARM-BUSY','ARM-READY','RECONFIGURE','MISO-GATE','REPLAY-RX','REPLAY-ARM','REPLAY-CONFIG','REPLACE','RELEASE','END','EXPIRY','FORCE','ACTIVE-RELEASE','ACTIVE-END','ACTIVE-EXPIRY','ACTIVE-FORCE','SESSION','COUNTS')
     def __init__(self,checks,adapter):self.c,self.a=checks,adapter
     @staticmethod
     def tlv(tag,value):return bytes((tag,))+struct.pack('<H',len(value))+value
@@ -46,6 +46,17 @@ class SpiChecks:
         with self.c.holding(1000) as sid:
             if kind=='STATE0':
                 require(self.status()==(0,0,0,0,0,0,0),'initial status');self.refused(self.req(2,'configure',sid,b'\0\0'),'unavailable',self.tlv(1,b'\6'));self.plan(sid);require(self.a.state()['pins']==self.a.state()['idle'],'plan changed unconfigured pins');self.refused(self.req(2,'read_rx',sid),'unavailable',self.tlv(1,b'\6'));return
+            if kind=='ARM-STATE0':
+                for planned in (False,True):
+                    if planned:self.plan(sid)
+                    require(self.status()[0]==0,'arm fixture already configured')
+                    req=self.arm_request(sid,1,b'x');self.refused(req,'unavailable',self.tlv(1,b'\6'))
+                    if planned:self.configure(sid)
+                    self.refused(req,'unavailable',self.tlv(1,b'\6'))
+                    if planned:
+                        require(self.status()[0]==1 and self.status()[3]==0,'old state0 refusal armed configured target')
+                        self.arm(sid,1,b'x');self.transfer(self.bits(b'y'),self.bits(b'x'))
+                return
             self.plan(sid);self.configure(sid)
             if kind=='PLAN-SHAPE':
                 self.arm(sid,1,b'x');self.transfer(self.bits(b'y'),self.bits(b'x'));self.arm(sid)
@@ -134,4 +145,4 @@ class SpiChecks:
         for kind in self.cases:
             first=len(self.a.trace);self.c.check('OEP-SPI-'+kind,'fixture §4; plan §2; core §6/8/9',lambda kind=kind:self.case(kind));self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]
-        return dict(status='passed' if all(row['status']=='passed' for row in rows) else 'failed',checks=rows,observed=self.c.observed,adapter_trace=self.a.trace,full_conformance=False,scope='logical SPI bit order/CPOL/CPHA/CS gating, FIFO/arm and plan lifecycle',unchecked=['physical SPI waveform and worst-case cs_setup_ns timing','state0 arm behavior not explicitly specified','queue count 255, bits saturation and u32 cumulative counter limits','persisted config, other pin candidates/channel groups','concurrent controller/writer and deferred response','production Host integration'])
+        return dict(status='passed' if all(row['status']=='passed' for row in rows) else 'failed',checks=rows,observed=self.c.observed,adapter_trace=self.a.trace,full_conformance=False,scope='logical SPI bit order/CPOL/CPHA/CS gating, FIFO/arm and plan lifecycle',unchecked=['physical SPI waveform and worst-case cs_setup_ns timing','queue count 255, bits saturation and u32 cumulative counter limits','persisted config, other pin candidates/channel groups','concurrent controller/writer and deferred response','production Host integration'])
