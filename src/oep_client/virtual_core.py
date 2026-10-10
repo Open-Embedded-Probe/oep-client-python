@@ -2,6 +2,7 @@
 
 Independent of the conformance checker and the legacy interface registry.
 The core-v1 profile has no resources, subscriptions, interfaces or targets.
+Explicit sample models may supply an independently defined extension hook.
 """
 from collections import OrderedDict
 import struct
@@ -47,13 +48,18 @@ def tail(data, owner=False):
 
 
 class Core:
-    def __init__(self, endpoint):
+    def __init__(self, endpoint, extension=None):
         self.ep = endpoint
+        # Only explicit current-contract models supply this hook. Legacy profiles
+        # and the core-v1 profile continue to expose fn 0 alone.
+        self.extension = extension
         self.holder, self.last, self.owner = None, None, b''
         self.lease, self.deadline, self.high = 3000, 0, 0
         self.cache = OrderedDict()
 
     def release(self):
+        if self.extension is not None:
+            self.extension.release()
         self.holder, self.owner = None, b''
 
     def tick(self):
@@ -77,11 +83,14 @@ class Core:
         # Header refusals precede replay, session and payload checks.
         if corr == 0:
             return answer(3)
-        if fn:
+        if fn and (self.extension is None or fn not in self.extension.functions):
             return answer(1)
-        if op not in OPS:
+        fixed = FIXED if fn == 0 else self.extension.fixed
+        if op not in fixed:
             return answer(2)
-        if sid == 0 and op not in FREE and op != 16:
+        free = op in FREE if fn == 0 else op in self.extension.free
+        opening = fn == 0 and op == 16
+        if sid == 0 and not free and not opening:
             return answer(9)
         if sid and sid == self.last:
             if corr in self.cache:
@@ -94,7 +103,7 @@ class Core:
 
         passed_session = False
         try:
-            if op == 16:
+            if opening:
                 if sid == 0:
                     raise Reject(3)
                 if self.holder is None and sid == self.last:
@@ -109,10 +118,12 @@ class Core:
                 if sid != self.holder:
                     raise Reject(8, self.locked())
                 passed_session = True
-            if len(payload) < FIXED[op]:
+            if len(payload) < fixed[op]:
                 raise Reject(3)
-            tags = tail(payload[FIXED[op]:], owner=op == 16)
-            if op == 1:
+            tags = tail(payload[fixed[op]:], owner=opening)
+            if fn:
+                value = self.extension.dispatch(fn, op, payload[:fixed[op]])
+            elif op == 1:
                 magic, minimum, maximum = payload[:4], payload[4], payload[5]
                 if magic != b'OEP?' or minimum > maximum:
                     raise Reject(3)
@@ -122,12 +133,14 @@ class Core:
                                               self.ep.window, self.ep.max_inflight, self.ep.boot_id)
                 value += tlv(1, bytes((transport,)))
             elif op == 2:
-                value = b'\0\0\0'  # no interfaces in this explicitly minimal profile
+                value = (self.extension.list_page(struct.unpack_from('<H', payload)[0],
+                                                  self.ep.probe.max_frame - 5)
+                         if self.extension is not None else b'\0\0\0')
             elif op == 3:
                 target, first = struct.unpack_from('<HH', payload)
-                if target:
+                if target and (self.extension is None or target not in self.extension.functions):
                     raise Reject(1)
-                rows = list(self.ep.static[0])
+                rows = list(self.ep.static[0] if target == 0 else self.extension.describe(target))
                 page, index = bytearray(), first
                 while index < len(rows) and len(page) + len(rows[index]) + 6 <= self.ep.probe.max_frame:
                     page.extend(rows[index])
