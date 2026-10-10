@@ -176,3 +176,6 @@ configure、受信/送信、TX idle、再送、plan再作成とend/expiry/force�
 [UARTへの共通stream適用](uart-stream-conformance.ja.md)は第二段階15項目で、既存assertをplan所有の寿命に合わせて使う。
 
 dmseq検査は35項目。console §2に従うresync/TO/CRCのmarkと無効flagの誤通知を追加した。繰り返し観測のmark数は固定しない。
+
+[I2C targetの固有検査](i2c-conformance.ja.md)は第三段階34項目。
+RX/TX FIFO、ACK、overflow、stretch/configure、再送の非重複、plan寿命を4構成で確認する。
