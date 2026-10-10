@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- (JA) コアの独立検査を43項目へ拡張し、独立したシリアルCOBS/CRC検査8項目を追加。拒否順、未知/破損TLV、owner、拒否結果の再送とlease、自分のsession間のforceを検査。固定部後の応答TLVを許容し、失敗したconfirmの後は他の要求を送らない。raw送受信と各検査器moduleのhashも保存。
+- (JA) transport宣言・describeサイズ・ロック中の発見・confirm後の履歴を個別検査。serial port再接続後のsession/lock・再送・終了履歴・leaseを検査し、boot/個体変化は後続を止める。個体照合は仕様に従い大文字小文字を区別しない。
+
+- (JA) コアの独立検査を47項目へ拡張し、独立したシリアルCOBS/CRC検査8項目とport再接続検査4項目を追加。拒否順、未知/破損TLV、owner、拒否結果の再送とlease、自分のsession間のforceを検査。固定部後の応答TLVを許容し、失敗したconfirmの後は他の要求を送らない。raw送受信と各検査器moduleのhashも保存。
 
 - (JA) 指定した SPEC checkout に対する独立した raw-message 適合検査器と項目別 pytest 入口を追加。コアと共通インターフェースの結果、送受信 byte、SPEC commit/dirty/hash、未検査範囲を保存する。旧実装の成功を新仕様の適合として扱わない。プロトコル実装の追従は別段階。既存ベクタ検査は取り込んだ SPEC commit と hash を固定し、明示した checkout の同じ commit と比較する。隣接 HEAD への暗黙依存を除去。
 

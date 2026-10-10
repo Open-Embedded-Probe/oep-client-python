@@ -52,6 +52,10 @@ EXTRA_CHECKS = (
     ('CORE-FORCE-OWNED', 'core §6.2/6.4', 'force_owned', None),
     ('CORE-LIST-STABILITY', 'core §7.2', 'list_stability', None),
     ('CORE-LEASE-DEFAULT', 'core §6.4', 'lease_clamp', 0),
+    ('CORE-TRANSPORT-DECLARE', 'core §7.5; transports §3', 'transport_declarations', None),
+    ('CORE-DESCRIBE-SIZE', 'core §7.3', 'describe_size', None),
+    ('CORE-DISCOVERY-LOCKED', 'core §6.3/7', 'discovery_locked', None),
+    ('CORE-CONFIRM-HISTORY', 'core §5.2/7.1', 'confirm_history', None),
 )
 
 CORE_CASES += tuple(row[0] for row in EXTRA_CHECKS)
@@ -59,6 +63,10 @@ CORE_CASES += tuple(row[0] for row in EXTRA_CHECKS)
 
 SERIAL_CASES = tuple(('CORE-SERIAL-' + kind.upper(), kind) for kind in
                      ('split', 'coalesce', 'crc', 'cobs', 'short', 'role', 'truncated', 'oversized'))
+
+
+RECONNECT_CASES = tuple(('CORE-RECONNECT-' + kind.upper(), kind) for kind in
+                        ('session', 'replay', 'ended', 'lease'))
 
 
 class Violation(ValueError):
@@ -119,6 +127,7 @@ class Checks:
         self.results = []
         self.abort = False
         self.wire = None
+        self.reopen = None
 
     def request(self, op, payload=b'', *, session=0, corr=None, fn=0):
         if corr is None:
@@ -192,7 +201,7 @@ class Checks:
         row = {'id': name, 'clause': clause,
                'level': 'interface' if name.startswith('IF-') else 'core'}
         if self.abort:
-            row.update(status='blocked', error='transport or cleanup failed; remaining checks not executed')
+            row.update(status='blocked', error='endpoint, transport or cleanup failure; remaining checks not executed')
         else:
             try:
                 function()
@@ -242,7 +251,7 @@ class Checks:
         tags = self.reg['core']['tlv']['describe']
         values = dict(reversed(rows))  # first non-repeating TLV wins
         unit = values.get(tags['unit_id'], b'').decode('ascii')
-        require(unit == self.unit, 'unit_id differs from explicit equipment selection')
+        require(unit.lower() == self.unit.lower(), 'unit_id differs from explicit equipment selection')
         require(1 <= len(unit) <= 32 and all(c in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in unit),
                 'unit_id format')
         for field in ('unit_id', 'firmware', 'model', 'chip'):
@@ -255,6 +264,14 @@ class Checks:
         require(tag in values, 'core describe missing current ops tag')
         declared = ops(values[tag])
         require(set(self.core.values()) <= declared, 'mandatory core operation absent')
+        self.transport_declarations()
+        channels = values.get(self.reg['core']['tlv']['describe']['channels'], b'\0\0')
+        require(len(channels) == 2, 'channels must be u16')
+        require(rows == self.describe(0), 'core describe changed within same boot')
+
+    def transport_declarations(self):
+        rows = [(x['tag'], bytes.fromhex(x['value_hex'])) for x in self.observed['core_describe']]
+        values = dict(reversed(rows))
         tags = self.reg['core']['tlv']['describe']
         maximum = values.get(tags['max_op_ms'], b'')
         require(len(maximum) == 4 and 1 <= int.from_bytes(maximum, 'little') <= 600000, 'max_op_ms')
@@ -262,9 +279,97 @@ class Checks:
         require(transports and all(len(v) == 3 and 1 <= v[1] <= 6 for v in transports), 'transport declaration')
         require(len({v[0] for v in transports}) == len(transports), 'duplicate transport index')
         require(self.confirm_transport in {v[0] for v in transports}, 'confirm transport has no describe entry')
-        channels = values.get(tags['channels'], b'\0\0')
-        require(len(channels) == 2, 'channels must be u16')
-        require(rows == self.describe(0), 'core describe changed within same boot')
+        require(all(v[2] == 255 for v in transports if v[1] in (1, 6)),
+                'UART/TCP transport interface must be 0xFF')
+        selected = next(v for v in transports if v[0] == self.confirm_transport)
+        if self.wire is not None:
+            require(selected[1] in (1, 2, 3), 'serial endpoint declares a non-serial kind')
+
+    def describe_size(self):
+        rows = [(x['tag'], bytes.fromhex(x['value_hex'])) for x in self.observed['core_describe']]
+        require(all(len(v) + 9 <= self.max_frame for _, v in rows), 'core describe TLV exceeds frame limit')
+        for entry in self.observed.get('interfaces', []):
+            for _, value in self.describe(entry['fn']):
+                require(len(value) + 9 <= self.max_frame, 'interface describe TLV exceeds frame limit')
+
+    def discovery_locked(self):
+        with self.holding(60000) as sid:
+            before = self.observed['confirm'].copy()
+            self.confirm()
+            require(before == self.observed['confirm'], 'confirm changed while locked')
+            self.identity()
+            require(self.list_snapshot() == [{k: v for k, v in e.items() if k != 'describe'}
+                                             for e in self.observed.get('interfaces', [])],
+                    'list changed while locked')
+            tlvs(self.success(self.request(self.core['keepalive'], session=sid)))
+
+    def confirm_history(self):
+        with self.holding() as sid:
+            request, original = self.clock(sid)
+            before = self.observed['confirm'].copy()
+            self.confirm()
+            require(before == self.observed['confirm'], 'repeat confirm changed limits or boot')
+            reply = self.exchange(request)
+            require(reply[3:5] == bytes((0, self.reasons['result_lost'])) or
+                    (reply[3:5] == b'\x01\0' and reply[5:] == original),
+                    'confirm discarded replay history or repeated execution')
+
+    def reconnect(self, kind):
+        lease = 1000 if kind == 'lease' else 60000
+        with self.holding(lease) as sid:
+            request, original = self.clock(sid)
+            if kind == 'ended':
+                tlvs(self.success(self.request(self.core['end'], session=sid)))
+                self.session = None
+            before = self.observed['confirm'].copy()
+            if kind == 'lease':
+                time.sleep(0.6)
+            record = {'reconnect': kind, 'started_monotonic_ns': time.monotonic_ns()}
+            self.trace.append(record)
+            try:
+                self.reopen()
+                # Stop immediately on restart or replacement. Never end a session on a
+                # different endpoint, or mistake a hardware reset for transport closure.
+                try:
+                    self.confirm()
+                    require(self.boot == before['boot_id'],
+                            'probe restarted while reopening; retention not established')
+                    self.identity()
+                except Exception:
+                    self.session = None
+                    self.abort = True
+                    raise
+                require(before == self.observed['confirm'], 'reopen changed confirm limits/transport')
+                if kind == 'session':
+                    state = self.success(self.request(self.core['lock_state']))
+                    require(len(state) >= 5 and state[0] == 1, 'close released session lock')
+                    tlvs(self.success(self.request(self.core['keepalive'], session=sid)))
+                elif kind == 'replay':
+                    reply = self.exchange(request)
+                    require(reply[3:5] == bytes((0, self.reasons['result_lost'])) or
+                            (reply[3:5] == b'\x01\0' and reply[5:] == original),
+                            'reconnect lost replay history or repeated execution')
+                elif kind == 'ended':
+                    opened = self.request(self.core['open'], struct.pack('<IB', 3000, 0), session=sid)
+                    reply = self.exchange(opened)
+                    if reply[3:5] == b'\x01\0':
+                        self.session = sid  # clean up buggy resurrection
+                    require(reply[3:5] == bytes((0, self.reasons['no_session'])),
+                            'reconnect forgot ended session and allowed reopening')
+                elif kind == 'lease':
+                    time.sleep(0.6)
+                    state = self.success(self.request(self.core['lock_state']))
+                    require(len(state) >= 5 and struct.unpack_from('<BI', state) == (0, 0),
+                            'reconnect renewed or stopped lease')
+                    self.session = None
+                    self.rejected(self.request(self.core['keepalive'], session=sid), 'no_session')
+                else:
+                    raise ValueError(kind)
+            except (OSError, TimeoutError):
+                self.abort = True
+                raise
+            finally:
+                record['elapsed_ns'] = time.monotonic_ns() - record['started_monotonic_ns']
 
     def list_snapshot(self):
         first, total, entries = 0, None, []
@@ -675,16 +780,20 @@ class Checks:
         if self.wire is not None:
             for name, kind in SERIAL_CASES:
                 self.check(name, 'transports §1/2; core §2.4', lambda kind=kind: self.serial_case(kind))
+        if self.reopen is not None:
+            for name, kind in RECONNECT_CASES:
+                self.check(name, 'transports §3; core §5.2/6.1/9', lambda kind=kind: self.reconnect(kind))
         return {'status': 'passed' if all(x['status'] == 'passed' for x in self.results) else 'failed',
                 'scope': 'selected core and common interface checks on selected transport; no target operations',
                 'full_conformance': False,
                 'levels': {'core': 'partial coverage', 'interface': 'declarations only',
                            'oep-interface': 'not executed'},
                 'framing_backend': 'independent serial' if self.wire is not None else 'client',
-                'unchecked': ['non-serial transport faults and alternate routes', 'reconnect/session retention',
+                'unchecked': ['non-serial transport faults and alternate routes', 'alternate-route session retention',
                               'target resource lifetime', 'multi-target isolation',
                               'interface operation behavior', 'electrical behavior'] +
-                             ([] if self.wire is not None else ['independent serial framing/faults']),
+                             ([] if self.wire is not None else ['independent serial framing/faults']) +
+                             ([] if self.reopen is not None else ['reconnect/session retention']),
                 'observed': self.observed, 'checks': self.results}
 
 
@@ -721,10 +830,15 @@ def main(argv=None):
                             wire = SerialWire(stream)
                             checks = Checks(wire.send, registry, args.unit)
                             checks.wire = wire
+                            def reopen():
+                                link._exclusive_off(wire.stream)
+                                wire.stream.close()
+                                wire.stream = link.open_serial(args.address)
+                            checks.reopen = reopen
                             report.update(checks.run())
                         finally:
-                            link._exclusive_off(stream)
-                            stream.close()
+                            link._exclusive_off(wire.stream)
+                            wire.stream.close()
                     else:
                         hst = link.open_host(args.address, keep_session=False, resend=False, port_speed=None)
                         report.update(Checks(hst.link.send, registry, args.unit).run())

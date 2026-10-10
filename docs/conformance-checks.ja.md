@@ -14,7 +14,7 @@
 
 ## 実行
 
-`tests/equipment/.env.example` をコピーし、明示的に読み込む。設定は安定した port/名指しした USB/TCP、期待する unit ID、SPEC checkout、既存の共有 lock、新規 JSON 出力先。SPEC は隣接 checkout を自動探索しない。私的設備台帳への依存はない。配線・target の指定はこのコア検査には不要。`OEP_CONFORMANCE_FRAMING=serial` では独立した COBS/CRC 検査器を使い、43項目のメッセージ検査に8項目のwire検査を加える。`client` は従来backendを使い、USB/TCPでもメッセージ検査を実行できる。
+`tests/equipment/.env.example` をコピーし、明示的に読み込む。設定は安定した port/名指しした USB/TCP、期待する unit ID、SPEC checkout、既存の共有 lock、新規 JSON 出力先。SPEC は隣接 checkout を自動探索しない。私的設備台帳への依存はない。配線・target の指定はこのコア検査には不要。`OEP_CONFORMANCE_FRAMING=serial` では独立した COBS/CRC 検査器を使い、47項目のメッセージ検査に8項目のwire検査と4項目の再接続検査を加える。`client` は従来backendを使い、USB/TCPでもメッセージ検査を実行できる。
 
 ```sh
 uv run --group dev --env-file tests/equipment/.env pytest tests/equipment/test_core_contract.py
@@ -29,19 +29,20 @@ uv run --env-file tests/equipment/.env oep-conformance
 | 項目 | 検査 |
 |---|---|
 | confirm | magic/revision、固定部、frame/window/inflight、transport、boot ID |
-| discovery | 個体照合、list の件数/境界/重複、describe のページング/末尾/不変性、ops の形、transport対応、max_op_ms |
+| discovery | 個体照合、list の件数/境界/重複、describe のページング/末尾/不変性、ops の形、transport対応、max_op_ms、describe TLVのframe上限、ロック中の発見とconfirm後の履歴 |
 | headers/TLV | 結果 role/corr/resolution/detail/長さ、固定部分後の未知応答TLV、拒否優先順、confirmの短さ/magic/revision範囲、要求TLVの短さ/長さ超過/ID 0（critical含む）/未知criticalと非critical |
 | session | keepalive、他 session の lock 拒否、lease 下限/上限/既定、ownerの重複と同ID open、自然失効、header拒否とpayload拒否のleaseへの影響、自分が取得したsession間だけのforce |
 | replay | 未実行でもhighwater以下のcorrはresult_lost、拒否結果の保持、payloadを直した同corrの拒否、header検査と再送検査の優先順、完全一致結果または result_lost、同 corr の要求変更拒否、同 ID open 後の履歴、end後の再送、open再送による復活禁止、再送によるlease延長禁止 |
 | u16 | 半周を越えた corr、session 0 の独立性、corr 65535 の end。番号を一周させない |
 | serial wire | 全byte境界での分割、未知role frameと要求の結合、CRC/COBS破損、短い要求/未知roleの無応答、途中切断後の区切りでの回復、過大frameの無応答とgap後の回復。raw送受信、復号結果、観測時間も保存 |
+| reconnect（serial） | OS portを閉じて同じportを開き、confirm/個体/bootを再照合。sessionとlock、再送履歴、終了したsessionの履歴、close中のlease失効を検査。再起動や個体の不一致はFAILとして後続を止め、異なる端点へendを送らない |
 | interface 共通 | 各 fn を独立に describe/ops/不変性/instance 検査。独自インターフェースにも同じ検査 |
 
 各項目に条項、PASS/FAIL/BLOCKED、要求と応答 hex、経過時間を保存する。timeout/transport切断やcleanup失敗の後は回復を隠さず BLOCKED にし、実行全体は FAIL。設定が全くない任意の pytest 実機入口だけ SKIP。不完全な設定、アクセス権不足、個体違い、仕様違反は FAIL。
 
 `result_lost` は仕様が許す保持サイズ上限を考慮して受ける。履歴の古い clock を送り直したとき、新しい時計値で completed を返せば再実行として失敗する。cacheの容量を実装固有の固定値と決めつけない。
 
-bulk/HID/TCPの独立したframing/fault、再接続、複数経路、force時の資源解放、subscription、電気的なpin解放、複数target・各opの動作は未検査。serialではclientのencoder/decoderを使わず、CRCは標準ライブラリ、COBSと受信は別コードで確認する。OSのport排他だけ既存clientを利用する。重複応答の検査は結果後30msの観測窓内、過大frameの無応答は宣言されたframe gap＋100msの観測窓内に限る。framing=clientでは独立wire検査を実行しない。これらを埋める前に全コア準拠・全インターフェース準拠と名乗らない。
+bulk/HID/TCPの独立したframing/fault、別経路への移動、force時の資源解放、subscription、電気的なpin解放、複数target・各opの動作は未検査。serialではclientのencoder/decoderを使わず、CRCは標準ライブラリ、COBSと受信は別コードで確認する。OSのport排他とportの開閉だけ既存clientを利用する。再接続はOS portのclose/openであり、USBの物理抜き差し・給電断・USB resetを模擬しない。DTR/RTSやbridge配線により再起動した場合、boot変化のFAILとして記録し、session保持の成否は確定しない。重複応答の検査は結果後30msの観測窓内、過大frameの無応答は宣言されたframe gap＋100msの観測窓内に限る。framing=clientでは独立wire検査を実行しない。これらを埋める前に全コア準拠・全インターフェース準拠と名乗らない。
 
 既存 `oep-hardware preflight` は個体・旧仕様の宣言・open/end に限った別契約。portable C++、共有ベクタ、仮想テストの成功も、実機適合とは別に報告する。
 

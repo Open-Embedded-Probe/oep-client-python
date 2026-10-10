@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from .conformance import main, CORE_CASES, SERIAL_CASES
+from .conformance import main, CORE_CASES, SERIAL_CASES, RECONNECT_CASES
 
 if os.environ.get("OEP_CONFORMANCE_FRAMING") == "serial":
-    CORE_CASES += tuple(name for name, _ in SERIAL_CASES)
+    CORE_CASES += tuple(name for name, _ in SERIAL_CASES + RECONNECT_CASES)
 
 
 
