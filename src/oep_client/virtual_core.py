@@ -151,9 +151,13 @@ class Core:
                 raise Reject(admission_reason)
             if len(payload) < fixed[op]:
                 raise Reject(3)
-            tags = tail(payload[fixed[op]:], owner=opening)
+            tags = (self.extension.request_tags(fn, op, payload[fixed[op]:])
+                    if fn and hasattr(self.extension, 'request_tags')
+                    else tail(payload[fixed[op]:], owner=opening))
             if fn:
-                value = self.extension.dispatch(fn, op, payload[:fixed[op]])
+                value = (self.extension.dispatch_request(fn, op, payload[:fixed[op]], tags)
+                         if hasattr(self.extension, 'dispatch_request')
+                         else self.extension.dispatch(fn, op, payload[:fixed[op]]))
             elif op == 1:
                 magic, minimum, maximum = payload[:4], payload[4], payload[5]
                 if magic != b'OEP?' or minimum > maximum:
