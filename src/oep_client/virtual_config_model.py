@@ -141,11 +141,11 @@ class ConfigExtension(Gpio):
             self.validate(new);self.items=new;self.apply();return struct.pack('<I',self.hash())
         if op==18:
             if sum(map(len,self.canonical()))>64:raise Reject(4,tlv(1,b'\3'))
-            self.model.saved=copy.deepcopy(self.items)
-            self.model.saved_identities={int.from_bytes(v[:2],'little'):self.model.catalog[int.from_bytes(v[:2],'little')] for (tag,key),v in self.items.items() if tag==1}
+            identities={int.from_bytes(v[:2],'little'):self.model.catalog[int.from_bytes(v[:2],'little')] for (tag,key),v in self.items.items() if tag==1}
+            self.model.persist_config(self.items,identities)
             self.model.storage_reason=0;self.model.saved_hash=self.hash();return struct.pack('<I',self.hash())
         if op==19:
-            self.model.saved=None;self.model.saved_identities={};self.model.storage_reason=0;self.model.saved_hash=0;return b''
+            self.model.erase_config();return b''
         if op==20:
             n=payload[0];at=1;new=dict(self.items);seen=set()
             for _ in range(n):
@@ -165,6 +165,23 @@ class ConfigModel(GpioModel):
         self.catalog={1:('oep.probe.plan',0,1),2:('oep.fixture.gpio',0,1),3:('oep.fixture.gpio',1,1),4:('oep.probe.config',0,1)}
         super().__init__(lambda:0,boot_id=boot_id);self.ep.probe.max_frame=256
     def install(self):self.extension=ConfigExtension(self);self.ep.current_core=Core(self.ep,self.extension)
+    def persist_config(self,items,identities):
+        def content(rows,names):
+            result={}
+            for (tag,key),value in rows.items():
+                if tag==1:
+                    fn,role,ch=struct.unpack('<HBH',value);result[tag,names[fn],role,ch]=b''
+                else:result[tag,key]=value
+            return result
+        same=False
+        if self.saved is not None and not self.storage_reason:
+            try:same=content(self.saved,self.saved_identities)==content(items,identities)
+            except (KeyError,TypeError,ValueError,struct.error):pass
+        if not same:self.write_config(items,identities)
+    def write_config(self,items,identities):
+        self.saved=copy.deepcopy(items);self.saved_identities=copy.deepcopy(identities)
+    def erase_config(self):
+        self.saved=None;self.saved_identities={};self.storage_reason=0;self.saved_hash=0
     def handle(self,request):
         if len(request)<6 or int.from_bytes(request[3:5],'little')!=4:return super().handle(request)
         e=self.extension;fixed,free=e.fixed,e.free;size=1

@@ -21,5 +21,6 @@ model内のhashとserializationは検査oracleではない。操作の返り値�
 新モデルのeraseが現在設定も消す違反とstorage fullのcause4を再現し、eraseは保存だけ/cause3へ修正した。
 旧config consumer/Endpointの自動attach・bind形は、この現仕様の適合根拠には使わない。
 get paging/数値キー順は[別の部分検査](config-paging-conformance.ja.md)で確認する。
-全項目、同内容saveの書き込み抑止、電源断/保存実行中の排他、
+同内容saveの書き込み抑止と保存容量境界は[別の部分検査](config-storage-conformance.ja.md)で確認する。
+全項目、電源断/保存実行中の排他、
 slot/uartのidentity読み替え、wifi、target、物理保存とproduction追従は残る。full_conformance=false。

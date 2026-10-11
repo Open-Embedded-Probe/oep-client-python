@@ -25,4 +25,5 @@ byte辞書順/byte offset、項目抜け/重複、誤ったmore/hash、途中で
 初期モデルの256 byte固定ページ上限は64/128で応答長違反となり、通知したmax_frameから応答headerを差し引く形へ修正した。
 
 all config items、slot/uart保存参照、任意channelカタログ、真の並行要求/継続変更、production Host連携、
-saveの書込み抑止/排他/電源断、物理設備は残る。full_conformance=false。
+saveの書込み抑止は[別の部分検査](config-storage-conformance.ja.md)で確認する。
+saveの排他/電源断、物理設備は残る。full_conformance=false。
