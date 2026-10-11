@@ -137,7 +137,7 @@ class VirtualCapture:
     base: int = 0                                               # the byte position data[0] is at
     segs: list[Segment] = field(default_factory=list)
     serial_done: int = 0
-    started_ms: int = 0
+    started_ms: int | Fraction = 0
     t0_ns: int = 0                     # the probe-clock time of the track's first sample
     produced: int = 0                  # samples produced since start
     sent: int = 0                      # streaming: the byte position pushed so far
@@ -447,6 +447,9 @@ class VirtualCapture:
                     break
                 seg = self._segment(self.samples)
                 events.append(bytes([EVENT["segment"]]) + seg.pack())
+                if len(self.segs) >= self.segments_max:
+                    self.state = STATE["paused"]
+                    break
         elif self.mode == MODE["streaming"]:
             per_byte = 1 if self.analog else 8 // math.gcd(self.width, 8)   # whole bytes only
             if self.mr_layout is not None:
@@ -458,12 +461,22 @@ class VirtualCapture:
                 self.serial_done = (self.produced // self.samples) & 0xFFFFFFFF   # the probe's own segments (§2.1)
         return events
 
-    def stop(self) -> list[bytes]:
-        """-> events. Stopping what is not running is nothing (§3.2)."""
+    def stop(self, now_ms: int | None = None) -> list[bytes]:
+        """Stop acquisition, committing the samples already taken in a short segment."""
+        events = self.tick(now_ms) if now_ms is not None else []
+        if self.state == STATE["error"]:
+            self.state = STATE["configured"]
+            return events
         if self.state not in (STATE["capturing"], STATE["waiting"], STATE["paused"]):
-            return []
+            return events
+        if self.state == STATE["capturing"] and self.mode == MODE["repeat"] and now_ms is not None and len(self.segs) < self.segments_max:
+            due = int((now_ms - self.started_ms) * self.rate / 1000)
+            partial = min(self.samples - 1, max(0, due - self.produced))
+            if partial:
+                segment = self._segment(partial, flags=FLAG["short"])
+                events.append(bytes([EVENT["segment"]]) + segment.pack())
         self.state = STATE["configured"]
-        return [self.stopped_event(STOPPED["host"])]
+        return events + [self.stopped_event(STOPPED["host"])]
 
     def overflow(self, error: int = CAP.enum["error"]["storage"]) -> list[bytes]:
         """TEST HOOK: the probe dropped data inside the segment it is taking (§2.2: a capture queue or ring overflow,
@@ -534,9 +547,10 @@ class VirtualCapture:
         del self.data[:drop_to - self.base]
         self.base = drop_to
         self.segs = keep
-        if self.state == STATE["paused"]:                          # it goes on from now; the gap shows (flags bit0)
+        if self.state == STATE["paused"] and len(self.segs) < self.segments_max: # resume only when a slot was freed
             self.state, self.gap_next = STATE["capturing"], True
-            self.started_ms = now_ms - int(self.produced * 1000 / self.rate)
+            self.started_ms = now_ms - Fraction(self.produced * 1000) / self.rate
+            self.t0_ns = now_ms * 1_000_000 + self.start_offset_ns - int(Fraction(self.produced * 1_000_000_000) / self.rate)
 
     def unsent(self) -> int:
         """Streaming: the bytes captured and not pushed yet (what a subscription's min_bytes counts, core §11.3)."""
@@ -671,8 +685,8 @@ class VirtualGroup:
         return (struct.pack("<IQIB", blocking_ms, self.start_ns, self.generation, len(self.tracks))
                 + b"".join(struct.pack("<HI", fn, caps[fn].generation) for fn in self.tracks))
 
-    def stop(self, caps: dict[int, VirtualCapture]) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
-        per = [(fn, caps[fn].stop()) for fn in self.tracks]
+    def stop(self, caps: dict[int, VirtualCapture], now_ms: int | None = None) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
+        per = [(fn, caps[fn].stop(now_ms)) for fn in self.tracks]
         return per, [self.stopped_event(STOPPED["host"])] if any(e for _, e in per) else []
 
     def state(self, caps: dict[int, VirtualCapture]) -> int:

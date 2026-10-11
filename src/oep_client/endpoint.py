@@ -1046,7 +1046,7 @@ class Endpoint:
                 return m.COMPLETED, m.SUCCESS, struct.pack("<II", 0, cap.generation)   # blocking_ms generation
             if op == O["stop"]:
                 t.tail()
-                self._events(fn, cap.stop())
+                self._events(fn, cap.stop(self.uptime_ms()))
                 return m.COMPLETED, m.SUCCESS, b""
             if op == O["force"]:
                 t.tail()
@@ -1086,7 +1086,7 @@ class Endpoint:
             gfn = next(g for g, v in self.groups.items() if v is grp)
             for track in grp.tracks:
                 if track != fn:
-                    self._events(track, self.captures[track].stop())
+                    self._events(track, self.captures[track].stop(self.uptime_ms()))
             self._events(gfn, [grp.stopped_event(virtual_bench_capture.STOPPED["error"], error)])
 
     def _group(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
@@ -1108,7 +1108,7 @@ class Endpoint:
                 return m.COMPLETED, m.SUCCESS, grp.start_answer(self.captures)
             if op == O["stop"]:
                 t.tail()
-                per, own = grp.stop(self.captures)
+                per, own = grp.stop(self.captures, self.uptime_ms())
                 for track, events in per:
                     self._events(track, events)
                 self._events(fn, own)

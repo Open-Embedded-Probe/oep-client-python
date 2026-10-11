@@ -48,3 +48,19 @@ logic/analog双方を確認する。state 5のqueryの断り方はこの検査�
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_requests.py
 ```
+
+## 既存仮想captureの世代とデータ寿命
+
+`test_virtual_bench_capture_lifetime.py`はlogic/analogの再startとu32世代境界、旧世代read/releaseの
+拒否時不変、one-shot releaseの非適用、repeatのinclusive解放を確認する。
+区画を解放しないreleaseは満杯のまま。実際に空きができたときだけ再開し、gap、通しpositionと
+再開時のmodel clockを反映したstart_nsを保つ。最終空き区画が完了した時点でstate 5へ入る。
+
+stopはすでに取った途中sampleを短い区画として確定し、空の区画を作らない。
+errorは完了済み区画/dataを取り消さず、次startで世代/data/flagsを更新する。
+error後のstopはdataを保ったままstate 1へ戻す。group stopの短い区画も両trackで検査する。
+仮想modelの論理時刻の検査であり、実機clock精度や全group契約の証明ではない。
+
+```sh
+uv run pytest -q tests/test_virtual_bench_capture_lifetime.py
+```
