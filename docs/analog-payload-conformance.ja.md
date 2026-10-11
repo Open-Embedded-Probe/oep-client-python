@@ -79,3 +79,19 @@ stoppedのerrorはreason 3のときだけ照合し、それ以外で0を要求�
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_notifications.py
 ```
+
+## 到達しないトリガーとforce
+
+`test_virtual_bench_capture_waiting.py`はunsigned ADCへのcross_up threshold 0を使い、
+条件が成立しないときstate 2を保ち、通知/data/区画を作らないことを確認する。
+再start/configureの拒否時不変、stop、error 1/2/3、releaseの非適用も検査する。
+forceでは現在のsampleを使い、まだ足りないpretrigger分だけ区画を短くする。
+groupでも全trackが待ち、forceが同じ時刻で始め、組のtrigger_fnは0を返す。
+
+既存one-shot fixtureと同じく、成立後の将来sampleは即時に合成する。
+これは物理的な待ち時間の証明ではない。自然な早期trigger、全modeのtriggerと
+全group状態機械は別途整備する。
+
+```sh
+uv run pytest -q tests/test_virtual_bench_capture_waiting.py
+```

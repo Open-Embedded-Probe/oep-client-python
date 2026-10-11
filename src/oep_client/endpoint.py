@@ -1050,7 +1050,8 @@ class Endpoint:
                 return m.COMPLETED, m.SUCCESS, b""
             if op == O["force"]:
                 t.tail()
-                return m.COMPLETED, m.SUCCESS, b""                  # nothing waits: a trigger is found at start
+                self._events(fn, cap.force(self.uptime_ms()))
+                return m.COMPLETED, m.SUCCESS, b""
             if op == O["status"]:
                 t.tail()
                 return m.COMPLETED, m.SUCCESS, cap.status()
@@ -1115,6 +1116,10 @@ class Endpoint:
                 return m.COMPLETED, m.SUCCESS, b""
             if op == O["force"]:
                 t.tail()
+                per, own = grp.force(self.captures, self.uptime_ms())
+                for track, events in per:
+                    self._events(track, events)
+                self._events(fn, own)
                 return m.COMPLETED, m.SUCCESS, b""
             if op == O["status"]:
                 t.tail()
