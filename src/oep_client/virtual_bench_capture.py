@@ -237,14 +237,24 @@ class VirtualCapture:
             kept = self.max_hz * 8 // max(8, weight)               # the highest base rate it keeps for this (§5.2)
             if kept < self.min_hz:
                 raise Reject(m.UNSUPPORTED, bytes([specs[0][1]]))  # not even at min_hz: the multirate tag (§5.2)
-        top = self.max_hz // channels if self.analog else self.max_hz   # an ADC's rate is shared by its channels
+        top = Fraction(self.max_hz, channels) if self.analog else self.max_hz   # an ADC's rate is shared by its channels
         if specs:
             top = min(top, kept)
         if self.exact:
             rate = Fraction(min(max(asked, self.min_hz), top))     # any rate in the range (rate_range exact)
         else:
-            div = max(1, -(-self.max_hz // min(max(asked, self.min_hz), top)))
-            rate = Fraction(self.max_hz, div)                      # the nearest it can make within the range
+            # Feasible divisor clocks decrease monotonically. Only the two around
+            # the requested rate can be nearest; constrain both to the declared
+            # minimum and this configuration's ADC/multirate budget. Compare exact
+            # fractions so a closer value above the request is not lost (§3.3).
+            first = max(1, -(-self.max_hz // top))
+            last = self.max_hz // self.min_hz
+            if first > last:
+                raise ValueError("virtual capture has no clock within its declared range and budget")
+            near = self.max_hz // asked
+            candidates = {Fraction(self.max_hz, min(last, max(first, div)))
+                          for div in (near, near + 1)}
+            rate = min(candidates, key=lambda value: (abs(value - asked), value))
         most = self.max_samples.get(mode, MAX_SAMPLES)
         samples = struct.unpack("<I", got[TLV["samples"]])[0] if TLV["samples"] in got else min(4096, most)
         samples = max(1, min(samples, most, MAX_SAMPLES))          # rounded down to its limit; the answer says (§3.3)

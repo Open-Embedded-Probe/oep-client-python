@@ -71,7 +71,7 @@ def test_the_classic_esp32_sampler_takes_a_byte_a_sample():
 def test_a_rate_is_the_source_divided_by_a_whole_number():
     ep, hst, lc, _ = bench()
     core.plan_apply(hst, [(lc.fn, 0, 20)])
-    assert lc.configure(rate=3_000_000, samples=100, query=True).rate == c.Fraction(20_000_000, 7)   # at or under the one asked
+    assert lc.configure(rate=3_000_000, samples=100, query=True).rate == c.Fraction(20_000_000, 7)   # the nearest realizable rate
     assert lc.config is None                                        # query changes nothing
 
 
@@ -281,7 +281,7 @@ def test_analog_values_scale_and_calibration():
     core.plan_apply(hst, [(an.fn, 0, 16), (an.fn, 1, 17)])
     cfg = an.configure(rate=10_000, samples=256, frontends={1: 0})
     assert (cfg.slot, cfg.offset, cfg.bits, cfg.order) == (16, 0, 12, [0, 1])
-    assert cfg.rate == c.Fraction(83_333, 9)                        # the ADC's 83.3 kHz divided: at or under 10 kHz
+    assert cfg.rate == c.Fraction(83_333, 8)                        # the nearest ADC divisor clock, above 10 kHz
     assert cfg.frontend == {0: 3, 1: 0} and cfg.skew_ns == {0: 0, 1: int(1e9 / (cfg.rate * 2))}   # one ADC, in turn
     assert cfg.scale_nv[0] == 3100 * 1_000_000 // 4095 and cfg.reference == ("internal", 1100, False)
     an.start()
@@ -322,9 +322,9 @@ def test_a_group_starts_logic_and_analog_together_and_marks_the_trigger_on_both(
     assert st.start_ns == start_ns == 3_000_000 and st.trigger_fn == lc.fn
     (ls,), (as_,) = lc.segments(), an.segments()
     assert ls.start_ns - start_ns == 0 and as_.start_ns - start_ns == 5000          # the analog starts 5 us later
-    # bit 1 rises at i % 4 == 2: the first at or after 4000 is 4002 (4.002 ms); the analog's (9259 Hz) nearest is 37
+    # bit 1 rises at i % 4 == 2: the first at or after 4000 is 4002 (4.002 ms); the analog's (10416.625 Hz) nearest is 42
     assert ls.trigger_index == 4002 and st.trigger_ns == start_ns + 4_002_000
-    assert as_.trigger_index == round((st.trigger_ns - as_.start_ns) * an.config.rate / 1_000_000_000) == 37
+    assert as_.trigger_index == round((st.trigger_ns - as_.start_ns) * an.config.rate / 1_000_000_000) == 42
     grp.bind([])
     an.start()                                                      # unbound: its own again
     assert an.generation == 2 and lc.read_segment(ls) == lc.read_segment(ls)   # the logic's generation 1 still reads

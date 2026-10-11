@@ -38,3 +38,19 @@ wire交換・sample・state・generation・data・区画・pinをtraceに保存�
 uv run pytest -q tests/test_conformance_logic.py
 uv run --project tests --with-editable /path/to/oep-client-python pytest -c tests/pyproject.toml /path/to/oep-client-python/tests/test_conformance_logic.py
 ```
+
+## 既存仮想ベンチのrate契約
+
+capture §3.3のrateは宣言範囲内で実現可能な最も近い値を使う。要求以下へ丸めるとは限らない。
+`tests/test_virtual_bench_capture_rates.py`は既存VirtualCaptureのsource/divisorという内部選択を明示し、
+小さい範囲では実現可能値を全列挙する独立oracleで全要求を検査する。
+logicの上/下丸め・同距離・min境界、analogの共有ADC予算と分数の上限、u32 source境界、
+exact宣言、queryの非適用、wire actual_rateとanalog skewを確認する。
+同距離の二候補は両方を許容する。このsource固有のdivisorを他のOEP probeへ要求しない。
+
+これはproduction用仮想ベンチの追加回帰であり、上記独立LogicModelのexact rate検査とは別の証拠。
+全analog取得/校正・capture-group・streamingの第三段階検査や物理clock保証を代替しない。
+
+```sh
+uv run pytest -q tests/test_virtual_bench_capture_rates.py tests/test_virtual_bench_capture.py
+```
