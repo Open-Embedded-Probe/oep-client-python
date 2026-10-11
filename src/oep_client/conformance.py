@@ -118,7 +118,7 @@ CHECKER_SOURCES = ('conformance.py', 'conformance_host_notifications.py', 'confo
                    'conformance_host_requests.py', 'conformance_host_request_sample.py',
                    'conformance_link_transfers.py', 'conformance_link_transfer_sample.py',
                    'conformance_link_routes.py', 'conformance_link_routes_sample.py',
-                   'conformance_port_speed.py', 'conformance_port_speed_sample.py',
+                   'conformance_port_speed.py', 'conformance_port_speed_sample.py', 'conformance_port_speed_lifecycle.py',
                    'conformance_host_tlv.py', 'conformance_host_tlv_sample.py', 'conformance_host_core.py', 'conformance_host_core_sample.py', 'conformance_allocator.py', 'conformance_allocator_sample.py', 'conformance_discovery.py', 'conformance_clock.py', 'conformance_clock_sample.py',
                    'conformance_notification_sequence.py', 'conformance_notification_sequence_sample.py', 'conformance_serial.py', 'conformance_tcp.py',
                    'conformance_tcp_peers.py', 'conformance_usb.py', 'conformance_usb_cases.py',

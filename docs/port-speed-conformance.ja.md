@@ -63,5 +63,24 @@ begin中に別の要求を実行する並行性は、この順次fixtureの採�
 検査の失敗時にも準備した書き込みを完了してからcleanupし、未完了writeのエラーで元の違反を隠さない。
 
 無効frameでidleを更新する仮想モデルの違反を1FAILで再現し、応答を出さないdiscardでは更新しないよう修正した。
-成功件数だけで完成としない（full_conformance=false）。要求の実行中のidle停止、force/lease期限、
+成功件数だけで完成としない（full_conformance=false）。要求の実行中のidle停止、
 長いwrite待ち/同時要求/誤応答復旧、他資源と経路条件、Hostのswitch/wait、物理UART/productionは残る。
+
+## セッション解放と古いwrite完了
+
+PortSpeedLifecycleChecksはcontext1と6ケースの部分検査を追加する。
+共通宣言とPortSpeedChecksの後、独立なmodel/Checksを作り、同じ明示SPEC registryで実行する。
+`PortSpeedLifecycleChecks(checks, SamplePortSpeedAdapter(model)).run()`を呼び、traceとreportを保存する。
+
+- FORCE-TRIAL / FORCE-COMMITTED：forceで新しい保持者へ交代しplanを解放する。応答は旧baudで送り終え、その後に起動baudへ戻る。
+- EXPIRY-TRIAL / EXPIRY-COMMITTED：lease1000msの999/1000ms境界で保持者・plan・昇速を解放する。trial verify5000ms、committed idle3000msより先にleaseが切れる条件を使う。
+- EXPIRED-TRY-WRITE / EXPIRED-COMMIT-WRITE：応答buffer準備後、write待ち中にleaseが切れる。古い応答の完了処理が速度・所有権・planを復活させない。
+
+このfixtureでは要求実行は瞬時、write待ちはidle時間として進む。forceの同時inflight、
+実行中の時計停止、leaseが保留write中に切れた場合の物理送信成功は証明しない。
+正常なforce例も新しいsessionを開く要求であり、保持者の既存sessionを他経路へ移動しない。
+検査失敗時のcleanupは観測された保持者を使い、元の境界違反を別のno_session拒否で隠さない。
+
+`uv run pytest -q tests/test_conformance_port_speed_lifecycle.py`：15件。
+正常1、応答故障6、状態故障8。forceの早すぎる復帰/復帰欠落、lease早期・解放欠落、
+古いwriteでtrial/commit/保持者を復活させる故障を検出する。
