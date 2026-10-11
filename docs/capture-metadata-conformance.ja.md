@@ -3,6 +3,9 @@
 `CaptureMetadataChecks(checks, selection).run()`はlogic/analog/capture-group/configのfn/nameを明示して実行する。
 revision 1の第三段階で、登録op検査を含む。全要求はSID 0読出し。
 
+analogの取得操作は[analog操作ガイド](analog-conformance.ja.md)の別checkerで確認する。
+describeの成功だけで取得操作やデータ寿命の適合を証明しない。
+
 - capture: features u32の予約bit0〜2は0。上位bitはこの検査で禁止しない。
 - track: modeの9 byte固定形とモードごとに1行、rate_rangeの9 byteとexactの0/1、channels u8、triggerの8 byte。
 - analog: frontendの13 byte固定形と番号ごとに1行。

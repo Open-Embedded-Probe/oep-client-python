@@ -7,6 +7,9 @@ layout.orderはplanのrole番号そのもの。飛び番も扱い、生サンプ
 例えばroles=(1,3)でorder=[3,1]なら、各行の2番目の値が最初の枠に入る。
 公開checkerは設備・私的ベンチ・隣接SPECを探索せず、Hostのcapture decoderも使わない。
 
+wire操作・世代・データ寿命の検査は[analog操作ガイド](analog-conformance.ja.md)の
+`AnalogChecks`でこのpayload検査と組み合わせる。
+
 `run(configure_payload=..., calibration_payload=..., data=..., expected_samples=...,
 roles=..., frontends=..., mode=..., max_op_ms=...)`は3項目を返す。
 成功解決・wire幅/経路・SID・資源寿命はcallerの別検査で確認する。payloadを渡しただけで実行の適合証明にはならない。
