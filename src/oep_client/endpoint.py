@@ -1031,7 +1031,7 @@ class Endpoint:
                 if len({r for r, _, _ in fronts}) != len(fronts):
                     raise Reject(m.MALFORMED)                      # two frontends for one role (capture §3.3)
                 multirate = [(tag, v) for tag, v in t.repeated if tag & 0x7F == mr_tag]
-                settled = cap.settle(got, t, len(roles), fronts, multirate, query=op == O["query"])
+                settled = cap.settle(got, t, len(roles), fronts, multirate, query=op == O["query"], planned_roles=roles)
                 if op == O["configure"]:
                     cap.apply(settled)
                     cap.slipped = self.capture_slipped

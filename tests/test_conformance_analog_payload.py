@@ -155,6 +155,37 @@ def test_existing_virtual_bench_success_bodies_and_raw_capture():
     assert result['status']=='passed',[(row['id'],row.get('error')) for row in result['checks']]
 
 
-def test_sparse_role_fixture_is_not_used_to_decide_undefined_layout_numbering():
-    with pytest.raises(Violation,match='sparse layout numbering pending SPEC'):
-        checker().configure(payload(),roles=(1,3),frontends={0,1},mode=1,max_op_ms=10)
+
+def sparse_payload(roles,order):
+    from oep_client.conformance import tlvs
+    result=[]
+    for tag,value in tlvs(payload(order=(0,1))):
+        if tag==T['layout']:value=value[:4]+bytes(order)
+        elif tag in (T['scale'],T['skew'],T['frontend_used']):value=bytes((roles[value[0]],))+value[1:]
+        result.append(message.tlv(tag,value))
+    return b''.join(result)
+
+
+@pytest.mark.parametrize('roles',[(1,3),(0,63),(62,63)])
+@pytest.mark.parametrize('reversed_order',[False,True])
+@pytest.mark.parametrize('dirty',[False,True])
+def test_sparse_roles_use_role_identity_for_layout_and_raw_samples(roles,reversed_order,dirty):
+    order=roles[::-1] if reversed_order else roles
+    p=sparse_payload(roles,order);samples=[[0,4095],[29,513],[2048,0]]
+    ordinal=[roles.index(role) for role in order];data=encode(samples,16,2,12,ordinal,dirty)
+    checked=checker();result=checked.run(configure_payload=p,calibration_payload=factory(),data=data,expected_samples=samples,roles=roles[::-1],frontends={0,1},mode=1,max_op_ms=10)
+    assert result['status']=='passed',result['checks']
+    assert checked.config['order']==list(order) and checked.config['roles']==list(roles)
+    host=capture.AnalogCapture.__new__(capture.AnalogCapture);host.config=capture._config(p,True)
+    for i,role in enumerate(roles):assert host.values(data,role)==[sample[i] for sample in samples]
+    assert host.millivolts(roles[0],1)==18 and host.millivolts(roles[1],1)==59998
+
+
+@pytest.mark.parametrize('order',[(0,1),(1,1),(1,2),(1,63)])
+def test_sparse_role_layout_rejects_ordinal_unplanned_or_duplicate_numbers(order):
+    with pytest.raises(Violation):checker().configure(sparse_payload((1,3),order),roles=(1,3),frontends={0,1},mode=1,max_op_ms=10)
+
+
+@pytest.mark.parametrize('roles',[(0,64),(-1,3),(1,1),(1,True)])
+def test_invalid_analog_planned_role_fixture_is_rejected(roles):
+    with pytest.raises(Violation):checker().configure(payload(),roles=roles,frontends={0,1},mode=1,max_op_ms=10)

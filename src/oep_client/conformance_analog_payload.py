@@ -16,7 +16,7 @@ class AnalogPayloadChecks:
         self.tags=self.spec['tlv']['configure_answer']
     def configure(self,payload,*,roles,frontends,mode,max_op_ms):
         require(mode in (1,2,3) and roles and len(set(roles))==len(roles),'explicit mode and unique planned roles')
-        require(sorted(roles)==list(range(len(roles))),'contiguous role fixture required; sparse layout numbering pending SPEC')
+        require(all(type(role)is int and 0<=role<=63 for role in roles),'analog planned role numbers 0..63')
         rows=tlvs(payload);values={}
         repeated={self.tags[name] for name in ('scale','skew','frontend_used')}
         for tag,value in rows:
@@ -27,7 +27,7 @@ class AnalogPayloadChecks:
         layout=values.get(self.tags['layout'],b'');require(len(layout)>=4,'analog layout header')
         slot,offset,bits,count=layout[:4];order=list(layout[4:])
         require(slot in (8,16,32) and 1<=bits<=31 and offset+bits<=slot,'analog slot/value bit bounds')
-        require(count==len(roles) and len(order)==count and sorted(order)==list(range(count)),'analog layout channel permutation/count')
+        require(count==len(roles) and len(order)==count and sorted(order)==sorted(roles),'analog layout channel permutation/count')
         config=dict(slot=slot,offset=offset,bits=bits,order=order,roles=list(sorted(roles)),rate=Fraction(numerator,denominator))
         for name,needed in [('actual_samples',mode in (1,2)),('actual_segments',mode==2)]:
             if needed:
@@ -69,7 +69,7 @@ class AnalogPayloadChecks:
         for i,expected in enumerate(expected_samples):
             for frame,channel in enumerate(config['order']):
                 at=(i*count+frame)*width;actual=(int.from_bytes(payload[at:at+width],'little')>>config['offset'])&mask
-                require(actual==expected[channel],'analog raw sample/order/little endian/value bits')
+                require(actual==expected[config['roles'].index(channel)],'analog raw sample/order/little endian/value bits')
     def run(self,*,configure_payload,calibration_payload,data,expected_samples,roles,frontends,mode,max_op_ms):
         start=len(self.c.results);self.config=None
         def configure():self.config=self.configure(configure_payload,roles=roles,frontends=frontends,mode=mode,max_op_ms=max_op_ms)
@@ -82,4 +82,4 @@ class AnalogPayloadChecks:
         return dict(status='passed' if all(row['status']=='passed' for row in rows) else 'failed',checks=rows,full_conformance=False,
                     scope='explicit analog success bodies and known raw samples',
                     payloads_hex=dict(configure=configure_payload.hex(),calibration=calibration_payload.hex(),data=data.hex()),
-                    unchecked=['wire execution, rejection/session and replay','capture generations, trigger, error, notification and resource lifetime','factory scheme raw interpretation and physical reference/skew accuracy','complete analog operation and capture-group contracts','sparse role layout numbering pending SPEC clarification'])
+                    unchecked=['wire execution, rejection/session and replay','capture generations, trigger, error, notification and resource lifetime','factory scheme raw interpretation and physical reference/skew accuracy','complete analog operation and capture-group contracts'])

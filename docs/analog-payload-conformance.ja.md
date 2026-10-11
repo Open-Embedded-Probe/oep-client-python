@@ -3,8 +3,8 @@
 `AnalogPayloadChecks(checks)`は選択SPECのcapture §1.2/3.2/3.3/3.8を第三段階で確認する。
 callerはconfigure/queryの成功payload、calibrationの成功payload、取得データと既知の生サンプル、
 planのroles、describeのfrontend番号、modeとcore max_op_msを明示する。
-現検査fixtureはrole 0から連番。疎なroleとlayout.orderの対応はSPECの明文化待ちで、
-そのfixtureをpreflightで拒否する。未定義の対応をprobeの違反と判断するためには使わない。
+layout.orderはplanのrole番号そのもの。飛び番も扱い、生サンプルの各行はrole番号の小さい順で渡す。
+例えばroles=(1,3)でorder=[3,1]なら、各行の2番目の値が最初の枠に入る。
 公開checkerは設備・私的ベンチ・隣接SPECを探索せず、Hostのcapture decoderも使わない。
 
 `run(configure_payload=..., calibration_payload=..., data=..., expected_samples=...,
@@ -94,4 +94,15 @@ groupでも全trackが待ち、forceが同じ時刻で始め、組のtrigger_fn�
 
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_waiting.py
+```
+
+## 疎なanalog roleの既存仮想ベンチ
+
+`test_virtual_bench_analog_roles.py`はrole 1/3、0/3、3だけのplanについて、
+configure/query、frontend/triggerの割当確認、raw dataとHost解析を検査する。
+queryは設定済みdataを変えず、未割当roleへの拒否もcapture/plan/GPIOを変えない。
+role 1と3を区別する既知sample列を使う。全analog/group契約の証明ではない。
+
+```sh
+uv run pytest -q tests/test_conformance_analog_payload.py tests/test_virtual_bench_analog_roles.py
 ```

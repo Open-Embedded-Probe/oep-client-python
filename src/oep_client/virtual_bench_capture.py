@@ -132,6 +132,7 @@ class VirtualCapture:
     pretrigger: int = 0
     width: int = 0                     # logic: w; analog: the bytes of one sample (C x 2)
     channels: int = 0
+    analog_roles: tuple[int, ...] = ()  # layout.order preserves planned role IDs (§1.2/3.1)
     frontend_of: dict[int, int] = field(default_factory=dict)   # analog: channel -> frontend
     data: bytearray = field(default_factory=bytearray)          # the stream from `base` on
     base: int = 0                                               # the byte position data[0] is at
@@ -169,7 +170,7 @@ class VirtualCapture:
     MR_WEIGHT = {mr.SAMPLE: 1, mr.ANY_ACTIVE: 2, mr.EDGE_LATCH: 5}
 
     def settle(self, got: dict[int, bytes], t, channels: int, frontends: list[tuple[int, int, int]],
-               multirate: list[tuple[int, bytes]] = (), *, query: bool = False) -> dict:
+               multirate: list[tuple[int, bytes]] = (), *, query: bool = False, planned_roles: list[int] | None = None) -> dict:
         """The actual values for a configure / query request (nothing changed). `t`: the request's tail reader
         (endpoint.Take: `fixed`, `refuse`). `frontends`: (role, frontend, the tag as received) asked. `multirate`:
         the multirate TLVs as received (tag, value), §5.2."""
@@ -227,7 +228,8 @@ class VirtualCapture:
                 raise t.refuse(TLV["trigger"])                     # a type not declared (or undefined)
         if not channels:
             raise wrong_state()                                    # no plan (§3.2)
-        if trigger is not None and trigger[1] >= channels:
+        role_ids = sorted(planned_roles) if self.analog and planned_roles is not None else list(range(channels))
+        if trigger is not None and trigger[1] not in role_ids:
             raise wrong_state()                                    # a role not in the fn's plan: cause 6 (§3.3)
         if any(spec.role >= channels for spec, _ in specs):
             raise wrong_state()                                    # a multirate role not in the plan: cause 6 (§5.2)
@@ -263,9 +265,9 @@ class VirtualCapture:
         pre = struct.unpack("<I", got[TLV["pretrigger"]])[0] if TLV["pretrigger"] in got else 0
         chosen = {}
         if self.analog:
-            chosen = {k: max(self.frontends) for k in range(channels)}   # the widest range unless asked
+            chosen = {k: max(self.frontends) for k in role_ids}   # the widest range unless asked
             for role, fe, tag in frontends:
-                if role >= channels or fe not in self.frontends:
+                if role not in role_ids or fe not in self.frontends:
                     raise Reject(m.UNSUPPORTED, bytes([tag]))      # the frontend's tag as received (core §2.3)
                 chosen[role] = fe
             width = 2 * channels
@@ -290,13 +292,14 @@ class VirtualCapture:
         if specs:
             layout = mr.Layout(width, list(range(len(d1))), mr.choose_block(reduced), reduced)
         return {"mode": mode, "rate": rate, "samples": samples, "segments": segs, "trigger": trigger,
-                "pretrigger": pre, "width": width, "channels": channels, "frontends": chosen,
+                "pretrigger": pre, "width": width, "channels": channels, "roles": role_ids, "frontends": chosen,
                 "multirate": layout, "d1": d1 if specs else []}
 
     def apply(self, s: dict) -> None:
         self.mode, self.rate, self.samples, self.segments_max = s["mode"], s["rate"], s["samples"], s["segments"]
         self.trigger, self.pretrigger, self.width, self.channels = s["trigger"], s["pretrigger"], s["width"], s["channels"]
         self.frontend_of = s["frontends"]
+        self.analog_roles = tuple(s["roles"]) if self.analog else ()
         self.mr_layout, self.mr_d1_roles = s["multirate"], s["d1"]
         self.state = STATE["configured"]
         self._clear()
@@ -306,7 +309,7 @@ class VirtualCapture:
         c = s["channels"]
         out = tlv(ANSWER["actual_rate"], struct.pack("<II", s["rate"].numerator, s["rate"].denominator))
         if self.analog:
-            out += tlv(ANSWER["layout"], bytes([16, 0, 12, c]) + bytes(range(c)))
+            out += tlv(ANSWER["layout"], bytes([16, 0, 12, c]) + bytes(s["roles"]))
         elif s["multirate"] is not None:                          # the D = 1 channels' layout, then block L (§5.3)
             lay = s["multirate"]
             out += tlv(ANSWER["layout"], bytes([lay.w, len(lay.pos)]) + bytes(lay.pos))
@@ -320,10 +323,10 @@ class VirtualCapture:
         out += tlv(ANSWER["blocking_ms"], struct.pack("<I", 0))
         if self.analog:
             step_ns = int(1e9 / (s["rate"] * c))                   # one ADC, the channels in turn
-            for k in range(c):
+            for ordinal, k in enumerate(s["roles"]):
                 lo, hi, _ = self.frontends[s["frontends"][k]]
                 out += tlv(ANSWER["scale"], struct.pack("<Bii", k, 0, (hi - lo) * 1_000_000 // FULL))   # signed (§3.3)
-                out += tlv(ANSWER["skew"], struct.pack("<BI", k, k * step_ns))
+                out += tlv(ANSWER["skew"], struct.pack("<BI", k, ordinal * step_ns))
                 out += tlv(ANSWER["frontend_used"], bytes([k, s["frontends"][k]]))
             out += tlv(ANSWER["reference"], struct.pack("<BIB", ANA.enum["reference_source"]["internal"], 1100, 0))
         return out
@@ -357,7 +360,7 @@ class VirtualCapture:
                 return lay.encode(lambda role, i: self.value(role, first + i), n, roles)
             return lay.encode(self.value, first + n, roles, range(first // lay.L, (first + n) // lay.L))
         if self.analog:
-            return b"".join(struct.pack(f"<{self.channels}H", *(analog_value(k, first + i) for k in range(self.channels)))
+            return b"".join(struct.pack(f"<{self.channels}H", *(analog_value(k, first + i) for k in self.analog_roles))
                             for i in range(n))
         return pack_samples([(first + i) & ((1 << self.width) - 1) for i in range(n)], self.width)   # the counter
 
