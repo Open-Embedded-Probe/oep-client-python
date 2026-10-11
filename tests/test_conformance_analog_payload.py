@@ -141,14 +141,14 @@ def test_raw_data_faults_are_detected(fault):
 def test_existing_virtual_bench_success_bodies_and_raw_capture():
     from test_virtual_bench_capture import bench
     from oep_client import core, virtual_bench_capture
-    ep,hst,_,_=bench();an=capture.AnalogCapture(hst)
+    ep,hst,_,clock=bench();an=capture.AnalogCapture(hst)
     core.plan_apply(hst,[(an.fn,0,16),(an.fn,1,17)])
     checked=checker();observed=[];original=hst.request
     def observe(*args,**kwargs):
         reply=original(*args,**kwargs)
         if args[:2]==(an.fn,an.CONFIGURE):observed.append(reply.payload)
         return reply
-    hst.request=observe;an.configure(rate=10000,samples=3);an.start();segment,=an.wait();raw=an.read_segment(segment)
+    hst.request=observe;an.configure(rate=10000,samples=3);an.start();clock.t=1;segment,=an.wait();raw=an.read_segment(segment)
     calibration=hst.request(an.fn,an.CALIBRATION).payload
     expected=[[virtual_bench_capture.analog_value(k,i) for k in range(2)] for i in range(3)]
     result=checked.run(configure_payload=observed[0],calibration_payload=calibration,data=raw,expected_samples=expected,roles=(0,1),frontends=set(ep.captures[an.fn].frontends),mode=1,max_op_ms=1000)

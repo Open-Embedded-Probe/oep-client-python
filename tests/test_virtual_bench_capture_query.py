@@ -16,7 +16,7 @@ def fixture(analog,state):
         ep.captures[track.fn].value=lambda role,index:0
         track.configure(rate=1000,samples=8,trigger=(c.CROSS_UP,0,1) if analog else (c.EDGE,0,0))
     if state in (2,3,4,5,6):track.start()
-    if state in (5,6):clock.t=9;track.status()
+    if state in (4,5,6):clock.t=9;track.status()
     if state==6:ep.capture_overflow(track.fn,2)
     assert track.status().state==state
     return ep,hst,track,clock
@@ -58,7 +58,7 @@ def test_group_bound_query_does_not_reconfigure_or_unbind_any_track(state,analog
         adc.configure(rate=1000,samples=8,trigger=(c.CROSS_UP,0,1))
     group.bind([logic,adc],trigger=adc if state==2 else None)
     if state!=1:group.start([logic,adc])
-    if state in (5,6):clock.t=9;group.status()
+    if state in (4,5,6):clock.t=9;group.status()
     if state==6:ep.capture_overflow(adc.fn,2)
     # Group status reports 3 while member tracks are paused (capture §4.1).
     assert group.status().state==(3 if state==5 else state)

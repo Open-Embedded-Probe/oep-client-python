@@ -33,7 +33,7 @@ def test_logic_fires_at_first_observed_condition_and_keeps_available_history(kin
 def test_analog_crossing_keeps_bounded_history_and_no_sample_before_start(kind,role,first,pre):
     ep,hst,_,clock=bench();track=c.AnalogCapture(hst);core.plan_apply(hst,[(track.fn,role,16)])
     track.configure(rate=1000,samples=40,trigger=(kind,role,2500),pretrigger=pre);track.subscribe();track.start()
-    clock.t=first+1  # Include the analog start offset.
+    clock.t=first+40  # Include the post-trigger record and analog start offset.
     segment,=track.segments();available=min(pre,first);count=40-pre+available
     assert segment.trigger_index==available and segment.samples==count and bool(segment.flags&2)==(first<pre)
     origin=ep.captures[track.fn].start_offset_ns
@@ -55,7 +55,7 @@ def test_group_early_trigger_shortens_each_track_by_its_actual_rate_history(pre)
     analog.configure(rate=1000,samples=32)
     group.bind([logic,analog],trigger=logic)
     for track in [logic,analog]:track.subscribe()
-    hst.subscribe(group.fn);group.start([logic,analog]);clock.t=3;status=group.status()
+    hst.subscribe(group.fn);group.start([logic,analog]);clock.t=40;status=group.status()
     assert status.trigger_ns==2000000 and status.trigger_fn==logic.fn and status.state==c.STATE['done']
     for track in [logic,analog]:
         segment,=track.segments();needed=group.pretrigger_of(track,logic)

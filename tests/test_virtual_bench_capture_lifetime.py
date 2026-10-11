@@ -9,8 +9,8 @@ from test_virtual_bench_capture_requests import configured,snapshot
 @pytest.mark.parametrize('analog',[False,True])
 @pytest.mark.parametrize('seed',[0,0xfffffffe,0xffffffff])
 def test_restart_generation_wrap_and_old_read_release_are_atomic(analog,seed):
-    ep,hst,track,_=configured(analog);cap=ep.captures[track.fn];cap.generation=seed
-    track.start();first=track.generation;track.wait();track.start();current=track.generation
+    ep,hst,track,clock=configured(analog);cap=ep.captures[track.fn];cap.generation=seed
+    track.start();first=track.generation;clock.t+=1;track.wait();track.start();current=track.generation;clock.t+=1;track.status()
     assert first==((seed+1)&0xffffffff or 1) and current==((first+1)&0xffffffff or 1)
     before=snapshot(ep,track.fn)
     for op,body in [(track.READ,struct.pack('<IQI',first,0,8)),(track.RELEASE,struct.pack('<II',first,0))]:
@@ -60,13 +60,13 @@ def test_error_preserves_committed_data_and_restart_clears_flags(analog,error):
 
 @pytest.mark.parametrize('analog',[False,True])
 def test_ring_pauses_as_soon_as_last_available_segment_finishes(analog):
-    ep,_,track,clock=configured(analog);track.configure(rate=1000,mode=c.REPEAT,samples=8,segments=1);track.start();clock.t=8
+    ep,_,track,clock=configured(analog);track.configure(rate=1000,mode=c.REPEAT,samples=8,segments=1);track.start();clock.t+=8
     assert track.status().state==c.STATE['paused']
 
 
 @pytest.mark.parametrize('analog',[False,True])
 def test_stop_commits_a_short_partial_segment(analog):
-    ep,_,track,clock=configured(analog);track.configure(rate=1000,mode=c.REPEAT,samples=8,segments=2);track.start();clock.t=3;track.stop()
+    ep,_,track,clock=configured(analog);track.configure(rate=1000,mode=c.REPEAT,samples=8,segments=2);track.start();clock.t+=3;track.stop()
     assert track.status().state==c.STATE['configured'];segment,=track.segments()
     assert segment.samples==3 and segment.flags&2 and segment.generation==track.generation
     assert len(track.read_segment(segment))==(12 if analog else 1)

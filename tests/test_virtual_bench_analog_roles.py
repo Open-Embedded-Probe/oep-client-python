@@ -10,7 +10,7 @@ from test_virtual_bench_capture_requests import snapshot
 @pytest.mark.parametrize('roles',[(1,3),(0,3),(3,)])
 @pytest.mark.parametrize('query',[False,True])
 def test_sparse_plan_configure_and_query_keep_role_ids(roles,query):
-    ep,hst,_,_=bench();track=c.AnalogCapture(hst)
+    ep,hst,_,clock=bench();track=c.AnalogCapture(hst)
     core.plan_apply(hst,[(track.fn,r,16+i) for i,r in enumerate(roles)])
     if query:
         track.configure(rate=1000,samples=3);track.start()
@@ -23,7 +23,7 @@ def test_sparse_plan_configure_and_query_keep_role_ids(roles,query):
     assert cfg.skew_ns[roles[0]]==0
     if query:assert snapshot(ep,track.fn)==before
     else:
-        track.config=cfg;track.start();segment,=track.segments();raw=track.read_segment(segment)
+        track.config=cfg;track.start();clock.t=10;segment,=track.segments();raw=track.read_segment(segment)
         # Independent known source vectors distinguish role 1 from role 3 after sample 0.
         expected={0:[4095,4095,4095],1:[2048,2248,2447],3:[2048,2148,2248]}
         for role in roles:assert track.values(raw,role)==expected[role]

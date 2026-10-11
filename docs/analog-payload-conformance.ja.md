@@ -115,7 +115,8 @@ trigger_indexは残した区画内の位置であり、取得開始からのsamp
 logicのedge/level、analogのcross_up/down（疎なroleも含む）、pretrigger 0と不足/充足、
 rawデータ・時刻・世代付き通知、groupのactual_rateに応じたP_kを照合する。
 開始前のsampleをedge/crossingの比較に使わない。
-既存one-shot fixtureは将来sampleを即時合成する。物理latency、全mode/全group契約は別途整備する。
+one-shotは最後のsample時刻を待って区画を公開する。取得途中は区画を返さない。
+[取得時間の検査](capture-metadata-conformance.ja.md#仮想captureの時間検査)を併用する。物理latency、全mode/全group契約は別途整備する。
 
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_pretrigger.py
@@ -143,9 +144,8 @@ forceと既知波形の初回triggerで履歴を残し、repeatの最初の区�
 途中stopでもそのindexを残す。streamingはtriggeredとdataを送り、segment通知は送らない。
 streamingの通し番号とerror時write_posは、捨てた開始前履歴を数えず実際の完了区画から計算する。
 
-既知波形の成立はone-shotと同じくstart時に先に合成する既存fixtureの方式。
-実時計で条件成立まで待つlatency、外部信号が変化した後の再探索、groupの非one-shot trigger、
-multirateの全幾何・storage gap・全stream区画契約は別途整備する。
+既知波形も経過済みsampleだけで条件成立を検出する。待機後の信号変化は下記の別試験で確認する。
+物理latency、offset/skewを含む全modeの時間因果性、multirateの全幾何・storage gap・全stream区画契約は別途整備する。
 
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_trigger_modes.py
@@ -159,7 +159,8 @@ forceでは共通の時刻で全trackを開始し、groupのtrigger_fnは0。自
 各trackのP_k、履歴不足、最初のrepeat区画のtrigger_index/shortを確認する。
 groupとtrackのtrigger通知は一度だけ送り、streamingではsegment通知を送らない。
 
-これは既知波形をstart時に合成するfixtureの回帰であり、待機中の信号変化、実時間latency、
+これは経過済みsampleで条件を検出するtimestamp付き波形fixtureの回帰である。
+待機中の信号変化は下記の別試験で確認する。実時間latency、
 全group操作・multirate・storage gap・並行性の独立適合検査は別途必要。
 
 ```sh
@@ -179,7 +180,8 @@ groupは全trackを進める前に条件を確認し、同じ成立時刻を各a
 status、各trackの操作、push、group force/stopの前にも進行を反映し、世代は進めない。
 one-shotのgroup complete通知を一度だけ送ることも確認する。
 このfixtureはtimestamp付きの入力関数であり、実機の非同期GPIO/ADC入力を証明しない。
-既知波形のstart時の先行合成と、one-shot成立後の将来data合成は継続する。
+start時の未来トリガー探索とone-shotの将来data合成は廃止した。
+自然trigger/forceの成立時と取得完了時を分けて通知を照合する。
 実時間latency、全multirate/storage gap・並行性・全group操作の独立適合は別途必要。
 
 ```sh

@@ -14,7 +14,7 @@ def configured(analog=True):
     ep,hst,logic,clock=bench();track=c.AnalogCapture(hst) if analog else logic
     channels=(16,17) if analog else (20,21)
     core.plan_apply(hst,[(track.fn,k,ch) for k,ch in enumerate(channels)])
-    track.configure(rate=10000 if analog else 1000000,samples=8);track.start();track.wait()
+    track.configure(rate=10000 if analog else 1000000,samples=8);track.start();clock.t=1;track.wait()
     return ep,hst,track,clock
 
 

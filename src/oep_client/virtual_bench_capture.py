@@ -16,9 +16,9 @@ Time (the probe's one clock, ns): a track's first sample is at its start (the gr
 at start) plus the track's start offset - logic 0 (+-50 ns), analog 5 us (+-2 us), as a probe that corrected what it
 knows and says how sure it is. Later segments follow at the actual rate.
 
-Triggers observe only samples whose time has elapsed. One-shot still synthesizes the post-trigger segment eagerly.
+Triggers observe only samples whose time has elapsed. One-shot publishes a segment only after its last sample has elapsed.
 
-Modes: one-shot (without a trigger the segment is there as soon as start answers), repeat (segments come with the clock at the actual
+Modes: one-shot (one completed segment comes with the clock), repeat (segments come with the clock at the actual
 rate, up to the ring; a full ring pauses the capture (state 5), release lets it go on) and streaming (the bytes come
 with the clock and go out as data pushes while subscribed). Triggers: logic level / edge, analog cross up / down, with a
 pretrigger. `slipped` sets flags bit2 on every segment (a probe whose software pace fell behind).
@@ -438,13 +438,8 @@ class VirtualCapture:
         if self.trigger:
             self.state = STATE["waiting"]
             return self.poll_trigger(now_ms)
-        if self.mode == MODE["one_shot"]:
-            seg = self._segment(self.samples)
-            self.state = STATE["done"]
-            events += [bytes([EVENT["segment"]]) + seg.pack(), self.stopped_event(STOPPED["complete"])]
-        else:
-            self.state = STATE["capturing"]
-        return events
+        self.state = STATE["capturing"]
+        return self.tick(now_ms)
 
     def _triggered(self, sample: int, when: int, requested: int) -> list[bytes]:
         """Retain available prehistory; trigger_index is relative to this segment, not acquisition start."""
@@ -459,19 +454,13 @@ class VirtualCapture:
             self.first_segment_samples = -(-self.first_segment_samples // unit) * unit
         events = [bytes([EVENT["triggered"]]) + struct.pack("<IIQI", 0, index, when, self.generation)]
         self.state = STATE["capturing"]
-        if self.mode == MODE["one_shot"]:
-            n = self.samples - requested + index
-            seg = self._segment(n, index, FLAG["short"] if n < self.samples else 0)
-            self.state = STATE["done"]
-            events += [bytes([EVENT["segment"]]) + seg.pack(), self.stopped_event(STOPPED["complete"])]
         return events
 
     def force(self, now_ms: int, *, trigger_ns: int | None = None,
               pretrigger: int | None = None) -> list[bytes]:
         """Resolve a waiting trigger without changing the generation; keep only available prehistory.
 
-        Like start's existing one-shot fixture, future samples are synthesized immediately.
-        This is not an assertion of production acquisition latency.
+        The trigger opens acquisition; the one-shot segment still waits for its sample times.
         """
         if self.state != STATE["waiting"]:
             return []
@@ -486,6 +475,13 @@ class VirtualCapture:
         """Time passes: repeat's segments, streaming's bytes. -> events."""
         events = self.poll_trigger(now_ms) if self.group is None else []
         if self.state != STATE["capturing"]:
+            return events
+        if self.mode == MODE["one_shot"]:
+            n = self.first_segment_samples or self.samples
+            if self.one_shot_due(now_ms) - self.produced >= n:
+                seg = self._segment(n, self.first_trigger_index, FLAG["short"] if n < self.samples else 0)
+                self.state = STATE["done"]
+                events += [bytes([EVENT["segment"]]) + seg.pack(), self.stopped_event(STOPPED["complete"])]
             return events
         due = int((now_ms - self.started_ms) * self.rate / 1000)   # samples the clock has taken since start
         if self.mode == MODE["repeat"]:
@@ -519,6 +515,16 @@ class VirtualCapture:
                     self.stream_committed_bytes = done_samples * self.width if self.analog else -(-done_samples * self.width // 8)
         return events
 
+    def one_shot_due(self, now_ms: int) -> int:
+        """Count samples whose complete frame has elapsed, including sample 0 at its timestamp.
+
+        Analog frames include the last channel's advertised skew. Work in rational time so a
+        fractional realized rate cannot produce a sample before its timestamp.
+        """
+        skew = (self.channels - 1) * int(Fraction(1_000_000_000, 1) / (self.rate * self.channels)) if self.analog else 0
+        elapsed = Fraction(now_ms * 1_000_000) - self.t0_ns - skew
+        return max(0, int(elapsed * self.rate // 1_000_000_000) + 1)
+
     def stop(self, now_ms: int | None = None) -> list[bytes]:
         """Stop acquisition, committing the samples already taken in a short segment."""
         events = self.tick(now_ms) if now_ms is not None else []
@@ -527,8 +533,8 @@ class VirtualCapture:
             return events
         if self.state not in (STATE["capturing"], STATE["waiting"], STATE["paused"]):
             return events
-        if self.state == STATE["capturing"] and self.mode == MODE["repeat"] and now_ms is not None and len(self.segs) < self.segments_max:
-            due = int((now_ms - self.started_ms) * self.rate / 1000)
+        if self.state == STATE["capturing"] and self.mode in (MODE["one_shot"], MODE["repeat"]) and now_ms is not None and len(self.segs) < self.segments_max:
+            due = self.one_shot_due(now_ms) if self.mode == MODE["one_shot"] else int((now_ms - self.started_ms) * self.rate / 1000)
             partial = min((self.first_segment_samples or self.samples) - 1, max(0, due - self.produced))
             if partial:
                 index = self.first_trigger_index if self.first_trigger_index < partial else NONE

@@ -27,9 +27,9 @@ def events(ep,fn):
 @pytest.mark.parametrize('analog',[False,True])
 @pytest.mark.parametrize('subscribed',[False,True])
 def test_one_shot_completion_matches_polling_and_generation(analog,subscribed):
-    ep,_,track,_=configured(analog)
+    ep,_,track,clock=configured(analog)
     if subscribed:track.subscribe()
-    track.start();rows=events(ep,track.fn)
+    track.start();clock.t+=1;rows=events(ep,track.fn)
     if not subscribed:assert rows==[];return
     segment,=track.segments();kinds=[row[0] for row in rows]
     assert kinds==[c.EVENT_SEGMENT,c.EVENT_STOPPED]
@@ -39,7 +39,7 @@ def test_one_shot_completion_matches_polling_and_generation(analog,subscribed):
 
 @pytest.mark.parametrize('analog',[False,True])
 def test_short_stop_notifies_the_actual_short_segment_and_host_reason(analog):
-    ep,_,track,clock=configured(analog);track.configure(rate=1000,mode=c.REPEAT,samples=8,segments=2);track.subscribe();track.start();clock.t=3;track.stop()
+    ep,_,track,clock=configured(analog);track.configure(rate=1000,mode=c.REPEAT,samples=8,segments=2);track.subscribe();track.start();clock.t+=3;track.stop()
     rows=events(ep,track.fn);assert [row[0] for row in rows]==[c.EVENT_SEGMENT,c.EVENT_STOPPED]
     assert rows[0][1][2]==3 and rows[0][1][6]&2 and rows[0][1][-1]==track.generation
     assert rows[1][1][0]==1 and rows[1][1][-1]==track.generation
@@ -56,17 +56,17 @@ def test_error_notification_matches_status_without_incomplete_segment(analog,err
 
 @pytest.mark.parametrize('analog',[False,True])
 def test_full_ring_and_release_do_not_notify_reserved_stopped_reason(analog):
-    ep,_,track,clock=configured(analog);track.configure(rate=1000,mode=c.REPEAT,samples=8,segments=1);track.subscribe();track.start();clock.t=8
+    ep,_,track,clock=configured(analog);track.configure(rate=1000,mode=c.REPEAT,samples=8,segments=1);track.subscribe();track.start();clock.t+=8
     assert track.status().state==c.STATE['paused'];rows=events(ep,track.fn)
     assert [row[0] for row in rows]==[c.EVENT_SEGMENT]
     track.release(0);assert events(ep,track.fn)==[]
-    clock.t=16;track.status();rows=events(ep,track.fn)
+    clock.t+=8;track.status();rows=events(ep,track.fn)
     assert [row[0] for row in rows]==[c.EVENT_SEGMENT] and rows[0][1][6]&1
 
 
 @pytest.mark.parametrize('analog',[False,True])
 def test_queued_old_events_keep_old_generation_and_host_discards_them(analog):
-    ep,_,track,_=configured(analog);track.subscribe();track.start();old=track.generation;track.start();current=track.generation
+    ep,_,track,clock=configured(analog);track.subscribe();track.start();old=track.generation;clock.t+=1;track.status();track.start();current=track.generation;clock.t+=1;track.status()
     rows=events(ep,track.fn);assert [row[1][-1] for row in rows]==[old,old,current,current]
     link=SimpleNamespace(events=[row[2] for row in rows]);chosen=track.events(link)
     assert [event.generation for event in chosen]==[current,current] and track.stale_events==2 and link.events==[]

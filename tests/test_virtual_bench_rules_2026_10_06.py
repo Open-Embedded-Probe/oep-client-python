@@ -498,8 +498,13 @@ def test_group_bind_any_one_reason_and_a_bound_tracks_configure_is_cause_4():
     that applies answers; a bound track's own configure / start is unavailable cause 4 (capture §4)."""
     ep, h = bench(virtual_bench.p4_x035())
     group = fn_of(ep, "oep.fixture.capture-group")
-    ep.groups[group].tracks = [7]                                             # a bound track that is capturing
-    ep.captures[7].state = reg.FIXTURE_LOGIC.enum["state"]["capturing"]
+    h.ok(h.plan_fn, PLAN_APPLY, assignment(7, 0, 20))
+    tags = LOGIC.tlv["configure"]
+    body = m.tlv(tags["mode"], b"\1") + m.tlv(tags["rate"], struct.pack("<I", 1000)) + m.tlv(tags["samples"], struct.pack("<I", 8))
+    h.ok(7, LOGIC.op["configure"], body)
+    h.ok(group, GROUP.op["bind"], struct.pack("<BH", 1, 7))
+    h.ok(group, GROUP.op["start"])
+    assert ep.captures[7].state == reg.FIXTURE_LOGIC.enum["state"]["capturing"]
     assert h.raw(group, GROUP.op["bind"], struct.pack("<BHH", 2, 7, 7)).detail in (m.MALFORMED, m.UNAVAILABLE)
     assert h.raw(group, GROUP.op["bind"], struct.pack("<BH", 1, 4)).detail in (m.UNSUPPORTED, m.UNAVAILABLE)
     assert h.raw(group, GROUP.op["bind"], struct.pack("<BH", 1, 7)).detail == m.UNAVAILABLE

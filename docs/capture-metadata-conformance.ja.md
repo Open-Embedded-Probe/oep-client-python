@@ -50,5 +50,15 @@ one-shot/repeat/streaming、単独/groupの12構成を確認する。start時に
 queryはplanがあればstate 0〜6とgroup-boundでも使い、設定・取得データ・世代・bindを変えない。
 この規則の回帰は`test_virtual_bench_capture_query.py`で確認する。
 
-仮想one-shotは、トリガー後の区画（トリガー無しならstart後の区画）をまだ先に合成する。
-上記12件を、取得完了・全データ生成の時間因果性や実機適合の証明にはしない。
+one-shotの取得完了は`test_virtual_bench_capture_one_shot_time.py`の50件で別に確認する。
+自然トリガー・force・即時取得、単独/group、logic/analogで、区画完成前のreadが空であること、
+完成前にsegment/stopped完了通知を送らないこと、完成後の世代と通知の一回性を確認する。
+途中stopでは経過したsampleだけを短い区画として残し、取得エラーでは未完成区画を公開しない。
+実現rateが分数の場合も、最後のsampleとanalogの最後のchannelのskewが経過してから完了する。
+1 sampleのlogic取得はstart時刻に完了でき、analogはstart offsetを待つ。
+未完成区画のreadを空にするのはこのfixtureの保存方針であり、取得済みの一部を返す他のProbeを禁止する規則にはしない。
+ナノ秒境界の12件もこのモデル時計の部品検査で、実機の時刻不確かさを0とする検査ではない。
+
+仮想波形はsample indexから値を返す関数で、完成時・stop時に過去の値を生成する。
+この検査はその関数の時刻付き入力を用い、実際の入力を継続観測して保存するbufferの証明ではない。
+repeat/streamingのoffset/skewを含む完全な時間因果性、multirate、実機適合は別途確認する。

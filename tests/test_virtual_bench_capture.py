@@ -32,13 +32,14 @@ def counter_ok(lc, data, samples, first=0):
 
 
 def test_one_shot_three_channels_in_four_bit_samples():
-    ep, hst, lc, _ = bench()
+    ep, hst, lc, clock = bench()
     core.plan_apply(hst, [(lc.fn, 0, 20), (lc.fn, 1, 21), (lc.fn, 2, 22)])
     cfg = lc.configure(rate=1_000_000, samples=1000)
     assert (cfg.width, cfg.positions, cfg.samples) == (4, [0, 1, 2], 1000)
     assert cfg.rate == 1_000_000
     lc.start()
     assert lc.generation == 1
+    clock.t += 1
     (seg,) = lc.wait()
     assert (seg.serial, seg.samples, seg.trigger_index, seg.generation) == (0, 1000, None, 1)
     data = lc.read_segment(seg)
@@ -51,6 +52,7 @@ def test_one_shot_three_channels_in_four_bit_samples():
     assert e.value.cause == "wrong_state"
     with pytest.raises(h.Unavailable):
         lc.release(0, generation=1)
+    clock.t += 1
     (seg2,) = lc.wait()
     assert seg2.generation == 2 and len(lc.read_segment(seg2)) == 500
     other = c.LogicCapture(hst)                                     # a host that did not start it asks status first
@@ -59,11 +61,12 @@ def test_one_shot_three_channels_in_four_bit_samples():
 
 
 def test_the_classic_esp32_sampler_takes_a_byte_a_sample():
-    ep, hst, lc, _ = bench(virtual_bench.esp32_v003)
+    ep, hst, lc, clock = bench(virtual_bench.esp32_v003)
     core.plan_apply(hst, [(lc.fn, 0, 4), (lc.fn, 1, 5)])
     cfg = lc.configure(rate=1_000_000, samples=300)
     assert (cfg.width, cfg.positions) == (8, [0, 1])
     lc.start()
+    clock.t += 1
     (seg,) = lc.wait()
     counter_ok(lc, lc.read_segment(seg), 300)
 
@@ -85,7 +88,7 @@ def test_a_trigger_is_where_the_channel_does_it(kind, role, value, index):
     core.plan_apply(hst, [(lc.fn, r, 20 + r) for r in range(4)])
     lc.configure(rate=1_000_000, samples=64, trigger=(kind, role, value), pretrigger=10)
     lc.start()
-    clock.t = 1  # The trigger samples have now elapsed.
+    clock.t = 1  # The trigger and the complete segment have now elapsed.
     (seg,) = lc.wait()
     assert seg.trigger_index == index and seg.samples == 64 - 10 + index and seg.flags & 2
 
@@ -100,15 +103,17 @@ def test_force_is_accepted_and_wait_keeps_the_lock():
     sent = []
     keepalive = hst.keepalive
     hst.keepalive = lambda: (sent.append(1), keepalive())
+    clock.t += 1
     (seg,) = lc.wait(keepalive_s=1e-9)
     assert sent and seg.trigger_index is not None
 
 def test_slipped_segments_say_so():
-    ep, hst, lc, _ = bench()
+    ep, hst, lc, clock = bench()
     ep.capture_slipped = True
     core.plan_apply(hst, [(lc.fn, 0, 20)])
     lc.configure(rate=1_000_000, samples=64)
     lc.start()
+    clock.t += 1
     (seg,) = lc.wait()
     assert seg.slipped
 
@@ -189,13 +194,15 @@ def test_min_bytes_and_max_delay_batch_the_data_and_never_the_events():
 
 
 def test_events_go_out_only_while_subscribed():
-    ep, hst, lc, _ = bench()
+    ep, hst, lc, clock = bench()
     core.plan_apply(hst, [(lc.fn, 0, 20)])
     lc.configure(rate=1_000_000, samples=64)
     lc.start()
+    clock.t += 1
     assert ep.pushes() == []
     lc.subscribe()
     lc.start()
+    clock.t += 1
     kinds = [f[5] for f in ep.pushes()]
     assert kinds == [c.EVENT_SEGMENT, c.EVENT_STOPPED] and ep.outbox == []
 
@@ -272,6 +279,7 @@ def test_segments_carry_ns_times_with_an_uncertainty():
     core.plan_apply(hst, [(lc.fn, 0, 20)])
     lc.configure(rate=1_000_000, samples=64)
     lc.start()
+    clock.t += 1
     (seg,) = lc.wait()
     assert (seg.start_ns, seg.start_uncertainty_ns) == (7_000_000, 50)
 
@@ -286,6 +294,7 @@ def test_analog_values_scale_and_calibration():
     assert cfg.frontend == {0: 3, 1: 0} and cfg.skew_ns == {0: 0, 1: int(1e9 / (cfg.rate * 2))}   # one ADC, in turn
     assert cfg.scale_nv[0] == 3100 * 1_000_000 // 4095 and cfg.reference == ("internal", 1100, False)
     an.start()
+    clock.t += 30
     (seg,) = an.wait()
     data = an.read_segment(seg)
     assert an.values(data, 0, 256) == [virtual_bench_capture.analog_value(0, i) for i in range(256)]   # a square
@@ -319,7 +328,7 @@ def test_a_group_starts_logic_and_analog_together_and_marks_the_trigger_on_both(
     assert e.value.cause == "bound_in_group"
     _, start_ns = grp.start([lc, an])
     assert grp.generations == {lc.fn: 1, an.fn: 1} and lc.generation == an.generation == 1   # the answer's TLV
-    clock.t = 4
+    clock.t = 20
     st = grp.wait()
     assert st.start_ns == start_ns == 3_000_000 and st.trigger_fn == lc.fn
     (ls,), (as_,) = lc.segments(), an.segments()
@@ -335,7 +344,7 @@ def test_a_group_starts_logic_and_analog_together_and_marks_the_trigger_on_both(
 
 
 def test_a_group_refuses_what_it_cannot_bind():
-    ep, hst, lc, clock = bench()
+    ep, hst, lc, _ = bench()
     an, grp = c.AnalogCapture(hst), c.CaptureGroup(hst)
     core.plan_apply(hst, [(lc.fn, 0, 20), (an.fn, 0, 16), (an.fn, 1, 17)])
     lc.configure(rate=1_000_000, samples=100)

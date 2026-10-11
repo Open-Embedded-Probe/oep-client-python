@@ -15,9 +15,9 @@ def waiting():
 
 
 def test_unreachable_threshold_waits_without_segments_data_or_events():
-    ep,_,track,clock=waiting();generation=track.generation
+    ep,_,track,clock=waiting();generation=track.generation;origin=clock.t
     for t in [0,1,20,1000]:
-        clock.t=t;status=track.status()
+        clock.t=origin+t;status=track.status()
         assert status.state==c.STATE['waiting'] and status.generation==generation
         assert track.segments()==[] and events(ep,track.fn)==[]
         assert not ep.captures[track.fn].data
@@ -49,12 +49,12 @@ def test_waiting_error_has_matching_stopped_reason_and_no_segment(error):
 
 @pytest.mark.parametrize('elapsed,index,count',[(0,0,4),(2,2,6),(20,4,8)])
 def test_force_uses_current_sample_and_available_pretrigger(elapsed,index,count):
-    ep,_,track,clock=waiting();generation=track.generation;clock.t=elapsed;track.force()
+    ep,_,track,clock=waiting();generation=track.generation;clock.t+=elapsed;track.force();clock.t+=10
     segment,=track.segments();assert segment.trigger_index==index and segment.samples==count
     assert bool(segment.flags&2)==(count<8) and track.generation==generation
     rows=events(ep,track.fn);assert [r[0] for r in rows]==[c.EVENT_TRIGGERED,c.EVENT_SEGMENT,c.EVENT_STOPPED]
     sampled=round(Fraction(elapsed)*track.config.rate/1000)
-    expected=ep.captures[track.fn].start_offset_ns+int(Fraction(sampled*1000000000)/track.config.rate)
+    expected=ep.captures[track.fn].t0_ns+int(Fraction(sampled*1000000000)/track.config.rate)
     assert rows[0][1][1]==index and rows[0][1][2]==expected
     assert rows[0][1][-1]==generation and track.status().state==c.STATE['done']
     assert abs(segment.start_ns+int(Fraction(index*1000000000)/track.config.rate)-rows[0][1][2])<=1
@@ -84,6 +84,8 @@ def test_group_waits_for_unreachable_source_and_stop_has_no_segments():
 
 def test_group_force_starts_all_tracks_and_reports_force_trigger():
     ep,group,analog,logic,clock=grouped();clock.t=20;generation=group.generation;group.force()
+    assert group.status().state==c.STATE['capturing']
+    clock.t=30
     status=group.status();assert status.state==c.STATE['done'] and status.trigger_fn is None and status.generation==generation
     all_frames=ep.pushes()
     for track in [analog,logic]:

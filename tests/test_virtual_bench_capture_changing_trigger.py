@@ -55,7 +55,7 @@ def test_standalone_detects_later_crossing_and_retains_actual_input(mode, analog
     assert source.status().state == c.STATE['waiting'] and ep.pushes() == []
     clock.t = 25
     status = source.status()
-    assert status.state == c.STATE['done' if mode == c.ONE_SHOT else 'capturing']
+    assert status.state == c.STATE['capturing']
     assert status.generation == generation
     frames = ep.pushes()
     triggered = [c.unpack_event(f) for f in notices(frames, source.fn) if f[5] == c.EVENT_TRIGGERED]
@@ -94,7 +94,7 @@ def test_group_later_trigger_starts_every_track_without_new_generation(mode, ana
     status = group.status()
     expected = ep.captures[source.fn].t0_ns + int(Fraction(20 * 1_000_000_000) / source.config.rate)
     assert status.trigger_ns == expected and status.trigger_fn == source.fn
-    assert status.state == c.STATE['done' if mode == c.ONE_SHOT else 'capturing']
+    assert status.state == c.STATE['capturing']
     assert [group.generation, source.generation, other.generation] == generations
     frames = ep.pushes()
     triggered = [f for f in notices(frames, group.fn) if f[5] == 3]
@@ -114,8 +114,10 @@ def test_group_later_trigger_starts_every_track_without_new_generation(mode, ana
     later = ep.pushes()
     assert not any(f[5] == 3 for f in notices(later, group.fn))
     if mode == c.ONE_SHOT:
-        assert [f[5] for f in notices(frames, group.fn)] == [3, 2]
-        assert notices(later, group.fn) == []
+        assert group.status().state == c.STATE['done']
+        assert [f[5] for f in notices(frames + later, group.fn)] == [3, 2]
+        assert [f[5] for f in notices(later, group.fn)] == [2]
+        assert notices(ep.pushes(), group.fn) == []
 
 
 @pytest.mark.parametrize('analog_source', [False, True])
