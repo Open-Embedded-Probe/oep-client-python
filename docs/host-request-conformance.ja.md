@@ -11,7 +11,7 @@ encoderは文脈の方針に従ってbit7を付け、長さu16 little-endian、�
 番号0・128以上、65536 byte以上の値はValueErrorで断る。
 このAPIの入力制限は検査部品の採用契約であり、既存Host APIを変更する要求ではない。
 
-## レビューした12文脈
+## レビューした16文脈
 
 | 文脈 | criticalを付けるTLV | criticalを付けないTLV | 根拠 |
 |---|---|---|---|
@@ -25,6 +25,10 @@ encoderは文脈の方針に従ってbit7を付け、長さu16 little-endian、�
 | logic configure / query（2文脈） | multirate 0x60 | mode/rate/samples/segments/trigger/pretrigger | capture §3.3、§5.2 |
 | analog configure / query（2文脈） | — | 上記基本設定、frontend | capture §3.3 |
 | capture-group bind | — | trigger_track 1 | capture §4 |
+| plan_apply | role_assignment 0x10 | — | core §2.3、plan §2.1 |
+| gpio set | drive 1 | — | core §2.3、fixture §1.1 |
+| uart configure | format 1 | — | fixture §2、registry configure.format |
+| config set | plan/label/idle/slot/uart/disable/wifi | — | core §2.3、config §1/2、今回のHost方針 |
 
 swd scanのtargetselは、coreの「無視されると要求の意味が無い」条件に当たる。
 scanの指定したmultidrop targetを試す意味を保つためcriticalとする。
@@ -33,7 +37,7 @@ captureの基本設定はすべて実装する規則があるため、SPECが明
 multirateは実装しないProbeがあり、基本layoutでの取得への誤った代替を防ぐためcriticalとする。
 ownerは表示用の任意情報なので非critical。すべてにbitを付ける方針ではこの仕様を満たさない。
 
-core/debug/capture本文SHAとregistry SHAをレビュー時の値へ固定する。
+core/debug/capture/plan/fixture/config本文SHAとregistry SHAをレビュー時の値へ固定する。
 番号・文脈名・revisionの整合も確認し、変われば再レビューまで停止する。
 公開検査はprivateベンチや隣接SPECを自動探索しない。SPECと出力先を明示する。
 
@@ -55,14 +59,25 @@ assert report["status"] == "passed"
 0/256/65535 byteの値は値を加工しない部品検査であり、各TLVの意味・幅、transport上限の適合とは別。
 
 単体は`uv run pytest -q tests/test_conformance_host_requests.py`。
-68件は正常1、各文脈の各tagのbit反転46、意味的故障13、本文変更3、registry/schema変更5。
+85件は正常1、各文脈の各tagのbit反転56、意味的故障13、本文変更6、registry/schema変更5、新規4文脈のop guard4。
 意味的故障は一律critical、一律非critical、並べ替え、重複除去、固定部分消失、値書換え、
 長さのendian/幅、省略、入力制限の破り、tagだけのcacheを含む。
 
-このPASSは12文脈のtail組み立てを証明する部分検査（full_conformance=false）。
+このPASSは16文脈のtail組み立てを証明する部分検査（full_conformance=false）。
 別拡張はその拡張の意味から重要項目をレビューし、同様のoracleを作る。
-plan、config、gpio drive等の重要度台帳、全要求schema、要求する機能の選択・必須引数/default、
+全要求schema、要求する機能の選択・必須引数/default、
 Probeの拒否/非変化、全固定部分の組み立て、production encoder、実機の電気的安全は未証明。
 外部encoderを使う場合は、そのsource/版・adapterと実行環境も別途保存する。
 Probe側の未知/既知TLV規則は[要求TLV検査](tlv-request-conformance.ja.md)、
 応答読出しは[core応答形検査](host-core-shapes-conformance.ja.md)で扱う。
+
+
+planの割り当てを無視した取得や、GPIOで指定のdriveを無視した駆動を避けるためcriticalを付ける。
+UART formatも、指定した通信形を無視して8N1へ落ちないようcriticalにする。
+config setの各項目については、このencoder例では「指定した項目を設定する」要求として全項目をcriticalにする。
+保存するpresetも、使うHostが明示的に設定した値である。labelもnrst等の線探索に使うので、
+この採用方針では表示だけのcore ownerと区別する。これらはcoreの意味から適用したHost方針であり、
+config本文に各tagのcritical指定を新たに追加したわけではない。
+同一set内のplan/wifiとdriveの複数キーを異なる値で送り、出現順とopaqueな値コピーを照合する。
+wifiのtestpassは検査用の架空文字列。実ネットワーク・設備・保存設定は扱わない。
+同時に成り立つ実機構成を検証せず、declared items、キー重複、無効channelや電気条件はProbe適合検査へ残す。

@@ -10,6 +10,9 @@ from .conformance import require, spec_identity
 
 
 REVIEWED = {
+    'interfaces/oep-if-plan.ja.md': '1b785a2c41934d6f1e29e663ca61a1a62049da5c4b094eb345f9a9d981ccbe1a',
+    'interfaces/oep-if-fixture.ja.md': 'f9bf2afb9ed278fb5d4ab8e63f61bc4bdf15f4db499c40caec4f9ff41eb09ee6',
+    'interfaces/oep-if-probe-config.ja.md': '7ecb886254ad5451b9a5c7cad4bffd8327bb0c146436266d90aadb9cfafc61f8',
     'docs/oep-core.ja.md': 'cddf917d49f36bbb1a5b24fbda247675834e1c398beaa179728b8efa31831bf9',
     'interfaces/oep-if-debug.ja.md': '2540689121fa46cfcb68cad08bef0a71acd7e8c0a802330b05bd97057f11861e',
     'interfaces/oep-if-capture.ja.md': 'bc63cae4b7d717f2228c0412534b1c409eedb5a20547cefd02dd99f0893016ec',
@@ -30,10 +33,10 @@ def reviewed_identity(spec):
     for name,op,fixed,fields in contexts():
         entry=registry['core'] if name=='core' else interfaces.get(name,{})
         require(name=='core' or entry.get('revision')==1,'request interface revision changed')
-        expected_op=16 if op in ('scan','configure','bind','open') else 17 if op=='attach' else 24
+        expected_op=17 if name=='oep.probe.config' and op=='set' else 16 if op in ('scan','configure','bind','open','plan_apply','set') else 17 if op=='attach' else 24
         require(next((r['code'] for r in entry['op'] if r['name']==op),None)==expected_op,
                 'request operation number changed')
-        tags=entry['tlv']['configure' if op=='query' else op]
+        tags=entry['tlv']['item' if name=='oep.probe.config' and op=='set' else 'configure' if op=='query' else op]
         require(set(tags.values())=={t for t,v,c in fields},'request tag space changed')
     return dict(identity, reviewed_request_policy_sha256=REVIEWED.copy())
 
@@ -67,6 +70,20 @@ def contexts():
         for op in ('configure', 'query'):
             rows.append(('oep.fixture.' + name, op, b'', list(tags)))
     rows.append(('oep.fixture.capture-group', 'bind', b'\x02\x02\x00\x03\x00', [(1, b'\x02\x00', False)]))
+    # Requested assignments and output/format settings cannot be silently ignored.
+    rows.append(('oep.probe.plan','plan_apply',b'',[
+        (16,b'\x02\x00\x01\x01\x00',True),(16,b'\x02\x00\x01\x03\x00',True)]))
+    rows.append(('oep.fixture.gpio','set',b'\x02\x01\x00\x04\x02\x00\x03',[
+        (1,b'\x00\x00',True),(1,b'\x01\xff',True)]))
+    rows.append(('oep.fixture.uart','configure',b'\x00\xc2\x01\x00',[(1,b'\x05',True)]))
+    # All supplied set items are intentional setting changes, including presets
+    # and line labels consumed by Host wiring discovery. Distinct repeat keys.
+    rows.append(('oep.probe.config','set',b'',[
+        (1,b'\x02\x00\x01\x01\x00',True),(1,b'\x02\x00\x01\x03\x00',True),
+        (2,b'\x04\x00nrst',True),(3,b'\x01\x00\x04\x00',True),
+        (4,b'\x00\x01\x00\x02\x00\x03\x00\x40\x42\x0f\x00\x00\xff\x08socket-a',True),
+        (6,b'\x06\x00\x00\xc2\x01\x00\x05',True),(7,b'\x07\x00',True),
+        (8,b'\x00\x03lab\x08testpass',True),(8,b'\x01\x04test\x00',True)]))
     return rows
 
 

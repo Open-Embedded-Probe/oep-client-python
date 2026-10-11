@@ -17,7 +17,7 @@ def selected_spec(monkeypatch):
 def test_adopted_policy_passes():
     r=HostRequestChecks(encode,spec=SPEC).run()
     assert r['status']=='passed',r['checks']
-    assert r['contexts']==12 and len(r['checks'])==5 and not r['full_conformance']
+    assert r['contexts']==16 and len(r['checks'])==5 and not r['full_conformance']
 
 
 def map_tags(raw, fixed_len, transform):
@@ -102,8 +102,8 @@ def registry_fixture():
     entries={}
     for name,op,fixed,fields in contexts():
         entry=entries.setdefault(name,dict(name=name,revision=1,op=[],tlv={}))
-        entry['op'].append(dict(name=op,code=16 if op in ('scan','configure','bind','open') else 17 if op=='attach' else 24))
-        entry['tlv']['configure' if op=='query' else op]={str(t):t for t,v,c in fields}
+        entry['op'].append(dict(name=op,code=17 if name=='oep.probe.config' and op=='set' else 16 if op in ('scan','configure','bind','open','plan_apply','set') else 17 if op=='attach' else 24))
+        entry['tlv']['item' if name=='oep.probe.config' and op=='set' else 'configure' if op=='query' else op]={str(t):t for t,v,c in fields}
     return dict(protocol=dict(revision=1,byte_order='little'),core=entries.pop('core'),interface=list(entries.values()))
 
 
@@ -123,3 +123,20 @@ def test_selected_schema_guard(tmp_path,monkeypatch,change):
     if change=='operation':registry['interface'][0]['op'][0]['code']=32
     if change=='tag':registry['interface'][0]['tlv']['scan']['1']=7
     with pytest.raises(Exception,match='request'):reviewed_identity(tmp_path)
+
+
+@pytest.mark.parametrize('interface,operation',[
+    ('oep.probe.plan','plan_apply'),('oep.fixture.gpio','set'),
+    ('oep.fixture.uart','configure'),('oep.probe.config','set')])
+def test_new_operation_number_requires_review(tmp_path,monkeypatch,interface,operation):
+    hashes={}
+    for name in REVIEWED:
+        p=tmp_path/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(name)
+        hashes[name]=hashlib.sha256(p.read_bytes()).hexdigest()
+    monkeypatch.setattr('oep_client.conformance_host_requests.REVIEWED',hashes)
+    registry=registry_fixture()
+    monkeypatch.setattr('oep_client.conformance_host_requests.spec_identity',lambda path:(registry,{'registry_sha256':REVIEWED_REGISTRY_SHA256}))
+    reviewed_identity(tmp_path)
+    item=next(row for row in registry['interface'] if row['name']==interface)
+    next(row for row in item['op'] if row['name']==operation)['code']=32
+    with pytest.raises(Exception,match='request operation number changed'):reviewed_identity(tmp_path)

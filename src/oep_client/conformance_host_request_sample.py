@@ -7,6 +7,12 @@ def encode(interface, operation, fixed, fields):
         critical = {1, 2, 3, 4, 5, 6}
     elif interface == 'oep.fixture.logic' and operation in ('configure', 'query'):
         critical = {96}
+    elif interface == 'oep.probe.plan' and operation == 'plan_apply':
+        critical = {16}
+    elif (interface, operation) in (('oep.fixture.gpio', 'set'), ('oep.fixture.uart', 'configure')):
+        critical = {1}
+    elif interface == 'oep.probe.config' and operation == 'set':
+        critical = {1, 2, 3, 4, 6, 7, 8}
     elif interface in ('core', 'oep.fixture.analog', 'oep.fixture.capture-group'):
         critical = set()
     else:
