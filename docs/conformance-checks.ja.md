@@ -185,3 +185,7 @@ mode/bit順/CS、部分byte、arm/overflow/FIFO、再送、CS有効時を含むp
 
 [logic captureの固有検査](logic-conformance.ja.md)は第三段階33項目。
 query/configure、one-shot/repeat、世代、read/区画/release、short/error、plan寿命を明示sampleで確認する。
+
+[analog成功payloadの検査](analog-payload-conformance.ja.md)は第三段階3項目。
+layout/actual値/scale/skew/frontend/reference、calibrationと既知raw sampleを独立に確認する。
+実行・拒否・世代・資源寿命・通知と全analog操作の適合は別に整備する。

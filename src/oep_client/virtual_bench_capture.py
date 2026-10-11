@@ -332,7 +332,7 @@ class VirtualCapture:
         """The analog's calibration (§3.8): a made-up two-point value per frontend, and the reference measured at start."""
         if not self.analog:
             raise Reject(m.UNKNOWN_OPERATION)
-        scheme = b"org.example.virtual_bench.two-point"
+        scheme = b"org.example.virtual-bench.two-point"
         out = b""
         for fe in sorted(self.frontends):
             raw = struct.pack("<HH", 150, 3950)                     # raw at the range's 5 % / 95 %

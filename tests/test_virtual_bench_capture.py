@@ -300,7 +300,7 @@ def test_analog_values_scale_and_calibration():
     assert (an.clipped(0, 0), an.clipped(0, 4095)) == (an.CLIP_HIGH, an.CLIP_LOW)
     assert an.ends_millivolts(0) == (pytest.approx(-3100, abs=1), 0)
     cal = an.calibration()
-    assert [f[0] for f in cal.factory] == [0, 1, 2, 3] and cal.factory[0][1] == "org.example.virtual_bench.two-point"
+    assert [f[0] for f in cal.factory] == [0, 1, 2, 3] and cal.factory[0][1] == "org.example.virtual-bench.two-point"
     assert cal.factory[0][2] == struct.pack("<HH", 150, 3950)       # raw_len(u16) raw
     assert cal.vrefint == (1365, seg.start_ns) and cal.vrefint_nominal_mv == 1100
 
