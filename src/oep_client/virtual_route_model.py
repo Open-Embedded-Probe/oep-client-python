@@ -62,6 +62,19 @@ class RouteModel(DataModel):
     def offer(self, route, frame):
         if route not in self.pipes or not self.pipes[route]['open']:
             return
+        # Include the next-sequence counter in the retained u16 space. Unsent
+        # whole notifications may be discarded; a started frame must finish or
+        # its route must close, never be replaced in the middle of its bytes.
+        fn = int.from_bytes(frame[1:3], 'little')
+        newest = self.extension.subscriptions[fn]
+        def stale(held):
+            return (int.from_bytes(held[1:3], 'little') == fn and
+                    (newest - int.from_bytes(held[3:5], 'little')) % 65536 >= 16384)
+        pipe = self.pipes[route]
+        if pipe['active'] is not None and pipe['active'][0][0] in (3, 4) and stale(pipe['active'][0]):
+            self.close(route)
+            return
+        pipe['push'] = deque(p for p in pipe['push'] if not stale(p))
         if sum(len(part) for part in self.queue(route)) + len(frame) <= self.ep.probe.max_frame * 2:
             self.pipes[route]['push'].append(frame)
 
