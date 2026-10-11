@@ -16,8 +16,8 @@ def selected_spec(monkeypatch):
 def test_notification_reader_contracts_pass():
     report = HostNotificationChecks(SampleHostNotificationReader(), spec=SPEC).run()
     assert report['status'] == 'passed', report['checks']
-    assert len(report['checks']) == 5 and not report['full_conformance']
-    assert sum(len(row['observations']) for row in report['checks']) == 12
+    assert len(report['checks']) == 6 and not report['full_conformance']
+    assert sum(len(row['observations']) for row in report['checks']) == 522
 
 
 @pytest.mark.parametrize('defect,case', [
@@ -27,22 +27,27 @@ def test_notification_reader_contracts_pass():
     ('conflate_fn', 'LOSS'), ('conceal_loss', 'LOSS'),
     ('extend_deadline', 'WAIT-DEADLINE'), ('infinite_wait', 'WAIT-DEADLINE'),
     ('infinite_pump', 'PUMP-DEADLINE'), ('skip_flood', 'PUMP-DEADLINE'),
+    ('ignored_resets_clock', 'IGNORED-DEADLINE'),
 ])
 def test_faults_are_detected(defect, case):
     class Broken(SampleHostNotificationReader):
         def run(self, receive, clock, *, deadline, corr, expected):
             seed = dict(expected)
+            ignored_seen = [False]
             if defect == 'skip_flood':
                 return {'reply': None, 'notifications': [], 'expected': expected, 'gaps': {fn: 0 for fn in expected}}
             def altered(limit):
                 frame = receive(limit + 1 if defect == 'extend_deadline' else limit)
                 if frame is None: return None
+                ignored_seen[0] = frame[0] not in (3, 4) and frame != b'\x02\x07\x00\x01\x00reply'
                 if defect == 'unknown_not_counted' and frame[0] == 3 and frame[5] != 1:
                     return b'\xfa' + frame[1:]
                 if defect == 'stale_reply' and frame[0] == 2 and frame[1:3] == b'\x08\x00':
                     return frame[:1] + b'\x07\x00' + frame[3:]
                 return frame
             effective_clock = (lambda: 0) if (defect == 'infinite_wait' and corr is not None) or (defect == 'infinite_pump' and corr is None) else clock
+            if defect == 'ignored_resets_clock':
+                effective_clock = lambda: 0 if ignored_seen[0] else clock()
             result = super().run(altered, effective_clock, deadline=deadline, corr=corr, expected=expected)
             if defect == 'notification_reply' and result['notifications']: result['reply'] = result['notifications'][0]
             if defect == 'deliver_unknown': result['notifications'].append(event(7, 65535, 127))

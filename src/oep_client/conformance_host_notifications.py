@@ -54,7 +54,8 @@ class HostNotificationChecks:
         return result, now[0]
 
     def demux(self):
-        for irrelevant in (struct.pack('<BHH', 250, 7, 0), reply(8), struct.pack('<BHH', 1, 7, 0)):
+        unknown_roles = (0, *range(5, 256))
+        for irrelevant in [struct.pack('<BHH', role, 7, 0) for role in unknown_roles] + [reply(8), struct.pack('<BHH', 1, 7, 0)]:
             known, stream = event(7, 0), data(7, 1)
             result, _ = self.drive([irrelevant, known, stream, reply(7)])
             require(result['reply'] == reply(7) and result['notifications'] == [known, stream],
@@ -62,7 +63,7 @@ class HostNotificationChecks:
             require(result['expected'] == {7: 2} and result['gaps'] == {7: 0}, 'demux changed notification seq')
 
     def unknown_seq(self):
-        for kind in (2, 127, 128, 255):
+        for kind in (0, *range(2, 256)):
             known, unknown, stream, final = event(7, 65534), event(7, 65535, kind), data(7, 0), event(7, 1)
             result, _ = self.drive([known, unknown, stream, final], corr=None, expected={7: 65534})
             require(result['reply'] is None and result['notifications'] == [known, stream, final], 'unknown kind delivered or known notification lost')
@@ -82,10 +83,20 @@ class HostNotificationChecks:
             require(ended <= 20 and result['reply'] is None, 'notifications extended response/pump deadline')
             require(result['expected'][7] > 0 and result['gaps'][7] == 0, 'flood was not processed')
 
+    def ignored_deadline(self):
+        for corr in (7, None):
+            for ignored in (struct.pack('<BHH', 0, 7, 0), struct.pack('<BHH', 250, 7, 0),
+                            struct.pack('<BHH', 1, 7, 0), reply(8)):
+                result, ended = self.drive(lambda _: ignored, corr=corr, flood=True)
+                require(ended <= 20 and result['reply'] is None and result['notifications'] == [],
+                        'ignored traffic extended deadline or became a response/notification')
+                require(result['expected'] == {7: 0} and result['gaps'] == {7: 0},
+                        'ignored traffic changed notification seq')
+
     def run(self):
         rows = []
         for name, call in [('DEMUX', self.demux), ('UNKNOWN-SEQ', self.unknown_seq), ('LOSS', self.loss),
-                           ('WAIT-DEADLINE', lambda: self.deadline(7)), ('PUMP-DEADLINE', lambda: self.deadline(None))]:
+                           ('WAIT-DEADLINE', lambda: self.deadline(7)), ('PUMP-DEADLINE', lambda: self.deadline(None)), ('IGNORED-DEADLINE', self.ignored_deadline)]:
             start = len(self.observations)
             row = {'id': 'HOST-NOTIFY-' + name, 'clause': 'core §2.4/11.1/11.2', 'status': 'passed'}
             try: call()
