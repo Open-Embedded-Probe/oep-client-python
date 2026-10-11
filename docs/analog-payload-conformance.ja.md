@@ -64,3 +64,18 @@ error後のstopはdataを保ったままstate 1へ戻す。group stopの短い�
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_lifetime.py
 ```
+
+## 既存仮想captureの通知
+
+`test_virtual_bench_capture_notifications.py`はraw eventの固定部分を独立に読み、Host decoderとも比較する。
+logic/analogのone-shot完了、short stop、error、repeat満杯/解放、到達可能なtriggerで世代と
+ポーリング結果を照合する。未購読なら送らず、満杯で予約stopped reason 2を送らない。
+新start後までqueueに残る旧通知は元の世代を保ち、Hostが現在の世代以外を捨てることも確認する。
+世代/時刻/停止理由の改変、通知欠落と不要なtriggerを故障注入して検出する。
+stoppedのerrorはreason 3のときだけ照合し、それ以外で0を要求しない。
+これは既存fixtureの通知動作の追加回帰。到達しないtrigger、全通知/streaming/並行性と
+現在のcoreへ移行した全analog操作の適合は継続して整備する。
+
+```sh
+uv run pytest -q tests/test_virtual_bench_capture_notifications.py
+```
