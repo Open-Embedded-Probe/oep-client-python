@@ -43,3 +43,6 @@ haltでもhartselを0にして返す。resumeとhalt timeoutはhaltreqを下ろ�
 自動で消さない。別connectionの状態は保持する。失敗時にDMCONTROL以外のレジスタを
 変えないことも確認する。これはDMCONTROLの論理状態の検査であり、複数実hartの選択を
 物理的に観測したものではない。optional opのhartselは引き続き別の検査範囲として扱う。
+
+ARM-ADIのraw transferと基本blockは、[ARM-ADIの独立検査](arm-adi-conformance.ja.md)で扱う。
+RISC-VのDMI/hart状態の検査をARMへ流用しない。posted readとraw ACKはARM側の検査条件にする。
