@@ -4,7 +4,7 @@ from .conformance_host_deadline import reviewed_identity
 
 
 class TcpRecoveryChecks:
-    cases=('PAUSE-HEADER','PAUSE-BODY','LENGTH','SHAPE','EOF','BLOCKED')
+    cases=('PAUSE-HEADER','PAUSE-BODY','LENGTH','SHAPE','EOF','BLOCKED','REBOOT','REBOOT-SAME','EXPIRED')
     def __init__(self, adapter, *, spec):
         self.a=adapter; self.identity=reviewed_identity(spec); self.checks=[]; self.observations=[]
     def check(self,name,fn):
@@ -17,6 +17,10 @@ class TcpRecoveryChecks:
             require(callable(getattr(self.a,name,None)),'explicit TCP reconnect/clock controls required')
     def case(self,name):
         r=self.a.run_case(name); events=r['events']
+        if name in ('REBOOT','REBOOT-SAME','EXPIRED'):
+            self.lifecycle(name,r)
+            self.observations.append(r)
+            return
         requests=[e for e in events if e['action']=='request']
         alloc=[e for e in requests if bytes.fromhex(e['request_hex'])[3:6]==b'\1\0\x10']
         require(alloc and all(e['request_hex']=='0102000100100700000001' for e in alloc),'allocation request bytes changed')
@@ -46,6 +50,47 @@ class TcpRecoveryChecks:
                 require(alloc[1]['before']==alloc[1]['after'] and alloc[1]['reply_hex']==alloc[0]['reply_hex'],'replay reexecuted or changed state/result')
         if name!='BLOCKED':require(len(results)==1 and results[0]['reply_hex']=='02020001000100','wrong recovered allocation result')
         self.observations.append(r)
+    def lifecycle(self,name,r):
+        events=r['events'];require(r['connections']==2,'lifecycle did not reopen TCP')
+        close=next(e for e in events if e['action']=='close');transition=next(e for e in events if e['action']=='transition')
+        connect=[e for e in events if e['action']=='connect'][1]
+        require(close['closed'] and events.index(close)<events.index(transition)<events.index(connect),'lifecycle transition/close/reopen order differs')
+        require(close['state']==transition['before'] and transition['after']==connect['state'],'transition snapshots differ')
+        before=transition['before'];state=r['state'];boot=18 if name=='REBOOT' else 17
+        require(before['holder']==7 and before['live']=={'1':[1,1]} and before['next_id']==2,'lifecycle live seed missing')
+        require(state['holder'] is None and not state['live'] and state['boot_id']==boot,'expired/reboot resources/session survived')
+        requests=[e for e in events if e['action']=='request'];alloc=[e for e in requests if bytes.fromhex(e['request_hex'])[3:6]==b'\1\0\x10']
+        require(all(e['request_hex']=='0102000100100700000001' for e in alloc) and len(alloc)==(2 if name=='EXPIRED' else 1),'unknown allocation reexecuted after lifecycle transition')
+        after=[e for e in requests if e['epoch']==1]
+        require(after[0]['request_hex']=='010a00000001000000004f45503f0101','lifecycle skipped confirm')
+        expected=['010a00000001000000004f45503f0101']
+        if name=='EXPIRED':expected+=['0102000100100700000001']
+        expected+=['010b0000001300000000','010c0000001207000000']
+        if name.startswith('REBOOT'):expected+=['010d00000002000000000000','010e00000002000000000100']
+        expected+=['010f0001001300000000']
+        require([e['request_hex'] for e in after]==expected,'recovery state/rediscovery request order or bytes differ')
+        confirm=next(e for e in events if e['action']=='confirm');raw=bytes.fromhex(confirm['reply_hex'])
+        require(confirm['valid'] and raw[:10]==b'\2\x0a\0\1\0OEP!\1' and int.from_bytes(raw[18:22],'little')==boot,'lifecycle confirm boot/corr/header differs')
+        require(next(e for e in events if e['action']=='core-state')['reply_hex']=='020b0001000000000000','lifecycle core state not unlocked')
+        require(next(e for e in events if e['action']=='old-session')['reply_hex']=='020c000007','new old-session request revived session')
+        require(next(e for e in events if e['action']=='resource-state')['reply_hex']=='020f00010000','freed resource remained visible')
+        invalid=next(e for e in events if e['action']=='invalidate')
+        require(invalid['boot_id']==boot and invalid['session'] is None and not invalid['resource_ids'],'Host kept stale session/resource identifiers')
+        if name=='EXPIRED':
+            require(transition['time_ns']==60_000_000_000 and transition['after']['cache']==before['cache'],'lease expiry discarded replay cache or occurred off boundary')
+            require(alloc[1]['before']==alloc[1]['after'] and alloc[1]['reply_hex']==alloc[0]['reply_hex']=='02020001000100','expired historical response reexecuted/changed state')
+            require(state['next_id']==2 and state['last']==7 and state['deadline']==60000,'expiry reset identifiers/deadline/last session')
+            require(not invalid['old_fn_cache_cleared'] and not invalid['discovered'],'unchanged boot unexpectedly required rediscovery in sample')
+        else:
+            require(transition['after']['cache']=={} and transition['after']['last'] is None and state['next_id']==1,'reboot retained old replay/session/resource IDs')
+            pages=[e for e in events if e['action']=='list-page']
+            require(invalid['old_fn_cache_cleared'] and len(pages)==2 and [e['first'] for e in pages]==[0,1],'reboot skipped fn rediscovery')
+            require([e['fn'] for e in invalid['discovered']]==[1,2] and all(e['name']=='io.github.open-embedded-probe.resource' for e in invalid['discovered']),'rediscovery returned wrong interfaces')
+            for i,page in enumerate(pages):
+                n=b'io.github.open-embedded-probe.resource'
+                value=b'\2\0\1'+(i+1).to_bytes(2,'little')+i.to_bytes(2,'little')+bytes((1,0,len(n)))+n
+                require(bytes.fromhex(page['reply_hex'])==b'\2'+(13+i).to_bytes(2,'little')+b'\1\0'+value,'rediscovery page wire differs')
+        require(not any(e['action']=='result' for e in events),'lifecycle returned stale live allocation')
     def run(self):
         self.check('CONTEXT',self.context)
         if self.checks[-1]['status']=='passed':
@@ -55,4 +100,4 @@ class TcpRecoveryChecks:
         return dict(status='passed' if all(r['status']=='passed' for r in self.checks) else 'failed',checks=self.checks,
                     observations=self.observations,spec=self.identity,full_conformance=False,
                     implementation_sources_sha256=self.a.source_sha256() if callable(getattr(self.a,'source_sha256',None)) else {},
-                    unchecked=['production SerialLink/full Host reconnect policy','OS TCP sockets/network timing','reboot or lease expiration during reconnect','notifications and multiple concurrent TCP clients'])
+                    unchecked=['production SerialLink/full Host reconnect policy','OS TCP sockets/network timing','arbitrary reboot catalogs/configuration and lease race interleavings','notifications and multiple concurrent TCP clients'])

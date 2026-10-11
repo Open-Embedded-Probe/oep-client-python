@@ -9,6 +9,8 @@ from unittest.mock import patch
 from . import frames, message
 from .conformance_host_deadline_sample import Clock, ScheduledStream
 from .virtual_resource_model import ResourceModel
+from .virtual_resource_model import Resources
+from .virtual_core import Core
 
 
 class TcpFixtureStream(ScheduledStream):
@@ -41,7 +43,7 @@ class SampleTcpRecoveryAdapter:
         streams = []
         request = message.Request(2, 1, 16, b'\1', 7).pack()
         def snapshot():
-            return dict(holder=core.holder, deadline=core.deadline,
+            return dict(holder=core.holder, deadline=core.deadline,last=core.last,high=core.high,boot_id=peer.ep.boot_id,
                         next_id=peer.extension.next_id,
                         live={str(k):list(v) for k,v in peer.extension.live.items()},
                         cache={str(k):repr(v) for k,v in core.cache.items()})
@@ -70,7 +72,7 @@ class SampleTcpRecoveryAdapter:
                                                     (clock.ns+400_000_000, wire[split:])])
                         elif name == 'LENGTH': stream.schedule.append((clock.ns,b'\xff\xff'))
                         elif name == 'SHAPE': stream.schedule.append((clock.ns,b'\3\0\2\2\0'))
-                        elif name == 'EOF': stream.eof = True
+                        elif name in ('EOF','REBOOT','REBOOT-SAME','EXPIRED'): stream.eof = True
                         elif name == 'BLOCKED': stream.schedule.append((clock.ns,b'\xff\xff'))
                     elif name == 'BLOCKED' and epoch == 1:
                         pass
@@ -99,6 +101,16 @@ class SampleTcpRecoveryAdapter:
                 state = snapshot()
                 stream.close()
                 events.append(dict(action='close', epoch=0,closed=stream.closed,state=snapshot()))
+                if name in ('REBOOT','REBOOT-SAME','EXPIRED'):
+                    if name=='EXPIRED':
+                        clock.sleep(60)
+                        core.tick()
+                    else:
+                        peer.extension.release()
+                        peer.ep.reboot(18 if name=='REBOOT' else 17)
+                        peer.extension=Resources()
+                        core=peer.ep.current_core=Core(peer.ep,peer.extension)
+                    events.append(dict(action='transition',name=name,time_ns=clock.ns,before=state,after=snapshot()))
                 stream, parser = connect()
                 confirm = message.Request(10,0,1,b'OEP?\1\1',0).pack()
                 parser.send_many([confirm])
@@ -106,9 +118,42 @@ class SampleTcpRecoveryAdapter:
                 valid = False
                 if reply:
                     result = message.Result.unpack(reply)
-                    valid = result.corr == 10 and result.succeeded and result.payload[:5] == b'OEP!\1' and int.from_bytes(result.payload[13:17],'little') == 17
+                    valid = result.corr == 10 and result.succeeded and result.payload[:5] == b'OEP!\1'
                 events.append(dict(action='confirm',epoch=1,valid=valid,reply_hex=reply.hex() if reply else None))
-                if valid:
+                if valid and name in ('REBOOT','REBOOT-SAME','EXPIRED'):
+                    boot=int.from_bytes(result.payload[13:17],'little')
+                    if name=='EXPIRED':
+                        parser.send_many([request])
+                        replay=parser.recv(1)
+                        events.append(dict(action='historical-result',reply_hex=replay.hex()))
+                    parser.send_many([message.Request(11,0,19,b'',0).pack()])
+                    status=message.Result.unpack(parser.recv(1))
+                    events.append(dict(action='core-state',reply_hex=status.pack().hex()))
+                    parser.send_many([message.Request(12,0,18,b'',7).pack()])
+                    gone=message.Result.unpack(parser.recv(1))
+                    events.append(dict(action='old-session',reply_hex=gone.pack().hex()))
+                    discovered=[]
+                    if name.startswith('REBOOT'):
+                        first=0
+                        while True:
+                            parser.send_many([message.Request(13+first,0,2,struct.pack('<H',first),0).pack()])
+                            page=message.Result.unpack(parser.recv(1))
+                            total,count=struct.unpack_from('<HB',page.payload)
+                            data=page.payload[3:]
+                            for _ in range(count):
+                                fn,instance,revision,flags,n=struct.unpack_from('<HHBBB',data)
+                                discovered.append(dict(fn=fn,instance=instance,revision=revision,name=data[7:7+n].decode()))
+                                data=data[7+n:]
+                            events.append(dict(action='list-page',first=first,reply_hex=page.pack().hex()))
+                            first+=count
+                            if first>=total:break
+                            if not count:raise ValueError('list paging stalled')
+                    parser.send_many([message.Request(15,1,19,b'',0).pack()])
+                    resources=message.Result.unpack(parser.recv(1))
+                    events.append(dict(action='resource-state',reply_hex=resources.pack().hex()))
+                    events.append(dict(action='invalidate',boot_id=boot,session=None,resource_ids=[],
+                                       old_fn_cache_cleared=name.startswith('REBOOT'),discovered=discovered))
+                elif valid:
                     parser.send_many([request])
                     reply = parser.recv(1)
                     events.append(dict(action='result',epoch=1,reply_hex=reply.hex() if reply else None))
