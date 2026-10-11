@@ -8,6 +8,7 @@
 既存`LogicChecks`のwire交換・世代・データ寿命・資源寿命の検査手順を再利用し、
 analogの成功payloadと生データは`AnalogPayloadChecks`で独立に読む。
 Hostのcapture decoderや仮想probeのencoderを正解の生成に使わない。
+複数trackの結合は[capture-group操作ガイド](capture-group-conformance.ja.md)の別checkerで確認する。
 
 - planなしのconfigure/query/start、SIDの要否、設定契約・幅・0値・critical同等性・raw tag・first-wins。
 - rateの範囲、samplesの容量切り下げ、repeat区画数、triggerのtype/role/値、pretrigger。

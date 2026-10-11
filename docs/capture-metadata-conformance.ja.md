@@ -4,6 +4,7 @@
 revision 1の第三段階で、登録op検査を含む。全要求はSID 0読出し。
 
 analogの取得操作は[analog操作ガイド](analog-conformance.ja.md)の別checkerで確認する。
+groupの結合・一斉取得・世代と寿命は[capture-group操作ガイド](capture-group-conformance.ja.md)を参照する。
 describeの成功だけで取得操作やデータ寿命の適合を証明しない。
 
 - capture: features u32の予約bit0〜2は0。上位bitはこの検査で禁止しない。
