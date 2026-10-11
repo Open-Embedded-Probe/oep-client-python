@@ -146,6 +146,22 @@ class RouteModel(DataModel):
                               'subscriptions': self.extension.subscriptions,
                               'routes': self.extension.routes, 'resources': self.extension.live})
 
+    def sequence_state(self):
+        return {**self.state(), 'conditions': copy.deepcopy(self.extension.conditions)}
+
+    def seed_sequence(self, fn, value):
+        if (type(value) is not int or not 0 <= value <= 65535 or fn not in self.extension.subscriptions
+                or any(self.queue(route) for route in self.pipes)):
+            raise ValueError('subscribed fn, empty notification queues and explicit u16 seed required')
+        self.extension.subscriptions[fn] = value
+
+    def restart_fixture(self):
+        if self.ep.current_core.holder is not None:
+            raise ValueError('logical reset requires no owner')
+        boot = (self.ep.boot_id + 1) & 0xffffffff
+        self.__init__(boot_id=boot)
+        return {'scope': 'logical-model', 'boot_id': boot}
+
     def drain(self):
         raise ValueError('route-specific receive required')
 
