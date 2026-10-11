@@ -13,11 +13,12 @@ save/eraseは組で宣言する。保存はRAM内の独立なcopyであり、fla
 
 getの項目はcritical bitを外し、hashはProbeが作る値として比較する。HostはCRC等を計算しない。
 model内のhashとserializationは検査oracleではない。操作の返り値、get/state、実際のGPIO/planを独立に照合する。
-fixtureのfn/role/channelは固定。保存先のinterface番号が変わる条件や読めない保存のfallbackは未検査。
+この基本検査のfn/role/channelは固定。保存先のinterface番号が変わる条件や読めない保存のfallbackは、
+別の[保存復帰検査](config-fallback-conformance.ja.md)で確認する。
 
 `uv run pytest -q tests/test_conformance_config.py`は20件。
 正常1、共通宣言1、wire故障4、意味的故障11、制御不足3。
 新モデルのeraseが現在設定も消す違反とstorage fullのcause4を再現し、eraseは保存だけ/cause3へ修正した。
 旧config consumer/Endpointの自動attach・bind形は、この現仕様の適合根拠には使わない。
 全項目、get paging/数値キー順の広い範囲、同内容saveの書き込み抑止、電源断/保存実行中の排他、
-identity読み替え/読めない保存、wifi、target、物理保存とproduction追従は残る。full_conformance=false。
+slot/uartのidentity読み替え、wifi、target、物理保存とproduction追従は残る。full_conformance=false。

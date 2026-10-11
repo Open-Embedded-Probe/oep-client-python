@@ -10,12 +10,50 @@ class ConfigExtension(Gpio):
     functions=(1,2,3,4)
     def __init__(self,model):
         super().__init__();self.model=model;self.items={}
+        self.functions=tuple(model.catalog)
         self.idle={ch:(0,0) for ch in range(8)};self.pins=dict(self.idle)
-        if model.saved is not None:self.items=copy.deepcopy(model.saved);self.apply()
+        model.storage_reason=0
+        if model.saved is not None:self.restore_saved()
+    def restore_saved(self):
+        # The RAM blob is a fixture format, not a prescribed storage serialization.
+        m=self.model
+        try:
+            if not isinstance(m.saved,dict) or not isinstance(m.saved_identities,dict):raise ValueError()
+            referenced=set()
+            for (tag,key),value in m.saved.items():
+                if type(tag) is not int or tag not in (1,2,3,7) or type(key) is not bytes or type(value) is not bytes:raise ValueError()
+                size=5 if tag==1 else 4 if tag==3 else 2 if tag==7 else None
+                if size is not None and len(value)!=size:raise ValueError()
+                if tag==2:
+                    if not 3<=len(value)<=34:raise ValueError()
+                    value[2:].decode('utf-8')
+                if key!=(value if tag==1 else value[:2]):raise ValueError()
+                if tag==1:referenced.add(int.from_bytes(value[:2],'little'))
+            if set(m.saved_identities)!=referenced:raise ValueError()
+            for fn,identity in m.saved_identities.items():
+                if type(fn) is not int or not 1<=fn<=65535 or type(identity) is not tuple or len(identity)!=3:raise ValueError()
+                name,instance,revision=identity
+                if type(name) is not str or not name or type(instance) is not int or not 0<=instance<=65535 or type(revision) is not int or not 1<=revision<=255:raise ValueError()
+        except (ValueError,TypeError):
+            m.storage_reason=1;m.saved_hash=0;return
+        remap={}
+        for old,identity in m.saved_identities.items():
+            matches=[fn for fn,row in m.catalog.items() if row==identity]
+            if len(matches)!=1:m.storage_reason=2;m.saved_hash=0;return
+            remap[old]=matches[0]
+        candidate={}
+        for (tag,key),value in m.saved.items():
+            if tag==1:value=struct.pack('<H',remap[int.from_bytes(value[:2],'little')])+value[2:];key=value
+            candidate[tag,key]=value
+        try:self.validate(candidate)
+        except Reject:
+            m.storage_reason=3;m.saved_hash=0;return
+        self.items=candidate;self.apply();m.saved_hash=self.hash()
     def list_page(self,first,limit):
-        names=(b'oep.probe.plan',b'oep.fixture.gpio',b'oep.fixture.gpio',b'oep.probe.config')
-        rows=[struct.pack('<HHBBB',i+1,int(i==2),1,0,len(n))+n for i,n in enumerate(names)]
-        out=bytearray(struct.pack('<HB',4,0))
+        rows=[]
+        for fn,(name,instance,revision) in sorted(self.model.catalog.items()):
+            n=name.encode('ascii');rows.append(struct.pack('<HHBBB',fn,instance,revision,0,len(n))+n)
+        out=bytearray(struct.pack('<HB',len(rows),0))
         for row in rows[first:]:
             if len(out)+len(row)>limit:break
             out.extend(row);out[2]+=1
@@ -38,7 +76,7 @@ class ConfigExtension(Gpio):
         if tag==1:
             if len(value)!=5:raise Reject(3)
             fn,role,ch=struct.unpack('<HBH',value)
-            if fn not in (2,3) or role!=1 or ch>=8:raise Reject(11,bytes((tag,)))
+            if fn not in (2,3) or self.model.catalog.get(fn,('',0,0))[0]!='oep.fixture.gpio' or role!=1 or ch>=8:raise Reject(11,bytes((tag,)))
             return value
         if len(value)<2:raise Reject(3)
         ch=int.from_bytes(value[:2],'little')
@@ -103,9 +141,11 @@ class ConfigExtension(Gpio):
             self.validate(new);self.items=new;self.apply();return struct.pack('<I',self.hash())
         if op==18:
             if sum(map(len,self.canonical()))>64:raise Reject(4,tlv(1,b'\3'))
-            self.model.saved=copy.deepcopy(self.items);self.model.saved_hash=self.hash();return struct.pack('<I',self.hash())
+            self.model.saved=copy.deepcopy(self.items)
+            self.model.saved_identities={int.from_bytes(v[:2],'little'):self.model.catalog[int.from_bytes(v[:2],'little')] for (tag,key),v in self.items.items() if tag==1}
+            self.model.storage_reason=0;self.model.saved_hash=self.hash();return struct.pack('<I',self.hash())
         if op==19:
-            self.model.saved=None;self.model.saved_hash=0;return b''
+            self.model.saved=None;self.model.saved_identities={};self.model.storage_reason=0;self.model.saved_hash=0;return b''
         if op==20:
             n=payload[0];at=1;new=dict(self.items);seen=set()
             for _ in range(n):
@@ -116,12 +156,13 @@ class ConfigExtension(Gpio):
                 if tag==1:new={k:v for k,v in new.items() if not(k[0]==1 and v[:2]==key)}
                 else:new.pop((tag,key),None)
             self.validate(new);self.items=new;self.apply();return struct.pack('<I',self.hash())
-        return struct.pack('<BIB',int(self.model.saved is not None),self.model.saved_hash,0)
+        return struct.pack('<BIB',2 if self.model.storage_reason else int(self.model.saved is not None),self.model.saved_hash,self.model.storage_reason)
 
 
 class ConfigModel(GpioModel):
     def __init__(self,*,boot_id=17):
-        self.saved=None;self.saved_hash=0
+        self.saved=None;self.saved_hash=0;self.saved_identities={};self.storage_reason=0
+        self.catalog={1:('oep.probe.plan',0,1),2:('oep.fixture.gpio',0,1),3:('oep.fixture.gpio',1,1),4:('oep.probe.config',0,1)}
         super().__init__(lambda:0,boot_id=boot_id);self.ep.probe.max_frame=256
     def install(self):self.extension=ConfigExtension(self);self.ep.current_core=Core(self.ep,self.extension)
     def handle(self,request):
@@ -135,5 +176,5 @@ class ConfigModel(GpioModel):
         try:return self.ep.current_core.handle(request,0)
         finally:e.fixed,e.free=fixed,free
     def config_state(self):
-        return dict(items={f'{tag}:{key.hex()}':value.hex() for (tag,key),value in self.extension.items.items()},hash=self.extension.hash(),saved_hash=self.saved_hash,
+        return dict(items={f'{tag}:{key.hex()}':value.hex() for (tag,key),value in self.extension.items.items()},hash=self.extension.hash(),saved_hash=self.saved_hash,storage_reason=self.storage_reason,
                     saved=None if self.saved is None else {f'{tag}:{key.hex()}':value.hex() for (tag,key),value in self.saved.items()},gpio=copy.deepcopy(self.gpio_state()))
