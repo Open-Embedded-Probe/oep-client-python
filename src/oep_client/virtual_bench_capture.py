@@ -144,6 +144,8 @@ class VirtualCapture:
     first_segment_samples: int = 0    # short initial segment; 0 uses configured size
     first_trigger_index: int = NONE
     stream_committed_bytes: int = 0
+    trigger_scan: int = 0             # waiting: next elapsed source sample to inspect
+    trigger_previous: int = 0         # previous observed trigger-role value
     produced: int = 0                  # samples produced since start
     sent: int = 0                      # streaming: the byte position pushed so far
     gap_next: bool = False             # repeat: the capture stopped for want of a segment; the next one says so
@@ -356,6 +358,7 @@ class VirtualCapture:
         self.produced, self.sent, self.gap_next = 0, 0, False
         self.capture_begin, self.first_segment_samples, self.first_trigger_index = 0, 0, NONE
         self.stream_committed_bytes = 0
+        self.trigger_scan, self.trigger_previous = 0, 0
 
     def _pack(self, first: int, n: int, segment: bool = True) -> bytes:
         """The stream of samples first .. first + n - 1 of the track. Multirate: a segment's blocks (its grid from its
@@ -366,9 +369,9 @@ class VirtualCapture:
                 return lay.encode(lambda role, i: self.value(role, first + i), n, roles)
             return lay.encode(self.value, first + n, roles, range(first // lay.L, (first + n) // lay.L))
         if self.analog:
-            return b"".join(struct.pack(f"<{self.channels}H", *(analog_value(k, first + i) for k in self.analog_roles))
+            return b"".join(struct.pack(f"<{self.channels}H", *(self.value(k, first + i) for k in self.analog_roles))
                             for i in range(n))
-        return pack_samples([(first + i) & ((1 << self.width) - 1) for i in range(n)], self.width)   # the counter
+        return pack_samples([sum(self.value(k, first + i) << k for k in range(self.width)) for i in range(n)], self.width)
 
     def value(self, k: int, i: int) -> int:
         return analog_value(k, i) if self.analog else (i >> k) & 1
@@ -388,6 +391,24 @@ class VirtualCapture:
             if i > 0 and kind == TRIGGER["cross_down"] and before > value >= now:
                 return i
         return None
+
+    def poll_trigger(self, now_ms: int) -> list[bytes]:
+        """Waiting input: inspect only elapsed, previously unobserved samples, retaining the edge predecessor."""
+        if self.state != STATE["waiting"] or self.trigger is None:
+            return []
+        kind, role, value = self.trigger
+        last = int((Fraction(now_ms * 1_000_000) - self.t0_ns) * self.rate // 1_000_000_000)
+        for i in range(self.trigger_scan, last + 1):
+            current, previous = self.value(role, i), self.trigger_previous
+            self.trigger_scan, self.trigger_previous = i + 1, current
+            matched = (kind == TRIGGER["level"] and current == (value & 1)
+                       or i > 0 and kind == TRIGGER["edge"] and current != previous
+                       and (value == 2 or (value == 0) == (current == 1))
+                       or i > 0 and kind == TRIGGER["cross_up"] and previous < value <= current
+                       or i > 0 and kind == TRIGGER["cross_down"] and previous > value >= current)
+            if matched:
+                return self._triggered(i, self.time_of(i), self.pretrigger)
+        return []
 
     def time_of(self, i: int) -> int:
         """The probe-clock time of the track's sample i."""
@@ -480,10 +501,10 @@ class VirtualCapture:
 
     def tick(self, now_ms: int) -> list[bytes]:
         """Time passes: repeat's segments, streaming's bytes. -> events."""
+        events = self.poll_trigger(now_ms) if self.group is None else []
         if self.state != STATE["capturing"]:
-            return []
+            return events
         due = int((now_ms - self.started_ms) * self.rate / 1000)   # samples the clock has taken since start
-        events = []
         if self.mode == MODE["repeat"]:
             while due - self.produced >= (self.first_segment_samples or self.samples):
                 if len(self.segs) >= self.segments_max:            # no free segment: it pauses (state 5, no event; §3.2)
@@ -754,6 +775,32 @@ class VirtualGroup:
             per.append((fn, cap.force(now_ms, trigger_ns=self.trigger_ns, pretrigger=pre)))
         own = [bytes([GRP.event["triggered"]]) + struct.pack("<HQI", 0, self.trigger_ns, self.generation)]
         if all(caps[fn].state == STATE["done"] for fn in self.tracks):
+            own.append(self.stopped_event(STOPPED["complete"]))
+        return per, own
+
+    def tick(self, caps: dict[int, VirtualCapture], now_ms: int) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
+        """Resolve a later source trigger before advancing any bound track; generations remain unchanged."""
+        per, own = [], []
+        was_done = self.state(caps) == STATE["done"]
+        src = caps.get(self.trigger_fn)
+        if src is not None and self.trigger_ns == NO_TIME and src.state == STATE["waiting"]:
+            events = src.poll_trigger(now_ms)
+            if src.state == STATE["waiting"]:
+                return [], []
+            per.append((self.trigger_fn, events))
+            when = self.trigger_ns = src.time_of(src.capture_begin + src.first_trigger_index)
+            for fn in self.tracks:
+                if fn == self.trigger_fn:
+                    continue
+                cap = caps[fn]
+                sample = max(0, round(Fraction(when - cap.t0_ns) * cap.rate / 1_000_000_000))
+                pre = -(-(src.pretrigger * cap.rate.numerator * src.rate.denominator)
+                        // (cap.rate.denominator * src.rate.numerator))
+                per.append((fn, cap._triggered(sample, when, pre)))
+            own.append(bytes([GRP.event["triggered"]]) + struct.pack("<HQI", self.trigger_fn, when, self.generation))
+        for fn in self.tracks:
+            per.append((fn, caps[fn].tick(now_ms)))
+        if not was_done and self.state(caps) == STATE["done"]:
             own.append(self.stopped_event(STOPPED["complete"]))
         return per, own
 

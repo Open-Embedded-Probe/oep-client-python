@@ -1005,9 +1005,22 @@ class Endpoint:
         out, self.outbox = self.outbox, []
         return out
 
+    def _group_tick(self, fn: int) -> None:
+        per, own = self.groups[fn].tick(self.captures, self.uptime_ms())
+        for track, events in per:
+            self._events(track, events)
+        self._events(fn, own)
+
+    def _capture_tick(self, fn: int) -> None:
+        cap = self.captures[fn]
+        if cap.group is None:
+            self._events(fn, cap.tick(self.uptime_ms()))
+        else:
+            self._group_tick(next(g for g, group in self.groups.items() if group is cap.group))
+
     def _capture(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         cap, O = self.captures[fn], virtual_bench_capture.OP
-        self._events(fn, cap.tick(self.uptime_ms()))               # what the clock captured up to this request
+        self._capture_tick(fn)                                    # advance a bound group together
         roles = sorted(a[1] for a in self.plan if a[0] == fn)
         budget = self.probe.max_frame - m.RESULT_HEADER
         try:
@@ -1080,7 +1093,7 @@ class Endpoint:
         to now is kept, that segment is not handed out, the track stops in error (state 6, stopped reason 3, `error`).
         A bound track's group stops its other tracks and says stopped reason 3 too (capture §4.1)."""
         cap = self.captures[fn]
-        self._events(fn, cap.tick(self.uptime_ms()))
+        self._capture_tick(fn)
         self._events(fn, cap.overflow(error))
         grp = cap.group
         if grp is not None:
@@ -1092,6 +1105,7 @@ class Endpoint:
 
     def _group(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         grp, O = self.groups[fn], virtual_bench_capture.GRP.op
+        self._group_tick(fn)
         try:
             if op == O["bind"]:
                 n = t.take("B")
@@ -1123,8 +1137,6 @@ class Endpoint:
                 return m.COMPLETED, m.SUCCESS, b""
             if op == O["status"]:
                 t.tail()
-                for track in grp.tracks:
-                    self._events(track, self.captures[track].tick(self.uptime_ms()))
                 return m.COMPLETED, m.SUCCESS, grp.status(self.captures)
         except virtual_bench_capture.Reject as e:
             raise Reject(e.reason, e.payload)
@@ -3559,8 +3571,11 @@ class Endpoint:
         self._speed_tick()
         self._console_poll()
         now = self.now()
+        for fn in self.groups:
+            self._group_tick(fn)
         for fn, cap in self.captures.items():
-            self._events(fn, cap.tick(self.uptime_ms()))
+            if cap.group is None:
+                self._events(fn, cap.tick(self.uptime_ms()))
         for n, s in self.slots.items():
             rt = self.slot_rt[n]
             if (s.attach == SLOT_ATTACH["at_boot"] and s.retry_ms and not rt.evicted

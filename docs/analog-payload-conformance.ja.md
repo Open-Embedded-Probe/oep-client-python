@@ -165,3 +165,23 @@ groupとtrackのtrigger通知は一度だけ送り、streamingではsegment通�
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_group_modes.py
 ```
+
+## 待機後に変化するtrigger信号
+
+`test_virtual_bench_capture_changing_trigger.py`は全3mode、logic/analogの単独取得とgroupを検査する。
+開始時に成立しない信号を、sample番号を時刻に対応させた波形へ差し替えるfixtureを使う。
+波形は過去のsampleを変えず、source sample 20から変化する。
+待機中は経過した未観測sampleだけを確認し、edge/crossingの直前値を保持する。
+同じ時刻で再照会しても再走査せず、再startでは観測位置をリセットする。
+trigger通知と取得rawは同じ`VirtualCapture.value(role, sample)`の信号源を使う。
+
+groupは全trackを進める前に条件を確認し、同じ成立時刻を各actual_rateへ写す。
+status、各trackの操作、push、group force/stopの前にも進行を反映し、世代は進めない。
+one-shotのgroup complete通知を一度だけ送ることも確認する。
+このfixtureはtimestamp付きの入力関数であり、実機の非同期GPIO/ADC入力を証明しない。
+既知波形のstart時の先行合成と、one-shot成立後の将来data合成は継続する。
+実時間latency、全multirate/storage gap・並行性・全group操作の独立適合は別途必要。
+
+```sh
+uv run pytest -q tests/test_virtual_bench_capture_changing_trigger.py
+```
