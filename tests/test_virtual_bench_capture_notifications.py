@@ -74,8 +74,9 @@ def test_queued_old_events_keep_old_generation_and_host_discards_them(analog):
 
 @pytest.mark.parametrize('analog',[False,True])
 def test_reachable_trigger_event_matches_segment_time_and_generation(analog):
-    ep,_,track,_=configured(analog);trigger=(c.CROSS_UP,1,2500) if analog else (c.EDGE,0,0)
+    ep,_,track,clock=configured(analog);trigger=(c.CROSS_UP,1,2500) if analog else (c.EDGE,0,0)
     track.configure(rate=1000,samples=64,trigger=trigger,pretrigger=10);track.subscribe();track.start()
+    clock.t=100
     rows=events(ep,track.fn);assert [row[0] for row in rows]==[c.EVENT_TRIGGERED,c.EVENT_SEGMENT,c.EVENT_STOPPED]
     serial,index,ns,generation=rows[0][1];segment,=track.segments()
     assert serial==segment.serial and index==segment.trigger_index and generation==segment.generation==track.generation

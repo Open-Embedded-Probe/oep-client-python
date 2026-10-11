@@ -16,7 +16,9 @@ Time (the probe's one clock, ns): a track's first sample is at its start (the gr
 at start) plus the track's start offset - logic 0 (+-50 ns), analog 5 us (+-2 us), as a probe that corrected what it
 knows and says how sure it is. Later segments follow at the actual rate.
 
-Modes: one-shot (the segment is there as soon as start answers), repeat (segments come with the clock at the actual
+Triggers observe only samples whose time has elapsed. One-shot still synthesizes the post-trigger segment eagerly.
+
+Modes: one-shot (without a trigger the segment is there as soon as start answers), repeat (segments come with the clock at the actual
 rate, up to the ring; a full ring pauses the capture (state 5), release lets it go on) and streaming (the bytes come
 with the clock and go out as data pushes while subscribed). Triggers: logic level / edge, analog cross up / down, with a
 pretrigger. `slipped` sets flags bit2 on every segment (a probe whose software pace fell behind).
@@ -376,22 +378,6 @@ class VirtualCapture:
     def value(self, k: int, i: int) -> int:
         return analog_value(k, i) if self.analog else (i >> k) & 1
 
-    def trigger_at(self) -> int | None:
-        """The first observed condition. Pretrigger is retained history, not an arming delay."""
-        kind, role, value = self.trigger
-        span = (1 << (role + 1)) if not self.analog else 64 * (role // 2 + 1)
-        for i in range(3 * span + 2):
-            now, before = self.value(role, i), self.value(role, i - 1)
-            if kind == TRIGGER["level"] and now == (value & 1):
-                return i
-            if i > 0 and kind == TRIGGER["edge"] and now != before and (value == 2 or (value == 0) == (now == 1)):
-                return i
-            if i > 0 and kind == TRIGGER["cross_up"] and before < value <= now:
-                return i
-            if i > 0 and kind == TRIGGER["cross_down"] and before > value >= now:
-                return i
-        return None
-
     def poll_trigger(self, now_ms: int) -> list[bytes]:
         """Waiting input: inspect only elapsed, previously unobserved samples, retaining the edge predecessor."""
         if self.state != STATE["waiting"] or self.trigger is None:
@@ -450,11 +436,8 @@ class VirtualCapture:
             sample = max(0, round(Fraction(trigger_ns - self.t0_ns) * self.rate / 1_000_000_000))
             return self._triggered(sample, trigger_ns, self.pretrigger if pretrigger_count is None else pretrigger_count)
         if self.trigger:
-            sample = self.trigger_at()
-            if sample is None:
-                self.state = STATE["waiting"]
-                return events
-            return self._triggered(sample, self.time_of(sample), self.pretrigger)
+            self.state = STATE["waiting"]
+            return self.poll_trigger(now_ms)
         if self.mode == MODE["one_shot"]:
             seg = self._segment(self.samples)
             self.state = STATE["done"]

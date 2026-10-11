@@ -81,10 +81,11 @@ def test_a_rate_is_the_source_divided_by_a_whole_number():
     (c.LEVEL, 3, 1, 8),    # bit 3 first becomes 1 at sample 8
 ])
 def test_a_trigger_is_where_the_channel_does_it(kind, role, value, index):
-    ep, hst, lc, _ = bench()
+    ep, hst, lc, clock = bench()
     core.plan_apply(hst, [(lc.fn, r, 20 + r) for r in range(4)])
     lc.configure(rate=1_000_000, samples=64, trigger=(kind, role, value), pretrigger=10)
     lc.start()
+    clock.t = 1  # The trigger samples have now elapsed.
     (seg,) = lc.wait()
     assert seg.trigger_index == index and seg.samples == 64 - 10 + index and seg.flags & 2
 
@@ -95,7 +96,7 @@ def test_force_is_accepted_and_wait_keeps_the_lock():
     core.plan_apply(hst, [(lc.fn, 0, 20), (lc.fn, 1, 21)])
     lc.configure(rate=1_000_000, samples=64, trigger=(c.EDGE, 1, 1))
     lc.start()
-    lc.force()                                  # the virtual bench finds its trigger at start: nothing is waiting
+    lc.force()                                  # force resolves the waiting trigger
     sent = []
     keepalive = hst.keepalive
     hst.keepalive = lambda: (sent.append(1), keepalive())
@@ -318,6 +319,7 @@ def test_a_group_starts_logic_and_analog_together_and_marks_the_trigger_on_both(
     assert e.value.cause == "bound_in_group"
     _, start_ns = grp.start([lc, an])
     assert grp.generations == {lc.fn: 1, an.fn: 1} and lc.generation == an.generation == 1   # the answer's TLV
+    clock.t = 4
     st = grp.wait()
     assert st.start_ns == start_ns == 3_000_000 and st.trigger_fn == lc.fn
     (ls,), (as_,) = lc.segments(), an.segments()

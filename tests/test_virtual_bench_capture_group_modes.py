@@ -93,6 +93,7 @@ def test_natural_group_trigger_maps_history_at_each_actual_rate(mode, analog_sou
     ep, group, source, other, clock = setup(mode, analog_source, pre)
     first = 5 if analog_source else 2
     expected_time = ep.captures[source.fn].start_offset_ns + int(Fraction(first * 1_000_000_000) / source.config.rate)
+    clock.t = first + 1
     status = group.status()
     assert status.state == c.STATE['capturing'] and status.trigger_ns == expected_time and status.trigger_fn == source.fn
     frames = ep.pushes()

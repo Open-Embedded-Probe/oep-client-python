@@ -122,18 +122,19 @@ def test_group_later_trigger_starts_every_track_without_new_generation(mode, ana
 def test_waiting_scan_reads_only_new_elapsed_samples_and_resets_on_restart(analog_source):
     ep, _, source, _, clock, _ = setup(c.REPEAT, analog_source, 0)
     calls = []
+    first_unobserved = ep.captures[source.fn].trigger_scan
     ep.captures[source.fn].value = lambda r, i: calls.append(i) or 0
     for elapsed in [5, 5, 10]:
         clock.t = elapsed
         before = len(calls)
         assert source.status().state == c.STATE['waiting']
         last = int((Fraction(elapsed * 1_000_000) - ep.captures[source.fn].t0_ns) * source.config.rate // 1_000_000_000)
-        assert calls == list(range(last + 1))
+        assert calls == list(range(first_unobserved, last + 1))
         if elapsed == 5 and before: assert len(calls) == before
     source.stop()
     clock.t = 100
+    calls.clear()
     source.start()
-    calls.clear()  # start's legacy known-waveform search is a separate eager fixture operation
     clock.t = 105
     assert source.status().state == c.STATE['waiting']
     assert calls and calls[0] == 0 and calls[-1] <= 5

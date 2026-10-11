@@ -56,13 +56,15 @@ def test_force_opens_gate_once_and_retains_pretrigger_for_initial_record(analog,
 @pytest.mark.parametrize('pre',[0,10])
 def test_known_waveform_has_one_initial_trigger_and_correct_retained_history(analog,mode,pre):
     ep,track,clock=setup(analog,mode,pre,False);first=5 if analog else 1;available=min(first,pre)
+    clock.t=first+1
     initial=frames(ep,track);events=[f for f in initial if f[0]==m.ROLE_EVENT]
     assert [f[5] for f in events]==[c.EVENT_TRIGGERED]
     trigger=c.unpack_event(events[0]);assert trigger.trigger_index==available
     origin=ep.captures[track.fn].t0_ns
     assert trigger.trigger_ns==origin+int(Fraction(first*1000000000)/track.config.rate)
-    clock.t=70;all_frames=frames(ep,track)
-    assert not [f for f in all_frames if f[0]==m.ROLE_EVENT and f[5]==c.EVENT_TRIGGERED]
+    clock.t=70;later=frames(ep,track)
+    assert not [f for f in later if f[0]==m.ROLE_EVENT and f[5]==c.EVENT_TRIGGERED]
+    all_frames=initial+later
     if mode==c.REPEAT:
         segments=track.segments();segment=segments[0]
         assert segment.samples==32-pre+available and segment.trigger_index==available

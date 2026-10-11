@@ -33,3 +33,22 @@ Arduinoのuv/pytest環境からは公開clientのpathを明示する。
 ```sh
 uv run --project tests --with-editable /path/to/oep-client-python pytest -c tests/pyproject.toml /path/to/oep-client-python/tests/test_conformance_capture_metadata.py
 ```
+
+## 仮想captureの時間検査
+
+取得動作の回帰はdescribe検査とは別に実行する。
+
+```sh
+uv run pytest -q tests/test_virtual_bench_capture*.py tests/test_virtual_bench_analog_roles.py tests/test_capture.py
+```
+
+`test_virtual_bench_capture_initial_trigger_time.py`では注入した時計と波形で、logic/analog、
+one-shot/repeat/streaming、単独/groupの12構成を確認する。start時に未来の波形を探索せず、
+経過したsampleで条件を初めて観測するまではwaitingのままで、trigger/data通知を出さない。
+検出後のtrigger時刻と世代も確認する。既知波形の試験でも、時計を明示的に進めてから検出を確認する。
+
+queryはplanがあればstate 0〜6とgroup-boundでも使い、設定・取得データ・世代・bindを変えない。
+この規則の回帰は`test_virtual_bench_capture_query.py`で確認する。
+
+仮想one-shotは、トリガー後の区画（トリガー無しならstart後の区画）をまだ先に合成する。
+上記12件を、取得完了・全データ生成の時間因果性や実機適合の証明にはしない。

@@ -10,8 +10,9 @@ from test_virtual_bench_capture_notifications import events
 @pytest.mark.parametrize('kind,role,value,first',[(c.EDGE,1,0,2),(c.EDGE,2,1,8),(c.LEVEL,3,1,8),(c.LEVEL,0,0,0)])
 @pytest.mark.parametrize('pre',[0,3,10])
 def test_logic_fires_at_first_observed_condition_and_keeps_available_history(kind,role,value,first,pre):
-    ep,hst,track,_=bench();core.plan_apply(hst,[(track.fn,r,20+r) for r in range(4)])
+    ep,hst,track,clock=bench();core.plan_apply(hst,[(track.fn,r,20+r) for r in range(4)])
     track.configure(rate=1000000,samples=64,trigger=(kind,role,value),pretrigger=pre);track.subscribe();track.start()
+    clock.t=1
     segment,=track.segments();available=min(pre,first);begin=first-available;count=64-pre+available
     assert (segment.trigger_index,segment.samples)==(available,count)
     assert bool(segment.flags&2)==(first<pre) and segment.position==0
@@ -30,8 +31,9 @@ def test_logic_fires_at_first_observed_condition_and_keeps_available_history(kin
 @pytest.mark.parametrize('kind,role,first',[(c.CROSS_UP,0,64),(c.CROSS_DOWN,0,32),(c.CROSS_UP,3,5)])
 @pytest.mark.parametrize('pre',[0,10])
 def test_analog_crossing_keeps_bounded_history_and_no_sample_before_start(kind,role,first,pre):
-    ep,hst,_,_=bench();track=c.AnalogCapture(hst);core.plan_apply(hst,[(track.fn,role,16)])
+    ep,hst,_,clock=bench();track=c.AnalogCapture(hst);core.plan_apply(hst,[(track.fn,role,16)])
     track.configure(rate=1000,samples=40,trigger=(kind,role,2500),pretrigger=pre);track.subscribe();track.start()
+    clock.t=first+1  # Include the analog start offset.
     segment,=track.segments();available=min(pre,first);count=40-pre+available
     assert segment.trigger_index==available and segment.samples==count and bool(segment.flags&2)==(first<pre)
     origin=ep.captures[track.fn].start_offset_ns
@@ -47,13 +49,13 @@ def test_analog_crossing_keeps_bounded_history_and_no_sample_before_start(kind,r
 
 @pytest.mark.parametrize('pre',[1,10])
 def test_group_early_trigger_shortens_each_track_by_its_actual_rate_history(pre):
-    ep,hst,logic,_=bench();analog=c.AnalogCapture(hst);group=c.CaptureGroup(hst)
+    ep,hst,logic,clock=bench();analog=c.AnalogCapture(hst);group=c.CaptureGroup(hst)
     core.plan_apply(hst,[(logic.fn,0,20),(logic.fn,1,21),(analog.fn,0,16)])
     logic.configure(rate=1000,samples=32,trigger=(c.EDGE,1,0),pretrigger=pre)
     analog.configure(rate=1000,samples=32)
     group.bind([logic,analog],trigger=logic)
     for track in [logic,analog]:track.subscribe()
-    hst.subscribe(group.fn);group.start([logic,analog]);status=group.status()
+    hst.subscribe(group.fn);group.start([logic,analog]);clock.t=3;status=group.status()
     assert status.trigger_ns==2000000 and status.trigger_fn==logic.fn and status.state==c.STATE['done']
     for track in [logic,analog]:
         segment,=track.segments();needed=group.pretrigger_of(track,logic)
