@@ -6,6 +6,7 @@
 | [SPECからの適合検査](conformance-checks.ja.md) | core / interfaceの公開検査器と実行範囲 |
 | [Host TLVの読出し検査](host-tlv-conformance.ja.md) | 明示readerアダプタで未知tag・critical・重複・破損と長さ境界を確認 |
 | [Host通知と期限](host-notification-conformance.ja.md) | 現SPECのrole振り分け、未知kindのseq、通知が続く時の応答待ち/pumpを確認 |
+| [Hostの未知値分類](host-value-conformance.ja.md) | 失敗となる未知値、値を保つcause/scan kind、予約confirm flagsを確認 |
 | [core clockの検査](clock-conformance.ja.md) | 正確な論理ns時計で採時・SID 0・再送例外・lease・u64境界を確認 |
 | [core発見処理の検査](discovery-conformance.ja.md) | list/fn 0 describeの任意cursor、labelと宣言の不変性を確認 |
 | [資源番号の上限](allocator-conformance.ja.md) | 明示seedでu16上限、解放後の非再利用、再送と再起動を確認 |
