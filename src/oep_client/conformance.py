@@ -112,7 +112,7 @@ def ops(value):
 
 
 
-CHECKER_SOURCES = ('conformance.py', 'conformance_allocator.py', 'conformance_allocator_sample.py', 'conformance_discovery.py', 'conformance_clock.py', 'conformance_clock_sample.py',
+CHECKER_SOURCES = ('conformance.py', 'conformance_host_tlv.py', 'conformance_host_tlv_sample.py', 'conformance_allocator.py', 'conformance_allocator_sample.py', 'conformance_discovery.py', 'conformance_clock.py', 'conformance_clock_sample.py',
                    'conformance_notification_sequence.py', 'conformance_notification_sequence_sample.py', 'conformance_serial.py', 'conformance_tcp.py',
                    'conformance_tcp_peers.py', 'conformance_usb.py', 'conformance_usb_cases.py',
                    'pytest_conformance.py', 'conformance_resources.py', 'conformance_resource_sample.py',
