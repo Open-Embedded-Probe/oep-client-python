@@ -6,6 +6,7 @@
 | [SPECからの適合検査](conformance-checks.ja.md) | core / interfaceの公開検査器と実行範囲 |
 | [core clockの検査](clock-conformance.ja.md) | 正確な論理ns時計で採時・SID 0・再送例外・lease・u64境界を確認 |
 | [core発見処理の検査](discovery-conformance.ja.md) | list/fn 0 describeの任意cursor、labelと宣言の不変性を確認 |
+| [資源番号の上限](allocator-conformance.ja.md) | 明示seedでu16上限、解放後の非再利用、再送と再起動を確認 |
 | [通知seqと再購読](notification-sequence-conformance.ja.md) | 論理経路でseqの一周・drop・購読置換・再送を確認 |
 | [raw USB検査](usb-conformance.ja.md) | bulk/HIDの独立検査器と最小ソフトウェアモデル。実機raw adapterは未実装 |
 | [全体テスト方針](testing-policy.ja.md) | OEP と利用プロジェクトの保証対象、責任、改修計画 |
