@@ -153,3 +153,8 @@ def test_existing_virtual_bench_success_bodies_and_raw_capture():
     expected=[[virtual_bench_capture.analog_value(k,i) for k in range(2)] for i in range(3)]
     result=checked.run(configure_payload=observed[0],calibration_payload=calibration,data=raw,expected_samples=expected,roles=(0,1),frontends=set(ep.captures[an.fn].frontends),mode=1,max_op_ms=1000)
     assert result['status']=='passed',[(row['id'],row.get('error')) for row in result['checks']]
+
+
+def test_sparse_role_fixture_is_not_used_to_decide_undefined_layout_numbering():
+    with pytest.raises(Violation,match='sparse layout numbering pending SPEC'):
+        checker().configure(payload(),roles=(1,3),frontends={0,1},mode=1,max_op_ms=10)

@@ -16,6 +16,7 @@ class AnalogPayloadChecks:
         self.tags=self.spec['tlv']['configure_answer']
     def configure(self,payload,*,roles,frontends,mode,max_op_ms):
         require(mode in (1,2,3) and roles and len(set(roles))==len(roles),'explicit mode and unique planned roles')
+        require(sorted(roles)==list(range(len(roles))),'contiguous role fixture required; sparse layout numbering pending SPEC')
         rows=tlvs(payload);values={}
         repeated={self.tags[name] for name in ('scale','skew','frontend_used')}
         for tag,value in rows:
@@ -81,4 +82,4 @@ class AnalogPayloadChecks:
         return dict(status='passed' if all(row['status']=='passed' for row in rows) else 'failed',checks=rows,full_conformance=False,
                     scope='explicit analog success bodies and known raw samples',
                     payloads_hex=dict(configure=configure_payload.hex(),calibration=calibration_payload.hex(),data=data.hex()),
-                    unchecked=['wire execution, rejection/session and replay','capture generations, trigger, error, notification and resource lifetime','factory scheme raw interpretation and physical reference/skew accuracy','complete analog operation and capture-group contracts'])
+                    unchecked=['wire execution, rejection/session and replay','capture generations, trigger, error, notification and resource lifetime','factory scheme raw interpretation and physical reference/skew accuracy','complete analog operation and capture-group contracts','sparse role layout numbering pending SPEC clarification'])

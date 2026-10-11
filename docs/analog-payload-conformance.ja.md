@@ -3,6 +3,8 @@
 `AnalogPayloadChecks(checks)`は選択SPECのcapture §1.2/3.2/3.3/3.8を第三段階で確認する。
 callerはconfigure/queryの成功payload、calibrationの成功payload、取得データと既知の生サンプル、
 planのroles、describeのfrontend番号、modeとcore max_op_msを明示する。
+現検査fixtureはrole 0から連番。疎なroleとlayout.orderの対応はSPECの明文化待ちで、
+そのfixtureをpreflightで拒否する。未定義の対応をprobeの違反と判断するためには使わない。
 公開checkerは設備・私的ベンチ・隣接SPECを探索せず、Hostのcapture decoderも使わない。
 
 `run(configure_payload=..., calibration_payload=..., data=..., expected_samples=...,
@@ -30,4 +32,19 @@ schemeごとのraw解釈と物理reference/skewの保証は未検査。schemaの
 ```sh
 uv run pytest -q tests/test_conformance_analog_payload.py tests/test_virtual_bench_capture.py
 uv run --project tests --with-editable /path/to/oep-client-python pytest -c tests/pyproject.toml /path/to/oep-client-python/tests/test_conformance_analog_payload.py
+```
+
+## 既存仮想ベンチの設定要求と状態不変
+
+`test_virtual_bench_capture_requests.py`はwire bodyを渡し、frontendの指定/幅/未宣言値/重複、
+rate/samples/mode/triggerの拒否、query成功時の非適用を確認する。
+拒否前後でcapture/config/data/segments/plan/GPIOを比較する。要求を受けたcoreのlease/cacheまで
+不変と要求する検査ではない。coreでは正当な更新や要求履歴の保存がありうる。
+
+区画満杯のstate 5はconfigureをunavailable・cause 6で拒否し、積んだ区画とdataを消さない。
+logic/analog双方を確認する。state 5のqueryの断り方はこの検査で規範を追加しない。
+既存仮想endpointのinterface回帰であり、そのlegacy coreを現在の独立core適合fixtureと同一視しない。
+
+```sh
+uv run pytest -q tests/test_virtual_bench_capture_requests.py
 ```
