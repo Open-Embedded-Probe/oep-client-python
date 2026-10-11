@@ -45,7 +45,7 @@ def test_force_opens_gate_once_and_retains_pretrigger_for_initial_record(analog,
     if mode==c.REPEAT:
         clock.t=60;segment=track.segments()[0]
         assert segment.trigger_index==pre and segment.samples==32 and not segment.flags&2
-        assert segment.start_ns+int(Fraction(pre*1000000000)/track.config.rate)==pytest.approx(event.trigger_ns,abs=1)
+        assert abs(segment.start_ns+Fraction(pre*1000000000)/track.config.rate-event.trigger_ns)<=Fraction(500000000)/track.config.rate
     else:
         assert len(b''.join(c.unpack_push(f)[3] for f in initial if f[0]==m.ROLE_DATA))==(pre*4 if analog else pre//4)
     track.force();assert not [f for f in frames(ep,track) if f[0]==m.ROLE_EVENT and f[5]==c.EVENT_TRIGGERED]
@@ -61,7 +61,7 @@ def test_known_waveform_has_one_initial_trigger_and_correct_retained_history(ana
     assert [f[5] for f in events]==[c.EVENT_TRIGGERED]
     trigger=c.unpack_event(events[0]);assert trigger.trigger_index==available
     origin=ep.captures[track.fn].t0_ns
-    assert trigger.trigger_ns==origin+int(Fraction(first*1000000000)/track.config.rate)
+    assert trigger.trigger_ns==origin+int(Fraction(first*1000000000)/track.config.rate)+(track.config.skew_ns[3] if analog else 0)
     clock.t=70;later=frames(ep,track)
     assert not [f for f in later if f[0]==m.ROLE_EVENT and f[5]==c.EVENT_TRIGGERED]
     all_frames=initial+later

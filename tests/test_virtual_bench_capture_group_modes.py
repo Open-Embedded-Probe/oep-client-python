@@ -92,7 +92,7 @@ def test_group_force_opens_all_tracks_once_with_common_time(mode, analog_source,
 def test_natural_group_trigger_maps_history_at_each_actual_rate(mode, analog_source, pre):
     ep, group, source, other, clock = setup(mode, analog_source, pre)
     first = 5 if analog_source else 2
-    expected_time = ep.captures[source.fn].start_offset_ns + int(Fraction(first * 1_000_000_000) / source.config.rate)
+    expected_time = ep.captures[source.fn].start_offset_ns + int(Fraction(first * 1_000_000_000) / source.config.rate) + (source.config.skew_ns[3] if analog_source else 0)
     clock.t = first + 1
     status = group.status()
     assert status.state == c.STATE['capturing'] and status.trigger_ns == expected_time and status.trigger_fn == source.fn

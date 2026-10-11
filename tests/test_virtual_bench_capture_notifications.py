@@ -80,7 +80,7 @@ def test_reachable_trigger_event_matches_segment_time_and_generation(analog):
     rows=events(ep,track.fn);assert [row[0] for row in rows]==[c.EVENT_TRIGGERED,c.EVENT_SEGMENT,c.EVENT_STOPPED]
     serial,index,ns,generation=rows[0][1];segment,=track.segments()
     assert serial==segment.serial and index==segment.trigger_index and generation==segment.generation==track.generation
-    expected=segment.start_ns+int(index*1000000000/track.config.rate)
+    expected=segment.start_ns+int(index*1000000000/track.config.rate)+(track.config.skew_ns[1] if analog else 0)
     assert ns==expected
 
 

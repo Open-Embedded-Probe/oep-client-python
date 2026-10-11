@@ -49,15 +49,14 @@ def test_waiting_error_has_matching_stopped_reason_and_no_segment(error):
 
 @pytest.mark.parametrize('elapsed,index,count',[(0,0,4),(2,2,6),(20,4,8)])
 def test_force_uses_current_sample_and_available_pretrigger(elapsed,index,count):
-    ep,_,track,clock=waiting();generation=track.generation;clock.t+=elapsed;track.force();clock.t+=10
+    ep,_,track,clock=waiting();generation=track.generation;clock.t+=elapsed;forced_ns=clock.t*1000000;track.force();clock.t+=10
     segment,=track.segments();assert segment.trigger_index==index and segment.samples==count
     assert bool(segment.flags&2)==(count<8) and track.generation==generation
     rows=events(ep,track.fn);assert [r[0] for r in rows]==[c.EVENT_TRIGGERED,c.EVENT_SEGMENT,c.EVENT_STOPPED]
-    sampled=round(Fraction(elapsed)*track.config.rate/1000)
-    expected=ep.captures[track.fn].t0_ns+int(Fraction(sampled*1000000000)/track.config.rate)
+    expected=forced_ns
     assert rows[0][1][1]==index and rows[0][1][2]==expected
     assert rows[0][1][-1]==generation and track.status().state==c.STATE['done']
-    assert abs(segment.start_ns+int(Fraction(index*1000000000)/track.config.rate)-rows[0][1][2])<=1
+    assert abs(segment.start_ns+Fraction(index*1000000000)/track.config.rate-rows[0][1][2])<=Fraction(500000000)/track.config.rate
     track.force();assert events(ep,track.fn)==[] and track.segments()==[segment]
 
 

@@ -62,3 +62,17 @@ one-shotの取得完了は`test_virtual_bench_capture_one_shot_time.py`の50件�
 仮想波形はsample indexから値を返す関数で、完成時・stop時に過去の値を生成する。
 この検査はその関数の時刻付き入力を用い、実際の入力を継続観測して保存するbufferの証明ではない。
 repeat/streamingのoffset/skewを含む完全な時間因果性、multirate、実機適合は別途確認する。
+
+
+`test_virtual_bench_capture_channel_time.py`はchannel時刻とforce/groupを98件で確認する。
+analogの条件判定はplan roleの数値ではなく、layout.orderでの位置から求めたskewまで待つ。
+2 channelの疎なroleと4 channelの最後のroleで、base sample時刻とchannel時刻の間を照会する。
+自然triggerの通知時刻はそのchannelで条件が成立した時刻。groupもこの時刻を保持し、
+sourceを含む各trackのtrigger_indexを最寄りのbase sampleへ写す。同距離の選択方向は固定しない。
+forceは実行時刻を通知し、offsetやsampleの丸めによってその時刻を動かさない。
+最初のsampleより前ならindex 0、それ以外は最寄りsampleまでの距離を確認する。
+
+repeat/streamingの24件はlogic/analog、1/2 channel、3 actual_rateで未来のchannel値を読まないことを確認する。
+8件の不具合注入では取得用時計だけを24 sample分先へ進め、同じ時刻oracleが未来のdata生成を検出する。
+Endpointを通した6件では整数msの時計とconfigureの広告skewを使い、source/group双方の通知時刻と世代を照合する。
+残るmultirate、pause/resume/stopの全境界、取得履歴buffer、実transport/物理時計は別途確認する。

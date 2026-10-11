@@ -145,6 +145,7 @@ class VirtualCapture:
     capture_begin: int = 0            # first retained source sample after initial trigger
     first_segment_samples: int = 0    # short initial segment; 0 uses configured size
     first_trigger_index: int = NONE
+    trigger_time_ns: int = NO_TIME     # actual trigger instant; group must not reconstruct it from the sample grid
     stream_committed_bytes: int = 0
     trigger_scan: int = 0             # waiting: next elapsed source sample to inspect
     trigger_previous: int = 0         # previous observed trigger-role value
@@ -361,6 +362,7 @@ class VirtualCapture:
         self.capture_begin, self.first_segment_samples, self.first_trigger_index = 0, 0, NONE
         self.stream_committed_bytes = 0
         self.trigger_scan, self.trigger_previous = 0, 0
+        self.trigger_time_ns = NO_TIME
 
     def _pack(self, first: int, n: int, segment: bool = True) -> bytes:
         """The stream of samples first .. first + n - 1 of the track. Multirate: a segment's blocks (its grid from its
@@ -383,7 +385,8 @@ class VirtualCapture:
         if self.state != STATE["waiting"] or self.trigger is None:
             return []
         kind, role, value = self.trigger
-        last = int((Fraction(now_ms * 1_000_000) - self.t0_ns) * self.rate // 1_000_000_000)
+        skew = self.channel_skew(role)
+        last = int((Fraction(now_ms * 1_000_000) - self.t0_ns - skew) * self.rate // 1_000_000_000)
         for i in range(self.trigger_scan, last + 1):
             current, previous = self.value(role, i), self.trigger_previous
             self.trigger_scan, self.trigger_previous = i + 1, current
@@ -393,8 +396,17 @@ class VirtualCapture:
                        or i > 0 and kind == TRIGGER["cross_up"] and previous < value <= current
                        or i > 0 and kind == TRIGGER["cross_down"] and previous > value >= current)
             if matched:
-                return self._triggered(i, self.time_of(i), self.pretrigger)
+                when = self.time_of(i) + skew
+                sample = max(0, round(Fraction(when - self.t0_ns) * self.rate / 1_000_000_000)) if self.group is not None else i
+                return self._triggered(sample, when, self.pretrigger)
         return []
+
+    def channel_skew(self, role: int) -> int:
+        """The advertised channel delay follows layout.order, not a dense role number."""
+        if not self.analog:
+            return 0
+        ordinal = self.analog_roles.index(role)
+        return ordinal * int(Fraction(1_000_000_000, 1) / (self.rate * self.channels))
 
     def time_of(self, i: int) -> int:
         """The probe-clock time of the track's sample i."""
@@ -443,6 +455,7 @@ class VirtualCapture:
 
     def _triggered(self, sample: int, when: int, requested: int) -> list[bytes]:
         """Retain available prehistory; trigger_index is relative to this segment, not acquisition start."""
+        self.trigger_time_ns = when
         index = min(requested, sample)
         self.produced = self.capture_begin = sample - index
         if self.mode == MODE["streaming"]:
@@ -464,10 +477,8 @@ class VirtualCapture:
         """
         if self.state != STATE["waiting"]:
             return []
-        when = trigger_ns if trigger_ns is not None else now_ms * 1_000_000 + self.start_offset_ns
+        when = trigger_ns if trigger_ns is not None else now_ms * 1_000_000
         sample = max(0, round(Fraction(when - self.t0_ns) * self.rate / 1_000_000_000))
-        if trigger_ns is None:
-            when = self.time_of(sample)
         requested = self.pretrigger if pretrigger is None else pretrigger
         return self._triggered(sample, when, requested)
 
@@ -738,7 +749,7 @@ class VirtualGroup:
                     if fn != self.trigger_fn:
                         per.append((fn, caps[fn].start(now_ms, self.start_ns, subscribed=subscribed(fn), waiting=True)))
                 return per, own
-            trigger_ns = self.trigger_ns = src.time_of(src.capture_begin + src.first_trigger_index)
+            trigger_ns = self.trigger_ns = src.trigger_time_ns
             own.append(bytes([GRP.event["triggered"]]) + struct.pack("<HQI", self.trigger_fn, trigger_ns, self.generation))
         for fn in self.tracks:
             if fn != self.trigger_fn or trigger_ns is None:
@@ -777,7 +788,7 @@ class VirtualGroup:
             if src.state == STATE["waiting"]:
                 return [], []
             per.append((self.trigger_fn, events))
-            when = self.trigger_ns = src.time_of(src.capture_begin + src.first_trigger_index)
+            when = self.trigger_ns = src.trigger_time_ns
             for fn in self.tracks:
                 if fn == self.trigger_fn:
                     continue

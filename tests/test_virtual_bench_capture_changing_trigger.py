@@ -61,7 +61,7 @@ def test_standalone_detects_later_crossing_and_retains_actual_input(mode, analog
     triggered = [c.unpack_event(f) for f in notices(frames, source.fn) if f[5] == c.EVENT_TRIGGERED]
     event, = triggered
     origin = ep.captures[source.fn].t0_ns
-    assert event.trigger_ns == origin + int(Fraction(20 * 1_000_000_000) / source.config.rate)
+    assert event.trigger_ns == origin + int(Fraction(20 * 1_000_000_000) / source.config.rate) + (source.config.skew_ns.get(role, 0) if analog_source else 0)
     assert event.trigger_index == pre and event.generation == generation
     clock.t = 60
     if mode != c.STREAMING:
@@ -92,7 +92,7 @@ def test_group_later_trigger_starts_every_track_without_new_generation(mode, ana
     clock.t = 25
     group.status() if poll == 'group' else other.status()
     status = group.status()
-    expected = ep.captures[source.fn].t0_ns + int(Fraction(20 * 1_000_000_000) / source.config.rate)
+    expected = ep.captures[source.fn].t0_ns + int(Fraction(20 * 1_000_000_000) / source.config.rate) + (source.config.skew_ns.get(role, 0) if analog_source else 0)
     assert status.trigger_ns == expected and status.trigger_fn == source.fn
     assert status.state == c.STATE['capturing']
     assert [group.generation, source.generation, other.generation] == generations
@@ -122,7 +122,7 @@ def test_group_later_trigger_starts_every_track_without_new_generation(mode, ana
 
 @pytest.mark.parametrize('analog_source', [False, True])
 def test_waiting_scan_reads_only_new_elapsed_samples_and_resets_on_restart(analog_source):
-    ep, _, source, _, clock, _ = setup(c.REPEAT, analog_source, 0)
+    ep, _, source, _, clock, role = setup(c.REPEAT, analog_source, 0)
     calls = []
     first_unobserved = ep.captures[source.fn].trigger_scan
     ep.captures[source.fn].value = lambda r, i: calls.append(i) or 0
@@ -130,7 +130,7 @@ def test_waiting_scan_reads_only_new_elapsed_samples_and_resets_on_restart(analo
         clock.t = elapsed
         before = len(calls)
         assert source.status().state == c.STATE['waiting']
-        last = int((Fraction(elapsed * 1_000_000) - ep.captures[source.fn].t0_ns) * source.config.rate // 1_000_000_000)
+        last = int((Fraction(elapsed * 1_000_000) - ep.captures[source.fn].t0_ns - (source.config.skew_ns.get(role, 0) if analog_source else 0)) * source.config.rate // 1_000_000_000)
         assert calls == list(range(first_unobserved, last + 1))
         if elapsed == 5 and before: assert len(calls) == before
     source.stop()
@@ -154,5 +154,5 @@ def test_group_operation_observes_natural_trigger_before_host_action(mode, analo
     getattr(group, operation)()
     frames = ep.pushes()
     notification, = [f for f in notices(frames, group.fn) if f[5] == 3]
-    expected = ep.captures[source.fn].t0_ns + int(Fraction(20 * 1_000_000_000) / source.config.rate)
+    expected = ep.captures[source.fn].t0_ns + int(Fraction(20 * 1_000_000_000) / source.config.rate) + (source.config.skew_ns.get(role, 0) if analog_source else 0)
     assert struct.unpack_from('<HQI', notification, 6) == (source.fn, expected, group.generation)

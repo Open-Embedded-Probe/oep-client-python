@@ -187,3 +187,13 @@ start時の未来トリガー探索とone-shotの将来data合成は廃止した
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_changing_trigger.py
 ```
+
+
+## channel時刻とgroupの写像
+
+analogの自然triggerは、該当roleのskewを含む観測時刻を待ち、その時刻をtrigger_nsで返す。
+groupはsourceの通知時刻を保持し、全trackをその時刻へ写す。sourceの最寄りbase sampleも
+conditionを検出したchannelのframeと一致するとは限らない（4 channelの最後のchannelなど）。
+forceのtrigger_nsは実行時刻で、trackのoffsetやsampling周期へ丸めない。
+[取得時間の検査](capture-metadata-conformance.ja.md#仮想captureの時間検査)に98件のscopeを記載する。
+取得区画のデータ・世代・plan roleの判定はこれらの時刻判定と併用する。
