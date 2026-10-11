@@ -84,3 +84,23 @@ PortSpeedLifecycleChecksはcontext1と6ケースの部分検査を追加する�
 `uv run pytest -q tests/test_conformance_port_speed_lifecycle.py`：15件。
 正常1、応答故障6、状態故障8。forceの早すぎる復帰/復帰欠落、lease早期・解放欠落、
 古いwriteでtrial/commit/保持者を復活させる故障を検出する。
+
+## 要求実行とwrite待ちの時計
+
+PortSpeedExecutionChecksとSamplePortSpeedExecutionAdapterを、PortSpeedExecutionModelで実行する。
+明示SPECから読み込んだregistryでChecksを作り、InterfaceChecksの後に実行する。
+max_op_ms5000の宣言と明示execution controlが必要。部品はprivate設定を探索しない。
+
+source/sink × 実行1500/3500ms × lease1000/60000msの8ケースとcontext1を扱う。
+400ms経過後に正常なframeを受け、実行中はcommitted idle期限とlease期限を進めない。
+実行後のwrite待ちは、短leaseなら残り600msの599ms、長leaseならidle2999msまで進める。
+期限が待ち中にずれないこと、応答完了からidle3000ms/lease_msを数え直すこと、
+その後の999/1000または2999/3000境界を確認する。
+固定した既知sourceデータとsink応答、live GPIO/plan/所有権も照合する。
+
+`uv run pytest -q tests/test_conformance_port_speed_execution.py`で31件。
+正常全体1/各スケジュール8、応答故障8、時計・状態故障12、fixture guard2。
+旧モデルで全8ケースのidle消費違反を再現し、実行時間だけidle期限を延ばした。
+3500msはidle3000msより長く、短lease1000msも越えるので、偶然期限内で通る刺激ではない。
+試し中のverifyの実行停止を新たに定義せず、確定後のidle停止だけを扱う。
+同時経路、source/sink以外の実行・拒否経路、物理時間・Host switch/waitは残る。

@@ -75,9 +75,14 @@ class PortSpeedModel(LinkTransferModel):
         else:e.fixed={16:1+3*n,17:1+2*n};e.free={17}
         self.in_release_request=fn==0 and len(request)>=6 and request[5] in (16,17)
         self.ep.probe.max_frame=e.frame_limit=self.limits[route]
+        started=self.clock_ms
         try:reply=self.ep.current_core.handle(request,route,defer_send=True)
         finally:
             self.in_release_request=False;e.fixed,e.free=fixed,free;self.ep.probe.max_frame,e.frame_limit=frame,limit
+        # Execution consumes wall time but not committed-port idle time.
+        # The prepared response's subsequent write wait remains ordinary idle.
+        if port and port['state']==2 and self.ports[route] is port:
+            port['deadline']+=self.clock_ms-started
         token=self.ep.current_core.renewal
         self.pending=dict(route=route,request=request,reply=reply,token=token,actions=list(self.actions))
         self.events.append(dict(action='prepared',time_ms=self.clock_ms,route=route,request_hex=request.hex(),reply_hex=reply.hex() if reply else None,baud=port['baud'] if port else None))
