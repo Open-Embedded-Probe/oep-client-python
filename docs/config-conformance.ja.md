@@ -20,5 +20,6 @@ model内のhashとserializationは検査oracleではない。操作の返り値�
 正常1、共通宣言1、wire故障4、意味的故障11、制御不足3。
 新モデルのeraseが現在設定も消す違反とstorage fullのcause4を再現し、eraseは保存だけ/cause3へ修正した。
 旧config consumer/Endpointの自動attach・bind形は、この現仕様の適合根拠には使わない。
-全項目、get paging/数値キー順の広い範囲、同内容saveの書き込み抑止、電源断/保存実行中の排他、
+get paging/数値キー順は[別の部分検査](config-paging-conformance.ja.md)で確認する。
+全項目、同内容saveの書き込み抑止、電源断/保存実行中の排他、
 slot/uartのidentity読み替え、wifi、target、物理保存とproduction追従は残る。full_conformance=false。

@@ -31,5 +31,6 @@ hashの作り方やRAM保存の内部形は規範ではなく、oracleはwire項
 単体は37件：正常1、共通宣言1、wire故障8、意味的故障15、制御不足6、破損形6。
 stateの誤った理由/状態/hash、idle/disable/項目の部分適用、保存の勝手な書換え、旧fnの使用、
 preset実行、無関係な変更での復帰拒否、新boot欠落、set/save/erase後の誤った保存状態を検出する。
-slot/uartの参照、任意カタログ、全項目/paging、同内容saveの書込み抑止、保存中排他/電源断、
+get pagingは[別の部分検査](config-paging-conformance.ja.md)で確認する。
+slot/uartの参照、任意カタログ、全項目、同内容saveの書込み抑止、保存中排他/電源断、
 物理保存とproduction追従は残る。full_conformance=false。

@@ -121,7 +121,7 @@ class ConfigExtension(Gpio):
         if op==16:
             first=int.from_bytes(payload,'little');out=bytearray(b'\0'+struct.pack('<I',self.hash()));rows=self.canonical();index=first
             for row in rows[first:]:
-                if len(out)+len(row)>251:break
+                if len(out)+len(row)>self.model.ep.probe.max_frame-5:break
                 out.extend(row);index+=1
             out[0]=int(index<len(rows));return bytes(out)
         if op==17:
