@@ -120,3 +120,17 @@ rawデータ・時刻・世代付き通知、groupのactual_rateに応じたP_k�
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_pretrigger.py
 ```
+
+## 取得中・結合中も非適用のquery
+
+`test_virtual_bench_capture_query.py`はplanのあるstate 0〜6と、group-boundの各状態を照会する。
+未openの別Hostからqueryし、現在設定/data/区画/世代/plan/GPIO/bind/通知queueを変えないことを確認する。
+状態を比較する検査は時計を固定する。別検査では時刻を進め、元の設定で取得が進む一方、
+queryの候補rate/samples/modeは適用されないことも確認する。plan無しはcause 6、
+取得中の不正rate 0はmalformedで、現在の取得を変えない。
+configureの取得中/結合中拒否は継続し、queryと同じ扱いにはしない。
+既存endpointのlegacy coreの検査であり、独立core適合fixtureとの同一視や全query契約の証明はしない。
+
+```sh
+uv run pytest -q tests/test_virtual_bench_capture_query.py
+```

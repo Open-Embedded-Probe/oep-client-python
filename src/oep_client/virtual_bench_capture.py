@@ -174,10 +174,10 @@ class VirtualCapture:
         """The actual values for a configure / query request (nothing changed). `t`: the request's tail reader
         (endpoint.Take: `fixed`, `refuse`). `frontends`: (role, frontend, the tag as received) asked. `multirate`:
         the multirate TLVs as received (tag, value), §5.2."""
-        if self.group is not None:
+        if self.group is not None and not query:
             raise Reject(m.UNAVAILABLE, m.tlv(reg.CORE.tlv["unavailable_payload"]["cause"],
                                               bytes([reg.CORE.enum["unavailable_cause"]["bound_in_group"]])))
-        if self.state in (STATE["waiting"], STATE["capturing"]) or (self.state == STATE["paused"] and not query):
+        if not query and self.state in (STATE["waiting"], STATE["capturing"], STATE["paused"]):
             raise wrong_state()                                    # §3.2: not while it captures
         # every TLV's form first (core §2.3: a value of another length is malformed, with or without bit 7), then the
         # contract (§3.3: mode and rate required, samples in modes 1 and 2), then what this probe does not handle:
