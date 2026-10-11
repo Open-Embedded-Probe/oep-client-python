@@ -36,3 +36,5 @@ uv環境で`uv run python example.py`として実行する。部品の単体検�
 長さ65535の試料はtransportを通さない字句・payload検査であり、frame上限内に収まることは証明しない。
 他の固定形・TLV定義、応答corr、通知demux、未知kindとseq、連続通知中の期限処理、
 production reader全体はこのPASSに含まれない。reportのfull_conformanceは常にfalse。
+
+実際のcore revision1の8操作・拒否payload・既知TLVは[core形の検査](host-core-shapes-conformance.ja.md)で別途確認する。

@@ -32,7 +32,8 @@ def test_lifecycle_wire_fault_is_detected(scenario):
     ('restart_keeps_grid','STOP-ACTIVE'),('late_expiry','EXPIRY-WAIT'),
     ('error_peer_runs','ERROR-SOURCE'),('publish_failed','ERROR-SOURCE'),
     ('wrong_error','ERROR-SOURCE'),('failed_position','ERROR-SOURCE'),
-    ('restart_origin','STOP-ACTIVE')])
+    ('restart_origin','STOP-ACTIVE'),('error_discards_done','ERROR-MIXED'),
+    ('error_resets_done_state','ERROR-MIXED')])
 def test_lifecycle_semantic_faults_are_detected(fault,kind):
     model,checks=setup();install=model.install
     def faulty_install():
@@ -71,13 +72,15 @@ def test_lifecycle_semantic_faults_are_detected(fault,kind):
             try:return advance(ns)
             finally:core.deadline=old
         model.timeline_advance_to=broken_advance
-    if fault in ('error_peer_runs','publish_failed','wrong_error'):
+    if fault in ('error_peer_runs','publish_failed','wrong_error','error_discards_done','error_resets_done_state'):
         fail=model.group_fail
         def broken_fail(fn,error):
             if fault=='publish_failed':model.extension.tracks[fn].finish(True)
             fail(fn,error)
             if fault=='error_peer_runs':model.extension.tracks[5-fn].state=3
             if fault=='wrong_error':model.extension.tracks[fn].error=3
+            if fault=='error_discards_done':model.extension.tracks[5-fn].data.clear();model.extension.tracks[5-fn].segments.clear()
+            if fault=='error_resets_done_state':model.extension.tracks[5-fn].state=1
         model.group_fail=broken_fail
     checker=CaptureTimelineLifecycleChecks(checks,SampleCaptureTimelineAdapter(model));checker.scenarios=((2,kind),)
     result=checker.run()

@@ -8,7 +8,7 @@ from .conformance_capture_group import NO_TIME
 
 
 class CaptureTimelineLifecycleChecks(CaptureTimelineChecks):
-    cases=('STOP-WAIT','STOP-ACTIVE','STOP-MIXED','ERROR-SOURCE','ERROR-PEER',
+    cases=('STOP-WAIT','STOP-ACTIVE','STOP-MIXED','ERROR-SOURCE','ERROR-PEER','ERROR-MIXED',
            'REPLAY-START-WAIT','REPLAY-START-ACTIVE','REPLAY-STOP',
            'QUERY-WAIT','QUERY-ACTIVE','QUERY-MIXED','END-WAIT','END-ACTIVE',
            'EXPIRY-WAIT','EXPIRY-RETAINED','SESSION-FORCE')
@@ -82,7 +82,7 @@ class CaptureTimelineLifecycleChecks(CaptureTimelineChecks):
             counts={source:0 if waiting else 16 if mixed else 9,5-source:0 if waiting else 7 if mixed else 3}
             if kind.startswith('ERROR'):
                 failed=source if kind=='ERROR-SOURCE' else 5-source;peer=5-failed
-                self.a.fail(failed,2);require(self.status()[0][0]==6 and self.status(failed)[0][0]==6 and self.status(peer)[0][0]==1,'error failed to stop peer')
+                self.a.fail(failed,2);require(self.status()[0][0]==6 and self.status(failed)[0][0]==6 and self.status(peer)[0][0]==(4 if mixed else 1),'error failed to stop active peer/preserve completed peer')
                 require(dict(tlvs(self.c.success(self.req(failed,'status'))[18:])).get(1)==b'\2','track error payload')
                 self.raw(failed,gens[failed],source,0);self.raw(peer,gens[peer],source,counts[peer])
             else:
