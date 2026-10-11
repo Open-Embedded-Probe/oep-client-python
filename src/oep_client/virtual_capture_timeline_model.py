@@ -79,6 +79,10 @@ class CaptureTimelineModel(CaptureGroupModel):
         target=self.ep._origin_ns+ns;e=self.extension;events=0
         while True:
             due={fn:self.ep._origin_ns+g['origin']+Fraction(g['next']*1000000000,e.tracks[fn].config['rate']) for fn,g in e.grids.items() if e.tracks[fn].state in (2,3)}
+            core=self.ep.current_core
+            expiry=max(self.absolute_ns,Fraction(core.deadline*1000000)) if core.holder is not None else None
+            if expiry is not None and expiry<=target and (not due or expiry<=min(due.values())):
+                self.set_time(expiry);core.tick();continue
             if not due or min(due.values())>target:break
             when=min(due.values());self.set_time(when)
             # Process simultaneous arrivals at the same clock instant.

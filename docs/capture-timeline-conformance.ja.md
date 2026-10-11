@@ -36,6 +36,9 @@ repeat/streaming/通知、他のgroup構成・ADC layout/skew、最大pretrigger
 1nsの時刻照合幅はこのfixtureの整数ns表現に対するもの。
 物理probeの精度保証や、報告uncertaintyに基づく許容幅ではない。
 
+stop・query・エラー・再送とsession寿命は[別の寿命checker](capture-timeline-lifecycle-conformance.ja.md)で確認する。
+取得geometryの72構成と寿命の32構成は対象と前提が異なり、それぞれのreportを保持する。
+
 ```sh
 uv run pytest -q tests/test_conformance_capture_timeline.py
 uv run --project tests --with-editable /path/to/oep-client-python pytest -c tests/pyproject.toml /path/to/oep-client-python/tests/test_conformance_capture_timeline.py
