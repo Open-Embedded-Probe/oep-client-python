@@ -721,14 +721,14 @@ class VirtualGroup:
         per, own = [], []
         trigger_ns = None
         src = caps.get(self.trigger_fn)
-        if src is not None and src.trigger and src.mode == MODE["one_shot"]:
+        if src is not None and src.trigger:
             per.append((self.trigger_fn, src.start(now_ms, self.start_ns, subscribed=subscribed(self.trigger_fn))))
             if src.state == STATE["waiting"]:
                 for fn in self.tracks:
                     if fn != self.trigger_fn:
                         per.append((fn, caps[fn].start(now_ms, self.start_ns, subscribed=subscribed(fn), waiting=True)))
                 return per, own
-            trigger_ns = self.trigger_ns = src.time_of(src.produced - src.segs[0].samples + src.segs[0].trigger_index)
+            trigger_ns = self.trigger_ns = src.time_of(src.capture_begin + src.first_trigger_index)
             own.append(bytes([GRP.event["triggered"]]) + struct.pack("<HQI", self.trigger_fn, trigger_ns, self.generation))
         for fn in self.tracks:
             if fn != self.trigger_fn or trigger_ns is None:

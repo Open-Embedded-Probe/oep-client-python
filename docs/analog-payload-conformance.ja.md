@@ -150,3 +150,18 @@ multirateの全幾何・storage gap・全stream区画契約は別途整備する
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_trigger_modes.py
 ```
+
+## repeat/streamingのグループtrigger
+
+`test_virtual_bench_capture_group_modes.py`はlogic/analogのどちらもtrigger元にし、
+他方を異なるactual_rateで結合する。成立しない条件では全trackが待機し、dataを作らない。
+forceでは共通の時刻で全trackを開始し、groupのtrigger_fnは0。自然triggerでは元のfnを返す。
+各trackのP_k、履歴不足、最初のrepeat区画のtrigger_index/shortを確認する。
+groupとtrackのtrigger通知は一度だけ送り、streamingではsegment通知を送らない。
+
+これは既知波形をstart時に合成するfixtureの回帰であり、待機中の信号変化、実時間latency、
+全group操作・multirate・storage gap・並行性の独立適合検査は別途必要。
+
+```sh
+uv run pytest -q tests/test_virtual_bench_capture_group_modes.py
+```
