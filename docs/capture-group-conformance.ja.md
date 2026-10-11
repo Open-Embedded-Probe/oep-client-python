@@ -51,3 +51,7 @@ metadataの構造が正しいことと、fixtureがその広告に対応する�
 uv run pytest -q tests/test_conformance_capture_group.py tests/test_conformance_analog.py tests/test_conformance_logic.py
 uv run --project tests --with-editable /path/to/oep-client-python pytest -c tests/pyproject.toml /path/to/oep-client-python/tests/test_conformance_capture_group.py
 ```
+
+異なるactual_rateのP_k/最寄りsampleと初回区画は、[group時刻検査ガイド](capture-group-geometry-conformance.ja.md)の
+別checkerでも確認する。生の観測payloadと既知のgrid/historyを明示する検査であり、
+この同レートの独立操作fixtureの取得能力を広げるものではない。
