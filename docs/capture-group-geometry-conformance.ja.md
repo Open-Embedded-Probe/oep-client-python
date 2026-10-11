@@ -49,3 +49,6 @@ wire拒否/再送/全世代進行、repeat/streaming/通知、途切れた履歴
 uv run pytest -q tests/test_conformance_capture_group_geometry.py tests/test_conformance_capture_group.py
 uv run --project tests --with-editable /path/to/oep-client-python pytest -c tests/pyproject.toml /path/to/oep-client-python/tests/test_conformance_capture_group_geometry.py
 ```
+
+[異レート取得timeline](capture-timeline-conformance.ja.md)は、独立した各trackの取得を進め、
+実際のwire応答と生データをこのgeometry checkerと組み合わせて確認する。

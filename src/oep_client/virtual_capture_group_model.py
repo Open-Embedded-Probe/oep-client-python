@@ -16,6 +16,7 @@ NO_TIME=(1<<64)-1
 
 class CaptureGroup(Gpio):
     functions=(1,2,3,4)
+    requires_equal_rate=True
     def __init__(self,ep):
         super().__init__(False);self.ep=ep;self.tracks={2:Analog(ep),3:Logic(ep)}
         self.bound=[];self.source=0;self.generation=0;self.start_ns=NO_TIME;self.trigger_ns=NO_TIME;self.trigger_fn=0
@@ -105,7 +106,7 @@ class CaptureGroup(Gpio):
             t=self.tracks[fn];c=t.config
             if c['mode']!=first['mode'] or (fn!=source and c['trigger'][0]):raise self.refusal(6,fn)
             # Explicit equal-rate acquisition resource; does not advertise every combination.
-            if c['rate']!=first['rate']:raise self.refusal(2,fn)
+            if self.requires_equal_rate and c['rate']!=first['rate']:raise self.refusal(2,fn)
             if source in functions:
                 src=self.tracks[source].config;p=-(-(src['pretrigger']*c['rate'])//src['rate'])
                 if fn!=source and (p>8 or p>=c['samples']):raise self.refusal(6,fn)

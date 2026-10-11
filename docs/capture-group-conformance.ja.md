@@ -55,3 +55,6 @@ uv run --project tests --with-editable /path/to/oep-client-python pytest -c test
 異なるactual_rateのP_k/最寄りsampleと初回区画は、[group時刻検査ガイド](capture-group-geometry-conformance.ja.md)の
 別checkerでも確認する。生の観測payloadと既知のgrid/historyを明示する検査であり、
 この同レートの独立操作fixtureの取得能力を広げるものではない。
+
+異レートの独立取得は[取得timelineガイド](capture-timeline-conformance.ja.md)の別fixtureで確認する。
+同レート操作fixtureの資源制限はそのまま維持する。
