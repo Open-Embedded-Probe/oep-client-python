@@ -312,7 +312,8 @@ def test_analog_values_scale_and_calibration():
     cal = an.calibration()
     assert [f[0] for f in cal.factory] == [0, 1, 2, 3] and cal.factory[0][1] == "org.example.virtual-bench.two-point"
     assert cal.factory[0][2] == struct.pack("<HH", 150, 3950)       # raw_len(u16) raw
-    assert cal.vrefint == (1365, seg.start_ns) and cal.vrefint_nominal_mv == 1100
+    assert cal.vrefint == (1365, 0) and cal.vrefint_nominal_mv == 1100
+    assert cal.vrefint[1] < seg.start_ns  # reference measured before the first channel sample
 
 
 def test_a_group_starts_logic_and_analog_together_and_marks_the_trigger_on_both():

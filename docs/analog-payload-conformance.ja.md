@@ -42,7 +42,8 @@ rate/samples/mode/triggerの拒否、query成功時の非適用を確認する�
 不変と要求する検査ではない。coreでは正当な更新や要求履歴の保存がありうる。
 
 区画満杯のstate 5はconfigureをunavailable・cause 6で拒否し、積んだ区画とdataを消さない。
-logic/analog双方を確認する。state 5のqueryの断り方はこの検査で規範を追加しない。
+logic/analog双方を確認する。planありのstate 5でもqueryを許可する規則はSPEC §3.3と
+`test_virtual_bench_capture_query.py`で確認する。
 既存仮想endpointのinterface回帰であり、そのlegacy coreを現在の独立core適合fixtureと同一視しない。
 
 ```sh
@@ -63,6 +64,22 @@ error後のstopはdataを保ったままstate 1へ戻す。group stopの短い�
 
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_lifetime.py
+```
+
+`test_virtual_bench_capture_resume_calibration.py`はrepeatのpause/release/resumeを3回繰り返し、
+残った区画のwire recordと生データ、世代、元のtrigger時刻を保持することを確認する。
+logic/analog、3種類の分数rate、1/2区画の解放を使い、再開後の最初の区画だけにgapを要求する。
+既知波形のcallbackで、モデルの現在時刻より先のチャネル値を読んでいないことも確認する。
+
+同じ検査でcalibrationのvrefintが最後のstartから照会時刻までの測定を表すことを確認する。
+3モード、単独/group start、即時/trigger待ち、再startを含む。
+このfixtureはstart時に同期的に基準電圧を測り、最初のチャネルsampleはその5µs後に始める。
+そのためvrefintのnsと区画のstart_nsは同じ値とは限らない。
+これはfixtureの測定モデルであり、一般のprobeに同じ遅延や即時測定を要求する検査ではない。
+測定値を持たないprobeの空calibrationも引き続き許容する。物理ADCの精度・測定手順は未検査。
+
+```sh
+uv run pytest -q tests/test_virtual_bench_capture_resume_calibration.py
 ```
 
 ## 既存仮想captureの通知

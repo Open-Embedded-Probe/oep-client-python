@@ -439,7 +439,10 @@ class VirtualCapture:
         self.flags, self.error = 0, 0
         self.started_ms = now_ms
         self.t0_ns = (group_ns if group_ns is not None else now_ms * 1_000_000) + self.start_offset_ns
-        self.vrefint_ns = self.t0_ns if self.analog else NO_TIME
+        # The fixture measures the reference synchronously at start, before the
+        # first channel sample's start offset. A measured value must not carry
+        # that future channel timestamp (capture §3.8).
+        self.vrefint_ns = now_ms * 1_000_000 if self.analog else NO_TIME
         events = []
         if waiting:
             self.state = STATE["waiting"]
