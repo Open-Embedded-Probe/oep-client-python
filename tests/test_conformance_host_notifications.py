@@ -16,8 +16,8 @@ def selected_spec(monkeypatch):
 def test_notification_reader_contracts_pass():
     report = HostNotificationChecks(SampleHostNotificationReader(), spec=SPEC).run()
     assert report['status'] == 'passed', report['checks']
-    assert len(report['checks']) == 6 and not report['full_conformance']
-    assert sum(len(row['observations']) for row in report['checks']) == 522
+    assert len(report['checks']) == 9 and not report['full_conformance']
+    assert sum(len(row['observations']) for row in report['checks']) == 563
 
 
 @pytest.mark.parametrize('defect,case', [
@@ -67,4 +67,55 @@ def test_short_receive_budgets_do_not_have_to_equal_the_total_deadline():
         def run(self, receive, clock, **kwargs):
             return super().run(lambda limit: receive(min(limit, clock() + 2)), clock, **kwargs)
     report = HostNotificationChecks(Chunked(), spec=SPEC).run()
+    assert report['status'] == 'passed', report['checks']
+
+
+@pytest.mark.parametrize('defect,case,prefix', [
+    ('accept_short', 'SHORT-FRAMES', 'Violation:'),
+    ('repair_data_length', 'BROKEN-NOTIFICATIONS', 'Violation:'),
+    ('skip_unknown_length', 'BROKEN-NOTIFICATIONS', 'Violation:'),
+    ('skip_zero', 'BROKEN-NOTIFICATIONS', 'Violation:'),
+    ('reject_empty', 'VARIABLE-NOTIFICATIONS', 'ValueError: injected empty data refusal'),
+    ('reject_large', 'VARIABLE-NOTIFICATIONS', 'ValueError: injected large data refusal'),
+])
+def test_frame_corruption_and_overrefusal_faults(defect, case, prefix):
+    class Broken(SampleHostNotificationReader):
+        def run(self, receive, clock, **kwargs):
+            def altered(limit):
+                frame = receive(limit)
+                if frame is None: return None
+                if frame[0] == 4 and len(frame) >= 15:
+                    size = int.from_bytes(frame[13:15], 'little')
+                    if defect == 'reject_empty' and size == 0:
+                        raise ValueError('injected empty data refusal')
+                    if defect == 'reject_large' and size > 255:
+                        raise ValueError('injected large data refusal')
+                    if defect == 'repair_data_length' and size > len(frame) - 15:
+                        frame = frame[:13] + (len(frame) - 15).to_bytes(2, 'little') + frame[15:]
+                if defect == 'skip_unknown_length' and frame.endswith(b'\x7f\x02\x00x'):
+                    frame = frame[:-4]
+                if defect == 'skip_zero' and frame[-3:] in (b'\x00\x00\x00', b'\x80\x00\x00'):
+                    frame = frame[:-3]
+                return frame
+            try:
+                return super().run(altered, clock, **kwargs)
+            except ValueError:
+                if defect != 'accept_short': raise
+                expected = kwargs['expected']
+                return {'reply': None, 'notifications': [], 'expected': expected,
+                        'gaps': {fn: 0 for fn in expected}}
+    report = HostNotificationChecks(Broken(), spec=SPEC).run()
+    row = next(r for r in report['checks'] if r['id'] == 'HOST-NOTIFY-' + case)
+    assert row['status'] == 'failed' and row['error'].startswith(prefix), row
+
+
+def test_reader_may_report_corruption_without_raising():
+    class Reporting(SampleHostNotificationReader):
+        def run(self, receive, clock, **kwargs):
+            try: return super().run(receive, clock, **kwargs)
+            except ValueError:
+                expected = kwargs['expected']
+                return {'reply': None, 'notifications': [], 'expected': expected,
+                        'gaps': {fn: 0 for fn in expected}, 'broken_frames': 1}
+    report = HostNotificationChecks(Reporting(), spec=SPEC).run()
     assert report['status'] == 'passed', report['checks']

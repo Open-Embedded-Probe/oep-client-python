@@ -17,12 +17,17 @@ receiveは絶対期限を受け取りraw frameまたはNoneを返す。clockは�
 corr=Noneは受信pump、整数はそのcorrの応答待ちを採用する。
 expectedは各fnの次のseqで、この値とclockはテスト側から明示する。
 返すmappingはreply（bytes/None）、notifications（既知frameのlist）、expectedとgaps（fn別整数）。
+破損を検出したときはValueErrorを出すか、broken_framesに正の件数を返し、その試料をreply/notificationsに含めない。
+この検査は破損の認識と不使用までを確認する。transportの再接続や区切りの立て直しは別検査である。
 このAPIは検査用アダプタの形で、Host一般の公開APIを規定しない。
 
 時計は1 receiveにつき最大5 ms進み、指定した読出し期限で切り詰める。全体の絶対期限は20 ms。
 一回の読出しを短い期限で区切る実装も許容する。
 既知通知と未知eventが連続する場合でも、応答待ちとpumpが期限を延ばさないことを確認する。
 未知role・要求role・古いcorrの応答が続く場合も同じ期限を確認し、通知seqを変えない。
+短い応答、eventの見出し/既知固定部分、data固定部分、data len超過、通知のTLV長超過と番号0も検査する。
+data長0/1/255/256、u64最大position、後続の未知TLVを正常試料とする。
+未知eventの固定形は知らないため、その本文をTLVと仮定して検査しない。
 20 readの刺激上限で終了しないアダプタも失敗とする。この上限はOEPの容量規定ではない。
 サンプルのgap計算は順方向の試料を対象とし、重複・逆順・再接続の処理は確認しない。
 
@@ -45,6 +50,6 @@ uv環境で`uv run python example.py`として実行する。単体は
 reportにはraw刺激・読出し期限・終了時刻・結果・checker/sample SHAを保存する。
 独自アダプタのsource/版は利用者が追加して保存する。
 
-6項目・522スケジュールのPASSは、production Host、実時計/OS scheduling、全event形、破損frame、
+9項目・563スケジュールのPASSは、production Host、実時計/OS scheduling、他のevent形、破損時のtransport回復、
 回復/再送、Probe通知送出の適合を意味しない。full_conformanceは常にfalse。
 未知kindを送り込む試料はHostの将来値への耐性を調べるもので、Probeが未割当kindを送ってよいという仕様ではない。

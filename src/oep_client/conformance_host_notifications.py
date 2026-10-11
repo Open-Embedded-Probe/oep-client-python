@@ -3,7 +3,7 @@ import hashlib
 from pathlib import Path
 import struct
 
-from .conformance import require, spec_identity
+from .conformance import Violation, require, spec_identity
 
 
 def event(fn, seq, kind=1):
@@ -44,9 +44,14 @@ class HostNotificationChecks:
         record = {'corr': corr, 'initial_expected': expected or {7: 0}, 'deadline_ms': 20,
                   'receive': reads}
         self.observations.append(record)
-        result = self.adapter.run(receive, lambda: now[0], deadline=20, corr=corr,
-                                  expected=dict(record['initial_expected']))
-        record['ended_at_ms'] = now[0]
+        try:
+            result = self.adapter.run(receive, lambda: now[0], deadline=20, corr=corr,
+                                      expected=dict(record['initial_expected']))
+        except Exception as exc:
+            record['error'] = f'{type(exc).__name__}: {exc}'
+            raise
+        finally:
+            record['ended_at_ms'] = now[0]
         require(isinstance(result, dict), 'adapter observation mapping required')
         record['observed'] = {k: (v.hex() if isinstance(v, bytes) else
                                  [x.hex() for x in v] if k == 'notifications' else v)
@@ -93,10 +98,48 @@ class HostNotificationChecks:
                 require(result['expected'] == {7: 0} and result['gaps'] == {7: 0},
                         'ignored traffic changed notification seq')
 
+    def unusable(self, frame):
+        try:
+            result, _ = self.drive([frame])
+        except Violation:
+            raise  # A stimulus/checker failure is not a reader corruption verdict.
+        except ValueError:
+            return
+        require(result.get('broken_frames', 0) >= 1 and result['reply'] is None and
+                result['notifications'] == [], 'broken frame used or not classified as broken')
+
+    def short_frames(self):
+        for full, minimum in ((reply(7), 5), (event(7, 0), 7), (data(7, 0), 15)):
+            for size in range(1, minimum):
+                self.unusable(full[:size])
+
+    def broken_notifications(self):
+        stream = data(7, 0)
+        self.unusable(stream[:13] + b'\x04\x00' + b'abc')
+        for base in (event(7, 0), stream):
+            for tail in (b'\x7f', b'\x7f\x00', b'\x7f\x02\x00x',
+                         b'\xff\x02\x00x', b'\x00\x00\x00', b'\x80\x00\x00'):
+                self.unusable(base + tail)
+
+    def variable_notifications(self):
+        for size in (0, 1, 255, 256):
+            stream = struct.pack('<BHHQH', 4, 7, 0, 0xffffffffffffffff, size) + b'x' * size
+            # Unknown TLVs, including high-bit aliases, are structurally valid.
+            stream += b'\x7f\x00\x00\x81\x01\x00z'
+            known = event(7, 1) + b'\x7f\x00\x00\x81\x01\x00z'
+            unknown = event(7, 2, 127) + b'\x7f\xff\xff'
+            result, _ = self.drive([stream, known, unknown, reply(7)])
+            require(result['reply'] == reply(7) and result['notifications'] == [stream, known],
+                    'valid variable data/event or unknown event shape rejected')
+            require(result['expected'] == {7: 3} and result['gaps'] == {7: 0},
+                    'variable data/event changed sequence')
+
     def run(self):
         rows = []
         for name, call in [('DEMUX', self.demux), ('UNKNOWN-SEQ', self.unknown_seq), ('LOSS', self.loss),
-                           ('WAIT-DEADLINE', lambda: self.deadline(7)), ('PUMP-DEADLINE', lambda: self.deadline(None)), ('IGNORED-DEADLINE', self.ignored_deadline)]:
+                           ('WAIT-DEADLINE', lambda: self.deadline(7)), ('PUMP-DEADLINE', lambda: self.deadline(None)), ('IGNORED-DEADLINE', self.ignored_deadline),
+                           ('SHORT-FRAMES', self.short_frames), ('BROKEN-NOTIFICATIONS', self.broken_notifications),
+                           ('VARIABLE-NOTIFICATIONS', self.variable_notifications)]:
             start = len(self.observations)
             row = {'id': 'HOST-NOTIFY-' + name, 'clause': 'core §2.4/11.1/11.2', 'status': 'passed'}
             try: call()
@@ -112,5 +155,5 @@ class HostNotificationChecks:
                 'sources_sha256': {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                                    for name in ('conformance_host_notifications.py', 'conformance_host_notifications_sample.py')},
                 'unchecked': ['production Host integration', 'physical timing/OS scheduling',
-                              'malformed frames and all event payload shapes', 'recovery/retry',
+                              'transport recovery for malformed frames and other event payload shapes', 'recovery/retry',
                               'external adapter source provenance', 'Probe notification emission']}
