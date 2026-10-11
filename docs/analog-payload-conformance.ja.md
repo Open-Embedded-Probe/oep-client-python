@@ -134,3 +134,19 @@ configureの取得中/結合中拒否は継続し、queryと同じ扱いには�
 ```sh
 uv run pytest -q tests/test_virtual_bench_capture_query.py
 ```
+
+## repeat/streamingの開始trigger
+
+`test_virtual_bench_capture_trigger_modes.py`は両modeのlogic/analogを確認する。
+成立しない開始条件ではstate 2を保ち、data/通知/区画を作らない。
+forceと既知波形の初回triggerで履歴を残し、repeatの最初の区画だけtrigger_index/不足時shortを付ける。
+途中stopでもそのindexを残す。streamingはtriggeredとdataを送り、segment通知は送らない。
+streamingの通し番号とerror時write_posは、捨てた開始前履歴を数えず実際の完了区画から計算する。
+
+既知波形の成立はone-shotと同じくstart時に先に合成する既存fixtureの方式。
+実時計で条件成立まで待つlatency、外部信号が変化した後の再探索、groupの非one-shot trigger、
+multirateの全幾何・storage gap・全stream区画契約は別途整備する。
+
+```sh
+uv run pytest -q tests/test_virtual_bench_capture_trigger_modes.py
+```

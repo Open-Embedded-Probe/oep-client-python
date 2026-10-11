@@ -140,6 +140,10 @@ class VirtualCapture:
     serial_done: int = 0
     started_ms: int | Fraction = 0
     t0_ns: int = 0                     # the probe-clock time of the track's first sample
+    capture_begin: int = 0            # first retained source sample after initial trigger
+    first_segment_samples: int = 0    # short initial segment; 0 uses configured size
+    first_trigger_index: int = NONE
+    stream_committed_bytes: int = 0
     produced: int = 0                  # samples produced since start
     sent: int = 0                      # streaming: the byte position pushed so far
     gap_next: bool = False             # repeat: the capture stopped for want of a segment; the next one says so
@@ -350,6 +354,8 @@ class VirtualCapture:
     def _clear(self) -> None:
         self.data, self.base, self.segs, self.serial_done = bytearray(), 0, [], 0
         self.produced, self.sent, self.gap_next = 0, 0, False
+        self.capture_begin, self.first_segment_samples, self.first_trigger_index = 0, 0, NONE
+        self.stream_committed_bytes = 0
 
     def _pack(self, first: int, n: int, segment: bool = True) -> bytes:
         """The stream of samples first .. first + n - 1 of the track. Multirate: a segment's blocks (its grid from its
@@ -419,16 +425,16 @@ class VirtualCapture:
         if waiting:
             self.state = STATE["waiting"]
             return events
+        if trigger_ns is not None:
+            sample = max(0, round(Fraction(trigger_ns - self.t0_ns) * self.rate / 1_000_000_000))
+            return self._triggered(sample, trigger_ns, self.pretrigger if pretrigger_count is None else pretrigger_count)
+        if self.trigger:
+            sample = self.trigger_at()
+            if sample is None:
+                self.state = STATE["waiting"]
+                return events
+            return self._triggered(sample, self.time_of(sample), self.pretrigger)
         if self.mode == MODE["one_shot"]:
-            if trigger_ns is not None:
-                sample = max(0, round(Fraction(trigger_ns - self.t0_ns) * self.rate / 1_000_000_000))
-                return self._triggered(sample, trigger_ns, self.pretrigger if pretrigger_count is None else pretrigger_count)
-            if self.trigger:
-                sample = self.trigger_at()
-                if sample is None:
-                    self.state = STATE["waiting"]
-                    return events
-                return self._triggered(sample, self.time_of(sample), self.pretrigger)
             seg = self._segment(self.samples)
             self.state = STATE["done"]
             events += [bytes([EVENT["segment"]]) + seg.pack(), self.stopped_event(STOPPED["complete"])]
@@ -439,7 +445,14 @@ class VirtualCapture:
     def _triggered(self, sample: int, when: int, requested: int) -> list[bytes]:
         """Retain available prehistory; trigger_index is relative to this segment, not acquisition start."""
         index = min(requested, sample)
-        self.produced = sample - index
+        self.produced = self.capture_begin = sample - index
+        if self.mode == MODE["streaming"]:
+            self.samples = max(self.samples, requested + 1)  # internal stream segment size, not a configure TLV
+        self.first_segment_samples = self.samples - requested + index
+        self.first_trigger_index = index
+        if self.mode == MODE["streaming"]:
+            unit = self.mr_layout.L if self.mr_layout is not None else (1 if self.analog else 8 // math.gcd(self.width, 8))
+            self.first_segment_samples = -(-self.first_segment_samples // unit) * unit
         events = [bytes([EVENT["triggered"]]) + struct.pack("<IIQI", 0, index, when, self.generation)]
         self.state = STATE["capturing"]
         if self.mode == MODE["one_shot"]:
@@ -472,11 +485,13 @@ class VirtualCapture:
         due = int((now_ms - self.started_ms) * self.rate / 1000)   # samples the clock has taken since start
         events = []
         if self.mode == MODE["repeat"]:
-            while due - self.produced >= self.samples:
+            while due - self.produced >= (self.first_segment_samples or self.samples):
                 if len(self.segs) >= self.segments_max:            # no free segment: it pauses (state 5, no event; §3.2)
                     self.state = STATE["paused"]
                     break
-                seg = self._segment(self.samples)
+                n = self.first_segment_samples or self.samples
+                seg = self._segment(n, self.first_trigger_index, FLAG["short"] if n < self.samples else 0)
+                self.first_segment_samples, self.first_trigger_index = 0, NONE
                 events.append(bytes([EVENT["segment"]]) + seg.pack())
                 if len(self.segs) >= self.segments_max:
                     self.state = STATE["paused"]
@@ -489,7 +504,15 @@ class VirtualCapture:
             if n > 0:
                 self.data += self._pack(self.produced, n, segment=False)
                 self.produced += n
-                self.serial_done = (self.produced // self.samples) & 0xFFFFFFFF   # the probe's own segments (§2.1)
+                taken = self.produced - self.capture_begin
+                first = self.first_segment_samples or self.samples
+                complete = 0 if taken < first else 1 + (taken - first) // self.samples
+                self.serial_done = complete & 0xFFFFFFFF
+                done_samples = 0 if not complete else first + (complete - 1) * self.samples
+                if self.mr_layout is not None:
+                    self.stream_committed_bytes = self.mr_layout.segment_bytes(done_samples)
+                else:
+                    self.stream_committed_bytes = done_samples * self.width if self.analog else -(-done_samples * self.width // 8)
         return events
 
     def stop(self, now_ms: int | None = None) -> list[bytes]:
@@ -502,9 +525,10 @@ class VirtualCapture:
             return events
         if self.state == STATE["capturing"] and self.mode == MODE["repeat"] and now_ms is not None and len(self.segs) < self.segments_max:
             due = int((now_ms - self.started_ms) * self.rate / 1000)
-            partial = min(self.samples - 1, max(0, due - self.produced))
+            partial = min((self.first_segment_samples or self.samples) - 1, max(0, due - self.produced))
             if partial:
-                segment = self._segment(partial, flags=FLAG["short"])
+                index = self.first_trigger_index if self.first_trigger_index < partial else NONE
+                segment = self._segment(partial, index, flags=FLAG["short"])
                 events.append(bytes([EVENT["segment"]]) + segment.pack())
         self.state = STATE["configured"]
         return events + [self.stopped_event(STOPPED["host"])]
@@ -517,7 +541,7 @@ class VirtualCapture:
         if self.state not in (STATE["waiting"], STATE["capturing"], STATE["paused"]):
             return []
         if self.mode == MODE["streaming"]:                         # its bytes ran on: write_pos back to the start of
-            keep = self.serial_done * self.segment_bytes()         # the segment not kept (§2.2; serials from start)
+            keep = self.stream_committed_bytes         # the segment not kept (§2.2; serials from start)
             if keep < self.base + len(self.data):
                 del self.data[max(0, keep - self.base):]
                 self.base = min(self.base, keep)                   # bytes already sent past it stay sent
