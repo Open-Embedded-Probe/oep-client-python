@@ -10,3 +10,5 @@ class SampleArmAdiAdapter(SampleAttachAdapter):
     def seed(self, parent, dp, ap, pending): return self.call('arm_seed', parent, dp, ap, pending)
     def acks(self, values): return self.call('arm_acks', values)
     def memory(self, parent, values): return self.call('arm_memory', parent, values)
+    def block_fault(self, index, phase, ack): return self.call('arm_block_fault', index, phase, ack)
+    def delivery(self, value): return self.call('arm_delivery', value)

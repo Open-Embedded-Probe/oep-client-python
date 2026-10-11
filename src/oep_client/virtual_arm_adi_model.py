@@ -20,20 +20,33 @@ class ArmAdi(Attachments):
     names = Attachments.names + (b'oep.target.arm-adi',)
     def __init__(self, ep):
         super().__init__(ep); self.targets = {}; self.acks = []; self.packets = []; self.executed = []; self.bus = []
+        self.block_fault = None; self.block_word = None; self.deliver = True
     def list_page(self, first, limit): return struct.pack('<H', len(self.functions)) + super().list_page(first, limit)[2:]
     def describe(self, fn):
         if fn == 5: return (tlv(7,b'\x10\x07'), tlv(3,struct.pack('<H',16)))
         return super().describe(fn)
     def packet(self, parent, req, value=None):
         for _ in range(3):
-            ack = self.acks.pop(0) if self.acks else 1
+            phase = {5:'tar',13:'data',15:'data',14:'buffer'}.get(req)
+            ack = (self.block_fault[2] if self.block_fault is not None and
+                   (self.block_word,phase) == self.block_fault[:2] else self.acks.pop(0) if self.acks else 1)
             self.packets.append((parent,req,ack,value))
             if ack != 2: break
         if ack != 1: return {2:1,4:3}.get(ack,2), ack, None
         target = self.targets[parent]; address = req & 12; bank = target['ap'] if req & 1 else target['dp']
+        memory_access = bool(req & 1) and address == 12
+        if memory_access:
+            tar = target['ap'].get(4,0)
+            if req & 2: current = target['memory'].get(tar,0)
+            else:
+                current = value
+                if self.deliver: target['memory'][tar] = value
+            self.bus.append((parent,'read' if req & 2 else 'write',tar,current))
+            if target['ap'].get(0,0) & 0x37 == 0x12:
+                target['ap'][4] = (tar & ~1023) | ((tar+4) & 1023)
         if req & 2:
             if req & 1:
-                result = target['pending']; target['pending'] = bank.get(address,0)
+                result = target['pending']; target['pending'] = current if memory_access else bank.get(address,0)
             elif address == 12: result = target['pending']
             else: result = bank.get(address,0)
         else:
@@ -74,14 +87,24 @@ class ArmAdi(Attachments):
                 done += 1
                 if req & 2: values.append(result)
             return Completed(struct.pack('<HBBH',done,status,ack,len(values))+b''.join(struct.pack('<I',v) for v in values), 0 if not status else (2 if done else 1))
-        target = self.targets[parent]; values = []
-        for i in range(count):
-            addr = (address+4*i) & 0xffffffff
-            if op == 18: target['memory'][addr] = struct.unpack_from('<I',payload,8+4*i)[0]
-            else: values.append(target['memory'].get(addr,0))
-            self.bus.append((parent,'write' if op == 18 else 'read',addr,target['memory'].get(addr,0)))
-        if count: target['ap'][4] = (address+4*count) & 0xffffffff
-        return struct.pack('<HB',count,0)+b''.join(struct.pack('<I',v) for v in values)
+        values,done,status = [],0,0
+        try:
+            for i in range(count):
+                self.block_word = i
+                status,_,_ = self.packet(parent,5,(address+4*i) & 0xffffffff)
+                if status: break
+                status,_,_ = self.packet(parent,13 if op == 18 else 15,
+                    struct.unpack_from('<I',payload,8+4*i)[0] if op == 18 else None)
+                if status: break
+                if op == 17:
+                    status,_,value = self.packet(parent,14)
+                    if status: break
+                    values.append(value)
+                done += 1
+        finally:
+            self.block_word = None
+        return Completed(struct.pack('<HB',done,status)+b''.join(struct.pack('<I',v) for v in values),
+                         0 if not status else (2 if done else 1))
 
 
 class ArmAdiModel(AttachModel):
@@ -94,7 +117,8 @@ class ArmAdiModel(AttachModel):
         finally: e.fixed,e.free = fixed,free
     def arm_state(self):
         state = self.attach_state(); e = self.extension
-        state.update(targets=copy.deepcopy(e.targets),acks=list(e.acks),packets=list(e.packets),executed=list(e.executed),bus=list(e.bus))
+        state.update(targets=copy.deepcopy(e.targets),acks=list(e.acks),packets=list(e.packets),executed=list(e.executed),bus=list(e.bus),
+                     block_fault=e.block_fault,block_word=e.block_word,deliver=e.deliver)
         return state
     def arm_seed(self, parent, dp, ap, pending):
         if parent not in self.extension.targets or any(type(k) is not int or k not in (0,4,8,12) or type(v) is not int or not 0<=v<=0xffffffff for row in (dp,ap) for k,v in row.items()) or type(pending) is not int or not 0<=pending<=0xffffffff: raise ValueError('explicit parent/register/pending seed required')
@@ -105,3 +129,10 @@ class ArmAdiModel(AttachModel):
     def arm_memory(self, parent, values):
         if parent not in self.extension.targets or not isinstance(values,dict) or any(type(k) is not int or not 0<=k<=0xffffffff or k&3 or type(v) is not int or not 0<=v<=0xffffffff for k,v in values.items()): raise ValueError('explicit aligned u32 memory seed required')
         self.extension.targets[parent]['memory'].update(values)
+    def arm_block_fault(self, index, phase, ack):
+        if type(index) is not int or not 0<=index<=3 or phase not in ('tar','data','buffer') or type(ack) is not int or ack not in (0,2,4):
+            raise ValueError('explicit word index, phase and failing raw ACK required')
+        self.extension.block_fault = (index,phase,ack)
+    def arm_delivery(self, value):
+        if type(value) is not bool: raise ValueError('explicit posted write delivery bool required')
+        self.extension.deliver = value

@@ -3,7 +3,8 @@
 `ArmAdiChecks`は選択したSPECのdebug §2/6とcore §2.3/4/5/7/9から、
 raw-messageで`oep.target.arm-adi`を確認する第三段階の検査である。
 一般インターフェイス検査（第二段階）も別に実行する。
-現時点で31項目を持ち、ARM-ADI全体の適合を主張しない。
+基底の31項目に、`ArmAdiBlockChecks`でMEM-AP blockの28項目を追加し、合計59項目を持つ。
+ARM-ADI全体の適合は主張しない。
 
 ## 前提と構成
 
@@ -44,10 +45,10 @@ RDBUFFを繰り返し読んだ場合のUNKNOWN値を特定の値として適合�
 ## 実行
 
 以下のコマンドはclient checkoutのルートで実行する。
-pytestでは正常モデル、16種類の意図的な違反、無効な前提、max_lengthの誤った幅を確認する。
+pytestでは正常モデル、transfer側16種類とblock側10種類の意図的な違反、無効な前提、max_lengthの誤った幅を確認する。
 
 ```sh
-uv run pytest -q tests/test_conformance_arm_adi.py
+uv run pytest -q tests/test_conformance_arm_adi.py tests/test_conformance_arm_adi_blocks.py
 ```
 
 SPECを選択したraw交換の保存例:
@@ -58,7 +59,7 @@ import hashlib, json, sys
 from pathlib import Path
 from oep_client import virtual_arm_adi_model
 from oep_client.conformance import Checks, checker_sources_sha256, spec_identity
-from oep_client.conformance_arm_adi import ArmAdiChecks
+from oep_client.conformance_arm_adi_blocks import ArmAdiBlockChecks
 from oep_client.conformance_arm_adi_sample import SampleArmAdiAdapter
 from oep_client.conformance_interfaces import InterfaceChecks
 from oep_client.virtual_arm_adi_model import ArmAdiModel
@@ -67,7 +68,7 @@ model = ArmAdiModel()
 common = InterfaceChecks(Checks(model.handle, registry, 'virtual-resource-1')).run()
 model = ArmAdiModel()
 checks = Checks(model.handle, registry, 'virtual-resource-1')
-report = ArmAdiChecks(checks, SampleArmAdiAdapter(model)).run()
+report = ArmAdiBlockChecks(checks, SampleArmAdiAdapter(model)).run()
 report['arm_status'] = report['status']
 report['status'] = 'passed' if report['arm_status'] == common['status'] == 'passed' else 'failed'
 report.update(spec=identity, interface_checks=common, wire_trace=checks.trace,
@@ -84,8 +85,19 @@ PY
 
 ## 未検査とモデルの制限
 
-blockモデルはバス上のメモリへのアクセスを抽象化し、MEM-APのpacket列を実装しない。
-posted blockの並べ直し、TAR自動増加境界での書き直し、部分失敗・posted write FAULTはまだ検査しない。
+blockモデルはTAR書込み・DRWアクセス・posted read回収というpacket列を実行する。
+fixtureのTARは下位10 bitでwrapする。0x23fcから4語を読む/書くとき、0x2400を再設定し、
+正しいbus番地へアクセスすることを確認する。1 KiBでwrapするのはこのfixtureの選択である。
+下位10 bitを越える自動増加は実装によるので、probeはそれを仮定しない
+（[Arm IHI 0031D、C2](https://documentation-service.arm.com/static/5f900abff86e16515cdc063b)）。
+
+モデルは小さくするため各語でTARを設定し、読出しではDRWの戻りを捨てRDBUFFを回収する。
+checkerは固定のpacket数を規定せず、bus番地・posted値・境界再設定・進捗とhost設定保持を観測する。
+TAR/data/bufferの段階へ失敗を注入し、読出しでは返せた値のprefixだけを返す。
+RDBUFF回収失敗では、まだ返せない語をtarget busから読んでいてもdoneに加えない。
+writeのdoneは送れた語数であり、fixtureでtargetへの配送を落としても送信数を返す。
+WAIT時のstore一回実行、block replay、失敗語/後続への不正アクセスも確認する。
+最適化したpipeline方式、全ての遅延FAULTの方針はまだ確認しない。
 AP bank/SELECTの完全なdecode、sticky状態とABORT、ADIv6、SWD attachのTARGETSEL/tid、
 packetのparity/turnaround/idle、電気的な再試行と時間、CPUの実行状態は別途必要。
 全経路のframe容量、u32番地を越えるblockの扱い、production Hostとの統合も未完成である。
