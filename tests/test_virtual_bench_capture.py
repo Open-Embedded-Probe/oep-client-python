@@ -76,9 +76,9 @@ def test_a_rate_is_the_source_divided_by_a_whole_number():
 
 
 @pytest.mark.parametrize("kind,role,value,index", [
-    (c.EDGE, 1, 0, 10),    # bit 1 rises at i % 4 == 2: the first at or after the pretrigger 10 is 10
-    (c.EDGE, 2, 1, 16),    # bit 2 falls at i % 8 == 0
-    (c.LEVEL, 3, 1, 10),   # bit 3 is 1 on 8..15
+    (c.EDGE, 1, 0, 2),     # the first observed rise, even before 10 samples of history exist
+    (c.EDGE, 2, 1, 8),     # bit 2 first falls at sample 8
+    (c.LEVEL, 3, 1, 8),    # bit 3 first becomes 1 at sample 8
 ])
 def test_a_trigger_is_where_the_channel_does_it(kind, role, value, index):
     ep, hst, lc, _ = bench()
@@ -86,7 +86,7 @@ def test_a_trigger_is_where_the_channel_does_it(kind, role, value, index):
     lc.configure(rate=1_000_000, samples=64, trigger=(kind, role, value), pretrigger=10)
     lc.start()
     (seg,) = lc.wait()
-    assert seg.trigger_index == index
+    assert seg.trigger_index == index and seg.samples == 64 - 10 + index and seg.flags & 2
 
 
 
@@ -322,9 +322,11 @@ def test_a_group_starts_logic_and_analog_together_and_marks_the_trigger_on_both(
     assert st.start_ns == start_ns == 3_000_000 and st.trigger_fn == lc.fn
     (ls,), (as_,) = lc.segments(), an.segments()
     assert ls.start_ns - start_ns == 0 and as_.start_ns - start_ns == 5000          # the analog starts 5 us later
-    # bit 1 rises at i % 4 == 2: the first at or after 4000 is 4002 (4.002 ms); the analog's (10416.625 Hz) nearest is 42
-    assert ls.trigger_index == 4002 and st.trigger_ns == start_ns + 4_002_000
-    assert as_.trigger_index == round((st.trigger_ns - as_.start_ns) * an.config.rate / 1_000_000_000) == 42
+    # The first rise is sample 2, before either track has its requested prehistory.
+    assert ls.trigger_index == 2 and st.trigger_ns == start_ns + 2_000
+    assert ls.samples == 6002 and ls.flags & 2
+    assert as_.trigger_index == max(0, round((st.trigger_ns - as_.start_ns) * an.config.rate / 1_000_000_000)) == 0
+    assert as_.samples == 100 - grp.pretrigger_of(an, lc) == 58 and as_.flags & 2
     grp.bind([])
     an.start()                                                      # unbound: its own again
     assert an.generation == 2 and lc.read_segment(ls) == lc.read_segment(ls)   # the logic's generation 1 still reads

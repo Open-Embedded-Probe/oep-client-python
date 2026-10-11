@@ -43,7 +43,7 @@ def test_frontend_for_absent_ordinal_role_is_rejected_without_changes(critical):
 def test_trigger_role_is_planned_identity_not_dense_ordinal(role):
     ep,hst,_,_=bench();track=c.AnalogCapture(hst)
     core.plan_apply(hst,[(track.fn,1,16),(track.fn,3,17)])
-    track.configure(rate=1000,samples=64,trigger=(c.CROSS_UP,role,2500))
+    track.configure(rate=1000,samples=64,trigger=(c.CROSS_UP,role,2500),pretrigger=1)
     track.start();segment,=track.segments();assert segment.trigger_index is not None
     values=track.values(track.read_segment(segment),role);i=segment.trigger_index
     assert values[i-1]<2500<=values[i]

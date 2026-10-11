@@ -368,29 +368,24 @@ class VirtualCapture:
         return analog_value(k, i) if self.analog else (i >> k) & 1
 
     def trigger_at(self) -> int | None:
-        """The first sample, at or after the pretrigger, where the trigger holds (within a few periods)."""
+        """The first observed condition. Pretrigger is retained history, not an arming delay."""
         kind, role, value = self.trigger
         span = (1 << (role + 1)) if not self.analog else 64 * (role // 2 + 1)
-        for i in range(max(self.pretrigger, 1), self.pretrigger + 3 * span + 2):
+        for i in range(3 * span + 2):
             now, before = self.value(role, i), self.value(role, i - 1)
             if kind == TRIGGER["level"] and now == (value & 1):
                 return i
-            if kind == TRIGGER["edge"] and now != before and (value == 2 or (value == 0) == (now == 1)):
+            if i > 0 and kind == TRIGGER["edge"] and now != before and (value == 2 or (value == 0) == (now == 1)):
                 return i
-            if kind == TRIGGER["cross_up"] and before < value <= now:
+            if i > 0 and kind == TRIGGER["cross_up"] and before < value <= now:
                 return i
-            if kind == TRIGGER["cross_down"] and before > value >= now:
+            if i > 0 and kind == TRIGGER["cross_down"] and before > value >= now:
                 return i
         return None
 
     def time_of(self, i: int) -> int:
         """The probe-clock time of the track's sample i."""
         return self.t0_ns + int(i * 1_000_000_000 / self.rate)
-
-    def index_at(self, t_ns: int) -> int:
-        """The track's sample nearest the probe-clock time t (NONE when outside the one-shot segment)."""
-        i = round((t_ns - self.t0_ns) * self.rate / 1_000_000_000)
-        return i if 0 <= i < self.samples else NONE
 
     def _segment(self, n: int, trigger_index: int = NONE, flags: int = 0) -> Segment:
         if self.gap_next:
@@ -407,7 +402,7 @@ class VirtualCapture:
 
     # ---- the operations ---------------------------------------------------------------------------------------------
     def start(self, now_ms: int, group_ns: int | None = None, trigger_ns: int | None = None,
-              subscribed: bool = True, waiting: bool = False) -> list[bytes]:
+              subscribed: bool = True, waiting: bool = False, pretrigger_count: int | None = None) -> list[bytes]:
         """-> the events it raises (kind(u8) fixed part). In a group: its start and, from the trigger track, the
         trigger's time to mark on this track. A new generation; streaming needs a subscription (§3.2)."""
         if self.state in (STATE["unconfigured"], STATE["waiting"], STATE["capturing"], STATE["paused"]):
@@ -426,21 +421,32 @@ class VirtualCapture:
             return events
         if self.mode == MODE["one_shot"]:
             if trigger_ns is not None:
-                index = self.index_at(trigger_ns)
-            elif self.trigger:
-                index = self.trigger_at()
-                if index is None:
+                sample = max(0, round(Fraction(trigger_ns - self.t0_ns) * self.rate / 1_000_000_000))
+                return self._triggered(sample, trigger_ns, self.pretrigger if pretrigger_count is None else pretrigger_count)
+            if self.trigger:
+                sample = self.trigger_at()
+                if sample is None:
                     self.state = STATE["waiting"]
                     return events
-                events.append(bytes([EVENT["triggered"]]) + struct.pack("<IIQI", 0, index, self.time_of(index),
-                                                                         self.generation))
-            else:
-                index = NONE
-            seg = self._segment(self.samples, index)
+                return self._triggered(sample, self.time_of(sample), self.pretrigger)
+            seg = self._segment(self.samples)
             self.state = STATE["done"]
             events += [bytes([EVENT["segment"]]) + seg.pack(), self.stopped_event(STOPPED["complete"])]
         else:
             self.state = STATE["capturing"]
+        return events
+
+    def _triggered(self, sample: int, when: int, requested: int) -> list[bytes]:
+        """Retain available prehistory; trigger_index is relative to this segment, not acquisition start."""
+        index = min(requested, sample)
+        self.produced = sample - index
+        events = [bytes([EVENT["triggered"]]) + struct.pack("<IIQI", 0, index, when, self.generation)]
+        self.state = STATE["capturing"]
+        if self.mode == MODE["one_shot"]:
+            n = self.samples - requested + index
+            seg = self._segment(n, index, FLAG["short"] if n < self.samples else 0)
+            self.state = STATE["done"]
+            events += [bytes([EVENT["segment"]]) + seg.pack(), self.stopped_event(STOPPED["complete"])]
         return events
 
     def force(self, now_ms: int, *, trigger_ns: int | None = None,
@@ -457,16 +463,7 @@ class VirtualCapture:
         if trigger_ns is None:
             when = self.time_of(sample)
         requested = self.pretrigger if pretrigger is None else pretrigger
-        index = min(requested, sample)
-        self.produced = sample - index
-        events = [bytes([EVENT["triggered"]]) + struct.pack("<IIQI", 0, index, when, self.generation)]
-        self.state = STATE["capturing"]
-        if self.mode == MODE["one_shot"]:
-            n = self.samples - requested + index
-            seg = self._segment(n, index, FLAG["short"] if n < self.samples else 0)
-            self.state = STATE["done"]
-            events += [bytes([EVENT["segment"]]) + seg.pack(), self.stopped_event(STOPPED["complete"])]
-        return events
+        return self._triggered(sample, when, requested)
 
     def tick(self, now_ms: int) -> list[bytes]:
         """Time passes: repeat's segments, streaming's bytes. -> events."""
@@ -707,11 +704,14 @@ class VirtualGroup:
                     if fn != self.trigger_fn:
                         per.append((fn, caps[fn].start(now_ms, self.start_ns, subscribed=subscribed(fn), waiting=True)))
                 return per, own
-            trigger_ns = self.trigger_ns = src.time_of(src.segs[0].trigger_index)
+            trigger_ns = self.trigger_ns = src.time_of(src.produced - src.segs[0].samples + src.segs[0].trigger_index)
             own.append(bytes([GRP.event["triggered"]]) + struct.pack("<HQI", self.trigger_fn, trigger_ns, self.generation))
         for fn in self.tracks:
             if fn != self.trigger_fn or trigger_ns is None:
-                per.append((fn, caps[fn].start(now_ms, self.start_ns, trigger_ns, subscribed=subscribed(fn))))
+                cap = caps[fn]
+                pre = -(-(src.pretrigger * cap.rate.numerator * src.rate.denominator)
+                        // (cap.rate.denominator * src.rate.numerator)) if trigger_ns is not None else None
+                per.append((fn, cap.start(now_ms, self.start_ns, trigger_ns, subscribed=subscribed(fn), pretrigger_count=pre)))
         if all(caps[fn].state == STATE["done"] for fn in self.tracks):
             own.append(self.stopped_event(STOPPED["complete"]))
         return per, own

@@ -106,3 +106,17 @@ role 1と3を区別する既知sample列を使う。全analog/group契約の証�
 ```sh
 uv run pytest -q tests/test_conformance_analog_payload.py tests/test_virtual_bench_analog_roles.py
 ```
+
+## 最初の自然triggerとpretrigger不足
+
+`test_virtual_bench_capture_pretrigger.py`は、pretriggerを待ち時間として使わず最初の条件成立で取得することを確認する。
+不足した履歴はshort区画として返し、十分ある履歴は要求数だけ残す。
+trigger_indexは残した区画内の位置であり、取得開始からのsample番号ではない。
+logicのedge/level、analogのcross_up/down（疎なroleも含む）、pretrigger 0と不足/充足、
+rawデータ・時刻・世代付き通知、groupのactual_rateに応じたP_kを照合する。
+開始前のsampleをedge/crossingの比較に使わない。
+既存one-shot fixtureは将来sampleを即時合成する。物理latency、全mode/全group契約は別途整備する。
+
+```sh
+uv run pytest -q tests/test_virtual_bench_capture_pretrigger.py
+```
