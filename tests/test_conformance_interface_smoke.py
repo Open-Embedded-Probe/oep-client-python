@@ -5,6 +5,7 @@ import struct
 import pytest
 
 from oep_client.conformance_core_smoke import CoreSmokeChecks
+from oep_client.conformance import Violation
 from oep_client.conformance_interface_smoke import InterfaceSmokeChecks
 from test_conformance_core_smoke import SmallCore, REG, SPEC, tag
 
@@ -84,3 +85,22 @@ def test_rejection_without_observer_leaves_effects_unchecked():
     report = run(observe=False)
     assert report['status'] == 'passed'
     assert 'rejection side effects not independently observed' in report['unchecked']
+
+
+def test_sparse_instances_survive_fn_reordering_and_removal():
+    core = CoreSmokeChecks(lambda _: None, REGISTRY, 'identity', spec=SPEC)
+    checker = InterfaceSmokeChecks(core)
+    a = dict(fn=8, name='io.example.echo', revision=1, instance=0)
+    b = dict(fn=3, name='io.example.echo', revision=1, instance=7)
+    checker.entries = [b, a]
+    checker.instances(a)
+    checker.instances(b)
+    checker.entries = [b]
+    checker.instances(b)
+    # The same instance is also valid in a different revision or name.
+    checker.entries += [dict(b, fn=9, revision=2), dict(b, fn=10, name='io.example.other')]
+    for entry in checker.entries:
+        checker.instances(entry)
+    checker.entries += [dict(b, fn=11)]
+    with pytest.raises(Violation, match='duplicate instance'):
+        checker.instances(b)

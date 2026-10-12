@@ -17,7 +17,7 @@ report = InterfaceSmokeChecks(core).run()
 callback、排他、framing、待ち時間、観測、結果保存は[コア大枠検査](core-smoke-conformance.ja.md)と同じ。
 機器を探索・接続する処理や、別のプロジェクトの設定への依存はない。
 
-confirm/core describe/listを準備し、各fnの名前、ops、共通tagの固定幅、宣言するpin候補、instance順、繰返しdescribeの不変を確認する。
+confirm/core describe/listを準備し、各fnの名前、ops、共通tagの固定幅、宣言するpin候補、(name, revision)内のinstanceの一意性、繰返しdescribeの不変を確認する。instanceの欠番とfn順からの独立を許す。firmware更新をまたぐ識別子の維持はこの単一起動検査の範囲外である。
 未提供操作はfnごとに代表1個を選び、sessionなしでunknown_operationとなることを確認する。
 これにより、未提供操作への拒否をsession_requiredより先に行う契約を扱う。
 観測callbackがあれば拒否前後の作用を比較して保存し、無ければ未観測をreportへ残す。

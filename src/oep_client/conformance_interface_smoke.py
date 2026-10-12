@@ -40,9 +40,10 @@ class InterfaceSmokeChecks:
         self.c.clock()  # Same boot, without requiring a fine-resolution clock.
 
     def instances(self, entry):
-        peers = sorted((row for row in self.entries if (row['name'], row['revision']) ==
-                        (entry['name'], entry['revision'])), key=lambda row: row['fn'])
-        require(entry['instance'] == peers.index(entry), 'instance order within name/revision')
+        peers = [row for row in self.entries if (row['name'], row['revision']) ==
+                 (entry['name'], entry['revision'])]
+        require(sum(row['instance'] == entry['instance'] for row in peers) == 1,
+                'duplicate instance within name/revision')
 
     def check(self, case, function):
         row = {'id': case, 'level': 'interface'}
