@@ -145,6 +145,20 @@ def checker_sources_sha256():
             for name in CHECKER_SOURCES}
 
 
+REVIEWED_CORE_SHA256 = 'cddf917d49f36bbb1a5b24fbda247675834e1c398beaa179728b8efa31831bf9'
+
+
+def require_reviewed_contract(registry, spec=None):
+    limits = registry.get('limits', {})
+    require('corr_half_range' not in limits and
+            limits.get('request_header_bytes', 10) == 10 and
+            limits.get('result_header_bytes', 5) == 5,
+            'checker migration required: cyclic-corr/new-header SPEC is not supported by this legacy checker')
+    if spec is not None:
+        require(spec.get('core_sha256') == REVIEWED_CORE_SHA256,
+                'checker migration required: core document differs from the reviewed checker contract')
+
+
 def spec_identity(path):
     path = Path(path).resolve(strict=True)
     raw = (path / 'registry/oep-v1.toml').read_bytes()
@@ -152,11 +166,13 @@ def spec_identity(path):
     commit = subprocess.check_output(['git', '-C', str(path), 'rev-parse', 'HEAD'], text=True).strip()
     dirty = bool(subprocess.check_output(['git', '-C', str(path), 'status', '--porcelain'], text=True))
     return tomllib.loads(raw.decode()), {'commit': commit, 'dirty': dirty,
-                                         'registry_sha256': hashlib.sha256(raw).hexdigest()}
+                                         'registry_sha256': hashlib.sha256(raw).hexdigest(),
+                                         'core_sha256': hashlib.sha256((Path(path) / 'docs/oep-core.ja.md').read_bytes()).hexdigest()}
 
 
 class Checks:
     def __init__(self, send, registry, expected_unit):
+        require_reviewed_contract(registry)
         self.send = send
         self.reg = registry
         self.unit = expected_unit
@@ -955,6 +971,10 @@ def main(argv=None):
     if args.tcp_peer and args.framing != 'tcp':
         parser.error('explicit TCP peer requires framing=tcp')
     registry, spec = spec_identity(args.spec)
+    try:
+        require_reviewed_contract(registry, spec)
+    except Violation as exc:
+        parser.error(str(exc))
     from . import __version__, link
     report = {'status': 'failed', 'spec': spec, 'client_version': __version__,
               'checker_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
