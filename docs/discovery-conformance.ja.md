@@ -4,7 +4,7 @@
 通常の順次ページングに加え、listのページ途中のentryとfn 0 describeのページ途中のTLVを指すcursorを確認する。
 privateベンチを参照せず、SPEC checkoutと出力先を明示する。
 
-前提1と動作5で6項目。
+前提1と動作5で6項目。明示した`supported_revisions=(1,1)`プロファイルを渡すと、revision範囲検査を加えて7項目。
 
 - listのfirstを0〜total、total+1（u16内）、65535で照合する。項目は最初のsnapshotの該当suffixで、末尾はcount 0。
 - fn 0 describeのfirstも全TLV位置と末尾以降で照合し、moreとTLV境界を確認する。
@@ -63,3 +63,11 @@ PY
 
 他経路のframe、firmware版を越えた不変性、並行性、Hostのtext表示と全core規範は未検査として残す。
 この6項目のPASSをcore全体の適合と扱わない。
+
+
+追加のrevision範囲検査は、fixtureが扱うrevisionの区間を明示して使う。省略時は既存6項目。
+revision1を含む整数tupleをsession操作前に確認する。現在の仮想宣言fixtureの期待区間は(1,1)。
+境界0/1/2/254/255の25組で、包含範囲は最高対応revision、非対応範囲はunsupported＋tag0＋supported TLV、逆順はmalformedを要求する。
+確認中も所有セッションを保持し、直近のclock再送は保存した応答又はresult_lost。keepaliveで所有権継続を確認する。
+このプロファイルはprobe firmwareの最低版ではない。複数revisionのfixtureを実行した証拠として使わない。
+経路ごとの両方向適用、他経路の宣言、すべての保持副作用は別の検査範囲である。

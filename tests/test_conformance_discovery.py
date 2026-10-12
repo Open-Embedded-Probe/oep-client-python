@@ -51,3 +51,64 @@ def test_invalid_channel_labels_fail(value):
     model,c,runner=setup();model.ep.static[0] += (tlv(0x46,value),)
     report=runner.run()
     assert next(x for x in report['checks'] if x['id']=='CORE-DISCOVERY-LABELS')['status']=='failed'
+
+
+
+def test_revision_range_profile_checks_all_boundary_pairs():
+    model, c, runner = setup()
+    runner.supported_revisions = (1,1)
+    report = runner.run()
+    assert report['status'] == 'passed', report['checks']
+    assert len(report['checks']) == 7
+    rows = report['observed']['confirm_revision_ranges']
+    assert {(r['minimum'],r['maximum']) for r in rows} == {(a,b) for a in (0,1,2,254,255) for b in (0,1,2,254,255)}
+    assert model.ep.current_core.holder is None
+
+
+@pytest.mark.parametrize('fault', ['revision','unsupported_tag','supported_missing','supported_width','supported_value','reverse','clear_owner','high_poison'])
+def test_confirm_range_faults_are_detected(fault):
+    model,c,runner=setup();c.confirm();c.identity();send=c.send
+    def broken(request):
+        answer=send(request)
+        if request[5]==1:
+            minimum,maximum=request[14:16]
+            if fault=='revision' and minimum<=1<=maximum:answer=answer[:9]+b'\x02'+answer[10:]
+            if minimum<=maximum and not minimum<=1<=maximum:
+                if fault=='unsupported_tag':answer=answer[:5]+b'\xfe'+answer[6:]
+                if fault=='supported_missing':answer=answer[:6]
+                if fault=='supported_width':answer=answer[:6]+b'\x01\x01\0\x01'
+                if fault=='supported_value':answer=answer[:6]+b'\x01\x02\0\x01\x02'
+            if fault=='reverse' and minimum>maximum:answer=answer[:3]+b'\0\x0b\0\x01\x02\0\x01\x01'
+            if fault=='clear_owner':model.ep.current_core.release()
+            if fault=='high_poison':model.ep.current_core.high=65535
+        return answer
+    c.send=broken;runner.supported_revisions=(1,1)
+    c.check('CORE-DISCOVERY-REVISIONS','core §7.1',runner.revisions)
+    assert c.results[-1]['status']=='failed',c.results
+    expected={'revision':'highest supported','unsupported_tag':'fixed tag','supported_missing':'interval','supported_width':'interval','supported_value':'interval','reverse':'expected rejected malformed','clear_owner':'expected completed success','high_poison':'expected completed success'}
+    assert expected[fault] in c.results[-1]['error'],c.results
+
+
+@pytest.mark.parametrize('profile',[(2,2),(1,0),(1,256),(True,1),(1,),[1,1]])
+def test_invalid_revision_profiles_fail_before_session_work(profile):
+    model,c,runner=setup();c.confirm();c.identity();runner.supported_revisions=profile
+    c.check('CORE-DISCOVERY-REVISIONS','explicit profile',runner.revisions)
+    assert c.results[-1]['status']=='failed' and model.ep.current_core.last is None
+
+
+
+def test_revision_range_profile_allows_unretained_clock_reply():
+    model,c,runner=setup();model.ep.remember_max=16;runner.supported_revisions=(1,1)
+    report=runner.run()
+    assert report['status']=='passed',report['checks']
+    assert any(bytes.fromhex(row['response_hex'])[3:5]==b'\0\x0c' for row in c.trace)
+
+
+
+@pytest.mark.parametrize('profile',[(2,2),(1,0),(1,256),(True,1),(1,),[1,1]])
+def test_invalid_revision_profiles_block_the_complete_run(profile):
+    model,c,runner=setup();runner.supported_revisions=profile
+    report=runner.run()
+    assert report['checks'][0]['status']=='failed'
+    assert all(row['status']=='blocked' for row in report['checks'][1:])
+    assert c.trace==[] and model.ep.current_core.last is None
