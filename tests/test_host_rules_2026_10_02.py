@@ -378,3 +378,18 @@ def test_c18_the_session_id_is_random_and_never_0():
     assert 0 not in ids and len(ids) > 1
     opens = [r for r in ep.requests if r.fn == 0 and r.op == m.OP_OPEN]
     assert len(opens) == 20 and {r.session for r in opens} == ids        # the id in the header (core §4.1, §6.4)
+
+
+@pytest.mark.parametrize('control',list(range(32))+[127])
+def test_c22_every_c0_and_del_is_replaced_without_losing_adjacent_text(control):
+    prefix='端子'.encode('utf-8');suffix='é'.encode('utf-8')
+    shown=m.shown(prefix+bytes((control,))+suffix)
+    assert shown=='端子�é'
+    assert not any(ord(c)<32 or ord(c)==127 for c in shown)
+
+
+@pytest.mark.parametrize('invalid',[b'\x80',b'\xc0\xaf',b'\xe2\x82',b'\xed\xa0\x80',b'\xf4\x90\x80\x80',b'\xff'])
+def test_c22_invalid_utf8_is_replaced_while_valid_text_is_preserved(invalid):
+    shown=m.shown(b'left'+invalid+'右'.encode('utf-8'))
+    assert shown.startswith('left') and shown.endswith('右') and '�' in shown
+    assert not any(ord(c)<32 or ord(c)==127 for c in shown)
