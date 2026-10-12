@@ -79,3 +79,8 @@ class PipelineModel(RouteModel):
         value = self.state()
         value.update(now_ms=self.ep.now())
         return value
+
+    def execution_state(self):
+        value = self.state()
+        value['next_resource_id'] = self.extension.next_id
+        return value
