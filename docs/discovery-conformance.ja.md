@@ -71,3 +71,6 @@ revision1を含む整数tupleをsession操作前に確認する。現在の仮�
 確認中も所有セッションを保持し、直近のclock再送は保存した応答又はresult_lost。keepaliveで所有権継続を確認する。
 このプロファイルはprobe firmwareの最低版ではない。複数revisionのfixtureを実行した証拠として使わない。
 経路ごとの両方向適用、他経路の宣言、すべての保持副作用は別の検査範囲である。
+
+範囲を変える要求はProbeへ与える検査刺激である。通常Hostの再confirmは選択済みrevisionへmin=maxを固定する（core §7.1）。
+検査刺激の後に既知revision1のconfirmへ戻してから、元のセッションのclock再送とkeepaliveを確認する。

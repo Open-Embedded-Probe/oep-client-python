@@ -51,6 +51,7 @@ class DiscoveryChecks:
         low, high = supported
         points = sorted({0, 1, low, high, min(low + 1, 255), min(high + 1, 255), 254, 255})
         observations = []
+        original_boot = self.c.boot
         with self.c.holding(60000) as sid:
             original, original_clock = self.c.clock(sid)
             for minimum in points:
@@ -77,6 +78,9 @@ class DiscoveryChecks:
                         require(values and values[0] == bytes((self.c.confirm_transport,)), 'range confirm transport changed')
                     observations.append({'minimum': minimum, 'maximum': maximum, 'reason': reason,
                                          'request_hex': request.hex(), 'reply_payload_hex': payload.hex()})
+            # Return the injection route to the known revision before normal session operations.
+            self.c.confirm()
+            require(self.c.boot == original_boot, 'range injection changed boot')
             # A replay may return result_lost when its response exceeds retention bounds.
             answer = self.c.exchange(original)
             require((answer[3:5] == b'\x01\0' and answer[5:] == original_clock) or
