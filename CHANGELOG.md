@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- (JA) 循環corr作業版のlease/forceを確認する選択raw検査を追加。時間と代表資源のadapterを明示入力とし、cache0/1、core-only/資源ありの論理fixtureと6つのfaultで検証。全適合・実タイマー・本番virtualの適合は主張しない。
+
 - (JA) 新コア仕様4681d22の最小バーチャルprofile `core-v1` を追加。既存のvirtual-bench CLIでPTY/TCPとして提供し、コアの拒否順・session・要求全体の再送照合・終了後の履歴とシリアルの過大frame破棄を実装。target/interfaceは持たず、旧profileと旧clientの期待値は固定したまま。独立したTCP length検査器と7項目のfault検査も追加。
 
 - (JA) transport宣言・describeサイズ・ロック中の発見・confirm後の履歴を個別検査。serial port再接続後のsession/lock・再送・終了履歴・leaseを検査し、boot/個体変化は後続を止める。個体照合は仕様に従い大文字小文字を区別しない。
