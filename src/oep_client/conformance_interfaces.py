@@ -12,6 +12,9 @@ class InterfaceChecks:
         labels=entry['name'].split('.')
         require(len(labels)>=2 and all(label and not label.startswith('-') and not label.endswith('-') for label in labels),
                 'interface name requires at least two nonempty labels without edge hyphens')
+        if labels[0] == 'oep':
+            require(len(labels) >= 3 and labels[1] in ('probe', 'wire', 'target', 'fixture'),
+                    'project interface requires a defined layer and a name')
 
     def declared_ops(self, entry):
         values=dict(reversed(self.snapshots[entry['fn']]))

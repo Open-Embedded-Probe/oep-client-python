@@ -100,3 +100,18 @@ def test_core_only_marks_interface_cases_not_applicable():
     c.send=model.handle;report=InterfaceChecks(c).run()
     assert report['status']=='passed' and len(report['checks'])==1 and report['interface_count']==0
     assert report['not_applicable'] and not report['full_conformance']
+
+
+@pytest.mark.parametrize('name',[b'oep.other.test',b'oep.probe',b'oep.probes.test'])
+def test_reserved_project_prefix_requires_a_defined_layer_and_name(name):
+    model,_,runner=setup();model.extension.name=name
+    report=runner.run()
+    assert any(row['id'].startswith('IF-NAME-') and row['status']=='failed' for row in report['checks']),report['checks']
+
+
+@pytest.mark.parametrize('name',[b'oep.probe.custom',b'oep.wire.custom',b'oep.target.custom',b'oep.fixture.custom',b'oep.fixture.custom.nested',b'io.vendor.custom'])
+def test_project_layers_and_external_names_remain_generic(name):
+    model,_,runner=setup();model.extension.name=name
+    report=runner.run()
+    assert report['status']=='passed',report['checks']
+    assert report['levels']['oep-interface']=='not executed'

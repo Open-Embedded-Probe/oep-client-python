@@ -39,3 +39,6 @@ assert report['status'] == 'passed', report
 これは明示した仮想sampleの例。実機へ適用する場合は、wire交換・個体・SPEC・共有lockを明示する。通常CLIへ自動追加せず、`.env.example`に新設定を追加しない。公開側から私的ベンチや隣接checkoutを探索しない。
 
 `full_conformance=false`。宣言されているopの実行、標準インターフェイスの必須op、共通部品の動作、資源/購読/通知、ピン選択の実効制約、firmware版を越える不変性、別経路の最小frame、並行writerは未検査。今回追加した独自modelは宣言のfixtureで、channelの空き状態やピン操作まで実装したprobeではない。SPEC・既存の仮想model・Arduino firmwareは変更していない。
+
+名前は共通の文字/label規則に加え、`oep.`ならprobe/wire/target/fixtureの層と後続名を要求する。
+未登録の適法な名前や、別の逆DNS名前も検査できる。定義権限・逆DNS所有・名称の意図は別の設計レビュー範囲である。
