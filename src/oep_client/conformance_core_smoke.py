@@ -49,7 +49,11 @@ class CoreSmokeChecks:
 
     def rejected(self, reply, reason):
         require(reply[3:5] == bytes([0, self.reg['reject_reasons'][reason]]), 'expected rejected ' + reason)
-        tlvs(reply[5:])
+        if reason == 'unsupported':
+            require(len(reply) >= 6 and (reply[5] == 0 or reply[5] & 0x80), 'unsupported field/tag marker')
+            tlvs(reply[6:])
+        else:
+            tlvs(reply[5:])
 
     def confirm(self):
         p = self.success(self.call('confirm', b'OEP?\1\1'))
@@ -135,15 +139,19 @@ class CoreSmokeChecks:
             observation.update(effects_before=before, effects_after=after)
             require(after == before, 'replay changed observed effects')
 
-    def session_cycle(self):
+    def open_session(self, corr=1):
         sid = secrets.randbits(32) or 1
         self.observed['attempted_session'] = sid
         owner = b'core-smoke'
         body = struct.pack('<IB', 60000, 0) + bytes([1]) + struct.pack('<H', len(owner)) + owner
-        p = self.success(self.call('open', body, sid=sid, corr=65534))
+        p = self.success(self.call('open', body, sid=sid, corr=corr))
         self.session = sid
         require(len(p) >= 8 and struct.unpack_from('<II', p) == (60000, self.boot), 'open lease/boot')
         tlvs(p[8:])
+        return sid
+
+    def session_cycle(self):
+        self.open_session(65534)
         self.success(self.call('keepalive', sid=self.session, corr=65535))
         self.replay('keepalive', b'', 1)
         state = self.success(self.call('lock_state'))

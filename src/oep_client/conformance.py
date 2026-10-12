@@ -112,7 +112,7 @@ def ops(value):
 
 
 
-CHECKER_SOURCES = ('conformance.py', 'conformance_core_smoke.py', 'conformance_interface_smoke.py', 'conformance_execution_order.py', 'conformance_execution_order_sample.py', 'conformance_host_notifications.py', 'conformance_host_notifications_sample.py',
+CHECKER_SOURCES = ('conformance.py', 'conformance_core_smoke.py', 'conformance_interface_smoke.py', 'conformance_oep_smoke.py', 'conformance_execution_order.py', 'conformance_execution_order_sample.py', 'conformance_host_notifications.py', 'conformance_host_notifications_sample.py',
                    'conformance_host_values.py', 'conformance_host_values_sample.py',
                    'conformance_tlv_requests.py',
                    'conformance_host_requests.py', 'conformance_host_request_sample.py',
@@ -167,7 +167,9 @@ def spec_identity(path):
     dirty = bool(subprocess.check_output(['git', '-C', str(path), 'status', '--porcelain'], text=True))
     return tomllib.loads(raw.decode()), {'commit': commit, 'dirty': dirty,
                                          'registry_sha256': hashlib.sha256(raw).hexdigest(),
-                                         'core_sha256': hashlib.sha256((Path(path) / 'docs/oep-core.ja.md').read_bytes()).hexdigest()}
+                                         'core_sha256': hashlib.sha256((Path(path) / 'docs/oep-core.ja.md').read_bytes()).hexdigest(),
+                                         'interface_sha256': {name: hashlib.sha256((path / 'interfaces' / name).read_bytes()).hexdigest()
+                                             for name in ('oep-if-fixture.ja.md', 'oep-if-plan.ja.md', 'oep-if-debug.ja.md', 'oep-if-common.ja.md')}}
 
 
 class Checks:
