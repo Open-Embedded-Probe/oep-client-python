@@ -169,7 +169,8 @@ def spec_identity(path):
                                          'registry_sha256': hashlib.sha256(raw).hexdigest(),
                                          'core_sha256': hashlib.sha256((Path(path) / 'docs/oep-core.ja.md').read_bytes()).hexdigest(),
                                          'interface_sha256': {name: hashlib.sha256((path / 'interfaces' / name).read_bytes()).hexdigest()
-                                             for name in ('oep-if-fixture.ja.md', 'oep-if-plan.ja.md', 'oep-if-debug.ja.md', 'oep-if-common.ja.md')}}
+                                             for name in ('oep-if-fixture.ja.md', 'oep-if-plan.ja.md', 'oep-if-debug.ja.md', 'oep-if-common.ja.md')
+                                             if (path / 'interfaces' / name).is_file()}}
 
 
 class Checks:
