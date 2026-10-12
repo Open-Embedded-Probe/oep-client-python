@@ -172,6 +172,52 @@ class RetentionChecks(ReplayPressureChecks):
                                          'old_history_unchanged': True})
         self.c.observed['retention_same_open'] = observations
 
+    def keepalive_state(self):
+        observations = []
+        for lease in (1000, 60000):
+            for route in (self.a.primary, self.a.peer):
+                with self.c.holding(lease) as sid:
+                    fn = self.a.functions[0]
+                    owned = self.create(sid)
+                    saved, rid = self.created_one(owned)
+                    tlvs(self.c.success(self.c.request(1, struct.pack('<HI', 0, 0), session=sid, fn=fn)))
+                    self.a.stimulate(fn, 11); self.service()
+                    frames = self.a.receive(self.a.primary)
+                    require(len(frames) == 1, 'keepalive initial notification missing')
+                    RouteChecks.event(self, frames[0], fn, 0, 11)
+                    require(self.a.receive(self.a.peer) == [], 'keepalive initial notification reached peer')
+                    before = self.state()
+                    self.a.wait_ms(7)
+                    start = self.a.timing_state()['now_ms']
+                    request = self.c.request(self.c.core['keepalive'], session=sid)
+                    frame = self.a.exchange(route, request)
+                    self.result(frame, request); tlvs(frame[5:])
+                    finish = self.a.timing_state()['now_ms']
+                    after = self.state()
+                    for field in ('holder', 'last', 'resources', 'routes', 'subscriptions', 'next_resource_id', 'boot_id'):
+                        require(after[field] == before[field], 'keepalive changed ' + field)
+                    require(set(after['resources']) == {rid}, 'keepalive changed resources')
+                    history = dict(after['cache'])
+                    require(all(history.get(corr) == value for corr, value in before['cache']),
+                            'keepalive changed previous replay history')
+                    corr = struct.unpack_from('<H', request, 1)[0]
+                    require(after['high'] == corr and history.get(corr) == (request, frame),
+                            'keepalive was not recorded')
+                    require(start + lease <= after['deadline'] <= finish + lease,
+                            'keepalive did not renew the original lease from response completion')
+                    self.replay_unchanged(owned, saved)
+                    self.replay_unchanged(request, frame)
+                    self.a.stimulate(fn, 12); self.service()
+                    frames = self.a.receive(self.a.primary)
+                    require(len(frames) == 1, 'keepalive notification subscription/route lost')
+                    RouteChecks.event(self, frames[0], fn, 1, 12)
+                    require(self.a.receive(self.a.peer) == [], 'keepalive redirected notification to peer')
+                    observations.append({'lease_ms': lease, 'route': route, 'request_hex': request.hex(),
+                                         'reply_hex': frame.hex(), 'deadline': after['deadline'],
+                                         'start_ms': start, 'finish_ms': finish, 'old_deadline': before['deadline'],
+                                         'resource_id': rid, 'notification_sequence': [0, 1]})
+        self.c.observed['retention_keepalive'] = observations
+
     def session_zero(self):
         with self.c.holding(60000) as sid:
             owned=self.create(sid);saved,rid=self.created_one(owned)
@@ -212,7 +258,7 @@ class RetentionChecks(ReplayPressureChecks):
         for name, case in [('REQUEST-BOUNDARY', self.request_boundary), ('REQUEST-LOST', self.request_lost),
                            ('RESPONSE-BOUNDARY', self.response_boundary), ('RESPONSE-LOST', self.response_lost),
                            ('EVICTION', self.eviction), ('REJECTED', self.rejected_lost), ('END', self.end_lost),
-                           ('SAME-OPEN', self.same_open), ('SESSION-ZERO', self.session_zero)]:
+                           ('SAME-OPEN', self.same_open), ('KEEPALIVE', self.keepalive_state), ('SESSION-ZERO', self.session_zero)]:
             first = len(self.a.trace)
             self.c.check('CORE-RETENTION-' + name, 'core §5.2/6.1/9; bounded fixture', case)
             self.c.results[-1]['adapter_trace'] = self.a.trace[first:]

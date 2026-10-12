@@ -32,7 +32,7 @@ def test_retention_passes():
     now, model, adapter, runner = build()
     report = runner.run()
     assert report['status'] == 'passed', [(x['id'],x.get('error')) for x in report['checks']]
-    assert len(report['checks']) == 12
+    assert len(report['checks']) == 13
     assert not report['full_conformance']
     assert model.ep.current_core.holder is None
 
@@ -157,4 +157,42 @@ def test_same_open_mutations_are_detected(defect):
                 'force_release': 'changed resources', 'redirect': 'changed routes',
                 'unsubscribe': 'changed subscriptions', 'sequence': 'changed subscriptions',
                 'history': 'previous replay history', 'allocator': 'changed next_resource_id'}
+    assert expected[defect] in runner.c.results[-1]['error'], runner.c.results
+
+
+
+def test_keepalive_preserves_state_on_both_routes():
+    _, _, adapter, runner = build()
+    runner.c.confirm(); runner.c.identity()
+    runner.c.check('CORE-RETENTION-KEEPALIVE', 'core §6.4', runner.keepalive_state)
+    assert runner.c.results[-1]['status'] == 'passed', runner.c.results
+    rows = runner.c.observed['retention_keepalive']
+    assert {(r['lease_ms'], r['route']) for r in rows} == {(lease,route) for lease in (1000,60000) for route in (adapter.primary,adapter.peer)}
+    assert all(r['deadline'] > r['old_deadline'] for r in rows)
+
+
+@pytest.mark.parametrize('defect', ['no_renew', 'lease', 'resources', 'redirect', 'unsubscribe', 'sequence', 'history', 'allocator'])
+def test_keepalive_side_effects_are_detected(defect):
+    _, model, adapter, runner = build()
+    core = model.ep.current_core; handle = core.handle
+    def altered(data, transport, **kwargs):
+        _, corr, fn, op, sid = struct.unpack_from('<BHHBI', data)
+        result = handle(data, transport, **kwargs)
+        if fn == 0 and op == 18 and sid == core.holder:
+            if defect == 'no_renew': core.renewal = None
+            elif defect == 'lease': core.lease = 3000
+            elif defect == 'resources': model.extension.live.clear()
+            elif defect == 'redirect': model.extension.routes[1] = adapter.peer
+            elif defect == 'unsubscribe': model.extension.subscriptions.clear()
+            elif defect == 'sequence': model.extension.subscriptions[1] = 0
+            elif defect == 'history': core.cache = type(core.cache)((k,v) for k,v in core.cache.items() if k == corr)
+            elif defect == 'allocator': model.extension.next_id += 1
+        return result
+    core.handle = altered
+    runner.c.confirm(); runner.c.identity()
+    runner.c.check('CORE-RETENTION-KEEPALIVE', 'core §6.4', runner.keepalive_state)
+    assert runner.c.results[-1]['status'] == 'failed', runner.c.results
+    expected = {'no_renew':'renew the original lease', 'lease':'renew the original lease', 'resources':'changed resources',
+                'redirect':'changed routes', 'unsubscribe':'changed subscriptions', 'sequence':'changed subscriptions',
+                'history':'previous replay history', 'allocator':'changed next_resource_id'}
     assert expected[defect] in runner.c.results[-1]['error'], runner.c.results

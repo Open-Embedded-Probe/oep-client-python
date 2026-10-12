@@ -2,14 +2,14 @@
 
 core §5.2/6/9を、明示した16 byte / 8件の[retention sample](retention-conformance.ja.md)で検査する。要求欠落、応答欠落、記録追い出しをそれぞれ作り、期限切れと異なるIDのforceでの扱いを分ける。終了と同じboot内のID継続、boot変更時の無効化は別の契約。
 
-`RetentionLifecycleChecks`はretentionの12項目＋明示reset制御の前提1項目＋7寿命契約で20項目。reset能力はsession操作の前に確認し、`reset_scope='logical-model'`だけを許す。実機の再起動/転送をこのadapterへ渡さない。
+`RetentionLifecycleChecks`はretentionの13項目＋明示reset制御の前提1項目＋7寿命契約で21項目。reset能力はsession操作の前に確認し、`reset_scope='logical-model'`だけを許す。実機の再起動/転送をこのadapterへ渡さない。
 
 - 期限切れ×3状態: 1000msのleaseで資源と購読を作り、1050ms待つ。資源/購読は消えるが、cache/high/last/boot/次の資源番号は変わらない。同一再送はresult_lost、要求を保持している応答欠落では変更した同corrはmalformed。新corrのkeepaliveはno_session。
 - 期限切れ後の別ID open: 新規openから履歴を始める。資源は新sessionへ渡さず、資源番号は同じbootの次の番号を使う。
 - force×3状態: 自分のSのboot/holderをpeerで再確認し、別ID Tをforceする。Sの資源/購読/履歴を捨て、cache/highはTのopenから始まる。Sの旧要求は元のprimaryでlockedとなり、Tの状態を変えない。Tの資源番号は同じbootの次の番号。Tだけをpeerでendする。
 - 論理再起動: 要求欠落・応答欠落・保存済み成功、送信待ち応答、受理した未実行要求を置いてから、明示した異なるu32 boot_idでsampleを作り直す。全履歴、session、資源、購読、送信枠/待ち結果を消し、uptimeと資源番号を再開する。両経路のconfirm/identityで新bootを確認し、旧Sの要求はno_sessionとなる。旧openは再送せず、別IDの新sessionを開いて資源番号1から作る。
 
-Sの要求はprimaryに固定する。peerはsession 0照会と別ID Tだけに使い、Sを別の接続へ移さない。終了したIDを再使用しない。再起動後の旧open再送はsessionを新規に作り得るため、この検査でも回復手順でも行わない。
+寿命契約のSの要求はprimaryを使い、peerはsession 0照会と別ID Tに使う。継承するretentionの同SID open/keepalive検査では、同じ所有SIDをpeer経路からも送って購読先の保持を確認する。終了したIDを再使用しない。再起動後の旧open再送はsessionを新規に作り得るため、この検査でも回復手順でも行わない。
 
 `SampleRetentionLifecycleAdapter`は既存adapterへ論理restartだけを追加する。modelのboot_idはstateで観測し、restartの返答だけで成功を判断しない。confirm/clockでも実際のbootを確認する。独立monotonic時計で待機を測り、state/cache/allocator、全raw交換・制御時刻・restart入力/出力を記録する。
 
