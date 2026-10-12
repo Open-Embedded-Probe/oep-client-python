@@ -81,3 +81,17 @@ config本文に各tagのcritical指定を新たに追加したわけではない
 同一set内のplan/wifiとdriveの複数キーを異なる値で送り、出現順とopaqueな値コピーを照合する。
 wifiのtestpassは検査用の架空文字列。実ネットワーク・設備・保存設定は扱わない。
 同時に成り立つ実機構成を検証せず、declared items、キー重複、無効channelや電気条件はProbe適合検査へ残す。
+
+## 公開APIの送信箇所を確認する
+
+`tests/test_conformance_host_critical_calls.py`は実HostとGPIO/UART/rvswd/swio/swdの公開APIを使う。
+GPIO driveの2要素、UART format、wire attachのmax_speed/pins/reset、rvswd idle_clock、swd targetselを、
+独立したliteral payloadと比較する。13種類の拒否tagをscripted peerからunsupportedで返し、
+Hostが受信したcritical tagを保持して例外にし、項目を外して再送しないことを確認する。
+各tagのcritical bitを落とす13故障も検出し、合計26件PASS。
+
+公開interfaceクライアントには旧op番号が残っているため、この検査は現SPECのop番号の適合を判定しない。
+初回に現SPECの16/17を要求した検査は、実際の1/2で失敗した。その差異は実装追従として残し、
+coreのcritical方針の検査ではrole/corr/fn/sessionとpayloadを照合する。
+現SPEC番号を使う独立encoderの16文脈検査と、この公開APIの部分検査を混同しない。
+scan/capture/config/planを含む公開API全体、物理副作用、未知項目を無視する実Probeとの連携は引き続き未確認。
