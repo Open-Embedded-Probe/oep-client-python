@@ -93,15 +93,55 @@ class StreamChecks:
         require(all(a[3]<=b[3] for a,b in zip(seen,seen[1:])),'mark timestamps decreased')
         require(self.marks(serial)[1]==seen[:len(self.marks(serial)[1])],'marks not repeatable')
 
-    def lost_marks(self):
-        self.fresh(serial=100)
+    def retained_span(self):
+        state=self.a.stream_state();next_serial=state['next_serial'];rows=state['marks']
+        require(len(rows)<=self.a.adoption['mark_capacity'],'mark ring exceeded explicit capacity')
+        require(all((next_serial-row[0])%2**32<2**30 for row in rows),'retained mark serial reached quarter span')
+
+    def lost_marks(self, serial=100):
+        self.fresh(serial=serial)
         for detail in range(8):self.a.mark_external(7,detail)
-        expected=self.a.stream_state()['marks'];require(len(expected)==5 and expected[0][0]==103,'controlled ring eviction')
-        for cursor in (100,99,109):
+        self.retained_span()
+        expected=self.a.stream_state()['marks'];require(len(expected)==5 and expected[0][0]==(serial+3)%2**32,'controlled ring eviction')
+        require([row[0] for row in expected]==[(serial+i)%2**32 for i in range(3,8)] and [row[4] for row in expected]==list(range(3,8)),'wrapped eviction serial/detail order')
+        for cursor in (serial,(serial-1)%2**32,(serial+9)%2**32):
             more,rows=self.marks(cursor);require(more and rows==expected[:len(rows)] and rows,'unretained serial must fall back to oldest')
-        more,rows=self.marks(104);require(more and rows[0][0]==104,'retained serial must be inclusive')
-        require(self.marks(108)==(0,[]),'next serial must be empty')
+        more,rows=self.marks((serial+4)%2**32);require(more and rows[0][0]==(serial+4)%2**32,'retained serial must be inclusive')
+        require(self.marks((serial+8)%2**32)==(0,[]),'next serial must be empty')
         self.expect_read((0,0,b''),mode=3,arg=1)
+
+    def moving_pages(self):
+        serial=0xfffffffe;base=(1<<40)+17
+        self.fresh(base,serial);self.a.feed_bytes(b'ab')
+        before=self.c.success(self.c.request(self.c.core['clock']))
+        for detail in range(5):self.a.mark_external(7,detail)
+        self.retained_span()
+        more,first=self.marks(serial)
+        require(more and len(first)==2 and [row[0] for row in first]==[serial,0xffffffff],'initial moving page geometry/order differs')
+        cursor=(first[-1][0]+1)%2**32
+        # Ordered producer arrivals between reads, not inside a read operation.
+        for detail in range(5,8):self.a.mark_external(7,detail)
+        self.retained_span()
+        seen=list(first);expected_details=[3,4,5,6,7];lost=0
+        for _ in range(4):
+            more,rows=self.marks(cursor)
+            require(rows,'moving page ended before retained marks')
+            gap=(rows[0][0]-cursor)%2**32
+            lost+=gap;require(gap==(1 if len(seen)==2 else 0),'moving cursor did not report exactly one lost mark')
+            details=expected_details[:len(rows)];expected_details=expected_details[len(rows):]
+            require([row[0] for row in rows]==[(serial+i)%2**32 for i in details] and [row[4] for row in rows]==details,'moving page duplicated/skipped/reordered retained marks')
+            seen.extend(rows);cursor=(rows[-1][0]+1)%2**32
+            require(more==int(bool(expected_details)),'moving page more flag differs')
+            if not more:break
+        else:raise ValueError('moving mark pages did not terminate')
+        after=self.c.success(self.c.request(self.c.core['clock']))
+        lower=struct.unpack_from('<Q',before,4)[0];upper=struct.unpack_from('<Q',after,4)[0]
+        require(lost==1 and [row[4] for row in seen]==[0,1,3,4,5,6,7] and len({row[0] for row in seen})==7,'moving mark loss/duplicates differ')
+        require(all(row[1]==base+2 and row[2]==7 and lower<=row[3]<=upper for row in seen),'moving mark position/kind/time differs')
+        require(self.marks(cursor)==(0,[]) and cursor==(serial+8)%2**32,'moving mark next cursor differs')
+        self.expect_read((base,0,b'ab'),arg=base)
+        self.c.observed['moving_mark_pages']={'seed':serial,'base':base,'seen_serials':[row[0] for row in seen],
+                                             'seen_details':[row[4] for row in seen],'missing_marks':lost,'next_serial':cursor}
 
     def mark_evicted(self):
         self.fresh();self.a.feed_bytes(b'ab');self.a.mark_external(1,1);self.a.feed_bytes(b'cd')
@@ -171,7 +211,8 @@ class StreamChecks:
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         for name,case in [('EMPTY',self.empty),('POSITION',self.position),('FRAME',self.frame),('GAP',self.gap),
                           ('SELECTORS',self.selectors),('PAGES',self.pages),('WRAP',lambda:self.pages(0xfffffffe)),
-                          ('EVICTION',self.lost_marks),('MARK-EVICTED',self.mark_evicted),('MARK-GAP',self.mark_gap),
+                          ('EVICTION',self.lost_marks),('EVICTION-WRAP',lambda:self.lost_marks(0xfffffffc)),
+                          ('MOVING-PAGES',self.moving_pages),('MARK-EVICTED',self.mark_evicted),('MARK-GAP',self.mark_gap),
                           ('LIMIT',self.limit),('CLEAR',self.clear),('PERSISTENT',self.persistent),('REFUSALS',self.locks)]:
             first=len(self.a.trace);self.c.check('IF-STREAM-'+name,'common §1.1–1.4; core §2.6/5.2/7.3',case)
             self.c.results[-1]['adapter_trace']=self.a.trace[first:]
@@ -181,4 +222,4 @@ class StreamChecks:
                 'interface':'selected adopted positioned-stream contracts','oep-interface':'not executed'},
                 'checks':checks,'observed':self.c.observed,'adapter_trace':self.a.trace,
                 'unchecked':['resource-addressed stream lifecycle','write delivery/partial/failed outcomes','notification data',
-                             'physical UART/reset','status/done debug component','other ring/frame limits','concurrent producers']}
+                             'physical UART/reset','status/done debug component','other ring/frame limits','simultaneous producers inside a request']}

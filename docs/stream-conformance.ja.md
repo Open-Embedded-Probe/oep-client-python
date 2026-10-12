@@ -9,7 +9,7 @@
 | oep.fixture.logic / analog | capture文書の区画・世代付き形式。今回のread/marks検査を適用しない。 |
 | 独自拡張 | 拡張の仕様とadapterがcommon §1の採用・addressing・op対応を明示した場合だけ適用。 |
 
-`StreamChecks`は前提1項目＋動作14項目の15項目をinterface段階で報告する。今回のadapterは独自のpersistent-fn sampleへ、read/marks/clear/mark/writeの対応、規範の参照、byte ring 64、mark ring 5を明示する。5 opの宣言は必須で、writeがないものをreadだけの成功で適合としない。writeの動作適合は今回の実行範囲に含めない。
+`StreamChecks`は前提1項目＋動作16項目の17項目をinterface段階で報告する。今回のadapterは独自のpersistent-fn sampleへ、read/marks/clear/mark/writeの対応、規範の参照、byte ring 64、mark ring 5を明示する。5 opの宣言は必須で、writeがないものをreadだけの成功で適合としない。writeの動作適合は今回の実行範囲に含めない。
 
 | case | 検査 |
 | --- | --- |
@@ -21,6 +21,8 @@
 | PAGES | inclusiveなserial指定、22 byte固定要素、more、同じ位置の複数mark、nextの空応答。 |
 | WRAP | 新bootの初期serialを0xFFFFFFFEにし、実際にmarkを生成して0を越えるページングを確認。 |
 | EVICTION | 押し出された/未知/未来serialは最古へ、保持serialはinclusive、nextは空。 |
+| EVICTION-WRAP | 0xFFFFFFFCから8markを生成し、周回と押し出しを同時に確認する。保持spanとdetail順を独立に照合する。 |
+| MOVING-PAGES | 0xFFFFFFFEからページを読み、次の読出し前に3markを追加する。cursorが押し出されてもoldestから再開し、1markの欠落を検出して重複なく最後まで読む。positionは2^40+19。 |
 | MARK-EVICTED | 指定kindのmarkがリングから消えた場合はnowへ。bytesは保持する。 |
 | MARK-GAP | mark位置のbytesだけ失われた場合はgap付きで最古のbytesへ。 |
 | LIMIT | u64上限直前の位置を読み、折り返しがないこと。 |
@@ -34,7 +36,10 @@ sample contractはfn 1、read 16（from u8/arg u64/max u16）、marks 17（from_
 
 `StreamModel`は独立した論理fixture。外部bytesとmark刺激をadapterで与える。境界値の初期化は毎回新しいbootの明示logical restartとして記録する。同bootのposition/serialを巻き戻して境界を作らない。serialの一周は初期値を境界直前に置く条件で、2^32回の刺激や実機の再起動を行ったという意味ではない。resetイベントはmark刺激であり、実際のtarget resetではない。
 
-単体22件でread消費、gap/more/未来位置、exclusive marks、wrapの数値sort、end時のserial初期化、clear時のposition初期化、reset時のbytes消去、時刻/種別/serialの不正を検出する。選択SPECのenum変更、採用条件・addressing・geometry・reset scope不足、write宣言欠落、所有中のfixture reset、不正seedも確認する。
+単体30件でread消費、gap/more/未来位置、exclusive marks、wrapの数値sort、end時のserial初期化、clear時のposition初期化、reset時のbytes消去、時刻/種別/serialの不正を検出する。選択SPECのenum変更、採用条件・addressing・geometry・reset scope不足、write宣言欠落、所有中のfixture reset、不正seedも確認する。ページ間arrivalへの8故障では、空応答/古いpageの再提示、追加後の数値sort、kind/位置切詰め、容量超過、serial飛び、marksによるbytes消費を検出する。
+
+MOVING-PAGESは要求と要求の間で順序を定めたproducer刺激である。要求処理中の同時threadを検証したとはしない。
+5markと次serialの保持spanはu32の1/4未満で、任意ring容量全域の証明へは広げない。
 
 ```python
 import os
@@ -54,4 +59,4 @@ assert report['status'] == 'passed', report
 
 既存`.env.example`のSPEC/共有lockを明示する。私的ベンチへの依存・探索や新設備設定を加えない。通常CLIへ自動追加しない。
 
-`full_conformance=false`。資源を指すstreamの寿命、writeの配送/partial/failed、通知data、physical UART/target reset、debug status/done部品、別のring/frame条件、並行producerは未検査。OEP固有opの動作、SPEC、既存仮想model、Arduino firmwareは変更しない。
+`full_conformance=false`。資源を指すstreamの寿命、writeの配送/partial/failed、通知data、physical UART/target reset、debug status/done部品、別のring/frame条件、要求中の同時producerは未検査。OEP固有opの動作、SPEC、既存仮想model、Arduino firmwareは変更しない。

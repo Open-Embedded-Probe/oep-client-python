@@ -19,7 +19,7 @@ def setup():
 def test_stream_contracts_pass():
     _,c,a=setup();report=StreamChecks(c,a).run()
     assert report['status']=='passed',[(r['id'],r.get('error')) for r in report['checks']]
-    assert len(report['checks'])==15 and not report['full_conformance']
+    assert len(report['checks'])==17 and not report['full_conformance']
     assert all(r['level']=='interface' for r in report['checks'])
 
 
@@ -95,3 +95,34 @@ def test_changed_spec_enum_blocks_old_fixture_before_wire():
     report=StreamChecks(c,a).run()
     assert report['checks'][0]['status']=='failed' and not c.trace
     assert all(row['status']=='blocked' for row in report['checks'][1:])
+
+@pytest.mark.parametrize('fault',[
+    'cursor_empty','stale_page','sort_after_arrival','kind','position_truncated',
+    'oversized_ring','serial_skip','consume_marks'])
+def test_mark_arrivals_between_pages_faults(fault):
+    model,c,a=setup();restart=model.restart_fixture
+    def broken(position,serial):
+        result=restart(position,serial);s=model.extension;dispatch=s.dispatch;mark=s.mark;previous=None
+        if fault=='oversized_ring':s.mark_capacity=6
+        def bad_mark(kind,detail):
+            if fault=='serial_skip' and detail==5:s.serial=(s.serial+1)%2**32
+            mark(kind,detail)
+            if detail>=5:
+                if fault=='sort_after_arrival':s.marks.sort()
+                if fault=='kind':s.marks[-1]=s.marks[-1][:2]+(2,)+s.marks[-1][3:]
+                if fault=='position_truncated':s.marks[-1]=(s.marks[-1][0],s.marks[-1][1]&0xffffffff)+s.marks[-1][2:]
+        def bad_dispatch(fn,op,payload):
+            nonlocal previous
+            value=dispatch(fn,op,payload)
+            if op==17:
+                first=int.from_bytes(payload,'little')
+                if fault=='cursor_empty' and first==0:value=b'\0\0'
+                if fault=='stale_page' and first==0:value=previous
+                if fault=='consume_marks':s.data.clear()
+                previous=value
+            return value
+        s.mark=bad_mark;s.dispatch=bad_dispatch
+        return result
+    model.restart_fixture=broken;runner=StreamChecks(c,a)
+    c.check('IF-STREAM-MOVING-PAGES','common §1.3',runner.moving_pages)
+    assert c.results[-1]['status']=='failed' and c.results[-1]['error'].startswith('Violation:'),c.results
