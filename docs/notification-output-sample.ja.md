@@ -19,8 +19,8 @@ slotが使用中に生まれたイベントを捨て、そのseqを消費し、�
 通知の1packetはlength込み66byteであり、max_frame×2=128byte以下。Python objectや全端点のRAM測定値ではない。
 
 データ保持48byte/max_delay_ms0の代表条件で、min_bytes65535の購読をunavailable cause2で断り、既存条件/seqを維持する。
-次の有効な購読はseq0から始め、unsubscribe後に新しいイベントを送らない。
-senderの細分化、購読拒否、seqの抜け、応答優先に4つのfaultを注入して、それぞれのcaseで検出する。
+次の有効な購読はseq0から始め、旧購読の未送信通知を捨て、unsubscribe後に新しいイベントを送らない。
+senderの細分化、購読拒否/置き換え、seqの抜け、応答優先に5つのfaultを注入して、それぞれのcaseで検出する。
 reportには全raw入力、message交換、出力chunk、選択した観測と未終了SIDを含める。
 
 1frame slotはこのfixtureの方針で、すべての実装に同じslot数を要求しない。

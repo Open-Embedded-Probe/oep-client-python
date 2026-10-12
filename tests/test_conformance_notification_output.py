@@ -87,8 +87,9 @@ class BoundedOutput:
     def submit(self, request):
         assert not self.responses and not (self.active and self.active[0] == 'response')
         self.raw_requests.append(request.hex())
+        previous_subscription = self.probe.subscription
         self.responses.append(self.packet(self.probe.send(request)))
-        if self.probe.subscription is None:
+        if self.probe.subscription is not previous_subscription and self.probe.output_fault != 'retain_old_notice':
             self.notice = None
 
     def event(self, token):
@@ -172,8 +173,12 @@ def run(capacity=1, fault=None, registry=REG, spec=SPEC):
         assert probe.subscription == before, 'rejected subscribe changed prior conditions/seq'
         report['observations'].append(dict(action=case, before=before, after=copy.deepcopy(probe.subscription)))
         report['checks'].append(dict(id=case, status='passed'))
+        case = 'REPLACEMENT'
+        output.event(11)  # Old subscription's notification has not started.
         core.success(core.call(1, struct.pack('<HI', 1, 0), fn=7, sid=1, corr=4))
         assert probe.subscription['seq'] == 0
+        assert output.drain() == b'', 'old unsent notification survived subscription replacement'
+        report['checks'].append(dict(id=case, status='passed'))
         case = 'PARTIAL-FRAME'
         first = output.event(20)
         prefix = output.pump(7)
@@ -216,11 +221,12 @@ def run(capacity=1, fault=None, registry=REG, spec=SPEC):
 def test_bounded_raw_notification_output(capacity):
     report = run(capacity)
     assert report['status'] == 'passed', report['checks']
-    assert len(report['checks']) == 5 and report['unfinished_session'] is None
+    assert len(report['checks']) == 6 and report['unfinished_session'] is None
 
 
 @pytest.mark.parametrize('fault,case', [('rejected_seq_reset', 'REJECTED-SUBSCRIBE'),
-    ('interleave', 'PARTIAL-FRAME'), ('reuse_dropped_seq', 'PARTIAL-FRAME'), ('notice_first', 'RESPONSE-PRIORITY')])
+    ('retain_old_notice', 'REPLACEMENT'), ('interleave', 'PARTIAL-FRAME'),
+    ('reuse_dropped_seq', 'PARTIAL-FRAME'), ('notice_first', 'RESPONSE-PRIORITY')])
 def test_output_faults(fault, case):
     report = run(fault=fault)
     assert report['status'] == 'failed'
