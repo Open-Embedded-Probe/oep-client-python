@@ -15,7 +15,7 @@ sample fn 1/2のown create(op 16)はkind u8、reply_size u8、[TLV]を受け、r
 - 件数上限: createの後に12件のkeepaliveを送り、最初の記録を追い出す。直近3件以上は保持する。追い出された要求と、意図して空けた未使用の古いcorrはresult_lost。新corrでは1回だけcreateが成功する。
 - 拒否記録: 17 byteの不正kind要求をmalformedとして記録し、要求欠落による再送はresult_lost。失敗と再送で資源番号を消費しないsample方針を確認する。
 - end: 資源を解放しても欠落markerと履歴を残し、再送はresult_lost。sessionを復活させない。
-- 同session新corr open: 資源と応答欠落markerを保持し、再送はresult_lost。別sessionを使わず、Sはprimaryに固定する。
+- 同session新corr open: 初期lease3000msから1000/60000msへ変更し、それぞれforce=0/1を確認する。新openはpeer経路へ送り、資源・既存履歴・購読先・通知連番を保持する。実際のdeadlineと応答leaseを独立に確認し、open自体も記録する。旧要求は保存応答又はresult_lostを再送し、同一openの再送もleaseを更新しない。通知は引き続きprimaryへseq0→1で届く。
 
 - SID0同一要求: 同じcorr65535のclock要求を5ms進めて繰り返し、現在時刻を返す。所有中セッションのcache/high/lease/資源は変えず、古いclock応答のdedupを検出する。
 

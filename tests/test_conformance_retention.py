@@ -114,3 +114,47 @@ def test_private_session_zero_reply_cache_is_detected():
     runner.c.check('CORE-RETENTION-SESSION-ZERO','core §5.2',runner.session_zero)
     assert runner.c.results[-1]['status']=='failed',runner.c.results
     assert 'deduplicated' in runner.c.results[-1]['error']
+
+
+def test_same_open_changes_lease_and_force_without_changing_owned_state():
+    now, model, adapter, runner = build()
+    runner.c.confirm(); runner.c.identity(); runner.peer.confirm(); runner.peer.identity()
+    runner.c.check('CORE-RETENTION-SAME-OPEN', 'core §6.2/6.4', runner.same_open)
+    assert runner.c.results[-1]['status'] == 'passed', runner.c.results
+    rows = runner.c.observed['retention_same_open']
+    assert {(r['lease_ms'], r['force']) for r in rows} == {(1000, 0), (1000, 1), (60000, 0), (60000, 1)}
+    assert all(r['open_route'] == adapter.peer and r['notification_sequence'] == [0, 1] for r in rows)
+
+
+@pytest.mark.parametrize('defect', ['lease', 'lease_timer', 'force_release', 'redirect', 'unsubscribe', 'sequence', 'history', 'allocator'])
+def test_same_open_mutations_are_detected(defect):
+    now, model, adapter, runner = build()
+    core = model.ep.current_core; handle = core.handle
+    def altered(data, transport, **kwargs):
+        _, corr, fn, op, sid = struct.unpack_from('<BHHBI', data)
+        same = fn == 0 and op == 16 and sid == core.holder
+        old_deadline = core.deadline
+        result = handle(data, transport, **kwargs)
+        if same:
+            force = data[14]
+            if defect == 'lease':
+                core.lease = 3000; core.deadline = old_deadline
+                result = result[:5] + struct.pack('<I', 3000) + result[9:]
+            elif defect == 'lease_timer': core.lease = 3000
+            elif defect == 'force_release' and force: model.extension.release()
+            elif defect == 'redirect': model.extension.routes[1] = adapter.peer
+            elif defect == 'unsubscribe': model.extension.subscriptions.clear()
+            elif defect == 'sequence': model.extension.subscriptions[1] = 0
+            elif defect == 'history':
+                core.cache = type(core.cache)((k,v) for k,v in core.cache.items() if k == corr)
+            elif defect == 'allocator': model.extension.next_id += 1
+        return result
+    core.handle = altered
+    runner.c.confirm(); runner.c.identity(); runner.peer.confirm(); runner.peer.identity()
+    runner.c.check('CORE-RETENTION-SAME-OPEN', 'core §6.2/6.4', runner.same_open)
+    assert runner.c.results[-1]['status'] == 'failed', runner.c.results
+    expected = {'lease': 'lease/boot payload', 'lease_timer': 'update lease',
+                'force_release': 'changed resources', 'redirect': 'changed routes',
+                'unsubscribe': 'changed subscriptions', 'sequence': 'changed subscriptions',
+                'history': 'previous replay history', 'allocator': 'changed next_resource_id'}
+    assert expected[defect] in runner.c.results[-1]['error'], runner.c.results

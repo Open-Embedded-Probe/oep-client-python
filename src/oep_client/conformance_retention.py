@@ -2,6 +2,7 @@
 import struct
 from .conformance import require, tlvs, ops
 from .conformance_replay_pressure import ReplayPressureChecks
+from .conformance_routes import RouteChecks
 
 
 class RetentionChecks(ReplayPressureChecks):
@@ -117,13 +118,59 @@ class RetentionChecks(ReplayPressureChecks):
             self.replay_unchanged(request, reason='result_lost')
 
     def same_open(self):
-        with self.c.holding(60000) as sid:
-            request = self.create(sid, reply_size=17); _, rid = self.created_one(request, 17)
-            opened = self.c.success(self.c.request(self.c.core['open'], struct.pack('<IB', 60000, 0), session=sid))
-            require(len(opened) >= 8 and struct.unpack_from('<II', opened) == (60000, self.c.boot), 'same-S open payload')
-            tlvs(opened[8:]); self.record(request, request, None)
-            self.replay_unchanged(request, reason='result_lost')
-            require(set(self.state()['resources']) == {rid}, 'same-S open freed resources')
+        observations = []
+        for lease in (1000, 60000):
+            for force in (0, 1):
+                with self.c.holding(3000) as sid:
+                    fn = self.a.functions[0]
+                    request = self.create(sid, reply_size=17)
+                    _, rid = self.created_one(request, 17)
+                    retained = self.create(sid)
+                    saved, second = self.created_one(retained)
+                    tlvs(self.c.success(self.c.request(1, struct.pack('<HI', 0, 0), session=sid, fn=fn)))
+                    self.a.stimulate(fn, 1); self.service()
+                    frames = self.a.receive(self.a.primary)
+                    require(len(frames) == 1, 'same-S initial notification missing')
+                    RouteChecks.event(self, frames[0], fn, 0, 1)
+                    require(self.a.receive(self.a.peer) == [], 'initial notification reached peer')
+                    before = self.state()
+                    self.a.wait_ms(7)
+                    start = self.a.timing_state()['now_ms']
+                    reopen = self.c.request(self.c.core['open'], struct.pack('<IB', lease, force), session=sid)
+                    # A fresh open may arrive on another route, but does not subscribe there.
+                    opened = self.peer.success(reopen)
+                    finish = self.a.timing_state()['now_ms']
+                    require(len(opened) >= 8 and struct.unpack_from('<II', opened) == (lease, self.c.boot),
+                            'same-S open lease/boot payload')
+                    tlvs(opened[8:])
+                    after = self.state()
+                    for field in ('holder', 'last', 'resources', 'routes', 'subscriptions', 'next_resource_id', 'boot_id'):
+                        require(after[field] == before[field], 'same-S open changed ' + field)
+                    require(set(after['resources']) == {rid, second}, 'same-S open freed resources')
+                    history = dict(after['cache'])
+                    require(all(history.get(corr) == value for corr, value in before['cache']),
+                            'same-S open changed previous replay history')
+                    corr = struct.unpack_from('<H', reopen, 1)[0]
+                    require(after['high'] == corr and history.get(corr) ==
+                            (reopen, b'\x02' + reopen[1:3] + b'\x01\0' + opened),
+                            'same-S open was not recorded')
+                    require(start + lease <= after['deadline'] <= finish + lease,
+                            'same-S open did not update lease from response completion')
+                    self.record(request, request, None)
+                    self.replay_unchanged(request, reason='result_lost')
+                    self.replay_unchanged(retained, saved)
+                    self.replay_unchanged(reopen, b'\x02' + reopen[1:3] + b'\x01\0' + opened)
+                    self.a.stimulate(fn, 2); self.service()
+                    frames = self.a.receive(self.a.primary)
+                    require(len(frames) == 1, 'same-S notification route changed or subscription lost')
+                    RouteChecks.event(self, frames[0], fn, 1, 2)
+                    require(self.a.receive(self.a.peer) == [], 'same-S open redirected notifications to peer')
+                    observations.append({'lease_ms': lease, 'force': force, 'open_route': self.a.peer,
+                                         'request_hex': reopen.hex(), 'reply_payload_hex': opened.hex(),
+                                         'deadline': after['deadline'], 'start_ms': start, 'finish_ms': finish,
+                                         'resource_ids': [rid, second], 'notification_sequence': [0, 1],
+                                         'old_history_unchanged': True})
+        self.c.observed['retention_same_open'] = observations
 
     def session_zero(self):
         with self.c.holding(60000) as sid:
