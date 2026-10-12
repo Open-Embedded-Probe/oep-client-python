@@ -8,7 +8,7 @@ import struct
 from .conformance import ops, require, tlvs
 from . import conformance as _helpers
 
-REVIEWED_CORE_SHA256 = '9c84905bb0ac3207c5738f07ac7db6c68b313f8f13262daa7d2be0e905b8bd88'
+REVIEWED_CORE_SHA256 = '832232128ac2897d2ab7f71bef3e54c91e1024c2a1e34d37acf7a05096cfd94c'
 
 
 class CoreSmokeChecks:
