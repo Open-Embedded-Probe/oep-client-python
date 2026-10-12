@@ -275,6 +275,61 @@ class RetentionChecks(ReplayPressureChecks):
                                          'old_owner_cleared': True})
         self.c.observed['retention_owner'] = observations
 
+    def owner_inputs(self):
+        observations = []
+        owner = b'original'
+        invalid = (('empty', b'\x01\0\0', 'malformed'),
+                   ('long', b'\x01\x21\0' + b'x' * 33, 'malformed'),
+                   ('utf8', b'\x01\x01\0\xff', 'malformed'),
+                   ('short-header', b'\x01\x01', 'malformed'),
+                   ('short-value', b'\x01\x02\0x', 'malformed'),
+                   ('tag-zero', b'\0\x01\0x', 'malformed'),
+                   ('unknown-critical', b'\xfe\0\0', 'unsupported'))
+        for name, tail, reason in invalid:
+            with self.c.holding(1000, b'\x01\x08\0' + owner) as sid:
+                fn = self.a.functions[0]
+                saved_request = self.create(sid); saved, _ = self.created_one(saved_request)
+                tlvs(self.c.success(self.c.request(1, struct.pack('<HI', 0, 0), session=sid, fn=fn)))
+                self.a.stimulate(fn, 31); self.service()
+                frames = self.a.receive(self.a.primary)
+                require(len(frames) == 1, 'owner input initial notification missing')
+                RouteChecks.event(self, frames[0], fn, 0, 31)
+                before = self.state(); self.a.wait_ms(7)
+                start = self.a.timing_state()['now_ms']
+                request = self.c.request(self.c.core['open'], struct.pack('<IB', 1000, 1) + tail, session=sid)
+                payload = self.c.rejected(request, reason)
+                finish = self.a.timing_state()['now_ms']
+                if reason == 'unsupported':
+                    require(payload[:1] == b'\xfe', 'owner unsupported tag lost critical bit'); tlvs(payload[1:])
+                else: tlvs(payload)
+                after = self.state()
+                for field in ('holder', 'last', 'resources', 'routes', 'subscriptions', 'next_resource_id', 'boot_id'):
+                    require(after[field] == before[field], 'invalid owner changed ' + field)
+                require(all(dict(after['cache']).get(corr) == value for corr, value in before['cache']),
+                        'invalid owner changed previous history')
+                frame = b'\x02' + request[1:3] + bytes((0, self.c.reasons[reason])) + payload
+                self.record(request, request if len(request) <= 16 else None, frame)
+                require(start + 1000 <= after['deadline'] <= finish + 1000,
+                        'invalid owner refusal did not renew lease')
+                state = self.c.success(self.c.request(self.c.core['lock_state']))
+                require(len(state) >= 5 and dict(tlvs(state[5:])).get(1) == owner,
+                        'invalid owner changed displayed owner')
+                self.replay_unchanged(saved_request, saved)
+                self.replay_unchanged(request, frame, reason='result_lost' if len(request) > 16 else None)
+                observations.append({'case': name, 'reason': reason, 'request_hex': request.hex(),
+                                     'reply_hex': frame.hex(), 'owner_hex': owner.hex()})
+        for first_tag, second_tag in ((1, 1), (1, 129), (129, 1)):
+            first, second = b'first', b'second'
+            tail = bytes((first_tag,)) + struct.pack('<H', len(first)) + first
+            tail += bytes((second_tag,)) + struct.pack('<H', len(second)) + second
+            with self.c.holding(1000, tail):
+                state = self.c.success(self.c.request(self.c.core['lock_state']))
+                require(len(state) >= 5 and dict(tlvs(state[5:])).get(1) == first,
+                        'duplicate owner did not use first tag number')
+                observations.append({'case': 'duplicate', 'tags': [first_tag, second_tag],
+                                     'owner_hex': first.hex(), 'tlv_hex': tail.hex()})
+        self.c.observed['retention_owner_inputs'] = observations
+
     def session_zero(self):
         with self.c.holding(60000) as sid:
             owned=self.create(sid);saved,rid=self.created_one(owned)
@@ -315,7 +370,7 @@ class RetentionChecks(ReplayPressureChecks):
         for name, case in [('REQUEST-BOUNDARY', self.request_boundary), ('REQUEST-LOST', self.request_lost),
                            ('RESPONSE-BOUNDARY', self.response_boundary), ('RESPONSE-LOST', self.response_lost),
                            ('EVICTION', self.eviction), ('REJECTED', self.rejected_lost), ('END', self.end_lost),
-                           ('SAME-OPEN', self.same_open), ('KEEPALIVE', self.keepalive_state), ('OWNER', self.owner_lifecycle), ('SESSION-ZERO', self.session_zero)]:
+                           ('SAME-OPEN', self.same_open), ('KEEPALIVE', self.keepalive_state), ('OWNER', self.owner_lifecycle), ('OWNER-INPUTS', self.owner_inputs), ('SESSION-ZERO', self.session_zero)]:
             first = len(self.a.trace)
             self.c.check('CORE-RETENTION-' + name, 'core §5.2/6.1/9; bounded fixture', case)
             self.c.results[-1]['adapter_trace'] = self.a.trace[first:]

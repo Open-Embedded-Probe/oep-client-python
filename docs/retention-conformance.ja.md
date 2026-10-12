@@ -6,7 +6,7 @@ core §5.2は直近max_inflight個以上の記録とcorrの最大値を保持し
 
 sample fn 1/2のown create(op 16)はkind u8、reply_size u8、[TLV]を受け、resource_id u16、[TLV]を返す。kindは1/2、reply_sizeは応答message全体の長さ7/16/17。16/17では非critical tag 0x40のpaddingを足す。要求も非critical TLVで16/17 byteに調整する。いずれもmax_frame内で実行可能な要求で、保持上限は受付上限とは別。
 
-`RetentionChecks`はidentity/幾何条件＋11契約＋primaryの2 IF宣言で14項目。
+`RetentionChecks`はidentity/幾何条件＋12契約＋primaryの2 IF宣言で15項目。
 
 - 要求16 byte: 全要求と応答を保持し、同一再送を返す。変更した同corrはmalformed。
 - 要求17 byte: 要求の欠落markerと小さい応答を保持する。同一/変更要求はresult_lostで、資源を増やさない。
@@ -19,7 +19,9 @@ sample fn 1/2のown create(op 16)はkind u8、reply_size u8、[TLV]を受け、r
 
 - keepalive: lease1000/60000msをprimary/peer双方から更新する4条件。資源・allocator・購読・通知送り先と連番・旧cacheを保持し、新要求を記録する。応答完了から元のlease長だけ実deadlineを更新し、同一再送は更新しない。
 
-- owner: 未指定/1byte/32byte空白/UTF-8の所有者名×end/expiry/forceの12条件。lock_stateと2種類のlocked拒否で元のownerを読み、same-S open/keepaliveで保持し、解放時又はowner未指定の新SIDへのforceで消す。全応答TLVをbyte比較する。ownerの不正入力や全text値はこのcaseの範囲外。
+- owner: 未指定/1byte/32byte空白/UTF-8の所有者名×end/expiry/forceの12条件。lock_stateと2種類のlocked拒否で元のownerを読み、same-S open/keepaliveで保持し、解放時又はowner未指定の新SIDへのforceで消す。全応答TLVをbyte比較する。不正入力は次のOWNER-INPUTSで確認する。全text値はこのcaseの範囲外。
+
+- owner入力: 空/33byte/不正UTF-8/短いTLV見出し/短い値/tag0はmalformed、未知criticalはunsupportedで受信tagを返す。拒否でもowner・資源・購読・旧履歴を保持し、lease更新と拒否記録、再送非更新を確認する。重複ownerはtag(1,1)/(1,129)/(129,1)で先頭を使う。二番目に不正な値を置く組合せはこのcaseでは固定しない。
 
 - SID0同一要求: 同じcorr65535のclock要求を5ms進めて繰り返し、現在時刻を返す。所有中セッションのcache/high/lease/資源は変えず、古いclock応答のdedupを検出する。
 

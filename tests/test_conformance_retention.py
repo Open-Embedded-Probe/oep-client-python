@@ -32,7 +32,7 @@ def test_retention_passes():
     now, model, adapter, runner = build()
     report = runner.run()
     assert report['status'] == 'passed', [(x['id'],x.get('error')) for x in report['checks']]
-    assert len(report['checks']) == 14
+    assert len(report['checks']) == 15
     assert not report['full_conformance']
     assert model.ep.current_core.holder is None
 
@@ -237,3 +237,61 @@ def test_owner_lifecycle_faults_are_detected(defect):
     runner.c.check('CORE-RETENTION-OWNER', 'core §6.4', runner.owner_lifecycle)
     assert runner.c.results[-1]['status'] == 'failed', runner.c.results
     assert 'owner mismatch' in runner.c.results[-1]['error'], runner.c.results
+
+
+
+def test_owner_input_validation_and_duplicate_tags():
+    _, _, _, runner = build()
+    runner.c.confirm(); runner.c.identity()
+    runner.c.check('CORE-RETENTION-OWNER-INPUTS', 'core §2.2/2.3/6.4', runner.owner_inputs)
+    assert runner.c.results[-1]['status'] == 'passed', runner.c.results
+    rows = runner.c.observed['retention_owner_inputs']
+    assert len(rows) == 10
+    assert {tuple(r['tags']) for r in rows if r['case']=='duplicate'} == {(1,1),(1,129),(129,1)}
+
+
+@pytest.mark.parametrize('defect', ['accept', 'owner', 'resources', 'route', 'sequence', 'history', 'lease'])
+def test_invalid_owner_side_effects_are_detected(defect):
+    _, model, adapter, runner = build()
+    core = model.ep.current_core; handle = core.handle
+    def altered(data, transport, **kwargs):
+        _, corr, fn, op, sid = struct.unpack_from('<BHHBI', data)
+        same = fn == 0 and op == 16 and sid == core.holder
+        result = handle(data, transport, **kwargs)
+        if same and result[3:4] == b'\0':
+            if defect == 'accept': result = result[:3] + b'\x01\0' + struct.pack('<II',1000,17)
+            elif defect == 'owner': core.owner = b'wrong'
+            elif defect == 'resources': model.extension.live.clear()
+            elif defect == 'route': model.extension.routes[1] = adapter.peer
+            elif defect == 'sequence': model.extension.subscriptions[1] = 0
+            elif defect == 'history': core.cache = type(core.cache)((k,v) for k,v in core.cache.items() if k == corr)
+            elif defect == 'lease': core.renewal = None
+        return result
+    core.handle = altered
+    runner.c.confirm(); runner.c.identity()
+    runner.c.check('CORE-RETENTION-OWNER-INPUTS', 'core §2.2/2.3/6.4', runner.owner_inputs)
+    assert runner.c.results[-1]['status'] == 'failed', runner.c.results
+    expected = {'accept':'expected rejected malformed', 'owner':'displayed owner', 'resources':'changed resources',
+                'route':'changed routes', 'sequence':'changed subscriptions', 'history':'previous history', 'lease':'renew lease'}
+    assert expected[defect] in runner.c.results[-1]['error'], runner.c.results
+
+
+@pytest.mark.parametrize('defect', ['last_wins', 'critical_separate', 'critical_unknown'])
+def test_duplicate_owner_rules_are_detected(defect):
+    _, model, _, runner = build()
+    core = model.ep.current_core; handle = core.handle
+    def altered(data, transport, **kwargs):
+        _, corr, fn, op, sid = struct.unpack_from('<BHHBI', data)
+        duplicate = fn == 0 and op == 16 and sid != core.holder and b'first' in data[15:] and b'second' in data[15:]
+        if duplicate and defect == 'critical_unknown' and data[15] == 129:
+            return struct.pack('<BHBBB',2,corr,0,11,129)
+        result = handle(data, transport, **kwargs)
+        if duplicate and (defect == 'last_wins' or (defect == 'critical_separate' and data[23] == 129)):
+            core.owner = b'second'
+        return result
+    core.handle = altered
+    runner.c.confirm(); runner.c.identity()
+    runner.c.check('CORE-RETENTION-OWNER-INPUTS', 'core §2.2/2.3/6.4', runner.owner_inputs)
+    assert runner.c.results[-1]['status'] == 'failed', runner.c.results
+    expected = 'expected completed success' if defect == 'critical_unknown' else 'duplicate owner did not use first'
+    assert expected in runner.c.results[-1]['error'], runner.c.results

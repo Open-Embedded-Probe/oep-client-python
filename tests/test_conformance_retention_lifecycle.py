@@ -32,7 +32,7 @@ def test_lifecycle_passes():
     now, model, adapter, runner = build()
     report = runner.run()
     assert report['status'] == 'passed', [(x['id'], x.get('error')) for x in report['checks']]
-    assert len(report['checks']) == 22
+    assert len(report['checks']) == 23
     assert not report['full_conformance']
     assert model.ep.boot_id == 16 and model.ep.current_core.holder is None
 
