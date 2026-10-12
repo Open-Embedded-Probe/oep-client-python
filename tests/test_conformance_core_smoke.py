@@ -119,3 +119,9 @@ def test_response_only_scope_does_not_claim_observed_side_effects():
     report = CoreSmokeChecks(probe.send, REG, 'minimal', spec=SPEC).run()
     assert report['status'] == 'passed'
     assert 'replay side effects not independently observed' in report['unchecked']
+
+
+def test_unsupported_preserves_a_known_noncritical_tlv_tag():
+    probe = SmallCore(0)
+    check = CoreSmokeChecks(probe.send, REG, 'minimal', spec=SPEC)
+    check.rejected(struct.pack('<BHBB', 2, 1, 0, 11) + b'\x40', 'unsupported')

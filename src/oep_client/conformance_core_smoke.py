@@ -50,7 +50,7 @@ class CoreSmokeChecks:
     def rejected(self, reply, reason):
         require(reply[3:5] == bytes([0, self.reg['reject_reasons'][reason]]), 'expected rejected ' + reason)
         if reason == 'unsupported':
-            require(len(reply) >= 6 and (reply[5] == 0 or reply[5] & 0x80), 'unsupported field/tag marker')
+            require(len(reply) >= 6 and (reply[5] == 0 or reply[5] & 0x7F), 'unsupported field/tag marker')
             tlvs(reply[6:])
         else:
             tlvs(reply[5:])
