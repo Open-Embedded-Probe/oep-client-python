@@ -112,7 +112,7 @@ def ops(value):
 
 
 
-CHECKER_SOURCES = ('conformance.py', 'conformance_core_smoke.py', 'conformance_execution_order.py', 'conformance_execution_order_sample.py', 'conformance_host_notifications.py', 'conformance_host_notifications_sample.py',
+CHECKER_SOURCES = ('conformance.py', 'conformance_core_smoke.py', 'conformance_interface_smoke.py', 'conformance_execution_order.py', 'conformance_execution_order_sample.py', 'conformance_host_notifications.py', 'conformance_host_notifications_sample.py',
                    'conformance_host_values.py', 'conformance_host_values_sample.py',
                    'conformance_tlv_requests.py',
                    'conformance_host_requests.py', 'conformance_host_request_sample.py',

@@ -30,7 +30,8 @@ class CoreSmokeChecks:
         if corr is None:
             self.zero += 1
             corr = self.zero
-        request = struct.pack('<BHHBI', 1, corr, fn, self.core[name], sid) + payload
+        opcode = self.core[name] if isinstance(name, str) else name
+        request = struct.pack('<BHHBI', 1, corr, fn, opcode, sid) + payload
         require(len(request) <= self.frame, 'request frame limit')
         record = {'request_hex': request.hex()}
         self.trace.append(record)
@@ -61,15 +62,20 @@ class CoreSmokeChecks:
         self.observed['confirm'] = {'max_frame': frame, 'window': window, 'max_inflight': inflight,
                                     'boot_id': boot, 'transport': transports[0][0]}
 
-    def discovery(self):
+    def describe(self, fn):
         first, rows = 0, []
         while True:
-            p = self.success(self.call('describe', struct.pack('<HH', 0, first)))
+            p = self.success(self.call('describe', struct.pack('<HH', fn, first)))
             require(p and p[0] in (0, 1), 'describe more')
             page = tlvs(p[1:]); rows.extend(page); first += len(page)
             require(first <= 65535 and (not p[0] or page), 'describe progress')
             if not p[0]:
                 break
+        return rows
+
+    def discovery(self):
+        rows = self.describe(0)
+        self.observed['core_describe'] = [{'tag': t, 'value_hex': v.hex()} for t, v in rows]
         values = dict(reversed(rows))
         tags = self.reg['core']['tlv']['describe']
         identity = values.get(tags['unit_id'], b'').decode('ascii')
