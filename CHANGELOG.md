@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- (JA) 有限保持の通知契約をraw fixtureで確認。通知1frame slotと7byte chunkで購読拒否時不変・seq抜け・frame完了・応答優先を検査し、4つのfaultを検出。本番virtualと実driverの適合は範囲外。
+
 - (JA) 循環corr作業版のlease/forceを確認する選択raw検査を追加。時間と代表資源のadapterを明示入力とし、cache0/1、core-only/資源ありの論理fixtureと6つのfaultで検証。全適合・実タイマー・本番virtualの適合は主張しない。
 
 - (JA) 新コア仕様4681d22の最小バーチャルprofile `core-v1` を追加。既存のvirtual-bench CLIでPTY/TCPとして提供し、コアの拒否順・session・要求全体の再送照合・終了後の履歴とシリアルの過大frame破棄を実装。target/interfaceは持たず、旧profileと旧clientの期待値は固定したまま。独立したTCP length検査器と7項目のfault検査も追加。

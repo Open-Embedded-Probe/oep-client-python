@@ -5,6 +5,7 @@
 | [最小構成の動作確認](hardware-quickstart.ja.md) | 現在動く validate/plan/仮想 smoke と `.env` の実行手順 |
 | [SPECからの適合検査](conformance-checks.ja.md) | core / interfaceの公開検査器と実行範囲 |
 | [lease・forceの大枠検査](session-smoke-conformance.ja.md) | 明示time/resource adapterで循環corr作業版の期限・再送・所有者交代を確認 |
+| [有限保持の通知出力](notification-output-sample.ja.md) | 限定raw fixtureで購読拒否・seq抜け・部分frame・応答優先を確認 |
 | [Host TLVの読出し検査](host-tlv-conformance.ja.md) | 明示readerアダプタで未知tag・critical・重複・破損と長さ境界を確認 |
 | [Host通知と期限](host-notification-conformance.ja.md) | 現SPECのrole振り分け、未知kindのseq、通知が続く時の応答待ち/pumpを確認 |
 | [Hostの未知値分類](host-value-conformance.ja.md) | 失敗となる未知値、値を保つcause/scan kind、予約confirm flagsを確認 |
