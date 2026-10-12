@@ -112,7 +112,7 @@ class CoreSmokeChecks:
 
     def replay(self, name, payload, corr):
         original = self.call(name, payload, sid=self.session, corr=corr)
-        self.success(original)
+        tlvs(self.success(original))  # keepalive/end have an empty fixed prefix.
         before = copy.deepcopy(self.observe()) if self.observe else None
         repeated = self.call(name, payload, sid=self.session, corr=corr)
         result = ('retained' if repeated[3:5] == b'\1\0' else
@@ -137,6 +137,7 @@ class CoreSmokeChecks:
         p = self.success(self.call('open', body, sid=sid, corr=65534))
         self.session = sid
         require(len(p) >= 8 and struct.unpack_from('<II', p) == (60000, self.boot), 'open lease/boot')
+        tlvs(p[8:])
         self.success(self.call('keepalive', sid=self.session, corr=65535))
         self.replay('keepalive', b'', 1)
         state = self.success(self.call('lock_state'))
