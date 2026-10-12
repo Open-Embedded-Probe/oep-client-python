@@ -23,15 +23,32 @@ class ProbeInputChecks:
         self.observations.append(row);return row
     def discard(self):
         self.fresh();self.a.advance_to(500)
+        self.discard_inputs('role','short')
+    def discard_inputs(self,role_group,short_group):
         for role in range(256):
             if role==1:continue
             for size in (10,11,64):
                 data=(bytes((role,))+self.request[1:]+b'\0'*64)[:size]
-                o=self.observe('role',data)
+                o=self.observe(role_group,data)
                 require(o['reply_hex'] is None and o['before']==o['after'],'Probe answered or changed state for non-request role')
         for size in range(10):
-            o=self.observe('short',self.request[:size])
+            o=self.observe(short_group,self.request[:size])
             require(o['reply_hex'] is None and o['before']==o['after'],'Probe answered or changed state for short request header')
+    def unowned(self,mode):
+        self.fresh();self.a.advance_to(500 if mode=='end' else 1000)
+        transition=self.observe(mode+'-transition',bytes.fromhex('01030000001107000000') if mode=='end' else b'\xff'+self.request[1:])
+        b,a=transition['before'],transition['after']
+        require(transition['reply_hex']==('0203000100' if mode=='end' else None),'end/expiry transition reply differs')
+        require(a['holder'] is None and not a['owner_hex'] and not a['live'] and a['last']==7 and a['next_id']==2 and a['deadline']==1000 and a['generation']==b['generation']+1,'unowned discard seed lost release/identity/deadline')
+        require(a['high']==(3 if mode=='end' else 2) and set(a['cache'])==({'1','2','3'} if mode=='end' else {'1','2'}),'end/expiry history seed differs')
+        require(all(a['cache'][k]==v for k,v in b['cache'].items()),'end/expiry changed old historical replies')
+        self.discard_inputs(mode+'-role',mode+'-short')
+        clock=self.observe(mode+'-clock',bytes.fromhex('01ffff00000400000000'))
+        expected=b'\2\xff\xff\1\0'+(17).to_bytes(4,'little')+(a['now_ms']*1000000).to_bytes(8,'little')
+        require(clock['reply_hex']==expected.hex() and clock['before']==clock['after'],'unowned discard swallowed observer clock or mutated history')
+        old=self.observe(mode+'-old-session',bytes.fromhex('0104000100100700000001'))
+        x=old['after']
+        require(old['reply_hex']=='0204000007' and x['holder'] is None and not x['live'] and x['generation']==a['generation'] and x['next_id']==2 and x['deadline']==1000,'discard revived old session/resource or swallowed no_session')
     def controls(self):
         self.fresh();self.a.advance_to(500)
         short=self.observe('valid-header-short-payload',self.request[:10])
@@ -54,7 +71,8 @@ class ProbeInputChecks:
     def run(self):
         self.check('CONTEXT',self.context)
         if self.checks[-1]['status']=='passed':
-            for name,fn in (('DISCARD',self.discard),('CONTROLS',self.controls),('EXPIRY',self.expiry)):self.check(name,fn)
+            for name,fn in (('DISCARD',self.discard),('CONTROLS',self.controls),('EXPIRY',self.expiry),
+                            ('ENDED',lambda:self.unowned('end')),('EXPIRED',lambda:self.unowned('expired'))):self.check(name,fn)
         return dict(status='passed' if all(c['status']=='passed' for c in self.checks) else 'failed',checks=self.checks,observations=self.observations,
                     spec=self.identity,full_conformance=False,implementation_sources_sha256=self.a.source_sha256() if callable(getattr(self.a,'source_sha256',None)) else {},
                     unchecked=['physical framing/empty transport frame handling','all extension resource/dependency types','production Host role and malformed-frame recovery integration'])

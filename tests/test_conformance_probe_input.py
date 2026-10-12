@@ -10,9 +10,12 @@ def selected_spec(monkeypatch):
 def test_raw_probe_role_and_header_rules():
     r=ProbeInputChecks(SampleProbeInputAdapter(),spec=SPEC).run()
     assert r['status']=='passed',r['checks']
-    assert len(r['checks'])==4 and len(r['observations'])==781
+    assert len(r['checks'])==6 and len(r['observations'])==2337
     assert sum(o['group']=='role' for o in r['observations'])==765
     assert sum(o['group']=='short' for o in r['observations'])==10
+    for mode in ('end','expired'):
+        assert sum(o['group']==mode+'-role' for o in r['observations'])==765
+        assert sum(o['group']==mode+'-short' for o in r['observations'])==10
 
 @pytest.mark.parametrize('fault,method',[
     ('role_reply','discard'),('role_renew','discard'),('role_cache','discard'),('role_free','discard'),
@@ -63,3 +66,32 @@ def test_actual_raw_core_faults(monkeypatch,fault,method):
 def test_missing_raw_input_controls(missing):
     a=SampleProbeInputAdapter();setattr(a,missing,None)
     assert ProbeInputChecks(a,spec=SPEC).run()['checks'][0]['status']=='failed'
+
+@pytest.mark.parametrize('mode',['end','expired'])
+@pytest.mark.parametrize('fault',['reply','history','last','allocator','generation','swallow-clock'])
+def test_unowned_discard_faults(mode,fault):
+    c=ProbeInputChecks(SampleProbeInputAdapter(),spec=SPEC);observe=c.observe
+    def broken(group,data):
+        row=observe(group,data)
+        if group==mode+'-role':
+            if fault=='reply':row['reply_hex']='0203000007'
+            if fault=='history':row['after']['cache']={}
+            if fault=='last':row['after']['last']=None
+            if fault=='allocator':row['after']['next_id']=1
+            if fault=='generation':row['after']['generation']+=1
+        if group==mode+'-clock' and fault=='swallow-clock':row['reply_hex']=None
+        return row
+    c.observe=broken;c.check('FAULT',lambda:c.unowned(mode))
+    assert c.checks[-1]['status']=='failed' and c.checks[-1]['error'].startswith('Violation:')
+
+@pytest.mark.parametrize('mode',['end','expired'])
+def test_raw_core_accepting_other_roles_only_when_unowned_fails(monkeypatch,mode):
+    from oep_client.virtual_core import Core
+    handle=Core.handle
+    def bad_handle(core,data,*args,**kwargs):
+        if core.holder is None and len(data)>=10 and data[0]!=1:
+            data=b'\1'+data[1:]
+        return handle(core,data,*args,**kwargs)
+    monkeypatch.setattr(Core,'handle',bad_handle)
+    c=ProbeInputChecks(SampleProbeInputAdapter(),spec=SPEC);c.check('FAULT',lambda:c.unowned(mode))
+    assert c.checks[-1]['status']=='failed' and 'non-request role' in c.checks[-1]['error']
