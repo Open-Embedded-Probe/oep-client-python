@@ -16,7 +16,7 @@ def test_recovery_passes():
     _, model, _, runner = setup()
     report = runner.run()
     assert report['status'] == 'passed', [(x['id'],x.get('error')) for x in report['checks']]
-    assert len(report['checks']) == 22
+    assert len(report['checks']) == 26
     assert len(report['recovery_decisions']) == 10
     assert not report['full_conformance']
     assert model.ep.current_core.holder is None

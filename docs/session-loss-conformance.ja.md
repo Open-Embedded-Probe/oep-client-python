@@ -1,6 +1,6 @@
 # end/openの結果喪失からの回復を検査する
 
-`SessionLossChecks`は保持検査11項目、制御前提1項目、回復9項目の21項目。core §4.1/5.2/6/9に基づき、endのcorr 65535と新sessionのopen 1について、保存した要求を同じ論理経路へ同じbytes/corrで再送する。production Hostへ回復を組み込む変更ではない。
+`SessionLossChecks`は保持検査15項目、制御前提1項目、回復9項目の25項目。core §4.1/5.2/6/9に基づき、endのcorr 65535と新sessionのopen 1について、保存した要求を同じ論理経路へ同じbytes/corrで再送する。production Hostへ回復を組み込む変更ではない。
 
 `SampleSessionLossHost`はwireだけで判断する。要求保持16 byte/履歴8件の明示sampleで、同経路の未解決要求は対象の1件だけ。接続を保ったまま要求または全応答を失い、操作待ち0ms・論理転送0msに対して1050ms待つ。reader barrierで未受信message/creditが空であることを確認してから、個体/bootを読み、元の要求を再送する。barrier不成立やboot変更では再送しない。経路を移したり、forceや新corrで変更操作を再実行したりしない。
 

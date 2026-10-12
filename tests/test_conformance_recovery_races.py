@@ -16,7 +16,7 @@ def test_races_pass(mode):
     _,model,_,runner = setup(mode)
     report = runner.run()
     assert report['status']=='passed',[(x['id'],x.get('error')) for x in report['checks']]
-    assert len(report['checks'])==27
+    assert len(report['checks'])==31
     assert len(report['recovery_decisions'])==13
     assert not report['full_conformance']
     assert model.ep.current_core.holder is None

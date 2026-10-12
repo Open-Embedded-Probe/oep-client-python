@@ -2,7 +2,7 @@
 
 core §4.1/5.2/6は、同sessionのcorrを一周させず、end用の番号を残して異なるsession_idでopenすることを定める。endで旧資源を解放するが、元の結果が不明な操作のoutcomeを復元するものではない。
 
-`RolloverChecks`は[corrの17項目](corr-conformance.ja.md)＋制御前提1項目＋切替5項目の23項目。`SampleRolloverHost`は明示retention sampleでwire交換を行うhostの例で、production Hostへ自動切替を組み込む変更ではない。保持16 byte、履歴8件、資源操作はsample条件。
+`RolloverChecks`は[corrの21項目](corr-conformance.ja.md)＋制御前提1項目＋切替5項目の27項目。`SampleRolloverHost`は明示retention sampleでwire交換を行うhostの例で、production Hostへ自動切替を組み込む変更ではない。保持16 byte、履歴8件、資源操作はsample条件。
 
 ## 切替手順
 

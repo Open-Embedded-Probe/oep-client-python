@@ -13,7 +13,7 @@ def test_rollover_passes():
     _,model,_,runner=setup()
     report=runner.run()
     assert report['status']=='passed',[(x['id'],x.get('error')) for x in report['checks']]
-    assert len(report['checks'])==23
+    assert len(report['checks'])==27
     assert len(report['rollover_observations'])==5
     assert not report['full_conformance']
     assert model.ep.current_core.holder is None

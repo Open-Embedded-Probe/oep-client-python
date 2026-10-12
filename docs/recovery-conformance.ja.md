@@ -2,7 +2,7 @@
 
 core §5.2は、実行済みか不明な変更要求を新しいcorrで自動再実行しないこと、再送を諦めた後はboot_idと状態を読み直すことを定める。result_lostは元の要求の成功・拒否・未実行のいずれも証明しない。読み直した状態も、元の結果そのものではない。
 
-今回の`RecoveryChecks`は明示retention sampleの11項目＋制御前提1項目＋回復10ケースの22項目。probeの保持契約とsample hostの回復方針を分けて観測する。sample資源操作、状態の読み方、単独writer条件を一般の拡張へ義務付けるものではない。既存production Hostへ回復処理を組み込む変更ではない。
+今回の`RecoveryChecks`は明示retention sampleの15項目＋制御前提1項目＋回復10ケースの26項目。probeの保持契約とsample hostの回復方針を分けて観測する。sample資源操作、状態の読み方、単独writer条件を一般の拡張へ義務付けるものではない。既存production Hostへ回復処理を組み込む変更ではない。
 
 `SampleRecoveryAdapter.discard_reply()`は論理exchangeを完了させ、全raw応答を証跡に記録した上で、hostへは返さない。実機の転送・再起動を行わず、physical timeoutも起こさない。sample opは操作待ち時間を定めておらず0ms、論理転送時間も0ms。再送前には独立時計で1050ms待ち、coreのhost_wait_add_ms=1000を下回らないことを確認する。実機では操作待ちと転送時間を加算し、経路の再同期/再接続を別途検査する必要がある。
 

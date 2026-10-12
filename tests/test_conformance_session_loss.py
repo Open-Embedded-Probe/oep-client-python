@@ -15,7 +15,7 @@ def test_session_loss_passes():
     _,model,_,runner=setup()
     report=runner.run()
     assert report['status']=='passed',[(row['id'],row.get('error')) for row in report['checks']]
-    assert len(report['checks'])==21 and len(report['session_loss_decisions'])==9
+    assert len(report['checks'])==25 and len(report['session_loss_decisions'])==9
     assert not report['full_conformance'] and model.ep.current_core.holder is None
 
 

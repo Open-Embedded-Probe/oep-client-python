@@ -13,7 +13,7 @@ def setup(mode='none'):
 def test_exhausted_recovery_passes(mode):
     _,model,_,runner=setup(mode);report=runner.run()
     assert report['status']=='passed',[(row['id'],row.get('error')) for row in report['checks']]
-    assert len(report['checks'])==13 and not report['full_conformance']
+    assert len(report['checks'])==17 and not report['full_conformance']
     assert model.ep.current_core.holder is None
     rows=report['exhausted_observation']['records']
     assert [row['status'] for row in rows]==(['completed','unknown','unknown','completed'] if mode=='prefix' else ['unknown']*3+['completed'])

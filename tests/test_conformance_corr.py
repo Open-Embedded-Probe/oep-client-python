@@ -13,7 +13,7 @@ def test_corr_boundaries_pass():
     model, runner = setup()
     report = runner.run()
     assert report['status'] == 'passed', [(row['id'], row.get('error')) for row in report['checks']]
-    assert len(report['checks']) == 17
+    assert len(report['checks']) == 21
     assert not report['full_conformance']
     assert model.ep.current_core.holder is None
 
@@ -42,7 +42,10 @@ def test_corr_mutants_fail(defect):
     core.handle = altered
     report = runner.run()
     assert report['status'] == 'failed'
-    assert any(row['id'].startswith('CORE-CORR-') and row['status'] == 'failed' for row in report['checks']), report
+    expected = 'CORE-RETENTION-SESSION-ZERO' if defect == 'free_high' else 'CORE-CORR-'
+    assert any(row['id'].startswith(expected) and row['status'] == 'failed' for row in report['checks']), report
+    if defect == 'free_high':
+        assert core.high == 65535  # The shared SID0 check catches the corrupt high-water mark earlier.
 
 
 @pytest.mark.parametrize('session', [0, 17])
