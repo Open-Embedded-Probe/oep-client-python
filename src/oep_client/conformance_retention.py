@@ -1,4 +1,5 @@
 """Independent bounded replay history checks on explicit sample equipment."""
+import secrets
 import struct
 from .conformance import require, tlvs, ops
 from .conformance_replay_pressure import ReplayPressureChecks
@@ -218,6 +219,62 @@ class RetentionChecks(ReplayPressureChecks):
                                          'resource_id': rid, 'notification_sequence': [0, 1]})
         self.c.observed['retention_keepalive'] = observations
 
+    def owner_lifecycle(self):
+        observations = []
+        owners = (None, b'x', b' ' * 32, '所有者'.encode('utf-8'))
+        def check_owner(payload, offset, expected, context):
+            values = [value for tag, value in tlvs(payload[offset:]) if tag == 1]
+            require((not values) if expected is None else bool(values) and values[0] == expected,
+                    context + ' owner mismatch')
+        def lock(expected, held=True):
+            payload = self.c.success(self.c.request(self.c.core['lock_state']))
+            require(len(payload) >= 5, 'owner lock_state shape')
+            flag, remaining = struct.unpack_from('<BI', payload)
+            require((flag == 1 and 0 < remaining <= 1000) if held else (flag, remaining) == (0, 0),
+                    'owner lock_state held/remaining mismatch')
+            check_owner(payload, 5, expected, 'lock_state')
+        for owner in owners:
+            for ending in ('end', 'expiry', 'force'):
+                tail = b'' if owner is None else b'\x01' + struct.pack('<H', len(owner)) + owner
+                with self.c.holding(1000, tail) as sid:
+                    lock(owner)
+                    # A same-S open cannot replace an owner, even with force set.
+                    replacement = b'other'
+                    tlvs(self.c.success(self.c.request(self.c.core['open'],
+                         struct.pack('<IB', 1000, 1) + b'\x01\x05\0' + replacement, session=sid))[8:])
+                    lock(owner)
+                    tlvs(self.c.success(self.c.request(self.c.core['keepalive'], session=sid)))
+                    lock(owner)
+                    other = secrets.randbelow(0xffffffff) + 1
+                    while other == sid: other = secrets.randbelow(0xffffffff) + 1
+                    for corr, op, payload in ((1, self.c.core['open'], struct.pack('<IB', 1000, 0)),
+                                              (2, self.c.core['keepalive'], b'')):
+                        refused = self.peer.rejected(self.peer.request(op, payload, session=other, corr=corr), 'locked')
+                        require(len(refused) >= 4 and 0 < struct.unpack_from('<I', refused)[0] <= 1000,
+                                'owner locked remaining mismatch')
+                        check_owner(refused, 4, owner, 'locked')
+                    lock(owner)
+                    if ending == 'end':
+                        tlvs(self.c.success(self.c.request(self.c.core['end'], session=sid)))
+                        self.c.session = None
+                        lock(None, False)
+                    elif ending == 'expiry':
+                        self.a.wait_ms(1005); self.service()
+                        self.c.session = None
+                        lock(None, False)
+                    else:
+                        opened = self.peer.success(self.peer.request(self.peer.core['open'],
+                                                    struct.pack('<IB', 1000, 1), session=other, corr=1))
+                        self.c.session, self.c.corr = other, 1
+                        require(len(opened) >= 8 and struct.unpack_from('<II', opened) == (1000, self.c.boot),
+                                'owner force open shape')
+                        tlvs(opened[8:]); lock(None)
+                    observations.append({'owner_hex': None if owner is None else owner.hex(),
+                                         'owner_bytes': 0 if owner is None else len(owner), 'ending': ending,
+                                         'same_open_owner_unchanged': True, 'locked_owner_verified': True,
+                                         'old_owner_cleared': True})
+        self.c.observed['retention_owner'] = observations
+
     def session_zero(self):
         with self.c.holding(60000) as sid:
             owned=self.create(sid);saved,rid=self.created_one(owned)
@@ -258,7 +315,7 @@ class RetentionChecks(ReplayPressureChecks):
         for name, case in [('REQUEST-BOUNDARY', self.request_boundary), ('REQUEST-LOST', self.request_lost),
                            ('RESPONSE-BOUNDARY', self.response_boundary), ('RESPONSE-LOST', self.response_lost),
                            ('EVICTION', self.eviction), ('REJECTED', self.rejected_lost), ('END', self.end_lost),
-                           ('SAME-OPEN', self.same_open), ('KEEPALIVE', self.keepalive_state), ('SESSION-ZERO', self.session_zero)]:
+                           ('SAME-OPEN', self.same_open), ('KEEPALIVE', self.keepalive_state), ('OWNER', self.owner_lifecycle), ('SESSION-ZERO', self.session_zero)]:
             first = len(self.a.trace)
             self.c.check('CORE-RETENTION-' + name, 'core §5.2/6.1/9; bounded fixture', case)
             self.c.results[-1]['adapter_trace'] = self.a.trace[first:]

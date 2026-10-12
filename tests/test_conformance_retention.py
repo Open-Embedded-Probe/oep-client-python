@@ -32,7 +32,7 @@ def test_retention_passes():
     now, model, adapter, runner = build()
     report = runner.run()
     assert report['status'] == 'passed', [(x['id'],x.get('error')) for x in report['checks']]
-    assert len(report['checks']) == 13
+    assert len(report['checks']) == 14
     assert not report['full_conformance']
     assert model.ep.current_core.holder is None
 
@@ -196,3 +196,44 @@ def test_keepalive_side_effects_are_detected(defect):
                 'redirect':'changed routes', 'unsubscribe':'changed subscriptions', 'sequence':'changed subscriptions',
                 'history':'previous replay history', 'allocator':'changed next_resource_id'}
     assert expected[defect] in runner.c.results[-1]['error'], runner.c.results
+
+
+
+def test_owner_lifecycle_matrix():
+    _, _, _, runner = build()
+    runner.c.confirm(); runner.c.identity(); runner.peer.confirm(); runner.peer.identity()
+    runner.c.check('CORE-RETENTION-OWNER', 'core §6.4', runner.owner_lifecycle)
+    assert runner.c.results[-1]['status'] == 'passed', runner.c.results
+    rows = runner.c.observed['retention_owner']
+    assert len(rows) == 12
+    assert {(r['owner_bytes'], r['ending']) for r in rows} == {(size,end) for size in (0,1,32,9) for end in ('end','expiry','force')}
+
+
+@pytest.mark.parametrize('defect', ['omit_state', 'omit_locked', 'same_replace', 'keepalive_clear', 'force_inherit', 'end_leak', 'expiry_leak', 'strip'])
+def test_owner_lifecycle_faults_are_detected(defect):
+    _, model, _, runner = build()
+    core = model.ep.current_core; handle = core.handle; retired = [b'']; release_reason = [None]
+    def altered(data, transport, **kwargs):
+        _, _, fn, op, sid = struct.unpack_from('<BHHBI', data)
+        old_holder, old_owner = core.holder, core.owner
+        if old_owner: retired[0] = old_owner
+        if fn == 0 and op == 16 and old_holder is None: release_reason[0] = None
+        if fn == 0 and op == 17 and old_holder is not None: release_reason[0] = 'end'
+        result = handle(data, transport, **kwargs)
+        if core.holder is None and release_reason[0] is None: release_reason[0] = 'expiry'
+        if fn == 0 and op == 16:
+            if defect == 'same_replace' and sid == old_holder: core.owner = b'other'
+            if defect == 'force_inherit' and old_holder is not None and sid != old_holder: core.owner = old_owner
+            if defect == 'strip': core.owner = core.owner.strip()
+        if defect == 'keepalive_clear' and fn == 0 and op == 18 and sid == core.holder: core.owner = b''
+        if fn == 0 and op == 19:
+            if defect == 'omit_state' and core.holder is not None: result = result[:10]
+            if core.holder is None and retired[0] and defect == str(release_reason[0]) + '_leak':
+                result += b'\x01' + struct.pack('<H',len(retired[0])) + retired[0]
+        if defect == 'omit_locked' and result[3:5] == b'\0\x08': result = result[:9]
+        return result
+    core.handle = altered
+    runner.c.confirm(); runner.c.identity(); runner.peer.confirm(); runner.peer.identity()
+    runner.c.check('CORE-RETENTION-OWNER', 'core §6.4', runner.owner_lifecycle)
+    assert runner.c.results[-1]['status'] == 'failed', runner.c.results
+    assert 'owner mismatch' in runner.c.results[-1]['error'], runner.c.results
