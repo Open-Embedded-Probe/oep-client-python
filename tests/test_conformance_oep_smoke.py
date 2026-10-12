@@ -64,7 +64,11 @@ class ExampleCore(SmallCore):
                 bitmap = {3: 3, 4: 3, 5: 0x43, 8: 14, 9: 1}[target]
                 data = tag(7, bytes([16, bitmap]))
                 if target == 4:
-                    data += tag(0x40, struct.pack('<I', 1 if self.input_only else 0x19))
+                    data += tag(1, b'\x01\0\0\x03') + tag(0x40, struct.pack('<I', 1 if self.input_only else 0x19))
+                if target == 5:
+                    data += tag(1, b'\x01\0\0\x04') + tag(0x40, b'\x01\0')
+                if target == 8:
+                    data += tag(1, b'\x01\0\0\x08') + tag(1, b'\x02\0\0\x10')
                 return success(b'\0' + data)
         if fn == 0:
             result = super().send(request)
