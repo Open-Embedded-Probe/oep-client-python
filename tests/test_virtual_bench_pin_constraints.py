@@ -37,6 +37,9 @@ def fixture(kind, interface='oep.fixture.i2c-target'):
         roles = [catalog.role_channels(2, [5]), catalog.role_channels(2, [14])]
     if kind == 'spi-partial':
         roles = [catalog.role_channels(3, [17, 18]), catalog.role_channels(4, [19, 21])]
+    if kind == 'unlisted':
+        groups = [catalog.channel_group(1, [(1, 4)]), catalog.channel_group(2, [(1, 5)])]
+        roles = []
     declarations = groups if kind == 'groups' else roles if kind == 'roles' else groups + roles
     probe = virtual_bench.esp32_v003()
     fn = next(o.fn for o in probe.offered if o.name == interface)
@@ -99,3 +102,12 @@ def test_selection_assertions_detect_bypassed_constraints(monkeypatch, path, kin
     monkeypatch.setattr(endpoint.Endpoint, '_check_plan', lambda *args, **kwargs: None)
     with pytest.raises(AssertionError):
         test_channel_selection_obeys_combined_declarations(path, kind, pair, False)
+
+
+@pytest.mark.parametrize('path', ['plan', 'config'])
+def test_role_outside_group_requires_its_own_candidates(path):
+    ep, h, fn = fixture('unlisted')
+    before = snapshot(ep)
+    result = apply(h, fn, (4, 5), path)
+    assert (result.resolution, result.detail) == (m.REJECTED, m.UNSUPPORTED)
+    assert snapshot(ep) == before

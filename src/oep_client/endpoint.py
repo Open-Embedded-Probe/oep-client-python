@@ -1698,8 +1698,12 @@ class Endpoint:
             mine = {(role, ch) for f, role, ch in got if f == fn}
             # A group fixes only the roles it names. Other roles are selected
             # through role_channels, whose candidates were checked above.
-            if groups and not any({(role, ch) for role, ch in mine if role in {r for r, _ in group}} == group
-                                  for group in groups):
+            listed = self._listed_roles(fn)
+            def matches(group):
+                grouped = {role for role, _ in group}
+                return ({(role, ch) for role, ch in mine if role in grouped} == group
+                        and all(role in grouped or role in listed for role, _ in mine))
+            if groups and not any(matches(group) for group in groups):
                 check(not_declared(min(ch for _, ch in mine)))
 
     def _declared_roles(self, fn: int, channel: int) -> set[int]:
