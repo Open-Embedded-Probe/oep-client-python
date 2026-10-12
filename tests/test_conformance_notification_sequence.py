@@ -17,7 +17,7 @@ def build():
 def test_notification_sequence_contracts_pass():
     model, _, runner = build(); report = runner.run()
     assert report['status'] == 'passed', [(x['id'], x.get('error')) for x in report['checks']]
-    assert len(report['checks']) == 9 and all(x['level'] == 'interface' for x in report['checks'])
+    assert len(report['checks']) == 10 and all(x['level'] == 'interface' for x in report['checks'])
     assert not report['full_conformance'] and model.ep.current_core.holder is None
 
 
@@ -91,3 +91,40 @@ def test_bad_sequence_fixture_blocks_before_wire(invalid):
     report = runner.run()
     assert report['checks'][0]['status'] == 'failed' and not runner.c.trace and not adapter.trace
     assert all(x['status'] == 'blocked' for x in report['checks'][1:])
+
+
+
+def test_unsubscribe_absent_active_and_repeated_isolation():
+    _,_,runner=build();report=runner.run()
+    assert report['status']=='passed',report['checks']
+    rows=report['observed']['unsubscribe_isolation']
+    assert [row['phase'] for row in rows]==['absent','active','again']
+    assert all(row['other_route']=='peer' and row['other_sequence']==1 for row in rows)
+
+
+@pytest.mark.parametrize('fault',['absent_reject','noop','other_clear','resource_clear','seq_reset','route_shift','condition_change'])
+def test_unsubscribe_isolation_faults_are_detected(fault):
+    model,adapter,runner=build();reset=model.restart_fixture
+    def faulty_reset():
+        value=reset();e=model.extension;dispatch=e.dispatch
+        def broken(fn,op,payload):
+            if op==2:
+                if fault=='absent_reject' and fn not in e.subscriptions:
+                    from oep_client.virtual_core import Reject
+                    raise Reject(4)
+                if fault=='noop':return b''
+            result=dispatch(fn,op,payload)
+            if op==2:
+                if fault=='other_clear':e.subscriptions.pop(2,None);e.routes.pop(2,None);e.conditions.pop(2,None)
+                elif fault=='resource_clear':e.live.clear()
+                elif fault=='seq_reset':e.subscriptions[2]=0
+                elif fault=='route_shift':e.routes[2]=adapter.primary
+                elif fault=='condition_change':e.conditions[2]=(1,2)
+            return result
+        e.dispatch=broken;return value
+    model.restart_fixture=faulty_reset
+    runner.c.check('IF-NOTIFY-SEQ-UNSUBSCRIBE','core §11.3',runner.unsubscribe)
+    row=runner.c.results[-1];assert row['status']=='failed',runner.c.results
+    expected={'absent_reject':'completed success','noop':'did not remove','other_clear':'other subscriptions',
+              'resource_clear':'owned resources','seq_reset':'other subscriptions','route_shift':'other routes','condition_change':'other conditions'}
+    assert expected[fault] in row['error'],runner.c.results

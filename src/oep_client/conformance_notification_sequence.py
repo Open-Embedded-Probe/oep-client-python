@@ -90,6 +90,37 @@ class NotificationSequenceChecks(RouteChecks):
             self.event_on(self.a.peer, fn, 0, 204)
             self.event_on(self.a.primary, other, 1, 205)
 
+    def unsubscribe(self):
+        self.fresh()
+        with self.c.holding(60000) as sid:
+            fn, other = self.a.functions
+            owned = self.c.success(self.c.request(16, b'\x01', session=sid, fn=fn))
+            require(len(owned) == 2 and int.from_bytes(owned, 'little') != 0, 'unsubscribe sample resource')
+            self.on(self.a.peer, self.c.request(1, struct.pack('<HI', 0, 0), session=sid, fn=other))
+            self.event_on(self.a.peer, other, 0, 301)
+            observations = []
+            for phase in ('absent', 'active', 'again'):
+                if phase == 'active':
+                    self.subscribe(sid, fn); self.event_on(self.a.primary, fn, 0, 302)
+                before = self.a.sequence_state()
+                request = self.c.request(2, session=sid, fn=fn)
+                self.on(self.a.peer, request)
+                after = self.a.sequence_state()
+                for field in ('subscriptions', 'routes', 'conditions'):
+                    require(fn not in after[field], 'unsubscribe did not remove selected ' + field)
+                    require({k:v for k,v in after[field].items() if k != fn} ==
+                            {k:v for k,v in before[field].items() if k != fn},
+                            'unsubscribe changed other ' + field)
+                require(after['resources'] == before['resources'], 'unsubscribe changed owned resources')
+                self.a.stimulate(fn, 303); self.service()
+                require(self.a.receive(self.a.primary) == [] and self.a.receive(self.a.peer) == [],
+                        'new notification emitted without subscription')
+                observations.append({'phase': phase, 'request_hex': request.hex(), 'other_sequence': after['subscriptions'][other],
+                                     'other_route': after['routes'][other], 'owned_resource_hex': owned.hex()})
+            self.event_on(self.a.peer, other, 1, 304)
+            self.subscribe(sid, fn); self.event_on(self.a.primary, fn, 0, 305)
+            self.c.observed['unsubscribe_isolation'] = observations
+
     def replay(self, refused=False):
         self.fresh()
         with self.c.holding(60000) as sid:
@@ -128,7 +159,7 @@ class NotificationSequenceChecks(RouteChecks):
             self.c.interfaces()
         self.c.check('IF-NOTIFY-SEQ-CONTEXT', 'core §11.2/11.3; explicit fixture', context)
         if any(x['status'] != 'passed' for x in self.c.results[start:]): self.c.abort = True
-        for name, method in [('WRAP', self.wrap), ('DROP-WRAP', self.dropped), ('REPLACE', self.replace),
+        for name, method in [('WRAP', self.wrap), ('DROP-WRAP', self.dropped), ('REPLACE', self.replace), ('UNSUBSCRIBE', self.unsubscribe),
                              ('REPLAY', self.replay), ('REPLAY-REFUSED', lambda: self.replay(True)), ('REJECTED', self.rejected)]:
             first = len(self.a.trace)
             self.c.check('IF-NOTIFY-SEQ-'+name, 'core §5.2/11.2/11.3/11.4; transports §3', method)

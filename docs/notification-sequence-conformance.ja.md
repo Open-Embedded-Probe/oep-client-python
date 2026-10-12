@@ -4,13 +4,14 @@
 公開`RouteModel`と`SampleNotificationSequenceAdapter`を使い、選択SPEC checkoutを明示する。
 privateベンチや隣接checkoutの探索は行わない。
 
-前提1、共通describe 2、動作6の計9項目を持つ。
+前提1、共通describe 2、動作7の計10項目を持つ。
 
 | 動作 | 観測 |
 |---|---|
 | WRAP | seq 65534からdata/eventを交互に出し、65535→0→1。同じfnで共有し、別fnは0から独立 |
 | DROP-WRAP | 送信停止中の32フレームでmax_frame×2の制限とdropを確認。一周前後を含め、捨てたフレームも番号を消費 |
 | REPLACE | seq/送り先の置換。別fnのseq/送り先を変えず、一つの通知を両経路へ出さない |
+| UNSUBSCRIBE | 未購読・解除・再解除が成功し、別fnの購読/seq/条件/経路と既存資源を保持。解除後の新通知は送らず、再購読でseq0 |
 | REPLAY | 古い成功subscribeの再送は同じ応答を返す。新しい購読のseq/送り先/条件を巻き戻さない |
 | REPLAY-REFUSED | 古い拒否subscribeの再送も保存応答を返し、新しい購読に触れない |
 | REJECTED | malformed/未知critical TLVの拒否前に購読seq/送り先/条件/資源を変更しない |
