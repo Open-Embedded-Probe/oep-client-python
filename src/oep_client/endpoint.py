@@ -1696,7 +1696,10 @@ class Endpoint:
             groups = [set(catalog.unpack_channel_group(v)[1]) for tag, v in self.decl[fn]
                       if tag == catalog.CHANNEL_GROUP]
             mine = {(role, ch) for f, role, ch in got if f == fn}
-            if groups and mine not in groups:                      # one channel_group exactly (core §7.4)
+            # A group fixes only the roles it names. Other roles are selected
+            # through role_channels, whose candidates were checked above.
+            if groups and not any({(role, ch) for role, ch in mine if role in {r for r, _ in group}} == group
+                                  for group in groups):
                 check(not_declared(min(ch for _, ch in mine)))
 
     def _declared_roles(self, fn: int, channel: int) -> set[int]:

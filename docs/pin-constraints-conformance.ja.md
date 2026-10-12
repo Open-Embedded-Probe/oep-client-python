@@ -1,0 +1,20 @@
+# ピン宣言の組み合わせを検査する
+
+core §7.4のrole_channelsとchannel_groupは、どの方法でピンを選ぶ場合にも制約として働く。
+同じroleのrole_channelsは和集合である。groupに含むroleはそのgroupへ完全一致し、
+groupに含まないroleはrole_channelsだけで選ぶ。両方に含むroleは両方の制約を満たす。
+
+`uv run pytest -q tests/test_virtual_bench_pin_constraints.py`で既存の論理Endpointを検査する。
+テスト用profileの宣言はEndpointを作る前に設定する。I2Cのgroupのみ/候補のみ/積集合/片側role、
+SPIのgroup固定2roleと候補指定2roleを、plan_applyとconfig setの両経路で確認する。
+有効な設定を先に適用し、拒否時のplan・config・idle保持も観測する。
+反例は異なるgroupの混合、groupにあるが候補にないpin、別roleだけに許可されたpinである。
+
+36設定caseと制約検査を迂回する6故障で42件。期待する許可/拒否はSPECから定めた表で、実装の判定関数から生成しない。
+追加時には、group外のroleを候補から選ぶI2C構成を拒否する実装の不具合を再現した。
+全role集合とgroupを比べる処理を、そのgroupが列挙するroleだけの比較へ修正した。
+全roleを固定する既存groupの制約は同じで、role_channelsの候補検査も保持する。
+
+このEndpointは旧op番号のvirtual profileも扱う。今回の検査は選択制約と拒否時不変を対象とし、
+現SPECの全interface schema適合を証明しない。全interface/全宣言形/全pin選択方法、
+同時実行・物理配線・電気条件は引き続き別途確認する。`full_conformance=false`。
