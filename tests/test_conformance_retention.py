@@ -32,7 +32,7 @@ def test_retention_passes():
     now, model, adapter, runner = build()
     report = runner.run()
     assert report['status'] == 'passed', [(x['id'],x.get('error')) for x in report['checks']]
-    assert len(report['checks']) == 11
+    assert len(report['checks']) == 12
     assert not report['full_conformance']
     assert model.ep.current_core.holder is None
 
@@ -89,3 +89,28 @@ def test_preconditions_block_session_work(invalid):
 def test_normal_pipeline_retention_stays_unchanged():
     assert PipelineModel(lambda: 0, boot_id=17).ep.remember_max == 72
     assert RetentionModel(lambda: 0, boot_id=17).ep.remember_max == 16
+
+
+def test_repeated_session_zero_executes_after_clock_advance():
+    now,model,adapter,runner=build()
+    runner.c.confirm();runner.c.identity();runner.peer.confirm();runner.peer.identity()
+    runner.c.check('CORE-RETENTION-SESSION-ZERO','core §5.2',runner.session_zero)
+    assert runner.c.results[-1]['status']=='passed',runner.c.results
+    evidence=runner.c.observed['retention_session_zero']
+    first=bytes.fromhex(evidence['first_clock_hex']);second=bytes.fromhex(evidence['second_clock_hex'])
+    assert int.from_bytes(second[4:12],'little')-int.from_bytes(first[4:12],'little')>=5000000
+
+
+def test_private_session_zero_reply_cache_is_detected():
+    now,model,adapter,runner=build();core=model.ep.current_core;handle=core.handle;cache={}
+    def cached(data,transport,**kwargs):
+        _,corr,fn,op,sid=struct.unpack_from('<BHHBI',data)
+        if sid==0 and fn==0 and op==4 and corr==65535:
+            if data not in cache:cache[data]=handle(data,transport,**kwargs)
+            return cache[data]
+        return handle(data,transport,**kwargs)
+    core.handle=cached
+    runner.c.confirm();runner.c.identity();runner.peer.confirm();runner.peer.identity()
+    runner.c.check('CORE-RETENTION-SESSION-ZERO','core §5.2',runner.session_zero)
+    assert runner.c.results[-1]['status']=='failed',runner.c.results
+    assert 'deduplicated' in runner.c.results[-1]['error']

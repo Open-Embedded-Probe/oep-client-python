@@ -125,6 +125,24 @@ class RetentionChecks(ReplayPressureChecks):
             self.replay_unchanged(request, reason='result_lost')
             require(set(self.state()['resources']) == {rid}, 'same-S open freed resources')
 
+    def session_zero(self):
+        with self.c.holding(60000) as sid:
+            owned=self.create(sid);saved,rid=self.created_one(owned)
+            before=self.state()
+            request=self.peer.request(self.peer.core['clock'],corr=65535)
+            first=self.peer.success(request)
+            require(len(first)>=12 and struct.unpack_from('<I',first)[0]==self.c.boot,'session0 clock shape/boot')
+            self.a.wait_ms(5)
+            second=self.peer.success(request)
+            require(len(second)>=12 and struct.unpack_from('<I',second)[0]==self.c.boot,'repeated session0 clock shape/boot')
+            tlvs(first[12:]);tlvs(second[12:])
+            require(struct.unpack_from('<Q',second,4)[0]>=struct.unpack_from('<Q',first,4)[0]+5000000,
+                    'session0 duplicate was deduplicated instead of executed')
+            require(self.state()==before and set(self.state()['resources'])=={rid},'session0 repeat changed owned lease/history/resources')
+            self.replay_unchanged(owned,saved)
+            self.c.observed['retention_session_zero']={'corr':65535,'first_clock_hex':first.hex(),'second_clock_hex':second.hex(),
+                                                     'same_request_hex':request.hex(),'owned_replay_unchanged':True}
+
     def run(self):
         def identify():
             require(self.a.primary != self.a.peer and callable(getattr(self.a, 'retention_state', None)) and
@@ -147,7 +165,7 @@ class RetentionChecks(ReplayPressureChecks):
         for name, case in [('REQUEST-BOUNDARY', self.request_boundary), ('REQUEST-LOST', self.request_lost),
                            ('RESPONSE-BOUNDARY', self.response_boundary), ('RESPONSE-LOST', self.response_lost),
                            ('EVICTION', self.eviction), ('REJECTED', self.rejected_lost), ('END', self.end_lost),
-                           ('SAME-OPEN', self.same_open)]:
+                           ('SAME-OPEN', self.same_open), ('SESSION-ZERO', self.session_zero)]:
             first = len(self.a.trace)
             self.c.check('CORE-RETENTION-' + name, 'core §5.2/6.1/9; bounded fixture', case)
             self.c.results[-1]['adapter_trace'] = self.a.trace[first:]

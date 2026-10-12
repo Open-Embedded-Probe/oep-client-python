@@ -6,7 +6,7 @@ core §5.2は直近max_inflight個以上の記録とcorrの最大値を保持し
 
 sample fn 1/2のown create(op 16)はkind u8、reply_size u8、[TLV]を受け、resource_id u16、[TLV]を返す。kindは1/2、reply_sizeは応答message全体の長さ7/16/17。16/17では非critical tag 0x40のpaddingを足す。要求も非critical TLVで16/17 byteに調整する。いずれもmax_frame内で実行可能な要求で、保持上限は受付上限とは別。
 
-`RetentionChecks`はidentity/幾何条件＋8契約＋primaryの2 IF宣言で11項目。
+`RetentionChecks`はidentity/幾何条件＋9契約＋primaryの2 IF宣言で12項目。
 
 - 要求16 byte: 全要求と応答を保持し、同一再送を返す。変更した同corrはmalformed。
 - 要求17 byte: 要求の欠落markerと小さい応答を保持する。同一/変更要求はresult_lostで、資源を増やさない。
@@ -16,6 +16,8 @@ sample fn 1/2のown create(op 16)はkind u8、reply_size u8、[TLV]を受け、r
 - 拒否記録: 17 byteの不正kind要求をmalformedとして記録し、要求欠落による再送はresult_lost。失敗と再送で資源番号を消費しないsample方針を確認する。
 - end: 資源を解放しても欠落markerと履歴を残し、再送はresult_lost。sessionを復活させない。
 - 同session新corr open: 資源と応答欠落markerを保持し、再送はresult_lost。別sessionを使わず、Sはprimaryに固定する。
+
+- SID0同一要求: 同じcorr65535のclock要求を5ms進めて繰り返し、現在時刻を返す。所有中セッションのcache/high/lease/資源は変えず、古いclock応答のdedupを検出する。
 
 `state()`のcacheにはcorrと実際の要求/応答bytesまたはNone markerを含め、deadline、high、last、資源一覧、next_resource_idも観測する。再送前後は状態そのものが一致する。5ms待機を独立時計で確認し、deadline誤更新を見逃さない。新corrの作成が次の番号を一度だけ返すことも確認する。単なる成功回数の自己申告で代用しない。
 
