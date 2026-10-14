@@ -448,12 +448,19 @@ class PinFinder:
                 self.say(f"attach swd {self._pins_text(self.pins)}: DPIDR {dpidr:08x}")
                 w.detach(conn)
                 return
-            conn, _ = w.attach(halt=True, pins=self.pins)
+            halt = w.attach_halt_offered()                 # method 1 only with features attach_halt (debug §3)
+            conn, _ = w.attach(halt=halt, pins=self.pins)
         except h.OepError as e:
             self.note(f"attach on {self._pins_text(self.pins)} did not get through: {e}")
             return
         self.mine.append(conn)
         try:
+            if not halt:
+                try:
+                    riscv.RiscvDm(self.hst, conn).halt()
+                    w.halted = True
+                except h.OepError as e:
+                    self.note(f"halt after the attach did not get through: {e}")
             tid = w.target_id
             self.family = targets.identify(tid)
             self.report.target_id = targets.describe_id(tid)

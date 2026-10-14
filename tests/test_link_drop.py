@@ -325,6 +325,7 @@ def test_held_payload_registers_are_right_or_raise_at_every_drop():
 def test_run_payload_places_and_starts_the_payload_on_the_virtual_bench():
     ep, hst, tg, d = bench()
     wire = riscv.Wire(hst)
+    wire.detach(d.conn)                                          # run_payload attaches on its own (debug §1)
     tg.regs[uiapduino.MSTATUS] = 0x88
     tg.drop_at = {tg.dmi_accesses + 9: "stale"}                  # inside the dpc write's group
     uiapduino.run_payload(hst, wire, [0x0000006F])

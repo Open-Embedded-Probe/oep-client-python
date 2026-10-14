@@ -50,26 +50,31 @@ def test_an_interface_in_another_revision_is_not_used():
 
 # ---- oep.wire.* ---------------------------------------------------------------------------------------------
 
-def test_attach_twice_returns_the_same_connection_and_max_speed_is_critical(bench):
+def test_attach_makes_a_new_connection_on_named_pins(bench):
+    """oep-if-debug §1, §3: method swdio swclk max_speed in the fixed part; pins a live connection holds are refused
+    (never joined); max_speed 0 is malformed."""
     ep, hst = bench
     wire = riscv.Wire(hst)
     conn, status = wire.attach(halt=True, max_speed=1_000_000)
-    assert wire.had_reset and not wire.existing and wire.speed_hz == 1_000_000 and status & 0x300
+    assert wire.had_reset and wire.speed_hz == 1_000_000 and status & 0x300
     assert wire.halted and wire.dpc == ep.target.dpc              # flags bit3 + the dpc TLV
-    assert ep.requests[-1].payload == bytes([1, 0x81, 4, 0]) + struct.pack("<I", 1_000_000)
-    again, _ = wire.attach(halt=False)
-    assert again == conn and wire.existing and not wire.had_reset
-    assert ep.requests[-1].payload == bytes([0, 0x81, 4, 0]) + struct.pack("<I", 5_000_000)   # None: the declared max_clock_hz
+    assert ep.requests[-1].payload == struct.pack("<BHHI", 1, 2, 54, 1_000_000)   # the wire's one pair
+    with pytest.raises(host.Unavailable) as e:
+        wire.attach(halt=False)
+    assert e.value.channels == [2]
     with pytest.raises(host.Rejected, match="malformed"):
-        hst.call(WIRE, riscv.Wire.ATTACH, bytes([0]))             # max_speed is required (oep-if-debug §1)
+        hst.call(WIRE, riscv.Wire.ATTACH, struct.pack("<BHHI", 0, 2, 54, 0))   # max_speed 0 (oep-if-debug §1)
     (info,) = wire.connections()
-    assert (info.connection, info.pins, info.users, info.slot) == (conn, (2, 54), 1, None)
+    assert (info.connection, info.pins, info.targetsel) == (conn, (2, 54), None)
+    wire.detach(conn)
+    again, _ = wire.attach(halt=False)
+    assert again != conn and not wire.had_reset
+    assert ep.requests[-1].payload == struct.pack("<BHHI", 0, 2, 54, 5_000_000)   # None: the declared max_clock_hz
 
 
 def test_attach_under_reset_is_the_reset_tlv(bench):
-    """oep-if-debug §3: attach's TLV 0x05 reset (channel, hold_ms) holds the line and attaches; with halt the hart stops
-    before its first instruction (flags halted, TLV dpc); on an existing connection it resets the target (mark reset,
-    detail 3)."""
+    """oep-if-debug §3: attach's TLV 0x05 reset (channel, hold_ms) holds the line and attaches; with halt the hart is
+    halted as early as the probe can (flags halted, TLV dpc). An attach makes no console mark (no stream yet, §4.6)."""
     ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())           # swio with NRST on 23
     hst = host.Host(ep.handle, rng=random.Random(3))
     hst.open()
@@ -77,14 +82,12 @@ def test_attach_under_reset_is_the_reset_tlv(bench):
     ep.target.dpc = 0x1234
     conn, dpc = wire.attach_under_reset(23, hold_ms=30)
     assert dpc == 0 and wire.halted and ep.target.halted
-    assert ep.requests[-1].payload == bytes([1, 0x81, 4, 0]) + struct.pack("<I", 1_000_000) \
+    assert ep.requests[-1].payload == struct.pack("<BHHI", 1, 16, 0xFFFF, 1_000_000) \
         + bytes([0x85, 4, 0]) + struct.pack("<HH", 23, 30)
-    con = console.Console(hst)
-    con.open(conn)
-    conn2, _ = wire.attach(halt=False, reset=(23, 20))          # the same connection, the target reset while running
-    assert conn2 == conn and wire.existing and not wire.halted and wire.dpc is None and not ep.target.halted
-    reset = [mk for mk in con.marks() if mk.kind == console.MARK_KIND["reset"]]
-    assert [mk.detail for mk in reset] == [3]                     # mark reset, detail attach_reset
+    wire.detach(conn)
+    conn2, _ = wire.attach(halt=False, reset=(23, 20))          # a new connection, the target reset while running
+    assert conn2 != conn and not wire.halted and wire.dpc is None and not ep.target.halted
+    wire.detach(conn2)
     with pytest.raises(host.Unsupported) as e:
         wire.attach(reset=(22, 20))                               # not a reset line
     assert e.value.tag == 0x85
@@ -113,7 +116,7 @@ def test_dmi_counts_its_steps_and_polls_return_their_last_value(dm):
     done, values = d.dmi(steps)
     assert done == 4 and values == [0x382, 0x0002]
     sent = ep.requests[-1].payload
-    assert sent[2:4] == struct.pack("<H", 4)                      # connection(u16), then n(u16), then the steps
+    assert sent[4:6] == struct.pack("<H", 4)                      # connection(u32), then n(u16), then the steps
     assert d.dmi(b"".join(steps[:2])) == (2, [0x382])            # packed bytes are counted too
 
 
@@ -149,7 +152,7 @@ def test_block_access_reports_how_far_it_got(dm):
     assert d.max_length == virtual_bench.block_max_length(1024) == 1000 and d.max_words == 250   # from describe, not max_frame
     d.write_block(0x20000000, struct.pack("<3I", 1, 2, 3))
     assert d.read_block(0x20000000, 3) == struct.pack("<3I", 1, 2, 3)
-    assert ep.requests[-2].payload[2:8] == struct.pack("<IH", 0x20000000, 3)   # address, count
+    assert ep.requests[-2].payload[4:10] == struct.pack("<IH", 0x20000000, 3)   # address, count
     ep.target.fault_at.add(0x20000008)
     with pytest.raises(riscv.TargetError) as e:
         d.read_block(0x20000000, 4)
@@ -169,7 +172,7 @@ def test_run_returns_the_registers_asked_for(dm):
     r = d.run(0x20000000, [(0x100A, 5)], timeout_ms=None, outs=(0x100A, 0x100B))
     assert r.stopped and r.dpc == 0x200000B0 and r.elapsed_us == 1234 and r.values == [0, 0x08000100]
     body = ep.requests[-1].payload
-    assert body[6:10] == struct.pack("<I", 10000)                # timeout_ms None: the probe's max_op_ms (core §7.5)
+    assert body[8:12] == struct.pack("<I", 10000)                # timeout_ms None: the probe's max_op_ms (core §7.5)
     assert ep.requests[-1].payload[-1 - 2 * 2:][0] == 2 or True   # n_out 2 asked; the answer counts its values
     assert d.run(0x20000000, [], outs=()).values == []           # n_out 0: no values
 
@@ -193,8 +196,8 @@ def test_run_that_could_not_halt_the_hart_says_so_with_no_values(dm):
     ep.target.unstoppable = True
     r = d.run(0x20000000, [], timeout_ms=200, outs=(0x100A, 0x100B))
     assert r.not_halted and not r.stopped and r.status == riscv.STATUS["timeout"] and r.values == []
-    assert ep.requests[-1].payload[6:10] == struct.pack("<I", 200)
-    raw = hst.request(2, riscv.RiscvDm.RUN, struct.pack("<H", d.conn) + riscv.RiscvDm.run_body(0x20000000, [], 200))
+    assert ep.requests[-1].payload[8:12] == struct.pack("<I", 200)
+    raw = hst.request(2, riscv.RiscvDm.RUN, struct.pack("<I", d.conn) + riscv.RiscvDm.run_body(0x20000000, [], 200))
     assert raw.detail == m.FAILED and raw.payload[1] == 2 and raw.payload[10] == 0   # stopped 2, nvals 0
 
 
@@ -211,21 +214,21 @@ def test_state_status_and_unknown_status_are_failures(dm):
 
 
 def test_reset_answers_status_flags_pc_and_takes_no_method(dm):
-    """oep-if-debug §4.3: reset is connection(u16) mode(u8), no request TLV (0x01, the old method, is reserved: an
-    unknown tag, core §2.3); the answer is status(u8) flags(u8: bit0 reached, bit1 verified) pc(u32) - no attempts."""
+    """oep-if-debug §4.3: reset is connection(u32) mode(u8: 0 or 2), no request TLV (0x01, the old method, is
+    reserved: an unknown tag, core §2.3); the answer is status(u8) flags(u8: bit0 reached) pc(u32)."""
     ep, hst, d = dm
     assert d.reset_halt() == 0
-    flags, pc = d.reset(confirm=True)
-    assert flags & 2
+    flags, pc = d.reset()
+    assert flags == 1 and pc == 0
     op = riscv.reg.TARGET_RISCV_DM.op["reset"]
-    body = struct.pack("<HB", d.conn, d.RESET_HALT)
+    body = struct.pack("<IB", d.conn, d.RESET_HALT)
     r = hst.call(DM, op, body + m.tlv(0x01, bytes([9])))          # not critical: ignored
     assert len(r.payload) == 6 and r.payload[0] == riscv.STATUS["ok"]
     with pytest.raises(host.Unsupported) as e:
         hst.call(DM, op, body + m.tlv(0x01, bytes([9]), critical=True))
     assert e.value.tag == 0x81
     with pytest.raises(host.Unsupported) as e:
-        hst.call(DM, op, struct.pack("<HB", d.conn, 0x7E))         # a mode left unused: a fixed-part value, 0x00
+        hst.call(DM, op, struct.pack("<IB", d.conn, 0x7E))         # a mode left unused: a fixed-part value, 0x00
     assert e.value.result.payload == b"\x00"
 
 
@@ -332,7 +335,7 @@ def test_console_io_writes_through_the_send_queue_and_gives_up_on_sdi():
         ep.console_take()                                         # the target takes the rest
         assert bytes(ep.streams[sid].written) == line
         con.close()
-        riscv.Wire(hst).detach(conn, force=True)
+        riscv.Wire(hst).detach(conn)
         conn, _ = riscv.Wire(hst).attach(halt=False)
     con = console.Console(hst)
     con.open(conn, console.Console.SDI)

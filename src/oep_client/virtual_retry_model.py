@@ -39,11 +39,12 @@ class Retry(Debug):
         super().close_connection(parent);self.plans.pop(parent,None);self.idle.pop(parent,None);self.levels.pop(parent,None)
     def dispatch_request(self,fn,op,payload,tags):
         if fn!=5 or op!=16:return super().dispatch_request(fn,op,payload,tags)
-        parent=struct.unpack_from('<H',payload)[0];self.resource(parent,'connection')
+        parent=struct.unpack_from('<I',payload)[0];self.resource(parent,'connection')
         if self.connections[parent]['fn']==3:raise Reject(4,tlv(1,b'\x06'))
-        count=struct.unpack_from('<H',payload,2)[0];cursor=4;steps=[];time_sum=0
+        count=struct.unpack_from('<H',payload,4)[0];cursor=6;steps=[];time_sum=0
         for _ in range(count):
-            if cursor>=len(payload) or payload[cursor] not in SIZES:raise Reject(3)
+            if cursor>=len(payload):raise Reject(3)
+            if payload[cursor] not in SIZES:raise Reject(11,b'\0')            # an unknown kind: unsupported (debug §4.1)
             size=SIZES[payload[cursor]];row=payload[cursor:cursor+size]
             if len(row)!=size:raise Reject(3)
             if row[0] in (4,5):time_sum+=struct.unpack_from('<I',row,size-4)[0]

@@ -13,19 +13,18 @@ class ScanOptions(WireOptions):
         known={1:4}
         if fn==1:known[4]=1
         if fn==3:known[6]=4
-        result={};seen=set()
+        result={}
         while data:
             if len(data)<3:raise Reject(3)
             raw,size=struct.unpack_from('<BH',data);value=data[3:3+size];tag=raw&127
             if not tag or len(value)!=size:raise Reject(3)
             data=data[3+size:]
-            if tag in seen:continue
-            seen.add(tag)
             if tag not in known:
                 if raw&128:raise Reject(11,bytes((raw,)))
                 continue
-            if size!=known[tag]:raise Reject(3)
-            result[tag]=(raw,value)
+            if size!=known[tag]:raise Reject(3)                 # every copy's length is checked (core §2.3)
+            if tag==1 and not struct.unpack('<I',value)[0]:raise Reject(3)   # max_speed 0 (debug §1)
+            result.setdefault(tag,(raw,value))
         return result
     def dispatch_request(self,fn,op,payload,tags):
         if fn>3 or op!=16:return super().dispatch_request(fn,op,payload,tags)
@@ -58,7 +57,7 @@ class ScanOptionsModel(WireOptionsModel):
     def install(self):self.extension=ScanOptions(self.ep);self.ep.current_core=Core(self.ep,self.extension)
     def handle(self,request):
         if len(request)>=6 and struct.unpack_from('<H',request,3)[0]==4:return super().handle(request)
-        e=self.extension;fixed,free=e.fixed,e.free;e.fixed={16:1,17:1,18:2,19:1};e.free={19}
+        e=self.extension;fixed,free=e.fixed,e.free;e.fixed={16:1,17:9,18:4,19:1};e.free={19}
         if len(request)>=11 and request[5]==16:e.fixed[16]=1+4*request[10]
         try:return self.ep.handle(request)
         finally:e.fixed,e.free=fixed,free

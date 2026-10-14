@@ -10,6 +10,7 @@ class Attachments(Dependencies):
     names=(b'oep.wire.rvswd',b'oep.wire.swio',b'oep.wire.swd',b'oep.target.console')
     pairs={1:[(0,1),(2,3),(6,7)],2:[(0,65535),(2,65535),(6,65535)],3:[(4,5)]}
     mechanisms=(0,1)
+    reset_channel=8
     def __init__(self, ep):
         super().__init__(ep);self.connections={};self.meta={};self.touch=[];self.failure=False
     def list_page(self,first,limit):
@@ -27,19 +28,19 @@ class Attachments(Dependencies):
             rows.append(tlv(6,bytes((index,len(members)))+b''.join(struct.pack('<BH',*row) for row in members)))
         return tuple(rows)
     def request_tags(self,fn,op,data):
-        known={1:4,3:4} if fn<=3 and op==17 else {}
+        known={5:4} if fn<=3 and op==17 else {}
         result={}
         while data:
             if len(data)<3:raise Reject(3)
             raw,size=struct.unpack_from('<BH',data);value=data[3:3+size]
             if not raw&127 or len(value)!=size:raise Reject(3)
             data=data[3+size:];tag=raw&127
-            if tag in result:continue
             if tag not in known:
                 if raw&128:raise Reject(11,bytes((raw,)))
                 continue
-            if size!=known[tag]:raise Reject(3)
-            result[tag]=(raw,value)
+            if size!=known[tag]:raise Reject(3)                 # every copy is checked; the first is used
+            if struct.unpack_from('<H',value)[0]!=self.reset_channel:raise Reject(11,bytes((raw,)))
+            result.setdefault(tag,(raw,value))
         return result
     def close_stream(self,rid):
         super().close_stream(rid);del self.meta[rid]
@@ -48,7 +49,7 @@ class Attachments(Dependencies):
             if parent==rid:self.close_stream(child)
         del self.connections[rid];self.events.append(('connection',rid))
     def connection_page(self,fn,first):
-        rows=[struct.pack('<HHHIBB',rid,*s['pins'],s['speed'],0,0) for rid,s in self.connections.items() if s['fn']==fn]
+        rows=[struct.pack('<IHHIBB',rid,*s['pins'],s['speed'],0,0) for rid,s in self.connections.items() if s['fn']==fn]
         return self.page(rows,first)
     def page(self,rows,first):
         page=bytearray(b'\0\0');index=first
@@ -59,26 +60,26 @@ class Attachments(Dependencies):
         if fn<=3:
             if op==19:return self.connection_page(fn,payload[0])
             if op==18:
-                rid=struct.unpack('<H',payload)[0];self.resource(rid,'connection')
+                rid=struct.unpack('<I',payload)[0];self.resource(rid,'connection')
                 if self.connections[rid]['fn']!=fn:raise Reject(4,tlv(1,b'\x06'))
                 self.close_connection(rid);return b''
-            method=payload[0]
+            method,swdio,swclk,speed=struct.unpack_from('<BHHI',payload);pair=(swdio,swclk)
+            if not speed:raise Reject(3)                                  # max_speed 0 (debug §1)
             if method not in ((0,) if fn==3 else (0,1)):raise Reject(11,b'\0')
-            if 1 not in tags or 3 not in tags:raise Reject(3)
-            speed=struct.unpack('<I',tags[1][1])[0];pair=struct.unpack('<HH',tags[3][1])
-            if speed<1000:raise Reject(11,bytes((tags[1][0],)))
-            if pair not in self.pairs[fn]:raise Reject(11,bytes((tags[3][0],)))
+            if speed<1000:raise Reject(11,b'\0')                         # below min_clock_hz: the fixed part
+            if pair not in self.pairs[fn]:raise Reject(11,b'\0')
             active={pin for s in self.connections.values() for pin in s['pins'] if pin!=65535}
             if active.intersection(pair):raise Reject(4,tlv(1,b'\x01'))
             if sum(s['fn']==fn for s in self.connections.values())>=2:raise Reject(4,tlv(1,b'\x02'))
-            if self.next_id>65535 or len(self.connections)+len(self.streams)>=8:raise Reject(4,tlv(1,b'\x02'))
+            if len(self.connections)+len(self.streams)>=8:raise Reject(4,tlv(1,b'\x02'))
             # All admission checks precede this logical stand-in for target access.
-            self.touch.append((fn,pair))
+            hold=struct.unpack_from('<H',tags[5][1],2)[0] if 5 in tags else None
+            self.touch.append((fn,pair,hold))
             if self.failure:return Completed(b'\x02'+tlv(127,b'x'),1)
             rid=self.allocate();chosen=1000 if fn==2 else min(speed,100000)
             self.connections[rid]={'fn':fn,'pins':pair,'speed':chosen}
             flags=8 if method else 0
-            return struct.pack('<HIBI',rid,0x200,flags,chosen)+(tlv(17,struct.pack('<I',0)) if method else b'')+tlv(127,b'x')
+            return struct.pack('<IIBI',rid,0x200,flags,chosen)+(tlv(17,struct.pack('<I',0)) if method else b'')+tlv(127,b'x')
         if op==23:return self.page([struct.pack('<HHB',rid,parent,self.meta[rid]) for rid,(parent,_) in self.streams.items()],struct.unpack('<H',payload)[0])
         rid=struct.unpack_from('<H',payload)[0]
         if op==16:
@@ -106,7 +107,7 @@ class AttachModel(DependencyModel):
         if len(request)>=6 and struct.unpack_from('<H',request,3)[0]==4:
             e.fixed={16:3,17:13,18:6,19:2,20:3,21:4,22:2,23:2};e.free={17,18,23}
             if request[5]==21 and len(request)>=14:e.fixed[21]=4+struct.unpack_from('<H',request,12)[0]
-        else:e.fixed={17:1,18:2,19:1};e.free={19}
+        else:e.fixed={17:9,18:4,19:1};e.free={19}
         try:return self.ep.handle(request)
         finally:e.fixed,e.free=fixed,free
     def restart_fixture(self):

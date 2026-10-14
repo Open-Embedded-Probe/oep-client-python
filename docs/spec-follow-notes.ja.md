@@ -11,3 +11,12 @@ oep-client-python を oep-spec `a09fa45` へ追従する作業（コア → 共�
 | 1 | core §2.3「後続の同じtagも上の検証対象」 | 繰り返さない tag が 2 回来たとき、使わない 2 つ目以降の値まで、長さだけでなく値域・対応の有無（unsupported）も op ごとに検証しなければならない。共通の TLV 読み取りでは長さしか見られず、各 op のハンドラーに「全コピーを検証する」処理を足す必要がある | probe（各 op の実装）、仮想ベンチ | 後続のコピーは長さ（TLV の符号化）だけを検証し、値の検証は使う最初のコピーに限る。または重複そのものを malformed にする |
 | 2 | core §4.1/§5.1（同じ session_id の新しい要求は、最後の corr から 1〜32767 先） | 別プロセス・別接続でセッションを引き継ぐ host（前回の実行が残したセッションを終わらせる CLI、別の接続での取り戻し）は、前の実行が最後に使った corr を知らないと要求が result_lost / malformed になる。終了処理のためだけに corr の状態を永続化する必要があり、本実装では 1024 番ずつ予約してファイルに書く仕組みを足した。分からなければ lease 切れまで待つしかない | host（CLI、再接続） | 新規要求として受け付けるのを「同一 session_id の open（新しい corr）」に限って順序判定から外す、または end だけは記録照合の対象外にする。もしくは probe が open の応答に最後の corr を返す |
 | 3 | oep-if-link §3（port_speed の phase 3「復帰保留」） | 復帰条件が成り立っても送受信中のフレームを壊さないよう境界まで待ち、その間を phase 3 として扱う。保留の理由（試しの期限切れ・idle の期限切れ・セッション終了）ごとに、元の所有者の正常な要求で取り消せるか、step 0/1/2 をどう断るか、取り消し後にどの phase へ戻すかが違う。probe はフレームの送受信状態と保留理由と元の所有者を組み合わせて持つ必要があり、試験も場合分けが多い | probe（UART bridge）、仮想ベンチ | 保留中は理由によらず全 step を cause 6 で断り、取り消しを設けない（境界で必ず戻す）。host は port_state で戻ったことを確認してからやり直す |
+
+## 仕様側の誤りと思われるもの
+
+不便さではなく、仕様の本文と検査ベクトルが食い違っているもの。クライアントの試験では strict な xfail にしてあり、
+仕様側が直れば試験が知らせる。
+
+| # | 箇所 | 食い違い | クライアントの扱い |
+|---|---|---|---|
+| E1 | `tests/vectors/interface_profiles.json` の「mode0 SPI target」（`tools/oepvectors1.py` の `interface_profiles`） | describe の max_length（tag 0x03）を `struct.pack('<I', 50)` の 4 byte で書いている。core §7.4 は max_length を u16 と定める | `test_interface_profiles_as_the_host_reads_them` のその 1 件を xfail（strict） |

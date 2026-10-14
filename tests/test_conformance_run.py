@@ -45,7 +45,7 @@ def test_run_checker_detects_independent_faults(fault,case):
             interleave(parent)
         def broken_dispatch(fn,op,payload,tags):
             if fn!=5 or op!=22:return dispatch(fn,op,payload,tags)
-            parent=struct.unpack_from('<H',payload)[0];saved_gprs=dict(e.targets.get(parent,{}).get('gprs',{}));old_limit=e.ep.probe.max_frame
+            parent=struct.unpack_from('<I',payload)[0];saved_gprs=dict(e.targets.get(parent,{}).get('gprs',{}));old_limit=e.ep.probe.max_frame
             if fault=='frame_over_accepted':e.ep.probe.max_frame=1000
             if fault=='program_omitted' and parent in e.programs:e.programs[parent]={'memory':{},'gprs':{}}
             try:
@@ -113,7 +113,7 @@ def test_invalid_run_behavior_preserves_state(mode,pc):
 def test_invalid_live_run_program_controls_preserve_state(memory,gprs):
     model,c,_=setup();c.confirm()
     with c.holding(3000) as sid:
-        parent=struct.unpack_from('<H',c.success(c.request(17,b'\0'+tlv(1,struct.pack('<I',2000))+tlv(3,struct.pack('<HH',0,1)),session=sid,fn=1)))[0];before=model.run_state()
+        parent=struct.unpack_from('<I',c.success(c.request(17,struct.pack('<BHHI',0,0,1,2000),session=sid,fn=1)))[0];before=model.run_state()
         with pytest.raises(ValueError):model.run_program(parent,memory,gprs)
         assert model.run_state()==before
 

@@ -14,20 +14,25 @@ class WireOptions(Attachments):
         return rows+(tlv(1,b'\x03\0\0\x40'),) if fn<=3 and self.reset_supported else rows
     def request_tags(self,fn,op,data):
         if fn>3 or op!=17:return super().request_tags(fn,op,data)
-        known={1:4,3:4,4:1,5:4}
+        known={5:4}
+        if fn==1:known[4]=1
         if fn==3:known[2]=4
-        result={};seen=set()
+        result={}
         while data:
             if len(data)<3:raise Reject(3)
             raw,size=struct.unpack_from('<BH',data);value=data[3:3+size];tag=raw&127
             if not tag or len(value)!=size:raise Reject(3)
             data=data[3+size:]
-            if tag in seen:continue
-            seen.add(tag)
             if tag not in known:
                 if raw&128:raise Reject(11,bytes((raw,)))
                 continue
             if size!=known[tag]:raise Reject(3)
+            if tag in result:                                  # a later copy is checked too (core §2.3); the first is used
+                if tag==4 and value[0] not in (0,1):raise Reject(11,bytes((raw,)))
+                if tag==5:
+                    channel,hold=struct.unpack('<HH',value)
+                    if not self.reset_supported or channel!=6 or hold>self.ep.max_op_ms:raise Reject(11,bytes((raw,)))
+                continue
             result[tag]=(raw,value)
         return result
     def close_connection(self,rid):
@@ -36,21 +41,25 @@ class WireOptions(Attachments):
             if pin!=65535:self.pin_levels[pin]=dict(mode='free',level=None)
         self.wire_events.append(('wire-close',rid))
     def connection_page(self,fn,first):
-        rows=[]
+        rows=[];selected=[]
         for rid,s in self.connections.items():
             if s['fn']!=fn:continue
-            tid=struct.pack('<I',s['targetsel'] or 0) if fn==3 else b''
-            rows.append(struct.pack('<HHHIBB',rid,*s['pins'],s['speed'],2 if fn==3 else 0,len(tid))+tid)
-        return self.page(rows,first)
+            tid=struct.pack('<I',0x2ba01477) if fn==3 else b''            # swd: the DPIDR read at attach (scheme 2)
+            if s['targetsel'] is not None:selected.append((len(rows),s['targetsel']))
+            rows.append(struct.pack('<IHHIBB',rid,*s['pins'],s['speed'],2 if fn==3 else 0,len(tid))+tid)
+        page=bytearray(b'\0\0');index=first;tail=b''
+        while index<len(rows):
+            extra=b''.join(tlv(1,struct.pack('<BI',index-first,t)) for i,t in selected if i==index)
+            if len(page)+len(tail)+len(rows[index])+len(extra)+9>self.ep.probe.max_frame:break
+            page.extend(rows[index]);tail+=extra;page[1]+=1;index+=1
+        page[0]=int(index<len(rows));return bytes(page)+tail+tlv(127,b'x')
     def dispatch_request(self,fn,op,payload,tags):
         if fn>3 or op!=17:return super().dispatch_request(fn,op,payload,tags)
-        method=payload[0]
+        method,swdio,swclk,speed=struct.unpack_from('<BHHI',payload);pair=(swdio,swclk);idle=tags[4][1][0] if 4 in tags else 0
+        if not speed:raise Reject(3)
         if method not in ((0,) if fn==3 else (0,1)):raise Reject(11,b'\0')
-        if 1 not in tags or 3 not in tags:raise Reject(3)
-        speed=struct.unpack('<I',tags[1][1])[0];pair=struct.unpack('<HH',tags[3][1]);idle=tags[4][1][0] if 4 in tags else 0
-        if speed<1000:raise Reject(11,bytes((tags[1][0],)))
-        if pair not in self.pairs[fn]:raise Reject(11,bytes((tags[3][0],)))
-        if idle not in (0,1) or fn!=1 and idle:raise Reject(11,bytes((tags[4][0],)))
+        if speed<1000 or pair not in self.pairs[fn]:raise Reject(11,b'\0')
+        if idle not in (0,1):raise Reject(11,bytes((tags[4][0],)))
         active={pin for s in self.connections.values() for pin in s['pins'] if pin!=65535}
         if active.intersection(pair):raise Reject(4,tlv(1,b'\x01'))
         for pin in pair:
@@ -63,7 +72,7 @@ class WireOptions(Attachments):
             if not self.reset_supported or channel!=6 or hold>self.ep.max_op_ms:raise Reject(11,bytes((tags[5][0],)))
             if channel in active or channel in pair or self.pin_modes[channel]=='reserved':raise Reject(4,tlv(1,b'\x01'))
             if self.pin_modes[channel]!='free':raise Reject(4,tlv(1,b'\x05'))
-        if sum(s['fn']==fn for s in self.connections.values())>=2 or self.next_id>65535 or len(self.connections)+len(self.streams)>=8:raise Reject(4,tlv(1,b'\x02'))
+        if sum(s['fn']==fn for s in self.connections.values())>=2 or len(self.connections)+len(self.streams)>=8:raise Reject(4,tlv(1,b'\x02'))
         targetsel=struct.unpack('<I',tags[2][1])[0] if 2 in tags else None;key=(fn,*pair,targetsel);start=self.clock_ms
         self.touch.append((fn,pair));flags=8 if method else 0
         if reset:
@@ -84,7 +93,7 @@ class WireOptions(Attachments):
         levels=(1,1-idle) if fn==1 else (1,) if fn==2 else (0,1)
         for pin,level in zip((pin for pin in pair if pin!=65535),levels):self.pin_levels[pin]=dict(mode='wire',level=level)
         identity=0x2ba01477 if fn==3 else 0x302 if method else 0xc02
-        return struct.pack('<HIBI',rid,identity,flags,chosen)+(tlv(17,struct.pack('<I',0x1000)) if method else b'')+tlv(127,b'x')
+        return struct.pack('<IIBI',rid,identity,flags,chosen)+(tlv(17,struct.pack('<I',0x1000)) if method else b'')+tlv(127,b'x')
 
 
 class WireOptionsModel(AttachModel):

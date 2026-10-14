@@ -21,29 +21,29 @@ _ADI = reg.TARGET_ARM_ADI
 
 class SwdWire(WireBase):
     NAME = "oep.wire.swd"
-    FLAGS = reg.WIRE_SWD.enum["attach_flags"]          # existing, dormant_woken (0x01 / 0x08 are riscv's only)
+    FLAGS = reg.WIRE_SWD.enum["attach_flags"]          # dormant_woken (0x01 / 0x08 are riscv's only)
     TAG_TARGETSEL = reg.WIRE_SWD.tlv["attach"]["targetsel"]
+    TAG_SCAN_TARGETSEL = reg.WIRE_SWD.tlv["scan"]["targetsel"]
+    TAG_TARGET_ID = reg.WIRE_SWD.tlv["attach_answer"]["target_id"]
 
     def __init__(self, hst: h.Host):
         super().__init__(hst)
         self.speed_hz = 0
-        self.existing = False
+        self.target_id: tuple[int, bytes] | None = None
 
     def attach(self, targetsel: int | None = None, max_speed: int | None = None,
                pins: tuple[int, int] | None = None, reset: tuple[int, int] | None = None) -> tuple[int, int, bool]:
-        """-> (connection, DPIDR, woke from dormant). The request is method 0 (swd has no halting attach) and TLVs:
-        max_speed (required, critical; None: the wire's declared max_clock_hz), targetsel (multidrop, critical), pins,
-        reset = (channel, hold_ms) (critical). self.existing: the wire was attached already (its connection returned).
-        self.flags: the attach_flags byte."""
-        body = bytes([0]) + self._speed_tlv(self._speed_or_default(max_speed)) + self._pins_tlv(pins) + self._reset_tlv(reset)
+        """-> (connection, DPIDR, woke from dormant). The request is method 0 (swd has no halting attach), swdio,
+        swclk, max_speed (None: the wire's declared max_clock_hz) and TLVs: targetsel (multidrop, critical), reset =
+        (channel, hold_ms) (critical) (oep-if-debug §5). Pins a live connection holds are refused, whatever the
+        targetsel (unavailable cause 1): detach first. self.flags: the attach_flags byte."""
+        body = self._attach_fixed(0, pins, max_speed) + self._reset_tlv(reset)
         if targetsel is not None:
             body += m.tlv(self.TAG_TARGETSEL, struct.pack("<I", targetsel), critical=True)
         rd = m.Reader(self._call(self.ATTACH, body, expect_ms=self.attach_ms(reset)).payload)
-        conn, dpidr, self.flags, self.speed_hz = rd.take("HIBI")
-        self.existing = bool(self.flags & self.FLAGS["existing"])
-        tail = rd.tail()
-        tries = tail.get(reg.WIRE_SWD.tlv["attach_answer"]["search_retries"])   # oep-if-debug §1 (optional)
-        self.search_retries = struct.unpack_from("<H", tries)[0] if tries and len(tries) >= 2 else None
+        conn, dpidr, self.flags, self.speed_hz = rd.take("IIBI")
+        v = rd.tail().get(self.TAG_TARGET_ID)
+        self.target_id = (v[0], bytes(v[1:])) if v else None
         return conn, dpidr, bool(self.flags & self.FLAGS["dormant_woken"])
 
 
@@ -71,7 +71,7 @@ class ArmAdi(Interface, BlockLength):
     TRANSFER, READ_BLOCK, WRITE_BLOCK = _ADI.op["transfer"], _ADI.op["read_block"], _ADI.op["write_block"]
 
     def __init__(self, hst: h.Host, conn: int, adiv6: bool = False):
-        super().__init__(hst, prefix=struct.pack("<H", conn))
+        super().__init__(hst, prefix=struct.pack("<I", conn))
         self.conn = conn
         self.adiv6 = adiv6
         self._select: int | None = None

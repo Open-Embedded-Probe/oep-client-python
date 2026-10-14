@@ -49,7 +49,7 @@ def test_wire_options_checker_detects_independent_faults(fault,case):
                 for t in e.targets.values():t['halted']=False
         def broken_page(fn,first):
             data=page(fn,first)
-            if fn==3 and data[1] and fault=='listing_scheme':data=data[:12]+b'\0'+data[13:]
+            if fn==3 and data[1] and fault=='listing_scheme':data=data[:14]+b'\0'+data[15:]
             return data
         def broken_dispatch(fn,op,payload,tags):
             if fn>3 or op!=17:return dispatch(fn,op,payload,tags)
@@ -62,12 +62,12 @@ def test_wire_options_checker_detects_independent_faults(fault,case):
                 if fault=='reject_effect':e.wire_events.append(('unexpected-pin-touch',))
                 raise
             data=bytes(value);outcome=getattr(value,'outcome',0)
-            if len(data)>=11 and not outcome:
-                rid=struct.unpack_from('<H',data)[0];pins=e.connections[rid]['pins']
+            if len(data)>=13 and not outcome:
+                rid=struct.unpack_from('<I',data)[0];pins=e.connections[rid]['pins']
                 if fault=='clock_high' and fn==1:e.pin_levels[pins[1]]['level']=1
                 elif fault=='data_low' and fn==1:e.pin_levels[pins[0]]['level']=0
-                elif fault=='wrong_flags':data=data[:6]+bytes((data[6]&~8,))+data[7:]
-                elif fault=='bad_dpc' and data[6]&8:data=data[:14]+struct.pack('<I',0xdeadbeef)+data[18:]
+                elif fault=='wrong_flags':data=data[:8]+bytes((data[8]&~8,))+data[9:]
+                elif fault=='bad_dpc' and data[8]&8:data=data[:16]+struct.pack('<I',0xdeadbeef)+data[20:]
                 elif fault=='targetsel_lost' and fn==3:e.connections[rid]['targetsel']=None
             if fault=='reset_push_pull':e.wire_events[:]=[(r[0],r[1],'push-pull-low',r[3]) if r[0]=='reset-assert' else r for r in e.wire_events]
             elif fault=='reset_short':e.wire_events[:]=[r[:3]+(r[3]-1,) if r[0]=='reset-release' else r for r in e.wire_events]
@@ -123,6 +123,6 @@ def test_wire_pin_control_cannot_change_owned_channel():
     from oep_client.virtual_core import tlv
     model,c,_=setup();c.confirm()
     with c.holding(3000) as sid:
-        c.success(c.request(17,b'\0'+tlv(1,struct.pack('<I',2000))+tlv(3,struct.pack('<HH',0,1)),session=sid,fn=1));before=model.wire_options_state()
+        c.success(c.request(17,struct.pack('<BHHI',0,0,1,2000),session=sid,fn=1));before=model.wire_options_state()
         with pytest.raises(ValueError):model.wire_pin(0,'output')
         assert model.wire_options_state()==before

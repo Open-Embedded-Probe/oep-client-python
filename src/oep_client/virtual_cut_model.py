@@ -23,7 +23,7 @@ class Cut(Retry):
     def dispatch_request(self,fn,op,payload,tags):
         result=super().dispatch_request(fn,op,payload,tags)
         if fn==5 and op==16:
-            parent=struct.unpack_from('<H',payload)[0];self.observe(parent,result[2])
+            parent=struct.unpack_from('<I',payload)[0];self.observe(parent,result[2])
             if result[2]==2:self.decide(parent,'request')
         return result
     def release(self):
@@ -60,11 +60,11 @@ class CutModel(RetryModel):
         if type(request)is not bytes or self.waiting is not None:raise ValueError('explicit bytes and an empty logical writer required')
         e=self.extension;fixed,free=e.fixed,e.free
         fn=struct.unpack_from('<H',request,3)[0] if len(request)>=6 else None
-        if fn==5:e.fixed={16:fixed_dmi(request[10:]),17:2,18:2};e.free=set()
+        if fn==5:e.fixed={16:fixed_dmi(request[10:]),17:4,18:4};e.free=set()
         elif fn==4:
             e.fixed={16:3,17:13,18:6,19:2,20:3,21:4,22:2,23:2};e.free={17,18,23}
             if request[5]==21 and len(request)>=14:e.fixed[21]=4+struct.unpack_from('<H',request,12)[0]
-        else:e.fixed={17:1,18:2,19:1};e.free={19}
+        else:e.fixed={17:9,18:4,19:1};e.free={19}
         try:result=self.ep.current_core.handle(request,0,defer_send=True)
         finally:e.fixed,e.free=fixed,free
         self.waiting=dict(request=request,result=result,token=self.ep.current_core.renewal)

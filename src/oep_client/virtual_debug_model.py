@@ -10,8 +10,8 @@ HARTSEL=(0x3ff<<6)|(0x3ff<<16)
 SIZES={1:6,2:2,3:12,4:5,5:14}
 
 def fixed_dmi(payload):
-    if len(payload)<4:return 4
-    count=struct.unpack_from('<H',payload,2)[0];cursor=4
+    if len(payload)<6:return 6
+    count=struct.unpack_from('<H',payload,4)[0];cursor=6
     for _ in range(count):
         if cursor>=len(payload):return cursor+1
         size=SIZES.get(payload[cursor])
@@ -50,10 +50,10 @@ class Debug(Dmseq):
     def dispatch_request(self,fn,op,payload,tags):
         if fn!=5:
             value=super().dispatch_request(fn,op,payload,tags)
-            if fn<=3 and op==17 and len(value)>=11 and getattr(value,'outcome',0)==0:
-                parent=struct.unpack_from('<H',value)[0];self.targets[parent]={'registers':{},'halted':False,'haltreq':False}
+            if fn<=3 and op==17 and len(value)>=13 and getattr(value,'outcome',0)==0:
+                parent=struct.unpack_from('<I',value)[0];self.targets[parent]={'registers':{},'halted':False,'haltreq':False}
             return value
-        parent=struct.unpack_from('<H',payload)[0];self.resource(parent,'connection')
+        parent=struct.unpack_from('<I',payload)[0];self.resource(parent,'connection')
         if self.connections[parent]['fn']==3:raise Reject(4,tlv(1,b'\x06'))
         target=self.targets[parent]
         if op in (17,18):
@@ -70,9 +70,10 @@ class Debug(Dmseq):
                 if self.hart_failure:return Completed(b'\x05'+tlv(127,b'x'),1)
                 target['halted']=False
             return b'\0'+tlv(127,b'x')
-        count=struct.unpack_from('<H',payload,2)[0];cursor=4;steps=[];time_sum=0
+        count=struct.unpack_from('<H',payload,4)[0];cursor=6;steps=[];time_sum=0
         for _ in range(count):
-            if cursor>=len(payload) or payload[cursor] not in SIZES:raise Reject(3)
+            if cursor>=len(payload):raise Reject(3)
+            if payload[cursor] not in SIZES:raise Reject(11,b'\0')            # an unknown kind: unsupported (debug §4.1)
             size=SIZES[payload[cursor]];row=payload[cursor:cursor+size]
             if len(row)!=size:raise Reject(3)
             if row[0] in (4,5):time_sum+=struct.unpack_from('<I',row,size-4)[0]
@@ -125,7 +126,7 @@ class DebugModel(DmseqModel):
     def install(self):self.extension=Debug(self.ep);self.ep.current_core=Core(self.ep,self.extension)
     def handle(self,request):
         if len(request)<6 or struct.unpack_from('<H',request,3)[0]!=5:return super().handle(request)
-        e=self.extension;fixed,free=e.fixed,e.free;e.fixed={16:fixed_dmi(request[10:]),17:2,18:2};e.free=set()
+        e=self.extension;fixed,free=e.fixed,e.free;e.fixed={16:fixed_dmi(request[10:]),17:4,18:4};e.free=set()
         try:return self.ep.handle(request)
         finally:e.fixed,e.free=fixed,free
     def debug_state(self):

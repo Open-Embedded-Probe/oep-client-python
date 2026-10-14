@@ -12,10 +12,11 @@ reset role 3はchannel 6、max_op_ms=5、最も遅い読出しは1000 Hzを宣�
 
 - RVSWD idle_clockは省略/0でclock high、1でlow。dataはhigh。
   SWIOのdataはhigh、SWDはdata low / clock high。
-  未定義idle値と非RVSWDへのidle=1は、受け取ったraw tagでunsupported。
+  未定義idle値は受け取ったraw tagでunsupported。SWIO/SWDではidle_clockは未知のtagで、
+  criticalならunsupported 0x84、noncriticalなら無視してattachする。
 - reset channelは毎回hostが指定する。role 3未提供、未宣言channel、hold_ms超過はunsupported。
   既存connection、自分のwire pins、外部予約との競合はcause 1、disable/出力idleはcause 5。
-  max_speed欠落、壊れた幅なども含め、reset前に全要求を検査する。
+  max_speed 0、壊れた幅なども含め、reset前に全要求を検査する（固定部分はdebug §1）。
 - resetはopen-drainでlowに引き、指定hold後に駆動をやめてcoreの空き状態へ戻す。
   channelをconnectionへ持ち越さない。reset TLVが無ければ既定線を動かさない。
 - resetを解いてから最も遅い速さでtargetが応えるまで待つ。
@@ -25,10 +26,11 @@ reset role 3はchannel 6、max_op_ms=5、最も遅い読出しは1000 Hzを宣�
   新しいconnection番号を割り当てず、試したピンを放し、既存connection/streamと駆動状態を保つ。
 - RISC-V method 1はhalted flagとdpcを返す。reset解除とhaltまでに走りうるため、
   最初の命令前での停止保証にはしない。SWDのdormant wake flagはRISC-Vのflagsと区別する。
-- SWD targetselはcriticalで明示する。connectionsではscheme 2/u32で記録し、無指定は値0。
+- SWD targetselはcriticalで明示する。connectionsのtidはattachで読んだDPIDR（scheme 2、4 byte）で、
+  hostが与えたtargetselは応答TLV 0x01 selected_target（entry_index、targetsel）で別に返す（debug §2.1）。無指定ならTLVを付けない。
   同じpinsはtargetselが同じ/違う/無い場合いずれも新規attachを拒否する。
   別targetを選ぶには先にdetachし、新しい資源番号でattachする。
-- 既知TLVのcritical bit有無で値を変えず、重複は最初を使う。
+- 既知TLVのcritical bit有無で値を変えず、重複は最初を使う。後のコピーも検証し、未定義値はunsupported。
   attachの同一要求再送でreset/資源割当を繰り返さない。
 - detachとsession endはstream/connectionを解放し、idle_clockの駆動もやめる。
   停止中のhartを勝手に再開/リセットしない。

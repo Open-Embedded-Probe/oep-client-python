@@ -155,11 +155,12 @@ def test_a_host_attach_with_reset_wakes_a_silent_target_and_scan_does_not_see_it
     ep, hst, _ = open_probe(virtual_bench.esp32_v003())
     tg = ep.targets[(1, V003_PAIR)]
     tg.silent_until_reset = True
-    assert hst.call(1, 0x01, struct.pack("<BHH", 1, *V003_PAIR)).payload[1] == 0   # scan: nothing found
-    attach = bytes([0]) + m.tlv(0x01, struct.pack("<I", 1_000_000), critical=True)
-    assert not hst.request(1, 0x02, attach).succeeded
+    W = reg.WIRE_RVSWD.op
+    assert hst.call(1, W["scan"], struct.pack("<BHH", 1, *V003_PAIR)).payload[1] == 0   # scan: nothing found
+    attach = struct.pack("<BHHI", 0, *V003_PAIR, 1_000_000)
+    assert not hst.request(1, W["attach"], attach).succeeded
     reset = m.tlv(0x05, struct.pack("<HH", NRST, 20), critical=True)
-    assert hst.call(1, 0x02, attach + reset).succeeded and not tg.silent_until_reset
+    assert hst.call(1, W["attach"], attach + reset).succeeded and not tg.silent_until_reset
 
 
 class FakeLink:

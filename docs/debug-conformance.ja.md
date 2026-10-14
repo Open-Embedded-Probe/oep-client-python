@@ -11,7 +11,8 @@
 - dmiのn=0、write/read/waitの混在、異なる値の順序、done/status/nvalsと途中失敗のsuffix非実行。
 - poll_reads/poll_usの一致・timeoutと0上限の1回読出し。poll timeoutは最後の値を足し、
   線の不良で読めなかった場合は値を足さない。statusはregistryのtimeout=4等と照合する。
-- 未知kind、切れた手順、時間引数の和の超過を要求全体の実行前に拒否する。
+- 未知kind（その位置で検証を止めてunsupported、固定部分の印0）、切れた手順（malformed）、
+  時間引数の和の超過を要求全体の実行前に拒否する。前の手順も実行しない（debug §4.1）。
   critical TLV・不正TLVの構造、資源の種類/系統、session/header優先順を確認する。
 - raw dmiでhostがDATA0/DATA1へ書いた値をprobeが自動復元しない。再送はtargetアクセスを繰り返さない。
 - 同じconnectionのconsole pollをdmiの各手順の間へ注入しても、DATA0/DATA1に触れない。

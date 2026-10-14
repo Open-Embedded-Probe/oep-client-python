@@ -10,7 +10,7 @@ class ArmAdiChecks(AttachChecks):
     @staticmethod
     def write(req, value): return bytes((req & ~2,)) + struct.pack('<I', value)
     def transfer_request(self, sid, parent, steps, extra=b''):
-        return self.request(5, 'transfer', sid, struct.pack('<HH', parent, len(steps)) + b''.join(steps) + extra)
+        return self.request(5, 'transfer', sid, struct.pack('<IH', parent, len(steps)) + b''.join(steps) + extra)
     def transfer(self, sid, parent, steps, done, status, ack, values):
         request = self.transfer_request(sid, parent, steps)
         frame = self.c.exchange(request)
@@ -68,9 +68,9 @@ class ArmAdiChecks(AttachChecks):
         with self.c.holding(3000) as sid:
             parent = self.parent(sid)
             if kind == 'RESERVED':
-                for bit in (16, 32, 64, 128): self.refused(self.transfer_request(sid, parent, [self.write(8, 99), bytes((bit | 2,))]), 'malformed')
+                for bit in (16, 32, 64, 128): self.refused(self.transfer_request(sid, parent, [self.write(8, 99), bytes((bit | 2,))]), 'unsupported', b'\0')
             elif kind == 'TRUNCATED': self.refused(self.transfer_request(sid, parent, [self.write(8, 99), b'\x04x']), 'malformed')
-            elif kind == 'COUNT': self.refused(self.request(5, 'transfer', sid, struct.pack('<HH', parent, 2) + b'\x02'), 'malformed')
+            elif kind == 'COUNT': self.refused(self.request(5, 'transfer', sid, struct.pack('<IH', parent, 2) + b'\x02'), 'malformed')
             elif kind == 'CRITICAL': self.refused(self.transfer_request(sid, parent, [self.write(8, 99)], self.tlv(254, b'x')), 'unsupported', b'\xfe')
             elif kind == 'TLV': self.refused(self.transfer_request(sid, parent, [self.write(8, 99)], b'\x7f\x05\0x'), 'malformed')
             elif kind == 'FOREIGN': self.refused(self.transfer_request(sid % 0xffffffff + 1, parent, [b'\xff']), 'locked')
@@ -85,7 +85,7 @@ class ArmAdiChecks(AttachChecks):
         with self.c.holding(3000) as sid:
             parent = self.parent(sid); base = 0x2000
             def request(name, count, values=(), address=base):
-                return self.request(5, name, sid, struct.pack('<HIH', parent, address, count) + b''.join(struct.pack('<I', v) for v in values))
+                return self.request(5, name, sid, struct.pack('<IIH', parent, address, count) + b''.join(struct.pack('<I', v) for v in values))
             def read(values):
                 body = self.c.success(request('read_block', len(values)))
                 require(len(body) >= 3 + len(values) * 4 and struct.unpack_from('<HB', body) == (len(values), 0), 'ARM block done/status')

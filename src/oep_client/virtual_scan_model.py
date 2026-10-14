@@ -54,7 +54,7 @@ class ScanModel(AttachModel):
     def handle(self,request):
         if len(request)>=6 and struct.unpack_from('<H',request,3)[0]==4:return super().handle(request)
         e=self.extension;fixed,free=e.fixed,e.free
-        e.fixed={16:1,17:1,18:2,19:1};e.free={19}
+        e.fixed={16:1,17:9,18:4,19:1};e.free={19}
         if len(request)>=11 and request[5]==16:e.fixed[16]=1+4*request[10]
         try:return self.ep.handle(request)
         finally:e.fixed,e.free=fixed,free

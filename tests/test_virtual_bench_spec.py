@@ -16,7 +16,12 @@ from oep_client import cobs, endpoint, virtual_bench, virtual_bench_serial, mess
 CFG = reg.PROBE_CONFIG
 ITEM, ATTACH, KIND = CFG.tlv["item"], CFG.enum["slot_attach"], CFG.enum["bind_stream"]
 STATE = CFG.enum["slot_state"]
-SPEED = m.tlv(0x01, struct.pack("<I", 4_000_000), critical=True)    # attach's required max_speed TLV
+W, RV = reg.WIRE_RVSWD.op, reg.TARGET_RISCV_DM.op
+
+
+def att(pair, method=0, speed=4_000_000):
+    """attach's fixed part: method swdio swclk max_speed (debug §1, §3)."""
+    return struct.pack("<BHHI", method, *pair, speed)
 MARK_KIND = reg.COMMON.enum["mark_kind"]
 PLAN_APPLY, PLAN_RELEASE = reg.PROBE_PLAN.op["plan_apply"], reg.PROBE_PLAN.op["plan_release"]   # oep.probe.plan
 
@@ -127,13 +132,12 @@ def test_a_long_result_is_not_remembered():
     ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     h = Host(ep)
     h.open()
-    wire = 1
-    r = h.raw(wire, 0x02, bytes([0]) + SPEED)                        # attach
-    conn = struct.unpack_from("<H", r.payload)[0]
+    r = h.raw(1, W["attach"], att(ep.pairs[1][0]))
+    conn = struct.unpack_from("<I", r.payload)[0]
     ep.target.halted = True
-    big = h.raw(2, 0x05, struct.pack("<HIH", conn, 0x20000000, 32))  # read_block: 32 words, over 72 bytes
+    big = h.raw(2, RV["read_block"], struct.pack("<IIH", conn, 0x20000000, 32))   # 32 words, over 72 bytes
     assert big.succeeded
-    assert h.raw(2, 0x05, struct.pack("<HIH", conn, 0x20000000, 32), corr=h.corr).detail == m.RESULT_LOST
+    assert h.raw(2, RV["read_block"], struct.pack("<IIH", conn, 0x20000000, 32), corr=h.corr).detail == m.RESULT_LOST
 
 
 def test_open_empties_the_table():
@@ -563,7 +567,7 @@ def test_the_closing_0x00_of_a_frame_is_not_raw_after_the_gap():
 def test_read_from_a_last_mark_that_is_not_there_is_from_now():
     ep, h = bench()
     p = ep.pairs[1][0]
-    r = h.raw(1, 0x02, bytes([0]) + SPEED + m.tlv(0x03, struct.pack("<HH", *p), critical=True))
+    r = h.raw(1, W["attach"], att(p))
     uart_fn = 5
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", uart_fn, 1, 20)) + m.tlv(0x90, struct.pack("<HBH", uart_fn, 2, 21)))
     h.ok(uart_fn, reg.FIXTURE_UART.op["configure"], struct.pack("<I", 115200))
@@ -575,44 +579,41 @@ def test_read_from_a_last_mark_that_is_not_there_is_from_now():
 
 def test_no_default_reset_line_only_the_declared_channels():
     """oep-if-debug §3: the attach's reset TLV names its channel; the probe takes only role 3 (reset) channels
-    (unsupported, tag 0x85 otherwise), and not one a plan holds (unavailable). Op 0x04 is gone."""
+    (unsupported, tag 0x85 otherwise), and not one a plan holds (unavailable)."""
     ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
     h = Host(ep)
     h.open()
+    swio = ep.pairs[1][0]
     assert ep.reset_channels[1] == {23}
     reset = lambda ch, hold=20: m.tlv(0x05, struct.pack("<HH", ch, hold), critical=True)
     for channel in (0xFFFF, 22):                                    # no default; 22 is not a reset line
-        r = h.raw(1, 0x02, b"\x01" + SPEED + reset(channel))
+        r = h.raw(1, W["attach"], att(swio, 1) + reset(channel))
         assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([0x85]))
-    rd = m.Reader(h.ok(1, 0x02, b"\x01" + SPEED + reset(23)))
-    conn, _, flags, _ = rd.take("HIBI")
+    rd = m.Reader(h.ok(1, W["attach"], att(swio, 1) + reset(23)))
+    conn, _, flags, _ = rd.take("IIBI")
     assert flags & 0x08 and rd.tail().get(0x11) == struct.pack("<I", 0)   # halted at the reset vector: TLV dpc
-    assert h.raw(1, 0x04, struct.pack("<HH", 23, 20)).detail == m.UNKNOWN_OPERATION
-    assert h.raw(1, 0x02, b"\x01" + SPEED + reset(23, 20000)).detail == m.UNSUPPORTED   # hold_ms over max_op_ms
+    h.ok(1, W["detach"], struct.pack("<I", conn))
+    assert h.raw(1, W["attach"], att(swio, 1) + reset(23, 20000)).detail == m.UNSUPPORTED   # hold_ms over max_op_ms
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 23)))   # fixture.gpio takes NRST
-    assert h.raw(1, 0x02, b"\x01" + SPEED + reset(23)).detail == m.UNAVAILABLE
-    assert h.raw(1, 0x02, b"\x01").detail == m.MALFORMED             # no max_speed
+    assert h.raw(1, W["attach"], att(swio, 1) + reset(23)).detail == m.UNAVAILABLE
+    assert h.raw(1, W["attach"], att(swio, 1, speed=0)).detail == m.MALFORMED   # max_speed 0
 
 
-def test_idle_clock_is_rvswd_s_and_a_slot_carries_the_line_settings():
+def test_idle_clock_is_rvswd_s():
     ep, h = bench()
     pair = ep.pairs[1][0]
     idle_low = m.tlv(0x04, b"\x01", critical=True)
-    h.ok(1, 0x02, b"\x01" + SPEED + m.tlv(0x03, struct.pack("<HH", *pair), critical=True) + idle_low)
+    h.ok(1, W["attach"], att(pair, 1) + idle_low)
     assert ep.conns[ep._conn_at(1, pair)].idle_clock == 1
-    assert h.raw(1, 0x02, b"\x01" + SPEED + m.tlv(0x03, struct.pack("<HH", *pair), critical=True)
+    assert h.raw(1, W["attach"], att(ep.pairs[1][1], 1)
                  + m.tlv(0x04, b"\x02", critical=True)).payload == b"\x84"   # a value a later revision may define
-    assert h.raw(1, 0x01, b"\x00" + m.tlv(0x04, b"\x01", critical=True) + m.tlv(0x01, SPEED[3:], critical=True)).succeeded   # scan takes them too
-    ep2, h2 = bench()
-    p2 = ep2.pairs[1][1]
-    h2.ok(6, 0x02, slot_item(0, 1, p2, name="l103", max_speed=1_000_000, idle=1))
-    c = ep2.conns[ep2._conn_at(1, p2)]
-    assert (c.speed, c.idle_clock) == (1_000_000, 1)                 # the probe's own attach uses the slot's settings
+    scan = b"\x01" + struct.pack("<HH", *ep.pairs[1][2])
+    assert h.raw(1, W["scan"], scan + m.tlv(0x04, b"\x01", critical=True)
+                 + m.tlv(0x01, struct.pack("<I", 4_000_000), critical=True)).succeeded   # scan takes them too
     v003 = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
     hv = Host(v003)
     hv.open()
-    assert hv.raw(9, 0x02, slot_item(0, 1, v003.pairs[1][0], idle=1)).detail == m.UNSUPPORTED   # swio has no idle_clock
-    r = hv.raw(1, 0x02, b"\x01" + SPEED + idle_low)
+    r = hv.raw(1, W["attach"], att(v003.pairs[1][0], 1) + idle_low)
     assert r.resolution == m.REJECTED and r.detail == m.UNSUPPORTED  # an unknown critical TLV on swio
 
 
@@ -624,40 +625,38 @@ def pins_probe():
 
 
 def test_a_wire_takes_any_free_pair_the_host_names():
-    """oep-if-debug §1: role_channels pairs; count 0 in swdio / swclk order; a live connection holds its pins."""
+    """oep-if-debug §1: role_channels pairs, named by the host; a live connection holds its pins (never joined)."""
     ep, h = pins_probe()
-    pins = lambda d, c: m.tlv(0x03, struct.pack("<HH", d, c), critical=True)
-    r = m.Reader(h.ok(1, 0x01, b"\x00"))                              # count 0: the first 255 free pairs
+    r = m.Reader(h.ok(1, W["scan"], b"\x02" + struct.pack("<HHHH", 0, 1, 1, 0)))
     tried, count = r.take("BB")
-    assert tried == 255 and count == 1 and r.take("BHHI")[1:3] == (0, 1)
-    skip = lambda n: m.tlv(0x02, struct.pack("<H", n))               # scan's skip is TLV 0x02 (0x01 is max_speed)
-    assert m.Reader(h.ok(1, 0x01, b"\x00" + skip(29 * 28 - 10))).take("B") == 10   # the last ten
-    assert m.Reader(h.ok(1, 0x01, b"\x00" + skip(29 * 28))).take("B") == 0         # the end
-    assert h.raw(1, 0x01, b"\x01" + struct.pack("<HH", 0, 1) + skip(1)).succeeded   # count > 0: skip not looked at (§1)
-    conn = struct.unpack_from("<H", h.ok(1, 0x02, b"\x01" + SPEED + pins(0, 1)))[0]
-    assert h.raw(1, 0x02, b"\x01" + SPEED + pins(1, 2)).detail == m.UNAVAILABLE    # GP1 is the live connection's
+    assert tried == 2 and count == 1 and r.take("BHHI")[1:3] == (0, 1)
+    conn = struct.unpack_from("<I", h.ok(1, W["attach"], att((0, 1), 1)))[0]
+    assert h.raw(1, W["attach"], att((1, 2), 1)).detail == m.UNAVAILABLE    # GP1 is the live connection's
+    assert h.raw(1, W["attach"], att((0, 1), 1)).detail == m.UNAVAILABLE    # its own pair too: no join (§1)
     assert h.raw(h.plan_fn, PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 0))).detail == m.UNAVAILABLE
-    assert m.Reader(h.ok(1, 0x01, b"\x00")).take("B") == 1           # its one seat is taken: the live pair only
-    assert struct.unpack_from("<H", h.ok(1, 0x02, b"\x00" + SPEED))[0] == conn   # no pins: the one live connection
-    assert h.raw(1, 0x01, b"\x01" + struct.pack("<HH", 2, 3)).detail == m.UNAVAILABLE
-    h.ok(1, 0x03, struct.pack("<H", conn) + m.tlv(0x01, b""))       # detach (force): the pins go back
+    assert h.raw(1, W["scan"], b"\x01" + struct.pack("<HH", 0, 1)).detail == m.UNAVAILABLE   # not searched (§1)
+    assert h.raw(1, W["attach"], att((2, 3), 1)).detail == m.UNAVAILABLE    # its one seat is taken: cause 2
+    h.ok(1, W["detach"], struct.pack("<I", conn))                  # detach: the pins go back
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 5)))
-    assert h.raw(1, 0x01, b"\x01" + struct.pack("<HH", 5, 6)).detail == m.UNAVAILABLE   # GP5 is the plan's
-    assert h.raw(1, 0x02, b"\x01" + SPEED + pins(3, 3)).detail == m.UNSUPPORTED         # one channel twice: no such pair
-    assert h.raw(1, 0x02, b"\x01" + SPEED + pins(19, 3)).detail == m.UNSUPPORTED        # not offered (PSRAM CS)
-    assert h.raw(1, 0x02, b"\x01" + SPEED).detail == m.UNAVAILABLE  # no pins, no live connection: the host chooses
-    r = h.raw(1, 0x02, b"\x01" + SPEED + pins(7, 8))                # a free pair nothing answers on
+    assert h.raw(1, W["scan"], b"\x01" + struct.pack("<HH", 5, 6)).detail == m.UNAVAILABLE   # GP5 is the plan's
+    assert h.raw(1, W["attach"], att((3, 3), 1)).detail == m.UNSUPPORTED         # one channel twice: no such pair
+    assert h.raw(1, W["attach"], att((19, 3), 1)).detail == m.UNSUPPORTED        # not offered (PSRAM CS)
+    r = h.raw(1, W["attach"], att((7, 8), 1))                       # a free pair nothing answers on
     assert r.resolution == m.COMPLETED and not r.succeeded and r.payload == bytes([2])   # failed: status line [TLV]
 
 
-def test_the_client_scan_walks_the_whole_count_0_list():
+def test_the_client_scan_walks_every_candidate_pair():
+    """debug §1: the host builds the candidate list (role 1 x role 2, no channel twice) and sends what is left after
+    each answer's tried."""
     from oep_client import host as hh, riscv as target
     ep = endpoint.Endpoint(virtual_bench.rp2350_pins(), Clock())
     hst = hh.Host(lambda b: ep.handle(b, 0))
     hst.open(3000)
-    ep._target(1, (28, 29)).present = True                        # the last pair of the list
+    ep._target(1, (29, 28)).present = True                        # the last pair of the list
     found = target.Wire(hst).scan(max_speed=1_000_000)
-    assert [f.pins for f in found] == [(0, 1), (28, 29)]
+    assert [f.pins for f in found] == [(0, 1), (29, 28)]
+    scans = [r for r in ep.requests if (r.fn, r.op) == (1, W["scan"])]
+    assert len(scans) == 4 and sum(r.payload[0] for r in scans) == 29 * 28   # 255 at most a request
     assert ep.requests[-1].payload.endswith(m.tlv(0x01, struct.pack("<I", 1_000_000), critical=True))
 
 
@@ -665,14 +664,14 @@ def test_dmi_and_run_answers_count_their_values_and_rejects_follow_the_order():
     """oep-if-debug §4: dmi answers done status nvals values; run answers ... nvals values; waits over max_op_ms are
     unsupported, a running hart's read_block is status state, an odd address malformed."""
     ep, h = bench()
-    conn = struct.unpack_from("<H", h.ok(1, 0x02, b"\x00" + SPEED + m.tlv(0x03, struct.pack("<HH", *ep.pairs[1][0]), critical=True)))[0]
+    conn = struct.unpack_from("<I", h.ok(1, W["attach"], att(ep.pairs[1][0])))[0]
     ep.targets[(1, ep.pairs[1][0])].dmi[0x11] = 0x382
-    r = h.ok(2, 0x01, struct.pack("<HH", conn, 2) + bytes([2, 0x11]) + bytes([2, 0x11]))
+    r = h.ok(2, RV["dmi"], struct.pack("<IH", conn, 2) + bytes([2, 0x11]) + bytes([2, 0x11]))
     assert r == struct.pack("<HBH", 2, 0, 2) + struct.pack("<II", 0x382, 0x382)
-    assert h.raw(2, 0x01, struct.pack("<HH", conn, 1) + struct.pack("<BI", 4, 20_000_000)).detail == m.UNSUPPORTED
-    r = h.raw(2, 0x05, struct.pack("<HIH", conn, 0x20000000, 2))   # read_block on a running hart
+    assert h.raw(2, RV["dmi"], struct.pack("<IH", conn, 1) + struct.pack("<BI", 4, 20_000_000)).detail == m.UNSUPPORTED
+    r = h.raw(2, RV["read_block"], struct.pack("<IIH", conn, 0x20000000, 2))   # read_block on a running hart
     assert r.detail == m.FAILED and r.payload == struct.pack("<HB", 0, 5)
-    assert h.raw(2, 0x05, struct.pack("<HIH", conn, 0x20000001, 2)).detail == m.MALFORMED
+    assert h.raw(2, RV["read_block"], struct.pack("<IIH", conn, 0x20000001, 2)).detail == m.MALFORMED
 
 
 @pytest.mark.parametrize("profile", sorted(virtual_bench.PROFILES))
@@ -694,13 +693,14 @@ def test_a_block_past_max_length_is_unsupported_not_malformed():
     """oep-if-debug §4.5 / §6: count x 4 over the declared max_length -> rejected unsupported with payload 0x00 (a
     fixed-part value); an odd address stays malformed (core §4.3 order 5 before 6)."""
     ep, h = bench()
-    conn = struct.unpack_from("<H", h.ok(1, 0x02, b"\x00" + SPEED + m.tlv(0x03, struct.pack("<HH", *ep.pairs[1][0]), critical=True)))[0]
+    conn = struct.unpack_from("<I", h.ok(1, W["attach"], att(ep.pairs[1][0])))[0]
     ep.targets[(1, ep.pairs[1][0])].halted = True
     words = ep.block_max[2] // 4
-    assert h.raw(2, 0x05, struct.pack("<HIH", conn, 0x20000000, words)).succeeded
-    r = h.raw(2, 0x05, struct.pack("<HIH", conn, 0x20000000, words + 1))
+    rb, wb = RV["read_block"], RV["write_block"]
+    assert h.raw(2, rb, struct.pack("<IIH", conn, 0x20000000, words)).succeeded
+    r = h.raw(2, rb, struct.pack("<IIH", conn, 0x20000000, words + 1))
     assert r.detail == m.UNSUPPORTED and r.payload == b"\x00"
-    r = h.raw(2, 0x06, struct.pack("<HIH", conn, 0x20000000, words + 1) + bytes(4 * (words + 1)))
+    r = h.raw(2, wb, struct.pack("<IIH", conn, 0x20000000, words + 1) + bytes(4 * (words + 1)))
     assert r.detail == m.UNSUPPORTED and r.payload == b"\x00"
-    assert h.raw(2, 0x06, struct.pack("<HIH", conn, 0x20000002, words + 1) + bytes(4 * (words + 1))).detail == m.MALFORMED
-    assert h.raw(2, 0x06, struct.pack("<HIH", conn, 0x20000000, words) + bytes(4 * words)).succeeded
+    assert h.raw(2, wb, struct.pack("<IIH", conn, 0x20000002, words + 1) + bytes(4 * (words + 1))).detail == m.MALFORMED
+    assert h.raw(2, wb, struct.pack("<IIH", conn, 0x20000000, words) + bytes(4 * words)).succeeded

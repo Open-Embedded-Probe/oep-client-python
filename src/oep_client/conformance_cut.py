@@ -7,7 +7,7 @@ from .conformance_debug import DebugChecks
 class CutChecks(DebugChecks):
     def prepare(self,sid,halt=False):
         parent,_=self.attach(sid);rid,_=self.console(sid,parent,2)
-        if halt:self.c.success(self.request(5,'halt',sid,struct.pack('<H',parent)))
+        if halt:self.c.success(self.request(5,'halt',sid,struct.pack('<I',parent)))
         return parent,rid
     def failed(self,sid,parent):
         self.a.plan(parent,[2]);return self.dmi(sid,parent,[self.write_reg(4,42)],0,2,[])
@@ -65,7 +65,7 @@ class CutChecks(DebugChecks):
         self.fresh()
         with self.c.holding(3000) as sid:
             parent,rid=self.prepare(sid);self.failed(sid,parent);before=self.a.state()
-            self.refused(self.dmi_request(sid,parent,[self.write_reg(4,99),b'\xff']),'malformed')
+            self.refused(self.dmi_request(sid,parent,[self.write_reg(4,99),b'\xff']),'unsupported',b'\0')
             after=self.a.state();require(after['streak']==before['streak'] and parent in after['connections'] and rid in after['streams'],'rejection decided loss')
     def run(self):
         start=len(self.c.results)

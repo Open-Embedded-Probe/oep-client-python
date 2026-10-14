@@ -43,7 +43,7 @@ def test_arm_checker_detects_independent_faults(fault,case):
             return status,ack,result
         def broken_dispatch(fn,op,payload,tags):
             if fault=='resource_kind' and fn==5:
-                parent=int.from_bytes(payload[:2],'little')
+                parent=int.from_bytes(payload[:4],'little')
                 if parent in e.connections:e.connections[parent]['fn']=3
             limit=e.ep.probe.max_frame
             if fault=='frame_over':e.ep.probe.max_frame=1000
@@ -53,7 +53,7 @@ def test_arm_checker_detects_independent_faults(fault,case):
                 raise
             finally:e.ep.probe.max_frame=limit
             if fn!=5:return value
-            data=bytes(value);outcome=getattr(value,'outcome',0);parent=int.from_bytes(payload[:2],'little')
+            data=bytes(value);outcome=getattr(value,'outcome',0);parent=int.from_bytes(payload[:4],'little')
             if op==16:
                 if fault=='ack':data=data[:3]+b'\x02'+data[4:]
                 if fault=='done':data=b'\0\0'+data[2:]
@@ -63,7 +63,7 @@ def test_arm_checker_detects_independent_faults(fault,case):
                 if fault=='block_stale' and op==17 and len(data)>3:data=data[:3]+b'\0'*(len(data)-3)
                 if fault=='block_select':e.targets[parent]['dp'][8]=0
                 if fault=='block_tar':e.targets[parent]['ap'][4]=0
-                if fault=='empty_bus' and payload[6:8]==b'\0\0':e.bus.append(('empty',))
+                if fault=='empty_bus' and payload[8:10]==b'\0\0':e.bus.append(('empty',))
             return Completed(data,outcome)
         e.packet=broken_packet;e.dispatch_request=broken_dispatch
         if fault=='critical_touch':

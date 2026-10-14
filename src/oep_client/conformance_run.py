@@ -11,7 +11,7 @@ class RunChecks(ResetChecks):
     outputs=(0x100b,0x100a,0x100b,0x100c)
     def run_request(self,sid,parent,pc=0x2000,timeout=1,inputs=None,outputs=None,extra=b''):
         inputs=self.inputs if inputs is None else inputs;outputs=self.outputs if outputs is None else outputs
-        return self.request(5,'run',sid,struct.pack('<HIIB',parent,pc,timeout,len(inputs))+b''.join(struct.pack('<HI',*row) for row in inputs)+bytes((len(outputs),))+b''.join(struct.pack('<H',reg) for reg in outputs)+extra)
+        return self.request(5,'run',sid,struct.pack('<IIIB',parent,pc,timeout,len(inputs))+b''.join(struct.pack('<HI',*row) for row in inputs)+bytes((len(outputs),))+b''.join(struct.pack('<H',reg) for reg in outputs)+extra)
     def loader(self,sid,parent,mode='stopped',pc=0x2000,after_pc=0x2004,timeout=1,inputs=None,outputs=None):
         inputs=self.inputs if inputs is None else inputs;outputs=self.outputs if outputs is None else outputs
         self.a.run_behavior(mode,after_pc);before=self.a.state();request=self.run_request(sid,parent,pc,timeout,inputs,outputs);frame=self.c.exchange(request)
@@ -66,7 +66,7 @@ class RunChecks(ResetChecks):
             for field in ('targets','streams','mailboxes','protocols'):
                 key=other if field=='targets' else other_rid;require(after[field][key]==before[field][key],'run changed other connection')
             polls=after['arbitration'][len(before['arbitration']):];require(polls and all(not row['events'] for row in polls),'console accessed run scratch')
-            if mode!='not-halted':self.c.success(self.request(5,'resume',sid,struct.pack('<H',parent)))
+            if mode!='not-halted':self.c.success(self.request(5,'resume',sid,struct.pack('<I',parent)))
             self.a.poll(rid);require(self.a.state()['streams'][rid]['data']==b'wire','console did not resume after run')
     def replay_run(self,mode):
         self.fresh()
@@ -81,8 +81,8 @@ class RunChecks(ResetChecks):
             if kind=='TIMEOUT':self.refused(self.run_request(sid,parent,timeout=2),'unsupported',b'\0')
             elif kind=='CRITICAL':self.refused(self.run_request(sid,parent,extra=self.tlv(254,b'x')),'unsupported',b'\xfe')
             elif kind=='TLV':self.refused(self.run_request(sid,parent,extra=b'\x7f\x05\0x'),'malformed')
-            elif kind=='INPUT-COUNT':self.refused(self.request(5,'run',sid,struct.pack('<HIIBHI',parent,0x2000,1,2,0x100a,1)),'malformed')
-            elif kind=='OUTPUT-COUNT':self.refused(self.request(5,'run',sid,struct.pack('<HIIBBH',parent,0x2000,1,0,2,0x100a)),'malformed')
+            elif kind=='INPUT-COUNT':self.refused(self.request(5,'run',sid,struct.pack('<IIIBHI',parent,0x2000,1,2,0x100a,1)),'malformed')
+            elif kind=='OUTPUT-COUNT':self.refused(self.request(5,'run',sid,struct.pack('<IIIBBH',parent,0x2000,1,0,2,0x100a)),'malformed')
             elif kind=='TRUNCATED':self.refused(self.request(5,'run',sid,b'\x01\0'),'malformed')
             elif kind=='FOREIGN':self.refused(self.request(5,'run',sid%0xffffffff+1,b'\xfe'),'locked')
             elif kind=='RESOURCE':

@@ -12,14 +12,14 @@ class Resets(Steps):
     def describe(self,fn):return (tlv(7,b'\x10\xbf'),tlv(3,struct.pack('<H',8))) if fn==5 else super().describe(fn)
     def dispatch_request(self,fn,op,payload,tags):
         if fn!=5 or op!=19:return super().dispatch_request(fn,op,payload,tags)
-        parent,mode=struct.unpack('<HB',payload);self.resource(parent,'connection')
+        parent,mode=struct.unpack('<IB',payload);self.resource(parent,'connection')
         if self.connections[parent]['fn']==3:raise Reject(4,tlv(1,b'\x06'))
-        if mode not in (0,1,2):raise Reject(11,b'\0')
+        if mode not in (0,2):raise Reject(11,b'\0')                   # debug §4.3: modes 0 and 2 only
         target=self.targets[parent];result=self.reset_result;related=[rid for rid,(p,_) in self.streams.items() if p==parent]
         for rid in related:self.mailboxes[rid]['debug_busy']=True
         control=target['registers'].get(0x10,0)&~(HARTSEL|0x80000002)
         target['haltreq']=mode==2;control|=0x80000000 if mode==2 else 0
-        status=0;flags=0;pc=0
+        status=0;flags=0;pc=0;cleaned=True
         try:
             self.writereg(parent,0x10,control|2);self.access.append(('ndmreset-assert',parent))
             for rid in related:self.streams[rid][1].mark(1,1)
@@ -38,34 +38,28 @@ class Resets(Steps):
                     if rid in self.protocols:self.protocols[rid]=initial()
                 if result=='state-timeout':status=4;target['halted']=mode!=2
                 elif result=='fault':status=3
-                elif result=='verify-timeout':status=4;flags=int(mode==1)
                 else:
                     flags=1;pc=target['pc'] if mode==2 else 0
-                    if mode==1:
-                        saved={reg:target['registers'].get(reg,0) for reg in (4,5)};dcsr=target['dcsr'];self.access.append(('reset-verify-before',parent,dcsr,dict(saved)))
-                        target['halted']=True;target['haltreq']=True;target['dcsr']|=4
-                        self.writereg(parent,5,0x7b0);self.writereg(parent,4,target['dcsr']);self.interleave(parent)
-                        self.access.append(('reset-verify-resume',parent));target['pc']=0x2004;target['dcsr']=dcsr
-                        for reg in (5,4):self.writereg(parent,reg,saved[reg]);self.restore.append(('reset-restore',parent,reg,saved[reg]))
-                        target['halted']=result=='verified-halted';target['haltreq']=False;flags=2 if result=='verified-halted' else 3;pc=target['pc']
+                    if result=='cleanup-line':status=2;cleaned=False   # haltreq could not be lowered
         finally:
-            if mode!=2:target['haltreq']=False
+            if cleaned:target['haltreq']=False                        # lowered in both modes; mode 2 stays halted
             self.writereg(parent,0x10,control if target['haltreq'] else control&~0x80000000)
             for rid in related:self.mailboxes[rid]['debug_busy']=False
-        good=bool(flags&(2 if mode==1 else 1))
-        return Completed(struct.pack('<BBI',status,flags,pc)+tlv(127,b'x'),int(not good))
+        answer=Completed(struct.pack('<BBI',status,flags,pc)+tlv(127,b'x'),int(bool(status)))
+        if not cleaned:self.close_connection(parent)                   # after the answer (debug §4)
+        return answer
 
 
 class ResetModel(StepModel):
     def install(self):self.extension=Resets(self.ep);self.ep.current_core=Core(self.ep,self.extension)
     def handle(self,request):
         if len(request)<6 or struct.unpack_from('<H',request,3)[0]!=5:return super().handle(request)
-        e=self.extension;fixed,free=e.fixed,e.free;e.fixed={16:fixed_dmi(request[10:]),17:2,18:2,19:3,20:8,21:8,23:2};e.free=set()
-        if request[5]==21 and len(request)>=18:e.fixed[21]=8+4*struct.unpack_from('<H',request,16)[0]
+        e=self.extension;fixed,free=e.fixed,e.free;e.fixed={16:fixed_dmi(request[10:]),17:4,18:4,19:5,20:10,21:10,23:4};e.free=set()
+        if request[5]==21 and len(request)>=20:e.fixed[21]=10+4*struct.unpack_from('<H',request,18)[0]
         try:return self.ep.handle(request)
         finally:e.fixed,e.free=fixed,free
     def reset_state(self):
         state=self.step_state();state['reset_result']=self.extension.reset_result;return state
     def reset_behavior(self,result):
-        if result not in ('ok','state-timeout','verify-timeout','dm-recover','dm-line','fault','verified-halted'):raise ValueError('explicit logical reset result required')
+        if result not in ('ok','state-timeout','dm-recover','dm-line','fault','cleanup-line'):raise ValueError('explicit logical reset result required')
         self.extension.reset_result=result

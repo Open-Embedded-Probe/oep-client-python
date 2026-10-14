@@ -6,7 +6,7 @@ from .conformance_dmseq import DmseqChecks, target_frame, reply_word
 
 class DebugChecks(DmseqChecks):
     def dmi_request(self,sid,parent,steps,extra=b''):
-        return self.request(5,'dmi',sid,struct.pack('<HH',parent,len(steps))+b''.join(steps)+extra)
+        return self.request(5,'dmi',sid,struct.pack('<IH',parent,len(steps))+b''.join(steps)+extra)
     def dmi(self,sid,parent,steps,done,status,values):
         req=self.dmi_request(sid,parent,steps);frame=self.c.exchange(req)
         require(len(frame)>=10 and frame[3:5]==bytes((1,0 if status==0 else (2 if done else 1))),'dmi outcome/header')
@@ -49,7 +49,7 @@ class DebugChecks(DmseqChecks):
         self.fresh()
         with self.c.holding(3000) as sid:
             parent,_=self.attach(sid);reason='malformed';steps=[self.write_reg(4,99)];extra=b''
-            if kind=='UNKNOWN-LATE':steps.append(b'\xff')
+            if kind=='UNKNOWN-LATE':steps.append(b'\xff');reason='unsupported'      # an unknown kind: 0x00 (debug §4.1)
             elif kind=='TRUNCATED':steps.append(b'\x01\x05x')
             elif kind=='TIME-SUM':steps+=[b'\x04'+struct.pack('<I',600),self.poll_step(5,4,0,0,401)];reason='unsupported'
             elif kind=='CRITICAL':extra=self.tlv(254,b'x');reason='unsupported'
@@ -82,7 +82,7 @@ class DebugChecks(DmseqChecks):
         with self.c.holding(3000) as sid:
             parent,_=self.attach(sid);rid,_=self.console(sid,parent,2);self.a.frame(rid,*target_frame(syn=True,data=b'x'))
             for name in ('halt','halt','resume'):
-                value=self.c.success(self.request(5,name,sid,struct.pack('<H',parent)));require(value[:1]==b'\0','halt/resume status');tlvs(value[1:])
+                value=self.c.success(self.request(5,name,sid,struct.pack('<I',parent)));require(value[:1]==b'\0','halt/resume status');tlvs(value[1:])
                 before=self.a.state();self.a.poll(rid);after=self.a.state()
                 if name=='halt':require(after['mailboxes'][rid]['events']==[('read',0x11,0x300)] and after['streams'][rid]==before['streams'][rid],'console touched mailbox while halted')
             after=self.a.state();require(after['streams'][rid]['data']==b'x' and not after['targets'][parent]['haltreq'],'resume failed to clear haltreq/restart console')
@@ -107,9 +107,9 @@ class DebugChecks(DmseqChecks):
         self.fresh()
         with self.c.holding(3000) as sid:
             parent,_=self.attach(sid)
-            if resume:self.c.success(self.request(5,'halt',sid,struct.pack('<H',parent)))
+            if resume:self.c.success(self.request(5,'halt',sid,struct.pack('<I',parent)))
             self.a.hart_failure(True);name='resume' if resume else 'halt';before=self.a.state()
-            frame=self.c.exchange(self.request(5,name,sid,struct.pack('<H',parent)))
+            frame=self.c.exchange(self.request(5,name,sid,struct.pack('<I',parent)))
             require(frame[3:6]==bytes((1,1,5 if resume else 4)),'halt/resume failure status/outcome');tlvs(frame[6:])
             after=self.a.state();require(not after['targets'][parent]['haltreq'],'failed halt/resume left haltreq set')
             require({k:v for k,v in after['targets'][parent]['registers'].items() if k!=0x10}=={k:v for k,v in before['targets'][parent]['registers'].items() if k!=0x10},'failed halt/resume changed registers other than DMCONTROL')
@@ -120,13 +120,13 @@ class DebugChecks(DmseqChecks):
         with self.c.holding(3000) as sid:
             parent,_=self.attach(sid);other,_=self.attach(sid,pair=self.a.pairs[1][1])
             mask=(0x3ff<<6)|(0x3ff<<16);control=mask|0x80000001
-            if resume or already:self.c.success(self.request(5,'halt',sid,struct.pack('<H',parent)))
+            if resume or already:self.c.success(self.request(5,'halt',sid,struct.pack('<I',parent)))
             self.a.registers(parent,{0x10:control});self.a.registers(other,{0x10:control});before=self.a.state()
             if raw:
                 self.dmi(sid,parent,[self.write_reg(0x10,control)],1,0,[])
                 require(self.a.state()['targets'][parent]['registers'][0x10]==control,'raw host DMI hartsel was silently cleared')
             else:
-                self.a.hart_failure(failed);frame=self.c.exchange(self.request(5,'resume' if resume else 'halt',sid,struct.pack('<H',parent)))
+                self.a.hart_failure(failed);frame=self.c.exchange(self.request(5,'resume' if resume else 'halt',sid,struct.pack('<I',parent)))
                 require(len(frame)>=6 and frame[3:5]==bytes((1,1 if failed else 0)),'high-level hart operation resolution/outcome')
                 value=frame[5:];require(value[0]==((5 if resume else 4) if failed else 0),'high-level hart operation status');tlvs(value[1:])
                 state=self.a.state();actual=state['targets'][parent]['registers'][0x10]

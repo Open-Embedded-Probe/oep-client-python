@@ -374,7 +374,7 @@ def p4_x035() -> VirtualProbe:
               _transports([(TRANSPORT["usb_serial_jtag"], 0xFF), (TRANSPORT["vendor_bulk"], 0),
                            (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)])
               + (catalog.text(CORE_CHIP, "esp32p4 v1.0"),)),
-        Offered(1, 0, "oep.wire.rvswd", (
+        Offered(1, 0, "oep.wire.rvswd", (catalog.u32(FEATURES, ATTACH_HALT),
             catalog.channel_group(1, [(1, 2), (2, 54)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000),
             catalog.u8(MAX_CONNECTIONS, 1))),
         Offered(2, 0, "oep.target.riscv-dm", (catalog.u16(MAX_LENGTH, block_max_length(1024)),)),   # every op
@@ -422,7 +422,7 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
     return VirtualProbe("esp32-v003" if max_frame == 512 else f"esp32-v003-{max_frame}", max_frame, [
         _core("3.0.0", "esp32", "fafe00000003", 40, {16: "SWIO", 23: "NRST", 22: "DUT TX", 21: "DUT RX"},
               _transports([(TRANSPORT["uart_bridge"], 0xFF)])),
-        Offered(1, 0, "oep.wire.swio", (catalog.channel_group(1, [(1, 16)]), catalog.role_channels(3, [23]),
+        Offered(1, 0, "oep.wire.swio", (catalog.u32(FEATURES, ATTACH_HALT), catalog.channel_group(1, [(1, 16)]), catalog.role_channels(3, [23]),
                                         catalog.u8(MAX_CONNECTIONS, 1))),
         Offered(2, 0, "oep.target.riscv-dm", ops_of("oep.target.riscv-dm", "step") + (    # no step
             catalog.u16(MAX_LENGTH, block_max_length(max_frame)),)),
@@ -465,7 +465,7 @@ def p4_bench() -> VirtualProbe:
               {2: "A SWDIO", 3: "A SWCLK", 4: "B SWDIO", 5: "B SWCLK", 6: "C SWDIO", 7: "C SWCLK"},
               _transports([(TRANSPORT["usb_serial_jtag"], 0xFF), (TRANSPORT["vendor_bulk"], 0),
                            (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)])),
-        Offered(1, 0, "oep.wire.rvswd", (
+        Offered(1, 0, "oep.wire.rvswd", (catalog.u32(FEATURES, ATTACH_HALT),
             catalog.channel_group(1, [(1, 2), (2, 3)]), catalog.channel_group(2, [(1, 4), (2, 5)]),
             catalog.channel_group(3, [(1, 6), (2, 7)]), catalog.u32(MAX_CLOCK_HZ, 5_000_000),
             catalog.u8(MAX_CONNECTIONS, 2))),
@@ -489,7 +489,7 @@ def rp2350_pins() -> VirtualProbe:
     pins = [p for p in range(30) if p not in own]
     return VirtualProbe("rp2350-pins", 1024, [
         _core("3.0.0", "rp2350", "e66138935f2b1f2c", 30, {}, _transports([(TRANSPORT["usb_cdc"], 0)])),
-        Offered(1, 0, "oep.wire.rvswd", _roles({1: pins, 2: pins, 3: pins}) + (
+        Offered(1, 0, "oep.wire.rvswd", _roles({1: pins, 2: pins, 3: pins}) + (catalog.u32(FEATURES, ATTACH_HALT),
             catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(MAX_CONNECTIONS, 1))),
         Offered(2, 0, "oep.target.riscv-dm", (catalog.u16(MAX_LENGTH, block_max_length(1024)),)),
         _console(3),
@@ -545,6 +545,7 @@ def with_stand_in(probe: VirtualProbe) -> VirtualProbe:
     return _again(probe, list(probe.offered) + [Offered(fn, 0, STAND_IN)])
 
 
+ATTACH_HALT = reg.WIRE_RVSWD.enum["features"]["attach_halt"]   # attach method 1 (debug §3)
 I2C_INTERNAL_PULLUPS = reg.FIXTURE_I2C_TARGET.enum["features"]["internal_pullups"]
 
 

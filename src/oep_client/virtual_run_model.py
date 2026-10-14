@@ -8,8 +8,8 @@ from .virtual_core import Core, Completed, Reject, tlv
 
 
 def fixed_run(payload):
-    if len(payload)<11:return 11
-    cursor=11+6*payload[10]
+    if len(payload)<13:return 13
+    cursor=13+6*payload[12]
     if cursor>=len(payload):return cursor+1
     return cursor+1+2*payload[cursor]
 
@@ -21,9 +21,9 @@ class Runs(Resets):
     def dispatch_request(self,fn,op,payload,tags):
         if fn!=5 or op!=22:
             value=super().dispatch_request(fn,op,payload,tags)
-            if fn<=3 and op==17 and len(value)>=11 and getattr(value,'outcome',0)==0:self.programs[struct.unpack_from('<H',value)[0]]={'memory':{},'gprs':{}}
+            if fn<=3 and op==17 and len(value)>=13 and getattr(value,'outcome',0)==0:self.programs[struct.unpack_from('<I',value)[0]]={'memory':{},'gprs':{}}
             return value
-        parent,pc,timeout,count=struct.unpack_from('<HIIB',payload);cursor=11;inputs=[]
+        parent,pc,timeout,count=struct.unpack_from('<IIIB',payload);cursor=13;inputs=[]
         for _ in range(count):inputs.append(struct.unpack_from('<HI',payload,cursor));cursor+=6
         nout=payload[cursor];cursor+=1;outputs=[struct.unpack_from('<H',payload,cursor+2*i)[0] for i in range(nout)]
         self.resource(parent,'connection')
@@ -66,8 +66,8 @@ class RunModel(ResetModel):
     def install(self):self.extension=Runs(self.ep);self.ep.current_core=Core(self.ep,self.extension)
     def handle(self,request):
         if len(request)<6 or struct.unpack_from('<H',request,3)[0]!=5:return super().handle(request)
-        e=self.extension;fixed,free=e.fixed,e.free;e.fixed={16:fixed_dmi(request[10:]),17:2,18:2,19:3,20:8,21:8,22:fixed_run(request[10:]),23:2};e.free=set()
-        if request[5]==21 and len(request)>=18:e.fixed[21]=8+4*struct.unpack_from('<H',request,16)[0]
+        e=self.extension;fixed,free=e.fixed,e.free;e.fixed={16:fixed_dmi(request[10:]),17:4,18:4,19:5,20:10,21:10,22:fixed_run(request[10:]),23:4};e.free=set()
+        if request[5]==21 and len(request)>=20:e.fixed[21]=10+4*struct.unpack_from('<H',request,18)[0]
         try:return self.ep.handle(request)
         finally:e.fixed,e.free=fixed,free
     def run_state(self):

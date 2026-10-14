@@ -5,7 +5,7 @@ list result  : total(u16) count(u8) count x entry [TLV tail]  fn 0 (the core) ha
 list entry   : fn(u16) instance(u16) revision(u8) name_len(u8) name   6 bytes and the name
 describe     : request fn(u16) first(u16); result more(u8) then TLV bytes (tag u8, len u16, value; tag bit 7 =
                critical). more = 1: TLVs remain after this page, ask again from first + count
-ops          : the common describe tag 0x09 every fn carries, base(u8) bitmap: bit i set = op base + i is offered
+ops          : the common describe tag 0x07 every fn carries, base(u8) bitmap: bit i set = op base + i is offered
                (core §1.2, §7.4) - the one declaration of an fn's ops, the optional ones included. A value is base and
                a bitmap of 1 byte or more, base + 8 x bitmap bytes <= 256 (`check_ops`); one set may have several
                values. This host does not use an fn whose ops break that (fn 0's: not the probe)
@@ -20,17 +20,19 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 
-from . import message as m
+from . import message as m, registry as reg
 from .message import Reader, split_tlvs
 
 # Common describe tags.
-ROLE_CHANNELS = 0x01     # role(u8) base(u16) bitmap(bytes): channels usable for that role
-MAX_CLOCK_HZ = 0x02      # u32
-MAX_LENGTH = 0x03        # u16
-MIN_CLOCK_HZ = 0x05      # u32
-FEATURES = 0x06          # u32, bits defined by the interface
-CHANNEL_GROUP = 0x08     # group(u8) n(u8) then n x (role(u8), channel(u16)): a fixed pin set
-OPS = m.TAG_OPS          # base(u8) bitmap: the ops this fn offers (core §1.2, §7.4)
+_COMMON = reg.DESCRIBE_COMMON
+ROLE_CHANNELS = _COMMON["role_channels"]   # role(u8) base(u16) bitmap(bytes): channels usable for that role
+MAX_CLOCK_HZ = _COMMON["max_clock_hz"]     # u32
+MAX_LENGTH = _COMMON["max_length"]         # u16
+MIN_CLOCK_HZ = _COMMON["min_clock_hz"]     # u32
+FEATURES = _COMMON["features"]             # u32, bits defined by the interface
+CHANNEL_GROUP = _COMMON["channel_group"]   # group(u8) n(u8) then n x (role(u8), channel(u16)): a fixed pin set
+OPS = _COMMON["ops"]                       # base(u8) bitmap: the ops this fn offers (core §1.2, §7.4)
+assert OPS == m.TAG_OPS
 CRITICAL = 0x80
 INTERFACE_TAG_FIRST = 0x40
 

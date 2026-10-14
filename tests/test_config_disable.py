@@ -77,16 +77,16 @@ def test_an_attach_reset_on_a_disabled_channel():
     assert _cause(e) == ("held_by_settings", [23])
 
 
-def test_scan_refuses_a_named_pair_and_count_0_skips_it():
+def test_scan_refuses_a_named_pair_with_a_disabled_channel():
+    """debug §1: a disabled pin in any candidate refuses the whole scan (cause 5); the host leaves it out."""
     ep, hst = open_bench()
     config.ProbeConfig(hst).set([config.Disable(channel=4)])
     wire = riscv.Wire(hst, "oep.wire.rvswd")
-    with pytest.raises(h.Rejected) as e:
-        wire.scan([(4, 5)])
-    assert _cause(e) == ("held_by_settings", [4])
-    r = hst.call(1, 0x01, b"\x00")                                            # count 0: the list without (4, 5)
-    assert r.payload[0] == 2
-    assert {f.pins for f in wire.scan()} == {(2, 3), (6, 7)}
+    for pairs in ([(4, 5)], None):                                              # None: every candidate pair
+        with pytest.raises(h.Rejected) as e:
+            wire.scan(pairs)
+        assert _cause(e) == ("held_by_settings", [4])
+    assert {f.pins for f in wire.scan([(2, 3), (6, 7)])} == {(2, 3), (6, 7)}
 
 
 def test_gpio_set_and_read_on_a_disabled_channel():

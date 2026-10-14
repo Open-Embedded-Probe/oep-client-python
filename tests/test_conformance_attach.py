@@ -10,7 +10,7 @@ from test_conformance import REG
 
 def setup():
     reg=copy.deepcopy(REG);reg['interface']=copy.deepcopy(SPECS)
-    for row in reg['interface'][:3]:row['tlv']['attach']={'max_speed':1,'pins':3}
+    for row in reg['interface'][:3]:row['tlv']['attach']={'reset':5}
     model=AttachModel(lambda:0,boot_id=17);c=Checks(model.handle,reg,'virtual-resource-1')
     return model,c,SampleAttachAdapter(model)
 
@@ -27,14 +27,15 @@ def test_invalid_fixture_or_registry_blocks_before_wire(invalid):
     _,c,a=setup()
     if invalid=='scope':a.reset_scope='physical'
     elif invalid=='mechanisms':a.mechanisms=[0,1,2]
-    else:c.reg['interface'][0]['tlv']['attach']['pins']=7
+    else:c.reg['interface'][0]['tlv']['attach']['reset']=7
     r=AttachChecks(c,a).run()
     assert r['checks'][0]['status']=='failed' and not c.trace
     assert all(row['status']=='blocked' for row in r['checks'][1:])
 
 
-@pytest.mark.parametrize('defect,case',[('missing_required','WIRE-MISSING-SPEED'),('critical_ignored','WIRE-TLV'),
-    ('noncritical_rejected','WIRE-UNMARKED'),('raw_tag_lost','WIRE-LOW-SPEED'),('last_wins','WIRE-FIRST-WINS'),
+@pytest.mark.parametrize('defect,case',[('zero_speed_taken','WIRE-ZERO-SPEED'),('critical_ignored','WIRE-TLV'),
+    ('noncritical_rejected','WIRE-UNMARKED'),('raw_tag_lost','WIRE-TLV'),('last_wins','WIRE-FIRST-WINS'),
+    ('later_copy_unchecked','WIRE-MALFORMED'),
     ('refusal_touches','WIRE-PINS'),('console_flags','CONSOLE-RESOURCE'),('arm_console','CONSOLE-RESOURCE'),
     ('duplicate_stream','CONSOLE-DUPLICATE'),('speed_exceeds','WIRE-BUSY'),('replay_executes','WIRE-REPLAY')])
 def test_attach_and_console_mutants_fail(defect,case):
@@ -44,14 +45,24 @@ def test_attach_and_console_mutants_fail(defect,case):
         def bad_tags(fn,op,data):
             if defect=='critical_ignored':data=data.replace(b'\xfe\x01\0x',b'\x7e\x01\0x')
             values=parse(fn,op,data)
-            if defect=='noncritical_rejected' and 1 in values and values[1][0]==1:
+            if defect=='noncritical_rejected' and 5 in values and values[5][0]==5:
                 from oep_client.virtual_core import Reject
-                raise Reject(11,b'\x01')
-            if defect=='raw_tag_lost':values={tag:(raw&127,value) for tag,(raw,value) in values.items()}
-            if defect=='last_wins' and fn==1 and op==17 and b'\x01\x04\0\xe7\x03\0\0' in data:values[1]=(1,b'\xe7\x03\0\0')
+                raise Reject(11,b'\x05')
+            if defect=='last_wins' and fn==1 and op==17 and b'\x85\x04\0\x08\0\x14\0' in data:values[5]=(133,b'\x08\0\x14\0')
             return values
+        def raw_lost(fn,op,data):
+            from oep_client.virtual_core import Reject
+            try:return bad_tags(fn,op,data)
+            except Reject as r:
+                if defect=='raw_tag_lost' and r.payload[:1] in (b'\x05',b'\x85'):raise Reject(r.reason if hasattr(r,'reason') else 11,bytes((r.payload[0]&127,)))
+                raise
+        def unchecked(fn,op,data):
+            if defect=='later_copy_unchecked' and fn<=3 and op==17:
+                first=data.find(b'\x85\x04\0')
+                if first>=0 and data[first+7:first+10]==b'\x85\x01\0':data=data[:first+7]
+            return raw_lost(fn,op,data)
         def bad_dispatch(fn,op,payload,tags):
-            if defect=='missing_required' and fn<=3 and op==17:tags={1:(129,b'\xd0\x07\0\0'),3:(131,b'\0\0\x01\0'),**tags}
+            if defect=='zero_speed_taken' and fn<=3 and op==17 and payload[5:9]==b'\0'*4:payload=payload[:5]+b'\xd0\x07\0\0'+payload[9:]
             if defect=='arm_console' and fn==4 and op==16:
                 parent=int.from_bytes(payload[:2],'little')
                 if parent in e.connections and e.connections[parent]['fn']==3:e.connections[parent]['fn']=1
@@ -64,9 +75,9 @@ def test_attach_and_console_mutants_fail(defect,case):
                 if defect=='refusal_touches':e.touch.append(('refused',fn))
                 raise
             if defect=='console_flags' and fn==4 and op==16:value=value[:2]+b'\x01'+value[3:]
-            if defect=='speed_exceeds' and fn<=3 and op==17 and not getattr(value,'outcome',0):value=value[:7]+b'\xff\xff\xff\x7f'+value[11:]
+            if defect=='speed_exceeds' and fn<=3 and op==17 and not getattr(value,'outcome',0):value=value[:9]+b'\xff\xff\xff\x7f'+value[13:]
             return value
-        e.request_tags=bad_tags;e.dispatch_request=bad_dispatch
+        e.request_tags=unchecked;e.dispatch_request=bad_dispatch
         if defect=='replay_executes':
             core=model.ep.current_core;handle=core.handle
             def replay(req,route,**kwargs):
@@ -89,7 +100,7 @@ def test_extension_tail_hook_is_after_session_and_replay_checks():
     with c.holding(3000) as sid:
         foreign=sid%0xffffffff+1
         c.rejected(c.request(17,b'\0\xfe',fn=1,session=foreign),'locked');assert not calls
-        req=c.request(17,b'\0\x81\x04\0\xd0\x07\0\0\x83\x04\0\0\0\x01\0',fn=1,session=sid)
+        req=c.request(17,b'\0\0\0\x01\0\xd0\x07\0\0',fn=1,session=sid)
         frame=c.exchange(req);assert frame[3:5]==b'\x01\0'
         assert c.exchange(req)==frame and calls==[(1,17)]
 

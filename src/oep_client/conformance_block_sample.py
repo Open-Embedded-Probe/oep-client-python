@@ -9,3 +9,4 @@ class SampleBlockAdapter(SampleDebugAdapter):
     def memory(self,parent,values):return self.call('block_memory',parent,values)
     def scratch(self,parent,values):return self.call('block_scratch',parent,values)
     def block_failure(self,index,status=2):return self.call('block_failure',index,status)
+    def restore_failure(self,value):return self.call('block_restore_failure',value)

@@ -27,7 +27,7 @@ class Dependencies(Resources):
     def describe(self, fn):return (tlv(7,b'\x10\x0f' if fn==1 else b'\x10\xff'),)
 
     def allocate(self):
-        if self.next_id>65535 or len(self.connections)+len(self.streams)>=8:raise Reject(4,tlv(1,b'\x02'))
+        if self.next_id>0xFFFFFFFF or len(self.connections)+len(self.streams)>=8:raise Reject(4,tlv(1,b'\x02'))
         rid=self.next_id;self.next_id+=1;return rid
 
     def resource(self, rid, kind):

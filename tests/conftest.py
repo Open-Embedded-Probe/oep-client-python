@@ -48,6 +48,22 @@ PENDING_FOLLOW = {
         "probe.config: bind/slot raw console bytes on the port are gone; a serial transport is OEP frames only (transports §4)",
     "tests/test_request_tails.py::test_a_tag_sent_twice_uses_the_first":
         "fixture uart: a later copy of a known TLV is checked for its value too (core §2.3)",
+    "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[rvswd ": "debug: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[riscv-dm ": "debug: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[arm-adi ": "debug: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[console ": "console: its connections are made by the current attach (u32); follows in the console stage",
+    "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[rvswd ": "debug: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[riscv-dm ": "debug: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[arm-adi ": "debug: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[console ": "console: its connections are made by the current attach (u32); follows in the console stage",
+    "tests/test_virtual_bench_spec.py::test_at_boot_slots_attach_and_say_so_without_the_lock":
+        "probe.config: slots are gone (connections are session-owned, debug §1, common §2)",
+    "tests/test_virtual_bench_spec.py::test_the_seat_rule_closes_the_oldest_slot_only_connection":
+        "probe.config: slots are gone; attach never closes a connection to make room (debug §1)",
+    "tests/test_virtual_bench_spec.py::test_a_closed_console_stays_readable_and_the_same_place_opens_it_again_under_its_number":
+        "console: follows in the console stage (u32 ids, no reopen under the same number)",
+    "tests/test_no_resume.py::test_a_slots_connection_outlives_every_session_and_an_attach_returns_it":
+        "probe.config: slots are gone; an attach never joins a connection (debug §1)",
 }
 
 

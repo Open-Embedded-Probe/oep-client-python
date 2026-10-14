@@ -11,10 +11,10 @@ class Steps(Blocks):
     def dispatch_request(self,fn,op,payload,tags):
         if fn!=5 or op!=23:
             value=super().dispatch_request(fn,op,payload,tags)
-            if fn<=3 and op==17 and len(value)>=11 and getattr(value,'outcome',0)==0:
-                parent=struct.unpack_from('<H',value)[0];self.targets[parent].update(pc=0x1000,dcsr=3)
+            if fn<=3 and op==17 and len(value)>=13 and getattr(value,'outcome',0)==0:
+                parent=struct.unpack_from('<I',value)[0];self.targets[parent].update(pc=0x1000,dcsr=3)
             return value
-        parent=struct.unpack('<H',payload)[0];self.resource(parent,'connection')
+        parent=struct.unpack('<I',payload)[0];self.resource(parent,'connection')
         if self.connections[parent]['fn']==3:raise Reject(4,tlv(1,b'\x06'))
         target=self.targets[parent];before=target['pc'];mode=self.step_mode
         saved={reg:target['registers'].get(reg,0) for reg in (4,5)}
@@ -36,7 +36,9 @@ class Steps(Blocks):
             target['haltreq']=False;self.writereg(parent,0x10,target['registers'].get(0x10,0)&~(HARTSEL|0x80000000))
             for rid in related:self.mailboxes[rid]['debug_busy']=False
         result=struct.pack('<BBII',status,int(before!=target['pc']) if not status else 0,before if not status else 0,target['pc'] if not status else 0)
-        if mode=='running':result+=tlv(1,b'')
+        if mode=='running':
+            # step_left: the cleanup could not finish - the answer, then the connection and its streams close (debug §4.2)
+            result+=tlv(1,b'');answer=Completed(result+tlv(127,b'x'),1);self.close_connection(parent);return answer
         return Completed(result+tlv(127,b'x'),int(bool(status)))
 
 
@@ -44,8 +46,8 @@ class StepModel(BlockModel):
     def install(self):self.extension=Steps(self.ep);self.ep.current_core=Core(self.ep,self.extension)
     def handle(self,request):
         if len(request)<6 or struct.unpack_from('<H',request,3)[0]!=5:return super().handle(request)
-        e=self.extension;fixed,free=e.fixed,e.free;e.fixed={16:fixed_dmi(request[10:]),17:2,18:2,20:8,21:8,23:2};e.free=set()
-        if request[5]==21 and len(request)>=18:e.fixed[21]=8+4*struct.unpack_from('<H',request,16)[0]
+        e=self.extension;fixed,free=e.fixed,e.free;e.fixed={16:fixed_dmi(request[10:]),17:4,18:4,20:10,21:10,23:4};e.free=set()
+        if request[5]==21 and len(request)>=20:e.fixed[21]=10+4*struct.unpack_from('<H',request,18)[0]
         try:return self.ep.handle(request)
         finally:e.fixed,e.free=fixed,free
     def step_state(self):

@@ -319,12 +319,14 @@ def test_an_unknown_answer_tlv_is_skipped_by_the_host(case):
 
 
 # ---- per-op vectors (ops.json) of the interfaces that follow the current spec --------------------------------------
-from oep_client import config, core, fixture, virtual_bench_capture
+from oep_client import config, core, fixture, riscv, virtual_bench_capture
 from test_vectors import vector_probe                                   # the vectors' fn numbers on the virtual bench
 
 S = 0x11223344                                                          # ops.json about: the lock holder's id
 FOLLOWED = {"oep.probe.plan", "oep.probe.restart", "oep.probe.link", "oep.fixture.gpio", "oep.fixture.uart",
-            "oep.fixture.i2c-target", "oep.fixture.spi-target"}                                           # grows with each stage
+            "oep.fixture.i2c-target", "oep.fixture.spi-target", "oep.wire.rvswd",
+            "oep.target.riscv-dm"}                                                                        # grows with each stage
+NOT_ON_THE_BENCH = {"oep.wire.swd", "oep.target.arm-adi"}               # read by the client only (no swd on the bench)
 OPS = load("ops.json")["cases"]
 
 
@@ -346,7 +348,10 @@ def bench_for(case):
     ops = {}
     if "ops of fn 1: source and sink only" in case.get("state", ""):
         ops[1] = {reg.PROBE_LINK.op["source"], reg.PROBE_LINK.op["sink"]}
-    probe = vector_probe(case["fns"], ops=ops)
+    fns = dict(case["fns"])
+    if "oep.target.riscv-dm" in fns.values() and "oep.wire.rvswd" not in fns.values():
+        fns["4"] = "oep.wire.rvswd"                                     # the wire its connection 1 comes from
+    probe = vector_probe(fns, ops=ops)
     if "port_s" in case["name"] and "not offered" not in case["name"]:   # a UART bridge probe with port_speed
         probe.offered = [virtual_bench._link(o.fn, port_speed=True) if o.name == virtual_bench.LINK else o
                          for o in probe.offered]
@@ -355,6 +360,19 @@ def bench_for(case):
             virtual_bench.Offered(o.fn, o.instance, o.name, tuple(catalog.u8(virtual_bench.SPI_MODES, 1)
                                   if t[0] == virtual_bench.SPI_MODES else t for t in o.tlvs), o.revision)
             if o.name == "oep.fixture.spi-target" else o for o in probe.offered])
+    state = case.get("state", "")
+    if "raw-only fn" in state or "dmi only" in state or "declares only dmi" in state:
+        ops[fn_of(case, "oep.target.riscv-dm")] = {reg.TARGET_RISCV_DM.op["dmi"]}
+    if "oep.wire.rvswd" in fns.values():                               # any two of channels 0-15 (debug §1), two seats
+        probe = virtual_bench.VirtualProbe(probe.label, probe.max_frame, [
+            virtual_bench.Offered(o.fn, 0, o.name, virtual_bench._roles({1: list(range(16)), 2: list(range(16))}) + (
+                catalog.u32(catalog.MAX_CLOCK_HZ, 4_000_000), catalog.u8(virtual_bench.MAX_CONNECTIONS, 2)))
+            if o.name == "oep.wire.rvswd" else o for o in probe.offered])
+    if ops:
+        probe = virtual_bench.VirtualProbe(probe.label, probe.max_frame, [
+            virtual_bench.Offered(o.fn, o.instance, o.name, (catalog.ops_tlv(ops[o.fn]),) + tuple(
+                t for t in o.tlvs if t[0] != catalog.OPS), o.revision, inner=o.inner) if o.fn in ops else o
+            for o in probe.offered])
     if "formats declares 8N1 only" in case.get("state", ""):
         probe = virtual_bench.VirtualProbe(probe.label, probe.max_frame, [
             virtual_bench._uart(o.fn, 0, list(range(16)), 3_000_000, formats=(0,)) if o.name == "oep.fixture.uart" else o
@@ -503,9 +521,59 @@ def spi_state(case, ep, hst):
         ep.spi_transfer(14, fixture.pack_wire_bits(wire, 1 if "bit_order 1" in state else 0), bits=12)
 
 
+DMSTATUS = 0x00400382                                                   # the vectors' DM: halted, version 2, impebreak
+
+
+def wire_target(ep, fn, pair, target_id=None):
+    """A halted RV32 hart on `pair` with no pending havereset, DMSTATUS 0x00400382."""
+    tg = ep._target(fn, pair)
+    tg.present, tg.halted, tg.havereset, tg.dmstatus_bits, tg.target_id = True, True, False, 0x400000, target_id
+    assert tg.dmstatus() == DMSTATUS
+    return tg
+
+
+def rvswd_state(case, ep, hst):
+    """debug §1-§3's cases on fn 4 (any pair of channels 0-15, two seats), made through the client."""
+    state, fn = case["state"], fn_of(case, "oep.wire.rvswd")
+    hst.open(3000)
+    wire = riscv.Wire(hst, "oep.wire.rvswd")
+    wire_target(ep, fn, (1, 2), 0x00203500 if "target_id" in state else None)
+    wire_target(ep, fn, (3, 4))
+    if "connection 1 on" in state or "owns connection 1" in state or state == "as above":
+        assert wire.attach(halt=False, pins=(1, 2), max_speed=1_000_000)[0] == 1
+    if "next resource 65536" in state:
+        ep._next_resource = 0x10000
+
+
+def dm_state(case, ep, hst):
+    """debug §4's cases on fn 6 over the rvswd connection 1 (fn 4), made through the client."""
+    state, name = case["state"], case["name"]
+    hst.open(3000)
+    tg = wire_target(ep, 4, (1, 2))
+    if "connection 9" in state or state == "—":
+        return
+    conn, _ = riscv.Wire(hst, "oep.wire.rvswd").attach(halt=False, pins=(1, 2), max_speed=1_000_000)
+    assert conn == 1
+    dm = riscv.RiscvDm(hst, conn, "oep.target.riscv-dm")
+    if "running" in state:
+        tg.halted = False
+    if "writing a0 fails" in state:
+        tg.fail_regs = {0x100A}
+    if "DMSTATUS0x200" in state:                                         # allhalted on the first wait read
+        tg.dmi[0x11] = 0x200
+    if "DMSTATUS reads" in state:
+        tg.dmi[0x11] = DMSTATUS
+    if "restoring saved DATA failed" in state or "closed after the previous high-level op failed cleanup" in state:
+        tg.restore_fails = True
+    if "closed after the previous high-level op failed cleanup" in state:
+        with pytest.raises(riscv.TargetError):
+            dm.write_block(0x20000000, struct.pack("<2I", 7, 8))
+        assert conn not in ep.conns
+
+
 STATES = {"oep.probe.plan": plan_state, "oep.probe.restart": restart_state, "oep.probe.link": link_state,
           "oep.fixture.gpio": gpio_state, "oep.fixture.uart": uart_state, "oep.fixture.i2c-target": i2c_state,
-          "oep.fixture.spi-target": spi_state}
+          "oep.fixture.spi-target": spi_state, "oep.wire.rvswd": rvswd_state, "oep.target.riscv-dm": dm_state}
 
 
 def make_case(case):
@@ -678,3 +746,110 @@ def test_fixture_boundaries_on_the_virtual_bench():
     ep.newest_corr = 0
     got = ep.handle(m.Request(1, 14, reg.FIXTURE_SPI_TARGET.op["read_rx"], b"", S).pack(), 0)
     assert got.hex() == row["spi_empty_answer_hex"]
+
+
+# ---- debug (oep-if-debug): the client's requests and its reading of the answers --------------------------------------
+from oep_client import arm
+
+DEBUG_CLIENT = [c for c in OPS if c["name"].startswith((                # what the client sends (it pages from 0)
+    "rvswd connections: one", "rvswd scan: one", "rvswd attach: a second", "rvswd attach: a resource",
+    "rvswd attach: busy", "swd ", "arm-adi ", "riscv-dm halt: halted", "riscv-dm halt on", "riscv-dm dmi: one read",
+    "riscv-dm dmi: n = 0", "riscv-dm step on", "riscv-dm run: the preparation", "riscv-dm write_block"))]
+
+
+def scripted(case):
+    """A host whose one request goes out as the case's and gets the case's answer."""
+    r = m.Request.unpack(hx(case["request_hex"]))
+    sent = []
+    hst = h.Host(lambda b: sent.append(b) or hx(case["answer_hex"]))
+    hst._corr, hst.revision, hst.session = r.corr - 1, 1, S
+    name = case["fns"][str(r.fn)]
+    hst._fns[name], hst._revisions[r.fn] = r.fn, 1
+    table = reg.INTERFACES[name]
+    hst._describes[r.fn] = [(catalog.OPS, catalog.pack_ops(table.op.values())), (catalog.MAX_LENGTH, struct.pack("<H", 256))]
+    hst._describes[0] = [(core.CORE_MAX_OP_MS, struct.pack("<I", 1000))]
+    return r, hst, sent
+
+
+@pytest.mark.parametrize("case", DEBUG_CLIENT, ids=lambda c: c["name"])
+def test_debug_vectors_as_the_client_sends_and_reads_them(case):
+    """oep-if-debug §1-§6: the client's wire and target requests are the case's bytes, and it reads their answers."""
+    r, hst, sent = scripted(case)
+    name = case["name"]
+    if name.startswith("rvswd connections"):
+        rows = riscv.Wire(hst, "oep.wire.rvswd").connections()
+        assert [(c.connection, c.pins, c.speed_hz, c.target_id) for c in rows] == (
+            [(1, (1, 2), 1_000_000, (1, struct.pack("<I", 0x00203500)))])
+    elif name.startswith("rvswd scan"):
+        found = riscv.Wire(hst, "oep.wire.rvswd").scan([(1, 2)])
+        assert [(f.kind, f.pins, f.dmstatus) for f in found] == [(1, (1, 2), DMSTATUS)]
+    elif name.startswith("rvswd attach"):
+        wire = riscv.Wire(hst, "oep.wire.rvswd")
+        pins = struct.unpack_from("<HH", r.payload, 1)
+        if "busy" in name:
+            with pytest.raises(h.Unavailable) as e:
+                wire.attach(halt=False, pins=pins, max_speed=1_000_000)
+            assert e.value.channels == [1]
+        else:
+            conn, status = wire.attach(halt=False, pins=pins, max_speed=1_000_000)
+            assert (conn, status, wire.flags, wire.speed_hz) == (struct.unpack_from("<I", hx(case["answer_hex"]), 5)[0],
+                                                                DMSTATUS, 0, 1_000_000)
+    elif name.startswith("swd connections"):
+        (row,) = arm.SwdWire(hst).connections()
+        assert (row.connection, row.pins, row.target_id, row.targetsel) == (
+            0x10000, (1, 2), (2, struct.pack("<I", 0x2BA01477)), 0x01000001)   # read identity, supplied selector
+    elif name.startswith("swd attach"):
+        with pytest.raises(h.Unavailable) as e:
+            arm.SwdWire(hst).attach(targetsel=0x01000002, pins=(1, 2), max_speed=1_000_000)
+        assert e.value.channels == [1]
+    elif name.startswith("arm-adi"):
+        conn = struct.unpack_from("<I", r.payload)[0]
+        adi = arm.ArmAdi(hst, conn)
+        if "reserved" in name:
+            with pytest.raises(h.Unsupported):
+                adi.transfer(adi.req(False, False, 0, 7) + b"\x12")
+        else:
+            assert adi.transfer(b"") == [] and adi.last_ack == 0
+    else:
+        dm = riscv.RiscvDm(hst, struct.unpack_from("<I", r.payload)[0])
+        if "halt: halted" in name:
+            dm.halt()
+        elif "halt on" in name:
+            with pytest.raises(h.NoResource):
+                dm.halt()
+        elif "one read" in name:
+            assert dm.dmi([dm.step_read(0x11)]) == (1, [DMSTATUS])
+        elif "n = 0" in name:
+            assert dm.dmi([]) == (0, [])
+        elif "step on" in name:
+            with pytest.raises(riscv.StepError) as e:
+                dm.step()
+            assert e.value.status == riscv.STATUS["state"] and not e.value.step_left
+        elif "run:" in name:
+            with pytest.raises(riscv.TargetError) as e:
+                dm.run(0x20000000, [(0x100A, 7)], timeout_ms=100, outs=())
+            res = riscv.RiscvDm.run_result(e.value.result)
+            assert res.not_run and res.status == riscv.STATUS["line"] and res.values == []
+        else:                                                           # the cleanup failed: partial, every word done
+            with pytest.raises(riscv.TargetError) as e:
+                dm.write_block(0x20000000, struct.pack("<2I", 7, 8))
+            assert e.value.done == 2 and e.value.result.detail == m.PARTIAL and e.value.status == riscv.STATUS["line"]
+    assert sent[-1] == hx(case["request_hex"])
+
+
+SPI_PROFILE_U32 = pytest.mark.xfail(strict=True, reason="oep-spec a09fa45's 'mode0 SPI target' profile packs max_length as "
+                                    "u32 (tools/oepvectors1.py); core §7.4 makes it u16")
+
+
+@pytest.mark.parametrize("profile", [pytest.param(p, marks=SPI_PROFILE_U32) if p["name"] == "mode0 SPI target" else p
+                                     for p in load("interface_profiles.json")["profiles"]], ids=lambda p: p["name"])
+def test_interface_profiles_as_the_host_reads_them(profile):
+    """interface_profiles.json (core §7.2-§7.4): the list entries (no flags byte) and each describe's ops."""
+    total, entries = catalog.unpack_list_result(m.Result.unpack(hx(profile["list_answer_hex"])).payload)
+    assert total == len(entries) == len(profile["entries"])
+    assert [(e.fn, e.instance, e.revision, e.name) for e in entries] == [
+        (p["fn"], p["instance"], p["revision"], p["name"]) for p in profile["entries"]]
+    for p in profile["entries"]:
+        payload = m.Result.unpack(hx(p["describe_answer_hex"])).payload
+        assert payload[0] == 0                                          # more = 0
+        assert catalog.decode_description(payload[1:]).ops == set(p["ops"])

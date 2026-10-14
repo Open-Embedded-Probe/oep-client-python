@@ -6,8 +6,8 @@ from .virtual_core import Core, Completed, Reject, tlv
 
 
 def fixed_transfer(data):
-    if len(data) < 4: return len(data)
-    count = struct.unpack_from('<H', data, 2)[0]; at = 4
+    if len(data) < 6: return len(data)
+    count = struct.unpack_from('<H', data, 4)[0]; at = 6
     for _ in range(count):
         if at >= len(data) or data[at] & 0xf0: return len(data)
         at += 1 if data[at] & 2 else 5
@@ -58,24 +58,25 @@ class ArmAdi(Attachments):
     def dispatch_request(self, fn, op, payload, tags):
         if fn != 5:
             value = super().dispatch_request(fn,op,payload,tags)
-            if fn <= 3 and op == 17 and len(value) >= 11 and not getattr(value,'outcome',0):
-                parent = struct.unpack_from('<H',value)[0]
+            if fn <= 3 and op == 17 and len(value) >= 13 and not getattr(value,'outcome',0):
+                parent = struct.unpack_from('<I',value)[0]
                 self.targets[parent] = dict(dp={},ap={},pending=0,memory={})
             return value
-        if len(payload) < (4 if op == 16 else 8): raise Reject(3)
-        parent = struct.unpack_from('<H',payload)[0]
+        if len(payload) < (6 if op == 16 else 10): raise Reject(3)
+        parent = struct.unpack_from('<I',payload)[0]
         if op == 16:
-            count = struct.unpack_from('<H',payload,2)[0]; at = 4; steps = []
+            count = struct.unpack_from('<H',payload,4)[0]; at = 6; steps = []
             for _ in range(count):
-                if at >= len(payload) or payload[at] & 0xf0: raise Reject(3)
+                if at >= len(payload): raise Reject(3)
+                if payload[at] & 0xf0: raise Reject(11,b'\0')     # reserved req bits: unsupported, nothing run (debug §6)
                 req = payload[at]; size = 1 if req & 2 else 5
                 if at + size > len(payload): raise Reject(3)
                 steps.append((req,None if req & 2 else struct.unpack_from('<I',payload,at+1)[0])); at += size
             if at != len(payload): raise Reject(3)
             if 11 + 4*sum(bool(req & 2) for req,_ in steps) > self.ep.probe.max_frame: raise Reject(11,b'\0')
         else:
-            address,count = struct.unpack_from('<IH',payload,2)
-            if len(payload) != 8 + (4*count if op == 18 else 0) or address & 3: raise Reject(3)
+            address,count = struct.unpack_from('<IH',payload,4)
+            if len(payload) != 10 + (4*count if op == 18 else 0) or address & 3: raise Reject(3)
             if count > 4: raise Reject(11,b'\0')
         self.resource(parent,'connection')
         if self.connections[parent]['fn'] != 3: raise Reject(4,tlv(1,b'\x06'))
@@ -94,7 +95,7 @@ class ArmAdi(Attachments):
                 status,_,_ = self.packet(parent,5,(address+4*i) & 0xffffffff)
                 if status: break
                 status,_,_ = self.packet(parent,13 if op == 18 else 15,
-                    struct.unpack_from('<I',payload,8+4*i)[0] if op == 18 else None)
+                    struct.unpack_from('<I',payload,10+4*i)[0] if op == 18 else None)
                 if status: break
                 if op == 17:
                     status,_,value = self.packet(parent,14)
@@ -112,7 +113,7 @@ class ArmAdiModel(AttachModel):
     def handle(self, request):
         if len(request) < 6 or struct.unpack_from('<H',request,3)[0] != 5: return super().handle(request)
         e = self.extension; fixed,free = e.fixed,e.free; data = request[10:]
-        e.fixed = {16:fixed_transfer(data),17:8,18:8+(4*struct.unpack_from('<H',data,6)[0] if len(data)>=8 else 0)}; e.free = set()
+        e.fixed = {16:fixed_transfer(data),17:10,18:10+(4*struct.unpack_from('<H',data,8)[0] if len(data)>=10 else 0)}; e.free = set()
         try: return self.ep.handle(request)
         finally: e.fixed,e.free = fixed,free
     def arm_state(self):

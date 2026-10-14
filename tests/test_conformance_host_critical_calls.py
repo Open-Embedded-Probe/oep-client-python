@@ -17,9 +17,9 @@ from oep_client import arm, catalog, core, fixture, host, message as m, riscv
 
 CASES = [('uart', 0x81)] + [
     (kind, tag) for kind, tags in (
-        ('rvswd', (0x81, 0x83, 0x84, 0x85)),
-        ('swio', (0x81, 0x83, 0x85)),
-        ('swd', (0x81, 0x83, 0x85, 0x82)),
+        ('rvswd', (0x84, 0x85)),
+        ('swio', (0x85,)),
+        ('swd', (0x85, 0x82)),
     ) for tag in tags
 ]
 
@@ -30,9 +30,9 @@ def exercise_call(kind, refused_tag):
     # Literal protocol oracle: independent of catalog/Host TLV encoders.
     expected = {
         'uart': bytes.fromhex('00c20100 81 0100 05'),
-        'rvswd': bytes.fromhex('00 81 0400 40420f00 83 0400 01000200 84 0100 01 85 0400 03000a00'),
-        'swio': bytes.fromhex('00 81 0400 40420f00 83 0400 0100ffff 85 0400 03000a00'),
-        'swd': bytes.fromhex('00 81 0400 40420f00 83 0400 01000200 85 0400 03000a00 82 0400 78563412'),
+        'rvswd': bytes.fromhex('00 0100 0200 40420f00 84 0100 01 85 0400 03000a00'),
+        'swio': bytes.fromhex('00 0100 ffff 40420f00 85 0400 03000a00'),
+        'swd': bytes.fromhex('00 0100 0200 40420f00 85 0400 03000a00 82 0400 78563412'),
     }[kind]
     sent = []
 

@@ -10,13 +10,13 @@ import sys
 
 import pytest
 
-from oep_client import endpoint, virtual_bench, virtual_bench_capture, message as m, registry_legacy as reg
+from oep_client import catalog, endpoint, virtual_bench, virtual_bench_capture, message as m, registry_legacy as reg
 
 
 CORE = reg.CORE
 CFG = reg.PROBE_CONFIG
 ITEM, ATTACH, STREAM = CFG.tlv["item"], CFG.enum["slot_attach"], CFG.enum["bind_stream"]
-SPEED = m.tlv(0x01, struct.pack("<I", 4_000_000), critical=True)    # attach's required max_speed TLV
+W = reg.WIRE_RVSWD.op                                               # scan 0x10 attach 0x11 detach 0x12 connections 0x13
 PLAN_APPLY, PLAN_RELEASE = reg.PROBE_PLAN.op["plan_apply"], reg.PROBE_PLAN.op["plan_release"]   # oep.probe.plan
 
 
@@ -115,8 +115,9 @@ def label_item(ch, text: bytes, tag=ITEM["label"]):
     return m.tlv(tag & 0x7F, struct.pack("<H", ch) + text, critical=bool(tag & 0x80))
 
 
-def pins(d, c, critical=True):
-    return m.tlv(0x03, struct.pack("<HH", d, c), critical=critical)
+def att(pair, method=0, speed=4_000_000):
+    """attach's fixed part: method swdio swclk max_speed (debug §1, §3)."""
+    return struct.pack("<BHHI", method, *pair, speed)
 
 
 # ---- C-02: a value a later revision may define is unsupported ----------------------------------------------------
@@ -137,26 +138,26 @@ def test_c02_attach_method_and_reset_mode_a_later_revision_may_define():
     """A value a later revision may define is unsupported (core §2.5); where the connection is also unknown, any one
     reason that applies answers (core §4.3, rule review 2026-10-07)."""
     ep, h = bench()
-    r = h.raw(1, 0x02, b"\x02" + SPEED)
+    r = h.raw(1, W["attach"], att(ep.pairs[1][0], method=2))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00")
     reset = reg.TARGET_RISCV_DM.op["reset"]
-    r = h.raw(2, reset, struct.pack("<HB", 0x777, 3))                            # no such connection, mode 3
-    assert r.detail in (m.UNSUPPORTED, m.NO_RESOURCE)
-    assert r.detail != m.UNSUPPORTED or r.payload == b"\x00"
-    assert h.raw(2, reset, struct.pack("<HB", 0x777, 0)).detail == m.NO_RESOURCE
+    for mode in (1, 3):                                                          # debug §4.3: modes 0 and 2 only
+        r = h.raw(2, reset, struct.pack("<IB", 0x777, mode))                     # no such connection either
+        assert r.detail in (m.UNSUPPORTED, m.NO_RESOURCE)
+        assert r.detail != m.UNSUPPORTED or r.payload == b"\x00"
+    assert h.raw(2, reset, struct.pack("<IB", 0x777, 0)).detail == m.NO_RESOURCE
 
 
 def test_riscv_dm_reset_has_no_method_tlv():
     """debug §4.3 (rule review 2026-10-07): reset is mode(u8) [TLV] alone - the old method tag 0x01 is an unknown TLV:
     ignored without bit 7, unsupported with the tag as received with it (core §2.3)."""
     ep, h = bench()
-    a = ep.pairs[1][0]
-    cid = struct.unpack_from("<H", h.ok(1, 0x02, b"\x00" + SPEED + pins(*a)))[0]
+    cid = struct.unpack_from("<I", h.ok(1, W["attach"], att(ep.pairs[1][0])))[0]
     reset = reg.TARGET_RISCV_DM.op["reset"]
     assert "reset" not in reg.TARGET_RISCV_DM.tlv
-    r = h.raw(2, reset, struct.pack("<HB", cid, 0) + m.tlv(0x01, b"\x02"))
+    r = h.raw(2, reset, struct.pack("<IB", cid, 0) + m.tlv(0x01, b"\x02"))
     assert r.succeeded and len(r.payload) == 6                                    # status flags pc, nothing listed
-    r = h.raw(2, reset, struct.pack("<HB", cid, 0) + m.tlv(0x01, b"\x02", critical=True))
+    r = h.raw(2, reset, struct.pack("<IB", cid, 0) + m.tlv(0x01, b"\x02", critical=True))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x81")
 
 
@@ -196,17 +197,9 @@ def test_a_non_repeating_tag_twice_the_first_is_used():
     """core §2.3 (rule review 2026-10-07): a tag the definition does not repeat, twice - the reader uses the first
     (no malformed any more)."""
     ep, h = bench()
-    pair = ep.pairs[1][0]
-    slow = m.tlv(0x01, struct.pack("<I", 1_000_000), critical=True)
-    r = h.raw(1, 0x02, b"\x00" + slow + SPEED + pins(*pair))
-    assert r.succeeded
-    cid, _, _, speed = struct.unpack_from("<HIBI", r.payload)
-    assert speed <= 1_000_000                                       # the first max_speed holds
     once = m.tlv(0x04, b"\x01", critical=True)
-    other = struct.pack("<HH", *ep.pairs[1][1])
-    r = h.raw(1, 0x02, b"\x00" + SPEED + m.tlv(0x03, other, critical=True) + pins(*pair) + once + m.tlv(0x04, b"\x00"))
-    assert r.succeeded and ep.conns[struct.unpack_from("<H", r.payload)[0]].idle_clock == 1
-    assert ep._conn_at(1, ep.pairs[1][1]) is not None               # the first pins
+    r = h.raw(1, W["attach"], att(ep.pairs[1][0]) + once + m.tlv(0x04, b"\x00"))
+    assert r.succeeded and ep.conns[struct.unpack_from("<I", r.payload)[0]].idle_clock == 1
 
 
 @pytest.mark.parametrize("critical", [False, True])
@@ -215,13 +208,11 @@ def test_an_implemented_tlv_of_another_length_is_malformed_with_or_without_bit_7
     value shorter or longer than its definition is malformed, and nothing runs."""
     ep, h = bench()
     pair = ep.pairs[1][0]
-    assert h.raw(1, 0x02, b"\x00" + m.tlv(0x01, b"\x00\x09\x3d", critical=critical)).detail == m.MALFORMED
-    long_speed = m.tlv(0x01, struct.pack("<IB", 4_000_000, 0), critical=critical)
-    assert h.raw(1, 0x02, b"\x00" + long_speed + pins(*pair)).detail == m.MALFORMED
-    long_pins = m.tlv(0x03, struct.pack("<HHB", *pair, 0), critical=critical)
-    assert h.raw(1, 0x02, b"\x00" + SPEED + long_pins).detail == m.MALFORMED
+    assert h.raw(1, W["attach"], att(pair)[:-1]).detail == m.MALFORMED              # the fixed part cut short
     long_idle = m.tlv(0x04, b"\x00\x00", critical=critical)
-    assert h.raw(1, 0x02, b"\x00" + SPEED + pins(*pair) + long_idle).detail == m.MALFORMED
+    assert h.raw(1, W["attach"], att(pair) + long_idle).detail == m.MALFORMED
+    short_speed = m.tlv(0x01, b"\x00\x09\x3d", critical=critical)                    # scan's max_speed
+    assert h.raw(1, W["scan"], b"\x01" + struct.pack("<HH", *pair) + short_speed).detail == m.MALFORMED
     assert not ep.conns                                             # nothing ran
 
 
@@ -230,7 +221,7 @@ def test_an_implemented_tlvs_value_the_probe_does_not_handle_is_unsupported_with
     """core §2.3: a value the definition leaves unused or this probe does not handle is unsupported with the tag as
     received, critical or not (idle_clock 2: debug §3 defines 0 and 1)."""
     ep, h = bench()
-    r = h.raw(1, 0x02, b"\x00" + SPEED + pins(*ep.pairs[1][0]) + m.tlv(0x04, b"\x02", critical=critical))
+    r = h.raw(1, W["attach"], att(ep.pairs[1][0]) + m.tlv(0x04, b"\x02", critical=critical))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([0x04 | (0x80 if critical else 0)]))
     assert not ep.conns
 
@@ -249,9 +240,9 @@ def test_an_unknown_tlv_is_ignored_silently_or_refused_when_critical():
 
 def test_an_unknown_critical_and_a_malformed_tlv_any_one_reason():
     """core §4.3 (rule review 2026-10-07): after the session check every reason that applies may answer - an unknown
-    critical TLV (unsupported) and a cut-short max_speed (malformed) in one request get either, and nothing runs."""
+    critical TLV (unsupported) and a cut-short idle_clock (malformed) in one request get either, and nothing runs."""
     ep, h = bench()
-    r = h.raw(1, 0x02, b"\x00" + m.tlv(UNKNOWN, b"", critical=True) + m.tlv(0x01, b"\x00", critical=True))
+    r = h.raw(1, W["attach"], att(ep.pairs[1][0]) + m.tlv(UNKNOWN, b"", critical=True) + m.tlv(0x04, b"", critical=True))
     assert r.detail in (m.MALFORMED, m.UNSUPPORTED)
     assert r.detail != m.UNSUPPORTED or r.payload == bytes([UNKNOWN | 0x80])
     assert not ep.conns
@@ -391,14 +382,16 @@ def test_c24_a_profile_with_an_x_unit_id():
 
 # ---- debug: P2-★1 / ★5 / ○1 / ○4 / ★4 -------------------------------------------------------------------------------
 
-def test_p2_1_count_0_leaves_out_every_idle_item_channel():
+def test_p2_1_scan_has_no_implicit_list_and_takes_an_input_idle_pair():
+    """debug §1: count 0 is malformed (no implicit candidate list, no skip); a pair twice is malformed; a named pair
+    with an input idle is scanned."""
     ep, h = bench()
     a, b, c = ep.pairs[1]
     h.ok(6, 0x02, idle_item(a[0], IDLE["pull_up"]))               # an input idle on pair A
-    rd = m.Reader(h.ok(1, 0x01, b"\x00"))
-    tried, count = rd.take("BB")
-    assert tried == 2                                             # B and C only
-    assert h.raw(1, 0x01, b"\x01" + struct.pack("<HH", *a)).succeeded   # named: an input idle is accepted
+    assert h.raw(1, W["scan"], b"\x00").detail == m.MALFORMED
+    assert h.raw(1, W["scan"], b"\x02" + struct.pack("<HHHH", *a, *a)).detail == m.MALFORMED
+    rd = m.Reader(h.ok(1, W["scan"], b"\x01" + struct.pack("<HH", *a)))
+    assert rd.take("BB")[0] == 1
 
 
 def test_p2_1_a_named_output_idle_channel_is_unavailable_cause_5_and_the_channel():
@@ -406,46 +399,44 @@ def test_p2_1_a_named_output_idle_channel_is_unavailable_cause_5_and_the_channel
     ep, h = bench()
     a = ep.pairs[1][0]
     h.ok(6, 0x02, idle_item(a[1], IDLE["output_high"]))
-    for r in (h.raw(1, 0x01, b"\x01" + struct.pack("<HH", *a)), h.raw(1, 0x02, b"\x00" + SPEED + pins(*a))):
+    for r in (h.raw(1, W["scan"], b"\x01" + struct.pack("<HH", *a)), h.raw(1, W["attach"], att(a))):
         t = una(r)
         assert r.detail == m.UNAVAILABLE
         assert t == {UNA["cause"]: b"\x05", UNA["channel"]: struct.pack("<H", a[1])}
     assert not ep.conns
 
 
-def test_p2_1_an_attach_without_pins_has_no_idle_item_candidate():
+def test_p2_1_an_attach_on_an_input_idle_pin_is_taken():
     ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())            # one SWIO pair
     h = Host(ep)
     h.open()
     swio = ep.pairs[1][0][0]
     h.ok(9, 0x02, idle_item(swio, IDLE["pull_up"]))
-    r = h.raw(1, 0x02, b"\x00" + SPEED)
-    assert r.detail == m.UNAVAILABLE and una(r) == {UNA["cause"]: b"\x05", UNA["channel"]: struct.pack("<H", swio)}
-    assert h.raw(1, 0x02, b"\x00" + SPEED + pins(swio, 0xFFFF)).succeeded   # named: an input idle is accepted
+    assert h.raw(1, W["attach"], att((swio, 0xFFFF))).succeeded           # named: an input idle is accepted
 
 
 def test_p2_1_the_pins_of_a_closed_connection_go_back_to_their_idle_state():
     ep, h = bench()
     a = ep.pairs[1][0]
-    cid = struct.unpack_from("<H", h.ok(1, 0x02, b"\x00" + SPEED + pins(*a)))[0]
+    cid = struct.unpack_from("<I", h.ok(1, W["attach"], att(a)))[0]
     assert ep.pin_state(a[0]) == "wire"
-    h.ok(1, 0x03, struct.pack("<H", cid))
+    h.ok(1, W["detach"], struct.pack("<I", cid))
     assert ep.pin_state(a[0]) == "idle hi-z"
 
 
 def test_p2_5_an_undeclared_combination_is_unsupported_scan_with_its_index():
     ep, h = bench()
     a, b = ep.pairs[1][:2]
-    r = h.raw(1, 0x01, b"\x02" + struct.pack("<HHHH", *a, a[0], b[1]))
+    r = h.raw(1, W["scan"], b"\x02" + struct.pack("<HHHH", *a, a[0], b[1]))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00" + m.tlv(0x40, b"\x01"))
-    r = h.raw(1, 0x02, b"\x00" + SPEED + pins(a[0], b[1], critical=False))
-    assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x03")       # attach: the pins tag as received
+    r = h.raw(1, W["attach"], att((a[0], b[1])))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00")      # attach: the fixed part
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 8), critical=True))
     rp = endpoint.Endpoint(virtual_bench.rp2350_pins(), Clock())
     hp = Host(rp)
     hp.open()
     hp.ok(hp.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 1), critical=True))
-    r = hp.raw(1, 0x01, b"\x01" + struct.pack("<HH", 0, 1))       # a held channel: unavailable cause 1, the channel
+    r = hp.raw(1, W["scan"], b"\x01" + struct.pack("<HH", 0, 1))   # a held channel: unavailable cause 1, the channel
     assert r.detail == m.UNAVAILABLE and una(r)[UNA["cause"]] == b"\x01" and una(r)[UNA["channel"]] == b"\x01\x00"
 
 
@@ -454,37 +445,34 @@ def test_p2_o1_found_is_version_2_or_more_and_not_15(version, found):
     ep, h = bench()
     for tg in ep.targets.values():
         tg.version = version
-    rd = m.Reader(h.ok(1, 0x01, b"\x00"))
-    assert rd.take("BB")[1] == (3 if found else 0)
+    pairs = ep.pairs[1]
+    rd = m.Reader(h.ok(1, W["scan"], bytes([len(pairs)]) + b"".join(struct.pack("<HH", *p) for p in pairs)))
+    assert rd.take("BB") == (3, 3 if found else 0)
 
 
 def test_p2_o4_a_halt_that_times_out_clears_haltreq_and_a_step_that_cannot_halt_again_says_step_left():
+    """debug §4.2: a step whose hart cannot be halted again answers step_left and closes the connection (its cleanup
+    could not finish)."""
     ep, h = bench()
     a = ep.pairs[1][0]
-    cid = struct.unpack_from("<H", h.ok(1, 0x02, b"\x00" + SPEED + pins(*a)))[0]
+    cid = struct.unpack_from("<I", h.ok(1, W["attach"], att(a)))[0]
     tg = ep._target(1, a)
     tg.halt_stuck, tg.haltreq = True, True
-    r = h.raw(2, reg.TARGET_RISCV_DM.op["halt"], struct.pack("<H", cid))
+    r = h.raw(2, reg.TARGET_RISCV_DM.op["halt"], struct.pack("<I", cid))
     assert (r.detail, r.payload[0], tg.haltreq) == (m.FAILED, endpoint.TIMEOUT, False)
     tg.halt_stuck, tg.halted = False, True
     tg.step_stuck = "runs"
-    r = h.raw(2, reg.TARGET_RISCV_DM.op["step"], struct.pack("<H", cid))
+    r = h.raw(2, reg.TARGET_RISCV_DM.op["step"], struct.pack("<I", cid))
     assert r.payload[0] == endpoint.STATE and m.Tail.parse(r.payload[10:]).get(0x01) == b""
     assert not tg.halted and tg.dcsr_step
+    assert h.raw(2, reg.TARGET_RISCV_DM.op["step"], struct.pack("<I", cid)).detail == m.NO_RESOURCE
+    cid = struct.unpack_from("<I", h.ok(1, W["attach"], att(a)))[0]
     tg.halted, tg.step_stuck = True, "halts"
-    r = h.raw(2, reg.TARGET_RISCV_DM.op["step"], struct.pack("<H", cid))
+    r = h.raw(2, reg.TARGET_RISCV_DM.op["step"], struct.pack("<I", cid))
     status, moved, before, after = struct.unpack_from("<BBII", r.payload)
     assert status == endpoint.STATE and (moved, before, after) == (0, 0, 0)   # not ok: all 0 (debug §4.2, a168c34)
     assert tg.halted and not tg.dcsr_step and tg.dpc != 0                  # halted again; its dpc is read with dmi
-    assert m.Tail.parse(r.payload[10:]).get(0x01) is None
-
-
-def test_p2_4_the_attach_answer_carries_search_retries():
-    ep, h = bench()
-    a = ep.pairs[1][0]
-    ep._target(1, a).search_retries = 70000
-    r = h.ok(1, 0x02, b"\x00" + SPEED + pins(*a))
-    assert m.Tail.parse(r[11:]).get(reg.WIRE_RVSWD.tlv["attach_answer"]["search_retries"]) == b"\xff\xff"
+    assert m.Tail.parse(r.payload[10:]).get(0x01) is None and cid in ep.conns
 
 
 # ---- fixture: P2-★2 / ★3 / ○13 ---------------------------------------------------------------------------------------
@@ -519,7 +507,7 @@ def test_p2_3_i2c_target_open_drain_and_declared_pullups():
     i2c = 8
     r = h.raw(0, m.OP_DESCRIBE, struct.pack("<HH", i2c, 0), session=False)
     d = dict(m.split_tlvs(r.payload[1:]))
-    assert struct.unpack("<I", d[0x06])[0] & virtual_bench.I2C_INTERNAL_PULLUPS == 0x04 and 0x42 not in d
+    assert struct.unpack("<I", d[catalog.FEATURES])[0] & virtual_bench.I2C_INTERNAL_PULLUPS == 0x04 and 0x42 not in d
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", i2c, 1, 30), critical=True)
          + m.tlv(0x10, struct.pack("<HBH", i2c, 2, 31), critical=True))
     assert ep.pin_state(30) == "idle hi-z"                        # state 0: released, nothing ACKed
@@ -528,7 +516,7 @@ def test_p2_3_i2c_target_open_drain_and_declared_pullups():
     assert h.raw(i2c, reg.FIXTURE_I2C_TARGET.op["configure"], b"\x42\x01").detail == m.MALFORMED   # no mode: a broken tail
     plain = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     d = dict(m.split_tlvs(Host(plain).raw(0, m.OP_DESCRIBE, struct.pack("<HH", i2c, 0), session=False).payload[1:]))
-    assert not struct.unpack("<I", d[0x06])[0] & virtual_bench.I2C_INTERNAL_PULLUPS   # the profiles declare none
+    assert not struct.unpack("<I", d[catalog.FEATURES])[0] & virtual_bench.I2C_INTERNAL_PULLUPS   # the profiles declare none
 
 
 def test_p2_o13_taking_a_plan_changes_no_pin_and_an_analog_plan_on_an_output_idle_is_refused():
@@ -703,7 +691,7 @@ def test_swio_swclk_other_than_0xffff_is_an_undeclared_combination_in_scan_and_a
     h = Host(ep)
     h.open()
     swio = ep.pairs[1][0][0]
-    r = h.raw(1, 0x01, b"\x01" + struct.pack("<HH", swio, 5))
+    r = h.raw(1, W["scan"], b"\x01" + struct.pack("<HH", swio, 5))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00" + m.tlv(0x40, b"\x00"))
-    r = h.raw(1, 0x02, b"\x00" + SPEED + pins(swio, 5))
-    assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x83")
+    r = h.raw(1, W["attach"], att((swio, 5)))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00")

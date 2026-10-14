@@ -50,7 +50,7 @@ def test_the_queue_is_handed_on_a_poll_at_a_time_and_survives_resets_and_restart
     clock.ms = 1
     con.read()                                                     # any request: the probe polled once
     assert bytes(ep.streams[sid].written) == b"abc" and bytes(ep.streams[sid].queue) == b"defghij"
-    riscv.RiscvDm(hst, conn).reset(confirm=False)                  # a reset: the queue stays (console §2)
+    riscv.RiscvDm(hst, conn).reset()                  # a reset: the queue stays (console §2)
     assert bytes(ep.streams[sid].queue) == b"defghij"
     clock.ms = 3
     con.read()
@@ -69,7 +69,7 @@ def test_dmseq_hands_on_2_bytes_a_poll_and_sdi_accepts_nothing():
     con.read()
     assert bytes(ep.streams[sid].written) == b"hell"
     con.close()
-    riscv.Wire(hst).detach(conn, force=True)
+    riscv.Wire(hst).detach(conn)
     conn, _ = riscv.Wire(hst).attach(halt=False)
     sdi = console.Console(hst)
     sdi.open(conn, sdi.SDI)
@@ -87,13 +87,13 @@ def test_reset_waits_out_a_self_restarting_target_within_max_op_ms(restart_ms, o
     dm = riscv.RiscvDm(hst, conn)
     n = len(ep.requests)
     if ok:
-        flags, _ = dm.reset(confirm=False)
+        flags, _ = dm.reset()
         assert flags & 1
     else:
         with pytest.raises(riscv.TargetError) as e:
-            dm.reset(confirm=False)
+            dm.reset()
         assert e.value.status == reg.STATUS["line"]
-        r = m.Result.unpack(ep.handle(m.Request(999, dm.fn, dm.RESET, struct.pack("<HB", conn, 0), hst.session).pack(), 1))
+        r = m.Result.unpack(ep.handle(m.Request(999, dm.fn, dm.RESET, struct.pack("<IB", conn, 0), hst.session).pack(), 1))
         assert struct.unpack("<BBI", r.payload) == (reg.STATUS["line"], 0, 0)   # status flags pc (debug §4.3)
         assert conn in ep.conns                                    # the connection kept
     assert ep.settle_log[0] == min(restart_ms, MAX_OP_MS)
@@ -101,16 +101,19 @@ def test_reset_waits_out_a_self_restarting_target_within_max_op_ms(restart_ms, o
     assert dm.reset_ms() == core.max_op_ms(hst) == MAX_OP_MS       # the argument time is max_op_ms (core §4.4)
 
 
-def test_attach_with_the_reset_tlv_waits_too_and_keeps_an_existing_connection():
+def test_attach_with_the_reset_tlv_waits_too_and_makes_nothing_when_it_fails():
+    """debug §2, §3: an attach under reset waits for the DM within max_op_ms; one that gives up is status line and makes
+    no connection (debug §1)."""
     clock, ep, hst = bench(virtual_bench.esp32_v003)                        # swio, NRST on 23
     wire = riscv.Wire(hst, "oep.wire.swio")
     ep.target.restart_ms = 300
     conn, dpc = wire.attach_under_reset(23, hold_ms=20)
     assert ep.settle_log == [300] and ep.target.halted
+    wire.detach(conn)
     ep.target.restart_ms = MAX_OP_MS + 100
     with pytest.raises(h.Failed):
         wire.attach(halt=False, reset=(23, 20))                    # status line within max_op_ms (debug §3)
-    assert conn in ep.conns and ep.settle_log[-1] == MAX_OP_MS
+    assert not ep.conns and ep.settle_log[-1] == MAX_OP_MS
     assert wire.attach_ms((23, 20)) == wire.attach_ms() == wire.scan_ms() == core.max_op_ms(hst)   # core §4.4
 
 

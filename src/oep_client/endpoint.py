@@ -50,14 +50,15 @@ define (oep-spec 0f455a0, the rule review of 2026-10-07):
   good frame or an answer sent), the session's end after its answer. The line is modelled by `broken_rates` (rate ->
   BrokenRate): frames at such a rate break, from a size and in the directions given, only both ways at once
   (`duplex`), only every Nth (`every`), only once `after` bytes have passed since the switch (`virtual_bench_serial` applies it)
-- oep.wire.rvswd / swio (debug §1-§3): scan (count = 0 pages the free pairs from `skip`; a count > 0 request's skip is
-  not looked at; tried and found per frame), attach on declared pin pairs with the reset TLV (an output-idle or
-  disabled reset line unavailable cause 5), several connections up to max_connections and the seat rule, connections;
-  attach and scan answer within max_op_ms - a target that restarts by itself after a reset (`VirtualTarget.restart_ms`)
-  is waited for up to max_op_ms, then status line with the connection kept (`settle_log`); an attach that joins a live
-  connection keeps its settings but what it carries (idle_clock), max_speed only lowers its speed; target_id scheme
-  dmi_7f; search_retries only when a bring-up ran; a target op whose exchanges go unanswered fails status line and
-  leaves the lines undriven until one succeeds (`pin_state` "wire-free")
+- oep.wire.rvswd / swio (debug §1-§3): scan of the host's named candidates (count 0 or a pair twice malformed; tried
+  and found per frame; a live connection's pins refused), attach naming method, pins and max_speed in its fixed part,
+  with the reset TLV (an output-idle or disabled reset line unavailable cause 5); attach always makes a new connection
+  (busy pins unavailable cause 1, past max_connections cause 2: nothing joined or closed), method 1 only with features
+  attach_halt; connections (u32 ids, target_id scheme dmi_7f); attach and scan answer within max_op_ms - a target that
+  restarts by itself after a reset (`VirtualTarget.restart_ms`) is waited for up to max_op_ms, then status line and no
+  connection (`settle_log`); a target op whose exchanges go unanswered fails status line and leaves the lines undriven
+  until one succeeds (`pin_state` "wire-free"); a high-level op whose cleanup fails (step_left, a block's restore:
+  `VirtualTarget.restore_fails`) answers, then closes the connection and its streams
 - oep.target.riscv-dm (debug §4) on one `VirtualTarget` per pin pair: dmi step lists, halt, resume, reset (status flags
   pc; ndmreset; within max_op_ms), read_block / write_block, run (stopped 0-3: 3 when the preparation fails -
   `VirtualTarget.fail_regs` - or the hart runs), step (step_left)
@@ -147,7 +148,8 @@ I2C_FEATURES, SPI_FEATURES = _I2C.enum["features"], _SPI.enum["features"]
 TARGET_ROLES = {"oep.fixture.gpio": {1}, "oep.fixture.uart": {1, 2}, _I2C.name: set(_I2C.enum["role"].values()),
                 _SPI.name: set(_SPI.enum["role"].values())}   # the plan roles each fixture takes
 UART_FORMAT_MASK = 0x1F                                    # the defined format bits (fixture §2)
-_T_SCAN, _T_ATTACH, _T_DETACH, _T_ATTACH_ANSWER = (reg.WIRE_RVSWD.tlv[k] for k in ("scan", "attach", "detach", "attach_answer"))
+_T_SCAN, _T_ATTACH, _T_ATTACH_ANSWER = (reg.WIRE_RVSWD.tlv[k] for k in ("scan", "attach", "attach_answer"))
+_WIRE_INDEX = reg.WIRE_RVSWD.tlv["unsupported_payload"]["index"]   # scan's candidate index (debug §1)
 ATTACH_METHOD = reg.WIRE_RVSWD.enum["attach_method"]
 _UNSUP_INDEX = reg.CORE.tlv["unsupported_payload"]["index"]   # the position in the request's list (scan, gpio set)
 GPIO_MODE_MAX = max(_GPIO.enum["mode"].values())           # 6: the modes revision 1 defines are 0-6 (fixture §1)
@@ -323,8 +325,9 @@ class VirtualTarget:
     reset_line: int | None = None                      # the channel wired to its reset (None: any reset channel resets it)
     silent_until_reset: bool = False                   # answers nothing on the wire until a reset through its line
     version: int = 2                                   # DMSTATUS.version: "found" is 2 or more and not 15 (debug §1)
-    search_retries: int | None = 0                     # the bring-up's extra attempts an attach answer reports (debug §1;
-                                                       # None: not sent; sent only when a bring-up ran)
+    dmstatus_bits: int = 0                             # more DMSTATUS bits a read shows (impebreak 0x400000, ...)
+    restore_fails: bool = False                        # read_block / write_block: restoring DATA0 / DATA1 fails on the
+                                                       # line - the answer, then the connection closes (debug §4)
     halt_stuck: bool = False                           # halt: allhalted never comes (status timeout, haltreq cleared)
     step_stuck: str | None = None                      # step: the hart does not come back - "halts" (to haltreq) / "runs"
     restart_ms: int = 0                                # after a reset's release it restarts by itself: the DM is silent
@@ -365,7 +368,8 @@ class VirtualTarget:
         return self.reset_line in (None, channel)
 
     def dmstatus(self) -> int:
-        return 0x80 | (self.version & 0xF) | ((0x300 if self.halted else 0xC00)) | (0xC0000 if self.havereset else 0)
+        return (0x80 | (self.version & 0xF) | ((0x300 if self.halted else 0xC00)) | (0xC0000 if self.havereset else 0)
+                | self.dmstatus_bits)
 
     def begin_dmi(self) -> None:
         """A dmi request begins: a drop in force counts it, and ends once drop_requests requests have begun."""
@@ -1177,15 +1181,14 @@ class Endpoint:
         return max(0, ms * 1_000_000 - self._origin_ns)
 
     def _new_resource(self, kind: str) -> int:
-        """The next free resource number (core §9): one u16 space for connections and streams, 1 .. 65535 then 1 again,
-        never a number still in use."""
-        for _ in range(0xFFFF):
-            n = self._next_resource
-            self._next_resource = n % 0xFFFF + 1
-            if n not in self.resources:
-                self.resources[n] = kind
-                return n
-        raise unavailable("limit")
+        """The next resource number (core §9): one u32 space for connections and streams from 1, never reused within
+        a boot_id; past 0xFFFFFFFF a new resource is refused (unavailable cause 2)."""
+        n = self._next_resource
+        if n > 0xFFFFFFFF:
+            raise unavailable("limit")
+        self._next_resource = n + 1
+        self.resources[n] = kind
+        return n
 
     def _connection(self, cid: int) -> Connection:
         """The connection `cid`, or rejected: no_resource (unknown), unavailable cause 6 (a stream's number)."""
@@ -2129,132 +2132,109 @@ class Endpoint:
     # ---- oep.wire.rvswd / swio ------------------------------------------------------------------
     def _wire(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         rvswd = self.names[fn] == "oep.wire.rvswd"
-        if op == 0x01:                                             # scan: count(u8) pairs -> tried count found...
+        O = reg.WIRE_RVSWD.op
+        if op == O["scan"]:                                        # scan: count(u8) pairs -> tried count found...
             count = t.take("B")
             pairs = [t.take("HH") for _ in range(count)]
-            known = {_T_SCAN["max_speed"], _T_SCAN["skip"]} | ({_T_SCAN["idle_clock"]} if rvswd else set())
+            known = {_T_SCAN["max_speed"]} | ({_T_SCAN["idle_clock"]} if rvswd else set())
             got = t.tail(known, defer=True)
-            skip_tlv = t.fixed(got, _T_SCAN["skip"], 2) if not count else None   # a count > 0 request: not looked at (§1)
             max_speed = t.fixed(got, _T_SCAN["max_speed"], 4)
+            if not count or len(set(pairs)) != len(pairs) or max_speed == bytes(4):
+                raise Reject(m.MALFORMED)                          # no implicit list, no pair twice, no speed 0 (§1)
             self._idle_clock(t, got)
             t.check()                                              # an unknown critical TLV (core §2.3)
-            if max_speed is not None:
-                self._check_min_speed(fn, t, struct.unpack("<I", max_speed)[0])
+            if max_speed is not None and struct.unpack("<I", max_speed)[0] < self._min_clock(fn):
+                raise Reject(m.UNSUPPORTED, bytes([t.received(_T_SCAN["max_speed"])]))
             for i, p in enumerate(pairs):                          # not a combination the declaration allows:
                 if not self._allows(fn, p):                        # unsupported, 0x00 + its index (debug §1)
-                    raise unsupported_fixed(m.tlv(_UNSUP_INDEX, bytes([i])))
-            live = [c.pair for c in self.conns.values() if c.fn == fn]
-            full = len(live) >= self.max_connections.get(fn, 1)   # every seat taken: the live pairs only
-            for p in pairs:                                        # a named channel the settings or another hold
-                self._refuse_named(fn, p)
-                if full and p not in live:
-                    raise unavailable("limit")                     # no seat to try it on (max_connections)
-            if not pairs:                                          # the count-0 list, from `skip` on (oep-if-debug §1)
-                skip = struct.unpack("<H", skip_tlv)[0] if skip_tlv is not None else 0
-                pairs = [p for p in self._allowed_pairs(fn) if self._candidate(fn, p) and (not full or p in live)][skip:]
-            pairs = pairs[:255]                                    # tried is a u8
-            found = []                                             # a live pair keeps its speed and rest (debug §1)
+                    raise unsupported_fixed(m.tlv(_WIRE_INDEX, bytes([i])))
+            for p in pairs:                                        # a pin disabled, with an output idle, or held
+                self._refuse_named(fn, p)                          # (a live connection's included): every pair first
+            found = []
             for p in pairs:
                 tg = self._target(fn, p)
-                if (tg.answers and tg.found) or self._conn_at(fn, p) is not None:   # a live pair: read over it
+                if tg.answers and tg.found:
                     found.append(struct.pack("<BHHI", 1, *p, tg.dmstatus()))   # 9 bytes, no length (§2.3)
             return m.COMPLETED, m.SUCCESS, struct.pack("<BB", len(pairs), len(found)) + b"".join(found)
-        if op == 0x02:                                             # attach: method(u8) [TLV] (oep-if-debug §3)
-            method = t.take("B")
-            known = {_T_ATTACH["max_speed"], _T_ATTACH["pins"], _T_ATTACH["reset"]} | ({_T_ATTACH["idle_clock"]} if rvswd else set())
+        if op == O["attach"]:                                      # attach: method swdio swclk max_speed [TLV] (§1, §3)
+            method, swdio, swclk, max_speed = t.take("BHHI")
+            known = {_T_ATTACH["reset"]} | ({_T_ATTACH["idle_clock"]} if rvswd else set())
             got = t.tail(known, defer=True)
-            max_speed = t.fixed(got, _T_ATTACH["max_speed"], 4)
-            if max_speed is None:
-                raise Reject(m.MALFORMED)                          # max_speed is required (§1)
+            if not max_speed:
+                raise Reject(m.MALFORMED)                          # max_speed 0 (§1)
             idle_clock = self._idle_clock(t, got)
             reset = t.fixed(got, _T_ATTACH["reset"], 4)
-            pins = t.fixed(got, _T_ATTACH["pins"], 4)
             t.check()
-            if method not in ATTACH_METHOD.values():
-                raise Reject(m.UNSUPPORTED)                        # a method a later revision may define: 0x00 (§2.5)
-            self._check_min_speed(fn, t, struct.unpack("<I", max_speed)[0])
+            if method not in self._attach_methods(fn):
+                raise Reject(m.UNSUPPORTED)                        # not offered, or undefined: 0x00 (§3)
+            if max_speed < self._min_clock(fn):
+                raise Reject(m.UNSUPPORTED)                        # below min_clock_hz: 0x00 (§1)
+            pair = (swdio, swclk)
+            if not self._allows(fn, pair):
+                raise Reject(m.UNSUPPORTED)                        # a pair the declaration does not allow (§1)
             if reset is not None:
                 channel, hold_ms = struct.unpack("<HH", reset)
                 if channel not in self.reset_channels.get(fn, set()) or hold_ms > self.max_op_ms:
                     # not a reset line here (§3), or longer than one request may take: the tag as received
                     raise Reject(m.UNSUPPORTED, bytes([t.received(_T_ATTACH["reset"])]))
-            pair = self._pick_pair(fn, pins, t)
+            self._refuse_named(fn, pair)                           # busy pins never join or evict (§1)
             if reset is not None:
                 self._refuse_disabled([channel])                   # a disabled reset line: cause 5 (probe.config §1)
                 if self._output_idle(channel):                     # its idle drives it: nothing executed (debug §1)
                     raise unavailable("held_by_settings", channel)
-                if any(a[2] == channel for a in self.plan):
+                if any(a[2] == channel for a in self.plan) or channel in self._held():
                     raise unavailable("pin_in_use", channel)
+            if len([c for c in self.conns.values() if c.fn == fn]) >= self.max_connections.get(fn, 1):
+                raise unavailable("limit")                         # no connection is closed to make room (§1)
             tg = self._target(fn, pair)
-            speed = min(4_000_000, struct.unpack("<I", max_speed)[0])
-            cid = self._conn_at(fn, pair)
-            flags = 0
             if reset is not None and tg.resets_through(channel):
                 tg.silent_until_reset = False                      # held in reset and let go: it answers again
-                if not self._settled(tg):                          # silent past max_op_ms (debug §3)
-                    if cid is not None:                            # the connection kept, the target was reset
-                        self._host_reset(cid, MARK_RESET["attach_reset"])
+                if not self._settled(tg):                          # silent past max_op_ms (debug §2)
                     return m.COMPLETED, m.FAILED, bytes([LINE])
-            bring_up = cid is None or reset is not None            # a new connection, or the reset TLV (debug §1)
-            if cid is None:
-                if not tg.answers:
-                    return m.COMPLETED, m.FAILED, bytes([LINE])    # failed: status [TLV] (common §3)
-                cid = self._seat(fn, pair, tg, speed)              # a failed attach consumed no number
-                if tg.havereset:
-                    tg.havereset, flags = False, flags | ATTACH_FLAGS["havereset_acked"]
-            else:
-                flags |= ATTACH_FLAGS["existing"]
-                bring_up |= speed < self.conns[cid].speed          # lowered for max_speed: brought up again
-                self.conns[cid].speed = min(self.conns[cid].speed, speed)
+            if not tg.answers:
+                return m.COMPLETED, m.FAILED, bytes([LINE])        # failed: status [TLV] (common §3); nothing made
+            flags = 0
+            cid = self._seat(fn, pair, tg, min(4_000_000, max_speed), evict=False)
+            if tg.havereset:
+                tg.havereset, flags = False, flags | ATTACH_FLAGS["havereset_acked"]
             c = self.conns[cid]
-            if idle_clock is not None:                             # only a carried idle_clock changes the rest; a join
-                c.idle_clock = idle_clock                          # without it keeps the connection's (debug §1, §3)
+            if idle_clock is not None:
+                c.idle_clock = idle_clock
             c.users.add("host")
-            for n, s in self.slots.items():                        # a new connection for an evicted slot: a new cue
-                if s.wire_fn == fn and s.pair == pair:
-                    self.slot_rt[n].evicted = False
             if reset is not None and tg.reset_line not in (None, channel):
                 if method == 1:                                    # a line that resets nothing: halted where it ran
                     tg.halted, tg.dpc = True, tg.reset_vector + 0x2f8
             elif reset is not None:                                # the reset line held, then let go: a host reset
                 tg.halted = method == 1
                 tg.dpc = tg.reset_vector if method == 1 else tg.reset_vector + 0x200
-                self._host_reset(cid, MARK_RESET["attach_reset"])
             elif method == 1:
                 tg.halted = True
             tail = b"" if c.tid is None else m.tlv(_T_ATTACH_ANSWER["target_id"],
                                                    bytes([TARGET_ID_SCHEME["dmi_7f"]]) + struct.pack("<I", c.tid))
-            if tg.halted:
+            if tg.halted and method == 1:                          # bit3: the probe saw hart 0 halted (§3)
                 flags |= ATTACH_FLAGS["halted"]
                 tail += m.tlv(_T_ATTACH_ANSWER["dpc"], struct.pack("<I", tg.dpc))
-            if tg.search_retries is not None and bring_up:         # the bring-up's extra attempts (debug §1): only when
-                tail += m.tlv(_T_ATTACH_ANSWER["search_retries"],  # one ran; saturating at 0xFFFF
-                              struct.pack("<H", min(tg.search_retries, 0xFFFF)))
             self._refresh()
-            return self._answer(struct.pack("<HIBI", cid, tg.dmstatus(), flags, c.speed) + tail)
-        if op == 0x03:                                             # detach
-            cid = t.take("H")
-            got = t.tail({_T_DETACH["force"]})
-            t.fixed(got, _T_DETACH["force"], 0)                    # length 0; another length: malformed (core §2.3)
+            return self._answer(struct.pack("<IIBI", cid, tg.dmstatus(), flags, c.speed) + tail)
+        if op == O["detach"]:
+            cid = t.take("I")
+            t.tail()
             c = self._connection(cid)
             if c.fn != fn:
                 raise wrong_kind()                                 # another wire's connection
-            c.users.discard("host")
-            if _T_DETACH["force"] in got or not c.users:
-                self._close_conn(cid, MARK["detach"])
+            self._close_conn(cid, MARK["detach"])
             self._refresh()
             return m.COMPLETED, m.SUCCESS, b""
-        if op == 0x05:                                             # connections (lock-free, paged by first: debug §2.1)
+        if op == O["connections"]:                                 # lock-free, paged by first (debug §2.1)
             first = t.take("B")
             t.tail()
             mine = sorted((c.order, cid) for cid, c in self.conns.items() if c.fn == fn)
             rows = []
             for _, cid in mine:
                 c = self.conns[cid]
-                users = (1 if "host" in c.users else 0) | (2 if any(u != "host" for u in c.users) else 0)
-                slot = next((n for n, s in self.slots.items() if s.wire_fn == fn and s.pair == c.pair), NO_SLOT)
                 tid = b"" if c.tid is None else struct.pack("<I", c.tid)
-                rows.append(struct.pack("<HHHIBBBB", cid, *c.pair, c.speed, users, slot, 1 if tid else 0, len(tid)) + tid)
+                scheme = TARGET_ID_SCHEME["dmi_7f"] if tid else 0
+                rows.append(struct.pack("<IHHIBB", cid, *c.pair, c.speed, scheme, len(tid)) + tid)
             return m.COMPLETED, m.SUCCESS, self._paged(rows, first)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
@@ -2268,27 +2248,13 @@ class Endpoint:
             out.append(row)
         return bytes([int(first + len(out) < len(rows)), len(out)]) + b"".join(out)
 
-    def _pick_pair(self, fn: int, pins: bytes | None, t: Take) -> tuple[int, int]:
-        """attach's pin pair (debug §1): the pins TLV's - not one the declaration allows: unsupported with the tag as
-        received; a channel disabled, held, or with an output idle: unavailable - or, without pins, the wire's one live
-        connection, else its one candidate (a disabled channel or one with an idle item is not a candidate)."""
-        if pins is not None:
-            pair = struct.unpack("<HH", pins)
-            if not self._allows(fn, pair):
-                raise Reject(m.UNSUPPORTED, bytes([t.received(_T_ATTACH["pins"])]))   # core §2.3
-            self._refuse_named(fn, pair)
-            return pair
-        live = [c.pair for c in self.conns.values() if c.fn == fn]
-        if len(live) == 1:
-            return live[0]                                         # no pins: the wire's one live connection
-        offered = self._allowed_pairs(fn)
-        allowed = [p for p in offered if not set(p) & self.disabled and not any(
-            self._idle_mode(ch) is not None for ch in p if ch != 0xFFFF)]   # never a disabled or idle-item channel
-        if not live and len(offered) == 1 and not allowed:
-            self._refuse_named(fn, offered[0], any_idle=True)     # its one pair is left out: cause 5
-        if live or len(allowed) != 1:
-            raise Reject(m.UNAVAILABLE)                            # the host chooses among several
-        return allowed[0]
+    def _attach_methods(self, fn: int) -> set[int]:
+        """method 0, and 1 when the wire declares features bit0 attach_halt (debug §3)."""
+        halt = self._own(fn, catalog.FEATURES, "I", 0) & reg.WIRE_RVSWD.enum["features"]["attach_halt"]
+        return {ATTACH_METHOD["run"]} | ({ATTACH_METHOD["halt"]} if halt else set())
+
+    def _min_clock(self, fn: int) -> int:
+        return self._own(fn, catalog.MIN_CLOCK_HZ, "I", 0)
 
     def _candidate(self, fn: int, pair: tuple[int, int]) -> bool:
         """A pair the count = 0 sequence lists (debug §1): no channel disabled, held by something else, or with an
@@ -2305,7 +2271,7 @@ class Endpoint:
         for ch in pair:
             if ch != 0xFFFF and (self._output_idle(ch) or (any_idle and self._idle_mode(ch) is not None)):
                 raise unavailable("held_by_settings", ch)
-        held = set(pair) & self._held(fn, pair)
+        held = set(pair) & self._held()                         # a live connection's own pins too (§1)
         if held:
             raise unavailable("pin_in_use", min(held))
 
@@ -2319,12 +2285,6 @@ class Endpoint:
         if value[0] not in reg.WIRE_RVSWD.enum["idle_clock"].values():
             raise t.refuse(tag)
         return value[0]
-
-    def _check_min_speed(self, fn: int, t: Take, hz: int) -> None:
-        """max_speed below the wire's min_clock_hz (when declared): unsupported, tag 0x01 as received (debug §1)."""
-        low = self._own(fn, catalog.MIN_CLOCK_HZ, "I", 0)
-        if hz < low:
-            raise Reject(m.UNSUPPORTED, bytes([t.received(_T_ATTACH["max_speed"])]))
 
     def _conn_at(self, fn: int, pair: tuple[int, int]) -> int | None:
         return next((cid for cid, c in self.conns.items() if c.fn == fn and c.pair == pair), None)
@@ -2356,6 +2316,18 @@ class Endpoint:
             if c == cid and not self.streams[sid].closed:
                 self.streams[sid].add_mark(mark, self.now_ns())
                 self._close_stream(sid, MARK_CLOSED["connection_closed"])
+
+    def _cleanup_failed(self, cid: int, done: int, payload: bytes) -> tuple[int, int, bytes]:
+        """A block op whose restore of DATA0 / DATA1 failed: partial when done > 0 (all words included), else failed,
+        status the failure; then the connection and its streams close (debug §4)."""
+        self._close_after_answer(cid)
+        return m.COMPLETED, m.PARTIAL if done else m.FAILED, payload
+
+    def _close_after_answer(self, cid: int) -> None:
+        """A high-level op whose cleanup could not finish answers, then the connection and its streams close (debug §4,
+        common §2). The bench answers within the call, so closing here is what the host sees after the answer."""
+        self._close_conn(cid, MARK["link_lost"])
+        self._refresh()
 
     def _target_of(self, cid: int) -> VirtualTarget:
         c = self.conns[cid]
@@ -2390,7 +2362,7 @@ class Endpoint:
     def _dm_op(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         """Each op reads and checks its whole request first - malformed, then unsupported (core §4.3 orders 5 / 6) -
         and only then looks up the connection (no_resource; every check before any change, core §4.3)."""
-        conn = t.take("H")
+        conn = t.take("I")
         target = lambda: self._exchange(conn)
         if op == _RV.op["dmi"]:
             n = t.take("H")
@@ -2398,13 +2370,16 @@ class Endpoint:
             for _ in range(n):
                 kind = t.take("B")
                 if kind not in STEP_ARGS:
-                    raise Reject(m.MALFORMED)                      # its length is unknown: the rest is unreadable
+                    raise Reject(m.UNSUPPORTED)                    # its length is unknown: stop there, run nothing (§4.1)
                 steps.append((kind, t.take(STEP_ARGS[kind])))
             t.tail()
             # the time-based waits only: 0x04's wait_us and 0x05's max_us; 0x03 is bounded by its count (debug §4.1)
             waits_us = sum(a if k == STEP["wait_us"] else a[3] if k == STEP["poll_us"] else 0 for k, a in steps)
             if waits_us > self.max_op_ms * 1000:
                 raise Reject(m.UNSUPPORTED)                        # longer than one request may take (debug §4.1)
+            reads = sum(k in (STEP["read"], STEP["poll_reads"], STEP["poll_us"]) for k, _ in steps)
+            if 10 + 4 * reads > self.probe.max_frame:
+                raise Reject(m.UNSUPPORTED)                        # the success answer would not fit (§4.1, core §4.4)
             tg = target()
             tg.begin_dmi()
             done, status, values = 0, OK, []
@@ -2469,8 +2444,8 @@ class Endpoint:
                 return m.COMPLETED, m.FAILED, struct.pack("<BBI", LINE, 0, 0)   # the connection kept
             tg.halted = mode == 2
             tg.dpc = tg.reset_vector if mode == 2 else tg.reset_vector + 0x200
-            # debug §4.3: status flags(bit0 reached the mode's state, bit1 confirmed by the pc - mode 1) pc
-            flags, pc = (0b01, 0) if mode == 0 else ((0b11, tg.dpc) if mode == 1 else (0b01, tg.dpc))
+            # debug §4.3: status flags(bit0 reached the mode's state) pc (mode 2: dpc)
+            flags, pc = (0b01, 0) if mode == 0 else (0b01, tg.dpc)
             return self._answer(struct.pack("<BBI", OK, flags, pc))
         if op == _RV.op["step"]:
             t.tail()
@@ -2485,6 +2460,7 @@ class Endpoint:
                     tg.dpc, tg.haltreq, tg.dcsr_step = tg.dpc + 0x20, False, False
                     return m.COMPLETED, m.FAILED, not_ok               # the host reads dpc with dmi
                 tg.halted, tg.haltreq, tg.dcsr_step = False, False, True   # runs on, dcsr.step may still be set
+                self._close_after_answer(conn)                     # the cleanup could not finish (debug §4.2)
                 return m.COMPLETED, m.FAILED, not_ok + m.tlv(STEP_LEFT, b"")
             tg.dpc += 4
             return m.COMPLETED, m.SUCCESS, struct.pack("<BBII", OK, 1, before, tg.dpc)
@@ -2504,6 +2480,8 @@ class Endpoint:
                     status = FAULT
                     break
                 words.append(tg.mem.get(address + 4 * i, 0))
+            if tg.restore_fails:                                   # the cleanup lost the line (debug §4)
+                return self._cleanup_failed(conn, len(words), struct.pack(f"<HB{len(words)}I", len(words), LINE, *words))
             return (m.COMPLETED, self._outcome(status, len(words)),
                     struct.pack(f"<HB{len(words)}I", len(words), status, *words))
         if op == _RV.op["write_block"]:
@@ -2524,6 +2502,8 @@ class Endpoint:
                     break
                 tg.mem[address + 4 * i] = w
                 done += 1
+            if tg.restore_fails:                                   # the cleanup lost the line (debug §4)
+                return self._cleanup_failed(conn, done, struct.pack("<HB", done, LINE))
             return m.COMPLETED, self._outcome(status, done), struct.pack("<HB", done, status)
         if op == _RV.op["run"]:
             pc, timeout_ms, n = t.take("IIB")

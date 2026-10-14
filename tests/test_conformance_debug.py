@@ -52,11 +52,11 @@ def test_debug_checker_detects_independent_faults(fault,case):
             try:value=dispatch(fn,op,payload,tags)
             except Reject:
                 if fault=='reject_access' and fn==5:e.access.append(('invalid-access',))
-                if fault=='boundary_effect' and fn==5 and op==16 and struct.unpack_from('<H',payload,2)[0]>13:e.writereg(struct.unpack_from('<H',payload)[0],4,123)
+                if fault=='boundary_effect' and fn==5 and op==16 and struct.unpack_from('<H',payload,4)[0]>13:e.writereg(struct.unpack_from('<I',payload)[0],4,123)
                 raise
             finally:e.ep.probe.max_frame=limit
             if fn!=5:return value
-            parent=struct.unpack_from('<H',payload)[0];data=bytes(value);outcome=getattr(value,'outcome',0)
+            parent=struct.unpack_from('<I',payload)[0];data=bytes(value);outcome=getattr(value,'outcome',0)
             if op==16:
                 if fault=='boundary_tail' and len(data)+5>limit-4:data+=b'\x7f\x01\0x'
                 elif fault=='done_wrong':data=b'\0\0'+data[2:]
@@ -70,7 +70,7 @@ def test_debug_checker_detects_independent_faults(fault,case):
                         if conn==parent:e.mailboxes[rid]['debug_busy']=True
                 elif fault=='line_has_value' and data[2]==2:data=data[:3]+b'\x01\0'+struct.pack('<I',123)+data[5:]
                 elif fault=='timeout_no_value' and data[2]==4:data=data[:3]+b'\0\0'+data[9:]
-                elif fault=='zero_us_twice' and len(payload)>=18 and payload[4]==5 and payload[14:18]==b'\0'*4:e.access.append(('dmi-read',parent,payload[5],e.readreg(parent,payload[5])))
+                elif fault=='zero_us_twice' and len(payload)>=20 and payload[6]==5 and payload[16:20]==b'\0'*4:e.access.append(('dmi-read',parent,payload[7],e.readreg(parent,payload[7])))
             if op in (17,18) and fault=='hartsel_left':e.writereg(parent,0x10,e.readreg(parent,0x10)|((0x3ff<<6)|(0x3ff<<16)))
             if op==18 and fault=='resume_req_left':e.writereg(parent,0x10,e.readreg(parent,0x10)|0x80000000)
             if op==17 and outcome and fault=='halt_req_left':e.writereg(parent,0x10,e.readreg(parent,0x10)|0x80000000)

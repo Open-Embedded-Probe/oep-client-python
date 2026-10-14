@@ -140,26 +140,51 @@ class Found:
     dmstatus: int
 
 
-_WIRE = reg.WIRE_RVSWD          # the three wires share their op and tag numbers (oep-if-debug §3, §5)
+_WIRE = reg.WIRE_RVSWD          # the three wires share their op and tag numbers (oep-if-debug §0, §3, §5)
 
 
 class WireBase(Interface):
-    """oep.wire.<link>: scan / attach / detach / connections. The shared part; each link's attach takes its own
-    arguments. A failed scan, attach or detach is completed failed with `status(u8) [TLV]` (common §3)."""
+    """oep.wire.<link>: scan / attach / detach / connections (oep-if-debug §0-§2). The shared part; each link's attach
+    takes its own arguments. A failed scan, attach or detach is completed failed with `status(u8) [TLV]` (common §3).
+    attach names its pins in the fixed part (§1): `pins` None takes the wire's one candidate pair (candidate_pairs)."""
     SCAN, ATTACH, DETACH, CONNECTIONS = (_WIRE.op[k] for k in ("scan", "attach", "detach", "connections"))
     REVISION = 1
-    TAG_MAX_SPEED = _WIRE.tlv["attach"]["max_speed"]   # u32 Hz, critical; attach requires it (oep-if-debug §1)
-    TAG_PINS = _WIRE.tlv["attach"]["pins"]             # swdio(u16) swclk(u16, 0xFFFF on one wire), critical
     TAG_RESET = _WIRE.tlv["attach"]["reset"]           # channel(u16) hold_ms(u16), critical: attach under reset (§3)
     TAG_SCAN_MAX_SPEED = _WIRE.tlv["scan"]["max_speed"]
-    TAG_SKIP = _WIRE.tlv["scan"]["skip"]               # scan, count 0 only: pairs of the count-0 list to skip (§1)
     TAG_SCAN_IDLE_CLOCK = _WIRE.tlv["scan"]["idle_clock"]
-    FLAGS = _WIRE.enum["attach_flags"]                 # bit0 havereset_acked, bit1 existing, bit2 dormant_woken, bit3 halted
+    FLAGS = _WIRE.enum["attach_flags"]                 # bit0 havereset_acked, bit2 dormant_woken, bit3 halted
+    ONE_WIRE = False                                   # swio: swclk is 0xFFFF (§3)
     DEFAULT_MAX_SPEED = 1_000_000                      # when the wire declares no max_clock_hz either
 
+    def _description(self) -> catalog.Description:
+        return catalog.decode_description(b"".join(catalog.tlv(t, v) for t, v in describe(self.host, self.fn)))
+
+    def candidate_pairs(self) -> list[tuple[int, int]]:
+        """The (swdio, swclk) pairs the wire's describe allows (oep-if-debug §1): its channel_groups' role 1 / role 2,
+        else role_channels' role 1 x role 2 without using a channel twice (swio: swclk 0xFFFF)."""
+        d = self._description()
+        if d.groups:
+            out = []
+            for pins in d.groups.values():
+                roles = dict(pins)
+                if 1 in roles:
+                    out.append((roles[1], 0xFFFF if self.ONE_WIRE else roles.get(2, 0xFFFF)))
+            return out
+        if self.ONE_WIRE:
+            return [(dio, 0xFFFF) for dio in d.roles.get(1, [])]
+        return [(dio, clk) for dio in d.roles.get(1, []) for clk in d.roles.get(2, []) if dio != clk]
+
+    def _pins(self, pins: tuple[int, int] | None) -> tuple[int, int]:
+        if pins is not None:
+            return pins
+        pairs = self.candidate_pairs()
+        if len(pairs) != 1:
+            raise ValueError(f"{self.name}: name the pins - the probe allows {len(pairs)} pairs")
+        return pairs[0]
+
     def _speed_or_default(self, max_speed: int | None) -> int:
-        """attach's max_speed is required (malformed without): None takes the wire's declared max_clock_hz (its
-        describe, cached), else DEFAULT_MAX_SPEED. The target's ceiling is the host's to know (oep-if-debug §3)."""
+        """attach's max_speed (fixed part, never 0): None takes the wire's declared max_clock_hz (its describe,
+        cached), else DEFAULT_MAX_SPEED. The target's ceiling is the host's to know (oep-if-debug §1)."""
         if max_speed is not None:
             return max_speed
         for tag, v in describe(self.host, self.fn):
@@ -188,28 +213,26 @@ class WireBase(Interface):
         # (channel, hold_ms), critical: hold the reset line (open drain, low) that long, then attach (oep-if-debug §3)
         return b"" if reset is None else m.tlv(self.TAG_RESET, struct.pack("<HH", *reset), critical=True)
 
+    def _attach_fixed(self, method: int, pins: tuple[int, int] | None, max_speed: int | None) -> bytes:
+        return struct.pack("<BHHI", method, *self._pins(pins), self._speed_or_default(max_speed))
+
     def scan(self, pairs: list[tuple[int, int]] | None = None, max_speed: int | None = None,
              idle_clock: str | None = None) -> list[Found]:
-        """Try `pairs` of (swdio, swclk); None = every pair the probe allows and nothing holds (describe's
-        channel_group / role_channels, oep-if-debug §1). A pair the probe does not allow, or one whose pins something
-        holds, refuses the whole scan (rejected unavailable). max_speed (critical; None: the wire's slowest speed) and
-        idle_clock ("high" / "low", rvswd only, critical) are the target's line settings (§3); they do not change a
-        live connection's settings (a live pair is read over its connection, §1). The probe tries at most
-        255 pairs a request and stops early when its answer would not fit one frame; this goes on until every pair is
-        tried (count 0: with skip until tried = 0; the probe tries at least one pair while any remain)."""
+        """Try `pairs` of (swdio, swclk); None = candidate_pairs() (the host builds the list: scan has no implicit
+        one, oep-if-debug §1). A pair the probe does not allow, or one whose pins something holds, refuses the whole
+        scan (rejected). max_speed (None: the wire's slowest speed) and idle_clock ("high" / "low", rvswd only) are
+        the target's line settings (§3). The probe answers how many it tried from the front (at least one while any
+        remain); the rest go in the next request, until every pair is tried."""
         out = []
-        pairs = list(pairs or [])
-        skip = 0
+        pairs = list(self.candidate_pairs() if pairs is None else pairs)
         extra = b""
         if max_speed is not None:
             extra += m.tlv(self.TAG_SCAN_MAX_SPEED, struct.pack("<I", max_speed), critical=True)
         if idle_clock is not None:
             extra += m.tlv(self.TAG_SCAN_IDLE_CLOCK, bytes([_WIRE.enum["idle_clock"][idle_clock]]), critical=True)
-        while True:
+        while pairs:
             chunk = pairs[:255]
             body = bytes([len(chunk)]) + b"".join(struct.pack("<HH", d, c) for d, c in chunk)
-            if not pairs and skip:
-                body += m.tlv(self.TAG_SKIP, struct.pack("<H", skip))
             rd = m.Reader(self._call(self.SCAN, body + extra, expect_ms=self.scan_ms()).payload)
             tried, count = rd.take("BB")
             for _ in range(count):
@@ -217,57 +240,47 @@ class WireBase(Interface):
                 out.append(Found(kind, (dio, clk), status))
             rd.tail()
             if tried == 0:
-                return out
-            if pairs:
-                pairs = pairs[tried:]
-                if not pairs:
-                    return out
-            else:
-                skip += tried
+                raise h.OepError(f"{self.name} scan tried none of {len(chunk)} pairs")
+            pairs = pairs[tried:]
+        return out
 
-    def detach(self, conn: int, force: bool = False) -> None:
-        """Take this session's share of the connection (it closes when nobody uses it); force closes it whatever
-        else uses it (oep-if-debug §2)."""
-        body = struct.pack("<H", conn)
-        if force:
-            body += m.tlv(_WIRE.tlv["detach"]["force"], b"", critical=True)
-        self._call(self.DETACH, body)
+    def detach(self, conn: int) -> None:
+        """Close the connection and its streams (oep-if-debug §2)."""
+        self._call(self.DETACH, struct.pack("<I", conn))
 
     def connections(self) -> list["ConnectionInfo"]:
         """The wire's live connections, in the order they were made (oep-if-debug §2.1, lock-free; paged: the request
-        is first(u8), the answer more count entries, followed until more is 0)."""
+        is first(u8), the answer more count entries [TLV], followed until more is 0). swd's selected_target TLVs
+        (entry_index, targetsel) give each entry the TARGETSEL the host supplied."""
         out: list[ConnectionInfo] = []
         while True:
             rd = m.Reader(self._call(self.CONNECTIONS, bytes([len(out)]), locked=False).payload)
             more, count = rd.take("BB")
+            page = []
             for _ in range(count):
-                conn, swdio, swclk, speed, users, slot, scheme, n = rd.take("HHHIBBBB")
+                conn, swdio, swclk, speed, scheme, n = rd.take("IHHIBB")
                 tid = rd.bytes(n)
-                out.append(ConnectionInfo(conn, (swdio, swclk), speed, users, None if slot == 0xFF else slot,
-                                          (scheme, tid) if scheme else None))
-            rd.tail()
+                page.append([conn, (swdio, swclk), speed, (scheme, tid) if scheme else None, None])
+            for tag, value in m.split_tlvs(rd.rest()):
+                if tag & ~m.TAG_CRITICAL == _SELECTED_TARGET and len(value) >= 5 and value[0] < len(page):
+                    page[value[0]][4] = struct.unpack_from("<I", value, 1)[0]
+            out += [ConnectionInfo(*row) for row in page]
             if not more or not count or len(out) > 0xFF:
                 return out
 
-    def _speed_tlv(self, max_speed: int | None) -> bytes:
-        # critical: a probe that cannot keep to a ceiling must refuse, not ignore it (core §2.3: safety arguments)
-        return b"" if max_speed is None else m.tlv(self.TAG_MAX_SPEED, struct.pack("<I", max_speed), critical=True)
 
-    def _pins_tlv(self, pins: tuple[int, int] | None) -> bytes:
-        # the pair to attach on (a scan result's .pins); None: the probe's only pair
-        return b"" if pins is None else m.tlv(self.TAG_PINS, struct.pack("<HH", *pins), critical=True)
+_SELECTED_TARGET = reg.WIRE_SWD.tlv["connections_answer"]["selected_target"]
 
 
 @dataclass(frozen=True)
 class ConnectionInfo:
-    """One row of connections (oep-if-debug §2.1): users bit0 = a host session, bit1 = a slot; slot = the slot it is
-    the connection of (None: none); target_id = (scheme, value) read at attach (None: none)."""
+    """One row of connections (oep-if-debug §2.1): target_id = (scheme, value) read at attach (None: none);
+    targetsel = the TARGETSEL the host supplied at attach (swd; None: none)."""
     connection: int
     pins: tuple[int, int]
     speed_hz: int
-    users: int
-    slot: int | None
     target_id: tuple[int, bytes] | None
+    targetsel: int | None = None
 
 
 class Wire(WireBase):
@@ -281,16 +294,15 @@ class Wire(WireBase):
     SCHEME_DMI_7F = reg.COMMON.enum["target_id_scheme"]["dmi_7f"]   # the u32 at DMI 0x7F (oep-if-debug §3)
 
     TAG_DPC = reg.WIRE_RVSWD.tlv["attach_answer"]["dpc"]
-    TAG_SEARCH_RETRIES = reg.WIRE_RVSWD.tlv["attach_answer"]["search_retries"]
 
     def __init__(self, hst: h.Host, name: str = "oep.wire.rvswd"):
         super().__init__(hst, name)
-        self.had_reset = self.existing = self.halted = False
+        self.ONE_WIRE = name == "oep.wire.swio"
+        self.had_reset = self.halted = False
         self.flags = 0
         self.speed_hz = 0
         self.dpc: int | None = None                        # the halted hart's dpc (attach flags bit3), else None
         self.target_id: tuple[int, bytes] | None = None   # (scheme, value) the last attach read, or None
-        self.search_retries: int | None = None           # the last attach's failed speed-search tries (None: not said)
 
     def _take_target_id(self, tail: m.Tail) -> None:
         v = tail.get(self.TAG_TARGET_ID)
@@ -303,44 +315,40 @@ class Wire(WireBase):
     def reset_channels(self) -> list[int]:
         """The channels an attach's reset TLV may take (describe role_channels, role reset). There is no default reset
         line: the host names one every time (oep-if-debug §3)."""
-        out = set()
-        for tag, v in describe(self.host, self.fn):
-            if tag & ~m.TAG_CRITICAL == catalog.ROLE_CHANNELS and v[0] == self.ROLE_RESET:
-                out.update(catalog.bitmap_to_channels(struct.unpack_from("<H", v, 1)[0], v[3:]))
-        return sorted(out)
+        return self._description().roles.get(self.ROLE_RESET, [])
+
+    def attach_halt_offered(self) -> bool:
+        """method 1 (halt) is offered only with features bit0 attach_halt (oep-if-debug §3)."""
+        features = self._description().features or 0
+        return bool(features & reg.WIRE_RVSWD.enum["features"]["attach_halt"])
 
     def attach_body(self, halt: bool = True, max_speed: int | None = None, pins: tuple[int, int] | None = None,
                     idle_clock: str | None = None, reset: tuple[int, int] | None = None) -> bytes:
-        """The attach request: method, then the TLVs (max_speed always: it is required)."""
-        return (bytes([self.HALT if halt else self.RUN]) + self._speed_tlv(self._speed_or_default(max_speed))
-                + self._pins_tlv(pins) + self._idle_tlv(idle_clock) + self._reset_tlv(reset))
+        """The attach request: method, swdio, swclk, max_speed, then the TLVs (oep-if-debug §3)."""
+        return (self._attach_fixed(self.HALT if halt else self.RUN, pins, max_speed)
+                + self._idle_tlv(idle_clock) + self._reset_tlv(reset))
 
     def attach(self, halt: bool = True, max_speed: int | None = None, pins: tuple[int, int] | None = None,
                idle_clock: str | None = None, reset: tuple[int, int] | None = None) -> tuple[int, int]:
-        """-> (connection, DMSTATUS). Attaching an attached wire returns its connection as it is (self.existing).
-        self.had_reset: a pending havereset was acknowledged first (a V00x's DMSTATUS halt / run bits stay frozen
-        until then); self.halted / self.dpc: the hart is halted and where (attach flags bit3, TLV dpc); self.speed_hz:
-        the speed the probe chose; max_speed: the ceiling the probe must keep (critical, required; None: the wire's
-        declared max_clock_hz); idle_clock: "high" / "low", how rvswd rests SWCLK (critical; sent whenever given, high
-        included). Both are the target's, known by the host (oep-if-debug §3). An attach that joins a live connection
-        (a slot's, another session's) changes only what it carries: idle_clock None keeps the connection's current
-        rest (None means high only for a new connection), and max_speed only lowers its speed (§1) - a caller that
-        knows the target's rest (a slot's idle_clock) passes it, high included. reset = (channel, hold_ms): hold that reset line (one of reset_channels())
-        low for hold_ms, then attach - halting before the first instruction with halt=True - the way back from firmware
-        that turns the debug pins into GPIOs. self.target_id: (scheme, value) of the target's identity when the probe
-        could read one."""
+        """-> (connection, DMSTATUS). A new connection every time: pins a live connection holds are refused
+        (unavailable cause 1, oep-if-debug §1) - detach first. self.had_reset: a pending havereset was acknowledged
+        first (a V00x's DMSTATUS halt / run bits stay frozen until then); self.halted / self.dpc: the probe saw hart 0
+        halted and where (attach flags bit3, TLV dpc); self.speed_hz: the speed the probe chose; max_speed: the ceiling
+        the probe must keep (None: the wire's declared max_clock_hz); idle_clock: "high" / "low", how rvswd rests SWCLK
+        (critical; sent whenever given, high included). Both are the target's, known by the host (oep-if-debug §3).
+        halt=True is method 1, offered only with features attach_halt. reset = (channel, hold_ms): hold that reset
+        line (one of reset_channels()) low for hold_ms, then attach - halting as early as it can with halt=True - the
+        way back from firmware that turns the debug pins into GPIOs. self.target_id: (scheme, value) of the target's
+        identity when the probe could read one."""
         rd = m.Reader(self._call(self.ATTACH, self.attach_body(halt, max_speed, pins, idle_clock, reset),
                                  expect_ms=self.attach_ms(reset)).payload)
-        conn, status, self.flags, self.speed_hz = rd.take("HIBI")
+        conn, status, self.flags, self.speed_hz = rd.take("IIBI")
         self.had_reset = bool(self.flags & self.FLAGS["havereset_acked"])
-        self.existing = bool(self.flags & self.FLAGS["existing"])
         self.halted = bool(self.flags & self.FLAGS["halted"])
         tail = rd.tail()
         self._take_target_id(tail)
         dpc = tail.get(self.TAG_DPC)
         self.dpc = int.from_bytes(dpc, "little") if self.halted and dpc else None
-        tries = tail.get(self.TAG_SEARCH_RETRIES)                 # 0xFFFF = 65535 or more (oep-if-debug §1)
-        self.search_retries = struct.unpack_from("<H", tries)[0] if tries and len(tries) >= 2 else None
         return conn, status
 
     def attach_under_reset(self, channel: int, hold_ms: int = 20, max_speed: int | None = None,
@@ -361,21 +369,18 @@ class Wire(WireBase):
         not a worry. Each try pulls one channel low (open drain) for hold_ms. The target is left running (or halted,
         where resume is not acknowledged).
 
-        pins: the debug pins to attach on (a scan result's .pins). Name them on a probe whose wire takes its pins
-        from the host (role_channels): without pins such a probe attaches only to the wire's one live connection, so
-        once the first try's detach closed it every later attach was refused (rejected unavailable) - and was taken
-        for "not a reset line" (2026-10-02, ESP32-P4 + CH32V003: [] with the real line at channel 4). None takes the
-        pins of the wire's one live connection, if there is one. A connection that was there before the search
-        (attach flags existing) is left open.
+        pins: the debug pins to attach on (a scan result's .pins; None: the wire's one candidate pair). A live
+        connection on them is closed first (attach never joins one, oep-if-debug §1); each try's own connection is
+        detached after it.
 
         Skipped: a channel the probe does not offer as a reset line (rejected unsupported) and one something else
         holds (rejected unavailable naming that channel); `last_search[channel]` keeps the rejection. Any other
         rejection is about the pins or the wire, not the channel, and is raised. A failed attach counts as a miss and
         is tried again (the first attach under reset of a session failed once in 7 on the P4)."""
-        if pins is None:
-            live = self.connections()
-            if len(live) == 1:
-                pins = live[0].pins
+        pins = self._pins(pins)
+        for c in self.connections():
+            if c.pins == pins:
+                self.detach(c.connection)
         hits = []
         self.last_search = {}   # channel -> list of dpc values (None: attach failed), or the rejection
         for channel in candidates:
@@ -386,7 +391,7 @@ class Wire(WireBase):
                 except h.Unavailable as e:
                     if channel not in e.channels:          # the pins or the wire, not this channel: no search
                         raise
-                    seen = e                               # held by something else (a plan, a slot)
+                    seen = e                               # held by something else (a plan, another connection)
                     break
                 except h.Rejected as e:
                     if e.result.detail != m.UNSUPPORTED:
@@ -396,7 +401,6 @@ class Wire(WireBase):
                 except h.Failed:
                     seen.append(None)                      # the attach itself failed: try again
                     continue
-                existing = self.existing
                 seen.append(dpc)
                 dm = RiscvDm(self.host, conn)
                 try:
@@ -404,14 +408,13 @@ class Wire(WireBase):
                         # Leave the vector for real: a hart left halted there reads dpc = vector again through the
                         # next, wrong channel (2026-09-24: a CH32L103 whose resume was not acknowledged made the
                         # channel after NRST a false hit). A reset-and-run always gets it going.
-                        dm.reset(confirm=True)
+                        dm.reset()
                     else:
                         dm.resume()
                 except h.OepError:
                     pass   # a CH32L103 raises no allresumeack; a hart left halted mid-code still lands off the vector
                 finally:
-                    if not existing:
-                        self.detach(conn)                  # the caller's own connection stays
+                    self.detach(conn)
                 if dpc == reset_vector:
                     hits.append(channel)
                     break
@@ -516,19 +519,19 @@ def dmi_value_count(kinds: list[int], done: int, status: int) -> int:
 
 
 class RiscvDm(Interface, BlockLength):
-    """oep.target.riscv-dm on one connection (every request starts with the connection, u16). `max_length` /
+    """oep.target.riscv-dm on one connection (every request starts with the connection, u32). `max_length` /
     `max_words` bound read_block / write_block (from the probe's describe)."""
     NAME = "oep.target.riscv-dm"
     REVISION = 1
     DMI, HALT, RESUME, RESET, READ_BLOCK, WRITE_BLOCK, RUN, STEP = (
         _RV.op[k] for k in ("dmi", "halt", "resume", "reset", "read_block", "write_block", "run", "step"))
-    RESET_RUN, RESET_RUN_CONFIRM, RESET_HALT = (_RV.enum["reset_mode"][k] for k in ("run", "run_verified", "halt_at_reset"))
+    RESET_RUN, RESET_HALT = (_RV.enum["reset_mode"][k] for k in ("run", "halt_at_reset"))
     TAG_STEP_LEFT = _RV.tlv["step_answer"]["step_left"]
     OPTIONAL = {"block": (_RV.op["read_block"], _RV.op["write_block"]), "run": (_RV.op["run"],),
                 "reset": (_RV.op["reset"],), "step": (_RV.op["step"],)}   # the optional ops (debug §4), by name
 
     def __init__(self, hst: h.Host, conn: int, name: str = "oep.target.riscv-dm"):
-        super().__init__(hst, name, prefix=struct.pack("<H", conn))
+        super().__init__(hst, name, prefix=struct.pack("<I", conn))
         self.conn = conn
         self._max_length = None
         self.data_saved: int | None = None   # DATA0 as it was before this host's own abstract commands changed it
@@ -700,7 +703,7 @@ class RiscvDm(Interface, BlockLength):
         # §4.3, core §4.4)
         r = self._request(self.RESET, bytes([mode]), expect_ms=self.reset_ms())
         rd = ran(r)
-        status, flags, pc = rd.take("BBI")                 # status flags(bit0 reached, bit1 verified) pc (§4.3)
+        status, flags, pc = rd.take("BBI")                 # status flags(bit0 reached) pc (§4.3)
         rd.tail()
         check("reset", r, status)
         return flags, pc
@@ -712,11 +715,11 @@ class RiscvDm(Interface, BlockLength):
         except (h.OepError, AttributeError, TypeError):
             return FALLBACK_MAX_OP_MS
 
-    def reset(self, confirm: bool = True) -> tuple[int, int]:
-        """Reset through ndmreset and let it run (confirm: seen running, the pc read). The reset op never drives a
-        reset line (debug §4.3): a line moves only through attach's reset TLV (`Wire.attach_under_reset`) or a
-        fixture. -> (flags, pc)"""
-        return self._reset(self.RESET_RUN_CONFIRM if confirm else self.RESET_RUN)
+    def reset(self) -> tuple[int, int]:
+        """Reset through ndmreset and let it run (success: the probe saw it running, flags bit0). The reset op never
+        drives a reset line (debug §4.3): a line moves only through attach's reset TLV (`Wire.attach_under_reset`) or
+        a fixture. -> (flags, pc)"""
+        return self._reset(self.RESET_RUN)
 
     def reset_halt(self) -> int:
         """Reset and stop before the first instruction (haltreq held through the reset). -> dpc"""
@@ -867,6 +870,6 @@ def attach_after_gpio_reset(hst: h.Host, wire_: Wire, gpio_fn: int, channel: int
         if not release.succeeded:
             raise h.Failed(release)                       # never leave the reset line held
         if last.succeeded:
-            conn, status = m.Reader(last.payload).take("HI")
+            conn, status = m.Reader(last.payload).take("II")
             return conn, status
     raise h.Failed(last) if last is not None else ValueError("tries must be at least 1")

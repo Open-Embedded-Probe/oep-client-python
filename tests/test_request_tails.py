@@ -351,15 +351,15 @@ BITS = pytest.mark.parametrize("critical", [False, True])
 
 
 @BITS
-def test_attach_max_speed_of_another_length_is_malformed_either_way(critical):
+def test_attach_reset_of_another_length_is_malformed_either_way(critical):
+    """The reset TLV is channel(u16) hold_ms(u16): shorter or longer is malformed, before the channel is looked at."""
     ep, rec, hst = recorded()
     wire = riscv.Wire(hst, "oep.wire.rvswd")
     wire.attach(halt=True)
-    tag = wire.TAG_MAX_SPEED
-    assert rec.variant(wire.fn, wire.ATTACH, 1, lambda t: with_bit(t, tag, critical)).resolution == m.COMPLETED
-    for value in (b"\x00\x09\x3d", b"\x00\x09\x3d\x00\x00"):        # shorter, longer
-        assert refused(rec.variant(wire.fn, wire.ATTACH, 1, lambda t: with_bit(t, tag, critical, value))) \
-            == (m.MALFORMED, b"")
+    tag = wire.TAG_RESET & 0x7F
+    sent = tag | (m.TAG_CRITICAL if critical else 0)
+    for value in (b"\x17\x00\x14", b"\x17\x00\x14\x00\x00"):        # shorter, longer
+        assert refused(rec.variant(wire.fn, wire.ATTACH, 9, lambda t: t + [(sent, value)])) == (m.MALFORMED, b"")
 
 
 @BITS
@@ -370,22 +370,20 @@ def test_attach_idle_clock_value_left_unused_is_unsupported_with_the_tag_as_rece
     wire.attach(halt=True)
     tag = reg.WIRE_RVSWD.tlv["attach"]["idle_clock"]
     sent = tag | (m.TAG_CRITICAL if critical else 0)
-    assert refused(rec.variant(wire.fn, wire.ATTACH, 1, lambda t: t + [(sent, b"\x02")])) \
+    assert refused(rec.variant(wire.fn, wire.ATTACH, 9, lambda t: t + [(sent, b"\x02")])) \
         == (m.UNSUPPORTED, bytes([sent]))
-    assert refused(rec.variant(wire.fn, wire.ATTACH, 1, lambda t: t + [(sent, b"\x01\x00")])) == (m.MALFORMED, b"")
-    assert rec.variant(wire.fn, wire.ATTACH, 1, lambda t: t + [(sent, b"\x01")]).resolution == m.COMPLETED
+    assert refused(rec.variant(wire.fn, wire.ATTACH, 9, lambda t: t + [(sent, b"\x01\x00")])) == (m.MALFORMED, b"")
+    assert rec.variant(wire.fn, wire.ATTACH, 9, lambda t: t + [(sent, b"\x01")]).resolution == m.COMPLETED
 
 
-@BITS
-def test_detach_force_with_a_value_is_malformed_either_way(critical):
+def test_detach_has_no_tlv_any_more():
+    """oep-if-debug §2: detach has no force TLV - its old tag is an unknown TLV (core §2.3)."""
     ep, rec, hst = recorded()
     wire = riscv.Wire(hst, "oep.wire.rvswd")
     conn, _ = wire.attach(halt=True)
-    wire.detach(conn, force=True)
-    tag = reg.WIRE_RVSWD.tlv["detach"]["force"]
-    assert rec.variant(wire.fn, wire.DETACH, 2, lambda t: with_bit(t, tag, critical)).resolution == m.COMPLETED
-    assert refused(rec.variant(wire.fn, wire.DETACH, 2, lambda t: with_bit(t, tag, critical, b"\x01"))) \
-        == (m.MALFORMED, b"")
+    wire.detach(conn)
+    assert rec.variant(wire.fn, wire.DETACH, 4, lambda t: [(0x01, b"")]).resolution == m.COMPLETED
+    assert refused(rec.variant(wire.fn, wire.DETACH, 4, lambda t: [(0x81, b"")])) == (m.UNSUPPORTED, b"\x81")
 
 
 @BITS
@@ -493,10 +491,11 @@ def test_a_tag_sent_twice_uses_the_first():
     assert refused(rec.variant(uart.fn, uart.CONFIGURE, 4, lambda t: [short, good])) == (m.MALFORMED, b"")
     wire = riscv.Wire(hst, "oep.wire.rvswd")
     wire.attach(halt=True)
-    speed = wire.TAG_MAX_SPEED
-    assert rec.variant(wire.fn, wire.ATTACH, 1,
-                       lambda t: t + [(speed | m.TAG_CRITICAL, b"\x01")]).resolution == m.COMPLETED
-    assert refused(rec.variant(wire.fn, wire.ATTACH, 1, lambda t: [(speed, b"\x01")] + t)) == (m.MALFORMED, b"")
+    idle = reg.WIRE_RVSWD.tlv["attach"]["idle_clock"]
+    r = rec.variant(wire.fn, wire.ATTACH, 9, lambda t: [(idle | m.TAG_CRITICAL, b"\x01"), (idle, b"\x00")])
+    assert r.resolution == m.COMPLETED                             # the first holds: rests low
+    assert refused(rec.variant(wire.fn, wire.ATTACH, 9, lambda t: [(idle, b"\x01"), (idle, b"\x01\x00")])) \
+        == (m.MALFORMED, b"")
 
 
 def test_an_unknown_critical_and_a_malformed_known_tlv_get_either_reason():

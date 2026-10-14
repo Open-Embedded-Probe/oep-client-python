@@ -6,7 +6,7 @@ from .conformance_dmseq import target_frame
 
 
 class StepChecks(BlockChecks):
-    def request_step(self,sid,parent,extra=b''):return self.request(5,'step',sid,struct.pack('<H',parent)+extra)
+    def request_step(self,sid,parent,extra=b''):return self.request(5,'step',sid,struct.pack('<I',parent)+extra)
     def step(self,sid,parent,mode,before_pc,after_pc):
         self.a.step_behavior(mode,after_pc);before=self.a.state();req=self.request_step(sid,parent);frame=self.c.exchange(req)
         status={'ok':0,'late-halt':5,'running':5,'prepare-line':2,'prepare-fault':3}[mode]
@@ -16,7 +16,13 @@ class StepChecks(BlockChecks):
         tags=dict(reversed(tlvs(frame[15:])));left=self.specs[5]['tlv']['step_answer']['step_left']
         if mode=='running':require(tags.get(left)==b'','step_left missing or has nonzero length')
         else:require(left not in tags,'step_left on successful re-halt/preparation failure')
-        after=self.a.state();prior=before['targets'][parent];target=after['targets'][parent]
+        after=self.a.state();prior=before['targets'][parent]
+        if mode=='running':                                # the cleanup could not finish: closed after the answer
+            mine=[rid for rid,s in before['streams'].items() if s['connection']==parent]
+            require(parent not in after['connections'] and not any(rid in after['streams'] for rid in mine),'step_left kept the connection or its streams')
+            require(sum(row[0]=='step-resume' for row in after['access'][len(before['access']):])==1,'step retried resume')
+            return req,frame
+        target=after['targets'][parent]
         require(target['dcsr']&3==prior['dcsr']&3,'step changed prv')
         if mode!='running':require(not target['dcsr']&4,'step bit not lowered')
         require(not target['haltreq'] and not target['registers'][0x10]&(HARTSEL|0x80000000),'step left haltreq/hartsel')
@@ -46,9 +52,10 @@ class StepChecks(BlockChecks):
         with self.c.holding(3000) as sid:
             parent=self.parent(sid);rid,_=self.console(sid,parent,2);data=target_frame(syn=True,data=b'wire');self.a.frame(rid,*data)
             self.a.seed_step(parent,0x1000,0x40008003);before=self.a.state();self.step(sid,parent,mode,0x1000,0x1004);after=self.a.state()
+            if mode=='running':require(rid not in after['streams'],'console stream outlived its connection');return
             require(after['mailboxes'][rid]['data0']==data[0] and after['mailboxes'][rid]['data1']==data[1] and after['protocols'][rid]==before['protocols'][rid],'step damaged console frame/pending')
             polls=after['arbitration'][len(before['arbitration']):];require(polls and all(not row['events'] for row in polls),'console accessed mailbox during step')
-            if mode!='running':self.c.success(self.request(5,'resume',sid,struct.pack('<H',parent)))
+            self.c.success(self.request(5,'resume',sid,struct.pack('<I',parent)))
             self.a.poll(rid);require(self.a.state()['streams'][rid]['data']==b'wire','console did not resume with restored frame')
     def refusal_step(self,kind):
         self.fresh()
@@ -57,7 +64,7 @@ class StepChecks(BlockChecks):
             parent=self.parent(sid)
             if kind=='CRITICAL':self.refused(self.request_step(sid,parent,self.tlv(254,b'x')),'unsupported',b'\xfe')
             elif kind=='TLV':self.refused(self.request_step(sid,parent,b'\x7f\x05\0x'),'malformed')
-            elif kind=='TRUNCATED':self.refused(self.request(5,'step',sid,b'\x01'),'malformed')
+            elif kind=='TRUNCATED':self.refused(self.request(5,'step',sid,b'\x01\0\0'),'malformed')
             elif kind=='FOREIGN':self.refused(self.request_step(sid%0xffffffff+1,parent,b'\xfe'),'locked')
             elif kind=='RESOURCE':
                 self.refused(self.request_step(sid,65535),'no_resource');rid,_=self.console(sid,parent,2);self.refused(self.request_step(sid,rid),'unavailable',cause=6)

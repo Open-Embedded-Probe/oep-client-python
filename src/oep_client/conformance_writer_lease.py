@@ -12,7 +12,7 @@ class WriterLeaseChecks(CutChecks):
         self.fresh()
         with self.c.holding(1000) as sid:
             parent,rid=self.prepare(sid);old=self.a.state();self.a.advance(400)
-            req=self.dmi_request(sid,parent,[b'\xff'] if rejected else [self.write_reg(4,42)])
+            req=self.dmi_request(sid,parent,[b'\x01\x05'] if rejected else [self.write_reg(4,42)])
             self.a.accept(req)
             try:
                 held=self.a.state();require(held['deadline']==old['deadline'] and held['holder']==sid and parent in held['connections'],'processing renewed or lost lease')

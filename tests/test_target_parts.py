@@ -31,6 +31,10 @@ class ScriptedHost(h.Host):
         fn = struct.unpack_from("<H", p)[0]
         if max_length is not None and fn in (FNS["oep.target.riscv-dm"], FNS["oep.target.arm-adi"]):
             return b"\x00" + catalog.u16(catalog.MAX_LENGTH, max_length)
+        if fn == FNS["oep.wire.rvswd"]:                                  # one SWIO-like pair, attach_halt (debug §3)
+            return b"\x00" + catalog.channel_group(1, [(1, 19)]) + catalog.u32(catalog.FEATURES, 1)
+        if fn == FNS["oep.wire.swd"]:
+            return b"\x00" + catalog.channel_group(1, [(1, 10), (2, 11)])
         return b"\x00"
 
     def request(self, fn, op, payload=b"", *, locked=True):
@@ -55,13 +59,14 @@ def ok(body=b""):
 
 
 CONFIRM = struct.pack("<4sBHIBI", b"OEP!", 1, 1024, 4096, 8, 0x1234)
-MAX_SPEED = bytes([0x81, 4, 0]) + struct.pack("<I", target.WireBase.DEFAULT_MAX_SPEED)   # attach's required TLV
+FIXED = struct.pack("<HHI", 19, 0xFFFF, target.WireBase.DEFAULT_MAX_SPEED)   # attach's swdio swclk max_speed
+SWD_FIXED = struct.pack("<HHI", 10, 11, target.WireBase.DEFAULT_MAX_SPEED)
 
 
 def attach_answer(conn, id_, flags, speed, dpc=None):
-    """connection id flags speed_hz [TLV dpc] (oep-if-debug §3)."""
+    """connection(u32) id flags speed_hz [TLV dpc] (oep-if-debug §3)."""
     tail = b"" if dpc is None else bytes([0x11, 4, 0]) + struct.pack("<I", dpc)
-    return struct.pack("<HIBI", conn, id_, flags, speed) + tail
+    return struct.pack("<IIBI", conn, id_, flags, speed) + tail
 
 
 # ---- reset-line search ----------------------------------------------------------------------------
@@ -72,8 +77,8 @@ def test_find_reset_line_hits_the_vector_skips_disallowed_and_retries_failures()
     tries = {}
 
     def aur(p):
-        assert p[0] == 1 and p[1:8] == MAX_SPEED                       # method halt, max_speed required
-        reset = dict(m.split_tlvs(p[1:]))[0x85]                        # the reset TLV, critical
+        assert p[0] == 1 and p[1:9] == FIXED                           # method halt, the pins, max_speed
+        reset = dict(m.split_tlvs(p[9:]))[0x85]                        # the reset TLV, critical
         channel, hold = struct.unpack("<HH", reset)
         assert hold == 20
         tries[channel] = tries.get(channel, 0) + 1
@@ -96,38 +101,38 @@ def test_find_reset_line_hits_the_vector_skips_disallowed_and_retries_failures()
     assert wire.last_search[5] == [None, 0x1305, 0x1305]
     assert wire.last_search[3] == [0x1303] * 3
     resets = [p for fn, op, p in hst.log if (fn, op) == (2, target.RiscvDm.RESET)]
-    assert resets == [struct.pack("<HB", 1, target.RiscvDm.RESET_RUN_CONFIRM)]   # only after the hit: off the vector for real
+    assert resets == [struct.pack("<IB", 1, target.RiscvDm.RESET_RUN)]   # only after the hit: off the vector for real
 
 
-def _pin_choice_wire():
-    """A wire that takes its pins from the host, as the firmware does (2026-10-02, ESP32-P4): an attach without pins
-    joins the one live connection, else it is rejected unavailable (no channel named); the reset line 6 is held by a
-    plan (unavailable naming it); 4 is the real line."""
-    state = {"live": None, "detached": []}
-    unavailable = (m.REJECTED, m.UNAVAILABLE, b"")
+def _pin_choice_wire(limit=False):
+    """A wire that takes its pins from the host (2026-10-02, ESP32-P4): an attach on the pins of a live connection is
+    rejected unavailable cause 1 naming its channel (debug §1: never joined); the reset line 6 is held by a plan
+    (unavailable naming it); 4 is the real line. limit: every attach is refused unavailable cause 2, no channel."""
+    state = {"live": None, "detached": [], "next": 7}
 
     def attach(p):
-        tlvs = dict(m.split_tlvs(p[1:]))
-        pins = struct.unpack("<HH", tlvs[0x83]) if 0x83 in tlvs else None
-        channel = struct.unpack("<HH", tlvs[0x85])[0] if 0x85 in tlvs else None
-        if pins is None and state["live"] is None:
-            return unavailable
+        pins = struct.unpack_from("<HH", p, 1)
+        channel = struct.unpack("<HH", dict(m.split_tlvs(p[9:]))[0x85])[0] if len(p) > 9 else None
+        if limit:
+            return m.REJECTED, m.UNAVAILABLE, m.tlv(0x01, bytes([2]))
+        if state["live"] is not None:
+            return m.REJECTED, m.UNAVAILABLE, m.tlv(0x01, bytes([1])) + m.tlv(0x02, struct.pack("<H", pins[0]))
         if channel == 6:
-            return m.REJECTED, m.UNAVAILABLE, bytes([0x02, 2, 0]) + struct.pack("<H", 6)   # the channel TLV
-        existing = state["live"] is not None
-        state["live"] = 7
+            return m.REJECTED, m.UNAVAILABLE, m.tlv(0x02, struct.pack("<H", 6))   # the channel TLV
+        state["live"] = state["next"]
+        state["next"] += 1
         dpc = None if channel is None else (0 if channel == 4 else 0x2f8)
-        return ok(attach_answer(7, 0x382, (0x02 if existing else 0) | (0x08 if dpc is not None else 0), 1_000_000, dpc))
+        return ok(attach_answer(state["live"], 0x382, 0x08 if dpc is not None else 0, 1_000_000, dpc))
 
     def detach(p):
-        state["detached"].append(struct.unpack_from("<H", p)[0])
+        state["detached"].append(struct.unpack("<I", p)[0])
         state["live"] = None
         return ok()
 
     def connections(p):
         if state["live"] is None:
             return ok(bytes([0, 0]))
-        row = struct.pack("<HHHIBBBB", 7, 19, 0xFFFF, 1_000_000, 1, 0xFF, 0, 0)
+        row = struct.pack("<IHHIBB", state["live"], 19, 0xFFFF, 1_000_000, 0, 0)
         return ok(bytes([0, 1]) + row)                                    # count x entry (core §2.3)
 
     hst = ScriptedHost({(1, target.Wire.ATTACH): attach, (1, target.Wire.DETACH): detach,
@@ -147,20 +152,22 @@ def test_find_reset_line_names_the_pins_on_a_wire_whose_pins_the_host_chooses():
     assert state["live"] is None                                   # its own connections closed again
 
 
-def test_find_reset_line_keeps_the_callers_connection_and_takes_its_pins():
+def test_find_reset_line_closes_a_live_connection_on_its_pins_first():
+    """attach never joins a live connection (debug §1): the search detaches the one on its pins (the wire's one
+    candidate pair when pins is None) and attaches anew for every try."""
     hst, state = _pin_choice_wire()
     wire = target.Wire(hst)
-    wire.attach(halt=False, pins=(19, 0xFFFF))                     # the caller's plain attach first
-    assert wire.find_reset_line([0, 1, 4], tries=1) == [4]         # pins None: the live connection's
-    assert state["detached"] == [] and state["live"] == 7          # left open: it was there before
+    first, _ = wire.attach(halt=False)                             # the caller's plain attach first
+    assert wire.find_reset_line([0, 1, 4], tries=1) == [4]
+    assert state["detached"][0] == first and state["live"] is None
     attaches = [p for fn, op, p in hst.log if (fn, op) == (1, target.Wire.ATTACH)][1:]
-    assert all(dict(m.split_tlvs(p[1:]))[0x83] == struct.pack("<HH", 19, 0xFFFF) for p in attaches)
+    assert all(p[1:9] == FIXED for p in attaches)
 
 
 def test_find_reset_line_raises_a_refusal_that_is_not_about_the_channel():
-    hst, state = _pin_choice_wire()
+    hst, state = _pin_choice_wire(limit=True)
     with pytest.raises(h.Unavailable):
-        target.Wire(hst).find_reset_line([0, 4])                   # no pins, no live connection: nothing to search with
+        target.Wire(hst).find_reset_line([0, 4])                   # cause 2, no channel: not the channel's
 
 
 def test_attach_after_gpio_reset_pipelines_release_with_attach_and_retries():
@@ -174,7 +181,7 @@ def test_attach_after_gpio_reset_pipelines_release_with_attach_and_retries():
     wire = target.Wire(hst)
     conn, status = target.attach_after_gpio_reset(hst, wire, 3, 23, exchange=None, tries=5, low_s=0)
     assert (conn, status) == (1, 0xc82)
-    assert len(attaches) == 3 and attaches[0] == b"\x01" + MAX_SPEED    # attach with halt, max_speed always
+    assert len(attaches) == 3 and attaches[0] == b"\x01" + FIXED        # attach with halt: pins and max_speed
     log = [(fn, op, p) for fn, op, p in hst.log if fn != 0]              # the describe (the default max_speed) aside
     assert [(fn, op) for fn, op, _ in log][:3] == [(3, fixture.Gpio.SET), (3, fixture.Gpio.SET), (1, target.Wire.ATTACH)]   # low, then release + attach together
     assert log[0][2] == bytes([1]) + struct.pack("<HB", 23, 5)           # set: n=1, channel 23 open-drain low
@@ -190,17 +197,15 @@ def test_attach_after_gpio_reset_gives_up():
 # ---- riscv-dm decoding ----------------------------------------------------------------------------
 
 def test_reset_halt_and_step_decode():
-    """oep-if-debug §4.3: reset is mode(u8) [TLV] (no method TLV); the answer is status(u8) flags(u8: bit0 reached,
-    bit1 verified) pc(u32) - no attempts byte."""
-    answers = {target.RiscvDm.RESET_HALT: (0, 0b01, 0x0), target.RiscvDm.RESET_RUN_CONFIRM: (0, 0b11, 0x2f8),
-               target.RiscvDm.RESET_RUN: (0, 0b01, 0)}
-    hst = ScriptedHost({(2, target.RiscvDm.RESET): lambda p: ok(struct.pack("<BBI", *answers[p[2]])),
+    """oep-if-debug §4.3: reset is mode(u8) [TLV] (modes 0 and 2 only); the answer is status(u8) flags(u8: bit0
+    reached) pc(u32: mode 2's dpc)."""
+    answers = {target.RiscvDm.RESET_HALT: (0, 0b01, 0x0), target.RiscvDm.RESET_RUN: (0, 0b01, 0)}
+    hst = ScriptedHost({(2, target.RiscvDm.RESET): lambda p: ok(struct.pack("<BBI", *answers[p[4]])),
                         (2, target.RiscvDm.STEP): lambda p: ok(struct.pack("<BBII", 0, 1, 0x0, 0x17f0) + b"\x40\x01\x00\x00")})
     dm = target.RiscvDm(hst, 1)
     assert dm.reset_halt() == 0
-    assert hst.log[-1][2] == struct.pack("<HB", 1, 2)                   # connection(u16), mode 2, nothing more
-    assert dm.reset() == (0b11, 0x2f8) and hst.log[-1][2] == struct.pack("<HB", 1, 1)
-    assert dm.reset(confirm=False) == (0b01, 0) and hst.log[-1][2] == struct.pack("<HB", 1, 0)
+    assert hst.log[-1][2] == struct.pack("<IB", 1, 2)                   # connection(u32), mode 2, nothing more
+    assert dm.reset() == (0b01, 0) and hst.log[-1][2] == struct.pack("<IB", 1, 0)
     assert dm.step() == (True, 0x0, 0x17f0)                             # an unknown TLV after the fixed part: skipped
     assert not [k for k in vars(target.RiscvDm) if k.startswith("METHOD_")]
     hst = ScriptedHost({(2, target.RiscvDm.RESET): lambda p: (m.COMPLETED, m.FAILED, struct.pack("<BBI", 2, 0, 0))})
@@ -287,8 +292,8 @@ class FakeAdi:
         self.selects = []
 
     def transfer(self, p):
-        n = struct.unpack_from("<H", p, 2)[0]
-        p, at, out, done = p[4:], 0, b"", 0
+        n = struct.unpack_from("<H", p, 4)[0]
+        p, at, out, done = p[6:], 0, b"", 0
         while at < len(p):
             req = p[at]; at += 1
             ap, read, a = req & 1, req >> 1 & 1, (req >> 2 & 3) << 2
@@ -315,16 +320,16 @@ class FakeAdi:
         return ok(struct.pack("<HBBH", done, 0, 1, len(out) // 4) + out)        # done status ack nvals values
 
     def read_block(self, p):
-        address, count = struct.unpack("<IH", p[2:])
+        address, count = struct.unpack("<IH", p[4:])
         assert self.select == 0x2D00                                     # TAR / DRW bank selected
         return ok(struct.pack("<HB", count, 0)
                   + b"".join(struct.pack("<I", self.mem.get(address + 4 * i, address + 4 * i)) for i in range(count)))
 
     def write_block(self, p):
-        address, count = struct.unpack_from("<IH", p, 2)
-        assert len(p) == 8 + 4 * count
+        address, count = struct.unpack_from("<IH", p, 4)
+        assert len(p) == 10 + 4 * count
         for i in range(count):
-            self.mem[address + 4 * i] = struct.unpack_from("<I", p, 8 + 4 * i)[0]
+            self.mem[address + 4 * i] = struct.unpack_from("<I", p, 10 + 4 * i)[0]
         return ok(struct.pack("<HB", count, 0))
 
 
@@ -340,12 +345,12 @@ def adi_bench():
 def test_swd_attach_decodes_dpidr_and_dormant(adi_bench):
     model, hst = adi_bench
     assert arm.SwdWire(hst).attach() == (1, 0x4c013477, True)                          # flags bit2: dormant woken
-    assert hst.log[-1][2] == b"\x00" + MAX_SPEED                                        # method 0, max_speed required
+    assert hst.log[-1][2] == b"\x00" + SWD_FIXED                                        # method 0, pins, max_speed
     wire = arm.SwdWire(hst)
     wire.attach(targetsel=0x01002927, max_speed=1_000_000)
-    assert hst.log[-1][2] == (b"\x00" + bytes([0x81, 4, 0]) + struct.pack("<I", 1_000_000)          # critical TLVs
+    assert hst.log[-1][2] == (b"\x00" + struct.pack("<HHI", 10, 11, 1_000_000)                  # a critical TLV
                               + bytes([0x82, 4, 0]) + struct.pack("<I", 0x01002927))
-    assert wire.speed_hz == 2_000_000 and not wire.existing
+    assert wire.speed_hz == 2_000_000
 
 
 def test_ap_read_uses_adiv6_select_and_the_posted_value(adi_bench):
@@ -365,7 +370,7 @@ def test_mem_ap_sets_csw_from_the_caller_and_chunks_blocks(adi_bench):
     words = mem.read_block(0x1000, 500)
     assert words == [0x1000 + 4 * i for i in range(500)]
     blocks = [p for fn, op, p in hst.log if op == arm.ArmAdi.READ_BLOCK]
-    assert [struct.unpack("<IH", p[2:])[1] for p in blocks] == [250, 250]   # the declared max_length 1000 / 4 words
+    assert [struct.unpack("<IH", p[4:])[1] for p in blocks] == [250, 250]   # the declared max_length 1000 / 4 words
     assert adi.max_length == 1000 and adi.max_words == 250 == mem.chunk
     mem.write_block(0x2007F3F0, list(range(16)))
     assert mem.read_block(0x2007F3F0, 16) == list(range(16))

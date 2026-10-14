@@ -12,13 +12,13 @@ class BlockChecks(DebugChecks):
     base=0x20000000
     def parent(self,sid,halt=True):
         parent,_=self.attach(sid)
-        if halt:self.c.success(self.request(5,'halt',sid,struct.pack('<H',parent)))
+        if halt:self.c.success(self.request(5,'halt',sid,struct.pack('<I',parent)))
         self.a.memory(parent,{self.base:0x12345678,self.base+4:0xabcdef01})
         self.a.registers(parent,{4:0x33445566,5:0x778899aa,0x18:0x55,0x10:0x800700c1})
         self.a.scratch(parent,{8:0x11110008,9:0x22220009,10:0x3333000a,11:0x4444000b,12:0x5555000c})
         return parent
     def block_request(self,sid,parent,write=False,count=2,address=None,values=None):
-        payload=struct.pack('<HIH',parent,self.base if address is None else address,count)
+        payload=struct.pack('<IIH',parent,self.base if address is None else address,count)
         if write:payload+=b''.join(struct.pack('<I',value) for value in (values if values is not None else [0x55+i for i in range(count)]))
         return self.request(5,'write_block' if write else 'read_block',sid,payload)
     def block(self,sid,parent,write=False,count=2,done=2,status=0,values=None):
@@ -82,7 +82,7 @@ class BlockChecks(DebugChecks):
             before=self.a.state();self.block(sid,parent,values=[0x12345678,0xabcdef01]);after=self.a.state()
             require(after['mailboxes'][rid]['data0']==frame[0] and after['mailboxes'][rid]['data1']==frame[1] and after['protocols'][rid]==before['protocols'][rid],'block destroyed live console frame/state')
             polls=after['arbitration'][len(before['arbitration']):];require(len(polls)==2 and all(not row['events'] for row in polls),'console read block scratch mid-operation')
-            self.c.success(self.request(5,'resume',sid,struct.pack('<H',parent)));self.a.poll(rid)
+            self.c.success(self.request(5,'resume',sid,struct.pack('<I',parent)));self.a.poll(rid)
             require(self.a.state()['streams'][rid]['data']==b'wire','restored console frame not delivered after resume')
     def replay_block(self,write):
         self.fresh()
@@ -90,6 +90,18 @@ class BlockChecks(DebugChecks):
             parent=self.parent(sid);req,result=self.block(sid,parent,write,values=[0x12345678,0xabcdef01])
             self.a.memory(parent,{self.base:999});before=self.a.state()
             require(self.c.exchange(req)==result and self.a.state()==before,'block replay touched bus or recomputed result')
+    def cleanup_failed(self,write):
+        """debug §4: the restore after a transfer fails - partial even with every word done, status the failure, then
+        the connection and its streams close."""
+        self.fresh()
+        with self.c.holding(3000) as sid:
+            parent=self.parent(sid);rid,_=self.console(sid,parent,2);self.a.restore_failure(True)
+            try:frame=self.c.exchange(self.block_request(sid,parent,write))
+            finally:self.a.restore_failure(False)
+            require(len(frame)>=8 and frame[3:5]==b'\x01\x02','cleanup failure must answer completed partial')
+            done,status=struct.unpack_from('<HB',frame,5);require(done==2 and status!=0,'cleanup failure done/status')
+            after=self.a.state();require(parent not in after['connections'] and rid not in after['streams'],'connection/streams kept after a failed cleanup')
+            self.refused(self.block_request(sid,parent,write),'no_resource')
     def bad_resource(self):
         self.fresh()
         with self.c.holding(3000) as sid:
@@ -105,13 +117,13 @@ class BlockChecks(DebugChecks):
             require(self.operations[5]['read_block']==20 and self.operations[5]['write_block']==21,'selected block grammar mismatch')
             self.c.confirm();self.c.identity();self.c.declarations();description=dict(reversed(self.c.describe(5)))
             require({20,21}<=ops(description[7]) and struct.unpack('<H',description[self.c.reg['describe_common']['max_length']])[0]==8,'paired block ops/max_length missing')
-            require(18+8<=self.c.max_frame and 8+8<=self.c.max_frame,'declared block size exceeds negotiated route')
+            require(20+8<=self.c.max_frame and 8+8<=self.c.max_frame,'declared block size exceeds negotiated route')
         self.c.check('OEP-BLOCK-CONTEXT','debug §4/4.5; core §7.4; explicit fixture',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         cases=[('ZERO-HALTED',lambda:self.zero(True)),('ZERO-RUNNING',lambda:self.zero(False)),('ROUNDTRIP',self.roundtrip),('LIVE',self.live)]
         cases += [(('WRITE' if write else 'READ')+'-FAIL-'+str(index),lambda write=write,index=index:self.partial(write,index)) for write in (False,True) for index in (0,1)]
         cases += [(('WRITE' if write else 'READ')+'-'+kind,lambda write=write,kind=kind:self.rejected_block(write,kind)) for write in (False,True) for kind in ('ALIGN','OVER')]
-        cases += [('TRUNCATED',lambda:self.rejected_block(True,'TRUNCATED')),('RUNNING-READ',lambda:self.running(False)),('RUNNING-WRITE',lambda:self.running(True)),('MAILBOX',self.mailbox),('REPLAY-READ',lambda:self.replay_block(False)),('REPLAY-WRITE',lambda:self.replay_block(True)),('RESOURCES',self.bad_resource)]
+        cases += [('TRUNCATED',lambda:self.rejected_block(True,'TRUNCATED')),('RUNNING-READ',lambda:self.running(False)),('RUNNING-WRITE',lambda:self.running(True)),('MAILBOX',self.mailbox),('REPLAY-READ',lambda:self.replay_block(False)),('REPLAY-WRITE',lambda:self.replay_block(True)),('RESOURCES',self.bad_resource),('CLEANUP-READ',lambda:self.cleanup_failed(False)),('CLEANUP-WRITE',lambda:self.cleanup_failed(True))]
         for name,case in cases:
             first=len(self.a.trace);self.c.check('OEP-BLOCK-'+name,'debug §4/4.5; common §2/3',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]

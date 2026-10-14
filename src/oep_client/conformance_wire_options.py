@@ -5,31 +5,34 @@ from .conformance_attach import AttachChecks
 
 
 class WireOptionsChecks(AttachChecks):
-    def option_request(self,sid,fn=1,pair=None,idle=None,reset=None,targetsel=None,method=0,marked=True,extra=b''):
+    def option_request(self,sid,fn=1,pair=None,idle=None,reset=None,targetsel=None,method=0,marked=True,extra=b'',speed=2000):
         bit=128 if marked else 0;options=b''
         if idle is not None:options+=self.tlv(4|bit,bytes((idle,)))
         if reset is not None:options+=self.tlv(5|bit,struct.pack('<HH',*reset))
         if targetsel is not None:options+=self.tlv(2|bit,struct.pack('<I',targetsel))
-        return self.attach_request(sid,fn,pair or self.a.pairs[fn][0],method=method,extra=options+extra)
+        return self.attach_request(sid,fn,pair or self.a.pairs[fn][0],speed=speed,method=method,extra=options+extra)
     def listing(self,fn):
-        before=self.a.state();rows=[];first=0
+        before=self.a.state();rows=[];first=0;selected={}
         for _ in range(4):
             value=self.c.success(self.request(fn,'connections',0,bytes((first,))));at=2
             require(len(value)>=2 and value[0] in (0,1),'connections page')
             for _ in range(value[1]):
-                require(len(value)>=at+12,'connections fixed entry');row=struct.unpack_from('<HHHIBB',value,at);at+=12;tid=value[at:at+row[-1]];at+=row[-1];require(len(tid)==row[-1],'connections targetsel length');rows.append((row,tid))
-            tlvs(value[at:])
+                require(len(value)>=at+14,'connections fixed entry');row=struct.unpack_from('<IHHIBB',value,at);at+=14;tid=value[at:at+row[-1]];at+=row[-1];require(len(tid)==row[-1],'connections target_id length');rows.append((row,tid))
+            for tag,data in tlvs(value[at:]):
+                if tag==1:                                     # selected_target: entry_index(u8) targetsel(u32) (debug §2.1)
+                    require(len(data)==5 and data[0]<value[1],'selected_target entry');selected[first+data[0]]=struct.unpack_from('<I',data,1)[0]
             if not value[0]:break
             require(value[1]>0,'connections paging progress');first+=value[1]
-        expected=[]
+        expected=[];wanted={}
         for rid,s in before['connections'].items():
             if s['fn']!=fn:continue
-            tid=struct.pack('<I',s['targetsel'] or 0) if fn==3 else b''
+            tid=struct.pack('<I',0x2ba01477) if fn==3 else b''            # swd: tid_scheme 2, the DPIDR read at attach
+            if s['targetsel'] is not None:wanted[len(expected)]=s['targetsel']
             expected.append(((rid,*s['pins'],s['speed'],2 if fn==3 else 0,len(tid)),tid))
-        require(rows==expected and self.a.state()==before,'connections target identity or side effects');return rows
+        require(rows==expected and selected==wanted and self.a.state()==before,'connections target identity, selector or side effects');return rows
     def attached(self,sid,fn=1,idle=None,reset=None,targetsel=None,method=0,marked=True,pair=None,extra=b''):
         before=self.a.state();req=self.option_request(sid,fn,pair,idle,reset,targetsel,method,marked,extra);value=self.c.success(req)
-        require(len(value)>=11,'attach response');rid,identity,flags,speed=struct.unpack_from('<HIBI',value);tags=dict(reversed(tlvs(value[11:])))
+        require(len(value)>=13,'attach response');rid,identity,flags,speed=struct.unpack_from('<IIBI',value);tags=dict(reversed(tlvs(value[13:])))
         wanted=(8 if method else 0)|(1 if reset is not None and fn!=3 else 0)|(4 if fn==3 and before['wire_behavior']=='dormant' else 0)
         require(flags==wanted and speed<=2000 and identity==(0x2ba01477 if fn==3 else 0x302 if method else 0xc02),'attach identity/flags/speed')
         require((tags.get(17)==struct.pack('<I',0x1000)) if method else 17 not in tags,'halted dpc metadata')
@@ -87,11 +90,14 @@ class WireOptionsChecks(AttachChecks):
             elif kind=='IDLE':
                 for marked in (True,False):
                     self.refused(self.option_request(sid,idle=2,marked=marked),'unsupported',bytes((0x84 if marked else 4,)))
-                    for fn in (2,3):self.refused(self.option_request(sid,fn,idle=1,marked=marked),'unsupported',bytes((0x84 if marked else 4,)))
+                    self.refused(self.option_request(sid,idle=1,marked=marked,extra=self.tlv(4,b'\x02')),'unsupported',b'\x04')   # a later copy is checked too
+                for fn in (2,3):                                   # rvswd's tag: unknown on swio / swd (core §2.3)
+                    self.refused(self.option_request(sid,fn,idle=1),'unsupported',b'\x84')
+                    rid,_=self.attached(sid,fn,extra=self.tlv(4,b'\x01'));self.detach(sid,fn,rid)
             elif kind=='WIDTH':
                 for fn,tag,size in [(1,0x84,2),(1,0x85,3),(3,0x82,3)]:self.refused(self.option_request(sid,fn,extra=self.tlv(tag,b'\0'*size)),'malformed')
             elif kind=='TARGETSEL-WIRE':self.refused(self.option_request(sid,targetsel=1),'unsupported',b'\x82')
-            elif kind=='MISSING-SPEED':self.refused(self.attach_request(sid,pair=(0,1),speed=None,extra=self.tlv(0x85,struct.pack('<HH',6,1))),'malformed')
+            elif kind=='MISSING-SPEED':self.refused(self.option_request(sid,reset=(6,1),speed=0),'malformed')
     def target_conflict(self,other):
         self.fresh()
         with self.c.holding(3000) as sid:
@@ -119,7 +125,7 @@ class WireOptionsChecks(AttachChecks):
         cases += [('RESET-HALT-'+str(fn),lambda fn=fn:self.normal(fn,reset=(6,1),method=1)) for fn in (1,2)]
         cases += [('RESET-ZERO',lambda:self.normal(reset=(6,0))),('RESET-RECOVER',lambda:self.normal(reset=(6,1),behavior='dm-recover')),('RESET-FAILED',self.failed_reset)]
         cases += [('TARGETSEL-'+str(value),lambda value=value:self.normal(3,targetsel=value)) for value in (None,0x01000001,0xffffffff)]
-        cases += [('DORMANT',lambda:self.normal(3,behavior='dormant')),('FIRST-WINS',lambda:self.normal(idle=1,reset=(6,1),extra=self.tlv(4,b'\x02')+self.tlv(5,struct.pack('<HH',5,6)))),('DETACH-IDLE',self.cleanup),('DETACH-SWD',lambda:self.cleanup(3,None,0x01000001)),('REPLAY',self.replay)]
+        cases += [('DORMANT',lambda:self.normal(3,behavior='dormant')),('FIRST-WINS',lambda:self.normal(idle=1,reset=(6,1),extra=self.tlv(4,b'\x00')+self.tlv(5,struct.pack('<HH',6,2)))),('DETACH-IDLE',self.cleanup),('DETACH-SWD',lambda:self.cleanup(3,None,0x01000001)),('REPLAY',self.replay)]
         cases += [('DETACH-HALTED',lambda:self.cleanup(method=1)),('END-IDLE',self.end_idle),('UNMARKED-RV',lambda:self.normal(idle=1,reset=(6,1),marked=False)),('UNMARKED-SWD',lambda:self.normal(3,targetsel=0x01000001,marked=False))]
         cases += [('CONFLICT-'+str(value),lambda value=value:self.target_conflict(value)) for value in (None,0x01000001,0x01000002)]
         cases += [(kind,lambda kind=kind:self.refusal(kind)) for kind in ('NO-RESET','CHANNEL','HOLD','SELF-CONFLICT','BUSY-RESET','DISABLED','OUTPUT','RESERVED','IDLE','WIDTH','TARGETSEL-WIRE','MISSING-SPEED','SESSION')]

@@ -14,7 +14,7 @@ def setup():
 def test_optional_block_contracts_pass():
     _,c,a=setup();r=BlockChecks(c,a).run()
     assert r['status']=='passed',[(row['id'],row.get('error')) for row in r['checks'] if row['status']!='passed']
-    assert len(r['checks'])==20 and not r['full_conformance']
+    assert len(r['checks'])==22 and not r['full_conformance']
 
 
 import pytest
@@ -30,11 +30,16 @@ from oep_client.virtual_core import Completed, Reject
     ('failed_write_suffix','WRITE-FAIL-1'),('alignment_ignored','READ-ALIGN'),
     ('length_ignored','READ-OVER'),('reject_access','READ-ALIGN'),
     ('zero_running_failed','ZERO-RUNNING'),('mailbox_interleave','MAILBOX'),
+    ('cleanup_kept','CLEANUP-WRITE'),('cleanup_success','CLEANUP-READ'),
 ])
 def test_block_checker_detects_independent_faults(fault,case):
     model,c,a=setup();install=model.install
     def faulty_install():
-        install();e=model.extension;dispatch=e.dispatch_request;interleave=e.interleave;cache={}
+        install();e=model.extension;dispatch=e.dispatch_request;interleave=e.interleave;cache={};close=e.close_connection
+        def kept_close(rid):
+            if fault=='cleanup_kept' and e.restore_fail:return
+            close(rid)
+        e.close_connection=kept_close
         def broken_interleave(parent):
             if fault=='mailbox_interleave':
                 for rid,(connection,_) in e.streams.items():
@@ -42,9 +47,9 @@ def test_block_checker_detects_independent_faults(fault,case):
             interleave(parent)
         def broken_dispatch(fn,op,payload,tags):
             if fn!=5 or op not in (20,21):return dispatch(fn,op,payload,tags)
-            parent=struct.unpack_from('<H',payload)[0];address=struct.unpack_from('<I',payload,2)[0];count=struct.unpack_from('<H',payload,6)[0]
+            parent=struct.unpack_from('<I',payload)[0];address=struct.unpack_from('<I',payload,4)[0];count=struct.unpack_from('<H',payload,8)[0]
             saved=dict(e.targets.get(parent,{}).get('registers',{}));start=len(e.restore)
-            if fault=='alignment_ignored':payload=payload[:2]+struct.pack('<I',address&~3)+payload[6:]
+            if fault=='alignment_ignored':payload=payload[:4]+struct.pack('<I',address&~3)+payload[8:]
             if fault=='length_ignored' and count>2:e.max_length=12
             if fault=='stale_read' and op==20 and parent in cache:return cache[parent]
             try:value=dispatch(fn,op,payload,tags)
@@ -53,6 +58,7 @@ def test_block_checker_detects_independent_faults(fault,case):
                 raise
             if op==20:cache[parent]=value
             outcome=getattr(value,'outcome',0);data=bytes(value)
+            if fault=='cleanup_success' and e.restore_fail:return Completed(data[:2]+b'\0'+data[3:],0)
             if fault=='data0_not_restored' and count:e.writereg(parent,4,0xdeadbeef)
             elif fault=='data1_not_restored' and count:e.writereg(parent,5,0xdeadbeef)
             elif fault=='auto_not_restored' and count:e.writereg(parent,0x18,1)

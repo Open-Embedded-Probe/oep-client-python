@@ -29,7 +29,7 @@ contextで断り、後続項目をblockedにする。実機へlogical resetを�
 | APの読み | 明示した以前のAP read結果、次のAP read、DP RDBUFFをrawの順序で返す。無関係なDP readでpendingを消さない |
 | ACKと進捗 | WAIT/FAULT/無応答を各失敗位置へ注入。doneまでの読みだけ返し、失敗した転送・後続を実行しない |
 | 再試行 | WAITからOKへの回復で、packetは繰り返すが書込みの実行は一度だけ。FAULT/無応答を自動再実行しない |
-| 受付 | req予約bit、途中の切れた引数、count、critical/壊れたTLV、SID/所有権、資源型、最大応答を実行前に断る |
+| 受付 | req予約bit（unsupported、固定部分の印0）、途中の切れた引数、count、critical/壊れたTLV、SID/所有権、資源型、最大応答を実行前に断る |
 | 再送 | 同じcorrの要求は同じ応答を返し、target操作を増やさない |
 | blockの基本 | 0語、16 byteの上限と超過、alignment、外部から変化したバス上のメモリを読む、write後のread、SELECT/CSW保持・TAR進行 |
 

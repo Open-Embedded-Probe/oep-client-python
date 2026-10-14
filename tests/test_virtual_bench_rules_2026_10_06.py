@@ -10,7 +10,7 @@ import pytest
 
 from oep_client import catalog, endpoint, virtual_bench, message as m, registry_legacy as reg
 
-from test_virtual_bench_rules_2026_10_02 import ITEM, PLAN_APPLY, SPEED, Clock, Host, slot_item
+from test_virtual_bench_rules_2026_10_02 import ITEM, PLAN_APPLY, W, Clock, Host, att, slot_item
 
 CORE = reg.CORE
 RV, CFG = reg.TARGET_RISCV_DM, reg.PROBE_CONFIG
@@ -51,9 +51,9 @@ def una(r) -> dict[int, bytes]:
 
 
 def attached(ep, h, wire=1, pair=(2, 3)):
-    r = h.raw(wire, 0x02, b"\x01" + SPEED + m.tlv(0x03, struct.pack("<HH", *pair), critical=True))
+    r = h.raw(wire, W["attach"], att(pair, method=1))
     assert r.succeeded, r.describe()
-    return struct.unpack_from("<H", r.payload)[0]
+    return struct.unpack_from("<I", r.payload)[0]
 
 
 # ---- C-21 (2e70f40): required and optional ops; an undefined op is unknown_operation at order 1 ----------------
@@ -79,14 +79,14 @@ def test_c21_riscv_dm_ops_are_gated_on_the_ops_tag():
     ep, h = bench(virtual_bench.esp32_v003())                                          # ops without step
     dm = fn_of(ep, "oep.target.riscv-dm")
     assert not ep.offers(dm, RV.op["step"]) and ep.offers(dm, RV.op["run"])
-    assert h.raw(dm, RV.op["step"], struct.pack("<H", 1)).detail == m.UNKNOWN_OPERATION
+    assert h.raw(dm, RV.op["step"], struct.pack("<I", 1)).detail == m.UNKNOWN_OPERATION
     ops = next(v for t, v in m.split_tlvs(b"".join(ep._declarations(dm))) if t == catalog.OPS)
-    assert ops == bytes([0, 0xFE])                                            # base 0: dmi .. run, no step (core §7.4)
+    assert ops == bytes([0x10, 0x7F])                                         # base 0x10: dmi .. run, no step (core §7.4)
     ep, h = bench(with_tlvs(virtual_bench.p4_bench(), "oep.target.riscv-dm",
                             ops_without(RV.name, "read_block", "write_block", "run", "reset", "step")))
     for op in ("read_block", "write_block", "run", "reset", "step"):
-        assert h.raw(2, RV.op[op], struct.pack("<H", 1)).detail == m.UNKNOWN_OPERATION, op
-    for op, body in (("dmi", struct.pack("<HH", 1, 0)), ("halt", b"\x01\x00"), ("resume", b"\x01\x00")):
+        assert h.raw(2, RV.op[op], struct.pack("<I", 1)).detail == m.UNKNOWN_OPERATION, op
+    for op, body in (("dmi", struct.pack("<IH", 1, 0)), ("halt", struct.pack("<I", 1)), ("resume", struct.pack("<I", 1))):
         assert h.raw(2, RV.op[op], body).detail == m.NO_RESOURCE, op      # required: the connection is looked up
 
 
@@ -372,13 +372,13 @@ def test_lines_rest_undriven_from_an_unanswered_exchange_until_one_succeeds():
     tg = ep._target(1, pair)
     assert ep.pin_state(pair[0]) == ep.pin_state(pair[1]) == "wire"           # the rest state (rvswd §3.1)
     tg.present = False                                                        # the target lost power
-    r = h.raw(2, RV.op["dmi"], struct.pack("<HHB", cid, 1, 2) + b"\x11")
+    r = h.raw(2, RV.op["dmi"], struct.pack("<IHB", cid, 1, 2) + b"\x11")
     assert (r.resolution, r.detail, r.payload) == (m.COMPLETED, m.FAILED, struct.pack("<HBH", 0, endpoint.LINE, 0))
     assert ep.pin_state(pair[0]) == ep.pin_state(pair[1]) == "wire-free"      # undriven between exchanges (debug §2)
-    r = h.raw(2, RV.op["halt"], struct.pack("<H", cid))
+    r = h.raw(2, RV.op["halt"], struct.pack("<I", cid))
     assert r.payload == bytes([endpoint.LINE]) and ep.pin_state(pair[0]) == "wire-free"   # each retry fails the same
     tg.present = True
-    assert h.raw(2, RV.op["halt"], struct.pack("<H", cid)).succeeded
+    assert h.raw(2, RV.op["halt"], struct.pack("<I", cid)).succeeded
     assert ep.pin_state(pair[0]) == "wire"                                    # a success: the rest state again
 
 
@@ -391,7 +391,7 @@ def test_every_target_op_fails_with_status_line_when_nothing_answers(op, body):
     ep, h = bench()
     cid = attached(ep, h)
     ep._target(1, (2, 3)).present = False
-    r = h.raw(2, RV.op[op], struct.pack("<H", cid) + body)
+    r = h.raw(2, RV.op[op], struct.pack("<I", cid) + body)
     assert (r.resolution, r.detail, r.payload[:1]) in {(m.COMPLETED, m.FAILED, bytes([endpoint.LINE])),
                                                       (m.COMPLETED, m.FAILED, b"\x00")}   # done(u16) 0 first
     assert endpoint.LINE in r.payload[:3]
@@ -406,29 +406,11 @@ def test_attach_reset_tlv_on_an_output_idle_channel_is_unavailable_and_runs_noth
     tg.silent_until_reset = True
     assert h.raw(9, CFG.op["set"], idle(23, 4)).succeeded                    # NRST idles high
     reset = m.tlv(0x05, struct.pack("<HH", 23, 20), critical=True)
-    r = h.raw(1, 0x02, b"\x00" + SPEED + reset)
+    r = h.raw(1, W["attach"], att(swio) + reset)
     assert r.detail == m.UNAVAILABLE
     assert una(r) == {UNA["cause"]: bytes([CORE.enum["unavailable_cause"]["held_by_settings"]]),
                       UNA["channel"]: struct.pack("<H", 23)}                  # cause, channel, fn only (core §4.3)
     assert tg.silent_until_reset                                              # the line was never pulled
-
-
-# ---- 73a0c37: search_retries only when a bring-up ran ----------------------------------------------------------------
-
-def search_retries(r):
-    return m.Tail.parse(r.payload[11:]).get(reg.WIRE_RVSWD.tlv["attach_answer"]["search_retries"])
-
-
-def test_search_retries_only_when_a_bring_up_ran():
-    ep, h = bench(virtual_bench.esp32_v003())
-    swio = ep.pairs[1][0]
-    ep._target(1, swio).search_retries = 0x12345                              # saturates
-    attach = lambda extra=b"", speed=4_000_000: h.raw(1, 0x02, b"\x00" + m.tlv(0x01, struct.pack("<I", speed),
-                                                                               critical=True) + extra)
-    assert search_retries(attach()) == b"\xff\xff"                            # a new connection
-    assert search_retries(attach()) is None                                   # joined without a bring-up
-    assert search_retries(attach(speed=1_000_000)) == b"\xff\xff"             # lowered for max_speed
-    assert search_retries(attach(m.tlv(0x05, struct.pack("<HH", 23, 20), critical=True))) == b"\xff\xff"   # reset
 
 
 # ---- ○2: the reset op is ndmreset and drives no line --------------------------------------------------------------
@@ -439,13 +421,14 @@ def test_o2_reset_is_ndmreset_and_moves_no_line():
     ep, h = bench(virtual_bench.esp32_v003())
     cid = attached(ep, h, pair=ep.pairs[1][0])
     sid = struct.unpack_from("<H", h.ok(3, reg.TARGET_CONSOLE.op["open"], struct.pack("<HB", cid, 2)))[0]
-    for mode in (0, 1, 2):
-        r = h.raw(2, RV.op["reset"], struct.pack("<HB", cid, mode))
+    for mode in (0, 2):
+        r = h.raw(2, RV.op["reset"], struct.pack("<IB", cid, mode))
         assert r.succeeded and len(r.payload) == 6
         status, flags, pc = struct.unpack("<BBI", r.payload)
-        assert status == 0 and flags & 1 and (flags & 2) == (2 if mode == 1 else 0)
+        assert status == 0 and flags == 1                                     # bit0 reached; no other bit (§4.3)
+    assert h.raw(2, RV.op["reset"], struct.pack("<IB", cid, 1)).detail == m.UNSUPPORTED   # mode 1 is not defined
     marks = [mk for mk in ep.streams[sid].marks if mk[2] == reg.COMMON.enum["mark_kind"]["reset"]]
-    assert [mk[4] for mk in marks] == [reg.COMMON.enum["mark_detail_reset"]["ndmreset"]] * 3
+    assert [mk[4] for mk in marks] == [reg.COMMON.enum["mark_detail_reset"]["ndmreset"]] * 2
     assert "nrst" not in reg.COMMON.enum["mark_detail_reset"] and ep.gpio_log == []
     assert "reset" not in RV.tlv
 

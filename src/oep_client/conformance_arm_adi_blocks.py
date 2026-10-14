@@ -9,7 +9,7 @@ class ArmAdiBlockChecks(ArmAdiChecks):
     words = (0x10203040,0x50607080,0x90abcdef,0xdeadbeef)
     def block_request(self, sid, parent, write, count=4):
         return self.request(5,'write_block' if write else 'read_block',sid,
-            struct.pack('<HIH',parent,self.base,count)+(b''.join(struct.pack('<I',v) for v in self.words[:count]) if write else b''))
+            struct.pack('<IIH',parent,self.base,count)+(b''.join(struct.pack('<I',v) for v in self.words[:count]) if write else b''))
     def setup_block(self, sid):
         parent=self.parent(sid)
         self.a.seed(parent,{8:0x12000000},{0:0x23000052,4:0x1abc},0xfedcba98)

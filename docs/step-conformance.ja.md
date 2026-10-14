@@ -14,7 +14,8 @@
 - dcsr.prvは変更しない。prv 0/1/3を検査する。
 - resumeは1回だけ。debugへ戻らない場合はhaltreqで再停止を試みる。
   再停止できたらstepを下ろしてstatus state。できなければhartは走ったまま、
-  haltreqを下ろしてstatus stateと長さ0のstep_leftを返す。
+  haltreqを下ろしてstatus stateと長さ0のstep_leftを返し、後始末を終えられないため
+  応答の後でconnectionとそのstreamを閉じる（debug §4.2）。
   step_leftはstep bitが残りうる通知であり、残ることを必須条件にしない。
 - statusがokでなければmovedと両PCは0。completed failedとの組合せを確認する。
   明示fixtureの準備中line/fault失敗ではresumeせず、PCを変えない。
@@ -33,7 +34,7 @@
 論理PC遷移と状態復元を扱い、CPU命令や抽象CSRコマンドを実行するものではない。
 各caseは新bootとし、raw交換、PC/dcsr、DATA復元順、haltreqとconsole調停を記録する。
 
-単体33件は19種類の誤動作注入、step_leftでstep bitが下がっていても通る正常例、
+単体34件は20種類の誤動作注入（step_left後もconnectionを残す誤りを含む）、step_leftでstep bitが下がっていても通る正常例、
 前提不足、不正刺激、共通宣言を含む。`full_conformance`はfalse。
 物理命令/CSR操作、再停止の実時間、DATA復元自体の失敗、初めから走っているhartの受付、
 実応答writer、reset/run、他targetとproduction Host統合は未検査。

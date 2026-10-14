@@ -10,16 +10,16 @@ HARTSEL=(0x3ff<<6)|(0x3ff<<16)
 
 class Blocks(Debug):
     max_length=8
-    def __init__(self,ep):super().__init__(ep);self.memory={};self.restore=[];self.block_fail=None;self.block_status=2
+    def __init__(self,ep):super().__init__(ep);self.memory={};self.restore=[];self.block_fail=None;self.block_status=2;self.restore_fail=False
     def describe(self,fn):return (tlv(7,b'\x10\x37'),tlv(3,struct.pack('<H',self.max_length))) if fn==5 else super().describe(fn)
     def close_connection(self,parent):super().close_connection(parent);self.memory.pop(parent,None)
     def dispatch_request(self,fn,op,payload,tags):
         if fn!=5 or op not in (20,21):
             value=super().dispatch_request(fn,op,payload,tags)
-            if fn<=3 and op==17 and len(value)>=11 and getattr(value,'outcome',0)==0:
-                parent=struct.unpack_from('<H',value)[0];self.targets[parent]['gprs']={8:0,9:0,10:0,11:0};self.memory[parent]={}
+            if fn<=3 and op==17 and len(value)>=13 and getattr(value,'outcome',0)==0:
+                parent=struct.unpack_from('<I',value)[0];self.targets[parent]['gprs']={8:0,9:0,10:0,11:0};self.memory[parent]={}
             return value
-        parent,address,count=struct.unpack_from('<HIH',payload);self.resource(parent,'connection')
+        parent,address,count=struct.unpack_from('<IIH',payload);self.resource(parent,'connection')
         if self.connections[parent]['fn']==3:raise Reject(4,tlv(1,b'\x06'))
         if address&3:raise Reject(3)
         if count*4>self.max_length:raise Reject(11,b'\0')
@@ -39,12 +39,18 @@ class Blocks(Debug):
                     if at not in self.memory[parent]:status=3;break
                     value=self.memory[parent][at];values.append(value);self.access.append(('bus-read',parent,at,value))
                 else:
-                    value=struct.unpack_from('<I',payload,8+4*index)[0];self.memory[parent][at]=value;self.access.append(('bus-write',parent,at,value))
+                    value=struct.unpack_from('<I',payload,10+4*index)[0];self.memory[parent][at]=value;self.access.append(('bus-write',parent,at,value))
                 done+=1
         finally:
             target['gprs']=gprs
-            for reg in (5,4,0x18):self.writereg(parent,reg,saved[reg]);self.restore.append(('restore',parent,reg,saved[reg]))
+            if not self.restore_fail:
+                for reg in (5,4,0x18):self.writereg(parent,reg,saved[reg]);self.restore.append(('restore',parent,reg,saved[reg]))
             for rid in related:self.mailboxes[rid]['debug_busy']=False
+        if self.restore_fail:
+            # the cleanup failed: the answer says so (partial with done > 0, even all words), then the connection and
+            # its streams close (debug §4, common §2)
+            answer=Completed(struct.pack('<HB',done,status or 2)+b''.join(struct.pack('<I',value) for value in values)+tlv(127,b'x'),2 if done else 1)
+            self.close_connection(parent);return answer
         return Completed(struct.pack('<HB',done,status)+b''.join(struct.pack('<I',value) for value in values)+tlv(127,b'x'),0 if not status else (2 if done else 1))
 
 
@@ -52,12 +58,12 @@ class BlockModel(DebugModel):
     def install(self):self.extension=Blocks(self.ep);self.ep.current_core=Core(self.ep,self.extension)
     def handle(self,request):
         if len(request)<6 or struct.unpack_from('<H',request,3)[0]!=5:return super().handle(request)
-        e=self.extension;fixed,free=e.fixed,e.free;e.fixed={16:fixed_dmi(request[10:]),17:2,18:2,20:8,21:8};e.free=set()
-        if request[5]==21 and len(request)>=18:e.fixed[21]=8+4*struct.unpack_from('<H',request,16)[0]
+        e=self.extension;fixed,free=e.fixed,e.free;e.fixed={16:fixed_dmi(request[10:]),17:4,18:4,20:10,21:10};e.free=set()
+        if request[5]==21 and len(request)>=20:e.fixed[21]=10+4*struct.unpack_from('<H',request,18)[0]
         try:return self.ep.handle(request)
         finally:e.fixed,e.free=fixed,free
     def block_state(self):
-        state=self.debug_state();e=self.extension;state.update(memory=copy.deepcopy(e.memory),restore=list(e.restore),block_fail=e.block_fail,block_status=e.block_status)
+        state=self.debug_state();e=self.extension;state.update(memory=copy.deepcopy(e.memory),restore=list(e.restore),block_fail=e.block_fail,block_status=e.block_status,restore_fail=e.restore_fail)
         return state
     def block_memory(self,parent,values):
         if parent not in self.extension.memory or not isinstance(values,dict) or any(type(k)is not int or not 0<=k<=0xfffffffc or k&3 or type(v)is not int or not 0<=v<=0xffffffff for k,v in values.items()):raise ValueError('live parent and aligned u32 memory rows required')
@@ -65,6 +71,9 @@ class BlockModel(DebugModel):
     def block_scratch(self,parent,values):
         if parent not in self.extension.targets or not isinstance(values,dict) or any(type(k)is not int or not 0<=k<32 or type(v)is not int or not 0<=v<=0xffffffff for k,v in values.items()):raise ValueError('live parent and GPR u32 values required')
         self.extension.targets[parent]['gprs'].update(values)
+    def block_restore_failure(self,value):
+        if type(value)is not bool:raise ValueError('logical restore failure switch must be bool')
+        self.extension.restore_fail=value
     def block_failure(self,index,status):
         if index is not None and (type(index)is not int or not 0<=index<=2):raise ValueError('logical block failure index must be 0..2 or None')
         if type(status)is not int or status not in (1,2,3,4,5):raise ValueError('standard block failure status required')

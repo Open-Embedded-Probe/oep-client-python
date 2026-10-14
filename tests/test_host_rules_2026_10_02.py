@@ -77,12 +77,12 @@ def test_c06_attach_scan_and_reset_wait_max_op_ms():
     w.attach(pins=ep.pairs[1][0], reset=None)
     budgets = dict((op, ms) for op, ms in seen if op in (riscv.Wire.SCAN, riscv.Wire.ATTACH))
     assert budgets == {riscv.Wire.SCAN: virtual_bench.MAX_OP_MS, riscv.Wire.ATTACH: virtual_bench.MAX_OP_MS}
-    assert w.attach_ms((7, 20)) == w.attach_ms() == w.scan_ms() == virtual_bench.MAX_OP_MS and w.search_retries == 0
+    assert w.attach_ms((7, 20)) == w.attach_ms() == w.scan_ms() == virtual_bench.MAX_OP_MS
     dm = riscv.RiscvDm(hst, 1)
     assert dm.reset_ms() == virtual_bench.MAX_OP_MS
     assert core.FALLBACK_MAX_OP_MS == 10000 and "reset_settle_ms" not in reg.TIMING
     seen.clear()
-    dm.reset(confirm=False)
+    dm.reset()
     assert seen == [(riscv.RiscvDm.RESET, virtual_bench.MAX_OP_MS)]
 
 
@@ -315,19 +315,18 @@ def test_c10_every_virtual_profile_gives_what_is_required_on_every_transport(pro
 
 # ---- the new answer TLVs in the API -------------------------------------------------------------------------------
 
-def test_api_search_retries_step_left_internal_pullups_mode():
+def test_api_step_left_internal_pullups_mode():
     ep, hst = in_process()
     hst.open(3000)
     w = riscv.Wire(hst)
     pair = ep.pairs[1][0]
-    ep._target(1, pair).search_retries = 3
     conn, _ = w.attach(halt=True, pins=pair)
-    assert w.search_retries == 3
     dm = riscv.RiscvDm(hst, conn)
     ep._target(1, pair).step_stuck = "runs"
     with pytest.raises(riscv.StepError) as e:
         dm.step()
     assert e.value.step_left and isinstance(e.value, riscv.TargetError)
+    assert w.connections() == []                                         # closed after the answer (debug §4.2)
     ep2, hst2 = in_process(lambda: virtual_bench.with_i2c_pullups(virtual_bench.p4_x035()))
     assert fixture.I2cTarget(hst2).internal_pullups is True               # features bit2 (fixture §3)
     ep3, hst3 = in_process(virtual_bench.p4_x035)

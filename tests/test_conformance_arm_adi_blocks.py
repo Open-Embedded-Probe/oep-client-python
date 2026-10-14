@@ -31,13 +31,13 @@ def test_mem_ap_checker_catches_packet_and_progress_faults(fault,case):
             return status,ack,result
         def broken_dispatch(fn,op,payload,tags):
             if fault=='bypass' and fn==5 and op==17:
-                parent,address,count=struct.unpack('<HIH',payload)
+                parent,address,count=struct.unpack('<IIH',payload)
                 values=[e.targets[parent]['memory'].get(address+4*i,0) for i in range(count)]
                 e.bus += [(parent,'read',address+4*i,v) for i,v in enumerate(values)]
                 return struct.pack('<HB',count,0)+b''.join(struct.pack('<I',v) for v in values)
             value=dispatch(fn,op,payload,tags)
             if fn!=5 or op==16:return value
-            data=bytes(value);outcome=getattr(value,'outcome',0);parent=int.from_bytes(payload[:2],'little')
+            data=bytes(value);outcome=getattr(value,'outcome',0);parent=int.from_bytes(payload[:4],'little')
             if fault=='done' and data[2]:data=struct.pack('<H',int.from_bytes(data[:2],'little')+1)+data[2:]
             if fault=='host_csw':e.targets[parent]['ap'][0]=0
             if fault=='delivery_required' and op==18 and not e.deliver:data=b'\0\0\x03';outcome=1

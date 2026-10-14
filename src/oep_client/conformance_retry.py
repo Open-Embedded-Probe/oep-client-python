@@ -54,7 +54,7 @@ class RetryChecks(DebugChecks):
     def invalid(self):
         self.fresh()
         with self.c.holding(3000) as sid:
-            parent,_=self.attach(sid);self.a.plan(parent,[2,0]);self.refused(self.dmi_request(sid,parent,[self.write_reg(4,42),b'\xff']),'malformed')
+            parent,_=self.attach(sid);self.a.plan(parent,[2,0]);self.refused(self.dmi_request(sid,parent,[self.write_reg(4,42),b'\xff']),'unsupported',b'\0')
     def run(self):
         start=len(self.c.results)
         def context():

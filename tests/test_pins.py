@@ -21,7 +21,7 @@ def profile() -> virtual_bench.VirtualProbe:
     return virtual_bench.VirtualProbe("p4-pins", 1024, [
         virtual_bench._core("3.0.0", "esp32p4", "30eda0ea068b", 30, {},
                    virtual_bench._transports([(virtual_bench.TRANSPORT["usb_serial_jtag"], 0xFF)])),
-        virtual_bench.Offered(WIRE, 0, "oep.wire.swio", (catalog.role_channels(1, PINS), catalog.role_channels(3, PINS),
+        virtual_bench.Offered(WIRE, 0, "oep.wire.swio", (catalog.u32(catalog.FEATURES, 1), catalog.role_channels(1, PINS), catalog.role_channels(3, PINS),
                                                 catalog.u8(virtual_bench.MAX_CONNECTIONS, 1))),
         virtual_bench.Offered(DM, 0, "oep.target.riscv-dm", (catalog.u32(catalog.FEATURES, 0b1111),
                                                     catalog.u16(catalog.MAX_LENGTH, virtual_bench.block_max_length(1024)))),
