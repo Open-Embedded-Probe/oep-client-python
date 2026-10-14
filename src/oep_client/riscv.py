@@ -135,9 +135,15 @@ def check(what: str, result: m.Result, status: int, **kw) -> None:
 
 @dataclass
 class Found:
+    """One scan answer row (oep-if-debug §3 / §5): kind (the target interface), the pins, and id - DMSTATUS on rvswd /
+    swio, DPIDR on swd."""
     kind: int
     pins: tuple[int, int]
-    dmstatus: int
+    dmstatus: int                                  # the row's id(u32) (its name from the RISC-V wires)
+
+    @property
+    def id(self) -> int:
+        return self.dmstatus
 
 
 _WIRE = reg.WIRE_RVSWD          # the three wires share their op and tag numbers (oep-if-debug §0, §3, §5)

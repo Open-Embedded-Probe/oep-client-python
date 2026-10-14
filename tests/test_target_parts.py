@@ -353,6 +353,23 @@ def test_swd_attach_decodes_dpidr_and_dormant(adi_bench):
     assert wire.speed_hz == 2_000_000
 
 
+def test_swd_scan_and_detach_are_debug_5s_forms():
+    """oep-if-debug §5: scan count(u8) count x (swdio, swclk) [TLV 0x01 max_speed, critical] -> tried(u8) count(u8)
+    count x (kind(u8) swdio swclk id(u32: DPIDR)); kind 2 = arm-adi. detach connection(u32)."""
+    seen = []
+
+    def scan(p):
+        seen.append(p)
+        return ok(struct.pack("<BB", 1, 1) + struct.pack("<BHHI", 2, 10, 11, 0x2BA01477))
+    hst = ScriptedHost({(4, target.Wire.SCAN): scan, (4, target.Wire.DETACH): lambda p: ok()})
+    wire = arm.SwdWire(hst)
+    found = wire.scan(max_speed=1_000_000)
+    assert seen[0] == b"\x01" + struct.pack("<HH", 10, 11) + bytes([0x81, 4, 0]) + struct.pack("<I", 1_000_000)
+    assert [(f.kind, f.pins, f.id) for f in found] == [(2, (10, 11), 0x2BA01477)]
+    wire.detach(0x10001)                                                  # a connection above u16 (core §9)
+    assert hst.log[-1] == (4, target.Wire.DETACH, struct.pack("<I", 0x10001))
+
+
 def test_ap_read_uses_adiv6_select_and_the_posted_value(adi_bench):
     model, hst = adi_bench
     adi = arm.ArmAdi(hst, 1, adiv6=True)
