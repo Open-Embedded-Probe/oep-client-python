@@ -197,11 +197,12 @@ def drive_config(hst):
     cfg.erase()
 
 
-def one_shot(cap, **kw):
+def one_shot(cap, clock, **kw):
     cap.configure(query=True, **kw)
     cap.configure(**kw)
     cap.start()
     cap.force()
+    clock.t += 5                                                         # one-shot completes once its samples have elapsed
     (seg,) = cap.wait()
     cap.status()
     cap.segments()
@@ -214,11 +215,11 @@ def drive_captures(hst, ep):
     ch = CHANNELS[ep.probe.label]
     lc = c.LogicCapture(hst)
     core.plan_apply(hst, [(lc.fn, 0, ch["logic"][0]), (lc.fn, 1, ch["logic"][1])])
-    one_shot(lc, rate=1_000_000, samples=100)
+    one_shot(lc, ep.now, rate=1_000_000, samples=100)
     if "oep.fixture.analog" in ep.fns:
         an, grp = c.AnalogCapture(hst), c.CaptureGroup(hst)
         core.plan_apply(hst, [(an.fn, 0, ch["analog"])])
-        one_shot(an, rate=10_000, samples=10)
+        one_shot(an, ep.now, rate=10_000, samples=10)
         an.calibration()
         grp.bind([lc, an])
         grp.start([lc, an])

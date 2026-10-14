@@ -602,6 +602,7 @@ def setup_case(case):
         cap.mode, cap.rate, cap.width, cap.channels, cap.samples = virtual_bench_capture.MODE["streaming"], 1000, 8, 1, 16
         cap.generation, cap.state, cap.serial_done = 1, virtual_bench_capture.STATE["capturing"], 2
         cap.data, cap.produced, cap.sent = bytearray(range(40)), 40, 40
+        cap.stream_committed_bytes = 2 * 16                            # serials 0 and 1 committed
         cap.overflow()                                                 # inside serial 2: write_pos back to 32 (§2.2)
     elif name.startswith("logic") and "overflowed inside serial 2" in state:
         cap = ep.captures[9]                                           # repeat, 1 channel w 1, 1 MHz from 5 ms

@@ -148,22 +148,25 @@ def test_a_pretrigger_of_0_without_a_trigger_is_left_out():
 
 def test_the_generation_after_0xffffffff_is_1():
     assert m.next_generation(0) == 1 and m.next_generation(0xFFFFFFFF) == 1 and m.next_generation(41) == 42
-    ep, hst, lc, _ = bench()
+    ep, hst, lc, clock = bench()
     core.plan_apply(hst, [(lc.fn, 0, 20)])
     lc.configure(rate=1_000_000, samples=64)
     ep.captures[lc.fn].generation = 0xFFFFFFFF
     lc.start()
     assert lc.generation == 1 and lc.status().generation == 1
+    clock.t += 1                                                         # one-shot completes once its samples have elapsed
     (seg,) = lc.wait()
     assert seg.generation == 1 and len(lc.read_segment(seg)) == 8
 
 
 def test_track_events_carry_the_generation():
-    ep, hst, lc, _ = bench()
+    ep, hst, lc, clock = bench()
     core.plan_apply(hst, [(lc.fn, 0, 20), (lc.fn, 1, 21)])
     lc.configure(rate=1_000_000, samples=64, trigger=(c.EDGE, 1, 0))
     lc.subscribe()
     lc.start()
+    clock.t += 1
+    lc.status()                                                          # the bench acts on the clock when asked
     link = Link()
     link.take(ep)
     got = lc.events(link)
@@ -280,6 +283,8 @@ def test_the_group_start_answer_has_the_groups_and_each_tracks_generation():
     assert grp.generations == {an.fn: 2, lc.fn: 4} and (lc.generation, an.generation) == (4, 2)
     raw = hst.request(grp.fn, grp.STATUS, b"", locked=False).payload
     assert struct.unpack_from("<I", raw, 19)[0] == 5 and grp.status().generation == 5
+    clock.t += 30                                                        # both tracks done: a running group refuses start (capture §4.1)
+    grp.status()
     grp.bind([lc, an], trigger=lc)                                       # bound again: the group's generation goes on
     grp.start([lc, an])
     assert grp.generation == 6 and list(grp.generations) == [lc.fn, an.fn]
@@ -302,6 +307,8 @@ def test_the_groups_events_carry_its_generation_and_wrap():
     hst.subscribe(grp.fn)
     grp.start([lc, an])
     assert grp.generation == 1
+    clock.t += 30
+    grp.status()                                                         # the bench acts on the clock when asked
     link = Link()
     link.take(ep)
     got = grp.events(link)
@@ -452,12 +459,13 @@ def test_logic_layout_vectors_both_ways(case):
 
 @pytest.mark.parametrize("w", [3, 5, 7, 12, 13, 24, 100])
 def test_a_capture_with_any_w_reads_back(w):
-    ep, hst, lc, _ = bench()
+    ep, hst, lc, clock = bench()
     ep.captures[lc.fn].widths = {w}
     core.plan_apply(hst, [(lc.fn, 0, 20), (lc.fn, 1, 21), (lc.fn, 2, 22)])
     cfg = lc.configure(rate=1_000_000, samples=101)
     assert cfg.width == w and cfg.bytes == (101 * w + 7) // 8
     lc.start()
+    clock.t += 1
     (seg,) = lc.wait()
     data = lc.read_segment(seg)
     for k in range(3):
@@ -544,6 +552,7 @@ def test_a_multirate_capture_decodes_to_the_waveform(mode):
         clock.t = 1
         segs = lc.segments()
     else:
+        clock.t = 1
         segs = lc.wait()
     assert segs and all(s.samples == 128 for s in segs)
     for seg in segs:
@@ -636,7 +645,8 @@ def test_a_broken_multirate_declaration_is_not_used(raw):
 def test_a_group_pretrigger_is_the_trigger_tracks_and_bind_refuses_a_track_that_cannot_keep_it():
     ep, hst, lc, an, grp, clock = group()                              # lc: pretrigger 4000 at 1 MHz
     an.configure(rate=10_000, samples=30)                               # P_k = ceil(4000 x rate_an / 1 MHz) > 30
-    assert c.CaptureGroup.pretrigger_of(an, lc) == -(-4000 * an.config.rate // 1_000_000) == 38
+    p_k = c.CaptureGroup.pretrigger_of(an, lc)                          # from the realized rate, not the requested 10 kHz
+    assert p_k == -(-4000 * an.config.rate // 1_000_000) and p_k > an.config.samples
     with pytest.raises(h.Unavailable) as e:
         grp.bind([lc, an], trigger=lc)
     assert (e.value.cause, e.value.fn) == ("limit", an.fn)

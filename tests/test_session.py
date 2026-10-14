@@ -309,6 +309,7 @@ def test_the_host_skips_tlvs_it_does_not_know_after_every_result(bench):
     core.plan_apply(a, [(lc.fn, 0, 5)])
     lc.configure(rate=1_000_000, samples=64)
     lc.start()
+    clock.ms += 1                                                # one-shot completes once its samples have elapsed
     (seg,) = lc.wait()
     assert len(lc.read_segment(seg)) == 64 and lc.status().state == capture.STATE["done"]
     cfg = config.ProbeConfig(a)
