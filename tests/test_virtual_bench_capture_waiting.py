@@ -71,30 +71,6 @@ def grouped():
     return ep,group,analog,logic,clock
 
 
-def test_group_waits_for_unreachable_source_and_stop_has_no_segments():
-    ep,group,analog,logic,clock=grouped();clock.t=20
-    status=group.status()
-    assert status.state==c.STATE['waiting'] and status.trigger_ns is None and status.trigger_fn is None
-    for track in [analog,logic]:
-        assert track.status().state==c.STATE['waiting'] and track.segments()==[] and events(ep,track.fn)==[]
-    group.stop();assert group.status().state==c.STATE['configured']
-    for track in [analog,logic]:assert track.segments()==[]
-
-
-def test_group_force_starts_all_tracks_and_reports_force_trigger():
-    ep,group,analog,logic,clock=grouped();clock.t=20;generation=group.generation;group.force()
-    assert group.status().state==c.STATE['capturing']
-    clock.t=30
-    status=group.status();assert status.state==c.STATE['done'] and status.trigger_fn is None and status.generation==generation
-    all_frames=ep.pushes()
-    for track in [analog,logic]:
-        segment,=track.segments();assert segment.trigger_index is not None
-        rows=[c.unpack_event(f) for f in all_frames if struct.unpack_from('<H',f,1)[0]==track.fn]
-        assert rows[0].kind=='triggered'
-    frames=[f for f in all_frames if struct.unpack_from('<H',f,1)[0]==group.fn]
-    assert frames[0][5]==3 and struct.unpack_from('<H',frames[0],6)[0]==0
-
-
 def test_waiting_release_does_not_trigger_or_discard_state():
     ep,_,track,_=waiting();before=snapshot(ep,track.fn)
     track.release(0)

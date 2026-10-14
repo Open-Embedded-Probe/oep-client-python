@@ -547,7 +547,7 @@ def _one_shot(cap: capture.LogicCapture, cfg: capture.Config, virtual: bool = Fa
     answers), and finishes within a second after it."""
     window_s = float(cfg.samples / cfg.rate)
     t0 = time.monotonic()
-    blocking = cap.start()
+    cap.start()
     segs = cap.wait(timeout=max(5.0, window_s + 5.0))
     done_s = time.monotonic() - t0
     assert len(segs) == 1, f"a one-shot gave {len(segs)} segments"
@@ -563,15 +563,14 @@ def _one_shot(cap: capture.LogicCapture, cfg: capture.Config, virtual: bool = Fa
     assert done_s <= window_s + 1.0, f"done {done_s:.2f} s after start, the window is {window_s * 1e3:.1f} ms"
     st = cap.status()
     assert st.state == capture.STATE["done"] and st.serial_done == 1 and st.write_pos == cfg.bytes and not st.flags, f"status {st}"
-    timing = {"blocking_ms": blocking, "done_s": round(done_s, 4), "read_s": round(read_s, 3), "window_s": round(window_s, 5),
+    timing = {"done_s": round(done_s, 4), "read_s": round(read_s, 3), "window_s": round(window_s, 5),
               "start_ns": seg.start_ns, "start_uncertainty_ns": seg.start_uncertainty_ns, "flags": seg.flags,
               "generation": seg.generation}
     return seg, data, timing
 
 
 def _config_record(cfg: capture.Config) -> dict:
-    out = {"actual_rate": float(cfg.rate), "samples": cfg.samples, "segments": cfg.segments, "bytes": cfg.bytes,
-           "blocking_ms": cfg.blocking_ms}
+    out = {"actual_rate": float(cfg.rate), "samples": cfg.samples, "segments": cfg.segments, "bytes": cfg.bytes}
     if cfg.width:
         out["layout"] = {"w": cfg.width, "pos": cfg.positions}
     else:
@@ -677,8 +676,8 @@ def test_capture(run: record.Run):
         rec.update(levels=levels, captures=captures, generations=generations,
                    actual_rate=rec.get("configured", {}).get("actual_rate"), layout=rec.get("configured", {}).get("layout"),
                    samples=rec.get("configured", {}).get("samples"), seconds=captures[-1]["window_s"] if captures else None)
-    assert len(generations) == 2 and generations[1] == m.next_generation(generations[0]), \
-        f"generations {generations}: not +1 per start (1 after 0xFFFFFFFF, oep-if-capture §3.4)"
+    assert len(generations) == 2 and generations[1] == generations[0] + 1, \
+        f"generations {generations}: not +1 per start (never re-used within a boot, oep-if-capture §0)"
     assert not wrong, "; ".join(wrong)
 
 
@@ -787,11 +786,11 @@ def test_capture_group(run: record.Run):
         grp.bind([cap, ana])
         bound = True
         t0 = time.monotonic()
-        blocking, start_ns = grp.start([cap, ana])
+        start_ns = grp.start([cap, ana])
         st = grp.wait(timeout=10.0)
         done_s = time.monotonic() - t0
-        rec.update(blocking_ms=blocking, start_ns=start_ns, group_generation=grp.generation, generations=grp.generations, done_s=round(done_s, 4),
-                   state=st.state, trigger_ns=st.trigger_ns, trigger_fn=st.trigger_fn)
+        rec.update(start_ns=start_ns, group_generation=grp.generation, generations=grp.generations, done_s=round(done_s, 4),
+                   state=st.state)
         assert set(grp.generations) == {cap.fn, ana.fn}, f"the start answer names generations for {list(grp.generations)}"
         offsets = {}
         for track, cfg in ((cap, l_cfg), (ana, a_cfg)):

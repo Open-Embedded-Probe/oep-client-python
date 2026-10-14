@@ -1,5 +1,5 @@
 """oep-spec 0098b56 .. 2c6d18d (the external review's interface re-check, 2026-10-07), in the client and the virtual
-bench: capture §3.3's configure contract, §3.4's generations (wrap, events carry them, a host drops another start's),
+bench: capture §3.3's configure contract, §3.4's generations (events carry them, a host drops another start's),
 §3.2's segments paged by common §1.3, §4's capture-group start answer, status and events with the group's generation."""
 
 import collections
@@ -112,9 +112,9 @@ def test_the_answer_rows_follow_the_mode():
                         (c.STREAMING, {})):
         r = hst.request(lc.fn, lc.QUERY_OP, body(mode=mode, rate=1_000_000, **extra), locked=False)
         rows[mode] = [t for t, _ in m.split_tlvs(r.payload)]
-    assert rows[c.ONE_SHOT] == [c.ACTUAL_RATE, c.LAYOUT, c.ACTUAL_SAMPLES, c.BLOCKING]
-    assert rows[c.REPEAT] == [c.ACTUAL_RATE, c.LAYOUT, c.ACTUAL_SAMPLES, c.ACTUAL_SEGMENTS, c.BLOCKING]
-    assert rows[c.STREAMING] == [c.ACTUAL_RATE, c.LAYOUT, c.BLOCKING]
+    assert rows[c.ONE_SHOT] == [c.ACTUAL_RATE, c.LAYOUT, c.ACTUAL_SAMPLES]
+    assert rows[c.REPEAT] == [c.ACTUAL_RATE, c.LAYOUT, c.ACTUAL_SAMPLES, c.ACTUAL_SEGMENTS]
+    assert rows[c.STREAMING] == [c.ACTUAL_RATE, c.LAYOUT]
     assert lc.configure(rate=1_000_000, samples=100).segments == 1      # one-shot: one segment, no row for it
 
 
@@ -144,19 +144,22 @@ def test_a_pretrigger_of_0_without_a_trigger_is_left_out():
     assert c.PRETRIGGER not in {t & 0x7F for t, _ in m.split_tlvs(ep.requests[-1].payload)}
 
 
-# ---- capture §3.4: generations wrap, events carry them --------------------------------------------------------------
+# ---- capture §0 / §3.4: generations never re-used, events carry them ----------------------------------------------
 
-def test_the_generation_after_0xffffffff_is_1():
-    assert m.next_generation(0) == 1 and m.next_generation(0xFFFFFFFF) == 1 and m.next_generation(41) == 42
+def test_the_last_generation_is_0xffffffff_and_the_next_start_is_refused():
+    """oep-spec a09fa45 capture §0: past 0xFFFFFFFF a start is unavailable cause 2 until a reboot (it was 1 before)."""
     ep, hst, lc, clock = bench()
     core.plan_apply(hst, [(lc.fn, 0, 20)])
     lc.configure(rate=1_000_000, samples=64)
-    ep.captures[lc.fn].generation = 0xFFFFFFFF
+    ep.captures[lc.fn].generation = 0xFFFFFFFE
     lc.start()
-    assert lc.generation == 1 and lc.status().generation == 1
+    assert lc.generation == 0xFFFFFFFF == lc.status().generation
     clock.t += 1                                                         # one-shot completes once its samples have elapsed
     (seg,) = lc.wait()
-    assert seg.generation == 1 and len(lc.read_segment(seg)) == 8
+    assert seg.generation == 0xFFFFFFFF and len(lc.read_segment(seg)) == 8
+    with pytest.raises(h.Unavailable) as e:
+        lc.start()
+    assert e.value.cause == "limit" and lc.read_segment(seg)             # the data stays
 
 
 def test_track_events_carry_the_generation():
@@ -269,53 +272,52 @@ def group(clock_t=7):
     an, grp = c.AnalogCapture(hst), c.CaptureGroup(hst)
     clock.t = clock_t
     core.plan_apply(hst, [(lc.fn, 0, 20), (lc.fn, 1, 21), (an.fn, 0, 16)])
-    lc.configure(rate=1_000_000, samples=10_000, trigger=(c.EDGE, 1, 0), pretrigger=4000)
+    lc.configure(rate=1_000_000, samples=10_000)
     an.configure(rate=10_000, samples=100)
     return ep, hst, lc, an, grp, clock
 
 
 def test_the_group_start_answer_has_the_groups_and_each_tracks_generation():
     ep, hst, lc, an, grp, clock = group()
-    grp.bind([an, lc], trigger=lc)                                       # bind order: analog first
+    grp.bind([an, lc])                                                   # bind order: analog first
     ep.groups[grp.fn].generation, ep.captures[lc.fn].generation, ep.captures[an.fn].generation = 4, 3, 1
-    blocking, start_ns = grp.start([lc, an])
-    assert (blocking, start_ns, grp.generation) == (0, 7_000_000, 5)
+    start_ns = grp.start([lc, an])
+    assert (start_ns, grp.generation) == (7_000_000, 5)
     assert grp.generations == {an.fn: 2, lc.fn: 4} and (lc.generation, an.generation) == (4, 2)
     raw = hst.request(grp.fn, grp.STATUS, b"", locked=False).payload
-    assert struct.unpack_from("<I", raw, 19)[0] == 5 and grp.status().generation == 5
+    assert struct.unpack_from("<I", raw, 9)[0] == 5 and grp.status().generation == 5
     clock.t += 30                                                        # both tracks done: a running group refuses start (capture §4.1)
     grp.status()
-    grp.bind([lc, an], trigger=lc)                                       # bound again: the group's generation goes on
+    grp.bind([lc, an])                                                   # bound again: the group's generation goes on
     grp.start([lc, an])
     assert grp.generation == 6 and list(grp.generations) == [lc.fn, an.fn]
 
 
 def test_the_start_answer_fixed_part_on_the_wire():
     ep, hst, lc, an, grp, clock = group()
-    grp.bind([lc, an], trigger=lc)
+    grp.bind([lc, an])
     r = hst.request(grp.fn, grp.START, b"")
-    blocking, start_ns, generation, n = struct.unpack_from("<IQIB", r.payload)
-    assert (blocking, start_ns, generation, n) == (0, 7_000_000, 1, 2) and len(r.payload) == 17 + 6 * n
-    assert [struct.unpack_from("<HI", r.payload, 17 + 6 * k) for k in range(n)] == [(lc.fn, 1), (an.fn, 1)]
-    assert not m.split_tlvs(r.payload[17 + 6 * n:])                     # no TLV 0x01 generations any more
+    start_ns, generation, n = struct.unpack_from("<QIB", r.payload)    # no blocking_ms (a09fa45)
+    assert (start_ns, generation, n) == (7_000_000, 1, 2) and len(r.payload) == 13 + 6 * n
+    assert [struct.unpack_from("<HI", r.payload, 13 + 6 * k) for k in range(n)] == [(lc.fn, 1), (an.fn, 1)]
+    assert not m.split_tlvs(r.payload[13 + 6 * n:])                     # no TLV 0x01 generations any more
 
 
-def test_the_groups_events_carry_its_generation_and_wrap():
+def test_the_groups_events_carry_its_generation():
     ep, hst, lc, an, grp, clock = group()
-    grp.bind([lc, an], trigger=lc)
-    ep.groups[grp.fn].generation = 0xFFFFFFFF
+    grp.bind([lc, an])
+    ep.groups[grp.fn].generation = 0xFFFFFFFE
     hst.subscribe(grp.fn)
     grp.start([lc, an])
-    assert grp.generation == 1
+    assert grp.generation == 0xFFFFFFFF
     clock.t += 30
     grp.status()                                                         # the bench acts on the clock when asked
     link = Link()
     link.take(ep)
     got = grp.events(link)
-    assert [(e.kind, e.generation) for e in got] == [("triggered", 1), ("stopped", 1)]
-    assert got[0].trigger_fn == lc.fn and got[0].trigger_ns == grp.status().trigger_ns
+    assert [(e.kind, e.generation) for e in got] == [("stopped", 0xFFFFFFFF)]   # stopped only (§4.2)
     link.events.append(bytes([m.ROLE_EVENT]) + struct.pack("<HHB", grp.fn, 7, c.EVENT_STOPPED) + bytes([1, 0])
-                       + struct.pack("<I", 0xFFFFFFFF))                  # the start before's
+                       + struct.pack("<I", 0xFFFFFFFE))                  # the start before's
     assert grp.events(link) == [] and grp.stale_events == 1
 
 
@@ -510,152 +512,6 @@ def test_a_bound_tracks_drop_stops_the_group():
     link.take(ep)
     (e,) = grp.events(link)
     assert (e.kind, e.reason_name, e.error) == ("stopped", "error", 1)
-
-
-# ---- oep-spec 59c5459 / dd5a886, capture §5: multirate ------------------------------------------------------------------
-
-from oep_client import multirate as mr   # noqa: E402
-
-A, S_, E = mr.ANY_ACTIVE, mr.SAMPLE, mr.EDGE_LATCH
-
-
-def multirate_bench(roles=4):
-    ep, hst, lc, clock = bench()
-    core.plan_apply(hst, [(lc.fn, k, 20 + k) for k in range(roles)])
-    return ep, hst, lc, clock
-
-
-def counter_levels(role, first, n):
-    return [((first + i) >> role) & 1 for i in range(n)]
-
-
-def test_the_virtual_bench_declares_multirate_and_d_1_is_always_accepted():
-    ep, hst, lc, _ = multirate_bench()
-    decl = lc.multirate_declared()
-    assert decl == mr.Declared(7, 2, 1024, False)
-    assert decl.accepts_d(1) and not decl.accepts_d(0) and decl.accepts_d(3)
-    assert mr.Declared(7, 2, 128, True).accepts_d(1) and not mr.Declared(7, 2, 128, True).accepts_d(3)   # d 1 always
-    assert c.AnalogCapture(hst).multirate_declared() is None
-    cfg = lc.configure(rate=1_000_000, samples=64, multirate=[mr.Multirate(1, S_, 1, 0), mr.Multirate(2, S_, 2, 1)])
-    assert cfg.positions == [0, 1, 2] and cfg.block == 32                  # role 1's d 1 sample: a D = 1 channel
-
-
-@pytest.mark.parametrize("mode", [c.ONE_SHOT, c.REPEAT])
-def test_a_multirate_capture_decodes_to_the_waveform(mode):
-    ep, hst, lc, clock = multirate_bench()
-    specs = [mr.Multirate(0, A, 8, 1), mr.Multirate(2, E, 4, 1), mr.Multirate(3, S_, 4, 3)]
-    extra = dict(segments=2) if mode == c.REPEAT else {}
-    cfg = lc.configure(rate=1_000_000, mode=mode, samples=100, multirate=specs, **extra)
-    assert cfg.block == 32 and cfg.samples == 128 and cfg.positions == [0]   # rounded up to L; role 1 is D = 1
-    lc.start()
-    if mode == c.REPEAT:
-        clock.t = 1
-        segs = lc.segments()
-    else:
-        clock.t = 1
-        segs = lc.wait()
-    assert segs and all(s.samples == 128 for s in segs)
-    for seg in segs:
-        data = lc.read_segment(seg)
-        assert len(data) == cfg.bytes == 4 * cfg.multirate_layout().block_bytes()
-        got = lc.decode_multirate(data, seg.samples)
-        first = seg.serial * 128
-        assert got.d1 == [counter_levels(1, first, 128)]
-        for s in specs:
-            assert got.reduced[s.role] == s.values(counter_levels(s.role, first, 128))
-
-
-def test_multirate_streaming_pushes_whole_blocks():
-    ep, hst, lc, clock = multirate_bench()
-    lc.configure(rate=1_000_000, mode=c.STREAMING, multirate=[mr.Multirate(3, A, 16, 0)])
-    lc.subscribe()
-    lc.start()
-    clock.t = 1                                                          # 1000 base samples: 31 blocks of 32
-    pushes = [c.unpack_push(f) for f in ep.pushes() if f[0] == m.ROLE_DATA]
-    data = b"".join(p[3] for p in pushes)
-    lay = lc.config.multirate_layout()
-    assert len(data) == 31 * lay.block_bytes()
-    got = lay.decode(data, 31 * 32)
-    assert got.reduced[3] == mr.Multirate(3, A, 16, 0).values(counter_levels(3, 0, 31 * 32))
-
-
-def test_multirate_refusals_on_the_virtual_bench():
-    ep, hst, lc, _ = multirate_bench()
-    base = m.tlv(c.MODE, bytes([1])) + m.tlv(c.RATE, struct.pack("<I", 1_000_000)) + m.tlv(c.SAMPLES, struct.pack("<I", 64))
-    def ask(*specs, critical=True):
-        return hst.request(lc.fn, lc.QUERY_OP, base + b"".join(m.tlv(mr.TAG, mr.TLV.pack(*x), critical=critical) for x in specs),
-                           locked=False)
-    for bad in [[(0, A, 0, 0)], [(0, S_, 4, 4)], [(0, E, 1, 1)], [(0, A, 4, 2)], [(1, S_, 2, 0), (1, S_, 4, 0)]]:
-        with pytest.raises(h.Rejected) as e:
-            ask(*bad)
-        assert e.value.result.detail == m.MALFORMED, bad
-    for bad, critical in [((0, 3, 4, 0), True), ((0, S_, 2000, 0), False)]:
-        with pytest.raises(h.Unsupported) as e:
-            ask(bad, critical=critical)
-        assert e.value.result.payload == bytes([mr.TAG | (0x80 if critical else 0)])
-    with pytest.raises(h.Unavailable) as e:
-        ask((9, S_, 4, 0))                                               # role 9 not in the plan
-    assert e.value.cause == "wrong_state"
-    ep.captures[lc.fn].min_hz = ep.captures[lc.fn].max_hz = 1_000_000   # one rate only: a heavy one cannot keep it
-    with pytest.raises(h.Unsupported) as e:
-        ask(*[(k, E, 2, 1) for k in range(4)])
-    assert e.value.result.payload == bytes([mr.TAG | 0x80])
-
-
-def test_the_client_checks_multirate_before_sending():
-    ep, hst, lc, _ = multirate_bench()
-    n = len(ep.requests)
-    for specs, words in [([mr.Multirate(0, A, 0, 0)], "d 0"), ([mr.Multirate(0, S_, 4, 4)], "phase"),
-                         ([mr.Multirate(0, E, 1, 0)], "edge_latch"), ([mr.Multirate(1, S_, 2), mr.Multirate(1, S_, 4)], "twice"),
-                         ([mr.Multirate(0, 3, 4, 0)], "policy 3"), ([mr.Multirate(0, S_, 2048, 0)], "d 2048")]:
-        with pytest.raises(ValueError, match=words):
-            lc.configure(rate=1_000_000, samples=64, multirate=specs)
-    an = c.AnalogCapture(hst)
-    with pytest.raises(ValueError, match="declares no multirate"):
-        an.configure(rate=10_000, samples=64, multirate=[mr.Multirate(0, S_, 2, 0)])
-    assert not [r for r in ep.requests[n:] if r.op in (c.LogicCapture.CONFIGURE, c.LogicCapture.QUERY_OP) and r.fn != 0]
-
-
-def test_a_multirate_track_heavy_combination_gets_a_lower_rate():
-    ep, hst, lc, _ = multirate_bench()
-    light = lc.configure(rate=20_000_000, samples=64, query=True, multirate=[mr.Multirate(0, A, 4, 0)])
-    heavy = lc.configure(rate=20_000_000, samples=64, query=True, multirate=[mr.Multirate(k, E, 2, 1) for k in range(4)])
-    assert light.rate == 20_000_000 and heavy.rate < 20_000_000 and heavy.positions == [] and heavy.width == 1
-
-
-# ---- oep-spec d801f02 .. c6ab5d9: the probe's and the client's questions ---------------------------------------------------
-
-def test_only_multirate_goes_critical_and_type_0_sends_role_0():
-    ep, hst, lc, _ = multirate_bench()
-    lc.configure(rate=1_000_000, samples=64, trigger=(c.IMMEDIATE, 3, 7), multirate=[mr.Multirate(0, A, 8, 0)])
-    tags = [t for t, _ in m.split_tlvs(ep.requests[-1].payload)]
-    assert [t for t in tags if t & 0x80] == [mr.TAG | 0x80]
-    assert dict(m.split_tlvs(ep.requests[-1].payload))[c.TRIGGER] == bytes(6)
-
-
-@pytest.mark.parametrize("raw", [(6, 2, 128, 1), (7, 1, 128, 0), (7, 8, 4, 0), (7, 2, 128, 2)])
-def test_a_broken_multirate_declaration_is_not_used(raw):
-    ep, hst, lc, _ = multirate_bench()
-    hst._describes[lc.fn] = [(mr.DECLARED, struct.pack("<IIIB", *raw))]
-    assert lc.multirate_declared() is None
-    with pytest.raises(ValueError, match="declares no multirate"):
-        lc.configure(rate=1_000_000, samples=64, multirate=[mr.Multirate(0, A, 8, 0)])
-
-
-def test_a_group_pretrigger_is_the_trigger_tracks_and_bind_refuses_a_track_that_cannot_keep_it():
-    ep, hst, lc, an, grp, clock = group()                              # lc: pretrigger 4000 at 1 MHz
-    an.configure(rate=10_000, samples=30)                               # P_k = ceil(4000 x rate_an / 1 MHz) > 30
-    p_k = c.CaptureGroup.pretrigger_of(an, lc)                          # from the realized rate, not the requested 10 kHz
-    assert p_k == -(-4000 * an.config.rate // 1_000_000) and p_k > an.config.samples
-    with pytest.raises(h.Unavailable) as e:
-        grp.bind([lc, an], trigger=lc)
-    assert (e.value.cause, e.value.fn) == ("limit", an.fn)
-    an.configure(rate=10_000, samples=100)
-    grp.bind([lc, an], trigger=lc)
-    lc2 = c.LogicCapture(hst, lc.fn)
-    lc2.config = c.Config(pretrigger=5)
-    with pytest.raises(ValueError, match="trigger_track's alone"):
-        grp.bind([an, lc2], trigger=an)
 
 
 def test_streaming_error_moves_write_pos_back_and_the_host_drops_what_came_past_it():

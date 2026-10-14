@@ -260,12 +260,12 @@ class SubscriptionChecks:
                         for fn in self.a.functions), 'configured fn must declare subscribe/unsubscribe')
             require(all(callable(getattr(self.a, name, None)) for name in
                         ('stimulate', 'receive', 'decode_event')), 'adapter event capabilities missing')
-        self.c.check('IF-SUB-IDENTITY', 'core §7/11; adapter contract', identify)
+        self.c.check('IF-SUB-IDENTITY', 'core §7/10; adapter contract', identify)
         if self.c.results[-1]['status'] != 'passed':
             self.c.abort = True
         for name, method in SUBSCRIPTION_CASES:
             first = len(self.notifications)
-            self.c.check(name, 'core §6/9/11.2/11.3', getattr(self, method))
+            self.c.check(name, 'core §6/9/10.2/10.3', getattr(self, method))
             self.c.results[-1]['notification_observations'] = self.notifications[first:]
         rows = self.c.results[start:]
         return {'status': 'passed' if all(x['status'] == 'passed' for x in rows) else 'failed',

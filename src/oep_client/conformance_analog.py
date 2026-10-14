@@ -7,10 +7,10 @@ from .conformance_registered_ops import RegisteredOpsChecks
 
 
 class AnalogChecks(LogicChecks):
-    cases=LogicChecks.cases+('RAW','FRONTEND','CALIBRATION','DOWN',*(f'QUERY-STATE-{state}' for state in range(7)))
+    cases=LogicChecks.cases+('RAW','FRONTEND','CALIBRATION','CALIBRATION-FIT','DOWN',*(f'QUERY-STATE-{state}' for state in range(7)))
     def plan(self,sid,roles=((1,0),(3,1))):return super().plan(sid,roles)
     def answer(self,payload,mode=1):
-        self.config=self.payload.configure(payload,roles=(1,3),frontends={0,1},mode=mode,max_op_ms=self.maximum_blocking)
+        self.config=self.payload.configure(payload,roles=(1,3),frontends={0,1},mode=mode)
         require(self.config['slot']==16 and self.config['offset']==2 and self.config['bits']==12 and self.config['order']==[3,1],'explicit ADC layout differs')
         return dict(reversed(tlvs(payload)))
     def data(self,generation,samples):
@@ -19,7 +19,7 @@ class AnalogChecks(LogicChecks):
         self.payload.data(data,self.config,samples)
         return data
     def case(self,kind):
-        special={'RAW-TAGS','TRIGGER','PRETRIGGER','WAIT','DOWN','PAGES','REPEAT','RELEASE','REPLAY-RELEASE','RAW','FRONTEND','CALIBRATION'}
+        special={'RAW-TAGS','TRIGGER','PRETRIGGER','WAIT','DOWN','PAGES','REPEAT','RELEASE','REPLAY-RELEASE','RAW','FRONTEND','CALIBRATION','CALIBRATION-FIT'}
         if kind not in special and not kind.startswith('QUERY-STATE-'):return super().case(kind)
         self.fresh()
         with self.c.holding(1000) as sid:
@@ -27,7 +27,7 @@ class AnalogChecks(LogicChecks):
             if kind=='RAW-TAGS':
                 for critical in (False,True):
                     self.configure(sid,critical=critical)
-                    for field,kwargs in [('mode',dict(mode=4)),('rate',dict(rate=99)),('trigger',dict(trigger=(1,1,0)))]:
+                    for field,kwargs in [('mode',dict(mode=4)),('mode',dict(mode=3,samples=None)),('rate',dict(rate=99)),('trigger',dict(trigger=(1,1,0)))]:
                         self.refused(self.req(2,'configure',sid,self.settings(critical=critical,**kwargs)),'unsupported',bytes((self.tags[field]|(128 if critical else 0),)))
                 self.refused(self.req(2,'configure',sid,self.settings()+self.tlv(254,b'x')),'unsupported',b'\xfe')
             elif kind=='TRIGGER':
@@ -68,7 +68,7 @@ class AnalogChecks(LogicChecks):
             elif kind in ('RAW','FRONTEND'):
                 p=self.settings()+self.tlv(self.tags['frontend'],b'\3\1')
                 self.answer(self.c.success(self.req(2,'configure',sid,p)))
-                require(self.config['frontend_used']=={1:(0,),3:(1,)} and self.config['scale'][3][1]<0,'ADC selected frontend/negative scale')
+                require(all({1:(0,),3:(1,)}[role]==row for role,row in self.config['frontend_used'].items()) and self.config['scale'][1][1]>0>self.config['scale'][3][1],'ADC selected frontend/negative scale')
                 if kind=='RAW':
                     samples=[[0,4095],[1,4094],[17,30000%4096],[2048,1500],[4095,0],[3000,1000],[123,321],[4040,40]]
                     generation,_,_=self.start(sid);require(self.a.feed(samples)==8,'ADC raw admission');self.data(generation,samples)
@@ -88,6 +88,14 @@ class AnalogChecks(LogicChecks):
                     raw,ns,mv=struct.unpack('<IQI',values[self.calibration_tags['vrefint']])
                     require(raw==1365 and ns==before['now_ns'] and mv==1100,'fixture last-start reference calibration')
                     self.ok(self.req(2,'stop',sid))
+            elif kind=='CALIBRATION-FIT':
+                def factory():
+                    p=self.c.success(self.req(2,'calibration'));return p,{fe:raw for fe,_,raw in self.payload.calibration(p,frontends={0,1})}
+                raw=self.a.factory(64);p,rows=factory();require(rows.get(255)==raw,'factory raw returned as held')
+                size=64+self.c.max_frame-5-len(p);raw=self.a.factory(size);p,rows=factory();require(5+len(p)==self.c.max_frame and rows.get(255)==raw,'exactly fitting calibration must succeed whole')
+                self.a.factory(size+1);self.refused(self.req(2,'calibration'),'unsupported',b'\0')
+                self.a.factory(size);self.configure(sid,trigger=(3,3,1500));self.start(sid);self.refused(self.req(2,'calibration'),'unsupported',b'\0')
+                raw=self.a.factory(0);p,rows=factory();require(rows.get(255)==raw and self.calibration_tags['vrefint'] in dict(tlvs(p)),'calibration after shrinking held information')
             else:
                 state=int(kind.rsplit('-',1)[1])
                 if state:
@@ -108,15 +116,14 @@ class AnalogChecks(LogicChecks):
             self.codes={fn:{r['name']:r['code'] for r in base.specs[name]['op']} for fn,name in self.a.selection.items()}
             spec=base.specs['oep.fixture.analog'];self.tags=spec['tlv']['configure'];self.answers=spec['tlv']['configure_answer'];self.calibration_tags=spec['tlv']['calibration_answer']
             self.assignment=base.specs['oep.probe.plan']['tlv']['plan_apply']['role_assignment']
-            self.maximum_blocking=int.from_bytes(dict(reversed(self.c.describe(0)))[self.c.reg['core']['tlv']['describe']['max_op_ms']],'little')
             self.payload=AnalogPayloadChecks(self.c)
             require(self.a.state()['clock_scope']=='explicit-logical-ms','explicit ADC model clock')
         self.c.check('OEP-ANALOG-CONTEXT','capture §1.2/3; plan §2',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         for kind in self.cases:
-            first=len(self.a.trace);self.c.check('OEP-ANALOG-'+kind,'capture §1.2/3/3.8; plan §2; core §6/8/9',lambda kind=kind:self.case(kind))
+            first=len(self.a.trace);self.c.check('OEP-ANALOG-'+kind,'capture §1.2/2/3/3.7; plan §2; core §4.4/6/8/9',lambda kind=kind:self.case(kind))
             self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]
         return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,observed=self.c.observed,adapter_trace=self.a.trace,full_conformance=False,
-                    scope='explicit ADC u12 rows, sparse roles/reverse layout, one-shot/repeat, threshold, calibration and lifetime',
-                    unchecked=['capture-group, streaming, notifications, multirate and optional force','other ADC layouts/rates/trigger boundaries and reference acquisition policies','serial wrap and bounded-retention/concurrency/persisted config','physical ADC accuracy/skew/clock and production Host integration'])
+                    scope='explicit ADC u12 rows, sparse roles/reverse layout, configure contract/answer rows, one-shot/repeat, read rules, threshold, generation exhaustion, calibration fit and lifetime',
+                    unchecked=['capture-group, streaming, notifications and optional force','other ADC layouts/rates/trigger boundaries and reference acquisition policies','serial wrap and bounded-retention/concurrency/persisted config','physical ADC accuracy/skew/clock and production Host integration'])

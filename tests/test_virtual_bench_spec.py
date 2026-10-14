@@ -77,18 +77,18 @@ def test_a_resent_request_gets_its_remembered_result_and_runs_once():
     ep = endpoint.Endpoint(virtual_bench.with_stand_in(virtual_bench.esp32_v003()), Clock())
     h = Host(ep)
     h.open()
-    toy = next(fn for fn, name in ep.names.items() if name.endswith(".stand-in"))   # 0x01 write(u32)
-    first = h.raw(toy, 0x01, struct.pack("<I", 5))
+    toy = next(fn for fn, name in ep.names.items() if name.endswith(".stand-in"))   # TOY_WRITE: write(u32)
+    first = h.raw(toy, endpoint.TOY_WRITE, struct.pack("<I", 5))
     ep.values[toy] = 99                                             # the state moved on
-    again = h.raw(toy, 0x01, struct.pack("<I", 5), corr=h.corr)
+    again = h.raw(toy, endpoint.TOY_WRITE, struct.pack("<I", 5), corr=h.corr)
     assert again == first and ep.values[toy] == 99                  # not executed a second time
     # core §5.1: the record is the whole request; the same corr with another payload is malformed, never run
-    assert h.raw(toy, 0x01, struct.pack("<I", 6), corr=h.corr).detail == m.MALFORMED and ep.values[toy] == 99
-    h.raw(toy, 0x01, struct.pack("<I", 1))
-    h.raw(toy, 0x01, struct.pack("<I", 2))
+    assert h.raw(toy, endpoint.TOY_WRITE, struct.pack("<I", 6), corr=h.corr).detail == m.MALFORMED and ep.values[toy] == 99
+    h.raw(toy, endpoint.TOY_WRITE, struct.pack("<I", 1))
+    h.raw(toy, endpoint.TOY_WRITE, struct.pack("<I", 2))
     for _ in range(10):
-        h.raw(toy, 0x01, struct.pack("<I", 3))
-    assert h.raw(toy, 0x01, struct.pack("<I", 1), corr=2).detail == m.RESULT_LOST   # fell out of the table
+        h.raw(toy, endpoint.TOY_WRITE, struct.pack("<I", 3))
+    assert h.raw(toy, endpoint.TOY_WRITE, struct.pack("<I", 1), corr=2).detail == m.RESULT_LOST   # fell out of the table
 
 
 def test_a_long_result_is_not_remembered():
@@ -107,9 +107,9 @@ def test_open_empties_the_table():
     ep = endpoint.Endpoint(virtual_bench.with_stand_in(virtual_bench.esp32_v003()), Clock())
     h = Host(ep)
     h.open()
-    h.raw(13, 0x01, struct.pack("<I", 5))                           # the stand-in fn
+    h.raw(13, endpoint.TOY_WRITE, struct.pack("<I", 5))                           # the stand-in fn
     h.open()                                                        # a new open: the table goes
-    assert h.raw(13, 0x01, struct.pack("<I", 5), corr=h.corr - 1).succeeded   # an old corr is new again
+    assert h.raw(13, endpoint.TOY_WRITE, struct.pack("<I", 5), corr=h.corr - 1).succeeded   # an old corr is new again
 
 
 # ---- the lock: owner and lease (core §6.4) -----------------------------------------------------------

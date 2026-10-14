@@ -7,12 +7,13 @@ analogの取得操作は[analog操作ガイド](analog-conformance.ja.md)の別c
 groupの結合・一斉取得・世代と寿命は[capture-group操作ガイド](capture-group-conformance.ja.md)を参照する。
 describeの成功だけで取得操作やデータ寿命の適合を証明しない。
 
-- capture: features u32の予約bit0〜2は0。上位bitはこの検査で禁止しない。
-- track: modeの9 byte固定形とモードごとに1行、rate_rangeの9 byteとexactの0/1、channels u8、triggerの8 byte。
-- analog: frontendの13 byte固定形と番号ごとに1行。
-- capture-group: tracksの要素数とu16列の形。
-- logic multirate: 存在時は13 byte、sample policy必須、2≤min_d≤max_d、pow2は0/1。
-  壊れた広告を検査器はFAILとする。Hostが広告を使わず基本captureへ戻る動作の検査は別途必要。
+- capture: features（0x05）はrevision 1でbitを定めないため、値0なら省略してよい。存在すればu32の形だけを確かめ、
+  bitの値では失敗にしない（後から定義されうる、capture §3.5/§4.3）。
+- track: planのrole_channels（0x01）かchannel_group（0x06）を1つ以上、modeの9 byte固定形とモードごとに1行、
+  mode 1/3のmax_segmentsは0、rate_rangeの8 byteと1≤min_hz≤max_hz、channels u8、triggerの8 byteとtypesに即時（bit0）を含むこと。
+  宣言するmodeは1つ以上で、1/2/3のどれを選ぶかは問わない。mode別に必須になるrelease/subscribeは[登録op検査](registered-ops-conformance.ja.md)が確かめる。
+- analog: frontendの9 byte固定形（frontend、range_min_mv、range_max_mv）を1つ以上、番号ごとに1行。
+- capture-group: tracksの要素数n≥1とu16列の形。
 - config: items（0x41）の存在、1つ以上、重複なし、項目番号0を含まない（probe.config §4）。
   旧版のslots_max/wifi_maxは現仕様に無いため検査しない。
 
@@ -21,6 +22,7 @@ itemsの未知tagを独自拡張でないと推測して禁止しない。
 
 `CaptureMetadataModel`は17 interfaceの宣言だけを持つ独立fixture。
 4 fnで10項目、全fn共通宣言137項目と登録op18項目は別に確認する。
+fixtureはfn 14にmode 1/3とsubscribe/unsubscribe、fn 15にmode 1/2とreleaseを宣言し、probeのchannelsを3にする。
 広告opを実装せず、完全probeとして使わない。ここで検査した固定形を、容量/rate/frontendの実動作や
 track bindの適合証拠としない。configure/取得/read/release/通知/世代/plan lifetimeは追加検査が必要。
 `full_conformance`はfalse。公開側は私的ベンチへ依存しない。
@@ -62,7 +64,7 @@ one-shotの取得完了は`test_virtual_bench_capture_one_shot_time.py`の50件�
 
 仮想波形はsample indexから値を返す関数で、完成時・stop時に過去の値を生成する。
 この検査はその関数の時刻付き入力を用い、実際の入力を継続観測して保存するbufferの証明ではない。
-repeat/streamingのoffset/skewを含む完全な時間因果性、multirate、実機適合は別途確認する。
+repeat/streamingのoffset/skewを含む完全な時間因果性、実機適合は別途確認する。
 
 
 `test_virtual_bench_capture_channel_time.py`はchannel時刻とforce/groupを98件で確認する。
@@ -76,4 +78,4 @@ forceは実行時刻を通知し、offsetやsampleの丸めによってその時
 repeat/streamingの24件はlogic/analog、1/2 channel、3 actual_rateで未来のchannel値を読まないことを確認する。
 8件の不具合注入では取得用時計だけを24 sample分先へ進め、同じ時刻oracleが未来のdata生成を検出する。
 Endpointを通した6件では整数msの時計とconfigureの広告skewを使い、source/group双方の通知時刻と世代を照合する。
-残るmultirate、pause/resume/stopの全境界、取得履歴buffer、実transport/物理時計は別途確認する。
+残るpause/resume/stopの全境界、取得履歴buffer、実transport/物理時計は別途確認する。

@@ -1,21 +1,23 @@
 # 通知seqの一周・再購読・再送の検査
 
-`NotificationSequenceChecks`はcore §5.2/11.2/11.3/11.4、transports §3に基づく第二段階の補助検査。
+`NotificationSequenceChecks`はcore §5.2/10.2/10.3/10.4、transports §3に基づく第二段階の補助検査。
 公開`RouteModel`と`SampleNotificationSequenceAdapter`を使い、選択SPEC checkoutを明示する。
 privateベンチや隣接checkoutの探索は行わない。
 
-前提1、共通describe 2、動作7の計10項目を持つ。
+前提1、共通describe 2、動作8の計11項目を持つ。
 
 | 動作 | 観測 |
 |---|---|
 | WRAP | seq 65534からdata/eventを交互に出し、65535→0→1。同じfnで共有し、別fnは0から独立 |
 | DROP-WRAP | 送信停止中の32フレームでmax_frame×2の制限とdropを確認。一周前後を含め、捨てたフレームも番号を消費 |
 | REPLACE | seq/送り先の置換。別fnのseq/送り先を変えず、一つの通知を両経路へ出さない |
+| DISCARD | 1byte以上送り始めたフレームと未送信2フレームを残して、同じ経路での再購読・別経路での再購読・解除を行う。旧購読の未送信フレームは捨て、送り始めたフレームは完了してから同じ経路の応答を返す。別fnの未送信フレームと別経路の応答は影響を受けない |
 | UNSUBSCRIBE | 未購読・解除・再解除が成功し、別fnの購読/seq/条件/経路と既存資源を保持。解除後の新通知は送らず、再購読でseq0 |
 | REPLAY | 古い成功subscribeの再送は同じ応答を返す。新しい購読のseq/送り先/条件を巻き戻さない |
 | REPLAY-REFUSED | 古い拒否subscribeの再送も保存応答を返し、新しい購読に触れない |
 | REJECTED | malformed/未知critical TLVの拒否前に購読seq/送り先/条件/資源を変更しない |
 
+サンプルの`RouteModel`と`NotificationModel`は、再購読・解除でそのfnの未送信フレームを捨て、送り始めたフレームは残して完了させる。
 fixtureはfn 1/2、primary/peer、max_frame 64を明示する。seqのseedと論理resetは検査用のinstrumentationで、
 実機の公開opではない。seedは購読済みfn・通知queueが空のときだけ可能。
 保持する通知の特定の選び方を規定せず、残ったフレームの内容と一周を含む生成順序、次のseqを照合する。
@@ -31,8 +33,8 @@ client checkoutのルートで実行する。
 uv run pytest -q tests/test_conformance_notification_sequence.py tests/test_conformance_routes.py tests/test_conformance_data.py tests/test_conformance_subscriptions.py
 ```
 
-新しいpytestは正常モデル、10種類の違反注入、無効な前提3種類の14件。
-既存のroute/data/subscriptionと合わせて92件。応答優先・部分送信・queue量・経路切断は既存RouteChecksを別に実行する。
+pytestは正常モデル、10種類の違反注入、DISCARDの違反注入5種類、解除の違反注入7種類、無効な前提3種類ほか計27件。
+応答優先・部分送信・queue量・経路切断は既存RouteChecksを別に実行する。
 SPEC identity、送受信raw、刺激/観測、checker/model SHAを保存する例:
 
 ```sh

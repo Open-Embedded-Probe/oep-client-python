@@ -331,12 +331,12 @@ def test_api_step_left_internal_pullups_mode():
     ep3, hst3 = in_process(virtual_bench.p4_x035)
     assert fixture.I2cTarget(hst3).internal_pullups is False and not hasattr(fixture.I2cTarget, "pullup_ohms")
     text = dump.to_text(dump.collect(virtual_bench.p4_x035().call, "oep.fixture.logic"))
-    assert "one-shot, max 1048576 samples x 1 segments" in text           # mode: mode max_samples max_segments
+    assert "one-shot, max 1048576 samples a segment" in text and "repeat, max 1048576 samples x 8 segments" in text
 
 
 def test_p2_o8_capture_configure_sends_the_table_tlvs_without_the_critical_bit():
-    """capture §3.3 (oep-spec c6ab5d9): every capture probe implements the table's TLVs, so the host sends them
-    without the critical bit; only multirate goes critical."""
+    """capture §3.3: every capture probe implements the table's TLVs, so the host sends them without the critical
+    bit."""
     ep, hst = in_process(virtual_bench.esp32_v003)
     hst.open(3000)
     core.plan_apply(hst, [(6, 0, 4)])
@@ -345,26 +345,6 @@ def test_p2_o8_capture_configure_sends_the_table_tlvs_without_the_critical_bit()
     tags = {t: v for t, v in m.split_tlvs(ep.requests[-1].payload)}
     assert set(tags) == {capture.MODE, capture.RATE, capture.TRIGGER, capture.PRETRIGGER, capture.SAMPLES}
     assert c.samples == 65536                                          # rounded down: the answer holds
-
-
-def test_p2_o9_blocking_ms_sends_nothing_then_resyncs_a_length_link():
-    calls = []
-
-    class FakeLink:
-        framing = "length"
-
-        def resync(self):
-            calls.append("resync")
-    hst = h.Host(lambda b: b)
-    hst.link = FakeLink()
-    capture.blocked(hst, 250, sleep=lambda s: calls.append(s))
-    assert calls == [0.25, "resync"]
-    hst.link.framing = "cobs"
-    calls.clear()
-    capture.blocked(hst, 10, sleep=lambda s: calls.append(s))
-    assert calls == [0.01]
-    capture.blocked(hst, 0, sleep=lambda s: calls.append("never"))
-    assert calls == [0.01]
 
 
 def test_c18_the_session_id_is_random_and_never_0():

@@ -1,10 +1,12 @@
 import copy
+import struct
 import pytest
 from oep_client import registry_legacy as registry
 from oep_client.conformance import Checks
 from oep_client.conformance_analog import AnalogChecks
 from oep_client.conformance_analog_sample import SampleAnalogAdapter
 from oep_client.virtual_analog_model import AnalogModel
+from oep_client.virtual_core import tlv
 from test_conformance_registered_ops import setup as registered_setup
 
 
@@ -65,7 +67,9 @@ def test_preflight_blocks_operations(invalid):
 
 
 @pytest.mark.parametrize('fault,case',[
- ('wrong_pack','RAW'),('wrong_order','RAW'),('generation_zero','GEN-WRAP'),
+ ('wrong_pack','RAW'),('wrong_order','RAW'),('generation_zero','GEN-EXHAUST'),('wrap_to_one','GEN-EXHAUST'),
+ ('missing_scale','RAW'),('missing_scale','QUERY-STATE-3'),('truncate_factory','CALIBRATION-FIT'),('omit_vrefint','CALIBRATION-FIT'),
+ ('partial_calibration','CALIBRATION-FIT'),('gone_without_gap','READ-GAP'),('mode3_accepted','RAW-TAGS'),
  ('keep_old_data','GENERATION'),('reset_generation','PLAN-RELEASE'),('no_resume','RELEASE'),
  ('no_gap','REPEAT'),('no_short','SHORT-STOP'),('wrong_stop_state','SHORT-STOP'),
  ('pin_output','RAW'),('discard_committed','ERROR'),('error_retains_partial','ERROR'),
@@ -77,9 +81,25 @@ def test_semantic_faults_are_detected(fault,case):
     def faulty_install():
         install();e=model.extension;dispatch=e.dispatch_request;finish=e.finish;release=e.release_plans
         def broken_dispatch(fn,op,payload,tags):
-            old_data=bytes(e.data);old_state=e.state;result=dispatch(fn,op,payload,tags)
+            from oep_client.virtual_core import Reject, Completed
+            old_data=bytes(e.data);old_state=e.state
             if fn==2:
-                if fault=='generation_zero' and op==17:e.generation=0;result=result[:4]+b'\0'*4
+                if fault=='wrap_to_one' and op==17 and e.generation==0xffffffff and e.state in (1,4,6):e.generation=0
+                if fault=='mode3_accepted' and op in (16,24) and tags.get(64,(0,b''))[1]==b'\3':tags={**tags,64:(64,b'\1'),67:(67,struct.pack('<I',8))}
+                if op==25 and fault in ('truncate_factory','omit_vrefint','partial_calibration'):
+                    raw,ns=e.factory_raw,e.calibration_ns
+                    try:return dispatch(fn,op,payload,tags)
+                    except Reject:
+                        if fault=='omit_vrefint':e.calibration_ns=None
+                        else:e.factory_raw=raw[:max(0,len(raw)-19)]
+                        result=dispatch(fn,op,payload,tags)
+                        return Completed(result,2) if fault=='partial_calibration' else result
+                    finally:e.factory_raw,e.calibration_ns=raw,ns
+            result=dispatch(fn,op,payload,tags)
+            if fn==2:
+                if fault=='generation_zero' and op==17:e.generation=0;result=b'\0'*4
+                if fault=='missing_scale' and op in (16,24):result=result.replace(tlv(85,struct.pack('<Bii',3,-17,1000000)),b'').replace(tlv(85,struct.pack('<Bii',3,-17,-1000000)),b'')
+                if fault=='gone_without_gap' and op==21 and result[8]&2 and result[9:11]==b'\0\0':result=result[:8]+bytes((result[8]&~2,))+result[9:]
                 if fault=='keep_old_data' and op==17:e.data[:]=old_data
                 if fault=='no_resume' and op==23:e.state=5
                 if fault=='no_gap' and op==23:e.gap=False
@@ -87,8 +107,6 @@ def test_semantic_faults_are_detected(fault,case):
                 if fault=='query_applies' and op==24:e.config=e.settings(tags);e.clear(1)
                 if fault=='calibration_changes_data' and op==25:e.data.append(255)
                 if fault=='future_reference' and op==25 and e.calibration_ns is not None:
-                    from oep_client.virtual_core import tlv
-                    import struct
                     from oep_client.conformance import tlvs
                     result=b''.join(tlv(tag,struct.pack('<IQI',1365,e.calibration_ns+1000,1100) if tag==2 else value) for tag,value in tlvs(result))
             return result
@@ -135,3 +153,14 @@ def test_replay_cannot_repeat_adc_side_effects(case):
     checks.send=broken;checker=AnalogChecks(checks,SampleAnalogAdapter(model));checker.cases=(case,)
     result=checker.run()
     assert next(r for r in result['checks'] if r['id']=='OEP-ANALOG-'+case)['status']=='failed'
+
+
+@pytest.mark.parametrize('case',['QUERY','RAW','FRONTEND','QUERY-STATE-3'])
+def test_optional_answer_rows_may_be_omitted(case):
+    from oep_client.conformance import tlvs
+    model,checks=setup();install=model.install
+    def lean_install():
+        install();e=model.extension;answer=e.answer
+        e.answer=lambda config:b''.join(tlv(tag,value) for tag,value in tlvs(answer(config)) if tag not in (87,88,89))
+    model.install=lean_install;checker=AnalogChecks(checks,SampleAnalogAdapter(model));checker.cases=(case,)
+    result=checker.run();assert result['status']=='passed',[(r['id'],r.get('error')) for r in result['checks'] if r['status']!='passed']

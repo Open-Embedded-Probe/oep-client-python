@@ -702,17 +702,22 @@ class Host:
                     raise
                 time.sleep(0.05)
 
-    # ---- notifications (core §11) ---------------------------------------------------------------------------------
+    # ---- notifications (core §10) ---------------------------------------------------------------------------------
     def subscribe(self, fn: int, min_bytes: int = 0, max_delay_ms: int = 0) -> None:
-        """Events and data pushes from interface `fn`: its own subscribe op (0x30, core §11.3: the request carries no
+        """Events and data pushes from interface `fn`: its own subscribe op (0x01, core §10.3: the request carries no
         target fn). The data goes when min_bytes are ready or max_delay_ms (u32) after its first byte (0, 0: as soon as
         there is anything); events go at once, whatever these say. Ends with the lock. An fn that sends no
-        notifications has no subscribe: rejected unknown_operation."""
+        notifications has no subscribe: rejected unknown_operation. fn 0 sends none, and its 0x01 is its own op:
+        ValueError before sending."""
+        if fn == 0:
+            raise ValueError("fn 0 sends no notifications (core §10.2): its op 0x01 is not subscribe")
         self.call(fn, m.OP_SUBSCRIBE, struct.pack("<HI", min_bytes, max_delay_ms))
         self.subscriptions.add(fn)
 
     def unsubscribe(self, fn: int) -> None:
-        """Interface `fn`'s own unsubscribe op (0x32, core §11.3); one without a subscription succeeds doing nothing."""
+        """Interface `fn`'s own unsubscribe op (0x02, core §10.3); one without a subscription succeeds doing nothing."""
+        if fn == 0:
+            raise ValueError("fn 0 sends no notifications (core §10.2): its op 0x02 is not unsubscribe")
         self.call(fn, m.OP_UNSUBSCRIBE)
         self.subscriptions.discard(fn)
 

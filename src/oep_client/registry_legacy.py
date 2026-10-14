@@ -110,6 +110,7 @@ from . import registry as _now
 REGISTRY_HASH = _now.REGISTRY_HASH
 ROLES, RESOLUTIONS, OUTCOMES = _now.ROLES, _now.RESOLUTIONS, _now.OUTCOMES
 REJECT_REASONS, STATUS, DESCRIBE_COMMON = _now.REJECT_REASONS, _now.STATUS, _now.DESCRIBE_COMMON
+OP_SUBSCRIBE, OP_UNSUBSCRIBE = _now.OP_SUBSCRIBE, _now.OP_UNSUBSCRIBE      # 0x01 / 0x02 in every op space (core §10.3)
 COMMON = _now.COMMON                                     # the common stream marks: lost 1, clear 2, host 3 (common §1.3)
 TIMING, LIMITS = {**TIMING, **_now.TIMING}, {**LIMITS, **_now.LIMITS}
 CORE.op, CORE.lock_free, CORE.enum = _now.CORE.op, _now.CORE.lock_free, _now.CORE.enum
@@ -118,7 +119,8 @@ CORE.tlv = {k: {**CORE.tlv.get(k, {}), **v} for k, v in _now.CORE.tlv.items()}
 # ---- interfaces already following the current spec (one per stage) ------------------------------------------------
 for _name in ("oep.probe.plan", "oep.probe.restart", "oep.probe.link", "oep.fixture.gpio", "oep.fixture.uart", "oep.fixture.i2c-target", "oep.fixture.spi-target",
               "oep.wire.rvswd", "oep.wire.swio", "oep.wire.swd", "oep.target.riscv-dm", "oep.target.arm-adi",
-              "oep.target.console", "oep.probe.config"):
+              "oep.target.console", "oep.probe.config", "oep.fixture.logic", "oep.fixture.analog",
+              "oep.fixture.capture-group"):
     _table = _now.INTERFACES[_name]
     globals()[next(k for k, v in list(globals().items()) if getattr(v, "name", None) == _name)] = _table
     INTERFACES[_name] = _table

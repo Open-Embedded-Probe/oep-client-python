@@ -60,7 +60,9 @@ class HostNotificationChecks:
 
     def demux(self):
         unknown_roles = (0, *range(5, 256))
-        for irrelevant in [struct.pack('<BHH', role, 7, 0) for role in unknown_roles] + [reply(8), struct.pack('<BHH', 1, 7, 0)]:
+        # fn 0 never sends notifications (core §10.2): such frames are not adopted and leave fn seqs alone.
+        for irrelevant in [struct.pack('<BHH', role, 7, 0) for role in unknown_roles] + [reply(8), struct.pack('<BHH', 1, 7, 0),
+                                                                                         event(0, 0), data(0, 1)]:
             known, stream = event(7, 0), data(7, 1)
             result, _ = self.drive([irrelevant, known, stream, reply(7)])
             require(result['reply'] == reply(7) and result['notifications'] == [known, stream],
@@ -141,7 +143,7 @@ class HostNotificationChecks:
                            ('SHORT-FRAMES', self.short_frames), ('BROKEN-NOTIFICATIONS', self.broken_notifications),
                            ('VARIABLE-NOTIFICATIONS', self.variable_notifications)]:
             start = len(self.observations)
-            row = {'id': 'HOST-NOTIFY-' + name, 'clause': 'core §2.4/11.1/11.2', 'status': 'passed'}
+            row = {'id': 'HOST-NOTIFY-' + name, 'clause': 'core §2.4/10.1/10.2', 'status': 'passed'}
             try: call()
             except Exception as exc: row.update(status='failed', error=f'{type(exc).__name__}: {exc}')
             row['observations'] = self.observations[start:]

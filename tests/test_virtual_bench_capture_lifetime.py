@@ -7,16 +7,26 @@ from test_virtual_bench_capture_requests import configured,snapshot
 
 
 @pytest.mark.parametrize('analog',[False,True])
-@pytest.mark.parametrize('seed',[0,0xfffffffe,0xffffffff])
-def test_restart_generation_wrap_and_old_read_release_are_atomic(analog,seed):
+@pytest.mark.parametrize('seed',[0,0xfffffffd])
+def test_restart_generation_and_old_read_release_are_atomic(analog,seed):
     ep,hst,track,clock=configured(analog);cap=ep.captures[track.fn];cap.generation=seed
     track.start();first=track.generation;clock.t+=1;track.wait();track.start();current=track.generation;clock.t+=1;track.status()
-    assert first==((seed+1)&0xffffffff or 1) and current==((first+1)&0xffffffff or 1)
+    assert first==seed+1 and current==first+1
     before=snapshot(ep,track.fn)
-    for op,body in [(track.READ,struct.pack('<IQI',first,0,8)),(track.RELEASE,struct.pack('<II',first,0))]:
+    for op,body in [(track.READ,struct.pack('<IQH',first,0,8)),(track.RELEASE,struct.pack('<II',first,0))]:
         with pytest.raises(host.Unavailable) as err:hst.request(track.fn,op,body)
         assert err.value.cause=='wrong_state' and snapshot(ep,track.fn)==before
     seg,=track.segments();assert seg.generation==current and seg.serial==0 and seg.position==0
+
+
+@pytest.mark.parametrize('analog',[False,True])
+def test_no_generation_past_the_last_until_a_reboot(analog):
+    """capture §0: the start after 0xFFFFFFFF is refused unavailable cause 2 before anything changes."""
+    ep,hst,track,clock=configured(analog);ep.captures[track.fn].generation=0xfffffffe
+    track.start();assert track.generation==0xffffffff;clock.t+=1;track.wait()
+    before=snapshot(ep,track.fn)
+    with pytest.raises(host.Unavailable) as err:track.start()
+    assert err.value.cause=='limit' and snapshot(ep,track.fn)==before
 
 
 @pytest.mark.parametrize('analog',[False,True])
@@ -38,7 +48,7 @@ def test_release_frees_inclusive_data_then_resumes_with_gap(analog):
     ep,_,track,clock=configured(analog);track.configure(rate=10000 if analog else 1000000,mode=c.REPEAT,samples=8,segments=1);track.start();clock.t=50
     assert track.status().state==c.STATE['paused'];first,=track.segments();old_end=first.position+len(track.read_segment(first))
     track.release(first.serial);assert track.status().state==c.STATE['capturing']
-    reply=ep.captures[track.fn].read(track.generation,0,8,128);position,flags,count=struct.unpack_from('<QBI',reply)
+    reply=ep.captures[track.fn].read(track.generation,0,8,128);position,flags,count=struct.unpack_from('<QBH',reply)
     assert position==old_end and flags&2 and count==0
     clock.t=52;next_segment,=track.segments(first.serial+1)
     assert next_segment.flags&1 and next_segment.generation==track.generation and next_segment.position==old_end

@@ -316,29 +316,33 @@ def test_analog_values_scale_and_calibration():
     assert cal.vrefint[1] < seg.start_ns  # reference measured before the first channel sample
 
 
-def test_a_group_starts_logic_and_analog_together_and_marks_the_trigger_on_both():
+def test_a_group_starts_logic_and_analog_together():
+    """capture §4.1: one start for both (immediate triggers); each track's segment says when it began - the group's
+    start_ns plus the track's own offset - and the group's stopped comes once every track is done."""
     ep, hst, lc, clock = bench()
     an, grp = c.AnalogCapture(hst), c.CaptureGroup(hst)
     clock.t = 3
     core.plan_apply(hst, [(lc.fn, 0, 20), (lc.fn, 1, 21), (an.fn, 0, 16)])
-    lc.configure(rate=1_000_000, samples=10_000, trigger=(c.EDGE, 1, 0), pretrigger=4000)
+    lc.configure(rate=1_000_000, samples=10_000)
     an.configure(rate=10_000, samples=100)
-    grp.bind([lc, an], trigger=lc)
+    assert grp.status() == c.GroupStatus(0, None, 0)                # nothing bound, never started
+    grp.bind([lc, an])
+    grp.bind([lc, an])                                              # the same list: nothing changes
     with pytest.raises(h.Unavailable) as e:
         an.start()                                                  # bound: the group starts it
     assert e.value.cause == "bound_in_group"
-    _, start_ns = grp.start([lc, an])
-    assert grp.generations == {lc.fn: 1, an.fn: 1} and lc.generation == an.generation == 1   # the answer's TLV
+    hst.subscribe(grp.fn)
+    start_ns = grp.start([lc, an])
+    assert grp.generations == {lc.fn: 1, an.fn: 1} and lc.generation == an.generation == 1 and grp.generation == 1
+    assert grp.status().state == c.STATE["capturing"]
     clock.t = 20
     st = grp.wait()
-    assert st.start_ns == start_ns == 3_000_000 and st.trigger_fn == lc.fn
+    assert st.start_ns == start_ns == 3_000_000 and st.generation == 1
     (ls,), (as_,) = lc.segments(), an.segments()
     assert ls.start_ns - start_ns == 0 and as_.start_ns - start_ns == 5000          # the analog starts 5 us later
-    # The first rise is sample 2, before either track has its requested prehistory.
-    assert ls.trigger_index == 2 and st.trigger_ns == start_ns + 2_000
-    assert ls.samples == 6002 and ls.flags & 2
-    assert as_.trigger_index == max(0, round((st.trigger_ns - as_.start_ns) * an.config.rate / 1_000_000_000)) == 0
-    assert as_.samples == 100 - grp.pretrigger_of(an, lc) == 58 and as_.flags & 2
+    assert ls.trigger_index is None and as_.trigger_index is None and ls.samples == 10_000 and as_.samples == 100
+    stopped, = [c.unpack_event(f, group=True) for f in ep.pushes() if f[0] == m.ROLE_EVENT and f[1] == grp.fn]
+    assert (stopped.kind, stopped.reason, stopped.generation) == ("stopped", 0, 1)
     grp.bind([])
     an.start()                                                      # unbound: its own again
     assert an.generation == 2 and lc.read_segment(ls) == lc.read_segment(ls)   # the logic's generation 1 still reads
@@ -368,8 +372,11 @@ def test_a_group_refuses_what_it_cannot_bind():
     assert e.value.cause == "bound_in_group"
     grp.bind([])
     lc.configure(rate=1_000_000, samples=100, trigger=(c.EDGE, 0, 0))
-    with pytest.raises(h.Rejected):
-        grp.bind([lc, an], trigger=an)                              # only the trigger track may have a trigger
+    with pytest.raises(h.Unavailable) as e:
+        grp.bind([lc, an])                                          # a group starts at once: immediate tracks only
+    assert e.value.cause == "wrong_state" and e.value.fn == lc.fn
+    with pytest.raises(h.Unsupported):
+        hst.call(grp.fn, grp.BIND, struct.pack("<BH", 1, an.fn) + m.tlv(0x01, struct.pack("<H", an.fn), critical=True))
 
 
 # ---- what configure / describe say (oep-if-capture §3.3, §2; core §2.3) --------------------------------------------
@@ -464,3 +471,23 @@ def test_a_bind_short_of_resources_is_unavailable_limit_naming_the_fn():
         grp.bind([lc, an])
     assert (e.value.cause, e.value.fn) == ("limit", an.fn)
     lc.configure(rate=1_000_000, samples=100)                       # nothing bound: its own again
+
+
+def test_a_new_subscribe_or_an_unsubscribe_drops_what_the_old_one_had_not_sent():
+    """core §10.3: replacing or ending a subscription drops its frames not sent yet; seq counts from 0 again."""
+    ep, hst, lc, clock = bench()
+    core.plan_apply(hst, [(lc.fn, 0, 20)])
+    lc.configure(rate=1_000_000, samples=100)
+    lc.subscribe()
+    lc.start()
+    clock.t += 1
+    lc.status()                                                     # the segment and stopped events wait
+    assert ep.outbox
+    lc.subscribe()
+    assert ep.pushes() == []
+    lc.start()
+    clock.t += 1
+    lc.status()
+    assert [struct.unpack_from("<H", f, 3)[0] for f in ep.outbox] == [0, 1]
+    lc.unsubscribe()
+    assert ep.pushes() == []

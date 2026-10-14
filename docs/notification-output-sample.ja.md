@@ -1,6 +1,6 @@
 # 有限保持の通知出力：代表fixture
 
-`tests/test_conformance_notification_output.py`は、循環corr作業版のcore §11.3/§11.4を確認する限定したraw fixtureである。
+`tests/test_conformance_notification_output.py`は、core §10.3/§10.4（a09fa45）を確認する限定したraw fixtureである。
 公開の汎用通知検査APIや、本番virtual profileを実装したものではない。
 独自の`io.example.notice`にsubscribe/unsubscribeと固定58byte payloadのkind1イベントを定義し、通知の共通部分をOEP固有操作から分けて検査する。
 
@@ -19,8 +19,8 @@ slotが使用中に生まれたイベントを捨て、そのseqを消費し、�
 通知の1packetはlength込み66byteであり、max_frame×2=128byte以下。Python objectや全端点のRAM測定値ではない。
 
 データ保持48byte/max_delay_ms0の代表条件で、min_bytes65535の購読をunavailable cause2で断り、既存条件/seqを維持する。
-次の有効な購読はseq0から始め、旧購読の未送信通知を捨て、unsubscribe後に新しいイベントを送らない。
-senderの細分化、購読拒否/置き換え、seqの抜け、応答優先に5つのfaultを注入して、それぞれのcaseで検出する。
+次の有効な購読はseq0から始め、旧購読の未送信通知を捨てる。unsubscribeも未送信の通知を捨て、解除後に新しいイベントを送らない。
+senderの細分化、購読拒否/置き換え、解除、seqの抜け、応答優先に6つのfaultを注入して、それぞれのcaseで検出する。
 reportには全raw入力、message交換、出力chunk、選択した観測と未終了SIDを含める。
 
 1frame slotはこのfixtureの方針で、すべての実装に同じslot数を要求しない。

@@ -203,10 +203,12 @@ def test_subscriptions_survive_a_same_id_open_while_held_and_go_with_the_lock(be
     assert ep.subscribed == {logic: (0, 500)} and a.subscriptions == {logic}
     clock.ms = 500
     assert ep.pushes() == []                                                        # fn 0 sends nothing (no heartbeat)
-    for fn in (TOY, 0, 4):                                                          # the toy, the core, gpio
+    for fn in (TOY, 4):                                                             # the toy, gpio
         with pytest.raises(host.Rejected) as e:
             a.subscribe(fn)
         assert type(e.value) is host.Rejected and e.value.result.detail == m.UNKNOWN_OPERATION
+    with pytest.raises(ValueError):
+        a.subscribe(0)                                                              # the core's 0x01 is its own op
     with pytest.raises(host.Rejected, match="unknown function"):
         a.subscribe(99)
     a.unsubscribe(logic)

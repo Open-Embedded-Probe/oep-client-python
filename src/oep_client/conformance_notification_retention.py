@@ -6,7 +6,7 @@ from .conformance_host_deadline import reviewed_identity
 class NotificationRetentionChecks:
     def __init__(self,adapter,*,spec):self.a=adapter;self.identity=reviewed_identity(spec);self.checks=[];self.observations=[]
     def check(self,name,fn):
-        row=dict(id='NOTIFY-RETENTION-'+name,level='core',clause='core §2.6/11.3/11.4; transports §3')
+        row=dict(id='NOTIFY-RETENTION-'+name,level='core',clause='core §2.6/10.3/10.4; transports §3')
         try:fn();row['status']='passed'
         except Exception as exc:row.update(status='failed',error=f'{type(exc).__name__}: {exc}')
         self.checks.append(row)

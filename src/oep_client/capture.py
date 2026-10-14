@@ -1,40 +1,34 @@
-"""oep.fixture.logic / oep.fixture.analog / oep.fixture.capture-group revision 1 (oep-spec docs/oep-if-capture.ja.md:
-§1 layouts, §2 segments, §3 operations, §3.8 calibration, §4 groups). Numbers from `registry`.
+"""oep.fixture.logic / oep.fixture.analog / oep.fixture.capture-group revision 1 (oep-spec a09fa45
+interfaces/oep-if-capture.ja.md: §1 layouts, §2 segments, §3 operations, §3.7 calibration, §4 groups). Numbers from
+`registry`.
 
 Times are the probe's one clock (ns since its boot, comparable within one boot_id): estimates with an uncertainty, the
 probe's known corrections applied. Analog values are always raw; the probe's 1st-order scale, its calibration data and
 its reference are for the host to choose from.
 
-Every start begins a new generation (u32: 1 at the first start after boot, 0xFFFFFFFF followed by 1, 0 only before the
-first start; compared for equality only): segment serials and positions count from 0 inside it, and read and release
-name it, so a read sent for the last capture never returns the next one's bytes (oep-if-capture §3.2, §3.4). The client
-keeps it (`LogicCapture.generation`, from start / status / the group's start) and passes it on; `read_segment` takes the
-segment's own. Every event carries the generation it was made in (segment, stopped, triggered; the group's triggered
-and stopped carry the group's): an event of an earlier start may come after the start's answer (core §11.4), so
-`LogicCapture.events` / `CaptureGroup.events` drop one whose generation is not the current one (`unpack_event` reads
-any). Segment serials wrap (core §2.6) and segments pages by common §1.3.
+Every start begins a new generation (u32: 1 at the first start after boot, 0 only before the first start; a start past
+0xFFFFFFFF is refused unavailable cause 2 until a reboot; compared for equality only): segment serials and positions
+count from 0 inside it, and read and release name it, so a read sent for the last capture never returns the next one's
+bytes (oep-if-capture §0, §3.2). The client keeps it (`LogicCapture.generation`, from start / status / the group's
+start) and passes it on; `read_segment` takes the segment's own. Every event carries the generation it was made in
+(segment, stopped, triggered; the group's stopped carries the group's): an event of an earlier start may come after the
+start's answer (core §10.4), so `LogicCapture.events` / `CaptureGroup.events` drop one whose generation is not the
+current one (`unpack_event` reads any). Segment serials wrap (core §2.6) and segments pages by common §1.3.
 
 configure (§3.3's contract, checked here before sending - ValueError): mode and rate always; samples in modes 1 and 2,
 never in mode 3; segments in mode 2 only; pretrigger only with a trigger (type other than 0); rate, samples and
-segments 1 or more; a type 0 trigger goes as role 0 value 0. The table's TLVs and trigger_track go without the critical
-bit (every probe of the interface implements them); only multirate is sent critical (oep-spec c6ab5d9). A value the
-probe cannot honour is refused unsupported with the tag as received (core §2.3) - which one, when several apply, is the
-probe's choice, so this client never relies on the order. The probe rounds samples down to its limit and the answer
-(Config.samples / .segments) is what holds.
+segments 1 or more; a type 0 trigger goes as role 0 value 0. The table's TLVs go without the critical bit (every probe
+of the interface implements them). A value the probe cannot honour is refused unsupported with the tag as received
+(core §2.3) - which one, when several apply, is the probe's choice, so this client never relies on the order. The probe
+rounds samples down to its limit and the answer (Config.samples / .segments) is what holds.
+
+Streaming (§3.4): every data frame carries its generation and its segment (segment_info: the segment's position, the
+samples taken so far, start_ns and its uncertainty) and stays inside that segment; `Received.segments` keeps what the
+frames said.
 
 Errors (§2.2): a segment's bytes may arrive before the segment ends; when the track stops in error, status's write_pos
 is the start of the segment not kept and the bytes received at or past it are dropped (`Received.drop_from`,
-`LogicCapture.finish` does it).
-
-multirate (§5, a second definition of oep.fixture.logic): `configure(multirate=[Multirate(role, policy, d, param),
-...])` sends one TLV 0xE0 per role (critical), after checking them against the fn's describe (`multirate_declared()`;
-ValueError for a malformed TLV, a role twice, a policy or d not declared, or no multirate declared). The answer's block L
-and layout of the D = 1 channels go to Config.block / Config.multirate_layout(); `decode_multirate(data, samples)` reads
-a segment's blocks (module `multirate`). rate, samples, pretrigger and trigger_index count base samples.
-
-blocking_ms (P2-○9): a start whose answer says blocking_ms > 0 is followed by nothing on any transport for that long
-(`blocked`), then - on a length-prefixed link - the resync of transports §5; neither the lease nor the answer's wait counts
-it."""
+`LogicCapture.finish` does it)."""
 
 from __future__ import annotations
 
@@ -44,8 +38,7 @@ import zipfile
 from dataclasses import dataclass, field
 from fractions import Fraction
 
-from . import cobs, host as h, message as m, multirate as mr, registry_legacy as reg
-from .multirate import ANY_ACTIVE, EDGE_LATCH, SAMPLE, Multirate
+from . import cobs, host as h, message as m, registry as reg
 from .frames import FramingLost
 from .core import Interface, confirm
 
@@ -56,13 +49,13 @@ _GRP = reg.FIXTURE_CAPTURE_GROUP
 MODE, RATE, SAMPLES, SEGMENTS, TRIGGER, PRETRIGGER = (
     _CAP.tlv["configure"][k] for k in ("mode", "rate", "samples", "segments", "trigger", "pretrigger"))
 FRONTEND = _ANA.tlv["configure"]["frontend"]             # analog only
-ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, SCALE, BLOCKING, SKEW, FRONTEND_USED, REFERENCE = (
+ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, SCALE, SKEW, FRONTEND_USED, REFERENCE = (
     _ANA.tlv["configure_answer"][k] for k in (
-        "actual_rate", "layout", "actual_samples", "actual_segments", "scale", "blocking_ms", "skew",
-        "frontend_used", "reference"))
+        "actual_rate", "layout", "actual_samples", "actual_segments", "scale", "skew", "frontend_used", "reference"))
 FACTORY, VREFINT = _ANA.tlv["calibration_answer"]["factory"], _ANA.tlv["calibration_answer"]["vrefint"]
 STATUS_ERROR = _CAP.tlv["status_answer"]["error"]          # status's TLV: why the state is 6
 DATA_GENERATION = _CAP.tlv["data"]["generation"]           # a data frame's TLV: its generation (always in streaming)
+SEGMENT_INFO = _CAP.tlv["data"]["segment_info"]            # and its segment: position samples start_ns uncertainty
 REFERENCE_SOURCE = {v: k for k, v in _ANA.enum["reference_source"].items()}
 CRITICAL = m.TAG_CRITICAL
 ONE_SHOT, REPEAT, STREAMING = (_CAP.enum["mode"][k] for k in ("one_shot", "repeat", "streaming"))
@@ -71,25 +64,13 @@ STATE = _CAP.enum["state"]
 SEGMENT_SLIPPED = _CAP.enum["segment_flag"]["slipped"]
 STATUS_FLAGS = _CAP.enum["status_flag"]                    # dropped, slipped (reset at start)
 ERRORS = {v: k for k, v in _CAP.enum["error"].items()}     # state 6's reason
-# events (oep-core §11, role 0x05); the group's are numbered as the tracks' (§4.2)
+# events (oep-core §10, role 0x03); the group's stopped is numbered as the tracks' (§4.2)
 EVENT_SEGMENT, EVENT_STOPPED, EVENT_TRIGGERED = (_CAP.event[k] for k in ("segment", "stopped", "triggered"))
-EVENT_HEADER = 6                                           # role(u8) fn(u16) seq(u16) kind(u8) (core §11.1)
+EVENT_HEADER = 6                                           # role(u8) fn(u16) seq(u16) kind(u8) (core §10.2)
 
 
 def tlvs(payload: bytes) -> list[tuple[int, bytes]]:
     return m.split_tlvs(payload)
-
-
-def blocked(hst: h.Host, blocking_ms: int, sleep=time.sleep) -> None:
-    """oep-if-capture §3.2 (P2-○9): from the start answer for blocking_ms the probe may not process frames on any
-    transport, so this host sends nothing for that long; afterwards a length-prefixed link begins with the resync of
-    transports §5, a serial port simply goes on. Neither the lease nor the host's wait counts blocking_ms."""
-    if blocking_ms <= 0:
-        return
-    sleep(blocking_ms / 1000)
-    link = getattr(hst, "link", None)
-    if link is not None and getattr(link, "framing", None) == "length":
-        link.resync()
 
 
 SEGMENT_BYTES = 37   # serial u32, position u64, samples u32, start_ns u64, start_uncertainty_ns u32, trigger_index u32,
@@ -147,7 +128,7 @@ class Status:
 
 @dataclass
 class Config:
-    """What configure answered: the probe's actual values (logic-capture §5.3)."""
+    """What configure answered: the probe's actual values (oep-if-capture §3.3)."""
     rate: Fraction = Fraction(0)
     width: int = 0                               # logic: bits per sample (w)
     positions: list[int] = field(default_factory=list)   # logic: bit of channel k within a sample
@@ -162,28 +143,17 @@ class Config:
     scale_nv: dict[int, int] = field(default_factory=dict)     # analog, nV per value, per channel
     frontend: dict[int, int] = field(default_factory=dict)     # analog: the frontend each channel took
     reference: tuple[str, int, bool] | None = None             # analog: (source, mV, measured)
-    blocking_ms: int = 0
-    pretrigger: int = 0                                        # what this host asked (a group's: the trigger_track's)
-    block: int | None = None                                   # multirate: L, base samples a block (§5.3)
-    multirate: list[Multirate] = field(default_factory=list)   # multirate: the reduced channels asked, role order
-
-    def multirate_layout(self) -> mr.Layout | None:
-        """The block layout of a multirate configuration (§5.5), else None."""
-        if self.block is None:
-            return None
-        return mr.Layout(self.width, list(self.positions), self.block, self.multirate)
+    pretrigger: int = 0                                        # what this host asked
 
     def segment_bytes(self, samples: int) -> int:
-        """Length of a segment of `samples` (base) samples in the stream: §1.1 rule 4, or §5.5's blocks."""
-        if self.block is not None:
-            return self.multirate_layout().segment_bytes(samples)
+        """Length of a segment of `samples` samples in the stream (§1.1 rule 4, §1.2 rule 3)."""
         if self.width:
             return (samples * self.width + 7) // 8
         return samples * len(self.order) * self.slot // 8
 
     @property
     def bytes(self) -> int:
-        """Length of one segment in the stream (§1.1 rule 4; multirate: §5.5)."""
+        """Length of one segment in the stream (§1.1 rule 4)."""
         return self.segment_bytes(self.samples)
 
 
@@ -210,6 +180,7 @@ class Received:
     frames: int = 0
     stale: int = 0                                             # pushes of an earlier generation, dropped
     dropped_after_error: int = 0                               # bytes at or past an error stop's write_pos, dropped
+    segments: dict[int, "SegmentInfo"] = field(default_factory=dict)   # a segment's position -> what its frames said
 
     def drop_from(self, position: int) -> None:
         """Drop every byte at stream position `position` or later (§2.2: after an error stop, status's write_pos)."""
@@ -227,32 +198,54 @@ class Received:
         self.gaps = [(i, n) for i, n in self.gaps if i < keep]
 
 
+@dataclass
+class SegmentInfo:
+    """A streaming data frame's segment_info (§3.4): the segment's position, the samples taken when the frame was made
+    (1 or more; the final count once the segment ended), start_ns and its uncertainty (as §2.2's segment)."""
+    position: int
+    samples: int
+    start_ns: int
+    start_uncertainty_ns: int
+
+
 def unpack_push(frame: bytes) -> tuple[int, int, int, bytes, int | None]:
-    """A data frame (core §11.2: role fn seq position(u64) len(u16) data [TLV]) -> (fn, seq, position, data,
+    """A data frame (core §10.2: role fn seq position(u64) len(u16) data [TLV]) -> (fn, seq, position, data,
     generation): the TLV 0x01 generation, None when the frame carries none."""
+    return _unpack_push(frame)[:5]
+
+
+def push_segment(frame: bytes) -> SegmentInfo | None:
+    """A streaming data frame's TLV 0x02 segment_info (§3.4), None when the frame carries none (or another length)."""
+    return _unpack_push(frame)[5]
+
+
+def _unpack_push(frame: bytes) -> tuple[int, int, int, bytes, int | None, SegmentInfo | None]:
     fn, seq, position = struct.unpack_from("<HHQ", frame, 1)
     rd = m.Reader(frame[13:])
     data = rd.counted("H")
-    g = rd.tail().get(DATA_GENERATION)
-    return fn, seq, position, data, struct.unpack("<I", g)[0] if g is not None and len(g) == 4 else None
+    tail = rd.tail()
+    g, info = tail.get(DATA_GENERATION), tail.get(SEGMENT_INFO)
+    return (fn, seq, position, data, struct.unpack("<I", g)[0] if g is not None and len(g) == 4 else None,
+            SegmentInfo(*struct.unpack("<QIQI", info)) if info is not None and len(info) == 24 else None)
 
 
-def take_pushes(link, fn: int) -> list[tuple[int, int, bytes, int | None]]:
-    """Remove this fn's data pushes (role 0x06) from the link: [(seq, position, data, generation)], oldest first."""
+def take_pushes(link, fn: int) -> list[tuple[int, int, bytes, int | None, SegmentInfo | None]]:
+    """Remove this fn's data pushes (role 0x04) from the link: [(seq, position, data, generation, segment_info)],
+    oldest first."""
     mine, rest = [], []
     for f in link.pushes:
         (mine if struct.unpack_from("<H", f, 1)[0] == fn else rest).append(f)
     link.pushes.clear()
     link.pushes.extend(rest)
-    return [unpack_push(f)[1:] for f in mine]
+    return [_unpack_push(f)[1:] for f in mine]
 
 
 @dataclass
 class Event:
-    """A capture event (oep-if-capture §3.4, §4.2; core §11.1 role 0x05). `generation`: the start it was made in - a
-    track's for a track's event, the group's for the group's. kind "segment" has `segment`; "stopped" has `reason` and
-    `error`; a track's "triggered" has `serial`, `trigger_index` and `trigger_ns`, the group's `trigger_fn` (None on a
-    force) and `trigger_ns`. An event of another kind keeps its fixed part in `raw` and generation None."""
+    """A capture event (oep-if-capture §3.4, §4.2; core §10.2 role 0x03). `generation`: the start it was made in - a
+    track's for a track's event, the group's for the group's stopped. kind "segment" has `segment`; "stopped" has
+    `reason` and `error`; "triggered" has `serial`, `trigger_index` and `trigger_ns`. An event of another kind (or a
+    group's other than stopped) keeps its fixed part in `raw` and generation None."""
     fn: int
     seq: int
     kind: str
@@ -263,7 +256,6 @@ class Event:
     serial: int | None = None
     trigger_index: int | None = None
     trigger_ns: int | None = None
-    trigger_fn: int | None = None
     raw: bytes = b""
 
     @property
@@ -276,8 +268,7 @@ STOPPED_REASONS = {v: k for k, v in _CAP.enum["stopped_reason"].items()}
 
 def unpack_event(frame: bytes, group: bool = False) -> Event:
     """An event frame (role fn seq kind, then the kind's fixed part and TLVs) -> Event. `group`: the frame is a
-    capture-group's (its triggered is trigger_fn(u16) trigger_ns(u64) generation(u32), §4.2). A fixed part shorter than
-    its kind's raises ProtocolError."""
+    capture-group's (stopped only, §4.2). A fixed part shorter than its kind's raises ProtocolError."""
     if len(frame) < EVENT_HEADER or frame[0] != m.ROLE_EVENT:
         raise h.ProtocolError(f"not an event frame: {frame.hex()}")
     fn, seq = struct.unpack_from("<HH", frame, 1)
@@ -290,10 +281,7 @@ def unpack_event(frame: bytes, group: bool = False) -> Event:
         elif kind == EVENT_STOPPED:
             reason, error, generation = rd.take("BBI")
             e = Event(fn, seq, "stopped", generation, reason=reason, error=error)
-        elif kind == EVENT_TRIGGERED and group:
-            trigger_fn, trigger_ns, generation = rd.take("HQI")
-            e = Event(fn, seq, "triggered", generation, trigger_fn=trigger_fn or None, trigger_ns=trigger_ns)
-        elif kind == EVENT_TRIGGERED:
+        elif kind == EVENT_TRIGGERED and not group:
             serial, index, trigger_ns, generation = rd.take("IIQI")
             e = Event(fn, seq, "triggered", generation, serial=serial, trigger_index=index, trigger_ns=trigger_ns)
         else:
@@ -305,7 +293,7 @@ def unpack_event(frame: bytes, group: bool = False) -> Event:
 
 
 def take_events(link, fn: int) -> list[bytes]:
-    """Remove this fn's event frames (role 0x05) from the link, oldest first."""
+    """Remove this fn's event frames (role 0x03) from the link, oldest first."""
     mine, rest = [], []
     for f in link.events:
         (mine if struct.unpack_from("<H", f, 1)[0] == fn else rest).append(f)
@@ -341,10 +329,8 @@ def _config(payload: bytes, analog: bool) -> Config:
         elif tag == REFERENCE and analog:
             source, mv, how = struct.unpack("<BIB", v)
             c.reference = (REFERENCE_SOURCE.get(source, str(source)), mv, how == 1)
-        elif tag == BLOCKING:
-            c.blocking_ms = struct.unpack("<I", v)[0]
-        elif tag == mr.BLOCK and not analog:
-            c.block = struct.unpack("<I", v)[0]
+    for k in c.order:
+        c.skew_ns.setdefault(k, 0)                            # a role with no delay may be left out (§3.3)
     return c
 
 
@@ -366,17 +352,14 @@ class LogicCapture(Interface):
 
     def configure(self, *, rate: int, mode: int = ONE_SHOT, samples: int | None = None, segments: int | None = None,
                   trigger: tuple[int, int, int] | None = None, pretrigger: int | None = None, query: bool = False,
-                  frontends: dict[int, int] | None = None,
-                  multirate: list[Multirate] | None = None) -> Config:
+                  frontends: dict[int, int] | None = None) -> Config:
         """-> the probe's actual values. A value the probe cannot honour is refused: host.Unsupported, .tag = the TLV as
-        sent (§3.3). The TLVs go without the critical bit (§3.3, oep-spec c6ab5d9). Read Config.samples / .segments: the probe rounds samples down.
+        sent (§3.3). The TLVs go without the critical bit (§3.3). Read Config.samples / .segments: the probe rounds
+        samples down.
 
         §3.3's contract is checked before anything is sent (ValueError): `samples` is needed in one-shot and repeat
         and not taken in streaming, `segments` is repeat's only, `pretrigger` needs a trigger (type other than 0) - a
-        pretrigger of 0 without one is simply not sent.
-
-        `multirate` (§5): one Multirate per role to reduce (a role left out is a D = 1 channel), checked against the
-        fn's describe before sending (ValueError), each sent as TLV 0xE0; the answer's block L goes to Config.block."""
+        pretrigger of 0 without one is simply not sent."""
         for name, v in (("rate", rate), ("samples", samples), ("segments", segments)):
             if v is not None and v < 1:
                 raise ValueError(f"capture configure: {name} {v} - 1 or more (oep-if-capture §3.3)")
@@ -406,49 +389,18 @@ class LogicCapture(Interface):
             body += tlv(PRETRIGGER, struct.pack("<I", pretrigger))
         for role, fe in sorted((frontends or {}).items()):   # analog: the input range per channel (describe frontend)
             body += tlv(FRONTEND, bytes([role, fe]))
-        specs = mr.check(list(multirate), self.multirate_declared()) if multirate else []
-        for spec in specs:                                     # critical: a probe without multirate refuses (§5.2)
-            body += m.tlv(mr.TAG, spec.value(), critical=True)
         # query is its own operation: the lock is decided per operation, before the payload is looked at
         op = self.QUERY_OP if query else self.CONFIGURE
         c = _config(self._call(op, body, locked=not query).payload, self.ANALOG)
         c.pretrigger = pretrigger or 0
         if mode == ONE_SHOT and not c.segments:
             c.segments = 1                                     # one-shot's answer has no actual_segments (§3.3)
-        if specs:
-            if c.block is None or c.block < 1:
-                raise h.ProtocolError("a multirate configure answered without block L (oep-if-capture §5.3)")
-            c.multirate = [s for s in specs if s.reduced]
-            try:
-                c.multirate_layout()                           # L divisible by every d (§5.3)
-            except ValueError as e:
-                raise h.ProtocolError(str(e)) from e
-        elif c.block is not None:
-            c.block = None                                     # not asked: not this host's form
         if not query:
             self.config = c
         return c
 
-    def multirate_declared(self) -> mr.Declared | None:
-        """describe's multirate (§5.1), None when this fn does not declare it, or declares it broken (policies bit 0
-        clear, min_d < 2, min_d > max_d, pow2 not 0 / 1), or is analog."""
-        if self.ANALOG:
-            return None
-        from .core import describe
-        v = next((v for t, v in describe(self.host, self.fn) if t & 0x7F == mr.DECLARED), None)
-        decl = mr.Declared.unpack(v) if v is not None and len(v) >= 13 else None
-        return None if decl is None or decl.broken else decl          # a broken declaration is not used (§5.1)
-
-    def decode_multirate(self, data: bytes, samples: int) -> mr.Decoded:
-        """A multirate segment's stream (read_segment's bytes, or a stream's from a segment's start) -> its D = 1
-        channels' levels (in role order, as the layout's pos) and each reduced role's values (§5.5)."""
-        layout = self.config.multirate_layout() if self.config else None
-        if layout is None:
-            raise ValueError("decode_multirate: not a multirate configuration")
-        return layout.decode(data, samples)
-
     def subscribe(self, min_bytes: int = 0, max_delay_ms: int = 0) -> None:
-        """Events, and in streaming the data pushes (oep-core §11): send when min_bytes are ready or max_delay_ms after the
+        """Events, and in streaming the data pushes (oep-core §10): send when min_bytes are ready or max_delay_ms after the
         first byte (0, 0: as soon as there is anything)."""
         self.host.subscribe(self.fn, min_bytes, max_delay_ms)
 
@@ -459,7 +411,7 @@ class LogicCapture(Interface):
 
     def events(self, link) -> list[Event]:
         """This track's events waiting on the link (taken off it), the current generation's only: one of another
-        generation belongs to an earlier start (it may come after the start's answer, core §11.4) and is dropped,
+        generation belongs to an earlier start (it may come after the start's answer, core §10.4) and is dropped,
         counted in `stale_events` (oep-if-capture §3.4). A host that did not start the capture learns the generation
         from status first."""
         frames = take_events(link, self.fn)
@@ -477,7 +429,7 @@ class LogicCapture(Interface):
         """Streaming: collect data pushes until `nbytes` have arrived or `seconds` have passed (at least one is needed).
         A position that does not follow the previous push is a probe-side drop (a gap); a seq that skips is a lost frame.
         A push of another generation than this capture's (a leftover of the start before, oep-if-capture §3.4) is
-        dropped. The subscription ends with the lock, so the lock is kept alive every `keepalive_s` while collecting (a
+        dropped; each push's segment_info goes to `segments`. The subscription ends with the lock, so the lock is kept alive every `keepalive_s` while collecting (a
         stream longer than the lease otherwise stopped: 35 MB missing at the end of 10 s at 150 MHz with a 10 s lease)."""
         if seconds is None and nbytes is None:
             raise ValueError("stream() needs seconds or nbytes")
@@ -490,7 +442,7 @@ class LogicCapture(Interface):
             for e in link.events:
                 if struct.unpack_from("<H", e, 1)[0] == self.fn:
                     event_seqs.add(struct.unpack_from("<H", e, 3)[0])
-            for seq, position, data, generation in take_pushes(link, self.fn):
+            for seq, position, data, generation, info in take_pushes(link, self.fn):
                 while expect_seq is not None and expect_seq != seq:
                     if expect_seq in event_seqs:
                         event_seqs.discard(expect_seq)
@@ -501,6 +453,8 @@ class LogicCapture(Interface):
                 if generation is not None and self.generation is not None and generation != self.generation:
                     got.stale += 1                              # the generation before: not this capture's bytes
                     continue
+                if info is not None:
+                    got.segments[info.position] = info              # the latest: samples grow while it is taken
                 if got.start is None:
                     got.start = position
                 else:
@@ -539,14 +493,13 @@ class LogicCapture(Interface):
         return got
 
     def start(self) -> int:
-        """-> blocking_ms (0: the probe keeps answering while it captures). self.generation: the new capture's. With
-        blocking_ms > 0 the call returns after it (`blocked`): nothing goes to the probe meanwhile (P2-○9)."""
-        rd = m.Reader(self._call(self.START).payload)             # the answer comes before the blocking (§3.2)
-        blocking, self.generation = rd.take("II")
+        """-> the new capture's generation (also self.generation). A start whose initialisation failed is completed
+        failed with the same fixed part (§3.2): host.Failed, the state 6 and error read by status()."""
+        rd = m.Reader(self._call(self.START).payload)
+        self.generation = rd.take("I")
         rd.tail()
         self.armed_s = time.monotonic()
-        blocked(self.host, blocking)
-        return blocking
+        return self.generation
 
     def stop(self) -> None:
         self._call(self.STOP)
@@ -619,13 +572,13 @@ class LogicCapture(Interface):
     READ_TRIES = 4   # batches of reads sent again after the link's own repeat failed too
     BATCH = 16   # frame-sized reads per pipeline; a keepalive between batches when a session is open
 
-    READ_HEAD = 13   # the answer's position(u64) flags(u8) len(u32) in front of the data
+    READ_HEAD = 11   # the answer's position(u64) flags(u8) len(u16) in front of the data
 
     @staticmethod
     def _read_data(payload: bytes) -> bytes:
         rd = m.Reader(payload)
         rd.take("QB")
-        return rd.counted("I")                             # position flags len(u32) data [TLV]
+        return rd.counted("H")                             # position flags len(u16) data [TLV]
 
     def read(self, position: int, length: int, generation: int | None = None) -> bytes:
         """Bytes [position, position+length) of the stream, pipelined in frame-sized reads. `generation`: the capture
@@ -637,7 +590,7 @@ class LogicCapture(Interface):
         115200 bps UART probe takes seconds) sends a keepalive between batches, or the lease lapsed mid-read, the plan
         went with it (core §9) and the capture read back nothing (2026-09-26, V003 jig)."""
         g = self._generation(generation)
-        chunk = max(1, confirm(self.host)["max_frame"] - m.RESULT_HEADER - self.READ_HEAD)
+        chunk = min(0xFFFF, max(1, confirm(self.host)["max_frame"] - m.RESULT_HEADER - self.READ_HEAD))
         offsets = list(range(0, length, chunk))
         out = bytearray()
         for at in range(0, len(offsets), self.BATCH):
@@ -645,7 +598,7 @@ class LogicCapture(Interface):
                 self.host.keepalive()
             batch = offsets[at:at + self.BATCH]
             for attempt in range(self.READ_TRIES):
-                reqs = [self.request(self.READ, struct.pack("<IQI", g, position + off, min(chunk, length - off)))
+                reqs = [self.request(self.READ, struct.pack("<IQH", g, position + off, min(chunk, length - off)))
                         for off in batch]
                 try:
                     replies = self.host.pipeline_calls(reqs, locked=False)
@@ -660,7 +613,7 @@ class LogicCapture(Interface):
                 want = min(chunk, length - off)
                 while len(data) < want:                   # a short answer: read on from where it stopped
                     more = self._read_data(self._call(self.READ, struct.pack(
-                        "<IQI", g, position + off + len(data), want - len(data)), locked=False).payload)
+                        "<IQH", g, position + off + len(data), want - len(data)), locked=False).payload)
                     if not more:
                         raise h.ProtocolError(f"read at {position + off + len(data)} returned nothing")
                     data += more
@@ -684,8 +637,6 @@ class LogicCapture(Interface):
         """Channel k's values, one per sample (§1.1 rules 1-3: bit i*w + pos[k] of the stream, bit j being bit j mod 8
         of byte j / 8 - any w 1-128, a sample may cross a byte boundary)."""
         c = self.config
-        if c.block is not None:
-            raise ValueError("a multirate segment is blocks (§5.5): use decode_multirate")
         n = samples if samples is not None else len(data) * 8 // c.width
         bit0 = c.positions[k]
         return [(data[(i * c.width + bit0) >> 3] >> ((i * c.width + bit0) & 7)) & 1 for i in range(n)]
@@ -713,7 +664,7 @@ class LogicCapture(Interface):
 
 @dataclass
 class Calibration:
-    """What the probe knows for turning an analog value into a voltage (oep-if-capture §3.8), raw: the probe applies
+    """What the probe knows for turning an analog value into a voltage (oep-if-capture §3.7), raw: the probe applies
     none of it. factory: (frontend or None, scheme, raw bytes) - scheme names how to read raw; vrefint: (raw, ns), the
     internal reference measured after the last start, and vrefint_nominal_mv its nominal voltage (what the supply is
     worked back from)."""
@@ -797,54 +748,40 @@ class AnalogCapture(LogicCapture):
 @dataclass
 class GroupStatus:
     state: int
-    start_ns: int | None
-    trigger_ns: int | None
-    trigger_fn: int | None
+    start_ns: int | None             # None before the group's first start
     generation: int = 0              # the group's (§4.1; 0 before its first start)
 
 
 class CaptureGroup(Interface):
-    """oep.fixture.capture-group (§4): tracks (LogicCapture / AnalogCapture, each configured as usual) started together,
-    one of them the trigger. Each track is read as usual; a track's offset is its first segment's start_ns minus the
-    group's start_ns, and every track's segment marks the trigger's instant (trigger_index)."""
+    """oep.fixture.capture-group (§4): tracks (LogicCapture / AnalogCapture, each configured as usual with an immediate
+    trigger, all in one mode) started at once by one request. Each track is read as usual; a track's offset is its
+    first segment's start_ns minus the group's start_ns (no exact match is promised: each segment's start_ns and
+    uncertainty place it)."""
     NAME = "oep.fixture.capture-group"
     REVISION = 1
-    BIND, START, STOP, FORCE, STATUS = (_GRP.op[k] for k in ("bind", "start", "stop", "force", "status"))
-    TAG_TRIGGER_TRACK = _GRP.tlv["bind"]["trigger_track"]
-    EVENT_TRIGGERED, EVENT_STOPPED = _GRP.event["triggered"], _GRP.event["stopped"]
+    BIND, START, STOP, STATUS = (_GRP.op[k] for k in ("bind", "start", "stop", "status"))
+    EVENT_STOPPED = _GRP.event["stopped"]
     NO_TIME = 0xFFFFFFFFFFFFFFFF
 
-    @staticmethod
-    def pretrigger_of(track: LogicCapture, trigger: LogicCapture) -> int:
-        """P_k (§4.1): the samples before the trigger `track` keeps for the trigger_track's pretrigger P, the same time:
-        ceil(P * num_k * den_t / (den_k * num_t)) by the actual rates (base samples for multirate)."""
-        p, rk, rt = trigger.config.pretrigger, track.config.rate, trigger.config.rate
-        return -(-(p * rk.numerator * rt.denominator) // (rk.denominator * rt.numerator))
-
-    def bind(self, tracks: list[LogicCapture], trigger: LogicCapture | None = None) -> None:
-        """Bind these (configured) tracks; [] unbinds. `trigger`: the track whose configure trigger starts them all;
-        its pretrigger is the group's, every other track keeping it as the same time (P_k, `pretrigger_of`). Only the
-        trigger track may have a pretrigger (ValueError before sending, §4.1). A track that cannot keep P_k is refused
-        host.Unavailable cause "limit" with `.fn` naming it."""
+    def bind(self, tracks: list[LogicCapture]) -> None:
+        """Bind these (configured, immediate-trigger) tracks; [] unbinds. A track with a trigger of its own is refused
+        here before sending (ValueError, §4.1); the probe refuses a track not in state 1/4/6 or modes apart
+        (unavailable cause 6, `.fn`), one in another group (cause 4) and more than it takes together (cause 2)."""
         for t in tracks:
-            if t is not trigger and t.config is not None and t.config.pretrigger:
-                raise ValueError(f"capture-group bind: fn {t.fn} has a pretrigger of its own - the group's is the "
-                                 "trigger_track's alone (oep-if-capture §4.1)")
-        body = struct.pack(f"<B{len(tracks)}H", len(tracks), *(t.fn for t in tracks))
-        if trigger is not None:
-            body += m.tlv(self.TAG_TRIGGER_TRACK, struct.pack("<H", trigger.fn))   # not critical (§3.3, §4.1)
-        self._call(self.BIND, body)
+            if t.config is not None and t.config.pretrigger:
+                raise ValueError(f"capture-group bind: fn {t.fn} has a trigger of its own - a group starts its tracks "
+                                 "at once (oep-if-capture §4.1)")
+        self._call(self.BIND, struct.pack(f"<B{len(tracks)}H", len(tracks), *(t.fn for t in tracks)))
 
     generation: int | None = None     # the group's current generation (start / status, §4.1)
     stale_events: int = 0             # the group's events of an earlier generation that events() dropped
 
-    def start(self, tracks: list[LogicCapture] = ()) -> tuple[int, int]:
-        """-> (blocking_ms, the group's start_ns). The answer's fixed part: blocking_ms start_ns generation(the
-        group's) n, then n x (fn, generation) - each bound track's new generation, in bind order (§4.1).
-        self.generation: the group's; self.generations: the tracks' by fn. `tracks`: whose armed_s and generation to
-        set."""
-        rd = m.Reader(self._call(self.START).payload)             # the answer comes before any blocking (§3.2)
-        blocking, start_ns, self.generation, n = rd.take("IQIB")
+    def start(self, tracks: list[LogicCapture] = ()) -> int:
+        """-> the group's start_ns. The answer's fixed part: start_ns generation(the group's) n, then n x (fn,
+        generation) - each bound track's new generation, in bind order (§4.1). self.generation: the group's;
+        self.generations: the tracks' by fn. `tracks`: whose armed_s and generation to set."""
+        rd = m.Reader(self._call(self.START).payload)
+        start_ns, self.generation, n = rd.take("QIB")
         self.generations = dict(rd.take("HI") for _ in range(n))
         rd.tail()
         now = time.monotonic()
@@ -852,28 +789,22 @@ class CaptureGroup(Interface):
             t.armed_s = now
             if t.fn in self.generations:
                 t.generation = self.generations[t.fn]
-        blocked(self.host, blocking)
-        return blocking, start_ns
+        return start_ns
 
     def stop(self) -> None:
         self._call(self.STOP)
 
-    def force(self) -> None:
-        self._call(self.FORCE)
-
     def status(self) -> GroupStatus:
         rd = m.Reader(self._call(self.STATUS, locked=False).payload)
-        state, start, trig, fn, generation = rd.take("BQQHI")
+        state, start, generation = rd.take("BQI")
         rd.tail()
         self.generation = generation
-        none = self.NO_TIME
-        return GroupStatus(state, None if start == none else start, None if trig == none else trig, fn or None,
-                           generation)
+        return GroupStatus(state, None if start == self.NO_TIME else start, generation)
 
     def events(self, link) -> list[Event]:
-        """The group's own events waiting on the link (taken off it; triggered and stopped, §4.2), the current group
-        generation's only - one of another generation is an earlier start's, dropped and counted in `stale_events`.
-        The tracks' events stay for each track's events()."""
+        """The group's own events waiting on the link (taken off it; stopped, §4.2), the current group generation's
+        only - one of another generation is an earlier start's, dropped and counted in `stale_events`. The tracks'
+        events stay for each track's events()."""
         frames = take_events(link, self.fn)
         if frames and self.generation is None:
             self.status()
@@ -883,8 +814,7 @@ class CaptureGroup(Interface):
         return out
 
     def wait(self, timeout: float = 5.0, keepalive_s: float = 1.0) -> GroupStatus:
-        """Poll until every track is done (one-shot). The lock is kept alive every `keepalive_s` while it waits (a
-        trigger may come later than the lease)."""
+        """Poll until every track is done (one-shot). The lock is kept alive every `keepalive_s` while it waits."""
         deadline = time.monotonic() + timeout
         kept = time.monotonic()
         while time.monotonic() < deadline:
@@ -898,4 +828,3 @@ class CaptureGroup(Interface):
                 raise h.Failed(None, "the group's capture stopped with an error")
             time.sleep(0.002)
         raise TimeoutError("the group's capture did not finish")
-

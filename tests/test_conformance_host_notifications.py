@@ -17,7 +17,7 @@ def test_notification_reader_contracts_pass():
     report = HostNotificationChecks(SampleHostNotificationReader(), spec=SPEC).run()
     assert report['status'] == 'passed', report['checks']
     assert len(report['checks']) == 9 and not report['full_conformance']
-    assert sum(len(row['observations']) for row in report['checks']) == 563
+    assert sum(len(row['observations']) for row in report['checks']) == 565
 
 
 @pytest.mark.parametrize('defect,case', [
@@ -27,7 +27,7 @@ def test_notification_reader_contracts_pass():
     ('conflate_fn', 'LOSS'), ('conceal_loss', 'LOSS'),
     ('extend_deadline', 'WAIT-DEADLINE'), ('infinite_wait', 'WAIT-DEADLINE'),
     ('infinite_pump', 'PUMP-DEADLINE'), ('skip_flood', 'PUMP-DEADLINE'),
-    ('ignored_resets_clock', 'IGNORED-DEADLINE'),
+    ('ignored_resets_clock', 'IGNORED-DEADLINE'), ('adopt_fn_zero', 'DEMUX'),
 ])
 def test_faults_are_detected(defect, case):
     class Broken(SampleHostNotificationReader):
@@ -48,6 +48,8 @@ def test_faults_are_detected(defect, case):
             effective_clock = (lambda: 0) if (defect == 'infinite_wait' and corr is not None) or (defect == 'infinite_pump' and corr is None) else clock
             if defect == 'ignored_resets_clock':
                 effective_clock = lambda: 0 if ignored_seen[0] else clock()
+            if defect == 'adopt_fn_zero':
+                expected.setdefault(0, 0)  # fn 0 sends no notifications; a reader must not adopt them
             result = super().run(altered, effective_clock, deadline=deadline, corr=corr, expected=expected)
             if defect == 'notification_reply' and result['notifications']: result['reply'] = result['notifications'][0]
             if defect == 'deliver_unknown': result['notifications'].append(event(7, 65535, 127))

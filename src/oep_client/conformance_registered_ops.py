@@ -6,9 +6,15 @@ No operation behavior or mandatory describe metadata is certified here.
 from .conformance import require, ops
 
 
-# An optional op that requires another: state with save, marks with mark.
-IMPLIED={'oep.probe.config':(('save','state'),),
+# An optional op that requires another: state with save, port_state with port_speed, marks with mark.
+IMPLIED={'oep.probe.config':(('save','state'),),'oep.probe.link':(('port_speed','port_state'),),
          'oep.target.console':(('mark','marks'),),'oep.fixture.uart':(('mark','marks'),)}
+# An optional op that a describe mode (TLV 0x40 rows) makes required: release with mode 2,
+# subscribe (and so unsubscribe) with mode 3 (capture §1/3.2/3.4).
+BY_MODE={n:((2,'release'),(3,'subscribe')) for n in ('oep.fixture.logic','oep.fixture.analog')}
+# An op a standard never offers, named by the interface whose op space holds its code:
+# logic has no calibration (analog-only), capture-group has no force in v1 (capture §3.2/4.3).
+ABSENT={'oep.fixture.logic':(('oep.fixture.analog','calibration'),),'oep.fixture.capture-group':(('oep.fixture.logic','force'),)}
 POLICIES={
     'oep.probe.plan':((),(),'plan §1'),
     'oep.probe.restart':((),(),'restart §1'),
@@ -21,8 +27,9 @@ POLICIES={
     'oep.fixture.uart':(('marks','clear','mark','write'),(),'fixture §2'),
     'oep.fixture.i2c-target':(('stretch',),(),'fixture §3'),
     'oep.fixture.spi-target':((),(),'fixture §4'),
-    **{n:(('force','query','subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §3') for n in ('oep.fixture.logic','oep.fixture.analog')},
-    'oep.fixture.capture-group':(('force','subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §4'),
+    'oep.fixture.logic':(('force','release','query','subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §1/3.2/3.4'),
+    'oep.fixture.analog':(('force','release','query','calibration','subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §1/3.2/3.4/3.7'),
+    'oep.fixture.capture-group':(('subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §4.1/4.3'),
     'oep.probe.config':(('save','erase','state'),(('save','erase'),),'probe-config §2, §4'),
 }
 
@@ -36,10 +43,13 @@ class RegisteredOpsChecks:
         require(required<=offered,'mandatory standard op missing')
         for first,second in pairs:require((codes[first] in offered)==(codes[second] in offered),'paired optional standard ops must be offered together')
         for first,then in IMPLIED.get(name,()):require(codes[first] not in offered or codes[then] in offered,'an optional op requires its companion op')
-        if name=='oep.fixture.logic':
-            analog={row['name']:row['code'] for row in self.specs['oep.fixture.analog']['op']}
-            require(analog['calibration'] not in offered,'logic must not advertise analog-only calibration')
-        self.c.observed.setdefault('registered_op_contracts',{})[str(fn)]=dict(name=name,required=sorted(required),optional=sorted(codes[n] for n in optional),offered=sorted(offered))
+        modes=set()
+        if name in BY_MODE:
+            mode_tag=spec['tlv']['describe']['mode'];modes={v[0] for t,v in self.rows[fn] if t==mode_tag and v}
+            for mode,op in BY_MODE[name]:require(mode not in modes or codes[op] in offered,f'mode {mode} declared without its required {op}')
+        for owner,op in ABSENT.get(name,()):
+            require({row['name']:row['code'] for row in self.specs[owner]['op']}[op] not in offered,f'{name} must not advertise {op}')
+        self.c.observed.setdefault('registered_op_contracts',{})[str(fn)]=dict(name=name,required=sorted(required),optional=sorted(codes[n] for n in optional),offered=sorted(offered),modes=sorted(modes))
     def run(self):
         start=len(self.c.results)
         def context():
@@ -49,7 +59,9 @@ class RegisteredOpsChecks:
             for name in self.selection.values():
                 optional,pairs,_=POLICIES[name];names={row['name'] for row in self.specs[name]['op']}
                 require(set(optional)<=names,'selected registry differs from optional-op policy')
-            if 'oep.fixture.logic' in self.selection.values():require('oep.fixture.analog' in self.specs and any(row['name']=='calibration' for row in self.specs['oep.fixture.analog']['op']),'selected analog calibration reference missing')
+            for name in set(self.selection.values()):
+                for owner,op in ABSENT.get(name,()):require(owner in self.specs and any(row['name']==op for row in self.specs[owner]['op']),'selected absent-op reference missing')
+                if name in BY_MODE:require(type(self.specs[name].get('tlv',{}).get('describe',{}).get('mode'))is int,'selected describe mode tag missing')
             self.c.confirm();self.c.identity();self.c.declarations();entries=self.c.list_snapshot();self.rows={}
             for fn,name in self.selection.items():
                 require(any(row['fn']==fn and row['name']==name and row['revision']==1 for row in entries),'selected fn/name/revision mismatch')
@@ -59,4 +71,4 @@ class RegisteredOpsChecks:
         for fn,name in (self.selection.items() if type(self.selection)is dict else []):
             self.c.check('OEP-REGISTERED-OPS-'+str(fn),'core §1.2; '+POLICIES.get(name if type(name)is str else '',((),(),'selected policy'))[2],lambda fn=fn,name=name:self.mandatory(fn,name))
         rows=self.c.results[start:]
-        return dict(status='passed' if all(row['status']=='passed' for row in rows) else 'failed',checks=rows,observed=self.c.observed,full_conformance=False,scope='explicit registered standard mandatory ops, optional pairs and analog-only calibration; read-only',unchecked=['mandatory interface-specific describe metadata','operation payloads/state/side effects','optional feature semantics and notifications','physical interfaces and production Host integration'])
+        return dict(status='passed' if all(row['status']=='passed' for row in rows) else 'failed',checks=rows,observed=self.c.observed,full_conformance=False,scope='explicit registered standard mandatory ops, optional pairs, mode-required capture ops and never-offered ops; read-only',unchecked=['mandatory interface-specific describe metadata','operation payloads/state/side effects','optional feature semantics and notifications','physical interfaces and production Host integration'])

@@ -15,7 +15,8 @@ def test_capture_serial_wrap_and_release():
 
 @pytest.mark.parametrize('fault',[
     'scope','serial','position','data','generation','current','span','metadata_position',
-    'page','read','refusal','replay','gap','partial','holder','fn'])
+    'page','read','refusal','replay','gap','partial','holder','fn',
+    'stale_read','stale_read_missing','zero_max','zero_max_missing','released_gap','read_shape'])
 def test_serial_observation_faults(fault):
     adapter=SampleCaptureSerialAdapter();run=adapter.run_case
     def broken(case):
@@ -36,12 +37,21 @@ def test_serial_observation_faults(fault):
         if fault=='partial':states['stopped']['segments'][0][2]=2
         if fault=='holder':states['stopped']['holder']=None
         if fault=='fn':next(e for e in trace if e['op']==22)['fn']=1
+        reads=[e for e in trace if e['op']==21]
+        stale=[e for e in reads if bytes.fromhex(e['reply_hex'])[3:5]==b'\0\4']
+        zero=[e for e in reads if bytes.fromhex(e['request_hex'])[22:24]==b'\0\0']
+        if fault=='stale_read':stale[0]['reply_hex']=stale[0]['reply_hex'][:6]+'0100'+'00'*11
+        if fault=='stale_read_missing':trace.remove(stale[0])
+        if fault=='zero_max':e=zero[0];reply=bytearray.fromhex(e['reply_hex']);reply[14:16]=b'\1\0';e['reply_hex']=(bytes(reply)+bytes.fromhex(e['before']['data_hex'])[:1]).hex()
+        if fault=='zero_max_missing':[trace.remove(e) for e in zero]
+        if fault=='released_gap':e=reads[-1];reply=bytearray.fromhex(e['reply_hex']);reply[13]&=~2;e['reply_hex']=bytes(reply).hex()
+        if fault=='read_shape':e=reads[0];e['request_hex']=e['request_hex']+'00'
         return r
     adapter.run_case=broken;c=CaptureSerialChecks(adapter,spec=SPEC)
     c.check('FAULT',lambda:c.case(dict(kind='logic',seed=0xfffffffe)))
     assert c.checks[-1]['status']=='failed' and c.checks[-1]['error'].startswith('Violation:'),c.checks
 
-@pytest.mark.parametrize('fault',['no_wrap','unsigned_release','discard_partial','corrupt_replay'])
+@pytest.mark.parametrize('fault',['no_wrap','unsigned_release','discard_partial','corrupt_replay','read_any_generation','read_zero_max_data','read_released_no_gap'])
 def test_actual_capture_faults(monkeypatch,fault):
     from oep_client.virtual_logic_model import Logic
     from oep_client.virtual_core import Core
@@ -60,6 +70,18 @@ def test_actual_capture_faults(monkeypatch,fault):
                 e.segments[:]=[row for row in e.segments if row[0]>serial]
             result=dispatch(e,fn,op,payload,tags)
             if fn==2 and op==23 and fault=='discard_partial':e.current=[]
+            return result
+        monkeypatch.setattr(Logic,'dispatch_request',bad_dispatch)
+    if fault in ('read_any_generation','read_zero_max_data','read_released_no_gap'):
+        import struct
+        dispatch=Logic.dispatch_request
+        def bad_dispatch(e,fn,op,payload,tags):
+            if fn==2 and op==21:
+                generation,position,maximum=struct.unpack('<IQH',payload)
+                if fault=='read_any_generation':payload=struct.pack('<IQH',e.generation,position,maximum)
+                if fault=='read_zero_max_data' and maximum==0:payload=struct.pack('<IQH',generation,position,1)
+            result=dispatch(e,fn,op,payload,tags)
+            if fn==2 and op==21 and fault=='read_released_no_gap' and not e.data and position<e.base:result=result[:8]+b'\0'+result[9:]
             return result
         monkeypatch.setattr(Logic,'dispatch_request',bad_dispatch)
     if fault=='corrupt_replay':

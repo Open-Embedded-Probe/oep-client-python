@@ -118,8 +118,8 @@ def test_p4_follows_the_agreed_names():
     assert caps.requests["list"] == 1 and caps.requests["describe"] == 16
     link_ops = virtual_bench.reg.PROBE_LINK.op
     assert by_name["oep.probe.link"].description.ops == {link_ops["source"], link_ops["sink"]}   # no UART bridge here
-    assert by_name["oep.fixture.logic"].description.ops >= {0x30, 0x32}     # it sends notifications (core §11.3)
-    assert not by_name["oep.fixture.gpio"].description.ops & {0x30, 0x32}   # it sends none
+    assert by_name["oep.fixture.logic"].description.ops >= {0x01, 0x02}     # it sends notifications (core §10.3)
+    assert not by_name["oep.fixture.gpio"].description.ops & {0x01, 0x02}   # it sends none
     assert all(o.description.ops for o in caps.offers) and not caps.missing  # every fn's describe carries ops
     # the debug port: wire, riscv-dm and console are the first instance of each
     assert {by_name[n].entry.instance for n in ("oep.wire.rvswd", "oep.target.riscv-dm", "oep.target.console")} == {0}

@@ -325,7 +325,8 @@ from test_vectors import vector_probe                                   # the ve
 S = 0x11223344                                                          # ops.json about: the lock holder's id
 FOLLOWED = {"oep.probe.plan", "oep.probe.restart", "oep.probe.link", "oep.fixture.gpio", "oep.fixture.uart",
             "oep.fixture.i2c-target", "oep.fixture.spi-target", "oep.wire.rvswd",
-            "oep.target.riscv-dm", "oep.target.console", "oep.probe.config"}                              # grows with each stage
+            "oep.target.riscv-dm", "oep.target.console", "oep.probe.config", "oep.fixture.logic",
+            "oep.fixture.analog", "oep.fixture.capture-group"}                                       # grows with each stage
 NOT_ON_THE_BENCH = {"oep.wire.swd", "oep.target.arm-adi"}               # read by the client only (no swd on the bench)
 OPS = load("ops.json")["cases"]
 
@@ -353,7 +354,10 @@ def bench_for(case):
         fns["4"] = "oep.wire.rvswd"                                     # the wire its connection comes from
     if "ops open/read/close/streams" in case.get("state", ""):
         ops[fn_of(case, "oep.target.console")] = {reg.TARGET_CONSOLE.op[k] for k in ("open", "read", "close", "streams")}
-    probe = vector_probe(fns, max_frame=64 if "max_frame 64" in case.get("state", "") else 1024, ops=ops)
+    if "mode1 only; ops10,11,12,14,15,16" in case.get("state", ""):
+        ops[fn_of(case, "oep.fixture.logic")] = {0x10, 0x11, 0x12, 0x14, 0x15, 0x16}
+    probe = vector_probe(fns, max_frame=64 if "max_frame 64" in case.get("state", "") or "max_frame64" in case.get(
+        "state", "") else 1024, ops=ops)
     no_storage = "no storage" in case.get("state", "")
     probe = virtual_bench.VirtualProbe(probe.label, probe.max_frame, [
         virtual_bench._config(o.fn, 0, storage=0 if no_storage else 4096) if o.name == "oep.probe.config" else
@@ -624,10 +628,98 @@ def config_state(case, ep, hst):
         ep.generation = 0xFFFFFFFF
 
 
+def capture_state(case, ep, hst):
+    """capture §2-§4's cases (logic fn 9 / 19, analog fn 20 / 13, capture-group fn 12), made through the client; what
+    the probe holds (an analog's calibration data, a capture's retained bytes) put on the bench's tracks."""
+    from oep_client import capture
+    state, name, clock = case["state"], case["name"], ep.now
+    if "without a session" in name:
+        return
+    hst.open(3000)
+    fns = {v: int(k) for k, v in case["fns"].items()}
+    logic = capture.LogicCapture(hst, fns["oep.fixture.logic"]) if "oep.fixture.logic" in fns else None
+    analog = capture.AnalogCapture(hst, fns["oep.fixture.analog"]) if "oep.fixture.analog" in fns else None
+    if "fn 9 subscribed" in state:
+        logic.subscribe()
+    if logic is not None and ("roles 0 and 1" in state or "as above" in state):
+        core.plan_apply(hst, [(logic.fn, 0, 1), (logic.fn, 1, 2)])
+    elif logic is not None and ("one-shot done" in state or "generation" in state or "role0 channel1" in state
+                                or "repeat" in state or "streaming" in state or "mode1" in state or "fn9" in state
+                                or "fn 9" in state):
+        core.plan_apply(hst, [(logic.fn, 0, 1)])
+    if "one-shot done" in state or "generation 1" == state or "generation2" in state or "generation1;" in state:
+        clock.t = 5                                                     # 1000 samples from 5 ms (+-50 ns)
+        logic.configure(rate=1_000_000, samples=1000)
+        logic.start()
+        if "generation2" in state:
+            clock.t = 7
+            logic.wait()
+            logic.start()
+        clock.t = 9
+        logic.wait()
+    if "generation1; 48 retained bytes" in state:                     # what a read of max 0xFFFF may return in 64
+        cap = ep.captures[logic.fn]
+        cap.data, cap.base = bytearray(range(48)), 0
+    if "mode1, immediate" in state:
+        logic.configure(rate=1_000_000, samples=1000)
+    if "generation0xFFFFFFFF" in state:
+        logic.configure(rate=1_000_000, samples=1000)
+        ep.captures[logic.fn].generation = 0xFFFFFFFE
+        logic.start()
+        clock.t += 2
+        logic.wait()
+    if "ring overflowed" in state:                                      # repeat, w 1: 8000 samples are 1000 bytes
+        ep.captures[logic.fn].widths = {1}
+        clock.t = 5
+        logic.configure(rate=1_000_000, samples=8000, mode=capture.REPEAT, segments=4)
+        logic.start()
+        clock.t = 25                                                    # serials 0 and 1 end at 13 and 21 ms
+        ep.capture_overflow(logic.fn, 2)
+    if "streaming stopped in error" in name:                          # w 8, 16 samples a segment, 1 kHz
+        ep.captures[logic.fn].widths = {8}
+        logic.subscribe()
+        logic.configure(rate=1000, mode=capture.STREAMING)
+        ep.captures[logic.fn].samples = 16
+        logic.start()
+        clock.t = 30
+        ep.pushes()
+        clock.t = 40
+        ep.pushes()                                                     # bytes 24-31 and 32-39 in frames of their own
+        ep.capture_overflow(logic.fn, 2)
+    if analog is not None and "calibration" in name:
+        held = {"everything held": m.tlv(1, bytes([0xFF, 15]) + b"com.example.adc" + struct.pack("<H", 4) + bytes(range(4)))
+                + m.tlv(2, struct.pack("<IQI", 1500, 7_000_000, 1200)),
+                "nothing held": b"",
+                "beyond max_frame": m.tlv(1, bytes([0xFF, 15]) + b"com.example.adc" + struct.pack("<H", 60) + bytes(60))}
+        ep.captures[analog.fn].calibration = lambda: next(v for k, v in held.items() if k in name)
+    if analog is not None and "configure" in name:
+        roles = 2 if "2 roles" in name else 1
+        core.plan_apply(hst, [(analog.fn, r, r + 1) for r in range(roles)])
+        cap = ep.captures[analog.fn]
+        cap.skews, cap.diagnostics = (0, 5)[-roles:], False         # one nonzero skew, no optional diagnostics
+    if "capture-group" in name:
+        group = capture.CaptureGroup(hst, fn=fns["oep.fixture.capture-group"])
+        if logic is None:
+            return                                                     # the bind's TLV is refused before its fns
+        core.plan_apply(hst, [(logic.fn, 0, 1), (analog.fn, 0, 2)])
+        if "non-immediate" in name or "both tracks immediate" in state or "status" in name or "start" in name:
+            logic.configure(rate=1_000_000, samples=100_000, trigger=(capture.EDGE, 0, 0) if "edge" in state else None)
+            analog.configure(rate=1000, samples=100)
+        if "status" in name or "start" in name:
+            group.bind([logic, analog])
+            grp = ep.groups[group.fn]
+            grp.generation = 4
+            ep.captures[logic.fn].generation, ep.captures[analog.fn].generation = 3, 1
+            clock.t = 7
+        if "status" in name:
+            group.start([logic, analog])
+
+
 STATES = {"oep.probe.plan": plan_state, "oep.probe.restart": restart_state, "oep.probe.link": link_state,
           "oep.fixture.gpio": gpio_state, "oep.fixture.uart": uart_state, "oep.fixture.i2c-target": i2c_state,
           "oep.fixture.spi-target": spi_state, "oep.wire.rvswd": rvswd_state, "oep.target.riscv-dm": dm_state,
-          "oep.target.console": console_state, "oep.probe.config": config_state}
+          "oep.target.console": console_state, "oep.probe.config": config_state, "oep.fixture.logic": capture_state,
+          "oep.fixture.analog": capture_state, "oep.fixture.capture-group": capture_state}
 
 
 def make_case(case):
@@ -977,3 +1069,74 @@ def test_config_vectors_as_the_client_sends_and_reads_them(case):
         else:
             assert cfg.set(items) == 2
     assert sent[-1] == hx(case["request_hex"])
+
+
+CAPTURE_CLIENT = [c for c in OPS if c["name"].startswith((
+    "logic subscribe: min_bytes", "logic unsubscribe", "logic segments:", "logic configure: one-shot", "logic start:",
+    "logic status:", "analog configure:", "analog calibration: everything", "analog calibration: nothing",
+    "capture-group status:", "capture-group start:", "logic release: old generation"))]
+
+
+@pytest.mark.parametrize("case", CAPTURE_CLIENT, ids=lambda c: c["name"])
+def test_capture_vectors_as_the_client_sends_and_reads_them(case):
+    """capture §2-§4: the client's subscribe / unsubscribe / configure / start / status / segments / release /
+    calibration and the group's start / status are the case's bytes, and it reads the answers (core §10.3)."""
+    from oep_client import capture
+    r, hst, sent = scripted(case)
+    name = case["name"]
+    track = (capture.AnalogCapture if name.startswith("analog") else capture.LogicCapture)(hst, fn=r.fn)
+    if name.startswith("logic subscribe"):
+        track.subscribe(1024, 20)
+    elif name.startswith("logic unsubscribe"):
+        track.unsubscribe()
+    elif name.startswith("logic segments"):
+        segs, more = track.segments_page(struct.unpack("<I", r.payload)[0])
+        want = {"one segment": [(0, 1000, 5_000_000, 50, None, 1)], "serial_done": [],
+                "dropped": [(0, 8000, 5_000_000, 50, None, 1), (1, 8000, 13_000_000, 50, None, 1)]}
+        assert not more and [(s.serial, s.samples, s.start_ns, s.start_uncertainty_ns, s.trigger_index, s.generation)
+                             for s in segs] == next(v for k, v in want.items() if k in name)
+    elif name.startswith("logic configure"):
+        cfg = track.configure(rate=20_000_000, samples=200_000)
+        assert (cfg.rate, cfg.width, cfg.positions, cfg.samples) == (20_000_000, 2, [0, 1], 200_000)
+    elif name.startswith("logic start: bounded"):
+        assert track.start() == 1 == track.generation
+    elif name.startswith("logic start: generation exhausted"):
+        with pytest.raises(h.Unavailable) as e:
+            track.start()
+        assert e.value.cause == "limit"
+    elif name.startswith("logic status"):
+        st = track.status()
+        assert (st.state, st.dropped, st.error_name, st.generation) == (capture.STATE["error"], True, "storage", 1)
+        assert st.write_pos == (2000 if "inside a segment" in name else 32)
+    elif name.startswith("logic release"):
+        with pytest.raises(h.Unavailable) as e:
+            track.release(0, generation=1)
+        assert e.value.cause == "wrong_state"
+    elif name.startswith("analog configure"):
+        cfg = track.configure(rate=1000, samples=10)
+        roles = [0, 1] if "2 roles" in name else [0]
+        assert (cfg.rate, cfg.order, cfg.samples, cfg.scale_nv) == (1000, roles, 10, {k: 1_000_000 for k in roles})
+        assert cfg.skew_ns == {k: 5 if k == roles[-1] else 0 for k in roles} and cfg.frontend == {} and cfg.reference is None
+    elif name.startswith("analog calibration"):
+        cal = track.calibration()
+        assert (cal.factory, cal.vrefint, cal.vrefint_nominal_mv) == (
+            ([(None, "com.example.adc", bytes(range(4)))], (1500, 7_000_000), 1200) if "everything" in name else ([], None, None))
+    else:
+        group = capture.CaptureGroup(hst, fn=r.fn)
+        if "status" in name:
+            assert group.status() == capture.GroupStatus(capture.STATE["capturing"], 7_000_000, 5)
+        else:
+            assert group.start() == 7_000_000 and group.generation == 5 and group.generations == {9: 4, 13: 2}
+    assert sent[-1] == hx(case["request_hex"])
+
+
+@pytest.mark.parametrize("case", load("logic_layout.json")["cases"], ids=lambda c: c["name"])
+def test_logic_layout_as_the_client_reads_it_and_the_bench_packs_it(case):
+    """capture §1.1: channel k of sample i is stream bit i*w + pos[k]; a sample may cross a byte boundary."""
+    from oep_client import capture
+    track = object.__new__(capture.LogicCapture)                        # its layout only: no probe asked
+    track.config = capture.Config(width=case["w"], positions=case["pos"], samples=case["samples"])
+    stream = hx(case["stream_hex"])
+    assert ["".join(map(str, track.channel(stream, k, case["samples"]))) for k in range(len(case["pos"]))] == case["channels"]
+    levels = [sum(int(case["channels"][k][i]) << case["pos"][k] for k in range(len(case["pos"]))) for i in range(case["samples"])]
+    assert virtual_bench_capture.pack_samples(levels, case["w"]) == stream

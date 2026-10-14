@@ -17,7 +17,7 @@ def build():
 def test_notification_sequence_contracts_pass():
     model, _, runner = build(); report = runner.run()
     assert report['status'] == 'passed', [(x['id'], x.get('error')) for x in report['checks']]
-    assert len(report['checks']) == 10 and all(x['level'] == 'interface' for x in report['checks'])
+    assert len(report['checks']) == 11 and all(x['level'] == 'interface' for x in report['checks'])
     assert not report['full_conformance'] and model.ep.current_core.holder is None
 
 
@@ -78,7 +78,45 @@ def test_independent_notification_faults_are_detected(fault, case):
     # instance hooks survive and install fresh faults for the isolated case.
     method = {'WRAP': runner.wrap, 'DROP-WRAP': runner.dropped, 'REPLACE': runner.replace,
               'REPLAY': runner.replay, 'REJECTED': runner.rejected}[case]
-    runner.c.check('IF-NOTIFY-SEQ-'+case, 'core §11', method)
+    runner.c.check('IF-NOTIFY-SEQ-'+case, 'core §10', method)
+    assert runner.c.results[-1]['status'] == 'failed', runner.c.results
+
+
+@pytest.mark.parametrize('fault', ['keep_unsent', 'keep_unsent_unsubscribe', 'drop_started', 'drop_other_fn', 'reply_first'])
+def test_replacement_discard_faults_are_detected(fault):
+    model, adapter, runner = build()
+    reset = model.restart_fixture
+    def faulty_reset():
+        value = reset(); extension = model.extension; discard = extension.discard; dispatch = extension.dispatch
+        if fault == 'keep_unsent':
+            extension.discard = lambda fn: None
+        elif fault == 'keep_unsent_unsubscribe':
+            def broken(fn, op, payload):
+                if op == 2:
+                    extension.discard = lambda fn: None
+                try: return dispatch(fn, op, payload)
+                finally: extension.discard = discard
+            extension.dispatch = broken
+        elif fault == 'drop_started':
+            def broken(fn):
+                discard(fn)
+                for pipe in model.pipes.values(): pipe['active'] = None
+            extension.discard = broken
+        elif fault == 'drop_other_fn':
+            def broken(fn):
+                discard(fn); discard(2 if fn == 1 else 1)
+            extension.discard = broken
+        else:
+            write = model.write
+            def broken(route):
+                pipe = model.pipes[route]
+                if pipe['result'] and pipe['active'] is not None:
+                    pipe['out'].append(pipe['result'].popleft())  # reply cuts in before the started frame
+                return write(route)
+            model.write = broken
+        return value
+    model.restart_fixture = faulty_reset
+    runner.c.check('IF-NOTIFY-SEQ-DISCARD', 'core §10.3', runner.discard)
     assert runner.c.results[-1]['status'] == 'failed', runner.c.results
 
 
@@ -123,7 +161,7 @@ def test_unsubscribe_isolation_faults_are_detected(fault):
             return result
         e.dispatch=broken;return value
     model.restart_fixture=faulty_reset
-    runner.c.check('IF-NOTIFY-SEQ-UNSUBSCRIBE','core §11.3',runner.unsubscribe)
+    runner.c.check('IF-NOTIFY-SEQ-UNSUBSCRIBE','core §10.3',runner.unsubscribe)
     row=runner.c.results[-1];assert row['status']=='failed',runner.c.results
     expected={'absent_reject':'completed success','noop':'did not remove','other_clear':'other subscriptions',
               'resource_clear':'owned resources','seq_reset':'other subscriptions','route_shift':'other routes','condition_change':'other conditions'}

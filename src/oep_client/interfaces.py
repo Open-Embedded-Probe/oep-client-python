@@ -45,16 +45,17 @@ def _label(v: bytes) -> str:
 
 
 def _capture_mode(v: bytes) -> str:
-    """capture describe's mode: mode(u8) max_samples(u32) max_segments(u32) (oep-if-capture §3.5)."""
+    """capture describe's mode: mode(u8) max_samples(u32) max_segments(u32: repeat's; 0 and unused otherwise,
+    oep-if-capture §3.5)."""
     mode, most, segments = struct.unpack_from("<BII", v)
     name = {1: "one-shot", 2: "repeat", 3: "streaming"}.get(mode, f"mode {mode}")
-    return f"{name}, max {most} samples x {segments} segments"
+    return f"{name}, max {most} samples" + (f" x {segments} segments" if mode == 2 else " a segment")
 
 
 def _rate_range(v: bytes) -> str:
-    """capture describe's rate_range: min_hz(u32) max_hz(u32) exact(u8)."""
-    lo, hi, exact = struct.unpack_from("<IIB", v)
-    return f"{lo}-{hi} Hz" + (" (any value)" if exact else "")
+    """capture describe's rate_range: min_hz(u32) max_hz(u32)."""
+    lo, hi = struct.unpack_from("<II", v)
+    return f"{lo}-{hi} Hz"
 
 
 _TRIGGERS = {0: "immediate", 1: "level", 2: "edge", 3: "cross up", 4: "cross down"}
@@ -66,17 +67,10 @@ def _trigger(v: bytes) -> str:
     return ", ".join(n for b, n in _TRIGGERS.items() if types >> b & 1) + f"; pretrigger up to {pre}"
 
 
-def _multirate(v: bytes) -> str:
-    """logic describe's multirate (oep-if-capture §5.1): policies(u32 bit set) min_d(u32) max_d(u32) pow2(u8)."""
-    policies, lo, hi, pow2 = struct.unpack_from("<IIIB", v)
-    names = ", ".join(n for b, n in enumerate(("sample", "any_active", "edge_latch")) if policies >> b & 1)
-    return f"{names}; d 1 and {lo}-{hi}" + (" (powers of 2)" if pow2 else "")
-
-
 def _frontend(v: bytes) -> str:
-    """analog describe's frontend: frontend(u8) range_min_mv(i32) range_max_mv(i32) attenuation_mdb(u32)."""
-    fe, lo, hi, mdb = struct.unpack_from("<BiiI", v)
-    return f"{fe}: {lo}..{hi} mV" + (f", {mdb / 1000:g} dB" if mdb not in (0, 0xFFFFFFFF) else "")
+    """analog describe's frontend: frontend(u8) range_min_mv(i32) range_max_mv(i32), at the input pin."""
+    fe, lo, hi = struct.unpack_from("<Bii", v)
+    return f"{fe}: {lo}..{hi} mV"
 
 
 def _u32_list(v: bytes) -> str:
@@ -129,22 +123,21 @@ KNOWN: dict[str, Known] = {
         "console streams on a debug connection (position-addressed, marks)",
         tags={0x40: ("mechanisms", lambda v: ", ".join(_MECHANISMS.get(b, str(b)) for b in v))}),
     "oep.probe.config": Known(
-        "the probe's configuration (plan, labels, idle pins, slots, binds, uart) and its storage; the state is op state",
+        "the probe's settings (labels, idle pins, disabled channels) and their storage; the state is op state",
         tags={0x40: ("storage", lambda v: f"{_u32(v[:4])} bytes"),
-              0x41: ("items", lambda v: ", ".join(str(b) for b in v)), 0x42: ("slots", lambda v: str(v[0]))}),
+              0x41: ("items", lambda v: ", ".join(str(b) for b in v))}),
     "oep.fixture.gpio": Known("drive and read probe pins", roles={1: "line"},
                               tags={0x40: ("modes", lambda v: ", ".join(str(b) for b in range(32) if _u32v(v) >> b & 1))}),
     "oep.fixture.uart": Known("a UART (USART, asynchronous) on probe pins", roles={1: "RX", 2: "TX"},
                               tags={0x40: ("formats", lambda v: ", ".join(f"0x{b:02x}" for b in v[1:1 + v[0]]))}),
     "oep.fixture.logic": Known("sampled logic capture", roles={k: f"line{k}" for k in range(8)},
                                tags={0x40: ("mode", _capture_mode), 0x41: ("rate range", _rate_range),
-                                     0x44: ("channels", lambda v: str(v[0])), 0x45: ("trigger", _trigger),
-                                     0x60: ("multirate", _multirate)}),
+                                     0x44: ("channels", lambda v: str(v[0])), 0x45: ("trigger", _trigger)}),
     "oep.fixture.analog": Known("sampled analog capture", roles={k: f"ch{k}" for k in range(8)},
                                 tags={0x40: ("mode", _capture_mode), 0x41: ("rate range", _rate_range),
                                       0x44: ("channels", lambda v: str(v[0])), 0x45: ("trigger", _trigger),
                                       0x46: ("frontend", _frontend)}),
-    "oep.fixture.capture-group": Known("captures started and stopped together",
+    "oep.fixture.capture-group": Known("captures started at once and stopped together",
                                        tags={0x40: ("tracks", lambda v: ", ".join(
                                            str(f) for f in struct.unpack_from(f"<{v[0]}H", v, 1)))}),
     "oep.fixture.i2c-target": Known(

@@ -16,7 +16,7 @@ def setup():
 def test_port_speed_handshake():
     model,c=setup();r=PortSpeedChecks(c,SamplePortSpeedAdapter(model)).run()
     assert r['status']=='passed',[(x['id'],x.get('error')) for x in r['checks'] if x['status']!='passed']
-    assert len(r['checks'])==19 and not r['full_conformance']
+    assert len(r['checks'])==23 and not r['full_conformance']
 
 
 def test_common_declarations():
@@ -51,16 +51,46 @@ def test_wrong_wire_result_is_detected(case):
     ('invalid_frame_renews_idle','IDLE-INVALID'),('valid_frame_does_not_renew','IDLE-RENEW'),
     ('allowed_boundary_rejected','TOLERANCE'),('outside_boundary_accepted','TOLERANCE'),
     ('refusal_changes_other_port','ONE-PORT'),
+    ('state_phase_stale','STATES'),('state_baud_boot','TRY-BARRIER'),('state_nonbridge_accepted','NON-BRIDGE'),
+    ('state_ignores_critical','TLV'),('state_after_verify_stale','VERIFY'),('state_after_idle_stale','IDLE'),
+    ('boot_rate_accepted','BOOT-RATE'),('revert_wrong_baud','REVERT-TRIAL'),('revert_wrong_baud','PENDING-IDLE-OWNER'),
+    ('commit_zero_verify_rejected','COMMIT'),('commit_needs_actual_baud','TOLERANCE'),
+    ('one_port_committed_accepted','ONE-PORT'),('one_port_pending_accepted','ONE-PORT'),('end_not_pending','END-BARRIER'),
+    ('no_pending_return','PENDING-VERIFY'),('pending_accepts_step','PENDING-VERIFY'),('verify_return_cancelled','PENDING-VERIFY'),
+    ('pending_switch_mid_frame','PENDING-IDLE-OTHER'),('pending_return_missing','PENDING-IDLE-OTHER'),
+    ('other_cancels','PENDING-IDLE-OTHER'),('owner_does_not_cancel','PENDING-IDLE-OWNER'),
+    ('cancelled_accepts_commit','PENDING-IDLE-OWNER'),('cancelled_revert_refused','PENDING-IDLE-OWNER'),
 ])
 def test_semantic_faults(defect,case):
-    model,c=setup();begin=model.begin;finish=model.finish;advance=model.advance
+    model,c=setup();begin=model.begin;finish=model.finish;advance=model.advance;cancel=model.cancel;fall=model.fall
+    raised=lambda state,deadline:dict(model.boot(),state=state,baud=230400,asked=230400,deadline=deadline,owner=model.ep.current_core.holder)
+    ok=lambda reply,value:reply[:3]+b'\1\0'+value;stale=[]
+    def bad_cancel():
+        p=model.ports.get(model.active_route)
+        if defect=='owner_does_not_cancel':return
+        if defect=='other_cancels' and p and p['why']=='idle':p.update(state=2,why=None,deadline=model.clock_ms+3000);return
+        if defect=='verify_return_cancelled' and p and p['why']=='verify':p.update(state=1,why=None);return
+        cancel()
+    def bad_fall(route,why):
+        if defect=='no_pending_return':model.reset_port(route)
+        else:fall(route,why)
     def bad_begin(request,route=0):
-        deadline=model.ports[0]['deadline']
+        deadline=model.ports[0]['deadline'];phase=model.ports.get(route,{}).get('state')
         reply=begin(request,route)
+        if request[3:6]==b'\4\0\x13' and reply:
+            if defect=='state_phase_stale' and reply[3:5]==b'\1\0':reply=reply[:9]+b'\0'+reply[10:]
+            if defect=='state_baud_boot' and reply[3:5]==b'\1\0':reply=reply[:5]+(115200).to_bytes(4,'little')+reply[9:]
+            if defect=='state_nonbridge_accepted' and route==1:reply=ok(reply,b'\0\xc2\1\0\0')
+            if defect=='state_ignores_critical' and reply[3:5]==b'\0\x0b':reply=ok(reply,(230400).to_bytes(4,'little')+b'\1')
+            if stale and reply[3:5]==b'\1\0':reply=ok(reply,(230400).to_bytes(4,'little')+bytes((stale.pop(),)))
+        if defect=='pending_switch_mid_frame' and phase==3:model.reset_port(route)
+        if defect=='end_not_pending' and request[3:6]==b'\0\0\x11':
+            for p in model.ports.values():
+                if p['state']==3:p.update(state=2,why=None)
         if defect=='valid_frame_does_not_renew' and request[3:6]==b'\0\0\1':model.ports[0]['deadline']=deadline
         if request[3:6]==b'\4\0\x12':
             step=request[14] if len(request)>=17 else -1
-            if defect=='early_trial' and step==0 and reply[3:5]==b'\1\0':model.ports[route]=dict(state=1,baud=230400,deadline=model.clock_ms+100)
+            if defect=='early_trial' and step==0 and reply[3:5]==b'\1\0':model.ports[route]=raised(1,model.clock_ms+100)
             if defect=='early_revert' and step==2:model.reset_port(route)
             if defect=='wrong_actual' and step==1:reply=reply[:5]+(460800).to_bytes(4,'little')
             if defect=='wrong_cause' and reply[3:5]==b'\0\4':reply=reply[:-1]+b'\2'
@@ -70,7 +100,16 @@ def test_semantic_faults(defect,case):
             if defect=='ignore_tolerance' and reply[3:5]==b'\0\x0b':reply=reply[:3]+b'\1\0'+(230400).to_bytes(4,'little')
             if defect=='nonbridge_accepted' and route==1:reply=reply[:3]+b'\1\0'+(230400).to_bytes(4,'little')
             if defect=='second_port_accepted' and route==2:reply=reply[:3]+b'\1\0'+(230400).to_bytes(4,'little')
-            if defect=='refusal_changes_other_port' and route==2:model.ports[2]=dict(state=1,baud=230400,deadline=model.clock_ms+100)
+            if defect=='refusal_changes_other_port' and route==2:model.ports[2]=raised(1,model.clock_ms+100)
+            if defect=='boot_rate_accepted' and step==0 and reply[3:5]==b'\0\x0b':reply=ok(reply,(115200).to_bytes(4,'little'))
+            if defect=='revert_wrong_baud' and step==2 and reply[3:5]==b'\1\0':reply=ok(reply,(230400).to_bytes(4,'little'))
+            if defect=='commit_zero_verify_rejected' and step==1 and request[15:17]==b'\0\0':reply=reply[:3]+b'\0\3'
+            if defect=='commit_needs_actual_baud' and step==1 and int.from_bytes(request[10:14],'little')==232000:reply=reply[:3]+b'\0\4\1\1\0\6'
+            if defect=='one_port_committed_accepted' and route==2 and step==0 and model.ports[0]['state']==2:reply=ok(reply,(230400).to_bytes(4,'little'))
+            if defect=='one_port_pending_accepted' and route==2 and step==0 and model.ports[0]['state']==3:reply=ok(reply,(230400).to_bytes(4,'little'))
+            if defect=='pending_accepts_step' and phase==3 and step==1:reply=ok(reply,(230400).to_bytes(4,'little'))
+            if defect=='cancelled_accepts_commit' and phase==3 and step==1:reply=ok(reply,(230400).to_bytes(4,'little'))
+            if defect=='cancelled_revert_refused' and phase==3 and step==2:reply=reply[:3]+b'\0\4\1\1\0\6';model.pending['actions']=[]
             rate=int.from_bytes(request[10:14],'little')
             if defect=='allowed_boundary_rejected' and rate==235102:reply=reply[:3]+b'\0\x0b\0'
             if defect=='outside_boundary_accepted' and rate==235103:reply=reply[:3]+b'\1\0'+(230400).to_bytes(4,'little')
@@ -82,6 +121,8 @@ def test_semantic_faults(defect,case):
         q=pending['request']
         if defect=='invalid_frame_renews_idle' and pending['reply'] is None and model.ports[0]['state']==2:model.ports[0]['deadline']=model.clock_ms+3000
         if defect=='valid_frame_does_not_renew' and q[3:6]==b'\0\0\1' and model.ports[0]['state']==2:model.ports[0]['deadline']-=2000
+        if defect=='pending_return_missing' and pending['route']==0 and model.ports[0]['state']==0 and pending['reply'] is not None and model.events[-1]['baud']==230400 and not pending['actions']:
+            model.ports[0]=raised(2,model.clock_ms+3000)
         if q[3:6]==b'\4\0\x12' and len(q)>=17:
             step=q[14]
             if defect=='trial_deadline_before_write' and step==0:model.ports[0]['deadline']=100
@@ -96,14 +137,23 @@ def test_semantic_faults(defect,case):
         if defect=='verify_early' and p['state']==1:model.reset_port(0)
         if defect=='no_idle_expiry' and p['state']==2:model.ports[0]=p
         if defect=='idle_early' and p['state']==2:model.reset_port(0)
-    model.begin=bad_begin;model.finish=bad_finish;model.advance=bad_advance
+        if defect in ('state_after_verify_stale','state_after_idle_stale') and p['state']==(1 if 'verify' in defect else 2) and not model.ports[0]['state']:stale[:]=[p['state']]
+    model.begin=bad_begin;model.finish=bad_finish;model.advance=bad_advance;model.cancel=bad_cancel;model.fall=bad_fall
     r=PortSpeedChecks(c,SamplePortSpeedAdapter(model)).run()
     row=next(x for x in r['checks'] if x['id']=='OEP-PORT-SPEED-'+case)
     assert row['status']=='failed' and row['error'].startswith('Violation:'),row
 
 
-@pytest.mark.parametrize('missing',['raw','select','speed','begin','finish','advance','events','seed','restart_fixture'])
+@pytest.mark.parametrize('missing',['raw','select','speed','begin','finish','advance','receive','events','seed','restart_fixture'])
 def test_missing_controls_do_not_pass(missing):
     model,c=setup();a=SamplePortSpeedAdapter(model);setattr(a,missing,None)
     r=PortSpeedChecks(c,a).run()
     assert r['checks'][2]['status']=='failed'
+
+
+def test_port_speed_without_port_state_does_not_pass():
+    model,c=setup();describe=model.extension.describe
+    model.extension.describe=lambda fn:(b'\7\2\0\x10\x07',) if fn==4 else describe(fn)
+    r=PortSpeedChecks(c,SamplePortSpeedAdapter(model)).run()
+    assert r['status']=='failed' and next(x for x in r['checks'] if x['id']=='OEP-PORT-SPEED-CONTEXT')['status']=='failed'
+    assert next(x for x in r['checks'] if x['id']=='OEP-REGISTERED-OPS-4')['status']=='failed'

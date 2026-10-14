@@ -1,4 +1,4 @@
-"""Capture §3.2/3.3/4: start never searches an unelapsed trigger waveform."""
+"""Capture §3.2/3.3: start never searches an unelapsed trigger waveform."""
 import pytest
 from oep_client import capture as c, core, message as m
 from test_virtual_bench_capture import bench
@@ -6,12 +6,11 @@ from test_virtual_bench_capture import bench
 
 @pytest.mark.parametrize('mode', [c.ONE_SHOT, c.REPEAT, c.STREAMING])
 @pytest.mark.parametrize('analog_source', [False, True])
-@pytest.mark.parametrize('grouped', [False, True])
-def test_start_observes_only_elapsed_samples_before_initial_trigger(mode, analog_source, grouped):
+def test_start_observes_only_elapsed_samples_before_initial_trigger(mode, analog_source):
     ep, hst, logic, clock = bench()
     analog = c.AnalogCapture(hst)
-    source, other = (analog, logic) if analog_source else (logic, analog)
-    tracks = [source, other] if grouped else [source]
+    source = analog if analog_source else logic
+    tracks = [source]
     core.plan_apply(hst, [(logic.fn, 0, 20), (analog.fn, 0, 16)])
     for track in tracks:
         track.configure(rate=1000, samples=8 if mode != c.STREAMING else None,
@@ -24,13 +23,7 @@ def test_start_observes_only_elapsed_samples_before_initial_trigger(mode, analog
         calls.append((clock.t, index))
         return (3000 if analog_source else 1) if index >= 3 else 0
     ep.captures[source.fn].value = value
-    group = c.CaptureGroup(hst) if grouped else None
-    if grouped:
-        group.bind([other, source], trigger=source);hst.subscribe(group.fn)
-        group.start([other, source])
-        status = lambda: group.status()
-    else:
-        source.start();status = source.status
+    source.start();status = source.status
     assert status().state == c.STATE['waiting']
     assert all(index <= 0 for _, index in calls)
     assert ep.pushes() == []

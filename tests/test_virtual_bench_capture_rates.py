@@ -47,7 +47,7 @@ def test_lowest_request_does_not_round_below_declared_minimum():
 @pytest.mark.parametrize('source',[59,60])
 @pytest.mark.parametrize('channels',[1,2,3,4])
 def test_analog_rate_uses_nearest_value_within_shared_adc_budget(channels,source):
-    track=VirtualCapture({1},{16},1,source,frontends={0:(0,3300,0)})
+    track=VirtualCapture({1},{16},1,source,frontends={0:(0,3300)})
     feasible={Fraction(source,divisor) for divisor in range(1,source+1) if Fraction(source,divisor)*channels<=source}
     for asked in range(1,source+1):
         actual=settle(track,asked,channels)

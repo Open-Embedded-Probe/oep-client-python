@@ -150,15 +150,15 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None, wifi
                                       inner=virtual_bench._capture_inner([1, 2, 8], 8, 480))
         elif name == "oep.fixture.logic":                              # 80 MHz / 4 = 20 MHz exact; w 2 for two channels
             o = virtual_bench.Offered(fn, 0, name, virtual_bench._roles({k: chans for k in range(4)})
-                             + (catalog.u32(catalog.MAX_CLOCK_HZ, 80_000_000),)
-                             + virtual_bench._capture_decl(["one_shot"], 8, 1 << 20, 1),
-                             inner=virtual_bench._capture_inner([2, 8], 1, 480))
+                             + virtual_bench._capture_decl(["one_shot", "repeat", "streaming"], 8, 1 << 20, 8, 1, 80_000_000),
+                             inner=virtual_bench._capture_inner([1, 2, 8], 8, 480))
         elif name == "oep.fixture.spi-target":                         # LSB first offered (features bit0)
             o = virtual_bench.Offered(fn, 0, name, virtual_bench._roles({k: chans for k in (1, 2, 3, 4)})
                              + virtual_bench._spi_decl(max_length=16, max_hz=1_000_000, features=1, queue_depth=4))
         elif name == "oep.fixture.analog":
             o = virtual_bench.Offered(fn, 0, name, virtual_bench._roles({k: chans for k in range(4)})
-                             + virtual_bench._analog_decl([(0, 0, 3300, 0)], 4096), inner=virtual_bench._capture_inner([16], 1, 480))
+                             + virtual_bench._analog_decl([(0, 0, 4095)], 4096, 1, 1_000_000),
+                             inner=virtual_bench._capture_inner([16], 1, 480) + (("exact", True),))
         elif name == "oep.fixture.capture-group":
             tracks = sorted(int(k) for k, v in fns.items() if v in ("oep.fixture.logic", "oep.fixture.analog"))
             o = virtual_bench.Offered(fn, 0, name, virtual_bench._group_decl(tracks))

@@ -1,4 +1,4 @@
-"""Logical response-write and clock controls for the port-speed fixture."""
+"""Logical frame-reception, response-write and clock controls for the port-speed fixture."""
 from .conformance_link_transfer_sample import SampleLinkTransferAdapter
 
 
@@ -12,5 +12,6 @@ class SamplePortSpeedAdapter(SampleLinkTransferAdapter):
     def begin(self,request):return self.model.begin(request,self.route)
     def finish(self):return self.model.finish()
     def advance(self,delta):self.model.advance(delta)
+    def receive(self):self.model.receive(self.route)
     def events(self):return self.model.speed_events()
     def raw(self,frame):return self.model.handle(frame,self.route)

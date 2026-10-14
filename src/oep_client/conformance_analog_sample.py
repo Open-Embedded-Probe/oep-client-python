@@ -12,3 +12,4 @@ class SampleAnalogAdapter(SampleRouteAdapter):
     def advance(self,ms):return self.call('analog_advance',ms)
     def fail(self,error):return self.call('analog_fail',error)
     def seed(self,generation):return self.call('analog_seed',generation)
+    def factory(self,size):return self.call('analog_factory',size)

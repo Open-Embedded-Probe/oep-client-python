@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
-"""oep.fixture.logic / oep.fixture.analog / oep.fixture.capture-group in the virtual bench (oep-spec
-docs/oep-if-capture.ja.md, revision 1).
+"""oep.fixture.logic / oep.fixture.analog / oep.fixture.capture-group in the virtual bench (oep-spec a09fa45
+interfaces/oep-if-capture.ja.md, revision 1).
 
 What it captures is known in advance, so a receiver can check it (sample i counted from the track's start, across
 segments):
@@ -23,10 +23,12 @@ rate, up to the ring; a full ring pauses the capture (state 5), release lets it 
 with the clock and go out as data pushes while subscribed). Triggers: logic level / edge, analog cross up / down, with a
 pretrigger. `slipped` sets flags bit2 on every segment (a probe whose software pace fell behind).
 
-Every start is a new generation (u32: 1 at the first start, 0xFFFFFFFF followed by 1; §3.4): read and release must
-name it (another one is rejected unavailable, cause 6), segment records, events and streaming data frames carry it. A
-capture-group has a generation of its own, by the same rules (§4.1), in its start answer, status and events. Segment
-serials wrap (core §2.6); segments pages by common §1.3.
+Every start is a new generation (u32: 1 at the first start; a start past 0xFFFFFFFF is refused unavailable cause 2
+before anything changes, never re-used until a reboot): read and release must name it (another one is rejected
+unavailable, cause 6), segment records, events and streaming data frames carry it. A streaming data frame carries its
+segment too (segment_info, §3.4) and never crosses a segment. A capture-group starts its tracks at once (immediate
+triggers only) and has a generation of its own, by the same rules (§4.1), in its start answer, status and stopped
+events. Segment serials wrap (core §2.6); segments pages by common §1.3.
 """
 
 from __future__ import annotations
@@ -36,7 +38,7 @@ import struct
 from dataclasses import dataclass, field
 from fractions import Fraction
 
-from . import message as m, multirate as mr, registry_legacy as reg
+from . import message as m, registry as reg
 
 CAP, ANA, GRP = reg.FIXTURE_LOGIC, reg.FIXTURE_ANALOG, reg.FIXTURE_CAPTURE_GROUP
 OP = CAP.op
@@ -51,8 +53,11 @@ NO_TIME = 0xFFFFFFFFFFFFFFFF
 MAX_SAMPLES = 1 << 20                  # a virtual bench keeps its captures in memory
 SEGMENT = struct.Struct("<IQIQIIBI")   # serial position samples start_ns start_uncertainty_ns trigger_index flags generation (§2)
 FULL = 4095                            # the analog value's top (12 bits)
-WRONG_STATE = m.tlv(reg.CORE.tlv["unavailable_payload"]["cause"], bytes([reg.CORE.enum["unavailable_cause"]["wrong_state"]]))
-DATA_GENERATION = CAP.tlv["data"]["generation"]
+CAUSE, FN_TLV = reg.CORE.tlv["unavailable_payload"]["cause"], reg.CORE.tlv["unavailable_payload"]["fn"]
+WRONG_STATE = m.tlv(CAUSE, bytes([reg.CORE.enum["unavailable_cause"]["wrong_state"]]))
+LIMIT = m.tlv(CAUSE, bytes([reg.CORE.enum["unavailable_cause"]["limit"]]))
+DATA_GENERATION, SEGMENT_INFO = CAP.tlv["data"]["generation"], CAP.tlv["data"]["segment_info"]
+LAST_GENERATION = 0xFFFFFFFF
 
 
 class Reject(Exception):
@@ -60,9 +65,14 @@ class Reject(Exception):
         self.reason, self.payload = reason, payload
 
 
-def wrong_state() -> Reject:
-    """rejected unavailable, cause 6 (the state or the generation does not fit)."""
-    return Reject(m.UNAVAILABLE, WRONG_STATE)
+def wrong_state(fn: int | None = None) -> Reject:
+    """rejected unavailable, cause 6 (the state or the generation does not fit), with the track's fn in a group."""
+    return Reject(m.UNAVAILABLE, WRONG_STATE + (m.tlv(FN_TLV, struct.pack("<H", fn)) if fn is not None else b""))
+
+
+def exhausted(fn: int | None = None) -> Reject:
+    """rejected unavailable, cause 2: no generation left until a reboot (§0: never re-used)."""
+    return Reject(m.UNAVAILABLE, LIMIT + (m.tlv(FN_TLV, struct.pack("<H", fn)) if fn is not None else b""))
 
 
 @dataclass
@@ -121,7 +131,7 @@ class VirtualCapture:
     max_hz: int
     ring: int = 8                      # the segment records it keeps (its own, §2)
     max_read: int = 4096               # the most one read returns (its own, §3.2)
-    frontends: dict[int, tuple[int, int, int]] = field(default_factory=dict)   # analog: n -> (min_mv, max_mv, mdb)
+    frontends: dict[int, tuple[int, int]] = field(default_factory=dict)   # analog: n -> (min_mv, max_mv)
     max_samples: dict[int, int] = field(default_factory=dict)   # mode -> describe's max_samples (one segment)
     max_pretrigger: int = MAX_SAMPLES - 1  # describe's trigger: max_pretrigger
     slipped: bool = False
@@ -157,10 +167,9 @@ class VirtualCapture:
     generation: int = 0                # +1 at every start (§3.2); 0 before the first
     flags: int = 0                     # status flags (dropped, slipped), reset at start
     error: int = 0                     # state 6's reason (status TLV error, stopped reason 3)
-    exact: bool = False                # rate_range's exact: any rate in the range (else max_hz / a whole number)
-    multirate_decl: mr.Declared | None = None   # describe's multirate (§5.1), None: not offered
-    mr_layout: mr.Layout | None = None # the multirate configuration's block layout (§5.5)
-    mr_d1_roles: list[int] = field(default_factory=list)   # the layout's D = 1 channels' roles
+    exact: bool = False                # its own: any rate in rate_range (else max_hz / a whole number)
+    skews: tuple[int, ...] | None = None   # its own: analog skew_ns by the order's place (None: the channels in turn)
+    diagnostics: bool = True           # analog: frontend_used and reference in the configure answer (optional, §3.3)
 
     @property
     def analog(self) -> bool:
@@ -175,14 +184,10 @@ class VirtualCapture:
         return 2000 if self.analog else 50
 
     # ---- configure ------------------------------------------------------------------------------------------------
-    # the virtual bench's multirate budget (its own, §5.2): the reduced channels' work per base sample against 8 x max_hz
-    MR_WEIGHT = {mr.SAMPLE: 1, mr.ANY_ACTIVE: 2, mr.EDGE_LATCH: 5}
-
-    def settle(self, got: dict[int, bytes], t, channels: int, frontends: list[tuple[int, int, int]],
-               multirate: list[tuple[int, bytes]] = (), *, query: bool = False, planned_roles: list[int] | None = None) -> dict:
+    def settle(self, got: dict[int, bytes], t, channels: int, frontends: list[tuple[int, int, int]], *,
+               query: bool = False, planned_roles: list[int] | None = None) -> dict:
         """The actual values for a configure / query request (nothing changed). `t`: the request's tail reader
-        (endpoint.Take: `fixed`, `refuse`). `frontends`: (role, frontend, the tag as received) asked. `multirate`:
-        the multirate TLVs as received (tag, value), §5.2."""
+        (endpoint.Take: `fixed`, `refuse`). `frontends`: (role, frontend, the tag as received) asked."""
         if self.group is not None and not query:
             raise Reject(m.UNAVAILABLE, m.tlv(reg.CORE.tlv["unavailable_payload"]["cause"],
                                               bytes([reg.CORE.enum["unavailable_cause"]["bound_in_group"]])))
@@ -205,17 +210,6 @@ class VirtualCapture:
         for tag in (TLV["samples"], TLV["segments"]):
             if tag in got and not struct.unpack("<I", got[tag])[0]:
                 raise Reject(m.MALFORMED)                          # 1 or more (§3.3)
-        specs = []                                                 # multirate (§5.2): the malformed cases first
-        for tag, v in multirate:
-            if len(v) != mr.TLV.size:
-                raise Reject(m.MALFORMED)
-            spec = mr.Multirate.unpack(v)
-            if spec.malformed() or any(x.role == spec.role for x, _ in specs):
-                raise Reject(m.MALFORMED)                          # d 0, phase >= d, d 1 / param > 1, a role twice
-            specs.append((spec, tag))
-        for spec, tag in specs:
-            if self.multirate_decl.refuses(spec):
-                raise Reject(m.UNSUPPORTED, bytes([tag]))          # reserved / undeclared policy, undeclared d
         trigger = None
         if TLV["trigger"] in got:
             kind, role, value = struct.unpack("<BBI", got[TLV["trigger"]])   # type role value(u32)
@@ -240,28 +234,18 @@ class VirtualCapture:
         role_ids = sorted(planned_roles) if self.analog and planned_roles is not None else list(range(channels))
         if trigger is not None and trigger[1] not in role_ids:
             raise wrong_state()                                    # a role not in the fn's plan: cause 6 (§3.3)
-        if any(spec.role >= channels for spec, _ in specs):
-            raise wrong_state()                                    # a multirate role not in the plan: cause 6 (§5.2)
-        reduced = sorted((spec for spec, _ in specs if spec.reduced), key=lambda x: x.role)
-        if specs:
-            weight = sum(self.MR_WEIGHT[x.policy] for x in reduced)
-            kept = self.max_hz * 8 // max(8, weight)               # the highest base rate it keeps for this (§5.2)
-            if kept < self.min_hz:
-                raise Reject(m.UNSUPPORTED, bytes([specs[0][1]]))  # not even at min_hz: the multirate tag (§5.2)
         top = Fraction(self.max_hz, channels) if self.analog else self.max_hz   # an ADC's rate is shared by its channels
-        if specs:
-            top = min(top, kept)
         if self.exact:
             rate = Fraction(min(max(asked, self.min_hz), top))     # any rate in the range (rate_range exact)
         else:
             # Feasible divisor clocks decrease monotonically. Only the two around
             # the requested rate can be nearest; constrain both to the declared
-            # minimum and this configuration's ADC/multirate budget. Compare exact
+            # minimum and this configuration's ADC budget. Compare exact
             # fractions so a closer value above the request is not lost (§3.3).
             first = max(1, -(-self.max_hz // top))
             last = self.max_hz // self.min_hz
             if first > last:
-                raise ValueError("virtual capture has no clock within its declared range and budget")
+                raise t.refuse(TLV["rate"])                        # no rate in the range kept for this (§3.3)
             near = self.max_hz // asked
             candidates = {Fraction(self.max_hz, min(last, max(first, div)))
                           for div in (near, near + 1)}
@@ -281,35 +265,23 @@ class VirtualCapture:
                 chosen[role] = fe
             width = 2 * channels
         else:
-            d1 = [r for r in range(channels) if r not in {x.role for x in reduced}]   # D = 1 channels (§5.2)
-            width = min((w for w in self.widths if w >= max(1, len(d1))), default=None)
+            width = min((w for w in self.widths if w >= channels), default=None)
             if width is None:
                 raise Reject(m.UNAVAILABLE, m.tlv(reg.CORE.tlv["unavailable_payload"]["cause"],
                                                   bytes([reg.CORE.enum["unavailable_cause"]["limit"]])))   # more than a sample holds
             step = 8 // math.gcd(width, 8)                         # samples to a whole byte
-            if specs:
-                block = mr.choose_block(reduced)
-                rounded = -(-samples // block) * block             # up to a multiple of L, down if past the most (§5.2)
-                samples = rounded if rounded <= min(most, MAX_SAMPLES) else min(most, MAX_SAMPLES) // block * block
-                if not samples:
-                    raise t.refuse(TLV["samples"])
-            elif mode != MODE["one_shot"] and step > 1:
-                samples = -(-samples // step) * step               # segments end on a byte
+            if mode != MODE["one_shot"] and step > 1:
+                samples = max(step, samples // step * step)        # segments end on a byte: rounded down (§3.3)
         if pre > self.max_pretrigger or (mode != MODE["streaming"] and pre >= samples):
             raise t.refuse(TLV["pretrigger"])                      # past max_pretrigger, or not below samples (§3.3)
-        layout = None
-        if specs:
-            layout = mr.Layout(width, list(range(len(d1))), mr.choose_block(reduced), reduced)
         return {"mode": mode, "rate": rate, "samples": samples, "segments": segs, "trigger": trigger,
-                "pretrigger": pre, "width": width, "channels": channels, "roles": role_ids, "frontends": chosen,
-                "multirate": layout, "d1": d1 if specs else []}
+                "pretrigger": pre, "width": width, "channels": channels, "roles": role_ids, "frontends": chosen}
 
     def apply(self, s: dict) -> None:
         self.mode, self.rate, self.samples, self.segments_max = s["mode"], s["rate"], s["samples"], s["segments"]
         self.trigger, self.pretrigger, self.width, self.channels = s["trigger"], s["pretrigger"], s["width"], s["channels"]
         self.frontend_of = s["frontends"]
         self.analog_roles = tuple(s["roles"]) if self.analog else ()
-        self.mr_layout, self.mr_d1_roles = s["multirate"], s["d1"]
         self.state = STATE["configured"]
         self._clear()
 
@@ -319,36 +291,41 @@ class VirtualCapture:
         out = tlv(ANSWER["actual_rate"], struct.pack("<II", s["rate"].numerator, s["rate"].denominator))
         if self.analog:
             out += tlv(ANSWER["layout"], bytes([16, 0, 12, c]) + bytes(s["roles"]))
-        elif s["multirate"] is not None:                          # the D = 1 channels' layout, then block L (§5.3)
-            lay = s["multirate"]
-            out += tlv(ANSWER["layout"], bytes([lay.w, len(lay.pos)]) + bytes(lay.pos))
-            out += tlv(CAP.tlv["configure_answer"]["block"], struct.pack("<I", lay.L))
         else:
             out += tlv(ANSWER["layout"], bytes([s["width"], c]) + bytes(range(c)))
         if s["mode"] != MODE["streaming"]:                         # the rows of §3.3: actual_samples in modes 1 / 2,
             out += tlv(ANSWER["actual_samples"], struct.pack("<I", s["samples"]))
         if s["mode"] == MODE["repeat"]:                            # actual_segments in mode 2 only
             out += tlv(ANSWER["actual_segments"], struct.pack("<I", s["segments"]))
-        out += tlv(ANSWER["blocking_ms"], struct.pack("<I", 0))
-        if self.analog:
-            step_ns = int(1e9 / (s["rate"] * c))                   # one ADC, the channels in turn
+        if self.analog:                                            # scale for every role; skew 0 left out (§3.3)
             for ordinal, k in enumerate(s["roles"]):
-                lo, hi, _ = self.frontends[s["frontends"][k]]
+                lo, hi = self.frontends[s["frontends"][k]]
                 out += tlv(ANSWER["scale"], struct.pack("<Bii", k, 0, (hi - lo) * 1_000_000 // FULL))   # signed (§3.3)
-                out += tlv(ANSWER["skew"], struct.pack("<BI", k, ordinal * step_ns))
-                out += tlv(ANSWER["frontend_used"], bytes([k, s["frontends"][k]]))
-            out += tlv(ANSWER["reference"], struct.pack("<BIB", ANA.enum["reference_source"]["internal"], 1100, 0))
+            for ordinal, k in enumerate(s["roles"]):
+                skew = self._skew(ordinal, s["rate"], c)
+                if skew:
+                    out += tlv(ANSWER["skew"], struct.pack("<BI", k, skew))
+            if self.diagnostics:                                   # frontend_used / reference: optional diagnostics
+                for k in s["roles"]:
+                    out += tlv(ANSWER["frontend_used"], bytes([k, s["frontends"][k]]))
+                out += tlv(ANSWER["reference"], struct.pack("<BIB", ANA.enum["reference_source"]["internal"], 1100, 0))
         return out
 
+    def _skew(self, ordinal: int, rate: Fraction, channels: int) -> int:
+        """skew_ns of the order's place `ordinal`: its own list, else one ADC taking the channels in turn."""
+        if self.skews is not None:
+            return self.skews[ordinal] if ordinal < len(self.skews) else 0
+        return ordinal * int(Fraction(1_000_000_000, 1) / (rate * channels))
+
     def calibration(self) -> bytes:
-        """The analog's calibration (§3.8): a made-up two-point value per frontend, and the reference measured at start."""
+        """The analog's calibration (§3.7): a made-up two-point value per frontend, and the reference measured at start."""
         if not self.analog:
             raise Reject(m.UNKNOWN_OPERATION)
         scheme = b"org.example.virtual-bench.two-point"
         out = b""
         for fe in sorted(self.frontends):
             raw = struct.pack("<HH", 150, 3950)                     # raw at the range's 5 % / 95 %
-            v = bytes([fe, len(scheme)]) + scheme + struct.pack("<H", len(raw)) + raw   # ... raw_len(u16) raw (§3.8)
+            v = bytes([fe, len(scheme)]) + scheme + struct.pack("<H", len(raw)) + raw   # ... raw_len(u16) raw (§3.7)
             out += m.tlv(CALIBRATION["factory"], v)
         if self.vrefint_ns != NO_TIME:
             v = struct.pack("<IQI", 1365, self.vrefint_ns, 1100)   # raw ns nominal_mv: 1100 mV against 3300 mV full scale
@@ -364,14 +341,8 @@ class VirtualCapture:
         self.trigger_scan, self.trigger_previous = 0, 0
         self.trigger_time_ns = NO_TIME
 
-    def _pack(self, first: int, n: int, segment: bool = True) -> bytes:
-        """The stream of samples first .. first + n - 1 of the track. Multirate: a segment's blocks (its grid from its
-        base sample 0), or - `segment` False, streaming - the blocks of one segment from the track's start."""
-        if self.mr_layout is not None:
-            lay, roles = self.mr_layout, self.mr_d1_roles
-            if segment:
-                return lay.encode(lambda role, i: self.value(role, first + i), n, roles)
-            return lay.encode(self.value, first + n, roles, range(first // lay.L, (first + n) // lay.L))
+    def _pack(self, first: int, n: int) -> bytes:
+        """The stream of samples first .. first + n - 1 of the track."""
         if self.analog:
             return b"".join(struct.pack(f"<{self.channels}H", *(self.value(k, first + i) for k in self.analog_roles))
                             for i in range(n))
@@ -405,8 +376,7 @@ class VirtualCapture:
         """The advertised channel delay follows layout.order, not a dense role number."""
         if not self.analog:
             return 0
-        ordinal = self.analog_roles.index(role)
-        return ordinal * int(Fraction(1_000_000_000, 1) / (self.rate * self.channels))
+        return self._skew(self.analog_roles.index(role), self.rate, self.channels)
 
     def time_of(self, i: int) -> int:
         """The probe-clock time of the track's sample i."""
@@ -428,14 +398,11 @@ class VirtualCapture:
     # ---- the operations ---------------------------------------------------------------------------------------------
     def start(self, now_ms: int, group_ns: int | None = None, trigger_ns: int | None = None,
               subscribed: bool = True, waiting: bool = False, pretrigger_count: int | None = None) -> list[bytes]:
-        """-> the events it raises (kind(u8) fixed part). In a group: its start and, from the trigger track, the
-        trigger's time to mark on this track. A new generation; streaming needs a subscription (§3.2)."""
-        if self.state in (STATE["unconfigured"], STATE["waiting"], STATE["capturing"], STATE["paused"]):
-            raise wrong_state()
-        if self.mode == MODE["streaming"] and not subscribed:
-            raise wrong_state()
+        """-> the events it raises (kind(u8) fixed part). In a group: the group's start time. A new generation;
+        streaming needs a subscription (§3.2); none left: cause 2 with the data kept (§0)."""
+        self.startable(subscribed)
         self._clear()
-        self.generation = m.next_generation(self.generation)     # 0xFFFFFFFF is followed by 1 (§3.4)
+        self.generation += 1
         self.flags, self.error = 0, 0
         self.started_ms = now_ms
         self.t0_ns = (group_ns if group_ns is not None else now_ms * 1_000_000) + self.start_offset_ns
@@ -456,6 +423,15 @@ class VirtualCapture:
         self.state = STATE["capturing"]
         return self.tick(now_ms)
 
+    def startable(self, subscribed: bool = True, fn: int | None = None) -> None:
+        """start's refusals, before anything changes (§3.2, §0); `fn`: the track's, named in a group's refusal."""
+        if self.state in (STATE["unconfigured"], STATE["waiting"], STATE["capturing"], STATE["paused"]):
+            raise wrong_state(fn)
+        if self.mode == MODE["streaming"] and not subscribed:
+            raise wrong_state(fn)
+        if self.generation == LAST_GENERATION:
+            raise exhausted(fn)
+
     def _triggered(self, sample: int, when: int, requested: int) -> list[bytes]:
         """Retain available prehistory; trigger_index is relative to this segment, not acquisition start."""
         self.trigger_time_ns = when
@@ -466,7 +442,7 @@ class VirtualCapture:
         self.first_segment_samples = self.samples - requested + index
         self.first_trigger_index = index
         if self.mode == MODE["streaming"]:
-            unit = self.mr_layout.L if self.mr_layout is not None else (1 if self.analog else 8 // math.gcd(self.width, 8))
+            unit = 1 if self.analog else 8 // math.gcd(self.width, 8)
             self.first_segment_samples = -(-self.first_segment_samples // unit) * unit
         events = [bytes([EVENT["triggered"]]) + struct.pack("<IIQI", 0, index, when, self.generation)]
         self.state = STATE["capturing"]
@@ -511,22 +487,17 @@ class VirtualCapture:
                     self.state = STATE["paused"]
                     break
         elif self.mode == MODE["streaming"]:
-            per_byte = 1 if self.analog else 8 // math.gcd(self.width, 8)   # whole bytes only
-            if self.mr_layout is not None:
-                per_byte = self.mr_layout.L                        # whole blocks (§5.5)
+            per_byte = 1 if self.analog else 8 // math.gcd(self.width, 8)   # whole bytes only (§2.2)
             n = min((due - self.produced) // per_byte * per_byte, MAX_SAMPLES)
             if n > 0:
-                self.data += self._pack(self.produced, n, segment=False)
+                self.data += self._pack(self.produced, n)
                 self.produced += n
                 taken = self.produced - self.capture_begin
                 first = self.first_segment_samples or self.samples
                 complete = 0 if taken < first else 1 + (taken - first) // self.samples
                 self.serial_done = complete & 0xFFFFFFFF
                 done_samples = 0 if not complete else first + (complete - 1) * self.samples
-                if self.mr_layout is not None:
-                    self.stream_committed_bytes = self.mr_layout.segment_bytes(done_samples)
-                else:
-                    self.stream_committed_bytes = done_samples * self.width if self.analog else -(-done_samples * self.width // 8)
+                self.stream_committed_bytes = self.bytes_of(done_samples)
         return events
 
     def one_shot_due(self, now_ms: int) -> int:
@@ -575,11 +546,11 @@ class VirtualCapture:
 
     def segment_bytes(self) -> int:
         """The bytes of one whole segment of this configuration."""
-        if self.mr_layout is not None:
-            return self.mr_layout.segment_bytes(self.samples)
-        if self.analog:
-            return self.samples * self.width
-        return (self.samples * self.width + 7) // 8
+        return self.bytes_of(self.samples)
+
+    def bytes_of(self, samples: int) -> int:
+        """The stream bytes of `samples` samples (§1.1 rule 4, §1.2 rule 3)."""
+        return samples * self.width if self.analog else -(-samples * self.width // 8)
 
     def stopped_event(self, reason: int, error: int = 0) -> bytes:
         """kind stopped: reason(u8) error(u8) generation(u32) (§3.4: every event carries the generation it was made
@@ -597,16 +568,19 @@ class VirtualCapture:
             raise wrong_state()                                    # another start's bytes (§3.2)
 
     def read(self, generation: int, position: int, most: int, budget: int) -> bytes:
+        """position(u64) flags(u8: more, gap) len(u16) data (§3.2): from write_pos on, nothing (gap 0) at write_pos; a
+        position re-used or pushed on goes to the next readable one with gap - write_pos with gap when none is left."""
         self.check_generation(generation)
-        flags = 0
+        flags, end = 0, self.base + len(self.data)
+        if position >= end:
+            return struct.pack("<QBH", end, 0, 0)
         if position < self.base:
             position, flags = self.base, flags | 0x02              # re-used: from what is kept (gap)
-        end = self.base + len(self.data)
-        take = max(0, min(most, self.max_read, budget - 13, end - position))
+        take = max(0, min(most, self.max_read, budget - 11, end - position))
         data = bytes(self.data[position - self.base:position - self.base + take])
         if position + take < end:
             flags |= 0x01                                          # more
-        return struct.pack("<QBI", position, flags, len(data)) + data   # position flags len(u32) data (§3.2)
+        return struct.pack("<QBH", position, flags, len(data)) + data
 
     def segment_list(self, first: int, budget: int) -> bytes:
         """more(u8) count(u8) count x record (§3.2; no element length, core §2.3), paged by common §1.3: from `first`
@@ -632,23 +606,39 @@ class VirtualCapture:
             self.t0_ns = now_ms * 1_000_000 + self.start_offset_ns - int(Fraction(self.produced * 1_000_000_000) / self.rate)
 
     def unsent(self) -> int:
-        """Streaming: the bytes captured and not pushed yet (what a subscription's min_bytes counts, core §11.3)."""
+        """Streaming: the bytes captured and not pushed yet (what a subscription's min_bytes counts, core §10.3)."""
         if self.mode != MODE["streaming"]:
             return 0
         return max(0, self.base + len(self.data) - self.sent)
 
+    def stream_segment(self, position: int) -> tuple[int, int, int]:
+        """Streaming: the segment the byte at `position` is in -> (its position, its first sample counted from the
+        retained start, its samples in all)."""
+        first = self.first_segment_samples or self.samples
+        first_bytes = self.bytes_of(first)
+        if position < first_bytes:
+            return 0, 0, first
+        k = (position - first_bytes) // self.bytes_of(self.samples)
+        return first_bytes + k * self.bytes_of(self.samples), first + k * self.samples, self.samples
+
     def pushes(self, fn: int, next_seq, budget: int) -> list[bytes]:
-        """Streaming: the bytes not pushed yet, as data frames (core §11.2: position(u64) len(u16) data, then the TLV
-        generation every streaming frame carries, §3.4)."""
+        """Streaming: the bytes not pushed yet, as data frames (core §10.2: position(u64) len(u16) data), each within
+        one segment and with the TLVs every streaming frame carries (§3.4): generation, and segment_info - the segment's
+        position, its samples taken so far, start_ns and start_uncertainty_ns."""
         if self.mode != MODE["streaming"]:
             return []
         out = []
         end = self.base + len(self.data)
         tail = m.tlv(DATA_GENERATION, struct.pack("<I", self.generation))
+        room = budget - 15 - len(tail) - 3 - 24
         while self.sent < end:
-            n = min(end - self.sent, budget - 15 - len(tail))
+            at, first, total = self.stream_segment(self.sent)
+            n = min(end - self.sent, at + self.bytes_of(total) - self.sent, room)
+            taken = min(total, self.produced - self.capture_begin - first)
+            info = struct.pack("<QIQI", at, taken, self.time_of(self.capture_begin + first), self.uncertainty_ns)
             chunk = bytes(self.data[self.sent - self.base:self.sent - self.base + n])
-            out.append(bytes([m.ROLE_DATA]) + struct.pack("<HHQH", fn, next_seq(), self.sent, n) + chunk + tail)
+            out.append(bytes([m.ROLE_DATA]) + struct.pack("<HHQH", fn, next_seq(), self.sent, n) + chunk + tail
+                       + m.tlv(SEGMENT_INFO, info))
             self.sent += n
         del self.data[:self.sent - self.base]                      # pushed: the probe re-uses it
         self.base = self.sent
@@ -657,164 +647,100 @@ class VirtualCapture:
 
 @dataclass
 class VirtualGroup:
-    """oep.fixture.capture-group (§4): tracks started together, one of them the trigger."""
+    """oep.fixture.capture-group (§4): tracks started at once by one request (immediate triggers only)."""
     tracks_allowed: list[int]          # the fns it may bind (describe tracks)
     max_tracks: int                    # its own: the most tracks one bind holds (not declared)
     budgets: list[tuple[int, list[int]]]   # its own: (max channel-samples / s, the fns sharing it) (not declared)
     tracks: list[int] = field(default_factory=list)
-    trigger_fn: int = 0
-    forced: bool = False              # group force reports trigger_fn 0 (§4.1)
-    start_ns: int = NO_TIME
-    trigger_ns: int = NO_TIME
+    start_ns: int = NO_TIME            # all ones before a start (§4.1)
     generation: int = 0                # the group's: +1 at every group start, as a track's (§4.1); kept across binds
 
-    def bind(self, caps: dict[int, VirtualCapture], fns: list[int], trigger_fn: int) -> None:
+    def bind(self, caps: dict[int, VirtualCapture], fns: list[int], others=(), budget: int = 1 << 16) -> None:
         """§4.1's refusals, every one checked before anything changes: the same fn twice -> malformed; an fn not in
-        tracks -> unsupported; not configured, modes apart, a trigger off the trigger track -> unavailable cause 6;
-        more tracks or more samples than it can take together -> unavailable cause 2."""
+        tracks -> unsupported (0x00, fn); the start answer past the route's frame -> unsupported (0x00); the same list
+        -> nothing changes; a change while capturing -> cause 6; a track in another group (`others`) -> cause 4; a
+        track not in state 1/4/6, modes apart or a non-immediate trigger -> cause 6; more than it takes together ->
+        cause 2."""
         if len(set(fns)) != len(fns):
             raise Reject(m.MALFORMED)
         if any(fn not in self.tracks_allowed for fn in fns):
             raise Reject(m.UNSUPPORTED, bytes([m.TAG_FIXED]) + m.tlv(          # 0x00 + TLV fn (core §4.3)
                 reg.CORE.tlv["unsupported_payload"]["fn"], struct.pack("<H", next(fn for fn in fns if fn not in self.tracks_allowed))))
-        if any(caps[fn].state == STATE["capturing"] for fn in self.tracks):
-            raise wrong_state()                                    # the state after the form and the values (core §4.3)
+        if 18 + 6 * len(fns) > budget:
+            raise Reject(m.UNSUPPORTED, bytes([m.TAG_FIXED]))      # its start answer would not fit (§4.1)
+        if fns == self.tracks:
+            return                                                 # the same list: the state kept
+        if self.state(caps) == STATE["capturing"]:
+            raise wrong_state()                                    # not while the group captures
         if not fns:
             self._unbind(caps)
             return
-        chosen = [caps.get(fn) for fn in fns]
-        if (any(c is None or c.state == STATE["unconfigured"] for c in chosen)
-                or len({c.mode for c in chosen}) != 1 or (trigger_fn and trigger_fn not in fns)
-                or any(c.trigger for fn, c in zip(fns, chosen) if fn != trigger_fn)):
-            raise wrong_state()
-        limit = m.tlv(reg.CORE.tlv["unavailable_payload"]["cause"], bytes([reg.CORE.enum["unavailable_cause"]["limit"]]))
+        for fn in fns:
+            c = caps[fn]
+            if fn not in self.tracks and any(fn in g.tracks for g in others):
+                raise Reject(m.UNAVAILABLE, m.tlv(CAUSE, bytes([reg.CORE.enum["unavailable_cause"]["bound_in_group"]]))
+                             + m.tlv(FN_TLV, struct.pack("<H", fn)))
+            if c.state not in (STATE["configured"], STATE["done"], STATE["error"]) or c.trigger is not None:
+                raise wrong_state(fn)
+        if len({caps[fn].mode for fn in fns}) != 1:
+            raise wrong_state(fns[0])
         if len(fns) > self.max_tracks:
-            raise Reject(m.UNAVAILABLE, limit)                     # the resources to capture together are short
+            raise Reject(m.UNAVAILABLE, LIMIT)                     # the resources to capture together are short
         for most, shared in self.budgets:
             if sum(caps[fn].channels * caps[fn].rate for fn in fns if fn in shared) > most:
                 over = next(fn for fn in fns if fn in shared)
-                raise Reject(m.UNAVAILABLE, limit + m.tlv(reg.CORE.tlv["unavailable_payload"]["fn"],
-                                                          struct.pack("<H", over)))
-        src = caps.get(trigger_fn) if trigger_fn else None
-        if src is not None and src.pretrigger:                    # the group's pretrigger, the same time on every track
-            for fn in fns:
-                if fn == trigger_fn:
-                    continue
-                c = caps[fn]
-                p_k = -(-(src.pretrigger * c.rate.numerator * src.rate.denominator)
-                        // (c.rate.denominator * src.rate.numerator))   # P_k (§4.1)
-                if p_k > c.max_pretrigger or (c.mode != MODE["streaming"] and p_k >= c.samples):
-                    raise Reject(m.UNAVAILABLE, limit + m.tlv(reg.CORE.tlv["unavailable_payload"]["fn"],
-                                                              struct.pack("<H", fn)))   # it cannot keep P_k
+                raise Reject(m.UNAVAILABLE, LIMIT + m.tlv(FN_TLV, struct.pack("<H", over)))
         self._unbind(caps)                                         # refused above: nothing changed (§4.1)
-        self.tracks, self.trigger_fn = list(fns), trigger_fn
-        for c in chosen:
-            c.group = self
+        self.tracks = list(fns)
+        for fn in fns:
+            caps[fn].group = self
 
     def _unbind(self, caps: dict[int, VirtualCapture]) -> None:
         for fn in self.tracks:
             if fn in caps:
                 caps[fn].group = None
-        self.tracks, self.trigger_fn, self.start_ns, self.trigger_ns = [], 0, NO_TIME, NO_TIME
+        self.tracks = []
 
     def release_session(self, caps: dict[int, VirtualCapture]) -> None:
         """The session's lock ended (end, lease expiry, force): its bind goes (capture §4.1: a session's resource,
         core §9); the tracks stay as they are, each on its own."""
-        for fn in self.tracks:
-            if fn in caps:
-                caps[fn].group = None
-        self.tracks, self.trigger_fn, self.start_ns, self.trigger_ns = [], 0, NO_TIME, NO_TIME
+        self._unbind(caps)
 
     def start(self, caps: dict[int, VirtualCapture], now_ms: int,
               subscribed=lambda fn: True) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
-        """-> (each track's events, the group's events). The group and every track get a new generation (the answer
-        names them, §4.1)."""
+        """-> (each track's events, the group's events). Every track checked first (state 1/4/6, its subscription for
+        streaming, a generation left), then the group and every track get a new generation (the answer names them,
+        §4.1) and start at once."""
         if not self.tracks:
             raise wrong_state()                                    # nothing bound (§4.1)
-        for fn in self.tracks:                                     # every track checked before any starts (§4.1)
-            c = caps[fn]
-            if c.state in (STATE["unconfigured"], STATE["waiting"], STATE["capturing"], STATE["paused"]):
-                raise Reject(m.UNAVAILABLE, WRONG_STATE + m.tlv(reg.CORE.tlv["unavailable_payload"]["fn"],
-                                                                struct.pack("<H", fn)))
-            if c.mode == MODE["streaming"] and not subscribed(fn):
-                raise Reject(m.UNAVAILABLE, WRONG_STATE + m.tlv(reg.CORE.tlv["unavailable_payload"]["fn"],
-                                                                struct.pack("<H", fn)))   # no subscription for it
-        self.forced = False
-        self.start_ns, self.trigger_ns = now_ms * 1_000_000, NO_TIME
-        self.generation = m.next_generation(self.generation)
-        per, own = [], []
-        trigger_ns = None
-        src = caps.get(self.trigger_fn)
-        if src is not None and src.trigger:
-            per.append((self.trigger_fn, src.start(now_ms, self.start_ns, subscribed=subscribed(self.trigger_fn))))
-            if src.state == STATE["waiting"]:
-                for fn in self.tracks:
-                    if fn != self.trigger_fn:
-                        per.append((fn, caps[fn].start(now_ms, self.start_ns, subscribed=subscribed(fn), waiting=True)))
-                return per, own
-            trigger_ns = self.trigger_ns = src.trigger_time_ns
-            own.append(bytes([GRP.event["triggered"]]) + struct.pack("<HQI", self.trigger_fn, trigger_ns, self.generation))
         for fn in self.tracks:
-            if fn != self.trigger_fn or trigger_ns is None:
-                cap = caps[fn]
-                pre = -(-(src.pretrigger * cap.rate.numerator * src.rate.denominator)
-                        // (cap.rate.denominator * src.rate.numerator)) if trigger_ns is not None else None
-                per.append((fn, cap.start(now_ms, self.start_ns, trigger_ns, subscribed=subscribed(fn), pretrigger_count=pre)))
-        if all(caps[fn].state == STATE["done"] for fn in self.tracks):
-            own.append(self.stopped_event(STOPPED["complete"]))
-        return per, own
+            caps[fn].startable(subscribed(fn), fn)
+        if self.generation == LAST_GENERATION:
+            raise exhausted()
+        self.start_ns = now_ms * 1_000_000
+        self.generation += 1
+        per = [(fn, caps[fn].start(now_ms, self.start_ns, subscribed=subscribed(fn))) for fn in self.tracks]
+        return per, self._finished(caps, False)
 
-    def force(self, caps: dict[int, VirtualCapture], now_ms: int) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
-        if self.state(caps) != STATE["waiting"]:
-            return [], []
-        src = caps[self.trigger_fn]
-        self.trigger_ns = now_ms * 1_000_000
-        self.forced = True
-        per = []
-        for fn in self.tracks:
-            cap = caps[fn]
-            pre = -(-(src.pretrigger * cap.rate.numerator * src.rate.denominator)
-                    // (cap.rate.denominator * src.rate.numerator))
-            per.append((fn, cap.force(now_ms, trigger_ns=self.trigger_ns, pretrigger=pre)))
-        own = [bytes([GRP.event["triggered"]]) + struct.pack("<HQI", 0, self.trigger_ns, self.generation)]
-        if all(caps[fn].state == STATE["done"] for fn in self.tracks):
-            own.append(self.stopped_event(STOPPED["complete"]))
-        return per, own
+    def _finished(self, caps: dict[int, VirtualCapture], was_done: bool) -> list[bytes]:
+        """The group's stopped 0 when every track has completed (§4.2)."""
+        if not was_done and self.state(caps) == STATE["done"]:
+            return [self.stopped_event(STOPPED["complete"])]
+        return []
 
     def tick(self, caps: dict[int, VirtualCapture], now_ms: int) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
-        """Resolve a later source trigger before advancing any bound track; generations remain unchanged."""
-        per, own = [], []
         was_done = self.state(caps) == STATE["done"]
-        src = caps.get(self.trigger_fn)
-        if src is not None and self.trigger_ns == NO_TIME and src.state == STATE["waiting"]:
-            events = src.poll_trigger(now_ms)
-            if src.state == STATE["waiting"]:
-                return [], []
-            per.append((self.trigger_fn, events))
-            when = self.trigger_ns = src.trigger_time_ns
-            for fn in self.tracks:
-                if fn == self.trigger_fn:
-                    continue
-                cap = caps[fn]
-                sample = max(0, round(Fraction(when - cap.t0_ns) * cap.rate / 1_000_000_000))
-                pre = -(-(src.pretrigger * cap.rate.numerator * src.rate.denominator)
-                        // (cap.rate.denominator * src.rate.numerator))
-                per.append((fn, cap._triggered(sample, when, pre)))
-            own.append(bytes([GRP.event["triggered"]]) + struct.pack("<HQI", self.trigger_fn, when, self.generation))
-        for fn in self.tracks:
-            per.append((fn, caps[fn].tick(now_ms)))
-        if not was_done and self.state(caps) == STATE["done"]:
-            own.append(self.stopped_event(STOPPED["complete"]))
-        return per, own
+        per = [(fn, caps[fn].tick(now_ms)) for fn in self.tracks]
+        return per, self._finished(caps, was_done)
 
     def stopped_event(self, reason: int, error: int = 0) -> bytes:
         """The group's stopped: reason(u8) error(u8) generation(u32: the group's, §4.2)."""
         return bytes([GRP.event["stopped"], reason, error]) + struct.pack("<I", self.generation)
 
-    def start_answer(self, caps: dict[int, VirtualCapture], blocking_ms: int = 0) -> bytes:
-        """start's answer (§4.1): blocking_ms(u32) start_ns(u64) generation(u32: the group's) n(u8), then n x (fn(u16)
-        generation(u32)) - each bound track once, in bind order."""
-        return (struct.pack("<IQIB", blocking_ms, self.start_ns, self.generation, len(self.tracks))
+    def start_answer(self, caps: dict[int, VirtualCapture]) -> bytes:
+        """start's answer (§4.1): start_ns(u64) generation(u32: the group's) n(u8), then n x (fn(u16) generation(u32))
+        - each bound track once, in bind order."""
+        return (struct.pack("<QIB", self.start_ns, self.generation, len(self.tracks))
                 + b"".join(struct.pack("<HI", fn, caps[fn].generation) for fn in self.tracks))
 
     def stop(self, caps: dict[int, VirtualCapture], now_ms: int | None = None) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
@@ -823,7 +749,7 @@ class VirtualGroup:
 
     def state(self, caps: dict[int, VirtualCapture]) -> int:
         """The group's state from its tracks' (§4.1): 0 with none bound; 6 if any is 6; else 4 if started and every
-        one is 4; else 2 if trigger_track is set, has not fired, and one is 2 or 3; else 3 if one is 2, 3 or 5; else 1."""
+        one is 4; else 3 if one is 3 or 5; else 1."""
         states = [caps[fn].state for fn in self.tracks]
         if not states:
             return STATE["unconfigured"]
@@ -831,14 +757,10 @@ class VirtualGroup:
             return STATE["error"]
         if self.start_ns != NO_TIME and all(s == STATE["done"] for s in states):
             return STATE["done"]
-        busy = (STATE["waiting"], STATE["capturing"])
-        if self.trigger_fn and self.trigger_ns == NO_TIME and any(s in busy for s in states):
-            return STATE["waiting"]
-        if any(s in busy + (STATE["paused"],) for s in states):
+        if any(s in (STATE["waiting"], STATE["capturing"], STATE["paused"]) for s in states):
             return STATE["capturing"]
         return STATE["configured"]
 
     def status(self, caps: dict[int, VirtualCapture]) -> bytes:
-        state = self.state(caps)
-        return struct.pack("<BQQHI", state, self.start_ns, self.trigger_ns,
-                           self.trigger_fn if self.trigger_ns != NO_TIME and not self.forced else 0, self.generation)   # ... generation (§4.1)
+        """state(u8) start_ns(u64) generation(u32) (§4.1)."""
+        return struct.pack("<BQI", self.state(caps), self.start_ns, self.generation)

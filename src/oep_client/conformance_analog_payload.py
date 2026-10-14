@@ -14,7 +14,7 @@ class AnalogPayloadChecks:
         self.c=checks
         self.spec=next(s for s in checks.reg['interface'] if s['name']=='oep.fixture.analog')
         self.tags=self.spec['tlv']['configure_answer']
-    def configure(self,payload,*,roles,frontends,mode,max_op_ms):
+    def configure(self,payload,*,roles,frontends,mode):
         require(mode in (1,2,3) and roles and len(set(roles))==len(roles),'explicit mode and unique planned roles')
         require(all(type(role)is int and 0<=role<=63 for role in roles),'analog planned role numbers 0..63')
         rows=tlvs(payload);values={}
@@ -30,22 +30,21 @@ class AnalogPayloadChecks:
         require(count==len(roles) and len(order)==count and sorted(order)==sorted(roles),'analog layout channel permutation/count')
         config=dict(slot=slot,offset=offset,bits=bits,order=order,roles=list(sorted(roles)),rate=Fraction(numerator,denominator))
         for name,needed in [('actual_samples',mode in (1,2)),('actual_segments',mode==2)]:
-            if needed:
-                value=struct.unpack('<I',fixed(name,4))[0];require(value>0,name+' positive');config[name]=value
-            else:require(self.tags[name] not in values,name+' forbidden outside its modes')
-        blocking=struct.unpack('<I',fixed('blocking_ms',4))[0];require(blocking<=max_op_ms,'blocking_ms exceeds core max_op_ms')
+            if needed:value=struct.unpack('<I',fixed(name,4))[0];require(value>0,name+' positive');config[name]=value
         for name,width,format_ in [('scale',9,'<Bii'),('skew',5,'<BI'),('frontend_used',2,'<BB')]:
             found={}
             for tag,value in rows:
                 if tag!=self.tags[name]:continue
                 require(len(value)==width,name+' row fixed shape');row=struct.unpack(format_,value);role=row[0]
                 require(role in roles and role not in found,name+' unknown/duplicate planned role');found[role]=row[1:]
-            if name!='skew':require(set(found)==set(roles),name+' one per planned role')
+            if name=='scale':require(set(found)==set(roles),'scale one per planned role')
             if name=='frontend_used':require(all(row[0] in frontends for row in found.values()),'frontend_used not declared')
             config[name]=found
-        source,mv,how=struct.unpack('<BIB',fixed('reference',6))
-        require(source in self.spec['enum']['reference_source'].values() and how in self.spec['enum']['reference_how'].values(),'reference enum')
-        config['reference']=(source,mv,how)
+        config['reference']=None
+        if self.tags['reference'] in values:
+            source,mv,how=struct.unpack('<BIB',fixed('reference',6))
+            require(source in self.spec['enum']['reference_source'].values() and how in self.spec['enum']['reference_how'].values(),'reference enum')
+            config['reference']=(source,mv,how)
         return config
     def calibration(self,payload,*,frontends):
         tags=self.spec['tlv']['calibration_answer'];seen=set();vref_seen=False;result=[]
@@ -70,14 +69,14 @@ class AnalogPayloadChecks:
             for frame,channel in enumerate(config['order']):
                 at=(i*count+frame)*width;actual=(int.from_bytes(payload[at:at+width],'little')>>config['offset'])&mask
                 require(actual==expected[config['roles'].index(channel)],'analog raw sample/order/little endian/value bits')
-    def run(self,*,configure_payload,calibration_payload,data,expected_samples,roles,frontends,mode,max_op_ms):
+    def run(self,*,configure_payload,calibration_payload,data,expected_samples,roles,frontends,mode):
         start=len(self.c.results);self.config=None
-        def configure():self.config=self.configure(configure_payload,roles=roles,frontends=frontends,mode=mode,max_op_ms=max_op_ms)
+        def configure():self.config=self.configure(configure_payload,roles=roles,frontends=frontends,mode=mode)
         self.c.check('OEP-ANALOG-PAYLOAD-CONFIGURE','capture §1.2/3.2/3.3; core §2.3',configure)
-        self.c.check('OEP-ANALOG-PAYLOAD-CALIBRATION','capture §3.8; core §2.3',lambda:self.calibration(calibration_payload,frontends=frontends))
+        self.c.check('OEP-ANALOG-PAYLOAD-CALIBRATION','capture §3.7; core §2.3',lambda:self.calibration(calibration_payload,frontends=frontends))
         def samples():
             require(self.config is not None,'valid configure required to interpret samples');self.data(data,self.config,expected_samples)
-        self.c.check('OEP-ANALOG-PAYLOAD-DATA','capture §1.2/3.8',samples)
+        self.c.check('OEP-ANALOG-PAYLOAD-DATA','capture §1.2',samples)
         rows=self.c.results[start:]
         return dict(status='passed' if all(row['status']=='passed' for row in rows) else 'failed',checks=rows,full_conformance=False,
                     scope='explicit analog success bodies and known raw samples',

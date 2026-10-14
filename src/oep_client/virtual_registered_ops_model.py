@@ -11,14 +11,14 @@ MINIMAL={
     'oep.target.console':(16,17,22,23),
     'oep.fixture.gpio':(16,17),'oep.fixture.uart':(16,17,22),
     'oep.fixture.i2c-target':tuple(range(16,20)),'oep.fixture.spi-target':tuple(range(16,20)),
-    'oep.fixture.logic':(16,17,18,20,21,22,23),'oep.fixture.analog':(16,17,18,20,21,22,23,25),
+    'oep.fixture.logic':(16,17,18,20,21,22),'oep.fixture.analog':(16,17,18,20,21,22),
     'oep.fixture.capture-group':(16,17,18,20),'oep.probe.config':(16,17,20),
 }
 
 
 class RegisteredOps(Resources):
     def __init__(self):
-        super().__init__();self.selection=dict(enumerate(MINIMAL,1));self.functions=tuple(self.selection);self.offered={fn:set(MINIMAL[name]) for fn,name in self.selection.items()}
+        super().__init__();self.selection=dict(enumerate(MINIMAL,1));self.functions=tuple(self.selection);self.offered={fn:set(MINIMAL[name]) for fn,name in self.selection.items()};self.extra={}
     def list_page(self,first,limit):
         rows=[struct.pack('<HHBB',fn,0,1,len(name))+name.encode() for fn,name in self.selection.items()];page=bytearray(struct.pack('<HB',len(rows),0))
         for row in rows[first:]:
@@ -29,7 +29,7 @@ class RegisteredOps(Resources):
         offered=self.offered[fn];bitmap=bytearray(32)
         for op in offered:bitmap[op//8]|=1<<(op%8)
         while len(bitmap)>1 and bitmap[-1]==0:bitmap.pop()
-        return (tlv(7,b'\0'+bitmap),)
+        return (tlv(7,b'\0'+bitmap),*self.extra.get(fn,()))
     def dispatch(self,*args):raise Reject(10)
 
 

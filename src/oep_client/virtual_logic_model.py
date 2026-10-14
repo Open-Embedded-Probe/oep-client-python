@@ -20,7 +20,7 @@ class Logic(Gpio):
         return bytes(page)
     def describe(self,fn):
         if fn==1:return super().describe(1)
-        return (tlv(7,b'\x10\xf7\x01'),*(tlv(1,bytes((role,0,0,7))) for role in range(3)),tlv(5,b'\0'*4),tlv(64,struct.pack('<BII',1,16,1)),tlv(64,struct.pack('<BII',2,16,2)),tlv(65,struct.pack('<IIB',100,1000,1)),tlv(68,b'\3'),tlv(69,struct.pack('<II',7,8)))
+        return (tlv(7,b'\x10\xf7\x01'),*(tlv(1,bytes((role,0,0,7))) for role in range(3)),tlv(5,b'\0'*4),tlv(64,struct.pack('<BII',1,16,0)),tlv(64,struct.pack('<BII',2,16,2)),tlv(65,struct.pack('<II',100,1000)),tlv(68,b'\3'),tlv(69,struct.pack('<II',7,8)))
     def request_tags(self,fn,op,data):
         if fn==1:return super().request_tags(fn,op,data)
         got={};seen=set()
@@ -53,7 +53,6 @@ class Logic(Gpio):
         if len({row[2] for row in rows})!=len(rows) or len({row[3] for row in rows})!=len(rows):raise Reject(3)
         self.release_plans([2]);rows.sort(key=lambda row:row[2]);self.roles=[row[2] for row in rows];self.plans[2]=[row[3] for row in rows];return b''
     def settings(self,tags):
-        if self.state in (2,3,5):raise Reject(4,tlv(1,b'\6'))
         if not all(key in tags for key in (64,66)):raise Reject(3)
         mode=tags[64][1][0];rate=struct.unpack('<I',tags[66][1])[0]
         if rate==0 or any(key in tags and struct.unpack('<I',tags[key][1])[0]==0 for key in (67,68)):raise Reject(3)
@@ -69,7 +68,7 @@ class Logic(Gpio):
         if pre>8 or pre>=samples:raise Reject(11,bytes((tags[70][0],)))
         return dict(mode=mode,rate=rate,samples=samples,segments=segments,trigger=trigger,pretrigger=pre)
     def answer(self,c):
-        rows=[tlv(80,struct.pack('<II',c['rate'],1)),tlv(81,bytes((3,len(self.roles),*range(len(self.roles))))),tlv(82,struct.pack('<I',c['samples'])),tlv(86,b'\0'*4)]
+        rows=[tlv(80,struct.pack('<II',c['rate'],1)),tlv(81,bytes((3,len(self.roles),*range(len(self.roles))))),tlv(82,struct.pack('<I',c['samples']))]
         if c['mode']==2:rows.append(tlv(83,struct.pack('<I',c['segments'])))
         return b''.join(rows)
     def finish(self,short=False):
@@ -87,13 +86,15 @@ class Logic(Gpio):
     def dispatch_request(self,fn,op,payload,tags):
         if fn==1:return self.plan(op,payload,tags)
         if op in (16,24):
+            if op==16 and self.state in (2,3,5):raise Reject(4,tlv(1,b'\6'))
             config=self.settings(tags);answer=self.answer(config)
             if op==16:self.config=config;self.clear(1)
             return answer
         if op==20:return struct.pack('<BIQBI',self.state,self.serial,self.base+len(self.data),self.flags,self.generation)+(tlv(1,bytes((self.error,))) if self.state==6 else b'')
         if op==17:
             if self.state not in (1,4,6):raise Reject(4,tlv(1,b'\6'))
-            self.clear(2 if self.config['trigger'][0] else 3);self.generation=(self.generation+1)&0xffffffff or 1;self.start_ns=self.ep.now_ns();return struct.pack('<II',0,self.generation)
+            if self.generation==0xffffffff:raise Reject(4,tlv(1,b'\2'))
+            self.clear(2 if self.config['trigger'][0] else 3);self.generation+=1;self.start_ns=self.ep.now_ns();return struct.pack('<I',self.generation)
         if op==18:
             previous=self.state
             if self.state==3:self.finish(True)
@@ -114,7 +115,9 @@ class Logic(Gpio):
                 new=self.segments[0][1] if self.segments else self.base+len(self.data);del self.data[:new-self.base];self.base=new
                 if self.state==5 and len(self.segments)<self.config['segments']:self.state=3;self.gap=True;self.start_ns=self.ep.now_ns()
             return b''
-        position,maximum=struct.unpack_from('<QI',payload,4);start=max(self.base,min(position,self.base+len(self.data)));count=min(maximum,self.base+len(self.data)-start,self.ep.probe.max_frame-18);part=bytes(self.data[start-self.base:start-self.base+count]);flags=(1 if start+count<self.base+len(self.data) else 0)|(2 if position<self.base else 0);return struct.pack('<QBI',start,flags,count)+part
+        position,maximum=struct.unpack_from('<QH',payload,4);end=self.base+len(self.data)
+        if position>=end:return struct.pack('<QBH',end,0,0)
+        start=max(self.base,position);count=min(maximum,end-start,self.ep.probe.max_frame-16);part=bytes(self.data[start-self.base:start-self.base+count]);flags=(1 if start+count<end else 0)|(2 if position<self.base else 0);return struct.pack('<QBH',start,flags,count)+part
     def feed(self,samples):
         accepted=0
         for sample in samples:
@@ -141,7 +144,7 @@ class LogicModel(GpioModel):
         if len(request)>=6:
             fn,op=struct.unpack_from('<HB',request,3);n=request[10] if len(request)>10 else 0
             if fn==1:e.fixed={16:0,17:1+2*n};e.free=set()
-            else:e.fixed={16:0,17:0,18:0,20:0,21:16,22:4,23:8,24:0};e.free={20,21,22,24}
+            else:e.fixed={16:0,17:0,18:0,20:0,21:14,22:4,23:8,24:0};e.free={20,21,22,24}
         try:return self.ep.handle(request)
         finally:e.fixed,e.free=fixed,free
     def logic_state(self):

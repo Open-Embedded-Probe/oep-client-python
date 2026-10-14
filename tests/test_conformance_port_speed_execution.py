@@ -13,7 +13,7 @@ def setup():
 def test_execution_and_writer_wait():
     model,c=setup();r=PortSpeedExecutionChecks(c,Adapter(model)).run()
     assert r['status']=='passed',[(x['id'],x.get('error')) for x in r['checks'] if x['status']!='passed']
-    assert len(r['checks'])==9 and not r['full_conformance']
+    assert len(r['checks'])==11 and not r['full_conformance']
 
 
 import pytest
@@ -71,6 +71,27 @@ def test_clock_faults_are_detected(fault):
         return out
     model.execution=bad_execution;model.begin=bad_begin;model.advance=bad_advance;model.finish=bad_finish
     checks=PortSpeedExecutionChecks(c,Adapter(model));checks.cases=(('source',3500,60000),)
+    row=checks.run()['checks'][-1]
+    assert row['status']=='failed' and row['error'].startswith('Violation:'),row
+
+
+@pytest.mark.parametrize('fault,case',[('consume_verify','VERIFY'),('verify_renewed_by_answer','VERIFY'),
+ ('other_route_consumes_idle','OTHER-ROUTE'),('other_route_renews_idle','OTHER-ROUTE'),('verify_expiry_early','VERIFY')])
+def test_pause_faults_are_detected(fault,case):
+    model,c=setup();begin=model.begin;finish=model.finish;advance=model.advance
+    def bad_begin(req,route=0):
+        start=model.clock_ms;out=begin(req,route)
+        if req[3:6]==b'\4\0\x10' and fault in ('consume_verify','other_route_consumes_idle'):model.ports[0]['deadline']-=model.clock_ms-start
+        return out
+    def bad_finish():
+        q=model.pending['request'];out=finish()
+        if q[3:6]==b'\4\0\x10' and fault in ('verify_renewed_by_answer','other_route_renews_idle'):model.ports[0]['deadline']=model.clock_ms+1000
+        return out
+    def bad_advance(ms):
+        p=model.ports[0];advance(ms)
+        if fault=='verify_expiry_early' and p['state']==1 and model.ports[0] is p and p['deadline']-model.clock_ms==1:model.reset_port(0)
+    model.begin=bad_begin;model.finish=bad_finish;model.advance=bad_advance
+    checks=PortSpeedExecutionChecks(c,Adapter(model));checks.cases=(case,)
     row=checks.run()['checks'][-1]
     assert row['status']=='failed' and row['error'].startswith('Violation:'),row
 

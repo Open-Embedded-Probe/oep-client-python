@@ -27,7 +27,7 @@ class SampleCaptureSerialAdapter:
         roles=(0,1) if case['kind']=='logic' else (1,3)
         exchange(1,16,b''.join(tlv(144,struct.pack('<HBH',2,role,ch)) for ch,role in enumerate(roles)),7)
         settings=tlv(64,b'\2')+tlv(66,struct.pack('<I',1000))+tlv(67,struct.pack('<I',2))+tlv(68,struct.pack('<I',2))
-        exchange(2,16,settings,7);start=exchange(2,17,b'',7);generation=int.from_bytes(start.payload[4:8],'little')
+        exchange(2,16,settings,7);start=exchange(2,17,b'',7);generation=int.from_bytes(start.payload[0:4],'little')
         # A retired, unretained prefix is represented by an explicit seed. No
         # claim that billions of acquisitions were physically performed.
         e.serial=case['seed'];e.base=(1<<40)+17;save('seed')
@@ -35,8 +35,10 @@ class SampleCaptureSerialAdapter:
         feed(rows*2);save('full')
         for first in (case['seed'],(case['seed']+1)&0xffffffff,(case['seed']+2)&0xffffffff,(case['seed']-1)&0xffffffff,(case['seed']+9)&0xffffffff):
             exchange(2,22,struct.pack('<I',first))
-        exchange(2,21,struct.pack('<IQI',generation,e.base-1,1000))
-        exchange(2,21,struct.pack('<IQI',generation,e.base+1000,1000))
+        exchange(2,21,struct.pack('<IQH',generation,e.base-1,1000))
+        exchange(2,21,struct.pack('<IQH',generation,e.base+1000,1000))
+        exchange(2,21,struct.pack('<IQH',generation,e.base+1,0));exchange(2,21,struct.pack('<IQH',generation,e.base-1,0))
+        exchange(2,21,struct.pack('<IQH',generation-1,e.base,1000))
         exchange(2,23,struct.pack('<II',generation-1,case['seed']),7)
         exchange(2,23,struct.pack('<II',generation,(case['seed']-1)&0xffffffff),7);save('before-release')
         release=exchange(2,23,struct.pack('<II',generation,case['seed']),7);release_request=bytes.fromhex(trace[-1]['request_hex']);save('released')
@@ -44,10 +46,12 @@ class SampleCaptureSerialAdapter:
         before=state();reply=model.handle(release_request)
         trace.append(dict(fn=2,op=23,request_hex=release_request.hex(),reply_hex=reply.hex(),before=before,after=state(),replay=True))
         for first in (case['seed'],(case['seed']+1)&0xffffffff,(case['seed']+2)&0xffffffff,(case['seed']+3)&0xffffffff):exchange(2,22,struct.pack('<I',first))
-        exchange(2,21,struct.pack('<IQI',generation,(1<<40)+17,1000))
+        exchange(2,21,struct.pack('<IQH',generation,(1<<40)+17,1000))
         exchange(2,23,struct.pack('<II',generation,(case['seed']+1)&0xffffffff),7)
         feed(rows[:1]);save('partial')
         exchange(2,23,struct.pack('<II',generation,(case['seed']+10)&0xffffffff),7);save('future-release')
+        # Everything finished is released: an old position reads write_pos with gap and no data.
+        exchange(2,21,struct.pack('<IQH',generation,(1<<40)+17,1000))
         exchange(2,18,b'',7);save('stopped')
         exchange(2,22,struct.pack('<I',(case['seed']+3)&0xffffffff))
         return dict(case=case,states=states,trace=trace,rows=rows,seed_scope='logical-retired-prefix')

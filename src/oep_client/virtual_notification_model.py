@@ -30,15 +30,21 @@ class Notifications(Resources):
         return (tlv(7, b'\x00\x06\x00\x0f'),)
 
     def dispatch(self, fn, op, payload):
+        # Replacing or ending a subscription drops its unsent notifications (core §10.3).
         if op == 1:
             self.conditions[fn] = struct.unpack('<HI', payload)
             self.subscriptions[fn] = 0
+            self.discard(fn)
             return b''
         if op == 2:
             self.subscriptions.pop(fn, None)
             self.conditions.pop(fn, None)
+            self.discard(fn)
             return b''
         return super().dispatch(fn, op, payload)
+
+    def discard(self, fn):
+        self.pending = [frame for frame in self.pending if int.from_bytes(frame[1:3], 'little') != fn]
 
     def emit(self, fn, marker):
         if fn not in self.subscriptions:

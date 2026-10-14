@@ -5,7 +5,8 @@ from .conformance_port_speed import PortSpeedChecks
 
 
 class PortSpeedLifecycleChecks(PortSpeedChecks):
-    cases=('FORCE-TRIAL','FORCE-COMMITTED','EXPIRY-TRIAL','EXPIRY-COMMITTED','EXPIRED-TRY-WRITE','EXPIRED-COMMIT-WRITE')
+    cases=('FORCE-TRIAL','FORCE-COMMITTED','EXPIRY-TRIAL','EXPIRY-COMMITTED','EXPIRED-TRY-WRITE','EXPIRED-COMMIT-WRITE',
+           'EXPIRY-PENDING','EXPIRY-PENDING-OLD','EXPIRY-PENDING-OPEN')
 
     def case(self,name):
         self.a.select(self.c,0)
@@ -14,6 +15,7 @@ class PortSpeedLifecycleChecks(PortSpeedChecks):
         with self.c.holding(1000) as sid:
             try:
                 self.a.seed(self.c,sid)
+                if name.startswith('EXPIRY-PENDING'):return self.expiry_pending(name,sid)
                 if name=='EXPIRED-TRY-WRITE':self.prepared(self.request(sid,verify=5000),230400)
                 else:
                     self.trial(sid,5000)
@@ -29,11 +31,11 @@ class PortSpeedLifecycleChecks(PortSpeedChecks):
                     # cleanup must use that owner even if the following check fails.
                     self.c.session,self.c.corr=new,1
                     require(len(p)>=8 and struct.unpack_from('<II',p)==(1000,self.c.boot),'force open response differs');tlvs(p[8:])
-                    self.speed(2 if name.endswith('COMMITTED') else 1,230400)
+                    self.speed(3,230400)
                     state=self.observe('force-prepared')['protected']
                     require(state['ownership']['holder']==new and state['plans']=={},'force did not replace owner/release plan')
                     self.a.finish();self.speed(0,115200)
-                    require(self.a.events()[-1]['baud']==230400,'force response not sent at old baud')
+                    require(self.a.events()[-1]['baud']==230400,'force response not sent at old baud');self.phase(0,115200)
                     self.c.rejected(self.c.request(self.c.core['keepalive'],session=sid,corr=2),'locked')
                 else:
                     before=self.observe('before-expiry')
@@ -42,7 +44,8 @@ class PortSpeedLifecycleChecks(PortSpeedChecks):
                     require(state['protected']['ownership']['holder']==sid,'lease expired early')
                     require(state['ports']==before['ports'],'speed changed before lease boundary')
                     self.a.advance(1)
-                    self.speed(0,115200)
+                    # A commit answer still being written keeps the raised baud until its boundary.
+                    self.speed(3,230400) if name=='EXPIRED-COMMIT-WRITE' else self.speed(0,115200)
                     state=self.observe('expired')['protected']
                     require(state['ownership']['holder'] is None and state['plans']=={},'expiry retained owner/plan')
                     self.c.session=None
@@ -51,6 +54,7 @@ class PortSpeedLifecycleChecks(PortSpeedChecks):
                         state=self.observe('stale-write-complete')['protected']
                         require(state['ownership']['holder'] is None and state['plans']=={},'stale response resurrected owner/plan')
                         self.a.advance(1);self.speed(0,115200)
+                    self.phase(0,115200)
                     self.c.rejected(self.c.request(self.c.core['keepalive'],session=sid),'no_session')
             finally:
                 if self.a.speed()['pending']:self.a.finish()
@@ -58,6 +62,20 @@ class PortSpeedLifecycleChecks(PortSpeedChecks):
                 # cleanup must not hide it with a second no_session rejection.
                 if self.a.state()['ownership']['holder'] is None:self.c.session=None
         self.speed(0,115200)
+
+    def expiry_pending(self,name,sid):
+        # The lease ends while the port's next frame is arriving: a session
+        # return waits for that frame's boundary and nothing cancels it.
+        self.trial(sid,5000);self.commit(sid);self.straddle(1000)
+        require(self.observe('expired')['protected']['ownership']['holder'] is None,'expiry retained owner');self.c.session=None
+        if name=='EXPIRY-PENDING':require(self.during(self.state_request())[:5]==struct.pack('<IB',230400,3),'port_state did not report phase3')
+        elif name=='EXPIRY-PENDING-OLD':self.during(self.request(sid,step=2,verify=0),'no_session')
+        else:
+            new=1 if sid!=1 else 2
+            p=self.during(self.c.request(self.c.core['open'],struct.pack('<IB',1000,0),session=new,corr=1))
+            self.c.session,self.c.corr=new,1
+            require(len(p)>=8 and struct.unpack_from('<II',p)==(1000,self.c.boot),'open response differs');tlvs(p[8:])
+        self.speed(0,115200);self.phase(0,115200)
 
     def run(self):
         start=len(self.c.results)

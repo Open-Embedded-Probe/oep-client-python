@@ -1,4 +1,4 @@
-"""Capture §3.2/3.8: retained segments survive resume; calibration describes past measurements."""
+"""Capture §3.2/3.7: retained segments survive resume; calibration describes past measurements."""
 from fractions import Fraction
 import copy
 import pytest
@@ -8,8 +8,7 @@ from test_virtual_bench_capture_channel_time import cap
 
 
 @pytest.mark.parametrize('mode', [c.ONE_SHOT, c.REPEAT, c.STREAMING])
-@pytest.mark.parametrize('grouped', [False, True])
-@pytest.mark.parametrize('waiting', [False, True])
+@pytest.mark.parametrize('grouped,waiting', [(False, False), (False, True), (True, False)])   # a group: immediate
 def test_calibration_measurement_is_not_in_the_future_and_tracks_last_start(mode, grouped, waiting):
     ep, hst, logic, clock = bench()
     adc, group = c.AnalogCapture(hst), c.CaptureGroup(hst)
@@ -22,7 +21,7 @@ def test_calibration_measurement_is_not_in_the_future_and_tracks_last_start(mode
         ep.captures[adc.fn].value = lambda role, index: 0
         adc.configure(rate=1000, samples=None if mode == c.STREAMING else 8, mode=mode,
                       trigger=(c.CROSS_UP, 3, 1500))
-    if grouped: group.bind([logic, adc], trigger=adc if waiting else None)
+    if grouped: group.bind([logic, adc])
     factory = adc.calibration().factory
     for start_ms in [7, 13]:
         clock.t = start_ms

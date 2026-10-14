@@ -108,12 +108,9 @@ def test_c21_capture_query_and_force_need_their_ops():
     assert h.raw(logic, LOGIC.op["query"], session=False).detail == m.UNKNOWN_OPERATION
     assert h.raw(logic, LOGIC.op["force"]).detail == m.UNKNOWN_OPERATION
     assert h.raw(logic, LOGIC.op["status"], session=False).succeeded
-    ep, h = bench(with_tlvs(virtual_bench.p4_x035(), "oep.fixture.capture-group", ops_without(GROUP.name, "force")))
-    group = fn_of(ep, "oep.fixture.capture-group")
-    assert h.raw(group, GROUP.op["force"]).detail == m.UNKNOWN_OPERATION
     ep, h = bench(virtual_bench.p4_x035())                                             # both offered
     assert h.raw(fn_of(ep, "oep.fixture.logic"), LOGIC.op["force"]).succeeded
-    assert h.raw(fn_of(ep, "oep.fixture.capture-group"), GROUP.op["force"]).succeeded
+    assert "force" not in GROUP.op                                                     # a group has none (a09fa45)
 
 
 def test_c21_order_1_refusals_are_not_remembered_and_do_not_restart_the_lease():
@@ -177,8 +174,10 @@ def test_fn_0_has_exactly_the_eight_core_ops_and_no_subscribe():
     assert ep.ops[0] == set(CORE.op.values()) == {0x01, 0x02, 0x03, 0x04, 0x10, 0x11, 0x12, 0x13}
     h = Host(ep)
     h.open()
-    for op in (0x05, 0x14, m.OP_SUBSCRIBE, m.OP_UNSUBSCRIBE):                 # old plan_release, restart, subscribe
+    for op in (0x05, 0x14, 0x30, 0x32):                                      # old plan_release, restart, subscribe
         assert h.raw(0, op, b"\x00\x00\x00\x00\x00\x00").detail == m.UNKNOWN_OPERATION
+    assert (m.OP_SUBSCRIBE, m.OP_UNSUBSCRIBE) == (0x01, 0x02)                 # fn 0's own 0x01 / 0x02 (core §10.2: no
+                                                                              # notifications from fn 0)
 
 
 def test_c19_after_a_reboot_with_a_repeated_boot_id_the_old_session_is_gone():
@@ -291,14 +290,14 @@ def test_plan_apply_unsupported_or_unavailable_and_nothing_changes():
 
 
 def test_subscribe_is_the_emitting_interfaces_own_op():
-    """core §11.3: subscribe / unsubscribe go to the fn that sends notifications (no target fn in the payload);
+    """core §10.3: subscribe / unsubscribe go to the fn that sends notifications (no target fn in the payload);
     logic, analog and capture-group set them in their ops, every other fn answers unknown_operation at order 1."""
     ep, h = bench(virtual_bench.p4_x035())
     for fn in (7, 11, 12):                                                    # logic, analog, capture-group
         assert {m.OP_SUBSCRIBE, m.OP_UNSUBSCRIBE} <= ep.ops[fn]
         assert h.raw(fn, m.OP_UNSUBSCRIBE).succeeded                          # not subscribed: nothing, ok
         assert h.raw(fn, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0)).succeeded and fn in ep.subscribed
-    for fn in (0, 4, 13):                                                     # the core, gpio, link
+    for fn in (4, 13):                                                        # gpio, link (fn 0: its own 0x01 / 0x02)
         assert not {m.OP_SUBSCRIBE, m.OP_UNSUBSCRIBE} & ep.ops[fn]
         assert h.raw(fn, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0)).detail == m.UNKNOWN_OPERATION
     assert h.raw(7, m.OP_SUBSCRIBE, struct.pack("<H", 0)).detail == m.MALFORMED   # min_bytes(u16) max_delay_ms(u32)
@@ -466,7 +465,8 @@ def test_group_bind_any_one_reason_and_a_bound_tracks_configure_is_cause_4():
     assert ep.captures[7].state == reg.FIXTURE_LOGIC.enum["state"]["capturing"]
     assert h.raw(group, GROUP.op["bind"], struct.pack("<BHH", 2, 7, 7)).detail in (m.MALFORMED, m.UNAVAILABLE)
     assert h.raw(group, GROUP.op["bind"], struct.pack("<BH", 1, 4)).detail in (m.UNSUPPORTED, m.UNAVAILABLE)
-    assert h.raw(group, GROUP.op["bind"], struct.pack("<BH", 1, 7)).detail == m.UNAVAILABLE
+    assert h.raw(group, GROUP.op["bind"], struct.pack("<BH", 1, 7)).succeeded   # the same list: nothing changes
+    assert h.raw(group, GROUP.op["bind"], struct.pack("<B", 0)).detail == m.UNAVAILABLE   # not while it captures
     assert ep.groups[group].tracks == [7]
 
 

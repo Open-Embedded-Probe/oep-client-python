@@ -90,6 +90,48 @@ class NotificationSequenceChecks(RouteChecks):
             self.event_on(self.a.peer, fn, 0, 204)
             self.event_on(self.a.primary, other, 1, 205)
 
+    def discard(self):
+        # Replacing or ending a subscription drops its unsent notifications; a frame already
+        # started on the route completes before the response on that route (core §10.3/10.4).
+        self.fresh()
+        with self.c.holding(60000) as sid:
+            fn, other = self.a.functions
+            self.subscribe(sid, fn); self.subscribe(sid, other)
+            observations = []
+            try:
+                for step, (route, op) in enumerate(((self.a.primary, 1), (self.a.peer, 1), (self.a.primary, 2))):
+                    base = 400 + 10 * step
+                    self.a.hold(self.a.primary, 3)
+                    for target, marker in ((fn, base), (fn, base + 1), (other, base + 2)): self.a.stimulate(target, marker)
+                    self.service()
+                    require(self.a.receive(self.a.primary) == [], 'held writer completed a frame')
+                    queued = self.bounded(self.a.primary)
+                    require(len(queued) == 3, 'started frame and two unsent frames required')
+                    request = self.c.request(op, struct.pack('<HI', 0, 0) if op == 1 else b'', session=sid, fn=fn)
+                    self.a.hold(self.a.primary, None); self.a.submit([(route, request)]); self.service()
+                    frames = self.a.receive(self.a.primary)
+                    observations.append({'route': route, 'op': op, 'frames_hex': [f.hex() for f in frames]})
+                    require(len(frames) == (3 if route == self.a.primary else 2), 'old unsent notification survived or started frame lost')
+                    self.event(frames[0], fn, (0, 1, 0)[step], base)
+                    if route == self.a.primary:
+                        require(frames[1][:5] == struct.pack('<BHBB', 2, struct.unpack_from('<H', request, 1)[0], 1, 0),
+                                'response did not follow the started frame'); tlvs(frames[1][5:])
+                    else:
+                        reply = self.a.receive(self.a.peer)
+                        require(len(reply) == 1 and reply[0][:5] == struct.pack('<BHBB', 2, struct.unpack_from('<H', request, 1)[0], 1, 0),
+                                'other-route response missing'); tlvs(reply[0][5:])
+                    self.event(frames[-1], other, step, base + 2)
+                    if op == 1:
+                        self.event_on(route, fn, 0, base + 3)
+                        if route != self.a.primary:  # move the subscription back for the next step
+                            self.on(self.a.primary, self.c.request(1, struct.pack('<HI', 0, 0), session=sid, fn=fn))
+                    else:
+                        self.a.stimulate(fn, base + 3); self.service()
+                        require(self.a.receive(self.a.primary) == [] and self.a.receive(self.a.peer) == [],
+                                'notification after unsubscribe')
+            finally: self.drain()
+            self.c.observed['discard'] = observations
+
     def unsubscribe(self):
         self.fresh()
         with self.c.holding(60000) as sid:
@@ -157,12 +199,12 @@ class NotificationSequenceChecks(RouteChecks):
             self.fresh()
             require(self.c.max_frame == self.peer.max_frame == 64, 'selected pressure fixture geometry differs')
             self.c.interfaces()
-        self.c.check('IF-NOTIFY-SEQ-CONTEXT', 'core §11.2/11.3; explicit fixture', context)
+        self.c.check('IF-NOTIFY-SEQ-CONTEXT', 'core §10.2/10.3; explicit fixture', context)
         if any(x['status'] != 'passed' for x in self.c.results[start:]): self.c.abort = True
-        for name, method in [('WRAP', self.wrap), ('DROP-WRAP', self.dropped), ('REPLACE', self.replace), ('UNSUBSCRIBE', self.unsubscribe),
+        for name, method in [('WRAP', self.wrap), ('DROP-WRAP', self.dropped), ('REPLACE', self.replace), ('DISCARD', self.discard), ('UNSUBSCRIBE', self.unsubscribe),
                              ('REPLAY', self.replay), ('REPLAY-REFUSED', lambda: self.replay(True)), ('REJECTED', self.rejected)]:
             first = len(self.a.trace)
-            self.c.check('IF-NOTIFY-SEQ-'+name, 'core §5.2/11.2/11.3/11.4; transports §3', method)
+            self.c.check('IF-NOTIFY-SEQ-'+name, 'core §5.2/10.2/10.3/10.4; transports §3', method)
             self.c.results[-1]['adapter_trace'] = self.a.trace[first:]
         rows = self.c.results[start:]
         return dict(status='passed' if all(x['status'] == 'passed' for x in rows) else 'failed', full_conformance=False,

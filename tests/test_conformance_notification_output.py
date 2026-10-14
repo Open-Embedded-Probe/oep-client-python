@@ -89,7 +89,9 @@ class BoundedOutput:
         self.raw_requests.append(request.hex())
         previous_subscription = self.probe.subscription
         self.responses.append(self.packet(self.probe.send(request)))
-        if self.probe.subscription is not previous_subscription and self.probe.output_fault != 'retain_old_notice':
+        retain = self.probe.output_fault == 'retain_old_notice' or (
+            self.probe.output_fault == 'retain_on_unsubscribe' and self.probe.subscription is None)
+        if self.probe.subscription is not previous_subscription and not retain:
             self.notice = None
 
     def event(self, token):
@@ -202,7 +204,10 @@ def run(capacity=1, fault=None, registry=REG, spec=SPEC):
         assert len(messages) == 2 and messages[0][:5] == struct.pack('<BHBB', 2, 101, 1, 0) and messages[1] == notice, 'new notice preceded waiting response'
         report['checks'].append(dict(id=case, status='passed'))
         case = 'UNSUBSCRIBE'
-        core.success(core.call(2, fn=7, sid=1, corr=5))
+        assert output.event(39) is not None  # unsent when unsubscribe arrives
+        output.submit(struct.pack('<BHHBI', 1, 5, 7, 2, 1))
+        messages = decode(output.drain())
+        assert len(messages) == 1 and messages[0][:5] == struct.pack('<BHBB', 2, 5, 1, 0), 'old unsent notification survived unsubscribe'
         assert output.event(40) is None and output.drain() == b''
         core.success(core.call('end', sid=1, corr=6))
         report['checks'].append(dict(id=case, status='passed'))
@@ -226,7 +231,8 @@ def test_bounded_raw_notification_output(capacity):
 
 @pytest.mark.parametrize('fault,case', [('rejected_seq_reset', 'REJECTED-SUBSCRIBE'),
     ('retain_old_notice', 'REPLACEMENT'), ('interleave', 'PARTIAL-FRAME'),
-    ('reuse_dropped_seq', 'PARTIAL-FRAME'), ('notice_first', 'RESPONSE-PRIORITY')])
+    ('reuse_dropped_seq', 'PARTIAL-FRAME'), ('notice_first', 'RESPONSE-PRIORITY'),
+    ('retain_on_unsubscribe', 'UNSUBSCRIBE')])
 def test_output_faults(fault, case):
     report = run(fault=fault)
     assert report['status'] == 'failed'

@@ -45,25 +45,3 @@ def test_analog_crossing_keeps_bounded_history_and_no_sample_before_start(kind,r
         assert (values[available-1]<2500<=values[available]) if kind==c.CROSS_UP else (values[available-1]>2500>=values[available])
     if role==0:
         assert values==[4095 if (first-available+i)%64<32 else 0 for i in range(count)]
-
-
-@pytest.mark.parametrize('pre',[1,10])
-def test_group_early_trigger_shortens_each_track_by_its_actual_rate_history(pre):
-    ep,hst,logic,clock=bench();analog=c.AnalogCapture(hst);group=c.CaptureGroup(hst)
-    core.plan_apply(hst,[(logic.fn,0,20),(logic.fn,1,21),(analog.fn,0,16)])
-    logic.configure(rate=1000,samples=32,trigger=(c.EDGE,1,0),pretrigger=pre)
-    analog.configure(rate=1000,samples=32)
-    group.bind([logic,analog],trigger=logic)
-    for track in [logic,analog]:track.subscribe()
-    hst.subscribe(group.fn);group.start([logic,analog]);clock.t=40;status=group.status()
-    assert status.trigger_ns==2000000 and status.trigger_fn==logic.fn and status.state==c.STATE['done']
-    for track in [logic,analog]:
-        segment,=track.segments();needed=group.pretrigger_of(track,logic)
-        origin=ep.captures[track.fn].t0_ns;absolute=max(0,round(Fraction(status.trigger_ns-origin)*track.config.rate/1000000000));available=min(needed,absolute)
-        assert segment.trigger_index==available and segment.samples==32-needed+available
-        assert bool(segment.flags&2)==(available<needed)
-        assert segment.start_ns==origin+int(Fraction((absolute-available)*1000000000)/track.config.rate)
-    frames=ep.pushes()
-    for track in [logic,analog]:
-        notified=[f for f in frames if struct.unpack_from('<H',f,1)[0]==track.fn]
-        assert [f[5] for f in notified]==[c.EVENT_TRIGGERED,c.EVENT_SEGMENT,c.EVENT_STOPPED]

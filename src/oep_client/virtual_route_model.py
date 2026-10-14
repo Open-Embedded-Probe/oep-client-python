@@ -36,6 +36,11 @@ class RoutedData(Data):
             self.routes.pop(fn, None)
         return value
 
+    def discard(self, fn):
+        # Unsent frames of the old subscription go; a frame already started still completes.
+        for pipe in self.model.pipes.values():
+            pipe['push'] = deque(p for p in pipe['push'] if int.from_bytes(p[1:3], 'little') != fn)
+
     def release(self):
         super().release()
         self.routes.clear()

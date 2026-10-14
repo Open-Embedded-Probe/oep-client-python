@@ -99,7 +99,7 @@ from typing import Callable, Hashable
 from . import catalog, config as cfgmod, virtual_bench, virtual_bench_capture, message as m, registry_legacy as reg
 from . import registry as current_reg     # TRANSITIONAL: the common stream marks of the interfaces that follow a09fa45
 
-TOY_WRITE, TOY_READ = 0x01, 0x02
+TOY_WRITE, TOY_READ = 0x10, 0x11                    # 0x01 / 0x02: subscribe / unsubscribe in every op space
 OK, WAIT, LINE, FAULT, TIMEOUT, STATE = (reg.STATUS[k] for k in ("ok", "wait", "line", "fault", "timeout", "state"))
 _RV, _CON, _GPIO, _UART, _CFG = (reg.TARGET_RISCV_DM, reg.TARGET_CONSOLE, reg.FIXTURE_GPIO, reg.FIXTURE_UART,
                                  reg.PROBE_CONFIG)
@@ -689,6 +689,7 @@ class Endpoint:
         self._via: Hashable = 0                         # and the connection on it (a TCP listener's accepted ones differ)
         # what the simulation is, not the probe's state (a reboot keeps them):
         self.capture_slipped = False                    # every capture segment says flags bit2 (a pace that fell behind)
+        self.capture_fail_start: set[int] = set()       # TEST HOOK: these captures' start fails to initialise (capture §3.2)
         self.uart_clock_hz = 80_000_000                # the UARTs' divider clock (a test lowers it: the item's fallback)
         # the lines outside (a test hook): gpio_world(channel, mode) -> the level an input mode reads (None: the
         # default - gpio_inputs, a pull-up 1); reads see the world as the modes set it (gpio_modes)
@@ -818,34 +819,28 @@ class Endpoint:
 
     @staticmethod
     def _capture_from(decl: list[tuple[int, bytes]], inner: dict) -> virtual_bench_capture.VirtualCapture:
-        """A capture as its describe declares it (modes and their max_samples, the rate range, the frontends) and as it
+        """A capture as its describe declares it (modes and their max_samples, rate_range, the frontends) and as it
         keeps to itself (`inner`: the w it can lay a sample out in, the segment records it keeps, how much a read
-        returns at most - the probe's own choices, oep-if-capture §1.1, §2, §3.2)."""
+        returns at most, whether any rate in the range is kept (`exact`), the analog's skews and diagnostics - the
+        probe's own choices, oep-if-capture §1.1, §2, §3.2, §3.3)."""
         d = reg.FIXTURE_ANALOG.tlv["describe"]                     # the logic's tags are the same numbers
         modes, lo, hi, fronts, most_samples = set(), 1, 1_000_000, {}, {}
         max_pre = virtual_bench_capture.MAX_SAMPLES - 1
-        exact, mr_decl = False, None
         for tag, v in decl:
-            if tag == d["frontend"]:                               # analog: frontend min_mv max_mv attenuation_mdb
-                fe, lo_mv, hi_mv, mdb = struct.unpack("<BiiI", v)
-                fronts[fe] = (lo_mv, hi_mv, mdb)
+            if tag == d["frontend"]:                               # analog: frontend min_mv max_mv
+                fe, lo_mv, hi_mv = struct.unpack("<Bii", v)
+                fronts[fe] = (lo_mv, hi_mv)
             elif tag == d["mode"]:
                 modes.add(v[0])
                 most_samples[v[0]] = struct.unpack_from("<I", v, 1)[0]   # mode max_samples max_segments
             elif tag == d["trigger"]:                              # types(u32) max_pretrigger(u32)
                 max_pre = struct.unpack_from("<I", v, 4)[0]
-            elif tag == d["rate_range"]:                           # min_hz(u32) max_hz(u32) exact(u8)
-                lo, hi, exact = struct.unpack_from("<IIB", v)
-            elif tag == reg.FIXTURE_LOGIC.tlv["describe"]["multirate"] and len(v) >= 13:
-                mr_decl = virtual_bench_capture.mr.Declared.unpack(v)
-            elif tag == catalog.MIN_CLOCK_HZ:
-                lo = struct.unpack("<I", v)[0]
-            elif tag == catalog.MAX_CLOCK_HZ:
-                hi = struct.unpack("<I", v)[0]
+            elif tag == d["rate_range"]:                           # min_hz(u32) max_hz(u32)
+                lo, hi = struct.unpack("<II", v)
         return virtual_bench_capture.VirtualCapture(modes or {virtual_bench_capture.MODE["one_shot"]}, set(inner.get("widths", (8,))), lo, hi,
                                         inner.get("ring", 8), inner.get("max_read", 4096), fronts,
-                                        max_samples=most_samples, max_pretrigger=max_pre, exact=bool(exact),
-                                        multirate_decl=mr_decl)
+                                        max_samples=most_samples, max_pretrigger=max_pre, exact=inner.get("exact", False),
+                                        skews=inner.get("skews"), diagnostics=inner.get("diagnostics", True))
 
     @staticmethod
     def _group_from(decl: list[tuple[int, bytes]], inner: dict) -> virtual_bench_capture.VirtualGroup:
@@ -922,12 +917,8 @@ class Endpoint:
                 analog = self.names[fn] == "oep.fixture.analog"
                 frontend_tag = virtual_bench_capture.ANA.tlv["configure"]["frontend"]
                 known = set(virtual_bench_capture.TLV.values()) | ({frontend_tag} if analog else set())
-                mr_tag = virtual_bench_capture.mr.TAG
-                known.discard(mr_tag)
-                if cap.multirate_decl is not None:
-                    known.add(mr_tag)                              # multirate only where describe declares it (§5.2)
-                # the frontend comes once per channel (capture §3.3), multirate once per role: they repeat
-                got = t.tail(known, repeats={frontend_tag, mr_tag})
+                # the frontend comes once per channel (capture §3.3): it repeats
+                got = t.tail(known, repeats={frontend_tag})
                 fronts = []                                        # (role, frontend, the tag as received)
                 for tag, v in t.repeated:
                     if tag & 0x7F != frontend_tag:
@@ -937,12 +928,14 @@ class Endpoint:
                     fronts.append((v[0], v[1], tag))
                 if len({r for r, _, _ in fronts}) != len(fronts):
                     raise Reject(m.MALFORMED)                      # two frontends for one role (capture §3.3)
-                multirate = [(tag, v) for tag, v in t.repeated if tag & 0x7F == mr_tag]
-                settled = cap.settle(got, t, len(roles), fronts, multirate, query=op == O["query"], planned_roles=roles)
+                settled = cap.settle(got, t, len(roles), fronts, query=op == O["query"], planned_roles=roles)
+                answer = cap.answer(settled)
+                if len(answer) > budget:
+                    raise Reject(m.UNSUPPORTED, bytes([m.TAG_FIXED]))   # the answer would not fit (§3.3, core §4.4)
                 if op == O["configure"]:
                     cap.apply(settled)
                     cap.slipped = self.capture_slipped
-                return self._answer(cap.answer(settled))
+                return self._answer(answer)
             if op in (O["start"], O["stop"], O["force"]):
                 t.tail()                                           # the request's form before the state (core §4.3)
                 if cap.group is not None:
@@ -950,7 +943,10 @@ class Endpoint:
             if op == O["start"]:
                 t.tail()
                 self._events(fn, cap.start(self.uptime_ms(), subscribed=fn in self.subscribed))
-                return m.COMPLETED, m.SUCCESS, struct.pack("<II", 0, cap.generation)   # blocking_ms generation
+                if fn in self.capture_fail_start:                  # TEST HOOK: the start's initialisation failed
+                    cap.state, cap.error = virtual_bench_capture.STATE["error"], virtual_bench_capture.CAP.enum["error"]["peripheral"]
+                    return m.COMPLETED, m.FAILED, struct.pack("<I", cap.generation)   # the same fixed form (§3.2)
+                return m.COMPLETED, m.SUCCESS, struct.pack("<I", cap.generation)
             if op == O["stop"]:
                 t.tail()
                 self._events(fn, cap.stop(self.uptime_ms()))
@@ -963,7 +959,7 @@ class Endpoint:
                 t.tail()
                 return m.COMPLETED, m.SUCCESS, cap.status()
             if op == O["read"]:
-                generation, position, most = t.take("IQI")           # generation position max (§3.2)
+                generation, position, most = t.take("IQH")           # generation position max(u16) (§3.2)
                 t.tail()
                 return m.COMPLETED, m.SUCCESS, cap.read(generation, position, most, budget)
             if op == O["segments"]:
@@ -977,7 +973,10 @@ class Endpoint:
                 return m.COMPLETED, m.SUCCESS, b""
             if op == virtual_bench_capture.ANA.op["calibration"] and cap.analog:
                 t.tail()
-                return m.COMPLETED, m.SUCCESS, cap.calibration()
+                answer = cap.calibration()
+                if len(answer) > budget:
+                    raise Reject(m.UNSUPPORTED, bytes([m.TAG_FIXED]))   # not cut, not left out (§3.7, core §4.4)
+                return m.COMPLETED, m.SUCCESS, answer
         except virtual_bench_capture.Reject as e:
             raise Reject(e.reason, e.payload)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
@@ -1004,9 +1003,9 @@ class Endpoint:
             if op == O["bind"]:
                 n = t.take("B")
                 fns = [t.take("H") for _ in range(n)]
-                got = t.tail({virtual_bench_capture.GRP.tlv["bind"]["trigger_track"]})
-                src = t.fixed(got, virtual_bench_capture.GRP.tlv["bind"]["trigger_track"], 2)
-                grp.bind(self.captures, fns, struct.unpack("<H", src)[0] if src else 0)
+                t.tail()                                           # v1 defines no bind TLV (§4.3)
+                grp.bind(self.captures, fns, [g for g in self.groups.values() if g is not grp],
+                         self.probe.max_frame - m.RESULT_HEADER)
                 return self._answer(b"")
             if op == O["start"]:
                 t.tail()
@@ -1018,13 +1017,6 @@ class Endpoint:
             if op == O["stop"]:
                 t.tail()
                 per, own = grp.stop(self.captures, self.uptime_ms())
-                for track, events in per:
-                    self._events(track, events)
-                self._events(fn, own)
-                return m.COMPLETED, m.SUCCESS, b""
-            if op == O["force"]:
-                t.tail()
-                per, own = grp.force(self.captures, self.uptime_ms())
                 for track, events in per:
                     self._events(track, events)
                 self._events(fn, own)
@@ -1451,23 +1443,29 @@ class Endpoint:
             return self._answer(b"")
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
-    # ---- notifications: the emitting interface's own subscribe / unsubscribe (core §11.3) --------------------
+    # ---- notifications: the emitting interface's own subscribe / unsubscribe (core §10.3) --------------------
     def _subscription(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         """subscribe: min_bytes(u16) max_delay_ms(u32) [TLV] - replaces the fn's subscription atomically (the batching,
-        the transport, seq from 0); unsubscribe: [TLV] - none to end succeeds doing nothing."""
+        the transport, seq from 0); unsubscribe: [TLV] - none to end succeeds doing nothing. Either drops what the old
+        subscription has not sent yet (core §10.3; the bench's frames are whole once handed out)."""
         if op == m.OP_SUBSCRIBE:
             min_bytes, max_delay_ms = t.take("HI")
             t.tail()
+            self._drop_unsent(fn)
             self.subscribed[fn] = (min_bytes, max_delay_ms)
             self.push_link[fn] = self._via                         # sent where the subscribe came (core §11.4)
             self.push_seq[fn] = 0                                  # seq from 0 at every subscribe (core §11.2)
             self.data_since_ms.pop(fn, None)
             return m.COMPLETED, m.SUCCESS, b""
         t.tail()
+        self._drop_unsent(fn)
         self.subscribed.pop(fn, None)
         self.push_link.pop(fn, None)
         self.data_since_ms.pop(fn, None)
         return m.COMPLETED, m.SUCCESS, b""
+
+    def _drop_unsent(self, fn: int) -> None:
+        self.outbox = [f for f in self.outbox if struct.unpack_from("<H", f, 1)[0] != fn]
 
     # ---- oep.probe.plan (oep-if-plan) ------------------------------------------------------------
     def _plan_op(self, plan_fn: int, op: int, t: Take) -> tuple[int, int, bytes]:

@@ -20,13 +20,15 @@ OPERATIONS={
 'oep.fixture.spi-target':list(zip(range(16,20),('configure','arm','read_rx','status'))),
 'oep.fixture.logic':list(zip(range(16,25),('configure','start','stop','force','status','read','segments','release','query')))+[(1,'subscribe'),(2,'unsubscribe')],
 'oep.fixture.analog':list(zip(range(16,26),('configure','start','stop','force','status','read','segments','release','query','calibration')))+[(1,'subscribe'),(2,'unsubscribe')],
-'oep.fixture.capture-group':list(zip(range(16,21),('bind','start','stop','force','status')))+[(1,'subscribe'),(2,'unsubscribe')],
+'oep.fixture.capture-group':[(16,'bind'),(17,'start'),(18,'stop'),(20,'status'),(1,'subscribe'),(2,'unsubscribe')],
 'oep.probe.config':list(zip(range(16,22),('get','set','save','erase','unset','state'))),
 }
 
 
 def setup():
     reg=copy.deepcopy(REG);reg['interface']=[dict(name=name,revision=1,op=[dict(code=code,name=op) for code,op in rows]) for name,rows in OPERATIONS.items()]
+    for spec in reg['interface']:
+        if spec['name'] in ('oep.fixture.logic','oep.fixture.analog'):spec['tlv']={'describe':{'mode':64}}
     reg['describe_common'].update(role_channels=1,max_clock_hz=2,max_length=3,min_clock_hz=4,features=5,channel_group=6)
     model=RegisteredOpsModel(lambda:0,boot_id=17)
     return model,Checks(model.handle,reg,'virtual-resource-1')
@@ -47,13 +49,38 @@ def test_every_minimal_mandatory_op_is_checked(name,code):
 @pytest.mark.parametrize('name,extra,passed',[
  ('oep.target.riscv-dm',{19,22,23},True),('oep.target.riscv-dm',{20},False),('oep.target.riscv-dm',{21},False),('oep.target.riscv-dm',{20,21},True),
  ('oep.probe.config',{18,21},False),('oep.probe.config',{19,21},False),('oep.probe.config',{18,19,21},True),('oep.probe.config',{18,19},False),('oep.probe.config',{21},True),
- ('oep.fixture.logic',{1},False),('oep.fixture.logic',{2},False),('oep.fixture.logic',{1,2,19,24},True),('oep.fixture.logic',{25},False),
- ('oep.fixture.analog',{1,2,19,24},True),('oep.fixture.capture-group',{1},False),('oep.fixture.capture-group',{1,2,19},True),
- ('oep.probe.link',{18,19},True),('oep.probe.link',{19},True),('oep.target.riscv-dm',{17,18},True),('oep.target.console',{20},False),('oep.target.console',{18,20},True),('oep.target.console',{19,21},True),('oep.fixture.uart',{20},False),('oep.fixture.uart',{18,19,20,21},True),('oep.fixture.i2c-target',{20},True),('oep.wire.rvswd',{16},True),('oep.wire.swio',{16},True),('oep.wire.swd',{16},True),
+ ('oep.fixture.logic',{1},False),('oep.fixture.logic',{2},False),('oep.fixture.logic',{1,2,19,23,24},True),('oep.fixture.logic',{25},False),
+ ('oep.fixture.analog',{1,2,19,23,24,25},True),('oep.fixture.analog',{25},True),('oep.fixture.capture-group',{1},False),('oep.fixture.capture-group',{1,2},True),
+ ('oep.fixture.capture-group',{19},False),('oep.fixture.capture-group',{1,2,19},False),
+ ('oep.probe.link',{18},False),('oep.probe.link',{18,19},True),('oep.probe.link',{19},True),('oep.target.riscv-dm',{17,18},True),('oep.target.console',{20},False),('oep.target.console',{18,20},True),('oep.target.console',{19,21},True),('oep.fixture.uart',{20},False),('oep.fixture.uart',{18,19,20,21},True),('oep.fixture.i2c-target',{20},True),('oep.wire.rvswd',{16},True),('oep.wire.swio',{16},True),('oep.wire.swd',{16},True),
 ])
 def test_optional_ops_pairs_and_calibration(name,extra,passed):
     model,c=setup();fn=next(fn for fn,n in model.selection.items() if n==name);model.extension.offered[fn].update(extra)
     r=RegisteredOpsChecks(c,model.selection).run();assert (r['status']=='passed')==passed,r['checks']
+
+
+def mode(value,samples=16,segments=0):
+    import struct
+    from oep_client.virtual_core import tlv
+    return tlv(64,struct.pack('<BII',value,samples,segments))
+
+
+@pytest.mark.parametrize('name,modes,extra,passed',[
+ *[(name,modes,extra,passed) for name in ('oep.fixture.logic','oep.fixture.analog') for modes,extra,passed in (
+   ((1,),set(),True),((2,),set(),False),((2,),{23},True),((1,2),set(),False),((3,),set(),False),((3,),{1},False),
+   ((3,),{1,2},True),((1,2,3),{1,2},False),((1,2,3),{23},False),((1,2,3),{1,2,23},True),((1,3),{23},False))],
+])
+def test_mode_required_capture_ops(name,modes,extra,passed):
+    # release is required only with mode 2, subscribe/unsubscribe only with mode 3 (capture §1/3.2/3.4).
+    model,c=setup();fn=next(fn for fn,n in model.selection.items() if n==name)
+    model.extension.offered[fn].update(extra);model.extension.extra[fn]=[mode(m,16,2 if m==2 else 0) for m in modes]
+    r=RegisteredOpsChecks(c,model.selection).run();assert (r['status']=='passed')==passed,r['checks']
+    if passed:assert c.observed['registered_op_contracts'][str(fn)]['modes']==sorted(modes)
+
+
+def test_mode_tag_must_be_selected():
+    model,c=setup();next(s for s in c.reg['interface'] if s['name']=='oep.fixture.logic')['tlv']={}
+    r=RegisteredOpsChecks(c,model.selection).run();assert r['checks'][0]['status']=='failed'
 
 
 def test_future_mandatory_op_is_not_silently_ignored():

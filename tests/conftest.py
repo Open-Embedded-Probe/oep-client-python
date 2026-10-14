@@ -15,6 +15,13 @@ def _session_dir(request, tmp_path_factory, monkeypatch):
 # follows the spec stage by stage (docs/conformance-spec-compatibility.ja.md); each entry is removed when its stage
 # rewrites or deletes the test. Keys are node ids or their prefixes.
 PENDING_FOLLOW = {
+    "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[logic ": "capture: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[analog ": "capture: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[capture-group ": "capture: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[logic ": "capture: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[analog ": "capture: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[capture-group ": "capture: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_multirate_streams_both_ways": "capture: multirate is gone from the spec (a09fa45)",
     "tests/test_vectors.py::test_discovery_": "core: discovery moved to test_spec_vectors.py (describe tags renumbered)",
     "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[logic describe: multirate declared]":
         "core: common describe tags renumbered; multirate removed from the spec",

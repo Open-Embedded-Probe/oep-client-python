@@ -1,4 +1,4 @@
-"""Capture §2.2/3.2/3.4/4: one-shot only publishes elapsed, completed samples."""
+"""Capture §2.2/3.2/3.4/4: one-shot only publishes elapsed, completed samples (a group: immediate tracks only)."""
 import struct
 from fractions import Fraction
 import pytest
@@ -25,22 +25,22 @@ def setup(analog_source, grouped, trigger, pre=0):
         cap.value = value
     group = c.CaptureGroup(hst) if grouped else None
     if group:
-        group.bind(tracks, trigger=source if trigger != 'none' else None)
+        group.bind(tracks)
         hst.subscribe(group.fn);group.start(tracks)
     else:source.start()
     return ep, tracks, group, clock
 
 
 def read_available(track):
-    payload = track._call(track.READ, struct.pack('<IQI', track.generation, 0, 32), locked=False).payload
-    position, flags, count = struct.unpack_from('<QBI', payload)
-    assert position == 0 and count == len(payload) - 13 and not flags & 2
-    return payload[13:]
+    payload = track._call(track.READ, struct.pack('<IQH', track.generation, 0, 32), locked=False).payload
+    position, flags, count = struct.unpack_from('<QBH', payload)
+    assert position == 0 and count == len(payload) - 11 and not flags & 2
+    return payload[11:]
 
 
 @pytest.mark.parametrize('analog_source', [False, True])
-@pytest.mark.parametrize('grouped', [False, True])
-@pytest.mark.parametrize('trigger,pre', [('none', 0), ('natural', 0), ('natural', 4), ('force', 0), ('force', 4)])
+@pytest.mark.parametrize('grouped,trigger,pre', [(False, 'none', 0), (False, 'natural', 0), (False, 'natural', 4),
+                                                 (False, 'force', 0), (False, 'force', 4), (True, 'none', 0)])
 def test_one_shot_does_not_complete_or_expose_future_data(analog_source, grouped, trigger, pre):
     ep, tracks, group, clock = setup(analog_source, grouped, trigger, pre)
     generation = {t.fn: t.generation for t in tracks}
@@ -90,7 +90,7 @@ def test_stop_commits_only_elapsed_one_shot_samples(analog_source, grouped):
 def test_last_sample_boundary_uses_realized_fractional_rate_and_analog_skew(analog, channels, rate):
     from oep_client.virtual_bench_capture import VirtualCapture
     cap = VirtualCapture({c.ONE_SHOT}, {8}, 1, 1_000_000,
-                         frontends={0: (0, 3300, 0)} if analog else {})
+                         frontends={0: (0, 3300)} if analog else {})
     cap.mode, cap.state, cap.rate = c.ONE_SHOT, c.STATE['configured'], rate
     cap.samples, cap.channels, cap.segments_max = 4, channels, 1
     cap.width = channels * 2 if analog else 8

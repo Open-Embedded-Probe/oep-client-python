@@ -42,7 +42,7 @@ class Offered:
 CORE_NAME = ""                       # fn 0 is the core: it has no name and is never listed (core §0, §7.2)
 PLAN_ROLE_INTERFACES = {"oep.fixture.gpio", "oep.fixture.uart", "oep.fixture.i2c-target", "oep.fixture.spi-target",
                         "oep.fixture.logic", "oep.fixture.analog"}   # the interfaces with plan roles (oep-if-plan)
-STAND_IN_OPS = (0x01, 0x02)          # the endpoint's two stand-in ops of an fn it does not simulate (VIRTUAL BENCH ONLY)
+STAND_IN_OPS = (0x10, 0x11)          # the endpoint's two stand-in ops of an fn it does not simulate (VIRTUAL BENCH ONLY)
 CORE_REQUIRED = tuple(reg.CORE.op)   # fn 0's ops: every one mandatory, none optional (core §1.2, §12)
 
 
@@ -196,12 +196,13 @@ CORE_CHIP = reg.CORE.tlv["describe"]["chip"]
 UNIT_ID = re.compile(r"[a-z0-9-]{1,32}")                    # an x- unit_id is not unique (core §7.5, C-24)
 
 
-def _analog_decl(frontends: list[tuple[int, int, int, int]], max_samples: int) -> tuple[bytes, ...]:
-    """oep.fixture.analog's declarations (oep-if-capture §3.5): one-shot / repeat / streaming, 4 channels, the
-    frontends (number, min_mv, max_mv, attenuation_mdb), triggers cross up / down."""
-    out = tuple(catalog.tlv(_ANAD["mode"], struct.pack("<BII", _CAPM[k], max_samples, 8 if k == "repeat" else 1))
+def _analog_decl(frontends: list[tuple[int, int, int]], max_samples: int, min_hz: int, max_hz: int) -> tuple[bytes, ...]:
+    """oep.fixture.analog's declarations (oep-if-capture §3.5): one-shot / repeat / streaming, rate_range, 4 channels,
+    the frontends (number, min_mv, max_mv at the input pin), triggers cross up / down."""
+    out = tuple(catalog.tlv(_ANAD["mode"], struct.pack("<BII", _CAPM[k], max_samples, 8 if k == "repeat" else 0))
                 for k in ("one_shot", "repeat", "streaming"))
-    out += tuple(catalog.tlv(_ANAD["frontend"], struct.pack("<BiiI", *f)) for f in frontends)
+    out += (catalog.tlv(_ANAD["rate_range"], struct.pack("<II", min_hz, max_hz)),)
+    out += tuple(catalog.tlv(_ANAD["frontend"], struct.pack("<Bii", *f)) for f in frontends)
     return out + (catalog.u8(_ANAD["channels"], 4),
                   catalog.tlv(_ANAD["trigger"], struct.pack("<II", 0b11001, max_samples - 1)))   # immediate, cross up / down
     # no features: revision 1 defines no bit (query, force, subscribe / unsubscribe: every op offered, the ops tag)
@@ -213,21 +214,16 @@ def _group_decl(tracks: list[int]) -> tuple[bytes, ...]:
 _CAPM = reg.FIXTURE_LOGIC.enum["mode"]
 
 
-def _capture_decl(modes: list[str], max_channels: int, max_samples: int, ring: int) -> tuple[bytes, ...]:
-    """oep.fixture.logic's declarations (oep-if-capture §3.5): a mode entry per mode (mode, max_samples, max_segments),
-    channels (max), the trigger types (immediate, level, edge) with the most pretrigger."""
-    out = tuple(catalog.tlv(_CAPD["mode"], struct.pack("<BII", _CAPM[k], max_samples, ring if k == "repeat" else 1))
+def _capture_decl(modes: list[str], max_channels: int, max_samples: int, ring: int, min_hz: int,
+                  max_hz: int) -> tuple[bytes, ...]:
+    """oep.fixture.logic's declarations (oep-if-capture §3.5): a mode entry per mode (mode, max_samples, max_segments:
+    0 outside repeat), rate_range, channels (max), the trigger types (immediate, level, edge) with the most pretrigger."""
+    out = tuple(catalog.tlv(_CAPD["mode"], struct.pack("<BII", _CAPM[k], max_samples, ring if k == "repeat" else 0))
                 for k in modes)
-    return out + (catalog.u8(_CAPD["channels"], max_channels),
+    return out + (catalog.tlv(_CAPD["rate_range"], struct.pack("<II", min_hz, max_hz)),
+                  catalog.u8(_CAPD["channels"], max_channels),
                   catalog.tlv(_CAPD["trigger"], struct.pack("<II", 0b111, max_samples - 1)))   # types u32, max_pretrigger
     # no features: revision 1 defines no bit (query, force, subscribe / unsubscribe: every op offered, the ops tag)
-
-
-def _multirate_decl(policies: int = 0b111, min_d: int = 2, max_d: int = 1024, pow2: bool = False) -> tuple[bytes, ...]:
-    """oep.fixture.logic's multirate (oep-if-capture §5.1): the policies (bit p: policy p), d 2 .. max_d (d 1 always),
-    every integer or powers of 2 only."""
-    from .multirate import Declared
-    return (catalog.tlv(_CAPD["multirate"], Declared(policies, min_d, max_d, pow2).value()),)
 
 
 def _capture_inner(widths: list[int], ring: int, max_read: int) -> tuple[tuple[str, object], ...]:
@@ -369,10 +365,8 @@ def p4_x035() -> VirtualProbe:
         _uart(5, 0, pins, 3_000_000),
         _uart(6, 1, pins, 3_000_000),
         # the P4's PARLIO: w 1-16, one-shot / repeat / streaming
-        Offered(7, 0, "oep.fixture.logic", _roles({k: pins for k in range(16)}) + (
-            catalog.u32(MAX_CLOCK_HZ, 20_000_000), catalog.u32(MIN_CLOCK_HZ, 1_000),
-            catalog.u16(MAX_LENGTH, 65000))
-            + _capture_decl(["one_shot", "repeat", "streaming"], 16, 1 << 20, 8) + _multirate_decl(),
+        Offered(7, 0, "oep.fixture.logic", _roles({k: pins for k in range(16)})
+            + _capture_decl(["one_shot", "repeat", "streaming"], 16, 1 << 20, 8, 1_000, 20_000_000),
             inner=_capture_inner([1, 2, 4, 8, 16], 8, 4096)),
         _i2c_target(8, pins, max_length=128, max_hz=1_000_000, features=0, queue_depth=8,
                     max_stretch_us=100_000),                                                       # stretch
@@ -380,9 +374,8 @@ def p4_x035() -> VirtualProbe:
                 + _spi_decl(max_length=64, max_hz=3_000_000, features=0b1, queue_depth=8)),             # LSB first
         _config(10, 0),
         # the P4's ADC1 (GPIO16-23): one ADC for all its channels, 611 Hz - 83.3 kHz in all; ESP32-style attenuations
-        Offered(11, 0, "oep.fixture.analog", _roles({k: list(range(16, 24)) for k in range(4)}) + (
-            catalog.u32(MAX_CLOCK_HZ, 83_333), catalog.u32(MIN_CLOCK_HZ, 611))
-            + _analog_decl([(0, 0, 950, 0), (1, 0, 1250, 2500), (2, 0, 1750, 6000), (3, 0, 3100, 12000)], 65536),
+        Offered(11, 0, "oep.fixture.analog", _roles({k: list(range(16, 24)) for k in range(4)})
+            + _analog_decl([(0, 0, 950), (1, 0, 1250), (2, 0, 1750), (3, 0, 3100)], 65536, 611, 83_333),
             inner=_capture_inner([16], 8, 4096)),
         # the logic (fn 7) and the analog (fn 11) together; the ADC's 83.3 kHz is shared by its channels (the probe's
         # own budget: a bind past it is refused unavailable, capture §4.2)
@@ -414,9 +407,8 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
         _gpio(4, wired + [23]),
         _uart(5, 0, wired, 115_200),
         # the classic ESP32's GPIO sampler: a byte a sample (w 8), one-shot
-        Offered(6, 0, "oep.fixture.logic", _roles({k: wired for k in range(4)}) + (
-            catalog.u32(MAX_CLOCK_HZ, 2_000_000), catalog.u32(MIN_CLOCK_HZ, 400_000))
-            + _capture_decl(["one_shot"], 8, 65536, 1), inner=_capture_inner([8], 1, 480)),
+        Offered(6, 0, "oep.fixture.logic", _roles({k: wired for k in range(4)})
+            + _capture_decl(["one_shot"], 8, 65536, 1, 400_000, 2_000_000), inner=_capture_inner([8], 1, 480)),
         _i2c_target(7, wired, max_length=16, max_hz=100_000, features=0, queue_depth=4),       # no stretch
         # Two fixed pin sets (an example of channel_group; GPIO23 is the DUT's NRST on this jig); MSB first only.
         Offered(8, 0, "oep.fixture.spi-target", (

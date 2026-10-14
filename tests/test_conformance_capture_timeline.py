@@ -1,20 +1,47 @@
+import copy
+import struct
 import pytest
 from oep_client.conformance import Checks
 from oep_client.conformance_capture_timeline import CaptureTimelineChecks
 from oep_client.conformance_capture_timeline_sample import SampleCaptureTimelineAdapter
 from oep_client.virtual_capture_timeline_model import CaptureTimelineModel
-from test_conformance_capture_group import setup as group_setup
+from test_conformance_registered_ops import setup as registered_setup
+
+
+# Independent literal capture a09fa45 tags (registry/oep-v1.toml), not the runtime client's registry.
+TRACK={'configure':{'mode':0x40,'rate':0x42,'samples':0x43,'segments':0x44,'trigger':0x45,'pretrigger':0x46},
+       'configure_answer':{'actual_rate':0x50,'layout':0x51,'actual_samples':0x52,'actual_segments':0x53},
+       'status_answer':{'error':0x01},'data':{'generation':0x01,'segment_info':0x02},
+       'describe':{'mode':0x40,'rate_range':0x41,'channels':0x44,'trigger':0x45}}
+ANALOG=copy.deepcopy(TRACK);ANALOG['configure']['frontend']=0x47;ANALOG['describe']['frontend']=0x46
+ANALOG['configure_answer'].update(scale=0x55,skew=0x57,frontend_used=0x58,reference=0x59);ANALOG['calibration_answer']={'factory':0x01,'vrefint':0x02}
+EVENTS={'segment':0x01,'stopped':0x02,'triggered':0x03}
+TAGS={'oep.probe.plan':({'plan_apply':{'role_assignment':0x10},'describe':{'plan_roles':0x40}},{}),
+      'oep.fixture.analog':(ANALOG,EVENTS),'oep.fixture.logic':(TRACK,EVENTS),
+      'oep.fixture.capture-group':({'bind':{},'describe':{'tracks':0x40}},{'stopped':0x02})}
 
 
 def setup():
-    _,old=group_setup();model=CaptureTimelineModel(boot_id=17)
-    return model,Checks(model.handle,old.reg,'virtual-resource-1')
+    _,old=registered_setup();reg=old.reg
+    reg['core']['tlv']['unavailable_payload']={'cause':1,'fn':5}
+    for spec in reg['interface']:
+        if spec['name'] in TAGS:spec['tlv'],spec['event']=copy.deepcopy(TAGS[spec['name']])
+    model=CaptureTimelineModel(boot_id=17)
+    return model,Checks(model.handle,reg,'virtual-resource-1')
+
+
+def run(model,checks,scenario,checker=CaptureTimelineChecks):
+    instance=checker(checks,SampleCaptureTimelineAdapter(model));instance.scenarios=(scenario,)
+    return instance.run()
+
+
+def failed(result,name='OEP-TIMELINE-0'):
+    return next(r for r in result['checks'] if r['id']==name)['status']=='failed'
 
 
 @pytest.mark.parametrize('scenario',CaptureTimelineChecks.scenarios)
 def test_cross_rate_acquisition(scenario):
-    model,checks=setup();checker=CaptureTimelineChecks(checks,SampleCaptureTimelineAdapter(model));checker.scenarios=(scenario,)
-    result=checker.run()
+    model,checks=setup();result=run(model,checks,scenario)
     assert result['status']=='passed',[(r['id'],r.get('error')) for r in result['checks'] if r['status']!='passed']
     assert not result['full_conformance']
 
@@ -28,11 +55,12 @@ def test_timeline_declarations(kind):
     assert result['status']=='passed',result['checks']
 
 
-@pytest.mark.parametrize('method,args',[('timeline_program',(2,True)),('timeline_program',(7,1)),('timeline_advance_to',(-1,)),('timeline_advance_to',(True,)),('group_feed',([],))])
+@pytest.mark.parametrize('method,args',[('timeline_advance_to',(-1,)),('timeline_advance_to',(True,)),('timeline_advance_to',(2000000000,)),
+                                        ('timeline_fail',(2,1)),('timeline_fail',(7,1)),('timeline_fail_next_start',(2,9)),('timeline_seed',(1<<32,0,0))])
 def test_bad_scheduler_controls_do_not_mutate(method,args):
-    model,_=setup();before=model.group_state()
+    model,_=setup();before=model.timeline_state()
     with pytest.raises(ValueError):getattr(model,method)(*args)
-    assert model.group_state()==before
+    assert model.timeline_state()==before
 
 
 @pytest.mark.parametrize('scenario',CaptureTimelineChecks.scenarios)
@@ -42,53 +70,101 @@ def test_wire_failure_is_detected(scenario):
         reply=original(req)
         if int.from_bytes(req[3:5],'little')==4:reply=reply[:4]+bytes(((reply[4]+1)&255,))+reply[5:]
         return reply
-    checks.send=broken;checker=CaptureTimelineChecks(checks,SampleCaptureTimelineAdapter(model));checker.scenarios=(scenario,)
-    result=checker.run()
-    assert next(r for r in result['checks'] if r['id']=='OEP-TIMELINE-0')['status']=='failed'
+    checks.send=broken;assert failed(run(model,checks,scenario))
 
 
-@pytest.mark.parametrize('fault',['future','missing_history','wrong_rate','adc_data','logic_data','floor_nearest','no_short','old_generation','keep_cache','skip_sample'])
-def test_scheduler_and_data_faults_are_detected(fault):
+ONE_SHOT=(1,(2,3),(1000,333),1234567)
+STREAM=(3,(2,3),(1000,333),1234567)
+STREAM_LOGIC=(3,(3,2),(1000,333),0)
+
+
+def patch_tracks(model,fault,hook):
+    """Wrap every installed fixture so restart keeps the injected fault."""
+    install=model.install
+    def faulty_install():
+        install()
+        for track in model.extension.tracks.values():hook(model.extension,track)
+    model.install=faulty_install
+
+
+def track_fault(fault):
+    def hook(group,track):
+        flush,read,finish,dispatch,encode=track.flush,track.read,track.finish,track.dispatch,track.encode
+        if fault=='future_sample':track.write_pos=lambda t=track:t.position+t.confirmed(len(t.current)+(1 if t.state==3 else 0))
+        if fault=='unconfirmed_byte':track.confirmed=lambda n,t=track:t.full(n)
+        if fault=='wrong_data':track.encode=lambda rows,t=track:bytes(b^1 for b in encode(rows))
+        if fault in ('read_requested_position','read_no_gap','read_gap_position','read_zero_max'):
+            def broken_read(payload,t=track):
+                out=read(payload);position,flags,count=struct.unpack_from('<QBH',out);generation,requested,maximum=struct.unpack('<IQH',payload)
+                if fault=='read_requested_position' and requested>=t.write_pos():return struct.pack('<QBH',requested,0,0)
+                if fault=='read_no_gap' and flags&2:return struct.pack('<QBH',position,flags&~2,count)+out[11:]
+                if fault=='read_gap_position' and flags&2 and not count:return struct.pack('<QBH',requested,flags,0)
+                if fault=='read_zero_max' and maximum==0 and requested<t.write_pos():return struct.pack('<QBH',requested,flags|2,0)
+                return out
+            track.read=broken_read
+        if fault=='segment_start':
+            def broken_finish(short=False,t=track):
+                finish(short)
+                if t.segments:row=t.segments[-1];t.segments[-1]=row[:3]+(row[3]+1,)+row[4:]
+            track.finish=broken_finish
+        if fault in ('cross_segment','no_segment_info','info_samples','info_start','generation_tlv','segment_event','extra_frame_byte'):
+            def broken_flush(t=track):
+                before=len(t.out);flush()
+                for k in range(before,len(t.out)):
+                    frame=t.out[k]
+                    if frame[0]!=4:continue
+                    size=struct.unpack_from('<H',frame,13)[0];tail=frame[15+size:]
+                    info=list(struct.unpack('<QIQI',tail[10:34]))
+                    if fault=='no_segment_info':tail=tail[:7]
+                    if fault=='info_samples':info[1]+=1
+                    if fault=='info_start':info[2]+=1000
+                    if fault=='generation_tlv':tail=tail[:3]+struct.pack('<I',t.generation+1)+tail[7:]
+                    if fault in ('no_segment_info','generation_tlv'):t.out[k]=frame[:15+size]+tail;continue
+                    t.out[k]=frame[:15+size]+tail[:10]+struct.pack('<QIQI',*info)
+                if fault=='cross_segment' and not getattr(t,'faulted',False):
+                    frames=[k for k in range(before,len(t.out)) if t.out[k][0]==4]
+                    for i,j in zip(frames,frames[1:]):
+                        a,b=t.out[i],t.out[j];sa=struct.unpack_from('<H',a,13)[0];sb=struct.unpack_from('<H',b,13)[0]
+                        if a[15+sa+3:15+sa+11]!=b[15+sb+3:15+sb+11] and len(a)+sb<=t.ep.probe.max_frame:
+                            t.out[i]=a[:13]+struct.pack('<H',sa+sb)+a[15:15+sa]+b[15:15+sb]+a[15+sa:];del t.out[j]
+                            for m in [m for m in range(j,len(t.out)) if struct.unpack_from('<H',t.out[m],1)[0]==t.fn]:t.out[m]=t.out[m][:3]+struct.pack('<H',struct.unpack_from('<H',t.out[m],3)[0]-1)+t.out[m][5:]
+                            t.seq=(t.seq-1)&0xffff;t.faulted=True;break
+                if fault=='segment_event' and t.config['mode']==3 and t.segments and t.subscribed and not getattr(t,'faulted',False):
+                    t.faulted=True;t.event(1,struct.pack('<IQIQIIBI',*t.segments[0]))
+            track.flush=broken_flush
+    return hook
+
+
+@pytest.mark.parametrize('fault,scenario',[
+    ('future_sample',ONE_SHOT),('unconfirmed_byte',(1,(3,2),(333,1000),0)),('wrong_data',ONE_SHOT),('segment_start',ONE_SHOT),
+    ('read_requested_position',ONE_SHOT),('read_no_gap',STREAM),('read_gap_position',STREAM),('read_zero_max',ONE_SHOT),
+    ('cross_segment',STREAM_LOGIC),('no_segment_info',STREAM),('info_samples',STREAM),('info_start',STREAM),
+    ('generation_tlv',STREAM),('segment_event',STREAM),('unconfirmed_byte',STREAM_LOGIC),('wrong_data',STREAM)])
+def test_track_faults_are_detected(fault,scenario):
+    model,checks=setup();patch_tracks(model,fault,track_fault(fault))
+    result=run(model,checks,scenario);assert failed(result),result['checks']
+
+
+@pytest.mark.parametrize('fault',['zero_generation','start_without_subscription','keep_subscription','stale_start_ns'])
+def test_group_faults_are_detected(fault):
     model,checks=setup();install=model.install
     def faulty_install():
-        install();e=model.extension;arrival=e.arrival;sample=e.sample;fire=e.fire;release=e.release_plans
-        def broken_arrival(fn):
-            arrival(fn)
-            if fault=='missing_history' and e.state()==2 and fn==3:e.grids[fn]['values'].clear()
-            if fault=='skip_sample' and fn==3:e.grids[fn]['next']+=1
-        def broken_sample(fn,index):
-            result=sample(fn,index)
-            if fault=='adc_data' and fn==2:result[0]^=1
-            if fault=='logic_data' and fn==3:result[1]^=1
-            return result
-        def broken_fire(forced=False):
-            fire(forced)
-            if fault=='floor_nearest':e.tracks[3].trigger_index=max(0,e.tracks[3].trigger_index-1)
-        def broken_release(functions):
-            before=dict(e.grids);release(functions)
-            if fault=='keep_cache':e.grids=before
-        e.arrival=broken_arrival;e.sample=broken_sample;e.fire=broken_fire;e.release_plans=broken_release
-        for fn in (2,3):
-            track=e.tracks[fn];finish=track.finish
-            def broken_finish(short=False,track=track,finish=finish):
-                finish(False if fault=='no_short' else short)
-                if fault=='old_generation' and track.segments:
-                    row=track.segments[-1];track.segments[-1]=row[:7]+(0,)
-            track.finish=broken_finish
+        install();e=model.extension;start=e.start;release=e.release
+        def broken_start():
+            if fault=='start_without_subscription':
+                for fn in e.bound:e.tracks[fn].subscribed=True
+            out=start()
+            if fault=='zero_generation':e.generation=0;out=out[:8]+struct.pack('<I',0)+out[12:]
+            if fault=='stale_start_ns':e.start_ns+=1
+            return out
+        def broken_release():
+            kept={fn:t.subscribed for fn,t in e.tracks.items()};release()
+            if fault=='keep_subscription':
+                for fn,t in e.tracks.items():t.subscribed=kept[fn]
+        e.start=broken_start;e.release=broken_release
     model.install=faulty_install
-    if fault=='future':
-        original=model.timeline_advance_to
-        model.timeline_advance_to=lambda ns:original(ns+10000000)
-    if fault=='wrong_rate':
-        program=model.timeline_program
-        def broken_program(fn,rise):
-            program(fn,rise)
-            if fn==3:model.extension.tracks[3].config['rate']=1000
-        model.timeline_program=broken_program
-    event='force0' if fault=='no_short' else 'force2500000' if fault=='floor_nearest' else 'rise3'
-    checker=CaptureTimelineChecks(checks,SampleCaptureTimelineAdapter(model));checker.scenarios=((2,(1000,333),2,event),)
-    result=checker.run()
-    assert next(r for r in result['checks'] if r['id']=='OEP-TIMELINE-0')['status']=='failed',result['checks']
+    scenario=STREAM if fault in ('start_without_subscription','keep_subscription') else ONE_SHOT
+    result=run(model,checks,scenario);assert failed(result),result['checks']
 
 
 @pytest.mark.parametrize('invalid',['scope','selection'])

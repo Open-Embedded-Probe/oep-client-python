@@ -272,7 +272,3 @@ def serial_page_start(kept: list[int], next_serial: int, from_serial: int) -> in
         return 0
 
 
-def next_generation(generation: int) -> int:
-    """The generation after `generation` (oep-if-capture §3.4: u32, the first start gives 1, 0xFFFFFFFF is followed by
-    1; 0 only means "before the first start"). Generations are compared for equality only."""
-    return (generation + 1) & 0xFFFFFFFF or 1

@@ -12,10 +12,15 @@ lock有無や番号の空きから推測しない。revision 1の17 interfaceに
 
 - plan/restart、ARM-ADI、GPIO、SPIの表のopは必須。
 - console/UARTのmarks/clear/mark/writeは任意。markを持つならmarksも持つ。
-- wireのscan、I2Cのstretchは任意。linkのport_speedとport_stateは任意（port_speedにport_stateが伴うことはport_speed検査の追従で加える）。
+- wireのscan、I2Cのstretchは任意。linkのport_speedとport_stateは任意。port_speedを持つならport_stateも持つ。
 - RISC-Vのhalt/resume/reset/block/run/stepは任意。read_block/write_blockは組で持つ。
-- captureのforce/query/subscribe/unsubscribeは任意。capture-groupはforce/subscribe/unsubscribeが任意。
-  subscribe/unsubscribeは組で持つ。analogのcalibrationは必須、logicには宣言しない。
+- logic/analogのconfigure/start/stop/status/read/segmentsは必須。force/queryは任意（capture §3.2）。
+  releaseはdescribeのmode（0x40）にmode 2を宣言したときだけ必須、ほかでは任意（capture §1/§3.2）。
+  subscribeはmode 3を宣言したときだけ必須、ほかでは任意（capture §3.2/§3.4）。subscribe/unsubscribeは組で持つ。
+  analogのcalibrationは任意、logicには宣言しない（analogのcalibrationの番号で確かめる）。
+- capture-groupはbind/start/stop/statusが必須、subscribe/unsubscribeは任意の組。forceはv1に無く（capture §4.1/§4.3）、
+  logicのforceと同じ番号0x13を宣言しない。
+- modeの行は先頭byteだけを読む。modeの形・重複・個数は[capture/configのdescribe検査](capture-metadata-conformance.ja.md)が扱う。
 - configのsave/eraseは任意だが組で持つ。saveを持つならstateも持つ。get/set/unsetは必須。
 - 選択registryへ追加されたopを、既知の任意op名でなければ必須として確認し、黙って無視しない。
   optional政策とregistryが合わなければ前提で停止する。新標準名/revisionへの自動適用はしない。

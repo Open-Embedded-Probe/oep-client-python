@@ -11,7 +11,7 @@ from .virtual_core import Core, Reject, tlv
 
 class Analog(Logic):
     def __init__(self,ep):
-        super().__init__(ep);self.calibration_ns=None
+        super().__init__(ep);self.calibration_ns=None;self.factory_raw=b'\x12\x34'
     def list_page(self,first,limit):
         rows=[struct.pack('<HHBB',fn,0,1,len(name))+name for fn,name in
               ((1,b'oep.probe.plan'),(2,b'oep.fixture.analog'))]
@@ -23,9 +23,9 @@ class Analog(Logic):
     def describe(self,fn):
         if fn==1:return super().describe(fn)
         return (tlv(7,b'\x10\xf7\x03'),*(tlv(1,bytes((role,0,0,3))) for role in (1,3)),
-                tlv(5,b'\0'*4),tlv(64,struct.pack('<BII',1,16,1)),tlv(64,struct.pack('<BII',2,16,2)),
-                tlv(65,struct.pack('<IIB',100,1000,1)),tlv(68,b'\2'),tlv(69,struct.pack('<II',25,8)),
-                tlv(70,struct.pack('<BiiI',0,0,3300,0)),tlv(70,struct.pack('<BiiI',1,-1000,1000,0)))
+                tlv(5,b'\0'*4),tlv(64,struct.pack('<BII',1,16,0)),tlv(64,struct.pack('<BII',2,16,2)),
+                tlv(65,struct.pack('<II',100,1000)),tlv(68,b'\2'),tlv(69,struct.pack('<II',25,8)),
+                tlv(70,struct.pack('<Bii',0,0,3300)),tlv(70,struct.pack('<Bii',1,-1000,1000)))
     def plan(self,op,payload,tags):
         if op==17:return super().plan(op,payload,tags)
         rows=[(raw,*struct.unpack('<HBH',v)) for raw,v in tags]
@@ -82,7 +82,7 @@ class Analog(Logic):
         return dict(mode=mode,rate=rate,samples=samples,segments=segments,trigger=trigger,pretrigger=pre,frontend=frontend)
     def answer(self,c):
         rows=[tlv(80,struct.pack('<II',c['rate'],1)),tlv(81,bytes((16,2,12,len(self.roles),*reversed(self.roles)))),
-              tlv(82,struct.pack('<I',c['samples'])),tlv(86,b'\0'*4),tlv(89,struct.pack('<BIB',2,1100,0))]
+              tlv(82,struct.pack('<I',c['samples'])),tlv(89,struct.pack('<BIB',2,1100,0))]
         if c['mode']==2:rows.append(tlv(83,struct.pack('<I',c['segments'])))
         for role in self.roles:rows.extend((tlv(85,struct.pack('<Bii',role,-17,-1000000 if c['frontend'][role] else 1000000)),
                                            tlv(87,struct.pack('<BI',role,0)),tlv(88,bytes((role,c['frontend'][role])))))
@@ -99,8 +99,9 @@ class Analog(Logic):
     def dispatch_request(self,fn,op,payload,tags):
         if fn==2 and op==16 and self.state in (2,3,5):raise Reject(4,tlv(1,b'\6'))
         if fn==2 and op==25:
-            scheme=b'org.example.adc';out=tlv(1,bytes((255,len(scheme)))+scheme+struct.pack('<H',2)+b'\x12\x34')
+            scheme=b'org.example.adc';out=tlv(1,bytes((255,len(scheme)))+scheme+struct.pack('<H',len(self.factory_raw))+self.factory_raw)
             if self.calibration_ns is not None:out+=tlv(2,struct.pack('<IQI',1365,self.calibration_ns,1100))
+            if 5+len(out)>self.ep.probe.max_frame:raise Reject(11,b'\0')
             return out
         out=super().dispatch_request(fn,op,payload,tags)
         if fn==2 and op==17:self.calibration_ns=self.ep.now_ns()
@@ -134,10 +135,13 @@ class AnalogModel(LogicModel):
         if len(request)>=6:
             fn,op=struct.unpack_from('<HB',request,3);n=request[10] if len(request)>10 else 0
             if fn==1:e.fixed={16:0,17:1+2*n};e.free=set()
-            else:e.fixed={16:0,17:0,18:0,20:0,21:16,22:4,23:8,24:0,25:0};e.free={20,21,22,24,25}
+            else:e.fixed={16:0,17:0,18:0,20:0,21:14,22:4,23:8,24:0,25:0};e.free={20,21,22,24,25}
         try:return self.ep.handle(request)
         finally:e.fixed,e.free=fixed,free
-    def analog_state(self):return dict(self.logic_state(),calibration_ns=self.extension.calibration_ns,now_ns=self.ep.now_ns())
+    def analog_state(self):return dict(self.logic_state(),calibration_ns=self.extension.calibration_ns,factory_raw=self.extension.factory_raw,now_ns=self.ep.now_ns())
+    def analog_factory(self,size):
+        if type(size)is not int or not 0<=size<=4096:raise ValueError('explicit 0..4096 factory raw byte count required')
+        self.extension.factory_raw=bytes(i*7&255 for i in range(size));return self.extension.factory_raw
     def analog_feed(self,samples):
         if type(samples)is not list or len(samples)>128 or any(type(row)is not list or len(row)!=len(self.extension.roles) or any(type(value)is not int or not 0<=value<=4095 for value in row) for row in samples):raise ValueError('explicit finite u12 raw samples in increasing plan role order required')
         accepted=0

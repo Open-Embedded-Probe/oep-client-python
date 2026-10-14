@@ -47,16 +47,13 @@ def test_query_invalid_request_does_not_change_active_acquisition(analog,state):
     assert error.value.result.detail==m.MALFORMED and snapshot(ep)==before
 
 
-@pytest.mark.parametrize('state',[1,2,3,4,5,6])
+@pytest.mark.parametrize('state',[1,3,4,5,6])
 @pytest.mark.parametrize('analog',[False,True])
 def test_group_bound_query_does_not_reconfigure_or_unbind_any_track(state,analog):
     ep,hst,logic,clock=bench();adc=c.AnalogCapture(hst);group=c.CaptureGroup(hst)
     core.plan_apply(hst,[(logic.fn,0,20),(adc.fn,0,16)])
     for track in [logic,adc]:track.configure(rate=1000,samples=8,mode=c.REPEAT if state in (3,5,6) else c.ONE_SHOT,segments=1 if state==5 else None)
-    if state==2:
-        ep.captures[adc.fn].value=lambda role,index:0
-        adc.configure(rate=1000,samples=8,trigger=(c.CROSS_UP,0,1))
-    group.bind([logic,adc],trigger=adc if state==2 else None)
+    group.bind([logic,adc])
     if state!=1:group.start([logic,adc])
     if state in (4,5,6):clock.t=9;group.status()
     if state==6:ep.capture_overflow(adc.fn,2)

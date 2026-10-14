@@ -1,12 +1,13 @@
 # Hostの通知振り分けと期限の検査
 
-core §2.4/11.1/11.2のHost側を、明示したreaderアダプタと論理時計で検査する。
+core §2.4/10.1/10.2のHost側を、明示したreaderアダプタと論理時計で検査する。
 production linkの置換は行わず、実装追従前の検査・仮想サンプルである。
 private設備設定や隣接SPECは探索しない。
 
 採用例はfn 7/8、既知event kind 1（固定部分1 byteとTLV）、標準data形。
 role 0x02だけをcorrと照合する。0x03/0x04の同じ位置はfnである。
 未知role・要求role・待っていないcorrの応答を捨てる。
+fn 0は通知を送らない（core §10.2）ため、fn 0のevent/dataも採用せず、ほかのfnのseqを変えない。
 u8の全role値のうち0/5〜255を未知として検査する。kindは1を既知とする採用例で、0/2〜255をすべて検査する。
 未知kindの固定部分は解釈せず捨てるが、data/event共通のfn別seqには反映する。
 65534からの明示した読出し開始位置で65535→0→1を確認する。
@@ -50,6 +51,6 @@ uv環境で`uv run python example.py`として実行する。単体は
 reportにはraw刺激・読出し期限・終了時刻・結果・checker/sample SHAを保存する。
 独自アダプタのsource/版は利用者が追加して保存する。
 
-9項目・563スケジュールのPASSは、production Host、実時計/OS scheduling、他のevent形、破損時のtransport回復、
+9項目・565スケジュールのPASSは、production Host、実時計/OS scheduling、他のevent形、破損時のtransport回復、
 回復/再送、Probe通知送出の適合を意味しない。full_conformanceは常にfalse。
 未知kindを送り込む試料はHostの将来値への耐性を調べるもので、Probeが未割当kindを送ってよいという仕様ではない。

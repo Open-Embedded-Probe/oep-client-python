@@ -5,8 +5,8 @@ import struct
 from .conformance import require
 from .conformance_host_deadline import reviewed_identity as core_identity
 
-REVIEWED={'interfaces/oep-if-capture.ja.md':'bc63cae4b7d717f2228c0412534b1c409eedb5a20547cefd02dd99f0893016ec',
-          'interfaces/oep-if-common.ja.md':'6744c4e30af5c5211a73b8f6050b7343e12e9679e7b62ba068fc904fa0ef06b7'}
+REVIEWED={'interfaces/oep-if-capture.ja.md':'430950c71e6bbd78b9e8233db075a99ab6587ad99b37aae30132d6e66eced9d9',
+          'interfaces/oep-if-common.ja.md':'4f1cfb88de976f5e934a0526edda3fbf302b51243b43c7faac0b3531d2f9975a'}
 
 def reviewed_identity(path):
     identity=core_identity(path)
@@ -19,7 +19,7 @@ class CaptureSerialChecks:
         # Pin the independently reviewed capture/common contracts as well.
         self.documents=dict(REVIEWED)
     def check(self,name,fn):
-        row=dict(id='CAPTURE-SERIAL-'+name,level='oep-interface',clause='core §2.6; common §1.3; capture §2/3.2')
+        row=dict(id='CAPTURE-SERIAL-'+name,level='oep-interface',clause='core §2.6; common §1.3; capture §2.2/3.2')
         try:fn();row['status']='passed'
         except Exception as exc:row.update(status='failed',error=f'{type(exc).__name__}: {exc}')
         self.checks.append(row)
@@ -63,11 +63,21 @@ class CaptureSerialChecks:
                 wire=bytes((0,len(rows_expected)))+b''.join(struct.pack('<IQIQIIBI',*row) for row in rows_expected)
                 require(reply[3:]==b'\1\0'+wire,'wrapped serial page from/inclusive/fallback differs')
             if e['fn']==2 and e['op']==21:
-                position,maximum=struct.unpack_from('<QI',request,14);s=e['before'];raw=bytes.fromhex(s['data_hex']);start=max(s['base'],min(position,s['base']+len(raw)));part=raw[start-s['base']:start-s['base']+maximum]
+                # read: generation(u32) position(u64) max(u16) -> position(u64) flags(u8) len(u16) data (capture §3.2).
+                require(len(request)==24,'read request shape differs');generation_read,position,maximum=struct.unpack_from('<IQH',request,10);s=e['before']
+                if generation_read!=s['generation']:
+                    require(reply[3:]==b'\0\4\1\1\0\6' and e['before']==e['after'],'wrong generation read not refused with cause 6');continue
+                raw=bytes.fromhex(s['data_hex']);start=max(s['base'],min(position,s['base']+len(raw)));part=raw[start-s['base']:start-s['base']+maximum]
+                # Before write_pos a recycled position moves forward with gap (also when nothing is left: write_pos, gap, len 0);
+                # at or past write_pos it is write_pos, no gap, len 0. max=0 is an empty success under the same rules.
                 flags=(2 if position<s['base'] else 0)|(1 if start+len(part)<s['base']+len(raw) else 0)
-                require(reply[3:]==b'\1\0'+struct.pack('<QBI',start,flags,len(part))+part,'u64 read position/gap/count differs')
-        stale=next(e for e in trace if e['fn']==2 and e['op']==23 and int.from_bytes(bytes.fromhex(e['request_hex'])[10:14],'little')==0)
-        require(bytes.fromhex(stale['reply_hex'])[3:]==b'\0\4\1\1\0\6' and stale['before']==stale['after'],'wrong generation release changed capture')
+                require(reply[3:]==b'\1\0'+struct.pack('<QBH',start,flags,len(part))+part,'u64 read position/gap/count differs')
+        for op in (21,23):
+            stale=[e for e in trace if e['fn']==2 and e['op']==op and int.from_bytes(bytes.fromhex(e['request_hex'])[10:14],'little')==generation-1]
+            require(stale and all(bytes.fromhex(e['reply_hex'])[3:]==b'\0\4\1\1\0\6' and e['before']==e['after'] for e in stale),'wrong generation read/release missing or changed capture')
+        reads=[struct.unpack_from('<QH',bytes.fromhex(e['request_hex']),14) for e in trace if e['fn']==2 and e['op']==21]
+        require(any(m==0 for _,m in reads) and any(e['op']==21 and e['before']['data_hex']=='' and e['before']['base']>base and
+                    int.from_bytes(bytes.fromhex(e['request_hex'])[14:22],'little')<e['before']['base'] for e in trace),'max=0 and all-released read stimulus missing')
         wrapped=states['wrapped']['segments'][-1];stopped=states['stopped']['segments'][0]
         require(wrapped[6]&1 and stopped[6]&2 and stopped[2]==1,'resumed gap/short stopped segment flags missing')
         self.observations.append(r)

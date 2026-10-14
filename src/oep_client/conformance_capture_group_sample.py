@@ -5,6 +5,7 @@ from .conformance_route_sample import SampleRouteAdapter
 class SampleCaptureGroupAdapter(SampleRouteAdapter):
     reset_scope='logical-model'
     selection={1:'oep.probe.plan',2:'oep.fixture.analog',3:'oep.fixture.logic',4:'oep.fixture.capture-group'}
+    auxiliary={5:'oep.fixture.capture-group',**{fn:'oep.fixture.logic' for fn in range(6,13)}}
     reference='docs/capture-group-conformance.ja.md explicit paired samples'
     def restart_fixture(self):return self.call('restart_fixture')
     def state(self):return self.call('group_state')
@@ -13,3 +14,4 @@ class SampleCaptureGroupAdapter(SampleRouteAdapter):
     def fail(self,fn,error):return self.call('group_fail',fn,error)
     def seed(self,generation,adc,logic):return self.call('group_seed',generation,adc,logic)
     def invalidate(self,fn):return self.call('group_invalidate',fn)
+    def frame(self,limit):return self.call('group_frame',limit)
