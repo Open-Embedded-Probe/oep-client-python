@@ -215,7 +215,10 @@ def test_notifications_go_only_to_the_subscribers_connection_and_move_with_the_s
         taker.corr = a._corr                                          # going on after its last corr (core §4.1, §5.1)
         corr = taker.send(m.CORE_FN, m.OP_OPEN, struct.pack("<IB", 5000, 0), session=sid)
         assert taker.result(corr).resolution == m.COMPLETED
-        pushed = [f for f in taker.frames(0.5) if f[0] in (m.ROLE_DATA, m.ROLE_EVENT)]
+        assert not [f for f in taker.frames(0.5) if f[0] in (m.ROLE_DATA, m.ROLE_EVENT)]   # the open moves no
+        corr = taker.send(lc.fn, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0), session=sid)    # subscription (core §6.2);
+        assert taker.result(corr).resolution == m.COMPLETED                                  # a subscribe again does
+        pushed = [f for f in taker.frames(0.5) if f[0] in (m.ROLE_DATA, m.ROLE_EVENT)]      # (§10.3)
         assert pushed and all(struct.unpack_from("<H", f, 1)[0] == lc.fn for f in pushed)   # the data moved there
         assert all(f[0] == m.ROLE_RESULT for f in watcher.frames(0.2))
         corr = taker.send(m.CORE_FN, m.OP_END, session=sid)
@@ -247,7 +250,11 @@ def test_the_endpoint_routes_pushes_by_connection():
     second._corr = first._corr                                        # going on after its last corr (core §4.1, §5.1)
     assert second.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IB", 3000, 0), session=first.session).succeeded
     now[0] += 50
-    assert {to for to, _ in ep.pushes_to()} == {"second"}            # taken back: they go there now
+    assert {to for to, _ in ep.pushes_to()} == {"first"}             # taken back: the subscription stays (core §6.2)
+    second.session = first.session
+    assert second.request(lc.fn, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0)).succeeded
+    now[0] += 50
+    assert {to for to, _ in ep.pushes_to()} == {"second"}            # a subscribe again moves it (core §10.3)
 
 
 # ---- --once --------------------------------------------------------------------------------------------------------

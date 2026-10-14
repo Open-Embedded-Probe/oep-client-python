@@ -595,6 +595,8 @@ class VirtualCapture:
         self.check_generation(generation)
         if self.mode != MODE["repeat"]:
             return                                                 # one-shot: the next start clears; streaming: pushed
+        if self.state not in (STATE["capturing"], STATE["paused"]):
+            return                                                 # the state table's "—" (§3.2): only 3 and 5 free
         keep = [s for s in self.segs if m.serial_diff(s.serial, serial) > 0]   # finished ones at or before serial
         # (core §2.6); self.segs holds finished segments only, so one not finished yet is never freed (§3.2)
         drop_to = keep[0].position if keep else self.base + len(self.data)

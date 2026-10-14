@@ -215,6 +215,7 @@
   "debug:1:16": {
    "text": "- **scan が書くもの**: 「速さを確かめる前の書き込み」の 1 と 2",
    "verify": [
+    "tests/test_trace_debug.py::test_scan_leaves_the_target_as_it_was",
     "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_o1_found_is_version_2_or_more_and_not_15[2-True]",
     "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_o1_found_is_version_2_or_more_and_not_15[15-False]",
     "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_o1_found_is_version_2_or_more_and_not_15[1-False]",
@@ -228,7 +229,7 @@
     "tests/test_conformance_scan_options.py::test_scan_option_checker_detects_independent_faults[speed-FIRST-IDLE]",
     "tests/test_conformance_scan_options.py::test_scan_option_checker_detects_independent_faults[release_leaked-IDLE-1]"
    ],
-   "note": "found = DMSTATUS.version >= 2 and != 15 (swd: DPIDR read); no max_speed -> slowest; pins freed; (its line-level writes are not modelled)"
+   "note": "scan changes nothing on the target (no scratch / register / memory write); found = DMSTATUS.version >= 2 and != 15; speeds and pins per the checkers"
   },
   "debug:1:17": {
    "text": "- **target の識別子**: attach の応答の後ろに、probe ",
@@ -484,7 +485,8 @@
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
     "tests/test_trace_debug.py::test_debug_vector_through_the_client[swd_connections__read_identity_and_supplied_selector_are_distinct]",
     "tests/test_debug_attach.py::test_the_client_reads_connections",
-    "tests/test_trace_debug.py::test_target_id_scheme_1_is_not_reported_for_its_none_values[0-False]"
+    "tests/test_trace_debug.py::test_target_id_scheme_1_is_not_reported_for_its_none_values[0-False]",
+    "tests/test_trace_debug.py::test_connections_tell_a_targetsel_of_0_from_none_with_page_relative_indexes"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[listing_scheme-TARGETSEL-None]",
@@ -839,7 +841,10 @@
     "tests/test_conformance_registered_ops.py::test_every_minimal_mandatory_op_is_checked[oep.target.riscv-dm-16]",
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_halt_not_offered_by_raw-only_fn]",
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_run_not_offered]",
-    "tests/test_host_rules_2026_10_06.py::test_c21_riscv_dm_says_which_optional_ops_the_probe_offers"
+    "tests/test_host_rules_2026_10_06.py::test_c21_riscv_dm_says_which_optional_ops_the_probe_offers",
+    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra1-False]",
+    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra2-False]",
+    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra3-True]"
    ],
    "note": "dmi mandatory; halt resume reset read/write_block run step optional in ops (absent -> unknown_operation)"
   },
@@ -1149,7 +1154,8 @@
    "text": "- **同じ場合、haltreq / haveresetを扱う一連の手順も、待ち",
    "verify": [
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_dmi__reset_and_halt_wait_in_one_request]",
-    "tests/test_conformance_reset.py::test_optional_reset_contracts_pass"
+    "tests/test_conformance_reset.py::test_optional_reset_contracts_pass",
+    "tests/test_trace_debug.py::test_the_client_puts_a_haltreq_sequence_in_one_dmi_request"
    ],
    "note": "a reset-and-halt sequence (haltreq, ndmreset, havereset ack, wait, haltreq clear) in one dmi request"
   },
@@ -1298,7 +1304,8 @@
   "debug:4.3:8": {
    "text": "- flags のほかの bit は 0。reset の後は havereset",
    "verify": [
-    "tests/test_conformance_reset.py::test_optional_reset_contracts_pass"
+    "tests/test_conformance_reset.py::test_optional_reset_contracts_pass",
+    "tests/test_trace_debug.py::test_a_reset_op_acknowledges_havereset_and_clears_haltreq"
    ],
    "mutants": [
     "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[reserved_flags-OK-2]",
@@ -1354,7 +1361,9 @@
    "text": "- regno は RISC-V の抽象レジスタ番号（a0 = 0x100A）。",
    "verify": [
     "tests/test_interfaces.py::test_run_returns_the_registers_asked_for",
-    "tests/test_trace_debug.py::test_debug_vector_through_the_client[riscv-dm_run__the_preparation_fails__the_hart_is_not_run]"
+    "tests/test_trace_debug.py::test_debug_vector_through_the_client[riscv-dm_run__the_preparation_fails__the_hart_is_not_run]",
+    "tests/test_trace_debug.py::test_regno_is_the_abstract_register_number",
+    "tests/test_conformance_run.py::test_optional_run_contracts_pass"
    ],
    "note": "regno is the abstract register number (a0 = 0x100A)"
   },
@@ -1377,13 +1386,16 @@
     "tests/test_virtual_bench_spec.py::test_a_block_past_max_length_is_unsupported_not_malformed",
     "tests/test_target_parts.py::test_block_length_comes_from_the_declared_max_length_only",
     "tests/test_conformance_blocks.py::test_block_preflight_blocks[length]",
-    "tests/test_conformance_blocks.py::test_optional_block_contracts_pass"
+    "tests/test_conformance_blocks.py::test_optional_block_contracts_pass",
+    "tests/test_trace_debug.py::test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame[64]",
+    "tests/test_trace_debug.py::test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame[120]",
+    "tests/test_trace_debug.py::test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame[1024]"
    ],
    "mutants": [
     "tests/test_conformance_blocks.py::test_block_checker_detects_independent_faults[length_ignored-READ-OVER]",
     "tests/test_conformance_blocks.py::test_block_checker_detects_independent_faults[alignment_ignored-READ-ALIGN]"
    ],
-   "note": "max_length (bytes, x4) declared; count x 4 over it unsupported 0x00; count 0 success; the host sizes count from max_length"
+   "note": "max_length (bytes, x4) declared; count x 4 over it unsupported 0x00; count 0 success; the host count <= min(max_length, max_frame - 8 / - 20) / 4"
   },
   "debug:4.5:3": {
    "text": "- **読みの意味**: read_block は target のバスを通して",
@@ -1420,7 +1432,8 @@
     "tests/test_conformance_reset.py::test_optional_reset_contracts_pass",
     "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass",
     "tests/test_conformance_debug.py::test_mandatory_debug_contracts_pass",
-    "tests/test_trace_console.py::test_a_reset_op_marks_reset_detail_1_once_and_no_restart_for_it"
+    "tests/test_trace_console.py::test_a_reset_op_marks_reset_detail_1_once_and_no_restart_for_it",
+    "tests/test_trace_debug.py::test_high_level_ops_acknowledge_a_pending_havereset_and_raw_dmi_does_not"
    ],
    "mutants": [
     "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[mark_detail-CONSOLE-0]",
@@ -1629,7 +1642,10 @@
    "verify": [
     "tests/test_conformance_arm_adi.py::test_arm_contracts_pass",
     "tests/test_conformance_arm_adi.py::test_arm_max_length_must_use_common_u16_width",
-    "tests/test_target_parts.py::test_block_length_comes_from_the_declared_max_length_only"
+    "tests/test_target_parts.py::test_block_length_comes_from_the_declared_max_length_only",
+    "tests/test_trace_debug.py::test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame[64]",
+    "tests/test_trace_debug.py::test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame[120]",
+    "tests/test_trace_debug.py::test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame[1024]"
    ],
    "mutants": [
     "tests/test_conformance_arm_adi.py::test_arm_checker_detects_independent_faults[block_stale-BLOCK-LIVE]",
@@ -1709,7 +1725,13 @@
   },
   "debug:pre:6": {
    "text": "- `oep.wire.*` は connection を作り、`oep.tar",
-   "excluded": "informative: an overview of how the wires and targets relate (the rules are in §0-§6)"
+   "verify": [
+    "tests/test_trace_debug.py::test_target_ops_need_a_connection_and_every_op_but_connections_the_lock",
+    "tests/test_trace_debug.py::test_every_wire_offers_attach_detach_connections_and_declares_scan_in_its_ops[p4-bench]",
+    "tests/test_trace_debug.py::test_every_wire_offers_attach_detach_connections_and_declares_scan_in_its_ops[esp32-v003]"
+   ],
+   "mutants": [],
+   "note": "target interfaces listed before any attach; a target request naming no connection is rejected no_resource"
   },
   "debug:pre:7": {
    "text": "- connections 以外の op はすべてロックが要る。",

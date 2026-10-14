@@ -56,7 +56,7 @@ def status_name(status: int) -> str:
 
 class NoMaxLength(h.OepError):
     """The probe declares no max_length for an interface with read_block / write_block. oep-if-debug §4.5 / §6 make it
-    mandatory there, and the host takes its block size from it alone - never from max_frame."""
+    mandatory there; the host's count is at most it and what the route's max_frame carries (§4.5)."""
 
 
 def declared_max_length(hst: h.Host, fn: int, name: str) -> int:
@@ -70,7 +70,7 @@ def declared_max_length(hst: h.Host, fn: int, name: str) -> int:
                 return length
             break
     raise NoMaxLength(f"{name} (fn {fn}) declares no usable max_length: read_block / write_block need it "
-                      f"(oep-if-debug §4.5; the host does not compute a block size from max_frame)")
+                      f"(oep-if-debug §4.5)")
 
 
 class BlockLength:
@@ -83,16 +83,40 @@ class BlockLength:
 
     @property
     def max_length(self) -> int:
-        """Bytes one block operation may move (describe max_length, oep-if-debug §4.5): what the probe declared, never
-        a value computed from max_frame. NoMaxLength when the probe declares none."""
+        """Bytes one block operation may move (describe max_length, oep-if-debug §4.5): what the probe declared.
+        NoMaxLength when the probe declares none."""
         if self._max_length is None:
             self._max_length = declared_max_length(self.host, self.fn, self.name)
         return self._max_length
 
+    def _route_frame(self) -> int | None:
+        """The route's max_frame (confirm), or None when the host has none to tell."""
+        try:
+            return int(self.host.confirmed()["max_frame"])
+        except (h.OepError, AttributeError, KeyError, TypeError):
+            return None
+
+    def _words(self, overhead: int) -> int:
+        frame = self._route_frame()
+        length = self.max_length if frame is None else min(self.max_length, frame - overhead)
+        return max(1, length // 4)
+
+    @property
+    def read_words(self) -> int:
+        """read_block's count at most: min(max_length, max_frame - 8) / 4 (oep-if-debug §4.5: the answer's header 5,
+        done 2, status 1), max_frame the route's."""
+        return self._words(8)
+
+    @property
+    def write_words(self) -> int:
+        """write_block's count at most: min(max_length, max_frame - 20) / 4 (oep-if-debug §4.5: the request's header
+        10, connection 4, address 4, count 2)."""
+        return self._words(20)
+
     @property
     def max_words(self) -> int:
-        """Words (u32) one block operation may move: max_length / 4."""
-        return self.max_length // 4
+        """Words (u32) one block operation either way may move: the smaller bound, write_words."""
+        return min(self.read_words, self.write_words)
 
 
 class TargetError(h.OepError):

@@ -302,7 +302,8 @@
     "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[16-0-12]",
     "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[16-4-12]",
     "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[32-0-12]",
-    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[32-1-31]"
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[32-1-31]",
+    "tests/test_trace_capture.py::test_review_signed_converter_values_arrive_as_offset_binary"
    ],
    "mutants": [
     "tests/test_conformance_analog_payload.py::test_raw_data_faults_are_detected[value]"
@@ -316,7 +317,8 @@
     "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[16-0-12]",
     "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[16-4-12]",
     "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[32-0-12]",
-    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[32-1-31]"
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[32-1-31]",
+    "tests/test_trace_capture.py::test_review_analog_roles_keep_their_plan_numbers"
    ],
    "mutants": [
     "tests/test_conformance_analog_payload.py::test_raw_data_faults_are_detected[channel_order]",
@@ -355,7 +357,8 @@
    "text": "5. チャネル k の時刻は、サンプルの時刻から `skew_ns[k]` 遅れ",
    "verify": [
     "tests/test_trace_capture.py::test_analog_voltage_skew_and_clipping",
-    "tests/test_virtual_bench_capture.py::test_analog_values_scale_and_calibration"
+    "tests/test_virtual_bench_capture.py::test_analog_values_scale_and_calibration",
+    "tests/test_trace_capture.py::test_triggered_event_serial_index_time_generation[True]"
    ],
    "mutants": [],
    "note": "skew_ns per channel: one ADC in turn gives ordinal x period / C"
@@ -412,7 +415,8 @@
   "capture:1.2:17": {
    "text": "- アナログのチャネルを、ほかの fn の plan（ロジックのキャプチャを含む",
    "verify": [
-    "tests/test_virtual_bench_capture.py::test_an_analog_pin_is_shared_with_nothing"
+    "tests/test_virtual_bench_capture.py::test_an_analog_pin_is_shared_with_nothing",
+    "tests/test_trace_capture.py::test_review_an_output_idle_set_onto_an_analog_pin_is_refused"
    ],
    "mutants": [],
    "note": "analog and logic / gpio on one pin refused unavailable whichever comes second, also in one request"
@@ -433,7 +437,8 @@
   "capture:1.2:19": {
    "text": "- アナログの取得が止まるとpadを空きの状態へ戻す（stop、完了、state",
    "verify": [
-    "tests/test_trace_capture.py::test_analog_pad_leaves_idle_only_while_it_acquires"
+    "tests/test_trace_capture.py::test_analog_pad_leaves_idle_only_while_it_acquires",
+    "tests/test_trace_capture.py::test_review_analog_switch_time_is_in_start_ns_and_resuming_sets_the_gap"
    ],
    "mutants": [],
    "note": "pad back to idle at completion, stop, state 5 and error, plan kept; analog again on resuming from 5"
@@ -684,7 +689,8 @@
   "capture:2.2:12": {
    "text": "- 区画の中は連続を約束する。リピートとストリーミングでは、flags bit0",
    "verify": [
-    "tests/test_trace_capture.py::test_repeat_segments_follow_on_unless_flags_bit0"
+    "tests/test_trace_capture.py::test_repeat_segments_follow_on_unless_flags_bit0",
+    "tests/test_trace_capture.py::test_streaming_segments_are_the_probes_and_every_frame_says_which"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_gap-REPEAT]"
@@ -782,7 +788,9 @@
   "capture:3.1:1": {
    "text": "- 役割 k = チャネル k（ロジックは 0〜127、アナログは 0〜63）。",
    "verify": [
-    "tests/test_trace_capture.py::test_role_k_is_channel_k"
+    "tests/test_trace_capture.py::test_role_k_is_channel_k",
+    "tests/test_trace_capture.py::test_review_role_numbers_stay_in_each_interfaces_range",
+    "tests/test_trace_capture.py::test_review_analog_roles_keep_their_plan_numbers"
    ],
    "mutants": [
     "tests/test_conformance_analog_payload.py::test_sparse_role_layout_rejects_ordinal_unplanned_or_duplicate_numbers[order0]",
@@ -1037,7 +1045,8 @@
     "tests/test_virtual_bench_capture_lifetime.py::test_one_shot_release_is_a_noop[False]",
     "tests/test_virtual_bench_capture_lifetime.py::test_one_shot_release_is_a_noop[True]",
     "tests/test_virtual_bench_capture_lifetime.py::test_release_frees_inclusive_data_then_resumes_with_gap[False]",
-    "tests/test_virtual_bench_capture_lifetime.py::test_release_frees_inclusive_data_then_resumes_with_gap[True]"
+    "tests/test_virtual_bench_capture_lifetime.py::test_release_frees_inclusive_data_then_resumes_with_gap[True]",
+    "tests/test_trace_capture.py::test_review_a_repeat_release_after_stop_or_error_changes_nothing"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_resume-RELEASE]",
@@ -1080,7 +1089,8 @@
     "tests/test_trace_capture.py::test_state_table_configure_and_start[1-1-new-False]",
     "tests/test_trace_capture.py::test_state_table_configure_and_start[1-1-new-True]",
     "tests/test_trace_capture.py::test_state_table_stop_force_release[1-False]",
-    "tests/test_trace_capture.py::test_state_table_stop_force_release[1-True]"
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[1-True]",
+    "tests/test_trace_capture.py::test_review_a_repeat_release_after_stop_or_error_changes_nothing"
    ],
    "mutants": [],
    "note": "state 1's row: configure, start, stop, force, release and the automatic column"
@@ -1146,7 +1156,8 @@
     "tests/test_trace_capture.py::test_state_table_configure_and_start[6-1-new-False]",
     "tests/test_trace_capture.py::test_state_table_configure_and_start[6-1-new-True]",
     "tests/test_trace_capture.py::test_state_table_stop_force_release[6-False]",
-    "tests/test_trace_capture.py::test_state_table_stop_force_release[6-True]"
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[6-True]",
+    "tests/test_trace_capture.py::test_review_a_repeat_release_after_stop_or_error_changes_nothing"
    ],
    "mutants": [],
    "note": "state 6's row: configure, start, stop, force, release and the automatic column"
@@ -1712,7 +1723,19 @@
     "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[5-False]",
     "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[5-True]",
     "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[6-False]",
-    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[6-True]"
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[6-True]",
+    "tests/test_virtual_bench_capture_query.py::test_group_bound_query_does_not_reconfigure_or_unbind_any_track[False-1]",
+    "tests/test_virtual_bench_capture_query.py::test_group_bound_query_does_not_reconfigure_or_unbind_any_track[False-3]",
+    "tests/test_virtual_bench_capture_query.py::test_group_bound_query_does_not_reconfigure_or_unbind_any_track[False-4]",
+    "tests/test_virtual_bench_capture_query.py::test_group_bound_query_does_not_reconfigure_or_unbind_any_track[False-5]",
+    "tests/test_virtual_bench_capture_query.py::test_group_bound_query_does_not_reconfigure_or_unbind_any_track[False-6]",
+    "tests/test_virtual_bench_capture_query.py::test_group_bound_query_does_not_reconfigure_or_unbind_any_track[True-1]",
+    "tests/test_virtual_bench_capture_query.py::test_group_bound_query_does_not_reconfigure_or_unbind_any_track[True-3]",
+    "tests/test_virtual_bench_capture_query.py::test_group_bound_query_does_not_reconfigure_or_unbind_any_track[True-4]",
+    "tests/test_virtual_bench_capture_query.py::test_group_bound_query_does_not_reconfigure_or_unbind_any_track[True-5]",
+    "tests/test_virtual_bench_capture_query.py::test_group_bound_query_does_not_reconfigure_or_unbind_any_track[True-6]",
+    "tests/test_virtual_bench_capture_query.py::test_query_does_not_suspend_elapsed_time_or_apply_candidate_settings[False]",
+    "tests/test_virtual_bench_capture_query.py::test_query_does_not_suspend_elapsed_time_or_apply_candidate_settings[True]"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[query_applies-QUERY]",
@@ -1775,7 +1798,8 @@
   "capture:3.3:17": {
    "text": "- mode 2のsegmentsも、実際のsamplesと役割数で持てる上限へ",
    "verify": [
-    "tests/test_trace_capture.py::test_samples_and_segments_are_rounded_down_to_what_it_holds"
+    "tests/test_trace_capture.py::test_samples_and_segments_are_rounded_down_to_what_it_holds",
+    "tests/test_trace_capture.py::test_review_pretrigger_is_checked_against_the_rounded_samples"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[segments_unclamped-SAMPLES]"
@@ -1933,7 +1957,8 @@
     "tests/test_virtual_bench_capture_notifications.py::test_error_notification_matches_status_without_incomplete_segment[2-False]",
     "tests/test_virtual_bench_capture_notifications.py::test_error_notification_matches_status_without_incomplete_segment[2-True]",
     "tests/test_virtual_bench_capture_notifications.py::test_error_notification_matches_status_without_incomplete_segment[3-False]",
-    "tests/test_virtual_bench_capture_notifications.py::test_error_notification_matches_status_without_incomplete_segment[3-True]"
+    "tests/test_virtual_bench_capture_notifications.py::test_error_notification_matches_status_without_incomplete_segment[3-True]",
+    "tests/test_trace_capture.py::test_review_a_group_stop_is_reason_1_on_each_tracks_subscription"
    ],
    "mutants": [
     "tests/test_virtual_bench_capture_notifications.py::test_notification_corruption_is_detected[reserved_reason-False]",
@@ -2031,7 +2056,9 @@
    "text": "| 0x44 | channels | max(u8)。チャネル数の上限 |",
    "verify": [
     "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.logic]",
-    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.analog]"
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.analog]",
+    "tests/test_trace_capture.py::test_review_channels_is_the_most_a_track_takes[oep.fixture.logic-30]",
+    "tests/test_trace_capture.py::test_review_channels_is_the_most_a_track_takes[oep.fixture.analog-16]"
    ],
    "mutants": [
     "tests/test_conformance_capture_metadata.py::test_metadata_defects[14-68-None]"
@@ -2044,7 +2071,9 @@
     "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.logic]",
     "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.analog]",
     "tests/test_trace_capture.py::test_trigger_types_per_interface[False]",
-    "tests/test_trace_capture.py::test_trigger_types_per_interface[True]"
+    "tests/test_trace_capture.py::test_trigger_types_per_interface[True]",
+    "tests/test_trace_capture.py::test_review_max_pretrigger_is_the_declared_bound[oep.fixture.logic]",
+    "tests/test_trace_capture.py::test_review_max_pretrigger_is_the_declared_bound[oep.fixture.analog]"
    ],
    "mutants": [
     "tests/test_conformance_capture_metadata.py::test_metadata_defects[14-69-None]"
@@ -2110,7 +2139,8 @@
   "capture:3.7:2": {
    "text": "| 0x02 | vrefint | raw(u32)、ns(u64)、nomi",
    "verify": [
-    "tests/test_trace_capture.py::test_calibration_returns_raw_factory_rows_and_vrefint_after_a_start"
+    "tests/test_trace_capture.py::test_calibration_returns_raw_factory_rows_and_vrefint_after_a_start",
+    "tests/test_trace_capture.py::test_review_vrefint_is_measured_after_a_group_start_too"
    ],
    "mutants": [
     "tests/test_conformance_analog.py::test_semantic_faults_are_detected[omit_vrefint-CALIBRATION-FIT]",
@@ -2209,7 +2239,8 @@
   "capture:4.1:8": {
    "text": "- n=0は束ねを解く。取得中の組（state 3）ではunavailable ",
    "verify": [
-    "tests/test_trace_capture.py::test_group_unbind"
+    "tests/test_trace_capture.py::test_group_unbind",
+    "tests/test_trace_capture.py::test_review_the_same_plan_on_a_bound_track_is_a_no_op"
    ],
    "mutants": [
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[change_active-UNBIND-ACTIVE]",

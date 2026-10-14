@@ -571,3 +571,132 @@ def test_the_host_takes_the_vendor_interface_by_class_subclass_protocol_alone(mo
                         lambda self, d, i, o, n: taken.append((i.bEndpointAddress, o.bEndpointAddress, n)))
     usb_stream.UsbBulkStream.open(0x1209, 0x4F45)
     assert taken == [(0x83, 0x03, 3)]
+
+
+# ---- review additions (independent review of the trace) ------------------------------------------------------------
+
+@pytest.mark.parametrize("kind", ["bulk", "hid"])
+def test_after_a_gap_the_probe_reads_the_next_byte_as_a_length(kind):
+    """transports §2 and §1 HID rule 5: once a frame stopped probe_frame_gap_ms half way and was dropped, the next byte of
+    the stream starts a length - a whole frame sent right after the gap is answered, with nothing else in between."""
+    clock, usb = usb_model(kind)
+    send = (lambda d: [usb.write(r) for r in hid_reports(usb, d)]) if kind == "hid" else usb.write
+    f1, f2 = frame(req(1)), frame(req(2))
+    send(f1[:4])
+    clock.now += 0.2
+    send(f2)
+    assert usb_answers(usb) == [2]
+
+
+def test_a_named_unit_id_is_compared_without_letter_case(monkeypatch):
+    """transports §3 named probe: the unit_id named and the describe's unit_id are compared without letter case (as the
+    USB serial number is) - USB:30EDA0E3B001 is the probe whose describe says 30eda0e3b001."""
+    from test_usb_identity import LengthStream, fake_ep, ops
+    s = LengthStream(fake_ep(unit_id="30eda0e3b001"))
+    asked = []
+    monkeypatch.setattr(link, "find_usb", lambda unit_id: asked.append(unit_id) or (0x1234, 0x5678))
+    monkeypatch.setattr(link, "_open_usb_stream", lambda kind, vid, pid, serial: s)
+    hst = link.open_host("usb:30EDA0E3B001")
+    assert not s.closed and hst.limits is not None and m.OP_DESCRIBE in ops(s.sent)
+
+
+def test_the_probing_confirm_waits_core_quick_op_max_ms_and_host_wait_add_ms():
+    """transports §3 probing rule: before max_op_ms is known the confirm (and its one resend) waits
+    core_quick_op_max_ms + host_wait_add_ms (2000 ms) and the transfer time; afterwards the link's own wait is back."""
+    assert link.PROBE_WAIT_S == (reg.TIMING["core_quick_op_max_ms"] + reg.TIMING["host_wait_add_ms"]) / 1000 == 2.0
+    lk = link.SerialLink.on_stream(Stream(), "length", 0.3)
+    seen = []
+
+    class Probing:
+        def confirm(self):
+            seen.append((lk.timeout, lk.resend))
+            return {"revision": 1}
+
+    assert lk.probe(Probing()) == {"revision": 1}
+    assert seen == [(2.0 + lk.transfer_s(), True)] and lk.timeout == 0.3
+
+
+def test_the_hid_is_opened_exclusively(monkeypatch, tmp_path):
+    """transports §3: the host opens the HID exclusively where the OS allows it - on Linux an flock on the hidraw node:
+    a second open is refused (HidBusy, and libusb is not tried on it), and closing the first frees it."""
+    if not sys.platform.startswith("linux"):
+        pytest.skip("flock on the hidraw node is Linux's")
+    import types
+    from test_hid_stream import espusbdevice_vendor_descriptor
+    node = tmp_path / "hidraw7"
+    node.write_bytes(b"")
+
+    class Device:
+        def open_path(self, path):
+            self.path = path
+
+        def get_report_descriptor(self):
+            return list(espusbdevice_vendor_descriptor(63))
+
+        def read(self, n, timeout_ms):
+            time.sleep(timeout_ms / 1000)
+            return []
+
+        def close(self):
+            pass
+
+    hid = types.SimpleNamespace(enumerate=lambda vid, pid: [{"usage_page": 0xFF4F, "path": str(node).encode(),
+                                                             "serial_number": "x"}], device=Device)
+    monkeypatch.setitem(sys.modules, "hid", hid)
+    monkeypatch.setattr(hid_stream, "_open_usb1", lambda *a: pytest.fail("libusb tried on a busy HID"))
+    first = hid_stream.open_hid(0x1209, 0x4F45)
+    with pytest.raises(hid_stream.HidBusy):
+        hid_stream.open_hid(0x1209, 0x4F45)
+    first.close()
+    hid_stream.open_hid(0x1209, 0x4F45).close()
+
+
+def test_a_host_that_may_have_raised_the_speed_sets_its_own_limit_for_the_boot_speed():
+    """transports §4: a host that handles port_speed retries confirm at the boot speed until the probe is back, with a
+    limit it sets itself, counting the earlier requests' processing and the frames' transfer (the link's wait) -
+    port_speed_idle_ms + host_wait_add_ms is not its only bound."""
+    assert link.OPEN_RETRY_S == (reg.TIMING["port_speed_idle_ms"] + reg.TIMING["host_wait_add_ms"]) / 1000
+    lk = link.SerialLink.on_stream(Stream(), "cobs", 0.3)
+    asked = []
+    lk._confirm_within = lambda wait_s, each_s: asked.append(wait_s) or True
+    lk.wait_boot_speed()
+    lk.timeout = link.OPEN_RETRY_S + 5.0                                # a long request's wait before it
+    lk.wait_boot_speed()
+    assert asked == [link.OPEN_RETRY_S, link.OPEN_RETRY_S + 5.0]
+
+
+class Noisy(Stream):
+    def __init__(self, respond=None):
+        super().__init__(respond)
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.mark.parametrize("reopens", [True, False])
+def test_a_length_port_that_never_goes_quiet_is_closed_and_opened_again(monkeypatch, reopens):
+    """transports §5: vendor bulk / HID with lost boundaries - the host reads and discards; when the input cannot be made
+    quiet (here not even after the blind unsubscribe and end) it closes the transport and opens it again, then
+    confirms with its own corr there; with no way to open it again it says so."""
+    monkeypatch.setattr(link.SerialLink, "NOISY_S", 0.05)
+    s = Noisy(lambda msg: [])
+    lk = link.SerialLink.on_stream(s, "length", 0.3)
+    hst = h.Host(lk.send)
+    hst.session, hst.revision, hst.subscriptions = 0xABCD, 1, {5}
+    lk.corr_source, lk.blind = hst.next_corr, hst.blind_stop
+    s.noise = frame(bytes([m.ROLE_DATA]) + struct.pack("<HHQ", 5, 0, 0) + b"x" * 32)   # pushes that never stop
+    new = Noisy(confirming())
+    lk.reopener = (lambda: new) if reopens else None
+    boots = []
+    lk.on_boot_id = boots.append
+    s.rx += frame(result(50))                                             # a stray result starts the resync
+    if not reopens:
+        with pytest.raises(ConnectionError, match="close the transport and open it again"):
+            lk.send(req(hst.next_corr(), 0x01, fn=5, session=0xABCD))
+        return
+    with pytest.raises(link.CorrMismatch):                                # the blind end ended the session
+        lk.send(req(hst.next_corr(), 0x01, fn=5, session=0xABCD))
+    assert s.closed and lk.stream is new
+    sent = [m.Request.unpack(w[2:]) for w in new.writes]
+    assert [r.op for r in sent] == [m.OP_CONFIRM] and boots == [0x11]       # confirmed there, its boot_id seen

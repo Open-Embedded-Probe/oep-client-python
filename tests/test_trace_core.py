@@ -2304,3 +2304,269 @@ def test_a_describe_tlv_of_another_length_is_not_used_and_a_tag_twice_uses_the_f
     d = catalog.decode_description(data)
     assert d.max_clock_hz == 1_000_000 and d.min_clock_hz is None and d.max_length == 64
     assert d.broken == [catalog.MIN_CLOCK_HZ, catalog.MAX_LENGTH]
+
+
+# ---- review 2026-10-15: rules the trace above checked only in part ----------------------------------------------------
+
+def test_an_implemented_tlvs_unused_value_is_unsupported_with_the_tag_as_received():
+    """core §2.3: an implemented request TLV is treated alike with and without bit 7 - a wrong length is malformed, a
+    value the definition leaves unused (rvswd attach's idle_clock 2) is unsupported naming the tag as received (0x04,
+    or 0x84 with bit 7); nothing is made either way."""
+    ep = build(vb.p4_bench)
+    w = Wire(ep)
+    w.open()
+    body = struct.pack("<BHHI", 1, 2, 3, 4_000_000)
+    tag = RVSWD.tlv["attach"]["idle_clock"]
+    for critical in (False, True):
+        r = rejected(w.raw(1, RVSWD.op["attach"], body + m.tlv(tag, b"\x02", critical=critical)), m.UNSUPPORTED)
+        assert r.payload[:1] == bytes([tag | (0x80 if critical else 0)])
+        rejected(w.raw(1, RVSWD.op["attach"], body + m.tlv(tag, b"\x00\x00", critical=critical)), m.MALFORMED)
+    assert not ep.conns
+    assert w.raw(1, RVSWD.op["attach"], body + m.tlv(tag, b"\x01", critical=True)).succeeded
+
+
+def test_the_client_takes_an_unknown_status_for_a_failure():
+    """core §2.4: an interface status the host does not know is a failure - even beside outcome success (the client's
+    riscv.check raises, naming it unknown)."""
+    from oep_client import riscv
+    ok = m.Result(1, m.COMPLETED, m.SUCCESS, b"")
+    riscv.check("halt", ok, riscv.OK)
+    with pytest.raises(riscv.TargetError, match="unknown status 0x55"):
+        riscv.check("halt", ok, 0x55)
+
+
+def test_the_client_ignores_reserved_flag_bits_and_shows_an_unknown_scan_kind(monkeypatch):
+    """core §2.4: reserved bits of an answer's flags are ignored (attach's flags with bits 4-7 set read as the defined
+    bits say); an unknown value of an enum that tells no failure (scan's entry kind 0x7E) is shown as it is."""
+    from oep_client import riscv
+    ep = build(vb.p4_bench)
+    hst = host_on(ep)
+    hst.open()
+    wire = riscv.Wire(hst, "oep.wire.rvswd")
+    real = wire._call
+
+    def bent(op, body=b"", **kw):
+        r = real(op, body, **kw)
+        p = bytearray(r.payload)
+        if op == wire.ATTACH:
+            p[8] |= 0xF0                                                  # conn(4) status(4) flags(1): bits 4-7
+        elif op == wire.SCAN and p[1]:
+            p[2] = 0x7E                                                   # tried count, then kind of the first row
+        return m.Result(r.corr, r.resolution, r.detail, bytes(p))
+    monkeypatch.setattr(wire, "_call", bent)
+    found = wire.scan([(2, 3)])
+    assert [f.kind for f in found] == [0x7E] and found[0].pins == (2, 3)
+    conn, _ = wire.attach(halt=True, pins=(2, 3), max_speed=4_000_000)
+    assert conn in ep.conns and wire.halted and wire.flags & 0xF0 == 0xF0
+
+
+def test_session_0_requests_never_move_the_sessions_corr_half_the_space():
+    """core §4.1: the host moves each session_id's corr on by 1-32767; many session_id 0 queries (one counter for every
+    session_id) never take the session's next request half the space or more past its last one - it is still taken
+    as new, never result_lost."""
+    ep = build()
+    sent = []
+    hst = h.Host(lambda b: sent.append(m.Request.unpack(b)) or ep.handle(b, 0), rng=random.Random(4))
+    hst.open()
+    for _ in range(40000):
+        hst.lock_state()
+    hst.keepalive()
+    last = None
+    for r in sent:
+        if r.session == hst.session:
+            assert last is None or 1 <= (r.corr - last) % 0x10000 <= 0x7FFF
+            last = r.corr
+    assert len({r.corr for r in sent[-5:]}) == 5 and 0 not in {r.corr for r in sent}
+
+
+def test_a_copy_of_a_request_not_yet_answered_is_dropped_and_touches_no_lease():
+    """core §4.4: a copy of a request still waiting, running, or answered but not yet sent on the same transport is
+    dropped unexamined - not counted, not run, no lease restarted by it; the same for session_id 0."""
+    ep = build()
+    w = Wire(ep)
+    w.open(1000)
+    data = w.bytes(0, m.OP_KEEPALIVE)
+    assert ep.receive(data) == "queued"
+    ep.now.t = 400
+    assert ep.receive(data) == "coalesced" and ep.expires_ms == 1000
+    before = ep.executions
+    ep.process()
+    assert ep.expires_ms == 1400 and ep.executions == before + 1
+    ep.now.t = 900
+    assert ep.receive(data) == "coalesced"                                     # answered, not yet sent
+    assert ep.expires_ms == 1400 and ep.credits() == {0: 1}
+    ep.sent()
+    zero = w.bytes(0, m.OP_CLOCK, sid=0)
+    assert ep.receive(zero) == "queued" and ep.receive(zero) == "coalesced" and ep.credits() == {0: 1}
+
+
+def test_the_holders_open_from_another_transport_keeps_where_the_subscriptions_send():
+    """core §6.2, §9: the holder's open again - from another transport too - renews the lease and keeps the resources,
+    the resend state and where each subscription sends; a subscribe again moves it (§10.3)."""
+    ep, hst, lc, clock = streaming()
+    assert ep.push_link[lc.fn] == 0
+    again = m.Request(700, 0, m.OP_OPEN, struct.pack("<IB", 3000, 0), hst.session).pack()
+    assert m.Result.unpack(ep.handle(again, 2, link="tcp-1")).succeeded
+    clock.t += 2
+    assert ep.push_link[lc.fn] == 0 and {to for to, _ in ep.pushes_to()} == {0}
+    sub = m.Request(701, lc.fn, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0), hst.session).pack()
+    assert m.Result.unpack(ep.handle(sub, 2, link="tcp-1")).succeeded
+    clock.t += 2
+    assert {to for to, _ in ep.pushes_to()} == {"tcp-1"}
+
+
+def test_repeated_role_channels_of_one_role_are_their_union():
+    """core §7.4: role_channels may name the same role more than once - its channels are the union (the host's decode,
+    the probe's check of a plan)."""
+    rc = (catalog.role_channels(1, [20]), catalog.role_channels(1, [30]))
+    assert catalog.decode_description(b"".join(rc)).roles == {1: [20, 30]}
+    probe = vb.p4_x035()
+    probe.offered = [vb.Offered(o.fn, o.instance, o.name, (o.tlvs[0],) + rc
+                                + tuple(t for t in o.tlvs[1:] if t[0] != catalog.ROLE_CHANNELS), o.revision, o.inner)
+                     if o.name == GPIO.name else o for o in probe.offered]
+    ep = endpoint.Endpoint(probe, Clock())
+    w = Wire(ep)
+    w.open()
+    plan = ep.fns[PLAN.name]
+    assert w.raw(plan, PLAN.op["plan_apply"], assign(4, 1, 20) + assign(4, 1, 30)).succeeded
+    rejected(w.raw(plan, PLAN.op["plan_apply"], assign(4, 1, 21)), m.UNSUPPORTED)
+
+
+def spi_both_declared():
+    """p4-x035 with its spi-target declaring channel_groups for sck / mosi and role_channels for sck (narrower than the
+    groups), miso and cs (core §7.4's example)."""
+    probe = vb.p4_x035()
+    spi = reg.FIXTURE_SPI_TARGET
+    new = (catalog.channel_group(1, [(1, 20), (2, 21)]), catalog.channel_group(2, [(1, 25), (2, 26)]),
+           catalog.role_channels(1, [20, 21]), catalog.role_channels(3, [22]), catalog.role_channels(4, [23]))
+    probe.offered = [vb.Offered(o.fn, o.instance, o.name, (o.tlvs[0],) + new
+                                + tuple(t for t in o.tlvs[1:] if t[0] != catalog.ROLE_CHANNELS), o.revision, o.inner)
+                     if o.name == spi.name else o for o in probe.offered]
+    return probe
+
+
+@pytest.mark.parametrize("pins, ok", [
+    ([(1, 20), (2, 21), (3, 22), (4, 23)], True),        # group 1 whole, miso / cs among their candidates
+    ([(1, 21), (2, 20), (3, 22), (4, 23)], False),       # no group matches whole
+    ([(1, 25), (2, 26), (3, 22), (4, 23)], False),       # group 2 whole, but sck 25 is not a role_channels candidate
+    ([(1, 20), (2, 21), (3, 30), (4, 23)], False),       # miso outside its role_channels
+], ids=["group-and-candidates", "no-group", "group-not-candidate", "role-outside"])
+def test_with_both_declared_the_pins_match_a_group_and_the_role_channels(pins, ok):
+    """core §7.4: where channel_group and role_channels are both declared, the chosen pins match one group whole and are
+    each among role_channels' candidates for the roles it names; a role only role_channels names (miso, cs) is bound by
+    it alone."""
+    ep = build(spi_both_declared)
+    w = Wire(ep)
+    w.open()
+    fn = ep.fns[reg.FIXTURE_SPI_TARGET.name]
+    r = w.raw(ep.fns[PLAN.name], PLAN.op["plan_apply"], b"".join(assign(fn, role, ch) for role, ch in pins))
+    if ok:
+        assert r.succeeded and {a for a in ep.plan if a[0] == fn} == {(fn, role, ch) for role, ch in pins}
+    else:
+        rejected(r, m.UNSUPPORTED)
+        assert not ep.plan
+
+
+def test_an_x_unit_id_names_no_probe_and_keeps_no_session(tmp_path):
+    """core §7.5: the host does not name a probe by an `x-` unit_id (tcp:x-... / usb:x-... refused before anything is
+    opened) nor keep anything across sessions under it (kept_session keeps nothing)."""
+    from oep_client import kept_session
+    for target in ("tcp:x-esp32", "usb:x-esp32"):
+        with pytest.raises(ValueError, match="x- unit_id names no unit"):
+            link.open_host(target)
+    ep = build(lambda: vb.with_unit_id(vb.p4_x035(), "x-board"))
+    hst = host_on(ep)
+    kept = kept_session.KeptSession(directory=tmp_path)
+    kept.before_open(hst)
+    assert "names no unit" in kept.why_not and not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("held", ["gpio-output", "idle-output-high", "idle-pull-up"])
+def test_a_reading_interface_never_changes_a_pins_drive(held):
+    """core §8: taking a pin changes nothing electrical, and an interface that only reads pins never changes them -
+    logic capture planned, started and stopped on a pin a gpio drives, or whose idle is an output or a pull, leaves its
+    state as it was."""
+    clock = Clock()
+    ep = endpoint.Endpoint(vb.p4_x035(), clock)
+    hst = h.Host(lambda b: ep.handle(b, 0), rng=random.Random(3))
+    hst.open(3000)
+    if held == "gpio-output":
+        ch = 20
+        core.plan_apply(hst, [(4, 1, ch)])
+        hst.call(4, GPIO.op["set"], b"\x01" + struct.pack("<HB", ch, 3))
+    else:
+        ch = 30
+        mode = CFG.enum["idle_mode"]["output_high" if held == "idle-output-high" else "pull_up"]
+        hst.call(ep.fns[CFG.name], CFG.op["set"], b"\x01" + idle_item(ch, mode))
+    before = ep.pin_state(ch)
+    lc = cap.LogicCapture(hst)
+    core.plan_apply(hst, [(lc.fn, 0, ch)] + ([(4, 1, ch)] if held == "gpio-output" else []))
+    assert ep.pin_state(ch) == before
+    lc.configure(rate=1_000_000, mode=cap.STREAMING)
+    lc.subscribe()
+    lc.start()
+    clock.t += 2
+    assert ep.pin_state(ch) == before
+    lc.stop()
+    assert ep.pin_state(ch) == before
+
+
+def test_data_due_goes_whole_in_frames_of_max_frame_without_min_bytes_again():
+    """core §10.3: once a data condition holds (min_bytes waiting), everything waiting goes, cut into frames within
+    max_frame; min_bytes is not applied again to the rest (the last frame is shorter) - it is no minimum frame length."""
+    ep, hst, lc, clock = streaming(min_bytes=1000)
+    clock.t += 3
+    assert not frames(ep, m.ROLE_DATA)                                         # 750 bytes: not yet
+    clock.t += 1
+    data = frames(ep, m.ROLE_DATA)
+    sizes = [struct.unpack_from("<H", f, 13)[0] for f in data]
+    assert len(data) >= 2 and sum(sizes) == 1000 and sizes[-1] < 1000
+    assert all(len(f) <= ep.probe.max_frame for f in data) and ep.captures[lc.fn].unsent() == 0
+
+
+def test_the_serial_port_sends_answers_first_and_keeps_notifications_within_twice_max_frame():
+    """core §10.4: the probe answers every request that came before it starts a new notification; it keeps at most
+    max_frame x 2 bytes of notifications waiting in the transport's buffer and drops the rest before they start (their
+    seq is spent: the gap shows it, §10.2). The virtual bench's serial port (virtual_bench_serial)."""
+    from oep_client import cobs, virtual_bench_serial
+    ep, hst, lc, clock = streaming()
+    port = virtual_bench_serial.VirtualSerialPort(ep, 0)
+
+    def out():
+        return [cobs.unframe(c) for c in port.output(1 << 20).split(b"\x00") if c]
+    clock.t += 20                                                              # far more data than 2 x max_frame
+    port.feed(cobs.frame(m.Request(60000, 0, m.OP_CLOCK, b"", 0).pack()))
+    port.tick()
+    got = out()
+    assert got[0][0] == m.ROLE_RESULT and m.Result.unpack(got[0]).corr == 60000   # the answer first
+    pushed = got[1:]
+    assert pushed and all(f[0] in (m.ROLE_DATA, m.ROLE_EVENT) for f in pushed)
+    assert sum(len(cobs.frame(f)) for f in pushed) <= 2 * ep.probe.max_frame and port.dropped_notices >= 1
+    last = struct.unpack_from("<H", pushed[-1], 3)[0]
+    clock.t += 1
+    port.tick()
+    later = out()
+    assert later and struct.unpack_from("<H", later[0], 3)[0] > last + 1        # the dropped ones' seq: a gap
+
+
+def test_a_subscribe_again_drops_the_old_subscriptions_unsent_notifications_on_the_transport():
+    """core §10.3: replacing or ending a subscription drops what the old one has not sent yet - also what waits in the
+    transport's buffer (the virtual bench's serial port), not only in the probe; what the new one makes goes."""
+    from oep_client import cobs, virtual_bench_serial
+    ep, hst, lc, clock = streaming()
+    port = virtual_bench_serial.VirtualSerialPort(ep, 0)
+    clock.t += 1
+    port.tick()
+    assert any(n is not None for n in port.notice)                            # the old subscription's, not sent
+    port.feed(cobs.frame(m.Request(hst.next_corr(hst.session), lc.fn, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0), hst.session).pack()))
+    clock.t += 1
+    port.tick()
+    got = [cobs.unframe(c) for c in port.output(1 << 20).split(b"\x00") if c]
+    assert m.Result.unpack(got[0]).corr == hst._corr and m.Result.unpack(got[0]).succeeded
+    assert got[1:] and struct.unpack_from("<H", got[1], 3)[0] == 0          # only the new one's, seq from 0
+    clock.t += 1
+    port.tick()
+    assert any(n is not None for n in port.notice)                            # the new one's, not sent yet
+    port.feed(cobs.frame(m.Request(hst.next_corr(hst.session), lc.fn, m.OP_UNSUBSCRIBE, b"", hst.session).pack()))
+    got = [cobs.unframe(c) for c in port.output(1 << 20).split(b"\x00") if c]
+    assert [f[0] for f in got] == [m.ROLE_RESULT]

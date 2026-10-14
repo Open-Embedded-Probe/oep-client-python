@@ -975,13 +975,17 @@ def test_state_table_stop_force_release(analog, state):
         ep, hst, clock, t = table(analog, state)
     else:
         assert snap(ep, t.fn) == before
-    if t.status().generation:
-        assert ask(hst, t.fn, t.RELEASE, struct.pack("<II", t.status().generation, 0)).succeeded
-        if state == 5:
-            assert t.status().state == 3
-            clock.t = 40
-            assert any(s.flags & GAP for s in t.segments())
-        ep, hst, clock, t = table(analog, state)
+    before = snap(ep, t.fn)
+    assert ask(hst, t.fn, t.RELEASE, struct.pack("<II", t.status().generation, 0)).succeeded
+    if state == 5:
+        assert t.status().state == 3
+        clock.t = 40
+        assert any(s.flags & GAP for s in t.segments())
+    elif state == 3:
+        assert t.status().state == 3 and t.segments() == []          # room given back: serial 0 freed
+    else:
+        assert snap(ep, t.fn) == before                             # "—": a success that changes nothing
+    ep, hst, clock, t = table(analog, state)
     before = snap(ep, t.fn)
     clock.t += 3 if state == 3 else 0
     assert ask(hst, t.fn, t.STOP).succeeded
@@ -1751,3 +1755,215 @@ def test_group_describe_tracks():
     assert v[0] >= 1 and list(struct.unpack_from(f"<{v[0]}H", v, 1)) == [ep.fns["oep.fixture.logic"],
                                                                           ep.fns["oep.fixture.analog"]]
     assert int.from_bytes(d.get(0x05, b"\0"), "little") == 0
+
+
+# ---- independent review (docs/trace/review/capture.json): rules the trace above left unchecked ---------------------
+
+def test_review_signed_converter_values_arrive_as_offset_binary():
+    """capture §1.2 rule 1: a converter with a signed (b-bit two's complement) result sends offset binary - bit b-1
+    flipped, zero carrying 2^(b-1) - so the host's one linear formula gives the signed voltage, and the codes 0 and
+    2^b - 1 are its clipped ends (rule 6)."""
+    bits = 12
+    zero = 1 << (bits - 1)
+    an = analog_of(16, 0, bits, [0], zero={0: zero}, scale={0: 1_000_000})
+    for signed in (-5, -1, 0, 1, 700, -2047, 2046):
+        sent = (signed + zero) % (1 << bits)                        # the probe flips bit b-1
+        assert sent == (signed & ((1 << bits) - 1)) ^ zero
+        raw = sent.to_bytes(2, "little")
+        (value,) = an.values(raw, 0, 1)
+        assert an.millivolts(0, value) == signed                    # 1 mV a value: the signed result back
+    assert an.clipped(0, 0) == an.CLIP_LOW and an.clipped(0, (1 << bits) - 1) == an.CLIP_HIGH   # -2048 / +2047
+
+
+def test_review_analog_roles_keep_their_plan_numbers():
+    """capture §1.2 rule 2 / §3.1: analog channel numbers are the plan's role numbers, never renumbered 0 .. C-1 -
+    roles 1 and 3 give C = 2 with order [1, 3] or [3, 1]; scale, skew, frontend_used and the trigger's role use the
+    same numbers; a trigger on a role not planned (0) is cause 6; each slot holds its own role's samples."""
+    ep, hst, clock = bench()
+    an = track(hst, analog=True, roles=(1, 3))
+    r = hst.request(an.fn, an.CONFIGURE, _configure_body(rate=1000, samples=8))
+    rows = m.split_tlvs(r.payload)
+    layout = dict(rows)[ANSWER["layout"]]
+    assert layout[3] == 2 and list(layout[4:6]) in ([1, 3], [3, 1])
+    assert sorted(v[0] for t, v in rows if t == ANSWER["scale"]) == [1, 3]
+    assert sorted(v[0] for t, v in rows if t == ANSWER["frontend_used"]) == [1, 3]
+    assert {v[0] for t, v in rows if t == ANSWER["skew"]} <= {1, 3}
+    trig = lambda role: tlvs(mode(1), rate_tlv(), samples(), (T["trigger"], struct.pack("<BBI", c.CROSS_UP, role, 1)))  # noqa: E731
+    assert ask(hst, an.fn, an.QUERY_OP, trig(3), locked=False).succeeded
+    assert cause(ask(hst, an.fn, an.QUERY_OP, trig(0), locked=False)) == 6
+    cfg = an.configure(rate=1000, samples=8)
+    an.start()
+    clock.t = 30
+    (seg,) = an.segments()
+    data = an.read_segment(seg)
+    assert len(data) == 8 * 2 * 2
+    for role in (1, 3):
+        assert an.values(data, role, 8) == [vbc.analog_value(role, i) for i in range(8)]
+    assert set(cfg.skew_ns) == {1, 3}
+
+
+def test_review_analog_switch_time_is_in_start_ns_and_resuming_sets_the_gap():
+    """capture §1.2: the pad goes to the analog function at start and back from state 5 on resuming; the switching time
+    shows in the segment's start_ns (this bench: 5 us after the start / release) and the resumed segment has the gap."""
+    ep, hst, clock = bench()
+    an = track(hst, analog=True, roles=(0,))
+    an.configure(rate=1000, mode=c.REPEAT, samples=8, segments=1)
+    clock.t = 7
+    an.start()
+    clock.t = 30
+    (first,) = an.segments()
+    assert an.status().state == ST["paused"] and first.start_ns == 7_000_000 + 5_000
+    clock.t = 40
+    an.release(first.serial)
+    assert ep.pin_state(16) == "analog"
+    clock.t = 60
+    (resumed,) = an.segments()
+    assert resumed.flags & GAP and resumed.start_ns == 40_000_000 + 5_000
+
+
+def test_review_an_output_idle_set_onto_an_analog_pin_is_refused():
+    """capture §1.2: a pin the analog cannot share is refused whichever comes second - the analog plan on an output
+    idle is cause 5, and probe.config's set of an output idle on a channel an analog plan holds is unavailable too
+    (nothing changed); a pull idle there, or an output idle on another channel, is taken."""
+    ep, hst, clock = bench()
+    an = track(hst, analog=True, roles=(0,))
+    cfg_fn = ep.fns[CFG.name]
+    for mode_name in ("output_low", "output_high"):
+        item = m.tlv(CFG.tlv["item"]["idle"], struct.pack("<HB", 16, CFG.enum["idle_mode"][mode_name]))
+        before = copy.deepcopy((ep.config, ep.generation, ep.plan))
+        r = ask(hst, cfg_fn, CFG.op["set"], bytes([1]) + item)
+        assert cause(r) == reg.CORE.enum["unavailable_cause"]["pin_in_use"]
+        assert copy.deepcopy((ep.config, ep.generation, ep.plan)) == before
+    pull = m.tlv(CFG.tlv["item"]["idle"], struct.pack("<HB", 16, CFG.enum["idle_mode"]["pull_up"]))
+    assert hst.request(cfg_fn, CFG.op["set"], bytes([1]) + pull).succeeded
+    output_idle(hst, ep, 17)
+    core.plan_release(hst, [an.fn])
+    output_idle(hst, ep, 16)                                        # the plan gone: the pin is free for it
+
+
+def test_review_role_numbers_stay_in_each_interfaces_range():
+    """capture §3.1: role k is channel k, logic roles 0-127 and analog 0-63 - every role the bench declares is in that
+    range, and a role it does not declare is refused by the plan."""
+    from oep_client import pins
+    ep, hst, clock = bench()
+    for name, top in (("oep.fixture.logic", 127), ("oep.fixture.analog", 63)):
+        fn = ep.fns[name]
+        declared = [r for r in range(256) if pins.role_channels(hst, fn, r)]
+        assert declared and max(declared) <= top
+        with pytest.raises(h.Rejected):
+            core.plan_apply(hst, [(fn, max(declared) + 1, 16)])
+
+
+@pytest.mark.parametrize("name, base", [("oep.fixture.logic", 30), ("oep.fixture.analog", 16)])
+def test_review_channels_is_the_most_a_track_takes(name, base):
+    """capture §3.5 channels: max(u8) is the upper bound of the channel count - a plan of that many roles configures
+    with C = max."""
+    ep, hst, clock = bench()
+    fn = ep.fns[name]
+    most = dict(describe(hst, fn))[DESCRIBE["channels"]][0]
+    t = c.AnalogCapture(hst) if name.endswith("analog") else c.LogicCapture(hst)
+    core.plan_apply(hst, [(fn, r, base + r) for r in range(most)])
+    layout = dict(m.split_tlvs(hst.request(fn, t.QUERY_OP, _configure_body(rate=1000, samples=8),
+                                           locked=False).payload))[ANSWER["layout"]]
+    assert (layout[3] if name.endswith("analog") else layout[1]) == most
+
+
+@pytest.mark.parametrize("name", ["oep.fixture.logic", "oep.fixture.analog"])
+def test_review_max_pretrigger_is_the_declared_bound(name):
+    """capture §3.5 trigger / §3.3: describe's max_pretrigger bounds pretrigger - in mode 3 (no samples) the declared
+    value is taken and one more is unsupported (pretrigger's tag)."""
+    ep, hst, clock = bench()
+    fn = ep.fns[name]
+    analog = name.endswith("analog")
+    t = track(hst, analog)
+    _, most = struct.unpack("<II", dict(describe(hst, fn))[DESCRIBE["trigger"]])
+    trig = (T["trigger"], struct.pack("<BBI", c.CROSS_UP if analog else c.EDGE, 0, 1))
+    body = lambda pre: tlvs(mode(3), rate_tlv(), trig, (T["pretrigger"], u32(pre)))   # noqa: E731
+    assert ask(hst, fn, t.QUERY_OP, body(most), locked=False).succeeded
+    assert unsupported_tag(ask(hst, fn, t.QUERY_OP, body(most + 1), locked=False)) == T["pretrigger"]
+
+
+def test_review_pretrigger_is_checked_against_the_rounded_samples():
+    """capture §3.3: samples past what the probe holds are rounded down and that alone is no refusal; a pretrigger not
+    below the rounded samples is then unsupported with pretrigger's tag (VIRTUAL BENCH ONLY: a one-shot segment held to
+    100 samples here, below the declaration - the declaration is a guide)."""
+    ep, hst, clock = bench()
+    lc = track(hst)
+    ep.captures[lc.fn].max_samples[c.ONE_SHOT] = 100
+    trig = (T["trigger"], struct.pack("<BBI", c.EDGE, 0, 0))
+    r = hst.request(lc.fn, lc.CONFIGURE, tlvs(mode(1), rate_tlv(), samples(1000), trig, (T["pretrigger"], u32(99))))
+    assert c._config(r.payload, False).samples == 100
+    before = snap(ep, lc.fn)
+    r = ask(hst, lc.fn, lc.CONFIGURE, tlvs(mode(1), rate_tlv(), samples(1000), trig, (T["pretrigger"], u32(100))))
+    assert unsupported_tag(r) == T["pretrigger"] and snap(ep, lc.fn) == before
+
+
+def test_review_a_repeat_release_after_stop_or_error_changes_nothing():
+    """capture §3.2's state table: release in state 1 (a repeat stopped) and 6 (an error) is "—" - a success that frees
+    nothing (the segments and their bytes still read); only 3 and 5 free."""
+    ep, hst, clock = bench()
+    lc = track(hst)
+    lc.configure(rate=1000, mode=c.REPEAT, samples=8, segments=4)
+    lc.start()
+    clock.t = 20
+    lc.stop()
+    assert lc.status().state == ST["configured"]
+    kept = lc.segments()
+    before = snap(ep, lc.fn)
+    lc.release(kept[-1].serial)
+    assert snap(ep, lc.fn) == before and lc.segments() == kept
+    lc.start()
+    clock.t = 40
+    ep.capture_overflow(lc.fn)
+    kept = lc.segments()
+    assert lc.status().state == ST["error"] and kept
+    before = snap(ep, lc.fn)
+    lc.release(kept[-1].serial)
+    assert snap(ep, lc.fn) == before and lc.read_segment(kept[0])
+
+
+def test_review_a_group_stop_is_reason_1_on_each_tracks_subscription():
+    """capture §3.4 stopped: reason 1 is the host's stop, also when the group (§4) stops the track - the track's own
+    subscription gets stopped reason 1 of the track's generation."""
+    ep, hst, clock, lc, an, grp = grouped(mode=c.REPEAT)
+    lc.subscribe()
+    an.subscribe()
+    grp.bind([lc, an])
+    grp.start([lc, an])
+    clock.t = 3
+    ep.pushes()
+    grp.stop()
+    frames = [f for f in ep.pushes() if f[0] == m.ROLE_EVENT]
+    for t in (lc, an):
+        stopped = [e for e in (c.unpack_event(f) for f in frames if struct.unpack_from("<H", f, 1)[0] == t.fn)
+                   if e.kind == "stopped"]
+        assert [(e.reason, e.error, e.generation) for e in stopped] == [(1, 0, t.generation)]
+
+
+def test_review_vrefint_is_measured_after_a_group_start_too():
+    """capture §3.7 vrefint: measured just after the last start, a capture-group start included - its ns is that
+    start's time, and a later start of the track alone moves it again."""
+    ep, hst, clock, lc, an, grp = grouped()
+    grp.bind([lc, an])
+    clock.t = 12
+    grp.start([lc, an])
+    assert an.calibration().vrefint[1] == 12_000_000
+    clock.t = 40
+    grp.bind([])
+    clock.t = 50
+    an.start()
+    assert an.calibration().vrefint[1] == 50_000_000
+
+
+def test_review_the_same_plan_on_a_bound_track_is_a_no_op():
+    """capture §4.1: a bound track's plan change is cause 4, but the same set of (role, channel) again is a no-op - the
+    bind, the track's state and its configuration stay."""
+    ep, hst, clock, lc, an, grp = grouped()
+    grp.bind([lc, an])
+    before = snap(ep, lc.fn)
+    core.plan_apply(hst, [(lc.fn, 0, 30), (lc.fn, 1, 31)])
+    assert snap(ep, lc.fn) == before and ep.captures[lc.fn].group is not None
+    plan = ep.fns["oep.probe.plan"]
+    r = ask(hst, plan, reg.PROBE_PLAN.op["plan_apply"],
+            m.tlv(reg.PROBE_PLAN.tlv["plan_apply"]["role_assignment"], struct.pack("<HBH", lc.fn, 0, 32), critical=True))
+    assert cause(r) == 4 and snap(ep, lc.fn) == before

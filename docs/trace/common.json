@@ -210,7 +210,8 @@
    "verify": [
     "tests/test_trace_common.py::test_marks_page_by_serial",
     "tests/test_interfaces.py::test_console_marks_follow_serials_and_more",
-    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+    "tests/test_conformance_stream.py::test_stream_contracts_pass",
+    "tests/test_trace_common.py::test_mark_serials_are_counted_per_stream"
    ],
    "mutants": [
     "tests/test_conformance_stream.py::test_stream_mutants_fail[serial_gap]",

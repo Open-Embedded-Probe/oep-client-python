@@ -144,3 +144,62 @@ def test_the_results_table_of_save_and_erase(op, fault, after):
     assert r.payload == (struct.pack("<I", 3) if op == "save" else b"")
     want = before if after == "before" else tuple(3 if v == "current" else v for v in after)
     assert state(cfg) == want
+
+
+def test_the_interface_row_lists_oep_probe_config_at_revision_1():
+    """probe-config preamble (the interface row): the probe lists oep.probe.config by that name at revision 1."""
+    from oep_client import registry as reg
+    ep, hst = open_bench()
+    entries = [e for e in core.list_entries(hst) if e.name == "oep.probe.config"]
+    assert [(e.fn, e.revision) for e in entries] == [(ep.fns["oep.probe.config"], 1)]
+    assert reg.PROBE_CONFIG.revision == 1
+
+
+@pytest.mark.parametrize("op, payload, locked", [
+    ("get", b"\x00\x00", False), ("set", b"\x01" + config.item(config.Disable(channel=30)), True), ("save", b"", True),
+    ("erase", b"", True), ("unset", b"\x01" + struct.pack("<BH", config.ITEM["idle"], 21), True), ("state", b"", False)],
+    ids=["get", "set", "save", "erase", "unset", "state"])
+def test_the_lock_column_of_the_op_table(op, payload, locked):
+    """probe-config §2 (the op table, lock column): get and state need no lock (answered with session_id 0); set,
+    save, erase and unset need it - session_required with 0, and the settings, the generation and the saved copy stay."""
+    from oep_client import registry as reg
+    ep, hst = open_bench()
+    cfg = config.ProbeConfig(hst)
+    cfg.set([config.Idle(channel=21, mode="pull-up")])
+    cfg.save()
+    before = (cfg.get(), state(cfg), dict(ep.saved), ep.disabled)
+    code = reg.PROBE_CONFIG.op[op]
+    assert (code not in reg.PROBE_CONFIG.lock_free) == locked
+    r = m.Result.unpack(ep.handle(m.Request(hst.next_corr(), cfg.fn, code, payload, 0).pack(), 1))
+    if locked:
+        assert r.detail == m.SESSION_REQUIRED
+        assert (cfg.get(), state(cfg), dict(ep.saved), ep.disabled) == before
+    else:
+        assert r.succeeded
+
+
+def test_unset_ignores_bit_7_of_the_item_tag():
+    """probe-config §2: an item tag's bit 7 is treated in unset as in set - unset of (0x83, channel) removes the idle
+    item (0x03, channel) and moves the generation; the same key once more is a no-op."""
+    ep, hst = open_bench()
+    cfg = config.ProbeConfig(hst)
+    g = cfg.set([config.Idle(channel=21, mode="pull-up"), config.Label(channel=21, text="x")])
+    r = hst.call(cfg.fn, cfg.UNSET, b"\x01" + struct.pack("<BH", config.ITEM["idle"] | 0x80, 21))
+    assert struct.unpack_from("<I", r.payload)[0] == g + 1
+    assert cfg.items() == [config.Label(channel=21, text="x")]
+    r = hst.call(cfg.fn, cfg.UNSET, b"\x01" + struct.pack("<BH", config.ITEM["idle"] | 0x80, 21))
+    assert struct.unpack_from("<I", r.payload)[0] == g + 1
+
+
+def test_save_and_erase_complete_within_max_op_ms():
+    """probe-config §3: the whole save / erase finishes inside the core's max_op_ms - the virtual bench answers each
+    completed in the request itself (never accepted / deferred), on a clock that has not moved past max_op_ms."""
+    ep, hst = open_bench()
+    cfg = config.ProbeConfig(hst)
+    limit = core.max_op_ms(hst)
+    assert limit >= 1
+    cfg.set([config.Label(channel=20, text="a" * 32)])
+    start = ep.now()
+    for op in (cfg.SAVE, cfg.ERASE):
+        r = hst.request(cfg.fn, op)
+        assert r.resolution == m.COMPLETED and r.detail == m.SUCCESS and ep.now() - start <= limit

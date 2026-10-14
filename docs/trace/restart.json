@@ -3,7 +3,11 @@
  "units": {
   "restart:pre:1": {
    "text": "| `oep.probe.restart` | 1 | probe 自身を起動し",
-   "excluded": "informative: the name / revision / role row of the interface (the numbers are checked under §1)"
+   "verify": [
+    "tests/test_trace_restart.py::test_the_interface_row_lists_oep_probe_restart_at_revision_1"
+   ],
+   "mutants": [],
+   "note": "the probe lists oep.probe.restart at revision 1"
   },
   "restart:pre:2": {
    "text": "- host が、probe を抜き差しせずに、おかしな状態になった probe",

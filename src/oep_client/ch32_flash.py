@@ -92,8 +92,8 @@ V003_INPUT, V003_STACK, V003_EBREAK, V003_RUN = 0x20000200, 0x20000800, 0x200001
 
 
 def _block_size(dm: riscv.RiscvDm) -> int:
-    """Bytes per read_block / write_block: the probe's declared max_length (oep-if-debug §4.5), never a value computed
-    from max_frame (riscv.NoMaxLength when the probe declares none)."""
+    """Bytes per read_block / write_block: min(max_length, max_frame - 20), a word multiple (oep-if-debug §4.5; the
+    write bound, the smaller; riscv.NoMaxLength when the probe declares none)."""
     return dm.max_words * 4
 
 

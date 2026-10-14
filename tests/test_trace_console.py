@@ -183,3 +183,73 @@ def test_dmseq_first_synchronisation_marks_no_restart():
     r = DmseqChecks(c, a).run()
     rows = {x["id"]: x for x in r["checks"]}
     assert all(rows[k]["status"] == "failed" for k in ("OEP-DMSEQ-VECTOR", "OEP-DMSEQ-SYN", "OEP-DMSEQ-UNSYNCED")), r["checks"]
+
+
+def test_the_interface_row_lists_oep_target_console_at_revision_1():
+    """console preamble (the interface row): the probe lists oep.target.console by that name at revision 1."""
+    clock, ep, hst = bench()
+    entries = [e for e in core.list_entries(hst) if e.name == CON.name]
+    assert [(e.fn, e.revision) for e in entries] == [(ep.fns[CON.name], 1)] and CON.revision == 1
+
+
+@pytest.mark.parametrize("op, locked", [("open", True), ("read", False), ("marks", False), ("clear", True),
+                                        ("mark", True), ("write", True), ("close", True), ("streams", False)])
+def test_the_lock_column_of_the_op_table(op, locked):
+    """console §1 (the op table, lock column): read, marks and streams need no lock (answered with session_id 0);
+    open, clear, mark, write and close need it - session_required with 0, and the stream, its buffer, marks and send
+    queue stay as they were."""
+    clock, ep, hst = bench()
+    conn, _ = riscv.Wire(hst).attach(halt=True)
+    con = console.Console(hst)
+    sid = con.open(conn, console.Console.DMDATA)
+    ep.emit(sid, b"out")
+    payload = {"open": struct.pack("<IB", conn, 2), "read": struct.pack("<IBQH", sid, 1, 0, 16),
+               "marks": struct.pack("<II", sid, 0), "clear": struct.pack("<I", sid), "mark": struct.pack("<IB", sid, 1),
+               "write": struct.pack("<IH", sid, 1) + b"x", "close": struct.pack("<I", sid),
+               "streams": struct.pack("<H", 0)}[op]
+    assert (CON.op[op] not in CON.lock_free) == locked
+    snap = lambda: (list(ep.streams), con.read(console.Console.FROM_OLDEST, 0, 64).data, con.marks(),
+                    bytes(ep.streams[sid].queue))
+    before = snap()
+    r = call(ep, hst, CON.op[op], payload, locked=False)
+    if locked:
+        assert r.detail == m.SESSION_REQUIRED and snap() == before
+    else:
+        assert r.succeeded
+
+
+def test_a_write_of_count_0_is_success_with_accepted_0():
+    """console §2 (the send queue): a write of count 0 is completed success with accepted 0 - even with the queue
+    full, where a count above 0 is completed failed with accepted 0."""
+    clock, ep, hst = bench()
+    conn, _ = riscv.Wire(hst).attach(halt=True)                       # halted: nothing is handed on
+    con = console.Console(hst)
+    sid = con.open(conn, console.Console.DMDATA)
+    for full in (False, True):
+        if full:
+            assert con.write(b"x" * virtual_bench.CONSOLE_SEND_QUEUE) == virtual_bench.CONSOLE_SEND_QUEUE
+        r = call(ep, hst, CON.op["write"], struct.pack("<IH", sid, 0))
+        assert (r.resolution, r.detail) == (m.COMPLETED, m.SUCCESS) and m.Reader(r.payload).u16() == 0
+    r = call(ep, hst, CON.op["write"], struct.pack("<IH", sid, 1) + b"y")
+    assert (r.resolution, r.detail) == (m.COMPLETED, m.FAILED) and m.Reader(r.payload).u16() == 0
+
+
+def test_a_fn_without_marks_still_synchronises_and_drops_duplicates_on_dmseq():
+    """console §2: a fn that does not offer marks still keeps dmseq's synchronisation and drops duplicate frames -
+    the dmseq checker on a model whose console answers marks / mark unknown_operation passes its synchronisation,
+    duplicate and transition cases (only the cases that read marks back fail)."""
+    from oep_client.conformance import Checks
+    model, c, a = dmseq_setup()
+    handle = model.handle
+
+    def without_marks(b, *rest):
+        q = m.Request.unpack(b)
+        if q.fn == 4 and q.op in (CON.op["marks"], CON.op["mark"]):
+            return m.Result(q.corr, m.REJECTED, m.UNKNOWN_OPERATION, b"").pack()
+        return handle(b, *rest)
+    r = DmseqChecks(Checks(without_marks, c.reg, "virtual-resource-1"), a).run()
+    rows = {x["id"]: x["status"] for x in r["checks"]}
+    kept = ["SYN", "UNSYNCED", "LENGTHS", "CRC", "DUP-PLAIN", "DUP-SYN", "DUP-TO", "SAME-S-SYN", "NEW-S-SYN",
+            "IDENTICAL-NEW", "DUP-ACK", "ACK-EMPTY"]
+    assert all(rows["OEP-DMSEQ-" + k] == "passed" for k in kept), rows
+    assert rows["OEP-DMSEQ-MARK-RESYNC-NEW"] == "failed"                    # the marks really are gone

@@ -730,6 +730,8 @@ class Endpoint:
         self.push_link: dict[int, Hashable] = {}        # fn -> the connection its notifications go to (core §10.4)
         self.data_since_ms: dict[int, int] = {}         # fn -> when its oldest data not sent yet was there (max_delay_ms)
         self.push_seq: dict[int, int] = {}              # fn -> the next event / data seq (core §10.2)
+        # fn -> +1 at every subscribe / unsubscribe: a transport drops what it holds of an older one unsent (§10.3)
+        self.sub_epoch: dict[int, int] = getattr(self, "sub_epoch", {})
         self.outbox: list[bytes] = []                   # events and data frames waiting to go out (pushes())
         self.plan: set[tuple[int, int, int]] = set()   # (fn, role, channel), from plan_apply
         # corr -> (the whole request, its answer); None where it was too large to keep (core §5.1)
@@ -879,8 +881,8 @@ class Endpoint:
                 self.outbox.append(bytes([m.ROLE_EVENT]) + struct.pack("<HH", fn, self._next_seq(fn)) + e)
 
     def pushes_to(self) -> list[tuple[Hashable, bytes]]:
-        """`pushes`, each with the connection it goes to (core §10.4: where its fn's subscribe came, or where the
-        session was taken back to; `handle`'s `link`). A serving loop with several connections sends each to its own
+        """`pushes`, each with the connection it goes to (core §10.4: where its fn's subscribe came - the holder's open
+        again does not move it, §6.2; `handle`'s `link`). A serving loop with several connections sends each to its own
         and drops one whose connection is gone (transports §3)."""
         return [(self.push_link.get(struct.unpack_from("<H", f, 1)[0]), f) for f in self.pushes()]
 
@@ -1404,10 +1406,8 @@ class Endpoint:
             self.owner = owner                                     # from the open that takes the lock, kept while held
             self.resend.clear()                                    # only a new id's open starts a new replay state (§5.1)
             self.newest_corr = None
-        else:
-            # the holder's open again - from another connection, it takes the session back there (transports §3):
-            # its notifications go to that connection from now on
-            self.push_link = {fn: self._via for fn in self.push_link}
+        # the holder's open again (from any connection) keeps the resources, the resend state and where the
+        # subscriptions send (core §6.2): a subscribe again moves them (§10.3)
         self.holder = self.last = session
         # 0: the probe's default; else rounded into lease_min_ms .. lease_max_ms (core §6.4)
         lo, hi = reg.LIMITS["lease_min_ms"], min(self.lease_max_ms, reg.LIMITS["lease_max_ms"])
@@ -1518,6 +1518,7 @@ class Endpoint:
             min_bytes, max_delay_ms = t.take("HI")
             t.tail()
             self._drop_unsent(fn)
+            self.sub_epoch[fn] = self.sub_epoch.get(fn, 0) + 1
             self.subscribed[fn] = (min_bytes, max_delay_ms)
             self.push_link[fn] = self._via                         # sent where the subscribe came (core §10.4)
             self.push_seq[fn] = 0                                  # seq from 0 at every subscribe (core §10.2)
@@ -1525,6 +1526,7 @@ class Endpoint:
             return m.COMPLETED, m.SUCCESS, b""
         t.tail()
         self._drop_unsent(fn)
+        self.sub_epoch[fn] = self.sub_epoch.get(fn, 0) + 1
         self.subscribed.pop(fn, None)
         self.push_link.pop(fn, None)
         self.data_since_ms.pop(fn, None)
@@ -2299,7 +2301,10 @@ class Endpoint:
         """Each op reads and checks its whole request first - malformed, then unsupported (core §4.3 orders 5 / 6) -
         and only then looks up the connection (no_resource; every check before any change, core §4.3)."""
         conn = t.take("I")
-        target = lambda: self._exchange(conn)
+        if op in (_RV.op["dmi"], _RV.op["reset"]):                 # raw dmi adds nothing; reset acks its own
+            target = lambda: self._exchange(conn)
+        else:                                                      # a high-level op acks a pending havereset (§4.6)
+            target = lambda: self._ack_havereset(conn, self._exchange(conn))
         if op == _RV.op["dmi"]:
             n = t.take("H")
             steps = []
@@ -2379,6 +2384,7 @@ class Endpoint:
                 return m.COMPLETED, m.FAILED, struct.pack("<BBI", LINE, 0, 0)   # the connection kept
             tg.halted = mode == 2
             tg.dpc = tg.reset_vector if mode == 2 else tg.reset_vector + 0x200
+            tg.havereset = tg.haltreq = False                      # havereset acknowledged, haltreq cleared (§4.3)
             self._host_reset(conn, MARK_RESET["ndmreset"])         # a successful reset op: one mark reset (§4.6)
             # debug §4.3: status flags(bit0 reached the mode's state) pc (mode 2: dpc)
             flags, pc = (0b01, 0) if mode == 0 else (0b01, tg.dpc)
@@ -2478,6 +2484,17 @@ class Endpoint:
         `settle_log`)."""
         self.settle_log.append(min(tg.restart_ms, self.max_op_ms))
         return tg.restart_ms <= self.max_op_ms
+
+    def _ack_havereset(self, cid: int, tg: VirtualTarget) -> VirtualTarget:
+        """A high-level op's automatic havereset acknowledgement (debug §4.6): a pending one (the target reset by
+        itself) is acknowledged and the connection's console streams get a restart mark (detail havereset)."""
+        if tg.havereset:
+            tg.havereset = False
+            now = self.now_ns()
+            for st in self.streams.values():
+                if st.conn == cid:
+                    st.add_mark(CON_MARK["restart"], now, MARK_RESTART["havereset"])
+        return tg
 
     def _host_reset(self, cid: int, detail: int) -> None:
         """The reset op's ndmreset on connection `cid` (detail 1): its stream gets one mark reset (console §2, debug
@@ -2755,8 +2772,10 @@ class Endpoint:
             if not st.queue:
                 return self._answer(struct.pack("<BH", 0, 0))
             frame, ns = st.queue.pop(0)
-            return self._answer(struct.pack("<BH", min(len(st.queue), 255), len(frame)) + frame
-                                + m.tlv(_I2C.tlv["read_rx_answer"]["ns"], struct.pack("<Q", ns)))
+            body = struct.pack("<BH", min(len(st.queue), 255), len(frame)) + frame
+            tail = m.tlv(_I2C.tlv["read_rx_answer"]["ns"], struct.pack("<Q", ns))
+            fits = m.RESULT_HEADER + len(body) + len(tail) <= self.probe.max_frame   # the optional TLV only if it fits
+            return self._answer(body + (tail if fits else b""))
         if op == ops["preload_tx"]:                                # count(u16) data -> nothing (fixture §3)
             count = t.take("H")
             data = t.bytes(count)
@@ -2860,7 +2879,10 @@ class Endpoint:
                 return self._answer(struct.pack("<BIH", 0, 0, 0))
             bits, data, ns = st.queue.pop(0)
             tail = m.tlv(_SPI.tlv["read_rx_answer"]["ns"], struct.pack("<Q", ns)) if self.spi_ns else b""   # optional
-            return self._answer(struct.pack("<BIH", min(len(st.queue), 255), bits, len(data)) + data + tail)
+            body = struct.pack("<BIH", min(len(st.queue), 255), bits, len(data)) + data
+            if m.RESULT_HEADER + len(body) + len(tail) > self.probe.max_frame:
+                tail = b""                                         # the optional TLV only if it fits (fixture §4)
+            return self._answer(body + tail)
         if op == ops["status"]:                                    # lock-free
             t.tail()
             return self._answer(struct.pack("<BBBBBII", st.state, st.mode, st.bit_order, int(st.armed is not None),
@@ -3046,7 +3068,13 @@ class Endpoint:
             raise unavailable("held_by_settings", min(disabled & idles))   # idle and disable on one channel (§1)
         old_idle = {ch: v for (tag, ch), v in self.config.items() if tag == ITEM["idle"]}
         new_idle = {ch: v for (tag, ch), v in new.items() if tag == ITEM["idle"]}
-        repark = (self.disabled - disabled) | {ch for ch in set(old_idle) | set(new_idle)
+        outputs = (IDLE_MODE["output_low"], IDLE_MODE["output_high"])
+        for ch in sorted({a[2] for a in self.plan if a[0] in self.captures and self.captures[a[0]].analog}):
+            v = new_idle.get(ch)
+            if v != old_idle.get(ch) and v is not None and len(v) >= 3 and v[2] in outputs:
+                raise unavailable("pin_in_use", ch)                # an output idle onto an analog plan's pad: refused
+                                                                   # whichever comes second (capture §1.2)
+        repark =(self.disabled - disabled) | {ch for ch in set(old_idle) | set(new_idle)
                                                if old_idle.get(ch) != new_idle.get(ch)}
         self.config = new
         self.generation += 1

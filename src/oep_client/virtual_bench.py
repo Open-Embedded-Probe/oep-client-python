@@ -241,7 +241,7 @@ BLOCK_HEADERS = 24   # write_block's request (10 + connection 2 + address 4 + co
 def block_max_length(max_frame: int) -> int:
     """The max_length (bytes, a multiple of 4) a probe with read_block / write_block declares for its max_frame
     (oep-if-debug §4.5): max_frame - 24 rounded down to a word, as the reference firmware does - a read's answer and a
-    write's request both fit one frame. The host takes this value; it never computes a block size from max_frame."""
+    write's request both fit one frame. The host's count is at most min(max_length, max_frame - 8 / - 20) / 4."""
     return max(0, (max_frame - BLOCK_HEADERS) // 4 * 4)
 
 

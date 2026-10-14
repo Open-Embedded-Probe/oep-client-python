@@ -146,8 +146,8 @@ class MemAp:
         csw = adi.ap_read(ap, self.base)
         adi.ap_write(ap, self.base, (((csw & ~0x37) | 0x12) | csw_set) & ~csw_clear)   # 32 bits, AddrInc single
         adi._ap_select(ap, self.base)                        # the bank the block operations assume
-        # Words per block operation: the probe's declared max_length (oep-if-debug §6), never computed from max_frame
-        self.chunk = adi.max_words
+        # Words per block operation: min(max_length, max_frame - 8 / - 20) / 4 for read / write (oep-if-debug §6, §4.5)
+        self.chunk, self.read_chunk = adi.write_words, adi.read_words
 
     def write_many(self, pairs: list[tuple[int, int]]) -> None:
         """Scattered single-word writes in one transfer list (TAR, DRW per word, RDBUFF at the end so the last one
@@ -158,7 +158,7 @@ class MemAp:
         self.adi.transfer(steps + self.adi.req(False, True, DP_RDBUFF))
 
     def read_block(self, address: int, words: int) -> list[int]:
-        out, chunk = [], self.chunk
+        out, chunk = [], self.read_chunk
         for off in range(0, words, chunk):
             self.adi._ap_select(self.ap, self.base)
             n = min(chunk, words - off)

@@ -95,7 +95,8 @@
    "text": "5. §2 の途切れの規則はこの列に掛かる: フレームが途中で、report が",
    "verify": [
     "tests/test_trace_transports.py::test_usb_probe_drops_a_frame_that_stops_for_probe_frame_gap_ms[hid]",
-    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[hid-6-9]"
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[hid-6-9]",
+    "tests/test_trace_transports.py::test_after_a_gap_the_probe_reads_the_next_byte_as_a_length[hid]"
    ],
    "mutants": [
     "tests/test_conformance_usb.py::test_checker_detects_usb_probe_faults[keep_partial]"
@@ -264,7 +265,9 @@
     "tests/test_trace_transports.py::test_usb_probe_drops_a_frame_that_stops_for_probe_frame_gap_ms[bulk]",
     "tests/test_trace_transports.py::test_usb_probe_drops_a_frame_that_stops_for_probe_frame_gap_ms[hid]",
     "tests/test_virtual_core.py::test_current_virtual_tcp_passes_core_and_tcp_faults",
-    "tests/test_host_rules_2026_10_02.py::test_c07_on_tcp_a_pause_inside_a_frame_is_read_on"
+    "tests/test_host_rules_2026_10_02.py::test_c07_on_tcp_a_pause_inside_a_frame_is_read_on",
+    "tests/test_trace_transports.py::test_after_a_gap_the_probe_reads_the_next_byte_as_a_length[bulk]",
+    "tests/test_trace_transports.py::test_after_a_gap_the_probe_reads_the_next_byte_as_a_length[hid]"
    ],
    "mutants": [
     "tests/test_conformance_usb.py::test_checker_detects_usb_probe_faults[keep_partial]"
@@ -337,7 +340,8 @@
     "tests/test_usb_identity.py::test_usb_unit_id_matches_the_serial_and_checks_describe",
     "tests/test_usb_identity.py::test_usb_unit_id_whose_describe_says_another_unit_is_closed",
     "tests/test_usb_identity.py::test_find_usb_matches_the_serial_alone",
-    "tests/test_conformance_reconnect.py::test_identity_selection_is_case_insensitive"
+    "tests/test_conformance_reconnect.py::test_identity_selection_is_case_insensitive",
+    "tests/test_trace_transports.py::test_a_named_unit_id_is_compared_without_letter_case"
    ],
    "mutants": [],
    "note": "named unit_id: device by serial (case-insensitive), used only when describe's unit_id matches, else closed"
@@ -359,7 +363,8 @@
     "tests/test_usb_identity.py::test_a_silent_device_gets_one_confirm_and_its_resend_then_is_closed",
     "tests/test_usb_identity.py::test_an_answer_that_is_not_a_valid_confirm_closes_the_device",
     "tests/test_usb_identity.py::test_a_silent_serial_port_gets_only_confirms_then_is_closed",
-    "tests/test_port_speed.py::test_open_waits_out_a_raised_rate_a_host_that_died_left"
+    "tests/test_port_speed.py::test_open_waits_out_a_raised_rate_a_host_that_died_left",
+    "tests/test_trace_transports.py::test_the_probing_confirm_waits_core_quick_op_max_ms_and_host_wait_add_ms"
    ],
    "mutants": [],
    "note": "probing: confirm (and its resend) only; no valid OEP! answer with the same corr -> closed, nothing else sent"
@@ -429,10 +434,11 @@
    "text": "- host は、OS が許すところでは、シリアルの口と HID を排他で開く（",
    "verify": [
     "tests/test_link_serial.py::test_open_host_on_a_serial_port_with_tiocexcl",
-    "tests/test_link_serial.py::test_a_port_left_open_at_exit_has_its_exclusive_mode_cleared"
+    "tests/test_link_serial.py::test_a_port_left_open_at_exit_has_its_exclusive_mode_cleared",
+    "tests/test_trace_transports.py::test_the_hid_is_opened_exclusively"
    ],
    "mutants": [],
-   "note": "serial ports opened exclusively (TIOCEXCL, flock): a second open is PortBusy"
+   "note": "serial ports opened exclusively (TIOCEXCL, flock): a second open is PortBusy; HID: flock on the hidraw node (client fixed), a second open is HidBusy"
   },
   "transports:3:16": {
    "text": "- HID を出す probe は、output の report を、inte",
@@ -462,7 +468,8 @@
    "text": "- **任意の速さ変更を扱うhost**: [port_speed](../in",
    "verify": [
     "tests/test_port_speed.py::test_open_waits_out_a_raised_rate_a_host_that_died_left",
-    "tests/test_port_speed.py::test_open_gives_up_on_a_probe_that_never_comes_back"
+    "tests/test_port_speed.py::test_open_gives_up_on_a_probe_that_never_comes_back",
+    "tests/test_trace_transports.py::test_a_host_that_may_have_raised_the_speed_sets_its_own_limit_for_the_boot_speed"
    ],
    "mutants": [],
    "note": "a host handling port_speed retries confirm at the boot speed and decides its own limit"
@@ -518,10 +525,12 @@
     "tests/test_host_rules_2026_10_02.py::test_c07_a_resync_waits_250_ms_after_the_hosts_last_write",
     "tests/test_link_host.py::test_an_impossible_length_resyncs",
     "tests/test_link_host.py::test_a_frame_that_stops_half_way_resyncs",
-    "tests/test_link_host.py::test_pushes_that_never_stop_are_stopped_blind_with_unsubscribe_and_end"
+    "tests/test_link_host.py::test_pushes_that_never_stop_are_stopped_blind_with_unsubscribe_and_end",
+    "tests/test_trace_transports.py::test_a_length_port_that_never_goes_quiet_is_closed_and_opened_again[True]",
+    "tests/test_trace_transports.py::test_a_length_port_that_never_goes_quiet_is_closed_and_opened_again[False]"
    ],
    "mutants": [],
-   "note": "vendor bulk/HID resync: read and discard until quiet, wait past probe_frame_gap_ms since the last write, own-corr confirm"
+   "note": "vendor bulk/HID resync: read and discard until quiet, wait past probe_frame_gap_ms since the last write, own-corr confirm; never quiet: closed and opened again (client fixed)"
   },
   "transports:5:3": {
    "text": "- COBS は壊れた候補を捨て、次の区切りから読む。要求の結果が不明な場合は ",

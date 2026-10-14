@@ -879,3 +879,102 @@ def test_spi_describe_declares_modes_and_cs_setup(profile, cs_setup):
     assert len(d[0x40]) == 1 and d[0x40][0] >= 1
     assert (0x43 in d) == bool(cs_setup) and (not cs_setup or struct.unpack("<I", d[0x43])[0] == cs_setup)
     assert fixture.SpiTarget(host.Host(ep.handle, rng=random.Random(1)), fn).cs_setup_ns == cs_setup
+
+
+# ---- review additions (independent review of docs/trace/fixture.json) ---------------------------------------------
+
+@pytest.mark.parametrize("mode, level", [(0, 1), (1, 1), (2, 1), (3, 0), (4, 1), (5, 0), (6, 1)])
+def test_gpio_modes_against_an_outside_high(mode, level):
+    """fixture §1 mode table, the other half: with something outside holding the line high, the input modes (0 floating,
+    1 pull-up, 2 pull-down) and the released open drain (6) read it high, while output low (3) and open-drain low (5)
+    keep pulling the line low and output high (4) drives it high - the driven modes ignore the outside."""
+    ep, h = bench()
+    h.ok(h.plan_fn, PLAN_APPLY, assign((GPIO, 1, 30)))
+    h.ok(GPIO, 0x10, bytes([1]) + struct.pack("<HB", 30, mode))
+    ep.gpio_world = lambda ch, md: 1
+    assert h.raw(GPIO, 0x11, bytes([1]) + struct.pack("<H", 30), session=False).payload == bytes([1, level])
+
+
+def test_uart_clear_may_come_without_marks(uart, monkeypatch):
+    """fixture §2: clear may be offered without marks (and then needs no clear mark): it empties the stream and the
+    position carries on; marks and mark stay unknown_operation, read from 3 unsupported."""
+    ep, h = uart
+    h.ok(UART, 0x10, struct.pack("<I", 115200))
+    offers = ep.offers
+    monkeypatch.setattr(ep, "offers", lambda fn, op: (fn != UART or op not in (0x12, 0x14)) and offers(fn, op))
+    ep.uart_rx(UART, b"abc")
+    assert h.ok(UART, 0x13) == b""
+    assert h.raw(UART, 0x11, struct.pack("<BQH", 1, 0, 9), session=False).payload == struct.pack("<QBH", 3, 0, 0)
+    assert h.raw(UART, 0x12, struct.pack("<I", 0), session=False).detail == m.UNKNOWN_OPERATION
+    r = h.raw(UART, 0x11, struct.pack("<BQH", 3, 0, 9), session=False)
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00")
+
+
+def test_uart_write_needs_tx_and_a_tx_only_plan_receives_nothing():
+    """fixture §2: a uart that offers write answers write unavailable cause 6 while its plan has no TX (configured RX
+    only) or is not configured; a TX-only plan and a plan not configured receive nothing, while what was kept before
+    stays readable by the ordinary read."""
+    ep, h = bench()
+    h.ok(h.plan_fn, PLAN_APPLY, assign((UART, 1, 20)))
+    assert cause(h.raw(UART, 0x15, struct.pack("<H", 1) + b"x")) == 6          # RX only, not configured
+    h.ok(UART, 0x10, struct.pack("<I", 115200))
+    assert cause(h.raw(UART, 0x15, struct.pack("<H", 1) + b"x")) == 6          # RX only, configured: still no TX
+    ep.uart_rx(UART, b"kept")
+    h.ok(UART, 0x10, struct.pack("<I", 115200))
+    h.ok(h.plan_fn, PLAN_RELEASE, bytes([1]) + struct.pack("<H", UART))
+    h.ok(h.plan_fn, PLAN_APPLY, assign((UART, 2, 21)))                          # TX only
+    h.ok(UART, 0x10, struct.pack("<I", 115200))
+    ep.uart_rx(UART, b"lost")
+    r = h.raw(UART, 0x11, struct.pack("<BQH", 1, 0, 9), session=False)
+    assert r.succeeded and r.payload == struct.pack("<QBH", 4, 0, 0)            # nothing received, the position kept
+    assert h.ok(UART, 0x15, struct.pack("<H", 2) + b"tx") == struct.pack("<H", 2)
+    ep2, h2 = bench()                                                           # kept bytes read while not configured
+    h2.ok(h2.plan_fn, PLAN_APPLY, assign((UART, 1, 20), (UART, 2, 21)))
+    h2.ok(UART, 0x10, struct.pack("<I", 115200))
+    ep2.uart_rx(UART, b"kept")
+    ep2.uart_fail_configure.add(UART)
+    h2.raw(UART, 0x10, struct.pack("<I", 9600))
+    ep2.uart_rx(UART, b"lost")
+    r = h2.raw(UART, 0x11, struct.pack("<BQH", 1, 0, 9), session=False)
+    assert r.payload == struct.pack("<QBH", 0, 0, 4) + b"kept"
+    assert cause(h2.raw(UART, 0x15, struct.pack("<H", 1) + b"x")) == 6
+
+
+def _at_the_bound(fn, length):
+    probe = virtual_bench.esp32_v003_64()
+    old = next(o for o in probe.offered if o.fn == fn)
+    return replaced(probe, fn, [t if t[0] != catalog.MAX_LENGTH else catalog.u16(catalog.MAX_LENGTH, length)
+                                for t in old.tlvs])
+
+
+def test_i2c_read_rx_timestamp_only_when_it_fits():
+    """fixture §3: max_length keeps preload_tx and read_rx's answer within max_frame; the optional timestamp TLV is put
+    on read_rx only when it fits - a frame of max_length (= max_frame - 12) comes back whole, without it."""
+    ep, h = bench(_at_the_bound(V003_I2C, 64 - 12))
+    ep.now_ns = lambda: 99
+    h.ok(h.plan_fn, PLAN_APPLY, assign((V003_I2C, 1, 25), (V003_I2C, 2, 26)))
+    h.ok(V003_I2C, 0x10, b"\x42")
+    assert h.ok(V003_I2C, 0x12, struct.pack("<H", 52) + bytes(52)) == b""        # 10 + 2 + 52 = 64
+    ep.i2c_write(V003_I2C, b"\x01")
+    ep.i2c_write(V003_I2C, bytes(range(52)))
+    assert h.ok(V003_I2C, 0x11) == struct.pack("<BH", 1, 1) + b"\x01" + m.tlv(0x01, struct.pack("<Q", 99))
+    r = h.raw(V003_I2C, 0x11)
+    assert r.succeeded and r.payload == struct.pack("<BH", 0, 52) + bytes(range(52))
+    assert 5 + len(r.payload) <= 64
+
+
+def test_spi_read_rx_timestamp_only_when_it_fits():
+    """fixture §4: max_length keeps the longest arm and read_rx's answer within max_frame; the optional timestamp TLV is
+    put on read_rx only when it fits - a transfer of max_length (= max_frame - 14) comes back whole, without it."""
+    ep, h = bench(_at_the_bound(V003_SPI, 64 - 14))
+    ep.now_ns = lambda: 99
+    h.ok(h.plan_fn, PLAN_APPLY, assign((V003_SPI, 1, 18), (V003_SPI, 2, 19), (V003_SPI, 3, 5), (V003_SPI, 4, 4)))
+    h.ok(V003_SPI, 0x10, b"\x00\x00")
+    h.ok(V003_SPI, 0x11, struct.pack("<HH", 50, 50) + bytes(50))                 # 10 + 2 + 2 + 50 = 64
+    ep.spi_transfer(V003_SPI, bytes(range(50)))
+    r = h.raw(V003_SPI, 0x12)
+    assert r.succeeded and r.payload == struct.pack("<BIH", 0, 400, 50) + bytes(range(50))
+    assert 5 + len(r.payload) <= 64
+    h.ok(V003_SPI, 0x11, struct.pack("<HH", 1, 0))
+    ep.spi_transfer(V003_SPI, b"\x07")
+    assert h.ok(V003_SPI, 0x12) == struct.pack("<BIH", 0, 8, 1) + b"\x07" + m.tlv(0x01, struct.pack("<Q", 99))

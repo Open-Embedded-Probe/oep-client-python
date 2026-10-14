@@ -349,3 +349,26 @@ def test_the_client_never_runs_a_failed_target_write_again_by_itself(bench):
     with pytest.raises(riscv.StepListError):
         dm.dmi([dm.step_write(0x10, 1)])
     assert len(ep.requests) == before + 1
+
+
+# ---- review additions (independent review of the trace) ------------------------------------------------------------
+
+def test_mark_serials_are_counted_per_stream(bench):
+    """common §1.3: serial is a count of marks per stream - marks on the console stream do not move the fixture UART's
+    serials, nor a second console stream's; each goes 0, 1, ... on its own."""
+    ep, clock, hst, conn, con, sid = bench
+    for v in range(3):
+        con.mark(v)
+    assert [mk.serial for mk in con.marks()] == [0, 1, 2]
+    core.plan_apply(hst, [(5, 1, 21)])
+    uart = fixture.FixtureUart(hst, 5)
+    uart.configure(115200)
+    uart.mark(7)
+    assert [(mk.serial, mk.detail) for mk in uart.marks()] == [(0, 7)]
+    other = console.Console(hst)
+    c2, _ = riscv.Wire(hst).attach(halt=False, pins=ep.pairs[1][1])
+    other.open(c2)
+    other.mark(9)
+    assert [(mk.serial, mk.detail) for mk in other.marks()] == [(0, 9)]
+    con.mark(3)
+    assert [mk.serial for mk in con.marks()] == [0, 1, 2, 3]

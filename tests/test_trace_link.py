@@ -11,7 +11,7 @@ import pytest
 from oep_client import core, endpoint, link, virtual_bench, host as h, message as m, registry as reg
 
 from test_link_serial import Scripted
-from test_port_speed import COMMIT, PS, TRY, FAST, Port, in_process, opened, ps
+from test_port_speed import COMMIT, PS, TRY, FAST, Port, committed, in_process, opened, ps
 
 LINK = reg.PROBE_LINK.op
 
@@ -148,3 +148,60 @@ def test_the_host_goes_back_after_a_restart():
     assert lk.baud == 115200 and ep.port_baud(0) == 115200
     hst.open(3000)
     hst.keepalive()
+
+
+def test_the_interface_row_lists_oep_probe_link_at_revision_1():
+    """link preamble (the interface row): the probe lists oep.probe.link by that name at revision 1."""
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
+    hst = h.Host(lambda b: ep.handle(b, 0))
+    entries = [e for e in core.list_entries(hst) if e.name == "oep.probe.link"]
+    assert [(e.fn, e.revision) for e in entries] == [(ep.link_fn, 1)] and reg.PROBE_LINK.revision == 1
+
+
+@pytest.mark.parametrize("op, locked", [("source", False), ("sink", False), ("port_speed", True), ("port_state", False)])
+def test_the_lock_column_of_the_op_table(op, locked):
+    """link §1 (the op table, lock column): source, sink and port_state need no lock - with session_id 0 they are
+    not refused session_required; port_speed needs it - session_required with 0, the port's speed unchanged."""
+    p = Port()
+    payload = {"source": struct.pack("<I", 4), "sink": struct.pack("<H", 1) + b"x",
+               "port_speed": ps(500000, TRY), "port_state": b""}[op]
+    r = p.send(p.ep.link_fn, LINK[op], payload, 0)
+    assert (LINK[op] not in reg.PROBE_LINK.lock_free) == locked
+    if locked:
+        assert r.detail == m.SESSION_REQUIRED and p.ep.speed_state == "base" and p.ep.port_baud(0) == 115200
+    else:
+        assert r.succeeded
+
+
+def test_the_probe_goes_back_by_itself_without_telling():
+    """link §3 (the probe's own return, "not announced"): going back after verify_ms or after port_speed_idle_ms sends
+    nothing on the port - no frame at either rate - and port_state shows the boot speed afterwards."""
+    p = Port()
+    sid = opened(p)
+    assert p.send(p.ep.link_fn, PS, ps(750000, TRY, 1000), sid).succeeded
+    p.port.output()
+    p.tick(1000)
+    assert p.ep.port_baud(0) == 115200 and p.port.output() == b""
+    committed(p, sid)
+    p.port.output()
+    p.tick(3000)
+    assert p.ep.port_baud(0) == 115200 and p.ep.speed_state == "base" and p.port.output() == b""
+    r = p.send(p.ep.link_fn, LINK["port_state"], b"", 0)
+    assert r.succeeded and struct.unpack_from("<IB", r.payload) == (115200, 0)
+
+
+def test_the_host_reads_the_phase_with_a_new_corr_not_from_an_old_answer():
+    """link §3 host 2: a past success answer resent is no evidence of the speed now - after a try that failed (its
+    confirm's answers broken at the new rate), the host reverts, then reads port_state with a new corr (above every
+    corr sent before) and only then tries the next candidate."""
+    ep, hst, lk = in_process()
+    ep.broken_rates[1000000] = endpoint.BrokenRate(to_probe=False)
+    n = len(ep.requests)
+    report = link.raise_speed(hst, [1000000, 500000], **FAST)
+    sent = ep.requests[n:]
+    at = next(i for i, q in enumerate(sent) if q.fn == ep.link_fn and q.op == LINK["port_state"])
+    revert = max(i for i, q in enumerate(sent[:at]) if q.fn == ep.link_fn and q.op == PS)
+    assert sent[revert].payload[4] == 2                                          # the failed try's revert ...
+    assert sent[at].corr > max(q.corr for q in sent[:at])                       # ... then port_state, a new corr
+    assert any(q.op == PS and q.payload[4] == TRY for q in sent[at + 1:])         # the next try after it
+    assert report.chosen == 500000 and lk.baud == 500000

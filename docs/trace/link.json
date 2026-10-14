@@ -3,7 +3,11 @@
  "units": {
   "link:pre:1": {
    "text": "| `oep.probe.link` | 1 | 経路を試し（線の試験）、セッシ",
-   "excluded": "informative: the name / revision / role row of the interface (its ops are checked under §1)"
+   "verify": [
+    "tests/test_trace_link.py::test_the_interface_row_lists_oep_probe_link_at_revision_1"
+   ],
+   "mutants": [],
+   "note": "the probe lists oep.probe.link at revision 1"
   },
   "link:pre:2": {
    "text": "- `oep.probe.link` は任意のインターフェースである。port_",
@@ -40,7 +44,8 @@
     "tests/test_console_queue_and_reset_settle.py::test_link_source_is_max_frame_less_7_with_or_without_a_tlv",
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[64]",
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[256]",
-    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[1024]"
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[1024]",
+    "tests/test_trace_link.py::test_the_lock_column_of_the_op_table[source-False]"
    ],
    "mutants": [
     "tests/test_conformance_link_transfers.py::test_wrong_wire_results_are_detected[SOURCE-64]",
@@ -55,7 +60,8 @@
     "tests/test_trace_link.py::test_sink_takes_up_to_max_frame_less_12_and_a_count_past_the_bytes_is_malformed",
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[64]",
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[256]",
-    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[1024]"
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[1024]",
+    "tests/test_trace_link.py::test_the_lock_column_of_the_op_table[sink-False]"
    ],
    "mutants": [
     "tests/test_conformance_link_transfers.py::test_wrong_wire_results_are_detected[SINK-64]",
@@ -69,7 +75,8 @@
     "tests/test_port_speed.py::test_the_request_is_baud_step_verify_ms_and_a_longer_fixed_part_is_a_tlv_tail",
     "tests/test_port_speed.py::test_try_then_commit_answered_at_the_old_speed",
     "tests/test_port_speed.py::test_the_ops_tag_offers_it_only_when_on_and_off_is_unknown_operation",
-    "tests/test_conformance_port_speed.py::test_port_speed_handshake"
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake",
+    "tests/test_trace_link.py::test_the_lock_column_of_the_op_table[port_speed-True]"
    ],
    "mutants": [
     "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[MALFORMED]",
@@ -84,7 +91,8 @@
     "tests/test_port_speed.py::test_the_ops_tag_offers_it_only_when_on_and_off_is_unknown_operation",
     "tests/test_conformance_port_speed.py::test_port_speed_without_port_state_does_not_pass",
     "tests/test_conformance_port_speed.py::test_port_speed_handshake",
-    "tests/test_trace_link.py::test_source_sink_and_port_state_change_nothing"
+    "tests/test_trace_link.py::test_source_sink_and_port_state_change_nothing",
+    "tests/test_trace_link.py::test_the_lock_column_of_the_op_table[port_state-False]"
    ],
    "mutants": [
     "tests/test_conformance_port_speed.py::test_semantic_faults[state_phase_stale-STATES]",
@@ -248,7 +256,8 @@
     "tests/test_port_speed.py::test_committed_goes_back_after_the_idle_time_counted_from_a_good_frame_or_an_answer",
     "tests/test_port_speed.py::test_step_2_and_the_sessions_end_answer_at_the_speed_then_revert",
     "tests/test_port_speed.py::test_broken_candidates_never_take_it_back_while_trying_or_committed",
-    "tests/test_conformance_port_speed.py::test_port_speed_handshake"
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake",
+    "tests/test_trace_link.py::test_the_probe_goes_back_by_itself_without_telling"
    ],
    "mutants": [
     "tests/test_conformance_port_speed.py::test_semantic_faults[no_verify_expiry-VERIFY]",
@@ -349,7 +358,8 @@
    "verify": [
     "tests/test_trace_link.py::test_the_host_goes_back_on_another_ids_force_open_not_on_its_own",
     "tests/test_trace_link.py::test_the_host_goes_back_after_a_restart",
-    "tests/test_port_speed.py::test_the_sessions_end_takes_the_link_back_to_the_boot_speed"
+    "tests/test_port_speed.py::test_the_sessions_end_takes_the_link_back_to_the_boot_speed",
+    "tests/test_trace_link.py::test_the_host_reads_the_phase_with_a_new_corr_not_from_an_old_answer"
    ],
    "mutants": [],
    "note": "the host goes back to the boot speed on revert / end / another id's force open / restart; not on the same id's open"

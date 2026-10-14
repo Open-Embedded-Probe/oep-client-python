@@ -25,6 +25,7 @@ the host's own `baudrate`: while it differs from the probe's, every byte either 
 
 from __future__ import annotations
 
+import struct
 from typing import Callable
 
 from . import cobs, registry as reg
@@ -41,6 +42,8 @@ class VirtualSerialPort:
         self.last_ms = 0
         self.limit = 2 * ep.probe.max_frame + 16     # longer than any COBS frame of max_frame: raw
         self.frames: list[bytes] = []                # framed answers waiting to go out
+        self.notice: list[tuple | None] = []         # per waiting frame: (fn, its subscription's epoch), None: an answer
+        self.dropped_notices = 0                     # notifications dropped before they started (core §10.4 rule 2)
         self.discarding = False
         self.answers = 0
         self.garble: Callable[[bytes, int], bytes] | None = None   # (frame, the rate it goes at) -> what arrives
@@ -111,6 +114,7 @@ class VirtualSerialPort:
             wire = self.answer_filter(self.answers, result)
         if wire:
             self.frames.append(self._line(wire))
+            self.notice.append(None)
         self.ep.after_answer()                       # now the answer is out: a port_speed switch or revert, a restart
 
     def reboot(self) -> None:
@@ -119,6 +123,7 @@ class VirtualSerialPort:
         self.cand = None
         self.discarding = False
         self.frames.clear()
+        self.notice.clear()
         self.spoiled.clear()
 
     def _both_ways(self, size: int) -> bool:
@@ -151,8 +156,27 @@ class VirtualSerialPort:
     def tick(self) -> None:
         self._gap(self.ep.now())
         self.ep.tick()
+        self._drop_replaced()
+        limit = 2 * self.ep.probe.max_frame          # notifications waiting at most (core §10.4 rule 2)
         for f in self.ep.pushes():                   # events and data the probe sends by itself (core §10)
-            self.frames.append(self._line(cobs.frame(f)))
+            wire = self._line(cobs.frame(f))
+            waiting = sum(len(w) for w, n in zip(self.frames, self.notice) if n is not None)
+            if waiting + len(wire) > limit:
+                self.dropped_notices += 1            # dropped before it starts: its seq shows the gap (§10.2)
+                continue
+            fn = struct.unpack_from("<H", f, 1)[0]
+            self.frames.append(wire)
+            self.notice.append((fn, self.ep.sub_epoch.get(fn, 0)))
+
+    def _drop_replaced(self) -> None:
+        """The waiting notifications of a subscription replaced or ended since: dropped unsent (core §10.3; a frame
+        handed to `output` has started and goes whole)."""
+        keep = [k for k, n in enumerate(self.notice) if n is None or self.ep.sub_epoch.get(n[0], 0) == n[1]]
+        if len(keep) == len(self.frames):
+            return
+        self.frames = [self.frames[k] for k in keep]
+        self.notice = [self.notice[k] for k in keep]
+        self.spoiled = {keep.index(k) for k in self.spoiled if k in keep}
 
     def _line(self, wire: bytes) -> bytes:
         """A framed message as the line delivers it at the port's rate now (`Endpoint.broken_rates`, `garble`)."""
@@ -162,9 +186,11 @@ class VirtualSerialPort:
 
     def output(self, room: int = 4096) -> bytes:
         """What the probe sends now: the waiting answers (up to `room`, at least one frame)."""
+        self._drop_replaced()
         out = bytearray()
         while self.frames and len(out) + len(self.frames[0]) <= max(room, len(self.frames[0])):
             out += self.frames.pop(0)
+            self.notice.pop(0)
             self.spoiled = {k - 1 for k in self.spoiled if k}
             if len(out) >= room:
                 return bytes(out)

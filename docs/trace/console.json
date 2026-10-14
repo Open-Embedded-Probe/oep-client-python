@@ -3,14 +3,19 @@
  "units": {
   "console:pre:1": {
    "text": "| `oep.target.console` | 1 | target のコンソ",
-   "excluded": "informative: the name / revision / role row of the interface (its ops are checked under §1)"
+   "verify": [
+    "tests/test_trace_console.py::test_the_interface_row_lists_oep_target_console_at_revision_1"
+   ],
+   "mutants": [],
+   "note": "the probe lists oep.target.console at revision 1"
   },
   "console:1:1": {
    "text": "| 0x10 | open | connection(u32)、mechanis",
    "verify": [
     "tests/test_interfaces.py::test_console_open_makes_a_stream_and_reads_by_position",
     "tests/test_trace_console.py::test_unknown_numbers_no_resource_and_another_kinds_number_cause_6",
-    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass"
+    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass",
+    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[open-True]"
    ],
    "mutants": [
     "tests/test_conformance_attach.py::test_attach_and_console_mutants_fail[console_extra_byte-CONSOLE-RESOURCE]"
@@ -22,7 +27,8 @@
    "verify": [
     "tests/test_interfaces.py::test_console_open_makes_a_stream_and_reads_by_position",
     "tests/test_trace_console.py::test_a_fn_without_marks_takes_no_from_3_and_has_no_mark_ops",
-    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+    "tests/test_conformance_stream.py::test_stream_contracts_pass",
+    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[read-False]"
    ],
    "mutants": [
     "tests/test_conformance_stream.py::test_stream_mutants_fail[consume]",
@@ -35,7 +41,8 @@
    "verify": [
     "tests/test_interfaces.py::test_console_marks_follow_serials_and_more",
     "tests/test_trace_console.py::test_a_fn_without_marks_takes_no_from_3_and_has_no_mark_ops",
-    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+    "tests/test_conformance_stream.py::test_stream_contracts_pass",
+    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[marks-False]"
    ],
    "mutants": [
     "tests/test_conformance_stream.py::test_stream_mutants_fail[serial_gap]"
@@ -47,7 +54,8 @@
    "verify": [
     "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
     "tests/test_conformance_dependencies.py::test_dependency_contracts_pass",
-    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+    "tests/test_conformance_stream.py::test_stream_contracts_pass",
+    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[clear-True]"
    ],
    "mutants": [
     "tests/test_conformance_dependencies.py::test_dependency_mutants_fail[clear_tx]",
@@ -60,7 +68,8 @@
    "verify": [
     "tests/test_interfaces.py::test_console_marks_follow_serials_and_more",
     "tests/test_conformance_stream.py::test_stream_contracts_pass",
-    "tests/test_trace_console.py::test_a_fn_without_marks_takes_no_from_3_and_has_no_mark_ops"
+    "tests/test_trace_console.py::test_a_fn_without_marks_takes_no_from_3_and_has_no_mark_ops",
+    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[mark-True]"
    ],
    "mutants": [
     "tests/test_conformance_stream.py::test_stream_mutants_fail[kind]"
@@ -72,7 +81,8 @@
    "verify": [
     "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
     "tests/test_interfaces.py::test_console_io_writes_through_the_send_queue_and_sdi_takes_no_write",
-    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass"
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass",
+    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[write-True]"
    ],
    "mutants": [
     "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[sdi_write_taken-SDI-WRITE]"
@@ -84,7 +94,8 @@
    "verify": [
     "tests/test_trace_console.py::test_close_the_connections_release_and_the_sessions_end_free_the_stream_and_its_queue[close]",
     "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
-    "tests/test_conformance_dependencies.py::test_dependency_contracts_pass"
+    "tests/test_conformance_dependencies.py::test_dependency_contracts_pass",
+    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[close-True]"
    ],
    "mutants": [
     "tests/test_conformance_dependencies.py::test_dependency_mutants_fail[orphan]"
@@ -96,7 +107,8 @@
    "verify": [
     "tests/test_trace_console.py::test_streams_lists_the_live_streams_in_the_order_made",
     "tests/test_spec_2c6d18d.py::test_streams_first_is_u16_and_pages_past_255",
-    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass"
+    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass",
+    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[streams-False]"
    ],
    "mutants": [
     "tests/test_conformance_attach.py::test_attach_and_console_mutants_fail[streams_reversed-CONSOLE-INDEPENDENT]"
@@ -247,7 +259,8 @@
    "text": "- marksを提供するfnだけが、共通部品の形で以下のマークを記録する。mar",
    "verify": [
     "tests/test_trace_console.py::test_a_fn_without_marks_takes_no_from_3_and_has_no_mark_ops",
-    "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass"
+    "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass",
+    "tests/test_trace_console.py::test_a_fn_without_marks_still_synchronises_and_drops_duplicates_on_dmseq"
    ],
    "mutants": [
     "tests/test_conformance_dmseq.py::test_dmseq_checker_detects_independent_faults[duplicate_delivery-DUP-SYN]",
@@ -364,7 +377,8 @@
     "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
     "tests/test_interfaces.py::test_console_io_writes_through_the_send_queue_and_sdi_takes_no_write",
     "tests/test_console_queue_and_reset_settle.py::test_the_send_queue_is_not_declared",
-    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass"
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass",
+    "tests/test_trace_console.py::test_a_write_of_count_0_is_success_with_accepted_0"
    ],
    "mutants": [],
    "note": "a send queue per DMDATA / dmseq stream, its size the probe's; accepted = min(count, free); 0 with count > 0 failed only when full; partial"
@@ -420,15 +434,32 @@
   },
   "console:3:3": {
    "text": "| 0 | SDI | target → host | 下の 3.1 |",
-   "excluded": "informative: a row of the mechanism table (number, name, direction; the rules are §3.1)"
+   "verify": [
+    "tests/test_trace_console.py::test_streams_lists_the_live_streams_in_the_order_made",
+    "tests/test_console_queue_and_reset_settle.py::test_dmseq_hands_on_2_bytes_a_poll_and_sdi_takes_no_write",
+    "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone"
+   ],
+   "mutants": [],
+   "note": "mechanism 0 is SDI (streams lists it as 0), target -> host only: its write is unsupported"
   },
   "console:3:4": {
    "text": "| 1 | DMDATA | 両方向 | 下の 3.2 |",
-   "excluded": "informative: a row of the mechanism table (number, name, direction; the rules are §3.2)"
+   "verify": [
+    "tests/test_trace_console.py::test_streams_lists_the_live_streams_in_the_order_made",
+    "tests/test_console_queue_and_reset_settle.py::test_the_queue_is_handed_on_a_poll_at_a_time_and_survives_resets_and_restarts",
+    "tests/test_interfaces.py::test_console_io_writes_through_the_send_queue_and_sdi_takes_no_write"
+   ],
+   "mutants": [],
+   "note": "mechanism 1 is DMDATA (streams lists it as 1), both ways: output read, the send queue handed to the target"
   },
   "console:3:5": {
    "text": "| 2 | dmseq | 両方向 | [target-console-dmse",
-   "excluded": "informative: a row of the mechanism table (number, name, direction; the rules are target-console-dmseq)"
+   "verify": [
+    "tests/test_interfaces.py::test_console_open_makes_a_stream_and_reads_by_position",
+    "tests/test_console_queue_and_reset_settle.py::test_dmseq_hands_on_2_bytes_a_poll_and_sdi_takes_no_write"
+   ],
+   "mutants": [],
+   "note": "mechanism 2 is dmseq (open sends 2, streams lists 2), both ways: output read, the send queue handed 2 bytes a poll"
   },
   "console:3.1:1": {
    "text": "- **郵便受けの中のバイト**: バイト 0 は DATA0 の bit 8〜",

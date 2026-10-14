@@ -63,6 +63,7 @@
    "text": "| 0 | 入力（浮き） |",
    "verify": [
     "tests/test_trace_fixture.py::test_gpio_modes_mean_what_the_table_says[0-None-0]",
+    "tests/test_trace_fixture.py::test_gpio_modes_against_an_outside_high[0-1]",
     "tests/test_conformance_gpio.py::test_gpio_plan_checks"
    ],
    "mutants": [
@@ -74,6 +75,7 @@
    "text": "| 1 | 入力、プルアップ |",
    "verify": [
     "tests/test_trace_fixture.py::test_gpio_modes_mean_what_the_table_says[1-1-0]",
+    "tests/test_trace_fixture.py::test_gpio_modes_against_an_outside_high[1-1]",
     "tests/test_conformance_gpio.py::test_gpio_plan_checks"
    ],
    "mutants": [
@@ -85,6 +87,7 @@
    "text": "| 2 | 入力、プルダウン |",
    "verify": [
     "tests/test_trace_fixture.py::test_gpio_modes_mean_what_the_table_says[2-0-0]",
+    "tests/test_trace_fixture.py::test_gpio_modes_against_an_outside_high[2-1]",
     "tests/test_conformance_gpio.py::test_gpio_plan_checks"
    ],
    "mutants": [
@@ -96,6 +99,7 @@
    "text": "| 3 | 出力 low |",
    "verify": [
     "tests/test_trace_fixture.py::test_gpio_modes_mean_what_the_table_says[3-0-0]",
+    "tests/test_trace_fixture.py::test_gpio_modes_against_an_outside_high[3-0]",
     "tests/test_conformance_gpio.py::test_gpio_plan_checks"
    ],
    "mutants": [
@@ -107,6 +111,7 @@
    "text": "| 4 | 出力 high |",
    "verify": [
     "tests/test_trace_fixture.py::test_gpio_modes_mean_what_the_table_says[4-1-1]",
+    "tests/test_trace_fixture.py::test_gpio_modes_against_an_outside_high[4-1]",
     "tests/test_conformance_gpio.py::test_gpio_plan_checks"
    ],
    "mutants": [
@@ -118,6 +123,7 @@
    "text": "| 5 | オープンドレイン low（引く） |",
    "verify": [
     "tests/test_trace_fixture.py::test_gpio_modes_mean_what_the_table_says[5-0-0]",
+    "tests/test_trace_fixture.py::test_gpio_modes_against_an_outside_high[5-0]",
     "tests/test_conformance_gpio.py::test_gpio_plan_checks"
    ],
    "mutants": [
@@ -129,6 +135,7 @@
    "text": "| 6 | オープンドレインの解放（外部または target のプルアップで h",
    "verify": [
     "tests/test_trace_fixture.py::test_gpio_modes_mean_what_the_table_says[6-1-0]",
+    "tests/test_trace_fixture.py::test_gpio_modes_against_an_outside_high[6-1]",
     "tests/test_conformance_gpio.py::test_gpio_plan_checks"
    ],
    "mutants": [
@@ -302,7 +309,8 @@
   "fixture:2:9": {
    "text": "- 任意opは提供するときだけopsに立てる。不在opはunknown_oper",
    "verify": [
-    "tests/test_trace_fixture.py::test_uart_optional_ops_left_out_are_unknown_and_from_a_mark_needs_marks"
+    "tests/test_trace_fixture.py::test_uart_optional_ops_left_out_are_unknown_and_from_a_mark_needs_marks",
+    "tests/test_trace_fixture.py::test_uart_clear_may_come_without_marks"
    ],
    "mutants": [],
    "note": "optional ops left out of ops are unknown_operation; read from 3 without marks unsupported 0x00; no features tag"
@@ -311,6 +319,7 @@
    "text": "- writeを提供しないfnは、planのTX roleを受け付けず、そのro",
    "verify": [
     "tests/test_trace_fixture.py::test_uart_without_write_takes_no_tx_role",
+    "tests/test_trace_fixture.py::test_uart_write_needs_tx_and_a_tx_only_plan_receives_nothing",
     "tests/test_conformance_uart.py::test_uart_checks"
    ],
    "mutants": [
@@ -664,7 +673,8 @@
    "verify": [
     "tests/test_trace_fixture.py::test_target_max_length_fits_the_frame[esp32_v003_64]",
     "tests/test_trace_fixture.py::test_target_max_length_fits_the_frame[p4_x035]",
-    "tests/test_conformance_fixture_metadata.py::test_route_frame_exact_boundary[12-52]"
+    "tests/test_conformance_fixture_metadata.py::test_route_frame_exact_boundary[12-52]",
+    "tests/test_trace_fixture.py::test_i2c_read_rx_timestamp_only_when_it_fits"
    ],
    "mutants": [
     "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[12-3-5\\x00]"
@@ -888,7 +898,8 @@
    "verify": [
     "tests/test_trace_fixture.py::test_target_max_length_fits_the_frame[esp32_v003_64]",
     "tests/test_trace_fixture.py::test_target_max_length_fits_the_frame[esp32_v003]",
-    "tests/test_conformance_fixture_metadata.py::test_route_frame_exact_boundary[13-50]"
+    "tests/test_conformance_fixture_metadata.py::test_route_frame_exact_boundary[13-50]",
+    "tests/test_trace_fixture.py::test_spi_read_rx_timestamp_only_when_it_fits"
    ],
    "mutants": [
     "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[13-3-3\\x00]"

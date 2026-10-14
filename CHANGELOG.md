@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- (JA) 規則の対応表（docs/trace）を、書いた者と別のレビューで全 902 単位について審査した（docs/trace/review/*.json）: 名指した試験が単位の規則そのものを確かめているか、除外が妥当か。弱い 84 件は試験を足して直し、抜き取りの照合（docs/trace/review/sample-audit.ja.md）でもう 1 件を直した。その過程で見つけた a09fa45 との食い違いを直した:
+  - core §4.1: session_id 0 の照会を 32768 回以上続けても、次のセッションの要求が result_lost にならない（半周の前にセッションの keepalive を挟む。メモの 6 行目）。
+  - core §6.2 / §10.3 / §10.4: 持ち主が別の経路から open し直しても通知の送り先は変えない（subscribe し直したら移る）、置き換えた購読の未送信分はシリアルの口の送信待ちからも捨てる、シリアルの口と TCP の通知の送信待ちは max_frame × 2 まで。
+  - fixture §3 / §4: read_rx の ns TLV は応答が max_frame に収まるときだけ付ける。
+  - capture §1.2: アナログの plan が持つピンに probe.config で出力の idle を入れる set を断る（どちらが後でも）。
+  - debug §4.3 / §4.5 / §4.6 / §6: クライアントはブロックの長さを max_frame にも収め、仮想ベンチは reset op と高水準の op で havereset を確認応答する。
+
 - (JA) oep-spec a09fa45 の全文書（core、transports、common、plan、restart、link、fixture、debug、console、probe.config、capture）の規範の単位 902 個を、それを確かめる試験と故障注入に 1 つずつ対応させた（docs/trace/*.json、`tools/spec_units.py`、`tools/check_trace.py`。除外は見出し行・用語集・参照の一覧・仕様書の書き方の規則・電気的な線と target 側の規則だけで、理由つき）。足りない規則には tests/test_trace_*.py に試験を足した。その照合で見つけた a09fa45 との食い違いを直した:
   - transports §1 / §3 / §5: HID の report の count が長さを超えたら捨てる（切り詰めない）、HID の口は usage page 0xFF4F・usage 0x45 だけ、full speed の USB でも OUT endpoint の wMaxPacketSize で長さ 0 のパケットを送る、TCP では待っていない corr の応答を読み飛ばし、壊れたフレームでは接続を開き直して confirm する。
   - fixture §2: write を持たない UART は plan の TX role を受けない、configure していない RX のピンは空きの状態。

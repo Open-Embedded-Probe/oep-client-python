@@ -533,18 +533,24 @@ class SerialLink:
     def resync(self, tries: int = 3) -> None:
         """transports §5: read and discard until the input is quiet for 50 ms, then prove the link with a confirm (a read,
         safe to send), then go on. When the input does not go quiet (pushes keep coming), the host's unsubscribe and end go
-        out blind, once (and send() then does not send its request again). TCP: the connection is closed and opened
-        again first (`_reopen`)."""
+        out blind, once (and send() then does not send its request again); when it is still not quiet, the transport is
+        closed and opened again (transports §5), once - ConnectionError when it cannot be opened again or stays noisy.
+        TCP: the connection is closed and opened again first (`_reopen`)."""
         self.resyncs += 1
         if self.framing != "length":
             return                                  # COBS frames carry their own boundaries: nothing to find again
         if self._keeps_boundaries():
             self._reopen()
-        blind_sent = False
+        blind_sent = reopened = False
         for _ in range(tries):
             while not self.frames.discard_until_quiet(RESYNC_QUIET_S, self.NOISY_S):
                 if blind_sent:
-                    raise ConnectionError("resync: the input never went quiet, even after unsubscribe and end")
+                    if reopened or self.reopener is None:
+                        raise ConnectionError("resync: the input never went quiet, even after unsubscribe and end - "
+                                              "close the transport and open it again (transports §5)")
+                    self._reopen()                  # transports §5: no quiet - closed and opened again
+                    reopened = True
+                    continue
                 stops = self.blind()
                 blind_sent = True
                 if stops:

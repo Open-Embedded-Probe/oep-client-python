@@ -305,10 +305,11 @@
    "text": "- **実装する TLV** は、bit 7 によらず同じに扱う: 値の長さが定",
    "verify": [
     "tests/test_trace_core.py::test_an_implemented_tlv_is_the_same_with_or_without_bit_7[core-v1]",
-    "tests/test_trace_core.py::test_an_implemented_tlv_is_the_same_with_or_without_bit_7[full]"
+    "tests/test_trace_core.py::test_an_implemented_tlv_is_the_same_with_or_without_bit_7[full]",
+    "tests/test_trace_core.py::test_an_implemented_tlvs_unused_value_is_unsupported_with_the_tag_as_received"
    ],
    "mutants": [],
-   "note": "owner of 33 bytes malformed with and without bit 7; a right one taken either way"
+   "note": "owner of 33 bytes malformed with and without bit 7; a right one taken either way; rvswd idle_clock 2: unsupported naming 0x04 / 0x84 as received, a wrong length malformed either way"
   },
   "core:2.3:9": {
    "text": "- **要求の TLV の値は後ろに伸ばさない。** 新しいフィールドは新しい ",
@@ -402,13 +403,14 @@
    "text": "- インターフェースの status や reason の知らない値は失敗として",
    "verify": [
     "tests/test_trace_core.py::test_an_unknown_reject_reason_or_status_is_a_failure",
-    "tests/test_conformance_host_values.py::test_selected_unknown_value_contracts_pass"
+    "tests/test_conformance_host_values.py::test_selected_unknown_value_contracts_pass",
+    "tests/test_trace_core.py::test_the_client_takes_an_unknown_status_for_a_failure"
    ],
    "mutants": [
     "tests/test_conformance_host_values.py::test_independent_reader_faults[status_success-STATUS-Violation:]",
     "tests/test_conformance_host_values.py::test_independent_reader_faults[reason_success-REASON-Violation:]"
    ],
-   "note": "unknown reason raised as a refusal; unknown status a failure (selected reader)"
+   "note": "unknown reason raised as a refusal; unknown status a failure (selected reader); the client's riscv.check raises on an unknown status beside outcome success"
   },
   "core:2.4:6": {
    "text": "- 知らない出来事の kind は捨てる（seq は数える）。",
@@ -426,13 +428,14 @@
    "text": "- host は応答の flags の予約のビットを無視する。応答の enum ",
    "verify": [
     "tests/test_trace_core.py::test_unknown_values_that_tell_no_failure_are_shown_as_unknown",
-    "tests/test_conformance_host_values.py::test_selected_unknown_value_contracts_pass"
+    "tests/test_conformance_host_values.py::test_selected_unknown_value_contracts_pass",
+    "tests/test_trace_core.py::test_the_client_ignores_reserved_flag_bits_and_shows_an_unknown_scan_kind"
    ],
    "mutants": [
     "tests/test_conformance_host_values.py::test_independent_reader_faults[cause_refusal-CAUSE-Violation:]",
     "tests/test_conformance_host_values.py::test_independent_reader_faults[cause_fallback-CAUSE-Violation:]"
    ],
-   "note": "an unknown cause is shown raw; reserved flags ignored by the selected reader"
+   "note": "an unknown cause is shown raw; reserved flags ignored by the selected reader; the client: attach flags bits 4-7 ignored, scan kind 0x7E kept raw"
   },
   "core:2.5:1": {
    "text": "| 空間 | 範囲 |",
@@ -566,13 +569,14 @@
    "text": "- `corr`: 0 を使わない u16。host は **session_i",
    "verify": [
     "tests/test_trace_core.py::test_the_host_corr_is_never_0_and_wraps_to_1",
-    "tests/test_conformance_corr.py::test_corr_boundaries_pass"
+    "tests/test_conformance_corr.py::test_corr_boundaries_pass",
+    "tests/test_trace_core.py::test_session_0_requests_never_move_the_sessions_corr_half_the_space"
    ],
    "mutants": [
     "tests/test_conformance_corr.py::test_corr_mutants_fail[no_wrap]",
     "tests/test_conformance_corr.py::test_corr_mutants_fail[reject_max]"
    ],
-   "note": "host corr 65534, 65535, 1, 2; the probe's cyclic corr rules pass the corr checker"
+   "note": "host corr 65534, 65535, 1, 2; the probe's cyclic corr rules pass the corr checker; 40000 session-0 queries never move the session's next corr half the space (a keepalive goes first)"
   },
   "core:4.1:2": {
    "text": "- `session_id`: 要求が属するセッション、または **0 = セッ",
@@ -866,10 +870,11 @@
   "core:4.4:4": {
    "text": "- window / max_inflightは、その経路の異なる未解決要求につ",
    "verify": [
-    "tests/test_trace_core.py::test_a_copy_of_an_unfinished_request_is_not_a_new_one"
+    "tests/test_trace_core.py::test_a_copy_of_an_unfinished_request_is_not_a_new_one",
+    "tests/test_trace_core.py::test_a_copy_of_a_request_not_yet_answered_is_dropped_and_touches_no_lease"
    ],
    "mutants": [],
-   "note": "a waiting copy is coalesced, run once, one credit"
+   "note": "a waiting copy is coalesced, run once, one credit; a copy waiting, running or answered-not-sent: coalesced, lease untouched, session 0 too"
   },
   "core:4.4:5": {
    "text": "- 要求が収まっても、要求の引数から必要となる固定結果がその経路のmax_fra",
@@ -893,12 +898,13 @@
   "core:4.4:7": {
    "text": "- confirm の max_frame、window、max_infligh",
    "verify": [
-    "tests/test_trace_core.py::test_limits_are_per_transport_and_the_resend_table_is_shared"
+    "tests/test_trace_core.py::test_limits_are_per_transport_and_the_resend_table_is_shared",
+    "tests/test_conformance_pipeline.py::test_pipeline_passes"
    ],
    "mutants": [
     "tests/test_conformance_pipeline.py::test_admission_mutants_fail[shared]"
    ],
-   "note": "each transport's confirm names itself; a resend on another transport gets the shared record"
+   "note": "each transport's confirm names itself; a resend on another transport gets the shared record; the pipeline checker's isolation case: one route's outstanding requests use no other route's credit"
   },
   "core:4.4:8": {
    "text": "- **host の待ち時間**: 応答が来ないことは時間切れだけで判断する。h",
@@ -1030,10 +1036,11 @@
    "text": "- 再接続後の同一要求の再送にも半周の範囲を守る。番号の進行や古い queue ",
    "verify": [
     "tests/test_trace_core.py::test_a_new_session_id_after_a_loss_never_reuses_the_ended_one",
-    "tests/test_trace_core.py::test_the_host_gives_up_after_the_resend_and_recovers_before_more"
+    "tests/test_trace_core.py::test_the_host_gives_up_after_the_resend_and_recovers_before_more",
+    "tests/test_trace_transports.py::test_on_tcp_broken_framing_closes_and_opens_the_connection_and_confirms_there"
    ],
    "mutants": [],
-   "note": "after a loss a new random session id; no resend on a failed transport before recovery"
+   "note": "after a loss a new random session id; no resend on a failed transport before recovery; after a TCP reopen: confirm first, only the unresolved request again with its bytes, no old queue"
   },
   "core:6.1:1": {
    "text": "- probe は**ロックを 1 つ**持つ。ロックを持つセッションだけが状態",
@@ -1097,10 +1104,11 @@
    "verify": [
     "tests/test_trace_core.py::test_the_decision_table[core-v1]",
     "tests/test_trace_core.py::test_the_decision_table[full]",
-    "tests/test_trace_core.py::test_the_holders_open_again_keeps_resources_subscriptions_and_resend_state"
+    "tests/test_trace_core.py::test_the_holders_open_again_keeps_resources_subscriptions_and_resend_state",
+    "tests/test_trace_core.py::test_the_holders_open_from_another_transport_keeps_where_the_subscriptions_send"
    ],
    "mutants": [],
-   "note": "the holder's open renews lease_ms and keeps owner, resources, subscriptions, record"
+   "note": "the holder's open renews lease_ms and keeps owner, resources, subscriptions, record; the holder's open from another transport does not move where subscriptions send"
   },
   "core:6.2:5": {
    "text": "| S が持つ | 別の id の open、force なし | reject",
@@ -1317,10 +1325,11 @@
    "text": "| 0x01 | role_channels | role(u8)、base(u",
    "verify": [
     "tests/test_trace_core.py::test_the_common_describe_tags_have_their_forms",
-    "tests/test_trace_core.py::test_a_channel_group_is_matched_whole_and_role_channels_bound_their_roles"
+    "tests/test_trace_core.py::test_a_channel_group_is_matched_whole_and_role_channels_bound_their_roles",
+    "tests/test_trace_core.py::test_repeated_role_channels_of_one_role_are_their_union"
    ],
    "mutants": [],
-   "note": "role_channels role base bitmap; a pin outside its candidates refused"
+   "note": "role_channels role base bitmap; a pin outside its candidates refused; the same role twice: the union (host decode, probe plan)"
   },
   "core:7.4:2": {
    "text": "| 0x02 | max_clock_hz | u32 |",
@@ -1393,10 +1402,14 @@
   "core:7.4:10": {
    "text": "- どのピンにも割り当てられる機能は role_channels に候補を並べ、",
    "verify": [
-    "tests/test_trace_core.py::test_a_channel_group_is_matched_whole_and_role_channels_bound_their_roles"
+    "tests/test_trace_core.py::test_a_channel_group_is_matched_whole_and_role_channels_bound_their_roles",
+    "tests/test_trace_core.py::test_with_both_declared_the_pins_match_a_group_and_the_role_channels[group-and-candidates]",
+    "tests/test_trace_core.py::test_with_both_declared_the_pins_match_a_group_and_the_role_channels[no-group]",
+    "tests/test_trace_core.py::test_with_both_declared_the_pins_match_a_group_and_the_role_channels[group-not-candidate]",
+    "tests/test_trace_core.py::test_with_both_declared_the_pins_match_a_group_and_the_role_channels[role-outside]"
    ],
    "mutants": [],
-   "note": "p4-bench's fixed groups vs rp2350's any-pin role_channels"
+   "note": "p4-bench's fixed groups vs rp2350's any-pin role_channels; both declared: a group whole and role_channels' candidates, a role only role_channels names bound by it alone"
   },
   "core:7.4:11": {
    "text": "- role_channels と channel_group は、インターフェ",
@@ -1494,10 +1507,11 @@
   "core:7.5:11": {
    "text": "- **unit_id の一意性**: unit_id は個体ごとに違う値にする",
    "verify": [
-    "tests/test_trace_core.py::test_an_x_unit_id_keys_nothing_kept_across_sessions"
+    "tests/test_trace_core.py::test_an_x_unit_id_keys_nothing_kept_across_sessions",
+    "tests/test_trace_core.py::test_an_x_unit_id_names_no_probe_and_keeps_no_session"
    ],
    "mutants": [],
-   "note": "the speed record keeps nothing under an x- unit_id"
+   "note": "the speed record keeps nothing under an x- unit_id; tcp:x-/usb:x- refused, kept_session keeps nothing for x-"
   },
   "core:7.5:12": {
    "text": "- **unit_id の不変性**: unit_id は個体の値（チップの固有",
@@ -1571,10 +1585,13 @@
   "core:8:4": {
    "text": "- **ピンを取ってもピンの電気の状態は変わらない。** ピンは、それを取ったイ",
    "verify": [
-    "tests/test_trace_core.py::test_taking_a_pin_keeps_its_idle_state_until_used"
+    "tests/test_trace_core.py::test_taking_a_pin_keeps_its_idle_state_until_used",
+    "tests/test_trace_core.py::test_a_reading_interface_never_changes_a_pins_drive[gpio-output]",
+    "tests/test_trace_core.py::test_a_reading_interface_never_changes_a_pins_drive[idle-output-high]",
+    "tests/test_trace_core.py::test_a_reading_interface_never_changes_a_pins_drive[idle-pull-up]"
    ],
    "mutants": [],
-   "note": "a planned pin stays idle until gpio set"
+   "note": "a planned pin stays idle until gpio set; logic capture on a driven / output-idle / pulled pin changes nothing"
   },
   "core:8:5": {
    "text": "- idle が出力の channel を取る要求は、そのインターフェースが取得",
@@ -1632,12 +1649,13 @@
   "core:9:4": {
    "text": "| 同じ ID の新しい open（保持中） | 残す | 残す | 残す |",
    "verify": [
-    "tests/test_trace_core.py::test_the_holders_open_again_keeps_resources_subscriptions_and_resend_state"
+    "tests/test_trace_core.py::test_the_holders_open_again_keeps_resources_subscriptions_and_resend_state",
+    "tests/test_trace_core.py::test_the_holders_open_from_another_transport_keeps_where_the_subscriptions_send"
    ],
    "mutants": [
     "tests/test_conformance_resources.py::test_common_checker_detects_resource_mutants[release_same_open-RESOURCE-OPEN-RETAIN]"
    ],
-   "note": "kept"
+   "note": "kept; subscriptions' transport kept"
   },
   "core:9:5": {
    "text": "| 同一 open の再送 | 変えない | 変えない | 保持した応答を返す。",
@@ -1819,7 +1837,8 @@
    "verify": [
     "tests/test_trace_core.py::test_subscribe_again_replaces_atomically",
     "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[0]",
-    "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[1]"
+    "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[1]",
+    "tests/test_trace_core.py::test_a_subscribe_again_drops_the_old_subscriptions_unsent_notifications_on_the_transport"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_resubscribe_keeps_seq_mutant",
@@ -1828,7 +1847,7 @@
     "tests/test_conformance_notification_output.py::test_output_faults[retain_old_notice-REPLACEMENT]",
     "tests/test_conformance_notification_sequence.py::test_replacement_discard_faults_are_detected[keep_unsent]"
    ],
-   "note": "conditions, transport and seq replaced; unsent old notifications dropped"
+   "note": "conditions, transport and seq replaced; unsent old notifications dropped; the bench's serial port drops the old subscription's waiting frames"
   },
   "core:10.3:7": {
    "text": "- probe は購読用の保持量に上限を置いてよい。要求したデータの送信条件を満",
@@ -1845,10 +1864,11 @@
   "core:10.3:8": {
    "text": "- **まとめて送る条件はデータ（role 0x04）だけに掛かる**: min",
    "verify": [
-    "tests/test_trace_core.py::test_data_waits_for_min_bytes_or_max_delay_and_events_never_wait"
+    "tests/test_trace_core.py::test_data_waits_for_min_bytes_or_max_delay_and_events_never_wait",
+    "tests/test_trace_core.py::test_data_due_goes_whole_in_frames_of_max_frame_without_min_bytes_again"
    ],
    "mutants": [],
-   "note": "push_due: min_bytes or max_delay_ms, 0 unused, both 0 at once"
+   "note": "push_due: min_bytes or max_delay_ms, 0 unused, both 0 at once; due data cut into max_frame frames, the rest not held for min_bytes"
   },
   "core:10.3:9": {
    "text": "- **出来事（role 0x03）はまとめない**: 生まれた出来事は、その前",
@@ -1864,24 +1884,26 @@
    "text": "1. **応答を先に送る。** 届いている要求をすべて処理してから、新しい通知フ",
    "verify": [
     "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[0]",
-    "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[1]"
+    "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[1]",
+    "tests/test_trace_core.py::test_the_serial_port_sends_answers_first_and_keeps_notifications_within_twice_max_frame"
    ],
    "mutants": [
     "tests/test_conformance_notification_output.py::test_output_faults[notice_first-RESPONSE-PRIORITY]",
     "tests/test_conformance_notification_output.py::test_output_faults[interleave-PARTIAL-FRAME]"
    ],
-   "note": "answers before new notifications; a started frame completes before the next answer"
+   "note": "answers before new notifications; a started frame completes before the next answer; the bench's serial port: the answer before new notifications"
   },
   "core:10.4:2": {
    "text": "2. **送りかけの通知を小さく保つ。** 経路の送信バッファに、送りかけの通知",
    "verify": [
     "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[0]",
-    "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[1]"
+    "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[1]",
+    "tests/test_trace_core.py::test_the_serial_port_sends_answers_first_and_keeps_notifications_within_twice_max_frame"
    ],
    "mutants": [
     "tests/test_conformance_notification_output.py::test_output_faults[reuse_dropped_seq-PARTIAL-FRAME]"
    ],
-   "note": "pending notification bytes stay within max_frame x 2; dropped ones consume seq"
+   "note": "pending notification bytes stay within max_frame x 2; dropped ones consume seq; the bench's serial port: notifications waiting within 2 x max_frame, the rest dropped with a seq gap"
   },
   "core:10.4:3": {
    "text": "3. 通知は、その fn の subscribe が来た経路に送る。",

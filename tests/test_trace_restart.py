@@ -76,3 +76,11 @@ def test_after_the_restart_the_serial_port_runs_at_its_boot_speed():
     assert p.ep.reboots == 1 and p.ep.boot_id != before
     assert p.ep.port_baud(0) == 115200 and p.ep.speed_state == "base" and p.ep.speed_port is None
     assert p.send(0, m.OP_CONFIRM, m.CONFIRM_REQUEST + struct.pack("<BB", 1, 1)).succeeded   # at the boot speed
+
+
+def test_the_interface_row_lists_oep_probe_restart_at_revision_1():
+    """restart preamble (the interface row): a probe offering it lists oep.probe.restart by that name at revision 1."""
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
+    hst = h.Host(lambda b: ep.handle(b, 0))
+    entries = [e for e in core.list_entries(hst) if e.name == "oep.probe.restart"]
+    assert [(e.fn, e.revision) for e in entries] == [(ep.restart_fn, 1)] and reg.PROBE_RESTART.revision == 1

@@ -273,6 +273,7 @@ class Host:
     # Called with every capture segment read (capture.CaptureRecord): the hook a run recorder hangs on.
     on_capture: list = field(default_factory=list)
     _corr: int = 0
+    _sid_corr: dict = field(default_factory=dict)   # session_id -> the last corr sent with it (core §4.1)
     _fns: dict = field(default_factory=dict)   # interface name -> fn, valid until the probe reboots (boot_id)
     _revisions: dict = field(default_factory=dict)   # fn -> interface revision from list
     _describes: dict = field(default_factory=dict)   # fn -> its describe TLVs (declarations: valid for one boot_id)
@@ -316,12 +317,33 @@ class Host:
             return QUICK_OP_MAX_MS
         return min(known, QUICK_OP_MAX_MS) if fn == m.CORE_FN and op in QUICK_OPS else known
 
-    def next_corr(self) -> int:
-        """The next corr: cyclic, never 0, one counter for every session_id this host sends (core §4.1)."""
+    def next_corr(self, sid: int = 0) -> int:
+        """The next corr: cyclic, never 0, one counter for every session_id this host sends (core §4.1). `sid`: the
+        session_id the request carries (its last corr is remembered for `_session_room`)."""
         self._corr = self._corr % 0xFFFF + 1
+        if sid:
+            self._sid_corr[sid] = self._corr
         if self.kept is not None:
             self.kept.sent(self._corr)                      # the next run must go on past it (kept_session)
         return self._corr
+
+    def _session_room(self, n: int) -> None:
+        """core §4.1: session_id 0 requests never move this session's corr half the space or more past its last one
+        (one counter serves every session_id). When `n` more of them would - the session's next request coming after
+        them - one keepalive of the session goes first; its corr is then the session's last (it restarts the lease,
+        as any request of the session does)."""
+        last = self._sid_corr.get(self.session) if self.session is not None else None
+        if last is None:
+            return
+        nxt = self._corr
+        for _ in range(n + 1):
+            nxt = nxt % 0xFFFF + 1
+        if (nxt - last) % 0x10000 < reg.LIMITS["corr_half_range"]:
+            return
+        try:
+            self.keepalive()
+        except Rejected:
+            pass                                            # the session is gone (no_session cleared it): nothing to keep
 
     def call(self, fn: int, op: int, payload: bytes = b"", *, locked: bool = True, expect_ms: int = 0) -> m.Result:
         """request() that also raises Failed unless the probe says it worked: what every operation wants."""
@@ -349,7 +371,9 @@ class Host:
         if self.before_request is not None:
             self.before_request()
         sid = session if session is not None else self._session_for(locked)
-        req = m.Request(self.next_corr(), fn, op, payload, sid)
+        if not sid:
+            self._session_room(1)
+        req = m.Request(self.next_corr(sid), fn, op, payload, sid)
         with self.expecting(max(expect_ms, self.op_bound_ms(fn, op))):
             result = m.Result.unpack(self.send(req.pack()))
         return self._answered(req, result)
@@ -405,7 +429,9 @@ class Host:
         session = self._session_for(locked)
         if self.before_request is not None:
             self.before_request()
-        reqs = [m.Request(self.next_corr(), fn, op, payload, session) for fn, op, payload in requests]
+        if not session:
+            self._session_room(len(requests))
+        reqs = [m.Request(self.next_corr(session), fn, op, payload, session) for fn, op, payload in requests]
         packed = [r.pack() for r in reqs]
         exchange = exchange or self.exchange
         with self.expecting(max(self.op_bound_ms(fn, op) for fn, op, _ in requests) if requests else 0):
@@ -614,6 +640,7 @@ class Host:
         self.require_usable()
         if self.before_request is not None:
             self.before_request()
+        self._session_room(1)
         req = m.Request(self.next_corr(), m.CORE_FN, m.OP_CLOCK, b"", m.NO_SESSION_ID)
         packed = req.pack()
         before = now()
@@ -757,9 +784,9 @@ class Host:
         - both harmless when run twice - for when pushes keep the input from going quiet."""
         if self.session is None or not self.revision:
             return []
-        out = [m.Request(self.next_corr(), fn, m.OP_UNSUBSCRIBE, b"", self.session).pack()
+        out = [m.Request(self.next_corr(self.session), fn, m.OP_UNSUBSCRIBE, b"", self.session).pack()
                for fn in sorted(self.subscriptions)]
-        out.append(m.Request(self.next_corr(), m.CORE_FN, m.OP_END, b"", self.session).pack())
+        out.append(m.Request(self.next_corr(self.session), m.CORE_FN, m.OP_END, b"", self.session).pack())
         self.subscriptions.clear()
         self.session = None                                 # the blind end ends it: nothing of it lasts (core §9)
         self.epoch += 1

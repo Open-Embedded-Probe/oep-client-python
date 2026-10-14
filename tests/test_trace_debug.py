@@ -361,14 +361,19 @@ def test_the_client_puts_each_abstract_command_sequence_in_one_dmi_request():
     console.Console(hst).open(conn, console.Console.DMSEQ)
     dm = riscv.RiscvDm(hst, conn)
     ep._target_of(conn).regs[0x100A] = 0xCAFE
-    for action in (lambda: dm.read_register(0x100A), lambda: dm.write_register(0x100B, 7)):
+    for read, action in ((True, lambda: dm.read_register(0x100A)), (False, lambda: dm.write_register(0x100B, 7))):
         before = len(sent)
-        action()
+        got = action()
         dmi = [r for r in sent[before:] if r.fn == ep.fns["oep.target.riscv-dm"] and r.op == RV["dmi"]]
         commands = [r for r in dmi if bytes([STEP["write"], 0x17]) in r.payload]
         assert commands
         for r in commands:                                        # DATA0 and the command and the wait in the same one
-            assert bytes([STEP["write"], 0x04]) in r.payload and bytes([STEP["poll_reads"], 0x16]) in r.payload
+            p = r.payload
+            assert bytes([STEP["write"], 0x04]) in p and bytes([STEP["poll_reads"], 0x16]) in p
+            if read:                                              # ... and the DATA0 read after the command's wait
+                assert p.rfind(bytes([STEP["read"], 0x04])) > p.find(bytes([STEP["write"], 0x17]))
+        if read:
+            assert got == 0xCAFE
     assert ep._target_of(conn).regs[0x100B] == 7
 
 
@@ -442,3 +447,149 @@ def test_the_documents_interfaces_are_these_names_at_revision_1():
     assert all(reg.INTERFACES[n].revision == 1 for n in names)
     assert riscv.WireBase.REVISION == riscv.RiscvDm.REVISION == arm.ArmAdi.REVISION == 1
     assert arm.ArmAdi.NAME == "oep.target.arm-adi"
+
+
+# ---- review 2026-10-15: rules the trace named no test for --------------------------------------------------------
+
+def test_connections_tell_a_targetsel_of_0_from_none_with_page_relative_indexes():
+    """debug §2.1: an swd entry with a TARGETSEL carries selected_target (entry_index(u8) targetsel(u32)), entry_index
+    counted in its own page; a selector of 0 is told from none. The logical swd model lists 0 as a selection and the
+    checker reads it so; the client reads each page's indexes from that page's first entry."""
+    from test_conformance_wire_options import setup as wire_setup
+    from oep_client.conformance_wire_options import WireOptionsChecks
+    _, c, a = wire_setup()
+    checks = WireOptionsChecks(c, a)
+    assert checks.run()["status"] == "passed"
+    checks.fresh()
+    with c.holding(3000) as sid:
+        zero, _ = checks.attached(sid, 3, targetsel=0)                 # listing() requires {0: 0}, not {}
+        rows = checks.listing(3)
+        assert [r[0][0] for r in rows] == [zero]
+        checks.detach(sid, 3, zero)
+        none, _ = checks.attached(sid, 3)                              # listing() requires no selected_target
+        checks.detach(sid, 3, none)
+    from oep_client import arm
+    from test_target_parts import ScriptedHost, ok
+    entry = lambda conn: struct.pack("<IHHIBB", conn, 10, 11, 1_000_000, 2, 4) + struct.pack("<I", 0x2BA01477)
+    sel = lambda i, v: m.tlv(reg.WIRE_SWD.tlv["connections_answer"]["selected_target"], struct.pack("<BI", i, v))
+    pages = {0: ok(b"\x01\x02" + entry(7) + entry(8) + sel(1, 0)), 2: ok(b"\x00\x01" + entry(9) + sel(0, 5))}
+    hst = ScriptedHost({(4, riscv.Wire.CONNECTIONS): lambda p: pages[p[0]]})
+    got = arm.SwdWire(hst).connections()
+    assert [(r.connection, r.targetsel) for r in got] == [(7, None), (8, 0), (9, 5)]
+
+
+def test_the_client_puts_a_haltreq_sequence_in_one_dmi_request():
+    """debug §4.1: a host with the connection's console stream open puts a sequence that handles haltreq in one dmi
+    request - the client's uiapduino.run_payload resumes into its payload and drops haltreq in one (stream or not)."""
+    from oep_client import uiapduino
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
+    sent = []
+
+    def link(b):
+        sent.append(m.Request.unpack(b))
+        return ep.handle(b, 1)
+    hst = h.Host(link)
+    hst.open(3000)
+    wire = riscv.Wire(hst)
+    wire_pins = ep.pairs[1][0]
+    attach_ = wire.attach
+    wire.attach = lambda **kw: attach_(pins=wire_pins, **kw)
+    uiapduino.run_payload(hst, wire, [0x0000006F])               # a jump to itself
+    dmi = [r for r in sent if r.fn == ep.fns["oep.target.riscv-dm"] and r.op == RV["dmi"]]
+    control = [r for r in dmi if bytes([STEP["write"], 0x10]) in r.payload]
+    assert len(control) == 1                                      # resumereq ... haltreq dropped: one request
+    p = control[0].payload
+    assert p.count(bytes([STEP["write"], 0x10])) == 3 and p.endswith(bytes([STEP["write"], 0x10]) + struct.pack("<I", 1))
+
+
+def test_a_reset_op_acknowledges_havereset_and_clears_haltreq():
+    """debug §4.3 / §4 table: after the reset the probe acknowledges havereset and clears haltreq (mode 2 stays
+    halted) - DMSTATUS read with dmi afterwards shows no allhavereset / anyhavereset."""
+    ep, hv = bench()
+    pair = ep.pairs[1][0]
+    cid = struct.unpack_from("<I", attach(hv, pair).payload)[0]
+    tg = ep.targets[(1, pair)]
+    for mode in (0, 2):
+        r = hv.raw(2, RV["reset"], struct.pack("<IB", cid, mode))
+        assert r.succeeded and struct.unpack("<BBI", r.payload)[:2] == (reg.STATUS["ok"], 1)
+        done, status, nvals, dmstatus = struct.unpack("<HBHI", hv.ok(2, RV["dmi"], struct.pack("<IHBB", cid, 1, 2, 0x11)))
+        assert not dmstatus & 0xC0000 and not tg.havereset, mode     # havereset acknowledged
+        assert not tg.haltreq and tg.halted == (mode == 2)
+
+
+def test_high_level_ops_acknowledge_a_pending_havereset_and_raw_dmi_does_not():
+    """debug §4.6: the automatic havereset acknowledgement is the high-level ops' (and the console read's): a halt on
+    a target that reset by itself acknowledges it and the connection's console stream gets a restart mark (kind 0x41,
+    detail 1 havereset); a raw dmi request adds no acknowledgement - DMSTATUS still shows it, no mark."""
+    ep, hv = bench()
+    pair = ep.pairs[1][0]
+    cid = struct.unpack_from("<I", attach(hv, pair).payload)[0]
+    con = reg.TARGET_CONSOLE
+    sid = struct.unpack_from("<I", hv.ok(3, con.op["open"], struct.pack("<IB", cid, console.Console.DMSEQ)))[0]
+    tg = ep.targets[(1, pair)]
+    tg.havereset = True                                            # the target reset itself
+    read = struct.pack("<IHBB", cid, 1, 2, 0x11)
+    assert struct.unpack("<HBHI", hv.ok(2, RV["dmi"], read))[3] & 0xC0000 == 0xC0000
+    assert tg.havereset and ep.streams[sid].marks == []           # raw dmi: nothing added
+    assert hv.raw(2, RV["halt"], struct.pack("<I", cid)).succeeded
+    assert not tg.havereset and struct.unpack("<HBHI", hv.ok(2, RV["dmi"], read))[3] & 0xC0000 == 0
+    kinds = con.enum["mark_kind"]
+    assert [(mk[2], mk[4]) for mk in ep.streams[sid].marks] == [(kinds["restart"], con.enum["mark_detail_restart"]["havereset"])]
+
+
+def test_regno_is_the_abstract_register_number():
+    """debug §4.4: run's regno is the RISC-V abstract register number - a0 is 0x100A (x10): the client's a0 and the
+    regno its run request carries (the logical run checker, test_conformance_run, holds the probe side: 0x100A is x10)."""
+    assert riscv.REG_A0 == 0x100A and riscv.REG_A1 == 0x100B
+    assert riscv.RiscvDm.run_body(0x20000000, [(riscv.REG_A0, 7)], 100)[-3:] == b"\x01" + struct.pack("<H", 0x100A)
+
+
+@pytest.mark.parametrize("max_frame", [64, 120, 1024])
+def test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame(max_frame):
+    """debug §4.5 / §6: the host's read_block count is at most min(max_length, max_frame - 8) / 4, write_block's
+    min(max_length, max_frame - 20) / 4 (answer header 5 + done 2 + status 1; request header 10 + connection 4 +
+    address 4 + count 2): a route smaller than max_length is not sent a block it cannot carry."""
+    from oep_client import arm
+    from test_target_parts import ScriptedHost, FakeAdi, ok
+    confirm = struct.pack("<4sBHIBI", b"OEP!", 1, max_frame, 4096, 8, 0x1234)
+    model = FakeAdi()
+    counts = []
+
+    def count(handler):
+        def run(p):
+            counts.append((p[0:0] or handler.__name__, struct.unpack_from("<H", p, 8)[0]))
+            return handler(p)
+        return run
+    hst = ScriptedHost({(0, m.OP_CONFIRM): lambda p: ok(confirm),
+                        (5, arm.ArmAdi.TRANSFER): model.transfer, (5, arm.ArmAdi.READ_BLOCK): count(model.read_block),
+                        (5, arm.ArmAdi.WRITE_BLOCK): count(model.write_block)}, max_length=1000)
+    read_words, write_words = min(1000, max_frame - 8) // 4, min(1000, max_frame - 20) // 4
+    dm = riscv.RiscvDm(hst, 1)
+    assert (dm.read_words, dm.write_words, dm.max_words) == (read_words, write_words, write_words)
+    adi = arm.ArmAdi(hst, 1, adiv6=True)
+    ap = arm.MemAp(adi, 0x2000)
+    ap.write_block(0x20000000, list(range(300)))
+    assert ap.read_block(0x20000000, 300) == list(range(300))
+    reads = [n for name, n in counts if name == "read_block"]
+    writes = [n for name, n in counts if name == "write_block"]
+    assert max(reads) == min(read_words, 300) and sum(reads) == 300
+    assert max(writes) == min(write_words, 300) and sum(writes) == 300
+
+
+def test_scan_leaves_the_target_as_it_was():
+    """debug §1 (scan が書くもの): scan writes only the wake / set-up steps and dmactive, never the scratch (PROGBUF0) nor
+    anything a host left there - the bench's scan reads DMSTATUS alone: every DMI register, GPR, memory word and the
+    hart's run state are as they were."""
+    import copy
+    ep, hv = bench()
+    pairs = ep.pairs[1]
+    for p in pairs:
+        tg = ep._target(1, p)
+        tg.dmi[0x20], tg.mem[0x2000_0000] = 0xDEADBEEF, 0x12345678       # PROGBUF0 and a memory word set before
+    before = {p: copy.deepcopy((ep._target(1, p).dmi, ep._target(1, p).regs, ep._target(1, p).mem,
+                                ep._target(1, p).halted)) for p in pairs}
+    r = hv.raw(1, W["scan"], bytes([len(pairs)]) + b"".join(struct.pack("<HH", *p) for p in pairs))
+    assert r.succeeded
+    for p in pairs:
+        tg = ep._target(1, p)
+        assert (tg.dmi, tg.regs, tg.mem, tg.halted) == before[p], p

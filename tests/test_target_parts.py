@@ -394,8 +394,8 @@ def test_mem_ap_sets_csw_from_the_caller_and_chunks_blocks(adi_bench):
 
 
 def test_block_length_comes_from_the_declared_max_length_only():
-    """oep-if-debug §4.5 / §6: the host takes max_length from describe and never computes it from max_frame; a probe
-    with block ops that declares none is an error, named."""
+    """oep-if-debug §4.5 / §6: the host takes max_length from describe (the route's max_frame bounds the count too:
+    tests/test_trace_debug.py); a probe with block ops that declares none is an error, named."""
     model = FakeAdi()
     handlers = {(5, arm.ArmAdi.TRANSFER): model.transfer, (5, arm.ArmAdi.READ_BLOCK): model.read_block}
     hst = ScriptedHost(dict(handlers), max_length=96)

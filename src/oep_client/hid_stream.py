@@ -13,6 +13,9 @@ Backends, same shape as UsbBulkStream (read with a timeout, in_waiting, write, r
 
 from __future__ import annotations
 
+import errno
+import os
+import sys
 import threading
 import time
 
@@ -150,9 +153,33 @@ class HidReportStream:
         self.backend.close()
 
 
+class HidBusy(OSError):
+    """The probe's HID node is held by another program (transports §3: a host opens the HID exclusively where the OS
+    allows it) - not taken over through libusb either."""
+
+
+def _lock_node(path) -> int | None:
+    """transports §3: the HID opened exclusively where the OS allows it - on Linux an flock (LOCK_EX | LOCK_NB) on the
+    hidraw node hidapi opened, as pyserial's exclusive=True on a serial port; macOS's hidapi opens the device exclusively
+    by itself. -> the locked fd (None: nothing to lock); HidBusy when another program holds it."""
+    name = path.decode(errors="replace") if isinstance(path, bytes) else str(path)
+    if not sys.platform.startswith("linux") or not os.path.exists(name):
+        return None
+    import fcntl
+    fd = os.open(name, os.O_RDONLY | os.O_NONBLOCK)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as e:
+        os.close(fd)
+        if e.errno in (errno.EWOULDBLOCK, errno.EAGAIN):
+            raise HidBusy(errno.EBUSY, f"{name} is open in another program") from e
+        raise
+    return fd
+
+
 class HidapiBackend:
-    def __init__(self, device, report_id: int):
-        self.device, self.report_id = device, report_id
+    def __init__(self, device, report_id: int, lock_fd: int | None = None):
+        self.device, self.report_id, self.lock_fd = device, report_id, lock_fd
 
     def read_report(self, timeout: float) -> bytes:
         data = bytes(self.device.read(65536, int(timeout * 1000)))
@@ -168,7 +195,12 @@ class HidapiBackend:
             raise OSError("HID write failed")
 
     def close(self) -> None:
-        self.device.close()
+        try:
+            self.device.close()
+        finally:
+            if self.lock_fd is not None:
+                os.close(self.lock_fd)                   # the flock goes with it
+                self.lock_fd = None
 
 
 class Usb1HidBackend:
@@ -225,7 +257,12 @@ def _open_hidapi(vid: int, pid: int, serial: str | None) -> HidReportStream:
         if r is None:
             dev.close()
             continue
-        return HidReportStream(HidapiBackend(dev, r["report_id"]), r["input"], r["output"])
+        try:
+            lock = _lock_node(info["path"])                  # exclusive (transports §3)
+        except OSError:
+            dev.close()
+            raise
+        return HidReportStream(HidapiBackend(dev, r["report_id"], lock), r["input"], r["output"])
     raise FileNotFoundError(f"no vendor HID interface on {vid:04x}:{pid:04x}" + (f" serial {serial}" if serial else ""))
 
 
@@ -271,6 +308,8 @@ def open_hid(vid: int, pid: int, serial: str | None = None) -> HidReportStream:
     for opener in (_open_hidapi, _open_usb1):
         try:
             return opener(vid, pid, serial)
+        except HidBusy:
+            raise                                        # held by another host: libusb would take it from that host
         except ImportError as e:
             errors.append(f"{opener.__name__}: {e}")
         except (OSError, FileNotFoundError) as e:

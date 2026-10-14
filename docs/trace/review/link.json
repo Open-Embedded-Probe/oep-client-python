@@ -1,0 +1,105 @@
+{
+ "reviewed_commit": "70a9bf7",
+ "units": {
+  "link:pre:1": {
+   "verdict": "ok",
+   "reason": "fixed: was excluded as informative, but the row's revision 1 is checkable; test_trace_link::test_the_interface_row_lists_oep_probe_link_at_revision_1 asserts list gives oep.probe.link at revision 1"
+  },
+  "link:pre:2": {
+   "verdict": "ok",
+   "reason": "test_trace_link::test_a_probe_lists_oep_probe_link_at_most_once_and_with_port_speed asserts len <= 1 and, with port_speed, listed and offering it; test_port_speed ops-tag test"
+  },
+  "link:pre:3": {
+   "verdict": "ok",
+   "reason": "test_trace_link::test_source_sink_and_port_state_change_nothing asserts the snapshot (session, plan, pins, settings, connections, streams, speed) unchanged after each op"
+  },
+  "link:1:1": {
+   "verdict": "ok",
+   "reason": "test_console_queue_and_reset_settle::test_link_source_is_max_frame_less_7... asserts len(u16) data; test_trace_link lock-column[source-False] asserts it is answered with session_id 0"
+  },
+  "link:1:2": {
+   "verdict": "ok",
+   "reason": "test_trace_link::test_sink_takes_up_to_max_frame_less_12... asserts count(u16) data -> empty success without a session; lock-column[sink-False]"
+  },
+  "link:1:3": {
+   "verdict": "ok",
+   "reason": "test_port_speed::test_the_request_is_baud_step_verify_ms... asserts the fixed part and the baud answer; test_try_then_commit... asserts session_required; ops-tag test asserts optional"
+  },
+  "link:1:4": {
+   "verdict": "ok",
+   "reason": "test_port_speed::test_the_ops_tag_offers_it_only_when_on... asserts port_state comes with port_speed; PortSpeedChecks (test_port_speed_handshake) asserts baud / state values; lock-column[port_state-False]"
+  },
+  "link:2:1": {
+   "verdict": "ok",
+   "reason": "test_link_source_is_max_frame_less_7 asserts len == max_frame - 7; the link-transfer checker (test_link_transfer_profiles) asserts the k & 0xFF pattern and len 0, with mutants"
+  },
+  "link:2:2": {
+   "verdict": "ok",
+   "reason": "test_trace_link::test_sink_takes_up_to_max_frame_less_12... asserts count max_frame-12 accepted, a count past the bytes malformed, an empty success"
+  },
+  "link:2:3": {
+   "verdict": "ok",
+   "reason": "test_trace_link::test_the_host_waits_for_a_source_answer... asserts one or two writes of the same bytes (one resend), not confirm's repeats"
+  },
+  "link:3:1": {
+   "verdict": "ok",
+   "reason": "test_port_speed::test_only_the_uart_bridge_the_request_came_in_on... asserts cause 6 on a USB-Serial/JTAG port and on a second port while one is raised"
+  },
+  "link:3:2": {
+   "verdict": "ok",
+   "reason": "test_port_speed::test_the_nearest_rate_the_uart_makes_must_be_within_the_tolerance asserts unsupported (0x00) past 2 %, the applied baud, not above the boot speed; verify_ms 0 malformed in a try, any in commit"
+  },
+  "link:3:3": {
+   "verdict": "ok",
+   "reason": "test_port_speed::test_a_step_that_does_not_fit_the_boot_state_is_cause_6 and test_only_the_uart_bridge... assert cause 6 with state unchanged and one port at a time; PortSpeedChecks PENDING-IDLE cases"
+  },
+  "link:3:4": {
+   "verdict": "ok",
+   "reason": "test_port_speed::test_try_then_commit_answered_at_the_old_speed asserts the try answer then port_baud 1500000 and state try"
+  },
+  "link:3:5": {
+   "verdict": "ok",
+   "reason": "test_try_then_commit... asserts commit of another baud cause 6, same baud -> committed; test_the_nearest_rate... asserts revert from try back to 115200"
+  },
+  "link:3:6": {
+   "verdict": "ok",
+   "reason": "test_port_speed::test_step_2_and_the_sessions_end_answer_at_the_speed_then_revert asserts revert answered at the raised rate then 115200; try/commit while committed cause 6"
+  },
+  "link:3:7": {
+   "verdict": "ok",
+   "reason": "PortSpeedChecks (test_port_speed_handshake) PENDING-VERIFY asserts every step cause 6 in phase 3; mutants pending_accepts_step / no_pending_return fail it"
+  },
+  "link:3:8": {
+   "verdict": "ok",
+   "reason": "fixed: the 'not announced' part was unchecked; test_trace_link::test_the_probe_goes_back_by_itself_without_telling asserts no output on the port after the verify and idle returns, port_state (115200, 0)"
+  },
+  "link:3:9": {
+   "verdict": "ok",
+   "reason": "test_port_speed::test_try_times_out_and_a_late_commit_is_wrong_state asserts 750000 at 999 ms, 115200 at 1000 ms, then commit cause 6"
+  },
+  "link:3:10": {
+   "verdict": "ok",
+   "reason": "test_port_speed::test_committed_goes_back_after_the_idle_time... asserts 3000 ms counted from a good frame and from an answer, noise not counting; execution checker for the pause"
+  },
+  "link:3:11": {
+   "verdict": "ok",
+   "reason": "test_port_speed::test_step_2_and_the_sessions_end... asserts end / lapse / force answered then 115200; lifecycle checker"
+  },
+  "link:3:12": {
+   "verdict": "ok",
+   "reason": "PortSpeedChecks / execution / lifecycle checkers assert the timer pause, frame-boundary pending, owner-only cancel, cause 6 after cancel; mutants fail each"
+  },
+  "link:3:13": {
+   "verdict": "ok",
+   "reason": "test_trace_link::test_the_session_and_the_lock_stay_while_trying_and_committed asserts holder, plan, gpio, connections, streams unchanged"
+  },
+  "link:3:14": {
+   "verdict": "ok",
+   "reason": "test_trace_link::test_the_host_waits_port_speed_switch_wait_ms_after_switching asserts a sleep >= 0.02 s after switching and switch before the confirm; set_baud uses the answer only when the OS refuses"
+  },
+  "link:3:15": {
+   "verdict": "ok",
+   "reason": "fixed: the clause 'a resent past success answer does not decide the speed' was unchecked; test_trace_link::test_the_host_reads_the_phase_with_a_new_corr_not_from_an_old_answer asserts a port_state with a corr above every earlier one after the failed try's revert, before the next try (force/restart/end parts already asserted)"
+  }
+ }
+}

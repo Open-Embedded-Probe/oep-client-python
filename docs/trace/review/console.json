@@ -1,0 +1,221 @@
+{
+ "reviewed_commit": "70a9bf7",
+ "units": {
+  "console:pre:1": {
+   "verdict": "ok",
+   "reason": "fixed: was excluded as informative, but the row's revision 1 is checkable; test_trace_console::test_the_interface_row_lists_oep_target_console_at_revision_1 asserts revision 1"
+  },
+  "console:1:1": {
+   "verdict": "ok",
+   "reason": "test_interfaces::test_console_open_makes_a_stream... asserts payload <IB conn, mechanism> and the u32 stream; AttachChecks asserts session_required; test_trace_console::test_the_lock_column_of_the_op_table[open-True]"
+  },
+  "console:1:2": {
+   "verdict": "ok",
+   "reason": "test_interfaces::test_console_open_makes_a_stream_and_reads_by_position asserts (start, flags, data); tests read with session_id 0; test_trace_console::test_the_lock_column_of_the_op_table[read-False]"
+  },
+  "console:1:3": {
+   "verdict": "ok",
+   "reason": "test_interfaces::test_console_marks_follow_serials_and_more asserts serials / more paging; test_a_fn_without_marks asserts optional; test_trace_console::test_the_lock_column_of_the_op_table[marks-False]"
+  },
+  "console:1:4": {
+   "verdict": "ok",
+   "reason": "test_interfaces::test_console_write_partial... asserts clear leaves the queue and records a clear mark; StreamChecks asserts session_required; test_trace_console::test_the_lock_column_of_the_op_table[clear-True]"
+  },
+  "console:1:5": {
+   "verdict": "ok",
+   "reason": "test_interfaces::test_console_marks_follow_serials_and_more asserts kind 3 detail = value; test_a_fn_without_marks asserts mark absent with marks; test_trace_console::test_the_lock_column_of_the_op_table[mark-True]"
+  },
+  "console:1:6": {
+   "verdict": "ok",
+   "reason": "fixed: the lock column was unchecked by the named tests (form / accepted were); test_trace_console::test_the_lock_column_of_the_op_table[write-True] asserts session_required with session_id 0 and the queue unchanged"
+  },
+  "console:1:7": {
+   "verdict": "ok",
+   "reason": "fixed: the lock column was unchecked; test_trace_console::test_the_lock_column_of_the_op_table[close-True] asserts session_required with session_id 0 and the stream still live"
+  },
+  "console:1:8": {
+   "verdict": "ok",
+   "reason": "test_trace_console::test_streams_lists_the_live_streams_in_the_order_made asserts (stream, connection, mechanism) rows; test_spec_2c6d18d first u16 paging; test_trace_console::test_the_lock_column_of_the_op_table[streams-False]"
+  },
+  "console:1:9": {
+   "verdict": "ok",
+   "reason": "test_conformance_stream::test_stream_contracts_pass (StreamChecks) asserts the common §1 forms with the stream prefix; test_interfaces read / marks / write payloads"
+  },
+  "console:1:10": {
+   "verdict": "ok",
+   "reason": "test_trace_console::test_a_mechanism_not_declared_or_unknown_is_unsupported_0x00 asserts unsupported payload 0x00 and nothing opened"
+  },
+  "console:1:11": {
+   "verdict": "ok",
+   "reason": "test_trace_console::test_describe_declares_the_mechanisms_counted_without_duplicates asserts one 0x40 TLV, n >= 1, no duplicates"
+  },
+  "console:1:12": {
+   "verdict": "ok",
+   "reason": "test_trace_console::test_unknown_numbers_no_resource_and_another_kinds_number_cause_6 asserts no_resource and cause 6; AttachChecks arm-adi console mutant"
+  },
+  "console:1:13": {
+   "verdict": "ok",
+   "reason": "test_trace_console::test_stream_numbers_are_never_used_again_in_a_boot asserts each new stream number unseen (not a closed one, not a connection's)"
+  },
+  "console:1:14": {
+   "verdict": "ok",
+   "reason": "test_trace_console::test_streams_lists_the_live_streams_in_the_order_made asserts order made, the closed one gone, no_resource after close"
+  },
+  "console:2:1": {
+   "verdict": "ok",
+   "reason": "test_interfaces::test_console_open_makes_a_stream... asserts a second open on the connection, any mechanism, is cause 6; test_stream_numbers... asserts no old buffer / marks come back"
+  },
+  "console:2:2": {
+   "verdict": "ok",
+   "reason": "test_trace_console::test_close_the_connections_release_and_the_sessions_end_free_the_stream_and_its_queue asserts the stream and resource gone for close / detach / end (the host's 'read before losing it' is advice to the application)"
+  },
+  "console:2:3": {
+   "verdict": "ok",
+   "reason": "test_console_queue_and_reset_settle::test_the_queue_is_handed_on_a_poll... asserts output taken / queue handed between requests; mailbox checker asserts no access while halted / busy"
+  },
+  "console:2:4": {
+   "verdict": "ok",
+   "reason": "test_conformance_dmseq / test_conformance_reset assert the dmseq sync cleared on the target's self reset (mutants reset_keep_protocol, sync_retained)"
+  },
+  "console:2:5": {
+   "verdict": "ok",
+   "reason": "fixed: 'without marks, dmseq still synchronises and drops duplicates' was unchecked; test_trace_console::test_a_fn_without_marks_still_synchronises_and_drops_duplicates_on_dmseq asserts DmseqChecks' SYN / DUP / transition cases pass with marks / mark refused"
+  },
+  "console:2:6": {
+   "verdict": "ok",
+   "reason": "test_trace_console::test_a_reset_op_marks_reset_detail_1_once... asserts [(0x40, 1)] only"
+  },
+  "console:2:7": {
+   "verdict": "ok",
+   "reason": "DmseqChecks (test_logical_probe_dmseq_contracts_pass) asserts restart (0x41) detail 1 after havereset and detail 2 on resync; test_interfaces asserts MARK_DETAIL resync == 2"
+  },
+  "console:2:8": {
+   "verdict": "ok",
+   "reason": "DmseqChecks MARK-TO-NEW / TO-DUP assert lost 0x01 detail 0x40 (event-checker mutants)"
+  },
+  "console:2:9": {
+   "verdict": "ok",
+   "reason": "test_trace_console::test_dmseq_first_synchronisation_marks_no_restart asserts the SYN / UNSYNCED / VECTOR cases pass and fail on a model that marks one"
+  },
+  "console:2:10": {
+   "verdict": "ok",
+   "reason": "DmseqChecks MARK-RESYNC-NEW asserts a restart mark detail 2 (mutant same_s_syn_lost)"
+  },
+  "console:2:11": {
+   "verdict": "ok",
+   "reason": "DmseqChecks MARK-TO-NEW / TO-DUP assert lost/TO also on a duplicate payload"
+  },
+  "console:2:12": {
+   "verdict": "ok",
+   "reason": "DmseqChecks MARK-CRC-FLAGS asserts lost detail 2 on a CRC mismatch; N7 case asserts no CRC position past 6"
+  },
+  "console:2:13": {
+   "verdict": "ok",
+   "reason": "test_conformance_dmseq::test_repeated_mark_coalescing_is_allowed asserts a coalescing model still passes (a permission)"
+  },
+  "console:2:14": {
+   "verdict": "ok",
+   "reason": "DmseqChecks MARK-INVALID-FLAGS asserts no restart / TO marks from invalid frames (test_invalid_flags_do_not_trigger_resync_or_to mutants)"
+  },
+  "console:2:15": {
+   "verdict": "ok",
+   "reason": "fixed: count 0 -> success accepted 0 was unchecked (min / partial / full failed were); test_trace_console::test_a_write_of_count_0_is_success_with_accepted_0 asserts it, even with the queue full"
+  },
+  "console:2:16": {
+   "verdict": "ok",
+   "reason": "test_console_queue_and_reset_settle::test_dmseq_hands_on_2_bytes... (b'hell' after 2 polls) and test_the_queue_is_handed_on... (3 bytes a poll, order kept)"
+  },
+  "console:2:17": {
+   "verdict": "ok",
+   "reason": "test_interfaces::test_console_write_partial... asserts clear leaves the queue and writes to a lost stream are no_resource; test_trace_console close test asserts the queue goes with the stream"
+  },
+  "console:3:1": {
+   "verdict": "ok",
+   "reason": "MailboxChecks / DmseqChecks assert no DATA0/1 access while halted or busy and DMSTATUS read first (mutants halt_access, busy_access, status_after_data)"
+  },
+  "console:3:2": {
+   "verdict": "ok",
+   "reason": "excluded rightly: the mechanism table's header row"
+  },
+  "console:3:3": {
+   "verdict": "ok",
+   "reason": "fixed: was excluded, but 'SDI = 0, target -> host only' is checkable; now traced to test_trace_console::test_streams_lists... (SDI listed as 0) and the SDI write-unsupported tests"
+  },
+  "console:3:4": {
+   "verdict": "ok",
+   "reason": "fixed: was excluded, but 'DMDATA = 1, both ways' is checkable; now traced to test_streams_lists... (DMDATA listed as 1) and the DMDATA queue hand-on tests"
+  },
+  "console:3:5": {
+   "verdict": "ok",
+   "reason": "fixed: was excluded, but 'dmseq = 2, both ways' is checkable; now traced to test_interfaces::test_console_open... (open sends 2, streams lists 2) and test_dmseq_hands_on_2_bytes..."
+  },
+  "console:3.1:1": {
+   "verdict": "ok",
+   "reason": "MailboxChecks SDI-LENGTHS asserts the byte positions in DATA0 / DATA1 (mutant sdi_skip_data1)"
+  },
+  "console:3.1:2": {
+   "verdict": "ok",
+   "reason": "excluded rightly: target firmware's side of the SDI mailbox"
+  },
+  "console:3.1:3": {
+   "verdict": "ok",
+   "reason": "MailboxChecks SDI-LENGTHS / SDI-INVALID / SDI-ACK assert the reads, the 0 written, L >= 8 cleared"
+  },
+  "console:3.1:4": {
+   "verdict": "ok",
+   "reason": "test_interfaces::test_console_write_partial... asserts an SDI write unsupported with payload 0x00"
+  },
+  "console:3.2:1": {
+   "verdict": "ok",
+   "reason": "MailboxChecks DM-BIT6 / DM-INVALID assert T and L handling and bit 6 ignored"
+  },
+  "console:3.2:2": {
+   "verdict": "ok",
+   "reason": "MailboxChecks DM-LENGTHS asserts bytes 0-2 from DATA0, 3-6 from DATA1"
+  },
+  "console:3.2:3": {
+   "verdict": "ok",
+   "reason": "excluded rightly: target firmware's side of the DMDATA mailbox"
+  },
+  "console:3.2:4": {
+   "verdict": "ok",
+   "reason": "excluded rightly: target firmware's side of the DMDATA mailbox"
+  },
+  "console:3.2:5": {
+   "verdict": "ok",
+   "reason": "excluded rightly: target firmware's side of the DMDATA mailbox"
+  },
+  "console:3.2:6": {
+   "verdict": "ok",
+   "reason": "excluded rightly: target firmware's side (how the target takes the probe's answer)"
+  },
+  "console:3.2:7": {
+   "verdict": "ok",
+   "reason": "MailboxChecks asserts the event order read DMSTATUS then DATA0 (mutant status_after_data)"
+  },
+  "console:3.2:8": {
+   "verdict": "ok",
+   "reason": "MailboxChecks DM-OWN-TURN asserts nothing written over a bit-7-0 word (mutant dm_overwrite_own)"
+  },
+  "console:3.2:9": {
+   "verdict": "ok",
+   "reason": "MailboxChecks DM-LENGTHS asserts n = L - 4 bytes and DATA1 read after DATA0 only when n >= 4"
+  },
+  "console:3.2:10": {
+   "verdict": "ok",
+   "reason": "MailboxChecks DM-QUEUE cases assert the empty frame is answered"
+  },
+  "console:3.2:11": {
+   "verdict": "ok",
+   "reason": "MailboxChecks DM-INVALID asserts 0 written and no queue bytes taken (mutant dm_consume_invalid)"
+  },
+  "console:3.2:12": {
+   "verdict": "ok",
+   "reason": "MailboxChecks DM-QUEUE-3 asserts DATA0 = (n+4) | bytes << 8, n = min(queue, 3), DATA1 not written; test_interfaces asserts 3 bytes a poll"
+  },
+  "console:4:1": {
+   "verdict": "ok",
+   "reason": "excluded rightly: the reference list (RISC-V Debug Specification versions and registers)"
+  }
+ }
+}

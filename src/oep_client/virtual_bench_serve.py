@@ -17,7 +17,7 @@ session, its lock, subscriptions and the resend table are shared (an open from o
 holds the lock is refused locked; lock_state shows it from every connection), and a closed connection does not end
 them (transports §3: they stay until the lease runs out or another core §9 event; answers and notifications for a
 closed connection are dropped; an open with the same session id from another connection takes the session back,
-core §6.2, and its notifications go there from then on). A connection that takes nothing for 2 s while answers wait is
+core §6.2 - its subscriptions still send where their subscribe came, until a subscribe again moves them, §10.3). A connection that takes nothing for 2 s while answers wait is
 closed as dead; notifications that would make more than 2 x max_frame wait on one are dropped (core §10.4).
 --framing cobs, only when asked for, is the serial port again over the socket (emulating a serial port, COBS frames):
 it serves one connection at a time (a second one waits until the first closes).
@@ -587,7 +587,7 @@ def _serve_length(a, ep, console, commands: Commands, srv: socket.socket) -> Non
         live = {c.link: c for c in clients}
         for link, f in ep.pushes_to():                   # events and data pushes (core §10), answers first (§11.4)
             c = live.get(link)
-            if c is not None and len(c.out) <= limit:    # else dropped: its seq shows the gap (core §10.3)
+            if c is not None and len(c.out) + 2 + len(f) <= limit:   # else dropped: its seq shows the gap (§10.3)
                 c.send(struct.pack("<H", len(f)) + f)
         for c in list(clients):
             if (c.out or c.sock in writable) and not c.flush():
