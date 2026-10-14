@@ -706,21 +706,34 @@ class VirtualGroup:
         core §9); the tracks stay as they are, each on its own."""
         self._unbind(caps)
 
-    def start(self, caps: dict[int, VirtualCapture], now_ms: int,
-              subscribed=lambda fn: True) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
-        """-> (each track's events, the group's events). Every track checked first (state 1/4/6, its subscription for
-        streaming, a generation left), then the group and every track get a new generation (the answer names them,
-        §4.1) and start at once."""
+    def start(self, caps: dict[int, VirtualCapture], now_ms: int, subscribed=lambda fn: True,
+              fail: set[int] = frozenset()) -> tuple[list[tuple[int, list[bytes]]], list[bytes], bool]:
+        """-> (each track's events, the group's events, whether a track's start failed). Every track checked first
+        (state 1/4/6, its subscription for streaming, a generation left), then the group and every track get a new
+        generation (the answer names them, §4.1) and start at once, in bind order. A track in `fail` (TEST HOOK) does
+        not start: it is state 6, the tracks not started yet stay state 1, the ones started are stopped as by stop, and
+        no generation goes back (§4.1)."""
         if not self.tracks:
             raise wrong_state()                                    # nothing bound (§4.1)
         for fn in self.tracks:
-            caps[fn].startable(subscribed(fn), fn)
+            caps[fn].startable(subscribed(fn))                 # cause 6 / 2 alone, as interface_boundaries.json
         if self.generation == LAST_GENERATION:
             raise exhausted()
         self.start_ns = now_ms * 1_000_000
         self.generation += 1
-        per = [(fn, caps[fn].start(now_ms, self.start_ns, subscribed=subscribed(fn))) for fn in self.tracks]
-        return per, self._finished(caps, False)
+        per = []
+        for k, fn in enumerate(self.tracks):
+            if fn in fail:
+                for later in self.tracks[k:]:                      # their generations are allotted all the same
+                    c = caps[later]
+                    c._clear()
+                    c.generation += 1
+                    c.state = STATE["configured"]
+                caps[fn].state, caps[fn].error = STATE["error"], CAP.enum["error"]["peripheral"]
+                per += [(started, caps[started].stop(now_ms)) for started in self.tracks[:k]]
+                return per, [], True
+            per.append((fn, caps[fn].start(now_ms, self.start_ns, subscribed=subscribed(fn))))
+        return per, self._finished(caps, False), False
 
     def _finished(self, caps: dict[int, VirtualCapture], was_done: bool) -> list[bytes]:
         """The group's stopped 0 when every track has completed (§4.2)."""

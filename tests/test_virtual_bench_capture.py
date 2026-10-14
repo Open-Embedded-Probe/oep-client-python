@@ -168,8 +168,9 @@ def test_streaming_pushes_the_bytes_while_subscribed():
 
 
 def test_min_bytes_and_max_delay_batch_the_data_and_never_the_events():
-    """core §11.3: the data (role 0x06) waits for min_bytes bytes or max_delay_ms since its oldest byte was there
-    (0 = that condition unused); an event (role 0x05) goes at once, and its bytes do not count."""
+    """core §10.3: the data (role 0x04) waits for min_bytes bytes or max_delay_ms since its oldest byte was there
+    (0 = that condition unused); an event (role 0x03) goes at once, and its bytes do not count; once the capture has
+    stopped, its rest goes without waiting (capture §2.1 rule 2)."""
     ep, hst, lc, clock = bench()
     core.plan_apply(hst, [(lc.fn, 0, 20), (lc.fn, 1, 21), (lc.fn, 2, 22)])
     lc.configure(rate=1_000_000, mode=c.STREAMING)
@@ -190,7 +191,7 @@ def test_min_bytes_and_max_delay_batch_the_data_and_never_the_events():
     lc.stop()
     frames = ep.pushes()
     assert [f[5] for f in frames if f[0] == m.ROLE_EVENT] == [c.EVENT_STOPPED]   # ... the event goes at once
-    assert not [f for f in frames if f[0] == m.ROLE_DATA]
+    assert sum(len(c.unpack_push(f)[3]) for f in frames if f[0] == m.ROLE_DATA) == 500    # and the rest (1 ms), stopped
 
 
 def test_events_go_out_only_while_subscribed():

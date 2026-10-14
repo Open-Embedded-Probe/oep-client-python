@@ -1264,3 +1264,85 @@ def test_refusals_as_the_host_reads_them(case):
     assert res.resolution == m.REJECTED and isinstance(err, h.Rejected)
     if res.detail == m.UNSUPPORTED:
         assert isinstance(err, h.Unsupported) and (err.tag is None) == (res.payload[:1] == b"\x00")
+
+
+BOUNDARIES = load("interface_boundaries.json")
+
+
+@pytest.mark.parametrize("row", BOUNDARIES["batching"], ids=lambda r: r["name"])
+def test_boundary_batching_on_the_virtual_bench(row):
+    """core §10.3 / capture §2.1 rule 2: when a streaming capture's pending data goes out (a stopped one's rest without
+    waiting, never an empty frame), and the frames it makes at max_frame (15 + 7 + 27 bytes of header and TLVs)."""
+    due = endpoint.push_due(row["min_bytes"], row["max_delay_ms"], row["age_ms"], row["pending_bytes"], row["stopped"])
+    cap = virtual_bench_capture.VirtualCapture({virtual_bench_capture.MODE["streaming"]}, {8}, 1, 1000)
+    cap.mode, cap.width, cap.channels, cap.rate = virtual_bench_capture.MODE["streaming"], 8, 1, virtual_bench_capture.Fraction(1000)
+    cap.samples, cap.generation = 1 << 16, 1                           # one w8 segment
+    cap.data, cap.produced = bytearray(row["pending_bytes"]), row["pending_bytes"]
+    frames = cap.pushes(9, lambda: 0, row["max_frame"]) if due else []
+    assert [struct.unpack_from("<H", f, 13)[0] for f in frames] == row["expected_data_lengths"]
+    assert all(len(f) <= row["max_frame"] for f in frames)
+
+
+@pytest.mark.parametrize("row", BOUNDARIES["reception"], ids=lambda r: r["name"])
+def test_boundary_reception_as_the_client_reads_it(row):
+    """capture §2.1 rule 2: reaching write_pos is not having the whole; only this generation's bytes cover it."""
+    from oep_client import capture
+    assert capture.coverage([tuple(s) for s in row["spans"]], row["generation"], row["write_pos"]) == (
+        row["expected_tail_reached"], row["expected_complete"])
+
+
+@pytest.mark.parametrize("row", BOUNDARIES["serial_loss"], ids=lambda r: r["name"])
+def test_boundary_serial_loss_as_the_client_counts_it(row):
+    """common §1.3 paging 3, core §2.6: a forward serial jump in one stream counts the elements lost, nothing else does."""
+    assert m.serials_lost(row["last_serial"], row["first_serial"], row["same_stream"]) == row["expected_lost"]
+
+
+@pytest.mark.parametrize("row", BOUNDARIES["storage"], ids=lambda r: r["name"])
+def test_boundary_storage_on_the_virtual_bench(row):
+    """probe.config §3: a save / erase answers the same fixed part either way; state then shows the storage as seen
+    after it (the save before kept, none, or unreadable), the settings and generation unchanged."""
+    case = {"name": row["name"], "fns": {"8": "oep.probe.config"}, "state": ""}
+    ep, hst, _ = bench_for(case)
+    hst.open(3000)
+    ep.load_config([config.item(config.Label(channel=k, text=f"l{k}")) for k in range(1, 5)], saved=False)
+    ep.generation = row["generation"]
+    ep.storage_state, ep.saved_generation, ep.storage_reason = row["before"]
+    ep.saved = {} if row["before"][0] in (1, 3) else None
+    if row["result"] == "failed":
+        ep.storage_fault = row["observed"]
+    for request_hex, answer_hex in ((row["request_hex"], row["answer_hex"]), ("0102000800" "15" "00000000", row["state_answer_hex"])):
+        r = m.Request.unpack(hx(request_hex))
+        ep.newest_corr, _ = (r.corr - 2) % 0xFFFF + 1, ep.resend.clear()
+        sid = hst.session if r.session else 0
+        out = ep.handle(m.Request(r.corr, r.fn, r.op, r.payload, sid).pack(), 0)
+        assert out.hex() == answer_hex
+    assert ep.generation == row["generation"]
+
+
+@pytest.mark.parametrize("row", BOUNDARIES["groups"], ids=lambda r: r["name"])
+def test_boundary_group_start_on_the_virtual_bench(row):
+    """capture §4.1: start only when every track is in state 1/4/6 (else cause 6, nothing changes); a track failing to
+    start makes the start completed failed with the same fixed part - the failed track 6, those not started 1, those
+    started stopped as by stop - and no generation goes back."""
+    from oep_client import capture
+    case = {"name": row["name"], "fns": {"12": "oep.fixture.capture-group", "9": "oep.fixture.logic",
+                                         "13": "oep.fixture.analog"}, "state": ""}
+    ep, hst, _ = bench_for(case)
+    hst.open(3000)
+    logic, analog = capture.LogicCapture(hst, fn=9), capture.AnalogCapture(hst, fn=13)
+    core.plan_apply(hst, [(9, 0, 1), (13, 0, 2)])
+    logic.configure(rate=1_000_000, samples=1 if row.get("completed_first") else 100_000)
+    analog.configure(rate=1000, samples=100)
+    capture.CaptureGroup(hst, fn=12).bind([logic, analog])
+    tracks = [ep.captures[9], ep.captures[13]]
+    ep.groups[12].generation, tracks[0].generation, tracks[1].generation = row["generations"]
+    for track, state in zip(tracks, row["states"]):
+        track.state = state
+    if "failed_index" in row:
+        ep.capture_fail_start.add((9, 13)[row["failed_index"]])
+    ep.now.t = 7                                                       # acquisition starts at 7 ms
+    r = m.Request.unpack(hx(row["request_hex"]))
+    ep.newest_corr, _ = (r.corr - 2) % 0xFFFF + 1, ep.resend.clear()
+    assert ep.handle(m.Request(r.corr, r.fn, r.op, r.payload, hst.session).pack(), 0).hex() == row["answer_hex"]
+    assert [ep.groups[12].generation] + [t.generation for t in tracks] == row["expected_generations"]
+    assert [t.state for t in tracks] == row.get("expected_states", row["states"])

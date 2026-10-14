@@ -208,6 +208,21 @@ class SegmentInfo:
     start_uncertainty_ns: int
 
 
+def coverage(spans: list[tuple[int, int, int]], generation: int, write_pos: int) -> tuple[bool, bool]:
+    """(tail reached, complete) of a generation's stream up to write_pos (§2.1 rule 2): `spans` are (generation,
+    start, end) byte ranges received by notification or read. Reaching write_pos says only that the end came; the
+    whole is had only when the generation's spans cover 0 .. write_pos with no hole - another generation's bytes fill
+    none."""
+    mine = sorted((a, b) for g, a, b in spans if g == generation)
+    reached = any(b == write_pos for _, b in mine)
+    at = 0
+    for a, b in mine:
+        if a > at:
+            break
+        at = max(at, b)
+    return reached, at >= write_pos
+
+
 def unpack_push(frame: bytes) -> tuple[int, int, int, bytes, int | None]:
     """A data frame (core §10.2: role fn seq position(u64) len(u16) data [TLV]) -> (fn, seq, position, data,
     generation): the TLV 0x01 generation, None when the frame carries none."""

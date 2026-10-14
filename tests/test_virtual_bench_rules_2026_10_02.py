@@ -560,7 +560,7 @@ def test_p2_o10_capture_group_with_nothing_bound_and_the_checks_before_start():
     h.ok(12, grp["bind"], struct.pack("<BHH", 2, 7, 11))
     h.ok(7, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0))              # fn 11 has no subscription
     r = h.raw(12, grp["start"])
-    assert r.detail == m.UNAVAILABLE and una(r)[UNA["fn"]] == struct.pack("<H", 11)
+    assert r.detail == m.UNAVAILABLE and una(r)[UNA["cause"]] == b"\x06"     # the fn TLV is optional (core §4.3)
     assert ep.captures[7].state == virtual_bench_capture.STATE["configured"]   # nothing started
 
 

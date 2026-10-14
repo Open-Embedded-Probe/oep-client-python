@@ -193,6 +193,13 @@ def wrong_kind() -> Reject:
     return unavailable("wrong_state")
 
 
+def push_due(min_bytes: int, max_delay_ms: int, age_ms: int, pending: int, stopped: bool) -> bool:
+    """Whether a streaming capture's pending data goes out now (core §10.3, capture §2.1 rule 2): min_bytes waiting, the
+    oldest max_delay_ms old, both 0 (at once), or the capture stopped (its rest without waiting); never nothing."""
+    return pending > 0 and (stopped or (min_bytes == max_delay_ms == 0) or (min_bytes > 0 and pending >= min_bytes)
+                            or (max_delay_ms > 0 and age_ms >= max_delay_ms))
+
+
 class Take:
     """Reads a request's fixed part; too short -> rejected malformed. `tail(known)` applies the request-tail rules of
     core §2.3:
@@ -741,6 +748,7 @@ class Endpoint:
         self.saved: dict | None = getattr(self, "saved", None)   # the stored items (they outlive a reboot)
         self.saved_generation = 0                      # state's saved_generation (0: none, unreadable or partial)
         self.storage_state, self.storage_reason = 0, 0
+        self.storage_fault: str | None = None          # TEST HOOK: the next save / erase fails ("old" / "none" / "unreadable")
         self.parked: dict[int, int] = {}               # channel -> the idle mode the probe put the free pin in
         self.speed_state = "base"                      # port_speed: "base", "try" or "committed" (oep-if-link §3)
         self.speed_port: int | None = None             # the port off its boot speed
@@ -885,9 +893,8 @@ class Endpoint:
                 continue
             since = self.data_since_ms.setdefault(fn, self.now())
             min_bytes, max_delay_ms = self.subscribed[fn]
-            due = (not min_bytes and not max_delay_ms) or (min_bytes and waiting >= min_bytes) or (
-                max_delay_ms and self.now() - since >= max_delay_ms)
-            if due:
+            stopped = cap.state not in (virtual_bench_capture.STATE["capturing"], virtual_bench_capture.STATE["paused"])
+            if push_due(min_bytes, max_delay_ms, self.now() - since, waiting, stopped):
                 self.outbox += cap.pushes(fn, lambda fn=fn: self._next_seq(fn), self.probe.max_frame)
                 self.data_since_ms.pop(fn, None)
         out, self.outbox = self.outbox, []
@@ -1008,11 +1015,12 @@ class Endpoint:
                 return self._answer(b"")
             if op == O["start"]:
                 t.tail()
-                per, own = grp.start(self.captures, self.uptime_ms(), lambda track: track in self.subscribed)
+                per, own, failed = grp.start(self.captures, self.uptime_ms(), lambda track: track in self.subscribed,
+                                             self.capture_fail_start)
                 for track, events in per:
                     self._events(track, events)
                 self._events(fn, own)
-                return m.COMPLETED, m.SUCCESS, grp.start_answer(self.captures)
+                return m.COMPLETED, m.FAILED if failed else m.SUCCESS, grp.start_answer(self.captures)   # one fixed form
             if op == O["stop"]:
                 t.tail()
                 per, own = grp.stop(self.captures, self.uptime_ms())
@@ -2923,15 +2931,34 @@ class Endpoint:
             t.tail()
             if sum(3 + len(v) for v in self.config.values()) > self.storage_max:
                 raise unavailable("storage_full")                  # past max_bytes, before anything (§4)
+            if self._storage_failed():
+                return m.COMPLETED, m.FAILED, struct.pack("<I", self.generation)   # the same fixed part (§3)
             self.saved = dict(self.config)
             self.storage_state, self.storage_reason, self.saved_generation = 1, 0, self.generation
             return m.COMPLETED, m.SUCCESS, struct.pack("<I", self.generation)
         if op == _CFG.op["erase"]:
             t.tail()
+            if self._storage_failed():
+                return m.COMPLETED, m.FAILED, b""
             self.saved = None
             self.storage_state, self.storage_reason, self.saved_generation = 0, 0, 0
             return m.COMPLETED, m.SUCCESS, b""
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
+
+    def _storage_failed(self) -> bool:
+        """TEST HOOK `storage_fault`: the next save / erase does not complete (probe.config §3) and the storage is then
+        seen as "old" (the save before kept: state unchanged), "none" (no save) or "unreadable" (state 2, reason 1).
+        The settings, generation and pins stay either way."""
+        fault, self.storage_fault = self.storage_fault, None
+        if fault is None:
+            return False
+        if fault == "none":
+            self.saved = None
+            self.storage_state, self.storage_reason, self.saved_generation = 0, 0, 0
+        elif fault == "unreadable":
+            self.saved = None
+            self.storage_state, self.storage_reason, self.saved_generation = 2, 1, 0
+        return True
 
     def _change_config(self, new: dict) -> None:
         """Make `new` the settings after checking it whole against what runs (probe.config §1, §2); a refusal changes

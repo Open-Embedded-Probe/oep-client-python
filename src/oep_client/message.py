@@ -259,6 +259,17 @@ def serial_diff(a: int, b: int, bits: int = 32) -> int:
     return d - (1 << bits) if d >> (bits - 1) else d
 
 
+def serials_lost(last: int | None, first: int, same_stream: bool = True, bits: int = 32) -> int | None:
+    """The elements lost between the last serial read (`last`) and the first of the next page (`first`), when the core
+    §2.6 comparison holds (common §1.3 paging 3): the same stream (a capture: the same generation, one boot), a forward
+    jump of less than a quarter of the space. None when it cannot be told - another stream, nothing read before, a
+    jump backwards or past a quarter."""
+    if not same_stream or last is None:
+        return None
+    d = serial_diff(first, last, bits)
+    return d - 1 if 0 < d < 1 << (bits - 2) else None
+
+
 def serial_page_start(kept: list[int], next_serial: int, from_serial: int) -> int:
     """Where an answer of a list paged by serial starts (common §1.3: marks, capture's segments), as an index into
     `kept` (the serials still kept, oldest first; `next_serial` the one the next element gets): from_serial itself
