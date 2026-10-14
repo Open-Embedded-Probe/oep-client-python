@@ -492,3 +492,27 @@ def test_a_new_subscribe_or_an_unsubscribe_drops_what_the_old_one_had_not_sent()
     assert [struct.unpack_from("<H", f, 3)[0] for f in ep.outbox] == [0, 1]
     lc.unsubscribe()
     assert ep.pushes() == []
+
+
+def test_a_position_jump_is_a_lost_notification_and_read_says_what_is_kept():
+    """common §1.5: a data frame starting past the previous one's end means the bytes between were not received by
+    notification - not that the probe lost them; read's position and gap say whether they are still kept."""
+    import collections
+    ep, hst, lc, clock = bench()
+    core.plan_apply(hst, [(lc.fn, 0, 20)])
+    ep.captures[lc.fn].widths = {8}                                   # w 8: a byte a sample
+    lc.configure(rate=1000, mode=c.STREAMING)
+    ep.captures[lc.fn].samples = 8                                     # 8 bytes a segment
+    lc.subscribe()
+    lc.start()
+    link = type("L", (), {"events": collections.deque(), "pushes": collections.deque(), "pump": lambda *a, **k: None})()
+    frames = []
+    for t in (8, 16, 24):                                              # three segments, a frame each
+        clock.t = t
+        frames += [f for f in ep.pushes() if f[0] == m.ROLE_DATA]
+    link.pushes.extend([frames[0], frames[2]])                         # the middle notification lost
+    got = lc.stream(link, nbytes=16, keepalive_s=0)
+    assert got.gaps == [(8, 8)] and got.seq_lost == 1                  # 8 bytes skipped at index 8, one frame missing
+    payload = hst.request(lc.fn, lc.READ, struct.pack("<IQH", lc.generation, 8, 8), locked=False).payload
+    position, flags = struct.unpack_from("<QB", payload)
+    assert (position, flags & 2) == (24, 2)                            # pushed, not kept by this probe: gap to write_pos

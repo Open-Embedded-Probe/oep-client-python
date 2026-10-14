@@ -38,6 +38,7 @@ def dm(bench):
 # ---- revision check -----------------------------------------------------------------------------------------
 
 def test_an_interface_in_another_revision_is_not_used():
+    """core §2.8: a host does not use an interface in a revision it does not know."""
     probe = virtual_bench.VirtualProbe("old", 256, [virtual_bench.Offered(0, 0, "oep.core"),
                                         virtual_bench.Offered(1, 1, "oep.wire.rvswd", revision=0),
                                         virtual_bench.Offered(2, 1, "oep.target.console", revision=2)])
