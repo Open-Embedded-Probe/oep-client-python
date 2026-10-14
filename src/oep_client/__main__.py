@@ -382,10 +382,6 @@ def _config_parser(sub) -> None:
     idle.add_argument("probe")
     idle.add_argument("channel", type=int)
     idle.add_argument("mode", choices=sorted(config.IDLE))
-    drive = idle.add_mutually_exclusive_group()
-    drive.add_argument("--drive-ma", type=int, help="output modes: the strongest drive level of about this many mA or "
-                                                    "less, picked here from the gpio's describe drive_levels")
-    drive.add_argument("--drive-level", type=int, help="output modes: a drive level number of this probe")
     idle.add_argument("--save", action="store_true")
     dis = cs.add_parser("disable", help="channels the probe never uses or touches (not on this board)")
     dis.add_argument("probe")
@@ -541,16 +537,7 @@ def _config(args) -> int:
         elif args.action == "label":
             _change(hst, cfg, [config.Label(channel=args.channel, text=args.text)], args.save)
         elif args.action == "idle":
-            from .fixture import Drive, Gpio
-            drive = Drive.level(args.drive_level) if args.drive_level is not None else None
-            if args.drive_ma is not None:
-                levels = Gpio(hst).drive_levels()
-                if levels is None:
-                    raise SystemExit("--drive-ma: this probe declares no drive_levels (its strength cannot be chosen)")
-                drive = levels.at_most(args.drive_ma)
-            if drive is not None and args.mode not in ("output-low", "output-high"):
-                raise SystemExit(f"--drive-ma / --drive-level go with output-low / output-high, not {args.mode}")
-            _change(hst, cfg, [config.Idle(channel=args.channel, mode=args.mode, drive=drive)], args.save)
+            _change(hst, cfg, [config.Idle(channel=args.channel, mode=args.mode)], args.save)
         elif args.action == "disable":
             _change(hst, cfg, [config.Disable(channel=ch) for ch in args.channels], args.save)
         elif args.action == "remove":

@@ -59,7 +59,7 @@ class LinkTransferChecks:
             self.a.seed(self.c,sid)
             seed=self.a.state()
             self.observations.append(dict(action='seed',case=name,state=seed))
-            require(seed['plans']=={2:[1]} and seed['pins'][1][0]==4 and seed['ownership']['holder']==sid,
+            require(seed['plans']=={2:[1]} and seed['pins'][1]==4 and seed['ownership']['holder']==sid,
                     'protected live GPIO/plan/ownership seed missing')
             if name=='SOURCE':
                 for length in (0,1,self.c.max_frame-8,self.c.max_frame-7,self.c.max_frame-6,0xffffffff):self.source(length,sid)

@@ -54,7 +54,7 @@ class LinkRoutesChecks:
         self.transfer.fresh()
         with self.c.holding(3000) as sid:
             self.a.seed(self.c,sid);seed=self.a.state()
-            require(seed['plans']=={2:[1]} and seed['pins'][1][0]==4 and seed['ownership']['holder']==sid,'live protected seed missing')
+            require(seed['plans']=={2:[1]} and seed['pins'][1]==4 and seed['ownership']['holder']==sid,'live protected seed missing')
             self.observations.append(dict(action='seed',case=name,state=seed))
             if name=='ROUTE-LIMITS':
                 for route in (0,2,1,0,1,2):

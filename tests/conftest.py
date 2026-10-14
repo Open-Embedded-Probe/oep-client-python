@@ -23,6 +23,10 @@ PENDING_FOLLOW = {
     "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[plan_": "plan: moved to test_spec_vectors.py",
     "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[restart": "restart: moved to test_spec_vectors.py",
     "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[link ": "link: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[gpio ": "gpio: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[gpio ": "gpio: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config set: an idle value of 3 bytes]":
+        "probe.config: the idle item is 3 bytes now (channel mode)",
     "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[link ": "link: moved to test_spec_vectors.py",
     "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[restart": "restart: moved to test_spec_vectors.py",
     "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[plan_": "plan: moved to test_spec_vectors.py",

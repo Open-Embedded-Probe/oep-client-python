@@ -96,8 +96,6 @@ Options:
                         reset through its line (repeatable): a host's attach with the reset TLV
   --label CH=TEXT       a label item on channel CH at boot, as if saved (repeatable; e.g. 23=v003.nrst names slot
                         v003's reset line, probe.config §1.3)
-  --no-drive-levels     the profile's oep.fixture.gpio without drive_levels (fixture §1.1): a probe that cannot switch
-                        the output strength (describe has no levels; a set with a drive is refused unsupported)
   --capture-slipped     every oep.fixture.logic segment says flags bit2 (slipped: a pace that fell behind)
   --uart-plan           the first oep.fixture.uart gets its RX / TX plan at boot, as if saved (the jig's "DUT TX" /
                         "DUT RX" labels when the profile has them, else the first free channels); configure then works
@@ -184,8 +182,6 @@ def _profile(name):
 def build(a: argparse.Namespace) -> endpoint.Endpoint:
     profile = _profile(a.profile)
     probe = profile()
-    if getattr(a, "no_drive_levels", False):
-        probe = virtual_bench.without_drive_levels(probe)
     if getattr(a, "unit_id", None):
         probe = virtual_bench.with_unit_id(probe, a.unit_id)
     if getattr(a, "no_restart", False):
@@ -735,7 +731,6 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--absent", type=int, action="append", default=[])
     ap.add_argument("--silent-until-reset", type=int, action="append", default=[], metavar="N")
     ap.add_argument("--label", action="append", default=[], type=_label, metavar="CH=TEXT")
-    ap.add_argument("--no-drive-levels", action="store_true")
     ap.add_argument("--uart-plan", action="store_true")
     ap.add_argument("--uart-rx")
     ap.add_argument("--run-hook")

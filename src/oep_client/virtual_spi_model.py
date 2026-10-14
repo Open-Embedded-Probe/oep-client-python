@@ -8,7 +8,7 @@ from .virtual_core import Core, Reject, Completed, tlv
 class Spi(Gpio):
     functions=(1,2)
     def __init__(self,ep,lsb=True):
-        super().__init__(False);self.ep=ep;self.lsb_available=lsb;self.idle={ch:(0,0) for ch in range(8)};self.pins=dict(self.idle);self.reset()
+        super().__init__();self.ep=ep;self.lsb_available=lsb;self.idle={ch:0 for ch in range(8)};self.pins=dict(self.idle);self.reset()
     def reset(self):
         self.configured=False;self.mode=0;self.bit_order=0;self.armed=None;self.rx=[];self.transactions=0;self.errors=0;self.active=False;self.sck=0;self.bits=[];self.output_index=0;self.ready=True
     def list_page(self,first,limit):
@@ -57,7 +57,7 @@ class Spi(Gpio):
             if order and not self.lsb_available:raise Reject(11,b'\0')
             if 2 not in self.plans:raise Reject(4,tlv(1,b'\6'))
             self.reset();self.configured=True;self.mode=mode;self.bit_order=order;self.sck=mode>>1
-            for ch in self.plans[2]:self.pins[ch]=(0,0)
+            for ch in self.plans[2]:self.pins[ch]=0
             self.events.append(('configure',mode,order));return b''
         if not self.configured:raise Reject(4,tlv(1,b'\6'))
         if op==18:
@@ -74,7 +74,7 @@ class Spi(Gpio):
         data=self.armed[1]
         return (data[index//8]>>(index%8 if self.bit_order else 7-index%8))&1 if index//8<len(data) else 0
     def drive(self,value):
-        channel=self.plans[2][2];self.pins[channel]=(4 if value else 3,0);self.events.append(('miso',channel,value))
+        channel=self.plans[2][2];self.pins[channel]=4 if value else 3;self.events.append(('miso',channel,value))
     def cs(self,active):
         self.active=active;self.events.append(('cs',int(active)))
         if active:
@@ -94,13 +94,13 @@ class Spi(Gpio):
                         for k,bit in enumerate(self.bits[:8*length]):data[k//8]|=bit<<(k%8 if self.bit_order else 7-k%8)
                         self.rx.append((min(count,0xffffffff),bytes(data),ended_ns))
                     self.armed=None
-            channel=self.plans[2][2];self.pins[channel]=(0,0);self.events.append(('miso-hiz',channel))
+            channel=self.plans[2][2];self.pins[channel]=0;self.events.append(('miso-hiz',channel))
         return ended_ns
     def clock(self,level,mosi):
         old=self.sck;self.sck=level;leading=level!=(self.mode>>1);sample=(leading and not self.mode&1) or (not leading and bool(self.mode&1))
         if not self.configured:sample=False
         if self.configured and self.mode&1 and leading:self.drive(self.miso(self.output_index))
-        mode=self.pins[self.plans[2][2]][0] if self.configured else 0
+        mode=self.pins[self.plans[2][2]] if self.configured else 0
         value=1 if mode==4 else 0 if mode==3 else None
         if sample:self.bits.append(mosi)
         if self.configured and not leading:

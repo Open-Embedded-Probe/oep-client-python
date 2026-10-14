@@ -323,7 +323,7 @@ from oep_client import config, core, fixture, virtual_bench_capture
 from test_vectors import vector_probe                                   # the vectors' fn numbers on the virtual bench
 
 S = 0x11223344                                                          # ops.json about: the lock holder's id
-FOLLOWED = {"oep.probe.plan", "oep.probe.restart", "oep.probe.link"}                                           # grows with each stage
+FOLLOWED = {"oep.probe.plan", "oep.probe.restart", "oep.probe.link", "oep.fixture.gpio"}                                           # grows with each stage
 OPS = load("ops.json")["cases"]
 
 
@@ -343,7 +343,7 @@ def bench_for(case):
     through the client's own modules. -> (endpoint, host, clock)."""
     clock = type("Settable", (), {"t": 0, "__call__": lambda self: self.t})()
     ops = {}
-    if "ops of fn 1: source and sink only" in case["state"]:
+    if "ops of fn 1: source and sink only" in case.get("state", ""):
         ops[1] = {reg.PROBE_LINK.op["source"], reg.PROBE_LINK.op["sink"]}
     probe = vector_probe(case["fns"], ops=ops)
     if "port_s" in case["name"] and "not offered" not in case["name"]:   # a UART bridge probe with port_speed
@@ -411,15 +411,24 @@ def link_state(case, ep, hst):
         ep.tick()
 
 
-STATES = {"oep.probe.plan": plan_state, "oep.probe.restart": restart_state, "oep.probe.link": link_state}
+def gpio_state(case, ep, hst):
+    """gpio's cases: session S; channel 3 in fn 2's plan; the read after the set."""
+    state = case["state"]
+    hst.open(3000)                                                      # S holds the lock (session_id 0 aside)
+    if "channel 3 in fn 2's plan" in state or "after the set" in state or "channel 9 in no plan" in state:
+        core.plan_apply(hst, [(2, 1, 3)])
+    if "after the set" in state:
+        fixture.Gpio(hst, 2).set([(3, fixture.Gpio.OUTPUT_HIGH)])
+
+
+STATES = {"oep.probe.plan": plan_state, "oep.probe.restart": restart_state, "oep.probe.link": link_state,
+          "oep.fixture.gpio": gpio_state}
 
 
 def make_case(case):
     ep, hst, clock = bench_for(case)
-    for name in sorted(set(case["fns"].values()), key=lambda n: n != "oep.probe.plan"):
-        if name in STATES:
-            STATES[name](case, ep, hst)
-            break
+    target = case["fns"][str(m.Request.unpack(hx(case["request_hex"])).fn)]   # the interface the case asks
+    STATES[target](case, ep, hst)
     corr = m.Request.unpack(hx(case["request_hex"])).corr
     ep.newest_corr = (corr - 2) % 0xFFFF + 1 if ep.last is not None else None   # the case's request is the next one
     ep.resend.clear()
@@ -518,3 +527,48 @@ def test_link_vectors_as_the_client_sends_and_reads_them(case):
         hst._describes[r.fn] = [(catalog.OPS, catalog.pack_ops(reg.PROBE_LINK.op.values()))]
         assert linkmod.port_state(hst, r.fn) == struct.unpack_from("<IB", res.payload)
     assert sent[-1] == hx(case["request_hex"])
+
+
+INTERFACE_REFUSALS = [c for c in load("refusals.json")["cases"] if c["fns"] and set(c["fns"].values()) <= FOLLOWED]
+
+
+@pytest.mark.parametrize("case", INTERFACE_REFUSALS, ids=lambda c: c["name"])
+def test_interface_refusals_from_the_virtual_bench(case):
+    """refusals.json's cases of followed interfaces (refusals.json about: session S holds the lock; channel 3 is in the
+    gpio fn's plan)."""
+    ep, hst, _ = bench_for(case)
+    hst.open(3000)
+    gpio = next((int(k) for k, v in case["fns"].items() if v == "oep.fixture.gpio"), None)
+    if gpio is not None:
+        ep.load_config([], saved=False)
+        ep.plan.add((gpio, 1, 3))
+    corr = m.Request.unpack(hx(case["request_hex"])).corr
+    ep.newest_corr, _ = (corr - 2) % 0xFFFF + 1, ep.resend.clear()
+    assert ep.handle(hx(case["request_hex"]), 0).hex() == case["answer_hex"]
+
+
+@pytest.mark.parametrize("case", [c for c in OPS if c["name"].startswith(("gpio set: channel 3", "gpio read", "gpio set: channel 9"))],
+                         ids=lambda c: c["name"])
+def test_gpio_vectors_as_the_client_sends_and_reads_them(case):
+    """The client's gpio set / read send the case's bytes and read its answer (fixture §1)."""
+    r = m.Request.unpack(hx(case["request_hex"]))
+    sent = []
+    hst = h.Host(lambda b: sent.append(b) or hx(case["answer_hex"]))
+    hst._corr, hst.revision, hst.session = r.corr - 1, 1, r.session or None
+    hst._fns["oep.fixture.gpio"], hst._revisions[r.fn] = r.fn, 1
+    hst._describes[r.fn] = [(catalog.OPS, catalog.pack_ops(reg.FIXTURE_GPIO.op.values()))]
+    g = fixture.Gpio(hst, r.fn)
+    res = m.Result.unpack(hx(case["answer_hex"]))
+    n = r.payload[0]
+    if r.op == fixture.Gpio.SET:
+        pairs = [struct.unpack_from("<HB", r.payload, 1 + 3 * k) for k in range(n)]
+        if res.succeeded:
+            g.set(pairs)
+        else:
+            with pytest.raises(h.Unavailable) as e:
+                g.set(pairs)
+            assert e.value.channels == [9]
+    else:
+        channels = [struct.unpack_from("<H", r.payload, 1 + 2 * k)[0] for k in range(n)]
+        assert g.read(channels) == list(res.payload[1:1 + n])
+    assert sent[0] == hx(case["request_hex"])

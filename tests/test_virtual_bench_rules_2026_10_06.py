@@ -314,9 +314,9 @@ def uart_item(fn, baud=115200, fmt=0):
     return m.tlv(ITEM["uart"], struct.pack("<HIB", fn, baud, fmt))
 
 
-def idle(ch, mode, drive=0xFF):
-    """An idle item: channel(u16) mode(u8) drive(u8), 4 bytes (probe.config §1); 0xFF the default level."""
-    return m.tlv(ITEM["idle"], struct.pack("<HBB", ch, mode, drive))
+def idle(ch, mode):
+    """An idle item: channel(u16) mode(u8), 3 bytes (probe.config §1)."""
+    return m.tlv(ITEM["idle"], struct.pack("<HB", ch, mode))
 
 
 def test_probe_config_set_any_one_reason_and_nothing_changes():
@@ -327,11 +327,11 @@ def test_probe_config_set_any_one_reason_and_nothing_changes():
         if t[0] == CFG.tlv["describe"]["items"] else t for t in tlvs])
     ep, h = bench(without_disable)
     disable = m.tlv(ITEM["disable"], struct.pack("<H", 20), critical=True)
-    r = cfg_set(h, 6, disable, m.tlv(ITEM["idle"], struct.pack("<HB", 21, 0)))   # an idle of 3 bytes
+    r = cfg_set(h, 6, disable, m.tlv(ITEM["idle"], struct.pack("<H", 21)))      # an idle of 2 bytes
     assert r.detail in (m.MALFORMED, m.UNSUPPORTED) and (r.detail != m.UNSUPPORTED or r.payload == b"\x87")
     r = cfg_set(h, 6, disable, idle(21, 0))
     assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([ITEM["disable"] | 0x80]))
-    r = cfg_set(h, 6, idle(21, 0), m.tlv(ITEM["idle"], struct.pack("<HBBB", 22, 0, 0xFF, 0)))   # 5 bytes: too long
+    r = cfg_set(h, 6, idle(21, 0), m.tlv(ITEM["idle"], struct.pack("<HBB", 22, 0, 0)))   # 4 bytes: too long
     assert r.detail == m.MALFORMED
     r = h.raw(6, CFG.op["unset"], b"\x02" + bytes([3, ITEM["disable"], 20, 0]) + bytes([5, ITEM["idle"], 21]))
     assert r.detail in (m.MALFORMED, m.UNSUPPORTED)                          # the second row is cut short

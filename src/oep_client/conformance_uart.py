@@ -54,7 +54,7 @@ class UartChecks:
                 self.refused(self.config_request(sid),'unavailable',self.tlv(1,b'\6'))
             self.plan(sid)
             if kind=='DEFAULT':
-                state=self.a.state();require(state['live'] and state['pins'][1]==(4,0) and state['pins'][0]==state['idle'][0],'plan did not start UART/TX idle before configure');require(self.status()==(self.default_baud,0),'default status');self.a.feed_bytes(b'early');require(self.read()[2]==b'early','receive before configure')
+                state=self.a.state();require(state['live'] and state['pins'][1]==4 and state['pins'][0]==state['idle'][0],'plan did not start UART/TX idle before configure');require(self.status()==(self.default_baud,0),'default status');self.a.feed_bytes(b'early');require(self.read()[2]==b'early','receive before configure')
             elif kind=='CONFIGURE':
                 for raw in (self.format_tag,self.format_tag|128):
                     actual=self.configure(sid,57600,4,raw=raw);require(self.status()==(actual,4),'actual configure/status');self.configure(sid);require(self.status()[1]==0,'omitted format must mean 8N1')

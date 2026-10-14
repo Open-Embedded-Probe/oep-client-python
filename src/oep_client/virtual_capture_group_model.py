@@ -18,7 +18,7 @@ class CaptureGroup(Gpio):
     functions=(1,2,3,4)
     requires_equal_rate=True
     def __init__(self,ep):
-        super().__init__(False);self.ep=ep;self.tracks={2:Analog(ep),3:Logic(ep)}
+        super().__init__();self.ep=ep;self.tracks={2:Analog(ep),3:Logic(ep)}
         self.bound=[];self.source=0;self.generation=0;self.start_ns=NO_TIME;self.trigger_ns=NO_TIME;self.trigger_fn=0
     def list_page(self,first,limit):
         names=[b'oep.probe.plan',b'oep.fixture.analog',b'oep.fixture.logic',b'oep.fixture.capture-group']

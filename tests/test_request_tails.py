@@ -448,27 +448,6 @@ def test_plan_apply_role_assignment_checked_either_way(critical):
 
 
 @BITS
-def test_gpio_drive_checked_either_way(critical):
-    """fixture §1.1: drive is index(u8) level(u8); another length -> malformed; a level past drive_levels ->
-    unsupported with the tag as received, critical or not."""
-    ep, rec, hst = recorded()
-    gpio = fixture.Gpio(hst)
-    core.plan_apply(hst, [(gpio.fn, 1, 30)])
-    levels = gpio.drive_levels()
-    assert levels is not None
-    gpio.set([(30, gpio.OUTPUT_HIGH, fixture.Drive.level(0))])
-    tag = gpio.TAG_DRIVE
-    sent = tag | (m.TAG_CRITICAL if critical else 0)
-    assert rec.variant(gpio.fn, gpio.SET, 4, lambda t: with_bit(t, tag, critical)).resolution == m.COMPLETED
-    for value in (b"\x00", b"\x00\x00\x00"):
-        assert refused(rec.variant(gpio.fn, gpio.SET, 4, lambda t: with_bit(t, tag, critical, value))) \
-            == (m.MALFORMED, b"")
-    detail, payload = refused(rec.variant(gpio.fn, gpio.SET, 4,
-                                          lambda t: with_bit(t, tag, critical, bytes([0, len(levels.ma)]))))
-    assert (detail, payload[:1]) == (m.UNSUPPORTED, bytes([sent]))
-
-
-@BITS
 def test_open_owner_length_checked_either_way(critical):
     """core §6.4: owner is text of 1-32 bytes (the length rule only, the text is not validated); another length ->
     malformed with or without bit 7."""
@@ -491,10 +470,10 @@ def test_config_item_of_another_length_is_malformed_either_way(critical):
     cfg.set([config.Label(channel=30, text="t.nrst")])
     fn, op = ep.fns["oep.probe.config"], reg.PROBE_CONFIG.op["set"]
     idle = reg.PROBE_CONFIG.tlv["item"]["idle"]
-    good = struct.pack("<HBB", 30, 3, 0xFF)
+    good = struct.pack("<HB", 30, 3)                                   # channel mode (probe.config §1)
     assert rec.variant(fn, op, 0, lambda t: [(idle | (m.TAG_CRITICAL if critical else 0), good)]).resolution \
         == m.COMPLETED
-    for value in (good[:3], good + b"\x00"):
+    for value in (good[:2], good + b"\x00"):
         assert refused(rec.variant(fn, op, 0, lambda t: [(idle | (m.TAG_CRITICAL if critical else 0), value)])) \
             == (m.MALFORMED, b"")
 

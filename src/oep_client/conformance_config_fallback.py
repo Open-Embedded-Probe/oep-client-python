@@ -38,7 +38,7 @@ class ConfigFallbackChecks(ConfigChecks):
         if reason:
             self.get([]);self.storage(2,0,reason)
             s=self.a.state()
-            require(s['gpio']['plans']=={} and all(pin==(0,0) for pin in s['gpio']['pins'].values()),
+            require(s['gpio']['plans']=={} and all(pin==0 for pin in s['gpio']['pins'].values()),
                     'unreadable config partially applied idle/plan')
             # An unrelated, healthy interface must be usable: stale disable must not survive.
             with self.c.holding() as sid:
@@ -67,7 +67,7 @@ class ConfigFallbackChecks(ConfigChecks):
             current=self.get(mapped);self.storage(1,current)
             if name=='REMAP':require(current!=h,'remapped current config hash unchanged')
             require(self.a.storage_snapshot()==stored,'successful boot rewrote saved identifiers')
-            s=self.a.state();require(s['gpio']['plans']=={} and s['gpio']['pins'][1]==(4,0),
+            s=self.a.state();require(s['gpio']['plans']=={} and s['gpio']['pins'][1]==4,
                                    'restored preset executed or idle missing')
             self.observe(name+'-restored');self.reboot()
             require(self.get(mapped)==current,'second boot did not resolve saved identity');self.storage(1,current)

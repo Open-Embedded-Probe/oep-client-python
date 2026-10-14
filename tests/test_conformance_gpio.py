@@ -6,19 +6,18 @@ from oep_client.virtual_gpio_model import GpioModel
 from test_conformance_registered_ops import setup as registered_setup
 
 
-def setup(selectable=True):
+def setup():
     _,original=registered_setup();reg=original.reg
     for s in reg['interface']:
         if s['name']=='oep.probe.plan':s['tlv']={'plan_apply':{'role_assignment':16},'describe':{'plan_roles':64}}
-        if s['name']=='oep.fixture.gpio':s['tlv']={'set':{'drive':1},'unavailable_payload':{'index':64},'describe':{'modes':64,'drive_levels':65}}
-    model=GpioModel(lambda:0,boot_id=17,selectable=selectable);return model,Checks(model.handle,reg,'virtual-resource-1')
+        if s['name']=='oep.fixture.gpio':s['tlv']={'unavailable_payload':{'index':64},'unsupported_payload':{'index':64},'describe':{'modes':64}}
+    model=GpioModel(lambda:0,boot_id=17);return model,Checks(model.handle,reg,'virtual-resource-1')
 
 
-@pytest.mark.parametrize('selectable',[True,False])
-def test_gpio_plan_checks(selectable):
-    model,c=setup(selectable);r=GpioChecks(c,SampleGpioAdapter(model)).run()
+def test_gpio_plan_checks():
+    model,c=setup();r=GpioChecks(c,SampleGpioAdapter(model)).run()
     assert r['status']=='passed',[(row['id'],row.get('error')) for row in r['checks'] if row['status']!='passed']
-    assert len(r['checks'])==28 and not r['full_conformance']
+    assert len(r['checks'])==25 and not r['full_conformance']
 
 
 def test_generic_declarations():
@@ -28,7 +27,7 @@ def test_generic_declarations():
 
 def test_gpio_metadata():
     from oep_client.conformance_fixture_metadata import FixtureMetadataChecks
-    _,c=setup();c.reg['constants']={'min_max_frame':64};r=FixtureMetadataChecks(c,{2:'oep.fixture.gpio',3:'oep.fixture.gpio'}).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==7
+    _,c=setup();c.reg['constants']={'min_max_frame':64};r=FixtureMetadataChecks(c,{2:'oep.fixture.gpio',3:'oep.fixture.gpio'}).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==6
 
 
 @pytest.mark.parametrize('kind',GpioChecks.cases)

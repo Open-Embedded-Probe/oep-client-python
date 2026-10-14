@@ -125,7 +125,7 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None, wifi
     offered = [core]
     for fn, name in sorted(((int(k), v) for k, v in fns.items())):
         if name == "oep.fixture.gpio":
-            o = virtual_bench._gpio(fn, chans, drive=False)
+            o = virtual_bench._gpio(fn, chans)
         elif name == "oep.fixture.i2c-target":
             o = virtual_bench._i2c_target(fn, chans, max_length=16, max_hz=100_000, features=0, queue_depth=4)
         elif name == "oep.wire.rvswd":

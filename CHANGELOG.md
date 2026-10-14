@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- (JA) oep-spec a09fa45 への追従（段階5: oep.fixture.gpio と出力の強さの削除）。op を 0x10/0x11 に移した。出力の強さ（set の drive TLV、describe の drive_levels、`fixture.Drive` / `DriveLevels`、設定の idle 項目の drive）は仕様から無くなったので、クライアント・仮想ベンチ・CLI（`config idle --drive-*`、`virtual_bench_serve --no-drive-levels`）・独立した検査器と見本モデルから外した。idle 項目は channel(u16) mode(u8) の 3 byte。見本モデルのピンの状態は mode だけを持つ。
+
 - (JA) oep-spec a09fa45 への追従（段階4: oep.probe.link）。op を 0x10〜0x12 に移し、port_state（0x13、port_speed とともに必須）を加えた。仮想ベンチは phase 0〜3 を持ち、送りかけのフレームがある間の復帰を phase 3（理由: verify / idle / session）として保ち、idle の保留だけを元の所有者の要求で取り消す。試す速さは起動時より上だけを受ける。host は異なる session_id への force open の成功でも起動時の速さに戻り、試しが通らなかった後は新しい corr の port_state で phase 0 を確かめる（`link.port_state`）。
 
 - (JA) oep-spec a09fa45 への追従（段階3: oep.probe.restart）。op を 0x10 に移した。restart_max_ms は probe 内部の再起動の上限になったので、`restart_probe` の既定の待ちは restart_max_ms に外部の待ち `RESTART_EXTERNAL_S`（5 s）を足したもの（host ガイド §5.2）。指定した `wait_s` は切り詰めない。

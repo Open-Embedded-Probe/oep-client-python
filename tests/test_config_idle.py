@@ -24,10 +24,10 @@ def open_bench():
 def test_idle_modes_have_names_both_spellings():
     assert config.IDLE["output-low"] == 3 and config.IDLE["output-high"] == 4
     assert config.Idle(channel=7, mode="output_high") == config.Idle(channel=7, mode="output-high")
-    assert config.Idle(channel=7, mode="output_low").value() == bytes([7, 0, 3, 0xFF])   # drive 0xFF: the default level
+    assert config.Idle(channel=7, mode="output_low").value() == bytes([7, 0, 3])          # channel mode (probe.config §1)
     with pytest.raises(ValueError, match="output-high"):
         config.Idle(channel=7, mode="output-medium").value()
-    assert config.decode(config.ITEM["idle"], bytes([7, 0, 4, 0xFF])) == config.Idle(channel=7, mode="output-high")
+    assert config.decode(config.ITEM["idle"], bytes([7, 0, 4])) == config.Idle(channel=7, mode="output-high")
 
 
 def test_output_idle_drives_and_survives_take_until_the_first_set():
@@ -73,10 +73,10 @@ def test_output_idle_on_an_input_only_channel_is_unsupported():
     assert e.value.tag == config.ITEM["idle"]                          # the item's tag as received (probe.config §1)
     cfg.set([config.Idle(channel=26, mode="pull-up")])                # the input modes still are
     with pytest.raises(h.Unsupported) as e:
-        cfg.set([m.tlv(config.ITEM["idle"], bytes([26, 0, 5, 0xFF]), critical=True)])   # mode 5: left unused
+        cfg.set([m.tlv(config.ITEM["idle"], bytes([26, 0, 5]), critical=True)])         # mode 5: left unused
     assert e.value.tag == config.ITEM["idle"] | 0x80
     with pytest.raises(h.Unsupported) as e:                           # the same without bit 7 (core §2.3)
-        cfg.set([m.tlv(config.ITEM["idle"], bytes([26, 0, 5, 0xFF]))])
+        cfg.set([m.tlv(config.ITEM["idle"], bytes([26, 0, 5]))])
     assert e.value.tag == config.ITEM["idle"]
 
 

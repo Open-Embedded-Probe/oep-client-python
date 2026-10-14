@@ -19,7 +19,7 @@ def configured(analog=True):
 
 
 def snapshot(ep,fn):
-    return copy.deepcopy((ep.captures[fn],ep.plan,ep.gpio_modes,ep.gpio_drive))
+    return copy.deepcopy((ep.captures[fn],ep.plan,ep.gpio_modes))
 
 
 def rejected(ep,hst,track,op,body,exception,tag=None,cause=None):

@@ -25,7 +25,7 @@ def test_common_declarations():
 
 def test_uart_metadata():
     from oep_client.conformance_fixture_metadata import FixtureMetadataChecks
-    _,c=setup();r=FixtureMetadataChecks(c,{2:'oep.fixture.uart'}).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==5
+    _,c=setup();r=FixtureMetadataChecks(c,{2:'oep.fixture.uart'}).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==4
 
 
 @pytest.mark.parametrize('kind',UartChecks.cases)

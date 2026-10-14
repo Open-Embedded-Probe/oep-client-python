@@ -8,7 +8,6 @@ import struct
 import pytest
 
 from oep_client import config, core, endpoint, virtual_bench, fixture, host as h, message as m, riscv
-from oep_client.fixture import Drive
 
 from test_drive_and_slots import V003_PAIR, items, slot_state, v003
 
@@ -84,40 +83,38 @@ def test_last_try_at_of_a_connected_slot_is_the_first_attempt():
 def test_idle_set_and_unset_on_a_free_channel_apply_at_once():
     ep, hst = open_probe()
     cfg = config.ProbeConfig(hst)
-    cfg.set([config.Idle(channel=20, mode="output-high", drive=Drive.level(1))])
-    assert ep.parked[20] == 4 and ep.parked_drive[20] == 1
-    cfg.set([config.Idle(channel=20, mode="output-low", drive=Drive.level(3))])
-    assert ep.parked[20] == 3 and ep.parked_drive[20] == 3
+    cfg.set([config.Idle(channel=20, mode="output-high")])
+    assert ep.parked[20] == 4
+    cfg.set([config.Idle(channel=20, mode="output-low")])
+    assert ep.parked[20] == 3
     cfg.unset([("idle", 20)])
-    assert ep.parked[20] == 0 and 20 not in ep.parked_drive
+    assert ep.parked[20] == 0
 
 
 def test_idle_change_on_a_channel_a_plan_holds_waits_for_the_release():
     ep, hst = open_probe()
     cfg = config.ProbeConfig(hst)
-    cfg.set([config.Idle(channel=20, mode="output-low", drive=Drive.level(0))])
+    cfg.set([config.Idle(channel=20, mode="output-low")])
     g = fixture.Gpio(hst, ep.fns["oep.fixture.gpio"])
     core.plan_apply(hst, [(g.fn, 1, 20), (g.fn, 1, 21)])
-    g.set([(21, g.OUTPUT_HIGH, 3)])
-    cfg.set([config.Idle(channel=20, mode="output-high", drive=Drive.level(2)),
-             config.Idle(channel=21, mode="output-low", drive=Drive.level(1))])
-    assert g.read([20, 21]) == [0, 1] and ep.gpio_drive == {20: 0, 21: 3}   # held: the lines stay as they were
-    assert ep.parked[20] == 3 and ep.parked_drive[20] == 0         # the old idle state, not yet the new one
+    g.set([(21, g.OUTPUT_HIGH)])
+    cfg.set([config.Idle(channel=20, mode="output-high"), config.Idle(channel=21, mode="output-low")])
+    assert g.read([20, 21]) == [0, 1]                              # held: the lines stay as they were
+    assert ep.parked[20] == 3                                      # the old idle state, not yet the new one
     core.plan_release(hst, [g.fn])
-    assert (ep.parked[20], ep.parked_drive[20]) == (4, 2)          # released: the new idle, level and drive
-    assert (ep.parked[21], ep.parked_drive[21]) == (3, 1)
+    assert (ep.parked[20], ep.parked[21]) == (4, 3)                # released: the new idle states
 
 
 def test_idle_unset_on_a_held_channel_waits_for_the_release():
     ep, hst = open_probe()
     cfg = config.ProbeConfig(hst)
-    cfg.set([config.Idle(channel=20, mode="output-high", drive=Drive.level(1))])
+    cfg.set([config.Idle(channel=20, mode="output-high")])
     g = fixture.Gpio(hst, ep.fns["oep.fixture.gpio"])
     core.plan_apply(hst, [(g.fn, 1, 20)])
     cfg.unset([("idle", 20)])
-    assert g.read([20]) == [1] and ep.gpio_drive[20] == 1          # taken in the old idle state, still so
+    assert g.read([20]) == [1]                                     # taken in the old idle state, still so
     core.plan_release(hst, [g.fn])
-    assert ep.parked[20] == 0 and 20 not in ep.parked_drive        # released: Hi-Z
+    assert ep.parked[20] == 0                                      # released: Hi-Z
 
 
 def test_idle_change_on_a_connection_pin_waits_for_the_detach():
@@ -127,10 +124,10 @@ def test_idle_change_on_a_connection_pin_waits_for_the_detach():
     wire = riscv.Wire(hst, "oep.wire.swio")
     conn, _ = wire.attach(halt=False, pins=V003_PAIR)
     swio = V003_PAIR[0]
-    config.ProbeConfig(hst).set([config.Idle(channel=swio, mode="output-high", drive=Drive.level(1))])
+    config.ProbeConfig(hst).set([config.Idle(channel=swio, mode="output-high")])
     assert ep.parked.get(swio, 0) == 0                             # the connection holds it
     wire.detach(conn)
-    assert ep.parked[swio] == 4 and ep.parked_drive[swio] == 1
+    assert ep.parked[swio] == 4
 
 
 def test_idle_change_on_a_slot_pin_without_a_connection_applies_at_once():

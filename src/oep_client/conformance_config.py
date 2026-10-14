@@ -36,7 +36,7 @@ class ConfigChecks:
                 tlvs(self.c.success(self.c.request(self.c.core['end'],session=sid)));self.c.session=None
                 self.a.restart_fixture();self.c.confirm();self.c.identity()
                 require(self.get([(2,b'\4\0nrst'),(3,b'\1\0\4\0')])==h,'unsaved settings survived restart');self.storage(1,h)
-                require(self.a.state()['gpio']['plans']=={} and self.a.state()['gpio']['pins'][1]==(4,0),'saved idle/preset boot differs')
+                require(self.a.state()['gpio']['plans']=={} and self.a.state()['gpio']['pins'][1]==4,'saved idle/preset boot differs')
                 self.observe('restored')
                 with self.c.holding() as new:
                     before=self.a.state();require(self.c.success(self.op(19,sid=new))==b'','erase response')
@@ -50,7 +50,7 @@ class ConfigChecks:
                 self.hashed(20,b'\1\2\1\2\0',sid);require(self.a.state()['gpio']==live,'unset preset changed live plan')
                 self.hashed(17,idle,sid);require(self.a.state()['gpio']['pins']==live['pins'],'idle immediately changed owned pin')
                 require(self.c.success(self.c.request(17,b'\1\2\0',fn=1,session=sid))==b'','release plan')
-                require(self.a.state()['gpio']['pins'][1]==(4,0),'release did not apply configured idle')
+                require(self.a.state()['gpio']['pins'][1]==4,'release did not apply configured idle')
                 self.observe('preset-separated')
             elif name=='ATOMIC':
                 self.hashed(17,label+idle,sid);before=self.a.state()

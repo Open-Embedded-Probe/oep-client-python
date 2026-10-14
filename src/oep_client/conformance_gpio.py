@@ -5,7 +5,7 @@ from .conformance_registered_ops import RegisteredOpsChecks
 
 
 class GpioChecks:
-    cases=('PLAN-IDLE','PLAN-REPLACE','PLAN-OTHER','PLAN-TRANSFER','PLAN-CAPACITY','PLAN-CONFLICT','PLAN-MALFORMED','PLAN-UNSUPPORTED','RELEASE-ONE','RELEASE-ALL','SET-ORDER','SET-MODES','SET-MALFORMED','SET-UNAVAILABLE','SET-UNSUPPORTED','DRIVE-VALID','DRIVE-MALFORMED','DRIVE-UNSUPPORTED','TLV','READ','SESSION','REPLAY','END')
+    cases=('PLAN-IDLE','PLAN-REPLACE','PLAN-OTHER','PLAN-TRANSFER','PLAN-CAPACITY','PLAN-CONFLICT','PLAN-MALFORMED','PLAN-UNSUPPORTED','RELEASE-ONE','RELEASE-ALL','SET-ORDER','SET-MODES','SET-MALFORMED','SET-UNAVAILABLE','SET-UNSUPPORTED','TLV','READ','SESSION','REPLAY','END')
     def __init__(self,checks,adapter):self.c,self.a=checks,adapter
     @staticmethod
     def tlv(tag,v):return bytes((tag,))+struct.pack('<H',len(v))+v
@@ -22,7 +22,7 @@ class GpioChecks:
     def refused(self,request,reason,payload=None):
         before=self.a.state();value=self.c.rejected(request,reason)
         if payload is not None:require(value==payload,'refusal payload/tag/channel/index')
-        require(self.a.state()==before,'refused request touched plan/pin or drive journal')
+        require(self.a.state()==before,'refused request touched plan/pin journal')
     def fresh(self):
         boot=self.a.restart_fixture();require(boot['scope']=='logical-model' and boot['boot_id']!=self.c.boot,'fresh logical boot');self.c.confirm();self.c.identity();require(self.c.boot==boot['boot_id'],'fresh boot readback')
     def case(self,kind):
@@ -56,7 +56,7 @@ class GpioChecks:
                     before=len(self.a.state()['events']);self.set(sid,[(0,3),(0,4)]);events=self.a.state()['events'][before:];require([(r[0],r[1],r[2]) for r in events]==[('set',0,3),('set',0,4)],'set order/duplicate-channel sequence lost');require(self.read([0])==[1],'final high')
                 elif kind=='SET-MODES':
                     for mode in range(7):
-                        self.set(sid,[(0,mode)]);require(self.a.state()['pins'][0][0]==mode,'mode not applied')
+                        self.set(sid,[(0,mode)]);require(self.a.state()['pins'][0]==mode,'mode not applied')
                         if mode in (1,2,3,4,5):require(self.read([0])==[int(mode in (1,4))],'mode level semantics')
                     self.set(sid,[]);require(self.read([])==[],'empty GPIO sequence')
                 elif kind=='SET-MALFORMED':
@@ -68,14 +68,6 @@ class GpioChecks:
                     self.refused(self.request(2,'read',0,b'\2\0\0\7\0'),'unavailable',meta)
                 elif kind=='SET-UNSUPPORTED':
                     meta=self.tlv(2,struct.pack('<H',1))+self.tlv(self.index,b'\1');self.refused(self.set_request(sid,[(0,3),(1,7)]),'unsupported',b'\0'+meta)
-                elif kind=='DRIVE-VALID':
-                    if self.selectable:
-                        self.set(sid,[(0,3),(1,4)],self.tlv(self.drive,b'\0\0')+self.tlv(self.drive,b'\1\1'));require(self.a.state()['pins'][0]==(3,0) and self.a.state()['pins'][1]==(4,1),'per-element drive');self.set(sid,[(0,4)],self.tlv(self.drive,b'\0\xff'));require(self.a.state()['pins'][0]==(4,0),'default drive sentinel');self.set(sid,[(0,3)]);require(self.a.state()['pins'][0]==(3,1),'idle drive fallback')
-                    else:self.refused(self.set_request(sid,[(0,3)],self.tlv(self.drive,b'\0\xff')),'unsupported',bytes((self.drive,)))
-                elif kind=='DRIVE-MALFORMED':
-                    for rows,tail in [([(0,3)],self.tlv(self.drive,b'\1\0')), ([(0,3)],self.tlv(self.drive,b'\0\0')*2), ([(0,0)],self.tlv(self.drive,b'\0\0')), ([(0,3)],self.tlv(self.drive,b'\0'))]:self.refused(self.set_request(sid,rows,tail),'malformed')
-                elif kind=='DRIVE-UNSUPPORTED':
-                    for raw in (self.drive,self.drive|128):self.refused(self.set_request(sid,[(0,3)],self.tlv(raw,b'\0\2')),'unsupported',bytes((raw,)))
                 elif kind=='TLV':
                     self.set(sid,[(0,3)],self.tlv(126,b'x'));self.refused(self.set_request(sid,[(0,4)],self.tlv(254,b'x')),'unsupported',b'\xfe');self.refused(self.set_request(sid,[(0,4)],b'\x7e\3\0x'),'malformed')
                 elif kind=='READ':
@@ -94,10 +86,10 @@ class GpioChecks:
         def context():
             require(self.a.reset_scope=='logical-model' and self.a.selection=={1:'oep.probe.plan',2:'oep.fixture.gpio',3:'oep.fixture.gpio'},'explicit logical fixture selection required')
             base=RegisteredOpsChecks(self.c,self.a.selection);report=base.run();require(report['status']=='passed','registered op context failed');self.codes={fn:{r['name']:r['code'] for r in base.specs[name]['op']} for fn,name in self.a.selection.items()}
-            plan=base.specs['oep.probe.plan'];gpio=base.specs['oep.fixture.gpio'];self.assignment=plan['tlv']['plan_apply']['role_assignment'];self.drive=gpio['tlv']['set']['drive'];self.index=gpio['tlv']['unavailable_payload']['index']
-            self.selectable=gpio['tlv']['describe']['drive_levels'] in dict(reversed(base.rows[2]));require(self.c.max_frame>=64,'fixture frame budget')
-        self.c.check('OEP-GPIO-CONTEXT','fixture §1/1.1; plan §2',context)
+            plan=base.specs['oep.probe.plan'];gpio=base.specs['oep.fixture.gpio'];self.assignment=plan['tlv']['plan_apply']['role_assignment'];self.index=gpio['tlv']['unavailable_payload']['index']
+            require(self.c.max_frame>=64,'fixture frame budget')
+        self.c.check('OEP-GPIO-CONTEXT','fixture §1; plan §2',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
-        for kind in self.cases:self.c.check('OEP-GPIO-'+kind,'fixture §1/1.1; plan §2; core §8/9',lambda kind=kind:self.case(kind))
+        for kind in self.cases:self.c.check('OEP-GPIO-'+kind,'fixture §1; plan §2; core §8/9',lambda kind=kind:self.case(kind))
         rows=self.c.results[start:]
         return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,observed=self.c.observed,adapter_trace=self.a.trace,full_conformance=False,scope='explicit logical GPIO/plan fixture set/read, admission, sequencing, replay and release',unchecked=['physical levels/pull/drive current and pin waveforms','other fixture plan role constraints and channel_group','persisted config idle/disable and production Host','force/lease expiry with these GPIO plans','other standard operation behaviors'])

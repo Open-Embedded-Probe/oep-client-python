@@ -133,10 +133,7 @@ KNOWN: dict[str, Known] = {
         tags={0x40: ("storage", lambda v: f"{_u32(v[:4])} bytes"),
               0x41: ("items", lambda v: ", ".join(str(b) for b in v)), 0x42: ("slots", lambda v: str(v[0]))}),
     "oep.fixture.gpio": Known("drive and read probe pins", roles={1: "line"},
-                              tags={0x40: ("modes", lambda v: ", ".join(str(b) for b in range(32) if _u32v(v) >> b & 1)),
-                                    0x41: ("drive levels", lambda v: (
-                                        ", ".join(f"{i}: ~{ma} mA" for i, ma in enumerate(
-                                            struct.unpack_from(f"<{v[1]}H", v, 2))) + f" (default {v[0]})"))}),
+                              tags={0x40: ("modes", lambda v: ", ".join(str(b) for b in range(32) if _u32v(v) >> b & 1))}),
     "oep.fixture.uart": Known("a UART (USART, asynchronous) on probe pins", roles={1: "RX", 2: "TX"},
                               tags={0x40: ("formats", lambda v: ", ".join(f"0x{b:02x}" for b in v[1:1 + v[0]]))}),
     "oep.fixture.logic": Known("sampled logic capture", roles={k: f"line{k}" for k in range(8)},

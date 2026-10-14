@@ -14,13 +14,6 @@ class FixtureMetadataChecks:
             return int.from_bytes(values[tag],'little')
         if name=='oep.fixture.gpio':
             modes=fixed(tags['modes'],4,'modes');require(modes&1,'GPIO input mode is mandatory');result=dict(modes=modes)
-            tag=tags['drive_levels'];result['drive_levels_present']=tag in values
-            if tag in values:
-                v=values[tag];require(len(v)>=2,'drive_levels header');default,count=v[:2]
-                require(count>=2 and len(v)==2+2*count and default<count,'drive_levels count/default/shape')
-                currents=[struct.unpack_from('<H',v,2+2*i)[0] for i in range(count)]
-                require(all(a<b for a,b in zip(currents,currents[1:])),'drive_levels must be strictly ascending')
-                result.update(default=default,ma=currents)
         elif name=='oep.fixture.uart':
             tag=tags['formats'];require(tag in values and values[tag] and len(values[tag])==1+values[tag][0],'formats required count/shape')
             formats=list(values[tag][1:]);require(0 in formats,'8N1 mandatory')
@@ -40,12 +33,6 @@ class FixtureMetadataChecks:
                     maximum=fixed(tags['max_stretch_us'],4,'max_stretch_us');require(maximum>=1,'stretch max must be positive');result['max_stretch_us']=maximum
             elif tags['cs_setup_ns'] in values:result['cs_setup_ns']=fixed(tags['cs_setup_ns'],4,'cs_setup_ns')
         self.c.observed.setdefault('fixture_metadata',{})[str(fn)]=dict(name=name,**result)
-    def drive_consistency(self):
-        declarations=[]
-        for fn,name in self.selection.items():
-            if name=='oep.fixture.gpio':
-                tag=self.base.specs[name]['tlv']['describe']['drive_levels'];declarations.append(dict(reversed(self.base.rows[fn])).get(tag))
-        require(not declarations or all(v==declarations[0] for v in declarations),'selected GPIO fns must declare identical drive_levels')
     def run(self):
         start=len(self.c.results)
         def context():
@@ -55,6 +42,5 @@ class FixtureMetadataChecks:
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         self.base=RegisteredOpsChecks(self.c,self.selection);self.base.run()
         for fn,name in (self.selection.items() if type(self.selection)is dict else []):self.c.check('OEP-FIXTURE-METADATA-'+str(fn),'fixture §1–4; core §7.4',lambda fn=fn,name=name:self.metadata(fn,name))
-        self.c.check('OEP-FIXTURE-DRIVE-CONSISTENCY','fixture §1.1; selected GPIO fns',self.drive_consistency)
         rows=self.c.results[start:]
-        return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,observed=self.c.observed,full_conformance=False,scope='selected GPIO/UART/I2C/SPI describe constraints; read-only',unchecked=['unselected GPIO fns drive consistency','pin assignment legality and electrical behavior','configure/set/read/write/plan lifetime and side effects','unconfirmed route limits beyond protocol minimum','metadata and behavior of other standard interfaces','physical transports and production Host integration'])
+        return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,observed=self.c.observed,full_conformance=False,scope='selected GPIO/UART/I2C/SPI describe constraints; read-only',unchecked=['pin assignment legality and electrical behavior','configure/set/read/write/plan lifetime and side effects','unconfirmed route limits beyond protocol minimum','metadata and behavior of other standard interfaces','physical transports and production Host integration'])

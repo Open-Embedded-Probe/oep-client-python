@@ -24,7 +24,6 @@ from dataclasses import dataclass, field
 
 from . import catalog, core, message as m, registry_legacy as reg
 from .core import Interface
-from .fixture import Drive
 
 _CFG = reg.PROBE_CONFIG
 ITEM = _CFG.tlv["item"]
@@ -94,33 +93,23 @@ class Idle:
     """The state of a channel no plan or connection uses (probe.config §1): at boot and after every release. mode:
     hi-z, pull-up, pull-down, output-low, output-high (output_low / output_high too). An output mode keeps driving that
     level while the channel is free - a target's power switch kept on - and a gpio plan that takes the channel keeps
-    it until its first set (fixture §1); a probe that cannot drive the channel refuses it unsupported.
-    drive (output modes only): the strength it drives at (`fixture.Drive`, or an int level number; fixture §1.1) -
-    also what a gpio set without its own drive uses on that channel. None: the default level (sent as 0xFF: the item
-    is always 4 bytes, probe.config §1; an input mode's drive is not looked at). A level past the probe's drive_levels,
-    or any level on a probe without them, is refused unsupported."""
+    it until its first set (fixture §1); a probe that cannot drive the channel refuses it unsupported. The output
+    strength is the probe's own."""
     channel: int
     mode: str = "pull-up"          # hi-z, pull-up, pull-down, output-low, output-high
-    drive: Drive | int | None = None
     TAG = ITEM["idle"]
 
     def __post_init__(self):
         self.mode = self.mode.replace("_", "-")
-        if self.drive is not None:
-            self.drive = Drive.of(self.drive)
 
     def key(self) -> tuple:
         return (self.channel,)
 
     def value(self) -> bytes:
-        """channel(u16) mode(u8) drive(u8): 4 bytes (probe.config §1)."""
+        """channel(u16) mode(u8): 3 bytes (probe.config §1)."""
         if self.mode not in IDLE:
             raise ValueError(f"idle mode {self.mode!r}: one of {', '.join(IDLE)}")
-        v = struct.pack("<HB", self.channel, IDLE[self.mode])
-        drive = self.drive if self.drive is not None else Drive.default()
-        if not drive.is_default and self.mode not in ("output-low", "output-high"):
-            raise ValueError(f"idle mode {self.mode}: a drive goes with output-low / output-high only")
-        return v + drive.pack()                                     # drive(u8): a level, 0xFF the default
+        return struct.pack("<HB", self.channel, IDLE[self.mode])
 
 
 @dataclass(kw_only=True)
@@ -324,10 +313,8 @@ def decode(tag: int, v: bytes):
         return Plan(fn=fn, role=role, channel=channel)
     if tag == ITEM["label"] and len(v) >= 2:
         return Label(channel=struct.unpack_from("<H", v)[0], text=v[2:].decode("utf-8", "replace"))
-    if tag == ITEM["idle"] and len(v) >= 4:
-        drive = Drive.unpack(v[3:4])
-        return Idle(channel=struct.unpack_from("<H", v)[0], mode=_name(IDLE, v[2]),
-                    drive=None if drive.is_default else drive)
+    if tag == ITEM["idle"] and len(v) >= 3:
+        return Idle(channel=struct.unpack_from("<H", v)[0], mode=_name(IDLE, v[2]))
     if tag == ITEM["disable"] and len(v) >= 2:
         return Disable(channel=struct.unpack_from("<H", v)[0])
     if tag == ITEM["slot"] and len(v) >= SLOT_HEAD.size:

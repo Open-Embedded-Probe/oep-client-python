@@ -11,7 +11,7 @@ class ConfigExtension(Gpio):
     def __init__(self,model):
         super().__init__();self.model=model;self.items={}
         self.functions=tuple(model.catalog)
-        self.idle={ch:(0,0) for ch in range(8)};self.pins=dict(self.idle)
+        self.idle={ch:0 for ch in range(8)};self.pins=dict(self.idle)
         model.storage_reason=0
         if model.saved is not None:self.restore_saved()
     def restore_saved(self):
@@ -98,9 +98,9 @@ class ConfigExtension(Gpio):
         live={ch for pins in self.plans.values() for ch in pins}
         if any(int.from_bytes(ch,'little') in live for ch in disabled):raise Reject(4,tlv(1,b'\1'))
     def apply(self):
-        self.idle={ch:(0,0) for ch in range(8)}
+        self.idle={ch:0 for ch in range(8)}
         for (tag,key),value in self.items.items():
-            if tag==3:self.idle[int.from_bytes(key,'little')]=(value[2],0 if value[3]==255 else value[3])
+            if tag==3:self.idle[int.from_bytes(key,'little')]=value[2]
         live={ch for pins in self.plans.values() for ch in pins}
         for ch in self.pins:
             if ch not in live and (7,ch.to_bytes(2,'little')) not in self.items:self.pins[ch]=self.idle[ch]

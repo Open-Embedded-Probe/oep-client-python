@@ -188,9 +188,6 @@ RESTART_MAX_MS = 2000                             # what the virtual bench decla
 PLAN_ROLES_TAG = reg.PROBE_PLAN.tlv["describe"]["plan_roles"]
 PLAN_ROLES = 32                                   # role assignments the virtual bench's plan holds at once (oep-if-plan §1)
 GPIO_MODES = reg.FIXTURE_GPIO.tlv["describe"]["modes"]
-GPIO_DRIVE_LEVELS = reg.FIXTURE_GPIO.tlv["describe"]["drive_levels"]
-DRIVE_LEVELS_MA = (5, 10, 20, 40)     # the virtual bench's selectable output strengths (fixture §1.1), approximate mA, ascending
-DRIVE_DEFAULT = 2                     # ... and the default level (about 20 mA)
 UART_FORMATS = reg.FIXTURE_UART.tlv["describe"]["formats"]
 I2C_QUEUE_DEPTH = reg.FIXTURE_I2C_TARGET.tlv["describe"]["queue_depth"]
 I2C_MAX_STRETCH_US = reg.FIXTURE_I2C_TARGET.tlv["describe"]["max_stretch_us"]
@@ -284,16 +281,10 @@ def _config(fn: int, instance: int, slots_max: int, storage: int = 4096, wifi_ma
         + ((catalog.u8(cfgmod.DESCRIBE["wifi_max"], wifi_max),) if wifi_max else ()))
 
 
-def drive_levels_tlv(default: int = DRIVE_DEFAULT, ma=DRIVE_LEVELS_MA) -> bytes:
-    """oep.fixture.gpio's drive_levels (fixture §1.1, tag 0x41): default(u8) n(u8) n x ma(u16), ascending."""
-    return catalog.tlv(GPIO_DRIVE_LEVELS, struct.pack(f"<BB{len(ma)}H", default, len(ma), *ma))
-
-
-def _gpio(fn: int, channels: list[int], modes: int = 0x7F, drive: bool = True) -> Offered:
-    """oep.fixture.gpio: role 1 on `channels`, the modes it drives (u32 bit set, fixture §1), and the output strengths
-    it can select (drive_levels, fixture §1.1: DRIVE_LEVELS_MA, default DRIVE_DEFAULT) unless `drive` is False."""
-    return Offered(fn, 0, "oep.fixture.gpio", _roles({1: channels}) + (catalog.u32(GPIO_MODES, modes),)
-                   + ((drive_levels_tlv(),) if drive else ()))
+def _gpio(fn: int, channels: list[int], modes: int = 0x7F) -> Offered:
+    """oep.fixture.gpio: role 1 on `channels` and the modes it drives (u32 bit set, fixture §1); the output strength is
+    the probe's own."""
+    return Offered(fn, 0, "oep.fixture.gpio", _roles({1: channels}) + (catalog.u32(GPIO_MODES, modes),))
 
 
 def _uart(fn: int, instance: int, channels: list[int], max_hz: int, formats=FORMATS_8) -> Offered:
@@ -563,13 +554,6 @@ def with_i2c_pullups(probe: VirtualProbe) -> VirtualProbe:
         return _with(o, (catalog.u32(FEATURES, struct.unpack_from("<I", t, 3)[0] | I2C_INTERNAL_PULLUPS)
                          if t[0] == FEATURES else t for t in o.tlvs))
     return _again(probe, [decl(o) if o.name == "oep.fixture.i2c-target" else o for o in probe.offered])
-
-
-def without_drive_levels(probe: VirtualProbe) -> VirtualProbe:
-    """The profile with no drive_levels on its oep.fixture.gpio fns: a probe that cannot switch the output strength
-    (fixture §1.1). VIRTUAL BENCH ONLY."""
-    return _again(probe, [_with(o, (t for t in o.tlvs if t[0] != GPIO_DRIVE_LEVELS)) if o.name == "oep.fixture.gpio"
-                          else o for o in probe.offered])
 
 
 def core_v1() -> VirtualProbe:

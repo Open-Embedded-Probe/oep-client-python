@@ -9,7 +9,7 @@ class Uart(Gpio):
     functions=(1,2)
     clock_hz=1843200
     def __init__(self,ep):
-        super().__init__(False);self.ep=ep;self.idle={ch:(0,0) for ch in range(8)};self.pins=dict(self.idle)
+        super().__init__();self.ep=ep;self.idle={ch:0 for ch in range(8)};self.pins=dict(self.idle)
         self.stream=None;self.position=0;self.serial=0;self.baud=115200;self.format=0
     def list_page(self,first,limit):
         rows=[struct.pack('<HHBB',fn,0,1,len(name))+name for fn,name in [(1,b'oep.probe.plan'),(2,b'oep.fixture.uart')]];page=bytearray(struct.pack('<HB',2,0))
@@ -54,7 +54,7 @@ class Uart(Gpio):
             if fn!=2 or (role,ch) not in ((1,0),(2,1)):raise Reject(11,bytes((raw,)))
         if not assignments:return b''
         self.release_plans([2]);self.plans[2]=[ch for _,_,_,ch in assignments];self.stream=Stream(self.ep,self.position,self.serial)
-        if 1 in self.plans[2]:self.pins[1]=(4,0);self.events.append(('uart-tx-idle',1))
+        if 1 in self.plans[2]:self.pins[1]=4;self.events.append(('uart-tx-idle',1))
         return b''
     def actual(self,baud):
         if baud==0:return None

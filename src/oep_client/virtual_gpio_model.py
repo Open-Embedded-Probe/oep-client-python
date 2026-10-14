@@ -6,9 +6,9 @@ from .virtual_core import Core, Reject, tlv
 
 class Gpio(Resources):
     functions=(1,2,3)
-    def __init__(self,selectable=True):
-        super().__init__();self.selectable=selectable;self.plans={};self.events=[]
-        self.idle={ch:(4 if ch==0 else 0,1 if ch==0 and selectable else 0) for ch in range(8)};self.pins=dict(self.idle);self.external={ch:ch%2 for ch in range(8)}
+    def __init__(self):
+        super().__init__();self.plans={};self.events=[]
+        self.idle={ch:4 if ch==0 else 0 for ch in range(8)};self.pins=dict(self.idle);self.external={ch:ch%2 for ch in range(8)}
     def list_page(self,first,limit):
         rows=[]
         for fn,name,instance in [(1,b'oep.probe.plan',0),(2,b'oep.fixture.gpio',0),(3,b'oep.fixture.gpio',1)]:rows.append(struct.pack('<HHBB',fn,instance,1,len(name))+name)
@@ -19,7 +19,7 @@ class Gpio(Resources):
         return bytes(page)
     def describe(self,fn):
         if fn==1:return (tlv(7,b'\x10\x03'),tlv(64,struct.pack('<I',4)))
-        return (tlv(7,b'\x10\x03'),tlv(1,b'\1\0\0\xff'),tlv(64,struct.pack('<I',127)))+((tlv(65,struct.pack('<BBHH',0,2,2,8)),) if self.selectable else ())
+        return (tlv(7,b'\x10\x03'),tlv(1,b'\1\0\0\xff'),tlv(64,struct.pack('<I',127)))
     def request_tags(self,fn,op,data):
         result=[]
         while data:
@@ -27,13 +27,13 @@ class Gpio(Resources):
             raw,size=struct.unpack_from('<BH',data);key=raw&127
             if not key or len(data)<3+size:raise Reject(3)
             value,data=data[3:3+size],data[3+size:]
-            expected=5 if fn==1 and op==16 and key==16 else 2 if fn in (2,3) and op==16 and key==1 else None
+            expected=5 if fn==1 and op==16 and key==16 else None   # gpio set has no TLV in revision 1
             if expected is not None:
                 if len(value)!=expected:raise Reject(3)
                 result.append((raw,value))
             elif raw&128:raise Reject(11,bytes((raw,)))
         return result
-    def restore(self,ch):self.pins[ch]=self.idle[ch];self.events.append(('idle',ch,*self.pins[ch]))
+    def restore(self,ch):self.pins[ch]=self.idle[ch];self.events.append(('idle',ch,self.pins[ch]))
     def release_plans(self,functions):
         for fn in functions:
             for ch in self.plans.pop(fn,[]):self.restore(ch)
@@ -61,33 +61,24 @@ class Gpio(Resources):
             for index,ch in enumerate(channels):
                 if ch not in self.plans.get(fn,[]):raise Reject(4,tlv(2,struct.pack('<H',ch))+tlv(64,bytes((index,))))
             return bytes((n,))+bytes(self.level(ch) for ch in channels)
-        elements=[struct.unpack_from('<HB',payload,1+3*i) for i in range(n)];drive={}
-        for raw,v in tags:
-            index,level=v
-            if index>=n or index in drive or elements[index][1] not in (3,4):raise Reject(3)
-            drive[index]=(raw,level)
-        for index,(raw,level) in drive.items():
-            if not self.selectable or level not in (0,1,255):raise Reject(11,bytes((raw,)))
+        elements=[struct.unpack_from('<HB',payload,1+3*i) for i in range(n)]
         for index,(ch,mode) in enumerate(elements):
             metadata=tlv(2,struct.pack('<H',ch))+tlv(64,bytes((index,)))
             if mode>6:raise Reject(11,b'\0'+metadata)
             if ch not in self.plans.get(fn,[]):raise Reject(4,metadata)
-        for index,(ch,mode) in enumerate(elements):
-            chosen=drive[index][1] if index in drive else self.idle[ch][1]
-            if chosen==255:chosen=0
-            if mode not in (3,4):chosen=0
-            self.pins[ch]=(mode,chosen);self.events.append(('set',ch,mode,chosen))
+        for ch,mode in elements:
+            self.pins[ch]=mode;self.events.append(('set',ch,mode))
         return b''
     def level(self,ch):
-        mode,_=self.pins[ch]
+        mode=self.pins[ch]
         return 1 if mode in (1,4) else 0 if mode in (2,3,5) else self.external[ch]
 
 
 class GpioModel(ResourceModel):
-    def __init__(self,*args,selectable=True,**kwargs):
-        super().__init__(*args,**kwargs);self.selectable=selectable;self.install()
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs);self.install()
         self.ep.static[0]=tuple(row for row in self.ep.static[0] if row[0]!=67)+(tlv(67,struct.pack('<H',8)),)
-    def install(self):self.extension=Gpio(self.selectable);self.ep.current_core=Core(self.ep,self.extension)
+    def install(self):self.extension=Gpio();self.ep.current_core=Core(self.ep,self.extension)
     def handle(self,request):
         e=self.extension;fixed,free=e.fixed,e.free
         if len(request)>=6:

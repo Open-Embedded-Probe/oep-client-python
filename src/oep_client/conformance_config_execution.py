@@ -49,7 +49,7 @@ class ConfigExecutionChecks(ConfigChecks):
                 if name.startswith('EXPIRE-'):
                     self.a.advance(599);require(self.a.state()['core']['holder']==sid,'writer lease expired early')
                     self.a.advance(1);expired=self.observe(name+'-expired')
-                    require(expired['core']['holder'] is None and expired['gpio']['plans']=={} and expired['gpio']['pins'][1]==(1,0),'writer wait did not expire lease/resources')
+                    require(expired['core']['holder'] is None and expired['gpio']['plans']=={} and expired['gpio']['pins'][1]==1,'writer wait did not expire lease/resources')
                     self.a.finish();self.c.session=None
                     require(self.a.state()['core']['holder'] is None,'stale writer token revived session')
                     count=self.a.state()['writes'];self.c.success(req);require(self.a.state()['writes']==count and self.a.state()['core']['holder'] is None,'save replay reexecuted or renewed expired session')

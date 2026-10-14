@@ -16,7 +16,7 @@ def test_gpio_lifecycle_checks():
 
 def test_gpio_operation_backward_checks():
     from oep_client.conformance_gpio import GpioChecks
-    model,c=setup();r=GpioChecks(c,SampleGpioLifecycleAdapter(model)).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==28
+    model,c=setup();r=GpioChecks(c,SampleGpioLifecycleAdapter(model)).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==25
 
 
 def test_common_declarations():

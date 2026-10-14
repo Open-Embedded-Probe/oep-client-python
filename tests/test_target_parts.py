@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-from oep_client import arm, catalog, endpoint, virtual_bench, host as h, message as m, riscv as target
+from oep_client import arm, catalog, endpoint, fixture, virtual_bench, host as h, message as m, riscv as target
 
 FNS = {"oep.wire.rvswd": 1, "oep.target.riscv-dm": 2, "oep.fixture.gpio": 3, "oep.wire.swd": 4,
        "oep.target.arm-adi": 5}
@@ -170,19 +170,19 @@ def test_attach_after_gpio_reset_pipelines_release_with_attach_and_retries():
         attaches.append(p)
         return (ok(attach_answer(1, 0xc82, 0, 1_000_000)) if len(attaches) == 3 else (m.COMPLETED, m.FAILED, bytes([2])))
 
-    hst = ScriptedHost({(3, 0x01): lambda p: ok(), (1, target.Wire.ATTACH): attach})
+    hst = ScriptedHost({(3, fixture.Gpio.SET): lambda p: ok(), (1, target.Wire.ATTACH): attach})
     wire = target.Wire(hst)
     conn, status = target.attach_after_gpio_reset(hst, wire, 3, 23, exchange=None, tries=5, low_s=0)
     assert (conn, status) == (1, 0xc82)
     assert len(attaches) == 3 and attaches[0] == b"\x01" + MAX_SPEED    # attach with halt, max_speed always
     log = [(fn, op, p) for fn, op, p in hst.log if fn != 0]              # the describe (the default max_speed) aside
-    assert [(fn, op) for fn, op, _ in log][:3] == [(3, 0x01), (3, 0x01), (1, target.Wire.ATTACH)]   # low, then release + attach together
+    assert [(fn, op) for fn, op, _ in log][:3] == [(3, fixture.Gpio.SET), (3, fixture.Gpio.SET), (1, target.Wire.ATTACH)]   # low, then release + attach together
     assert log[0][2] == bytes([1]) + struct.pack("<HB", 23, 5)           # set: n=1, channel 23 open-drain low
     assert log[1][2] == bytes([1]) + struct.pack("<HB", 23, 6)           # ... then released
 
 
 def test_attach_after_gpio_reset_gives_up():
-    hst = ScriptedHost({(3, 0x01): lambda p: ok(), (1, target.Wire.ATTACH): lambda p: (m.COMPLETED, m.FAILED, bytes([4]))})
+    hst = ScriptedHost({(3, fixture.Gpio.SET): lambda p: ok(), (1, target.Wire.ATTACH): lambda p: (m.COMPLETED, m.FAILED, bytes([4]))})
     with pytest.raises(h.Failed):
         target.attach_after_gpio_reset(hst, target.Wire(hst), 3, 23, exchange=None, tries=2, low_s=0)
 

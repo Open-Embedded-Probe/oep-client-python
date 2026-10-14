@@ -10,7 +10,7 @@ from test_conformance_registered_ops import setup as registered_setup
 def setup():
     _,original=registered_setup();reg=original.reg;reg.setdefault('constants',{})['min_max_frame']=64
     for s in reg['interface']:
-        tags={'oep.fixture.gpio':{'modes':64,'drive_levels':65},'oep.fixture.uart':{'formats':64},'oep.fixture.i2c-target':{'queue_depth':64,'max_stretch_us':65},'oep.fixture.spi-target':{'queue_depth':64,'cs_setup_ns':67}}
+        tags={'oep.fixture.gpio':{'modes':64},'oep.fixture.uart':{'formats':64},'oep.fixture.i2c-target':{'queue_depth':64,'max_stretch_us':65},'oep.fixture.spi-target':{'queue_depth':64,'cs_setup_ns':67}}
         if s['name'] in tags:s['tlv']={'describe':tags[s['name']]}
     model=FixtureMetadataModel(lambda:0,boot_id=17)
     return model,Checks(model.handle,reg,'virtual-resource-1')
@@ -23,14 +23,12 @@ def replace(model,fn,tag,value):
 
 def test_fixture_metadata_passes_read_only():
     model,c=setup();r=FixtureMetadataChecks(c,model.metadata_selection).run()
-    assert r['status']=='passed',r['checks'];assert len(r['checks'])==11 and not r['full_conformance']
+    assert r['status']=='passed',r['checks'];assert len(r['checks'])==10 and not r['full_conformance']
     assert all(bytes.fromhex(row['request_hex'])[6:10]==b'\0'*4 for row in c.trace)
 
 
 @pytest.mark.parametrize('fn,tag,value',[
     (10,64,None),(10,64,b'\1'),(10,64,b'\0'*4),
-    (10,65,b''),(10,65,b'\0\1\2\0'),(10,65,b'\2\2\2\0\4\0'),
-    (10,65,b'\0\2\2\0'),(10,65,b'\0\2\4\0\2\0'),(10,65,b'\0\2\2\0\2\0'),
     (11,64,None),(11,64,b''),(11,64,b'\0'),(11,64,b'\2\0'),(11,64,b'\1\4'),
     (11,64,b'\2\0\x02'),(11,64,b'\2\0\x0c'),(11,64,b'\2\0\x20'),
     (12,65,None),(12,65,b'\0'*4),(12,65,b'\1'),(13,67,b'\1'),
@@ -55,7 +53,7 @@ def test_no_invented_lower_bounds(fn,tag):
     assert FixtureMetadataChecks(c,model.metadata_selection).run()['status']=='passed'
 
 
-@pytest.mark.parametrize('fn,tag',[(10,65),(13,67)])
+@pytest.mark.parametrize('fn,tag',[(13,67)])
 def test_optional_metadata_absent(fn,tag):
     model,c=setup();replace(model,fn,tag,None)
     assert FixtureMetadataChecks(c,model.metadata_selection).run()['status']=='passed'
@@ -88,16 +86,6 @@ def test_small_multiroute_bound_is_proven():
     assert FixtureMetadataChecks(c,model.metadata_selection).run()['status']=='passed'
 
 
-@pytest.mark.parametrize('value',[None,b'\0\2\2\0\x10\0'])
-def test_selected_gpio_drive_declarations_must_match(value):
-    model,c=setup();checker=FixtureMetadataChecks(c,model.metadata_selection);r=checker.run();assert r['status']=='passed'
-    checker.selection={10:'oep.fixture.gpio',18:'oep.fixture.gpio'}
-    checker.base.rows[18]=list(checker.base.rows[10]);checker.base.rows[18]=[(tag,v) for tag,v in checker.base.rows[18] if tag!=65]
-    if value is not None:checker.base.rows[18].append((65,value))
-    from oep_client.conformance import Violation
-    with pytest.raises(Violation):checker.drive_consistency()
-
-
 def test_fixture_common_declarations():
     from oep_client.conformance_interfaces import InterfaceChecks
     _,c=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==137
@@ -118,10 +106,3 @@ def test_fixture_metadata_preflight(invalid):
     assert FixtureMetadataChecks(c,selection).run()['status']=='failed'
 
 
-@pytest.mark.parametrize('absent',[False,True])
-def test_identical_selected_gpio_drive_declarations(absent):
-    model,c=setup()
-    if absent:replace(model,10,65,None)
-    checker=FixtureMetadataChecks(c,model.metadata_selection);assert checker.run()['status']=='passed'
-    checker.selection={10:'oep.fixture.gpio',18:'oep.fixture.gpio'};checker.base.rows[18]=list(checker.base.rows[10])
-    checker.drive_consistency()

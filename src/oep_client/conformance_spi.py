@@ -37,7 +37,7 @@ class SpiChecks:
         return bytes(result)
     def transfer(self,bits,expected):
         result=self.a.transfer(bits);require(result['miso']==expected,'SPI MISO bit order/prefix/zero fill')
-        state=self.a.state();require(state['pins'][2]==(0,0) and all(state['pins'][ch][0]==0 for ch in (0,1,3)),'CS inactive MISO/inputs not HiZ')
+        state=self.a.state();require(state['pins'][2]==0 and all(state['pins'][ch]==0 for ch in (0,1,3)),'CS inactive MISO/inputs not HiZ')
         return result
     def closed(self):
         state=self.a.state();require(not state['configured'] and state['mode']==0 and state['bit_order']==0 and state['armed'] is None and not state['rx'] and state['transactions']==0 and state['errors']==0 and not state['active'] and not state['bits'] and state['pins']==state['idle'],'plan close retained SPI state/queue/arm/pins')
@@ -107,7 +107,7 @@ class SpiChecks:
             elif kind=='RECONFIGURE':
                 self.transfer([1],[0]);self.arm(sid,1);self.transfer(self.bits(b'xx'),[0]*16);self.arm(sid,1,b'x');self.configure(sid,2);require(self.status()==(1,2,0,0,0,0,0),'configure retained counters/queue/arm')
             elif kind=='MISO-GATE':
-                self.arm(sid,1,b'\x80');require(self.a.state()['pins'][2]==(0,0),'arm drove inactive MISO');self.a.cs(True);state=self.a.state();require(state['pins'][2]==(4,0) and all(state['pins'][ch][0]==0 for ch in (0,1,3)),'CS active first bit/inputs');self.a.cs(False);require(self.a.state()['pins'][2]==(0,0) and self.status()[3]==1,'CS end HiZ/zero bits arm')
+                self.arm(sid,1,b'\x80');require(self.a.state()['pins'][2]==0,'arm drove inactive MISO');self.a.cs(True);state=self.a.state();require(state['pins'][2]==4 and all(state['pins'][ch]==0 for ch in (0,1,3)),'CS active first bit/inputs');self.a.cs(False);require(self.a.state()['pins'][2]==0 and self.status()[3]==1,'CS end HiZ/zero bits arm')
             elif kind=='REPLAY-RX':
                 for data in (b'a',b'b'):self.arm(sid,1);self.transfer(self.bits(data),[0]*8)
                 _,_,_,req,v=self.rx(sid);before=self.a.state();require(self.c.success(req)==v and self.a.state()==before,'read_rx replay popped another frame');require(self.rx(sid)[:3]==(0,8,b'b'),'replay lost next RX')
@@ -118,7 +118,7 @@ class SpiChecks:
             elif kind in ('REPLACE','RELEASE','END','EXPIRY','FORCE','ACTIVE-RELEASE','ACTIVE-END','ACTIVE-EXPIRY','ACTIVE-FORCE'):
                 self.configure(sid,3);self.arm(sid,1);self.transfer(self.bits(b'xy'),[0]*16);self.arm(sid,1,b'z')
                 if kind.startswith('ACTIVE-'):
-                    self.a.cs(True);self.a.clock(0,1);self.a.clock(1,1);require(len(self.a.state()['bits'])==1 and self.a.state()['active'] and self.a.state()['pins'][2][0] in (3,4),'CS did not drive MISO before release');kind=kind.removeprefix('ACTIVE-')
+                    self.a.cs(True);self.a.clock(0,1);self.a.clock(1,1);require(len(self.a.state()['bits'])==1 and self.a.state()['active'] and self.a.state()['pins'][2] in (3,4),'CS did not drive MISO before release');kind=kind.removeprefix('ACTIVE-')
                 if kind=='REPLACE':self.plan(sid)
                 elif kind=='RELEASE':self.release(sid)
                 elif kind=='END':self.ok(self.c.request(self.c.core['end'],session=sid));self.c.session=None

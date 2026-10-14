@@ -43,7 +43,7 @@ class ConfigPowerLossChecks(ConfigChecks):
                 require(self.get(NEW)==h,'successful save lost durable config');self.storage(1,h)
                 self.c.rejected(req,'no_session')
                 s=self.a.state();require(s['journal_image']==event['image']==event['recovered_image'],'acknowledged recovery rewrote durable bytes')
-                require(s['gpio']['plans']=={} and s['gpio']['pins'][1]==(2,0),'acknowledged saved idle/preset differs')
+                require(s['gpio']['plans']=={} and s['gpio']['pins'][1]==2,'acknowledged saved idle/preset differs')
                 self.cuts.append(dict(case=name,cut=None,total=None,outcome='new',hash=h,event=event,state=s))
             self.observe(name+'-final');return
         self.seed(name)
@@ -68,8 +68,8 @@ class ConfigPowerLossChecks(ConfigChecks):
                 else:require(h==old_hash,'old recovered hash differs');self.storage(1,h);mode=1;outcome='old'
                 self.c.rejected(req,'no_session')
                 state=self.a.state()
-                require(state['gpio']['plans']=={} and state['gpio']['pins'][1]==(mode,0),'recovered idle/preset or old live resources differ')
-                require(before['plans']=={2:[1]} and before['pins'][1]==(4,0),'power-loss live fixture not seeded')
+                require(state['gpio']['plans']=={} and state['gpio']['pins'][1]==mode,'recovered idle/preset or old live resources differ')
+                require(before['plans']=={2:[1]} and before['pins'][1]==4,'power-loss live fixture not seeded')
                 require(state['journal_image']==event['image']==event['recovered_image'],'boot rewrote durable bytes')
                 # Recovery remains stable on another boot; no unfinished write is resumed.
                 fresh=self.a.restart_fixture();self.c.confirm();self.c.identity()

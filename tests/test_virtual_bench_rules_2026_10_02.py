@@ -106,9 +106,9 @@ def una(r) -> dict[int, bytes]:
     return out
 
 
-def idle_item(ch, mode, tag=ITEM["idle"], drive=0xFF):
-    """An idle item (probe.config §1): channel(u16) mode(u8) drive(u8), 4 bytes; 0xFF = the default level."""
-    return m.tlv(tag & 0x7F, struct.pack("<HBB", ch, mode, drive), critical=bool(tag & 0x80))
+def idle_item(ch, mode, tag=ITEM["idle"]):
+    """An idle item (probe.config §1): channel(u16) mode(u8), 3 bytes."""
+    return m.tlv(tag & 0x7F, struct.pack("<HB", ch, mode), critical=bool(tag & 0x80))
 
 
 def label_item(ch, text: bytes, tag=ITEM["label"]):
@@ -176,48 +176,6 @@ def test_c02_read_from_4_unsupported_and_from_3_with_a_wide_arg_reads_from_now()
     for arg in (0x100, 0xFFFF_FFFF_FFFF_FFFF):
         r = h.raw(5, read, struct.pack("<BQH", 3, arg, 16), session=False)
         assert r.succeeded and r.payload == struct.pack("<QBH", 3, 0, 0)          # from now: the write position
-
-
-def gpio_drive(index, level, critical=False):
-    """gpio set's TLV 0x01 drive (fixture §1.1): index(u8) level(u8), 0xFF the default level."""
-    return m.tlv(reg.FIXTURE_GPIO.tlv["set"]["drive"], struct.pack("<BB", index, level), critical=critical)
-
-
-@pytest.mark.parametrize("critical", [False, True])
-def test_gpio_drive_is_a_level_checked_alike_with_or_without_bit_7(critical):
-    """fixture §1.1 + core §2.3 (rule review 2026-10-07): drive is index(u8) level(u8); an implemented TLV is checked
-    the same with or without bit 7 - a level past drive_levels is unsupported (the tag as received), another length,
-    an index past n or an element that is not mode 3 / 4 malformed."""
-    ep, h = bench()
-    h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 20), critical=True))
-    tag = reg.FIXTURE_GPIO.tlv["set"]["drive"] | (0x80 if critical else 0)
-    body = bytes([1]) + struct.pack("<HB", 20, 4)
-    set_ = reg.FIXTURE_GPIO.op["set"]
-    r = h.raw(4, set_, body + gpio_drive(0, len(virtual_bench.DRIVE_LEVELS_MA), critical))
-    assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([tag]))
-    assert h.raw(4, set_, body + m.tlv(tag & 0x7F, b"\x00\x01\x00", critical=critical)).detail == m.MALFORMED
-    assert h.raw(4, set_, body + m.tlv(tag & 0x7F, b"\x00", critical=critical)).detail == m.MALFORMED
-    assert h.raw(4, set_, body + gpio_drive(1, 0, critical)).detail == m.MALFORMED  # index >= n
-    low_in = bytes([1]) + struct.pack("<HB", 20, 1)
-    assert h.raw(4, set_, low_in + gpio_drive(0, 0, critical)).detail == m.MALFORMED   # not mode 3 / 4
-    assert not ep.gpio_drive
-    r = h.raw(4, set_, body + gpio_drive(0, 0xFF, critical))
-    assert r.succeeded and r.payload == b"" and ep.gpio_drive[20] == virtual_bench.DRIVE_DEFAULT
-    assert h.raw(4, set_, body + gpio_drive(0, 0, critical)).succeeded and ep.gpio_drive[20] == 0
-
-
-def test_gpio_any_drive_on_a_probe_without_drive_levels_is_unsupported():
-    """fixture §1.1: a drive on a probe that declares no drive_levels is unsupported (the tag as received), even
-    0xFF."""
-    ep = endpoint.Endpoint(virtual_bench.without_drive_levels(virtual_bench.p4_bench()), Clock())
-    h = Host(ep)
-    h.open()
-    h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 20), critical=True))
-    body = bytes([1]) + struct.pack("<HB", 20, 4)
-    for critical in (False, True):
-        r = h.raw(4, reg.FIXTURE_GPIO.op["set"], body + gpio_drive(0, 0xFF, critical))
-        assert (r.detail, r.payload) == (m.UNSUPPORTED, gpio_drive(0, 0xFF, critical)[:1])
-    assert h.raw(4, reg.FIXTURE_GPIO.op["set"], body).succeeded
 
 
 def test_c02_probe_config_enums_and_bits_a_later_revision_may_define():
@@ -296,17 +254,6 @@ def test_an_unknown_critical_and_a_malformed_tlv_any_one_reason():
     assert r.detail in (m.MALFORMED, m.UNSUPPORTED)
     assert r.detail != m.UNSUPPORTED or r.payload == bytes([UNKNOWN | 0x80])
     assert not ep.conns
-
-
-def test_c03_role_assignment_and_gpio_drive_repeat():
-    ep, h = bench()
-    ra = lambda ch: m.tlv(0x10, struct.pack("<HBH", 4, 1, ch), critical=True)
-    assert h.raw(h.plan_fn, PLAN_APPLY, ra(20) + ra(21)).succeeded
-    body = bytes([2]) + struct.pack("<HBHB", 20, 4, 21, 4)
-    r = h.raw(4, reg.FIXTURE_GPIO.op["set"], body + gpio_drive(0, 1) + gpio_drive(1, 3))
-    assert r.succeeded and ep.gpio_drive == {20: 1, 21: 3}
-    r = h.raw(4, reg.FIXTURE_GPIO.op["set"], body + gpio_drive(0, 1) + gpio_drive(0, 3))
-    assert r.detail == m.MALFORMED                                  # the same index twice (fixture §1.1)
 
 
 def test_an_answer_that_fills_the_frame_has_no_ignored_list():

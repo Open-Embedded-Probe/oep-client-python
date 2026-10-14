@@ -9,7 +9,7 @@ from .virtual_core import Core, Reject, tlv
 class Logic(Gpio):
     functions=(1,2)
     def __init__(self,ep):
-        super().__init__(False);self.ep=ep;self.generation=0;self.roles=[];self.config=None;self.clear(0)
+        super().__init__();self.ep=ep;self.generation=0;self.roles=[];self.config=None;self.clear(0)
     def clear(self,state):
         self.state=state;self.data=bytearray();self.base=0;self.segments=[];self.serial=0;self.flags=0;self.error=0;self.current=[];self.history=[];self.previous=None;self.gap=False;self.trigger_index=0xffffffff;self.start_ns=0
     def list_page(self,first,limit):

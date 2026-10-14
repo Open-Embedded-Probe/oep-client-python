@@ -52,7 +52,7 @@ class PortSpeedChecks:
         old=self.c.boot;fresh=self.a.restart_fixture();self.c.confirm();self.c.identity()
         require(fresh['boot_id']==self.c.boot!=old,'fresh logical boot required')
         with self.holding() as sid:
-            self.a.seed(self.c,sid);require(self.a.state()['plans']=={2:[1]} and self.a.state()['pins'][1][0]==4,'live seed required')
+            self.a.seed(self.c,sid);require(self.a.state()['plans']=={2:[1]} and self.a.state()['pins'][1]==4,'live seed required')
             if name=='TRY-BARRIER':
                 self.prepared(self.request(sid,verify=100),230400);self.speed(0,115200)
                 self.a.advance(9);self.speed(0,115200);self.a.finish();self.speed(1,230400)

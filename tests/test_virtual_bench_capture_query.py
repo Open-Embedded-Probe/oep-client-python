@@ -23,7 +23,7 @@ def fixture(analog,state):
 
 
 def snapshot(ep):
-    return copy.deepcopy((ep.captures,ep.groups,ep.plan,ep.gpio_modes,ep.gpio_drive,ep.outbox))
+    return copy.deepcopy((ep.captures,ep.groups,ep.plan,ep.gpio_modes,ep.outbox))
 
 
 @pytest.mark.parametrize('analog',[False,True])

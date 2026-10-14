@@ -67,9 +67,8 @@ define (oep-spec 0f455a0, the rule review of 2026-10-07):
   when full; SDI takes nothing); the probe hands the queue's head to the target, dmseq 2 bytes and DMDATA 3 a poll -
   one poll per ms while the hart runs, none while it is halted or a riscv-dm request of the connection runs - or all of
   it at `console_take`
-- oep.fixture.gpio (fixture §1: modes 0-6, the lines outside through `gpio_world`; the drive a u8 level, 0xFF the
-  default - a level past drive_levels, or any drive without them, unsupported; `gpio_drive` / `parked_drive` the
-  effective strength), oep.fixture.uart (its stream made by the plan; status baud / format; the settings' uart item),
+- oep.fixture.gpio (fixture §1: modes 0-6, the lines outside through `gpio_world`; the output strength is the probe's),
+  oep.fixture.uart (its stream made by the plan; status baud / format; the settings' uart item),
   oep.fixture.i2c-target (§3, one form: configure an address, a write with data is one frame cut at max_length, reads
   from preload_tx slots or 0xFF, stretch when the ops offer it; test hooks `i2c_write` / `i2c_read`) and
   oep.fixture.spi-target (§4: configure, arm, read_rx, status; errors at most 1 a transfer; `spi_transfer`),
@@ -149,8 +148,6 @@ UART_FORMAT_MASK = 0x1F                                    # the defined format 
 _T_SCAN, _T_ATTACH, _T_DETACH, _T_ATTACH_ANSWER = (reg.WIRE_RVSWD.tlv[k] for k in ("scan", "attach", "detach", "attach_answer"))
 ATTACH_METHOD = reg.WIRE_RVSWD.enum["attach_method"]
 _UNSUP_INDEX = reg.CORE.tlv["unsupported_payload"]["index"]   # the position in the request's list (scan, gpio set)
-GPIO_SET_DRIVE = _GPIO.tlv["set"]["drive"]                # index(u8) level(u8), repeats (fixture §1.1)
-DRIVE_DEFAULT = _GPIO.enum["drive_level"]["default"]       # 0xFF: drive_levels' default level (fixture §1.1)
 GPIO_MODE_MAX = max(_GPIO.enum["mode"].values())           # 6: the modes revision 1 defines are 0-6 (fixture §1)
 OUTPUT_MODES = (_GPIO.enum["mode"]["output_low"], _GPIO.enum["mode"]["output_high"])   # the modes a strength applies to
 LINK_SOURCE_OVERHEAD = m.RESULT_HEADER + 2                 # source's len <= max_frame - 7: header and len (oep-if-link §2)
@@ -529,7 +526,7 @@ class Slot:
     name: str
 
 
-ITEM_SIZES = {ITEM["plan"]: 5, ITEM["idle"]: 4, ITEM["uart"]: 7, ITEM["disable"]: 2, ITEM["bind"]: 4}
+ITEM_SIZES = {ITEM["plan"]: 5, ITEM["idle"]: 3, ITEM["uart"]: 7, ITEM["disable"]: 2, ITEM["bind"]: 4}
 SLOT_HEAD = struct.Struct("<BHHHBIIBBB")   # slot wire_fn swdio swclk attach retry_ms max_speed_hz idle_clock mechanism name_len
 
 
@@ -704,14 +701,6 @@ class Endpoint:
                           for fn, name in self.names.items() if name == "oep.target.riscv-dm"}
         self.gpio_allowed = {fn: self._own(fn, virtual_bench.GPIO_MODES, "I", 0xFF)
                              for fn, name in self.names.items() if name == "oep.fixture.gpio"}
-        # the output strengths (fixture §1.1, drive_levels): (default level, [approximate mA per level]) or None - one
-        # declaration for the whole probe (every gpio fn declares the same)
-        self.drive_levels: tuple[int, list[int]] | None = None
-        for fn, name in sorted(self.names.items()):
-            for tag, v in self.decl[fn] if name == "oep.fixture.gpio" else ():
-                if tag == virtual_bench.GPIO_DRIVE_LEVELS:
-                    default, n = v[0], v[1]
-                    self.drive_levels = (default, list(struct.unpack_from(f"<{n}H", v, 2)))
         self.uart_formats = {fn: next((set(v[1:1 + v[0]]) for tag, v in self.decl[fn] if tag == virtual_bench.UART_FORMATS), {0})
                              for fn, name in self.names.items() if name == "oep.fixture.uart"}
         self.uart_max_hz = {fn: self._own(fn, catalog.MAX_CLOCK_HZ, "I", 3_000_000)
@@ -804,8 +793,6 @@ class Endpoint:
         self.gpio_modes: dict[int, int] = {}
         self.gpio_inputs: dict[int, int] = {}
         self.gpio_log: list[tuple[int, int]] = []
-        self.gpio_drive: dict[int, int] = {}           # channel -> the level it is driven at in mode 3 / 4 (fixture §1.1)
-        self.parked_drive: dict[int, int] = {}         # channel -> the level a free pin's output idle drives at
         self.uarts: dict[int, Stream] = {}             # fn -> stream (while its plan has RX or TX)
         self.uart_carry: dict[int, tuple[int, int]] = {}   # fn -> (position, mark serial) a released stream left off at
         self.uart_baud: dict[int, tuple[int, int]] = {}   # fn -> (baud, format) in force (absent: 115200 8N1)
@@ -899,30 +886,6 @@ class Endpoint:
                 continue
             item = self.config.get((ITEM["idle"], ch))
             self.parked[ch] = item[2] if item else 0               # 0 = Hi-Z
-            level = self._idle_level(ch)
-            if level is None:
-                self.parked_drive.pop(ch, None)
-            else:
-                self.parked_drive[ch] = level                      # an output idle drives at the idle's strength
-
-    def _drive_level(self, level: int) -> int | None:
-        """The level a strength specification (fixture §1.1: a level number, 0xFF the default level) picks; None: no
-        such level (past drive_levels) or no drive_levels at all."""
-        if self.drive_levels is None:
-            return None
-        default, ma = self.drive_levels
-        if level == DRIVE_DEFAULT:
-            return default
-        return level if level < len(ma) else None
-
-    def _idle_level(self, ch: int) -> int | None:
-        """The level the idle state of `ch` drives at: None when it is not an output idle (or the probe declares no
-        drive_levels); the idle's drive (fixture §1.1)."""
-        item = self.config.get((ITEM["idle"], ch))
-        if self.drive_levels is None or not item or item[2] not in OUTPUT_MODES:
-            return None
-        level = self._drive_level(item[3])
-        return self.drive_levels[0] if level is None else level
 
     @property
     def target_id(self) -> int | None:
@@ -1793,7 +1756,7 @@ class Endpoint:
 
     def _replace_plans(self, fns: set[int], got) -> None:
         """The plans of `fns` become `got` as one change (oep-if-plan §2.1): a channel leaving goes to its idle state, one in
-        both the old and the new plan of a gpio keeps its state and drive, and a new gpio line keeps the state it was
+        both the old and the new plan of a gpio keeps its state, and a new gpio line keeps the state it was
         in - an output idle keeps driving - until the first set (fixture §1); the idle modes 0-4 are the gpio modes of
         the same numbers."""
         old = {a for a in self.plan if a[0] in fns}
@@ -1802,21 +1765,17 @@ class Endpoint:
         released = {a[2] for a in old} - {a[2] for a in got}
         for ch in {a[2] for a in old} - kept:
             self.gpio_modes.pop(ch, None)
-            self.gpio_drive.pop(ch, None)
         self.plan = {a for a in self.plan if a[0] not in fns}
         self._park(released)
         self.plan |= set(got)
         for fn, _, ch in got:
             if ch not in kept and self.names.get(fn) == "oep.fixture.gpio" and self.parked.get(ch, 0):
                 self.gpio_modes[ch] = self.parked[ch]
-                if ch in self.parked_drive:                        # taken: the idle state's strength until a set
-                    self.gpio_drive[ch] = self.parked_drive[ch]
 
     def _drop_plan(self, fn: int) -> None:
         released = set()
         for a in [a for a in self.plan if a[0] == fn]:
             self.gpio_modes.pop(a[2], None)
-            self.gpio_drive.pop(a[2], None)
             self.plan.discard(a)
             released.add(a[2])
         self.plan_from_config.discard(fn)
@@ -2813,30 +2772,19 @@ class Endpoint:
         if op == _GPIO.op["set"]:
             n = t.take("B")
             pairs = [t.take("HB") for _ in range(n)]
-            # drive (fixture §1.1, repeats): gpio revision 1 defines it, so every probe implements the tag - one without
-            # drive_levels refuses it unsupported
-            t.tail({GPIO_SET_DRIVE}, repeats={GPIO_SET_DRIVE})
+            t.tail()                                               # no set TLV in revision 1 (fixture §1)
             index_tag = _GPIO.tlv["unavailable_payload"]["index"]
-            drives = self._drive_forms(t, pairs)                   # every check before anything changes (core §4.3)
             for i, (ch, mode) in enumerate(pairs):
                 # a mode the definition leaves unused (7 or more) or one it does not drive (fixture §1)
                 if mode > GPIO_MODE_MAX or not self.gpio_allowed.get(fn, 0xFF) >> mode & 1:
                     raise unsupported_fixed(m.tlv(_UNA["channel"], struct.pack("<H", ch)), m.tlv(index_tag, bytes([i])))
-            drives = self._drive_levels_of(drives)
             for i, (ch, mode) in enumerate(pairs):
                 self._refuse_disabled([ch], m.tlv(index_tag, bytes([i])))   # disabled: cause 5 (probe.config §1)
                 if ch not in mine:                                 # the position as the gpio's TLV (fixture §1)
                     raise unavailable(channel=ch, extra=m.tlv(index_tag, bytes([i])))
-            for i, (ch, mode) in enumerate(pairs):
+            for ch, mode in pairs:
                 self.gpio_modes[ch] = mode
                 self.gpio_log.append((ch, mode))
-                if mode in OUTPUT_MODES and self.drive_levels is not None:   # the effective strength (fixture §1.1)
-                    level = drives.get(i)
-                    if level is None:
-                        level = self._idle_level(ch)
-                    self.gpio_drive[ch] = self.drive_levels[0] if level is None else level
-                else:
-                    self.gpio_drive.pop(ch, None)
             return self._answer(b"")
         if op == _GPIO.op["read"]:
             n = t.take("B")
@@ -2855,35 +2803,6 @@ class Endpoint:
             return self._answer(bytes([len(levels)]) + bytes(levels))   # n(u8) n x level [TLV] (fixture §1)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
-    def _drive_forms(self, t: Take, pairs: list[tuple[int, int]]) -> list[tuple[int, int, int]]:
-        """set's drive TLVs (fixture §1.1), their form: malformed (the whole request) for a value of another length than
-        2, index n or more, the same index twice, an element whose mode is not 3 / 4. -> (tag as received, index,
-        level)."""
-        seen, drives = set(), []
-        for tag, value in t.repeated:
-            if tag & 0x7F != GPIO_SET_DRIVE:
-                continue
-            if len(value) != 2:
-                raise Reject(m.MALFORMED)
-            index, level = value
-            if index >= len(pairs) or index in seen or pairs[index][1] not in OUTPUT_MODES:
-                raise Reject(m.MALFORMED)
-            seen.add(index)
-            drives.append((tag, index, level))
-        return drives
-
-    def _drive_levels_of(self, drives: list[tuple[int, int, int]]) -> dict[int, int]:
-        """-> {element index: level}. A level past drive_levels (0xFF, the default, aside), and any drive on a probe
-        without drive_levels: rejected unsupported with the tag as received (fixture §1.1)."""
-        out = {}
-        for tag, index, level in drives:
-            chosen = self._drive_level(level)
-            if chosen is None:
-                raise Reject(m.UNSUPPORTED, bytes([tag]))
-            out[index] = chosen
-        return out
-
-    # ---- oep.fixture.uart -----------------------------------------------------------------------
     def _uart(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         fmt_tag = _UART.tlv["configure"]["format"]
         if op == _UART.op["configure"]:
@@ -3392,7 +3311,7 @@ class Endpoint:
                     raise Reject(m.MALFORMED)                      # fn 0 holds no plan (oep-if-plan §2.5)
             elif tag == ITEM["idle"]:
                 if len(value) != ITEM_SIZES[tag]:
-                    raise Reject(m.MALFORMED)                      # channel mode drive: 4 bytes (probe.config §1)
+                    raise Reject(m.MALFORMED)                      # channel mode: 3 bytes (probe.config §1)
             elif tag == ITEM["label"]:
                 # channel(u16) text: 1-32 bytes (probe.config §1: the length is the rule)
                 if not 3 <= len(value) <= 2 + reg.LIMITS["label_max_bytes"]:
@@ -3444,14 +3363,11 @@ class Endpoint:
             elif tag == ITEM["bind"]:
                 binds[key] = self._item_refusal(received, tag, key, self._parse_bind, value, slots, "values")
             elif tag == ITEM["idle"]:
-                mode, drive = value[2], value[3]
+                mode = value[2]
                 if mode not in IDLE_MODE.values():
                     raise Reject(m.UNSUPPORTED, as_received + channel)   # 5 or more: left unused by the definition
-                if mode in (IDLE_MODE["output_low"], IDLE_MODE["output_high"]):
-                    if key in self.input_only:
-                        raise Reject(m.UNSUPPORTED, as_received + channel)   # cannot drive it as an output (§1)
-                    if drive != DRIVE_DEFAULT and self._drive_level(drive) is None:
-                        raise Reject(m.UNSUPPORTED, as_received + channel)   # no such level, or no drive_levels
+                if mode in (IDLE_MODE["output_low"], IDLE_MODE["output_high"]) and key in self.input_only:
+                    raise Reject(m.UNSUPPORTED, as_received + channel)   # cannot drive it as an output (§1)
                 if mode in (IDLE_MODE["pull_up"], IDLE_MODE["pull_down"]) and mode in self.no_pull.get(key, ()):
                     raise Reject(m.UNSUPPORTED, as_received + channel)   # the channel lacks that pull (PC-3)
             elif tag == ITEM["wifi"] and (key >= self.wifi_max or 0 in value[2:2 + value[1]]):

@@ -17,82 +17,17 @@ from .core import Interface, describe
 
 _GPIO, _UART, _I2C, _SPI = reg.FIXTURE_GPIO, reg.FIXTURE_UART, reg.FIXTURE_I2C_TARGET, reg.FIXTURE_SPI_TARGET
 _MODE = _GPIO.enum["mode"]
-DRIVE_DEFAULT = _GPIO.enum["drive_level"]["default"]      # 0xFF: drive_levels' default level (fixture §1.1)
-
-
-@dataclass(frozen=True)
-class Drive:
-    """An output strength (oep-if-fixture §1.1), for gpio set and the settings' idle: a level number of the probe's
-    drive_levels (0 the weakest, in its order), or the default level (0xFF). Levels are one probe's list: a host that
-    takes a setting to another probe picks the level again from that probe's drive_levels (`DriveLevels.at_most`)."""
-    value: int
-
-    @classmethod
-    def level(cls, n: int) -> "Drive":
-        if not 0 <= n < DRIVE_DEFAULT:
-            raise ValueError(f"drive level {n}: 0 to {DRIVE_DEFAULT - 1} (0xFF is the default level)")
-        return cls(n)
-
-    @classmethod
-    def default(cls) -> "Drive":
-        """The default level of drive_levels (0xFF)."""
-        return cls(DRIVE_DEFAULT)
-
-    @property
-    def is_default(self) -> bool:
-        return self.value == DRIVE_DEFAULT
-
-    @classmethod
-    def of(cls, drive: "Drive | int") -> "Drive":
-        """A Drive as it is, an int as a level number."""
-        return drive if isinstance(drive, Drive) else cls.level(int(drive))
-
-    def pack(self) -> bytes:
-        """level(u8), the form both places use."""
-        if not 0 <= self.value <= 0xFF:
-            raise ValueError(f"drive {self.value}: a u8 level, 0xFF the default")
-        return bytes([self.value])
-
-    @classmethod
-    def unpack(cls, data: bytes) -> "Drive":
-        return cls(data[0])
-
-    def __str__(self) -> str:
-        return "default" if self.is_default else f"level {self.value}"
-
-
-@dataclass(frozen=True)
-class DriveLevels:
-    """describe drive_levels (fixture §1.1): the strengths the probe selects, approximate mA per level in ascending
-    order (a level's number is its position), and the default level."""
-    default: int
-    ma: tuple[int, ...]
-
-    def pick(self, drive: "Drive | int") -> int | None:
-        """The level a Drive selects here (None: a level number past the list - the probe refuses that drive)."""
-        d = Drive.of(drive)
-        if d.is_default:
-            return self.default
-        return d.value if d.value < len(self.ma) else None
-
-    def at_most(self, ma: int) -> Drive:
-        """The strongest level of about `ma` mA or less (level 0 when every level is stronger): the host's way to carry
-        a strength between probes (host guide §18.5)."""
-        return Drive.level(max((i for i, x in enumerate(self.ma) if x <= ma), default=0))
 
 
 class Gpio(Interface):
     """oep.fixture.gpio. `set` applies (channel, mode) pairs in order in one request (pull NRST, then release it); a
     channel the plan did not assign or a mode the probe lacks rejects the whole list as unavailable (host.Unavailable:
     .channels, and its position as TLV 0x40). The open-drain modes never drive a line high: the way to move a target's reset line.
-    An output element (mode 3 / 4) may carry a strength (`Drive`, or an int level number) on a probe that declares
-    drive_levels (`drive_levels()`); without one it is driven at the idle item's strength, else the default. A level
-    past drive_levels, or any drive on a probe without them, is refused unsupported (host.Unsupported)."""
+    The output strength is the probe's own (fixture §1: revision 1 defines no strength selection)."""
     NAME = "oep.fixture.gpio"
     REVISION = 1
     SET, READ = _GPIO.op["set"], _GPIO.op["read"]
-    TAG_DRIVE = _GPIO.tlv["set"]["drive"]                  # set's drive TLV: index(u8) level(u8), one per element
-    TAG_MODES, TAG_DRIVE_LEVELS = _GPIO.tlv["describe"]["modes"], _GPIO.tlv["describe"]["drive_levels"]
+    TAG_MODES = _GPIO.tlv["describe"]["modes"]
     INPUT, INPUT_PULLUP, INPUT_PULLDOWN = _MODE["input"], _MODE["input_pullup"], _MODE["input_pulldown"]
     OUTPUT_LOW, OUTPUT_HIGH = _MODE["output_low"], _MODE["output_high"]
     OPEN_DRAIN_LOW, OPEN_DRAIN_RELEASE = _MODE["open_drain_low"], _MODE["open_drain_release"]
@@ -101,28 +36,13 @@ class Gpio(Interface):
         super().__init__(hst, name, fn=fn)
 
     @classmethod
-    def set_body(cls, pairs: list[tuple]) -> bytes:
-        """n(u8) n x (channel(u16) mode(u8)), then a drive TLV (index(u8) level(u8), critical: a strength that did not
-        take would drive the line otherwise) for each element that carries a third item (a Drive or an int level
-        number; None: none)."""
-        body = struct.pack("<B", len(pairs)) + b"".join(struct.pack("<HB", p[0], p[1]) for p in pairs)
-        for i, p in enumerate(pairs):
-            if len(p) > 2 and p[2] is not None:
-                body += m.tlv(cls.TAG_DRIVE, bytes([i]) + Drive.of(p[2]).pack(), critical=True)
-        return body
+    def set_body(cls, pairs: list[tuple[int, int]]) -> bytes:
+        """n(u8) n x (channel(u16) mode(u8)) (fixture §1)."""
+        return struct.pack("<B", len(pairs)) + b"".join(struct.pack("<HB", ch, mode) for ch, mode in pairs)
 
-    def set(self, pairs: list[tuple]) -> None:
-        """[(channel, mode)] or [(channel, mode, drive)], applied in order; drive only on mode 3 / 4 (anything else is
-        rejected malformed). A level past the probe's drive_levels, or a drive on a probe without them: rejected
-        unsupported, nothing applied (fixture §1.1)."""
+    def set(self, pairs: list[tuple[int, int]]) -> None:
+        """[(channel, mode)], applied in order (fixture §1)."""
         self._call(self.SET, self.set_body(pairs))
-
-    def drive_levels(self) -> DriveLevels | None:
-        """describe drive_levels (fixture §1.1): None when the probe cannot switch the output strength."""
-        for tag, v in describe(self.host, self.fn):
-            if tag & ~catalog.CRITICAL == self.TAG_DRIVE_LEVELS and len(v) >= 2 and len(v) >= 2 + 2 * v[1]:
-                return DriveLevels(v[0], struct.unpack_from(f"<{v[1]}H", v, 2))
-        return None
 
     def modes(self) -> int:
         """describe modes: a u32 bit set, bit n = mode n (0xFF when not declared)."""

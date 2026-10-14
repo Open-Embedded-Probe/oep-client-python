@@ -21,4 +21,4 @@ class SampleRestartAdapter(SampleLinkTransferAdapter):
         require(checks.success(checks.request(16,b'\x90\x05\x00'+assignment,fn=1,session=sid))==b'', 'seed plan')
         require(checks.success(checks.request(16,b'\x01\x01\x00\x04',fn=2,session=sid))==b'', 'seed GPIO high')
         state=self.model.gpio_state()
-        require(state['plans']=={2:[1]} and state['pins'][1][0]==4,'live plan/pin seed missing')
+        require(state['plans']=={2:[1]} and state['pins'][1]==4,'live plan/pin seed missing')

@@ -8,7 +8,7 @@ from .virtual_core import Core, Reject, tlv
 class I2c(Gpio):
     functions=(1,2)
     def __init__(self,ep,stretch=True,pullups=True):
-        super().__init__(False);self.ep=ep;self.stretch_available=stretch;self.internal_pullups=pullups;self.idle={ch:(0,0) for ch in range(8)};self.pins=dict(self.idle);self.reset()
+        super().__init__();self.ep=ep;self.stretch_available=stretch;self.internal_pullups=pullups;self.idle={ch:0 for ch in range(8)};self.pins=dict(self.idle);self.reset()
     def reset(self):self.configured=False;self.address=None;self.rx=[];self.tx=[];self.rx_frames=0;self.errors=0;self.stretch_us=0;self.pullups=False
     def list_page(self,first,limit):
         rows=[struct.pack('<HHBB',fn,0,1,len(name))+name for fn,name in ((1,b'oep.probe.plan'),(2,b'oep.fixture.i2c-target'))];page=bytearray(struct.pack('<HB',2,0))
@@ -61,7 +61,7 @@ class I2c(Gpio):
             if address<8 or address>=120:raise Reject(11,b'\0')
             if 2 not in self.plans:raise Reject(4,tlv(1,b'\6'))
             stretch=self.stretch_us;self.reset();self.stretch_us=stretch;self.configured=True;self.address=address;self.pullups=self.internal_pullups
-            for ch in self.plans[2]:self.pins[ch]=(1 if self.pullups else 6,0)
+            for ch in self.plans[2]:self.pins[ch]=1 if self.pullups else 6
             self.events.append(('configure',address));return b''
         if not self.configured:raise Reject(4,tlv(1,b'\6'))
         if op==17:
