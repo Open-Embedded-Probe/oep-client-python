@@ -1,6 +1,6 @@
 import copy
 import pytest
-from oep_client import registry_legacy as registry
+from oep_client import registry as registry
 from oep_client.conformance import Checks
 from oep_client.conformance_capture_group import CaptureGroupChecks
 from oep_client.conformance_capture_group_sample import SampleCaptureGroupAdapter

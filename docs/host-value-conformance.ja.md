@@ -5,12 +5,14 @@ readerを明示指定し、SPEC checkoutと出力先も指定する。production
 
 採用する形は標準debug read_blockのdone/status/語、wire scanのtried/count/entry、
 core confirmの固定部分とtransport TLV、rejected unavailableのcause TLV。
+oep-spec a09fa45で、debug read_block、wire scan、confirm、causeの各形と値の扱いを再確認した。
 未知resolution・outcome・reject reasonは失敗で、未知payloadの形を解釈する必要はない。
 statusは0だけが成功で、未知statusも失敗である。固定形を読むならdoneと語の並びを勝手に変えない。
 unknown failureをValueErrorで知らせるreaderも許容する。
 
 causeやscan entryのkindは、未知でも受け取った整数値を保つ。
-confirmの全flagsは予約なので、値によって既知の限界値・版・bootを変えず読めることを要求する。
+confirmはa09fa45でflagsを持たない16 byteの固定部分である（readerは既にこの形）。
+causeは0x01〜0x3F本体、0x40〜0x7Fは要求先fnのインターフェースが使う（a09fa45）。どちらも未知値として整数のまま保つ。
 Probeが未知値を送ってよいという規則ではなく、Hostの将来値に対する読出し検査である。
 u8の値域をすべて列挙する。reasonは選択registryで定義されない値を刺激する。
 
@@ -34,5 +36,5 @@ uv環境でuv run python example.pyとして実行する。
 SPEC commit/dirty/registry SHA、raw frame、読出し結果、checker/sample SHAをreportに残す。
 独自readerのsource/版は利用者が別途保存する。public runnerはprivateベンチや隣接checkoutを探索しない。
 
-7項目のPASSは選んだ形の読出し範囲に限る。他のstatus/reason/flags、全TLV幅、
+6項目のPASSは選んだ形の読出し範囲に限る。他のstatus/reason/flags、全TLV幅、
 全payload、production Host、target実行や経路回復は証明しない。full_conformanceは常にfalse。

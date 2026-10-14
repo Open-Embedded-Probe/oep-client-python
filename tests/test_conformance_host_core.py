@@ -46,6 +46,28 @@ def test_each_broken_known_context_is_detected(index):
     assert next(x for x in r['checks'] if x['id']=='HOST-CORE-KNOWN-WIDTH')['status']=='failed'
 
 
+@pytest.mark.parametrize('index',[i for i,row in enumerate(cc.known_vectors()) if row[3]])
+def test_each_broken_later_duplicate_is_not_used(index):
+    # core §2.3 at a09fa45: the later same-tag TLV is validated too; a reader using it unvalidated fails.
+    ctx,tag,value,bad,_=cc.known_vectors()[index];target=cc.HostCoreShapeChecks.append(ctx,cc.field(tag,value)+cc.field(tag,bad[0]))
+    def broken(frame,op,**kw):
+        if (frame,op,kw['described_fn'])==target:
+            out=decode(*ctx[:2],described_fn=ctx[2]);out['tlvs']=[(tag,value),(tag,bad[0])];return out
+        return decode(frame,op,**kw)
+    r=cc.HostCoreShapeChecks(broken,spec=SPEC).run()
+    row=next(x for x in r['checks'] if x['id']=='HOST-CORE-KNOWN-WIDTH')
+    assert row['status']=='failed' and 'later duplicate' in row['error'],row
+
+
+def test_unsupported_index_is_not_a_core_tag(tmp_path,monkeypatch):
+    # a09fa45 moved unsupported/unavailable index to each interface's 0x40-0x7F space.
+    core=tmp_path/'docs/oep-core.ja.md';core.parent.mkdir();core.write_bytes(b'reviewed unit core')
+    monkeypatch.setattr(cc,'REVIEWED_CORE_SHA256',hashlib.sha256(core.read_bytes()).hexdigest())
+    registry=registry_fixture();registry['core']['tlv']['unsupported_payload']['index']=64
+    monkeypatch.setattr(cc,'spec_identity',lambda path:(registry,{'commit':'unit-fixture'}))
+    with pytest.raises(Exception,match='tag spaces differ'):ORIGINAL_IDENTITY(tmp_path)
+
+
 @pytest.mark.parametrize('fault,case',[
     ('critical_alias','TAIL'),('unknown_tag_refusal','TAIL'),('zero_id','TAIL'),
     ('broken_unknown','TAIL'),('short_fixed','SHORT'),('entry_count','FIXED'),
@@ -107,7 +129,7 @@ def test_broken_known_field_may_be_ignored_without_use():
 def test_changed_reviewed_spec_stops_before_reader_use(tmp_path,monkeypatch,fault):
     core=tmp_path/'docs/oep-core.ja.md';core.parent.mkdir();core.write_bytes(b'reviewed unit core')
     monkeypatch.setattr(cc,'REVIEWED_CORE_SHA256',hashlib.sha256(core.read_bytes()).hexdigest())
-    registry=dict(protocol={'revision':1,'byte_order':'little'},roles={'result':2},resolutions={'rejected':0,'completed':1},outcomes={'success':0,'failed':1,'partial':2},reject_reasons=dict(cc.CORE_REASONS),describe_common={'role_channels':1,'max_clock_hz':2,'max_length':3,'min_clock_hz':4,'features':5,'channel_group':6,'ops':7},core={'op':[{'name':n,'code':v} for n,v in cc.CORE_OPS.items()], 'tlv':{'confirm_answer':{'transport':1},'locked_payload':{'owner':1},'lock_state_answer':{'owner':1},'unavailable_payload':{'cause':1,'channel':2,'fn':5},'unsupported_payload':{'supported':1,'channel':2,'fn':5,'index':64},'describe':{'firmware':64,'model':65,'unit_id':66,'channels':67,'label':70,'transport':73,'chip':76,'max_op_ms':77}}})
+    registry=registry_fixture()
     monkeypatch.setattr(cc,'spec_identity',lambda path:(registry,dict(commit='unit',dirty=False)))
     assert ORIGINAL_IDENTITY(tmp_path)['reviewed_core_sha256']==cc.REVIEWED_CORE_SHA256
     if fault=='text':core.write_bytes(b'changed core')
@@ -116,3 +138,7 @@ def test_changed_reviewed_spec_stops_before_reader_use(tmp_path,monkeypatch,faul
     elif fault=='tlv':registry['core']['tlv']['confirm_answer']['transport']=2
     else:registry['describe_common']['ops']=8
     with pytest.raises(Violation):ORIGINAL_IDENTITY(tmp_path)
+
+
+def registry_fixture():
+    return dict(protocol={'revision':1,'byte_order':'little'},roles={'result':2},resolutions={'rejected':0,'completed':1},outcomes={'success':0,'failed':1,'partial':2},reject_reasons=dict(cc.CORE_REASONS),describe_common={'role_channels':1,'max_clock_hz':2,'max_length':3,'min_clock_hz':4,'features':5,'channel_group':6,'ops':7},core={'op':[{'name':n,'code':v} for n,v in cc.CORE_OPS.items()], 'tlv':{'confirm_answer':{'transport':1},'locked_payload':{'owner':1},'lock_state_answer':{'owner':1},'unavailable_payload':{'cause':1,'channel':2,'fn':5},'unsupported_payload':{'supported':1,'channel':2,'fn':5},'describe':{'firmware':64,'model':65,'unit_id':66,'channels':67,'label':70,'transport':73,'chip':76,'max_op_ms':77}}})

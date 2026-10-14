@@ -11,6 +11,8 @@ decoderは`fixed`（整数）、`blob`（bytes）、`first`（整数またはNon
 
 検査は未知tag（127も含む）、critical bit付きの既知/未知tag、最初の重複値、繰返し順序、
 短い固定部分・数付きdata・TLV、tag番号0、既知値の幅、u16長の境界を確認する。
+既知値の幅では、正しい値の後に同じtagの壊れた値を置き、後の値も検証して使わないことを確かめる
+（core §2.3、oep-spec a09fa45で明記。payloadを使わない、壊れた値やそのtagを捨てる実装を許す）。
 未知tagでもlenがmessage末尾を超えれば破損である。critical bitを消して既知tagとして読む実装は拒否する。
 Probeがcritical bit付き応答を送ってよいという規則ではない。
 

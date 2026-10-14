@@ -37,7 +37,7 @@ import pytest
 import json
 
 from oep_client import (capture, catalog, config, console as console_mod, core, dump, fixture, host as h, link, linktest,
-                        message as m, registry_legacy as reg, riscv)
+                        message as m, registry as reg, riscv)
 
 from . import firmware as fwmod, flash, record
 

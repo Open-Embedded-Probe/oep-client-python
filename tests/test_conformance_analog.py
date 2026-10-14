@@ -1,7 +1,7 @@
 import copy
 import struct
 import pytest
-from oep_client import registry_legacy as registry
+from oep_client import registry as registry
 from oep_client.conformance import Checks
 from oep_client.conformance_analog import AnalogChecks
 from oep_client.conformance_analog_sample import SampleAnalogAdapter

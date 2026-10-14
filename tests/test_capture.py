@@ -3,7 +3,7 @@
 import struct
 from fractions import Fraction
 
-from oep_client import capture as c, message as m, registry_legacy as reg
+from oep_client import capture as c, message as m, registry as reg
 
 
 def answer(*items):

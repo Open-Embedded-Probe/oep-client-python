@@ -11,7 +11,7 @@ import struct
 import time
 from dataclasses import dataclass
 
-from . import catalog, host as h, message as m, registry_legacy as reg
+from . import catalog, host as h, message as m, registry as reg
 from .console import PositionStream, StreamIO
 from .core import Interface, describe
 

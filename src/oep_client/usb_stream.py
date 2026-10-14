@@ -16,7 +16,7 @@ import time
 
 
 
-from . import registry_legacy as reg
+from . import registry as reg
 
 # the vendor bulk transport's interface: class 0xFF, subclass 'O', protocol 'E' (transports §3); one per probe
 VENDOR_CLASS, VENDOR_SUBCLASS, VENDOR_PROTOCOL = (reg.USB[k] for k in ("vendor_bulk_class", "vendor_bulk_subclass",

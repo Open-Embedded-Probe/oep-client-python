@@ -6,11 +6,11 @@ import struct
 
 from .conformance import ops, require, tlvs
 
-REVIEWED_INTERFACES = {
-    'oep-if-fixture.ja.md': '102ab57140fd7f4fd00f0e731b1a61e78c1ffd2db484c32c6bc5b2afa73d4921',
-    'oep-if-plan.ja.md': '1b785a2c41934d6f1e29e663ca61a1a62049da5c4b094eb345f9a9d981ccbe1a',
-    'oep-if-debug.ja.md': 'd32c71b5a4d8a3d8f52f6b09d54530876116c79f026d9756c1cfe122b6b312f7',
-    'oep-if-common.ja.md': 'b6b6c065f6c30a0b4fbc94229e0f12746eb060ca440dfbde21920b4e0f5af0ac',
+REVIEWED_INTERFACES = {  # oep-spec a09fa45 interfaces/
+    'oep-if-fixture.ja.md': '4fe81f7920094abe02261cdf3f73a4f4207979244883669b77665872c4f510c5',
+    'oep-if-plan.ja.md': 'da8bd60af53499573c07bc33dbd8c4df93eb61a93b91dc57907f26620ae36bbf',
+    'oep-if-debug.ja.md': 'b3fdd56f002815c8d85ee6a0d83470e9e4a197d815c46aa5eb0a308b2edf8234',
+    'oep-if-common.ja.md': '4f1cfb88de976f5e934a0526edda3fbf302b51243b43c7faac0b3531d2f9975a',
 }
 
 
@@ -98,12 +98,23 @@ class OepExampleSmokeChecks:
         self.reject_unchanged(lambda: self.call(name, 'set', bad), 'unsupported', 'GPIO invalid batch before effects')
         self.finish()
 
+    def uart_status(self, name):
+        p = self.c.success(self.call(name, 'status', unlocked=True))
+        require(len(p) >= 5, 'UART status prefix')
+        tlvs(p[5:])
+        return struct.unpack_from('<IB', p)
+
     def uart(self):
         name = 'oep.fixture.uart'; rx, = self.pins['uart_rx']
         self.start(); self.apply(name, [(1, rx)])
+        # fixture §2: before the first configure the plan does not receive and status reports baud 0, format 0.
+        require(self.uart_status(name) == (0, 0), 'UART status before configure must be baud 0, format 0')
         p = self.c.success(self.call(name, 'configure', struct.pack('<I', 115200)))
-        require(len(p) >= 4 and abs(int.from_bytes(p[:4], 'little') - 115200) * 100 <= 115200 * 5, 'UART actual baud')
+        require(len(p) >= 4, 'UART configure prefix')
+        actual = int.from_bytes(p[:4], 'little')
+        require(actual and abs(actual - 115200) * 100 <= 115200 * 5, 'UART actual baud')
         tlvs(p[4:])
+        require(self.uart_status(name) == (actual, 0), 'UART status differs from the configured baud/8N1')
         self.feed(b'AB')
         before = copy.deepcopy(self.observe()); reads = []
         for _ in range(2):
@@ -126,21 +137,22 @@ class OepExampleSmokeChecks:
     def arm(self):
         wire, target = 'oep.wire.swd', 'oep.target.arm-adi'
         self.start()
-        payload = b'\0' + tag(0x81, struct.pack('<I', 1000000)) + tag(0x83, struct.pack('<HH', *self.pins['swd']))
+        # debug §5: method, swdio, swclk and max_speed are the fixed part; the connection is a u32 (common §2).
+        payload = struct.pack('<BHHI', 0, *self.pins['swd'], 1000000)
         p = self.c.success(self.call(wire, 'attach', payload))
-        require(len(p) >= 11, 'SWD attach prefix')
-        connection, identity, flags, speed = struct.unpack_from('<HIBI', p)
-        require(connection and 0 < speed <= 1000000, 'SWD connection/speed'); tlvs(p[11:])
-        p = self.c.success(self.call(target, 'transfer', struct.pack('<HHB', connection, 1, 2)))
+        require(len(p) >= 13, 'SWD attach prefix')
+        connection, identity, flags, speed = struct.unpack_from('<IIBI', p)
+        require(connection and 0 < speed <= 1000000, 'SWD connection/speed'); tlvs(p[13:])
+        p = self.c.success(self.call(target, 'transfer', struct.pack('<IHB', connection, 1, 2)))
         require(len(p) >= 10 and struct.unpack_from('<HBBH', p) == (1, 0, 1, 1), 'raw ARM transfer progress/ACK/value count')
         require(struct.unpack_from('<I', p, 6)[0] == identity, 'raw DP identity differs from selected attach')
         tlvs(p[10:])
         count = (self.c.frame - 11) // 4 + 1
-        bad = struct.pack('<HH', connection, count) + bytes([2]) * count
+        bad = struct.pack('<IH', connection, count) + bytes([2]) * count
         self.reject_unchanged(lambda: self.call(target, 'transfer', bad), 'unsupported', 'ARM fixed reply overflow')
         self.finish()
         self.start()
-        self.reject_unchanged(lambda: self.call(target, 'transfer', struct.pack('<HHB', connection, 1, 2)),
+        self.reject_unchanged(lambda: self.call(target, 'transfer', struct.pack('<IHB', connection, 1, 2)),
                               'no_resource', 'ARM old connection after session end')
         self.finish()
 

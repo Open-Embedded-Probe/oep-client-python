@@ -8,6 +8,9 @@ from .conformance_host_deadline_sample import Clock,ScheduledStream
 from .virtual_resource_model import ResourceModel
 
 
+MAX_OP_MS=2000  # the fixture Probe's describe max_op_ms
+
+
 class SampleHostResendAdapter:
     def run_case(self,name):
         kind='length' if name.endswith('LENGTH') else 'cobs';clock=Clock();stream=ScheduledStream(clock,kind)
@@ -18,6 +21,9 @@ class SampleHostResendAdapter:
         seen={};events=[]
         with patch.object(link,'time',clock),patch.object(frames,'time',clock):
             d=link.SerialLink.on_stream(stream,kind,.05);d.held=lambda:True
+            # core §4.4 (a09fa45): the fixture op16 defines no shorter whole-request bound, so the floor uses max_op_ms.
+            # Production Host.expect_ms carries argument times only; this adapter states the bound explicitly.
+            d.expected_s=lambda:MAX_OP_MS/1000
             def write(raw):
                 started=clock.ns;clock.sleep(.4);written=clock.ns
                 if kind=='length':
@@ -25,7 +31,7 @@ class SampleHostResendAdapter:
                     while at<len(raw):n=int.from_bytes(raw[at:at+2],'little');packets.append(raw[at+2:at+2+n]);at+=2+n
                 else:packets=[cobs.unframe(p) for p in raw.split(b'\0') if p]
                 wire=max(len(p)+2 for p in packets) if kind=='length' else max(len(cobs.frame(p)) for p in packets)
-                floor_ns=round((1+(wire+64*3)*10/115200 if kind=='cobs' else 1)*1e9)
+                floor_ns=round((MAX_OP_MS/1000+1+((wire+64*3)*10/115200 if kind=='cobs' else 0))*1e9)
                 events.append(dict(action='write',started_ns=started,time_ns=written,wire_length=wire,minimum_ns=floor_ns,requests_hex=[p.hex() for p in packets]))
                 for p in packets:
                     req=message.Request.unpack(p);before=peer.extension.next_id;deadline=peer.ep.current_core.deadline;reply=peer.handle(p)
@@ -53,7 +59,7 @@ class SampleHostResendAdapter:
                 except ConnectionError as exc:next_error=type(exc).__name__
             return dict(name=name,kind=kind,events=events,finished_ns=clock.ns,replies_hex=[p.hex() for p in replies],error=error,
                         failed_before_next=bool(failed_before),failed_after_next=bool(d.failed_transport),next_error=next_error,next_reply_hex=next_reply,
-                        next_id=peer.extension.next_id,live={str(rid):list(row) for rid,row in peer.extension.live.items()},retries=d.retries)
+                        next_id=peer.extension.next_id,max_op_ms=MAX_OP_MS,live={str(rid):list(row) for rid,row in peer.extension.live.items()},retries=d.retries)
     def source_sha256(self):
         root=Path(__file__).parent
         return {n:hashlib.sha256((root/n).read_bytes()).hexdigest() for n in

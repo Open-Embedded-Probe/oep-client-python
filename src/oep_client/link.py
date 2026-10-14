@@ -23,7 +23,7 @@ transports §5 confirm - quiet input, then a confirm until the answer with its o
 host as a reboot; read the state before repeating a state-changing request.
 
 Frames the probe sends by itself are routed: data pushes and events are kept (`pushes`, `events`) for the clients
-of the interfaces that sent them (fn 0 sends none, core §11.2). A result shorter than 5
+of the interfaces that sent them (fn 0 sends none, core §10.2). A result shorter than 5
 bytes, or an event or data frame shorter than its header, is a broken frame; a request role from the probe is dropped
 (core §2.4, C-36). The transfer time of the wait counts min_max_frame (64) until a confirm answer came on the
 transport, then the latest one's max_frame (core §4.4, N-1).
@@ -32,10 +32,11 @@ A serial port is opened exclusively (host guide §6): pyserial's `exclusive=True
 macOS, TIOCEXCL, so a second open fails at once (EBUSY) instead of sharing the answers. The port opens with pyserial's
 defaults - DTR and RTS asserted - which reset none of the measured probes (host guide §1). No sleep after open. The port
 asks for the driver's low-latency mode (pyserial `set_low_latency_mode`; an FTDI's latency timer 16 -> 1 ms tripled the
-throughput of a UART bridge, oep-spec docs/uart-speed-negotiation.ja.md §3b), where the driver has it.
+throughput of a UART bridge, a measurement of the earlier oep-spec uart-speed-negotiation notes), where the driver has it.
 
-port_speed (oep-if-link §3 is the handshake: baud, step and verify_ms on the UART bridge the request comes in on; the
-host's procedure is the host guide §17, followed here): `raise_speed` (or `open_host(..., port_speed=...)`) asks a probe
+port_speed (oep-if-link §3 is the handshake: baud, step and verify_ms on the UART bridge the request comes in on, and
+leaves which rates to try and how to judge them to the host. The procedure here is this client's own; "guide §17" below
+names the host guide section it came from, which oep-spec a09fa45 no longer has): `raise_speed` (or `open_host(..., port_speed=...)`) asks a probe
 that declares it for a faster rate on the UART bridge this host opened. The default candidate is 500000 alone
 (DEFAULT_CANDIDATES): the guide's ceiling - a host does not try faster by default (§17). A rate above DEFAULT_CEILING
 (500000) is the user's choice - pass it in the candidates only when the user named it - and whatever the form, it is
@@ -87,7 +88,7 @@ from dataclasses import dataclass, field
 
 import serial
 
-from . import cobs, host as _host, message as m, registry_legacy as reg
+from . import cobs, host as _host, message as m, registry as reg
 from .frames import FramingLost, LengthFrames
 
 # the link's own confirms (resync §5.1, confirm_raw) ask for the revisions this client handles before the first
@@ -104,7 +105,9 @@ NOTIFY_PENDING = reg.TIMING["notify_pending_max_frames"]   # max_frame x this of
 # and what a bare `usb` target opens.
 USB_VID, USB_PID = reg.USB["project_vid"], reg.USB["project_pid"]
 PROJECT_VID_PIDS: tuple[tuple[int, int], ...] = ((USB_VID, USB_PID),)
-PROBE_WAIT_S = reg.TIMING["host_wait_add_ms"] / 1000   # the probing rule's wait for confirm's answer (transports §3, core §4.4)
+# the probing rule's wait for confirm's answer before max_op_ms is known: core_quick_op_max_ms + host_wait_add_ms (2000 ms,
+# transports §3, core §4.4), then the transfer time
+PROBE_WAIT_S = (reg.TIMING["core_quick_op_max_ms"] + reg.TIMING["host_wait_add_ms"]) / 1000
 
 
 RESULT_HEADER, DATA_HEADER, EVENT_HEADER = 5, 5, 6   # the shortest result, data and event frames (core §4.2, §11.1)
@@ -384,8 +387,9 @@ class SerialLink:
         return (self.tx_len + self.max_frame * (1 + NOTIFY_PENDING)) * 10 / self.baud
 
     def wait_floor_s(self) -> float:
-        """The least a request's answer is waited for (core §4.4, C-06): the time its arguments set (Host.expecting:
-        run's timeout_ms, dmi's waits, attach / scan budgets, a save) + host_wait_add_ms + the transfer time; counted
+        """The least a request's answer is waited for (core §4.4, C-06): the request's processing bound (Host.expecting:
+        Host.op_bound_ms - max_op_ms, fn 0's quick ops' shorter one - or longer when its arguments say so) +
+        host_wait_add_ms + the transfer time; counted
         from the write, or from the answer before it while several are outstanding (each reply's wait starts when it is
         read). The link's own short requests (its confirms, port_speed's procedure, a measurement) are the host guide's
         and keep their own waits."""
@@ -467,7 +471,7 @@ class SerialLink:
 
     def _recv_for(self, corr: int) -> bytes:
         """The reply to request `corr` (pushes and events routed on the way). Length frames: a result for another
-        request raises CorrMismatch (the §5.1 resync follows); a serial port: it is read past (oep-core §11.1)."""
+        request raises CorrMismatch (the §5.1 resync follows); a serial port: it is read past (oep-core §10.1)."""
         while True:
             reply = self._recv()
             if self._route(reply):
@@ -1150,7 +1154,7 @@ class SerialLink:
         """The probing rule (transports §3): every device or port this client opens - one it has not identified, and a
         project VID:PID device too - gets a confirm first, and nothing else until a valid answer
         (completed, the same corr, a payload starting OEP!) came back. None: the link is closed and NotOepProbe raised.
-        Vendor bulk / HID: one confirm and its one §5.2 resend, each waiting PROBE_WAIT_S (1000 ms, §4.4). A serial
+        Vendor bulk / HID: one confirm and its one §5.2 resend, each waiting PROBE_WAIT_S (2000 ms, §4.4). A serial
         port first runs wait_boot_speed's confirms (transports §4, after a raised speed: repeated for port_speed_idle_ms +
         host_wait_add_ms at the boot speed, a previous host's raised rate running out), then the checked confirm. TCP (a host-side
         broker, which opens the probe itself) keeps the link's timeout. -> confirm's limits."""
@@ -2248,12 +2252,14 @@ def _try(hst, lk: SerialLink, report: SpeedReport, rates: list[int], run: _Run) 
         if revert:
             saved = lk.timeout, lk.resend
             lk.timeout, lk.resend = 0.3, False
-            try:
+            lk._own += 1                                    # the link's own: a lost answer is recovered by the confirm
+            try:                                            # and port_state below (oep-if-link §3), not waited out
                 hst.call(lk.speed_fn, OP_PORT_SPEED, struct.pack("<IBH", rate, SPEED_STEP["revert"], 0))
             except (TimeoutError, _host.Rejected, cobs.CorruptFrame, FramingLost):
                 pass                                        # lost at that rate, or the probe is back already
             finally:
                 lk.timeout, lk.resend = saved
+                lk._own -= 1
         if not lk.back_to_base(max(OPEN_RETRY_S, wait / 1000 + 1.0)):
             raise ConnectionError(f"after trying {rate}: no answer at the boot speed {base}")
         state = port_state(hst, lk.speed_fn)                # a new corr: the phase now, not an old answer (§3)

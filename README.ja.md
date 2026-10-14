@@ -6,32 +6,11 @@ Open Embedded Probe の host 側。v1（oep-spec の本体 `docs/oep-core.ja.md`
 `generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.registry` から取る。破壊的変更を前提とする
 実験段階で、互換 API は約束しない。
 
-**実装する仕様: oep-spec の commit `c6ab5d9`**（`v0.x` のタグはまだ無い。oep-spec versioning §6: 凍結の前は revision 1 だけでは
-形が決まらないので、実装は自分が実装する仕様を名乗る）。2026-10-07 のロジックキャプチャの変更（66c49e7〜dd5a886: layout の w は
-1〜128 の任意の整数、連続に保てない区画は出さずにトラックをエラーで止める、multirate ― チャネルごとに sample / any_active /
-edge_latch で縮約し L base sample の block に詰める。`capture.Multirate` / `LogicCapture.decode_multirate`、仮想ベンチも答える）、
-0991759 のインターフェースの再確認（0098b56〜2c6d18d: marks とキャプチャの
-segments は from_serial を含めて通し番号でページングする、console の streams の first は u16、キャプチャの configure の契約、
-0xFFFFFFFF の次は 1 でどの出来事にも付く世代、capture-group の start の応答の固定部、step / run / transfer の細部、spi-target の
-ビットの詰め方）、probe.config の wifi の項目と TCP の見つけ方（c2b8007、62c1988。下の「Wi-Fi と TCP」）、2026-10-07 の外部レビューの再確認（af3d52b〜283e5b5: フレームは書き込みに分けてよいが、
-TCP 以外では送る側はフレームの途中で probe_frame_gap_ms 止めない。経路が閉じてもセッションは終わらない。describe の TLV と max_length は
-いちばん小さい max_frame に収まる。channel を持つ probe は `channels` を付け、番号は 0〜channels − 1）、その後の直し（3759027〜f8bb2de:
-resend_max は無く、送り直しは host が決める。インターフェースの名前は 1〜48 byte。i2c-target の errors は書き込み 1 回に多くても 1。
-host ガイドの sink の count は max_frame − 12 でこの client が送っているのと同じ。走り直す host はセッションの id を残す、下）、
-764b110 の再々確認（29902a6〜9118dc0: wifi の項目を持つ probe はどの経路でも max_frame 112 以上を答える
-（`wifi_min_max_frame`）。TCP の probe は `_oep._tcp` で知らせても知らせなくてもよい）、
-2026-10-07 の規則の見直し（7688c49〜0f455a0、
-`docs/v1-rule-review-2026-10-07.ja.md` の §2 / §7）: ignored の TLV は無い（知らない非 critical の要求の TLV は黙って無視し、probe が
-実装する TLV は bit 7 によらず同じに確かめる）。断り方の順は 1 つ - 見出し、送り直しの表、セッション、その後は当たった理由のどれか 1 つ。
-送り直しの表は corr と応答（corr_reused は無い）。list は first だけ。fn 0 の describe は小さくなった。unavailable の payload は
-cause / channel / fn。attach、scan、riscv-dm の reset は max_op_ms のうち。reset に method は無い。DATA0 / DATA1 の書き戻しは
-riscv-dm の規則。drive は u8 の段。i2c-target は 1 つの形。コンソールの send_queue は無い。capture の configure は core §2.3 だけに
-従う。probe.config のスロットに錠も boot_reset も無く、bind はストリーム 1 本、hash は probe 自身のもの。port_speed は握手
-baud / step / verify_ms。その前は 2026-10-06 の単純化（10 byte の要求の見出し 1 つ、TLV の len は u16、閉じた固定の形、describe の
-`ops` tag、再開なし）と構成（289bde0〜498ae95: 本体は名前を持たない fn 0。`oep.probe.plan`、`oep.probe.restart`、`oep.probe.link`
-は名前で探す。subscribe / unsubscribe は通知を送り出すインターフェースの op 0x30 / 0x32）。
+**実装する仕様: oep-spec の commit `a09fa45`**（`v0.x` のタグはまだ無い。oep-spec versioning §2 / §6: 凍結の前は revision 1 だけでは
+形が決まらないので、実装は自分が実装する仕様の commit を名乗る）。番号の表と `tests/vectors/` の共有ベクタはその commit から写したもの
+（`tests/vectors/SPEC_COMMIT`）。そこまでの変更は [CHANGELOG.md](CHANGELOG.md) にある。
 
-凍結までは日本語の文（`.ja.md`）が仕様の作業の文で、英語の文書は凍結のときにそこから作り直し、そのときから英語が正になる。OEP を初めて読む人は oep-spec の
+凍結までは日本語の文（`.ja.md`）が仕様の作業の文で、英語の文書は凍結のときにそこから作り、そのときから英語が正になる（それまで oep-spec は英訳を置かない）。OEP を初めて読む人は oep-spec の
 [README](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/README.ja.md) と [レビューの手引き](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/review-guide.ja.md)（どこに何が書いてあるか）から。
 [使い始める](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/getting-started.ja.md) が最小の probe と host を作り、
 [docs/oep-core.ja.md](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/oep-core.ja.md) がプロトコルの本体、[docs/conformance.ja.md](https://github.com/Open-Embedded-Probe/oep-spec/blob/main/docs/conformance.ja.md)
@@ -46,15 +25,15 @@ uv run pytest                                                            # in a 
 OEP_HW_BOARDS=<board id> OEP_HW_NOFLASH=1 uv run pytest tests/hw -m hw   # 実機: tests/hw/README.ja.md
 ```
 
-`import oep_client` だけで使える（`sys.path` に `src/` を足す使い方は不要になった）。番号の表と oep-spec の試験ベクタ
-（`tests/vectors/*.json`。`tests/test_vectors.py` がこのクライアントと仮想ベンチを突き合わせる）は `tools/sync_registry.sh` で
-oep-spec から写す。PyPI の `oep-client` は別のプロジェクトなので、配布名は `oep-client-python`。
+`import oep_client` だけで使える。番号の表と oep-spec の試験ベクタ（`tests/vectors/*.json`。`tests/test_spec_vectors.py` がこのクライアントと
+仮想ベンチを突き合わせる）は、名指した oep-spec の checkout から `OEP_SPEC_DIR=<checkout> tools/sync_registry.sh` で写す（`OEP_SPEC_REF` で
+HEAD 以外の commit を選べる。commit とファイルの hash は `tests/vectors/SPEC_COMMIT` / `SPEC_SHA256` に残る）。PyPI の `oep-client` は別のプロジェクトなので、配布名は `oep-client-python`。
 
 リリースは GitHub Actions の Release（workflow_dispatch、version = X.Y.Z か X.Y.ZbN）: `tools/prepare_release.py` が
 pyproject.toml、uv.lock、`oep_client.__version__` を書き換え、CHANGELOG.md の Unreleased をその版にし、試験と build の後に commit と tag、
 GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md の Unreleased に (EN) / (JA) で書き足しておく。
 
-最小構成の確認は [動作確認手順](docs/hardware-quickstart.ja.md)。テストの責任と保証対象は [全体テスト方針](docs/testing-policy.ja.md)、OEP を使うプロジェクトの手順は [利用者ガイド](docs/testing-consumers.ja.md)。実機設定の新形式は [構成設計](docs/hardware-configuration.ja.md)と[設定形式・雛形](docs/hardware-schema.ja.md)にまとめる（offline 実装あり、実機連携は未実装）。
+最小構成の確認は [動作確認手順](docs/hardware-quickstart.ja.md)。共通の [テスト方針](docs/testing-policy.ja.md) と [OEP を使うプロジェクトのガイド](docs/testing-consumers.ja.md) も見る。[構成設計](docs/hardware-configuration.ja.md)と[設定形式・雛形](docs/hardware-schema.ja.md)は予定の形式を書く（offline の検査・計画は実装あり、実機の runner との連携は未実装）。
 
 ## モジュール（`oep_client`）
 
@@ -63,18 +42,18 @@ GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md 
 
 | モジュール | 中身 |
 |---|---|
-| `host` | 要求と結果（見出しは 10 byte の 1 つ: セッションの中で送る要求はそのセッションの id、セッションの外のロックなしの要求は 0）、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`。セッションが終わった（end、lease の期限切れ、ほかのセッションの force）なら `NoSession`: probe はそのセッションが作ったものをすべて解放している。再開は無く、黙って open し直さず、`Host.session` は None に、`Host.epoch` が進む。confirm が core §7.1 の範囲の外か、`max_op_ms` が 1〜600000 の外の probe は `NotUsable` で、それ以上何も送らない。`Unavailable` は payload の cause、channel、`fn`（断りが関わる fn）を読む）。`open(lease_ms, force=, owner=)` はいつも新しい乱数の id で新しいセッションを開き、`Opened(lease_ms, boot_id)` を返す。`end()` はすべてを解放し、host はセッションの外に出る。boot_id が変わったとき（confirm、clock、open）は名前 → fn の cache を捨て、list し直す。`clock()` は fn 0 の clock（core §7.7。ロックもセッションも要らない）を `ClockReading(before_ns, after_ns, uptime_ns, boot_id, round_trip_ns)` で返す: 要求を出す直前と応答を受けた直後のこの host の時刻（`time.monotonic_ns`、または `now=`）と、その間に probe が読んだ uptime。`.host_ns` は中点、`.uncertainty_ns` は往復の半分（host ガイド §12）。`clock_best(n=8)` は n 回のうち往復が最短のものを残す。`subscribe(fn, min_bytes, max_delay_ms)` / `unsubscribe(fn)` はそのインターフェース自身の op 0x30 / 0x32 を送る（core §11.3。min_bytes / max_delay_ms はデータだけをまとめ、出来事はすぐ来る。通知を送らない fn は unknown_operation で答える）。`restart_probe(wait_s=None, reopen_s=None)` は名前で探した `oep.probe.restart`（oep-if-restart、host ガイド §5.2。probe が出していなければ LookupError。セッションがロックを持つこと）で probe を再起動する: 応答の後、link は閉じ、少し（約 100 ms、`host.RESTART_AFTER_ANSWER_S`）待ち、新しく開くのと同じに開き直し（最初は confirm。シリアルの口は起動時の速さ、USB の device は列挙し直した後に探し直し、TCP は接続し直す）、probe の restart_max_ms（oep.probe.restart の describe。restart の前に読む。`core.restart_max_ms`）まで、宣言が無ければ 10 s まで繰り返し（それより長い `wait_s` は restart_max_ms に切る: host ガイド §5.2 で繰り返せるのはそこまで。過ぎれば probe は無くなったものとして link を閉じ、ConnectionError / TimeoutError）、新しい boot_id を返す。`reopen_s` は、そうして無くなったものとした probe を利用者が開き直すことを前もって頼むもの: 新しく開くのと同じに、さらにその秒数まで開き直す（probe には分からない遅れで device が戻る host のため - WSL では列挙し直した device を usbipd が付け直す。要ったかどうかは `Host.restart_reopened`）。同じなら `NotRestarted`。応答が失われ、送り直しが再起動した probe に no_session で断られたときも済んだとみなす。`request_restart()` は要求だけを送る |
-| `link` | transport: シリアルの口（常に COBS + CRC、`0x00 <COBS> 0x00`、フレームの外は雑音として捨てる、排他で開く、8N1 で DTR / RTS を立てる）、USB vendor bulk / HID と TCP（長さつきフレーム、transports §5 の立て直し: host の最後の書き込みから probe_frame_gap_ms より長く、250 ms 待つ。TCP ではフレームの途中の休みもそのまま読み続ける）、corr による照合と送り直し（セッションが持つシリアルの口で、答えを待つ間に壊れたフレームが来たらすぐ同じ corr で送り直す - フレームが届き続ける間 `BROKEN_RESENDS` = 3 回まで、host ガイド §8。何も来ない待ちの後は 1 回。上げた port_speed では先にその速さのまま送り直す、下）。送り直しにも応答が無ければ `TransportFailed` を上げ、次の要求の前に confirm で立て直す（入力が静かになるのを待ち、自分の corr の confirm。シリアルの口でも）。立て直せなければ ConnectionError。応答はどれも core §4.4 の下限（引数の時間 + 1000 ms + シリアルの口の転送時間。confirm の応答が来るまでは min_max_frame で数える、`wait_floor_s`）以上待つ。短い応答は壊れたフレーム。`open_host(target)` |
+| `host` | 要求と結果（見出しは 10 byte の 1 つ: セッションの中で送る要求はそのセッションの id、セッションの外のロックなしの要求は 0。corr は 0 を使わずに一周し、どの session_id にも共通の 1 つの数）、session_id とロック、`call()`（失敗なら例外）、pipeline、エラーの階層（`OepError` / `Rejected` / `Failed`。セッションが終わった（end、lease の期限切れ、ほかのセッションの force）なら `NoSession`: probe はそのセッションが作ったものをすべて解放している。再開は無く、黙って open し直さず、`Host.session` は None に、`Host.epoch` が進む。probe が知らない connection や stream の番号には `NoResource`。confirm が core §7.1 の範囲の外か、`max_op_ms` が 1〜600000 の外の probe は `NotUsable` で、それ以上何も送らない。`Unavailable` は payload の cause、channel、`fn`（断りが関わる fn）を読む）。`open(lease_ms, force=, owner=)` はいつも新しい乱数の id で新しいセッションを開き、`Opened(lease_ms, boot_id)` を返す。`end()` はすべてを解放し、host はセッションの外に出る。boot_id が変わったとき（confirm、clock、open）は名前 → fn の cache を捨て、list し直す。`clock()` は fn 0 の clock（core §7.6。ロックもセッションも要らない）を `ClockReading(before_ns, after_ns, uptime_ns, boot_id, round_trip_ns)` で返す: 要求を出す直前と応答を受けた直後のこの host の時刻（`time.monotonic_ns`、または `now=`）と、その間に probe が読んだ uptime。`.host_ns` は中点、`.uncertainty_ns` は往復の半分（host ガイド §12）。`clock_best(n=8)` は n 回のうち往復が最短のものを残す。`subscribe(fn, min_bytes, max_delay_ms)` / `unsubscribe(fn)` はそのインターフェース自身の op 0x01 / 0x02 を送る（core §10.3。min_bytes / max_delay_ms はデータだけをまとめ、出来事はすぐ来る。通知を送らない fn は unknown_operation で答える。fn 0 は通知を送らないので、`subscribe(0)` は送る前に ValueError）。`restart_probe(wait_s=None, reopen_s=None)` は名前で探した `oep.probe.restart`（oep-if-restart、host ガイド §5.2。probe が出していなければ LookupError。セッションがロックを持つこと）で probe を再起動する: 応答の後、link は閉じ、少し（約 100 ms、`host.RESTART_AFTER_ANSWER_S`）待ち、新しく開くのと同じに開き直し（最初は confirm。シリアルの口は起動時の速さ、USB の device は列挙し直した後に探し直し、TCP は接続し直す）、`wait_s` の間繰り返す。既定は probe の restart_max_ms（oep.probe.restart の describe。restart の前に読む。probe 自身の再起動だけの上限。`core.restart_max_ms`）に列挙と接続し直しの分の `host.RESTART_EXTERNAL_S`（5 s）を足したもの、宣言が無ければ 10 s。過ぎれば probe は無くなったものとして link を閉じ、ConnectionError / TimeoutError。戻れば新しい boot_id を返す。`reopen_s` は、そうして無くなったものとした probe を利用者が開き直すことを前もって頼むもの: 新しく開くのと同じに、さらにその秒数まで開き直す（probe には分からない遅れで device が戻る host のため - WSL では列挙し直した device を usbipd が付け直す。要ったかどうかは `Host.restart_reopened`）。boot_id が前と同じなら `NotRestarted`。応答が失われ、送り直しが再起動した probe に no_session で断られたときも済んだとみなす。`request_restart()` は要求だけを送る |
+| `link` | transport: シリアルの口（常に COBS + CRC、`0x00 <COBS> 0x00`、フレームの外は雑音として捨てる、排他で開く、8N1 で DTR / RTS を立てる）、USB vendor bulk / HID と TCP（長さつきフレーム、transports §5 の立て直し: host の最後の書き込みから probe_frame_gap_ms より長く、250 ms 待つ。TCP ではフレームの途中の休みもそのまま読み続ける）、corr による照合と送り直し（セッションが持つシリアルの口で、答えを待つ間に壊れたフレームが来たらすぐ同じ corr で送り直す - フレームが届き続ける間 `BROKEN_RESENDS` = 3 回まで、host ガイド §8。何も来ない待ちの後は 1 回。上げた port_speed では先にその速さのまま送り直す、下）。送り直しにも応答が無ければ `TransportFailed` を上げ、次の要求の前に confirm で立て直す（入力が静かになるのを待ち、自分の corr の confirm。シリアルの口でも）。立て直せなければ ConnectionError。応答はどれも core §4.4 の下限（その要求の処理上限 + 1000 ms + シリアルの口の転送時間。処理上限は max_op_ms、fn 0 の confirm / list / describe / clock / keepalive / lock_state は 1000 ms まで、max_op_ms を読む前は 1000 ms、引数の待ちがそれより長ければその長さ（`Host.op_bound_ms`）。転送時間は confirm の応答が来るまで min_max_frame で数える、`wait_floor_s`）以上待つ。`Host.open` は先に fn 0 の describe を読む。port_speed の手順の confirm と戻すは link 自身の短い待ちを使う。短い応答は壊れたフレーム。`open_host(target)` |
 | `kept_session` | host が次の実行のために probe ごとに残すセッションの id（`KeptSession`、`Host.kept`。open_host が置く。下） |
 | `discovery` | ネットワークの probe: mDNS の DNS-SD `_oep._tcp`（transports §3）- `browse(timeout)` -> `Found(instance, unit_id, host, port, addresses)`、`verify(found)` / `check(f)`（confirm と describe の unit_id、host ガイド §4.1）、`find_unit(unit_id)`（確かめたもの）、`port_of(host)`。python-zeroconf があればそれ（`mdns` の extra）、無ければ自前の最小の問い合わせ（下） |
 | `core` | インターフェースを名前で探す（キャッシュつき）、confirm（probe の `boot_id` と、この host が来た経路の番号 `transport` つき。2 回目からは使っている revision を求める）、probe の describe（宣言だけ。起動の間 cache: ラベル、transport の一覧、`max_op_ms`）、どの fn の `ops` も（describe の ops tag、core §7.4 - base と 1 byte 以上の bitmap で op 0xFF を越えない - その形を確かめる: 破った fn は使わない（`UnusableFunction`）。fn 0 のものなら probe を使わない（`NotUsable`）。`ops(hst, fn)`、`offers(hst, fn, op)`、`Interface.offers(op)`。`require` / `not_offered` は送らずに、probe が答えるのと同じ `Rejected`（detail unknown_operation）を上げる）、ロックの取り方（`take`）、`oep.probe.plan` でのピンの割り当て（`plan_fn`、`plan_apply`、`plan_release`、`plan_roles`）、`oep.probe.restart`（`restart_fn`、`restart_max_ms`）、`Interface` の土台。`list_entries(hst, name, exact)` は list を first だけで読み進め、名前が合うものを host で残す（core §7.2）。fn 0 の list の項目は捨てる（本体は list に載らない）。`max_op_ms`（宣言の無い probe には `FALLBACK_MAX_OP_MS` 10000）。`oep.probe.link`（oep-if-link）: `link_fn`、`link_speed`、source / sink の要求と応答の部品（`link_size` = source の応答の max_frame − 7、`link_sink_size` = sink の要求の max_frame − 12） |
 | `riscv` | `oep.wire.rvswd` / `oep.wire.swio`（scan: 候補の組は host が作る（`candidate_pairs()`）、attach: method・ピンの組・`max_speed` を固定部分で送り、いつも新しい connection（使用中のピンは unavailable）、`reset=(channel, hold_ms)` でリセットをかけながら attach、method 1（halt）は features の attach_halt があるときだけ、detach、connections（connection は u32））、`oep.target.riscv-dm`（応答は値の数を持つ。`reset()` -> `(flags, pc)`（mode 0。flags の bit0 到達）、`reset_halt()` -> dpc。`RunResult.not_halted`、`RunResult.not_run`（準備が失敗し hart を走らせていない）。hart を止め直せなかった step は `step_left` つきの `StepError`。`read_register` / `write_register` は DATA0 を元のまま取っておき（`data_saved`）、`resume` / `step` / `run` は先に書き戻す（`restore_data`、debug §4））、`RiscvDm.declared()`（probe が ops tag で出している任意の op。ほかは unknown_operation）、後始末に失敗した高水準の op（step_left、block の DATA の復元）の後は connection が閉じる、target_id の scheme は `dmi_7f`（`Wire.SCHEME_DMI_7F`）、attach、scan、riscv-dm の reset は引数の時間として max_op_ms 待つ（`attach_ms`、`scan_ms`、`reset_ms`。debug §1、§4.3）、リセット線の探索（`find_reset_line(candidates, pins=...)`）、GPIO 経由の attach |
 | `targets` | host が target の系統ごとに知っていることを 1 つの表に（`FAMILIES`: 線、target_id の照合、リセットのベクタ、NRST を option で読む関数、max_speed / idle_clock）。`identify(target_id)` |
 | `pins` | `oep pins`: channel の分類、low に保つ探索、scan、識別、リセットの線の確かめ、接続プロファイルと label の提案（`PinFinder`） |
-| `console` | `oep.target.console`（位置つきのストリーム: read の応答は長さを持ち、マークは `time_ns`、ロック不要の `streams()`。ストリームはセッションのもので、close、connection の解放、セッションの終わりでバッファごと解放され、その番号はその後 no_resource。write はストリームの送りの列に入る - 列の大きさは probe が決め、宣言しない -。accepted = count と列の空きの小さい方で、0 は列が満ちたときだけ。SDI のストリームへの write は unsupported。marks、clear、mark、write は任意）と、バイト列として読み、多くても 1 フレームずつ、応答の accepted の続きから書く `ConsoleIO`（`stall_s`: その間何も受けなければ TimeoutError） |
-| `fixture` | `oep.fixture.gpio`（出力の強さを要素ごとに、probe の drive_levels の u8 の段で: `set([(ch, mode, Drive.level(n))])`、`drive_levels().at_most(10)` = 約 10 mA 以下でいちばん強い段、`Drive.default()` = 0xFF。drive_levels を越える段と、drive_levels の無い probe への drive は unsupported で断られる。`set` は None を返し、`read` は level を返す）/ `uart`（ストリームは plan が作る。`status()` = いま効いている `UartStatus(baud, format)`）/ `i2c-target`（1 つの形: `configure(address)` - target を作り直す -、データのある controller の書き込み 1 回が `read_rx` の 1 フレーム、読み出しには `preload_tx(data)` の置き場か 0xFF で答える、`status()` = `I2cStatus(state, queued, rx_frames, tx_slots, errors)`、ops にあれば `stretch`、`internal_pullups`: 自分の pull-up を入れるか。予約のアドレス 0x00〜0x07 / 0x78〜0x7F は送る前に断る）/ `spi-target`（reset は無く、configure し直す。`cs_setup_ns`: CS の後、最初のビットが確かになるまでの時間。`oep dump` が出す） |
+| `console` | `oep.target.console`（位置つきのストリーム: read の応答は長さを持ち、マークは `time_ns` と、共通の kind の lost / clear / host、コンソールの reset 0x40 / restart 0x41 を持つ。ロック不要の `streams()` は stream、connection、mechanism の並び。`open(conn, mechanism)` はいつもその connection に新しいストリーム（u32）を作る - 生きているストリームのある connection への 2 つ目は unavailable cause 6 -。ストリームはセッションのもので、close、connection の解放、セッションの終わりでバッファごと解放され、その番号はその後 no_resource。write はストリームの送りの列に入る - 列の大きさは probe が決め、宣言しない -。accepted = count と列の空きの小さい方で、0 は列が満ちたときだけ。SDI のストリームへの write は unsupported。marks、clear、mark、write は任意）と、バイト列として読み、多くても 1 フレームずつ、応答の accepted の続きから書く `ConsoleIO`（`stall_s`: その間何も受けなければ TimeoutError） |
+| `fixture` | `oep.fixture.gpio`（`set([(ch, mode)])` は 1 つの要求で順に当て、`read(channels)` は level を返す。出力の強さは probe 自身のもので、選ぶ手段は無い）/ `uart`（ストリームは plan が作る。`configure(baud, fmt)` までは何も受けない。`status()` = いま効いている `UartStatus(baud, format)` で、configure していなければ baud 0、format 0。probe が立ち上げられなかった configure は `Failed` を上げ、configure していない状態に戻る）/ `i2c-target`（1 つの形: `configure(address)` - target を作り直す -、データのある controller の書き込み 1 回が `read_rx` の 1 フレーム、読み出しには `preload_tx(data)` の置き場か 0xFF で答える、`status()` = `I2cStatus(state, queued, rx_frames, tx_slots, errors)`、ops にあれば `stretch`、`internal_pullups`: 自分の pull-up を入れるか。予約のアドレス 0x00〜0x07 / 0x78〜0x7F は送る前に断る）/ `spi-target`（reset は無く、configure し直す。`cs_setup_ns`: CS の後、最初のビットが確かになるまでの時間。`oep dump` が出す） |
 | `config` | `oep.probe.config`（channel ごとの label / idle / disable の項目、count 付きの get / set / unset、保存を持つ probe では save / erase / state。`describe()` = 宣言、`state()` = `State(storage, saved_generation, reason)`。generation は起動から 1 で数える変更の回数: `same_items(a, b)` は項目で比べ、`needs_save()` は保存すると保存が変わるかを言い、`apply(wanted, save=False)` は違う分を set / unset する（host ガイド §15）。`find_line(cfg, "nrst", profile=None)` = host ガイド §5.3 の線の探し方で、firmware の固定 label が最後の段） |
-| `capture` | `oep.fixture.logic` / `analog` / `capture-group`（revision 1、oep-spec の oep-if-capture）。configure の TLV は core §2.3 に従う: probe が守れない値は送ったままの tag で unsupported で断られる（表の TLV は critical を付けずに送る）。応答が実際の値で、samples もそれが正しい。start ごとに世代（`LogicCapture.generation`。同じ起動の間は使い回さず、0xFFFFFFFF の後の start は断られる）が進み、ストリーミングのフレームは自分の区画を持つ（`Received.segments`）。capture-group は即時のトラックを一度に始める。read と release は世代を付ける（`read_segment(segment)` は自分で付ける）。`status()` は `Status` を返す。読んだ区画は `Host.on_capture` の callback に `CaptureRecord` で渡る（記録の受け口。wireskein には依存しない） |
+| `capture` | `oep.fixture.logic` / `analog` / `capture-group`（revision 1、oep-spec の oep-if-capture）。configure の TLV は core §2.3 に従う: probe が守れない値は送ったままの tag で unsupported で断られる（表の TLV は critical を付けずに送る）。応答が実際の値で、samples もそれが正しい（アナログ: scale は役割ごとに必ずあり、省かれた skew は 0 と読む）。`start()` はそのたびに新しい世代を返す（`LogicCapture.generation`。同じ起動の間は使い回さず、0xFFFFFFFF の後の start は再起動まで断られる）。read と release はその世代を付け（`read_segment(segment)` は区画自身の世代を付ける）、どの出来事も世代を持つ（`events()` は前の start のものを捨てる）。ストリーミングのデータフレームは世代と自分の区画を持ち、区画をまたがない（segment_info、`Received.segments`）。`status()` は `Status` を返す。capture-group は configure 済みで即時のトリガの、同じ mode のトラックを束ね、一度に始める（`CaptureGroup.start` -> group の start_ns。group と各トラックの世代）。読んだ区画は `Host.on_capture` の callback に `CaptureRecord` で渡る（記録の受け口。wireskein には依存しない） |
 | `decode` | キャプチャのチャネルの復号（I2C） |
 | `registry` | oep-spec の番号の表から生成したモジュール（編集しない。oep-spec から写し直す）。名前からインターフェースの番号を引く公開の入口は `registry.INTERFACES[name]`（`.revision`、`.op`、`.tlv`、`.enum`。例 `INTERFACES["oep.fixture.uart"].enum["role"]`）。`FIXTURE_UART` などのモジュールの名前は同じもの |
 | `arm` | `oep.wire.swd`、`oep.target.arm-adi`、MEM-AP、Cortex-M の停止と関数呼び出し |
@@ -101,7 +80,7 @@ conn, _ = wire.attach(halt=True)
 dm = riscv.RiscvDm(hst, conn)
 dm.reset_halt()
 result = ch32_flash.program(hst, dm, open("sketch.bin", "rb").read(), ch32_flash.PROFILES["x035"])
-dm.reset(confirm=True)
+dm.reset()                                    # ndmreset して走らせる -> (flags, pc)
 wire.detach(conn)
 hst.end()
 ```
@@ -123,11 +102,11 @@ probe の CDC の口（`/dev/ttyACM*`）は、いつもの `dialout` グルー�
 
 ```sh
 oep dump --port <probe>                      # 能力の一覧（--virtual p4-x035 でハードウェアなし）
-oep config show <probe>                      # 設定、宣言、今の状態
+oep config show <probe>                      # 設定、宣言、保存の状態
 oep config state <probe>                     # 保存の状態だけ（ロック不要）
-oep config label <probe> 23 nrst             # ほかに idle CH MODE、disable CH...、remove KIND CH
+oep config label <probe> 23 nrst             # ほかに idle CH MODE、disable CH...、remove KIND CH（どれも --save を取る）
 oep config save <probe>                      # 再起動の後も残す（erase もある）
-oep speed <probe> [--candidates 921600,500000] [--verify [--flows out:2]]  # port_speed: 速さを上げ（既定 500000）、結果を出す（下）
+oep speed <probe> [921600,500000] [--verify] [--flows out:2]  # port_speed: UART bridge を速くし（既定 500000）、結果を出す（下）
 oep pins <probe> --power 5 --wire swio       # target のつながり方: debug のピン、リセットの線、label（下）
 oep clock <probe> [-n 8] [--json]            # fn 0 の clock: uptime_ns と boot_id をこの host の時刻に合わせて（n 回のうち往復が最短のもの）
 oep restart <probe> [--reopen-s S]           # oep.probe.restart: probe を再起動し、戻るまで待つ（新しい boot_id）。
@@ -139,6 +118,27 @@ oep linktest <probe> ...                     # --timeout: 既定は応答 1 つ�
 `<probe>` はシリアルの口、`tcp://HOST:PORT`、`tcp://HOST`（その host に DNS-SD が見つけた port）、`tcp:UNIT_ID`（TXT の unit_id で
 DNS-SD が見つけた probe。describe の unit_id が同じでなければ閉じる）、`usb[:VID:PID[:SERIAL]]`。変更はロックを取り（owner "oep config"）、終わったら
 セッションを閉じる。変更はすぐ効き、`save` の後は再起動しても残る。
+
+### 走り直す host: 残したセッションの id
+
+probe は経路が閉じてもセッションを保つ（transports §3）ので、殺された、落ちた、線を失った命令は、lease が切れるまでロックと
+持っていたもの（connection、plan、購読）を残す。そこで `link.open_host` は、host が開いたセッションの id を probe ごとのファイルに
+残し（`kept_session.KeptSession` を `Host.kept` に。host ガイド §5）、host の最初の open の前に、前の実行が残したセッションを終える:
+その id で open し（ロックを持つセッションの open はそのセッションを保つ。core §6.2: 何も解放しない）、すぐ end する。それから自分のセッションを開く。
+この 2 つの要求は、前の実行が送ったどの corr よりも先の corr で送る（core §5.1）: ファイルは id と一緒に、その実行が使った先に取って
+おいた corr（1024 ずつ取り直す）を残し、次の実行はその先から続ける。それの無いファイルでは何も終えない。
+`oep` の命令と tests/hw は `open_host` で開くので、こうなる。ほかの長く動く host は `keep_session=True`（既定）を渡すか、自分で作った
+Host に `hst.kept = kept_session.KeptSession()` を置く。
+
+- ファイルは `<dir>/<unit_id>.session`（id と取っておいた corr を 16 進で `ssssssss cccc`。`end` の後は空）。fn 0 の unit_id をキーにするので、同じ probe の別の口や
+  経路でも同じファイル。`<dir>` は `$OEP_SESSION_DIR`、無ければ `$XDG_RUNTIME_DIR/oep-client`、無ければ
+  `%LOCALAPPDATA%\oep-client\sessions`（Windows）か `${XDG_CACHE_HOME:-~/.cache}/oep-client/sessions`。
+- host はファイルを持つ間、そのファイルに排他の錠（flock / msvcrt.locking）を掛け、link を閉じるかプロセスが終われば外れる。
+  ほかの動いている host が持つファイルには触れない: その host のセッションはその host のもので、この host はふつうに開く（その
+  ロックに会い、`core.take` が待つか持ち主を示す）。`x-` の unit_id は個体を名指さないので、何も残さない。
+- `Host.end_previous(sid)` がこの手順そのもの: そのセッションを終えたら True、別のセッションがロックを持てば False（この host の
+  終えるものではない）。`keep_session=False` は何も読み書きしない。
+
 ### TCP
 
 TCP で OEP を運ぶ probe は DNS-SD で見つける（ネットワークの設定は oep.probe.config のものではない）。
@@ -155,41 +155,22 @@ TCP で OEP を運ぶ probe は DNS-SD で見つける（ネットワークの�
   すべてのインターフェース（InterfaceChoice.All）で、最小の問い合わせも IPv4 のインターフェースそれぞれから送る（インターフェースの
   アドレスごとに IP_MULTICAST_IF。`discovery.interface_addresses`: ifaddr があればそれ、無ければ Linux は各インターフェースのアドレス、
   ほかは host 名のアドレス）。一度の送信は 1 つのインターフェースからしか出ず（Windows ではよく仮想アダプタ）、別のアダプタの probe には届かない。mDNS は同じリンクの
-  中だけ: WSL 2 の既定の NAT、VM、ルーターの向こうからは見つからない。そのときは `tcp://HOST:PORT` で名指す（アドレスはシリアルの口からの
-  `oep config state` に出る）。
+  中だけ: WSL 2 の既定の NAT、VM、ルーターの向こうからは見つからない。そのときは `tcp://HOST:PORT` で名指す。
 - `tcp:UNIT_ID` はその unit_id で DNS-SD が見つけた probe を開き、describe の unit_id を確かめる（違えば UnitIdMismatch で閉じる）。
   再起動の後は browse し直す（アドレスは変わりうる）。TCP に認証は無い: 信頼するネットワークかトンネルの中で使う（transports §1）。
 - `oep linktest` は TCP では応答を 3 秒待つ（ほかは 0.3 秒）: Wi-Fi の再送でときどき 1〜4 秒止まり、それでも答えは来る。
 
 実機での一通りの確認は ArduinoCore-CH32 の `tests/manual/oep_smoke/`（`oep_smoke.py`、`oep_probe_checks.py`）。
 
-### 走り直す host: 残したセッションの id
-
-probe は経路が閉じてもセッションを保つ（transports §3）ので、殺された、落ちた、線を失った命令は、lease が切れるまでロックと
-持っていたもの（connection、plan、購読）を残す。そこで `link.open_host` は、host が開いたセッションの id を probe ごとのファイルに
-残し（`kept_session.KeptSession` を `Host.kept` に。host ガイド §5）、host の最初の open の前に、前の実行が残したセッションを終える:
-その id で open し（その open の送り直しとして受けられる。core §6.2: 何も解放しない）、すぐ end する。それから自分のセッションを開く。
-`oep` の命令と tests/hw は `open_host` で開くので、こうなる。ほかの長く動く host は `keep_session=True`（既定）を渡すか、自分で作った
-Host に `hst.kept = kept_session.KeptSession()` を置く。
-
-- ファイルは `<dir>/<unit_id>.session`（id を 16 進 8 桁。`end` の後は空）。fn 0 の unit_id をキーにするので、同じ probe の別の口や
-  経路でも同じファイル。`<dir>` は `$OEP_SESSION_DIR`、無ければ `$XDG_RUNTIME_DIR/oep-client`、無ければ
-  `%LOCALAPPDATA%\oep-client\sessions`（Windows）か `${XDG_CACHE_HOME:-~/.cache}/oep-client/sessions`。
-- host はファイルを持つ間、そのファイルに排他の錠（flock / msvcrt.locking）を掛け、link を閉じるかプロセスが終われば外れる。
-  ほかの動いている host が持つファイルには触れない: その host のセッションはその host のもので、この host はふつうに開く（その
-  ロックに会い、`core.take` が待つか持ち主を示す）。`x-` の unit_id は個体を名指さないので、何も残さない。
-- `Host.end_previous(sid)` がこの手順そのもの: そのセッションを終えたら True、別のセッションがロックを持てば False（この host の
-  終えるものではない）。`keep_session=False` は何も読み書きしない。
-
 ## ピンを探す（`oep pins`）
 
 `oep pins <probe> [--power CH] [--exclude CH,...] [--wire swio|rvswd|swd] [--steps ...] [--save] [--json]` は、ピンを host
 が選ぶ probe で、target がどこにつながっているかを探します。各段は何をしたかを出し、全体は 1 分以内に終わり、最後に plan を
-すべて解きます。手順とその理由は oep-spec の host 開発ガイド（§19「ピンの探し方（参考）」）にあります。target の系統ごとに要る
-こと（線、リセットのベクタ、リセットの線の有無を読む option の読み方、max_speed / idle_clock）は 1 つの表 `targets.FAMILIES`
-にまとめ、その出典は oep-spec の `docs/target-scan-notes.ja.md` に記録します。
+すべて解きます。手順はこの client のものです（oep-spec の host ガイド §5.3 が決めるのは label での線の探し方だけ）。target の系統ごとに
+要ること（線、リセットのベクタ、リセットの線の有無を読む option の読み方、max_speed / idle_clock）は 1 つの表 `targets.FAMILIES`
+にまとめます。
 
-1. **classify**: `oep.fixture.gpio` が許すすべての channel を、pull-up、pull-down の順に 16 回ずつ読む（host ガイド §19.1）:
+1. **classify**: `oep.fixture.gpio` が許すすべての channel を、pull-up、pull-down の順に 16 回ずつ読む:
    floating（pull-up で 1、pull-down で 0。リセットの線の弱い pull-up のように probe のものより弱い pull もこう読める）、
    driven-high / driven-low（どちらの pull でも同じレベル: push-pull か強い pull。idle-high の UART の線はこう見える）、active
    （読むたびに変わる）。`--power CH` では先に target の電源を切って読み、違って読めた channel が電源に従う。どれも候補を出すだけ。
@@ -252,26 +233,26 @@ report = link.raise_speed(hst, [500000], verify=True, flows=[("out", 2)], record
 hst = link.open_host("/dev/ttyUSB0", port_speed=[921600, 500000])
 ```
 
-**既定の上限は 500000**（oep-spec の host 開発ガイド §17 の勧め）: 既定の候補は 500000 だけ（`link.DEFAULT_CANDIDATES`）で、利用者が明示して
+**既定の上限は 500000**（この client の選び方。oep-if-link §3 は、どの速さを試すか、どう確かめるか、いつ戻すかを host に任せる）: 既定の候補は 500000 だけ（`link.DEFAULT_CANDIDATES`）で、利用者が明示して
 選ばない限り、それより速い速さは試しません。`link.DEFAULT_CEILING` より速い速さを候補に入れるのは、利用者がそれを選んだとき
-（`oep speed <probe> 921600,500000`、設定）だけにしてください。その速さは、最小の形でも完全な形でも、**1 秒の確かめ**（host 開発
-ガイド §17.3.3）を通ってから決めます: 試しの状態で、oep.probe.link の source（in、max_frame − 7）と sink（out、max_frame − 12）の
+（`oep speed <probe> 921600,500000`、設定）だけにしてください。その速さは、最小の形でも完全な形でも、**1 秒の確かめ**を通ってから
+決めます: 試しの状態で、oep.probe.link の source（in、max_frame − 7）と sink（out、max_frame − 12）の
 いっぱいのフレームを、完全な形が duplex を確かめるなら duplex でも、それぞれ 1 秒以上（`link.FAST_VERIFY_S`）その同時数で流し、
 流し方と同じ基準で判定します（n = 1 での流し直しはしない）。その試すは verify_ms 4000（duplex を含めば 6000）を頼むので、lease は
 5000（7000）ms 以上が要ります（`link.lease_for(candidates, flows, verify)`。`open_host` と `oep speed` は少なくともそれで取り、短い
 lease ではその候補を飛ばす）。決めた後は、ほかの速さと同じ試用期間と使用中の判定を受けます。理由: ある変換では 921600 が両方向
-16 フレームずつの確かめを通っても、9 KiB の書き込みのたびに応答が 1〜4 個壊れた。500000 は測ったどの変換でも壊れなかった
-（oep-spec の host 開発ガイド §17.5）。
+16 フレームずつの確かめを通っても、9 KiB の書き込みのたびに応答が 1〜4 個壊れた。500000 は測ったどの変換でも壊れなかった。
 
-手順は oep-spec の host 開発ガイド §17。oep-if-link §3 は握手だけで、port_speed の要求は baud、step、verify_ms、効くのは要求が来た
-UART bridge の口。**最小の形**（既定、約 50 ms、計測なし）: 候補ごとに順に
+手順はこの client のもの。oep-if-link §3 は握手だけで、port_speed の要求は baud、step（試す / 決める / 戻す）、verify_ms、効くのは要求が来た
+UART bridge の口で、起動時より速い速さだけ。port_state（ロック不要）はその口の baud と phase（0 起動時、1 試し、2 決めた、3 フレームの
+切れ目を待つ戻り）を読む。**最小の形**（既定、約 50 ms、計測なし）: 候補ごとに順に
 `試す`（今の速さで応答してから probe が切り替える）→ host は要求した baud に切り替える → 20 ms → `confirm`（100 ms、3 回まで）→
 `決める`。**完全な形**（`verify=True` か `flows=` を渡す）: 起動時の速さの基準を流し方ごとに取り（このセッションのフレーム、
 無ければ 60 フレーム）、候補ごとに使う流し方だけ流す。流し方 = `("in"|"out"|"duplex", n)`（in = oep.probe.link の source probe → host、
 out = oep.probe.link の sink host → probe、duplex = 両方を交互。`n` は同時数、0 = link が出す最大）で、いっぱいのフレーム（source は
 max_frame − 7、sink は max_frame − 12）を 16 個流し、
 壊れと失われを数え KB/s を測る。壊れ + 失われが 3 以上で割合が max(基準 × 2, 5 %) を超えたら流し方は通らず、n = 1 で流し直し
-（通れば n = 1 が link の上限）、1 つでも通らなければ候補は通らない。通らない候補は戻して（step 2）起動時の速さに戻り confirm し直す。
+（通れば n = 1 が link の上限）、1 つでも通らなければ候補は通らない。通らない候補は戻して（step 2）起動時の速さに戻り confirm し直し、新しい port_state で phase 0 を確かめる（`link.port_state`）。
 最初に通った候補を使う。probe の UART が作れない速さ（port_speed_tolerance_pct、2 % の内で）は断られ、飛ばす。通る速さは変換チップとドライバで決まる（クロックの整数分周しか
 作れないもの、短い確かめは通るのに 500000 より速い速さで長い burst を壊すものがある）ので、速さは host が上限の内で選ぶ。
 結果（`link.speed`: `base`、`rate`、`chosen`、`baseline`、`trials` = `flows` と `in_kb_s` / `out_kb_s` / `duplex_kb_s` を持つ
@@ -281,8 +262,8 @@ probe が自分で起動時の速さに戻るのは、試すが verify_ms を過
 （3 秒、`link.IDLE_MS`。落ちた host の速さもそれより長くは残らない）が過ぎたとき、セッションが終わったとき（`end`、lease の期限切れ、
 force）だけ - 壊れたフレームだけでは戻らない。上げている間、link は 1 秒（`link.KEEPALIVE_S`）黙れば要求の前に keepalive を送り、
 長く黙る呼び出し側は `hst.link.keep_alive()` で同じことをする。シリアルの口を開くと最初の confirm を port_speed_idle_ms +
-host_wait_add_ms（4 秒、`link.OPEN_RETRY_S`）繰り返して、残った速さが戻るのを待つ。link は `end`、戻す、restart にはすぐ合わせる。
-上げた速さで応答の来ない要求は、まずその速さのまま送り直す（host 開発ガイド §17.3.2 の 4）: 最初の待ちは多くても port_speed_idle_ms
+host_wait_add_ms（4 秒、`link.OPEN_RETRY_S`）繰り返して、残った速さが戻るのを待つ。link は `end`、戻す、restart、別のセッションの force の open にはすぐ合わせる。
+上げた速さで応答の来ない要求は、まずその速さのまま送り直す: 最初の待ちは多くても port_speed_idle_ms
 の 3 分の 1（`link.RAISED_FIRST_WAIT_S`）と lease の 4 分の 1 で、core §4.4 の下限は下回らないので、送り直しはまだその速さの probe に
 届く。その送り直しにも応答が無いときだけ、起動時の速さに戻って confirm し、下げて、そこでもう一度送る（固まらない）。使っている間、決めた速さの最初の 32 KiB と 1 秒（`probation_bytes`、
 `probation_s`）は試用期間で、そこで壊れ・失われが 3 以上かつ max(基準 × 2, 5 %) 超、または応答が来なければ、確かめの失敗として
@@ -296,8 +277,8 @@ max(基準 × 2, 10 %) を超えて壊れ・失われたら下げる。下げる
 2 秒（`settle_s`）以内に測った失敗は「不明」）、通った速さを先頭に、通らなかった速さを外す。全部の候補が通らなかったとあれば、
 いちばん遅い候補を 1 回だけ試す（`speed.retried`）。`x-` で始まる unit_id（一意の番号も保存先も無い probe、core §7.5）では
 何も残さず何も読まない。上げるのは、この host が来た経路（confirm の応答の transport TLV、core §7.1）が UART bridge のときの
-その口。UART bridge でない口に来た port_speed の要求と、口を上げている間の試すは unavailable（cause 6）で断られる。`oep.probe.link` の無い probe、または `oep.probe.link` が port_speed を持たない probe は `not supported`
-で、速さは変わらない。線の試験（`linktest`、`core.link_speed`）も `oep.probe.link` を要る。ブローカー（TCP）の後ろでは client ではなくブローカーが行う。シリアルの口は、ドライバにあれば low-latency の
+その口。UART bridge でない口に来た port_speed の要求と、口を上げている間の試すは unavailable（cause 6）で断られる。`oep.probe.link` の無い probe、または `oep.probe.link` が port_speed を持たない probe では
+速さは変わらない（結果がその理由を言う）。線の試験（`linktest`、`core.link_speed`）も `oep.probe.link` を要る。ブローカー（TCP）の後ろでは client ではなくブローカーが行う。シリアルの口は、ドライバにあれば low-latency の
 モードで開く（FTDI の latency timer 16 → 1 ms で UART bridge の速度が 3 倍になった）。ボードの起動時の速さが 115200 でなければ
 `open_host(..., baud=)` で渡す。
 
@@ -306,75 +287,65 @@ max(基準 × 2, 10 %) を超えて壊れ・失われたら下げる。下げる
 仮想ベンチは、probe とその先の target、治具の配線を、実際の治具に合わせてソフトウェアで作ったもので、ハードウェアなしで host の
 ソフトウェアを試す環境である（この repo で「ベンチ」とだけ書けば実機の HIL の治具を指し、ソフトウェアのほうは常に「仮想ベンチ」と書く）。
 
-その probe、`endpoint.Endpoint` は oep-spec の規範どおりに答え（応答のデータと並びは長さを持ち、どの応答にも TLV が
-続けられる、資源番号は 1 つの空間、describe は宣言だけで状態は `state`、キャプチャの世代）、
-ch32rv・この client・probe の firmware を突き合わせる「動く spec」として使う（spec が変わったら、probe の firmware より先にここを合わせる）。`virtual_bench` は宣言の例（profile:
+その probe、`endpoint.Endpoint` は oep-spec a09fa45 の規範どおりに答え（応答のデータと並びは長さを持ち、どの応答にも TLV が
+続けられる、describe は宣言だけで状態はロック不要の状態の op、キャプチャの世代）、ch32rv・この client・probe の firmware を突き合わせる
+「動く spec」として使う（spec が変わったら、probe の firmware より先にここを合わせる）。`virtual_bench` は宣言の例（profile:
 `p4-x035`、`esp32-v003` = classic ESP32 の firmware と同じフレームの上限 - max_frame 512、riscv-dm の max_length 488 -、
 `esp32-v003-64` = 同じ probe を宣言できる最小の max_frame 64 で（max_length 40、list / describe は分けて読む）、
-`p4-bench` = RVSWD の場所 3 か所と席 2 つの架空の治具、`rp2350-pins` = host がピンを選ぶ wire。probe が自分で持ち宣言しないもの - 自分の
-channel、コンソールの 256 byte の送りの列、キャプチャの幅・区画の記録・max_read、capture-group の budget - は `Offered.inner` と
-`VirtualProbe.own_channels` に置く）、`virtual_bench_serial` はシリアルの口のバイトの側（COBS のフレームだけ。フレームでないものは捨てる）。
+`p4-bench` = RVSWD の場所 3 か所で同時に 2 つの connection を持つ架空の治具、`rp2350-pins` = host がピンを選ぶ wire、`core-v1` = 本体だけで
+max_frame 64、インターフェースなし（`virtual_bench_serve` だけ）。probe が自分で持ち宣言しないもの - 自分の channel、コンソールの
+256 byte の送りの列、キャプチャの幅・区画の記録・max_read、capture-group の budget - は `Offered.inner` と `VirtualProbe.own_channels`
+に置く）、`virtual_bench_serial` はシリアルの口のバイトの側（COBS のフレームだけ。フレームでないものは捨てる）。
 
 `virtual_bench_capture` は `oep.fixture.logic`（ロジック）: ワンショット、リピート（実際のレートで時計どおりに区画ができ、リング、release）、
-ストリーミング（購読している間のデータの push）、レベル / エッジのトリガとプリトリガ、出来事。取れるものは決まっている: サンプル i は
-カウンタの値 i で、チャネル k はそのビット k（周期 2^(k+1) サンプルの方形波）。layout は profile が作れる幅（自分のもので宣言しない。
-`p4-x035`: P4 の PARLIO と同じ w 1〜16、3 本なら w 4。`esp32-v003`: classic ESP32 の sampler と同じ w 8、ワンショットだけ）。capture は聞くだけ
-なので、ほかのインターフェースが持つピンにも plan できる。`p4-x035` には `oep.fixture.analog`（P4 の ADC1 の 4 チャネル、GPIO16〜23。
-偶数のチャネル k は方形波、奇数は正弦波で、周期は 64 (k // 2 + 1) サンプル。16 ビットの枠に 12 ビットの値。ESP32 と同じ形の
-frontend、作り物の 2 点の較正と Vrefint）と、ロジックとアナログを束ねる `oep.fixture.capture-group` もある（一緒に始まり、
-アナログは 5 µs 遅れ（±2 µs）、片方のトリガが両方に印される）。時刻は probe の 1 本の時計の ns。
+ストリーミング（購読している間のデータの push。どれも世代と区画を持つ）、レベル / エッジのトリガとプリトリガ、出来事。取れるものは
+決まっている: サンプル i はカウンタの値 i で、チャネル k はそのビット k（周期 2^(k+1) サンプルの方形波）。layout は profile が作れる幅
+（自分のもので宣言しない。`p4-x035`: P4 の PARLIO と同じ w 1〜16、3 本なら w 4。`esp32-v003`: classic ESP32 の sampler と同じ w 8、
+ワンショットだけ）。capture は聞くだけなので、ほかのインターフェースが持つピンにも plan できる。`p4-x035` には `oep.fixture.analog`
+（P4 の ADC1 の 4 チャネル、GPIO16〜23。偶数のチャネル k は方形波、奇数は正弦波で、周期は 64 (k // 2 + 1) サンプル。16 ビットの枠に
+12 ビットの値。950 / 1250 / 1750 / 3100 mV の 4 つの frontend、作り物の 2 点の較正と Vrefint）と、ロジックとアナログを束ねる
+`oep.fixture.capture-group` もある（一緒に始まり、アナログは 5 µs 遅れ（±2 µs））。時刻は probe の 1 本の時計の ns。
 
 `oep.fixture.i2c-target` と `oep.fixture.spi-target`（`p4-x035`、`esp32-v003`）は plan で役割を受け（SDA / SCL、SCK / MOSI / MISO / CS。
 `esp32-v003` の SPI は 2 つの channel_group のどれかに完全に一致）、fixture §3 / §4 の op にすべて答える。バスの controller は無い:
 試験が endpoint の hook（`i2c_write` / `i2c_read` / `spi_transfer`: バス上の 1 回のトランザクション）を呼ぶまで、何も受けない（spi の arm は待ったまま）。
 
-2026-10-07 の規則の見直し（oep-spec 7688c49〜0f455a0、`docs/v1-rule-review-2026-10-07.ja.md` の §2 / §7）は入っている。本体: 知らない
-非 critical の要求の TLV は黙って無視し、知らない critical のものは受け取ったままの tag で unsupported。仮想ベンチが実装する TLV は bit 7 に
-よらず同じに確かめる（長さが違う - 長いのも - か除かれた値は malformed、使われていない値や扱わない値は受け取ったままの tag で
-unsupported）。繰り返さない tag が 2 つあれば最初のものを使う。真偽値は 0 でなければ真。要求の text は確かめない（owner の 1〜32 byte
-は残る）。断るのは見出し（unknown_function、unknown_operation、session_required）、送り直しの表（corr → 応答。corr_reused は無い）、
-セッション（no_session、locked）の順で、その後はどれも何も変える前に確かめ、当たった理由のどれか 1 つで答える。list は first だけ。
-fn 0 の describe に implementation、reserved、profile、resets_on_open、discoverable は無い。unavailable は cause、channel、fn を運ぶ。
-資源の番号は +1 で、使用中の番号を飛ばす。oep.probe.link の source は max_frame − 7 までを答える。debug: attach、scan、riscv-dm の
-reset は max_op_ms（10000。黙った DM を待つのも含む、`settle_log`）のうちに答える。reset は status、flags、pc で答える。timeout_ms 0
-の run はすぐ止める。準備の失敗（`VirtualTarget.fail_regs`）と走っている hart は stopped 3 not_run。target_id の scheme は `dmi_7f`。
-count > 0 の scan は skip を見ない。コンソールの送りの列は probe 自身の大きさ（describe に send_queue は無い）で、読みはその
-connection の riscv-dm の要求の間と hart が止まっている間は止まる。capture: configure の TLV は core §2.3 だけに従い、応答に timing /
-rate_accuracy は無い。describe の mode は mode max_samples max_segments、channels は max だけ、capture-group は tracks だけを宣言する。
-bind された track の start / configure は unavailable cause 4、資源の足りない bind は cause 2 と fn。fixture: gpio の mode は 0〜6、
-drive は u8 の段（0xFF が既定。drive_levels を越える段と、drive_levels の無いときの drive は unsupported）。uart の status は baud と
-format。i2c-target は 1 つの形（データのある書き込み 1 回が 1 フレームで max_length で切る。読み出しは preload_tx の置き場から、
-無ければ 0xFF。arm_rx、reset、mode は無い）。spi-target に reset は無い。probe.config: label / idle / disable の項目（idle は 3 byte）。
-長さが形と違う項目は malformed。generation は起動からの変更の回数。state は storage_state、saved_generation、reason。起動時は保存した
-項目を 1 つずつ確かめ、disable を先に当て、当てられないものは外す（部分適用）。port_speed は要求が来た UART
-bridge の口への baud / step / verify_ms で、port_speed_tolerance_pct の内。仮想ベンチが戻るのは verify_ms の後、正常なフレームの無い
-port_speed_idle_ms の後、セッションの終わり - 壊れたフレームでは戻らない。
+従う規則の要点。本体: fn 0 は名前を持たず list に載らず、ops は本体の必須のものだけ。list は first だけ。断るのは見出し（corr 0 は
+malformed、unknown_function、unknown_operation、session_required）、送り直し（core §5.1: 最後に開いたセッションの最後の corr と、要求全体と
+応答の上限つきの記録 - 覚えた corr で中身の違う要求は malformed、覚えていない corr は 1〜32767 先なら新しい要求、ほかは result_lost）、
+セッション（no_session、locked と残りの ms と owner）の順で、その後はどれも何も変える前に確かめ、当たった理由のどれか 1 つで答える。
+知らない非 critical の要求の TLV は無視し、知らない critical のものは受け取ったままの tag で unsupported、実装する TLV は bit 7 によらず
+同じに確かめ、TLV の番号 0 は malformed。unavailable は cause、channel、fn を運ぶ。connection と stream は 1 から始まる 1 つの u32 の番号の
+空間を分け合い、同じ boot_id の間は使い回さない。通知（core §10）はその fn の subscribe が来た接続へ送り、出来事はすぐ、データは
+min_bytes / max_delay_ms でまとめ、置き換えた・解いた購読のまだ送っていないものは捨てる。時計は起動からの ns（`now_ns=`。
+virtual_bench_serve は `time.monotonic_ns` で、boot_id も引く）で、`reboot()` で 0 から。debug: attach は method、ピン、max_speed を固定部分で
+名指し、いつも新しい connection を作る（使用中のピンは unavailable cause 1、max_connections を超えれば cause 2）。method 1 は features の
+attach_halt があるときだけ。attach、scan、riscv-dm の reset は max_op_ms（10000）のうちに答える（reset の後に自分で再起動する target -
+`VirtualTarget.restart_ms` - を待ち、`settle_log` に残す）。reset は status、flags、pc で答える。timeout_ms 0 の run はすぐ止める。準備の
+失敗（`VirtualTarget.fail_regs`）と走っている hart は stopped 3 not_run。やり取りに答えの無い target の op は status line で失敗し、線を
+駆動しない（`pin_state` は `wire-free`）。後始末に失敗した高水準の op（`VirtualTarget.restore_fails`、`step_stuck`）は答えてから
+connection とそのストリームを閉じる。見つかった = DMSTATUS.version が 2 以上で 15 でない（`VirtualTarget.version`）。`halt_stuck` は halt を
+時間切れにする。コンソール: connection ごとにセッションが持つストリーム 1 つ。共通のマークのほかに reset 0x40（reset op の ndmreset）と
+restart 0x41。DMDATA / dmseq のストリームの送りの列は poll ごとに 3 / 2 byte ずつ target に渡し、poll は hart が走っている間 1 ms に
+1 回、止まっている間とその connection の riscv-dm の要求の間はしない（`console_take(sid)` は全部渡す）。fixture: gpio の mode は 0〜6
+（外の線は `gpio_world`）。uart は configure するまで何も受けず、status は baud と format。i2c-target は 1 つの形（データのある書き込み
+1 回が 1 フレームで max_length で切る。読み出しは preload_tx の置き場から、無ければ 0xFF）。spi-target に reset は無い。capture:
+configure の TLV は core §2.3 だけに従う。bind されたトラックの start / configure は unavailable cause 4、資源の足りない bind は cause 2 と
+fn。書き込み位置以降の read は write_pos と len 0 を答える。probe.config: label / idle / disable の項目（idle は 3 byte。長さが形と違う
+項目は malformed）。generation は起動から 1 で数える変更の回数。state は storage_state、saved_generation、reason。起動時は保存した項目を
+1 つずつ確かめ、disable を先に当て、当てられないものは外す（部分適用）。port_speed: 要求が来た UART bridge の口への
+baud / step / verify_ms で、port_speed_tolerance_pct の内、phase 0〜3 は port_state で読める。仮想ベンチが戻るのは verify_ms の後、正常な
+フレームの無い port_speed_idle_ms の後、セッションの終わり - 壊れたフレームでは戻らない。
 
-2026-10-07 の見直しは、下の前の規則のいくつか（ignored の TLV、corr_reused、断り方の順、debug の予算と reset_settle_ms、スロットの錠 /
-boot_reset と bind の mode、drive の種類、i2c-target の mode、コンソールの send_queue など）を置き換えた。下は履歴として残す:
-
-- 2026-10-02（`docs/v1-rule-change-proposal-2026-10-02.ja.md`）: confirm は来た経路を名指し、扱えない revision は扱える範囲を付けて
-  断る。断った応答も覚える。lease は 1000〜60000。見つかった = DMSTATUS.version が 2 以上で 15 でない（`VirtualTarget.version`）。
-  halt / step の失敗（`halt_stuck`、`step_stuck`）。線の探し方の手順 (c) で firmware のラベルも探す。channel に無い pull の idle
-  （`no_pull`）。probe がピンに何をしているかは `pin_state(ch)`（MISO は CS が有効な間だけ駆動 - `spi_select` -、i2c-target は
-  オープンドレインで自分の pull-up だけ - `virtual_bench.with_i2c_pullups` -、plan を取っても使い始めるまでピンは変わらない、閉じた
-  connection のピンは idle に戻る）。`virtual_bench.with_unit_id(probe, "x-...")` は `x-` の unit_id の probe を作る。
-- 2026-10-06 の規則（2e70f40〜40291a4）: インターフェースが定めない op と、probe が宣言しない任意の op は unknown_operation
-  （`offers`）。時計は起動からの ns（`now_ns=`。virtual_bench_serve は `time.monotonic_ns` で、boot_id も引く）で戻らず、`reboot()` で 0 から。
-  confirm の範囲と max_op_ms は `Endpoint` を作るときに調べる。target が答えない riscv-dm の op は status line で失敗し、線を駆動
-  しない（`pin_state` は `wire-free`）。`esp32-v003` の spi-target は `cs_setup_ns` を宣言する。ピンの無い wire の profile は無い。
-- 2026-10-06 の単純化（b69ec26〜9d4baf9）とその後（f0c68bf、d34dafa、4bd3a87、59dd028）: session_id を持つ 10 byte の要求の見出し
-  1 つ。TLV は tag(u8) len(u16) value。どの fn の describe も `ops` tag を持つ（profile が書かなければ `virtual_bench.VirtualProbe` がその
-  インターフェースの表の op をすべて立てる。`virtual_bench.ops_of(name, *without)` で任意の op を外す）。再開は無い。コンソールのストリームは
-  場所と mechanism ごとの probe のもので、送りの列は hart が走っている間 poll ごとに dmseq は 2、DMDATA は 3 byte ずつ target に渡す
-  （`console_take(sid)` は全部渡す）。生きている connection に加わる attach は、運ばない設定をそのまま保つ。`tests/test_vectors.py` は
-  sessions.json を 1 段ずつ、ops.json の全部の場合を、それぞれが書く状態の仮想ベンチで走らせる。
-- 2026-10-06 の構成（289bde0〜498ae95）: fn 0 は本体で list に載らず、ops は必須の 8 つ。どの profile も、前からあった fn の後ろに
-  `oep.probe.plan`（plan_roles 32）と `oep.probe.restart`（restart_max_ms 2000）を並べる: p4-x035 は plan 14 / restart 15、
-  esp32-v003 は 11 / 12、p4-bench は 8 / 9、rp2350-pins は 7 / 8。`virtual_bench.without(probe, name)` はインターフェースを外す
-  （`virtual_bench.without(p, virtual_bench.RESTART)`）。logic、analog、capture-group は subscribe / unsubscribe（0x30 / 0x32）を立て、min_bytes /
-  max_delay_ms はストリーミングのキャプチャのデータを待たせ、出来事は待たせない。core §7.4 を破る ops（試験が `fill_ops=False` で
-  与えたもの）は与えたとおりに出す。
+試験の hook はほかに: probe がピンに何をしているかは `pin_state(ch)`（MISO は CS が有効な間だけ駆動 - `spi_select` -、i2c-target は
+オープンドレインで自分の pull-up だけ - `virtual_bench.with_i2c_pullups` -、plan を取っても使い始めるまでピンは変わらない、閉じた
+connection のピンは idle に戻る）。channel に無い pull の idle（`no_pull`）。`virtual_bench.with_unit_id(probe, "x-...")` は `x-` の unit_id
+の probe を作り、`virtual_bench.without(probe, name)` はインターフェースを外す（`virtual_bench.without(p, virtual_bench.RESTART)`）。どの fn の
+describe も `ops` tag を持つ（profile が書かなければ `VirtualProbe` がそのインターフェースの表の op をすべて立て、
+`virtual_bench.ops_of(name, *without)` で任意の op を外す。core §7.4 を破る ops - 試験が `fill_ops=False` で与えたもの - は与えたとおりに
+出す）。`core-v1` 以外のどの profile も、前からあった fn の後ろに `oep.probe.plan`（plan_roles 32）と `oep.probe.restart`（restart_max_ms
+2000）を並べる: p4-x035 は plan 14 / restart 15、esp32-v003 は 11 / 12、p4-bench は 8 / 9、rp2350-pins は 7 / 8。
+`tests/test_spec_vectors.py` は oep-spec のベクタ（sessions.json を 1 段ずつ、ops の場合を byte のとおりに）を仮想ベンチとこの client で走らせる。
 
 外のプログラムの試験には `virtual_bench_serve` を子プロセスで使う:
 
@@ -384,8 +355,8 @@ uv run python -m oep_client.virtual_bench_serve --pty --profile p4-bench --conso
 ```
 
 stdin に `reboot` の 1 行を書くと、セッションの途中で probe が新しい乱数の boot_id で再起動する（`Endpoint.reboot`）。
-セッションの表、送り直しの表、接続、ストリーム、購読、plan、保存していない設定は消え、保存した設定（`--label`）がもう一度当たる。古いセッションでの要求は no_session になり、confirm と open は新しい boot_id を返す。
-pty や TCP の接続は開いたまま。stderr に `virtual_bench_serve: rebooted, boot_id 0x........` を出す。`lose [CONNECTION]` はその connection（無ければ生きているすべて）の線をずっと失わせる（`Endpoint.lose`、debug §2）: connection とそのコンソールのストリームが閉じ、以後それを名指す要求は no_resource。stderr に `virtual_bench_serve: lost connection(s) ...` を出す。ほかの行は stderr に一言出して無視する。oep.probe.restart の restart（oep-if-restart。どの profile もこのインターフェースを並べ、describe に restart_max_ms 2000 を出す。`--no-restart` はそれを持たない probe にする: list に無く、その fn は unknown_function）は要求で同じことをする: 応答を先に送り、それから probe が再起動し、要求の後ろに読んでいたものは捨てる:
+セッションの表、送り直しの表、接続、ストリーム、購読、plan、保存していない設定は消え、保存した設定（`--label`）がもう一度当たり、時計は 0 から、シリアルの口は起動時の速さに戻る。古いセッションでの要求は no_session になり、confirm と open は新しい boot_id を返す。
+pty や TCP の接続は開いたまま。stderr に `virtual_bench_serve: rebooted, boot_id 0x........` を出す。`lose [CONNECTION]` はその connection（無ければ生きているすべて）の線をずっと失わせる（`Endpoint.lose`、debug §2）: connection とそのコンソールのストリームが閉じ、以後それを名指す要求は no_resource。stderr に `virtual_bench_serve: lost connection(s) ...` を出す。`capture-overflow FN [ERROR]` はキャプチャ FN に、取っている区画の途中のデータを落とさせる（`Endpoint.capture_overflow`）: その区画は出さず、トラックはエラーで止まる（state 6、error は ERROR、既定 2）。ほかの行は stderr に一言出して無視する。oep.probe.restart の restart（oep-if-restart。`core-v1` 以外のどの profile もこのインターフェースを並べ、describe に restart_max_ms 2000 を出す。`--no-restart` はそれを持たない probe にする: list に無く、その fn は unknown_function）は要求で同じことをする: 応答を先に送り、それから probe が再起動し、要求の後ろに読んでいたものは捨てる:
 
 ```python
 # 試験は子プロセスを stdin=PIPE で持ち、その行を書く
@@ -394,8 +365,9 @@ proc.stdin.write(b"reboot\n"); proc.stdin.flush()
 
 pty がシリアルの口（host が TIOCEXCL を掛けて開く）、`--tcp PORT` は既定で probe の TCP の経路と同じ length のフレームを話す（`--framing length`:
 待ち受けは probe の TCP の経路として describe に載り、confirm がその番号を返す。max_frame を超える長さは接続を閉じる）。
-`--framing cobs` は指定したときだけで、socket の上でシリアルの口をまねる（COBS のフレーム、一度に 1 つの接続）。length の framing の TCP は同時に `--tcp-connections N` 個（既定 3。参照の probe と同じ。それを超える接続は受けてすぐ閉じる）の接続に答える。どの接続も別の経路（transports §1: confirm と使っている revision は接続ごと、通知はその fn の subscribe が来た接続へ）で、probe は 1 つ: ある接続のセッションがロックを持つ間、別の接続の open は locked で断られ、lock_state はどの接続からも同じに見える。`--framing cobs`（シリアルの口）は今も一度に 1 つの接続に答える。閉じた接続はセッションを終えない（transports §3）: セッション、ロック、購読、送り直しの表は lease が切れるまで残り、閉じた接続への通知は捨て、別の接続からの同じ id の open がセッションを取り戻し、通知もその接続に移る（core §6.2）。`--once` は、接続を 1 つ受けた後に接続が 1 つも無くなったら終わる（length の framing では、重なった接続の最後が閉じたとき）。故障の注入は `--drop N`（N 番目の答えを 1 回出さない。要求は実行済みなので送り直しは覚えた答えを
-受ける）、`--noise TEXT`（答えの前に雑音）、`--corrupt N`（N 番目の答えの CRC を 1 回壊す）。`--capture-slipped` は capture の
+`--framing cobs` は指定したときだけで、socket の上でシリアルの口をまねる（COBS のフレームだけ、一度に 1 つの接続）。length の framing の TCP は同時に `--tcp-connections N` 個（既定 3。参照の probe と同じ。それを超える接続は受けてすぐ閉じる）の接続に答える。どの接続も別の経路（transports §1: confirm と使っている revision は接続ごと、通知はその fn の subscribe が来た接続へ）で、probe は 1 つ: ある接続のセッションがロックを持つ間、別の接続の open は locked で断られ、lock_state はどの接続からも同じに見える。`--framing cobs`（シリアルの口）は今も一度に 1 つの接続に答える。閉じた接続はセッションを終えない（transports §3）: セッション、ロック、購読、送り直しの表は lease が切れるまで残り、閉じた接続への通知は捨て、別の接続からの同じ id の open がセッションを取り戻し、通知もその接続に移る（core §6.2）。`--once` は、接続を 1 つ受けた後に接続が 1 つも無くなったら終わる（length の framing では、重なった接続の最後が閉じたとき）。故障の注入は `--drop N`（N 番目の答えを 1 回出さない。要求は実行済みなので送り直しは覚えた答えを
+受ける）、`--noise TEXT`（答えの前に雑音）、`--corrupt N`（N 番目の答えの CRC を 1 回壊す）。`--uart-rx` は、セッションが plan して
+configure した最初の fixture UART の RX にバイトを渡し、`--run-hook` は riscv-dm の run を host 自身の模型にする。`--capture-slipped` は capture の
 区画すべてに flags bit2 を立てる。
 `--silent-until-reset N` は N 番目のピンの組の target を、その線でリセットされるまで（host の reset TLV 付きの attach）何も答えない
 ようにする（`--label CH=TEXT`、例 `23=v003.nrst` は host のプロファイル v003 の線を名付ける、host ガイド §5.3）。port_speed: `esp32-v003` の `oep.probe.link` は持つ（`--no-port-speed` で ops から外す）。

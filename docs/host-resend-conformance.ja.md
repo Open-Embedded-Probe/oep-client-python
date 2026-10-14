@@ -1,7 +1,7 @@
 # 同一要求の再送と結果不明後の復帰
 
 SPEC checkoutを明示し、`HostResendChecks(SampleHostResendAdapter(), spec=path).run()`を実行する。
-core/transports本文と待ちの数値を照合する。private設備やOSの口を使わない。
+core/transports本文（oep-spec a09fa45、待受け期限の検査と共有）と待ちの数値を照合する。private設備やOSの口を使わない。
 既存SerialLink.send/exchange/resync/recover_transport、現在のvirtual Core、ResourceModelを
 仮想時計と予定streamで接続する。事前に確定したmax_frame64/inflight2、所有セッション7/lease60000のfixture。
 実時計で待たず、moduleのtime参照の一時差替えは必ず戻す。
@@ -19,12 +19,18 @@ fixtureのfn1/op16はresource(kind u8)を作り、成功payloadはid(u16)。op19
 lengthは信頼できる非TCP経路のfixtureとして、実際のresyncも通す。
 TCPの接続close/reopen、link自身のconfirm待ち時間、実clock/physical transportはこの結果に含めない。
 破損/欠落時の再送回数はresend=Trueの現実装の採用設定。SPECがすべてのHostへ再送を必須にするという意味ではない。
-待ちの転送時間は実writeしたframe長とmax_frame64から独立に求め、欠落時の再送開始が下限以上であることを確認する。
+待ちの下限はa09fa45のcore §4.4に従い、max_op_ms＋1秒＋転送時間（fixtureのop16は短い処理上限を定めない）。
+fixtureのmax_op_msは2000 msで、reportの値から検査側が下限を独立に計算する（旧版はadapterの「引数0＋1秒」を信用していた）。
+production Host.expect_msは引数時間だけを運ぶため、サンプルはSerialLink.expected_sへmax_op_msを明示的に与える。
+転送時間は実writeしたframe長とmax_frame64から独立に求め、欠落時の再送開始が下限以上であることを確認する。
+Probe側のreplay（再実行せず、leaseを更新しない）はcore §5.1/6.1（a09fa45）と一致する。byte記録は任意になったが、
+このfixtureのvirtual Coreは記録を持つProbeとして振る舞う。
 reply byteとresource next_id、live状態、lease deadlineをProbeイベントへ記録する。
 
-単体22件：正常1、観測故障13、実link/Core故障6、制御不足2。
+単体27件：正常1、観測故障13、実link/Core故障6、旧下限（引数時間＋1秒）での早い再送4、fixtureのmax_op_ms欠落1、制御不足2。
 corr/payloadの変更、結果変更、再実行/lease更新、早い再送、解決済み要求の再送、
 failed flag/confirm省略、復帰前照会、復帰失敗後の継続、誤った結果を検出する。
 fixtureが復帰後の新要求まで落としていた条件を修正し、productionや現在のCoreのコードは変更していない。
 TCP close/reopen、実clock/transport、own-link confirm時間、破損時の再送上限、他pipeline/cache容量、
+corrの循環と半周の制限（core §4.1/5.1、a09fa45）、production Hostによる処理上限の選択、
 全production Host統合は残る。full_conformance=false。

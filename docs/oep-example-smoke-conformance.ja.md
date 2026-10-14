@@ -25,7 +25,7 @@ pinsと各callbackは呼び出すプロジェクトが明示する。私的bench
 これは実行すると指定GPIOを設定し、UARTのplanを作り、SWD attachを行う検査である。明示した設備だけを選び、排他とframingは呼び出す側で用意する。
 未選択のtargetを探したり、他のセッションをforceで奪ったりはしない。
 
-SPECのcoreと、fixture/plan/debug/commonの本文SHAを確認してから送信する。
+SPECのcoreと、fixture/plan/debug/commonの本文SHAを確認してから送信する（レビュー済みはoep-spec a09fa45）。
 選択したOEPの必須操作はopsにあることを確認する。不在なら準備不成立を失敗として記録し、任意機能と混同しない。
 
 GPIOはplan/set/readを行い、後ろに未対応modeを持つbatchを実行前に拒否して旧状態を保つことを確認する。
@@ -33,10 +33,13 @@ GPIOはplan/set/readを行い、後ろに未対応modeを持つbatchを実行前
 同値設定の再適用などを確かめるには、levelだけでなく設定作用の回数などを独立に観測する必要がある。
 
 UARTはRXだけのplan、configure、明示したAB刺激、2回の非消費readを扱う。
+受信はconfigureから始まるため、刺激はconfigureの後に与える。configure前のstatusがbaud 0・format 0（未configureの印）であること、
+configure後のstatusがconfigureの返した実際のbaudと8N1であることも確認する。
 marks/writeが無ければ、それぞれfrom3のunsupportedと不在writeのunknown_operationを確認する。任意操作の不在を違反にはしない。
 刺激callbackが無ければUARTはnot_run、全体はincompleteであり、PASSや設備不足skipにしない。
 
 ARMはSWD attachで得たconnectionを別target fnのtransferへ渡し、DP identityとACK/進捗を確認する。
+attachは固定部分`method(0)、swdio、swclk、max_speed`で送り、connectionはu32として読み、transferの先頭へu32で置く。
 固定応答がmax_frameへ入らないread batchはtargetへ触らず拒否する。
 session終了後に新SIDで旧connectionを使い、no_resourceと作用不変を確認する。
 read_block/write_blockを必須にせず、新しい世代番号やlarge result bufferを要求しない。

@@ -18,7 +18,7 @@ import struct
 import pytest
 
 from oep_client import (capture as c, config, console, core, endpoint, virtual_bench, fixture, host as h, message as m,
-                        registry_legacy as reg, riscv)
+                        registry as reg, riscv)
 
 UNKNOWN = 0x3D                                 # no context defines it
 CORE_NAME = "(core)"                           # fn 0: the core has no name (core §0); a label for these tests

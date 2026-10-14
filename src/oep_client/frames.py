@@ -8,7 +8,7 @@ from __future__ import annotations
 import struct
 import time
 
-from . import registry_legacy as reg
+from . import registry as reg
 
 STALL_S = reg.TIMING["probe_frame_gap_ms"] / 1000   # a frame whose bytes stop this long is not coming
 

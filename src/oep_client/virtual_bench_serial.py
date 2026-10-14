@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from . import cobs, registry_legacy as reg
+from . import cobs, registry as reg
 
 GAP_MS = reg.TIMING["probe_frame_gap_ms"]
 
@@ -151,7 +151,7 @@ class VirtualSerialPort:
     def tick(self) -> None:
         self._gap(self.ep.now())
         self.ep.tick()
-        for f in self.ep.pushes():                   # events and data the probe sends by itself (core §11)
+        for f in self.ep.pushes():                   # events and data the probe sends by itself (core §10)
             self.frames.append(self._line(cobs.frame(f)))
 
     def _line(self, wire: bytes) -> bytes:

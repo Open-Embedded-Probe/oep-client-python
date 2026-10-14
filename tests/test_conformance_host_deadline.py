@@ -14,7 +14,7 @@ def selected_spec(monkeypatch):
 def test_wait_loop_and_pipeline_deadline_origins():
     r=HostDeadlineChecks(SampleHostDeadlineAdapter(),spec=SPEC).run()
     assert r['status']=='passed',r['checks']
-    assert len(r['checks'])==5 and len(r['observations'])==24 and not r['full_conformance']
+    assert len(r['checks'])==6 and len(r['observations'])==34 and not r['full_conformance']
 
 
 @pytest.mark.parametrize('fault,group',[
@@ -77,7 +77,7 @@ def test_missing_controls_do_not_pass(missing):
     a=SampleHostDeadlineAdapter();setattr(a,missing,None);r=HostDeadlineChecks(a,spec=SPEC).run();assert r['checks'][0]['status']=='failed'
 
 
-def registry():return dict(timing=dict(host_wait_add_ms=1000,notify_pending_max_frames=2),constants=dict(min_max_frame=64))
+def registry():return dict(timing=dict(host_wait_add_ms=1000,notify_pending_max_frames=2,core_quick_op_max_ms=1000),constants=dict(min_max_frame=64),limits=dict(max_op_ms_max=600000))
 
 
 @pytest.mark.parametrize('document',REVIEWED)
@@ -93,7 +93,7 @@ def test_document_guard(monkeypatch,tmp_path,document):
     with pytest.raises(Violation,match='document changed'):actual_review(tmp_path)
 
 
-@pytest.mark.parametrize('field',['margin','notifications','frame'])
+@pytest.mark.parametrize('field',['margin','notifications','frame','quick','quick_missing','maximum'])
 def test_registry_guard(monkeypatch,field):
     import oep_client.conformance_host_deadline as module
     from oep_client.conformance import Violation
@@ -101,5 +101,27 @@ def test_registry_guard(monkeypatch,field):
     if field=='margin':r['timing']['host_wait_add_ms']=999
     if field=='notifications':r['timing']['notify_pending_max_frames']=1
     if field=='frame':r['constants']['min_max_frame']=63
+    if field=='quick':r['timing']['core_quick_op_max_ms']=500
+    if field=='quick_missing':del r['timing']['core_quick_op_max_ms']
+    if field=='maximum':r['limits']['max_op_ms_max']=600001
     monkeypatch.setattr(module,'spec_identity',lambda path:(r,{'commit':'unit-fixture'}))
     with pytest.raises(Violation):actual_review('/explicit/changed-deadline-spec')
+
+
+@pytest.mark.parametrize('fault,group',[
+    ('argument_only','SINGLE'),('argument_only','TIMEOUT'),('argument_only','PIPELINE'),
+    ('quick_zero','QUICK'),('quick_before_describe_zero','QUICK')])
+def test_old_argument_time_floor_is_detected(monkeypatch,fault,group):
+    # core §4.4 at a09fa45: the floor is the whole-request processing bound (max_op_ms, or the fn 0 quick
+    # bound, 1000 ms while max_op_ms is unknown) + 1000 ms + transfer; the argument time alone is too short.
+    from oep_client import conformance_host_deadline_sample as sample
+    real=sample.bound_ms
+    def bad(case):
+        if fault=='argument_only' and not case['quick']:return case['argument_ms']
+        if fault=='quick_zero' and case['quick']:return 0
+        if fault=='quick_before_describe_zero' and case['quick'] and case['max_op_ms'] is None:return 0
+        return real(case)
+    monkeypatch.setattr(sample,'bound_ms',bad)
+    r=HostDeadlineChecks(SampleHostDeadlineAdapter(),spec=SPEC).run();row=next(x for x in r['checks'] if x['id']=='HOST-DEADLINE-'+group)
+    assert row['status']=='failed' and row['error'].startswith('Violation:'),row
+

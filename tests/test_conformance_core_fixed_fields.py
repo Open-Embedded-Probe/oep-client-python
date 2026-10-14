@@ -14,6 +14,14 @@ def checker(reader=decode,factory=None):
     return CoreFixedFieldChecks(reader,factory or (lambda:setup()[1]),spec='/explicit/unit-fixture')
 
 
+def test_removed_confirm_flags_are_not_reviewed_shape(monkeypatch):
+    # a09fa45 removed confirm flags(u8): a 17-byte confirm inventory no longer matches the reviewed core.
+    from oep_client import conformance_core_fixed_fields as ff
+    old=tuple(('confirm',1,req,reply[:2]+(('flags',1),)+reply[2:]) if name=='confirm' else (name,op,req,reply) for name,op,req,reply in CORE_SHAPES)
+    monkeypatch.setattr(ff,'CORE_SHAPES',old)
+    with pytest.raises(Exception,match='prefixes differ'):checker().run()
+
+
 def test_review_and_fixed_fields():
     r=checker().run();assert r['status']=='passed',r['checks']
     assert len(r['checks'])==5 and len(r['inventory'])==8 and not r['full_conformance']

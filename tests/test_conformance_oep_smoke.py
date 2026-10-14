@@ -27,19 +27,22 @@ class ExampleCore(SmallCore):
         self.modes = {n: 0 for n in range(5)}
         self.buffer, self.position = b'', 0
         self.gpio_applies = self.target_calls = 0
-        self.next_resource = 1
+        self.uart_baud = 0
+        self.next_resource = 0x10001  # u32 numbers (core §9); earlier allocations/gaps put this past u16
 
     def resources(self):
         # Exclude valid core order/lease updates and allowed allocation-ID gaps.
         return {'plans': copy.deepcopy(self.plans), 'connections': copy.deepcopy(self.connections),
                 'gpio_modes': dict(self.modes), 'uart_buffer': self.buffer.hex(),
-                'uart_position': self.position, 'gpio_applies': self.gpio_applies, 'target_calls': self.target_calls}
+                'uart_position': self.position, 'uart_baud': self.uart_baud, 'gpio_applies': self.gpio_applies,
+                'target_calls': self.target_calls}
 
     def released(self):
-        return not self.plans and not self.connections and not self.buffer and not any(self.modes.values())
+        return (not self.plans and not self.connections and not self.buffer and not any(self.modes.values())
+                and not self.uart_baud)
 
     def feed(self, data):
-        assert self.plans.get(5) == [(1, 2)]
+        assert self.plans.get(5) == [(1, 2)] and self.uart_baud  # receiving starts at an explicit configure
         self.buffer += data; self.position += len(data)
 
     def send(self, request):
@@ -75,7 +78,7 @@ class ExampleCore(SmallCore):
             if op == 3:
                 result += tag(67, b'\5\0')
             if op == 17 and result[3:5] == b'\1\0' and self.oep_fault != 'end_leak':
-                self.plans.clear(); self.connections.clear(); self.buffer = b''
+                self.plans.clear(); self.connections.clear(); self.buffer = b''; self.uart_baud = 0
                 self.modes = {n: 0 for n in range(5)}
             return result
         offered = {3: {16, 17}, 4: {16, 17}, 5: {16, 17, 22}, 8: {17, 18, 19}, 9: {16}}
@@ -110,9 +113,12 @@ class ExampleCore(SmallCore):
             return result
         if fn == 5:
             if op == 16:
+                self.uart_baud = 115200
                 return success(struct.pack('<I', 115200))
             if op == 22:
-                return success(struct.pack('<IB', 115200, 0))
+                if self.oep_fault == 'uart_status_default':  # the removed implicit 115200 8N1 before configure
+                    return success(struct.pack('<IB', self.uart_baud or 115200, 0))
+                return success(struct.pack('<IB', self.uart_baud, 0))
             source, arg, maximum = struct.unpack('<BQH', body)
             if source == 3:
                 return reject(11, b'\0')
@@ -122,12 +128,18 @@ class ExampleCore(SmallCore):
                 self.buffer = self.buffer[len(data):]
             return result
         if fn == 8:
-            assert op == 17 and body[0] == 0
+            assert op == 17
+            if self.oep_fault == 'attach_tlv_only':  # an old probe wanting max_speed/pins as TLVs
+                return reject(3)
+            method, swdio, swclk, max_speed = struct.unpack_from('<BHHI', body)
+            assert len(body) == 9 and (method, swdio, swclk) == (0, 3, 4) and max_speed == 1000000
             number = self.next_resource; self.next_resource += 1
             self.connections[number] = {'wire_fn': 8, 'pins': [3, 4], 'sid': sid}
-            return success(struct.pack('<HIBI', number, 0x1BA01477, 0, 1000000))
+            if self.oep_fault == 'connection_u16':
+                return success(struct.pack('<HIBI', number & 0xFFFF, 0x1BA01477, 0, 1000000))
+            return success(struct.pack('<IIBI', number, 0x1BA01477, 0, 1000000))
         assert fn == 9
-        connection, count = struct.unpack_from('<HH', body)
+        connection, count = struct.unpack_from('<IH', body)
         if connection not in self.connections:
             return reject(10)
         if self.oep_fault == 'cross_fn':
@@ -136,7 +148,7 @@ class ExampleCore(SmallCore):
             if self.oep_fault == 'overflow_io':
                 self.target_calls += 1
             return reject(11, b'\0')
-        assert body[4:] == bytes([2]) * count
+        assert body[6:] == bytes([2]) * count
         self.target_calls += count
         return success(struct.pack('<HBBH', count, 0, 1, count) + struct.pack('<I', 0x1BA01477) * count)
 
@@ -159,7 +171,8 @@ def test_oep_representative_scenarios_pass(input_only):
 
 
 @pytest.mark.parametrize('fault,case', [('gpio_partial', 'GPIO'), ('gpio_read_changes', 'GPIO'),
-    ('uart_consumes', 'UART'), ('cross_fn', 'ARM'), ('overflow_io', 'ARM'), ('end_leak', 'GPIO')])
+    ('uart_consumes', 'UART'), ('uart_status_default', 'UART'), ('cross_fn', 'ARM'), ('overflow_io', 'ARM'),
+    ('attach_tlv_only', 'ARM'), ('connection_u16', 'ARM'), ('end_leak', 'GPIO')])
 def test_oep_representative_faults_are_detected(fault, case):
     _, report = execute(fault)
     assert report['status'] == 'failed'

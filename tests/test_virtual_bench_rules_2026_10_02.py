@@ -10,7 +10,7 @@ import sys
 
 import pytest
 
-from oep_client import catalog, endpoint, virtual_bench, virtual_bench_capture, message as m, registry_legacy as reg
+from oep_client import catalog, endpoint, virtual_bench, virtual_bench_capture, message as m, registry as reg
 
 
 CORE = reg.CORE

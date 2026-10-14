@@ -15,7 +15,7 @@ import struct
 from dataclasses import dataclass, field
 from typing import Callable
 
-from . import registry_legacy as reg
+from . import registry as reg
 
 SCHEME_DMI_7F = reg.COMMON.enum["target_id_scheme"]["dmi_7f"]   # the u32 at DMI 0x7F (oep-if-debug §3)
 

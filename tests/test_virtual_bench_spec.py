@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from oep_client import cobs, endpoint, virtual_bench, message as m, registry_legacy as reg
+from oep_client import cobs, endpoint, virtual_bench, message as m, registry as reg
 
 CFG = reg.PROBE_CONFIG
 W, RV = reg.WIRE_RVSWD.op, reg.TARGET_RISCV_DM.op

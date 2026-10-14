@@ -4,7 +4,7 @@ from pathlib import Path
 import struct
 from .conformance import require,spec_identity
 
-REVIEWED_CORE_SHA256='cddf917d49f36bbb1a5b24fbda247675834e1c398beaa179728b8efa31831bf9'
+REVIEWED_CORE_SHA256='4c5dcdcc779c5ba0ee85060a33b2b629deddad3e8f8f1a22e18bdeea9d471bdc'
 CORE_OPS={'confirm':1,'list':2,'describe':3,'clock':4,'open':16,'end':17,'keepalive':18,'lock_state':19}
 CORE_REASONS={'unknown_function':1,'unknown_operation':2,'malformed':3,'unavailable':4,'window_exceeded':6,'no_session':7,'locked':8,'session_required':9,'no_resource':10,'unsupported':11,'result_lost':12}
 
@@ -14,7 +14,7 @@ def reviewed_identity(spec):
     require(core_sha==REVIEWED_CORE_SHA256,'core text changed: review result shapes before reusing vectors')
     require(registry['protocol']['revision']==1 and registry['protocol']['byte_order']=='little' and {r['name']:r['code'] for r in registry['core']['op']}==CORE_OPS and registry['reject_reasons']==CORE_REASONS,'selected core revision/numbers differ')
     require(registry['roles']['result']==2 and registry['resolutions']=={'rejected':0,'completed':1} and registry['outcomes']=={'success':0,'failed':1,'partial':2},'selected result header meanings differ')
-    tags=registry['core']['tlv'];require(tags['confirm_answer']=={'transport':1} and tags['locked_payload']=={'owner':1} and tags['lock_state_answer']=={'owner':1} and tags['unavailable_payload']=={'cause':1,'channel':2,'fn':5} and tags['unsupported_payload']=={'supported':1,'channel':2,'fn':5,'index':64},'selected core response tag spaces differ')
+    tags=registry['core']['tlv'];require(tags['confirm_answer']=={'transport':1} and tags['locked_payload']=={'owner':1} and tags['lock_state_answer']=={'owner':1} and tags['unavailable_payload']=={'cause':1,'channel':2,'fn':5} and tags['unsupported_payload']=={'supported':1,'channel':2,'fn':5},'selected core response tag spaces differ')
     require(registry['describe_common']=={'role_channels':1,'max_clock_hz':2,'max_length':3,'min_clock_hz':4,'features':5,'channel_group':6,'ops':7} and tags['describe']=={'firmware':64,'model':65,'unit_id':66,'channels':67,'label':70,'transport':73,'chip':76,'max_op_ms':77},'selected declaration tag spaces differ')
     return dict(identity,reviewed_core_sha256=core_sha)
 
@@ -102,11 +102,15 @@ class HostCoreShapeChecks:
         for ctx,tag,value,_,_ in known_vectors():
             base=self.read(ctx);require(base is not None,'valid fixed base');self.expect(self.append(ctx,field(tag,value)),base['fixed'],[(tag,value)])
     def known_width(self):
-        for ctx,tag,_,bad,_ in known_vectors():
+        for ctx,tag,good,bad,_ in known_vectors():
             base=self.read(ctx)
             for value in bad:
                 decoded=self.read(self.append(ctx,field(tag,value)))
                 require(decoded is None or decoded==base,'wrong known TLV width/count used')
+                # core §2.3 (a09fa45): a later same-tag TLV is validated as well; a broken one is never used,
+                # whether the reader then drops the whole response or keeps only the valid first value.
+                decoded=self.read(self.append(ctx,field(tag,good)+field(tag,value)))
+                require(decoded is None or decoded in (dict(base,tlvs=[(tag,good)]),base),'broken later duplicate TLV used')
     def duplicates(self):
         for ctx,tag,value,_,repeat in known_vectors():
             base=self.read(ctx);other=bytes(((value[0]+1)&255,))+value[1:]
@@ -138,7 +142,7 @@ class HostCoreShapeChecks:
     def run(self):
         rows=[]
         for name in self.cases:
-            at=len(self.observations);row=dict(id='HOST-CORE-'+name,status='passed',clause='core §2.2/2.3/2.4/4.3/6.4/7/12')
+            at=len(self.observations);row=dict(id='HOST-CORE-'+name,status='passed',clause='core §2.2/2.3/2.4/4.3/6.4/7/11')
             try:getattr(self,name.lower().replace('-','_'))()
             except Exception as e:row.update(status='failed',error=f'{type(e).__name__}: {e}')
             row['observations']=self.observations[at:];rows.append(row)

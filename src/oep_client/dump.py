@@ -10,7 +10,7 @@ import json
 import struct
 from dataclasses import dataclass, field
 
-from . import catalog, interfaces, message as m, names, registry_legacy as reg
+from . import catalog, interfaces, message as m, names, registry as reg
 
 CORE_FN, OP_CONFIRM, OP_LIST, OP_DESCRIBE = 0, 0x01, 0x02, 0x03
 

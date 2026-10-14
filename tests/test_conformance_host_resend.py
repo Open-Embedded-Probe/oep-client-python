@@ -92,3 +92,20 @@ def test_actual_link_and_core_faults_are_detected(monkeypatch,fault,case):
 @pytest.mark.parametrize('missing',['run_case','source_sha256'])
 def test_missing_controls_do_not_pass(missing):
     a=SampleHostResendAdapter();setattr(a,missing,None);r=HostResendChecks(a,spec=SPEC).run();assert r['checks'][0]['status']=='failed'
+
+
+@pytest.mark.parametrize('case',['LOST-COBS','LOST-LENGTH','PIPELINE-COBS','FAILURE-RECOVER'])
+def test_argument_time_resend_floor_is_detected(monkeypatch,case):
+    # core §4.4 at a09fa45: a resend waits max_op_ms + 1000 ms + transfer, not the argument time (0) + 1000 + transfer.
+    from oep_client import link
+    monkeypatch.setattr(link.SerialLink,'_wait',lambda d:1+d.transfer_s())
+    r=HostResendChecks(SampleHostResendAdapter(),spec=SPEC).run();row=next(x for x in r['checks'] if x['id']=='HOST-RESEND-'+case)
+    assert row['status']=='failed' and 'before missing response wait' in row['error'],row
+
+
+def test_missing_fixture_max_op_ms_is_not_assumed():
+    a=SampleHostResendAdapter();run=a.run_case
+    def broken(name):
+        r=run(name);r.pop('max_op_ms');return r
+    a.run_case=broken;r=HostResendChecks(a,spec=SPEC).run()
+    assert next(x for x in r['checks'] if x['id']=='HOST-RESEND-LOST-COBS')['status']=='failed'

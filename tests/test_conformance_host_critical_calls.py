@@ -4,9 +4,7 @@ The peer checks wire bytes against literal expectations and returns unsupported
 for a selected critical field. It does not model electrical effects or certify
 all optional arguments of every interface.
 
-Public interface clients still carry legacy operation numbers. This core-policy
-test deliberately does not certify those numbers against the current SPEC;
-that implementation follow-up remains separate from critical-bit validation.
+The wire forms are oep-spec a09fa45's (attach: method swdio swclk max_speed, then TLVs).
 """
 import struct
 

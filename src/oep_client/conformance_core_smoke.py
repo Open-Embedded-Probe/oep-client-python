@@ -8,7 +8,7 @@ import struct
 from .conformance import ops, require, tlvs
 from . import conformance as _helpers
 
-REVIEWED_CORE_SHA256 = 'ae404776afcf556f3036c5717b2bfef41f7942b6f07a539b016f25cd26e33063'
+REVIEWED_CORE_SHA256 = '4c5dcdcc779c5ba0ee85060a33b2b629deddad3e8f8f1a22e18bdeea9d471bdc'  # oep-spec a09fa45 docs/oep-core.ja.md
 
 
 class CoreSmokeChecks:
@@ -187,4 +187,6 @@ class CoreSmokeChecks:
             'unfinished_session': self.session,
             'unchecked': ['physical framing and transport faults', 'full lease/force and owner display behavior',
                           'resources and interface operation behavior', 'Host half-range admission and old-reply draining',
+                          'fn 0 quick-operation processing bound (core_quick_op_max_ms) and other timing',
+                          'optional policy admission of session operations (unavailable cause 7)',
                           'all mandatory core conditions'] + ([] if self.observe else ['replay side effects not independently observed'])}

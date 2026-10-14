@@ -1,17 +1,18 @@
 # コアの固定フィールドと省略のレビュー
 
 core §2.3の「固定部分に省略できるフィールドを置かない」を、revision1のコアpayloadへ適用する。
-本文SHAは`cddf917d49f36bbb1a5b24fbda247675834e1c398beaa179728b8efa31831bf9`。
+本文SHAは`4c5dcdcc779c5ba0ee85060a33b2b629deddad3e8f8f1a22e18bdeea9d471bdc`（oep-spec a09fa45、[core形の検査](host-core-shapes-conformance.ja.md)の固定を共有）。
+a09fa45でconfirmの応答とlistのentryからflagsが削除されたので、台帳から外した。
 CoreFixedFieldChecksはSPECを明示指定し、本文・番号が変わればレビューし直す。
 生成registryは番号の照合に使う。幅・省略条件は本文§1.1/4.3/6.4/7を読んで下の台帳に固定した。
 privateベンチへの依存や隣接SPECの自動探索はない。
 
-以下の固定フィールドはすべて必須。意味のあるゼロ値、空の並び、予約flagsもbyteを省略しない。
+以下の固定フィールドはすべて必須。意味のあるゼロ値、空の並びもbyteを省略しない。
 後続TLVを省略しても固定部分の幅は変わらない。可変の名前にはname_lenを必ず置く。
 
 | op | 必須要求payload | 必須成功payload | 固定prefix幅（要求/成功） |
 |---|---|---|---|
-| confirm | magic4、min_rev u8、max_rev u8 | magic4、revision u8、flags u8、max_frame u16、window u32、max_inflight u8、boot_id u32 | 6/17 |
+| confirm | magic4、min_rev u8、max_rev u8 | magic4、revision u8、max_frame u16、window u32、max_inflight u8、boot_id u32 | 6/16 |
 | list | first u16 | total u16、count u8、count個のentry | 2/3＋entry |
 | describe | fn u16、first u16 | more u8 | 4/1 |
 | clock | 空 | boot_id u32、uptime_ns u64 | 0/12 |
@@ -20,8 +21,8 @@ privateベンチへの依存や隣接SPECの自動探索はない。
 | keepalive | 空 | 空 | 0/0 |
 | lock_state | 空 | locked u8、remaining_ms u32 | 0/5 |
 
-list entryはfn u16、instance u16、revision u8、flags u8、name_len u8、name。
-固定prefix7 byteとname_lenで決まるnameが必要で、nameは1〜48 byte。
+list entryはfn u16、instance u16、revision u8、name_len u8、name。
+固定prefix6 byteとname_lenで決まるnameが必要で、nameは1〜48 byte。
 count0でもtotal/countはある。describeに続く宣言がなくてもmoreはある。
 locked0でもremaining_ms0はある。openのlease_ms0は既定を選ぶ値であり、force0も必ず送る。
 clockのuptime0やunsupportedのtag0も固定fieldを省略する意味にはしない。
@@ -41,7 +42,7 @@ REVIEW、REQUEST-FIELDS、RESPONSE-FIELDS、ZERO-VALUES、OWNER-TLVの5項目。
 各要求/応答の固定fieldを丸ごと抜いた刺激と、list要素の各field欠落を確認する。
 これはtailを含まない欠落刺激であり、任意byte列を足した全曖昧性を証明しない。
 
-`uv run pytest -q tests/test_conformance_core_fixed_fields.py`は16件。
-正常1、応答欠落受理の故障6、短い要求受理の故障4、ゼロ値/owner省略の混同5。
+`uv run pytest -q tests/test_conformance_core_fixed_fields.py`は17件。
+正常1、応答欠落受理の故障6、短い要求受理の故障4、ゼロ値/owner省略の混同5、旧confirm flags台帳の検出1。
 コアpayloadのレビューであり、全message header、拡張の要求/応答/event/data/TLV、
 config項目の固定形・省略条件は別途レビューが必要。full_conformance=false。

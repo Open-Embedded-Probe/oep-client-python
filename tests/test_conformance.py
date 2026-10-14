@@ -72,7 +72,7 @@ def test_transport_error_blocks_following_checks_without_recovery(failure):
     assert all(x['status'] == 'blocked' for x in report['checks'][1:])
 
 
-def legacy(monkeypatch):
+def p4_bench(monkeypatch):
     now = [1000]
     monkeypatch.setattr('oep_client.conformance.time.sleep', lambda seconds: now.__setitem__(0, now[0] + int(seconds * 1000)))
     probe = virtual_bench.PROFILES['p4-bench']()
@@ -81,20 +81,18 @@ def legacy(monkeypatch):
 
 
 def test_the_main_virtual_bench_passes_every_core_check(monkeypatch):
-    """The p4-bench profile follows the current core: every core check passes. Its interfaces still use the
-    b80555a numbers (registry_legacy) until their stages, so only their describe checks fail."""
-    ep, unit = legacy(monkeypatch)
+    """The p4-bench profile follows the current spec: every check passes, the core's and the interfaces' describe."""
+    ep, unit = p4_bench(monkeypatch)
     report = Checks(ep.handle, copy.deepcopy(REG), unit).run()
     core_rows = [r for r in report['checks'] if r['level'] == 'core']
     assert len(core_rows) == 47 and all(r['status'] == 'passed' for r in core_rows), \
         [(r['id'], r.get('error')) for r in core_rows if r['status'] != 'passed']
-    assert {r['id'] for r in report['checks'] if r['status'] != 'passed'} <= {
-        r['id'] for r in report['checks'] if r['id'].startswith('IF-DESCRIBE-')}
+    assert report['status'] == 'passed', [(r['id'], r.get('error')) for r in report['checks'] if r['status'] != 'passed']
     assert ep.holder is None                                   # the runner released its own lock
 
 
 def test_identity_mismatch_prevents_all_session_mutation(monkeypatch):
-    ep, _ = legacy(monkeypatch)
+    ep, _ = p4_bench(monkeypatch)
     sent = []
 
     def send(req):
@@ -169,7 +167,7 @@ def test_core_negative_predicates_use_spec_request_and_reason(monkeypatch, mode,
 
 def test_all_core_predicates_have_individual_results(monkeypatch):
     from oep_client.conformance import CORE_CASES
-    ep, unit = legacy(monkeypatch)
+    ep, unit = p4_bench(monkeypatch)
     report = Checks(ep.handle, REG, unit).run()
     ids = [r['id'] for r in report['checks'] if r['level'] == 'core']
     assert set(ids) == set(CORE_CASES)

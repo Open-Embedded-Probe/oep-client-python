@@ -10,7 +10,7 @@ import contextlib
 
 import struct
 
-from . import catalog, host as h, message as m, names as _names, registry_legacy as reg
+from . import catalog, host as h, message as m, names as _names, registry as reg
 
 # oep.probe.plan (oep-if-plan): which channel each role of an interface uses; listed when an interface has plan roles
 PLAN_NAME = reg.PROBE_PLAN.name

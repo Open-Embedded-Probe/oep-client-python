@@ -27,7 +27,7 @@ import re
 import sys
 from pathlib import Path
 
-from . import message as m, registry_legacy as reg
+from . import message as m, registry as reg
 
 # Imported here, not when a file is let go: __del__ may run at interpreter exit, when an import raises ImportError
 if sys.platform == "win32":

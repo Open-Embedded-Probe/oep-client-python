@@ -21,7 +21,7 @@ A probe whose confirm answer is outside core §7.1's bounds (max_frame under 64,
 or whose fn 0 describe declares a max_op_ms outside 1..600000 (core §7.5), does not conform and is not used (host guide
 §5): `NotUsable` is raised with the values, and nothing more is sent through this host.
 
-The probe's time (core §7.7, host guide §12): `clock` reads fn 0's clock - lock-free and session-free - with this
+The probe's time (core §7.6, host guide §12): `clock` reads fn 0's clock - lock-free and session-free - with this
 host's time just before the request went out and just after its answer came back (`ClockReading`); the probe read its
 clock after the request arrived and before its answer was sent, so the midpoint stands for its uptime_ns within half
 the round trip - through a relaying broker too, which relays clock (transports §1). `clock_best` keeps the reading with
@@ -37,7 +37,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, NamedTuple
 
-from . import message as m, registry_legacy as reg
+from . import message as m, registry as reg
 from .message import OepError, ProtocolError, ShortPayload  # noqa: F401  (re-exported: callers use host.*)
 
 MIN_REVISION = MAX_REVISION = 1          # the v1 shapes this client speaks
@@ -76,6 +76,8 @@ class NotUsable(OepError):
 
 
 MAX_OP_MS_MAX = reg.LIMITS["max_op_ms_max"]   # fn 0 describe max_op_ms is 1 to this (core §7.5)
+QUICK_OP_MAX_MS = reg.TIMING["core_quick_op_max_ms"]   # fn 0's quick ops finish within this and max_op_ms (core §4.4)
+QUICK_OPS = frozenset(reg.CORE.op[k] for k in ("confirm", "list", "describe", "clock", "keepalive", "lock_state"))
 RESTART_AFTER_ANSWER_S = 0.1                   # restart: the short wait before the first reopen (host guide §5.2, about 100 ms)
 RESTART_NAME = reg.PROBE_RESTART.name
 OP_RESTART = reg.PROBE_RESTART.op["restart"]   # oep.probe.restart's restart (oep-if-restart §2)
@@ -225,7 +227,7 @@ class Opened:
 
 
 class ClockReading(NamedTuple):
-    """One clock (core §7.7): this host's time just before the request went out (`before_ns`) and just after its answer
+    """One clock (core §7.6): this host's time just before the request went out (`before_ns`) and just after its answer
     came back (`after_ns`), on the host clock `Host.clock` was given (time.monotonic_ns by default); the probe's
     `uptime_ns` (ns since its boot, core §2.6a) read between the two; its `boot_id`; and the round trip
     (after - before). The probe's time stands for the host time `host_ns` (the midpoint) within `uncertainty_ns` (half
@@ -290,6 +292,21 @@ class Host:
         finally:
             self.expect_ms = saved
 
+    def max_op_ms(self) -> int | None:
+        """fn 0's describe max_op_ms (core §7.5) as far as this host has read it, else None."""
+        v = next((v for t, v in self._describes.get(m.CORE_FN, ()) if t == reg.CORE.tlv["describe"]["max_op_ms"]
+                  and len(v) == 4), None)
+        return struct.unpack("<I", v)[0] if v is not None else None
+
+    def op_bound_ms(self, fn: int, op: int) -> int:
+        """The whole request's processing bound the wait for its answer starts from (core §4.4): max_op_ms; fn 0's
+        confirm / list / describe / clock / keepalive / lock_state min(max_op_ms, core_quick_op_max_ms); while max_op_ms
+        is not known yet, core_quick_op_max_ms. An argument's wait alone never stands for it (`expecting` adds to it)."""
+        known = self.max_op_ms()
+        if known is None:
+            return QUICK_OP_MAX_MS
+        return min(known, QUICK_OP_MAX_MS) if fn == m.CORE_FN and op in QUICK_OPS else known
+
     def next_corr(self) -> int:
         """The next corr: cyclic, never 0, one counter for every session_id this host sends (core §4.1)."""
         self._corr = self._corr % 0xFFFF + 1
@@ -324,7 +341,7 @@ class Host:
             self.before_request()
         sid = session if session is not None else self._session_for(locked)
         req = m.Request(self.next_corr(), fn, op, payload, sid)
-        with self.expecting(expect_ms):
+        with self.expecting(max(expect_ms, self.op_bound_ms(fn, op))):
             result = m.Result.unpack(self.send(req.pack()))
         return self._answered(req, result)
 
@@ -382,7 +399,8 @@ class Host:
         reqs = [m.Request(self.next_corr(), fn, op, payload, session) for fn, op, payload in requests]
         packed = [r.pack() for r in reqs]
         exchange = exchange or self.exchange
-        replies = exchange(packed) if exchange else [self.send(p) for p in packed]
+        with self.expecting(max(self.op_bound_ms(fn, op) for fn, op, _ in requests) if requests else 0):
+            replies = exchange(packed) if exchange else [self.send(p) for p in packed]
         results = [m.Result.unpack(r) for r in replies]
         for req, res in zip(reqs, results):
             if res.corr != req.corr:
@@ -484,10 +502,14 @@ class Host:
         probe's default; 1000..60000 are taken as asked. owner: who holds the lock (1-32 bytes), shown to other hosts.
         force: take the lock from another session (its resources are released first). A session this host had open
         is left behind: it ended, or the probe refuses this open locked while it holds the lock - end it first. The
-        answer's boot_id is watched (core §6.5: a reboot drops the fn mapping)."""
+        answer's boot_id is watched (core §6.5: a reboot drops the fn mapping). fn 0's describe (its max_op_ms) is read
+        first when this host has not read it yet (core §4.4)."""
         self.require_v1()
         if self.kept is not None and self.session is None:
             self.kept.before_open(self, owner)              # once: the previous run's session ended (host guide §5)
+        if self.max_op_ms() is None:
+            from . import core
+            core.describe(self, m.CORE_FN)                  # max_op_ms before a request that changes state (core §4.4)
         sid = self.rng.randrange(1, 1 << 32)                # random, never 0 (core §6.1)
         tail = m.tlv(OWNER, owner_text(owner)) if owner else b""
         r = self.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IB", lease_ms, int(force)) + tail, session=sid)
@@ -574,9 +596,9 @@ class Host:
                     raise InUse(f"the probe is in use by {who} (lease {e.remaining_ms} ms left, kept going)") from e
                 time.sleep(min(left, e.remaining_ms / 1000 + 0.05))
 
-    # ---- the probe's time (core §7.7) ----------------------------------------------------------------------------------
+    # ---- the probe's time (core §7.6) ----------------------------------------------------------------------------------
     def clock(self, now: Callable[[], int] = time.monotonic_ns) -> ClockReading:
-        """fn 0's clock (core §7.7): lock-free and session-free (session_id 0: no session, lock or lease touched, §4.1).
+        """fn 0's clock (core §7.6): lock-free and session-free (session_id 0: no session, lock or lease touched, §4.1).
         -> ClockReading(before_ns, after_ns, uptime_ns, boot_id, round_trip_ns): `now` (this host's clock in ns) read
         just before the request goes out and just after its answer is in; the probe's clock was read between them. The
         boot_id is watched like confirm's (core §6.5: a change drops what this host remembered of the old boot)."""

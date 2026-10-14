@@ -5,11 +5,6 @@ import struct
 from . import config,host,link,message
 
 
-class CurrentSaveBudget(config.ProbeConfig):
-    # Explicit current-wire projection; inherited time propagation is unmodified.
-    SAVE=18
-
-
 class MemoryStream:
     def __init__(self,baud):self.baudrate=baud;self.timeout=0;self.writes=[]
     @property
@@ -17,6 +12,14 @@ class MemoryStream:
     def reset_input_buffer(self):pass
     def read(self,n=1):return b''
     def write(self,data):self.writes.append(bytes(data));return len(data)
+
+
+def max_op_ms(h):
+    for tag,value in h._describes.get(0,()):
+        if tag==77:return struct.unpack('<I',value)[0]
+    return None
+
+
 
 
 class SampleHostWaitAdapter:
@@ -40,17 +43,21 @@ class SampleHostWaitAdapter:
         return h,driver,records,advertised,failed
     def save(self,case):
         h,d,rows,advertised,failed=self.setup(case['kind'],case['baud'],case['maximum'],case['timeout'])
-        d._limits(dict(max_frame=case['frame']));cfg=CurrentSaveBudget(h,fn=4);failed[0]=case.get('failure',False)
+        d._limits(dict(max_frame=case['frame']));cfg=config.ProbeConfig(h,fn=4);failed[0]=case.get('failure',False)
         error=None;value=None
         with h.expecting(case['outer_ms']):
             try:value=cfg.save()
             except host.Failed as exc:error=type(exc).__name__
             restored=h.expect_ms
         return dict(record=rows[-1],restored_outer_ms=restored,final_expect_ms=h.expect_ms,error=error,value=value,
-                    projection=dict(current_save_code=CurrentSaveBudget.SAVE,legacy_registry_save_code=config.ProbeConfig.SAVE))
+                    save_code=config.ProbeConfig.SAVE)
     def limits(self,kind,baud):
         h,d,rows,advertised,failed=self.setup(kind,baud,5000,0.05)
-        for value in (256,64,65535):advertised[0]=value;h.confirm()
+        for value in (256,64,65535):
+            # production Host.confirm: its processing bound is Host.op_bound_ms, min(max_op_ms, core_quick_op_max_ms) (core §4.4)
+            advertised[0]=value
+            h.confirm()
+            rows[-1]['max_op_ms']=max_op_ms(h)
         return rows
     def source_sha256(self):
         root=Path(__file__).parent

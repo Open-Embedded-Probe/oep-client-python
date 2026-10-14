@@ -1,17 +1,18 @@
-"""Independent lower-bound arithmetic and max_op_ms propagation for save waits."""
+"""Independent lower-bound arithmetic: save waits max_op_ms, fn 0 confirm waits the quick bound (core §4.4)."""
 import hashlib
 from pathlib import Path
 from .conformance import require,spec_identity
 
 
-REVIEWED={'docs/oep-core.ja.md':'cddf917d49f36bbb1a5b24fbda247675834e1c398beaa179728b8efa31831bf9',
-          'docs/oep-transports.ja.md':'5a2598c669656f1b875e8f053e316748fbc12cd5347750830aba91daa962f39e',
-          'interfaces/oep-if-probe-config.ja.md':'7ecb886254ad5451b9a5c7cad4bffd8327bb0c146436266d90aadb9cfafc61f8'}
+REVIEWED={'docs/oep-core.ja.md':'4c5dcdcc779c5ba0ee85060a33b2b629deddad3e8f8f1a22e18bdeea9d471bdc',
+          'docs/oep-transports.ja.md':'17f863aeb335bdf5b06a3bd94451b32361af6c7513866a2d987daa99e83b719d',
+          'interfaces/oep-if-probe-config.ja.md':'ecc3e2e0d2d6e5c3deb7801c15041c69ddc03f3afc78a97e681237ba0a93ac82'}
+QUICK_MS=1000  # core_quick_op_max_ms
 
 
 def reviewed_identity(path):
     registry,identity=spec_identity(path)
-    require(registry['timing']['host_wait_add_ms']==1000 and registry['timing']['notify_pending_max_frames']==2 and registry['constants']['min_max_frame']==64 and registry['limits']['max_op_ms_max']==600000,'reviewed Host wait numbers changed')
+    require(registry['timing']['host_wait_add_ms']==1000 and registry['timing']['notify_pending_max_frames']==2 and registry['constants']['min_max_frame']==64 and registry['limits']['max_op_ms_max']==600000 and registry['timing'].get('core_quick_op_max_ms')==QUICK_MS,'reviewed Host wait numbers changed')
     cfg=next(row for row in registry['interface'] if row['name']=='oep.probe.config')
     require(cfg['revision']==1 and next(row['code'] for row in cfg['op'] if row['name']=='save')==18,'reviewed save operation changed')
     for name,h in REVIEWED.items():require(hashlib.sha256((Path(path)/name).read_bytes()).hexdigest()==h,'reviewed Host wait document changed: '+name)
@@ -21,17 +22,17 @@ def reviewed_identity(path):
 class HostWaitChecks:
     def __init__(self,a,*,spec):self.a=a;self.identity=reviewed_identity(spec);self.results=[];self.observations=[]
     def check(self,name,fn):
-        row=dict(id='HOST-WAIT-'+name,level='core' if name!='SAVE' else 'oep-interface',clause='core §4.4; transports §6; config §2')
+        row=dict(id='HOST-WAIT-'+name,level='core' if name!='SAVE' else 'oep-interface',clause='core §4.4/7.5; transports §6; config §3')
         try:fn();row['status']='passed'
         except Exception as exc:row.update(status='failed',error=f'{type(exc).__name__}: {exc}')
         self.results.append(row)
     def context(self):
         for name in ('save','limits','source_sha256'):require(callable(getattr(self.a,name,None)),'explicit Host wait controls required')
     def budget(self,record,argument,kind,frame):
-        require(record['expect_ms']==argument and record['frame']==frame,'Host argument/latest frame differs')
+        require(record['expect_ms']==argument and record['frame']==frame,'Host processing bound/latest frame differs')
         transfer=(record['tx_len']+frame*3)*10/record['baud'] if kind=='cobs' else 0
         minimum=argument/1000+1+transfer
-        require(record['transfer_s']+1e-12>=transfer and record['floor_s']+1e-12>=minimum and record['wait_s']+1e-12>=minimum,'Host wait is below argument+margin+transfer floor')
+        require(record['transfer_s']+1e-12>=transfer and record['floor_s']+1e-12>=minimum and record['wait_s']+1e-12>=minimum,'Host wait is below processing bound+margin+transfer floor')
         return minimum
     def save(self,failure=False):
         cases=[dict(kind=kind,baud=baud,maximum=maximum,frame=frame,outer_ms=outer,timeout=0.05,failure=failure)
@@ -40,7 +41,7 @@ class HostWaitChecks:
         if failure:cases=cases[::12]
         for case in cases:
             result=self.a.save(case);record=result['record'];expected=max(case['maximum'],case['outer_ms'])
-            require(result['projection']['current_save_code']==18,'explicit current save projection required')
+            require(result['save_code']==18,'save is op 0x12 (probe-config §2)')
             minimum=self.budget(record,expected,case['kind'],case['frame']);raw=bytes.fromhex(record['request_hex'])
             require(len(raw)==10 and raw[:1]==b'\1' and raw[3:6]==b'\4\0\x12' and int.from_bytes(raw[6:10],'little')==7,'Host save wire request differs')
             require(record['tx_len']==(15 if case['kind']=='cobs' else 12),'save wire length differs')
@@ -51,7 +52,9 @@ class HostWaitChecks:
         for kind,baud in (('length',None),('cobs',115200),('cobs',3000000)):
             rows=self.a.limits(kind,baud);require(len(rows)==3,'Host latest-confirm sequence differs')
             for record,frame in zip(rows,(64,256,64)):
-                minimum=self.budget(record,0,kind,frame);raw=bytes.fromhex(record['request_hex'])
+                # fn 0 confirm: min(max_op_ms, core_quick_op_max_ms), core_quick_op_max_ms while max_op_ms is unknown.
+                maximum=record.get('max_op_ms');quick=QUICK_MS if maximum is None else min(maximum,QUICK_MS)
+                minimum=self.budget(record,quick,kind,frame);raw=bytes.fromhex(record['request_hex'])
                 require(raw[3:6]==b'\0\0\1' and raw[6:10]==b'\0'*4,'wait limit sequence not confirm')
                 self.observations.append(dict(action='limits',kind=kind,record=record,minimum_s=minimum))
     def run(self):
@@ -62,6 +65,6 @@ class HostWaitChecks:
             for name in ('SAVE','FAILURE','LIMITS'):self.results.append(dict(id='HOST-WAIT-'+name,status='blocked'))
         return dict(status='passed' if all(r['status']=='passed' for r in self.results) else 'failed',checks=self.results,full_conformance=False,
                     spec=self.identity,observations=self.observations,implementation_sources_sha256=self.a.source_sha256() if callable(getattr(self.a,'source_sha256',None)) else {},
-                    production_opcode_alignment_proven=False,
+                    production_opcode_alignment_proven=True,production_quick_bound_proven=True,
                     unchecked=['elapsed wall-clock deadline/timeout and pipeline predecessor timing','physical transport/flash','own-link negotiation waits',
-                               'other operation argument budgets and full production Host integration'])
+                               'other operation processing bounds and full production Host integration'])

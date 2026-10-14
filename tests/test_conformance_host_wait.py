@@ -15,14 +15,30 @@ def test_existing_host_save_budget_path():
     r=HostWaitChecks(SampleHostWaitAdapter(),spec=SPEC).run()
     assert r['status']=='passed',r['checks']
     assert len(r['checks'])==4 and len(r['observations'])==87 and not r['full_conformance']
-    assert not r['production_opcode_alignment_proven']
+    assert r['production_opcode_alignment_proven'] and r['production_quick_bound_proven']
+
+
+@pytest.mark.parametrize('fault',['no_bound','argument_floor','unknown_max_op_zero'])
+def test_quick_confirm_bound_faults_are_detected(monkeypatch,fault):
+    # core §4.4 at a09fa45: fn 0 confirm waits min(max_op_ms, 1000) + 1000 + transfer (1000 while max_op_ms is unknown).
+    from oep_client import host
+    a=SampleHostWaitAdapter();limits=a.limits
+    if fault=='no_bound':monkeypatch.setattr(host.Host,'op_bound_ms',lambda self,fn,op:0)          # a Host without it
+    if fault=='argument_floor':monkeypatch.setattr(host.Host,'op_bound_ms',lambda self,fn,op:self.expect_ms)
+    def broken(kind,baud):
+        rows=limits(kind,baud)
+        for row in rows:
+            if fault=='unknown_max_op_zero':row['max_op_ms']=None;row['expect_ms']=0
+        return rows
+    a.limits=broken;r=HostWaitChecks(a,spec=SPEC).run();row=next(x for x in r['checks'] if x['id']=='HOST-WAIT-LIMITS')
+    assert row['status']=='failed' and row['error'].startswith('Violation:'),row
 
 
 @pytest.mark.parametrize('fault,group',[
     ('no_argument','SAVE'),('no_margin','SAVE'),('no_transfer','SAVE'),('no_notifications','SAVE'),
     ('wrong_wire_length','SAVE'),('lease_clamp','SAVE'),('short_timeout','SAVE'),
     ('outer_discarded','SAVE'),('scope_leaks','SAVE'),('failure_scope_leaks','FAILURE'),
-    ('wrong_hash','SAVE'),('wrong_projection','SAVE'),('latest_not_applied','LIMITS')])
+    ('wrong_hash','SAVE'),('wrong_save_code','SAVE'),('latest_not_applied','LIMITS')])
 def test_budget_and_scope_faults_are_detected(fault,group):
     a=SampleHostWaitAdapter();save=a.save;limits=a.limits
     def broken(case):
@@ -38,7 +54,7 @@ def test_budget_and_scope_faults_are_detected(fault,group):
         if fault=='scope_leaks':r['final_expect_ms']=case['maximum']
         if fault=='failure_scope_leaks' and case['failure']:r['final_expect_ms']=case['maximum']
         if fault=='wrong_hash':r['value']=0
-        if fault=='wrong_projection':r['projection']['current_save_code']=3
+        if fault=='wrong_save_code':r['save_code']=3
         return r
     def broken_limits(kind,baud):
         rows=limits(kind,baud)
@@ -54,7 +70,7 @@ def test_missing_controls_do_not_pass(missing):
 
 
 def registry():
-    return dict(timing=dict(host_wait_add_ms=1000,notify_pending_max_frames=2),constants=dict(min_max_frame=64),limits=dict(max_op_ms_max=600000),
+    return dict(timing=dict(host_wait_add_ms=1000,notify_pending_max_frames=2,core_quick_op_max_ms=1000),constants=dict(min_max_frame=64),limits=dict(max_op_ms_max=600000),
                 interface=[dict(name='oep.probe.config',revision=1,op=[dict(name='save',code=18)])])
 
 
@@ -71,7 +87,7 @@ def test_changed_reviewed_document_is_not_accepted(monkeypatch,tmp_path,document
     with pytest.raises(Violation,match='document changed'):actual_review(tmp_path)
 
 
-@pytest.mark.parametrize('field',['margin','notifications','frame','maximum','save'])
+@pytest.mark.parametrize('field',['margin','notifications','frame','maximum','save','quick'])
 def test_changed_registry_wait_rule_is_not_accepted(monkeypatch,field):
     import oep_client.conformance_host_wait as module
     from oep_client.conformance import Violation
@@ -81,5 +97,6 @@ def test_changed_registry_wait_rule_is_not_accepted(monkeypatch,field):
     if field=='frame':r['constants']['min_max_frame']=63
     if field=='maximum':r['limits']['max_op_ms_max']=600001
     if field=='save':r['interface'][0]['op'][0]['code']=3
+    if field=='quick':r['timing']['core_quick_op_max_ms']=2000
     monkeypatch.setattr(module,'spec_identity',lambda path:(r,{'commit':'unit-fixture'}))
     with pytest.raises(Violation):actual_review('/explicit/changed-wait-spec')

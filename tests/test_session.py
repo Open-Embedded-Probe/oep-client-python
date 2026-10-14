@@ -273,7 +273,8 @@ def test_the_first_session_request_confirms_first(bench):
     _, ep = bench
     a = new_host(ep, 1)
     a.open()
-    assert [(r.fn, r.op) for r in ep.requests[:2]] == [(0, m.OP_CONFIRM), (0, m.OP_OPEN)]
+    assert [(r.fn, r.op) for r in ep.requests[:3]] == [(0, m.OP_CONFIRM), (0, m.OP_DESCRIBE), (0, m.OP_OPEN)]   # max_op_ms
+    # before a request that changes state (core §4.4)
 
 
 # ---- §0 tails ---------------------------------------------------------------------------------------------

@@ -3,11 +3,11 @@
 This is the spec side's "working spec": ch32rv, the JS client, this client and the probe firmware are checked against
 it. It wraps a `virtual_bench.VirtualProbe` (the static declarations, and what the probe keeps to itself: `own_channels`,
 `Offered.inner`) and does what oep-spec docs/oep-core.ja.md, docs/oep-transports.ja.md and interfaces/*.ja.md
-define (oep-spec 0f455a0, the rule review of 2026-10-07):
+define (oep-spec a09fa45):
 
 - the core (fn 0) has no name and is never listed (core §0, §7.2); its ops are exactly the eight mandatory ones:
   confirm, list, describe, clock, open, end, keepalive, lock_state (core §1.2, §12). list takes first(u16) alone and
-  pages every interface (core §7.2); describe answers declarations only (§7.3). clock (core §7.7) answers boot_id and
+  pages every interface (core §7.2); describe answers declarations only (§7.3). clock (core §7.6) answers boot_id and
   uptime_ns, read while handling the request - lock-free, and with session_id 0 it touches no session, lock or lease
 - one request header of 10 bytes with session_id (0 = no session; core §4.1), TLVs as tag(u8) len(u16) value (§2.2),
   every sequence count x element with no element length and every fixed form closed (§2.3)
@@ -22,7 +22,7 @@ define (oep-spec 0f455a0, the rule review of 2026-10-07):
   and the request is refused for one reason that applies (this virtual bench's handlers check the form, then the fns named, then
   what they do not handle, then the state and the resources). unsupported is always `tag [TLV]` (0x00 for a fixed-part
   value); unavailable carries cause, channel and (capture-group) fn; a resource number of the wrong kind is unavailable
-  cause 6 - connections and streams share one u16 space, +1 skipping numbers in use (core §9)
+  cause 6 - connections and streams share one u32 space, never re-used within a boot (core §9)
 - confirm with a revision range (its answer carries the boot_id and the transport it came on, core §7.1);
   `revision=0` makes a v0 probe that answers in the v0 shape and drops requests with a session_id
 - the ops tag (core §1.2, §7.4): every fn's describe carries it, and an op it does not set is unknown_operation
@@ -38,7 +38,7 @@ define (oep-spec 0f455a0, the rule review of 2026-10-07):
   (mod 65536), else result_lost. Open goes through the same record; only a successful open of another id starts a new
   replay state, and end or a lapse keeps it
 - oep.probe.plan (oep-if-plan: role_assignment, plan_roles), oep.probe.restart (oep-if-restart §2: the answer first,
-  then nothing on any transport until the probe has restarted; the target is not reset), notifications (core §11:
+  then nothing on any transport until the probe has restarted; the target is not reset), notifications (core §10:
   subscribe / unsubscribe are the emitting interface's ops; events at once, data batched by min_bytes / max_delay_ms;
   each fn's go to the connection its subscribe came on, and an open that takes the lock's session back from another
   connection moves them there: `handle(..., link=)`, `pushes_to`),
@@ -96,7 +96,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Callable, Hashable
 
-from . import catalog, config as cfgmod, virtual_bench, virtual_bench_capture, message as m, registry_legacy as reg
+from . import catalog, config as cfgmod, virtual_bench, virtual_bench_capture, message as m, registry as reg
 from . import registry as current_reg     # TRANSITIONAL: the common stream marks of the interfaces that follow a09fa45
 
 TOY_WRITE, TOY_READ = 0x10, 0x11                    # 0x01 / 0x02: subscribe / unsubscribe in every op space
@@ -135,7 +135,6 @@ UART_FORMAT_MASK = 0x1F                                    # the defined format 
 _T_SCAN, _T_ATTACH, _T_ATTACH_ANSWER = (reg.WIRE_RVSWD.tlv[k] for k in ("scan", "attach", "attach_answer"))
 _WIRE_INDEX = reg.WIRE_RVSWD.tlv["unsupported_payload"]["index"]   # scan's candidate index (debug §1)
 ATTACH_METHOD = reg.WIRE_RVSWD.enum["attach_method"]
-_UNSUP_INDEX = reg.CORE.tlv["unsupported_payload"]["index"]   # the position in the request's list (scan, gpio set)
 GPIO_MODE_MAX = max(_GPIO.enum["mode"].values())           # 6: the modes revision 1 defines are 0-6 (fixture §1)
 OUTPUT_MODES = (_GPIO.enum["mode"]["output_low"], _GPIO.enum["mode"]["output_high"])   # the modes a strength applies to
 LINK_SOURCE_OVERHEAD = m.RESULT_HEADER + 2                 # source's len <= max_frame - 7: header and len (oep-if-link §2)
@@ -710,11 +709,11 @@ class Endpoint:
         self.revision_in_use: dict[int, int] = {}   # transport -> the revision its last confirm chose (core §7.1)
         self.discarded = 0                   # messages discarded unanswered: not a request role, or short (core §2.4)
         self.requests: list[m.Request] = []
-        # fn -> (min_bytes, max_delay_ms) of its subscription (core §11.3); ends with the lock
+        # fn -> (min_bytes, max_delay_ms) of its subscription (core §10.3); ends with the lock
         self.subscribed: dict[int, tuple[int, int]] = {}
-        self.push_link: dict[int, Hashable] = {}        # fn -> the connection its notifications go to (core §11.4)
+        self.push_link: dict[int, Hashable] = {}        # fn -> the connection its notifications go to (core §10.4)
         self.data_since_ms: dict[int, int] = {}         # fn -> when its oldest data not sent yet was there (max_delay_ms)
-        self.push_seq: dict[int, int] = {}              # fn -> the next event / data seq (core §11.2)
+        self.push_seq: dict[int, int] = {}              # fn -> the next event / data seq (core §10.2)
         self.outbox: list[bytes] = []                   # events and data frames waiting to go out (pushes())
         self.plan: set[tuple[int, int, int]] = set()   # (fn, role, channel), from plan_apply
         # corr -> (the whole request, its answer); None where it was too large to keep (core §5.1)
@@ -863,13 +862,13 @@ class Endpoint:
                 self.outbox.append(bytes([m.ROLE_EVENT]) + struct.pack("<HH", fn, self._next_seq(fn)) + e)
 
     def pushes_to(self) -> list[tuple[Hashable, bytes]]:
-        """`pushes`, each with the connection it goes to (core §11.4: where its fn's subscribe came, or where the
+        """`pushes`, each with the connection it goes to (core §10.4: where its fn's subscribe came, or where the
         session was taken back to; `handle`'s `link`). A serving loop with several connections sends each to its own
         and drops one whose connection is gone (transports §3)."""
         return [(self.push_link.get(struct.unpack_from("<H", f, 1)[0]), f) for f in self.pushes()]
 
     def pushes(self) -> list[bytes]:
-        """The frames the probe sends by itself now (core §11): events (at once: never batched, core §11.3) and a
+        """The frames the probe sends by itself now (core §10): events (at once: never batched, core §10.3) and a
         streaming capture's data - held back while its subscription's batching says so: until min_bytes bytes wait, or
         max_delay_ms has passed since the oldest of them was there (0 = that condition unused; both 0: at once). fn 0
         sends nothing. A serving loop frames and sends them; a test takes them from here. None once a restart was
@@ -1227,7 +1226,7 @@ class Endpoint:
         if req.fn == m.CORE_FN:
             return self._core(req, t)
         if req.op in (m.OP_SUBSCRIBE, m.OP_UNSUBSCRIBE) and (req.fn in self.captures or req.fn in self.groups):
-            return self._subscription(req.fn, req.op, t)          # the emitting interface's own ops (core §11.3)
+            return self._subscription(req.fn, req.op, t)          # the emitting interface's own ops (core §10.3)
         sim = SIMS.get(self.names[req.fn])
         if sim is not None:
             return getattr(self, f"_{sim}")(req.fn, req.op, t)
@@ -1426,7 +1425,7 @@ class Endpoint:
             t.tail()
             return self._answer(b"")
         if op == m.OP_CLOCK:
-            # core §7.7: no fixed part; lock-free (session_id 0 touches no session, lock or lease, §4.1). The clock is
+            # core §7.6: no fixed part; lock-free (session_id 0 touches no session, lock or lease, §4.1). The clock is
             # read while handling this request, never a value read earlier
             t.tail()
             return self._answer(struct.pack("<IQ", self.boot_id, self.now_ns()))
@@ -1453,8 +1452,8 @@ class Endpoint:
             t.tail()
             self._drop_unsent(fn)
             self.subscribed[fn] = (min_bytes, max_delay_ms)
-            self.push_link[fn] = self._via                         # sent where the subscribe came (core §11.4)
-            self.push_seq[fn] = 0                                  # seq from 0 at every subscribe (core §11.2)
+            self.push_link[fn] = self._via                         # sent where the subscribe came (core §10.4)
+            self.push_seq[fn] = 0                                  # seq from 0 at every subscribe (core §10.2)
             self.data_since_ms.pop(fn, None)
             return m.COMPLETED, m.SUCCESS, b""
         t.tail()
@@ -2615,6 +2614,8 @@ class Endpoint:
             got = t.tail({fmt_tag})
             fmt = t.fixed(got, fmt_tag, 1)                         # another length: malformed (core §2.3)
             fmt = b"\0" if fmt is None else fmt
+            for tag, later in t.repeated[1:]:                      # a later copy is checked for its value too (core §2.3)
+                self._uart_check(baud, later[0], fn, tag)
             actual = self._uart_check(baud, fmt[0], fn, t.received(fmt_tag))   # unhandled: unsupported, bit 7 or not
             if fn not in self.uarts:
                 raise unavailable("wrong_state")                   # no pins: the plan has neither RX nor TX (fixture §2)

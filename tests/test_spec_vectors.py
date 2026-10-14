@@ -1,8 +1,6 @@
 """oep-spec's current shared vectors (tests/vectors/*.json and src/oep_client/registry.py, copied by
 tools/sync_registry.sh from the commit in tests/vectors/SPEC_COMMIT, never edited) against this client and its virtual
-bench. The client follows the spec stage by stage (docs/conformance-spec-compatibility.ja.md): the core first, then the
-contracts common to every extension, then each standard interface. Each stage moves its vectors here from
-test_vectors.py, which still reads the frozen b80555a copy in tests/vectors_legacy for what has not moved yet."""
+bench: the core, the contracts common to every extension and every standard interface."""
 
 import hashlib
 import json
@@ -270,6 +268,7 @@ def test_session_scenarios_as_the_host_reads_them(scenario):
         sent = []
         hst = h.Host(lambda b: sent.append(b) or hx(step["answer_hex"]))
         hst._corr, hst.revision = req.corr - 1, 1
+        hst._describes[0] = [(reg.CORE.tlv["describe"]["max_op_ms"], struct.pack("<I", 5000))]   # read before (§4.4)
         hst.rng = type("Fixed", (), {"randrange": staticmethod(lambda a, b, sid=req.session: sid)})()
         if req.op == m.OP_OPEN:
             lease, force = struct.unpack_from("<IB", req.payload)
@@ -320,7 +319,60 @@ def test_an_unknown_answer_tlv_is_skipped_by_the_host(case):
 
 # ---- per-op vectors (ops.json) of the interfaces that follow the current spec --------------------------------------
 from oep_client import config, console, core, fixture, riscv, virtual_bench_capture
-from test_vectors import vector_probe                                   # the vectors' fn numbers on the virtual bench
+
+
+def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None) -> virtual_bench.VirtualProbe:
+    """A virtual bench whose fn numbers are a vector's: fn 0 with one UART bridge (index 0), then each named interface
+    with channels 0-15 for its roles (the wire on pins 1 / 2; gpio without drive_levels). `ops`: fn -> the ops its
+    ops tag sets instead of every op of its table (core §1.2, §7.4)."""
+    core = virtual_bench._core("1.0.0", "vectors", "0123456789ab", 16, {},
+                      virtual_bench._transports([(virtual_bench.TRANSPORT["uart_bridge"], 0xFF)]))
+    chans = list(range(16))
+    offered = [core]
+    for fn, name in sorted(((int(k), v) for k, v in fns.items())):
+        if name == "oep.fixture.gpio":
+            o = virtual_bench._gpio(fn, chans)
+        elif name == "oep.fixture.i2c-target":
+            o = virtual_bench._i2c_target(fn, chans, max_length=16, max_hz=100_000, features=0, queue_depth=4)
+        elif name == "oep.wire.rvswd":
+            o = virtual_bench.Offered(fn, 0, name, (catalog.channel_group(1, [(1, 1), (2, 2)]),
+                                           catalog.u32(catalog.MAX_CLOCK_HZ, 4_000_000)))
+        elif name == "oep.fixture.uart":
+            o = virtual_bench._uart(fn, 0, chans, 3_000_000)
+        elif name == "oep.target.riscv-dm":                            # every op offered: the default ops tag
+            o = virtual_bench.Offered(fn, 0, name, (catalog.u16(catalog.MAX_LENGTH, 256),))
+        elif name == "oep.target.console":
+            o = virtual_bench._console(fn)
+        elif name == "oep.probe.link":
+            o = virtual_bench._link(fn)                                         # source and sink (no UART bridge speed)
+        elif name == "oep.probe.plan":
+            o = virtual_bench._plan(fn)
+        elif name == "oep.probe.restart":
+            o = virtual_bench._restart(fn)
+        elif name == "oep.probe.config":
+            o = virtual_bench._config(fn, 0, storage=0)   # no storage: no save / erase
+        elif name == "oep.fixture.logic":                              # 80 MHz / 4 = 20 MHz exact; w 2 for two channels
+            o = virtual_bench.Offered(fn, 0, name, virtual_bench._roles({k: chans for k in range(4)})
+                             + virtual_bench._capture_decl(["one_shot", "repeat", "streaming"], 8, 1 << 20, 8, 1, 80_000_000),
+                             inner=virtual_bench._capture_inner([1, 2, 8], 8, 480))
+        elif name == "oep.fixture.spi-target":                         # LSB first offered (features bit0)
+            o = virtual_bench.Offered(fn, 0, name, virtual_bench._roles({k: chans for k in (1, 2, 3, 4)})
+                             + virtual_bench._spi_decl(max_length=16, max_hz=1_000_000, features=1, queue_depth=4))
+        elif name == "oep.fixture.analog":
+            o = virtual_bench.Offered(fn, 0, name, virtual_bench._roles({k: chans for k in range(4)})
+                             + virtual_bench._analog_decl([(0, 0, 4095)], 4096, 1, 1_000_000),
+                             inner=virtual_bench._capture_inner([16], 1, 480) + (("exact", True),))
+        elif name == "oep.fixture.capture-group":
+            tracks = sorted(int(k) for k, v in fns.items() if v in ("oep.fixture.logic", "oep.fixture.analog"))
+            o = virtual_bench.Offered(fn, 0, name, virtual_bench._group_decl(tracks))
+        else:
+            raise AssertionError(f"a vector names {name}: add it here")
+        if ops and fn in ops:
+            o = virtual_bench.Offered(o.fn, o.instance, o.name, (catalog.ops_tlv(ops[fn]),) + tuple(
+                t for t in o.tlvs if t[0] != catalog.OPS), inner=o.inner)
+        offered.append(o)
+    return virtual_bench.VirtualProbe("vectors", max_frame, offered)
+
 
 S = 0x11223344                                                          # ops.json about: the lock holder's id
 FOLLOWED = {"oep.probe.plan", "oep.probe.restart", "oep.probe.link", "oep.fixture.gpio", "oep.fixture.uart",
@@ -1140,3 +1192,75 @@ def test_logic_layout_as_the_client_reads_it_and_the_bench_packs_it(case):
     assert ["".join(map(str, track.channel(stream, k, case["samples"]))) for k in range(len(case["pos"]))] == case["channels"]
     levels = [sum(int(case["channels"][k][i]) << case["pos"][k] for k in range(len(case["pos"]))) for i in range(case["samples"])]
     assert virtual_bench_capture.pack_samples(levels, case["w"]) == stream
+
+
+CAPTURE_EVENTS, CAPTURE_DATA = load("ops.json")["events"], load("ops.json")["data"]
+
+
+@pytest.mark.parametrize("case", CAPTURE_EVENTS, ids=lambda c: c["name"])
+def test_capture_events_as_the_client_reads_them(case):
+    """capture §3.4 / §4.2, core §10.2: role 0x03, the kind's fixed part with the generation it was made in; a
+    group's event read as the group's."""
+    from oep_client import capture
+    frame = hx(case["event_hex"])
+    group = case["fns"][str(struct.unpack_from("<H", frame, 1)[0])] == "oep.fixture.capture-group"
+    e = capture.unpack_event(frame, group=group)
+    assert frame[0] == m.ROLE_EVENT and e.generation == case["generation"]
+    assert e.kind in ("stopped", "triggered") and (e.kind == "stopped" or not group)
+
+
+@pytest.mark.parametrize("case", CAPTURE_DATA, ids=lambda c: c["name"])
+def test_capture_data_frames_as_the_client_reads_them(case):
+    """core §10.2, capture §3.4: role 0x04 with the generation and the segment (segment_info) every streaming frame
+    carries, inside that one segment; after an error stop at write_pos 32 the host keeps what came before it (§2.2)."""
+    from oep_client import capture
+    frame = hx(case["frame_hex"])
+    fn, seq, position, data, generation = capture.unpack_push(frame)
+    info = capture.push_segment(frame)
+    assert frame[0] == m.ROLE_DATA and generation == case["generation"] and info is not None
+    assert info.position <= position and info.samples >= 1
+    if "layout" in case:                                               # w 3: the segment's bytes so far, no more
+        assert position + len(data) <= info.position + -(-info.samples * case["layout"]["w"] // 8)
+    if "keep" in case:
+        got = capture.Received(data=bytearray(data), start=position)
+        got.drop_from(32)
+        assert bytes(got.data) == data[:case["keep"]] and got.dropped_after_error == len(data) - case["keep"]
+
+
+@pytest.mark.parametrize("case", [c for c in CAPTURE_DATA if "keep" in c], ids=lambda c: c["name"])
+def test_capture_data_frames_from_the_virtual_bench(case):
+    """The streaming state above (w 8, 16 samples a segment, 1 kHz) on the bench: the frame at the case's position is
+    the case's, seq aside."""
+    want = hx(case["frame_hex"])
+    ep, hst, _ = bench_for({**OPS[0], "fns": case["fns"], "state": case["state"]})
+    from oep_client import capture
+    hst.open(3000)
+    logic = capture.LogicCapture(hst, fn=9)
+    core.plan_apply(hst, [(9, 0, 1)])
+    ep.captures[9].widths = {8}
+    logic.subscribe()
+    logic.configure(rate=1000, mode=capture.STREAMING)
+    ep.captures[9].samples = 16
+    ep.now.t = 1                                                       # serial 1 (samples 16-31) starts at 17 ms
+    logic.start()
+    frames = []
+    for t in (25, 33, 41):                                              # bytes 24-31, then 32-39, a frame each
+        ep.now.t = t
+        frames += ep.pushes()
+    at = struct.unpack_from("<Q", want, 5)[0]
+    got = next(f for f in frames if f[0] == m.ROLE_DATA and struct.unpack_from("<Q", f, 5)[0] == at)
+    assert got[:3] + got[5:] == want[:3] + want[5:]
+
+
+@pytest.mark.parametrize("case", load("refusals.json")["cases"], ids=lambda c: c["name"])
+def test_refusals_as_the_host_reads_them(case):
+    """refusals.json's answers read by the host: a rejection becomes its exception (unsupported with its tag, or the
+    fixed part's mark 0)."""
+    res = m.Result.unpack(hx(case["answer_hex"]))
+    if res.succeeded:
+        assert res.payload == b""
+        return
+    err = h.rejection(res)
+    assert res.resolution == m.REJECTED and isinstance(err, h.Rejected)
+    if res.detail == m.UNSUPPORTED:
+        assert isinstance(err, h.Unsupported) and (err.tag is None) == (res.payload[:1] == b"\x00")

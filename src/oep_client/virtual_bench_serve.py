@@ -12,13 +12,13 @@ describe, its index in every confirm's transport TLV; transports §1), no pause 
 (transports §2), and a length over max_frame closes the connection. The length framing serves up to --tcp-connections
 connections at once (default 3, as the reference probe); one more is accepted and closed at once. Each connection is a
 transport of its own (transports §1): its own confirm and revision in use, answers back on it, notifications on the
-connection their fn's subscribe came on (core §11.4) - none of the others'. The probe behind them is one: the
+connection their fn's subscribe came on (core §10.4) - none of the others'. The probe behind them is one: the
 session, its lock, subscriptions and the resend table are shared (an open from one connection while another's session
 holds the lock is refused locked; lock_state shows it from every connection), and a closed connection does not end
 them (transports §3: they stay until the lease runs out or another core §9 event; answers and notifications for a
 closed connection are dropped; an open with the same session id from another connection takes the session back,
 core §6.2, and its notifications go there from then on). A connection that takes nothing for 2 s while answers wait is
-closed as dead; notifications that would make more than 2 x max_frame wait on one are dropped (core §11.4).
+closed as dead; notifications that would make more than 2 x max_frame wait on one are dropped (core §10.4).
 --framing cobs, only when asked for, is the serial port again over the socket (emulating a serial port, COBS frames):
 it serves one connection at a time (a second one waits until the first closes).
 
@@ -129,7 +129,7 @@ import sys
 import time
 import tty
 
-from . import catalog, endpoint, virtual_bench, virtual_bench_serial, message as m, registry_legacy as reg
+from . import catalog, endpoint, virtual_bench, virtual_bench_serial, message as m, registry as reg
 
 _ITEM = reg.PROBE_CONFIG.tlv["item"]
 TCP_CONNECTIONS = 3                                      # --tcp-connections' default (length framing)
@@ -515,7 +515,7 @@ def _serve_length(a, ep, console, commands: Commands, srv: socket.socket) -> Non
     index = ep.tcp_index
     clients: list[_Client] = []
     served = False                                       # --once: some connection was served
-    limit = 2 * ep.probe.max_frame                       # notifications waiting in a connection at most (core §11.4)
+    limit = 2 * ep.probe.max_frame                       # notifications waiting in a connection at most (core §10.4)
 
     def drop(c: _Client) -> None:
         clients.remove(c)
@@ -585,9 +585,9 @@ def _serve_length(a, ep, console, commands: Commands, srv: socket.socket) -> Non
         console.tick()
         ep.tick()
         live = {c.link: c for c in clients}
-        for link, f in ep.pushes_to():                   # events and data pushes (core §11), answers first (§11.4)
+        for link, f in ep.pushes_to():                   # events and data pushes (core §10), answers first (§11.4)
             c = live.get(link)
-            if c is not None and len(c.out) <= limit:    # else dropped: its seq shows the gap (core §11.3)
+            if c is not None and len(c.out) <= limit:    # else dropped: its seq shows the gap (core §10.3)
                 c.send(struct.pack("<H", len(f)) + f)
         for c in list(clients):
             if (c.out or c.sock in writable) and not c.flush():

@@ -33,8 +33,9 @@ def exercise_boot_change(observer, before, after, host_type=host.Host):
             payload = catalog.pack_list_result(1, [catalog.ListEntry(state['fn'], 0, 1, NAME)] if first == 0 else [])
         elif req.fn == 0 and req.op == m.OP_DESCRIBE:
             fn, first = struct.unpack('<HH', req.payload)
-            assert fn == state['fn']
-            payload = b'\0' + (catalog.ops_tlv({16}) if first == 0 else b'')
+            assert fn in (0, state['fn'])                       # fn 0: max_op_ms before open (core §4.4)
+            body = catalog.u32(core.CORE_MAX_OP_MS, 1000) if fn == 0 else catalog.ops_tlv({16})
+            payload = b'\0' + (body if first == 0 else b'')
         else:
             assert (req.fn, req.op) == (state['fn'], 16), 'Host used an obsolete function binding'
             payload = b''
@@ -50,15 +51,15 @@ def exercise_boot_change(observer, before, after, host_type=host.Host):
     state.update(boot=after, fn=513)
     start = len(requests)
     getattr(h, observer)()
+    observed = len(requests)
     assert h._boot_id == after
     assert h.epoch == epoch + 1, 'changed boot did not invalidate resource epoch'
     assert not h._fns and not h._revisions and not h._describes, 'old discovery caches survived boot change'
     assert not h.subscriptions, 'old subscription survived boot change'
     assert core.find(h, NAME) == 513
     h.call(513, 16, locked=False)
-    tail = requests[start:]
-    assert tail[0].fn == 0
-    assert [(r.fn, r.op) for r in tail[1:]] == [(0, m.OP_LIST), (513, 16)], 'Host must rediscover before interface use'
+    assert all(r.fn == 0 for r in requests[start:observed])          # the observer (open: fn 0's describe first)
+    assert [(r.fn, r.op) for r in requests[observed:]] == [(0, m.OP_LIST), (513, 16)], 'Host must rediscover before interface use'
     assert h.epoch == epoch + 1
 
 

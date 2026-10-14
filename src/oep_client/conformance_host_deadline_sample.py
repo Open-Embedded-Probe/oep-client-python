@@ -37,11 +37,20 @@ class ScheduledStream:
         self.writes.append(bytes(data));self.on_write(bytes(data));return len(data)
 
 
+def bound_ms(case):
+    quick=1000  # core_quick_op_max_ms
+    if case['quick']:return quick if case['max_op_ms'] is None else min(case['max_op_ms'],quick)
+    return case['max_op_ms']
+
+
 class SampleHostDeadlineAdapter:
     def run_case(self,case):
         clock=Clock();stream=ScheduledStream(clock,case['kind']);events=stream.events
         with patch.object(link,'time',clock),patch.object(frames,'time',clock):
-            d=link.SerialLink.on_stream(stream,case['kind'],.05);d.expected_s=lambda:case['argument_ms']/1000
+            d=link.SerialLink.on_stream(stream,case['kind'],.05)
+            # Explicit adoption of core §4.4 (a09fa45): the Link waits the whole-request processing bound, not the
+            # argument time. Production Host.expect_ms still carries argument times only, so the bound is set here.
+            bound=bound_ms(case);d.expected_s=lambda:bound/1000
             d.resend=False;d._recover=lambda:events.append(dict(action='recovery-control',time_ns=clock.ns))
             received=[];receive=d._recv_for
             def traced(corr):
@@ -50,7 +59,8 @@ class SampleHostDeadlineAdapter:
                 except TimeoutError:events.append(dict(action='timeout',corr=corr,started_ns=start,time_ns=clock.ns));raise
                 received.append(dict(corr=corr,started_ns=start,time_ns=clock.ns,reply_hex=r.hex()));return r
             d._recv_for=traced
-            requests=[message.Request(7+i,1,16,struct.pack('<I',case['argument_ms']),7).pack() for i in range(2 if case['pipeline'] else 1)]
+            requests=[(message.Request(7+i,0,4,b'',0) if case['quick'] else message.Request(7+i,1,16,struct.pack('<I',case['argument_ms']),7)).pack()
+                      for i in range(2 if case['pipeline'] else 1)]
             def write(raw):
                 started=clock.ns;clock.sleep(case['write_ms']/1000);written=clock.ns
                 packets=[]
@@ -60,7 +70,7 @@ class SampleHostDeadlineAdapter:
                 else:packets=[cobs.unframe(part) for part in raw.split(b'\0') if part]
                 wire=max(len(p)+2 for p in packets) if case['kind']=='length' else max(len(cobs.frame(p)) for p in packets)
                 transfer=(wire+64*3)*10/115200 if case['kind']=='cobs' else 0
-                floor=case['argument_ms']/1000+1+transfer;delay=round(floor*1e9)-1_000_000
+                floor=bound/1000+1+transfer;delay=round(floor*1e9)-1_000_000
                 events.append(dict(action='write',started_ns=started,time_ns=written,wire_length=wire,minimum_ns=round(floor*1e9),requests_hex=[p.hex() for p in packets]))
                 for i,p in enumerate(packets):
                     if case['missing'] and i==len(packets)-1:continue

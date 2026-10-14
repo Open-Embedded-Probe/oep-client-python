@@ -8,7 +8,7 @@ import struct
 
 import pytest
 
-from oep_client import catalog, endpoint, virtual_bench, message as m, registry_legacy as reg
+from oep_client import catalog, endpoint, virtual_bench, message as m, registry as reg
 
 from test_virtual_bench_rules_2026_10_02 import ITEM, PLAN_APPLY, W, Clock, Host, att
 

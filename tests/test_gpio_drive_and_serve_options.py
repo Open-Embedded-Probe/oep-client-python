@@ -5,7 +5,7 @@ import struct
 
 import pytest
 
-from oep_client import config, core, endpoint, virtual_bench, fixture, host as h, message as m, registry_legacy as reg
+from oep_client import config, core, endpoint, virtual_bench, fixture, host as h, message as m, registry as reg
 
 
 class Clock:

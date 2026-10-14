@@ -171,25 +171,22 @@ def serve(*args):
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="pty and TIOCEXCL as on Linux")
-def test_open_host_on_a_serial_port_with_console_bytes_and_tiocexcl():
-    proc, where = serve("--pty", "--profile", "esp32-v003", "--slot", "v003", "--bind", "0",
-                        "--console", "uptime %d\\r\\n", "--every", "5")
+def test_open_host_on_a_serial_port_with_tiocexcl():
+    """A serial transport carries OEP frames only (transports §4): one host at a time on the port."""
+    proc, where = serve("--pty", "--profile", "esp32-v003")
     try:
         hst = link.open_host(where[1], timeout=1.0)
         assert hst.limits["max_frame"] == 512
         if os.geteuid() != 0:
             with pytest.raises(link.PortBusy):
                 link.open_host(where[1])                              # exclusive: one host at a time
-        deadline = time.monotonic() + 3                               # lock-free reads among the console bytes,
-        while hst.link.noise == 0 and time.monotonic() < deadline:   # before a session holds the port's raw side
-            assert [k for _, k, _ in core.transports(hst)] == [1]     # a UART bridge
-            time.sleep(0.02)
-        opened = core.take(hst, 3000, owner="test")                   # the only way in: by force at once
+        assert [k for _, k, _ in core.transports(hst)] == [1]         # a UART bridge
+        opened = core.take(hst, 3000, owner="test")
         assert opened.lease_ms == 3000
-        for _ in range(20):                                           # requests among the console bytes
+        for _ in range(20):
             hst.keepalive()
         hst.end()
-        assert hst.link.noise > 0 and hst.link.retries == 0         # console bytes before the session, all skipped
+        assert hst.link.noise == 0 and hst.link.retries == 0
         hst.link.close()
     finally:
         proc.stdin.close()

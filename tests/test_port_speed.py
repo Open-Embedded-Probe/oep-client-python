@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from oep_client import cobs, core, endpoint, virtual_bench, virtual_bench_serial, host as h, link, message as m
+from oep_client import catalog, cobs, core, registry as reg, endpoint, virtual_bench, virtual_bench_serial, host as h, link, message as m
 
 TRY, COMMIT, REVERT = 0, 1, 2
 PS = endpoint.OP_PORT_SPEED
@@ -292,9 +292,19 @@ def test_only_the_uart_bridge_the_request_came_in_on_and_one_port_at_a_time():
 
 # ---- the client: raise_speed (host guide §17) -----------------------------------------------------------------------------
 
-def in_process(profile=virtual_bench.esp32_v003, lease=10000):
+def quick(probe, max_op_ms=1):
+    """The probe declaring a short max_op_ms (core §7.5): an answer lost costs the wait floor, max_op_ms (fn 0's quick
+    ops: at most core_quick_op_max_ms) + host_wait_add_ms + the transfer time (core §4.4)."""
+    tag = reg.CORE.tlv["describe"]["max_op_ms"]
+    probe.offered = [virtual_bench.Offered(o.fn, o.instance, o.name, tuple(t for t in o.tlvs if t[0] != tag)
+                                           + (catalog.u32(tag, max_op_ms),), o.revision, inner=o.inner)
+                     if o.fn == 0 else o for o in probe.offered]
+    return probe
+
+
+def in_process(profile=virtual_bench.esp32_v003, lease=10000, max_op_ms=1):
     start = time.monotonic()
-    ep = endpoint.Endpoint(profile(), lambda: int((time.monotonic() - start) * 1000))
+    ep = endpoint.Endpoint(quick(profile(), max_op_ms), lambda: int((time.monotonic() - start) * 1000))
     stream = virtual_bench_serial.VirtualSerialStream(ep, 0)
     lk = link.SerialLink.on_stream(stream, "cobs", 0.5)
     lk.transport = "serial"
@@ -495,8 +505,8 @@ def test_a_raised_link_keeps_the_line_alive_when_quiet():
 NO_PROBATION = dict(probation_bytes=0, probation_s=0)   # the window alone (the probation has its own tests)
 
 
-def raised_in_use(lease=10000, **kw):
-    ep, hst, lk = in_process(lease=lease)
+def raised_in_use(lease=10000, max_op_ms=1, **kw):
+    ep, hst, lk = in_process(lease=lease, max_op_ms=max_op_ms)
     report = link.raise_speed(hst, [921600], **{**FAST, **NO_PROBATION, **kw})
     assert report.chosen == 921600
     return ep, hst, lk, report
@@ -665,7 +675,7 @@ def test_no_answer_and_no_confirm_at_the_boot_speed_is_a_link_error():
 
 def test_a_long_run_at_a_raised_rate_waits_its_timeout_ms_without_a_step_down():
     from oep_client import riscv
-    ep, hst, lk, report = raised_in_use(lease=3000)
+    ep, hst, lk, report = raised_in_use(lease=3000, max_op_ms=3000)     # the run's timeout_ms within max_op_ms
     lk.timeout = 3.0                                     # the default: an ordinary request waits 0.75 s (lease / 4)
     stream, held, late = lk.stream, {}, []
     pull = stream._pull

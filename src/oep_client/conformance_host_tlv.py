@@ -73,6 +73,14 @@ class HostTlvChecks:
                 # SPEC permits refusing the payload or not using the broken field.
                 require(result is None or result == {'fixed': 0x1234, 'blob': b'abc',
                         'first': None, 'repeated': []}, 'broken known TLV value used')
+        # core §2.3 (a09fa45): a later same-tag TLV is validated as well; a broken duplicate is never used.
+        for tail, kept in ((field(1, b'\x07') + field(1, b'\x09\x08'), {'first': 7, 'repeated': []}),
+                           (field(3, b'\x07') + field(3, b'\x09\x08'), {'first': None, 'repeated': [7]})):
+            result = self.read(payload(tail))
+            # Refusing the payload, or dropping the broken value (and possibly the whole field), never uses it.
+            require(result is None or result['fixed'] == 0x1234 and result['blob'] == b'abc' and
+                    result['first'] in (kept['first'], None) and result['repeated'] in (kept['repeated'], []),
+                    'broken later duplicate TLV used')
 
     def sizes(self):
         for blob in (b'', bytes(range(256)), b'x' * 65535):

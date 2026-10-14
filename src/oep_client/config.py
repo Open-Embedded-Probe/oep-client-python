@@ -21,7 +21,7 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 
-from . import core, message as m, registry_legacy as reg
+from . import core, message as m, registry as reg
 from .core import Interface
 
 _CFG = reg.PROBE_CONFIG

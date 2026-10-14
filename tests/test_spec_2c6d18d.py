@@ -442,21 +442,7 @@ def test_the_virtual_bench_clears_the_bits_that_did_not_come(order):
 
 # ---- oep-spec 66c49e7, capture §1.1: w is any integer 1-128 -------------------------------------------------------------
 
-import json   # noqa: E402
-from pathlib import Path   # noqa: E402
-
-VECTORS = Path(__file__).resolve().parent / "vectors_legacy"   # TRANSITIONAL: oep-spec b80555a
-
-
-@pytest.mark.parametrize("case", json.loads((VECTORS / "logic_layout.json").read_text())["cases"], ids=lambda c: c["name"])
-def test_logic_layout_vectors_both_ways(case):
-    w, pos, n = case["w"], case["pos"], case["samples"]
-    lc = c.LogicCapture.__new__(c.LogicCapture)
-    lc.config = c.Config(width=w, positions=pos, samples=n)
-    data = bytes.fromhex(case["stream_hex"])
-    assert ["".join(map(str, lc.channel(data, k, n))) for k in range(len(pos))] == case["channels"]
-    values = [sum(int(case["channels"][k][i]) << pos[k] for k in range(len(pos))) for i in range(n)]
-    assert vbc.pack_samples(values, w).hex() == case["stream_hex"]
+# logic_layout.json both ways: test_spec_vectors.py
 
 
 @pytest.mark.parametrize("w", [3, 5, 7, 12, 13, 24, 100])

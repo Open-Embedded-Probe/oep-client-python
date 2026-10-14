@@ -18,7 +18,7 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 
-from . import registry_legacy as reg
+from . import registry as reg
 
 ROLE_REQUEST, ROLE_RESULT = reg.ROLES["request"], reg.ROLES["result"]
 ROLE_EVENT, ROLE_DATA = reg.ROLES["event"], reg.ROLES["data"]
@@ -56,7 +56,7 @@ OP_CONFIRM, OP_LIST, OP_DESCRIBE, OP_CLOCK = _OP["confirm"], _OP["list"], _OP["d
 OP_OPEN, OP_END, OP_KEEPALIVE, OP_LOCK_STATE = _OP["open"], _OP["end"], _OP["keepalive"], _OP["lock_state"]
 CORE_OPS = frozenset(_OP.values())           # every op fn 0 has: all mandatory (core §1.2, §12)
 # subscribe / unsubscribe: ops of the interface that sends notifications, at the same numbers in every interface's op
-# space (core §11.3) - sent to that fn itself, never to fn 0
+# space (core §10.3) - sent to that fn itself, never to fn 0
 OP_SUBSCRIBE, OP_UNSUBSCRIBE = reg.OP_SUBSCRIBE, reg.OP_UNSUBSCRIBE
 
 CONFIRM_REQUEST = reg.CONFIRM_REQUEST_MAGIC.encode()

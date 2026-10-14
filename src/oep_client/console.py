@@ -12,7 +12,7 @@ import struct
 import time
 from dataclasses import dataclass, field
 
-from . import host as h, message as m, registry_legacy as reg
+from . import host as h, message as m, registry as reg
 from .core import Interface, describe
 
 _CON = reg.TARGET_CONSOLE

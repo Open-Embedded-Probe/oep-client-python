@@ -3,10 +3,10 @@ import struct
 from .conformance import require
 from .conformance_host_core import HostCoreShapeChecks,CORE_OPS,fixed_vectors,result,field
 
-# Reviewed from core §1.1/4.3/6.4/7, not inferred from a generated schema.
+# Reviewed from core §1.1/4.3/6.4/7 (oep-spec a09fa45: confirm and list entries carry no flags), not inferred from a generated schema.
 # Each tuple lists all mandatory request fields and fixed response prefixes.
 CORE_SHAPES=(
- ('confirm',1,(('magic',4),('min_rev',1),('max_rev',1)),(('magic',4),('revision',1),('flags',1),('max_frame',2),('window',4),('max_inflight',1),('boot_id',4))),
+ ('confirm',1,(('magic',4),('min_rev',1),('max_rev',1)),(('magic',4),('revision',1),('max_frame',2),('window',4),('max_inflight',1),('boot_id',4))),
  ('list',2,(('first',2),),(('total',2),('count',1))),
  ('describe',3,(('fn',2),('first',2)),(('more',1),)),
  ('clock',4,(),(('boot_id',4),('uptime_ns',8))),
@@ -20,7 +20,7 @@ REQUESTS={1:b'OEP?\1\1',2:b'\0\0',3:b'\0'*4,4:b'',16:b'\0'*5,17:b'',18:b'',19:b'
 def reviewed_shapes():
     require({name:op for name,op,_,_ in CORE_SHAPES}==CORE_OPS,'review inventory must cover all8 core operations')
     require([sum(n for _,n in req) for _,_,req,_ in CORE_SHAPES]==[6,2,4,0,5,0,0,0],'reviewed request widths differ')
-    require([sum(n for _,n in reply) for _,_,_,reply in CORE_SHAPES]==[17,3,1,12,8,0,0,5],'reviewed result prefixes differ')
+    require([sum(n for _,n in reply) for _,_,_,reply in CORE_SHAPES]==[16,3,1,12,8,0,0,5],'reviewed result prefixes differ')
     return [dict(name=name,op=op,request=[dict(name=k,width=n,optional=False) for k,n in req],
                  response_prefix=[dict(name=k,width=n,optional=False) for k,n in reply]) for name,op,req,reply in CORE_SHAPES]
 

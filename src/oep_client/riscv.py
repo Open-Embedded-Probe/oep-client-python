@@ -21,7 +21,7 @@ import struct
 import time
 from dataclasses import dataclass, field
 
-from . import catalog, host as h, message as m, registry_legacy as reg
+from . import catalog, host as h, message as m, registry as reg
 from .core import FALLBACK_MAX_OP_MS, Interface, describe, max_op_ms
 from .fixture import Gpio
 

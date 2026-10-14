@@ -17,7 +17,7 @@ def selected_spec(monkeypatch):
 def test_adopted_policy_passes():
     r=HostRequestChecks(encode,spec=SPEC).run()
     assert r['status']=='passed',r['checks']
-    assert r['contexts']==16 and len(r['checks'])==5 and not r['full_conformance']
+    assert r['contexts']==14 and len(r['checks'])==5 and not r['full_conformance']
 
 
 def map_tags(raw, fixed_len, transform):
@@ -102,7 +102,7 @@ def registry_fixture():
     entries={}
     for name,op,fixed,fields in contexts():
         entry=entries.setdefault(name,dict(name=name,revision=1,op=[],tlv={}))
-        entry['op'].append(dict(name=op,code=17 if name=='oep.probe.config' and op=='set' else 16 if op in ('scan','configure','bind','open','plan_apply','set') else 17 if op=='attach' else 24))
+        entry['op'].append(dict(name=op,code=17 if name=='oep.probe.config' and op=='set' else 16 if op in ('scan','configure','open','plan_apply') else 17 if op=='attach' else 24))
         entry['tlv']['item' if name=='oep.probe.config' and op=='set' else 'configure' if op=='query' else op]={str(t):t for t,v,c in fields}
     return dict(protocol=dict(revision=1,byte_order='little'),core=entries.pop('core'),interface=list(entries.values()))
 
@@ -126,8 +126,7 @@ def test_selected_schema_guard(tmp_path,monkeypatch,change):
 
 
 @pytest.mark.parametrize('interface,operation',[
-    ('oep.probe.plan','plan_apply'),('oep.fixture.gpio','set'),
-    ('oep.fixture.uart','configure'),('oep.probe.config','set')])
+    ('oep.probe.plan','plan_apply'),('oep.fixture.uart','configure'),('oep.probe.config','set')])
 def test_new_operation_number_requires_review(tmp_path,monkeypatch,interface,operation):
     hashes={}
     for name in REVIEWED:
@@ -140,3 +139,31 @@ def test_new_operation_number_requires_review(tmp_path,monkeypatch,interface,ope
     item=next(row for row in registry['interface'] if row['name']==interface)
     next(row for row in item['op'] if row['name']==operation)['code']=32
     with pytest.raises(Exception,match='request operation number changed'):reviewed_identity(tmp_path)
+
+
+@pytest.mark.parametrize('legacy',['config_items_critical','attach_legacy_shape','logic_multirate_critical'])
+def test_superseded_policies_are_detected(legacy):
+    # Rules changed at a09fa45: config items carry bit 7 = 0 (config §1); attach max_speed/pins are fixed fields,
+    # so attach tag 1/3 have no critical policy; multirate (0x60) no longer exists and capture TLVs are non-critical.
+    def broken(name,op,fixed,fields):
+        raw=encode(name,op,fixed,fields)
+        if legacy=='config_items_critical' and (name,op)==('oep.probe.config','set'):
+            raw=map_tags(raw,len(fixed),lambda t:t|128)
+        if legacy=='attach_legacy_shape' and op=='attach':
+            raw=map_tags(raw,len(fixed),lambda t:t|128 if t&127 in (1,2,3,4,5,6) else t)
+            raw=raw[:len(fixed)-4]+raw[len(fixed):]  # max_speed moved back into a TLV: fixed part shortened
+        if legacy=='logic_multirate_critical' and name=='oep.fixture.logic':
+            raw=map_tags(raw,len(fixed),lambda t:t|128)
+        return raw
+    r=HostRequestChecks(broken,spec=SPEC).run()
+    assert r['status']=='failed'
+    failed={x['id'] for x in r['checks'] if x['status']=='failed'}
+    assert failed and all(x['error'].startswith('Violation:') for x in r['checks'] if x['status']=='failed'),r['checks']
+
+
+def test_removed_request_contexts_are_not_adopted():
+    # gpio set lost its drive TLV and capture-group bind lost trigger_track at a09fa45.
+    names={(n,o) for n,o,_,_ in contexts()}
+    assert ('oep.fixture.gpio','set') not in names and ('oep.fixture.capture-group','bind') not in names
+    for name,op in (('oep.fixture.gpio','set'),('oep.fixture.capture-group','bind')):
+        with pytest.raises(ValueError):encode(name,op,b'',[(1,b'\0')])

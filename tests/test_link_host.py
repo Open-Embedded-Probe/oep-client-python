@@ -262,6 +262,8 @@ def test_find_is_cached_until_the_probe_reboots_and_an_empty_page_ends_the_searc
             return result(req.corr, catalog.pack_list_result(3, page))     # claims 3, sends one in all
         if req.op == m.OP_OPEN:
             return result(req.corr, struct.pack("<II", 1000, boot[0]))
+        if req.op == m.OP_DESCRIBE:                                # fn 0's max_op_ms, read before open (core §4.4)
+            return result(req.corr, b"\0" + catalog.u32(core.CORE_MAX_OP_MS, 1000))
         raise AssertionError(req.op)
 
     hst = h.Host(send)

@@ -12,7 +12,7 @@ import time
 import pytest
 
 from oep_client import (capture, config, core, dump, endpoint, virtual_bench, fixture, frames, host as h, link, message as m,
-                        registry_legacy as reg, riscv, speed_record)
+                        registry as reg, riscv, speed_record)
 
 from test_virtual_bench_rules_2026_10_02 import Clock
 from test_link_host import CONFIRM_V1, Stream, frame, make_link, result

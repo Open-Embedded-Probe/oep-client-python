@@ -7,7 +7,7 @@ class HostResendChecks:
     cases=('LOST-COBS','LOST-LENGTH','PIPELINE-COBS','PIPELINE-LENGTH','BAD-CRC','FAILURE-RECOVER','FAILURE-BLOCKED')
     def __init__(self,a,*,spec):self.a=a;self.identity=reviewed_identity(spec);self.results=[];self.observations=[]
     def check(self,name,fn):
-        row=dict(id='HOST-RESEND-'+name,level='core',clause='core §4.4/5.2; transports §5/6')
+        row=dict(id='HOST-RESEND-'+name,level='core',clause='core §4.1/4.4/5.1; transports §5/6')
         try:fn();row['status']='passed'
         except Exception as exc:row.update(status='failed',error=f'{type(exc).__name__}: {exc}')
         self.results.append(row)
@@ -25,8 +25,12 @@ class HostResendChecks:
         require(repeat['next_after']==repeat['next_before'] and repeat['reply_hex']==first['reply_hex'] and repeat['deadline_after']==repeat['deadline_before'],'Probe replay reexecuted/changed result/renewed lease')
         writes=[e for e in events if e['action']=='write'];apps=[e for e in writes if any(bytes.fromhex(p)[3:6]==b'\1\0\x10' for p in e['requests_hex'])]
         if name!='BAD-CRC':
+            # core §4.4 (a09fa45): max_op_ms (no shorter whole-request bound for op16) + 1000 ms + transfer time.
+            maximum=r.get('max_op_ms');require(isinstance(maximum,int) and 1<=maximum<=600000,'fixture max_op_ms required')
+            wire=apps[0]['wire_length'];transfer=(wire+64*3)*10/115200 if r['kind']=='cobs' else 0
+            floor_ns=round((maximum/1000+1+transfer)*1e9)
             origin=apps[0]['time_ns']+(10_000_000 if pipeline else 0)
-            require(apps[1]['started_ns']>=origin+apps[0]['minimum_ns'],'Host resent before missing response wait elapsed')
+            require(apps[1]['started_ns']>=origin+floor_ns,'Host resent before missing response wait elapsed')
         total=3 if pipeline else 2
         require(len(alloc)==total,'extra state-changing requests sent')
         require(r['live']=={str(i):[1,1] for i in range(1,count+1)},'retry or recovery lost/changed live resources')
@@ -52,4 +56,5 @@ class HostResendChecks:
         return dict(status='passed' if all(row['status']=='passed' for row in self.results) else 'failed',checks=self.results,full_conformance=False,
                     spec=self.identity,observations=self.observations,implementation_sources_sha256=self.a.source_sha256() if callable(getattr(self.a,'source_sha256',None)) else {},
                     unchecked=['TCP close/reopen and actual wall-clock/transport','state read before deciding another state change','own-link confirm timing',
-                               'resend exhaustion after corruption,other pipeline sizes/cache capacity','production Host integration'])
+                               'resend exhaustion after corruption,other pipeline sizes/cache capacity','corr wrap and half-range limits (core §4.1/5.1)',
+                               'production Host selection of the processing bound and integration'])

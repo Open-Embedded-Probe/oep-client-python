@@ -15,7 +15,7 @@
   oep linktest <probe> --rates now,921600 --patterns in,out,duplex --inflight 1,2 --sizes 128,496 --frames 300
   oep pins <probe> --power 5 --wire swio  (find the target's debug pins and reset line: classify the channels, scan,
                                            identify, hold-low + attach under reset; prints the labels, --save writes them)
-  oep clock <probe> [-n 8] [--json]       (fn 0's clock, core §7.7: the probe's uptime_ns and boot_id against this
+  oep clock <probe> [-n 8] [--json]       (fn 0's clock, core §7.6: the probe's uptime_ns and boot_id against this
                                            host's time - the reading with the shortest round trip of n)
   oep restart <probe> [--reopen-s S]      (oep.probe.restart: the probe restarts; waits until it is back, its new boot_id)
 
@@ -55,7 +55,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="oep", description="Open Embedded Probe: what a probe offers, its settings")
     sub = parser.add_subparsers(dest="command", required=True)
     _config_parser(sub)
-    sp = sub.add_parser("speed", help="port_speed (oep-if-link §3, host guide §17): try faster rates on a UART bridge, "
+    sp = sub.add_parser("speed", help="port_speed (oep-if-link §3; this client's procedure): try faster rates on a UART bridge, "
                         "print the report")
     sp.add_argument("probe", help="the probe's serial port (a UART bridge this host opens)")
     sp.add_argument("rates", nargs="?", default="", help="the candidates, comma-separated, in order of preference "
@@ -106,7 +106,7 @@ def main(argv=None) -> int:
     pn.add_argument("--name", help="the host's connection profile name: labels <name>.nrst / <name>.power_hi (a probe "
                     "serving several targets; default: nrst / power_hi)")
     pn.add_argument("--json", action="store_true", help="the report as JSON (the steps' lines go to stderr)")
-    ck = sub.add_parser("clock", help="the probe's clock (fn 0 clock, core §7.7) against this host's: lock-free")
+    ck = sub.add_parser("clock", help="the probe's clock (fn 0 clock, core §7.6) against this host's: lock-free")
     ck.add_argument("probe", help="a probe: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]")
     ck.add_argument("-n", type=int, default=8, help="readings; the one with the shortest round trip is kept (default 8)")
     ck.add_argument("--json", action="store_true")

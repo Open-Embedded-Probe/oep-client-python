@@ -18,7 +18,7 @@ import re
 import struct
 from dataclasses import dataclass
 
-from . import catalog, message as m, names, registry_legacy as reg
+from . import catalog, message as m, names, registry as reg
 from .catalog import CHANNEL_GROUP, FEATURES, MAX_CLOCK_HZ, MAX_LENGTH, MIN_CLOCK_HZ, ListEntry
 
 CORE_FN = 0
@@ -532,7 +532,7 @@ def with_i2c_pullups(probe: VirtualProbe) -> VirtualProbe:
 
 
 def core_v1() -> VirtualProbe:
-    """Current core only; no target/fixture interfaces. Legacy profiles stay pinned."""
+    """Current core only; no target/fixture interfaces."""
     def field(tag, value):
         return bytes((tag,)) + struct.pack('<H', len(value)) + value
     return VirtualProbe('core-v1', 64, [Offered(0, 0, '', (

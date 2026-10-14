@@ -51,7 +51,10 @@ class SmallCore:
             answer = reject(7 if self.holder is None else 8)
         elif op == 1:
             assert body == b'OEP?\1\1'
-            answer = success(b'OEP!' + struct.pack('<BHIBI', 1, 64, 64, 1, 17) + tag(1, b'\0'))
+            if self.fault == 'confirm_flags':  # the flags byte removed from confirm (oep-spec a09fa45)
+                answer = success(b'OEP!' + struct.pack('<BBHIBI', 1, 0, 64, 64, 1, 17) + tag(1, b'\0'))
+            else:
+                answer = success(b'OEP!' + struct.pack('<BHIBI', 1, 64, 64, 1, 17) + tag(1, b'\0'))
         elif op == 2:
             assert body == b'\0\0'
             if self.named:
@@ -66,6 +69,8 @@ class SmallCore:
             assert body == b'\0' * 4
             answer = success(b'\0' + tag(7, b'\0\x1e\0\x0f') + tag(66, b'minimal') +
                              tag(73, b'\0\1\xff') + tag(77, struct.pack('<I', 1)))
+        elif op == 4 and self.fault == 'policy_clock':
+            answer = reject(4) + tag(1, b'\7')  # core §4.3: fn 0 lock-free queries are never refused by policy
         elif op == 4:
             self.clock += 1
             value = 100 - self.clock if self.fault == 'clock_reverse' else 0
@@ -106,7 +111,8 @@ def test_small_core_variants_pass_with_observed_replay_effects(capacity, named):
 
 
 @pytest.mark.parametrize('fault,case,named', [('old_flags', 'DISCOVERY', True),
-    ('clock_reverse', 'CLOCK', False), ('no_wrap', 'CYCLE', False), ('repeat', 'CYCLE', False)])
+    ('clock_reverse', 'CLOCK', False), ('no_wrap', 'CYCLE', False), ('repeat', 'CYCLE', False),
+    ('confirm_flags', 'CONFIRM', False), ('policy_clock', 'CLOCK', False)])
 def test_observable_faults_fail_the_appropriate_smoke_case(fault, case, named):
     probe = SmallCore(0, fault=fault, named=named)
     report = CoreSmokeChecks(probe.send, REG, 'minimal', spec=SPEC, observe_effects=probe.effects).run()
