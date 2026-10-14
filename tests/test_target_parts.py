@@ -54,7 +54,7 @@ def ok(body=b""):
     return m.COMPLETED, m.SUCCESS, body
 
 
-CONFIRM = struct.pack("<4sBBHIBI", b"OEP!", 1, 0, 1024, 4096, 8, 0x1234)
+CONFIRM = struct.pack("<4sBHIBI", b"OEP!", 1, 1024, 4096, 8, 0x1234)
 MAX_SPEED = bytes([0x81, 4, 0]) + struct.pack("<I", target.WireBase.DEFAULT_MAX_SPEED)   # attach's required TLV
 
 

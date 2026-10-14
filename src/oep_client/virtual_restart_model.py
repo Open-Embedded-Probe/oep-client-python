@@ -10,7 +10,7 @@ class RestartExtension(Gpio):
     def __init__(self,model):super().__init__();self.model=model
     def list_page(self,first,limit):
         names=(b'oep.probe.plan',b'oep.fixture.gpio',b'oep.fixture.gpio',b'oep.probe.restart')
-        rows=[struct.pack('<HHBBB',i+1,int(i==2),1,0,len(n))+n for i,n in enumerate(names)]
+        rows=[struct.pack('<HHBB',i+1,int(i==2),1,len(n))+n for i,n in enumerate(names)]
         out=bytearray(struct.pack('<HB',4,0))
         for row in rows[first:]:
             if len(out)+len(row)>limit:break

@@ -18,7 +18,7 @@ import re
 import struct
 from dataclasses import dataclass
 
-from . import catalog, message as m, names, registry as reg
+from . import catalog, message as m, names, registry_legacy as reg
 from .catalog import CHANNEL_GROUP, FEATURES, MAX_CLOCK_HZ, MAX_LENGTH, MIN_CLOCK_HZ, ListEntry
 
 CORE_FN = 0
@@ -36,7 +36,6 @@ class Offered:
     name: str
     tlvs: tuple[bytes, ...] = ()
     revision: int = 1
-    flags: int = 0
     inner: tuple[tuple[str, object], ...] = ()   # what the fn keeps to itself, not declared: (key, value) pairs
 
 
@@ -106,7 +105,7 @@ class VirtualProbe:
             tlvs = (catalog.ops_tlv(default_ops(o.fn, o.name)),) + tlvs
         if o.name == RESTART and not any(t[0] == RESTART_MAX_MS_TAG for t in tlvs):
             tlvs = tlvs + (catalog.u32(RESTART_MAX_MS_TAG, RESTART_MAX_MS),)
-        return o if tlvs is o.tlvs else Offered(o.fn, o.instance, o.name, tlvs, o.revision, o.flags, o.inner)
+        return o if tlvs is o.tlvs else Offered(o.fn, o.instance, o.name, tlvs, o.revision, o.inner)
 
     def instance_errors(self) -> list[str]:
         """Where the offered instances break core §7.2 (C-30): numbered from 0 per (name, revision) in ascending fn
@@ -131,7 +130,7 @@ class VirtualProbe:
             if not payload[4] <= REVISION <= payload[5]:
                 raise LookupError(f"virtual bench: no revision in {payload[4]}..{payload[5]}")
             # boot_id, then TLV transport: the index it came on (core §7.1; this bare VirtualProbe: transport 0)
-            return (struct.pack("<4sBBHIBI", m.CONFIRM_RESULT, REVISION, 0, self.max_frame, WINDOW, MAX_INFLIGHT, BOOT_ID)
+            return (struct.pack("<4sBHIBI", m.CONFIRM_RESULT, REVISION, self.max_frame, WINDOW, MAX_INFLIGHT, BOOT_ID)
                     + catalog.tlv(reg.CORE.tlv["confirm_answer"]["transport"], b"\x00"))
         if op == OP_LIST:
             return self._list(catalog.unpack_list_request(payload)[0])
@@ -171,7 +170,7 @@ class VirtualProbe:
 
     @staticmethod
     def _entry(o: Offered) -> ListEntry:
-        return ListEntry(o.fn, o.instance, o.revision, o.flags, o.name)
+        return ListEntry(o.fn, o.instance, o.revision, o.name)
 
 
 # ---- example profiles ----------------------------------------------------
@@ -519,7 +518,7 @@ def _again(probe: VirtualProbe, offered: list[Offered]) -> VirtualProbe:
 
 
 def _with(o: Offered, tlvs) -> Offered:
-    return Offered(o.fn, o.instance, o.name, tuple(tlvs), o.revision, o.flags, o.inner)
+    return Offered(o.fn, o.instance, o.name, tuple(tlvs), o.revision, o.inner)
 
 
 def without(probe: VirtualProbe, name: str) -> VirtualProbe:

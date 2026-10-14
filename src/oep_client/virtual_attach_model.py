@@ -13,7 +13,7 @@ class Attachments(Dependencies):
     def __init__(self, ep):
         super().__init__(ep);self.connections={};self.meta={};self.touch=[];self.failure=False
     def list_page(self,first,limit):
-        rows=[struct.pack('<HHBBB',fn,0,1,0,len(name))+name for fn,name in zip(self.functions,self.names)]
+        rows=[struct.pack('<HHBB',fn,0,1,len(name))+name for fn,name in zip(self.functions,self.names)]
         page=bytearray(struct.pack('<HB',4,0))
         for row in rows[first:]:
             if len(page)+len(row)>limit:break

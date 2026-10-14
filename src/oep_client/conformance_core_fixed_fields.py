@@ -69,8 +69,8 @@ class CoreFixedFieldChecks(HostCoreShapeChecks):
             if op==2:ctx=result(2,b'\0'*3)
             for field_name,short in drop_fields(ctx[0][5:],fields):
                 require(self.read((ctx[0][:5]+short,*ctx[1:])) is None,'omitted result fixed field accepted: '+name+'.'+field_name)
-        body=struct.pack('<HBHHBBB',1,1,2,0,1,0,1)+b'a';ctx=result(2,body)
-        entry_fields=(('fn',2),('instance',2),('revision',1),('flags',1),('name_len',1),('name',1))
+        body=struct.pack('<HBHHBB',1,1,2,0,1,1)+b'a';ctx=result(2,body)
+        entry_fields=(('fn',2),('instance',2),('revision',1),('name_len',1),('name',1))
         for field_name,short in drop_fields(body[3:],entry_fields):
             require(self.read(result(2,body[:3]+short)) is None,'omitted list entry field accepted: '+field_name)
         for ctx,_ in vectors[8:]:

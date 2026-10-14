@@ -9,8 +9,8 @@ revision) and never extended at its end; a sequence is count x element with no e
 part (and any counted list) come TLVs (tag u8, len u16, value - core §2.2, one form whatever the length); the host skips
 tags it does not know. A request may end with TLVs too; tag bit 7 = critical: a probe that does not implement the tag
 refuses the request rejected unsupported (the tag as received) when it is set, and ignores the TLV when it is not; a
-TLV the probe implements is checked the same with or without the bit (core §2.3). Tags 0x00 and 0x7F are never TLV
-tags. Numbers come from `registry` (generated from oep-spec registry/oep-v1.toml).
+TLV the probe implements is checked the same with or without the bit (core §2.3). TLV number 0 (with or without bit 7) is never a
+TLV: malformed in a request, a broken TLV in an answer or a notification (core §2.2). Numbers come from `registry` (generated from oep-spec registry/oep-v1.toml).
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 
-from . import registry as reg
+from . import registry_legacy as reg
 
 ROLE_REQUEST, ROLE_RESULT = reg.ROLES["request"], reg.ROLES["result"]
 ROLE_EVENT, ROLE_DATA = reg.ROLES["event"], reg.ROLES["data"]
@@ -26,7 +26,7 @@ REQUEST_HEADER, RESULT_HEADER = 10, 5           # core §4.1 / §4.2
 NO_SESSION_ID = 0                                 # a request's session_id when it belongs to no session (core §4.1)
 TLV_HEADER = 3                                    # tag(u8) len(u16) (core §2.2)
 
-REJECTED, COMPLETED, ACCEPTED = (reg.RESOLUTIONS[k] for k in ("rejected", "completed", "accepted"))
+REJECTED, COMPLETED = reg.RESOLUTIONS["rejected"], reg.RESOLUTIONS["completed"]   # any other resolution is a failure (core §2.4)
 SUCCESS, FAILED, PARTIAL = (reg.OUTCOMES[k] for k in ("success", "failed", "partial"))
 
 _R = reg.REJECT_REASONS
@@ -34,12 +34,11 @@ UNKNOWN_FUNCTION = _R["unknown_function"]
 UNKNOWN_OPERATION = _R["unknown_operation"]
 MALFORMED = _R["malformed"]
 UNAVAILABLE = _R["unavailable"]
-BUSY = _R["busy"]                          # reserved: a host takes it as a failure (core §2.4)
 WINDOW_EXCEEDED = _R["window_exceeded"]
 NO_SESSION = _R["no_session"]              # a session_id while no session holds the lock: open a new session
 LOCKED = _R["locked"]                      # another session holds the lock; payload = remaining ms (u32)
 SESSION_REQUIRED = _R["session_required"]  # an op that needs the lock came with session_id 0
-NO_CONNECTION = _R["no_connection"]        # the probe does not know the request's connection: attach again
+NO_RESOURCE = _R["no_resource"]            # the probe does not know the resource the request names (connection, stream...): make it again
 UNSUPPORTED = _R["unsupported"]            # a critical TLV (payload: its tag) or a fixed-part value it cannot handle
 RESULT_LOST = _R["result_lost"]            # a request sent again whose result the probe did not keep: read the state again
 
@@ -47,7 +46,6 @@ REJECT_NAMES = {v: k.replace("_", " ") for k, v in _R.items()}
 REJECT_NAMES[MALFORMED] = "malformed payload"
 
 TAG_CRITICAL = reg.TAG_CRITICAL
-TAG_RESERVED = 0x7F                        # never a TLV tag, in every context (core §2.2, §2.5)
 TAG_FIXED = reg.TAG_RESERVED_ZERO          # the rejected unsupported payload's first byte for a fixed-part value (core §4.3)
 TAG_OPS = reg.DESCRIBE_COMMON["ops"]       # every fn's describe: base(u8) bitmap - the ops it offers (core §1.2, §7.4)
 
@@ -136,8 +134,6 @@ class Result:
     def describe(self) -> str:
         if self.resolution == REJECTED:
             return f"rejected: {REJECT_NAMES.get(self.detail, f'reason 0x{self.detail:02x}')}"
-        if self.resolution == ACCEPTED:
-            return "accepted"
         if self.resolution != COMPLETED:
             return f"unknown resolution 0x{self.resolution:02x}"
         return {SUCCESS: "completed", FAILED: "failed", PARTIAL: "partial"}.get(self.detail,
@@ -151,14 +147,14 @@ def tlv(tag: int, value: bytes, critical: bool = False) -> bytes:
     argument the probe must honour or refuse)."""
     if len(value) > 0xFFFF:
         raise ValueError(f"TLV 0x{tag:02x}: value of {len(value)} bytes does not fit a u16 length")
-    if tag & 0x7F in (TAG_RESERVED, TAG_FIXED):
-        raise ValueError("tags 0x00 and 0x7F are never TLV tags (core §2.2)")
+    if tag & 0x7F == TAG_FIXED:
+        raise ValueError("TLV number 0 is never a TLV (core §2.2)")
     return struct.pack("<BH", tag | (TAG_CRITICAL if critical else 0), len(value)) + value
 
 
 def split_tlvs(data: bytes) -> list[tuple[int, bytes]]:
-    """TLVs in order (core §2.2). A truncated TLV - a header cut short, or a len past the end - raises ShortPayload
-    (the result is broken)."""
+    """TLVs in order (core §2.2). A truncated TLV - a header cut short, or a len past the end - raises ShortPayload,
+    and a TLV numbered 0 raises ProtocolError (the result is broken)."""
     pos, out = 0, []
     while pos < len(data):
         if pos + TLV_HEADER > len(data):
@@ -167,6 +163,8 @@ def split_tlvs(data: bytes) -> list[tuple[int, bytes]]:
         pos += TLV_HEADER
         if pos + n > len(data):
             raise ShortPayload(f"TLV 0x{tag:02x}: truncated value")
+        if tag & 0x7F == TAG_FIXED:
+            raise ProtocolError("a TLV numbered 0 (core §2.2)")
         out.append((tag, data[pos:pos + n]))
         pos += n
     return out

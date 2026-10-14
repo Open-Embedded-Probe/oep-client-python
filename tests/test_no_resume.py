@@ -9,7 +9,7 @@ import struct
 
 import pytest
 
-from oep_client import config, console, core, endpoint, virtual_bench, fixture, host as h, message as m, registry as reg, riscv
+from oep_client import config, console, core, endpoint, virtual_bench, fixture, host as h, message as m, registry_legacy as reg, riscv
 
 CLOSED = reg.COMMON.enum["mark_kind"]["closed"]
 SESSION_ENDED = reg.COMMON.enum["mark_detail_closed"]["session_ended"]

@@ -7,7 +7,7 @@ import struct
 
 import pytest
 
-from oep_client import core, endpoint, virtual_bench, fixture, host, message as m, registry as reg
+from oep_client import core, endpoint, virtual_bench, fixture, host, message as m, registry_legacy as reg
 
 P4_I2C, P4_SPI = 8, 9                      # p4_x035: queue_depth 8, max_length 128 / 64, i2c stretch, spi features 0b1
 V003_I2C, V003_SPI = 7, 8                  # esp32_v003: queue_depth 4, max_length 16 / 32, no stretch, spi 0 (groups)

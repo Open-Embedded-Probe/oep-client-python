@@ -10,7 +10,7 @@ import json
 import struct
 from dataclasses import dataclass, field
 
-from . import catalog, interfaces, message as m, names, registry as reg
+from . import catalog, interfaces, message as m, names, registry_legacy as reg
 
 CORE_FN, OP_CONFIRM, OP_LIST, OP_DESCRIBE = 0, 0x01, 0x02, 0x03
 
@@ -49,7 +49,7 @@ def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, byte
     have = {tag & 0x7F for tag, _ in core_describe}
     if len(confirm_payload) > 4 and confirm_payload[4] >= 1:
         try:
-            where = m.Tail.parse(confirm_payload[17:]).get(reg.CORE.tlv["confirm_answer"]["transport"])
+            where = m.Tail.parse(confirm_payload[16:]).get(reg.CORE.tlv["confirm_answer"]["transport"])
         except m.ProtocolError:
             out.append("confirm's transport TLV (the answer's tail is broken)")
         else:
@@ -97,7 +97,7 @@ def collect(call, prefix: str = "", exact: bool = False, confirm: tuple[int, int
     if magic != m.CONFIRM_RESULT:
         raise ValueError("not an OEP endpoint")
     # revision 0: max_frame(u16) follows; revision 1: flags(u8), then max_frame(u16)
-    max_frame = struct.unpack_from("<H", p, 5 if revision == 0 else 6)[0]
+    max_frame = struct.unpack_from("<H", p, 5)[0]                       # right after the revision (core §7.1)
     caps = Capabilities(revision, max_frame, requests={"confirm": 1, "list": 0, "describe": 0})
     entries: list[catalog.ListEntry] = []
     while True:
@@ -113,7 +113,7 @@ def collect(call, prefix: str = "", exact: bool = False, confirm: tuple[int, int
             caps.missing.append("list: an entry with fn 0 (the core has no name and is never listed, core §7.2)")
         entries = [e for e in entries if e.fn != CORE_FN]
         core_data = _describe_all(call, CORE_FN, caps)
-        caps.offers.append(Offer(catalog.ListEntry(CORE_FN, 0, revision, 0, interfaces.CORE_KEY),
+        caps.offers.append(Offer(catalog.ListEntry(CORE_FN, 0, revision, interfaces.CORE_KEY),
                                  catalog.decode_description(core_data)))
         caps.missing = required_missing(p, catalog.split_tlv(core_data)) + caps.missing
     for e in entries:

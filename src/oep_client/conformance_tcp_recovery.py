@@ -46,7 +46,7 @@ class TcpRecoveryChecks:
             else:
                 require(confirm['valid'] and len(alloc)==2 and alloc[1]['epoch']==1 and events.index(confirm)<events.index(alloc[1]),'replay before valid confirm')
                 raw=bytes.fromhex(confirm['reply_hex'])
-                require(len(raw)>=22 and raw[:10]==b'\2\x0a\0\1\0OEP!\1' and int.from_bytes(raw[18:22],'little')==17,'recovery confirm corr/header/magic/boot differs')
+                require(len(raw)>=21 and raw[:10]==b'\2\x0a\0\1\0OEP!\1' and int.from_bytes(raw[17:21],'little')==17,'recovery confirm corr/header/magic/boot differs')
                 require(alloc[1]['before']==alloc[1]['after'] and alloc[1]['reply_hex']==alloc[0]['reply_hex'],'replay reexecuted or changed state/result')
         if name!='BLOCKED':require(len(results)==1 and results[0]['reply_hex']=='02020001000100','wrong recovered allocation result')
         self.observations.append(r)
@@ -70,7 +70,7 @@ class TcpRecoveryChecks:
         expected+=['010f0001001300000000']
         require([e['request_hex'] for e in after]==expected,'recovery state/rediscovery request order or bytes differ')
         confirm=next(e for e in events if e['action']=='confirm');raw=bytes.fromhex(confirm['reply_hex'])
-        require(confirm['valid'] and raw[:10]==b'\2\x0a\0\1\0OEP!\1' and int.from_bytes(raw[18:22],'little')==boot,'lifecycle confirm boot/corr/header differs')
+        require(confirm['valid'] and raw[:10]==b'\2\x0a\0\1\0OEP!\1' and int.from_bytes(raw[17:21],'little')==boot,'lifecycle confirm boot/corr/header differs')
         require(next(e for e in events if e['action']=='core-state')['reply_hex']=='020b0001000000000000','lifecycle core state not unlocked')
         require(next(e for e in events if e['action']=='old-session')['reply_hex']=='020c000007','new old-session request revived session')
         require(next(e for e in events if e['action']=='resource-state')['reply_hex']=='020f00010000','freed resource remained visible')
@@ -88,7 +88,7 @@ class TcpRecoveryChecks:
             require([e['fn'] for e in invalid['discovered']]==[1,2] and all(e['name']=='io.github.open-embedded-probe.resource' for e in invalid['discovered']),'rediscovery returned wrong interfaces')
             for i,page in enumerate(pages):
                 n=b'io.github.open-embedded-probe.resource'
-                value=b'\2\0\1'+(i+1).to_bytes(2,'little')+i.to_bytes(2,'little')+bytes((1,0,len(n)))+n
+                value=b'\2\0\1'+(i+1).to_bytes(2,'little')+i.to_bytes(2,'little')+bytes((1,len(n)))+n
                 require(bytes.fromhex(page['reply_hex'])==b'\2'+(13+i).to_bytes(2,'little')+b'\1\0'+value,'rediscovery page wire differs')
         require(not any(e['action']=='result' for e in events),'lifecycle returned stale live allocation')
     def run(self):

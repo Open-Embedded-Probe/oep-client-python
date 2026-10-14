@@ -37,7 +37,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, NamedTuple
 
-from . import message as m, registry as reg
+from . import message as m, registry_legacy as reg
 from .message import OepError, ProtocolError, ShortPayload  # noqa: F401  (re-exported: callers use host.*)
 
 MIN_REVISION = MAX_REVISION = 1          # the v1 shapes this client speaks
@@ -124,13 +124,9 @@ class NoSession(Rejected):
     created. Nothing is re-opened silently: the caller opens a new session and builds again (host guide §9)."""
 
 
-class Busy(Rejected):
-    """reason 0x05: reserved (core §4.3 defines none); a probe that sends it is refused like any unknown reason."""
-
-
-class NoConnection(Rejected):
-    """The probe does not know the connection (never attached, probe restarted, lost to a wire or target reset):
-    attach again."""
+class NoResource(Rejected):
+    """rejected no_resource (core §4.3): the probe does not know the resource the request names by number (a
+    connection or a stream: never made, the probe restarted, lost to a wire or target reset): make it again."""
 
 
 class Unsupported(Rejected):
@@ -196,7 +192,7 @@ class Unavailable(Rejected):
         return struct.unpack_from("<H", v)[0] if v and len(v) >= 2 else None
 
 
-_REJECTS = {m.LOCKED: Locked, m.NO_SESSION: NoSession, m.BUSY: Busy, m.NO_CONNECTION: NoConnection,
+_REJECTS = {m.LOCKED: Locked, m.NO_SESSION: NoSession, m.NO_RESOURCE: NoResource,
             m.UNSUPPORTED: Unsupported, m.UNAVAILABLE: Unavailable}
 
 
@@ -294,7 +290,10 @@ class Host:
             self.expect_ms = saved
 
     def next_corr(self) -> int:
+        """The next corr: cyclic, never 0, one counter for every session_id this host sends (core §4.1)."""
         self._corr = self._corr % 0xFFFF + 1
+        if self.kept is not None:
+            self.kept.sent(self._corr)                      # the next run must go on past it (kept_session)
         return self._corr
 
     def call(self, fn: int, op: int, payload: bytes = b"", *, locked: bool = True, expect_ms: int = 0) -> m.Result:
@@ -416,7 +415,7 @@ class Host:
         return m.CONFIRM_REQUEST + bytes(self.confirm_range())
 
     def confirm(self, min_rev: int | None = None, max_rev: int | None = None) -> dict:
-        """Ask for a revision in [min_rev, max_rev] (default `confirm_range()`). -> {"revision", "flags", "max_frame",
+        """Ask for a revision in [min_rev, max_rev] (default `confirm_range()`). -> {"revision", "max_frame",
         "window", "max_inflight", "boot_id", "transport", "tail"}. The boot_id is the probe's for this boot (core §6.5,
         §7.1): a host without the lock learns of a restart from it. transport: the index (fn 0's describe) of the
         transport this confirm came on (core §7.1, C-05; 0xFF from a relaying broker; None when the probe sent none).
@@ -441,12 +440,13 @@ class Host:
         boot_id = None
         if revision == 0:                                   # v0: max_frame(16) window(16) max_inflight(8) flags(8)
             max_frame, window, inflight = rd.take("HHB")
-            flags = rd.u8() if rd.at < len(rd.data) else 0
+            if rd.at < len(rd.data):
+                rd.u8()                                     # v0 flags
             tail = m.Tail()
         else:
             if not min_rev <= revision <= max_rev:
                 raise ProtocolError(f"confirm answered revision {revision}, outside the {min_rev}..{max_rev} asked")
-            flags, max_frame, window, inflight, boot_id = rd.take("BHIBI")
+            max_frame, window, inflight, boot_id = rd.take("HIBI")
             tail = rd.tail()
             why = check_confirm(max_frame, window, inflight)
             if why:
@@ -454,7 +454,7 @@ class Host:
             self.boot_id_seen(boot_id)
         self.revision = revision
         where = tail.get(CONFIRM_TRANSPORT)
-        self.limits = {"magic": magic, "revision": revision, "flags": flags, "max_frame": max_frame, "window": window,
+        self.limits = {"magic": magic, "revision": revision, "max_frame": max_frame, "window": window,
                        "max_inflight": inflight, "boot_id": boot_id, "transport": where[0] if where else None,
                        "tail": tail}
         if self.on_limits is not None:
@@ -501,15 +501,18 @@ class Host:
         self.boot_id_seen(boot_id)                          # a reboot: one loss, and the names listed again
         self.lease_ms = lease
         if self.kept is not None:
-            self.kept.opened(sid)
+            self.kept.opened(sid, self._corr)
         return Opened(lease, boot_id)
 
-    def end_previous(self, sid: int, owner: str | None = None) -> bool:
+    def end_previous(self, sid: int, owner: str | None = None, *, corr: int | None = None) -> bool:
         """End session `sid` that a previous run of this host left open (host guide §5; transports §3: a closed
         transport does not end a session): open it - taken as a resend of its open while it holds the lock (core §6.2:
         nothing released, the resend table dropped; with the lock free, a session under that id) - and end it at once,
         releasing what it held. -> True when it was ended; False when another session holds the lock (locked: not
-        this host's to end). This host's own session is not touched."""
+        this host's to end). This host's own session is not touched. `corr`: one at or ahead of every corr the
+        previous run sent (kept_session's reservation): the open and the end go on after it (core §4.1, §5.1)."""
+        if corr is not None:
+            self._corr = corr
         tail = m.tlv(OWNER, owner_text(owner)) if owner else b""
         try:
             r = self.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IB", reg.LIMITS["lease_min_ms"], 0) + tail,

@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from oep_client import cobs, endpoint, virtual_bench, virtual_bench_serial, message as m, registry as reg
+from oep_client import cobs, endpoint, virtual_bench, virtual_bench_serial, message as m, registry_legacy as reg
 
 CFG = reg.PROBE_CONFIG
 ITEM, ATTACH, KIND = CFG.tlv["item"], CFG.enum["slot_attach"], CFG.enum["bind_stream"]
@@ -158,11 +158,12 @@ def test_owner_is_named_by_lock_state_and_by_locked_but_never_the_session():
     assert refused.detail == m.LOCKED and refused.payload[4:] == m.tlv(0x01, b"ch32rv monitor pid 1234")
     a.ok(0, m.OP_END)
     assert b.raw(0, m.OP_LOCK_STATE, session=False).payload == struct.pack("<BI", 0, 0)
-    assert a.open().succeeded                                       # a new lock without an owner: none (core §6.4)
+    c = Host(ep, 0xC)                                               # a new id: the ended 0xA never opens again (§6.2)
+    assert c.open().succeeded                                       # a new lock without an owner: none (core §6.4)
     assert m.Tail.parse(b.raw(0, m.OP_LOCK_STATE, session=False).payload[5:]).get(0x01) is None
-    assert a.open(owner=b"later").succeeded                         # the holder's own open again: the lock's owner stays
+    assert c.open(owner=b"later").succeeded                         # the holder's own open again: the lock's owner stays
     assert m.Tail.parse(b.raw(0, m.OP_LOCK_STATE, session=False).payload[5:]).get(0x01) is None
-    a.ok(0, m.OP_END)
+    c.ok(0, m.OP_END)
     assert b.open(owner=b"next").succeeded                          # the owner comes from the open that takes the lock
     assert m.Tail.parse(a.raw(0, m.OP_LOCK_STATE, session=False).payload[5:]).get(0x01) == b"next"
 
@@ -185,16 +186,18 @@ def test_core_describe_lists_the_transports_and_max_op_ms():
     assert any(t == tags["unit_id"] for t, _ in tlvs) and 0x48 not in [t for t, _ in tlvs]
     # declarations only (core §7.3): a label the settings give is not in the describe
     ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
-    Host(ep).open()
-    Host(ep).ok(10, 0x02, m.tlv(ITEM["label"], struct.pack("<H", 20) + b"DUT"))
+    holder = Host(ep)
+    holder.open()
+    holder.ok(10, 0x02, m.tlv(ITEM["label"], struct.pack("<H", 20) + b"DUT"))
     assert all(v[2:] != b"DUT" for t, v in describe(ep, 0) if t == tags["label"])
 
 
 @pytest.mark.parametrize("profile", sorted(virtual_bench.PROFILES))
 def test_core_describe_has_no_removed_tags(profile):
-    """core §7.4 (rule review 2026-10-07): implementation (0x07), reserved (0x44), profile (0x45), resets_on_open
-    (0x47) and discoverable (0x4A) are gone - the registry names none of them and no virtual bench profile describes them."""
-    gone = {0x07, 0x44, 0x45, 0x47, 0x4A}
+    """core §7.5 (rule review 2026-10-07): reserved (0x44), profile (0x45), resets_on_open (0x47) and discoverable
+    (0x4A) are gone - the registry names none of them and no virtual bench profile describes them (implementation went
+    from the common tags, whose 0x07 is now ops)."""
+    gone = {0x44, 0x45, 0x47, 0x4A}
     tags = reg.CORE.tlv["describe"]
     assert not {"implementation", "reserved", "profile", "resets_on_open", "discoverable"} & set(tags)
     assert not gone & set(tags.values())
@@ -206,7 +209,7 @@ def _with_transports(probe, entries):
     core0 = next(o for o in probe.offered if o.fn == 0)
     tlvs = tuple(t for t in core0.tlvs if t[0] != virtual_bench.CORE_TRANSPORT) + tuple(
         virtual_bench.catalog.tlv(virtual_bench.CORE_TRANSPORT, bytes(e)) for e in entries)
-    offered = [virtual_bench.Offered(0, core0.instance, core0.name, tlvs, core0.revision, core0.flags) if o.fn == 0 else o
+    offered = [virtual_bench.Offered(0, core0.instance, core0.name, tlvs, core0.revision) if o.fn == 0 else o
                for o in probe.offered]
     return virtual_bench.VirtualProbe(probe.label, probe.max_frame, offered)
 
@@ -466,7 +469,7 @@ def test_a_closed_console_stays_readable_and_the_same_place_opens_it_again_under
     assert a == 1 and sa == 2                                        # one space, from 1 (core §9)
     assert h.raw(3, 0x02, struct.pack("<HBQH", a, 1, 0, 16), session=False).detail == m.UNAVAILABLE   # a connection's number
     assert h.raw(2, 0x02, struct.pack("<H", sa)).detail == m.UNAVAILABLE                               # a stream's number
-    assert h.raw(3, 0x02, struct.pack("<HBQH", 77, 1, 0, 16), session=False).detail == m.NO_CONNECTION  # unknown
+    assert h.raw(3, 0x02, struct.pack("<HBQH", 77, 1, 0, 16), session=False).detail == m.NO_RESOURCE  # unknown
     ep.emit(sa, b"bye")
     h.ok(1, 0x03, struct.pack("<H", a))                              # detach: the stream closes, stays readable
     b = attach(p[1])
@@ -482,7 +485,7 @@ def test_a_closed_console_stays_readable_and_the_same_place_opens_it_again_under
     h.ok(1, 0x03, struct.pack("<H", a2))
     a3 = attach(p[0])
     h.ok(3, 0x01, struct.pack("<HB", a3, 1))                         # another mechanism there: the old one goes
-    assert h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).detail == m.NO_CONNECTION
+    assert h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).detail == m.NO_RESOURCE
     rd = m.Reader(h.raw(3, 0x08, b"\x00\x00", session=False).payload)   # streams: the live ones (b's and a3's), lock-free
     more, count = rd.take("BB")
     rows = [rd.take("HHBBB") for _ in range(count)]

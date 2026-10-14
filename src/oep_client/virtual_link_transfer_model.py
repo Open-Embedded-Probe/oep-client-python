@@ -10,7 +10,7 @@ class LinkTransfers(Gpio):
 
     def list_page(self,first,limit):
         names=(b'oep.probe.plan',b'oep.fixture.gpio',b'oep.fixture.gpio',b'oep.probe.link')
-        rows=[struct.pack('<HHBBB',i+1,int(i==2),1,0,len(name))+name for i,name in enumerate(names)]
+        rows=[struct.pack('<HHBB',i+1,int(i==2),1,len(name))+name for i,name in enumerate(names)]
         page=bytearray(struct.pack('<HB',4,0))
         for row in rows[first:]:
             if len(page)+len(row)>limit:break

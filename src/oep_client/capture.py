@@ -44,7 +44,7 @@ import zipfile
 from dataclasses import dataclass, field
 from fractions import Fraction
 
-from . import cobs, host as h, message as m, multirate as mr, registry as reg
+from . import cobs, host as h, message as m, multirate as mr, registry_legacy as reg
 from .multirate import ANY_ACTIVE, EDGE_LATCH, SAMPLE, Multirate
 from .frames import FramingLost
 from .core import Interface, confirm

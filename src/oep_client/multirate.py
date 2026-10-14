@@ -22,7 +22,7 @@ import struct
 from dataclasses import dataclass, field
 from typing import Callable
 
-from . import registry as reg
+from . import registry_legacy as reg
 
 _CAP = reg.FIXTURE_LOGIC
 POLICY = dict(_CAP.enum["multirate_policy"])                    # sample 0, any_active 1, edge_latch 2; 3 onwards reserved

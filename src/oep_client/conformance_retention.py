@@ -13,6 +13,14 @@ class RetentionChecks(ReplayPressureChecks):
         return self.c.request(16, bytes((kind, reply_size)) + tail, session=sid,
                               fn=self.a.functions[0], corr=corr)
 
+    def walk(self, sid, target):
+        """Moves the session's corr to `target` with keepalives, each step below half the space (core §4.1)."""
+        while self.c.corr != target:
+            ahead = (target - self.c.corr) % 65536
+            nxt = target if ahead < 32000 else ((self.c.corr + 32000) % 65536 or 1)
+            self.c.corr = (nxt - 2) % 65535 + 1                         # request() takes corr % 65535 + 1 == nxt
+            tlvs(self.c.success(self.c.request(self.c.core['keepalive'], session=sid)))
+
     def state(self):
         value = super().state()
         require(type(value.get('next_resource_id')) is int, 'resource allocator instrumentation required')

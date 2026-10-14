@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 
-from . import registry as reg
+from . import registry_legacy as reg
 
 MAX_NAME = reg.LIMITS["interface_name_max_bytes"]   # 48 (core §7.2: one list entry fits the smallest max_frame)
 _LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\Z")   # no '-' at either end (core §13 rule 1)

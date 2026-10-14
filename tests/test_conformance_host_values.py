@@ -19,7 +19,7 @@ def selected_spec(monkeypatch):
 def test_selected_unknown_value_contracts_pass():
     report = HostValueChecks(decode, spec=SPEC).run()
     assert report['status'] == 'passed', report['checks']
-    assert len(report['checks']) == 7 and not report['full_conformance']
+    assert len(report['checks']) == 6 and not report['full_conformance']
 
 
 @pytest.mark.parametrize('defect,case,prefix', [
@@ -32,8 +32,6 @@ def test_selected_unknown_value_contracts_pass():
     ('cause_fallback', 'CAUSE', 'Violation:'),
     ('kind_refusal', 'SCAN_KIND', 'Violation:'),
     ('kind_fallback', 'SCAN_KIND', 'Violation:'),
-    ('flags_refusal', 'FLAGS', 'Violation:'),
-    ('flags_change_limit', 'FLAGS', 'Violation:'),
 ])
 def test_independent_reader_faults(defect, case, prefix):
     def broken(frame, shape):
@@ -41,8 +39,6 @@ def test_independent_reader_faults(defect, case, prefix):
             raise ValueError('unknown cause')
         if defect == 'kind_refusal' and shape == 'scan' and frame[7] > 2:
             raise ValueError('unknown kind')
-        if defect == 'flags_refusal' and shape == 'confirm' and frame[10]:
-            raise ValueError('reserved flags')
         out = decode(frame, shape)
         if defect == 'resolution_success' and frame[3] > 1: out['successful'] = True
         if defect == 'outcome_success' and frame[3] == 1 and frame[4] > 2: out['successful'] = True
@@ -51,7 +47,6 @@ def test_independent_reader_faults(defect, case, prefix):
         if defect == 'reason_success' and frame[3] == 0 and frame[4] > 12: out['successful'] = True
         if defect == 'cause_fallback' and out.get('cause', 0) > 6: out['cause'] = 6
         if defect == 'kind_fallback' and shape == 'scan' and out['entries'][0][0] > 2: out['entries'][0][0] = 1
-        if defect == 'flags_change_limit' and shape == 'confirm' and frame[10]: out['maximum'] = 64
         return out
     report = HostValueChecks(broken, spec=SPEC).run()
     row = next(r for r in report['checks'] if r['id'] == 'HOST-VALUES-' + case)

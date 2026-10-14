@@ -38,7 +38,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
-from . import arm, catalog, config, core, host as h, registry as reg, riscv, targets
+from . import arm, catalog, config, core, host as h, registry_legacy as reg, riscv, targets
 from .fixture import Gpio
 
 FLOATING, DRIVEN_HIGH, DRIVEN_LOW, ACTIVE = "floating", "driven-high", "driven-low", "active"

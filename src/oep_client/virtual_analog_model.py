@@ -13,7 +13,7 @@ class Analog(Logic):
     def __init__(self,ep):
         super().__init__(ep);self.calibration_ns=None
     def list_page(self,first,limit):
-        rows=[struct.pack('<HHBBB',fn,0,1,0,len(name))+name for fn,name in
+        rows=[struct.pack('<HHBB',fn,0,1,len(name))+name for fn,name in
               ((1,b'oep.probe.plan'),(2,b'oep.fixture.analog'))]
         page=bytearray(struct.pack('<HB',2,0))
         for row in rows[first:]:

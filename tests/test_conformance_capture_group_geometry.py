@@ -1,7 +1,7 @@
 import copy
 import struct
 import pytest
-from oep_client import registry
+from oep_client import registry_legacy as registry
 from oep_client.conformance_capture_group_geometry import CaptureGroupGeometryChecks
 from oep_client.virtual_capture_group_geometry_model import geometry,fixtures
 from test_conformance_registered_ops import setup as registered_setup

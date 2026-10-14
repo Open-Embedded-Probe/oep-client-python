@@ -29,9 +29,9 @@ def fixed_vectors():
     # These expected dictionaries are reviewed from core tables, not obtained from the reader.
     rows=[]
     def add(op,body,fixed,reason=None):rows.append((result(op,body,reason=reason),fixed))
-    add(1,struct.pack('<4sBBHIBI',b'OEP!',1,0,1024,4096,4,0x12345678),dict(magic=b'OEP!',revision=1,maximum=1024,window=4096,inflight=4,boot=0x12345678))
-    entries=[(2,0,1,0,b'io.example.a'),(9,4,7,0,b'io.example.b')]
-    add(2,struct.pack('<HB',13,2)+b''.join(struct.pack('<HHBBB',fn,instance,revision,flags,len(name))+name for fn,instance,revision,flags,name in entries),dict(total=13,entries=[dict(fn=fn,instance=instance,revision=revision,name=name) for fn,instance,revision,flags,name in entries]))
+    add(1,struct.pack('<4sBHIBI',b'OEP!',1,1024,4096,4,0x12345678),dict(magic=b'OEP!',revision=1,maximum=1024,window=4096,inflight=4,boot=0x12345678))
+    entries=[(2,0,1,b'io.example.a'),(9,4,7,b'io.example.b')]
+    add(2,struct.pack('<HB',13,2)+b''.join(struct.pack('<HHBB',fn,instance,revision,len(name))+name for fn,instance,revision,name in entries),dict(total=13,entries=[dict(fn=fn,instance=instance,revision=revision,name=name) for fn,instance,revision,name in entries]))
     add(3,b'\0',dict(more=False));add(4,struct.pack('<IQ',0x87654321,0x0102030405060708),dict(boot=0x87654321,uptime_ns=0x0102030405060708))
     add(16,struct.pack('<II',3000,0xabcdef01),dict(lease_ms=3000,boot=0xabcdef01));add(17,b'',{});add(18,b'',{});add(19,struct.pack('<BI',1,1234),dict(locked=True,remaining_ms=1234))
     for reason in (1,2,3,4,6,7,8,9,10,11,12):
@@ -124,7 +124,7 @@ class HostCoreShapeChecks:
         ctx=result(3,b'\0',described_fn=9);self.expect(self.append(ctx,field(64,b'extension')),dict(more=False))
     def variable(self):
         for n in (0,1,48,255):
-            name=b'x'*(48 if n else 1);entries=b''.join(struct.pack('<HHBBB',i+1,0,1,0,len(name))+name for i in range(n));ctx=result(2,struct.pack('<HB',n,n)+entries)
+            name=b'x'*(48 if n else 1);entries=b''.join(struct.pack('<HHBB',i+1,0,1,len(name))+name for i in range(n));ctx=result(2,struct.pack('<HB',n,n)+entries)
             self.expect(ctx,dict(total=n,entries=[dict(fn=i+1,instance=0,revision=1,name=name) for i in range(n)]))
         for n in (0,1,255):
             value=bytes((7,n))+b'\1\2\0'*n;ctx=result(3,b'\0');self.expect(self.append(ctx,field(6,value)),dict(more=False),[(6,value)])
@@ -132,13 +132,9 @@ class HostCoreShapeChecks:
         for tag,value in ((1,b'\2\0\0'),(7,b'\0'+b'\xff'*32),(7,b'\xf8\xff'),(70,b'\1\0'),(64,b'x'*65535)):
             self.expect(self.append(ctx,field(tag,value)),dict(more=False),[(tag,value)])
     def flags_bool(self):
-        ctx,expected=fixed_vectors()[0]
         for value in range(256):
-            frame=ctx[0][:10]+bytes((value,))+ctx[0][11:];self.expect((frame,*ctx[1:]),expected)
             self.expect(result(3,bytes((value,))),dict(more=bool(value)))
             self.expect(result(19,struct.pack('<BI',value,123)),dict(locked=bool(value),remaining_ms=123))
-        for value in (1,128,255):
-            ctx=result(2,struct.pack('<HBHHBBB',1,1,2,0,7,value,1)+b'a');self.expect(ctx,dict(total=1,entries=[dict(fn=2,instance=0,revision=7,name=b'a')]))
     def run(self):
         rows=[]
         for name in self.cases:

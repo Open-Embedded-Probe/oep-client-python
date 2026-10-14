@@ -12,7 +12,7 @@ class Uart(Gpio):
         super().__init__(False);self.ep=ep;self.idle={ch:(0,0) for ch in range(8)};self.pins=dict(self.idle)
         self.stream=None;self.position=0;self.serial=0;self.baud=115200;self.format=0
     def list_page(self,first,limit):
-        rows=[struct.pack('<HHBBB',fn,0,1,0,len(name))+name for fn,name in [(1,b'oep.probe.plan'),(2,b'oep.fixture.uart')]];page=bytearray(struct.pack('<HB',2,0))
+        rows=[struct.pack('<HHBB',fn,0,1,len(name))+name for fn,name in [(1,b'oep.probe.plan'),(2,b'oep.fixture.uart')]];page=bytearray(struct.pack('<HB',2,0))
         for row in rows[first:]:
             if len(page)+len(row)>limit:break
             page.extend(row);page[2]+=1

@@ -10,7 +10,7 @@ import contextlib
 
 import struct
 
-from . import catalog, host as h, message as m, names as _names, registry as reg
+from . import catalog, host as h, message as m, names as _names, registry_legacy as reg
 
 # oep.probe.plan (oep-if-plan): which channel each role of an interface uses; listed when an interface has plan roles
 PLAN_NAME = reg.PROBE_PLAN.name
@@ -84,7 +84,7 @@ def revision(hst: h.Host, name: str, fn: int) -> int:
 
 
 def confirm(hst: h.Host) -> dict:
-    """The probe's limits (asked once per host): revision, flags, max_frame, window (u32), max_inflight."""
+    """The probe's limits (asked once per host): revision, max_frame, window (u32), max_inflight, boot_id."""
     return hst.confirmed()
 
 

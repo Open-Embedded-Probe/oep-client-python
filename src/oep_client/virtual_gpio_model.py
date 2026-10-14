@@ -11,7 +11,7 @@ class Gpio(Resources):
         self.idle={ch:(4 if ch==0 else 0,1 if ch==0 and selectable else 0) for ch in range(8)};self.pins=dict(self.idle);self.external={ch:ch%2 for ch in range(8)}
     def list_page(self,first,limit):
         rows=[]
-        for fn,name,instance in [(1,b'oep.probe.plan',0),(2,b'oep.fixture.gpio',0),(3,b'oep.fixture.gpio',1)]:rows.append(struct.pack('<HHBBB',fn,instance,1,0,len(name))+name)
+        for fn,name,instance in [(1,b'oep.probe.plan',0),(2,b'oep.fixture.gpio',0),(3,b'oep.fixture.gpio',1)]:rows.append(struct.pack('<HHBB',fn,instance,1,len(name))+name)
         page=bytearray(struct.pack('<HB',3,0))
         for row in rows[first:]:
             if len(page)+len(row)>limit:break

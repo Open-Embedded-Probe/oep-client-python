@@ -8,7 +8,7 @@ from test_conformance_registered_ops import setup as registered_setup
 
 
 def setup():
-    _,original=registered_setup();reg=original.reg;reg['limits']={'wifi_min_max_frame':112}
+    _,original=registered_setup();reg=original.reg;reg['limits']={**reg.get('limits',{}),'wifi_min_max_frame':112}
     tags={'oep.fixture.logic':{'mode':64,'rate_range':65,'channels':68,'trigger':69,'multirate':96},'oep.fixture.analog':{'mode':64,'rate_range':65,'channels':68,'trigger':69,'frontend':70},'oep.fixture.capture-group':{'tracks':64},'oep.probe.config':{'items':65,'slots_max':66,'wifi_max':70}}
     for s in reg['interface']:
         if s['name'] in tags:s['tlv']={'describe':tags[s['name']]}

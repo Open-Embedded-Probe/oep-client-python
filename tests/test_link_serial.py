@@ -44,13 +44,14 @@ def result(corr, payload=b"\x00" * 5):
     return m.Result(corr, m.COMPLETED, m.SUCCESS, payload).pack()
 
 
-def test_noise_and_answers_to_other_requests_are_skipped_without_a_resend():
+def test_answers_to_other_requests_are_read_past_without_a_resend():
+    """transports §1/§4: the port carries OEP frames only; an answer to another request is read past."""
     s = Scripted()
     lk = link.SerialLink.on_stream(s, "cobs", 0.3)
-    s.rx += b"console says hi\r\n\x00zz" + cobs.frame(result(9)) + b"more console" + cobs.frame(result(7))
+    s.rx += b"\x00" + cobs.frame(result(9)) + cobs.frame(result(7))
     reply = lk.send(m.Request(7, 0, m.OP_LOCK_STATE, b"").pack())
     assert m.Result.unpack(reply).corr == 7
-    assert lk.noise > 0 and lk.stale == 1 and lk.retries == 0
+    assert lk.noise == 0 and lk.stale == 1 and lk.retries == 0
     assert s.tx.startswith(b"\x00") and s.tx.endswith(b"\x00")      # the request framed on both sides
 
 
@@ -135,13 +136,13 @@ def test_a_wait_with_nothing_allows_the_one_resend_of_core_5_2():
     assert len(sent) == 3 and len(set(sent)) == 1
 
 
-def test_a_broken_frame_on_a_port_no_session_holds_is_noise_and_waits():
-    """Not held: the probe's raw bytes share the line (transports §4), so a broken candidate is skipped without a
-    resend; the answer's loss shows by the wait only (core §5.2)."""
-    lk, sent = held_link(["broken", "good"], timeout=0.2, held=False)
+def test_a_broken_frame_on_a_port_no_session_holds_is_resent_at_once_too():
+    """transports §4: the port carries OEP frames only, so a broken candidate is a broken frame whether or not a session
+    holds the port - most likely the awaited answer, sent again at once with the same corr (core §5.1)."""
+    lk, sent = held_link(["broken", "good"], timeout=2.0, held=False)
     t0 = time.monotonic()
     assert m.Result.unpack(lk.send(m.Request(10, 1, 0x01, b"").pack())).corr == 10
-    assert len(sent) == 2 and time.monotonic() - t0 >= 0.2 and lk.corrupt == 0 and lk.noise > 0
+    assert len(sent) == 2 and sent[0] == sent[1] and time.monotonic() - t0 < 0.5 and lk.corrupt == 1
 
 
 def test_pipelined_requests_resend_the_unanswered_ones_after_a_broken_frame():

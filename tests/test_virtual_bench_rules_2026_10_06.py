@@ -8,7 +8,7 @@ import struct
 
 import pytest
 
-from oep_client import catalog, endpoint, virtual_bench, message as m, registry as reg
+from oep_client import catalog, endpoint, virtual_bench, message as m, registry_legacy as reg
 
 from test_virtual_bench_rules_2026_10_02 import ITEM, PLAN_APPLY, SPEED, Clock, Host, slot_item
 
@@ -32,7 +32,7 @@ def fn_of(ep, name):
 def with_tlvs(probe: virtual_bench.VirtualProbe, name: str, change) -> virtual_bench.VirtualProbe:
     """The profile with the describe TLVs of every `name` fn passed through change(tlvs) -> tlvs."""
     return virtual_bench.VirtualProbe(probe.label, probe.max_frame, [
-        virtual_bench.Offered(o.fn, o.instance, o.name, tuple(change(o.tlvs)), o.revision, o.flags) if o.name == name else o
+        virtual_bench.Offered(o.fn, o.instance, o.name, tuple(change(o.tlvs)), o.revision) if o.name == name else o
         for o in probe.offered])
 
 
@@ -81,13 +81,13 @@ def test_c21_riscv_dm_ops_are_gated_on_the_ops_tag():
     assert not ep.offers(dm, RV.op["step"]) and ep.offers(dm, RV.op["run"])
     assert h.raw(dm, RV.op["step"], struct.pack("<H", 1)).detail == m.UNKNOWN_OPERATION
     ops = next(v for t, v in m.split_tlvs(b"".join(ep._declarations(dm))) if t == catalog.OPS)
-    assert ops == bytes([1, 0x7F])                                            # base 1: dmi .. run, no step (core §7.4)
+    assert ops == bytes([0, 0xFE])                                            # base 0: dmi .. run, no step (core §7.4)
     ep, h = bench(with_tlvs(virtual_bench.p4_bench(), "oep.target.riscv-dm",
                             ops_without(RV.name, "read_block", "write_block", "run", "reset", "step")))
     for op in ("read_block", "write_block", "run", "reset", "step"):
         assert h.raw(2, RV.op[op], struct.pack("<H", 1)).detail == m.UNKNOWN_OPERATION, op
     for op, body in (("dmi", struct.pack("<HH", 1, 0)), ("halt", b"\x01\x00"), ("resume", b"\x01\x00")):
-        assert h.raw(2, RV.op[op], body).detail == m.NO_CONNECTION, op      # required: the connection is looked up
+        assert h.raw(2, RV.op[op], body).detail == m.NO_RESOURCE, op      # required: the connection is looked up
 
 
 def test_c21_save_and_erase_without_storage_are_unknown_operation():

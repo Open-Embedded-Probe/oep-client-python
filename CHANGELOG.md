@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- (JA) oep-spec a09fa45 への追従（段階1: コア）。registry とベクタを同期し、confirm と list entry から flags を外し、corr16 の循環と要求全体での再送照合（同じ corr の異なる要求は malformed、異なる ID の open だけが再送状態を置き換える）、TLV 番号 0 の拒否と 0x7F の通常の tag 化、シリアル経路のフレーム専用化に合わせた。no_connection は no_resource（`host.NoResource`）、accepted と busy は削除。kept session は corr の予約を保存し、次の実行がその先から終了処理を送る。コアの独立検査器（`conformance.py` ほか）を同じ core に合わせ、corr 枯渇前の session 切替検査（rollover）は不要になったため削除した。インターフェースはまだ b80555a の番号で、`registry_legacy.py` と `tests/vectors_legacy/` を段階ごとに外す（`tests/conftest.py` の PENDING_FOLLOW）。
+
 - (JA) 有限保持の通知契約をraw fixtureで確認。通知1frame slotと7byte chunkで購読拒否時不変・seq抜け・frame完了・応答優先を検査し、4つのfaultを検出。本番virtualと実driverの適合は範囲外。
 
 - (JA) 循環corr作業版のlease/forceを確認する選択raw検査を追加。時間と代表資源のadapterを明示入力とし、cache0/1、core-only/資源ありの論理fixtureと6つのfaultで検証。全適合・実タイマー・本番virtualの適合は主張しない。

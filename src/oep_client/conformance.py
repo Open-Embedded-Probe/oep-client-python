@@ -43,8 +43,8 @@ EXTRA_CHECKS = (
     ('CORE-OP-PRIORITY', 'core §4.3', 'invalid_request', 'op-priority'),
     ('CORE-SESSION-PRIORITY', 'core §4.3', 'invalid_request', 'session-priority'),
     ('CORE-SESSION-BEFORE-PAYLOAD', 'core §4.3/6.2', 'invalid_request', 'session-before-payload'),
-    ('CORE-UNSEEN-OLD', 'core §5.2', 'unseen_old', None),
-    ('CORE-REJECTED-REPLAY', 'core §5.2', 'replay_rejected', False),
+    ('CORE-UNSEEN-OLD', 'core §5.1', 'unseen_old', None),
+    ('CORE-REJECTED-REPLAY', 'core §5.1', 'replay_rejected', False),
     ('CORE-HEADER-BEFORE-REPLAY', 'core §4.3/5.2', 'replay_rejected', True),
     ('CORE-OWNER', 'core §2.3/6.4', 'owners', None),
     ('CORE-HEADER-LEASE', 'core §4.3/6.1', 'lease_rejections', True),
@@ -55,7 +55,7 @@ EXTRA_CHECKS = (
     ('CORE-TRANSPORT-DECLARE', 'core §7.5; transports §3', 'transport_declarations', None),
     ('CORE-DESCRIBE-SIZE', 'core §7.3', 'describe_size', None),
     ('CORE-DISCOVERY-LOCKED', 'core §6.3/7', 'discovery_locked', None),
-    ('CORE-CONFIRM-HISTORY', 'core §5.2/7.1', 'confirm_history', None),
+    ('CORE-CONFIRM-HISTORY', 'core §5.1/7.1', 'confirm_history', None),
 )
 
 CORE_CASES += tuple(row[0] for row in EXTRA_CHECKS)
@@ -132,7 +132,6 @@ CHECKER_SOURCES = ('conformance.py', 'conformance_core_smoke.py', 'conformance_s
                    'conformance_retention_lifecycle.py', 'conformance_retention_lifecycle_sample.py',
                    'conformance_corr.py', 'conformance_recovery.py', 'conformance_recovery_sample.py',
                    'conformance_recovery_races.py', 'conformance_recovery_race_sample.py',
-                   'conformance_rollover.py', 'conformance_rollover_sample.py',
                    'conformance_session_loss.py', 'conformance_session_loss_sample.py',
                    'conformance_exhausted.py', 'conformance_exhausted_sample.py', 'conformance_interfaces.py',
                    'conformance_stream.py', 'conformance_stream_sample.py',
@@ -145,15 +144,14 @@ def checker_sources_sha256():
             for name in CHECKER_SOURCES}
 
 
-REVIEWED_CORE_SHA256 = 'cddf917d49f36bbb1a5b24fbda247675834e1c398beaa179728b8efa31831bf9'
+REVIEWED_CORE_SHA256 = '4c5dcdcc779c5ba0ee85060a33b2b629deddad3e8f8f1a22e18bdeea9d471bdc'   # oep-spec a09fa45 docs/oep-core.ja.md
 
 
 def require_reviewed_contract(registry, spec=None):
     limits = registry.get('limits', {})
-    require('corr_half_range' not in limits and
-            limits.get('request_header_bytes', 10) == 10 and
-            limits.get('result_header_bytes', 5) == 5,
-            'checker migration required: cyclic-corr/new-header SPEC is not supported by this legacy checker')
+    require(limits.get('corr_half_range') == 0x8000 and limits.get('corr_max') == 0xFFFF and
+            limits.get('request_header_bytes') == 10 and limits.get('result_header_bytes') == 5,
+            'checker migration required: this checker speaks the cyclic corr16 core with 10/5-byte headers')
     if spec is not None:
         require(spec.get('core_sha256') == REVIEWED_CORE_SHA256,
                 'checker migration required: core document differs from the reviewed checker contract')
@@ -201,10 +199,7 @@ class Checks:
     def request(self, op, payload=b'', *, session=0, corr=None, fn=0):
         automatic = corr is None
         if corr is None:
-            corr = (self.corr if session else self.zero_corr) + 1
-            if corr > 65535:
-                raise ValueError('corr exhausted; ' + ('end before exhaustion and open a different session ID'
-                                                     if session else 'choose an explicit free-session corr after draining requests'))
+            corr = (self.corr if session else self.zero_corr) % 65535 + 1   # cyclic, never 0 (core §4.1)
         request = struct.pack('<BHHBI', self.reg['roles']['request'], corr, fn, op, session) + payload
         if automatic:
             if session: self.corr = corr
@@ -297,11 +292,11 @@ class Checks:
 
     def confirm(self):
         p = self.success(self.request(self.core['confirm'], b'OEP?\x01\x01'))
-        require(17 <= len(p) <= 59 and p[:4] == b'OEP!', 'confirm shape/magic')
-        revision, flags, frame, window, inflight, boot = struct.unpack_from('<BBHIBI', p, 4)
-        require(revision == 1 and flags == 0, 'confirm revision/flags')
+        require(16 <= len(p) <= 59 and p[:4] == b'OEP!', 'confirm shape/magic')
+        revision, frame, window, inflight, boot = struct.unpack_from('<BHIBI', p, 4)
+        require(revision == 1, 'confirm revision')
         require(frame >= 64 and window >= frame and inflight >= 1, 'confirm limits')
-        rows = tlvs(p[17:])
+        rows = tlvs(p[16:])
         tag = self.reg['core']['tlv']['confirm_answer']['transport']
         values = [v for t, v in rows if t == tag]
         require(values and len(values[0]) == 1, 'confirm transport required, u8')
@@ -474,11 +469,11 @@ class Checks:
             total = size
             at = 3
             for _ in range(count):
-                require(len(p) >= at + 7, 'list truncated entry')
-                fn, instance, revision, flags, length = struct.unpack_from('<HHBBB', p, at)
-                at += 7
+                require(len(p) >= at + 6, 'list truncated entry')
+                fn, instance, revision, length = struct.unpack_from('<HHBB', p, at)
+                at += 6
                 require(fn and 1 <= length <= 48 and len(p) >= at + length, 'list fn/name length')
-                require(revision >= 1 and flags == 0, 'interface revision/flags')
+                require(revision >= 1, 'interface revision')
                 name = p[at:at + length].decode('ascii')
                 require(all(c in 'abcdefghijklmnopqrstuvwxyz0123456789-.' for c in name), 'interface name format')
                 entries.append(dict(fn=fn, instance=instance, revision=revision, name=name))
@@ -576,11 +571,11 @@ class Checks:
 
     def highwater(self):
         with self.holding() as sid:
-            self.corr = 65529
             self.success(self.request(self.core['keepalive'], session=sid))
-            # session zero has its own independent corr space, including a half-range jump.
-            self.zero_corr = max(self.zero_corr, 39999)
+            # session-zero numbers do not move the session's: even a half-range jump of them (core §4.1, §5.1)
+            self.zero_corr = (self.zero_corr + 40000) % 65535
             self.clock()
+            self.success(self.request(self.core['keepalive'], session=sid))
             self.success(self.request(self.core['end'], session=sid))
             self.session = None
             self.must_not_reopen(sid)
@@ -593,10 +588,12 @@ class Checks:
 
     def corr_maximum(self):
         with self.holding() as sid:
-            self.corr = 65533
-            tlvs(self.success(self.request(self.core['keepalive'], session=sid)))
-            tlvs(self.success(self.request(self.core['end'], session=sid)))
-            self.session = None  # the end used corr 65535; do not wrap this session
+            for step in (32000, 64000, 65533):                   # each forward step below half the space (§5.1)
+                self.corr = step
+                tlvs(self.success(self.request(self.core['keepalive'], session=sid)))   # last one: 65534
+            tlvs(self.success(self.request(self.core['keepalive'], session=sid)))   # 65535
+            tlvs(self.success(self.request(self.core['keepalive'], session=sid)))   # wraps to 1, skipping 0 (§4.1)
+            require(self.corr == 1, 'corr did not wrap to 1')
 
     def ended(self):
         with self.holding() as sid:
@@ -896,7 +893,7 @@ class Checks:
             self.abort = True  # no session mutations on an unidentified endpoint
         self.check('CORE-DECLARE', 'core §1.2/7.3/7.4/7.5', self.declarations)
         self.check('CORE-LIST', 'core §7.2/7.3/7.4', self.interfaces)
-        self.check('CORE-CLOCK', 'core §7.7', self.clock_progress)
+        self.check('CORE-CLOCK', 'core §7.6', self.clock_progress)
         self.check('CORE-ZERO-CORR', 'core §4.1/5.2', lambda: self.rejected(
             self.request(self.core['clock'], corr=0), 'malformed'))
         self.check('CORE-ZERO-SESSION', 'core §4.1/6.1', lambda: self.rejected(
@@ -907,15 +904,15 @@ class Checks:
         self.check('CORE-KEEPALIVE-LOCK', 'core §6.1/6.2/6.4', self.keepalive)
         self.check('CORE-LEASE-MIN', 'core §6.4', lambda: self.lease_clamp(1))
         self.check('CORE-LEASE-MAX', 'core §6.4', lambda: self.lease_clamp(60001))
-        self.check('CORE-OPEN-AFTER-END', 'core §5.2/6.2', self.replayed_open)
-        self.check('CORE-REPLAY', 'core §5.2', self.replay)
-        self.check('CORE-OPEN-HISTORY', 'core §5.2/6.2', lambda: self.replay(True))
-        self.check('CORE-ALTERED-REPLAY', 'core §5.2', self.altered)
+        self.check('CORE-OPEN-AFTER-END', 'core §5.1/6.2', self.replayed_open)
+        self.check('CORE-REPLAY', 'core §5.1', self.replay)
+        self.check('CORE-OPEN-HISTORY', 'core §5.1/6.2', lambda: self.replay(True))
+        self.check('CORE-ALTERED-REPLAY', 'core §5.1', self.altered)
         self.check('CORE-CORR-U16', 'core §4.1/5.2/6.2', self.highwater)
         self.check('CORE-CORR-MAX', 'core §4.1/5.2', self.corr_maximum)
-        self.check('CORE-END', 'core §5.2/6.2', self.ended)
+        self.check('CORE-END', 'core §5.1/6.2', self.ended)
         self.check('CORE-LEASE', 'core §6.1', self.lease_expiry)
-        self.check('CORE-REPLAY-LEASE', 'core §5.2/6.1', lambda: self.lease_expiry(True))
+        self.check('CORE-REPLAY-LEASE', 'core §5.1/6.1', lambda: self.lease_expiry(True))
         for name, clause, method, argument in EXTRA_CHECKS:
             self.check(name, clause, lambda method=method, argument=argument:
                        getattr(self, method)(argument) if argument is not None else getattr(self, method)())
@@ -924,7 +921,7 @@ class Checks:
                 self.check(name, 'transports §1/2; core §2.4', lambda kind=kind: self.serial_case(kind))
         if self.reopen is not None:
             for name, kind in RECONNECT_CASES:
-                self.check(name, 'transports §3; core §5.2/6.1/9', lambda kind=kind: self.reconnect(kind))
+                self.check(name, 'transports §3; core §5.1/6.1/9', lambda kind=kind: self.reconnect(kind))
         if self.usb_wire is not None:
             from .conformance_usb_cases import USB_CASES, HID_CASES, run
             cases = USB_CASES + (HID_CASES if self.usb_wire.kind == 'hid' else ())

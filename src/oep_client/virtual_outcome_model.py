@@ -14,7 +14,7 @@ class Outcomes(Stream):
 
     def list_page(self, first, limit):
         names=[self.name,b'io.github.open-embedded-probe.progress']
-        entries=[struct.pack('<HHBBB',fn,0,1,0,len(name))+name for fn,name in zip(self.functions,names)]
+        entries=[struct.pack('<HHBB',fn,0,1,len(name))+name for fn,name in zip(self.functions,names)]
         result=bytearray(struct.pack('<HB',2,0))
         for row in entries[first:]:
             if len(result)+len(row)>limit:break

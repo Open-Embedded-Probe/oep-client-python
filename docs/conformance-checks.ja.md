@@ -56,8 +56,8 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 | discovery | 個体照合、list の件数/境界/重複、describe のページング/末尾/不変性、ops の形、transport対応、max_op_ms、describe TLVのframe上限、ロック中の発見とconfirm後の履歴 |
 | headers/TLV | 結果 role/corr/resolution/detail/長さ、固定部分後の未知応答TLV、拒否優先順、confirmの短さ/magic/revision範囲、要求TLVの短さ/長さ超過/ID 0（critical含む）/未知criticalと非critical |
 | session | keepalive、他 session の lock 拒否、lease 下限/上限/既定、ownerの重複と同ID open、自然失効、header拒否とpayload拒否のleaseへの影響、自分が取得したsession間だけのforce |
-| replay | 未実行でもhighwater以下のcorrはresult_lost、拒否結果の保持、payloadを直した同corrの拒否、header検査と再送検査の優先順、完全一致結果または result_lost、同 corr の要求変更拒否、同 ID open 後の履歴、end後の再送、open再送による復活禁止、再送によるlease延長禁止 |
-| u16 | 半周を越えた corr、session 0 の独立性、corr 65535 の end。番号を一周させない |
+| replay | 未実行でも最後の番号から前へ1〜32767でないcorrはresult_lost、拒否結果の保持、payloadを直した同corrの拒否、header検査と再送検査の優先順、完全一致結果または result_lost、同 corr の要求変更拒否、同 ID open 後の履歴、end後の再送、open再送による復活禁止、再送によるlease延長禁止 |
+| u16 | 半周未満の前進、session 0 の独立性、65535 の次の 1 への一周 |
 | serial wire | 全byte境界での分割、未知role frameと要求の結合、CRC/COBS破損、短い要求/未知roleの無応答、途中切断後の区切りでの回復、過大frameの無応答とgap後の回復。raw送受信、復号結果、観測時間も保存 |
 | TCP wire | lengthのbyte分割・結合、length 0、短い要求・未知roleの無応答、frame gapを越える途中待ちでもフレームを保持、過大length時の切断。raw bytesとclose/resetを保存 |
 | TCP peer（明示設定時） | 接続前の同一個体照合、共通lock/owner、応答の接続分離、途中headerの分離、primary切断後のlock保持、自分のsessionだけのtakeover、peer切断faultのprimaryからの分離 |
@@ -92,13 +92,13 @@ bulk/HIDには独立したraw adapter APIと最小USBモデルを追加した。
 
 [保持欠落とsession/boot寿命](retention-lifecycle-conformance.ja.md)はretentionを含む19項目。期限切れでは履歴を残し、異なるsessionでは置換し、新bootでは履歴/資源/送信待ちを無効にする。明示logical-model resetだけを許し、物理設備の再起動は行わない。
 
-[corr u16の境界](corr-conformance.ja.md)はretentionを含む17項目。通常の大小比較、半周の前後と上限、古い番号の拒否、SID 0の独立性、65535をendに残して別sessionへ切り替える手順を検査する。
+[corr u16の境界](corr-conformance.ja.md)はretentionを含む21項目。循環番号の前進、ちょうど半周とそれ以上の拒否、65535から1への一周、半周以上後ろの番号の拒否、SID 0の独立性、一周後のendと別sessionでの履歴の置換を検査する。
 
 [result_lost後の状態読み直し](recovery-conformance.ja.md)はretentionを含む22項目。sample hostがwireだけでboot/sessionと現在の資源を確認し、結果不明の変更要求を新corrで再実行しないことを検査する。元のoutcomeはunknownのままとする。
 
 [回復中のforceと経路単位の結果不明化](recovery-races-conformance.ja.md)は条件ごとに27項目。読み出し前/途中/最後のsession差し替えを検出し、全応答喪失・先頭だけ受信・全件未実行の3条件で、その経路の未解決要求だけをunknownにする。
 
-[corr枯渇前のsession切替](rollover-conformance.ja.md)はcorrを含む23項目。end用番号を残し、未解決要求の処理・boot/reader確認を経て別IDのopen 1へ切り替える。旧資源を無効にし、結果不明の旧操作はunknownのまま保持する。
+corr枯渇前のsession切替検査は、corrが循環する現行core（§4.1、§5.1）では不要になったため削除した。corrの循環・半周・記録の破棄は[corr検査](corr-conformance.ja.md)のWRAP/HALF-GAPS/WRAP-ENDで確認する。
 
 [end/openの結果喪失からの回復](session-loss-conformance.ja.md)は保持検査を含む21項目。同一要求を再送し、現在のsession状態も確認する。保存されたopenの成功を取得しても、期限切れなら利用を再開しない。result_lostから成功やlease値を推測しない。
 

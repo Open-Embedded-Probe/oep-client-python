@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import struct
 
-from . import host as h, message as m, registry as reg
+from . import host as h, message as m, registry_legacy as reg
 from .core import Interface
 from .riscv import OK, BlockLength, TargetError, WireBase, check, ran, status_name  # noqa: F401
 

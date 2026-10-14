@@ -22,7 +22,7 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 
-from . import catalog, core, message as m, registry as reg
+from . import catalog, core, message as m, registry_legacy as reg
 from .core import Interface
 from .fixture import Drive
 

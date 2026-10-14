@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from . import cobs, registry as reg
+from . import cobs, registry_legacy as reg
 
 GAP_MS = reg.TIMING["probe_frame_gap_ms"]
 

@@ -12,7 +12,7 @@ class Spi(Gpio):
     def reset(self):
         self.configured=False;self.mode=0;self.bit_order=0;self.armed=None;self.rx=[];self.transactions=0;self.errors=0;self.active=False;self.sck=0;self.bits=[];self.output_index=0;self.ready=True
     def list_page(self,first,limit):
-        rows=[struct.pack('<HHBBB',fn,0,1,0,len(name))+name for fn,name in ((1,b'oep.probe.plan'),(2,b'oep.fixture.spi-target'))];page=bytearray(struct.pack('<HB',2,0))
+        rows=[struct.pack('<HHBB',fn,0,1,len(name))+name for fn,name in ((1,b'oep.probe.plan'),(2,b'oep.fixture.spi-target'))];page=bytearray(struct.pack('<HB',2,0))
         for row in rows[first:]:
             if len(page)+len(row)>limit:break
             page.extend(row);page[2]+=1

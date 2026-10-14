@@ -47,7 +47,7 @@ class RestartChecks:
         require(len(clock)>=12 and int.from_bytes(clock[:4],'little')==boot['boot_id'] and clock[4:12]==b'\0'*8,'new boot clock identity/uptime differs');tlvs(clock[12:])
         for route in self.a.routes:
             answer=self.a.raw(self.c.request(self.c.core['confirm'],b'OEP?\1\1'),route)
-            require(answer is not None and answer[3:5]==b'\1\0' and int.from_bytes(answer[18:22],'little')==boot['boot_id'],'route did not return by declared bound')
+            require(answer is not None and answer[3:5]==b'\1\0' and int.from_bytes(answer[17:21],'little')==boot['boot_id'],'route did not return by declared bound')
         self.c.rejected(req,'no_session')
     def case(self,name):
         old=self.c.boot;fresh=self.a.restart_fixture();self.c.confirm();self.c.identity()

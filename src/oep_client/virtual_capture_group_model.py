@@ -22,7 +22,7 @@ class CaptureGroup(Gpio):
         self.bound=[];self.source=0;self.generation=0;self.start_ns=NO_TIME;self.trigger_ns=NO_TIME;self.trigger_fn=0
     def list_page(self,first,limit):
         names=[b'oep.probe.plan',b'oep.fixture.analog',b'oep.fixture.logic',b'oep.fixture.capture-group']
-        rows=[struct.pack('<HHBBB',fn,0,1,0,len(name))+name for fn,name in enumerate(names,1)];page=bytearray(struct.pack('<HB',4,0))
+        rows=[struct.pack('<HHBB',fn,0,1,len(name))+name for fn,name in enumerate(names,1)];page=bytearray(struct.pack('<HB',4,0))
         for row in rows[first:]:
             if len(page)+len(row)>limit:break
             page.extend(row);page[2]+=1

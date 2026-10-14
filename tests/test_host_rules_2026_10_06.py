@@ -10,7 +10,7 @@ import time
 import pytest
 
 from oep_client import catalog, cobs, config, core, endpoint, virtual_bench, fixture, host as h, link, message as m
-from oep_client import registry as reg, riscv
+from oep_client import registry_legacy as reg, riscv
 
 from test_virtual_bench_rules_2026_10_02 import Clock
 from test_link_host import CONFIRM_V1, Stream, answering, frame, make_link, result
@@ -18,7 +18,7 @@ from test_link_serial import Scripted
 
 
 def confirm_payload(max_frame=1024, window=65536, inflight=4, boot_id=0x11):
-    return struct.pack("<4sBBHIBI", b"OEP!", 1, 0, max_frame, window, inflight, boot_id)
+    return struct.pack("<4sBHIBI", b"OEP!", 1, max_frame, window, inflight, boot_id)
 
 
 def in_process(probe=None, transport=0, **kw):
@@ -385,8 +385,8 @@ def test_ops_encodings_the_old_one_encoding_rule_refused_are_read(value, ops):
 
 
 def test_a_probe_whose_fn_0_ops_break_the_encoding_is_not_used():
-    core_ops = catalog.pack_ops(reg.CORE.op.values())
-    broken = core_ops + bytes(33 - len(core_ops))                             # base 1 + 8 x 32 bytes: past op 0xFF
+    core_ops = catalog.pack_ops(reg.CORE.op.values())                        # base 0 and a 3-byte bitmap
+    broken = core_ops + bytes(34 - len(core_ops))                             # base 0 + 8 x 33 bytes: past op 0xFF
     ep = endpoint.Endpoint(_with_ops(virtual_bench.CORE_NAME, broken), Clock())
     hst = h.Host(lambda b: ep.handle(b, 1))
     with pytest.raises(h.NotUsable, match="core §7.4"):
@@ -401,7 +401,7 @@ def test_a_probe_whose_fn_0_ops_break_the_encoding_is_not_used():
 
 def test_a_list_entry_with_fn_0_is_left_out():
     """The core is never listed (core §7.2): a probe that lists an fn 0 anyway is not taken at its word."""
-    entries = [catalog.ListEntry(0, 0, 1, 0, "oep.core"), catalog.ListEntry(3, 0, 1, 0, "oep.fixture.gpio")]
+    entries = [catalog.ListEntry(0, 0, 1, "oep.core"), catalog.ListEntry(3, 0, 1, "oep.fixture.gpio")]
     hst = h.Host(lambda b: m.Result(m.Request.unpack(b).corr, m.COMPLETED, m.SUCCESS,
                                     catalog.pack_list_result(2, entries)).pack())
     assert [e.fn for e in core.list_entries(hst)] == [3]

@@ -18,11 +18,11 @@ from pathlib import Path
 
 import pytest
 
-from oep_client import catalog, cobs, config, core, endpoint, virtual_bench, virtual_bench_capture, host as h, message as m, registry as reg
+from oep_client import catalog, cobs, config, core, endpoint, virtual_bench, virtual_bench_capture, host as h, message as m, registry_legacy as reg
 
 PLAN_APPLY, PLAN_RELEASE = core.OP_PLAN_APPLY, core.OP_PLAN_RELEASE
 
-HERE = Path(__file__).resolve().parent / "vectors"
+HERE = Path(__file__).resolve().parent / "vectors_legacy"   # TRANSITIONAL: oep-spec b80555a, replaced by test_spec_vectors.py stage by stage
 SPEC_COMMIT = (HERE / "SPEC_COMMIT").read_text().strip()
 
 
@@ -38,36 +38,6 @@ class Clock:
     def __call__(self):
         return 0
 
-
-def test_copied_inputs_have_recorded_provenance():
-    """Every vendored input is pinned, even in an isolated checkout without SPEC."""
-    assert re.fullmatch(r'[0-9a-f]{40}', SPEC_COMMIT)
-    root = HERE.parents[1]
-    manifest = dict(line.split('  ', 1)[::-1] for line in (HERE / 'SPEC_SHA256').read_text().splitlines())
-    expected = {str(p.relative_to(root)) for p in HERE.glob('*.json')} | {'src/oep_client/registry.py'}
-    assert set(manifest) == expected
-    for name, digest in manifest.items():
-        assert hashlib.sha256((root / name).read_bytes()).hexdigest() == digest, name
-
-
-def test_the_copy_is_the_specs():
-    """Compare against the pinned commit in an explicitly supplied checkout, never HEAD."""
-    spec = os.environ.get('OEP_SPEC_DIR')
-    if not spec:
-        pytest.skip('OEP_SPEC_DIR not set: optional upstream snapshot verification')
-    paths = subprocess.check_output(['git', '-C', spec, 'ls-tree', '--name-only',
-                                     SPEC_COMMIT + ':tests/vectors'], text=True).splitlines()
-    mine = {p.name: p.read_bytes() for p in HERE.glob('*.json')}
-    theirs = {name: subprocess.check_output(['git', '-C', spec, 'show',
-                                            SPEC_COMMIT + ':tests/vectors/' + name])
-              for name in paths if name.endswith('.json')}
-    assert mine == theirs, 'vendored vectors differ from recorded SPEC_COMMIT'
-    registry = subprocess.check_output(['git', '-C', spec, 'show',
-                                       SPEC_COMMIT + ':generated/oep-v1/oep_v1_registry.py'])
-    assert (HERE.parents[1] / 'src/oep_client/registry.py').read_bytes() == registry
-
-
-# ---- COBS and serial frames (transports §1) --------------------------------------------------------------------------
 
 @pytest.mark.parametrize("case", load("cobs.json")["encode"], ids=lambda c: c["name"])
 def test_cobs_encode_and_decode(case):
@@ -902,7 +872,7 @@ def _on_client(case):
         r = m.Request.unpack(hx(case["request_hex"]))
         dm = rv.RiscvDm(hst, struct.unpack_from("<H", r.payload)[0])
         if "halt" in name and "unknown connection" in name:
-            with pytest.raises(h.NoConnection):
+            with pytest.raises(h.NoResource):
                 dm.halt()
         elif "halt" in name:
             dm.halt()

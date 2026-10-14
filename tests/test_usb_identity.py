@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from oep_client import catalog, endpoint, virtual_bench, link, message as m, registry as reg
+from oep_client import catalog, endpoint, virtual_bench, link, message as m, registry_legacy as reg
 
 
 class LengthStream:

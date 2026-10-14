@@ -2,9 +2,9 @@
 host-side broker), all under one Host.
 
 Framing follows the kind of transport, never the VID:PID. A serial port (USB CDC, USB-Serial/JTAG, a UART bridge) is
-COBS + CRC-16 sent as 0x00 <COBS> 0x00, and the probe's raw bytes (a target's console, its bind) share the line: every
-span between 0x00s (and from the open to the first 0x00) is a candidate, and one that does not decode, fails its CRC or
-answers another request is noise, skipped without a resend (transports §1, host guide §2). A missing answer is seen
+COBS + CRC-16 sent as 0x00 <COBS> 0x00, and the port carries OEP frames only (transports §4): every span between 0x00s
+(and from the open to the first 0x00) is a candidate; one that does not decode or fails its CRC is a broken frame - most
+likely the awaited answer, sent again at once - and an answer to another request is read past (transports §1). A missing answer is seen
 by the timeout only, and the request goes once more with the same corr. Vendor bulk, HID and TCP are length(u16) message;
 lost boundaries there are recovered by the §5.1 resync: on a result for another request, an impossible length or a
 frame that stops half way, read and discard until the input is quiet for 50 ms, prove the link with a confirm, and go
@@ -87,7 +87,7 @@ from dataclasses import dataclass, field
 
 import serial
 
-from . import cobs, host as _host, message as m, registry as reg
+from . import cobs, host as _host, message as m, registry_legacy as reg
 from .frames import FramingLost, LengthFrames
 
 # the link's own confirms (resync §5.1, confirm_raw) ask for the revisions this client handles before the first
@@ -417,15 +417,12 @@ class SerialLink:
                 try:
                     frame = cobs.unframe(raw)
                 except cobs.CorruptFrame:
-                    self.noise += len(raw)           # raw bytes of the port, or a broken frame: noise, no resend
-                    if self.held():
-                        # a session holds this port: the probe sends no raw bytes on it (transports §4), so this was a
-                        # broken frame - most likely the reply (§5.2). Send again now instead of waiting out the
-                        # timeout (a second waited 1 s each on an M5Stack ATOM's FTDI, 2026-10-01); a repeat is
-                        # answered from the probe's retry table
-                        self._count("broken")
-                        raise
-                    continue
+                    self.noise += len(raw)
+                    # a serial transport carries OEP frames only (transports §4): this was a broken frame - most
+                    # likely the reply. Send again now instead of waiting out the timeout (a second waited 1 s each
+                    # on an M5Stack ATOM's FTDI, 2026-10-01); a repeat is answered from the probe's record (§5.1)
+                    self._count("broken")
+                    raise
                 self._moved(len(raw) + 2)
                 self._count("good")                  # a result or a notification that decoded (host guide §17.3.2)
                 return frame
@@ -460,15 +457,13 @@ class SerialLink:
 
     def _broken(self, frame: bytes, why: str) -> bool:
         """A frame that decoded but cannot be read (C-36): on a length-framed link the boundaries are in doubt (the
-        §5.1 resync follows); on a serial port it is a broken frame like a bad CRC - the awaited answer while a session
-        holds the port (resent at once, §5.2), noise skipped otherwise (-> True)."""
+        §5.1 resync follows); on a serial port it is a broken frame like a bad CRC - most likely the awaited answer,
+        resent at once (core §5.1; transports §4: the port carries OEP frames only)."""
         if self.framing == "length":
             raise FramingLost(why)
-        if self.held():
-            self._count("broken")
-            raise cobs.CorruptFrame(why)
         self.noise += len(frame)
-        return True
+        self._count("broken")
+        raise cobs.CorruptFrame(why)
 
     def _recv_for(self, corr: int) -> bytes:
         """The reply to request `corr` (pushes and events routed on the way). Length frames: a result for another
@@ -632,9 +627,10 @@ class SerialLink:
         except m.ProtocolError:
             return
         p = r.payload
-        if r.succeeded and len(p) >= 17 and p[:4] == m.CONFIRM_RESULT and p[4] >= 1:
-            self.max_frame = max(reg.MIN_MAX_FRAME, struct.unpack_from("<H", p, 6)[0])
-            self.on_boot_id(struct.unpack_from("<I", p, 13)[0])
+        if r.succeeded and len(p) >= 16 and p[:4] == m.CONFIRM_RESULT and p[4] >= 1:
+            # magic revision max_frame(u16) window(u32) max_inflight(u8) boot_id(u32) (core §7.1)
+            self.max_frame = max(reg.MIN_MAX_FRAME, struct.unpack_from("<H", p, 5)[0])
+            self.on_boot_id(struct.unpack_from("<I", p, 12)[0])
 
     def send(self, message: bytes) -> bytes:
         if self.failed_transport:

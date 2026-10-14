@@ -18,7 +18,7 @@ import struct
 import pytest
 
 from oep_client import (capture as c, config, console, core, endpoint, virtual_bench, fixture, host as h, message as m,
-                        registry as reg, riscv)
+                        registry_legacy as reg, riscv)
 
 UNKNOWN = 0x3D                                 # no context defines it
 CORE_NAME = "(core)"                           # fn 0: the core has no name (core §0); a label for these tests
@@ -261,13 +261,20 @@ def test_every_op_ignores_an_unknown_tlv_and_refuses_it_critical_esp32_v003():
     assert every_op(ep) - tag.seen == set()
 
 
-@pytest.mark.parametrize("tag", [m.TAG_RESERVED, m.TAG_FIXED])
-def test_tags_0x00_and_0x7f_are_unknown_tags_on_every_op(tag):
-    """core §2.2 / §2.5: 0x00 and 0x7F are never TLV tags, so no probe implements them: a request carrying one is
-    read like any unknown TLV - ignored plain, unsupported (the byte as received) critical."""
-    ep, tagging, hst = bench(virtual_bench.p4_x035(), tag=tag)
+def test_tag_0x7f_is_an_unknown_tag_on_every_op():
+    """core §2.2: tag numbers are 0x01-0x7F; the virtual bench implements no 0x7F, so a request carrying one is read like
+    any unknown TLV - ignored plain, unsupported (the byte as received) critical."""
+    ep, tagging, hst = bench(virtual_bench.p4_x035(), tag=0x7F)
     drive_all_p4_x035(hst, ep)
     assert every_op(ep) - tagging.seen == set()
+
+
+@pytest.mark.parametrize("tag", [0x00, 0x80])
+def test_a_tlv_numbered_0_is_malformed(tag):
+    """core §2.2: TLV number 0, with or without the critical bit, is malformed in a request."""
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
+    req = m.Request(1, m.CORE_FN, m.OP_CLOCK, struct.pack("<BH", tag, 0))
+    assert m.Result.unpack(ep.handle(req.pack(), 1)).detail == m.MALFORMED
 
 
 @pytest.mark.parametrize("op", ["describe", "get"])
@@ -500,8 +507,8 @@ def test_a_tag_sent_twice_uses_the_first():
     uart.configure(115200, 0)
     tag = uart.TAG_FORMAT
     good, bad, short = (tag, b"\x00"), (tag, b"\x03"), (tag, b"")
-    assert rec.variant(uart.fn, uart.CONFIGURE, 4, lambda t: [good, bad]).resolution == m.COMPLETED
-    assert rec.variant(uart.fn, uart.CONFIGURE, 4, lambda t: [good, short]).resolution == m.COMPLETED
+    assert refused(rec.variant(uart.fn, uart.CONFIGURE, 4, lambda t: [good, bad])) == (m.UNSUPPORTED, bytes([tag]))
+    assert refused(rec.variant(uart.fn, uart.CONFIGURE, 4, lambda t: [good, short])) == (m.MALFORMED, b"")  # later copies checked (core §2.3)
     assert refused(rec.variant(uart.fn, uart.CONFIGURE, 4, lambda t: [bad, good])) == (m.UNSUPPORTED, bytes([tag]))
     assert refused(rec.variant(uart.fn, uart.CONFIGURE, 4, lambda t: [short, good])) == (m.MALFORMED, b"")
     wire = riscv.Wire(hst, "oep.wire.rvswd")

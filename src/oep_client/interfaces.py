@@ -165,7 +165,7 @@ KNOWN: dict[str, Known] = {
 def op_names(name: str, ops) -> list[str]:
     """The ops of an ops tag by the registry's names for interface `name` (the core's for CORE_KEY; an op it does not
     name: 0x.. hex)."""
-    from . import registry as reg
+    from . import registry_legacy as reg
     i = reg.CORE if name == CORE_KEY else reg.INTERFACES.get(name)
     known = {v: k for k, v in getattr(i, "op", {}).items()}
     return [known.get(op, f"0x{op:02x}") for op in sorted(ops)]

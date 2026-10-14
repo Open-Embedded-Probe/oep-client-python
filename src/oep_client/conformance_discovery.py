@@ -16,9 +16,9 @@ class DiscoveryChecks:
             size, count = struct.unpack_from('<HB', p); at = 3; page = []
             require(size == total and count <= max(0, total-first), 'list total/count/cursor')
             for _ in range(count):
-                require(len(p) >= at + 7, 'list entry header')
-                fn, instance, revision, flags, length = struct.unpack_from('<HHBBB', p, at); at += 7
-                require(fn and revision and flags == 0 and 1 <= length <= 48 and len(p) >= at+length,
+                require(len(p) >= at + 6, 'list entry header')
+                fn, instance, revision, length = struct.unpack_from('<HHBB', p, at); at += 6
+                require(fn and revision and 1 <= length <= 48 and len(p) >= at+length,
                         'list entry fields')
                 name = p[at:at+length].decode('ascii'); at += length
                 page.append(dict(fn=fn, instance=instance, revision=revision, name=name))
@@ -69,12 +69,12 @@ class DiscoveryChecks:
                     else:
                         reason = None
                         payload = self.c.success(request)
-                        require(17 <= len(payload) <= 59 and payload[:4] == b'OEP!', 'range confirm shape/magic')
-                        revision, flags, frame, window, inflight, boot = struct.unpack_from('<BBHIBI', payload, 4)
-                        require(revision == min(maximum, high) and flags == 0, 'confirm did not choose highest supported revision')
+                        require(16 <= len(payload) <= 59 and payload[:4] == b'OEP!', 'range confirm shape/magic')
+                        revision, frame, window, inflight, boot = struct.unpack_from('<BHIBI', payload, 4)
+                        require(revision == min(maximum, high), 'confirm did not choose highest supported revision')
                         require(frame >= 64 and window >= frame and inflight >= 1 and boot == self.c.boot,
                                 'range confirm limits/boot')
-                        values = [v for tag, v in tlvs(payload[17:]) if tag == 1]
+                        values = [v for tag, v in tlvs(payload[16:]) if tag == 1]
                         require(values and values[0] == bytes((self.c.confirm_transport,)), 'range confirm transport changed')
                     observations.append({'minimum': minimum, 'maximum': maximum, 'reason': reason,
                                          'request_hex': request.hex(), 'reply_payload_hex': payload.hex()})

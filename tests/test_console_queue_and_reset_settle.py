@@ -7,7 +7,7 @@ import struct
 
 import pytest
 
-from oep_client import config, console, core, endpoint, virtual_bench, host as h, message as m, registry as reg, riscv
+from oep_client import config, console, core, endpoint, virtual_bench, host as h, message as m, registry_legacy as reg, riscv
 
 MAX_OP_MS = virtual_bench.MAX_OP_MS
 

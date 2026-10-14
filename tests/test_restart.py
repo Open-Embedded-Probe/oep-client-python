@@ -12,7 +12,7 @@ import time
 
 import pytest
 
-from oep_client import cobs, config, core, endpoint, virtual_bench, virtual_bench_serial, host as h, link, message as m, registry as reg
+from oep_client import cobs, config, core, endpoint, virtual_bench, virtual_bench_serial, host as h, link, message as m, registry_legacy as reg
 
 RESTART = reg.PROBE_RESTART.op["restart"]
 VENDOR = 1                                       # p4-x035's transport 1: vendor bulk (not a serial port)

@@ -74,16 +74,9 @@ class HostValueChecks:
             self.expect(result(1, 0, payload), 'scan',
                         {'successful': True, 'tried': 1, 'entries': [[value, 20, 21, 0x89abcdef]]})
 
-    def flags(self):
-        for value in range(256):
-            payload = struct.pack('<4sBBHIBI', b'OEP!', 1, value, 1024, 4096, 4, 17) + b'\x01\x01\x00\x00'
-            self.expect(result(1, 0, payload), 'confirm',
-                        {'successful': True, 'revision': 1, 'maximum': 1024, 'window': 4096,
-                         'inflight': 4, 'boot': 17})
-
     def run(self):
         rows = []
-        for name in ('resolution', 'outcome', 'status', 'reason', 'cause', 'scan_kind', 'flags'):
+        for name in ('resolution', 'outcome', 'status', 'reason', 'cause', 'scan_kind'):
             start = len(self.observations)
             row = {'id': 'HOST-VALUES-' + name.upper(), 'clause': 'core §2.4/7.1; debug §3/4',
                    'status': 'passed'}

@@ -13,7 +13,7 @@ class Declarations(Resources):
         for fn in self.functions:
             revision=2 if fn==5 else 1
             instance=1 if fn==9 else 0
-            entries.append(struct.pack('<HHBBB',fn,instance,revision,0,len(self.name))+self.name)
+            entries.append(struct.pack('<HHBB',fn,instance,revision,len(self.name))+self.name)
         page=bytearray(struct.pack('<HB',len(entries),0))
         for row in entries[first:]:
             if len(page)+len(row)>limit:break

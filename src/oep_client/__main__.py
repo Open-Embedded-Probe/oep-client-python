@@ -440,7 +440,7 @@ def _pins(hst, fn: int, text: str | None, wire: str) -> tuple[int, int]:
 def _plan_fn(hst, spec: str) -> tuple[int, dict[str, int]]:
     """fn and its role names (from the registry) for `spec`: an fn number, or name[#instance] (the list's instance,
     0-based, core §7.2)."""
-    from . import registry as reg
+    from . import registry_legacy as reg
     if spec.isdigit():
         fn = int(spec)
         name = next((e.name for e in core.list_entries(hst) if e.fn == fn), "")

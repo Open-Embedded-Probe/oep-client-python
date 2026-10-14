@@ -20,7 +20,7 @@ class RegisteredOps(Resources):
     def __init__(self):
         super().__init__();self.selection=dict(enumerate(MINIMAL,1));self.functions=tuple(self.selection);self.offered={fn:set(MINIMAL[name]) for fn,name in self.selection.items()}
     def list_page(self,first,limit):
-        rows=[struct.pack('<HHBBB',fn,0,1,0,len(name))+name.encode() for fn,name in self.selection.items()];page=bytearray(struct.pack('<HB',len(rows),0))
+        rows=[struct.pack('<HHBB',fn,0,1,len(name))+name.encode() for fn,name in self.selection.items()];page=bytearray(struct.pack('<HB',len(rows),0))
         for row in rows[first:]:
             if len(page)+len(row)>limit:break
             page.extend(row);page[2]+=1

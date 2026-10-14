@@ -57,10 +57,10 @@ class CoreSmokeChecks:
 
     def confirm(self):
         p = self.success(self.call('confirm', b'OEP?\1\1'))
-        require(len(p) >= 17 and p[:4] == b'OEP!', 'confirm fixed fields')
-        revision, flags, frame, window, inflight, boot = struct.unpack_from('<BBHIBI', p, 4)
-        require(revision == 1 and flags == 0 and frame >= 64 and window >= frame and inflight >= 1, 'confirm limits')
-        transports = [v for t, v in tlvs(p[17:]) if t == 1]
+        require(len(p) >= 16 and p[:4] == b'OEP!', 'confirm fixed fields')
+        revision, frame, window, inflight, boot = struct.unpack_from('<BHIBI', p, 4)
+        require(revision == 1 and frame >= 64 and window >= frame and inflight >= 1, 'confirm limits')
+        transports = [v for t, v in tlvs(p[16:]) if t == 1]
         require(transports and len(transports[0]) == 1, 'confirm transport')
         self.frame, self.boot = frame, boot
         self.observed['confirm'] = {'max_frame': frame, 'window': window, 'max_inflight': inflight,

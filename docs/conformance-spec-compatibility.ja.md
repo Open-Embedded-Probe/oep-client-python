@@ -4,12 +4,12 @@
 protocol revisionが同じ1でも、凍結前の仕様変更へ検査が自動的に追従するわけではない。
 
 現行の検査CLIは、レビュー済みcore本文のSHAを確認し、異なる本文では機器を開く前に停止する。
-core本文のSHAは実行結果のSPEC情報にも記録する。現在レビュー済みの本文はSPEC19753f5のcoreである。
+core本文のSHAは実行結果のSPEC情報にも記録する。現在レビュー済みの本文はSPEC a09fa45 のcoreである（循環するcorr16、flagsの無いconfirmとlist entry、TLV番号0の拒否）。
 Checksを直接使う場合も、循環corrの宣言や新しいheader幅を持つregistryは旧検査として受け付けない。
 手書きregistryによるunit testは、選んだ検査条件の確認であり、任意のSPECへの適合を証明しない。
 
-最近の作業版には、corr16の循環、ownerの任意表示、再送cache0件、flagsを持たないlist entry、UARTやARMの任意操作が含まれる。
-旧検査の「65535でend」「ownerは必ずecho」「list entryは7byte」を、そのまま新しい適合条件にしない。
+a09fa45のcoreでは、corr16は循環し、ownerの表示と再送記録は任意、list entryは6byte、confirmはflagsを持たない。
+旧検査の「65535でend」「corr枯渇前のsession切替」「list entryは7byte」は削除または書き換えた。
 ガードのSHAだけを新しい本文へ更新して通す変更も行わない。
 
 追従はコア、全拡張の共通契約、標準インターフェース固有の順に進める。

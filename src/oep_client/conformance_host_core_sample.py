@@ -29,13 +29,13 @@ def decode(frame,op,*,described_fn=0):
             fixed['tag']=take('B')[0];fields={2:2,5:2};repeated={2}
             if op==1:fields[1]=2
     elif op==1:
-        magic,revision,flags,maximum,window,inflight,boot=take('4sBBHIBI')
+        magic,revision,maximum,window,inflight,boot=take('4sBHIBI')
         if magic!=b'OEP!' or revision!=1:raise ValueError('unsupported confirm shape')
         fixed=dict(magic=magic,revision=revision,maximum=maximum,window=window,inflight=inflight,boot=boot);fields={1:1}
     elif op==2:
         total,count=take('HB');entries=[]
         for _ in range(count):
-            fn,instance,revision,flags,n=take('HHBBB')
+            fn,instance,revision,n=take('HHBB')
             if not 1<=n<=48:raise ValueError('interface name length')
             entries.append(dict(fn=fn,instance=instance,revision=revision,name=blob(n)))
         fixed=dict(total=total,entries=entries)

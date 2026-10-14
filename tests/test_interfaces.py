@@ -95,11 +95,11 @@ def test_attach_under_reset_is_the_reset_tlv(bench):
 def test_no_connection_after_the_probe_lost_it(dm):
     ep, hst, d = dm
     ep.lose_connections()
-    with pytest.raises(host.NoConnection):
+    with pytest.raises(host.NoResource):
         d.halt()
-    with pytest.raises(host.NoConnection):
+    with pytest.raises(host.NoResource):
         riscv.Wire(hst).detach(d.conn)
-    with pytest.raises(host.NoConnection):
+    with pytest.raises(host.NoResource):
         riscv.RiscvDm(hst, 77).read32(0)
 
 

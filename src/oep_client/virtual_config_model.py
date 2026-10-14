@@ -52,7 +52,7 @@ class ConfigExtension(Gpio):
     def list_page(self,first,limit):
         rows=[]
         for fn,(name,instance,revision) in sorted(self.model.catalog.items()):
-            n=name.encode('ascii');rows.append(struct.pack('<HHBBB',fn,instance,revision,0,len(n))+n)
+            n=name.encode('ascii');rows.append(struct.pack('<HHBB',fn,instance,revision,len(n))+n)
         out=bytearray(struct.pack('<HB',len(rows),0))
         for row in rows[first:]:
             if len(out)+len(row)>limit:break

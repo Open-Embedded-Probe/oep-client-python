@@ -3,7 +3,7 @@
 import struct
 from fractions import Fraction
 
-from oep_client import capture as c, message as m, registry as reg
+from oep_client import capture as c, message as m, registry_legacy as reg
 
 
 def answer(*items):
@@ -76,7 +76,7 @@ class FakeLink:
 def push(fn, seq, position, data, generation=None):
     """A data frame (core §11.2): role fn seq position(u64) len(u16) data [TLV generation]."""
     tail = b"" if generation is None else struct.pack("<BHI", c.DATA_GENERATION, 4, generation)
-    return bytes([0x06]) + struct.pack("<HHQH", fn, seq, position, len(data)) + data + tail
+    return bytes([m.ROLE_DATA]) + struct.pack("<HHQH", fn, seq, position, len(data)) + data + tail
 
 
 def test_stream_follows_positions_and_counts_gaps_and_lost_frames():
@@ -102,7 +102,7 @@ def test_stream_does_not_count_the_fns_events_as_lost():
     cap = c.LogicCapture.__new__(c.LogicCapture)
     cap.fn = 2
     link = FakeLink([[push(2, 0, 0, b"ab")], [push(2, 2, 2, b"cd")]])
-    link.events = __import__("collections").deque([bytes([0x05]) + struct.pack("<HHB", 2, 1, 1)])   # seq 1 = an event
+    link.events = __import__("collections").deque([bytes([m.ROLE_EVENT]) + struct.pack("<HHB", 2, 1, 1)])   # seq 1 = an event
     got = cap.stream(link, nbytes=4)
     assert got.seq_lost == 0 and len(link.events) == 1
 

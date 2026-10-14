@@ -36,7 +36,7 @@ import struct
 from dataclasses import dataclass, field
 from fractions import Fraction
 
-from . import message as m, multirate as mr, registry as reg
+from . import message as m, multirate as mr, registry_legacy as reg
 
 CAP, ANA, GRP = reg.FIXTURE_LOGIC, reg.FIXTURE_ANALOG, reg.FIXTURE_CAPTURE_GROUP
 OP = CAP.op

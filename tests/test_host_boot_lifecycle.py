@@ -22,7 +22,7 @@ def exercise_boot_change(observer, before, after, host_type=host.Host):
         req = m.Request.unpack(raw)
         requests.append(req)
         if req.fn == 0 and req.op == m.OP_CONFIRM:
-            payload = struct.pack('<4sBBHIBI', b'OEP!', 1, 0, 1024, 4096, 4, state['boot'])
+            payload = struct.pack('<4sBHIBI', b'OEP!', 1, 1024, 4096, 4, state['boot'])
             payload += m.tlv(1, b'\0')
         elif req.fn == 0 and req.op == m.OP_CLOCK:
             payload = struct.pack('<IQ', state['boot'], 1234)
@@ -30,7 +30,7 @@ def exercise_boot_change(observer, before, after, host_type=host.Host):
             payload = struct.pack('<II', 3000, state['boot'])
         elif req.fn == 0 and req.op == m.OP_LIST:
             first = struct.unpack('<H', req.payload)[0]
-            payload = catalog.pack_list_result(1, [catalog.ListEntry(state['fn'], 0, 1, 0, NAME)] if first == 0 else [])
+            payload = catalog.pack_list_result(1, [catalog.ListEntry(state['fn'], 0, 1, NAME)] if first == 0 else [])
         elif req.fn == 0 and req.op == m.OP_DESCRIBE:
             fn, first = struct.unpack('<HH', req.payload)
             assert fn == state['fn']
@@ -72,7 +72,7 @@ def test_boot_observation_invalidates_and_rediscovers(observer, before, after):
 def test_repeated_zero_boot_preserves_discovery(observer):
     def send(raw):
         req = m.Request.unpack(raw)
-        payload = (struct.pack('<4sBBHIBI', b'OEP!', 1, 0, 1024, 4096, 4, 0) + m.tlv(1, b'\0')
+        payload = (struct.pack('<4sBHIBI', b'OEP!', 1, 1024, 4096, 4, 0) + m.tlv(1, b'\0')
                    if req.op == m.OP_CONFIRM else struct.pack('<IQ', 0, 1234))
         return b'\2' + struct.pack('<H', req.corr) + b'\1\0' + payload
     h = host.Host(send)

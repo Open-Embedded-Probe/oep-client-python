@@ -162,6 +162,7 @@ def test_one_client_drops_while_another_keeps_going(bench):
     with pytest.raises(h.Locked):
         b.open(3000)
     third = _host(bench)                                              # a new connection takes the session back
+    third._corr = a._corr                                             # going on after its last corr (core §4.1, §5.1)
     r = third.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IB", 3000, 0), session=sid)
     assert r.succeeded
     third.session = sid
@@ -178,6 +179,7 @@ def test_a_session_resumed_from_a_new_connection_while_the_old_one_is_open(bench
     a.open(5000, owner="alpha")
     sid = a.session
     b = _host(bench)                                                  # a is still connected
+    b._corr = a._corr                                                 # going on after its last corr (core §4.1, §5.1)
     r = b.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IB", 5000, 0), session=sid)
     assert r.succeeded                                                # the same id from another connection: taken back
     b.session = sid
@@ -210,6 +212,7 @@ def test_notifications_go_only_to_the_subscribers_connection_and_move_with_the_s
         assert [f[0] for f in frames] == [m.ROLE_RESULT] and m.Result.unpack(frames[0]).corr == corr   # nothing else
 
         taker = Raw(port)                                             # the session taken back on a third connection
+        taker.corr = a._corr                                          # going on after its last corr (core §4.1, §5.1)
         corr = taker.send(m.CORE_FN, m.OP_OPEN, struct.pack("<IB", 5000, 0), session=sid)
         assert taker.result(corr).resolution == m.COMPLETED
         pushed = [f for f in taker.frames(0.5) if f[0] in (m.ROLE_DATA, m.ROLE_EVENT)]
@@ -241,6 +244,7 @@ def test_the_endpoint_routes_pushes_by_connection():
     assert set(ep.revision_in_use) == {"first"}                      # each connection's own confirm
     second.confirm()
     assert set(ep.revision_in_use) == {"first", "second"}
+    second._corr = first._corr                                        # going on after its last corr (core §4.1, §5.1)
     assert second.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IB", 3000, 0), session=first.session).succeeded
     now[0] += 50
     assert {to for to, _ in ep.pushes_to()} == {"second"}            # taken back: they go there now

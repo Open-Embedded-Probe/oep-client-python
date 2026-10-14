@@ -345,7 +345,7 @@ def plan(equipment: Equipment, contract='PROBE-DECLARE', probes=(), targets=(), 
 
 def virtual_smoke(equipment: Equipment, probes=()):
     """Exercise actual OEP bytes in memory; refuse any physical transport before requests."""
-    from . import __version__, cobs, core, dump, endpoint, host, registry, virtual_bench
+    from . import __version__, cobs, core, dump, endpoint, host, registry_legacy as registry, virtual_bench
     selected = plan(equipment, probes=probes)
     ids = [x['roles']['probe'] for x in selected['assignments']]
     nodes = {x['id']: x for x in equipment.data['probes']}
@@ -425,7 +425,7 @@ def equipment_lock(path):
 
 def physical_preflight(equipment: Equipment, probes=(), *, lock_path=None):
     """Confirm identity/declarations and open/end a session, without target operations."""
-    from . import __version__, core, dump, link, registry
+    from . import __version__, core, dump, link, registry_legacy as registry
     selected = plan(equipment, probes=probes)
     nodes = {x['id']: x for x in equipment.data['probes']}
     ids = [x['roles']['probe'] for x in selected['assignments']]

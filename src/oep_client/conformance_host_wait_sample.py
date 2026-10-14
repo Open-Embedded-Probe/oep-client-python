@@ -29,7 +29,7 @@ class SampleHostWaitAdapter:
             records.append(dict(request_hex=raw.hex(),expect_ms=h.expect_ms,wait_s=driver._wait(),floor_s=driver.wait_floor_s(),
                                 transfer_s=driver.transfer_s(),tx_len=driver.tx_len,frame=driver.max_frame,baud=driver.baud))
             if req.fn==0 and req.op==1:
-                payload=struct.pack('<4sBBHIBI',b'OEP!',1,0,advertised[0],max(65535,advertised[0]),1,17)+b'\1\1\0\0'
+                payload=struct.pack('<4sBHIBI',b'OEP!',1,advertised[0],max(65535,advertised[0]),1,17)+b'\1\1\0\0'
             else:payload=struct.pack('<I',0x12345678)
             return message.Result(req.corr,message.COMPLETED,message.FAILED if failed[0] else message.SUCCESS,payload).pack()
         h=host.Host(send,revision=1,session=7,lease_ms=1000)

@@ -27,10 +27,9 @@ def decode(frame, shape):
         out.update(tried=tried, entries=entries)
     elif shape == 'confirm':
         magic = reader.bytes(4)
-        revision, flags, maximum, window, inflight, boot = reader.take('BBHIBI')
+        revision, maximum, window, inflight, boot = reader.take('BHIBI')
         if magic != b'OEP!' or revision != 1: raise ValueError('confirm')
         out.update(revision=revision, maximum=maximum, window=window, inflight=inflight, boot=boot)
-        # Every confirm flag is reserved; none changes the interpretation.
     else:
         raise ValueError('explicit result shape required')
     reader.tail()

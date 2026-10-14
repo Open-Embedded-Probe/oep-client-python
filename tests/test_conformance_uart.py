@@ -7,7 +7,7 @@ from test_conformance_registered_ops import setup as registered_setup
 
 
 def setup():
-    _,c=registered_setup();reg=c.reg;reg['limits']={'uart_baud_tolerance_pct':5,'uart_default_baud':115200};reg['constants']={'min_max_frame':64}
+    _,c=registered_setup();reg=c.reg;reg['limits']={**reg.get('limits',{}),'uart_baud_tolerance_pct':5,'uart_default_baud':115200};reg['constants']={'min_max_frame':64}
     for s in reg['interface']:
         if s['name']=='oep.probe.plan':s['tlv']={'plan_apply':{'role_assignment':16},'describe':{'plan_roles':64}}
         if s['name']=='oep.fixture.uart':s['tlv']={'configure':{'format':1},'describe':{'formats':64}}

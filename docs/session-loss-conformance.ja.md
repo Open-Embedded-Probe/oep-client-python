@@ -1,14 +1,14 @@
 # end/openの結果喪失からの回復を検査する
 
-`SessionLossChecks`は保持検査15項目、制御前提1項目、回復9項目の25項目。core §4.1/5.2/6/9に基づき、endのcorr 65535と新sessionのopen 1について、保存した要求を同じ論理経路へ同じbytes/corrで再送する。production Hostへ回復を組み込む変更ではない。
+`SessionLossChecks`は保持検査15項目、制御前提1項目、回復9項目の25項目。core §4.1/5.2/6/9に基づき、end（その時点の次のcorr）と新sessionのopen 1について、保存した要求を同じ論理経路へ同じbytes/corrで再送する。production Hostへ回復を組み込む変更ではない。
 
 `SampleSessionLossHost`はwireだけで判断する。要求保持16 byte/履歴8件の明示sampleで、同経路の未解決要求は対象の1件だけ。接続を保ったまま要求または全応答を失い、操作待ち0ms・論理転送0msに対して1050ms待つ。reader barrierで未受信message/creditが空であることを確認してから、個体/bootを読み、元の要求を再送する。barrier不成立やboot変更では再送しない。経路を移したり、forceや新corrで変更操作を再実行したりしない。
 
 | 条件 | 判断 |
 | --- | --- |
-| end応答を失う | 再送で保存された成功を確認し、SID 0のlock_stateとsample inventoryで解放も確認する。65535を増やさない。 |
+| end応答を失う | 再送で保存された成功を確認し、SID 0のlock_stateとsample inventoryで解放も確認する。endのcorrより先へ番号を進めない。 |
 | end要求17 byteの応答を失う | 再送はresult_lost。解放を観測しても元のoutcomeはunknown。 |
-| end要求が届かない | 同一要求の再送が初回実行となる。資源を解放し、65535で完了する。 |
+| end要求が届かない | 同一要求の再送が初回実行となる。資源を解放し、元のcorrで完了する。 |
 | open応答を失う | 保存された成功のlease/boot/TLVを確認し、Sのclockを新corrで読んで現在の所有権を確認する。再送だけではleaseを更新しない。 |
 | open要求18 byteの応答を失う | 再送はresult_lost。S clockが成功すれば現在の有効性を確認できるが、元のoutcomeと実際のlease値は不明のまま。 |
 | open要求が届かない | 同じopen 1を初回実行し、応答と現在のSを確認する。 |
@@ -35,6 +35,6 @@ with equipment_lock(os.environ['OEP_HW_LOCK']):
 assert report['status'] == 'passed', report
 ```
 
-既存`.env.example`のSPEC/共有lockを明示する。私的ベンチへの依存や自動探索は不要。既存の[切替検査](rollover-conformance.ja.md)は応答喪失時に停止する負例として保持し、この回復検査と分ける。
+既存`.env.example`のSPEC/共有lockを明示する。私的ベンチへの依存や自動探索は不要。
 
 `full_conformance=false`。物理reader停止/再同期、TCP再接続、複数pendingの放棄後の回復、production Host統合、任意の並行writerや拡張の副作用は未検査。TCP切断後の新接続へ旧Sを移せるという保証はない。SPEC・仮想probe・Arduino firmwareは変更していない。

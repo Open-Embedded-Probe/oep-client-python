@@ -15,7 +15,7 @@ define (oep-spec 0f455a0, the rule review of 2026-10-07):
   unsupported (the tag as received) when critical; a tag it implements is checked the same with or without bit 7 - a
   value of another length (longer too) or one the definition excludes is malformed, a value the definition leaves
   unused or this probe does not handle is unsupported with the tag as received; a non-repeating tag sent twice: the
-  first is used; tags 0x00 / 0x7F are no tags. `tail=` appends TLVs to every result that may carry them, so hosts can
+  first is used; TLV number 0 is malformed. `tail=` appends TLVs to every result that may carry them, so hosts can
   be checked to skip what they do not know
 - refusals (core §4.3): the header (unknown_function, unknown_operation, session_required), then the resend table,
   then the session (no_session / locked + remaining ms + owner); after that every check runs before anything changes
@@ -32,9 +32,11 @@ define (oep-spec 0f455a0, the rule review of 2026-10-07):
   the session created (its plan, its shares of connections and streams, its subscriptions, its capture-group bind);
   lease 0 = the probe default, 1000-60000 ms taken as asked; open's force is a boolean (non-zero = true, §2.1); the
   owner TLV (1-32 bytes) from the open that takes the lock, shown by lock_state and by rejected locked
-- the resend table (core §5.2): (corr, answer) of the last session's recent requests - a request is known by its corr
-  alone, a resend gets the remembered answer whatever it carries (answers longer than `remember_max` bytes are not kept
-  -> result_lost); result_lost for old corrs; open is never looked up; emptied by a successful open, kept over end
+- replay (core §5.1): the last corr of the last successfully opened session, and a bounded record of its recent
+  requests (the whole request bytes and the answer; longer than `remember_max` bytes are not kept -> result_lost). A
+  remembered corr with other bytes is malformed; a corr not remembered is new when it is 1 to 32767 ahead of the last
+  (mod 65536), else result_lost. Open goes through the same record; only a successful open of another id starts a new
+  replay state, and end or a lapse keeps it
 - oep.probe.plan (oep-if-plan: role_assignment, plan_roles), oep.probe.restart (oep-if-restart §2: the answer first,
   then nothing on any transport until the probe has restarted; the target is not reset), notifications (core §11:
   subscribe / unsubscribe are the emitting interface's ops; events at once, data batched by min_bytes / max_delay_ms;
@@ -101,7 +103,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Callable, Hashable
 
-from . import catalog, config as cfgmod, virtual_bench, virtual_bench_capture, message as m, registry as reg
+from . import catalog, config as cfgmod, virtual_bench, virtual_bench_capture, message as m, registry_legacy as reg
 
 TOY_WRITE, TOY_READ = 0x01, 0x02
 OK, WAIT, LINE, FAULT, TIMEOUT, STATE = (reg.STATUS[k] for k in ("ok", "wait", "line", "fault", "timeout", "state"))
@@ -212,7 +214,7 @@ class Take:
     core §2.3:
 
     - a TLV past the end of the request -> malformed;
-    - an unknown tag (one this probe does not implement in this (fn, op) context; 0x00 and 0x7F are never tags) ->
+    - an unknown tag (one this probe does not implement in this (fn, op) context) ->
       critical: unsupported with the tag as received, raised once the whole tail has been read (so a malformed one
       later in it wins), or kept for `check()` when `defer` (the handler checks its own malformed cases first); not
       critical: ignored;
@@ -257,11 +259,13 @@ class Take:
             value = rest[at:at + n]
             at += n
             number = tag & 0x7F
+            if number == 0:
+                raise Reject(m.MALFORMED)                          # TLV number 0, critical bit or not (core §2.2)
             if number in known:
+                self.repeated.append((tag, value))                 # later copies are checked too (core §2.3)
                 if number in got and number not in repeats:
                     continue                                       # the first is used (core §2.3)
                 got.setdefault(number, value)
-                self.repeated.append((tag, value))
                 if tag & m.TAG_CRITICAL:
                     self.critical.add(number)
             elif tag & m.TAG_CRITICAL:
@@ -286,8 +290,8 @@ class Take:
         """A known TLV of a fixed `size`: a value of another length -> malformed (core §2.3: an implemented TLV is
         checked with or without bit 7); None when absent."""
         value = got.get(tag)
-        if value is not None and len(value) != size:
-            raise Reject(m.MALFORMED)
+        if any(t & 0x7F == tag and len(v) != size for t, v in self.repeated):
+            raise Reject(m.MALFORMED)                              # the first and every later copy (core §2.3)
         return value
 
     def refuse(self, tag: int, payload: bytes = b"") -> Reject:
@@ -605,7 +609,7 @@ class Endpoint:
 
     def __init__(self, probe: virtual_bench.VirtualProbe, now_ms: Callable[[], int], boot_id: int = 0x1234ABCD,
                  lease_default_ms: int = 3000, lease_max_ms: int = 60000, revision: int = 1, tail: bytes = b"",
-                 window: int = 1 << 18, max_inflight: int = 4, remember_max: int = 72,
+                 window: int = 1 << 18, max_inflight: int = 4, remember_max: int = 72, remember_count: int = 8,
                  now_ns: Callable[[], int] | None = None):
         """`now_ms`: the clock the timers run on (leases, retries, port_speed), since this boot. `now_ns`: the same clock
         in ns when it has that resolution (virtual_bench_serve: time.monotonic_ns); without it the probe's clock (core §2.6a)
@@ -629,6 +633,7 @@ class Endpoint:
         self.tail = tail
         self.window, self.max_inflight = window, max_inflight
         self.remember_max = remember_max
+        self.remember_count = remember_count            # requests the replay record keeps (core §5.1: the probe's choice)
         self.names = {o.fn: o.name for o in probe.offered}
         self.decl = {o.fn: [m.split_tlvs(t)[0] for t in o.tlvs] for o in probe.offered}   # fn -> [(tag, value)]
         self.identity = {o.fn: (o.name, o.instance, o.revision) for o in probe.offered}   # what a saved item names
@@ -784,7 +789,8 @@ class Endpoint:
         self.outbox: list[bytes] = []                   # events and data frames waiting to go out (pushes())
         self.plan: set[tuple[int, int, int]] = set()   # (fn, role, channel), from plan_apply and the config
         self.plan_from_config: set[int] = set()        # fns whose plan came from the config (not a session's)
-        self.resend: OrderedDict[int, bytes | None] = OrderedDict()   # corr -> its answer (None: too large to keep)
+        # corr -> (the whole request, its answer); None where it was too large to keep (core §5.1)
+        self.resend: OrderedDict[int, tuple[bytes | None, bytes | None]] = OrderedDict()
         self.newest_corr: int | None = None
         self.conns: dict[int, Connection] = {}
         self.resources: dict[int, str] = {}            # number -> "connection" / "stream": one u16 space (core §9)
@@ -1208,16 +1214,16 @@ class Endpoint:
         raise unavailable("limit")
 
     def _connection(self, cid: int) -> Connection:
-        """The connection `cid`, or rejected: no_connection (unknown), unavailable cause 6 (a stream's number)."""
+        """The connection `cid`, or rejected: no_resource (unknown), unavailable cause 6 (a stream's number)."""
         c = self.conns.get(cid)
         if c is None:
-            raise wrong_kind() if cid in self.resources else Reject(m.NO_CONNECTION)
+            raise wrong_kind() if cid in self.resources else Reject(m.NO_RESOURCE)
         return c
 
     def _stream(self, sid: int) -> Stream:
         s = self.streams.get(sid)
         if s is None:
-            raise wrong_kind() if sid in self.resources else Reject(m.NO_CONNECTION)
+            raise wrong_kind() if sid in self.resources else Reject(m.NO_RESOURCE)
         return s
 
     # ---- the one entry point: a request message in, a result message out ------------------------
@@ -1246,7 +1252,7 @@ class Endpoint:
         header = self._header(req)                                 # core §4.3: the header, before the resend table
         if header is not None:
             return m.Result(req.corr, m.REJECTED, header).pack()
-        remembered = self._resent(req)
+        remembered = self._resent(req, data)
         if remembered is not None:
             return remembered                                      # replayed: the lease does not restart (§6.1)
         try:
@@ -1269,8 +1275,8 @@ class Endpoint:
             self.held_ports.add(transport)                         # transports §4: the raw transfer holds here
         out = m.Result(req.corr, res, detail, payload).pack()
         self.speed_answered(transport)                             # a committed rate's idle counts from here too
-        if req.session and req.session == self.last and past_header and not is_open:
-            self._remember(req, out)                               # rejected answers too; open is not (core §5.2)
+        if req.session and req.session == self.last and past_header:
+            self._remember(req, data, out)                         # rejected answers too, open too (core §5.1)
         if transport not in self.serial_ports:
             self.after_answer()                                    # the answer is not on a port whose speed changes
         return out
@@ -1278,7 +1284,9 @@ class Endpoint:
     def _header(self, req: m.Request) -> int | None:
         """core §4.3, the header: unknown_function, unknown_operation (an op the interface does not define,
         or an optional op this probe does not offer: core §1.2, `offers`), session_required - in that order and before
-        the resend table, so these are neither remembered nor restart the lease."""
+        the resend table, so these are neither remembered nor restart the lease. corr 0 is malformed before them."""
+        if req.corr == 0:
+            return m.MALFORMED                                     # corr never 0 (core §4.1, §4.3 order 1)
         if req.fn != m.CORE_FN and req.fn not in self.names:
             return m.UNKNOWN_FUNCTION
         if not self.offers(req.fn, req.op):
@@ -1349,27 +1357,36 @@ class Endpoint:
             return getattr(self, f"_{sim}")(req.fn, req.op, t)
         return self._toy(req, t)
 
-    # ---- the resend table (core §5.2) -----------------------------------------------------------
-    def _resent(self, req: m.Request) -> bytes | None:
-        """A request of the last session seen before: its remembered result or result_lost; None = new. The request is
-        known by its corr alone (core §5.2): a request with a remembered corr gets that result whatever it carries.
-        An open is never looked up (core §5.2: a resent open is decided by §6.2)."""
-        if not req.session or req.session != self.last or (req.fn == m.CORE_FN and req.op == m.OP_OPEN):
+    # ---- replay (core §5.1) ---------------------------------------------------------------------
+    def _resent(self, req: m.Request, data: bytes) -> bytes | None:
+        """A request of the last successfully opened session (core §4.3 order 2, §5.1): its remembered answer, malformed
+        (the same corr with other bytes) or result_lost (not kept, or not ahead of the last corr); None = a new
+        request. session_id 0 is never deduplicated."""
+        if not req.session or req.session != self.last:
             return None
+        lost = m.Result(req.corr, m.REJECTED, m.RESULT_LOST).pack()
         if req.corr in self.resend:
-            result = self.resend[req.corr]
-            return result if result is not None else m.Result(req.corr, m.REJECTED, m.RESULT_LOST).pack()
-        if self.newest_corr is not None and m.serial_diff(req.corr, self.newest_corr, 16) <= 0:
-            return m.Result(req.corr, m.REJECTED, m.RESULT_LOST).pack()
+            request, result = self.resend[req.corr]
+            if request is None:
+                return lost
+            if request != data:
+                return m.Result(req.corr, m.REJECTED, m.MALFORMED).pack()
+            return result if result is not None else lost
+        if self.newest_corr is not None and not 0 < (req.corr - self.newest_corr) % 0x10000 < 0x8000:
+            return lost
         return None
 
-    def _remember(self, req: m.Request, result: bytes) -> None:
-        self.resend[req.corr] = result if len(result) <= self.remember_max else None   # (corr, answer) (core §5.2)
+    def _remember(self, req: m.Request, data: bytes, result: bytes) -> None:
+        """A new request of the last session that passed order 2: the last corr moves to it, and it is recorded (rejected
+        answers too) within the record's bounds; records half the space or more behind are dropped (core §5.1)."""
+        keep = lambda b: b if len(b) <= self.remember_max else None   # noqa: E731
+        self.resend[req.corr] = (keep(data), keep(result))
         self.resend.move_to_end(req.corr)
-        while len(self.resend) > 2 * max(self.max_inflight, 4):
+        self.newest_corr = req.corr
+        for corr in [c for c in self.resend if not 0 <= (self.newest_corr - c) % 0x10000 < 0x8000]:
+            del self.resend[corr]
+        while len(self.resend) > self.remember_count:               # a record bound of the bench's choosing (§5.1)
             self.resend.popitem(last=False)
-        if self.newest_corr is None or m.serial_diff(req.corr, self.newest_corr, 16) > 0:
-            self.newest_corr = req.corr
 
     # ---- the stand-in operations ----------------------------------------------------------------
     def _toy(self, req: m.Request, t: Take) -> tuple[int, int, bytes]:
@@ -1439,6 +1456,8 @@ class Endpoint:
         owner = got.get(OWNER)
         if owner is not None and not 1 <= len(owner) <= reg.LIMITS["owner_max_bytes"]:
             raise Reject(m.MALFORMED)                              # owner: text of 1-32 bytes (core §6.4)
+        if self.holder is None and session == self.last:
+            return m.REJECTED, m.NO_SESSION, b""                   # the ended id is never opened again (core §6.2)
         if self.holder is not None and self.holder != session:
             if not force:
                 return self._locked()
@@ -1447,13 +1466,13 @@ class Endpoint:
             self.subscribed.clear()
             self.push_link.clear()
             self.owner = owner                                     # from the open that takes the lock, kept while held
+            self.resend.clear()                                    # only a new id's open starts a new replay state (§5.1)
+            self.newest_corr = None
         else:
             # the holder's open again - from another connection, it takes the session back there (transports §3):
             # its notifications go to that connection from now on
             self.push_link = {fn: self._via for fn in self.push_link}
         self.holder = self.last = session
-        self.resend.clear()
-        self.newest_corr = None
         # 0: the probe's default; else rounded into lease_min_ms .. lease_max_ms (core §6.4)
         lo, hi = reg.LIMITS["lease_min_ms"], min(self.lease_max_ms, reg.LIMITS["lease_max_ms"])
         self.lease_ms = self.lease_default_ms if lease == 0 else min(max(lease, lo), hi)
@@ -1487,7 +1506,7 @@ class Endpoint:
     def lose(self, cid: int | None = None) -> list[int]:
         """TEST HOOK: the line of connection `cid` (every connection when None) is lost for good (debug §2): the
         connection closes, its console streams get mark link-lost and close with detail 4 (connection closed), and a
-        request naming it is answered no_connection. An at-boot slot on its place attaches again by itself at its next
+        request naming it is answered no_resource. An at-boot slot on its place attaches again by itself at its next
         retry (probe.config §3.1), its bound console coming back under the same stream number (console §2). -> the
         connections closed (an unknown `cid`: none)."""
         gone = [c for c in (list(self.conns) if cid is None else [cid]) if c in self.conns]
@@ -1511,7 +1530,7 @@ class Endpoint:
             # no revision in the range: tag 0x00, then TLV supported (min, max) - the range this probe handles
             raise unsupported_fixed(m.tlv(UNSUPPORTED_SUPPORTED, bytes([self.revision, self.revision])))
         self.revision_in_use[self._via] = self.revision           # until the next confirm on this connection (§7.1)
-        return self._answer(struct.pack("<4sBBHIBI", m.CONFIRM_RESULT, self.revision, 0, self.probe.max_frame,
+        return self._answer(struct.pack("<4sBHIBI", m.CONFIRM_RESULT, self.revision, self.probe.max_frame,
                                         self.window, self.max_inflight, self.boot_id)    # boot_id (core §7.1)
                             + m.tlv(CONFIRM_TRANSPORT, bytes([self._transport])))   # the transport it came on
 
@@ -2310,7 +2329,7 @@ class Endpoint:
 
     def _dm_op(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         """Each op reads and checks its whole request first - malformed, then unsupported (core §4.3 orders 5 / 6) -
-        and only then looks up the connection (no_connection; every check before any change, core §4.3)."""
+        and only then looks up the connection (no_resource; every check before any change, core §4.3)."""
         conn = t.take("H")
         target = lambda: self._exchange(conn)
         if op == _RV.op["dmi"]:
@@ -2585,7 +2604,7 @@ class Endpoint:
             t.tail()
             if mech not in self.mechanisms:
                 raise Reject(m.UNSUPPORTED)                        # not a mechanism this probe opens (0xFF included)
-            self._connection(conn)                                 # no_connection, or unavailable 6 for a stream's number
+            self._connection(conn)                                 # no_resource, or unavailable 6 for a stream's number
             sid, existing = self._open_stream(conn, mech, "host")
             return self._answer(struct.pack("<HB", sid, int(existing)))
         if op == _CON.op["streams"]:                               # lock-free, paged by first: every stream, live or readable
@@ -2603,7 +2622,7 @@ class Endpoint:
             return m.REJECTED, m.UNKNOWN_OPERATION, b""
         sid = t.take("H")
         args = self._stream_args(op, t)                            # the request first (core §4.3 orders 5 / 6) ...
-        s = self._stream(sid)                                      # ... then no_connection (unavailable 6: a connection's)
+        s = self._stream(sid)                                      # ... then no_resource (unavailable 6: a connection's)
         if op == _CON.op["close"]:
             if not s.closed:
                 self._drop_stream_user(sid, "host", MARK_CLOSED["all_released"])

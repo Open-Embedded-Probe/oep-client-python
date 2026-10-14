@@ -16,8 +16,8 @@ class SampleSessionLossHost(SampleRecoveryHost):
         require(type(request) is bytes and len(request)>=10 and callable(reader_barrier), 'saved request and barrier required')
         role,corr,fn,op,sid = struct.unpack_from('<BHHBI',request)
         require(role==1 and fn==0 and sid!=0 and
-                ((op==self.c.core['end'] and corr==65535 and len(request)>=10) or
-                 (op==self.c.core['open'] and corr==1 and len(request)>=15)), 'reserved end or initial open required')
+                ((op==self.c.core['end'] and len(request)>=10) or
+                 (op==self.c.core['open'] and corr==1 and len(request)>=15)), 'an end or the initial open required')
         if op==self.c.core['open']:
             require(request[14]==0, 'sample recovery never forces ownership')
         tlvs(request[15:] if op==self.c.core['open'] else request[10:])

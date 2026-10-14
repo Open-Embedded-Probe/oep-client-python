@@ -28,7 +28,7 @@ class Resources:
     def list_page(self, first, limit):
         rows = []
         for index, fn in enumerate(self.functions):
-            rows.append(struct.pack('<HHBBB', fn, index, 1, 0, len(self.name)) + self.name)
+            rows.append(struct.pack('<HHBB', fn, index, 1, len(self.name)) + self.name)
         page = bytearray(struct.pack('<HB', len(rows), 0))
         count = 0
         for row in rows[first:]:

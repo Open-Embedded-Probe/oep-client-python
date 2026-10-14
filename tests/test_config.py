@@ -154,7 +154,7 @@ def test_state_is_paged_and_describe_is_declarations_only():
     pages = [r for r in ep.requests[before:] if r.op == config.ProbeConfig.STATE]
     assert len(pages) >= 2 and pages[0].payload == b"\x00\x00" and pages[1].payload[0] >= 1   # first_slot moved on
     tags = {t & 0x7F for t, _ in core.describe(hst, cfg.fn)}
-    assert tags == {0x09, 0x40, 0x41, 0x42}                          # ops storage items slots_max: no bind_modes
+    assert tags == {0x07, 0x40, 0x41, 0x42}                          # ops storage items slots_max: no bind_modes
 
 
 def test_a_refused_set_changes_nothing():

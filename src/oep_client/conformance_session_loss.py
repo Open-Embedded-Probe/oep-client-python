@@ -19,8 +19,8 @@ class SessionLossChecks(RetentionChecks):
             c.success(c.request(c.core['open'],struct.pack('<IB',60000,0),session=sid,corr=1))
             c.corr=1
             self.created_one(self.create(sid))
-            c.corr=65535
-            request=c.request(c.core['end'],session=sid,corr=65535)
+            request=c.request(c.core['end'],session=sid)            # the next corr: no number is set aside (core §4.1)
+            end_corr=c.corr
             if large:request+=b'\x40\x04\0'+b'\0'*4
         else:
             c.corr=1
@@ -52,9 +52,9 @@ class SessionLossChecks(RetentionChecks):
                     'recovery created or closed sample resources')
             after=self.state()
             if not transition and operation=='end':
-                require(after['holder'] is None and not after['resources'] and after['high']==65535 and
+                require(after['holder'] is None and not after['resources'] and after['high']==end_corr and
                         after['next_resource_id']==before['next_resource_id'],'end replay state')
-                require(c.corr==65535,'end recovery consumed/wrapped corr')
+                require(c.corr==end_corr,'end recovery consumed another corr')
                 if loss=='reply':require(after==before,'end replay mutated already-ended state')
             if not transition and operation=='open':
                 require(after['next_resource_id']==before['next_resource_id'] and not after['resources'],'open recovery allocated resources')

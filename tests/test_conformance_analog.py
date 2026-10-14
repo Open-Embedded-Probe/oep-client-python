@@ -1,6 +1,6 @@
 import copy
 import pytest
-from oep_client import registry
+from oep_client import registry_legacy as registry
 from oep_client.conformance import Checks
 from oep_client.conformance_analog import AnalogChecks
 from oep_client.conformance_analog_sample import SampleAnalogAdapter

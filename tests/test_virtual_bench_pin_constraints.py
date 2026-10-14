@@ -9,7 +9,7 @@ import struct
 
 import pytest
 
-from oep_client import catalog, endpoint, message as m, registry as reg, virtual_bench
+from oep_client import catalog, endpoint, message as m, registry_legacy as reg, virtual_bench
 from test_virtual_bench_rules_2026_10_02 import Clock, Host
 
 

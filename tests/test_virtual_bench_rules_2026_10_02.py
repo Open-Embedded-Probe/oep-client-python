@@ -10,7 +10,7 @@ import sys
 
 import pytest
 
-from oep_client import endpoint, virtual_bench, virtual_bench_capture, message as m, registry as reg
+from oep_client import endpoint, virtual_bench, virtual_bench_capture, message as m, registry_legacy as reg
 
 
 CORE = reg.CORE
@@ -141,9 +141,9 @@ def test_c02_attach_method_and_reset_mode_a_later_revision_may_define():
     assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00")
     reset = reg.TARGET_RISCV_DM.op["reset"]
     r = h.raw(2, reset, struct.pack("<HB", 0x777, 3))                            # no such connection, mode 3
-    assert r.detail in (m.UNSUPPORTED, m.NO_CONNECTION)
+    assert r.detail in (m.UNSUPPORTED, m.NO_RESOURCE)
     assert r.detail != m.UNSUPPORTED or r.payload == b"\x00"
-    assert h.raw(2, reset, struct.pack("<HB", 0x777, 0)).detail == m.NO_CONNECTION
+    assert h.raw(2, reset, struct.pack("<HB", 0x777, 0)).detail == m.NO_RESOURCE
 
 
 def test_riscv_dm_reset_has_no_method_tlv():
@@ -333,8 +333,8 @@ def test_c05_confirm_names_the_transport_it_came_on():
     ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     for index in (0, 1, 3):
         r = confirm(Host(ep, transport=index))
-        assert r.succeeded and len(r.payload) == 17 + 4
-        assert m.Tail.parse(r.payload[17:]).get(CORE.tlv["confirm_answer"]["transport"]) == bytes([index])
+        assert r.succeeded and len(r.payload) == 16 + 4
+        assert m.Tail.parse(r.payload[16:]).get(CORE.tlv["confirm_answer"]["transport"]) == bytes([index])
         assert ep.revision_in_use[index] == 1
 
 
@@ -735,7 +735,7 @@ def test_c05_c07_virtual_bench_serve_tcp_is_a_tcp_transport_and_closes_on_an_ove
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=5) as s:
             r = m.Result.unpack(exchange(s, m.Request(1, 0, m.OP_CONFIRM, m.CONFIRM_REQUEST + b"\x01\x01").pack()))
-            index = m.Tail.parse(r.payload[17:]).get(0x01)[0]
+            index = m.Tail.parse(r.payload[16:]).get(0x01)[0]
             r = m.Result.unpack(exchange(s, m.Request(2, 0, m.OP_DESCRIBE, struct.pack("<HH", 0, 0)).pack()))
             transports = [v for t, v in m.split_tlvs(r.payload[1:]) if t == CORE.tlv["describe"]["transport"]]
             assert bytes([index, virtual_bench.TRANSPORT["tcp"], 0xFF]) in transports and index == 4

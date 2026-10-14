@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass, field
 
 import oep_client
-from oep_client import catalog, config, core, host as h, link, message as m, registry as reg
+from oep_client import catalog, config, core, host as h, link, message as m, registry_legacy as reg
 
 from . import boards
 

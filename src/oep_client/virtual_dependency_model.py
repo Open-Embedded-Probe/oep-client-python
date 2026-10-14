@@ -17,7 +17,7 @@ class Dependencies(Resources):
         self.fixed=dict(type(self).fixed);self.free=set(type(self).free)
 
     def list_page(self, first, limit):
-        rows=[struct.pack('<HHBBB',fn,0,1,0,len(name))+name for fn,name in zip(self.functions,self.names)]
+        rows=[struct.pack('<HHBB',fn,0,1,len(name))+name for fn,name in zip(self.functions,self.names)]
         result=bytearray(b'\x02\0\0')
         for row in rows[first:]:
             if len(result)+len(row)>limit:break

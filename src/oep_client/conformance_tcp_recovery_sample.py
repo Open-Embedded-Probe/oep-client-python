@@ -121,7 +121,7 @@ class SampleTcpRecoveryAdapter:
                     valid = result.corr == 10 and result.succeeded and result.payload[:5] == b'OEP!\1'
                 events.append(dict(action='confirm',epoch=1,valid=valid,reply_hex=reply.hex() if reply else None))
                 if valid and name in ('REBOOT','REBOOT-SAME','EXPIRED'):
-                    boot=int.from_bytes(result.payload[13:17],'little')
+                    boot=int.from_bytes(result.payload[12:16],'little')
                     if name=='EXPIRED':
                         parser.send_many([request])
                         replay=parser.recv(1)
@@ -141,9 +141,9 @@ class SampleTcpRecoveryAdapter:
                             total,count=struct.unpack_from('<HB',page.payload)
                             data=page.payload[3:]
                             for _ in range(count):
-                                fn,instance,revision,flags,n=struct.unpack_from('<HHBBB',data)
-                                discovered.append(dict(fn=fn,instance=instance,revision=revision,name=data[7:7+n].decode()))
-                                data=data[7+n:]
+                                fn,instance,revision,n=struct.unpack_from('<HHBB',data)
+                                discovered.append(dict(fn=fn,instance=instance,revision=revision,name=data[6:6+n].decode()))
+                                data=data[6+n:]
                             events.append(dict(action='list-page',first=first,reply_hex=page.pack().hex()))
                             first+=count
                             if first>=total:break

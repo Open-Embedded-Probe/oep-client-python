@@ -16,6 +16,7 @@ REG = {
                       'unavailable': 4, 'window_exceeded': 6, 'no_session': 7, 'locked': 8,
                       'session_required': 9, 'no_resource': 10, 'unsupported': 11, 'result_lost': 12},
     'describe_common': {'ops': 7},
+    'limits': {'request_header_bytes': 10, 'result_header_bytes': 5, 'corr_max': 0xFFFF, 'corr_half_range': 0x8000},
     'core': {'op': [{'name': n, 'code': c} for n, c in
                     [('confirm', 1), ('list', 2), ('describe', 3), ('clock', 4),
                      ('open', 16), ('end', 17), ('keepalive', 18), ('lock_state', 19)]],
@@ -79,19 +80,17 @@ def legacy(monkeypatch):
     return ep, virtual_bench.unit_id_of(probe)
 
 
-def test_old_probe_does_not_pass_new_core_contract(monkeypatch):
+def test_the_main_virtual_bench_passes_every_core_check(monkeypatch):
+    """The p4-bench profile follows the current core: every core check passes. Its interfaces still use the
+    b80555a numbers (registry_legacy) until their stages, so only their describe checks fail."""
     ep, unit = legacy(monkeypatch)
     report = Checks(ep.handle, copy.deepcopy(REG), unit).run()
-    results = {r['id']: r for r in report['checks']}
-    assert report['status'] == 'failed'
-    for name in ('CORE-DECLARE', 'CORE-ZERO-CORR', 'CORE-TLV-ZERO', 'CORE-OPEN-AFTER-END',
-                 'CORE-OPEN-HISTORY', 'CORE-ALTERED-REPLAY', 'CORE-CORR-U16'):
-        assert results[name]['status'] == 'failed', name
-        if name != 'CORE-DECLARE':
-            assert results[name]['exchanges'], name
-    # Even when the probe resurrects a session, the runner releases its own lock.
-    assert results['CORE-LEASE']['status'] == 'passed'
-    assert results['CORE-END']['status'] == 'failed'
+    core_rows = [r for r in report['checks'] if r['level'] == 'core']
+    assert len(core_rows) == 47 and all(r['status'] == 'passed' for r in core_rows), \
+        [(r['id'], r.get('error')) for r in core_rows if r['status'] != 'passed']
+    assert {r['id'] for r in report['checks'] if r['status'] != 'passed'} <= {
+        r['id'] for r in report['checks'] if r['id'].startswith('IF-DESCRIBE-')}
+    assert ep.holder is None                                   # the runner released its own lock
 
 
 def test_identity_mismatch_prevents_all_session_mutation(monkeypatch):
@@ -230,7 +229,7 @@ def test_list_stability_checks_fields_without_repeating_interface_case_ids(chang
         first = struct.unpack_from('<H', req, 10)[0]
         p = struct.pack('<HB', 1, 0 if first else 1)
         if not first:
-            p += struct.pack('<HHBBB', 2 if changed else 1, 0, 1, 0, 3) + b'x.y'
+            p += struct.pack('<HHBB', 2 if changed else 1, 0, 1, 3) + b'x.y'
         return struct.pack('<BHBB', 2, struct.unpack_from('<H', req, 1)[0], 1, 0) + p
 
     check = Checks(send, REG, 'unit')

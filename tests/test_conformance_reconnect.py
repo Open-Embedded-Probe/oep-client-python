@@ -47,7 +47,7 @@ class Probe:
         if op == 1:
             if self.fault == 'confirm' and self.closed:
                 return struct.pack('<BHBB', 2, corr, 1, 0) + b'bad confirm'
-            payload = b'OEP!' + struct.pack('<BBHIBI', 1, 0, 64, 64, 1, self.boot) + b'\x01\x01\0\0'
+            payload = b'OEP!' + struct.pack('<BHIBI', 1, 64, 64, 1, self.boot) + b'\x01\x01\0\0'
         elif op == 3:
             first = struct.unpack_from('<H', req, 12)[0]
             unit = b'wrong' if self.fault == 'unit' and self.closed else b'unit'

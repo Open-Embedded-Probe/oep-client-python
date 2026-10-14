@@ -65,6 +65,7 @@ def test_a_dropped_tcp_client_keeps_its_session_and_a_new_connection_takes_it_ba
     other.link.close()
 
     again = _raw_host(tcp_bench)
+    again._corr = first._corr                                        # going on after its last corr (core §4.1, §5.1)
     r = again.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IB", 3000, 0), session=sid)   # the same id: taken back
     assert r.succeeded
     again.session = sid
@@ -96,7 +97,9 @@ def test_a_host_run_again_ends_the_session_its_previous_run_left(tcp_bench):
     core.take(first, 30000, owner="oep run 1", wait_s=0)
     sid = first.session
     path = pathlib.Path(os.environ["OEP_SESSION_DIR"]) / "fafe00000003.session"
-    assert path.read_text() == f"{sid:08x}\n" and first.kept.path == path
+    kept, reserved = path.read_text().split()                        # the id and a corr reserved ahead of the last one
+    assert int(kept, 16) == sid and first.kept.path == path
+    assert 0 < (int(reserved, 16) - first._corr) % 0x10000 <= kept_session.RESERVE
     first.link.close()                                               # killed: no end; the file keeps the id
 
     without = _raw_host(tcp_bench)                                   # a host that keeps nothing meets the old lock
@@ -107,7 +110,7 @@ def test_a_host_run_again_ends_the_session_its_previous_run_left(tcp_bench):
     second = link.open_host(tcp_bench)
     core.take(second, 30000, owner="oep run 2", wait_s=0)            # at once: the old session was ended first
     assert second.kept.previous == sid and second.kept.ended_previous
-    assert second.session != sid and path.read_text() == f"{second.session:08x}\n"
+    assert second.session != sid and int(path.read_text().split()[0], 16) == second.session
     second.end()
     assert path.read_text() == ""                                    # ended: nothing to take back next time
     second.link.close()
@@ -150,9 +153,8 @@ def test_end_previous_does_not_touch_a_session_of_another_holder():
     a.open(3000)
     assert b.end_previous(0x12345678) is False                       # another session holds the lock: locked
     a.keepalive()
-    assert b.end_previous(a.session) is True                         # the holder's id: taken back and ended
-    with pytest.raises(h.NoSession):
-        a.keepalive()
+    assert b.end_previous(a.session, corr=a._corr) is True           # the holder's id, after its corr: taken back and ended
+    assert a.lock_state() == (False, 0)                              # a's session is gone
 
 
 def test_default_dir_order(monkeypatch, tmp_path):

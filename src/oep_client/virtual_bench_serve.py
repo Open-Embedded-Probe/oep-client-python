@@ -57,7 +57,7 @@ Lines on stdin are commands, read between requests (the serving never waits for 
                         "virtual_bench_serve: rebooted, boot_id 0x........"
   lose [CONNECTION]     the line of that connection (every live connection without one) is lost for good
                         (Endpoint.lose, debug §2): the connection closes, its console streams get mark link-lost and
-                        close with detail 4, and a request naming it is answered no_connection. An at-boot --slot on
+                        close with detail 4, and a request naming it is answered no_resource. An at-boot --slot on
                         its place attaches again by itself at its next retry (a new connection), its bound console
                         back under the same stream number. stderr says "virtual_bench_serve: lost connection(s) ..."
   wifi-air [SSID[=PASS] ...]
@@ -146,7 +146,7 @@ import sys
 import time
 import tty
 
-from . import catalog, endpoint, virtual_bench, virtual_bench_serial, message as m, registry as reg
+from . import catalog, endpoint, virtual_bench, virtual_bench_serial, message as m, registry_legacy as reg
 
 _ITEM = reg.PROBE_CONFIG.tlv["item"]
 TCP_CONNECTIONS = 3                                      # --tcp-connections' default (length framing)

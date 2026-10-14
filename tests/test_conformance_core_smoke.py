@@ -51,7 +51,7 @@ class SmallCore:
             answer = reject(7 if self.holder is None else 8)
         elif op == 1:
             assert body == b'OEP?\1\1'
-            answer = success(b'OEP!' + struct.pack('<BBHIBI', 1, 0, 64, 64, 1, 17) + tag(1, b'\0'))
+            answer = success(b'OEP!' + struct.pack('<BHIBI', 1, 64, 64, 1, 17) + tag(1, b'\0'))
         elif op == 2:
             assert body == b'\0\0'
             if self.named:

@@ -72,7 +72,7 @@ def test_invalid_peer_identity_stops_before_session_mutation(fault):
                         return reply[:5] + b'broken'
                     if fault == 'boot':
                         out = bytearray(reply)
-                        out[18:22] = (int.from_bytes(out[18:22], 'little') ^ 1).to_bytes(4, 'little')
+                        out[17:21] = (int.from_bytes(out[17:21], 'little') ^ 1).to_bytes(4, 'little')
                         return bytes(out)
                     if fault == 'transport':
                         return reply[:-1] + b'\xff'

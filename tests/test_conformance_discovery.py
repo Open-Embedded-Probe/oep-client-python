@@ -80,7 +80,7 @@ def test_confirm_range_faults_are_detected(fault):
                 if fault=='supported_value':answer=answer[:6]+b'\x01\x02\0\x01\x02'
             if fault=='reverse' and minimum>maximum:answer=answer[:3]+b'\0\x0b\0\x01\x02\0\x01\x01'
             if fault=='clear_owner':model.ep.current_core.release()
-            if fault=='high_poison':model.ep.current_core.high=65535
+            if fault=='high_poison':model.ep.current_core.high=0x8001   # half the space ahead: later corrs look old (core §5.1)
         return answer
     c.send=broken;runner.supported_revisions=(1,1)
     c.check('CORE-DISCOVERY-REVISIONS','core §7.1',runner.revisions)

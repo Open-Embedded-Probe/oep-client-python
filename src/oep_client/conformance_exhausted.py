@@ -18,7 +18,7 @@ class ExhaustedChecks(RetentionChecks):
             limits={route:{key:checks.observed['confirm'][key] for key in ('max_frame','window','max_inflight')}
                     for route,checks in ((a.primary,c),(a.peer,self.peer))}
             ledger=SamplePendingHost(c.reg,limits)
-            c.corr=65532
+            self.walk(sid,65532)                 # forward below half the space each step (core §4.1)
             requests=[self.create(sid),self.create(sid,kind=9,size=17),c.request(c.core['end'],session=sid)]
             require([struct.unpack_from('<H',req,1)[0] for req in requests]==[65533,65534,65535], 'exhausted batch corr')
             for req in requests:ledger.track(a.primary,req,boot)

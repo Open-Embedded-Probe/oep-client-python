@@ -55,7 +55,7 @@ def result(corr, payload=b"", res=m.COMPLETED, detail=m.SUCCESS):
     return m.Result(corr, res, detail, payload).pack()
 
 
-CONFIRM_V1 = struct.pack("<4sBBHIBI", b"OEP!", 1, 0, 1024, 65536, 4, 0x11)   # ... boot_id (core §7.1)
+CONFIRM_V1 = struct.pack("<4sBHIBI", b"OEP!", 1, 1024, 65536, 4, 0x11)   # ... boot_id (core §7.1)
 
 
 def answering(by_op=None):
@@ -88,9 +88,9 @@ def test_pushes_are_routed_by_role_and_never_taken_for_a_reply():
     lk = make_link(s)
     # A data push for fn 7 carries 07 00 where a result carries its correlation id: matched by bytes, it would pass
     # for the reply to request 7.
-    push = bytes([0x06]) + struct.pack("<HHI", 7, 0, 100) + b"data"
-    event = bytes([0x05, 7, 0, 0, 0, 1])
-    s.rx += frame(push) + frame(event) + frame(bytes([0x03, 7, 0])) + frame(result(7, b"reply"))
+    push = bytes([m.ROLE_DATA]) + struct.pack("<HHI", 7, 0, 100) + b"data"
+    event = bytes([m.ROLE_EVENT, 7, 0, 0, 0, 1])
+    s.rx += frame(push) + frame(event) + frame(bytes([0x05, 7, 0])) + frame(result(7, b"reply"))   # 0x05: no role
     assert lk.send(m.Request(7, 0, 0x01, b"").pack()).endswith(b"reply")
     assert list(lk.pushes) == [push] and list(lk.events) == [event] and lk.dropped == 1 and lk.stale == 0
     s.rx += frame(push)
@@ -172,7 +172,7 @@ def test_pushes_that_never_stop_are_stopped_blind_with_unsubscribe_and_end(monke
     hst = h.Host(lk.send)
     hst.session, hst.revision, hst.subscriptions = 0xABCD, 1, {5}
     lk.corr_source, lk.blind = hst.next_corr, hst.blind_stop
-    s.noise = frame(bytes([0x06]) + struct.pack("<HHQ", 5, 0, 0) + b"x" * 32)
+    s.noise = frame(bytes([m.ROLE_DATA]) + struct.pack("<HHQ", 5, 0, 0) + b"x" * 32)
 
     def respond(msg):
         req = m.Request.unpack(msg)
@@ -258,7 +258,7 @@ def test_find_is_cached_until_the_probe_reboots_and_an_empty_page_ends_the_searc
             lists.append(req.payload)
             first, tail = catalog.unpack_list_request(req.payload)
             assert tail == b""
-            page = [catalog.ListEntry(4, 1, 1, 0, "oep.wire.swd")][first:]
+            page = [catalog.ListEntry(4, 1, 1, "oep.wire.swd")][first:]
             return result(req.corr, catalog.pack_list_result(3, page))     # claims 3, sends one in all
         if req.op == m.OP_OPEN:
             return result(req.corr, struct.pack("<II", 1000, boot[0]))

@@ -56,7 +56,7 @@ def test_a_48_byte_name_fits_a_64_byte_frame():
     ep = endpoint.Endpoint(probe, Clock())
     from oep_client import catalog
     result = ep.handle(m.Request(1, 0, m.OP_LIST, catalog.pack_list_request(0)).pack())
-    assert len(result) == 63 and catalog.unpack_list_result(result[5:])[1][0].name == name   # no element length (§2.3)
+    assert len(result) == 62 and catalog.unpack_list_result(result[5:])[1][0].name == name   # no element length (§2.3)
 
 
 # ---- the lock table -------------------------------------------------------------------------------
@@ -237,7 +237,7 @@ def test_confirm_sends_a_range_and_reads_the_v1_answer(bench):
     a = new_host(ep, 1)
     limits = a.confirm()
     assert ep.requests[-1].payload == b"OEP?\x01\x01"
-    assert limits["revision"] == 1 and limits["flags"] == 0 and limits["max_frame"] == 512
+    assert limits["revision"] == 1 and "flags" not in limits and limits["max_frame"] == 512
     assert limits["window"] == 1 << 18 and limits["max_inflight"] == 4            # window is u32 now
     with pytest.raises(host.Unsupported):
         a.confirm(2, 3)                                                             # nothing in the range
@@ -337,7 +337,7 @@ def test_request_tails_critical_refused_non_critical_ignored(bench):
     with pytest.raises(host.Rejected, match="malformed"):
         a.request(TOY, endpoint.TOY_WRITE, b"\x01\x02")                  # shorter than the fixed part
     with pytest.raises(ValueError):
-        m.tlv(0x7F, b"")                                                 # 0x7F is never a TLV tag (core §2.2)
+        m.tlv(0x00, b"")                                                 # TLV number 0 is never a TLV (core §2.2)
 
 
 def test_tlv_one_form_round_trip():
@@ -359,8 +359,8 @@ def test_tlv_one_form_round_trip():
     assert r.payload == plain.payload
     with pytest.raises(host.Rejected, match="malformed"):
         a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 5) + bytes([0x21, 5, 0, 9]))  # len past the request's end
-    assert a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 5) + bytes([0x00, 0, 0])).payload == plain.payload
-    # tag 0x00 is never a TLV tag: an unknown one, ignored when not critical (core §2.2, §2.3)
+    with pytest.raises(host.Rejected, match="malformed"):
+        a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 5) + bytes([0x00, 0, 0]))   # TLV number 0 (core §2.2)
 
 
 def test_a_result_shorter_than_its_fixed_part_is_broken():

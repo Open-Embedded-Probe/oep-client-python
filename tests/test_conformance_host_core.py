@@ -51,7 +51,7 @@ def test_each_broken_known_context_is_detected(index):
     ('broken_unknown','TAIL'),('short_fixed','SHORT'),('entry_count','FIXED'),
     ('element_length','FIXED'),('last_owner','DUPLICATES'),('sort_channels','DUPLICATES'),
     ('unsupported_cause','CONTEXT'),('describe_space','CONTEXT'),('cross_call_cache','CONTEXT'),
-    ('confirm_flags','FLAGS-BOOL'),('strict_bool','FLAGS-BOOL'),('list_flags','FLAGS-BOOL'),
+    ('strict_bool','FLAGS-BOOL'),
     ('reject_unknown_revision','FIXED'),('length_u8','VARIABLE'),('tiny_limit','VARIABLE')])
 def test_semantic_reader_faults_are_detected(fault,case):
     cache={}
@@ -80,9 +80,7 @@ def test_semantic_reader_faults_are_detected(fault,case):
             tag,value=out['tlvs'][0]
             if tag in cache:out['tlvs'][0]=(tag,cache[tag])
             else:cache[tag]=value
-        if fault=='confirm_flags' and op==1 and out['successful'] and body[5]:out['successful']=False
         if fault=='strict_bool' and op in (3,19) and out['successful'] and body[0]>1:out['fixed']['more' if op==3 else 'locked']=False
-        if fault=='list_flags' and op==2 and out['successful'] and out['fixed']['entries'] and body[8]:out['successful']=False
         return out
     checker=cc.HostCoreShapeChecks(broken,spec=SPEC)
     # Cache fault is observed within the deliberately interleaved contexts, independent of earlier checks.

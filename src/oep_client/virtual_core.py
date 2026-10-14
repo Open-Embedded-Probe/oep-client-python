@@ -125,8 +125,8 @@ class Core:
                 if request != data:
                     return answer(3)
                 return answer(12) if result is None else result
-            if corr <= self.high:
-                return answer(12)
+            if self.high and not 0 < (corr - self.high) % 0x10000 < 0x8000:
+                return answer(12)                        # not ahead of the last corr (core §5.1)
 
         passed_session = False
         try:
@@ -164,7 +164,7 @@ class Core:
                     raise Reject(3)
                 if not minimum <= 1 <= maximum:
                     raise Reject(11, b'\0' + tlv(1, b'\x01\x01'))
-                value = b'OEP!' + struct.pack('<BBHIBI', 1, 0, self.ep.probe.max_frame,
+                value = b'OEP!' + struct.pack('<BHIBI', 1, self.ep.probe.max_frame,
                                               self.ep.window, self.ep.max_inflight, self.ep.boot_id)
                 value += tlv(1, bytes((transport,)))
             elif op == 2:
@@ -218,7 +218,9 @@ class Core:
         if sid and sid == self.last:
             cap = self.ep.remember_max
             self.cache[corr] = (data if len(data) <= cap else None, result if len(result) <= cap else None)
-            self.high = max(self.high, corr)
+            self.high = corr
+            for old in [c for c in self.cache if not 0 <= (corr - c) % 0x10000 < 0x8000]:
+                del self.cache[old]                      # half the space or more behind: never matched (core §5.1)
             while len(self.cache) > max(8, self.ep.max_inflight):
                 self.cache.popitem(last=False)
         return result

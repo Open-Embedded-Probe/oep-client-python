@@ -443,7 +443,7 @@ def test_the_virtual_bench_clears_the_bits_that_did_not_come(order):
 import json   # noqa: E402
 from pathlib import Path   # noqa: E402
 
-VECTORS = Path(__file__).resolve().parent / "vectors"
+VECTORS = Path(__file__).resolve().parent / "vectors_legacy"   # TRANSITIONAL: oep-spec b80555a
 
 
 @pytest.mark.parametrize("case", json.loads((VECTORS / "logic_layout.json").read_text())["cases"], ids=lambda c: c["name"])

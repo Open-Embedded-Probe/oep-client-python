@@ -39,7 +39,7 @@ import pytest
 import json
 
 from oep_client import (capture, catalog, config, console as console_mod, core, dump, fixture, host as h, link, linktest,
-                        message as m, registry as reg, riscv)
+                        message as m, registry_legacy as reg, riscv)
 
 from . import firmware as fwmod, flash, record
 
@@ -1044,7 +1044,7 @@ def test_console(run: record.Run):
             try:
                 stream = con.open(conn, mechanism)
                 break
-            except h.NoConnection:
+            except h.NoResource:
                 rec.setdefault("no_connection_on", []).append(fn)
             except h.Unavailable as e:
                 if e.cause != "wrong_state":

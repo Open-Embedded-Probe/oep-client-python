@@ -2,7 +2,7 @@
 
 list request : first(u16)                                   every interface from the first-th; the host filters by name
 list result  : total(u16) count(u8) count x entry [TLV tail]  fn 0 (the core) has no name and is never an entry
-list entry   : fn(u16) instance(u16) revision(u8) flags(u8) name_len(u8) name
+list entry   : fn(u16) instance(u16) revision(u8) name_len(u8) name   6 bytes and the name
 describe     : request fn(u16) first(u16); result more(u8) then TLV bytes (tag u8, len u16, value; tag bit 7 =
                critical). more = 1: TLVs remain after this page, ask again from first + count
 ops          : the common describe tag 0x09 every fn carries, base(u8) bitmap: bit i set = op base + i is offered
@@ -41,7 +41,6 @@ class ListEntry:
     fn: int
     instance: int
     revision: int
-    flags: int
     name: str
 
 
@@ -59,7 +58,7 @@ def unpack_list_request(payload: bytes) -> tuple[int, bytes]:
 
 def pack_entry(e: ListEntry) -> bytes:
     raw = e.name.encode("ascii")
-    return struct.pack("<HHBBB", e.fn, e.instance, e.revision, e.flags, len(raw)) + raw
+    return struct.pack("<HHBB", e.fn, e.instance, e.revision, len(raw)) + raw
 
 
 def pack_list_result(total: int, entries: list[ListEntry]) -> bytes:
@@ -72,8 +71,8 @@ def unpack_list_result(payload: bytes) -> tuple[int, list[ListEntry]]:
     total, count = rd.take("HB")
     out = []
     for _ in range(count):
-        fn, instance, revision, flags, n = rd.take("HHBBB")
-        out.append(ListEntry(fn, instance, revision, flags, rd.bytes(n).decode("ascii", "replace")))
+        fn, instance, revision, n = rd.take("HHBB")
+        out.append(ListEntry(fn, instance, revision, rd.bytes(n).decode("ascii", "replace")))
     rd.tail()
     return total, out
 
@@ -90,14 +89,14 @@ def tlv(tag: int, value: bytes) -> bytes:
 
 
 def pack_ops(ops) -> bytes:
-    """The ops tag's value (core §7.4): base = the lowest op, then the bitmap, as short as it can be (any value that
-    names the set is valid; this is the shortest). An fn always has an op: an empty set has no value (ValueError)."""
+    """The ops tag's value (core §7.4): base = the lowest op rounded down to a multiple of 8, then the bitmap (any value
+    that names the set is valid; this one never passes op 0xFF and is the spec's own generator's). An fn always has an op: an empty set has no value (ValueError)."""
     ops = sorted(set(ops))
     if not ops:
         raise ValueError("ops: an empty set has no encoding (core §7.4)")
     if ops[0] < 0 or ops[-1] > 0xFF:
         raise ValueError("an op is u8")
-    base = ops[0]
+    base = ops[0] & ~7
     bits = bytearray((ops[-1] - base) // 8 + 1)
     for op in ops:
         bits[(op - base) // 8] |= 1 << ((op - base) % 8)

@@ -1,7 +1,7 @@
 import copy
 import struct
 import pytest
-from oep_client import capture, registry, message
+from oep_client import capture, registry_legacy as registry, message
 from oep_client.conformance_analog_payload import AnalogPayloadChecks
 from oep_client.conformance import Violation
 from test_conformance_registered_ops import setup as registered_setup

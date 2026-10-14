@@ -59,8 +59,8 @@ def test_prefix_matches_on_label_boundaries():
 # ---- wire ----------------------------------------------------------------
 
 def test_list_round_trip():
-    entries = [catalog.ListEntry(5, 3, 0, 0, "oep.fixture.i2c-target"),
-               catalog.ListEntry(6, 3, 1, 0, "io.github.ch32-riscv-ug.p4.i2c-target")]
+    entries = [catalog.ListEntry(5, 3, 0, "oep.fixture.i2c-target"),
+               catalog.ListEntry(6, 3, 1, "io.github.ch32-riscv-ug.p4.i2c-target")]
     assert catalog.unpack_list_result(catalog.pack_list_result(7, entries)) == (7, entries)
     assert catalog.unpack_list_request(catalog.pack_list_request(300)) == (300, b"")
     assert catalog.pack_list_request(0x1234) == bytes([0x34, 0x12])   # first(u16) only, no prefix (core §7.2)
@@ -68,7 +68,7 @@ def test_list_round_trip():
 
 
 def test_list_total_is_u16_and_a_longer_answer_is_not_rejected():
-    entries = [catalog.ListEntry(0, 0, 1, 0, "oep.core")]
+    entries = [catalog.ListEntry(0, 0, 1, "oep.core")]
     packed = catalog.pack_list_result(300, entries)
     assert packed[:3] == bytes([0x2C, 0x01, 1])                    # total u16, count u8
     assert packed[3:] == catalog.pack_entry(entries[0])          # count x entry, no element length (core §2.3)

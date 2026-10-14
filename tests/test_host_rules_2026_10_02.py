@@ -12,7 +12,7 @@ import time
 import pytest
 
 from oep_client import (capture, config, core, dump, endpoint, virtual_bench, fixture, frames, host as h, link, message as m,
-                        registry as reg, riscv, speed_record)
+                        registry_legacy as reg, riscv, speed_record)
 
 from test_virtual_bench_rules_2026_10_02 import Clock
 from test_link_host import CONFIRM_V1, Stream, frame, make_link, result
@@ -262,13 +262,13 @@ def test_c22_the_owner_goes_as_valid_text_of_at_most_32_bytes():
 # ---- C-04 / C-10 ------------------------------------------------------------------------------------------------------
 
 def test_no_ignored_marker_any_more():
-    """core §2.3 (rule review 2026-10-07): an answer carries no ignored TLV - 0x7F is never a TLV tag, and the Tail has
-    no ignored list."""
+    """core §2.2/§2.3: the Tail has no ignored list; 0x7F is an ordinary tag number and only number 0 is never a TLV."""
     t = m.Tail.parse(bytes([0x01, 1, 0, 0x31]))
     assert t.tlvs == [(0x01, b"\x31")] and not hasattr(t, "ignored") and not hasattr(t, "more_ignored")
-    assert m.TAG_RESERVED == 0x7F and not hasattr(m, "TAG_IGNORED")
+    assert not hasattr(m, "TAG_RESERVED") and not hasattr(m, "TAG_IGNORED")   # 0x7F is a tag (core §2.2)
+    assert m.tlv(0x7F, b"") == b"\x7f\x00\x00"
     with pytest.raises(ValueError):
-        m.tlv(0x7F, b"")
+        m.tlv(0x00, b"")
 
 
 def test_c10_dump_says_what_a_probe_must_give_and_did_not():
@@ -284,7 +284,7 @@ def _confirm_tail(probe: virtual_bench.VirtualProbe, tail: bytes):
     """probe.call with confirm's answer tail replaced by `tail`."""
     def call(fn, op, payload=b""):
         out = probe.call(fn, op, payload)
-        return out[:17] + tail if (fn, op) == (dump.CORE_FN, dump.OP_CONFIRM) else out
+        return out[:16] + tail if (fn, op) == (dump.CORE_FN, dump.OP_CONFIRM) else out
     return call
 
 
