@@ -1,4 +1,4 @@
-"""Independent request response-before-release and console link-lost checks."""
+"""Independent request response-before-release and console line-loss release checks."""
 import struct
 from .conformance import require
 from .conformance_debug import DebugChecks
@@ -35,7 +35,7 @@ class CutChecks(DebugChecks):
             require(frame[3:5]==bytes((1,2 if partial else 1)) and struct.unpack_from('<HBH',frame,5)==(done,2,0),'cut operation result')
             self.verify_closed(held,after,parent,rid)
             rows=after['lifecycle'];write=next(i for i,r in enumerate(rows) if r[:2]==('response-write',accepted['corr']));close=next(i for i,r in enumerate(rows) if r[:2]==('stream-close',rid));require(write<close,'response was written after child close')
-            require(not any(r[0]=='mark' and r[2]==8 for r in rows),'request cut added console-only link-lost')
+            require(not any(r[0]=='mark' for r in rows),'line loss left a mark on a released stream')
             packets=after['packets'];targets=after['closed_targets'];require(self.c.exchange(req)==frame,'cached cut response differs')
             replay=self.a.state();require(replay['packets']==packets and replay['closed_targets']==targets and replay['connections']==after['connections'],'cached cut response reexecuted or reopened')
             self.refused(self.dmi_request(sid,parent,[self.read(4)]),'no_resource')
@@ -45,10 +45,8 @@ class CutChecks(DebugChecks):
             parent,rid=self.prepare(sid,halt);self.a.plan(parent,[2,2]);require(self.a.poll_cut(rid)==2,'first console line status')
             before=self.a.state();require(parent in before['connections'] and rid in before['streams'],'single line operation closed console')
             self.a.plan(parent,[2,2]);require(self.a.poll_cut(rid)==2,'second console line status');after=self.a.state();self.verify_closed(before,after,parent,rid)
-            archive=after['archives'][rid];marks=archive['marks'];require([r[2:3] for r in marks[-2:]]==[(8,),(9,)] and marks[-1][4]==4,'link-lost/closed mark order or cause')
-            require(marks[-2][1]==before['streams'][rid]['position'] and marks[-1][1]==marks[-2][1],'cut marks changed receive position')
-            rows=after['lifecycle'];mark=next(i for i,r in enumerate(rows) if r[:3]==('mark',rid,8));close=next(i for i,r in enumerate(rows) if r[:2]==('stream-close',rid));require(mark<close,'link-lost was recorded after stream close')
-            self.refused(self.request(4,'read',sid,struct.pack('<HQHB',rid,0,0,0)),'no_resource')
+            require(not any(r[0]=='mark' for r in after['lifecycle']),'line loss left a mark nobody can read (debug §2)')
+            self.refused(self.request(4,'read',0,struct.pack('<IBQH',rid,1,0,16)),'no_resource')   # the stream is gone
     def recovery(self):
         self.fresh()
         with self.c.holding(3000) as sid:
@@ -75,7 +73,6 @@ class CutChecks(DebugChecks):
             self.specs={fn:next(s for s in self.c.reg['interface'] if s['name']==name and s['revision']==1) for fn,name in selection.items()};self.operations={fn:{r['name']:r['code'] for r in s['op']} for fn,s in self.specs.items()}
             require(self.c.reg['status']==dict(ok=0,wait=1,line=2,fault=3,timeout=4,state=5),'selected status map differs')
             require(self.specs[5]['enum']['dmi_step']==dict(write=1,read=2,poll_reads=3,wait_us=4,poll_us=5),'selected DMI grammar differs')
-            require(self.c.reg['common']['enum']['mark_kind']['link_lost']==8 and self.c.reg['common']['enum']['mark_kind']['closed']==9 and self.c.reg['common']['enum']['mark_detail_closed']['connection_closed']==4,'selected cut marks differ')
             self.c.confirm();self.c.identity();self.c.declarations();require(self.a.state()['cut_policy']=='two-line-operations','selected logical cut policy differs')
         self.c.check('OEP-CUT-CONTEXT','debug §2; common §1',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
@@ -83,4 +80,4 @@ class CutChecks(DebugChecks):
         for name,case in cases:
             first=len(self.a.trace);self.c.check('OEP-CUT-'+name,'debug §2; common §1/2; core §5.2/9',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]
-        return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,adapter_trace=self.a.trace,observed=self.c.observed,full_conformance=False,scope='logical response writer before request wire-cut; console link-lost and dependent release',unchecked=['physical writer/pins and actual transport delivery','writer concurrency, lease expiry while blocked and alternate budgets','resync/TO/framing marks','poll/wait DMI failure injection and store-trigger writes','production Host integration'])
+        return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,adapter_trace=self.a.trace,observed=self.c.observed,full_conformance=False,scope='logical response writer before request wire-cut; console line loss and dependent release',unchecked=['physical writer/pins and actual transport delivery','writer concurrency, lease expiry while blocked and alternate budgets','resync/TO/framing marks','poll/wait DMI failure injection and store-trigger writes','production Host integration'])

@@ -11,7 +11,7 @@
 | 競合 | 使用中pinはunavailable cause 1、wireの接続数上限はcause 2。既存接続へ暗黙に加わらず、空きを作るために閉じない。 |
 | attach応答 | connection(u32)/id/flags/speedの固定13 byte＋TLV。speedは要求上限以下。connections一覧（connection u32の14 byte＋可変tid）と末尾TLVも読み、fn/pins/speed/IDを独立状態に照合する。 |
 | 立ち上げ失敗 | completed failed / status line＋TLV。新しいlive資源を残さず、既存connection/streamの出力を変えない。 |
-| console open | connection/mechanismが固定部。stream/flags 0＋TLVを返す。宣言外/未知/preset noneの方式はunsupported payload 0。 |
+| console open | connection(u32)/mechanismが固定部。stream(u32)だけ（4 byte）を返す。streams一覧は`stream, connection(u32), mechanism`の9 byte行。宣言外/未知/preset noneの方式はunsupported payload 0。 |
 | console資源 | 不明connectionはno_resource、streamをparentにする要求やARM/SWD connectionはunavailable cause 6。 |
 | 方式の競合 | mechanism 0〜2は1 connectionに1 stream。既存streamと同じ方式、別の方式のどちらのopenもcause 6。 |
 | 複数target | 別connectionには個別streamを作り、streamsの作成順・connection・mechanismを照合する。SID 0のreadは個別出力を読み、消費しない。 |
@@ -23,7 +23,7 @@
 
 仮想コアへ`request_tags` / `dispatch_request`の明示拡張入口を加え、拡張固有critical TLVを検査・実行へ渡す。入口がない既存拡張は従来の処理を使う。session・header・cacheの判定は入口より先に行う。同一要求再送でTLV解析や実行を繰り返さない。
 
-単体19件でmax_speed 0の受理、未知critical無視、既知noncritical拒否、raw tag喪失、後のtag優先、後のコピーの未検証、拒否時targetアクセス、console flags不正、ARM console受理、方式競合無視、速度上限超過、再送再実行、connectionsのmetadata不正を検出する。採用条件/選択SPEC変更、所有中fixture再起動拒否、拡張入口とsession/cacheの優先順も確認する。
+単体19件でmax_speed 0の受理、未知critical無視、既知noncritical拒否、raw tag喪失、後のtag優先、後のコピーの未検証、拒否時targetアクセス、console応答の余分なbyte、ARM console受理、方式競合無視、速度上限超過、再送再実行、connectionsのmetadata不正を検出する。採用条件/選択SPEC変更、所有中fixture再起動拒否、拡張入口とsession/cacheの優先順も確認する。
 
 ```python
 import os

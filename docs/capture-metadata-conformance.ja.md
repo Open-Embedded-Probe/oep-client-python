@@ -13,14 +13,11 @@ describeの成功だけで取得操作やデータ寿命の適合を証明しな
 - capture-group: tracksの要素数とu16列の形。
 - logic multirate: 存在時は13 byte、sample policy必須、2≤min_d≤max_d、pow2は0/1。
   壊れた広告を検査器はFAILとする。Hostが広告を使わず基本captureへ戻る動作の検査は別途必要。
-- config: itemsの存在、slots_max u8、wifi_maxの存在時はwifi itemと正のu8容量。
-  itemsがwifiを含む場合、confirmのmax_frameはregistryのwifi_min_max_frame（現行112）以上。
-  全経路へ適用される条件なので、他経路の上限未確認はPASSにせず、唯一の広告経路をconfirm済みの場合に限る。
+- config: items（0x41）の存在、1つ以上、重複なし、項目番号0を含まない（probe.config §4）。
+  旧版のslots_max/wifi_maxは現仕様に無いため検査しない。
 
-本文のstorage/wifi_maxは「持つときに限り」、registryコメントは「そのとき必ず」と読める。
-この検査は本文に基づき、wifi itemからwifi_maxの存在を逆に必須とはしない。
-storageの提供条件は既存SelectedMetadataChecksで別に確認する。
-itemsの未知tagを独自拡張でないと推測して禁止せず、slots_maxの0も許す。
+storage max_bytesとsave/erase提供時の存在は既存SelectedMetadataChecksで別に確認する。
+itemsの未知tagを独自拡張でないと推測して禁止しない。
 
 `CaptureMetadataModel`は17 interfaceの宣言だけを持つ独立fixture。
 4 fnで10項目、全fn共通宣言137項目と登録op18項目は別に確認する。

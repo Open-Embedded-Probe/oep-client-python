@@ -2,7 +2,7 @@
 import copy
 import struct
 from .virtual_attach_model import Attachments, AttachModel
-from .virtual_core import Core, Completed
+from .virtual_core import Core
 
 
 class Mailboxes(Attachments):
@@ -10,12 +10,9 @@ class Mailboxes(Attachments):
     def close_stream(self,rid):
         super().close_stream(rid);self.mailboxes.pop(rid,None)
     def dispatch_request(self,fn,op,payload,tags):
-        if fn==4 and op==21:
-            rid=struct.unpack_from('<H',payload)[0];self.resource(rid,'stream')
-            if self.meta[rid]==0:return Completed(struct.pack('<H',0),1)
         value=super().dispatch_request(fn,op,payload,tags)
         if fn==4 and op==16:
-            rid=struct.unpack_from('<H',value)[0]
+            rid=struct.unpack_from('<I',value)[0]
             self.mailboxes[rid]={'data0':0,'data1':0,'halted':False,'debug_busy':False,'events':[]}
         return value
     def poll(self,rid):
@@ -27,7 +24,8 @@ class Mailboxes(Attachments):
         if status:return
         d0,d1=m['data0'],m['data1'];m['events'].append(('read',4,d0));length=d0&255
         if self.meta[rid]==0:
-            if not 1<=length<=7:return
+            if not length:return
+            if length>7:m['events'].append(('write',4,0));m['data0']=0;return   # not a frame: cleared (console §3.1)
             m['events'].append(('read',5,d1));s.feed((d0.to_bytes(4,'little')[1:]+d1.to_bytes(4,'little'))[:length]);answer=0
         else:
             if not length&128:return

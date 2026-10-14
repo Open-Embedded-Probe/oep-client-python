@@ -126,14 +126,14 @@ class DmseqChecks(MailboxChecks):
             require(not after['protocols'][rid]['synced'] and not after['protocols'][rid]['pending'],'detected reset did not discard dmseq state')
             require(after['connections']==before['connections'] and after['streams'][rid]['data']==b'x' and after['streams'][rid]['tx']==b'cd' and after['streams'][rid]['position']==1,'target reset discarded OEP resources/output/queue')
             marks=after['streams'][rid]['marks'];require(len(marks)==len(before['streams'][rid]['marks'])+1 and marks[-1][1:3]==(1,0x41) and marks[-1][-1]==1,'detected reset restart mark')
-            page=self.c.success(self.request(4,'marks',0,struct.pack('<HI',rid,marks[-1][0])));require(page[:2]==b'\0\x01' and struct.unpack_from('<IQBQB',page,2)==marks[-1],'restart mark wire readback');tlvs(page[24:])
+            page=self.c.success(self.request(4,'marks',0,struct.pack('<II',rid,marks[-1][0])));require(page[:2]==b'\0\x01' and struct.unpack_from('<IQBQB',page,2)==marks[-1],'restart mark wire readback');tlvs(page[24:])
             self.step(rid,target_frame(syn=True,data=b'x'),b'x',reply_word(0,0,b'cd'),b'',self.protocol(syn=True,pending=b'cd'))
     def clear(self):
         self.fresh()
         with self.c.holding(3000) as sid:
             rid=self.opened(sid,2);self.write(sid,rid,b'abcd',0,4);frame=target_frame(syn=True,data=b'x')
             self.step(rid,frame,b'x',reply_word(0,0,b'ab'),b'cd',self.protocol(syn=True,pending=b'ab'))
-            before=self.a.state();self.c.success(self.request(4,'clear',sid,struct.pack('<H',rid)));after=self.a.state()
+            before=self.a.state();self.c.success(self.request(4,'clear',sid,struct.pack('<I',rid)));after=self.a.state()
             require(after['protocols']==before['protocols'] and after['streams'][rid]['tx']==b'cd' and after['streams'][rid]['data']==b'' and after['streams'][rid]['position']==1,'clear discarded pending or queue or synchronization')
             self.step(rid,frame,b'',reply_word(0,0,b'ab'),b'cd',self.protocol(syn=True,pending=b'ab'))
     def independent(self):
@@ -173,14 +173,14 @@ class DmseqChecks(MailboxChecks):
             before=self.a.state()['streams'][rid];self.step(rid,frame,received,answer,b'')
             marks=self.a.state()['streams'][rid]['marks'];new=[m for m in marks if m not in before['marks']]
             require(any((m[2],m[4])==expected for m in new),'dmseq required event mark missing/wrong detail')
-            if kind=='CRC-FLAGS':require(not any((m[2],m[4]) in ((2,2),(5,4)) for m in new),'invalid CRC SYN/TO emitted valid-frame mark')
+            if kind=='CRC-FLAGS':require(not any((m[2],m[4]) in ((0x41,2),(1,0x40)) for m in new),'invalid CRC SYN/TO emitted valid-frame mark')
             for m in new:
-                page=self.c.success(self.request(4,'marks',0,struct.pack('<HI',rid,m[0])))
+                page=self.c.success(self.request(4,'marks',0,struct.pack('<II',rid,m[0])))
                 require(page[1]>=1 and struct.unpack_from('<IQBQB',page,2)==m,'dmseq event mark wire readback');tlvs(page[2+22*page[1]:])
             # A repeated observation may coalesce or append; payload/queue must not repeat.
             self.step(rid,frame,b'',answer,b'')
             after=self.a.state()['streams'][rid]['marks']
-            if kind=='CRC-FLAGS':require(not any((m[2],m[4]) in ((2,2),(5,4)) for m in after),'invalid repeated CRC SYN/TO mark')
+            if kind=='CRC-FLAGS':require(not any((m[2],m[4]) in ((0x41,2),(1,0x40)) for m in after),'invalid repeated CRC SYN/TO mark')
     def invalid_flags(self):
         self.fresh()
         with self.c.holding(3000) as sid:
@@ -189,7 +189,7 @@ class DmseqChecks(MailboxChecks):
             for frame in ((0xff,0xffffffff),(0x78,0xffffffff)):
                 before=self.a.state()['streams'][rid]['marks'];self.step(rid,frame,b'',None,b'')
                 new=[m for m in self.a.state()['streams'][rid]['marks'] if m not in before]
-                require(not any((m[2],m[4]) in ((2,2),(5,4)) for m in new),'invalid N/host word SYN/TO emitted valid-frame mark')
+                require(not any((m[2],m[4]) in ((0x41,2),(1,0x40)) for m in new),'invalid N/host word SYN/TO emitted valid-frame mark')
     def run(self):
         start=len(self.c.results)
         def context():
@@ -197,9 +197,9 @@ class DmseqChecks(MailboxChecks):
             self.specs={fn:next(s for s in self.c.reg['interface'] if s['name']==name and s['revision']==1) for fn,name in self.a.selection.items()}
             self.operations={fn:{op['name']:op['code'] for op in spec['op']} for fn,spec in self.specs.items()}
             require(self.specs[4]['enum']['mechanism']['dmseq']==2 and 2 in self.a.mechanisms,'selected SPEC/mechanism mismatch')
-            require(self.c.reg['common']['enum']['mark_kind']['restart']==2 and self.c.reg['common']['enum']['mark_detail_restart']['havereset']==1,'reset mark SPEC mismatch')
-            enums=self.c.reg['common']['enum']
-            require(enums['mark_kind']['lost']==5 and enums['mark_detail_restart']['resync']==2 and enums['mark_detail_lost']['framing']==2 and enums['mark_detail_lost']['target_timeout']==4,'dmseq event mark SPEC mismatch')
+            console=self.specs[4]['enum'];common=self.c.reg['common']['enum']
+            require(console['mark_kind']['restart']==0x41 and console['mark_detail_restart']=={'havereset':1,'resync':2},'reset mark SPEC mismatch')
+            require(common['mark_kind']['lost']==1 and console['mark_detail_lost']['target_timeout']==0x40,'dmseq event mark SPEC mismatch')
             self.c.confirm();self.c.identity();self.c.declarations()
             require(2 in dict(reversed(self.c.describe(4)))[64],'probe did not declare dmseq')
         self.c.check('OEP-DMSEQ-CONTEXT','dmseq host rules; console §1/2/3',context)

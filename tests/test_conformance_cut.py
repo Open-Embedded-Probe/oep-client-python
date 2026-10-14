@@ -6,7 +6,7 @@ from test_conformance_debug import setup as debug_setup
 
 
 def setup():
-    _,c,_=debug_setup();c.reg.setdefault('common',{}).setdefault('enum',{}).update(mark_kind={'link_lost':8,'closed':9},mark_detail_closed={'connection_closed':4});model=CutModel(lambda:0,boot_id=17)
+    _,c,_=debug_setup();c.reg.setdefault('common',{}).setdefault('enum',{}).update(mark_kind={'lost':1,'clear':2,'host':3});model=CutModel(lambda:0,boot_id=17)
     return model,Checks(model.handle,c.reg,'virtual-resource-1'),SampleCutAdapter(model)
 
 
@@ -22,8 +22,7 @@ from oep_client.virtual_core import Completed, Reject
 
 @pytest.mark.parametrize('fault,case',[
     ('early_close','REQUEST'),('early_close','REQUEST-HALTED'),
-    ('no_cut','REQUEST'),('single_line','CONSOLE'),('no_link_mark','CONSOLE'),
-    ('mark_order','CONSOLE'),('mark_position','CONSOLE'),('closed_cause','CONSOLE'),
+    ('no_cut','REQUEST'),('single_line','CONSOLE'),('stale_mark','CONSOLE'),('stream_kept','CONSOLE'),
     ('drive_left','REQUEST'),('changed_hart','REQUEST-HALTED'),
     ('parent_first','REQUEST'),('response_last','REQUEST'),
     ('no_recovery','RECOVERY'),('timer_cut','RECOVERY'),
@@ -52,14 +51,10 @@ def test_cut_checker_detects_independent_faults(fault,case):
             if fault=='other_closed':
                 for other in list(e.connections):close(other)
         def broken_streamclose(rid):
-            stream=e.streams[rid][1]
-            if fault=='no_link_mark':stream.marks=[r for r in stream.marks if r[2]!=8];e.lifecycle=[r for r in e.lifecycle if not(r[0]=='mark' and r[2]==8)]
+            if fault=='stale_mark':e.lifecycle.append(('mark',rid,8,0))     # an old link-lost mark on a released stream
+            if fault=='stream_kept' and e.pending:
+                e.lifecycle.append(('stream-close',rid,e.streams[rid][0]));return   # said closed, still readable
             streamclose(rid)
-            if rid in e.archives:
-                marks=e.archives[rid]['marks']
-                if fault=='mark_order':marks.reverse()
-                elif fault=='mark_position' and len(marks)>1:marks[-2]=(marks[-2][0],marks[-2][1]+1)+marks[-2][2:]
-                elif fault=='closed_cause':marks[-1]=marks[-1][:4]+(2,)
         def broken_observe(parent,status):
             if fault=='no_recovery' and status==0:return
             observe(parent,status)
@@ -67,7 +62,7 @@ def test_cut_checker_detects_independent_faults(fault,case):
             try:result=dispatch(fn,op,payload,tags)
             except Reject:
                 if fault=='rejection_cut' and fn==5:
-                    parent=int.from_bytes(payload[:2],'little');e.streak[parent]=2;e.decide(parent,'request')
+                    parent=int.from_bytes(payload[:4],'little');e.streak[parent]=2;e.decide(parent,'request')
                 raise
             if fault=='partial_done' and fn==5 and op==16 and result[:2]==b'\x01\0' and result[2]==2:return Completed(b'\0\0'+result[2:],result.outcome)
             return result
@@ -89,13 +84,12 @@ def test_cut_checker_detects_independent_faults(fault,case):
     assert next(row for row in r['checks'] if row['id']=='OEP-CUT-'+case)['status']=='failed',r['checks']
 
 
-@pytest.mark.parametrize('invalid',['scope','status','policy','grammar','marks'])
+@pytest.mark.parametrize('invalid',['scope','status','policy','grammar'])
 def test_cut_context_blocks(invalid):
     _,c,a=setup()
     if invalid=='scope':a.reset_scope='physical'
     elif invalid=='status':c.reg['status']['line']=3
     elif invalid=='grammar':c.reg['interface'][-1]['enum']['dmi_step']['write']=7
-    elif invalid=='marks':c.reg['common']['enum']['mark_kind']['link_lost']=7
     else:
         state=a.state
         def broken():

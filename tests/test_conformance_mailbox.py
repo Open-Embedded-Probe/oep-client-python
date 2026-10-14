@@ -27,7 +27,7 @@ import pytest
     ('dm_overwrite_own','DM-OWN-TURN'),('dm_send_reverse','DM-QUEUE-3'),
     ('dm_send_short','DM-QUEUE-3'),('halt_access','DM-HALTED'),
     ('busy_access','DM-DEBUG'),('status_after_data','DM-DEBUG'),
-    ('sdi_zero_success','SDI-WRITE'),('bit6_reject','DM-BIT6'),
+    ('sdi_write_taken','SDI-WRITE'),('bit6_reject','DM-BIT6'),
     ('ack_not_written','SDI-ACK'),
 ])
 def test_mailbox_checker_detects_independent_faults(fault,case):
@@ -54,9 +54,10 @@ def test_mailbox_checker_detects_independent_faults(fault,case):
             elif fault=='bit6_reject' and mechanism and length&64:s.data.clear();s.position=0
             elif fault=='ack_not_written' and not mechanism and 1<=length<=7:m['data0']=d0
         def broken_dispatch(fn,op,payload,tags):
-            value=dispatch(fn,op,payload,tags)
-            if fault=='sdi_zero_success' and fn==4 and op==21 and payload[2:4]==b'\0\0':return bytes(value)
-            return value
+            if fault=='sdi_write_taken' and fn==4 and op==21 and e.meta.get(int.from_bytes(payload[:4],'little'))==0:
+                from oep_client.virtual_core import Completed
+                return Completed(payload[4:6],0)                      # an SDI write taken as if it had a way in
+            return dispatch(fn,op,payload,tags)
         e.poll=broken_poll;e.dispatch_request=broken_dispatch
     model.install=faulty_install
     report=MailboxChecks(c,a).run();row=next(r for r in report['checks'] if r['id']=='OEP-MAILBOX-'+case)

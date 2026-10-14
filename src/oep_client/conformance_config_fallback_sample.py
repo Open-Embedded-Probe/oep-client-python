@@ -1,30 +1,25 @@
-"""Explicit RAM storage/catalog perturbations; never alters physical equipment."""
+"""Explicit RAM storage perturbations; never alters physical equipment."""
 import copy
 from .conformance_config_sample import SampleConfigAdapter
 
 
-CATALOG={1:('oep.probe.plan',0,1),2:('oep.fixture.gpio',0,1),
-         3:('oep.fixture.gpio',1,1),4:('oep.probe.config',0,1)}
-
-
 class SampleConfigFallbackAdapter(SampleConfigAdapter):
     def prepare(self):
-        self.model.saved=None;self.model.saved_hash=0;self.model.saved_identities={}
-        self.model.catalog=dict(CATALOG)
+        self.model.erase_config();self.model.hold_max=None
         return self.restart_fixture()
     def perturb(self,case):
-        m=self.model
-        if case=='FORMAT':m.saved[(2,b'\4\0')]=b'\4\0'
-        elif case=='MISSING':m.catalog.pop(2)
-        elif case=='NAME':m.catalog[2]=('io.example.other-gpio',0,1)
-        elif case=='INSTANCE':m.catalog[2]=('oep.fixture.gpio',7,1)
-        elif case=='REVISION':m.catalog[2]=('oep.fixture.gpio',0,2)
-        elif case=='APPLY':m.saved[(7,b'\1\0')]=b'\1\0'
-        elif case=='REMAP':m.catalog[2],m.catalog[3]=m.catalog[3],m.catalog[2]
-        elif case=='UNRELATED':m.catalog[3]=('oep.fixture.gpio',1,2)
+        # Each case changes the saved items as an older firmware or a torn write might have left them (fixture form only).
+        m=self.model;saved=m.saved
+        if case=='FORMAT':saved.append(b'torn')
+        elif case=='UNKNOWN':saved.insert(0,(1,b'\2\0\1\3\0'))
+        elif case=='CHANNEL':saved.append((2,b'\x09\0far'))
+        elif case=='MODE':saved.append((3,b'\2\0\7'))
+        elif case=='LABEL':saved.append((2,b'\5\0'))
+        elif case=='CONFLICT':saved.append((7,b'\1\0'))
+        elif case=='DUPLICATE':saved.append((2,b'\4\0other'))
+        elif case=='CAPACITY':saved.append((2,b'\0\0pwr'));m.hold_max=3
         else:raise ValueError('unknown explicit fallback scenario')
     def storage_snapshot(self):
-        return copy.deepcopy(dict(items=self.model.saved,identities=self.model.saved_identities))
+        return copy.deepcopy(self.model.saved)
     def state(self):
-        return dict(super().state(),catalog={str(fn):list(row) for fn,row in self.model.catalog.items()},
-                    saved_identities={str(fn):list(row) for fn,row in self.model.saved_identities.items()})
+        return dict(super().state(),hold_max=self.model.hold_max)

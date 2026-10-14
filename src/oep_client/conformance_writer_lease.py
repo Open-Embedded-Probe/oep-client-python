@@ -47,8 +47,7 @@ class WriterLeaseChecks(CutChecks):
                 require(expired['holder'] is None and expired['generation']>held['generation'] and expired['writer_waiting'],'expiry did not retire owner while retaining queued result')
                 require(not expired['connections'] and not expired['streams'] and not expired['protocols'] and not expired['mailboxes'],'expiry left live dependency resources')
                 for p,r in ((parent,rid),(other,child)):
-                    self.verify_closed(held,expired,p,r)
-                    marks=expired['archives'][r]['marks'];require(marks[-1][2]==9 and marks[-1][4]==2,'expiry marked connection-cut instead of session-ended')
+                    self.verify_closed(held,expired,p,r)                # released with its buffer: no closed mark (console §2)
                 frame=self.c.exchange(req);after=self.a.state();require(frame[3:5]==bytes((1,1 if cut else 0)),'late original result was discarded or changed')
                 require(after['holder'] is None and after['generation']==expired['generation'] and not after['connections'] and after['packets']==expired['packets'],'late writer token resurrected owner/resources or reexecuted')
                 require(self.c.exchange(req)==frame and self.a.state()['holder'] is None,'cached late result resurrected owner')
@@ -65,7 +64,7 @@ class WriterLeaseChecks(CutChecks):
             require(self.a.reset_scope=='logical-model' and self.a.reference,'explicit logical writer lease fixture required')
             selection=dict(self.a.selection);selection[5]='oep.target.riscv-dm'
             self.specs={fn:next(s for s in self.c.reg['interface'] if s['name']==name and s['revision']==1) for fn,name in selection.items()};self.operations={fn:{r['name']:r['code'] for r in s['op']} for fn,s in self.specs.items()}
-            require(self.c.reg['common']['enum']['mark_kind']['closed']==9 and self.c.reg['common']['enum']['mark_detail_closed']['session_ended']==2,'selected session close marks differ')
+            require('closed' not in self.c.reg['common']['enum']['mark_kind'],'selected SPEC still marks released streams')   # released with its buffer (console §2)
             self.c.confirm();self.c.identity();self.c.declarations();state=self.a.state();require(state['clock_scope']=='explicit-logical-ms' and state['max_op_ms']==5000,'selected execution/clock fixture differs')
         self.c.check('CORE-WRITER-LEASE-CONTEXT','core §6.1/9; common §1',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True

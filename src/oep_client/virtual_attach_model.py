@@ -80,21 +80,22 @@ class Attachments(Dependencies):
             self.connections[rid]={'fn':fn,'pins':pair,'speed':chosen}
             flags=8 if method else 0
             return struct.pack('<IIBI',rid,0x200,flags,chosen)+(tlv(17,struct.pack('<I',0)) if method else b'')+tlv(127,b'x')
-        if op==23:return self.page([struct.pack('<HHB',rid,parent,self.meta[rid]) for rid,(parent,_) in self.streams.items()],struct.unpack('<H',payload)[0])
-        rid=struct.unpack_from('<H',payload)[0]
+        if op==23:return self.page([struct.pack('<IIB',rid,parent,self.meta[rid]) for rid,(parent,_) in self.streams.items()],struct.unpack('<H',payload)[0])
+        rid=struct.unpack_from('<I',payload)[0]
         if op==16:
-            mechanism=payload[2]
+            mechanism=payload[4]
             if mechanism not in self.mechanisms:raise Reject(11,b'\0')
             self.resource(rid,'connection')
             if self.connections[rid]['fn']==3 or any(parent==rid for parent,_ in self.streams.values()):raise Reject(4,tlv(1,b'\x06'))
             child=self.allocate();self.streams[child]=(rid,Stream(self.ep));self.meta[child]=mechanism
-            return struct.pack('<HB',child,0)+tlv(127,b'x')
+            return struct.pack('<I',child)+tlv(127,b'x')
         self.resource(rid,'stream');s=self.streams[rid][1]
         if op==22:self.close_stream(rid);return b''
         if op==21:
-            count=struct.unpack_from('<H',payload,2)[0];accepted=0 if self.meta[rid]==0 else min(count,4-len(s.tx));s.tx.extend(payload[4:4+accepted])
+            if self.meta[rid]==0:raise Reject(11,b'\0')                     # an SDI stream takes no write (console §1)
+            count=struct.unpack_from('<H',payload,4)[0];accepted=min(count,4-len(s.tx));s.tx.extend(payload[6:6+accepted])
             return Completed(struct.pack('<H',accepted),0 if accepted==count else (2 if accepted else 1))
-        return s.dispatch(1,op-1,payload[2:])
+        return s.dispatch(1,op-1,payload[4:])
 
 
 class AttachModel(DependencyModel):
@@ -105,8 +106,8 @@ class AttachModel(DependencyModel):
     def handle(self,request):
         e=self.extension;fixed,free=e.fixed,e.free
         if len(request)>=6 and struct.unpack_from('<H',request,3)[0]==4:
-            e.fixed={16:3,17:13,18:6,19:2,20:3,21:4,22:2,23:2};e.free={17,18,23}
-            if request[5]==21 and len(request)>=14:e.fixed[21]=4+struct.unpack_from('<H',request,12)[0]
+            e.fixed={16:5,17:15,18:8,19:4,20:5,21:6,22:4,23:2};e.free={17,18,23}
+            if request[5]==21 and len(request)>=16:e.fixed[21]=6+struct.unpack_from('<H',request,14)[0]
         else:e.fixed={17:9,18:4,19:1};e.free={19}
         try:return self.ep.handle(request)
         finally:e.fixed,e.free=fixed,free

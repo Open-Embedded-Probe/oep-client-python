@@ -9,7 +9,7 @@ from test_conformance_mailbox import setup as mailbox_setup
 def setup():
     _,c,_=mailbox_setup();model=DmseqModel(lambda:0,boot_id=17)
     c.reg['interface'][3]['enum']['mechanism']['dmseq']=2
-    c.reg['common']={'enum':{'mark_kind':{'restart':2,'lost':5},'mark_detail_restart':{'havereset':1,'resync':2},'mark_detail_lost':{'framing':2,'target_timeout':4}}}
+    c.reg['common']={'enum':{'mark_kind':{'lost':1,'clear':2,'host':3}}}
     return model,Checks(model.handle,c.reg,'virtual-resource-1'),SampleDmseqAdapter(model)
 
 
@@ -93,7 +93,7 @@ def test_dmseq_preflight_blocks(invalid):
     model,c,a=setup()
     if invalid=='scope':a.reset_scope='physical'
     elif invalid=='mechanism':c.reg['interface'][3]['enum']['mechanism']['dmseq']=3
-    elif invalid=='marks':c.reg['common']['enum']['mark_kind']['restart']=3
+    elif invalid=='marks':c.reg['interface'][3]['enum']['mark_kind']['restart']=3
     else:model.extension.mechanisms=(0,1)
     r=DmseqChecks(c,a).run()
     assert r['checks'][0]['status']=='failed'
@@ -121,8 +121,8 @@ def test_invalid_flags_do_not_trigger_resync_or_to(invalid_case):
         install();poll=model.extension.poll
         def broken(rid):
             frame=model.extension.mailboxes[rid]['data0'];poll(rid)
-            if frame&8:model.extension.streams[rid][1].mark(2,2)
-            if frame&64:model.extension.streams[rid][1].mark(5,4)
+            if frame&8:model.extension.streams[rid][1].mark(0x41,2)
+            if frame&64:model.extension.streams[rid][1].mark(1,0x40)
         model.extension.poll=broken
     model.install=faulty_install
     report=DmseqChecks(c,a).run()

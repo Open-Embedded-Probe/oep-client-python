@@ -12,7 +12,7 @@ from .virtual_core import Core
 
 class Cut(Retry):
     def __init__(self,ep):
-        super().__init__(ep);self.streak={};self.pending=set();self.lifecycle=[];self.archives={};self.closed_targets={};self.freed_pins={};self.releasing=False
+        super().__init__(ep);self.streak={};self.pending=set();self.lifecycle=[];self.closed_targets={};self.freed_pins={}
     def observe(self,parent,status):
         if status==2:self.streak[parent]=self.streak.get(parent,0)+1
         elif status==0:self.streak[parent]=0
@@ -26,17 +26,9 @@ class Cut(Retry):
             parent=struct.unpack_from('<I',payload)[0];self.observe(parent,result[2])
             if result[2]==2:self.decide(parent,'request')
         return result
-    def release(self):
-        self.releasing=True
-        try:super().release()
-        finally:self.releasing=False
     def close_stream(self,rid):
-        parent,stream=self.streams[rid]
-        if parent in self.pending or self.releasing:
-            detail=2 if self.releasing else 4
-            stream.mark(9,detail);self.lifecycle.append(('mark',rid,9,detail))
-            self.archives[rid]=dict(parent=parent,position=stream.position,data=bytes(stream.data),tx=bytes(stream.tx),marks=list(stream.marks))
-        super().close_stream(rid);self.lifecycle.append(('stream-close',rid,parent))
+        parent,_=self.streams[rid]
+        super().close_stream(rid);self.lifecycle.append(('stream-close',rid,parent))   # released: no mark (debug §2)
     def close_connection(self,parent):
         snapshot=copy.deepcopy(self.targets.get(parent));pins=self.connections[parent]['pins']
         super().close_connection(parent);self.closed_targets[parent]=snapshot
@@ -48,7 +40,7 @@ class Cut(Retry):
         parent,stream=self.streams[rid]
         status,_=self.transaction(parent,'read',0x11,owned=True);self.observe(parent,status)
         if status==2 and self.decide(parent,'console'):
-            stream.mark(8,0);self.lifecycle.append(('mark',rid,8,0));self.close_connection(parent)
+            self.close_connection(parent)                  # the connection and its stream; no mark nobody could read
         elif status==0:super().poll(rid)
         return status
 
@@ -62,8 +54,8 @@ class CutModel(RetryModel):
         fn=struct.unpack_from('<H',request,3)[0] if len(request)>=6 else None
         if fn==5:e.fixed={16:fixed_dmi(request[10:]),17:4,18:4};e.free=set()
         elif fn==4:
-            e.fixed={16:3,17:13,18:6,19:2,20:3,21:4,22:2,23:2};e.free={17,18,23}
-            if request[5]==21 and len(request)>=14:e.fixed[21]=4+struct.unpack_from('<H',request,12)[0]
+            e.fixed={16:5,17:15,18:8,19:4,20:5,21:6,22:4,23:2};e.free={17,18,23}
+            if request[5]==21 and len(request)>=16:e.fixed[21]=6+struct.unpack_from('<H',request,14)[0]
         else:e.fixed={17:9,18:4,19:1};e.free={19}
         try:result=self.ep.current_core.handle(request,0,defer_send=True)
         finally:e.fixed,e.free=fixed,free
@@ -83,7 +75,7 @@ class CutModel(RetryModel):
         return self.flush_response()
     def cut_state(self):
         state=self.retry_state();e=self.extension
-        state.update(cut_policy='two-line-operations',streak=dict(e.streak),pending=sorted(e.pending),lifecycle=list(e.lifecycle),archives=copy.deepcopy(e.archives),closed_targets=copy.deepcopy(e.closed_targets),freed_pins=copy.deepcopy(e.freed_pins),writer_waiting=self.waiting is not None)
+        state.update(cut_policy='two-line-operations',streak=dict(e.streak),pending=sorted(e.pending),lifecycle=list(e.lifecycle),closed_targets=copy.deepcopy(e.closed_targets),freed_pins=copy.deepcopy(e.freed_pins),writer_waiting=self.waiting is not None)
         return state
     def cut_console_poll(self,rid):
         if type(rid)is not int or rid not in self.extension.streams or self.waiting is not None:raise ValueError('live stream and idle logical writer required')

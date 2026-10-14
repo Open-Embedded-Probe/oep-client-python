@@ -21,7 +21,7 @@ class Dmseq(Mailboxes):
     def __init__(self,ep):super().__init__(ep);self.protocols={}
     def dispatch_request(self,fn,op,payload,tags):
         value=super().dispatch_request(fn,op,payload,tags)
-        if fn==4 and op==16 and payload[2]==2:self.protocols[struct.unpack_from('<H',value)[0]]=initial()
+        if fn==4 and op==16 and payload[4]==2:self.protocols[struct.unpack_from('<I',value)[0]]=initial()
         return value
     def close_stream(self,rid):super().close_stream(rid);self.protocols.pop(rid,None)
     def poll(self,rid):

@@ -36,7 +36,7 @@ def test_invalid_fixture_or_registry_blocks_before_wire(invalid):
 @pytest.mark.parametrize('defect,case',[('zero_speed_taken','WIRE-ZERO-SPEED'),('critical_ignored','WIRE-TLV'),
     ('noncritical_rejected','WIRE-UNMARKED'),('raw_tag_lost','WIRE-TLV'),('last_wins','WIRE-FIRST-WINS'),
     ('later_copy_unchecked','WIRE-MALFORMED'),
-    ('refusal_touches','WIRE-PINS'),('console_flags','CONSOLE-RESOURCE'),('arm_console','CONSOLE-RESOURCE'),
+    ('refusal_touches','WIRE-PINS'),('console_extra_byte','CONSOLE-RESOURCE'),('arm_console','CONSOLE-RESOURCE'),
     ('duplicate_stream','CONSOLE-DUPLICATE'),('speed_exceeds','WIRE-BUSY'),('replay_executes','WIRE-REPLAY')])
 def test_attach_and_console_mutants_fail(defect,case):
     model,c,a=setup();restart=model.restart_fixture
@@ -64,17 +64,17 @@ def test_attach_and_console_mutants_fail(defect,case):
         def bad_dispatch(fn,op,payload,tags):
             if defect=='zero_speed_taken' and fn<=3 and op==17 and payload[5:9]==b'\0'*4:payload=payload[:5]+b'\xd0\x07\0\0'+payload[9:]
             if defect=='arm_console' and fn==4 and op==16:
-                parent=int.from_bytes(payload[:2],'little')
+                parent=int.from_bytes(payload[:4],'little')
                 if parent in e.connections and e.connections[parent]['fn']==3:e.connections[parent]['fn']=1
             if defect=='duplicate_stream' and fn==4 and op==16:
-                parent=int.from_bytes(payload[:2],'little')
+                parent=int.from_bytes(payload[:4],'little')
                 for rid,(owner,_) in list(e.streams.items()):
                     if owner==parent:e.close_stream(rid)
             try:value=dispatch(fn,op,payload,tags)
             except Exception:
                 if defect=='refusal_touches':e.touch.append(('refused',fn))
                 raise
-            if defect=='console_flags' and fn==4 and op==16:value=value[:2]+b'\x01'+value[3:]
+            if defect=='console_extra_byte' and fn==4 and op==16:value=value[:4]+b'\x01'+value[4:]   # an old flags byte
             if defect=='speed_exceeds' and fn<=3 and op==17 and not getattr(value,'outcome',0):value=value[:9]+b'\xff\xff\xff\x7f'+value[13:]
             return value
         e.request_tags=unchecked;e.dispatch_request=bad_dispatch

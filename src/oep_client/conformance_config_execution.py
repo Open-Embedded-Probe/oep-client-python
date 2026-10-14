@@ -27,9 +27,9 @@ class ConfigExecutionChecks(ConfigChecks):
         elif name.startswith('EXPIRE-'):duration=int(name.split('-')[1])
         with self.c.holding(lease) as sid:
             try:
-                self.a.seed(self.c,sid);h=self.hashed(17,item(2,b'\4\0nrst')+item(3,b'\1\0\1\0'),sid)
-                if name=='SAME':require(self.hashed(18,b'',sid)==h,'initial no-op save')
-                if name=='CAPACITY':h=self.hashed(17,item(2,b'\2\0'+b'a'*32)+item(2,b'\3\0'+b'b'*32),sid)
+                self.a.seed(self.c,sid);g=self.set(sid,item(2,b'\4\0nrst'),item(3,b'\1\0\1'))
+                if name=='SAME':require(self.changed(18,b'',sid)==g,'initial save generation')
+                if name=='CAPACITY':g=self.set(sid,item(2,b'\2\0'+b'a'*32),item(2,b'\3\0'+b'b'*32))
                 self.a.advance(400);start=self.observe(name+'-start');probes=self.probes();self.a.arm(duration,probes)
                 req=self.op(18,item(255,b'') if name=='TLV' else b'',sid)
                 p=self.buffered(req,'unsupported' if name=='TLV' else 'unavailable' if name=='CAPACITY' else None)
@@ -43,9 +43,9 @@ class ConfigExecutionChecks(ConfigChecks):
                 require([(e['route'],bytes.fromhex(e['request_hex'])) for e in suppressed]==(probes if writing else []),'save busy requests were answered or lost from observation')
                 require(all(e['reply_hex'] is None for e in suppressed),'save answered other requests while writing')
                 if name=='TLV':require(p==b'\xff','save unsupported raw tag differs')
-                elif name=='CAPACITY':require(p==b'\1\1\0\3','save capacity cause differs')
+                elif name=='CAPACITY':require(dict(tlvs(p)).get(1)==b'\3','save capacity cause differs')
                 else:
-                    require(len(p)>=4 and int.from_bytes(p[:4],'little')==h,'prepared save hash differs');tlvs(p[4:])
+                    require(len(p)>=4 and int.from_bytes(p[:4],'little')==g,'prepared save generation differs');tlvs(p[4:])
                 if name.startswith('EXPIRE-'):
                     self.a.advance(599);require(self.a.state()['core']['holder']==sid,'writer lease expired early')
                     self.a.advance(1);expired=self.observe(name+'-expired')
@@ -73,4 +73,4 @@ class ConfigExecutionChecks(ConfigChecks):
         rows=self.c.results[start:]
         return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,full_conformance=False,state_observations=self.observations,
                     unchecked=['actual wall-clock Host timeout and physical flash','queued input behavior after save and actual concurrent transports',
-                               'force/open races during pending response','all config items and production implementation'])
+                               'force/open races during pending response','erase execution timing','production implementation'])

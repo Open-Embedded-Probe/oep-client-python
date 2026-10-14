@@ -9,7 +9,9 @@ from test_conformance import REG
 # The public tests carry only the registry subset they actually consume.
 SPECS=[{'name':name,'revision':1,'op':[{'name':op,'code':code} for op,code in operations],
         'tlv':{'describe':{'mechanisms' if name.endswith('console') else 'max_connections':64}},
-        'enum':{'mechanism':{'sdi':0,'dmdata':1,'dmseq':2,'none':255}} if name.endswith('console') else
+        'enum':{'mechanism':{'sdi':0,'dmdata':1,'dmseq':2,'none':255},'mark_kind':{'reset':0x40,'restart':0x41},
+                'mark_detail_reset':{'ndmreset':1},'mark_detail_restart':{'havereset':1,'resync':2},
+                'mark_detail_lost':{'target_timeout':0x40}} if name.endswith('console') else
                {'pin_role':{'swdio':1,**({} if name.endswith('swio') else {'swclk':2})}}}
        for name,operations in [(name,[('scan',16),('attach',17),('detach',18),('connections',19)]) for name in
                                ('oep.wire.rvswd','oep.wire.swio','oep.wire.swd')]+[('oep.target.console',list(zip(('open','read','marks','clear','mark','write','close','streams'),range(16,24))))]]

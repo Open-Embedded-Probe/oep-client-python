@@ -41,7 +41,7 @@ class OepDeclarationModel(ResourceModel):
         e=self.extension;fixed,free=e.fixed,e.free
         if len(request)>=6:
             fn=struct.unpack_from('<H',request,3)[0]
-            if fn==4:e.fixed={16:3,17:13,18:6,19:2,20:3,21:4,22:2,23:2};e.free={17,18,23}
+            if fn==4:e.fixed={16:5,17:15,18:8,19:4,20:5,21:6,22:4,23:2};e.free={17,18,23}
             else:e.fixed={17:9,18:4,19:1};e.free={19}
         try:return super().handle(request)
         finally:e.fixed,e.free=fixed,free

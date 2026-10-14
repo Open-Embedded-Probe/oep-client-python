@@ -16,15 +16,15 @@ fixtureの線切れ方針は「成功した操作を挟まずlineの操作が2�
 - `accept(request)`は要求を処理して応答writerを止める刺激。応答本文をhostへ返さず、ready/corrだけを返す。
   同じ要求を`Checks.exchange`へ渡すとwriterを進める。raw要求/応答はこの交換で記録する。
 - 閉じた後の同一要求再送は保存結果を返す。線へ再送せず、資源を復活させない。新しい要求で旧IDを使うとno_resource。
-- console読み中に判定したら、現在positionにlink-lost（8）、closed/connection_closed（9/4）を付けて閉じる。
-  要求中の判定にはconsole専用のlink-lostを付けない。
+- console読み中に判定したら、connectionとstreamをmarkなしで閉じる（読める相手がいない。console §2）。
+  旧streamへのreadはno_resource。
 - targetは閉じる直前のhost操作の状態に保つ。止まったhartも勝手に走らせない。
   別connectionとそのstream、target状態へ影響を与えない。閉じたpinにはidle駆動を残さない。
 
 `poll_cut(stream)`はDMSTATUS読みと線切れ判定を起こす明示的console刺激。
 `tick()`はtimer刺激。writer待ちの間は別要求とconsole刺激を拒否する単一writer fixtureであり、
-並行実行モデルではない。状態とadapter traceへ判定/response-write/mark/解放の順序を記録する。
-`archives`と`closed_targets`は検査用にコピーした観測記録で、閉じた資源をhostへ提供する仕組みではない。
+並行実行モデルではない。状態とadapter traceへ判定/response-write/解放の順序を記録する。
+`closed_targets`は検査用にコピーした観測記録で、閉じた資源をhostへ提供する仕組みではない。
 live stream、受信/送信バッファとprotocol/mailboxは解放し、旧streamへのreadは拒否する。
 
 ```sh
@@ -42,4 +42,3 @@ SWIO/SWD固有の切断経路、writer並行性、writer待ち中のlease期限�
 storeを起こす内部書き込みとproduction Host統合は未検査。
 
 writer待ち中のlease境界は、追加の[明示logical clock検査](writer-lease-conformance.ja.md)で扱う。
-session終了によるcloseはsession-ended 2、通常のconnection切断はconnection-closed 4として区別する。

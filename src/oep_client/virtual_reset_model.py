@@ -22,7 +22,6 @@ class Resets(Steps):
         status=0;flags=0;pc=0;cleaned=True
         try:
             self.writereg(parent,0x10,control|2);self.access.append(('ndmreset-assert',parent))
-            for rid in related:self.streams[rid][1].mark(1,1)
             self.writereg(parent,0x10,control);self.access.append(('ndmreset-release',parent,target['haltreq']))
             target['pc']=0x2000;target['halted']=mode==2
             failures=5 if result=='dm-line' else 2 if result=='dm-recover' else 0
@@ -34,8 +33,7 @@ class Resets(Steps):
             else:
                 self.access.append(('ack-havereset',parent))
                 for rid in related:
-                    self.streams[rid][1].mark(2,1)
-                    if rid in self.protocols:self.protocols[rid]=initial()
+                    if rid in self.protocols:self.protocols[rid]=initial()   # dmseq unsynced again (debug §4.6)
                 if result=='state-timeout':status=4;target['halted']=mode!=2
                 elif result=='fault':status=3
                 else:
@@ -45,6 +43,8 @@ class Resets(Steps):
             if cleaned:target['haltreq']=False                        # lowered in both modes; mode 2 stays halted
             self.writereg(parent,0x10,control if target['haltreq'] else control&~0x80000000)
             for rid in related:self.mailboxes[rid]['debug_busy']=False
+        if not status:
+            for rid in related:self.streams[rid][1].mark(0x40,1)       # a successful reset op: one reset mark (§4.6)
         answer=Completed(struct.pack('<BBI',status,flags,pc)+tlv(127,b'x'),int(bool(status)))
         if not cleaned:self.close_connection(parent)                   # after the answer (debug §4)
         return answer

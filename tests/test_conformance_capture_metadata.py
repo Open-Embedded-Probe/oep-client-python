@@ -8,11 +8,10 @@ from test_conformance_registered_ops import setup as registered_setup
 
 
 def setup():
-    _,original=registered_setup();reg=original.reg;reg['limits']={**reg.get('limits',{}),'wifi_min_max_frame':112}
-    tags={'oep.fixture.logic':{'mode':64,'rate_range':65,'channels':68,'trigger':69,'multirate':96},'oep.fixture.analog':{'mode':64,'rate_range':65,'channels':68,'trigger':69,'frontend':70},'oep.fixture.capture-group':{'tracks':64},'oep.probe.config':{'items':65,'slots_max':66,'wifi_max':70}}
+    _,original=registered_setup();reg=original.reg
+    tags={'oep.fixture.logic':{'mode':64,'rate_range':65,'channels':68,'trigger':69,'multirate':96},'oep.fixture.analog':{'mode':64,'rate_range':65,'channels':68,'trigger':69,'frontend':70},'oep.fixture.capture-group':{'tracks':64},'oep.probe.config':{'storage':64,'items':65}}
     for s in reg['interface']:
         if s['name'] in tags:s['tlv']={'describe':tags[s['name']]}
-        if s['name']=='oep.probe.config':s['tlv']['item']={'wifi':8}
     model=CaptureMetadataModel(lambda:0,boot_id=17);return model,Checks(model.handle,reg,'virtual-resource-1')
 
 
@@ -32,7 +31,7 @@ def test_metadata_passes_read_only():
     *[(fn,5,struct.pack('<I',bit)) for fn in (14,15,16) for bit in (1,2,4)],
     (14,65,struct.pack('<IIB',1,2,2)),(14,68,b'\0\0'),(15,70,None),(15,70,b'\0'),
     (16,64,None),(16,64,b''),(16,64,b'\2\x0e\0'),(16,5,None),(16,5,b'\0'),
-    (17,65,None),(17,66,None),(17,66,b''),(17,66,b'\0\0'),
+    (17,65,None),(17,65,b''),(17,65,b'\2\3\2'),(17,65,b'\2\x80'),
     (14,96,b'\0'),(14,96,struct.pack('<IIIB',0,2,8,0)),(14,96,struct.pack('<IIIB',1,1,8,0)),(14,96,struct.pack('<IIIB',1,8,2,0)),(14,96,struct.pack('<IIIB',1,2,8,2)),
 ])
 def test_metadata_defects(fn,tag,value):
@@ -55,27 +54,9 @@ def test_future_feature_bits_not_reserved_low_bits(fn):
     model,c=setup();replace(model,fn,5,struct.pack('<I',8));assert CaptureMetadataChecks(c,model.metadata_selection).run()['status']=='passed'
 
 
-@pytest.mark.parametrize('value',[None,b'',b'\0',b'\0\0'])
-def test_wifi_capacity_condition_and_shape(value):
-    model,c=setup();replace(model,17,70,value)
-    r=CaptureMetadataChecks(c,model.metadata_selection).run()
-    assert r['status']==('passed' if value is None else 'failed')
-
-
-@pytest.mark.parametrize('frame,other,expected',[(111,False,'failed'),(112,False,'passed'),(128,False,'passed'),(128,True,'failed')])
-def test_wifi_all_route_minimum(frame,other,expected):
-    model,c=setup();model.ep.probe.max_frame=frame;replace(model,17,65,b'\x08');replace(model,17,70,b'\1')
-    if other:model.ep.static[0]+=(tlv(73,b'\1\6\xff'),)
-    r=CaptureMetadataChecks(c,model.metadata_selection).run();assert r['status']==expected,r['checks']
-
-
-def test_wifi_max_not_made_mandatory_by_registry_comment():
-    model,c=setup();model.ep.probe.max_frame=112;replace(model,17,65,b'\x08')
-    assert CaptureMetadataChecks(c,model.metadata_selection).run()['status']=='passed'
-
-
-@pytest.mark.parametrize('tag,value',[(65,b''),(66,b'\0')])
-def test_no_invented_positive_config_minimum(tag,value):
+@pytest.mark.parametrize('tag,value',[(66,None),(66,b''),(70,b'\0\0'),(65,b'\2\3\7')])
+def test_config_items_only(tag,value):
+    # slots_max/wifi_max are gone: their presence or shape is not checked; items is the only config declaration checked here.
     model,c=setup();replace(model,17,tag,value);assert CaptureMetadataChecks(c,model.metadata_selection).run()['status']=='passed'
 
 

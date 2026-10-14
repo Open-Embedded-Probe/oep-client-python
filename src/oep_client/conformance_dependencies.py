@@ -21,13 +21,13 @@ class DependencyChecks:
         self.c.confirm();self.c.identity();require(result['boot_id']==self.c.boot,'boot readback')
 
     def allocate(self, group, sid, parent=0):
-        req=self.request(group,'attach' if group=='connection' else 'open',sid,b'' if group=='connection' else struct.pack('<H',parent))
-        value=self.c.success(req);require(len(value)>=2,'created ID missing');tlvs(value[2:])
-        rid=struct.unpack_from('<H',value)[0];require(rid!=0,'zero resource ID')
+        req=self.request(group,'attach' if group=='connection' else 'open',sid,b'' if group=='connection' else struct.pack('<I',parent))
+        value=self.c.success(req);require(len(value)>=4,'created ID missing');tlvs(value[4:])
+        rid=struct.unpack_from('<I',value)[0];require(rid!=0,'zero resource ID')
         return rid,req
 
     def read(self, rid, sid=0):
-        req=self.request('stream','read',sid,struct.pack('<HBQH',rid,1,0,32));value=self.c.success(req)
+        req=self.request('stream','read',sid,struct.pack('<IBQH',rid,1,0,32));value=self.c.success(req)
         require(len(value)>=11,'read shape');start,flags,size=struct.unpack_from('<QBH',value)
         require(size<=32 and len(value)>=11+size,'read size');tlvs(value[11+size:])
         return (start,flags,value[11:11+size]),req,value
@@ -37,9 +37,9 @@ class DependencyChecks:
         for _ in range(9):
             value=self.c.success(self.request(group,'list',payload=struct.pack('<H',first)))
             require(len(value)>=2 and value[0] in (0,1),'resource list header')
-            more,count=value[:2];width=2 if group=='connection' else 4
+            more,count=value[:2];width=4 if group=='connection' else 8
             require(len(value)>=2+width*count,'list count');tlvs(value[2+width*count:])
-            rows=[struct.unpack_from('<H' if width==2 else '<HH',value,2+i*width) for i in range(count)]
+            rows=[struct.unpack_from('<I' if width==4 else '<II',value,2+i*width) for i in range(count)]
             result.extend(rows)
             if not more:return result
             require(count>0,'list page made no progress');first+=count
@@ -55,15 +55,15 @@ class DependencyChecks:
         require(dict(reversed(tlvs(self.c.rejected(req,'unavailable')))).get(1)==b'\x06','wrong resource kind cause')
 
     def missing(self, rid, sid):
-        for action,payload in [('read',struct.pack('<HBQH',rid,1,0,1)),('marks',struct.pack('<HI',rid,0)),
-                               ('clear',struct.pack('<H',rid)),('mark',struct.pack('<HB',rid,1)),
-                               ('write',struct.pack('<HH',rid,1)+b'x'),('close',struct.pack('<H',rid))]:
+        for action,payload in [('read',struct.pack('<IBQH',rid,1,0,1)),('marks',struct.pack('<II',rid,0)),
+                               ('clear',struct.pack('<I',rid)),('mark',struct.pack('<IB',rid,1)),
+                               ('write',struct.pack('<IH',rid,1)+b'x'),('close',struct.pack('<I',rid))]:
             self.c.rejected(self.request('stream',action,0 if action in ('read','marks') else sid,payload),'no_resource')
 
     def populate(self, sid):
         parent,_=self.allocate('connection',sid);child,_=self.allocate('stream',sid,parent)
         self.a.feed_bytes(child,b'abc')
-        accepted=self.c.success(self.request('stream','write',sid,struct.pack('<HH',child,3)+b'xyz'))
+        accepted=self.c.success(self.request('stream','write',sid,struct.pack('<IH',child,3)+b'xyz'))
         require(len(accepted)>=2 and struct.unpack_from('<H',accepted)[0]==3,'resource write acceptance');tlvs(accepted[2:])
         state=self.visible()['streams'][child]
         require(state['position']==3 and state['data']==b'abc' and state['tx']==b'xyz','populate resource state')
@@ -80,23 +80,23 @@ class DependencyChecks:
                 require(self.visible()==before,'read consumed or mutated state')
                 ids=list(before['connections'])+list(before['streams']);require(len(set(ids))==4,'global resource ID space')
             elif kind=='CLEAR':
-                self.empty(self.request('stream','clear',sid,struct.pack('<H',s)))
+                self.empty(self.request('stream','clear',sid,struct.pack('<I',s)))
                 state=self.visible()['streams'][s]
                 require(state['position']==3 and state['data']==b'' and state['tx']==b'xyz' and state['marks'][-1][2]==2,'clear destroyed queue/position or missed mark')
             elif kind=='CLOSE':
-                self.empty(self.request('stream','close',sid,struct.pack('<H',s)))
+                self.empty(self.request('stream','close',sid,struct.pack('<I',s)))
                 state=self.visible();require(p in state['connections'] and not state['streams'],'stream close released parent or retained buffers')
                 self.missing(s,sid);fresh,_=self.allocate('stream',sid,p);new=self.visible()['streams'][fresh]
                 require(fresh>s and new['position']==0 and new['next_serial']==0 and not new['data'] and not new['marks'] and not new['tx'],'recreated stream reused state/ID')
             elif kind=='WRONG-KIND':
                 before=self.visible()
-                self.cause(self.request('stream','read',payload=struct.pack('<HBQH',p,1,0,1)))
-                self.cause(self.request('connection','use',sid,struct.pack('<H',s)))
-                self.cause(self.request('stream','open',sid,struct.pack('<H',s)))
+                self.cause(self.request('stream','read',payload=struct.pack('<IBQH',p,1,0,1)))
+                self.cause(self.request('connection','use',sid,struct.pack('<I',s)))
+                self.cause(self.request('stream','open',sid,struct.pack('<I',s)))
                 require(self.visible()==before,'wrong kind changed resources')
             elif kind=='UNKNOWN':
                 before=self.visible();self.missing(65535,sid)
-                self.c.rejected(self.request('stream','open',sid,struct.pack('<H',65535)),'no_resource')
+                self.c.rejected(self.request('stream','open',sid,struct.pack('<I',65535)),'no_resource')
                 require(self.visible()==before,'missing resource changed state')
             else:
                 before=self.visible();self.a.reset_target(p);after=self.visible()
@@ -109,18 +109,18 @@ class DependencyChecks:
         with self.c.holding(3000) as sid:
             p,s=self.populate(sid);other,_=self.allocate('stream',sid,p)
             for detail in range(4):
-                req=self.request('stream','mark',sid,struct.pack('<HB',s,detail));self.empty(req)
+                req=self.request('stream','mark',sid,struct.pack('<IB',s,detail));self.empty(req)
                 stable=self.visible();self.empty(req);require(self.visible()==stable,'replayed mark duplicated')
             before=self.visible();expected=before['streams'][s]['marks'];rows=[];serial=0
             for _ in range(4):
-                value=self.c.success(self.request('stream','marks',payload=struct.pack('<HI',s,serial)))
+                value=self.c.success(self.request('stream','marks',payload=struct.pack('<II',s,serial)))
                 require(len(value)>=2 and value[0] in (0,1),'marks header');more,count=value[:2]
                 require(len(value)>=2+22*count,'marks size');tlvs(value[2+22*count:])
                 rows += [struct.unpack_from('<IQBQB',value,2+22*i) for i in range(count)]
                 if not more:break
                 require(count>0,'marks made no progress');serial=(rows[-1][0]+1)&0xffffffff
             require(rows==expected and [row[4] for row in rows]==list(range(4)),'resource mark routing/serial/detail')
-            value=self.c.success(self.request('stream','marks',payload=struct.pack('<HI',other,0)))
+            value=self.c.success(self.request('stream','marks',payload=struct.pack('<II',other,0)))
             require(value[:2]==b'\0\0','marks leaked to other stream');tlvs(value[2:])
             require(self.visible()==before,'marks consumed or changed resources')
 
@@ -129,13 +129,13 @@ class DependencyChecks:
         with self.c.holding(3000) as sid:
             p,s=self.populate(sid);before=self.visible()
             if malformed:
-                for group,action,payload in [('stream','read',struct.pack('<H',s)),('stream','marks',struct.pack('<H',s)),
-                                             ('stream','write',struct.pack('<HH',s,4)+b'ab'),('connection','detach',b'')]:
+                for group,action,payload in [('stream','read',struct.pack('<I',s)),('stream','marks',struct.pack('<I',s)),
+                                             ('stream','write',struct.pack('<IH',s,4)+b'ab'),('connection','detach',b'')]:
                     self.c.rejected(self.request(group,action,sid,payload),'malformed')
             else:
                 foreign=sid%0xffffffff+1
-                for group,action,payload in [('stream','close',struct.pack('<H',s)),('connection','detach',struct.pack('<H',p)),
-                                             ('stream','write',struct.pack('<HH',s,1)+b'x')]:
+                for group,action,payload in [('stream','close',struct.pack('<I',s)),('connection','detach',struct.pack('<I',p)),
+                                             ('stream','write',struct.pack('<IH',s,1)+b'x')]:
                     self.c.rejected(self.request(group,action,foreign,payload),'locked')
             require(self.visible()==before,'refused request changed dependencies or buffers')
 
@@ -157,28 +157,28 @@ class DependencyChecks:
             p2,_=self.allocate('connection',sid);other,_=self.allocate('stream',sid,p2);self.a.feed_bytes(other,b'other')
             before=self.visible()
             if external:self.a.break_connection(p)
-            else:self.empty(self.request('connection','detach',sid,struct.pack('<H',p)))
+            else:self.empty(self.request('connection','detach',sid,struct.pack('<I',p)))
             after=self.visible();self.release_order(before,after,{p})
             require(after['streams'][other]==before['streams'][other] and after['connections']==[p2],'detach affected unrelated connection')
             self.missing(s,sid);self.missing(s2,sid)
-            self.c.rejected(self.request('connection','use',sid,struct.pack('<H',p)),'no_resource')
+            self.c.rejected(self.request('connection','use',sid,struct.pack('<I',p)),'no_resource')
 
     def replay(self):
         self.fresh()
         with self.c.holding(3000) as sid:
             p,_=self.allocate('connection',sid);s,opened=self.allocate('stream',sid,p)
             self.a.feed_bytes(s,b'old');_,read,old=self.read(s,sid)
-            closed=self.request('stream','close',sid,struct.pack('<H',s));self.empty(closed)
+            closed=self.request('stream','close',sid,struct.pack('<I',s));self.empty(closed)
             fresh,_=self.allocate('stream',sid,p);self.a.feed_bytes(fresh,b'new');before=self.visible()
-            require(self.c.success(opened)[:2]==struct.pack('<H',s),'replayed open changed ID')
+            require(self.c.success(opened)[:4]==struct.pack('<I',s),'replayed open changed ID')
             require(self.c.success(read)==old,'replayed read lost historical bytes')
             self.empty(closed);require(self.visible()==before,'replay resurrected resource or closed replacement')
-            self.c.rejected(self.request('stream','read',payload=struct.pack('<HBQH',s,1,0,1)),'no_resource')
+            self.c.rejected(self.request('stream','read',payload=struct.pack('<IBQH',s,1,0,1)),'no_resource')
 
     def detach_replay(self):
         self.fresh()
         with self.c.holding(3000) as sid:
-            p,s=self.populate(sid);req=self.request('connection','detach',sid,struct.pack('<H',p));self.empty(req)
+            p,s=self.populate(sid);req=self.request('connection','detach',sid,struct.pack('<I',p));self.empty(req)
             new,child=self.populate(sid);before=self.visible();self.empty(req)
             require(self.visible()==before and new>p and child>s,'detach replay affected replacement')
 
@@ -202,7 +202,7 @@ class DependencyChecks:
             after=self.visible();self.release_order(before,after,{p});require(not after['connections'] and not after['streams'],'session retained resources')
             if kind!='FORCE':
                 require(self.c.success(read)==old and self.visible()==after,'historical read resurrected ended resources')
-                self.c.rejected(self.request('connection','use',sid,struct.pack('<H',p)),'no_session')
+                self.c.rejected(self.request('connection','use',sid,struct.pack('<I',p)),'no_session')
                 new=secrets.randbelow(0xffffffff)+1
                 while new==sid:new=secrets.randbelow(0xffffffff)+1
                 self.c.corr=0;self.c.success(self.c.request(self.c.core['open'],struct.pack('<IB',3000,0),session=new));self.c.session=new
@@ -225,8 +225,9 @@ class DependencyChecks:
                     a['stream']['addressing']=='resource' and a['reference'] and a['tx_capacity']==4 and a['max_resources']==8,'explicit dependency adoption/geometry')
             require(all(callable(getattr(self.a,key,None)) for key in ('restart_fixture','feed_bytes','reset_target','break_connection','dependency_state')),'adapter controls required')
             require(self.a.reset_scope=='logical-model' and a['connection']['fn']!=a['stream']['fn'],'logical resource fixture required')
-            require(self.c.reg['common']['enum']['mark_kind']['clear']==6 and self.c.reg['common']['enum']['mark_kind']['restart']==2 and
-                    self.c.reg['common']['enum']['mark_detail_restart']['havereset']==1,'selected SPEC mark mapping differs')
+            console=next(s for s in self.c.reg['interface'] if s['name']=='oep.target.console' and s['revision']==1)['enum']
+            require(self.c.reg['common']['enum']['mark_kind']['clear']==2 and console['mark_kind']['restart']==0x41 and
+                    console['mark_detail_restart']['havereset']==1,'selected SPEC mark mapping differs')
             needed_ops={'connection':{'attach','detach','use','list'},'stream':{'open','read','marks','clear','mark','write','close','list'}}
             require(all(set(a[group]['ops'])==needed and len(set(a[group]['ops'].values()))==len(needed) for group,needed in needed_ops.items()),'adopted operation mapping incomplete/aliased')
             self.c.confirm();self.c.identity();self.c.declarations();listed=self.c.list_snapshot()

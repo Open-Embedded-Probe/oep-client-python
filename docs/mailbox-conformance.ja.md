@@ -7,10 +7,9 @@
 
 前提1項目＋動作22項目。対象はmechanism 0/1を明示提供する論理sampleである。
 
-- SDIはL=0〜7を検査し、L=1〜7ではDATA0→DATA1読出し→DATA0=0の順で受信する。
+- SDIはL=0〜7を検査し、L=1〜7ではDATA0→DATA1読出し→DATA0=0の順で受信する。L≥8は枠でないのでDATA0=0で消す（console §3.1）。
   L=8〜255では受信も消去もしない。短い枠でもDATA1を読む。
-- SDIには送信列がない。§3.1の方式固有規則に従い、ゼロ長を含めwriteはaccepted 0 / completed failed。
-  共通writeのゼロ長successは機構1には適用するが、SDIの明示例外へ置き換えない。
+- SDIには送信列がない。SDI streamへのwriteはゼロ長を含めunsupported（payload 0）。
 - DMDATAはT=0の状態byte全128値で無操作。T=1ではL=4の空枠、L=5〜11の受信、
   L=0〜3/12〜63の消去を検査する。bit 6は無視する。DATA1は受信が4 byte以上の場合だけ読む。
 - 有効target枠にはDATA0をちょうど1回書き、DATA1は書かない。送りの列から最大3 byteの先頭を
@@ -30,7 +29,7 @@
 
 単体23件には15種類の誤動作注入を含む。DATA1の欠落/過剰読出し/書込み、不正枠消去の違反、
 自己応答の上書き、queueの誤消費/逆順/短縮、halt/debug中アクセス、DMSTATUS順序違反、
-SDIゼロ長success、bit 6の誤解釈、ack未反映を独立検査で検出する。
+SDI writeの受理、bit 6の誤解釈、ack未反映を独立検査で検出する。
 
 `full_conformance`はfalse。dmseq、target自己reset/restart mark、実際の標準riscv-dm要求との
 arbitration、物理DMI/timing/配送、production Host統合、別queue/ring容量と並行pollerは未検査。

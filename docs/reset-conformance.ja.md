@@ -22,9 +22,8 @@ resetを提供しないprobeへ実装を要求するものではない。
   読みは全体上限より前に行い、DMが戻らなくてもconnection/streamを保つ。
   この間隔/回数を他probeへ要求しない。wire wakeの再送は任意なので必須条件にしない。
 - DMが応えたらhaveresetを確認応答。各streamのdmseqを未同期へ戻し、pendingを捨てる。
-  生きたbuffer/position/送りqueueは保つ。reset mark（detail 1 ndmreset）と
-  restart mark（detail 1 havereset）を区別し、wire marks読出しでも確認する
-  （markの種類と付け方はconsoleの段で今の仕様へ合わせる。今は従来の番号）。
+  生きたbuffer/position/送りqueueは保つ。reset mark（0x40/detail 1 ndmreset、reset opが成功したときだけ）と
+  restart mark（0x41/detail 1 havereset）を区別し、wire marks読出しでも確認する。
   DMが戻らずhavereset未観測ならrestartを付けない。未観測時のdmseq同期解除は合否条件にしない。
 - 同じconnectionのconsole pollはreset中にscratchへ触れず、
   別connectionのtarget/mailbox/protocol/streamへ影響を与えない。

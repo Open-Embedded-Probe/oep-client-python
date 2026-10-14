@@ -6,21 +6,24 @@ No operation behavior or mandatory describe metadata is certified here.
 from .conformance import require, ops
 
 
+# An optional op that requires another: state with save, marks with mark.
+IMPLIED={'oep.probe.config':(('save','state'),),
+         'oep.target.console':(('mark','marks'),),'oep.fixture.uart':(('mark','marks'),)}
 POLICIES={
     'oep.probe.plan':((),(),'plan §1'),
     'oep.probe.restart':((),(),'restart §1'),
-    'oep.probe.link':(('port_speed',),(),'link §1'),
+    'oep.probe.link':(('port_speed','port_state'),(),'link §1'),
     **{n:(('scan',),(),'debug §1/3/5') for n in ('oep.wire.rvswd','oep.wire.swio','oep.wire.swd')},
-    'oep.target.riscv-dm':(('reset','read_block','write_block','run','step'),(('read_block','write_block'),),'debug §4'),
+    'oep.target.riscv-dm':(('halt','resume','reset','read_block','write_block','run','step'),(('read_block','write_block'),),'debug §4'),
     'oep.target.arm-adi':((),(),'debug §6'),
-    'oep.target.console':((),(),'console §1'),
+    'oep.target.console':(('marks','clear','mark','write'),(),'console §1'),
     'oep.fixture.gpio':((),(),'fixture §1'),
-    'oep.fixture.uart':((),(),'fixture §2'),
+    'oep.fixture.uart':(('marks','clear','mark','write'),(),'fixture §2'),
     'oep.fixture.i2c-target':(('stretch',),(),'fixture §3'),
     'oep.fixture.spi-target':((),(),'fixture §4'),
     **{n:(('force','query','subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §3') for n in ('oep.fixture.logic','oep.fixture.analog')},
     'oep.fixture.capture-group':(('force','subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §4'),
-    'oep.probe.config':(('save','erase'),(('save','erase'),),'probe-config §4'),
+    'oep.probe.config':(('save','erase','state'),(('save','erase'),),'probe-config §2, §4'),
 }
 
 
@@ -32,6 +35,7 @@ class RegisteredOpsChecks:
         require(tag in values,'mandatory ops declaration missing');offered=ops(values[tag]);required={code for op,code in codes.items() if op not in optional}
         require(required<=offered,'mandatory standard op missing')
         for first,second in pairs:require((codes[first] in offered)==(codes[second] in offered),'paired optional standard ops must be offered together')
+        for first,then in IMPLIED.get(name,()):require(codes[first] not in offered or codes[then] in offered,'an optional op requires its companion op')
         if name=='oep.fixture.logic':
             analog={row['name']:row['code'] for row in self.specs['oep.fixture.analog']['op']}
             require(analog['calibration'] not in offered,'logic must not advertise analog-only calibration')

@@ -5,10 +5,12 @@ from oep_client.conformance_dependencies import DependencyChecks
 from oep_client.conformance_dependency_sample import SampleDependencyAdapter
 from oep_client.virtual_dependency_model import DependencyModel
 from test_conformance import REG
+from test_conformance_oep_declarations import SPECS
 
 
 def setup():
-    reg=copy.deepcopy(REG);reg['common']={'enum':{'mark_kind':{'clear':6,'restart':2},'mark_detail_restart':{'havereset':1}}}
+    reg=copy.deepcopy(REG);reg['common']={'enum':{'mark_kind':{'lost':1,'clear':2,'host':3}}}
+    reg['interface']=[copy.deepcopy(s) for s in SPECS if s['name']=='oep.target.console']   # restart mark: console's own kind
     now=[0];model=DependencyModel(lambda:now[0],boot_id=17);c=Checks(model.handle,reg,'virtual-resource-1')
     return model,c,SampleDependencyAdapter(model),lambda seconds:now.__setitem__(0,now[0]+int(seconds*1000))
 
@@ -32,11 +34,11 @@ def test_dependency_mutants_fail(defect):
             else:close(rid)
         e.close_connection=bad_close
         def bad_dispatch(fn,op,payload):
-            if defect=='implicit_last' and fn==2 and op==17 and e.streams:payload=max(e.streams).to_bytes(2,'little')+payload[2:]
+            if defect=='implicit_last' and fn==2 and op==17 and e.streams:payload=max(e.streams).to_bytes(4,'little')+payload[4:]
             result=dispatch(fn,op,payload)
             if fn==2 and op==22 and defect=='close_parent':e.release()
             if fn==2 and op==19 and defect=='clear_tx':e.streams[int.from_bytes(payload,'little')][1].tx.clear()
-            if fn==2 and op==17 and defect=='read_consume':e.streams[int.from_bytes(payload[:2],'little')][1].data.clear()
+            if fn==2 and op==17 and defect=='read_consume':e.streams[int.from_bytes(payload[:4],'little')][1].data.clear()
             if defect=='reuse_id' and fn==2 and op==22:e.next_id-=1
             return result
         e.dispatch=bad_dispatch
@@ -60,7 +62,7 @@ def test_adoption_preflight_blocks_invalid_configuration(invalid):
     elif invalid=='addressing':a.adoption['stream']['addressing']='persistent-fn'
     elif invalid=='ops':a.adoption['stream']['ops'].pop('write')
     elif invalid=='scope':a.reset_scope='physical'
-    else:c.reg['common']['enum']['mark_kind']['restart']=3
+    else:c.reg['common']['enum']['mark_kind']['clear']=6
     r=DependencyChecks(c,a,wait=wait).run()
     assert r['checks'][0]['status']=='failed'
     assert not c.trace and not a.trace and all(x['status']=='blocked' for x in r['checks'][1:])
@@ -87,7 +89,7 @@ def test_wire_dependency_defects_fail(defect):
         result=restart();e=model.extension;dispatch=e.dispatch
         def bad(fn,op,payload):
             if defect=='marks_wrong_resource' and fn==2 and op==18 and e.streams:
-                payload=max(e.streams).to_bytes(2,'little')+payload[2:]
+                payload=max(e.streams).to_bytes(4,'little')+payload[4:]
             if defect=='detach_twice' and fn==1 and op==17 and int.from_bytes(payload,'little') not in e.connections:
                 from oep_client.virtual_core import Reject
                 raise Reject(10)

@@ -10,7 +10,7 @@ class MailboxChecks(AttachChecks):
         padded=data.ljust(7,b'\xa5')
         return status|int.from_bytes(padded[:3],'little')<<8,int.from_bytes(padded[3:7],'little')
     def write(self,sid,rid,data,outcome,accepted):
-        req=self.request(4,'write',sid,struct.pack('<HH',rid,len(data))+data)
+        req=self.request(4,'write',sid,struct.pack('<IH',rid,len(data))+data)
         before=self.a.state();value=self.c.exchange(req)
         require(value is not None and len(value)>=7 and value[:5]==struct.pack('<BHBB',2,struct.unpack_from('<H',req,1)[0],1,outcome),'console write completion classification')
         require(struct.unpack_from('<H',value,5)[0]==accepted,'console accepted');tlvs(value[7:])
@@ -18,10 +18,10 @@ class MailboxChecks(AttachChecks):
         require(after['streams'][rid]['data']==before['streams'][rid]['data'] and after['mailboxes']==before['mailboxes'],'write accessed mailbox or changed received data')
         return req,value
     def read_all(self,rid,expected):
-        req=self.request(4,'read',0,struct.pack('<HBQH',rid,1,0,64));value=self.c.success(req)
+        req=self.request(4,'read',0,struct.pack('<IBQH',rid,1,0,64));value=self.c.success(req)
         require(len(value)>=11,'console read size');start,flags,count=struct.unpack_from('<QBH',value)
         require(start==0 and flags==0 and value[11:11+count]==expected,'mailbox buffer/read mismatch');tlvs(value[11+count:])
-        require(self.c.success(self.request(4,'read',0,struct.pack('<HBQH',rid,1,0,64)))==value,'console read consumed bytes')
+        require(self.c.success(self.request(4,'read',0,struct.pack('<IBQH',rid,1,0,64)))==value,'console read consumed bytes')
     def opened(self,sid,mechanism):
         parent,_=self.attach(sid);rid,_=self.console(sid,parent,mechanism);return rid
     def poll_expect(self,rid,data0,data1,received,operations,tx):
@@ -51,8 +51,7 @@ class MailboxChecks(AttachChecks):
             if mechanism==1:self.write(sid,rid,b'abcd',0,4)
             statuses=range(8,256) if mechanism==0 else [0x80|n for n in list(range(4))+list(range(12,64))]
             for status in statuses:
-                d0,d1=self.words(status);ops=[('read',0x11,0),('read',4,d0)]
-                if mechanism==1:ops.append(('write',4,0))
+                d0,d1=self.words(status);ops=[('read',0x11,0),('read',4,d0),('write',4,0)]   # not a frame: cleared (§3.1/3.2)
                 self.poll_expect(rid,d0,d1,b'',ops,b'abcd' if mechanism else b'')
             self.read_all(rid,b'')
     def own_turn(self):
@@ -70,8 +69,8 @@ class MailboxChecks(AttachChecks):
         self.fresh()
         with self.c.holding(3000) as sid:
             rid=self.opened(sid,0)
-            for data in (b'',b'x',b'1234567'):
-                before=self.a.state();self.write(sid,rid,data,1,0);require(self.a.state()==before,'SDI created or changed sender queue')
+            for data in (b'',b'x',b'1234567'):                 # SDI has no host -> target way: unsupported (console §1)
+                self.refused(self.request(4,'write',sid,struct.pack('<IH',rid,len(data))+data),'unsupported',b'\0')
     def queue(self,size):
         self.fresh()
         with self.c.holding(3000) as sid:
@@ -110,7 +109,7 @@ class MailboxChecks(AttachChecks):
         with self.c.holding(3000) as sid:
             rid=self.opened(sid,1);self.write(sid,rid,b'q',0,1);d0,d1=self.words(0x85,b'x')
             self.poll_expect(rid,d0,d1,b'x',[('read',0x11,0),('read',4,d0),('write',4,0x7105)],b'')
-            self.write(sid,rid,b'z',0,1);self.c.success(self.request(4,'clear',sid,struct.pack('<H',rid)))
+            self.write(sid,rid,b'z',0,1);self.c.success(self.request(4,'clear',sid,struct.pack('<I',rid)))
             state=self.a.state();require(state['streams'][rid]['data']==b'' and state['streams'][rid]['position']==1 and state['streams'][rid]['tx']==b'z','clear changed sender queue or position')
     def acknowledged(self,mechanism):
         self.fresh()

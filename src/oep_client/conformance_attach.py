@@ -43,14 +43,14 @@ class AttachChecks:
         require(self.a.state()==before,'refused request changed resource/allocator or touched target')
     def detach(self, sid, fn, rid):tlvs(self.c.success(self.request(fn,'detach',sid,struct.pack('<I',rid))))
     def console_request(self, sid, parent, mechanism=1, extra=b''):
-        return self.request(self.a.console_fn,'open',sid,struct.pack('<HB',parent,mechanism)+extra)
+        return self.request(self.a.console_fn,'open',sid,struct.pack('<IB',parent,mechanism)+extra)
     def console(self, sid, parent, mechanism=1):
         req=self.console_request(sid,parent,mechanism);value=self.c.success(req)
-        require(len(value)>=3,'console open fixed response');rid,flags=struct.unpack_from('<HB',value);tlvs(value[3:])
-        require(rid and flags==0,'console stream ID/flags');state=self.a.state()
+        require(len(value)>=4,'console open fixed response');rid=struct.unpack_from('<I',value)[0];tlvs(value[4:])
+        require(rid,'console stream ID');state=self.a.state()
         require(state['streams'][rid]['connection']==parent and state['streams'][rid]['mechanism']==mechanism,'console binding differs')
         return rid,req
-    def close(self,sid,rid):tlvs(self.c.success(self.request(self.a.console_fn,'close',sid,struct.pack('<H',rid))))
+    def close(self,sid,rid):tlvs(self.c.success(self.request(self.a.console_fn,'close',sid,struct.pack('<I',rid))))
     def wire_case(self, kind):
         self.fresh()
         with self.c.holding(3000) as sid:
@@ -110,17 +110,17 @@ class AttachChecks:
                 self.console(sid,parent,0)
                 for mechanism in (0,1):self.refused(self.console_request(sid,parent,mechanism),'unavailable',cause=6)
             elif kind=='MALFORMED':
-                self.refused(self.request(4,'open',sid,struct.pack('<H',parent)),'malformed')
+                self.refused(self.request(4,'open',sid,struct.pack('<I',parent)),'malformed')
                 self.refused(self.console_request(sid,parent,extra=b'\x7f'),'malformed')
             elif kind=='INDEPENDENT':
                 s1,_=self.console(sid,parent);p2,_=self.attach(sid,pair=(2,3));s2,_=self.console(sid,p2)
                 self.a.feed_bytes(s1,b'one');self.a.feed_bytes(s2,b'two')
                 value=self.c.success(self.request(4,'streams',0,b'\0\0'))
-                require(value[:2]==b'\0\x02' and len(value)>=12,'console streams page');tlvs(value[12:])
-                require([struct.unpack_from('<HHB',value,i) for i in (2,7)]==[(s1,parent,1),(s2,p2,1)],'console streams ordering/entry shape')
+                require(value[:2]==b'\0\x02' and len(value)>=20,'console streams page');tlvs(value[20:])
+                require([struct.unpack_from('<IIB',value,i) for i in (2,11)]==[(s1,parent,1),(s2,p2,1)],'console streams ordering/entry shape')
                 before=self.a.state()
                 for stream,data in ((s1,b'one'),(s2,b'two')):
-                    read=self.c.success(self.request(4,'read',0,struct.pack('<HBQH',stream,1,0,32)))
+                    read=self.c.success(self.request(4,'read',0,struct.pack('<IBQH',stream,1,0,32)))
                     require(len(read)>=14 and struct.unpack_from('<QBH',read)==(0,0,3) and read[11:14]==data,'console read selected wrong stream');tlvs(read[14:])
                 require(self.a.state()==before,'console read consumed buffer')
             else:

@@ -46,7 +46,7 @@ class LinkTransferChecks:
         require(self.a.retained_bytes>=23,'explicit small replay request/result retention required')
         spec=next(s for s in self.c.reg['interface'] if s['name']=='oep.probe.link')
         self.codes={row['name']:row['code'] for row in spec['op']}
-        require(self.codes==dict(source=16,sink=17,port_speed=18),'selected link operation numbers differ')
+        require(self.codes==dict(source=16,sink=17,port_speed=18,port_state=19),'selected link operation numbers differ')
         offered=ops(dict(reversed(self.c.describe(self.a.link_fn)))[self.c.reg['describe_common']['ops']])
         require(offered=={16,17},'mandatory-only profile must not advertise port_speed or unadopted ops')
     def fresh(self):

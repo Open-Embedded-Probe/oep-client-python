@@ -45,16 +45,17 @@ class ResetChecks(StepChecks):
         self.fresh()
         with self.c.holding(3000) as sid:
             parent=self.parent(sid,halt=False);rid,_=self.console(sid,parent,2)
-            self.c.success(self.request(4,'write',sid,struct.pack('<HH',rid,3)+b'ABC'));self.a.frame(rid,*target_frame(syn=True,data=b'before'));self.a.poll(rid)
+            self.c.success(self.request(4,'write',sid,struct.pack('<IH',rid,3)+b'ABC'));self.a.frame(rid,*target_frame(syn=True,data=b'before'));self.a.poll(rid)
             other,_=self.attach(sid,pair=(2,3));other_rid,_=self.console(sid,other,2);self.a.frame(other_rid,*target_frame(syn=True,data=b'peer'));self.a.poll(other_rid)
             self.c.success(self.request(5,'halt',sid,struct.pack('<I',parent)));before=self.a.state();self.reset(sid,parent,mode,result);after=self.a.state()
             require(before['protocols'][rid]['synced'] and before['protocols'][rid]['pending']==b'AB','explicit pending/reset premise')
             if result!='dm-line':require(not after['protocols'][rid]['synced'] and after['protocols'][rid]['pending']==b'','reset retained dmseq sync/pending')
             for field in ('data','position','tx'):require(after['streams'][rid][field]==before['streams'][rid][field],'reset lost live buffer/queue')
             marks=after['streams'][rid]['marks'];new=marks[len(before['streams'][rid]['marks']):]
-            require([(row[2],row[-1]) for row in new]==([(1,1)] if result=='dm-line' else [(1,1),(2,1)]) and all(row[1]==before['streams'][rid]['position'] for row in new),'reset/restart mark kind/detail/position')
+            # a successful reset op: one reset mark (0x40, ndmreset), no restart for the same reset; a failed one: none
+            require([(row[2],row[-1]) for row in new]==([] if result=='dm-line' else [(0x40,1)]) and all(row[1]==before['streams'][rid]['position'] for row in new),'reset mark kind/detail/position')
             for mark in new:
-                page=self.c.success(self.request(4,'marks',0,struct.pack('<HI',rid,mark[0])));count=page[1]
+                page=self.c.success(self.request(4,'marks',0,struct.pack('<II',rid,mark[0])));count=page[1]
                 require(count and struct.unpack_from('<IQBQB',page,2)==mark,'reset mark wire readback');tlvs(page[2+22*count:])
             for field in ('targets','streams','mailboxes','protocols'):
                 key=other if field=='targets' else other_rid;require(after[field][key]==before[field][key],'reset changed other connection')

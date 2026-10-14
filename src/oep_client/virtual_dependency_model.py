@@ -7,9 +7,9 @@ from .virtual_stream_model import Stream
 
 class Dependencies(Resources):
     functions=(1,2)
-    fixed={16:0,17:2,18:2,19:2}
+    fixed={16:0,17:4,18:4,19:2}
     free={19}
-    stream_fixed={16:2,17:13,18:6,19:2,20:3,21:4,22:2,23:2}
+    stream_fixed={16:4,17:15,18:8,19:4,20:5,21:6,22:4,23:2}   # resource ids u32 (common §1, §2; core §9)
     names=(b'io.github.open-embedded-probe.link',b'io.github.open-embedded-probe.resource-stream')
 
     def __init__(self, ep):
@@ -48,7 +48,7 @@ class Dependencies(Resources):
         for parent in list(self.connections):self.close_connection(parent)
 
     def listing(self, group, first):
-        rows=[struct.pack('<H',rid) for rid in self.connections] if group=='connection' else [struct.pack('<HH',rid,parent) for rid,(parent,_) in self.streams.items()]
+        rows=[struct.pack('<I',rid) for rid in self.connections] if group=='connection' else [struct.pack('<II',rid,parent) for rid,(parent,_) in self.streams.items()]
         page=bytearray(b'\0\0');index=first
         while index<len(rows) and len(page)+len(rows[index])+5+4<=self.ep.probe.max_frame:
             page.extend(rows[index]);page[1]+=1;index+=1
@@ -57,22 +57,22 @@ class Dependencies(Resources):
     def dispatch(self, fn, op, payload):
         if fn==1:
             if op==16:
-                rid=self.allocate();self.connections.append(rid);return struct.pack('<H',rid)
-            rid=struct.unpack('<H',payload)[0]
-            if op==19:return self.listing('connection',rid)
+                rid=self.allocate();self.connections.append(rid);return struct.pack('<I',rid)
+            if op==19:return self.listing('connection',struct.unpack('<H',payload)[0])
+            rid=struct.unpack('<I',payload)[0]
             self.resource(rid,'connection')
             if op==17:self.close_connection(rid)
             return b''
-        rid=struct.unpack_from('<H',payload)[0]
-        if op==23:return self.listing('stream',rid)
+        if op==23:return self.listing('stream',struct.unpack('<H',payload)[0])
+        rid=struct.unpack_from('<I',payload)[0]
         if op==16:
-            self.resource(rid,'connection');child=self.allocate();self.streams[child]=(rid,Stream(self.ep));return struct.pack('<H',child)
+            self.resource(rid,'connection');child=self.allocate();self.streams[child]=(rid,Stream(self.ep));return struct.pack('<I',child)
         self.resource(rid,'stream');s=self.streams[rid][1]
         if op==22:self.close_stream(rid);return b''
         if op==21:
-            count=struct.unpack_from('<H',payload,2)[0];accepted=min(count,4-len(s.tx));s.tx.extend(payload[4:4+accepted])
+            count=struct.unpack_from('<H',payload,4)[0];accepted=min(count,4-len(s.tx));s.tx.extend(payload[6:6+accepted])
             return Completed(struct.pack('<H',accepted),0 if accepted==count else (2 if accepted else 1))
-        return s.dispatch(1,op-1,payload[2:])
+        return s.dispatch(1,op-1,payload[4:])
 
 
 class DependencyModel(ResourceModel):
@@ -83,7 +83,7 @@ class DependencyModel(ResourceModel):
         e=self.extension;fixed,free=e.fixed,e.free
         if len(request)>=6 and struct.unpack_from('<H',request,3)[0]==2:
             e.fixed=dict(e.stream_fixed);e.free={17,18,23}
-            if request[5]==21 and len(request)>=14:e.fixed[21]=4+struct.unpack_from('<H',request,12)[0]
+            if request[5]==21 and len(request)>=16:e.fixed[21]=6+struct.unpack_from('<H',request,14)[0]
         try:return super().handle(request)
         finally:e.fixed,e.free=fixed,free
 

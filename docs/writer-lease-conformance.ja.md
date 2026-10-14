@@ -13,13 +13,13 @@
   rejectedでもsession判定を通った応答は更新する。同一要求再送では更新しない。
 - 実行時間1500 msはleaseより長いが、実行中は期限を数えない。writer待ちへ入った後は数える。
 - writer停止中に期限へ達したら、ownerと子stream/protocol/mailbox、connection、pinを解放する。
-  閉じる直前のtarget/halt状態を保つ。両connectionを解放し、closedの原因をsession-ended 2とする。
-- 線切れ判定済みでも、session期限切れの後始末として閉じたときはconnection-closed 4と混同しない。
+  閉じる直前のtarget/halt状態を保つ。両connectionを解放する。streamはbufferごと解放し、markは残さない（console §2）。
+- 線切れ判定済みのconnectionも、session期限切れの後始末として同じく閉じる。
 - キューに残る応答は当初の結果のまま返す。古いwriter tokenで所有権や資源を復活させない。
   保存結果の再送は再実行しない。旧sessionの新要求はno_session、新sessionが所有中ならlocked。
   新資源は同bootの旧IDを使い回さない。
 
-`archives`と`closed_targets`は検査用の観測コピーで、live資源ではない。
+`closed_targets`は検査用の観測コピーで、live資源ではない。
 lease経過は`tick()`で処理する。writerを停止したcaseはfinallyで必ず進めて後始末する。
 
 ```sh

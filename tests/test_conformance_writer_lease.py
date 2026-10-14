@@ -6,7 +6,7 @@ from test_conformance_cut import setup as cut_setup
 
 
 def setup():
-    _,c,_=cut_setup();c.reg['common']['enum']['mark_detail_closed']['session_ended']=2
+    _,c,_=cut_setup()
     model=WriterLeaseModel(boot_id=17)
     return model,Checks(model.handle,c.reg,'virtual-resource-1'),SampleWriterLeaseAdapter(model)
 
@@ -25,14 +25,13 @@ import pytest
     ('no_execution_pause','EXECUTION'),('no_expiry','EXPIRED'),
     ('stale_token','EXPIRED'),('no_generation','EXPIRED'),
     ('resources_left','EXPIRED'),('parent_first','EXPIRED'),
-    ('close_cause','EXPIRED'),('cut_cause','CUT-EXPIRED'),
     ('changed_hart','EXPIRED'),('drive_left','EXPIRED'),
     ('late_discard','EXPIRED'),
 ])
 def test_writer_lease_checker_detects_independent_faults(fault,case):
     model,c,a=setup();install=model.install;accept=model.accept_request;advance=model.writer_advance;flush=model.flush_response
     def faulty_install():
-        install();core=model.ep.current_core;e=model.extension;sent=core.response_sent;release=core.release;close=e.close_connection;close_stream=e.close_stream
+        install();core=model.ep.current_core;e=model.extension;sent=core.response_sent;release=core.release;close=e.close_connection
         if fault=='no_expiry':core.tick=lambda:None
         if fault=='resources_left':e.release=lambda:None
         def broken_sent(token,**kwargs):
@@ -49,15 +48,7 @@ def test_writer_lease_checker_detects_independent_faults(fault,case):
                 for pin in e.freed_pins:e.freed_pins[pin]['mode']='wire'
             if fault=='parent_first':
                 i=next(i for i,r in enumerate(e.lifecycle) if r[:2]==('connection-close',parent));e.lifecycle.insert(0,e.lifecycle.pop(i))
-        def broken_stream(rid):
-            if fault=='cut_cause':
-                releasing=e.releasing;e.releasing=False
-                try:return close_stream(rid)
-                finally:e.releasing=releasing
-            close_stream(rid)
-            if fault=='close_cause' and rid in e.archives:
-                marks=e.archives[rid]['marks'];marks[-1]=marks[-1][:4]+(4,)
-        core.response_sent=broken_sent;core.release=broken_release;e.close_connection=broken_close;e.close_stream=broken_stream
+        core.response_sent=broken_sent;core.release=broken_release;e.close_connection=broken_close
     model.install=faulty_install
     def broken_accept(req):
         old=model.execution_ms;result=accept(req);core=model.ep.current_core
@@ -80,7 +71,7 @@ def test_writer_lease_checker_detects_independent_faults(fault,case):
 def test_writer_lease_context_blocks(invalid):
     _,c,a=setup()
     if invalid=='scope':a.reset_scope='physical'
-    elif invalid=='mark':c.reg['common']['enum']['mark_detail_closed']['session_ended']=4
+    elif invalid=='mark':c.reg['common']['enum']['mark_kind']['closed']=9
     else:
         state=a.state
         def broken():
@@ -124,8 +115,7 @@ def test_existing_cut_fixture_uses_session_cause_on_expiry():
         a.accept(req)
         try:
             milliseconds[0]+=1000;a.tick();state=a.state()
-            assert not state['connections'] and not state['streams']
-            assert state['archives'][rid]['marks'][-1][2]==9 and state['archives'][rid]['marks'][-1][4]==2
+            assert not state['connections'] and not state['streams'] and rid not in state['streams']
         finally:
             c.exchange(req)
             if model.ep.current_core.holder is None:c.session=None

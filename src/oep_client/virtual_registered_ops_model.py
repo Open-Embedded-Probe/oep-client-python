@@ -7,12 +7,12 @@ from .virtual_core import Core, Reject, tlv
 MINIMAL={
     'oep.probe.plan':(16,17),'oep.probe.restart':(16,),'oep.probe.link':(16,17),
     'oep.wire.rvswd':(17,18,19),'oep.wire.swio':(17,18,19),'oep.wire.swd':(17,18,19),
-    'oep.target.riscv-dm':(16,17,18),'oep.target.arm-adi':(16,17,18),
-    'oep.target.console':tuple(range(16,24)),
-    'oep.fixture.gpio':(16,17),'oep.fixture.uart':tuple(range(16,23)),
+    'oep.target.riscv-dm':(16,),'oep.target.arm-adi':(16,17,18),
+    'oep.target.console':(16,17,22,23),
+    'oep.fixture.gpio':(16,17),'oep.fixture.uart':(16,17,22),
     'oep.fixture.i2c-target':tuple(range(16,20)),'oep.fixture.spi-target':tuple(range(16,20)),
     'oep.fixture.logic':(16,17,18,20,21,22,23),'oep.fixture.analog':(16,17,18,20,21,22,23,25),
-    'oep.fixture.capture-group':(16,17,18,20),'oep.probe.config':(16,17,20,21),
+    'oep.fixture.capture-group':(16,17,18,20),'oep.probe.config':(16,17,20),
 }
 
 

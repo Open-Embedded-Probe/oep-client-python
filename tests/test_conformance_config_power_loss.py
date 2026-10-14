@@ -44,7 +44,7 @@ def test_wrong_recovered_page_is_detected(case):
 @pytest.mark.parametrize('fault,case',[
     ('overwrite_active','REPLACE'),('erase_active','REUSE'),('choose_old','ACK'),('older_record','REUSE'),
     ('missing_commit','ACK'),('corrupt_crc','ACK'),('partial_items','REPLACE'),
-    ('wrong_idle','FIRST'),('execute_preset','REPLACE'),('reuse_boot','FIRST'),
+    ('wrong_idle','FIRST'),('keep_live_plan','REPLACE'),('lost_disable','REPLACE'),('wrong_generation','REUSE'),('reuse_boot','FIRST'),
     ('early_response','FIRST'),('recovery_writes','FIRST'),('old_session','FIRST'),
     ('old_history','FIRST'),('old_cache','FIRST'),
     ('resume_partial','REPLACE'),('ghost_new','REPLACE')])
@@ -55,8 +55,8 @@ def test_power_loss_faults_are_detected(fault,case):
     def run_case(name):
         nonlocal active
         active=name;return original_case(name)
-    def bad_begin(items,ids):
-        begin(items,ids)
+    def bad_begin(items):
+        begin(items)
         if active==case and fault=='overwrite_active':
             p=model.journal.pending;p['target']=model.journal.active;model.journal.cells[p['target']]=bytearray()
         if active==case and fault=='erase_active':model.journal.cells[model.journal.active]=bytearray()
@@ -74,16 +74,18 @@ def test_power_loss_faults_are_detected(fault,case):
         blob=recover()
         if active==case and fault=='older_record' and pending is not None:
             from oep_client.conformance_config_power_loss import OLDER
-            return dict(items={(t,v if t==1 else v[:2]):v for t,v in OLDER},identities={2:model.catalog[2]})
+            return list(OLDER)
         if active==case and fault=='choose_old':
             rows=[row for cell in model.journal.cells if (row:=model.journal.decode(cell)) is not None]
             if rows:return min(rows,key=lambda row:row[0])[1]
         return blob
     def tamper(event,holder):
         if active!=case:return event
-        if fault=='partial_items':model.extension.items[(2,b'\4\0')]=b'\4\0mixed'
-        if fault=='wrong_idle':model.extension.pins[1]=(4,0)
-        if fault=='execute_preset':model.extension.plans={2:[3]}
+        if fault=='partial_items':model.extension.items[(2,4)]=b'\4\0mixed'
+        if fault=='wrong_idle':model.extension.pins[1]=4
+        if fault=='keep_live_plan':model.extension.plans={2:[3]}
+        if fault=='lost_disable':model.extension.pins[6]=model.extension.pins[7]=0
+        if fault=='wrong_generation':model.extension.generation=2
         if fault=='reuse_boot':model.ep.boot_id=event['old_boot_id'];event['boot_id']=event['old_boot_id']
         if fault=='early_response':event['reply_hex']='0201000100'
         if fault=='recovery_writes':model.journal.cells[0].append(0)
@@ -94,15 +96,14 @@ def test_power_loss_faults_are_detected(fault,case):
     def bad_cut(req,at):
         nonlocal after_cut,unfinished
         if active==case and fault=='resume_partial':
-            import copy
-            unfinished=copy.deepcopy(dict(items=model.extension.items,identities={2:model.catalog[2]}))
+            unfinished=[(t,v) for (t,ch),v in sorted(model.extension.items.items())]
         holder=model.ep.current_core.holder;r=cut(req,at);after_cut=True;return tamper(r,holder)
     def bad_power():
         holder=model.ep.current_core.holder;r=power();return tamper(r,holder)
     def bad_restart():
         nonlocal after_cut
         if active==case and fault=='resume_partial' and after_cut:
-            model.journal.begin(unfinished['items'],unfinished['identities'])
+            model.journal.begin(unfinished)
             while model.journal.pending is not None:model.journal.step()
         after_cut=False;return restart()
     checker.case=run_case;model.journal.begin=bad_begin;model.journal.step=bad_step;model.journal.recover=bad_recover
@@ -111,7 +112,7 @@ def test_power_loss_faults_are_detected(fault,case):
     assert row['status']=='failed' and row['error'].startswith('Violation:'),row
 
 
-@pytest.mark.parametrize('missing',['state','seed','restart_fixture','prepare','write_steps','cut_save','power_cycle'])
+@pytest.mark.parametrize('missing',['state','seed','restart_fixture','generation_at','prepare','write_steps','cut_save','power_cycle'])
 def test_missing_controls_do_not_pass(missing):
     model,c=setup();a=SampleConfigPowerLossAdapter(model);setattr(a,missing,None)
     r=ConfigPowerLossChecks(c,a).run();assert r['checks'][2]['status']=='failed'

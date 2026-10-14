@@ -9,7 +9,7 @@ from test_conformance import REG
 # Independent literal op names/numbers, including all optional operations.
 OPERATIONS={
 'oep.probe.plan':[(16,'plan_apply'),(17,'plan_release')], 'oep.probe.restart':[(16,'restart')],
-'oep.probe.link':[(16,'source'),(17,'sink'),(18,'port_speed')],
+'oep.probe.link':[(16,'source'),(17,'sink'),(18,'port_speed'),(19,'port_state')],
 **{n:list(zip(range(16,20),('scan','attach','detach','connections'))) for n in ('oep.wire.rvswd','oep.wire.swio','oep.wire.swd')},
 'oep.target.riscv-dm':list(zip(range(16,24),('dmi','halt','resume','reset','read_block','write_block','run','step'))),
 'oep.target.arm-adi':[(16,'transfer'),(17,'read_block'),(18,'write_block')],
@@ -46,10 +46,10 @@ def test_every_minimal_mandatory_op_is_checked(name,code):
 
 @pytest.mark.parametrize('name,extra,passed',[
  ('oep.target.riscv-dm',{19,22,23},True),('oep.target.riscv-dm',{20},False),('oep.target.riscv-dm',{21},False),('oep.target.riscv-dm',{20,21},True),
- ('oep.probe.config',{18},False),('oep.probe.config',{19},False),('oep.probe.config',{18,19},True),
+ ('oep.probe.config',{18,21},False),('oep.probe.config',{19,21},False),('oep.probe.config',{18,19,21},True),('oep.probe.config',{18,19},False),('oep.probe.config',{21},True),
  ('oep.fixture.logic',{1},False),('oep.fixture.logic',{2},False),('oep.fixture.logic',{1,2,19,24},True),('oep.fixture.logic',{25},False),
  ('oep.fixture.analog',{1,2,19,24},True),('oep.fixture.capture-group',{1},False),('oep.fixture.capture-group',{1,2,19},True),
- ('oep.probe.link',{18},True),('oep.fixture.i2c-target',{20},True),('oep.wire.rvswd',{16},True),('oep.wire.swio',{16},True),('oep.wire.swd',{16},True),
+ ('oep.probe.link',{18,19},True),('oep.probe.link',{19},True),('oep.target.riscv-dm',{17,18},True),('oep.target.console',{20},False),('oep.target.console',{18,20},True),('oep.target.console',{19,21},True),('oep.fixture.uart',{20},False),('oep.fixture.uart',{18,19,20,21},True),('oep.fixture.i2c-target',{20},True),('oep.wire.rvswd',{16},True),('oep.wire.swio',{16},True),('oep.wire.swd',{16},True),
 ])
 def test_optional_ops_pairs_and_calibration(name,extra,passed):
     model,c=setup();fn=next(fn for fn,n in model.selection.items() if n==name);model.extension.offered[fn].update(extra)

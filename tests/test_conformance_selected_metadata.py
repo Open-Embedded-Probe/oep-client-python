@@ -25,7 +25,7 @@ def test_selected_metadata_passes_read_only():
 @pytest.mark.parametrize('fn,rows',[
  (2,[]),(2,[tlv(64,b'\0')]),(7,[]),(7,[tlv(3,b'\0')]),(7,[tlv(3,struct.pack('<H',6))]),
  (7,[tlv(3,struct.pack('<H',48))]),(8,[]),(8,[tlv(3,struct.pack('<H',8)),tlv(5,b'\0'*4)]),
- (17,[tlv(64,b'\0')]),(17,[tlv(64,b'\0'*4)]),
+ (17,[tlv(64,b'\0')]),(17,[tlv(64,b'\0'*4)]),(17,[]),
 ])
 def test_metadata_defects_are_detected(fn,rows):
     model,c=setup();model.extension.metadata[fn]=rows;r=SelectedMetadataChecks(c,model.metadata_selection).run()

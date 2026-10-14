@@ -105,20 +105,20 @@ def test_execution_faults_are_detected(fault,case):
                 finally:model.in_write=True
         if active==case and fault=='replay_writes' and model.ep.current_core.holder is None and req[3:6]==b'\4\0\x12':model.writes+=1
         return handle(req,route)
-    def bad_write(items,ids):
+    def bad_write(items):
         if active==case and fault=='no_duration':model.execution_ms=0
-        write(items,ids)
+        write(items)
         if active==case and fault=='wrong_elapsed':model.clock_ms+=1
-        if active==case and fault=='save_changes_pin':model.extension.pins[1]=(0,0)
-    def bad_persist(items,ids):
-        if active==case and fault=='noop_writes':return bad_write(items,ids)
-        return persist(items,ids)
+        if active==case and fault=='save_changes_pin':model.extension.pins[1]=3
+    def bad_persist(items):
+        if active==case and fault=='noop_writes':return bad_write(items)
+        return persist(items)
     checker.case=run;a.begin=bad_begin;a.advance=bad_advance;a.finish=bad_finish;model.handle=bad_handle;model.write_config=bad_write;model.persist_config=bad_persist;c.send=bad_handle
     r=checker.run();row=next(x for x in r['checks'] if x['id']=='OEP-CONFIG-EXECUTION-'+case)
     assert row['status']=='failed' and row['error'].startswith('Violation:'),row
 
 
-@pytest.mark.parametrize('missing',['state','seed','restart_fixture','prepare','arm','advance','begin','finish'])
+@pytest.mark.parametrize('missing',['state','seed','restart_fixture','generation_at','prepare','arm','advance','begin','finish'])
 def test_missing_controls_do_not_pass(missing):
     model,c=setup();a=SampleConfigExecutionAdapter(model);setattr(a,missing,None)
     r=ConfigExecutionChecks(c,a).run();assert r['checks'][2]['status']=='failed'

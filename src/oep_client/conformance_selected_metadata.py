@@ -14,6 +14,7 @@ class SelectedMetadataChecks:
             result=dict(restart_max_ms=struct.unpack('<I',values[tag])[0])
         elif name=='oep.probe.config':
             tag=reg['tlv']['describe']['storage'];result=dict(storage_present=tag in values)
+            require(tag in values or codes['save'] not in offered,'save/erase offered without storage')   # probe-config §4
             if tag in values:
                 require(codes['save'] in offered and codes['erase'] in offered,'storage advertised without save/erase')
                 require(len(values[tag])==4 and struct.unpack('<I',values[tag])[0]>=1,'storage max_bytes must be positive u32');result['max_bytes']=struct.unpack('<I',values[tag])[0]
@@ -38,4 +39,4 @@ class SelectedMetadataChecks:
         self.base=RegisteredOpsChecks(self.c,self.selection);self.base.run()
         for fn,name in (self.selection.items() if type(self.selection)is dict else []):self.c.check('OEP-METADATA-'+str(fn),'restart §1; debug §4.5/6; probe-config §4',lambda fn=fn,name=name:self.metadata(fn,name))
         rows=self.c.results[start:]
-        return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,observed=self.c.observed,full_conformance=False,scope='selected standard op and restart/block/storage describe constraints; read-only',unchecked=['metadata of other standard interfaces','unconfirmed route limits beyond protocol minimum','storage presence when save/erase exist is not made mandatory here','restart duration, bus operations and storage behavior','physical transports and production Host integration'])
+        return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,observed=self.c.observed,full_conformance=False,scope='selected standard op and restart/block/storage describe constraints; read-only',unchecked=['metadata of other standard interfaces','unconfirmed route limits beyond protocol minimum','restart duration, bus operations and storage behavior','physical transports and production Host integration'])

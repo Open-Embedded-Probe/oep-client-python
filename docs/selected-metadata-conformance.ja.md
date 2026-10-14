@@ -7,7 +7,7 @@ restart、config、riscv-dm、arm-adiのrevision 1を扱い、登録op検査も�
 - RISC-V: blockを提供するときは`max_length`が必須u16で、byte単位の4の倍数。
 - ARM-ADI: 必須blockにも同じ上限条件を適用し、`features`の宣言を禁止する。
 - config: `storage`を宣言した場合、save/eraseの提供と正のu32容量を確認する。
-  save/eraseからstorageの存在を逆に必須とはしない。仕様文のonly-if条件に従う。
+  save/eraseを提供するならstorageも必須（probe-config §4）。
 
 block上限では、要求18 byte＋data、応答8 byte＋dataが経路のframeに収まることを確認する。
 全経路に保証される64 byte最小frameで収まる場合は、その下限を証拠にする。
