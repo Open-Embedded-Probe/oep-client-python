@@ -10,8 +10,7 @@ from test_conformance import REG
 def setup():
     reg=copy.deepcopy(REG)
     reg['common']={'enum':{'read_from':{'position':0,'oldest':1,'now':2,'last_mark':3},'read_flags':{'more':1,'gap':2},
-                          'mark_kind':{'reset':1,'lost':5,'clear':6,'host':7},'mark_detail_reset':{'ndmreset':1},
-                          'mark_detail_lost':{'overflow':1}}}
+                          'mark_kind':{'lost':1,'clear':2,'host':3},'mark_detail_lost':{'overflow':1}}}
     now=[0];model=StreamModel(lambda:now[0]);c=Checks(model.handle,reg,'virtual-resource-1')
     return model,c,SampleStreamAdapter(model)
 

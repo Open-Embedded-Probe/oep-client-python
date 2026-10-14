@@ -101,7 +101,7 @@ def test_dmseq_preflight_blocks(invalid):
     assert not a.trace
 
 
-@pytest.mark.parametrize('kind,detail,case',[(2,2,'RESYNC-SAME'),(2,2,'RESYNC-NEW'),(5,4,'TO-NEW'),(5,4,'TO-DUP'),(5,2,'CRC-FLAGS')])
+@pytest.mark.parametrize('kind,detail,case',[(0x41,2,'RESYNC-SAME'),(0x41,2,'RESYNC-NEW'),(1,0x40,'TO-NEW'),(1,0x40,'TO-DUP'),(1,2,'CRC-FLAGS')])
 def test_event_checker_detects_missing_mark(kind,detail,case):
     model,c,a=setup();install=model.install
     def faulty_install():

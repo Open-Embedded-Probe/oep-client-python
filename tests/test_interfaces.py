@@ -438,10 +438,15 @@ def test_uart_stream_is_the_plans_and_its_position_never_goes_back(bench):
     assert e.value.cause == "wrong_state"
     with pytest.raises(host.Unavailable):
         uart.read()
-    assert uart.status() == fixture.UartStatus(baud=115200, format=0)
-    core.plan_apply(hst, [(UART, 1, 20)])                        # RX only: the stream is there, 115200 8N1 by default
+    with pytest.raises(host.Unavailable):
+        uart.status()                                             # no plan: nothing to show (fixture §2)
+    core.plan_apply(hst, [(UART, 1, 20)])                        # RX only: the stream is there, not configured
+    assert uart.status() == fixture.UartStatus(baud=0, format=0) and not uart.status().configured
+    ep.uart_rx(UART, b"never kept")                               # nothing is received before a configure
+    assert uart.read().data == b""
+    uart.configure(115200)
     ep.uart_rx(UART, b"before configure")
-    assert uart.read().data == b"before configure" and uart.status() == fixture.UartStatus(baud=115200, format=0)
+    assert uart.read().data == b"before configure" and uart.status().configured
     uart.mark(1)
     core.plan_release(hst, [UART])
     with pytest.raises(host.Unavailable):

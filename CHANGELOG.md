@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- (JA) oep-spec a09fa45 への追従（段階6: oep.fixture.uart と共通の位置付きストリーム）。op を 0x10〜0x16 に移した。configure するまで受信せず、status は baud 0 / format 0（暗黙の既定 baud は無い）。configure が通らなければ baud 0 の completed failed で未 configure に戻り、未送信 TX を捨て、受信済みのデータは読める。write は TX と configure を要する。configure 済みの割り当て変更は cause 6、未 configure の変更は buffer とマークを解く。plan の無い fn の status は cause 6。共通のマーク kind は lost 1 / clear 2 / host 3、console の restart は 0x41、target_timeout は lost の detail 0x40 になり、独立した検査器（stream / uart / uart-stream / dmseq / dependencies）と見本モデルを合わせた。仮想ベンチの read は、押し出された位置で保持データが無くても gap を立てる。
+
 - (JA) oep-spec a09fa45 への追従（段階5: oep.fixture.gpio と出力の強さの削除）。op を 0x10/0x11 に移した。出力の強さ（set の drive TLV、describe の drive_levels、`fixture.Drive` / `DriveLevels`、設定の idle 項目の drive）は仕様から無くなったので、クライアント・仮想ベンチ・CLI（`config idle --drive-*`、`virtual_bench_serve --no-drive-levels`）・独立した検査器と見本モデルから外した。idle 項目は channel(u16) mode(u8) の 3 byte。見本モデルのピンの状態は mode だけを持つ。
 
 - (JA) oep-spec a09fa45 への追従（段階4: oep.probe.link）。op を 0x10〜0x12 に移し、port_state（0x13、port_speed とともに必須）を加えた。仮想ベンチは phase 0〜3 を持ち、送りかけのフレームがある間の復帰を phase 3（理由: verify / idle / session）として保ち、idle の保留だけを元の所有者の要求で取り消す。試す速さは起動時より上だけを受ける。host は異なる session_id への force open の成功でも起動時の速さに戻り、試しが通らなかった後は新しい corr の port_state で phase 0 を確かめる（`link.port_state`）。

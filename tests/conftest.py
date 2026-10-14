@@ -24,6 +24,12 @@ PENDING_FOLLOW = {
     "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[restart": "restart: moved to test_spec_vectors.py",
     "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[link ": "link: moved to test_spec_vectors.py",
     "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[gpio ": "gpio: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[UART ": "uart: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[UART ": "uart: moved to test_spec_vectors.py",
+    "tests/test_config.py::test_uart_item_is_applied_when_the_plan_gives_the_uart_pins":
+        "probe.config: the uart item is gone; a UART receives only after a session's configure (fixture §2)",
+    "tests/test_config.py::test_a_bind_carries_one_stream_and_keeps_its_position_through_a_session":
+        "probe.config: bind is gone; a UART receives only after a session's configure (fixture §2)",
     "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[gpio ": "gpio: moved to test_spec_vectors.py",
     "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config set: an idle value of 3 bytes]":
         "probe.config: the idle item is 3 bytes now (channel mode)",

@@ -323,7 +323,7 @@ from oep_client import config, core, fixture, virtual_bench_capture
 from test_vectors import vector_probe                                   # the vectors' fn numbers on the virtual bench
 
 S = 0x11223344                                                          # ops.json about: the lock holder's id
-FOLLOWED = {"oep.probe.plan", "oep.probe.restart", "oep.probe.link", "oep.fixture.gpio"}                                           # grows with each stage
+FOLLOWED = {"oep.probe.plan", "oep.probe.restart", "oep.probe.link", "oep.fixture.gpio", "oep.fixture.uart"}                                           # grows with each stage
 OPS = load("ops.json")["cases"]
 
 
@@ -349,6 +349,10 @@ def bench_for(case):
     if "port_s" in case["name"] and "not offered" not in case["name"]:   # a UART bridge probe with port_speed
         probe.offered = [virtual_bench._link(o.fn, port_speed=True) if o.name == virtual_bench.LINK else o
                          for o in probe.offered]
+    if "formats declares 8N1 only" in case.get("state", ""):
+        probe = virtual_bench.VirtualProbe(probe.label, probe.max_frame, [
+            virtual_bench._uart(o.fn, 0, list(range(16)), 3_000_000, formats=(0,)) if o.name == "oep.fixture.uart" else o
+            for o in probe.offered])
     ep = endpoint.Endpoint(probe, clock, boot_id=EXAMPLE_BOOT_ID)
     hst = h.Host(lambda b: ep.handle(b, 0))
     hst.rng = Fixed()
@@ -421,8 +425,30 @@ def gpio_state(case, ep, hst):
         fixture.Gpio(hst, 2).set([(3, fixture.Gpio.OUTPUT_HIGH)])
 
 
+def uart_state(case, ep, hst):
+    """fixture §2's cases on fn 5 (RX role 1 / TX role 2 on channel 3), made through the client; the boot-scoped
+    write position by the stream the bench carries on."""
+    state, name = case["state"], case["name"]
+    uart = fixture.FixtureUart(hst, 5)
+    hst.open(3000)
+    if "write position7" in state or "write position 7" in state:
+        ep.uart_carry[5] = (3 if "abcd" in state else 7, 0)
+    role = 2 if "TX-only plan" in state else 1
+    if "plan" in state or "the configure above failed" in state:
+        core.plan_apply(hst, [(5, role, 3)])
+    if "configured at 9600" in state or "abcd" in state:
+        uart.configure(9600)
+    if "abcd" in state:
+        ep.uart_rx(5, b"abcd")
+    if "fails" in state or "the configure above failed" in state:
+        ep.uart_fail_configure.add(5)
+    if "the configure above failed" in state:
+        with pytest.raises(h.Failed):
+            uart.configure(115200)
+
+
 STATES = {"oep.probe.plan": plan_state, "oep.probe.restart": restart_state, "oep.probe.link": link_state,
-          "oep.fixture.gpio": gpio_state}
+          "oep.fixture.gpio": gpio_state, "oep.fixture.uart": uart_state}
 
 
 def make_case(case):

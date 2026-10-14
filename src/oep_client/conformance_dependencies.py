@@ -82,7 +82,7 @@ class DependencyChecks:
             elif kind=='CLEAR':
                 self.empty(self.request('stream','clear',sid,struct.pack('<H',s)))
                 state=self.visible()['streams'][s]
-                require(state['position']==3 and state['data']==b'' and state['tx']==b'xyz' and state['marks'][-1][2]==6,'clear destroyed queue/position or missed mark')
+                require(state['position']==3 and state['data']==b'' and state['tx']==b'xyz' and state['marks'][-1][2]==2,'clear destroyed queue/position or missed mark')
             elif kind=='CLOSE':
                 self.empty(self.request('stream','close',sid,struct.pack('<H',s)))
                 state=self.visible();require(p in state['connections'] and not state['streams'],'stream close released parent or retained buffers')
@@ -102,7 +102,7 @@ class DependencyChecks:
                 before=self.visible();self.a.reset_target(p);after=self.visible()
                 require(after['connections']==before['connections'] and set(after['streams'])=={s},'target restart released resources')
                 a,b=after['streams'][s],before['streams'][s]
-                require(all(a[key]==b[key] for key in ('data','position','tx')) and a['marks'][-1][2]==2,'restart discarded stream contents or missed mark')
+                require(all(a[key]==b[key] for key in ('data','position','tx')) and a['marks'][-1][2]==0x41,'restart discarded stream contents or missed mark')
 
     def marks(self):
         self.fresh()

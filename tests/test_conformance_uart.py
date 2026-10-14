@@ -15,7 +15,7 @@ def setup():
 
 
 def test_uart_checks():
-    model,c=setup();r=UartChecks(c,SampleUartAdapter(model)).run();assert r['status']=='passed',[(r['id'],r.get('error')) for r in r['checks'] if r['status']!='passed'];assert len(r['checks'])==28 and not r['full_conformance']
+    model,c=setup();r=UartChecks(c,SampleUartAdapter(model)).run();assert r['status']=='passed',[(r['id'],r.get('error')) for r in r['checks'] if r['status']!='passed'];assert len(r['checks'])==29 and not r['full_conformance']
 
 
 def test_common_declarations():
@@ -77,13 +77,12 @@ def test_uart_write_replay_cannot_requeue_bytes():
     r=checker.run();assert next(row for row in r['checks'] if row['id']=='OEP-UART-WRITE-REPLAY')['status']=='failed'
 
 
-@pytest.mark.parametrize('invalid',['selection','revision','tolerance','default'])
+@pytest.mark.parametrize('invalid',['selection','revision','tolerance'])
 def test_uart_preflight(invalid):
     model,c=setup();adapter=SampleUartAdapter(model)
     if invalid=='selection':adapter.selection={2:'oep.fixture.uart'}
     elif invalid=='revision':next(s for s in c.reg['interface'] if s['name']=='oep.fixture.uart')['revision']=2
-    elif invalid=='tolerance':c.reg['limits']['uart_baud_tolerance_pct']=6
-    else:c.reg['limits']['uart_default_baud']=9600
+    else:c.reg['limits']['uart_baud_tolerance_pct']=6
     assert UartChecks(c,adapter).run()['status']=='failed'
 
 

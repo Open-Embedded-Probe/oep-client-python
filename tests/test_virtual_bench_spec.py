@@ -566,10 +566,11 @@ def test_read_from_a_last_mark_that_is_not_there_is_from_now():
     r = h.raw(1, 0x02, bytes([0]) + SPEED + m.tlv(0x03, struct.pack("<HH", *p), critical=True))
     uart_fn = 5
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", uart_fn, 1, 20)) + m.tlv(0x90, struct.pack("<HBH", uart_fn, 2, 21)))
-    h.ok(uart_fn, 0x01, struct.pack("<I", 115200))
+    h.ok(uart_fn, reg.FIXTURE_UART.op["configure"], struct.pack("<I", 115200))
     ep.uart_rx(uart_fn, b"old output")
-    rd = m.Reader(h.raw(uart_fn, 0x02, struct.pack("<BQH", 3, MARK_KIND["reset"], 64), session=False).payload)
-    assert rd.take("QB") == (10, 0) and rd.counted("H") == b""      # no reset mark: from now, not the old bytes
+    lost = reg.COMMON.enum["mark_kind"]["lost"] if "lost" in reg.COMMON.enum["mark_kind"] else 1
+    rd = m.Reader(h.raw(uart_fn, reg.FIXTURE_UART.op["read"], struct.pack("<BQH", 3, 1, 64), session=False).payload)
+    assert rd.take("QB") == (10, 0) and rd.counted("H") == b""      # no lost mark (kind 1): from now, not the old bytes
 
 
 def test_no_default_reset_line_only_the_declared_channels():

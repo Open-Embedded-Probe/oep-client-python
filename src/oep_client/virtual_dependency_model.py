@@ -98,7 +98,7 @@ class DependencyModel(ResourceModel):
     def reset_target(self, rid):
         self.extension.resource(rid,'connection')
         for parent,s in self.extension.streams.values():
-            if parent==rid:s.mark(2,1)
+            if parent==rid:s.mark(0x41,1)   # console restart, havereset (console's own kind)
 
     def break_connection(self, rid):self.extension.resource(rid,'connection');self.extension.close_connection(rid)
 

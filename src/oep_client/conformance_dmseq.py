@@ -125,7 +125,7 @@ class DmseqChecks(MailboxChecks):
             before=self.a.state();self.a.reset_target(parent);after=self.a.state()
             require(not after['protocols'][rid]['synced'] and not after['protocols'][rid]['pending'],'detected reset did not discard dmseq state')
             require(after['connections']==before['connections'] and after['streams'][rid]['data']==b'x' and after['streams'][rid]['tx']==b'cd' and after['streams'][rid]['position']==1,'target reset discarded OEP resources/output/queue')
-            marks=after['streams'][rid]['marks'];require(len(marks)==len(before['streams'][rid]['marks'])+1 and marks[-1][1:3]==(1,2) and marks[-1][-1]==1,'detected reset restart mark')
+            marks=after['streams'][rid]['marks'];require(len(marks)==len(before['streams'][rid]['marks'])+1 and marks[-1][1:3]==(1,0x41) and marks[-1][-1]==1,'detected reset restart mark')
             page=self.c.success(self.request(4,'marks',0,struct.pack('<HI',rid,marks[-1][0])));require(page[:2]==b'\0\x01' and struct.unpack_from('<IQBQB',page,2)==marks[-1],'restart mark wire readback');tlvs(page[24:])
             self.step(rid,target_frame(syn=True,data=b'x'),b'x',reply_word(0,0,b'cd'),b'',self.protocol(syn=True,pending=b'cd'))
     def clear(self):
@@ -162,13 +162,13 @@ class DmseqChecks(MailboxChecks):
             rid=self.opened(sid,2)
             self.step(rid,target_frame(data=b'x'),b'x',reply_word(0,0),b'',self.protocol())
             if kind in ('RESYNC-SAME','RESYNC-NEW'):
-                bit=int(kind=='RESYNC-NEW');frame=target_frame(bit,syn=True,data=b'y');expected=(2,2)
+                bit=int(kind=='RESYNC-NEW');frame=target_frame(bit,syn=True,data=b'y');expected=(0x41,2)
                 received=b'y';answer=reply_word(bit,0)
             elif kind in ('TO-NEW','TO-DUP'):
-                bit=int(kind=='TO-NEW');frame=target_frame(bit,to=True,data=b'y' if bit else b'x');expected=(5,4)
+                bit=int(kind=='TO-NEW');frame=target_frame(bit,to=True,data=b'y' if bit else b'x');expected=(1,0x40)
                 received=b'y' if bit else b'';answer=reply_word(bit,0)
             else:
-                valid=target_frame(1,syn=True,to=True,data=b'y');frame=(valid[0]^(1<<16),valid[1]);expected=(5,2)
+                valid=target_frame(1,syn=True,to=True,data=b'y');frame=(valid[0]^(1<<16),valid[1]);expected=(1,2)
                 received=b'';answer=None
             before=self.a.state()['streams'][rid];self.step(rid,frame,received,answer,b'')
             marks=self.a.state()['streams'][rid]['marks'];new=[m for m in marks if m not in before['marks']]

@@ -170,6 +170,7 @@ def test_c02_read_from_4_unsupported_and_from_3_with_a_wide_arg_reads_from_now()
     assert r.detail != m.UNSUPPORTED or r.payload == b"\x00"
     assert h.raw(5, read, struct.pack("<BQH", 3, 0x100, 16), session=False).detail == m.UNAVAILABLE   # no plan
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 5, 1, 20), critical=True))
+    h.ok(5, reg.FIXTURE_UART.op["configure"], struct.pack("<I", 115200))   # receiving from here (fixture §2)
     ep.uart_rx(5, b"abc")
     r = h.raw(5, read, struct.pack("<BQH", 4, 0, 16), session=False)
     assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00")
@@ -262,6 +263,7 @@ def test_an_answer_that_fills_the_frame_has_no_ignored_list():
     h = Host(ep)
     h.open()
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 5, 1, 21), critical=True))
+    h.ok(5, reg.FIXTURE_UART.op["configure"], struct.pack("<I", 115200))   # receiving from here (fixture §2)
     ep.uart_rx(5, bytes(range(1, 200)))
     tail = b"".join(m.tlv(0x30 + k, b"") for k in range(8))
     r = h.raw(5, reg.FIXTURE_UART.op["read"], struct.pack("<BQH", 1, 0, 1000) + tail, session=False)
@@ -594,6 +596,7 @@ def test_p2_o10_capture_group_with_nothing_bound_and_the_checks_before_start():
 def test_p2_o11_a_read_past_the_write_position():
     ep, h = bench()
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 5, 1, 20), critical=True))
+    h.ok(5, reg.FIXTURE_UART.op["configure"], struct.pack("<I", 115200))   # receiving from here (fixture §2)
     ep.uart_rx(5, b"abc")
     r = h.raw(5, reg.FIXTURE_UART.op["read"], struct.pack("<BQH", 0, 100, 16), session=False)
     assert r.payload == struct.pack("<QBH", 3, 0, 0)

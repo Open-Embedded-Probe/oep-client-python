@@ -103,6 +103,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Hashable
 
 from . import catalog, config as cfgmod, virtual_bench, virtual_bench_capture, message as m, registry_legacy as reg
+from . import registry as current_reg     # TRANSITIONAL: the common stream marks of the interfaces that follow a09fa45
 
 TOY_WRITE, TOY_READ = 0x01, 0x02
 OK, WAIT, LINE, FAULT, TIMEOUT, STATE = (reg.STATUS[k] for k in ("ok", "wait", "line", "fault", "timeout", "state"))
@@ -112,6 +113,7 @@ STEP = _RV.enum["dmi_step"]
 STEP_ARGS = {STEP["write"]: "BI", STEP["read"]: "B", STEP["poll_reads"]: "BIIH", STEP["wait_us"]: "I",
              STEP["poll_us"]: "BIII"}
 MARK = reg.COMMON.enum["mark_kind"]
+UART_MARK = current_reg.COMMON.enum["mark_kind"]          # oep.fixture.uart's stream (common §1.3: lost 1, clear 2, host 3)
 MARK_RESET, MARK_RESTART, MARK_CLOSED = (reg.COMMON.enum[k] for k in ("mark_detail_reset", "mark_detail_restart",
                                                                        "mark_detail_closed"))
 MECHANISM_NONE = _CON.enum["mechanism"]["none"]
@@ -486,6 +488,7 @@ class Stream:
     users: set = field(default_factory=set)
     conn: int = 0                                      # console: the connection it is on
     mechanism: int = 0
+    kinds: dict | None = None                          # the mark kinds this stream uses (None: the console's)
 
     @property
     def end(self) -> int:
@@ -797,6 +800,7 @@ class Endpoint:
         self.uart_carry: dict[int, tuple[int, int]] = {}   # fn -> (position, mark serial) a released stream left off at
         self.uart_baud: dict[int, tuple[int, int]] = {}   # fn -> (baud, format) in force (absent: 115200 8N1)
         self.uart_session_cfg: set[int] = set()        # fns a session's configure set (it beats the uart item)
+        self.uart_fail_configure: set[int] = set()     # TEST HOOK: fns whose next accepted configure fails to come up
         self.uart_tx: dict[int, bytearray] = {}        # what a serial port's raw bytes sent out on a fixture UART
         self.i2c: dict[int, I2cState] = {fn: I2cState() for fn, n in self.names.items() if n == _I2C.name}
         self.spi_selected: set[int] = set()            # spi-target fns whose CS is active now (spi_select)
@@ -1849,10 +1853,11 @@ class Endpoint:
         planned = any(a[0] == fn for a in self.plan)
         s = self.uarts.get(fn)
         if planned and s is None:
-            s = self.uarts[fn] = Stream()
+            s = self.uarts[fn] = Stream(kinds=UART_MARK)
             s.base, s.serial = self.uart_carry.get(fn, (0, 0))
-            if fn not in self.uart_session_cfg:
-                self._uart_apply_item(fn)
+        elif planned:                                              # a new set of pins, not configured (fixture §2):
+            s.drop_oldest(len(s.data))                             # the buffer and the marks go; position and serial
+            s.marks.clear()                                        # carry on
         elif not planned and s is not None:
             self.uart_carry[fn] = (s.end, s.serial)
             del self.uarts[fn]
@@ -2609,8 +2614,8 @@ class Endpoint:
             flags = 0
             if pos < s.base:
                 pos, flags = s.base, 2
-            if pos >= s.end:
-                return m.COMPLETED, m.SUCCESS, struct.pack("<QBH", s.end, 0, 0)   # at or past the write position
+            if pos >= s.end:                                       # at or past the write position: nothing to read,
+                return m.COMPLETED, m.SUCCESS, struct.pack("<QBH", s.end, flags & 2, 0)   # gap kept (common §1.2)
             budget = self.probe.max_frame - m.RESULT_HEADER - 11    # within max_frame (common §1.2)
             data = bytes(s.data[pos - s.base:pos - s.base + min(mx, budget)])
             if pos + len(data) < s.end:
@@ -2627,12 +2632,13 @@ class Endpoint:
             return self._answer(body)
         if s.closed:
             raise unavailable("wrong_state")                       # a closed stream: read / marks only (console §2)
+        kinds = s.kinds or MARK
         if op == _CON.op["clear"]:
             s.drop_oldest(len(s.data))
-            s.add_mark(MARK["clear"], self.now_ns())
+            s.add_mark(kinds["clear"], self.now_ns())
             return m.COMPLETED, m.SUCCESS, b""
         if op == _CON.op["mark"]:
-            s.add_mark(MARK["host"], self.now_ns(), args)
+            s.add_mark(kinds["host"], self.now_ns(), args)
             return m.COMPLETED, m.SUCCESS, b""
         if op == _CON.op["write"]:
             data, count = args, len(args)
@@ -2813,27 +2819,38 @@ class Endpoint:
             actual = self._uart_check(baud, fmt[0], fn, t.received(fmt_tag))   # unhandled: unsupported, bit 7 or not
             if fn not in self.uarts:
                 raise unavailable("wrong_state")                   # no pins: the plan has neither RX nor TX (fixture §2)
+            self.uarts[fn].written.clear()                         # unsent TX never carries over (fixture §2)
+            if fn in self.uart_fail_configure:                     # taken, but the UART does not come up: not configured,
+                self.uart_fail_configure.discard(fn)               # the stream's bytes and marks stay (fixture §2)
+                self.uart_baud.pop(fn, None)
+                return self._answer(struct.pack("<I", 0), m.FAILED)
             self.uart_baud[fn] = (actual, fmt[0])
-            self.uart_session_cfg.add(fn)                          # a session's configure beats the uart item
+            self.uart_session_cfg.add(fn)
             return self._answer(struct.pack("<I", actual))
         if op == _UART.op["status"]:                               # lock-free: baud(u32) format(u8) (fixture §2)
             t.tail()
-            baud, fmt = self.uart_baud.get(fn, (reg.LIMITS["uart_default_baud"], 0))
+            if fn not in self.uarts:
+                raise unavailable("wrong_state")                   # no RX and no TX in a plan (fixture §2)
+            baud, fmt = self.uart_baud.get(fn, (0, 0))             # 0 0: not configured, no implicit baud
             return self._answer(struct.pack("<IB", baud, fmt))
-        if op not in (_CON.op["read"], _CON.op["marks"], _CON.op["mark"], _CON.op["write"], _CON.op["clear"]):
+        names = {v: k for k, v in _UART.op.items()}
+        if names.get(op) not in ("read", "marks", "mark", "write", "clear"):
             return m.REJECTED, m.UNKNOWN_OPERATION, b""
+        op = _CON.op[names[op]]                                    # the same form as the console's (common §1)
         args = self._stream_args(op, t)                            # the request first (core §4.3 orders 5 / 6)
         s = self.uarts.get(fn)
         if s is None:
             raise unavailable("wrong_state")                       # the plan makes the stream (fixture §2)
-        if op == _UART.op["write"] and not any(
-                a[0] == fn and a[1] == _UART.enum["role"]["tx"] for a in self.plan):
-            raise unavailable("wrong_state")                       # a plan without TX: nothing to write on (△6)
+        if op == _CON.op["write"] and (fn not in self.uart_baud or not any(
+                a[0] == fn and a[1] == _UART.enum["role"]["tx"] for a in self.plan)):
+            raise unavailable("wrong_state")                       # no TX in the plan, or not configured (fixture §2)
         return self._stream_op(s, op, args, t, self.uart_accept)
 
     def uart_rx(self, fn: int, data: bytes) -> None:
-        """Bytes arrive on fixture UART `fn`'s RX."""
-        self.uarts[fn].data += data
+        """Bytes arrive on fixture UART `fn`'s RX line: kept only while it is configured with RX in its plan (fixture
+        §2: nothing is received before a configure, after a failed one, or on a TX-only plan)."""
+        if fn in self.uart_baud and any(a[0] == fn and a[1] == _UART.enum["role"]["rx"] for a in self.plan):
+            self.uarts[fn].data += data
 
     # ---- oep.fixture.i2c-target (fixture §3) ------------------------------------------------------
     def _i2c_op(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
@@ -3425,9 +3442,6 @@ class Endpoint:
             self._replace_plans({fn}, assigned)
             self.plan_from_config.add(fn)
             self._uart_plan_changed(fn)
-        for fn in self.uarts:                                      # the uart item (or its going) on the planned UARTs no session set
-            if fn not in self.uart_session_cfg:
-                self._uart_apply_item(fn)
         for n in list(self.slot_rt):
             if n not in slots:
                 del self.slot_rt[n]

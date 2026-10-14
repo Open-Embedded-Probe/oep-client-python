@@ -83,20 +83,26 @@ class Gpio(Interface):
 
 @dataclass(frozen=True, kw_only=True)
 class UartStatus:
-    """oep.fixture.uart status (op 0x07, lock-free): the baud and format the UART runs with now (fixture §2)."""
+    """oep.fixture.uart status (lock-free): the baud and format the UART runs with now (fixture §2); baud 0 and format 0
+    before the first configure and after a failed one (not configured: nothing is received)."""
     baud: int
     format: int
 
+    @property
+    def configured(self) -> bool:
+        return self.baud != 0
+
 
 class FixtureUart(PositionStream):
-    """oep.fixture.uart: one position stream per fn, like the console without a stream byte. The stream exists while
-    the plan gives the fn RX or TX; received bytes are kept from then on, whatever the session, and the position never
-    goes back within one boot (a plan released and applied again carries on). Reads are lock-free and do not consume.
-    TX idles high while planned, before configure too; write on an fn whose plan has no TX is rejected unavailable
-    (cause 6, fixture §2)."""
+    """oep.fixture.uart: one position stream per fn, like the console without a stream byte (fixture §2). The stream
+    exists while the plan gives the fn RX or TX; nothing is received until a configure, and received bytes are kept
+    from then on, whatever the session; reconfiguring (it succeeds or fails) keeps them and the position never goes
+    back within one boot. Reads are lock-free and do not consume. TX idles high while planned; write needs TX in the
+    plan and a configure (else unavailable cause 6). marks, clear, mark and write are optional ops (`offers`)."""
     NAME = "oep.fixture.uart"
     REVISION = 1
     CONFIGURE, STATUS = _UART.op["configure"], _UART.op["status"]
+    READ, MARKS, CLEAR, MARK, WRITE = (_UART.op[k] for k in ("read", "marks", "clear", "mark", "write"))
     TAG_FORMAT = _UART.tlv["configure"]["format"]
     # format bits: data bits (0 = 8, 1 = 7), parity (0 none, 1 even, 2 odd) << 2, stop bits (0 = 1, 1 = 2) << 4
     EIGHT_N_1 = 0x00
@@ -111,7 +117,9 @@ class FixtureUart(PositionStream):
     def configure(self, baud: int, fmt: int | None = None) -> int:
         """-> the actual baud (within 5 % of the one asked, else the probe refuses unsupported). fmt (format_byte())
         goes as its TLV (critical: this host's choice); a format the probe cannot set is refused unsupported, never run
-        as 8N1. None leaves the default 8N1. An fn whose plan has neither RX nor TX is rejected unavailable (cause 6)."""
+        as 8N1. None leaves the default 8N1. An fn whose plan has neither RX nor TX is rejected unavailable (cause 6).
+        A configure the probe took but could not bring up is completed failed (raised as Failed; its baud is 0): the
+        UART is not configured then, received bytes stay readable, and unsent TX is dropped (fixture §2)."""
         body = struct.pack("<I", baud)
         if fmt is not None:
             body += m.tlv(self.TAG_FORMAT, bytes([fmt]), critical=True)

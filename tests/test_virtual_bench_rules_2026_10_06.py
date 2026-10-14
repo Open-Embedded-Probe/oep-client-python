@@ -473,6 +473,9 @@ def test_t6_uart_write_without_tx_is_unavailable_cause_6():
     assert h.raw(5, uart.op["read"], struct.pack("<BQH", 2, 0, 16), session=False).succeeded
     assert h.raw(h.plan_fn, PLAN_APPLY, assignment(5, uart.enum["role"]["rx"], 20)
                  + assignment(5, uart.enum["role"]["tx"], 21)).succeeded
+    r = h.raw(5, uart.op["write"], struct.pack("<H", 1) + b"x")
+    assert r.detail == m.UNAVAILABLE                                   # TX, but not configured (fixture §2)
+    assert h.raw(5, uart.op["configure"], struct.pack("<I", 115200)).succeeded
     assert h.raw(5, uart.op["write"], struct.pack("<H", 1) + b"x").succeeded
 
 

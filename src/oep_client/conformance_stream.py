@@ -63,19 +63,19 @@ class StreamChecks:
         self.expect_read((16,3,data[16:20]),arg=0,maximum=4)
         self.expect_read((16,1,data[16:20]),mode=1,maximum=4)
         self.expect_read((80,0,b''),mode=2)
-        _,rows=self.marks(0);require(rows and rows[-1][1:3]==(80,5) and rows[-1][4]==1,'overflow lost mark')
+        _,rows=self.marks(0);require(rows and rows[-1][1:3]==(80,1) and rows[-1][4]==1,'overflow lost mark')
 
     def selectors(self):
-        self.fresh();self.a.feed_bytes(b'ab');self.a.mark_external(7,11);self.a.feed_bytes(b'cd');self.a.mark_external(1,1);self.a.feed_bytes(b'ef')
-        self.expect_read((2,0,b'cdef'),mode=3,arg=7)
+        self.fresh();self.a.feed_bytes(b'ab');self.a.mark_external(3,11);self.a.feed_bytes(b'cd');self.a.mark_external(0x40,1);self.a.feed_bytes(b'ef')
+        self.expect_read((2,0,b'cdef'),mode=3,arg=3)
         self.expect_read((4,0,b'ef'),mode=3,arg=0)
         self.expect_read((6,0,b''),mode=3,arg=0x7f)
-        self.expect_read((0,0,b'abcdef'))  # target reset keeps earlier bytes
+        self.expect_read((0,0,b'abcdef'))  # an interface-defined event mark keeps earlier bytes
 
     def pages(self, serial=10):
         self.fresh(serial=serial)
         before_clock=self.c.success(self.c.request(self.c.core['clock']))
-        for detail in range(5):self.a.mark_external(7,detail)
+        for detail in range(5):self.a.mark_external(3,detail)
         after_clock=self.c.success(self.c.request(self.c.core['clock']))
         expected=self.a.stream_state()['marks'];cursor=serial;seen=[]
         for _ in range(6):
@@ -86,7 +86,7 @@ class StreamChecks:
             if not more:break
         require(seen==expected and self.marks(cursor)==(0,[]),'next serial marks end')
         lower=struct.unpack_from('<Q',before_clock,4)[0];upper=struct.unpack_from('<Q',after_clock,4)[0]
-        require([row[0] for row in seen]==[(serial+i)&0xffffffff for i in range(5)] and all(row[2]==7 for row in seen),
+        require([row[0] for row in seen]==[(serial+i)&0xffffffff for i in range(5)] and all(row[2]==3 for row in seen),
                 'mark serial/kind differ from stimulus')
         require(all(lower<=row[3]<=upper for row in seen),'mark timestamp outside independent clock interval')
         require([row[1] for row in seen]==[0]*5 and [row[4] for row in seen]==list(range(5)),'same-position marks dropped')
@@ -100,7 +100,7 @@ class StreamChecks:
 
     def lost_marks(self, serial=100):
         self.fresh(serial=serial)
-        for detail in range(8):self.a.mark_external(7,detail)
+        for detail in range(8):self.a.mark_external(3,detail)
         self.retained_span()
         expected=self.a.stream_state()['marks'];require(len(expected)==5 and expected[0][0]==(serial+3)%2**32,'controlled ring eviction')
         require([row[0] for row in expected]==[(serial+i)%2**32 for i in range(3,8)] and [row[4] for row in expected]==list(range(3,8)),'wrapped eviction serial/detail order')
@@ -114,13 +114,13 @@ class StreamChecks:
         serial=0xfffffffe;base=(1<<40)+17
         self.fresh(base,serial);self.a.feed_bytes(b'ab')
         before=self.c.success(self.c.request(self.c.core['clock']))
-        for detail in range(5):self.a.mark_external(7,detail)
+        for detail in range(5):self.a.mark_external(3,detail)
         self.retained_span()
         more,first=self.marks(serial)
         require(more and len(first)==2 and [row[0] for row in first]==[serial,0xffffffff],'initial moving page geometry/order differs')
         cursor=(first[-1][0]+1)%2**32
         # Ordered producer arrivals between reads, not inside a read operation.
-        for detail in range(5,8):self.a.mark_external(7,detail)
+        for detail in range(5,8):self.a.mark_external(3,detail)
         self.retained_span()
         seen=list(first);expected_details=[3,4,5,6,7];lost=0
         for _ in range(4):
@@ -137,7 +137,7 @@ class StreamChecks:
         after=self.c.success(self.c.request(self.c.core['clock']))
         lower=struct.unpack_from('<Q',before,4)[0];upper=struct.unpack_from('<Q',after,4)[0]
         require(lost==1 and [row[4] for row in seen]==[0,1,3,4,5,6,7] and len({row[0] for row in seen})==7,'moving mark loss/duplicates differ')
-        require(all(row[1]==base+2 and row[2]==7 and lower<=row[3]<=upper for row in seen),'moving mark position/kind/time differs')
+        require(all(row[1]==base+2 and row[2]==3 and lower<=row[3]<=upper for row in seen),'moving mark position/kind/time differs')
         require(self.marks(cursor)==(0,[]) and cursor==(serial+8)%2**32,'moving mark next cursor differs')
         self.expect_read((base,0,b'ab'),arg=base)
         self.c.observed['moving_mark_pages']={'seed':serial,'base':base,'seen_serials':[row[0] for row in seen],
@@ -145,13 +145,13 @@ class StreamChecks:
 
     def mark_evicted(self):
         self.fresh();self.a.feed_bytes(b'ab');self.a.mark_external(1,1);self.a.feed_bytes(b'cd')
-        for detail in range(5):self.a.mark_external(7,detail)
+        for detail in range(5):self.a.mark_external(3,detail)
         self.expect_read((4,0,b''),mode=3,arg=1)
         self.expect_read((0,0,b'abcd'))
 
     def mark_gap(self):
-        self.fresh();self.a.mark_external(7,1);data=bytes(range(80));self.a.feed_bytes(data)
-        self.expect_read((16,3,data[16:20]),mode=3,arg=7,maximum=4)
+        self.fresh();self.a.mark_external(3,1);data=bytes(range(80));self.a.feed_bytes(data)
+        self.expect_read((16,3,data[16:20]),mode=3,arg=3,maximum=4)
 
     def limit(self):
         base=(1<<64)-4;self.fresh(base);self.a.feed_bytes(b'abc')
@@ -167,7 +167,7 @@ class StreamChecks:
             after=self.a.stream_state();require(after['position']==3 and not after['data'],'clear reset byte position')
             require(self.c.exchange(request)==frame and self.a.stream_state()==after,'clear replay duplicated mark')
         self.expect_read((3,2,b''))
-        more,rows=self.marks(0);require(not more and len(rows)==1 and rows[0][1:3]==(3,6),'clear mark')
+        more,rows=self.marks(0);require(not more and len(rows)==1 and rows[0][1:3]==(3,2),'clear mark')
 
     def persistent(self):
         self.fresh();self.a.feed_bytes(b'abc')
@@ -175,7 +175,7 @@ class StreamChecks:
             request=self.request('mark',b'\x37',sid);frame=self.c.exchange(request);self.c.success(request)
             require(frame[3:5]==b'\x01\0','host mark success');tlvs(frame[5:])
             state=self.a.stream_state()
-            require(len(state['marks'])==1 and state['marks'][0][1:3]==(3,7) and state['marks'][0][4]==0x37,'host mark/replay')
+            require(len(state['marks'])==1 and state['marks'][0][1:3]==(3,3) and state['marks'][0][4]==0x37,'host mark/replay')
         require(self.a.stream_state()==state,'persistent fn resets position/marks at end')
         with self.c.holding(3000):require(self.a.stream_state()==state,'persistent fn resets at new session')
         self.expect_read((0,0,b'abc'))
@@ -194,8 +194,8 @@ class StreamChecks:
             a=self.a.adoption
             enums=self.c.reg['common']['enum']
             for name,expected in [('read_from',{'position':0,'oldest':1,'now':2,'last_mark':3}),
-                                  ('read_flags',{'more':1,'gap':2}),('mark_kind',{'reset':1,'lost':5,'clear':6,'host':7}),
-                                  ('mark_detail_reset',{'ndmreset':1}),('mark_detail_lost',{'overflow':1})]:
+                                  ('read_flags',{'more':1,'gap':2}),('mark_kind',{'lost':1,'clear':2,'host':3}),
+                                  ('mark_detail_lost',{'overflow':1})]:
                 require(all(enums[name].get(key)==value for key,value in expected.items()),'selected SPEC enum differs from this sample contract')
             require(a['component']=='positioned-stream-v1' and a['addressing']=='persistent-fn' and a['reference'] and
                     set(a['ops'])=={'read','marks','clear','mark','write'} and len(set(a['ops'].values()))==5 and

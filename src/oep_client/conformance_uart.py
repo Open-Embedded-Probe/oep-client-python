@@ -6,7 +6,7 @@ from .conformance_registered_ops import RegisteredOpsChecks
 
 
 class UartChecks:
-    cases=('DEFAULT','RX-ONLY','TX-ONLY','CONFIGURE','BAUD-BOUNDARY','FORMAT','FORMAT-SHAPE','FIRST-WINS','TLV','RECONFIGURE','READ','OVERFLOW','MARKS','CLEAR','WRITE','WRITE-REPLAY','CONFIGURE-REPLAY','COUNTS','SESSION','RECREATE','REPLACE','END','EXPIRY','FORCE')
+    cases=('DEFAULT','RX-ONLY','TX-ONLY','CONFIGURE','CONFIGURE-FAIL','BAUD-BOUNDARY','FORMAT','FORMAT-SHAPE','FIRST-WINS','TLV','RECONFIGURE','READ','OVERFLOW','MARKS','CLEAR','WRITE','WRITE-REPLAY','CONFIGURE-REPLAY','COUNTS','SESSION','RECREATE','REPLACE','END','EXPIRY','FORCE')
     def __init__(self,checks,adapter):self.c,self.a=checks,adapter
     @staticmethod
     def tlv(tag,value):return bytes((tag,))+struct.pack('<H',len(value))+value
@@ -47,14 +47,23 @@ class UartChecks:
         self.fresh()
         with self.c.holding(1000) as sid:
             if kind=='RX-ONLY':
-                self.plan(sid,(1,));self.a.feed_bytes(b'rx');require(self.read()[2]==b'rx','RX-only input');self.refused(self.write_request(sid,b'x'),'unavailable',self.tlv(1,b'\6'));self.configure(sid);return
+                self.plan(sid,(1,));self.configure(sid);self.a.feed_bytes(b'rx');require(self.read()[2]==b'rx','RX-only input');self.refused(self.write_request(sid,b'x'),'unavailable',self.tlv(1,b'\6'));return
             if kind=='TX-ONLY':
                 self.plan(sid,(2,));self.configure(sid);self.write(sid,b'tx',2,0);require(self.a.drain(2)==b'tx','TX-only logical queue');return
             if kind=='CONFIGURE':
                 self.refused(self.config_request(sid),'unavailable',self.tlv(1,b'\6'))
             self.plan(sid)
+            if kind not in ('DEFAULT','CONFIGURE','CONFIGURE-FAIL'):self.configure(sid)   # nothing is received before a configure
             if kind=='DEFAULT':
-                state=self.a.state();require(state['live'] and state['pins'][1]==4 and state['pins'][0]==state['idle'][0],'plan did not start UART/TX idle before configure');require(self.status()==(self.default_baud,0),'default status');self.a.feed_bytes(b'early');require(self.read()[2]==b'early','receive before configure')
+                state=self.a.state();require(state['live'] and state['pins'][1]==4 and state['pins'][0]==state['idle'][0],'plan did not start UART/TX idle before configure')
+                require(self.status()==(0,0),'unconfigured status must be baud 0 format 0');self.a.feed_bytes(b'early');require(self.read()[2]==b'','received before configure')
+                self.refused(self.write_request(sid,b'x'),'unavailable',self.tlv(1,b'\6'));self.configure(sid);self.a.feed_bytes(b'late');require(self.read()[2]==b'late','configure did not start reception')
+            elif kind=='CONFIGURE-FAIL':
+                self.configure(sid,57600,4);self.a.feed_bytes(b'kept');self.write(sid,b'tx',2,0);self.a.fail_configure()
+                reply=self.c.exchange(self.config_request(sid,115200));require(reply[3:5]==b'\1\1' and len(reply)>=9 and struct.unpack_from('<I',reply,5)[0]==0,'failed configure must answer completed failed baud 0');tlvs(reply[9:])
+                state=self.a.state();require(state['live'] and not state['tx'] and self.status()==(0,0),'failed configure left the UART configured or kept unsent TX')
+                require(self.read()[2]==b'kept','failed configure lost received bytes');self.a.feed_bytes(b'lost');require(self.read()[2]==b'kept','received while not configured')
+                self.refused(self.write_request(sid,b'x'),'unavailable',self.tlv(1,b'\6'));self.configure(sid);require(self.status()==(115200,0),'new configure did not recover')
             elif kind=='CONFIGURE':
                 for raw in (self.format_tag,self.format_tag|128):
                     actual=self.configure(sid,57600,4,raw=raw);require(self.status()==(actual,4),'actual configure/status');self.configure(sid);require(self.status()[1]==0,'omitted format must mean 8N1')
@@ -75,11 +84,11 @@ class UartChecks:
             elif kind=='READ':
                 self.a.feed_bytes(b'abcdef');require(self.read(maximum=2)==(0,1,b'ab'),'read max/more');require(self.read(arg=2)==(2,0,b'cdef'),'read continuation');require(self.read(arg=100)==(6,0,b''),'future position');require(self.read(mode=2)==(6,0,b''),'read now');self.refused(self.req(2,'read',payload=struct.pack('<BQH',4,0,1)),'unsupported',b'\0')
             elif kind=='OVERFLOW':
-                data=bytes(range(80));self.a.feed_bytes(data);start,flags,part=self.read();require(start==16 and flags&2 and part==data[16:16+len(part)] and flags&1,'overflow gap/frame bound');require(self.read(arg=start+len(part))[2]==data[start+len(part):],'overflow continuation');require(any(r[2]==5 and r[4]==1 for r in self.marks()),'overflow lost mark')
+                data=bytes(range(80));self.a.feed_bytes(data);start,flags,part=self.read();require(start==16 and flags&2 and part==data[16:16+len(part)] and flags&1,'overflow gap/frame bound');require(self.read(arg=start+len(part))[2]==data[start+len(part):],'overflow continuation');require(any(r[2]==1 and r[4]==1 for r in self.marks()),'overflow lost mark')
             elif kind=='MARKS':
-                self.a.feed_bytes(b'ab');self.a.error(2);self.a.feed_bytes(b'c');self.a.error(3);rows=self.marks();require([(r[1],r[2],r[4]) for r in rows]==[(2,5,2),(3,5,3)],'framing/parity lost mark or position');require(rows[0][3]<=rows[1][3],'mark time decreased');require(self.marks(rows[-1][0])==[rows[-1]],'marks cursor not inclusive')
+                self.a.feed_bytes(b'ab');self.a.error(2);self.a.feed_bytes(b'c');self.a.error(3);rows=self.marks();require([(r[1],r[2],r[4]) for r in rows]==[(2,1,2),(3,1,3)],'framing/parity lost mark or position');require(rows[0][3]<=rows[1][3],'mark time decreased');require(self.marks(rows[-1][0])==[rows[-1]],'marks cursor not inclusive')
             elif kind=='CLEAR':
-                self.a.feed_bytes(b'abc');tlvs(self.c.success(self.req(2,'clear',sid)));require(self.read()==(3,2,b''),'clear reset position or failed gap');tlvs(self.c.success(self.req(2,'mark',sid,b'\x22')));require([(r[1],r[2],r[4]) for r in self.marks()]==[(3,6,0),(3,7,34)],'clear/host marks');require(self.read(mode=3,arg=7)==(3,0,b''),'read from last host mark')
+                self.a.feed_bytes(b'abc');tlvs(self.c.success(self.req(2,'clear',sid)));require(self.read()==(3,2,b''),'clear reset position or failed gap');tlvs(self.c.success(self.req(2,'mark',sid,b'\x22')));require([(r[1],r[2],r[4]) for r in self.marks()]==[(3,2,0),(3,3,34)],'clear/host marks');require(self.read(mode=3,arg=3)==(3,0,b''),'read from last host mark')
             elif kind=='WRITE':
                 self.write(sid,b'abc',3,0);self.write(sid,b'def',1,2);require(self.a.state()['tx']==b'abcd','write must accept prefix');self.write(sid,b'x',0,1);self.write(sid,b'',0,0);require(self.a.drain(4)==b'abcd','queue drain order');self.write(sid,b'ef',2,0)
             elif kind=='WRITE-REPLAY':
@@ -93,9 +102,11 @@ class UartChecks:
                 self.read();self.marks();self.status()
             elif kind in ('RECREATE','REPLACE'):
                 self.a.feed_bytes(b'old');self.configure(sid,57600,4);tlvs(self.c.success(self.req(2,'mark',sid,b'\7')));before=self.a.state()
-                if kind=='RECREATE':self.release(sid);self.closed();self.plan(sid)
-                else:self.plan(sid,(1,))
-                state=self.a.state();require(state['position']==before['position'] and ((state['next_serial']-before['next_serial'])&0xffffffff)<0x40000000 and not state['data'] and not state['tx'],'plan recreate reset counters or retained data');require(self.status()==(115200,0),'plan did not discard session configure');self.a.feed_bytes(b'new');require(self.read()==(3,2,b'new'),'recreated UART byte positions')
+                if kind=='REPLACE':
+                    payload=self.tlv(self.assignment,struct.pack('<HBH',2,1,0));self.refused(self.req(1,'plan_apply',sid,payload),'unavailable',self.tlv(1,b'\6'))
+                    require(self.a.state()==before,'refused configured replacement changed the UART');self.release(sid);self.plan(sid,(1,))
+                else:self.release(sid);self.closed();self.plan(sid)
+                state=self.a.state();require(state['position']==before['position'] and ((state['next_serial']-before['next_serial'])&0xffffffff)<0x40000000 and not state['data'] and not state['tx'],'plan recreate reset counters or retained data');require(self.status()==(0,0),'plan did not discard session configure');self.configure(sid);self.a.feed_bytes(b'new');require(self.read()==(3,2,b'new'),'recreated UART byte positions')
                 if kind=='REPLACE':require(state['pins'][1]==state['idle'][1],'replacement RX-only left TX driving')
             elif kind=='END':
                 self.a.feed_bytes(b'x');self.write(sid,b'tx',2,0);tlvs(self.c.success(self.c.request(self.c.core['end'],session=sid)));self.c.session=None;require(self.closed()['position']==1,'end reset UART position')
@@ -104,12 +115,12 @@ class UartChecks:
             elif kind=='FORCE':
                 self.a.feed_bytes(b'old');tlvs(self.c.success(self.req(2,'mark',sid,b'\7')));old=self.a.state();req,_=self.write(sid,b'tx',2,0);replacement=secrets.randbelow(0xffffffff)+1
                 while replacement==sid:replacement=secrets.randbelow(0xffffffff)+1
-                self.c.corr=0;opened=self.c.success(self.c.request(self.c.core['open'],struct.pack('<IB',1000,1),session=replacement));self.c.session=replacement;require(struct.unpack_from('<II',opened)==(1000,self.c.boot),'force result');tlvs(opened[8:]);closed=self.closed();require(closed['position']==old['position'] and ((closed['next_serial']-old['next_serial'])&0xffffffff)<0x40000000,'force reset UART counters');self.plan(replacement);self.a.feed_bytes(b'new');require(self.read()==(3,2,b'new'),'force/recreate reset UART position');before=self.a.state();self.c.rejected(req,'locked');require(self.a.state()==before,'old UART write touched new owner')
+                self.c.corr=0;opened=self.c.success(self.c.request(self.c.core['open'],struct.pack('<IB',1000,1),session=replacement));self.c.session=replacement;require(struct.unpack_from('<II',opened)==(1000,self.c.boot),'force result');tlvs(opened[8:]);closed=self.closed();require(closed['position']==old['position'] and ((closed['next_serial']-old['next_serial'])&0xffffffff)<0x40000000,'force reset UART counters');self.plan(replacement);self.configure(replacement);self.a.feed_bytes(b'new');require(self.read()==(3,2,b'new'),'force/recreate reset UART position');before=self.a.state();self.c.rejected(req,'locked');require(self.a.state()==before,'old UART write touched new owner')
             else:raise ValueError(kind)
     def run(self):
         start=len(self.c.results)
         def context():
-            require(self.a.reset_scope=='logical-model' and self.a.selection=={1:'oep.probe.plan',2:'oep.fixture.uart'},'explicit logical UART selection required');base=RegisteredOpsChecks(self.c,self.a.selection);require(base.run()['status']=='passed','UART standard op context');self.codes={fn:{r['name']:r['code'] for r in base.specs[name]['op']} for fn,name in self.a.selection.items()};self.assignment=base.specs['oep.probe.plan']['tlv']['plan_apply']['role_assignment'];self.format_tag=base.specs['oep.fixture.uart']['tlv']['configure']['format'];self.tolerance=self.c.reg['limits']['uart_baud_tolerance_pct'];self.default_baud=self.c.reg['limits']['uart_default_baud'];require(self.tolerance==5 and self.default_baud==115200 and self.a.state()['clock_scope']=='explicit-logical-ms','selected logical UART limits/clock differ')
+            require(self.a.reset_scope=='logical-model' and self.a.selection=={1:'oep.probe.plan',2:'oep.fixture.uart'},'explicit logical UART selection required');base=RegisteredOpsChecks(self.c,self.a.selection);require(base.run()['status']=='passed','UART standard op context');self.codes={fn:{r['name']:r['code'] for r in base.specs[name]['op']} for fn,name in self.a.selection.items()};self.assignment=base.specs['oep.probe.plan']['tlv']['plan_apply']['role_assignment'];self.format_tag=base.specs['oep.fixture.uart']['tlv']['configure']['format'];self.tolerance=self.c.reg['limits']['uart_baud_tolerance_pct'];require(self.tolerance==5 and self.a.state()['clock_scope']=='explicit-logical-ms','selected logical UART limits/clock differ')
         self.c.check('OEP-UART-CONTEXT','fixture §2; common §1; plan §2',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         for kind in self.cases:

@@ -10,5 +10,6 @@ class SampleUartAdapter(SampleRouteAdapter):
     def state(self):return self.call('uart_state')
     def feed_bytes(self,data):return self.call('uart_feed',data)
     def error(self,detail):return self.call('uart_error',detail)
+    def fail_configure(self):return self.call('uart_fail_configure')
     def drain(self,count):return self.call('uart_drain',count)
     def advance(self,ms):return self.call('uart_advance',ms)

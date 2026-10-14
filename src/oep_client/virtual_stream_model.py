@@ -29,7 +29,7 @@ class Stream(Resources):
         if self.position+len(data)>0xffffffffffffffff:raise ValueError('position never wraps')
         self.data.extend(data);self.position+=len(data)
         if len(self.data)>self.capacity:
-            del self.data[:-self.capacity];self.mark(5,1)
+            del self.data[:-self.capacity];self.mark(1,1)   # lost, overflow (common §1.3)
 
     def dispatch(self, fn, op, payload):
         suffix=tlv(0x7f,b'x')
@@ -56,8 +56,8 @@ class Stream(Resources):
                 rows=self.marks[index:]
             count=min(len(rows),(self.ep.probe.max_frame-7-len(suffix))//22)
             return bytes((int(count<len(rows)),count))+b''.join(struct.pack('<IQBQB',*row) for row in rows[:count])+suffix
-        if op==18:self.data.clear();self.mark(6,0);return b''
-        if op==19:self.mark(7,payload[0]);return b''
+        if op==18:self.data.clear();self.mark(2,0);return b''      # clear
+        if op==19:self.mark(3,payload[0]);return b''             # host
         count=struct.unpack_from('<H',payload)[0];self.tx.extend(payload[2:]);return struct.pack('<H',count)
 
 
