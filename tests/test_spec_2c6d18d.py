@@ -353,11 +353,11 @@ def test_marks_page_from_the_serial_included_and_stop_at_more_0():
     assert c.marks_page(9) == ([], False)                                # next: none, more 0
     assert [k.serial for k in c.marks_page(2)[0]] == [5, 6]              # pushed out: from the oldest kept
     assert [k.serial for k in c.marks_page(100)[0]] == [5, 6]            # not given yet: the same
-    froms = [struct.unpack_from("<I", r.payload, 2)[0] for r in ep.requests[-4:]]
+    froms = [struct.unpack_from("<I", r.payload, 4)[0] for r in ep.requests[-4:]]   # after stream(u32)
     assert froms == [6, 9, 2, 100]
     n = len(ep.requests)
     assert [k.serial for k in c.marks(5)] == [5, 6, 7, 8]
-    assert [struct.unpack_from("<I", r.payload, 2)[0] for r in ep.requests[n:]] == [5, 7]   # last + 1, more 0 ends
+    assert [struct.unpack_from("<I", r.payload, 4)[0] for r in ep.requests[n:]] == [5, 7]   # last + 1, more 0 ends
 
 
 def test_marks_serials_wrap():
@@ -370,12 +370,12 @@ def test_marks_serials_wrap():
 
 def test_streams_first_is_u16_and_pages_past_255():
     ep, hst, _, _ = bench()
-    for k in range(300):
+    for k in range(400):                                                 # 9 bytes a row: 113 a 1024-byte page
         ep.streams[1000 + k] = endpoint.Stream(conn=1)
         ep.stream_order[1000 + k] = k
     c = con.Console(hst)
     got = c.streams()
-    assert [s.stream for s in got] == [1000 + k for k in range(300)]
+    assert [s.stream for s in got] == [1000 + k for k in range(400)]
     firsts = [struct.unpack("<H", r.payload)[0] for r in ep.requests if r.op == con.Console.STREAMS]
     assert firsts[0] == 0 and firsts[-1] > 255 and all(len(r.payload) == 2 for r in ep.requests if r.op == con.Console.STREAMS)
 

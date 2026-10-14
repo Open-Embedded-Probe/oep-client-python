@@ -176,7 +176,7 @@ def test_the_cli_keeps_its_session(tcp_bench):
     hst.link.close()                                                 # the command was killed
     out = subprocess.run([sys.executable, "-m", "oep_client", "config", "label", tcp_bench, "5", "x.y"],
                          capture_output=True, text=True, timeout=60)
-    assert out.returncode == 0 and "set: hash" in out.stdout, out.stdout + out.stderr
+    assert out.returncode == 0 and "set: generation" in out.stdout, out.stdout + out.stderr
 
 
 # ---- core §7.5 / §1.2: channels ---------------------------------------------------------------------------------------

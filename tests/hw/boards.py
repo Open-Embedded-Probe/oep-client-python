@@ -17,8 +17,8 @@ Port forms (see oep_client.link.open_host):
   tcp://<host>:<port>              a probe on the network at that address (where mDNS does not reach: WSL 2's NAT, a
                                    router between; tcp://<host> alone takes the port DNS-SD finds)
 
-A TCP board (kind tcp) is never flashed: put the firmware on through the board's serial / USB entry first (its own
-run), and give it its networks with OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n> on that run (the wifi test). OEP_HW_BOARDS
+A TCP board (kind tcp) is never flashed: put the firmware on and give it its network through the board's serial / USB
+entry first (its own run; the network settings are not oep.probe.config's). OEP_HW_BOARDS
 may also name a TCP probe directly - `tcp:<unit_id>` or `tcp://<host>:<port>` - as a board of kind tcp with no table
 entry (no expected model, no free channels unless OEP_HW_GPIO / OEP_HW_UART / OEP_HW_DISABLE give them).
 """

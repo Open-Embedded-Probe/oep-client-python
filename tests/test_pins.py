@@ -27,7 +27,7 @@ def profile() -> virtual_bench.VirtualProbe:
                                                     catalog.u16(catalog.MAX_LENGTH, virtual_bench.block_max_length(1024)))),
         virtual_bench.Offered(3, 0, "oep.target.console", (catalog.tlv(virtual_bench.MECHANISMS, bytes([0, 1, 2])),)),
         virtual_bench._gpio(GPIO, PINS),
-        virtual_bench._config(CFG, 0, slots_max=2),
+        virtual_bench._config(CFG, 0),
     ], own_channels=(24, 25))
 
 
@@ -100,10 +100,10 @@ def test_multiple_candidates_are_all_preserved_without_attach_or_save(monkeypatc
     ep.targets[(WIRE, (18, 0xFFFF))] = endpoint.VirtualTarget(target_id=V003_ID)
     f = finder(hst, t, [], save=True)
     monkeypatch.setattr(f.wire, 'attach', lambda *a, **kw: pytest.fail('attached ambiguous candidate'))
-    report = f.run(steps=('classify', 'scan', 'identify', 'reset', 'slot'))
+    report = f.run(steps=('classify', 'scan', 'identify', 'reset', 'labels'))
     assert set(report.found) == {(18, 0xFFFF), (19, 0xFFFF)}
     assert report.resolution == 'ambiguous' and f.pins is None
-    assert not report.saved and not report.slot and not ep.plan
+    assert not report.saved and not report.profile and not ep.plan
     assert report.target_id is None
 
 
@@ -135,9 +135,9 @@ def test_finds_the_swio_pin_and_the_reset_line_without_being_told():
     assert r.found == [(19, 0xFFFF)] and not {3, 5, 7, 21, 22, 23} & set(r.scanned)
     assert r.family == "ch32v00x" and r.target_id.startswith("00310510") and r.nrst_enabled is True
     assert r.reset_channel == 4 and r.reset_dpc == 0
-    assert "--wire swio --pins 19" in r.slot and not r.saved
-    assert any("label" in line and " 4 " in line and ".nrst" in line for line in lines)   # the reset line as a label
-    assert any(".power_hi" in line for line in lines) and any("output-high" in line for line in lines)
+    assert "wire swio, pins 19" in r.profile and not r.saved
+    assert any("label" in line and " 4 nrst" in line for line in lines)   # the reset line as a label (host guide §5.3)
+    assert any(" power_hi" in line for line in lines) and any("output-high" in line for line in lines)
     assert r.elapsed_s < 60
 
 
@@ -176,16 +176,16 @@ def test_nothing_active_the_attach_under_reset_decides():
     assert any("attach under reset alone decides" in line for line in lines)
 
 
-def test_save_writes_the_slot_and_the_lines_as_labels():
+def test_save_writes_the_lines_as_labels():
+    """The probe keeps no wiring (probe.config): --save writes the labels only; with a profile name
+    `<name>.nrst` / `<name>.power_hi` (host guide §5.3)."""
     ep, hst, t = bench()
-    r = finder(hst, t, [], power=5, save=True, slot=1, name="v003").run()
-    assert r.saved and "reset" not in r.slot                   # a slot has no reset field: the line is a label (§1.3)
+    r = finder(hst, t, [], power=5, save=True, name="v003").run()
+    assert r.saved and "wire swio" in r.profile
     items = config.ProbeConfig(hst).items()
-    slots = [it for it in items if isinstance(it, config.Slot)]
-    assert [(s.slot, s.name, s.wire_fn, s.pins) for s in slots] == [(1, "v003", WIRE, (19, 0xFFFF))]
-    labels = {(it.channel, it.text) for it in items if isinstance(it, config.Label)}
-    assert labels == {(4, "v003.nrst"), (5, "v003.power_hi")}
-    assert config.find_line(items, "v003", "nrst") == 4
+    assert {(it.channel, it.text) for it in items if isinstance(it, config.Label)} == {(4, "v003.nrst"),
+                                                                                       (5, "v003.power_hi")}
+    assert config.find_line(items, "nrst", "v003", single=False) == 4
 
 
 def test_steps_are_optional():
@@ -229,13 +229,13 @@ def test_target_table():
 
 
 def test_suggested_labels_are_checked_by_the_line_lookup():
-    """The suggested <slot>.nrst / .power_hi are looked up by config.find_line (probe.config §1.3) in the settings as
-    they would be: another channel already named so (any case) would make the line not found - said in a note."""
+    """The suggested nrst / power_hi are looked up by config.find_line (host guide §5.3) in the settings as they would
+    be: another channel already named so (any case) would make the line not found - said in a note."""
     ep, hst, t = bench()
     r = finder(hst, t, [], power=5).run()
     assert not any("would find no" in n for n in r.notes)        # nothing else named so: found as suggested
     ep, hst, t = bench()
-    config.ProbeConfig(hst).set([config.Label(channel=9, text="CH32V00X.NRST"), config.Label(channel=4, text="ch32v00x.nrst")])
+    config.ProbeConfig(hst).set([config.Label(channel=9, text="NRST"), config.Label(channel=4, text="nrst")])
     r = finder(hst, t, [], power=5).run()
     notes = [n for n in r.notes if "would find no" in n]
-    assert len(notes) == 1 and "ch32v00x.nrst" in notes[0] and "[9]" in notes[0]   # 4 itself is relabelled: no clash
+    assert len(notes) == 1 and "nrst" in notes[0] and "[9]" in notes[0]   # 4 itself is relabelled: no clash

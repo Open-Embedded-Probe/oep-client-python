@@ -40,8 +40,6 @@ class Offered:
 
 
 CORE_NAME = ""                       # fn 0 is the core: it has no name and is never listed (core §0, §7.2)
-WIFI_MAX_TAG = reg.PROBE_CONFIG.tlv["describe"]["wifi_max"]
-WIFI_MIN_MAX_FRAME = reg.LIMITS["wifi_min_max_frame"]   # a probe with the wifi item answers at least this (probe.config §1.4)
 PLAN_ROLE_INTERFACES = {"oep.fixture.gpio", "oep.fixture.uart", "oep.fixture.i2c-target", "oep.fixture.spi-target",
                         "oep.fixture.logic", "oep.fixture.analog"}   # the interfaces with plan roles (oep-if-plan)
 STAND_IN_OPS = (0x01, 0x02)          # the endpoint's two stand-in ops of an fn it does not simulate (VIRTUAL BENCH ONLY)
@@ -89,14 +87,6 @@ class VirtualProbe:
         for o in self.offered:
             if o.fn != CORE_FN:
                 names.validate(o.name)
-        if fill_ops and max_frame < WIFI_MIN_MAX_FRAME and any(self.has_wifi(o) for o in self.offered):
-            raise ValueError(f"{label}: a probe with the wifi item answers max_frame {WIFI_MIN_MAX_FRAME} or more on every "
-                             f"transport (probe.config §1.4), not {max_frame}")
-
-    @staticmethod
-    def has_wifi(o: Offered) -> bool:
-        """Whether this fn is oep.probe.config with the wifi item (its describe's wifi_max)."""
-        return o.name == "oep.probe.config" and any(t[0] & 0x7F == WIFI_MAX_TAG for t in o.tlvs)
 
     @staticmethod
     def _filled(o: Offered) -> Offered:
@@ -268,18 +258,14 @@ def _transports(kinds: list[tuple[int, int]]) -> tuple[bytes, ...]:
     return tuple(catalog.tlv(CORE_TRANSPORT, bytes([i, k, itf])) for i, (k, itf) in enumerate(kinds))
 
 
-def _config(fn: int, instance: int, slots_max: int, storage: int = 4096, wifi_max: int = 0) -> Offered:
-    """oep.probe.config's declarations (probe.config §4: declarations only; the state is the endpoint's op state):
-    storage 0 = none - no storage tag, and save / erase not in its ops (probe.config §2). wifi_max > 0: the wifi item
-    too, with up to that many entries (describe wifi_max), and state's wifi TLV."""
+def _config(fn: int, instance: int, storage: int = 4096) -> Offered:
+    """oep.probe.config's declarations (probe.config §4): the items label / idle / disable; storage 0 = none - no
+    storage tag, and save / erase / state not in its ops (save, erase and state come together, probe.config §2)."""
     from . import config as cfgmod
-    items = [v for k, v in cfgmod.ITEM.items() if k != "wifi" or wifi_max]
     return Offered(fn, instance, "oep.probe.config", (
-        ops_of("oep.probe.config") if storage else ops_of("oep.probe.config", "save", "erase"))
+        ops_of("oep.probe.config") if storage else ops_of("oep.probe.config", "save", "erase", "state"))
         + ((catalog.u32(_CFG["storage"], storage),) if storage else ()) + (
-        catalog.tlv(_CFG["items"], bytes(items)),
-        catalog.u8(_CFG["slots_max"], slots_max))
-        + ((catalog.u8(cfgmod.DESCRIBE["wifi_max"], wifi_max),) if wifi_max else ()))
+        catalog.tlv(_CFG["items"], bytes(sorted(cfgmod.ITEM.values()))),))
 
 
 def _gpio(fn: int, channels: list[int], modes: int = 0x7F) -> Offered:
@@ -392,7 +378,7 @@ def p4_x035() -> VirtualProbe:
                     max_stretch_us=100_000),                                                       # stretch
         Offered(9, 0, "oep.fixture.spi-target", _roles({1: pins, 2: pins, 3: pins, 4: pins})
                 + _spi_decl(max_length=64, max_hz=3_000_000, features=0b1, queue_depth=8)),             # LSB first
-        _config(10, 0, slots_max=1),
+        _config(10, 0),
         # the P4's ADC1 (GPIO16-23): one ADC for all its channels, 611 Hz - 83.3 kHz in all; ESP32-style attenuations
         Offered(11, 0, "oep.fixture.analog", _roles({k: list(range(16, 24)) for k in range(4)}) + (
             catalog.u32(MAX_CLOCK_HZ, 83_333), catalog.u32(MIN_CLOCK_HZ, 611))
@@ -414,9 +400,7 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
     down to a word, oep-if-debug §4.5), so a host splits its block ops as it does on that probe (a 9168-byte image: 19
     write_blocks of up to 122 words, not 230 of 10). oep.probe.link with port_speed (oep-if-link §3), as that firmware.
     Its channels and the other interfaces' limits are this profile's own. `max_frame`: the same probe at another frame
-    size (esp32_v003_64: the smallest a probe may declare). oep.probe.config has the wifi item (wifi_max 4), as the
-    reference firmware on a classic ESP32 (its TCP transport is not part of this profile: `virtual_bench_serve --tcp`),
-    when max_frame is wifi_min_max_frame (112) or more (probe.config §1.4); below that, no wifi item."""
+    size (esp32_v003_64: the smallest a probe may declare). oep.probe.config with 1024 bytes of storage."""
     own = [0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15]   # UART0, strapping, flash: the probe's own (SWIO 16 is the wire's)
     wired = [4, 5, 13, 14, 17, 18, 19, 21, 22, 25, 26, 27, 32, 33]
     return VirtualProbe("esp32-v003" if max_frame == 512 else f"esp32-v003-{max_frame}", max_frame, [
@@ -439,9 +423,7 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
             catalog.channel_group(1, [(1, 18), (2, 19), (3, 5), (4, 4)]),
             catalog.channel_group(2, [(1, 14), (2, 13), (3, 27), (4, 26)]))
             + _spi_decl(max_length=32, max_hz=3_000_000, features=0, queue_depth=4, cs_setup_ns=4000)),   # MISO in software
-        # the classic ESP32 joins Wi-Fi from its settings - at a max_frame that carries the longest wifi set (112,
-        # probe.config §1.4); below that (esp32-v003-64) the same probe without the wifi item
-        _config(9, 0, slots_max=1, storage=1024, wifi_max=4 if max_frame >= WIFI_MIN_MAX_FRAME else 0),
+        _config(9, 0, storage=1024),
         _link(10, port_speed=True),
         _plan(11),
         _restart(12),
@@ -450,14 +432,13 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
 
 def esp32_v003_64() -> VirtualProbe:
     """esp32-v003 at the smallest max_frame a probe may declare (64, reg.MIN_MAX_FRAME): list and describe paged, a
-    riscv-dm max_length of 40, every answer cut to 64 bytes - what a host must still work with. No wifi item: a probe
-    with it answers max_frame 112 or more (probe.config §1.4)."""
+    riscv-dm max_length of 40, every answer cut to 64 bytes - what a host must still work with."""
     return esp32_v003(reg.MIN_MAX_FRAME)
 
 
 def p4_bench() -> VirtualProbe:
-    """A made-up bench probe with three RVSWD places and two seats (slots, the seat rule and the binds can be
-    exercised): USB-Serial/JTAG (serial port 0), vendor bulk, HID and a CDC (serial port 3) on the project's VID:PID."""
+    """A made-up bench probe with three RVSWD places and two seats (several connections at once): USB-Serial/JTAG (serial
+    port 0), vendor bulk, HID and a CDC (serial port 3) on the project's VID:PID."""
     own = [24, 25]                                  # USB-Serial/JTAG (the wires' pins 2-7 are interfaces')
     pins = [p for p in range(55) if p not in own + list(range(2, 8))]
     return VirtualProbe("p4-bench", 1024, [
@@ -473,7 +454,7 @@ def p4_bench() -> VirtualProbe:
         _console(3),
         _gpio(4, pins),
         _uart(5, 0, pins, 3_000_000),
-        _config(6, 0, slots_max=4),
+        _config(6, 0),
         _link(7),
         _plan(8),
         _restart(9),

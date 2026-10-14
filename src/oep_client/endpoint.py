@@ -62,32 +62,25 @@ define (oep-spec 0f455a0, the rule review of 2026-10-07):
 - oep.target.riscv-dm (debug §4) on one `VirtualTarget` per pin pair: dmi step lists, halt, resume, reset (status flags
   pc; ndmreset; within max_op_ms), read_block / write_block, run (stopped 0-3: 3 when the preparation fails -
   `VirtualTarget.fail_regs` - or the hart runs), step (step_left)
-- oep.target.console (console §1-§3): one live stream per connection, lifetime by its users, the streams list; a stream
-  of a mechanism that carries host -> target bytes (DMDATA, dmseq) has a send queue of the probe's own size
-  (`send_queue`, not declared): a write puts min(count, the free space) at its end (count 0: success; accepted 0 only
-  when full; SDI takes nothing); the probe hands the queue's head to the target, dmseq 2 bytes and DMDATA 3 a poll -
-  one poll per ms while the hart runs, none while it is halted or a riscv-dm request of the connection runs - or all of
-  it at `console_take`
+- oep.target.console (console §1-§3): a session-owned stream opened on a connection (one live stream a connection,
+  u32 numbers never reused), released by close, the connection's release or the session's end (a closed number:
+  no_resource); marks reset 0x40 (the reset op's ndmreset), restart 0x41, common lost / clear / host; a stream of a
+  mechanism that carries host -> target bytes (DMDATA, dmseq) has a send queue of the probe's own size (`send_queue`,
+  not declared): a write puts min(count, the free space) at its end (count 0: success; accepted 0 only when full; an
+  SDI stream's write is unsupported); the probe hands the queue's head to the target, dmseq 2 bytes and DMDATA 3 a
+  poll - one poll per ms while the hart runs, none while it is halted or a riscv-dm request of the connection runs - or
+  all of it at `console_take`
 - oep.fixture.gpio (fixture §1: modes 0-6, the lines outside through `gpio_world`; the output strength is the probe's),
-  oep.fixture.uart (its stream made by the plan; status baud / format; the settings' uart item),
+  oep.fixture.uart (its stream made by the plan; status baud / format),
   oep.fixture.i2c-target (§3, one form: configure an address, a write with data is one frame cut at max_length, reads
   from preload_tx slots or 0xFF, stretch when the ops offer it; test hooks `i2c_write` / `i2c_read`) and
   oep.fixture.spi-target (§4: configure, arm, read_rx, status; errors at most 1 a transfer; `spi_transfer`),
   oep.fixture.logic / analog / capture-group (`virtual_bench_capture`)
-- oep.probe.config (probe.config §1-§3): plan / label / idle / slot / bind / uart / disable items (each of one form:
-  another length is malformed, critical or not), get / set / unset / save / erase / state; the hash is the virtual bench's own
-  (a seeded CRC-32 of get's bytes: no host may compute it); storage_hash is get's hash when the saved settings became
-  current; at boot disable and idle before any other item; slots without a lock (state 0 connected / 1 absent), binds
-  of one stream whose port position stays during a session and carries on after it; a disabled channel is refused
-  everywhere with unavailable cause 5 and never parked; `parked` records the free pins' states. The wifi item on a
-  profile that declares wifi_max: index ssid_len ssid pass_len passphrase, key index; the passphrase write-only (get
-  shows pass_len 0xFF, a set with 0xFF keeps the entry's; the hash covers a token that changes with any passphrase,
-  not the passphrase), and a simulated link in state's wifi TLV: the entries tried in index order against the networks
-  in range (`wifi_air`: ssid -> passphrase or None), `wifi_join_ms` connecting, then connected (rssi `wifi_rssi`, ipv4
-  `wifi_ip`) or waiting with the reason of the last entry tried
-- the serial ports' raw side (transports §4, probe.config §1.2): `port_input` / `port_output` carry the bytes outside
-  the frames for each serial port by its bind; a port the lock holder's requests came in on is held until the session
-  ends. The byte framing itself is `virtual_bench_serial`.
+- oep.probe.config (probe.config §1-§3): label / idle / disable items keyed by (tag, channel) (another length is
+  malformed; tag bit 7 ignored), get / set / unset with counts, save / erase / state when the profile has storage; the
+  generation counts the changes of one boot from 1; state is storage_state, saved_generation, reason; at boot the saved
+  items are checked one by one (disable first, then idle): what fails is left out (partial, reason 2); a disabled
+  channel is refused everywhere with unavailable cause 5 and never parked; `parked` records the free pins' states
 
 Every other non-core fn gets two stand-in operations so the session rules can be exercised - VIRTUAL BENCH ONLY, they mean
 nothing on a real probe:  0x01 write(u32) changes state, 0x02 read -> u32 needs no lock.
@@ -113,25 +106,18 @@ _RV, _CON, _GPIO, _UART, _CFG = (reg.TARGET_RISCV_DM, reg.TARGET_CONSOLE, reg.FI
 STEP = _RV.enum["dmi_step"]
 STEP_ARGS = {STEP["write"]: "BI", STEP["read"]: "B", STEP["poll_reads"]: "BIIH", STEP["wait_us"]: "I",
              STEP["poll_us"]: "BIII"}
-MARK = reg.COMMON.enum["mark_kind"]
-UART_MARK = current_reg.COMMON.enum["mark_kind"]          # oep.fixture.uart's stream (common §1.3: lost 1, clear 2, host 3)
-MARK_RESET, MARK_RESTART, MARK_CLOSED = (reg.COMMON.enum[k] for k in ("mark_detail_reset", "mark_detail_restart",
-                                                                       "mark_detail_closed"))
-MECHANISM_NONE = _CON.enum["mechanism"]["none"]
-STREAM_STATE, STREAM_USERS = _CON.enum["stream_state"], _CON.enum["stream_users"]
+MARK = reg.COMMON.enum["mark_kind"]                       # the common stream marks: lost 1, clear 2, host 3 (common §1.3)
+UART_MARK = MARK
+CON_MARK = _CON.enum["mark_kind"]                          # the console's own: reset 0x40, restart 0x41 (console §2)
+MARK_RESET, MARK_RESTART = _CON.enum["mark_detail_reset"], _CON.enum["mark_detail_restart"]
 ATTACH_FLAGS = reg.WIRE_RVSWD.enum["attach_flags"]
 RUN_STOPPED = _RV.enum["run_stopped"]
 RESET_MODE = _RV.enum["reset_mode"]
 STEP_LEFT = _RV.tlv["step_answer"]["step_left"]            # step's answer: the hart could not be halted again (§4.2)
-ITEM = cfgmod.ITEM                                         # the registry's items and the wifi item
+ITEM = cfgmod.ITEM                                         # label / idle / disable (probe.config §1)
 CHANNEL_ITEMS = (ITEM["label"], ITEM["idle"], ITEM["disable"])   # items keyed by a channel (probe.config §1)
 IDLE_MODE = _CFG.enum["idle_mode"]
 CFG_DESCRIBE = cfgmod.DESCRIBE
-WIFI_STATE, WIFI_REASON = cfgmod.WIFI_STATE, cfgmod.WIFI_REASON
-SLOT_ATTACH = _CFG.enum["slot_attach"]
-SLOT_STATE = _CFG.enum["slot_state"]
-BIND_STREAM = _CFG.enum["bind_stream"]
-BIND_FLOW = _CFG.enum["bind_flow"]
 WIRES = ("oep.wire.rvswd", "oep.wire.swio")
 OWNER = reg.CORE.tlv["open"]["owner"]
 ROLE_ASSIGNMENT = reg.PROBE_PLAN.tlv["plan_apply"]["role_assignment"]   # the tag number (0x10); hosts send it critical
@@ -139,8 +125,6 @@ OP_PLAN_APPLY, OP_PLAN_RELEASE = reg.PROBE_PLAN.op["plan_apply"], reg.PROBE_PLAN
 OP_RESTART = reg.PROBE_RESTART.op["restart"]
 CONFIRM_TRANSPORT = reg.CORE.tlv["confirm_answer"]["transport"]   # confirm's answer: the transport it came on (§7.1)
 UNSUPPORTED_SUPPORTED = reg.CORE.tlv["unsupported_payload"]["supported"]   # confirm's refusal: the revisions handled
-SLOT_NAME = re.compile(r"[a-z0-9_-]{1,32}")
-NO_SLOT, NEVER_NS = 0xFF, 0xFFFFFFFFFFFFFFFF
 PIN_ROLE_RESET = reg.WIRE_RVSWD.enum["pin_role"]["reset"]   # the channels an attach's reset TLV may take
 TARGET_ID_SCHEME = reg.COMMON.enum["target_id_scheme"]     # one space for the whole probe (oep-if-debug §1)
 _I2C, _SPI = reg.FIXTURE_I2C_TARGET, reg.FIXTURE_SPI_TARGET
@@ -479,17 +463,15 @@ class SpiState:
 
 @dataclass
 class Stream:
-    """A position stream (common §1): bytes from position `base`, marks with serials; a console stream's users
-    ("host" and ("slot", n), console §2) and what it is on."""
+    """A position stream (common §1): bytes from position `base`, marks with serials; a console stream's connection
+    and mechanism (console §1)."""
     data: bytearray = field(default_factory=bytearray)
     base: int = 0
     marks: list = field(default_factory=list)          # (serial, position, kind, time_ns, detail)
     serial: int = 0
-    closed: bool = False
     written: bytearray = field(default_factory=bytearray)
     queue: bytearray = field(default_factory=bytearray)  # console: the send queue, accepted bytes not handed on yet
     fed_ms: int = 0                                    # console: the last poll that handed queue bytes on (timers' clock)
-    users: set = field(default_factory=set)
     conn: int = 0                                      # console: the connection it is on
     mechanism: int = 0
     kinds: dict | None = None                          # the mark kinds this stream uses (None: the console's)
@@ -509,69 +491,17 @@ class Stream:
 
 @dataclass
 class Connection:
-    """A debug connection (common §2): made by a wire's attach, open while anything uses it."""
+    """A debug connection (common §2): made by a wire's attach, the session's until detach, its end or a lost line."""
     fn: int
     pair: tuple[int, int]
-    order: int                                         # creation order (the seat rule closes the oldest)
+    order: int                                         # creation order (connections lists them in it)
     speed: int = 4_000_000
     tid: int | None = None
-    users: set = field(default_factory=set)            # "host" and/or ("slot", n)
     idle_clock: int = 0                                # rvswd: SWCLK while the line rests, 0 high / 1 low
     free: bool = False                                 # an exchange went unanswered: the lines rest undriven (debug §2)
 
 
-@dataclass(frozen=True)
-class Slot:
-    slot: int
-    wire_fn: int
-    pair: tuple[int, int]
-    attach: int
-    retry_ms: int
-    max_speed: int                                     # Hz; 0: no ceiling (oep-if-debug §3: the target's, the host's to set)
-    idle_clock: int
-    mechanism: int
-    name: str
-
-
-ITEM_SIZES = {ITEM["plan"]: 5, ITEM["idle"]: 3, ITEM["uart"]: 7, ITEM["disable"]: 2, ITEM["bind"]: 4}
-SLOT_HEAD = struct.Struct("<BHHHBIIBBB")   # slot wire_fn swdio swclk attach retry_ms max_speed_hz idle_clock mechanism name_len
-
-
-def _item_size(tag: int, v: bytes) -> int | None:
-    """The length of item `tag`'s one form as the value's own counts make it (probe.config §1: plan 5, idle 4, uart 7,
-    disable 2, bind 4, a slot by its name_len, wifi by ssid_len and pass_len - none after 0xFF; a label is its text to
-    the end: None). A slot or wifi item too short for its counts is malformed (`Reject`)."""
-    if tag in ITEM_SIZES:
-        return ITEM_SIZES[tag]
-    if tag == ITEM["wifi"]:
-        if len(v) < 3 or len(v) < 3 + v[1]:
-            raise Reject(m.MALFORMED)
-        pass_len = v[2 + v[1]]
-        return 3 + v[1] + (0 if pass_len == cfgmod.PASS_SET else pass_len)
-    if tag == ITEM["slot"]:
-        if len(v) < SLOT_HEAD.size:
-            raise Reject(m.MALFORMED)
-        return SLOT_HEAD.size + v[SLOT_HEAD.size - 1]              # the name ends the item
-    return None
-
-
-@dataclass(frozen=True)
-class Bind:
-    port: int
-    stream: tuple[int, int]                            # (kind, id): the one stream the port carries (probe.config §1.2)
-
-
-@dataclass
-class SlotRuntime:
-    last_try_ms: int | None = None
-    evicted: bool = False                              # the seat rule closed its connection: no retry until a new cue
-
-
-@dataclass
-class Flow:
-    """One stream as a serial port's bind carries it: the stream id and the port's position in it."""
-    sid: object = None
-    pos: int = 0
+ITEM_SIZES = {ITEM["idle"]: 3, ITEM["disable"]: 2}          # the items of a fixed length (probe.config §1)
 
 
 @dataclass
@@ -610,7 +540,6 @@ SPEED_RATES = (300, 5_000_000)                     # what the virtual bench's UA
 
 class Endpoint:
     MARKS_PER_ANSWER = 3                     # small, so hosts must follow `more`
-    CHUNK = 64                               # raw bytes a serial port takes at a time (probe guide §6)
 
     def __init__(self, probe: virtual_bench.VirtualProbe, now_ms: Callable[[], int], boot_id: int = 0x1234ABCD,
                  lease_default_ms: int = 3000, lease_max_ms: int = 60000, revision: int = 1, tail: bytes = b"",
@@ -727,10 +656,8 @@ class Endpoint:
                             for fn, name in self.names.items() if name == _I2C.name}
         cfg_fn = self.fns.get("oep.probe.config")
         cfg = dict(self.decl.get(cfg_fn, ()))
-        self.slots_max = cfg[CFG_DESCRIBE["slots_max"]][0] if CFG_DESCRIBE["slots_max"] in cfg else 0
         self.items = set(cfg.get(CFG_DESCRIBE["items"], b""))
         self.storage_max = struct.unpack_from("<I", cfg[CFG_DESCRIBE["storage"]])[0] if CFG_DESCRIBE["storage"] in cfg else 0
-        self.wifi_max = cfg[CFG_DESCRIBE["wifi_max"]][0] if CFG_DESCRIBE["wifi_max"] in cfg and ITEM["wifi"] in self.items else 0
         # the console's send queue (console §2): its size is the probe's (not declared); what a poll hands to the target
         # per mechanism (dmseq 2 bytes, DMDATA 3; SDI carries nothing to the target, §3.1)
         con_fn = self.fns.get(_CON.name)
@@ -766,6 +693,7 @@ class Endpoint:
         # the lines outside (a test hook): gpio_world(channel, mode) -> the level an input mode reads (None: the
         # default - gpio_inputs, a pull-up 1); reads see the world as the modes set it (gpio_modes)
         self.gpio_world: Callable[[int, int], int | None] | None = None
+        self.config_get_tail = b""                      # TEST HOOK: TLVs after get's items (an extension, core §2.3)
         self._boot()
 
     def _boot(self) -> None:
@@ -787,18 +715,15 @@ class Endpoint:
         self.data_since_ms: dict[int, int] = {}         # fn -> when its oldest data not sent yet was there (max_delay_ms)
         self.push_seq: dict[int, int] = {}              # fn -> the next event / data seq (core §11.2)
         self.outbox: list[bytes] = []                   # events and data frames waiting to go out (pushes())
-        self.plan: set[tuple[int, int, int]] = set()   # (fn, role, channel), from plan_apply and the config
-        self.plan_from_config: set[int] = set()        # fns whose plan came from the config (not a session's)
+        self.plan: set[tuple[int, int, int]] = set()   # (fn, role, channel), from plan_apply
         # corr -> (the whole request, its answer); None where it was too large to keep (core §5.1)
         self.resend: OrderedDict[int, tuple[bytes | None, bytes | None]] = OrderedDict()
         self.newest_corr: int | None = None
         self.conns: dict[int, Connection] = {}
-        self.resources: dict[int, str] = {}            # number -> "connection" / "stream": one u16 space (core §9)
+        self.resources: dict[int, str] = {}            # live number -> "connection" / "stream": one u32 space (core §9)
         self._next_resource = 1
         self._order = 0
-        self.streams: dict[int, Stream] = {}           # console stream id -> stream
-        self.stream_keys: dict[tuple[int, int], int] = {}   # (connection, mechanism) -> stream id
-        self.stream_places: dict[int, tuple[int, tuple[int, int]]] = {}   # stream id -> (wire fn, pin pair) it was on
+        self.streams: dict[int, Stream] = {}           # live console stream id -> stream
         self.stream_order: dict[int, int] = {}         # stream id -> creation order (the streams list's order)
         self.gpio_modes: dict[int, int] = {}
         self.gpio_inputs: dict[int, int] = {}
@@ -806,31 +731,16 @@ class Endpoint:
         self.uarts: dict[int, Stream] = {}             # fn -> stream (while its plan has RX or TX)
         self.uart_carry: dict[int, tuple[int, int]] = {}   # fn -> (position, mark serial) a released stream left off at
         self.uart_baud: dict[int, tuple[int, int]] = {}   # fn -> (baud, format) in force (absent: 115200 8N1)
-        self.uart_session_cfg: set[int] = set()        # fns a session's configure set (it beats the uart item)
         self.uart_fail_configure: set[int] = set()     # TEST HOOK: fns whose next accepted configure fails to come up
-        self.uart_tx: dict[int, bytearray] = {}        # what a serial port's raw bytes sent out on a fixture UART
         self.i2c: dict[int, I2cState] = {fn: I2cState() for fn, n in self.names.items() if n == _I2C.name}
         self.spi_selected: set[int] = set()            # spi-target fns whose CS is active now (spi_select)
         self.spi_ns = True                              # read_rx carries the optional TLV ns (fixture §4)
         self.spi: dict[int, SpiState] = {fn: SpiState() for fn, n in self.names.items() if n == _SPI.name}
-        self.config: dict[tuple[int, int], bytes | list[bytes]] = {}   # (item tag, key) -> value (plan: list)
-        # Wi-Fi (a profile with wifi_max): the networks in range stay over a reboot (the world's); the link joins anew
-        self.wifi_air: dict[bytes, bytes | None] = getattr(self, "wifi_air", {})   # ssid -> passphrase (None: open)
-        self.wifi_join_ms: int = getattr(self, "wifi_join_ms", 500)   # connecting this long after a change or boot
-        self.wifi_rssi: int = getattr(self, "wifi_rssi", -55)
-        self.wifi_ip: str = getattr(self, "wifi_ip", "127.0.0.1")   # the address state shows (this host's: serve --tcp)
-        self.wifi_token = secrets.randbits(32)                  # stands for the passphrases in the hash
-        self.wifi_since_ms = self.now()                         # when the probe last started joining
-        self.wifi_joined: int | None = None                     # the entry the link uses (None: not connected)
-        self.saved: dict | None = getattr(self, "saved", None)
-        self.saved_ids: dict[int, tuple] = getattr(self, "saved_ids", {})   # saved fn -> (name, instance, revision)
-        self.saved_reason = 0                          # why the saved settings were not applied (probe.config §4)
-        self.saved_hash = getattr(self, "saved_hash", 0)   # storage_hash: get's hash when the saved ones became current
-        self.slots: dict[int, Slot] = {}
-        self.binds: dict[int, Bind] = {}
-        self.slot_rt: dict[int, SlotRuntime] = {}
-        self.flows: dict[tuple[int, tuple[int, int]], Flow] = {}
-        self.held_ports: set[int] = set()
+        self.config: dict[tuple[int, int], bytes] = {}   # (item tag, channel) -> value (probe.config §1)
+        self.generation = 1                            # the changes of this boot, from 1 (probe.config §2)
+        self.saved: dict | None = getattr(self, "saved", None)   # the stored items (they outlive a reboot)
+        self.saved_generation = 0                      # state's saved_generation (0: none, unreadable or partial)
+        self.storage_state, self.storage_reason = 0, 0
         self.parked: dict[int, int] = {}               # channel -> the idle mode the probe put the free pin in
         self.speed_state = "base"                      # port_speed: "base", "try" or "committed" (oep-if-link §3)
         self.speed_port: int | None = None             # the port off its boot speed
@@ -844,7 +754,7 @@ class Endpoint:
         self.speed_fallback: str | None = None         # phase 3: why a return waits for a frame boundary (verify/idle/session)
         self.speed_frame_busy = False                  # TEST HOOK: a frame on the raised port is not finished yet
         if self.saved is not None:
-            self._apply_saved()                        # disable and idle before any other item (probe.config §2)
+            self._apply_saved()                        # disable before idle (probe.config §3)
         self._park(self._boot_channels())              # every free pin's idle state before the first answer (core §8)
 
     def _own(self, fn: int, tag: int, fmt: str, default: int) -> int:
@@ -890,7 +800,7 @@ class Endpoint:
     def _park(self, channels) -> None:
         """Free pins go to their idle state (the idle item, else Hi-Z) at boot and whenever released (probe.config §1);
         a disabled channel stays as the reset left it (never parked), one a plan or a connection holds is not free (a
-        slot's pins without a connection are: the idle is the state of a pin neither uses, probe.config §1)."""
+        probe.config §1)."""
         busy = {a[2] for a in self.plan if not self._listens(a[0])} | {p for c in self.conns.values() for p in c.pair}
         for ch in channels:
             if ch == 0xFFFF or ch in self.disabled or ch in busy:
@@ -1145,10 +1055,9 @@ class Endpoint:
         return pair in self.pairs.get(fn, [])
 
     def _held(self, fn: int | None = None, pair: tuple[int, int] | None = None) -> set[int]:
-        """Channels something holds (core §8.1): the plan, the slots' pairs, the live connections' pairs - except
+        """Channels something holds (core §8.1): the plan and the live connections' pairs - except
         wire `fn`'s own connection on `pair` (attaching there again, or scanning through it)."""
         held = {a[2] for a in self.plan if not self._listens(a[0])}   # a logic capture only listens
-        held |= {p for s in self.slots.values() for p in s.pair if p != 0xFFFF and not (s.wire_fn == fn and s.pair == pair)}
         held |= {p for c in self.conns.values() for p in c.pair if p != 0xFFFF and not (c.fn == fn and c.pair == pair)}
         return held
 
@@ -1177,7 +1086,7 @@ class Endpoint:
         return self.now_ns() // 1_000_000
 
     def _clock_ns_of(self, ms: int) -> int:
-        """A time of the timers' clock (`now_ms`, e.g. a slot's last attempt) on the probe's clock (ns since boot)."""
+        """A time of the timers' clock (`now_ms`) on the probe's clock (ns since boot)."""
         return max(0, ms * 1_000_000 - self._origin_ns)
 
     def _new_resource(self, kind: str) -> int:
@@ -1247,9 +1156,6 @@ class Endpoint:
             # every answer to the holder's request past the session check, rejected ones too (core §6.1)
             self.expires_ms = self.now() + self.lease_ms
         took_lock = is_open and res == m.COMPLETED
-        if self.holder is not None and transport in self.serial_ports and (
-                took_lock or (req.session and req.session == self.holder)):
-            self.held_ports.add(transport)                         # transports §4: the raw transfer holds here
         out = m.Result(req.corr, res, detail, payload).pack()
         self.speed_answered(transport)                             # a committed rate's idle counts from here too
         if req.session and req.session == self.last and past_header:
@@ -1385,26 +1291,20 @@ class Endpoint:
 
     def _release_lock(self) -> None:
         """The session's lock ends - end, lease expiry or force, all alike (core §6.4, §9): everything it created is
-        released - its plan (the pins to their idle state), its shares of the streams (before those of the connections:
-        a stream it was the last user of closes with detail session_ended, console §2) and of the connections (one
-        nobody else uses closes), its subscriptions; the owner is forgotten. Nothing passes to the next session. What
-        the settings keep (their plan, a slot's connection, a bind's stream) stays."""
+        released - its plan (the pins to their idle state), its streams and then its connections (console §2, common
+        §2), its subscriptions; the owner is forgotten. Nothing passes to the next session."""
         self.holder = None
         self.owner = None
         self.subscribed.clear()                                    # subscriptions end with the lock
         self.push_link.clear()
-        for fn in {a[0] for a in self.plan} - self.plan_from_config:
+        for fn in {a[0] for a in self.plan}:
             self._drop_plan(fn)
-        for sid, st in list(self.streams.items()):
-            if "host" in st.users:
-                self._drop_stream_user(sid, "host", MARK_CLOSED["session_ended"])
-        for cid, c in list(self.conns.items()):
-            c.users.discard("host")
-            if not c.users:
-                self._close_conn(cid, MARK["detach"])
+        for sid in list(self.streams):                             # the streams before their connections (core §9)
+            self._close_stream(sid)
+        for cid in list(self.conns):
+            self._close_conn(cid)
         for grp in self.groups.values():
             grp.release_session(self.captures)
-        self._refresh()
         self._session_over()
 
     def _remaining(self) -> int:
@@ -1478,19 +1378,16 @@ class Endpoint:
         self._boot()
 
     def lose_connections(self) -> None:
-        """A wire drops every connection; their console streams close with a link-lost mark."""
+        """A wire drops every connection; their console streams close with them."""
         self.lose()
 
     def lose(self, cid: int | None = None) -> list[int]:
         """TEST HOOK: the line of connection `cid` (every connection when None) is lost for good (debug §2): the
-        connection closes, its console streams get mark link-lost and close with detail 4 (connection closed), and a
-        request naming it is answered no_resource. An at-boot slot on its place attaches again by itself at its next
-        retry (probe.config §3.1), its bound console coming back under the same stream number (console §2). -> the
+        connection and its console streams close, and a request naming either is answered no_resource. -> the
         connections closed (an unknown `cid`: none)."""
         gone = [c for c in (list(self.conns) if cid is None else [cid]) if c in self.conns]
         for c in gone:
-            self._close_conn(c, MARK["link_lost"])
-        self._refresh()
+            self._close_conn(c)
         return gone
 
     # ---- core -----------------------------------------------------------------------------------
@@ -1593,8 +1490,6 @@ class Endpoint:
             t.check()                                              # ... an unknown critical TLV ...
             tag_of = lambda fn: tags.get(fn, ROLE_ASSIGNMENT)      # noqa: E731
             self._check_plan(got, held=False, tag_of=tag_of)       # ... roles and channels not declared ...
-            if named & self.plan_from_config:                       # ... the settings' plan is the settings' (§2.3)
-                raise unavailable("held_by_settings")
             self._check_plan(got, tag_of=tag_of)
             self._refuse_disabled(ch for _, _, ch in got)          # a disabled channel (probe.config §1): cause 5
             for fn, _, ch in got:                                  # only gpio and a logic capture take an output idle
@@ -1620,11 +1515,11 @@ class Endpoint:
             t.tail()
             if any(fn not in self.names or fn == m.CORE_FN for fn in fns):
                 raise Reject(m.UNKNOWN_FUNCTION)                   # every fn checked before anything is released (§2.2)
-            dropping = {a[0] for a in self.plan if not fns or a[0] in fns} - self.plan_from_config
+            dropping = {a[0] for a in self.plan if not fns or a[0] in fns}
             if any(fn in self.captures and self.captures[fn].group is not None for fn in dropping):
                 raise unavailable("bound_in_group")                # a track bound in a group (oep-if-plan §2.2)
             for fn in dropping:
-                self._drop_plan(fn)                                 # the settings' plans stay, n = 0 too
+                self._drop_plan(fn)
             return m.COMPLETED, m.SUCCESS, b""
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
@@ -1672,7 +1567,7 @@ class Endpoint:
 
     def _check_plan(self, got: list[tuple[int, int, int]], held: bool = True, tag_of=None) -> None:
         """plan_apply's all-or-nothing check, in core §4.3's order over the whole request: the roles and channels each
-        fn declares (unsupported) for every assignment, then - `held` - no pin another fn, a slot or a
+        fn declares (unsupported) for every assignment, then - `held` - no pin another fn or a
         connection holds (unavailable). `tag_of(fn)`: the tag an unsupported names (the role_assignment or
         probe.config's plan item as received)."""
         self._check_target_roles(got, tag_of)
@@ -1683,8 +1578,7 @@ class Endpoint:
         named = {fn for fn, _, _ in got}
         others = {a for a in self.plan if a[0] not in named}
         kept = {a for a in others if not self._listens(a[0])}
-        slot_pins = {p for s in self.slots.values() for p in s.pair if p != 0xFFFF}
-        slot_pins |= {p for c in self.conns.values() for p in c.pair if p != 0xFFFF}   # a live connection's pins too
+        slot_pins = {p for c in self.conns.values() for p in c.pair if p != 0xFFFF}    # a live connection's pins
         analog = {fn for fn, cap in self.captures.items() if cap.analog}
         current = [None]                                           # the fn of the assignment being checked
 
@@ -1704,7 +1598,7 @@ class Endpoint:
         for fn, role, ch in got:
             current[0] = fn
             beside = [f for f, _, c in got if c == ch and f != fn] + [a[0] for a in others if a[2] == ch]
-            if fn in analog:   # the analog shares its pin with nothing: another fn's plan, a slot, a connection
+            if fn in analog:   # the analog shares its pin with nothing: another fn's plan, a connection
                 if role not in self._declared_roles(fn, ch):
                     check(not_declared(ch))
                     continue
@@ -1787,7 +1681,6 @@ class Endpoint:
             self.gpio_modes.pop(a[2], None)
             self.plan.discard(a)
             released.add(a[2])
-        self.plan_from_config.discard(fn)
         self._uart_plan_changed(fn)
         self._capture_unplanned(fn)
         self._park(released)
@@ -1867,21 +1760,6 @@ class Endpoint:
             self.uart_carry[fn] = (s.end, s.serial)
             del self.uarts[fn]
             self.uart_baud.pop(fn, None)
-            self.uart_session_cfg.discard(fn)
-
-    def _uart_apply_item(self, fn: int) -> None:
-        """The settings' uart item on a UART whose plan runs (fixture §2): the divider is made now; a baud it cannot
-        make within 5 % falls back to the default 115200 8N1 (status shows what runs). No item: default."""
-        item = self.config.get((ITEM["uart"], fn))
-        if item is None:
-            self.uart_baud.pop(fn, None)
-            return
-        _, baud, fmt = struct.unpack_from("<HIB", item)
-        actual = self._uart_actual(baud)
-        if abs(actual - baud) * 20 > baud:
-            self.uart_baud.pop(fn, None)                           # the default 115200 8N1 (fixture §2)
-        else:
-            self.uart_baud[fn] = (actual, fmt)
 
     def _uart_actual(self, baud: int) -> int:
         return self.uart_clock_hz // max(1, self.uart_clock_hz // baud)
@@ -2194,13 +2072,12 @@ class Endpoint:
             if not tg.answers:
                 return m.COMPLETED, m.FAILED, bytes([LINE])        # failed: status [TLV] (common §3); nothing made
             flags = 0
-            cid = self._seat(fn, pair, tg, min(4_000_000, max_speed), evict=False)
+            cid = self._seat(fn, pair, tg, min(4_000_000, max_speed))
             if tg.havereset:
                 tg.havereset, flags = False, flags | ATTACH_FLAGS["havereset_acked"]
             c = self.conns[cid]
             if idle_clock is not None:
                 c.idle_clock = idle_clock
-            c.users.add("host")
             if reset is not None and tg.reset_line not in (None, channel):
                 if method == 1:                                    # a line that resets nothing: halted where it ran
                     tg.halted, tg.dpc = True, tg.reset_vector + 0x2f8
@@ -2214,7 +2091,6 @@ class Endpoint:
             if tg.halted and method == 1:                          # bit3: the probe saw hart 0 halted (§3)
                 flags |= ATTACH_FLAGS["halted"]
                 tail += m.tlv(_T_ATTACH_ANSWER["dpc"], struct.pack("<I", tg.dpc))
-            self._refresh()
             return self._answer(struct.pack("<IIBI", cid, tg.dmstatus(), flags, c.speed) + tail)
         if op == O["detach"]:
             cid = t.take("I")
@@ -2222,8 +2098,7 @@ class Endpoint:
             c = self._connection(cid)
             if c.fn != fn:
                 raise wrong_kind()                                 # another wire's connection
-            self._close_conn(cid, MARK["detach"])
-            self._refresh()
+            self._close_conn(cid)
             return m.COMPLETED, m.SUCCESS, b""
         if op == O["connections"]:                                 # lock-free, paged by first (debug §2.1)
             first = t.take("B")
@@ -2265,7 +2140,7 @@ class Endpoint:
 
     def _refuse_named(self, fn: int, pair: tuple[int, int], any_idle: bool = False) -> None:
         """A pair a request names (scan's list, attach's pins): a disabled channel or an output idle (any idle with
-        `any_idle`) -> unavailable cause 5; held by a plan, a slot or another connection -> cause 1 (debug §1, core
+        `any_idle`) -> unavailable cause 5; held by a plan or another connection -> cause 1 (debug §1, core
         §8.1); each with the channel."""
         self._refuse_disabled(pair)
         for ch in pair:
@@ -2289,33 +2164,23 @@ class Endpoint:
     def _conn_at(self, fn: int, pair: tuple[int, int]) -> int | None:
         return next((cid for cid, c in self.conns.items() if c.fn == fn and c.pair == pair), None)
 
-    def _seat(self, fn: int, pair: tuple[int, int], tg: VirtualTarget, speed: int, evict: bool = True) -> int:
-        """A new connection; a full wire gives up its oldest slot-only connection (debug §1), if `evict`."""
-        mine = [(c.order, cid) for cid, c in self.conns.items() if c.fn == fn]
-        if len(mine) >= self.max_connections.get(fn, 1):
-            slot_only = sorted((o, cid) for o, cid in mine if "host" not in self.conns[cid].users)
-            if not evict or not slot_only:
-                raise Reject(m.UNAVAILABLE)
-            gone = self.conns[slot_only[0][1]]
-            for u in gone.users:
-                if u != "host":
-                    self.slot_rt[u[1]].evicted = True
-            self._close_conn(slot_only[0][1], MARK["link_lost"])
-        cid = self._new_resource("connection")                    # one u16 space with the streams (core §9)
+    def _seat(self, fn: int, pair: tuple[int, int], tg: VirtualTarget, speed: int) -> int:
+        """A new connection; a full wire is refused unavailable cause 2 - none is closed to make room (debug §1)."""
+        if sum(1 for c in self.conns.values() if c.fn == fn) >= self.max_connections.get(fn, 1):
+            raise unavailable("limit")
+        cid = self._new_resource("connection")                    # one u32 space with the streams (core §9)
         self._order += 1
         self.conns[cid] = Connection(fn, pair, self._order, speed, tg.target_id)
         return cid
 
-    def _close_conn(self, cid: int, mark: int) -> None:
-        """The connection goes; its streams close (mark `mark`, then closed 4) and stay readable (console §2)."""
+    def _close_conn(self, cid: int) -> None:
+        """The connection goes, its console streams first (common §2); its pins go back to their idle state."""
+        for sid in [k for k, st in self.streams.items() if st.conn == cid]:
+            self._close_stream(sid)
         gone = self.conns.pop(cid, None)
         self.resources.pop(cid, None)
         if gone is not None:
-            self._park(gone.pair)                                  # its pins are free again: their idle state
-        for (c, _), sid in list(self.stream_keys.items()):
-            if c == cid and not self.streams[sid].closed:
-                self.streams[sid].add_mark(mark, self.now_ns())
-                self._close_stream(sid, MARK_CLOSED["connection_closed"])
+            self._park(gone.pair)
 
     def _cleanup_failed(self, cid: int, done: int, payload: bytes) -> tuple[int, int, bytes]:
         """A block op whose restore of DATA0 / DATA1 failed: partial when done > 0 (all words included), else failed,
@@ -2326,8 +2191,7 @@ class Endpoint:
     def _close_after_answer(self, cid: int) -> None:
         """A high-level op whose cleanup could not finish answers, then the connection and its streams close (debug §4,
         common §2). The bench answers within the call, so closing here is what the host sees after the answer."""
-        self._close_conn(cid, MARK["link_lost"])
-        self._refresh()
+        self._close_conn(cid)
 
     def _target_of(self, cid: int) -> VirtualTarget:
         c = self.conns[cid]
@@ -2439,11 +2303,11 @@ class Endpoint:
                 raise Reject(m.UNSUPPORTED)                        # a mode the definition leaves unused: 0x00 (§2.5)
             tg = target()
             tg.havereset = True
-            self._host_reset(conn, MARK_RESET["ndmreset"])
             if not self._settled(tg):                              # the DM still silent at max_op_ms (§4.3)
                 return m.COMPLETED, m.FAILED, struct.pack("<BBI", LINE, 0, 0)   # the connection kept
             tg.halted = mode == 2
             tg.dpc = tg.reset_vector if mode == 2 else tg.reset_vector + 0x200
+            self._host_reset(conn, MARK_RESET["ndmreset"])         # a successful reset op: one mark reset (§4.6)
             # debug §4.3: status flags(bit0 reached the mode's state) pc (mode 2: dpc)
             flags, pc = (0b01, 0) if mode == 0 else (0b01, tg.dpc)
             return self._answer(struct.pack("<BBI", OK, flags, pc))
@@ -2544,12 +2408,12 @@ class Endpoint:
         return tg.restart_ms <= self.max_op_ms
 
     def _host_reset(self, cid: int, detail: int) -> None:
-        """A reset of the target on connection `cid` - riscv-dm reset (detail 1 ndmreset) or an attach's reset TLV
-        (detail 3): its streams get mark reset (common §1.3)."""
+        """The reset op's ndmreset on connection `cid` (detail 1): its stream gets one mark reset (console §2, debug
+        §4.6) and no restart for the same reset."""
         now = self.now_ns()
-        for (c, _), sid in self.stream_keys.items():
-            if c == cid and not self.streams[sid].closed:
-                self.streams[sid].add_mark(MARK["reset"], now, detail)
+        for st in self.streams.values():
+            if st.conn == cid:
+                st.add_mark(CON_MARK["reset"], now, detail)
 
     # ---- position streams (console, fixture.uart) -----------------------------------------------
     def _stream_args(self, op: int, t: Take):
@@ -2612,8 +2476,6 @@ class Endpoint:
             body = struct.pack("<BB", int(len(hits) > len(page)), len(page))
             body += b"".join(struct.pack("<IQBQB", *mk) for mk in page)   # 22 bytes each, time_ns u64 (common §1.3)
             return self._answer(body)
-        if s.closed:
-            raise unavailable("wrong_state")                       # a closed stream: read / marks only (console §2)
         kinds = s.kinds or MARK
         if op == _CON.op["clear"]:
             s.drop_oldest(len(s.data))
@@ -2625,8 +2487,9 @@ class Endpoint:
         if op == _CON.op["write"]:
             data, count = args, len(args)
             if accept is None:                                     # a console: its send queue (console §2)
-                carries = s.mechanism in self.console_feed         # SDI has no host -> target way (§3.1): 0
-                took = min(count, self.send_queue - len(s.queue)) if carries else 0
+                if s.mechanism not in self.console_feed:
+                    raise Reject(m.UNSUPPORTED)                    # SDI has no host -> target way (§1, §3.1): 0x00
+                took = min(count, self.send_queue - len(s.queue))
                 if took:
                     if not s.queue:
                         s.fed_ms = self.now()                      # the first poll that can take them: a ms on
@@ -2641,85 +2504,41 @@ class Endpoint:
     # ---- oep.target.console ---------------------------------------------------------------------
     def _console(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         if op == _CON.op["open"]:
-            conn, mech = t.take("HB")
+            conn, mech = t.take("IB")
             t.tail()
             if mech not in self.mechanisms:
-                raise Reject(m.UNSUPPORTED)                        # not a mechanism this probe opens (0xFF included)
+                raise Reject(m.UNSUPPORTED)                        # not a mechanism this probe opens: 0x00 (§1)
             self._connection(conn)                                 # no_resource, or unavailable 6 for a stream's number
-            sid, existing = self._open_stream(conn, mech, "host")
-            return self._answer(struct.pack("<HB", sid, int(existing)))
-        if op == _CON.op["streams"]:                               # lock-free, paged by first: every stream, live or readable
-            first = t.take("H")                                    # first(u16): no u8 bound on the streams (console §1)
+            if any(st.conn == conn for st in self.streams.values()):
+                raise unavailable("wrong_state")                   # one live stream a connection, any mechanism (§2)
+            sid = self._new_resource("stream")                     # one u32 space with the connections (core §9)
+            self._order += 1
+            self.stream_order[sid] = self._order                   # streams lists them in the order they were made
+            self.streams[sid] = Stream(conn=conn, mechanism=mech)
+            return self._answer(struct.pack("<I", sid))
+        if op == _CON.op["streams"]:                               # lock-free, paged by first(u16): the live streams
+            first = t.take("H")
             t.tail()
-            rows = []
-            for sid in sorted(self.streams, key=lambda k: self.stream_order.get(k, 0)):
-                s = self.streams[sid]
-                users = (STREAM_USERS["host_session"] if "host" in s.users else 0) | \
-                        (STREAM_USERS["slot"] if any(u != "host" for u in s.users) else 0)
-                rows.append(struct.pack("<HHBBB", sid, s.conn, s.mechanism, users,
-                                        STREAM_STATE["closed"] if s.closed else STREAM_STATE["open"]))
+            rows = [struct.pack("<IIB", sid, self.streams[sid].conn, self.streams[sid].mechanism)
+                    for sid in sorted(self.streams, key=lambda k: self.stream_order.get(k, 0))]
             return m.COMPLETED, m.SUCCESS, self._paged(rows, first)
         if op not in _CON.op.values():
             return m.REJECTED, m.UNKNOWN_OPERATION, b""
-        sid = t.take("H")
+        sid = t.take("I")
         args = self._stream_args(op, t)                            # the request first (core §4.3 orders 5 / 6) ...
+        if op == _CON.op["read"] and args[0] == 3 and not self.offers(fn, _CON.op["marks"]):
+            raise Reject(m.UNSUPPORTED)                            # from 3 needs marks (console §1, common §1)
         s = self._stream(sid)                                      # ... then no_resource (unavailable 6: a connection's)
         if op == _CON.op["close"]:
-            if not s.closed:
-                self._drop_stream_user(sid, "host", MARK_CLOSED["all_released"])
-            return m.COMPLETED, m.SUCCESS, b""                     # a closed stream: nothing, ok (console §1)
+            self._close_stream(sid)
+            return m.COMPLETED, m.SUCCESS, b""
         return self._stream_op(s, op, args, t, None)
 
-    def _open_stream(self, conn: int, mech: int, user) -> tuple[int, bool]:
-        """A stream for `user` on (conn, mech) (console §2): the live one of the pair; another mechanism's live stream
-        on the connection -> unavailable 6; a closed one of the same place and mechanism comes back under its number
-        (position and marks carry on); else a new number. -> (stream, existing)."""
-        sid = self.stream_keys.get((conn, mech))
-        if sid is not None and not self.streams[sid].closed:
-            self.streams[sid].users.add(user)
-            return sid, True
-        live = [k for k, v in self.stream_keys.items() if k[0] == conn and not self.streams[v].closed]
-        if live:
-            raise unavailable("wrong_state")                       # one live stream per connection
-        place = (self.conns[conn].fn, self.conns[conn].pair)
-        again = None
-        for key in [k for k, v in self.stream_keys.items()          # the closed ones of this place
-                    if self.streams[v].closed and self.stream_places.get(v) == place]:
-            old = self.stream_keys.pop(key)
-            if key[1] == mech and again is None:
-                again = old                                        # the same mechanism: it opens again as it was
-            else:
-                self.streams.pop(old, None)                        # another mechanism's: gone
-                self.stream_places.pop(old, None)
-                self.resources.pop(old, None)
-        if again is not None:
-            sid, s = again, self.streams[again]
-            s.closed = False
-        else:
-            sid = self._new_resource("stream")                     # one u16 space with the connections (core §9)
-            s = self.streams[sid] = Stream()
-            self._order += 1
-            self.stream_order[sid] = self._order                   # streams lists them in the order they were made
-        s.conn, s.mechanism = conn, mech
-        s.users = {user}
-        self.stream_keys[(conn, mech)] = sid
-        self.stream_places[sid] = place
-        s.add_mark(MARK["attach"], self.now_ns())
-        return sid, again is not None
-
-    def _drop_stream_user(self, sid: int, user, detail: int) -> None:
-        """One user lets go of the stream (close, a lapse, a slot change); nobody left closes it (mark closed)."""
-        s = self.streams[sid]
-        s.users.discard(user)
-        if not s.users and not s.closed:
-            self._close_stream(sid, detail)
-
-    def _close_stream(self, sid: int, detail: int) -> None:
-        s = self.streams[sid]
-        s.add_mark(MARK["closed"], self.now_ns(), detail)
-        s.closed = True
-        s.users.clear()
-        s.queue.clear()                                            # the send queue goes with the stream (console §2)
+    def _close_stream(self, sid: int) -> None:
+        """The stream, its buffer and its send queue go (console §2); its number is never used again (core §9)."""
+        self.streams.pop(sid, None)
+        self.resources.pop(sid, None)
+        self.stream_order.pop(sid, None)
 
     def console_take(self, sid: int | None = None) -> None:
         """TEST HOOK: the target takes everything console stream `sid`'s send queue holds (every stream when None), as
@@ -2734,7 +2553,7 @@ class Endpoint:
         hart runs and answers, each handing the queue's head to the target - dmseq 2 bytes, DMDATA 3."""
         now = self.now()
         for st in self.streams.values():
-            if not st.queue or st.closed or now <= st.fed_ms or st.conn not in self.conns:
+            if not st.queue or now <= st.fed_ms or st.conn not in self.conns:
                 continue
             tg = self._target_of(st.conn)
             if tg.answers and not tg.halted:
@@ -2750,9 +2569,9 @@ class Endpoint:
     def target_says(self, data: bytes, target: VirtualTarget | None = None) -> None:
         """The target (the first one by default) writes to its console: every open stream on a connection to it."""
         target = target or self.target
-        for (cid, _), sid in self.stream_keys.items():
-            if cid in self.conns and self._target_of(cid) is target and not self.streams[sid].closed:
-                self.streams[sid].data += data
+        for st in self.streams.values():
+            if st.conn in self.conns and self._target_of(st.conn) is target:
+                st.data += data
 
     # ---- oep.fixture.gpio -----------------------------------------------------------------------
     def _gpio(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
@@ -2807,7 +2626,6 @@ class Endpoint:
                 self.uart_baud.pop(fn, None)
                 return self._answer(struct.pack("<I", 0), m.FAILED)
             self.uart_baud[fn] = (actual, fmt[0])
-            self.uart_session_cfg.add(fn)
             return self._answer(struct.pack("<I", actual))
         if op == _UART.op["status"]:                               # lock-free: baud(u32) format(u8) (fixture §2)
             t.tail()
@@ -3012,712 +2830,188 @@ class Endpoint:
         return (tx + bytes(n))[:n]
 
     # ---- oep.probe.config -----------------------------------------------------------------------
+    @staticmethod
+    def _read_items(t: Take, count: int) -> list[tuple[int, int, bytes]]:
+        """`count` items, tag(u8) len(u16) value each (probe.config §1) -> (tag as received, number, value); item
+        number 0 is malformed."""
+        out = []
+        for _ in range(count):
+            received, n = t.take("BH")
+            value = t.bytes(n)
+            if not received & 0x7F:
+                raise Reject(m.MALFORMED)
+            out.append((received, received & 0x7F, value))
+        return out
+
+    @staticmethod
+    def _item_channel(tag: int, value: bytes) -> int:
+        """A known item's channel; another length than its form is malformed (probe.config §1)."""
+        if tag == ITEM["label"]:
+            ok = 3 <= len(value) <= 2 + reg.LIMITS["label_max_bytes"]     # channel and 1-32 bytes of text
+        else:
+            ok = len(value) == ITEM_SIZES[tag]
+        if not ok:
+            raise Reject(m.MALFORMED)
+        return struct.unpack_from("<H", value)[0]
+
+    def _item_refusal(self, tag: int, ch: int, value: bytes) -> bool:
+        """Whether this probe cannot take the item's values (probe.config §1): a channel at or past `channels` or its
+        own, an idle mode left unused (5 or more), an output on an input-only channel, a pull the channel lacks."""
+        if not self._channel_ok(ch):
+            return True
+        if tag == ITEM["idle"]:
+            mode = value[2]
+            if mode not in IDLE_MODE.values():
+                return True
+            if mode in (IDLE_MODE["output_low"], IDLE_MODE["output_high"]) and ch in self.input_only:
+                return True
+            if mode in (IDLE_MODE["pull_up"], IDLE_MODE["pull_down"]) and mode in self.no_pull.get(ch, ()):
+                return True
+        return False
+
     def _config_op(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
-        if op == _CFG.op["get"]:
+        if op == _CFG.op["get"]:                                   # first(u16): more generation count items [TLV]
             first = t.take("H")
             t.tail()
-            items = self._canonical(self.config, shown=True)    # a wifi item without its passphrase
-            budget = self.probe.max_frame - m.RESULT_HEADER - 5
+            items = [struct.pack("<BH", tag, len(v)) + v for (tag, _), v in sorted(self.config.items())]
+            budget = self.probe.max_frame - m.RESULT_HEADER - 6
             out, sent = b"", 0
             for item in items[first:]:
-                if out and len(out) + len(item) > budget:
-                    break
+                if len(out) + len(item) > budget:
+                    break                                          # an item is never split (§2)
                 out += item
                 sent += 1
             more = 1 if first + sent < len(items) else 0
-            return m.COMPLETED, m.SUCCESS, struct.pack("<BI", more, self._hash(self.config)) + out
-        if op == _CFG.op["set"]:
-            new = dict(self.config)
-            seen, plans = set(), {}
-            try:
-                tlvs = m.split_tlvs(t.data) if t.data else []
-            except m.ProtocolError:
-                raise Reject(m.MALFORMED) from None
-            as_sent = {}
-            undeclared = None                                      # the first item this probe does not handle
-            for received, value in tlvs:
-                tag = received & 0x7F                              # kept without the critical bit
+            return m.COMPLETED, m.SUCCESS, struct.pack("<BIB", more, self.generation, sent) + out + self.config_get_tail
+        if op == _CFG.op["set"]:                                   # count(u8) items [TLV]
+            items = self._read_items(t, t.take("B"))
+            t.tail()                                               # the request's own tail (core §2.3), not items
+            new, seen, undeclared = dict(self.config), set(), None
+            for received, tag, value in items:
                 if tag not in self.items:
-                    undeclared = undeclared if undeclared is not None else received   # the tag as received (§2)
-                    continue                                       # refused after every item's form (core §4.3)
-                size = _item_size(tag, value)
-                if size is not None and len(value) != size:
-                    raise Reject(m.MALFORMED)                      # a value of another length, bit 7 or not (§1)
-                if tag != ITEM["plan"]:
-                    as_sent[(tag, self._item_key(tag, value))] = received
-                if tag == ITEM["plan"]:                            # one item per assignment, key (fn, role, channel)
-                    key = struct.unpack("<HBH", value)
-                    if (tag, key) in seen:
-                        raise Reject(m.MALFORMED)
-                    seen.add((tag, key))
-                    plans.setdefault(key[0], []).append(value)
-                    as_sent.setdefault((tag, key[0]), received)
+                    undeclared = received if undeclared is None else undeclared   # after every item's form (§4.3)
                     continue
-                key = self._item_key(tag, value)
-                if (tag, key) in seen:
-                    raise Reject(m.MALFORMED)                      # the same key twice in one set
-                seen.add((tag, key))
-                if tag == ITEM["wifi"] and value[2 + value[1]] == cfgmod.PASS_SET:
-                    have = self.config.get((tag, key))             # pass_len 0xFF: the passphrase the entry has
-                    if have is None:
-                        raise Reject(m.MALFORMED)                  # no such entry
-                    value = value[:2 + value[1]] + have[2 + have[1]:]
-                new[(tag, key)] = value
-            for fn, values in plans.items():
-                new[(ITEM["plan"], fn)] = values
-            self._apply_config(new, changed_slots={k for t_, k in seen if t_ == ITEM["slot"]}, received=as_sent,
-                               undeclared=undeclared)
-            return m.COMPLETED, m.SUCCESS, struct.pack("<I", self._hash(self.config))
-        if op == _CFG.op["unset"]:                                 # n(u8) n x (len(u8) tag(u8) key), len the key's
-            n = t.take("B")
-            keys, undeclared = [], None
-            for _ in range(n):
-                klen, tag = t.take("BB")
-                key = t.bytes(klen)
-                if tag not in self.items:
-                    undeclared = tag if undeclared is None else undeclared   # after the whole form (core §4.3)
-                    continue
-                if klen != self._key_len(tag):
-                    raise Reject(m.MALFORMED)                      # the key's length is the tag's
-                keys.append((tag, self._item_key(tag, key)))
+                ch = self._item_channel(tag, value)
+                if (tag, ch) in seen:
+                    raise Reject(m.MALFORMED)                      # the same key twice in one set (§2)
+                seen.add((tag, ch))
+                new[(tag, ch)] = value
+            if undeclared is not None:
+                raise Reject(m.UNSUPPORTED, bytes([undeclared]))   # an item it does not declare, as received (§1)
+            for received, tag, value in items:
+                if self._item_refusal(tag, struct.unpack_from("<H", value)[0], value):
+                    raise Reject(m.UNSUPPORTED, bytes([received]))
+            self._change_config(new)
+            return m.COMPLETED, m.SUCCESS, struct.pack("<I", self.generation)
+        if op == _CFG.op["unset"]:                                 # count(u8) count x (tag(u8) channel(u16)) [TLV]
+            keys = [t.take("BH") for _ in range(t.take("B"))]
             t.tail()
+            undeclared = next((tag for tag, _ in keys if tag & 0x7F not in self.items), None)
+            if any(not tag & 0x7F for tag, _ in keys) or len({(tag & 0x7F, ch) for tag, ch in keys}) != len(keys):
+                raise Reject(m.MALFORMED)                          # item 0, or a key twice
             if undeclared is not None:
                 raise Reject(m.UNSUPPORTED, bytes([undeclared]))
             new = dict(self.config)
-            for tag, key in keys:
-                new.pop((tag, key), None)                          # a key that is not there: nothing
-            self._apply_config(new, changed_slots={k for t_, k in keys if t_ == ITEM["slot"]})
-            return m.COMPLETED, m.SUCCESS, struct.pack("<I", self._hash(self.config))
-        if op == _CFG.op["state"]:                                 # lock-free; §3.3, paged
-            first_slot, first_bind = t.take("BB")
+            for tag, ch in keys:
+                new.pop((tag & 0x7F, ch), None)                    # a key that is not there: nothing
+            self._change_config(new)
+            return m.COMPLETED, m.SUCCESS, struct.pack("<I", self.generation)
+        if op == _CFG.op["state"]:                                 # lock-free (§3)
             t.tail()
-            return m.COMPLETED, m.SUCCESS, self._state_answer(first_slot, first_bind)
+            return m.COMPLETED, m.SUCCESS, struct.pack("<BIB", self.storage_state, self.saved_generation,
+                                                        self.storage_reason)
         if op == _CFG.op["save"]:
             t.tail()
-            if not self.storage_max:
-                raise Reject(m.UNSUPPORTED)                        # a probe without storage
-            if len(b"".join(self._canonical(self.config))) > self.storage_max:
-                raise unavailable("storage_full")                  # max_bytes: the items' TLV bytes (§2)
+            if sum(3 + len(v) for v in self.config.values()) > self.storage_max:
+                raise unavailable("storage_full")                  # past max_bytes, before anything (§4)
             self.saved = dict(self.config)
-            self.saved_ids = {fn: self.identity[fn] for fn in self._referenced(self.config) if fn in self.identity}
-            self.saved_reason = 0
-            self.saved_hash = self._hash(self.config)
-            return m.COMPLETED, m.SUCCESS, struct.pack("<I", self._hash(self.config))
+            self.storage_state, self.storage_reason, self.saved_generation = 1, 0, self.generation
+            return m.COMPLETED, m.SUCCESS, struct.pack("<I", self.generation)
         if op == _CFG.op["erase"]:
             t.tail()
-            if not self.storage_max:
-                raise Reject(m.UNSUPPORTED)
-            self.saved, self.saved_ids, self.saved_reason, self.saved_hash = None, {}, 0, 0
+            self.saved = None
+            self.storage_state, self.storage_reason, self.saved_generation = 0, 0, 0
             return m.COMPLETED, m.SUCCESS, b""
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
-    def _state_answer(self, first_slot: int, first_bind: int) -> bytes:
-        """probe.config §3.3: more storage_state storage_hash unreadable_reason, the slot states from first_slot and
-        the bind states from first_bind that fit the frame. storage_hash: the hash the settings had when the saved ones
-        became the current ones (at boot or by save) - get's hash while nothing changed since (0: none or unreadable)."""
-        saved_hash = self.saved_hash if self.saved is not None and not self.saved_reason else 0
-        state = 0 if self.saved is None else 2 if self.saved_reason else 1
-        slots = [self._slot_state(n) for n in sorted(self.slots)][first_slot:]   # count x element (core §2.3)
-        binds = [self._bind_state(p) for p in sorted(self.binds)][first_bind:]
-        wifi = self._wifi_state_tlv()
-        budget = self.probe.max_frame - m.RESULT_HEADER - 9 - len(wifi)   # the wifi TLV on every page
-        out_s, out_b = [], []
-        for row in slots:
-            if sum(map(len, out_s)) + len(row) > budget:
-                break
-            out_s.append(row)
-        for row in binds:
-            if sum(map(len, out_s)) + sum(map(len, out_b)) + len(row) > budget:
-                break
-            out_b.append(row)
-        more = int(len(out_s) < len(slots) or len(out_b) < len(binds))
-        return (struct.pack("<BBIB", more, state, saved_hash, self.saved_reason)
-                + bytes([len(out_s)]) + b"".join(out_s) + bytes([len(out_b)]) + b"".join(out_b) + wifi)
-
-    # ---- the wifi item and its simulated link ----
-    def _wifi_form(self, index: int, value: bytes) -> None:
-        """The wifi item's form (malformed otherwise, probe.config §1.4): ssid 1-32 bytes, the passphrase none, 8-63
-        bytes of 0x20-0x7E or 64 hex digits. (An index at or past wifi_max is unsupported: `_apply_config`.)"""
-        if not 1 <= value[1] <= cfgmod.SSID_MAX:
-            raise Reject(m.MALFORMED)
-        try:
-            raw = value[3 + value[1]:]
-            if raw:
-                cfgmod.check_passphrase(raw)
-        except ValueError:
-            raise Reject(m.MALFORMED) from None
-
-    def wifi_entries(self, config: dict | None = None) -> list[tuple[int, bytes, bytes | None]]:
-        """The settings' networks in index order: (index, ssid, passphrase or None)."""
-        out = []
-        for (tag, key), v in sorted((config if config is not None else self.config).items()):
-            if tag == ITEM["wifi"]:
-                out.append((key, bytes(v[2:2 + v[1]]), bytes(v[3 + v[1]:]) or None))
-        return out
-
-    def _wifi_link(self, config: dict) -> tuple[int, int, int]:
-        """Where the entries end up once joined: (state, entry, reason) - the first entry in range whose passphrase
-        the network takes is connected; none: waiting with the reason of the last one tried; no entry: off."""
-        entries = self.wifi_entries(config)
-        if not entries:
-            return WIFI_STATE["off"], cfgmod.NO_ENTRY, WIFI_REASON["none"]
-        reason = WIFI_REASON["none"]
-        for index, ssid, passphrase in entries:
-            if ssid not in self.wifi_air:
-                reason = WIFI_REASON["not-found"]
-            elif self.wifi_air[ssid] != passphrase:
-                reason = WIFI_REASON["auth"]
-            else:
-                return WIFI_STATE["connected"], index, WIFI_REASON["none"]
-        return WIFI_STATE["waiting"], cfgmod.NO_ENTRY, reason
-
-    def wifi_set_air(self, air: dict) -> None:
-        """The networks in range change (ssid -> passphrase or None, str or bytes): the probe joins again."""
-        enc = lambda v: v.encode() if isinstance(v, str) else v    # noqa: E731
-        self.wifi_air = {enc(k): (enc(v) if v else None) for k, v in air.items()}
-        self.wifi_joined, self.wifi_since_ms = None, self.now()
-
-    def wifi_status(self) -> tuple[int, int, int, int, bytes]:
-        """state entry reason rssi ipv4 now: `wifi_join_ms` connecting (on the first entry) after the entries or the
-        air changed, then `_wifi_link`'s outcome."""
-        entries = self.wifi_entries()
-        if not entries:
-            self.wifi_joined = None
-            return WIFI_STATE["off"], cfgmod.NO_ENTRY, WIFI_REASON["none"], 0, bytes(4)
-        if self.wifi_joined is None and self.now() - self.wifi_since_ms < self.wifi_join_ms:
-            return WIFI_STATE["connecting"], entries[0][0], WIFI_REASON["none"], 0, bytes(4)
-        if self.wifi_joined is not None:
-            state, entry, reason = WIFI_STATE["connected"], self.wifi_joined, WIFI_REASON["none"]
-        else:
-            state, entry, reason = self._wifi_link(self.config)
-            self.wifi_joined = entry if state == WIFI_STATE["connected"] else None
-        if state == WIFI_STATE["connected"]:
-            return state, entry, reason, self.wifi_rssi, bytes(int(x) for x in self.wifi_ip.split("."))
-        return state, entry, reason, 0, bytes(4)
-
-    def _wifi_state_tlv(self) -> bytes:
-        """state's wifi TLV (a probe with the wifi item): state(u8) entry(u8) reason(u8) rssi(i8) ipv4(4)."""
-        if not self.wifi_max:
-            return b""
-        state, entry, reason, rssi, ip = self.wifi_status()
-        return m.tlv(cfgmod.STATE_TLV["wifi"], struct.pack("<BBBb", state, entry, reason, rssi) + ip)
-
-    @staticmethod
-    def _key_len(tag: int) -> int:
-        return 1 if tag in cfgmod.BYTE_KEYED else 2
-
-    def _item_key(self, tag: int, value: bytes) -> int:
-        if len(value) < self._key_len(tag):
-            raise Reject(m.MALFORMED)
-        return value[0] if self._key_len(tag) == 1 else struct.unpack_from("<H", value)[0]
-
-    @staticmethod
-    def _canonical(config: dict, shown: bool = False) -> list[bytes]:
-        """get's order (probe.config §2): tag order, then key order (plan by (fn, role, channel)), the items' bytes as
-        the host sent them, each as its TLV (core §2.2). shown: as get shows them (a wifi item's passphrase left out,
-        pass_len 0xFF when it has one)."""
-        rows = []
-        for (tag, key), value in config.items():
-            if shown and tag == ITEM["wifi"]:
-                value = cfgmod.wifi_get_form(value)
-            for v in (value if isinstance(value, list) else [value]):
-                sort_key = struct.unpack("<HBH", v[:5]) if isinstance(value, list) else (key,)
-                rows.append((tag, sort_key, m.tlv(tag, v)))
-        return [r[2] for r in sorted(rows)]
-
-    hash_fn: Callable[[dict], int] | None = None            # a test's own hash (the vectors name the probe's hash)
-    HASH_SEED = 0x4F45                                      # the virtual bench's own way to make the hash (the probe's choice, §2)
-
-    def _hash(self, config: dict | None) -> int:
-        """A u32 that changes with the settings (probe.config §2: how it is made is the probe's; a host never computes
-        it): here a CRC-32 of get's bytes, seeded so no host can take it for a rule - and, with wifi items, of a token
-        that changes whenever a passphrase does (never the passphrase: a lock-free get must not let one be guessed)."""
-        config = config or {}
-        if self.hash_fn is not None:
-            return self.hash_fn(config)
-        token = struct.pack("<I", self.wifi_token) if any(t == ITEM["wifi"] for t, _ in config) else b""
-        return zlib.crc32(b"".join(self._canonical(config, shown=True)) + token, self.HASH_SEED)
-
-    @staticmethod
-    def _referenced(config: dict) -> set[int]:
-        """The fns saved items name (probe.config §2): plan fns, slot wire_fns, fixture UARTs a bind carries."""
-        fns = set()
-        for (tag, key), value in config.items():
-            if tag in (ITEM["plan"], ITEM["uart"]):
-                fns.add(key)
-            elif tag == ITEM["slot"]:
-                fns.add(struct.unpack_from("<H", value, 1)[0])
-            elif tag == ITEM["bind"] and value[1] == BIND_STREAM["fixture_uart"]:
-                fns.add(struct.unpack_from("<H", value, 2)[0])
-        return fns
+    def _change_config(self, new: dict) -> None:
+        """Make `new` the settings after checking it whole against what runs (probe.config §1, §2); a refusal changes
+        nothing. The same contents: nothing changes, the generation stays."""
+        if new == self.config:
+            return
+        if self.generation == 0xFFFFFFFF:
+            raise unavailable("limit")                             # no generation left before a restart (§2)
+        disabled = {ch for tag, ch in new if tag == ITEM["disable"]}
+        idles = {ch for tag, ch in new if tag == ITEM["idle"]}
+        busy = {a[2] for a in self.plan} | {p for c in self.conns.values() for p in c.pair}
+        for ch in sorted(disabled - self.disabled):
+            if ch in busy:
+                raise unavailable("pin_in_use", ch)                # a channel in use cannot be disabled (§1)
+        if disabled & idles:
+            raise unavailable("held_by_settings", min(disabled & idles))   # idle and disable on one channel (§1)
+        old_idle = {ch: v for (tag, ch), v in self.config.items() if tag == ITEM["idle"]}
+        new_idle = {ch: v for (tag, ch), v in new.items() if tag == ITEM["idle"]}
+        repark = (self.disabled - disabled) | {ch for ch in set(old_idle) | set(new_idle)
+                                               if old_idle.get(ch) != new_idle.get(ch)}
+        self.config = new
+        self.generation += 1
+        self._park(repark)                                         # a free channel's new idle, an enabled one (§1)
 
     def _apply_saved(self) -> None:
-        """At boot: the saved items' fns found again by (name, instance, revision) and renumbered, then applied; one
-        not found (or of another revision) leaves the whole unapplied (probe.config §2)."""
-        for (tag, key), value in self.saved.items():
-            if tag == ITEM["bind"] and key not in self.serial_ports:
-                self.saved_reason = 2                              # a bind's port not a serial port here (PC-8)
-                return
-        now = {ident: fn for fn, ident in self.identity.items()}
-        remap = {}
-        for fn, ident in self.saved_ids.items():
-            if ident not in now:
-                self.saved_reason = 2
-                return
-            remap[fn] = now[ident]
-        pack = lambda fn: struct.pack("<H", remap.get(fn, fn))   # noqa: E731
-        new = {}
-        for (tag, key), value in self.saved.items():
-            if tag == ITEM["plan"]:
-                new[(tag, remap.get(key, key))] = [pack(key) + v[2:] for v in value]
-            elif tag == ITEM["slot"]:
-                new[(tag, key)] = value[:1] + pack(struct.unpack_from("<H", value, 1)[0]) + value[3:]
-            elif tag == ITEM["bind"] and value[1] == BIND_STREAM["fixture_uart"]:
-                new[(tag, key)] = value[:2] + pack(struct.unpack_from("<H", value, 2)[0])
-            elif tag == ITEM["uart"]:
-                new[(tag, remap.get(key, key))] = pack(key) + value[2:]
-            else:
-                new[(tag, key)] = value
-        self.saved = new                                           # the saved items, read for this boot's fns
-        try:
-            self._apply_config(new, boot=True)
-            self.saved_hash = self._hash(self.config)              # the saved settings are the current ones now
-        except Reject:
-            self.saved_reason = 3
+        """At boot (probe.config §3): every saved item checked by itself against this firmware - disable first, then
+        idle (a channel with both keeps the disable), then label; one it cannot take is left out and the rest applied
+        (storage_state 3 partial, reason 2), never read as another channel or mode."""
+        order = {ITEM["disable"]: 0, ITEM["idle"]: 1, ITEM["label"]: 2}
+        applied, bad = {}, False
+        for (tag, ch), value in sorted(self.saved.items(), key=lambda kv: (order.get(kv[0][0], 3), kv[0][1])):
+            try:
+                ok = (tag in self.items and self._item_channel(tag, value) == ch
+                      and not self._item_refusal(tag, ch, value))
+            except Reject:
+                ok = False
+            if ok and tag == ITEM["idle"] and (ITEM["disable"], ch) in applied:
+                ok = False                                         # disable wins over idle on one channel
+            if ok:
+                applied[(tag, ch)] = value
+            bad |= not ok
+        self.config = applied
+        self.storage_state, self.storage_reason = (3, 2) if bad else (1, 0)
+        self.saved_generation = 0 if bad else 1
 
     def load_config(self, items: list[bytes], saved: bool = True) -> None:
-        """Put `items` (item TLVs) in as the config, as a set would; with `saved` they are also the saved config
-        (a probe that booted with them)."""
-        new: dict = {}
+        """TEST HOOK: `items` (item bytes: tag len value) as the settings - with `saved`, as a probe that booted with them
+        stored (applied as at boot); without, as the settings now (generation one on, the free pins reparked)."""
+        new = {}
         for tag, value in m.split_tlvs(b"".join(items)):
-            key = self._item_key(tag, value)
-            if tag == ITEM["plan"]:
-                new.setdefault((tag, key), []).append(value)
-            else:
-                new[(tag, key)] = value
-        self._apply_config(new, changed_slots=None, boot=True)
+            new[(tag & 0x7F, struct.unpack_from("<H", value)[0])] = value
         if saved:
-            self.saved = dict(self.config)
-            self.saved_ids = {fn: self.identity[fn] for fn in self._referenced(self.config) if fn in self.identity}
-            self.saved_hash = self._hash(self.config)
-
-    def _apply_config(self, new: dict, changed_slots: set[int] | None = None, boot: bool = False,
-                      received: dict | None = None, undeclared: int | None = None) -> None:
-        """Check the whole config, then make it the current one (set is all-or-nothing up to reserving resources);
-        automatic attaches and console opens follow (and are not rolled back). `received`: (tag, key) -> the item's
-        tag as the set sent it (the critical bit kept; a plan's key is its fn), for the unsupported payloads that name
-        it. `undeclared`: the first item tag of the set this probe does not handle.
-
-        Every check runs before anything changes (core §4.3: any one reason that applies): the form of each item and
-        the contradictions between items (malformed), the fns the items name (unknown_function), what this probe does
-        not handle (unsupported), then the state and the resources (unavailable). Items are visited in get's order."""
-        received = received or {}
-        items = sorted(new.items(), key=lambda kv: kv[0])
-        # the form of each item, then the contradictions between items
-        slots: dict[int, Slot] = {}
-        for (tag, key), value in items:
-            if tag == ITEM["slot"]:
-                slots[key] = self._parse_slot(value, "form")
-            elif tag == ITEM["plan"]:
-                if any(len(v) != 5 for v in value) or key == m.CORE_FN:
-                    raise Reject(m.MALFORMED)                      # fn 0 holds no plan (oep-if-plan §2.5)
-            elif tag == ITEM["idle"]:
-                if len(value) != ITEM_SIZES[tag]:
-                    raise Reject(m.MALFORMED)                      # channel mode: 3 bytes (probe.config §1)
-            elif tag == ITEM["label"]:
-                # channel(u16) text: 1-32 bytes (probe.config §1: the length is the rule)
-                if not 3 <= len(value) <= 2 + reg.LIMITS["label_max_bytes"]:
-                    raise Reject(m.MALFORMED)
-            elif tag == ITEM["uart"]:
-                if len(value) != ITEM_SIZES[tag] or struct.unpack_from("<I", value, 2)[0] == 0:
-                    raise Reject(m.MALFORMED)                      # baud 0 (fixture §2)
-            elif tag == ITEM["bind"]:
-                if len(value) != ITEM_SIZES[tag]:
-                    raise Reject(m.MALFORMED)
-            elif tag == ITEM["wifi"]:
-                self._wifi_form(key, value)
-        names = [s.name for s in slots.values()]
-        if len(set(names)) != len(names):
-            raise Reject(m.MALFORMED)
-        places = [(s.wire_fn, s.pair) for s in slots.values()]
-        if len(set(places)) != len(places):
-            raise Reject(m.MALFORMED)                              # two slots on one place: the settings contradict
-        disabled = {key for tag, key in new if tag == ITEM["disable"]}
-        idles = {key for tag, key in new if tag == ITEM["idle"]}
-        if disabled & idles:
-            raise Reject(m.MALFORMED)                              # idle and disable for one channel (probe.config §1)
-        for (tag, key), value in items:
-            if tag == ITEM["bind"]:
-                self._parse_bind(value, slots, "form")
-        # the fns the items name
-        for (tag, key), value in items:
-            if tag == ITEM["plan"] and key not in self.names:
-                raise Reject(m.UNKNOWN_FUNCTION)
-            if tag == ITEM["slot"]:
-                self._parse_slot(value, "fn")
-            elif tag == ITEM["bind"]:
-                self._parse_bind(value, slots, "fn")
-            elif tag == ITEM["uart"] and struct.unpack_from("<H", value)[0] not in self.names:
-                raise Reject(m.UNKNOWN_FUNCTION)
-        # what this probe does not handle
-        if undeclared is not None:
-            raise Reject(m.UNSUPPORTED, bytes([undeclared]))       # an item it does not declare, the tag as received
-        binds: dict[int, Bind] = {}
-        uarts: dict[int, tuple[int, int]] = {}
-        for (tag, key), value in items:
-            as_received = bytes([received.get((tag, key), tag)])  # the item's tag as received (probe.config §1)
-            channel = m.tlv(_UNA["channel"], struct.pack("<H", key)) if tag in CHANNEL_ITEMS else b""
-            if tag in CHANNEL_ITEMS and not self._channel_ok(key):
-                # at or past `channels`, or one the probe uses itself (probe.config §1, the channel of an item)
-                raise Reject(m.UNSUPPORTED, as_received + channel)
-            if tag == ITEM["slot"]:
-                slots[key] = self._item_refusal(received, tag, key, self._parse_slot, value, "values")
-            elif tag == ITEM["bind"]:
-                binds[key] = self._item_refusal(received, tag, key, self._parse_bind, value, slots, "values")
-            elif tag == ITEM["idle"]:
-                mode = value[2]
-                if mode not in IDLE_MODE.values():
-                    raise Reject(m.UNSUPPORTED, as_received + channel)   # 5 or more: left unused by the definition
-                if mode in (IDLE_MODE["output_low"], IDLE_MODE["output_high"]) and key in self.input_only:
-                    raise Reject(m.UNSUPPORTED, as_received + channel)   # cannot drive it as an output (§1)
-                if mode in (IDLE_MODE["pull_up"], IDLE_MODE["pull_down"]) and mode in self.no_pull.get(key, ()):
-                    raise Reject(m.UNSUPPORTED, as_received + channel)   # the channel lacks that pull (PC-3)
-            elif tag == ITEM["wifi"] and (key >= self.wifi_max or 0 in value[2:2 + value[1]]):
-                # an index at or past wifi_max; an SSID with a 0x00 byte, which this probe cannot join (§1.4)
-                raise Reject(m.UNSUPPORTED, as_received)
-            elif tag == ITEM["uart"]:
-                fn, baud, fmt = struct.unpack_from("<HIB", value)
-                if self.names[fn] != "oep.fixture.uart":
-                    raise Reject(m.UNSUPPORTED, as_received)
-                uarts[fn] = (self._item_refusal(received, tag, key, self._uart_check, baud, fmt, fn, None, divide=False),
-                             fmt)                                  # the range now, the divider at plan time
-        plans = {key: [struct.unpack_from("<HBH", v) for v in value] for (tag, key), value in items
-                 if tag == ITEM["plan"]}
-        want = [a for fn in plans for a in plans[fn]]
-        plan_tag = lambda fn: received.get((ITEM["plan"], fn), ITEM["plan"])   # noqa: E731
-        self._check_plan(want, held=False, tag_of=plan_tag)        # roles and channels the fns do not declare
-        # the state and the resources
-        for fn in self.pairs:                                      # every wire (pin_roles wires have an empty list)
-            if sum(1 for s in slots.values() if s.wire_fn == fn and s.attach == SLOT_ATTACH["at_boot"]) > \
-                    self.max_connections.get(fn, 1):
-                raise unavailable("limit")
-        if len(want) + len([a for a in self.plan if a[0] not in plans and a[0] not in self.plan_from_config]) > \
-                (self.plan_roles if self.plan_roles is not None else 1 << 30):
-            raise unavailable("limit")
-        old_plan_fns = {k[1] for k in self.config if k[0] == ITEM["plan"]}
-        old_wifi = {k: v for k, v in self.config.items() if k[0] == ITEM["wifi"]}
-        if self.wifi_max:
-            self.wifi_status()                                     # the link as it stands before the change
-        self.slots = slots                                         # the pin check below sees the new slots
-        try:
-            self._check_plan(want, tag_of=plan_tag)
-            self._check_disabled(new, disabled, plans, want, slots)
-        except Reject:
-            self.slots = {k: self._parse_slot(v) for (t, k), v in self.config.items() if t == ITEM["slot"]}
-            raise
-        # accepted: make it current - disable and idle before any other item (probe.config §2)
-        old_idle = {key: v for (tag, key), v in self.config.items() if tag == ITEM["idle"]}
-        repark = (self.disabled - disabled) | {key for key in idles | set(old_idle) if new.get((ITEM["idle"], key)) != old_idle.get(key)}
-        self.config = new
-        new_wifi = {k: v for k, v in new.items() if k[0] == ITEM["wifi"]}
-        if new_wifi != old_wifi:
-            if {k: v[2 + v[1]:] for k, v in new_wifi.items()} != {k: v[2 + v[1]:] for k, v in old_wifi.items()}:
-                self.wifi_token = (self.wifi_token + (secrets.randbits(32) | 1)) & 0xFFFFFFFF   # always another value
-            k = (ITEM["wifi"], self.wifi_joined)
-            if self.wifi_joined is None or old_wifi.get(k) != new_wifi.get(k):
-                # the entry in use changed or went (or none was in use): after the answer the link drops and the probe
-                # starts over with the new list (§1.4); another change keeps the link
-                self.wifi_joined, self.wifi_since_ms = None, self.now()
-        # at boot every free channel, later the ones whose idle changed (or enabled again); a gpio plan then takes a
-        # line in that state
-        self._park(self._boot_channels() if boot else repark)
-        for fn in old_plan_fns - set(plans):
-            self._drop_plan(fn)
-        for fn, assigned in plans.items():
-            self._replace_plans({fn}, assigned)
-            self.plan_from_config.add(fn)
-            self._uart_plan_changed(fn)
-        for n in list(self.slot_rt):
-            if n not in slots:
-                del self.slot_rt[n]
-        for n in slots:
-            self.slot_rt.setdefault(n, SlotRuntime())
-        for port, b in binds.items():
-            if port not in self.binds or self.binds[port] != b:
-                # a new bind: the port's position from here on (probe.config §1.2) - the stream's write position now,
-                # or the start of the stream that comes later (sid None)
-                sid, st = self._stream_for(b.stream)
-                self.flows[(port, b.stream)] = Flow(sid, st.end) if st is not None else Flow(None, 0)
-        self.binds = binds
-        for n, s in slots.items():
-            if s.attach == SLOT_ATTACH["at_boot"] and (boot or changed_slots is None or n in changed_slots):
-                self.slot_rt[n].evicted = False
-                self._auto_attach(n)
-        self._refresh()
-
-    @staticmethod
-    def _item_refusal(received: dict, tag: int, key: int, check, *args, **kw):
-        """check(*args) for one item; its unsupported names the item's tag as received (probe.config §1, core §4.3:
-        a value inside a TLV names that TLV), the TLVs after it kept."""
-        try:
-            return check(*args, **kw)
-        except Reject as r:
-            if r.reason == m.UNSUPPORTED and r.payload[:1] == bytes([m.TAG_FIXED]):
-                raise Reject(m.UNSUPPORTED, bytes([received.get((tag, key), tag)]) + r.payload[1:]) from None
-            raise
-
-    def _check_disabled(self, new: dict, disabled: set[int], plans: dict, want: list, slots: dict) -> None:
-        """probe.config §1 disable: a channel in use now (a plan, a connection, a slot this set keeps) cannot be disabled
-        (unavailable cause 1); an item naming a disabled channel (a plan, a slot's pins) is cause 5 with the channel."""
-        for ch in sorted(disabled - self.disabled):
-            for fn, _, c in sorted(self.plan):
-                if c != ch:
-                    continue
-                if fn in self.plan_from_config:
-                    if new.get((ITEM["plan"], fn)) == self.config.get((ITEM["plan"], fn)):
-                        raise unavailable("pin_in_use", ch)
-                elif fn not in plans:                              # a session's plan this set does not replace
-                    raise unavailable("pin_in_use", ch)
-            conn = next((c for c in self.conns.values() if ch in c.pair), None)
-            if conn is not None:
-                raise unavailable("pin_in_use", ch)
-            for (tag, key), value in self.config.items():
-                if tag == ITEM["slot"] and new.get((tag, key)) == value and ch in self._parse_slot(value).pair:
-                    raise unavailable("pin_in_use", ch)
-        self._refuse_disabled_in(disabled, [c for _, _, c in want] + [p for s in slots.values() for p in s.pair])
-
-    @staticmethod
-    def _refuse_disabled_in(disabled: set[int], channels: list[int]) -> None:
-        for ch in channels:
-            if ch != 0xFFFF and ch in disabled:
-                raise unavailable("held_by_settings", ch)
-
-    def _parse_slot(self, v: bytes, stage: str | None = None) -> Slot:
-        """probe.config §1.1, its checks by kind: the form ("form": malformed), the fn it names ("fn":
-        unknown_function), then what this probe lacks ("values": unsupported); `stage` None runs all three. retry_ms is
-        not looked at on a host slot."""
-        t = Take(v)
-        n, wire_fn, swdio, swclk, attach, retry_ms, max_speed, idle_clock, mech, name_len = t.take("BHHHBIIBBB")
-        name = t.bytes(name_len)                                   # the item ends with the name
-        if stage in (None, "form"):
-            if n >= self.slots_max:
-                raise Reject(m.MALFORMED)
-            if not SLOT_NAME.fullmatch(name.decode("ascii", "replace")):
-                raise Reject(m.MALFORMED)
-        if stage in (None, "fn") and wire_fn not in self.names:
-            raise Reject(m.UNKNOWN_FUNCTION)
-        if stage in (None, "values"):
-            if attach not in SLOT_ATTACH.values() or idle_clock not in reg.WIRE_RVSWD.enum["idle_clock"].values():
-                raise Reject(m.UNSUPPORTED)                        # values the definition leaves unused (core §2.5)
-            if self.names[wire_fn] not in WIRES:
-                raise Reject(m.UNSUPPORTED)                        # not a wire slots ride on (swd: debug §5)
-            if not self._allows(wire_fn, (swdio, swclk)):
-                raise Reject(m.UNSUPPORTED)                        # not a pair that wire offers
-            if idle_clock and self.names[wire_fn] != "oep.wire.rvswd":
-                raise Reject(m.UNSUPPORTED)                        # as attach's idle_clock (debug §3)
-            if mech != MECHANISM_NONE and mech not in self.mechanisms:
-                raise Reject(m.UNSUPPORTED)
-        if attach != SLOT_ATTACH["at_boot"]:
-            retry_ms = 0                                           # a host slot is never retried (not looked at)
-        return Slot(n, wire_fn, (swdio, swclk), attach, retry_ms, max_speed, idle_clock, mech,
-                    name.decode("ascii", "replace"))
-
-    def _parse_bind(self, v: bytes, slots: dict[int, Slot], stage: str | None = None) -> Bind:
-        """probe.config §1.2 - port(u8) kind(u8) id(u16) - its checks by kind as `_parse_slot` (stages "form", "fn",
-        "values"; None: all)."""
-        if len(v) != ITEM_SIZES[ITEM["bind"]]:
-            raise Reject(m.MALFORMED)
-        port, kind = v[0], v[1]
-        i = struct.unpack_from("<H", v, 2)[0]
-        if stage in (None, "form"):
-            if kind == BIND_STREAM["slot_console"] and (i not in slots or slots[i].mechanism == MECHANISM_NONE):
-                raise Reject(m.MALFORMED)                          # a slot that is not there, or has no console
-        if stage in (None, "fn"):
-            if kind == BIND_STREAM["fixture_uart"] and i not in self.names:
-                raise Reject(m.UNKNOWN_FUNCTION)
-        if stage in (None, "values"):
-            if kind not in (BIND_STREAM["slot_console"], BIND_STREAM["fixture_uart"]):
-                raise Reject(m.UNSUPPORTED)                        # a kind the definition leaves unused (core §2.5)
-            if port not in self.serial_ports:
-                raise Reject(m.UNSUPPORTED)                        # not a serial port (§1.2)
-            if kind == BIND_STREAM["fixture_uart"] and self.names[i] != "oep.fixture.uart":
-                raise Reject(m.UNSUPPORTED)
-        return Bind(port, (kind, i))
-
-    # ---- slots: automatic attach, what uses a connection ----------------------------------------
-    def _bound(self, n: int) -> bool:
-        return any(b.stream == (BIND_STREAM["slot_console"], n) for b in self.binds.values())
-
-    def _auto_attach(self, n: int) -> None:
-        """An at-boot slot's automatic attach (probe.config §3.1): method 0 on the slot's pins with its line settings,
-        never evicting a connection; the probe checks no target (a host does, with connections' tid)."""
-        s = self.slots[n]
-        rt = self.slot_rt[n]
-        rt.last_try_ms = self.now()
-        if s.attach != SLOT_ATTACH["at_boot"]:
-            return
-        tg = self._target(s.wire_fn, s.pair)
-        cid = self._conn_at(s.wire_fn, s.pair)
-        if cid is None:
-            if not tg.answers:                                     # completed failed, status line: absent
-                return
-            try:
-                speed = min(4_000_000, s.max_speed) if s.max_speed else 4_000_000   # the slot's line settings
-                cid = self._seat(s.wire_fn, s.pair, tg, speed, evict=False)   # automatic: never evicts
-                self.conns[cid].idle_clock = s.idle_clock
-            except Reject:
-                return
-            tg.havereset = False
-        self.conns[cid].users.add(("slot", n))
-
-    def line_for(self, slot_name: str | None, name: str) -> int | None:
-        """The channel of a line by the label convention (probe.config §1.3): the settings' label items, then the
-        firmware's fixed labels (step (c), PC-1)."""
-        labels = [(key, value[2:].decode("utf-8", "replace")) for (tag, key), value in self.config.items()
-                  if tag == ITEM["label"]]
-        n_slots = sum(1 for tag, _ in self.config if tag == ITEM["slot"])
-        return cfgmod.line_from_labels(labels, n_slots, slot_name, name, list(self.static_labels.items()))
-
-    def _refresh(self) -> None:
-        """Make what the slots use match the config: a bound slot rides any connection on its place with its console
-        open; an at-boot slot keeps its automatic connection; nothing else."""
-        for sid, st in list(self.streams.items()):                 # a slot's share of a console: while bound, same place
-            for u in [u for u in st.users if u != "host"]:
-                s = self.slots.get(u[1])
-                c = self.conns.get(st.conn)
-                if (s is None or c is None or (s.wire_fn, s.pair) != (c.fn, c.pair) or s.mechanism != st.mechanism
-                        or not self._bound(u[1])):
-                    self._drop_stream_user(sid, u, MARK_CLOSED["slot_changed"])
-        for cid, c in list(self.conns.items()):
-            for u in [u for u in c.users if u != "host"]:
-                s = self.slots.get(u[1])
-                if (s is None or (s.wire_fn, s.pair) != (c.fn, c.pair)
-                        or not (s.attach == SLOT_ATTACH["at_boot"] or self._bound(u[1]))):
-                    c.users.discard(u)
-            if not c.users:
-                self._close_conn(cid, MARK["detach"])
-        for n, s in self.slots.items():
-            cid = self._conn_at(s.wire_fn, s.pair)
-            if cid is None or not self._bound(n):
-                continue
-            if s.mechanism == MECHANISM_NONE:
-                continue                                           # no console on this slot
-            self.conns[cid].users.add(("slot", n))
-            try:
-                self._open_stream(cid, s.mechanism, ("slot", n))
-            except Reject:
-                continue                                           # another mechanism's stream is live there
+            self.saved = new
+            self._apply_saved()
+        else:
+            self.config = new
+            self.generation += 1
+        self._park(self._boot_channels())
 
     def tick(self) -> None:
-        """Time passes: the lease, at-boot retries, the captures, port_speed's timers."""
+        """Time passes: the lease, the console polls, the captures, port_speed's timers."""
         if self.current_core is not None:
             self.current_core.tick()
         self._lapse()
         self._speed_tick()
         self._console_poll()
-        now = self.now()
         for fn in self.groups:
             self._group_tick(fn)
         for fn, cap in self.captures.items():
             if cap.group is None:
                 self._events(fn, cap.tick(self.uptime_ms()))
-        for n, s in self.slots.items():
-            rt = self.slot_rt[n]
-            if (s.attach == SLOT_ATTACH["at_boot"] and s.retry_ms and not rt.evicted
-                    and self._conn_at(s.wire_fn, s.pair) is None
-                    and (rt.last_try_ms is None or now - rt.last_try_ms >= s.retry_ms)):
-                self._auto_attach(n)
-                self._refresh()
-
-    def _slot_state(self, n: int) -> bytes:
-        """slot(u8) state(u8: 0 connected, 1 absent) connection(u16, 0 none) last_try_at_ns(u64, all ones: never)
-        (probe.config §3.3)."""
-        rt = self.slot_rt[n]
-        s = self.slots[n]
-        cid = self._conn_at(s.wire_fn, s.pair)
-        state = SLOT_STATE["connected"] if cid is not None else SLOT_STATE["absent"]
-        tried = NEVER_NS if rt.last_try_ms is None else self._clock_ns_of(rt.last_try_ms)   # when (the probe's clock)
-        return struct.pack("<BBHQ", n, state, cid or 0, tried)
-
-    def _bind_state(self, port: int) -> bytes:
-        """port(u8) flow(u8: 0 nothing to carry, 1 carrying, 2 held by a session) (probe.config §3.3)."""
-        b = self.binds[port]
-        if port in self.held_ports and self.holder is not None:
-            flow = BIND_FLOW["held"]
-        else:
-            flow = BIND_FLOW["streaming"] if self._stream_for(b.stream)[1] is not None else BIND_FLOW["idle"]
-        return struct.pack("<BB", port, flow)
-
-    # ---- serial ports: the raw bytes outside the frames (transports §4, probe.config §1.2) ----------
-    def _stream_for(self, key: tuple[int, int]) -> tuple[object, Stream | None]:
-        kind, i = key
-        if kind == BIND_STREAM["fixture_uart"]:
-            return ("uart", i), self.uarts.get(i)
-        s = self.slots.get(i)
-        if s is None:
-            return None, None
-        cid = self._conn_at(s.wire_fn, s.pair)
-        sid = self.stream_keys.get((cid, s.mechanism)) if cid is not None else None
-        if sid is None or self.streams[sid].closed:
-            return None, None
-        return sid, self.streams[sid]
-
-
-    def _flow(self, port: int, key: tuple[int, int]) -> tuple[Flow, Stream | None]:
-        """The port's position in its bind's stream: from now when first seen; after an overflow, the oldest byte left
-        (probe.config §1.2)."""
-        sid, s = self._stream_for(key)
-        f = self.flows.get((port, key))
-        if s is None:
-            return f or Flow(), None
-        if f is None:
-            f = self.flows[(port, key)] = Flow(sid, s.end)         # no position yet: from now
-        elif f.sid != sid:
-            f = self.flows[(port, key)] = Flow(sid, s.base)        # a stream that came after the bind: from its start
-        if f.pos < s.base:
-            f.pos = s.base                                         # overflowed past the port: the oldest left
-        return f, s
-
-    def port_held(self, port: int) -> bool:
-        return self.holder is not None and port in self.held_ports
-
-    def port_output(self, port: int, room: int | None = None) -> bytes:
-        """The raw bytes serial port `port` sends now by its bind (none while a session holds it: the position stays)."""
-        room = self.CHUNK if room is None else room
-        b = self.binds.get(port)
-        if b is None or self.port_held(port) or room <= 0:
-            return b""
-        f, s = self._flow(port, b.stream)
-        if s is None:
-            return b""
-        out = bytes(s.data[f.pos - s.base:f.pos - s.base + room])
-        f.pos += len(out)
-        return out
-
-    def port_input(self, port: int, data: bytes) -> None:
-        """Raw bytes that came in on serial port `port` outside any frame: to the bind's stream's other end (a console
-        write, a fixture UART's TX)."""
-        b = self.binds.get(port)
-        if b is None or self.port_held(port) or not data:
-            return
-        sid, s = self._stream_for(b.stream)
-        if s is None:
-            return
-        if b.stream[0] == BIND_STREAM["fixture_uart"]:
-            self.uart_tx.setdefault(b.stream[1], bytearray()).extend(data)
-        else:
-            s.written += data
 
     def _session_over(self) -> None:
-        """The session ended (end, lapse, force): the ports it held carry on from where they stopped (probe.config
-        §1.2: the oldest byte left after an overflow); a port off its boot speed goes back after the answer
-        (oep-if-link §3)."""
+        """The session ended (end, lapse, force): a port off its boot speed goes back after the answer (oep-if-link §3)."""
         if self.speed_state != "base":
             if self.speed_frame_busy:
                 self.speed_fallback = "session"                    # never cancelled (oep-if-link §3)
             else:
                 self.speed_pending = ("revert",)
-        self.held_ports.clear()
 
 
 SIMS = {"oep.probe.link": "link", "oep.probe.plan": "plan_op", "oep.probe.restart": "restart", "oep.wire.rvswd": "wire", "oep.wire.swio": "wire", "oep.target.riscv-dm": "dm",

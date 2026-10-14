@@ -1,8 +1,6 @@
-"""D1 (oep-spec 22e4319, core §6.2 / §9, common §2, console §2, debug §2): when a session's lock ends - end, lease
-expiry, force - the probe releases everything the session created and passes nothing to the next session; only open
-takes the lock. What lasts is the probe's: a console stream per place and mechanism (closed, readable until the next
-open there, which returns its number with its position and marks), a slot's connection (an attach on that live
-combination returns it), the settings."""
+"""core §6.2 / §9, common §2, console §2, debug §2: when a session's lock ends - end, lease expiry, force - the probe
+releases everything the session created (its plan, its console streams and then its connections, its subscriptions)
+and passes nothing to the next session; only open takes the lock. What lasts is the settings."""
 
 import random
 import struct
@@ -11,8 +9,6 @@ import pytest
 
 from oep_client import config, console, core, endpoint, virtual_bench, fixture, host as h, message as m, registry_legacy as reg, riscv
 
-CLOSED = reg.COMMON.enum["mark_kind"]["closed"]
-SESSION_ENDED = reg.COMMON.enum["mark_detail_closed"]["session_ended"]
 
 
 class Clock:
@@ -56,12 +52,12 @@ def test_a_session_end_of_any_kind_releases_what_it_created(how):
         b.open(1000, force=True)
     assert not any(fn == gpio for fn, _, _ in ep.plan) and ep.parked[20] == 0   # the pin back to its idle state
     assert conn not in ep.conns and ep.subscribed == {}
-    s = ep.streams[sid]
-    assert s.closed and s.marks[-1][2] == CLOSED and s.marks[-1][4] == SESSION_ENDED   # closed before the connection
-    reader = new_host(ep, 3)                                                  # no session: lock-free reads go on
+    assert sid not in ep.streams                                             # released with its buffer (console §2)
+    reader = new_host(ep, 3)                                                  # no session: lock-free reads
     c2 = console.Console(reader)
     c2.stream = sid
-    assert c2.read(c2.FROM_OLDEST).data == b"last words"                      # readable until the next open there
+    with pytest.raises(h.NoResource):
+        c2.read(c2.FROM_OLDEST)                                               # a closed number: no_resource
 
 
 def test_no_resume_the_ended_id_is_no_session_and_open_is_the_only_way_in():
@@ -79,9 +75,9 @@ def test_no_resume_the_ended_id_is_no_session_and_open_is_the_only_way_in():
     assert ep.holder == a.session != sid
 
 
-def test_the_next_session_reopens_the_console_under_its_number_with_position_and_marks():
-    """console §2: a one-command-one-process host loses no first line - a command opens the console, resets the
-    target and ends; the next command's open at the same place and mechanism returns the stream and reads on."""
+def test_the_next_session_opens_a_new_stream_under_a_new_number():
+    """console §2, core §9: the next session's open makes a new stream; the old number is never used again. A host
+    that keeps the output across commands reads it before the session ends (console §2)."""
     clock, ep = bench()
     pair = ep.pairs[1][0]
     first = new_host(ep, 1)
@@ -90,35 +86,15 @@ def test_the_next_session_reopens_the_console_under_its_number_with_position_and
     con = console.Console(first)
     sid = con.open(conn)
     ep.emit(sid, b"boot banner\n")
-    marks = len(ep.streams[sid].marks)
+    assert con.read(con.FROM_OLDEST).data == b"boot banner\n"
     first.end()
     second = new_host(ep, 2)
     second.open(3000)
     conn2, _ = riscv.Wire(second).attach(halt=False, pins=pair)
     con2 = console.Console(second)
-    assert con2.open(conn2) == sid and con2.existing                          # its number, flags bit0
-    assert con2.read(con2.FROM_OLDEST).data == b"boot banner\n"
-    kinds = [mk.kind for mk in con2.marks()]
-    assert len(kinds) == marks + 2 and kinds[-2:] == [CLOSED, reg.COMMON.enum["mark_kind"]["attach"]]   # closed, attach
-
-
-def test_a_slots_connection_outlives_every_session_and_an_attach_returns_it():
-    """common §2: a session's share goes at its end; a slot keeps the connection, and a later session's attach on that
-    live combination joins it (flags bit1)."""
-    clock, ep = bench()
-    pair = ep.pairs[1][0]
-    a = new_host(ep, 1)
-    a.open(3000)
-    config.ProbeConfig(a).set([config.Slot(slot=0, wire_fn=1, pins=pair, name="dut", attach="at-boot")])
-    conn = ep._conn_at(1, pair)
-    wire = riscv.Wire(a)
-    assert wire.attach(halt=False, pins=pair)[0] == conn and wire.existing
-    a.end()
-    assert conn in ep.conns and ep.conns[conn].users == {("slot", 0)}       # the session's share went
-    b = new_host(ep, 2)
-    b.open(3000)
-    wire = riscv.Wire(b)
-    assert wire.attach(halt=False, pins=pair)[0] == conn and wire.existing
+    sid2 = con2.open(conn2)
+    assert conn2 not in (conn,) and sid2 not in (sid, conn, conn2)
+    assert con2.read(con2.FROM_OLDEST).data == b"" and con2.streams() == [console.StreamInfo(sid2, conn2, con2.DMSEQ)]
 
 
 def test_a_resent_end_is_answered_from_the_table_and_a_resent_open_restarts_the_lease():

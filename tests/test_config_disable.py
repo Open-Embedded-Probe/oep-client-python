@@ -1,6 +1,6 @@
 """oep.probe.config item disable (0x07, probe.config §1): a channel the probe never uses or touches. Any request naming
-it is rejected unavailable cause 5 (held by settings) with the channel; scan's count-0 list skips it; the probe never
-parks it; disabling a channel in use is cause 1; idle and disable on one channel is malformed."""
+it is rejected unavailable cause 5 (held by settings) with the channel; the probe never parks it; disabling a channel
+in use is cause 1; idle and disable on one channel is unavailable cause 5."""
 
 import struct
 
@@ -18,19 +18,19 @@ def _cause(e) -> tuple[str | None, list[int]]:
     return e.value.cause, e.value.channels
 
 
-def test_the_item_round_trips_and_moves_the_hash():
+def test_the_item_round_trips_and_moves_the_generation():
     ep, hst = open_bench()
     cfg = config.ProbeConfig(hst)
     assert config.ITEM["disable"] == 0x07 and config.item(config.Disable(channel=40)) == bytes([0x07, 2, 0, 40, 0])
-    h1 = cfg.set([config.Disable(channel=41), config.Disable(channel=40), config.Label(channel=40, text="NC")])
+    g1 = cfg.set([config.Disable(channel=41), config.Disable(channel=40), config.Label(channel=40, text="NC")])
     items = cfg.items()
     assert items == [config.Label(channel=40, text="NC"), config.Disable(channel=40), config.Disable(channel=41)]
-    assert h1 == cfg.get()[0]                                                 # the probe's own u32 (probe.config §2)
+    assert g1 == cfg.get()[0] == 2                                            # the change counter (probe.config §2)
     assert config.decode(0x07, struct.pack("<H", 9)) == config.Disable(channel=9)
     assert ep.disabled == {40, 41}
-    h2 = cfg.unset([("disable", 41)])
-    assert ep.requests[-1].payload == bytes([1, 2, 7, 41, 0])                 # len (the key's) tag channel(u16)
-    assert h2 == cfg.get()[0] != h1 and config.same_items(cfg.items(), items[:2])
+    g2 = cfg.unset([("disable", 41)])
+    assert ep.requests[-1].payload == bytes([1, 7, 41, 0])                    # count, then tag channel(u16)
+    assert g2 == cfg.get()[0] == 3 and config.same_items(cfg.items(), items[:2])
     cfg.set([config.remove("disable", 40)])
     assert ep.disabled == set()
 
@@ -44,21 +44,11 @@ def test_a_plan_naming_a_disabled_channel_is_held_by_settings():
     with pytest.raises(core.PinsTaken) as e2:                                 # the client names the setting
         core.plan_apply(hst, [(4, 1, 20)])
     assert "disabled" in e2.value.holders[0][1]
-    with pytest.raises(h.Rejected) as e:                                      # a settings plan too
-        config.ProbeConfig(hst).set([config.Plan(fn=5, role=1, channel=20)])
-    assert _cause(e) == ("held_by_settings", [20])
-    with pytest.raises(h.Rejected) as e:                                      # disable and the plan in one set
-        config.ProbeConfig(hst).set([config.Disable(channel=21), config.Plan(fn=5, role=1, channel=21)])
-    assert _cause(e) == ("held_by_settings", [21]) and ep.disabled == {20}   # nothing changed
 
 
-def test_a_slot_or_an_attach_naming_a_disabled_channel():
+def test_an_attach_naming_a_disabled_channel():
     ep, hst = open_bench()
-    cfg = config.ProbeConfig(hst)
-    cfg.set([config.Disable(channel=5)])
-    with pytest.raises(h.Rejected) as e:
-        cfg.set([config.Slot(slot=0, wire_fn=1, pins=(4, 5), name="b")])
-    assert _cause(e) == ("held_by_settings", [5])
+    config.ProbeConfig(hst).set([config.Disable(channel=5)])
     wire = riscv.Wire(hst, "oep.wire.rvswd")
     with pytest.raises(h.Rejected) as e:
         wire.attach(pins=(4, 5))
@@ -108,33 +98,29 @@ def test_disabling_a_channel_in_use_is_pin_in_use():
     with pytest.raises(h.Rejected) as e:
         cfg.set([config.Disable(channel=30)])
     assert _cause(e) == ("pin_in_use", [30])
-    cfg.set([config.Plan(fn=5, role=1, channel=31)])                          # a settings plan
-    with pytest.raises(h.Rejected) as e:
-        cfg.set([config.Disable(channel=31)])
-    assert _cause(e) == ("pin_in_use", [31])
-    cfg.set([config.Slot(slot=0, wire_fn=1, pins=(6, 7), name="c")])          # a slot
-    with pytest.raises(h.Rejected) as e:
-        cfg.set([config.Disable(channel=7)])
-    assert _cause(e) == ("pin_in_use", [7])
-    riscv.Wire(hst, "oep.wire.rvswd").attach(pins=(2, 3))                     # a connection
+    conn, _ = riscv.Wire(hst, "oep.wire.rvswd").attach(pins=(2, 3))          # a connection
     with pytest.raises(h.Rejected) as e:
         cfg.set([config.Disable(channel=2)])
     assert _cause(e) == ("pin_in_use", [2])
     assert ep.disabled == set()
-    cfg.unset([("plan", 5)])                                                  # once free, it can be disabled
-    cfg.set([config.Disable(channel=31)])
-    assert ep.disabled == {31}
+    core.plan_release(hst, [4])                                               # once free, it can be disabled
+    cfg.set([config.Disable(channel=30)])
+    assert ep.disabled == {30}
 
 
-def test_idle_and_disable_on_one_channel_is_malformed():
+def test_idle_and_disable_on_one_channel_is_held_by_settings():
+    """probe.config §1: an idle and a disable on one channel after the change: unavailable cause 5 with the channel;
+    the settings and the generation stay."""
     ep, hst = open_bench()
     cfg = config.ProbeConfig(hst)
-    with pytest.raises(h.Rejected, match="malformed"):
+    with pytest.raises(h.Rejected) as e:
         cfg.set([config.Idle(channel=40, mode="pull-up"), config.Disable(channel=40)])
+    assert _cause(e) == ("held_by_settings", [40])
     cfg.set([config.Idle(channel=40, mode="pull-up")])
-    with pytest.raises(h.Rejected, match="malformed"):
+    with pytest.raises(h.Rejected) as e:
         cfg.set([config.Disable(channel=40)])
-    assert ep.disabled == set()
+    assert _cause(e) == ("held_by_settings", [40])
+    assert ep.disabled == set() and cfg.get()[0] == 2
 
 
 def test_unset_enables_it_again():
@@ -209,5 +195,5 @@ def test_disabling_a_channel_the_firmware_does_not_declare_is_unsupported():
     for ch in (24, 60):                                                       # reserved on this probe; past its channels
         with pytest.raises(h.Unsupported) as e:
             cfg.set([config.Disable(channel=ch)])
-        assert struct.pack("<H", ch) in e.value.result.payload
+        assert e.value.result.payload == bytes([config.ITEM["disable"]])     # the item's tag (probe.config §1)
     assert ep.disabled == set()

@@ -1,15 +1,13 @@
-"""The byte side of a virtual bench probe's serial port (transports §1, §4): COBS frames and raw bytes on one port.
+"""The byte side of a virtual bench probe's serial port (transports §1, §4): COBS frames, and nothing else, on one port.
 
 `VirtualSerialPort(endpoint, index)` is serial port `index` of an `endpoint.Endpoint`. Bytes from the host go to
 `feed`; what the probe sends comes from `output`. It does what a probe does:
 
 - a candidate runs from a 0x00 to the next 0x00; if it decodes and its CRC matches it is a request, otherwise it
-  (with its leading 0x00) is raw bytes, and the closing 0x00 starts the next candidate; bytes outside a candidate
-  are raw at once; a candidate that stops for 200 ms (`tick`) is raw; a candidate that is only its 0x00 (0x00 0x00,
-  or the closing 0x00 of a frame when nothing follows) is nothing
-- raw bytes go to the endpoint's bind for this port (`Endpoint.port_input`)
-- answers go out as 0x00 <COBS> 0x00, ahead of raw chunks (`Endpoint.port_output`); one writer, never a raw byte
-  inside a frame
+  is dropped, and the closing 0x00 starts the next candidate; bytes outside a candidate are dropped; a candidate that
+  stops for 200 ms (`tick`) is dropped; a candidate that is only its 0x00 (0x00 0x00, or the closing 0x00 of a frame
+  when nothing follows) is nothing (a serial transport carries OEP frames only, transports §4)
+- answers go out as 0x00 <COBS> 0x00
 
 `answer_filter(n, message) -> bytes | None` may change how the n-th answer (1-based) goes on the wire: the framed
 bytes to send, or None to send nothing (fault injection for tests).
@@ -148,8 +146,7 @@ class VirtualSerialPort:
                 self._raw(bytearray(raw))
 
     def _raw(self, raw: bytearray) -> None:
-        if raw and not self.ep.probe.core_contract:
-            self.ep.port_input(self.index, bytes(raw))
+        """Bytes that are no frame: dropped (transports §4)."""
 
     def tick(self) -> None:
         self._gap(self.ep.now())
@@ -164,18 +161,13 @@ class VirtualSerialPort:
         return self.garble(wire, self.ep.port_baud(self.index)) if self.garble else wire
 
     def output(self, room: int = 4096) -> bytes:
-        """What the probe sends now: waiting answers first, then raw bytes by the bind (up to `room` in all)."""
+        """What the probe sends now: the waiting answers (up to `room`, at least one frame)."""
         out = bytearray()
         while self.frames and len(out) + len(self.frames[0]) <= max(room, len(self.frames[0])):
             out += self.frames.pop(0)
             self.spoiled = {k - 1 for k in self.spoiled if k}
             if len(out) >= room:
                 return bytes(out)
-        while len(out) < room:
-            chunk = self.ep.port_output(self.index, min(self.ep.CHUNK, room - len(out)))
-            if not chunk:
-                break
-            out += chunk
         return bytes(out)
 
 

@@ -20,10 +20,10 @@ Steps, each optional and each saying what it did:
    whose option bytes say whether the reset line exists (CH32V00x), read them (read-only), then resume.
 5. reset line, confirmed: attach under reset through each channel that stopped the activity (or, with nothing
    active, through each candidate) - the real line stops the hart at the reset vector.
-6. print a suggested slot and the labels that name the lines found (probe.config §1.3): `<slot>.nrst` on the reset
-   line (5) - a slot has no reset field; a host's attach looks the line up by this label - and `<slot>.power_hi` on
-   --power; --save writes the slot and the labels (config set + save). Nothing is
-   written otherwise.
+6. print the connection profile the host keeps (wire, pins, line settings: host guide §5.3 - the probe keeps no
+   wiring) and the labels that name the lines found: `nrst` on the reset line (5) and `power_hi` on --power, or
+   `<profile>.nrst` / `<profile>.power_hi` with --name (a probe serving several targets); --save writes the labels
+   (config set + save). Nothing is written otherwise.
 
 Everything is bounded in time (the whole run under a minute) and every plan is released at the end. A plan_apply
 replaces the gpio's whole plan, and the probe lets every pin of the old plan go first (oep-core §8) - the power
@@ -47,7 +47,7 @@ SAFE = (FLOATING,)                    # the only kind a scan, a hold or an attac
 GPIO_MODES_TAG = reg.FIXTURE_GPIO.tlv["describe"]["modes"]
 ROLE_LINE, ROLE_SWDIO, ROLE_SWCLK, ROLE_RESET = 1, 1, 2, 3
 MAX_PAIRS = 600                       # rvswd / swd: the most pairs one run scans
-STEPS = ("classify", "hold", "scan", "identify", "reset", "slot")
+STEPS = ("classify", "hold", "scan", "identify", "reset", "labels")
 
 
 @dataclass
@@ -80,7 +80,7 @@ class Report:
     labels: list = dataclasses.field(default_factory=list)
     reset_dpc: int | None = None
     reset_how: str = ""
-    slot: str = ""
+    profile: str = ""                 # the connection profile the host keeps (wire, pins, line settings)
     saved: bool = False
     power_cycles: int = 0
     notes: list[str] = field(default_factory=list)
@@ -141,12 +141,12 @@ class PinFinder:
 
     def __init__(self, hst: h.Host, wire: str = "swio", power: int | None = None, exclude=(),
                  say: Callable[[str], None] = print, budget_s: float = 55.0, sleep=time.sleep, clock=time.monotonic,
-                 probe: str = "<probe>", save: bool = False, slot: int = 0, name: str | None = None):
+                 probe: str = "<probe>", save: bool = False, name: str | None = None):
         self.hst, self.say, self.sleep, self.clock = hst, say, sleep, clock
         self.power, self.exclude = power, sorted(set(exclude))
         self.started = clock()
         self.deadline = self.started + budget_s
-        self.probe, self.save, self.slot_no, self.name = probe, save, slot, name
+        self.probe, self.save, self.name = probe, save, name
         self.report = Report(wire=wire, power=power, excluded=self.exclude)
         self.gpio = Gpio(hst)
         self.modes = next((struct.unpack_from("<I", v)[0] for t, v in core.describe(hst, self.gpio.fn)
@@ -177,7 +177,7 @@ class PinFinder:
 
     def _plan(self, channels: list[int], cycle: bool = True) -> list[int]:
         """oep.fixture.gpio's whole plan = `channels` (+ the power channel). Channels something else holds (the
-        settings' plans, a slot, a disabled channel) are dropped and named. A new plan lets every old pin go first,
+        a disabled channel) are dropped and named. A new plan lets every old pin go first,
         the power channel too: with --power, `cycle` power-cycles cleanly after it. -> the channels planned."""
         channels = [c for c in channels if c != self.power]
         if channels == self.planned:
@@ -435,7 +435,7 @@ class PinFinder:
             self.report.resolution = 'unique-candidate'
         elif found:
             self.report.resolution = 'ambiguous'
-            self.note(f"{len(found)} answered; no candidate selected; identify/reset/slot are disabled")
+            self.note(f"{len(found)} answered; no candidate selected; identify/reset/labels are disabled")
         return found
 
     def identify(self) -> None:
@@ -546,58 +546,52 @@ class PinFinder:
             self.say(f"  attach under reset through {c}: dpc {text} (not the vector {vector:#x})")
         return False
 
-    # ---- 6: the slot ----
+    # ---- 6: the connection profile and the labels ----
     def suggest(self) -> None:
         r = self.report
         if self.pins is None:
             return
-        name = self.name or (self.family.name if self.family else "target")
         fam = self.family
-        parts = [f"oep config slot {self.probe} --name {name} --wire {r.wire} --pins {self._pins_text(self.pins)}"]
+        parts = [f"wire {r.wire}, pins {self._pins_text(self.pins)}"]
         if fam and fam.max_speed:
-            parts.append(f"--max-speed {fam.max_speed}")
+            parts.append(f"max_speed {fam.max_speed}")
         if fam and fam.idle_clock and r.wire == "rvswd":
-            parts.append(f"--idle-clock {fam.idle_clock}")
-        r.slot = " ".join(parts)
-        self.say("slot: " + r.slot + ("" if self.save else "   (not written; --save writes it)"))
-        # the lines found are named by label (probe.config §1.3; a slot has no reset field): `<slot>.nrst` - the reset
-        # line the host's attach and the probe's retry with reset look up - and `<slot>.power_hi`
+            parts.append(f"idle_clock {fam.idle_clock}")
+        r.profile = ", ".join(parts)
+        self.say(f"profile{' ' + self.name if self.name else ''}: {r.profile}   (the host's to keep: the probe keeps "
+                 f"no wiring)")
+        # the lines found are named by label (host guide §5.3): `nrst` - the reset line a host's attach under reset
+        # looks up - and `power_hi`; `<profile>.<line>` when the probe serves several targets (--name)
+        prefix = f"{self.name}." if self.name else ""
         labels = []
         if r.reset_channel is not None:
-            labels.append((r.reset_channel, f"{name}.nrst"))
+            labels.append((r.reset_channel, f"{prefix}nrst"))
         if self.power is not None:
-            labels.append((self.power, f"{name}.power_hi"))
+            labels.append((self.power, f"{prefix}power_hi"))
         r.labels = labels
         for ch, text in labels:
             self.say(f"label: oep config label {self.probe} {ch} {text}" + ("" if self.save else "   (not written)"))
-        self._check_lines(name, labels)
+        self._check_lines(labels)
         if self.power is not None:
             self.say(f"idle:  oep config idle {self.probe} {self.power} output-high   (keeps the target powered while no "
                      f"plan holds channel {self.power}; not written by this tool)")
-        if self.save:
-            kw = dict(slot=self.slot_no, wire_fn=self.wire.fn, pins=self.pins, name=name,
-                      max_speed=(fam.max_speed or 0) if fam else 0,
-                      idle_clock=(fam.idle_clock or "high") if fam and r.wire == "rvswd" else "high")
-            core.plan_release(self.hst)                    # a slot's pins must be free of this run's plans
-            self.planned = []
+        if self.save and labels:
             cfg = config.ProbeConfig(self.hst)
-            cfg.set([config.Slot(**kw)] + [config.Label(channel=ch, text=text) for ch, text in labels])
+            cfg.set([config.Label(channel=ch, text=text) for ch, text in labels])
             cfg.save()
             r.saved = True
-            self.say(f"  written to slot {self.slot_no} and saved")
+            self.say("  labels written and saved")
 
-    def _check_lines(self, name: str, labels: list[tuple[int, str]]) -> None:
-        """Would the suggested labels find their lines (probe.config §1.3, config.find_line) in the probe's settings
-        as they would be after them - the slot in place, each labelled channel relabelled? Another channel already
-        carrying the same name (any case) makes the line not found at all; say so, naming those channels."""
+    def _check_lines(self, labels: list[tuple[int, str]]) -> None:
+        """Would the suggested labels find their lines (host guide §5.3, config.find_line) in the probe's settings as
+        they would be after them - each labelled channel relabelled? Another channel already carrying the same name
+        (any case) makes the line not found at all; say so, naming those channels."""
         try:
             items = config.ProbeConfig(self.hst).items()
         except (LookupError, h.OepError):
             items = []                                     # no oep.probe.config: nothing else to meet
         relabelled = {ch for ch, _ in labels}
-        after = [it for it in items if not (isinstance(it, config.Label) and it.channel in relabelled)
-                 and not (isinstance(it, config.Slot) and (it.slot == self.slot_no or it.name == name))]
-        after += [config.Slot(slot=self.slot_no, wire_fn=self.wire.fn, pins=self.pins, name=name)]
+        after = [it for it in items if not (isinstance(it, config.Label) and it.channel in relabelled)]
         after += [config.Label(channel=ch, text=text) for ch, text in labels]
         try:
             fixed = core.firmware_labels(self.hst)
@@ -605,12 +599,12 @@ class PinFinder:
             fixed = []
         for ch, text in labels:
             line = text.rpartition(".")[2]
-            found = config.find_line(after, name, line, fixed)
+            found = config.find_line(after, line, self.name, fixed, single=self.name is None)
             if found != ch:
                 clash = sorted(it.channel for it in after if isinstance(it, config.Label) and it.channel != ch
                                and config.fold_name(it.text) == config.fold_name(text))
-                self.note(f"label {text}: the settings already name channel(s) {clash} the same way - a host (and "
-                          f"the probe) would find no {line} line for slot {name}; relabel or remove those first")
+                self.note(f"label {text}: the settings already name channel(s) {clash} the same way - a host would "
+                          f"find no {line} line; relabel or remove those first")
 
     # ---- the run ----
     def run(self, steps=STEPS) -> Report:
@@ -629,7 +623,7 @@ class PinFinder:
                 self.identify()
             if "reset" in steps and self.left() > 3:
                 self.confirm_reset()
-            if "slot" in steps:
+            if "labels" in steps:
                 self.suggest()
         finally:
             for conn in list(self.mine):

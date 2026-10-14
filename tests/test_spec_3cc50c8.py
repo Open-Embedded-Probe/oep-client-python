@@ -1,7 +1,6 @@
 """oep-spec 9ed53e7 / 3cc50c8 against the virtual bench: describe of an fn not offered is unknown_function (core §4.3), unset of
-an undeclared item tag is unsupported with the tag as received (probe.config §2), last_try_at_ns follows the at-boot
-slot's plain retries (§3.3; oep-spec 0f455a0 has no retry with reset), and an idle change takes effect at once on a
-free channel and at the next release on a held one (probe.config §1: the level and the drive)."""
+an undeclared item tag is unsupported with the tag as received (probe.config §2), and an idle change takes effect at
+once on a free channel and at the next release on a held one (probe.config §1)."""
 
 import struct
 
@@ -9,7 +8,15 @@ import pytest
 
 from oep_client import config, core, endpoint, virtual_bench, fixture, host as h, message as m, riscv
 
-from test_drive_and_slots import V003_PAIR, items, slot_state, v003
+V003_PAIR = (16, 0xFFFF)                                          # esp32-v003: swio on 16
+
+
+def v003(silent=True):
+    clock = Clock()
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), clock)
+    tg = ep.targets[(1, V003_PAIR)]
+    tg.silent_until_reset = silent
+    return ep, clock, tg
 
 
 class Clock:
@@ -50,32 +57,9 @@ def test_unset_of_an_undeclared_tag_is_unsupported_with_the_tag_as_received(tag)
     ep, hst = open_probe()
     cfg_fn = ep.fns["oep.probe.config"]
     assert tag & 0x7F not in ep.items
-    body = bytes([2, 2, config.ITEM["idle"], 20, 0, 2, tag, 1, 0])  # a declared key first, then the undeclared tag
+    body = bytes([2, config.ITEM["idle"], 20, 0, tag, 1, 0])      # a declared key first, then the undeclared tag
     r = rejected(lambda: hst.call(cfg_fn, config.ProbeConfig.UNSET, body))
     assert r.detail == m.UNSUPPORTED and r.payload == bytes([tag])
-
-
-# ---- last_try_at_ns follows the retries ------------------------------------------------------------------------------
-
-def test_last_try_at_follows_each_retry():
-    """probe.config §3.3: the probe's clock when it last tried an automatic attach; retry_ms counts from that try."""
-    ep, clock, _ = v003()                                          # silent: stays absent
-    ep.load_config(items())
-    assert slot_state(ep).last_try_at_ns == 7_000_000              # the first attempt, at boot
-    clock.t = 7 + 999
-    ep.tick()
-    assert slot_state(ep).last_try_at_ns == 7_000_000              # retry_ms 1000 not yet
-    clock.t = 7 + 1000
-    ep.tick()
-    assert slot_state(ep).last_try_at_ns == 1_007_000_000
-    assert slot_state(ep).state == "absent"
-
-
-def test_last_try_at_of_a_connected_slot_is_the_first_attempt():
-    ep, _, _ = v003(silent=False)
-    ep.load_config(items())
-    st = slot_state(ep)
-    assert st.state == "connected" and st.last_try_at_ns == 7_000_000
 
 
 # ---- an idle change: at once when free, at the next release when held ---------------------------------------------
@@ -128,22 +112,3 @@ def test_idle_change_on_a_connection_pin_waits_for_the_detach():
     assert ep.parked.get(swio, 0) == 0                             # the connection holds it
     wire.detach(conn)
     assert ep.parked[swio] == 4
-
-
-def test_idle_change_on_a_slot_pin_without_a_connection_applies_at_once():
-    ep, clock, tg = v003(silent=True)                              # no answer: a slot, no connection on its pin
-    ep.load_config(items())
-    swio = V003_PAIR[0]
-    hst = h.Host(lambda b: ep.handle(b, 1))
-    hst.open(3000)
-    cfg = config.ProbeConfig(hst)
-    cfg.set([config.Idle(channel=swio, mode="pull-up")])
-    assert ep.parked[swio] == 1                                    # neither a plan nor a connection uses it: free
-    tg.silent_until_reset = False
-    clock.t = 7 + 1000
-    ep.tick()                                                      # the slot's retry attaches: now held
-    assert slot_state(ep).state == "connected"
-    cfg.set([config.Idle(channel=swio, mode="pull-down")])
-    assert ep.parked[swio] == 1                                    # held by the connection: not yet
-    cfg.unset([("slot", 0)])                                       # the slot goes, its connection with it
-    assert ep.parked[swio] == 2

@@ -1,6 +1,6 @@
 """The console's per-stream send queue (console §2, §3: its size is the probe's, not declared), the wait for a target
 that restarts by itself after a reset (debug §3, §4.3: within max_op_ms, the argument time of core §4.4), an item of
-another length (probe-config §1, core §2.3) and oep.link source's len (oep-if-link §2) - oep-spec 7688c49..0f455a0."""
+another length (probe-config §1) and oep.link source's len (oep-if-link §2)."""
 
 import random
 import struct
@@ -56,10 +56,10 @@ def test_the_queue_is_handed_on_a_poll_at_a_time_and_survives_resets_and_restart
     con.read()
     assert bytes(ep.streams[sid].written) == b"abcdefghi"         # 2 polls x 3 bytes
     con.close()
-    assert ep.streams[sid].closed and ep.streams[sid].queue == b""  # the queue goes with the stream
+    assert sid not in ep.streams                                   # the queue goes with the stream (console §2)
 
 
-def test_dmseq_hands_on_2_bytes_a_poll_and_sdi_accepts_nothing():
+def test_dmseq_hands_on_2_bytes_a_poll_and_sdi_takes_no_write():
     clock, ep, hst = bench()
     conn, _ = riscv.Wire(hst).attach(halt=False)
     con = console.Console(hst)
@@ -73,8 +73,8 @@ def test_dmseq_hands_on_2_bytes_a_poll_and_sdi_accepts_nothing():
     conn, _ = riscv.Wire(hst).attach(halt=False)
     sdi = console.Console(hst)
     sdi.open(conn, sdi.SDI)
-    with pytest.raises(h.Failed):
-        sdi.write(b"x")                                            # accepted 0 (console §3.1)
+    with pytest.raises(h.Unsupported):
+        sdi.write(b"x")                                            # no host -> target way (console §1, §3.1)
 
 
 # ---- the wait for a silent DM after a reset: within max_op_ms ----------------------------------------------------------
@@ -119,19 +119,20 @@ def test_attach_with_the_reset_tlv_waits_too_and_makes_nothing_when_it_fails():
 
 # ---- an item of another length; source's len -------------------------------------------------------------------
 
-@pytest.mark.parametrize("critical", [False, True])
-def test_an_item_of_another_length_is_malformed_with_or_without_bit_7(critical):
-    """probe-config §1, core §2.3: an implemented item whose value is longer or shorter than its form is malformed
-    whatever bit 7 says - nothing applied."""
+@pytest.mark.parametrize("bit7", [False, True])
+def test_an_item_of_another_length_is_malformed_with_or_without_bit_7(bit7):
+    """probe-config §1: an item whose value is longer or shorter than its form is malformed whatever bit 7 says (the
+    probe ignores bit 7 of items) - nothing applied; a label's text runs to the item's end."""
     clock, ep, hst = bench(virtual_bench.p4_bench)
     cfg = config.ProbeConfig(hst)
-    for value in (struct.pack("<HIB", 5, 115200, 0) + b"\x00", struct.pack("<HI", 5, 115200)):
+    tag = config.ITEM["idle"] | (0x80 if bit7 else 0)
+    for value in (struct.pack("<HBB", 20, 1, 0), struct.pack("<H", 20)):
         with pytest.raises(h.Rejected) as e:
-            hst.call(cfg.fn, cfg.SET, m.tlv(config.ITEM["uart"], value, critical=critical)
+            hst.call(cfg.fn, cfg.SET, b"\x02" + struct.pack("<BH", tag, len(value)) + value
                      + config.item(config.Label(channel=20, text="ok")))
         assert e.value.result.detail == m.MALFORMED
     assert cfg.items() == []
-    hst.call(cfg.fn, cfg.SET, config.item(config.Label(channel=21, text="a long label text")))   # text: to the end
+    cfg.set([config.Label(channel=21, text="a long label text")])
     assert [type(i).__name__ for i in cfg.items()] == ["Label"]
 
 

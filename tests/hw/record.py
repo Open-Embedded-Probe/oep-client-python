@@ -284,12 +284,12 @@ class Run:
     # ---- the probe's settings: put back whatever a test changed -------------------------------------------------
     def settings_before(self, cfg: config.ProbeConfig) -> None:
         """The probe's settings before tests/hw changes any (once a run): the label / idle / disable items and the
-        storage (state, saved hash) - what restore_settings puts back."""
+        storage (state, whether it held the settings in force) - what restore_settings puts back."""
         if self.settings_baseline is None:
-            h0, items = cfg.get()
+            gen, items = cfg.get()
             st = cfg.state()
-            self.settings_baseline = {"hash": h0, "items": _by_key(items), "storage": st.storage,
-                                      "saved_hash": st.saved_hash}
+            self.settings_baseline = {"generation": gen, "items": _by_key(items), "storage": st.storage,
+                                      "saved_current": st.storage == "applied" and st.saved_generation == gen}
 
     def settings_changing(self, test: str, kind: str, channel: int) -> None:
         """A test is about to set this item: restore_settings puts it back (removes it, or the value it had)."""
@@ -326,7 +326,7 @@ class Run:
         if not self.settings_pending and not self.settings_saved:
             return True
         entry = self.tests.setdefault("_settings", {})
-        base = self.settings_baseline or {"items": {}, "storage": None, "saved_hash": None}
+        base = self.settings_baseline or {"items": {}, "storage": None, "saved_current": False}
         try:
             hst = self._host_for_restore()
             cfg = config.ProbeConfig(hst)
@@ -341,7 +341,7 @@ class Run:
             done = {"where": where, "removed": [f"{k} {c}" for k, c in unsets], "set_back": len(sets)}
             if self.settings_saved:
                 st = cfg.state()
-                if base["storage"] == "applied" and st.saved_hash != base["saved_hash"]:
+                if base["storage"] in ("applied", "partial") and cfg.needs_save():
                     done["saved"] = cfg.save()       # the live settings now: as before the tests, but for unsaved ones
                 elif base["storage"] == "none" and st.storage != "none":
                     cfg.erase()

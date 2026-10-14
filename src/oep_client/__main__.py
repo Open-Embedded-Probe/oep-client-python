@@ -2,18 +2,10 @@
 
   oep dump --port /run/board-identify/by-id/<probe>        oep dump --virtual p4-x035 --prefix oep.target --json
   oep config show <probe>                 (the settings and what the probe declares; lock-free)
-  oep config state <probe>                (the live slot / bind / storage state; lock-free)
-  oep config slot <probe> --name x035 --wire rvswd --pins 2,54 --attach at-boot --retry 1 --mechanism dmseq
-  oep config bind <probe> --port 1 --stream slot:x035      (the one stream a serial port carries)
-  oep config plan <probe> oep.fixture.uart#1 rx=48 tx=49       (the fn's whole plan; fn number or name#instance)
-  oep config uart <probe> oep.fixture.uart#1 115200 --format 8N1
-  oep config disable <probe> 3 4           (channels the probe never uses or touches; remove disable CH re-enables)
-  oep config remove <probe> bind 1        oep config save <probe>        oep config erase <probe>
-  oep config wifi <probe> --index 0 --ssid LAB --pass-prompt [--save]   (a network the probe joins, probe.config §1.4;
-                                           the passphrase is asked without echo or read from --pass-env VAR, never
-                                           printed; without either the entry keeps its passphrase)
-  oep config wifi <probe> --from-env [--save]   (OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n>, n = the index)
-  oep config wifi-unset <probe> --index 0 [--save]
+  oep config state <probe>                (the storage state; lock-free)
+  oep config label <probe> 23 nrst         oep config idle <probe> 20 pull-up
+  oep config disable <probe> 3 4           (channels the probe never drives or sets up; remove disable CH re-enables)
+  oep config remove <probe> idle 20       oep config save <probe>        oep config erase <probe>
   oep find [--timeout 2] [--json] [--no-verify]   (probes announcing _oep._tcp by DNS-SD over mDNS: unit_id, host,
                                            port, IP; each verified first by confirm + describe's unit_id, host guide
                                            §4.1 - one that fails is dropped with a warning)
@@ -22,7 +14,7 @@
                                            500000 - a faster rate only when named, after its 1 s verify each way)
   oep linktest <probe> --rates now,921600 --patterns in,out,duplex --inflight 1,2 --sizes 128,496 --frames 300
   oep pins <probe> --power 5 --wire swio  (find the target's debug pins and reset line: classify the channels, scan,
-                                           identify, hold-low + attach under reset; prints a slot, --save writes it)
+                                           identify, hold-low + attach under reset; prints the labels, --save writes them)
   oep clock <probe> [-n 8] [--json]       (fn 0's clock, core §7.7: the probe's uptime_ns and boot_id against this
                                            host's time - the reading with the shortest round trip of n)
   oep restart <probe> [--reopen-s S]      (oep.probe.restart: the probe restarts; waits until it is back, its new boot_id)
@@ -102,17 +94,17 @@ def main(argv=None) -> int:
     lt.add_argument("--low-latency", choices=("on", "off"), default="on", help="the serial driver's low-latency mode")
     lt.add_argument("--json", action="store_true", help="one JSON object per cell")
     pn = sub.add_parser("pins", help="find where a target is wired: classify the channels, scan the wire, find the "
-                        "reset line, suggest a slot (writes nothing without --save)")
+                        "reset line, suggest labels (writes nothing without --save)")
     pn.add_argument("probe", help="a probe: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]")
     pn.add_argument("--power", type=int, help="the gpio channel that powers the target: switched off, then on, to "
                     "see which channels follow it (never touched without this)")
     pn.add_argument("--exclude", default="", help="channels never to read, scan or hold, comma-separated")
     pn.add_argument("--wire", choices=("swio", "rvswd", "swd"), default="swio")
-    pn.add_argument("--steps", default="classify,hold,scan,identify,reset,slot",
-                    help="the steps to run, comma-separated (default all: classify, hold, scan, identify, reset, slot)")
-    pn.add_argument("--save", action="store_true", help="write the suggested slot (config set, then save)")
-    pn.add_argument("--slot", type=int, default=0, help="--save: the slot number (default 0)")
-    pn.add_argument("--name", help="--save: the slot's name (default: the target family, else 'target')")
+    pn.add_argument("--steps", default="classify,hold,scan,identify,reset,labels",
+                    help="the steps to run, comma-separated (default all: classify, hold, scan, identify, reset, labels)")
+    pn.add_argument("--save", action="store_true", help="write the suggested labels (config set, then save)")
+    pn.add_argument("--name", help="the host's connection profile name: labels <name>.nrst / <name>.power_hi (a probe "
+                    "serving several targets; default: nrst / power_hi)")
     pn.add_argument("--json", action="store_true", help="the report as JSON (the steps' lines go to stderr)")
     ck = sub.add_parser("clock", help="the probe's clock (fn 0 clock, core §7.7) against this host's: lock-free")
     ck.add_argument("probe", help="a probe: a serial port, tcp://HOST:PORT or usb[:VID:PID[:SERIAL]]")
@@ -246,7 +238,7 @@ def _pins_cmd(args) -> int:
     try:
         core.take(hst, 10000, owner="oep pins")
         finder = pins.PinFinder(hst, wire=args.wire, power=args.power, exclude=exclude, say=say, probe=args.probe,
-                                save=args.save, slot=args.slot, name=args.name)
+                                save=args.save, name=args.name)
         report = finder.run(steps=tuple(s for s in args.steps.split(",") if s))
         say(f"done in {report.elapsed_s:.1f} s")
         if args.json:
@@ -340,40 +332,15 @@ def _speed(args) -> int:
 # ---- oep config ----------------------------------------------------------------------------------------------------
 
 def _config_parser(sub) -> None:
-    c = sub.add_parser("config", help="the probe's settings (oep.probe.config): slots, binds, save")
+    c = sub.add_parser("config", help="the probe's channel settings (oep.probe.config): labels, idle, disable, save")
     cs = c.add_subparsers(dest="action", required=True)
-    show = cs.add_parser("show", help="the settings, what the probe declares, and the live slot / bind state")
+    show = cs.add_parser("show", help="the settings, what the probe declares, and the storage state")
     show.add_argument("probe")
     show.add_argument("--json", action="store_true")
-    state = cs.add_parser("state", help="the live slot / bind / storage state (op state, lock-free)")
+    state = cs.add_parser("state", help="the storage state (op state, lock-free)")
     state.add_argument("probe")
     state.add_argument("--json", action="store_true")
-    slot = cs.add_parser("slot", help="register a slot (a place a target is wired to)")
-    slot.add_argument("probe")
-    slot.add_argument("--slot", type=int, default=0, help="the slot number (default 0)")
-    slot.add_argument("--name", required=True, help="1-32 of a-z 0-9 - _ (the oep://<probe>/<name> address)")
-    slot.add_argument("--wire", help="rvswd or swio (or an fn); default: the probe's only wire")
-    slot.add_argument("--pins", help="swdio,swclk (one pin on swio); default: the wire's only pin set")
-    slot.add_argument("--attach", choices=sorted(config.ATTACH), default="host")
-    slot.add_argument("--retry", type=float, default=0, help="at-boot: try again every N s while absent (0: never)")
-    slot.add_argument("--mechanism", choices=sorted(config.MECHANISM), default="dmseq",
-                      help="the console's mechanism, or none (no console on this slot)")
-    slot.add_argument("--max-speed", type=int, default=0,
-                      help="the line's ceiling in Hz for the probe's own attach (0: none); the target's, e.g. 1000000")
-    slot.add_argument("--idle-clock", choices=sorted(config.IDLE_CLOCK), default="high",
-                      help="rvswd: SWCLK while the line rests (the target's: low on CH32L103 / V203)")
-    slot.add_argument("--save", action="store_true", help="save after the change")
-    bind = cs.add_parser("bind", help="the one stream a serial port carries (set it again to change it)")
-    bind.add_argument("probe")
-    bind.add_argument("--port", type=int, required=True, help="the serial port (its transport index, see show)")
-    bind.add_argument("--stream", required=True, help="slot:NAME, slot:N or uart:FN")
-    bind.add_argument("--save", action="store_true")
-    plan = cs.add_parser("plan", help="the pins an interface keeps (its whole plan, kept as a setting)")
-    plan.add_argument("probe")
-    plan.add_argument("fn", help="an fn, or name#instance (the list instance, 0 = the first; #0 may be left out, core §7.2)")
-    plan.add_argument("roles", nargs="+", help="ROLE=CHANNEL, ROLE a number or the interface's role name (rx, tx, line...)")
-    plan.add_argument("--save", action="store_true")
-    label = cs.add_parser("label", help="name a channel (a setting, read with config get)")
+    label = cs.add_parser("label", help="name a channel (a setting, read with config show)")
     label.add_argument("probe")
     label.add_argument("channel", type=int)
     label.add_argument("text")
@@ -383,114 +350,29 @@ def _config_parser(sub) -> None:
     idle.add_argument("channel", type=int)
     idle.add_argument("mode", choices=sorted(config.IDLE))
     idle.add_argument("--save", action="store_true")
-    dis = cs.add_parser("disable", help="channels the probe never uses or touches (not on this board)")
+    dis = cs.add_parser("disable", help="channels the probe never drives or sets up (not on this board)")
     dis.add_argument("probe")
     dis.add_argument("channels", type=int, nargs="+")
     dis.add_argument("--save", action="store_true")
-    uart = cs.add_parser("uart", help="a fixture UART's baud / format, applied whenever its plan has RX or TX")
-    uart.add_argument("probe")
-    uart.add_argument("fn", help="an fn, or name#instance of the oep.fixture.uart")
-    uart.add_argument("baud", type=int)
-    uart.add_argument("--format", default="8N1", help="data bits, parity, stop bits: 8N1 (default), 8E1, 7O2 ...")
-    uart.add_argument("--save", action="store_true")
-    rm = cs.add_parser("remove", help="remove one item (unset): slot N, bind PORT, plan FN, label CH, idle CH, uart FN, disable CH")
+    rm = cs.add_parser("remove", help="remove one item (unset): label CH, idle CH, disable CH")
     rm.add_argument("probe")
     rm.add_argument("kind", choices=sorted(config.ITEM))
-    rm.add_argument("key", type=int)
+    rm.add_argument("channel", type=int)
     rm.add_argument("--save", action="store_true")
-    wifi = cs.add_parser("wifi", help="a Wi-Fi network the probe joins (the wifi item; the passphrase is never printed)")
-    wifi.add_argument("probe")
-    wifi.add_argument("--index", type=int, help="the entry (tried in index order; below the probe's wifi_max)")
-    wifi.add_argument("--ssid", help="the network's name (1-32 bytes)")
-    pw = wifi.add_mutually_exclusive_group()
-    pw.add_argument("--pass-prompt", action="store_true", help="ask for the passphrase (no echo)")
-    pw.add_argument("--pass-env", metavar="VAR", help="read the passphrase from environment variable VAR")
-    pw.add_argument("--open", action="store_true", help="no passphrase: an open network")
-    pw.add_argument("--from-env", action="store_true", help="every entry from OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n> "
-                    "(n = the index; no PASS: open); entries whose SSID and passphrase presence already match are not "
-                    "sent again (a passphrase cannot be compared: --force sends them)")
-    wifi.add_argument("--force", action="store_true", help="--from-env: send every entry, passphrases included")
-    wifi.add_argument("--save", action="store_true")
-    wun = cs.add_parser("wifi-unset", help="remove Wi-Fi entries (the wifi item of these indexes)")
-    wun.add_argument("probe")
-    wun.add_argument("--index", type=int, action="append", required=True, help="an entry's index (repeatable)")
-    wun.add_argument("--save", action="store_true")
     for name in ("save", "erase"):
         cs.add_parser(name, help=f"{name} the stored settings").add_argument("probe")
-
-
-def _pins(hst, fn: int, text: str | None, wire: str) -> tuple[int, int]:
-    if text:
-        parts = [int(x, 0) for x in text.split(",")]
-        return (parts[0], parts[1] if len(parts) > 1 else 0xFFFF)
-    groups = []
-    for tag, v in core.describe(hst, fn):
-        if tag & 0x7F == catalog.CHANNEL_GROUP:
-            roles = dict(catalog.unpack_channel_group(v)[1])
-            groups.append((roles.get(1, 0xFFFF), roles.get(2, 0xFFFF)))
-    if len(groups) != 1:
-        raise SystemExit(f"{wire}: {len(groups)} pin sets on this probe - name one with --pins")
-    return groups[0]
-
-
-def _plan_fn(hst, spec: str) -> tuple[int, dict[str, int]]:
-    """fn and its role names (from the registry) for `spec`: an fn number, or name[#instance] (the list's instance,
-    0-based, core §7.2)."""
-    from . import registry_legacy as reg
-    if spec.isdigit():
-        fn = int(spec)
-        name = next((e.name for e in core.list_entries(hst) if e.fn == fn), "")
-    else:
-        name, _, k = spec.partition("#")
-        entries = [e for e in core.list_entries(hst, name, exact=True)]
-        if not entries:
-            raise SystemExit(f"the probe offers no {name}")
-        instance = int(k) if k else 0
-        fn = next((e.fn for e in entries if e.instance == instance), None)
-        if fn is None:
-            raise SystemExit(f"{name}: instances {sorted(e.instance for e in entries)}, not {instance}")
-    iface = reg.INTERFACES.get(name)
-    roles = dict(iface.enum.get("role", {})) if iface else {}
-    return fn, roles
-
-
-def _wire_fn(hst, wire: str | None) -> int:
-    if wire is None:
-        wires = [e for e in core.list_entries(hst, "oep.wire") if e.name in ("oep.wire.rvswd", "oep.wire.swio")]
-        if len(wires) != 1:
-            raise SystemExit("this probe has " + (", ".join(f"{e.name} (fn {e.fn})" for e in wires) or "no RISC-V wire")
-                             + ": name one with --wire")
-        return wires[0].fn
-    name = wire if wire.startswith("oep.") else f"oep.wire.{wire}"
-    if wire.isdigit():
-        return int(wire)
-    try:
-        return core.find(hst, name)
-    except LookupError:
-        raise SystemExit(f"this probe does not offer {name}") from None
-
-
-def _stream(spec: str, slots: dict[str, int]) -> tuple[str, int]:
-    kind, _, key = spec.partition(":")
-    if kind not in config.STREAM or not key:
-        raise SystemExit(f"--stream {spec}: want slot:NAME, slot:N or uart:FN")
-    if kind == "slot" and not key.isdigit():
-        if key not in slots:
-            raise SystemExit(f"--stream {spec}: no slot named {key} (see oep config show)")
-        return kind, slots[key]
-    return kind, int(key)
 
 
 def _change(hst, cfg, items, save: bool) -> None:
     core.take(hst, 3000, owner="oep config")
     try:
-        h = cfg.set(items)
-        print(f"set: hash 0x{h:08x}")
+        gen = cfg.set(items)
+        print(f"set: generation {gen}")
         if save:
             if cfg.needs_save():
-                print(f"saved: hash 0x{cfg.save():08x}")
+                print(f"saved: generation {cfg.save()}")
             else:
-                print("saved already (storage_hash is the settings' hash): not written")
+                print("saved already (saved_generation is the current generation): not written")
     finally:
         hst.end()
 
@@ -503,54 +385,19 @@ def _config(args) -> int:
             return _show(hst, cfg, args.json)
         if args.action == "state":
             return _state(cfg, args.json)
-        if args.action == "slot":
-            fn = _wire_fn(hst, args.wire)
-            args.wire = args.wire or str(fn)
-            it = config.Slot(slot=args.slot, wire_fn=fn, pins=_pins(hst, fn, args.pins, args.wire), name=args.name,
-                             attach=args.attach, retry_s=args.retry, mechanism=args.mechanism,
-                             max_speed=args.max_speed, idle_clock=args.idle_clock)
-            _change(hst, cfg, [it], args.save)
-        elif args.action == "bind":
-            slots = {it.name: it.slot for it in cfg.items() if isinstance(it, config.Slot)}
-            _change(hst, cfg, [config.Bind(port=args.port, stream=_stream(args.stream, slots))], args.save)
-        elif args.action == "plan":
-            fn, roles = _plan_fn(hst, args.fn)
-            items = []
-            for spec in args.roles:
-                role, _, ch = spec.partition("=")
-                if not ch:
-                    raise SystemExit(f"{spec}: want ROLE=CHANNEL")
-                number = int(role) if role.isdigit() else roles.get(role.lower())
-                if number is None:
-                    raise SystemExit(f"{role}: not a role of fn {fn} (roles: {', '.join(sorted(roles)) or 'numbers only'})")
-                items.append(config.Plan(fn=fn, role=number, channel=int(ch, 0)))
-            _change(hst, cfg, items, args.save)
-        elif args.action == "uart":
-            fn, _ = _plan_fn(hst, args.fn)
-            from .fixture import FixtureUart
-            fmt = args.format.upper()
-            try:
-                byte = FixtureUart.format_byte(int(fmt[0]), fmt[1], int(fmt[2]))
-            except (KeyError, ValueError, IndexError):
-                raise SystemExit(f"--format {args.format}: want <data bits><parity><stop bits>, e.g. 8N1, 8E2, 7O1") from None
-            _change(hst, cfg, [config.Uart(fn=fn, baud=args.baud, format=byte)], args.save)
-        elif args.action == "label":
+        if args.action == "label":
             _change(hst, cfg, [config.Label(channel=args.channel, text=args.text)], args.save)
         elif args.action == "idle":
             _change(hst, cfg, [config.Idle(channel=args.channel, mode=args.mode)], args.save)
         elif args.action == "disable":
             _change(hst, cfg, [config.Disable(channel=ch) for ch in args.channels], args.save)
         elif args.action == "remove":
-            _change(hst, cfg, [config.remove(args.kind, args.key)], args.save)
-        elif args.action == "wifi":
-            _wifi_set(hst, cfg, args)
-        elif args.action == "wifi-unset":
-            _change(hst, cfg, [config.remove("wifi", i) for i in args.index], args.save)
+            _change(hst, cfg, [config.remove(args.kind, args.channel)], args.save)
         else:
             core.take(hst, 3000, owner="oep config")
             try:
                 if args.action == "save":
-                    print(f"saved: hash 0x{cfg.save():08x}")
+                    print(f"saved: generation {cfg.save()}")
                 else:
                     cfg.erase()
                     print("erased (the settings now in effect stay until the probe restarts)")
@@ -564,154 +411,41 @@ def _config(args) -> int:
         hst.link.close()
 
 
-def _wifi_set(hst, cfg, args) -> None:
-    """oep config wifi (host guide §15.1): the passphrase from a prompt without echo or an environment variable, never
-    from the command line, never printed; without one the entry keeps its passphrase (pass_len 0xFF) - an entry that
-    does not exist yet needs --pass-prompt, --pass-env or --open."""
-    import os
-    decl = cfg.describe()
-    if config.ITEM["wifi"] not in decl.items:
-        raise SystemExit("this probe has no wifi item (describe's items)")
-    if args.from_env:
-        wanted = config.wifi_from_env(count=decl.wifi_max)
-        if not wanted:
-            raise SystemExit("--from-env: no OEP_WIFI_SSID_<n> set (n = 0 .. wifi_max - 1)")
-        have = {it.index: it for it in cfg.items() if isinstance(it, config.Wifi)}
-        send = [w for w in wanted if args.force or not config.same_items([have[w.index]] if w.index in have else [], [w])]
-        for w in wanted:
-            print(f"wifi {w.index}: " + ("sent" if w in send else "unchanged (ssid and passphrase presence match)"))
-        if send:
-            _change(hst, cfg, send, args.save)
-        elif args.save and cfg.needs_save():
-            core.take(hst, 3000, owner="oep config")
-            try:
-                print(f"saved: hash 0x{cfg.save():08x}")
-            finally:
-                hst.end()
-        return
-    if args.index is None or args.ssid is None:
-        raise SystemExit("oep config wifi: --index and --ssid (or --from-env)")
-    if not 0 <= args.index < max(decl.wifi_max, 1):
-        raise SystemExit(f"--index {args.index}: 0 to {decl.wifi_max - 1} (the probe's wifi_max is {decl.wifi_max})")
-    if args.pass_prompt:
-        import getpass
-        passphrase = getpass.getpass(f"passphrase for {args.ssid!r} (not shown): ")
-    elif args.pass_env:
-        passphrase = os.environ.get(args.pass_env)
-        if passphrase is None:
-            raise SystemExit(f"--pass-env {args.pass_env}: not set")
-    elif args.open:
-        passphrase = None
-    else:
-        if not any(isinstance(it, config.Wifi) and it.index == args.index for it in cfg.items()):
-            raise SystemExit(f"wifi entry {args.index} does not exist yet: give --pass-prompt, --pass-env VAR or --open")
-        passphrase = config.KEEP
-    it = config.Wifi(index=args.index, ssid=args.ssid, passphrase=passphrase)
-    try:
-        it.value()
-    except ValueError as e:
-        raise SystemExit(str(e)) from None
-    _change(hst, cfg, [it], args.save)
-    print(f"wifi {args.index}: {it.shown()['ssid']!r}, passphrase {it.shown()['passphrase']}")
-
-
 def _plain(o):
-    if hasattr(o, "shown"):
-        return o.shown()                                           # a wifi item: never its passphrase
     return {k: (v.hex() if isinstance(v, bytes) else v) for k, v in vars(o).items()} if hasattr(o, "__dict__") \
         else list(o)
 
 
-def _state_dict(st) -> dict:
-    return {**{k: v for k, v in vars(st).items() if k not in ("slots", "binds", "wifi")},
-            "slots": [_plain(s) for s in st.slots], "binds": [_plain(b) for b in st.binds],
-            **({"wifi": vars(st.wifi)} if st.wifi is not None else {})}
-
-
 def _state(cfg, as_json: bool) -> int:
-    """The live state alone (op state, lock-free): what a monitor polls."""
+    """The storage state alone (op state, lock-free)."""
     st = cfg.state()
     if as_json:
-        print(json.dumps(_state_dict(st), indent=2, default=lambda o: o.hex() if isinstance(o, bytes) else str(o)))
+        print(json.dumps(vars(st), indent=2))
         return 0
-    why = f" ({st.unreadable})" if st.unreadable else ""
-    print(f"storage: {st.storage}{why}, saved hash 0x{st.saved_hash:08x}")
-    for s in st.slots:
-        print(f"  slot {s.slot}: {s.state}" + (f", connection {s.connection}" if s.connection else "")
-              + (f", tried at {s.last_try_at_ns / 1e9:.3f} s" if s.last_try_at_ns is not None else ""))
-    for b in st.binds:
-        print(f"  port {b.port}: {b.flow}")
-    if st.wifi is not None:
-        print(f"wifi: {st.wifi.text()}")
+    why = f" ({st.reason})" if st.reason else ""
+    print(f"storage: {st.storage}{why}, saved generation {st.saved_generation}")
     return 0
 
 
-def _tids(hst) -> dict[int, str]:
-    """connection -> its target_id as hex, from every wire's connections (the slot's target is the host's to check,
-    probe.config §1.1, debug §2.1); best effort."""
-    from . import riscv
-    out = {}
-    for e in core.list_entries(hst):
-        if e.name in ("oep.wire.rvswd", "oep.wire.swio"):
-            try:
-                for c in riscv.Wire(hst, e.name).connections():
-                    if c.target_id:
-                        out[c.connection] = c.target_id[1][::-1].hex()
-            except host.OepError:
-                pass
-    return out
-
-
 def _show(hst, cfg, as_json: bool) -> int:
-    h, _ = cfg.get()
+    gen, _ = cfg.get()
     items = cfg.items()
     decl = cfg.describe()
-    st = cfg.state()
-    kinds = {i: _name(k) for i, k, _ in core.transports(hst)}
+    st = cfg.state() if cfg.offers(cfg.STATE) else None
     if as_json:
-        out = {"hash": h, "items": [dict(type=type(i).__name__, **_plain(i)) if hasattr(i, "__dict__") else _plain(i)
-                                     for i in items],
-               "declared": _plain(decl), "state": _state_dict(st), "transports": kinds}
+        out = {"generation": gen, "items": [dict(type=type(i).__name__, **_plain(i)) if hasattr(i, "__dict__")
+                                             else _plain(i) for i in items],
+               "declared": _plain(decl), "state": vars(st) if st else None}
         print(json.dumps(out, indent=2, default=lambda o: o.hex() if isinstance(o, bytes) else str(o)))
         return 0
-    why = f" ({st.unreadable})" if st.unreadable else ""
-    print(f"storage: {st.storage}{why} ({decl.storage_bytes} bytes), saved hash 0x{st.saved_hash:08x}; now 0x{h:08x}")
-    print("transports: " + ", ".join(f"{i} {k}" for i, k in kinds.items()))
-    by_slot = {s.slot: s for s in st.slots}
-    tids = _tids(hst) if any(s.connection for s in st.slots) else {}
-    print(f"slots (up to {decl.slots_max}):")
+    if st is not None:
+        why = f" ({st.reason})" if st.reason else ""
+        print(f"storage: {st.storage}{why} ({decl.storage_bytes} bytes), saved generation {st.saved_generation}; "
+              f"now {gen}")
+    else:
+        print(f"no storage; generation {gen}")
     for it in items:
-        if isinstance(it, config.Slot):
-            s = by_slot.get(it.slot)
-            pins = f"{it.pins[0]}" if it.pins[1] == 0xFFFF else f"{it.pins[0]},{it.pins[1]}"
-            retry = f" retry {it.retry_s:g} s" if it.attach == "at-boot" else ""
-            retry += (f" max {it.max_speed} Hz" if it.max_speed else "") + (" idle-low" if it.idle_clock == "low" else "")
-            live = ""
-            if s:
-                tried = "never tried" if s.last_try_at_ns is None else f"tried at {s.last_try_at_ns / 1e9:.3f} s"
-                tid = f" target_id {tids[s.connection]}" if s.connection in tids else ""
-                live = f"  -> {s.state}" + (f" (connection {s.connection})" if s.connection else f" ({tried})") + tid
-            print(f"  {it.slot} {it.name}: fn {it.wire_fn} pins {pins} {it.attach}{retry} {it.mechanism}{live}")
-    by_port = {b.port: b for b in st.binds}
-    print("binds:")
-    names = {it.slot: it.name for it in items if isinstance(it, config.Slot)}
-    for it in items:
-        if isinstance(it, config.Bind):
-            b = by_port.get(it.port)
-            k, i = it.stream
-            stream = f"slot:{names.get(i, i)}" if k == "slot" else f"{k}:{i}"
-            live = f"  -> {b.flow}" if b else ""
-            print(f"  port {it.port} ({kinds.get(it.port, '?')}): {stream}{live}")
-    if config.ITEM["wifi"] in decl.items:
-        print(f"wifi (up to {decl.wifi_max}): " + (st.wifi.text() if st.wifi is not None else "no state"))
-        for it in items:
-            if isinstance(it, config.Wifi):
-                s = it.shown()
-                use = "  <- in use" if st.wifi is not None and st.wifi.entry == it.index else ""
-                print(f"  {s['index']} {s['ssid']!r}: passphrase {s['passphrase']}{use}")
-    for it in items:
-        if not isinstance(it, (config.Slot, config.Bind, config.Wifi)):
-            print(f"  {it}")
+        print(f"  {it}")
     return 0
 
 

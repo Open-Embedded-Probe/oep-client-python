@@ -2,7 +2,7 @@
 optional ops, C-21), 975d88c / 598bb26 / 8d91db0 (the lines while a wire does not answer, the rest states), 73a0c37
 (cs_setup_ns, search_retries, boot_reset), and docs/v1-rule-change-proposal-2026-10-06.md (b4b08f1, 40291a4). Each test
 names its item. Updated to oep-spec 0f455a0 (rule review 2026-10-07 §2: any one reason after the session check, no
-ignored TLV, no reset method / boot_reset, the new idle / slot forms)."""
+ignored TLV, no reset method / boot_reset, the new idle form)."""
 
 import struct
 
@@ -10,7 +10,7 @@ import pytest
 
 from oep_client import catalog, endpoint, virtual_bench, message as m, registry_legacy as reg
 
-from test_virtual_bench_rules_2026_10_02 import ITEM, PLAN_APPLY, W, Clock, Host, att, slot_item
+from test_virtual_bench_rules_2026_10_02 import ITEM, PLAN_APPLY, W, Clock, Host, att
 
 CORE = reg.CORE
 RV, CFG = reg.TARGET_RISCV_DM, reg.PROBE_CONFIG
@@ -91,7 +91,7 @@ def test_c21_riscv_dm_ops_are_gated_on_the_ops_tag():
 
 
 def test_c21_save_and_erase_without_storage_are_unknown_operation():
-    probe = virtual_bench.VirtualProbe("x", 1024, [virtual_bench._config(6, 0, slots_max=4, storage=0) if o.name == CFG.name else o
+    probe = virtual_bench.VirtualProbe("x", 1024, [virtual_bench._config(6, 0, storage=0) if o.name == CFG.name else o
                                        for o in virtual_bench.p4_bench().offered])
     ep, h = bench(probe)
     assert not [t for t in ep.static[6] if t[0] == CFG.tlv["describe"]["storage"]]   # no storage tag (probe.config §2)
@@ -307,11 +307,8 @@ def test_subscribe_is_the_emitting_interfaces_own_op():
 
 
 def cfg_set(h, fn, *items):
-    return h.raw(fn, CFG.op["set"], b"".join(items))
-
-
-def uart_item(fn, baud=115200, fmt=0):
-    return m.tlv(ITEM["uart"], struct.pack("<HIB", fn, baud, fmt))
+    """probe.config set: count(u8) items (probe.config §2)."""
+    return h.raw(fn, CFG.op["set"], bytes([len(items)]) + b"".join(items))
 
 
 def idle(ch, mode):
@@ -333,34 +330,9 @@ def test_probe_config_set_any_one_reason_and_nothing_changes():
     assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([ITEM["disable"] | 0x80]))
     r = cfg_set(h, 6, idle(21, 0), m.tlv(ITEM["idle"], struct.pack("<HBB", 22, 0, 0)))   # 4 bytes: too long
     assert r.detail == m.MALFORMED
-    r = h.raw(6, CFG.op["unset"], b"\x02" + bytes([3, ITEM["disable"], 20, 0]) + bytes([5, ITEM["idle"], 21]))
+    r = h.raw(6, CFG.op["unset"], b"\x02" + bytes([ITEM["disable"], 20, 0]) + bytes([ITEM["idle"], 21]))
     assert r.detail in (m.MALFORMED, m.UNSUPPORTED)                          # the second row is cut short
     assert not ep.config
-
-
-def test_probe_config_set_any_one_of_unknown_function_unsupported_malformed():
-    ep, h = bench()
-    r = cfg_set(h, 6, idle(21, 9), uart_item(99))                             # mode 9 unsupported, fn 99 unknown
-    assert r.detail in (m.UNKNOWN_FUNCTION, m.UNSUPPORTED)
-    r = cfg_set(h, 6, uart_item(99, baud=0))                                  # baud 0 is the form's; fn 99
-    assert r.detail in (m.MALFORMED, m.UNKNOWN_FUNCTION)
-    assert cfg_set(h, 6, uart_item(5, baud=0)).detail == m.MALFORMED
-    r = cfg_set(h, 6, slot_item(0, 1, (2, 3), attach=5), slot_item(1, 99, (4, 5)))
-    assert r.detail in (m.UNKNOWN_FUNCTION, m.UNSUPPORTED)
-    assert not ep.config
-
-
-def test_an_undefined_attach_is_unsupported():
-    ep, h = bench()
-    r = cfg_set(h, 6, slot_item(0, 1, (2, 3), attach=5))
-    assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([ITEM["slot"]]))
-
-
-def test_c21_a_plan_item_on_a_channel_the_fn_does_not_offer_names_the_item():
-    ep, h = bench(virtual_bench.p4_x035())
-    plan = m.tlv(ITEM["plan"], struct.pack("<HBH", 4, 1, 24), critical=True)  # 24 is the probe's own: no fn offers it
-    r = cfg_set(h, 10, plan)
-    assert r.detail == m.UNSUPPORTED and r.payload[0] == ITEM["plan"] | 0x80
 
 
 # ---- 975d88c / 598bb26 / 8d91db0: the lines while the wire does not answer, the rest state ------------------------
@@ -404,7 +376,7 @@ def test_attach_reset_tlv_on_an_output_idle_channel_is_unavailable_and_runs_noth
     swio = ep.pairs[1][0]
     tg = ep._target(1, swio)
     tg.silent_until_reset = True
-    assert h.raw(9, CFG.op["set"], idle(23, 4)).succeeded                    # NRST idles high
+    assert cfg_set(h, 9, idle(23, 4)).succeeded                    # NRST idles high
     reset = m.tlv(0x05, struct.pack("<HH", 23, 20), critical=True)
     r = h.raw(1, W["attach"], att(swio) + reset)
     assert r.detail == m.UNAVAILABLE
@@ -420,16 +392,17 @@ def test_o2_reset_is_ndmreset_and_moves_no_line():
     the reset line. Its answer is status(u8) flags(u8) pc(u32)."""
     ep, h = bench(virtual_bench.esp32_v003())
     cid = attached(ep, h, pair=ep.pairs[1][0])
-    sid = struct.unpack_from("<H", h.ok(3, reg.TARGET_CONSOLE.op["open"], struct.pack("<HB", cid, 2)))[0]
+    sid = struct.unpack_from("<I", h.ok(3, reg.TARGET_CONSOLE.op["open"], struct.pack("<IB", cid, 2)))[0]
     for mode in (0, 2):
         r = h.raw(2, RV.op["reset"], struct.pack("<IB", cid, mode))
         assert r.succeeded and len(r.payload) == 6
         status, flags, pc = struct.unpack("<BBI", r.payload)
         assert status == 0 and flags == 1                                     # bit0 reached; no other bit (§4.3)
     assert h.raw(2, RV.op["reset"], struct.pack("<IB", cid, 1)).detail == m.UNSUPPORTED   # mode 1 is not defined
-    marks = [mk for mk in ep.streams[sid].marks if mk[2] == reg.COMMON.enum["mark_kind"]["reset"]]
-    assert [mk[4] for mk in marks] == [reg.COMMON.enum["mark_detail_reset"]["ndmreset"]] * 2
-    assert "nrst" not in reg.COMMON.enum["mark_detail_reset"] and ep.gpio_log == []
+    con = reg.TARGET_CONSOLE.enum
+    assert [(mk[2], mk[4]) for mk in ep.streams[sid].marks] == [(con["mark_kind"]["reset"],
+                                                                 con["mark_detail_reset"]["ndmreset"])] * 2   # no restart
+    assert "nrst" not in con["mark_detail_reset"] and ep.gpio_log == []
     assert "reset" not in RV.tlv
 
 

@@ -6,8 +6,6 @@
   required     what every probe must give and a lock-free look can check (core §1.2, §7.1, §7.5): dump's MISSING
   config       probe.config set / get / save / state / unset with a disable item, a reboot in between (oep.probe.restart
                when the probe lists it - on a USB probe only with OEP_HW_RESTART=1 -, else a bridge board's EN line)
-  wifi         the wifi item (when declared): with OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n> the entries are set and saved,
-               the link must connect, and tcp:<unit_id> opens when DNS-SD finds it; never printed or recorded
   wire         scan, attach (with the reset TLV when OEP_HW_RESET names the line), halt -> read_block -> resume 50x
                with s0 / s1 / a0 / a1 read before and after each block op       (only with OEP_HW_TARGET)
   gpio         fixture gpio set / read on two free channels (outputs read back, pull-up / pull-down levels)
@@ -169,8 +167,7 @@ def test_config(run: record.Run):
     declared = cfg.describe()
     run.settings_before(cfg)                          # what restore_settings puts back, whatever happens below
     h0, items0 = cfg.get()
-    rec = run.record("config", storage_bytes=declared.storage_bytes, slots_max=declared.slots_max,
-                     items_before=len(items0), hash_before=h0)
+    rec = run.record("config", storage_bytes=declared.storage_bytes, items_before=len(items0), generation_before=h0)
     assert config.ITEM["disable"] in declared.items, "the probe declares no disable item"
     assert declared.storage_bytes > 0, "the probe declares no storage: nothing to save"
     label_ch, disable_ch = board.label or board.gpio[0], board.disable
@@ -193,12 +190,12 @@ def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: di
     run.settings_changing("config", "disable", disable_ch)
     h1 = cfg.set(added)
     h_items, items1 = cfg.get()
-    assert h_items == h1, "set's hash is not get's hash (probe.config §2: the probe's own u32 for the settings)"
-    assert h1 != h0, "the hash did not change with the settings (probe.config §2)"
+    assert h_items == h1, "set's generation is not get's (probe.config §2)"
+    assert h1 != h0, "the generation did not move with the settings (probe.config §2)"
     decoded = [config.decode(t, v) for t, v in items1]
     assert any(isinstance(it, config.Label) and it.channel == label_ch and it.text == "HW-A" for it in decoded)
     assert any(isinstance(it, config.Disable) and it.channel == disable_ch for it in decoded)
-    rec.update(hash_set=h1, items_after_set=len(items1))
+    rec.update(generation_set=h1, items_after_set=len(items1))
     # a plan naming the disabled channel is refused (unavailable, held by settings)
     gpio = fixture.Gpio(hst)
     with pytest.raises(h.Rejected) as e:
@@ -207,12 +204,12 @@ def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: di
     assert isinstance(e.value, (core.PinsTaken, h.Unavailable))
     # save, state
     run.settings_saving()
-    assert cfg.needs_save(), "storage_hash already equals the new settings' hash before a save"
+    assert cfg.needs_save(), "saved_generation already equals the new settings' generation before a save"
     h_saved = cfg.save()
     st = cfg.state()
-    rec.update(hash_saved=h_saved, storage=st.storage, saved_hash=st.saved_hash)
-    # storage_hash: get's hash when the saved settings became the current ones (probe.config §3.3)
-    assert h_saved == h1 and st.storage == "applied" and st.saved_hash == h_saved, f"state after save: {st}"
+    rec.update(generation_saved=h_saved, storage=st.storage, saved_generation=st.saved_generation)
+    # saved_generation: the generation saved (probe.config §3)
+    assert h_saved == h1 and st.storage == "applied" and st.saved_generation == h_saved, f"state after save: {st}"
     assert not cfg.needs_save(), "a save right after a save would write again (host guide §15)"
     # reboot: oep.probe.restart when the probe lists it (oep-if-restart: answers, then restarts; restart_probe waits up to
     # its restart_max_ms and confirms the new boot_id), else a bridge board's EN line through DTR / RTS (esptool's hard
@@ -253,9 +250,10 @@ def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: di
         cfg = config.ProbeConfig(hst)                 # fns found again on the new boot
         st2 = cfg.state()
         h2, items2 = cfg.get()
-        rec.update(storage_after_reboot=st2.storage, saved_hash_after_reboot=st2.saved_hash, hash_after_reboot=h2)
-        # the saved settings became the current ones at boot: storage_hash is get's hash (probe.config §3.3)
-        assert st2.storage == "applied" and st2.saved_hash == h2, f"saved settings not applied at boot: {st2}"
+        rec.update(storage_after_reboot=st2.storage, saved_generation_after_reboot=st2.saved_generation,
+                   generation_after_reboot=h2)
+        # applied whole at boot: saved_generation 1, the generation 1 (probe.config §2, §3)
+        assert st2.storage == "applied" and st2.saved_generation == h2 == 1, f"saved settings not applied at boot: {st2}"
         assert config.same_items(items2, items1), "the settings after the reboot are not the ones saved"
         decoded2 = [config.decode(t, v) for t, v in items2]
         assert any(isinstance(it, config.Disable) and it.channel == disable_ch for it in decoded2)
@@ -273,81 +271,15 @@ def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: di
     _, items3 = cfg.get()
     decoded3 = [config.decode(t, v) for t, v in items3]
     assert not any(isinstance(it, (config.Label, config.Disable)) and it.channel in (label_ch, disable_ch) for it in decoded3)
-    # compared item by item (host guide §15): the hash is the probe's and need not repeat for equal settings
+    # compared item by item (host guide §15): the generation counts changes, not contents
     assert config.same_items(items3, items0), "after unset the settings are not the ones from before the test"
     run.settings_saving()
     h_saved2 = cfg.save()
     st3 = cfg.state()
-    rec.update(hash_after_unset=h3, saved_hash_final=st3.saved_hash)
-    assert h_saved2 == h3 and st3.saved_hash == h3
+    rec.update(generation_after_unset=h3, saved_generation_final=st3.saved_generation)
+    assert h_saved2 == h3 and st3.saved_generation == h3
     core.plan_apply(hst, [(gpio.fn, GPIO_ROLE_LINE, disable_ch)])      # enabled again
     core.plan_release(hst, [gpio.fn])
-
-
-# ---- 3a. Wi-Fi (the wifi item) ------------------------------------------------------------------------------------------
-
-def _wifi_wait_s() -> float:
-    return float(os.environ.get("OEP_HW_WIFI_WAIT_S", "") or 30)
-
-
-def test_wifi(run: record.Run):
-    """probe.config §1.4 / §3.3 on a probe with the wifi item. With OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n> set: the
-    entries that differ from the probe's (ssid and passphrase presence: the passphrase cannot be compared, host guide
-    §15.1) are set and saved - they are the bench's settings and stay -, then the link must reach connected within
-    OEP_HW_WIFI_WAIT_S (30 s) and, when DNS-SD finds the probe by its unit_id, tcp:<unit_id> must open it (describe's
-    unit_id checked). Without them only the state is recorded. Nothing of a network (ssid, passphrase, address) is
-    printed or recorded: the indexes, the state, the reason, the rssi and whether an address came."""
-    hst = run.require()
-    cfg = config.ProbeConfig(hst)
-    decl = cfg.describe()
-    if config.ITEM["wifi"] not in decl.items:
-        pytest.skip("the probe has no wifi item")
-    rec = run.record("wifi", wifi_max=decl.wifi_max)
-    wanted = config.wifi_from_env(count=decl.wifi_max)
-
-    def state() -> dict:
-        w = config.ProbeConfig(run.require()).state().wifi
-        assert w is not None, "a probe with the wifi item answers state without its wifi TLV (probe.config §3.3)"
-        return {"state": w.state, "entry": w.entry, "reason": w.reason, "rssi": w.rssi, "address": w.ipv4 is not None}
-
-    if not wanted:
-        rec.update(env="none: OEP_WIFI_SSID_<n> not set, nothing changed", now=state())
-        return
-    run.restore_settings("before wifi")              # a pending restore must not erase the storage after this save
-    hst = run.take()
-    cfg = config.ProbeConfig(hst)
-    have = {it.index: it for it in cfg.items() if isinstance(it, config.Wifi)}
-    send = [w for w in wanted if not config.same_items([have[w.index]] if w.index in have else [], [w])]
-    rec.update(sent=[w.index for w in send], unchanged=[w.index for w in wanted if w not in send])
-    if send:
-        cfg.set(send)                                # over TCP an entry in use that changes drops this link (§1.4)
-    if cfg.needs_save():
-        rec["saved"] = True
-        cfg.save()
-    deadline = time.monotonic() + _wifi_wait_s()
-    t0 = time.monotonic()
-    while True:
-        now = state()
-        if now["state"] == "connected" or time.monotonic() > deadline:
-            break
-        time.sleep(0.5)
-    rec.update(now=now, seconds=round(time.monotonic() - t0, 1))
-    assert now["state"] == "connected" and now["address"], f"not connected within {_wifi_wait_s():g} s: {now}"
-    unit = (run.firmware.get("after") or {}).get("unit_id") or record.probe_info(hst).get("unit_id")
-    if run.board.tcp or not unit:
-        return
-    from oep_client import discovery
-    try:
-        found = discovery.find_unit(unit, timeout=3.0)
-    except LookupError:
-        rec["dns_sd"] = "not found (mDNS does not reach this host: a NAT or a router between)"
-        return
-    rec["dns_sd"] = {"port": found.port, "instance": found.instance}
-    tcp = link.open_host(f"tcp:{unit}", keep_session=False)   # describe's unit_id checked (transports §3)
-    try:
-        rec["tcp_confirm"] = tcp.confirm()["revision"]
-    finally:
-        tcp.link.close()
 
 
 # ---- 4. the wire -----------------------------------------------------------------------------------------------------------
@@ -519,18 +451,10 @@ def test_uart(run: record.Run):
         except h.Unavailable as e:
             refused, planned_here = e, False
     if not planned_here:
-        # The probe's settings may already give this UART its pins (a jig's plan items): then the test runs on those
-        # and leaves the plan alone (planning it twice is what the probe refuses). So does a board the table gives no
-        # free pair (every channel that can drive TX goes to its target); without a settings plan it skips.
-        plans = [it for it in config.ProbeConfig(hst).items() if isinstance(it, config.Plan) and it.fn == u.fn]
-        if not plans:
-            if refused is not None:
-                raise refused
-            pytest.skip("the table gives this board no free UART pair and the probe's settings plan none for "
-                        "the fixture UART (OEP_HW_UART=rx,tx names one)")
-        rx = next((it.channel for it in plans if it.role == UART_RX), rx)
-        tx = next((it.channel for it in plans if it.role == UART_TX), tx)
-        rec.update(rx=rx, tx=tx, settings_plan=True)
+        # a board the table gives no free pair (every channel that can drive TX goes to its target): skipped
+        if refused is not None:
+            raise refused
+        pytest.skip("the table gives this board no free UART pair for the fixture UART (OEP_HW_UART=rx,tx names one)")
     try:
         actual = u.configure(115200, fixture.FixtureUart.EIGHT_N_1)
         st = u.status()

@@ -271,7 +271,7 @@ def test_once_ends_when_the_last_connection_closes():
 
 # ---- stdin commands with several connections ---------------------------------------------------------------------
 
-def test_reboot_and_wifi_air_on_stdin_reach_every_connection():
+def test_reboot_on_stdin_reaches_every_connection():
     from test_virtual_bench_serve_reboot import _command
     proc, port = _serve("--profile", "esp32-v003")
     try:
@@ -284,7 +284,7 @@ def test_reboot_and_wifi_air_on_stdin_reach_every_connection():
         assert new != boot
         assert a.confirm()["boot_id"] == new == b.confirm()["boot_id"]   # both connections stay open
         assert b.lock_state() == (False, 0)                               # the lock went with the reboot
-        assert _command(proc, "wifi-air lab=secret") == "virtual_bench_serve: wifi air now 1 network(s)"
+        assert "unknown command 'wifi-air lab=secret'" in _command(proc, "wifi-air lab=secret")   # gone
         assert _command(proc, "lose") == "virtual_bench_serve: lost connection(s) none"
         assert a.lock_state() == (False, 0)
         a.link.close()

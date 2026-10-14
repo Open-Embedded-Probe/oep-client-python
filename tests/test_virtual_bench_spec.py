@@ -1,5 +1,5 @@
-"""The virtual bench as the working spec (2026-09-29 revision): resend table, owner, lease, describe, slots and binds,
-the seat rule, and a serial port shared by frames and raw bytes."""
+"""The virtual bench as the working spec: resend table, owner, lease, describe, the serial port's frames, the wires and
+riscv-dm, and virtual_bench_serve."""
 
 import fcntl
 import os
@@ -11,18 +11,15 @@ import time
 
 import pytest
 
-from oep_client import cobs, endpoint, virtual_bench, virtual_bench_serial, message as m, registry_legacy as reg
+from oep_client import cobs, endpoint, virtual_bench, message as m, registry_legacy as reg
 
 CFG = reg.PROBE_CONFIG
-ITEM, ATTACH, KIND = CFG.tlv["item"], CFG.enum["slot_attach"], CFG.enum["bind_stream"]
-STATE = CFG.enum["slot_state"]
 W, RV = reg.WIRE_RVSWD.op, reg.TARGET_RISCV_DM.op
 
 
 def att(pair, method=0, speed=4_000_000):
     """attach's fixed part: method swdio swclk max_speed (debug §1, §3)."""
     return struct.pack("<BHHI", method, *pair, speed)
-MARK_KIND = reg.COMMON.enum["mark_kind"]
 PLAN_APPLY, PLAN_RELEASE = reg.PROBE_PLAN.op["plan_apply"], reg.PROBE_PLAN.op["plan_release"]   # oep.probe.plan
 
 
@@ -63,26 +60,6 @@ class Host:
         return r.payload
 
 
-def slot_value(n, wire, pair, attach=ATTACH["at_boot"], retry=1, mech=2, name=None, max_speed=0, idle=0):
-    """A slot item's value (probe.config §1.1): slot wire_fn swdio swclk attach retry_ms(u32) max_speed_hz(u32)
-    idle_clock mechanism name_len name; `retry` in seconds here."""
-    raw = (name or f"s{n}").encode()
-    return struct.pack("<BHHHBIIBBB", n, wire, *pair, attach, 1000 * retry if attach == ATTACH["at_boot"] else 0,
-                       max_speed, idle, mech, len(raw)) + raw
-
-
-def slot_item(n, wire, pair, **kw):
-    return m.tlv(ITEM["slot"], slot_value(n, wire, pair, **kw))
-
-
-def bind_item(port, kind, ident):
-    """A bind item (probe.config §1.2): port(u8) kind(u8) id(u16) - one stream."""
-    return m.tlv(ITEM["bind"], struct.pack("<BBH", port, kind, ident))
-
-
-SLOT_CONSOLE = KIND["slot_console"]
-
-
 def describe(ep, fn):
     """Every describe TLV of `fn`, paged (core §7.3)."""
     h, out = Host(ep), []
@@ -92,20 +69,6 @@ def describe(ep, fn):
         out += page
         if not r.payload[0] or not page:
             return out
-
-
-def state(ep, fn=6, first_slot=0, first_bind=0):
-    """probe.config's state op (lock-free, §3.3): -> (more, storage_state, storage_hash, reason, {slot: raw
-    slot_state}, [raw bind_state])."""
-    rd = m.Reader(Host(ep).raw(fn, CFG.op["state"], bytes([first_slot, first_bind]), session=False).payload)
-    more, storage, h, why = rd.take("BBIB")
-    slots = {}
-    for _ in range(rd.u8()):                                        # slot state connection(u16) last_try_at_ns(u64)
-        raw = rd.bytes(12)
-        slots[raw[0]] = raw
-    binds = [rd.bytes(2) for _ in range(rd.u8())]                   # port flow
-    rd.tail()
-    return more, storage, h, why, slots, binds
 
 
 # ---- the resend table (core §5.2) --------------------------------------------------------------------
@@ -192,7 +155,7 @@ def test_core_describe_lists_the_transports_and_max_op_ms():
     ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     holder = Host(ep)
     holder.open()
-    holder.ok(10, 0x02, m.tlv(ITEM["label"], struct.pack("<H", 20) + b"DUT"))
+    holder.ok(10, CFG.op["set"], b"\x01" + m.tlv(CFG.tlv["item"]["label"], struct.pack("<H", 20) + b"DUT"))
     assert all(v[2:] != b"DUT" for t, v in describe(ep, 0) if t == tags["label"])
 
 
@@ -223,7 +186,7 @@ def _with_transports(probe, entries):
     ([(7, virtual_bench.TRANSPORT["vendor_bulk"], 0), (3, virtual_bench.TRANSPORT["uart_bridge"], 0xFF)], 3, 7),   # not from 0, gaps
 ])
 def test_transport_list_follows_the_index_byte_not_the_tlv_order(entries, bridge, other):
-    """core §7.5: index is the number designating a transport (a bind's port), whatever order the TLVs come in.
+    """core §7.5: index is the number designating a transport, whatever order the TLVs come in.
     port_speed is accepted on the UART bridge it came on and refused on the vendor bulk (unavailable, oep-if-link §3)."""
     for port, ok in ((bridge, True), (other, False)):
         ep = endpoint.Endpoint(_with_transports(virtual_bench.esp32_v003(), entries), Clock())
@@ -234,20 +197,6 @@ def test_transport_list_follows_the_index_byte_not_the_tlv_order(entries, bridge
         assert r.succeeded if ok else r.detail == m.UNAVAILABLE
 
 
-def test_bind_port_is_the_transport_index_not_the_tlv_position():
-    """probe.config §1.2: a bind's port is the transport index of core §7.5. The serial port declared second in TLV
-    order but with index 0 is bindable; the vendor bulk with index 1 is not a serial port (unsupported)."""
-    probe = _with_transports(virtual_bench.p4_bench(), [(1, virtual_bench.TRANSPORT["vendor_bulk"], 0), (0, virtual_bench.TRANSPORT["usb_cdc"], 2)])
-    ep = endpoint.Endpoint(probe, Clock())
-    h = Host(ep)
-    h.open()
-    p = ep.pairs[1][0]
-    assert h.raw(6, 0x02, slot_item(0, 1, p) + bind_item(0, SLOT_CONSOLE, 0)).succeeded
-    assert h.raw(6, 0x02, slot_item(0, 1, p) + bind_item(1, SLOT_CONSOLE, 0)).detail == m.UNSUPPORTED
-
-
-# ---- slots, connections and the seat rule --------------------------------------------------------------
-
 def bench(clock=None):
     ep = endpoint.Endpoint(virtual_bench.p4_bench(), clock or Clock())
     h = Host(ep)
@@ -255,171 +204,12 @@ def bench(clock=None):
     return ep, h
 
 
-def test_at_boot_slots_attach_and_say_so_without_the_lock():
-    ep, h = bench()
-    pairs = ep.pairs[1]
-    ep.targets[(1, pairs[1])].present = False
-    ep.targets[(1, pairs[0])].target_id = 0x035E0601
-    h.ok(6, 0x02, slot_item(0, 1, pairs[0], name="x035") + slot_item(1, 1, pairs[1], name="l103"))
-    _, _, _, _, states, _ = state(ep)
-    conn = ep._conn_at(1, pairs[0])
-    # slot state connection(u16) last_try_at_ns(u64), 12 bytes (probe.config §3.3)
-    assert struct.unpack("<BBHQ", states[0])[:3] == (0, STATE["connected"], conn)
-    assert struct.unpack("<BBHQ", states[1]) == (1, STATE["absent"], 0, 0)       # no connection, tried at 0 ns
-    listed = h.raw(1, 0x05, b"\x00", session=False).payload        # connections, lock-free, from the first
-    assert listed[0] == 0 and listed[1] == 1 and len(listed) == 2 + 18   # more, count, the entry: no length (core §2.3)
-    assert listed[2 + 10] == 0b10 and listed[2 + 11] == 0            # used by slot 0 only
-    assert listed[2 + 14:] == struct.pack("<I", 0x035E0601)         # which target: the host reads the tid (§1.1)
-    assert h.raw(1, 0x05, b"\x01", session=False).payload[:2] == b"\x00\x00"   # past the end: nothing more
-
-
-def test_a_slot_has_one_form_without_a_lock_and_the_probe_checks_no_target():
-    """probe.config §1, §1.1, §3.2: the slot item has no lock - a value one byte longer (the old lock_len) is another
-    length, malformed critical or not (core §2.3); the probe attaches whatever answers at the slot's pins (the host
-    checks the tid); slot_state is 0 connected / 1 absent only."""
-    ep, h = bench()
-    pair = ep.pairs[1][0]
-    ep.targets[(1, pair)].target_id = 0x00300500                     # any target
-    value = slot_value(0, 1, pair)
-    for critical in (False, True):
-        r = h.raw(6, 0x02, m.tlv(ITEM["slot"], value + b"\x00", critical=critical))
-        assert (r.detail, r.payload) == (m.MALFORMED, b"") and not ep.slots
-    h.ok(6, 0x02, m.tlv(ITEM["slot"], value, critical=True))
-    assert state(ep)[4][0][1] == STATE["connected"] and ep._conn_at(1, pair) is not None
-    assert STATE == {"connected": 0, "absent": 1}
-
-
-def test_the_seat_rule_closes_the_oldest_slot_only_connection():
-    ep, h = bench()
-    p = ep.pairs[1]
-    h.ok(6, 0x02, slot_item(0, 1, p[0]) + slot_item(1, 1, p[1]))  # two seats, both taken by the slots
-    r = h.raw(1, 0x02, bytes([0]) + SPEED + m.tlv(0x03, struct.pack("<HH", *p[2]), critical=True))
-    assert r.succeeded                                              # slot 0's connection gave way
-    assert {c.pair for c in ep.conns.values()} == {p[1], p[2]}
-    ep.tick()
-    assert ep._conn_at(1, p[0]) is None                             # evicted: no retry until a new cue
-    r2 = h.raw(1, 0x02, bytes([0]) + SPEED + m.tlv(0x03, struct.pack("<HH", *p[0]), critical=True))
-    assert r2.succeeded                                             # slot 1's connection goes the same way
-
-
-def test_too_many_at_boot_slots_are_refused():
-    ep, h = bench()
-    p = ep.pairs[1]
-    r = h.raw(6, 0x02, slot_item(0, 1, p[0]) + slot_item(1, 1, p[1]) + slot_item(2, 1, p[2]))
-    assert r.detail == m.UNAVAILABLE and not ep.slots
-
-
-@pytest.mark.parametrize("name", ["", "Upper", "a/b", "x" * 33])
-def test_slot_names_are_url_safe(name):
-    ep, h = bench()
-    assert h.raw(6, 0x02, slot_item(0, 1, ep.pairs[1][0], name=name or None) if name else
-                 m.tlv(ITEM["slot"], struct.pack("<BHHHBIIBBB", 0, 1, *ep.pairs[1][0], 1, 1000, 0, 0, 2, 0))).detail == m.MALFORMED
-
-
-def test_slot_refusals_follow_the_reason_table():
-    """probe.config §1.1 / §1.2: a pair the wire does not offer -> unsupported, two slots on one place -> malformed,
-    a bind to a slot without a console -> malformed, a port that is no serial port -> unsupported, a host slot's
-    retry_ms is not looked at, the mechanism none -> a slot that opens no console."""
-    ep, h = bench()
-    p = ep.pairs[1]
-    assert h.raw(6, 0x02, slot_item(0, 1, (9, 10))).detail == m.UNSUPPORTED
-    assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + slot_item(1, 1, p[0])).detail == m.MALFORMED
-    assert h.raw(6, 0x02, slot_item(0, 1, p[0], mech=0xFF) + bind_item(0, SLOT_CONSOLE, 0)).detail == m.MALFORMED
-    assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + bind_item(1, SLOT_CONSOLE, 0)).detail == m.UNSUPPORTED
-    assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + bind_item(0, KIND["fixture_uart"], 4)).detail == m.UNSUPPORTED
-    assert h.raw(6, 0x02, slot_item(0, 1, p[0]) + bind_item(0, KIND["fixture_uart"], 99)).detail == m.UNKNOWN_FUNCTION
-    host_retry = m.tlv(ITEM["slot"], struct.pack("<BHHHBIIBBB", 0, 1, *p[0], ATTACH["host"], 1000, 0, 0, 2, 2) + b"s0")
-    assert h.raw(6, 0x02, host_retry).succeeded                     # retry_ms on a host slot: not looked at
-    assert ep._conn_at(1, p[0]) is None                             # a host slot: the probe does not attach
-    h.ok(6, 0x02, slot_item(0, 1, p[0], mech=0xFF))
-    assert ep._conn_at(1, p[0]) is not None and not ep.streams      # attached, no console opened
-
-
-def test_a_bind_is_one_stream_and_another_length_is_malformed():
-    """probe.config §1, §1.2: port(u8) kind(u8) id(u16), one stream. An item the probe handles with a value of another
-    length - the old n x streams form, a short one - is malformed with or without bit 7 (core §2.3)."""
-    ep, h = bench()
-    slot = slot_item(0, 1, ep.pairs[1][0])
-    good = struct.pack("<BBH", 0, SLOT_CONSOLE, 0)
-    for value in (struct.pack("<BBBB", 0, 0, 0, 1) + struct.pack("<BH", SLOT_CONSOLE, 0), good + b"\x00", good[:3]):
-        for critical in (False, True):
-            r = h.raw(6, 0x02, slot + m.tlv(ITEM["bind"], value, critical=critical))
-            assert (r.detail, r.payload) == (m.MALFORMED, b"") and not ep.binds
-    assert h.raw(6, 0x02, slot + m.tlv(ITEM["bind"], good, critical=True)).succeeded
-    assert ep.binds[0].stream == (SLOT_CONSOLE, 0)
-
-
-def framed(req):
-    return cobs.frame(req.pack())
-
-
-def test_raw_console_stops_during_a_session_and_carries_on_where_it_stopped():
-    """probe.config §1.2: during a session the port's position stays; afterwards it carries on where it stopped (a
-    reset in between changes nothing)."""
-    clock = Clock()
-    ep = endpoint.Endpoint(virtual_bench.p4_bench(), clock)
-    p = ep.pairs[1]
-    ep.load_config([slot_item(0, 1, p[0], name="x035"), bind_item(0, SLOT_CONSOLE, 0)])
-    port = virtual_bench_serial.VirtualSerialPort(ep, 0)
-    assert port.output() == b""                                     # the virtual bench starts the position when first read
-    ep.target_says(b"boot\n", ep.targets[(1, p[0])])
-    assert port.output() == b"boot\n"
-    port.feed(framed(m.Request(1, 0, m.OP_OPEN, struct.pack("<IB", 3000, 0), 9)))
-    out = port.output()
-    assert out.startswith(b"\x00") and out.endswith(b"\x00")        # the answer, framed both sides
-    assert m.Result.unpack(cobs.unframe(out[1:-1])).succeeded
-    ep.target_says(b"held\n", ep.targets[(1, p[0])])
-    assert port.output() == b""                                     # the session holds this port
-    assert state(ep)[5] == [bytes([0, CFG.enum["bind_flow"]["held"]])]
-    conn = ep._conn_at(1, p[0])
-    port.feed(framed(m.Request(2, 2, 0x04, struct.pack("<HB", conn, 0), 9)))   # riscv-dm reset
-    port.output()
-    ep.target_says(b"after reset\n", ep.targets[(1, p[0])])
-    port.feed(framed(m.Request(3, 0, m.OP_END, b"", 9)))
-    out = port.output()
-    assert out.endswith(b"\x00held\nafter reset\n")                # the end's answer, then from where it stopped
-    assert state(ep)[5] == [bytes([0, CFG.enum["bind_flow"]["streaming"]])]
-
-
-def test_raw_bytes_from_the_host_reach_the_selected_console_and_a_broken_frame_is_raw_too():
-    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
-    p = ep.pairs[1]
-    ep.load_config([slot_item(0, 1, p[0]), bind_item(0, SLOT_CONSOLE, 0)])
-    port = virtual_bench_serial.VirtualSerialPort(ep, 0)
-    port.feed(b"hi\x00zz\x00")
-    sid = ep.stream_keys[(ep._conn_at(1, p[0]), 2)]
-    assert bytes(ep.streams[sid].written) == b"hi\x00zz"            # the closing 0x00 starts the next candidate
-
-
-def test_a_candidate_that_stops_for_200_ms_is_raw():
-    clock = Clock()
-    ep = endpoint.Endpoint(virtual_bench.p4_bench(), clock)
-    p = ep.pairs[1]
-    ep.load_config([slot_item(0, 1, p[0]), bind_item(0, SLOT_CONSOLE, 0)])
-    port = virtual_bench_serial.VirtualSerialPort(ep, 0)
-    port.feed(b"\x00abc")
-    clock.t += 250
-    port.tick()
-    sid = ep.stream_keys[(ep._conn_at(1, p[0]), 2)]
-    assert bytes(ep.streams[sid].written) == b"\x00abc"
-
-
-def test_bind_state_is_port_and_flow():
-    """probe.config §3.3: bind_state is port(u8) flow(u8): 0 nothing to carry, 1 carrying (2 held: above)."""
-    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
-    p = ep.pairs[1]
-    ep.targets[(1, p[1])].present = False
-    ep.load_config([slot_item(0, 1, p[0]), slot_item(1, 1, p[1]), bind_item(0, SLOT_CONSOLE, 0),
-                    bind_item(3, SLOT_CONSOLE, 1)])
-    assert state(ep)[5] == [bytes([0, CFG.enum["bind_flow"]["streaming"]]), bytes([3, CFG.enum["bind_flow"]["idle"]])]
-
-
 # ---- virtual_bench_serve on a pty -----------------------------------------------------------------------------------
 
 @pytest.mark.skipif(sys.platform != "linux", reason="pty and TIOCEXCL as on Linux")
-def test_virtual_bench_serve_pty_speaks_cobs_with_console_bytes_and_honours_tiocexcl():
-    proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", "--pty", "--profile", "p4-bench",
-                             "--slot", "x035", "--bind", "0", "--console", "tick %d\\n", "--every", "20"],
+def test_virtual_bench_serve_pty_speaks_cobs_and_honours_tiocexcl():
+    """The pty is the probe's serial port: OEP frames only (transports §4), opened exclusively."""
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", "--pty", "--profile", "p4-bench"],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     try:
         where = proc.stdout.readline().split()
@@ -429,19 +219,12 @@ def test_virtual_bench_serve_pty_speaks_cobs_with_console_bytes_and_honours_tioc
         if os.geteuid() != 0:
             with pytest.raises(OSError):
                 os.open(where[1], os.O_RDWR | os.O_NOCTTY)          # the second open: EBUSY
-        os.write(fd, cobs.frame(m.Request(1, 0, m.OP_CONFIRM, m.CONFIRM_REQUEST + bytes([1, 1])).pack()))
+        os.write(fd, b"noise" + cobs.frame(m.Request(1, 0, m.OP_CONFIRM, m.CONFIRM_REQUEST + bytes([1, 1])).pack()))
         got, deadline = b"", time.monotonic() + 3
-        while time.monotonic() < deadline and not (b"tick" in got and got.count(b"\x00") >= 2):
+        while time.monotonic() < deadline and got.count(b"\x00") < 2:
             got += os.read(fd, 4096)
-        assert b"tick" in got                                        # the raw console, bound to this port
         frames = [f for f in got.split(b"\x00") if f]
-        answers = []
-        for f in frames:
-            try:
-                answers.append(m.Result.unpack(cobs.unframe(f)))
-            except (cobs.CorruptFrame, ValueError):
-                pass                                                 # console bytes: noise to the host
-        assert [a.corr for a in answers] == [1] and answers[0].succeeded
+        assert [m.Result.unpack(cobs.unframe(f)).corr for f in frames] == [1]   # the answer and nothing else
         os.close(fd)
     finally:
         proc.stdin.close()
@@ -453,92 +236,25 @@ def test_virtual_bench_serve_run_hook_from_a_file(tmp_path):
     hook = tmp_path / "loader.py"
     hook.write_text("def run(target, pc, regs):\n    target.mem[0x100] = regs.get(0x100A, 0)\n    return True, pc + 4, 7\n")
     a = virtual_bench_serve.main.__globals__["argparse"].Namespace(
-        profile="p4-x035", target_id=None, absent=[], slot=[], bind=None, port_index=0, run_hook=f"{hook}:run",
-        uart_plan=False)
+        profile="p4-x035", target_id=None, absent=[], port_index=0, run_hook=f"{hook}:run")
     ep = virtual_bench_serve.build(a)
     assert ep.target.run_hook(0x2000, {0x100A: 5}) == (True, 0x2004, 7) and ep.target.mem[0x100] == 5
 
 
-def test_a_closed_console_stays_readable_and_the_same_place_opens_it_again_under_its_number():
-    """console §2: a closed stream reads until its place is opened again; the same mechanism there brings it back under
-    its number (flags bit0, mark attach), another mechanism makes it go. Connections and streams share one number
-    space; a connection's number where a stream goes is unavailable cause 6."""
-    ep, h = bench()
-    p = ep.pairs[1]
-    def attach(pair):
-        r = h.raw(1, 0x02, bytes([0]) + SPEED + m.tlv(0x03, struct.pack("<HH", *pair), critical=True))
-        return struct.unpack_from("<H", r.payload)[0]
-    a = attach(p[0])
-    sa = struct.unpack_from("<H", h.ok(3, 0x01, struct.pack("<HB", a, 2)))[0]
-    assert a == 1 and sa == 2                                        # one space, from 1 (core §9)
-    assert h.raw(3, 0x02, struct.pack("<HBQH", a, 1, 0, 16), session=False).detail == m.UNAVAILABLE   # a connection's number
-    assert h.raw(2, 0x02, struct.pack("<H", sa)).detail == m.UNAVAILABLE                               # a stream's number
-    assert h.raw(3, 0x02, struct.pack("<HBQH", 77, 1, 0, 16), session=False).detail == m.NO_RESOURCE  # unknown
-    ep.emit(sa, b"bye")
-    h.ok(1, 0x03, struct.pack("<H", a))                              # detach: the stream closes, stays readable
-    b = attach(p[1])
-    h.ok(3, 0x01, struct.pack("<HB", b, 2))                          # the same mechanism on another place
-    assert h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).succeeded
-    a2 = attach(p[0])
-    again = m.Reader(h.ok(3, 0x01, struct.pack("<HB", a2, 2)))
-    assert again.take("HB") == (sa, 1)                               # the same place, mechanism: the same number, bit0
-    rd = m.Reader(h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).payload)
-    assert rd.take("QB") == (0, 0) and rd.counted("H") == b"bye"     # position and bytes carried on
-    kinds = [mk[2] for mk in ep.streams[sa].marks]
-    assert kinds == [MARK_KIND["attach"], MARK_KIND["detach"], MARK_KIND["closed"], MARK_KIND["attach"]]
-    h.ok(1, 0x03, struct.pack("<H", a2))
-    a3 = attach(p[0])
-    h.ok(3, 0x01, struct.pack("<HB", a3, 1))                         # another mechanism there: the old one goes
-    assert h.raw(3, 0x02, struct.pack("<HBQH", sa, 1, 0, 16), session=False).detail == m.NO_RESOURCE
-    rd = m.Reader(h.raw(3, 0x08, b"\x00\x00", session=False).payload)   # streams: the live ones (b's and a3's), lock-free
-    more, count = rd.take("BB")
-    rows = [rd.take("HHBBB") for _ in range(count)]
-    assert more == 0
-    (row,) = [r for r in rows if r[1] == a3]
-    assert len(rows) == 2 and row[2:] == (1, 1, 0) and row[0] not in (sa, a, a2, a3, b)   # stream connection mechanism users state
-
-
-def test_a_stream_lives_while_anything_uses_it():
-    """console §2: the stream's users are the session that opened it and the bound slot; close and a lease lapse take
-    one share each (mark closed 1 / 2 when the last goes), a slot's removal takes its share (3)."""
-    clock = Clock()
-    ep = endpoint.Endpoint(virtual_bench.p4_bench(), clock)
-    p = ep.pairs[1]
-    ep.load_config([slot_item(0, 1, p[0], name="x035"), bind_item(0, SLOT_CONSOLE, 0)])
-    h = Host(ep, transport=1)
-    h.open(lease=1000)
-    conn = ep._conn_at(1, p[0])
-    sid, flags = m.Reader(h.ok(3, 0x01, struct.pack("<HB", conn, 2))).take("HB")
-    assert flags == 1 and ep.streams[sid].users == {"host", ("slot", 0)}
-    rd = m.Reader(h.raw(3, 0x08, b"\x00\x00", session=False).payload)
-    assert rd.take("BB") == (0, 1) and rd.take("HHBBB") == (sid, conn, 2, 0b11, 0)   # users: session and slot
-    h.ok(3, 0x07, struct.pack("<H", sid))                            # close: the slot still uses it
-    assert ep.streams[sid].users == {("slot", 0)} and not ep.streams[sid].closed
-    h.ok(3, 0x01, struct.pack("<HB", conn, 2))
-    clock.t = 5000
-    ep.tick()                                                        # the lease lapsed: the session's share goes
-    assert ep.streams[sid].users == {("slot", 0)} and not ep.streams[sid].closed
-    h2 = Host(ep, 0x99, transport=1)
-    h2.open()
-    assert h2.raw(6, 0x05, bytes([1, 2, ITEM["slot"], 0])).detail == m.MALFORMED   # the bind would point at nothing
-    h2.ok(6, 0x05, bytes([2, 1, ITEM["slot"], 0, 1, ITEM["bind"], 0]))   # unset slot and bind: the share goes, it closes
-    assert ep.streams[sid].closed and ep.streams[sid].marks[-1][2:5:2] == (MARK_KIND["closed"], 3)
-    h2.ok(3, 0x07, struct.pack("<H", sid))                           # closing a closed stream: ok
-
-
-def test_virtual_bench_serve_uart_plan_and_rx():
+def test_virtual_bench_serve_uart_rx():
+    """--uart-rx: what arrives on the first UART's RX once a session planned and configured it (fixture §2)."""
     import time
-    from oep_client import fixture, link
+    from oep_client import core, fixture, link
     proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", "--tcp", "0", "--framing", "length",
-                             "--profile", "esp32-v003", "--uart-plan", "--uart-rx", "rx %d\\n", "--every", "10"],
+                             "--profile", "esp32-v003", "--uart-rx", "rx %d\\n", "--every", "10"],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     try:
         port = proc.stdout.readline().split()[1]
         hst = link.open_host(f"tcp://127.0.0.1:{port}", timeout=1.0)
         hst.open(3000)
         uart = fixture.FixtureUartIO(hst)
-        assert uart.configure(115200) > 0                            # the saved plan: configure works
-        assert uart.configure(9600) > 0                              # and again, while it runs
+        core.plan_apply(hst, [(uart.uart.fn, 1, 22), (uart.uart.fn, 2, 21)])   # the jig's DUT TX / DUT RX
+        assert uart.configure(115200) > 0
         got, deadline = b"", time.monotonic() + 2
         while b"\n" not in got and time.monotonic() < deadline:
             got += uart.read()
@@ -549,19 +265,6 @@ def test_virtual_bench_serve_uart_plan_and_rx():
     finally:
         proc.stdin.close()
         proc.wait(timeout=5)
-
-
-def test_the_closing_0x00_of_a_frame_is_not_raw_after_the_gap():
-    clock = Clock()
-    ep = endpoint.Endpoint(virtual_bench.p4_bench(), clock)
-    p = ep.pairs[1]
-    ep.load_config([slot_item(0, 1, p[0]), bind_item(0, SLOT_CONSOLE, 0)])
-    port = virtual_bench_serial.VirtualSerialPort(ep, 0)
-    port.feed(framed(m.Request(1, 0, m.OP_LOCK_STATE, b"")))       # lock-free: the port is not held
-    clock.t += 250
-    port.tick()
-    sid = ep.stream_keys[(ep._conn_at(1, p[0]), 2)]
-    assert bytes(ep.streams[sid].written) == b""                   # no stray 0x00 at the target
 
 
 def test_read_from_a_last_mark_that_is_not_there_is_from_now():

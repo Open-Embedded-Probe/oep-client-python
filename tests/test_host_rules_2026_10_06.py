@@ -293,29 +293,6 @@ def test_c38_pipelined_requests_fail_together():
     assert lk.failed_transport
 
 
-# ---- PC-9: the last page's storage ------------------------------------------------------------------------------
-
-def test_pc9_state_keeps_the_last_pages_storage():
-    ep, hst, _ = in_process()
-    hst.open(3000)
-    cfg = config.ProbeConfig(hst)
-    cfg.set([config.Slot(slot=n, wire_fn=1, pins=ep.pairs[1][n], name=f"s{n}", attach="host") for n in range(3)])
-    pages = []
-    real = cfg._call
-
-    def call(op, body=b"", **kw):
-        r = real(op, body, **kw)
-        if op == cfg.STATE:
-            pages.append(body)
-            if len(pages) == 1:
-                ep.saved = dict(ep.config)                                    # saved between the pages
-                r = m.Result(r.corr, r.resolution, r.detail, b"\x01" + r.payload[1:])   # say there is more
-        return r
-    cfg._call = call
-    st = cfg.state()
-    assert len(pages) == 2 and st.storage == "applied"                       # the second (last) page's
-
-
 # ---- C-21: optional ops are used when declared ------------------------------------------------------------------
 
 def test_c21_riscv_dm_says_which_optional_ops_the_probe_offers():

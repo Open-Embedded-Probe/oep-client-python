@@ -62,8 +62,10 @@ PENDING_FOLLOW = {
         "probe.config: slots are gone; attach never closes a connection to make room (debug §1)",
     "tests/test_virtual_bench_spec.py::test_a_closed_console_stays_readable_and_the_same_place_opens_it_again_under_its_number":
         "console: follows in the console stage (u32 ids, no reopen under the same number)",
-    "tests/test_no_resume.py::test_a_slots_connection_outlives_every_session_and_an_attach_returns_it":
-        "probe.config: slots are gone; an attach never joins a connection (debug §1)",
+    "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config": "probe.config: moved to test_spec_vectors.py (label / idle / disable, the generation)",
+    "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[probe.config": "probe.config: moved to test_spec_vectors.py (label / idle / disable, the generation)",
+    "tests/test_vectors.py::test_every_wifi_vector_is_routed_to_the_wifi_checks": "probe.config: the wifi item is gone",
+    "tests/test_vectors.py::test_a_wifi_set_past_the_probes_max_frame_is_refused_before_sending": "probe.config: the wifi item is gone",
 }
 
 

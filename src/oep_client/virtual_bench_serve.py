@@ -3,7 +3,7 @@
     python -m oep_client.virtual_bench_serve [--pty | --tcp PORT] [options]
 
 --pty (the default) opens a pseudo terminal that is the probe's serial port (transports §4): COBS frames
-0x00 <COBS> 0x00 and the raw bytes of the port's bind on one line. The host opens the printed path itself (and
+0x00 <COBS> 0x00 on one line (OEP frames only). The host opens the printed path itself (and
 should set TIOCEXCL on it, as on a real port). On Linux this program keeps a slave fd of its own and watches the
 path's opens and closes (inotify): when the last host closes it - or ends without closing it - TIOCEXCL is cleared
 and the unread input dropped, as a real port's last close does, so the next host's open succeeds. --tcp PORT (0 = any free
@@ -19,8 +19,8 @@ them (transports §3: they stay until the lease runs out or another core §9 eve
 closed connection are dropped; an open with the same session id from another connection takes the session back,
 core §6.2, and its notifications go there from then on). A connection that takes nothing for 2 s while answers wait is
 closed as dead; notifications that would make more than 2 x max_frame wait on one are dropped (core §11.4).
---framing cobs, only when asked for, is the serial port again over the socket (emulating a serial port, COBS frames and
-the port's raw bytes): it serves one connection at a time (a second one waits until the first closes).
+--framing cobs, only when asked for, is the serial port again over the socket (emulating a serial port, COBS frames):
+it serves one connection at a time (a second one waits until the first closes).
 
 --announce (with --tcp, length framing) announces the port as a probe listening on TCP does (transports §3): DNS-SD
 `_oep._tcp` over mDNS - PTR `_oep._tcp.local.` -> instance `OEP virtual <unit_id> <port>`, its SRV (the port, host
@@ -50,20 +50,14 @@ stdin does not end it (stop it with a signal).
 Lines on stdin are commands, read between requests (the serving never waits for them):
   reboot                the probe restarts with a new random boot_id (Endpoint.reboot, core §6.5): the session table,
                         the resend table, connections, streams, subscriptions, the plan and the unsaved settings are
-                        gone, the saved settings (--slot, --bind, --label, --uart-plan) apply again, the clock starts
+                        gone, the saved settings (--label) apply again, the clock starts
                         from 0 and a serial port is back at its boot speed. A request with the old session gets
                         no_session; confirm and open show the new boot_id. The pty or TCP connection stays open (on
                         a serial port the half-read frame and the unsent answers are lost). stderr says
                         "virtual_bench_serve: rebooted, boot_id 0x........"
   lose [CONNECTION]     the line of that connection (every live connection without one) is lost for good
-                        (Endpoint.lose, debug §2): the connection closes, its console streams get mark link-lost and
-                        close with detail 4, and a request naming it is answered no_resource. An at-boot --slot on
-                        its place attaches again by itself at its next retry (a new connection), its bound console
-                        back under the same stream number. stderr says "virtual_bench_serve: lost connection(s) ..."
-  wifi-air [SSID[=PASS] ...]
-                        the Wi-Fi networks in range now (none: no network), as --wifi-air, each word %-decoded (a space
-                        is %20, = in an SSID %3D): the probe joins again. A passphrase given here is not in the process
-                        list
+                        (Endpoint.lose, debug §2): the connection and its console streams close, and a request naming
+                        either is answered no_resource. stderr says "virtual_bench_serve: lost connection(s) ..."
   capture-overflow FN [ERROR]
                         capture FN drops data inside the segment it is taking (capture §2.2, Endpoint.capture_overflow):
                         that segment is not handed out and the track stops in error - state 6, stopped reason 3, error
@@ -86,20 +80,16 @@ Options:
   --corrupt N           the N-th answer goes out once with a broken CRC
   --console FMT         what the targets write to their consoles, %d = a counter, {t} = the target's index
   --every MS            how often (default 100; "100ms" works too)
-  --slot NAME           register a slot at boot (repeatable; the n-th on the n-th pin pair of the first wire, at boot,
-                        retry 1000 ms, mechanism dmseq), as if saved
-  --bind N              the serial port carries the console of the N-th --slot (0 = the first; probe.config §1.2)
   --target-id HEX       the target_id every target's attach reports (scheme dmi_7f)
   --absent N            the N-th pin pair of the first wire has no target (repeatable)
   --silent-until-reset N
                         the N-th pin pair of the first wire has a target that answers nothing on the wire until a
                         reset through its line (repeatable): a host's attach with the reset TLV
-  --label CH=TEXT       a label item on channel CH at boot, as if saved (repeatable; e.g. 23=v003.nrst names slot
-                        v003's reset line, probe.config §1.3)
+  --label CH=TEXT       a label item on channel CH at boot, as if saved (repeatable; e.g. 23=v003.nrst names the
+                        reset line of the host's profile v003, host guide §5.3)
   --capture-slipped     every oep.fixture.logic segment says flags bit2 (slipped: a pace that fell behind)
-  --uart-plan           the first oep.fixture.uart gets its RX / TX plan at boot, as if saved (the jig's "DUT TX" /
-                        "DUT RX" labels when the profile has them, else the first free channels); configure then works
-  --uart-rx TEXT        what arrives on that UART's RX every --every ms once it is configured (%d = a counter)
+  --uart-rx TEXT        what arrives on the first oep.fixture.uart's RX every --every ms once a session planned and
+                        configured it (%d = a counter)
   --no-port-speed       the profile's port_speed (oep.probe.link, oep-if-link §3; esp32-v003 has it) off: not in the ops, unknown_operation
   --no-restart          a probe without oep.probe.restart (oep-if-restart, optional): not listed, unknown_function
   --broken-rate SPEC    port_speed's line model: frames at RATE break (repeatable). SPEC is
@@ -109,11 +99,6 @@ Options:
                         B bytes have passed at RATE since the switch to it (afterB). The virtual bench cannot see the host's own rate (a pty,
                         TCP): only the probe's rate decides
   --keep-on-eof         the end of stdin does not end the program
-  --wifi-air SSID[=PASS]
-                        a Wi-Fi network in range (repeatable; no =PASS: open) for a profile with the wifi item
-                        (esp32-v003): the entries of probe.config's wifi item are tried against these in index order,
-                        and state's wifi TLV shows connecting for --wifi-join-ms (default 500), then connected (rssi
-                        -55, ip --wifi-ip, default 127.0.0.1 - where this program listens) or waiting with the reason
   --tcp-connections N   with --tcp and length framing: connections served at once (default 3); one more is accepted
                         and closed at once
   --once                with --tcp: end when no connection is left after one was served (above)
@@ -165,15 +150,6 @@ def _label(text: str) -> str:
     return text
 
 
-def _air(specs: list[str]) -> dict[str, str | None]:
-    """SSID[=PASS] ... -> {ssid: passphrase or None}."""
-    out = {}
-    for spec in specs:
-        ssid, eq, passphrase = spec.partition("=")
-        out[ssid] = passphrase if eq and passphrase else None
-    return out
-
-
 def _profile(name):
     name = name.replace("_", "-")
     return virtual_bench.CORE_PROFILES.get(name) or virtual_bench.PROFILES.get(name)
@@ -199,10 +175,6 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
         for tg in ep.targets.values():
             tg.run_hook = (lambda t: lambda pc, regs: hook(t, pc, regs))(tg)
     ep.capture_slipped = getattr(a, "capture_slipped", False)
-    ep.wifi_join_ms = getattr(a, "wifi_join_ms", ep.wifi_join_ms)
-    ep.wifi_ip = getattr(a, "wifi_ip", ep.wifi_ip)
-    if getattr(a, "wifi_air", None):
-        ep.wifi_set_air(_air(a.wifi_air))
     if getattr(a, "no_port_speed", False):
         ep.port_speed_base = None
     for spec in getattr(a, "broken_rate", []):
@@ -218,28 +190,10 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
     for n in getattr(a, "silent_until_reset", []):
         ep.targets[(wire, ep.pairs[wire][n])].silent_until_reset = True
     items = []
-    for n, name in enumerate(a.slot):
-        swdio, swclk = ep.pairs[wire][n]
-        mech = 2 if 2 in ep.mechanisms else min(ep.mechanisms)
-        raw = name.encode()
-        value = struct.pack("<BHHHBIIBBB", n, wire, swdio, swclk, reg.PROBE_CONFIG.enum["slot_attach"]["at_boot"],
-                            1000, 0, 0, mech, len(raw)) + raw
-        items.append(m.tlv(_ITEM["slot"], value))                 # retry 1 s, no speed ceiling, rests high
-    if a.bind is not None:
-        if not 0 <= a.bind < len(a.slot):
-            raise SystemExit(f"--bind {a.bind}: no such --slot")
-        port = a.port_index if a.port_index is not None else min(ep.serial_ports)
-        value = struct.pack("<BBH", port, reg.PROBE_CONFIG.enum["bind_stream"]["slot_console"], a.bind)
-        items.append(m.tlv(_ITEM["bind"], value))                 # port kind id (probe.config §1.2)
     for spec in getattr(a, "label", []):
         channel, _, text = spec.partition("=")
         value = struct.pack("<H", int(channel, 0)) + text.encode()
         items.append(m.tlv(_ITEM["label"], value))
-    if a.uart_plan:
-        fn = uart_fn(ep)
-        rx, tx = _uart_channels(ep, fn)
-        for role, ch in ((1, rx), (2, tx)):
-            items.append(m.tlv(_ITEM["plan"], struct.pack("<HBH", fn, role, ch)))
     if items:
         ep.load_config(items, saved=True)
     return ep
@@ -250,22 +204,6 @@ def uart_fn(ep: endpoint.Endpoint) -> int:
     if fn is None:
         raise SystemExit("this profile offers no oep.fixture.uart")
     return fn
-
-
-def _uart_channels(ep: endpoint.Endpoint, fn: int) -> tuple[int, int]:
-    """RX, TX for the UART's plan: the jig's DUT TX (probe RX) / DUT RX (probe TX) labels, else the first two free."""
-    labels = {name: ch for ch, name in ep.static_labels.items()}
-    if "DUT TX" in labels and "DUT RX" in labels:
-        return labels["DUT TX"], labels["DUT RX"]
-    allowed = []
-    for tag, v in ep.decl[fn]:
-        if tag == catalog.ROLE_CHANNELS and v[0] == 1:
-            allowed = catalog.bitmap_to_channels(struct.unpack_from("<H", v, 1)[0], v[3:])
-    taken = {p for s in ep.slots.values() for p in s.pair} | {a[2] for a in ep.plan}
-    free = [ch for ch in allowed if ch not in taken]
-    if len(free) < 2:
-        raise SystemExit("no two free channels for the UART's plan")
-    return free[0], free[1]
 
 
 def _load_hook(spec: str):
@@ -382,10 +320,6 @@ class Commands:
                 return
             gone = self.ep.lose(cid)
             print(f"virtual_bench_serve: lost connection(s) {', '.join(map(str, gone)) or 'none'}", file=sys.stderr, flush=True)
-        elif text.split()[0] == "wifi-air":
-            from urllib.parse import unquote
-            self.ep.wifi_set_air(_air([unquote(w) for w in text.split()[1:]]))
-            print(f"virtual_bench_serve: wifi air now {len(self.ep.wifi_air)} network(s)", file=sys.stderr, flush=True)
         elif text.split()[0] == "capture-overflow" and 2 <= len(text.split()) <= 3:
             try:
                 fn, *err = (int(w, 0) for w in text.split()[1:])
@@ -395,7 +329,7 @@ class Commands:
                 return
             print(f"virtual_bench_serve: capture fn {fn} dropped data inside a segment", file=sys.stderr, flush=True)
         else:
-            print(f"virtual_bench_serve: unknown command {text!r} ignored (known: reboot, lose, wifi-air, capture-overflow)",
+            print(f"virtual_bench_serve: unknown command {text!r} ignored (known: reboot, lose, capture-overflow)",
                   file=sys.stderr, flush=True)
 
 
@@ -725,13 +659,10 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--corrupt", type=int, default=0)
     ap.add_argument("--console")
     ap.add_argument("--every", default="100")
-    ap.add_argument("--slot", action="append", default=[])
-    ap.add_argument("--bind", type=int, metavar="N")
     ap.add_argument("--target-id")
     ap.add_argument("--absent", type=int, action="append", default=[])
     ap.add_argument("--silent-until-reset", type=int, action="append", default=[], metavar="N")
     ap.add_argument("--label", action="append", default=[], type=_label, metavar="CH=TEXT")
-    ap.add_argument("--uart-plan", action="store_true")
     ap.add_argument("--uart-rx")
     ap.add_argument("--run-hook")
     ap.add_argument("--once", action="store_true")
@@ -741,9 +672,6 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--no-port-speed", action="store_true")
     ap.add_argument("--no-restart", action="store_true")
     ap.add_argument("--broken-rate", action="append", default=[])
-    ap.add_argument("--wifi-air", action="append", default=[])
-    ap.add_argument("--wifi-join-ms", type=int, default=500)
-    ap.add_argument("--wifi-ip", default="127.0.0.1")
     ap.add_argument("--listen", default="127.0.0.1", metavar="ADDR")
     ap.add_argument("--unit-id", metavar="ID")
     ap.add_argument("--announce", action="store_true")

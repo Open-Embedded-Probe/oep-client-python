@@ -234,16 +234,16 @@ def test_reset_answers_status_flags_pc_and_takes_no_method(dm):
 
 # ---- oep.target.console -------------------------------------------------------------------------------------
 
-def test_console_open_returns_an_existing_stream_and_reads_by_position(dm):
+def test_console_open_makes_a_stream_and_reads_by_position(dm):
+    """console §1, §2: open makes a new stream (u32) of the session; one live stream a connection - a second open, any
+    mechanism, is unavailable cause 6; an unknown or undeclared mechanism is unsupported (0x00)."""
     ep, hst, d = dm
     con = console.Console(hst)
     sid = con.open(d.conn, console.Console.DMSEQ)
-    assert not con.existing
+    assert ep.requests[-1].payload == struct.pack("<IB", d.conn, 2)
     io = console.ConsoleIO(con)
     ep.emit(sid, b"hello ")
     assert io.read() == b"hello "
-    again = console.Console(hst)
-    assert again.open(d.conn, console.Console.DMSEQ) == sid and again.existing   # a one-shot process carries on
     ep.emit(sid, b"world")
     assert io.read() == b"world" and io.position == 11
     first = con.read(console.Console.FROM_OLDEST, 0, 5)
@@ -251,30 +251,29 @@ def test_console_open_returns_an_existing_stream_and_reads_by_position(dm):
     with pytest.raises(host.Unsupported) as e:
         con.open(d.conn, 9)
     assert e.value.tag is None and e.value.result.payload == b"\x00"   # a fixed-part value: tag 0x00 (core §4.3)
-    with pytest.raises(host.Unsupported):
-        con.open(d.conn, console.Console.NONE)                    # 0xFF: no console, never opened
-    with pytest.raises(host.Unavailable) as e:
-        con.open(d.conn, console.Console.SDI)                     # another mechanism on a live stream: cause 6
-    assert e.value.cause == "wrong_state"
-    rows = con.streams()
-    assert [(r.stream, r.connection, r.mechanism, r.users, r.open) for r in rows] == [(sid, d.conn, 2, 1, True)]
+    for mech in (console.Console.DMSEQ, console.Console.SDI):       # the same or another mechanism: cause 6
+        with pytest.raises(host.Unavailable) as e:
+            console.Console(hst).open(d.conn, mech)
+        assert e.value.cause == "wrong_state"
+    assert con.streams() == [console.StreamInfo(sid, d.conn, 2)]
 
 
 def test_console_marks_follow_serials_and_more(dm):
     ep, hst, d = dm
     con = console.Console(hst)
     con.open(d.conn)
-    for v in range(6):
+    for v in range(7):
         con.mark(v)                                               # several marks at the same position
     marks = con.marks()
-    assert [mk.serial for mk in marks] == list(range(7))          # attach + 6 host marks, over 3 answers
-    assert [mk.kind for mk in marks] == [3] + [7] * 6 and [mk.detail for mk in marks[1:]] == list(range(6))
-    assert console.MARK_NAMES[8] == "link-lost"
+    assert [mk.serial for mk in marks] == list(range(7))          # no mark at open; 7 host marks, over 3 answers
+    assert [mk.kind for mk in marks] == [3] * 7 and [mk.detail for mk in marks] == list(range(7))
+    assert console.MARK_NAMES == {1: "lost", 2: "clear", 3: "host", 0x40: "reset", 0x41: "restart"}
+    assert console.MARK_DETAIL["lost"]["target_timeout"] == 0x40 and console.MARK_DETAIL["restart"]["resync"] == 2
     page, more = con.marks_page(5)
     assert [mk.serial for mk in page] == [5, 6] and not more
 
 
-def test_console_write_partial_and_a_closed_stream_stays_readable(dm):
+def test_console_write_partial_and_a_closed_stream_is_gone(dm):
     ep, hst, d = dm
     con = console.Console(hst)
     sid = con.open(d.conn)                                        # dmseq; the hart halted: nothing is handed on
@@ -287,30 +286,26 @@ def test_console_write_partial_and_a_closed_stream_stays_readable(dm):
     assert m.Reader(e.value.result.payload).u16() == 0
     con.clear()                                                   # clear leaves the queue (console §2)
     assert len(ep.streams[sid].queue) == 256
+    assert [mk.kind for mk in con.marks()] == [console.MARK_KIND["clear"]]
     ep.console_take(sid)                                          # the target takes them (the probe's polls)
     assert con.write(b"NG\n") == 3 and bytes(ep.streams[sid].written) == b"x" * 250 + b"PING\nP"
-    ep.emit(sid, b"last words")
-    ep.lose_connections()
-    assert con.read().data == b"last words"
-    marks = con.marks()
-    assert [mk.kind for mk in marks[-2:]] == [8, 9] and marks[-1].detail == 4   # link-lost, then closed (connection)
-    assert marks[-1].name == "closed" and console.MARK_DETAIL["closed"]["connection_closed"] == 4
-    assert marks[-1].time_ns == ep.now_ns()                       # the probe's one clock, ns (common §1.3)
-    with pytest.raises(host.Rejected, match="unavailable"):
-        con.write(b"x")
-    assert ep.streams[sid].queue == b""                           # the queue went with the stream (console §2)
-    assert not con.streams()[0].open and con.streams()[0].users == 0
-    con.close()                                                   # closed already: ok
+    ep.lose_connections()                                         # the line lost: the stream goes with it
+    for call in (con.read, con.marks, lambda: con.write(b"x"), con.close):
+        with pytest.raises(host.NoResource):
+            call()
+    assert con.streams() == []
     con2 = console.Console(hst)
     con2.open(riscv.Wire(hst).attach(halt=False)[0], console.Console.SDI)
-    with pytest.raises(host.Failed):
-        con2.write(b"x")                                          # SDI takes no input: accepted 0 = failed (§3.1)
+    with pytest.raises(host.Unsupported) as e:
+        con2.write(b"x")                                          # SDI has no host -> target way (console §1, §3.1)
+    assert e.value.result.payload == b"\x00"
 
 
-def test_console_io_writes_through_the_send_queue_and_gives_up_on_sdi():
+def test_console_io_writes_through_the_send_queue_and_sdi_takes_no_write():
     """console §2 / §3 (oep-spec f0c68bf, R-A): a write takes min(count, the send queue's free space); the probe hands
     the queue to the target 2 (dmseq) or 3 (DMDATA) bytes a poll; ConsoleIO writes what one frame carries, goes on from
-    each answer's accepted, and gives up (TimeoutError) when nothing is taken for stall_s - SDI takes nothing. The
+    each answer's accepted, and gives up (TimeoutError) when nothing is taken for stall_s; an SDI stream's write is
+    unsupported. The
     queue's size is the probe's own (not declared: no describe send_queue)."""
     clock = Clock()
 
@@ -329,7 +324,7 @@ def test_console_io_writes_through_the_send_queue_and_gives_up_on_sdi():
         io = console.ConsoleIO(con)
         assert not hasattr(io, "send_queue") and not hasattr(con, "send_queue")
         io.write(line)
-        sizes = [struct.unpack_from("<H", r.payload, 2)[0] for r in ep.requests[n:] if r.op == con.WRITE]
+        sizes = [struct.unpack_from("<H", r.payload, 4)[0] for r in ep.requests[n:] if r.op == con.WRITE]
         assert sizes[:2] == [len(line), len(line) - virtual_bench.CONSOLE_SEND_QUEUE]   # all that fits, then from accepted
         assert len(ep.streams[sid].written) % per == 0 or len(ep.streams[sid].queue) == 0   # handed on per poll
         ep.console_take()                                         # the target takes the rest
@@ -339,7 +334,7 @@ def test_console_io_writes_through_the_send_queue_and_gives_up_on_sdi():
         conn, _ = riscv.Wire(hst).attach(halt=False)
     con = console.Console(hst)
     con.open(conn, console.Console.SDI)
-    with pytest.raises(TimeoutError, match="accepted nothing"):
+    with pytest.raises(host.Unsupported):
         console.ConsoleIO(con).write(b"x", stall_s=0.05)          # SDI has no host -> target way (console §3.1)
 
 

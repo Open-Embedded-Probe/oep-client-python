@@ -33,9 +33,13 @@ class Mark:
 
 
 MARK_BYTES = 22          # serial u32, position u64, kind u8, time_ns u64, detail u8 (common §1.3)
-MARK_NAMES = {v: k.replace("_", "-") for k, v in _COMMON["mark_kind"].items()}
-MARK_KIND = dict(_COMMON["mark_kind"])
+# the common kinds (lost 1, clear 2, host 3) and the console's own (reset 0x40, restart 0x41; console §2)
+MARK_KIND = {**_COMMON["mark_kind"], **_CON.enum["mark_kind"]}
+MARK_NAMES = {v: k.replace("_", "-") for k, v in MARK_KIND.items()}
 MARK_DETAIL = {k[len("mark_detail_"):]: dict(v) for k, v in _COMMON.items() if k.startswith("mark_detail_")}
+for _k, _v in _CON.enum.items():                     # the console's details: reset, restart, lost's target_timeout
+    if _k.startswith("mark_detail_"):
+        MARK_DETAIL.setdefault(_k[len("mark_detail_"):], {}).update(_v)
 READ_FLAGS = _COMMON["read_flags"]
 
 
@@ -53,17 +57,10 @@ class Chunk:
 
 @dataclass(frozen=True)
 class StreamInfo:
-    """One row of the console's streams answer (oep-if-console §1): the stream, its connection and mechanism, who uses
-    it (bit0 a host session, bit1 a slot) and whether it is open (0) or closed but still readable (1)."""
+    """One row of the console's streams answer (oep-if-console §1): a live stream, its connection and mechanism."""
     stream: int
     connection: int
     mechanism: int
-    users: int
-    state: int
-
-    @property
-    def open(self) -> bool:
-        return self.state == _CON.enum["stream_state"]["open"]
 
 
 class PositionStream(Interface):
@@ -118,9 +115,9 @@ class PositionStream(Interface):
     def write(self, data: bytes) -> int:
         """-> bytes accepted: what went into the probe's send queue from data's start, min(count, its free space)
         (common §1.4; delivery is not implied) - a console's queue is the probe's own size (not declared), handed to
-        the target 2 (dmseq) or 3 (DMDATA) bytes at a time; SDI takes nothing (console §2, §3). Fewer than asked is
-        completed partial, not an error; nothing accepted (the queue full) is completed failed (raised as Failed):
-        `StreamIO.write` loops on it."""
+        the target 2 (dmseq) or 3 (DMDATA) bytes at a time; an SDI stream's write is unsupported (console §1, §3).
+        Fewer than asked is completed partial, not an error; nothing accepted (the queue full) is completed failed
+        (raised as Failed): `StreamIO.write` loops on it."""
         r = self._request(self.WRITE, self._stream_prefix() + struct.pack("<H", len(data)) + data)
         if r.resolution != m.COMPLETED or r.detail not in (m.SUCCESS, m.PARTIAL):
             raise h.Failed(r)
@@ -131,23 +128,22 @@ class PositionStream(Interface):
 
 
 class Console(PositionStream):
-    """oep.target.console: streams on a debug connection, one live stream per connection; reads, marks and the streams
-    list need no lock. A stream lives while anything uses it (the sessions that opened it, a slot's bind): close and a
-    lease lapse take one share; a closed stream (connection lost, every user gone) stays readable until the same
-    place is opened again, when it comes back under the same number."""
+    """oep.target.console: a session's stream on a debug connection, one live stream per connection; reads, marks and
+    the streams list need no lock. close, the connection's release and the session's end release the stream, its
+    buffer and its send queue: read what is wanted first (console §2). A closed stream's number answers no_resource
+    and is never used again. marks, clear, mark and write are optional (`offers`): without marks, read from a mark is
+    unsupported; an SDI stream takes no write (unsupported)."""
     NAME = "oep.target.console"
     REVISION = 1
     OPEN, CLOSE, STREAMS = _CON.op["open"], _CON.op["close"], _CON.op["streams"]
     SDI, DMDATA, DMSEQ = (_CON.enum["mechanism"][k] for k in ("sdi", "dmdata", "dmseq"))
-    NONE = _CON.enum["mechanism"]["none"]          # a slot's "no console" (never opened)
 
     def __init__(self, hst: h.Host, name: str = "oep.target.console"):
         super().__init__(hst, name)
         self.stream = 1
-        self.existing = False
 
     def _stream_prefix(self) -> bytes:
-        return struct.pack("<H", self.stream)
+        return struct.pack("<I", self.stream)
 
     TAG_MECHANISMS = _CON.tlv["describe"]["mechanisms"]
 
@@ -156,29 +152,26 @@ class Console(PositionStream):
         return [b for tag, v in describe(self.host, self.fn) if tag & 0x7F == self.TAG_MECHANISMS for b in v]
 
     def open(self, conn: int, mechanism: int = DMSEQ) -> int:
-        """-> the stream. An open stream of the same (connection, mechanism) comes back as it is (self.existing):
-        position and marks carry on; so does a closed one of the same place and mechanism, under its old number. A
-        mechanism the probe lacks is rejected unsupported; another mechanism on a connection whose stream is live is
-        rejected unavailable (cause 6)."""
-        rd = m.Reader(self._call(self.OPEN, struct.pack("<HB", conn, mechanism)).payload)
-        self.stream, flags = rd.take("HB")
-        self.existing = bool(flags & _CON.enum["open_flags"]["existing"])
+        """-> a new stream (u32) on the connection (console §2). A mechanism the probe lacks is rejected unsupported; a
+        connection with a live stream (any mechanism) is rejected unavailable (cause 6)."""
+        rd = m.Reader(self._call(self.OPEN, struct.pack("<IB", conn, mechanism)).payload)
+        self.stream = rd.u32()
         rd.tail()
         return self.stream
 
     def close(self) -> None:
-        """Take this session's share of the stream (it closes when nobody uses it any more). Closed already: ok."""
-        self._call(self.CLOSE, struct.pack("<H", self.stream))
+        """Release the stream, its buffer and its send queue (console §2)."""
+        self._call(self.CLOSE, struct.pack("<I", self.stream))
 
     def streams(self) -> list[StreamInfo]:
-        """The probe's console streams, live and closed-but-readable, in the order they were made (oep-if-console §1,
-        lock-free; paged by first(u16) / more like connections, each page from the number already read, until more 0):
-        how a host without the lock finds a stream's number."""
+        """The probe's live console streams, in the order they were made (oep-if-console §1, lock-free; paged by
+        first(u16) / more, each page from the number already read, until more 0): how a host without the lock finds a
+        stream's number."""
         out: list[StreamInfo] = []
         while True:
             rd = m.Reader(self._call(self.STREAMS, struct.pack("<H", len(out)), locked=False).payload)
             more, count = rd.take("BB")
-            out += [StreamInfo(*rd.take("HHBBB")) for _ in range(count)]
+            out += [StreamInfo(*rd.take("IIB")) for _ in range(count)]
             rd.tail()
             if not more or not count or len(out) > 0xFFFF:
                 return out
@@ -187,8 +180,8 @@ class Console(PositionStream):
 class StreamIO:
     """A position stream read from a position onwards, as a plain byte stream (console or fixture UART). `write`
     sends in chunks and goes on from what each answer accepted (a console's send queue empties 2 or 3 bytes a poll);
-    `stall_s`: how long it waits with nothing accepted before it gives up (TimeoutError) - an SDI console accepts
-    nothing ever (console §3.1)."""
+    `stall_s`: how long it waits with nothing accepted before it gives up (TimeoutError); an SDI console's write is
+    refused unsupported (console §1)."""
     MAX_READ, MAX_WRITE = 1000, 64
     STALL_S = 2.0
 
@@ -199,7 +192,7 @@ class StreamIO:
 
     def _limits(self) -> tuple[int, int]:
         """(read, write) chunk sizes that fit the probe's frame: a write is request header 10 (session_id included) + the
-        stream's prefix (the console's stream u16, none on a fixture UART) + count 2; a read's result is header 5 +
+        stream's prefix (the console's stream u32, none on a fixture UART) + count 2; a read's result is header 5 +
         start 8 + flags 1 + len 2."""
         frame = self.source.host.confirmed()["max_frame"]
         write = frame - 12 - len(self.source._stream_prefix())
@@ -234,7 +227,7 @@ class StreamIO:
                 since = time.monotonic()
             elif time.monotonic() - since > stall:
                 raise TimeoutError(f"the stream accepted nothing for {stall} s ({total - len(data)} of {total} bytes "
-                                   "went): the target is not taking input (an SDI console never does)")
+                                   "went): the target is not taking input")
             else:
                 time.sleep(0.005)   # the target has not taken the last chunk yet
 

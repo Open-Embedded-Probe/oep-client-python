@@ -222,14 +222,13 @@ def test_c07_a_resync_waits_250_ms_after_the_hosts_last_write():
 # ---- PC-1: the line search's step (c) ------------------------------------------------------------------------------
 
 def test_pc1_find_line_takes_the_firmware_labels_as_step_c():
-    items = [config.Slot(slot=0, wire_fn=1, pins=(16, 0xFFFF), name="v003")]
-    assert config.find_line(items, "v003", "nrst", firmware=[(23, "NRST")]) == 23
-    assert config.find_line(items + [config.Label(channel=22, text="nrst")], "v003", "nrst", [(23, "NRST")]) == 22
-    assert config.find_line(items, "v003", "nrst", [(23, "NRST"), (24, "nrst")]) is None   # two at one step
-    two = items + [config.Slot(slot=1, wire_fn=1, pins=(4, 0xFFFF), name="b")]
-    assert config.find_line(two, "v003", "nrst", [(23, "NRST")]) is None   # two slots: (b) and (c) not searched
+    """host guide §5.3: `<profile>.<name>`, then for a single target the bare name, then the firmware's label."""
+    assert config.find_line([], "nrst", firmware=[(23, "NRST")]) == 23
+    assert config.find_line([config.Label(channel=22, text="nrst")], "nrst", firmware=[(23, "NRST")]) == 22
+    assert config.find_line([], "nrst", firmware=[(23, "NRST"), (24, "nrst")]) is None   # two at one step
+    assert config.find_line([], "nrst", "b", [(23, "NRST")], single=False) is None   # several targets: (b), (c) not
     ep, hst = in_process(virtual_bench.esp32_v003)
-    assert config.find_line(hst, None, "nrst") == 23                   # a Host: describe's labels are read
+    assert config.find_line(hst, "nrst") == 23                         # a Host: describe's labels are read
     assert config.LINE_NAMES == ("nrst", "power_hi", "power_lo")       # from the registry (PC-2)
 
 

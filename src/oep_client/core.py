@@ -258,7 +258,7 @@ class PinsTaken(h.Rejected):
 
     def __str__(self) -> str:
         return "pins taken: " + "; ".join(f"channel {ch} by {who}" for ch, who in self.holders) + \
-            " (oep config show; oep config remove <probe> plan <fn> frees a saved plan)"
+            " (oep config show)"
 
 
 def _pin_holders(hst: h.Host, assignments: list[tuple[int, int, int]]) -> list[tuple[int, str]]:
@@ -273,11 +273,7 @@ def _pin_holders(hst: h.Host, assignments: list[tuple[int, int, int]]) -> list[t
     out = []
     for fn, role, ch in assignments:
         for it in items:
-            if isinstance(it, config.Plan) and it.channel == ch and it.fn not in fns:
-                out.append((ch, f"the saved plan of fn {it.fn} (role {it.role})"))
-            elif isinstance(it, config.Slot) and ch in it.pins:
-                out.append((ch, f"slot {it.slot} {it.name}"))
-            elif isinstance(it, config.Disable) and it.channel == ch:
+            if isinstance(it, config.Disable) and it.channel == ch:
                 out.append((ch, "the settings (disabled; oep config remove <probe> disable <channel> enables it)"))
     return out
 

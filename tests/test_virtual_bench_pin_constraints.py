@@ -1,4 +1,4 @@
-"""Core §7.4 pin constraint intersection through plan and config requests.
+"""Core §7.4 pin constraint intersection through plan requests (probe.config holds no plan any more).
 
 These test the existing logical Endpoint's selection semantics. Its legacy
 operation numbering is not evidence of current interface-schema conformance.
@@ -63,7 +63,7 @@ def snapshot(ep):
     return copy.deepcopy((ep.plan, ep.config, ep.parked))
 
 
-@pytest.mark.parametrize('path', ['plan', 'config'])
+@pytest.mark.parametrize('path', ['plan'])
 @pytest.mark.parametrize('kind,pair,allowed', CASES)
 def test_channel_selection_obeys_combined_declarations(path, kind, pair, allowed):
     ep, h, fn = fixture(kind)
@@ -80,7 +80,7 @@ def test_channel_selection_obeys_combined_declarations(path, kind, pair, allowed
         assert snapshot(ep) == before, 'rejected selection changed existing plan/settings/idle'
 
 
-@pytest.mark.parametrize('path', ['plan', 'config'])
+@pytest.mark.parametrize('path', ['plan'])
 @pytest.mark.parametrize('pair,allowed', [((4, 5, 17, 19), True), ((13, 14, 18, 21), True),
                                        ((4, 14, 17, 19), False), ((4, 5, 13, 19), False)])
 def test_spi_groups_leave_other_roles_to_candidate_constraints(path, pair, allowed):
@@ -96,7 +96,7 @@ def test_spi_groups_leave_other_roles_to_candidate_constraints(path, pair, allow
         assert snapshot(ep) == before
 
 
-@pytest.mark.parametrize('path', ['plan', 'config'])
+@pytest.mark.parametrize('path', ['plan'])
 @pytest.mark.parametrize('kind,pair', [('groups', (0, 3)), ('intersection', (2, 3)), ('partial', (0, 2))])
 def test_selection_assertions_detect_bypassed_constraints(monkeypatch, path, kind, pair):
     monkeypatch.setattr(endpoint.Endpoint, '_check_plan', lambda *args, **kwargs: None)
@@ -104,7 +104,7 @@ def test_selection_assertions_detect_bypassed_constraints(monkeypatch, path, kin
         test_channel_selection_obeys_combined_declarations(path, kind, pair, False)
 
 
-@pytest.mark.parametrize('path', ['plan', 'config'])
+@pytest.mark.parametrize('path', ['plan'])
 def test_role_outside_group_requires_its_own_candidates(path):
     ep, h, fn = fixture('unlisted')
     before = snapshot(ep)

@@ -3,6 +3,7 @@ Run.restore_settings puts the probe's settings back as they were before tests/hw
 failed half-way, and after a probe that went away (opened again; while it stays away, what is left is recorded and the
 summary prints the commands that remove it)."""
 from __future__ import annotations
+import struct
 
 import pytest
 
@@ -38,7 +39,7 @@ def test_a_failed_test_leaves_nothing():
     ep, hst, r = _bench()
     cfg = config.ProbeConfig(hst)
     cfg.set([config.Label(channel=5, text="MINE")])
-    saved0 = cfg.save()
+    cfg.save()
     r.settings_before(cfg)
     r.settings_changing("config", "label", 5)
     r.settings_changing("config", "disable", 7)
@@ -49,7 +50,8 @@ def test_a_failed_test_leaves_nothing():
     now = _items(hst)
     assert ("disable", 7) not in now and config.decode(*now[("label", 5)]).text == "MINE"
     st = cfg.state()
-    assert st.storage == "applied" and st.saved_hash == saved0 and not r.settings_pending and not r.settings_saved
+    assert st.storage == "applied" and not cfg.needs_save() and not r.settings_pending and not r.settings_saved
+    assert ep.saved == {(config.ITEM["label"], 5): struct.pack("<H", 5) + b"MINE"}      # stored as before the test
     assert r.restore_settings("again")                          # nothing more to do
     assert r.tests["_settings"]["restored"][0]["removed"] == ["disable 7"]
 

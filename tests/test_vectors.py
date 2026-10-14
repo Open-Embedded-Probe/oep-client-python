@@ -144,7 +144,7 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None, wifi
         elif name == "oep.probe.restart":
             o = virtual_bench._restart(fn)
         elif name == "oep.probe.config":
-            o = virtual_bench._config(fn, 0, slots_max=2, storage=0, wifi_max=wifi_max)   # no storage: no save / erase
+            o = virtual_bench._config(fn, 0, storage=0)   # no storage: no save / erase
         elif name == "oep.fixture.logic" and multirate and fn == 9:
             o = virtual_bench.Offered(fn, 0, name, MULTIRATE_ROLES + MULTIRATE_LOGIC,
                                       inner=virtual_bench._capture_inner([1, 2, 8], 8, 480))

@@ -169,11 +169,10 @@ def test_reboot_resets_what_a_probe_loses_and_applies_the_saved_settings_again()
 
 # ---- `lose` on stdin: a connection's line lost for good (debug §2, P1) -------------------------------------------------
 
-def test_lose_closes_the_connection_its_streams_and_a_slot_attaches_again():
-    """Endpoint.lose (virtual_bench_serve's `lose`): the connection closes as lost - mark link-lost, then closed detail 4 on its
-    streams - and a request naming it is no_connection; an at-boot slot on its place attaches again by itself at its
-    next retry (a new connection) and its bound console comes back under the same stream number (console §2)."""
-    from oep_client import console, endpoint, virtual_bench, message as m, registry_legacy as reg
+def test_lose_closes_the_connection_and_its_streams():
+    """Endpoint.lose (virtual_bench_serve's `lose`): the connection and its console stream close (debug §2, common §2)
+    and a request naming either is no_resource."""
+    from oep_client import console, endpoint, virtual_bench
 
     class Clock:
         ms = 0
@@ -181,32 +180,19 @@ def test_lose_closes_the_connection_its_streams_and_a_slot_attaches_again():
         def __call__(self):
             return self.ms
 
-    clock = Clock()
-    ep = endpoint.Endpoint(virtual_bench.p4_bench(), clock)
-    wire = 1
-    pair = ep.pairs[wire][0]
-    slot = struct.pack("<BHHHBIIBBB", 0, wire, *pair, reg.PROBE_CONFIG.enum["slot_attach"]["at_boot"], 100, 0, 0,
-                       2, 1) + b"s"
-    ep.load_config([m.tlv(config.ITEM["slot"], slot), m.tlv(config.ITEM["bind"], struct.pack("<BBH", 3, 1, 0))],
-                   saved=False)
-    (cid,) = ep.conns
-    (sid,) = ep.streams
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     hst = h.Host(lambda b: ep.handle(b, 1))
     hst.open(3000)
-    dm = riscv.RiscvDm(hst, cid)
-    assert ep.lose(cid) == [cid] and cid not in ep.conns
-    s = ep.streams[sid]
-    kinds = [(k, d) for _, _, k, _, d in s.marks]
-    assert s.closed and kinds[-2:] == [(reg.COMMON.enum["mark_kind"]["link_lost"], 0),
-                                       (reg.COMMON.enum["mark_kind"]["closed"],
-                                        reg.COMMON.enum["mark_detail_closed"]["connection_closed"])]
+    cid, _ = riscv.Wire(hst, "oep.wire.rvswd").attach(halt=False, pins=ep.pairs[1][0])
+    con = console.Console(hst)
+    sid = con.open(cid)
+    assert ep.lose(cid) == [cid] and cid not in ep.conns and sid not in ep.streams
     with pytest.raises(h.NoResource):
-        dm.halt()
-    clock.ms = 100                                                    # the slot's retry_ms
-    ep.tick()
-    (again,) = ep.conns
-    assert again != cid and not ep.streams[sid].closed               # a new connection, the console under its number
-    assert ep.stream_keys[(again, console.Console.DMSEQ)] == sid
+        riscv.RiscvDm(hst, cid).halt()
+    with pytest.raises(h.NoResource):
+        con.read()
+    again, _ = riscv.Wire(hst, "oep.wire.rvswd").attach(halt=False, pins=ep.pairs[1][0])
+    assert again not in (cid, sid)                                    # numbers are never reused (core §9)
     assert ep.lose(999) == [] and ep.lose() == [again]               # an unknown number: none; no number: every one
 
 

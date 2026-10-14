@@ -319,13 +319,13 @@ def test_an_unknown_answer_tlv_is_skipped_by_the_host(case):
 
 
 # ---- per-op vectors (ops.json) of the interfaces that follow the current spec --------------------------------------
-from oep_client import config, core, fixture, riscv, virtual_bench_capture
+from oep_client import config, console, core, fixture, riscv, virtual_bench_capture
 from test_vectors import vector_probe                                   # the vectors' fn numbers on the virtual bench
 
 S = 0x11223344                                                          # ops.json about: the lock holder's id
 FOLLOWED = {"oep.probe.plan", "oep.probe.restart", "oep.probe.link", "oep.fixture.gpio", "oep.fixture.uart",
             "oep.fixture.i2c-target", "oep.fixture.spi-target", "oep.wire.rvswd",
-            "oep.target.riscv-dm"}                                                                        # grows with each stage
+            "oep.target.riscv-dm", "oep.target.console", "oep.probe.config"}                              # grows with each stage
 NOT_ON_THE_BENCH = {"oep.wire.swd", "oep.target.arm-adi"}               # read by the client only (no swd on the bench)
 OPS = load("ops.json")["cases"]
 
@@ -349,9 +349,16 @@ def bench_for(case):
     if "ops of fn 1: source and sink only" in case.get("state", ""):
         ops[1] = {reg.PROBE_LINK.op["source"], reg.PROBE_LINK.op["sink"]}
     fns = dict(case["fns"])
-    if "oep.target.riscv-dm" in fns.values() and "oep.wire.rvswd" not in fns.values():
-        fns["4"] = "oep.wire.rvswd"                                     # the wire its connection 1 comes from
-    probe = vector_probe(fns, ops=ops)
+    if {"oep.target.riscv-dm", "oep.target.console"} & set(fns.values()) and "oep.wire.rvswd" not in fns.values():
+        fns["4"] = "oep.wire.rvswd"                                     # the wire its connection comes from
+    if "ops open/read/close/streams" in case.get("state", ""):
+        ops[fn_of(case, "oep.target.console")] = {reg.TARGET_CONSOLE.op[k] for k in ("open", "read", "close", "streams")}
+    probe = vector_probe(fns, max_frame=64 if "max_frame 64" in case.get("state", "") else 1024, ops=ops)
+    no_storage = "no storage" in case.get("state", "")
+    probe = virtual_bench.VirtualProbe(probe.label, probe.max_frame, [
+        virtual_bench._config(o.fn, 0, storage=0 if no_storage else 4096) if o.name == "oep.probe.config" else
+        virtual_bench._console(o.fn, (0,) if "mechanisms SDI" in case.get("state", "") else (0, 1, 2))
+        if o.name == "oep.target.console" and o.fn not in ops else o for o in probe.offered])
     if "port_s" in case["name"] and "not offered" not in case["name"]:   # a UART bridge probe with port_speed
         probe.offered = [virtual_bench._link(o.fn, port_speed=True) if o.name == virtual_bench.LINK else o
                          for o in probe.offered]
@@ -571,9 +578,56 @@ def dm_state(case, ep, hst):
         assert conn not in ep.conns
 
 
+def console_state(case, ep, hst):
+    """console §1-§2's cases on fn 7 over an rvswd connection (fn 4), made through the client; marks put in place."""
+    state = case["state"]
+    hst.open(3000)
+    wire_target(ep, 4, (1, 2))
+    if "65536" in state or "65537" in state:
+        ep._next_resource = 0x10000                                   # the ids past u16 (core §9)
+    if state == "—":
+        return
+    conn, _ = riscv.Wire(hst, "oep.wire.rvswd").attach(halt=False, pins=(1, 2), max_speed=1_000_000)
+    if "stream" not in state.replace("streams", "") or "absent on RX-only" in case["name"]:
+        return                                                         # a connection, no stream (open's cases)
+    con = console.Console(hst)
+    sid = con.open(conn, con.SDI if "is SDI" in state or "mechanisms SDI" in state else con.DMSEQ)
+    if "5 bytes written" in state:
+        ep.emit(sid, b"hello")
+    if "one explicit host mark" in state:
+        ep.now_ns = lambda: 1_000_000
+        con.mark(0)
+    if "marks 5 to 8 kept" in state:
+        s = ep.streams[sid]
+        s.marks = [(k, k * 10, 3, k * 1_000_000, k) for k in range(5, 9)]
+        s.serial = 9
+
+
+def config_state(case, ep, hst):
+    """probe.config §1-§3's cases on fn 8, made through the client."""
+    state = case["state"]
+    hst.open(3000)
+    cfg = config.ProbeConfig(hst)
+    if "response extensions" in case["name"]:
+        ep.config_get_tail = m.tlv(0x7F, b"x")                        # an answer TLV after the items (core §2.3)
+    if "idle channel4 exists" in state or "one item generation2" in state or "one idle item" in state:
+        cfg.set([config.Idle(channel=4, mode="hi-z")])
+    if "disable channel4" in state:
+        cfg.set([config.Disable(channel=4)])
+    if "CRC-valid saved blob" in state:
+        ep.saved = {(config.ITEM["disable"], 5): struct.pack("<H", 5), (config.ITEM["idle"], 6): struct.pack("<HB", 6, 1),
+                    (config.ITEM["label"], 99): struct.pack("<H", 99) + b"gone"}     # 99: past the probe's channels
+        ep.reboot(EXAMPLE_BOOT_ID)
+        hst.session = None
+        hst.open(3000)
+    if "generation0xFFFFFFFF" in state:
+        ep.generation = 0xFFFFFFFF
+
+
 STATES = {"oep.probe.plan": plan_state, "oep.probe.restart": restart_state, "oep.probe.link": link_state,
           "oep.fixture.gpio": gpio_state, "oep.fixture.uart": uart_state, "oep.fixture.i2c-target": i2c_state,
-          "oep.fixture.spi-target": spi_state, "oep.wire.rvswd": rvswd_state, "oep.target.riscv-dm": dm_state}
+          "oep.fixture.spi-target": spi_state, "oep.wire.rvswd": rvswd_state, "oep.target.riscv-dm": dm_state,
+          "oep.target.console": console_state, "oep.probe.config": config_state}
 
 
 def make_case(case):
@@ -768,6 +822,7 @@ def scripted(case):
     table = reg.INTERFACES[name]
     hst._describes[r.fn] = [(catalog.OPS, catalog.pack_ops(table.op.values())), (catalog.MAX_LENGTH, struct.pack("<H", 256))]
     hst._describes[0] = [(core.CORE_MAX_OP_MS, struct.pack("<I", 1000))]
+    hst.limits = {"max_frame": 64 if "frame64" in case["name"] else 1024}    # what confirm said (a set's size check)
     return r, hst, sent
 
 
@@ -853,3 +908,72 @@ def test_interface_profiles_as_the_host_reads_them(profile):
         payload = m.Result.unpack(hx(p["describe_answer_hex"])).payload
         assert payload[0] == 0                                          # more = 0
         assert catalog.decode_description(payload[1:]).ops == set(p["ops"])
+
+
+# ---- console and probe.config: the client's requests and its reading of the answers ----------------------------------
+
+CONSOLE_CLIENT = [c for c in OPS if c["name"].startswith(("console open", "console marks: one", "console marks: from_serial",
+                                                          "console streams: one", "console streams: resource",
+                                                          "console read: empty", "console write: SDI"))]
+
+
+@pytest.mark.parametrize("case", CONSOLE_CLIENT, ids=lambda c: c["name"])
+def test_console_vectors_as_the_client_sends_and_reads_them(case):
+    """console §1 / common §1: the client's open, marks, streams, read and write are the case's bytes."""
+    r, hst, sent = scripted(case)
+    name, con = case["name"], console.Console(hst)
+    res = m.Result.unpack(hx(case["answer_hex"]))
+    if name.startswith("console open"):
+        assert con.open(*struct.unpack_from("<IB", r.payload)) == struct.unpack_from("<I", res.payload)[0]
+    elif name.startswith("console streams"):
+        assert [(i.stream, i.connection, i.mechanism) for i in con.streams()] == [
+            struct.unpack_from("<IIB", res.payload, 2)]
+    else:
+        con.stream = struct.unpack_from("<I", r.payload)[0]
+        if name.startswith("console marks"):
+            marks, more = con.marks_page(struct.unpack_from("<I", r.payload, 4)[0])
+            assert more == bool(res.payload[0]) and len(marks) == res.payload[1] and all(mk.kind == 3 for mk in marks)
+        elif name.startswith("console read"):
+            c = con.read_from(struct.unpack_from("<Q", r.payload, 5)[0], struct.unpack_from("<H", r.payload, 13)[0])
+            assert (c.start, c.more, c.gap, c.data) == (5, False, False, b"")
+        else:
+            with pytest.raises(h.Unsupported):
+                con.write(b"x")                                    # an SDI stream: no write (console §1)
+    assert sent[-1] == hx(case["request_hex"])
+
+
+CONFIG_CLIENT = [c for c in OPS if c["name"].startswith((
+    "probe.config state: no saved", "probe.config state: independent", "probe.config get:", "probe.config unset:",
+    "probe.config set: longest", "probe.config set: changed contents", "probe.config set: disable conflicts",
+    "probe.config set: idle conflicts"))]
+
+
+@pytest.mark.parametrize("case", CONFIG_CLIENT, ids=lambda c: c["name"])
+def test_config_vectors_as_the_client_sends_and_reads_them(case):
+    """probe.config §1-§3: the client's get / set / unset / state are the case's bytes, and it reads the answers - get's
+    count apart from the answer's own TLVs."""
+    r, hst, sent = scripted(case)
+    name, cfg = case["name"], config.ProbeConfig(hst)
+    res = m.Result.unpack(hx(case["answer_hex"]))
+    if name.startswith("probe.config state"):
+        st = cfg.state()
+        assert (st.storage, st.saved_generation, st.reason) == (
+            ("none", 0, None) if "no saved" in name else ("partial", 0, "item"))
+    elif name.startswith("probe.config get"):
+        first = struct.unpack_from("<H", r.payload)[0]
+        hst._corr = r.corr - 1
+        if first:
+            rd = m.Reader(cfg._call(cfg.GET, r.payload, locked=False).payload)
+            assert rd.take("BIB") == (0, 2, 0)
+        else:
+            assert cfg.get() == (2, [(config.ITEM["idle"], struct.pack("<HB", 4, 0))])
+    elif name.startswith("probe.config unset"):
+        assert cfg.unset([("disable", 4)]) == 3
+    else:
+        items = [config.decode(t, v) for t, v in config.split_items(r.payload[1:], r.payload[0])[0]]
+        if res.resolution == m.REJECTED:
+            with pytest.raises(h.Unavailable):
+                cfg.set(items)
+        else:
+            assert cfg.set(items) == 2
+    assert sent[-1] == hx(case["request_hex"])

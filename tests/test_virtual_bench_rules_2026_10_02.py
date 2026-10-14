@@ -1,7 +1,7 @@
 """The virtual bench against the rule changes of oep-spec docs/v1-rule-change-proposal-2026-10-02.md (applied 09622ef..
 536fc99): each test names its item. The final text is the spec's (core, debug, fixture, capture, probe-config); the
 tests follow oep-spec 0f455a0 (rule review 2026-10-07 §2): no ignored TLV, any one reason after the session check,
-implemented TLVs checked alike with or without bit 7, list = first alone, the new item / drive / bind forms."""
+implemented TLVs checked alike with or without bit 7, list = first alone; probe.config as oep-spec a09fa45 has it."""
 
 import socket
 import struct
@@ -15,7 +15,7 @@ from oep_client import catalog, endpoint, virtual_bench, virtual_bench_capture, 
 
 CORE = reg.CORE
 CFG = reg.PROBE_CONFIG
-ITEM, ATTACH, STREAM = CFG.tlv["item"], CFG.enum["slot_attach"], CFG.enum["bind_stream"]
+ITEM, SET = CFG.tlv["item"], CFG.op["set"]
 W = reg.WIRE_RVSWD.op                                               # scan 0x10 attach 0x11 detach 0x12 connections 0x13
 PLAN_APPLY, PLAN_RELEASE = reg.PROBE_PLAN.op["plan_apply"], reg.PROBE_PLAN.op["plan_release"]   # oep.probe.plan
 
@@ -57,34 +57,22 @@ class Host:
         return r.payload
 
 
-def slot_item(n, wire, pair, attach=ATTACH["at_boot"], retry=1, mech=2, name=None, max_speed=0, idle=0):
-    """A slot item (probe.config §1.1): slot wire_fn swdio swclk attach retry_ms(u32) max_speed_hz(u32) idle_clock
-    mechanism name_len name; `retry` in seconds here."""
-    raw = (name or f"s{n}").encode()
-    return m.tlv(ITEM["slot"], struct.pack("<BHHHBIIBBB", n, wire, *pair, attach, 1000 * retry, max_speed, idle, mech,
-                                           len(raw)) + raw)
-
-
-def bind_item(port, kind, ident):
-    """A bind item (probe.config §1.2): port(u8) kind(u8) id(u16), one stream."""
-    return m.tlv(ITEM["bind"], struct.pack("<BBH", port, kind, ident))
-
-
-def state(ep, fn=6, first_slot=0, first_bind=0):
-    """probe.config's state op (lock-free, §3.3): -> (more, storage_state, storage_hash, reason, {slot: raw slot_state},
-    [raw bind_state])."""
-    rd = m.Reader(Host(ep).raw(fn, CFG.op["state"], bytes([first_slot, first_bind]), session=False).payload)
-    more, storage, h, why = rd.take("BBIB")
-    slots = {}
-    for _ in range(rd.u8()):                                        # slot(u8) state(u8) connection(u16) last_try(u64)
-        raw = rd.bytes(12)
-        slots[raw[0]] = raw
-    binds = [rd.bytes(2) for _ in range(rd.u8())]                   # port(u8) flow(u8)
-    rd.tail()
-    return more, storage, h, why, slots, binds
 UNA = CORE.tlv["unavailable_payload"]
 IDLE = reg.PROBE_CONFIG.enum["idle_mode"]
 UNKNOWN = 0x3E                                                    # a tag no context defines
+
+
+def cset(items: bytes) -> bytes:
+    """probe.config set's body: count(u8) and the items (probe.config §2)."""
+    return bytes([len(m.split_tlvs(items))]) + items
+
+
+def state(ep, fn=6):
+    """probe.config's state op (lock-free, §3): -> (storage_state, saved_generation, reason)."""
+    rd = m.Reader(Host(ep).raw(fn, CFG.op["state"], session=False).payload)
+    out = rd.take("BIB")
+    rd.tail()
+    return out
 
 
 def bench(profile=virtual_bench.p4_bench, **kw):
@@ -180,15 +168,10 @@ def test_c02_read_from_4_unsupported_and_from_3_with_a_wide_arg_reads_from_now()
         assert r.succeeded and r.payload == struct.pack("<QBH", 3, 0, 0)          # from now: the write position
 
 
-def test_c02_probe_config_enums_and_bits_a_later_revision_may_define():
+def test_c02_probe_config_a_mode_a_later_revision_may_define():
     ep, h = bench()
-    pair = ep.pairs[1][0]
-    r = h.raw(6, 0x02, slot_item(0, 1, pair, attach=2))                # slot attach 2
-    assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([ITEM["slot"]]))
-    r = h.raw(6, 0x02, bind_item(0, 3, 0))                             # a stream kind 3
-    assert (r.detail, r.payload[:1]) == (m.UNSUPPORTED, bytes([ITEM["bind"]]))
-    r = h.raw(6, 0x02, idle_item(20, 5))
-    assert (r.detail, r.payload[:1]) == (m.UNSUPPORTED, bytes([ITEM["idle"]]))
+    r = h.raw(6, SET, cset(idle_item(20, 5)))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([ITEM["idle"]]))
 
 
 # ---- C-03 (as the rule review 2026-10-07 left it): repeated, short and long request TLVs -------------------------
@@ -387,7 +370,7 @@ def test_p2_1_scan_has_no_implicit_list_and_takes_an_input_idle_pair():
     with an input idle is scanned."""
     ep, h = bench()
     a, b, c = ep.pairs[1]
-    h.ok(6, 0x02, idle_item(a[0], IDLE["pull_up"]))               # an input idle on pair A
+    h.ok(6, SET, cset(idle_item(a[0], IDLE["pull_up"])))               # an input idle on pair A
     assert h.raw(1, W["scan"], b"\x00").detail == m.MALFORMED
     assert h.raw(1, W["scan"], b"\x02" + struct.pack("<HHHH", *a, *a)).detail == m.MALFORMED
     rd = m.Reader(h.ok(1, W["scan"], b"\x01" + struct.pack("<HH", *a)))
@@ -398,7 +381,7 @@ def test_p2_1_a_named_output_idle_channel_is_unavailable_cause_5_and_the_channel
     """debug §1; the unavailable payload is cause, channel, fn only (core §4.3, rule review 2026-10-07)."""
     ep, h = bench()
     a = ep.pairs[1][0]
-    h.ok(6, 0x02, idle_item(a[1], IDLE["output_high"]))
+    h.ok(6, SET, cset(idle_item(a[1], IDLE["output_high"])))
     for r in (h.raw(1, W["scan"], b"\x01" + struct.pack("<HH", *a)), h.raw(1, W["attach"], att(a))):
         t = una(r)
         assert r.detail == m.UNAVAILABLE
@@ -411,7 +394,7 @@ def test_p2_1_an_attach_on_an_input_idle_pin_is_taken():
     h = Host(ep)
     h.open()
     swio = ep.pairs[1][0][0]
-    h.ok(9, 0x02, idle_item(swio, IDLE["pull_up"]))
+    h.ok(9, SET, cset(idle_item(swio, IDLE["pull_up"])))
     assert h.raw(1, W["attach"], att((swio, 0xFFFF))).succeeded           # named: an input idle is accepted
 
 
@@ -489,7 +472,7 @@ def test_p2_2_spi_target_drives_miso_only_while_cs_is_active():
     spi = 9
     plan = b"".join(m.tlv(0x10, struct.pack("<HBH", spi, role, ch), critical=True)
                     for role, ch in ((1, 30), (2, 31), (3, 32), (4, 33)))
-    h.ok(6 + 4, 0x02, idle_item(32, IDLE["pull_up"]))             # MISO's idle: a pull-up input
+    h.ok(6 + 4, SET, cset(idle_item(32, IDLE["pull_up"])))             # MISO's idle: a pull-up input
     h.ok(h.plan_fn, PLAN_APPLY, plan)
     assert ep.pin_state(32) == "idle pull-up"                     # before configure: the idle state
     h.ok(spi, reg.FIXTURE_SPI_TARGET.op["configure"], b"\x00\x00")
@@ -521,7 +504,7 @@ def test_p2_3_i2c_target_open_drain_and_declared_pullups():
 
 def test_p2_o13_taking_a_plan_changes_no_pin_and_an_analog_plan_on_an_output_idle_is_refused():
     ep, h = x035()
-    h.ok(10, 0x02, idle_item(16, IDLE["output_high"]) + idle_item(20, IDLE["output_low"]) + idle_item(21, IDLE["output_high"]))
+    h.ok(10, SET, cset(idle_item(16, IDLE["output_high"]) + idle_item(20, IDLE["output_low"]) + idle_item(21, IDLE["output_high"])))
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 20), critical=True)
          + m.tlv(0x10, struct.pack("<HBH", 7, 0, 21), critical=True))
     assert ep.pin_state(20) == "gpio 3" and ep.gpio_log == []     # gpio: the idle's output low kept, no set yet
@@ -590,32 +573,34 @@ def test_p2_o11_a_read_past_the_write_position():
     assert r.payload == struct.pack("<QBH", 3, 0, 0)
 
 
-# ---- probe.config: PC-1 / PC-3 / PC-4 / PC-5 / PC-8 ---------------------------------------------------------------------
+# ---- probe.config: PC-3 / PC-4 / PC-5 ---------------------------------------------------------------------
 
 def test_pc3_an_idle_pull_the_channel_lacks_is_unsupported():
     ep, h = bench()
     ep.no_pull = {20: {IDLE["pull_down"]}}
-    r = h.raw(6, 0x02, idle_item(20, IDLE["pull_down"], tag=ITEM["idle"] | 0x80))
+    r = h.raw(6, SET, cset(idle_item(20, IDLE["pull_down"], tag=ITEM["idle"] | 0x80)))
     assert (r.detail, r.payload[:1]) == (m.UNSUPPORTED, bytes([ITEM["idle"] | 0x80]))
-    assert h.raw(6, 0x02, idle_item(20, IDLE["pull_up"])).succeeded
+    assert h.raw(6, SET, cset(idle_item(20, IDLE["pull_up"]))).succeeded
 
 
-def test_pc3_a_saved_idle_pull_the_channel_lacks_fails_the_whole_save_at_boot():
+def test_pc3_a_saved_idle_pull_the_channel_lacks_is_left_out_at_boot():
+    """probe.config §3: an item this firmware cannot take is left out at boot and the others applied (partial,
+    reason 2)."""
     ep, h = bench()
-    h.ok(6, 0x02, idle_item(20, IDLE["pull_down"]) + label_item(21, b"x"))
+    h.ok(6, SET, cset(idle_item(20, IDLE["pull_down"]) + label_item(21, b"x")))
     h.ok(6, reg.PROBE_CONFIG.op["save"])
     ep.no_pull = {20: {IDLE["pull_down"]}}
     ep.reboot(0x99)
-    assert state(ep)[1:4][2] == 3 and not ep.config               # reason 3: applying was refused, nothing applied
+    assert state(ep) == (3, 0, 2) and list(ep.config) == [(ITEM["label"], 21)]
 
 
 @pytest.mark.parametrize("ch", [24, 55, 0xFFFF])                  # the probe's own, = channels, far past
 def test_pc4_the_channel_of_an_item(ch):
     ep, h = bench()
     for item in (label_item(ch, b"x"), idle_item(ch, IDLE["hi_z"]), m.tlv(ITEM["disable"], struct.pack("<H", ch))):
-        r = h.raw(6, 0x02, item)
+        r = h.raw(6, SET, cset(item))
         assert (r.detail, r.payload[:1]) == (m.UNSUPPORTED, item[:1])
-    assert h.raw(6, 0x02, label_item(54, b"x")).succeeded         # below channels, not its own, declared by none
+    assert h.raw(6, SET, cset(label_item(54, b"x"))).succeeded         # below channels, not its own, declared by none
 
 
 @pytest.mark.parametrize("text, ok", [(b"x" * 32, True), (b"x" * 33, False), (b"", False), (b"a\nb", True),
@@ -624,27 +609,8 @@ def test_pc5_label_text(text, ok):
     """probe.config §1 (rule review 2026-10-07): a label's text is checked for its length (1-32) only - request text
     is not validated (core §2.1); the host replaces what it shows."""
     ep, h = bench()
-    r = h.raw(6, 0x02, label_item(20, text))
+    r = h.raw(6, SET, cset(label_item(20, text)))
     assert r.succeeded if ok else r.detail == m.MALFORMED
-
-
-def test_pc8_a_saved_bind_on_a_port_that_is_not_a_serial_port_makes_the_save_unreadable():
-    ep, h = bench()
-    h.ok(6, 0x02, slot_item(0, 1, ep.pairs[1][0], attach=0, retry=0) + bind_item(0, STREAM["slot_console"], 0))
-    h.ok(6, reg.PROBE_CONFIG.op["save"])
-    ep.transports[0] = virtual_bench.TRANSPORT["vendor_bulk"]              # "another firmware": index 0 is no serial port now
-    ep.serial_ports.discard(0)
-    ep.reboot(0x99)
-    assert state(ep)[1] == 2 and state(ep)[3] == 2                # unreadable, reason 2
-
-
-def test_virtual_bench_serve_has_no_boot_reset_any_more():
-    """probe.config (rule review 2026-10-07): no boot_reset / retry with reset - virtual_bench_serve's --boot-reset is gone."""
-    from oep_client import virtual_bench_serve
-    with pytest.raises(SystemExit):
-        virtual_bench_serve.parse(["--tcp", "0", "--profile", "esp32-v003", "--slot", "v003", "--boot-reset"])
-    ep = virtual_bench_serve.build(virtual_bench_serve.parse(["--tcp", "0", "--profile", "esp32-v003", "--slot", "v003"]))
-    assert not hasattr(ep, "slot_reset_log")
 
 
 # ---- C-07 / C-05 on virtual_bench_serve's TCP -----------------------------------------------------------------------------
