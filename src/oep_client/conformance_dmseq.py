@@ -201,7 +201,7 @@ class DmseqChecks(MailboxChecks):
             require(console['mark_kind']['restart']==0x41 and console['mark_detail_restart']=={'havereset':1,'resync':2},'reset mark SPEC mismatch')
             require(common['mark_kind']['lost']==1 and console['mark_detail_lost']['target_timeout']==0x40,'dmseq event mark SPEC mismatch')
             self.c.confirm();self.c.identity();self.c.declarations()
-            require(2 in dict(reversed(self.c.describe(4)))[64],'probe did not declare dmseq')
+            declared=dict(reversed(self.c.describe(4)))[64];require(2 in declared[1:1+declared[0]],'probe did not declare dmseq')   # n x mechanism
         self.c.check('OEP-DMSEQ-CONTEXT','dmseq host rules; console §1/2/3',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         cases=[(k,lambda k=k:self.first(k)) for k in ('VECTOR','SYN','UNSYNCED')]+[('LENGTHS',self.lengths)]
