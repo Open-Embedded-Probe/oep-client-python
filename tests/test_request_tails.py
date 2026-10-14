@@ -247,6 +247,7 @@ def test_every_op_ignores_an_unknown_tlv_and_refuses_it_critical_p4_x035():
 def test_every_op_ignores_an_unknown_tlv_and_refuses_it_critical_esp32_v003():
     ep, tag, hst = bench(virtual_bench.with_stand_in(virtual_bench.esp32_v003()), transport=0)
     drive_core(hst, ep)
+    hst.call(ep.link_fn, endpoint.OP_PORT_STATE, b"", locked=False)                    # oep-if-link §1
     hst.call(ep.link_fn, endpoint.OP_PORT_SPEED,
              struct.pack("<IBH", 230400, reg.PROBE_LINK.enum["port_speed_step"]["try"], 500))   # oep-if-link §3
     drive_wire_dm_console(hst, "oep.wire.swio")

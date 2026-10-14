@@ -105,9 +105,10 @@ def link_ops(p):
 
 def test_the_ops_tag_offers_it_only_when_on_and_off_is_unknown_operation():
     p = Port()
-    assert link_ops(p) == {1, 2, PS}                                            # source, sink, port_speed
+    LINK = virtual_bench.reg.PROBE_LINK.op
+    assert link_ops(p) == {LINK["source"], LINK["sink"], PS, LINK["port_state"]}   # port_state comes with port_speed
     p.ep.port_speed_base = None
-    assert link_ops(p) == {1, 2}
+    assert link_ops(p) == {LINK["source"], LINK["sink"]}
     sid = opened(p)
     r = p.send(p.ep.link_fn, PS, ps(1500000, TRY), sid)
     assert r.resolution == m.REJECTED and r.detail == m.UNKNOWN_OPERATION
@@ -177,8 +178,8 @@ def test_the_nearest_rate_the_uart_makes_must_be_within_the_tolerance():
     assert p.send(p.ep.link_fn, PS, ps(5_000_000, COMMIT), sid).detail == m.UNAVAILABLE   # not the baud tried
     assert p.send(p.ep.link_fn, PS, ps(5_100_000, COMMIT), sid).succeeded                # the same baud as the try
     assert p.send(p.ep.link_fn, PS, ps(0, REVERT), sid).succeeded and p.ep.port_baud(0) == 115200
-    r = p.send(p.ep.link_fn, PS, ps(295, TRY), sid)                       # 300: within 2 % at the low end too
-    assert r.succeeded and m.Reader(r.payload).u32() == 300
+    r = p.send(p.ep.link_fn, PS, ps(295, TRY), sid)                       # 300: not above the boot speed
+    assert (r.detail, r.payload[:1]) == (m.UNSUPPORTED, b"\x00") and p.ep.speed_state == "base"   # (oep-if-link §3)
 
 
 def test_try_times_out_and_a_late_commit_is_wrong_state():
@@ -1078,7 +1079,7 @@ def test_ceiling_a_faster_rate_is_committed_only_after_full_frames_ran_1_s_each_
     for f in t.flows:
         assert f.passed and f.frames > link.FLOW_FRAMES and f.frames * size / (f.kb_s * 1000) >= link.FAST_VERIFY_S
     assert try_verify_ms(ep, 921600) == link.fast_verify_ms(2) == 4000
-    assert [o for o in ops(ep) if o[0] == PS][-2:] == [(PS, TRY), (PS, COMMIT)]       # the flows between them
+    assert [o for o in ops(ep) if o[0] == PS and o[1] is not None][-2:] == [(PS, TRY), (PS, COMMIT)]   # between them
     assert t.probation == "running"                     # and the in-use judging as for any rate
 
 

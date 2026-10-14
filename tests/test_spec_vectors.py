@@ -323,7 +323,7 @@ from oep_client import config, core, fixture, virtual_bench_capture
 from test_vectors import vector_probe                                   # the vectors' fn numbers on the virtual bench
 
 S = 0x11223344                                                          # ops.json about: the lock holder's id
-FOLLOWED = {"oep.probe.plan", "oep.probe.restart"}                                           # grows with each stage
+FOLLOWED = {"oep.probe.plan", "oep.probe.restart", "oep.probe.link"}                                           # grows with each stage
 OPS = load("ops.json")["cases"]
 
 
@@ -342,7 +342,14 @@ def bench_for(case):
     """The virtual bench with the case's fns, and a host holding session S on it for setting the case's state up
     through the client's own modules. -> (endpoint, host, clock)."""
     clock = type("Settable", (), {"t": 0, "__call__": lambda self: self.t})()
-    ep = endpoint.Endpoint(vector_probe(case["fns"]), clock, boot_id=EXAMPLE_BOOT_ID)
+    ops = {}
+    if "ops of fn 1: source and sink only" in case["state"]:
+        ops[1] = {reg.PROBE_LINK.op["source"], reg.PROBE_LINK.op["sink"]}
+    probe = vector_probe(case["fns"], ops=ops)
+    if "port_s" in case["name"] and "not offered" not in case["name"]:   # a UART bridge probe with port_speed
+        probe.offered = [virtual_bench._link(o.fn, port_speed=True) if o.name == virtual_bench.LINK else o
+                         for o in probe.offered]
+    ep = endpoint.Endpoint(probe, clock, boot_id=EXAMPLE_BOOT_ID)
     hst = h.Host(lambda b: ep.handle(b, 0))
     hst.rng = Fixed()
     return ep, hst, clock
@@ -376,7 +383,35 @@ def restart_state(case, ep, hst):
         hst.open(3000)
 
 
-STATES = {"oep.probe.plan": plan_state, "oep.probe.restart": restart_state}
+def link_state(case, ep, hst):
+    """port_speed's phases (oep-if-link §3) on the bench's UART bridge (transport 0): raised to 921600 by the client's
+    own requests; a frame not finished yet (`speed_frame_busy`) keeps a return pending in phase 3."""
+    state, clock = case["state"], ep.now
+    if "max_frame" in state or state == "—" or "source and sink only" in state:
+        return
+    raise_to = ("921600" in state or "phase3" in state) and "expired try" not in state
+    if "session S" in state or "previous owner ended" in state or "expired try" in state:
+        hst.open(60000)
+    if raise_to:
+        lk = reg.PROBE_LINK
+        hst.call(1, lk.op["port_speed"], struct.pack("<IBH", 921600, lk.enum["port_speed_step"]["try"], 2000))
+        ep.after_answer()
+        if "after try verify expiry" not in state:
+            hst.call(1, lk.op["port_speed"], struct.pack("<IBH", 921600, lk.enum["port_speed_step"]["commit"], 0))
+        ep.speed_frame_busy = "frame" in state or "phase3" in state     # a frame still on the line: the return waits
+        clock.t += 3001 if "idle expiry" in state else 2001 if "verify expiry" in state else 0
+        if "ended" in state:
+            hst.end()
+        ep.tick()
+    if "expired try, now boot baud" in state:                            # a try whose verify ran out with nothing pending
+        lk = reg.PROBE_LINK
+        hst.call(1, lk.op["port_speed"], struct.pack("<IBH", 921600, lk.enum["port_speed_step"]["try"], 2000))
+        ep.after_answer()
+        clock.t += 2001
+        ep.tick()
+
+
+STATES = {"oep.probe.plan": plan_state, "oep.probe.restart": restart_state, "oep.probe.link": link_state}
 
 
 def make_case(case):
@@ -455,3 +490,31 @@ def test_restart_vectors_as_the_client_sends_them(case):
     except h.Rejected as e:
         assert e.result == m.Result.unpack(hx(case["answer_hex"]))
     assert sent[0] == hx(case["request_hex"])
+
+
+@pytest.mark.parametrize("case", [c for c in OPS if c["name"].startswith(("link source", "link sink", "link port_state"))],
+                         ids=lambda c: c["name"])
+def test_link_vectors_as_the_client_sends_and_reads_them(case):
+    """The client's source / sink / port_state requests are the case's bytes, and it reads their answers."""
+    from oep_client import link as linkmod
+    r = m.Request.unpack(hx(case["request_hex"]))
+    sent = []
+    hst = h.Host(lambda b: sent.append(b) or hx(case["answer_hex"]))
+    hst._corr, hst.revision = r.corr - 1, 1
+    res = m.Result.unpack(hx(case["answer_hex"]))
+    if r.op == reg.PROBE_LINK.op["source"]:
+        payload = core.link_source_request(struct.unpack_from("<I", r.payload)[0])
+        got = hst.request(r.fn, r.op, payload, locked=False)
+        assert core.link_source_data(got.payload) == bytes(k & 0xFF for k in range(len(core.link_source_data(got.payload))))
+    elif r.op == reg.PROBE_LINK.op["sink"]:
+        n = struct.unpack_from("<H", r.payload)[0]
+        payload = core.link_sink_request(r.payload[2:2 + n])[:len(r.payload)] if res.succeeded else r.payload
+        if res.succeeded:
+            hst.request(r.fn, r.op, payload, locked=False)
+        else:
+            with pytest.raises(h.Rejected):
+                hst.request(r.fn, r.op, payload, locked=False)
+    else:
+        hst._describes[r.fn] = [(catalog.OPS, catalog.pack_ops(reg.PROBE_LINK.op.values()))]
+        assert linkmod.port_state(hst, r.fn) == struct.unpack_from("<IB", res.payload)
+    assert sent[-1] == hx(case["request_hex"])

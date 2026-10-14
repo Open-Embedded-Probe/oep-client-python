@@ -145,7 +145,7 @@ def test_c05_a_relaying_brokers_0xff_and_a_confirm_without_the_tlv():
     hst = h.Host(lambda b: b)
     hst.limits = {"transport": 0xFF}
     hst._fns["oep.probe.link"] = 10                                    # oep.probe.link offering port_speed (its ops)
-    hst._describes[10] = [(virtual_bench.catalog.OPS, virtual_bench.catalog.pack_ops({1, 2, 3}))]
+    hst._describes[10] = [(virtual_bench.catalog.OPS, virtual_bench.catalog.pack_ops(virtual_bench.reg.PROBE_LINK.op.values()))]
     assert "broker" in link._speed_port(hst)[2]
     hst.limits = {"transport": None}
     assert "names no transport" in link._speed_port(hst)[2]

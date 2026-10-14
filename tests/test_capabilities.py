@@ -116,7 +116,8 @@ def test_p4_follows_the_agreed_names():
     assert len(caps.offers) == 16                    # fn 0 and 15 listed: link, plan and restart the last three
     assert [o.entry.name for o in caps.offers[-3:]] == ["oep.probe.link", "oep.probe.plan", "oep.probe.restart"]
     assert caps.requests["list"] == 1 and caps.requests["describe"] == 16
-    assert by_name["oep.probe.link"].description.ops == {1, 2}              # source and sink: no UART bridge here
+    link_ops = virtual_bench.reg.PROBE_LINK.op
+    assert by_name["oep.probe.link"].description.ops == {link_ops["source"], link_ops["sink"]}   # no UART bridge here
     assert by_name["oep.fixture.logic"].description.ops >= {0x30, 0x32}     # it sends notifications (core §11.3)
     assert not by_name["oep.fixture.gpio"].description.ops & {0x30, 0x32}   # it sends none
     assert all(o.description.ops for o in caps.offers) and not caps.missing  # every fn's describe carries ops

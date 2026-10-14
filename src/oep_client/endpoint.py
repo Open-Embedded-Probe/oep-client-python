@@ -596,6 +596,7 @@ class BrokenRate:
 
 _LINK = reg.PROBE_LINK
 OP_PORT_SPEED = _LINK.op["port_speed"]
+OP_PORT_STATE = _LINK.op.get("port_state")
 SPEED_STEP = _LINK.enum["port_speed_step"]
 SPEED_IDLE_MS = reg.TIMING["port_speed_idle_ms"]   # committed: back to the boot speed after this with no good frame
 SPEED_TOLERANCE_PCT = reg.LIMITS["port_speed_tolerance_pct"]   # the UART's nearest rate within this of the request (§3)
@@ -841,6 +842,9 @@ class Endpoint:
         self.speed_good_ms = 0                         # committed: the last good frame on that port or answer sent there
         self.speed_pending: tuple | None = None        # ("switch", port, rate, asked, verify_ms) / ("revert",): after the answer
         self.speed_log: list[tuple[int, int]] = []     # (port, rate) every switch, reverts included
+        self.speed_owner: int | None = None            # the session that raised the port
+        self.speed_fallback: str | None = None         # phase 3: why a return waits for a frame boundary (verify/idle/session)
+        self.speed_frame_busy = False                  # TEST HOOK: a frame on the raised port is not finished yet
         if self.saved is not None:
             self._apply_saved()                        # disable and idle before any other item (probe.config §2)
         self._park(self._boot_channels())              # every free pin's idle state before the first answer (core §8)
@@ -1306,7 +1310,7 @@ class Endpoint:
         oep.probe.link's port_speed follows `port_speed_base` (a test turns it off or on)."""
         if fn not in self.ops:
             return False
-        if fn == self.link_fn and op == OP_PORT_SPEED:
+        if fn == self.link_fn and op in (OP_PORT_SPEED, OP_PORT_STATE):
             return self.port_speed_base is not None
         return op in self.ops[fn]
 
@@ -1346,6 +1350,7 @@ class Endpoint:
             refused = self._check(req.session)
             if refused:
                 return refused
+            self._speed_cancel(req, self._transport)               # before the step's check (oep-if-link §3)
         if req.fn == m.CORE_FN and req.op == m.OP_CONFIRM:
             return self._confirm(t)
         if req.fn == m.CORE_FN:
@@ -1978,6 +1983,12 @@ class Endpoint:
             return self._answer(b"")
         if op == OP_PORT_SPEED:
             return self._port_speed(t)
+        if op == OP_PORT_STATE:                                    # [TLV] -> baud(u32) state(u8) (oep-if-link §3)
+            t.tail()
+            port = self._transport
+            if self.transports.get(port) != virtual_bench.TRANSPORT["uart_bridge"]:
+                raise unavailable("wrong_state")                   # only a UART bridge's port
+            return self._answer(struct.pack("<IB", self.port_baud(port), self.speed_phase(port)))
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
     # ---- port_speed (oep-if-link §3) --------------------------------------------------------------
@@ -1998,15 +2009,18 @@ class Endpoint:
         port = self._transport
         if self.transports.get(port) != virtual_bench.TRANSPORT["uart_bridge"]:
             raise unavailable("wrong_state")                       # only a UART bridge's port (oep-if-link §3)
-        # the port's state (boot speed / trying / committed) decides which step fits (oep-if-link §3): any other is cause
-        # 6, and so is a try on another port while one is raised
+        # the port's phase (0 boot, 1 trying, 2 committed, 3 a return waiting for a frame boundary) decides which step
+        # fits (oep-if-link §3): any other is cause 6, and so is a try on another port while one is raised
+        if self.speed_fallback is not None:
+            raise unavailable("wrong_state")                       # phase 3 refuses every step
         if step == SPEED_STEP["try"]:
             if self.speed_state != "base":
                 raise unavailable("wrong_state")                   # trying or committed (here or on another port)
             actual = self.speed_actual(baud)
-            if abs(actual - baud) * 100 > baud * SPEED_TOLERANCE_PCT:
-                raise unsupported_fixed()                          # the nearest rate is more than 2 % off
+            if abs(actual - baud) * 100 > baud * SPEED_TOLERANCE_PCT or actual <= (self.port_speed_base or 115200):
+                raise unsupported_fixed()                          # more than 2 % off, or not above the boot speed
             self.speed_pending = ("switch", port, actual, baud, verify_ms)
+            self.speed_owner = self.holder
             return self._answer(struct.pack("<I", actual))
         if step == SPEED_STEP["commit"]:
             if self.speed_state != "try" or port != self.speed_port or baud != self.speed_asked:
@@ -2071,10 +2085,44 @@ class Endpoint:
         self.speed_log.append((port, rate))
 
     def _speed_revert(self) -> None:
+        self.speed_fallback = None
         if self.speed_state == "base":
             return
         self.speed_log.append((self.speed_port, self.port_speed_base))
         self.speed_state, self.speed_port, self.speed_rate, self.speed_asked = "base", None, 0, 0
+        self.speed_owner = None
+
+    def speed_phase(self, port: int) -> int:
+        """port_state's phase of `port` (oep-if-link §3): 0 boot, 1 trying, 2 committed, 3 a return pending."""
+        if self.speed_state == "base" or port != self.speed_port:
+            return 0
+        if self.speed_fallback is not None:
+            return 3
+        return 1 if self.speed_state == "try" else 2
+
+    def _speed_fall(self, why: str) -> None:
+        """A return condition holds (oep-if-link §3): back at once, or - a frame on the port not finished - phase 3 until
+        its boundary. A session's end is never cancelled, so it overrides an idle return."""
+        if self.speed_state == "base":
+            return
+        if not self.speed_frame_busy:
+            self._speed_revert()
+        elif self.speed_fallback is None or why == "session":
+            self.speed_fallback = why
+
+    def speed_frame_done(self) -> None:
+        """TEST HOOK: the frame on the raised port is finished: a pending return happens now."""
+        self.speed_frame_busy = False
+        if self.speed_fallback is not None:
+            self._speed_revert()
+
+    def _speed_cancel(self, req: m.Request, transport: int) -> None:
+        """A good request frame of the session that raised the port, while it holds the lock, cancels a pending idle
+        return and restarts the idle timer (phase 2 again); a verify or a session's return is never cancelled."""
+        if (self.speed_fallback == "idle" and self.speed_state == "committed" and transport == self.speed_port
+                and req.session and req.session == self.holder == self.speed_owner):
+            self.speed_fallback = None
+            self.speed_good_ms = self.now()
 
     def speed_frame(self, port: int, good: bool) -> None:
         """A candidate closed on serial port `port`: a frame (good) or not. A good frame restarts the committed rate's
@@ -2095,10 +2143,12 @@ class Endpoint:
         if self.speed_pending and self.speed_pending[0] == "revert":
             self.speed_after_answer()
         now = self.now()
+        if self.speed_fallback is not None:
+            return
         if self.speed_state == "try" and now >= self.speed_until_ms:
-            self._speed_revert()                                   # no commit within verify_ms (return condition 1)
+            self._speed_fall("verify")                             # no commit within verify_ms (return condition 1)
         elif self.speed_state == "committed" and now - self.speed_good_ms >= SPEED_IDLE_MS:
-            self._speed_revert()                                   # return condition 2
+            self._speed_fall("idle")                               # return condition 2
 
     def _page(self, tlvs: list[bytes], first: int) -> bytes:
         budget = self.probe.max_frame - m.RESULT_HEADER - 1
@@ -3738,7 +3788,10 @@ class Endpoint:
         §1.2: the oldest byte left after an overflow); a port off its boot speed goes back after the answer
         (oep-if-link §3)."""
         if self.speed_state != "base":
-            self.speed_pending = ("revert",)
+            if self.speed_frame_busy:
+                self.speed_fallback = "session"                    # never cancelled (oep-if-link §3)
+            else:
+                self.speed_pending = ("revert",)
         self.held_ports.clear()
 
 

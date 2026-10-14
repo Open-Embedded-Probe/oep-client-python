@@ -337,8 +337,9 @@ def _console(fn: int, mechanisms=(0, 1, 2), send_queue: int = CONSOLE_SEND_QUEUE
 
 
 def _link(fn: int, port_speed: bool = False) -> Offered:
-    """oep.probe.link (oep-if-link): source and sink, and port_speed when `port_speed` (a probe on a UART bridge)."""
-    return Offered(fn, 0, LINK, ops_of(LINK) if port_speed else ops_of(LINK, "port_speed"))
+    """oep.probe.link (oep-if-link): source and sink, and port_speed with port_state when `port_speed` (a probe on a
+    UART bridge; port_state is required with port_speed, oep-if-link §1)."""
+    return Offered(fn, 0, LINK, ops_of(LINK) if port_speed else ops_of(LINK, "port_speed", "port_state"))
 
 
 def _plan(fn: int, plan_roles: int = PLAN_ROLES) -> Offered:

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- (JA) oep-spec a09fa45 への追従（段階4: oep.probe.link）。op を 0x10〜0x12 に移し、port_state（0x13、port_speed とともに必須）を加えた。仮想ベンチは phase 0〜3 を持ち、送りかけのフレームがある間の復帰を phase 3（理由: verify / idle / session）として保ち、idle の保留だけを元の所有者の要求で取り消す。試す速さは起動時より上だけを受ける。host は異なる session_id への force open の成功でも起動時の速さに戻り、試しが通らなかった後は新しい corr の port_state で phase 0 を確かめる（`link.port_state`）。
+
 - (JA) oep-spec a09fa45 への追従（段階3: oep.probe.restart）。op を 0x10 に移した。restart_max_ms は probe 内部の再起動の上限になったので、`restart_probe` の既定の待ちは restart_max_ms に外部の待ち `RESTART_EXTERNAL_S`（5 s）を足したもの（host ガイド §5.2）。指定した `wait_s` は切り詰めない。
 
 - (JA) oep-spec a09fa45 への追従（段階2: oep.probe.plan）。op を 0x10/0x11 に移し、plan_apply は割り当ての集合が変わる fn だけを置き換え（同じ集合は何も変えない）、動作中の機能（configure 済み UART、state 1 の I2C/SPI target、state 2/3/5 のキャプチャ）は cause 6、group に束ねたトラックは cause 4 で断る。plan の変わったキャプチャは generation を保って state 0 へ戻す。出力 idle のチャンネルは GPIO とロジック以外が cause 5 で断る。plan_release は存在しない fn を unknown_function、束ねたトラックを cause 4 で、何も変えずに断る。

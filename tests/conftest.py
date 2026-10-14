@@ -22,6 +22,8 @@ PENDING_FOLLOW = {
     "tests/test_vectors.py::test_confirm_": "core: confirm moved to test_spec_vectors.py (no flags)",
     "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[plan_": "plan: moved to test_spec_vectors.py",
     "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[restart": "restart: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[link ": "link: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[link ": "link: moved to test_spec_vectors.py",
     "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[restart": "restart: moved to test_spec_vectors.py",
     "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[plan_": "plan: moved to test_spec_vectors.py",
     "tests/test_vectors.py::test_refusals_from_the_virtual_bench_byte_for_byte":

@@ -667,10 +667,16 @@ class SerialLink:
         return cls._completed(message, reply)
 
     def _reverts(self, message: bytes, reply: bytes) -> bool:
-        """A completed end, a completed restart (oep.probe.restart: the probe starts again at its boot speed), or
-        port_speed's revert (oep.probe.link): the probe is back at its boot speed once this answer is out (oep-if-link
-        §3 host 2)."""
-        if self._core_completed(message, reply) == m.OP_END:
+        """A completed end, a successful open with force for another session id (the lock changes hands; the same
+        id's open keeps the session and the speed), a completed restart (oep.probe.restart: the probe starts again at
+        its boot speed), or port_speed's revert (oep.probe.link): the probe is back at its boot speed once this answer
+        is out (oep-if-link §3 host 2)."""
+        op = self._core_completed(message, reply)
+        if op == m.OP_END:
+            return True
+        if (op == m.OP_OPEN and reply[4] == m.SUCCESS and len(message) >= m.REQUEST_HEADER + 5
+                and message[m.REQUEST_HEADER + 4] and _session_of(message)
+                != getattr(getattr(self, "bound_host", None), "session", None)):
             return True
         if self._completed(message, reply, self.restart_fn) == reg.PROBE_RESTART.op["restart"]:
             return True
@@ -1602,6 +1608,20 @@ def _open_host(target: str, timeout: float | None, resend: bool | None, *, baud:
 
 # ---- port_speed (oep-if-link §3) ----------------------------------------------------------------------------------------
 OP_PORT_SPEED = reg.PROBE_LINK.op["port_speed"]
+OP_PORT_STATE = reg.PROBE_LINK.op["port_state"]
+
+
+def port_state(hst, fn: int) -> tuple[int, int] | None:
+    """oep.probe.link port_state (oep-if-link §1, §3): (baud, phase) of the port this host's link came on - phase 0 the
+    boot speed, 1 trying, 2 committed, 3 a return waiting for a frame boundary. None when the probe does not offer it.
+    Always a new request: a resent port_speed answer is history, never the port's state now."""
+    from . import core
+    if not core.offers(hst, fn, OP_PORT_STATE):
+        return None
+    rd = m.Reader(hst.call(fn, OP_PORT_STATE, b"", locked=False).payload)
+    baud, phase = rd.take("IB")
+    rd.tail()
+    return baud, phase
 OP_SOURCE, OP_SINK = reg.PROBE_LINK.op["source"], reg.PROBE_LINK.op["sink"]
 SPEED_STEP = reg.PROBE_LINK.enum["port_speed_step"]
 UNIT_ID_TAG = reg.CORE.tlv["describe"]["unit_id"]
@@ -2236,6 +2256,9 @@ def _try(hst, lk: SerialLink, report: SpeedReport, rates: list[int], run: _Run) 
                 lk.timeout, lk.resend = saved
         if not lk.back_to_base(max(OPEN_RETRY_S, wait / 1000 + 1.0)):
             raise ConnectionError(f"after trying {rate}: no answer at the boot speed {base}")
+        state = port_state(hst, lk.speed_fn)                # a new corr: the phase now, not an old answer (§3)
+        if state is not None and state != (base, 0):
+            raise ConnectionError(f"after trying {rate}: the port reports {state[0]} in phase {state[1]}, not the boot speed")
         report.rate = base
 
     for rate in rates:
