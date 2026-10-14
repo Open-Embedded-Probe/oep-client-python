@@ -18,7 +18,7 @@ def setup(**kwargs):
 def test_i2c_contract(stretch,pullups):
     model,c=setup(stretch=stretch,pullups=pullups);r=I2cChecks(c,SampleI2cAdapter(model)).run()
     assert r['status']=='passed',[(x['id'],x.get('error')) for x in r['checks'] if x['status']!='passed']
-    assert len(r['checks'])==34 and not r['full_conformance']
+    assert len(r['checks'])==35 and not r['full_conformance']
 
 
 def test_common_declarations():

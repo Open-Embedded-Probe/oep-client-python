@@ -715,6 +715,9 @@ class Endpoint:
                                  own(fn, _I2C.tlv["describe"]["queue_depth"], "B", 1),
                                  own(fn, _I2C.tlv["describe"]["max_stretch_us"], "I", 0) if name == _I2C.name else 0)
                             for fn, name in self.names.items() if name in (_I2C.name, _SPI.name)}
+        self.spi_modes = {fn: own(fn, virtual_bench.SPI_MODES, "B", 0x0F) for fn, name in self.names.items() if name == _SPI.name}
+        self.target_fail_configure: set[int] = set()   # TEST HOOK: i2c / spi targets whose next accepted configure fails
+        self.spi_fail_arm: set[int] = set()            # TEST HOOK: spi targets whose next arm cannot prepare MISO
         # i2c-target internal pull-ups (fixture §3): features bit2, else none
         self.i2c_pullups = {fn: bool(self.target_decl[fn][1] & I2C_FEATURES["internal_pullups"])
                             for fn, name in self.names.items() if name == _I2C.name}
@@ -1581,7 +1584,6 @@ class Endpoint:
                 tags.setdefault(a[0], tag)                         # the tag as received, for unsupported (§2.5)
             if len(set(got)) != len(got) or any(fn == m.CORE_FN for fn, _, _ in got):
                 raise Reject(m.MALFORMED)                          # the same (fn, role, channel) twice, or fn 0 (oep-if-plan §2.5)
-            self._check_target_roles(got)                          # the whole form first ...
             named = {fn for fn, _, _ in got}
             if any(fn not in self.names for fn in named):
                 raise Reject(m.UNKNOWN_FUNCTION)                   # ... then its fns ...
@@ -1655,22 +1657,22 @@ class Endpoint:
         their analog function, cutting their digital input and output (oep-if-capture §1.2), as on this library's ESP32s."""
         return fn in self.captures and not self.captures[fn].analog
 
-    def _check_target_roles(self, got: list[tuple[int, int, int]]) -> None:
+    def _check_target_roles(self, got: list[tuple[int, int, int]], tag_of=None) -> None:
         """An i2c-target / spi-target plan holds each of its roles exactly once, on distinct channels (fixture §3 /
-        §4): a missing role, a role twice or two roles on one channel -> malformed. A role the fn does not define is
-        left to the declaration check (unsupported)."""
-        for fn in {f for f, _, _ in got if f in self.i2c or f in self.spi}:
+        §4): a missing role, a role twice or two roles on one channel -> unsupported, the role_assignment's tag as
+        received. A role the fn does not define is left to the declaration check (unsupported too)."""
+        for fn in sorted({f for f, _, _ in got if f in self.i2c or f in self.spi}):
             roles = TARGET_ROLES[self.names[fn]]
             mine = [(role, ch) for f, role, ch in got if f == fn and role in roles]
             if sorted(r for r, _ in mine) != sorted(roles) or len({ch for _, ch in mine}) != len(mine):
-                raise Reject(m.MALFORMED)
+                raise Reject(m.UNSUPPORTED, bytes([tag_of(fn) if tag_of else ROLE_ASSIGNMENT]))
 
     def _check_plan(self, got: list[tuple[int, int, int]], held: bool = True, tag_of=None) -> None:
         """plan_apply's all-or-nothing check, in core §4.3's order over the whole request: the roles and channels each
         fn declares (unsupported) for every assignment, then - `held` - no pin another fn, a slot or a
         connection holds (unavailable). `tag_of(fn)`: the tag an unsupported names (the role_assignment or
         probe.config's plan item as received)."""
-        self._check_target_roles(got)
+        self._check_target_roles(got, tag_of)
         for declared in (True, False) if held else (True,):
             self._check_plan_pass(got, declared, tag_of)
 
@@ -2866,6 +2868,10 @@ class Endpoint:
                 raise unsupported_fixed()                          # reserved by I2C: general call, 10-bit, ... (△5)
             if not planned:
                 raise unavailable("wrong_state")                   # before the plan (cause 6)
+            if fn in self.target_fail_configure:                   # taken, not brought up: state 0, the queue, slots
+                self.target_fail_configure.discard(fn)             # and counters gone, stretch kept (fixture §3)
+                self.i2c[fn] = I2cState(stretch_us=st.stretch_us)
+                return self._answer(b"", m.FAILED)
             self.i2c[fn] = I2cState(state=1, address=address, stretch_us=st.stretch_us)   # made anew, stretch kept
             return self._answer(b"")
         if op == ops["read_rx"]:
@@ -2917,11 +2923,11 @@ class Endpoint:
         over = len(data) > max_length
         data = data[:max_length]
         if len(st.queue) >= depth:
-            st.errors += 1                                         # the queue overflows: the new frame goes (once)
+            st.errors = min(st.errors + 1, 0xFFFFFFFF)            # the queue overflows: the new frame goes (once)
             return True
-        st.errors += over
+        st.errors = min(st.errors + over, 0xFFFFFFFF)               # saturates (fixture §3)
         st.queue.append((bytes(data), self.now_ns()))
-        st.rx_frames += 1
+        st.rx_frames = min(st.rx_frames + 1, 0xFFFFFFFF)
         return True
 
     def i2c_read(self, fn: int, n: int, address: int | None = None) -> bytes | None:
@@ -2947,8 +2953,14 @@ class Endpoint:
                 raise Reject(m.MALFORMED)
             if order == 1 and not features & SPI_FEATURES["lsb_first"]:
                 raise unsupported_fixed()
+            if not self.spi_modes.get(fn, 0x0F) >> mode & 1:
+                raise unsupported_fixed()                          # a mode not in describe's modes (fixture §4)
             if not any(a[0] == fn for a in self.plan):
                 raise unavailable("wrong_state")                   # before the plan (cause 6)
+            if fn in self.target_fail_configure:                   # taken, not brought up: state 0, everything 0, the
+                self.target_fail_configure.discard(fn)             # queue and the arm's data gone (fixture §4)
+                self.spi[fn] = SpiState()
+                return self._answer(b"", m.FAILED)
             self.spi[fn] = SpiState(state=1, mode=mode, bit_order=order)
             return self._answer(b"")
         if op == ops["arm"]:
@@ -2961,6 +2973,9 @@ class Endpoint:
                 raise unsupported_fixed()
             if st.state == 0 or st.armed is not None:
                 raise unavailable("wrong_state")                   # not configured, or one is armed already
+            if fn in self.spi_fail_arm:                            # cannot get MISO ready: nothing armed, nothing
+                self.spi_fail_arm.discard(fn)                      # changes (fixture §4: completed failed, no fixed part)
+                return self._answer(b"", m.FAILED)
             st.armed = (length, tx)
             return self._answer(b"")
         if op == ops["read_rx"]:
@@ -3003,15 +3018,15 @@ class Endpoint:
     def _spi_transaction(self, fn: int, st: "SpiState", depth: int, mosi: bytes, n: int, bits: int) -> bytes:
         if st.state == 0 or bits == 0:
             return bytes(n)
-        st.transactions += 1
+        st.transactions = min(st.transactions + 1, 0xFFFFFFFF)
         if st.armed is None:
-            st.errors += 1
+            st.errors = min(st.errors + 1, 0xFFFFFFFF)
             return bytes(n)
         length, tx = st.armed
         st.armed = None
         got = (bits + 7) // 8
         if got > length or len(st.queue) >= depth:
-            st.errors += 1                                         # past the armed length, or the queue full: once
+            st.errors = min(st.errors + 1, 0xFFFFFFFF)            # past the armed length, or the queue full: once
         if len(st.queue) < depth:                                  # bits saturates; ns: when CS went inactive (§4)
             st.queue.append((min(bits, 0xFFFFFFFF), bytes(mosi[:min(got, length)]), self.now_ns()))
         return (tx + bytes(n))[:n]

@@ -20,7 +20,7 @@ def setup(**kwargs):
 def test_spi_contract(lsb):
     model,c=setup(lsb=lsb);r=SpiChecks(c,SampleSpiAdapter(model)).run()
     assert r['status']=='passed',[(row['id'],row.get('error')) for row in r['checks'] if row['status']!='passed']
-    assert len(r['checks'])==41 and not r['full_conformance']
+    assert len(r['checks'])==42 and not r['full_conformance']
 
 
 def test_common_declarations():

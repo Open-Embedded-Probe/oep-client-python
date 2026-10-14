@@ -4,10 +4,12 @@
 `Checks(send, registry, unit)` と `SampleI2cAdapter(source)` を明示して渡す。
 公開側は私的ベンチ・設備設定・隣接リポジトリを探索しない。
 
-前提と標準op宣言を含む34項目。別に第二段階の共通宣言17項目とI2C metadata 5項目を適用する。
+前提と標準op宣言を含む35項目。別に第二段階の共通宣言17項目とI2C metadata 5項目を適用する。
 
 - 未設定ではどのアドレスにもACKしない。plan前configureと未設定read_rx/preload_txを拒否する。
-- role 1/2を各1つ、別のchannelに割り当てる。拒否した置換はplan、queue、pinsを変えない。
+- role 1/2を各1つ、別のchannelに割り当てる。満たさない組はunsupported（role_assignmentのtag）、同じ(fn, role, channel)の重複はmalformed。
+- state 1で同じ割り当てのplan_applyは何も変えず、割り当ての変更はunavailable cause 6で、plan、queue、pinsを変えない。
+- configureの初期化失敗はcompleted failedで、state 0へ戻り列・置き場・累計を消し、stretchを保つ。read_rxはcause 6、新しいconfigureで回復する。
 - addressの7 bit幅と予約範囲、合法境界、選択アドレス以外からのアクセスでqueueを消費しないことを確認する。
 - STARTからSTOPまたは次のSTARTまでのwriteを1フレームとしてFIFOで返す。任意timestampは存在時だけ幅と境界時刻を確認する。
 - address-only writeは数えない。max_lengthの超過はprefixを残し、queueあふれは新しいフレームを捨てる。
@@ -18,7 +20,7 @@
   stretchありではstate 0、上限、writeのdata byteだけ・readのaddress後への適用、0による無効化を確認する。
 - 内部pullupは宣言に従う。logical pinはopen-drainの解放状態とし、push-pull highを検出する。
 - read_rx/preload/configureの同一要求再送は副作用を繰り返さない。
-- plan置換/release/end/expiry/forceで未設定に戻し、queue・累計・stretchを捨て、pinsをidleへ戻す。
+- release/end/expiry/forceで未設定に戻し、queue・累計・stretchを捨て、pinsをidleへ戻す。
   force後の旧要求は新ownerのtargetを変更できない。statusはSID 0で読め、他操作はsessionを要求する。
 
 独立`I2cModel`はmax_length 8、queue_depth 3、max_clock 400000 Hz、stretch上限1000 µsの論理fixture。

@@ -25,6 +25,10 @@ PENDING_FOLLOW = {
     "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[link ": "link: moved to test_spec_vectors.py",
     "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[gpio ": "gpio: moved to test_spec_vectors.py",
     "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[UART ": "uart: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[i2c-target": "i2c-target: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[i2c-target": "i2c-target: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[spi-target": "spi-target: moved to test_spec_vectors.py",
+    "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[spi-target": "spi-target: moved to test_spec_vectors.py",
     "tests/test_vectors.py::test_ops_vectors_as_the_client_sends_and_reads_them[UART ": "uart: moved to test_spec_vectors.py",
     "tests/test_config.py::test_uart_item_is_applied_when_the_plan_gives_the_uart_pins":
         "probe.config: the uart item is gone; a UART receives only after a session's configure (fixture §2)",

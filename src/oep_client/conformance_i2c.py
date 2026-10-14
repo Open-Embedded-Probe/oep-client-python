@@ -6,7 +6,7 @@ from .conformance_registered_ops import RegisteredOpsChecks
 
 
 class I2cChecks:
-    cases=('STATE0','PLAN-SHAPE','PLAN-TAGS','CONFIGURE','ADDRESS','MISMATCH','TLV','WRITE','EMPTY','TRUNCATE','OVERFLOW','DOUBLE-ERROR','READ-FIFO','PRELOAD','PRELOAD-LENGTH','SLOTS','READ-LENGTH','RECONFIGURE','STRETCH','PULLUPS','REPLAY-RX','REPLAY-TX','REPLAY-CONFIG','REPLACE','RELEASE','END','EXPIRY','FORCE','SESSION','COUNTS')
+    cases=('STATE0','PLAN-SHAPE','PLAN-TAGS','RUNNING-PLAN','CONFIGURE','CONFIGURE-FAIL','ADDRESS','MISMATCH','TLV','WRITE','EMPTY','TRUNCATE','OVERFLOW','DOUBLE-ERROR','READ-FIFO','PRELOAD','PRELOAD-LENGTH','SLOTS','READ-LENGTH','RECONFIGURE','STRETCH','PULLUPS','REPLAY-RX','REPLAY-TX','REPLAY-CONFIG','RELEASE','END','EXPIRY','FORCE','SESSION','COUNTS')
     def __init__(self,checks,adapter):self.c,self.a=checks,adapter
     @staticmethod
     def tlv(tag,value):return bytes((tag,))+struct.pack('<H',len(value))+value
@@ -40,10 +40,19 @@ class I2cChecks:
             if kind=='STATE0':
                 require(self.status()==(0,0,0,0,0),'initial status');self.refused(self.req(2,'configure',sid,b'B'),'unavailable',self.tlv(1,b'\6'))
                 self.plan(sid);require(self.status()==(0,0,0,0,0),'plan configured target early');state=self.a.state();require(state['pins']==state['idle'],'plan changed pins before configure');require(not self.a.write(0x42,b'x','stop')['ack'] and not self.a.read(0x42,1)['ack'],'state0 ACKed address');self.refused(self.req(2,'read_rx',sid),'unavailable',self.tlv(1,b'\6'));self.refused(self.preload_request(sid,b'x'),'unavailable',self.tlv(1,b'\6'));return
-            self.plan(sid);self.configure(sid)
-            if kind=='PLAN-SHAPE':
-                self.written(b'keep');self.preload(sid,b'tx')
-                for roles in (((1,0),),((2,1),),((1,0),(1,1),(2,1)),((1,0),(2,0)),((1,0),(2,1),(1,0))):self.refused(self.plan_request(sid,roles),'malformed')
+            self.plan(sid)
+            if kind!='PLAN-SHAPE':self.configure(sid)
+            if kind=='PLAN-SHAPE':                                  # state 0: only the form of the plan applies
+                for roles in (((1,0),),((2,1),),((1,0),(1,1),(2,1)),((1,0),(2,0))):self.refused(self.plan_request(sid,roles),'unsupported',bytes((self.assignment,)))
+                self.refused(self.plan_request(sid,((1,0),(2,1),(1,0))),'malformed')   # the same (fn, role, channel) twice
+            elif kind=='RUNNING-PLAN':
+                self.written(b'keep');self.preload(sid,b'tx');before=self.a.state();self.ok(self.plan_request(sid));require(self.a.state()==before,'the same set changed a running target')
+                self.refused(self.plan_request(sid,((1,1),(2,0))),'unavailable',self.tlv(1,b'\6'))
+            elif kind=='CONFIGURE-FAIL':
+                self.written(b'keep');self.preload(sid,b'tx');self.a.fail_configure();before=self.a.state()
+                reply=self.c.exchange(self.req(2,'configure',sid,b'B'));require(reply[3:5]==b'\1\1','failed configure must be completed failed');tlvs(reply[5:])
+                require(self.status()==(0,0,0,0,0),'failed configure left state, queue, slots or counters');require(self.a.state()['stretch_us']==before['stretch_us'],'failed configure lost stretch')
+                self.refused(self.req(2,'read_rx',sid),'unavailable',self.tlv(1,b'\6'));self.configure(sid);require(self.status()[0]==1,'new configure did not recover')
             elif kind=='PLAN-TAGS':
                 self.refused(self.plan_request(sid,((3,0),(2,1))),'unsupported',bytes((self.assignment,)));self.refused(self.req(1,'plan_apply',sid,self.tlv(self.assignment,b'\0'*4)),'malformed')
             elif kind=='CONFIGURE':
@@ -100,11 +109,10 @@ class I2cChecks:
                 req=self.preload_request(sid,b'a');self.ok(req);self.read_bus(1);before=self.a.state();self.ok(req);require(self.a.state()==before and self.read_bus(1)==b'\xff','preload replay duplicated TX slot')
             elif kind=='REPLAY-CONFIG':
                 req=self.req(2,'configure',sid,b'B');self.ok(req);self.configure(sid,0x43);self.written(b'x',0x43);before=self.a.state();self.ok(req);require(self.a.state()==before,'configure replay reset current target')
-            elif kind in ('REPLACE','RELEASE','END','EXPIRY','FORCE'):
+            elif kind in ('RELEASE','END','EXPIRY','FORCE'):
                 self.written(b'x'*(self.maximum+1));self.preload(sid,b'tx')
                 if self.stretch_available:self.ok(self.req(2,'stretch',sid,struct.pack('<I',7)))
-                if kind=='REPLACE':self.plan(sid)
-                elif kind=='RELEASE':self.release(sid)
+                if kind=='RELEASE':self.release(sid)
                 elif kind=='END':self.ok(self.c.request(self.c.core['end'],session=sid));self.c.session=None
                 elif kind=='EXPIRY':self.a.advance(1000);require(struct.unpack_from('<BI',self.c.success(self.c.request(self.c.core['lock_state'])))==(0,0),'expiry did not end owner');self.c.session=None
                 else:
@@ -112,8 +120,7 @@ class I2cChecks:
                     while replacement==sid:replacement=secrets.randbelow(0xffffffff)+1
                     self.c.corr=0;v=self.c.success(self.c.request(self.c.core['open'],struct.pack('<IB',1000,1),session=replacement));require(struct.unpack_from('<II',v)==(1000,self.c.boot),'force response');tlvs(v[8:]);self.c.session=replacement
                 self.idle();require(self.status()==(0,0,0,0,0),'close status not initial')
-                if kind=='REPLACE':require(self.a.state()['plans']=={2:[0,1]},'replacement lost new plan')
-                else:require(not self.a.state()['plans'],'release retained plan')
+                require(not self.a.state()['plans'],'release retained plan')
                 if kind=='FORCE':self.plan(replacement);self.configure(replacement);self.refused(old,'locked')
             elif kind=='SESSION':
                 for name,payload in [('configure',b'B'),('read_rx',b''),('preload_tx',b'\1\0x')]:self.refused(self.req(2,name,0,payload),'session_required')

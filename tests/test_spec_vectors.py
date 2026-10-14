@@ -323,7 +323,8 @@ from oep_client import config, core, fixture, virtual_bench_capture
 from test_vectors import vector_probe                                   # the vectors' fn numbers on the virtual bench
 
 S = 0x11223344                                                          # ops.json about: the lock holder's id
-FOLLOWED = {"oep.probe.plan", "oep.probe.restart", "oep.probe.link", "oep.fixture.gpio", "oep.fixture.uart"}                                           # grows with each stage
+FOLLOWED = {"oep.probe.plan", "oep.probe.restart", "oep.probe.link", "oep.fixture.gpio", "oep.fixture.uart",
+            "oep.fixture.i2c-target", "oep.fixture.spi-target"}                                           # grows with each stage
 OPS = load("ops.json")["cases"]
 
 
@@ -349,6 +350,11 @@ def bench_for(case):
     if "port_s" in case["name"] and "not offered" not in case["name"]:   # a UART bridge probe with port_speed
         probe.offered = [virtual_bench._link(o.fn, port_speed=True) if o.name == virtual_bench.LINK else o
                          for o in probe.offered]
+    if "modes=1 (mode0 only)" in case.get("state", ""):
+        probe = virtual_bench.VirtualProbe(probe.label, probe.max_frame, [
+            virtual_bench.Offered(o.fn, o.instance, o.name, tuple(catalog.u8(virtual_bench.SPI_MODES, 1)
+                                  if t[0] == virtual_bench.SPI_MODES else t for t in o.tlvs), o.revision)
+            if o.name == "oep.fixture.spi-target" else o for o in probe.offered])
     if "formats declares 8N1 only" in case.get("state", ""):
         probe = virtual_bench.VirtualProbe(probe.label, probe.max_frame, [
             virtual_bench._uart(o.fn, 0, list(range(16)), 3_000_000, formats=(0,)) if o.name == "oep.fixture.uart" else o
@@ -447,8 +453,59 @@ def uart_state(case, ep, hst):
             uart.configure(115200)
 
 
+def i2c_state(case, ep, hst):
+    """fixture §3's cases on fn 3 (SDA role 1 on channel 1, SCL role 2 on channel 2)."""
+    state = case["state"]
+    hst.open(3000)
+    core.plan_apply(hst, [(3, 1, 1), (3, 2, 2)])
+    t = fixture.I2cTarget(hst, 3)
+    if "running" in state or "the configure above failed" in state:
+        t.configure(0x42)
+        for frame in (b"a", b"b"):
+            ep.i2c_write(3, frame)
+        ep.i2c[3].rx_frames, ep.i2c[3].errors = 5, 1
+        t.preload_tx(b"x")
+        if t.offers(t.STRETCH):
+            t.stretch(50)
+    if "fails" in state or "the configure above failed" in state:
+        ep.target_fail_configure.add(3)
+    if "the configure above failed" in state:
+        with pytest.raises(h.Failed):
+            t.configure(0x42)
+
+
+def spi_state(case, ep, hst):
+    """fixture §4's cases on fn 14 (SCK MOSI MISO CS on channels 1-4)."""
+    state, name = case["state"], case["name"]
+    hst.open(3000)
+    core.plan_apply(hst, [(14, r, r) for r in (1, 2, 3, 4)])
+    t = fixture.SpiTarget(hst, 14)
+    if "previous mode0" in state or "configured" in state or "running" in state or "the configure above failed" in state:
+        t.configure(0, 1 if "bit_order 1" in state else 0)
+    if "running" in state or "the configure above failed" in state or "previous mode0" in state:
+        t.arm(16, b"")
+        ep.spi_transfer(14, b"\x01")
+        t.arm(16, b"")
+        st = ep.spi[14]
+        st.transactions, st.errors = 4, 1
+    if "driver cannot prepare output" in state:
+        ep.spi_fail_arm.add(14)
+    if "fails" in state or "the configure above failed" in state:
+        ep.target_fail_configure.add(14)
+    if "the configure above failed" in state:
+        with pytest.raises(h.Failed):
+            t.configure(0, 0)
+        ep.spi_transfer(14, b"\x55")                                 # neither queued nor counted in state 0
+    if "one transaction queued" in state:
+        ep.spi_ns = False
+        t.arm(16, b"")
+        wire = [1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1]
+        ep.spi_transfer(14, fixture.pack_wire_bits(wire, 1 if "bit_order 1" in state else 0), bits=12)
+
+
 STATES = {"oep.probe.plan": plan_state, "oep.probe.restart": restart_state, "oep.probe.link": link_state,
-          "oep.fixture.gpio": gpio_state, "oep.fixture.uart": uart_state}
+          "oep.fixture.gpio": gpio_state, "oep.fixture.uart": uart_state, "oep.fixture.i2c-target": i2c_state,
+          "oep.fixture.spi-target": spi_state}
 
 
 def make_case(case):
@@ -598,3 +655,26 @@ def test_gpio_vectors_as_the_client_sends_and_reads_them(case):
         channels = [struct.unpack_from("<H", r.payload, 1 + 2 * k)[0] for k in range(n)]
         assert g.read(channels) == list(res.payload[1:1 + n])
     assert sent[0] == hx(case["request_hex"])
+
+
+def test_fixture_boundaries_on_the_virtual_bench():
+    """interface_boundaries.json fixtures (fixture §3/§4): consecutive i2c reads from preload slots, counters that
+    saturate, and the spi read_rx of an empty queue."""
+    row = load("interface_boundaries.json")["fixtures"]
+    case = {"name": "fixtures", "fns": {"3": "oep.fixture.i2c-target", "14": "oep.fixture.spi-target", "10": "oep.probe.plan"}}
+    ep, hst, _ = bench_for(case)
+    hst.open(3000)
+    core.plan_apply(hst, [(3, 1, 1), (3, 2, 2)] + [(14, r, 4 + r) for r in (1, 2, 3, 4)])
+    i2c = fixture.I2cTarget(hst, 3)
+    i2c.configure(0x42)
+    for slot in row["i2c_slots_hex"]:
+        i2c.preload_tx(bytes.fromhex(slot))
+    assert [ep.i2c_read(3, n).hex() for n in row["i2c_read_lengths"]] == row["expected_i2c_reads_hex"]
+    ep.i2c[3].errors = row["counter_before"]
+    for _ in range(row["increments"]):
+        ep.i2c_write(3, bytes(64))                                    # past max_length: an error each
+    assert ep.i2c[3].errors == row["expected_counter"]
+    fixture.SpiTarget(hst, 14).configure(0, 0)
+    ep.newest_corr = 0
+    got = ep.handle(m.Request(1, 14, reg.FIXTURE_SPI_TARGET.op["read_rx"], b"", S).pack(), 0)
+    assert got.hex() == row["spi_empty_answer_hex"]

@@ -3,7 +3,7 @@
 `SpiChecks(checks, adapter).run()` は選択SPECのfixture §4、plan §2、core §6/8/9を第三段階で検査する。
 `Checks(send, registry, unit)` と `SampleSpiAdapter(source)` を明示して渡す。
 公開checkerは私的ベンチや隣接リポジトリ、設備設定を探索しない。
-前提と標準op宣言を含む41項目。共通宣言17項目とSPI metadata5項目は別に適用する。
+前提と標準op宣言を含む42項目。共通宣言17項目とSPI metadata5項目は別に適用する。
 
 - state 0、plan開始前configure、未設定read_rx、role 1〜4の各1つ/別pin、拒否前不変を確認する。
 - configureのmode/bit_order幅、LSB featureの有無、未知TLV/raw tag、mode/statusを確認する。
@@ -19,7 +19,9 @@
 - configureでqueue/arm/累計を消す。configure/arm/read_rxの同一要求再送は古い副作用を実行しない。
 - MISOはCSで駆動/HiZを切り替え、SCK/MOSI/CSは入力を保つ。
   MISOは計算した送信byteだけでなくlogical pinの駆動状態を観測する。
-- plan置換/release/end/expiry/forceはstate 0、mode/order 0、queue/arm/累計なし、pins idleへ戻す。
+- role 1〜4の組を満たさないplanはunsupported（tag）、同じ割り当ての重複はmalformed。state 1の同じ割り当ては何も変えず、変更はcause 6。
+- configureの初期化失敗はcompleted failedで、state 0とすべて0へ戻し、armはcause 6、新しいconfigureで回復する。
+- release/end/expiry/forceはstate 0、mode/order 0、queue/arm/累計なし、pins idleへ戻す。
   CS有効・1 bit取得中のrelease/end/expiry/forceも確認し、不完全な取得とMISO駆動を残さない。
   force後の旧要求は新ownerへ触れない。statusはSID 0、他opはsessionを要求する。
 

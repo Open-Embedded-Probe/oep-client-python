@@ -13,3 +13,4 @@ class SampleSpiAdapter(SampleRouteAdapter):
     def clock(self,level,mosi):return self.call('spi_clock',level,mosi)
     def ready(self,value):return self.call('spi_ready',value)
     def advance(self,ms):return self.call('spi_advance',ms)
+    def fail_configure(self):return self.call('spi_fail_configure')

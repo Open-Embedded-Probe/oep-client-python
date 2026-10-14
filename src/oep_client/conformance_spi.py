@@ -6,7 +6,7 @@ from .conformance_registered_ops import RegisteredOpsChecks
 
 
 class SpiChecks:
-    cases=('STATE0','ARM-STATE0','PLAN-SHAPE','PLAN-TAGS','CONFIGURE','FORMAT','LSB-FEATURE','TLV','MODES','PARTIAL','EMPTY-TX','UNARMED','ZERO-BITS','TRUNCATE','OVERFLOW','DOUBLE-ERROR','FIFO','TIMESTAMP','ARM-LIMIT','ARM-BUSY','ARM-READY','RECONFIGURE','MISO-GATE','REPLAY-RX','REPLAY-ARM','REPLAY-CONFIG','REPLACE','RELEASE','END','EXPIRY','FORCE','ACTIVE-RELEASE','ACTIVE-END','ACTIVE-EXPIRY','ACTIVE-FORCE','SESSION','COUNTS')
+    cases=('STATE0','ARM-STATE0','PLAN-SHAPE','PLAN-TAGS','RUNNING-PLAN','CONFIGURE','CONFIGURE-FAIL','FORMAT','LSB-FEATURE','TLV','MODES','PARTIAL','EMPTY-TX','UNARMED','ZERO-BITS','TRUNCATE','OVERFLOW','DOUBLE-ERROR','FIFO','TIMESTAMP','ARM-LIMIT','ARM-BUSY','ARM-READY','RECONFIGURE','MISO-GATE','REPLAY-RX','REPLAY-ARM','REPLAY-CONFIG','RELEASE','END','EXPIRY','FORCE','ACTIVE-RELEASE','ACTIVE-END','ACTIVE-EXPIRY','ACTIVE-FORCE','SESSION','COUNTS')
     def __init__(self,checks,adapter):self.c,self.a=checks,adapter
     @staticmethod
     def tlv(tag,value):return bytes((tag,))+struct.pack('<H',len(value))+value
@@ -57,10 +57,20 @@ class SpiChecks:
                         require(self.status()[0]==1 and self.status()[3]==0,'old state0 refusal armed configured target')
                         self.arm(sid,1,b'x');self.transfer(self.bits(b'y'),self.bits(b'x'))
                 return
-            self.plan(sid);self.configure(sid)
-            if kind=='PLAN-SHAPE':
-                self.arm(sid,1,b'x');self.transfer(self.bits(b'y'),self.bits(b'x'));self.arm(sid)
-                for roles in (((1,0),(2,1),(3,2)),((1,0),(2,1),(3,2),(4,2)),((1,0),(2,1),(3,2),(4,3),(1,1)),((1,0),(2,1),(3,2),(4,3),(1,0))):self.refused(self.plan_request(sid,roles),'malformed')
+            self.plan(sid)
+            if kind!='PLAN-SHAPE':self.configure(sid)
+            if kind=='PLAN-SHAPE':                                  # state 0: only the form of the plan applies
+                for roles in (((1,0),(2,1),(3,2)),((1,0),(2,1),(3,2),(4,2)),((1,0),(2,1),(3,2),(4,3),(1,1))):self.refused(self.plan_request(sid,roles),'unsupported',bytes((self.assignment,)))
+                self.refused(self.plan_request(sid,((1,0),(2,1),(3,2),(4,3),(1,0))),'malformed')   # the same (fn, role, channel) twice
+            elif kind=='RUNNING-PLAN':
+                self.arm(sid,1,b'x');self.transfer(self.bits(b'y'),self.bits(b'x'));self.arm(sid);before=self.a.state()
+                self.ok(self.plan_request(sid));require(self.a.state()==before,'the same set changed a running target')
+                self.refused(self.plan_request(sid,((1,1),(2,0),(3,2),(4,3))),'unavailable',self.tlv(1,b'\6'))
+            elif kind=='CONFIGURE-FAIL':
+                self.arm(sid,1,b'x');self.transfer(self.bits(b'y'),self.bits(b'x'));self.arm(sid);self.a.fail_configure()
+                reply=self.c.exchange(self.req(2,'configure',sid,b'\0\0'));require(reply[3:5]==b'\1\1','failed configure must be completed failed');tlvs(reply[5:])
+                require(self.status()==(0,0,0,0,0,0,0),'failed configure left state, queue, arm or counters')
+                self.refused(self.arm_request(sid,1,b'x'),'unavailable',self.tlv(1,b'\6'));self.configure(sid);require(self.status()[0]==1,'new configure did not recover')
             elif kind=='PLAN-TAGS':
                 self.refused(self.plan_request(sid,((5,0),(2,1),(3,2),(4,3))),'unsupported',bytes((self.assignment,)));self.refused(self.req(1,'plan_apply',sid,self.tlv(self.assignment,b'\0'*4)),'malformed')
             elif kind=='CONFIGURE':
@@ -115,12 +125,11 @@ class SpiChecks:
                 req=self.arm_request(sid,1,b'a');self.ok(req);self.transfer(self.bits(b'x'),self.bits(b'a'));before=self.a.state();self.ok(req);require(self.a.state()==before,'arm replay rearmed consumed TX');self.transfer(self.bits(b'y'),[0]*8);require(self.status()[-2:]==(2,1),'arm replay accepted next transfer')
             elif kind=='REPLAY-CONFIG':
                 req=self.req(2,'configure',sid,b'\0\0');self.ok(req);self.configure(sid,3);self.arm(sid,1,b'a');before=self.a.state();self.ok(req);require(self.a.state()==before,'configure replay reset newer target')
-            elif kind in ('REPLACE','RELEASE','END','EXPIRY','FORCE','ACTIVE-RELEASE','ACTIVE-END','ACTIVE-EXPIRY','ACTIVE-FORCE'):
+            elif kind in ('RELEASE','END','EXPIRY','FORCE','ACTIVE-RELEASE','ACTIVE-END','ACTIVE-EXPIRY','ACTIVE-FORCE'):
                 self.configure(sid,3);self.arm(sid,1);self.transfer(self.bits(b'xy'),[0]*16);self.arm(sid,1,b'z')
                 if kind.startswith('ACTIVE-'):
                     self.a.cs(True);self.a.clock(0,1);self.a.clock(1,1);require(len(self.a.state()['bits'])==1 and self.a.state()['active'] and self.a.state()['pins'][2] in (3,4),'CS did not drive MISO before release');kind=kind.removeprefix('ACTIVE-')
-                if kind=='REPLACE':self.plan(sid)
-                elif kind=='RELEASE':self.release(sid)
+                if kind=='RELEASE':self.release(sid)
                 elif kind=='END':self.ok(self.c.request(self.c.core['end'],session=sid));self.c.session=None
                 elif kind=='EXPIRY':self.a.advance(1000);require(struct.unpack_from('<BI',self.c.success(self.c.request(self.c.core['lock_state'])))==(0,0),'SPI expiry');self.c.session=None
                 else:
@@ -128,8 +137,7 @@ class SpiChecks:
                     while replacement==sid:replacement=secrets.randbelow(0xffffffff)+1
                     self.c.corr=0;v=self.c.success(self.c.request(self.c.core['open'],struct.pack('<IB',1000,1),session=replacement));require(struct.unpack_from('<II',v)==(1000,self.c.boot),'force response');tlvs(v[8:]);self.c.session=replacement
                 self.closed();require(self.status()==(0,0,0,0,0,0,0),'plan close status')
-                if kind=='REPLACE':require(self.a.state()['plans']=={2:[0,1,2,3]},'replacement plan disappeared')
-                else:require(not self.a.state()['plans'],'closed plan retained')
+                require(not self.a.state()['plans'],'closed plan retained')
                 if kind=='FORCE':self.plan(replacement);self.configure(replacement);self.refused(old,'locked')
             elif kind=='SESSION':
                 for name,payload in [('configure',b'\0\0'),('arm',b'\1\0\0\0'),('read_rx',b'')]:self.refused(self.req(2,name,0,payload),'session_required')

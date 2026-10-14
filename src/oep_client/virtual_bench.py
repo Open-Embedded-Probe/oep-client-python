@@ -193,6 +193,7 @@ I2C_QUEUE_DEPTH = reg.FIXTURE_I2C_TARGET.tlv["describe"]["queue_depth"]
 I2C_MAX_STRETCH_US = reg.FIXTURE_I2C_TARGET.tlv["describe"]["max_stretch_us"]
 SPI_QUEUE_DEPTH = reg.FIXTURE_SPI_TARGET.tlv["describe"]["queue_depth"]
 SPI_CS_SETUP_NS = reg.FIXTURE_SPI_TARGET.tlv["describe"]["cs_setup_ns"]
+SPI_MODES = reg.FIXTURE_SPI_TARGET.tlv["describe"]["modes"]
 FORMATS_8 = (0x00, 0x04, 0x08, 0x10, 0x14, 0x18)   # 8N1 8E1 8O1 8N2 8E2 8O2: the formats the virtual bench UARTs take
 TRANSPORT = reg.CORE.enum["transport_kind"]
 SERIAL_KINDS = {TRANSPORT["uart_bridge"], TRANSPORT["usb_cdc"], TRANSPORT["usb_serial_jtag"]}
@@ -307,13 +308,13 @@ def _i2c_target(fn: int, channels: list[int], max_length: int, max_hz: int, feat
 
 
 def _spi_decl(max_length: int, max_hz: int, features: int, queue_depth: int,
-              cs_setup_ns: int = 0) -> tuple[bytes, ...]:
+              cs_setup_ns: int = 0, modes: int = 0x0F) -> tuple[bytes, ...]:
     """oep.fixture.spi-target's declarations besides its pins (fixture §4): max_length (bytes a transaction),
-    max_clock_hz, features (bit0 LSB first), queue_depth (tag 0x40 u8), and cs_setup_ns (tag 0x43 u32: the worst
-    CS-active-to-first-SCK time for which MISO carries the first bit - declared by a probe that drives MISO in software
-    once it sees CS; 0 = left out, MISO driven at once)."""
+    max_clock_hz, features (bit0 LSB first), queue_depth (tag 0x40 u8), modes (tag 0x41 u8, required: bit k = SPI mode
+    k), and cs_setup_ns (tag 0x43 u32: the worst CS-active-to-first-SCK time for which MISO carries the first bit -
+    declared by a probe that drives MISO in software once it sees CS; 0 = left out, MISO driven at once)."""
     return ((catalog.u16(MAX_LENGTH, max_length), catalog.u32(MAX_CLOCK_HZ, max_hz), catalog.u32(FEATURES, features),
-             catalog.u8(SPI_QUEUE_DEPTH, queue_depth))
+             catalog.u8(SPI_QUEUE_DEPTH, queue_depth), catalog.u8(SPI_MODES, modes))
             + ((catalog.u32(SPI_CS_SETUP_NS, cs_setup_ns),) if cs_setup_ns else ()))
 
 

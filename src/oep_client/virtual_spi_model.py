@@ -8,7 +8,7 @@ from .virtual_core import Core, Reject, Completed, tlv
 class Spi(Gpio):
     functions=(1,2)
     def __init__(self,ep,lsb=True):
-        super().__init__();self.ep=ep;self.lsb_available=lsb;self.idle={ch:0 for ch in range(8)};self.pins=dict(self.idle);self.reset()
+        super().__init__();self.ep=ep;self.lsb_available=lsb;self.modes=0x0f;self.idle={ch:0 for ch in range(8)};self.pins=dict(self.idle);self.fail_next=False;self.reset()
     def reset(self):
         self.configured=False;self.mode=0;self.bit_order=0;self.armed=None;self.rx=[];self.transactions=0;self.errors=0;self.active=False;self.sck=0;self.bits=[];self.output_index=0;self.ready=True
     def list_page(self,first,limit):
@@ -19,7 +19,7 @@ class Spi(Gpio):
         return bytes(page)
     def describe(self,fn):
         if fn==1:return super().describe(1)
-        return (tlv(7,b'\x10\x0f'),*(tlv(1,bytes((role,0,0,15))) for role in range(1,5)),tlv(2,struct.pack('<I',1000000)),tlv(3,struct.pack('<H',8)),tlv(5,struct.pack('<I',int(self.lsb_available))),tlv(64,b'\3'),tlv(67,b'\0'*4))
+        return (tlv(7,b'\x10\x0f'),*(tlv(1,bytes((role,0,0,15))) for role in range(1,5)),tlv(2,struct.pack('<I',1000000)),tlv(3,struct.pack('<H',8)),tlv(5,struct.pack('<I',int(self.lsb_available))),tlv(64,b'\3'),tlv(65,bytes((self.modes,))),tlv(67,b'\0'*4))
     def request_tags(self,fn,op,data):
         if fn==1:return super().request_tags(fn,op,data)
         seen=set()
@@ -46,7 +46,10 @@ class Spi(Gpio):
             if fn not in self.functions:raise Reject(1)
             if fn!=2 or role not in range(1,5) or ch not in range(4):raise Reject(11,bytes((raw,)))
         if not assignments:return b''
-        if len(assignments)!=4 or {row[2] for row in assignments}!=set(range(1,5)) or len({row[3] for row in assignments})!=4:raise Reject(3)
+        if len(assignments)!=4 or {row[2] for row in assignments}!=set(range(1,5)) or len({row[3] for row in assignments})!=4:raise Reject(11,bytes((assignments[0][0],)))   # each role once, distinct channels: unsupported (fixture §3/§4)
+        channels=[row[3] for row in sorted(assignments,key=lambda row:row[2])]
+        if channels==self.plans.get(2):return b''                       # the same set: nothing changes (plan §2.1)
+        if self.configured:raise Reject(4,tlv(1,b'\6'))                # state 1: a change is cause 6
         self.release_plans([2]);self.plans[2]=[row[3] for row in sorted(assignments,key=lambda row:row[2])];return b''
     def dispatch_request(self,fn,op,payload,tags):
         if fn==1:return self.plan(op,payload,tags)
@@ -55,7 +58,10 @@ class Spi(Gpio):
             mode,order=payload
             if mode>3 or order>1:raise Reject(3)
             if order and not self.lsb_available:raise Reject(11,b'\0')
+            if not self.modes>>mode&1:raise Reject(11,b'\0')       # not in describe's modes (fixture §4)
             if 2 not in self.plans:raise Reject(4,tlv(1,b'\6'))
+            if self.fail_next:                                     # taken, not brought up: state 0, all 0
+                self.fail_next=False;self.reset();self.events.append(('configure-failed',mode,order));return Completed(b'',1)
             self.reset();self.configured=True;self.mode=mode;self.bit_order=order;self.sck=mode>>1
             for ch in self.plans[2]:self.pins[ch]=0
             self.events.append(('configure',mode,order));return b''
@@ -84,11 +90,11 @@ class Spi(Gpio):
         ended_ns=self.ep.now_ns();count=len(self.bits)
         if self.configured:
             if count:
-                self.transactions+=1
-                if self.armed is None:self.errors+=1
+                self.transactions=min(self.transactions+1,0xffffffff)
+                if self.armed is None:self.errors=min(self.errors+1,0xffffffff)
                 else:
                     length,_=self.armed;overflow=len(self.rx)>=3;long=count>8*length
-                    if overflow or long:self.errors+=1
+                    if overflow or long:self.errors=min(self.errors+1,0xffffffff)
                     if not overflow:
                         data=bytearray(min(length,(count+7)//8))
                         for k,bit in enumerate(self.bits[:8*length]):data[k//8]|=bit<<(k%8 if self.bit_order else 7-k%8)
@@ -113,6 +119,7 @@ class SpiModel(GpioModel):
     def __init__(self,boot_id=None,*,lsb=True):
         self.milliseconds=0;self.spi_lsb=lsb;super().__init__(lambda:self.milliseconds,boot_id=boot_id)
     def install(self):self.extension=Spi(self.ep,self.spi_lsb);self.ep.current_core=Core(self.ep,self.extension)
+    def spi_fail_configure(self):self.extension.fail_next=True   # the next accepted configure does not come up
     def handle(self,request):
         e=self.extension;fixed,free=e.fixed,e.free
         if len(request)>=6:

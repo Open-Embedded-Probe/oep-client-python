@@ -11,3 +11,4 @@ class SampleI2cAdapter(SampleRouteAdapter):
     def write(self,address,data,end):return self.call('i2c_write',address,data,end)
     def read(self,address,count):return self.call('i2c_read',address,count)
     def advance(self,ms):return self.call('i2c_advance',ms)
+    def fail_configure(self):return self.call('i2c_fail_configure')

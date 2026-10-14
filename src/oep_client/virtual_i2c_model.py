@@ -2,13 +2,13 @@
 import copy
 import struct
 from .virtual_gpio_model import Gpio, GpioModel
-from .virtual_core import Core, Reject, tlv
+from .virtual_core import Core, Reject, Completed, tlv
 
 
 class I2c(Gpio):
     functions=(1,2)
     def __init__(self,ep,stretch=True,pullups=True):
-        super().__init__();self.ep=ep;self.stretch_available=stretch;self.internal_pullups=pullups;self.idle={ch:0 for ch in range(8)};self.pins=dict(self.idle);self.reset()
+        super().__init__();self.ep=ep;self.stretch_available=stretch;self.internal_pullups=pullups;self.idle={ch:0 for ch in range(8)};self.pins=dict(self.idle);self.fail_next=False;self.reset()
     def reset(self):self.configured=False;self.address=None;self.rx=[];self.tx=[];self.rx_frames=0;self.errors=0;self.stretch_us=0;self.pullups=False
     def list_page(self,first,limit):
         rows=[struct.pack('<HHBB',fn,0,1,len(name))+name for fn,name in ((1,b'oep.probe.plan'),(2,b'oep.fixture.i2c-target'))];page=bytearray(struct.pack('<HB',2,0))
@@ -46,7 +46,10 @@ class I2c(Gpio):
             if fn not in self.functions:raise Reject(1)
             if fn!=2 or role not in (1,2) or ch not in (0,1):raise Reject(11,bytes((raw,)))
         if not assignments:return b''
-        if len(assignments)!=2 or {r for _,_,r,_ in assignments}!={1,2} or len({ch for _,_,_,ch in assignments})!=2:raise Reject(3)
+        if len(assignments)!=2 or {r for _,_,r,_ in assignments}!={1,2} or len({ch for _,_,_,ch in assignments})!=2:raise Reject(11,bytes((assignments[0][0],)))   # each role once, distinct channels: unsupported (fixture §3/§4)
+        channels=[row[3] for row in sorted(assignments,key=lambda row:row[2])]
+        if channels==self.plans.get(2):return b''                       # the same set: nothing changes (plan §2.1)
+        if self.configured:raise Reject(4,tlv(1,b'\6'))                # state 1: a change is cause 6
         self.release_plans([2]);self.plans[2]=[ch for _,_,_,ch in sorted(assignments,key=lambda row:row[2])];return b''
     def dispatch_request(self,fn,op,payload,tags):
         if fn==1:return self.plan(op,payload,tags)
@@ -60,6 +63,10 @@ class I2c(Gpio):
             if address>127:raise Reject(3)
             if address<8 or address>=120:raise Reject(11,b'\0')
             if 2 not in self.plans:raise Reject(4,tlv(1,b'\6'))
+            if self.fail_next:                                     # taken, not brought up: state 0, queues and counters
+                self.fail_next=False;stretch=self.stretch_us;self.reset();self.stretch_us=stretch   # gone, stretch kept
+                for ch in self.plans[2]:self.pins[ch]=self.idle[ch]
+                self.events.append(('configure-failed',address));return Completed(b'',1)
             stretch=self.stretch_us;self.reset();self.stretch_us=stretch;self.configured=True;self.address=address;self.pullups=self.internal_pullups
             for ch in self.plans[2]:self.pins[ch]=1 if self.pullups else 6
             self.events.append(('configure',address));return b''
@@ -77,8 +84,8 @@ class I2c(Gpio):
         self.events.append(('write',address,data,end,ack,ns))
         if not ack or not data:return result
         overflow=len(self.rx)>=3;long=len(data)>8
-        if overflow or long:self.errors+=1
-        if not overflow:self.rx.append((data[:8],ns));self.rx_frames+=1
+        if overflow or long:self.errors=min(self.errors+1,0xffffffff)
+        if not overflow:self.rx.append((data[:8],ns));self.rx_frames=min(self.rx_frames+1,0xffffffff)
         return result
     def read(self,address,count):
         ack=self.configured and address==self.address;data=b''
@@ -91,6 +98,7 @@ class I2cModel(GpioModel):
     def __init__(self,boot_id=None,*,stretch=True,pullups=True):
         self.milliseconds=0;self.i2c_stretch=stretch;self.i2c_pullups=pullups;super().__init__(lambda:self.milliseconds,boot_id=boot_id)
     def install(self):self.extension=I2c(self.ep,self.i2c_stretch,self.i2c_pullups);self.ep.current_core=Core(self.ep,self.extension)
+    def i2c_fail_configure(self):self.extension.fail_next=True   # the next accepted configure does not come up
     def handle(self,request):
         e=self.extension;fixed,free=e.fixed,e.free
         if len(request)>=6:

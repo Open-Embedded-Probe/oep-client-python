@@ -64,7 +64,7 @@ def test_i2c_plan_roles_and_channels():
                 t.assignments(20, 20)):                             # both roles on one channel
         with pytest.raises(host.Rejected) as e:
             core.plan_apply(hst, bad)
-        assert detail(e) == m.MALFORMED
+        assert detail(e) == m.UNSUPPORTED                           # the role_assignment's tag (fixture §3)
     assert not any(a[0] == t.fn for a in ep.plan)
     with pytest.raises(host.Unsupported):
         core.plan_apply(hst, t.assignments(2, 21))                  # 2 is reserved (SWDIO): not a candidate
@@ -277,8 +277,8 @@ def test_spi_channel_groups_match_exactly():
     with pytest.raises(host.Unsupported):
         core.plan_apply(hst, t.assignments(18, 19, 27, 4))          # a mix of the two groups
     with pytest.raises(host.Rejected) as e:
-        core.plan_apply(hst, [(t.fn, 1, 18), (t.fn, 2, 19)])        # roles 3 and 4 missing: malformed first
-    assert detail(e) == m.MALFORMED
+        core.plan_apply(hst, [(t.fn, 1, 18), (t.fn, 2, 19)])        # roles 3 and 4 missing
+    assert detail(e) == m.UNSUPPORTED                               # the role_assignment's tag (fixture §4)
     core.plan_apply(hst, t.assignments(14, 13, 27, 26))             # group 2
     with pytest.raises(host.Unsupported):
         t.configure(0, t.LSB_FIRST)                                 # features bit0 not declared here
@@ -324,7 +324,7 @@ def test_spi_plan_holds_each_role_once():
                 t.assignments(20, 21, 22, 22)):                     # MISO and CS on one channel
         with pytest.raises(host.Rejected) as e:
             core.plan_apply(hst, bad)
-        assert detail(e) == m.MALFORMED
+        assert detail(e) == m.UNSUPPORTED                           # the role_assignment's tag (fixture §4)
     assert not any(a[0] == t.fn for a in ep.plan)
     assert (t.max_length, t.max_clock_hz, t.features, t.queue_depth) == (64, 3_000_000, t.FEATURE_LSB_FIRST, 8)
 
