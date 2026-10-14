@@ -60,17 +60,19 @@ class PortSpeedExecutionChecks(PortSpeedChecks):
                 require(held['protected']==start['protected'],'execution changed protected state')
                 require(held['ports'][0]['state']==2 and held['ports'][0]['baud']==230400,'execution expired port')
                 require(held['ports'][0]['deadline']==held['time_ms']+3000,'execution consumed idle interval')
-                require(held['lease_deadline']==start['lease_deadline']+duration,'execution consumed or renewed lease')
+                # core §6.1 (a09fa45): the lease does not run during execution and restarts when the answer is generated;
+                # waiting for the writer and the write's completion change nothing after that
+                require(held['lease_deadline']==held['time_ms']+lease,'execution consumed the lease or its answer did not restart it')
                 wait=599 if lease==1000 else 2999
                 self.a.advance(wait);waiting=self.observe('writer-wait')
                 require(waiting['ports']==held['ports'] and waiting['lease_deadline']==held['lease_deadline'],'writer wait paused or renewed timer')
                 require(waiting['protected']==held['protected'],'writer wait released protected state early')
                 self.a.finish();sent=self.observe('writer-complete')
                 require(sent['ports'][0]['state']==2 and sent['ports'][0]['deadline']==sent['time_ms']+3000,'response completion did not restart idle')
-                require(sent['lease_deadline']==sent['time_ms']+lease,'response completion did not restart lease')
+                require(sent['lease_deadline']==held['lease_deadline'],'response completion renewed lease')
                 require(self.a.events()[-1]['baud']==230400,'timed response sent after speed expiry')
                 # Wait to the exact limiting timer with no request to renew it.
-                boundary=min(lease,3000)
+                boundary=min(sent['lease_deadline']-sent['time_ms'],3000)
                 self.a.advance(boundary-1);self.speed(2,230400)
                 self.a.advance(1);self.speed(0,115200)
                 end=self.observe('final-boundary')['protected']

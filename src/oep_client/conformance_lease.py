@@ -21,25 +21,28 @@ class LeaseChecks(ReplayPressureChecks):
     def unhold(self):
         self.a.hold(self.a.primary, None); self.service()
 
-    def sent_deadline(self, before, after, lease=1000):
-        require(before['now_ms'] + lease <= after['deadline'] <= after['now_ms'] + lease,
-                'lease did not start at whole-response completion')
+    def generated(self, at, lease=1000):
+        # core §6.1 (a09fa45): the lease restarts when the answer is generated - rejected answers too - and waiting
+        # for the writer, a partial write, the write's completion or a closed route change nothing after that.
+        require(self.state()['deadline'] == at['now_ms'] + lease, 'lease did not restart at response generation')
 
     def whole(self):
         with self.c.holding(1000) as sid:
             self.setup(sid)
-            old = self.state(); self.a.wait_ms(100)
+            self.a.wait_ms(100)
             request = self.c.request(self.c.core['clock'], session=sid)
             try:
-                self.a.hold(self.a.primary, 0); self.send_batch([request])
+                self.a.hold(self.a.primary, 0); self.send_batch([request]); at = self.timing()
+                self.generated(at); renewed = self.state()['deadline']
                 self.a.wait_ms(150); self.service()
-                require(self.state()['deadline'] == old['deadline'], 'processing or waiting renewed lease')
+                require(self.state()['deadline'] == renewed, 'waiting for the writer paused or renewed lease')
                 self.a.hold(self.a.primary, 7); self.service()
                 require(self.a.receive(self.a.primary) == [], 'partial clock response completed')
-                require(self.state()['deadline'] == old['deadline'], 'partial response renewed lease')
+                require(self.state()['deadline'] == renewed, 'partial response renewed lease')
                 self.a.wait_ms(150)
-                before = self.timing(); self.unhold(); after = self.timing()
-                self.frames(self.a.primary, [request]); self.sent_deadline(before, after)
+                self.unhold(); self.frames(self.a.primary, [request])
+                require(self.state()['deadline'] == renewed, 'write completion renewed lease')
+                after = self.timing()
                 require(after['holder'] == sid and after['resources'] and after['subscriptions'], 'live state lost')
             finally: self.unhold()
 
@@ -47,18 +50,20 @@ class LeaseChecks(ReplayPressureChecks):
         with self.c.holding(1000) as sid:
             self.setup(sid)
             request = self.c.request(self.c.core['keepalive'], b'\x40', session=sid)
-            old = self.state(); self.a.wait_ms(100)
+            self.a.wait_ms(100)
             try:
-                self.a.hold(self.a.primary, 0); self.send_batch([request]); self.a.wait_ms(150)
-                require(self.state()['deadline'] == old['deadline'], 'queued rejection renewed lease')
-                before = self.timing(); self.unhold(); after = self.timing()
+                self.a.hold(self.a.primary, 0); self.send_batch([request]); at = self.timing()
+                self.generated(at); renewed = self.state()['deadline']
+                self.a.wait_ms(150)
+                require(self.state()['deadline'] == renewed, 'queued rejection paused or renewed lease')
+                self.unhold()
                 saved = self.frames(self.a.primary, [request], ['malformed'])[0]
-                self.sent_deadline(before, after)
+                require(self.state()['deadline'] == renewed, 'rejection write completion renewed lease')
                 self.a.wait_ms(100)
                 self.a.hold(self.a.primary, 0); self.send_batch([request]); self.a.wait_ms(100)
                 self.unhold()
                 require(self.frames(self.a.primary, [request], ['malformed'])[0] == saved, 'rejected replay changed')
-                require(self.state()['deadline'] == after['deadline'], 'rejected replay renewed lease')
+                require(self.state()['deadline'] == renewed, 'rejected replay renewed lease')
             finally: self.unhold()
 
     def no_renew(self):

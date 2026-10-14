@@ -15,7 +15,7 @@ def test_competing_writer_completion():
 @pytest.mark.parametrize('fault,kind',[
     ('old_corr','FORCE'),('old_result','REJECTED'),('old_token','FORCE'),('early_renew','FORCE'),
     ('stale_lease','FORCE'),('stale_resources','FORCE'),('stale_cache','FORCE'),
-    ('refusal_token','NO-FORCE'),('refusal_result','NO-FORCE'),('no_valid_renew','NO-FORCE'),
+    ('refusal_token','NO-FORCE'),('refusal_result','NO-FORCE'),('send_renew','NO-FORCE'),
     ('replay_renews','NO-FORCE'),('force_resources','DOUBLE-FORCE'),('reset_id','FORCE'),
     ('middle_renews','DOUBLE-FORCE'),('expiry_owner','EXPIRE-NEW'),('same_id_epoch','RETURN-ID'),
     ('new_request_sid','FORCE'),('expiry_early','EXPIRE-NEW'),('force_reply','FORCE'),('middle_reply','DOUBLE-FORCE')])
@@ -33,7 +33,7 @@ def test_response_race_observation_faults(fault,kind):
         if fault=='stale_cache':r['state']['cache']['3']='old'
         if fault=='refusal_token':next(e for e in events if e['action']=='prepare' and e['route']==1)['token']=[7,1]
         if fault=='refusal_result':next(e for e in events if e['action']=='prepare' and e['route']==1)['reply_hex']='0201000007'
-        if fault=='no_valid_renew':late['after']['deadline']=late['before']['deadline']
+        if fault=='send_renew':late['after']['deadline']=700+1000          # renewed at the write: pre-a09fa45 §6.1
         if fault=='replay_renews':next(e for e in events if e['action']=='replay')['after']['deadline']+=1
         if fault=='force_resources':next(e for e in events if e['action']=='prepare' and e['route']==1)['after']['live']={'1':[1,1]}
         if fault=='reset_id':r['state']['next_id']=1

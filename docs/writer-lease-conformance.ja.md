@@ -9,9 +9,9 @@
 `advance(ms)`は論理時計を進め、`execution(ms)`は次に実行する有効DMI要求の論理実行時間を指定する。
 実時計sleepやUSB転送は使わない。時計はfixtureの継続カウンタで、bootのuptimeは端点側が分離する。
 
-- 要求処理直後とwriter待ち中はleaseを更新しない。応答を書き出した時から1000 msで数え直す。
+- 応答を生成した時点から1000 msで数え直し、writer待ち中と書き出しの完了では更新しない（core a09fa45 §6.1）。
   rejectedでもsession判定を通った応答は更新する。同一要求再送では更新しない。
-- 実行時間1500 msはleaseより長いが、実行中は期限を数えない。writer待ちへ入った後は数える。
+- 実行時間1500 msはleaseより長いが、実行中は期限を数えない。応答の生成から数え、writer待ちでも数え続ける。
 - writer停止中に期限へ達したら、ownerと子stream/protocol/mailbox、connection、pinを解放する。
   閉じる直前のtarget/halt状態を保つ。両connectionを解放する。streamはbufferごと解放し、markは残さない（console §2）。
 - 線切れ判定済みのconnectionも、session期限切れの後始末として同じく閉じる。

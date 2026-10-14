@@ -237,6 +237,8 @@ class VirtualCapture:
             raise wrong_state()                                    # a role not in the fn's plan: cause 6 (§3.3)
         top = Fraction(self.max_hz, channels) if self.analog else self.max_hz   # an ADC's rate is shared by its channels
         if self.exact:
+            if top < self.min_hz:
+                raise t.refuse(TLV["rate"])                        # no rate in the range kept for this (§3.3)
             rate = Fraction(min(max(asked, self.min_hz), top))     # any rate in the range (rate_range exact)
         else:
             # Feasible divisor clocks decrease monotonically. Only the two around
@@ -271,8 +273,9 @@ class VirtualCapture:
                 raise Reject(m.UNAVAILABLE, m.tlv(reg.CORE.tlv["unavailable_payload"]["cause"],
                                                   bytes([reg.CORE.enum["unavailable_cause"]["limit"]])))   # more than a sample holds
             step = 8 // math.gcd(width, 8)                         # samples to a whole byte
-            if mode != MODE["one_shot"] and step > 1:
-                samples = max(step, samples // step * step)        # segments end on a byte: rounded down (§3.3)
+            if mode == MODE["streaming"] and step > 1:             # its own split (no samples TLV in mode 3): a
+                samples = max(step, samples // step * step)        # piece ends on a byte; repeat's segments take the
+                # samples asked and end padded (§1.1 rule 4) - rounding down is for capacity only (§3.3)
         if pre > self.max_pretrigger or (mode != MODE["streaming"] and pre >= samples):
             raise t.refuse(TLV["pretrigger"])                      # past max_pretrigger, or not below samples (§3.3)
         return {"mode": mode, "rate": rate, "samples": samples, "segments": segs, "trigger": trigger,

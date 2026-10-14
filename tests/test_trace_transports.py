@@ -813,3 +813,56 @@ def test_a_tcp_probe_named_by_unit_id_is_matched_without_letter_case(monkeypatch
     finally:
         proc.stdin.close()
         proc.wait(5)
+
+
+# ---- third review additions ----------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("name", sorted(virtual_bench.PROFILES))
+def test_a_probe_offers_at_most_one_vendor_bulk_and_one_hid(name):
+    """transports §3 (choosing the interface): a probe offers vendor bulk and HID in the OEP form and at most one of
+    each - every profile's fn 0 describe lists at most one transport of kind 4 and one of kind 5, and the virtual
+    bench refuses a second vendor bulk or HID (its USB model included) while one of each is fine."""
+    T = virtual_bench.TRANSPORT
+    ep = endpoint.Endpoint(virtual_bench.PROFILES[name](), Clock())
+    kinds = list(ep.transports.values())
+    assert kinds.count(T["vendor_bulk"]) <= 1 and kinds.count(T["hid"]) <= 1
+    for kind in ("vendor_bulk", "hid"):
+        if T[kind] not in ep.transports.values():
+            ep.add_transport(T[kind], interface=1)
+        with pytest.raises(ValueError):
+            ep.add_transport(T[kind], interface=2)
+    kinds = [v[1] for t, v in ep.decl[0] if t == virtual_bench.CORE_TRANSPORT]
+    assert kinds.count(T["vendor_bulk"]) == 1 and kinds.count(T["hid"]) == 1
+
+
+def test_the_usb_model_is_one_vendor_bulk_or_one_hid_interface():
+    """transports §3: the virtual bench's USB model adds its one vendor bulk (or HID) transport; a second of the same
+    kind on that probe is refused."""
+    ep = endpoint.Endpoint(virtual_bench.core_v1(), Clock())
+    virtual_bench_usb.Usb(ep, "bulk")
+    virtual_bench_usb.Usb(ep, "hid")
+    for kind in ("bulk", "hid"):
+        with pytest.raises(ValueError):
+            virtual_bench_usb.Usb(ep, kind)
+
+
+def test_each_accepted_tcp_connection_has_its_own_revision_and_credits():
+    """transports §1 (the TCP transport): every connection accepted on the one listener reports its index in confirm's
+    transport TLV, and the rules core applies per transport apply to each connection apart - the revision a confirm
+    chose is recorded per connection (a confirm on one leaves the other's), and each connection has its own
+    window / max_inflight credits (max_inflight queued on each at once, counted apart)."""
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
+    tcp = ep.add_transport(virtual_bench.TRANSPORT["tcp"])
+    for corr, link in ((1, "a"), (2, "b")):
+        r = m.Result.unpack(ep.handle(req(corr, m.OP_CONFIRM, m.CONFIRM_REQUEST + b"\x01\x01"), tcp, link=link))
+        assert r.succeeded and m.Tail.parse(r.payload[16:]).get(0x01) == bytes([tcp])
+    assert ep.revision_in_use == {"a": 1, "b": 1}
+    ep.handle(req(3, m.OP_CONFIRM, m.CONFIRM_REQUEST + b"\x02\x05"), tcp, link="b")       # chooses nothing
+    assert ep.revision_in_use == {"a": 1, "b": 1}
+    for link in ("a", "b"):
+        for k in range(ep.max_inflight):
+            assert ep.receive(req(10 + k, m.OP_CLOCK), (tcp, link)) == "queued"
+    assert ep.credits() == {(tcp, "a"): ep.max_inflight, (tcp, "b"): ep.max_inflight}
+    ep.process((tcp, "a"))
+    ep.sent((tcp, "a"))
+    assert ep.credits() == {(tcp, "a"): ep.max_inflight - 1, (tcp, "b"): ep.max_inflight}

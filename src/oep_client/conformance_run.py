@@ -32,7 +32,12 @@ class RunChecks(ResetChecks):
         if stopped==3:require(elapsed==0 and target['halted'],'preparation failure elapsed/hart state')
         else:
             require(elapsed==finishes[0][2]-resumes[0][2],'elapsed_us counted preparation or omitted halt wait')
-            require(elapsed==(100 if stopped==1 else timeout*1000+(200 if stopped==0 else 300)),'selected logical run duration differs')
+            begun=[row for row in access if row[0]=='run-begin']
+            # debug §4.4: the whole request, preparation and cleanup included, ends within max_op_ms; the wait is at most
+            # timeout_ms (with less time left, the stop is tried within what is left)
+            require(len(begun)==1 and finishes[0][2]-begun[0][2]<=before['max_op_ms']*1000,'run request exceeded max_op_ms')
+            if stopped!=1:require(resumes[0][2]<=rehalts[0][2]<=resumes[0][2]+timeout*1000,'run waited past timeout_ms')
+            if stopped==1:require(elapsed==100,'selected logical run duration differs')
             require(target['pc']==after_pc and target['gprs']==expected,'run reverted host/program PC/GPR changes')
             require(target['dcsr']&0x8003==0x8003,'run reverted ebreakm/prv M')
             require(target['halted']==(stopped!=2),'run final halted state')

@@ -63,9 +63,9 @@ def test_truncated_save_result_tail_is_detected(case):
 
 
 @pytest.mark.parametrize('fault,case',[
-    ('no_pause','RUN-1500-1000'),('early_renew','RUN-5000-60000'),
+    ('no_pause','RUN-1500-1000'),('no_generation_renew','RUN-5000-60000'),
     ('pause_writer','RUN-1500-1000'),('renew_writer','RUN-5000-1000'),
-    ('no_send_renew','RUN-1500-60000'),('revive_expired','EXPIRE-1500'),
+    ('send_renew','RUN-1500-60000'),('revive_expired','EXPIRE-1500'),
     ('busy_response','RUN-5000-1000'),('busy_execute','RUN-1500-1000'),
     ('wrong_elapsed','RUN-5000-1000'),('no_duration','RUN-1500-1000'),
     ('save_changes_pin','RUN-5000-1000'),('noop_writes','SAME'),
@@ -77,11 +77,11 @@ def test_execution_faults_are_detected(fault,case):
         nonlocal active
         active=name;return case_run(name)
     def bad_begin(req):
-        start=model.clock_ms;r=begin(req)
+        start=model.clock_ms;before=model.ep.current_core.deadline;r=begin(req)
         if active==case:
             core=model.ep.current_core;elapsed=model.clock_ms-start
             if fault=='no_pause':core.deadline-=elapsed
-            if fault=='early_renew':core.deadline=model.clock_ms+core.lease
+            if fault=='no_generation_renew':core.deadline=before+elapsed      # the pre-a09fa45 rule (core §6.1)
             if fault=='rejected_writes':model.writes+=1
             if fault=='capacity_writes':model.writes+=1
         return r
@@ -93,7 +93,7 @@ def test_execution_faults_are_detected(fault,case):
     def bad_finish():
         p=model.pending;deadline=model.ep.current_core.deadline;holder=model.ep.current_core.holder;r=finish()
         if active==case:
-            if fault=='no_send_renew':model.ep.current_core.deadline=deadline
+            if fault=='send_renew':model.ep.current_core.deadline=model.clock_ms+model.ep.current_core.lease
             if fault=='revive_expired' and holder is None:model.ep.current_core.holder=p['token'][0]
         return r
     def bad_handle(req,route=0):

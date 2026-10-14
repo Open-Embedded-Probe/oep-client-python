@@ -156,3 +156,62 @@ def test_plan_release_checks_every_fn_before_it_releases_any():
     except h.Rejected as err:
         r = err.result
     assert r.detail == m.UNAVAILABLE and ep.plan == before
+
+
+# ---- review 3 (2026-10-15): a refusal changes no pin and no function; the refusal table's order --------------------
+
+def _everything(ep):
+    """The state a refused plan request must leave as it was: the plan, every channel's electrical state, the gpio
+    modes, the fixture UART's configuration and received bytes."""
+    return (sorted(ep.plan), [ep.pin_state(ch) for ch in range(ep.channels)], dict(ep.gpio_modes),
+            dict(ep.uart_baud), repr(ep.uarts))
+
+
+def test_a_refused_plan_request_changes_no_pin_and_no_function():
+    """plan §2.1 (checked without side effects; one refusal changes nothing, the replaced fns' plans stay), §2.1 割り当て
+    の数, §2.2: a plan_apply refused unsupported, unavailable cause 1, cause 2 or cause 6, and a plan_release refused
+    unknown_function, leave every pin as it was - gpio's driven channel 4 still driven high, the channel it would have
+    moved to untouched, the configured UART's pins, baud and bytes - not only the set of assignments."""
+    import struct
+    from test_plan import GPIO, UART, cause
+    ep, hst = bench()
+    core.plan_apply(hst, [(GPIO, 1, 4), (UART, 1, 5), (UART, 2, 13)])
+    fixture.Gpio(hst, GPIO).set([(4, fixture.Gpio.OUTPUT_HIGH)])
+    uart = fixture.FixtureUart(hst, UART)
+    uart.configure(9600)
+    ep.uart_rx(UART, b"kept")
+    before = _everything(ep)
+    assert before[1][4] == ep.pin_state(4) and ep.pin_state(4).startswith("gpio")
+    refused = [(assignment(GPIO, 1, 14) + assignment(GPIO, 9, 15), m.UNSUPPORTED, None),   # gpio has no role 9
+               (assignment(GPIO, 1, 5), m.UNAVAILABLE, b"\x01"),                            # 5 is the UART's
+               (assignment(GPIO, 1, 14) + assignment(UART, 1, 18), m.UNAVAILABLE, b"\x06")] # the UART is running
+    for payload, detail, why in refused:
+        r = raw(hst, APPLY, payload)
+        assert r.detail == detail and (why is None or cause(r) == why), (payload, r.describe())
+        assert _everything(ep) == before, payload
+    ep.plan_roles = 3
+    r = raw(hst, APPLY, assignment(GPIO, 1, 4) + assignment(GPIO, 1, 14))      # 4 in all: past plan_roles
+    assert r.detail == m.UNAVAILABLE and cause(r) == b"\x02" and _everything(ep) == before
+    r = raw(hst, PLAN.op["plan_release"], struct.pack("<BHH", 2, GPIO, 99))
+    assert r.detail == m.UNKNOWN_FUNCTION and _everything(ep) == before
+    assert uart.read(uart.FROM_OLDEST).data == b"kept"
+
+
+@pytest.mark.parametrize("payload, detail", [
+    (assignment(99, 1, 4) + assignment(0, 1, 4), m.MALFORMED),                # fn 0 before an fn the probe lacks
+    (assignment(99, 1, 4) + assignment(4, 1, 4) + assignment(4, 1, 4), m.MALFORMED),   # the same triple twice
+    (assignment(4, 7, 4) + assignment(99, 1, 4), m.UNKNOWN_FUNCTION),         # no such fn before no such role
+    (assignment(5, 1, 4) + assignment(5, 9, 13), m.UNSUPPORTED),             # no such role before the pin conflict
+    (assignment(6, 0, 13) + assignment(6, 1, 14) + assignment(4, 7, 5), m.UNSUPPORTED),   # before plan_roles
+], ids=["fn0-before-unknown-fn", "twice-before-unknown-fn", "unknown-fn-before-role", "role-before-pin-conflict",
+        "role-before-plan-roles"])
+def test_plan_apply_refusals_follow_the_tables_order(payload, detail):
+    """plan §2.4 (plan_apply, core §4.3's order): malformed (form, a triple twice, fn 0) before unknown_function before
+    unsupported (role, channel, group) before unavailable (plan_roles, a pin conflict) - a request with two faults is
+    refused for the earlier row, and nothing changes."""
+    ep, hst = bench()
+    core.plan_apply(hst, [(4, 1, 4)])
+    ep.plan_roles = 2
+    r = raw(hst, APPLY, payload)
+    assert r.detail == detail, r.describe()
+    assert ep.plan == {(4, 1, 4)}

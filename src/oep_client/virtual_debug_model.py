@@ -58,13 +58,15 @@ class Debug(Dmseq):
         target=self.targets[parent]
         if op in (17,18):
             control=target['registers'].get(0x10,0)&~HARTSEL
-            self.writereg(parent,0x10,control if op==17 else control&~0x80000000)
+            self.writereg(parent,0x10,control&~0x80000000)
             if op==17:
+                # halt (debug §4 table, §4.2): allhalted seen, then haltreq lowered; already halted: lowered, ok
+                target['haltreq']=False
                 if not target['halted']:
                     self.access.append(('halt',parent))
                     if self.hart_failure:
                         target['haltreq']=False;self.writereg(parent,0x10,control&~0x80000000);return Completed(b'\x04'+tlv(127,b'x'),1)
-                    target.update(halted=True,haltreq=True);self.writereg(parent,0x10,control|0x80000000)
+                    target.update(halted=True,haltreq=False);self.writereg(parent,0x10,control&~0x80000000)
             else:
                 target['haltreq']=False;self.access.append(('resume',parent))
                 if self.hart_failure:return Completed(b'\x05'+tlv(127,b'x'),1)

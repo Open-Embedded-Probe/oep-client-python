@@ -605,8 +605,12 @@ class SerialLink:
         if getattr(self, "_probing", False):
             raise e                                        # probing: the probe() caller closes the link (transports §3)
         why = f"a request and its resend got no answer ({type(e).__name__}: {e})"
-        if self.framing != "length":                       # a length-framed link has just resynced with a confirm
-            self.failed_transport = why                    # (`_recover`): recovered; a serial port recovers next
+        # a length-framed link whose framing broke has just resynced with a confirm (`_recover`): recovered. A serial
+        # port recovers next; so does TCP, whose boundaries hold (`_recover` did nothing): the connection is closed and
+        # opened again, and confirmed, before anything else goes out (core §5.1: TCP closes and opens it again)
+        if self.framing != "length" or (self._keeps_boundaries()
+                                        and not isinstance(getattr(self, "link_error", None), FramingLost)):
+            self.failed_transport = why
         raise TransportFailed(why) from e
 
     def recover_transport(self, tries: int = 3) -> None:

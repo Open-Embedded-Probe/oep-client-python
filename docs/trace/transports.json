@@ -221,12 +221,14 @@
     "tests/test_virtual_bench_serve_tcp_connections.py::test_two_clients_at_once_share_one_lock",
     "tests/test_virtual_bench_serve_tcp_connections.py::test_notifications_go_only_to_the_subscribers_connection_and_move_with_the_session",
     "tests/test_virtual_bench_serve_tcp_connections.py::test_a_fourth_connection_is_accepted_and_closed_at_once",
-    "tests/test_virtual_bench_serve_tcp_connections.py::test_tcp_connections_sets_the_limit"
+    "tests/test_virtual_bench_serve_tcp_connections.py::test_tcp_connections_sets_the_limit",
+    "tests/test_trace_transports.py::test_each_accepted_tcp_connection_has_its_own_revision_and_credits",
+    "tests/test_trace_core.py::test_the_revision_a_confirm_chose_is_kept_per_transport_until_the_next"
    ],
    "mutants": [
     "tests/test_conformance_tcp_peers.py::test_checker_catches_response_leak_to_other_connection"
    ],
-   "note": "one listener = one describe entry (kind 6, 0xFF) named by every connection's confirm; per-connection rules; connection limit"
+   "note": "one listener = one describe entry (kind 6, 0xFF) named by every connection's confirm; per-connection rules (revision in use, window / max_inflight credits, notifications); connection limit"
   },
   "transports:2:1": {
    "text": "- 同じ経路では、受け取る完全な message の順序を送った順序に保つ。分割",
@@ -377,10 +379,16 @@
    "verify": [
     "tests/test_trace_transports.py::test_the_host_takes_the_vendor_interface_by_class_subclass_protocol_alone",
     "tests/test_hid_stream.py::test_the_espusbdevice_vendor_report_is_found_with_its_id_and_sizes[63]",
-    "tests/test_hid_stream.py::test_a_keyboard_is_not_a_vendor_report"
+    "tests/test_hid_stream.py::test_a_keyboard_is_not_a_vendor_report",
+    "tests/test_trace_transports.py::test_a_probe_offers_at_most_one_vendor_bulk_and_one_hid[esp32-v003]",
+    "tests/test_trace_transports.py::test_a_probe_offers_at_most_one_vendor_bulk_and_one_hid[esp32-v003-64]",
+    "tests/test_trace_transports.py::test_a_probe_offers_at_most_one_vendor_bulk_and_one_hid[p4-bench]",
+    "tests/test_trace_transports.py::test_a_probe_offers_at_most_one_vendor_bulk_and_one_hid[p4-x035]",
+    "tests/test_trace_transports.py::test_a_probe_offers_at_most_one_vendor_bulk_and_one_hid[rp2350-pins]",
+    "tests/test_trace_transports.py::test_the_usb_model_is_one_vendor_bulk_or_one_hid_interface"
    ],
    "mutants": [],
-   "note": "vendor bulk by class 0xFF/0x4F/0x45 only; HID by usage page 0xFF4F usage 0x45 only (client fixed)"
+   "note": "vendor bulk by class 0xFF/0x4F/0x45 only; HID by usage page 0xFF4F usage 0x45 only (client fixed); a probe offers at most one vendor bulk and one HID (bench fixed: add_transport / the USB model refuse a second)"
   },
   "transports:3:10": {
    "text": "- raw CDC を併設する probe は、最初の発見に使える vendor",

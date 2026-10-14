@@ -32,6 +32,7 @@ from oep_client.virtual_core import Completed, Reject
     ('halt_not_stop','HALT-RESUME'),('halt_failure_left','HALT-FAILURE'),
     ('line_has_value','POLL-LINE'),('timeout_no_value','POLL-TIMEOUT'),
     ('zero_us_twice','POLL-US'),('oversized','OUTPUT-BOUND'),('boundary_effect','OUTPUT-BOUND'),('boundary_tail','OUTPUT-BOUND'),('hartsel_left','HARTSEL-HALT'),('resume_req_left','HARTSEL-RESUME'),('halt_req_left','HARTSEL-HALT-FAIL'),
+    ('halt_ok_req_left','HARTSEL-HALT'),('halt_ok_req_left','HARTSEL-HALT-ALREADY'),('halt_ok_req_left','HALT-RESUME'),
 ])
 def test_debug_checker_detects_independent_faults(fault,case):
     model,c,a=setup();install=model.install
@@ -74,6 +75,8 @@ def test_debug_checker_detects_independent_faults(fault,case):
             if op in (17,18) and fault=='hartsel_left':e.writereg(parent,0x10,e.readreg(parent,0x10)|((0x3ff<<6)|(0x3ff<<16)))
             if op==18 and fault=='resume_req_left':e.writereg(parent,0x10,e.readreg(parent,0x10)|0x80000000)
             if op==17 and outcome and fault=='halt_req_left':e.writereg(parent,0x10,e.readreg(parent,0x10)|0x80000000)
+            if op==17 and not outcome and fault=='halt_ok_req_left':   # debug §4 table: haltreq kept after allhalted
+                e.targets[parent]['haltreq']=True;e.writereg(parent,0x10,e.readreg(parent,0x10)|0x80000000)
             if op==18 and fault=='resume_twice':e.access.append(('resume',parent))
             elif op==17 and fault=='halt_not_stop':e.targets[parent]['halted']=False
             elif op==17 and fault=='halt_failure_left' and outcome:e.targets[parent]['haltreq']=True

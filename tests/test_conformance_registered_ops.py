@@ -53,6 +53,7 @@ def test_every_minimal_mandatory_op_is_checked(name,code):
  ('oep.fixture.analog',{1,2,19,23,24,25},True),('oep.fixture.analog',{25},True),('oep.fixture.capture-group',{1},False),('oep.fixture.capture-group',{1,2},True),
  ('oep.fixture.capture-group',{19},False),('oep.fixture.capture-group',{1,2,19},False),
  ('oep.probe.link',{18},False),('oep.probe.link',{18,19},True),('oep.probe.link',{19},True),('oep.target.riscv-dm',{17,18},True),('oep.target.console',{20},False),('oep.target.console',{18,20},True),('oep.target.console',{19,21},True),('oep.fixture.uart',{20},False),('oep.fixture.uart',{18,19,20,21},True),('oep.fixture.i2c-target',{20},True),('oep.wire.rvswd',{16},True),('oep.wire.swio',{16},True),('oep.wire.swd',{16},True),
+ ('oep.target.arm-adi',{17},False),('oep.target.arm-adi',{18},False),('oep.target.arm-adi',{17,18},True),   # debug §6: transfer alone; blocks a pair
 ])
 def test_optional_ops_pairs_and_calibration(name,extra,passed):
     model,c=setup();fn=next(fn for fn,n in model.selection.items() if n==name);model.extension.offered[fn].update(extra)

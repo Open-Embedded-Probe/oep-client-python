@@ -140,7 +140,7 @@ def test_same_open_mutations_are_detected(defect):
             if defect == 'lease':
                 core.lease = 3000; core.deadline = old_deadline
                 result = result[:5] + struct.pack('<I', 3000) + result[9:]
-            elif defect == 'lease_timer': core.lease = 3000
+            elif defect == 'lease_timer': core.lease = 3000; core.deadline = core.ep.now() + 3000   # counts another lease
             elif defect == 'force_release' and force: model.extension.release()
             elif defect == 'redirect': model.extension.routes[1] = adapter.peer
             elif defect == 'unsubscribe': model.extension.subscriptions.clear()
@@ -177,10 +177,11 @@ def test_keepalive_side_effects_are_detected(defect):
     core = model.ep.current_core; handle = core.handle
     def altered(data, transport, **kwargs):
         _, corr, fn, op, sid = struct.unpack_from('<BHHBI', data)
+        before = core.deadline
         result = handle(data, transport, **kwargs)
         if fn == 0 and op == 18 and sid == core.holder:
-            if defect == 'no_renew': core.renewal = None
-            elif defect == 'lease': core.lease = 3000
+            if defect == 'no_renew': core.deadline = before                   # the answer did not restart it (§6.1)
+            elif defect == 'lease': core.lease = 3000; core.deadline = core.ep.now() + 3000
             elif defect == 'resources': model.extension.live.clear()
             elif defect == 'redirect': model.extension.routes[1] = adapter.peer
             elif defect == 'unsubscribe': model.extension.subscriptions.clear()
@@ -257,6 +258,7 @@ def test_invalid_owner_side_effects_are_detected(defect):
     def altered(data, transport, **kwargs):
         _, corr, fn, op, sid = struct.unpack_from('<BHHBI', data)
         same = fn == 0 and op == 16 and sid == core.holder
+        before = core.deadline
         result = handle(data, transport, **kwargs)
         if same and result[3:4] == b'\0':
             if defect == 'accept': result = result[:3] + b'\x01\0' + struct.pack('<II',1000,17)
@@ -265,7 +267,7 @@ def test_invalid_owner_side_effects_are_detected(defect):
             elif defect == 'route': model.extension.routes[1] = adapter.peer
             elif defect == 'sequence': model.extension.subscriptions[1] = 0
             elif defect == 'history': core.cache = type(core.cache)((k,v) for k,v in core.cache.items() if k == corr)
-            elif defect == 'lease': core.renewal = None
+            elif defect == 'lease': core.deadline = before                     # a rejected answer must restart it
         return result
     core.handle = altered
     runner.c.confirm(); runner.c.identity()

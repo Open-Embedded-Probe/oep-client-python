@@ -164,7 +164,7 @@ class RetentionChecks(ReplayPressureChecks):
                             (reopen, b'\x02' + reopen[1:3] + b'\x01\0' + opened),
                             'same-S open was not recorded')
                     require(start + lease <= after['deadline'] <= finish + lease,
-                            'same-S open did not update lease from response completion')
+                            'same-S open did not update lease from response generation')
                     self.record(request, request, None)
                     self.replay_unchanged(request, reason='result_lost')
                     self.replay_unchanged(retained, saved)
@@ -213,7 +213,7 @@ class RetentionChecks(ReplayPressureChecks):
                     require(after['high'] == corr and history.get(corr) == (request, frame),
                             'keepalive was not recorded')
                     require(start + lease <= after['deadline'] <= finish + lease,
-                            'keepalive did not renew the original lease from response completion')
+                            'keepalive did not renew the original lease from response generation')
                     self.replay_unchanged(owned, saved)
                     self.replay_unchanged(request, frame)
                     self.a.stimulate(fn, 12); self.service()

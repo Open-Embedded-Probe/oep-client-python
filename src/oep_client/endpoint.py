@@ -783,6 +783,7 @@ class Endpoint:
         self.config: dict[tuple[int, int], bytes] = {}   # (item tag, channel) -> value (probe.config §1)
         self.generation = 1                            # the changes of this boot, from 1 (probe.config §2)
         self.saved: dict | None = getattr(self, "saved", None)   # the stored items (they outlive a reboot)
+        self.saved_unreadable = getattr(self, "saved_unreadable", False)   # a save left whose integrity is unknown (outlives a reboot)
         self.saved_generation = 0                      # state's saved_generation (0: none, unreadable or partial)
         self.storage_state, self.storage_reason = 0, 0
         self.storage_fault: str | None = None          # TEST HOOK: the next save / erase fails ("old" / "none" / "unreadable")
@@ -800,6 +801,8 @@ class Endpoint:
         self.speed_frame_busy = False                  # TEST HOOK: a frame on the raised port is not finished yet
         if self.saved is not None:
             self._apply_saved()                        # disable before idle (probe.config §3)
+        elif self.saved_unreadable:
+            self.storage_state, self.storage_reason = 2, 1   # nothing applied: state 2, reason 1 at the next boot (§3)
         self._park(self._boot_channels())              # every free pin's idle state before the first answer (core §8)
 
     def _own(self, fn: int, tag: int, fmt: str, default: int) -> int:
@@ -1184,6 +1187,8 @@ class Endpoint:
         self.requests.append(req)
         self._transport = transport
         self._via = transport if link is None else link
+        self._lapse()                                              # an expired lease is cleaned up before the next
+        #                                                            request's processing, its resend check too (core §6.1)
         header = self._header(req)                                 # core §4.3: the header, before the resend table
         if header is not None:
             return m.Result(req.corr, m.REJECTED, header).pack()
@@ -1796,7 +1801,8 @@ class Endpoint:
         """TEST HOOK: the electrical state the probe gives channel `ch` now, as a word a test can compare:
         "reset" (disabled: never touched), "wire" (a live connection's pin at its rest state between exchanges),
         "wire-free" (the same after an exchange went unanswered, until one succeeds: undriven, no pull - never a pull-up
-        on a clock resting low; debug §2, swio §3.2), "idle <mode>" (the idle item's, hi-z
+        on a clock resting low; debug §2), "wire-free pull-up" (swio's one line then: released to its pull-up, never
+        driven high; debug §3.2), "idle <mode>" (the idle item's, hi-z
         without one), "gpio <mode>" (after a set, or taken in its idle state), "uart-tx-high" / "input" (a fixture
         UART's TX at the plan, its RX), "open-drain" / "open-drain pull-up" (an i2c-target from configure: pulls low or
         releases, never drives high; pull-up only when it declares internal pull-ups), "miso-driven" / "miso-hi-z" /
@@ -1806,7 +1812,9 @@ class Endpoint:
             return "reset"
         conn = next((c for c in self.conns.values() if ch in c.pair), None)
         if conn is not None:
-            return "wire-free" if conn.free else "wire"
+            if not conn.free:
+                return "wire"
+            return "wire-free pull-up" if self.names.get(conn.fn) == "oep.wire.swio" else "wire-free"
         idle = f"idle {self.IDLE_NAMES.get(self.parked.get(ch, 0), 'hi-z')}"
         for fn, role, c in sorted(self.plan):
             if c != ch or self._listens(fn):
@@ -1894,6 +1902,9 @@ class Endpoint:
         """A transport the virtual bench also serves (virtual_bench_serve's TCP listener: kind 6, interface 0xFF): listed in fn 0's
         describe under the next unused index - an index is never reused (core §7.5) - which every confirm accepted on
         it reports (transports §1, core §7.1). -> its index."""
+        one_only = {virtual_bench.TRANSPORT["vendor_bulk"], virtual_bench.TRANSPORT["hid"]}
+        if kind in one_only and kind in self.transports.values():
+            raise ValueError("a probe offers at most one vendor bulk and one HID interface (transports §3)")
         index = max(self.transports, default=-1) + 1
         self.transports[index] = kind
         self.static[0] = tuple(self.static.get(0, ())) + (catalog.tlv(virtual_bench.CORE_TRANSPORT, bytes([index, kind, interface])),)
@@ -3077,14 +3088,14 @@ class Endpoint:
                 raise unavailable("storage_full")                  # past max_bytes, before anything (§4)
             if self._storage_failed():
                 return m.COMPLETED, m.FAILED, struct.pack("<I", self.generation)   # the same fixed part (§3)
-            self.saved = dict(self.config)
+            self.saved, self.saved_unreadable = dict(self.config), False
             self.storage_state, self.storage_reason, self.saved_generation = 1, 0, self.generation
             return m.COMPLETED, m.SUCCESS, struct.pack("<I", self.generation)
         if op == _CFG.op["erase"]:
             t.tail()
             if self._storage_failed():
                 return m.COMPLETED, m.FAILED, b""
-            self.saved = None
+            self.saved, self.saved_unreadable = None, False
             self.storage_state, self.storage_reason, self.saved_generation = 0, 0, 0
             return m.COMPLETED, m.SUCCESS, b""
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
@@ -3097,10 +3108,10 @@ class Endpoint:
         if fault is None:
             return False
         if fault == "none":
-            self.saved = None
+            self.saved, self.saved_unreadable = None, False
             self.storage_state, self.storage_reason, self.saved_generation = 0, 0, 0
         elif fault == "unreadable":
-            self.saved = None
+            self.saved, self.saved_unreadable = None, True
             self.storage_state, self.storage_reason, self.saved_generation = 2, 1, 0
         return True
 
@@ -3161,7 +3172,7 @@ class Endpoint:
         for tag, value in m.split_tlvs(b"".join(items)):
             new[(tag & 0x7F, struct.unpack_from("<H", value)[0])] = value
         if saved:
-            self.saved = new
+            self.saved, self.saved_unreadable = new, False
             self._apply_saved()
         else:
             self.config = new

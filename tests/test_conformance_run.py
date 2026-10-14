@@ -33,6 +33,7 @@ from oep_client.virtual_core import Completed, Reject, tlv
     ('prep_running','PREPARE-LINE'),('program_omitted','PROGRAM-EFFECTS'),
     ('other_connection','CONSOLE-STOPPED'),('mailbox_interleave','CONSOLE-STOPPED'),
     ('frame_over_accepted','FRAME-OVER'),('frame_unknown_tlv','FRAME-BOUND'),('reject_effect','TIMEOUT'),
+    ('over_budget','TIMEOUT-HALTED'),('over_budget','NOT-HALTED'),
 ])
 def test_run_checker_detects_independent_faults(fault,case):
     model,c,a=setup();install=model.install
@@ -61,6 +62,9 @@ def test_run_checker_detects_independent_faults(fault,case):
             elif fault=='invalid_values' and data[1]==2:data=data[:10]+b'\x01'+struct.pack('<I',1)+data[11:]
             elif fault=='elapsed_preparation':data=data[:6]+struct.pack('<I',struct.unpack_from('<I',data,6)[0]+400)+data[10:]
             elif fault=='elapsed_halt_wait' and data[1]==0:data=data[:6]+struct.pack('<I',1000)+data[10:]
+            elif fault=='over_budget' and data[1] in (0,2):   # debug §4.4: the whole wait of timeout_ms, past max_op_ms
+                i=max(k for k,row in enumerate(e.access) if row[0]=='run-finish');e.access[i]=e.access[i][:2]+(e.access[i][2]+600,)
+                data=data[:6]+struct.pack('<I',struct.unpack_from('<I',data,6)[0]+600)+data[10:]
             elif fault=='elapsed_prepare' and data[1]==3:data=data[:6]+struct.pack('<I',400)+data[10:]
             elif fault=='reverse_outputs' and count:data=data[:11]+b''.join(data[11+4*i:15+4*i] for i in reversed(range(count)))+data[end:]
             elif fault=='deduplicate' and count==4:data=data[:10]+b'\x03'+data[11:19]+data[23:27]+data[end:]

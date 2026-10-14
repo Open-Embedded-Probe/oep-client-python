@@ -36,7 +36,9 @@ class ConfigExecutionChecks(ConfigChecks):
                 held=self.observe(name+'-prepared');writing=name.startswith(('RUN-','EXPIRE-'))
                 elapsed=duration if writing else 0
                 require(held['time_ms']==start['time_ms']+elapsed,'save execution elapsed time differs')
-                require(held['core']['deadline']==start['core']['deadline']+elapsed,'save execution consumed or renewed lease')
+                # core §6.1 (a09fa45): the lease does not run while save runs and restarts when its answer is generated
+                # (rejected answers too); waiting for the writer and the write change nothing after that
+                require(held['core']['deadline']==held['time_ms']+lease,'save execution consumed the lease or its answer did not restart it')
                 require(held['core']['holder']==sid and held['gpio']==start['gpio'],'save execution changed ownership/live resources')
                 require(held['writes']==start['writes']+int(writing),'save execution backend calls differ')
                 suppressed=[e for e in held['events'] if e['action']=='input-result']
@@ -47,7 +49,7 @@ class ConfigExecutionChecks(ConfigChecks):
                 else:
                     require(len(p)>=4 and int.from_bytes(p[:4],'little')==g,'prepared save generation differs');tlvs(p[4:])
                 if name.startswith('EXPIRE-'):
-                    self.a.advance(599);require(self.a.state()['core']['holder']==sid,'writer lease expired early')
+                    self.a.advance(lease-1);require(self.a.state()['core']['holder']==sid,'writer lease expired early')
                     self.a.advance(1);expired=self.observe(name+'-expired')
                     require(expired['core']['holder'] is None and expired['gpio']['plans']=={} and expired['gpio']['pins'][1]==1,'writer wait did not expire lease/resources')
                     self.a.finish();self.c.session=None
@@ -57,8 +59,8 @@ class ConfigExecutionChecks(ConfigChecks):
                     wait=lease-401;self.a.advance(wait);waiting=self.observe(name+'-waiting')
                     require(waiting['core']==held['core'] and waiting['gpio']==held['gpio'],'writer wait paused/renewed timer or resources')
                     self.a.finish();sent=self.observe(name+'-sent')
-                    require(sent['core']['deadline']==sent['time_ms']+lease,'save response completion did not renew lease')
-                    self.a.advance(lease-1);require(self.a.state()['core']['holder']==sid,'renewed save lease expired early')
+                    require(sent['core']['deadline']==held['core']['deadline'],'save response completion renewed lease')
+                    self.a.advance(sent['core']['deadline']-sent['time_ms']-1);require(self.a.state()['core']['holder']==sid,'renewed save lease expired early')
                     self.a.advance(1);self.c.session=None
                     require(self.a.state()['core']['holder'] is None and self.a.state()['gpio']['plans']=={},'renewed save lease did not expire at boundary')
                 self.observe(name+'-final')

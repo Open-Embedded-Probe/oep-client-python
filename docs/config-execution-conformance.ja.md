@@ -20,7 +20,7 @@ lease1,000/60,000msの4条件では、開始前に400msを消費する。
 完了済みsaveの同一要求再送は保存を再実行せず、期限切れセッションも更新しない。
 
 同内容save、未知critical TLV、容量超過には実writeが無く、仮想実行時間も増えない。
-拒否のraw tag/cause（cause TLV）と成功時の応答generationを確認し、これらの応答も送信完了からleaseを更新する。
+拒否のraw tag/cause（cause TLV）と成功時の応答generationを確認し、これらの応答も生成時にleaseを更新し、送信完了では更新しない（core a09fa45 §6.1）。
 各clock値は明示fixtureの制御条件で、一般Probeへ正確な実行時間を要求しない。
 Checksが見るbuffer結果とmodelのprepared/sentイベントを区別する。
 保存実行中は21入力の実戻り値を記録し、モデルが「抑止した」と記録するだけではPASSにしない。

@@ -786,3 +786,353 @@ def test_the_host_waits_max_op_ms_for_run_and_dmi_not_their_own_times():
     dm.dmi([dm.step_delay(10), dm.step_read(0x11)])
     assert [ms for op, ms in seen if op in (RV["run"], RV["dmi"])][-2:] == [virtual_bench.MAX_OP_MS] * 2
     assert {op for op, _ in seen} >= {RV["run"], RV["dmi"]}
+
+
+# ---- review 3 (2026-10-15): rules the first two reviews passed without a test that asserts them ------------------
+
+@pytest.mark.parametrize("profile", ["p4-bench", "esp32-v003"])
+def test_every_target_interface_is_listed_before_attach_and_every_target_op_without_a_connection_is_no_resource(profile):
+    """debug (before §0): the target interfaces (oep.target.riscv-dm and oep.target.console) are in list before any
+    attach; every riscv-dm op the probe offers and console's open, each naming no connection, is rejected
+    no_resource - nothing made, the targets untouched."""
+    ep, hv = bench(virtual_bench.PROFILES[profile]())
+    names = {e.name for e in core.list_entries(h.Host(lambda b: ep.handle(b, 1)))}
+    assert {"oep.target.riscv-dm", "oep.target.console"} <= names and not ep.conns
+    dm, con = ep.fns["oep.target.riscv-dm"], ep.fns["oep.target.console"]
+    bodies = {**HIGH_LEVEL, "dmi": struct.pack("<H", 0)}
+    states = {k: copy.deepcopy((t.dmi, t.halted, t.regs, t.mem)) for k, t in ep.targets.items()}
+    asked = 0
+    for name, body in bodies.items():
+        if not ep.offers(dm, RV[name]):
+            continue
+        r = hv.raw(dm, RV[name], struct.pack("<I", 0x7777) + body)
+        assert (r.resolution, r.detail) == (m.REJECTED, m.NO_RESOURCE), name
+        asked += 1
+    assert asked >= 7
+    r = hv.raw(con, reg.TARGET_CONSOLE.op["open"], struct.pack("<IB", 0x7777, console.Console.DMSEQ))
+    assert (r.resolution, r.detail) == (m.REJECTED, m.NO_RESOURCE)
+    assert not ep.conns and not ep.streams
+    assert {k: (t.dmi, t.halted, t.regs, t.mem) for k, t in ep.targets.items()} == states
+
+
+def test_swdio_is_the_role_1_channel_and_swclk_the_role_2_one():
+    """debug §0 rule 2: swdio / swclk read as "the channel of pin role 1 / 2" - a channel_group's (role 1, role 2) pair
+    named the other way round is not a pair the declaration allows (unsupported: attach 0x00, scan 0x00 + the index);
+    with role_channels a role-2-only channel is never swdio; the client builds (role 1, role 2) pairs."""
+    ep, hv = bench()
+    a = ep.pairs[1][0]
+    swapped = (a[1], a[0])
+    r = hv.raw(1, W["attach"], fixed(swapped))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00") and not ep.conns
+    r = hv.raw(1, W["scan"], b"\x02" + struct.pack("<HHHH", *a, *swapped))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00" + m.tlv(0x40, b"\x01"))
+    hst = h.Host(lambda b: ep.handle(b, 1))                              # describe only: no session
+    assert riscv.Wire(hst).candidate_pairs() == ep.pairs[1]
+    probe = wire_with(virtual_bench.rp2350_pins(), "oep.wire.rvswd",
+                      lambda tlvs: [t for t in tlvs if t[0] != catalog.ROLE_CHANNELS]
+                      + list(virtual_bench._roles({1: [0], 2: [1]})))
+    ep, hv = bench(probe)
+    ep._target(1, (0, 1)).present = True
+    ep._target(1, (1, 0)).present = True
+    r = hv.raw(1, W["attach"], fixed((1, 0)))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00")
+    attach(hv, (0, 1))
+    hst = h.Host(lambda b: ep.handle(b, 1))
+    assert riscv.Wire(hst).candidate_pairs() == [(0, 1)]
+
+
+def test_the_client_scan_sends_the_untried_candidates_again():
+    """debug §1 (scan は任意の有限探索): the probe answers how many it tried from the front; the host puts the untried
+    ones in its next request - every request the client sends lists exactly the candidates not yet tried, in order,
+    until none is left."""
+    from test_target_parts import ScriptedHost, ok
+    seen = []
+
+    def scan(p):
+        seen.append([struct.unpack_from("<HH", p, 1 + 4 * i) for i in range(p[0])])
+        first = seen[-1][0]
+        found = struct.pack("<BHHI", 1, *first, 0x00400C82) if first == (5, 6) else b""
+        return ok(struct.pack("<BB", 1, len(found) // 9) + found)       # one tried a request
+    hst = ScriptedHost({(1, riscv.Wire.SCAN): scan})
+    pairs = [(1, 2), (3, 4), (5, 6), (7, 8)]
+    found = riscv.Wire(hst).scan(pairs)
+    assert seen == [pairs[i:] for i in range(len(pairs))]
+    assert [f.pins for f in found] == [(5, 6)]
+
+
+@pytest.mark.parametrize("profile,wire", [("p4-bench", "oep.wire.rvswd"), ("esp32-v003", "oep.wire.swio")])
+def test_on_a_connection_the_probe_sends_no_set_up_and_changes_nothing_by_itself(profile, wire):
+    """debug §2 (target の状態を変えない; reset後のDMの待ち: the set-up only in a wait): the set-up writes, which may
+    reset the target on these wires, go out in attach (and scan) only - target ops, unanswered exchanges, the
+    recovery that follows and a dropped link coming back add none, and the failed exchanges change nothing on the
+    target."""
+    ep, hv = bench(virtual_bench.PROFILES[profile]())
+    fn, dm = ep.fns[wire], ep.fns["oep.target.riscv-dm"]
+    pair = ep.pairs[fn][0]
+    cid = struct.unpack_from("<I", attach(hv, pair, method=1, fn=fn).payload)[0]
+    tg = ep.targets[(fn, pair)]
+    assert tg.bringup[:4] == SETUP
+    tg.bringup.clear()
+    con = reg.TARGET_CONSOLE
+    sid = struct.unpack_from("<I", hv.ok(ep.fns["oep.target.console"], con.op["open"],
+                                         struct.pack("<IB", cid, console.Console.DMSEQ)))[0]
+    read = struct.pack("<IHBB", cid, 1, STEP["read"], 0x11)
+    hv.ok(dm, RV["dmi"], read)
+    hv.ok(dm, RV["read_block"], struct.pack("<IIH", cid, 0x2000_0000, 1))
+    before = copy.deepcopy((tg.dmi, tg.regs, tg.mem, tg.halted, tg.dpc))
+    tg.present = False                                                     # unanswered exchanges
+    for op, body in (("halt", b""), ("dmi", read[4:]), ("read_block", struct.pack("<IH", 0x2000_0000, 1))):
+        r = hv.raw(dm, RV[op], struct.pack("<I", cid) + body)
+        assert (r.resolution, r.detail) == (m.COMPLETED, m.FAILED), op
+    hv.raw(ep.fns["oep.target.console"], con.op["read"], struct.pack("<IBQH", sid, 1, 0, 16), session=False)
+    assert copy.deepcopy((tg.dmi, tg.regs, tg.mem, tg.halted, tg.dpc)) == before
+    tg.present = True
+    hv.ok(dm, RV["dmi"], read)                                             # an exchange succeeds again
+    tg.drop_at = {tg.dmi_accesses: "ones_line"}                            # a dropped link, brought back by the probe
+    hv.raw(dm, RV["dmi"], read)
+    hv.ok(dm, RV["dmi"], read)
+    assert cid in ep.conns and tg.bringup == []
+
+
+@pytest.mark.parametrize("profile,wire", [("p4-bench", "oep.wire.rvswd"), ("esp32-v003", "oep.wire.swio")])
+def test_status_line_alone_closes_nothing_and_the_host_learns_it_from_connections(profile, wire):
+    """debug §2 (線切れの判定は...): a request answered status line does not close the connection by itself - the host
+    learns whether it still lives from connections (the client's Wire.connections still lists it); once the probe
+    has decided the line lost, connections no longer does."""
+    clock = Clock()
+    ep = endpoint.Endpoint(virtual_bench.PROFILES[profile](), clock)
+    hst = h.Host(lambda b: ep.handle(b, 1))
+    hst.open(3000)
+    w = riscv.Wire(hst, wire)
+    pair = ep.pairs[ep.fns[wire]][0]
+    conn, _ = w.attach(halt=False, pins=pair)
+    ep.targets[(ep.fns[wire], pair)].present = False
+    with pytest.raises(riscv.TargetError) as e:
+        riscv.RiscvDm(hst, conn).halt()
+    assert e.value.status == reg.STATUS["line"]
+    assert [c.connection for c in w.connections()] == [conn]
+    ep.lose(conn)
+    assert w.connections() == []
+
+
+@pytest.mark.parametrize("profile,wire", [("p4-bench", "oep.wire.rvswd"), ("esp32-v003", "oep.wire.swio")])
+def test_after_an_unanswered_exchange_the_line_is_released_until_one_succeeds(profile, wire):
+    """debug §2 (線が応えない間の線) with §3.2: from an exchange that went unanswered until one succeeds the probe drives
+    no line between exchanges - rvswd's lines undriven with no pull, swio's one line released to its pull-up (never
+    driven high); a success brings the connection's rest state back."""
+    ep, hv = bench(virtual_bench.PROFILES[profile]())
+    fn, dm = ep.fns[wire], ep.fns["oep.target.riscv-dm"]
+    pair = ep.pairs[fn][0]
+    cid = struct.unpack_from("<I", attach(hv, pair, fn=fn).payload)[0]
+    lines = [ch for ch in pair if ch != 0xFFFF]
+    assert {ep.pin_state(ch) for ch in lines} == {"wire"}
+    ep.targets[(fn, pair)].present = False
+    assert hv.raw(dm, RV["halt"], struct.pack("<I", cid)).payload == bytes([reg.STATUS["line"]])
+    free = "wire-free pull-up" if wire == "oep.wire.swio" else "wire-free"
+    assert {ep.pin_state(ch) for ch in lines} == {free}
+    ep.targets[(fn, pair)].present = True
+    assert hv.raw(dm, RV["halt"], struct.pack("<I", cid)).succeeded
+    assert {ep.pin_state(ch) for ch in lines} == {"wire"}
+
+
+def test_connections_fill_each_page_as_far_as_one_frame_holds():
+    """debug §2.1: each page holds as many entries as one frame holds - an answer with more = 1 has no room for the
+    next entry; the last page says more = 0."""
+    ep, hv = bench(many_seats())
+    for i in range(6):
+        p = (2 * i, 2 * i + 1)
+        ep._target(1, p).present = True
+        attach(hv, p)
+    rows_all = []
+    first = 0
+    while True:
+        r = hv.raw(1, W["connections"], bytes([first]), session=False)
+        more, page = rows(r.payload)
+        rows_all += page
+        if not more:
+            break
+        entry = 14                                                         # the next one: no target_id here
+        assert m.RESULT_HEADER + len(r.payload) + entry > ep.probe.max_frame
+        first += len(page)
+    assert len(rows_all) == 6 and first > 0
+
+
+def test_attach_under_reset_checks_the_speed_only_after_the_dm_answered():
+    """debug §3 (resetの線を離した後の待ちは§2。DMが答えてから速さを確認する): an attach whose DM never answers within
+    max_op_ms after the reset line's release fails status line before any speed check - no ABSTRACTAUTO or PROGBUF0
+    write, the scratch as it was, no connection; one whose DM answers in time checks the scratch after the wait."""
+    ep, hv = bench(virtual_bench.esp32_v003())
+    fn = ep.fns["oep.wire.swio"]
+    pair = ep.pairs[fn][0]
+    tg = ep.targets[(fn, pair)]
+    tg.dmi[0x20] = 0xDEADBEEF
+    reset = m.tlv(T_ATTACH["reset"], struct.pack("<HH", 23, 20), critical=True)
+    tg.restart_ms = virtual_bench.MAX_OP_MS + 100
+    r = hv.raw(fn, W["attach"], fixed(pair) + reset)
+    assert (r.resolution, r.detail, r.payload) == (m.COMPLETED, m.FAILED, bytes([reg.STATUS["line"]]))
+    assert not ep.conns and all(a not in (0x18, 0x20) for a, _ in tg.bringup) and tg.dmi[0x20] == 0xDEADBEEF
+    tg.restart_ms = 300
+    attach(hv, pair, reset, fn=fn)
+    assert ep.settle_log[-1] == 300 and [a for a, _ in tg.bringup if a in (0x18, 0x20)] == [0x18, 0x20, 0x20]
+
+
+@pytest.mark.parametrize("how", ["detach", "end", "lapse", "force", "lost", "cleanup"])
+def test_every_way_a_connection_closes_frees_its_pins(how):
+    """debug §2 (connection が閉じたら、その組の channel は core §8 の空きの状態になる): whichever way the connection goes -
+    detach, end, lease expiry, force, a lost line, a failed cleanup - its pins go back to their idle state."""
+    clock = Clock()
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), clock)
+    hst = h.Host(lambda b: ep.handle(b, 1))
+    hst.open(1000)
+    pair = ep.pairs[1][0]
+    conn, _ = riscv.Wire(hst).attach(halt=True, pins=pair, idle_clock="low")
+    assert {ep.pin_state(ch) for ch in pair} == {"wire"}
+    if how == "detach":
+        riscv.Wire(hst).detach(conn)
+    elif how == "end":
+        hst.end()
+    elif how == "lapse":
+        clock.t = 5000
+        ep.tick()
+    elif how == "force":
+        assert Host(ep, session=0x99).open(force=1).succeeded
+    elif how == "lost":
+        ep.lose(conn)
+    else:
+        ep._target_of(conn).restore_fails = True
+        with pytest.raises(riscv.TargetError):
+            riscv.RiscvDm(hst, conn).write_block(0x2000_0000, struct.pack("<2I", 7, 8))
+    assert conn not in ep.conns
+    assert all(ep.pin_state(ch).startswith("idle") for ch in pair), [ep.pin_state(ch) for ch in pair]
+
+
+def test_connections_report_the_target_id_read_at_attach():
+    """debug §2.1: an entry's tid is the target_id read at attach - what the target holds later does not change it."""
+    ep, hv = bench()
+    pair = ep.pairs[1][0]
+    tg = ep.targets[(1, pair)]
+    tg.target_id = 0x035E0601
+    attach(hv, pair)
+    tg.target_id = 0x11111111
+    (row,) = rows(hv.raw(1, W["connections"], b"\x00", session=False).payload)[1]
+    assert row[3:] == (1, struct.pack("<I", 0x035E0601))
+
+
+def test_the_client_sends_rvswd_idle_clock_critical_and_nothing_for_the_default():
+    """debug §3 (the TLV table: attach's 0x04 idle_clock, rvswd only, critical; 0 high - also when left out - 1 low): the
+    client's attach sends tag 0x84 with 0 / 1 for "high" / "low", and no TLV when none is asked (the probe's high)."""
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
+    sent = []
+
+    def link(b):
+        sent.append(m.Request.unpack(b))
+        return ep.handle(b, 1)
+    hst = h.Host(link)
+    hst.open(3000)
+    w = riscv.Wire(hst)
+    pair = ep.pairs[1][0]
+    for idle, value in (("high", 0), ("low", 1), (None, None)):
+        conn, _ = w.attach(halt=False, pins=pair, idle_clock=idle)
+        tail = dict(m.split_tlvs(sent[-1].payload[9:]))
+        assert tail.get(T_ATTACH["idle_clock"] | m.TAG_CRITICAL) == (None if value is None else bytes([value]))
+        assert T_ATTACH["idle_clock"] not in tail
+        assert ep.conns[conn].idle_clock == (value or 0)
+        w.detach(conn)
+
+
+def test_a_minimal_wire_needs_no_scan_no_second_connection_and_no_console():
+    """debug (before §0): the minimal wire is attach / detach / connections and one connection - the declarations
+    checker passes a rvswd fn alone (no console selected) that offers no scan and declares no max_connections (one);
+    the bench serves such a wire: attach, a target op, connections, detach."""
+    from oep_client.conformance_oep_declarations import OepDeclarationChecks
+    from test_conformance_oep_declarations import setup as decl_setup
+    model, c = decl_setup()
+    r = OepDeclarationChecks(c, {1: "oep.wire.rvswd"}).run()
+    assert r["status"] == "passed", [(x["id"], x.get("error")) for x in r["checks"] if x["status"] != "passed"]
+    assert 16 not in r["observed"]["oep_required_ops"]["1"] and "console_mechanisms" not in r["observed"]
+    probe = wire_with(virtual_bench.p4_bench(), "oep.wire.rvswd",
+                      lambda tlvs: [t for t in tlvs if t[0] != virtual_bench.MAX_CONNECTIONS])
+    probe = virtual_bench._again(probe, [o for o in probe.offered if o.name != "oep.target.console"])
+    ep, hv = bench(probe)
+    assert "oep.target.console" not in ep.fns
+    cid = struct.unpack_from("<I", attach(hv, ep.pairs[1][0]).payload)[0]
+    assert hv.raw(ep.fns["oep.target.riscv-dm"], RV["halt"], struct.pack("<I", cid)).succeeded
+    assert [row[0] for row in rows(hv.raw(1, W["connections"], b"\x00", session=False).payload)[1]] == [cid]
+    hv.ok(1, W["detach"], struct.pack("<I", cid))
+
+
+# ---- review 3, debug §4-§7 (2026-10-15): the op tables' lock / optional columns, swd's pin roles ----------------
+
+OPTIONAL_RV = ("halt", "resume", "reset", "read_block", "write_block", "run", "step")
+
+
+@pytest.mark.parametrize("op", OPTIONAL_RV)
+def test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out(op):
+    """debug §4 (the op table's 要否 column, rule 1): dmi is the only mandatory op - a riscv-dm fn whose ops leave out
+    `op` answers it unknown_operation (nothing runs, the hart as it was) while dmi still works; the same fn with the
+    op declared answers it. read_block / write_block are left out together (a pair)."""
+    from test_virtual_bench_rules_2026_10_06 import ops_without, with_tlvs
+    left = ("read_block", "write_block") if op in ("read_block", "write_block") else (op,)
+    probe = with_tlvs(virtual_bench.p4_bench(), "oep.target.riscv-dm", ops_without("oep.target.riscv-dm", *left))
+    body = HIGH_LEVEL[op]
+    for declared, ep_probe in ((False, probe), (True, virtual_bench.p4_bench())):
+        ep, hv = bench(ep_probe)
+        pair = ep.pairs[1][0]
+        cid = struct.unpack_from("<I", attach(hv, pair, method=1).payload)[0]
+        tg = ep.targets[(1, pair)]
+        before = (tg.halted, tg.dpc, dict(tg.regs), dict(tg.mem))
+        r = hv.raw(2, RV[op], struct.pack("<I", cid) + body)
+        if declared:
+            assert r.resolution == m.COMPLETED, r.describe()
+        else:
+            assert (r.resolution, r.detail) == (m.REJECTED, m.UNKNOWN_OPERATION), op
+            assert (tg.halted, tg.dpc, dict(tg.regs), dict(tg.mem)) == before
+            assert hv.raw(2, RV["dmi"], struct.pack("<IHBB", cid, 1, STEP["read"], 0x11)).succeeded
+
+
+def test_swd_and_arm_adi_ops_need_the_lock_and_connections_does_not():
+    """debug §5 / §6 (the op tables' ロック column): swd's attach and detach and arm-adi's transfer, read_block and
+    write_block sent with session_id 0 are session_required and change nothing; swd's connections answers without the
+    lock while another session holds it (the logical ARM model: swd fn 3, arm-adi fn 5); swd's scan likewise (the
+    logical scan model, whose swd offers scan)."""
+    from test_conformance_arm_adi import setup as arm_setup
+    model, c, a = arm_setup()
+    c.confirm()
+    swd = reg.WIRE_SWD.op
+    adi = reg.TARGET_ARM_ADI.op
+    pair = a.pairs[3][0]
+    with c.holding(3000) as sid:
+        r = c.success(c.request(swd["attach"], struct.pack("<BHHI", 0, *pair, 2000), session=sid, fn=3))
+        cid = struct.unpack_from("<I", r)[0]
+        before = a.state()
+        for fn, op, payload in ((3, swd["attach"], struct.pack("<BHHI", 0, *pair, 2000)),
+                                (3, swd["detach"], struct.pack("<I", cid)),
+                                (5, adi["transfer"], struct.pack("<IH", cid, 0)),
+                                (5, adi["read_block"], struct.pack("<IIH", cid, 0x2000, 1)),
+                                (5, adi["write_block"], struct.pack("<IIHI", cid, 0x2000, 1, 5))):
+            c.rejected(c.request(op, payload, session=0, fn=fn), "session_required")
+        assert a.state() == before
+        listing = c.success(c.request(swd["connections"], b"\x00", session=0, fn=3))
+        assert listing[1] == 1 and struct.unpack_from("<I", listing, 2)[0] == cid
+    assert swd["connections"] in reg.WIRE_SWD.lock_free and not reg.TARGET_ARM_ADI.lock_free
+    from test_conformance_scan import setup as scan_setup                  # a swd fn that offers scan
+    model, c, a = scan_setup()
+    c.confirm()
+    before = a.state()
+    c.rejected(c.request(swd["scan"], b"\x01" + struct.pack("<HH", *a.pairs[3][0]), session=0, fn=3), "session_required")
+    assert a.state() == before
+
+
+def test_swds_swdio_is_pin_role_1_and_swclk_pin_role_2():
+    """debug §5 (線と packet): the swd wire's lines are SWDIO (pin role 1) and SWCLK (pin role 2) - the registry's roles,
+    and the client reads its (swdio, swclk) candidate pair from describe by role, not by order (a channel_group naming
+    role 2 first gives the same pair); the rest of the rule (SWD packets, turnaround) is the line's and not modelled."""
+    from oep_client import arm
+    from test_target_parts import FNS, ScriptedHost, ok
+    assert reg.WIRE_SWD.enum["pin_role"]["swdio"] == 1 and reg.WIRE_SWD.enum["pin_role"]["swclk"] == 2
+    for group in ([(1, 10), (2, 11)], [(2, 11), (1, 10)]):
+        def describe(p, group=group):
+            fn = struct.unpack_from("<H", p)[0]
+            return ok(b"\x00" + (catalog.channel_group(1, group) if fn == FNS["oep.wire.swd"] else b""))
+        hst = ScriptedHost({(0, m.OP_DESCRIBE): describe})
+        assert arm.SwdWire(hst).candidate_pairs() == [(10, 11)], group

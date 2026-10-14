@@ -82,10 +82,10 @@ class Core:
         return struct.pack('<I', remaining) + (tlv(1, self.owner) if self.owner else b'')
 
     def response_sent(self, token, *, check_expiry=True):
+        # The lease restarted when the answer was generated (core a09fa45 §6.1): waiting to write it, writing it,
+        # or dropping it with a closed route changes nothing. A model hands the token over only to let time pass.
         if check_expiry:
             self.tick()
-        if token is not None and token == (self.holder, self.generation):
-            self.deadline = self.ep.now() + self.lease
 
     def handle(self, data, transport, *, admission_reason=None, defer_send=False):
         self.renewal = None
@@ -206,13 +206,10 @@ class Core:
         except Reject as exc:
             result = answer(exc.reason, exc.payload)
         if passed_session and sid == self.holder:
+            # The lease did not run while the request ran and restarts from the answer's generation, rejected answers
+            # too, whether the answer then waits for the writer, is written or is dropped (core a09fa45 §6.1).
             self.renewal = (sid, self.generation)
-            if defer_send:
-                # Pause only for actual execution. Waiting to write is idle time.
-                self.deadline += self.ep.now() - started
-            else:
-                # Synchronous model API hands over the whole reply here.
-                self.response_sent(self.renewal, check_expiry=False)
+            self.deadline = self.ep.now() + self.lease
         if sid and sid == self.last:
             cap = self.ep.remember_max
             self.cache[corr] = (data if len(data) <= cap else None, result if len(result) <= cap else None)

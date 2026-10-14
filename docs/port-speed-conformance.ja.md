@@ -116,7 +116,7 @@ max_op_ms5000の宣言と明示execution controlが必要。部品はprivate設�
 source/sink × 実行1500/3500ms × lease1000/60000msの8ケース、VERIFY、OTHER-ROUTEとcontext1を扱う。
 400ms経過後に正常なframeを受け、実行中はcommitted idle期限とlease期限を進めない。
 実行後のwrite待ちは、短leaseなら残り600msの599ms、長leaseならidle2999msまで進める。
-期限が待ち中にずれないこと、応答完了からidle3000ms/lease_msを数え直すこと、
+期限が待ち中にずれないこと、応答完了からidle3000msを数え直し、leaseは応答生成時から数えて送信完了で変えないこと（core a09fa45 §6.1）、
 その後の999/1000または2999/3000境界を確認する。
 固定した既知sourceデータとsink応答、live GPIO/plan/所有権も照合する。
 

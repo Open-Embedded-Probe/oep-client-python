@@ -37,7 +37,12 @@ def test_checker_detects_pin_release_omission(kind):
 def test_checker_detects_failure_to_renew(kind):
     model,c=setup();install=model.install
     def broken_install():
-        install();model.ep.current_core.response_sent=lambda *args,**kwargs:None
+        install();core=model.ep.current_core;handle=core.handle
+        def no_renewal(data,transport,**kwargs):               # answers past the session check do not restart the lease
+            before=core.deadline;holder=core.holder;out=handle(data,transport,**kwargs)
+            if holder is not None and core.holder==holder and data[3:6]!=b'\0\0\x10':core.deadline=before
+            return out
+        core.handle=no_renewal
     model.install=broken_install;checker=GpioLifecycleChecks(c,SampleGpioLifecycleAdapter(model));checker.cases=(kind,)
     r=checker.run();assert next(row for row in r['checks'] if row['id']=='CORE-GPIO-LIFECYCLE-'+kind)['status']=='failed',r['checks']
 

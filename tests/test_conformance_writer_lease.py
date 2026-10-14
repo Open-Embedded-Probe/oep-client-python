@@ -21,7 +21,7 @@ import pytest
 
 
 @pytest.mark.parametrize('fault,case',[
-    ('accept_renew','DELIVERY'),('wait_pause','DELIVERY'),('cached_renew','DELIVERY'),
+    ('send_renew','DELIVERY'),('no_generation_renew','DELIVERY'),('wait_pause','DELIVERY'),('cached_renew','DELIVERY'),
     ('no_execution_pause','EXECUTION'),('no_expiry','EXPIRED'),
     ('stale_token','EXPIRED'),('no_generation','EXPIRED'),
     ('resources_left','EXPIRED'),('parent_first','EXPIRED'),
@@ -37,7 +37,9 @@ def test_writer_lease_checker_detects_independent_faults(fault,case):
         def broken_sent(token,**kwargs):
             if fault=='cached_renew' and token is None and core.holder is not None:core.deadline=model.milliseconds+core.lease
             if fault=='stale_token' and token is not None and core.holder is None:core.holder=token[0]
-            return sent(token,**kwargs)
+            out=sent(token,**kwargs)
+            if fault=='send_renew' and token is not None and token==(core.holder,core.generation):core.deadline=model.ep.now()+core.lease
+            return out
         def broken_release():
             old=core.generation;release()
             if fault=='no_generation':core.generation=old
@@ -51,8 +53,9 @@ def test_writer_lease_checker_detects_independent_faults(fault,case):
         core.response_sent=broken_sent;core.release=broken_release;e.close_connection=broken_close
     model.install=faulty_install
     def broken_accept(req):
-        old=model.execution_ms;result=accept(req);core=model.ep.current_core
-        if fault=='accept_renew':core.deadline=model.milliseconds+core.lease
+        core=model.ep.current_core;before=core.deadline;old=model.execution_ms;result=accept(req)
+        # the pre-a09fa45 rule (renewed at the write) or no renewal at all: core §6.1 restarts it at the generation
+        if fault in ('send_renew','no_generation_renew') and core.holder is not None:core.deadline=before+old
         if fault=='no_execution_pause':core.deadline-=old
         return result
     def broken_advance(ms):

@@ -15,10 +15,12 @@ class WriterLeaseChecks(CutChecks):
             req=self.dmi_request(sid,parent,[b'\x01\x05'] if rejected else [self.write_reg(4,42)])
             self.a.accept(req)
             try:
-                held=self.a.state();require(held['deadline']==old['deadline'] and held['holder']==sid and parent in held['connections'],'processing renewed or lost lease')
+                # core §6.1 (a09fa45): the lease restarts when the answer is generated (rejected ones too); waiting
+                # for the writer and the write's completion change nothing after that
+                held=self.a.state();require(held['deadline']==held['now_ms']+1000 and held['holder']==sid and parent in held['connections'],'lease did not restart at response generation, or ownership lost')
                 self.a.advance(300);require(self.a.state()['deadline']==held['deadline'],'writer wait paused or renewed lease');frame=self.c.exchange(req);sent=self.a.state()
                 require(frame[3:5]==bytes((self.c.reg['resolutions']['rejected'],self.c.reasons['malformed'])) if rejected else frame[3:5]==b'\x01\0','deferred response resolution')
-                require(sent['deadline']==sent['now_ms']+1000 and parent in sent['connections'] and rid in sent['streams'],'lease did not restart at writer completion')
+                require(sent['deadline']==held['deadline'] and parent in sent['connections'] and rid in sent['streams'],'writer completion renewed lease')
                 if replay_expired:
                     self.a.advance(1000);require(self.c.exchange(req)==frame,'expired replay lost cached response')
                     after=self.a.state();require(after['holder'] is None and not after['connections'] and not after['streams'],'cached response restored expired ownership')
@@ -32,9 +34,9 @@ class WriterLeaseChecks(CutChecks):
             parent,rid=self.prepare(sid);before=self.a.state();self.a.execution(1500)
             req=self.dmi_request(sid,parent,[self.read(4)]);self.a.accept(req)
             try:
-                held=self.a.state();require(held['now_ms']==before['now_ms']+1500 and held['deadline']==before['deadline']+1500 and held['holder']==sid,'execution consumed lease instead of pausing it')
-                self.a.advance(999);self.a.tick();require(parent in self.a.state()['connections'] and rid in self.a.state()['streams'],'lease expired before paused deadline')
-                frame=self.c.exchange(req);after=self.a.state();require(frame[3:5]==b'\x01\0' and after['deadline']==after['now_ms']+1000,'post-execution writer did not renew lease')
+                held=self.a.state();require(held['now_ms']==before['now_ms']+1500 and held['deadline']==held['now_ms']+1000 and held['holder']==sid,'execution consumed lease instead of pausing it, or the answer did not restart it')
+                self.a.advance(999);self.a.tick();require(parent in self.a.state()['connections'] and rid in self.a.state()['streams'],'lease expired before the deadline its answer set')
+                frame=self.c.exchange(req);after=self.a.state();require(frame[3:5]==b'\x01\0' and after['deadline']==held['deadline'],'post-execution writer completion renewed lease')
             finally:self.cleanup_waiter(req)
     def expiry(self,cut=False):
         self.fresh()

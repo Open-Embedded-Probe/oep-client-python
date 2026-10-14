@@ -2925,3 +2925,523 @@ def test_event_bytes_are_not_counted_toward_min_bytes():
     ep._events(lc.fn, [bytes([0x7E]) + bytes(400)])
     pushed = ep.pushes()
     assert [f[0] for f in pushed] == [m.ROLE_EVENT] and ep.captures[lc.fn].unsent() == 750
+
+
+# ---- third review of §0-§5 (docs/trace/review3/core-a.json) -----------------------------------------------------------
+
+def test_the_preflight_reports_describe_text_with_control_characters_replaced(monkeypatch, tmp_path):
+    """core §2.1: the hardware preflight's report shows fn 0's describe text (firmware, model, unit_id, chip) - with C0
+    controls, 0x7F and invalid UTF-8 replaced first. (Before: decoded strictly - bad UTF-8 failed the probe and 0x7F
+    went into the report as it came.)"""
+    from oep_client import hardware
+    from test_hardware import physical_equipment, simulated_transport
+    hst, _, _ = simulated_transport(monkeypatch)
+    real = core.describe
+    fw = CORE.tlv["describe"]["firmware"]
+
+    def bent(h_, fn=0):
+        tlvs = real(h_, fn)
+        return [(t, b"fw\x1b[2J\x7f\xff" if t == fw else v) for t, v in tlvs] if fn == 0 else tlvs
+    monkeypatch.setattr(core, "describe", bent)
+    lock = tmp_path / "shared.lock"
+    lock.touch()
+    report = hardware.physical_preflight(physical_equipment(), lock_path=lock)
+    got = report["probes"][0]
+    assert report["status"] == "passed", got
+    assert got["firmware"] == "fw�[2J��"
+    assert not any(ord(c) < 0x20 or ord(c) == 0x7F for v in got.values() if isinstance(v, str) for c in v)
+
+
+def _data(fn, seq, data, tail=b""):
+    return bytes([m.ROLE_DATA]) + struct.pack("<HHQH", fn, seq, 0, len(data)) + data + tail
+
+
+def test_a_notification_with_a_tlv_past_its_end_or_numbered_0_is_broken():
+    """core §2.2: in an event or a data frame too, a TLV whose len runs past the frame, or a TLV numbered 0 (0x00 or
+    0x80), makes it broken - the host reads nothing from it; the same frame without it reads normally."""
+    gen = reg.FIXTURE_LOGIC.tlv["data"]["generation"]
+    good = _data(7, 1, b"abc", m.tlv(gen, struct.pack("<I", 5)))
+    assert cap._unpack_push(good)[3:5] == (b"abc", 5)
+    stopped = bytes([m.ROLE_EVENT]) + struct.pack("<HHB", 7, 2, cap.EVENT_STOPPED) + struct.pack("<BBI", 1, 0, 5)
+    assert cap.unpack_event(stopped).generation == 5
+    for bad in (b"\x7e\x05\x00ab", b"\x00\x00\x00", b"\x80\x01\x00x"):
+        with pytest.raises(m.ProtocolError):
+            cap._unpack_push(good + bad)
+        with pytest.raises(m.ProtocolError):
+            cap.unpack_event(stopped + bad)
+
+
+def test_answers_and_notifications_carry_no_bit_7_and_the_host_skips_one_that_does():
+    """core §2.2: bit 7 is the critical mark of requests only - the probe's answers (confirm, lock_state after an owner
+    sent critical, locked, unavailable, unsupported, describe of every fn), events and data frames carry their TLVs
+    with bit 7 clear; a host reading a data frame or an event skips a TLV with bit 7 set as an unknown tag."""
+    ep, hst, lc, clock = streaming()
+    seen = []
+    w = Wire(ep, hst.session)
+    w.corr = hst._corr + 10
+    seen += m.split_tlvs(w.ok(0, m.OP_CONFIRM, m.CONFIRM_REQUEST + b"\x01\x01", sid=0)[16:])
+    for fn in [0] + [e.fn for e in entries(ep)[1]]:
+        seen += describe(ep, fn)
+    hst.end()
+    a, b = Wire(ep, 0x10), Wire(ep, 0x20)
+    a.corr = b.corr = hst._corr + 50
+    assert a.open(tail=m.tlv(OWNER, b"me", critical=True)).succeeded
+    seen += m.split_tlvs(a.lock_state() and a.raw(0, m.OP_LOCK_STATE, sid=0).payload[5:])
+    seen += m.split_tlvs(rejected(b.open(), m.LOCKED).payload[4:])
+    plan = ep.fns[PLAN.name]
+    seen += m.split_tlvs(rejected(a.raw(plan, PLAN.op["plan_apply"], assign(4, 1, 2, critical=True)), m.UNSUPPORTED)
+                         .payload[1:])
+    assert a.raw(plan, PLAN.op["plan_apply"], assign(5, 1, 20)).succeeded
+    seen += m.split_tlvs(rejected(a.raw(plan, PLAN.op["plan_apply"], assign(4, 1, 20)), m.UNAVAILABLE).payload)
+    assert (OWNER, b"me") in seen and len(seen) > 20
+    assert all(t < 0x80 for t, _ in seen), [hex(t) for t, _ in seen if t >= 0x80]
+    ep2, hst2, lc2, clock2 = streaming()
+    clock2.t += 3
+    data = frames(ep2, m.ROLE_DATA)
+    lc2.stop()
+    events = frames(ep2, m.ROLE_EVENT)
+    assert data and events
+    for f in data:
+        n = struct.unpack_from("<H", f, 13)[0]
+        assert all(t < 0x80 for t, _ in m.split_tlvs(f[15 + n:]))
+    for f in events:
+        if f[5] == cap.EVENT_STOPPED:
+            assert all(t < 0x80 for t, _ in m.split_tlvs(f[12:]))
+    gen = reg.FIXTURE_LOGIC.tlv["data"]["generation"]
+    assert cap._unpack_push(_data(7, 1, b"x", m.tlv(gen | 0x80, struct.pack("<I", 9))))[4] is None
+    assert cap._unpack_push(_data(7, 1, b"x", m.tlv(gen | 0x80, struct.pack("<I", 9))
+                                  + m.tlv(gen, struct.pack("<I", 3))))[4] == 3
+    stopped = bytes([m.ROLE_EVENT]) + struct.pack("<HHB", 7, 2, cap.EVENT_STOPPED) + struct.pack("<BBI", 1, 0, 5)
+    assert cap.unpack_event(stopped + m.tlv(0x81, b"\x01")).generation == 5
+
+
+def test_a_describe_tag_means_what_the_described_fns_definition_says():
+    """core §2.2: describe's tags are in the space of the fn described - 0x40 is fn 0's firmware text and
+    oep.probe.plan's plan_roles (u32): the host reads plan_roles from the plan's describe only, and fn 0's max_op_ms
+    tag in another fn's describe is not fn 0's max_op_ms."""
+    ep = build()
+    hst = host_on(ep)
+    plan = core.plan_fn(hst)
+    fw = dict(core.describe(hst, 0))[0x40]
+    roles = dict(core.describe(hst, plan))[0x40]
+    assert fw == b"3.0.0" and len(roles) == 4 and core.plan_roles(hst) == struct.unpack("<I", roles)[0]
+    tag = CORE.tlv["describe"]["max_op_ms"]
+    hst2 = h.Host(lambda b: b)
+    hst2._describes = {0: [], plan: [(tag, struct.pack("<I", 1234))]}
+    assert hst2.max_op_ms() is None
+
+
+def test_an_answer_goes_back_on_the_transport_its_request_came_on():
+    """core §4.2: the one answer to a request goes back on the transport the request came on, with its corr - requests
+    on transports 0 and 2 each get their answer in their own route, none in the other."""
+    ep = build()
+    w = Wire(ep)
+    a, b = w.bytes(0, m.OP_CLOCK, sid=0), w.bytes(0, m.OP_LOCK_STATE, sid=0)
+    assert ep.receive(a, 0) == "queued" and ep.receive(b, 2) == "queued"
+    ans_b, ans_a = ep.process(2), ep.process(0)
+    assert [e[1] for e in ep.routes[2]] == [ans_b] and [e[1] for e in ep.routes[0]] == [ans_a]
+    assert m.Result.unpack(ans_b).corr == m.Request.unpack(b).corr and len(ans_b) == 5 + 5
+    assert m.Result.unpack(ans_a).corr == m.Request.unpack(a).corr and len(ans_a) == 5 + 12
+
+
+def test_unsupported_names_the_element_after_its_tag():
+    """core §4.3 unsupported: after the tag (as received) a TLV in unavailable's tag space may say which element - a
+    plan_apply naming a channel gpio does not offer for the role: tag 0x90 (as received), then channel (0x02, u16);
+    the host reads both."""
+    ep = build()
+    w = Wire(ep)
+    w.open()
+    r = rejected(w.raw(ep.fns[PLAN.name], PLAN.op["plan_apply"], assign(4, 1, 2, critical=True)), m.UNSUPPORTED)
+    assert r.payload == bytes([0x90]) + m.tlv(UNA["channel"], struct.pack("<H", 2))
+    u = h.Unsupported(r)
+    assert u.tag == 0x90 and u.tlvs == [(UNA["channel"], b"\x02\x00")] and not ep.plan
+
+
+def test_the_policy_check_comes_after_the_header_and_before_the_record_and_the_session():
+    """core §4.3 order 1 and the optional policy, §5.1: the header's refusals come first (corr 0, unknown fn, an op the
+    fn's ops do not set - even one that needs the lock, with session_id 0); then the policy - unavailable cause 7 for
+    another id's request (not locked) and for the holder's resend (not its recorded answer); nothing changes, and fn
+    0's confirm / list / describe / clock / lock_state are never refused by it. Allowed again, the record answers."""
+    ep = build(vb.esp32_v003)
+    w = Wire(ep)
+    w.open()
+    data = w.bytes(0, m.OP_KEEPALIVE)
+    first = ep.handle(data, 0)
+    ep.policy = lambda req: False
+    before = (ep.holder, ep.expires_ms, ep.newest_corr, dict(ep.resend), ep.executions)
+    rejected(w.raw(0, m.OP_KEEPALIVE, corr=0), m.MALFORMED)
+    rejected(w.raw(99, 0x10), m.UNKNOWN_FUNCTION)
+    rejected(w.raw(ep.fns[RV.name], RV.op["step"], struct.pack("<I", 1), sid=0), m.UNKNOWN_OPERATION)
+    ep.now.t = 500
+    for r in (Wire(ep, 0x77).raw(0, m.OP_KEEPALIVE), m.Result.unpack(ep.handle(data, 0))):
+        assert h.Unavailable(rejected(r, m.UNAVAILABLE)).cause == "policy_denied"
+    assert (ep.holder, ep.expires_ms, ep.newest_corr, dict(ep.resend), ep.executions) == before
+    for op, body in ((m.OP_CONFIRM, m.CONFIRM_REQUEST + b"\x01\x01"), (m.OP_LIST, b"\0\0"), (m.OP_DESCRIBE, b"\0\0\0\0"),
+                     (m.OP_CLOCK, b""), (m.OP_LOCK_STATE, b"")):
+        assert w.raw(0, op, body, sid=0).succeeded, op
+    ep.policy = None
+    assert ep.handle(data, 0) == first
+
+
+def test_a_message_of_max_frame_bytes_is_taken_whatever_its_frame_wraps_around_it():
+    """core §4.4: max_frame counts the message from its role on - the 10-byte header included, the frame's wrapping
+    (CRC, COBS, the 0x00s) not: on the serial port of a 64-byte probe a 64-byte request is answered though its frame is
+    longer; a 65-byte one is dropped unanswered."""
+    from test_trace_transports import answers, req, serial_port
+    from oep_client import cobs
+    ep, clock, port = serial_port(vb.esp32_v003_64)
+    assert ep.probe.max_frame == 64
+    msg = req(1, m.OP_CLOCK, m.tlv(0x3E, bytes(64 - m.REQUEST_HEADER - 3)))
+    assert len(msg) == 64 and len(cobs.frame(msg)) > 64
+    port.feed(cobs.frame(msg))
+    assert answers(port) == [1]
+    port.feed(cobs.frame(req(2, m.OP_CLOCK, m.tlv(0x3E, bytes(64 - m.REQUEST_HEADER - 2)))))
+    assert answers(port) == []
+
+
+def test_repeated_confirms_are_new_requests_and_a_late_answer_to_an_earlier_one_is_read_past():
+    """core §4.4 (port_speed's repeated confirms, transports §4): each repeated confirm is a new request with a new corr,
+    not a resend - the next goes before the first's floor has passed, and the first's answer arriving late is read past
+    while the host waits for its own."""
+    from oep_client import cobs
+    written = []
+    answer = m.CONFIRM_RESULT + struct.pack("<BHIBI", 1, 64, 64, 1, 3)
+
+    class Stream(FakeStream):
+        def write(self, data):
+            req = m.Request.unpack(cobs.unframe(bytes(data)[1:-1]))
+            written.append(req)
+            if len(written) == 2:                                            # the first's answer, late, then its own
+                for r in written:
+                    self.incoming += cobs.frame(m.Result(r.corr, m.COMPLETED, m.SUCCESS, answer).pack())
+            return len(data)
+    lk = link.SerialLink.on_stream(Stream(), framing="cobs", timeout=0.2)
+    assert lk._confirm_within(1.0, 0.05)
+    assert [r.op for r in written] == [m.OP_CONFIRM] * 2 and written[0].corr != written[1].corr
+    assert lk.stale == 1
+
+
+def test_on_tcp_a_resend_given_up_closes_and_opens_the_connection_and_confirms_first():
+    """core §5.1: a request and its resend unanswered - its outcome is unknown; on TCP the host closes the connection and
+    opens it again, confirming there (the boot_id seen) before the next request goes out. (Before: the connection was
+    kept and the next request went straight out on it.)"""
+    from test_trace_transports import TcpStream, confirming, req
+    old, new = TcpStream(lambda msg: []), TcpStream(confirming())
+    lk = link.SerialLink.on_stream(old, "length", 0.1)
+    lk.wait_add_s = 0.0
+    lk.reopener = lambda: new
+    boots = []
+    lk.on_boot_id = boots.append
+    with pytest.raises(link.TransportFailed):
+        lk.send(req(7, m.OP_KEEPALIVE, session=5))
+    assert len(old.writes) == 2 and len(set(old.writes)) == 1                   # the request and its one resend
+    assert m.Result.unpack(lk.send(req(8))).corr == 8
+    assert old.closed and len(old.writes) == 2 and boots == [0x11]
+    assert [m.Request.unpack(x[2:]).op for x in new.writes] == [m.OP_CONFIRM, m.OP_CLOCK]
+
+
+# ---- third review (docs/trace/review3/core-b.json): core §6-§13 ------------------------------------------------------
+
+def test_the_lease_restarts_at_the_answers_generation_not_its_write():
+    """core §6.1 (a09fa45): the holder's answer restarts lease_ms when it is generated - the write waiting, completing
+    later, or the route closing and dropping the answer change nothing; a copy still waiting on the route (coalesced)
+    neither pauses nor renews it; the lease then runs out lease_ms after the generation."""
+    ep = build()
+    w = Wire(ep)
+    w.open(1000)
+    ep.now.t = 300
+    ep.receive(w.bytes(0, m.OP_KEEPALIVE))
+    ep.process()
+    assert ep.expires_ms == 1300                                              # generated at 300
+    ep.now.t = 900
+    ep.sent()
+    assert ep.expires_ms == 1300                                              # the write completing: nothing
+    data = w.bytes(0, m.OP_KEEPALIVE)
+    assert ep.receive(data) == "queued"
+    ep.now.t = 1000
+    assert ep.receive(data) == "coalesced" and ep.expires_ms == 1300          # a copy still waiting: nothing
+    ep.process()
+    assert ep.expires_ms == 2000
+    ep.now.t = 1500
+    ep.close_route(0)                                                         # the answer dropped unsent
+    assert ep.expires_ms == 2000 and ep.holder == SID
+    ep.now.t = 1999
+    assert Wire(ep).lock_state()[:2] == (1, 1)
+    ep.now.t = 2000
+    assert Wire(ep).lock_state() == (0, 0, None) and ep.holder is None
+
+
+def test_lease_renewed_at_the_write_mutant(monkeypatch):
+    """core §6.1 mutant: a probe that restarts the lease when the answer's write completes (the rule before a09fa45) is
+    caught by the check above."""
+    orig = endpoint.Endpoint.sent
+
+    def renewing(self, route=0):
+        orig(self, route)
+        if self.holder is not None:
+            self.expires_ms = self.now() + self.lease_ms
+    monkeypatch.setattr(endpoint.Endpoint, "sent", renewing)
+    with pytest.raises(AssertionError):
+        test_the_lease_restarts_at_the_answers_generation_not_its_write()
+
+
+def test_a_new_owners_lease_starts_at_its_open_answer_and_an_ended_session_is_never_renewed():
+    """core §6.1: a new owner's lease starts when its open's answer is generated (a force open that runs 500 ms: from
+    the end of that); after end the old session's ids renew nothing - their requests are no_session and the lock stays
+    free."""
+    ep = build()
+    a, b = Wire(ep, 0x10), Wire(ep, 0x20)
+    a.open(1000)
+    ep.now.t = 200
+    ep.receive(b.bytes(0, m.OP_OPEN, struct.pack("<IB", 2000, 1)))
+    ep.process(spend=lambda: setattr(ep.now, "t", ep.now.t + 500))
+    assert ep.holder == 0x20 and ep.expires_ms == 2700                        # its answer at 700
+    ep.now.t = 800
+    assert b.raw(0, m.OP_END).succeeded
+    for w in (a, b):
+        rejected(w.raw(0, m.OP_KEEPALIVE), m.NO_SESSION)
+    assert Wire(ep).lock_state() == (0, 0, None) and ep.expires_ms == 2700
+
+
+def test_an_expired_lease_is_cleaned_up_before_the_next_request_even_a_resend(ep):
+    """core §6.1: the cleanup of a lease past its time comes before the next request's processing, its resend check
+    included - the expired holder's request sent again still gets its recorded answer (§9), and by then the lock is
+    free and (on the full bench) the plan, the pin and the subscription are released."""
+    w = Wire(ep)
+    w.open(1000)
+    full = not ep.probe.core_contract
+    if full:
+        w.ok(ep.fns[PLAN.name], PLAN.op["plan_apply"], assign(4, 1, 20))
+        w.ok(4, GPIO.op["set"], b"\x01" + struct.pack("<HB", 20, 4))
+        w.ok(7, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0))
+    data = w.bytes(0, m.OP_KEEPALIVE)
+    first = ep.handle(data, 0)
+    ep.now.t = 5000
+    assert ep.handle(data, 0) == first
+    assert ep_holder(ep) is None
+    if full:
+        assert not ep.plan and not ep.subscribed and ep.pin_state(20) == "idle hi-z"
+
+
+def test_the_host_draws_a_new_session_id_for_each_session():
+    """core §6.1: the host draws each session's id anew (a u32 from 1 - never 0, never a fixed value): an open after end
+    draws again and uses the new id."""
+    ids = iter([0x1111, 0x2222])
+
+    class Rng:
+        def __init__(self):
+            self.calls = []
+
+        def randrange(self, a, b):
+            self.calls.append((a, b))
+            return next(ids)
+    ep = build()
+    rng = Rng()
+    hst = h.Host(lambda b: ep.handle(b, 0), rng=rng)
+    hst.open()
+    assert ep.holder == 0x1111
+    hst.end()
+    hst.open()
+    assert rng.calls == [(1, 1 << 32)] * 2 and hst.session == 0x2222 == ep.holder
+
+
+@pytest.mark.parametrize("profile", sorted(PROFILES))
+def test_the_decision_table_whatever_force_says(profile):
+    """core §6.2: force changes no row but the one it names - on a free lock an open with force takes it as one without
+    does (lease, owner); the holder's open with force renews lease_ms and keeps the owner (and, on the full bench, the
+    plan); another id's other request is locked with the remaining ms and the owner; the last ended id's open is
+    no_session with force too."""
+    ep = build(PROFILES[profile])
+    s, o = Wire(ep, 0x10), Wire(ep, 0x20)
+    assert s.open(2000, force=1, tail=m.tlv(OWNER, b"S")).succeeded
+    assert s.lock_state() == (1, 2000, b"S") and ep_holder(ep) == 0x10
+    full = not ep.probe.core_contract
+    if full:
+        s.ok(ep.fns[PLAN.name], PLAN.op["plan_apply"], assign(4, 1, 20))
+    ep.now.t = 700
+    r = rejected(o.raw(0, m.OP_KEEPALIVE), m.LOCKED)
+    assert struct.unpack_from("<I", r.payload)[0] == 1300 and m.Tail.parse(r.payload[4:]).get(OWNER) == b"S"
+    assert s.open(4000, force=1, tail=m.tlv(OWNER, b"T")).succeeded
+    assert s.lock_state() == (1, 4000, b"S") and ep_holder(ep) == 0x10
+    if full:
+        assert ep.plan
+    assert s.raw(0, m.OP_END).succeeded
+    rejected(s.open(force=1), m.NO_SESSION)
+    assert s.lock_state() == (0, 0, None)
+
+
+def test_the_owner_comes_from_the_force_open_and_goes_at_expiry(ep):
+    """core §6.4: an owner outside 1-32 bytes is malformed and changes nothing; a force open takes the lock and its
+    owner replaces the old one (shown by lock_state and rejected locked); the lease running out forgets it."""
+    a, b = Wire(ep, 0x10), Wire(ep, 0x20)
+    a.open(1000, tail=m.tlv(OWNER, b"old"))
+    for bad in (b"", b"x" * 33):
+        rejected(b.open(force=1, tail=m.tlv(OWNER, bad)), m.MALFORMED)
+        assert a.lock_state()[2] == b"old" and ep_holder(ep) == 0x10
+    assert b.open(1000, force=1, tail=m.tlv(OWNER, b"new")).succeeded
+    assert a.lock_state()[2] == b"new"
+    assert m.Tail.parse(rejected(a.open(), m.LOCKED).payload[4:]).get(OWNER) == b"new"
+    ep.now.t = 5000
+    assert a.lock_state() == (0, 0, None)
+
+
+def test_max_length_keeps_a_whole_request_and_its_answer_within_max_frame():
+    """core §7.4 (max_length): the request and the answer still fit max_frame - every profile's riscv-dm declares a
+    max_length whose write_block request and read_block answer fit its max_frame; on the bench both run at it."""
+    for profile in (vb.p4_x035, vb.p4_bench, vb.esp32_v003, vb.esp32_v003_64, vb.rp2350_pins):
+        ep = build(profile)
+        dm = ep.fns[RV.name]
+        words = struct.unpack("<H", next(v for t, v in describe(ep, dm) if t == catalog.MAX_LENGTH))[0] // 4
+        write = m.Request(1, dm, RV.op["write_block"], struct.pack("<IIH", 1, 0, words) + bytes(4 * words), SID).pack()
+        assert len(write) <= ep.probe.max_frame and m.RESULT_HEADER + 3 + 4 * words <= ep.probe.max_frame, profile
+    ep = build(vb.p4_bench)
+    w = Wire(ep)
+    w.open()
+    conn = attach(w)
+    w.ok(2, RV.op["halt"], struct.pack("<I", conn))
+    words = ep.block_max[2] // 4
+    body = struct.pack("<IIH", conn, 0x2000_0000, words)
+    assert w.raw(2, RV.op["write_block"], body + bytes(4 * words)).succeeded
+    out = ep.handle(w.bytes(2, RV.op["read_block"], body), 0)
+    assert m.Result.unpack(out).succeeded and len(out) <= ep.probe.max_frame
+
+
+def test_a_reboot_drops_the_subscriptions_and_the_resend_state():
+    """core §9 (the restart row), §6.5: after a restart the subscriptions are gone, nothing is pushed, and the resend
+    state is gone too - the old session's request sent again gets no recorded answer (no_session)."""
+    ep, hst, lc, clock = streaming()
+    data = m.Request(hst.next_corr(hst.session), 0, m.OP_KEEPALIVE, b"", hst.session).pack()
+    assert m.Result.unpack(ep.handle(data, 0)).succeeded and ep.subscribed and ep.resend
+    ep.reboot()
+    assert not ep.subscribed and not ep.resend
+    rejected(m.Result.unpack(ep.handle(data, 0)), m.NO_SESSION)
+    clock.t += 5
+    assert ep.pushes() == []
+
+
+def test_resource_number_0xffffffff_is_given_and_only_then_cause_2():
+    """core §9: the u32 space is used to its end - 0xFFFFFFFF itself is given; only after it is a new resource refused
+    unavailable cause 2 (the one given still works)."""
+    ep = build(vb.p4_bench)
+    w = Wire(ep)
+    w.open()
+    ep._next_resource = 0xFFFFFFFF
+    assert attach(w) == 0xFFFFFFFF
+    r = rejected(w.raw(1, RVSWD.op["attach"], struct.pack("<BHHI", 1, 4, 5, 4_000_000)), m.UNAVAILABLE)
+    assert h.Unavailable(r).cause == "limit"
+    assert w.raw(2, RV.op["halt"], struct.pack("<I", 0xFFFFFFFF)).succeeded
+
+
+def test_an_answer_on_another_transport_does_not_wait_for_the_old_ones_frames():
+    """core §10.3: a subscribe again from another transport is answered there at once - it does not wait for the frames
+    the old transport still has queued; those, the old subscription's unsent ones, are dropped, and the new
+    subscription's go to the new transport from seq 0."""
+    from oep_client import cobs, virtual_bench_serial
+    ep, hst, lc, clock = streaming()
+    old, new = virtual_bench_serial.VirtualSerialPort(ep, 0), virtual_bench_serial.VirtualSerialPort(ep, 3)
+
+    def out(port):
+        return [cobs.unframe(c) for c in port.output(1 << 20).split(b"\x00") if c]
+    clock.t += 1
+    old.tick()
+    assert any(n is not None for n in old.notice)                             # the old one's frames wait there
+    corr = hst.next_corr(hst.session)
+    new.feed(cobs.frame(m.Request(corr, lc.fn, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0), hst.session).pack()))
+    got = out(new)
+    assert [f[0] for f in got] == [m.ROLE_RESULT] and m.Result.unpack(got[0]).corr == corr
+    assert out(old) == []
+    clock.t += 1
+    new.tick()
+    pushed = out(new)
+    assert pushed and struct.unpack_from("<H", pushed[0], 3)[0] == 0
+
+
+def test_every_request_that_came_is_answered_before_a_new_notification():
+    """core §10.4 rule 1: every request that has come in is answered before a new notification frame starts - two
+    requests arriving together on the bench's serial port, both answers first, then the notifications."""
+    from oep_client import cobs, virtual_bench_serial
+    ep, hst, lc, clock = streaming()
+    port = virtual_bench_serial.VirtualSerialPort(ep, 0)
+    clock.t += 20
+    port.feed(cobs.frame(m.Request(60001, 0, m.OP_CLOCK, b"", 0).pack())
+              + cobs.frame(m.Request(60002, 0, m.OP_LOCK_STATE, b"", 0).pack()))
+    port.tick()
+    got = [cobs.unframe(c) for c in port.output(1 << 20).split(b"\x00") if c]
+    assert [m.Result.unpack(f).corr for f in got[:2]] == [60001, 60002]
+    assert got[2:] and all(f[0] in (m.ROLE_DATA, m.ROLE_EVENT) for f in got[2:])
+
+
+def test_every_describe_tlv_fits_the_frame_and_a_page_never_splits_one():
+    """core §12 item 2 (and §7.3): what an interface declares fits every transport - each describe TLV value is at most
+    max_frame - 9 bytes - and describe's pages carry whole TLVs (each page parses alone, more = 1 never on an empty
+    page), for fn 0 and every listed fn of every profile."""
+    for profile in (vb.p4_x035, vb.p4_bench, vb.esp32_v003, vb.esp32_v003_64, vb.rp2350_pins, vb.core_v1):
+        ep = build(profile)
+        for fn in [0] + [e.fn for e in entries(ep)[1]]:
+            w, first = Wire(ep), 0
+            while True:
+                raw = ep.handle(w.bytes(0, m.OP_DESCRIBE, struct.pack("<HH", fn, first), sid=0), 0)
+                assert len(raw) <= ep.probe.max_frame
+                r = m.Result.unpack(raw)
+                page = m.split_tlvs(r.payload[1:])                            # a cut TLV raises
+                assert all(len(v) <= ep.probe.max_frame - 9 for _, v in page), (profile.__name__, fn)
+                first += len(page)
+                if not r.payload[0]:
+                    break
+                assert page
+
+
+def test_the_family_an_interface_is_for_is_in_the_registry():
+    """core §12 rule 8 (and rule 1): an `oep.` interface for one target family says so in the registry's `target`
+    (the wires and target operations of one architecture), a generic one names none; the name says neither "generic"
+    nor which families."""
+    specific = {"oep.wire.rvswd", "oep.wire.swio", "oep.wire.swd", "oep.target.riscv-dm", "oep.target.arm-adi"}
+    assert specific <= set(reg.INTERFACES)
+    for i in reg.INTERFACES.values():
+        assert (i.target is not None) == (i.name in specific), i.name
+        assert not {"generic", "any", "all", "common"} & set(i.name.replace("-", ".").split(".")), i.name
+
+
+def test_the_revision_a_confirm_chose_is_kept_per_transport_until_the_next():
+    """core §7.1: the revision a confirm chose holds on the transport it came on (a TCP connection is one) until the
+    next confirm there - each records revision 1, a later confirm on one transport leaves the others as they were."""
+    ep = build()
+    Wire(ep, transport=0).ok(0, m.OP_CONFIRM, m.CONFIRM_REQUEST + b"\x01\x01", sid=0)
+    assert ep.revision_in_use == {0: 1}
+    ep.handle(m.Request(1, 0, m.OP_CONFIRM, m.CONFIRM_REQUEST + b"\x01\x05", 0).pack(), 2, link="tcp-a")
+    assert ep.revision_in_use == {0: 1, "tcp-a": 1}
+    rejected(m.Result.unpack(ep.handle(m.Request(2, 0, m.OP_CONFIRM, m.CONFIRM_REQUEST + b"\x02\x05", 0).pack(), 2,
+                                       link="tcp-b")), m.UNSUPPORTED)
+    assert ep.revision_in_use == {0: 1, "tcp-a": 1}                           # no revision chosen there
+
+
+def test_a_label_set_in_the_settings_is_not_in_describe():
+    """core §7.5 (label), §7.3: describe's label is the firmware's fixed name - a label set in the settings is read by
+    probe.config's op and never shows in fn 0's describe (asked afresh, not from a host's cache)."""
+    ep = build()
+    w = Wire(ep)
+    w.open()
+    before = describe(ep)
+    item = m.tlv(CFG.tlv["item"]["label"], struct.pack("<H", 20) + b"from-settings")
+    assert cfg_set(w, ep, item).succeeded
+    assert describe(ep) == before
+    assert all(b"from-settings" not in v for _, v in describe(ep))
+
+
+@pytest.mark.parametrize("min_bytes, max_delay_ms", [(0, 0), (0, 5), (100, 0)])
+def test_answers_go_before_notifications_whichever_condition_makes_data_due(min_bytes, max_delay_ms):
+    """core §10.3, §10.4 rule 1: data made due by max_delay_ms (or min_bytes, or at once) still starts only after every
+    request that came is answered - max_delay_ms does not overrule the answers going first."""
+    from oep_client import cobs, virtual_bench_serial
+    ep, hst, lc, clock = streaming(min_bytes=min_bytes, max_delay_ms=max_delay_ms)
+    port = virtual_bench_serial.VirtualSerialPort(ep, 0)
+    clock.t += 20
+    port.tick()                                                                # the max_delay_ms timer starts
+    port.output(1 << 20)
+    clock.t += 5                                                               # data due under every condition
+    port.feed(cobs.frame(m.Request(60001, 0, m.OP_CLOCK, b"", 0).pack())
+              + cobs.frame(m.Request(60002, 0, m.OP_LOCK_STATE, b"", 0).pack()))
+    port.tick()
+    got = [cobs.unframe(c) for c in port.output(1 << 20).split(b"\x00") if c]
+    assert [m.Result.unpack(f).corr for f in got[:2]] == [60001, 60002]
+    assert any(f[0] == m.ROLE_DATA for f in got[2:]) and all(f[0] in (m.ROLE_DATA, m.ROLE_EVENT) for f in got[2:])

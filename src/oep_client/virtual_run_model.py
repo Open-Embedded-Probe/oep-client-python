@@ -41,6 +41,7 @@ class Runs(Resets):
             for reg in (5,4,0x18):self.writereg(parent,reg,saved[reg]);self.restore.append(('run-restore',parent,reg,saved[reg]))
             restored=True
         try:
+            begun=self.run_clock_us;self.access.append(('run-begin',parent,begun));end=begun+self.ep.max_op_ms*1000   # the whole request's bound
             self.run_clock_us+=400;self.writereg(parent,5,0x7b1);self.writereg(parent,4,pc);self.writereg(parent,0x18,1);self.interleave(parent)
             if mode not in ('prepare-line','prepare-fault'):
                 for reg,value in inputs:target['gprs'][reg-0x1000]=value
@@ -48,9 +49,12 @@ class Runs(Resets):
                 restore();self.access.append(('run-resume',parent,self.run_clock_us));target['halted']=False;start=self.run_clock_us;self.interleave(parent)
                 program=self.programs[parent];self.memory[parent].update(program['memory']);target['gprs'].update(program['gprs']);self.access.append(('run-program',parent,copy.deepcopy(program)))
                 stopped={'stopped':1,'timeout-halted':0,'not-halted':2}[mode];status=0 if stopped==1 else 4
-                self.run_clock_us+=100 if stopped==1 else timeout*1000+(200 if stopped==0 else 300)
+                # debug §4.4: timeout_ms bounds the wait, the whole request max_op_ms - with less time left than timeout_ms the
+                # probe halts (200 us) or gives up halting (300 us) within what is left
+                halt_us=200 if stopped==0 else 300;wait=min(timeout*1000,max(0,end-start-halt_us))
+                self.run_clock_us+=100 if stopped==1 else wait+halt_us
                 if stopped!=1:
-                    target['haltreq']=True;self.writereg(parent,0x10,target['registers'].get(0x10,0)|0x80000000);self.access.append(('run-rehalt',parent,start+timeout*1000))
+                    target['haltreq']=True;self.writereg(parent,0x10,target['registers'].get(0x10,0)|0x80000000);self.access.append(('run-rehalt',parent,start+wait))
                 target['halted']=stopped!=2;target['pc']=self.run_pc;self.access.append(('run-finish',parent,self.run_clock_us));elapsed=self.run_clock_us-start
                 if stopped in (0,1):dpc=target['pc'];values=[target['gprs'].get(reg-0x1000,0) for reg in outputs]
         finally:

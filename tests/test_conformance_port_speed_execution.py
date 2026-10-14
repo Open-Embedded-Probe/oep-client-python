@@ -39,8 +39,8 @@ def test_bad_wire_response_is_detected(case):
 
 
 @pytest.mark.parametrize('fault',[
- 'missing_execution','wrong_execution_duration','consume_idle','renew_lease_early','consume_lease',
- 'writer_pauses_idle','writer_pauses_lease','no_idle_send_renewal','no_lease_send_renewal',
+ 'missing_execution','wrong_execution_duration','consume_idle','no_generation_renewal','consume_lease',
+ 'writer_pauses_idle','writer_pauses_lease','no_idle_send_renewal','lease_send_renewal',
  'execution_changes_pin','idle_expiry_early','idle_expiry_missing'])
 def test_clock_faults_are_detected(fault):
     model,c=setup();begin=model.begin;advance=model.advance;finish=model.finish;execution=model.execution
@@ -51,7 +51,7 @@ def test_clock_faults_are_detected(fault):
         if req[3:6]==b'\4\0\x10':
             elapsed=model.clock_ms-start
             if fault=='consume_idle':model.ports[0]['deadline']-=elapsed
-            if fault=='renew_lease_early':model.ep.current_core.deadline=model.clock_ms+model.ep.current_core.lease
+            if fault=='no_generation_renewal':model.ep.current_core.deadline=deadline+elapsed   # pre-a09fa45 (core §6.1)
             if fault=='consume_lease':model.ep.current_core.deadline=deadline
             if fault=='execution_changes_pin':model.extension.pins[1]=(3,0)
         return out
@@ -67,7 +67,7 @@ def test_clock_faults_are_detected(fault):
         out=finish()
         if q[3:6]==b'\4\0\x10':
             if fault=='no_idle_send_renewal':model.ports[0]['deadline']=idle
-            if fault=='no_lease_send_renewal':model.ep.current_core.deadline=lease
+            if fault=='lease_send_renewal':model.ep.current_core.deadline=model.clock_ms+model.ep.current_core.lease
         return out
     model.execution=bad_execution;model.begin=bad_begin;model.advance=bad_advance;model.finish=bad_finish
     checks=PortSpeedExecutionChecks(c,Adapter(model));checks.cases=(('source',3500,60000),)

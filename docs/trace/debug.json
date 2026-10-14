@@ -23,14 +23,15 @@
    "verify": [
     "tests/test_virtual_bench_spec.py::test_a_wire_takes_any_free_pair_the_host_names",
     "tests/test_virtual_bench_spec.py::test_the_client_scan_walks_every_candidate_pair",
-    "tests/test_conformance_oep_declarations.py::test_standard_declarations_pass_without_mutating_requests"
+    "tests/test_conformance_oep_declarations.py::test_standard_declarations_pass_without_mutating_requests",
+    "tests/test_trace_debug.py::test_swdio_is_the_role_1_channel_and_swclk_the_role_2_one"
    ],
    "mutants": [
     "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[missing_pins]",
     "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[same_pin]",
     "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[pin_range]"
    ],
-   "note": "swdio / swclk are the role 1 / role 2 channels the wire's role_channels / channel_group declare"
+   "note": "swdio / swclk are the role 1 / role 2 channels the wire's role_channels / channel_group declare; review 3: a (role 2, role 1) pair is not allowed (attach 0x00, scan 0x00 + index); the client builds (role 1, role 2)"
   },
   "debug:0:3": {
    "text": "3. `oep.target.*` のインターフェースが使う [共通部品](oe",
@@ -128,7 +129,8 @@
     "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_1_scan_has_no_implicit_list_and_takes_an_input_idle_pair",
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[rvswd_scan__count_0_is_malformed]",
     "tests/test_virtual_bench_spec.py::test_the_client_scan_walks_every_candidate_pair",
-    "tests/test_conformance_scan.py::test_finite_scan_contracts_pass"
+    "tests/test_conformance_scan.py::test_finite_scan_contracts_pass",
+    "tests/test_trace_debug.py::test_the_client_scan_sends_the_untried_candidates_again"
    ],
    "mutants": [
     "tests/test_conformance_scan.py::test_scan_checker_detects_independent_faults[zero_tried-SINGLE]",
@@ -136,7 +138,7 @@
     "tests/test_conformance_scan.py::test_scan_checker_detects_independent_faults[extra_candidate-SINGLE]",
     "tests/test_conformance_scan_options.py::test_scan_option_checker_detects_independent_faults[prefix_ignored-PREFIX]"
    ],
-   "note": "count 0 / a pair twice malformed; tried counts from the front; the host builds role1 x role2 and resends the untried"
+   "note": "count 0 / a pair twice malformed; tried counts from the front; the host builds role1 x role2 and resends the untried; review 3: the client resends exactly the untried candidates after a partial tried"
   },
   "debug:1:8": {
    "text": "- 宣言が許さない組は unsupported。使用中のピンを含む組は unav",
@@ -272,7 +274,9 @@
     "tests/test_console_queue_and_reset_settle.py::test_reset_waits_out_a_self_restarting_target_within_max_op_ms[10000-True]",
     "tests/test_console_queue_and_reset_settle.py::test_reset_waits_out_a_self_restarting_target_within_max_op_ms[10001-False]",
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
-    "tests/test_conformance_reset.py::test_optional_reset_contracts_pass"
+    "tests/test_conformance_reset.py::test_optional_reset_contracts_pass",
+    "tests/test_trace_debug.py::test_on_a_connection_the_probe_sends_no_set_up_and_changes_nothing_by_itself[p4-bench-oep.wire.rvswd]",
+    "tests/test_trace_debug.py::test_on_a_connection_the_probe_sends_no_set_up_and_changes_nothing_by_itself[esp32-v003-oep.wire.swio]"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[read_before_release-RESET-1]",
@@ -282,7 +286,7 @@
     "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[dm_before_release-DM-RECOVER-2]",
     "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[dm_over_budget-DM-LINE-0]"
    ],
-   "note": "after the reset line / ndmreset release the probe re-reads DMSTATUS (attach: slowest speed) until it answers, within max_op_ms"
+   "note": "after the reset line / ndmreset release the probe re-reads DMSTATUS (attach: slowest speed) until it answers, within max_op_ms; review 3: the set-up is not sent again outside attach / scan (outside a reset wait)"
   },
   "debug:2:2": {
    "text": "- **detach は connection と、その上の stream を解",
@@ -343,12 +347,14 @@
    "text": "- **target の状態を変えない**: connection がある間、p",
    "verify": [
     "tests/test_conformance_retry.py::test_retry_contracts_pass",
-    "tests/test_conformance_cut.py::test_cut_contracts_pass"
+    "tests/test_conformance_cut.py::test_cut_contracts_pass",
+    "tests/test_trace_debug.py::test_on_a_connection_the_probe_sends_no_set_up_and_changes_nothing_by_itself[p4-bench-oep.wire.rvswd]",
+    "tests/test_trace_debug.py::test_on_a_connection_the_probe_sends_no_set_up_and_changes_nothing_by_itself[esp32-v003-oep.wire.swio]"
    ],
    "mutants": [
     "tests/test_conformance_retry.py::test_retry_checker_detects_independent_faults[speed_saved-OWNED-1]"
    ],
-   "note": "the probe's own retries change neither the target nor the connection (the wake-sequence part is line-level, not modelled)"
+   "note": "the probe's own retries change neither the target nor the connection (the wake-sequence part is line-level, not modelled); review 3: on a connection no set-up writes (bench bringup log) through ops, unanswered exchanges, recovery and a dropped link; failed exchanges change no target state"
   },
   "debug:2:7": {
    "text": "- **線切れ**: ある connection の操作が線からの応答無しで失敗",
@@ -370,7 +376,9 @@
   "debug:2:8": {
    "text": "- **線切れの判定は、要求の中かコンソールの読みの中でだけ行う**。statu",
    "verify": [
-    "tests/test_conformance_cut.py::test_cut_contracts_pass"
+    "tests/test_conformance_cut.py::test_cut_contracts_pass",
+    "tests/test_trace_debug.py::test_status_line_alone_closes_nothing_and_the_host_learns_it_from_connections[p4-bench-oep.wire.rvswd]",
+    "tests/test_trace_debug.py::test_status_line_alone_closes_nothing_and_the_host_learns_it_from_connections[esp32-v003-oep.wire.swio]"
    ],
    "mutants": [
     "tests/test_conformance_cut.py::test_cut_checker_detects_independent_faults[timer_cut-RECOVERY]",
@@ -380,13 +388,15 @@
     "tests/test_conformance_cut.py::test_cut_checker_detects_independent_faults[rejection_cut-REJECTED]",
     "tests/test_conformance_cut.py::test_cut_checker_detects_independent_faults[other_closed-ISOLATED]"
    ],
-   "note": "the cut is decided only in a request or console read; status line alone closes nothing; a console-read cut closes connection and stream, no mark"
+   "note": "the cut is decided only in a request or console read; status line alone closes nothing; a console-read cut closes connection and stream, no mark; review 3: after status line the client's connections still lists the connection; after the probe's cut it does not"
   },
   "debug:2:9": {
    "text": "- **線が応えない間の線**（電気的な安全）: やり取りとは、wire の節が",
    "verify": [
     "tests/test_virtual_bench_rules_2026_10_06.py::test_lines_rest_undriven_from_an_unanswered_exchange_until_one_succeeds",
-    "tests/test_conformance_retry.py::test_retry_contracts_pass"
+    "tests/test_conformance_retry.py::test_retry_contracts_pass",
+    "tests/test_trace_debug.py::test_after_an_unanswered_exchange_the_line_is_released_until_one_succeeds[p4-bench-oep.wire.rvswd]",
+    "tests/test_trace_debug.py::test_after_an_unanswered_exchange_the_line_is_released_until_one_succeeds[esp32-v003-oep.wire.swio]"
    ],
    "mutants": [
     "tests/test_conformance_retry.py::test_retry_checker_detects_independent_faults[drive-OWNED-1]",
@@ -394,7 +404,7 @@
     "tests/test_conformance_retry.py::test_retry_checker_detects_independent_faults[wrong_idle-OWNED-1]",
     "tests/test_conformance_retry.py::test_retry_checker_detects_independent_faults[drive-OWNED-EXHAUST]"
    ],
-   "note": "after an answerless exchange the lines rest released (no pull-up on a low-resting clock) until one succeeds, then the rest state again"
+   "note": "after an answerless exchange the lines rest released (no pull-up on a low-resting clock) until one succeeds, then the rest state again; review 3: swio's released line goes to its pull-up (bench fix), rvswd undriven no pull; a success restores the rest state"
   },
   "debug:2:10": {
    "text": "- **connectionを閉じる手順はtargetをreset/resume",
@@ -418,13 +428,19 @@
     "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_1_the_pins_of_a_closed_connection_go_back_to_their_idle_state",
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
     "tests/test_conformance_cut.py::test_cut_contracts_pass",
-    "tests/test_trace_debug.py::test_detach_answers_nothing_and_releases_the_connection_and_its_streams"
+    "tests/test_trace_debug.py::test_detach_answers_nothing_and_releases_the_connection_and_its_streams",
+    "tests/test_trace_debug.py::test_every_way_a_connection_closes_frees_its_pins[detach]",
+    "tests/test_trace_debug.py::test_every_way_a_connection_closes_frees_its_pins[end]",
+    "tests/test_trace_debug.py::test_every_way_a_connection_closes_frees_its_pins[lapse]",
+    "tests/test_trace_debug.py::test_every_way_a_connection_closes_frees_its_pins[force]",
+    "tests/test_trace_debug.py::test_every_way_a_connection_closes_frees_its_pins[lost]",
+    "tests/test_trace_debug.py::test_every_way_a_connection_closes_frees_its_pins[cleanup]"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[close_left_drive-DETACH-IDLE]",
     "tests/test_conformance_cut.py::test_cut_checker_detects_independent_faults[drive_left-REQUEST]"
    ],
-   "note": "a closed connection's channels go back to the core §8 free state (idle_clock drive stops)"
+   "note": "a closed connection's channels go back to the core §8 free state (idle_clock drive stops); review 3: every close path (detach, end, lease expiry, force, lost line, failed cleanup) frees the bench pins"
   },
   "debug:2:12": {
    "text": "| 出来事 | connection | hart | ストリーム |",
@@ -499,9 +515,10 @@
     "tests/test_trace_debug.py::test_connections_lists_the_live_connections_in_creation_order_a_frame_at_a_time",
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[rvswd_connections__first_beyond_the_count]",
     "tests/test_conformance_attach.py::test_connections_metadata_must_match_attached_resource",
-    "tests/test_trace_debug.py::test_target_ops_need_a_connection_and_every_op_but_connections_the_lock"
+    "tests/test_trace_debug.py::test_target_ops_need_a_connection_and_every_op_but_connections_the_lock",
+    "tests/test_trace_debug.py::test_connections_fill_each_page_as_far_as_one_frame_holds"
    ],
-   "note": "live connections in creation order from first, a frame at a time, more = 1 while some are left; lock-free"
+   "note": "live connections in creation order from first, a frame at a time, more = 1 while some are left; lock-free; review 3: a page with more = 1 has no room for the next entry"
   },
   "debug:2.1:2": {
    "text": "- tidはattach時に読んだtarget_id（無ければtid_schem",
@@ -510,13 +527,14 @@
     "tests/test_trace_debug.py::test_debug_vector_through_the_client[swd_connections__read_identity_and_supplied_selector_are_distinct]",
     "tests/test_debug_attach.py::test_the_client_reads_connections",
     "tests/test_trace_debug.py::test_target_id_scheme_1_is_not_reported_for_its_none_values[0-False]",
-    "tests/test_trace_debug.py::test_connections_tell_a_targetsel_of_0_from_none_with_page_relative_indexes"
+    "tests/test_trace_debug.py::test_connections_tell_a_targetsel_of_0_from_none_with_page_relative_indexes",
+    "tests/test_trace_debug.py::test_connections_report_the_target_id_read_at_attach"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[listing_scheme-TARGETSEL-None]",
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[targetsel_lost-TARGETSEL-16777217]"
    ],
-   "note": "tid is attach's target_id (none: scheme 0 len 0); swd scheme 2 len 4 DPIDR; selected_target TLV per entry with a targetsel"
+   "note": "tid is attach's target_id (none: scheme 0 len 0); swd scheme 2 len 4 DPIDR; selected_target TLV per entry with a targetsel; review 3: tid stays the value read at attach"
   },
   "debug:3:1": {
    "text": "| 0x10 | scan | count(u8)、count × (swdio",
@@ -629,14 +647,15 @@
    "text": "- resetの線を離した後の待ちは§2。DMが答えてから速さを確認する（§1）",
    "verify": [
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
-    "tests/test_console_queue_and_reset_settle.py::test_attach_with_the_reset_tlv_waits_too_and_makes_nothing_when_it_fails"
+    "tests/test_console_queue_and_reset_settle.py::test_attach_with_the_reset_tlv_waits_too_and_makes_nothing_when_it_fails",
+    "tests/test_trace_debug.py::test_attach_under_reset_checks_the_speed_only_after_the_dm_answered"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[read_before_release-RESET-1]",
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[read_fast-RESET-1]",
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[no_retry-RESET-RECOVER]"
    ],
-   "note": "after the reset line's release the DM is waited for (§2) before the speed check"
+   "note": "after the reset line's release the DM is waited for (§2) before the speed check; review 3: no scratch write before the DM answered after the release; the check follows the wait"
   },
   "debug:3:12": {
    "text": "- **reset の線に既定は無い**: どの線を reset に使うかは h",
@@ -688,14 +707,15 @@
     "tests/test_debug_attach.py::test_a_new_connection_without_idle_clock_rests_high",
     "tests/test_request_tails.py::test_attach_idle_clock_value_left_unused_is_unsupported_with_the_tag_as_received[True]",
     "tests/test_request_tails.py::test_attach_idle_clock_value_left_unused_is_unsupported_with_the_tag_as_received[False]",
-    "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass"
+    "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
+    "tests/test_trace_debug.py::test_the_client_sends_rvswd_idle_clock_critical_and_nothing_for_the_default"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[clock_high-IDLE-1]",
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[data_low-IDLE-None]",
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[idle_ignored-IDLE]"
    ],
-   "note": "attach TLV 0x04 idle_clock (rvswd only, critical): 0 high (default), 1 low; other values unsupported"
+   "note": "attach TLV 0x04 idle_clock (rvswd only, critical): 0 high (default), 1 low; other values unsupported; review 3: the client sends 0x84 critical with 0 / 1, nothing for the default high"
   },
   "debug:3:16": {
    "text": "| attach | 0x05 | reset | channel(u16)、h",
@@ -784,7 +804,11 @@
   },
   "debug:3.1:15": {
    "text": "- data のパリティが合わない読み出しは、失敗した読み出しである（§2 のと",
-   "excluded": "behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+   "verify": [
+    "tests/test_trace_debug.py::test_attach_fails_when_the_scratch_does_not_read_back_and_makes_nothing",
+    "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.rvswd]"
+   ],
+   "note": "review 3 (exclusion overturned): a DMI write has no acknowledgement - the bench's write that does not take is found only by the scratch read-back, and attach fails; the parity bit itself is line-level, not modelled"
   },
   "debug:3.1:16": {
    "text": "- **休ませ方**（フレームの間）: idle_clock 0 では 2 本と",
@@ -828,7 +852,10 @@
   },
   "debug:3.1:24": {
    "text": "- wake のパターンは、target のデバッグの口だけでなく target",
-   "excluded": "behaviour this repository cannot model: a target-side effect (the wake pattern may reset the target); the retry rule it points to is traced under debug:2:6"
+   "verify": [
+    "tests/test_trace_debug.py::test_on_a_connection_the_probe_sends_no_set_up_and_changes_nothing_by_itself[p4-bench-oep.wire.rvswd]"
+   ],
+   "note": "review 3 (exclusion overturned): the rule it applies - the set-up (wake pattern included) is not sent again on a connection by the probe's own retries - is asserted on the bench's rvswd bringup log; that the wake resets a target is target-side"
   },
   "debug:3.2:1": {
    "text": "| 区切り | low | その後の high |",
@@ -919,9 +946,10 @@
    ],
    "mutants": [
     "tests/test_conformance_debug.py::test_debug_checker_detects_independent_faults[halt_failure_left-HALT-FAILURE]",
-    "tests/test_conformance_debug.py::test_debug_checker_detects_independent_faults[halt_req_left-HARTSEL-HALT-FAIL]"
+    "tests/test_conformance_debug.py::test_debug_checker_detects_independent_faults[halt_req_left-HARTSEL-HALT-FAIL]",
+    "tests/test_conformance_debug.py::test_debug_checker_detects_independent_faults[halt_ok_req_left-HARTSEL-HALT]"
    ],
-   "note": "halt: haltreq cleared after allhalted, and tried when the wait gives up"
+   "note": "halt: haltreq cleared after allhalted, and tried when the wait gives up; a successful halt leaves haltreq down too (model fixed, checker requires it)"
   },
   "debug:4:4": {
    "text": "| resume | haltreq = 0、resumereq = 1 を 1",
@@ -1022,69 +1050,89 @@
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_dmi__one_read_of_DMSTATUS]",
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_dmi__n___0]",
     "tests/test_trace_debug.py::test_debug_vector_through_the_client[riscv-dm_dmi__one_read_of_DMSTATUS]",
-    "tests/test_virtual_bench_spec.py::test_dmi_and_run_answers_count_their_values_and_rejects_follow_the_order"
+    "tests/test_virtual_bench_spec.py::test_dmi_and_run_answers_count_their_values_and_rejects_follow_the_order",
+    "tests/test_trace_debug.py::test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock",
+    "tests/test_conformance_registered_ops.py::test_every_minimal_mandatory_op_is_checked[oep.target.riscv-dm-16]"
    ],
-   "note": "dmi 0x10 n steps -> done status nvals values [TLV], mandatory"
+   "note": "dmi 0x10 n steps -> done status nvals values [TLV], mandatory; lock required (session_required), mandatory (a fn without dmi fails)"
   },
   "debug:4:12": {
    "text": "| 0x11 | halt | — | status(u8)、[TLV] | 必",
    "verify": [
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_halt__halted]",
     "tests/test_trace_debug.py::test_debug_vector_through_the_client[riscv-dm_halt__halted]",
-    "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_halt_on_an_unknown_connection]"
+    "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_halt_on_an_unknown_connection]",
+    "tests/test_trace_debug.py::test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock",
+    "tests/test_trace_debug.py::test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out[halt]"
    ],
-   "note": "halt 0x11 -> status [TLV], optional"
+   "note": "halt 0x11 -> status [TLV], optional; lock required; optional (absent from ops: unknown_operation)"
   },
   "debug:4:13": {
    "text": "| 0x12 | resume | — | status(u8)、[TLV] |",
    "verify": [
     "tests/test_trace_debug.py::test_resume_answers_status_alone",
-    "tests/test_conformance_debug.py::test_mandatory_debug_contracts_pass"
+    "tests/test_conformance_debug.py::test_mandatory_debug_contracts_pass",
+    "tests/test_trace_debug.py::test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock",
+    "tests/test_trace_debug.py::test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out[resume]"
    ],
-   "note": "resume 0x12 -> status [TLV], optional"
+   "note": "resume 0x12 -> status [TLV], optional; lock required; optional (absent from ops: unknown_operation)"
   },
   "debug:4:14": {
    "text": "| 0x13 | reset | mode(u8)、[TLV] | status",
    "verify": [
     "tests/test_interfaces.py::test_reset_answers_status_flags_pc_and_takes_no_method",
     "tests/test_virtual_bench_rules_2026_10_06.py::test_o2_reset_is_ndmreset_and_moves_no_line",
-    "tests/test_target_parts.py::test_reset_halt_and_step_decode"
+    "tests/test_target_parts.py::test_reset_halt_and_step_decode",
+    "tests/test_trace_debug.py::test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock",
+    "tests/test_trace_debug.py::test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out[reset]"
    ],
-   "note": "reset 0x13 mode [TLV] -> status flags pc [TLV]"
+   "note": "reset 0x13 mode [TLV] -> status flags pc [TLV]; lock required; optional (absent from ops: unknown_operation)"
   },
   "debug:4:15": {
    "text": "| 0x14 | read_block | address(u32)、count",
    "verify": [
     "tests/test_interfaces.py::test_block_access_reports_how_far_it_got",
-    "tests/test_conformance_blocks.py::test_optional_block_contracts_pass"
+    "tests/test_conformance_blocks.py::test_optional_block_contracts_pass",
+    "tests/test_trace_debug.py::test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock",
+    "tests/test_trace_debug.py::test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out[read_block]",
+    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra1-False]",
+    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra3-True]"
    ],
-   "note": "read_block 0x14 address count -> done status words"
+   "note": "read_block 0x14 address count -> done status words; lock required; optional, paired with write_block"
   },
   "debug:4:16": {
    "text": "| 0x15 | write_block | address(u32)、coun",
    "verify": [
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_write_block__memory_written_but_cleanup_lost_the_line]",
     "tests/test_trace_debug.py::test_debug_vector_through_the_client[riscv-dm_write_block__memory_written_but_cleanup_lost_the_line]",
-    "tests/test_conformance_blocks.py::test_optional_block_contracts_pass"
+    "tests/test_conformance_blocks.py::test_optional_block_contracts_pass",
+    "tests/test_trace_debug.py::test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock",
+    "tests/test_trace_debug.py::test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out[write_block]",
+    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra2-False]",
+    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra3-True]"
    ],
-   "note": "write_block 0x15 address count words -> done status"
+   "note": "write_block 0x15 address count words -> done status; lock required; optional, paired with read_block"
   },
   "debug:4:17": {
    "text": "| 0x16 | run | pc(u32)、timeout_ms(u32)、n",
    "verify": [
     "tests/test_virtual_bench_spec.py::test_dmi_and_run_answers_count_their_values_and_rejects_follow_the_order",
     "tests/test_interfaces.py::test_run_returns_the_registers_asked_for",
-    "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_run__the_preparation_fails__the_hart_is_not_run]"
+    "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_run__the_preparation_fails__the_hart_is_not_run]",
+    "tests/test_trace_debug.py::test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock",
+    "tests/test_trace_debug.py::test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out[run]"
    ],
-   "note": "run 0x16 pc timeout_ms regs outs -> status stopped dpc elapsed_us nvals values"
+   "note": "run 0x16 pc timeout_ms regs outs -> status stopped dpc elapsed_us nvals values; lock required; optional (absent from ops: unknown_operation)"
   },
   "debug:4:18": {
    "text": "| 0x17 | step | — | status(u8)、moved(u8)",
    "verify": [
     "tests/test_target_parts.py::test_reset_halt_and_step_decode",
-    "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_step_on_a_running_hart__status_state__moved_and_both_dpc_0]"
+    "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_step_on_a_running_hart__status_state__moved_and_both_dpc_0]",
+    "tests/test_trace_debug.py::test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock",
+    "tests/test_trace_debug.py::test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out[step]"
    ],
-   "note": "step 0x17 -> status moved dpc_before dpc_after"
+   "note": "step 0x17 -> status moved dpc_before dpc_after; lock required; optional (absent from ops: unknown_operation)"
   },
   "debug:4.1:1": {
    "text": "| 0x01 | 書く | address(u8)、value(u32) | —",
@@ -1213,9 +1261,11 @@
    ],
    "mutants": [
     "tests/test_conformance_debug.py::test_debug_checker_detects_independent_faults[halt_not_stop-HALT-RESUME]",
-    "tests/test_conformance_debug.py::test_debug_checker_detects_independent_faults[halt_failure_left-HALT-FAILURE]"
+    "tests/test_conformance_debug.py::test_debug_checker_detects_independent_faults[halt_failure_left-HALT-FAILURE]",
+    "tests/test_conformance_debug.py::test_debug_checker_detects_independent_faults[halt_ok_req_left-HARTSEL-HALT-ALREADY]",
+    "tests/test_conformance_debug.py::test_debug_checker_detects_independent_faults[halt_ok_req_left-HALT-RESUME]"
    ],
-   "note": "halt: already halted -> ok; allhalted not seen -> haltreq cleared, status timeout"
+   "note": "halt: already halted -> ok; allhalted not seen -> haltreq cleared, status timeout; haltreq lowered after a halt that succeeds or finds the hart halted (checker)"
   },
   "debug:4.2:2": {
    "text": "- **resume** は haltreq = 0、resumereq = 1",
@@ -1388,9 +1438,11 @@
     "tests/test_conformance_run.py::test_run_checker_detects_independent_faults[invalid_pc-NOT-HALTED]",
     "tests/test_conformance_run.py::test_run_checker_detects_independent_faults[invalid_values-NOT-HALTED]",
     "tests/test_conformance_run.py::test_run_checker_detects_independent_faults[missing_rehalt-NOT-HALTED]",
-    "tests/test_conformance_run.py::test_run_checker_detects_independent_faults[wrong_timeout-NOT-HALTED]"
+    "tests/test_conformance_run.py::test_run_checker_detects_independent_faults[wrong_timeout-NOT-HALTED]",
+    "tests/test_conformance_run.py::test_run_checker_detects_independent_faults[over_budget-TIMEOUT-HALTED]",
+    "tests/test_conformance_run.py::test_run_checker_detects_independent_faults[over_budget-NOT-HALTED]"
    ],
-   "note": "timeout_ms over max_op_ms unsupported; stopped 1/0/2/3 with their status, outcome and value rules"
+   "note": "timeout_ms over max_op_ms unsupported; stopped 1/0/2/3 with their status, outcome and value rules; the whole request, preparation and halt included, within max_op_ms (model fixed, checker requires it)"
   },
   "debug:4.4:3": {
    "text": "- **elapsed_us** は、probe が hart を走らせた書き込",
@@ -1496,32 +1548,40 @@
    "text": "| 0x10 | scan | count(u8)、count × (swdio",
    "verify": [
     "tests/test_target_parts.py::test_swd_scan_and_detach_are_debug_5s_forms",
-    "tests/test_conformance_scan.py::test_finite_scan_contracts_pass"
+    "tests/test_conformance_scan.py::test_finite_scan_contracts_pass",
+    "tests/test_trace_debug.py::test_swd_and_arm_adi_ops_need_the_lock_and_connections_does_not",
+    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.wire.swd-extra31-True]"
    ],
-   "note": "swd scan 0x10 the same form as §3"
+   "note": "swd scan 0x10 the same form as §3; lock required; optional (offered or not)"
   },
   "debug:5:2": {
    "text": "| 0x11 | attach | method(u8: 0だけ。ほかはunsu",
    "verify": [
     "tests/test_target_parts.py::test_swd_attach_decodes_dpidr_and_dormant",
-    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass"
+    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass",
+    "tests/test_trace_debug.py::test_swd_and_arm_adi_ops_need_the_lock_and_connections_does_not",
+    "tests/test_conformance_registered_ops.py::test_every_minimal_mandatory_op_is_checked[oep.wire.swd-17]"
    ],
-   "note": "swd attach 0x11: method 0 only (others unsupported 0x00)"
+   "note": "swd attach 0x11: method 0 only (others unsupported 0x00); lock required; mandatory"
   },
   "debug:5:3": {
    "text": "| 0x12 | detach | connection(u32)、[TLV] ",
    "verify": [
-    "tests/test_target_parts.py::test_swd_scan_and_detach_are_debug_5s_forms"
+    "tests/test_target_parts.py::test_swd_scan_and_detach_are_debug_5s_forms",
+    "tests/test_trace_debug.py::test_swd_and_arm_adi_ops_need_the_lock_and_connections_does_not",
+    "tests/test_conformance_registered_ops.py::test_every_minimal_mandatory_op_is_checked[oep.wire.swd-18]"
    ],
-   "note": "swd detach 0x12 connection(u32)"
+   "note": "swd detach 0x12 connection(u32); lock required; mandatory"
   },
   "debug:5:4": {
    "text": "| 0x13 | connections | first(u8) | §2.1 ",
    "verify": [
     "tests/test_trace_debug.py::test_debug_vector_through_the_client[swd_connections__read_identity_and_supplied_selector_are_distinct]",
-    "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass"
+    "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
+    "tests/test_trace_debug.py::test_swd_and_arm_adi_ops_need_the_lock_and_connections_does_not",
+    "tests/test_conformance_registered_ops.py::test_every_minimal_mandatory_op_is_checked[oep.wire.swd-19]"
    ],
-   "note": "swd connections 0x13 first(u8), §2.1"
+   "note": "swd connections 0x13 first(u8), §2.1; lock-free; mandatory"
   },
   "debug:5:5": {
    "text": "- scanのkindは2 = arm-adi。idはscan、attachとも",
@@ -1568,7 +1628,11 @@
   },
   "debug:5:10": {
    "text": "- **線と packet**: この wire の線は SWDIO（ピンの役 ",
-   "excluded": "behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - SWD's lines and packets (ADI)"
+   "verify": [
+    "tests/test_trace_debug.py::test_swds_swdio_is_pin_role_1_and_swclk_pin_role_2"
+   ],
+   "mutants": [],
+   "note": "SWDIO pin role 1, SWCLK pin role 2 (registry, the client reads the pair by role); the SWD packets and turnaround are the line's (hardware, not modelled)"
   },
   "debug:5:11": {
    "text": "- **idle サイクル**: probe は、どの packet の後にも、",
@@ -1613,38 +1677,45 @@
    "verify": [
     "tests/test_conformance_arm_adi.py::test_arm_contracts_pass",
     "tests/test_trace_debug.py::test_debug_vector_through_the_client[arm-adi_transfer__n___0]",
-    "tests/test_trace_debug.py::test_debug_vector_through_the_client[arm-adi_transfer__a_connection_ID_above_u16]"
+    "tests/test_trace_debug.py::test_debug_vector_through_the_client[arm-adi_transfer__a_connection_ID_above_u16]",
+    "tests/test_conformance_registered_ops.py::test_every_minimal_mandatory_op_is_checked[oep.target.arm-adi-16]"
    ],
    "mutants": [
     "tests/test_conformance_arm_adi.py::test_arm_checker_detects_independent_faults[ack-MIXED]",
     "tests/test_conformance_arm_adi.py::test_arm_checker_detects_independent_faults[done-MIXED]",
     "tests/test_conformance_arm_adi.py::test_arm_checker_detects_independent_faults[nvals-MIXED]"
    ],
-   "note": "transfer 0x10 n reqs [values] -> done status ack nvals values, mandatory"
+   "note": "transfer 0x10 n reqs [values] -> done status ack nvals values, mandatory; mandatory (a fn without transfer fails)"
   },
   "debug:6:2": {
    "text": "| 0x11 | read_block | address(u32)、count",
    "verify": [
     "tests/test_conformance_arm_adi.py::test_arm_contracts_pass",
     "tests/test_conformance_arm_adi_blocks.py::test_mem_ap_packet_contracts_pass",
-    "tests/test_target_parts.py::test_mem_ap_sets_csw_from_the_caller_and_chunks_blocks"
+    "tests/test_target_parts.py::test_mem_ap_sets_csw_from_the_caller_and_chunks_blocks",
+    "tests/test_trace_debug.py::test_swd_and_arm_adi_ops_need_the_lock_and_connections_does_not",
+    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.arm-adi-extra32-False]",
+    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.arm-adi-extra34-True]"
    ],
    "mutants": [
     "tests/test_conformance_arm_adi.py::test_arm_checker_detects_independent_faults[block_stale-BLOCK-LIVE]"
    ],
-   "note": "read_block 0x11 -> done status words"
+   "note": "read_block 0x11 -> done status words; lock required; optional, paired with write_block (the ops checker had it mandatory: fixed)"
   },
   "debug:6:3": {
    "text": "| 0x12 | write_block | address(u32)、coun",
    "verify": [
     "tests/test_conformance_arm_adi.py::test_arm_contracts_pass",
     "tests/test_conformance_arm_adi_blocks.py::test_mem_ap_packet_contracts_pass",
-    "tests/test_target_parts.py::test_mem_ap_sets_csw_from_the_caller_and_chunks_blocks"
+    "tests/test_target_parts.py::test_mem_ap_sets_csw_from_the_caller_and_chunks_blocks",
+    "tests/test_trace_debug.py::test_swd_and_arm_adi_ops_need_the_lock_and_connections_does_not",
+    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.arm-adi-extra33-False]",
+    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.arm-adi-extra34-True]"
    ],
    "mutants": [
     "tests/test_conformance_arm_adi_blocks.py::test_mem_ap_checker_catches_packet_and_progress_faults[done-FAIL-True-4-1]"
    ],
-   "note": "write_block 0x12 -> done status"
+   "note": "write_block 0x12 -> done status; lock required; optional, paired with read_block (the ops checker had it mandatory: fixed)"
   },
   "debug:6:4": {
    "text": "- ack は最後の転送の生の ACK（`swd_ack`: 線の順で bit0",
@@ -1776,10 +1847,12 @@
    "verify": [
     "tests/test_trace_debug.py::test_target_ops_need_a_connection_and_every_op_but_connections_the_lock",
     "tests/test_trace_debug.py::test_every_wire_offers_attach_detach_connections_and_declares_scan_in_its_ops[p4-bench]",
-    "tests/test_trace_debug.py::test_every_wire_offers_attach_detach_connections_and_declares_scan_in_its_ops[esp32-v003]"
+    "tests/test_trace_debug.py::test_every_wire_offers_attach_detach_connections_and_declares_scan_in_its_ops[esp32-v003]",
+    "tests/test_trace_debug.py::test_every_target_interface_is_listed_before_attach_and_every_target_op_without_a_connection_is_no_resource[p4-bench]",
+    "tests/test_trace_debug.py::test_every_target_interface_is_listed_before_attach_and_every_target_op_without_a_connection_is_no_resource[esp32-v003]"
    ],
    "mutants": [],
-   "note": "target interfaces listed before any attach; a target request naming no connection is rejected no_resource"
+   "note": "target interfaces listed before any attach; a target request naming no connection is rejected no_resource; review 3: riscv-dm and console listed before attach; every offered riscv-dm op and console open without a connection no_resource"
   },
   "debug:pre:7": {
    "text": "- connections 以外の op はすべてロックが要る。",
@@ -1796,10 +1869,12 @@
     "tests/test_trace_debug.py::test_every_wire_offers_attach_detach_connections_and_declares_scan_in_its_ops[esp32-v003]",
     "tests/test_trace_debug.py::test_max_connections_is_a_u8_and_one_when_not_declared",
     "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.wire.rvswd-extra29-True]",
-    "tests/test_trace_debug.py::test_each_target_request_picks_its_connection_by_the_number_it_starts_with"
+    "tests/test_trace_debug.py::test_each_target_request_picks_its_connection_by_the_number_it_starts_with",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c21_riscv_dm_ops_are_gated_on_the_ops_tag",
+    "tests/test_trace_debug.py::test_a_minimal_wire_needs_no_scan_no_second_connection_and_no_console"
    ],
    "mutants": [],
-   "note": "attach/detach/connections required, scan optional, one connection by default"
+   "note": "attach/detach/connections required, scan optional, one connection by default; review 3: the probe's high-level ops stay within the declared target ops (an op not in ops is unknown_operation); review 3: a rvswd alone with no scan, no max_connections and no console passes the declarations checker and works on the bench"
   }
  }
 }

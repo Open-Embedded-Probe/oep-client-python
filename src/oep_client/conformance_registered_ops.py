@@ -21,7 +21,7 @@ POLICIES={
     'oep.probe.link':(('port_speed','port_state'),(),'link §1'),
     **{n:(('scan',),(),'debug §1/3/5') for n in ('oep.wire.rvswd','oep.wire.swio','oep.wire.swd')},
     'oep.target.riscv-dm':(('halt','resume','reset','read_block','write_block','run','step'),(('read_block','write_block'),),'debug §4'),
-    'oep.target.arm-adi':((),(),'debug §6'),
+    'oep.target.arm-adi':(('read_block','write_block'),(('read_block','write_block'),),'debug §6'),   # transfer only is mandatory
     'oep.target.console':(('marks','clear','mark','write'),(),'console §1'),
     'oep.fixture.gpio':((),(),'fixture §1'),
     'oep.fixture.uart':(('marks','clear','mark','write'),(),'fixture §2'),

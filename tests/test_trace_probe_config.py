@@ -245,3 +245,44 @@ def test_a_refused_or_unchanging_set_touches_no_pin(monkeypatch):
     assert parks == [] and (cfg.get(), dict(ep.parked)) == before
     cfg.set([config.Idle(channel=22, mode="pull-down")])
     assert parks == [{22}] and ep.parked[22] == config.IDLE["pull-down"]
+
+
+# ---- third review additions ----------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("op", ["save", "erase"])
+def test_a_save_left_unreadable_stays_unreadable_at_the_next_boot(op):
+    """probe-config §3: a save / erase that fails with a saved copy whose integrity cannot be confirmed reports
+    storage_state 2 / reason 1; the next boot does not apply any of it and reports it the same (2, saved_generation 0,
+    reason 1) - not "no save". The settings come back empty at generation 1 and the free pins at Hi-Z."""
+    ep, hst = open_bench()
+    cfg = config.ProbeConfig(hst)
+    cfg.set([config.Idle(channel=21, mode="output-high"), config.Disable(channel=30)])
+    cfg.save()
+    ep.storage_fault = "unreadable"
+    with pytest.raises(h.Failed):
+        hst.call(cfg.fn, cfg.SAVE if op == "save" else cfg.ERASE)
+    assert state(cfg) == ("unreadable", 0, "form")
+    ep.reboot()
+    hst = h.Host(lambda b: ep.handle(b, 1))
+    cfg = config.ProbeConfig(hst)
+    assert state(cfg) == ("unreadable", 0, "form")                 # nothing applied, said so at boot
+    assert cfg.get() == (1, []) and ep.disabled == set() and ep.parked[21] == config.IDLE["hi-z"]
+    hst.open(3000)
+    cfg.save()                                                     # a new complete save clears it
+    ep.reboot()
+    assert state(cfg) == ("applied", 1, None)
+
+
+def test_an_idle_unset_on_a_free_channel_is_hi_z_at_once():
+    """probe-config §1 idle: a channel without an idle is Hi-Z - removing a free channel's idle item takes it back to
+    Hi-Z at once; a pull the channel lacks is unsupported with the item tag and changes nothing."""
+    ep, hst = open_bench()
+    cfg = config.ProbeConfig(hst)
+    cfg.set([config.Idle(channel=21, mode="pull-up")])
+    assert ep.parked[21] == config.IDLE["pull-up"]
+    cfg.unset([("idle", 21)])
+    assert ep.parked[21] == config.IDLE["hi-z"] and cfg.items() == []
+    ep.no_pull = {22: {config.IDLE["pull-down"]}}
+    with pytest.raises(h.Unsupported) as e:
+        cfg.set([config.Idle(channel=22, mode="pull-down")])
+    assert e.value.tag == config.ITEM["idle"] and cfg.get() == (3, []) and ep.parked.get(22, 0) == config.IDLE["hi-z"]

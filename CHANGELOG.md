@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- (JA) 規則の対応表に第 3 回の独立レビューをかけた（docs/trace/review3/、文書の割り振りをまた変えた）。902 単位のうち 105 単位を弱いとして試験を足した（第 1 回 84、第 2 回 80: まだ収束していない）。見つけて直した a09fa45 との食い違い:
+  - core §6.1: lease は応答を生成した時点から数え直す（送信待ち・送信完了によらない）。論理のコア（virtual_core）と、送信完了で数え直すことを求めていた独立検査器 5 本（lease、writer lease、config execution、port_speed execution、response race）を直した。
+  - core §2.1: preflight と virtual smoke が、fn 0 の describe の文字列を表示の前に置き換える。
+  - probe.config §3: 消去・保存の途中で完全性を確かめられない保存が残ったら、次の起動で何も適用せず storage_state 2 / reason 1 を示す（仮想ベンチ）。
+  - debug §3.2 / §4 / §4.4 / §6: 失敗の後の swio の線はプルアップで放す、halt の後は haltreq を下ろす、run は要求全体を max_op_ms のうちに終える、arm-adi の read_block / write_block は組の任意（論理モデルと検査器）。
+  - capture §3.3: repeat の samples を容量と関係なくバイト境界へ切り下げない、役割数で上限が rate_range を下回るときは rate の tag で unsupported。
+
 - (JA) 規則の対応表を、文書の割り振りを変えた別の担当で第 2 回の独立レビューにかけた（docs/trace/review2/*.json）。第 1 回が ok とした単位から 80 個の弱い対応を見つけて試験を足し、除外 10 個を覆して試験にした。抜き取りの照合（docs/trace/review/sample-audit.ja.md）では、その後の無作為の 40 個すべてで試験が規則を確かめていた。見つけて直した a09fa45 との食い違い:
   - core §2.1: list のインターフェース名も、表示の前に制御文字と不正な UTF-8 を置き換える。
   - link §3: 戻りを待つ phase 3 の間は、上げた口に新しい通知のフレームを始めない（口が戻ってから送る）。

@@ -2160,3 +2160,203 @@ def test_review2_a_bind_is_the_sessions_and_ends_with_it():
     other.open(3000)
     assert c.CaptureGroup(other).status().state == 0
     assert ep.groups[grp.fn].tracks == [] and ep.captures[lc.fn].group is None and ep.captures[an.fn].group is None
+
+
+# ---- third review (docs/trace/review3/capture.json): rules the two reviews passed but no named test checked --------
+
+def _with_wire_on_adc_pin():
+    """p4_x035 with its RVSWD pair moved to (17, 54): SWDIO on an ADC pin (VIRTUAL BENCH ONLY: a probe of another
+    shape)."""
+    p = virtual_bench.p4_x035()
+    old = virtual_bench.catalog.channel_group(1, [(1, 2), (2, 54)])
+    new = virtual_bench.catalog.channel_group(1, [(1, 17), (2, 54)])
+    return virtual_bench._again(p, [virtual_bench._with(o, [new if v == old else v for v in o.tlvs])
+                                    if o.name == "oep.wire.rvswd" else o for o in p.offered])
+
+
+def test_review3_an_analog_pin_and_a_wire_connection_refuse_each_other():
+    """capture §1.2 pin sharing: an analog channel and a line connection (debug attach) on one pin - the one that comes
+    second is rejected unavailable (pin_in_use, the channel), whichever it is; nothing changes."""
+    ep, hst, clock = bench(_with_wire_on_adc_pin)
+    wire, attach = ep.fns["oep.wire.rvswd"], reg.WIRE_RVSWD.op["attach"]
+    an = track(hst, analog=True, roles=(0,))                        # role 0 on channel 16
+    core.plan_apply(hst, [(an.fn, 0, 17)])                          # now on the wire's SWDIO pin
+    r = ask(hst, wire, attach, struct.pack("<BHHI", 1, 17, 54, 1_000_000))
+    assert cause(r) == reg.CORE.enum["unavailable_cause"]["pin_in_use"] and not ep.conns
+    assert dict(m.split_tlvs(r.payload))[reg.CORE.tlv["unavailable_payload"]["channel"]] == struct.pack("<H", 17)
+    core.plan_release(hst, [an.fn])
+    assert ask(hst, wire, attach, struct.pack("<BHHI", 1, 17, 54, 1_000_000)).succeeded
+    before = copy.deepcopy((ep.plan, list(ep.conns)))
+    r = ask(hst, ep.fns["oep.probe.plan"], reg.PROBE_PLAN.op["plan_apply"],
+            m.tlv(reg.PROBE_PLAN.tlv["plan_apply"]["role_assignment"], struct.pack("<HBH", an.fn, 0, 17), critical=True))
+    assert cause(r) == reg.CORE.enum["unavailable_cause"]["pin_in_use"]
+    assert copy.deepcopy((ep.plan, list(ep.conns))) == before
+
+
+def test_review3_an_error_end_still_sends_the_rest_before_write_pos():
+    """capture §2.1 rule 2: after an error stop the bytes taken before write_pos and not sent yet go out like a stop's
+    rest - without waiting for min_bytes / max_delay_ms - and nothing at or past write_pos is sent."""
+    ep, hst, clock = bench()
+    lc = track(hst)
+    lc.configure(rate=1000, mode=c.STREAMING)
+    ep.captures[lc.fn].samples = 16                                 # the probe's own pieces: 16 samples, 4 bytes
+    lc.subscribe(min_bytes=60000, max_delay_ms=60000)
+    lc.start()
+    clock.t = 41                                                    # 2 whole pieces (8 bytes) and a part
+    assert [f for f in ep.pushes() if f[0] == m.ROLE_DATA] == []    # held by the batching
+    ep.capture_overflow(lc.fn)
+    st = lc.status()
+    assert st.state == ST["error"] and st.write_pos == 8
+    data = [c.unpack_push(f) for f in ep.pushes() if f[0] == m.ROLE_DATA]
+    assert data and data[0][2] == 0 and data[-1][2] + len(data[-1][3]) == st.write_pos
+    counter_ok(lc, b"".join(p[3] for p in data), 32)
+
+
+def test_review3_release_names_generation_0_before_the_first_start():
+    """capture §3.2 generation: before the first start the generation is 0 - release (and read) naming 0 succeed (a
+    release that frees nothing), naming another is unavailable cause 6."""
+    ep, hst, clock = bench()
+    lc = track(hst)
+    lc.configure(rate=1000, mode=c.REPEAT, samples=8, segments=2)
+    before = snap(ep, lc.fn)
+    assert ask(hst, lc.fn, lc.RELEASE, struct.pack("<II", 0, 0)).succeeded and snap(ep, lc.fn) == before
+    assert cause(ask(hst, lc.fn, lc.RELEASE, struct.pack("<II", 1, 0))) == 6
+    assert cause(ask(hst, lc.fn, lc.READ, struct.pack("<IQH", 1, 0, 8), locked=False)) == 6
+    assert snap(ep, lc.fn) == before
+
+
+@pytest.mark.parametrize("analog", [False, True])
+def test_review3_the_trigger_takes_state_2_to_3(analog):
+    """capture §3.2's state table, row 2's last column: the trigger takes a waiting track to 3 (capturing) and sends
+    triggered; it is not done until the segment's samples are taken."""
+    ep, hst, clock = bench()
+    t = track(hst, analog)
+    t.subscribe()
+    t.configure(rate=1000, samples=8, trigger=(c.CROSS_UP, 1, 2100) if analog else (c.EDGE, 0, 0))
+    t.start()
+    assert t.status().state == ST["waiting"] and events(ep, t.fn) == []
+    clock.t = 3                                                     # sample 1 crosses / rises
+    assert t.status().state == ST["capturing"] and [e.kind for e in events(ep, t.fn)] == ["triggered"]
+    clock.t = 30
+    assert t.status().state == ST["done"]
+
+
+@pytest.mark.parametrize("analog", [False, True])
+def test_review3_contract_in_mode_2_and_mode_3_and_type_0_sent_as_0(analog):
+    """capture §3.3's contract: in mode 2 too a pretrigger at or past samples is unsupported (pretrigger) and one below
+    it is taken; in mode 3 only max_pretrigger bounds it (the declared most is taken, past mode 2's 8 samples); a type 0
+    trigger's role and value go as 0 from the host."""
+    ep, hst, clock = bench()
+    t = track(hst, analog)
+    trig = (T["trigger"], struct.pack("<BBI", c.CROSS_UP if analog else c.EDGE, 0, 1))
+    seg2 = (T["segments"], u32(2))
+    before = snap(ep, t.fn)
+    for op in (t.CONFIGURE, t.QUERY_OP):
+        r = ask(hst, t.fn, op, tlvs(mode(2), rate_tlv(), samples(8), seg2, trig, (T["pretrigger"], u32(8))),
+                locked=op == t.CONFIGURE)
+        assert unsupported_tag(r) == T["pretrigger"] and snap(ep, t.fn) == before
+    assert hst.request(t.fn, t.QUERY_OP, tlvs(mode(2), rate_tlv(), samples(8), seg2, trig, (T["pretrigger"], u32(7))),
+                       locked=False).succeeded
+    _, most = struct.unpack("<II", dict(describe(hst, t.fn))[DESCRIBE["trigger"]])
+    assert most > 8 and hst.request(t.fn, t.QUERY_OP, tlvs(mode(3), rate_tlv(), trig, (T["pretrigger"], u32(most))),
+                                    locked=False).succeeded
+    t.configure(rate=1000, samples=8, trigger=(c.IMMEDIATE, 9, 7))
+    sent = dict(m.split_tlvs(ep.requests[-1].payload))
+    assert sent[T["trigger"]] == struct.pack("<BBI", 0, 0, 0)
+
+
+def _analog_from(min_hz, exact=False):
+    """p4_x035 whose analog declares rate_range min_hz .. 83 333 Hz (VIRTUAL BENCH ONLY), `exact`: any rate in it."""
+    p = virtual_bench.p4_x035()
+    out = []
+    for o in p.offered:
+        if o.name == "oep.fixture.analog":
+            o = virtual_bench.Offered(o.fn, o.instance, o.name, virtual_bench._roles({k: list(range(16, 24)) for k in range(4)})
+                                      + virtual_bench._analog_decl([(0, 0, 950), (1, 0, 1250), (2, 0, 1750), (3, 0, 3100)],
+                                                                   65536, min_hz, 83_333),
+                                      o.revision, tuple({**dict(o.inner), "exact": exact}.items()))
+        out.append(o)
+    return virtual_bench._again(p, out)
+
+
+@pytest.mark.parametrize("exact", [False, True])
+def test_review3_no_rate_kept_in_range_for_the_configuration_is_unsupported(exact):
+    """capture §3.3 rate: when the configuration (here 4 roles sharing one ADC) keeps no value inside rate_range, the
+    request is unsupported (rate's tag) even though the asked rate is in the range - never a rate outside it."""
+    ep, hst, clock = bench(lambda: _analog_from(30_000, exact))
+    an = track(hst, analog=True, roles=(0,))
+    assert an.configure(rate=30_000, samples=8, query=True).rate >= 30_000
+    core.plan_apply(hst, [(an.fn, k, 16 + k) for k in range(4)])
+    before = snap(ep, an.fn)
+    for op in (an.QUERY_OP, an.CONFIGURE):
+        r = ask(hst, an.fn, op, tlvs(mode(1), rate_tlv(30_000), samples()), locked=op == an.CONFIGURE)
+        assert unsupported_tag(r) == T["rate"] and snap(ep, an.fn) == before
+
+
+def test_review3_repeat_segments_take_the_samples_asked_and_end_padded():
+    """capture §3.3 / §1.1 rule 4 / §2.2: samples are rounded down for capacity only - with w 3 a repeat segment of 10
+    samples is taken as asked (actual_samples 10), each segment ceil(10 x 3 / 8) = 4 bytes ending in its padding, the
+    next one right after it, the samples running on across them."""
+    ep, hst, clock = bench(with_inner(widths=(3,)))
+    lc = track(hst, roles=(0, 1, 2))
+    assert lc.configure(rate=1000, mode=c.REPEAT, samples=10, segments=4).samples == 10
+    lc.start()
+    clock.t = 35
+    segs = lc.segments()
+    assert [(s.position, s.samples) for s in segs] == [(0, 10), (4, 10), (8, 10)]
+    for k, s in enumerate(segs):
+        data = lc.read_segment(s)
+        assert len(data) == 4
+        assert [sum(lc.channel(data, ch, 10)[i] << ch for ch in range(3)) for i in range(10)] == \
+            [(10 * k + i) % 8 for i in range(10)]
+
+
+def _two_groups():
+    """p4_x035 with a second capture-group (fn 16) over the same tracks (VIRTUAL BENCH ONLY)."""
+    p = virtual_bench.p4_x035()
+    g = next(o for o in p.offered if o.name == "oep.fixture.capture-group")
+    return virtual_bench._again(p, list(p.offered) + [virtual_bench.Offered(16, 1, g.name, g.tlvs, g.revision, g.inner)])
+
+
+def test_review3_a_track_bound_in_another_group_is_cause_4():
+    """capture §4.1 bind: a track another group holds is unavailable cause 4 (with its fn) - nothing bound, the other
+    group's bind kept; unbound there, it binds."""
+    ep, hst, clock = bench(_two_groups)
+    lc, an = track(hst), track(hst, analog=True, roles=(0,))
+    for t in (lc, an):
+        t.configure(rate=1000, samples=8)
+    first, second = c.CaptureGroup(hst, fn=ep.fns["oep.fixture.capture-group"]), c.CaptureGroup(hst, fn=16)
+    first.bind([lc, an])
+    r = ask(hst, second.fn, second.BIND, struct.pack("<BH", 1, lc.fn))
+    assert cause(r) == reg.CORE.enum["unavailable_cause"]["bound_in_group"]
+    assert dict(m.split_tlvs(r.payload))[reg.CORE.tlv["unavailable_payload"]["fn"]] == struct.pack("<H", lc.fn)
+    assert ep.groups[16].tracks == [] and ep.groups[first.fn].tracks == [lc.fn, an.fn]
+    first.bind([])
+    second.bind([lc])
+    assert ep.captures[lc.fn].group is ep.groups[16]
+
+
+def test_review3_a_failed_group_start_makes_the_group_6():
+    """capture §4.1: a start whose track fails to initialise puts that track in 6 and the group with it (status 6),
+    the started tracks stopped (state 1)."""
+    ep, hst, clock, lc, an, grp = grouped()
+    ep.capture_fail_start = {lc.fn}
+    grp.bind([an, lc])
+    r = hst.request(grp.fn, grp.START, b"")
+    assert (r.resolution, r.detail) == (m.COMPLETED, m.FAILED)
+    assert grp.status().state == ST["error"]
+    assert (lc.status().state, an.status().state) == (ST["error"], ST["configured"])
+
+
+def test_review3_a_group_stop_gives_the_analog_pad_back_as_its_own_stop_does():
+    """capture §4.1 stop: every track stops by its own rules, the pad included - the analog's pad, on the analog
+    function while the group captures, is idle again after the group's stop (the plan kept), with short segments."""
+    ep, hst, clock, lc, an, grp = grouped(mode=c.REPEAT)
+    idle = ep.pin_state(16)
+    grp.bind([lc, an])
+    grp.start([lc, an])
+    assert ep.pin_state(16) == "analog"
+    clock.t = 3
+    grp.stop()
+    assert ep.pin_state(16) == idle and (an.fn, 0, 16) in ep.plan
+    assert an.status().state == ST["configured"] and an.segments()[-1].flags & SHORT

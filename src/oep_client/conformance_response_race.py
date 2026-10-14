@@ -22,7 +22,9 @@ class ResponseRaceChecks:
         expected_request='01030001001007000000'+('03' if kind=='REJECTED' else '01')
         expected_reply='0203000003' if kind=='REJECTED' else '02030001000200'
         require(old['request_hex']==expected_request and old['reply_hex']==expected_reply and old['token']==[7,1],'old request/reply/token differs')
-        require(old['before']['deadline']==old['after']['deadline']==lease and old['after']['holder']==7 and old['after']['now_ms']==100,'processing renewed or lost old lease')
+        # core §6.1 (a09fa45): the old holder's answer restarts its lease when it is generated (rejected too), not at
+        # the writer's completion
+        require(old['before']['deadline']==lease and old['after']['deadline']==100+lease and old['after']['holder']==7 and old['after']['now_ms']==100,'old answer did not restart the lease at its generation, or lost it')
         finish=next(e for e in events if e['action']=='finish' and e['request_hex']==expected_request)
         require(finish['reply_hex']==expected_reply and finish['token']==old['token'],'queued old result changed before completion')
         competing=[e for e in events if e['action']=='prepare' and e['route'] in (1,2) and bytes.fromhex(e['request_hex'])[3:6]==b'\0\0\x10']
@@ -30,7 +32,7 @@ class ResponseRaceChecks:
         for i,e in enumerate(competing):
             holder=7 if kind=='RETURN-ID' and i==1 else 8+i;payload=lease.to_bytes(4,'little')+bytes((kind!='NO-FORCE',))
             require(bytes.fromhex(e['request_hex'])==b'\1\1\0\0\0\x10'+holder.to_bytes(4,'little')+payload,'competing open bytes differ')
-            expected_open=(b'\2\1\0\0\10'+(lease-400).to_bytes(4,'little') if kind=='NO-FORCE'
+            expected_open=(b'\2\1\0\0\10'+(lease-300).to_bytes(4,'little') if kind=='NO-FORCE'
                            else b'\2\1\0\1\0'+lease.to_bytes(4,'little')+(17).to_bytes(4,'little'))
             require(bytes.fromhex(e['reply_hex'])==expected_open,'competing open result lease/boot/refusal differs')
             sent=next(s for s in events if s['action']=='finish' and s['route']==e['route'] and s['request_hex']==e['request_hex'])
@@ -40,7 +42,7 @@ class ResponseRaceChecks:
             require(competing[0]['reply_hex'].startswith('0201000008') and competing[0]['token'] is None and competing[0]['before']==competing[0]['after'],'non-force open changed old ownership')
             refused=next(e for e in events if e['action']=='finish' and e['route']==1)
             require(refused['before']==refused['after'],'non-owner refused completion renewed old lease')
-            require(finish['before']['deadline']==lease and finish['after']['deadline']==700+lease,'valid old completion failed to renew from send completion')
+            require(finish['before']['deadline']==finish['after']['deadline']==100+lease,'old completion renewed the lease at send completion')
             replay=next(e for e in events if e['action']=='replay');require(replay['before']==replay['after'] and replay['reply_hex']==expected_reply,'replay changed old owner after valid completion')
             require(state['holder']==7 and state['live']=={'1':[1,1],'2':[1,1]} and state['next_id']==3,'non-force attempt lost resources')
         else:

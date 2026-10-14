@@ -83,6 +83,7 @@ class DebugChecks(DmseqChecks):
             parent,_=self.attach(sid);rid,_=self.console(sid,parent,2);self.a.frame(rid,*target_frame(syn=True,data=b'x'))
             for name in ('halt','halt','resume'):
                 value=self.c.success(self.request(5,name,sid,struct.pack('<I',parent)));require(value[:1]==b'\0','halt/resume status');tlvs(value[1:])
+                require(not self.a.state()['targets'][parent]['haltreq'],'halt/resume left haltreq asserted')
                 before=self.a.state();self.a.poll(rid);after=self.a.state()
                 if name=='halt':require(after['mailboxes'][rid]['events']==[('read',0x11,0x300)] and after['streams'][rid]==before['streams'][rid],'console touched mailbox while halted')
             after=self.a.state();require(after['streams'][rid]['data']==b'x' and not after['targets'][parent]['haltreq'],'resume failed to clear haltreq/restart console')
@@ -132,7 +133,8 @@ class DebugChecks(DmseqChecks):
                 state=self.a.state();actual=state['targets'][parent]['registers'][0x10]
                 require(not actual&mask,'high-level op returned with nonzero hartsel')
                 if already:require(state['targets'][parent]['halted'] and state['access']==before['access'],'already halted hart was halted again')
-                if resume or failed:require(not actual&0x80000000 and not state['targets'][parent]['haltreq'],'resume/failed halt left haltreq asserted')
+                # every halt lowers haltreq too: after allhalted, when already halted, or when the wait gives up (debug §4, §4.2)
+                require(not actual&0x80000000 and not state['targets'][parent]['haltreq'],'halt/resume left haltreq asserted')
             require(self.a.state()['targets'][other]==before['targets'][other],'high-level hart selection affected another connection')
     def output_bound(self):
         self.fresh()

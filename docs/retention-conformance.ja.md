@@ -17,7 +17,7 @@ sample fn 1/2のown create(op 16)はkind u8、reply_size u8、[TLV]を受け、r
 - end: 資源を解放しても欠落markerと履歴を残し、再送はresult_lost。sessionを復活させない。
 - 同session新corr open: 初期lease3000msから1000/60000msへ変更し、それぞれforce=0/1を確認する。新openはpeer経路へ送り、資源・既存履歴・購読先・通知連番を保持する。実際のdeadlineと応答leaseを独立に確認し、open自体も記録する。旧要求は保存応答又はresult_lostを再送し、同一openの再送もleaseを更新しない。通知は引き続きprimaryへseq0→1で届く。
 
-- keepalive: lease1000/60000msをprimary/peer双方から更新する4条件。資源・allocator・購読・通知送り先と連番・旧cacheを保持し、新要求を記録する。応答完了から元のlease長だけ実deadlineを更新し、同一再送は更新しない。
+- keepalive: lease1000/60000msをprimary/peer双方から更新する4条件。資源・allocator・購読・通知送り先と連番・旧cacheを保持し、新要求を記録する。応答の生成から元のlease長だけ実deadlineを更新し、同一再送は更新しない。
 
 - owner: 未指定/1byte/32byte空白/UTF-8の所有者名×end/expiry/forceの12条件。lock_stateと2種類のlocked拒否で元のownerを読み、same-S open/keepaliveで保持し、解放時又はowner未指定の新SIDへのforceで消す。全応答TLVをbyte比較する。不正入力は次のOWNER-INPUTSで確認する。全text値はこのcaseの範囲外。
 

@@ -345,7 +345,7 @@ def plan(equipment: Equipment, contract='PROBE-DECLARE', probes=(), targets=(), 
 
 def virtual_smoke(equipment: Equipment, probes=()):
     """Exercise actual OEP bytes in memory; refuse any physical transport before requests."""
-    from . import __version__, cobs, core, dump, endpoint, host, registry as registry, virtual_bench
+    from . import __version__, cobs, core, dump, endpoint, host, message, registry as registry, virtual_bench
     selected = plan(equipment, probes=probes)
     ids = [x['roles']['probe'] for x in selected['assignments']]
     nodes = {x['id']: x for x in equipment.data['probes']}
@@ -378,8 +378,9 @@ def virtual_smoke(equipment: Equipment, probes=()):
                                         confirm=hst.confirm_range())
             result['declarations'] = json.loads(dump.to_json(capabilities))
             values = dict(core.describe(hst))
-            result['firmware'] = values.get(virtual_bench.CORE_FIRMWARE, b'').decode('utf-8') or None
-            result['unit_id'] = values.get(virtual_bench.CORE_UNIT_ID, b'').decode('utf-8') or None
+            # answer text shown with control characters and bad UTF-8 replaced (core §2.1)
+            result['firmware'] = message.shown(values.get(virtual_bench.CORE_FIRMWARE, b'')) or None
+            result['unit_id'] = message.shown(values.get(virtual_bench.CORE_UNIT_ID, b'')) or None
             if result['unit_id'] != node['identity']['value']:
                 raise RuntimeError('probe identity does not match explicit configuration')
             if capabilities.missing:
@@ -425,7 +426,7 @@ def equipment_lock(path):
 
 def physical_preflight(equipment: Equipment, probes=(), *, lock_path=None):
     """Confirm identity/declarations and open/end a session, without target operations."""
-    from . import __version__, core, dump, link, registry as registry
+    from . import __version__, core, dump, link, message, registry as registry
     selected = plan(equipment, probes=probes)
     nodes = {x['id']: x for x in equipment.data['probes']}
     ids = [x['roles']['probe'] for x in selected['assignments']]
@@ -472,7 +473,8 @@ def physical_preflight(equipment: Equipment, probes=(), *, lock_path=None):
                 values = dict(core.describe(hst))
                 tags = registry.CORE.tlv['describe']
                 for field in ('firmware', 'model', 'unit_id', 'chip'):
-                    result[field] = values.get(tags[field], b'').decode('utf-8') or None
+                    # answer text shown with control characters and bad UTF-8 replaced (core §2.1)
+                    result[field] = message.shown(values.get(tags[field], b'')) or None
                 if not result['unit_id'] or result['unit_id'].lower() != node['identity']['value'].lower():
                     raise RuntimeError('probe identity does not match explicit configuration')
                 caps = dump.collect(lambda fn, op, payload: hst.call(fn, op, payload, locked=False).payload,
