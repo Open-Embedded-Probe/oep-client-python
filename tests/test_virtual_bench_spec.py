@@ -109,13 +109,13 @@ def test_a_resent_request_gets_its_remembered_result_and_runs_once():
     ep = endpoint.Endpoint(virtual_bench.with_stand_in(virtual_bench.esp32_v003()), Clock())
     h = Host(ep)
     h.open()
-    toy = 11                                                        # a stand-in fn: 0x01 write(u32)
+    toy = next(fn for fn, name in ep.names.items() if name.endswith(".stand-in"))   # 0x01 write(u32)
     first = h.raw(toy, 0x01, struct.pack("<I", 5))
     ep.values[toy] = 99                                             # the state moved on
     again = h.raw(toy, 0x01, struct.pack("<I", 5), corr=h.corr)
     assert again == first and ep.values[toy] == 99                  # not executed a second time
-    # core §5.2: the table is corr -> answer; the same corr with another payload gets the remembered answer too
-    assert h.raw(toy, 0x01, struct.pack("<I", 6), corr=h.corr) == first and ep.values[toy] == 99
+    # core §5.1: the record is the whole request; the same corr with another payload is malformed, never run
+    assert h.raw(toy, 0x01, struct.pack("<I", 6), corr=h.corr).detail == m.MALFORMED and ep.values[toy] == 99
     h.raw(toy, 0x01, struct.pack("<I", 1))
     h.raw(toy, 0x01, struct.pack("<I", 2))
     for _ in range(10):

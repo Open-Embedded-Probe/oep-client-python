@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- (JA) oep-spec a09fa45 への追従（段階2: oep.probe.plan）。op を 0x10/0x11 に移し、plan_apply は割り当ての集合が変わる fn だけを置き換え（同じ集合は何も変えない）、動作中の機能（configure 済み UART、state 1 の I2C/SPI target、state 2/3/5 のキャプチャ）は cause 6、group に束ねたトラックは cause 4 で断る。plan の変わったキャプチャは generation を保って state 0 へ戻す。出力 idle のチャンネルは GPIO とロジック以外が cause 5 で断る。plan_release は存在しない fn を unknown_function、束ねたトラックを cause 4 で、何も変えずに断る。
+
 - (JA) oep-spec a09fa45 への追従（段階1: コア）。registry とベクタを同期し、confirm と list entry から flags を外し、corr16 の循環と要求全体での再送照合（同じ corr の異なる要求は malformed、異なる ID の open だけが再送状態を置き換える）、TLV 番号 0 の拒否と 0x7F の通常の tag 化、シリアル経路のフレーム専用化に合わせた。no_connection は no_resource（`host.NoResource`）、accepted と busy は削除。kept session は corr の予約を保存し、次の実行がその先から終了処理を送る。コアの独立検査器（`conformance.py` ほか）を同じ core に合わせ、corr 枯渇前の session 切替検査（rollover）は不要になったため削除した。インターフェースはまだ b80555a の番号で、`registry_legacy.py` と `tests/vectors_legacy/` を段階ごとに外す（`tests/conftest.py` の PENDING_FOLLOW）。
 
 - (JA) 有限保持の通知契約をraw fixtureで確認。通知1frame slotと7byte chunkで購読拒否時不変・seq抜け・frame完了・応答優先を検査し、4つのfaultを検出。本番virtualと実driverの適合は範囲外。

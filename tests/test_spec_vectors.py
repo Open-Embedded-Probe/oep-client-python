@@ -316,3 +316,121 @@ def test_an_unknown_answer_tlv_is_skipped_by_the_host(case):
         assert isinstance(h.rejection(res), h.Rejected)
     tail = m.split_tlvs(res.payload[fixed:])
     assert tail and all(t & 0x7F == 0x7F or t for t, _ in tail)
+
+
+# ---- per-op vectors (ops.json) of the interfaces that follow the current spec --------------------------------------
+from oep_client import config, core, fixture, virtual_bench_capture
+from test_vectors import vector_probe                                   # the vectors' fn numbers on the virtual bench
+
+S = 0x11223344                                                          # ops.json about: the lock holder's id
+FOLLOWED = {"oep.probe.plan"}                                           # grows with each stage
+OPS = load("ops.json")["cases"]
+
+
+def followed(case) -> bool:
+    """The case's request goes to an interface that follows the current spec (its state may involve others)."""
+    return case["fns"].get(str(m.Request.unpack(hx(case["request_hex"])).fn)) in FOLLOWED
+
+
+class Fixed:
+    @staticmethod
+    def randrange(a, b):
+        return S
+
+
+def bench_for(case):
+    """The virtual bench with the case's fns, and a host holding session S on it for setting the case's state up
+    through the client's own modules. -> (endpoint, host, clock)."""
+    clock = type("Settable", (), {"t": 0, "__call__": lambda self: self.t})()
+    ep = endpoint.Endpoint(vector_probe(case["fns"]), clock, boot_id=EXAMPLE_BOOT_ID)
+    hst = h.Host(lambda b: ep.handle(b, 0))
+    hst.rng = Fixed()
+    return ep, hst, clock
+
+
+def fn_of(case, name):
+    return int(next(k for k, v in case["fns"].items() if v == name))
+
+
+def plan_state(case, ep, hst):
+    """The state plan's cases name, made through the client."""
+    name, state = case["name"], case["state"]
+    if state != "—":
+        hst.open(3000)
+    if "fn 2 has the plan above" in state or "fn2 role1 channel3 is high" in state:
+        core.plan_apply(hst, [(2, 1, 3)])
+    if "fn2 role1 channel3 is high" in state:
+        fixture.Gpio(hst, 2).set([(3, reg.INTERFACES["oep.fixture.gpio"].enum["mode"]["output_high"])])
+    if "fn5 RX on channel3 at 9600 baud" in state:
+        core.plan_apply(hst, [(5, 1, 3)])
+        fixture.FixtureUart(hst, 5).configure(9600)
+    if "fn9 state3, role0 channel1" in state:
+        core.plan_apply(hst, [(9, 0, 1)])
+        ep.captures[9].state = virtual_bench_capture.STATE["capturing"]
+    if "channel3 idle high in volatile config" in state:                 # the settings, not a session's
+        ep.load_config([config.item(config.Idle(channel=3, mode="output-high"))], saved=False)
+
+
+STATES = {"oep.probe.plan": plan_state}
+
+
+def make_case(case):
+    ep, hst, clock = bench_for(case)
+    for name in sorted(set(case["fns"].values()), key=lambda n: n != "oep.probe.plan"):
+        if name in STATES:
+            STATES[name](case, ep, hst)
+            break
+    corr = m.Request.unpack(hx(case["request_hex"])).corr
+    ep.newest_corr = (corr - 2) % 0xFFFF + 1 if ep.last is not None else None   # the case's request is the next one
+    ep.resend.clear()
+    return ep, hst
+
+
+@pytest.mark.parametrize("case", [c for c in OPS if followed(c)], ids=lambda c: c["name"])
+def test_ops_vectors_from_the_virtual_bench_byte_for_byte(case):
+    ep, _ = make_case(case)
+    assert ep.handle(hx(case["request_hex"]), 0).hex() == case["answer_hex"]
+
+
+def test_plan_keeps_what_its_cases_say_it_keeps():
+    """The states the plan vectors say stay (oep-if-plan §2.1): a kept gpio output, a configured UART's baud and buffer,
+    a running capture."""
+    by = {c["name"]: c for c in OPS}
+    ep, _ = make_case(by["plan_apply: GPIO addition preserves an existing output"])
+    before = ep.pin_state(3)
+    ep.handle(hx(by["plan_apply: GPIO addition preserves an existing output"]["request_hex"]), 0)
+    assert ep.pin_state(3) == before and before.startswith("gpio") and (2, 1, 4) in ep.plan
+    for name in ("plan_apply: identical configured UART is unchanged", "plan_apply: configured UART channel change is refused"):
+        ep, _ = make_case(by[name])
+        before = (dict(ep.uart_baud), set(ep.plan))
+        ep.handle(hx(by[name]["request_hex"]), 0)
+        assert (dict(ep.uart_baud), set(ep.plan)) == before, name
+    for name in ("plan_apply: active capture channel change is refused", "plan_apply: active capture identical assignment is unchanged"):
+        ep, _ = make_case(by[name])
+        ep.handle(hx(by[name]["request_hex"]), 0)
+        assert ep.captures[9].state == virtual_bench_capture.STATE["capturing"] and (9, 0, 1) in ep.plan, name
+
+
+@pytest.mark.parametrize("case", [c for c in OPS if followed(c) and c["name"].startswith("plan_")
+                                  and "session_required" not in c["name"] and "n = 2" not in c["name"]],
+                         ids=lambda c: c["name"])
+def test_plan_vectors_as_the_client_sends_and_reads_them(case):
+    """The client's plan_apply / plan_release send the case's bytes and read its answer."""
+    r = m.Request.unpack(hx(case["request_hex"]))
+    sent = []
+    hst = h.Host(lambda b: sent.append(b) or hx(case["answer_hex"]))
+    hst._corr, hst.revision, hst.session = r.corr - 1, 1, r.session or None
+    hst._fns["oep.probe.plan"] = r.fn
+    res = m.Result.unpack(hx(case["answer_hex"]))
+    if r.op == core.OP_PLAN_APPLY:
+        call = lambda: core.plan_apply(hst, [struct.unpack("<HBH", v) for _, v in m.split_tlvs(r.payload)])  # noqa: E731
+    else:
+        n = r.payload[0]
+        call = lambda: core.plan_release(hst, [struct.unpack_from("<H", r.payload, 1 + 2 * k)[0] for k in range(n)])  # noqa: E731
+    if res.resolution == m.REJECTED:
+        with pytest.raises(h.Rejected) as e:
+            call()
+        assert e.value.result.detail == res.detail
+    else:
+        call()
+    assert sent[0] == hx(case["request_hex"])

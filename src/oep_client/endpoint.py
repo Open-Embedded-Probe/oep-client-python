@@ -1620,20 +1620,63 @@ class Endpoint:
                 raise unavailable("held_by_settings")
             self._check_plan(got, tag_of=tag_of)
             self._refuse_disabled(ch for _, _, ch in got)          # a disabled channel (probe.config §1): cause 5
+            for fn, _, ch in got:                                  # only gpio and a logic capture take an output idle
+                if (self._output_idle(ch) and self.names.get(fn) not in ("oep.fixture.gpio", "oep.fixture.logic")
+                        and (fn, _, ch) not in self.plan):
+                    raise unavailable("held_by_settings", ch)      # (fixture §1, capture §1.2; plan §2.4: cause 5)
             if self.plan_roles is not None and len([a for a in self.plan if a[0] not in named]) + len(got) > self.plan_roles:
                 raise unavailable("limit")                          # plan_roles (oep-if-plan §2.1)
-            self._replace_plans(named, got)
-            for fn in named:
+            # only the fns whose set of assignments changes; the same set is left as it is (oep-if-plan §2.1)
+            changed = {fn for fn in named if {a for a in self.plan if a[0] == fn} != {a for a in got if a[0] == fn}}
+            for fn in sorted(changed):
+                refusal = self._plan_change_refusal(fn)
+                if refusal is not None:
+                    raise refusal
+            self._replace_plans(changed, [a for a in got if a[0] in changed])
+            for fn in changed:
                 self._uart_plan_changed(fn)
+                self._capture_unplanned(fn)
             return m.COMPLETED, m.SUCCESS, b""
         if op == OP_PLAN_RELEASE:                                 # n(u8) n x fn(u16); n = 0: every fn
             n = t.take("B")
             fns = {t.take("H") for _ in range(n)}
             t.tail()
-            for fn in {a[0] for a in self.plan if not fns or a[0] in fns} - self.plan_from_config:
-                self._drop_plan(fn)                                 # the settings' plans stay, n = 0 too (oep-if-plan §2.3)
+            if any(fn not in self.names or fn == m.CORE_FN for fn in fns):
+                raise Reject(m.UNKNOWN_FUNCTION)                   # every fn checked before anything is released (§2.2)
+            dropping = {a[0] for a in self.plan if not fns or a[0] in fns} - self.plan_from_config
+            if any(fn in self.captures and self.captures[fn].group is not None for fn in dropping):
+                raise unavailable("bound_in_group")                # a track bound in a group (oep-if-plan §2.2)
+            for fn in dropping:
+                self._drop_plan(fn)                                 # the settings' plans stay, n = 0 too
             return m.COMPLETED, m.SUCCESS, b""
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
+
+    def _plan_change_refusal(self, fn: int) -> Reject | None:
+        """Why fn's set of assignments may not change now (oep-if-plan §2.1): bound in a capture group (cause 4), or its
+        function running (cause 6) - a configured fixture UART (fixture §2), an i2c / spi target in state 1 (§3, §4), a
+        capture in state 2, 3 or 5 (capture §3.2). None: it may."""
+        cap = self.captures.get(fn)
+        if cap is not None:
+            if cap.group is not None:
+                return unavailable("bound_in_group")
+            if cap.state in (virtual_bench_capture.STATE["waiting"], virtual_bench_capture.STATE["capturing"],
+                             virtual_bench_capture.STATE["paused"]):
+                return unavailable("wrong_state")
+        if self.names.get(fn) == "oep.fixture.uart" and fn in self.uart_baud and fn in self.uarts:
+            return unavailable("wrong_state")
+        if (fn in self.i2c and self.i2c[fn].state) or (fn in self.spi and self.spi[fn].state):
+            return unavailable("wrong_state")
+        return None
+
+    def _capture_unplanned(self, fn: int) -> None:
+        """A capture whose plan changed or went: its configuration, data and segments are gone and it is back in state
+        0; the generation stays and the next start moves it on (capture §3.2)."""
+        cap = self.captures.get(fn)
+        if cap is None or cap.state == virtual_bench_capture.STATE["unconfigured"]:
+            return
+        fresh = self._capture_from(self.decl[fn], self.inner[fn])
+        fresh.generation = cap.generation
+        self.captures[fn] = fresh
 
     def _listens(self, fn: int) -> bool:
         """A logic capture only listens: it shares pins with anything (core §8.1). The analog does not: its pads go to
@@ -1773,6 +1816,7 @@ class Endpoint:
             released.add(a[2])
         self.plan_from_config.discard(fn)
         self._uart_plan_changed(fn)
+        self._capture_unplanned(fn)
         self._park(released)
 
     # ---- what the probe does to a pin now (core §8, fixture §2-§4, capture §1.2) -----------------------
