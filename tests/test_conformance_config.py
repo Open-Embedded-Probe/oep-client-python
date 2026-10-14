@@ -43,7 +43,9 @@ def test_wrong_set_result_is_detected(case):
  ('refusal_changes_config','ATOMIC'),('refusal_counts','ATOMIC'),('accept_disabled_live','ATOMIC'),('normalized_tag','ATOMIC'),
  ('wrong_channel_tlv','ATOMIC'),('accept_duplicate','ATOMIC'),('tail_as_item','ATOMIC'),('ignore_critical_tail','ATOMIC'),
  ('wrap_generation','GENERATION'),('unset_missing_counts','GENERATION'),
- ('wrong_storage_cause','STORAGE-LIMIT'),('failed_save_changes_saved','STORAGE-LIMIT')])
+ ('wrong_storage_cause','STORAGE-LIMIT'),('failed_save_changes_saved','STORAGE-LIMIT'),
+ ('accept_item_zero','ATOMIC'),('accept_channel_past','ATOMIC'),('accept_wrong_length','ATOMIC'),('accept_unknown_mode','ATOMIC'),
+ ('noop_touches_pins','ATOMIC')])
 def test_semantic_faults(fault,case):
     model,c=setup();restart=model.restart_fixture
     def inject():
@@ -54,9 +56,21 @@ def test_semantic_faults(fault,case):
         def bad_tags(fn,op,data):
             if fn==4 and op==17 and fault=='tail_as_item' and data.endswith(b'\x40\1\0x'):raise Reject(11,b'\x40')
             if fn==4 and op==17 and fault=='ignore_critical_tail' and data[-3:]==b'\xc0\0\0':data=data[:-3]
+            if fn==4 and op==17 and fault=='accept_item_zero' and len(data)>=4 and not data[1]&127:return []   # taken, not malformed
             return tags_of(fn,op,data)
         e.request_tags=bad_tags
         def bad(fn,op,payload,tags):
+            # probe-config §1: an item number 0, a channel past `channels`, a known item of another length and an
+            # unknown idle mode are refused - these faults take them as a change instead
+            sizes={2:None,3:3,7:2}
+            if fn==4 and op==17 and (fault=='accept_channel_past' and any(len(v)>=2 and int.from_bytes(v[:2],'little')>=model.channels for raw,v in tags)
+                    or fault=='accept_wrong_length' and any(sizes.get(raw&127) not in (None,len(v)) for raw,v in tags)
+                    or fault=='accept_unknown_mode' and any(raw&127==3 and len(v)==3 and v[2]>4 for raw,v in tags)):
+                e.generation+=1;return e.generation.to_bytes(4,'little')
+            if fn==4 and op in (17,20) and fault=='noop_touches_pins':
+                before=(dict(e.items),e.generation);out=original(fn,op,payload,tags)
+                if (dict(e.items),e.generation)==before:e.pins={ch:0 for ch in e.pins}   # re-parked all the same (§2)
+                return out
             if fn==4 and op==17 and fault=='accept_duplicate' and len(tags)==2 and tags[0][1][:2]==tags[1][1][:2] and tags[0][0]&127==tags[1][0]&127==2:tags=tags[1:]
             if fn==4 and op==17 and fault=='bit7_kept' and any(raw&128 for raw,v in tags):
                 for raw,v in tags:e.items[raw,int.from_bytes(v[:2],'little')]=v

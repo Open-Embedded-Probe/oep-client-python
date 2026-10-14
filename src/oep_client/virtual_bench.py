@@ -306,7 +306,7 @@ CONSOLE_SEND_QUEUE = 256      # each console stream's send queue, bytes: the pro
 def _console(fn: int, mechanisms=(0, 1, 2), send_queue: int = CONSOLE_SEND_QUEUE) -> Offered:
     """oep.target.console: the mechanisms it opens (console §1), and - kept to itself - the send queue a stream of
     DMDATA / dmseq has (§2)."""
-    return Offered(fn, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes(mechanisms)),),
+    return Offered(fn, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([len(mechanisms), *mechanisms])),),
                    inner=(("send_queue", send_queue),))
 
 

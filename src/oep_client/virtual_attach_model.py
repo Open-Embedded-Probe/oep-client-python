@@ -21,7 +21,7 @@ class Attachments(Dependencies):
             page.extend(row);page[2]+=1
         return bytes(page)
     def describe(self,fn):
-        if fn==4:return (tlv(7,b'\x10\xff'),tlv(64,bytes(self.mechanisms)))
+        if fn==4:return (tlv(7,b'\x10\xff'),tlv(64,bytes((len(self.mechanisms),*self.mechanisms))))
         rows=[tlv(7,b'\x10\x0e'),tlv(64,b'\x02'),tlv(4,struct.pack('<I',1000))]
         for index,pair in enumerate(self.pairs[fn]):
             members=[(1,pair[0])] if fn==2 else [(1,pair[0]),(2,pair[1])]

@@ -37,7 +37,7 @@ def test_invalid_fixture_or_registry_blocks_before_wire(invalid):
     ('noncritical_rejected','WIRE-UNMARKED'),('raw_tag_lost','WIRE-TLV'),('last_wins','WIRE-FIRST-WINS'),
     ('later_copy_unchecked','WIRE-MALFORMED'),
     ('refusal_touches','WIRE-PINS'),('console_extra_byte','CONSOLE-RESOURCE'),('arm_console','CONSOLE-RESOURCE'),
-    ('duplicate_stream','CONSOLE-DUPLICATE'),('speed_exceeds','WIRE-BUSY'),('replay_executes','WIRE-REPLAY')])
+    ('duplicate_stream','CONSOLE-DUPLICATE'),('streams_reversed','CONSOLE-INDEPENDENT'),('speed_exceeds','WIRE-BUSY'),('replay_executes','WIRE-REPLAY')])
 def test_attach_and_console_mutants_fail(defect,case):
     model,c,a=setup();restart=model.restart_fixture
     def corrupt():
@@ -75,6 +75,8 @@ def test_attach_and_console_mutants_fail(defect,case):
                 if defect=='refusal_touches':e.touch.append(('refused',fn))
                 raise
             if defect=='console_extra_byte' and fn==4 and op==16:value=value[:4]+b'\x01'+value[4:]   # an old flags byte
+            if defect=='streams_reversed' and fn==4 and op==23 and value[1]>1:   # console §1: live streams in creation order
+                rows=[value[2+9*i:11+9*i] for i in range(value[1])];value=value[:2]+b''.join(reversed(rows))+value[2+9*len(rows):]
             if defect=='speed_exceeds' and fn<=3 and op==17 and not getattr(value,'outcome',0):value=value[:9]+b'\xff\xff\xff\x7f'+value[13:]
             return value
         e.request_tags=unchecked;e.dispatch_request=bad_dispatch

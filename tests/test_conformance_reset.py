@@ -34,6 +34,7 @@ from oep_client.virtual_core import Completed, Reject
     ('buffer_lost','CONSOLE-2'),('other_connection','CONSOLE-0'),
     ('mailbox_interleave','CONSOLE-0'),('reject_effect','MODE'),
     ('cleanup_kept','CLEANUP-LINE-0'),('cleanup_success','CLEANUP-LINE-2'),
+    ('mark_on_failure','CONSOLE-DM-LINE-0'),
 ])
 def test_reset_checker_detects_independent_faults(fault,case):
     model,c,a=setup();install=model.install
@@ -84,6 +85,7 @@ def test_reset_checker_detects_independent_faults(fault,case):
                 elif fault=='sync_retained' and rid in e.protocols:e.protocols[rid]['synced']=True
                 elif fault=='pending_retained' and rid in e.protocols:e.protocols[rid]['pending']=b'AB'
                 elif fault=='buffer_lost':stream.data.clear()
+                elif fault=='mark_on_failure' and outcome and not stream.marks:stream.mark(0x40,1)   # console §2: success only
             return Completed(data,outcome)
         e.dispatch_request=broken_dispatch;e.interleave=broken_interleave
     model.install=faulty_install;r=ResetChecks(c,a).run()

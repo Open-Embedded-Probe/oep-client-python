@@ -33,7 +33,11 @@ def test_standard_declarations_pass_without_mutating_requests():
     assert r['observed']['wire_max_connections']=={'1':2,'2':1,'3':1}
 
 
-@pytest.mark.parametrize('defect',['missing_attach','missing_detach','missing_connections','missing_console_write','missing_mechanisms','unknown_mechanism','preset_none','capacity_width','missing_pins','same_pin','pin_range'])
+MECH=lambda value:b'\x40'+len(value).to_bytes(2,'little')+value   # describe tag 0x40 mechanisms
+
+
+@pytest.mark.parametrize('defect',['missing_attach','missing_detach','missing_connections','missing_console_write','missing_mechanisms','unknown_mechanism','preset_none','capacity_width','missing_pins','same_pin','pin_range',
+                                   'uncounted_mechanisms','duplicate_mechanism','empty_mechanisms'])
 def test_standard_declaration_mutants_fail(defect):
     model,c=setup();describe=model.extension.describe
     def bad(fn):
@@ -44,7 +48,10 @@ def test_standard_declaration_mutants_fail(defect):
         if fn==4:
             if defect=='missing_console_write':rows=[row[:4]+bytes((row[4]&~32,)) if row[0]==7 else row for row in rows]
             if defect=='missing_mechanisms':rows=[row for row in rows if row[0]!=64]
-            if defect in ('unknown_mechanism','preset_none'):rows=[row[:3]+bytes((3 if defect=='unknown_mechanism' else 255,)) if row[0]==64 else row for row in rows]
+            if defect in ('unknown_mechanism','preset_none'):rows=[MECH(bytes((1,3 if defect=='unknown_mechanism' else 255))) if row[0]==64 else row for row in rows]
+            if defect=='uncounted_mechanisms':rows=[MECH(b'\x01') if row[0]==64 else row for row in rows]        # the mechanism alone, no n
+            if defect=='duplicate_mechanism':rows=[MECH(b'\x02\x01\x01') if row[0]==64 else row for row in rows]
+            if defect=='empty_mechanisms':rows=[MECH(b'\x00') if row[0]==64 else row for row in rows]
         if fn==1:
             if defect=='capacity_width':rows=[b'\x40\x02\0\x01\0' if row[0]==64 else row for row in rows]
             if defect=='missing_pins':rows=[row for row in rows if row[0] not in (1,6)]
@@ -67,11 +74,11 @@ def test_selection_and_revision_must_match(invalid):
     assert r['checks'][0]['status']=='failed' and all(x['status']=='blocked' for x in r['checks'][1:])
 
 
-def test_scan_is_optional_and_empty_mechanism_list_is_not_invented_as_error():
-    model,c=setup();describe=model.extension.describe
-    model.extension.describe=lambda fn:tuple(b'\x40\0\0' if fn==4 and row[0]==64 else row for row in describe(fn))
+def test_scan_is_optional_and_the_mechanisms_are_counted():
+    """debug §1: scan is optional; console §1: mechanisms is n(u8) n x mechanism, n >= 1, no duplicates."""
+    model,c=setup()
     r=OepDeclarationChecks(c,SELECTION).run();assert r['status']=='passed'
-    assert 16 not in r['observed']['oep_required_ops']['1'] and r['observed']['console_mechanisms']['4']==[]
+    assert 16 not in r['observed']['oep_required_ops']['1'] and r['observed']['console_mechanisms']['4']==[1]
 
 
 def test_future_registry_mandatory_op_is_not_silently_ignored():

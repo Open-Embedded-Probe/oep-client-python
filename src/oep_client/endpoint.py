@@ -646,7 +646,8 @@ class Endpoint:
         self.mechanisms = set()
         for fn, name in self.names.items():
             if name == "oep.target.console":
-                self.mechanisms |= {b for tag, v in self.decl[fn] if tag == virtual_bench.MECHANISMS for b in v}
+                self.mechanisms |= {b for tag, v in self.decl[fn] if tag == virtual_bench.MECHANISMS
+                                    for b in v[1:1 + v[0]]}          # n(u8) n x mechanism (console §1)
         self.block_max = {fn: self._own(fn, catalog.MAX_LENGTH, "H", 1 << 16)
                           for fn, name in self.names.items() if name == "oep.target.riscv-dm"}
         self.gpio_allowed = {fn: self._own(fn, virtual_bench.GPIO_MODES, "I", 0xFF)

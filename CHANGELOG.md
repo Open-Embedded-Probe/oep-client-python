@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- (JA) 段階 9 / 9b を規則ごとに確かめ直した（docs/stage9-rule-trace.ja.md）。console の describe mechanisms を仕様どおり `n(u8)、n × mechanism` で宣言・読みするように直した（仮想ベンチ、`Console.mechanisms()`、`oep dump`、検査器とそのモデル。これまで n が無かった）。宣言の検査は n ≥ 1・重複なし・count の一致も確かめる。故障注入を足した: probe.config の項目番号 0・範囲外 channel・長さ違い・未知の mode を受け付ける、変えない set でピンを触る、console の streams の順番違い、失敗した reset にマークを付ける、mechanisms の count 無し / 重複 / 空。
+
 - (JA) oep-spec a09fa45 の節ごとの確認表（docs/spec-a09fa45-sections.ja.md）を足した: core / transports / 各インターフェース文書の番号付きの節ごとに、名指して確かめる試験と独立した検査器を挙げる。足りなかった節に試験を足した: oep.probe.plan の各規則（tests/test_plan.py: list に出す条件、セッションの資源、§1 の宣言、§2.1 の置き換えと原子性・残る割り当て・cause 6 / 4 / 2、§2.2 の解放、§2.3 のピン、§2.4 の断り方）、common §1.5（位置の飛びは通知の欠落で、保持は read で確かめる）、core §2.7 / §12.1、capture §3.1 / §3.6（tests/test_spec_sections.py）。
 
 - (JA) swd の scan と detach をクライアントから送る試験を足した（oep-if-debug §5 の形）。scan の行の `Found.id`（rvswd / swio は DMSTATUS、swd は DPIDR）を足し、`dmstatus` は旧名として残す。

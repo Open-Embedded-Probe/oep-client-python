@@ -148,8 +148,9 @@ class Console(PositionStream):
     TAG_MECHANISMS = _CON.tlv["describe"]["mechanisms"]
 
     def mechanisms(self) -> list[int]:
-        """The mechanisms the probe opens (describe tag 0x40)."""
-        return [b for tag, v in describe(self.host, self.fn) if tag & 0x7F == self.TAG_MECHANISMS for b in v]
+        """The mechanisms the probe opens (describe tag 0x40: n(u8) n x mechanism(u8), console §1)."""
+        return [b for tag, v in describe(self.host, self.fn) if tag & 0x7F == self.TAG_MECHANISMS and v
+                for b in v[1:1 + v[0]]]
 
     def open(self, conn: int, mechanism: int = DMSEQ) -> int:
         """-> a new stream (u32) on the connection (console §2). A mechanism the probe lacks is rejected unsupported; a

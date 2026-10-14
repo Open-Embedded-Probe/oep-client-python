@@ -146,7 +146,8 @@ class AttachChecks:
                 require(any(row['fn']==fn and row['name']==name and row['revision']==1 for row in entries),'standard fn/name/revision mismatch')
                 rows=dict(reversed(self.c.describe(fn)));offered=ops(rows[self.c.reg['describe_common']['ops']])
                 require({code for op,code in self.operations[fn].items() if op!='scan'}<=offered,'mandatory standard ops missing')
-            require(list(rows[self.specs[4]['tlv']['describe']['mechanisms']])==self.a.mechanisms,'declared mechanism subset differs')
+            declared=rows[self.specs[4]['tlv']['describe']['mechanisms']]
+            require(declared[:1]==bytes((len(declared)-1,)) and list(declared[1:])==self.a.mechanisms,'declared mechanism subset differs (n(u8) n x mechanism)')
             self.c.observed['attach_fixture']={'selection':self.a.selection,'pairs':self.a.pairs,'mechanisms':self.a.mechanisms,'scope':'logical-model','reference':self.a.reference}
         self.c.check('OEP-ATTACH-CONTEXT','debug §1/3/5; console §1',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True

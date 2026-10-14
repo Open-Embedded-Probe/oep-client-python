@@ -51,9 +51,11 @@ class OepDeclarationChecks:
     def mechanisms(self, fn, name):
         spec=self.specs[name];tag=spec['tlv']['describe']['mechanisms'];values=dict(reversed(self.rows[fn]))
         require(tag in values,'console mechanisms declaration missing')
+        raw=values[tag];require(len(raw)>=1 and raw[0]>=1 and len(raw)==1+raw[0],'console mechanisms is n(u8) n x mechanism, n >= 1')
+        listed=list(raw[1:]);require(len(set(listed))==len(listed),'console mechanisms listed twice')
         known={value for key,value in spec['enum']['mechanism'].items() if key!='none'}
-        require(all(value in known for value in values[tag]),'unknown or preset-only console mechanism declared')
-        self.c.observed.setdefault('console_mechanisms',{})[str(fn)]=list(values[tag])
+        require(all(value in known for value in listed),'unknown or preset-only console mechanism declared')
+        self.c.observed.setdefault('console_mechanisms',{})[str(fn)]=listed
 
     def run(self):
         start=len(self.c.results)

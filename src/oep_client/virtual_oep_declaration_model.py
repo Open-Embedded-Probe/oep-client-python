@@ -17,7 +17,7 @@ class OepDeclarations(Resources):
         return bytes(page)
 
     def describe(self, fn):
-        if fn==4:return (tlv(7,b'\x10\xff'),tlv(64,b'\x01'))
+        if fn==4:return (tlv(7,b'\x10\xff'),tlv(64,b'\x01\x01'))
         rows=[tlv(7,b'\x10\x0e')]
         if fn==1:rows.append(tlv(64,b'\x02'))
         if fn==2:rows.append(tlv(4,struct.pack('<I',1000000)))
