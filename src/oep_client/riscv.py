@@ -64,7 +64,7 @@ def declared_max_length(hst: h.Host, fn: int, name: str) -> int:
     declares it so that both a read_block answer and a write_block request fit its max_frame (oep-if-debug §4.5).
     NoMaxLength when the probe does not declare it (or declares less than one word)."""
     for tag, value in describe(hst, fn):
-        if tag & 0x7F == catalog.MAX_LENGTH and len(value) >= 2:
+        if tag == catalog.MAX_LENGTH and len(value) >= 2:
             length = struct.unpack_from("<H", value)[0] // 4 * 4
             if length >= 4:
                 return length

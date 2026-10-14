@@ -16,14 +16,19 @@ from __future__ import annotations
 import threading
 import time
 
-VENDOR_USAGE_PAGE_MIN = 0xFF00
+from . import registry as reg
+
+HID_USAGE_PAGE, HID_USAGE = reg.USB["hid_usage_page"], reg.USB["hid_usage"]   # OEP's HID: 0xFF4F, 0x45 (transports §3)
+GAP_S = reg.TIMING["probe_frame_gap_ms"] / 1000
 
 
 def parse_report_descriptor(desc: bytes) -> list[dict]:
-    """The reports of a HID report descriptor: [{usage_page, report_id (0 = none), input, output}] with input/output in
-    bytes (the report ID not counted). Short items only (long items are skipped); enough for a vendor interface."""
+    """The reports of a HID report descriptor: [{usage_page, usage (the top-level collection's), report_id (0 = none),
+    input, output}] with input/output in bytes (the report ID not counted). Short items only (long items are skipped);
+    enough for a vendor interface."""
     reports: dict[tuple[int, int], dict] = {}
     usage_page = report_id = size = count = 0
+    usage = top = depth = 0
     stack = []
     i = 0
     while i < len(desc):
@@ -48,17 +53,26 @@ def parse_report_descriptor(desc: bytes) -> list[dict]:
                 stack.append((usage_page, report_id, size, count))
             elif tag == 0xB0 and stack:
                 usage_page, report_id, size, count = stack.pop()
+        elif kind == 0x08 and tag == 0x00:               # local: Usage
+            usage = value
+        elif kind == 0x00 and tag == 0xA0:               # main: Collection
+            top = usage if depth == 0 else top
+            depth += 1
+        elif kind == 0x00 and tag == 0xC0:               # main: End Collection
+            depth = max(0, depth - 1)
         elif kind == 0x00 and tag in (0x80, 0x90):       # main: Input / Output
             r = reports.setdefault((usage_page, report_id),
-                                   {"usage_page": usage_page, "report_id": report_id, "input": 0, "output": 0})
+                                   {"usage_page": usage_page, "usage": top, "report_id": report_id, "input": 0,
+                                    "output": 0})
             r["input" if tag == 0x80 else "output"] += (size * count + 7) // 8
     return list(reports.values())
 
 
 def vendor_report(desc: bytes) -> dict | None:
-    """The vendor-page report carrying both directions, if the descriptor has one."""
+    """OEP's report carrying both directions - usage page 0xFF4F, usage 0x45 (transports §3: another vendor HID is not
+    taken) - if the descriptor has one."""
     for r in parse_report_descriptor(desc):
-        if r["usage_page"] >= VENDOR_USAGE_PAGE_MIN and r["input"] >= 3 and r["output"] >= 3:
+        if (r["usage_page"], r["usage"]) == (HID_USAGE_PAGE, HID_USAGE) and r["input"] >= 3 and r["output"] >= 3:
             return r
     return None
 
@@ -77,6 +91,7 @@ class HidReportStream:
         self._reader.start()
 
     def _drain(self) -> None:
+        last, discarding = None, False
         while not self._closed:
             try:
                 report = self.backend.read_report(0.1)
@@ -87,7 +102,15 @@ class HidReportStream:
                 continue
             if len(report) < 2:
                 continue
-            n = min(report[0] | report[1] << 8, len(report) - 2)
+            now = time.monotonic()
+            quiet = last is None or now - last >= GAP_S
+            last = now
+            if discarding and not quiet:
+                continue                                 # the stream broke: input dropped until a 200 ms pause
+            n = report[0] | report[1] << 8
+            discarding = n > len(report) - 2             # more than the report holds: dropped, the stream broken
+            if discarding:                               # (transports §1 HID rule 6)
+                continue
             if n:
                 with self._cond:
                     self._buffer += report[2:2 + n]
@@ -187,7 +210,7 @@ class Usb1HidBackend:
 def _open_hidapi(vid: int, pid: int, serial: str | None) -> HidReportStream:
     import hid
     for info in hid.enumerate(vid, pid):
-        if info.get("usage_page", 0) and info["usage_page"] < VENDOR_USAGE_PAGE_MIN:
+        if info.get("usage_page", 0) and info["usage_page"] != HID_USAGE_PAGE:
             continue
         if serial and (info.get("serial_number") or "").lower() != serial.lower():
             continue

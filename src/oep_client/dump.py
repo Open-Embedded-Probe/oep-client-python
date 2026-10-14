@@ -53,13 +53,13 @@ def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, byte
         except m.ProtocolError:
             out.append("confirm's transport TLV (the answer's tail is broken)")
         else:
-            indexes = {v[0] for tag, v in core_describe if tag & 0x7F == _TRANSPORT_TAG and v}
+            indexes = {v[0] for tag, v in core_describe if tag == _TRANSPORT_TAG and v}
             if not where:
                 out.append("confirm's transport TLV")
             elif where[0] != _RELAYING_BROKER and _TRANSPORT_TAG in have and where[0] not in indexes:
                 out.append(f"describe of fn 0: the transport confirm names (index {where[0]})")
     out += [f"describe of fn 0: {name}" for tag, name in _REQUIRED_CORE_TAGS.items() if tag not in have]
-    values = [v for tag, v in core_describe if tag & 0x7F == m.TAG_OPS]
+    values = [v for tag, v in core_describe if tag == m.TAG_OPS]
     if not values:
         out.append("describe of fn 0: ops")                    # every fn's describe carries it (core §1.2, §7.4)
     else:
@@ -126,7 +126,7 @@ def collect(call, prefix: str = "", exact: bool = False, confirm: tuple[int, int
             caps.missing.append(f"describe of fn {e.fn}: ops in core §7.4's encoding ({d.ops_invalid}; the fn is not used)")
         elif d.ops is None:
             caps.missing.append(f"describe of fn {e.fn}: ops")   # every listed fn's describe (core §1.2, §7.4)
-        if e.name == _RESTART and not any(tag & 0x7F == _RESTART_MAX_MS for tag, _ in catalog.split_tlv(data)):
+        if e.name == _RESTART and not any(tag == _RESTART_MAX_MS for tag, _ in catalog.split_tlv(data)):
             caps.missing.append(f"describe of fn {e.fn} ({_RESTART}): restart_max_ms")   # oep-if-restart §1
     return caps
 

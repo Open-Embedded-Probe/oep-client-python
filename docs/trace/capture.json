@@ -1,0 +1,2280 @@
+{
+ "spec_commit": "a09fa45",
+ "units": {
+  "capture:pre:1": {
+   "text": "| `oep.fixture.logic` | 1 | ロジック（1 トラック）",
+   "verify": [
+    "tests/test_trace_capture.py::test_names_are_revision_1_and_offered_as_such[oep.fixture.logic]"
+   ],
+   "mutants": [],
+   "note": "oep.fixture.logic is revision 1 in the registry and offered at revision 1 by the bench"
+  },
+  "capture:pre:2": {
+   "text": "| `oep.fixture.analog` | 1 | アナログ（1 トラック",
+   "verify": [
+    "tests/test_trace_capture.py::test_names_are_revision_1_and_offered_as_such[oep.fixture.analog]"
+   ],
+   "mutants": [],
+   "note": "oep.fixture.analog is revision 1 in the registry and offered at revision 1 by the bench"
+  },
+  "capture:pre:3": {
+   "text": "| `oep.fixture.capture-group` | 1 | 複数のト",
+   "verify": [
+    "tests/test_trace_capture.py::test_names_are_revision_1_and_offered_as_such[oep.fixture.capture-group]"
+   ],
+   "mutants": [],
+   "note": "oep.fixture.capture-group is revision 1 in the registry and offered at revision 1 by the bench"
+  },
+  "capture:1.1:1": {
+   "text": "| `w` | 1〜128 の整数 | 1 サンプルのビット数。probe が選",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[1-widths0-1]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[3-widths1-4]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[3-widths2-3]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[2-widths3-8]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[9-widths4-16]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[5-widths5-128]"
+   ],
+   "mutants": [],
+   "note": "configure answers the probe's w (1, 3, 4, 8, 16, 128 by the probe's own widths), 1..128 and >= the channel count"
+  },
+  "capture:1.1:2": {
+   "text": "| `C` | 1 以上 | チャネル数（plan で割り当てたロジックの役割の",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[1-widths0-1]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[3-widths1-4]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[3-widths2-3]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[2-widths3-8]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[9-widths4-16]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[5-widths5-128]"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[layout_count-QUERY]"
+   ],
+   "note": "layout C equals the number of planned logic roles"
+  },
+  "capture:1.1:3": {
+   "text": "| `pos[k]`（k = 0 … C−1） | 0 ≤ pos[k] < w",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[1-widths0-1]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[3-widths1-4]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[3-widths2-3]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[2-widths3-8]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[9-widths4-16]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[5-widths5-128]",
+    "tests/test_trace_capture.py::test_role_k_is_channel_k"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[layout_count-QUERY]"
+   ],
+   "note": "pos[k] distinct, below w, in role order (planned out of order still gives 0, 1, 2)"
+  },
+  "capture:1.1:4": {
+   "text": "| `N` | 1 以上 | 区画のサンプル数 |",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[1-widths0-1]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[3-widths1-4]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[3-widths2-3]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[2-widths3-8]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[9-widths4-16]",
+    "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[5-widths5-128]"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[missing_actual_samples-QUERY]"
+   ],
+   "note": "actual_samples is N (>= 1); samples 0 is malformed"
+  },
+  "capture:1.1:5": {
+   "text": "1. サンプル i（i = 0 … N−1）は、区画内のビット `i·w` から",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[1]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[2]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[3]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[4]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[5]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[7]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[8]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[9]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[12]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[16]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[24]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[127]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[128]",
+    "tests/test_trace_capture.py::test_logic_three_bit_samples_through_the_bench"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[wrong_pack-ONE-SHOT]"
+   ],
+   "note": "sample i is bits i*w..i*w+w-1 (LSB first) for w 1-128, bench packer and client reader"
+  },
+  "capture:1.1:6": {
+   "text": "2. サンプル i のチャネル k の値は、区画内のビット `i·w + pos",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[1]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[2]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[3]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[4]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[5]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[7]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[8]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[9]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[12]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[16]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[24]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[127]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[128]",
+    "tests/test_trace_capture.py::test_logic_three_bit_samples_through_the_bench"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[wrong_pack-ONE-SHOT]"
+   ],
+   "note": "channel k of sample i is bit i*w + pos[k]; the bench's counter reads back per channel"
+  },
+  "capture:1.1:7": {
+   "text": "3. どの `pos[k]` にも当たらないビットの値は**未定義**。host",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_bits_no_channel_hits_are_ignored",
+    "tests/test_conformance_logic.py::test_unused_layout_bits_are_not_required_zero"
+   ],
+   "mutants": [],
+   "note": "bits on no pos[k] and the pad are ignored by the client and not required 0 by the checker"
+  },
+  "capture:1.1:8": {
+   "text": "4. 区画の長さは `ceil(N·w / 8)` バイト。最後のバイトの、`N",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[1]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[2]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[3]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[4]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[5]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[7]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[8]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[9]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[12]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[16]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[24]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[127]",
+    "tests/test_trace_capture.py::test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[128]",
+    "tests/test_trace_capture.py::test_logic_layout_examples[w1-1ch]",
+    "tests/test_trace_capture.py::test_logic_layout_examples[w3-3ch]",
+    "tests/test_trace_capture.py::test_logic_layout_examples[w8-1ch]",
+    "tests/test_trace_capture.py::test_logic_layout_examples[w8-bit5]",
+    "tests/test_trace_capture.py::test_logic_layout_examples[w4-3ch]",
+    "tests/test_trace_capture.py::test_logic_layout_examples[w8-3ch]",
+    "tests/test_trace_capture.py::test_logic_layout_examples[w16-9ch]"
+   ],
+   "mutants": [],
+   "note": "segment length ceil(N*w/8) (pack_samples and Config.bytes)"
+  },
+  "capture:1.1:9": {
+   "text": "5. w が 8 の倍数のとき、サンプルは `w/8` バイトの little ",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_whole_byte_samples_are_little_endian_integers"
+   ],
+   "mutants": [],
+   "note": "w 16: a sample is the 2-byte little-endian integer"
+  },
+  "capture:1.1:10": {
+   "text": "| 1 ビットずつ詰める probe、1 本 | 1 | [0] | サンプル ",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_layout_examples[w1-1ch]",
+    "tests/test_capture.py::test_one_channel_packs_eight_samples_per_byte_lsb_first"
+   ],
+   "mutants": [],
+   "note": "the example's configuration decodes as its row says, the undefined bits set"
+  },
+  "capture:1.1:11": {
+   "text": "| 3 ビットずつ詰める probe、**3 本** | 3 | [0, 1, ",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_layout_examples[w3-3ch]",
+    "tests/test_trace_capture.py::test_logic_three_bit_sample_2_straddles_bytes_0_and_1",
+    "tests/test_trace_capture.py::test_logic_three_bit_samples_through_the_bench"
+   ],
+   "mutants": [],
+   "note": "the example's configuration decodes as its row says, the undefined bits set"
+  },
+  "capture:1.1:12": {
+   "text": "| 1 バイト単位でしか取れない probe、1 本 | 8 | [0] | 1",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_layout_examples[w8-1ch]"
+   ],
+   "mutants": [],
+   "note": "the example's configuration decodes as its row says, the undefined bits set"
+  },
+  "capture:1.1:13": {
+   "text": "| GPIO のポートの 1 バイトをそのまま取る probe、ピンがビット 5",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_layout_examples[w8-bit5]",
+    "tests/test_capture.py::test_a_byte_per_sample_probe_with_the_channel_on_bit_5"
+   ],
+   "mutants": [],
+   "note": "the example's configuration decodes as its row says, the undefined bits set"
+  },
+  "capture:1.1:14": {
+   "text": "| 4 ビット単位で詰める probe、**3 本** | 4 | [0, 1,",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_layout_examples[w4-3ch]",
+    "tests/test_capture.py::test_three_channels_in_four_bit_samples_with_undefined_bits"
+   ],
+   "mutants": [],
+   "note": "the example's configuration decodes as its row says, the undefined bits set"
+  },
+  "capture:1.1:15": {
+   "text": "| 1 バイト 1 サンプルの probe、**3 本** | 8 | [0, ",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_layout_examples[w8-3ch]"
+   ],
+   "mutants": [],
+   "note": "the example's configuration decodes as its row says, the undefined bits set"
+  },
+  "capture:1.1:16": {
+   "text": "| 16 ビット単位で詰める probe、9 本 | 16 | [0 … 8] ",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_layout_examples[w16-9ch]"
+   ],
+   "mutants": [],
+   "note": "the example's configuration decodes as its row says, the undefined bits set"
+  },
+  "capture:1.2:1": {
+   "text": "| `s` | 8, 16, 32 のどれか | 1 つの値を入れる枠のビット数",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_layout_s_o_b_c_order_n",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[8-0-8]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[16-0-12]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[16-4-12]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[32-0-12]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[32-1-31]"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog.py::test_semantic_faults_are_detected[wrong_pack-RAW]"
+   ],
+   "note": "s is 8/16/32 in the answer; the client reads 8, 16 and 32-bit slots"
+  },
+  "capture:1.2:2": {
+   "text": "| `o`, `b` | 0 ≤ o、1 ≤ b ≤ 31、o + b ≤ s ",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_layout_s_o_b_c_order_n",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[8-0-8]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[16-0-12]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[16-4-12]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[32-0-12]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[32-1-31]"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog_payload.py::test_raw_data_faults_are_detected[value]"
+   ],
+   "note": "0 <= o, 1 <= b <= 31, o+b <= s; the value is bits o..o+b-1"
+  },
+  "capture:1.2:3": {
+   "text": "| `C` | 1 以上 | planで割り当てたアナログの役割の数 |",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_layout_s_o_b_c_order_n"
+   ],
+   "mutants": [],
+   "note": "C equals the planned analog roles (3)"
+  },
+  "capture:1.2:4": {
+   "text": "| `order[m]`（m = 0 … C−1） | planで割り当てた役割",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_layout_s_o_b_c_order_n",
+    "tests/test_trace_capture.py::test_role_k_is_channel_k"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog_payload.py::test_sparse_role_layout_rejects_ordinal_unplanned_or_duplicate_numbers[order0]",
+    "tests/test_conformance_analog_payload.py::test_sparse_role_layout_rejects_ordinal_unplanned_or_duplicate_numbers[order1]",
+    "tests/test_conformance_analog_payload.py::test_sparse_role_layout_rejects_ordinal_unplanned_or_duplicate_numbers[order2]",
+    "tests/test_conformance_analog_payload.py::test_sparse_role_layout_rejects_ordinal_unplanned_or_duplicate_numbers[order3]"
+   ],
+   "note": "order holds each planned role number once (sparse roles 1, 3 kept as such)"
+  },
+  "capture:1.2:5": {
+   "text": "| `N` | 1 以上 | 区画のサンプル数 |",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_layout_s_o_b_c_order_n"
+   ],
+   "mutants": [],
+   "note": "actual_samples N >= 1; samples 0 malformed"
+  },
+  "capture:1.2:6": {
+   "text": "1. 枠は `s/8` バイトの little endian の整数。枠の値の ",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[8-0-8]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[16-0-12]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[16-4-12]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[32-0-12]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[32-1-31]"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog_payload.py::test_raw_data_faults_are_detected[value]"
+   ],
+   "note": "slot is an s/8-byte LE integer, bits o..o+b-1 the value, other bits ignored (the bench ADC is unsigned: offset binary not exercised)"
+  },
+  "capture:1.2:7": {
+   "text": "2. サンプル i は、枠 `i·C` から `i·C + C − 1` まで。",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[8-0-8]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[16-0-12]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[16-4-12]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[32-0-12]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[32-1-31]"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog_payload.py::test_raw_data_faults_are_detected[channel_order]",
+    "tests/test_conformance_analog.py::test_semantic_faults_are_detected[wrong_order-RAW]"
+   ],
+   "note": "sample i is slots i*C..i*C+C-1, slot m is channel order[m]"
+  },
+  "capture:1.2:8": {
+   "text": "3. 区画の長さは `N·C·s/8` バイト。",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[8-0-8]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[16-0-12]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[16-4-12]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[32-0-12]",
+    "tests/test_trace_capture.py::test_analog_slots_frames_and_value_bits[32-1-31]"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog_payload.py::test_raw_data_faults_are_detected[short]",
+    "tests/test_conformance_analog_payload.py::test_raw_data_faults_are_detected[extra]"
+   ],
+   "note": "segment length N*C*s/8"
+  },
+  "capture:1.2:9": {
+   "text": "4. チャネル k の電圧 = （値 − `zero[k]`）× `scale_",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_voltage_skew_and_clipping",
+    "tests/test_virtual_bench_capture.py::test_analog_values_scale_and_calibration"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog.py::test_semantic_faults_are_detected[missing_scale-RAW]",
+    "tests/test_conformance_analog_payload.py::test_raw_data_faults_are_detected[calibrated]"
+   ],
+   "note": "voltage (value - zero) x scale_nv per channel, the raw values as sent"
+  },
+  "capture:1.2:10": {
+   "text": "5. チャネル k の時刻は、サンプルの時刻から `skew_ns[k]` 遅れ",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_voltage_skew_and_clipping",
+    "tests/test_virtual_bench_capture.py::test_analog_values_scale_and_calibration"
+   ],
+   "mutants": [],
+   "note": "skew_ns per channel: one ADC in turn gives ordinal x period / C"
+  },
+  "capture:1.2:11": {
+   "text": "6. 値 0（変換器の最小コード）と 2^b − 1（最大コード）は、入力が f",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_voltage_skew_and_clipping",
+    "tests/test_virtual_bench_capture.py::test_analog_values_scale_and_calibration"
+   ],
+   "mutants": [],
+   "note": "codes 0 and 2^b-1 are clipped ends (inverted with a negative scale), shown against the ends' voltages"
+  },
+  "capture:1.2:12": {
+   "text": "| DMA の 4 バイトのレコードをそのまま送る 12 ビット ADC | 3",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_layout_examples[32-0-12-80572-2748]"
+   ],
+   "mutants": [],
+   "note": "the example's s/o/b read the value whatever the other bits hold"
+  },
+  "capture:1.2:13": {
+   "text": "| 2 バイトのレコードをそのまま送る 12 ビット ADC | 16 | 0 ",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_layout_examples[16-0-12-15036-2748]"
+   ],
+   "mutants": [],
+   "note": "the example's s/o/b read the value whatever the other bits hold"
+  },
+  "capture:1.2:14": {
+   "text": "| FIFO の 16 ビットをそのまま送る 12 ビット ADC | 16 |",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_layout_examples[16-0-12-2748-2748]"
+   ],
+   "mutants": [],
+   "note": "the example's s/o/b read the value whatever the other bits hold"
+  },
+  "capture:1.2:15": {
+   "text": "| 8 ビットに縮めた ADC | 8 | 0 | 8 | |",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_layout_examples[8-0-8-165-165]"
+   ],
+   "mutants": [],
+   "note": "the example's s/o/b read the value whatever the other bits hold"
+  },
+  "capture:1.2:16": {
+   "text": "- ロジックのplanは出力idleのchannelも受け付け、駆動を変えずに観",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_plan_on_an_output_idle_channel_listens_without_driving"
+   ],
+   "mutants": [],
+   "note": "a logic plan on an output-idle channel is taken and the pin keeps its idle drive through a capture"
+  },
+  "capture:1.2:17": {
+   "text": "- アナログのチャネルを、ほかの fn の plan（ロジックのキャプチャを含む",
+   "verify": [
+    "tests/test_virtual_bench_capture.py::test_an_analog_pin_is_shared_with_nothing"
+   ],
+   "mutants": [],
+   "note": "analog and logic / gpio on one pin refused unavailable whichever comes second, also in one request"
+  },
+  "capture:1.2:18": {
+   "text": "- **plan を取ってもピンの電気的な状態は変わらない**（core §8）",
+   "verify": [
+    "tests/test_trace_capture.py::test_logic_capture_never_changes_a_driven_pin",
+    "tests/test_trace_capture.py::test_analog_pad_leaves_idle_only_while_it_acquires",
+    "tests/test_virtual_bench_capture.py::test_a_capture_listens_on_pins_other_interfaces_hold"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[pin_output-ONE-SHOT]",
+    "tests/test_conformance_analog.py::test_semantic_faults_are_detected[pin_output-RAW]"
+   ],
+   "note": "plan and configure change no pin; logic never; the analog pad leaves idle at start"
+  },
+  "capture:1.2:19": {
+   "text": "- アナログの取得が止まるとpadを空きの状態へ戻す（stop、完了、state",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_pad_leaves_idle_only_while_it_acquires"
+   ],
+   "mutants": [],
+   "note": "pad back to idle at completion, stop, state 5 and error, plan kept; analog again on resuming from 5"
+  },
+  "capture:1.2:20": {
+   "text": "- idle が出力（mode 3 / 4）の channel へのアナログの ",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_plan_on_an_output_idle_channel_is_unavailable_cause_5"
+   ],
+   "mutants": [],
+   "note": "analog plan on output-low/high idle -> unavailable cause 5; logic there is taken"
+  },
+  "capture:2.1:1": {
+   "text": "| 1 ワンショット | start（とトリガ）の後、samples 個のサンプ",
+   "verify": [
+    "tests/test_trace_capture.py::test_one_shot_takes_samples_stops_in_4_and_the_next_start_clears[False]",
+    "tests/test_trace_capture.py::test_one_shot_takes_samples_stops_in_4_and_the_next_start_clears[True]",
+    "tests/test_virtual_bench_capture.py::test_one_shot_three_channels_in_four_bit_samples"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[keep_old_data-GENERATION]",
+    "tests/test_conformance_analog.py::test_semantic_faults_are_detected[keep_old_data-GENERATION]"
+   ],
+   "note": "one-shot: samples then state 4, read later, the next start clears it"
+  },
+  "capture:2.1:2": {
+   "text": "| 2 リピート | ワンショットを次々に、区画の境目に隙間なく、空いている区画",
+   "verify": [
+    "tests/test_trace_capture.py::test_repeat_follows_on_without_gaps_into_free_segments_only",
+    "tests/test_virtual_bench_capture.py::test_repeat_fills_its_ring_with_the_clock_and_goes_on_after_release"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_gap-REPEAT]",
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_resume-RELEASE]"
+   ],
+   "note": "repeat: back-to-back segments into free ones, state 5 when full, release resumes"
+  },
+  "capture:2.1:3": {
+   "text": "| 3 ストリーミング | リピートと同じく隙間なく取り、ロックを持つ者が購読し",
+   "verify": [
+    "tests/test_trace_capture.py::test_streaming_sends_while_the_lock_holder_subscribes",
+    "tests/test_virtual_bench_capture.py::test_streaming_pushes_the_bytes_while_subscribed",
+    "tests/test_virtual_bench_capture.py::test_events_go_out_only_while_subscribed"
+   ],
+   "mutants": [],
+   "note": "streaming: contiguous bytes pushed while subscribed"
+  },
+  "capture:2.1:4": {
+   "text": "- triggerは最初の区画の取得を確定する条件である。非即時なら、start",
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_known_waveform_has_one_initial_trigger_and_correct_retained_history[0-2-False]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_known_waveform_has_one_initial_trigger_and_correct_retained_history[0-2-True]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_known_waveform_has_one_initial_trigger_and_correct_retained_history[0-3-False]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_known_waveform_has_one_initial_trigger_and_correct_retained_history[0-3-True]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_known_waveform_has_one_initial_trigger_and_correct_retained_history[10-2-False]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_known_waveform_has_one_initial_trigger_and_correct_retained_history[10-2-True]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_known_waveform_has_one_initial_trigger_and_correct_retained_history[10-3-False]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_known_waveform_has_one_initial_trigger_and_correct_retained_history[10-3-True]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_force_opens_gate_once_and_retains_pretrigger_for_initial_record[0-2-False]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_force_opens_gate_once_and_retains_pretrigger_for_initial_record[0-2-True]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_force_opens_gate_once_and_retains_pretrigger_for_initial_record[0-3-False]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_force_opens_gate_once_and_retains_pretrigger_for_initial_record[0-3-True]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_force_opens_gate_once_and_retains_pretrigger_for_initial_record[4-2-False]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_force_opens_gate_once_and_retains_pretrigger_for_initial_record[4-2-True]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_force_opens_gate_once_and_retains_pretrigger_for_initial_record[4-3-False]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_force_opens_gate_once_and_retains_pretrigger_for_initial_record[4-3-True]"
+   ],
+   "mutants": [],
+   "note": "the trigger gates the first segment only (one triggered, later segments trigger_index none), pretrigger kept from start"
+  },
+  "capture:2.1:5": {
+   "text": "- probeはstart後にだけ取得し、start前の先回り取得を行わない。",
+   "verify": [
+    "tests/test_trace_capture.py::test_no_sample_is_taken_before_start[False]",
+    "tests/test_trace_capture.py::test_no_sample_is_taken_before_start[True]",
+    "tests/test_virtual_bench_capture_initial_trigger_time.py::test_start_observes_only_elapsed_samples_before_initial_trigger[False-1]",
+    "tests/test_virtual_bench_capture_initial_trigger_time.py::test_start_observes_only_elapsed_samples_before_initial_trigger[False-2]",
+    "tests/test_virtual_bench_capture_initial_trigger_time.py::test_start_observes_only_elapsed_samples_before_initial_trigger[False-3]",
+    "tests/test_virtual_bench_capture_initial_trigger_time.py::test_start_observes_only_elapsed_samples_before_initial_trigger[True-1]",
+    "tests/test_virtual_bench_capture_initial_trigger_time.py::test_start_observes_only_elapsed_samples_before_initial_trigger[True-2]",
+    "tests/test_virtual_bench_capture_initial_trigger_time.py::test_start_observes_only_elapsed_samples_before_initial_trigger[True-3]"
+   ],
+   "mutants": [],
+   "note": "nothing before start: first sample at start, no pretrigger from before it"
+  },
+  "capture:2.1:6": {
+   "text": "1. 送る余地が無いとき、probe は**新しい**区画を丸ごと捨てる（すでに",
+   "verify": [
+    "tests/test_trace_capture.py::test_streaming_without_room_drops_and_the_position_jumps"
+   ],
+   "mutants": [],
+   "note": "no room (subscription gone): capture goes on, the dropped bytes make the next frame's position jump, status flags bit0"
+  },
+  "capture:2.1:7": {
+   "text": "2. stopの後も、probeは停止前に取った未送信データを送信対象にする。残",
+   "verify": [
+    "tests/test_trace_capture.py::test_after_stop_the_rest_goes_without_waiting_for_the_batching",
+    "tests/test_virtual_bench_capture.py::test_min_bytes_and_max_delay_batch_the_data_and_never_the_events",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_stream_error_rolls_back_to_real_completed_boundary_after_trigger[0-0-0]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_stream_error_rolls_back_to_real_completed_boundary_after_trigger[10-1-44]",
+    "tests/test_trace_capture.py::test_host_drops_the_data_past_write_pos_after_an_error"
+   ],
+   "mutants": [],
+   "note": "after stop the rest goes regardless of min_bytes/max_delay; coverage() tells reached vs complete; error: write_pos rule"
+  },
+  "capture:2.1:8": {
+   "text": "3. ストリーミングでは区画の出来事を送らない（stopped は送る）。",
+   "verify": [
+    "tests/test_trace_capture.py::test_streaming_sends_while_the_lock_holder_subscribes",
+    "tests/test_trace_capture.py::test_segment_event_carries_the_record_and_not_in_streaming[False]",
+    "tests/test_trace_capture.py::test_segment_event_carries_the_record_and_not_in_streaming[True]"
+   ],
+   "mutants": [],
+   "note": "streaming sends no segment events, stopped yes"
+  },
+  "capture:2.1:9": {
+   "text": "4. 通知で送ったデータはreadで読めないことがある。要求位置の後にも読めるデ",
+   "verify": [
+    "tests/test_trace_capture.py::test_streaming_read_of_pushed_data_points_at_write_pos_with_gap",
+    "tests/test_virtual_bench_capture.py::test_a_position_jump_is_a_lost_notification_and_read_says_what_is_kept"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[gone_without_gap-READ-GAP]"
+   ],
+   "note": "pushed data not kept: read answers write_pos, gap 1, len 0"
+  },
+  "capture:2.2:1": {
+   "text": "| ワンショット | 1 個（serial 0）。次の start で消える（世",
+   "verify": [
+    "tests/test_trace_capture.py::test_one_shot_takes_samples_stops_in_4_and_the_next_start_clears[False]",
+    "tests/test_trace_capture.py::test_one_shot_takes_samples_stops_in_4_and_the_next_start_clears[True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[keep_old_data-GENERATION]"
+   ],
+   "note": "one-shot: one segment, serial 0, gone at the next start"
+  },
+  "capture:2.2:2": {
+   "text": "| リピート | 隙間なく続く。host が解放するまで読める。空き区画がなくな",
+   "verify": [
+    "tests/test_trace_capture.py::test_repeat_follows_on_without_gaps_into_free_segments_only",
+    "tests/test_trace_capture.py::test_release_frees_finished_segments_up_to_serial_inclusive"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_gap-REPEAT]",
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_resume-RELEASE]"
+   ],
+   "note": "repeat: readable until released, state 5 when full, resumes with flags bit0"
+  },
+  "capture:2.2:3": {
+   "text": "| ストリーミング | probe の都合の区切り（DMA の 1 回ぶんなど）",
+   "verify": [
+    "tests/test_trace_capture.py::test_streaming_segments_are_the_probes_and_every_frame_says_which"
+   ],
+   "mutants": [],
+   "note": "streaming: the probe's pieces, each frame inside one, data sent by the probe"
+  },
+  "capture:2.2:4": {
+   "text": "| serial | start からの区画の通し番号（0 から。u32 で一周",
+   "verify": [
+    "tests/test_trace_capture.py::test_segment_serials_wrap_and_compare_by_core_2_6",
+    "tests/test_conformance_capture_serial.py::test_capture_serial_wrap_and_release"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_serial.py::test_actual_capture_faults[no_wrap]",
+    "tests/test_conformance_capture_serial.py::test_actual_capture_faults[unsigned_release]"
+   ],
+   "note": "serial from 0, wraps at 2^32, compared by core §2.6"
+  },
+  "capture:2.2:5": {
+   "text": "| position | 区画の先頭のバイト位置（start から通し、u64 ",
+   "verify": [
+    "tests/test_trace_capture.py::test_segment_serials_wrap_and_compare_by_core_2_6",
+    "tests/test_trace_capture.py::test_segment_fields_position_samples_times_trigger_flags_generation"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_serial.py::test_serial_observation_faults[position]"
+   ],
+   "note": "position: the segment's first byte from start, u64, read's space"
+  },
+  "capture:2.2:6": {
+   "text": "| samples | 区画のサンプル数（stop で途中で終わった区画は短い）",
+   "verify": [
+    "tests/test_trace_capture.py::test_segment_fields_position_samples_times_trigger_flags_generation",
+    "tests/test_virtual_bench_capture_lifetime.py::test_stop_commits_a_short_partial_segment[False]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_stop_commits_a_short_partial_segment[True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_short-SHORT-STOP]"
+   ],
+   "note": "samples; a stopped segment is short"
+  },
+  "capture:2.2:7": {
+   "text": "| start_ns | 区画の最初のサンプルの時刻の推定値（probe の時計",
+   "verify": [
+    "tests/test_trace_capture.py::test_segment_fields_position_samples_times_trigger_flags_generation",
+    "tests/test_virtual_bench_capture.py::test_segments_carry_ns_times_with_an_uncertainty"
+   ],
+   "mutants": [],
+   "note": "start_ns: the first sample's time on the probe clock, segments a rate apart"
+  },
+  "capture:2.2:8": {
+   "text": "| start_uncertainty_ns | start_ns の不確かさ（",
+   "verify": [
+    "tests/test_trace_capture.py::test_segment_fields_position_samples_times_trigger_flags_generation",
+    "tests/test_virtual_bench_capture.py::test_segments_carry_ns_times_with_an_uncertainty"
+   ],
+   "mutants": [],
+   "note": "start_uncertainty_ns given with start_ns"
+  },
+  "capture:2.2:9": {
+   "text": "| trigger_index | 区画の中でトリガが立ったサンプルの番号。トリ",
+   "verify": [
+    "tests/test_trace_capture.py::test_segment_fields_position_samples_times_trigger_flags_generation",
+    "tests/test_capture.py::test_segment_without_trigger",
+    "tests/test_virtual_bench_capture.py::test_a_trigger_is_where_the_channel_does_it[2-1-0-2]",
+    "tests/test_virtual_bench_capture.py::test_a_trigger_is_where_the_channel_does_it[2-2-1-8]",
+    "tests/test_virtual_bench_capture.py::test_a_trigger_is_where_the_channel_does_it[1-3-1-8]"
+   ],
+   "mutants": [],
+   "note": "trigger_index of the trigger's sample, 0xFFFFFFFF without one"
+  },
+  "capture:2.2:10": {
+   "text": "| flags | bit0 前の区画との間が空いた（リピートで空き区画がなかっ",
+   "verify": [
+    "tests/test_trace_capture.py::test_segment_fields_position_samples_times_trigger_flags_generation",
+    "tests/test_trace_capture.py::test_repeat_follows_on_without_gaps_into_free_segments_only",
+    "tests/test_virtual_bench_capture.py::test_slipped_segments_say_so"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_gap-REPEAT]",
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_short-SHORT-STOP]"
+   ],
+   "note": "flags bit0 gap, bit1 short, bit2 slipped"
+  },
+  "capture:2.2:11": {
+   "text": "| generation | この区画の世代（冒頭の非再利用の規則） |",
+   "verify": [
+    "tests/test_trace_capture.py::test_one_shot_takes_samples_stops_in_4_and_the_next_start_clears[False]",
+    "tests/test_trace_capture.py::test_one_shot_takes_samples_stops_in_4_and_the_next_start_clears[True]",
+    "tests/test_trace_capture.py::test_segment_fields_position_samples_times_trigger_flags_generation"
+   ],
+   "mutants": [
+    "tests/test_virtual_bench_capture_notifications.py::test_notification_corruption_is_detected[segment_generation-False]"
+   ],
+   "note": "a segment's generation is its start's"
+  },
+  "capture:2.2:12": {
+   "text": "- 区画の中は連続を約束する。リピートとストリーミングでは、flags bit0",
+   "verify": [
+    "tests/test_trace_capture.py::test_repeat_segments_follow_on_unless_flags_bit0"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_gap-REPEAT]"
+   ],
+   "note": "repeat segments follow on directly (positions, times, counter) unless bit0"
+  },
+  "capture:2.2:13": {
+   "text": "- **区画の隙間と、区画の中の落とし**を、落とした理由で分ける:",
+   "verify": [
+    "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[1-False]",
+    "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[1-True]",
+    "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[2-False]",
+    "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[2-True]",
+    "tests/test_trace_capture.py::test_repeat_follows_on_without_gaps_into_free_segments_only"
+   ],
+   "mutants": [],
+   "note": "a gap (bit0) vs a drop inside a segment (error) are told apart"
+  },
+  "capture:2.2:14": {
+   "text": "- **隙間**（flags bit0）: 置き場（リピートの空き区画、ストリー",
+   "verify": [
+    "tests/test_trace_capture.py::test_repeat_follows_on_without_gaps_into_free_segments_only",
+    "tests/test_trace_capture.py::test_release_frees_finished_segments_up_to_serial_inclusive",
+    "tests/test_trace_capture.py::test_streaming_without_room_drops_and_the_position_jumps"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_gap-REPEAT]"
+   ],
+   "note": "no room: whole segments not taken, the next has bit0 and capture goes on"
+  },
+  "capture:2.2:15": {
+   "text": "- **区画の中の落とし**（エラー）: それ以外の理由（取り込みのキューやリン",
+   "verify": [
+    "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[1-False]",
+    "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[1-True]",
+    "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[2-False]",
+    "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[2-True]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[1-False]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[1-True]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[2-False]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[2-True]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[3-False]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[3-True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[discard_committed-ERROR]",
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[error_retains_partial-ERROR]"
+   ],
+   "note": "an in-segment drop: no record/event, state 6, stopped 3, error 1/2, flags bit0, write_pos at its start"
+  },
+  "capture:2.2:16": {
+   "text": "- trigger待ちのpretrigger ringは公開streamではない",
+   "verify": [
+    "tests/test_trace_capture.py::test_the_pretrigger_ring_is_not_public_while_waiting",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_unreachable_condition_remains_waiting_without_data_or_events[2-False]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_unreachable_condition_remains_waiting_without_data_or_events[2-True]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_unreachable_condition_remains_waiting_without_data_or_events[3-False]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_unreachable_condition_remains_waiting_without_data_or_events[3-True]"
+   ],
+   "mutants": [],
+   "note": "waiting: write_pos 0, no read data, no pushes"
+  },
+  "capture:2.2:17": {
+   "text": "- probeは区画が終わる前に、確定した完全なbyteをread/通知で返して",
+   "verify": [
+    "tests/test_trace_capture.py::test_unfinished_tail_bytes_are_not_returned_before_the_segment_ends",
+    "tests/test_trace_capture.py::test_host_drops_the_data_past_write_pos_after_an_error",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_stream_error_rolls_back_to_real_completed_boundary_after_trigger[0-0-0]",
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_stream_error_rolls_back_to_real_completed_boundary_after_trigger[10-1-44]"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[discard_committed-ERROR]"
+   ],
+   "note": "only whole settled bytes go early (w 3: 3-byte steps); after an error the host drops from write_pos"
+  },
+  "capture:2.2:18": {
+   "text": "- flags bit2 は、probe が自分で遅れを見つけられるときに立てる",
+   "verify": [
+    "tests/test_virtual_bench_capture.py::test_slipped_segments_say_so",
+    "tests/test_trace_capture.py::test_status_flags_reset_at_start_and_error_tlv_in_state_6"
+   ],
+   "mutants": [],
+   "note": "a probe that knows it fell behind sets segment bit2 and status bit1"
+  },
+  "capture:2.2:19": {
+   "text": "- 区画の情報は本文とは別の小さなリングにためる（いくつ覚えるかは probe ",
+   "verify": [
+    "tests/test_trace_capture.py::test_segment_records_are_a_small_ring_the_probe_sizes"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_serial.py::test_serial_observation_faults[page]"
+   ],
+   "note": "records in the probe's ring, paged; a serial no longer kept starts at the oldest kept"
+  },
+  "capture:3.1:1": {
+   "text": "- 役割 k = チャネル k（ロジックは 0〜127、アナログは 0〜63）。",
+   "verify": [
+    "tests/test_trace_capture.py::test_role_k_is_channel_k"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog_payload.py::test_sparse_role_layout_rejects_ordinal_unplanned_or_duplicate_numbers[order0]",
+    "tests/test_conformance_analog_payload.py::test_sparse_role_layout_rejects_ordinal_unplanned_or_duplicate_numbers[order1]",
+    "tests/test_conformance_analog_payload.py::test_sparse_role_layout_rejects_ordinal_unplanned_or_duplicate_numbers[order2]",
+    "tests/test_conformance_analog_payload.py::test_sparse_role_layout_rejects_ordinal_unplanned_or_duplicate_numbers[order3]"
+   ],
+   "note": "logic pos in role order; analog order/scale/frontend use the planned role numbers (sparse)"
+  },
+  "capture:3.1:2": {
+   "text": "- ADC のチャネルを持たないピンは、アナログの plan で拒否する。",
+   "verify": [
+    "tests/test_trace_capture.py::test_analog_plan_refuses_a_pin_without_an_adc_channel"
+   ],
+   "mutants": [],
+   "note": "an analog plan on a non-ADC pin is refused, an ADC pin taken"
+  },
+  "capture:3.2:1": {
+   "text": "| 0x10 | configure | 設定のTLV（§3.3） | 実際の値",
+   "verify": [
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[configure-False]",
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[configure-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-True]"
+   ],
+   "mutants": [],
+   "note": "configure: its op number, lock (session 0 -> session_required) or lock-free, its answer form, in describe's ops"
+  },
+  "capture:3.2:2": {
+   "text": "| 0x11 | start | — | generation(u32)、[TL",
+   "verify": [
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[start-False]",
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[start-True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[old_start_shape-ONE-SHOT]"
+   ],
+   "note": "start: its op number, lock (session 0 -> session_required) or lock-free, its answer form, in describe's ops"
+  },
+  "capture:3.2:3": {
+   "text": "| 0x12 | stop | — | — | 必要 | 必須 |",
+   "verify": [
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[stop-False]",
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[stop-True]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[0-False]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[0-True]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[1-False]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[1-True]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[2-False]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[2-True]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[3-False]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[3-True]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[4-False]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[4-True]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[5-False]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[5-True]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[6-False]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[6-True]"
+   ],
+   "mutants": [],
+   "note": "stop: its op number, lock (session 0 -> session_required) or lock-free, its answer form, in describe's ops"
+  },
+  "capture:3.2:4": {
+   "text": "| 0x13 | force | — | —（トリガ待ちなら条件を強制する） |",
+   "verify": [
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[force-False]",
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[force-True]",
+    "tests/test_virtual_bench_capture_waiting.py::test_force_uses_current_sample_and_available_pretrigger[0-0-4]",
+    "tests/test_virtual_bench_capture_waiting.py::test_force_uses_current_sample_and_available_pretrigger[2-2-6]",
+    "tests/test_virtual_bench_capture_waiting.py::test_force_uses_current_sample_and_available_pretrigger[20-4-8]"
+   ],
+   "mutants": [],
+   "note": "force: its op number, lock (session 0 -> session_required) or lock-free, its answer form, in describe's ops"
+  },
+  "capture:3.2:5": {
+   "text": "| 0x14 | status | — | state(u8)、serial_d",
+   "verify": [
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[status-False]",
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[status-True]",
+    "tests/test_trace_capture.py::test_states_0_to_6_and_status_fields[False]",
+    "tests/test_trace_capture.py::test_states_0_to_6_and_status_fields[True]"
+   ],
+   "mutants": [],
+   "note": "status: its op number, lock (session 0 -> session_required) or lock-free, its answer form, in describe's ops"
+  },
+  "capture:3.2:6": {
+   "text": "| 0x15 | read | generation(u32)、position",
+   "verify": [
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[read-False]",
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[read-True]",
+    "tests/test_trace_capture.py::test_read_positions_gaps_and_max_0"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[future_keeps_position-READ]"
+   ],
+   "note": "read: its op number, lock (session 0 -> session_required) or lock-free, its answer form, in describe's ops"
+  },
+  "capture:3.2:7": {
+   "text": "| 0x16 | segments | from_serial(u32) | m",
+   "verify": [
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[segments-False]",
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[segments-True]",
+    "tests/test_trace_capture.py::test_segment_records_are_a_small_ring_the_probe_sizes"
+   ],
+   "mutants": [],
+   "note": "segments: its op number, lock (session 0 -> session_required) or lock-free, its answer form, in describe's ops"
+  },
+  "capture:3.2:8": {
+   "text": "| 0x17 | release | generation(u32)、seria",
+   "verify": [
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[release-False]",
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[release-True]",
+    "tests/test_trace_capture.py::test_release_frees_finished_segments_up_to_serial_inclusive"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_resume-RELEASE]"
+   ],
+   "note": "release: its op number, lock (session 0 -> session_required) or lock-free, its answer form, in describe's ops"
+  },
+  "capture:3.2:9": {
+   "text": "| 0x18 | query | 設定のTLV（configureと同じ） | ",
+   "verify": [
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[query-False]",
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[query-True]",
+    "tests/test_trace_capture.py::test_query_is_its_own_lock_free_op_that_changes_nothing"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[query_applies-QUERY]"
+   ],
+   "note": "query: its op number, lock (session 0 -> session_required) or lock-free, its answer form, in describe's ops"
+  },
+  "capture:3.2:10": {
+   "text": "| 0x19 | calibration | — | 較正の情報のTLV（§3.",
+   "verify": [
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[calibration-False]",
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[calibration-True]",
+    "tests/test_trace_capture.py::test_calibration_returns_raw_factory_rows_and_vrefint_after_a_start"
+   ],
+   "mutants": [],
+   "note": "calibration: its op number, lock (session 0 -> session_required) or lock-free, its answer form, in describe's ops"
+  },
+  "capture:3.2:11": {
+   "text": "| 0x01 | subscribe | core §10.3 | — | 必要",
+   "verify": [
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[subscribe-False]",
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[subscribe-True]",
+    "tests/test_trace_capture.py::test_streaming_needs_a_subscription_and_declares_subscribe"
+   ],
+   "mutants": [],
+   "note": "subscribe: its op number, lock (session 0 -> session_required) or lock-free, its answer form, in describe's ops"
+  },
+  "capture:3.2:12": {
+   "text": "| 0x02 | unsubscribe | core §10.3 | — | ",
+   "verify": [
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[unsubscribe-False]",
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[unsubscribe-True]",
+    "tests/test_trace_capture.py::test_streaming_needs_a_subscription_and_declares_subscribe"
+   ],
+   "mutants": [],
+   "note": "unsubscribe: its op number, lock (session 0 -> session_required) or lock-free, its answer form, in describe's ops"
+  },
+  "capture:3.2:13": {
+   "text": "- state: 0 未設定、1 設定済み、2 トリガ待ち、3 取得中、4 完了",
+   "verify": [
+    "tests/test_trace_capture.py::test_states_0_to_6_and_status_fields[False]",
+    "tests/test_trace_capture.py::test_states_0_to_6_and_status_fields[True]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[0-False]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[0-True]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[1-False]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[1-True]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[2-False]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[2-True]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[3-False]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[3-True]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[4-False]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[4-True]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[5-False]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[5-True]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[6-False]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[6-True]"
+   ],
+   "mutants": [],
+   "note": "states 0-6 named and reached"
+  },
+  "capture:3.2:14": {
+   "text": "- `serial_done` は次に終わる区画の serial（start か",
+   "verify": [
+    "tests/test_trace_capture.py::test_states_0_to_6_and_status_fields[False]",
+    "tests/test_trace_capture.py::test_states_0_to_6_and_status_fields[True]",
+    "tests/test_trace_capture.py::test_write_pos_counts_dropped_streaming_bytes",
+    "tests/test_trace_capture.py::test_segment_serials_wrap_and_compare_by_core_2_6"
+   ],
+   "mutants": [],
+   "note": "serial_done = segments finished mod 2^32; write_pos the next byte, dropped ones counted"
+  },
+  "capture:3.2:15": {
+   "text": "- status の `flags`: bit0 データを落とした（ストリーミン",
+   "verify": [
+    "tests/test_trace_capture.py::test_status_flags_reset_at_start_and_error_tlv_in_state_6",
+    "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[1-False]",
+    "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[1-True]",
+    "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[2-False]",
+    "tests/test_trace_capture.py::test_a_drop_inside_a_segment_is_an_error_not_a_gap[2-True]",
+    "tests/test_trace_capture.py::test_streaming_without_room_drops_and_the_position_jumps"
+   ],
+   "mutants": [],
+   "note": "status flags bit0 dropped, bit1 slipped, reset at start; state 6 has TLV error"
+  },
+  "capture:3.2:16": {
+   "text": "- **generation**: readと、提供するreleaseは今の世代",
+   "verify": [
+    "tests/test_trace_capture.py::test_generation_on_read_and_release_and_zero_before_start[1]",
+    "tests/test_trace_capture.py::test_generation_on_read_and_release_and_zero_before_start[2]",
+    "tests/test_trace_capture.py::test_generation_on_read_and_release_and_zero_before_start[3]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_restart_generation_and_old_read_release_are_atomic[0-False]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_restart_generation_and_old_read_release_are_atomic[0-True]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_restart_generation_and_old_read_release_are_atomic[4294967293-False]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_restart_generation_and_old_read_release_are_atomic[4294967293-True]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_no_generation_past_the_last_until_a_reboot[False]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_no_generation_past_the_last_until_a_reboot[True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_serial.py::test_actual_capture_faults[read_any_generation]",
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[generation_zero-GEN-EXHAUST]",
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[wrap_to_one-GEN-EXHAUST]"
+   ],
+   "note": "read/release name the generation, another is cause 6 (before release's no-op); 0 before start"
+  },
+  "capture:3.2:17": {
+   "text": "- readの要求位置が使い回された/押し出された場合、次の読める位置へ進めてg",
+   "verify": [
+    "tests/test_trace_capture.py::test_read_positions_gaps_and_max_0",
+    "tests/test_trace_capture.py::test_streaming_read_of_pushed_data_points_at_write_pos_with_gap"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[gone_without_gap-READ-GAP]",
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[max0_ignores_gap-READ-GAP]",
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[future_keeps_position-READ]",
+    "tests/test_conformance_capture_serial.py::test_actual_capture_faults[read_released_no_gap]",
+    "tests/test_conformance_capture_serial.py::test_actual_capture_faults[read_zero_max_data]"
+   ],
+   "note": "re-used -> next readable with gap; none -> write_pos gap; past write_pos -> write_pos no gap; max 0 same rules"
+  },
+  "capture:3.2:18": {
+   "text": "- release はリピートだけ（ワンショットとストリーミングでは何もせず成功",
+   "verify": [
+    "tests/test_trace_capture.py::test_release_frees_finished_segments_up_to_serial_inclusive",
+    "tests/test_virtual_bench_capture_lifetime.py::test_one_shot_release_is_a_noop[False]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_one_shot_release_is_a_noop[True]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_release_frees_inclusive_data_then_resumes_with_gap[False]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_release_frees_inclusive_data_then_resumes_with_gap[True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_resume-RELEASE]",
+    "tests/test_conformance_capture_serial.py::test_actual_capture_faults[unsigned_release]"
+   ],
+   "note": "release repeat only, inclusive by core §2.6, unfinished kept, resumes 5 -> 3 with bit0, no stopped"
+  },
+  "capture:3.2:19": {
+   "text": "- read が実際に返す量は probe が決める（max 以下で、応答が m",
+   "verify": [
+    "tests/test_trace_capture.py::test_read_returns_at_most_max_and_within_max_frame"
+   ],
+   "mutants": [],
+   "note": "read returns <= max within max_frame (512)"
+  },
+  "capture:3.2:20": {
+   "text": "- segments は [共通部品](oep-if-common.ja.md)",
+   "verify": [
+    "tests/test_trace_capture.py::test_segment_records_are_a_small_ring_the_probe_sizes"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_serial.py::test_serial_observation_faults[page]"
+   ],
+   "note": "segments pages by common §1.3: more, from serial_done nothing"
+  },
+  "capture:3.2:21": {
+   "text": "| 0 未設定 | → 1 | unavailable 6 | — | — | ",
+   "verify": [
+    "tests/test_trace_capture.py::test_state_table_configure_and_start[0-1-cause6-False]",
+    "tests/test_trace_capture.py::test_state_table_configure_and_start[0-1-cause6-True]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[0-False]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[0-True]"
+   ],
+   "mutants": [],
+   "note": "state 0's row: configure, start, stop, force, release and the automatic column"
+  },
+  "capture:3.2:22": {
+   "text": "| 1 設定済み | → 1 | → 2（トリガあり）/ 3。世代 +1、区画は",
+   "verify": [
+    "tests/test_trace_capture.py::test_state_table_configure_and_start[1-1-new-False]",
+    "tests/test_trace_capture.py::test_state_table_configure_and_start[1-1-new-True]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[1-False]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[1-True]"
+   ],
+   "mutants": [],
+   "note": "state 1's row: configure, start, stop, force, release and the automatic column"
+  },
+  "capture:3.2:23": {
+   "text": "| 2 トリガ待ち | unavailable 6 | unavailable ",
+   "verify": [
+    "tests/test_trace_capture.py::test_state_table_configure_and_start[2-cause6-cause6-False]",
+    "tests/test_trace_capture.py::test_state_table_configure_and_start[2-cause6-cause6-True]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[2-False]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[2-True]",
+    "tests/test_trace_capture.py::test_state_table_automatic_transitions[False]",
+    "tests/test_trace_capture.py::test_state_table_automatic_transitions[True]"
+   ],
+   "mutants": [],
+   "note": "state 2's row: configure, start, stop, force, release and the automatic column"
+  },
+  "capture:3.2:24": {
+   "text": "| 3 取得中 | unavailable 6 | unavailable 6 ",
+   "verify": [
+    "tests/test_trace_capture.py::test_state_table_configure_and_start[3-cause6-cause6-False]",
+    "tests/test_trace_capture.py::test_state_table_configure_and_start[3-cause6-cause6-True]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[3-False]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[3-True]",
+    "tests/test_trace_capture.py::test_state_table_automatic_transitions[False]",
+    "tests/test_trace_capture.py::test_state_table_automatic_transitions[True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[wrong_stop_state-SHORT-STOP]",
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_short-SHORT-STOP]"
+   ],
+   "note": "state 3's row: configure, start, stop, force, release and the automatic column"
+  },
+  "capture:3.2:25": {
+   "text": "| 4 完了 | → 1 | → 2 / 3（世代 +1） | — | — | ",
+   "verify": [
+    "tests/test_trace_capture.py::test_state_table_configure_and_start[4-1-new-False]",
+    "tests/test_trace_capture.py::test_state_table_configure_and_start[4-1-new-True]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[4-False]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[4-True]"
+   ],
+   "mutants": [],
+   "note": "state 4's row: configure, start, stop, force, release and the automatic column"
+  },
+  "capture:3.2:26": {
+   "text": "| 5 止まっている | unavailable 6 | unavailable",
+   "verify": [
+    "tests/test_trace_capture.py::test_state_table_configure_and_start[5-cause6-cause6-False]",
+    "tests/test_trace_capture.py::test_state_table_configure_and_start[5-cause6-cause6-True]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[5-False]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[5-True]",
+    "tests/test_virtual_bench_capture_requests.py::test_paused_capture_rejects_configure_and_keeps_queued_segments[False]",
+    "tests/test_virtual_bench_capture_requests.py::test_paused_capture_rejects_configure_and_keeps_queued_segments[True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_resume-RELEASE]"
+   ],
+   "note": "state 5's row: configure, start, stop, force, release and the automatic column"
+  },
+  "capture:3.2:27": {
+   "text": "| 6 エラー | → 1 | → 2 / 3（世代 +1） | → 1 | —",
+   "verify": [
+    "tests/test_trace_capture.py::test_state_table_configure_and_start[6-1-new-False]",
+    "tests/test_trace_capture.py::test_state_table_configure_and_start[6-1-new-True]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[6-False]",
+    "tests/test_trace_capture.py::test_state_table_stop_force_release[6-True]"
+   ],
+   "mutants": [],
+   "note": "state 6's row: configure, start, stop, force, release and the automatic column"
+  },
+  "capture:3.3:1": {
+   "text": "| 0x40 | mode | u8: 1 ワンショット、2 リピート、3 スト",
+   "verify": [
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-True-query]",
+    "tests/test_trace_capture.py::test_a_probe_declares_only_the_modes_it_has"
+   ],
+   "mutants": [],
+   "note": "mode required (malformed without), undefined/undeclared mode unsupported (mode)"
+  },
+  "capture:3.3:2": {
+   "text": "| 0x42 | rate | rate_hz(u32)（アナログはチャネルあた",
+   "verify": [
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-True-query]",
+    "tests/test_trace_capture.py::test_rate_is_the_nearest_kept_within_the_range[1000-1000]",
+    "tests/test_trace_capture.py::test_rate_is_the_nearest_kept_within_the_range[3000000-got1]",
+    "tests/test_trace_capture.py::test_rate_is_the_nearest_kept_within_the_range[19999999-20000000]",
+    "tests/test_trace_capture.py::test_rate_is_the_nearest_kept_within_the_range[999-None]",
+    "tests/test_trace_capture.py::test_rate_is_the_nearest_kept_within_the_range[20000001-None]",
+    "tests/test_trace_capture.py::test_analog_rate_is_per_channel_and_rounds_within_the_shared_budget"
+   ],
+   "mutants": [],
+   "note": "rate required, 0 malformed, per channel for analog"
+  },
+  "capture:3.3:3": {
+   "text": "| 0x43 | samples | u32（1 区画のサンプル数。1 以上） ",
+   "verify": [
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-True-query]"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[mode3_accepted-CONTRACT]"
+   ],
+   "note": "samples required in modes 1/2, 0 malformed, never in mode 3"
+  },
+  "capture:3.3:4": {
+   "text": "| 0x44 | segments | u32（リピートの区画の数。1 以上） ",
+   "verify": [
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-True-query]",
+    "tests/test_trace_capture.py::test_samples_and_segments_are_rounded_down_to_what_it_holds"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[segments_unclamped-SAMPLES]"
+   ],
+   "note": "segments mode 2 only, 0 malformed, left out the probe picks"
+  },
+  "capture:3.3:5": {
+   "text": "| 0x45 | trigger | type(u8)、role(u8)、val",
+   "verify": [
+    "tests/test_trace_capture.py::test_trigger_types_per_interface[False]",
+    "tests/test_trace_capture.py::test_trigger_types_per_interface[True]",
+    "tests/test_trace_capture.py::test_type_0_trigger_role_and_value_are_not_looked_at[False]",
+    "tests/test_trace_capture.py::test_type_0_trigger_role_and_value_are_not_looked_at[True]",
+    "tests/test_trace_capture.py::test_logic_edge_values[0-2]",
+    "tests/test_trace_capture.py::test_logic_edge_values[1-4]",
+    "tests/test_trace_capture.py::test_logic_edge_values[2-2]"
+   ],
+   "mutants": [],
+   "note": "trigger type/role/value, optional (type 0)"
+  },
+  "capture:3.3:6": {
+   "text": "| 0x46 | pretrigger | u32（トリガより前に残すサンプル数",
+   "verify": [
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-True-query]",
+    "tests/test_trace_capture.py::test_samples_count_the_pretrigger_and_an_early_trigger_shortens"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[lone_pretrigger-CONTRACT]"
+   ],
+   "note": "pretrigger only with a non-0 trigger, default 0"
+  },
+  "capture:3.3:7": {
+   "text": "| 0x47 | frontend | role(u8)、frontend(u8",
+   "verify": [
+    "tests/test_virtual_bench_capture_requests.py::test_requested_frontend_is_returned_per_role_and_query_preserves_capture[0-False-False]",
+    "tests/test_virtual_bench_capture_requests.py::test_requested_frontend_is_returned_per_role_and_query_preserves_capture[0-False-True]",
+    "tests/test_virtual_bench_capture_requests.py::test_requested_frontend_is_returned_per_role_and_query_preserves_capture[0-True-False]",
+    "tests/test_virtual_bench_capture_requests.py::test_requested_frontend_is_returned_per_role_and_query_preserves_capture[0-True-True]",
+    "tests/test_virtual_bench_capture_requests.py::test_requested_frontend_is_returned_per_role_and_query_preserves_capture[1-False-False]",
+    "tests/test_virtual_bench_capture_requests.py::test_requested_frontend_is_returned_per_role_and_query_preserves_capture[1-False-True]",
+    "tests/test_virtual_bench_capture_requests.py::test_requested_frontend_is_returned_per_role_and_query_preserves_capture[1-True-False]",
+    "tests/test_virtual_bench_capture_requests.py::test_requested_frontend_is_returned_per_role_and_query_preserves_capture[1-True-True]",
+    "tests/test_virtual_bench_capture_requests.py::test_requested_frontend_is_returned_per_role_and_query_preserves_capture[2-False-False]",
+    "tests/test_virtual_bench_capture_requests.py::test_requested_frontend_is_returned_per_role_and_query_preserves_capture[2-False-True]",
+    "tests/test_virtual_bench_capture_requests.py::test_requested_frontend_is_returned_per_role_and_query_preserves_capture[2-True-False]",
+    "tests/test_virtual_bench_capture_requests.py::test_requested_frontend_is_returned_per_role_and_query_preserves_capture[2-True-True]",
+    "tests/test_virtual_bench_capture_requests.py::test_requested_frontend_is_returned_per_role_and_query_preserves_capture[3-False-False]",
+    "tests/test_virtual_bench_capture_requests.py::test_requested_frontend_is_returned_per_role_and_query_preserves_capture[3-False-True]",
+    "tests/test_virtual_bench_capture_requests.py::test_requested_frontend_is_returned_per_role_and_query_preserves_capture[3-True-False]",
+    "tests/test_virtual_bench_capture_requests.py::test_requested_frontend_is_returned_per_role_and_query_preserves_capture[3-True-True]",
+    "tests/test_virtual_bench_capture_requests.py::test_two_frontends_for_the_same_role_are_malformed_even_if_identical[False-False-False]",
+    "tests/test_virtual_bench_capture_requests.py::test_two_frontends_for_the_same_role_are_malformed_even_if_identical[False-False-True]",
+    "tests/test_virtual_bench_capture_requests.py::test_two_frontends_for_the_same_role_are_malformed_even_if_identical[False-True-False]",
+    "tests/test_virtual_bench_capture_requests.py::test_two_frontends_for_the_same_role_are_malformed_even_if_identical[False-True-True]",
+    "tests/test_virtual_bench_capture_requests.py::test_two_frontends_for_the_same_role_are_malformed_even_if_identical[True-False-False]",
+    "tests/test_virtual_bench_capture_requests.py::test_two_frontends_for_the_same_role_are_malformed_even_if_identical[True-False-True]",
+    "tests/test_virtual_bench_capture_requests.py::test_two_frontends_for_the_same_role_are_malformed_even_if_identical[True-True-False]",
+    "tests/test_virtual_bench_capture_requests.py::test_two_frontends_for_the_same_role_are_malformed_even_if_identical[True-True-True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog.py::test_semantic_faults_are_detected[ignore_frontend-FRONTEND]"
+   ],
+   "note": "frontend per channel, repeated, two for one role malformed"
+  },
+  "capture:3.3:8": {
+   "text": "- **契約**（configure と query で同じ）: 必須の TLV",
+   "verify": [
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-mode-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-rate-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-1-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[no-samples-in-mode-2-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[samples-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[segments-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-samples-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-3-segments-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-1-segments-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-without-trigger-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-with-type-0-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-not-below-samples-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[pretrigger-past-max_pretrigger-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[trigger-role-not-planned-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[mode-undefined-True-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-False-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-False-query]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-True-configure]",
+    "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-True-query]",
+    "tests/test_trace_capture.py::test_type_0_trigger_role_and_value_are_not_looked_at[False]",
+    "tests/test_trace_capture.py::test_type_0_trigger_role_and_value_are_not_looked_at[True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[lone_pretrigger-CONTRACT]",
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[mode3_accepted-CONTRACT]",
+    "tests/test_conformance_analog.py::test_semantic_faults_are_detected[mode3_accepted-RAW-TAGS]"
+   ],
+   "note": "the contract's malformed / unsupported (tag as received) / cause 6 cases, configure and query, nothing changed"
+  },
+  "capture:3.3:9": {
+   "text": "- **critical の bit**: この表の TLV は、その対象の p",
+   "verify": [
+    "tests/test_trace_capture.py::test_the_critical_bit_on_the_tables_tlvs_changes_nothing[False]",
+    "tests/test_trace_capture.py::test_the_critical_bit_on_the_tables_tlvs_changes_nothing[True]"
+   ],
+   "mutants": [],
+   "note": "the table's TLVs: same answer with bit 7, client sends without it, refusal echoes the tag as received"
+  },
+  "capture:3.3:10": {
+   "text": "- **挙げていない断り**: この節が挙げる断りは全部ではない。probe は",
+   "verify": [
+    "tests/test_trace_capture.py::test_values_it_cannot_handle_are_unsupported_with_their_tag",
+    "tests/test_virtual_bench_capture.py::test_analog_frontend_past_the_declared_is_unsupported_critical_or_not"
+   ],
+   "mutants": [],
+   "note": "a value it cannot handle (frontend 9) unsupported with its tag; capacity rounded not refused"
+  },
+  "capture:3.3:11": {
+   "text": "- **断りが 2 つ以上当たるとき**（例: mode 1 で samples",
+   "verify": [
+    "tests/test_trace_capture.py::test_two_refusals_answer_one_of_them"
+   ],
+   "mutants": [],
+   "note": "two refusals apply: one of them answers"
+  },
+  "capture:3.3:12": {
+   "text": "- **問い合わせは別の操作（0x18）**。configure の TLV の",
+   "verify": [
+    "tests/test_trace_capture.py::test_query_is_its_own_lock_free_op_that_changes_nothing",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[0-False]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[0-True]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[1-False]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[1-True]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[2-False]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[2-True]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[3-False]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[3-True]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[4-False]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[4-True]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[5-False]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[5-True]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[6-False]",
+    "tests/test_virtual_bench_capture_query.py::test_query_from_unopened_reader_preserves_all_acquisition_states[6-True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[query_applies-QUERY]",
+    "tests/test_conformance_analog.py::test_semantic_faults_are_detected[query_applies-QUERY-STATE-3]",
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[query_applies-QUERY]"
+   ],
+   "note": "query 0x18 lock-free, in every state, changes nothing; configure needs the lock"
+  },
+  "capture:3.3:13": {
+   "text": "- trigger の type: 0 即時（省略時）、1 レベル（value ",
+   "verify": [
+    "tests/test_trace_capture.py::test_trigger_types_per_interface[False]",
+    "tests/test_trace_capture.py::test_trigger_types_per_interface[True]",
+    "tests/test_trace_capture.py::test_logic_edge_values[0-2]",
+    "tests/test_trace_capture.py::test_logic_edge_values[1-4]",
+    "tests/test_trace_capture.py::test_logic_edge_values[2-2]",
+    "tests/test_virtual_bench_capture.py::test_a_trigger_is_where_the_channel_does_it[2-1-0-2]",
+    "tests/test_virtual_bench_capture.py::test_a_trigger_is_where_the_channel_does_it[2-2-1-8]",
+    "tests/test_virtual_bench_capture.py::test_a_trigger_is_where_the_channel_does_it[1-3-1-8]"
+   ],
+   "mutants": [],
+   "note": "types 1-2 logic, 3-4 analog, others unsupported; edge values 0/1/2"
+  },
+  "capture:3.3:14": {
+   "text": "- **samplesは区画のsample総数**（pretriggerを含む）",
+   "verify": [
+    "tests/test_trace_capture.py::test_samples_count_the_pretrigger_and_an_early_trigger_shortens",
+    "tests/test_virtual_bench_capture_waiting.py::test_force_uses_current_sample_and_available_pretrigger[0-0-4]",
+    "tests/test_virtual_bench_capture_waiting.py::test_force_uses_current_sample_and_available_pretrigger[2-2-6]",
+    "tests/test_virtual_bench_capture_waiting.py::test_force_uses_current_sample_and_available_pretrigger[20-4-8]",
+    "tests/test_virtual_bench_capture.py::test_a_trigger_is_where_the_channel_does_it[2-1-0-2]",
+    "tests/test_virtual_bench_capture.py::test_a_trigger_is_where_the_channel_does_it[2-2-1-8]",
+    "tests/test_virtual_bench_capture.py::test_a_trigger_is_where_the_channel_does_it[1-3-1-8]"
+   ],
+   "mutants": [],
+   "note": "samples include the pretrigger; early trigger short with smaller index; force's index and triggered; immediate no triggered"
+  },
+  "capture:3.3:15": {
+   "text": "- **rate**: 宣言したrate_rangeの中で、その役割/モード/設",
+   "verify": [
+    "tests/test_trace_capture.py::test_rate_is_the_nearest_kept_within_the_range[1000-1000]",
+    "tests/test_trace_capture.py::test_rate_is_the_nearest_kept_within_the_range[3000000-got1]",
+    "tests/test_trace_capture.py::test_rate_is_the_nearest_kept_within_the_range[19999999-20000000]",
+    "tests/test_trace_capture.py::test_rate_is_the_nearest_kept_within_the_range[999-None]",
+    "tests/test_trace_capture.py::test_rate_is_the_nearest_kept_within_the_range[20000001-None]",
+    "tests/test_trace_capture.py::test_analog_rate_is_per_channel_and_rounds_within_the_shared_budget"
+   ],
+   "mutants": [],
+   "note": "nearest kept rate, out of range unsupported (rate), analog's lower top rounded into"
+  },
+  "capture:3.3:16": {
+   "text": "- probe が持てる量を超える samples は、その上限に切り下げ、応答",
+   "verify": [
+    "tests/test_trace_capture.py::test_samples_and_segments_are_rounded_down_to_what_it_holds",
+    "tests/test_trace_capture.py::test_values_it_cannot_handle_are_unsupported_with_their_tag"
+   ],
+   "mutants": [],
+   "note": "samples past max_samples rounded down, actual_samples says"
+  },
+  "capture:3.3:17": {
+   "text": "- mode 2のsegmentsも、実際のsamplesと役割数で持てる上限へ",
+   "verify": [
+    "tests/test_trace_capture.py::test_samples_and_segments_are_rounded_down_to_what_it_holds"
+   ],
+   "mutants": [
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[segments_unclamped-SAMPLES]"
+   ],
+   "note": "mode 2 segments rounded down to the ring, left out >= 1, rounding is no refusal"
+  },
+  "capture:3.3:18": {
+   "text": "| 0x50 | actual_rate | num(u32)、den(u32)",
+   "verify": [
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog_payload.py::test_required_configure_information_cannot_be_missing[actual_rate]"
+   ],
+   "note": "actual_rate num/den >= 1 always"
+  },
+  "capture:3.3:19": {
+   "text": "| 0x51 | layout | ロジック: w(u8)、C(u8)、pos[",
+   "verify": [
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog_payload.py::test_required_configure_information_cannot_be_missing[layout]",
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[layout_count-QUERY]"
+   ],
+   "note": "layout logic w C pos[C] / analog s o b C order[C]"
+  },
+  "capture:3.3:20": {
+   "text": "| 0x52 | actual_samples | u32 | 両方 |",
+   "verify": [
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog_payload.py::test_required_configure_information_cannot_be_missing[actual_samples]",
+    "tests/test_conformance_logic.py::test_side_effect_faults_detected[missing_actual_samples-QUERY]"
+   ],
+   "note": "actual_samples in modes 1/2 only"
+  },
+  "capture:3.3:21": {
+   "text": "| 0x53 | actual_segments | u32 | 両方 |",
+   "verify": [
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog_payload.py::test_zero_required_mode_capacity[2-actual_segments]"
+   ],
+   "note": "actual_segments in mode 2 only"
+  },
+  "capture:3.3:22": {
+   "text": "| 0x55 | scale | role(u8)、zero(i32、値)、sc",
+   "verify": [
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-True]",
+    "tests/test_trace_capture.py::test_analog_voltage_skew_and_clipping"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog_payload.py::test_required_configure_information_cannot_be_missing[scale]",
+    "tests/test_conformance_analog_payload.py::test_scale_is_required_for_every_planned_role",
+    "tests/test_conformance_analog.py::test_semantic_faults_are_detected[missing_scale-RAW]"
+   ],
+   "note": "scale role zero(i32) scale_nv(i32) per planned role"
+  },
+  "capture:3.3:23": {
+   "text": "| 0x57 | skew | role(u8)、skew_ns(u32)。チャ",
+   "verify": [
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog_payload.py::test_channel_rows_cannot_duplicate_or_name_unplanned_role[1-skew-5]"
+   ],
+   "note": "skew role u32 per channel, 0 left out"
+  },
+  "capture:3.3:24": {
+   "text": "| 0x58 | frontend_used | role(u8)、fronte",
+   "verify": [
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-True]",
+    "tests/test_trace_capture.py::test_chip_firmware_frontends_and_reference_are_where_the_rules_say"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog_payload.py::test_channel_rows_cannot_duplicate_or_name_unplanned_role[1-frontend_used-2]"
+   ],
+   "note": "frontend_used role frontend per channel"
+  },
+  "capture:3.3:25": {
+   "text": "| 0x59 | reference | source(u8、enum `ref",
+   "verify": [
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[1-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[2-True]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-False]",
+    "tests/test_trace_capture.py::test_configure_answer_rows[3-True]",
+    "tests/test_trace_capture.py::test_chip_firmware_frontends_and_reference_are_where_the_rules_say"
+   ],
+   "mutants": [],
+   "note": "reference source(enum) mv how(enum)"
+  },
+  "capture:3.4:1": {
+   "text": "| 出来事 kind 0x01 segment | 区画が終わった（ワンショット",
+   "verify": [
+    "tests/test_trace_capture.py::test_segment_event_carries_the_record_and_not_in_streaming[False]",
+    "tests/test_trace_capture.py::test_segment_event_carries_the_record_and_not_in_streaming[True]",
+    "tests/test_virtual_bench_capture_notifications.py::test_one_shot_completion_matches_polling_and_generation[False-False]",
+    "tests/test_virtual_bench_capture_notifications.py::test_one_shot_completion_matches_polling_and_generation[False-True]",
+    "tests/test_virtual_bench_capture_notifications.py::test_one_shot_completion_matches_polling_and_generation[True-False]",
+    "tests/test_virtual_bench_capture_notifications.py::test_one_shot_completion_matches_polling_and_generation[True-True]"
+   ],
+   "mutants": [
+    "tests/test_virtual_bench_capture_notifications.py::test_notification_corruption_is_detected[segment_generation-False]",
+    "tests/test_virtual_bench_capture_notifications.py::test_notification_corruption_is_detected[segment_time-False]"
+   ],
+   "note": "segment event with the record at each end incl. one-shot; none in streaming"
+  },
+  "capture:3.4:2": {
+   "text": "| 出来事 kind 0x02 stopped | 取得が止まった | reas",
+   "verify": [
+    "tests/test_trace_capture.py::test_stopped_event_reasons_error_and_generation[False]",
+    "tests/test_trace_capture.py::test_stopped_event_reasons_error_and_generation[True]",
+    "tests/test_virtual_bench_capture_notifications.py::test_error_notification_matches_status_without_incomplete_segment[1-False]",
+    "tests/test_virtual_bench_capture_notifications.py::test_error_notification_matches_status_without_incomplete_segment[1-True]",
+    "tests/test_virtual_bench_capture_notifications.py::test_error_notification_matches_status_without_incomplete_segment[2-False]",
+    "tests/test_virtual_bench_capture_notifications.py::test_error_notification_matches_status_without_incomplete_segment[2-True]",
+    "tests/test_virtual_bench_capture_notifications.py::test_error_notification_matches_status_without_incomplete_segment[3-False]",
+    "tests/test_virtual_bench_capture_notifications.py::test_error_notification_matches_status_without_incomplete_segment[3-True]"
+   ],
+   "mutants": [
+    "tests/test_virtual_bench_capture_notifications.py::test_notification_corruption_is_detected[reserved_reason-False]",
+    "tests/test_virtual_bench_capture_notifications.py::test_notification_corruption_is_detected[missing_stopped-False]",
+    "tests/test_virtual_bench_capture_notifications.py::test_notification_corruption_is_detected[stopped_generation-False]"
+   ],
+   "note": "stopped reason 0/1/3, error, generation"
+  },
+  "capture:3.4:3": {
+   "text": "| 出来事 kind 0x03 triggered | トリガが立った | se",
+   "verify": [
+    "tests/test_trace_capture.py::test_triggered_event_serial_index_time_generation[False]",
+    "tests/test_trace_capture.py::test_triggered_event_serial_index_time_generation[True]"
+   ],
+   "mutants": [
+    "tests/test_virtual_bench_capture_notifications.py::test_notification_corruption_is_detected[extra_trigger-False]"
+   ],
+   "note": "triggered serial, trigger_index, trigger_ns, generation"
+  },
+  "capture:3.4:4": {
+   "text": "| データ（role 0x04） | ストリーミングの間だけ | core §1",
+   "verify": [
+    "tests/test_trace_capture.py::test_streaming_data_frames_carry_generation_and_segment_info",
+    "tests/test_trace_capture.py::test_streaming_segments_are_the_probes_and_every_frame_says_which",
+    "tests/test_capture.py::test_stream_drops_pushes_of_another_generation"
+   ],
+   "mutants": [],
+   "note": "data role 0x04 only in streaming, every frame TLV generation and 24-byte segment_info"
+  },
+  "capture:3.4:5": {
+   "text": "- **出来事はどれも、それが生まれた世代を持つ**（segment は区画の情",
+   "verify": [
+    "tests/test_trace_capture.py::test_host_takes_events_of_another_generation_as_old",
+    "tests/test_virtual_bench_capture_notifications.py::test_queued_old_events_keep_old_generation_and_host_discards_them[False]",
+    "tests/test_virtual_bench_capture_notifications.py::test_queued_old_events_keep_old_generation_and_host_discards_them[True]"
+   ],
+   "mutants": [
+    "tests/test_virtual_bench_capture_notifications.py::test_notification_corruption_is_detected[stopped_generation-True]"
+   ],
+   "note": "events carry their generation; the host drops an old one"
+  },
+  "capture:3.4:6": {
+   "text": "- ストリーミングは subscribe が前提（データは probe が送る。",
+   "verify": [
+    "tests/test_trace_capture.py::test_streaming_needs_a_subscription_and_declares_subscribe"
+   ],
+   "mutants": [],
+   "note": "mode 3 declared -> subscribe/unsubscribe in ops; mode 3 start without subscription cause 6"
+  },
+  "capture:3.5:1": {
+   "text": "| 0x07 | ops | 持つ op（core §7.4）: query、f",
+   "verify": [
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.logic]",
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.analog]"
+   ],
+   "mutants": [],
+   "note": "ops lists the mandatory ops and exactly the optional ones answered"
+  },
+  "capture:3.5:2": {
+   "text": "| 0x05 | features | revision 1はビットを定めない ",
+   "verify": [
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.logic]",
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.analog]",
+    "tests/test_trace_capture.py::test_group_describe_tracks"
+   ],
+   "mutants": [],
+   "note": "no features bit (absent or 0)"
+  },
+  "capture:3.5:3": {
+   "text": "| 0x40 | mode | mode(u8)、max_samples(u32",
+   "verify": [
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.logic]",
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.analog]",
+    "tests/test_trace_capture.py::test_describe_answers_the_maximum_not_the_free_room"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_metadata.py::test_mode_row_defects[14-rows0]",
+    "tests/test_conformance_capture_metadata.py::test_mode_row_defects[14-rows1]",
+    "tests/test_conformance_capture_metadata.py::test_metadata_defects[14-64-None]"
+   ],
+   "note": "one row per mode, max_segments 0 outside mode 2, the maximum not the free room"
+  },
+  "capture:3.5:4": {
+   "text": "| 0x41 | rate_range | min_hz(u32)、max_hz",
+   "verify": [
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.logic]",
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.analog]"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_metadata.py::test_metadata_defects[14-65-None]"
+   ],
+   "note": "rate_range 1 <= min <= max"
+  },
+  "capture:3.5:5": {
+   "text": "| 0x44 | channels | max(u8)。チャネル数の上限 |",
+   "verify": [
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.logic]",
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.analog]"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_metadata.py::test_metadata_defects[14-68-None]"
+   ],
+   "note": "channels max u8"
+  },
+  "capture:3.5:6": {
+   "text": "| 0x45 | trigger | types(u32: type のビット集",
+   "verify": [
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.logic]",
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.analog]",
+    "tests/test_trace_capture.py::test_trigger_types_per_interface[False]",
+    "tests/test_trace_capture.py::test_trigger_types_per_interface[True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_metadata.py::test_metadata_defects[14-69-None]"
+   ],
+   "note": "trigger types u32 with type 0, max_pretrigger"
+  },
+  "capture:3.5:7": {
+   "text": "| 0x46 | frontend | frontend(u8: 番号)、ran",
+   "verify": [
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.logic]",
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.analog]",
+    "tests/test_trace_capture.py::test_chip_firmware_frontends_and_reference_are_where_the_rules_say"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_metadata.py::test_metadata_defects[15-70-None]"
+   ],
+   "note": "analog frontend rows number, min, max mV"
+  },
+  "capture:3.5:8": {
+   "text": "- 必須の宣言はops、1つ以上のmode、rate_range、channel",
+   "verify": [
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.logic]",
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.analog]",
+    "tests/test_conformance_capture_metadata.py::test_metadata_passes_read_only"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_metadata.py::test_metadata_defects[14-1-None]",
+    "tests/test_conformance_capture_metadata.py::test_metadata_defects[14-64-None]",
+    "tests/test_conformance_capture_metadata.py::test_metadata_defects[15-70-None]"
+   ],
+   "note": "ops, modes, rate_range, channels, trigger, role_channels and analog frontends present"
+  },
+  "capture:3.5:9": {
+   "text": "- modeは少なくとも1つ宣言する。1/2/3を全部宣言する必要はなく、対応す",
+   "verify": [
+    "tests/test_trace_capture.py::test_a_probe_declares_only_the_modes_it_has",
+    "tests/test_conformance_capture_metadata.py::test_any_declared_mode_subset_passes[14-rows0]"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_metadata.py::test_mode_row_defects[15-rows2]"
+   ],
+   "note": "only the offered modes declared; another mode unsupported (mode)"
+  },
+  "capture:3.5:10": {
+   "text": "- **宣言は目安、configure の応答が正。** 宣言に出ていない組み合",
+   "verify": [
+    "tests/test_trace_capture.py::test_the_configure_answer_is_what_holds_not_the_declaration"
+   ],
+   "mutants": [],
+   "note": "a declared rate comes back as the configuration's kept rate"
+  },
+  "capture:3.7:1": {
+   "text": "| 0x01 | factory | frontend(u8)、scheme_l",
+   "verify": [
+    "tests/test_trace_capture.py::test_calibration_returns_raw_factory_rows_and_vrefint_after_a_start",
+    "tests/test_virtual_bench_capture.py::test_analog_values_scale_and_calibration"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog.py::test_semantic_faults_are_detected[truncate_factory-CALIBRATION-FIT]"
+   ],
+   "note": "factory rows per frontend, reverse-DNS scheme, raw_len + raw as read"
+  },
+  "capture:3.7:2": {
+   "text": "| 0x02 | vrefint | raw(u32)、ns(u64)、nomi",
+   "verify": [
+    "tests/test_trace_capture.py::test_calibration_returns_raw_factory_rows_and_vrefint_after_a_start"
+   ],
+   "mutants": [
+    "tests/test_conformance_analog.py::test_semantic_faults_are_detected[omit_vrefint-CALIBRATION-FIT]",
+    "tests/test_conformance_analog.py::test_semantic_faults_are_detected[future_reference-CALIBRATION]"
+   ],
+   "note": "vrefint raw/ns/nominal after the last start, absent before"
+  },
+  "capture:3.7:3": {
+   "text": "- チップの型番とリビジョンは core の describe の chip（c",
+   "verify": [
+    "tests/test_trace_capture.py::test_chip_firmware_frontends_and_reference_are_where_the_rules_say"
+   ],
+   "mutants": [],
+   "note": "chip and firmware in core describe"
+  },
+  "capture:3.7:4": {
+   "text": "- frontend ごとの減衰と測れる範囲は describe の front",
+   "verify": [
+    "tests/test_trace_capture.py::test_chip_firmware_frontends_and_reference_are_where_the_rules_say"
+   ],
+   "mutants": [],
+   "note": "frontend ranges in describe, chosen ones in frontend_used, reference in configure's answer"
+  },
+  "capture:4.1:1": {
+   "text": "| 0x10 | bind | n(u8)、n × fn(u16)、[TLV] ",
+   "verify": [
+    "tests/test_trace_capture.py::test_group_operation_rows[bind-16-True]"
+   ],
+   "mutants": [],
+   "note": "group bind: op number, lock, form"
+  },
+  "capture:4.1:2": {
+   "text": "| 0x11 | start | [TLV] | start_ns(u64)、g",
+   "verify": [
+    "tests/test_trace_capture.py::test_group_operation_rows[start-17-True]"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[reverse_reply-REVERSE]",
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[legacy_start-START]"
+   ],
+   "note": "group start: op number, lock, form"
+  },
+  "capture:4.1:3": {
+   "text": "| 0x12 | stop | [TLV] | — | 必要 | 必須 |",
+   "verify": [
+    "tests/test_trace_capture.py::test_group_operation_rows[stop-18-True]"
+   ],
+   "mutants": [],
+   "note": "group stop: op number, lock, form"
+  },
+  "capture:4.1:4": {
+   "text": "| 0x14 | status | [TLV] | state(u8)、star",
+   "verify": [
+    "tests/test_trace_capture.py::test_group_operation_rows[status-20-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[legacy_status-EMPTY]"
+   ],
+   "note": "group status: op number, lock, form"
+  },
+  "capture:4.1:5": {
+   "text": "| 0x01 | subscribe | core §10.3 | — | 必要",
+   "verify": [
+    "tests/test_trace_capture.py::test_group_operation_rows[subscribe-1-True]",
+    "tests/test_trace_capture.py::test_group_notifications_are_stopped_only"
+   ],
+   "mutants": [],
+   "note": "group subscribe: op number, lock, form"
+  },
+  "capture:4.1:6": {
+   "text": "| 0x02 | unsubscribe | core §10.3 | — | ",
+   "verify": [
+    "tests/test_trace_capture.py::test_group_operation_rows[unsubscribe-2-True]"
+   ],
+   "mutants": [],
+   "note": "group unsubscribe: op number, lock, form"
+  },
+  "capture:4.1:7": {
+   "text": "- bindは設定済みのlogic/analogのfnを束ねる。全trackは同",
+   "verify": [
+    "tests/test_trace_capture.py::test_group_bind_rules",
+    "tests/test_virtual_bench_capture.py::test_a_group_refuses_what_it_cannot_bind",
+    "tests/test_virtual_bench_capture.py::test_a_bind_short_of_resources_is_unavailable_limit_naming_the_fn"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[dup_accepted-BIND-DUP]",
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[unknown_no_fn-BIND-UNKNOWN]",
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[allow_trigger-BIND-TRIGGER]",
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[allow_active_track-BIND-ACTIVE]",
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[same_list_refused-BIND-SAME]",
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[mutate_bind_refusal-BIND-MODE]",
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[steal_track-BIND-OTHER]"
+   ],
+   "note": "bind: configured immediate tracks of one mode in 1/4/6; same list no-op; refusals before changes"
+  },
+  "capture:4.1:8": {
+   "text": "- n=0は束ねを解く。取得中の組（state 3）ではunavailable ",
+   "verify": [
+    "tests/test_trace_capture.py::test_group_unbind"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[change_active-UNBIND-ACTIVE]",
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[allow_track_op-TRACK-LOCK]",
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[allow_plan_op-PLAN-LOCK]"
+   ],
+   "note": "n=0 unbinds, cause 6 while capturing, no-op unbound; bound track ops cause 4, reads usable"
+  },
+  "capture:4.1:9": {
+   "text": "- bindは、同じ経路のstart成功応答（18+6×n byte）がfram",
+   "verify": [
+    "tests/test_trace_capture.py::test_group_bind_checks_the_start_answer_fits_the_frame"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[ignore_frame-BIND-FRAME]"
+   ],
+   "note": "bind refuses (unsupported 0x00) when 18+6n does not fit"
+  },
+  "capture:4.1:10": {
+   "text": "- startは束ねがあり、全trackがstate 1/4/6のときだけ受け付",
+   "verify": [
+    "tests/test_trace_capture.py::test_group_start_only_from_1_4_6_and_atomic",
+    "tests/test_virtual_bench_capture.py::test_a_group_starts_logic_and_analog_together"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[start_while_active-START-ACTIVE]",
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[partial_start-START-ATOMIC]"
+   ],
+   "note": "start only bound with tracks 1/4/6, else cause 6 with nothing changed"
+  },
+  "capture:4.1:11": {
+   "text": "- 初期化/取得の失敗でtrackがstate 6になれば組も6とし、ほかのtr",
+   "verify": [
+    "tests/test_trace_capture.py::test_group_error_stops_the_others_and_a_failed_start"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[error_peer_runs-ERROR-ADC]"
+   ],
+   "note": "a track's error makes the group 6 and stops the others; failed start's fixed form and states"
+  },
+  "capture:4.1:12": {
+   "text": "- stopは全trackへ適用し、短い区画とpadは各trackの規則に従う。",
+   "verify": [
+    "tests/test_trace_capture.py::test_group_stop_and_status_state",
+    "tests/test_trace_capture.py::test_group_start_only_from_1_4_6_and_atomic",
+    "tests/test_virtual_bench_capture_lifetime.py::test_group_stop_commits_short_segments_on_both_tracks"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[stop_one_track-STOP]",
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[no_short-STOP]"
+   ],
+   "note": "stop every track with short segments; unbound stop no-op, start cause 6"
+  },
+  "capture:4.1:13": {
+   "text": "- statusのstate: 束ねなし0、どれかが6なら6、開始後に全部4なら",
+   "verify": [
+    "tests/test_trace_capture.py::test_group_stop_and_status_state",
+    "tests/test_trace_capture.py::test_group_error_stops_the_others_and_a_failed_start"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[premature_done-START]",
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[paused_group-REPEAT]",
+    "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[reset_bind_generation-REBIND-GEN]"
+   ],
+   "note": "status state 0/6/4/3/1 from the tracks; group generation survives rebinding"
+  }
+ }
+}

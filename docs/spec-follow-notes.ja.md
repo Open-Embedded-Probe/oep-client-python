@@ -16,9 +16,9 @@ oep-client-python を oep-spec `a09fa45` へ追従する作業（コア → 共�
 
 ## 仕様側の誤りと思われるもの
 
-不便さではなく、仕様の本文と検査ベクトルが食い違っているもの。クライアントの試験では strict な xfail にしてあり、
+不便さではなく、仕様の本文と検査ベクトルが食い違っているもの。クライアントの試験はその食い違いを明示的に確かめており、
 仕様側が直れば試験が知らせる。
 
 | # | 箇所 | 食い違い | クライアントの扱い |
 |---|---|---|---|
-| E1 | `tests/vectors/interface_profiles.json` の「mode0 SPI target」（`tools/oepvectors1.py` の `interface_profiles`） | describe の max_length（tag 0x03）を `struct.pack('<I', 50)` の 4 byte で書いている。core §7.4 は max_length を u16 と定める | `test_interface_profiles_as_the_host_reads_them` のその 1 件を xfail（strict） |
+| E1 | `tests/vectors/interface_profiles.json` の「mode0 SPI target」（`tools/oepvectors1.py` の `interface_profiles`） | describe の max_length（tag 0x03）を `struct.pack('<I', 50)` の 4 byte で書いている。core §7.4 は max_length を u16 と定める | core §2.3 のとおり壊れた TLV として使わない。`test_interface_profiles_as_the_host_reads_them` がその 1 件の max_length を壊れたものとして確かめ、ベクタが直れば失敗して知らせる |

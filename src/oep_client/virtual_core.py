@@ -43,15 +43,13 @@ def tail(data, owner=False):
         value, data = data[3:3 + size], data[3 + size:]
         key = tag & 127
         if owner and key == 1:
-            if key in first:
-                continue
             if not 1 <= size <= 32:
-                raise Reject(3)
+                raise Reject(3)                          # a later copy is checked too (core §2.3)
             try:
                 value.decode('utf-8')
             except UnicodeDecodeError:
                 raise Reject(3) from None
-            first[key] = value
+            first.setdefault(key, value)
         elif tag & 128:
             raise Reject(11, bytes((tag,)))
     return first

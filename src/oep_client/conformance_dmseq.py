@@ -43,18 +43,22 @@ class DmseqChecks(MailboxChecks):
     @staticmethod
     def protocol(s=0,syn=False,h=0,pending=b'',synced=True):return dict(synced=synced,last_s=s,last_syn=syn,h=h,pending=pending)
     def first(self,kind):
+        def no_restart(rid,before):   # console §2: the first synchronisation from unsynced marks no restart
+            require(not any(m[2]==0x41 for m in self.a.state()['streams'][rid]['marks'] if m not in before),'restart mark on first synchronisation')
         self.fresh()
         with self.c.holding(3000) as sid:
             rid=self.opened(sid,2)
             if kind=='VECTOR':
                 require(crc_reference(b'123456789')==0xfb and crc_reference(b'\0')==0xf3,'normative CRC check values')
                 require(target_frame(syn=True,data=b'')[0]&0xffff==0x3298 and reply_word(0,0)==0xf300,'normative word examples')
-                self.step(rid,(0x3298,0xdeadbeef),b'',0xf300,b'',self.protocol(syn=True))
+                before=list(self.a.state()['streams'][rid]['marks'])
+                self.step(rid,(0x3298,0xdeadbeef),b'',0xf300,b'',self.protocol(syn=True));no_restart(rid,before)
             else:
                 for s,a in ((0,0),(1,0),(0,1),(1,1)):
                     # Explicit new fixture for each initial S/A; no assumption of zero seeds.
-                    self.close(sid,rid);rid=self.opened_new(sid)
+                    self.close(sid,rid);rid=self.opened_new(sid);before=list(self.a.state()['streams'][rid]['marks'])
                     self.step(rid,target_frame(s,a,kind=='SYN',data=b'x'),b'x',reply_word(s,1-a),b'',self.protocol(s,kind=='SYN',1-a))
+                    no_restart(rid,before)
     def opened_new(self,sid):
         state=self.a.state();parent=next(iter(state['connections']));rid,_=self.console(sid,parent,2);return rid
     def lengths(self):

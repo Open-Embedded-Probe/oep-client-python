@@ -895,7 +895,12 @@ class Endpoint:
         self.tick()
         for fn, cap in self.captures.items():
             if fn not in self.subscribed:
+                if cap.unsent():                                   # streaming with no one to send to: dropped, the
+                    cap.drop_to(cap.base + len(cap.data))          # position jumps (capture §2.1 rule 1, §3.2) - and
+                    cap.drop_until = cap.segment_end_after(cap.sent)   # a segment begun meanwhile goes whole (rule 1)
                 continue
+            if cap.sent < cap.drop_until:                          # subscribed again inside a segment begun with no
+                cap.drop_to(min(cap.drop_until, cap.base + len(cap.data)))   # room: the rest of it goes too
             waiting = cap.unsent()
             if not waiting:
                 self.data_since_ms.pop(fn, None)
@@ -1385,8 +1390,8 @@ class Endpoint:
         if session == 0:
             raise Reject(m.MALFORMED)                              # session_id 0 (§4.1)
         owner = got.get(OWNER)
-        if owner is not None and not 1 <= len(owner) <= reg.LIMITS["owner_max_bytes"]:
-            raise Reject(m.MALFORMED)                              # owner: text of 1-32 bytes (core §6.4)
+        if any(not 1 <= len(v) <= reg.LIMITS["owner_max_bytes"] for tag, v in t.repeated if tag & 0x7F == OWNER):
+            raise Reject(m.MALFORMED)                              # owner: 1-32 bytes, a later copy too (core §6.4, §2.3)
         if self.holder is None and session == self.last:
             return m.REJECTED, m.NO_SESSION, b""                   # the ended id is never opened again (core §6.2)
         if self.holder is not None and self.holder != session:
@@ -1676,7 +1681,11 @@ class Endpoint:
             if role not in roles or ch not in self._declared_channels(fn):
                 check(not_declared(ch))
                 continue
-            if fn in self.i2c or fn in self.spi:                   # role_channels binds the roles it lists (core §7.4)
+            if (self.names.get(fn) == _UART.name and role == _UART.enum["role"]["tx"]
+                    and not self.offers(fn, _UART.op["write"])):
+                check(not_declared(ch))                            # no write: no TX role (fixture §2)
+                continue
+            if fn in self.i2c or fn in self.spi:                  # role_channels binds the roles it lists (core §7.4)
                 listed = self._listed_roles(fn)
                 if role in listed and role not in self._declared_roles(fn, ch):
                     check(not_declared(ch))
@@ -1771,7 +1780,9 @@ class Endpoint:
                 mode = self.gpio_modes.get(ch)
                 return idle if mode is None else f"gpio {mode}"
             if name == "oep.fixture.uart":
-                return "uart-tx-high" if role == _UART.enum["role"]["tx"] else "input"
+                if role == _UART.enum["role"]["tx"]:
+                    return "uart-tx-high"
+                return "input" if fn in self.uart_baud else idle   # RX: used from configure, else idle (fixture §2)
             if fn in self.i2c:
                 if self.i2c[fn].state == 0:
                     return idle                                    # state 0: released, the idle state (fixture §3)
@@ -1783,9 +1794,9 @@ class Endpoint:
                     return "miso-driven" if fn in self.spi_selected else "miso-hi-z"
                 return "input"
             if fn in self.captures:                                # the analog: its pad leaves the digital function at start
-                started = self.captures[fn].state not in (virtual_bench_capture.STATE["unconfigured"],
-                                                          virtual_bench_capture.STATE["configured"])
-                return "analog" if started or self.captures[fn].generation else idle
+                acquiring = self.captures[fn].state in (virtual_bench_capture.STATE["waiting"],   # and comes back when
+                                                        virtual_bench_capture.STATE["capturing"])  # it stops (capture §1.2)
+                return "analog" if acquiring else idle
         return idle
 
     def spi_select(self, fn: int, active: bool) -> None:
@@ -2131,7 +2142,8 @@ class Endpoint:
             if not tg.answers:
                 return m.COMPLETED, m.FAILED, bytes([LINE])        # failed: status [TLV] (common §3); nothing made
             flags = 0
-            cid = self._seat(fn, pair, tg, min(4_000_000, max_speed))
+            fixed_hz = self._min_clock(fn) if self.names[fn] == "oep.wire.swio" else 0   # swio: no speed chosen (§3.2)
+            cid = self._seat(fn, pair, tg, fixed_hz or min(4_000_000, max_speed))
             if tg.havereset:
                 tg.havereset, flags = False, flags | ATTACH_FLAGS["havereset_acked"]
             c = self.conns[cid]
@@ -2229,7 +2241,8 @@ class Endpoint:
             raise unavailable("limit")
         cid = self._new_resource("connection")                    # one u32 space with the streams (core §9)
         self._order += 1
-        self.conns[cid] = Connection(fn, pair, self._order, speed, tg.target_id)
+        tid = None if tg.target_id in (0, 0xFFFFFFFF) else tg.target_id   # scheme 1's "none" (debug §3)
+        self.conns[cid] = Connection(fn, pair, self._order, speed, tid)
         return cid
 
     def _close_conn(self, cid: int) -> None:
@@ -2699,6 +2712,8 @@ class Endpoint:
             return m.REJECTED, m.UNKNOWN_OPERATION, b""
         op = _CON.op[names[op]]                                    # the same form as the console's (common §1)
         args = self._stream_args(op, t)                            # the request first (core §4.3 orders 5 / 6)
+        if op == _CON.op["read"] and args[0] == 3 and not self.offers(fn, _UART.op["marks"]):
+            raise Reject(m.UNSUPPORTED)                            # from 3 needs marks (fixture §2): 0x00
         s = self.uarts.get(fn)
         if s is None:
             raise unavailable("wrong_state")                       # the plan makes the stream (fixture §2)

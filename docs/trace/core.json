@@ -1,0 +1,2191 @@
+{
+ "spec_commit": "a09fa45",
+ "units": {
+  "core:0:1": {
+   "text": "| 層 | 中身 | 名前 | 版 |",
+   "excluded": "informative: the header row of a table (column names only) (§0's two layers)"
+  },
+  "core:0:2": {
+   "text": "| **本体（この文書）** | どの probe と host も、機能に関係",
+   "verify": [
+    "tests/test_trace_core.py::test_core_is_fn_0_has_no_name_and_is_never_listed[core-v1]",
+    "tests/test_trace_core.py::test_core_is_fn_0_has_no_name_and_is_never_listed[full]",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c39_list_from_beyond_the_matches_gives_the_total_and_count_0"
+   ],
+   "mutants": [],
+   "note": "fn 0 has no name and no list entry on both benches; confirm gives protocol revision 1"
+  },
+  "core:0:3": {
+   "text": "| **インターフェース** | 本体の仕組みだけで定義した、名前つきの機能。本",
+   "verify": [
+    "tests/test_trace_core.py::test_interfaces_are_named_by_reverse_dns_or_the_oep_prefix_with_their_own_revision"
+   ],
+   "mutants": [],
+   "note": "every listed name is reverse DNS or oep.<layer>.<name>; each entry has its own revision"
+  },
+  "core:1:1": {
+   "text": "| 用語 | 意味 |",
+   "excluded": "informative: the header row of a table (column names only) (§1's glossary)"
+  },
+  "core:1:2": {
+   "text": "| probe | OEP を話す装置（デバッガ、治具、ロジアナなど） |",
+   "excluded": "informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:3": {
+   "text": "| host | probe を使うソフトウェア |",
+   "excluded": "informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:4": {
+   "text": "| target | 操作・観測の対象（開発中のマイコンなど）。probe自身を",
+   "excluded": "informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:5": {
+   "text": "| 経路（transport） | OEP のフレームを運ぶもの（UART br",
+   "excluded": "informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:6": {
+   "text": "| シリアルの口（serial port） | 経路のうち OS からシリアルデ",
+   "excluded": "informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:7": {
+   "text": "| インターフェース | probe が名前で出す機能。list で見つけ、fn",
+   "excluded": "informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:8": {
+   "text": "| fn | 同じ boot_id の間、インターフェースを指す番号（u16、§",
+   "excluded": "informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:9": {
+   "text": "| セッション | ロックを持って状態を変える権利。host が選ぶ sessi",
+   "excluded": "informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:10": {
+   "text": "| lease | ロックの期限。keepalive などの要求で延びる |",
+   "excluded": "informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:11": {
+   "text": "| channel | probe のピンの番号（u16） |",
+   "excluded": "informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1.2:1": {
+   "text": "- §3 の経路の少なくとも 1 つと、そのフレーム;",
+   "verify": [
+    "tests/test_trace_core.py::test_a_probe_declares_a_transport_and_speaks_its_frames",
+    "tests/test_virtual_core.py::test_current_virtual_tcp_passes_core_and_tcp_faults"
+   ],
+   "mutants": [],
+   "note": "the bench declares its transports and answers in serial frames; over TCP the independent checker passes"
+  },
+  "core:1.2:2": {
+   "text": "- §4〜§6;",
+   "verify": [
+    "tests/test_conformance.py::test_the_main_virtual_bench_passes_every_core_check",
+    "tests/test_virtual_core.py::test_virtual_current_core_passes_every_message_contract"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_decision_table_mutant",
+    "tests/test_trace_core.py::test_no_order_state_mutant"
+   ],
+   "note": "the independent core checker (§4-§6 cases) passes on the full bench and on core-v1"
+  },
+  "core:1.2:3": {
+   "text": "- fn 0 の confirm、list、describe、clock、ope",
+   "verify": [
+    "tests/test_trace_core.py::test_fn_0_offers_its_eight_ops_and_answers_each[core-v1]",
+    "tests/test_trace_core.py::test_fn_0_offers_its_eight_ops_and_answers_each[full]",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_fn_0_has_exactly_the_eight_core_ops_and_no_subscribe"
+   ],
+   "mutants": [],
+   "note": "fn 0's ops tag is exactly the eight core ops and each is answered"
+  },
+  "core:1.2:4": {
+   "text": "- fn 0 の describe の unit_id、transport、ma",
+   "verify": [
+    "tests/test_trace_core.py::test_fn_0_declares_unit_id_transport_and_max_op_ms[core-v1]",
+    "tests/test_trace_core.py::test_fn_0_declares_unit_id_transport_and_max_op_ms[full]"
+   ],
+   "mutants": [],
+   "note": "unit_id, transport and max_op_ms in fn 0's describe"
+  },
+  "core:1.2:5": {
+   "text": "- fn 0 と、list に載せるすべての fn の describe の、共",
+   "verify": [
+    "tests/test_trace_core.py::test_every_listed_fn_and_fn_0_declare_their_ops"
+   ],
+   "mutants": [],
+   "note": "ops in fn 0's and every listed fn's describe, four profiles"
+  },
+  "core:1.2:6": {
+   "text": "- channel を持つなら、fn 0 の describe の channe",
+   "verify": [
+    "tests/test_trace_core.py::test_a_probe_with_channels_declares_them_and_parks_them_idle",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_t12_every_channel_not_the_probes_own_is_parked_at_boot"
+   ],
+   "mutants": [],
+   "note": "channels declared; every channel not the probe's own is Hi-Z idle from boot"
+  },
+  "core:1.2:7": {
+   "text": "- 通知を送り出すインターフェースを持つなら、§10.3 と §10.4。",
+   "verify": [
+    "tests/test_trace_core.py::test_every_fn_that_sends_notifications_has_subscribe_and_unsubscribe",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_subscribe_is_the_emitting_interfaces_own_op"
+   ],
+   "mutants": [],
+   "note": "notifying fns set both subscribe and unsubscribe; §10.3/§10.4 traced at their units"
+  },
+  "core:2.1:1": {
+   "text": "- 真偽値の u8 は、送る側が 0（偽）か 1（真）を置き、読む側は 0 でな",
+   "verify": [
+    "tests/test_trace_core.py::test_a_boolean_is_sent_0_or_1_and_any_non_zero_reads_true[core-v1]",
+    "tests/test_trace_core.py::test_a_boolean_is_sent_0_or_1_and_any_non_zero_reads_true[full]"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_core.py::test_semantic_reader_faults_are_detected[strict_bool-FLAGS-BOOL]"
+   ],
+   "note": "probe reads force 2 as true; host sends force 1 and reads locked 7 as true"
+  },
+  "core:2.1:2": {
+   "text": "- host は、応答の text を見せる前に、C0 の制御文字（0x00〜0",
+   "verify": [
+    "tests/test_trace_core.py::test_text_is_shown_with_control_characters_and_bad_utf8_replaced"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_text_shown_mutant"
+   ],
+   "note": "m.shown, lock_owner and Locked.owner replace C0, 0x7F and bad UTF-8"
+  },
+  "core:2.2:1": {
+   "text": "- **すべての TLV が 1 つの形**で、値の長さ（0〜65535 byt",
+   "verify": [
+    "tests/test_trace_core.py::test_one_tlv_form_and_a_length_past_the_end[core-v1]",
+    "tests/test_trace_core.py::test_one_tlv_form_and_a_length_past_the_end[full]"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_tlv.py::test_faults_are_detected[accept_short-BROKEN]"
+   ],
+   "note": "one TLV form for 0/255/300-byte values; len past the end: malformed (probe), ShortPayload (host)"
+  },
+  "core:2.2:2": {
+   "text": "- **tag の番号は下位 7 bit（0x01〜0x7F）。** bit 7",
+   "verify": [
+    "tests/test_trace_core.py::test_bit_7_is_the_critical_mark_in_requests_and_an_unknown_tag_in_answers[core-v1]",
+    "tests/test_trace_core.py::test_bit_7_is_the_critical_mark_in_requests_and_an_unknown_tag_in_answers[full]"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_bit_7_alias_in_an_answer_mutant",
+    "tests/test_conformance_host_tlv.py::test_faults_are_detected[critical_alias-CRITICAL]",
+    "tests/test_conformance_host_core.py::test_semantic_reader_faults_are_detected[critical_alias-TAIL]"
+   ],
+   "note": "owner 0x81 taken as owner; a bit-7 TLV in lock_state / unavailable / describe answers is skipped"
+  },
+  "core:2.2:3": {
+   "text": "- TLV の番号 0（critical bit の有無を問わない）は要求では ",
+   "verify": [
+    "tests/test_trace_core.py::test_tlv_number_0_is_never_a_tlv[core-v1]",
+    "tests/test_trace_core.py::test_tlv_number_0_is_never_a_tlv[full]"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_tlv.py::test_faults_are_detected[accept_zero-BROKEN]",
+    "tests/test_conformance_host_core.py::test_semantic_reader_faults_are_detected[zero_id-TAIL]"
+   ],
+   "note": "tag 0x00 / 0x80 in a request: malformed; in an answer: ProtocolError; unsupported's 0x00 is no TLV"
+  },
+  "core:2.2:4": {
+   "text": "- rejected unsupported の payload は、受け取った",
+   "verify": [
+    "tests/test_trace_core.py::test_unsupported_names_the_tag_as_received[core-v1]",
+    "tests/test_trace_core.py::test_unsupported_names_the_tag_as_received[full]"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_unsupported_tag_mutant"
+   ],
+   "note": "unknown critical 0xC5 refused with payload C5"
+  },
+  "core:2.2:5": {
+   "text": "- tagの空間は、そのpayloadの定義の文脈ごとである。要求・応答では(f",
+   "verify": [
+    "tests/test_trace_core.py::test_the_tag_space_is_the_payloads_context[core-v1]",
+    "tests/test_trace_core.py::test_the_tag_space_is_the_payloads_context[full]"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_core.py::test_semantic_reader_faults_are_detected[describe_space-CONTEXT]",
+    "tests/test_conformance_host_core.py::test_semantic_reader_faults_are_detected[unsupported_cause-CONTEXT]"
+   ],
+   "note": "0x01 is owner on open, ignored on clock, transport in confirm's answer, supported in its refusal"
+  },
+  "core:2.2:6": {
+   "text": "- 同じ tag の繰り返しは、繰り返すと定義が言う tag で、並びを表す（§",
+   "verify": [
+    "tests/test_trace_core.py::test_a_tag_repeats_only_where_its_definition_says"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_tlv.py::test_faults_are_detected[sort_repeated-DUPLICATES]"
+   ],
+   "note": "repeating channel / label kept in order; non-repeating cause: the first"
+  },
+  "core:2.3:1": {
+   "text": "- **容器は自分の長さを知る**: フレーム、TLV、並び、バイト列（data",
+   "verify": [
+    "tests/test_trace_core.py::test_containers_know_their_length[core-v1]",
+    "tests/test_trace_core.py::test_containers_know_their_length[full]",
+    "tests/test_trace_core.py::test_a_list_is_count_then_elements_without_lengths"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_core.py::test_semantic_reader_faults_are_detected[element_length-FIXED]"
+   ],
+   "note": "list / describe / clock answers read by their own counts and lengths, nothing left over"
+  },
+  "core:2.3:2": {
+   "text": "- **固定の形はどれも (名前, revision) で決まる**（fn 0 ",
+   "verify": [
+    "tests/test_trace_core.py::test_fn_0_answers_have_their_fixed_parts_and_a_tlv_tail_after"
+   ],
+   "mutants": [],
+   "note": "fn 0 answers are exactly their fixed parts; additions come as a TLV tail the host skips"
+  },
+  "core:2.3:3": {
+   "text": "- **並び**: `count、count × 要素`。要求でも応答でも同じ。",
+   "verify": [
+    "tests/test_trace_core.py::test_a_list_is_count_then_elements_without_lengths"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_core.py::test_semantic_reader_faults_are_detected[entry_count-FIXED]",
+    "tests/test_conformance_host_core.py::test_semantic_reader_faults_are_detected[element_length-FIXED]"
+   ],
+   "note": "list is total count and count entries read field by field"
+  },
+  "core:2.3:4": {
+   "text": "- **応答**: 各 op の応答の固定部分（と、前に数か長さを置いた並び）の",
+   "verify": [
+    "tests/test_trace_core.py::test_the_host_skips_unknown_tags_and_refuses_a_short_answer",
+    "tests/test_trace_core.py::test_fn_0_answers_have_their_fixed_parts_and_a_tlv_tail_after",
+    "tests/test_conformance_host_tlv.py::test_sample_reader_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_tlv.py::test_faults_are_detected[reject_unknown-UNKNOWN]",
+    "tests/test_conformance_host_tlv.py::test_faults_are_detected[accept_bad_width-KNOWN_WIDTH]",
+    "tests/test_conformance_host_core.py::test_semantic_reader_faults_are_detected[short_fixed-SHORT]"
+   ],
+   "note": "host skips unknown tags, raises on a short fixed part, does not use a known TLV of a wrong length"
+  },
+  "core:2.3:5": {
+   "text": "- **出来事とデータ**（§10.2）も応答と同じ: 固定部分の後ろは TLV",
+   "verify": [
+    "tests/test_trace_core.py::test_data_frames_are_their_fixed_part_then_tlvs"
+   ],
+   "mutants": [],
+   "note": "the bench's data frames: fixed part, len, data, then TLVs; events parse by kind"
+  },
+  "core:2.3:6": {
+   "text": "- **要求**: 要求の後ろに足せるのは TLV の並びだけ。host は、効",
+   "verify": [
+    "tests/test_trace_core.py::test_the_host_sends_harmful_or_meaningless_if_ignored_tlvs_critical",
+    "tests/test_conformance_host_critical_calls.py::test_public_calls_send_critical_fields_and_surface_refusal[rvswd-133]",
+    "tests/test_conformance_host_critical_calls.py::test_public_calls_send_critical_fields_and_surface_refusal[swd-133]"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_critical_calls.py::test_critical_field_assertion_detects_dropped_bit[rvswd-133]",
+    "tests/test_conformance_host_critical_calls.py::test_critical_field_assertion_detects_dropped_bit[swio-133]"
+   ],
+   "note": "the client sends scan's max_speed and attach's reset with bit 7"
+  },
+  "core:2.3:7": {
+   "text": "- **知らない TLV**（この probe が実装しない tag）: cri",
+   "verify": [
+    "tests/test_trace_core.py::test_unsupported_names_the_tag_as_received[core-v1]",
+    "tests/test_trace_core.py::test_unsupported_names_the_tag_as_received[full]",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_plan_apply_any_one_reason_that_applies"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_unsupported_tag_mutant"
+   ],
+   "note": "unknown critical: unsupported with the tag as received; unknown non-critical: ignored"
+  },
+  "core:2.3:8": {
+   "text": "- **実装する TLV** は、bit 7 によらず同じに扱う: 値の長さが定",
+   "verify": [
+    "tests/test_trace_core.py::test_an_implemented_tlv_is_the_same_with_or_without_bit_7[core-v1]",
+    "tests/test_trace_core.py::test_an_implemented_tlv_is_the_same_with_or_without_bit_7[full]"
+   ],
+   "mutants": [],
+   "note": "owner of 33 bytes malformed with and without bit 7; a right one taken either way"
+  },
+  "core:2.3:9": {
+   "text": "- **要求の TLV の値は後ろに伸ばさない。** 新しいフィールドは新しい ",
+   "verify": [
+    "tests/test_trace_core.py::test_a_request_tlvs_value_is_not_extended"
+   ],
+   "mutants": [],
+   "note": "role_assignment one byte longer: malformed, nothing applied"
+  },
+  "core:2.3:10": {
+   "text": "- 繰り返すと定義が言わない tag が 2 つ以上あれば、読む側は最初のものを",
+   "verify": [
+    "tests/test_trace_core.py::test_a_tag_twice_the_first_is_used_and_the_later_is_checked_too[core-v1]",
+    "tests/test_trace_core.py::test_a_tag_twice_the_first_is_used_and_the_later_is_checked_too[full]"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_later_duplicate_unchecked_mutant",
+    "tests/test_conformance_host_tlv.py::test_faults_are_detected[unvalidated_later_first-KNOWN_WIDTH]",
+    "tests/test_conformance_host_tlv.py::test_faults_are_detected[last_duplicate-DUPLICATES]"
+   ],
+   "note": "two owners: the first used; a later owner of a wrong length makes the open malformed"
+  },
+  "core:2.3:11": {
+   "text": "- 固定部分より短い要求は rejected malformed。",
+   "verify": [
+    "tests/test_trace_core.py::test_a_request_shorter_than_its_fixed_part_is_malformed[core-v1]",
+    "tests/test_trace_core.py::test_a_request_shorter_than_its_fixed_part_is_malformed[full]"
+   ],
+   "mutants": [],
+   "note": "short confirm / list / describe / open: malformed"
+  },
+  "core:2.3:12": {
+   "text": "- **可変の並びは前に数を置く**（後ろに TLV を付けられるように）。",
+   "verify": [
+    "tests/test_trace_core.py::test_a_counted_list_may_be_followed_by_tlvs"
+   ],
+   "mutants": [],
+   "note": "TLVs after list's counted entries and unsupported's tag"
+  },
+  "core:2.3:13": {
+   "text": "- 固定部分に省略できるフィールドを置かない（省略したい値は TLV にする）。",
+   "verify": [
+    "tests/test_trace_core.py::test_a_request_shorter_than_its_fixed_part_is_malformed[core-v1]",
+    "tests/test_trace_core.py::test_a_request_shorter_than_its_fixed_part_is_malformed[full]"
+   ],
+   "mutants": [],
+   "note": "no fixed-part field may be omitted: open without force is malformed, nothing changes"
+  },
+  "core:2.4:1": {
+   "text": "- 知らない role のフレームは捨てる。",
+   "verify": [
+    "tests/test_trace_core.py::test_the_host_routes_by_role_and_drops_unknown_roles_and_requests",
+    "tests/test_trace_core.py::test_the_probe_drops_what_is_not_a_whole_request[core-v1]",
+    "tests/test_trace_core.py::test_the_probe_drops_what_is_not_a_whole_request[full]"
+   ],
+   "mutants": [],
+   "note": "host drops role 0x05; probe answers nothing to any role but 0x01"
+  },
+  "core:2.4:2": {
+   "text": "- probe は、role が要求の role（0x01）でない messag",
+   "verify": [
+    "tests/test_trace_core.py::test_the_probe_drops_what_is_not_a_whole_request[core-v1]",
+    "tests/test_trace_core.py::test_the_probe_drops_what_is_not_a_whole_request[full]",
+    "tests/test_trace_core.py::test_the_host_routes_by_role_and_drops_unknown_roles_and_requests"
+   ],
+   "mutants": [],
+   "note": "probe: no answer to roles != 1 or under 10 bytes; host drops a request frame"
+  },
+  "core:2.4:3": {
+   "text": "- host は、5 byte より短い応答と、見出しより短い出来事やデータのフ",
+   "verify": [
+    "tests/test_trace_core.py::test_the_host_takes_short_results_and_notifications_for_broken_frames"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_notifications.py::test_frame_corruption_and_overrefusal_faults[accept_short-SHORT-FRAMES-Violation:]"
+   ],
+   "note": "results under 5 bytes, events under 6, data under 5: broken frames"
+  },
+  "core:2.4:4": {
+   "text": "- 知らない resolution、completed の知らない outcom",
+   "verify": [
+    "tests/test_trace_core.py::test_an_unknown_resolution_or_outcome_is_a_failure"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_values.py::test_independent_reader_faults[resolution_success-RESOLUTION-Violation:]",
+    "tests/test_conformance_host_values.py::test_independent_reader_faults[outcome_success-OUTCOME-Violation:]"
+   ],
+   "note": "resolution 2, outcome 3 / 0xFF: Failed"
+  },
+  "core:2.4:5": {
+   "text": "- インターフェースの status や reason の知らない値は失敗として",
+   "verify": [
+    "tests/test_trace_core.py::test_an_unknown_reject_reason_or_status_is_a_failure",
+    "tests/test_conformance_host_values.py::test_selected_unknown_value_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_values.py::test_independent_reader_faults[status_success-STATUS-Violation:]",
+    "tests/test_conformance_host_values.py::test_independent_reader_faults[reason_success-REASON-Violation:]"
+   ],
+   "note": "unknown reason raised as a refusal; unknown status a failure (selected reader)"
+  },
+  "core:2.4:6": {
+   "text": "- 知らない出来事の kind は捨てる（seq は数える）。",
+   "verify": [
+    "tests/test_trace_core.py::test_an_unknown_event_kind_is_dropped_and_its_seq_counted",
+    "tests/test_conformance_host_notifications.py::test_notification_reader_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_notifications.py::test_faults_are_detected[deliver_unknown-UNKNOWN-SEQ]",
+    "tests/test_conformance_host_notifications.py::test_faults_are_detected[unknown_not_counted-UNKNOWN-SEQ]"
+   ],
+   "note": "an unknown kind is not returned by events() and its seq is no lost frame"
+  },
+  "core:2.4:7": {
+   "text": "- host は応答の flags の予約のビットを無視する。応答の enum ",
+   "verify": [
+    "tests/test_trace_core.py::test_unknown_values_that_tell_no_failure_are_shown_as_unknown",
+    "tests/test_conformance_host_values.py::test_selected_unknown_value_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_values.py::test_independent_reader_faults[cause_refusal-CAUSE-Violation:]",
+    "tests/test_conformance_host_values.py::test_independent_reader_faults[cause_fallback-CAUSE-Violation:]"
+   ],
+   "note": "an unknown cause is shown raw; reserved flags ignored by the selected reader"
+  },
+  "core:2.5:1": {
+   "text": "| 空間 | 範囲 |",
+   "excluded": "informative: the header row of a table (column names only) (§2.5's number spaces)"
+  },
+  "core:2.5:2": {
+   "text": "| role | 0x01 要求、0x02 応答、0x03 出来事、0x04 デ",
+   "verify": [
+    "tests/test_trace_core.py::test_the_probe_drops_what_is_not_a_whole_request[core-v1]",
+    "tests/test_trace_core.py::test_the_probe_drops_what_is_not_a_whole_request[full]"
+   ],
+   "mutants": [],
+   "note": "role 0x00 and unassigned roles get no answer"
+  },
+  "core:2.5:3": {
+   "text": "| 本体（fn 0）の op | 0x01〜0x0F 発見、0x10〜0x1F ",
+   "verify": [
+    "tests/test_trace_core.py::test_fn_0_op_space[core-v1]",
+    "tests/test_trace_core.py::test_fn_0_op_space[full]",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c21_an_op_fn_0_does_not_define_is_unknown_operation_not_session_required"
+   ],
+   "mutants": [],
+   "note": "fn 0 ops in 0x01-0x0F / 0x10-0x1F; others unknown_operation"
+  },
+  "core:2.5:4": {
+   "text": "| インターフェースの op | 0x01〜0x0F は共通操作専用（0x01 ",
+   "verify": [
+    "tests/test_trace_core.py::test_interface_op_space_keeps_0x01_0x0f_for_the_shared_ops",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c21_an_op_an_interface_does_not_define_is_unknown_operation"
+   ],
+   "mutants": [],
+   "note": "registry: below 0x10 only subscribe 0x01 / unsubscribe 0x02"
+  },
+  "core:2.5:5": {
+   "text": "| reject reason | 0x01〜0x3F 本体（全インターフェース",
+   "verify": [
+    "tests/test_trace_core.py::test_reason_and_cause_spaces"
+   ],
+   "mutants": [],
+   "note": "core reasons 0x01-0x3F, interface ones 0x40-0x7F"
+  },
+  "core:2.5:6": {
+   "text": "| unavailableのcause | 0x01〜0x3F 本体、0x40〜",
+   "verify": [
+    "tests/test_trace_core.py::test_reason_and_cause_spaces"
+   ],
+   "mutants": [],
+   "note": "core causes 0x01-0x3F, interface ones 0x40-0x7F"
+  },
+  "core:2.5:7": {
+   "text": "| outcome | 0 success、1 failed、2 partial",
+   "verify": [
+    "tests/test_trace_core.py::test_outcome_space",
+    "tests/test_trace_core.py::test_an_unknown_resolution_or_outcome_is_a_failure"
+   ],
+   "mutants": [],
+   "note": "outcomes 0/1/2, others not run"
+  },
+  "core:2.5:8": {
+   "text": "| 出来事の kind | fn ごとの空間。0x01〜0x7F はインターフェ",
+   "verify": [
+    "tests/test_trace_core.py::test_event_kind_space",
+    "tests/test_trace_core.py::test_fn_0_sends_no_notifications"
+   ],
+   "mutants": [],
+   "note": "event kinds 0x01-0x7F; fn 0 none"
+  },
+  "core:2.5:9": {
+   "text": "| TLV の tag | payloadの文脈ごと（§2.2）。番号は下位 7",
+   "verify": [
+    "tests/test_trace_core.py::test_tlv_tag_spaces",
+    "tests/test_trace_core.py::test_tlv_number_0_is_never_a_tlv[core-v1]",
+    "tests/test_trace_core.py::test_tlv_number_0_is_never_a_tlv[full]"
+   ],
+   "mutants": [],
+   "note": "every registry tag 0x01-0x7F; 0 never a TLV"
+  },
+  "core:2.5:10": {
+   "text": "| describe の tag | 0x01〜0x3F 本体の共通タグ（§7.",
+   "verify": [
+    "tests/test_trace_core.py::test_tlv_tag_spaces"
+   ],
+   "mutants": [],
+   "note": "describe common tags 0x01-0x3F, probe-wide and interface ones 0x40-0x7F"
+  },
+  "core:2.5:11": {
+   "text": "| 資源の番号 | u32（1〜0xFFFFFFFF、0 は割り当てない）、pr",
+   "verify": [
+    "tests/test_trace_core.py::test_resource_numbers_are_u32_from_1",
+    "tests/test_trace_core.py::test_resource_numbers_are_never_reused_and_run_out_with_cause_2"
+   ],
+   "mutants": [],
+   "note": "resource numbers u32 from 1, one space for connections and streams"
+  },
+  "core:2.8:1": {
+   "text": "- インターフェースのどの**固定の形**（§2.3: 固定部分、TLV の値、",
+   "verify": [
+    "tests/test_trace_core.py::test_the_host_does_not_use_an_interface_revision_it_does_not_know"
+   ],
+   "mutants": [],
+   "note": "the client's interface classes speak one (name, revision); another revision is refused"
+  },
+  "core:2.8:2": {
+   "text": "- **revision を上げるのは、既存の契約を壊すとき**。固定の形の意味",
+   "verify": [
+    "tests/test_trace_core.py::test_the_host_does_not_use_an_interface_revision_it_does_not_know"
+   ],
+   "mutants": [],
+   "note": "UnsupportedRevision for revision 2"
+  },
+  "core:2.8:3": {
+   "text": "- 既存の形と振る舞いの契約を保ち、任意の request TLV、respon",
+   "verify": [
+    "tests/test_trace_core.py::test_an_optional_op_is_known_by_ops_and_not_sent_when_absent",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c21_riscv_dm_ops_are_gated_on_the_ops_tag"
+   ],
+   "mutants": [],
+   "note": "an optional op is used only when ops sets it; nothing sent otherwise"
+  },
+  "core:2.8:4": {
+   "text": "- 本体の形または既存の契約を壊す振る舞いを変えるときは、プロトコルの revi",
+   "verify": [
+    "tests/test_trace_core.py::test_the_protocol_revision_is_confirms",
+    "tests/test_trace_core.py::test_core_is_fn_0_has_no_name_and_is_never_listed[core-v1]",
+    "tests/test_trace_core.py::test_core_is_fn_0_has_no_name_and_is_never_listed[full]"
+   ],
+   "mutants": [],
+   "note": "protocol revision 1 from confirm"
+  },
+  "core:4.1:1": {
+   "text": "- `corr`: 0 を使わない u16。host は **session_i",
+   "verify": [
+    "tests/test_trace_core.py::test_the_host_corr_is_never_0_and_wraps_to_1",
+    "tests/test_conformance_corr.py::test_corr_boundaries_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_corr.py::test_corr_mutants_fail[no_wrap]",
+    "tests/test_conformance_corr.py::test_corr_mutants_fail[reject_max]"
+   ],
+   "note": "host corr 65534, 65535, 1, 2; the probe's cyclic corr rules pass the corr checker"
+  },
+  "core:4.1:2": {
+   "text": "- `session_id`: 要求が属するセッション、または **0 = セッ",
+   "verify": [
+    "tests/test_trace_core.py::test_every_request_carries_a_session_id"
+   ],
+   "mutants": [],
+   "note": "10-byte header with the session's id or 0"
+  },
+  "core:4.1:3": {
+   "text": "- ロックが要る op（§6.3）の要求は、ロックを持つセッションの id を持",
+   "verify": [
+    "tests/test_trace_core.py::test_a_locked_op_with_session_id_0_is_session_required[core-v1]",
+    "tests/test_trace_core.py::test_a_locked_op_with_session_id_0_is_session_required[full]"
+   ],
+   "mutants": [],
+   "note": "end / keepalive / gpio set with 0: session_required"
+  },
+  "core:4.1:4": {
+   "text": "- ロックなしの op の要求は 0 を持ってよい: そのときはセッションの確か",
+   "verify": [
+    "tests/test_trace_core.py::test_a_lock_free_op_with_0_touches_no_session_and_with_an_id_is_checked[core-v1]",
+    "tests/test_trace_core.py::test_a_lock_free_op_with_0_touches_no_session_and_with_an_id_is_checked[full]",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_clock_touches_no_session_lock_or_lease"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_session_0_touches_the_lease_mutant"
+   ],
+   "note": "clock with 0 keeps the lease; with an id: no_session / locked / renews"
+  },
+  "core:4.1:5": {
+   "text": "- open は、開くセッションの id を持つ（§6.4）。0 なら reje",
+   "verify": [
+    "tests/test_trace_core.py::test_open_with_session_id_0_is_malformed[core-v1]",
+    "tests/test_trace_core.py::test_open_with_session_id_0_is_malformed[full]"
+   ],
+   "mutants": [],
+   "note": "open with id 0: malformed, no lock"
+  },
+  "core:4.2:1": {
+   "text": "| resolution | 値 | detail | payload |",
+   "excluded": "informative: the header row of a table (column names only) (§4.2's resolutions)"
+  },
+  "core:4.2:2": {
+   "text": "| rejected | 0x00 | reject reason（§4.3） ",
+   "verify": [
+    "tests/test_trace_core.py::test_one_answer_per_request_with_its_corr_and_no_fn_or_op[core-v1]",
+    "tests/test_trace_core.py::test_one_answer_per_request_with_its_corr_and_no_fn_or_op[full]",
+    "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says"
+   ],
+   "mutants": [],
+   "note": "rejected is resolution 0x00 with the reason in detail and its payload"
+  },
+  "core:4.2:3": {
+   "text": "| completed | 0x01 | outcome（0 success、1",
+   "verify": [
+    "tests/test_trace_core.py::test_one_answer_per_request_with_its_corr_and_no_fn_or_op[core-v1]",
+    "tests/test_trace_core.py::test_one_answer_per_request_with_its_corr_and_no_fn_or_op[full]",
+    "tests/test_trace_core.py::test_outcome_space"
+   ],
+   "mutants": [],
+   "note": "completed is 0x01 with the outcome in detail"
+  },
+  "core:4.2:4": {
+   "text": "- 要求ごとに応答はちょうど 1 つ。応答はその要求の来た経路に、同じ corr",
+   "verify": [
+    "tests/test_trace_core.py::test_one_answer_per_request_with_its_corr_and_no_fn_or_op[core-v1]",
+    "tests/test_trace_core.py::test_one_answer_per_request_with_its_corr_and_no_fn_or_op[full]",
+    "tests/test_trace_core.py::test_limits_are_per_transport_and_the_resend_table_is_shared"
+   ],
+   "mutants": [],
+   "note": "one answer with the request's corr, a 5-byte header without fn / op"
+  },
+  "core:4.2:5": {
+   "text": "- **rejected は「要求を受け付けなかった」ときだけ**（書式、番号、",
+   "verify": [
+    "tests/test_trace_core.py::test_executed_and_failed_is_completed_failed_not_rejected"
+   ],
+   "mutants": [],
+   "note": "a halt run on a target that stopped answering is completed failed, not rejected"
+  },
+  "core:4.2:6": {
+   "text": "- completedの進捗の計測点はopが定める。外部targetへの書き込み",
+   "verify": [
+    "tests/test_trace_core.py::test_the_host_does_not_run_a_failed_request_again"
+   ],
+   "mutants": [],
+   "note": "completed failed: Failed raised, one request sent"
+  },
+  "core:4.3:1": {
+   "text": "| 0x01 | unknown_function | その fn は無い（見出",
+   "verify": [
+    "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says"
+   ],
+   "mutants": [],
+   "note": "unknown_function for the header's fn and describe's"
+  },
+  "core:4.3:2": {
+   "text": "| 0x02 | unknown_operation | その fn にその o",
+   "verify": [
+    "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says"
+   ],
+   "mutants": [],
+   "note": "unknown_operation for fn 0 op 0x30"
+  },
+  "core:4.3:3": {
+   "text": "| 0x03 | malformed | 長さ・値域の誤り | — |",
+   "verify": [
+    "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says"
+   ],
+   "mutants": [],
+   "note": "malformed for a short list"
+  },
+  "core:4.3:4": {
+   "text": "| 0x04 | unavailable | 今の状態・資源・方針では受けられな",
+   "verify": [
+    "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says",
+    "tests/test_trace_core.py::test_the_cause_fn_and_channel_tlvs"
+   ],
+   "mutants": [],
+   "note": "unavailable with cause and channel TLVs"
+  },
+  "core:4.3:5": {
+   "text": "| 0x06 | window_exceeded | window / max_",
+   "verify": [
+    "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says"
+   ],
+   "mutants": [],
+   "note": "window_exceeded is 0x06 and raised as a refusal (the bench never needs it)"
+  },
+  "core:4.3:6": {
+   "text": "| 0x07 | no_session | 要求は session_id を持つ",
+   "verify": [
+    "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says"
+   ],
+   "mutants": [],
+   "note": "no_session with no holder"
+  },
+  "core:4.3:7": {
+   "text": "| 0x08 | locked | 他のセッションがロックを持つ | 残り時間 ",
+   "verify": [
+    "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says",
+    "tests/test_trace_core.py::test_the_decision_table[core-v1]",
+    "tests/test_trace_core.py::test_the_decision_table[full]"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_decision_table_mutant"
+   ],
+   "note": "locked with remaining ms and the owner TLV"
+  },
+  "core:4.3:8": {
+   "text": "| 0x09 | session_required | ロックが要る op の要",
+   "verify": [
+    "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says"
+   ],
+   "mutants": [],
+   "note": "session_required for keepalive with 0"
+  },
+  "core:4.3:9": {
+   "text": "| 0x0A | no_resource | 要求の資源（connection、",
+   "verify": [
+    "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says"
+   ],
+   "mutants": [],
+   "note": "no_resource for an unknown connection"
+  },
+  "core:4.3:10": {
+   "text": "| 0x0B | unsupported | 定義にはあるが、この probe ",
+   "verify": [
+    "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says",
+    "tests/test_trace_core.py::test_unsupported_names_the_tag_as_received[core-v1]",
+    "tests/test_trace_core.py::test_unsupported_names_the_tag_as_received[full]",
+    "tests/test_trace_core.py::test_no_revision_in_range_is_unsupported_with_supported[core-v1]",
+    "tests/test_trace_core.py::test_no_revision_in_range_is_unsupported_with_supported[full]"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_unsupported_tag_mutant"
+   ],
+   "note": "unsupported: the tag as received, 0x00 for a fixed-part value, then TLVs"
+  },
+  "core:4.3:11": {
+   "text": "| 0x0C | result_lost | 送り直された要求の結果を覚えていな",
+   "verify": [
+    "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says",
+    "tests/test_trace_core.py::test_the_record_answers_a_resend_by_its_bytes[core-v1]",
+    "tests/test_trace_core.py::test_the_record_answers_a_resend_by_its_bytes[full]"
+   ],
+   "mutants": [],
+   "note": "result_lost for a resend whose result was not kept"
+  },
+  "core:4.3:12": {
+   "text": "1. 見出し: corr 0 は malformed。そのほかは unknown",
+   "verify": [
+    "tests/test_trace_core.py::test_the_header_order_corr_fn_op_session[core-v1]",
+    "tests/test_trace_core.py::test_the_header_order_corr_fn_op_session[full]",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c21_order_1_refusals_are_not_remembered_and_do_not_restart_the_lease"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_header_order_mutant"
+   ],
+   "note": "corr 0 malformed first, then unknown_function, unknown_operation, session_required"
+  },
+  "core:4.3:13": {
+   "text": "2. 送り直し: 未完了のコピーは§4.4に従って捨ててよい。処理済みなら§5.",
+   "verify": [
+    "tests/test_trace_core.py::test_the_resend_check_comes_before_the_session_check[core-v1]",
+    "tests/test_trace_core.py::test_the_resend_check_comes_before_the_session_check[full]"
+   ],
+   "mutants": [],
+   "note": "a resend after the lease ran out gets its recorded answer, not no_session"
+  },
+  "core:4.3:14": {
+   "text": "3. セッション（§6.2）: no_session / locked。",
+   "verify": [
+    "tests/test_trace_core.py::test_the_session_check_comes_after_the_header_and_before_the_payload[core-v1]",
+    "tests/test_trace_core.py::test_the_session_check_comes_after_the_header_and_before_the_payload[full]"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_decision_table_mutant"
+   ],
+   "note": "another id with a broken payload: locked; the holder's: malformed"
+  },
+  "core:4.3:15": {
+   "text": "4. そのほか: probe は、書式（malformed: 長さ、中身と合わな",
+   "verify": [
+    "tests/test_trace_core.py::test_the_rest_is_checked_before_anything_changes[core-v1]",
+    "tests/test_trace_core.py::test_the_rest_is_checked_before_anything_changes[full]",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_plan_apply_any_one_reason_that_applies",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_plan_apply_unsupported_or_unavailable_and_nothing_changes"
+   ],
+   "mutants": [],
+   "note": "any one reason that applies; nothing changed by the refused request"
+  },
+  "core:4.3:16": {
+   "text": "| 0x01 | cause | u8: 1 ピンが使われている、2 数・処理能",
+   "verify": [
+    "tests/test_trace_core.py::test_the_cause_fn_and_channel_tlvs"
+   ],
+   "mutants": [],
+   "note": "cause values 1-7 and the host's names for them"
+  },
+  "core:4.3:17": {
+   "text": "| 0x02 | channel | u16。ぶつかった channel（繰り返",
+   "verify": [
+    "tests/test_trace_core.py::test_the_cause_fn_and_channel_tlvs",
+    "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says"
+   ],
+   "mutants": [],
+   "note": "channel u16, repeated, read in order"
+  },
+  "core:4.3:18": {
+   "text": "| 0x05 | fn | u16。断りの対象の fn |",
+   "verify": [
+    "tests/test_trace_core.py::test_the_cause_fn_and_channel_tlvs"
+   ],
+   "mutants": [],
+   "note": "fn u16 read by the host"
+  },
+  "core:4.4:1": {
+   "text": "- confirm（§7.1）で probe は `max_frame`（受け取",
+   "verify": [
+    "tests/test_trace_core.py::test_confirm_gives_this_transports_limits[core-v1]",
+    "tests/test_trace_core.py::test_confirm_gives_this_transports_limits[full]",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c20_confirms_bounds_are_the_virtual_bench_s_too[63-4096-4]",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c20_confirms_bounds_are_the_virtual_bench_s_too[1024-1023-4]",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c20_confirms_bounds_are_the_virtual_bench_s_too[1024-4096-0]"
+   ],
+   "mutants": [],
+   "note": "max_frame >= 64, window >= max_frame, max_inflight >= 1"
+  },
+  "core:4.4:2": {
+   "text": "- host はこれらの上限を守る。超えた要求を probe は rejecte",
+   "verify": [
+    "tests/test_trace_core.py::test_the_host_keeps_max_inflight_and_window"
+   ],
+   "mutants": [],
+   "note": "the link's pipeline never exceeds 3 in flight / 40 bytes"
+  },
+  "core:4.4:3": {
+   "text": "- probeは、各経路のwindow / max_inflightを守る新規要",
+   "verify": [
+    "tests/test_trace_core.py::test_the_probe_takes_new_requests_while_one_is_processed_and_answers_in_order",
+    "tests/test_conformance_pipeline.py::test_pipeline_passes"
+   ],
+   "mutants": [
+    "tests/test_conformance_pipeline.py::test_admission_mutants_fail[count]",
+    "tests/test_conformance_pipeline.py::test_admission_mutants_fail[bytes]"
+   ],
+   "note": "requests within max_inflight are queued while one runs"
+  },
+  "core:4.4:4": {
+   "text": "- window / max_inflightは、その経路の異なる未解決要求につ",
+   "verify": [
+    "tests/test_trace_core.py::test_a_copy_of_an_unfinished_request_is_not_a_new_one"
+   ],
+   "mutants": [],
+   "note": "a waiting copy is coalesced, run once, one credit"
+  },
+  "core:4.4:5": {
+   "text": "- 要求が収まっても、要求の引数から必要となる固定結果がその経路のmax_fra",
+   "verify": [
+    "tests/test_trace_core.py::test_a_fixed_result_past_max_frame_is_unsupported_or_cut_as_the_interface_says"
+   ],
+   "mutants": [],
+   "note": "dmi of 14 reads on 64-byte frames: unsupported 0x00 before the connection lookup; source cut to max_frame - 7"
+  },
+  "core:4.4:6": {
+   "text": "- probe は要求を受け取った順に処理し、その要求の順に応答を返す。",
+   "verify": [
+    "tests/test_trace_core.py::test_the_probe_takes_new_requests_while_one_is_processed_and_answers_in_order",
+    "tests/test_conformance_pipeline.py::test_pipeline_passes"
+   ],
+   "mutants": [
+    "tests/test_conformance_pipeline.py::test_admission_mutants_fail[order]"
+   ],
+   "note": "answers in the order received"
+  },
+  "core:4.4:7": {
+   "text": "- confirm の max_frame、window、max_infligh",
+   "verify": [
+    "tests/test_trace_core.py::test_limits_are_per_transport_and_the_resend_table_is_shared"
+   ],
+   "mutants": [
+    "tests/test_conformance_pipeline.py::test_admission_mutants_fail[shared]"
+   ],
+   "note": "each transport's confirm names itself; a resend on another transport gets the shared record"
+  },
+  "core:4.4:8": {
+   "text": "- **host の待ち時間**: 応答が来ないことは時間切れだけで判断する。h",
+   "verify": [
+    "tests/test_trace_core.py::test_the_host_waits_at_least_the_floor",
+    "tests/test_conformance_host_deadline.py::test_wait_loop_and_pipeline_deadline_origins",
+    "tests/test_conformance_host_wait.py::test_existing_host_save_budget_path"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_deadline.py::test_actual_wait_loop_faults_are_detected[no_margin-SINGLE]",
+    "tests/test_conformance_host_deadline.py::test_actual_wait_loop_faults_are_detected[no_transfer-SINGLE]",
+    "tests/test_conformance_host_wait.py::test_quick_confirm_bound_faults_are_detected[no_bound]",
+    "tests/test_conformance_host_wait.py::test_quick_confirm_bound_faults_are_detected[unknown_max_op_zero]"
+   ],
+   "note": "op_bound_ms: max_op_ms, quick ops min(max_op_ms, 1000), 1000 unknown; floor = bound + 1 s + transfer"
+  },
+  "core:4.4:9": {
+   "text": "- **この下限はすべての要求に当てはまる**。インターフェースの文書が要求と要",
+   "verify": [
+    "tests/test_trace_core.py::test_an_interfaces_wait_does_not_shorten_the_floor"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_deadline.py::test_old_argument_time_floor_is_detected[argument_only-SINGLE]",
+    "tests/test_conformance_host_wait.py::test_quick_confirm_bound_faults_are_detected[argument_floor]"
+   ],
+   "note": "a 10 ms argument wait still waits max_op_ms"
+  },
+  "core:5.1:1": {
+   "text": "- 応答が来ないか壊れたとき、host は同一の要求を送り直してよい。実行済みか",
+   "verify": [
+    "tests/test_trace_core.py::test_the_host_resends_the_same_bytes_and_never_a_new_corr",
+    "tests/test_conformance_host_resend.py::test_same_byte_resends_and_probe_cache"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_resend.py::test_actual_link_and_core_faults_are_detected[retry_new_corr-LOST-COBS]",
+    "tests/test_conformance_host_resend.py::test_actual_link_and_core_faults_are_detected[no_resend-LOST-COBS]"
+   ],
+   "note": "a lost answer: the same bytes again, never a new corr"
+  },
+  "core:5.1:2": {
+   "text": "- probe は最後に成功した新規セッションについて、最後に受けた新しい要求の",
+   "verify": [
+    "tests/test_trace_core.py::test_the_probe_keeps_the_last_corr_and_refuses_one_not_ahead[core-v1]",
+    "tests/test_trace_core.py::test_the_probe_keeps_the_last_corr_and_refuses_one_not_ahead[full]"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_no_order_state_mutant"
+   ],
+   "note": "with no byte record, the last corr alone refuses old corrs"
+  },
+  "core:5.1:3": {
+   "text": "- §4.3の見出し・方針判定を通った後、順 2 で、記録した要求と同じ cor",
+   "verify": [
+    "tests/test_trace_core.py::test_the_record_answers_a_resend_by_its_bytes[core-v1]",
+    "tests/test_trace_core.py::test_the_record_answers_a_resend_by_its_bytes[full]",
+    "tests/test_conformance_retention.py::test_retention_passes"
+   ],
+   "mutants": [
+    "tests/test_conformance_retention.py::test_retention_mutants_fail[reexecute]"
+   ],
+   "note": "same bytes: recorded answer; other bytes: malformed; not kept: result_lost"
+  },
+  "core:5.1:4": {
+   "text": "- 同じセッションの記録に無い番号は、最後の番号との差 `d = (corr −",
+   "verify": [
+    "tests/test_trace_core.py::test_the_probe_keeps_the_last_corr_and_refuses_one_not_ahead[core-v1]",
+    "tests/test_trace_core.py::test_the_probe_keeps_the_last_corr_and_refuses_one_not_ahead[full]",
+    "tests/test_conformance_corr.py::test_corr_boundaries_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_corr.py::test_corr_mutants_fail[unsigned_forward]",
+    "tests/test_conformance_corr.py::test_corr_mutants_fail[no_wrap]"
+   ],
+   "note": "d = 0 and d >= 32768 are result_lost, d = 32767 is new"
+  },
+  "core:5.1:5": {
+   "text": "- 最後に成功した新規セッションの新しい要求で §4.3 の順 2 を通ったもの",
+   "verify": [
+    "tests/test_trace_core.py::test_a_new_corr_that_is_refused_still_moves_the_last_corr[core-v1]",
+    "tests/test_trace_core.py::test_a_new_corr_that_is_refused_still_moves_the_last_corr[full]"
+   ],
+   "mutants": [],
+   "note": "a refused corr 50 makes 49 result_lost"
+  },
+  "core:5.1:6": {
+   "text": "- end と期限切れでも順序状態を残す。保持中の byte 記録も、その保持上",
+   "verify": [
+    "tests/test_trace_core.py::test_end_and_expiry_keep_the_order_state_and_the_same_id_open_keeps_it[core-v1]",
+    "tests/test_trace_core.py::test_end_and_expiry_keep_the_order_state_and_the_same_id_open_keeps_it[full]"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_end_clears_the_record_mutant",
+    "tests/test_conformance_retention.py::test_retention_mutants_fail[end_clear]",
+    "tests/test_conformance_retention.py::test_retention_mutants_fail[same_open]",
+    "tests/test_conformance_corr.py::test_corr_mutants_fail[new_session_high]"
+   ],
+   "note": "after the holder's open and after end the record answers; a new id's open replaces it"
+  },
+  "core:5.1:7": {
+   "text": "- session_id 0の処理済み要求は重複排除しない。未完了コピーは§4.",
+   "verify": [
+    "tests/test_trace_core.py::test_session_0_requests_are_never_deduplicated[core-v1]",
+    "tests/test_trace_core.py::test_session_0_requests_are_never_deduplicated[full]"
+   ],
+   "mutants": [],
+   "note": "the same session-0 clock bytes run twice; corr 0 malformed"
+  },
+  "core:5.1:8": {
+   "text": "- この再送状態は probe に 1 つで、すべての経路で共有する。OEP の",
+   "verify": [
+    "tests/test_trace_core.py::test_limits_are_per_transport_and_the_resend_table_is_shared"
+   ],
+   "mutants": [],
+   "note": "one resend table for every transport"
+  },
+  "core:5.1:9": {
+   "text": "- 再送を諦めたら、その経路の未解決の要求は結果不明となる。host は TCP",
+   "verify": [
+    "tests/test_trace_core.py::test_the_host_gives_up_after_the_resend_and_recovers_before_more",
+    "tests/test_conformance_host_resend.py::test_same_byte_resends_and_probe_cache"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_resend.py::test_retry_fault_observations_are_detected[no_confirm-FAILURE-RECOVER]",
+    "tests/test_conformance_host_resend.py::test_actual_link_and_core_faults_are_detected[bypass_failed_recovery-FAILURE-RECOVER]"
+   ],
+   "note": "an unanswered resend fails the transport; nothing more until a confirm recovers it"
+  },
+  "core:5.1:10": {
+   "text": "- 再接続後の同一要求の再送にも半周の範囲を守る。番号の進行や古い queue ",
+   "verify": [
+    "tests/test_trace_core.py::test_a_new_session_id_after_a_loss_never_reuses_the_ended_one",
+    "tests/test_trace_core.py::test_the_host_gives_up_after_the_resend_and_recovers_before_more"
+   ],
+   "mutants": [],
+   "note": "after a loss a new random session id; no resend on a failed transport before recovery"
+  },
+  "core:6.1:1": {
+   "text": "- probe は**ロックを 1 つ**持つ。ロックを持つセッションだけが状態",
+   "verify": [
+    "tests/test_trace_core.py::test_one_lock_and_only_its_holder_changes_state"
+   ],
+   "mutants": [],
+   "note": "another id's plan_apply: locked, nothing applied"
+  },
+  "core:6.1:2": {
+   "text": "- host はセッションごとの session_id を、予測できない 32 ",
+   "verify": [
+    "tests/test_trace_core.py::test_the_host_draws_a_random_non_zero_session_id",
+    "tests/test_trace_core.py::test_open_with_session_id_0_is_malformed[core-v1]",
+    "tests/test_trace_core.py::test_open_with_session_id_0_is_malformed[full]",
+    "tests/test_trace_core.py::test_the_decision_table[core-v1]",
+    "tests/test_trace_core.py::test_the_decision_table[full]"
+   ],
+   "mutants": [],
+   "note": "host draws randrange(1, 2^32); probe refuses id 0 and remembers the last id"
+  },
+  "core:6.1:3": {
+   "text": "- leaseはopenで決まる。ロックの持ち主の新規要求で§4.3の順3を通っ",
+   "verify": [
+    "tests/test_trace_core.py::test_the_lease_stops_while_the_holders_request_runs_and_restarts_at_its_answer",
+    "tests/test_conformance_lease.py::test_lease_writer"
+   ],
+   "mutants": [
+    "tests/test_conformance_lease.py::test_lease_mutants_fail[processing]",
+    "tests/test_conformance_lease.py::test_lease_mutants_fail[replay]",
+    "tests/test_conformance_lease.py::test_lease_mutants_fail[no_rejected]"
+   ],
+   "note": "processing past the lease keeps it; answers (rejected too) restart it; resends / session 0 / others do not"
+  },
+  "core:6.2:1": {
+   "text": "| ロック | 要求 | 結果 |",
+   "excluded": "informative: the header row of a table (column names only) (§6.2's decision table)"
+  },
+  "core:6.2:2": {
+   "text": "| 空き | open（session_id ≠ 0、最後に終了した ID と異",
+   "verify": [
+    "tests/test_trace_core.py::test_the_decision_table[core-v1]",
+    "tests/test_trace_core.py::test_the_decision_table[full]"
+   ],
+   "mutants": [],
+   "note": "free lock: open takes it with lease and owner"
+  },
+  "core:6.2:3": {
+   "text": "| 空き | 終了した最後の ID の新しい open、または session_",
+   "verify": [
+    "tests/test_trace_core.py::test_the_decision_table[core-v1]",
+    "tests/test_trace_core.py::test_the_decision_table[full]",
+    "tests/test_trace_core.py::test_open_answers_the_lease_and_boot_id_and_nothing_resumes[core-v1]",
+    "tests/test_trace_core.py::test_open_answers_the_lease_and_boot_id_and_nothing_resumes[full]"
+   ],
+   "mutants": [],
+   "note": "free lock: the ended id's open and any id's other request are no_session"
+  },
+  "core:6.2:4": {
+   "text": "| S が持つ | session_id S の open（force の有無を",
+   "verify": [
+    "tests/test_trace_core.py::test_the_decision_table[core-v1]",
+    "tests/test_trace_core.py::test_the_decision_table[full]",
+    "tests/test_trace_core.py::test_the_holders_open_again_keeps_resources_subscriptions_and_resend_state"
+   ],
+   "mutants": [],
+   "note": "the holder's open renews lease_ms and keeps owner, resources, subscriptions, record"
+  },
+  "core:6.2:5": {
+   "text": "| S が持つ | 別の id の open、force なし | reject",
+   "verify": [
+    "tests/test_trace_core.py::test_the_decision_table[core-v1]",
+    "tests/test_trace_core.py::test_the_decision_table[full]"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_decision_table_mutant"
+   ],
+   "note": "another id's open without force: locked, remaining, owner"
+  },
+  "core:6.2:6": {
+   "text": "| S が持つ | 別の id の open、force あり | 奪う（§6.",
+   "verify": [
+    "tests/test_trace_core.py::test_the_decision_table[core-v1]",
+    "tests/test_trace_core.py::test_the_decision_table[full]",
+    "tests/test_trace_core.py::test_force_releases_the_old_sessions_resources_before_handing_over"
+   ],
+   "mutants": [],
+   "note": "force: the old session released, the lock to the new id"
+  },
+  "core:6.2:7": {
+   "text": "| S が持つ | session_id S のほかの要求 | 処理する |",
+   "verify": [
+    "tests/test_trace_core.py::test_the_decision_table[core-v1]",
+    "tests/test_trace_core.py::test_the_decision_table[full]"
+   ],
+   "mutants": [],
+   "note": "the holder's keepalive runs"
+  },
+  "core:6.2:8": {
+   "text": "| S が持つ | 別の id のほかの要求 | rejected locked",
+   "verify": [
+    "tests/test_trace_core.py::test_the_decision_table[core-v1]",
+    "tests/test_trace_core.py::test_the_decision_table[full]"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_decision_table_mutant"
+   ],
+   "note": "another id's keepalive: locked"
+  },
+  "core:6.4:1": {
+   "text": "- **open**（lease_ms、force。session_id は見出",
+   "verify": [
+    "tests/test_trace_core.py::test_open_answers_the_lease_and_boot_id_and_nothing_resumes[core-v1]",
+    "tests/test_trace_core.py::test_open_answers_the_lease_and_boot_id_and_nothing_resumes[full]"
+   ],
+   "mutants": [],
+   "note": "lease_ms and boot_id; an ended session never resumes"
+  },
+  "core:6.4:2": {
+   "text": "- **lease_ms**: 0 は「probe の既定」。probe は 1",
+   "verify": [
+    "tests/test_trace_core.py::test_lease_ms_is_taken_or_rounded_into_range[0-3000]",
+    "tests/test_trace_core.py::test_lease_ms_is_taken_or_rounded_into_range[1-1000]",
+    "tests/test_trace_core.py::test_lease_ms_is_taken_or_rounded_into_range[999-1000]",
+    "tests/test_trace_core.py::test_lease_ms_is_taken_or_rounded_into_range[1000-1000]",
+    "tests/test_trace_core.py::test_lease_ms_is_taken_or_rounded_into_range[60000-60000]",
+    "tests/test_trace_core.py::test_lease_ms_is_taken_or_rounded_into_range[60001-60000]",
+    "tests/test_trace_core.py::test_lease_ms_is_taken_or_rounded_into_range[4294967295-60000]"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_lease_clamp_mutant"
+   ],
+   "note": "0 the default, 1000-60000 as asked, others rounded; the host takes the answer's"
+  },
+  "core:6.4:3": {
+   "text": "- **end**: ロックと、セッションが作ったものすべてを解放する（§9）。",
+   "verify": [
+    "tests/test_trace_core.py::test_end_releases_the_lock_and_everything_the_session_made"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_pin_left_driven_after_release_mutant"
+   ],
+   "note": "end: lock, plan, subscriptions gone; pin idle"
+  },
+  "core:6.4:4": {
+   "text": "- **keepalive**: lease を延ばすだけ。",
+   "verify": [
+    "tests/test_trace_core.py::test_keepalive_only_extends_the_lease[core-v1]",
+    "tests/test_trace_core.py::test_keepalive_only_extends_the_lease[full]"
+   ],
+   "mutants": [],
+   "note": "keepalive restarts the lease, owner unchanged"
+  },
+  "core:6.4:5": {
+   "text": "- **lock_state**: ロックの有無と残り時間（ロックが空いていれば",
+   "verify": [
+    "tests/test_trace_core.py::test_lock_state_tells_any_holder_and_0_when_free[core-v1]",
+    "tests/test_trace_core.py::test_lock_state_tells_any_holder_and_0_when_free[full]"
+   ],
+   "mutants": [],
+   "note": "locked and remaining for any holder; 0, 0 when free"
+  },
+  "core:6.4:6": {
+   "text": "- **owner（任意の表示機能）**: open の TLV 0x01 ow",
+   "verify": [
+    "tests/test_trace_core.py::test_the_owner_is_kept_while_the_lock_is_and_shown[core-v1]",
+    "tests/test_trace_core.py::test_the_owner_is_kept_while_the_lock_is_and_shown[full]",
+    "tests/test_trace_core.py::test_the_host_sends_a_clean_owner_and_takes_none_back_as_no_failure"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_owner_changed_by_the_holders_open_mutant"
+   ],
+   "note": "owner from the taking open, kept, shown, forgotten; host sends clean text and accepts none"
+  },
+  "core:6.4:7": {
+   "text": "- **force**: 他のセッションがロックを持っていても奪う。probe ",
+   "verify": [
+    "tests/test_trace_core.py::test_force_releases_the_old_sessions_resources_before_handing_over"
+   ],
+   "mutants": [],
+   "note": "force releases the old plan, pins, subscriptions"
+  },
+  "core:7.1:1": {
+   "text": "- TLV 0x01 transport（u8）: この confirm が来た",
+   "verify": [
+    "tests/test_trace_core.py::test_confirm_names_the_transport_it_came_on"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_confirm_transport_mutant"
+   ],
+   "note": "TLV 0x01 = the transport index it came on, both benches"
+  },
+  "core:7.1:2": {
+   "text": "- confirm の要求と応答の見出し（§4.1、§4.2）と固定部分、mag",
+   "verify": [
+    "tests/test_trace_core.py::test_confirms_shape_is_the_same_for_every_revision_and_fits_64_bytes[core-v1]",
+    "tests/test_trace_core.py::test_confirms_shape_is_the_same_for_every_revision_and_fits_64_bytes[full]"
+   ],
+   "mutants": [],
+   "note": "OEP! form within 64 bytes for a wide range"
+  },
+  "core:7.1:3": {
+   "text": "- probe が選んだ revision は、**その confirm が来た",
+   "verify": [
+    "tests/test_trace_core.py::test_the_revision_is_chosen_per_transport"
+   ],
+   "mutants": [],
+   "note": "revision in use kept per transport / connection"
+  },
+  "core:7.1:4": {
+   "text": "- ある経路で最初の confirm をした後、host はそこでの後の con",
+   "verify": [
+    "tests/test_trace_core.py::test_later_confirms_ask_for_the_revision_in_use"
+   ],
+   "mutants": [],
+   "note": "first confirm 1..1 range, later min = max = 1"
+  },
+  "core:7.1:5": {
+   "text": "- 範囲の中に扱える revision が無いとき: rejected unsu",
+   "verify": [
+    "tests/test_trace_core.py::test_no_revision_in_range_is_unsupported_with_supported[core-v1]",
+    "tests/test_trace_core.py::test_no_revision_in_range_is_unsupported_with_supported[full]"
+   ],
+   "mutants": [],
+   "note": "unsupported 00 + supported(1,1); min > max malformed"
+  },
+  "core:7.2:1": {
+   "text": "- probe のインターフェースを、first 番目から 1 フレームに入る分",
+   "verify": [
+    "tests/test_trace_core.py::test_list_pages_from_first_and_fits_every_frame",
+    "tests/test_trace_core.py::test_core_is_fn_0_has_no_name_and_is_never_listed[core-v1]",
+    "tests/test_trace_core.py::test_core_is_fn_0_has_no_name_and_is_never_listed[full]"
+   ],
+   "mutants": [],
+   "note": "pages within max_frame (64 and 1024), total right, no fn 0"
+  },
+  "core:7.2:2": {
+   "text": "- 名前は 1〜48 byte、使える文字は `a-z 0-9 - .`（§12",
+   "verify": [
+    "tests/test_trace_core.py::test_a_name_of_48_bytes_fits_the_smallest_frame"
+   ],
+   "mutants": [],
+   "note": "48-byte name: a 62-byte answer; 49 refused"
+  },
+  "core:7.2:3": {
+   "text": "- instance は、同じ (名前, revision) のインターフェース",
+   "verify": [
+    "tests/test_trace_core.py::test_instances_are_unique_per_name_and_revision"
+   ],
+   "mutants": [],
+   "note": "(name, revision, instance) unique in every profile"
+  },
+  "core:7.2:4": {
+   "text": "- list の応答（どのインターフェースがあるか、その fn、instance",
+   "verify": [
+    "tests/test_trace_core.py::test_the_list_holds_for_the_boot_and_the_host_forgets_fns_at_a_reboot"
+   ],
+   "mutants": [],
+   "note": "same list in a boot; host drops name -> fn at a reboot"
+  },
+  "core:7.2:5": {
+   "text": "- first が total 以上なら、応答は total と count 0",
+   "verify": [
+    "tests/test_trace_core.py::test_list_from_first_past_total_is_total_and_count_0[core-v1]",
+    "tests/test_trace_core.py::test_list_from_first_past_total_is_total_and_count_0[full]",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c39_list_from_beyond_the_matches_gives_the_total_and_count_0"
+   ],
+   "mutants": [],
+   "note": "first >= total: total and count 0"
+  },
+  "core:7.3:1": {
+   "text": "- **ページングの終わり**（firstでページを指す一覧に共通）: firs",
+   "verify": [
+    "tests/test_trace_core.py::test_describe_paging_ends_with_more_0_and_nothing[core-v1]",
+    "tests/test_trace_core.py::test_describe_paging_ends_with_more_0_and_nothing[full]"
+   ],
+   "mutants": [],
+   "note": "first past the end: more 0 and no TLVs"
+  },
+  "core:7.4:1": {
+   "text": "| 0x01 | role_channels | role(u8)、base(u",
+   "verify": [
+    "tests/test_trace_core.py::test_the_common_describe_tags_have_their_forms",
+    "tests/test_trace_core.py::test_a_channel_group_is_matched_whole_and_role_channels_bound_their_roles"
+   ],
+   "mutants": [],
+   "note": "role_channels role base bitmap; a pin outside its candidates refused"
+  },
+  "core:7.4:2": {
+   "text": "| 0x02 | max_clock_hz | u32 |",
+   "verify": [
+    "tests/test_trace_core.py::test_the_common_describe_tags_have_their_forms"
+   ],
+   "mutants": [],
+   "note": "max_clock_hz is 4 bytes"
+  },
+  "core:7.4:3": {
+   "text": "| 0x03 | max_length | u16。機能が1回に扱える長さの上限",
+   "verify": [
+    "tests/test_trace_core.py::test_max_length_bounds_a_request",
+    "tests/test_trace_core.py::test_the_common_describe_tags_have_their_forms"
+   ],
+   "mutants": [],
+   "note": "read_block past max_length: unsupported 0x00; at it: runs"
+  },
+  "core:7.4:4": {
+   "text": "| 0x04 | min_clock_hz | u32 |",
+   "verify": [
+    "tests/test_trace_core.py::test_min_clock_hz_bounds_a_requested_speed"
+   ],
+   "mutants": [],
+   "note": "min_clock_hz u32; a max_speed below it unsupported"
+  },
+  "core:7.4:5": {
+   "text": "| 0x05 | features | u32。op でない任意機能のビット: ",
+   "verify": [
+    "tests/test_trace_core.py::test_the_common_describe_tags_have_their_forms",
+    "tests/test_trace_core.py::test_an_optional_op_is_known_by_ops_and_not_sent_when_absent"
+   ],
+   "mutants": [],
+   "note": "features is a u32; optional ops are read from ops, not features"
+  },
+  "core:7.4:6": {
+   "text": "| 0x06 | channel_group | group(u8)、n(u8)",
+   "verify": [
+    "tests/test_trace_core.py::test_a_channel_group_is_matched_whole_and_role_channels_bound_their_roles",
+    "tests/test_trace_core.py::test_the_common_describe_tags_have_their_forms"
+   ],
+   "mutants": [],
+   "note": "a pair matching no group whole: unsupported"
+  },
+  "core:7.4:7": {
+   "text": "| 0x07 | ops | base(u8)、bitmap。bit i が立っ",
+   "verify": [
+    "tests/test_trace_core.py::test_every_listed_fn_and_fn_0_declare_their_ops",
+    "tests/test_trace_core.py::test_ops_value_form_and_the_examples"
+   ],
+   "mutants": [],
+   "note": "ops in every describe"
+  },
+  "core:7.4:8": {
+   "text": "- **ops の値**: base(u8) と、1 byte 以上の bitm",
+   "verify": [
+    "tests/test_trace_core.py::test_ops_value_form_and_the_examples"
+   ],
+   "mutants": [],
+   "note": "base + 8 x n <= 256, a bitmap byte or more; outside: the fn not used"
+  },
+  "core:7.4:9": {
+   "text": "- **ops** の例: op 0x10〜0x17 をすべて持つ riscv-",
+   "verify": [
+    "tests/test_trace_core.py::test_ops_value_form_and_the_examples"
+   ],
+   "mutants": [],
+   "note": "07 02 00 10 FF and 07 02 00 10 07 decode as the example says; F9 01 invalid"
+  },
+  "core:7.4:10": {
+   "text": "- どのピンにも割り当てられる機能は role_channels に候補を並べ、",
+   "verify": [
+    "tests/test_trace_core.py::test_a_channel_group_is_matched_whole_and_role_channels_bound_their_roles"
+   ],
+   "mutants": [],
+   "note": "p4-bench's fixed groups vs rp2350's any-pin role_channels"
+  },
+  "core:7.4:11": {
+   "text": "- role_channels と channel_group は、インターフェ",
+   "verify": [
+    "tests/test_trace_core.py::test_a_channel_group_is_matched_whole_and_role_channels_bound_their_roles"
+   ],
+   "mutants": [],
+   "note": "the same declarations bound an attach's arguments and a plan's assignment"
+  },
+  "core:7.5:1": {
+   "text": "| 0x40 | firmware | text。任意の版・診断情報 |",
+   "verify": [
+    "tests/test_trace_core.py::test_firmware_model_and_chip_are_text"
+   ],
+   "mutants": [],
+   "note": "firmware is text"
+  },
+  "core:7.5:2": {
+   "text": "| 0x41 | model | text。probe の種類の名前（任意。個体",
+   "verify": [
+    "tests/test_trace_core.py::test_firmware_model_and_chip_are_text"
+   ],
+   "mutants": [],
+   "note": "model is text"
+  },
+  "core:7.5:3": {
+   "text": "| 0x42 | unit_id | 個体の ID。**必須**。text で ",
+   "verify": [
+    "tests/test_trace_core.py::test_unit_id_is_required_its_grammar_and_the_same_on_every_transport"
+   ],
+   "mutants": [],
+   "note": "1-32 of a-z 0-9 -, the same on 4 transports"
+  },
+  "core:7.5:4": {
+   "text": "| 0x43 | channels | u16。channel の数。chann",
+   "verify": [
+    "tests/test_trace_core.py::test_channels_are_numbered_from_0",
+    "tests/test_trace_core.py::test_a_probe_with_channels_declares_them_and_parks_them_idle"
+   ],
+   "mutants": [],
+   "note": "u16; channel == channels is unsupported; core-v1 without channels"
+  },
+  "core:7.5:5": {
+   "text": "| 0x46 | label | channel(u16)、text。**fir",
+   "verify": [
+    "tests/test_trace_core.py::test_labels_are_the_firmwares_fixed_names"
+   ],
+   "mutants": [],
+   "note": "channel(u16) text, read by the host"
+  },
+  "core:7.5:6": {
+   "text": "| 0x49 | transport | index(u8)、kind(u8)、",
+   "verify": [
+    "tests/test_trace_core.py::test_one_transport_entry_per_transport_with_its_kind_and_interface",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c41_a_uart_bridge_and_tcp_name_no_usb_interface"
+   ],
+   "mutants": [],
+   "note": "index kind interface, one per transport; UART bridge / TCP 0xFF"
+  },
+  "core:7.5:7": {
+   "text": "| 0x4C | chip | text。probe の MCU の型番とリビジ",
+   "verify": [
+    "tests/test_trace_core.py::test_firmware_model_and_chip_are_text"
+   ],
+   "mutants": [],
+   "note": "chip is text, optional"
+  },
+  "core:7.5:8": {
+   "text": "| 0x4D | max_op_ms | u32。probe が1つの要求自身の",
+   "verify": [
+    "tests/test_trace_core.py::test_max_op_ms_is_required_and_in_range",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c47_max_op_ms_outside_1_to_600000_is_not_a_probe[0]",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c47_max_op_ms_outside_1_to_600000_is_not_a_probe[600001]"
+   ],
+   "mutants": [],
+   "note": "1-600000; a hold past it unsupported; the host refuses others"
+  },
+  "core:7.5:9": {
+   "text": "- transport の kind: 1 UART bridge、2 USB ",
+   "verify": [
+    "tests/test_trace_core.py::test_one_transport_entry_per_transport_with_its_kind_and_interface"
+   ],
+   "mutants": [],
+   "note": "kinds 1-6 as the registry says"
+  },
+  "core:7.5:10": {
+   "text": "- **経路の index の不変性**: 経路は、同じ model の fir",
+   "verify": [
+    "tests/test_trace_core.py::test_a_firmware_that_adds_a_transport_gives_it_an_unused_index",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c41_a_uart_bridge_and_tcp_name_no_usb_interface"
+   ],
+   "mutants": [],
+   "note": "an added transport takes an index not used before (firmware releases themselves are not modelled)"
+  },
+  "core:7.5:11": {
+   "text": "- **unit_id の一意性**: unit_id は個体ごとに違う値にする",
+   "verify": [
+    "tests/test_trace_core.py::test_an_x_unit_id_keys_nothing_kept_across_sessions"
+   ],
+   "mutants": [],
+   "note": "the speed record keeps nothing under an x- unit_id"
+  },
+  "core:7.5:12": {
+   "text": "- **unit_id の不変性**: unit_id は個体の値（チップの固有",
+   "verify": [
+    "tests/test_trace_core.py::test_unit_id_is_required_its_grammar_and_the_same_on_every_transport"
+   ],
+   "mutants": [],
+   "note": "the same unit_id on every transport (kind does not change it)"
+  },
+  "core:7.6:1": {
+   "text": "- clock は probe の今の時刻を返す。boot_id は §6.5 ",
+   "verify": [
+    "tests/test_trace_core.py::test_clock_gives_the_boot_id_of_confirm_and_open_and_the_uptime[core-v1]",
+    "tests/test_trace_core.py::test_clock_gives_the_boot_id_of_confirm_and_open_and_the_uptime[full]",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c31_a_reboot_starts_the_clock_again_and_clock_says_so"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_clock_is_read_at_the_request_mutant"
+   ],
+   "note": "clock's boot_id = confirm's = open's; uptime_ns the clock"
+  },
+  "core:7.6:2": {
+   "text": "- clock はロックの要らない読むだけの op（§6.3）である。セッション",
+   "verify": [
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_clock_touches_no_session_lock_or_lease",
+    "tests/test_trace_core.py::test_a_lock_free_op_with_0_touches_no_session_and_with_an_id_is_checked[core-v1]",
+    "tests/test_trace_core.py::test_a_lock_free_op_with_0_touches_no_session_and_with_an_id_is_checked[full]"
+   ],
+   "mutants": [],
+   "note": "session-0 clock touches no lease or record"
+  },
+  "core:7.6:3": {
+   "text": "- uptime_ns は、probe がこの clock の要求を受けてから応",
+   "verify": [
+    "tests/test_trace_core.py::test_clock_gives_the_boot_id_of_confirm_and_open_and_the_uptime[core-v1]",
+    "tests/test_trace_core.py::test_clock_gives_the_boot_id_of_confirm_and_open_and_the_uptime[full]",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c31_the_clock_has_the_resolution_it_is_given_and_never_goes_back"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_clock_is_read_at_the_request_mutant"
+   ],
+   "note": "uptime_ns read for this request"
+  },
+  "core:8:1": {
+   "text": "- **空きの状態**: 設定（インターフェースが定める）がそのピンの空きの状態",
+   "verify": [
+    "tests/test_trace_core.py::test_the_idle_state_is_the_settings_or_hi_z"
+   ],
+   "mutants": [],
+   "note": "Hi-Z without settings; an output-high idle item drives high"
+  },
+  "core:8:2": {
+   "text": "- 解いたピンは、どの道で解いても（インターフェースが定める解く操作、§9 の ",
+   "verify": [
+    "tests/test_trace_core.py::test_a_released_pin_returns_to_idle_whichever_way"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_pin_left_driven_after_release_mutant"
+   ],
+   "note": "plan_release, end, expiry, force: back to idle"
+  },
+  "core:8:3": {
+   "text": "- **起動時**、probe は最初の要求に答える前に、自分で使う chann",
+   "verify": [
+    "tests/test_trace_core.py::test_a_probe_with_channels_declares_them_and_parks_them_idle",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_t12_every_channel_not_the_probes_own_is_parked_at_boot"
+   ],
+   "mutants": [],
+   "note": "every non-own channel idle from boot"
+  },
+  "core:8:4": {
+   "text": "- **ピンを取ってもピンの電気の状態は変わらない。** ピンは、それを取ったイ",
+   "verify": [
+    "tests/test_trace_core.py::test_taking_a_pin_keeps_its_idle_state_until_used"
+   ],
+   "mutants": [],
+   "note": "a planned pin stays idle until gpio set"
+  },
+  "core:8:5": {
+   "text": "- idle が出力の channel を取る要求は、そのインターフェースが取得",
+   "verify": [
+    "tests/test_trace_core.py::test_taking_an_output_idle_channel_is_unavailable_cause_5"
+   ],
+   "mutants": [],
+   "note": "plan on an output-idle channel: cause 5, nothing"
+  },
+  "core:8.1:1": {
+   "text": "- probe の資源（ピン、ペリフェラル、DMA、タイマーなど）を取るものはす",
+   "verify": [
+    "tests/test_trace_core.py::test_a_conflicting_take_is_unavailable_and_changes_nothing",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_plan_apply_unsupported_or_unavailable_and_nothing_changes"
+   ],
+   "mutants": [],
+   "note": "a held pin: unavailable cause 1, the plan unchanged"
+  },
+  "core:8.1:2": {
+   "text": "- configure / attach / start などで資源の使用量を増",
+   "verify": [
+    "tests/test_trace_core.py::test_more_than_the_probe_can_run_at_once_is_unavailable_cause_2"
+   ],
+   "mutants": [],
+   "note": "a third attach past 2 seats: cause 2, no change"
+  },
+  "core:9:1": {
+   "text": "| 出来事 | 実行時の資源 | 購読 | 再送状態 |",
+   "excluded": "informative: the header row of a table (column names only) (§9's lifetime table)"
+  },
+  "core:9:2": {
+   "text": "| end / lease の期限切れ | すべて解放 | 終了 | 最後のセッ",
+   "verify": [
+    "tests/test_trace_core.py::test_end_and_expiry_release_resources_and_subscriptions_and_keep_the_order_state",
+    "tests/test_trace_core.py::test_only_the_holder_subscribes_and_the_subscription_ends_with_the_lock"
+   ],
+   "mutants": [
+    "tests/test_conformance_resources.py::test_common_checker_detects_resource_mutants[retain_release-RESOURCE-END]",
+    "tests/test_conformance_resources.py::test_common_checker_detects_resource_mutants[retain_release-RESOURCE-EXPIRY]",
+    "tests/test_trace_core.py::test_end_clears_the_record_mutant"
+   ],
+   "note": "end / expiry: connections gone (no_resource), subscriptions ended, record kept"
+  },
+  "core:9:3": {
+   "text": "| 別の ID の force open | 前の資源をすべて解放 | 終了 |",
+   "verify": [
+    "tests/test_trace_core.py::test_a_force_open_releases_and_replaces_the_resend_state",
+    "tests/test_trace_core.py::test_force_releases_the_old_sessions_resources_before_handing_over"
+   ],
+   "mutants": [
+    "tests/test_conformance_resources.py::test_common_checker_detects_resource_mutants[retain_release-RESOURCE-FORCE]"
+   ],
+   "note": "force: resources and subscriptions released, the record replaced"
+  },
+  "core:9:4": {
+   "text": "| 同じ ID の新しい open（保持中） | 残す | 残す | 残す |",
+   "verify": [
+    "tests/test_trace_core.py::test_the_holders_open_again_keeps_resources_subscriptions_and_resend_state"
+   ],
+   "mutants": [
+    "tests/test_conformance_resources.py::test_common_checker_detects_resource_mutants[release_same_open-RESOURCE-OPEN-RETAIN]"
+   ],
+   "note": "kept"
+  },
+  "core:9:5": {
+   "text": "| 同一 open の再送 | 変えない | 変えない | 保持した応答を返す。",
+   "verify": [
+    "tests/test_trace_core.py::test_the_holders_open_again_keeps_resources_subscriptions_and_resend_state"
+   ],
+   "mutants": [
+    "tests/test_conformance_resources.py::test_common_checker_detects_resource_mutants[release_open_replay-RESOURCE-OPEN-REPLAY]"
+   ],
+   "note": "the same open resent: its recorded answer, nothing changed"
+  },
+  "core:9:6": {
+   "text": "| 再起動 | 無効（boot_id が変わる） | 無効 | 無効 |",
+   "verify": [
+    "tests/test_trace_core.py::test_a_reboot_invalidates_everything",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c19_after_a_reboot_with_a_repeated_boot_id_the_old_session_is_gone"
+   ],
+   "mutants": [],
+   "note": "a reboot: new boot_id, no connections, no session"
+  },
+  "core:9:7": {
+   "text": "- 資源の番号は u32、probe 全体で 1 つの空間。0 は割り当てず、1",
+   "verify": [
+    "tests/test_trace_core.py::test_resource_numbers_are_never_reused_and_run_out_with_cause_2",
+    "tests/test_trace_core.py::test_resource_numbers_are_u32_from_1"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_resource_number_reused_mutant",
+    "tests/test_conformance_resources.py::test_common_checker_detects_resource_mutants[reuse-RESOURCE-ID]"
+   ],
+   "note": "from 1, never reused; past 0xFFFFFFFF cause 2 while the old ones work"
+  },
+  "core:9:8": {
+   "text": "- 閉じた資源の番号、存在しない番号は rejected no_resource",
+   "verify": [
+    "tests/test_trace_core.py::test_a_closed_or_unknown_number_is_no_resource_and_another_kind_cause_6"
+   ],
+   "mutants": [
+    "tests/test_conformance_resources.py::test_common_checker_detects_resource_mutants[wrong_cause-RESOURCE-WRONG-FN-KIND]"
+   ],
+   "note": "closed / unknown: no_resource; a stream where a connection goes: cause 6"
+  },
+  "core:9:9": {
+   "text": "- 作成に失敗した要求は使用可能な番号や資源を返さない。予約だけで失敗した番号を",
+   "verify": [
+    "tests/test_trace_core.py::test_a_failed_creation_returns_no_number"
+   ],
+   "mutants": [
+    "tests/test_conformance_resources.py::test_common_checker_detects_resource_mutants[leak_failure-RESOURCE-CAPACITY]"
+   ],
+   "note": "a refused attach leaves no connection"
+  },
+  "core:9:10": {
+   "text": "- 接続先は常に要求の fn と資源の番号で指定する。「現在の target」や",
+   "verify": [
+    "tests/test_trace_core.py::test_a_target_is_always_named_by_its_resource_number"
+   ],
+   "mutants": [],
+   "note": "two connections each by number; an unknown one no_resource"
+  },
+  "core:10.1:1": {
+   "text": "- 受け取ったフレームを role で振り分ける。corr で照合するのは ro",
+   "verify": [
+    "tests/test_trace_core.py::test_the_host_routes_by_role_and_drops_unknown_roles_and_requests",
+    "tests/test_conformance_host_notifications.py::test_notification_reader_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_notifications.py::test_faults_are_detected[notification_reply-DEMUX]",
+    "tests/test_conformance_host_notifications.py::test_faults_are_detected[adopt_fn_zero-DEMUX]"
+   ],
+   "note": "an event / data frame whose fn equals the corr is not the reply"
+  },
+  "core:10.1:2": {
+   "text": "- 知らない role のフレームと、待っていない corr の応答は捨てる。",
+   "verify": [
+    "tests/test_trace_core.py::test_the_host_routes_by_role_and_drops_unknown_roles_and_requests"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_notifications.py::test_faults_are_detected[stale_reply-DEMUX]"
+   ],
+   "note": "unknown roles dropped, a stray corr read past"
+  },
+  "core:10.1:3": {
+   "text": "- 通知が届き続けても、応答を待つ処理と受信を読む処理が締め切りどおりに終わるよ",
+   "verify": [
+    "tests/test_trace_core.py::test_notifications_do_not_keep_the_host_past_its_deadline",
+    "tests/test_conformance_host_notifications.py::test_notification_reader_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_host_notifications.py::test_faults_are_detected[infinite_wait-WAIT-DEADLINE]",
+    "tests/test_conformance_host_notifications.py::test_faults_are_detected[infinite_pump-PUMP-DEADLINE]"
+   ],
+   "note": "a flood of events cannot hold pump or the wait for a reply past its deadline"
+  },
+  "core:10.2:1": {
+   "text": "- データの payload の形は全インターフェース共通: `position",
+   "verify": [
+    "tests/test_trace_core.py::test_data_frames_are_their_fixed_part_then_tlvs"
+   ],
+   "mutants": [],
+   "note": "position u64, len u16, data, TLVs"
+  },
+  "core:10.2:2": {
+   "text": "- `seq` は fn ごとのフレームの通し番号（u16、一周する。データと出",
+   "verify": [
+    "tests/test_trace_core.py::test_seq_counts_per_fn_from_0_at_each_subscribe_and_wraps",
+    "tests/test_conformance_notification_sequence.py::test_notification_sequence_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_notification_sequence.py::test_independent_notification_faults_are_detected[no_wrap-WRAP]",
+    "tests/test_conformance_notification_sequence.py::test_independent_notification_faults_are_detected[global_seq-WRAP]",
+    "tests/test_conformance_notification_sequence.py::test_independent_notification_faults_are_detected[drop_refund-DROP-WRAP]",
+    "tests/test_trace_core.py::test_resubscribe_keeps_seq_mutant"
+   ],
+   "note": "seq per fn from 0, 0xFFFF then 0"
+  },
+  "core:10.2:3": {
+   "text": "- fn 0 は通知を送らない。",
+   "verify": [
+    "tests/test_trace_core.py::test_fn_0_sends_no_notifications",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_fn_0_has_exactly_the_eight_core_ops_and_no_subscribe"
+   ],
+   "mutants": [],
+   "note": "fn 0's 0x01 is confirm; no push from fn 0; host refuses to subscribe it"
+  },
+  "core:10.3:1": {
+   "text": "| 0x01 | subscribe | min_bytes(u16)、max_",
+   "verify": [
+    "tests/test_trace_core.py::test_subscribe_and_unsubscribe_forms_and_lock",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_subscribe_is_the_emitting_interfaces_own_op"
+   ],
+   "mutants": [],
+   "note": "min_bytes u16 max_delay_ms u32 [TLV], lock needed, empty answer"
+  },
+  "core:10.3:2": {
+   "text": "| 0x02 | unsubscribe | [TLV] | — | 必要 |",
+   "verify": [
+    "tests/test_trace_core.py::test_subscribe_and_unsubscribe_forms_and_lock",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_subscribe_is_the_emitting_interfaces_own_op"
+   ],
+   "mutants": [],
+   "note": "unsubscribe [TLV], lock needed, empty answer"
+  },
+  "core:10.3:3": {
+   "text": "- 通知を提供する場合は、subscribe と unsubscribe を両方",
+   "verify": [
+    "tests/test_trace_core.py::test_every_fn_that_sends_notifications_has_subscribe_and_unsubscribe",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_subscribe_is_the_emitting_interfaces_own_op"
+   ],
+   "mutants": [],
+   "note": "both ops set in ops wherever one is"
+  },
+  "core:10.3:4": {
+   "text": "- **購読はロックの持ち主だけができ、ロックと一緒に終わる**（end、期限切",
+   "verify": [
+    "tests/test_trace_core.py::test_only_the_holder_subscribes_and_the_subscription_ends_with_the_lock"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_subscription_outlives_the_lock_mutant",
+    "tests/test_conformance_subscriptions.py::test_checker_detects_subscription_mutants[retain_release-IF-SUB-END]",
+    "tests/test_conformance_subscriptions.py::test_checker_detects_subscription_mutants[retain_release-IF-SUB-EXPIRY]",
+    "tests/test_conformance_subscriptions.py::test_checker_detects_subscription_mutants[retain_release-IF-SUB-FORCE]"
+   ],
+   "note": "another id: locked; end / expiry / force end it"
+  },
+  "core:10.3:5": {
+   "text": "- 購読の無い fn の unsubscribe は何もせず成功。",
+   "verify": [
+    "tests/test_trace_core.py::test_unsubscribe_without_a_subscription_succeeds",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_subscribe_is_the_emitting_interfaces_own_op"
+   ],
+   "mutants": [
+    "tests/test_conformance_notification_sequence.py::test_unsubscribe_isolation_faults_are_detected[absent_reject]"
+   ],
+   "note": "succeeds, nothing changes"
+  },
+  "core:10.3:6": {
+   "text": "- 同じ fn をもう一度 subscribe したら、前の購読を原子的に置き換",
+   "verify": [
+    "tests/test_trace_core.py::test_subscribe_again_replaces_atomically",
+    "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[0]",
+    "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[1]"
+   ],
+   "mutants": [
+    "tests/test_trace_core.py::test_resubscribe_keeps_seq_mutant",
+    "tests/test_conformance_subscriptions.py::test_checker_detects_subscription_mutants[no_reset-IF-SUB-REPLACE]",
+    "tests/test_conformance_subscriptions.py::test_checker_detects_subscription_mutants[duplicate-IF-SUB-REPLACE]",
+    "tests/test_conformance_notification_output.py::test_output_faults[retain_old_notice-REPLACEMENT]",
+    "tests/test_conformance_notification_sequence.py::test_replacement_discard_faults_are_detected[keep_unsent]"
+   ],
+   "note": "conditions, transport and seq replaced; unsent old notifications dropped"
+  },
+  "core:10.3:7": {
+   "text": "- probe は購読用の保持量に上限を置いてよい。要求したデータの送信条件を満",
+   "verify": [
+    "tests/test_trace_core.py::test_subscription_conditions_are_kept_as_asked",
+    "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[0]",
+    "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[1]"
+   ],
+   "mutants": [
+    "tests/test_conformance_notification_output.py::test_output_faults[rejected_seq_reset-REJECTED-SUBSCRIBE]"
+   ],
+   "note": "conditions kept as asked; a refused replacement (cause 2) keeps conditions and seq"
+  },
+  "core:10.3:8": {
+   "text": "- **まとめて送る条件はデータ（role 0x04）だけに掛かる**: min",
+   "verify": [
+    "tests/test_trace_core.py::test_data_waits_for_min_bytes_or_max_delay_and_events_never_wait"
+   ],
+   "mutants": [],
+   "note": "push_due: min_bytes or max_delay_ms, 0 unused, both 0 at once"
+  },
+  "core:10.3:9": {
+   "text": "- **出来事（role 0x03）はまとめない**: 生まれた出来事は、その前",
+   "verify": [
+    "tests/test_trace_core.py::test_data_waits_for_min_bytes_or_max_delay_and_events_never_wait"
+   ],
+   "mutants": [
+    "tests/test_conformance_subscriptions.py::test_checker_detects_subscription_mutants[threshold_events-IF-SUB-EVENT-THRESHOLD]"
+   ],
+   "note": "with min_bytes 60000 no data yet but the stopped event goes"
+  },
+  "core:10.4:1": {
+   "text": "1. **応答を先に送る。** 届いている要求をすべて処理してから、新しい通知フ",
+   "verify": [
+    "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[0]",
+    "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[1]"
+   ],
+   "mutants": [
+    "tests/test_conformance_notification_output.py::test_output_faults[notice_first-RESPONSE-PRIORITY]",
+    "tests/test_conformance_notification_output.py::test_output_faults[interleave-PARTIAL-FRAME]"
+   ],
+   "note": "answers before new notifications; a started frame completes before the next answer"
+  },
+  "core:10.4:2": {
+   "text": "2. **送りかけの通知を小さく保つ。** 経路の送信バッファに、送りかけの通知",
+   "verify": [
+    "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[0]",
+    "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[1]"
+   ],
+   "mutants": [
+    "tests/test_conformance_notification_output.py::test_output_faults[reuse_dropped_seq-PARTIAL-FRAME]"
+   ],
+   "note": "pending notification bytes stay within max_frame x 2; dropped ones consume seq"
+  },
+  "core:10.4:3": {
+   "text": "3. 通知は、その fn の subscribe が来た経路に送る。",
+   "verify": [
+    "tests/test_trace_core.py::test_notifications_go_to_the_transport_the_subscribe_came_on"
+   ],
+   "mutants": [],
+   "note": "pushes_to names the subscribe's connection"
+  },
+  "core:11:1": {
+   "text": "| 0x01 | confirm | §7.1 | §7.1 | 不要 | 必須",
+   "verify": [
+    "tests/test_trace_core.py::test_fn_0_op_table[core-v1-confirm]",
+    "tests/test_trace_core.py::test_fn_0_op_table[full-confirm]"
+   ],
+   "mutants": [],
+   "note": "fn 0 confirm: present, answered, lock not needed"
+  },
+  "core:11:2": {
+   "text": "| 0x02 | list | §7.2 | §7.2 | 不要 | 必須 |",
+   "verify": [
+    "tests/test_trace_core.py::test_fn_0_op_table[core-v1-list]",
+    "tests/test_trace_core.py::test_fn_0_op_table[full-list]"
+   ],
+   "mutants": [],
+   "note": "fn 0 list: present, answered, lock not needed"
+  },
+  "core:11:3": {
+   "text": "| 0x03 | describe | §7.3 | §7.3 | 不要 | 必",
+   "verify": [
+    "tests/test_trace_core.py::test_fn_0_op_table[core-v1-describe]",
+    "tests/test_trace_core.py::test_fn_0_op_table[full-describe]"
+   ],
+   "mutants": [],
+   "note": "fn 0 describe: present, answered, lock not needed"
+  },
+  "core:11:4": {
+   "text": "| 0x04 | clock | — | boot_id(u32)、uptime",
+   "verify": [
+    "tests/test_trace_core.py::test_fn_0_op_table[core-v1-clock]",
+    "tests/test_trace_core.py::test_fn_0_op_table[full-clock]"
+   ],
+   "mutants": [],
+   "note": "fn 0 clock: present, answered, lock not needed"
+  },
+  "core:11:5": {
+   "text": "| 0x10 | open | lease_ms(u32)、force(u8)、",
+   "verify": [
+    "tests/test_trace_core.py::test_fn_0_open_row[core-v1]",
+    "tests/test_trace_core.py::test_fn_0_open_row[full]"
+   ],
+   "mutants": [],
+   "note": "open lease force [owner] -> lease boot_id; it takes the lock"
+  },
+  "core:11:6": {
+   "text": "| 0x11 | end | — | — | 必要 | 必須 |",
+   "verify": [
+    "tests/test_trace_core.py::test_fn_0_op_table[core-v1-end]",
+    "tests/test_trace_core.py::test_fn_0_op_table[full-end]"
+   ],
+   "mutants": [],
+   "note": "fn 0 end: present, answered, lock needed"
+  },
+  "core:11:7": {
+   "text": "| 0x12 | keepalive | — | — | 必要 | 必須 |",
+   "verify": [
+    "tests/test_trace_core.py::test_fn_0_op_table[core-v1-keepalive]",
+    "tests/test_trace_core.py::test_fn_0_op_table[full-keepalive]"
+   ],
+   "mutants": [],
+   "note": "fn 0 keepalive: present, answered, lock needed"
+  },
+  "core:11:8": {
+   "text": "| 0x13 | lock_state | — | locked(u8)、rem",
+   "verify": [
+    "tests/test_trace_core.py::test_fn_0_op_table[core-v1-lock_state]",
+    "tests/test_trace_core.py::test_fn_0_op_table[full-lock_state]"
+   ],
+   "mutants": [],
+   "note": "fn 0 lock_state: present, answered, lock not needed"
+  },
+  "core:12:1": {
+   "text": "1. **名前**: インターフェースの名前は、定義する者の逆 DNS の名前（",
+   "verify": [
+    "tests/test_trace_core.py::test_interfaces_are_named_by_reverse_dns_or_the_oep_prefix_with_their_own_revision",
+    "tests/test_trace_core.py::test_every_interface_has_a_name_revision_and_op_table"
+   ],
+   "mutants": [],
+   "note": "names validated: labels, length, oep. layers"
+  },
+  "core:12:2": {
+   "text": "2. **定義が決めるもの**: インターフェースの文書はどれも、次のチェックリ",
+   "verify": [
+    "tests/test_trace_core.py::test_every_interface_has_a_name_revision_and_op_table"
+   ],
+   "mutants": [],
+   "note": "the registry built from the documents carries each interface's name, revision, ops, lock, TLV contexts"
+  },
+  "core:12:3": {
+   "text": "- 名前と revision。",
+   "verify": [
+    "tests/test_trace_core.py::test_every_interface_has_a_name_revision_and_op_table"
+   ],
+   "mutants": [],
+   "note": "every interface: name and revision"
+  },
+  "core:12:4": {
+   "text": "- op の表: 番号、要求、応答、ロックの要否、どの op が必須でどれが任意",
+   "verify": [
+    "tests/test_trace_core.py::test_every_interface_has_a_name_revision_and_op_table",
+    "tests/test_trace_core.py::test_an_optional_op_is_known_by_ops_and_not_sent_when_absent"
+   ],
+   "mutants": [],
+   "note": "op numbers and lock-free sets; optional ops by the ops tag"
+  },
+  "core:12:5": {
+   "text": "- 各 op の要求と応答の TLV（その op の文脈の tag の空間）。",
+   "verify": [
+    "tests/test_trace_core.py::test_every_interface_has_a_name_revision_and_op_table"
+   ],
+   "mutants": [],
+   "note": "every TLV context is an op, an event, describe or the refusals"
+  },
+  "core:12:6": {
+   "text": "- 各 op の completed success、completed fai",
+   "excluded": "cannot be modelled here: it says what an interface document in oep-spec must contain, not what a host or probe does, and no registry field this repository reads carries it (each op's completed success / failed / partial payload)"
+  },
+  "core:12:7": {
+   "text": "- インターフェース自身のstatus、reject reason、unavai",
+   "verify": [
+    "tests/test_trace_core.py::test_an_interfaces_own_values_and_describe_tags_are_in_its_range",
+    "tests/test_trace_core.py::test_reason_and_cause_spaces"
+   ],
+   "mutants": [],
+   "note": "interface statuses / reasons / causes and refusal tags in 0x40-0x7F"
+  },
+  "core:12:8": {
+   "text": "- describe のインターフェース固有のタグ（0x40〜0x7F）と、ピン",
+   "verify": [
+    "tests/test_trace_core.py::test_an_interfaces_own_values_and_describe_tags_are_in_its_range"
+   ],
+   "mutants": [],
+   "note": "interface describe tags 0x40-0x7F"
+  },
+  "core:12:9": {
+   "text": "- どの target の系統のためのものか（規則 8。どの系統にも使うものはそ",
+   "verify": [
+    "tests/test_trace_core.py::test_every_interface_has_a_name_revision_and_op_table"
+   ],
+   "mutants": [],
+   "note": "each registry interface names its target family or none"
+  },
+  "core:12:10": {
+   "text": "- インターフェースが作る資源とその寿命（§9 の上で）。",
+   "excluded": "cannot be modelled here: it says what an interface document in oep-spec must contain, not what a host or probe does, and no registry field this repository reads carries it (the resources an interface makes and their lifetime; the general §9 rules are traced at §9)"
+  },
+  "core:12:11": {
+   "text": "- 通知を送り出すか。送り出すなら subscribe / unsubscrib",
+   "verify": [
+    "tests/test_trace_core.py::test_an_interface_with_events_declares_subscribe_and_unsubscribe"
+   ],
+   "mutants": [],
+   "note": "interfaces with events have both ops"
+  },
+  "core:12:12": {
+   "text": "- 読む側が、応答の enum の知らない値と知らない flags をどう扱うか",
+   "verify": [
+    "tests/test_trace_core.py::test_unknown_values_that_tell_no_failure_are_shown_as_unknown",
+    "tests/test_trace_core.py::test_an_unknown_resolution_or_outcome_is_a_failure"
+   ],
+   "mutants": [],
+   "note": "the client follows §2.4 for unknown enum values"
+  },
+  "core:12:13": {
+   "text": "- 頼る外部の仕様と、その版と、使う部分（「参照する仕様」の節）。",
+   "excluded": "cannot be modelled here: it says what an interface document in oep-spec must contain, not what a host or probe does, and no registry field this repository reads carries it (the referenced external specifications)"
+  },
+  "core:12:14": {
+   "text": "3. **形の規則**: §2.3 のとおり（固定の形、足すものは TLV だけ",
+   "verify": [
+    "tests/test_trace_core.py::test_a_request_shorter_than_its_fixed_part_is_malformed[core-v1]",
+    "tests/test_trace_core.py::test_a_request_shorter_than_its_fixed_part_is_malformed[full]",
+    "tests/test_trace_core.py::test_a_list_is_count_then_elements_without_lengths",
+    "tests/test_trace_core.py::test_the_host_sends_harmful_or_meaningless_if_ignored_tlvs_critical"
+   ],
+   "mutants": [],
+   "note": "restates §2.3: fixed forms, counted lists, critical safety arguments"
+  },
+  "core:12:15": {
+   "text": "4. **失敗**: 受け付けなかったものは rejected、受け付けて失敗し",
+   "verify": [
+    "tests/test_trace_core.py::test_executed_and_failed_is_completed_failed_not_rejected",
+    "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says"
+   ],
+   "mutants": [],
+   "note": "not accepted: rejected; run and failed: completed failed"
+  },
+  "core:12:16": {
+   "text": "5. **ロックなしの op は状態を変えない**（§6.3）。",
+   "verify": [
+    "tests/test_trace_core.py::test_a_lock_free_op_changes_no_state"
+   ],
+   "mutants": [],
+   "note": "every lock-free op sent with session 0 leaves lock, plan, pins, subscriptions"
+  },
+  "core:12:17": {
+   "text": "6. **版**: §2.8。",
+   "verify": [
+    "tests/test_trace_core.py::test_the_host_does_not_use_an_interface_revision_it_does_not_know",
+    "tests/test_trace_core.py::test_an_optional_op_is_known_by_ops_and_not_sent_when_absent"
+   ],
+   "mutants": [],
+   "note": "restates §2.8"
+  },
+  "core:12:18": {
+   "text": "7. **ほかの者の名前のインターフェースに、op、tag、値を足さない。** ",
+   "verify": [
+    "tests/test_trace_core.py::test_the_bench_adds_nothing_to_the_projects_interfaces"
+   ],
+   "mutants": [],
+   "note": "the bench's oep. fns offer only registry ops; its own experiment is under its own name"
+  },
+  "core:12:19": {
+   "text": "8. **特定のチップ向けの手順は、汎用のインターフェースに入れない。** チッ",
+   "excluded": "cannot be modelled here: it says what an interface document in oep-spec must contain, not what a host or probe does, and no registry field this repository reads carries it (how interfaces are split: no chip-specific procedure in a generic interface)"
+  },
+  "core:12.1:1": {
+   "text": "1. **新しい TLV**: 要求、応答、出来事、データ、describe の",
+   "verify": [
+    "tests/test_trace_core.py::test_fn_0_answers_have_their_fixed_parts_and_a_tlv_tail_after",
+    "tests/test_trace_core.py::test_unsupported_names_the_tag_as_received[core-v1]",
+    "tests/test_trace_core.py::test_unsupported_names_the_tag_as_received[full]"
+   ],
+   "mutants": [],
+   "note": "a new answer TLV is skipped by the host, a new non-critical request TLV ignored by the probe"
+  },
+  "core:12.1:2": {
+   "text": "2. **新しい任意の op**（ops で宣言する、§1.2）か**新しい出来",
+   "verify": [
+    "tests/test_trace_core.py::test_an_optional_op_is_known_by_ops_and_not_sent_when_absent",
+    "tests/test_trace_core.py::test_an_unknown_event_kind_is_dropped_and_its_seq_counted"
+   ],
+   "mutants": [],
+   "note": "a new optional op used only when declared; a new event kind dropped"
+  },
+  "core:12.1:3": {
+   "text": "3. **予約の空間の新しい値**: 古い probe が unsupporte",
+   "verify": [
+    "tests/test_trace_core.py::test_a_reserved_value_in_a_request_is_unsupported",
+    "tests/test_trace_core.py::test_fn_0_op_space[core-v1]",
+    "tests/test_trace_core.py::test_fn_0_op_space[full]"
+   ],
+   "mutants": [],
+   "note": "gpio mode 7: unsupported 0x00; unassigned fn 0 ops unknown_operation"
+  },
+  "core:12.1:4": {
+   "text": "4. 新しい意味には**新しいインターフェースの名前**、変わった固定の形には*",
+   "verify": [
+    "tests/test_trace_core.py::test_the_host_does_not_use_an_interface_revision_it_does_not_know"
+   ],
+   "mutants": [],
+   "note": "a changed fixed form means a revision the host refuses"
+  },
+  "core:12.1:5": {
+   "text": "1. どのフィールドの有無、長さ、位置も、その値によらない。",
+   "verify": [
+    "tests/test_trace_core.py::test_an_enum_answer_value_never_moves_a_field"
+   ],
+   "mutants": [],
+   "note": "an unknown cause does not move the channel TLV"
+  },
+  "core:12.1:6": {
+   "text": "2. §2.4 の扱いが安全である（知らない outcome、status、re",
+   "verify": [
+    "tests/test_trace_core.py::test_an_unknown_resolution_or_outcome_is_a_failure",
+    "tests/test_trace_core.py::test_an_unknown_reject_reason_or_status_is_a_failure",
+    "tests/test_trace_core.py::test_unknown_values_that_tell_no_failure_are_shown_as_unknown"
+   ],
+   "mutants": [],
+   "note": "restates §2.4"
+  },
+  "core:12.1:7": {
+   "text": "3. 意味がその値によるフィールドはどれも、その値を知らない読む側が無視するか、",
+   "verify": [
+    "tests/test_trace_core.py::test_unknown_values_that_tell_no_failure_are_shown_as_unknown"
+   ],
+   "mutants": [],
+   "note": "an unknown cause shown raw"
+  },
+  "core:13:1": {
+   "text": "- [はじめに](getting-started.ja.md): いちばん小さい",
+   "excluded": "informative: §13 lists the non-normative guides (a reference list; they add no rules)"
+  },
+  "core:13:2": {
+   "text": "- [host 開発ガイド](host-development-guide.ja",
+   "excluded": "informative: §13 lists the non-normative guides (a reference list; they add no rules)"
+  },
+  "core:13:3": {
+   "text": "- [適合](conformance.ja.md): probe と host ",
+   "excluded": "informative: §13 lists the non-normative guides (a reference list; they add no rules)"
+  },
+  "core:13:4": {
+   "text": "- [安全とセキュリティ](security.ja.md)、[用語集](glos",
+   "excluded": "informative: §13 lists the non-normative guides (a reference list; they add no rules)"
+  }
+ }
+}

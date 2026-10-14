@@ -1,0 +1,578 @@
+{
+ "spec_commit": "a09fa45",
+ "units": {
+  "console:pre:1": {
+   "text": "| `oep.target.console` | 1 | target のコンソ",
+   "excluded": "informative: the name / revision / role row of the interface (its ops are checked under §1)"
+  },
+  "console:1:1": {
+   "text": "| 0x10 | open | connection(u32)、mechanis",
+   "verify": [
+    "tests/test_interfaces.py::test_console_open_makes_a_stream_and_reads_by_position",
+    "tests/test_trace_console.py::test_unknown_numbers_no_resource_and_another_kinds_number_cause_6",
+    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_attach.py::test_attach_and_console_mutants_fail[console_extra_byte-CONSOLE-RESOURCE]"
+   ],
+   "note": "open 0x10 connection(u32) mechanism(u8) [TLV] -> stream(u32) [TLV], needs the lock"
+  },
+  "console:1:2": {
+   "text": "| 0x11 | read | stream(u32)、from(u8)、arg",
+   "verify": [
+    "tests/test_interfaces.py::test_console_open_makes_a_stream_and_reads_by_position",
+    "tests/test_trace_console.py::test_a_fn_without_marks_takes_no_from_3_and_has_no_mark_ops",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[consume]",
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[more]"
+   ],
+   "note": "read 0x11 stream from arg max -> start flags len data [TLV], lock-free"
+  },
+  "console:1:3": {
+   "text": "| 0x12 | marks | stream(u32)、from_serial",
+   "verify": [
+    "tests/test_interfaces.py::test_console_marks_follow_serials_and_more",
+    "tests/test_trace_console.py::test_a_fn_without_marks_takes_no_from_3_and_has_no_mark_ops",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[serial_gap]"
+   ],
+   "note": "marks 0x12 stream from_serial -> more count marks; optional (absent: unknown_operation)"
+  },
+  "console:1:4": {
+   "text": "| 0x13 | clear | stream(u32) | — | 必要 | ",
+   "verify": [
+    "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
+    "tests/test_conformance_dependencies.py::test_dependency_contracts_pass",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_dependencies.py::test_dependency_mutants_fail[clear_tx]",
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[clear_position]"
+   ],
+   "note": "clear 0x13 stream -> nothing, needs the lock; optional"
+  },
+  "console:1:5": {
+   "text": "| 0x14 | mark | stream(u32)、value(u8) | ",
+   "verify": [
+    "tests/test_interfaces.py::test_console_marks_follow_serials_and_more",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass",
+    "tests/test_trace_console.py::test_a_fn_without_marks_takes_no_from_3_and_has_no_mark_ops"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[kind]"
+   ],
+   "note": "mark 0x14 stream value -> nothing; optional, only with marks"
+  },
+  "console:1:6": {
+   "text": "| 0x15 | write | stream(u32)、count(u16)、",
+   "verify": [
+    "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
+    "tests/test_interfaces.py::test_console_io_writes_through_the_send_queue_and_sdi_takes_no_write",
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[sdi_write_taken-SDI-WRITE]"
+   ],
+   "note": "write 0x15 stream count data -> accepted(u16) [TLV]; optional"
+  },
+  "console:1:7": {
+   "text": "| 0x16 | close | stream(u32) | — | 必要 | ",
+   "verify": [
+    "tests/test_trace_console.py::test_close_the_connections_release_and_the_sessions_end_free_the_stream_and_its_queue[close]",
+    "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
+    "tests/test_conformance_dependencies.py::test_dependency_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_dependencies.py::test_dependency_mutants_fail[orphan]"
+   ],
+   "note": "close 0x16 stream -> nothing, needs the lock; required"
+  },
+  "console:1:8": {
+   "text": "| 0x17 | streams | first(u16) | more(u8)",
+   "verify": [
+    "tests/test_trace_console.py::test_streams_lists_the_live_streams_in_the_order_made",
+    "tests/test_spec_2c6d18d.py::test_streams_first_is_u16_and_pages_past_255",
+    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_attach.py::test_attach_and_console_mutants_fail[streams_reversed-CONSOLE-INDEPENDENT]"
+   ],
+   "note": "streams 0x17 first(u16) -> more count (stream connection mechanism), lock-free"
+  },
+  "console:1:9": {
+   "text": "- read、marks、clear、mark、write は [共通部品](o",
+   "verify": [
+    "tests/test_conformance_stream.py::test_stream_contracts_pass",
+    "tests/test_interfaces.py::test_console_open_makes_a_stream_and_reads_by_position",
+    "tests/test_interfaces.py::test_console_marks_follow_serials_and_more",
+    "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[consume]",
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[gap]",
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[future]",
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[timestamp]"
+   ],
+   "note": "read / marks / clear / mark / write in common §1's form, stream first"
+  },
+  "console:1:10": {
+   "text": "- mechanism: 0 SDI、1 DMDATA、2 dmseq（fram",
+   "verify": [
+    "tests/test_trace_console.py::test_a_mechanism_not_declared_or_unknown_is_unsupported_0x00",
+    "tests/test_interfaces.py::test_console_open_makes_a_stream_and_reads_by_position",
+    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass"
+   ],
+   "mutants": [],
+   "note": "0 SDI, 1 DMDATA, 2 dmseq; an unknown mechanism or one not in describe's mechanisms: unsupported 0x00, nothing opened"
+  },
+  "console:1:11": {
+   "text": "- describe: tag 0x40 mechanisms（n(u8)、n ",
+   "verify": [
+    "tests/test_trace_console.py::test_describe_declares_the_mechanisms_counted_without_duplicates",
+    "tests/test_console_queue_and_reset_settle.py::test_the_send_queue_is_not_declared",
+    "tests/test_conformance_oep_declarations.py::test_standard_declarations_pass_without_mutating_requests",
+    "tests/test_conformance_oep_declarations.py::test_scan_is_optional_and_the_mechanisms_are_counted"
+   ],
+   "mutants": [
+    "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[missing_mechanisms]",
+    "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[uncounted_mechanisms]",
+    "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[duplicate_mechanism]",
+    "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[empty_mechanisms]",
+    "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[unknown_mechanism]"
+   ],
+   "note": "describe 0x40 mechanisms n(u8) n x mechanism(u8), n >= 1, no duplicate, always"
+  },
+  "console:1:12": {
+   "text": "- 知らない stream は rejected no_resource（cor",
+   "verify": [
+    "tests/test_trace_console.py::test_unknown_numbers_no_resource_and_another_kinds_number_cause_6",
+    "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
+    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_attach.py::test_attach_and_console_mutants_fail[arm_console-CONSOLE-RESOURCE]"
+   ],
+   "note": "unknown stream no_resource; another kind's number cause 6; an arm-adi connection's open cause 6 (checker)"
+  },
+  "console:1:13": {
+   "text": "- ストリームの番号（u32）は core §9 に従い、同じ boot_id ",
+   "verify": [
+    "tests/test_trace_console.py::test_stream_numbers_are_never_used_again_in_a_boot",
+    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass",
+    "tests/test_conformance_dependencies.py::test_dependency_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_dependencies.py::test_dependency_mutants_fail[reuse_id]"
+   ],
+   "note": "a stream number (u32) is never used again in a boot, nor a connection's"
+  },
+  "console:1:14": {
+   "text": "- streams は生きているストリームだけを作成順に返す。first は u",
+   "verify": [
+    "tests/test_trace_console.py::test_streams_lists_the_live_streams_in_the_order_made",
+    "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
+    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_attach.py::test_attach_and_console_mutants_fail[streams_reversed-CONSOLE-INDEPENDENT]"
+   ],
+   "note": "only live streams, in creation order, first(u16); a closed stream is no_resource"
+  },
+  "console:2:1": {
+   "text": "- openはセッション所有の新しいstreamを作る。mechanism 0〜",
+   "verify": [
+    "tests/test_interfaces.py::test_console_open_makes_a_stream_and_reads_by_position",
+    "tests/test_trace_console.py::test_stream_numbers_are_never_used_again_in_a_boot",
+    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_attach.py::test_attach_and_console_mutants_fail[duplicate_stream-CONSOLE-DUPLICATE]"
+   ],
+   "note": "open makes a new session stream; one live stream a connection (any mechanism: cause 6); a closed one's number / buffer / marks never back"
+  },
+  "console:2:2": {
+   "text": "- close、connection の解放、セッションの終了で stream ",
+   "verify": [
+    "tests/test_trace_console.py::test_close_the_connections_release_and_the_sessions_end_free_the_stream_and_its_queue[close]",
+    "tests/test_trace_console.py::test_close_the_connections_release_and_the_sessions_end_free_the_stream_and_its_queue[detach]",
+    "tests/test_trace_console.py::test_close_the_connections_release_and_the_sessions_end_free_the_stream_and_its_queue[end]",
+    "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
+    "tests/test_conformance_dependencies.py::test_dependency_contracts_pass",
+    "tests/test_conformance_writer_lease.py::test_writer_lease_contracts_pass",
+    "tests/test_conformance_cut.py::test_cut_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_dependencies.py::test_dependency_mutants_fail[orphan]",
+    "tests/test_conformance_dependencies.py::test_dependency_mutants_fail[close_parent]",
+    "tests/test_conformance_dependencies.py::test_dependency_mutants_fail[retain_end]",
+    "tests/test_conformance_writer_lease.py::test_writer_lease_checker_detects_independent_faults[resources_left-EXPIRED]",
+    "tests/test_conformance_cut.py::test_cut_checker_detects_independent_faults[stream_kept-CONSOLE]"
+   ],
+   "note": "close, the connection's release (detach, lost line) and the session's end free the stream, its buffer and send queue"
+  },
+  "console:2:3": {
+   "text": "- streamが生きている間、probeは処理の合間にtargetの出力を吸い",
+   "verify": [
+    "tests/test_console_queue_and_reset_settle.py::test_the_queue_is_handed_on_a_poll_at_a_time_and_survives_resets_and_restarts",
+    "tests/test_interfaces.py::test_console_io_writes_through_the_send_queue_and_sdi_takes_no_write",
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass",
+    "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[halt_access-DM-HALTED]",
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[busy_access-DM-DEBUG]"
+   ],
+   "note": "the probe polls between requests while the stream lives (not while halted or a riscv-dm request runs); poll rate its own"
+  },
+  "console:2:4": {
+   "text": "- targetの自己リセット時のdmseqの同期の扱いは[線とデバッグ](oe",
+   "verify": [
+    "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass",
+    "tests/test_conformance_reset.py::test_optional_reset_contracts_pass",
+    "tests/test_conformance_reset.py::test_dm_line_may_proactively_clear_dmseq_sync_without_havereset_mark"
+   ],
+   "mutants": [
+    "tests/test_conformance_dmseq.py::test_dmseq_checker_detects_independent_faults[reset_keep_protocol-RESET]",
+    "tests/test_conformance_dmseq.py::test_dmseq_checker_detects_independent_faults[reset_drop_output-RESET]",
+    "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[sync_retained-CONSOLE-0]",
+    "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[pending_retained-CONSOLE-2]"
+   ],
+   "note": "a target reset drops the dmseq sync / pending answer, keeps output and queue (debug §4.6)"
+  },
+  "console:2:5": {
+   "text": "- marksを提供するfnだけが、共通部品の形で以下のマークを記録する。mar",
+   "verify": [
+    "tests/test_trace_console.py::test_a_fn_without_marks_takes_no_from_3_and_has_no_mark_ops",
+    "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_dmseq.py::test_dmseq_checker_detects_independent_faults[duplicate_delivery-DUP-SYN]",
+    "tests/test_conformance_dmseq.py::test_dmseq_checker_detects_independent_faults[pop_twice-DUP-PLAIN]"
+   ],
+   "note": "only a fn with marks records marks (none: no marks / mark ops, from 3 unsupported); dmseq sync and de-duplication always"
+  },
+  "console:2:6": {
+   "text": "| 0x40 | reset | 1 ndmreset。契機は線とデバッグ §4",
+   "verify": [
+    "tests/test_trace_console.py::test_a_reset_op_marks_reset_detail_1_once_and_no_restart_for_it",
+    "tests/test_conformance_reset.py::test_optional_reset_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[mark_detail-CONSOLE-0]",
+    "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[missing_mark-CONSOLE-2]",
+    "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[mark_on_failure-CONSOLE-DM-LINE-0]"
+   ],
+   "note": "reset 0x40 detail 1 ndmreset: one mark on the reset op's success, none on failure, no restart for it"
+  },
+  "console:2:7": {
+   "text": "| 0x41 | restart | 1 havereset、2 再同期 |",
+   "verify": [
+    "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass",
+    "tests/test_interfaces.py::test_console_marks_follow_serials_and_more"
+   ],
+   "mutants": [
+    "tests/test_conformance_dmseq.py::test_event_checker_detects_missing_mark[65-2-RESYNC-SAME]",
+    "tests/test_conformance_dmseq.py::test_event_checker_detects_missing_mark[65-2-RESYNC-NEW]"
+   ],
+   "note": "restart 0x41: detail 1 havereset (a detected target reset), 2 resync"
+  },
+  "console:2:8": {
+   "text": "| 0x01 | lost | 共通のdetailに加え、0x40 target",
+   "verify": [
+    "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass",
+    "tests/test_interfaces.py::test_console_marks_follow_serials_and_more"
+   ],
+   "mutants": [
+    "tests/test_conformance_dmseq.py::test_event_checker_detects_missing_mark[1-64-TO-NEW]",
+    "tests/test_conformance_dmseq.py::test_event_checker_detects_missing_mark[1-64-TO-DUP]"
+   ],
+   "note": "lost 0x01 with detail 0x40: the target's TO"
+  },
+  "console:2:9": {
+   "text": "- 未同期からの初回同期ではrestartマークを付けない。",
+   "verify": [
+    "tests/test_trace_console.py::test_dmseq_first_synchronisation_marks_no_restart",
+    "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_trace_console.py::test_dmseq_first_synchronisation_marks_no_restart"
+   ],
+   "note": "the first sync from unsynced marks no restart (checker SYN / UNSYNCED / VECTOR; a model that marks one fails them)"
+  },
+  "console:2:10": {
+   "text": "- 同期済みで、重複でない新しいSYNフレームによって再同期する場合はresta",
+   "verify": [
+    "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_dmseq.py::test_event_checker_detects_missing_mark[65-2-RESYNC-NEW]",
+    "tests/test_conformance_dmseq.py::test_event_checker_detects_missing_mark[65-2-RESYNC-SAME]",
+    "tests/test_conformance_dmseq.py::test_dmseq_checker_detects_independent_faults[same_s_syn_lost-SAME-S-SYN]"
+   ],
+   "note": "synced, a new non-duplicate SYN frame: restart detail 2"
+  },
+  "console:2:11": {
+   "text": "- 有効なtargetフレームでTOが1ならlost（kind 0x01、det",
+   "verify": [
+    "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_dmseq.py::test_event_checker_detects_missing_mark[1-64-TO-NEW]",
+    "tests/test_conformance_dmseq.py::test_event_checker_detects_missing_mark[1-64-TO-DUP]",
+    "tests/test_conformance_dmseq.py::test_dmseq_checker_detects_independent_faults[to_resync-DUP-TO]"
+   ],
+   "note": "a valid target frame with TO 1: lost detail 0x40, also when its payload is a duplicate"
+  },
+  "console:2:12": {
+   "text": "- targetフレームのCRCが不一致ならlost（kind 0x01、det",
+   "verify": [
+    "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_dmseq.py::test_event_checker_detects_missing_mark[1-2-CRC-FLAGS]",
+    "tests/test_conformance_dmseq.py::test_dmseq_checker_detects_independent_faults[invalid_answer-N7]"
+   ],
+   "note": "a CRC mismatch: lost detail 2 framing; N > 6 has no CRC position"
+  },
+  "console:2:13": {
+   "text": "- 同じフレームを繰り返し観測した際の mark はまとめてよい。poll ごと",
+   "verify": [
+    "tests/test_conformance_dmseq.py::test_repeated_mark_coalescing_is_allowed",
+    "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass"
+   ],
+   "mutants": [],
+   "note": "marks for a frame seen again may be merged; no count per poll required"
+  },
+  "console:2:14": {
+   "text": "- 無効なフレームの SYN/TO から restart/resync や lo",
+   "verify": [
+    "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_dmseq.py::test_invalid_flags_do_not_trigger_resync_or_to[CRC-FLAGS]",
+    "tests/test_conformance_dmseq.py::test_invalid_flags_do_not_trigger_resync_or_to[INVALID-FLAGS]"
+   ],
+   "note": "an invalid frame's SYN / TO never gives restart / resync or lost / TO; CRC lost/framing apart"
+  },
+  "console:2:15": {
+   "text": "- **送りの列**: writeを提供するfnは、mechanism 1/2の",
+   "verify": [
+    "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
+    "tests/test_interfaces.py::test_console_io_writes_through_the_send_queue_and_sdi_takes_no_write",
+    "tests/test_console_queue_and_reset_settle.py::test_the_send_queue_is_not_declared",
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass"
+   ],
+   "mutants": [],
+   "note": "a send queue per DMDATA / dmseq stream, its size the probe's; accepted = min(count, free); 0 with count > 0 failed only when full; partial"
+  },
+  "console:2:16": {
+   "text": "- probe は列の先頭から、mechanism の運び方で target に",
+   "verify": [
+    "tests/test_console_queue_and_reset_settle.py::test_dmseq_hands_on_2_bytes_a_poll_and_sdi_takes_no_write",
+    "tests/test_console_queue_and_reset_settle.py::test_the_queue_is_handed_on_a_poll_at_a_time_and_survives_resets_and_restarts",
+    "tests/test_interfaces.py::test_console_io_writes_through_the_send_queue_and_sdi_takes_no_write",
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass",
+    "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[dm_send_reverse-DM-QUEUE-3]",
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[dm_send_short-DM-QUEUE-3]"
+   ],
+   "note": "handed from the head: dmseq up to 2 bytes an answer, DMDATA 3, less when less is queued, in write order"
+  },
+  "console:2:17": {
+   "text": "- 列は、ストリームが閉じたときに捨てる（閉じたストリームへの write は ",
+   "verify": [
+    "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
+    "tests/test_trace_console.py::test_close_the_connections_release_and_the_sessions_end_free_the_stream_and_its_queue[close]",
+    "tests/test_trace_console.py::test_close_the_connections_release_and_the_sessions_end_free_the_stream_and_its_queue[detach]",
+    "tests/test_trace_console.py::test_close_the_connections_release_and_the_sessions_end_free_the_stream_and_its_queue[end]",
+    "tests/test_conformance_dependencies.py::test_dependency_contracts_pass",
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_dependencies.py::test_dependency_mutants_fail[clear_tx]"
+   ],
+   "note": "the queue goes with the stream (write to a closed one no_resource); clear drops the read buffer only"
+  },
+  "console:3:1": {
+   "text": "- probe は、**その connection の riscv-dm の要求",
+   "verify": [
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass",
+    "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[halt_access-DM-HALTED]",
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[busy_access-DM-DEBUG]",
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[status_after_data-DM-DEBUG]",
+    "tests/test_conformance_dmseq.py::test_dmseq_checker_detects_independent_faults[halt_access-HALTED]",
+    "tests/test_conformance_dmseq.py::test_dmseq_checker_detects_independent_faults[debug_access-DEBUG]"
+   ],
+   "note": "no DATA0 / DATA1 access while the connection's riscv-dm request runs or the hart is halted; DMSTATUS read before DATA0"
+  },
+  "console:3:2": {
+   "text": "| mechanism | 名前 | 向き | 定義 |",
+   "excluded": "informative: the header row of the mechanism table"
+  },
+  "console:3:3": {
+   "text": "| 0 | SDI | target → host | 下の 3.1 |",
+   "excluded": "informative: a row of the mechanism table (number, name, direction; the rules are §3.1)"
+  },
+  "console:3:4": {
+   "text": "| 1 | DMDATA | 両方向 | 下の 3.2 |",
+   "excluded": "informative: a row of the mechanism table (number, name, direction; the rules are §3.2)"
+  },
+  "console:3:5": {
+   "text": "| 2 | dmseq | 両方向 | [target-console-dmse",
+   "excluded": "informative: a row of the mechanism table (number, name, direction; the rules are target-console-dmseq)"
+  },
+  "console:3.1:1": {
+   "text": "- **郵便受けの中のバイト**: バイト 0 は DATA0 の bit 8〜",
+   "verify": [
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[sdi_skip_data1-SDI-LENGTHS]"
+   ],
+   "note": "byte 0-2 in DATA0 bits 8-31, 3-6 in DATA1, L in DATA0's low byte"
+  },
+  "console:3.1:2": {
+   "text": "- **target** は 1 回に n バイト（n = 1〜7）を送る: D",
+   "excluded": "target-side rule: what the target firmware does with the mailbox; this repository has no SDI / DMDATA target firmware (the probe side of the same exchange is traced under the probe's units of this section)"
+  },
+  "console:3.1:3": {
+   "text": "- **probe** は DATA0 を読む。L が 1〜7 なら DATA1",
+   "verify": [
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[sdi_skip_data1-SDI-LENGTHS]",
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[sdi_clear_invalid-SDI-INVALID]",
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[ack_not_written-SDI-ACK]"
+   ],
+   "note": "L 1-7: DATA1 read, bytes taken in order, DATA0 = 0; L 0 nothing; L >= 8 no bytes, DATA0 cleared"
+  },
+  "console:3.1:4": {
+   "text": "- host → targetの向きは無い（送りの列を持たず、提供されているwr",
+   "verify": [
+    "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
+    "tests/test_console_queue_and_reset_settle.py::test_dmseq_hands_on_2_bytes_a_poll_and_sdi_takes_no_write",
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[sdi_write_taken-SDI-WRITE]"
+   ],
+   "note": "no host -> target way: no queue, a write unsupported 0x00"
+  },
+  "console:3.2:1": {
+   "text": "- **状態の byte** は DATA0 の下位 byte（bit 0〜7）",
+   "verify": [
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[bit6_reject-DM-BIT6]",
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[dm_consume_invalid-DM-INVALID]"
+   ],
+   "note": "status byte: bit 7 T, bits 0-5 L = bytes + 4, bit 6 ignored by the reader"
+  },
+  "console:3.2:2": {
+   "text": "- **郵便受けの中のバイト**: SDI（§3.1）と同じ位置: バイト 0〜",
+   "verify": [
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[dm_read_data1_short-DM-LENGTHS]",
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[dm_skip_data1_long-DM-LENGTHS]"
+   ],
+   "note": "the bytes at SDI's places"
+  },
+  "console:3.2:3": {
+   "text": "- **target** は DATA0 の bit 7 が 0 のときだけ D",
+   "excluded": "target-side rule: what the target firmware does with the mailbox; this repository has no SDI / DMDATA target firmware (the probe side of the same exchange is traced under the probe's units of this section)"
+  },
+  "console:3.2:4": {
+   "text": "- n バイト（n = 1〜7）を送るときは、DATA0 の bit 7 が 0",
+   "excluded": "target-side rule: what the target firmware does with the mailbox; this repository has no SDI / DMDATA target firmware (the probe side of the same exchange is traced under the probe's units of this section)"
+  },
+  "console:3.2:5": {
+   "text": "- 送らずに入力を求めるときは、DATA0 の bit 7 が 0 になるまで待",
+   "excluded": "target-side rule: what the target firmware does with the mailbox; this repository has no SDI / DMDATA target firmware (the probe side of the same exchange is traced under the probe's units of this section)"
+  },
+  "console:3.2:6": {
+   "text": "- **答えの受け取り**: bit 7 = 0 で L が 5〜7 の wor",
+   "excluded": "target-side rule: what the target firmware does with the mailbox; this repository has no SDI / DMDATA target firmware (the probe side of the same exchange is traced under the probe's units of this section)"
+  },
+  "console:3.2:7": {
+   "text": "- **probe** は DATA0 を読む。",
+   "verify": [
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[status_after_data-DM-DEBUG]"
+   ],
+   "note": "each poll: DMSTATUS, then DATA0 read"
+  },
+  "console:3.2:8": {
+   "text": "- bit 7 が 0 なら何もしない: その word は、target がま",
+   "verify": [
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[dm_overwrite_own-DM-OWN-TURN]"
+   ],
+   "note": "bit 7 = 0: nothing, never written over"
+  },
+  "console:3.2:9": {
+   "text": "- bit 7 が 1 で L が 5〜11 なら、n = L − 4 バイトを",
+   "verify": [
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[dm_read_data1_short-DM-LENGTHS]",
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[dm_skip_data1_long-DM-LENGTHS]"
+   ],
+   "note": "bit 7 = 1, L 5-11: n = L - 4 bytes, 0-2 from DATA0, 3.. from DATA1 read after DATA0; then the answer"
+  },
+  "console:3.2:10": {
+   "text": "- bit 7 が 1 で L が 4 なら、枠は空（バイトを運ばない）。pro",
+   "verify": [
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[dm_send_short-DM-QUEUE-3]"
+   ],
+   "note": "bit 7 = 1, L 4: an empty frame, answered"
+  },
+  "console:3.2:11": {
+   "text": "- bit 7 が 1 で L が 0〜3 か 12〜63 なら、その word",
+   "verify": [
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[dm_consume_invalid-DM-INVALID]"
+   ],
+   "note": "bit 7 = 1, L 0-3 / 12-63: not a frame, DATA0 cleared, no input put on it"
+  },
+  "console:3.2:12": {
+   "text": "- **答え**: target の枠 1 つにつき DATA0 をちょうど 1",
+   "verify": [
+    "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass",
+    "tests/test_interfaces.py::test_console_io_writes_through_the_send_queue_and_sdi_takes_no_write"
+   ],
+   "mutants": [
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[dm_send_reverse-DM-QUEUE-3]",
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[dm_send_short-DM-QUEUE-3]",
+    "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[dm_write_data1-DM-LENGTHS]"
+   ],
+   "note": "one DATA0 write a frame: (n + 4) | the queue's first n <= 3 bytes, or 0; DATA1 never written"
+  },
+  "console:4:1": {
+   "text": "| RISC-V Debug Specification 0.13.2 と 1.",
+   "excluded": "informative: the reference list (RISC-V Debug Specification versions and the registers used)"
+  }
+ }
+}

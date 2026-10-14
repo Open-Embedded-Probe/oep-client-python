@@ -400,7 +400,9 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
         _core("3.0.0", "esp32", "fafe00000003", 40, {16: "SWIO", 23: "NRST", 22: "DUT TX", 21: "DUT RX"},
               _transports([(TRANSPORT["uart_bridge"], 0xFF)])),
         Offered(1, 0, "oep.wire.swio", (catalog.u32(FEATURES, ATTACH_HALT), catalog.channel_group(1, [(1, 16)]), catalog.role_channels(3, [23]),
-                                        catalog.u8(MAX_CONNECTIONS, 1))),
+                                        catalog.u8(MAX_CONNECTIONS, 1),
+                                        # the fixed speed of a 0 slot, as the reference firmware (oep-if-debug §3.2)
+                                        catalog.u32(MIN_CLOCK_HZ, SWIO_HZ))),
         Offered(2, 0, "oep.target.riscv-dm", ops_of("oep.target.riscv-dm", "step") + (    # no step
             catalog.u16(MAX_LENGTH, block_max_length(max_frame)),)),
         _console(3),
@@ -519,6 +521,7 @@ def with_stand_in(probe: VirtualProbe) -> VirtualProbe:
 
 
 ATTACH_HALT = reg.WIRE_RVSWD.enum["features"]["attach_halt"]   # attach method 1 (debug §3)
+SWIO_HZ = 888_888                     # SWIO's 0 slot, 862.5 ns low + 262.5 ns high (oep-probe-arduino's SwioPhy)
 I2C_INTERNAL_PULLUPS = reg.FIXTURE_I2C_TARGET.enum["features"]["internal_pullups"]
 
 

@@ -105,9 +105,9 @@ def describe(hst: h.Host, fn: int = 0) -> list[tuple[int, bytes]]:
             break
     out = catalog.split_tlv(data)
     if fn == m.CORE_FN:
-        value = next((v for tag, v in out if tag & 0x7F == CORE_MAX_OP_MS and len(v) >= 4), None)
+        value = next((v for tag, v in out if tag == CORE_MAX_OP_MS and len(v) == 4), None)
         why = h.check_max_op_ms(struct.unpack_from("<I", value)[0]) if value is not None else ""
-        bad_ops = next((catalog.check_ops(v) for tag, v in out if tag & 0x7F == m.TAG_OPS and catalog.check_ops(v)), "")
+        bad_ops = next((catalog.check_ops(v) for tag, v in out if tag == m.TAG_OPS and catalog.check_ops(v)), "")
         if bad_ops and not why:
             why = f"describe of fn 0: {bad_ops} - outside core §7.4, so the probe is not used"
         if why:
@@ -123,7 +123,7 @@ def ops(hst: h.Host, fn: int = 0) -> set[int] | None:
     UnusableFunction (fn 0: NotUsable from `describe`, the probe is not used)."""
     found = None
     for tag, value in describe(hst, fn):
-        if tag & 0x7F == m.TAG_OPS:
+        if tag == m.TAG_OPS:                     # bit 7 set: an unknown tag in an answer (core §2.2)
             why = catalog.check_ops(value)
             if why:
                 raise UnusableFunction(f"fn {fn}: {why} - outside core §7.4, so the fn is not used")
@@ -155,7 +155,7 @@ def firmware_labels(hst: h.Host) -> list[tuple[int, str]]:
     every one, two channels with the same text included (probe.config §1.3 step (c) finds none then). Text shown as
     core §2.1 says (`m.shown`)."""
     return [(struct.unpack_from("<H", value)[0], m.shown(value[2:]))
-            for tag, value in describe(hst) if tag & 0x7F == CORE_LABEL and len(value) >= 2]
+            for tag, value in describe(hst) if tag == CORE_LABEL and len(value) >= 2]
 
 
 def probe_labels(hst: h.Host) -> dict[str, int]:
@@ -169,7 +169,7 @@ def max_op_ms(hst: h.Host) -> int:
     timeout_ms, a dmi list's waits, an attach's hold_ms, and the argument time of attach, scan and riscv-dm's reset
     (oep-if-debug §1, §4.3). A probe that declares none (not conforming) is taken as FALLBACK_MAX_OP_MS (10000 ms)."""
     for tag, value in describe(hst):
-        if tag & 0x7F == CORE_MAX_OP_MS and len(value) >= 4:
+        if tag == CORE_MAX_OP_MS and len(value) == 4:
             return struct.unpack_from("<I", value)[0]
     return FALLBACK_MAX_OP_MS
 
@@ -188,15 +188,14 @@ def restart_max_ms(hst: h.Host) -> int | None:
     except LookupError:
         return None
     for tag, value in describe(hst, fn):
-        if tag & 0x7F == TAG_RESTART_MAX_MS and len(value) >= 4:
+        if tag == TAG_RESTART_MAX_MS and len(value) == 4:
             return struct.unpack_from("<I", value)[0]
     return None
 
 
 def transports(hst: h.Host) -> list[tuple[int, int, int]]:
     """The probe's transports from fn 0's describe (core §7.5): [(index, kind, usb interface or 0xFF)]."""
-    return [(v[0], v[1], v[2] if len(v) > 2 else 0xFF) for tag, v in describe(hst) if tag & 0x7F == CORE_TRANSPORT
-            and len(v) >= 2]
+    return [(v[0], v[1], v[2]) for tag, v in describe(hst) if tag == CORE_TRANSPORT and len(v) == 3]   # core §2.3
 
 
 def take(hst: h.Host, lease_ms: int = 3000, *, owner: str | None = None, wait_s: float = 5.0,
@@ -225,7 +224,7 @@ def plan_roles(hst: h.Host) -> int | None:
     except LookupError:
         return None
     for tag, value in describe(hst, fn):
-        if tag & 0x7F == TAG_PLAN_ROLES and len(value) >= 4:
+        if tag == TAG_PLAN_ROLES and len(value) == 4:
             return struct.unpack_from("<I", value)[0]
     return None
 

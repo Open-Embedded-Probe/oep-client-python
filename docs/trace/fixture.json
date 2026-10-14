@@ -1,0 +1,928 @@
+{
+ "spec_commit": "a09fa45",
+ "units": {
+  "fixture:pre:1": {
+   "text": "| `oep.fixture.gpio` | 1 | ピンを駆動し、読む | 1",
+   "verify": [
+    "tests/test_trace_fixture.py::test_names_revisions_and_plan_roles[oep.fixture.gpio-roles0-4]"
+   ],
+   "mutants": [],
+   "note": "revision 1, the role numbers of the table are taken by plan_apply and the next one is unsupported (0x90)"
+  },
+  "fixture:pre:2": {
+   "text": "| `oep.fixture.uart` | 1 | UART の送受信 | 1",
+   "verify": [
+    "tests/test_trace_fixture.py::test_names_revisions_and_plan_roles[oep.fixture.uart-roles1-5]"
+   ],
+   "mutants": [],
+   "note": "revision 1, the role numbers of the table are taken by plan_apply and the next one is unsupported (0x90)"
+  },
+  "fixture:pre:3": {
+   "text": "| `oep.fixture.i2c-target` | 1 | I2C の t",
+   "verify": [
+    "tests/test_trace_fixture.py::test_names_revisions_and_plan_roles[oep.fixture.i2c-target-roles2-8]"
+   ],
+   "mutants": [],
+   "note": "revision 1, the role numbers of the table are taken by plan_apply and the next one is unsupported (0x90)"
+  },
+  "fixture:pre:4": {
+   "text": "| `oep.fixture.spi-target` | 1 | SPI の t",
+   "verify": [
+    "tests/test_trace_fixture.py::test_names_revisions_and_plan_roles[oep.fixture.spi-target-roles3-9]"
+   ],
+   "mutants": [],
+   "note": "revision 1, the role numbers of the table are taken by plan_apply and the next one is unsupported (0x90)"
+  },
+  "fixture:1:1": {
+   "text": "| 0x10 | set | n(u8)、n × (channel(u16)、m",
+   "verify": [
+    "tests/test_trace_fixture.py::test_gpio_set_row_needs_the_lock_and_answers_nothing",
+    "tests/test_interfaces.py::test_gpio_set_is_a_list_in_order_and_only_planned_channels"
+   ],
+   "mutants": [
+    "tests/test_conformance_gpio.py::test_checker_rejects_wrong_wire_results[SESSION]"
+   ],
+   "note": "set is op 0x10, n x (channel u16, mode u8) [TLV], empty answer, session_required without the lock"
+  },
+  "fixture:1:2": {
+   "text": "| 0x11 | read | n(u8)、n × channel(u16) |",
+   "verify": [
+    "tests/test_trace_fixture.py::test_gpio_read_row_is_lock_free_and_answers_n_levels",
+    "tests/test_interfaces.py::test_gpio_set_is_a_list_in_order_and_only_planned_channels"
+   ],
+   "mutants": [
+    "tests/test_conformance_gpio.py::test_checker_rejects_wrong_wire_results[READ]"
+   ],
+   "note": "read is op 0x11, n x channel -> n x level 0/1, lock-free (session 0, another host)"
+  },
+  "fixture:1:3": {
+   "text": "| mode | 意味 |",
+   "excluded": "informative: the heading row of the mode table (mode / 意味); the modes are the rows below"
+  },
+  "fixture:1:4": {
+   "text": "| 0 | 入力（浮き） |",
+   "verify": [
+    "tests/test_trace_fixture.py::test_gpio_modes_mean_what_the_table_says[0-None-0]",
+    "tests/test_conformance_gpio.py::test_gpio_plan_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_gpio.py::test_checker_rejects_wrong_wire_results[SET-MODES]"
+   ],
+   "note": "mode 0: the line takes the mode and reads the level the table means (driven / pulled / outside)"
+  },
+  "fixture:1:5": {
+   "text": "| 1 | 入力、プルアップ |",
+   "verify": [
+    "tests/test_trace_fixture.py::test_gpio_modes_mean_what_the_table_says[1-1-0]",
+    "tests/test_conformance_gpio.py::test_gpio_plan_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_gpio.py::test_checker_rejects_wrong_wire_results[SET-MODES]"
+   ],
+   "note": "mode 1: the line takes the mode and reads the level the table means (driven / pulled / outside)"
+  },
+  "fixture:1:6": {
+   "text": "| 2 | 入力、プルダウン |",
+   "verify": [
+    "tests/test_trace_fixture.py::test_gpio_modes_mean_what_the_table_says[2-0-0]",
+    "tests/test_conformance_gpio.py::test_gpio_plan_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_gpio.py::test_checker_rejects_wrong_wire_results[SET-MODES]"
+   ],
+   "note": "mode 2: the line takes the mode and reads the level the table means (driven / pulled / outside)"
+  },
+  "fixture:1:7": {
+   "text": "| 3 | 出力 low |",
+   "verify": [
+    "tests/test_trace_fixture.py::test_gpio_modes_mean_what_the_table_says[3-0-0]",
+    "tests/test_conformance_gpio.py::test_gpio_plan_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_gpio.py::test_checker_rejects_wrong_wire_results[SET-MODES]"
+   ],
+   "note": "mode 3: the line takes the mode and reads the level the table means (driven / pulled / outside)"
+  },
+  "fixture:1:8": {
+   "text": "| 4 | 出力 high |",
+   "verify": [
+    "tests/test_trace_fixture.py::test_gpio_modes_mean_what_the_table_says[4-1-1]",
+    "tests/test_conformance_gpio.py::test_gpio_plan_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_gpio.py::test_checker_rejects_wrong_wire_results[SET-MODES]"
+   ],
+   "note": "mode 4: the line takes the mode and reads the level the table means (driven / pulled / outside)"
+  },
+  "fixture:1:9": {
+   "text": "| 5 | オープンドレイン low（引く） |",
+   "verify": [
+    "tests/test_trace_fixture.py::test_gpio_modes_mean_what_the_table_says[5-0-0]",
+    "tests/test_conformance_gpio.py::test_gpio_plan_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_gpio.py::test_checker_rejects_wrong_wire_results[SET-MODES]"
+   ],
+   "note": "mode 5: the line takes the mode and reads the level the table means (driven / pulled / outside)"
+  },
+  "fixture:1:10": {
+   "text": "| 6 | オープンドレインの解放（外部または target のプルアップで h",
+   "verify": [
+    "tests/test_trace_fixture.py::test_gpio_modes_mean_what_the_table_says[6-1-0]",
+    "tests/test_conformance_gpio.py::test_gpio_plan_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_gpio.py::test_checker_rejects_wrong_wire_results[SET-MODES]"
+   ],
+   "note": "mode 6: the line takes the mode and reads the level the table means (driven / pulled / outside)"
+  },
+  "fixture:1:11": {
+   "text": "- 並びは要求の順に 1 つずつ行う（NRST を引いてから離す、などを 1 要",
+   "verify": [
+    "tests/test_trace_fixture.py::test_gpio_set_checks_everything_first_then_runs_in_order",
+    "tests/test_conformance_gpio.py::test_gpio_plan_checks",
+    "tests/test_interfaces.py::test_gpio_set_is_a_list_in_order_and_only_planned_channels"
+   ],
+   "mutants": [
+    "tests/test_conformance_gpio.py::test_checker_detects_reversed_set_execution",
+    "tests/test_conformance_gpio.py::test_checker_detects_admission_side_effect"
+   ],
+   "note": "the list runs in order, all checks first (a refused list does nothing), success otherwise"
+  },
+  "fixture:1:12": {
+   "text": "- 割り当てていないチャンネル（set、read）は、何もせず rejected",
+   "verify": [
+    "tests/test_trace_fixture.py::test_gpio_refusals_name_the_channel_and_its_place",
+    "tests/test_conformance_gpio.py::test_gpio_plan_checks",
+    "tests/test_interfaces.py::test_gpio_set_is_a_list_in_order_and_only_planned_channels"
+   ],
+   "mutants": [
+    "tests/test_conformance_gpio.py::test_checker_rejects_wrong_wire_results[SET-UNAVAILABLE]",
+    "tests/test_conformance_gpio.py::test_checker_rejects_wrong_wire_results[SET-UNSUPPORTED]",
+    "tests/test_conformance_gpio.py::test_checker_detects_admission_side_effect"
+   ],
+   "note": "unassigned channel (set, read): unavailable with channel 0x02 + index 0x40; undeclared mode: unsupported 0x00 + the same TLVs"
+  },
+  "fixture:1:13": {
+   "text": "- 扱える mode は describe の modes（tag 0x40、u",
+   "verify": [
+    "tests/test_trace_fixture.py::test_gpio_modes_are_declared_and_input_is_always_there",
+    "tests/test_conformance_gpio.py::test_gpio_metadata"
+   ],
+   "mutants": [
+    "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[10-64-None]",
+    "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[10-64-\\x01]",
+    "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[10-64-\\x00\\x00\\x00\\x00]"
+   ],
+   "note": "describe modes tag 0x40 u32 with bit0 on every profile; a mode left out is unsupported; the client reads the set"
+  },
+  "fixture:1:14": {
+   "text": "- **plan で取ったチャンネルは、最初の set までそれまでの状態を保つ",
+   "verify": [
+    "tests/test_trace_fixture.py::test_gpio_plan_keeps_the_line_as_it_was_until_the_first_set",
+    "tests/test_conformance_gpio.py::test_gpio_plan_checks",
+    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_o13_taking_a_plan_changes_no_pin_and_an_analog_plan_on_an_output_idle_is_refused"
+   ],
+   "mutants": [
+    "tests/test_conformance_gpio.py::test_checker_rejects_wrong_wire_results[PLAN-IDLE]"
+   ],
+   "note": "taking the plan leaves the line (output idle keeps driving, hi-z stays) until the first set; no level change"
+  },
+  "fixture:1:15": {
+   "text": "- GPIOのplanは出力のidleのchannelも受け付ける。",
+   "verify": [
+    "tests/test_trace_fixture.py::test_gpio_plan_takes_an_output_idle_channel_another_fixture_does_not",
+    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_o13_taking_a_plan_changes_no_pin_and_an_analog_plan_on_an_output_idle_is_refused"
+   ],
+   "mutants": [],
+   "note": "a gpio plan takes an output-idle channel (a uart TX there is held_by_settings)"
+  },
+  "fixture:1:16": {
+   "text": "- readは現在のlevelを観測するだけで、入力へ切り替えたり、出力・プル・",
+   "verify": [
+    "tests/test_trace_fixture.py::test_gpio_read_only_looks_and_release_or_end_gives_the_line_back",
+    "tests/test_conformance_gpio.py::test_gpio_plan_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_gpio.py::test_checker_detects_missing_idle_restore[RELEASE-ALL]",
+    "tests/test_conformance_gpio.py::test_checker_detects_missing_idle_restore[END]",
+    "tests/test_conformance_gpio.py::test_checker_detects_missing_idle_restore[RELEASE-ONE]"
+   ],
+   "note": "read changes no mode / pull / log; plan release and session end return the line to its idle"
+  },
+  "fixture:2:1": {
+   "text": "| 0x10 | configure | baud(u32)、[TLV] | b",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_configure_row",
+    "tests/test_conformance_uart.py::test_uart_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_uart.py::test_wrong_wire_results_detected[CONFIGURE-FAIL]"
+   ],
+   "note": "op 0x10 baud -> actual baud (0 when failed), lock"
+  },
+  "fixture:2:2": {
+   "text": "| 0x11 | read | from(u8)、arg(u64)、max(u1",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_read_row",
+    "tests/test_conformance_uart.py::test_uart_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_uart.py::test_wrong_wire_results_detected[READ]"
+   ],
+   "note": "op 0x11 from arg max -> start flags len data, lock-free"
+  },
+  "fixture:2:3": {
+   "text": "| 0x12 | marks | from_serial(u32) | more",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_marks_row",
+    "tests/test_conformance_uart.py::test_uart_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_uart.py::test_wrong_wire_results_detected[MARKS]"
+   ],
+   "note": "op 0x12 from_serial -> more count marks (22 bytes), lock-free"
+  },
+  "fixture:2:4": {
+   "text": "| 0x13 | clear | — | — | 必要 | 任意 |",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_clear_row",
+    "tests/test_conformance_uart.py::test_uart_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_uart.py::test_wrong_wire_results_detected[CLEAR]"
+   ],
+   "note": "op 0x13, empty, lock"
+  },
+  "fixture:2:5": {
+   "text": "| 0x14 | mark | value(u8) | — | 必要 | 任意。",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_mark_row",
+    "tests/test_conformance_uart.py::test_uart_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.fixture.uart-extra26-False]"
+   ],
+   "note": "op 0x14 value, empty, lock; mark implies marks"
+  },
+  "fixture:2:6": {
+   "text": "| 0x15 | write | count(u16)、data | accep",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_write_row",
+    "tests/test_conformance_uart.py::test_uart_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_uart.py::test_wrong_wire_results_detected[WRITE]",
+    "tests/test_conformance_uart.py::test_uart_write_replay_cannot_requeue_bytes"
+   ],
+   "note": "op 0x15 count data -> accepted, lock"
+  },
+  "fixture:2:7": {
+   "text": "| 0x16 | status | — | baud(u32、実際の値)、for",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_status_row",
+    "tests/test_conformance_uart.py::test_uart_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_uart.py::test_wrong_wire_results_detected[DEFAULT]"
+   ],
+   "note": "op 0x16 -> baud format, lock-free"
+  },
+  "fixture:2:8": {
+   "text": "- op 0x11〜0x15 は [共通部品](oep-if-common.ja",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_stream_ops_are_the_console_numbers_without_the_stream",
+    "tests/test_conformance_uart_stream.py::test_uart_common_stream"
+   ],
+   "mutants": [
+    "tests/test_conformance_uart_stream.py::test_common_wrong_result_detected[SELECTORS]"
+   ],
+   "note": "read..write carry the console's numbers and common §1's form without the stream u32"
+  },
+  "fixture:2:9": {
+   "text": "- 任意opは提供するときだけopsに立てる。不在opはunknown_oper",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_optional_ops_left_out_are_unknown_and_from_a_mark_needs_marks"
+   ],
+   "mutants": [],
+   "note": "optional ops left out of ops are unknown_operation; read from 3 without marks unsupported 0x00; no features tag"
+  },
+  "fixture:2:10": {
+   "text": "- writeを提供しないfnは、planのTX roleを受け付けず、そのro",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_without_write_takes_no_tx_role",
+    "tests/test_conformance_uart.py::test_uart_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_uart.py::test_wrong_wire_results_detected[RX-ONLY]",
+    "tests/test_conformance_uart.py::test_wrong_wire_results_detected[TX-ONLY]"
+   ],
+   "note": "no write: plan TX refused unsupported, no TX role declared; with write: no TX / not configured -> unavailable 6, TX-only receives nothing"
+  },
+  "fixture:2:11": {
+   "text": "- RXもTXもない、plan未作成の状態では、提供する上記opの有効な要求をu",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_without_a_plan_is_unavailable_6_after_the_header_and_format_rules",
+    "tests/test_conformance_uart.py::test_uart_checks",
+    "tests/test_interfaces.py::test_uart_stream_is_the_plans_and_its_position_never_goes_back"
+   ],
+   "mutants": [
+    "tests/test_conformance_uart.py::test_wrong_wire_results_detected[CONFIGURE]"
+   ],
+   "note": "no plan: every op's valid request unavailable 6; session_required / malformed / unsupported first"
+  },
+  "fixture:2:12": {
+   "text": "- configure の TLV 0x01 format（u8）: bit0-",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_format_bits_default_and_baud_refusals",
+    "tests/test_interfaces.py::test_uart_configure_format_and_reads_that_do_not_consume",
+    "tests/test_conformance_uart.py::test_uart_checks"
+   ],
+   "mutants": [
+    "tests/test_trace_fixture.py::test_uart_checker_catches_baud_0_answered_unsupported",
+    "tests/test_conformance_uart.py::test_wrong_wire_results_detected[FORMAT]",
+    "tests/test_conformance_uart.py::test_wrong_wire_results_detected[BAUD-BOUNDARY]"
+   ],
+   "note": "format bits, default 8N1, undeclared -> unsupported with the tag as received, 5 % boundary -> unsupported 0x00, baud 0 malformed"
+  },
+  "fixture:2:13": {
+   "text": "- configureは割り当てたRX/TXを、決めた実際のbaudと指定のfo",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_configure_comes_up_or_fails_back_to_not_configured",
+    "tests/test_conformance_uart.py::test_uart_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_uart.py::test_wrong_wire_results_detected[CONFIGURE-FAIL]"
+   ],
+   "note": "success = running at the actual baud; failure: completed failed baud 0, not configured, RX idle, TX high; unsent TX dropped either way"
+  },
+  "fixture:2:14": {
+   "text": "- **status**（ロック不要）: configure済みなら実際のbau",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_status_is_zero_before_the_first_configure_and_after_a_failed_one",
+    "tests/test_conformance_uart.py::test_uart_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_uart.py::test_wrong_wire_results_detected[DEFAULT]"
+   ],
+   "note": "status lock-free: actual baud/format; 0 0 before the first configure and after a failed one"
+  },
+  "fixture:2:15": {
+   "text": "- **ストリームはplanが作り、planを解くと消える**。セッションのco",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_stream_belongs_to_the_plan_and_a_configure_keeps_what_it_holds",
+    "tests/test_interfaces.py::test_uart_stream_is_the_plans_and_its_position_never_goes_back",
+    "tests/test_conformance_uart.py::test_uart_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_uart.py::test_reconfigure_cannot_clear_received_data",
+    "tests/test_conformance_uart.py::test_uart_counter_reset_on_close_detected[RECREATE]",
+    "tests/test_conformance_uart.py::test_uart_counter_reset_on_close_detected[END]"
+   ],
+   "note": "stream made by the plan, gone with it with the configure; receive only once configured; configure keeps data/marks/position/serial; marks lost on errors (checker MARKS)"
+  },
+  "fixture:2:16": {
+   "text": "- configure済みの割り当て変更はunavailable（cause 6",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_configured_reassignment_is_refused_and_an_unconfigured_one_starts_afresh",
+    "tests/test_conformance_uart.py::test_uart_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_uart.py::test_uart_counter_reset_on_close_detected[REPLACE]",
+    "tests/test_conformance_uart.py::test_wrong_wire_results_detected[REPLACE]"
+   ],
+   "note": "configured reassignment unavailable 6; unconfigured one drops buffer and marks, keeps position/serial, stays unconfigured"
+  },
+  "fixture:2:17": {
+   "text": "- **TX の線は、plan で割り当てている間（configure の前も）",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_tx_idles_high_from_the_plan_and_its_release_frees_the_line",
+    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_o13_taking_a_plan_changes_no_pin_and_an_analog_plan_on_an_output_idle_is_refused",
+    "tests/test_conformance_uart.py::test_uart_checks"
+   ],
+   "mutants": [
+    "tests/test_conformance_uart.py::test_wrong_wire_results_detected[DEFAULT]"
+   ],
+   "note": "TX high from the plan (before configure), release returns it to its idle (an idle pull-up item)"
+  },
+  "fixture:2:18": {
+   "text": "- 扱える format は describe の formats（tag 0x",
+   "verify": [
+    "tests/test_trace_fixture.py::test_uart_formats_are_declared_and_8n1_is_one",
+    "tests/test_conformance_uart.py::test_uart_metadata"
+   ],
+   "mutants": [
+    "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[11-64-None]",
+    "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[11-64-\\x01\\x04]",
+    "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[11-64-\\x02\\x00\\x02]"
+   ],
+   "note": "formats tag 0x40 n x u8 with 0 on every profile; undeclared format unsupported"
+  },
+  "fixture:3:1": {
+   "text": "| 0x10 | configure | address(u8、7 ビット)、[",
+   "verify": [
+    "tests/test_trace_fixture.py::test_i2c_op_rows[configure]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_i2c.py::test_bad_wire_results_detected[SESSION]"
+   ],
+   "note": "configure op 0x10 address, empty answer, lock"
+  },
+  "fixture:3:2": {
+   "text": "| 0x11 | read_rx | — | pending(u8)、count",
+   "verify": [
+    "tests/test_trace_fixture.py::test_i2c_op_rows[read_rx]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_i2c.py::test_bad_wire_results_detected[SESSION]"
+   ],
+   "note": "read_rx op 0x11 -> pending count data + ns TLV, lock"
+  },
+  "fixture:3:3": {
+   "text": "| 0x12 | preload_tx | count(u16)、data | ",
+   "verify": [
+    "tests/test_trace_fixture.py::test_i2c_op_rows[preload_tx]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_i2c.py::test_bad_wire_results_detected[SESSION]"
+   ],
+   "note": "preload_tx op 0x12 count data, empty answer, lock"
+  },
+  "fixture:3:4": {
+   "text": "| 0x13 | status | — | state(u8)、queued(u",
+   "verify": [
+    "tests/test_trace_fixture.py::test_i2c_op_rows[status]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_i2c.py::test_bad_wire_results_detected[SESSION]"
+   ],
+   "note": "status op 0x13 -> state queued rx_frames tx_slots errors, lock-free"
+  },
+  "fixture:3:5": {
+   "text": "| 0x14 | stretch | stretch_us(u32) | — |",
+   "verify": [
+    "tests/test_trace_fixture.py::test_i2c_op_rows[stretch]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_i2c.py::test_bad_wire_results_detected[SESSION]"
+   ],
+   "note": "stretch op 0x14 stretch_us, empty answer, lock"
+  },
+  "fixture:3:6": {
+   "text": "- このfnのplanはrole 1と2をちょうど1つずつ、別々のchannel",
+   "verify": [
+    "tests/test_virtual_bench_targets.py::test_i2c_plan_roles_and_channels",
+    "tests/test_trace_fixture.py::test_i2c_running_assignment_change_is_6_and_release_or_replace_starts_afresh",
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_i2c.py::test_bad_wire_results_detected[PLAN-SHAPE]",
+    "tests/test_conformance_i2c.py::test_bad_wire_results_detected[RUNNING-PLAN]",
+    "tests/test_conformance_i2c.py::test_side_effect_faults_detected[keep_plan-RELEASE]"
+   ],
+   "note": "SDA and SCL once each on different channels (else unsupported 0x90); running change unavailable 6; release / state-0 replacement start afresh (stretch 0)"
+  },
+  "fixture:3:7": {
+   "text": "- SDA と SCL は**オープンドレインだけ**で駆動する: probe ",
+   "verify": [
+    "tests/test_trace_fixture.py::test_i2c_drives_open_drain_only_with_its_pullups_as_declared[False]",
+    "tests/test_trace_fixture.py::test_i2c_drives_open_drain_only_with_its_pullups_as_declared[True]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_i2c.py::test_side_effect_faults_detected[push_high-PULLUPS]"
+   ],
+   "note": "SDA/SCL only open-drain (pin_state; checker PULLUPS never sees a high drive)"
+  },
+  "fixture:3:8": {
+   "text": "- **内部のプルアップ**: configure されている間 SDA / S",
+   "verify": [
+    "tests/test_trace_fixture.py::test_i2c_drives_open_drain_only_with_its_pullups_as_declared[False]",
+    "tests/test_trace_fixture.py::test_i2c_drives_open_drain_only_with_its_pullups_as_declared[True]",
+    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_3_i2c_target_open_drain_and_declared_pullups",
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_i2c.py::test_bad_wire_results_detected[PULLUPS]"
+   ],
+   "note": "own pull-ups exactly when features bit2 is declared"
+  },
+  "fixture:3:9": {
+   "text": "- state 0ではどのアドレスにもACKせず、I2C機能としての駆動・内部プ",
+   "verify": [
+    "tests/test_trace_fixture.py::test_i2c_state_0_acks_nothing_and_leaves_the_lines_idle",
+    "tests/test_virtual_bench_targets.py::test_i2c_refusals_before_configure_and_in_order",
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_i2c.py::test_bad_wire_results_detected[STATE0]"
+   ],
+   "note": "state 0: no ACK, lines at their idle (an idle pull-up is the idle's), also after a failed configure"
+  },
+  "fixture:3:10": {
+   "text": "- configure は target を作り直す（積んだフレーム、置き場、r",
+   "verify": [
+    "tests/test_trace_fixture.py::test_i2c_configure_makes_the_target_anew_and_refuses_in_order",
+    "tests/test_virtual_bench_targets.py::test_i2c_refusals_before_configure_and_in_order",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_t5_i2c_target_refuses_the_reserved_addresses[0-11]",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_t5_i2c_target_refuses_the_reserved_addresses[128-3]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_i2c.py::test_side_effect_faults_detected[keep_config-RECONFIGURE]",
+    "tests/test_conformance_i2c.py::test_bad_wire_results_detected[ADDRESS]"
+   ],
+   "note": "configure renews queue/slots/counters, keeps stretch; no plan unavailable 6; > 0x7F malformed; reserved addresses unsupported 0x00"
+  },
+  "fixture:3:11": {
+   "text": "- configureの成功はstate 1となってから返す。初期化に失敗したら",
+   "verify": [
+    "tests/test_trace_fixture.py::test_i2c_failed_configure_goes_back_to_state_0_keeping_the_stretch",
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_i2c.py::test_bad_wire_results_detected[CONFIGURE-FAIL]"
+   ],
+   "note": "success in state 1; failure: state 0, queue/slots empty, counters 0, stretch kept, completed failed no fixed part"
+  },
+  "fixture:3:12": {
+   "text": "- **書き込み**: controller の書き込みは 1 回のトランザクシ",
+   "verify": [
+    "tests/test_virtual_bench_targets.py::test_i2c_writes_are_frames_cut_at_max_length_and_overflow",
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_i2c.py::test_side_effect_faults_detected[empty_counted-EMPTY]",
+    "tests/test_conformance_i2c.py::test_side_effect_faults_detected[no_error-TRUNCATE]",
+    "tests/test_conformance_i2c.py::test_side_effect_faults_detected[drop_ack-TRUNCATE]",
+    "tests/test_conformance_i2c.py::test_side_effect_faults_detected[wrong_timestamp-WRITE]"
+   ],
+   "note": "one write = one frame, ACK each byte, cut at max_length with errors + 1, address-only write counts nothing"
+  },
+  "fixture:3:13": {
+   "text": "- read_rx は、いちばん古いフレームを取り出して返す（無ければ coun",
+   "verify": [
+    "tests/test_virtual_bench_targets.py::test_i2c_writes_are_frames_cut_at_max_length_and_overflow",
+    "tests/test_virtual_bench_targets.py::test_i2c_refusals_before_configure_and_in_order",
+    "tests/test_trace_fixture.py::test_i2c_counts_stop_at_their_limits_and_go_with_configure_or_release",
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_i2c.py::test_side_effect_faults_detected[rx_lifo-READ-FIFO]",
+    "tests/test_conformance_i2c.py::test_side_effect_faults_detected[double_error-DOUBLE-ERROR]",
+    "tests/test_conformance_i2c.py::test_cached_reply_cannot_repeat_side_effects[REPLAY-RX]"
+   ],
+   "note": "read_rx oldest first, count 0 when empty, state 0 unavailable 6, pending stops at 255, a full queue drops the new frame (errors + 1 once a write)"
+  },
+  "fixture:3:14": {
+   "text": "- **読み出し**: controller の読み出しには、preload_t",
+   "verify": [
+    "tests/test_virtual_bench_targets.py::test_i2c_preload_slots_answer_reads",
+    "tests/test_virtual_bench_targets.py::test_i2c_refusals_before_configure_and_in_order",
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_i2c.py::test_side_effect_faults_detected[tx_lifo-PRELOAD]",
+    "tests/test_conformance_i2c.py::test_side_effect_faults_detected[keep_slot-READ-LENGTH]",
+    "tests/test_conformance_i2c.py::test_cached_reply_cannot_repeat_side_effects[REPLAY-TX]"
+   ],
+   "note": "reads answered from slots in order, 0xFF past / without; count 1..max_length; queue_depth slots then unavailable 2; state 0 unavailable 6"
+  },
+  "fixture:3:15": {
+   "text": "- preload_tx の success は、置いたデータがその後に始まる ",
+   "verify": [
+    "tests/test_trace_fixture.py::test_i2c_preload_is_ready_for_the_next_read_once_answered",
+    "tests/test_virtual_bench_targets.py::test_i2c_preload_slots_answer_reads",
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_i2c.py::test_bad_wire_results_detected[PRELOAD]"
+   ],
+   "note": "a read after preload_tx's success is answered from it"
+  },
+  "fixture:3:16": {
+   "text": "- status: state 0 未設定、1 動いている。queued は積ん",
+   "verify": [
+    "tests/test_trace_fixture.py::test_i2c_counts_stop_at_their_limits_and_go_with_configure_or_release",
+    "tests/test_virtual_bench_targets.py::test_i2c_preload_slots_answer_reads",
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_i2c.py::test_bad_wire_results_detected[COUNTS]",
+    "tests/test_conformance_i2c.py::test_side_effect_faults_detected[keep_config-RECONFIGURE]"
+   ],
+   "note": "status fields; queued stops at 255; rx_frames/errors saturate and go to 0 on configure / release"
+  },
+  "fixture:3:17": {
+   "text": "- stretch は、受けたデータの byte ごとに、8 bit 目の後、A",
+   "verify": [
+    "tests/test_virtual_bench_targets.py::test_i2c_stretch_and_plan_release",
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_i2c.py::test_side_effect_faults_detected[stretch_address-STRETCH]"
+   ],
+   "note": "stretch in any state, kept by configure, > max_stretch_us unsupported; checker: data bytes and read address only, never the write address"
+  },
+  "fixture:3:18": {
+   "text": "- describe: ops、role_channels、max_length",
+   "verify": [
+    "tests/test_trace_fixture.py::test_i2c_describe_declares_its_limits",
+    "tests/test_virtual_bench_targets.py::test_i2c_declarations",
+    "tests/test_conformance_i2c.py::test_metadata"
+   ],
+   "mutants": [
+    "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[12-65-None]",
+    "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[12-65-\\x00\\x00\\x00\\x00]",
+    "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[12-64-None]"
+   ],
+   "note": "describe: ops, role_channels, max_length, max_clock_hz, features bit2, queue_depth 0x40 u8, max_stretch_us 0x41 >= 1 with stretch"
+  },
+  "fixture:3:19": {
+   "text": "- max_lengthは、preload_txの要求（見出し10 + coun",
+   "verify": [
+    "tests/test_trace_fixture.py::test_target_max_length_fits_the_frame[esp32_v003_64]",
+    "tests/test_trace_fixture.py::test_target_max_length_fits_the_frame[p4_x035]",
+    "tests/test_conformance_fixture_metadata.py::test_route_frame_exact_boundary[12-52]"
+   ],
+   "mutants": [
+    "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[12-3-5\\x00]"
+   ],
+   "note": "12 + max_length fits max_frame on every profile; the checker's exact boundary"
+  },
+  "fixture:4:1": {
+   "text": "| 0x10 | configure | mode(u8: SPI の mode",
+   "verify": [
+    "tests/test_trace_fixture.py::test_spi_op_rows[configure]",
+    "tests/test_conformance_spi.py::test_spi_contract[True]",
+    "tests/test_conformance_spi.py::test_spi_contract[False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_spi.py::test_wire_faults_detected[SESSION]"
+   ],
+   "note": "configure op 0x10 mode bit_order, empty answer, lock"
+  },
+  "fixture:4:2": {
+   "text": "| 0x11 | arm | length(u16)、count(u16)、tx",
+   "verify": [
+    "tests/test_trace_fixture.py::test_spi_op_rows[arm]",
+    "tests/test_conformance_spi.py::test_spi_contract[True]",
+    "tests/test_conformance_spi.py::test_spi_contract[False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_spi.py::test_wire_faults_detected[SESSION]"
+   ],
+   "note": "arm op 0x11 length count tx, empty answer, lock"
+  },
+  "fixture:4:3": {
+   "text": "| 0x12 | read_rx | — | pending(u8)、bits(",
+   "verify": [
+    "tests/test_trace_fixture.py::test_spi_op_rows[read_rx]",
+    "tests/test_conformance_spi.py::test_spi_contract[True]",
+    "tests/test_conformance_spi.py::test_spi_contract[False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_spi.py::test_wire_faults_detected[SESSION]"
+   ],
+   "note": "read_rx op 0x12 -> pending bits count data + ns TLV, lock"
+  },
+  "fixture:4:4": {
+   "text": "| 0x13 | status | — | state(u8)、mode(u8)",
+   "verify": [
+    "tests/test_trace_fixture.py::test_spi_op_rows[status]",
+    "tests/test_conformance_spi.py::test_spi_contract[True]",
+    "tests/test_conformance_spi.py::test_spi_contract[False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_spi.py::test_wire_faults_detected[SESSION]"
+   ],
+   "note": "status op 0x13 -> state mode bit_order armed queued transactions errors, lock-free"
+  },
+  "fixture:4:5": {
+   "text": "- **SPI の mode** = CPOL × 2 + CPHA。CPOL ",
+   "verify": [
+    "tests/test_conformance_spi.py::test_spi_contract[True]",
+    "tests/test_conformance_spi.py::test_spi_contract[False]",
+    "tests/test_spec_2c6d18d.py::test_spi_wire_bits_pack_msb_or_lsb_first_with_a_partial_last_byte[0-c0b0]",
+    "tests/test_spec_2c6d18d.py::test_spi_wire_bits_pack_msb_or_lsb_first_with_a_partial_last_byte[1-030d]"
+   ],
+   "mutants": [
+    "tests/test_conformance_spi.py::test_side_effect_faults_detected[wrong_order-MODES]",
+    "tests/test_conformance_spi.py::test_side_effect_faults_detected[wrong_phase-MODES]",
+    "tests/test_conformance_spi.py::test_side_effect_faults_detected[wrong_drive-MODES]"
+   ],
+   "note": "checker MODES: CPOL/CPHA sampling edge and bit order for modes 0-3 on the logical model; client wire-bit packing"
+  },
+  "fixture:4:6": {
+   "text": "- このfnのplanはrole 1〜4をちょうど1つずつ、別々のchannel",
+   "verify": [
+    "tests/test_virtual_bench_targets.py::test_spi_plan_holds_each_role_once",
+    "tests/test_virtual_bench_targets.py::test_spi_channel_groups_match_exactly",
+    "tests/test_trace_fixture.py::test_spi_running_assignment_change_is_6_and_release_starts_afresh",
+    "tests/test_conformance_spi.py::test_spi_contract[True]",
+    "tests/test_conformance_spi.py::test_spi_contract[False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_spi.py::test_wire_faults_detected[PLAN-SHAPE]",
+    "tests/test_conformance_spi.py::test_wire_faults_detected[RUNNING-PLAN]",
+    "tests/test_conformance_spi.py::test_side_effect_faults_detected[lost_plan_reset-RELEASE]"
+   ],
+   "note": "roles 1-4 once each on different channels (else unsupported 0x90); running change unavailable 6; release / state-0 replacement reset"
+  },
+  "fixture:4:7": {
+   "text": "- configure は target を作り直す（積んだ転送、待ち、tran",
+   "verify": [
+    "tests/test_trace_fixture.py::test_spi_configure_refuses_a_mode_it_does_not_declare_and_changes_nothing",
+    "tests/test_virtual_bench_targets.py::test_spi_refusals_in_order",
+    "tests/test_virtual_bench_targets.py::test_spi_armed_consumed_unarmed_and_overflow",
+    "tests/test_conformance_spi.py::test_spi_contract[True]",
+    "tests/test_conformance_spi.py::test_spi_contract[False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_spi.py::test_side_effect_faults_detected[keep_config-RECONFIGURE]",
+    "tests/test_conformance_spi.py::test_wire_faults_detected[FORMAT]",
+    "tests/test_conformance_spi.py::test_wire_faults_detected[LSB-FEATURE]"
+   ],
+   "note": "configure renews; no plan unavailable 6; mode > 3 / bit_order > 1 malformed; LSB without bit0 and an undeclared mode unsupported 0x00, nothing changed"
+  },
+  "fixture:4:8": {
+   "text": "- configureの成功はstate 1となってから返す。初期化に失敗したら",
+   "verify": [
+    "tests/test_trace_fixture.py::test_spi_failed_configure_goes_back_to_state_0_and_the_idle_lines",
+    "tests/test_conformance_spi.py::test_spi_contract[True]",
+    "tests/test_conformance_spi.py::test_spi_contract[False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_spi.py::test_wire_faults_detected[CONFIGURE-FAIL]"
+   ],
+   "note": "failure: state 0, fields 0, queue and arm gone, lines idle, completed failed no fixed part; state-0 transfers not counted"
+  },
+  "fixture:4:9": {
+   "text": "- state 0（未設定）への arm は rejected unavaila",
+   "verify": [
+    "tests/test_trace_fixture.py::test_spi_arm_in_state_0_is_6_and_changes_nothing",
+    "tests/test_virtual_bench_targets.py::test_spi_refusals_in_order",
+    "tests/test_conformance_spi.py::test_spi_contract[True]",
+    "tests/test_conformance_spi.py::test_spi_contract[False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_spi.py::test_state0_arm_refusal_faults[True-arms]",
+    "tests/test_conformance_spi.py::test_state0_arm_refusal_faults[False-failed]",
+    "tests/test_conformance_spi.py::test_state0_arm_refusal_faults[True-wrong_cause]"
+   ],
+   "note": "arm in state 0 unavailable 6, nothing armed"
+  },
+  "fixture:4:10": {
+   "text": "- arm は次の 1 回の転送を待つ: length は受ける最大 byte（",
+   "verify": [
+    "tests/test_virtual_bench_targets.py::test_spi_refusals_in_order",
+    "tests/test_virtual_bench_targets.py::test_spi_armed_consumed_unarmed_and_overflow",
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_t6_spi_arm_count_over_length_is_malformed",
+    "tests/test_conformance_spi.py::test_spi_contract[True]",
+    "tests/test_conformance_spi.py::test_spi_contract[False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_spi.py::test_side_effect_faults_detected[keep_arm-ZERO-BITS]",
+    "tests/test_conformance_spi.py::test_side_effect_faults_detected[discard_arm-ZERO-BITS]",
+    "tests/test_conformance_spi.py::test_side_effect_faults_detected[no_unarmed_error-UNARMED]",
+    "tests/test_conformance_spi.py::test_cached_reply_cannot_repeat_side_effects[REPLAY-ARM]"
+   ],
+   "note": "length 0 malformed / > max_length unsupported, count > length malformed, one arm at a time, unarmed transfer counts and errors, MISO 0 outside tx, 0-bit CS no transfer"
+  },
+  "fixture:4:11": {
+   "text": "- arm の success は、次の転送に tx を出せる状態になってから返",
+   "verify": [
+    "tests/test_trace_fixture.py::test_spi_arm_that_cannot_get_miso_ready_fails_and_arms_nothing",
+    "tests/test_conformance_spi.py::test_spi_contract[True]",
+    "tests/test_conformance_spi.py::test_spi_contract[False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_spi.py::test_side_effect_faults_detected[not_ready_arms-ARM-READY]"
+   ],
+   "note": "arm success = tx goes out on the next transfer; cannot get ready: completed failed, nothing armed"
+  },
+  "fixture:4:12": {
+   "text": "- **state 1の間、probe は CS が有効な間だけ MISO を駆",
+   "verify": [
+    "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_2_spi_target_drives_miso_only_while_cs_is_active",
+    "tests/test_trace_fixture.py::test_spi_failed_configure_goes_back_to_state_0_and_the_idle_lines",
+    "tests/test_conformance_spi.py::test_spi_contract[True]",
+    "tests/test_conformance_spi.py::test_spi_contract[False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_spi.py::test_side_effect_faults_detected[inactive_drive-MISO-GATE]",
+    "tests/test_conformance_spi.py::test_side_effect_faults_detected[input_output-MISO-GATE]",
+    "tests/test_conformance_spi.py::test_active_cs_release_must_restore_miso[ACTIVE-RELEASE]"
+   ],
+   "note": "state 1: MISO driven only while CS active, SCK/MOSI/CS inputs; state 0 idle"
+  },
+  "fixture:4:13": {
+   "text": "- 転送が CS で終わると、MOSI のバイトと、実際に来たビット数（bits",
+   "verify": [
+    "tests/test_virtual_bench_targets.py::test_spi_armed_consumed_unarmed_and_overflow",
+    "tests/test_spec_2c6d18d.py::test_the_virtual_bench_clears_the_bits_that_did_not_come[0]",
+    "tests/test_spec_2c6d18d.py::test_the_virtual_bench_clears_the_bits_that_did_not_come[1]",
+    "tests/test_trace_fixture.py::test_spi_counts_stop_at_their_limits_and_go_with_configure_or_release",
+    "tests/test_conformance_spi.py::test_spi_contract[True]",
+    "tests/test_conformance_spi.py::test_spi_contract[False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_spi.py::test_side_effect_faults_detected[truncate_bits-TRUNCATE]",
+    "tests/test_conformance_spi.py::test_side_effect_faults_detected[dirty_partial-PARTIAL]",
+    "tests/test_conformance_spi.py::test_side_effect_faults_detected[rx_lifo-FIFO]",
+    "tests/test_conformance_spi.py::test_side_effect_faults_detected[double_error-DOUBLE-ERROR]",
+    "tests/test_conformance_spi.py::test_side_effect_faults_detected[wrong_timestamp-TIMESTAMP]"
+   ],
+   "note": "MOSI bytes and bits queued (bits saturate), packing per bit order with missing bits 0, length cut + error, full queue drop + error, oldest first, empty read zeros without ns"
+  },
+  "fixture:4:14": {
+   "text": "- status: state 0 未設定、1 動いている。armed は転送を",
+   "verify": [
+    "tests/test_trace_fixture.py::test_spi_counts_stop_at_their_limits_and_go_with_configure_or_release",
+    "tests/test_virtual_bench_targets.py::test_spi_armed_consumed_unarmed_and_overflow",
+    "tests/test_conformance_spi.py::test_spi_contract[True]",
+    "tests/test_conformance_spi.py::test_spi_contract[False]"
+   ],
+   "mutants": [
+    "tests/test_conformance_spi.py::test_wire_faults_detected[COUNTS]",
+    "tests/test_conformance_spi.py::test_side_effect_faults_detected[keep_config-RECONFIGURE]"
+   ],
+   "note": "status fields; queued stops at 255; transactions/errors saturate and go to 0 on configure / release"
+  },
+  "fixture:4:15": {
+   "text": "- describe: ops、role_channels、max_length",
+   "verify": [
+    "tests/test_trace_fixture.py::test_spi_describe_declares_modes_and_cs_setup[p4_x035-0]",
+    "tests/test_trace_fixture.py::test_spi_describe_declares_modes_and_cs_setup[esp32_v003-4000]",
+    "tests/test_conformance_spi.py::test_metadata"
+   ],
+   "mutants": [
+    "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[13-64-None]",
+    "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[13-67-\\x01]"
+   ],
+   "note": "describe: ops, role_channels/channel_group, max_length, max_clock_hz, features bit0, queue_depth 0x40, modes 0x41 (1..15), cs_setup_ns 0x43"
+  },
+  "fixture:4:16": {
+   "text": "- max_lengthは、最大長のarm要求（見出し10 + length 2",
+   "verify": [
+    "tests/test_trace_fixture.py::test_target_max_length_fits_the_frame[esp32_v003_64]",
+    "tests/test_trace_fixture.py::test_target_max_length_fits_the_frame[esp32_v003]",
+    "tests/test_conformance_fixture_metadata.py::test_route_frame_exact_boundary[13-50]"
+   ],
+   "mutants": [
+    "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[13-3-3\\x00]"
+   ],
+   "note": "14 + max_length fits max_frame on every profile; the checker's exact boundary"
+  },
+  "fixture:4:17": {
+   "text": "- **cs_setup_ns**（describe の tag 0x43、u3",
+   "verify": [
+    "tests/test_trace_fixture.py::test_spi_describe_declares_modes_and_cs_setup[esp32_v003-4000]",
+    "tests/test_trace_fixture.py::test_spi_describe_declares_modes_and_cs_setup[p4_x035-0]",
+    "tests/test_conformance_spi.py::test_optional_metadata_can_be_absent[setup]",
+    "tests/test_conformance_spi.py::test_metadata"
+   ],
+   "mutants": [
+    "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[13-67-\\x01]"
+   ],
+   "note": "cs_setup_ns tag 0x43 u32 declared or left out (= 0), shown by the client; the ns timing itself and the concurrency refusal are not modelled"
+  },
+  "fixture:5:1": {
+   "text": "| インターフェース | 仕様 | 使う部分 |",
+   "excluded": "informative: the heading row of the reference table (インターフェース / 仕様 / 使う部分)"
+  },
+  "fixture:5:2": {
+   "text": "| `oep.fixture.i2c-target` | I2C-bus spe",
+   "excluded": "informative: reference list (NXP UM10204 for i2c-target); the reserved addresses it names are the rule of fixture:3:10"
+  },
+  "fixture:5:3": {
+   "text": "| `oep.fixture.spi-target` | 無し: SPI には正",
+   "excluded": "informative: reference list (SPI has no formal standard; §4 defines mode, CS and bit order)"
+  },
+  "fixture:5:4": {
+   "text": "| `oep.fixture.uart` | 無し | configure の ",
+   "excluded": "informative: reference list (UART line format follows configure's format, §2); the electrical bit timing of the wire is not modelled"
+  }
+ }
+}

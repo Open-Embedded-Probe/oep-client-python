@@ -1,0 +1,444 @@
+"""oep.wire.rvswd / swio / swd, oep.target.riscv-dm (oep-spec a09fa45 interfaces/oep-if-debug.ja.md) on the virtual
+bench and through the client: the rules tests/test_debug_attach.py, tests/test_interfaces.py, tests/test_target_parts.py
+and the debug checkers leave to the trace - the wires' mandatory ops and the lock, max_connections, max_speed against
+min_clock_hz, the target_id values that mean none, detach and a probe restart, the connections list's order and pages,
+attach method 1 and the pending havereset, swio's fixed speed, resume's answer, the dmi step kinds, and the client's
+abstract command sequences in one dmi request."""
+
+import struct
+
+import pytest
+
+from oep_client import catalog, console, core, endpoint, riscv, virtual_bench, host as h, message as m, registry as reg
+
+from test_virtual_bench_spec import Clock, Host
+
+W = reg.WIRE_RVSWD.op
+RV = reg.TARGET_RISCV_DM.op
+STEP = reg.TARGET_RISCV_DM.enum["dmi_step"]
+UNA = reg.CORE.tlv["unavailable_payload"]
+T_ATTACH = reg.WIRE_RVSWD.tlv["attach"]
+T_SCAN = reg.WIRE_RVSWD.tlv["scan"]
+T_ANSWER = reg.WIRE_RVSWD.tlv["attach_answer"]
+FLAGS = reg.WIRE_RVSWD.enum["attach_flags"]
+WIRES = ("oep.wire.rvswd", "oep.wire.swio", "oep.wire.swd")
+
+
+def bench(probe=None):
+    ep = endpoint.Endpoint(probe or virtual_bench.p4_bench(), Clock())
+    hv = Host(ep)
+    assert hv.open().succeeded
+    return ep, hv
+
+
+def fixed(pair, hz=4_000_000, method=0):
+    return struct.pack("<BHHI", method, *pair, hz)
+
+
+def attach(hv, pair, *tlvs, hz=4_000_000, method=0, fn=1):
+    r = hv.raw(fn, W["attach"], fixed(pair, hz, method) + b"".join(tlvs))
+    assert r.succeeded, r.describe()
+    return r
+
+
+def rows(payload):
+    """connections' answer: more, count, entries (connection, swdio, swclk, speed_hz, tid_scheme, tid)."""
+    rd = m.Reader(payload)
+    more, count = rd.take("BB")
+    out = []
+    for _ in range(count):
+        conn, swdio, swclk, speed, scheme, n = rd.take("IHHIBB")
+        out.append((conn, (swdio, swclk), speed, scheme, rd.bytes(n)))
+    return more, out
+
+
+def wire_with(probe, name, change):
+    """`probe` with the describe TLVs of its `name` fn passed through `change` (a list of TLVs -> a list)."""
+    return virtual_bench._again(probe, [virtual_bench._with(o, change(list(o.tlvs))) if o.name == name else o
+                                        for o in probe.offered])
+
+
+# ---- §0: the wires' ops; the target interfaces before an attach; the lock ---------------------------------------
+
+@pytest.mark.parametrize("profile", sorted(virtual_bench.PROFILES))
+def test_every_wire_offers_attach_detach_connections_and_declares_scan_in_its_ops(profile):
+    """debug §0 rule 1: scan 0x10, attach 0x11, detach 0x12, connections 0x13; attach / detach / connections mandatory,
+    scan optional and declared in ops (core §7.4); the target interfaces are listed before any attach."""
+    ep, hv = bench(virtual_bench.PROFILES[profile]())
+    assert (W["scan"], W["attach"], W["detach"], W["connections"]) == (0x10, 0x11, 0x12, 0x13)
+    for name in WIRES:
+        assert reg.INTERFACES[name].op == W                        # the three wires share their numbers
+    hst = h.Host(lambda b: ep.handle(b, 1))
+    names = {e.name for e in core.list_entries(hst)}
+    wires = [fn for fn, n in ep.names.items() if n in WIRES]
+    assert wires and "oep.target.riscv-dm" in names and not ep.conns   # listed before an attach
+    for fn in wires:
+        ops = core.ops(hst, fn)
+        assert {W["attach"], W["detach"], W["connections"]} <= ops
+        pair = ep.pairs[fn][0] if ep.pairs.get(fn) else ep._role_pairs(fn)[0]
+        r = hv.raw(fn, W["scan"], b"\x01" + struct.pack("<HH", *pair))
+        assert (r.detail == m.UNKNOWN_OPERATION) == (W["scan"] not in ops)   # scan answers where ops declares it
+
+
+def test_target_ops_need_a_connection_and_every_op_but_connections_the_lock():
+    """debug (the interfaces' rules before §0): a target request naming no connection is no_resource; every op but
+    connections needs the lock (session_required without it); connections answers without it."""
+    ep, hv = bench()
+    r = hv.raw(2, RV["halt"], struct.pack("<I", 0x7777))
+    assert (r.resolution, r.detail) == (m.REJECTED, m.NO_RESOURCE)
+    pair = ep.pairs[1][0]
+    for fn, op, payload in ((1, W["attach"], fixed(pair)), (1, W["scan"], b"\x01" + struct.pack("<HH", *pair)),
+                            (1, W["detach"], struct.pack("<I", 1)), (2, RV["dmi"], struct.pack("<IH", 1, 0))):
+        r = hv.raw(fn, op, payload, session=False)
+        assert (r.resolution, r.detail) == (m.REJECTED, m.SESSION_REQUIRED), (fn, op)
+    assert not ep.conns
+    cid = struct.unpack_from("<I", attach(hv, pair).payload)[0]
+    other = Host(ep, session=0x77)
+    r = other.raw(1, W["connections"], b"\x00", session=False)    # lock-free, while 0x51 holds the lock
+    assert r.succeeded and rows(r.payload)[1][0][0] == cid
+
+
+# ---- §1: max_connections, max_speed, target_id ------------------------------------------------------------------
+
+def test_max_connections_is_a_u8_and_one_when_not_declared():
+    """debug §1: describe's max_connections (tag 0x40, u8) bounds the wire's connections; absent, it is 1 - the next
+    attach is unavailable cause 2 and no connection is closed to make room."""
+    assert virtual_bench.MAX_CONNECTIONS == 0x40
+    ep, hv = bench()
+    (v,) = [v for t, v in ep.decl[1] if t == virtual_bench.MAX_CONNECTIONS]
+    assert len(v) == 1 and v[0] == 2
+    probe = wire_with(virtual_bench.p4_bench(), "oep.wire.rvswd",
+                      lambda tlvs: [t for t in tlvs if t[0] != virtual_bench.MAX_CONNECTIONS])
+    ep, hv = bench(probe)
+    first = struct.unpack_from("<I", attach(hv, ep.pairs[1][0]).payload)[0]
+    r = hv.raw(1, W["attach"], fixed(ep.pairs[1][1]))
+    assert r.detail == m.UNAVAILABLE and dict(m.split_tlvs(r.payload)) == {UNA["cause"]: b"\x02"}
+    assert list(ep.conns) == [first]
+
+
+def test_max_speed_under_min_clock_is_unsupported_attach_fixed_part_scan_the_tag():
+    """debug §1: a max_speed under the wire's min_clock_hz is unsupported - attach with the fixed part's mark 0x00, scan
+    with the max_speed tag as received; 0 is malformed in both; the speed chosen is at most max_speed."""
+    probe = wire_with(virtual_bench.p4_bench(), "oep.wire.rvswd",
+                      lambda tlvs: tlvs + [catalog.u32(catalog.MIN_CLOCK_HZ, 100_000)])
+    ep, hv = bench(probe)
+    pair = ep.pairs[1][0]
+    r = hv.raw(1, W["attach"], fixed(pair, 99_999))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00") and not ep.conns
+    assert hv.raw(1, W["attach"], fixed(pair, 0)).detail == m.MALFORMED
+    for raw in (T_SCAN["max_speed"] | 0x80, T_SCAN["max_speed"]):
+        r = hv.raw(1, W["scan"], b"\x01" + struct.pack("<HH", *pair) + m.tlv(raw, struct.pack("<I", 99_999)))
+        assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([raw]))
+        r = hv.raw(1, W["scan"], b"\x01" + struct.pack("<HH", *pair) + m.tlv(raw, bytes(4)))
+        assert r.detail == m.MALFORMED
+    r = attach(hv, pair, hz=100_000)
+    assert struct.unpack_from("<IIBI", r.payload)[3] <= 100_000
+
+
+@pytest.mark.parametrize("value,reported", [(0, False), (0xFFFFFFFF, False), (0x035E0601, True)])
+def test_target_id_scheme_1_is_not_reported_for_its_none_values(value, reported):
+    """debug §1, §3: attach may report target_id (TLV 0x10: scheme(u8) value); scheme 1 is the u32 at DMI 0x7F, length
+    4, and 0 / 0xFFFFFFFF mean none - not reported, and connections says tid_scheme 0, tid_len 0."""
+    ep, hv = bench()
+    pair = ep.pairs[1][0]
+    ep.targets[(1, pair)].target_id = value
+    r = attach(hv, pair)
+    tail = dict(m.split_tlvs(r.payload[13:]))
+    want = bytes([reg.COMMON.enum["target_id_scheme"]["dmi_7f"]]) + struct.pack("<I", value)
+    assert tail.get(T_ANSWER["target_id"]) == (want if reported else None)
+    (row,) = rows(hv.raw(1, W["connections"], b"\x00", session=False).payload)[1]
+    assert row[3:] == ((1, struct.pack("<I", value)) if reported else (0, b""))
+
+
+# ---- §2: detach, a probe restart -------------------------------------------------------------------------------
+
+def test_detach_answers_nothing_and_releases_the_connection_and_its_streams():
+    """debug §2, §3: detach connection(u32) [TLV] -> no payload; the connection and its console stream go, the pins
+    back to their idle state; a request naming either is no_resource."""
+    ep, hv = bench()
+    pair = ep.pairs[1][0]
+    cid = struct.unpack_from("<I", attach(hv, pair).payload)[0]
+    con = reg.TARGET_CONSOLE
+    sid = struct.unpack_from("<I", hv.ok(3, con.op["open"], struct.pack("<IB", cid, console.Console.DMSEQ)))[0]
+    r = hv.raw(1, W["detach"], struct.pack("<I", cid))
+    assert r.succeeded and r.payload == b""
+    assert not ep.conns and not ep.streams and rows(hv.raw(1, W["connections"], b"\x00", session=False).payload)[1] == []
+    assert all(ep.pin_state(ch).startswith("idle") for ch in pair)
+    assert hv.raw(2, RV["halt"], struct.pack("<I", cid)).detail == m.NO_RESOURCE
+    assert hv.raw(3, con.op["read"], struct.pack("<IBQH", sid, 1, 0, 16), session=False).detail == m.NO_RESOURCE
+
+
+def test_a_probe_restart_drops_the_connections_and_leaves_the_hart_as_it_was():
+    """debug §2's table: a probe restart - the connections and streams are gone (no number names them), the procedure
+    neither resets nor resumes the hart (a halted hart stays halted)."""
+    ep, hv = bench()
+    pair = ep.pairs[1][0]
+    cid = struct.unpack_from("<I", attach(hv, pair, method=1).payload)[0]
+    tg = ep.targets[(1, pair)]
+    assert tg.halted
+    dpc = tg.dpc
+    ep.reboot()
+    assert not ep.conns and not ep.streams and (tg.halted, tg.dpc) == (True, dpc)
+    hv = Host(ep)
+    assert hv.open().succeeded
+    assert rows(hv.raw(1, W["connections"], b"\x00", session=False).payload)[1] == []
+    assert hv.raw(2, RV["halt"], struct.pack("<I", cid)).detail == m.NO_RESOURCE
+
+
+@pytest.mark.parametrize("how", ["detach", "end", "lapse", "force"])
+def test_closing_a_connection_or_ending_the_session_leaves_a_halted_hart_halted(how):
+    """debug §2 (the table, the safety note): detach, end, lease expiry and force release the connection and its stream
+    and touch no hart - one halted stays halted where it was (the probe neither resets nor resumes it)."""
+    clock = Clock()
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), clock)
+    hst = h.Host(lambda b: ep.handle(b, 1))
+    hst.open(1000)
+    pair = ep.pairs[1][0]
+    conn, _ = riscv.Wire(hst).attach(halt=True, pins=pair)
+    sid = console.Console(hst).open(conn, console.Console.DMSEQ)
+    tg = ep.targets[(1, pair)]
+    state = (tg.halted, tg.dpc, tg.haltreq, dict(tg.regs))
+    assert tg.halted
+    if how == "detach":
+        riscv.Wire(hst).detach(conn)
+    elif how == "end":
+        hst.end()
+    elif how == "lapse":
+        clock.t = 5000
+        ep.tick()
+    else:
+        assert Host(ep, session=0x99).open(force=1).succeeded
+    assert conn not in ep.conns and sid not in ep.streams
+    assert (tg.halted, tg.dpc, tg.haltreq, dict(tg.regs)) == state
+
+
+# ---- §2.1: connections ------------------------------------------------------------------------------------------
+
+def many_seats(seats=6, max_frame=64):
+    """rp2350-pins (any pair the host names) with `seats` connections and a small frame."""
+    p = wire_with(virtual_bench.rp2350_pins(), "oep.wire.rvswd",
+                  lambda tlvs: [catalog.u8(virtual_bench.MAX_CONNECTIONS, seats) if t[0] == virtual_bench.MAX_CONNECTIONS
+                                else t for t in tlvs])
+    return virtual_bench.VirtualProbe(p.label, max_frame, p.offered, own_channels=p.own_channels)
+
+
+def test_connections_lists_the_live_connections_in_creation_order_a_frame_at_a_time():
+    """debug §2.1: the wire's live connections in the order they were made, from the first-th, as many as one frame
+    holds; more = 1 when some are left and the host asks again with first + the count it got. Lock-free."""
+    ep, hv = bench(many_seats())
+    pairs = [(2 * i, 2 * i + 1) for i in range(6)]
+    made = []
+    for p in pairs:
+        ep._target(1, p).present = True
+        made.append(struct.unpack_from("<I", attach(hv, p).payload)[0])
+    hv.raw(1, W["detach"], struct.pack("<I", made.pop(2)))           # a gap: the live ones only
+    got, first = [], 0
+    while True:
+        r = hv.raw(1, W["connections"], bytes([first]), session=False)
+        assert r.succeeded and len(r.payload) + m.RESULT_HEADER <= ep.probe.max_frame
+        more, page = rows(r.payload)
+        assert page
+        got += page
+        first += len(page)
+        if not more:
+            break
+        assert first < len(made)
+    assert first > len(rows(hv.raw(1, W["connections"], b"\x00", session=False).payload)[1])   # it took pages
+    assert [g[0] for g in got] == made and [g[1] for g in got] == [p for i, p in enumerate(pairs) if i != 2]
+    assert rows(hv.raw(1, W["connections"], bytes([len(made)]), session=False).payload) == (0, [])
+
+
+# ---- §3: method, flags, havereset --------------------------------------------------------------------------------
+
+def test_method_1_only_where_attach_halt_is_declared_and_method_0_leaves_the_hart_running():
+    """debug §3: method 0 is mandatory; method 1 only on a wire declaring features bit0 attach_halt - elsewhere, and any
+    undefined method, unsupported with the fixed part's mark; method 1 succeeds with hart 0 halted (flags bit3, dpc
+    TLV); method 0 asks no halt (bit3 clear, no dpc)."""
+    halt_bit = reg.WIRE_RVSWD.enum["features"]["attach_halt"]
+    ep, hv = bench()
+    p0, p1 = ep.pairs[1][:2]
+    r = attach(hv, p0)
+    assert not struct.unpack_from("<IIBI", r.payload)[2] & FLAGS["halted"] and not ep.targets[(1, p0)].halted
+    assert T_ANSWER["dpc"] not in dict(m.split_tlvs(r.payload[13:]))
+    r = attach(hv, p1, method=1)
+    assert struct.unpack_from("<IIBI", r.payload)[2] & FLAGS["halted"] and ep.targets[(1, p1)].halted
+    assert dict(m.split_tlvs(r.payload[13:]))[T_ANSWER["dpc"]] == struct.pack("<I", ep.targets[(1, p1)].dpc)
+    probe = wire_with(virtual_bench.p4_bench(), "oep.wire.rvswd",
+                      lambda tlvs: [t for t in tlvs if t[0] != catalog.FEATURES])
+    ep, hv = bench(probe)
+    assert not ep.features(1) & halt_bit
+    for method in (1, 2, 0xFF):
+        r = hv.raw(1, W["attach"], fixed(ep.pairs[1][0], method=method))
+        assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00") and not ep.conns
+    attach(hv, ep.pairs[1][0])
+
+
+def test_attach_acknowledges_a_pending_havereset_and_says_so():
+    """debug §3 flags bit0 / §4.6: attach acknowledges a pending havereset first (flags bit0); with none pending the bit
+    is clear. bit1 is unassigned and stays 0 on these wires."""
+    ep, hv = bench()
+    pair = ep.pairs[1][0]
+    tg = ep.targets[(1, pair)]
+    tg.havereset = True
+    r = attach(hv, pair)
+    cid, _, flags, _ = struct.unpack_from("<IIBI", r.payload)
+    assert flags & FLAGS["havereset_acked"] and not flags & 0b10 and not tg.havereset
+    hv.ok(1, W["detach"], struct.pack("<I", cid))
+    flags = struct.unpack_from("<IIBI", attach(hv, pair).payload)[2]
+    assert not flags & FLAGS["havereset_acked"]
+
+
+# ---- §3.2: swio's fixed speed ----------------------------------------------------------------------------------
+
+def test_swio_declares_its_fixed_speed_as_min_clock_hz_and_attach_runs_at_it():
+    """debug §3.2: swio's bit times are fixed, the probe chooses no speed - describe's min_clock_hz is the speed of a 0
+    slot (1 / (its low + its high), 840-1060 ns + 240-270 ns), attach's speed_hz is that value, and a max_speed under it
+    is unsupported (§1); a swio pair has swclk 0xFFFF."""
+    ep, hv = bench(virtual_bench.esp32_v003())
+    fn = ep.fns["oep.wire.swio"]
+    hz = ep._min_clock(fn)
+    assert 1e9 / (1060 + 270) <= hz <= 1e9 / (840 + 240)
+    pair = ep.pairs[fn][0]
+    assert pair[1] == 0xFFFF
+    for max_speed in (hz, 4_000_000):
+        r = attach(hv, pair, hz=max_speed, fn=fn)
+        cid, _, _, speed = struct.unpack_from("<IIBI", r.payload)
+        assert speed == hz
+        (row,) = rows(hv.raw(fn, W["connections"], b"\x00", session=False).payload)[1]
+        assert row[2] == hz
+        hv.ok(fn, W["detach"], struct.pack("<I", cid))
+    r = hv.raw(fn, W["attach"], fixed(pair, hz - 1))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00")
+    declared = core.describe(h.Host(lambda b: ep.handle(b, 1)), fn)
+    assert catalog.decode_description(b"".join(catalog.tlv(t, v) for t, v in declared)).min_clock_hz == hz
+
+
+# ---- §4: resume's answer; the dmi steps ------------------------------------------------------------------------
+
+def test_resume_answers_status_alone():
+    """debug §4: resume 0x12 - connection(u32) -> status(u8) [TLV]; ok once the hart left debug mode."""
+    ep, hv = bench()
+    pair = ep.pairs[1][0]
+    cid = struct.unpack_from("<I", attach(hv, pair, method=1).payload)[0]
+    r = hv.raw(2, RV["resume"], struct.pack("<I", cid))
+    assert r.succeeded and r.payload == bytes([reg.STATUS["ok"]]) and not ep.targets[(1, pair)].halted
+
+
+def test_each_dmi_step_kind_takes_its_arguments_and_adds_its_value():
+    """debug §4.1: 0x01 write address(u8) value(u32), no value; 0x02 read address(u8) -> the value; 0x03 poll by reads
+    address mask value max_reads(u16) -> the last value read; 0x04 wait wait_us(u32), no value; 0x05 poll by time
+    address mask value max_us(u32) -> the last value read."""
+    assert STEP == {"write": 1, "read": 2, "poll_reads": 3, "wait_us": 4, "poll_us": 5}
+    ep, hv = bench()
+    pair = ep.pairs[1][0]
+    cid = struct.unpack_from("<I", attach(hv, pair, method=1).payload)[0]
+    tg = ep.targets[(1, pair)]
+    steps = (struct.pack("<BBI", 1, 0x05, 0x12345678) + struct.pack("<BB", 2, 0x05)
+             + struct.pack("<BBIIH", 3, 0x05, 0xFF, 0x78, 3) + struct.pack("<BI", 4, 10)
+             + struct.pack("<BBIII", 5, 0x05, 0xFF00, 0x5600, 100))
+    r = hv.raw(2, RV["dmi"], struct.pack("<IH", cid, 5) + steps)
+    assert r.succeeded
+    done, status, nvals = struct.unpack_from("<HBH", r.payload)
+    assert (done, status, nvals) == (5, reg.STATUS["ok"], 3)
+    assert struct.unpack_from("<3I", r.payload, 5) == (0x12345678,) * 3 and tg.dmi[0x05] == 0x12345678
+    for short in (b"\x01\x05\x00", b"\x03\x05" + bytes(9), b"\x04\x00", b"\x05\x05" + bytes(11)):
+        assert hv.raw(2, RV["dmi"], struct.pack("<IH", cid, 1) + short).detail == m.MALFORMED, short
+
+
+def test_the_client_puts_each_abstract_command_sequence_in_one_dmi_request():
+    """debug §4.1: a host with the connection's console stream open puts an abstract command's sequence (DATA0 write,
+    command, DATA0 read) in one dmi request - the client's read_register / write_register do, whether a stream is open
+    or not."""
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
+    sent = []
+
+    def link(b):
+        sent.append(m.Request.unpack(b))
+        return ep.handle(b, 1)
+    hst = h.Host(link)
+    hst.open(3000)
+    conn, _ = riscv.Wire(hst).attach(halt=True, pins=ep.pairs[1][0])
+    console.Console(hst).open(conn, console.Console.DMSEQ)
+    dm = riscv.RiscvDm(hst, conn)
+    ep._target_of(conn).regs[0x100A] = 0xCAFE
+    for action in (lambda: dm.read_register(0x100A), lambda: dm.write_register(0x100B, 7)):
+        before = len(sent)
+        action()
+        dmi = [r for r in sent[before:] if r.fn == ep.fns["oep.target.riscv-dm"] and r.op == RV["dmi"]]
+        commands = [r for r in dmi if bytes([STEP["write"], 0x17]) in r.payload]
+        assert commands
+        for r in commands:                                        # DATA0 and the command and the wait in the same one
+            assert bytes([STEP["write"], 0x04]) in r.payload and bytes([STEP["poll_reads"], 0x16]) in r.payload
+    assert ep._target_of(conn).regs[0x100B] == 7
+
+
+# ---- §5: the host powers the debug domain up ---------------------------------------------------------------------
+
+def test_the_host_powers_the_debug_domain_up_with_dp_writes():
+    """debug §5: the probe's attach does not power the target's debug up - the host does, with DP writes: CTRL/STAT's
+    CDBGPWRUPREQ / CSYSPWRUPREQ (bits 28 / 30), then reads it until both acks (bits 29 / 31) are set."""
+    from oep_client import arm
+    from test_target_parts import FNS, ScriptedHost, ok
+
+    dp, written = {arm.DP_CTRL_STAT: 0}, []
+
+    def transfer(p):
+        n, at = struct.unpack_from("<H", p, 4)[0], 6
+        values = []
+        for _ in range(n):
+            req, at = p[at], at + 1
+            addr = (req >> 2 & 3) << 2
+            assert not req & 1                                   # DP only
+            if req & 2:
+                values.append(dp[addr])
+                if addr == arm.DP_CTRL_STAT and dp[addr] & 0x50000000 == 0x50000000:
+                    dp[addr] |= 0xA0000000                       # acks follow the requests
+            else:
+                (value,), at = struct.unpack_from("<I", p, at), at + 4
+                written.append((addr, value))
+                dp[addr] = value
+        return ok(struct.pack(f"<HBBH{len(values)}I", n, 0, 1, len(values), *values))
+
+    hst = ScriptedHost({(FNS["oep.target.arm-adi"], arm.ArmAdi.TRANSFER): transfer})
+    cs = arm.ArmAdi(hst, 1).power_up()
+    assert (arm.DP_CTRL_STAT, 0x50000000) in written and cs & 0xF0000000 == 0xF0000000
+    assert all(fn == FNS["oep.target.arm-adi"] for fn, _, _ in hst.log if fn)   # nothing asked of the wire
+
+
+# ---- the spec's debug vectors under ids without spaces (tools/check_trace.py reads node ids split at whitespace) ----
+
+import test_spec_vectors as sv                                            # noqa: E402 (called, not collected here)
+
+DEBUG_PREFIXES = ("rvswd ", "swio ", "swd ", "riscv-dm ", "arm-adi ")
+
+
+def _slug(case):
+    return "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in case["name"])
+
+
+@pytest.mark.parametrize("case", [c for c in sv.OPS if sv.followed(c) and c["name"].startswith(DEBUG_PREFIXES)], ids=_slug)
+def test_debug_ops_vector_on_the_bench(case):
+    """oep-if-debug §1-§4 (ops.json): the bench answers the case's request with the case's bytes."""
+    sv.test_ops_vectors_from_the_virtual_bench_byte_for_byte(case)
+
+
+@pytest.mark.parametrize("case", sv.DEBUG_CLIENT, ids=_slug)
+def test_debug_vector_through_the_client(case):
+    """oep-if-debug §1-§6 (ops.json): the client sends the case's request and reads its answer."""
+    sv.test_debug_vectors_as_the_client_sends_and_reads_them(case)
+
+
+@pytest.mark.parametrize("case", [c for c in sv.INTERFACE_REFUSALS if c["name"].startswith(DEBUG_PREFIXES)], ids=_slug)
+def test_debug_refusal_vector_on_the_bench(case):
+    """oep-if-debug §4.3 (refusals.json): the bench refuses as the case says."""
+    sv.test_interface_refusals_from_the_virtual_bench(case)
+
+
+def test_the_documents_interfaces_are_these_names_at_revision_1():
+    """debug (the table before §0): oep.wire.rvswd / swio / swd and oep.target.riscv-dm / arm-adi, revision 1, in the
+    registry and as the client's own interface classes use them."""
+    from oep_client import arm
+    names = ("oep.wire.rvswd", "oep.wire.swio", "oep.wire.swd", "oep.target.riscv-dm", "oep.target.arm-adi")
+    assert all(reg.INTERFACES[n].revision == 1 for n in names)
+    assert riscv.WireBase.REVISION == riscv.RiscvDm.REVISION == arm.ArmAdi.REVISION == 1
+    assert arm.ArmAdi.NAME == "oep.target.arm-adi"

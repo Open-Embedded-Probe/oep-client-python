@@ -367,6 +367,9 @@ class SerialLink:
 
     # ---- one frame each way ----------------------------------------------------------------------
     def _write(self, messages: list[bytes]) -> None:
+        for msg in messages:                       # max_frame binds the host too: 64 until a confirm answer (transports §3)
+            if len(msg) > self.max_frame:
+                raise ValueError(f"a {len(msg)}-byte message is over max_frame {self.max_frame}")
         if self.framing == "length":
             self.frames.send_many(messages)
             self.tx_len = max((len(msg) + 2 for msg in messages), default=0)
@@ -471,15 +474,19 @@ class SerialLink:
 
     def _recv_for(self, corr: int) -> bytes:
         """The reply to request `corr` (pushes and events routed on the way). Length frames: a result for another
-        request raises CorrMismatch (the §5.1 resync follows); a serial port: it is read past (oep-core §10.1)."""
+        request raises CorrMismatch (the §5.1 resync follows); a serial port and TCP: it is read past (oep-core §10.1;
+        transports §5: on TCP an answer to a corr not waited for is no broken boundary)."""
+        deadline = time.monotonic() + self._wait()                 # pushes that keep coming never extend it (core §10.1)
         while True:
+            if time.monotonic() > deadline:
+                raise TimeoutError("no result from the probe")
             reply = self._recv()
             if self._route(reply):
                 continue
             if len(reply) >= 3 and self._corr(reply) == corr:
                 return reply
             self.stale += 1
-            if self.framing == "length":
+            if self.framing == "length" and not self._keeps_boundaries():
                 raise CorrMismatch(f"a result for correlation {self._corr(reply) if len(reply) >= 3 else None}, "
                                    f"waiting for {corr}")
 
@@ -526,10 +533,13 @@ class SerialLink:
     def resync(self, tries: int = 3) -> None:
         """transports §5: read and discard until the input is quiet for 50 ms, then prove the link with a confirm (a read,
         safe to send), then go on. When the input does not go quiet (pushes keep coming), the host's unsubscribe and end go
-        out blind, once (and send() then does not send its request again)."""
+        out blind, once (and send() then does not send its request again). TCP: the connection is closed and opened
+        again first (`_reopen`)."""
         self.resyncs += 1
         if self.framing != "length":
             return                                  # COBS frames carry their own boundaries: nothing to find again
+        if self._keeps_boundaries():
+            self._reopen()
         blind_sent = False
         for _ in range(tries):
             while not self.frames.discard_until_quiet(RESYNC_QUIET_S, self.NOISY_S):
@@ -556,11 +566,32 @@ class SerialLink:
         raise ConnectionError(f"resync: no confirm came back in {tries} tries")
 
     def _recover(self) -> None:
-        """After a lost, broken or missing reply: leave the link in step for the next request. A serial port needs
-        nothing (a late answer is read past by its corr). While probing (transports §3) there is no resync: its confirms
-        would be more than the one resend the probing rule allows."""
+        """After a lost, broken or missing reply (`link_error`): leave the link in step for the next request. A serial
+        port needs nothing (a late answer is read past by its corr), nor does TCP unless its framing broke (transports
+        §5: a pause is no lost boundary). While probing (transports §3) there is no resync: its confirms would be more
+        than the one resend the probing rule allows."""
+        if self._keeps_boundaries() and not isinstance(getattr(self, "link_error", None), FramingLost):
+            return
         if self.framing == "length" and not getattr(self, "_probing", False):
             self.resync()
+
+    def _keeps_boundaries(self) -> bool:
+        """A length-framed stream that never loses a boundary (TCP, transports §2)."""
+        return self.framing == "length" and getattr(self.stream, "keeps_boundaries", False)
+
+    def _reopen(self) -> None:
+        """transports §5: a TCP connection whose framing broke is closed and opened again - quiet input and a confirm do
+        not reset the probe's parser there. The session and the resend table stay on the probe (§3); the confirm that
+        follows on the new connection shows its boot_id. ConnectionError when the link cannot open it again."""
+        if self.reopener is None:
+            raise ConnectionError("the TCP framing broke: close the connection and open it again (transports §5)")
+        try:
+            self.stream.close()
+        except OSError:
+            pass
+        self.stream = self.reopener()
+        self.frames = LengthFrames(self.stream, self.frames.max_frame)
+        self.last_write = None
 
     def _fail_transport(self, e: Exception) -> None:
         """core §5.2 (C-38): the resend went unanswered too - the transport failed. Its outcome is unknown, so are the
@@ -701,6 +732,7 @@ class SerialLink:
                 if corrupt:
                     self.corrupt += 1
                 self._strike(e)
+                self.link_error = e
                 self._recover()
                 # a broken frame on a held serial port: something arrives, the line is not lost - the answer was
                 # broken; resend at once, a few times (host guide §8). A wait with nothing: one resend (core §5.2)
@@ -1055,6 +1087,7 @@ class SerialLink:
         except (cobs.CorruptFrame, TimeoutError, FramingLost) as e:
             if isinstance(e, cobs.CorruptFrame):
                 self.corrupt += 1
+            self.link_error = e
             self._recover()
             raise
         return replies
@@ -1360,7 +1393,7 @@ def _hidapi_devices(vid: int, pid: int) -> list[dict]:
     except Exception:
         return []
     return [{"serial": i.get("serial_number") or None, "location": None, "ways": {"hid"}} for i in infos
-            if not (i.get("usage_page", 0) and i["usage_page"] < 0xFF00)]
+            if not (i.get("usage_page", 0) and i["usage_page"] != reg.USB["hid_usage_page"])]   # OEP's HID (transports §3)
 
 
 def _merge_probes(usb: list[dict], hid: list[dict], ports: list[tuple[str, str | None, str | None]]) -> list[UsbProbe]:
@@ -1409,7 +1442,7 @@ def check_unit_id(hst, unit_id: str) -> None:
     said = None
     try:
         for tag, value in core.describe(hst, 0):
-            if tag & 0x7F == reg.CORE.tlv["describe"]["unit_id"] and value:
+            if tag == reg.CORE.tlv["describe"]["unit_id"] and value:
                 said = value.decode("ascii", "replace")
                 break
     except Exception as e:
@@ -1594,6 +1627,9 @@ def _open_host(target: str, timeout: float | None, resend: bool | None, *, baud:
             except FileNotFoundError as e:
                 if one is None or not one.ports:
                     raise FileNotFoundError(f"{e}; cdc: no serial port on {vid:04x}:{pid:04x}") from None
+                # a raw CDC may sit beside vendor bulk / HID: only the CDC their describe declares is OEP (transports §3)
+                raise FileNotFoundError(f"{e}; its serial port ({', '.join(one.ports)}) is not opened unless named: "
+                                        "a CDC beside vendor bulk / HID is OEP only when their describe declares it") from None
         if len(one.ports) > 1:
             raise ValueError(f"the probe on {vid:04x}:{pid:04x} ({one}) has {len(one.ports)} serial ports: name one")
         if not one.ports:
@@ -1860,7 +1896,7 @@ def _unit_id(hst) -> str:
     """The probe's unit_id (core §7.5, mandatory) - the record's key with the port."""
     from . import core
     for tag, value in core.describe(hst, 0):
-        if tag & 0x7F == UNIT_ID_TAG and value:
+        if tag == UNIT_ID_TAG and value:
             return value.decode("ascii", "replace")
     return "?"
 

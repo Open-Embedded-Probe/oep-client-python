@@ -197,26 +197,36 @@ class Description:
     ops_invalid: str = ""             # why the ops tag breaks core §7.4 (the fn is not used)
     specific: list[tuple[int, bytes]] = field(default_factory=list)
     unknown_critical: list[int] = field(default_factory=list)
+    broken: list[int] = field(default_factory=list)   # common tags whose value is not their defined length (not used)
 
 
 def decode_description(data: bytes) -> Description:
     d = Description()
+    seen: set[int] = set()
     for tag, value in split_tlv(data):
-        t = tag & ~CRITICAL
-        if t == ROLE_CHANNELS:
-            role, base = struct.unpack_from("<BH", value)
-            d.roles.setdefault(role, []).extend(bitmap_to_channels(base, value[3:]))
-        elif t == CHANNEL_GROUP:
-            group, pins = unpack_channel_group(value)
-            d.groups[group] = pins
-        elif t == MAX_CLOCK_HZ:
-            d.max_clock_hz = struct.unpack("<I", value)[0]
-        elif t == MIN_CLOCK_HZ:
-            d.min_clock_hz = struct.unpack("<I", value)[0]
-        elif t == MAX_LENGTH:
-            d.max_length = struct.unpack("<H", value)[0]
-        elif t == FEATURES:
-            d.features = struct.unpack("<I", value)[0]
+        if tag & CRITICAL:
+            continue                                # bit 7 in an answer: an unknown tag, skipped (core §2.2)
+        t = tag
+        single = {MAX_CLOCK_HZ: ("max_clock_hz", "<I"), MIN_CLOCK_HZ: ("min_clock_hz", "<I"),
+                  MAX_LENGTH: ("max_length", "<H"), FEATURES: ("features", "<I")}
+        try:
+            if t == ROLE_CHANNELS:
+                role, base = struct.unpack_from("<BH", value)
+                d.roles.setdefault(role, []).extend(bitmap_to_channels(base, value[3:]))
+            elif t == CHANNEL_GROUP:
+                group, pins = unpack_channel_group(value)
+                d.groups[group] = pins
+            elif t in single:
+                name, fmt = single[t]
+                got = struct.unpack(fmt, value)[0]
+                if t not in seen:
+                    setattr(d, name, got)                   # a tag sent twice: the first is used (core §2.3)
+                seen.add(t)
+        except (struct.error, ValueError):
+            d.broken.append(tag)                            # not its defined length: broken, not used (core §2.3)
+            continue
+        if t in (ROLE_CHANNELS, CHANNEL_GROUP) or t in single:
+            pass
         elif t == OPS:
             why = check_ops(value)
             if why:

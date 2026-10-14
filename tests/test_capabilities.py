@@ -98,13 +98,13 @@ def test_description_keeps_what_it_does_not_know():
             + catalog.channel_group(1, [(1, 18), (2, 23)])
             + catalog.u32(catalog.FEATURES, 0b101)
             + catalog.tlv(0x3E, b"\x01")                 # unknown common, not critical: skipped
-            + catalog.tlv(0x80 | 0x3D, b"")              # unknown common, critical: remembered
+            + catalog.tlv(0x80 | 0x3D, b"")              # bit 7 in an answer: an unknown tag, skipped (core §2.2)
             + catalog.u8(0x40, 2))                       # interface-specific: kept raw
     d = catalog.decode_description(data)
     assert d.roles == {1: [4, 5, 9]}
     assert d.groups == {1: [(1, 18), (2, 23)]}
     assert d.features == 0b101
-    assert d.unknown_critical == [0xBD]
+    assert d.unknown_critical == []
     assert d.specific == [(0x40, b"\x02")]
 
 

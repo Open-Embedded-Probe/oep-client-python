@@ -1,0 +1,358 @@
+{
+ "spec_commit": "a09fa45",
+ "units": {
+  "link:pre:1": {
+   "text": "| `oep.probe.link` | 1 | 経路を試し（線の試験）、セッシ",
+   "excluded": "informative: the name / revision / role row of the interface (its ops are checked under §1)"
+  },
+  "link:pre:2": {
+   "text": "- `oep.probe.link` は任意のインターフェースである。port_",
+   "verify": [
+    "tests/test_trace_link.py::test_a_probe_lists_oep_probe_link_at_most_once_and_with_port_speed[esp32-v003]",
+    "tests/test_trace_link.py::test_a_probe_lists_oep_probe_link_at_most_once_and_with_port_speed[esp32-v003-64]",
+    "tests/test_trace_link.py::test_a_probe_lists_oep_probe_link_at_most_once_and_with_port_speed[p4-bench]",
+    "tests/test_trace_link.py::test_a_probe_lists_oep_probe_link_at_most_once_and_with_port_speed[p4-x035]",
+    "tests/test_trace_link.py::test_a_probe_lists_oep_probe_link_at_most_once_and_with_port_speed[rp2350-pins]",
+    "tests/test_port_speed.py::test_the_ops_tag_offers_it_only_when_on_and_off_is_unknown_operation"
+   ],
+   "mutants": [],
+   "note": "optional; listed (with port_speed in its ops) by a probe that has port_speed; at most one"
+  },
+  "link:pre:3": {
+   "text": "- その op は、port_speed が変える口の速さのほか、probe の",
+   "verify": [
+    "tests/test_trace_link.py::test_source_sink_and_port_state_change_nothing",
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[64]",
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[256]",
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[1024]",
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake"
+   ],
+   "mutants": [
+    "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[source_mutates_pin-SOURCE]",
+    "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[sink_mutates_plan-SINK]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[trial_changes_pin-COMMIT]"
+   ],
+   "note": "source / sink / port_state leave session, plan, pins, settings, resources and speed as they were"
+  },
+  "link:1:1": {
+   "text": "| 0x10 | source | length(u32)、[TLV] | le",
+   "verify": [
+    "tests/test_console_queue_and_reset_settle.py::test_link_source_is_max_frame_less_7_with_or_without_a_tlv",
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[64]",
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[256]",
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[1024]"
+   ],
+   "mutants": [
+    "tests/test_conformance_link_transfers.py::test_wrong_wire_results_are_detected[SOURCE-64]",
+    "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[short_source_accepted-MALFORMED]",
+    "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[unknown_critical_ignored-TLV]"
+   ],
+   "note": "source 0x10: length(u32) [TLV] -> len(u16) data [TLV], lock-free"
+  },
+  "link:1:2": {
+   "text": "| 0x11 | sink | count(u16)、data、[TLV] | ",
+   "verify": [
+    "tests/test_trace_link.py::test_sink_takes_up_to_max_frame_less_12_and_a_count_past_the_bytes_is_malformed",
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[64]",
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[256]",
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[1024]"
+   ],
+   "mutants": [
+    "tests/test_conformance_link_transfers.py::test_wrong_wire_results_are_detected[SINK-64]",
+    "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[short_sink_accepted-MALFORMED]"
+   ],
+   "note": "sink 0x11: count(u16) data [TLV] -> empty, lock-free"
+  },
+  "link:1:3": {
+   "text": "| 0x12 | port_speed | baud(u32)、step(u8:",
+   "verify": [
+    "tests/test_port_speed.py::test_the_request_is_baud_step_verify_ms_and_a_longer_fixed_part_is_a_tlv_tail",
+    "tests/test_port_speed.py::test_try_then_commit_answered_at_the_old_speed",
+    "tests/test_port_speed.py::test_the_ops_tag_offers_it_only_when_on_and_off_is_unknown_operation",
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake"
+   ],
+   "mutants": [
+    "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[MALFORMED]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[accept_zero_verify-MALFORMED]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[ignore_critical-TLV]"
+   ],
+   "note": "port_speed 0x12: baud(u32) step(u8) verify_ms(u16) [TLV] -> baud(u32) [TLV]; needs the lock; optional (ops)"
+  },
+  "link:1:4": {
+   "text": "| 0x13 | port_state | [TLV] | baud(u32)、",
+   "verify": [
+    "tests/test_port_speed.py::test_the_ops_tag_offers_it_only_when_on_and_off_is_unknown_operation",
+    "tests/test_conformance_port_speed.py::test_port_speed_without_port_state_does_not_pass",
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake",
+    "tests/test_trace_link.py::test_source_sink_and_port_state_change_nothing"
+   ],
+   "mutants": [
+    "tests/test_conformance_port_speed.py::test_semantic_faults[state_phase_stale-STATES]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[state_baud_boot-TRY-BARRIER]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[state_nonbridge_accepted-NON-BRIDGE]"
+   ],
+   "note": "port_state 0x13 comes with port_speed: baud(u32) state(u8 0-3) of the request's route, lock-free; kind 1 only"
+  },
+  "link:2:1": {
+   "text": "- **source**: data は len バイトで、k バイト目（k は",
+   "verify": [
+    "tests/test_console_queue_and_reset_settle.py::test_link_source_is_max_frame_less_7_with_or_without_a_tlv",
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[64]",
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[256]",
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[1024]"
+   ],
+   "mutants": [
+    "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[source_plus_one-SOURCE]",
+    "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[pattern_shift-SOURCE]",
+    "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[pattern_no_wrap-SOURCE]",
+    "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[source_empty_nonzero-SOURCE]",
+    "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[source_wrong_count-SOURCE]"
+   ],
+   "note": "byte k = k & 0xFF; len = min(length, max_frame - 7); length 0 -> len 0"
+  },
+  "link:2:2": {
+   "text": "- **sink**: count の後ろに、値が任意の count バイトが続",
+   "verify": [
+    "tests/test_trace_link.py::test_sink_takes_up_to_max_frame_less_12_and_a_count_past_the_bytes_is_malformed",
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[64]",
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[256]",
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[1024]"
+   ],
+   "mutants": [
+    "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[sink_nonempty-SINK]",
+    "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[short_sink_accepted-MALFORMED]"
+   ],
+   "note": "count past the bytes: malformed; up to max_frame - 12 taken; an empty success"
+  },
+  "link:2:3": {
+   "text": "- host はその応答を、ほかの要求と同じように待つ（core §4.4）。c",
+   "verify": [
+    "tests/test_trace_link.py::test_the_host_waits_for_a_source_answer_as_for_any_request_never_repeating_it_like_confirm"
+   ],
+   "mutants": [],
+   "note": "the host's wait for a line test: the normal wait and one resend with the same corr, no confirm-like retries"
+  },
+  "link:3:1": {
+   "text": "- 対象は、要求の来た経路が transport kind 1（UART bri",
+   "verify": [
+    "tests/test_port_speed.py::test_only_the_uart_bridge_the_request_came_in_on_and_one_port_at_a_time",
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake"
+   ],
+   "mutants": [
+    "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[NON-BRIDGE]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[nonbridge_accepted-NON-BRIDGE]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[state_nonbridge_accepted-NON-BRIDGE]"
+   ],
+   "note": "only the UART bridge (kind 1) the request came on; another route: unavailable cause 6"
+  },
+  "link:3:2": {
+   "text": "- UART が作れる最も近い速さが要求と `port_speed_tolera",
+   "verify": [
+    "tests/test_port_speed.py::test_the_nearest_rate_the_uart_makes_must_be_within_the_tolerance",
+    "tests/test_port_speed.py::test_a_step_that_does_not_fit_the_boot_state_is_cause_6",
+    "tests/test_port_speed.py::test_try_then_commit_answered_at_the_old_speed",
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake"
+   ],
+   "mutants": [
+    "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[TOLERANCE]",
+    "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[BOOT-RATE]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[ignore_tolerance-TOLERANCE]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[outside_boundary_accepted-TOLERANCE]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[allowed_boundary_rejected-TOLERANCE]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[boot_rate_accepted-BOOT-RATE]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[accept_zero_verify-MALFORMED]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[commit_zero_verify_rejected-COMMIT]"
+   ],
+   "note": "over 2 % or not above the boot rate: unsupported 0x00; the answer is the rate applied; try verify_ms 0 malformed, commit/revert any"
+  },
+  "link:3:3": {
+   "text": "- port_stateが返すphaseは口ごとに管理する。stepの受理は次の",
+   "verify": [
+    "tests/test_port_speed.py::test_a_step_that_does_not_fit_the_boot_state_is_cause_6",
+    "tests/test_port_speed.py::test_try_then_commit_answered_at_the_old_speed",
+    "tests/test_port_speed.py::test_only_the_uart_bridge_the_request_came_in_on_and_one_port_at_a_time",
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake"
+   ],
+   "mutants": [
+    "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[STATES]",
+    "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[ONE-PORT]",
+    "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[PENDING-IDLE-OWNER]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[wrong_cause-STATES]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[second_port_accepted-ONE-PORT]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[refusal_changes_other_port-ONE-PORT]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[one_port_committed_accepted-ONE-PORT]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[one_port_pending_accepted-ONE-PORT]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[cancelled_accepts_commit-PENDING-IDLE-OWNER]"
+   ],
+   "note": "per-port phase; the table's refusals are cause 6 and change nothing; one raised port at a time; the owner's frame cancels an idle return first"
+  },
+  "link:3:4": {
+   "text": "| 0 起動時 | 今の速さで応答後、応答のbaudへ切替えphase 1。この",
+   "verify": [
+    "tests/test_port_speed.py::test_try_then_commit_answered_at_the_old_speed",
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake"
+   ],
+   "mutants": [
+    "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[TRY-BARRIER]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[early_trial-TRY-BARRIER]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[trial_deadline_before_write-TRY-BARRIER]"
+   ],
+   "note": "phase 0, step 0: answered at the old rate, then the switch and phase 1, verify_ms from then; steps 1/2 refused"
+  },
+  "link:3:5": {
+   "text": "| 1 試し | 拒否 | 試したbaudと同じ要求を新しい速さで受け、phas",
+   "verify": [
+    "tests/test_port_speed.py::test_try_then_commit_answered_at_the_old_speed",
+    "tests/test_port_speed.py::test_the_nearest_rate_the_uart_makes_must_be_within_the_tolerance",
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake"
+   ],
+   "mutants": [
+    "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[COMMIT]",
+    "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[REVERT-TRIAL]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[no_commit-COMMIT]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[early_revert-REVERT-TRIAL]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[revert_wrong_baud-REVERT-TRIAL]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[wrong_actual-COMMIT]"
+   ],
+   "note": "phase 1: step 0 refused; commit with the tried baud -> phase 2 (another baud cause 6); revert answered at the old rate, baud = boot"
+  },
+  "link:3:6": {
+   "text": "| 2 決めた | 拒否 | 拒否 | phase 1と同じ戻す手順 |",
+   "verify": [
+    "tests/test_port_speed.py::test_try_then_commit_answered_at_the_old_speed",
+    "tests/test_port_speed.py::test_step_2_and_the_sessions_end_answer_at_the_speed_then_revert",
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake"
+   ],
+   "mutants": [
+    "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[REVERT-COMMITTED]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[wrong_sent_rate-REVERT-COMMITTED]"
+   ],
+   "note": "phase 2: steps 0/1 refused, step 2 as from phase 1"
+  },
+  "link:3:7": {
+   "text": "| 3 復帰保留 | 拒否 | 拒否 | 拒否 |",
+   "verify": [
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake"
+   ],
+   "mutants": [
+    "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[PENDING-VERIFY]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[pending_accepts_step-PENDING-VERIFY]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[no_pending_return-PENDING-VERIFY]"
+   ],
+   "note": "phase 3 (a return waiting for a frame boundary): every step refused cause 6"
+  },
+  "link:3:8": {
+   "text": "- **probe が自分で起動時の速さに戻る条件**（戻ったことは知らせない）",
+   "verify": [
+    "tests/test_port_speed.py::test_try_times_out_and_a_late_commit_is_wrong_state",
+    "tests/test_port_speed.py::test_committed_goes_back_after_the_idle_time_counted_from_a_good_frame_or_an_answer",
+    "tests/test_port_speed.py::test_step_2_and_the_sessions_end_answer_at_the_speed_then_revert",
+    "tests/test_port_speed.py::test_broken_candidates_never_take_it_back_while_trying_or_committed",
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake"
+   ],
+   "mutants": [
+    "tests/test_conformance_port_speed.py::test_semantic_faults[no_verify_expiry-VERIFY]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[no_idle_expiry-IDLE]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[early_end-END-BARRIER]"
+   ],
+   "note": "the probe goes back by itself only on the three conditions, telling no one"
+  },
+  "link:3:9": {
+   "text": "1. 試しのまま verify_ms が過ぎた。",
+   "verify": [
+    "tests/test_port_speed.py::test_try_times_out_and_a_late_commit_is_wrong_state",
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake"
+   ],
+   "mutants": [
+    "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[VERIFY]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[no_verify_expiry-VERIFY]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[verify_early-VERIFY]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[state_after_verify_stale-VERIFY]"
+   ],
+   "note": "a try not committed within verify_ms goes back"
+  },
+  "link:3:10": {
+   "text": "2. 決めた後、その口に正常なフレームが `port_speed_idle_ms",
+   "verify": [
+    "tests/test_port_speed.py::test_committed_goes_back_after_the_idle_time_counted_from_a_good_frame_or_an_answer",
+    "tests/test_conformance_port_speed_execution.py::test_execution_and_writer_wait",
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake"
+   ],
+   "mutants": [
+    "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[IDLE]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[no_idle_expiry-IDLE]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[idle_early-IDLE]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[invalid_frame_renews_idle-IDLE-INVALID]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[valid_frame_does_not_renew-IDLE-RENEW]",
+    "tests/test_conformance_port_speed_execution.py::test_clock_faults_are_detected[consume_idle]",
+    "tests/test_conformance_port_speed_execution.py::test_pause_faults_are_detected[other_route_consumes_idle-OTHER-ROUTE]"
+   ],
+   "note": "committed: back after port_speed_idle_ms (3000) with no good frame, counted again from each good frame and answer; paused while executing"
+  },
+  "link:3:11": {
+   "text": "3. セッションが終わった（end、lease の期限切れ、force で持ち主",
+   "verify": [
+    "tests/test_port_speed.py::test_step_2_and_the_sessions_end_answer_at_the_speed_then_revert",
+    "tests/test_port_speed.py::test_the_sessions_end_takes_the_link_back_to_the_boot_speed",
+    "tests/test_conformance_port_speed_lifecycle.py::test_session_release_and_stale_writes",
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake"
+   ],
+   "mutants": [
+    "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[END-BARRIER]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[early_end-END-BARRIER]",
+    "tests/test_conformance_port_speed_lifecycle.py::test_state_faults_are_detected[force_no_reset-FORCE-COMMITTED]",
+    "tests/test_conformance_port_speed_lifecycle.py::test_state_faults_are_detected[expiry_keeps_speed-EXPIRY-TRIAL]",
+    "tests/test_conformance_port_speed_lifecycle.py::test_state_faults_are_detected[early_force-FORCE-TRIAL]"
+   ],
+   "note": "the session's end (end, lapse, force) takes it back; end and force after their answer"
+  },
+  "link:3:12": {
+   "text": "- verify/idleのtimerは要求の処理中は進めない。復帰条件を満たし",
+   "verify": [
+    "tests/test_conformance_port_speed_execution.py::test_execution_and_writer_wait",
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake",
+    "tests/test_conformance_port_speed_lifecycle.py::test_session_release_and_stale_writes"
+   ],
+   "mutants": [
+    "tests/test_conformance_port_speed_execution.py::test_pause_faults_are_detected[consume_verify-VERIFY]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[pending_switch_mid_frame-PENDING-IDLE-OTHER]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[other_cancels-PENDING-IDLE-OTHER]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[owner_does_not_cancel-PENDING-IDLE-OWNER]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[verify_return_cancelled-PENDING-VERIFY]",
+    "tests/test_conformance_port_speed_lifecycle.py::test_state_faults_are_detected[expiry_pending_immediate-EXPIRY-PENDING]"
+   ],
+   "note": "timers paused while executing; a return waits for frame boundaries; only the owner's good frame cancels an idle return; verify/session returns never"
+  },
+  "link:3:13": {
+   "text": "- 試しと決めるの間、セッションの資源とロックは変わらない。通知の欠落は通常のs",
+   "verify": [
+    "tests/test_trace_link.py::test_the_session_and_the_lock_stay_while_trying_and_committed",
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake"
+   ],
+   "mutants": [
+    "tests/test_conformance_port_speed.py::test_semantic_faults[trial_changes_pin-COMMIT]"
+   ],
+   "note": "try and commit leave the lock, plan, pins, connections and streams as they were"
+  },
+  "link:3:14": {
+   "text": "1. 試すの応答を受けたら、要求した baud（作れなければ応答の baud）に",
+   "verify": [
+    "tests/test_trace_link.py::test_the_host_waits_port_speed_switch_wait_ms_after_switching",
+    "tests/test_port_speed.py::test_the_minimal_form_tries_confirms_and_commits_without_a_measurement",
+    "tests/test_port_speed.py::test_set_baud_switches_to_the_requested_rate_and_to_the_answer_only_when_the_os_refuses"
+   ],
+   "mutants": [],
+   "note": "the host switches after try's answer (the asked rate, the answer's when the OS refuses), waits >= 20 ms, then confirms at the new rate"
+  },
+  "link:3:15": {
+   "text": "2. 戻す、end、異なるsession_idへのforce open、またはp",
+   "verify": [
+    "tests/test_trace_link.py::test_the_host_goes_back_on_another_ids_force_open_not_on_its_own",
+    "tests/test_trace_link.py::test_the_host_goes_back_after_a_restart",
+    "tests/test_port_speed.py::test_the_sessions_end_takes_the_link_back_to_the_boot_speed"
+   ],
+   "mutants": [],
+   "note": "the host goes back to the boot speed on revert / end / another id's force open / restart; not on the same id's open"
+  }
+ }
+}

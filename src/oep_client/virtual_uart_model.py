@@ -70,6 +70,7 @@ class Uart(Gpio):
             return struct.pack('<IB',self.baud,self.format)
         if op==16:
             requested=struct.unpack('<I',payload)[0];raw,format_value=tags.get(1,(1,b'\0'));format_value=format_value[0]
+            if requested==0:raise Reject(3)                        # baud 0 is malformed (fixture §2)
             if format_value not in (0,4,17):raise Reject(11,bytes((raw,)))
             baud=self.actual(requested)
             if baud is None:raise Reject(11,b'\0')

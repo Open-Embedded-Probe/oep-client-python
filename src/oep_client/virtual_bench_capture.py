@@ -161,6 +161,7 @@ class VirtualCapture:
     trigger_previous: int = 0         # previous observed trigger-role value
     produced: int = 0                  # samples produced since start
     sent: int = 0                      # streaming: the byte position pushed so far
+    drop_until: int = 0                # streaming: the end of a segment begun with no room to send (dropped whole)
     gap_next: bool = False             # repeat: the capture stopped for want of a segment; the next one says so
     group: object | None = None        # the VirtualGroup that binds it
     vrefint_ns: int = NO_TIME
@@ -335,7 +336,7 @@ class VirtualCapture:
     # ---- the data ---------------------------------------------------------------------------------------------------
     def _clear(self) -> None:
         self.data, self.base, self.segs, self.serial_done = bytearray(), 0, [], 0
-        self.produced, self.sent, self.gap_next = 0, 0, False
+        self.produced, self.sent, self.gap_next, self.drop_until = 0, 0, False, 0
         self.capture_begin, self.first_segment_samples, self.first_trigger_index = 0, 0, NONE
         self.stream_committed_bytes = 0
         self.trigger_scan, self.trigger_previous = 0, 0
@@ -620,6 +621,21 @@ class VirtualCapture:
             return 0, 0, first
         k = (position - first_bytes) // self.bytes_of(self.samples)
         return first_bytes + k * self.bytes_of(self.samples), first + k * self.samples, self.samples
+
+    def drop_to(self, position: int) -> None:
+        """Streaming: the bytes before `position` not sent are dropped - the next frame's position jumps, status flags
+        bit0 (capture §2.1 rule 1)."""
+        if position <= self.sent:
+            return
+        del self.data[:position - self.base]
+        self.base = self.sent = position
+        self.flags |= CAP.enum["status_flag"]["dropped"]
+
+    def segment_end_after(self, position: int) -> int:
+        """Streaming: where the segment holding stream byte `position` ends (a segment boundary at `position`: that
+        position itself, the segment beginning there not begun yet)."""
+        at, _, total = self.stream_segment(position)
+        return position if position == at else at + self.bytes_of(total)
 
     def pushes(self, fn: int, next_seq, budget: int) -> list[bytes]:
         """Streaming: the bytes not pushed yet, as data frames (core §10.2: position(u64) len(u16) data), each within

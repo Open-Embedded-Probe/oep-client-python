@@ -1,0 +1,493 @@
+{
+ "spec_commit": "a09fa45",
+ "units": {
+  "probe-config:pre:1": {
+   "text": "| `oep.probe.config` | 1 | channelのdisab",
+   "excluded": "informative: the name / revision / role row of the interface (its ops and items are checked under §1, §2, §4)"
+  },
+  "probe-config:1:1": {
+   "text": "| 0x02 | label | channel(u16)、text（1〜32b",
+   "verify": [
+    "tests/test_trace_probe_config.py::test_a_labels_text_is_1_to_32_bytes",
+    "tests/test_config.py::test_items_round_trip_with_the_generation",
+    "tests/test_config.py::test_get_is_paged_at_a_small_frame",
+    "tests/test_conformance_config.py::test_current_config_storage_contract"
+   ],
+   "mutants": [],
+   "note": "label 0x02: channel(u16) text 1-32 bytes keyed by channel; 0 or 33 bytes malformed; the longest fits a 64-byte frame"
+  },
+  "probe-config:1:2": {
+   "text": "| 0x03 | idle | channel(u16)、mode(u8: 0 ",
+   "verify": [
+    "tests/test_config_idle.py::test_idle_modes_have_names_both_spellings",
+    "tests/test_config_idle.py::test_output_idle_on_an_input_only_channel_is_unsupported",
+    "tests/test_config.py::test_a_refused_set_changes_nothing",
+    "tests/test_conformance_config.py::test_current_config_storage_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_config.py::test_semantic_faults[accept_unknown_mode-ATOMIC]"
+   ],
+   "note": "idle 0x03: channel(u16) mode(u8 0-4) keyed by channel; mode 5+ unsupported"
+  },
+  "probe-config:1:3": {
+   "text": "| 0x07 | disable | channel(u16) | channe",
+   "verify": [
+    "tests/test_config_disable.py::test_the_item_round_trips_and_moves_the_generation",
+    "tests/test_conformance_config.py::test_current_config_storage_contract"
+   ],
+   "mutants": [],
+   "note": "disable 0x07: channel(u16) keyed by channel"
+  },
+  "probe-config:1:4": {
+   "text": "- channelはfn 0のchannels未満で、firmware自身が使う",
+   "verify": [
+    "tests/test_config.py::test_a_refused_set_changes_nothing",
+    "tests/test_config_disable.py::test_disabling_a_channel_the_firmware_does_not_declare_is_unsupported",
+    "tests/test_conformance_config.py::test_current_config_storage_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_config.py::test_semantic_faults[accept_channel_past-ATOMIC]"
+   ],
+   "note": "a channel at or past fn 0's channels or the firmware's own: unsupported with the item tag"
+  },
+  "probe-config:1:5": {
+   "text": "- 知っている項目の長さが違う場合はmalformed。項目の値を後ろへ伸ばさず",
+   "verify": [
+    "tests/test_config.py::test_an_item_of_another_length_or_number_0_is_malformed_and_an_unknown_one_unsupported",
+    "tests/test_request_tails.py::test_config_item_of_another_length_is_malformed_either_way[False]",
+    "tests/test_request_tails.py::test_config_item_of_another_length_is_malformed_either_way[True]",
+    "tests/test_console_queue_and_reset_settle.py::test_an_item_of_another_length_is_malformed_with_or_without_bit_7[False]",
+    "tests/test_console_queue_and_reset_settle.py::test_an_item_of_another_length_is_malformed_with_or_without_bit_7[True]",
+    "tests/test_conformance_config.py::test_current_config_storage_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_config.py::test_semantic_faults[accept_wrong_length-ATOMIC]"
+   ],
+   "note": "a known item of another length is malformed (bit 7 or not); nothing applied"
+  },
+  "probe-config:1:6": {
+   "text": "- labelは設定の名前で、firmwareのdescribeのlabelを変",
+   "verify": [
+    "tests/test_trace_probe_config.py::test_a_label_is_the_settings_name_and_leaves_the_firmwares_alone",
+    "tests/test_config.py::test_lines_by_label"
+   ],
+   "mutants": [],
+   "note": "a label leaves describe's firmware label and every line as they were; the host's own lookup by name"
+  },
+  "probe-config:1:7": {
+   "text": "- disableはそのchannelの駆動/設定を行わない指定で、起動時と解放",
+   "verify": [
+    "tests/test_config_disable.py::test_a_plan_naming_a_disabled_channel_is_held_by_settings",
+    "tests/test_config_disable.py::test_an_attach_naming_a_disabled_channel",
+    "tests/test_config_disable.py::test_an_attach_reset_on_a_disabled_channel",
+    "tests/test_config_disable.py::test_scan_refuses_a_named_pair_with_a_disabled_channel",
+    "tests/test_config_disable.py::test_gpio_set_and_read_on_a_disabled_channel",
+    "tests/test_config_disable.py::test_disabling_a_channel_in_use_is_pin_in_use",
+    "tests/test_config_disable.py::test_idle_and_disable_on_one_channel_is_held_by_settings",
+    "tests/test_config_disable.py::test_unset_enables_it_again",
+    "tests/test_config_disable.py::test_saved_disable_applies_at_boot_before_any_park",
+    "tests/test_config_disable.py::test_a_released_pin_is_parked_but_not_a_disabled_one",
+    "tests/test_config_disable.py::test_describe_is_unchanged",
+    "tests/test_conformance_config.py::test_current_config_storage_contract",
+    "tests/test_conformance_config_fallback.py::test_saved_items_partial_and_unreadable_fallback"
+   ],
+   "mutants": [
+    "tests/test_conformance_config.py::test_semantic_faults[disable_drives-IDLE]",
+    "tests/test_conformance_config.py::test_semantic_faults[disabled_usable-IDLE]",
+    "tests/test_conformance_config.py::test_semantic_faults[accept_disabled_live-ATOMIC]",
+    "tests/test_conformance_config.py::test_semantic_faults[unset_keeps_disable-IDLE]",
+    "tests/test_conformance_config.py::test_semantic_faults[refusal_changes_config-ATOMIC]",
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[idle_wins-CONFLICT]"
+   ],
+   "note": "disable before the boot / release park; requests naming it cause 5; disabling one in use cause 1; idle+disable cause 5; nothing changed; unset frees it at once"
+  },
+  "probe-config:1:8": {
+   "text": "- idleは空きのchannelの状態（core §8）。空きのchannel",
+   "verify": [
+    "tests/test_trace_probe_config.py::test_an_idle_set_while_the_channel_is_in_use_applies_when_it_is_free",
+    "tests/test_config_idle.py::test_output_idle_drives_and_survives_take_until_the_first_set",
+    "tests/test_config_idle.py::test_replacing_and_lapsing_release_to_the_idle_state",
+    "tests/test_config_idle.py::test_output_idle_on_an_input_only_channel_is_unsupported",
+    "tests/test_conformance_config.py::test_current_config_storage_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_config.py::test_semantic_faults[idle_waits_free-IDLE]",
+    "tests/test_conformance_config.py::test_semantic_faults[idle_changes_live_pin-IDLE]",
+    "tests/test_conformance_config.py::test_semantic_faults[accept_unknown_mode-ATOMIC]"
+   ],
+   "note": "a free channel's idle at once, one in use when next free; no idle: Hi-Z; an unsupported pull/output/mode unsupported (item tag)"
+  },
+  "probe-config:2:1": {
+   "text": "| 0x10 | get | first(u16) | more(u8)、gen",
+   "verify": [
+    "tests/test_config.py::test_items_round_trip_with_the_generation",
+    "tests/test_config.py::test_get_is_paged_at_a_small_frame",
+    "tests/test_conformance_config_paging.py::test_config_paging_and_generation_recovery[64]",
+    "tests/test_conformance_config_paging.py::test_config_paging_and_generation_recovery[128]",
+    "tests/test_conformance_config_paging.py::test_config_paging_and_generation_recovery[256]"
+   ],
+   "mutants": [
+    "tests/test_conformance_config_paging.py::test_semantic_faults_are_detected[tail_counted_as_item-DENSE]"
+   ],
+   "note": "get 0x10 first(u16) -> more generation count items [TLV], lock-free"
+  },
+  "probe-config:2:2": {
+   "text": "| 0x11 | set | count(u8)、count × 項目、[TLV",
+   "verify": [
+    "tests/test_config.py::test_items_round_trip_with_the_generation",
+    "tests/test_conformance_config.py::test_current_config_storage_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_config.py::test_wrong_set_result_is_detected[GENERATION]"
+   ],
+   "note": "set 0x11 count items [TLV] -> generation, needs the lock"
+  },
+  "probe-config:2:3": {
+   "text": "| 0x12 | save | [TLV] | generation(u32)、",
+   "verify": [
+    "tests/test_config.py::test_save_state_and_the_next_boot",
+    "tests/test_config.py::test_describe_and_a_probe_without_storage",
+    "tests/test_conformance_config_storage.py::test_content_save_suppression_and_capacity_boundaries"
+   ],
+   "mutants": [
+    "tests/test_conformance_config.py::test_semantic_faults[no_save-PERSISTENCE]"
+   ],
+   "note": "save 0x12 -> generation; optional, with erase and state; absent without storage"
+  },
+  "probe-config:2:4": {
+   "text": "| 0x13 | erase | [TLV] | — | 必要 | saveと組",
+   "verify": [
+    "tests/test_config.py::test_save_state_and_the_next_boot",
+    "tests/test_config.py::test_describe_and_a_probe_without_storage",
+    "tests/test_conformance_config_storage.py::test_content_save_suppression_and_capacity_boundaries"
+   ],
+   "mutants": [
+    "tests/test_conformance_config_storage.py::test_semantic_faults_are_detected[erase_keeps_blob-ERASE]"
+   ],
+   "note": "erase 0x13 -> nothing; goes with save"
+  },
+  "probe-config:2:5": {
+   "text": "| 0x14 | unset | count(u8)、count × (tag(",
+   "verify": [
+    "tests/test_config.py::test_items_round_trip_with_the_generation",
+    "tests/test_config_disable.py::test_unset_enables_it_again",
+    "tests/test_conformance_config.py::test_current_config_storage_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_config.py::test_semantic_faults[unset_missing_counts-GENERATION]"
+   ],
+   "note": "unset 0x14 count x (tag channel) -> generation"
+  },
+  "probe-config:2:6": {
+   "text": "| 0x15 | state | [TLV] | storage_state(u",
+   "verify": [
+    "tests/test_config.py::test_save_state_and_the_next_boot",
+    "tests/test_config.py::test_describe_and_a_probe_without_storage",
+    "tests/test_conformance_config_fallback.py::test_saved_items_partial_and_unreadable_fallback"
+   ],
+   "mutants": [
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[wrong_state-UNKNOWN]"
+   ],
+   "note": "state 0x15 -> storage_state saved_generation reason, lock-free; with save, else optional (absent here)"
+  },
+  "probe-config:2:7": {
+   "text": "- 設定は最大65535項目。probeはさらに小さい有限量にしてよく、保持でき",
+   "verify": [
+    "tests/test_trace_probe_config.py::test_a_save_past_storage_is_cause_3_before_anything",
+    "tests/test_conformance_config.py::test_current_config_storage_contract",
+    "tests/test_conformance_config_storage.py::test_content_save_suppression_and_capacity_boundaries"
+   ],
+   "mutants": [
+    "tests/test_conformance_config.py::test_semantic_faults[wrong_storage_cause-STORAGE-LIMIT]",
+    "tests/test_conformance_config_storage.py::test_semantic_faults_are_detected[capacity63-LIMIT-64]",
+    "tests/test_conformance_config_storage.py::test_semantic_faults_are_detected[capacity65-LIMIT-65]",
+    "tests/test_conformance_config_storage.py::test_semantic_faults_are_detected[wrong_cause-LIMIT-65]"
+   ],
+   "note": "a change or save the probe cannot keep: unavailable cause 2 / 3, nothing changed"
+  },
+  "probe-config:2:8": {
+   "text": "- setは(tag,channel)ごとに置換し、送らないキーは保つ。unse",
+   "verify": [
+    "tests/test_config.py::test_items_round_trip_with_the_generation",
+    "tests/test_config.py::test_an_item_of_another_length_or_number_0_is_malformed_and_an_unknown_one_unsupported",
+    "tests/test_conformance_config.py::test_current_config_storage_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_config.py::test_semantic_faults[accept_duplicate-ATOMIC]",
+    "tests/test_conformance_config.py::test_semantic_faults[unset_missing_counts-GENERATION]"
+   ],
+   "note": "set replaces per (tag, channel) keeping the rest; unset of a missing key does nothing; a key twice malformed"
+  },
+  "probe-config:2:9": {
+   "text": "- 変更後の設定全体、容量、実行中の資源との競合を先に検証する。拒否時は設定・世",
+   "verify": [
+    "tests/test_config.py::test_a_refused_set_changes_nothing",
+    "tests/test_config_disable.py::test_idle_and_disable_on_one_channel_is_held_by_settings",
+    "tests/test_conformance_config.py::test_current_config_storage_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_config.py::test_semantic_faults[refusal_changes_config-ATOMIC]",
+    "tests/test_conformance_config.py::test_semantic_faults[refusal_counts-ATOMIC]",
+    "tests/test_conformance_config.py::test_semantic_faults[noop_touches_pins-ATOMIC]"
+   ],
+   "note": "the whole result is checked first; a refusal keeps settings, generation and pins; no change touches no pin"
+  },
+  "probe-config:2:10": {
+   "text": "- generationは内容のdigestではなく、同じboot内の変更カウン",
+   "verify": [
+    "tests/test_config.py::test_items_round_trip_with_the_generation",
+    "tests/test_config.py::test_save_state_and_the_next_boot",
+    "tests/test_conformance_config.py::test_current_config_storage_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_config.py::test_semantic_faults[boot_generation-PERSISTENCE]",
+    "tests/test_conformance_config.py::test_semantic_faults[count_same_contents-PERSISTENCE]",
+    "tests/test_conformance_config.py::test_semantic_faults[wrap_generation-GENERATION]"
+   ],
+   "note": "a change counter from 1 (also with a saved set), +1 per change, same contents unchanged, 0xFFFFFFFF refuses cause 2"
+  },
+  "probe-config:2:11": {
+   "text": "- getはtag、channelの順に並べ、firstから1frameに入る項",
+   "verify": [
+    "tests/test_config.py::test_get_is_paged_at_a_small_frame",
+    "tests/test_conformance_config_paging.py::test_config_paging_and_generation_recovery[64]",
+    "tests/test_conformance_config_paging.py::test_config_paging_and_generation_recovery[128]",
+    "tests/test_conformance_config_paging.py::test_config_paging_and_generation_recovery[256]"
+   ],
+   "mutants": [
+    "tests/test_conformance_config_paging.py::test_semantic_faults_are_detected[byte_key_order-DENSE]",
+    "tests/test_conformance_config_paging.py::test_semantic_faults_are_detected[byte_offset-FIRST]",
+    "tests/test_conformance_config_paging.py::test_semantic_faults_are_detected[split_item-DENSE]",
+    "tests/test_conformance_config_paging.py::test_semantic_faults_are_detected[critical_bit-DENSE]",
+    "tests/test_conformance_config_paging.py::test_semantic_faults_are_detected[empty_more-EMPTY]",
+    "tests/test_conformance_config_paging.py::test_semantic_faults_are_detected[changing_generation-DENSE]",
+    "tests/test_conformance_config_paging.py::test_semantic_faults_are_detected[tail_counted_as_item-DENSE]"
+   ],
+   "note": "tag then channel order, pages from first by item count, never split, bit 7 clear, more/first, the same generation same contents"
+  },
+  "probe-config:2:12": {
+   "text": "- count 0のset/unsetはno-op。外側の未知critical ",
+   "verify": [
+    "tests/test_trace_probe_config.py::test_count_0_is_a_no_op_and_a_critical_tail_is_refused_before_anything",
+    "tests/test_conformance_config.py::test_current_config_storage_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_config.py::test_semantic_faults[ignore_critical_tail-ATOMIC]",
+    "tests/test_conformance_config.py::test_semantic_faults[tail_as_item-ATOMIC]"
+   ],
+   "note": "count 0 set / unset: success, nothing changes; an unknown critical outer TLV refused before any change"
+  },
+  "probe-config:3:1": {
+   "text": "- save/eraseを提供するときだけ不揮発領域を使う。saveは明示操作で",
+   "verify": [
+    "tests/test_config.py::test_save_state_and_the_next_boot",
+    "tests/test_conformance_config_storage.py::test_content_save_suppression_and_capacity_boundaries",
+    "tests/test_conformance_config.py::test_current_config_storage_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_config_storage.py::test_semantic_faults_are_detected[always_write-SAME]",
+    "tests/test_conformance_config_storage.py::test_semantic_faults_are_detected[no_write-SAME]",
+    "tests/test_conformance_config_storage.py::test_semantic_faults_are_detected[auto_save_set-EDIT-RETURN]",
+    "tests/test_conformance_config_storage.py::test_semantic_faults_are_detected[generation_equality-EDIT-RETURN]",
+    "tests/test_conformance_config.py::test_semantic_faults[save_each_set-PERSISTENCE]"
+   ],
+   "note": "storage only through save / erase; save is explicit and writes the whole; the same contents not written again (not by generation)"
+  },
+  "probe-config:3:2": {
+   "text": "- 保存は、書込みの任意の時点で電源が落ちても、更新前の保存か新しい完全な保存の",
+   "verify": [
+    "tests/test_conformance_config_power_loss.py::test_all_durable_write_boundaries_restore_whole_config"
+   ],
+   "mutants": [
+    "tests/test_conformance_config_power_loss.py::test_power_loss_faults_are_detected[overwrite_active-REPLACE]",
+    "tests/test_conformance_config_power_loss.py::test_power_loss_faults_are_detected[erase_active-REUSE]",
+    "tests/test_conformance_config_power_loss.py::test_power_loss_faults_are_detected[partial_items-REPLACE]",
+    "tests/test_conformance_config_power_loss.py::test_power_loss_faults_are_detected[ghost_new-REPLACE]",
+    "tests/test_conformance_config_power_loss.py::test_power_loss_faults_are_detected[missing_commit-ACK]",
+    "tests/test_conformance_config_power_loss.py::test_power_loss_faults_are_detected[corrupt_crc-ACK]"
+   ],
+   "note": "a power loss at any write keeps the old complete save or the new complete one; a half write is never a save"
+  },
+  "probe-config:3:3": {
+   "text": "- save/eraseは成功・失敗とも現在の設定/世代とピンを変えない。era",
+   "verify": [
+    "tests/test_trace_probe_config.py::test_save_and_erase_leave_the_settings_the_generation_and_the_pins",
+    "tests/test_conformance_config.py::test_current_config_storage_contract",
+    "tests/test_conformance_config_storage.py::test_content_save_suppression_and_capacity_boundaries"
+   ],
+   "mutants": [
+    "tests/test_conformance_config.py::test_semantic_faults[erase_current-PERSISTENCE]",
+    "tests/test_conformance_config.py::test_semantic_faults[failed_save_changes_saved-STORAGE-LIMIT]",
+    "tests/test_conformance_config_storage.py::test_semantic_faults_are_detected[save_changes_pin-SAME]",
+    "tests/test_conformance_config_storage.py::test_semantic_faults_are_detected[erase_clears_items-ERASE]"
+   ],
+   "note": "save / erase leave settings, generation and pins, success or failure; erase drops only the save, succeeds with none"
+  },
+  "probe-config:3:4": {
+   "text": "- 保存が読める場合は項目ごとに現firmwareで検証する。未知の項目、非対応",
+   "verify": [
+    "tests/test_config.py::test_save_state_and_the_next_boot",
+    "tests/test_conformance_config_fallback.py::test_saved_items_partial_and_unreadable_fallback"
+   ],
+   "mutants": [
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[whole_refused-UNKNOWN]",
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[remapped_channel-CHANNEL]",
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[remapped_mode-MODE]",
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[kept_invalid_label-LABEL]",
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[idle_wins-CONFLICT]",
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[first_duplicate-DUPLICATE]"
+   ],
+   "note": "each saved item checked by this firmware; independent valid ones applied, disable first and winning over idle, a duplicate key not applied, nothing remapped"
+  },
+  "probe-config:3:5": {
+   "text": "- 保持量が減って保存全体が入らない場合は、disable、idle、label",
+   "verify": [
+    "tests/test_conformance_config_fallback.py::test_saved_items_partial_and_unreadable_fallback"
+   ],
+   "mutants": [
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[label_before_disable-CAPACITY]",
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[item_reason_for_capacity-CAPACITY]",
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[boot_generation-CAPACITY]"
+   ],
+   "note": "less room than the save: disable, idle, label, by channel; partial with reason 3"
+  },
+  "probe-config:3:6": {
+   "text": "- 容器が壊れて境界/完全性を確かめられない保存は全体を適用しない。",
+   "verify": [
+    "tests/test_conformance_config_fallback.py::test_saved_items_partial_and_unreadable_fallback",
+    "tests/test_conformance_config_fallback.py::test_distinct_unreadable_container_shapes[element]",
+    "tests/test_conformance_config_fallback.py::test_distinct_unreadable_container_shapes[tag]",
+    "tests/test_conformance_config_fallback.py::test_distinct_unreadable_container_shapes[value]",
+    "tests/test_conformance_config_fallback.py::test_distinct_unreadable_container_shapes[container]"
+   ],
+   "mutants": [
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[partial_on_corrupt-FORMAT]",
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[leaked_disable-FORMAT]",
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[wrong_reason-FORMAT]"
+   ],
+   "note": "a container whose bounds / integrity cannot be checked: nothing applied (state 2 reason 1)"
+  },
+  "probe-config:3:7": {
+   "text": "- 起動では設定済みdisableを先に反映し、ほかのchannelをidle（",
+   "verify": [
+    "tests/test_config_disable.py::test_saved_disable_applies_at_boot_before_any_park",
+    "tests/test_config_idle.py::test_boot_applies_the_saved_idle_before_the_first_answer",
+    "tests/test_config.py::test_save_state_and_the_next_boot",
+    "tests/test_conformance_config_fallback.py::test_saved_items_partial_and_unreadable_fallback"
+   ],
+   "mutants": [
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[idle_not_parked-MODE]",
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[saved_generation_partial-CHANNEL]",
+    "tests/test_conformance_config_power_loss.py::test_power_loss_faults_are_detected[wrong_idle-FIRST]"
+   ],
+   "note": "at boot disable first, other channels to their idle (Hi-Z without); saved_generation 1 only when the whole applied"
+  },
+  "probe-config:3:8": {
+   "text": "- stateのstorage_state: 0 保存なし、1 全体適用済み/保",
+   "verify": [
+    "tests/test_config.py::test_save_state_and_the_next_boot",
+    "tests/test_conformance_config_fallback.py::test_saved_items_partial_and_unreadable_fallback",
+    "tests/test_trace_probe_config.py::test_the_results_table_of_save_and_erase[save-None-after0]",
+    "tests/test_trace_probe_config.py::test_the_results_table_of_save_and_erase[erase-None-after1]",
+    "tests/test_trace_probe_config.py::test_the_results_table_of_save_and_erase[save-old-before]",
+    "tests/test_trace_probe_config.py::test_the_results_table_of_save_and_erase[erase-old-before]",
+    "tests/test_trace_probe_config.py::test_the_results_table_of_save_and_erase[save-none-after4]",
+    "tests/test_trace_probe_config.py::test_the_results_table_of_save_and_erase[erase-none-after5]",
+    "tests/test_trace_probe_config.py::test_the_results_table_of_save_and_erase[save-unreadable-after6]",
+    "tests/test_trace_probe_config.py::test_the_results_table_of_save_and_erase[erase-unreadable-after7]"
+   ],
+   "mutants": [
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[wrong_state-UNKNOWN]",
+    "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[wrong_reason-FORMAT]",
+    "tests/test_conformance_config.py::test_semantic_faults[wrong_saved_generation-PERSISTENCE]"
+   ],
+   "note": "storage_state 0-3, reason 0-3, saved_generation 0 unless whole; after a save the generation saved, kept over later changes"
+  },
+  "probe-config:3:9": {
+   "text": "| save成功 | 1 | 現在のgeneration | 0 |",
+   "verify": [
+    "tests/test_trace_probe_config.py::test_the_results_table_of_save_and_erase[save-None-after0]",
+    "tests/test_config.py::test_save_state_and_the_next_boot",
+    "tests/test_conformance_config.py::test_current_config_storage_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_config.py::test_semantic_faults[wrong_saved_generation-PERSISTENCE]"
+   ],
+   "note": "save success: state 1, the current generation, reason 0"
+  },
+  "probe-config:3:10": {
+   "text": "| erase成功 | 0 | 0 | 0 |",
+   "verify": [
+    "tests/test_trace_probe_config.py::test_the_results_table_of_save_and_erase[erase-None-after1]",
+    "tests/test_config.py::test_save_state_and_the_next_boot",
+    "tests/test_conformance_config_storage.py::test_content_save_suppression_and_capacity_boundaries"
+   ],
+   "mutants": [
+    "tests/test_conformance_config_storage.py::test_semantic_faults_are_detected[erase_keeps_state-ERASE]"
+   ],
+   "note": "erase success: 0 / 0 / 0"
+  },
+  "probe-config:3:11": {
+   "text": "| 失敗し、更新前の保存がそのまま残ることを確認できた | 操作前の値 | 操作",
+   "verify": [
+    "tests/test_trace_probe_config.py::test_the_results_table_of_save_and_erase[save-old-before]",
+    "tests/test_trace_probe_config.py::test_the_results_table_of_save_and_erase[erase-old-before]",
+    "tests/test_conformance_config.py::test_current_config_storage_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_config.py::test_semantic_faults[failed_save_changes_saved-STORAGE-LIMIT]"
+   ],
+   "note": "failed with the old save kept: completed failed, state as before"
+  },
+  "probe-config:3:12": {
+   "text": "| 失敗し、保存がないことを確認できた | 0 | 0 | 0 |",
+   "verify": [
+    "tests/test_trace_probe_config.py::test_the_results_table_of_save_and_erase[save-none-after4]",
+    "tests/test_trace_probe_config.py::test_the_results_table_of_save_and_erase[erase-none-after5]"
+   ],
+   "mutants": [
+    "tests/test_conformance_config_execution.py::test_wrong_save_result_is_detected[RUN-1500-1000]"
+   ],
+   "note": "failed with no save left: 0 / 0 / 0"
+  },
+  "probe-config:3:13": {
+   "text": "| 失敗し、保存の完全性を確認できない | 2 | 0 | 1 |",
+   "verify": [
+    "tests/test_trace_probe_config.py::test_the_results_table_of_save_and_erase[save-unreadable-after6]",
+    "tests/test_trace_probe_config.py::test_the_results_table_of_save_and_erase[erase-unreadable-after7]"
+   ],
+   "mutants": [],
+   "note": "failed with an unreadable save: 2 / 0 / 1"
+  },
+  "probe-config:4:1": {
+   "text": "| 0x40 | storage | max_bytes(u32、1以上)。項目",
+   "verify": [
+    "tests/test_config.py::test_describe_and_a_probe_without_storage",
+    "tests/test_trace_probe_config.py::test_a_save_past_storage_is_cause_3_before_anything",
+    "tests/test_conformance_selected_metadata.py::test_selected_metadata_passes_read_only"
+   ],
+   "mutants": [
+    "tests/test_conformance_selected_metadata.py::test_metadata_defects_are_detected[17-rows8]",
+    "tests/test_conformance_selected_metadata.py::test_metadata_defects_are_detected[17-rows9]",
+    "tests/test_conformance_selected_metadata.py::test_metadata_defects_are_detected[17-rows10]",
+    "tests/test_conformance_selected_metadata.py::test_storage_without_save_ops_is_rejected"
+   ],
+   "note": "storage 0x40 max_bytes(u32 >= 1) with save / erase only; a save past it cause 3"
+  },
+  "probe-config:4:2": {
+   "text": "| 0x41 | items | 対応する項目tagの並び（u8）。1つ以上、重",
+   "verify": [
+    "tests/test_config.py::test_describe_and_a_probe_without_storage",
+    "tests/test_conformance_capture_metadata.py::test_metadata_passes_read_only",
+    "tests/test_conformance_capture_metadata.py::test_config_items_only[65-\\x02\\x03\\x07]"
+   ],
+   "mutants": [
+    "tests/test_conformance_capture_metadata.py::test_metadata_defects[17-65-None]",
+    "tests/test_conformance_capture_metadata.py::test_metadata_defects[17-65-]",
+    "tests/test_conformance_capture_metadata.py::test_metadata_defects[17-65-\\x02\\x03\\x02]",
+    "tests/test_conformance_capture_metadata.py::test_metadata_defects[17-65-\\x02\\x80]"
+   ],
+   "note": "items 0x41: the item tags (u8), one or more, no duplicates, required"
+  }
+ }
+}

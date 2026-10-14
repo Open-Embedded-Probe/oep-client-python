@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- (JA) oep-spec a09fa45 の全文書（core、transports、common、plan、restart、link、fixture、debug、console、probe.config、capture）の規範の単位 902 個を、それを確かめる試験と故障注入に 1 つずつ対応させた（docs/trace/*.json、`tools/spec_units.py`、`tools/check_trace.py`。除外は見出し行・用語集・参照の一覧・仕様書の書き方の規則・電気的な線と target 側の規則だけで、理由つき）。足りない規則には tests/test_trace_*.py に試験を足した。その照合で見つけた a09fa45 との食い違いを直した:
+  - transports §1 / §3 / §5: HID の report の count が長さを超えたら捨てる（切り詰めない）、HID の口は usage page 0xFF4F・usage 0x45 だけ、full speed の USB でも OUT endpoint の wMaxPacketSize で長さ 0 のパケットを送る、TCP では待っていない corr の応答を読み飛ばし、壊れたフレームでは接続を開き直して confirm する。
+  - fixture §2: write を持たない UART は plan の TX role を受けない、configure していない RX のピンは空きの状態。
+  - debug §1 / §3: scheme 1 の target_id 0 と 0xFFFFFFFF は「無い」、swio の attach は速さを選ばず min_clock_hz の速さ（esp32-v003 は 888888 Hz を宣言）。
+  - capture §1.2 / §2.1 / §3.2: アナログの pad は取得が止まれば空きへ戻る、購読の無い間のストリーミングは送れない分を捨てて位置が飛び（flags bit0）、送る余地の無いまま始まった区画は再購読の後も丸ごと捨てる。
+  - console §2: dmseq の検査器が、未同期からの初回同期に restart のマークを付けないことを確かめる。
+  - core §2.3: 応答の describe で長さの違う共通 tag は使わずに読み飛ばし（`Description.broken`）、繰り返さない tag は最初のものを使う。interface_profiles.json の「mode0 SPI target」（max_length を u32 で書くベクタの誤り、メモ E1）はこの規則で読み、xfail は無くなった。
+
 - (JA) 段階 9 / 9b を規則ごとに確かめ直した（docs/stage9-rule-trace.ja.md）。console の describe mechanisms を仕様どおり `n(u8)、n × mechanism` で宣言・読みするように直した（仮想ベンチ、`Console.mechanisms()`、`oep dump`、検査器とそのモデル。これまで n が無かった）。宣言の検査は n ≥ 1・重複なし・count の一致も確かめる。故障注入を足した: probe.config の項目番号 0・範囲外 channel・長さ違い・未知の mode を受け付ける、変えない set でピンを触る、console の streams の順番違い、失敗した reset にマークを付ける、mechanisms の count 無し / 重複 / 空。
 
 - (JA) oep-spec a09fa45 の節ごとの確認表（docs/spec-a09fa45-sections.ja.md）を足した: core / transports / 各インターフェース文書の番号付きの節ごとに、名指して確かめる試験と独立した検査器を挙げる。足りなかった節に試験を足した: oep.probe.plan の各規則（tests/test_plan.py: list に出す条件、セッションの資源、§1 の宣言、§2.1 の置き換えと原子性・残る割り当て・cause 6 / 4 / 2、§2.2 の解放、§2.3 のピン、§2.4 の断り方）、common §1.5（位置の飛びは通知の欠落で、保持は read で確かめる）、core §2.7 / §12.1、capture §3.1 / §3.6（tests/test_spec_sections.py）。

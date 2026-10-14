@@ -1,0 +1,571 @@
+{
+ "spec_commit": "a09fa45",
+ "units": {
+  "transports:1:1": {
+   "text": "| 経路 | フレーム |",
+   "excluded": "informative: the header row of the transport/framing table (column names only); its data rows are traced"
+  },
+  "transports:1:2": {
+   "text": "| シリアルの口（UART bridge、USB CDC、内蔵の USB シリア",
+   "verify": [
+    "tests/test_trace_transports.py::test_a_serial_frame_is_message_crc16_le_cobs_between_zeros_and_empty_frames_are_skipped",
+    "tests/test_virtual_core.py::test_current_virtual_serial_passes_faults_and_reconnect",
+    "tests/test_cobs.py::test_random_frames_round_trip",
+    "tests/test_link_serial.py::test_answers_to_other_requests_are_read_past_without_a_resend"
+   ],
+   "mutants": [],
+   "note": "serial ports (bench pty, client) carry COBS+CRC-16 frames between 0x00s, both directions"
+  },
+  "transports:1:3": {
+   "text": "| USB の vendor bulk、TCP | `length(u16) m",
+   "verify": [
+    "tests/test_trace_transports.py::test_length_frames_skip_length_0_and_need_no_boundaries_from_the_reads",
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[bulk-0-9]",
+    "tests/test_virtual_core.py::test_current_virtual_tcp_passes_core_and_tcp_faults"
+   ],
+   "mutants": [],
+   "note": "vendor bulk / TCP length(u16) message, no CRC; length 0 skipped by client and by bench (CORE-USB-ZERO, CORE-TCP-ZERO)"
+  },
+  "transports:1:4": {
+   "text": "| USB の HID（vendor 定義の report） | vendor ",
+   "verify": [
+    "tests/test_trace_transports.py::test_hid_reports_carry_counted_bytes_skip_count_0_and_ignore_any_padding",
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[hid-0-9]",
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[hid-6-9]",
+    "tests/test_hid_stream.py::test_writes_are_cut_into_whole_reports_with_their_count"
+   ],
+   "mutants": [],
+   "note": "HID report = count(u16), the stream's bytes, padding to the descriptor's size; client and bench model"
+  },
+  "transports:1:5": {
+   "text": "- **HID の report**: 向きごとに、report は 1 つのバ",
+   "verify": [
+    "tests/test_hid_stream.py::test_reads_join_the_counted_bytes_and_drop_the_padding",
+    "tests/test_trace_transports.py::test_hid_reports_carry_counted_bytes_skip_count_0_and_ignore_any_padding",
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[hid-6-9]"
+   ],
+   "mutants": [],
+   "note": "per direction the reports carry one byte stream (client joins reads, splits writes; bench model reassembles)"
+  },
+  "transports:1:6": {
+   "text": "1. report の OEP のバイトは、count の後ろの count バ",
+   "verify": [
+    "tests/test_hid_stream.py::test_reads_join_the_counted_bytes_and_drop_the_padding",
+    "tests/test_conformance_usb.py::test_hid_response_crosses_count_and_length_boundaries[6]",
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[hid-6-9]"
+   ],
+   "mutants": [],
+   "note": "the counted bytes joined in report order are the vendor-bulk length stream, frames across report boundaries"
+  },
+  "transports:1:7": {
+   "text": "2. count が 0 の report は空で、読み飛ばす。",
+   "verify": [
+    "tests/test_trace_transports.py::test_hid_reports_carry_counted_bytes_skip_count_0_and_ignore_any_padding",
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[hid-0-9]",
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[hid-6-9]"
+   ],
+   "mutants": [],
+   "note": "count 0 reports are empty and skipped (client; bench CORE-HID-EMPTY-REPORT)"
+  },
+  "transports:1:8": {
+   "text": "3. 送る側は埋めを 0 にする。受ける側は、埋めをその値によらず無視する。",
+   "verify": [
+    "tests/test_trace_transports.py::test_hid_reports_carry_counted_bytes_skip_count_0_and_ignore_any_padding",
+    "tests/test_hid_stream.py::test_writes_are_cut_into_whole_reports_with_their_count",
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[hid-6-9]",
+    "tests/test_conformance_usb.py::test_hid_count_uses_both_bytes_and_sender_zero_padding"
+   ],
+   "mutants": [
+    "tests/test_conformance_usb.py::test_checker_detects_usb_probe_faults[padding]"
+   ],
+   "note": "sender pads with 0; receiver ignores nonzero padding (client and bench CORE-HID-PADDING)"
+  },
+  "transports:1:9": {
+   "text": "4. OEP の HID の interface は、report ID を宣言",
+   "verify": [
+    "tests/test_trace_transports.py::test_hid_reports_keep_the_declared_report_id_and_drop_another",
+    "tests/test_hid_stream.py::test_hidapi_reports_carry_the_report_id_both_ways",
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[hid-6-9]",
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[hid-255-511]"
+   ],
+   "mutants": [],
+   "note": "a declared report ID starts every report both ways, count after it; another ID is dropped (client; bench CORE-HID-REPORT-ID)"
+  },
+  "transports:1:10": {
+   "text": "5. §2 の途切れの規則はこの列に掛かる: フレームが途中で、report が",
+   "verify": [
+    "tests/test_trace_transports.py::test_usb_probe_drops_a_frame_that_stops_for_probe_frame_gap_ms[hid]",
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[hid-6-9]"
+   ],
+   "mutants": [
+    "tests/test_conformance_usb.py::test_checker_detects_usb_probe_faults[keep_partial]"
+   ],
+   "note": "a HID frame stopping 200 ms is dropped by the probe and the next byte read as a length"
+  },
+  "transports:1:11": {
+   "text": "6. count が report に入る量（report の長さ − 2、re",
+   "verify": [
+    "tests/test_trace_transports.py::test_hid_count_over_the_report_breaks_the_stream_until_a_gap_at_the_probe",
+    "tests/test_hid_stream.py::test_a_count_larger_than_the_report_is_dropped_and_input_until_a_200_ms_pause",
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[hid-6-9]"
+   ],
+   "mutants": [
+    "tests/test_conformance_usb.py::test_checker_detects_usb_probe_faults[clip_count]"
+   ],
+   "note": "count over report capacity: report dropped, input dropped until 200 ms quiet (bench model and client, fixed)"
+  },
+  "transports:1:12": {
+   "text": "- **COBS のフレーム**: message の後ろに CRC-16/CC",
+   "verify": [
+    "tests/test_trace_transports.py::test_a_serial_frame_is_message_crc16_le_cobs_between_zeros_and_empty_frames_are_skipped",
+    "tests/test_cobs.py::test_crc_check_value",
+    "tests/test_cobs.py::test_known_encodings",
+    "tests/test_cobs.py::test_random_frames_round_trip"
+   ],
+   "mutants": [
+    "tests/test_cobs.py::test_a_flipped_byte_is_caught"
+   ],
+   "note": "CRC-16/CCITT-FALSE LE, standard COBS, 0x00 both sides, no empty block after 254, both decoded, empty frames skipped"
+  },
+  "transports:1:13": {
+   "text": "- **host の受け方（COBS）**: 口を開いた直後から最初の 0x00",
+   "verify": [
+    "tests/test_trace_transports.py::test_on_tcp_an_answer_to_a_corr_not_waited_for_is_read_past",
+    "tests/test_link_serial.py::test_answers_to_other_requests_are_read_past_without_a_resend",
+    "tests/test_link_serial.py::test_a_broken_frame_on_a_port_no_session_holds_is_resent_at_once_too",
+    "tests/test_trace_transports.py::test_the_host_reads_the_span_before_the_first_zero_as_a_candidate"
+   ],
+   "mutants": [],
+   "note": "host COBS: the span from open to the first 0x00 is a candidate; bad candidates and other-corr results discarded"
+  },
+  "transports:1:14": {
+   "text": "- **USB の束ね方**（vendor bulk）: host は、書き込み",
+   "verify": [
+    "tests/test_trace_transports.py::test_the_host_ends_a_whole_packet_bulk_write_with_a_zero_length_packet",
+    "tests/test_trace_transports.py::test_the_probe_ends_a_whole_packet_bulk_answer_with_a_zero_length_packet",
+    "tests/test_conformance_usb.py::test_bulk_length_zero_and_zlp_are_distinct_and_ignored"
+   ],
+   "mutants": [],
+   "note": "host ZLP after a write that is a multiple of wMaxPacketSize (both backends, fixed for 64-byte FS); probe ZLP / short last packet"
+  },
+  "transports:1:15": {
+   "text": "- **max_frame より大きい長さ**: probe はそのフレームと、",
+   "verify": [
+    "tests/test_trace_transports.py::test_the_probe_drops_a_frame_over_max_frame_and_what_follows_until_a_gap[esp32_v003]",
+    "tests/test_trace_transports.py::test_the_probe_drops_a_frame_over_max_frame_and_what_follows_until_a_gap[core_v1]",
+    "tests/test_virtual_core.py::test_current_virtual_serial_passes_faults_and_reconnect",
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[bulk-0-9]",
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[hid-6-9]",
+    "tests/test_virtual_core.py::test_current_virtual_tcp_passes_core_and_tcp_faults",
+    "tests/test_virtual_bench_rules_2026_10_02.py::test_c05_c07_virtual_bench_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_length"
+   ],
+   "mutants": [
+    "tests/test_conformance_usb.py::test_checker_detects_usb_probe_faults[accept_oversize]"
+   ],
+   "note": "over max_frame: dropped with input until a gap, no answer (serial/bulk/HID); TCP closes"
+  },
+  "transports:1:16": {
+   "text": "- どのフレームを使うかは経路の種類だけで決まる（VID:PID で選ばない）。",
+   "verify": [
+    "tests/test_trace_transports.py::test_the_framing_follows_the_kind_of_transport_not_the_vid_pid"
+   ],
+   "mutants": [],
+   "note": "framing chosen by transport kind (serial COBS; usb/tcp length), whatever the VID:PID"
+  },
+  "transports:1:17": {
+   "text": "- **TCP は、信頼できるローカルの接続か、認証したトンネルの内側でだけ使う",
+   "verify": [
+    "tests/test_trace_transports.py::test_the_virtual_bench_listens_on_the_local_host_unless_told",
+    "tests/test_virtual_bench_serve_tcp_connections.py::test_two_clients_at_once_share_one_lock"
+   ],
+   "mutants": [],
+   "note": "the bench's TCP listens on 127.0.0.1 by default; several hosts share one probe's one lock/session"
+  },
+  "transports:1:18": {
+   "text": "- **OEP の要求に自分で答える端点は probe である**。何が運び、後",
+   "verify": [
+    "tests/test_virtual_bench_serve_tcp_connections.py::test_two_clients_at_once_share_one_lock",
+    "tests/test_conformance_tcp_peers.py::test_virtual_core_passes_all_tcp_peer_contracts",
+    "tests/test_virtual_core.py::test_current_virtual_tcp_passes_core_and_tcp_faults"
+   ],
+   "mutants": [],
+   "note": "virtual_bench_serve answers OEP itself over TCP, so it is a probe: core and transport probe rules pass on it"
+  },
+  "transports:1:19": {
+   "text": "- **broker が OEP の要求へ自分で答える場合**は、独立した OE",
+   "verify": [
+    "tests/test_virtual_core.py::test_current_virtual_tcp_passes_core_and_tcp_faults",
+    "tests/test_conformance_tcp_peers.py::test_virtual_core_passes_all_tcp_peer_contracts",
+    "tests/test_virtual_bench_rules_2026_10_02.py::test_c05_c07_virtual_bench_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_length"
+   ],
+   "mutants": [],
+   "note": "the self-answering TCP endpoint implements discovery, transport declaration, sessions, resend, resource lifetime in full"
+  },
+  "transports:1:20": {
+   "text": "- **brokerが使う下流のprobe/target側の接続が失われた場合*",
+   "verify": [
+    "tests/test_virtual_bench_serve_reboot.py::test_lose_closes_the_connection_and_its_streams",
+    "tests/test_virtual_bench_serve_reboot.py::test_lose_on_stdin_over_tcp",
+    "tests/test_virtual_bench_serve_reboot.py::test_reboot_on_stdin_over_tcp_length_framing",
+    "tests/test_spec_283e5b5.py::test_a_dropped_tcp_client_keeps_its_session_and_a_new_connection_takes_it_back"
+   ],
+   "mutants": [],
+   "note": "lost downstream line invalidates its resources (no_resource); a regenerated endpoint has a new boot_id; client close ends nothing"
+  },
+  "transports:1:21": {
+   "text": "- **TCP の経路**: TCP で待ち受ける probe は、待ち受けの ",
+   "verify": [
+    "tests/test_virtual_bench_rules_2026_10_02.py::test_c05_c07_virtual_bench_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_length",
+    "tests/test_virtual_bench_serve_tcp_connections.py::test_two_clients_at_once_share_one_lock",
+    "tests/test_virtual_bench_serve_tcp_connections.py::test_notifications_go_only_to_the_subscribers_connection_and_move_with_the_session",
+    "tests/test_virtual_bench_serve_tcp_connections.py::test_a_fourth_connection_is_accepted_and_closed_at_once",
+    "tests/test_virtual_bench_serve_tcp_connections.py::test_tcp_connections_sets_the_limit"
+   ],
+   "mutants": [
+    "tests/test_conformance_tcp_peers.py::test_checker_catches_response_leak_to_other_connection"
+   ],
+   "note": "one listener = one describe entry (kind 6, 0xFF) named by every connection's confirm; per-connection rules; connection limit"
+  },
+  "transports:2:1": {
+   "text": "- 同じ経路では、受け取る完全な message の順序を送った順序に保つ。分割",
+   "verify": [
+    "tests/test_trace_transports.py::test_answers_on_one_transport_keep_the_order_of_the_requests",
+    "tests/test_trace_transports.py::test_on_tcp_broken_framing_closes_and_opens_the_connection_and_confirms_there"
+   ],
+   "mutants": [],
+   "note": "answers in request order on one transport; after a reopen only the unresolved request goes again, nothing carried over"
+  },
+  "transports:2:2": {
+   "text": "- フレームは、何回の書き込み、USB の転送、HID の report、TCP",
+   "verify": [
+    "tests/test_virtual_core.py::test_current_virtual_serial_passes_faults_and_reconnect",
+    "tests/test_virtual_core.py::test_current_virtual_tcp_passes_core_and_tcp_faults",
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[bulk-0-9]",
+    "tests/test_trace_transports.py::test_length_frames_skip_length_0_and_need_no_boundaries_from_the_reads",
+    "tests/test_conformance_usb.py::test_bulk_response_transfer_boundaries_do_not_define_frames[1]"
+   ],
+   "mutants": [],
+   "note": "frames split or coalesced over writes/transfers/reports/segments are read alike (bench CORE-*-SPLIT/COALESCE; client)"
+  },
+  "transports:2:3": {
+   "text": "- 送る側（host も probe も）は、TCP を除き、1 つのフレームの",
+   "verify": [
+    "tests/test_trace_transports.py::test_the_host_writes_frames_whole_in_one_write[cobs]",
+    "tests/test_trace_transports.py::test_the_host_writes_frames_whole_in_one_write[length]",
+    "tests/test_trace_transports.py::test_answers_and_notifications_go_as_whole_frames_one_after_another"
+   ],
+   "mutants": [],
+   "note": "host writes each frame batch in one write; bench sends whole frames"
+  },
+  "transports:2:4": {
+   "text": "- シリアルの口、vendor bulk、HID では、フレームの途中で 200",
+   "verify": [
+    "tests/test_trace_transports.py::test_the_probe_drops_a_frame_that_stops_for_probe_frame_gap_ms",
+    "tests/test_trace_transports.py::test_usb_probe_drops_a_frame_that_stops_for_probe_frame_gap_ms[bulk]",
+    "tests/test_trace_transports.py::test_usb_probe_drops_a_frame_that_stops_for_probe_frame_gap_ms[hid]",
+    "tests/test_virtual_core.py::test_current_virtual_tcp_passes_core_and_tcp_faults",
+    "tests/test_host_rules_2026_10_02.py::test_c07_on_tcp_a_pause_inside_a_frame_is_read_on"
+   ],
+   "mutants": [
+    "tests/test_conformance_usb.py::test_checker_detects_usb_probe_faults[keep_partial]"
+   ],
+   "note": "200 ms gap restarts the reader on serial/bulk/HID; TCP reads on (bench CORE-TCP-PARTIAL-GAP, client)"
+  },
+  "transports:3:1": {
+   "text": "- probe は OEP の制御を複数の経路で受けてよい。**複数の経路はセッ",
+   "verify": [
+    "tests/test_virtual_bench_serve_tcp_connections.py::test_two_clients_at_once_share_one_lock",
+    "tests/test_virtual_bench_serve_tcp_connections.py::test_notifications_go_only_to_the_subscribers_connection_and_move_with_the_session",
+    "tests/test_conformance_tcp_peers.py::test_virtual_core_passes_all_tcp_peer_contracts"
+   ],
+   "mutants": [
+    "tests/test_conformance_tcp_peers.py::test_checker_catches_separate_lock_on_peer",
+    "tests/test_conformance_tcp_peers.py::test_checker_catches_response_leak_to_other_connection"
+   ],
+   "note": "transports share one session/lock; answers to the request's transport, notifications to the subscriber's"
+  },
+  "transports:3:2": {
+   "text": "- **経路が閉じても**（TCP の接続が閉じた、USB の device が",
+   "verify": [
+    "tests/test_spec_283e5b5.py::test_a_dropped_tcp_client_keeps_its_session_and_a_new_connection_takes_it_back",
+    "tests/test_spec_283e5b5.py::test_a_dropped_tcp_client_lapses_only_with_its_lease",
+    "tests/test_virtual_bench_serve_tcp_connections.py::test_one_client_drops_while_another_keeps_going",
+    "tests/test_virtual_core.py::test_current_virtual_serial_passes_faults_and_reconnect",
+    "tests/test_conformance_reconnect.py::test_reconnect_retention_accepts_compliant_responses[session]",
+    "tests/test_conformance_reconnect.py::test_reconnect_retention_accepts_compliant_responses[replay]",
+    "tests/test_conformance_reconnect.py::test_reconnect_retention_accepts_compliant_responses[ended]",
+    "tests/test_conformance_reconnect.py::test_reconnect_retention_accepts_compliant_responses[lease]"
+   ],
+   "mutants": [
+    "tests/test_conformance_reconnect.py::test_reconnect_retention_detects_mutants[session-release-lock]",
+    "tests/test_conformance_reconnect.py::test_reconnect_retention_detects_mutants[replay-cache-history]"
+   ],
+   "note": "a closed transport keeps session, lock, subscriptions and resend table until a core §9 event"
+  },
+  "transports:3:3": {
+   "text": "- **1 つのセッションの id を持つ要求は 1 つの経路で送る**（cor",
+   "verify": [
+    "tests/test_trace_transports.py::test_the_probe_does_not_check_which_transport_a_sessions_request_came_on",
+    "tests/test_virtual_bench_serve_tcp_connections.py::test_a_session_resumed_from_a_new_connection_while_the_old_one_is_open"
+   ],
+   "mutants": [],
+   "note": "probe does not check which transport a session's request came on; session 0 anywhere"
+  },
+  "transports:3:4": {
+   "text": "- host は、同じ probe に複数の経路があれば、自分が対応する経路を ",
+   "verify": [
+    "tests/test_hid_stream.py::test_open_usb_host_falls_back_from_vendor_to_hid",
+    "tests/test_usb_identity.py::test_a_bare_usb_target_with_one_probe_of_all_three_ways_opens_vendor",
+    "tests/test_usb_identity.py::test_a_silent_device_gets_one_confirm_and_its_resend_then_is_closed"
+   ],
+   "mutants": [],
+   "note": "host tries vendor bulk, then HID (CDC by name)"
+  },
+  "transports:3:5": {
+   "text": "- **USB の OEP の probe の見分け方**: host が知らな",
+   "verify": [
+    "tests/test_usb_identity.py::test_only_the_project_vid_pid_identifies_a_probe",
+    "tests/test_usb_identity.py::test_project_serial_ports_lists_the_project_vid_pid_only",
+    "tests/test_usb_identity.py::test_find_usb_matches_the_serial_alone"
+   ],
+   "mutants": [],
+   "note": "only 1209:4F45 identifies automatically; iProduct not used"
+  },
+  "transports:3:6": {
+   "text": "- **名指した probe**: 利用者が probe を unit_id で",
+   "verify": [
+    "tests/test_usb_identity.py::test_usb_unit_id_matches_the_serial_and_checks_describe",
+    "tests/test_usb_identity.py::test_usb_unit_id_whose_describe_says_another_unit_is_closed",
+    "tests/test_usb_identity.py::test_find_usb_matches_the_serial_alone",
+    "tests/test_conformance_reconnect.py::test_identity_selection_is_case_insensitive"
+   ],
+   "mutants": [],
+   "note": "named unit_id: device by serial (case-insensitive), used only when describe's unit_id matches, else closed"
+  },
+  "transports:3:7": {
+   "text": "- **ほかの device とシリアルの口**: 上の 2 つに当たらない U",
+   "verify": [
+    "tests/test_usb_identity.py::test_a_named_vid_pid_has_no_cdc_fallback_and_no_listing",
+    "tests/test_usb_identity.py::test_project_serial_ports_lists_the_project_vid_pid_only",
+    "tests/test_usb_identity.py::test_a_bare_usb_target_with_several_probes_opens_none_and_lists_them[devices0]"
+   ],
+   "mutants": [],
+   "note": "other devices and ports are opened only when named by the user"
+  },
+  "transports:3:8": {
+   "text": "- **探りの規則**: host が見分けずに開く device と口（名指し",
+   "verify": [
+    "tests/test_usb_identity.py::test_open_usb_host_probes_with_confirm_first",
+    "tests/test_usb_identity.py::test_a_silent_device_gets_one_confirm_and_its_resend_then_is_closed",
+    "tests/test_usb_identity.py::test_an_answer_that_is_not_a_valid_confirm_closes_the_device",
+    "tests/test_usb_identity.py::test_a_silent_serial_port_gets_only_confirms_then_is_closed",
+    "tests/test_port_speed.py::test_open_waits_out_a_raised_rate_a_host_that_died_left"
+   ],
+   "mutants": [],
+   "note": "probing: confirm (and its resend) only; no valid OEP! answer with the same corr -> closed, nothing else sent"
+  },
+  "transports:3:9": {
+   "text": "- **口の選び方**: OEP の probe と分かった device（プロ",
+   "verify": [
+    "tests/test_trace_transports.py::test_the_host_takes_the_vendor_interface_by_class_subclass_protocol_alone",
+    "tests/test_hid_stream.py::test_the_espusbdevice_vendor_report_is_found_with_its_id_and_sizes[63]",
+    "tests/test_hid_stream.py::test_a_keyboard_is_not_a_vendor_report"
+   ],
+   "mutants": [],
+   "note": "vendor bulk by class 0xFF/0x4F/0x45 only; HID by usage page 0xFF4F usage 0x45 only (client fixed)"
+  },
+  "transports:3:10": {
+   "text": "- raw CDC を併設する probe は、最初の発見に使える vendor",
+   "verify": [
+    "tests/test_usb_identity.py::test_a_bare_usb_target_with_one_probe_of_all_three_ways_opens_vendor",
+    "tests/test_usb_identity.py::test_a_bare_usb_target_with_one_cdc_only_probe_takes_its_port"
+   ],
+   "mutants": [],
+   "note": "a probe with vendor/HID: its CDC is not opened by enumeration (client fixed); CDC-only probe: CDC is OEP"
+  },
+  "transports:3:11": {
+   "text": "- **USB の serial number は unit_id**（core",
+   "verify": [
+    "tests/test_usb_identity.py::test_find_usb_matches_the_serial_alone",
+    "tests/test_usb_identity.py::test_usb_unit_id_matches_the_serial_and_checks_describe",
+    "tests/test_usb_identity.py::test_usb_probes_counts_each_device_once_whatever_its_ways_in"
+   ],
+   "mutants": [],
+   "note": "host finds a probe by its USB serial = unit_id without opening, confirms by describe (probe descriptor side is hardware)"
+  },
+  "transports:3:12": {
+   "text": "- **TCP の probe の見つけ方**: TCP で待ち受ける prob",
+   "verify": [
+    "tests/test_virtual_bench_announce.py::test_the_records_and_the_two_answer_forms",
+    "tests/test_virtual_bench_announce.py::test_find_unit_finds_the_announcing_virtual_bench[minimal-minimal]",
+    "tests/test_virtual_bench_announce.py::test_find_unit_and_tcp_unit_id_pass_over_an_impostor_with_the_same_txt[minimal]",
+    "tests/test_tcp_discovery.py::test_tcp_unit_id_opens_the_probe_dns_sd_names_and_checks_describe",
+    "tests/test_tcp_discovery.py::test_tcp_targets_without_a_port_and_by_unit_id"
+   ],
+   "mutants": [],
+   "note": "DNS-SD _oep._tcp over mDNS, SRV port, TXT unit_id; host opens found/explicit only, checks describe unit_id"
+  },
+  "transports:3:13": {
+   "text": "- **max_frame は両方向の上限**: probe は max_fra",
+   "verify": [
+    "tests/test_trace_transports.py::test_max_frame_binds_the_host_and_is_64_until_a_confirm_answer",
+    "tests/test_trace_transports.py::test_the_probe_sends_nothing_over_max_frame",
+    "tests/test_virtual_core.py::test_current_virtual_serial_passes_faults_and_reconnect"
+   ],
+   "mutants": [],
+   "note": "probe answers within max_frame; host refuses to send over max_frame (client fixed)"
+  },
+  "transports:3:14": {
+   "text": "- **confirm の前**: どの probe も 64 byte（reg",
+   "verify": [
+    "tests/test_trace_transports.py::test_max_frame_binds_the_host_and_is_64_until_a_confirm_answer",
+    "tests/test_trace_transports.py::test_the_host_reads_a_65535_byte_message",
+    "tests/test_host_rules_2026_10_02.py::test_c05_the_confirm_names_the_transport_and_port_speed_takes_it"
+   ],
+   "mutants": [],
+   "note": "probes take 64-byte messages before confirm; host sends <=64 until confirm's answer; host reads 65535"
+  },
+  "transports:3:15": {
+   "text": "- host は、OS が許すところでは、シリアルの口と HID を排他で開く（",
+   "verify": [
+    "tests/test_link_serial.py::test_open_host_on_a_serial_port_with_tiocexcl",
+    "tests/test_link_serial.py::test_a_port_left_open_at_exit_has_its_exclusive_mode_cleared"
+   ],
+   "mutants": [],
+   "note": "serial ports opened exclusively (TIOCEXCL, flock): a second open is PortBusy"
+  },
+  "transports:3:16": {
+   "text": "- HID を出す probe は、output の report を、inte",
+   "verify": [
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[hid-6-9]",
+    "tests/test_conformance_usb.py::test_current_virtual_core_passes_usb_contracts[hid-0-9]"
+   ],
+   "mutants": [
+    "tests/test_conformance_usb.py::test_checker_detects_usb_probe_faults[ignore_set_report]"
+   ],
+   "note": "the HID model takes output reports by interrupt OUT and by SET_REPORT (CORE-HID-SET-REPORT)"
+  },
+  "transports:3:17": {
+   "text": "- vendor bulk を出す probe は、できれば（SHOULD）その",
+   "excluded": "behaviour this repository cannot model: a USB device descriptor of the probe hardware (the Microsoft OS 2.0 compatible ID of its vendor interface); there is no USB device here"
+  },
+  "transports:4:1": {
+   "text": "- **UART bridge の回線**: データ 8 bit、パリティなし、",
+   "verify": [
+    "tests/test_host_rules_2026_10_02.py::test_c09_a_serial_port_opens_8n1_without_flow_control_and_dtr_rts_asserted",
+    "tests/test_trace_transports.py::test_a_uart_bridge_boots_at_115200_8n1_and_port_speed_changes_the_rate_alone"
+   ],
+   "mutants": [],
+   "note": "8N1, no flow control, 115200 at boot; set_baud changes only the rate"
+  },
+  "transports:4:2": {
+   "text": "- **任意の速さ変更を扱うhost**: [port_speed](../in",
+   "verify": [
+    "tests/test_port_speed.py::test_open_waits_out_a_raised_rate_a_host_that_died_left",
+    "tests/test_port_speed.py::test_open_gives_up_on_a_probe_that_never_comes_back"
+   ],
+   "mutants": [],
+   "note": "a host handling port_speed retries confirm at the boot speed and decides its own limit"
+  },
+  "transports:4:3": {
+   "text": "- **USB のシリアルの口**（USB CDC、内蔵の USB シリアル）:",
+   "verify": [
+    "tests/test_trace_transports.py::test_a_usb_serial_port_takes_any_line_coding"
+   ],
+   "mutants": [],
+   "note": "bench USB CDC port answers whatever line coding the host set (bench fixed); only a UART bridge has a rate"
+  },
+  "transports:4:4": {
+   "text": "- **制御線**: probe は、OEP を受けるか送るかを DTR、RTS",
+   "verify": [
+    "tests/test_host_rules_2026_10_02.py::test_c09_a_serial_port_opens_8n1_without_flow_control_and_dtr_rts_asserted"
+   ],
+   "mutants": [],
+   "note": "host asserts DTR and RTS while the port is open (probe side: no control lines in the bench)"
+  },
+  "transports:4:5": {
+   "text": "- probe は `0x00 <COBS(message | CRC)> 0x",
+   "verify": [
+    "tests/test_trace_transports.py::test_the_probe_takes_only_candidates_between_zeros_and_the_closing_zero_opens_the_next",
+    "tests/test_trace_transports.py::test_the_probe_drops_a_frame_that_stops_for_probe_frame_gap_ms",
+    "tests/test_virtual_core.py::test_current_virtual_serial_passes_faults_and_reconnect"
+   ],
+   "mutants": [],
+   "note": "probe processes only 0x00 COBS 0x00 candidates; bad CRC / undecodable / timed out dropped; closing 0x00 opens the next"
+  },
+  "transports:4:6": {
+   "text": "- 応答と通知は同じフレームで送る。1 つの経路の書き手は 1 つで、フレームの",
+   "verify": [
+    "tests/test_trace_transports.py::test_answers_and_notifications_go_as_whole_frames_one_after_another"
+   ],
+   "mutants": [],
+   "note": "answers and notifications use the same COBS frames, whole, one after another"
+  },
+  "transports:5:1": {
+   "text": "- TCP のフレームの長さや形が壊れた場合は接続を閉じて開き直す。入力を静かに",
+   "verify": [
+    "tests/test_trace_transports.py::test_on_tcp_broken_framing_closes_and_opens_the_connection_and_confirms_there",
+    "tests/test_trace_transports.py::test_on_tcp_an_answer_to_a_corr_not_waited_for_is_read_past",
+    "tests/test_trace_transports.py::test_on_tcp_a_pause_or_a_timeout_keeps_the_frame_being_read",
+    "tests/test_host_rules_2026_10_02.py::test_c07_on_tcp_a_pause_inside_a_frame_is_read_on"
+   ],
+   "mutants": [],
+   "note": "TCP broken framing: close and reopen (client fixed); pause is no breakage; other-corr answers just dropped"
+  },
+  "transports:5:2": {
+   "text": "- vendor bulk と HID の区切りを失った host は入力を読み",
+   "verify": [
+    "tests/test_host_rules_2026_10_02.py::test_c07_a_resync_waits_250_ms_after_the_hosts_last_write",
+    "tests/test_link_host.py::test_an_impossible_length_resyncs",
+    "tests/test_link_host.py::test_a_frame_that_stops_half_way_resyncs",
+    "tests/test_link_host.py::test_pushes_that_never_stop_are_stopped_blind_with_unsubscribe_and_end"
+   ],
+   "mutants": [],
+   "note": "vendor bulk/HID resync: read and discard until quiet, wait past probe_frame_gap_ms since the last write, own-corr confirm"
+  },
+  "transports:5:3": {
+   "text": "- COBS は壊れた候補を捨て、次の区切りから読む。要求の結果が不明な場合は ",
+   "verify": [
+    "tests/test_link_serial.py::test_a_broken_answer_on_a_held_port_is_resent_at_once_with_the_same_corr",
+    "tests/test_link_serial.py::test_answers_to_other_requests_are_read_past_without_a_resend",
+    "tests/test_trace_transports.py::test_the_probe_takes_only_candidates_between_zeros_and_the_closing_zero_opens_the_next"
+   ],
+   "mutants": [],
+   "note": "COBS: broken candidates dropped, reading goes on at the next delimiter; unknown outcome resent by core §5.1"
+  },
+  "transports:5:4": {
+   "text": "- 開き直してもセッションと再送履歴は残る（§3）。新しい経路で confirm",
+   "verify": [
+    "tests/test_spec_283e5b5.py::test_a_dropped_tcp_client_keeps_its_session_and_a_new_connection_takes_it_back",
+    "tests/test_trace_transports.py::test_on_tcp_broken_framing_closes_and_opens_the_connection_and_confirms_there",
+    "tests/test_conformance_reconnect.py::test_reconnect_retention_accepts_compliant_responses[replay]"
+   ],
+   "mutants": [],
+   "note": "after reopening, session and resend history stay; the new transport is confirmed and boot_id checked; no queue carried over"
+  },
+  "transports:7:1": {
+   "text": "| Universal Serial Bus Specification, Re",
+   "excluded": "informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
+  },
+  "transports:7:2": {
+   "text": "| USB Class Definitions for Communicatio",
+   "excluded": "informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
+  },
+  "transports:7:3": {
+   "text": "| Device Class Definition for HID 1.11 |",
+   "excluded": "informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
+  },
+  "transports:7:4": {
+   "text": "| Microsoft OS 2.0 Descriptors Specifica",
+   "excluded": "informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
+  },
+  "transports:7:5": {
+   "text": "| RFC 6762 Multicast DNS | `.local` の問い合",
+   "excluded": "informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
+  },
+  "transports:7:6": {
+   "text": "| RFC 6763 DNS-Based Service Discovery |",
+   "excluded": "informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
+  }
+ }
+}

@@ -118,10 +118,11 @@ class UsbAsyncStream:
     URB_SIZE = 64 * 1024
     DEPTH = 32
 
-    def __init__(self, context, handle, endpoint_in: int, endpoint_out: int, interface: int):
+    def __init__(self, context, handle, endpoint_in: int, endpoint_out: int, interface: int, out_packet: int = 512):
         import usb1
         self._usb1 = usb1
         self.context, self.handle, self.ep_in, self.ep_out, self.interface = context, handle, endpoint_in, endpoint_out, interface
+        self.out_packet = out_packet   # the OUT endpoint's wMaxPacketSize (64 at full speed, 512 at high speed)
         self.timeout = 0.05
         self._buffer = bytearray()
         self._cond = threading.Condition()
@@ -158,11 +159,12 @@ class UsbAsyncStream:
                         (VENDOR_CLASS, VENDOR_SUBCLASS, VENDOR_PROTOCOL):   # the OEP vendor interface (transports §3)
                     continue
                 eps = [(e.getAddress(), e.getAttributes()) for e in setting]
+                sizes = {e.getAddress(): e.getMaxPacketSize() for e in setting}
                 ins = [a for a, attr in eps if attr & 3 == 2 and a & 0x80]
                 outs = [a for a, attr in eps if attr & 3 == 2 and not a & 0x80]
                 if ins and outs:
                     handle.claimInterface(setting.getNumber())
-                    return cls(context, handle, ins[0], outs[0], setting.getNumber())
+                    return cls(context, handle, ins[0], outs[0], setting.getNumber(), sizes[outs[0]])
             handle.close()
         context.close()
         raise FileNotFoundError(f"no USB device {vid:04x}:{pid:04x}" + (f" serial {serial}" if serial else ""))
@@ -215,7 +217,7 @@ class UsbAsyncStream:
 
     def write(self, data: bytes) -> int:
         n = self.handle.bulkWrite(self.ep_out, data, timeout=2000)
-        if data and len(data) % 512 == 0:   # end the probe's receive transfer (a probe reading large transfers needs it)
+        if data and len(data) % self.out_packet == 0:   # a zero-length packet ends the transfer (transports §1)
             self.handle.bulkWrite(self.ep_out, b"", timeout=2000)
         return n
 

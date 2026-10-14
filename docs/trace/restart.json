@@ -1,0 +1,144 @@
+{
+ "spec_commit": "a09fa45",
+ "units": {
+  "restart:pre:1": {
+   "text": "| `oep.probe.restart` | 1 | probe 自身を起動し",
+   "excluded": "informative: the name / revision / role row of the interface (the numbers are checked under §1)"
+  },
+  "restart:pre:2": {
+   "text": "- host が、probe を抜き差しせずに、おかしな状態になった probe",
+   "excluded": "informative: the interface's purpose (an overview; no behaviour of its own)"
+  },
+  "restart:pre:3": {
+   "text": "- `oep.probe.restart` は任意のインターフェースである。pr",
+   "verify": [
+    "tests/test_trace_restart.py::test_a_probe_lists_oep_probe_restart_at_most_once[esp32-v003]",
+    "tests/test_trace_restart.py::test_a_probe_lists_oep_probe_restart_at_most_once[esp32-v003-64]",
+    "tests/test_trace_restart.py::test_a_probe_lists_oep_probe_restart_at_most_once[p4-bench]",
+    "tests/test_trace_restart.py::test_a_probe_lists_oep_probe_restart_at_most_once[p4-x035]",
+    "tests/test_trace_restart.py::test_a_probe_lists_oep_probe_restart_at_most_once[rp2350-pins]",
+    "tests/test_restart.py::test_a_probe_without_oep_probe_restart",
+    "tests/test_restart.py::test_virtual_bench_serve_without_restart"
+   ],
+   "mutants": [],
+   "note": "optional: a probe without it lists none (unknown_function); every profile lists it at most once"
+  },
+  "restart:1:1": {
+   "text": "| 0x10 | restart | [TLV] | —（固定部分は無い。応答の",
+   "verify": [
+    "tests/test_restart.py::test_the_registry_and_the_virtual_bench_offer_it",
+    "tests/test_restart.py::test_restart_answers_first_then_the_probe_restarts",
+    "tests/test_conformance_restart.py::test_restart_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_restart.py::test_bad_wire_response_is_detected[BARRIER]"
+   ],
+   "note": "op 0x10 restart, lock required, no fixed part, an empty answer"
+  },
+  "restart:1:2": {
+   "text": "| 0x40 | restart_max_ms | u32。**必須**。応答が",
+   "verify": [
+    "tests/test_restart.py::test_the_restart_interface_declares_restart_max_ms",
+    "tests/test_capabilities.py::test_restart_without_restart_max_ms_is_named_missing",
+    "tests/test_restart.py::test_restart_probe_waits_restart_max_ms_and_the_outside_by_default",
+    "tests/test_conformance_restart.py::test_restart_contract"
+   ],
+   "mutants": [],
+   "note": "describe 0x40 restart_max_ms(u32) required and declared; the host's wait reads it (the checker: max_ms 50 bounds the return)"
+  },
+  "restart:2:1": {
+   "text": "- **ロックが要る**（core §6.3）。restart は要求の TLV",
+   "verify": [
+    "tests/test_restart.py::test_restart_needs_the_lock",
+    "tests/test_restart.py::test_a_tlv_after_restart",
+    "tests/test_conformance_restart.py::test_restart_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_restart.py::test_bad_wire_response_is_detected[LOCK]",
+    "tests/test_conformance_restart.py::test_bad_wire_response_is_detected[TLV]",
+    "tests/test_conformance_restart.py::test_state_faults_are_detected[wrong_critical_tag-TLV]",
+    "tests/test_conformance_restart.py::test_state_faults_are_detected[refusal_changes_pin-LOCK]"
+   ],
+   "note": "session_required / locked / no_session; no TLV of its own: a non-critical one ignored, a critical one unsupported (tag as received)"
+  },
+  "restart:2:2": {
+   "text": "- **応答が先**: 受け付けた restart に、probe は comp",
+   "verify": [
+    "tests/test_restart.py::test_restart_answers_first_then_the_probe_restarts",
+    "tests/test_conformance_restart.py::test_restart_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_restart.py::test_bad_wire_response_is_detected[BARRIER]",
+    "tests/test_conformance_restart.py::test_state_faults_are_detected[boot_before_write-BARRIER]"
+   ],
+   "note": "completed success, empty payload, sent before the restart (the old boot answers)"
+  },
+  "restart:2:3": {
+   "text": "- **応答の後**: probe は、その応答を送った後、再起動するまで、どの",
+   "verify": [
+    "tests/test_restart.py::test_requests_behind_the_restart_are_lost_with_the_old_boot",
+    "tests/test_trace_restart.py::test_no_notification_goes_out_once_the_restart_is_answered",
+    "tests/test_conformance_restart.py::test_restart_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_restart.py::test_state_faults_are_detected[quiet_response-BARRIER]"
+   ],
+   "note": "after the answer: no answer on any route (a request behind it on the same route included), no notification"
+  },
+  "restart:2:4": {
+   "text": "- **target**: 再起動の手順でtargetのreset/resume",
+   "verify": [
+    "tests/test_trace_restart.py::test_the_restart_leaves_the_target_as_it_was"
+   ],
+   "mutants": [],
+   "note": "a halted hart stays halted at its dpc, havereset not raised (the pins' MCU reset state and external pulls are hardware, not modelled)"
+  },
+  "restart:2:5": {
+   "text": "- **再起動の後**は、OEP については電源を入れたときの起動と同じである:",
+   "verify": [
+    "tests/test_restart.py::test_restart_answers_first_then_the_probe_restarts",
+    "tests/test_restart.py::test_the_saved_settings_come_back_the_unsaved_ones_do_not",
+    "tests/test_trace_restart.py::test_after_the_restart_the_serial_port_runs_at_its_boot_speed",
+    "tests/test_conformance_restart.py::test_restart_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_restart.py::test_state_faults_are_detected[reuse_boot-BARRIER]",
+    "tests/test_conformance_restart.py::test_state_faults_are_detected[keep_plan-BARRIER]",
+    "tests/test_conformance_restart.py::test_state_faults_are_detected[keep_pin-BARRIER]",
+    "tests/test_conformance_restart.py::test_state_faults_are_detected[keep_cache-BARRIER]",
+    "tests/test_conformance_restart.py::test_state_faults_are_detected[keep_owner-BARRIER]",
+    "tests/test_conformance_restart.py::test_state_faults_are_detected[bad_uptime-BARRIER]",
+    "tests/test_conformance_restart.py::test_restarted_clock_shape_and_identity[wrong_clock_boot]"
+   ],
+   "note": "as at power-on: a new boot_id, no session / plan / pins / resend cache, clock from 0, saved settings only, the serial port at its boot speed"
+  },
+  "restart:2:6": {
+   "text": "- **経路**: 再起動のあいだ probe は経路に答えない。USB の経路",
+   "verify": [
+    "tests/test_restart.py::test_virtual_bench_serve_restart_over_tcp_length_framing",
+    "tests/test_restart.py::test_virtual_bench_serve_restart_over_tcp_kept_open",
+    "tests/test_restart.py::test_virtual_bench_serve_restart_over_a_pty",
+    "tests/test_conformance_restart.py::test_restart_contract"
+   ],
+   "mutants": [
+    "tests/test_conformance_restart.py::test_state_faults_are_detected[quiet_response-BARRIER]",
+    "tests/test_conformance_restart.py::test_state_faults_are_detected[missing_route-BARRIER]"
+   ],
+   "note": "silent on every route while restarting; a TCP connection may close or stay, the host reconnects / reopens"
+  },
+  "restart:2:7": {
+   "text": "- **内部の復帰**: probeはrestart_max_msのうちに上記の",
+   "verify": [
+    "tests/test_conformance_restart.py::test_restart_contract",
+    "tests/test_restart.py::test_a_probe_that_does_not_come_back_by_the_hosts_deadline_is_gone",
+    "tests/test_restart.py::test_a_given_wait_is_the_hosts_own_deadline",
+    "tests/test_restart.py::test_restart_probe_waits_restart_max_ms_and_the_outside_by_default"
+   ],
+   "mutants": [
+    "tests/test_conformance_restart.py::test_state_faults_are_detected[never_boot-BARRIER]",
+    "tests/test_conformance_restart.py::test_state_faults_are_detected[missing_route-BARRIER]"
+   ],
+   "note": "every route answers confirm by restart_max_ms (checker); the host's reopen deadline is its own"
+  }
+ }
+}

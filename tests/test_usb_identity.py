@@ -127,9 +127,9 @@ def test_a_bare_usb_target_with_one_probe_of_all_three_ways_opens_vendor(monkeyp
     link.open_host("usb")
     assert seen == [("vendor", "30eda0e343c6")]
     monkeypatch.setattr(link, "SerialLink", serial_link)
-    monkeypatch.setattr(link, "_open_usb_stream", no_stream)  # vendor and HID not openable: its CDC port
-    with pytest.raises(Opened, match="/dev/ttyACM0"):
-        link.open_host("usb")
+    monkeypatch.setattr(link, "_open_usb_stream", no_stream)  # vendor and HID not openable: its CDC is not opened
+    with pytest.raises(FileNotFoundError, match="/dev/ttyACM0. is not opened unless named"):   # (transports §3: a raw
+        link.open_host("usb")                                                                  # CDC may sit beside them)
 
 
 def test_a_bare_usb_target_with_one_cdc_only_probe_takes_its_port(monkeypatch):

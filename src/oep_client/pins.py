@@ -107,7 +107,7 @@ def role_channels(hst: h.Host, fn: int, role: int) -> list[int]:
     """The channels fn's describe allows for `role` (role_channels, core §7.4)."""
     out = set()
     for tag, v in core.describe(hst, fn):
-        if tag & 0x7F == catalog.ROLE_CHANNELS and len(v) >= 3 and v[0] == role:
+        if tag == catalog.ROLE_CHANNELS and len(v) >= 3 and v[0] == role:
             out.update(catalog.bitmap_to_channels(struct.unpack_from("<H", v, 1)[0], v[3:]))
     return sorted(out)
 
@@ -150,7 +150,7 @@ class PinFinder:
         self.report = Report(wire=wire, power=power, excluded=self.exclude)
         self.gpio = Gpio(hst)
         self.modes = next((struct.unpack_from("<I", v)[0] for t, v in core.describe(hst, self.gpio.fn)
-                           if t & 0x7F == GPIO_MODES_TAG and len(v) >= 4), 0xFF)
+                           if t == GPIO_MODES_TAG and len(v) >= 4), 0xFF)
         self.wire = arm.SwdWire(hst) if wire == "swd" else riscv.Wire(hst, f"oep.wire.{wire}")
         self.riscv = wire != "swd"
         self.kinds: dict[int, Channel] = {}
@@ -403,7 +403,7 @@ class PinFinder:
             else:                                          # fixed pairs (channel_group): those wholly safe
                 pairs = []
                 for tag, v in core.describe(self.hst, self.wire.fn):
-                    if tag & 0x7F == catalog.CHANNEL_GROUP:
+                    if tag == catalog.CHANNEL_GROUP:
                         roles = dict(catalog.unpack_channel_group(v)[1])
                         pair = (roles.get(1, 0xFFFF), roles.get(2, 0xFFFF))
                         if all(p in self.kinds and self.kinds[p].kind in SAFE for p in pair if p != 0xFFFF):

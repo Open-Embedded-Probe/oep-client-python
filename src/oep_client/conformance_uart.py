@@ -69,7 +69,8 @@ class UartChecks:
                     actual=self.configure(sid,57600,4,raw=raw);require(self.status()==(actual,4),'actual configure/status');self.configure(sid);require(self.status()[1]==0,'omitted format must mean 8N1')
             elif kind=='BAUD-BOUNDARY':
                 for baud in (1755429,1940210):require(self.configure(sid,baud)==1843200,'fixture divider boundary')
-                for baud in (1755428,1940211,0):self.refused(self.config_request(sid,baud),'unsupported',b'\0')
+                for baud in (1755428,1940211):self.refused(self.config_request(sid,baud),'unsupported',b'\0')
+                self.refused(self.config_request(sid,0),'malformed')   # baud 0 is malformed (fixture §2)
             elif kind=='FORMAT':
                 for raw in (self.format_tag,self.format_tag|128):
                     for value in (1,2,12,32,255):self.refused(self.config_request(sid,format_value=value,raw=raw),'unsupported',bytes((raw,)))

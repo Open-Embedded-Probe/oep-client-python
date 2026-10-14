@@ -1,0 +1,471 @@
+{
+ "spec_commit": "a09fa45",
+ "units": {
+  "common:1.1:1": {
+   "text": "- ストリームの各バイトに位置（u64、一周しない）を振る。資源として番号を持つ",
+   "verify": [
+    "tests/test_trace_common.py::test_a_stream_made_as_a_resource_starts_at_0_and_a_new_one_has_a_new_number",
+    "tests/test_interfaces.py::test_uart_stream_is_the_plans_and_its_position_never_goes_back",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[reset_serial]",
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[clear_position]"
+   ],
+   "note": "u64 positions, a resource stream starts at 0, a new one gets a new number; fixture UART carries position/serial on"
+  },
+  "common:1.1:2": {
+   "text": "- **読み出しはバッファを消費しない。** バイトが消えるのは次のときだけ:",
+   "verify": [
+    "tests/test_trace_common.py::test_reading_consumes_nothing_and_a_target_reset_drops_nothing",
+    "tests/test_interfaces.py::test_uart_configure_format_and_reads_that_do_not_consume",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[consume]"
+   ],
+   "note": "reading does not consume the buffer"
+  },
+  "common:1.1:3": {
+   "text": "1. あふれ（古いものから押し出す。target や相手を待たせない）。",
+   "verify": [
+    "tests/test_conformance_stream.py::test_stream_contracts_pass",
+    "tests/test_conformance_uart_stream.py::test_uart_common_stream"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[gap]"
+   ],
+   "note": "overflow pushes the oldest out without waiting (stream model GAP case: gap flag, lost mark)"
+  },
+  "common:1.1:4": {
+   "text": "2. host の明示の消去（clear）。",
+   "verify": [
+    "tests/test_trace_common.py::test_clear_release_and_restart_drop_the_bytes",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[clear_position]"
+   ],
+   "note": "clear drops the kept bytes"
+  },
+  "common:1.1:5": {
+   "text": "3. ストリームの解放、または probe の再起動。",
+   "verify": [
+    "tests/test_trace_common.py::test_clear_release_and_restart_drop_the_bytes",
+    "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone"
+   ],
+   "mutants": [],
+   "note": "a released stream and a restarted probe keep nothing"
+  },
+  "common:1.1:6": {
+   "text": "- target のリセットでは捨てない（リセット直前の出力が最も見たいことが多",
+   "verify": [
+    "tests/test_trace_common.py::test_reading_consumes_nothing_and_a_target_reset_drops_nothing",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[reset_drops_bytes]"
+   ],
+   "note": "a target reset keeps the bytes (console reset mark)"
+  },
+  "common:1.2:1": {
+   "text": "| from | 意味 |",
+   "excluded": "informative: the header row of the read `from` table (column names only); its data rows are traced"
+  },
+  "common:1.2:2": {
+   "text": "| 0 | 位置 arg から |",
+   "verify": [
+    "tests/test_trace_common.py::test_read_from_a_position_the_oldest_now_and_the_last_mark",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [],
+   "note": "from 0: from position arg"
+  },
+  "common:1.2:3": {
+   "text": "| 1 | 残っている一番古いバイトから |",
+   "verify": [
+    "tests/test_trace_common.py::test_read_from_a_position_the_oldest_now_and_the_last_mark",
+    "tests/test_interfaces.py::test_console_open_makes_a_stream_and_reads_by_position"
+   ],
+   "mutants": [],
+   "note": "from 1: the oldest byte kept"
+  },
+  "common:1.2:4": {
+   "text": "| 2 | 今から（まだ何もない位置） |",
+   "verify": [
+    "tests/test_trace_common.py::test_read_from_a_position_the_oldest_now_and_the_last_mark",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [],
+   "note": "from 2: now, nothing yet"
+  },
+  "common:1.2:5": {
+   "text": "| 3 | kind が arg の最後のマークの位置から（arg 0 はどの ",
+   "verify": [
+    "tests/test_trace_common.py::test_read_from_a_position_the_oldest_now_and_the_last_mark",
+    "tests/test_trace_common.py::test_read_from_a_mark_without_marks_is_unsupported",
+    "tests/test_virtual_bench_rules_2026_10_02.py::test_c02_read_from_4_unsupported_and_from_3_with_a_wide_arg_reads_from_now",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [],
+   "note": "from 3: last mark of kind arg (0 any); none kept -> from now; no marks offered -> unsupported 0x00"
+  },
+  "common:1.2:6": {
+   "text": "- `start` は data の先頭の位置。要求した位置がもう押し出されてい",
+   "verify": [
+    "tests/test_trace_common.py::test_start_moves_on_with_gap_over_bytes_gone_and_a_future_position_reads_nothing",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[gap]"
+   ],
+   "note": "start = data's first position; a pushed-out position moves start on with gap"
+  },
+  "common:1.2:7": {
+   "text": "- 要求した位置（from 0）が書き込みの位置より先なら、応答は start ",
+   "verify": [
+    "tests/test_trace_common.py::test_start_moves_on_with_gap_over_bytes_gone_and_a_future_position_reads_nothing",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[future]"
+   ],
+   "note": "a position past the write position: start = write position, len 0, flags 0"
+  },
+  "common:1.2:8": {
+   "text": "- len は max 以下で、かつ max_frame の中で応答に収まる分以",
+   "verify": [
+    "tests/test_trace_common.py::test_len_stays_within_max_and_max_frame_and_more_says_bytes_are_left",
+    "tests/test_interfaces.py::test_stream_io_fits_a_64_byte_frame",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[more]"
+   ],
+   "note": "len <= max and within max_frame; more set while bytes remain"
+  },
+  "common:1.2:9": {
+   "text": "- **read はロックなしで使える**（保持データを消費せず、probe は",
+   "verify": [
+    "tests/test_trace_common.py::test_read_and_marks_need_no_lock_even_while_another_session_holds_it",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[consume]"
+   ],
+   "note": "read is lock-free and keeps no per-reader state"
+  },
+  "common:1.3:1": {
+   "text": "| 0x01 | lost | あふれで押し出した、または受信の誤り | 理由（",
+   "verify": [
+    "tests/test_trace_common.py::test_mark_kinds_and_their_spaces",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass",
+    "tests/test_conformance_uart.py::test_uart_checks"
+   ],
+   "mutants": [],
+   "note": "lost 0x01 with detail overflow 1 (stream model GAP) / framing 2 / parity 3 (UART model)"
+  },
+  "common:1.3:2": {
+   "text": "| 0x02 | clear | host が消去した | 0 |",
+   "verify": [
+    "tests/test_trace_common.py::test_clear_release_and_restart_drop_the_bytes",
+    "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone"
+   ],
+   "mutants": [],
+   "note": "clear leaves a clear mark, detail 0"
+  },
+  "common:1.3:3": {
+   "text": "| 0x03 | host | host が付けた印 | host の値 |",
+   "verify": [
+    "tests/test_trace_common.py::test_a_host_mark_carries_the_value_at_the_write_position_and_the_probe_clock",
+    "tests/test_interfaces.py::test_console_marks_follow_serials_and_more"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[kind]"
+   ],
+   "note": "mark puts kind host with detail = value"
+  },
+  "common:1.3:4": {
+   "text": "- マークの position は、probe がそのマークを付けた時の書き込み",
+   "verify": [
+    "tests/test_trace_common.py::test_a_host_mark_carries_the_value_at_the_write_position_and_the_probe_clock",
+    "tests/test_trace_common.py::test_reading_consumes_nothing_and_a_target_reset_drops_nothing"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_mark_arrivals_between_pages_faults[position_truncated]"
+   ],
+   "note": "a mark's position is the write position when it was made"
+  },
+  "common:1.3:5": {
+   "text": "- kind の空間: 0x01〜0x3F 標準、0x40〜0x7F インターフ",
+   "verify": [
+    "tests/test_trace_common.py::test_mark_kinds_and_their_spaces",
+    "tests/test_interfaces.py::test_console_marks_follow_serials_and_more"
+   ],
+   "mutants": [],
+   "note": "kinds 0x01-0x3F standard, 0x40-0x7F the interface's; details from the registry"
+  },
+  "common:1.3:6": {
+   "text": "- `serial` はストリームごとのマークの通し番号（u32、一周する。co",
+   "verify": [
+    "tests/test_trace_common.py::test_marks_page_by_serial",
+    "tests/test_interfaces.py::test_console_marks_follow_serials_and_more",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[serial_gap]",
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[sort_wrap]"
+   ],
+   "note": "per-stream u32 serial that wraps; marks at one position read without loss or repeat"
+  },
+  "common:1.3:7": {
+   "text": "- `time_ns` は probe の時計（起動からの ns、u64、cor",
+   "verify": [
+    "tests/test_trace_common.py::test_a_host_mark_carries_the_value_at_the_write_position_and_the_probe_clock",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[timestamp]"
+   ],
+   "note": "time_ns is the probe's clock in ns since boot"
+  },
+  "common:1.3:8": {
+   "text": "- マークは本文とは別の小さなリングにためる。あふれたら古いものから捨てる。ho",
+   "verify": [
+    "tests/test_conformance_stream.py::test_stream_contracts_pass",
+    "tests/test_trace_common.py::test_the_host_counts_lost_marks_by_the_forward_serial_jump"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_mark_arrivals_between_pages_faults[oversized_ring]",
+    "tests/test_conformance_stream.py::test_mark_arrivals_between_pages_faults[serial_skip]"
+   ],
+   "note": "marks in their own ring, oldest dropped; the serial jump counts the marks lost"
+  },
+  "common:1.3:9": {
+   "text": "1. 応答の要素は serial の順で、from_serial を**含む**",
+   "verify": [
+    "tests/test_trace_common.py::test_marks_page_by_serial",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_mark_arrivals_between_pages_faults[stale_page]"
+   ],
+   "note": "paging 1: serial order, from_serial included"
+  },
+  "common:1.3:10": {
+   "text": "2. from_serial = next なら、要素 0 個、more 0（ま",
+   "verify": [
+    "tests/test_trace_common.py::test_marks_page_by_serial",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_mark_arrivals_between_pages_faults[cursor_empty]"
+   ],
+   "note": "paging 2: from next (or nothing kept): none, more 0"
+  },
+  "common:1.3:11": {
+   "text": "3. それ以外（押し出された番号、まだ付けていない番号、前の起動の番号）は、残っ",
+   "verify": [
+    "tests/test_trace_common.py::test_marks_page_by_serial",
+    "tests/test_trace_common.py::test_the_host_counts_lost_marks_by_the_forward_serial_jump",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [],
+   "note": "paging 3: serial not kept / not given / other boot -> from the oldest; host counts only a forward jump in one stream"
+  },
+  "common:1.3:12": {
+   "text": "4. more = 1 なら、返した要素の後ろにまだ残っている。host は、受",
+   "verify": [
+    "tests/test_trace_common.py::test_marks_page_by_serial",
+    "tests/test_interfaces.py::test_console_marks_follow_serials_and_more",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[more]"
+   ],
+   "note": "paging 4: more 1 -> next from the last serial + 1 mod 2^32 (client follows)"
+  },
+  "common:1.4:1": {
+   "text": "| 操作 | 要求 | 応答 | 意味 |",
+   "excluded": "informative: the header row of the state-changing operations table (column names only); its data rows are traced"
+  },
+  "common:1.4:2": {
+   "text": "| clear | [stream(u32)] | — | 貯めたバイトを捨てる",
+   "verify": [
+    "tests/test_trace_common.py::test_clear_release_and_restart_drop_the_bytes",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[clear_position]"
+   ],
+   "note": "clear: needs the lock, drops the bytes, adds a clear mark"
+  },
+  "common:1.4:3": {
+   "text": "| mark | [stream(u32)]、value(u8) | — | マ",
+   "verify": [
+    "tests/test_trace_common.py::test_a_host_mark_carries_the_value_at_the_write_position_and_the_probe_clock",
+    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[kind]"
+   ],
+   "note": "mark: needs the lock, a host mark with detail = value"
+  },
+  "common:1.4:4": {
+   "text": "| write | [stream(u32)]、count(u16)、data ",
+   "verify": [
+    "tests/test_trace_common.py::test_write_accepted_is_success_partial_or_failed",
+    "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
+    "tests/test_conformance_outcomes.py::test_outcome_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_outcomes.py::test_outcome_mutants_fail[accepted_overflow]",
+    "tests/test_conformance_outcomes.py::test_outcome_mutants_fail[wrong_outcome]"
+   ],
+   "note": "write: accepted = min(count, room); all success, some partial, none failed"
+  },
+  "common:2:1": {
+   "text": "- connection は、明示したピンの組と target 選択に対して a",
+   "verify": [
+    "tests/test_trace_common.py::test_a_connection_is_made_by_attach_named_first_by_target_ops_and_never_reused",
+    "tests/test_interfaces.py::test_attach_makes_a_new_connection_on_named_pins",
+    "tests/test_interfaces.py::test_dmi_counts_its_steps_and_polls_return_their_last_value"
+   ],
+   "mutants": [],
+   "note": "attach on named pins makes a session-owned connection(u32); target ops start with it"
+  },
+  "common:2:2": {
+   "text": "- 番号は core §9 の規則で振る。同じ boot_id の間は再利用しな",
+   "verify": [
+    "tests/test_trace_common.py::test_a_connection_is_made_by_attach_named_first_by_target_ops_and_never_reused",
+    "tests/test_virtual_bench_serve_reboot.py::test_lose_closes_the_connection_and_its_streams"
+   ],
+   "mutants": [],
+   "note": "numbers by core §9, never reused in one boot_id"
+  },
+  "common:2:3": {
+   "text": "- detach、セッションの終わり、線切れ、または提供するtarget opが",
+   "verify": [
+    "tests/test_trace_common.py::test_a_connection_closes_on_detach_session_end_lost_line_or_failed_cleanup_streams_first[detach]",
+    "tests/test_trace_common.py::test_a_connection_closes_on_detach_session_end_lost_line_or_failed_cleanup_streams_first[end]",
+    "tests/test_trace_common.py::test_a_connection_closes_on_detach_session_end_lost_line_or_failed_cleanup_streams_first[lost]",
+    "tests/test_trace_common.py::test_a_connection_closes_on_detach_session_end_lost_line_or_failed_cleanup_streams_first[cleanup]",
+    "tests/test_no_resume.py::test_a_session_end_of_any_kind_releases_what_it_created[end]"
+   ],
+   "mutants": [],
+   "note": "closed by detach, session end, lost line, failed cleanup; its streams first"
+  },
+  "common:2:4": {
+   "text": "- connectionを作るwireのfnと、それを使うtargetのfnは別",
+   "verify": [
+    "tests/test_trace_common.py::test_a_connection_is_made_by_attach_named_first_by_target_ops_and_never_reused",
+    "tests/test_interfaces.py::test_no_connection_after_the_probe_lost_it",
+    "tests/test_conformance_arm_adi.py::test_arm_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_arm_adi.py::test_arm_checker_detects_independent_faults[resource_kind-RESOURCE]"
+   ],
+   "note": "target op names its connection explicitly; another wire's connection / wrong kind: unavailable 6; none or closed: no_resource"
+  },
+  "common:3:1": {
+   "text": "| 0 | ok | 最後まで進んだ |",
+   "verify": [
+    "tests/test_trace_common.py::test_the_status_values_and_an_unknown_one_is_a_failure",
+    "tests/test_interfaces.py::test_reset_answers_status_flags_pc_and_takes_no_method"
+   ],
+   "mutants": [],
+   "note": "status 0 ok: went to the end"
+  },
+  "common:3:2": {
+   "text": "| 1 | wait | target が「待て」を返し続けた（DMI の bu",
+   "verify": [
+    "tests/test_trace_common.py::test_the_status_values_and_an_unknown_one_is_a_failure",
+    "tests/test_conformance_arm_adi.py::test_arm_contracts_pass"
+   ],
+   "mutants": [],
+   "note": "status 1 wait: retries used up -> a failure (client); ARM model answers status 1 after WAIT retries (ACK-2-*)"
+  },
+  "common:3:3": {
+   "text": "| 2 | line | 線の応答が無い、パリティの誤り |",
+   "verify": [
+    "tests/test_trace_common.py::test_the_bench_answers_line_and_state_and_timeout_where_they_happen",
+    "tests/test_trace_common.py::test_a_failed_attach_answers_status_alone_and_a_bad_form_is_malformed",
+    "tests/test_interfaces.py::test_a_write_that_fails_on_the_line_adds_no_value"
+   ],
+   "mutants": [],
+   "note": "status 2 line: no answer on the line"
+  },
+  "common:3:4": {
+   "text": "| 3 | fault | target が拒否した（DMI の op の失敗、",
+   "verify": [
+    "tests/test_trace_common.py::test_the_status_values_and_an_unknown_one_is_a_failure",
+    "tests/test_interfaces.py::test_block_access_reports_how_far_it_got"
+   ],
+   "mutants": [],
+   "note": "status 3 fault: the target refused"
+  },
+  "common:3:5": {
+   "text": "| 4 | timeout | 待つ手順や run の上限に達した |",
+   "verify": [
+    "tests/test_trace_common.py::test_the_bench_answers_line_and_state_and_timeout_where_they_happen",
+    "tests/test_interfaces.py::test_a_poll_that_gives_up_stops_the_list_with_its_last_value",
+    "tests/test_interfaces.py::test_run_returns_the_registers_asked_for"
+   ],
+   "mutants": [],
+   "note": "status 4 timeout: a wait or run reached its limit"
+  },
+  "common:3:6": {
+   "text": "| 5 | state | 前提の状態でない（止まっていない hart に止まっ",
+   "verify": [
+    "tests/test_trace_common.py::test_the_bench_answers_line_and_state_and_timeout_where_they_happen",
+    "tests/test_interfaces.py::test_state_status_and_unknown_status_are_failures"
+   ],
+   "mutants": [],
+   "note": "status 5 state: not in the needed state (a running hart)"
+  },
+  "common:3:7": {
+   "text": "- 0x06〜0x3F は共通の値として予約、0x40〜0x7F はインターフェ",
+   "verify": [
+    "tests/test_trace_common.py::test_the_status_values_and_an_unknown_one_is_a_failure",
+    "tests/test_interfaces.py::test_state_status_and_unknown_status_are_failures",
+    "tests/test_conformance_outcomes.py::test_unknown_status_never_becomes_success_or_changes_payload_shape[6]",
+    "tests/test_conformance_outcomes.py::test_unknown_status_never_becomes_success_or_changes_payload_shape[64]"
+   ],
+   "mutants": [],
+   "note": "0x06-0x3F reserved, 0x40-0x7F the interface's; an unknown status is a failure"
+  },
+  "common:3:8": {
+   "text": "- **失敗は completed で返す**（core §4.2）。何も進まな",
+   "verify": [
+    "tests/test_trace_common.py::test_the_bench_answers_line_and_state_and_timeout_where_they_happen",
+    "tests/test_interfaces.py::test_block_access_reports_how_far_it_got",
+    "tests/test_trace_common.py::test_a_failed_attach_answers_status_alone_and_a_bad_form_is_malformed",
+    "tests/test_conformance_outcomes.py::test_outcome_contracts_pass"
+   ],
+   "mutants": [
+    "tests/test_conformance_outcomes.py::test_outcome_mutants_fail[debug_rejected]",
+    "tests/test_conformance_outcomes.py::test_outcome_mutants_fail[wrong_done]"
+   ],
+   "note": "failures are completed failed / partial with the success shape (done, status); bad form rejected malformed"
+  },
+  "common:3:9": {
+   "text": "- failedやdone 0は、targetへ書き込みが届かなかった保証ではな",
+   "verify": [
+    "tests/test_trace_common.py::test_the_client_never_runs_a_failed_target_write_again_by_itself",
+    "tests/test_conformance_outcomes.py::test_completed_failure_and_partial_are_cached_without_reexecution[1]"
+   ],
+   "mutants": [
+    "tests/test_conformance_outcomes.py::test_outcome_mutants_fail[reexecute]"
+   ],
+   "note": "a failed write is not run again by a new corr; the probe answers a repeat from its table"
+  },
+  "common:3:10": {
+   "text": "- 成功の形に done / status が無い op（scan、attach",
+   "verify": [
+    "tests/test_trace_common.py::test_a_failed_attach_answers_status_alone_and_a_bad_form_is_malformed"
+   ],
+   "mutants": [],
+   "note": "scan/attach/detach failure: completed failed, payload status(u8) [TLV]"
+  }
+ }
+}

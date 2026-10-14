@@ -101,6 +101,13 @@ def check_max_op_ms(value: int) -> str:
     return ""
 
 
+def owner_of(tlvs: bytes) -> str | None:
+    """The owner TLV after lock_state's fixed part or rejected locked's remaining ms (core §6.4), shown as core §2.1 says;
+    None when there is none, or any copy is not 1-32 bytes (a broken TLV is not used, core §2.3)."""
+    values = [v for t, v in m.split_tlvs(tlvs) if t == OWNER]
+    return m.shown(values[0]) if values and all(1 <= len(v) <= reg.LIMITS["owner_max_bytes"] for v in values) else None
+
+
 class Locked(Rejected):
     @property
     def remaining_ms(self) -> int:
@@ -109,8 +116,7 @@ class Locked(Rejected):
     @property
     def owner(self) -> str | None:
         """The holder's owner text, when its open gave one (oep-core §6.4)."""
-        value = m.Tail.parse(self.result.payload[4:]).get(OWNER)
-        return m.shown(value) if value is not None else None      # control characters replaced (core §2.1)
+        return owner_of(self.result.payload[4:])                   # control characters replaced (core §2.1)
 
     def __str__(self) -> str:
         who = f" by {self.owner}" if self.owner else ""
@@ -176,23 +182,26 @@ class Unavailable(Rejected):
         except ValueError:
             return []
 
-    def _first(self, tag: int) -> bytes | None:
-        return next((v for t, v in self.tlvs if t & 0x7F == tag), None)
+    def _first(self, tag: int, size: int) -> bytes | None:
+        """The first TLV `tag`; None when absent or any copy is not `size` bytes (broken: not used, core §2.3). A tag with
+        bit 7 set is not this one in an answer (core §2.2)."""
+        values = [v for t, v in self.tlvs if t == tag]
+        return values[0] if values and all(len(v) == size for v in values) else None
 
     @property
     def cause(self) -> str | None:
-        v = self._first(self._T["cause"])
+        v = self._first(self._T["cause"], 1)
         return self.CAUSES.get(v[0], str(v[0])) if v else None
 
     @property
     def channels(self) -> list[int]:
-        return [struct.unpack_from("<H", v)[0] for t, v in self.tlvs if t & 0x7F == self._T["channel"] and len(v) >= 2]
+        return [struct.unpack_from("<H", v)[0] for t, v in self.tlvs if t == self._T["channel"] and len(v) == 2]
 
     @property
     def fn(self) -> int | None:
         """TLV 0x05 fn: the fn the refusal is about (a track of a capture-group's bind or start)."""
-        v = self._first(self._T["fn"])
-        return struct.unpack_from("<H", v)[0] if v and len(v) >= 2 else None
+        v = self._first(self._T["fn"], 2)
+        return struct.unpack_from("<H", v)[0] if v else None
 
 
 _REJECTS = {m.LOCKED: Locked, m.NO_SESSION: NoSession, m.NO_RESOURCE: NoResource,
@@ -474,7 +483,8 @@ class Host:
         self.revision = revision
         where = tail.get(CONFIRM_TRANSPORT)
         self.limits = {"magic": magic, "revision": revision, "max_frame": max_frame, "window": window,
-                       "max_inflight": inflight, "boot_id": boot_id, "transport": where[0] if where else None,
+                       "max_inflight": inflight, "boot_id": boot_id,
+                       "transport": where[0] if where is not None and len(where) == 1 else None,   # u8 (core §2.3)
                        "tail": tail}
         if self.on_limits is not None:
             self.on_limits(self.limits)
@@ -574,8 +584,7 @@ class Host:
         """lock_state with the holder's owner text (None: it gave none)."""
         p = self.request(m.CORE_FN, m.OP_LOCK_STATE, locked=False).payload
         locked, remaining = m.Reader(p).take("BI")
-        value = m.Tail.parse(p[5:]).get(OWNER)
-        return bool(locked), remaining, m.shown(value) if value is not None else None
+        return bool(locked), remaining, owner_of(p[5:])
 
     def take(self, lease_ms: int = 3000, *, owner: str | None = None, only_way_in: bool = False,
              wait_s: float = 5.0, force: bool = False) -> Opened:

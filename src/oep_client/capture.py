@@ -432,7 +432,8 @@ class LogicCapture(Interface):
         frames = take_events(link, self.fn)
         if frames and self.generation is None:
             self.status()
-        return self._current([unpack_event(f) for f in frames])
+        return self._current([e for e in map(unpack_event, frames) if e.generation is not None])   # an unknown kind:
+                                                                   # dropped, its seq counted (core §2.4)
 
     def _current(self, events: list[Event]) -> list[Event]:
         out = [e for e in events if e.generation is None or e.generation == self.generation]
@@ -823,7 +824,7 @@ class CaptureGroup(Interface):
         frames = take_events(link, self.fn)
         if frames and self.generation is None:
             self.status()
-        got = [unpack_event(f, group=True) for f in frames]
+        got = [e for e in (unpack_event(f, group=True) for f in frames) if e.generation is not None]   # core §2.4
         out = [e for e in got if e.generation is None or e.generation == self.generation]
         self.stale_events += len(got) - len(out)
         return out

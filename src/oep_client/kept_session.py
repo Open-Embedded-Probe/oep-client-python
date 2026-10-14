@@ -108,7 +108,7 @@ class KeptSession:
     @staticmethod
     def unit_id(hst) -> str | None:
         from . import core
-        value = next((v for tag, v in core.describe(hst, m.CORE_FN) if tag & 0x7F == _UNIT_ID), None)
+        value = next((v for tag, v in core.describe(hst, m.CORE_FN) if tag == _UNIT_ID), None)
         return value.decode("ascii", "replace") if value else None
 
     def before_open(self, hst, owner: str | None = None) -> None:

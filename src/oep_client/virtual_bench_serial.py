@@ -7,6 +7,8 @@
   is dropped, and the closing 0x00 starts the next candidate; bytes outside a candidate are dropped; a candidate that
   stops for 200 ms (`tick`) is dropped; a candidate that is only its 0x00 (0x00 0x00, or the closing 0x00 of a frame
   when nothing follows) is nothing (a serial transport carries OEP frames only, transports §4)
+- a message over max_frame (or a candidate longer than any frame) is dropped with what follows until 200 ms pass
+  with nothing (transports §1)
 - answers go out as 0x00 <COBS> 0x00
 
 `answer_filter(n, message) -> bytes | None` may change how the n-th answer (1-based) goes on the wire: the framed
@@ -28,6 +30,7 @@ from typing import Callable
 from . import cobs, registry as reg
 
 GAP_MS = reg.TIMING["probe_frame_gap_ms"]
+UART_BRIDGE = reg.CORE.enum["transport_kind"]["uart_bridge"]   # the kind whose line has a rate (core §7.5)
 
 
 class VirtualSerialPort:
@@ -67,12 +70,9 @@ class VirtualSerialPort:
                 self.cand = bytearray(b"\x00")
             elif self.cand is not None:
                 self.cand.append(b)
-                if len(self.cand) > self.limit:
-                    if self.ep.probe.core_contract:
-                        self.discarding, self.cand, self.last_ms = True, None, now
-                        return
-                    raw += self.cand
-                    self.cand = None
+                if len(self.cand) > self.limit:            # longer than any frame of max_frame: dropped with what
+                    self.discarding, self.cand, self.last_ms = True, None, now   # follows until a gap (transports §1)
+                    return
             else:
                 raw.append(b)
         self.last_ms = now
@@ -93,7 +93,7 @@ class VirtualSerialPort:
             raw += b"\x00" + body                    # not a frame: raw, the leading 0x00 too
             self.ep.speed_frame(self.index, False)
             return
-        if self.ep.probe.core_contract and len(msg) > self.ep.probe.max_frame:
+        if len(msg) > self.ep.probe.max_frame:       # over max_frame: dropped with what follows until a gap (§1)
             self.discarding, self.cand = True, None
             return
         self.ep.speed_frame(self.index, True)
@@ -196,14 +196,15 @@ class VirtualSerialStream:
     def __init__(self, ep, index: int, baudrate: int = 115200, answer_filter=None):
         self.ep, self.index = ep, index
         self.port = VirtualSerialPort(ep, index, answer_filter)
-        self.port.garble = lambda wire, rate: wire if rate == self.baudrate else _garble(wire)   # sent at that rate
+        self.port.garble = lambda wire, rate: wire if self._matched() else _garble(wire)   # sent at that rate
         self.baudrate = baudrate
         self.timeout = 0.05
         self._rx = bytearray()
         self.closed = False
 
     def _matched(self) -> bool:
-        return self.baudrate == self.ep.port_baud(self.index)
+        """The rates match - or the port is no UART bridge: a USB serial port takes any line coding (transports §4)."""
+        return self.baudrate == self.ep.port_baud(self.index) or self.ep.transports.get(self.index) != UART_BRIDGE
 
     def _pull(self) -> None:
         self.port.tick()
