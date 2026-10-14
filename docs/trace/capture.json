@@ -426,13 +426,14 @@
    "verify": [
     "tests/test_trace_capture.py::test_logic_capture_never_changes_a_driven_pin",
     "tests/test_trace_capture.py::test_analog_pad_leaves_idle_only_while_it_acquires",
-    "tests/test_virtual_bench_capture.py::test_a_capture_listens_on_pins_other_interfaces_hold"
+    "tests/test_virtual_bench_capture.py::test_a_capture_listens_on_pins_other_interfaces_hold",
+    "tests/test_trace_capture.py::test_review2_an_analog_plan_leaves_the_pin_as_it_was_and_logic_keeps_a_pull"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[pin_output-ONE-SHOT]",
     "tests/test_conformance_analog.py::test_semantic_faults_are_detected[pin_output-RAW]"
    ],
-   "note": "plan and configure change no pin; logic never; the analog pad leaves idle at start"
+   "note": "plan and configure change no pin; logic never; the analog pad leaves idle at start; review2: the pin as before the plan through analog plan/configure/completion, a pull idle kept by logic"
   },
   "capture:1.2:19": {
    "text": "- アナログの取得が止まるとpadを空きの状態へ戻す（stop、完了、state",
@@ -759,12 +760,18 @@
     "tests/test_trace_capture.py::test_unfinished_tail_bytes_are_not_returned_before_the_segment_ends",
     "tests/test_trace_capture.py::test_host_drops_the_data_past_write_pos_after_an_error",
     "tests/test_virtual_bench_capture_trigger_modes.py::test_stream_error_rolls_back_to_real_completed_boundary_after_trigger[0-0-0]",
-    "tests/test_virtual_bench_capture_trigger_modes.py::test_stream_error_rolls_back_to_real_completed_boundary_after_trigger[10-1-44]"
+    "tests/test_virtual_bench_capture_trigger_modes.py::test_stream_error_rolls_back_to_real_completed_boundary_after_trigger[10-1-44]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[1-False]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[1-True]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[2-False]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[2-True]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[3-False]",
+    "tests/test_virtual_bench_capture_lifetime.py::test_error_preserves_committed_data_and_restart_clears_flags[3-True]"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[discard_committed-ERROR]"
    ],
-   "note": "only whole settled bytes go early (w 3: 3-byte steps); after an error the host drops from write_pos"
+   "note": "only whole settled bytes go early (w 3: 3-byte steps); after an error the host drops from write_pos; review2: committed segments and bytes unchanged by a later error (lifetime test)"
   },
   "capture:2.2:18": {
    "text": "- flags bit2 は、probe が自分で遅れを見つけられるときに立てる",
@@ -1046,13 +1053,14 @@
     "tests/test_virtual_bench_capture_lifetime.py::test_one_shot_release_is_a_noop[True]",
     "tests/test_virtual_bench_capture_lifetime.py::test_release_frees_inclusive_data_then_resumes_with_gap[False]",
     "tests/test_virtual_bench_capture_lifetime.py::test_release_frees_inclusive_data_then_resumes_with_gap[True]",
-    "tests/test_trace_capture.py::test_review_a_repeat_release_after_stop_or_error_changes_nothing"
+    "tests/test_trace_capture.py::test_review_a_repeat_release_after_stop_or_error_changes_nothing",
+    "tests/test_trace_capture.py::test_review2_release_of_an_unfinished_segment_and_in_streaming"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_resume-RELEASE]",
     "tests/test_conformance_capture_serial.py::test_actual_capture_faults[unsigned_release]"
    ],
-   "note": "release repeat only, inclusive by core §2.6, unfinished kept, resumes 5 -> 3 with bit0, no stopped"
+   "note": "release repeat only, inclusive by core §2.6, unfinished kept, resumes 5 -> 3 with bit0, no stopped; review2: an unfinished serial is not freed, streaming release changes nothing"
   },
   "capture:3.2:19": {
    "text": "- read が実際に返す量は probe が決める（max 以下で、応答が m",
@@ -1081,7 +1089,7 @@
     "tests/test_trace_capture.py::test_state_table_stop_force_release[0-True]"
    ],
    "mutants": [],
-   "note": "state 0's row: configure, start, stop, force, release and the automatic column"
+   "note": "state 0's row: configure, start, stop, force, release and the automatic column; review2: stop in state 0 asserted to change nothing (snapshot)"
   },
   "capture:3.2:22": {
    "text": "| 1 設定済み | → 1 | → 2（トリガあり）/ 3。世代 +1、区画は",
@@ -1090,10 +1098,11 @@
     "tests/test_trace_capture.py::test_state_table_configure_and_start[1-1-new-True]",
     "tests/test_trace_capture.py::test_state_table_stop_force_release[1-False]",
     "tests/test_trace_capture.py::test_state_table_stop_force_release[1-True]",
-    "tests/test_trace_capture.py::test_review_a_repeat_release_after_stop_or_error_changes_nothing"
+    "tests/test_trace_capture.py::test_review_a_repeat_release_after_stop_or_error_changes_nothing",
+    "tests/test_trace_capture.py::test_review2_start_in_state_1_clears_the_old_segments_and_goes_to_2_or_3"
    ],
    "mutants": [],
-   "note": "state 1's row: configure, start, stop, force, release and the automatic column"
+   "note": "state 1's row: configure, start, stop, force, release and the automatic column; review2: start from a stopped repeat (state 1 with segments) clears them, gen+1, 3 / 2 with a trigger; stop in 1 changes nothing"
   },
   "capture:3.2:23": {
    "text": "| 2 トリガ待ち | unavailable 6 | unavailable ",
@@ -1106,7 +1115,7 @@
     "tests/test_trace_capture.py::test_state_table_automatic_transitions[True]"
    ],
    "mutants": [],
-   "note": "state 2's row: configure, start, stop, force, release and the automatic column"
+   "note": "state 2's row: configure, start, stop, force, release and the automatic column; review2: the automatic error asserted to come from state 2"
   },
   "capture:3.2:24": {
    "text": "| 3 取得中 | unavailable 6 | unavailable 6 ",
@@ -1133,7 +1142,7 @@
     "tests/test_trace_capture.py::test_state_table_stop_force_release[4-True]"
    ],
    "mutants": [],
-   "note": "state 4's row: configure, start, stop, force, release and the automatic column"
+   "note": "state 4's row: configure, start, stop, force, release and the automatic column; review2: stop in state 4 asserted to change nothing (snapshot, data kept)"
   },
   "capture:3.2:26": {
    "text": "| 5 止まっている | unavailable 6 | unavailable",
@@ -1559,12 +1568,13 @@
     "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-False-query]",
     "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-True-configure]",
     "tests/test_trace_capture.py::test_configure_contract_refusals_change_nothing[rate-under-the-range-True-query]",
-    "tests/test_trace_capture.py::test_samples_count_the_pretrigger_and_an_early_trigger_shortens"
+    "tests/test_trace_capture.py::test_samples_count_the_pretrigger_and_an_early_trigger_shortens",
+    "tests/test_trace_capture.py::test_review2_a_trigger_without_pretrigger_keeps_none_before_it"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[lone_pretrigger-CONTRACT]"
    ],
-   "note": "pretrigger only with a non-0 trigger, default 0"
+   "note": "pretrigger only with a non-0 trigger, default 0; review2: omitted with a trigger it is 0 (trigger_index 0, whole segment)"
   },
   "capture:3.3:7": {
    "text": "| 0x47 | frontend | role(u8)、frontend(u8",
@@ -2110,12 +2120,14 @@
    "text": "- modeは少なくとも1つ宣言する。1/2/3を全部宣言する必要はなく、対応す",
    "verify": [
     "tests/test_trace_capture.py::test_a_probe_declares_only_the_modes_it_has",
-    "tests/test_conformance_capture_metadata.py::test_any_declared_mode_subset_passes[14-rows0]"
+    "tests/test_conformance_capture_metadata.py::test_any_declared_mode_subset_passes[14-rows0]",
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.logic]",
+    "tests/test_trace_capture.py::test_describe_declarations[oep.fixture.analog]"
    ],
    "mutants": [
     "tests/test_conformance_capture_metadata.py::test_mode_row_defects[15-rows2]"
    ],
-   "note": "only the offered modes declared; another mode unsupported (mode)"
+   "note": "only the offered modes declared; another mode unsupported (mode); review2: max_segments 0 outside mode 2 (describe_declarations)"
   },
   "capture:3.5:10": {
    "text": "- **宣言は目安、configure の応答が正。** 宣言に出ていない組み合",
@@ -2223,7 +2235,8 @@
    "verify": [
     "tests/test_trace_capture.py::test_group_bind_rules",
     "tests/test_virtual_bench_capture.py::test_a_group_refuses_what_it_cannot_bind",
-    "tests/test_virtual_bench_capture.py::test_a_bind_short_of_resources_is_unavailable_limit_naming_the_fn"
+    "tests/test_virtual_bench_capture.py::test_a_bind_short_of_resources_is_unavailable_limit_naming_the_fn",
+    "tests/test_trace_capture.py::test_review2_bind_refuses_a_track_not_in_1_4_6"
    ],
    "mutants": [
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[dup_accepted-BIND-DUP]",
@@ -2234,20 +2247,21 @@
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[mutate_bind_refusal-BIND-MODE]",
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[steal_track-BIND-OTHER]"
    ],
-   "note": "bind: configured immediate tracks of one mode in 1/4/6; same list no-op; refusals before changes"
+   "note": "bind: configured immediate tracks of one mode in 1/4/6; same list no-op; refusals before changes; review2: a track in state 0 or 5 is cause 6, nothing bound"
   },
   "capture:4.1:8": {
    "text": "- n=0は束ねを解く。取得中の組（state 3）ではunavailable ",
    "verify": [
     "tests/test_trace_capture.py::test_group_unbind",
-    "tests/test_trace_capture.py::test_review_the_same_plan_on_a_bound_track_is_a_no_op"
+    "tests/test_trace_capture.py::test_review_the_same_plan_on_a_bound_track_is_a_no_op",
+    "tests/test_trace_capture.py::test_review2_a_bind_is_the_sessions_and_ends_with_it"
    ],
    "mutants": [
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[change_active-UNBIND-ACTIVE]",
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[allow_track_op-TRACK-LOCK]",
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[allow_plan_op-PLAN-LOCK]"
    ],
-   "note": "n=0 unbinds, cause 6 while capturing, no-op unbound; bound track ops cause 4, reads usable"
+   "note": "n=0 unbinds, cause 6 while capturing, no-op unbound; bound track ops cause 4, reads usable; review2: the session end unbinds"
   },
   "capture:4.1:9": {
    "text": "- bindは、同じ経路のstart成功応答（18+6×n byte）がfram",
@@ -2263,23 +2277,25 @@
    "text": "- startは束ねがあり、全trackがstate 1/4/6のときだけ受け付",
    "verify": [
     "tests/test_trace_capture.py::test_group_start_only_from_1_4_6_and_atomic",
-    "tests/test_virtual_bench_capture.py::test_a_group_starts_logic_and_analog_together"
+    "tests/test_virtual_bench_capture.py::test_a_group_starts_logic_and_analog_together",
+    "tests/test_trace_capture.py::test_review2_group_start_checks_generations_and_subscriptions_first"
    ],
    "mutants": [
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[start_while_active-START-ACTIVE]",
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[partial_start-START-ATOMIC]"
    ],
-   "note": "start only bound with tracks 1/4/6, else cause 6 with nothing changed"
+   "note": "start only bound with tracks 1/4/6, else cause 6 with nothing changed; review2: generation exhausted (group or track) cause 2, streaming track unsubscribed cause 6, nothing changed"
   },
   "capture:4.1:11": {
    "text": "- 初期化/取得の失敗でtrackがstate 6になれば組も6とし、ほかのtr",
    "verify": [
-    "tests/test_trace_capture.py::test_group_error_stops_the_others_and_a_failed_start"
+    "tests/test_trace_capture.py::test_group_error_stops_the_others_and_a_failed_start",
+    "tests/test_trace_capture.py::test_review2_a_group_error_keeps_a_finished_tracks_data_and_stops_the_others_as_stop_does"
    ],
    "mutants": [
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[error_peer_runs-ERROR-ADC]"
    ],
-   "note": "a track's error makes the group 6 and stops the others; failed start's fixed form and states"
+   "note": "a track's error makes the group 6 and stops the others; failed start's fixed form and states; review2: a finished track keeps its data, a capturing one gets stopped reason 1 and a short segment"
   },
   "capture:4.1:12": {
    "text": "- stopは全trackへ適用し、短い区画とpadは各trackの規則に従う。",
@@ -2298,14 +2314,15 @@
    "text": "- statusのstate: 束ねなし0、どれかが6なら6、開始後に全部4なら",
    "verify": [
     "tests/test_trace_capture.py::test_group_stop_and_status_state",
-    "tests/test_trace_capture.py::test_group_error_stops_the_others_and_a_failed_start"
+    "tests/test_trace_capture.py::test_group_error_stops_the_others_and_a_failed_start",
+    "tests/test_trace_capture.py::test_review2_group_status_counts_paused_as_3_and_needs_a_start_for_4"
    ],
    "mutants": [
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[premature_done-START]",
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[paused_group-REPEAT]",
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[reset_bind_generation-REBIND-GEN]"
    ],
-   "note": "status state 0/6/4/3/1 from the tracks; group generation survives rebinding"
+   "note": "status state 0/6/4/3/1 from the tracks; group generation survives rebinding; review2: all 4 before a group start is 1, all paused is 3, bind keeps track generations"
   }
  }
 }

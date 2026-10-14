@@ -4,7 +4,7 @@ plan_release itself refuses (a track bound in a capture-group)."""
 
 import pytest
 
-from oep_client import capture, core, virtual_bench, host as h, message as m
+from oep_client import capture, core, fixture, virtual_bench, host as h, message as m
 
 from test_plan import APPLY, ASSIGN, PLAN, assignment, bench, raw
 
@@ -83,3 +83,76 @@ def test_a_target_plan_missing_a_role_or_holding_one_twice_is_unsupported():
         assert r.detail == m.UNSUPPORTED and r.payload[:1] == bytes([ASSIGN | m.TAG_CRITICAL]) and not ep.plan
     assert raw(hst, APPLY, b"".join(assignment(spi, role, ch) for role, ch in group)).succeeded
     assert ep.plan == {(spi, role, ch) for role, ch in group}
+
+
+# ---- second review additions ---------------------------------------------------------------------------------------
+
+def test_every_profile_lists_one_plan_exactly_when_an_interface_has_plan_roles():
+    """plan preamble: a probe listing an interface with plan roles lists oep.probe.plan, at most one; a probe with
+    none lists none - every virtual bench profile, and one made without its gpio and uart (the last plan roles)."""
+    from oep_client import endpoint
+    from test_plan import Clock
+    no_roles = virtual_bench.without(virtual_bench.without(virtual_bench.rp2350_pins(), "oep.fixture.gpio"),
+                                     "oep.fixture.uart")
+    probes = [p() for p in (virtual_bench.p4_x035, virtual_bench.esp32_v003, virtual_bench.esp32_v003_64,
+                            virtual_bench.p4_bench, virtual_bench.rp2350_pins, virtual_bench.core_v1)] + [no_roles]
+    for probe in probes:
+        ep = endpoint.Endpoint(probe, Clock())
+        hst = h.Host(lambda b, ep=ep: ep.handle(b, 0))
+        names = [e.name for e in core.list_entries(hst)]
+        roles = bool(virtual_bench.PLAN_ROLE_INTERFACES & set(names))
+        assert names.count("oep.probe.plan") == (1 if roles else 0), (probe.label, names)
+    assert "oep.probe.plan" not in [o.name for o in no_roles.offered]
+
+
+def test_the_replaced_fns_own_assignments_do_not_conflict_with_its_new_ones():
+    """plan §2.1: each interface checks the request as if the replaced fns' current assignments were gone (core §8.1's
+    conflict check included) - moving the uart's channel 5 from RX to TX, and handing gpio's channel 4 to the uart while
+    gpio moves to 5 in the same request, are accepted; the same move onto a channel a fn not named holds is cause 1."""
+    from test_plan import GPIO, UART, cause
+    ep, hst = bench()
+    core.plan_apply(hst, [(UART, 1, 5)])
+    assert raw(hst, APPLY, assignment(UART, 2, 5)).succeeded and ep.plan == {(UART, 2, 5)}
+    ep, hst = bench()
+    core.plan_apply(hst, [(GPIO, 1, 4)])
+    assert raw(hst, APPLY, assignment(GPIO, 1, 5) + assignment(UART, 1, 4)).succeeded
+    assert ep.plan == {(GPIO, 1, 5), (UART, 1, 4)}
+    r = raw(hst, APPLY, assignment(UART, 1, 5))                              # 5 is gpio's, gpio not named
+    assert r.detail == m.UNAVAILABLE and cause(r) == b"\x01" and ep.plan == {(GPIO, 1, 5), (UART, 1, 4)}
+
+
+def test_an_unchanged_set_keeps_a_running_function_as_it_is():
+    """plan §2.1: an fn whose set of assignments does not change is left alone - a configured (running) fixture UART
+    named again with the same set stays configured at its baud with its received bytes, and its pins are not touched."""
+    from test_plan import UART
+    ep, hst = bench()
+    core.plan_apply(hst, [(UART, 1, 5), (UART, 2, 13)])
+    uart = fixture.FixtureUart(hst, UART)
+    uart.configure(9600)
+    ep.uart_rx(UART, b"kept")
+    before = (dict(ep.uart_baud), ep.pin_state(5), ep.pin_state(13))
+    assert raw(hst, APPLY, assignment(UART, 2, 13) + assignment(UART, 1, 5)).succeeded   # the same set, other order
+    assert (dict(ep.uart_baud), ep.pin_state(5), ep.pin_state(13)) == before
+    assert uart.status().configured and uart.read(uart.FROM_OLDEST).data == b"kept"
+
+
+def test_plan_release_checks_every_fn_before_it_releases_any():
+    """plan §2.2: every fn named is checked before anything is released - a releasable gpio named before a track bound
+    in a capture-group is kept when the request is refused cause 4, and n = 0 (every fn) is refused the same way."""
+    ep, hst = bench(virtual_bench.p4_x035)
+    logic, analog = capture.LogicCapture(hst), capture.AnalogCapture(hst)
+    gpio = core.find_all(hst, "oep.fixture.gpio")[0]
+    core.plan_apply(hst, [(gpio, 1, 4), (logic.fn, 0, 20), (analog.fn, 0, 16)])
+    logic.configure(rate=1_000_000, samples=100)
+    analog.configure(rate=1000, samples=10)
+    capture.CaptureGroup(hst).bind([logic, analog])
+    before = set(ep.plan)
+    with pytest.raises(h.Unavailable) as e:
+        core.plan_release(hst, [gpio, logic.fn])
+    assert e.value.cause == "bound_in_group" and ep.plan == before
+    plan_fn = core.find_all(hst, "oep.probe.plan")[0]
+    try:
+        r = hst.call(plan_fn, PLAN.op["plan_release"], b"\x00")
+    except h.Rejected as err:
+        r = err.result
+    assert r.detail == m.UNAVAILABLE and ep.plan == before

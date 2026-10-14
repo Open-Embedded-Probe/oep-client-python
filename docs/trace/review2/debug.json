@@ -1,0 +1,729 @@
+{
+ "reviewed_commit": "677b6bb",
+ "units": {
+  "debug:0:1": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_every_wire_offers_..._in_its_ops asserts ops 0x10..0x13, attach/detach/connections in every wire ops and scan answered unknown_operation exactly when not declared; registered-ops mutants drop each mandatory op"
+  },
+  "debug:0:2": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_a_wire_takes_any_free_pair_the_host_names / test_the_client_scan_walks_every_candidate_pair use role 1 x role 2 channels as swdio/swclk; declaration checker wire_pins requires role 1/2 (mutants missing_pins/same_pin/pin_range)"
+  },
+  "debug:0:3": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_a_connection_is_made_by_attach_named_first_by_target_ops_and_never_reused asserts the u32 connection is the target op prefix and never reused; standard attach checker binds it to fn/pins"
+  },
+  "debug:0:4": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): informative for this repository: a checklist of what the definition of another wire must state (a rule for spec authors); no behaviour of these three wires' host or probe"
+  },
+  "debug:0:5": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): informative for this repository: a checklist of what the definition of another wire must state (a rule for spec authors); no behaviour of these three wires' host or probe"
+  },
+  "debug:0:6": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): informative for this repository: a checklist of what the definition of another wire must state (a rule for spec authors); no behaviour of these three wires' host or probe"
+  },
+  "debug:0:7": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): informative for this repository: a checklist of what the definition of another wire must state (a rule for spec authors); no behaviour of these three wires' host or probe"
+  },
+  "debug:0:8": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): informative for this repository: a checklist of what the definition of another wire must state (a rule for spec authors); no behaviour of these three wires' host or probe"
+  },
+  "debug:0:9": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): informative for this repository: a checklist of what the definition of another wire must state (a rule for spec authors); no behaviour of these three wires' host or probe"
+  },
+  "debug:1:1": {
+   "verdict": "fixed",
+   "reason": "excluded as 'not modelled', but the bench target models DMI registers; the bench attach now records its bring-up writes (VirtualTarget.bringup) and test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[rvswd/swio] asserts that before the PROGBUF0 check only the set-up pair and dmactive are written"
+  },
+  "debug:1:2": {
+   "verdict": "fixed",
+   "reason": "un-excluded: the same test asserts the first writes are the wire's set-up pair DMI 0x7E / 0x7D (the slowest-speed part stays line-level)"
+  },
+  "debug:1:3": {
+   "verdict": "fixed",
+   "reason": "un-excluded: test_attach_writes_only_... asserts dmactive (haltreq 0) written only when DMCONTROL read dmactive 0 and DMCONTROL untouched when it read 1; test_scan_leaves_the_target_as_it_was the same for scan"
+  },
+  "debug:1:4": {
+   "verdict": "fixed",
+   "reason": "un-excluded (bench fix: attach had no scratch check): test_attach_writes_only_... asserts ABSTRACTAUTO = 0 then PROGBUF0 written and given back its earlier value, nothing else changed; test_attach_fails_when_the_scratch_does_not_read_back_and_makes_nothing asserts completed failed status line, no connection, pins idle when PROGBUF0's write does not take"
+  },
+  "debug:1:5": {
+   "verdict": "fixed",
+   "reason": "un-excluded: test_attach_writes_only_... and test_scan_leaves_the_target_as_it_was snapshot DMI / GPR / memory / run state and assert only the allowed writes changed them"
+  },
+  "debug:1:6": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: vector rvswd_attach__a_short_fixed_body_is_malformed and attach checker WIRE-SHORT assert malformed for a short fixed part; test_busy_pins_are_refused... asserts no join of an existing connection"
+  },
+  "debug:1:7": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: scan checker ZERO/DUPLICATE/PREFIX (tried from the front, >=1) + test_p2_1_scan_has_no_implicit_list... (count 0 / pair twice malformed) + test_the_client_scan_walks_every_candidate_pair (host builds 29x28 pairs, resends the untried)"
+  },
+  "debug:1:8": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_p2_5_... (unsupported 0x00 + TLV 0x40 index), test_p2_1_a_named_output_idle_channel... (cause 5 + channel), scan checker BUSY-LATE/DISABLED-LATE refusals with state unchanged and candidate pins freed"
+  },
+  "debug:1:9": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_c06_attach_scan_and_reset_wait_max_op_ms asserts the host budget is max_op_ms; test_a_failed_attach_answers_status_alone... asserts completed failed status line; wire options checker bounds attach clock to max_op_ms"
+  },
+  "debug:1:10": {
+   "verdict": "fixed",
+   "reason": "max_connections was asserted but not 'the lock stays one per probe'; test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock asserts another session is refused locked on either of two live connections and nothing runs"
+  },
+  "debug:1:11": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_busy_pins_are_refused_and_the_connection_is_left_as_it_was asserts unavailable cause 1 + channel and the live connection unchanged"
+  },
+  "debug:1:12": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_the_limit_closes_nothing asserts cause 2 and both existing connections kept"
+  },
+  "debug:1:13": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: wire options checker RESET-FAILED requires no new ID, connections/streams unchanged and tried pins free (mutants failure_allocated/stream_lost/pins)"
+  },
+  "debug:1:14": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_swio_declares_its_fixed_speed... asserts attach speed_hz equals the connections row speed; attach checker requires state speed == answered speed_hz"
+  },
+  "debug:1:15": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_max_speed_under_min_clock_is_unsupported_attach_fixed_part_scan_the_tag asserts attach 0x00 / scan tag as received, 0 malformed, chosen speed <= max_speed"
+  },
+  "debug:1:16": {
+   "verdict": "fixed",
+   "reason": "the scan test asserted the target unchanged but never with dmactive 0, so 'dmactive は立てたまま残す' was unchecked and the bench left it 0 (code fix); strengthened test_scan_leaves_the_target_as_it_was: DMCONTROL reading 0 reads 1 after the scan, PROGBUF0 / ABSTRACTAUTO untouched, bringup log = set-up pair (+ dmactive) only"
+  },
+  "debug:1:17": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_target_id_scheme_1_is_not_reported_for_its_none_values asserts TLV 0x10 scheme 1 + u32 only when read, none for 0 / 0xFFFFFFFF"
+  },
+  "debug:2:1": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: wire options checker requires reset-read rows after the release at 1000 Hz and the dm-recover retries; reset checker requires DM polls after ndmreset release within max_op_ms"
+  },
+  "debug:2:2": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_detach_answers_nothing_and_releases_the_connection_and_its_streams asserts empty answer, connection and stream gone; test_detach_has_no_tlv_any_more asserts the old force tag is unknown"
+  },
+  "debug:2:3": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: reset checker requires connections unchanged after a reset op (mutant connection_lost); bench test keeps conn in ep.conns after a failed reset"
+  },
+  "debug:2:4": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: retry checker OWNED requires a slower retry, speed_hz unchanged and no cut; failure answers status line without closing"
+  },
+  "debug:2:5": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: retry checker READ/WRITE/RESUME require one packet for an ambiguous host step and no suffix; BUSY retried; ARM WAIT_RECOVER executes the write once"
+  },
+  "debug:2:6": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: retry checker OWNED requires connections and targets unchanged by the probe-owned retry (the wake-sequence part is line-level)"
+  },
+  "debug:2:7": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: cut checker REQUEST requires the status line answer written before the connection/stream close (mutants early_close/response_last/no_cut)"
+  },
+  "debug:2:8": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: cut checker RECOVERY/REJECTED/CONSOLE: no timer-only cut, a single line failure closes nothing, a console-read cut closes connection+stream with no mark"
+  },
+  "debug:2:9": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_lines_rest_undriven_from_an_unanswered_exchange_until_one_succeeds asserts wire-free after a failed exchange and the rest state after a success; retry checker pull checks"
+  },
+  "debug:2:10": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_closing_a_connection_or_ending_the_session_leaves_a_halted_hart_halted[*] asserts halted/dpc/haltreq/regs unchanged after detach/end/lapse/force"
+  },
+  "debug:2:11": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_p2_1_the_pins_of_a_closed_connection_go_back_to_their_idle_state asserts pin_state idle; wire options cleanup requires pin_levels free"
+  },
+  "debug:2:12": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): informative: the header row of the connection / hart state table (its rows are traced below)"
+  },
+  "debug:2:13": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_closing_a_connection_or_ending_the_session_leaves_a_halted_hart_halted[*] asserts connection and stream released and the hart untouched"
+  },
+  "debug:2:14": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: cut checker verify_closed requires the connection and its stream released on a lost line (mutant stream_kept)"
+  },
+  "debug:2:15": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: dmseq checker RESET requires connection/stream bytes/queue kept and one restart mark (0x41 detail 1) on a target self-reset"
+  },
+  "debug:2:16": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_a_probe_restart_drops_the_connections_and_leaves_the_hart_as_it_was asserts conns/streams gone, numbers no_resource, hart halted with the same dpc"
+  },
+  "debug:2:17": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_closing_..._leaves_a_halted_hart_halted[end/lapse/force] asserts the halted hart stays halted"
+  },
+  "debug:2.1:1": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_connections_lists_the_live_connections_in_creation_order_a_frame_at_a_time asserts creation order, frame-sized pages, more, first+count, lock-free"
+  },
+  "debug:2.1:2": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: fixed: target_id/DPIDR rows were checked but not a targetsel of 0 vs none or page-relative entry_index; added test_connections_tell_a_targetsel_of_0_from_none_with_page_relative_indexes (logical swd model + checker listing, client paging)"
+  },
+  "debug:3:1": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: vector rvswd_scan__one_combination_listed_and_found asserts the bench bytes and the client decoding of the scan form"
+  },
+  "debug:3:2": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: vectors rvswd_attach__* assert the attach request / answer bytes on the bench and through the client"
+  },
+  "debug:3:3": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_detach_answers_nothing... asserts connection(u32) -> empty payload; test_detach_has_no_tlv_any_more for the TLV tail"
+  },
+  "debug:3:4": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: vector rvswd_connections__one_connection_with_a_target_id + lock-free assertion in test_target_ops_need_a_connection..."
+  },
+  "debug:3:5": {
+   "verdict": "fixed",
+   "reason": "attach's id = DMSTATUS, swio scan kind 1 / id DMSTATUS and a swio connection taking riscv-dm and console were not asserted; added test_the_wires_ids_are_dmstatus_scan_kind_1_and_a_swio_connection_takes_the_console"
+  },
+  "debug:3:6": {
+   "verdict": "fixed",
+   "reason": "'method 1 sets hartsel 0 and succeeds only when hart 0 halted and haltreq dropped' was unchecked and the bench violated it (method 1 succeeded on a hart that never halts, kept hartsel); fixed endpoint attach and added test_method_1_selects_hart_0_drops_haltreq_and_succeeds_only_with_hart_0_halted (hartsel 0, haltreq 0, halt_stuck -> completed failed timeout, no connection)"
+  },
+  "debug:3:7": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: wire options checker attached() requires flags == bit0/bit2/bit3 exactly and dpc only with bit3; test_attach_acknowledges_a_pending_havereset_and_says_so asserts bit0/bit1"
+  },
+  "debug:3:8": {
+   "verdict": "fixed",
+   "reason": "un-excluded: test_attach_writes_only_...[rvswd/swio] and test_scan_leaves_the_target_as_it_was assert the set-up writes DMI 0x7E then 0x7D = 0x5AA50400, the pair twice (the wake pattern itself is line-level)"
+  },
+  "debug:3:9": {
+   "verdict": "fixed",
+   "reason": "un-excluded: test_attach_writes_only_... asserts PROGBUF0 is the scratch written and given back, ABSTRACTAUTO = 0 written first and not restored; test_attach_fails_when_the_scratch_... the failure"
+  },
+  "debug:3:10": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_attach_under_reset_is_the_reset_tlv / test_no_default_reset_line_only_the_declared_channels assert hold+release, method 1 halted with dpc, unsupported 0x85, hold over max_op_ms unsupported"
+  },
+  "debug:3:11": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: wire options checker requires the DM reads after the reset release (mutants read_before_release/read_fast/no_retry)"
+  },
+  "debug:3:12": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_no_default_reset_line_only_the_declared_channels (role 3 only, 0x85, plan-held unavailable) + wire options reset-assert open-drain-low / release free (mutant reset_push_pull)"
+  },
+  "debug:3:13": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: scan_options checker requires reads at 1000 Hz without max_speed and <= max_speed with TLV 0x01"
+  },
+  "debug:3:14": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: scan_options checker IDLE cases require rest levels [1, 1-idle] during the scan and idle_clock unsupported on swio/swd"
+  },
+  "debug:3:15": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_idle_clock_is_rvswd_s / test_attach_idle_clock_value_left_unused... assert 0/1 accepted, 2 unsupported with the tag, swio refuses it"
+  },
+  "debug:3:16": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_attach_reset_of_another_length_is_malformed_either_way asserts channel(u16) hold_ms(u16), other lengths malformed"
+  },
+  "debug:3:17": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_attach_reports_the_target_id_when_the_probe_reads_one + test_target_id_scheme_1...[56493569-True] assert TLV 0x10 scheme+value"
+  },
+  "debug:3:18": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_method_1_only_where_attach_halt_is_declared... asserts TLV 0x11 dpc == target dpc with bit3, absent with method 0"
+  },
+  "debug:3.1:1": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:2": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:3": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:4": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:5": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:6": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:7": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:8": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:9": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:10": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:11": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:12": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:13": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:14": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:15": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:16": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: wire options checker requires the rvswd idle levels [SWDIO 1, SWCLK 1-idle_clock] probe-driven (mutants clock_high/data_low); test_a_new_connection_without_idle_clock_rests_high"
+  },
+  "debug:3.1:17": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:18": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:19": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:20": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:21": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:22": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - RVSWD's bit slots, conditions, frame fields, turnaround, wake pattern and T"
+  },
+  "debug:3.1:23": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked; reason reworded since the bench now logs attach DMI writes): behaviour this repository cannot model: the choice of T by DMSTATUS reads from the slowest - the bench's attach records its DMI writes (VirtualTarget.bringup) but has no line speeds to step through, and the attach / scan checkers leave 'attach speed/scratch algorithms' unchecked"
+  },
+  "debug:3.1:24": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: a target-side effect (the wake pattern may reset the target); the retry rule it points to is traced under debug:2:6"
+  },
+  "debug:3.2:1": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - SWIO's slot times, read slots and frames"
+  },
+  "debug:3.2:2": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - SWIO's slot times, read slots and frames"
+  },
+  "debug:3.2:3": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - SWIO's slot times, read slots and frames"
+  },
+  "debug:3.2:4": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - SWIO's slot times, read slots and frames"
+  },
+  "debug:3.2:5": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - SWIO's slot times, read slots and frames"
+  },
+  "debug:3.2:6": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - SWIO's slot times, read slots and frames"
+  },
+  "debug:3.2:7": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - SWIO's slot times, read slots and frames"
+  },
+  "debug:3.2:8": {
+   "verdict": "fixed",
+   "reason": "'scratchの確認はこの固定速で行う' was not asserted; test_attach_writes_only_...[oep.wire.swio] asserts swio's attach does the PROGBUF0 check (at its only, fixed speed)"
+  },
+  "debug:4:1": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: fixed: test_c21_* covered dmi mandatory / others optional; added test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra1/2-False, extra3-True] for the read_block/write_block pair"
+  },
+  "debug:4:2": {
+   "verdict": "fixed",
+   "reason": "only the logical checkers held hartsel 0; the bench left a host-chosen hartsel after high-level ops (code fix: Endpoint._hart0); added test_a_high_level_op_leaves_hartsel_0_and_raw_dmi_keeps_the_hosts[halt/resume/reset/step/read_block/write_block/run] (raw dmi keeps the host's hartsel, each op leaves 0)"
+  },
+  "debug:4:3": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: debug checker HALT-FAILURE requires haltreq cleared after a halt timeout; test_p2_o4_... asserts haltreq False"
+  },
+  "debug:4:4": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: debug checker HALT-RESUME requires one resumereq and haltreq clear (mutant resume_twice)"
+  },
+  "debug:4:5": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: step checker requires dcsr.step lowered, DATA1 then DATA0 restored, haltreq clear, step_left when not halted again"
+  },
+  "debug:4:6": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: reset checker requires ndmreset released, one havereset ack, haltreq clear (mode 2 halted)"
+  },
+  "debug:4:7": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: blocks checker requires DATA0/DATA1/abstractauto/GPRs restored (DATA1 before DATA0)"
+  },
+  "debug:4:8": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: run checker requires pc/GPR/dcsr as the host asked and abstractauto/haltreq/DATA restored"
+  },
+  "debug:4:9": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: debug checker MIXED requires raw host writes kept, no restoration (mutant raw_restore)"
+  },
+  "debug:4:10": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: debug checker ARBITRATION requires no console access inside a dmi request; dmseq checker uses DATA0/DATA1 per console §3"
+  },
+  "debug:4:11": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: vectors riscv-dm_dmi__* assert the dmi request/answer bytes; test_dmi_and_run_answers... asserts done status nvals values"
+  },
+  "debug:4:12": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: vectors riscv-dm_halt__halted / halt_on_an_unknown_connection assert the halt form and answer"
+  },
+  "debug:4:13": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_resume_answers_status_alone asserts payload == status(u8) ok and the hart running"
+  },
+  "debug:4:14": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_o2_reset_is_ndmreset_and_moves_no_line asserts a 6-byte status flags pc answer; test_reset_answers_status_flags_pc_and_takes_no_method"
+  },
+  "debug:4:15": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_block_access_reports_how_far_it_got asserts address/count request and done + words answer"
+  },
+  "debug:4:16": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: vector riscv-dm_write_block__memory_written_but_cleanup_lost_the_line asserts the write_block form and done/status answer"
+  },
+  "debug:4:17": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_dmi_and_run_answers_count_their_values... and test_run_returns_the_registers_asked_for assert the run request/answer fields"
+  },
+  "debug:4:18": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: vector riscv-dm_step_on_a_running_hart... asserts status moved dpc_before dpc_after; test_reset_halt_and_step_decode"
+  },
+  "debug:4.1:1": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_each_dmi_step_kind_takes_its_arguments_and_adds_its_value asserts kind 1 writes and adds no value"
+  },
+  "debug:4.1:2": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_each_dmi_step_kind_... asserts kind 2 returns the value"
+  },
+  "debug:4.1:3": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_each_dmi_step_kind_... asserts kind 3 returns the last value; debug checker POLL-READS max_reads 0 reads once"
+  },
+  "debug:4.1:4": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_each_dmi_step_kind_... asserts kind 4 wait adds nothing; short argument malformed"
+  },
+  "debug:4.1:5": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_each_dmi_step_kind_... asserts kind 5 returns the last value; debug checker POLL-US"
+  },
+  "debug:4.1:6": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: vectors riscv-dm_dmi__an_unknown_step_kind / a_known_write_before_an_unknown_kind_is_not_executed assert unsupported 0x00 with nothing run; short known args malformed"
+  },
+  "debug:4.1:7": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: debug checker PROGRESS/POLL-LINE/POLL-TIMEOUT require done = failed index and nvals rules; test_dmi_value_count_rule"
+  },
+  "debug:4.1:8": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: debug checker OUTPUT-BOUND refuses 10+4r over max_frame before the earlier write (mutants oversized/boundary_effect)"
+  },
+  "debug:4.1:9": {
+   "verdict": "fixed",
+   "reason": "the host side 'host の待ちは core §4.4' was unchecked; added test_the_host_waits_max_op_ms_for_run_and_dmi_not_their_own_times (a dmi with wait_us 10 waits max_op_ms)"
+  },
+  "debug:4.1:10": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: fixed: the test asserted DATA0 write+command+wait in one request but not the DATA0 read; strengthened test_the_client_puts_each_abstract_command_sequence_in_one_dmi_request to require the DATA0 read after the command in the same request"
+  },
+  "debug:4.1:11": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: fixed: only a bench vector named (host rule unchecked); added test_the_client_puts_a_haltreq_sequence_in_one_dmi_request (uiapduino.run_payload resumereq/haltreq writes in one dmi request)"
+  },
+  "debug:4.2:1": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: debug checker HARTSEL-HALT-ALREADY (no access, ok) and HALT-FAILURE (timeout, haltreq cleared)"
+  },
+  "debug:4.2:2": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: debug checker RESUME-FAILURE requires status state, one resumereq"
+  },
+  "debug:4.2:3": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: informative; test_ch32_resume_asks_again_while_dpc_has_not_moved shows the host-side retry"
+  },
+  "debug:4.2:4": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: step checker SELF-BRANCH (ok, moved 0), PRV-* (prv kept), RUNNING (step_left, close), one step-resume"
+  },
+  "debug:4.2:5": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_a_step_that_is_not_ok_answers_zeros_and_the_client_reads_none[*] asserts moved/dpcs 0 and the client reads None"
+  },
+  "debug:4.3:1": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): informative: the header row of the reset mode table (its rows are traced below)"
+  },
+  "debug:4.3:2": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: reset checker OK-0 requires the hart running after mode 0 (mutant verified_mode0)"
+  },
+  "debug:4.3:3": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: reset checker OK-2 requires haltreq held at the ndmreset release and the hart halted"
+  },
+  "debug:4.3:4": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: reset checker requires flags bit0 iff the state was reached"
+  },
+  "debug:4.3:5": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: reset checker requires pc = dpc for mode 2 with bit0, else 0"
+  },
+  "debug:4.3:6": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: refusal vectors riscv-dm_reset_mode_1/3 unsupported 0x00; reset checker status timeout/line/fault without success"
+  },
+  "debug:4.3:7": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_reset_waits_out_a_self_restarting_target_within_max_op_ms asserts the wait and status line; reset checker CLEANUP-LINE closes the connection"
+  },
+  "debug:4.3:8": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: fixed: only the logical reset checker held it - the virtual bench left havereset pending after a reset op; added test_a_reset_op_acknowledges_havereset_and_clears_haltreq and fixed endpoint (reset acks havereset, clears haltreq)"
+  },
+  "debug:4.4:1": {
+   "verdict": "fixed",
+   "reason": "the host rule 'host もdpcだけで未実行と判断しない / never re-sends' was unchecked; added test_the_client_never_sends_a_run_again_by_itself[True/False] (stop at the start pc -> one run request only)"
+  },
+  "debug:4.4:2": {
+   "verdict": "fixed",
+   "reason": "'host の待ちは core §4.4 に従い、timeout_ms だけから決めない' was unchecked; test_the_host_waits_max_op_ms_for_run_and_dmi_not_their_own_times asserts a run with timeout_ms 5 waits max_op_ms"
+  },
+  "debug:4.4:3": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: run checker requires elapsed = finish - resume, 0 for stopped 3"
+  },
+  "debug:4.4:4": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: fixed: named tests only used 0x100A without asserting it means a0; added test_regno_is_the_abstract_register_number and the run checker (its model maps 0x100A to x10 and the checker compares GPRs)"
+  },
+  "debug:4.5:1": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: blocks checker ALIGN malformed and word counts; test_a_block_past_max_length..."
+  },
+  "debug:4.5:2": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: fixed (client bug): the client sized blocks by max_length alone (and a test asserted it ignores max_frame); now min(max_length, max_frame-8 / -20)/4, checked by test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame[*]; probe side by test_a_block_past_max_length_is_unsupported_not_malformed"
+  },
+  "debug:4.5:3": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: blocks checker LIVE requires fresh bus values (mutant stale_read)"
+  },
+  "debug:4.5:4": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: blocks checker RUNNING-* status state; test_dmi_and_run_answers... read_block on a running hart status 5"
+  },
+  "debug:4.6:1": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_attach_acknowledges_a_pending_havereset_and_says_so asserts flags bit0 and tg.havereset cleared"
+  },
+  "debug:4.6:2": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: fixed: reset-op marks and console-read restart were checked, but not the high-level op auto-ack nor raw dmi adding none, and the bench did neither; added test_high_level_ops_acknowledge_a_pending_havereset_and_raw_dmi_does_not and the bench ack + restart mark"
+  },
+  "debug:5:1": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_swd_scan_and_detach_are_debug_5s_forms asserts the scan request bytes and kind 2 / DPIDR decoding"
+  },
+  "debug:5:2": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: attach checker METHOD refuses swd method 1 unsupported 0x00; test_swd_attach_decodes_dpidr_and_dormant asserts method 0 bytes"
+  },
+  "debug:5:3": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_swd_scan_and_detach_are_debug_5s_forms asserts detach connection(u32) bytes"
+  },
+  "debug:5:4": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: vector swd_connections__read_identity_and_supplied_selector_are_distinct asserts the swd connections row"
+  },
+  "debug:5:5": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: scan checker found() requires kind 2 for swd (mutant wrong_kind); attach identity DPIDR asserted"
+  },
+  "debug:5:6": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: scan_options SELECTOR cases and wire options TARGETSEL/RESET-3 accept those tags; others unsupported"
+  },
+  "debug:5:7": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked; reason reworded since the bench now logs attach DMI writes): behaviour this repository cannot model: SWD's JTAG-to-SWD switch, dormant wake and TARGETSEL line sequences - the virtual bench has no swd wire and the logical swd models (wire options, scan options) keep no line sequence ('physical wake' unchecked)"
+  },
+  "debug:5:8": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked; reason reworded since the bench now logs attach DMI writes): behaviour this repository cannot model: SWD's speed check by DPIDR reads with ACK OK and parity - no swd wire on the bench, and the logical swd models have no line speeds or parity ('attach speed/scratch algorithms' unchecked)"
+  },
+  "debug:5:9": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: wire options DORMANT requires flags bit2; test_the_host_powers_the_debug_domain_up_with_dp_writes asserts CDBGPWRUPREQ/CSYSPWRUPREQ written by the host"
+  },
+  "debug:5:10": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - SWD's lines and packets (ADI)"
+  },
+  "debug:5:11": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - SWD's idle cycles after each packet"
+  },
+  "debug:5:12": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: wire options checker requires swd levels [SWDIO 0, SWCLK 1] probe-driven"
+  },
+  "debug:5:13": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): behaviour this repository cannot model: the electrical bit-level line timing / framing of the wire (hardware) - SWD's 8 idle cycles before the probe stops driving"
+  },
+  "debug:5:14": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: wire options CONFLICT-* refuse cause 1 whatever targetsel and keep it in the connection; test_swd_attach... asserts critical 0x82"
+  },
+  "debug:5:15": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: attach checker CONSOLE-RESOURCE requires unavailable cause 6 on an swd connection (mutant arm_console)"
+  },
+  "debug:6:1": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: arm checker transfer() requires done/status/ack/nvals/values (mutants ack/done/nvals)"
+  },
+  "debug:6:2": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: arm checker BLOCK-LIVE requires done/status/words from the bus"
+  },
+  "debug:6:3": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: arm checker BLOCK-LIVE write result done/status; mem-ap checker done mutant"
+  },
+  "debug:6:4": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: arm checker RESERVED (unsupported 0x00, nothing run), TRUNCATED malformed, EMPTY ack 0"
+  },
+  "debug:6:5": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: arm checker POSTED (delayed AP read), WAIT-RECOVER, ACK-4-* stops at FAULT"
+  },
+  "debug:6:6": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: arm checker FRAME refuses 11+4r over max_frame unsupported 0x00"
+  },
+  "debug:6:7": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: fixed (client bug, same as 4.5:2): MemAp chunked by max_length only; now read/write by their formulas, test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame[*]; probe side arm checker BLOCK-LIMIT"
+  },
+  "debug:6:8": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: mem-ap checker BOUNDARY (TAR reload, posted collection, SELECT/CSW unchanged), DROP (done = words sent)"
+  },
+  "debug:7:1": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): informative: the reference list of the external specifications these interfaces use"
+  },
+  "debug:7:2": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): informative: the reference list of the external specifications these interfaces use"
+  },
+  "debug:7:3": {
+   "verdict": "ok",
+   "reason": "excluded ok (re-checked): informative: the reference list of the external specifications these interfaces use"
+  },
+  "debug:pre:1": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_the_documents_interfaces_are_these_names_at_revision_1 asserts reg.INTERFACES[name].revision == 1 and the client classes use it"
+  },
+  "debug:pre:2": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_the_documents_interfaces_are_these_names_at_revision_1 asserts oep.wire.swio revision 1 in the registry"
+  },
+  "debug:pre:3": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_the_documents_interfaces_are_these_names_at_revision_1 asserts oep.wire.swd revision 1 in the registry"
+  },
+  "debug:pre:4": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_the_documents_interfaces_are_these_names_at_revision_1 asserts oep.target.riscv-dm revision 1 (RiscvDm.REVISION)"
+  },
+  "debug:pre:5": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: test_the_documents_interfaces_are_these_names_at_revision_1 asserts oep.target.arm-adi revision 1 and ArmAdi.NAME"
+  },
+  "debug:pre:6": {
+   "verdict": "ok",
+   "reason": "re-read the named tests: fixed: was excluded as an overview, but it states that target interfaces are listed before attach and a request without a connection is rejected no_resource; now verified by test_target_ops_need_a_connection_and_every_op_but_connections_the_lock (no_resource) and test_every_wire_offers_...[*] (riscv-dm listed with no connection)"
+  },
+  "debug:pre:7": {
+   "verdict": "fixed",
+   "reason": "only scan/attach/detach/dmi were sent without the lock; added test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock: every wire op but connections and all eight riscv-dm ops session_required with session_id 0, connections lock-free"
+  },
+  "debug:pre:8": {
+   "verdict": "fixed",
+   "reason": "nothing asserted that a target request picks its connection by its leading number (with two live connections) or that wire and target fn differ; added test_each_target_request_picks_its_connection_by_the_number_it_starts_with (halt on c1 halts only its target, a dmi write on c0 lands only on c0's, wire fn != riscv-dm fn)"
+  }
+ }
+}

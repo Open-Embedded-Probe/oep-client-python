@@ -577,19 +577,212 @@ def test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame(max_frame
 
 
 def test_scan_leaves_the_target_as_it_was():
-    """debug §1 (scan が書くもの): scan writes only the wake / set-up steps and dmactive, never the scratch (PROGBUF0) nor
-    anything a host left there - the bench's scan reads DMSTATUS alone: every DMI register, GPR, memory word and the
-    hart's run state are as they were."""
+    """debug §1 (scan が書くもの): scan writes only the wake / set-up steps and dmactive, never the scratch (PROGBUF0),
+    ABSTRACTAUTO nor anything a host left there, and leaves dmactive set - on the bench every DMI register but DMCONTROL's
+    dmactive, every GPR, memory word and the hart's run state are as they were; a DMCONTROL that read dmactive 0 reads
+    1 after the scan, one that read 1 is not written."""
     import copy
     ep, hv = bench()
     pairs = ep.pairs[1]
-    for p in pairs:
+    for i, p in enumerate(pairs):
         tg = ep._target(1, p)
-        tg.dmi[0x20], tg.mem[0x2000_0000] = 0xDEADBEEF, 0x12345678       # PROGBUF0 and a memory word set before
+        tg.dmi[0x20], tg.dmi[0x18], tg.mem[0x2000_0000] = 0xDEADBEEF, 0x10000, 0x12345678   # PROGBUF0, ABSTRACTAUTO
+        tg.dmi[0x10] = 0 if i == 0 else 1                                                     # dmactive 0 on the first
     before = {p: copy.deepcopy((ep._target(1, p).dmi, ep._target(1, p).regs, ep._target(1, p).mem,
                                 ep._target(1, p).halted)) for p in pairs}
     r = hv.raw(1, W["scan"], bytes([len(pairs)]) + b"".join(struct.pack("<HH", *p) for p in pairs))
     assert r.succeeded
-    for p in pairs:
+    setup = [(0x7E, 0x5AA50400), (0x7D, 0x5AA50400)] * 2
+    for i, p in enumerate(pairs):
         tg = ep._target(1, p)
-        assert (tg.dmi, tg.regs, tg.mem, tg.halted) == before[p], p
+        dmi, regs, mem, halted = before[p]
+        assert (tg.dmi, tg.regs, tg.mem, tg.halted) == ({**dmi, 0x10: 1}, regs, mem, halted), p   # dmactive left set
+        assert tg.bringup == setup + ([(0x10, 1)] if i == 0 else []), p                         # nothing else written
+
+
+# ---- review 2 (2026-10-15): rules the first review passed without a test that asserts them ------------------------
+
+import copy                                                                 # noqa: E402
+
+SETUP = [(0x7E, 0x5AA50400), (0x7D, 0x5AA50400)] * 2                        # rvswd / swio set-up pair, twice (§3)
+HARTSEL = 0x3FF << 16 | 0x3FF << 6
+
+
+def test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock():
+    """debug (before §0) / §1 同時に持てる接続の数: every op of the wire and of riscv-dm but connections needs the lock -
+    each sent with session_id 0 is session_required; the probe keeps one lock however many connections there are:
+    another session is refused locked on either connection (nothing runs), and its connections answers lock-free."""
+    ep, hv = bench()
+    p0, p1 = ep.pairs[1][:2]
+    c0 = struct.unpack_from("<I", attach(hv, p0).payload)[0]
+    c1 = struct.unpack_from("<I", attach(hv, p1).payload)[0]
+    for op in W.values():
+        if op != W["connections"]:
+            r = hv.raw(1, op, fixed(ep.pairs[1][2]), session=False)
+            assert (r.resolution, r.detail) == (m.REJECTED, m.SESSION_REQUIRED), op
+    for op in RV.values():
+        r = hv.raw(2, op, struct.pack("<I", c0) + bytes(12), session=False)
+        assert (r.resolution, r.detail) == (m.REJECTED, m.SESSION_REQUIRED), op
+    other = Host(ep, session=0x77)
+    for cid in (c0, c1):
+        for op in (RV["halt"], RV["dmi"]):
+            r = other.raw(2, op, struct.pack("<I", cid) + (struct.pack("<HBBI", 1, 1, 0x10, 1 << 31) if op == RV["dmi"]
+                                                          else b""))
+            assert (r.resolution, r.detail) == (m.REJECTED, m.LOCKED), (cid, op)
+    assert not ep.targets[(1, p0)].halted and not ep.targets[(1, p1)].halted
+    r = other.raw(1, W["connections"], b"\x00", session=False)
+    assert r.succeeded and [row[0] for row in rows(r.payload)[1]] == [c0, c1]
+
+
+def test_each_target_request_picks_its_connection_by_the_number_it_starts_with():
+    """debug (before §0): a connection keeps the wire's pin / target choice and each target request picks it by the
+    connection number it starts with; the wire's fn and the target interface's fn need not be the same number."""
+    ep, hv = bench()
+    wire_fn, dm_fn = ep.fns["oep.wire.rvswd"], ep.fns["oep.target.riscv-dm"]
+    assert wire_fn != dm_fn
+    p0, p1 = ep.pairs[wire_fn][:2]
+    c0 = struct.unpack_from("<I", attach(hv, p0, fn=wire_fn).payload)[0]
+    c1 = struct.unpack_from("<I", attach(hv, p1, fn=wire_fn).payload)[0]
+    t0, t1 = ep.targets[(wire_fn, p0)], ep.targets[(wire_fn, p1)]
+    assert hv.raw(dm_fn, RV["halt"], struct.pack("<I", c1)).succeeded
+    assert t1.halted and not t0.halted
+    hv.ok(dm_fn, RV["dmi"], struct.pack("<IHBBI", c0, 1, STEP["write"], 0x04, 0xA5A5))
+    assert t0.dmi[0x04] == 0xA5A5 and 0x04 not in t1.dmi
+
+
+@pytest.mark.parametrize("wire", ["oep.wire.rvswd", "oep.wire.swio"])
+def test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back(wire):
+    """debug §1 (速さを確かめる前の書き込み / 速さの確かめ方), §3 (wake / 設定の手順, scratch), §3.2 (the check at the fixed
+    speed): before the speed is checked the probe writes only the set-up pair (DMI 0x7E, 0x7D = 0x5AA50400, twice) and
+    dmactive when DMCONTROL does not read it; the check writes ABSTRACTAUTO = 0 (not given back) and PROGBUF0, which it
+    read first and gives its value back after; nothing else of the target changes. A DMCONTROL already reading
+    dmactive is not written (its hartsel stays: method 0 changes no hart selection)."""
+    swio = wire == "oep.wire.swio"
+    ep, hv = bench(virtual_bench.esp32_v003() if swio else None)
+    fn = ep.fns[wire]
+    pair = ep.pairs[fn][0]
+    tg = ep.targets[(fn, pair)]
+    tg.havereset = False
+    tg.dmi.update({0x10: 0, 0x18: 0x10000, 0x20: 0xDEADBEEF, 0x21: 0x1234, 0x04: 7})
+    tg.regs[0x100A], tg.mem[0x2000_0000] = 5, 9
+    dmi, regs, mem, halted = copy.deepcopy((tg.dmi, tg.regs, tg.mem, tg.halted))
+    cid = struct.unpack_from("<I", attach(hv, pair, fn=fn).payload)[0]
+    assert tg.bringup[:4] == SETUP and tg.bringup[4] == (0x10, 1)             # before the check: these only
+    check = tg.bringup[5:]
+    assert check[0] == (0x18, 0) and [a for a, _ in check[1:]] == [0x20, 0x20]
+    assert check[1][1] != 0xDEADBEEF and check[2] == (0x20, 0xDEADBEEF)       # written, then its value back
+    assert (tg.dmi, tg.regs, tg.mem, tg.halted) == ({**dmi, 0x10: 1, 0x18: 0}, regs, mem, halted)
+    hv.ok(fn, W["detach"], struct.pack("<I", cid))
+    tg.bringup.clear()
+    tg.dmi[0x10] = 1 | 1 << 16                                                 # dmactive, hartsel 1
+    attach(hv, pair, fn=fn)
+    assert all(a != 0x10 for a, _ in tg.bringup) and tg.dmi[0x10] == 1 | 1 << 16
+
+
+def test_attach_fails_when_the_scratch_does_not_read_back_and_makes_nothing():
+    """debug §1 速さの確かめ方: a speed whose write does not read back is not used, and a scratch whose value cannot be
+    given back ends the attach completed failed with no connection made; the pins it tried are free again."""
+    ep, hv = bench()
+    pair = ep.pairs[1][0]
+    tg = ep.targets[(1, pair)]
+    tg.fail_write.add(0x20)
+    r = hv.raw(1, W["attach"], fixed(pair))
+    assert (r.resolution, r.detail, r.payload[:1]) == (m.COMPLETED, m.FAILED, bytes([reg.STATUS["line"]]))
+    assert not ep.conns and all(ep.pin_state(ch).startswith("idle") for ch in pair)
+    tg.fail_write.clear()
+    attach(hv, pair)
+
+
+def test_the_wires_ids_are_dmstatus_scan_kind_1_and_a_swio_connection_takes_the_console():
+    """debug §3: on rvswd and swio a scan entry's kind is 1 (riscv-dm) and its id DMSTATUS, attach's id is DMSTATUS
+    too; the connection is used by oep.target.riscv-dm and oep.target.console (a swio one included)."""
+    for probe, wire in ((virtual_bench.p4_bench(), "oep.wire.rvswd"), (virtual_bench.esp32_v003(), "oep.wire.swio")):
+        ep, hv = bench(probe)
+        fn = ep.fns[wire]
+        pair = ep.pairs[fn][0]
+        tg = ep.targets[(fn, pair)]
+        r = hv.ok(fn, W["scan"], b"\x01" + struct.pack("<HH", *pair))
+        assert struct.unpack_from("<BBBHHI", r) == (1, 1, 1, *pair, tg.dmstatus()), wire
+        r = attach(hv, pair, fn=fn)
+        cid, ident = struct.unpack_from("<II", r.payload)
+        assert ident == tg.dmstatus(), wire
+        assert hv.raw(ep.fns["oep.target.riscv-dm"], RV["halt"], struct.pack("<I", cid)).succeeded
+        con = reg.TARGET_CONSOLE
+        assert hv.raw(ep.fns["oep.target.console"], con.op["open"],
+                      struct.pack("<IB", cid, console.Console.DMSEQ)).succeeded, wire
+
+
+def test_method_1_selects_hart_0_drops_haltreq_and_succeeds_only_with_hart_0_halted():
+    """debug §3: method 1 sets hartsel to 0 and succeeds only when hart 0 halted and haltreq could be dropped - on a
+    hart that never halts it fails (status timeout), makes no connection and leaves haltreq down; method 0 asks no
+    halt and succeeds there."""
+    ep, hv = bench()
+    p0, p1 = ep.pairs[1][:2]
+    t0, t1 = ep.targets[(1, p0)], ep.targets[(1, p1)]
+    t0.dmi[0x10] = 1 | 3 << 16                                                 # dmactive, hartsel 3
+    attach(hv, p0, method=1)
+    assert t0.halted and not t0.dmi[0x10] & HARTSEL and not t0.dmi[0x10] & 1 << 31 and not t0.haltreq
+    first = list(ep.conns)
+    t1.halt_stuck = True
+    r = hv.raw(1, W["attach"], fixed(p1, method=1))
+    assert (r.resolution, r.detail, r.payload) == (m.COMPLETED, m.FAILED, bytes([reg.STATUS["timeout"]]))
+    assert list(ep.conns) == first and not t1.halted and not t1.haltreq
+    r = attach(hv, p1)
+    assert not struct.unpack_from("<IIBI", r.payload)[2] & FLAGS["halted"] and not t1.halted
+
+
+HIGH_LEVEL = {"halt": b"", "resume": b"", "reset": b"\x00", "step": b"",
+              "read_block": struct.pack("<IH", 0x2000_0000, 1), "write_block": struct.pack("<IHI", 0x2000_0000, 1, 5),
+              "run": riscv.RiscvDm.run_body(0x2000_0000, [], 100, ())}
+
+
+@pytest.mark.parametrize("op", sorted(HIGH_LEVEL))
+def test_a_high_level_op_leaves_hartsel_0_and_raw_dmi_keeps_the_hosts(op):
+    """debug §4 (dmi 以外の op の範囲): a high-level op works on hart 0 - it sets DMCONTROL.hartsel to 0 and returns it 0;
+    the hartsel the host chose with dmi is that dmi request's alone (raw dmi itself neither restores nor changes it)."""
+    ep, hv = bench()
+    pair = ep.pairs[1][0]
+    cid = struct.unpack_from("<I", attach(hv, pair, method=1).payload)[0]
+    read = struct.pack("<IHBB", cid, 1, STEP["read"], 0x10)
+    hv.ok(2, RV["dmi"], struct.pack("<IHBBI", cid, 1, STEP["write"], 0x10, 1 | 1 << 16))
+    assert struct.unpack("<HBHI", hv.ok(2, RV["dmi"], read))[3] & HARTSEL == 1 << 16      # the host's, kept
+    r = hv.raw(2, RV[op], struct.pack("<I", cid) + HIGH_LEVEL[op])
+    assert r.resolution == m.COMPLETED, r.describe()
+    assert struct.unpack("<HBHI", hv.ok(2, RV["dmi"], read))[3] & HARTSEL == 0, op
+
+
+def _counting_client():
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
+    sent = []
+
+    def link(b):
+        sent.append(m.Request.unpack(b))
+        return ep.handle(b, 1)
+    hst = h.Host(link)
+    hst.open(3000)
+    conn, _ = riscv.Wire(hst).attach(halt=True, pins=ep.pairs[1][0])
+    return ep, hst, sent, riscv.RiscvDm(hst, conn), ep._target_of(conn)
+
+
+@pytest.mark.parametrize("stopped", [True, False])
+def test_the_client_never_sends_a_run_again_by_itself(stopped):
+    """debug §4.4: the host does not take a dpc alone for "not run" - a run that stopped (or was stopped at the limit)
+    where it began is answered to the caller as it is; the client sends the run request once and never again."""
+    ep, hst, sent, dm, tg = _counting_client()
+    tg.run_hook = lambda pc, regs: (stopped, pc, 7)                            # halted at its start
+    res = dm.run(0x2000_0000, [], timeout_ms=100)
+    assert res.dpc == 0x2000_0000 and res.stopped == stopped
+    assert len([r for r in sent if r.fn == ep.fns["oep.target.riscv-dm"] and r.op == RV["run"]]) == 1
+
+
+def test_the_host_waits_max_op_ms_for_run_and_dmi_not_their_own_times():
+    """debug §4.4 / §4.1: the host's wait follows core §4.4 - the whole request's bound max_op_ms - and is not taken from
+    run's timeout_ms nor dmi's wait_us / max_us alone."""
+    ep, hst, sent, dm, tg = _counting_client()
+    seen = []
+    send = hst.send
+    hst.send = lambda b: (seen.append((b[5], hst.expect_ms)), send(b))[1]
+    dm.run(0x2000_0000, [], timeout_ms=5)
+    dm.dmi([dm.step_delay(10), dm.step_read(0x11)])
+    assert [ms for op, ms in seen if op in (RV["run"], RV["dmi"])][-2:] == [virtual_bench.MAX_OP_MS] * 2
+    assert {op for op, _ in seen} >= {RV["run"], RV["dmi"]}

@@ -74,7 +74,7 @@ def unpack_list_result(payload: bytes) -> tuple[int, list[ListEntry]]:
     out = []
     for _ in range(count):
         fn, instance, revision, n = rd.take("HHBB")
-        out.append(ListEntry(fn, instance, revision, rd.bytes(n).decode("ascii", "replace")))
+        out.append(ListEntry(fn, instance, revision, m.shown(rd.bytes(n))))   # shown as core §2.1 says
     rd.tail()
     return total, out
 

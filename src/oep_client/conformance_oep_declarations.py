@@ -11,9 +11,13 @@ class OepDeclarationChecks:
         require(tag in values,'ops declaration missing');return ops(values[tag])
 
     def mandatory(self, fn, name):
-        spec=self.specs[name]
-        required={row['code'] for row in spec['op'] if row['name']!='scan'}
-        require(required<=self.offered(fn),'mandatory standard operation missing')
+        spec=self.specs[name];code={row['name']:row['code'] for row in spec['op']}
+        # optional: a wire's scan (debug §1); the console's marks / clear / mark / write (console §1, the op table)
+        optional={'scan'}|({'marks','clear','mark','write'} if name=='oep.target.console' else set())
+        required={c for n,c in code.items() if n not in optional};offered=self.offered(fn)
+        require(required<=offered,'mandatory standard operation missing')
+        if name=='oep.target.console':   # mark is offered only with marks (console §1)
+            require(code['mark'] not in offered or code['marks'] in offered,'console mark offered without marks')
         self.c.observed.setdefault('oep_required_ops',{})[str(fn)]=sorted(required)
 
     def wire_capacity(self, fn, name):

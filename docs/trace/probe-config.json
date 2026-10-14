@@ -93,7 +93,8 @@
     "tests/test_config_disable.py::test_a_released_pin_is_parked_but_not_a_disabled_one",
     "tests/test_config_disable.py::test_describe_is_unchanged",
     "tests/test_conformance_config.py::test_current_config_storage_contract",
-    "tests/test_conformance_config_fallback.py::test_saved_items_partial_and_unreadable_fallback"
+    "tests/test_conformance_config_fallback.py::test_saved_items_partial_and_unreadable_fallback",
+    "tests/test_trace_probe_config.py::test_a_key_twice_or_a_wrong_length_stays_malformed_beside_an_idle_disable_conflict"
    ],
    "mutants": [
     "tests/test_conformance_config.py::test_semantic_faults[disable_drives-IDLE]",
@@ -103,7 +104,7 @@
     "tests/test_conformance_config.py::test_semantic_faults[refusal_changes_config-ATOMIC]",
     "tests/test_conformance_config_fallback.py::test_semantic_faults_are_detected[idle_wins-CONFLICT]"
    ],
-   "note": "disable before the boot / release park; requests naming it cause 5; disabling one in use cause 1; idle+disable cause 5; nothing changed; unset frees it at once"
+   "note": "disable before the boot / release park; requests naming it cause 5; disabling one in use cause 1; idle+disable cause 5; nothing changed; unset frees it at once; a key twice / wrong length stays malformed beside the idle+disable conflict"
   },
   "probe-config:1:8": {
    "text": "- idleは空きのchannelの状態（core §8）。空きのchannel",
@@ -234,14 +235,15 @@
    "verify": [
     "tests/test_config.py::test_a_refused_set_changes_nothing",
     "tests/test_config_disable.py::test_idle_and_disable_on_one_channel_is_held_by_settings",
-    "tests/test_conformance_config.py::test_current_config_storage_contract"
+    "tests/test_conformance_config.py::test_current_config_storage_contract",
+    "tests/test_trace_probe_config.py::test_a_refused_or_unchanging_set_touches_no_pin"
    ],
    "mutants": [
     "tests/test_conformance_config.py::test_semantic_faults[refusal_changes_config-ATOMIC]",
     "tests/test_conformance_config.py::test_semantic_faults[refusal_counts-ATOMIC]",
     "tests/test_conformance_config.py::test_semantic_faults[noop_touches_pins-ATOMIC]"
    ],
-   "note": "the whole result is checked first; a refusal keeps settings, generation and pins; no change touches no pin"
+   "note": "the whole result is checked first; a refusal keeps settings, generation and pins; no change touches no pin; bench: a refusal or a no-op parks nothing"
   },
   "probe-config:2:10": {
    "text": "- generationは内容のdigestではなく、同じboot内の変更カウン",

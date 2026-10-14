@@ -997,7 +997,7 @@ def test_state_table_stop_force_release(analog, state):
         if state == 3:
             assert t.segments()[-1].flags & SHORT
     else:
-        assert t.status().state == state
+        assert t.status().state == state and snap(ep, t.fn) == before   # "—": nothing changes, the data kept
 
 
 @pytest.mark.parametrize("analog", [False, True])
@@ -1016,6 +1016,7 @@ def test_state_table_automatic_transitions(analog):
     assert [(e.kind, e.reason) for e in events(ep, t.fn)] == [("segment", None), ("stopped", 0)]
     ep.captures[t.fn].value = lambda role, i: 0
     t.start()
+    assert t.status().state == 2                                    # waiting: the error comes from 2
     ep.capture_overflow(t.fn)
     assert t.status().state == 6 and [(e.kind, e.reason) for e in events(ep, t.fn)] == [("stopped", 3)]
     t.configure(rate=1000, mode=c.REPEAT, samples=8, segments=1)
@@ -1967,3 +1968,195 @@ def test_review_the_same_plan_on_a_bound_track_is_a_no_op():
     r = ask(hst, plan, reg.PROBE_PLAN.op["plan_apply"],
             m.tlv(reg.PROBE_PLAN.tlv["plan_apply"]["role_assignment"], struct.pack("<HBH", lc.fn, 0, 32), critical=True))
     assert cause(r) == 4 and snap(ep, lc.fn) == before
+
+
+# ---- second review (docs/trace/review2/capture.json): rules the first review passed but no named test checked -------
+
+def test_review2_start_in_state_1_clears_the_old_segments_and_goes_to_2_or_3():
+    """capture §3.2's state table, row 1: start -> 3 (immediate) or 2 (a trigger), the generation + 1 and the
+    segments gone - here from a stopped repeat (state 1) that still holds segments: none left, write_pos 0, a read of
+    the old generation cause 6."""
+    ep, hst, clock = bench()
+    lc = track(hst)
+    lc.configure(rate=1000, mode=c.REPEAT, samples=8, segments=4)
+    lc.start()
+    clock.t = 20
+    lc.stop()
+    old = lc.status()
+    assert old.state == ST["configured"] and lc.segments() and old.write_pos > 0
+    lc.start()
+    st = lc.status()
+    assert (st.state, st.generation, st.write_pos) == (ST["capturing"], old.generation + 1, 0) and lc.segments() == []
+    assert cause(ask(hst, lc.fn, lc.READ, struct.pack("<IQH", old.generation, 0, 8), locked=False)) == 6
+    lc.stop()
+    ep.captures[lc.fn].value = lambda role, i: 0                    # the edge never comes
+    lc.configure(rate=1000, samples=8, trigger=(c.EDGE, 0, 0))
+    lc.start()
+    assert lc.status().state == ST["waiting"] and lc.status().generation == old.generation + 2
+
+
+def test_review2_release_of_an_unfinished_segment_and_in_streaming():
+    """capture §3.2 release: a serial not finished yet is not freed (only the finished ones at or before it are) - the
+    segment being taken finishes and reads as usual; in streaming release is a success that does nothing."""
+    ep, hst, clock = bench()
+    lc = track(hst)
+    lc.configure(rate=1000, mode=c.REPEAT, samples=8, segments=4)
+    lc.start()
+    clock.t = 12                                                    # serial 0 done, serial 1 half taken
+    assert lc.status().serial_done == 1
+    lc.release(1)
+    clock.t = 17
+    segs = lc.segments()
+    assert segs[0].serial == 1 and len(lc.read_segment(segs[0])) == 2 and not segs[0].flags & GAP
+    ep, hst, clock, t = running(mode=c.STREAMING)
+    ep.pushes()
+    before = snap(ep, t.fn)
+    t.release(0)
+    assert snap(ep, t.fn) == before
+
+
+def test_review2_an_analog_plan_leaves_the_pin_as_it_was_and_logic_keeps_a_pull():
+    """capture §1.2: taking a plan changes nothing electrical - an analog plan and configure leave the pin as before the
+    plan (it leaves idle only at start and comes back to that same state); a logic capture keeps a pull idle's pull."""
+    ep, hst, clock = bench()
+    free = ep.pin_state(16)
+    an = track(hst, analog=True, roles=(0,))
+    assert ep.pin_state(16) == free
+    an.configure(rate=1000, samples=8)
+    assert ep.pin_state(16) == free
+    an.start()
+    assert ep.pin_state(16) == "analog"
+    clock.t = 20
+    assert an.status().state == ST["done"] and ep.pin_state(16) == free
+    pull = m.tlv(CFG.tlv["item"]["idle"], struct.pack("<HB", 30, CFG.enum["idle_mode"]["pull_up"]))
+    assert hst.request(ep.fns[CFG.name], CFG.op["set"], bytes([1]) + pull).succeeded
+    pulled = ep.pin_state(30)
+    lc = c.LogicCapture(hst)
+    core.plan_apply(hst, [(lc.fn, 0, 30)])
+    lc.configure(rate=1000, samples=8)
+    lc.start()
+    assert ep.pin_state(30) == pulled
+    clock.t = 40
+    lc.wait()
+    assert ep.pin_state(30) == pulled
+
+
+def test_review2_a_trigger_without_pretrigger_keeps_none_before_it():
+    """capture §3.3 pretrigger: left out with a non-0 trigger it is 0 - the segment begins at the trigger's sample
+    (trigger_index 0), whole (samples, not short)."""
+    ep, hst, clock = bench()
+    lc = track(hst)
+    lc.configure(rate=1000, samples=8, trigger=(c.EDGE, 1, 0))       # bit 1 of the counter rises at sample 2
+    assert c.PRETRIGGER not in {tag for tag, _ in m.split_tlvs(ep.requests[-1].payload)}
+    lc.start()
+    clock.t = 30
+    (seg,) = lc.segments()
+    assert (seg.trigger_index, seg.samples, seg.start_ns) == (0, 8, 2_000_000) and not seg.flags & SHORT
+
+
+def test_review2_group_start_checks_generations_and_subscriptions_first():
+    """capture §4.1 start: the group's and every track's generation left, and the subscriptions streaming needs, are
+    all checked before anything changes - the group at 0xFFFFFFFF or a track at 0xFFFFFFFF is unavailable cause 2,
+    a streaming track without its subscription cause 6; the generations, states and data stay."""
+    ep, hst, clock, lc, an, grp = grouped()
+    grp.bind([lc, an])
+    every = lambda: copy.deepcopy((ep.captures[lc.fn], ep.captures[an.fn], ep.groups[grp.fn]))   # noqa: E731
+    ep.groups[grp.fn].generation = 0xFFFFFFFF
+    before = every()
+    assert cause(ask(hst, grp.fn, grp.START)) == reg.CORE.enum["unavailable_cause"]["limit"] and every() == before
+    ep.groups[grp.fn].generation = 5
+    ep.captures[an.fn].generation = 0xFFFFFFFF
+    before = every()
+    assert cause(ask(hst, grp.fn, grp.START)) == reg.CORE.enum["unavailable_cause"]["limit"] and every() == before
+    ep, hst, clock, lc, an, grp = grouped(mode=c.STREAMING)
+    lc.subscribe()
+    grp.bind([lc, an])
+    before = every()
+    assert cause(ask(hst, grp.fn, grp.START)) == 6 and every() == before
+    an.subscribe()
+    grp.start([lc, an])
+    assert grp.status().state == ST["capturing"]
+
+
+def test_review2_group_status_counts_paused_as_3_and_needs_a_start_for_4():
+    """capture §4.1 status: tracks all 4 before any group start is 1 (4 only once started); tracks paused (5) make the
+    group 3; a bind changes no track's generation."""
+    ep, hst, clock, lc, an, grp = grouped()
+    lc.start()
+    an.start()
+    clock.t = 30
+    gens = (lc.status().generation, an.status().generation)
+    assert lc.status().state == an.status().state == ST["done"]
+    grp.bind([lc, an])
+    assert grp.status().state == ST["configured"] and (lc.status().generation, an.status().generation) == gens
+    grp.start([lc, an])
+    clock.t = 60
+    assert grp.status().state == ST["done"]
+    ep, hst, clock, lc, an, grp = grouped(mode=c.REPEAT)
+    grp.bind([lc, an])
+    grp.start([lc, an])
+    clock.t = 100                                                   # 4 segments of 8 ms each: both rings full
+    assert lc.status().state == an.status().state == ST["paused"] and grp.status().state == ST["capturing"]
+
+
+def test_review2_bind_refuses_a_track_not_in_1_4_6():
+    """capture §4.1 bind: the tracks are configured ones in state 1/4/6 - an unconfigured track (0) or one paused alone
+    (5) is unavailable cause 6, nothing bound."""
+    ep, hst, clock = bench()
+    lc, an = track(hst), track(hst, analog=True, roles=(0,))
+    grp = c.CaptureGroup(hst)
+    an.configure(rate=1000, samples=8)
+    assert cause(ask(hst, grp.fn, grp.BIND, struct.pack("<BHH", 2, lc.fn, an.fn))) == 6     # logic in state 0
+    assert grp.status().state == 0 and ep.captures[an.fn].group is None
+    lc.configure(rate=1000, mode=c.REPEAT, samples=8, segments=1)
+    an.configure(rate=1000, mode=c.REPEAT, samples=8, segments=1)
+    lc.start()
+    clock.t = 20
+    assert lc.status().state == ST["paused"]
+    assert cause(ask(hst, grp.fn, grp.BIND, struct.pack("<BHH", 2, lc.fn, an.fn))) == 6
+    assert grp.status().state == 0 and ep.captures[an.fn].group is None and ep.captures[lc.fn].group is None
+
+
+def test_review2_a_group_error_keeps_a_finished_tracks_data_and_stops_the_others_as_stop_does():
+    """capture §4.1: a track's error makes the group 6 and stops the others as stop does - a track still capturing
+    sends stopped reason 1 on its own subscription and keeps a short segment, a finished track (4) keeps its data."""
+    ep, hst, clock = bench()
+    lc, an = track(hst), track(hst, analog=True, roles=(0,))
+    grp = c.CaptureGroup(hst)
+    lc.configure(rate=1000, samples=8)
+    an.configure(rate=1000, samples=40)
+    grp.bind([lc, an])
+    grp.start([lc, an])
+    clock.t = 20
+    assert lc.status().state == ST["done"] and an.status().state == ST["capturing"]
+    (seg,) = lc.segments()
+    data = lc.read_segment(seg)
+    ep.capture_overflow(an.fn)
+    assert grp.status().state == ST["error"] and lc.status().state == ST["done"]
+    assert lc.segments() == [seg] and lc.read_segment(seg) == data
+    ep, hst, clock = bench()
+    lc, an = track(hst), track(hst, analog=True, roles=(0,))
+    grp = c.CaptureGroup(hst)
+    for t in (lc, an):
+        t.configure(rate=1000, mode=c.REPEAT, samples=8, segments=4)
+    lc.subscribe()
+    grp.bind([lc, an])
+    grp.start([lc, an])
+    clock.t = 11
+    events(ep, lc.fn)
+    ep.capture_overflow(an.fn)
+    assert [(e.kind, e.reason) for e in events(ep, lc.fn) if e.kind == "stopped"] == [("stopped", 1)]
+    assert lc.status().state == ST["configured"] and lc.segments()[-1].flags & SHORT
+
+
+def test_review2_a_bind_is_the_sessions_and_ends_with_it():
+    """capture §4.1: the bind is the session's resource (core §9) - the session's end unbinds the group (status 0, no
+    track bound), and the next session finds nothing bound."""
+    ep, hst, clock, lc, an, grp = grouped()
+    grp.bind([lc, an])
+    assert grp.status().state == ST["configured"]
+    hst.end()
+    other = h.Host(lambda b: ep.handle(b, 0))
+    other.open(3000)
+    assert c.CaptureGroup(other).status().state == 0
+    assert ep.groups[grp.fn].tracks == [] and ep.captures[lc.fn].group is None and ep.captures[an.fn].group is None

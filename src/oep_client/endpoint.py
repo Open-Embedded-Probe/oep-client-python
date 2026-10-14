@@ -101,6 +101,7 @@ from . import registry as current_reg     # TRANSITIONAL: the common stream mark
 
 TOY_WRITE, TOY_READ = 0x10, 0x11                    # 0x01 / 0x02: subscribe / unsubscribe in every op space
 OK, WAIT, LINE, FAULT, TIMEOUT, STATE = (reg.STATUS[k] for k in ("ok", "wait", "line", "fault", "timeout", "state"))
+HARTSEL = 0x3FF << 16 | 0x3FF << 6                  # DMCONTROL.hartsello / hartselhi
 _RV, _CON, _GPIO, _UART, _CFG = (reg.TARGET_RISCV_DM, reg.TARGET_CONSOLE, reg.FIXTURE_GPIO, reg.FIXTURE_UART,
                                  reg.PROBE_CONFIG)
 STEP = _RV.enum["dmi_step"]
@@ -345,6 +346,31 @@ class VirtualTarget:
     lost_writes: int = 0
     glitch: bool = False                               # this access is a "glitch" one
     glitch_parity: bool = False                        # ... a "glitch_parity" one
+    # The DMI writes an rvswd / swio scan or attach makes before its answer (debug §1, §3), in order: the set-up pair
+    # DMI 0x7E / 0x7D = 0x5AA50400 twice, dmactive when DMCONTROL does not read it, then (attach only, the speed check)
+    # ABSTRACTAUTO = 0 and PROGBUF0 written, read back and given back its value. Kept apart from dmi_accesses.
+    bringup: list = field(default_factory=list)        # (DMI address, value) per write
+
+    def bring_up(self, scratch: bool) -> bool:
+        """The DMI writes of debug §1 / §3 before the speed is checked, and with `scratch` the check itself on PROGBUF0
+        (freed by ABSTRACTAUTO = 0, which is not given back). -> False when PROGBUF0's write does not take (its address
+        in fail_write): no speed reads back what it wrote and the value cannot be given back - attach fails."""
+        for _ in range(2):
+            self.bringup += [(0x7E, 0x5AA50400), (0x7D, 0x5AA50400)]
+        if not self.dmi.get(0x10, 1) & 1:                     # dmactive only when DMCONTROL does not read it (haltreq 0)
+            self.dmi[0x10] = 1
+            self.bringup.append((0x10, 1))
+        if not scratch:
+            return True
+        self.bringup.append((0x18, 0))
+        if 0x18 in self.dmi:
+            self.dmi[0x18] = 0
+        saved = self.dmi.get(0x20, 0)                          # read before the check, written back after it
+        self.bringup.append((0x20, ~saved & 0xFFFFFFFF))
+        if 0x20 in self.fail_write:
+            return False
+        self.bringup.append((0x20, saved))
+        return True
 
     @property
     def answers(self) -> bool:
@@ -913,6 +939,14 @@ class Endpoint:
             if push_due(min_bytes, max_delay_ms, self.now() - since, waiting, stopped):
                 self.outbox += cap.pushes(fn, lambda fn=fn: self._next_seq(fn), self.probe.max_frame)
                 self.data_since_ms.pop(fn, None)
+        if self.speed_fallback is not None:
+            # phase 3 (oep-if-link §3): a return waits for the frame boundary - no new notification frame starts on
+            # the raised port until it is back at its boot speed; the frames wait, nothing is dropped
+            raised = [self.push_link.get(struct.unpack_from("<H", f, 1)[0], self.speed_port) == self.speed_port
+                      for f in self.outbox]
+            out = [f for f, r in zip(self.outbox, raised) if not r]
+            self.outbox = [f for f, r in zip(self.outbox, raised) if r]
+            return out
         out, self.outbox = self.outbox, []
         return out
 
@@ -2103,6 +2137,8 @@ class Endpoint:
             found = []
             for p in pairs:
                 tg = self._target(fn, p)
+                if tg.answers:                                     # the set-up pair and dmactive, left set (§1)
+                    tg.bring_up(scratch=False)
                 if tg.answers and tg.found:
                     found.append(struct.pack("<BHHI", 1, *p, tg.dmstatus()))   # 9 bytes, no length (§2.3)
             return m.COMPLETED, m.SUCCESS, struct.pack("<BB", len(pairs), len(found)) + b"".join(found)
@@ -2143,6 +2179,13 @@ class Endpoint:
                     return m.COMPLETED, m.FAILED, bytes([LINE])
             if not tg.answers:
                 return m.COMPLETED, m.FAILED, bytes([LINE])        # failed: status [TLV] (common §3); nothing made
+            if not tg.bring_up(scratch=True):                      # no speed reads PROGBUF0 back: failed (§1)
+                return m.COMPLETED, m.FAILED, bytes([LINE])
+            if method == 1 and tg.halt_stuck:                      # hart 0 never halts: no success (§3)
+                tg.haltreq = False
+                return m.COMPLETED, m.FAILED, bytes([TIMEOUT])
+            if method == 1 and 0x10 in tg.dmi:                     # method 1 selects hart 0 (hartsel 0, haltreq down)
+                tg.dmi[0x10] &= ~HARTSEL
             flags = 0
             fixed_hz = self._min_clock(fn) if self.names[fn] == "oep.wire.swio" else 0   # swio: no speed chosen (§3.2)
             cid = self._seat(fn, pair, tg, fixed_hz or min(4_000_000, max_speed))
@@ -2287,6 +2330,14 @@ class Endpoint:
             e.conn.free = True
             return m.COMPLETED, m.FAILED, DM_LINE_FAILED[op]
 
+    @staticmethod
+    def _hart0(tg: VirtualTarget) -> VirtualTarget:
+        """A high-level op works on hart 0: it sets DMCONTROL.hartsel to 0 and leaves it 0 (debug §4) - a hartsel the
+        host chose with dmi lasts only for that dmi request."""
+        if 0x10 in tg.dmi:
+            tg.dmi[0x10] &= ~HARTSEL
+        return tg
+
     def _exchange(self, cid: int) -> VirtualTarget:
         """A target op's exchanges on connection `cid` (after the request's checks): the target, or _Unanswered.
         A success after failures restores the connection's rest state (debug §2: rvswd §3.1, swio §3.2)."""
@@ -2301,10 +2352,12 @@ class Endpoint:
         """Each op reads and checks its whole request first - malformed, then unsupported (core §4.3 orders 5 / 6) -
         and only then looks up the connection (no_resource; every check before any change, core §4.3)."""
         conn = t.take("I")
-        if op in (_RV.op["dmi"], _RV.op["reset"]):                 # raw dmi adds nothing; reset acks its own
+        if op == _RV.op["dmi"]:                                    # raw dmi adds nothing, keeps the host's hartsel
             target = lambda: self._exchange(conn)
+        elif op == _RV.op["reset"]:                                # reset acks its own; hart 0, hartsel left 0 (§4)
+            target = lambda: self._hart0(self._exchange(conn))
         else:                                                      # a high-level op acks a pending havereset (§4.6)
-            target = lambda: self._ack_havereset(conn, self._exchange(conn))
+            target = lambda: self._hart0(self._ack_havereset(conn, self._exchange(conn)))
         if op == _RV.op["dmi"]:
             n = t.take("H")
             steps = []

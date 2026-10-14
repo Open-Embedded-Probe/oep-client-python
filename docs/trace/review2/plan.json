@@ -1,0 +1,81 @@
+{
+ "reviewed_commit": "677b6bb",
+ "units": {
+  "plan:pre:1": {
+   "verdict": "ok",
+   "reason": "checked again: was excluded as informative, but the row's revision 1 is checkable; test_trace_plan::test_the_interface_row_lists_oep_probe_plan_at_revision_1 asserts list gives oep.probe.plan at fn 11, revision 1"
+  },
+  "plan:pre:2": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_plan::test_a_role_an_attach_names_its_pins_for_is_no_plan_role asserts plan_apply naming a wire's attach / reset role is unsupported (tag as received) and nothing is assigned"
+  },
+  "plan:pre:3": {
+   "verdict": "fixed",
+   "reason": "test_plan only compared esp32-v003 with core_v1; virtual_bench.without() left oep.probe.plan on a probe with no plan-role interface left (a bench bug, fixed in without()). Added test_trace_plan::test_every_profile_lists_one_plan_exactly_when_an_interface_has_plan_roles: every profile and rp2350_pins without gpio/uart list plan exactly when a plan-role interface is listed, at most one"
+  },
+  "plan:pre:4": {
+   "verdict": "ok",
+   "reason": "checked again: test_plan::test_plan_is_a_session_resource asserts the plan is empty after end and stays empty after a new open (no automatic re-apply)"
+  },
+  "plan:1:1": {
+   "verdict": "ok",
+   "reason": "checked again: test_plan::test_ops_and_plan_roles_are_declared asserts 0x10 offered and session_required without a session; test_apply_answers_success... asserts the TLV form and empty answer"
+  },
+  "plan:1:2": {
+   "verdict": "ok",
+   "reason": "checked again: the lock column of plan_release was unchecked (only plan_apply's); test_trace_plan::test_plan_apply_and_plan_release_need_the_lock[plan_release-17] asserts session_required with session_id 0 and nothing released"
+  },
+  "plan:1:3": {
+   "verdict": "ok",
+   "reason": "checked again: test_plan::test_ops_and_plan_roles_are_declared asserts describe 0x40 plan_roles u32 == 32; test_past_plan_roles_is_cause_2_and_changes_nothing applies the limit"
+  },
+  "plan:2.1:1": {
+   "verdict": "ok",
+   "reason": "checked again: test_plan::test_apply_answers_success_with_no_payload_and_an_assignment_is_fn_role_channel asserts two channels of gpio role 1 are both held; the same triple twice is malformed (test_apply_refusals)"
+  },
+  "plan:2.1:2": {
+   "verdict": "fixed",
+   "reason": "'checked as if the replaced fns' current assignments were gone (core §8.1 conflict included)' was asserted only for the plan_roles count. Added test_trace_plan::test_the_replaced_fns_own_assignments_do_not_conflict_with_its_new_ones: uart moves channel 5 RX->TX, gpio hands channel 4 to the uart in one request (accepted), a channel an unnamed fn holds is cause 1 and nothing changes"
+  },
+  "plan:2.1:3": {
+   "verdict": "fixed",
+   "reason": "'an fn whose set does not change does nothing (function state kept)' was asserted only for a gpio pin level and a success answer for a running UART. Added test_trace_plan::test_an_unchanged_set_keeps_a_running_function_as_it_is: a configured UART named again with the same set keeps uart_baud, its received bytes, status configured and both pin states"
+  },
+  "plan:2.1:4": {
+   "verdict": "ok",
+   "reason": "checked again: test_plan::test_past_plan_roles_is_cause_2_and_changes_nothing asserts unavailable cause 2 with plan unchanged, and a replacement totalling plan_roles succeeds"
+  },
+  "plan:2.1:5": {
+   "verdict": "ok",
+   "reason": "checked again: test_plan::test_apply_answers_success_with_no_payload... asserts r.succeeded and payload == b''"
+  },
+  "plan:2.2:1": {
+   "verdict": "fixed",
+   "reason": "'every target checked before any release' was asserted for unknown_function only; the cause-4 case named the bound fn alone. Added test_trace_plan::test_plan_release_checks_every_fn_before_it_releases_any: gpio named before a bound logic track and n = 0 are both refused unavailable with the whole plan kept"
+  },
+  "plan:2.2:2": {
+   "verdict": "ok",
+   "reason": "checked again: test_plan::test_release_names_fns_n_0_is_every_fn... asserts r.succeeded and payload == b''"
+  },
+  "plan:2.4:1": {
+   "verdict": "ok",
+   "reason": "checked again: test_plan::test_apply_refusals asserts malformed for a duplicate triple, fn 0 and a short assignment, plan empty"
+  },
+  "plan:2.4:2": {
+   "verdict": "ok",
+   "reason": "checked again: test_plan::test_apply_refusals[...-1] asserts unknown_function for fn 99"
+  },
+  "plan:2.4:3": {
+   "verdict": "ok",
+   "reason": "checked again: the role-count part was unchecked (role / channel / channel_group were); test_trace_plan::test_a_target_plan_missing_a_role_or_holding_one_twice_is_unsupported asserts spi-target missing role 4 or role 1 twice is unsupported (tag as received), nothing assigned"
+  },
+  "plan:2.4:4": {
+   "verdict": "ok",
+   "reason": "checked again: test_plan: cause 2 (test_past_plan_roles...), cause 1 (test_a_channel_group_mismatch_and_a_pin_conflict), cause 5 (test_an_output_idle_channel_is_refused...) each asserted with the cause byte"
+  },
+  "plan:2.4:5": {
+   "verdict": "ok",
+   "reason": "checked again: test_plan::test_a_running_function_refuses_a_change_with_cause_6 asserts cause 6; test_a_resource_bound_to_another_fn_refuses_with_cause_4 asserts bound_in_group (cause 4), plan unchanged"
+  }
+ }
+}

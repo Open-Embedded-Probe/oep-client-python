@@ -95,8 +95,9 @@ class InterfaceChecks:
                 self.c.check('IF-'+name+'-'+str(entry['fn']),'core §'+clause,
                              lambda entry=entry,method=method:method(entry))
             def instances(entry=entry):
-                peers=sorted((row for row in self.entries if (row['name'],row['revision'])==(entry['name'],entry['revision'])),key=lambda row:row['fn'])
-                require(entry['instance']==peers.index(entry),'instance must follow fn order within name/revision')
+                peers=[row for row in self.entries if (row['name'],row['revision'])==(entry['name'],entry['revision'])]
+                # core §7.2: unique within (name, revision); 0 and gaps allowed, not computed from fn order
+                require(sum(row['instance']==entry['instance'] for row in peers)==1,'duplicate instance within name/revision')
             self.c.check('IF-INSTANCE-'+str(entry['fn']),'core §7.2',instances)
         checks=self.c.results[start:]
         return {'status':'passed' if all(row['status']=='passed' for row in checks) else 'failed',

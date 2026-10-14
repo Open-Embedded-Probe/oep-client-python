@@ -203,3 +203,45 @@ def test_save_and_erase_complete_within_max_op_ms():
     for op in (cfg.SAVE, cfg.ERASE):
         r = hst.request(cfg.fn, op)
         assert r.resolution == m.COMPLETED and r.detail == m.SUCCESS and ep.now() - start <= limit
+
+
+# ---- second review additions ---------------------------------------------------------------------------------------
+
+def test_a_key_twice_or_a_wrong_length_stays_malformed_beside_an_idle_disable_conflict():
+    """probe-config §1 disable: idle and disable on one channel is unavailable cause 5, but a set that also repeats a key
+    or carries an item of the wrong length is still malformed - the form is refused first, nothing changes."""
+    ep, hst = open_bench()
+    cfg = config.ProbeConfig(hst)
+    cfg.set([config.Idle(channel=40, mode="pull-up")])
+    before = (cfg.get(), dict(ep.parked), set(ep.disabled))
+    dis = config.item(config.Disable(channel=40))
+    for body in (b"\x02" + dis * 2,                                                    # the conflicting key twice
+                 b"\x02" + dis + m.tlv(config.ITEM["disable"], b"\x29")):              # and a 1-byte disable
+        with pytest.raises(h.Rejected) as e:
+            hst.call(cfg.fn, cfg.SET, body)
+        assert e.value.result.detail == m.MALFORMED
+        assert (cfg.get(), dict(ep.parked), set(ep.disabled)) == before
+    with pytest.raises(h.Unavailable) as e:
+        hst.call(cfg.fn, cfg.SET, b"\x01" + dis)                                       # alone: the conflict, cause 5
+    assert dict(e.value.tlvs)[CAUSE] == b"\x05"
+
+
+def test_a_refused_or_unchanging_set_touches_no_pin(monkeypatch):
+    """probe-config §2: a refusal keeps the settings, the generation and the pins; a set / unset that changes nothing
+    does not set any pin again (the virtual bench parks nothing)."""
+    ep, hst = open_bench()
+    cfg = config.ProbeConfig(hst)
+    cfg.set([config.Idle(channel=21, mode="pull-up")])
+    core.plan_apply(hst, [(4, 1, 30)])
+    parks = []
+    park = ep._park
+    monkeypatch.setattr(ep, "_park", lambda chs: (parks.append(set(chs)), park(chs)))
+    before = (cfg.get(), dict(ep.parked))
+    with pytest.raises(h.Unavailable):
+        cfg.set([config.Idle(channel=22, mode="output-high"), config.Disable(channel=30)])   # 30 in use: cause 1
+    cfg.set([config.Idle(channel=21, mode="pull-up")])                                   # the same contents
+    cfg.unset([("disable", 23)])                                                        # a key not there
+    hst.call(cfg.fn, cfg.SET, b"\x00")
+    assert parks == [] and (cfg.get(), dict(ep.parked)) == before
+    cfg.set([config.Idle(channel=22, mode="pull-down")])
+    assert parks == [{22}] and ep.parked[22] == config.IDLE["pull-down"]

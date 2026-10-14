@@ -510,9 +510,9 @@ class Checks:
                 'unassigned common operation declared')
         require((1 in declared) == (2 in declared), 'subscribe/unsubscribe must be declared together')
         require(rows == self.describe(entry['fn']), f'{entry["name"]}: unstable describe')
-        peers = sorted((x for x in entries if (x['name'], x['revision']) == (entry['name'], entry['revision'])),
-                       key=lambda x: x['fn'])
-        require(entry['instance'] == peers.index(entry), 'interface instance numbering')
+        peers = [x for x in entries if (x['name'], x['revision']) == (entry['name'], entry['revision'])]
+        # core §7.2: unique within (name, revision); 0 allowed, gaps allowed, not computed from fn order or position
+        require(sum(x['instance'] == entry['instance'] for x in peers) == 1, 'duplicate instance within name/revision')
 
     @contextmanager
     def holding(self, lease=3000, tail=b''):

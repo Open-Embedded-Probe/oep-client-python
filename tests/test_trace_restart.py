@@ -84,3 +84,42 @@ def test_the_interface_row_lists_oep_probe_restart_at_revision_1():
     hst = h.Host(lambda b: ep.handle(b, 0))
     entries = [e for e in core.list_entries(hst) if e.name == "oep.probe.restart"]
     assert [(e.fn, e.revision) for e in entries] == [(ep.restart_fn, 1)] and reg.PROBE_RESTART.revision == 1
+
+
+def test_nothing_of_the_old_boot_is_left_on_the_bench():
+    """restart §2.5 (after the restart, core §9's restart row): runtime resources, subscriptions and the resend state
+    of the old boot are gone - the connection, the plan and the gpio drive (the pin back at its idle), the uart stream
+    with its configure, bytes and position, the remembered answers; a request naming the old connection is
+    no_resource in the new boot."""
+    from test_virtual_bench_spec import Host as Raw
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
+    hv = Raw(ep)
+    assert hv.open().succeeded
+    attach = reg.WIRE_RVSWD.op["attach"]
+    pair = ep.pairs[1][0]
+    r = hv.raw(1, attach, struct.pack("<BHHI", 1, *pair, 4_000_000))
+    assert r.succeeded
+    cid = struct.unpack_from("<I", r.payload)[0]
+    gpio, uart = ep.fns["oep.fixture.gpio"], ep.fns["oep.fixture.uart"]
+    assign = lambda *rows: b"".join(m.tlv(0x10, struct.pack("<HBH", *row), critical=True) for row in rows)  # noqa: E731
+    hv.ok(hv.plan_fn, reg.PROBE_PLAN.op["plan_apply"], assign((gpio, 1, 30), (uart, 1, 20)))
+    hv.ok(gpio, 0x10, bytes([1]) + struct.pack("<HB", 30, 4))
+    hv.ok(uart, 0x10, struct.pack("<I", 115200))
+    ep.uart_rx(uart, b"old boot")
+    assert ep.conns and ep.resources and ep.resend and ep.plan and ep.pin_state(30) == "gpio 4"
+    idle = endpoint.Endpoint(virtual_bench.p4_bench(), Clock()).pin_state(30)
+    r = hv.raw(ep.restart_fn, RESTART)
+    assert r.succeeded and r.payload == b""
+    ep.after_answer()
+    assert ep.reboots == 1
+    assert (ep.conns, ep.resources, len(ep.resend), ep.plan, ep.gpio_modes, ep.uarts, ep.uart_baud) == (
+        {}, {}, 0, set(), {}, {}, {})
+    assert ep.pin_state(30) == idle and ep.holder is None and ep.subscribed == {}
+    hv.session = 0x52
+    assert hv.open().succeeded
+    r = hv.raw(1, reg.WIRE_RVSWD.op["detach"], struct.pack("<I", cid))
+    assert r.detail == m.NO_RESOURCE                                       # the old boot's number names nothing
+    hv.ok(hv.plan_fn, reg.PROBE_PLAN.op["plan_apply"], assign((uart, 1, 20)))
+    hv.ok(uart, 0x10, struct.pack("<I", 115200))
+    r = hv.raw(uart, 0x11, struct.pack("<BQH", 1, 0, 64), session=False)
+    assert r.payload == struct.pack("<QBH", 0, 0, 0)                       # the stream starts afresh: no old bytes

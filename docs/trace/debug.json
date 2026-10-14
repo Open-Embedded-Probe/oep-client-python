@@ -67,23 +67,46 @@
   },
   "debug:1:1": {
    "text": "- **速さを確かめる前の書き込み.** 線の速さを確かめ終えるまで、probe",
-   "excluded": "behaviour this repository cannot model: the probe firmware's line-level attach bring-up (the DMI writes before and during the speed check, scratch write / read-back); the virtual bench and the logical attach / scan checkers model attach without DMI traffic on the line (conformance_attach lists 'physical bringup/scratch/speed' as unchecked)"
+   "verify": [
+    "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.rvswd]",
+    "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.swio]"
+   ],
+   "note": "bench rvswd / swio attach: before the PROGBUF0 check only the set-up pair and dmactive are written (VirtualTarget.bringup); the line speed of these writes is not modelled"
   },
   "debug:1:2": {
    "text": "1. その wire の節が定める wake / 設定の手順（たとえば wake",
-   "excluded": "behaviour this repository cannot model: the probe firmware's line-level attach bring-up (the DMI writes before and during the speed check, scratch write / read-back); the virtual bench and the logical attach / scan checkers model attach without DMI traffic on the line (conformance_attach lists 'physical bringup/scratch/speed' as unchecked)"
+   "verify": [
+    "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.rvswd]",
+    "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.swio]"
+   ],
+   "note": "the set-up pair DMI 0x7E / 0x7D (twice) is the first write of attach and scan; the slowest-speed part is line-level, not modelled"
   },
   "debug:1:3": {
    "text": "2. connection が RISC-V の DM に届く wire での ",
-   "excluded": "behaviour this repository cannot model: the probe firmware's line-level attach bring-up (the DMI writes before and during the speed check, scratch write / read-back); the virtual bench and the logical attach / scan checkers model attach without DMI traffic on the line (conformance_attach lists 'physical bringup/scratch/speed' as unchecked)"
+   "verify": [
+    "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.rvswd]",
+    "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.swio]",
+    "tests/test_trace_debug.py::test_scan_leaves_the_target_as_it_was"
+   ],
+   "note": "dmactive written only when DMCONTROL does not read it (haltreq 0), never when it reads 1; scan leaves it set"
   },
   "debug:1:4": {
    "text": "- **速さの確かめ方.** 可変速のwireは読むだけで速さを選ぶ。scrat",
-   "excluded": "behaviour this repository cannot model: the probe firmware's line-level attach bring-up (the DMI writes before and during the speed check, scratch write / read-back); the virtual bench and the logical attach / scan checkers model attach without DMI traffic on the line (conformance_attach lists 'physical bringup/scratch/speed' as unchecked)"
+   "verify": [
+    "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.rvswd]",
+    "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.swio]",
+    "tests/test_trace_debug.py::test_attach_fails_when_the_scratch_does_not_read_back_and_makes_nothing"
+   ],
+   "note": "PROGBUF0 read before, written, given back; ABSTRACTAUTO = 0 the only other check write; no read-back -> attach completed failed, no connection"
   },
   "debug:1:5": {
    "text": "- 速さを確かめる前に、これ以外のものを target に書かない（速さの合わな",
-   "excluded": "behaviour this repository cannot model: the probe firmware's line-level attach bring-up (the DMI writes before and during the speed check, scratch write / read-back); the virtual bench and the logical attach / scan checkers model attach without DMI traffic on the line (conformance_attach lists 'physical bringup/scratch/speed' as unchecked)"
+   "verify": [
+    "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.rvswd]",
+    "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.swio]",
+    "tests/test_trace_debug.py::test_scan_leaves_the_target_as_it_was"
+   ],
+   "note": "nothing but the allowed writes changes the bench target in attach / scan"
   },
   "debug:1:6": {
    "text": "- **ピンの組**: describe の channel_group / r",
@@ -147,7 +170,8 @@
    "verify": [
     "tests/test_trace_debug.py::test_max_connections_is_a_u8_and_one_when_not_declared",
     "tests/test_debug_attach.py::test_the_limit_closes_nothing",
-    "tests/test_conformance_oep_declarations.py::test_standard_declarations_pass_without_mutating_requests"
+    "tests/test_conformance_oep_declarations.py::test_standard_declarations_pass_without_mutating_requests",
+    "tests/test_trace_debug.py::test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock"
    ],
    "mutants": [
     "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[capacity_width]"
@@ -229,7 +253,7 @@
     "tests/test_conformance_scan_options.py::test_scan_option_checker_detects_independent_faults[speed-FIRST-IDLE]",
     "tests/test_conformance_scan_options.py::test_scan_option_checker_detects_independent_faults[release_leaked-IDLE-1]"
    ],
-   "note": "scan changes nothing on the target (no scratch / register / memory write); found = DMSTATUS.version >= 2 and != 15; speeds and pins per the checkers"
+   "note": "scan writes only the set-up pair and dmactive (left set), never PROGBUF0 / ABSTRACTAUTO; found = DMSTATUS.version >= 2 and != 15"
   },
   "debug:1:17": {
    "text": "- **target の識別子**: attach の応答の後ろに、probe ",
@@ -535,7 +559,8 @@
    "verify": [
     "tests/test_virtual_bench_rules_2026_10_02.py::test_swio_swclk_other_than_0xffff_is_an_undeclared_combination_in_scan_and_attach",
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[rvswd_scan__one_combination_listed_and_found]",
-    "tests/test_trace_debug.py::test_swio_declares_its_fixed_speed_as_min_clock_hz_and_attach_runs_at_it"
+    "tests/test_trace_debug.py::test_swio_declares_its_fixed_speed_as_min_clock_hz_and_attach_runs_at_it",
+    "tests/test_trace_debug.py::test_the_wires_ids_are_dmstatus_scan_kind_1_and_a_swio_connection_takes_the_console"
    ],
    "mutants": [
     "tests/test_conformance_scan.py::test_scan_checker_detects_independent_faults[wrong_kind-SINGLE]",
@@ -548,7 +573,8 @@
    "verify": [
     "tests/test_trace_debug.py::test_method_1_only_where_attach_halt_is_declared_and_method_0_leaves_the_hart_running",
     "tests/test_virtual_bench_rules_2026_10_02.py::test_c02_attach_method_and_reset_mode_a_later_revision_may_define",
-    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass"
+    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass",
+    "tests/test_trace_debug.py::test_method_1_selects_hart_0_drops_haltreq_and_succeeds_only_with_hart_0_halted"
    ],
    "note": "method 0 mandatory; method 1 only with features attach_halt, success with hart 0 halted; others unsupported 0x00"
   },
@@ -568,11 +594,21 @@
   },
   "debug:3:8": {
    "text": "- **wake / 設定の手順**（§1 の 1）: rvswd: wake ",
-   "excluded": "behaviour this repository cannot model: the probe firmware's line-level attach bring-up (the DMI writes before and during the speed check, scratch write / read-back); the virtual bench and the logical attach / scan checkers model attach without DMI traffic on the line (conformance_attach lists 'physical bringup/scratch/speed' as unchecked) - here the wake pattern and the DMI 0x7E / 0x7D writes of rvswd / swio"
+   "verify": [
+    "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.rvswd]",
+    "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.swio]",
+    "tests/test_trace_debug.py::test_scan_leaves_the_target_as_it_was"
+   ],
+   "note": "rvswd / swio set-up writes DMI 0x7E then 0x7D = 0x5AA50400, the pair twice, in attach and scan (the wake pattern and frames are line-level, not modelled)"
   },
   "debug:3:9": {
    "text": "- **scratch**（§1）: PROGBUF0（DMI 0x20）。それ",
-   "excluded": "behaviour this repository cannot model: the probe firmware's line-level attach bring-up (the DMI writes before and during the speed check, scratch write / read-back); the virtual bench and the logical attach / scan checkers model attach without DMI traffic on the line (conformance_attach lists 'physical bringup/scratch/speed' as unchecked) - here PROGBUF0 as the scratch and ABSTRACTAUTO = 0 before it"
+   "verify": [
+    "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.rvswd]",
+    "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.swio]",
+    "tests/test_trace_debug.py::test_attach_fails_when_the_scratch_does_not_read_back_and_makes_nothing"
+   ],
+   "note": "scratch PROGBUF0 (0x20) freed by ABSTRACTAUTO (0x18) = 0, which is not given back"
   },
   "debug:3:10": {
    "text": "- **reset をかけながらの attach**: TLV 0x05 res",
@@ -788,7 +824,7 @@
   },
   "debug:3.1:23": {
    "text": "- **速さの選び方**: probe は、DMSTATUS の読み出しで、一番",
-   "excluded": "behaviour this repository cannot model: the probe firmware's line-level attach bring-up (the DMI writes before and during the speed check, scratch write / read-back); the virtual bench and the logical attach / scan checkers model attach without DMI traffic on the line (conformance_attach lists 'physical bringup/scratch/speed' as unchecked) - here RVSWD's choice of T by DMSTATUS reads from the slowest"
+   "excluded": "behaviour this repository cannot model: the choice of T by DMSTATUS reads from the slowest - the bench's attach records its DMI writes (VirtualTarget.bringup) but has no line speeds to step through, and the attach / scan checkers leave 'attach speed/scratch algorithms' unchecked"
   },
   "debug:3.1:24": {
    "text": "- wake のパターンは、target のデバッグの口だけでなく target",
@@ -826,7 +862,8 @@
    "text": "- **速さ**: ビットの時間は決まっているので、probe は速さを選ばない",
    "verify": [
     "tests/test_trace_debug.py::test_swio_declares_its_fixed_speed_as_min_clock_hz_and_attach_runs_at_it",
-    "tests/test_conformance_oep_declarations.py::test_standard_declarations_pass_without_mutating_requests"
+    "tests/test_conformance_oep_declarations.py::test_standard_declarations_pass_without_mutating_requests",
+    "tests/test_trace_debug.py::test_attach_writes_only_the_setup_dmactive_and_the_scratch_and_gives_progbuf0_back[oep.wire.swio]"
    ],
    "mutants": [
     "tests/test_conformance_oep_declarations.py::test_swio_fixed_clock_must_be_declared[missing]",
@@ -855,7 +892,14 @@
     "tests/test_conformance_blocks.py::test_optional_block_contracts_pass",
     "tests/test_conformance_reset.py::test_optional_reset_contracts_pass",
     "tests/test_conformance_run.py::test_optional_run_contracts_pass",
-    "tests/test_conformance_step.py::test_optional_step_contracts_pass"
+    "tests/test_conformance_step.py::test_optional_step_contracts_pass",
+    "tests/test_trace_debug.py::test_a_high_level_op_leaves_hartsel_0_and_raw_dmi_keeps_the_hosts[halt]",
+    "tests/test_trace_debug.py::test_a_high_level_op_leaves_hartsel_0_and_raw_dmi_keeps_the_hosts[read_block]",
+    "tests/test_trace_debug.py::test_a_high_level_op_leaves_hartsel_0_and_raw_dmi_keeps_the_hosts[reset]",
+    "tests/test_trace_debug.py::test_a_high_level_op_leaves_hartsel_0_and_raw_dmi_keeps_the_hosts[resume]",
+    "tests/test_trace_debug.py::test_a_high_level_op_leaves_hartsel_0_and_raw_dmi_keeps_the_hosts[run]",
+    "tests/test_trace_debug.py::test_a_high_level_op_leaves_hartsel_0_and_raw_dmi_keeps_the_hosts[step]",
+    "tests/test_trace_debug.py::test_a_high_level_op_leaves_hartsel_0_and_raw_dmi_keeps_the_hosts[write_block]"
    ],
    "mutants": [
     "tests/test_conformance_debug.py::test_debug_checker_detects_independent_faults[hartsel_left-HARTSEL-HALT]",
@@ -1138,7 +1182,8 @@
    "text": "- 0x04 の手順の wait_us と 0x05 の手順の max_us の",
    "verify": [
     "tests/test_virtual_bench_spec.py::test_dmi_and_run_answers_count_their_values_and_rejects_follow_the_order",
-    "tests/test_conformance_debug.py::test_mandatory_debug_contracts_pass"
+    "tests/test_conformance_debug.py::test_mandatory_debug_contracts_pass",
+    "tests/test_trace_debug.py::test_the_host_waits_max_op_ms_for_run_and_dmi_not_their_own_times"
    ],
    "note": "wait_us + max_us over max_op_ms unsupported; 0x03 bounded by count; reaching max_op_ms answers timeout at that step"
   },
@@ -1318,7 +1363,9 @@
    "text": "- host のローダーを呼ぶためのもの。probe は dcsr の ebre",
    "verify": [
     "tests/test_conformance_run.py::test_optional_run_contracts_pass",
-    "tests/test_interfaces.py::test_run_returns_the_registers_asked_for"
+    "tests/test_interfaces.py::test_run_returns_the_registers_asked_for",
+    "tests/test_trace_debug.py::test_the_client_never_sends_a_run_again_by_itself[True]",
+    "tests/test_trace_debug.py::test_the_client_never_sends_a_run_again_by_itself[False]"
    ],
    "mutants": [
     "tests/test_conformance_run.py::test_run_checker_detects_independent_faults[repeat_resume-SAME-PC]",
@@ -1333,7 +1380,8 @@
     "tests/test_virtual_bench_spec.py::test_dmi_and_run_answers_count_their_values_and_rejects_follow_the_order",
     "tests/test_interfaces.py::test_run_that_could_not_halt_the_hart_says_so_with_no_values",
     "tests/test_target_parts.py::test_run_not_run_is_stopped_3",
-    "tests/test_conformance_run.py::test_optional_run_contracts_pass"
+    "tests/test_conformance_run.py::test_optional_run_contracts_pass",
+    "tests/test_trace_debug.py::test_the_host_waits_max_op_ms_for_run_and_dmi_not_their_own_times"
    ],
    "mutants": [
     "tests/test_conformance_run.py::test_run_checker_detects_independent_faults[wrong_stopped-TIMEOUT-HALTED]",
@@ -1503,11 +1551,11 @@
   },
   "debug:5:7": {
    "text": "- **wake / 設定の手順**（§1 の 1）: JTAG から SWD ",
-   "excluded": "behaviour this repository cannot model: the probe firmware's line-level attach bring-up (the DMI writes before and during the speed check, scratch write / read-back); the virtual bench and the logical attach / scan checkers model attach without DMI traffic on the line (conformance_attach lists 'physical bringup/scratch/speed' as unchecked) - here SWD's JTAG-to-SWD switch, dormant wake and TARGETSEL sequences"
+   "excluded": "behaviour this repository cannot model: SWD's JTAG-to-SWD switch, dormant wake and TARGETSEL line sequences - the virtual bench has no swd wire and the logical swd models (wire options, scan options) keep no line sequence ('physical wake' unchecked)"
   },
   "debug:5:8": {
    "text": "- **速さの確認**: max_speed以下でDPIDRの読みがACK OK",
-   "excluded": "behaviour this repository cannot model: the probe firmware's line-level attach bring-up (the DMI writes before and during the speed check, scratch write / read-back); the virtual bench and the logical attach / scan checkers model attach without DMI traffic on the line (conformance_attach lists 'physical bringup/scratch/speed' as unchecked) - here SWD's speed check by DPIDR reads with ACK OK and parity"
+   "excluded": "behaviour this repository cannot model: SWD's speed check by DPIDR reads with ACK OK and parity - no swd wire on the bench, and the logical swd models have no line speeds or parity ('attach speed/scratch algorithms' unchecked)"
   },
   "debug:5:9": {
    "text": "- attach は JTAG から SWD への切り替えを試し、答えがなければ",
@@ -1736,17 +1784,19 @@
   "debug:pre:7": {
    "text": "- connections 以外の op はすべてロックが要る。",
    "verify": [
-    "tests/test_trace_debug.py::test_target_ops_need_a_connection_and_every_op_but_connections_the_lock"
+    "tests/test_trace_debug.py::test_target_ops_need_a_connection_and_every_op_but_connections_the_lock",
+    "tests/test_trace_debug.py::test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock"
    ],
    "mutants": [],
-   "note": "session_required without the lock for scan/attach/detach/dmi; connections answers lock-free"
+   "note": "every wire / riscv-dm op but connections session_required without the lock; connections lock-free"
   },
   "debug:pre:8": {
    "text": "- 最小のwireはattach/detach/connectionsと1接続だ",
    "verify": [
     "tests/test_trace_debug.py::test_every_wire_offers_attach_detach_connections_and_declares_scan_in_its_ops[esp32-v003]",
     "tests/test_trace_debug.py::test_max_connections_is_a_u8_and_one_when_not_declared",
-    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.wire.rvswd-extra29-True]"
+    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.wire.rvswd-extra29-True]",
+    "tests/test_trace_debug.py::test_each_target_request_picks_its_connection_by_the_number_it_starts_with"
    ],
    "mutants": [],
    "note": "attach/detach/connections required, scan optional, one connection by default"

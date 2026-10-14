@@ -1,0 +1,53 @@
+{
+ "reviewed_commit": "677b6bb",
+ "units": {
+  "restart:pre:1": {
+   "verdict": "ok",
+   "reason": "test_trace_restart::test_the_interface_row_lists_oep_probe_restart_at_revision_1 asserts list gives oep.probe.restart at its fn, revision 1"
+  },
+  "restart:pre:2": {
+   "verdict": "ok",
+   "reason": "excluded correctly: the purpose sentence states no behaviour of its own"
+  },
+  "restart:pre:3": {
+   "verdict": "ok",
+   "reason": "test_trace_restart::test_a_probe_lists_oep_probe_restart_at_most_once asserts <= 1 per profile; test_restart::test_a_probe_without_oep_probe_restart asserts none listed and unknown_function"
+  },
+  "restart:1:1": {
+   "verdict": "ok",
+   "reason": "test_restart::test_the_registry_and_the_virtual_bench_offer_it asserts op 0x10, not lock-free, offered; test_restart_answers_first asserts completed success with b'' payload"
+  },
+  "restart:1:2": {
+   "verdict": "ok",
+   "reason": "test_restart::test_the_restart_interface_declares_restart_max_ms asserts tag 0x40 u32 once on the restart fn; test_capabilities names it missing; checker CONTEXT requires 0x40 = 50"
+  },
+  "restart:2:1": {
+   "verdict": "ok",
+   "reason": "test_restart::test_restart_needs_the_lock asserts session_required / locked / no_session and no reboot; test_a_tlv_after_restart asserts critical unknown TLV unsupported with the tag, non-critical ignored"
+  },
+  "restart:2:2": {
+   "verdict": "ok",
+   "reason": "test_restart_answers_first asserts (COMPLETED, SUCCESS, b''); checker BARRIER requires the reply sent before the boot (boot_before_write mutant)"
+  },
+  "restart:2:3": {
+   "verdict": "ok",
+   "reason": "test_trace_restart::test_no_notification_goes_out_once_the_restart_is_answered asserts pushes() == [] and another route unanswered; test_requests_behind_the_restart asserts the same-route request behind it gets no frame"
+  },
+  "restart:2:4": {
+   "verdict": "ok",
+   "reason": "test_trace_restart::test_the_restart_leaves_the_target_as_it_was asserts the halted hart stays halted at its dpc, havereset not raised; the pins' reset state is permitted, not required"
+  },
+  "restart:2:5": {
+   "verdict": "fixed",
+   "reason": "only boot_id, holder, saved settings, subscriptions and port speed were asserted on the bench (plan/pins/cache on the checker model only); added test_trace_restart::test_nothing_of_the_old_boot_is_left_on_the_bench: after the restart op no connection, resource, resend entry, plan, gpio drive (pin back to idle) or uart stream/configure remain, the old connection id is no_resource and a new uart stream reads from position 0"
+  },
+  "restart:2:6": {
+   "verdict": "ok",
+   "reason": "test_restart serve tests over TCP (closed or kept open) and a pty reconnect and confirm the new boot; checker BARRIER requires every route silent until boot (quiet_response / missing_route mutants)"
+  },
+  "restart:2:7": {
+   "verdict": "ok",
+   "reason": "checker BARRIER requires a confirm answered on every route by restart_max_ms 50 (never_boot mutant); test_restart host tests assert the host's own reopen deadline (restart_max_ms + outside, or wait_s as given)"
+  }
+ }
+}

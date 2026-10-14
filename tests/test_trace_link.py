@@ -205,3 +205,51 @@ def test_the_host_reads_the_phase_with_a_new_corr_not_from_an_old_answer():
     assert sent[at].corr > max(q.corr for q in sent[:at])                       # ... then port_state, a new corr
     assert any(q.op == PS and q.payload[4] == TRY for q in sent[at + 1:])         # the next try after it
     assert report.chosen == 500000 and lk.baud == 500000
+
+
+def test_a_pending_return_starts_no_new_notification_frame_until_the_port_is_back():
+    """link §3.12 (link §3, the return waits for a frame boundary): once a return is pending (phase 3), the probe starts no
+    new notification frame on the raised port - the subscribed capture's events wait, none lost - and sends them at the
+    boot speed after the frame on the line has ended and the port has gone back; without a pending return the same
+    events go out at once."""
+    from oep_client import capture
+    for pending in (True, False):
+        clock = Clock()
+        ep = endpoint.Endpoint(virtual_bench.esp32_v003(), clock)                  # transport 0: its UART bridge
+        hst = h.Host(lambda b: ep.handle(b, 0))
+        hst.open(60000)
+        lc = capture.LogicCapture(hst)
+        core.plan_apply(hst, [(lc.fn, 0, 4)])
+        lc.configure(rate=1000000, samples=8)
+        lc.subscribe()
+        hst.call(ep.link_fn, PS, struct.pack("<IBH", 500000, TRY, 2000))
+        ep.after_answer()
+        hst.call(ep.link_fn, PS, struct.pack("<IBH", 500000, COMMIT, 0))
+        lc.start()
+        ep.speed_frame_busy = pending                                           # a frame still on the raised line
+        clock.t += 3000                                                         # port_speed_idle_ms: the return is due
+        ep.tick()
+        if not pending:
+            assert ep.speed_phase(0) == 0 and any(f[0] == m.ROLE_EVENT for f in ep.pushes())
+            continue
+        assert ep.speed_phase(0) == 3 and ep.port_baud(0) == 500000
+        assert ep.pushes() == [] and ep.pushes() == []                          # held, not started
+        ep.speed_frame_done()                                                   # the boundary: back at the boot speed
+        assert ep.speed_phase(0) == 0 and ep.port_baud(0) == 115200
+        events = ep.pushes()
+        assert events and all(f[0] == m.ROLE_EVENT for f in events)             # now they go, none dropped
+        assert [struct.unpack_from("<H", f, 3)[0] for f in events] == list(range(len(events)))   # seq from 0, no gap
+
+
+def test_source_len_is_bounded_by_the_max_frame_of_the_route_the_request_came_on():
+    """link §2 source / sink: len = min(length, max_frame - 7) of the route the request came on - routes of 64, 256 and
+    1024 bytes each give their own bound, and sink takes max_frame - 12 of that route (checker OEP-LINK-ROUTES-ROUTE-
+    LIMITS over three logical routes; a probe using one global bound fails it)."""
+    from test_conformance_link_routes import setup as routes_setup
+    from oep_client.conformance_link_routes import LinkRoutesChecks
+    from oep_client.conformance_link_routes_sample import SampleLinkRoutesAdapter
+    model, c = routes_setup()
+    r = LinkRoutesChecks(c, SampleLinkRoutesAdapter(model)).run()
+    row = next(x for x in r["checks"] if x["id"] == "OEP-LINK-ROUTES-ROUTE-LIMITS")
+    assert row["status"] == "passed", row
+    assert {x["route"] for x in r["route_wire_trace"]} == {0, 1, 2}

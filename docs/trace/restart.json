@@ -103,7 +103,8 @@
     "tests/test_restart.py::test_restart_answers_first_then_the_probe_restarts",
     "tests/test_restart.py::test_the_saved_settings_come_back_the_unsaved_ones_do_not",
     "tests/test_trace_restart.py::test_after_the_restart_the_serial_port_runs_at_its_boot_speed",
-    "tests/test_conformance_restart.py::test_restart_contract"
+    "tests/test_conformance_restart.py::test_restart_contract",
+    "tests/test_trace_restart.py::test_nothing_of_the_old_boot_is_left_on_the_bench"
    ],
    "mutants": [
     "tests/test_conformance_restart.py::test_state_faults_are_detected[reuse_boot-BARRIER]",
@@ -114,7 +115,7 @@
     "tests/test_conformance_restart.py::test_state_faults_are_detected[bad_uptime-BARRIER]",
     "tests/test_conformance_restart.py::test_restarted_clock_shape_and_identity[wrong_clock_boot]"
    ],
-   "note": "as at power-on: a new boot_id, no session / plan / pins / resend cache, clock from 0, saved settings only, the serial port at its boot speed"
+   "note": "as at power-on: a new boot_id, no session / plan / pins / connections / streams / resend cache (old connection no_resource), clock from 0, saved settings only, the serial port at its boot speed"
   },
   "restart:2:6": {
    "text": "- **経路**: 再起動のあいだ probe は経路に答えない。USB の経路",

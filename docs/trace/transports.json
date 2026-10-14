@@ -121,7 +121,8 @@
     "tests/test_trace_transports.py::test_a_serial_frame_is_message_crc16_le_cobs_between_zeros_and_empty_frames_are_skipped",
     "tests/test_cobs.py::test_crc_check_value",
     "tests/test_cobs.py::test_known_encodings",
-    "tests/test_cobs.py::test_random_frames_round_trip"
+    "tests/test_cobs.py::test_random_frames_round_trip",
+    "tests/test_link_serial.py::test_answers_to_other_requests_are_read_past_without_a_resend"
    ],
    "mutants": [
     "tests/test_cobs.py::test_a_flipped_byte_is_caught"
@@ -297,7 +298,9 @@
     "tests/test_conformance_reconnect.py::test_reconnect_retention_accepts_compliant_responses[session]",
     "tests/test_conformance_reconnect.py::test_reconnect_retention_accepts_compliant_responses[replay]",
     "tests/test_conformance_reconnect.py::test_reconnect_retention_accepts_compliant_responses[ended]",
-    "tests/test_conformance_reconnect.py::test_reconnect_retention_accepts_compliant_responses[lease]"
+    "tests/test_conformance_reconnect.py::test_reconnect_retention_accepts_compliant_responses[lease]",
+    "tests/test_trace_transports.py::test_a_closed_route_drops_what_it_had_and_rolls_nothing_back",
+    "tests/test_trace_transports.py::test_notifications_for_a_closed_connection_are_dropped_and_not_carried_to_a_new_one"
    ],
    "mutants": [
     "tests/test_conformance_reconnect.py::test_reconnect_retention_detects_mutants[session-release-lock]",
@@ -405,7 +408,9 @@
     "tests/test_virtual_bench_announce.py::test_find_unit_finds_the_announcing_virtual_bench[minimal-minimal]",
     "tests/test_virtual_bench_announce.py::test_find_unit_and_tcp_unit_id_pass_over_an_impostor_with_the_same_txt[minimal]",
     "tests/test_tcp_discovery.py::test_tcp_unit_id_opens_the_probe_dns_sd_names_and_checks_describe",
-    "tests/test_tcp_discovery.py::test_tcp_targets_without_a_port_and_by_unit_id"
+    "tests/test_tcp_discovery.py::test_tcp_targets_without_a_port_and_by_unit_id",
+    "tests/test_trace_transports.py::test_a_tcp_probe_named_by_unit_id_is_matched_without_letter_case[FAFE00000003-fafe00000003]",
+    "tests/test_trace_transports.py::test_a_tcp_probe_named_by_unit_id_is_matched_without_letter_case[fafe00000003-FAFE00000003]"
    ],
    "mutants": [],
    "note": "DNS-SD _oep._tcp over mDNS, SRV port, TXT unit_id; host opens found/explicit only, checks describe unit_id"

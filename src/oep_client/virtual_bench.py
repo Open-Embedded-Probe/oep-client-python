@@ -98,15 +98,16 @@ class VirtualProbe:
         return o if tlvs is o.tlvs else Offered(o.fn, o.instance, o.name, tlvs, o.revision, o.inner)
 
     def instance_errors(self) -> list[str]:
-        """Where the offered instances break core §7.2 (C-30): numbered from 0 per (name, revision) in ascending fn
-        order. Empty for every profile; a test may make a probe that breaks it on purpose."""
-        count: dict[tuple[str, int], int] = {}
+        """Where the offered instances break core §7.2: an instance is unique within its (name, revision) - 0 may be
+        used and gaps are allowed (it is not computed from the fn order or the list position). Empty for every
+        profile; a test may make a probe that breaks it on purpose."""
+        seen: dict[tuple[str, int, int], int] = {}
         out = []
         for o in self.offered:
-            k = (o.name, o.revision)
-            if o.instance != count.get(k, 0):
-                out.append(f"fn {o.fn} {o.name} rev {o.revision} is instance {o.instance}, not {count.get(k, 0)}")
-            count[k] = o.instance + 1
+            k = (o.name, o.revision, o.instance)
+            if k in seen:
+                out.append(f"fn {o.fn} {o.name} rev {o.revision} repeats instance {o.instance} of fn {seen[k]}")
+            seen.setdefault(k, o.fn)
         return out
 
     # The one entry point a transport would call: (fn, op, payload) -> result payload.
@@ -492,8 +493,12 @@ def _with(o: Offered, tlvs) -> Offered:
 def without(probe: VirtualProbe, name: str) -> VirtualProbe:
     """The profile without its fns of interface `name` (`virtual_bench_serve --no-restart`: a probe without the optional
     oep.probe.restart, which then lists none and answers unknown_function on its old fn). The other fns keep their
-    numbers. VIRTUAL BENCH ONLY."""
-    return _again(probe, [o for o in probe.offered if o.name != name])
+    numbers. When no interface with plan roles is left, oep.probe.plan goes too (oep-if-plan: a probe without plan
+    roles lists none). VIRTUAL BENCH ONLY."""
+    kept = [o for o in probe.offered if o.name != name]
+    if not PLAN_ROLE_INTERFACES & {o.name for o in kept}:
+        kept = [o for o in kept if o.name != PLAN]
+    return _again(probe, kept)
 
 
 def with_unit_id(probe: VirtualProbe, unit_id: str) -> VirtualProbe:

@@ -52,10 +52,11 @@
    "text": "3. ストリームの解放、または probe の再起動。",
    "verify": [
     "tests/test_trace_common.py::test_clear_release_and_restart_drop_the_bytes",
-    "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone"
+    "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
+    "tests/test_trace_common.py::test_a_probe_restart_drops_a_fixture_uarts_bytes_and_marks"
    ],
    "mutants": [],
-   "note": "a released stream and a restarted probe keep nothing"
+   "note": "a released stream and a restarted probe keep nothing; the fn-addressed fixture UART keeps nothing over a restart"
   },
   "common:1.1:6": {
    "text": "- target のリセットでは捨てない（リセット直前の出力が最も見たいことが多",
@@ -294,7 +295,8 @@
    "text": "| clear | [stream(u32)] | — | 貯めたバイトを捨てる",
    "verify": [
     "tests/test_trace_common.py::test_clear_release_and_restart_drop_the_bytes",
-    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+    "tests/test_conformance_stream.py::test_stream_contracts_pass",
+    "tests/test_trace_common.py::test_write_clear_and_mark_need_the_lock_on_a_fixture_uart"
    ],
    "mutants": [
     "tests/test_conformance_stream.py::test_stream_mutants_fail[clear_position]"
@@ -305,7 +307,8 @@
    "text": "| mark | [stream(u32)]、value(u8) | — | マ",
    "verify": [
     "tests/test_trace_common.py::test_a_host_mark_carries_the_value_at_the_write_position_and_the_probe_clock",
-    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+    "tests/test_conformance_stream.py::test_stream_contracts_pass",
+    "tests/test_trace_common.py::test_write_clear_and_mark_need_the_lock_on_a_fixture_uart"
    ],
    "mutants": [
     "tests/test_conformance_stream.py::test_stream_mutants_fail[kind]"
@@ -317,13 +320,14 @@
    "verify": [
     "tests/test_trace_common.py::test_write_accepted_is_success_partial_or_failed",
     "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
-    "tests/test_conformance_outcomes.py::test_outcome_contracts_pass"
+    "tests/test_conformance_outcomes.py::test_outcome_contracts_pass",
+    "tests/test_trace_common.py::test_write_clear_and_mark_need_the_lock_on_a_fixture_uart"
    ],
    "mutants": [
     "tests/test_conformance_outcomes.py::test_outcome_mutants_fail[accepted_overflow]",
     "tests/test_conformance_outcomes.py::test_outcome_mutants_fail[wrong_outcome]"
    ],
-   "note": "write: accepted = min(count, room); all success, some partial, none failed"
+   "note": "write: accepted = min(count, room); all success, some partial, none failed; write needs the lock (session 0: session_required, nothing written)"
   },
   "common:2:1": {
    "text": "- connection は、明示したピンの組と target 選択に対して a",
@@ -361,12 +365,13 @@
    "verify": [
     "tests/test_trace_common.py::test_a_connection_is_made_by_attach_named_first_by_target_ops_and_never_reused",
     "tests/test_interfaces.py::test_no_connection_after_the_probe_lost_it",
-    "tests/test_conformance_arm_adi.py::test_arm_contracts_pass"
+    "tests/test_conformance_arm_adi.py::test_arm_contracts_pass",
+    "tests/test_trace_common.py::test_a_target_op_uses_the_connection_it_names_never_the_last_attached"
    ],
    "mutants": [
     "tests/test_conformance_arm_adi.py::test_arm_checker_detects_independent_faults[resource_kind-RESOURCE]"
    ],
-   "note": "target op names its connection explicitly; another wire's connection / wrong kind: unavailable 6; none or closed: no_resource"
+   "note": "target op names its connection explicitly; another wire's connection / wrong kind: unavailable 6; none or closed: no_resource; with two live connections the named one is used, not the last attached"
   },
   "common:3:1": {
    "text": "| 0 | ok | 最後まで進んだ |",

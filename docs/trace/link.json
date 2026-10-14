@@ -107,16 +107,19 @@
     "tests/test_console_queue_and_reset_settle.py::test_link_source_is_max_frame_less_7_with_or_without_a_tlv",
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[64]",
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[256]",
-    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[1024]"
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[1024]",
+    "tests/test_trace_link.py::test_source_len_is_bounded_by_the_max_frame_of_the_route_the_request_came_on",
+    "tests/test_conformance_link_routes.py::test_shared_routes_pass"
    ],
    "mutants": [
     "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[source_plus_one-SOURCE]",
     "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[pattern_shift-SOURCE]",
     "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[pattern_no_wrap-SOURCE]",
     "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[source_empty_nonzero-SOURCE]",
-    "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[source_wrong_count-SOURCE]"
+    "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[source_wrong_count-SOURCE]",
+    "tests/test_conformance_link_routes.py::test_route_semantics_faults[source_global_limit-ROUTE-LIMITS]"
    ],
-   "note": "byte k = k & 0xFF; len = min(length, max_frame - 7); length 0 -> len 0"
+   "note": "byte k = k & 0xFF; len = min(length, max_frame - 7) of the route the request came on (64/256/1024 routes); length 0 -> len 0"
   },
   "link:2:2": {
    "text": "- **sink**: count の後ろに、値が任意の count バイトが続",
@@ -124,7 +127,9 @@
     "tests/test_trace_link.py::test_sink_takes_up_to_max_frame_less_12_and_a_count_past_the_bytes_is_malformed",
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[64]",
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[256]",
-    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[1024]"
+    "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[1024]",
+    "tests/test_trace_link.py::test_source_len_is_bounded_by_the_max_frame_of_the_route_the_request_came_on",
+    "tests/test_conformance_link_routes.py::test_shared_routes_pass"
    ],
    "mutants": [
     "tests/test_conformance_link_transfers.py::test_semantic_wire_and_state_faults[sink_nonempty-SINK]",
@@ -320,7 +325,8 @@
    "verify": [
     "tests/test_conformance_port_speed_execution.py::test_execution_and_writer_wait",
     "tests/test_conformance_port_speed.py::test_port_speed_handshake",
-    "tests/test_conformance_port_speed_lifecycle.py::test_session_release_and_stale_writes"
+    "tests/test_conformance_port_speed_lifecycle.py::test_session_release_and_stale_writes",
+    "tests/test_trace_link.py::test_a_pending_return_starts_no_new_notification_frame_until_the_port_is_back"
    ],
    "mutants": [
     "tests/test_conformance_port_speed_execution.py::test_pause_faults_are_detected[consume_verify-VERIFY]",
@@ -330,7 +336,7 @@
     "tests/test_conformance_port_speed.py::test_semantic_faults[verify_return_cancelled-PENDING-VERIFY]",
     "tests/test_conformance_port_speed_lifecycle.py::test_state_faults_are_detected[expiry_pending_immediate-EXPIRY-PENDING]"
    ],
-   "note": "timers paused while executing; a return waits for frame boundaries; only the owner's good frame cancels an idle return; verify/session returns never"
+   "note": "timers paused while executing; a return waits for frame boundaries and starts no new notification frame meanwhile (held, sent at the boot speed after); only the owner's good frame cancels an idle return; verify/session returns never"
   },
   "link:3:13": {
    "text": "- 試しと決めるの間、セッションの資源とロックは変わらない。通知の欠落は通常のs",

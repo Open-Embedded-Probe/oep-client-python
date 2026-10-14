@@ -1,0 +1,185 @@
+{
+ "reviewed_commit": "677b6bb",
+ "units": {
+  "common:1.1:1": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_a_stream_made_as_a_resource_starts_at_0_and_a_new_one_has_a_new_number asserts start 0, new number, u64 position past 2^40; test_interfaces fixture UART position/serial carry on"
+  },
+  "common:1.1:2": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_reading_consumes_nothing_and_a_target_reset_drops_nothing asserts two reads return the same bytes"
+  },
+  "common:1.1:3": {
+   "verdict": "ok",
+   "reason": "checked again: test_conformance_stream::test_stream_contracts_pass (IF-STREAM-GAP) asserts oldest bytes pushed out on overflow with start/gap; mutant [gap]"
+  },
+  "common:1.1:4": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_clear_release_and_restart_drop_the_bytes asserts after clear read oldest is (3,..,b\"\")"
+  },
+  "common:1.1:5": {
+   "verdict": "fixed",
+   "reason": "the restart case asserted only that console streams are gone; the fn-addressed fixture UART stream was unchecked. Added test_trace_common::test_a_probe_restart_drops_a_fixture_uarts_bytes_and_marks: after reboot the UART reads no bytes and has no marks"
+  },
+  "common:1.1:6": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_reading_consumes_nothing_and_a_target_reset_drops_nothing asserts bytes kept after ndmreset with a reset mark"
+  },
+  "common:1.2:1": {
+   "verdict": "ok",
+   "reason": "checked again: excluded rightly: header row of the from table"
+  },
+  "common:1.2:2": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_read_from_a_position_the_oldest_now_and_the_last_mark asserts from 0 arg 5 -> (5,b\"fgh\")"
+  },
+  "common:1.2:3": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_read_from_a_position... asserts from 1 -> (4,b\"efgh\")"
+  },
+  "common:1.2:4": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_read_from_a_position... asserts from 2 -> (8,b\"\")"
+  },
+  "common:1.2:5": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_read_from_a_position... asserts last host/clear/any mark and none -> now; IF-STREAM-MARK-EVICTED asserts a pushed-out mark -> now; from 3 without marks unsupported"
+  },
+  "common:1.2:6": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_start_moves_on_with_gap_over_bytes_gone_and_a_future_position_reads_nothing asserts start 3 with gap for position 1"
+  },
+  "common:1.2:7": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_start_moves_on... asserts payload (5,0,0) for position 100"
+  },
+  "common:1.2:8": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_len_stays_within_max_and_max_frame_and_more_says_bytes_are_left asserts len<=max, answer <=64 with more set, more clear at the end"
+  },
+  "common:1.2:9": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_read_and_marks_need_no_lock_even_while_another_session_holds_it asserts session-0 read succeeds while the lock is held and repeated reads are equal"
+  },
+  "common:1.3:1": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_mark_kinds_and_their_spaces asserts lost=1 and details 1/2/3; IF-STREAM-GAP asserts an overflow lost mark with detail 1 at the bench model"
+  },
+  "common:1.3:2": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_clear_release_and_restart_drop_the_bytes asserts a clear mark (kind 2, position 3, detail 0)"
+  },
+  "common:1.3:3": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_a_host_mark_carries_the_value_at_the_write_position_and_the_probe_clock asserts kind host, detail 0x5A"
+  },
+  "common:1.3:4": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_a_host_mark_carries... asserts position 3 = write position and from-mark read returns only later bytes"
+  },
+  "common:1.3:5": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_mark_kinds_and_their_spaces asserts standard kinds in 0x01-0x3F, console kinds and lost details from 0x40"
+  },
+  "common:1.3:6": {
+   "verdict": "ok",
+   "reason": "checked again: wrap and same-position marks were asserted, \"per stream\" was not; added test_trace_common::test_mark_serials_are_counted_per_stream (console, fixture UART and a second console each count from 0)"
+  },
+  "common:1.3:7": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_a_host_mark_carries... asserts time_ns == probe clock 1234 ms in ns"
+  },
+  "common:1.3:8": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_the_host_counts_lost_marks_by_the_forward_serial_jump asserts jump = lost count; IF-STREAM-LOST-MARKS/MOVING-PAGES assert ring eviction of the oldest on the model"
+  },
+  "common:1.3:9": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_marks_page_by_serial asserts pages in serial order including from_serial"
+  },
+  "common:1.3:10": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_marks_page_by_serial asserts marks_page(next) == ([], False) and none kept likewise"
+  },
+  "common:1.3:11": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_marks_page_by_serial asserts serials not given / pushed out / other boot start from the oldest kept"
+  },
+  "common:1.3:12": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_marks_page_by_serial asserts more set and paging from last+1 across the 2^32 wrap yields all serials once"
+  },
+  "common:1.4:1": {
+   "verdict": "ok",
+   "reason": "checked again: excluded rightly: header row of the operations table"
+  },
+  "common:1.4:2": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_clear_release_and_restart_drop_the_bytes asserts clear needs the lock, drops bytes and adds a clear mark"
+  },
+  "common:1.4:3": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_a_host_mark_carries... asserts mark needs the lock and adds kind host detail = value"
+  },
+  "common:1.4:4": {
+   "verdict": "fixed",
+   "reason": "'どれもロックが要る' was unchecked for write by the named tests (accepted/outcome only). Added test_trace_common::test_write_clear_and_mark_need_the_lock_on_a_fixture_uart: write / clear / mark with session_id 0 are session_required and nothing is written, dropped or marked"
+  },
+  "common:2:1": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_a_connection_is_made_by_attach_named_first_by_target_ops_and_never_reused asserts the target op payload starts with connection(u32)"
+  },
+  "common:2:2": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_a_connection_is_made_by_attach... asserts new attaches never reuse a connection or stream number"
+  },
+  "common:2:3": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_a_connection_closes_on_detach_session_end_lost_line_or_failed_cleanup_streams_first asserts conn and its stream gone for each of the four causes"
+  },
+  "common:2:4": {
+   "verdict": "fixed",
+   "reason": "'最後にattachした接続を暗黙に使わない' was checked only with a closed number. Added test_trace_common::test_a_target_op_uses_the_connection_it_names_never_the_last_attached: with two live connections, resume/halt naming each acts only on that connection's target"
+  },
+  "common:3:1": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_the_status_values_and_an_unknown_one_is_a_failure asserts ok=0 is the only success"
+  },
+  "common:3:2": {
+   "verdict": "ok",
+   "reason": "checked again: test_conformance_arm_adi::test_arm_contracts_pass (ACK failure with WAIT x3) asserts status wait after the probe's retries; test_trace asserts the value 1"
+  },
+  "common:3:3": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_the_bench_answers_line_and_state_and_timeout_where_they_happen asserts status line, failed, done 0 for a failed DMI write"
+  },
+  "common:3:4": {
+   "verdict": "ok",
+   "reason": "checked again: test_interfaces::test_block_access_reports_how_far_it_got asserts status fault with done 2 at a faulting address"
+  },
+  "common:3:5": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_the_bench_answers_line_and_state... asserts status timeout, partial, done 1 for a poll that gives up"
+  },
+  "common:3:6": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_the_bench_answers_line_and_state... asserts status state for step on a running hart"
+  },
+  "common:3:7": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_the_status_values_and_an_unknown_one_is_a_failure asserts 0x06/0x3F/0x40/0x7F raise unknown status even with outcome success"
+  },
+  "common:3:8": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_the_bench_answers_line_and_state... asserts completed failed/partial with done/status; failed attach test asserts malformed for a bad form"
+  },
+  "common:3:9": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_the_client_never_runs_a_failed_target_write_again_by_itself asserts exactly one request; outcomes checker mutant [reexecute]"
+  },
+  "common:3:10": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_common::test_a_failed_attach_answers_status_alone_and_a_bad_form_is_malformed asserts completed failed with payload status(line) only"
+  }
+ }
+}

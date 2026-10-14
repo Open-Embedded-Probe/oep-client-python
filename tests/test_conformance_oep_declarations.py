@@ -36,7 +36,7 @@ def test_standard_declarations_pass_without_mutating_requests():
 MECH=lambda value:b'\x40'+len(value).to_bytes(2,'little')+value   # describe tag 0x40 mechanisms
 
 
-@pytest.mark.parametrize('defect',['missing_attach','missing_detach','missing_connections','missing_console_write','missing_mechanisms','unknown_mechanism','preset_none','capacity_width','missing_pins','same_pin','pin_range',
+@pytest.mark.parametrize('defect',['missing_attach','missing_detach','missing_connections','missing_console_close','console_mark_without_marks','missing_mechanisms','unknown_mechanism','preset_none','capacity_width','missing_pins','same_pin','pin_range',
                                    'uncounted_mechanisms','duplicate_mechanism','empty_mechanisms'])
 def test_standard_declaration_mutants_fail(defect):
     model,c=setup();describe=model.extension.describe
@@ -46,7 +46,8 @@ def test_standard_declaration_mutants_fail(defect):
             bit={'missing_attach':1,'missing_detach':2,'missing_connections':3}[defect]
             rows=[row[:4]+bytes((row[4]&~(1<<bit),)) if row[0]==7 else row for row in rows]
         if fn==4:
-            if defect=='missing_console_write':rows=[row[:4]+bytes((row[4]&~32,)) if row[0]==7 else row for row in rows]
+            if defect=='missing_console_close':rows=[row[:4]+bytes((row[4]&~64,)) if row[0]==7 else row for row in rows]   # close 0x16: required
+            if defect=='console_mark_without_marks':rows=[row[:4]+bytes((row[4]&~4,)) if row[0]==7 else row for row in rows]   # mark kept, marks 0x12 gone
             if defect=='missing_mechanisms':rows=[row for row in rows if row[0]!=64]
             if defect in ('unknown_mechanism','preset_none'):rows=[MECH(bytes((1,3 if defect=='unknown_mechanism' else 255))) if row[0]==64 else row for row in rows]
             if defect=='uncounted_mechanisms':rows=[MECH(b'\x01') if row[0]==64 else row for row in rows]        # the mechanism alone, no n
@@ -101,3 +102,16 @@ def test_swio_fixed_clock_must_be_declared(invalid):
 def test_nonmapping_selection_reports_failure_without_wire():
     _,c=setup();r=OepDeclarationChecks(c,[1]).run()
     assert r['status']=='failed' and not c.trace
+
+
+def test_a_console_offering_only_the_minimum_ops_passes():
+    """console §1 (the op table, 要否): marks, clear, mark and write are optional - a console offering only open, read,
+    close and streams passes the declaration checks; one offering mark without marks fails them."""
+    for keep, ok in ((0x01 | 0x02 | 0x40 | 0x80, True), (0x01 | 0x02 | 0x10 | 0x40 | 0x80, False)):
+        model,c=setup();describe=model.extension.describe
+        def bad(fn, keep=keep):
+            rows=list(describe(fn))
+            if fn==4:rows=[row[:4]+bytes((row[4]&keep,)) if row[0]==7 else row for row in rows]
+            return tuple(rows)
+        model.extension.describe=bad;r=OepDeclarationChecks(c,SELECTION).run()
+        assert (r['status']=='passed')==ok,[(x['id'],x.get('error')) for x in r['checks']]

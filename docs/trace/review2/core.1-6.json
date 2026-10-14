@@ -1,0 +1,513 @@
+{
+ "reviewed_commit": "677b6bb",
+ "units": {
+  "core:1:1": {
+   "verdict": "ok",
+   "reason": "excluded rightly: informative: the header row of a table (column names only) (§1's glossary)"
+  },
+  "core:1:2": {
+   "verdict": "ok",
+   "reason": "excluded rightly: informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:3": {
+   "verdict": "ok",
+   "reason": "excluded rightly: informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:4": {
+   "verdict": "ok",
+   "reason": "excluded rightly: informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:5": {
+   "verdict": "ok",
+   "reason": "excluded rightly: informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:6": {
+   "verdict": "ok",
+   "reason": "excluded rightly: informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:7": {
+   "verdict": "ok",
+   "reason": "excluded rightly: informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:8": {
+   "verdict": "ok",
+   "reason": "excluded rightly: informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:9": {
+   "verdict": "ok",
+   "reason": "excluded rightly: informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:10": {
+   "verdict": "ok",
+   "reason": "excluded rightly: informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:11": {
+   "verdict": "ok",
+   "reason": "excluded rightly: informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1.2:1": {
+   "verdict": "ok",
+   "reason": "checked: test_virtual_core::test_current_virtual_tcp_passes_core_and_tcp_faults asserts the independent checker passes 54 core/TCP-frame checks over a real TCP transport; test_a_probe_declares_a_transport_and_speaks_its_frames asserts transport TLVs of 3 bytes and a COBS-framed confirm answered"
+  },
+  "core:1.2:2": {
+   "verdict": "ok",
+   "reason": "checked: test_conformance::test_the_main_virtual_bench_passes_every_core_check and test_virtual_core::test_virtual_current_core_passes_every_message_contract assert the core checker's §4-§6 cases pass on both benches; mutants fail"
+  },
+  "core:1.2:3": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_fn_0_offers_its_eight_ops_and_answers_each asserts fn 0's ops == the 8 core ops and each answers success"
+  },
+  "core:1.2:4": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_fn_0_declares_unit_id_transport_and_max_op_ms asserts the three tags are in fn 0's describe on both benches"
+  },
+  "core:1.2:5": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_every_listed_fn_and_fn_0_declare_their_ops asserts an ops TLV in fn 0's and every listed fn's describe, four profiles"
+  },
+  "core:1.2:6": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_a_probe_with_channels_declares_them_and_parks_them_idle asserts channels == 55 and every non-own channel 'idle hi-z' before any request"
+  },
+  "core:1.2:7": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_every_fn_that_sends_notifications_has_subscribe_and_unsubscribe asserts every notifying fn sets both ops; §10.3/§10.4 themselves traced at their units"
+  },
+  "core:2.1:1": {
+   "verdict": "fixed",
+   "reason": "missing: the probe as sender (only force read and the host's force 1 were checked). Added test_the_booleans_the_probe_sends_are_0_or_1_and_the_host_sends_force_0_or_1: lock_state locked 0 / 1, describe more 0 / 1 on both benches, host force byte 0 and 1"
+  },
+  "core:2.1:2": {
+   "verdict": "fixed",
+   "reason": "missing: only m.shown / owner were checked, list entry names reached the dump unclean (code bug: catalog.unpack_list_result decoded ascii-replace, ESC/BEL/0x7F passed). Fixed catalog to m.shown; added test_list_names_are_shown_with_control_characters_replaced (entry name and dump.to_text have no C0 / 0x7F)"
+  },
+  "core:2.2:1": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_one_tlv_form_and_a_length_past_the_end asserts 0/255/300-byte values in one form, a len past the end malformed (probe) and ShortPayload (host)"
+  },
+  "core:2.2:2": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_bit_7_is_the_critical_mark_in_requests_and_an_unknown_tag_in_answers asserts owner 0x81 taken as owner and bit-7 TLVs in lock_state/unavailable/describe answers ignored"
+  },
+  "core:2.2:3": {
+   "verdict": "fixed",
+   "reason": "missing: an answer TLV 0x00 without bit 7 (only 0x80 checked). Added test_a_tlv_numbered_0_breaks_an_answer_with_or_without_bit_7: Tail.parse and Host.clock raise ProtocolError for 0x00 and 0x80"
+  },
+  "core:2.2:4": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_unsupported_names_the_tag_as_received asserts payload == b'\\xc5' for critical 0x45"
+  },
+  "core:2.2:5": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_tag_space_is_the_payloads_context asserts 0x01 = owner on open (40 bytes malformed), ignored on clock, transport in confirm, supported in its refusal"
+  },
+  "core:2.2:6": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_a_tag_repeats_only_where_its_definition_says asserts repeated channel TLVs -> [5, 7] in order and labels kept as a list"
+  },
+  "core:2.3:1": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_containers_know_their_length asserts list entries read by count/name_len leave nothing over, describe TLVs split, clock 12 bytes"
+  },
+  "core:2.3:2": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_fn_0_answers_have_their_fixed_parts_and_a_tlv_tail_after asserts each fn 0 answer is exactly its fixed size with additions only as a TLV tail"
+  },
+  "core:2.3:3": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_a_list_is_count_then_elements_without_lengths asserts list entries read field by field by core.list_entries match the bench's names"
+  },
+  "core:2.3:4": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_host_skips_unknown_tags_and_refuses_a_short_answer asserts unknown tag skipped, short clock ShortPayload, wrong-length known TLVs unused"
+  },
+  "core:2.3:5": {
+   "verdict": "fixed",
+   "reason": "missing: the bench's frames had no tail, so the host reading a TLV tail after a data / event fixed part was never exercised. Added test_the_host_reads_data_and_events_with_tlvs_after_their_fixed_part: same stream bytes and same stopped event with an unknown TLV appended"
+  },
+  "core:2.3:6": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_host_sends_harmful_or_meaningless_if_ignored_tlvs_critical asserts scan's max_speed sent as 0x81; test_conformance_host_critical_calls asserts attach's reset critical"
+  },
+  "core:2.3:7": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_unsupported_names_the_tag_as_received asserts unknown critical -> unsupported 0xC5, unknown non-critical -> success"
+  },
+  "core:2.3:8": {
+   "verdict": "ok",
+   "reason": "checked: test_an_implemented_tlvs_unused_value_is_unsupported_with_the_tag_as_received asserts rvswd idle_clock 2 -> unsupported payload 0x04 / 0x84 (as received), wrong length malformed with and without bit 7 (before: only owner's length was checked)"
+  },
+  "core:2.3:9": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_a_request_tlvs_value_is_not_extended asserts role_assignment one byte longer is malformed and nothing applied"
+  },
+  "core:2.3:10": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_a_tag_twice_the_first_is_used_and_the_later_is_checked_too asserts good+33-byte owner malformed, 'one'+'two' -> owner 'one'"
+  },
+  "core:2.3:11": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_a_request_shorter_than_its_fixed_part_is_malformed asserts short confirm/list/describe/open malformed"
+  },
+  "core:2.3:12": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_a_counted_list_may_be_followed_by_tlvs asserts list entries then a TLV tail, unsupported's tag then TLVs"
+  },
+  "core:2.3:13": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_a_request_shorter_than_its_fixed_part_is_malformed asserts open without its force byte is malformed and no lock taken"
+  },
+  "core:2.4:1": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_host_routes_by_role_and_drops_unknown_roles_and_requests asserts role 0x05 dropped (dropped == 3); test_the_probe_drops_what_is_not_a_whole_request asserts no answer to other roles"
+  },
+  "core:2.4:2": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_probe_drops_what_is_not_a_whole_request asserts None for roles != 1 and for 0-9 byte messages; the host test drops a request frame"
+  },
+  "core:2.4:3": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_host_takes_short_results_and_notifications_for_broken_frames asserts CorruptFrame for a 4-byte result, short event and data"
+  },
+  "core:2.4:4": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_an_unknown_resolution_or_outcome_is_a_failure asserts Failed for resolution 2, outcome 3 / 0xFF"
+  },
+  "core:2.4:5": {
+   "verdict": "ok",
+   "reason": "checked: test_the_client_takes_an_unknown_status_for_a_failure asserts riscv.check raises TargetError 'unknown status 0x55' beside outcome success (before: status only on the sample reader, not the client)"
+  },
+  "core:2.4:6": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_an_unknown_event_kind_is_dropped_and_its_seq_counted asserts events() gives only 'stopped' and seq_lost == 0"
+  },
+  "core:2.4:7": {
+   "verdict": "ok",
+   "reason": "checked: test_the_client_ignores_reserved_flag_bits_and_shows_an_unknown_scan_kind asserts attach flags bits 4-7 ignored (halted read right) and scan kind 0x7E kept raw; the cause case was already asserted (before: flags / scan kind only on the sample reader)"
+  },
+  "core:2.5:1": {
+   "verdict": "ok",
+   "reason": "excluded rightly: informative: the header row of a table (column names only) (§2.5's number spaces)"
+  },
+  "core:2.5:2": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_probe_drops_what_is_not_a_whole_request asserts no answer to roles 0x00, 0x02-0x05, 0x81, 0xFF"
+  },
+  "core:2.5:3": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_fn_0_op_space asserts fn 0 ops in 0x01-0x0F/0x10-0x1F and 0x00/0x05/0x0F/0x14/0x1F/0x20/0xFF unknown_operation"
+  },
+  "core:2.5:4": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_interface_op_space_keeps_0x01_0x0f_for_the_shared_ops asserts below 0x10 only subscribe 0x01 / unsubscribe 0x02 in every interface"
+  },
+  "core:2.5:5": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_reason_and_cause_spaces asserts core reasons 0x01-0x3F, interface ones 0x40-0x7F"
+  },
+  "core:2.5:6": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_reason_and_cause_spaces asserts core causes 0x01-0x3F, interface causes 0x40-0x7F"
+  },
+  "core:2.5:7": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_outcome_space asserts OUTCOMES == {0,1,2} and outcome 3 not ran"
+  },
+  "core:2.5:8": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_event_kind_space asserts kinds 0x01-0x7F and fn 0 none"
+  },
+  "core:2.5:9": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_tlv_tag_spaces asserts every registry tag 0x01-0x7F; test_tlv_number_0_is_never_a_tlv asserts 0 invalid"
+  },
+  "core:2.5:10": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_tlv_tag_spaces asserts describe common tags 0x01-0x3F, the rest 0x40-0x7F"
+  },
+  "core:2.5:11": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_resource_numbers_are_u32_from_1 asserts a connection 1 then a console stream 2 (one space); never-reused test asserts u32 exhaustion"
+  },
+  "core:2.8:1": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_host_does_not_use_an_interface_revision_it_does_not_know asserts a client of (gpio, 1) refuses revision 2 (UnsupportedRevision)"
+  },
+  "core:2.8:2": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_host_does_not_use_an_interface_revision_it_does_not_know asserts UnsupportedRevision for an unknown revision"
+  },
+  "core:2.8:3": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_an_optional_op_is_known_by_ops_and_not_sent_when_absent asserts step absent from ops -> unknown_operation raised with nothing sent"
+  },
+  "core:2.8:4": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_protocol_revision_is_confirms asserts PROTOCOL_REVISION == MIN == MAX == 1 and confirm answers 1"
+  },
+  "core:4.1:1": {
+   "verdict": "fixed",
+   "reason": "missing: no corr reuse across session_ids on one transport. Added test_one_corr_counter_for_every_session_id_never_reuses_a_corr: interleaved session-0 / session requests step by one cyclically across 65535->1, never 0, all distinct"
+  },
+  "core:4.1:2": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_every_request_carries_a_session_id asserts 0 for lock_state, the session's id for keepalive"
+  },
+  "core:4.1:3": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_a_locked_op_with_session_id_0_is_session_required asserts end/keepalive/gpio set with 0 -> session_required"
+  },
+  "core:4.1:4": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_a_lock_free_op_with_0_touches_no_session_and_with_an_id_is_checked asserts session-0 clock leaves remaining 1000, an id gets no_session/locked, the holder's renews to 3000"
+  },
+  "core:4.1:5": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_open_with_session_id_0_is_malformed asserts malformed and no holder"
+  },
+  "core:4.2:1": {
+   "verdict": "ok",
+   "reason": "excluded rightly: informative: the header row of a table (column names only) (§4.2's resolutions)"
+  },
+  "core:4.2:2": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_one_answer_per_request_with_its_corr_and_no_fn_or_op asserts session_required answer == Result(9, 0x00, reason).pack() and locked 0x00/0x08 with payload"
+  },
+  "core:4.2:3": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_one_answer_per_request_with_its_corr_and_no_fn_or_op asserts raw[3:5] == 01 00 for completed success"
+  },
+  "core:4.2:4": {
+   "verdict": "fixed",
+   "reason": "missing: a dropped copy sharing the one answer. Added test_a_dropped_copy_shares_the_one_answer_of_its_request: coalesced copy, exactly one answer queued on the route, credit freed after it"
+  },
+  "core:4.2:5": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_executed_and_failed_is_completed_failed_not_rejected asserts halt on a silent target -> completed failed with status line"
+  },
+  "core:4.2:6": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_host_does_not_run_a_failed_request_again asserts Failed raised and exactly one request sent"
+  },
+  "core:4.3:1": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_each_core_reason_is_given_where_the_table_says asserts unknown_function (header fn and describe's fn) (values 1..12 asserted)"
+  },
+  "core:4.3:2": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_each_core_reason_is_given_where_the_table_says asserts unknown_operation for fn 0 op 0x30 (values 1..12 asserted)"
+  },
+  "core:4.3:3": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_each_core_reason_is_given_where_the_table_says asserts malformed for a short list (values 1..12 asserted)"
+  },
+  "core:4.3:4": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_each_core_reason_is_given_where_the_table_says asserts unavailable with cause pin_in_use and channel 20 (values 1..12 asserted)"
+  },
+  "core:4.3:5": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_each_core_reason_is_given_where_the_table_says asserts window_exceeded == 6 and raised as Rejected (values 1..12 asserted)"
+  },
+  "core:4.3:6": {
+   "verdict": "fixed",
+   "reason": "missing: the host side ('host reopens the session'). Added tests/test_session.py::test_a_lapsed_lock_is_no_session_and_the_host_opens_anew to verify (NoSession, session cleared, nothing reopened silently, open gets a new id)"
+  },
+  "core:4.3:7": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_each_core_reason_is_given_where_the_table_says asserts locked with remaining 3000 and owner 'tool' (values 1..12 asserted)"
+  },
+  "core:4.3:8": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_each_core_reason_is_given_where_the_table_says asserts session_required for keepalive with 0 (values 1..12 asserted)"
+  },
+  "core:4.3:9": {
+   "verdict": "fixed",
+   "reason": "missing: the host side ('host makes it again'). Added test_no_resource_the_host_makes_the_resource_again: after a reboot halt on the old connection raises NoResource, attach again gives a working connection"
+  },
+  "core:4.3:10": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_each_core_reason_is_given_where_the_table_says asserts unsupported payload 0xB0 for a critical 0x30 (values 1..12 asserted)"
+  },
+  "core:4.3:11": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_each_core_reason_is_given_where_the_table_says asserts result_lost for keepalive corr 1 (values 1..12 asserted)"
+  },
+  "core:4.3:12": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_header_order_corr_fn_op_session asserts corr 0 malformed before unknown_function, then unknown_operation, then session_required"
+  },
+  "core:4.3:13": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_resend_check_comes_before_the_session_check asserts the resend after expiry gets the record or result_lost, a new corr no_session"
+  },
+  "core:4.3:14": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_session_check_comes_after_the_header_and_before_the_payload asserts another id's broken keepalive locked, the holder's malformed"
+  },
+  "core:4.3:15": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_rest_is_checked_before_anything_changes asserts a refused open leaves no holder/owner; test_virtual_bench_rules plan_apply tests assert any one reason and no change"
+  },
+  "core:4.3:16": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_cause_fn_and_channel_tlvs asserts causes 1-7 by name and cause 4 read"
+  },
+  "core:4.3:17": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_cause_fn_and_channel_tlvs asserts repeated channel u16 -> [16, 17]"
+  },
+  "core:4.3:18": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_cause_fn_and_channel_tlvs asserts fn u16 -> 11, missing -> None"
+  },
+  "core:4.4:1": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_confirm_gives_this_transports_limits asserts max_frame >= 64, window >= max_frame, max_inflight >= 1"
+  },
+  "core:4.4:2": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_host_keeps_max_inflight_and_window asserts at most 3 outstanding and 40 bytes"
+  },
+  "core:4.4:3": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_probe_takes_new_requests_while_one_is_processed_and_answers_in_order asserts every request within max_inflight 'queued' while one is processed"
+  },
+  "core:4.4:4": {
+   "verdict": "ok",
+   "reason": "checked: test_a_copy_of_a_request_not_yet_answered_is_dropped_and_touches_no_lease asserts a copy waiting / answered-not-sent is coalesced, run once, lease 1000 -> 1400 only from the answer, session-0 copy coalesced (before: lease and session 0 unchecked)"
+  },
+  "core:4.4:5": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_a_fixed_result_past_max_frame_is_unsupported_or_cut_as_the_interface_says asserts 14-read dmi unsupported 0x00 before no_resource; source cut to max_frame - 7"
+  },
+  "core:4.4:6": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_probe_takes_new_requests_while_one_is_processed_and_answers_in_order asserts answer corrs in request order"
+  },
+  "core:4.4:7": {
+   "verdict": "ok",
+   "reason": "checked: added test_conformance_pipeline::test_pipeline_passes (its isolation case: one route's outstanding requests take no other route's credit; mutant [shared] fails) to test_limits_are_per_transport's per-transport confirm index (before: per-transport counting not in verify)"
+  },
+  "core:4.4:8": {
+   "verdict": "fixed",
+   "reason": "missing: 'host reads max_op_ms by fn 0 describe before a state-changing request' was not in the named tests. Added tests/test_host_wait_bound.py::test_open_reads_max_op_ms_before_it_goes_out and ::test_the_bound_by_request"
+  },
+  "core:4.4:9": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_an_interfaces_wait_does_not_shorten_the_floor asserts expect_ms 10 still waits 4000"
+  },
+  "core:5.1:1": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_host_resends_the_same_bytes_and_never_a_new_corr asserts two writes byte-identical with corr 5"
+  },
+  "core:5.1:2": {
+   "verdict": "fixed",
+   "reason": "missing: records half the space old are dropped; open under the same rule. Added test_a_record_half_the_space_old_is_not_used (same bytes after last moved 0x8000 -> result_lost, both benches) and test_the_holders_open_again_keeps_resources_subscriptions_and_resend_state (open resend gets its record)"
+  },
+  "core:5.1:3": {
+   "verdict": "fixed",
+   "reason": "missing: 'no lease / push-target change' on a recorded answer. Added test_a_recorded_answer_changes_neither_the_lease_nor_where_notifications_go: subscribe resent from tcp-1 gets the record, push_link stays 0, expires_ms and executions unchanged"
+  },
+  "core:5.1:4": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_probe_keeps_the_last_corr_and_refuses_one_not_ahead asserts d=0 and d=32768 result_lost, d=32767 new"
+  },
+  "core:5.1:5": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_a_new_corr_that_is_refused_still_moves_the_last_corr asserts malformed corr 50 makes 49 result_lost"
+  },
+  "core:5.1:6": {
+   "verdict": "fixed",
+   "reason": "missing: expiry (the named test only did end) and 'only a successful new-id open replaces'. Added test_end_and_expiry_release_resources_and_subscriptions_and_keep_the_order_state (record after expiry), new test_a_refused_open_of_another_id_keeps_the_resend_state (locked open keeps record and order), test_a_force_open_releases_and_replaces_the_resend_state, test_a_new_session_id_after_a_loss_never_reuses_the_ended_one"
+  },
+  "core:5.1:7": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_session_0_requests_are_never_deduplicated asserts the same session-0 clock bytes run twice (new uptime) and corr 0 malformed"
+  },
+  "core:5.1:8": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_limits_are_per_transport_and_the_resend_table_is_shared asserts the resend on transport 1 gets transport 0's recorded answer"
+  },
+  "core:5.1:9": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_host_gives_up_after_the_resend_and_recovers_before_more asserts TransportFailed and nothing sent before recovery; test_conformance_host_resend FAILURE-RECOVER asserts confirm before the next state read"
+  },
+  "core:5.1:10": {
+   "verdict": "ok",
+   "reason": "checked: added test_trace_transports::test_on_tcp_broken_framing_closes_and_opens_the_connection_and_confirms_there (new connection: confirm first, only the unresolved request again with its bytes, no old queue); test_a_new_session_id_after_a_loss_never_reuses_the_ended_one asserts a fresh id (before: reconnection itself unchecked)"
+  },
+  "core:6.1:1": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_one_lock_and_only_its_holder_changes_state asserts another id's plan_apply locked and no plan"
+  },
+  "core:6.1:2": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_host_draws_a_random_non_zero_session_id asserts randrange(1, 2^32) from SystemRandom; open id 0 malformed; decision table asserts the last ended id refused"
+  },
+  "core:6.1:3": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_lease_stops_while_the_holders_request_runs_and_restarts_at_its_answer asserts expiry 6000 after a 5 s request, 6500 after a rejected answer, unchanged by resend/session 0/others"
+  },
+  "core:6.2:1": {
+   "verdict": "ok",
+   "reason": "excluded rightly: informative: the header row of a table (column names only) (§6.2's decision table)"
+  },
+  "core:6.2:2": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_decision_table asserts a free lock opened with lock_state (1, 2000, b'S')"
+  },
+  "core:6.2:3": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_decision_table asserts no_session for keepalive with no holder and for the ended id's open"
+  },
+  "core:6.2:4": {
+   "verdict": "ok",
+   "reason": "checked: test_the_holders_open_from_another_transport_keeps_where_the_subscriptions_send asserts push_link stays 0 after the holder's open from tcp-1 (moves only with a subscribe); bench bug fixed (endpoint moved it). Lease/resources/record asserted by test_the_decision_table and test_the_holders_open_again..."
+  },
+  "core:6.2:5": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_decision_table asserts another id's open locked with remaining 5000 and owner 'S'"
+  },
+  "core:6.2:6": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_decision_table asserts force open succeeds with holder 0x20; force test asserts the old session released"
+  },
+  "core:6.2:7": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_decision_table asserts the holder's keepalive succeeds"
+  },
+  "core:6.2:8": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_decision_table asserts another id's keepalive locked"
+  },
+  "core:6.4:1": {
+   "verdict": "fixed",
+   "reason": "missing: the clauses 'only a successful different-id open replaces the resend state; end / expiry keep the order state'. Added test_a_refused_open_of_another_id_keeps_the_resend_state, test_a_force_open_releases_and_replaces_the_resend_state, test_end_and_expiry_release_resources_and_subscriptions_and_keep_the_order_state"
+  },
+  "core:6.4:2": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_lease_ms_is_taken_or_rounded_into_range asserts 0->3000, 1/999->1000, 60001/0xFFFFFFFF->60000 on both benches and Host.lease_ms from the answer"
+  },
+  "core:6.4:3": {
+   "verdict": "fixed",
+   "reason": "missing: 'lease expiry and force the same' and connections (named test: end only, plan / pin / subscription). Added test_end_and_expiry_release_resources_and_subscriptions_and_keep_the_order_state (conns gone on end and expiry, old number no_resource), test_force_releases_the_old_sessions_resources_before_handing_over, test_conformance_lease::test_lease_writer (EXPIRE / FORCE cases)"
+  },
+  "core:6.4:4": {
+   "verdict": "fixed",
+   "reason": "missing: 'only' (named test checked lease and owner). Added test_keepalive_changes_nothing_but_the_lease: snapshot of plan, 55 pin states, subscriptions, push_link, connections, owner, holder equal before / after keepalive, lease back to 2000"
+  },
+  "core:6.4:5": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_lock_state_tells_any_holder_and_0_when_free asserts (0, 0) free and (1, 3000) for another session"
+  },
+  "core:6.4:6": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_the_owner_is_kept_while_the_lock_is_and_shown asserts owner from the taking open, unchanged by the holder's open, forgotten at end, no TLV without one; host test accepts none"
+  },
+  "core:6.4:7": {
+   "verdict": "ok",
+   "reason": "checked: test_trace_core::test_force_releases_the_old_sessions_resources_before_handing_over asserts plan, subscriptions gone and pin idle after force"
+  }
+ }
+}

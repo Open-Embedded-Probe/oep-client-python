@@ -42,12 +42,13 @@
     "tests/test_interfaces.py::test_console_marks_follow_serials_and_more",
     "tests/test_trace_console.py::test_a_fn_without_marks_takes_no_from_3_and_has_no_mark_ops",
     "tests/test_conformance_stream.py::test_stream_contracts_pass",
-    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[marks-False]"
+    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[marks-False]",
+    "tests/test_conformance_oep_declarations.py::test_a_console_offering_only_the_minimum_ops_passes"
    ],
    "mutants": [
     "tests/test_conformance_stream.py::test_stream_mutants_fail[serial_gap]"
    ],
-   "note": "marks 0x12 stream from_serial -> more count marks; optional (absent: unknown_operation)"
+   "note": "marks 0x12 stream from_serial -> more count marks; optional (absent: unknown_operation); optional in the declaration checks"
   },
   "console:1:4": {
    "text": "| 0x13 | clear | stream(u32) | — | 必要 | ",
@@ -55,13 +56,14 @@
     "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
     "tests/test_conformance_dependencies.py::test_dependency_contracts_pass",
     "tests/test_conformance_stream.py::test_stream_contracts_pass",
-    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[clear-True]"
+    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[clear-True]",
+    "tests/test_conformance_oep_declarations.py::test_a_console_offering_only_the_minimum_ops_passes"
    ],
    "mutants": [
     "tests/test_conformance_dependencies.py::test_dependency_mutants_fail[clear_tx]",
     "tests/test_conformance_stream.py::test_stream_mutants_fail[clear_position]"
    ],
-   "note": "clear 0x13 stream -> nothing, needs the lock; optional"
+   "note": "clear 0x13 stream -> nothing, needs the lock; optional; optional in the declaration checks"
   },
   "console:1:5": {
    "text": "| 0x14 | mark | stream(u32)、value(u8) | ",
@@ -69,12 +71,14 @@
     "tests/test_interfaces.py::test_console_marks_follow_serials_and_more",
     "tests/test_conformance_stream.py::test_stream_contracts_pass",
     "tests/test_trace_console.py::test_a_fn_without_marks_takes_no_from_3_and_has_no_mark_ops",
-    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[mark-True]"
+    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[mark-True]",
+    "tests/test_conformance_oep_declarations.py::test_a_console_offering_only_the_minimum_ops_passes"
    ],
    "mutants": [
-    "tests/test_conformance_stream.py::test_stream_mutants_fail[kind]"
+    "tests/test_conformance_stream.py::test_stream_mutants_fail[kind]",
+    "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[console_mark_without_marks]"
    ],
-   "note": "mark 0x14 stream value -> nothing; optional, only with marks"
+   "note": "mark 0x14 stream value -> nothing; optional, only with marks; mark only with marks (declaration checks)"
   },
   "console:1:6": {
    "text": "| 0x15 | write | stream(u32)、count(u16)、",
@@ -82,12 +86,13 @@
     "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
     "tests/test_interfaces.py::test_console_io_writes_through_the_send_queue_and_sdi_takes_no_write",
     "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass",
-    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[write-True]"
+    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[write-True]",
+    "tests/test_conformance_oep_declarations.py::test_a_console_offering_only_the_minimum_ops_passes"
    ],
    "mutants": [
     "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[sdi_write_taken-SDI-WRITE]"
    ],
-   "note": "write 0x15 stream count data -> accepted(u16) [TLV]; optional"
+   "note": "write 0x15 stream count data -> accepted(u16) [TLV]; optional; optional in the declaration checks"
   },
   "console:1:7": {
    "text": "| 0x16 | close | stream(u32) | — | 必要 | ",
@@ -95,12 +100,14 @@
     "tests/test_trace_console.py::test_close_the_connections_release_and_the_sessions_end_free_the_stream_and_its_queue[close]",
     "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
     "tests/test_conformance_dependencies.py::test_dependency_contracts_pass",
-    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[close-True]"
+    "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[close-True]",
+    "tests/test_conformance_oep_declarations.py::test_a_console_offering_only_the_minimum_ops_passes"
    ],
    "mutants": [
-    "tests/test_conformance_dependencies.py::test_dependency_mutants_fail[orphan]"
+    "tests/test_conformance_dependencies.py::test_dependency_mutants_fail[orphan]",
+    "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[missing_console_close]"
    ],
-   "note": "close 0x16 stream -> nothing, needs the lock; required"
+   "note": "close 0x16 stream -> nothing, needs the lock; required; required in the declaration checks"
   },
   "console:1:8": {
    "text": "| 0x17 | streams | first(u16) | more(u8)",

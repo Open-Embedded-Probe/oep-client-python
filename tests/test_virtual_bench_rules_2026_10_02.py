@@ -352,7 +352,8 @@ def test_c22_a_utf8_owner_is_taken():
 def test_c30_every_profile_numbers_its_instances_per_name_and_revision():
     for name, profile in virtual_bench.PROFILES.items():
         assert profile().instance_errors() == [], name
-    bad = virtual_bench.VirtualProbe("x", 256, [virtual_bench.Offered(0, 0, virtual_bench.CORE_NAME), virtual_bench.Offered(1, 1, "oep.fixture.gpio")])
+    bad = virtual_bench.VirtualProbe("x", 256, [virtual_bench.Offered(0, 0, virtual_bench.CORE_NAME), virtual_bench.Offered(1, 1, "oep.fixture.gpio"),
+                                                virtual_bench.Offered(2, 1, "oep.fixture.gpio")])   # core §7.2: a repeated instance
     assert bad.instance_errors()
 
 

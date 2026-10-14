@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- (JA) 規則の対応表を、文書の割り振りを変えた別の担当で第 2 回の独立レビューにかけた（docs/trace/review2/*.json）。第 1 回が ok とした単位から 80 個の弱い対応を見つけて試験を足し、除外 10 個を覆して試験にした。抜き取りの照合（docs/trace/review/sample-audit.ja.md）では、その後の無作為の 40 個すべてで試験が規則を確かめていた。見つけて直した a09fa45 との食い違い:
+  - core §2.1: list のインターフェース名も、表示の前に制御文字と不正な UTF-8 を置き換える。
+  - link §3: 戻りを待つ phase 3 の間は、上げた口に新しい通知のフレームを始めない（口が戻ってから送る）。
+  - debug §1 / §3 / §4: scan は dmactive を立てる、attach は設定の書き込みと scratch（PROGBUF0）の書き込みと読み戻しで線を確かめ、読み戻らなければ completed failed / line で connection を作らない、method 1 で止まらない hart は timeout で haltreq を下げ hartsel を 0 に戻す、高水準の op の後は hartsel を 0 に戻す。
+
 - (JA) 規則の対応表（docs/trace）を、書いた者と別のレビューで全 902 単位について審査した（docs/trace/review/*.json）: 名指した試験が単位の規則そのものを確かめているか、除外が妥当か。弱い 84 件は試験を足して直し、抜き取りの照合（docs/trace/review/sample-audit.ja.md）でもう 1 件を直した。その過程で見つけた a09fa45 との食い違いを直した:
   - core §4.1: session_id 0 の照会を 32768 回以上続けても、次のセッションの要求が result_lost にならない（半周の前にセッションの keepalive を挟む。メモの 6 行目）。
   - core §6.2 / §10.3 / §10.4: 持ち主が別の経路から open し直しても通知の送り先は変えない（subscribe し直したら移る）、置き換えた購読の未送信分はシリアルの口の送信待ちからも捨てる、シリアルの口と TCP の通知の送信待ちは max_frame × 2 まで。

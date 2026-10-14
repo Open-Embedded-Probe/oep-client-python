@@ -372,3 +372,56 @@ def test_mark_serials_are_counted_per_stream(bench):
     assert [(mk.serial, mk.detail) for mk in other.marks()] == [(0, 9)]
     con.mark(3)
     assert [mk.serial for mk in con.marks()] == [0, 1, 2, 3]
+
+
+# ---- second review additions ---------------------------------------------------------------------------------------
+
+def test_write_clear_and_mark_need_the_lock_on_a_fixture_uart():
+    """common §1.4: clear, mark and write all need the lock - on the fixture UART too, session_id 0 is answered
+    session_required and nothing is written, dropped or marked."""
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
+    hst = h.Host(ep.handle, rng=random.Random(7))
+    hst.open()
+    core.plan_apply(hst, [(5, 1, 21), (5, 2, 22)])
+    uart = fixture.FixtureUart(hst, 5)
+    uart.configure(115200)
+    ep.uart_rx(5, b"abc")
+    U = reg.FIXTURE_UART.op
+    for op, payload in ((U["write"], struct.pack("<H", 2) + b"xy"), (U["clear"], b""), (U["mark"], b"\x07")):
+        r = m.Result.unpack(ep.handle(m.Request(hst.next_corr(), 5, op, payload, 0).pack()))
+        assert r.detail == m.SESSION_REQUIRED
+    assert bytes(ep.uarts[5].written) == b"" and uart.read(uart.FROM_OLDEST).data == b"abc" and uart.marks() == []
+
+
+def test_a_probe_restart_drops_a_fixture_uarts_bytes_and_marks():
+    """common §1.1: bytes go with the probe's restart - the fn-addressed fixture UART keeps neither its bytes nor its
+    marks over a reboot (the same boot_id rule no longer holds)."""
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
+    hst = h.Host(ep.handle, rng=random.Random(8))
+    hst.open()
+    core.plan_apply(hst, [(5, 1, 21)])
+    uart = fixture.FixtureUart(hst, 5)
+    uart.configure(115200)
+    ep.uart_rx(5, b"before restart")
+    uart.mark(3)
+    ep.reboot()
+    hst = h.Host(ep.handle, rng=random.Random(9))
+    hst.open()
+    core.plan_apply(hst, [(5, 1, 21)])
+    uart = fixture.FixtureUart(hst, 5)
+    assert uart.read(uart.FROM_OLDEST).data == b"" and uart.marks() == []
+
+
+def test_a_target_op_uses_the_connection_it_names_never_the_last_attached(bench):
+    """common §2: the target request's connection number chooses the connection - with two live connections, an op
+    naming the first acts on the first one's target even though the second was attached last."""
+    ep, clock, hst, conn, con, sid = bench
+    c2, _ = riscv.Wire(hst).attach(halt=False, pins=ep.pairs[1][1])
+    first, second = ep._target_of(conn), ep._target_of(c2)
+    assert first is not second and first.halted and not second.halted
+    riscv.RiscvDm(hst, conn).resume()
+    assert not first.halted and not second.halted
+    riscv.RiscvDm(hst, c2).halt()
+    assert second.halted and not first.halted
+    riscv.RiscvDm(hst, conn).halt()
+    assert first.halted and second.halted

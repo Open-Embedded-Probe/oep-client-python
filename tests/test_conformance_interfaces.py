@@ -74,7 +74,7 @@ def test_wrong_instance_fails_separately_from_revision_group():
     model,_,runner=setup();listing=model.extension.list_page
     def wrong(first,limit):
         page=listing(first,limit)
-        if page[2]:page=page[:5]+b'\x09\0'+page[7:]
+        if page[2]:page=page[:5]+b'\0\0'+page[7:]   # instance 0 twice in one (name, revision) (core §7.2)
         return page
     model.extension.list_page=wrong;report=runner.run()
     assert any(row['id'].startswith('IF-INSTANCE-') and row['status']=='failed' for row in report['checks'])

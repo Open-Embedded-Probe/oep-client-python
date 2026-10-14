@@ -700,3 +700,116 @@ def test_a_length_port_that_never_goes_quiet_is_closed_and_opened_again(monkeypa
     assert s.closed and lk.stream is new
     sent = [m.Request.unpack(w[2:]) for w in new.writes]
     assert [r.op for r in sent] == [m.OP_CONFIRM] and boots == [0x11]       # confirmed there, its boot_id seen
+
+
+# ---- second review (docs/trace/review2/transports.json) -------------------------------------------------------------
+
+def test_a_closed_route_drops_what_it_had_and_rolls_nothing_back():
+    """transports §3: a transport closing leaves the session, the lock and the core §5.1 table; a request it had already
+    carried out stays done, one it had not yet run is dropped (never run); on another transport the request sent again
+    gets its recorded answer (not run twice) and the order state is not rolled back (a corr behind is result_lost)."""
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
+    sid = 0x51
+    assert m.Result.unpack(ep.handle(req(1, m.OP_OPEN, struct.pack("<IB", 3000, 0), session=sid), 0)).succeeded
+    done, waiting = req(2, m.OP_KEEPALIVE, session=sid), req(3, m.OP_LOCK_STATE, session=sid)
+    assert ep.receive(done, 0) == "queued" and ep.receive(waiting, 0) == "queued"
+    answer = ep.process(0)
+    runs = ep.executions
+    ep.close_route(0)                                                    # closed before either answer went out
+    assert ep.credits() == {} and ep.executions == runs                   # the waiting one dropped, not run
+    assert ep.holder == sid and ep.last == sid
+    assert ep.handle(done, 1) == answer and ep.executions == runs         # sent again elsewhere: the record
+    lost = m.Result.unpack(ep.handle(req(0xF000, m.OP_KEEPALIVE, session=sid), 1))
+    assert (lost.resolution, lost.detail) == (m.REJECTED, m.RESULT_LOST)  # behind the last corr: not rolled back
+    assert m.Result.unpack(ep.handle(waiting, 1)).succeeded               # the dropped one, sent again, runs once
+
+
+def test_notifications_for_a_closed_connection_are_dropped_and_not_carried_to_a_new_one():
+    """transports §3, core §10.3 / §10.4: when the subscriber's TCP connection closes the session and its subscription
+    stay, but what was to go there is dropped - a new connection taking the session back gets none of it (nor another
+    connection); a subscribe again there sends from seq 0, nothing of the old route carried over."""
+    import select
+    import socket
+    import subprocess
+    from oep_client import capture as cap, core
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", "--tcp", "0", "--framing", "length"],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    port = int(proc.stdout.readline().decode().split()[1])
+
+    class Raw:
+        def __init__(self):
+            self.sock, self.buf, self.corr = socket.create_connection(("127.0.0.1", port), timeout=5), bytearray(), 0
+
+        def send(self, fn, op, payload=b"", session=0):
+            self.corr += 1
+            msg = m.Request(self.corr, fn, op, payload, session).pack()
+            self.sock.sendall(struct.pack("<H", len(msg)) + msg)
+            return self.corr
+
+        def frames(self, seconds):
+            out, deadline = [], time.monotonic() + seconds
+            while (left := deadline - time.monotonic()) > 0:
+                if select.select([self.sock], [], [], left)[0]:
+                    data = self.sock.recv(65536)
+                    if not data:
+                        break
+                    self.buf += data
+                while len(self.buf) >= 2 and len(self.buf) >= 2 + struct.unpack_from("<H", self.buf)[0]:
+                    n = struct.unpack_from("<H", self.buf)[0]
+                    out.append(bytes(self.buf[2:2 + n]))
+                    del self.buf[:2 + n]
+            return out
+
+    try:
+        a = link.open_host(f"tcp://127.0.0.1:{port}", keep_session=False)
+        core.take(a, 5000)
+        sid = a.session
+        lc = cap.LogicCapture(a)
+        core.plan_apply(a, [(lc.fn, 0, 20), (lc.fn, 1, 21)])
+        lc.configure(rate=100_000, mode=cap.STREAMING)
+        lc.subscribe()
+        lc.start()
+        assert len(lc.stream(a.link, nbytes=500, seconds=3).data) >= 500
+        a.link.close()                                                    # no unsubscribe, no end: it just goes
+        time.sleep(0.3)                                                   # data made meanwhile, for the closed one
+        watcher, taker = Raw(), Raw()
+        taker.corr = a._corr + 10
+        corr = taker.send(m.CORE_FN, m.OP_OPEN, struct.pack("<IB", 5000, 0), session=sid)
+        got = taker.frames(0.5)
+        assert [m.Result.unpack(f).corr for f in got if f[0] == m.ROLE_RESULT] == [corr]
+        assert m.Result.unpack(next(f for f in got if f[0] == m.ROLE_RESULT)).succeeded   # the session stayed
+        assert not [f for f in got if f[0] in (m.ROLE_DATA, m.ROLE_EVENT)]     # nothing of the closed route
+        assert not [f for f in watcher.frames(0.2) if f[0] != m.ROLE_RESULT]
+        taker.send(lc.fn, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0), session=sid)
+        pushed = [f for f in taker.frames(0.5) if f[0] in (m.ROLE_DATA, m.ROLE_EVENT)]
+        assert pushed and struct.unpack_from("<H", pushed[0], 3)[0] == 0      # from seq 0: the new subscription's own
+        taker.send(m.CORE_FN, m.OP_END, session=sid)
+        taker.frames(0.2)
+        for x in (watcher, taker):
+            x.sock.close()
+    finally:
+        proc.stdin.close()
+        proc.wait(5)
+
+
+@pytest.mark.parametrize("named, txt", [("FAFE00000003", "fafe00000003"), ("fafe00000003", "FAFE00000003")])
+def test_a_tcp_probe_named_by_unit_id_is_matched_without_letter_case(monkeypatch, named, txt):
+    """transports §3 TCP: a probe named by unit_id may be chosen by its TXT unit_id and is used when describe's unit_id
+    is the one named - compared as for a named USB probe, without letter case (TXT, describe and the name)."""
+    import re
+    import subprocess
+    from oep_client import discovery
+    proc = subprocess.Popen([sys.executable, "-m", "oep_client.virtual_bench_serve", "--tcp", "0", "--framing", "length",
+                             "--profile", "esp32-v003"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    port = int(re.search(r"PORT (\d+)", proc.stdout.readline()).group(1))
+    try:
+        monkeypatch.setattr(discovery, "browse", lambda timeout=2.0, engine="auto":
+                            [discovery.Found("OEP x", txt, "oep-x.local.", port, ["127.0.0.1"])])
+        hst = link.open_host(f"tcp:{named}", keep_session=False)          # describe says fafe00000003
+        try:
+            assert hst.limits is not None and hst.link.transport == "tcp"
+        finally:
+            hst.link.close()
+    finally:
+        proc.stdin.close()
+        proc.wait(5)

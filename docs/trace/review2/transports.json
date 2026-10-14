@@ -1,0 +1,237 @@
+{
+ "reviewed_commit": "677b6bb",
+ "units": {
+  "transports:1:1": {
+   "verdict": "ok",
+   "reason": "checked again: excluded rightly: header row of the framing table (column names only)"
+  },
+  "transports:1:2": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_a_serial_frame_is_message_crc16_le_cobs_between_zeros_and_empty_frames_are_skipped asserts the bench answer is 0x00 <COBS(msg|CRC16 LE)> 0x00; test_link_serial asserts the host request framed by 0x00 on both sides"
+  },
+  "transports:1:3": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_length_frames_skip_length_0_and_need_no_boundaries_from_the_reads asserts length(u16) message parsing with length 0 skipped; usb bulk conformance (CORE-USB-ZERO) checks the bench"
+  },
+  "transports:1:4": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_hid_reports_carry_counted_bytes_skip_count_0_and_ignore_any_padding asserts count(u16)+bytes+padding reports joined into the length stream and written as fixed-size reports"
+  },
+  "transports:1:5": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_hid_reports_carry_counted_bytes... reads one frame split over two reports and writes one byte stream in reports"
+  },
+  "transports:1:6": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_hid_reports_carry_counted_bytes... asserts the counted bytes of reports in order form the length frame (corr 5)"
+  },
+  "transports:1:7": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_hid_reports_carry_counted_bytes... puts a count-0 report (padding 0xee) between the halves and the frame still parses"
+  },
+  "transports:1:8": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_hid_reports_carry_counted_bytes... asserts the sender pads with 0 and the receiver ignores 0xff/0x55 padding; checker mutant [padding]"
+  },
+  "transports:1:9": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_hid_reports_keep_the_declared_report_id_and_drop_another asserts the ID leads written reports and a report of another ID is dropped"
+  },
+  "transports:1:10": {
+   "verdict": "ok",
+   "reason": "checked again: fixed: the named test only showed the drop (a later frame came after a second gap); added test_trace_transports::test_after_a_gap_the_probe_reads_the_next_byte_as_a_length[hid] asserting a whole frame right after the 200 ms gap is answered"
+  },
+  "transports:1:11": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_hid_count_over_the_report_breaks_the_stream_until_a_gap_at_the_probe asserts the over-count report and the following frame are dropped until 200 ms pass, then frame 2 is answered"
+  },
+  "transports:1:12": {
+   "verdict": "fixed",
+   "reason": "missing: 'the host does not omit the leading 0x00 either' was not asserted by the named tests (they check the probe's answers and the codec). Named tests/test_link_serial.py::test_answers_to_other_requests_are_read_past_without_a_resend (the host's request starts and ends with 0x00)"
+  },
+  "transports:1:13": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_the_host_reads_the_span_before_the_first_zero_as_a_candidate asserts the span before the first 0x00 is decoded and bad CRC / other role / other corr candidates are dropped"
+  },
+  "transports:1:14": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_the_host_ends_a_whole_packet_bulk_write_with_a_zero_length_packet asserts writes [64,0,63,128,0]; ..._probe_ends_a_whole_packet_bulk_answer... asserts the bench ZLP / short last packet"
+  },
+  "transports:1:15": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_the_probe_drops_a_frame_over_max_frame_and_what_follows_until_a_gap asserts no answer for the frame and input until a 200 ms gap; test_c05_c07 asserts TCP closes; USB checker mutant [accept_oversize]"
+  },
+  "transports:1:16": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_the_framing_follows_the_kind_of_transport_not_the_vid_pid asserts cobs for a tty, length for tcp and usb of any VID:PID"
+  },
+  "transports:1:17": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_the_virtual_bench_listens_on_the_local_host_unless_told asserts the TCP listener defaults to 127.0.0.1; several hosts share one lock via the one endpoint (tcp_connections test)"
+  },
+  "transports:1:18": {
+   "verdict": "ok",
+   "reason": "checked again: test_conformance_tcp_peers::test_virtual_core_passes_all_tcp_peer_contracts and test_virtual_core tcp run the probe checks against the self-answering TCP endpoint and require them to pass"
+  },
+  "transports:1:19": {
+   "verdict": "ok",
+   "reason": "checked again: test_conformance_tcp_peers / test_virtual_core tcp: the self-answering endpoint passes discovery, transport declaration, session, resend and resource checks in full"
+  },
+  "transports:1:20": {
+   "verdict": "ok",
+   "reason": "checked again: test_virtual_bench_serve_reboot::test_lose_closes_the_connection_and_its_streams asserts lost line -> no_resource; reboot test asserts a new boot_id; test_spec_283e5b5 asserts a client close keeps the session"
+  },
+  "transports:1:21": {
+   "verdict": "ok",
+   "reason": "checked again: test_c05_c07 asserts describe lists (index, kind 6, 0xFF) and confirm names index 4; tcp_connections tests assert per-connection notifications and the connection limit; tcp peer checker asserts per-connection routing/partial/oversized"
+  },
+  "transports:2:1": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_answers_on_one_transport_keep_the_order_of_the_requests asserts answers [5,3,9]; ..._broken_framing_closes... asserts the resolved request is not sent again"
+  },
+  "transports:2:2": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_length_frames_skip_length_0_and_need_no_boundaries_from_the_reads reads frames one byte per read and two per buffer; bench CORE-*-SPLIT/COALESCE"
+  },
+  "transports:2:3": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_the_host_writes_frames_whole_in_one_write asserts a batch of frames goes in one write (cobs and length)"
+  },
+  "transports:2:4": {
+   "verdict": "ok",
+   "reason": "checked again: fixed: serial/bulk/HID drop on a 200 ms gap was asserted (and TCP reads on, test_c07); added test_trace_transports::test_after_a_gap_the_probe_reads_the_next_byte_as_a_length[bulk/hid] so the restart of reading itself is asserted on vendor bulk / HID"
+  },
+  "transports:3:1": {
+   "verdict": "ok",
+   "reason": "checked again: test_virtual_bench_serve_tcp_connections::test_two_clients_at_once_share_one_lock asserts Locked from the other connection; notifications test asserts data only on the subscriber connection; peer checker mutants"
+  },
+  "transports:3:2": {
+   "verdict": "fixed",
+   "reason": "missing: 'what was to go to the closed transport is dropped; a request carried out completes, one not yet run may be dropped; the order state is not rolled back' was unchecked. Added test_a_closed_route_drops_what_it_had_and_rolls_nothing_back (close_route: the waiting request never runs, the done one answers from the record elsewhere, corr behind result_lost, lock kept) and test_notifications_for_a_closed_connection_are_dropped_and_not_carried_to_a_new_one (real TCP serving)"
+  },
+  "transports:3:3": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_the_probe_does_not_check_which_transport_a_sessions_request_came_on asserts a session request on transport 1 after open on 0 succeeds, session 0 on transport 2"
+  },
+  "transports:3:4": {
+   "verdict": "ok",
+   "reason": "checked again: test_hid_stream::test_open_usb_host_falls_back_from_vendor_to_hid asserts tried == [vendor, hid]; test_usb_identity asserts vendor first of three ways (CDC not supported for auto-open, allowed)"
+  },
+  "transports:3:5": {
+   "verdict": "ok",
+   "reason": "checked again: test_usb_identity::test_only_the_project_vid_pid_identifies_a_probe asserts only 1209:4F45 is identified; test_find_usb_matches_the_serial_alone asserts iProduct is not used"
+  },
+  "transports:3:6": {
+   "verdict": "ok",
+   "reason": "checked again: fixed: serial match case-insensitivity and describe mismatch -> closed were asserted, describe comparison case was not; added test_trace_transports::test_a_named_unit_id_is_compared_without_letter_case (USB:30EDA0E3B001 vs describe 30eda0e3b001 is used)"
+  },
+  "transports:3:7": {
+   "verdict": "ok",
+   "reason": "checked again: test_usb_identity::test_project_serial_ports_lists_the_project_vid_pid_only and test_a_named_vid_pid_has_no_cdc_fallback_and_no_listing assert other devices/ports are not opened without being named"
+  },
+  "transports:3:8": {
+   "verdict": "ok",
+   "reason": "checked again: fixed: confirm-only and close-on-no-valid-answer were asserted, the 2000 ms + transfer wait was not; added test_trace_transports::test_the_probing_confirm_waits_core_quick_op_max_ms_and_host_wait_add_ms asserting timeout 2.0 + transfer_s with one resend during probing"
+  },
+  "transports:3:9": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_the_host_takes_the_vendor_interface_by_class_subclass_protocol_alone asserts only the 0xFF/0x4F/0x45 interface is taken; test_hid_stream asserts only usage page 0xFF4F usage 0x45 is OEP HID"
+  },
+  "transports:3:10": {
+   "verdict": "ok",
+   "reason": "checked again: test_usb_identity::test_a_bare_usb_target_with_one_probe_of_all_three_ways_opens_vendor asserts vendor opened and CDC beside vendor/HID not opened; cdc_only test asserts a CDC-only probe uses its CDC"
+  },
+  "transports:3:11": {
+   "verdict": "ok",
+   "reason": "checked again: test_usb_identity::test_find_usb_matches_the_serial_alone / test_usb_unit_id_matches_the_serial_and_checks_describe assert the host finds the probe by USB serial = unit_id and checks describe (probe descriptor side is hardware)"
+  },
+  "transports:3:12": {
+   "verdict": "fixed",
+   "reason": "missing: for TCP 'compared as for a named probe' (no letter case) was unchecked - only the USB case was. Added test_a_tcp_probe_named_by_unit_id_is_matched_without_letter_case[FAFE00000003-fafe00000003 / fafe00000003-FAFE00000003]: tcp:<unit_id> opens the bench whose TXT and describe differ in case from the name"
+  },
+  "transports:3:13": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_max_frame_binds_the_host_and_is_64_until_a_confirm_answer asserts the host refuses 65 before / 1025 after confirm; test_the_probe_sends_nothing_over_max_frame asserts len <= 64"
+  },
+  "transports:3:14": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_max_frame_binds_the_host... asserts 64-byte messages taken before confirm and the host limit 64; test_the_host_reads_a_65535_byte_message"
+  },
+  "transports:3:15": {
+   "verdict": "ok",
+   "reason": "checked again: fixed: only the serial port was opened exclusively; the client opened HID (hidapi) shared - added an flock on the hidraw node in hid_stream._open_hidapi (HidBusy, no libusb takeover) and test_trace_transports::test_the_hid_is_opened_exclusively"
+  },
+  "transports:3:16": {
+   "verdict": "ok",
+   "reason": "checked again: test_conformance_usb::test_current_virtual_core_passes_usb_contracts[hid-*] runs CORE-HID-SET-REPORT on the bench model; mutant [ignore_set_report] fails"
+  },
+  "transports:3:17": {
+   "verdict": "ok",
+   "reason": "checked again: excluded rightly: a USB device descriptor (MS OS 2.0 compatible ID) of the probe hardware; no USB device is modelled"
+  },
+  "transports:4:1": {
+   "verdict": "ok",
+   "reason": "checked again: test_c09_a_serial_port_opens_8n1_without_flow_control_and_dtr_rts_asserted asserts 115200 8N1 no flow control; test_trace asserts set_baud changes only the rate"
+  },
+  "transports:4:2": {
+   "verdict": "ok",
+   "reason": "checked again: fixed: the retry/give-up was asserted, the host-chosen bound was not; added test_trace_transports::test_a_host_that_may_have_raised_the_speed_sets_its_own_limit_for_the_boot_speed asserting the confirm window grows with the link wait beyond port_speed_idle_ms + host_wait_add_ms"
+  },
+  "transports:4:3": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_a_usb_serial_port_takes_any_line_coding asserts confirm works on the USB CDC port at 9600 while a UART bridge at 9600 does not match"
+  },
+  "transports:4:4": {
+   "verdict": "ok",
+   "reason": "checked again: test_c09 asserts the host keeps DTR and RTS asserted on open; probe side: the bench has no control lines to depend on (not modelled)"
+  },
+  "transports:4:5": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_the_probe_takes_only_candidates_between_zeros_and_the_closing_zero_opens_the_next asserts raw bytes, bad CRC, undecodable dropped and shared 0x00 -> answers [1,2,3]"
+  },
+  "transports:4:6": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_answers_and_notifications_go_as_whole_frames_one_after_another asserts results and pushes are whole COBS frames in order"
+  },
+  "transports:5:1": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_on_tcp_broken_framing_closes_and_opens_the_connection_and_confirms_there asserts old.closed and confirm on the new connection; pause/other-corr tests assert no resync"
+  },
+  "transports:5:2": {
+   "verdict": "ok",
+   "reason": "checked again: fixed: discard-until-quiet, the wait past probe_frame_gap_ms and own-corr confirm were asserted; \"not quiet -> close and reopen\" was neither implemented (ConnectionError) nor tested - SerialLink.resync now reopens once via reopener; tests ..._never_goes_quiet_is_closed_and_opened_again[True/False]"
+  },
+  "transports:5:3": {
+   "verdict": "ok",
+   "reason": "checked again: test_link_serial::test_a_broken_answer_on_a_held_port_is_resent_at_once_with_the_same_corr asserts the broken candidate dropped and the request resent (core §5.1); reading continues at the next 0x00"
+  },
+  "transports:5:4": {
+   "verdict": "ok",
+   "reason": "checked again: test_trace_transports::test_on_tcp_broken_framing_closes... asserts confirm on the new connection with boot_id seen and only the unresolved request once; test_spec_283e5b5 asserts the session stays"
+  },
+  "transports:7:1": {
+   "verdict": "ok",
+   "reason": "checked again: excluded rightly: reference-list row naming an outside specification; its rules are traced where used"
+  },
+  "transports:7:2": {
+   "verdict": "ok",
+   "reason": "checked again: excluded rightly: reference-list row naming an outside specification; its rules are traced where used"
+  },
+  "transports:7:3": {
+   "verdict": "ok",
+   "reason": "checked again: excluded rightly: reference-list row naming an outside specification; its rules are traced where used"
+  },
+  "transports:7:4": {
+   "verdict": "ok",
+   "reason": "checked again: excluded rightly: reference-list row naming an outside specification; its rules are traced where used"
+  },
+  "transports:7:5": {
+   "verdict": "ok",
+   "reason": "checked again: excluded rightly: reference-list row naming an outside specification; its rules are traced where used"
+  },
+  "transports:7:6": {
+   "verdict": "ok",
+   "reason": "checked again: excluded rightly: reference-list row naming an outside specification; its rules are traced where used"
+  }
+ }
+}

@@ -2570,3 +2570,358 @@ def test_a_subscribe_again_drops_the_old_subscriptions_unsent_notifications_on_t
     port.feed(cobs.frame(m.Request(hst.next_corr(hst.session), lc.fn, m.OP_UNSUBSCRIBE, b"", hst.session).pack()))
     got = [cobs.unframe(c) for c in port.output(1 << 20).split(b"\x00") if c]
     assert [f[0] for f in got] == [m.ROLE_RESULT]
+
+
+# ---- second review 2026-10-15 (core §1-§6): rules the trace above checked only in part -----------------------------
+
+def test_the_booleans_the_probe_sends_are_0_or_1_and_the_host_sends_force_0_or_1(ep):
+    """core §2.1: a sender puts 0 or 1 in a boolean u8 - the probe's lock_state locked and describe's more (0 / 1 only),
+    the host's open force (0 without force, 1 with)."""
+    w = Wire(ep)
+    assert w.raw(0, m.OP_LOCK_STATE, sid=0).payload[0] == 0
+    assert Wire(ep, 0x33).open(tail=m.tlv(OWNER, b"x")).succeeded
+    assert w.raw(0, m.OP_LOCK_STATE, sid=0).payload[0] == 1
+    first = 0
+    while True:
+        more = w.ok(0, m.OP_DESCRIBE, struct.pack("<HH", 0, first), sid=0)
+        assert more[0] in (0, 1)
+        if not more[0]:
+            break
+        first += len(m.split_tlvs(more[1:]))
+    for force, byte in ((False, 0), (True, 1)):
+        hst = h.Host(scripted(completed(struct.pack("<II", 3000, 1))), rng=random.Random(1))
+        hst.revision, hst._describes[0] = 1, [(CORE.tlv["describe"]["max_op_ms"], struct.pack("<I", 1000))]
+        hst.open(force=force)
+        assert hst.send.sent[-1][m.REQUEST_HEADER + 4] == byte
+
+
+def test_list_names_are_shown_with_control_characters_replaced():
+    """core §2.1: every answer text the host shows is cleaned first - a list entry's name too (the capability dump
+    prints it): C0 controls, 0x7F and invalid UTF-8 replaced. (Before: the name was shown as the probe sent it.)"""
+    from oep_client import dump
+    bad = b"io.x\x1b[2J\x07\x7f\xff"
+    payload = struct.pack("<HB", 1, 1) + struct.pack("<HHBB", 5, 0, 1, len(bad)) + bad
+    _, (entry,) = catalog.unpack_list_result(payload)
+    assert entry.name == "io.x�[2J���" and entry.fn == 5
+    hst = h.Host(scripted(completed(payload)))
+    hst.revision = 1
+    (got,) = core.list_entries(hst)
+    assert not any(ord(c) < 0x20 or ord(c) == 0x7F for c in got.name)
+    caps = dump.Capabilities(1, 64, requests={"list": 1, "describe": 1})
+    caps.offers.append(dump.Offer(got, catalog.decode_description(b"")))
+    assert "\x1b" not in dump.to_text(caps) and "\x07" not in dump.to_text(caps)
+
+
+def test_a_tlv_numbered_0_breaks_an_answer_with_or_without_bit_7():
+    """core §2.2: TLV number 0 in an answer is a broken TLV - 0x00 as well as 0x80 - the host never takes it for a
+    value."""
+    for zero in (b"\x00\x00\x00", b"\x80\x00\x00", b"\x00\x01\x00x"):
+        with pytest.raises(m.ProtocolError):
+            m.Tail.parse(zero)
+        with pytest.raises(m.ProtocolError):
+            h.Host(scripted(completed(struct.pack("<IQ", 1, 2) + zero))).clock()
+
+
+def test_the_host_reads_data_and_events_with_tlvs_after_their_fixed_part():
+    """core §2.3, §10.2: a data frame or an event is its fixed part then TLVs, as an answer - the host reads the same
+    data and the same event when a TLV it does not know follows the fixed part (the data is not taken longer, the event
+    is not refused)."""
+    ep, hst, lc, clock = streaming()
+    clock.t += 3
+    data = frames(ep, m.ROLE_DATA)
+    lc.stop()
+    stopped = [f for f in ep.pushes() if f[0] == m.ROLE_EVENT and f[5] == cap.EVENT_STOPPED]
+    assert data and stopped
+    extra = m.tlv(0x7E, b"later")
+    plain = lc.stream(serial_link(*data), seconds=0.01)
+    tailed = lc.stream(serial_link(*[d + extra for d in data]), seconds=0.01)
+    assert bytes(tailed.data) == bytes(plain.data) and tailed.seq_lost == plain.seq_lost == 0
+    want = cap.unpack_event(stopped[0])
+    got = cap.unpack_event(stopped[0] + extra)
+    assert (got.kind, got.seq, got.generation, got.reason) == (want.kind, want.seq, want.generation, want.reason)
+
+
+def test_one_corr_counter_for_every_session_id_never_reuses_a_corr():
+    """core §4.1: on one transport no corr is used again while a request may be unresolved or its answer still come,
+    whatever its session_id - the host's requests (session 0 and the session's, interleaved) take one cyclic counter:
+    each corr is the last + 1 (65535 then 1), never 0, so none repeats within the 65535 before it."""
+    ep = build()
+    sent = []
+    hst = h.Host(lambda b: sent.append(m.Request.unpack(b)) or ep.handle(b, 0), rng=random.Random(8))
+    hst._corr = 65530
+    hst.open()
+    for _ in range(4):
+        hst.lock_state()
+        hst.keepalive()
+        hst.clock()
+    corrs = [r.corr for r in sent]
+    assert {r.session for r in sent} == {0, hst.session}
+    assert 0 not in corrs and all(b == a % 0xFFFF + 1 for a, b in zip(corrs, corrs[1:]))
+    assert len(set(corrs)) == len(corrs)
+
+
+def test_a_dropped_copy_shares_the_one_answer_of_its_request():
+    """core §4.2, §4.4: one answer per request - a copy of a request not yet answered, dropped on the same transport,
+    gets no answer of its own: the one answer of the request stands for both."""
+    ep = build()
+    w = Wire(ep)
+    w.open()
+    data = w.bytes(0, m.OP_KEEPALIVE)
+    assert ep.receive(data) == "queued" and ep.receive(data) == "coalesced"
+    answer = ep.process()
+    assert m.Result.unpack(answer).corr == m.Request.unpack(data).corr
+    assert [e[1] for e in ep.routes[0]] == [answer]                           # one answer waits to go, not two
+    ep.sent()
+    assert not ep.credits()
+
+
+def test_no_resource_the_host_makes_the_resource_again():
+    """core §4.3 no_resource: the probe answers it for a number it does not know (a connection gone with a restart); the
+    host takes it as NoResource - not a failure of the op - and makes the resource again, which then works."""
+    ep = build(vb.p4_bench)
+    hst = host_on(ep)
+    hst.open()
+    attach_body = struct.pack("<BHHI", 1, 2, 3, 4_000_000)
+    conn = struct.unpack_from("<I", hst.call(1, RVSWD.op["attach"], attach_body).payload)[0]
+    ep.reboot()
+    hst.open()                                                                # a new session after the restart
+    with pytest.raises(h.NoResource):
+        hst.call(2, RV.op["halt"], struct.pack("<I", conn))
+    again = struct.unpack_from("<I", hst.call(1, RVSWD.op["attach"], attach_body).payload)[0]
+    assert again in ep.conns
+    assert hst.call(2, RV.op["halt"], struct.pack("<I", again)).succeeded
+
+
+def test_a_record_half_the_space_old_is_not_used(ep):
+    """core §5.1: a byte record half the space or more behind the last corr is dropped and never matched - the very
+    same bytes again are result_lost, not the recorded answer, and nothing runs."""
+    w = Wire(ep)
+    w.open()
+    data = w.bytes(0, m.OP_KEEPALIVE, corr=100)
+    first = ep.handle(data, 0)
+    assert ep.handle(data, 0) == first                                        # recorded
+    assert w.raw(0, m.OP_KEEPALIVE, corr=100 + 0x4000).succeeded
+    assert w.raw(0, m.OP_KEEPALIVE, corr=100 + 0x8000).succeeded             # the record of 100 is half the space old
+    rejected(m.Result.unpack(ep.handle(data, 0)), m.RESULT_LOST)
+
+
+def test_a_recorded_answer_changes_neither_the_lease_nor_where_notifications_go():
+    """core §5.1: the recorded answer to a resend runs nothing again and moves neither the lease nor the notifications'
+    transport - a subscribe sent again (here from another transport, the table being the probe's one) keeps both."""
+    ep, hst, lc, clock = streaming()
+    sub = m.Request(hst.next_corr(hst.session), lc.fn, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0), hst.session).pack()
+    first = ep.handle(sub, 0)
+    assert m.Result.unpack(first).succeeded and ep.push_link[lc.fn] == 0
+    expires, runs = ep.expires_ms, ep.executions
+    clock.t += 700
+    assert ep.handle(sub, 2, link="tcp-1") == first
+    assert ep.push_link[lc.fn] == 0 and ep.expires_ms == expires and ep.executions == runs
+
+
+def test_a_refused_open_of_another_id_keeps_the_resend_state(ep):
+    """core §5.1, §6.4: only a new id's open that succeeds replaces the resend state - another id's open refused locked
+    leaves it: the holder's request sent again still gets its recorded answer."""
+    a, b = Wire(ep, 0x10), Wire(ep, 0x20)
+    a.open()
+    data = a.bytes(0, m.OP_KEEPALIVE)
+    first = ep.handle(data, 0)
+    rejected(b.open(), m.LOCKED)
+    assert ep.handle(data, 0) == first and ep_holder(ep) == 0x10
+    rejected(a.raw(0, m.OP_KEEPALIVE, corr=0xF000), m.RESULT_LOST)            # the order state too
+
+
+def test_keepalive_changes_nothing_but_the_lease():
+    """core §6.4: keepalive only extends the lease - the plan, the pins' state, the subscriptions and where they send,
+    the connections and the owner are all as before."""
+    ep = build()
+    w = Wire(ep)
+    w.open(2000, tail=m.tlv(OWNER, b"k"))
+    conn = attach(w, (2, 54))
+    plan = ep.fns[PLAN.name]
+    w.ok(plan, PLAN.op["plan_apply"], assign(4, 1, 20))
+    w.ok(4, GPIO.op["set"], b"\x01" + struct.pack("<HB", 20, 4))
+    w.ok(7, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0))
+
+    def snapshot():
+        return (dict(ep.plan) if isinstance(ep.plan, dict) else list(ep.plan), [ep.pin_state(c) for c in range(55)],
+                dict(ep.subscribed), dict(ep.push_link), sorted(ep.conns), w.lock_state()[2], ep.holder)
+    ep.now.t = 1500
+    before = snapshot()
+    assert w.raw(0, m.OP_KEEPALIVE).succeeded
+    assert snapshot() == before and conn in ep.conns
+    assert w.lock_state()[:2] == (1, 2000)
+
+
+# ---- second review of §7-§13 (docs/trace/review2/core.7-13.json) ----------------------------------------------------
+
+def test_instances_are_unique_u16s_with_gaps_and_not_the_fn_order():
+    """core §7.2: instance is a u16 unique within its (name, revision) - 0 may be used, gaps are allowed, it is not
+    computed from the fn order or the list position: the bench and both checkers take instances 0 and 7 given against
+    the fn order, and refuse an instance repeated within one (name, revision)."""
+    import test_conformance_interfaces as tci
+    gpio = "oep.fixture.gpio"
+    sparse = vb.VirtualProbe("x", 256, [vb.Offered(0, 0, vb.CORE_NAME), vb.Offered(1, 7, gpio), vb.Offered(2, 0, gpio),
+                                        vb.Offered(3, 7, gpio, revision=2)])
+    assert sparse.instance_errors() == []
+    twice = vb.VirtualProbe("x", 256, [vb.Offered(0, 0, vb.CORE_NAME), vb.Offered(1, 3, gpio), vb.Offered(2, 3, gpio)])
+    assert twice.instance_errors()
+    for instances, ok in (({9: 0, 2: 7}, True), ({9: 4, 2: 4}, False)):
+        model, c, runner = tci.setup()                                     # fns 9 and 2 share (name, revision 1)
+        listing = model.extension.list_page
+
+        def page(first, limit, listing=listing, instances=instances):
+            out, at = bytearray(listing(first, limit)), 3
+            for _ in range(out[2]):
+                fn = struct.unpack_from("<H", out, at)[0]
+                if fn in instances:
+                    struct.pack_into("<H", out, at + 2, instances[fn])
+                at += 6 + out[at + 5]
+            return bytes(out)
+        model.extension.list_page = page
+        report = runner.run()
+        failed = [row["id"] for row in report["checks"] if row["status"] != "passed"]
+        entries = c.list_snapshot()
+        if ok:
+            assert report["status"] == "passed" and not failed, failed
+            for e in entries:
+                c.interface(e, entries)                                     # conformance.Checks' own check
+        else:
+            assert failed and all(i.startswith("IF-INSTANCE-") for i in failed), failed
+            with pytest.raises(Exception, match="duplicate instance"):
+                for e in entries:
+                    c.interface(e, entries)
+
+
+def test_the_host_pages_describe_until_more_0_and_list_until_total():
+    """core §7.3, §7.2: the host asks describe again with first moved by the TLVs it got while more = 1 and stops at
+    more = 0; list has no more - the host stops once it has total entries."""
+    def describe_page(data):
+        first = struct.unpack_from("<H", data, m.REQUEST_HEADER + 2)[0]
+        return completed(b"\x01" + m.tlv(0x40, b"a") + m.tlv(0x41, b"b")) if first == 0 else \
+            completed(b"\x00" + m.tlv(0x42, b"c"))
+    hst = h.Host(scripted(describe_page, describe_page))
+    assert [t for t, _ in core.describe(hst, 5)] == [0x40, 0x41, 0x42]
+    firsts = [struct.unpack_from("<HH", d, m.REQUEST_HEADER) for d in hst.send.sent]
+    assert firsts == [(5, 0), (5, 2)]                                       # first += the TLVs received; then stop
+    one = lambda fn, name: catalog.pack_entry(catalog.ListEntry(fn, 0, 1, name))          # noqa: E731
+    hst = h.Host(scripted(completed(struct.pack("<HB", 3, 2) + one(1, "a.b") + one(2, "a.c")),
+                          completed(struct.pack("<HB", 3, 1) + one(3, "a.d"))))
+    assert [e.fn for e in core.list_entries(hst)] == [1, 2, 3]
+    assert [struct.unpack_from("<H", d, m.REQUEST_HEADER)[0] for d in hst.send.sent] == [0, 2]   # no third request
+
+
+def test_a_released_pin_returns_to_its_configured_idle_whichever_way():
+    """core §8, §9: a pin released by plan_release, end, lease expiry or force goes back to the idle state its setting
+    defines (here a pull-up), not to Hi-Z and not left as the interface drove it."""
+    for way in ("release", "end", "expiry", "force"):
+        ep = build()
+        w = Wire(ep)
+        w.open(1000)
+        assert cfg_set(w, ep, idle_item(20, CFG.enum["idle_mode"]["pull_up"])).succeeded
+        assert ep.pin_state(20) == "idle pull-up"
+        plan = ep.fns[PLAN.name]
+        w.ok(plan, PLAN.op["plan_apply"], assign(4, 1, 20))
+        w.ok(4, GPIO.op["set"], b"\x01" + struct.pack("<HB", 20, 4))
+        assert ep.pin_state(20) == "gpio 4"
+        if way == "release":
+            w.ok(plan, PLAN.op["plan_release"], b"\x00")
+        elif way == "end":
+            w.ok(0, m.OP_END)
+        elif way == "expiry":
+            ep.now.t = 5000
+            Wire(ep).raw(0, m.OP_CLOCK, sid=0)
+        else:
+            Wire(ep, 0x99).open(force=1)
+        assert ep.pin_state(20) == "idle pull-up", way
+
+
+def test_at_boot_the_saved_idles_are_applied_and_a_disabled_channel_is_left_alone():
+    """core §8: at boot, before the first request, every channel but the probe's own and those the settings forbid is
+    in its idle state - the saved idle (output high) where one is set, Hi-Z elsewhere; a disabled channel stays as the
+    reset left it (never parked), the probe's own are not touched."""
+    ep = build()
+    w = Wire(ep)
+    w.open()
+    disable = m.tlv(CFG.tlv["item"]["disable"], struct.pack("<H", 31))
+    assert cfg_set(w, ep, idle_item(30, CFG.enum["idle_mode"]["output_high"]), disable).succeeded
+    w.ok(ep.fns[CFG.name], CFG.op["save"])
+    ep.reboot()
+    assert ep.pin_state(30) == "idle output-high" and ep.pin_state(31) == "reset"
+    assert 31 not in ep.parked and not set(ep.parked) & ep.own_channels
+    for ch in set(range(ep.channels)) - ep.own_channels - {30, 31}:
+        assert ep.pin_state(ch) == "idle hi-z", ch
+
+
+def test_a_take_clashing_with_a_runtime_resource_or_a_setting_changes_nothing():
+    """core §8.1: whatever takes pins checks every hold first - a connection's pins against the plan's and the plan's
+    against a live connection's are unavailable cause 1 (pin_in_use) with the channel, a disabled channel cause 5; the
+    refused request changes nothing (no connection, no assignment, every pin's state as it was)."""
+    ep = build(vb.rp2350_pins)
+    w = Wire(ep)
+    w.open()
+    plan = ep.fns[PLAN.name]
+    state = lambda: ([ep.pin_state(c) for c in range(ep.channels)], sorted(ep.plan), sorted(ep.conns))   # noqa: E731
+    w.ok(plan, PLAN.op["plan_apply"], assign(4, 1, 0))
+    before = state()
+    r = rejected(w.raw(1, RVSWD.op["attach"], struct.pack("<BHHI", 1, 0, 1, 4_000_000)), m.UNAVAILABLE)
+    assert (h.Unavailable(r).cause, h.Unavailable(r).channels) == ("pin_in_use", [0]) and state() == before
+    w.ok(plan, PLAN.op["plan_release"], b"\x00")
+    attach(w, (0, 1))
+    before = state()
+    r = rejected(w.raw(plan, PLAN.op["plan_apply"], assign(4, 1, 1)), m.UNAVAILABLE)
+    assert (h.Unavailable(r).cause, h.Unavailable(r).channels) == ("pin_in_use", [1]) and state() == before
+    ep = build()
+    w = Wire(ep)
+    w.open()
+    assert cfg_set(w, ep, m.tlv(CFG.tlv["item"]["disable"], struct.pack("<H", 21))).succeeded
+    before = ([ep.pin_state(c) for c in range(55)], sorted(ep.plan))
+    r = rejected(w.raw(ep.fns[PLAN.name], PLAN.op["plan_apply"], assign(4, 1, 20) + assign(4, 1, 21)), m.UNAVAILABLE)
+    assert h.Unavailable(r).cause == "held_by_settings" and ([ep.pin_state(c) for c in range(55)], sorted(ep.plan)) == before
+
+
+def test_a_refused_force_open_releases_nothing_and_keeps_the_resend_state():
+    """core §9: another id's force open releases the old session's resources and replaces the resend state only when
+    it succeeds - one refused (an owner past 32 bytes: malformed) leaves the plan, the pins, the subscription, the lock
+    and the record as they were."""
+    ep = build()
+    a, b = Wire(ep, 0x10), Wire(ep, 0x20)
+    a.open()
+    a.ok(ep.fns[PLAN.name], PLAN.op["plan_apply"], assign(4, 1, 20))
+    a.ok(4, GPIO.op["set"], b"\x01" + struct.pack("<HB", 20, 4))
+    a.ok(7, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0))
+    data = a.bytes(0, m.OP_KEEPALIVE)
+    first = ep.handle(data, 0)
+    rejected(b.open(force=1, tail=m.tlv(OWNER, b"x" * 33)), m.MALFORMED)
+    assert ep.holder == 0x10 and ep.plan and 7 in ep.subscribed and ep.pin_state(20) == "gpio 4"
+    assert ep.handle(data, 0) == first and ep.last == 0x10
+
+
+def test_a_resent_open_not_kept_is_result_lost_and_changes_nothing(ep):
+    """core §9: the same open sent again changes nothing - its recorded answer when it is kept, result_lost when the
+    record has no room for it; the lock, the lease and (on the full bench) the plan stay."""
+    w = Wire(ep)
+    o = w.bytes(0, m.OP_OPEN, struct.pack("<IB", 3000, 0))
+    assert m.Result.unpack(ep.handle(o, 0)).succeeded
+    full = not ep.probe.core_contract
+    if full:
+        w.ok(ep.fns[PLAN.name], PLAN.op["plan_apply"], assign(4, 1, 20))
+    ep.remember_max = 9                                                      # nothing kept from here on
+    o2 = w.bytes(0, m.OP_OPEN, struct.pack("<IB", 3000, 0))
+    assert m.Result.unpack(ep.handle(o2, 0)).succeeded
+    ep.now.t = 500
+    before = w.lock_state()
+    rejected(m.Result.unpack(ep.handle(o2, 0)), m.RESULT_LOST)
+    assert w.lock_state() == before and ep_holder(ep) == SID
+    if full:
+        assert ep.plan
+
+
+def test_event_bytes_are_not_counted_toward_min_bytes():
+    """core §10.3: events are never batched and their bytes do not count toward min_bytes - an event goes at once
+    while 750 bytes of data (min_bytes 1000) still wait, even though data and event together pass 1000."""
+    ep, hst, lc, clock = streaming(min_bytes=1000)
+    clock.t += 3                                                               # 750 bytes of data waiting
+    assert not frames(ep, m.ROLE_DATA) and ep.captures[lc.fn].unsent() == 750
+    ep._events(lc.fn, [bytes([0x7E]) + bytes(400)])
+    pushed = ep.pushes()
+    assert [f[0] for f in pushed] == [m.ROLE_EVENT] and ep.captures[lc.fn].unsent() == 750
