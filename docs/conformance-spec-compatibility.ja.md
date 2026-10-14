@@ -24,8 +24,8 @@ a09fa45のcoreでは、corr16は循環し、ownerの表示と再送記録は任�
 - cobs / headers / confirm / discovery / sessions / refusals / ops / ops_encoding / core_extensions /
   interface_profiles / logic_layout: 全ケース。ops.json の events と data（capture の出来事とデータフレーム）も含む。
 - interface_boundaries: batching / reception / serial_loss / storage / groups / fixtures の全ケース。
-- checks.json: COBS の CRC は全ケース。dmseq の CRC8 は端末側の枠の検査なので、このクライアントのものではない
-  （dmseq の検査器 `conformance_dmseq` が扱う）。
-- core_lifecycle（処理中の lease・経路の受付の契約モデル）と core_policy（任意の受付ハーネス。方針判定の
-  unavailable cause 7 は任意機能で、仮想ベンチは持たない）は、SPEC 自身の試験が独立したモデルに当てるベクトルで、
-  同期的に答える仮想ベンチにはそのまま当てない。
+- checks.json: 全ケース。dmseq の CRC-8 と DATA0 の語は、dmseq の検査器の参照実装と仮想ベンチの dmseq モデルに当てる。
+- core_lifecycle: 全シナリオ。仮想ベンチの経路ごとの受付（`Endpoint.receive` / `process` / `sent` /
+  `close_route`）に、再送記録 0 件で当てる。
+- core_policy: 全ケース。仮想ベンチの任意の受付方針（試験フック `Endpoint.policy`）に当てる。下流の応答は
+  ベクトルの仮の値なので、方針で断られないことだけを比べる。

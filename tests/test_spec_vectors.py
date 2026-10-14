@@ -90,9 +90,25 @@ def test_crc_check_values(case):
     assert case["algorithm"] == "crc16-ccitt-false" and cobs.crc16(hx(case["input_hex"])) == case["crc"]
 
 
-def test_only_the_dmseq_crc8_is_not_this_clients():
-    """The dmseq CRC-8 belongs to the probe and the target (target-console-dmseq): this client reads console bytes."""
-    assert {c["algorithm"] for c in load("checks.json")["cases"]} == {"crc16-ccitt-false", "crc8-dmseq"}
+@pytest.mark.parametrize("case", [c for c in load("checks.json")["cases"] if c["algorithm"] == "crc8-dmseq"],
+                         ids=lambda c: c["name"])
+def test_dmseq_crc8(case):
+    """target-console-dmseq CRC-8: the dmseq checker's reference and the virtual bench's dmseq model."""
+    from oep_client import conformance_dmseq, virtual_dmseq_model
+    data = hx(case["input_hex"])
+    assert conformance_dmseq.crc_reference(data) == virtual_dmseq_model.checksum(data) == case["crc"]
+
+
+@pytest.mark.parametrize("case", load("checks.json")["dmseq_words"], ids=lambda c: c["name"])
+def test_dmseq_words(case):
+    """target-console-dmseq byte order: DATA0 is byte0, the payload and the CRC-8 of them, little endian."""
+    from oep_client import conformance_dmseq
+    head = bytes([case["byte0"]]) + hx(case["payload_hex"])
+    assert conformance_dmseq.crc_reference(head) == case["crc"]
+    assert int.from_bytes((head + bytes([case["crc"]])).ljust(4, b"\0")[:4], "little") == case["data0"]
+    if not case["byte0"] & 0x80:                                       # a host answer: the checker builds the same word
+        b = case["byte0"]
+        assert conformance_dmseq.reply_word(b >> 5 & 1, b >> 4 & 1, hx(case["payload_hex"])) == case["data0"]
 
 
 @pytest.mark.parametrize("case", load("headers.json")["requests"], ids=lambda c: c["name"])
@@ -365,6 +381,8 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None) -> v
         elif name == "oep.fixture.capture-group":
             tracks = sorted(int(k) for k, v in fns.items() if v in ("oep.fixture.logic", "oep.fixture.analog"))
             o = virtual_bench.Offered(fn, 0, name, virtual_bench._group_decl(tracks))
+        elif name.startswith("io.example."):                          # an example fn: op 0x10, a lock-free read
+            o = virtual_bench.Offered(fn, 0, name, (catalog.ops_tlv({0x10}),), inner=(("reads", (0x10,)),))
         else:
             raise AssertionError(f"a vector names {name}: add it here")
         if ops and fn in ops:
@@ -1346,3 +1364,72 @@ def test_boundary_group_start_on_the_virtual_bench(row):
     assert ep.handle(m.Request(r.corr, r.fn, r.op, r.payload, hst.session).pack(), 0).hex() == row["answer_hex"]
     assert [ep.groups[12].generation] + [t.generation for t in tracks] == row["expected_generations"]
     assert [t.state for t in tracks] == row.get("expected_states", row["states"])
+
+
+LIFECYCLE = load("core_lifecycle.json")["scenarios"]
+
+
+@pytest.mark.parametrize("scenario", LIFECYCLE, ids=lambda c: c["name"])
+def test_core_lifecycle_on_the_virtual_bench(scenario):
+    """core §4.4 / §6.1 / §5.1 in steps on the bench's routes (core_lifecycle.json about: no replay byte cache, fn 3 an
+    example lock-free read): a copy of a request still waiting or being answered is dropped (one credit, one
+    execution); the owner's own processing does not count against its lease, an observer's does; a closed route drops
+    what it had not carried out and leaves the session; a queued heartbeat does not revive an expired owner."""
+    clock = type("Settable", (), {"t": 0, "__call__": lambda self: self.t})()
+    ep = endpoint.Endpoint(vector_probe({"3": "io.example.slow-query"}), clock, boot_id=EXAMPLE_BOOT_ID, remember_count=0)
+    for event in scenario["events"]:
+        action = event["action"]
+        if action == "receive":
+            assert ep.receive(hx(event["request_hex"]), event["route"]) == event["expect"], event
+        elif action == "process":
+            ms = event["duration_ms"]
+            out = m.Result.unpack(ep.process(event["route"], lambda: setattr(clock, "t", clock.t + ms)))
+            if "reason" in event:
+                assert out.resolution == m.REJECTED and out.detail == getattr(m, event["reason"].upper()), event
+            else:
+                assert out.resolution == m.COMPLETED, event
+        elif action == "sent":
+            ep.sent(event["route"])
+        elif action == "close":
+            ep.close_route(event["route"])
+        elif action == "advance":
+            clock.t += event["ms"]
+        else:                                                           # check
+            ep._lapse()
+            if "owner" in event:
+                assert (ep.holder or 0) == event["owner"], event
+            if "remaining_ms" in event:
+                assert (max(0, ep.expires_ms - clock.t) if ep.holder else 0) == event["remaining_ms"], event
+            if "executions" in event:
+                assert ep.executions == event["executions"], event
+            if "credits" in event:
+                assert {str(k): v for k, v in ep.credits().items()} == event["credits"], event
+
+
+POLICY = load("core_policy.json")["scenarios"]
+
+
+@pytest.mark.parametrize("case", POLICY, ids=lambda c: c["name"])
+def test_core_policy_on_the_virtual_bench(case):
+    """core §4.3 with an admission policy (optional; core_policy.json about: owner 0x12345678, last corr 12, 1000 ms of
+    lease left, fn 2 an example read): the header first, then the policy - unavailable cause 7 with nothing changed and
+    no remembered answer given out - and fn 0's confirm / list / describe / clock / lock_state never refused; an allowed
+    replay is the remembered answer. The downstream answers are the vectors' opaque sentinels: only "not refused" is
+    compared for them."""
+    clock = type("Settable", (), {"t": 0, "__call__": lambda self: self.t})()
+    ep = endpoint.Endpoint(vector_probe({"2": "io.example.query"}), clock, boot_id=EXAMPLE_BOOT_ID)
+    owner = 0x12345678
+    ep.holder = ep.last = owner
+    ep.lease_ms, ep.expires_ms, ep.newest_corr = 5000, 1000, 12
+    if "cache_response_hex" in case:
+        ep.resend[12] = (hx(case["request_hex"]), hx(case["cache_response_hex"]))
+    ep.policy = lambda req: case["allowed"]
+    before = (ep.holder, ep.last, ep.expires_ms, ep.newest_corr, dict(ep.resend), ep.executions)
+    out = ep.handle(hx(case["request_hex"]), 0)
+    if "downstream_response_hex" in case:
+        res = m.Result.unpack(out)                                      # the request too is a sentinel (confirm's)
+        assert not (res.resolution == m.REJECTED and res.detail == m.UNAVAILABLE)   # not refused by the policy
+    else:
+        assert out.hex() == case["expected_response_hex"]
+        assert (ep.holder, ep.last, ep.expires_ms, ep.newest_corr, dict(ep.resend), ep.executions) == before
+    assert b"secret" not in out or case["allowed"]

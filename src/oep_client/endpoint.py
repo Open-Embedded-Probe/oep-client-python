@@ -176,6 +176,8 @@ def unsupported_fixed(*tlvs: bytes) -> Reject:
 
 _UNA = reg.CORE.tlv["unavailable_payload"]
 UNAVAILABLE_CAUSE = reg.CORE.enum["unavailable_cause"]
+# fn 0's ops no admission policy refuses (core §4.3): confirm, list, describe, clock, lock_state
+PUBLIC_OPS = frozenset((m.CORE_FN, reg.CORE.op[k]) for k in ("confirm", "list", "describe", "clock", "lock_state"))
 
 
 def unavailable(cause: str | None = None, channel: int | None = None, extra: bytes = b"") -> Reject:
@@ -574,6 +576,12 @@ class Endpoint:
         self.window, self.max_inflight = window, max_inflight
         self.remember_max = remember_max
         self.remember_count = remember_count            # requests the replay record keeps (core §5.1: the probe's choice)
+        self.policy: Callable[[m.Request], bool] | None = None   # TEST HOOK: an admission policy (core §4.3, optional)
+        self.executions = 0                            # requests carried out (a completed answer made by an op)
+        self._processing: Callable[[], None] | None = None   # process(): the time the request takes, spent once
+        self.routes: dict[Hashable, list[list]] = {}   # route -> [request bytes, answer or None] (receive / process / sent)
+        self.reads: dict[int, set[int]] = {fn: set(dict(o.inner).get("reads", ())) for o in probe.offered
+                                           for fn in (o.fn,)}   # an fn's side-effect-free, lock-free read ops (stand-ins)
         self.names = {o.fn: o.name for o in probe.offered}
         self.decl = {o.fn: [m.split_tlvs(t)[0] for t in o.tlvs] for o in probe.offered}   # fn -> [(tag, value)]
         self.identity = {o.fn: (o.name, o.instance, o.revision) for o in probe.offered}   # what a saved item names
@@ -1137,6 +1145,10 @@ class Endpoint:
         header = self._header(req)                                 # core §4.3: the header, before the resend table
         if header is not None:
             return m.Result(req.corr, m.REJECTED, header).pack()
+        if self.policy is not None and (req.fn, req.op) not in PUBLIC_OPS and not self.policy(req):
+            # an admission policy (core §4.3, optional): after the header, before the resend table - nothing changes,
+            # no remembered answer is given out
+            return m.Result(req.corr, m.REJECTED, m.UNAVAILABLE, unavailable("policy_denied").payload).pack()
         remembered = self._resent(req, data)
         if remembered is not None:
             return remembered                                      # replayed: the lease does not restart (§6.1)
@@ -1144,6 +1156,12 @@ class Endpoint:
             res, detail, payload = self._dispatch(req)
         except Reject as r:
             res, detail, payload = m.REJECTED, r.reason, r.payload
+        finally:
+            if self._processing is not None:
+                advance, self._processing = self._processing, None
+                advance()                                          # the request's processing time (process())
+        if res == m.COMPLETED:
+            self.executions += 1
         if res == m.REJECTED and detail == m.UNSUPPORTED and not payload:
             payload = bytes([m.TAG_FIXED])                         # core §4.3: unsupported is always tag [TLV]
         if res != m.REJECTED and not self._closed_tail(req.fn, req.op) and self.revision >= 1:
@@ -1162,6 +1180,38 @@ class Endpoint:
         if transport not in self.serial_ports:
             self.after_answer()                                    # the answer is not on a port whose speed changes
         return out
+
+    # ---- one route's requests in steps: receive, process, sent (core §4.4) ---------------------------------------
+    def receive(self, data: bytes, route: Hashable = 0) -> str:
+        """A request arriving on `route`: "queued", or "coalesced" when the same bytes are still waiting or being
+        answered there - the copy is dropped unexamined, run never, counted in no window (core §4.4)."""
+        queue = self.routes.setdefault(route, [])
+        if any(entry[0] == data for entry in queue):
+            return "coalesced"
+        queue.append([data, None])
+        return "queued"
+
+    def process(self, route: Hashable = 0, spend: Callable[[], None] | None = None) -> bytes | None:
+        """The oldest request queued on `route` carried out; `spend` passes its processing time (the clock moves while
+        it runs: an owner's lease is not counted meanwhile, its answer restarts it, core §6.1). The answer waits for
+        `sent`."""
+        entry = next(e for e in self.routes.get(route, []) if e[1] is None)
+        self._processing = spend
+        entry[1] = self.handle(entry[0], route) or b""
+        self._processing = None
+        return entry[1]
+
+    def sent(self, route: Hashable = 0) -> None:
+        """The oldest answer on `route` is out: its credit is free again (window / max_inflight)."""
+        queue = self.routes.get(route, [])
+        queue.pop(next(i for i, e in enumerate(queue) if e[1] is not None))
+
+    def close_route(self, route: Hashable) -> None:
+        """The route closed: what it had not carried out is dropped; the session is not ended (transports §3)."""
+        self.routes.pop(route, None)
+
+    def credits(self) -> dict:
+        return {r: len(q) for r, q in self.routes.items() if q}
 
     def _header(self, req: m.Request) -> int | None:
         """core §4.3, the header: unknown_function, unknown_operation (an op the interface does not define,
@@ -1207,7 +1257,7 @@ class Endpoint:
         if fn == m.CORE_FN:
             return op in reg.CORE.lock_free
         if i is None or self.names.get(fn) not in SIMS:
-            return op == TOY_READ
+            return op == TOY_READ or op in self.reads.get(fn, ())
         return op in i.lock_free
 
     @staticmethod
@@ -1273,6 +1323,9 @@ class Endpoint:
 
     # ---- the stand-in operations ----------------------------------------------------------------
     def _toy(self, req: m.Request, t: Take) -> tuple[int, int, bytes]:
+        if req.op in self.reads.get(req.fn, ()):
+            t.tail()
+            return self._answer(b"")                               # a side-effect-free read with no fixed part
         if req.op == TOY_READ:
             t.tail()
             return self._answer(struct.pack("<I", self.values.get(req.fn, 0)))
