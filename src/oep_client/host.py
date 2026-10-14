@@ -79,6 +79,7 @@ MAX_OP_MS_MAX = reg.LIMITS["max_op_ms_max"]   # fn 0 describe max_op_ms is 1 to 
 RESTART_AFTER_ANSWER_S = 0.1                   # restart: the short wait before the first reopen (host guide §5.2, about 100 ms)
 RESTART_NAME = reg.PROBE_RESTART.name
 OP_RESTART = reg.PROBE_RESTART.op["restart"]   # oep.probe.restart's restart (oep-if-restart §2)
+RESTART_EXTERNAL_S = 5.0                 # past restart_max_ms: enumeration, reconnection (host guide §5.2)
 RESTART_WAIT_S = 10.0                          # restart_probe: the wait for a probe that declares no restart_max_ms
 
 
@@ -636,9 +637,10 @@ class Host:
         After the answer nothing more goes out; the link (`link.reopen_after_restart`, when this host has one) closes,
         waits a moment (about 100 ms) and opens again as a new open - the confirm first, a serial port at its boot
         speed, a USB device found again once it has re-enumerated - retried for `wait_s`; a host on a bare `send` waits
-        and confirms. `wait_s` None: the probe's restart_max_ms (oep.probe.restart's describe, read before the restart),
-        or RESTART_WAIT_S (10 s) when it declares none (a probe that does not conform); a `wait_s` longer than a
-        declared restart_max_ms is cut to it - host guide §5.2: a host retries only until restart_max_ms has passed.
+        and confirms. `wait_s` None: the probe's restart_max_ms (oep.probe.restart's describe, read before the restart:
+        the probe's own restart only, oep-if-restart §1) plus RESTART_EXTERNAL_S for what happens outside the probe (an
+        OS enumerating the device again, a network reconnecting), or RESTART_WAIT_S (10 s) when it declares none (a probe
+        that does not conform); host guide §5.2: the reopen's deadline is the host's own.
         A confirm sent before then is waited for as core §4.4 says. No valid confirm by then: the probe is gone
         (host guide §5.2) - the link is closed and, without `reopen_s`, ConnectionError / TimeoutError is raised.
         `reopen_s` is the user's own reopen of a probe given up that way, asked for beforehand: once the window has
@@ -654,9 +656,9 @@ class Host:
         fn = self._restart_fn()
         from . import core
         ms = core.restart_max_ms(self)
-        window_s = ms / 1000 if ms is not None else RESTART_WAIT_S
-        if wait_s is None or (ms is not None and wait_s > window_s):
-            wait_s = window_s                               # never past restart_max_ms (host guide §5.2)
+        window_s = ms / 1000 + RESTART_EXTERNAL_S if ms is not None else RESTART_WAIT_S
+        if wait_s is None:
+            wait_s = window_s                               # the probe's bound plus the outside's (host guide §5.2)
         self.restart_reopened = False
         epoch = self.epoch
         try:

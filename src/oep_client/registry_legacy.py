@@ -115,7 +115,7 @@ CORE.op, CORE.lock_free, CORE.enum = _now.CORE.op, _now.CORE.lock_free, _now.COR
 CORE.tlv = {k: {**CORE.tlv.get(k, {}), **v} for k, v in _now.CORE.tlv.items()}
 
 # ---- interfaces already following the current spec (one per stage) ------------------------------------------------
-for _name in ("oep.probe.plan",):
+for _name in ("oep.probe.plan", "oep.probe.restart"):
     _table = _now.INTERFACES[_name]
     globals()[next(k for k, v in list(globals().items()) if getattr(v, "name", None) == _name)] = _table
     INTERFACES[_name] = _table

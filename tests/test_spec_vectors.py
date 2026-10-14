@@ -323,7 +323,7 @@ from oep_client import config, core, fixture, virtual_bench_capture
 from test_vectors import vector_probe                                   # the vectors' fn numbers on the virtual bench
 
 S = 0x11223344                                                          # ops.json about: the lock holder's id
-FOLLOWED = {"oep.probe.plan"}                                           # grows with each stage
+FOLLOWED = {"oep.probe.plan", "oep.probe.restart"}                                           # grows with each stage
 OPS = load("ops.json")["cases"]
 
 
@@ -371,7 +371,12 @@ def plan_state(case, ep, hst):
         ep.load_config([config.item(config.Idle(channel=3, mode="output-high"))], saved=False)
 
 
-STATES = {"oep.probe.plan": plan_state}
+def restart_state(case, ep, hst):
+    if "holds the lock" in case["state"]:
+        hst.open(3000)
+
+
+STATES = {"oep.probe.plan": plan_state, "oep.probe.restart": restart_state}
 
 
 def make_case(case):
@@ -433,4 +438,20 @@ def test_plan_vectors_as_the_client_sends_and_reads_them(case):
         assert e.value.result.detail == res.detail
     else:
         call()
+    assert sent[0] == hx(case["request_hex"])
+
+
+@pytest.mark.parametrize("case", [c for c in OPS if c["name"].startswith("restart") and c["state"] != "—"],
+                         ids=lambda c: c["name"])
+def test_restart_vectors_as_the_client_sends_them(case):
+    """The client's restart request is the case's bytes (oep-if-restart §1: no fixed part)."""
+    r = m.Request.unpack(hx(case["request_hex"]))
+    sent = []
+    hst = h.Host(lambda b: sent.append(b) or hx(case["answer_hex"]))
+    hst._corr, hst.revision, hst.session = r.corr - 1, 1, r.session
+    hst._fns["oep.probe.restart"] = r.fn
+    try:
+        hst.request_restart()
+    except h.Rejected as e:
+        assert e.result == m.Result.unpack(hx(case["answer_hex"]))
     assert sent[0] == hx(case["request_hex"])

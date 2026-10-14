@@ -32,7 +32,7 @@ def bench(transport: int = VENDOR):
 
 
 def test_the_registry_and_the_virtual_bench_offer_it():
-    assert RESTART == core.OP_RESTART == h.OP_RESTART == 0x01 and RESTART not in reg.PROBE_RESTART.lock_free  # the lock
+    assert RESTART == core.OP_RESTART == h.OP_RESTART == 0x10 and RESTART not in reg.PROBE_RESTART.lock_free  # the lock
     assert "restart" not in reg.CORE.op                                 # not the core's any more
     assert "restart_after_answer_ms" not in reg.LIMITS                  # the host's wait: host guide §5.2, not a limit
     assert h.RESTART_AFTER_ANSWER_S == 0.1                              # the guide's "about 100 ms"
@@ -220,23 +220,26 @@ class _Reopen:
         return hst.confirm()
 
 
-def test_restart_probe_waits_restart_max_ms_by_default(monkeypatch):
+def test_restart_probe_waits_restart_max_ms_and_the_outside_by_default(monkeypatch):
+    """host guide §5.2: restart_max_ms bounds the probe's own restart; the host adds the outside's wait (enumeration,
+    reconnection) and decides its own deadline."""
     ep, hst = bench()
     ep.restart_max_ms = 3500
     hst.link = _Reopen()
     hst.open(3000)
     hst.restart_probe()
-    assert hst.link.waits == [3.5]                                      # the describe's value, read before the restart
+    assert hst.link.waits == [3.5 + h.RESTART_EXTERNAL_S] and h.RESTART_EXTERNAL_S == 5.0   # read before the restart
     hst.open(3000)
     hst.restart_probe(wait_s=0.7)                                       # given: that one
     monkeypatch.setattr(core, "restart_max_ms", lambda hst: None)       # a probe that declares none (not conforming)
     hst.open(3000)
     hst.restart_probe()
-    assert hst.link.waits == [3.5, 0.7, h.RESTART_WAIT_S] and h.RESTART_WAIT_S == 10.0
+    assert hst.link.waits == [3.5 + h.RESTART_EXTERNAL_S, 0.7, h.RESTART_WAIT_S] and h.RESTART_WAIT_S == 10.0
 
 
-def test_a_probe_that_does_not_come_back_within_restart_max_ms_is_gone():
-    """No confirm answered by restart_max_ms after the answer: the host gives up (host guide §5.2) - not after 10 s."""
+def test_a_probe_that_does_not_come_back_by_the_hosts_deadline_is_gone(monkeypatch):
+    """No confirm answered by restart_max_ms and the outside's wait: the host gives up (host guide §5.2) - not after 10 s."""
+    monkeypatch.setattr(h, "RESTART_EXTERNAL_S", 0.2)
     ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     ep.restart_max_ms = 300
 
@@ -249,16 +252,16 @@ def test_a_probe_that_does_not_come_back_within_restart_max_ms_is_gone():
     start = time.monotonic()
     with pytest.raises(TimeoutError):
         hst.restart_probe()
-    assert 0.3 <= time.monotonic() - start < 2.0 and ep.reboots == 1
+    assert 0.5 <= time.monotonic() - start < 2.0 and ep.reboots == 1
 
-def test_a_wait_longer_than_restart_max_ms_is_cut_to_it():
-    """host guide §5.2: the host retries only until restart_max_ms has passed - a longer wait_s is cut to it."""
+def test_a_given_wait_is_the_hosts_own_deadline():
+    """host guide §5.2: the reopen's deadline is the host's own - a wait_s longer than restart_max_ms is used as given."""
     ep, hst = bench()
     ep.restart_max_ms = 1500
     hst.link = _Reopen()
     hst.open(3000)
     hst.restart_probe(wait_s=9)
-    assert hst.link.waits == [1.5] and not hst.restart_reopened
+    assert hst.link.waits == [9] and not hst.restart_reopened
 
 
 class _LateReopen(_Reopen):
@@ -270,9 +273,10 @@ class _LateReopen(_Reopen):
         return hst.confirm()
 
 
-def test_reopen_s_opens_a_probe_given_up_again():
+def test_reopen_s_opens_a_probe_given_up_again(monkeypatch):
     """Not back within restart_max_ms: gone, and without reopen_s raised; with reopen_s (the user's reopen) a new
     open for up to that much more, the new boot_id checked as ever, restart_reopened True."""
+    monkeypatch.setattr(h, "RESTART_EXTERNAL_S", 0.0)                 # the window: restart_max_ms alone here
     ep, hst = bench()
     ep.restart_max_ms = 1200
     hst.link = _LateReopen()
@@ -291,8 +295,9 @@ def test_reopen_s_opens_a_probe_given_up_again():
     assert hst.link.waits == [1.2] and not hst.restart_reopened
 
 
-def test_reopen_s_on_a_bare_send():
+def test_reopen_s_on_a_bare_send(monkeypatch):
     """A host on a bare send: silent past restart_max_ms (300 ms), back at 0.6 s - found on reopen_s, not before."""
+    monkeypatch.setattr(h, "RESTART_EXTERNAL_S", 0.0)                 # the window: restart_max_ms alone here
     ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     ep.restart_max_ms = 300
     back = []
