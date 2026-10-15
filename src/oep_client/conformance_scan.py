@@ -85,7 +85,7 @@ class ScanChecks(AttachChecks):
         with self.c.holding(3000) as sid:
             pair=self.a.pairs[1][0];self.a.scan_id(1,pair,0x202);req,original=self.scan(sid,1,[pair],1,[self.found(1,pair,0x202)])
             self.a.scan_id(1,pair,None);before=self.a.state()
-            require(self.c.success(req)==original and self.a.state()==before,'scan replay re-explored or recomputed')
+            require(self.c.replayed(req,original) and self.a.state()==before,'scan replay re-explored or recomputed')
     def retained(self):
         self.fresh()
         with self.c.holding(3000) as sid:

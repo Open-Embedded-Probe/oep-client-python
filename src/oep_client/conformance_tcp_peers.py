@@ -3,7 +3,7 @@ from contextlib import contextmanager
 import secrets
 import struct
 
-from .conformance import Checks, Violation, require, tlvs
+from .conformance import Checks, NotApplicable, Violation, require, tlvs
 from .conformance_tcp import frame
 from .conformance_serial import WireError
 
@@ -27,6 +27,10 @@ class Peers:
         peer = None
         try:
             wire = primary.tcp_peer_open()
+        except ConnectionRefusedError:
+            # transports §1: a probe may cap its connections, at one too, and refuse or close one past the cap
+            raise NotApplicable('the probe does not take a second TCP connection (transports §1: a cap, even of one, '
+                                'is allowed)') from None
         except Exception:
             primary.abort = True
             raise
@@ -39,7 +43,14 @@ class Peers:
             # Confirm-only discovery until the handshake succeeds. A wrong endpoint must
             # never get open/force/end requests from any of these tests.
             try:
-                peer.confirm()
+                try:
+                    peer.confirm()
+                except (WireError, OSError):
+                    seen = getattr(wire, 'last_exchange', {}) or {}
+                    if seen.get('closed') and not seen.get('reads'):   # closed before any answer: past the probe's cap
+                        raise NotApplicable('the probe closed a second TCP connection before answering (transports '
+                                            '§1: a cap, even of one, is allowed)') from None
+                    raise
                 require(peer.boot == primary.boot, 'peer boot differs from primary')
                 peer.identity()
                 peer.transport_declarations()
@@ -48,6 +59,8 @@ class Peers:
                 entries = [{k: v for k, v in entry.items() if k != 'describe'}
                            for entry in primary.observed.get('interfaces', [])]
                 require(peer.list_snapshot() == entries, 'interface list differs between TCP connections')
+            except NotApplicable:
+                raise
             except Exception:
                 primary.abort = True
                 raise

@@ -21,7 +21,10 @@ class SpiChecks:
     def status(self):
         before=self.a.state();v=self.c.success(self.req(2,'status'));require(len(v)>=13,'SPI status width');result=struct.unpack_from('<BBBBBII',v);tlvs(v[13:]);require(self.a.state()==before,'status changed target');return result
     def rx(self,sid):
-        req=self.req(2,'read_rx',sid);v=self.c.success(req);require(len(v)>=7,'read_rx header');pending,bits,count=struct.unpack_from('<BIH',v);require(count<=self.maximum and len(v)>=7+count,'SPI read_rx count');tags=tlvs(v[7+count:]);require(all(len(value)==8 for tag,value in tags if tag&127==self.ns),'SPI timestamp width');return pending,bits,v[7:7+count],req,v
+        req=self.req(2,'read_rx',sid);v=self.c.success(req);require(len(v)>=7,'read_rx header');pending,bits,count=struct.unpack_from('<BIH',v);require(count<=self.maximum and len(v)>=7+count,'SPI read_rx count');tags=tlvs(v[7+count:]);require(all(len(value)==8 for tag,value in tags if tag&127==self.ns),'SPI timestamp width')
+        # an empty queue: pending, bits and count all 0, no data and no timestamp (fixture §4; a queued transfer has bits >= 1)
+        if count==0:require(pending==0 and bits==0 and not any(tag&127==self.ns for tag,_ in tags),'empty read_rx must be all 0 without a timestamp')
+        return pending,bits,v[7:7+count],req,v
     def refused(self,req,reason,payload=None):
         before=self.a.state();v=self.c.rejected(req,reason)
         if payload is not None:require(refusal_carries(reason,v,payload),'SPI refusal raw tag/cause')
@@ -52,7 +55,9 @@ class SpiChecks:
                     require(self.status()[0]==0,'arm fixture already configured')
                     req=self.arm_request(sid,1,b'x');self.refused(req,'unavailable',self.tlv(1,b'\6'))
                     if planned:self.configure(sid)
-                    self.refused(req,'unavailable',self.tlv(1,b'\6'))
+                    # the replay: the recorded refusal, or result_lost from a probe without records (core §5.1)
+                    before=self.a.state();reply=self.c.exchange(req)
+                    require(reply[3:5]==bytes((0,self.c.reasons['result_lost'])) or (reply[3:5]==bytes((0,self.c.reasons['unavailable'])) and refusal_carries('unavailable',reply[5:],self.tlv(1,b'\6'))),'state0 arm replay not refused');require(self.a.state()==before,'rejected SPI request changed target/pins/queue')
                     if planned:
                         require(self.status()[0]==1 and self.status()[3]==0,'old state0 refusal armed configured target')
                         self.arm(sid,1,b'x');self.transfer(self.bits(b'y'),self.bits(b'x'))
@@ -113,18 +118,18 @@ class SpiChecks:
             elif kind=='ARM-BUSY':
                 self.arm(sid,1,b'a');self.refused(self.arm_request(sid,1,b'b'),'unavailable');self.transfer(self.bits(b'x'),self.bits(b'a'));self.arm(sid,1,b'b');self.transfer(self.bits(b'y'),self.bits(b'b'))
             elif kind=='ARM-READY':
-                self.a.ready(False);before=self.a.state();req=self.arm_request(sid,1,b'x');reply=self.c.exchange(req);require(reply[3:5]==b'\1\1','not ready must complete failed');tlvs(reply[5:]);require(self.a.state()==before and self.status()[3]==0,'failed arm changed target');self.a.ready(True);before=self.a.state();require(self.c.exchange(req)==reply and self.a.state()==before,'failed arm replay became ready/armed');self.arm(sid,1,b'x');self.transfer(self.bits(b'y'),self.bits(b'x'))
+                self.a.ready(False);before=self.a.state();req=self.arm_request(sid,1,b'x');reply=self.c.exchange(req);require(reply[3:5]==b'\1\1','not ready must complete failed');tlvs(reply[5:]);require(self.a.state()==before and self.status()[3]==0,'failed arm changed target');self.a.ready(True);before=self.a.state();require(self.c.replayed(req,reply,frame=True) and self.a.state()==before,'failed arm replay became ready/armed');self.arm(sid,1,b'x');self.transfer(self.bits(b'y'),self.bits(b'x'))
             elif kind=='RECONFIGURE':
                 self.transfer([1],[0]);self.arm(sid,1);self.transfer(self.bits(b'xx'),[0]*16);self.arm(sid,1,b'x');self.configure(sid,2);require(self.status()==(1,2,0,0,0,0,0),'configure retained counters/queue/arm')
             elif kind=='MISO-GATE':
                 self.arm(sid,1,b'\x80');require(self.a.state()['pins'][2]==0,'arm drove inactive MISO');self.a.cs(True);state=self.a.state();require(state['pins'][2]==4 and all(state['pins'][ch]==0 for ch in (0,1,3)),'CS active first bit/inputs');self.a.cs(False);require(self.a.state()['pins'][2]==0 and self.status()[3]==1,'CS end HiZ/zero bits arm')
             elif kind=='REPLAY-RX':
                 for data in (b'a',b'b'):self.arm(sid,1);self.transfer(self.bits(data),[0]*8)
-                _,_,_,req,v=self.rx(sid);before=self.a.state();require(self.c.success(req)==v and self.a.state()==before,'read_rx replay popped another frame');require(self.rx(sid)[:3]==(0,8,b'b'),'replay lost next RX')
+                _,_,_,req,v=self.rx(sid);before=self.a.state();require(self.c.replayed(req,v) and self.a.state()==before,'read_rx replay popped another frame');require(self.rx(sid)[:3]==(0,8,b'b'),'replay lost next RX')
             elif kind=='REPLAY-ARM':
-                req=self.arm_request(sid,1,b'a');self.ok(req);self.transfer(self.bits(b'x'),self.bits(b'a'));before=self.a.state();self.ok(req);require(self.a.state()==before,'arm replay rearmed consumed TX');self.transfer(self.bits(b'y'),[0]*8);require(self.status()[-2:]==(2,1),'arm replay accepted next transfer')
+                req=self.arm_request(sid,1,b'a');first=self.ok(req);self.transfer(self.bits(b'x'),self.bits(b'a'));before=self.a.state();require(self.c.replayed(req,first) and self.a.state()==before,'arm replay rearmed consumed TX');self.transfer(self.bits(b'y'),[0]*8);require(self.status()[-2:]==(2,1),'arm replay accepted next transfer')
             elif kind=='REPLAY-CONFIG':
-                req=self.req(2,'configure',sid,b'\0\0');self.ok(req);self.configure(sid,3);self.arm(sid,1,b'a');before=self.a.state();self.ok(req);require(self.a.state()==before,'configure replay reset newer target')
+                req=self.req(2,'configure',sid,b'\0\0');first=self.ok(req);self.configure(sid,3);self.arm(sid,1,b'a');before=self.a.state();require(self.c.replayed(req,first) and self.a.state()==before,'configure replay reset newer target')
             elif kind in ('RELEASE','END','EXPIRY','FORCE','ACTIVE-RELEASE','ACTIVE-END','ACTIVE-EXPIRY','ACTIVE-FORCE'):
                 self.configure(sid,3);self.arm(sid,1);self.transfer(self.bits(b'xy'),[0]*16);self.arm(sid,1,b'z')
                 if kind.startswith('ACTIVE-'):
@@ -147,7 +152,7 @@ class SpiChecks:
     def run(self):
         start=len(self.c.results)
         def context():
-            require(self.a.reset_scope=='logical-model' and self.a.selection=={1:'oep.probe.plan',2:'oep.fixture.spi-target'},'explicit SPI fixture');base=RegisteredOpsChecks(self.c,self.a.selection);require(base.run()['status']=='passed','standard SPI ops');self.codes={fn:{row['name']:row['code'] for row in base.specs[name]['op']} for fn,name in self.a.selection.items()};self.assignment=base.specs['oep.probe.plan']['tlv']['plan_apply']['role_assignment'];spec=base.specs['oep.fixture.spi-target'];self.ns=spec['tlv']['read_rx_answer']['ns'];require(spec['enum']['role']=={'sck':1,'mosi':2,'miso':3,'cs':4} and spec['enum']['state']=={'unconfigured':0,'running':1} and spec['enum']['features']['lsb_first']==1,'selected SPI roles/states/features differ');values=dict(reversed(self.c.describe(2)));common=self.c.reg['describe_common'];self.maximum=struct.unpack('<H',values[common['max_length']])[0];self.depth=values[spec['tlv']['describe']['queue_depth']][0];self.lsb=bool(struct.unpack('<I',values[common['features']])[0]&1);setup=values.get(spec['tlv']['describe']['cs_setup_ns'],b'\0'*4);require(len(setup)==4 and struct.unpack('<I',setup)[0]==0 and self.maximum==8 and self.depth==3 and self.a.state()['clock_scope']=='explicit-logical-ms','logical fixture geometry/CS setup/clock differs')
+            require(self.a.reset_scope=='logical-model' and self.a.selection=={1:'oep.probe.plan',2:'oep.fixture.spi-target'},'explicit SPI fixture');base=RegisteredOpsChecks(self.c,self.a.selection);require(base.run()['status']=='passed','standard SPI ops');self.codes={fn:{row['name']:row['code'] for row in base.specs[name]['op']} for fn,name in self.a.selection.items()};self.assignment=base.specs['oep.probe.plan']['tlv']['plan_apply']['role_assignment'];spec=base.specs['oep.fixture.spi-target'];self.ns=spec['tlv']['read_rx_answer']['ns'];require(spec['enum']['role']=={'sck':1,'mosi':2,'miso':3,'cs':4} and spec['enum']['state']=={'unconfigured':0,'running':1} and spec['enum']['features']['lsb_first']==1,'selected SPI roles/states/features differ');values=dict(reversed(self.c.describe(2)));common=self.c.reg['describe_common'];self.maximum=struct.unpack('<H',values[common['max_length']])[0];self.depth=values[spec['tlv']['describe']['queue_depth']][0];self.lsb=bool(struct.unpack('<I',values.get(common['features'],b'\0'*4))[0]&1);setup=values.get(spec['tlv']['describe']['cs_setup_ns'],b'\0'*4);require(len(setup)==4 and struct.unpack('<I',setup)[0]==0 and self.maximum==8 and self.depth==3 and self.a.state()['clock_scope']=='explicit-logical-ms','logical fixture geometry/CS setup/clock differs')
         self.c.check('OEP-SPI-CONTEXT','fixture §4; plan §2',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         for kind in self.cases:

@@ -1,7 +1,7 @@
 """Explicit instrumentation adapter; no imports of the probe model."""
 import struct
 import time
-from .conformance import require
+from .conformance import require, tlvs
 
 
 def encoded(value):
@@ -62,5 +62,5 @@ class SampleRouteAdapter:
 
     def create_resource(self, checks, sid):
         payload = checks.success(checks.request(16, b'\x01', session=sid, fn=self.functions[0]))
-        require(len(payload) == 2, 'sample resource response')
-        return struct.unpack('<H', payload)[0]
+        require(len(payload) >= 2, 'sample resource response'); tlvs(payload[2:])  # fixed part, then a TLV tail (core §2.3)
+        return struct.unpack_from('<H', payload)[0]

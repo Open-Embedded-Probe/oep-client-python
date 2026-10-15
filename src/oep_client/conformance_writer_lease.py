@@ -22,10 +22,10 @@ class WriterLeaseChecks(CutChecks):
                 require(frame[3:5]==bytes((self.c.reg['resolutions']['rejected'],self.c.reasons['malformed'])) if rejected else frame[3:5]==b'\x01\0','deferred response resolution')
                 require(sent['deadline']==held['deadline'] and parent in sent['connections'] and rid in sent['streams'],'writer completion renewed lease')
                 if replay_expired:
-                    self.a.advance(1000);require(self.c.exchange(req)==frame,'expired replay lost cached response')
+                    self.a.advance(1000);require(self.c.replayed(req,frame,frame=True),'expired replay lost cached response')
                     after=self.a.state();require(after['holder'] is None and not after['connections'] and not after['streams'],'cached response restored expired ownership')
                 else:
-                    self.a.advance(100);require(self.c.exchange(req)==frame,'replay response changed')
+                    self.a.advance(100);require(self.c.replayed(req,frame,frame=True),'replay response changed')
                     require(self.a.state()['deadline']==sent['deadline'],'replayed response renewed lease')
             finally:self.cleanup_waiter(req)
     def execution(self):
@@ -52,7 +52,7 @@ class WriterLeaseChecks(CutChecks):
                     self.verify_closed(held,expired,p,r)                # released with its buffer: no closed mark (console §2)
                 frame=self.c.exchange(req);after=self.a.state();require(frame[3:5]==bytes((1,1 if cut else 0)),'late original result was discarded or changed')
                 require(after['holder'] is None and after['generation']==expired['generation'] and not after['connections'] and after['packets']==expired['packets'],'late writer token resurrected owner/resources or reexecuted')
-                require(self.c.exchange(req)==frame and self.a.state()['holder'] is None,'cached late result resurrected owner')
+                require(self.c.replayed(req,frame,frame=True) and self.a.state()['holder'] is None,'cached late result resurrected owner')
                 self.c.rejected(self.dmi_request(sid,parent,[]),'no_session')
                 self.c.session=None
             finally:self.cleanup_waiter(req)

@@ -15,15 +15,24 @@ class StreamChecks:
     def request(self, action, payload=b'', sid=0):
         return self.c.request(self.a.adoption['ops'][action],payload,session=sid,fn=self.a.adoption['fn'])
 
-    def read(self, mode=0, arg=0, maximum=65535):
-        before=self.a.stream_state()
-        payload=self.c.success(self.request('read',struct.pack('<BQH',mode,arg,maximum)))
-        require(len(payload)>=11,'read fixed fields')
-        start,flags,size=struct.unpack_from('<QBH',payload)
-        require(size<=maximum and len(payload)>=11+size,'read count/maximum')
-        tlvs(payload[11+size:]);after=self.a.stream_state()
+    def read(self, mode=0, arg=0, maximum=65535, whole=True):
+        """Up to `maximum` bytes: len is max or less (common §1.2) and how much one read returns is the probe's, so while
+        it sets more the rest is read on (from 0) where the answer ended; (first start, first gap | last more, data).
+        whole=False: the one answer as it came."""
+        before=self.a.stream_state();first=None;data=b''
+        while True:
+            payload=self.c.success(self.request('read',struct.pack('<BQH',mode,arg,maximum-len(data))))
+            require(len(payload)>=11,'read fixed fields')
+            start,flags,size=struct.unpack_from('<QBH',payload)
+            require(size<=maximum-len(data) and len(payload)>=11+size,'read count/maximum')
+            tlvs(payload[11+size:])
+            if first is None:first=(start,flags&2)
+            elif start!=arg or flags&2:break
+            data+=payload[11:11+size];mode,arg,more=0,start+size,flags&1
+            if not whole or not more or not size or len(data)>=maximum:break
+        after=self.a.stream_state()
         require(before==after,'SID 0 read consumed or changed stream')
-        return start,flags&3,payload[11:11+size]
+        return first[0],first[1]|more,data
 
     def marks(self, first):
         before=self.a.stream_state();payload=self.c.success(self.request('marks',struct.pack('<I',first)))
@@ -50,7 +59,7 @@ class StreamChecks:
     def frame(self):
         self.fresh();data=bytes(range(64));self.a.feed_bytes(data);position=0;seen=bytearray()
         while position<len(data):
-            start,flags,part=self.read(arg=position)
+            start,flags,part=self.read(arg=position,whole=False)
             require(start==position and part and len(part)<=self.c.max_frame-16,'read frame/count progress')
             seen.extend(part);position+=len(part)
             require(flags==int(position<len(data)),'read more flag')
@@ -166,14 +175,14 @@ class StreamChecks:
             request=self.request('clear',sid=sid);frame=self.c.exchange(request)
             require(frame[3:5]==b'\x01\0','clear success');tlvs(frame[5:])
             after=self.a.stream_state();require(after['position']==3 and not after['data'],'clear reset byte position')
-            require(self.c.exchange(request)==frame and self.a.stream_state()==after,'clear replay duplicated mark')
+            require(self.c.replayed(request,frame,frame=True) and self.a.stream_state()==after,'clear replay duplicated mark')
         self.expect_read((3,2,b''))
         more,rows=self.marks(0);require(not more and len(rows)==1 and rows[0][1:3]==(3,2),'clear mark')
 
     def persistent(self):
         self.fresh();self.a.feed_bytes(b'abc')
         with self.c.holding(3000) as sid:
-            request=self.request('mark',b'\x37',sid);frame=self.c.exchange(request);self.c.success(request)
+            request=self.request('mark',b'\x37',sid);frame=self.c.exchange(request);require(self.c.replayed(request,frame,frame=True),'host mark replay')
             require(frame[3:5]==b'\x01\0','host mark success');tlvs(frame[5:])
             state=self.a.stream_state()
             require(len(state['marks'])==1 and state['marks'][0][1:3]==(3,3) and state['marks'][0][4]==0x37,'host mark/replay')

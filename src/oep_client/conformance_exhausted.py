@@ -29,7 +29,7 @@ class ExhaustedChecks(RetentionChecks):
                 self.service();a.hold(a.primary,None);self.service();raw=a.receive(a.primary)
                 require(len(raw)==3,'batch reply count')
                 for frame,req,reason in zip(raw,requests,(None,'malformed',None)):self.result(frame,req,reason)
-                require(len(raw[0])==7 and len(raw[2])==5,'batch response shape')
+                require(len(raw[0])>=7 and len(raw[2])>=5,'batch response shape');tlvs(raw[0][7:]);tlvs(raw[2][5:])   # TLV tails (core §2.3)
                 if mode=='prefix':require(ledger.accept(a.primary,0,raw[0]),'known prefix not accepted')
             a.trace.append({'method':'exhausted_batch_delivery','mode':mode,'requests_hex':[r.hex() for r in requests],
                             'observed_responses_hex':[r.hex() for r in raw],'delivered_count':1 if mode=='prefix' else 0})

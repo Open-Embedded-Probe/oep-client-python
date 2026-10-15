@@ -37,6 +37,8 @@ class AnalogChecks(LogicChecks):
                     for field,kwargs in [('mode',dict(mode=4)),('mode',dict(mode=3,samples=None)),('rate',dict(rate=99)),('trigger',dict(trigger=(1,1,0)))]:
                         self.refused(self.req(2,'configure',sid,self.settings(critical=critical,**kwargs)),'unsupported',bytes((self.tags[field]|(128 if critical else 0),)))
                 self.refused(self.req(2,'configure',sid,self.settings()+self.tlv(254,b'x')),'unsupported',b'\xfe')
+                # core §2.3: every copy of an unknown tag counts - a critical one after a non-critical one is refused
+                self.refused(self.req(2,'configure',sid,self.settings()+self.tlv(126,b'x')+self.tlv(254,b'x')),'unsupported',b'\xfe')
             elif kind=='TRIGGER':
                 self.configure(sid,trigger=(0,255,0xffffffff))
                 self.refused(self.req(2,'configure',sid,self.settings(trigger=(3,0,1500))),'unavailable',self.tlv(1,b'\6'))
@@ -71,7 +73,7 @@ class AnalogChecks(LogicChecks):
                     require(new_rows[0]==rows[1] and self.read(generation,32,32)[2]==retained,'ADC release changed retained rows/data')
                     require(new_rows[1][:3]==(2,64,8) and new_rows[1][6]&1,'ADC resumed segment gap')
                     if kind=='REPLAY-RELEASE':
-                        before=self.a.state();require(self.c.success(request)==reply and self.a.state()==before,'ADC replay release applied twice')
+                        before=self.a.state();require(self.c.replayed(request,reply) and self.a.state()==before,'ADC replay release applied twice')
             elif kind in ('RAW','FRONTEND'):
                 p=self.settings()+self.tlv(self.tags['frontend'],b'\3\1')
                 self.answer(self.c.success(self.req(2,'configure',sid,p)))
@@ -93,7 +95,9 @@ class AnalogChecks(LogicChecks):
                     self.a.advance(3);self.start(sid);before=self.a.state()
                     p=self.c.success(self.req(2,'calibration'));self.payload.calibration(p,frontends={0,1})
                     require(self.a.state()==before,'calibration changed acquisition')
-                    values=dict(tlvs(p));require(values[self.calibration_tags['factory']]==dict(tlvs(initial))[self.calibration_tags['factory']],'factory calibration changed at start')
+                    # factory repeats (one per frontend): every copy compared; vrefint does not: its first copy (core §2.3)
+                    factory=lambda q:[v for t,v in tlvs(q) if t==self.calibration_tags['factory']]   # noqa: E731
+                    values=dict(reversed(tlvs(p)));require(factory(p)==factory(initial),'factory calibration changed at start')
                     raw,ns,mv=struct.unpack('<IQI',values[self.calibration_tags['vrefint']])
                     require(raw==1365 and ns==before['now_ns'] and mv==1100,'fixture last-start reference calibration')
                     self.ok(self.req(2,'stop',sid))

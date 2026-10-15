@@ -1,6 +1,7 @@
 """Processing order from dependent resource effects on an explicit pipeline fixture."""
 import struct
 from .conformance import require, tlvs
+from .conformance_registered_ops import fixed_then_tlvs
 
 
 class ExecutionOrderChecks:
@@ -38,8 +39,8 @@ class ExecutionOrderChecks:
                 'explicit processing fixture geometry differs')
         with self.c.holding(60000) as sid:
             seed = self.c.success(self.request(sid, 1, 16, 1))
-            require(len(seed) == 2 and int.from_bytes(seed, 'little') != 0, 'processing seed resource shape')
-            old_id = int.from_bytes(seed, 'little'); before = self.state(); new_id = before['next_resource_id']
+            require(len(seed) >= 2 and int.from_bytes(seed[:2], 'little') != 0, 'processing seed resource shape'); tlvs(seed[2:])
+            old_id = int.from_bytes(seed[:2], 'little'); before = self.state(); new_id = before['next_resource_id']
             require(1 <= new_id <= 65535 and new_id != old_id, 'explicit future allocator witness required')
             if phase == 'CLOSE-USE-CREATE':
                 requests = [self.request(sid, 1, 17, 1, old_id), self.request(sid, 1, 18, 1, old_id),
@@ -69,13 +70,13 @@ class ExecutionOrderChecks:
                 require(len(frames) == len(requests), 'missing processing results')
                 for request, frame, (reason, payload) in zip(requests, frames, expected):
                     header = b'\x02' + request[1:3] + (b'\x01\0' if reason is None else bytes((0, self.c.reasons[reason])))
-                    require(frame == header + payload, 'processing order result/corr/outcome differs')
-                    if reason is not None or not payload: tlvs(frame[5:])
+                    # the fixed part, then a TLV tail on every answer, rejected ones too (core §2.3, §4.3)
+                    require(fixed_then_tlvs(frame, header + payload), 'processing order result/corr/outcome differs')
                 require(self.a.pending(self.a.primary) == [] and self.a.receive(self.a.peer) == [],
                         'processing result credit/route differs')
                 after = self.state()
                 for request, saved in zip(requests, frames):
-                    require(self.c.exchange(request) == saved, 'processing result replay differs')
+                    require(self.c.replayed(request, saved, frame=True), 'processing result replay differs')
                     require(self.state() == after, 'processing replay reapplied dependent effects')
                 self.observations.append(dict(phase=phase, writer_budget=budget,
                     request_hex=[request.hex() for request in requests], reply_hex=[frame.hex() for frame in frames],

@@ -1,6 +1,12 @@
 """TCP pauses, broken framing, reconnect and retained replay/session state."""
 from .conformance import require
 from .conformance_host_deadline import reviewed_identity
+from .conformance_registered_ops import fixed_then_tlvs
+
+
+def answers(reply_hex,fixed):
+    """The reply starts with these bytes (header and fixed part); TLVs may follow (core §2.3, §4.3)."""
+    return reply_hex is not None and fixed_then_tlvs(bytes.fromhex(reply_hex),bytes.fromhex(fixed) if isinstance(fixed,str) else fixed)
 
 
 class TcpRecoveryChecks:
@@ -48,7 +54,7 @@ class TcpRecoveryChecks:
                 raw=bytes.fromhex(confirm['reply_hex'])
                 require(len(raw)>=21 and raw[:10]==b'\2\x0a\0\1\0OEP!\1' and int.from_bytes(raw[17:21],'little')==17,'recovery confirm corr/header/magic/boot differs')
                 require(alloc[1]['before']==alloc[1]['after'] and alloc[1]['reply_hex']==alloc[0]['reply_hex'],'replay reexecuted or changed state/result')
-        if name!='BLOCKED':require(len(results)==1 and results[0]['reply_hex']=='02020001000100','wrong recovered allocation result')
+        if name!='BLOCKED':require(len(results)==1 and answers(results[0]['reply_hex'],'02020001000100'),'wrong recovered allocation result')
         self.observations.append(r)
     def lifecycle(self,name,r):
         events=r['events'];require(r['connections']==2,'lifecycle did not reopen TCP')
@@ -71,14 +77,14 @@ class TcpRecoveryChecks:
         require([e['request_hex'] for e in after]==expected,'recovery state/rediscovery request order or bytes differ')
         confirm=next(e for e in events if e['action']=='confirm');raw=bytes.fromhex(confirm['reply_hex'])
         require(confirm['valid'] and raw[:10]==b'\2\x0a\0\1\0OEP!\1' and int.from_bytes(raw[17:21],'little')==boot,'lifecycle confirm boot/corr/header differs')
-        require(next(e for e in events if e['action']=='core-state')['reply_hex']=='020b0001000000000000','lifecycle core state not unlocked')
-        require(next(e for e in events if e['action']=='old-session')['reply_hex']=='020c000007','new old-session request revived session')
-        require(next(e for e in events if e['action']=='resource-state')['reply_hex']=='020f00010000','freed resource remained visible')
+        require(answers(next(e for e in events if e['action']=='core-state')['reply_hex'],'020b0001000000000000'),'lifecycle core state not unlocked')
+        require(answers(next(e for e in events if e['action']=='old-session')['reply_hex'],'020c000007'),'new old-session request revived session')
+        require(answers(next(e for e in events if e['action']=='resource-state')['reply_hex'],'020f00010000'),'freed resource remained visible')
         invalid=next(e for e in events if e['action']=='invalidate')
         require(invalid['boot_id']==boot and invalid['session'] is None and not invalid['resource_ids'],'Host kept stale session/resource identifiers')
         if name=='EXPIRED':
             require(transition['time_ns']==60_000_000_000 and transition['after']['cache']==before['cache'],'lease expiry discarded replay cache or occurred off boundary')
-            require(alloc[1]['before']==alloc[1]['after'] and alloc[1]['reply_hex']==alloc[0]['reply_hex']=='02020001000100','expired historical response reexecuted/changed state')
+            require(alloc[1]['before']==alloc[1]['after'] and alloc[1]['reply_hex']==alloc[0]['reply_hex'] and answers(alloc[0]['reply_hex'],'02020001000100'),'expired historical response reexecuted/changed state')
             require(state['next_id']==2 and state['last']==7 and state['deadline']==60000,'expiry reset identifiers/deadline/last session')
             require(not invalid['old_fn_cache_cleared'] and not invalid['discovered'],'unchanged boot unexpectedly required rediscovery in sample')
         else:
@@ -89,7 +95,7 @@ class TcpRecoveryChecks:
             for i,page in enumerate(pages):
                 n=b'io.github.open-embedded-probe.resource'
                 value=b'\2\0\1'+(i+1).to_bytes(2,'little')+i.to_bytes(2,'little')+bytes((1,len(n)))+n
-                require(bytes.fromhex(page['reply_hex'])==b'\2'+(13+i).to_bytes(2,'little')+b'\1\0'+value,'rediscovery page wire differs')
+                require(answers(page['reply_hex'],b'\2'+(13+i).to_bytes(2,'little')+b'\1\0'+value),'rediscovery page wire differs')
         require(not any(e['action']=='result' for e in events),'lifecycle returned stale live allocation')
     def run(self):
         self.check('CONTEXT',self.context)

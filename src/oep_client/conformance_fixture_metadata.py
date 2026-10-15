@@ -19,8 +19,15 @@ class FixtureMetadataChecks:
             formats=list(values[tag][1:]);require(0 in formats,'8N1 mandatory')
             require(all(v&0xe0==0 and v&3 in (0,1) and (v>>2)&3 in (0,1,2) for v in formats),'formats contain undefined values or reserved bits')
             result=dict(formats=formats)
+            # a fn without write takes no TX role and declares none in role_channels / channel_group (fixture §2)
+            codes={r['name']:r['code'] for r in spec['op']};tx=spec.get('enum',{}).get('role',{}).get('tx',2)
+            if codes['write'] not in ops(values[common['ops']]):
+                for t,v in self.base.rows[fn]:
+                    if t==common['role_channels']:require(not v or v[0]!=tx,'UART without write declares the TX role in role_channels')
+                    elif t==common['channel_group']:require(all(v[i]!=tx for i in range(2,len(v),3)),'UART without write declares the TX role in a channel_group')
         else:
-            length=fixed(common['max_length'],2,'max_length');clock=fixed(common['max_clock_hz'],4,'max_clock_hz');features=fixed(common['features'],4,'features');queue=fixed(tags['queue_depth'],1,'queue_depth')
+            length=fixed(common['max_length'],2,'max_length');clock=fixed(common['max_clock_hz'],4,'max_clock_hz');features=int.from_bytes(values.get(common['features'],b'\0'*4),'little');require(len(values.get(common['features'],b'\0'*4))==4,'features fixed width')   # optional: absent = no bits (core §7.4; fixture §3/§4)
+            queue=fixed(tags['queue_depth'],1,'queue_depth')
             request,response=(12,8) if name=='oep.fixture.i2c-target' else (14,12)
             bound=max(request,response)+length
             require(bound<=self.c.max_frame,'fixture max_length does not fit negotiated route')

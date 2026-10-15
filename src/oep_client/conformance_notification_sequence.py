@@ -137,7 +137,7 @@ class NotificationSequenceChecks(RouteChecks):
         with self.c.holding(60000) as sid:
             fn, other = self.a.functions
             owned = self.c.success(self.c.request(16, b'\x01', session=sid, fn=fn))
-            require(len(owned) == 2 and int.from_bytes(owned, 'little') != 0, 'unsubscribe sample resource')
+            require(len(owned) >= 2 and int.from_bytes(owned[:2], 'little') != 0, 'unsubscribe sample resource'); tlvs(owned[2:])  # fixed part, then a TLV tail (core §2.3)
             self.on(self.a.peer, self.c.request(1, struct.pack('<HI', 0, 0), session=sid, fn=other))
             self.event_on(self.a.peer, other, 0, 301)
             observations = []

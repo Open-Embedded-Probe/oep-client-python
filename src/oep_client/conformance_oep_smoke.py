@@ -118,13 +118,22 @@ class OepExampleSmokeChecks:
         self.feed(b'AB')
         before = copy.deepcopy(self.observe()); reads = []
         for _ in range(2):
-            p = self.c.success(self.call(name, 'read', struct.pack('<BQH', 1, 0, 2), unlocked=True))
-            require(len(p) >= 11, 'UART read prefix')
-            position, flags, length = struct.unpack_from('<QBH', p)
-            self.observations.append({'action': 'UART read', 'position': position, 'flags': flags, 'length': length,
-                                      'data_hex': p[11:11+length].hex(), 'resources': copy.deepcopy(self.observe())})
-            require(length == 2 and p[11:13] == b'AB', 'UART nonconsuming data')
-            tlvs(p[13:]); reads.append((position, flags, length))
+            # len is max or less and more is set while bytes remain (common §1.2): how much one read returns is the
+            # probe's, so the 2 bytes are read on from where an answer ended
+            mode, arg, data, answers = 1, 0, b'', []
+            while True:
+                p = self.c.success(self.call(name, 'read', struct.pack('<BQH', mode, arg, 2 - len(data)), unlocked=True))
+                require(len(p) >= 11, 'UART read prefix')
+                position, flags, length = struct.unpack_from('<QBH', p)
+                require(len(p) >= 11 + length and length <= 2 - len(data), 'UART read length')
+                self.observations.append({'action': 'UART read', 'position': position, 'flags': flags, 'length': length,
+                                          'data_hex': p[11:11+length].hex(), 'resources': copy.deepcopy(self.observe())})
+                tlvs(p[11+length:]); data += p[11:11+length]; answers.append((position, flags, length))
+                mode, arg = 0, position + length
+                if not flags & 1 or not length or len(data) >= 2:
+                    break
+            require(data == b'AB', 'UART nonconsuming data')
+            reads.append(answers)
         require(reads[0] == reads[1] and self.observe() == before, 'UART read consumed/changed data')
         if self.operations[name]['marks'] not in self.declared[name]:
             self.reject_unchanged(lambda: self.call(name, 'read', struct.pack('<BQH', 3, 0, 2), unlocked=True),

@@ -159,7 +159,7 @@ def matrix(hst, *, rates: list[int | None] = (None,), patterns: list[str] = PATT
                 result.actual = _speed(hst, rate, 0)
                 lk.set_baud(rate)
                 switched = True
-                if not any(lk.confirm_raw(timeout) for _ in range(3)):
+                if not lk.confirm_tries(3, timeout):       # the last one waits its core §4.4 floor
                     result.why = "no confirm at the new rate"
                     yield result
                     continue
@@ -180,16 +180,24 @@ def matrix(hst, *, rates: list[int | None] = (None,), patterns: list[str] = PATT
             result.why = result.why or f"{type(e).__name__}: {e}"
         finally:
             if switched:
+                lost = False
                 try:
                     lk.timeout, saved = timeout, lk.timeout
                     _speed(hst, rate, 2)
                 except Exception:
-                    pass
+                    lost = True
                 finally:
                     lk.timeout = saved
                 lk.set_baud(base)
-                deadline = time.monotonic() + VERIFY_MS / 1000 + 1.5   # the probe's try state may have to run out
-                while not lk.confirm_raw(timeout):
-                    if time.monotonic() > deadline:
-                        raise ConnectionError(f"after {rate}: no answer at the boot speed {base}")
+                # the probe's try state may have to run out; the last confirm waits its core §4.4 floor
+                if not lk._confirm_within(VERIFY_MS / 1000 + 1.5, timeout):
+                    raise ConnectionError(f"after {rate}: no answer at the boot speed {base}")
+                if lost:
+                    # oep-if-link §3: a revert whose answer was lost is recovered with a confirm and a new corr's
+                    # port_state (the port's phase now, never an old answer's)
+                    from .link import port_state
+                    state = port_state(hst, core.link_fn(hst))
+                    if state is not None and state != (base, 0):
+                        raise ConnectionError(f"after {rate}: the port reports {state[0]} in phase {state[1]}, "
+                                              "not the boot speed")
         yield result

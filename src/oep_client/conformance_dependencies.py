@@ -15,6 +15,13 @@ class DependencyChecks:
     def empty(self, request):
         tlvs(self.c.success(request))
 
+    def replay_empty(self, request):
+        """A replay of a request whose answer had no fixed part: the recorded success, or result_lost from a probe without
+        records (core §5.1: the records are optional, 0 allowed)."""
+        reply=self.c.exchange(request)
+        require(reply[3:5] in (b'\1\0',bytes((0,self.c.reasons['result_lost']))),'replay neither the recorded answer nor result_lost')
+        tlvs(reply[5:])
+
     def fresh(self):
         result=self.a.restart_fixture()
         require(result['scope']=='logical-model' and result['boot_id']!=self.c.boot,'fresh logical boot required')
@@ -110,7 +117,7 @@ class DependencyChecks:
             p,s=self.populate(sid);other,_=self.allocate('stream',sid,p)
             for detail in range(4):
                 req=self.request('stream','mark',sid,struct.pack('<IB',s,detail));self.empty(req)
-                stable=self.visible();self.empty(req);require(self.visible()==stable,'replayed mark duplicated')
+                stable=self.visible();self.replay_empty(req);require(self.visible()==stable,'replayed mark duplicated')
             before=self.visible();expected=before['streams'][s]['marks'];rows=[];serial=0
             for _ in range(4):
                 value=self.c.success(self.request('stream','marks',payload=struct.pack('<II',s,serial)))
@@ -170,16 +177,16 @@ class DependencyChecks:
             self.a.feed_bytes(s,b'old');_,read,old=self.read(s,sid)
             closed=self.request('stream','close',sid,struct.pack('<I',s));self.empty(closed)
             fresh,_=self.allocate('stream',sid,p);self.a.feed_bytes(fresh,b'new');before=self.visible()
-            require(self.c.success(opened)[:4]==struct.pack('<I',s),'replayed open changed ID')
-            require(self.c.success(read)==old,'replayed read lost historical bytes')
-            self.empty(closed);require(self.visible()==before,'replay resurrected resource or closed replacement')
+            reply=self.c.exchange(opened);require(reply[3:5]==bytes((0,self.c.reasons['result_lost'])) or (reply[3:5]==b'\1\0' and reply[5:9]==struct.pack('<I',s)),'replayed open changed ID')   # records are optional (core §5.1)
+            require(self.c.replayed(read,old),'replayed read lost historical bytes')
+            self.replay_empty(closed);require(self.visible()==before,'replay resurrected resource or closed replacement')
             self.c.rejected(self.request('stream','read',payload=struct.pack('<IBQH',s,1,0,1)),'no_resource')
 
     def detach_replay(self):
         self.fresh()
         with self.c.holding(3000) as sid:
             p,s=self.populate(sid);req=self.request('connection','detach',sid,struct.pack('<I',p));self.empty(req)
-            new,child=self.populate(sid);before=self.visible();self.empty(req)
+            new,child=self.populate(sid);before=self.visible();self.replay_empty(req)
             require(self.visible()==before and new>p and child>s,'detach replay affected replacement')
 
     def same_session(self):
@@ -201,7 +208,7 @@ class DependencyChecks:
                 self.c.success(self.c.request(self.c.core['open'],struct.pack('<IB',3000,1),session=new));self.c.session=new
             after=self.visible();self.release_order(before,after,{p});require(not after['connections'] and not after['streams'],'session retained resources')
             if kind!='FORCE':
-                require(self.c.success(read)==old and self.visible()==after,'historical read resurrected ended resources')
+                require(self.c.replayed(read,old) and self.visible()==after,'historical read resurrected ended resources')
                 self.c.rejected(self.request('connection','use',sid,struct.pack('<I',p)),'no_session')
                 new=secrets.randbelow(0xffffffff)+1
                 while new==sid:new=secrets.randbelow(0xffffffff)+1

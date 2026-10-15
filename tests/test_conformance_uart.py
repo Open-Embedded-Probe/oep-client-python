@@ -93,3 +93,11 @@ def test_unknown_success_response_tlv_allowed():
         if request[3:6] in (b'\1\0\x10',b'\1\0\x11',b'\2\0\x10',b'\2\0\x15',b'\2\0\x16') and reply[3:5]==b'\1\0':reply+=b'\x7f\1\0x'
         return reply
     c.send=extended;r=UartChecks(c,SampleUartAdapter(model)).run();assert r['status']=='passed',r['checks']
+
+
+def test_short_reads_are_the_probe_choice():
+    """common §1.2 (fixture §2): the probe decides how much one read returns (max or less, more while bytes remain);
+    the checker reads on from where an answer ended (cut every read's max to 1)."""
+    from test_conformance_logic import one_byte_reads
+    model,c=setup();one_byte_reads(c,fn=2,op=17,at=19);r=UartChecks(c,SampleUartAdapter(model)).run()
+    assert r['status']=='passed',[(x['id'],x.get('error')) for x in r['checks'] if x['status']!='passed']

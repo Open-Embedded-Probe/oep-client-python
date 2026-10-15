@@ -53,8 +53,9 @@ def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, byte
         except m.ProtocolError:
             out.append("confirm's transport TLV (the answer's tail is broken)")
         else:
-            indexes = {v[0] for tag, v in core_describe if tag == _TRANSPORT_TAG and v}
-            if not where:
+            # index(u8) kind(u8) interface(u8); confirm's transport a u8: another length is broken, not used (core §2.3)
+            indexes = {v[0] for tag, v in core_describe if tag == _TRANSPORT_TAG and len(v) == 3}
+            if where is None or len(where) != 1:
                 out.append("confirm's transport TLV")
             elif where[0] != _RELAYING_BROKER and _TRANSPORT_TAG in have and where[0] not in indexes:
                 out.append(f"describe of fn 0: the transport confirm names (index {where[0]})")

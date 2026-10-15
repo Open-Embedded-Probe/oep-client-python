@@ -29,8 +29,8 @@ class SampleRecoveryHost:
         result, ids = {}, set()
         for fn in self.functions:
             payload = self.c.success(self.c.request(19, fn=fn))
-            require(payload and len(payload) == 1 + 3 * payload[0], 'sample inventory shape')
-            for at in range(1, len(payload), 3):
+            require(payload and len(payload) >= 1 + 3 * payload[0], 'sample inventory shape'); tlvs(payload[1 + 3 * payload[0]:])  # fixed part, then a TLV tail (core §2.3)
+            for at in range(1, 1 + 3 * payload[0], 3):
                 rid, kind = struct.unpack_from('<HB', payload, at)
                 require(rid and rid not in ids and kind in (1, 2), 'sample inventory duplicate/invalid resource')
                 ids.add(rid); result[rid] = (fn, kind)

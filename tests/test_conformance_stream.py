@@ -125,3 +125,11 @@ def test_mark_arrivals_between_pages_faults(fault):
     model.restart_fixture=broken;runner=StreamChecks(c,a)
     c.check('IF-STREAM-MOVING-PAGES','common §1.3',runner.moving_pages)
     assert c.results[-1]['status']=='failed' and c.results[-1]['error'].startswith('Violation:'),c.results
+
+
+def test_short_reads_are_the_probe_choice():
+    """common §1.2: len is max or less and the probe decides how much one read returns, setting more while bytes remain;
+    the checker reads on from where an answer ended (cut every read's max to 1)."""
+    from test_conformance_logic import one_byte_reads
+    _,c,a=setup();one_byte_reads(c,fn=1,op=16,at=19);report=StreamChecks(c,a).run()
+    assert report['status']=='passed',[(r['id'],r.get('error')) for r in report['checks'] if r['status']!='passed']

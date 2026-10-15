@@ -164,3 +164,10 @@ def test_optional_answer_rows_may_be_omitted(case):
         e.answer=lambda config:b''.join(tlv(tag,value) for tag,value in tlvs(answer(config)) if tag not in (87,88,89))
     model.install=lean_install;checker=AnalogChecks(checks,SampleAnalogAdapter(model));checker.cases=(case,)
     result=checker.run();assert result['status']=='passed',[(r['id'],r.get('error')) for r in result['checks'] if r['status']!='passed']
+
+
+def test_short_reads_are_the_probe_choice():
+    """capture §3.2: the probe decides how much one read returns (max or less); AnalogChecks reads on while more is set."""
+    from test_conformance_logic import one_byte_reads
+    model,checks=setup();one_byte_reads(checks);result=AnalogChecks(checks,SampleAnalogAdapter(model)).run()
+    assert result['status']=='passed',[(r['id'],r.get('error')) for r in result['checks'] if r['status']!='passed']

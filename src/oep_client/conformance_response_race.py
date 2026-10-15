@@ -1,6 +1,7 @@
 """Stale response completions across competing force and lease expiry."""
 from .conformance import require
 from .conformance_host_deadline import reviewed_identity
+from .conformance_registered_ops import fixed_then_tlvs
 
 
 class ResponseRaceChecks:
@@ -21,12 +22,12 @@ class ResponseRaceChecks:
         old=old_prepared[-1]
         expected_request='01030001001007000000'+('03' if kind=='REJECTED' else '01')
         expected_reply='0203000003' if kind=='REJECTED' else '02030001000200'
-        require(old['request_hex']==expected_request and old['reply_hex']==expected_reply and old['token']==[7,1],'old request/reply/token differs')
+        require(old['request_hex']==expected_request and fixed_then_tlvs(bytes.fromhex(old['reply_hex']),bytes.fromhex(expected_reply)) and old['token']==[7,1],'old request/reply/token differs')
         # core §6.1 (a09fa45): the old holder's answer restarts its lease when it is generated (rejected too), not at
         # the writer's completion
         require(old['before']['deadline']==lease and old['after']['deadline']==100+lease and old['after']['holder']==7 and old['after']['now_ms']==100,'old answer did not restart the lease at its generation, or lost it')
         finish=next(e for e in events if e['action']=='finish' and e['request_hex']==expected_request)
-        require(finish['reply_hex']==expected_reply and finish['token']==old['token'],'queued old result changed before completion')
+        require(finish['reply_hex']==old['reply_hex'] and finish['token']==old['token'],'queued old result changed before completion')
         competing=[e for e in events if e['action']=='prepare' and e['route'] in (1,2) and bytes.fromhex(e['request_hex'])[3:6]==b'\0\0\x10']
         require(len(competing)==(2 if kind in ('DOUBLE-FORCE','RETURN-ID') else 1),'force attempt count differs')
         for i,e in enumerate(competing):
@@ -34,7 +35,7 @@ class ResponseRaceChecks:
             require(bytes.fromhex(e['request_hex'])==b'\1\1\0\0\0\x10'+holder.to_bytes(4,'little')+payload,'competing open bytes differ')
             expected_open=(b'\2\1\0\0\10'+(lease-300).to_bytes(4,'little') if kind=='NO-FORCE'
                            else b'\2\1\0\1\0'+lease.to_bytes(4,'little')+(17).to_bytes(4,'little'))
-            require(bytes.fromhex(e['reply_hex'])==expected_open,'competing open result lease/boot/refusal differs')
+            require(fixed_then_tlvs(bytes.fromhex(e['reply_hex']),expected_open),'competing open result lease/boot/refusal differs')
             sent=next(s for s in events if s['action']=='finish' and s['route']==e['route'] and s['request_hex']==e['request_hex'])
             require(sent['reply_hex']==e['reply_hex'] and sent['token']==e['token'],'queued competing response changed')
         state=r['state']
@@ -43,7 +44,7 @@ class ResponseRaceChecks:
             refused=next(e for e in events if e['action']=='finish' and e['route']==1)
             require(refused['before']==refused['after'],'non-owner refused completion renewed old lease')
             require(finish['before']['deadline']==finish['after']['deadline']==100+lease,'old completion renewed the lease at send completion')
-            replay=next(e for e in events if e['action']=='replay');require(replay['before']==replay['after'] and replay['reply_hex']==expected_reply,'replay changed old owner after valid completion')
+            replay=next(e for e in events if e['action']=='replay');require(replay['before']==replay['after'] and replay['reply_hex']==old['reply_hex'],'replay changed old owner after valid completion')
             require(state['holder']==7 and state['live']=={'1':[1,1],'2':[1,1]} and state['next_id']==3,'non-force attempt lost resources')
         else:
             holder=7 if kind=='RETURN-ID' else 9 if kind=='DOUBLE-FORCE' else 8;rid=2 if kind=='REJECTED' else 3

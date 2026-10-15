@@ -73,7 +73,7 @@ class StepChecks(BlockChecks):
         self.fresh()
         with self.c.holding(3000) as sid:
             parent=self.parent(sid);self.a.seed_step(parent,0x1000,0x40008003);req,result=self.step(sid,parent,mode,0x1000,0x1004)
-            self.a.step_behavior('ok',0x2000);before=self.a.state();require(self.c.exchange(req)==result and self.a.state()==before,'step replay executed/resumed/recomputed')
+            self.a.step_behavior('ok',0x2000);before=self.a.state();require(self.c.replayed(req,result,frame=True) and self.a.state()==before,'step replay executed/resumed/recomputed')
     def run(self):
         start=len(self.c.results)
         def context():

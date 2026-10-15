@@ -18,10 +18,19 @@ class MailboxChecks(AttachChecks):
         require(after['streams'][rid]['data']==before['streams'][rid]['data'] and after['mailboxes']==before['mailboxes'],'write accessed mailbox or changed received data')
         return req,value
     def read_all(self,rid,expected):
-        req=self.request(4,'read',0,struct.pack('<IBQH',rid,1,0,64));value=self.c.success(req)
-        require(len(value)>=11,'console read size');start,flags,count=struct.unpack_from('<QBH',value)
-        require(start==0 and flags==0 and value[11:11+count]==expected,'mailbox buffer/read mismatch');tlvs(value[11+count:])
-        require(self.c.success(self.request(4,'read',0,struct.pack('<IBQH',rid,1,0,64)))==value,'console read consumed bytes')
+        # how much one read returns is the probe's (len is max or less, more while bytes remain: common §1.2), so the
+        # buffer is read on from where each answer ended; read twice to see that reading consumes nothing
+        answers=[]
+        for _ in range(2):
+            mode,arg,data,replies=1,0,b'',[]
+            while True:
+                value=self.c.success(self.request(4,'read',0,struct.pack('<IBQH',rid,mode,arg,64)))
+                require(len(value)>=11,'console read size');start,flags,count=struct.unpack_from('<QBH',value);tlvs(value[11+count:])
+                require(start==(0 if mode==1 else arg) and not flags&2 and len(value)>=11+count,'mailbox buffer/read mismatch')
+                data+=value[11:11+count];replies.append(value);mode,arg=0,start+count
+                if not flags&1 or not count:break
+            require(data==expected and not flags&1,'mailbox buffer/read mismatch');answers.append(replies)
+        require(answers[0]==answers[1],'console read consumed bytes')
     def opened(self,sid,mechanism):
         parent,_=self.attach(sid);rid,_=self.console(sid,parent,mechanism);return rid
     def poll_expect(self,rid,data0,data1,received,operations,tx):
@@ -103,7 +112,7 @@ class MailboxChecks(AttachChecks):
         with self.c.holding(3000) as sid:
             rid=self.opened(sid,1);req,original=self.write(sid,rid,b'abc',0,3)
             self.poll_expect(rid,0x84,0,b'',[('read',0x11,0),('read',4,0x84),('write',4,0x63626107)],b'')
-            before=self.a.state();require(self.c.exchange(req)==original and self.a.state()==before,'write replay refilled or re-delivered sender queue')
+            before=self.a.state();require(self.c.replayed(req,original,frame=True) and self.a.state()==before,'write replay refilled or re-delivered sender queue')
     def clear(self):
         self.fresh()
         with self.c.holding(3000) as sid:

@@ -210,3 +210,12 @@ def test_replay_group_side_effects_are_detected(case,op):
     checks.send=broken;checker=CaptureGroupChecks(checks,SampleCaptureGroupAdapter(model));checker.cases=(case,)
     result=checker.run()
     assert next(r for r in result['checks'] if r['id']=='OEP-GROUP-'+case)['status']=='failed'
+
+
+def test_short_reads_are_the_probe_choice():
+    """capture §3.2: the probe decides how much one read returns (max or less); the checker reads on while more is set."""
+    from test_conformance_logic import one_byte_reads
+    model,checks=setup()
+    for fn in (2,3):one_byte_reads(checks,fn=fn)
+    result=CaptureGroupChecks(checks,SampleCaptureGroupAdapter(model)).run()
+    assert result['status']=='passed',[(r['id'],r.get('error')) for r in result['checks'] if r['status']!='passed']

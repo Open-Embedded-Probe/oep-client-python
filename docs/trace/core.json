@@ -317,7 +317,32 @@
     "tests/test_review6_core_early.py::test_step_left_is_taken_only_with_its_length_0",
     "tests/test_review6_core_early.py::test_capture_status_error_is_taken_only_as_one_byte",
     "tests/test_review6_core_early.py::test_configure_answer_uses_the_first_copy_and_only_values_of_their_length",
-    "tests/test_review6_core_early.py::test_calibration_takes_only_whole_values_and_the_first_vrefint"
+    "tests/test_review6_core_early.py::test_calibration_takes_only_whole_values_and_the_first_vrefint",
+    "tests/test_review7_tlv_readers.py::test_a_unit_id_over_32_bytes_is_not_used",
+    "tests/test_review7_tlv_readers.py::test_the_hardware_runner_reads_unit_id_through_its_defined_length",
+    "tests/test_review7_tlv_readers.py::test_required_missing_does_not_use_broken_transport_values",
+    "tests/test_review7_exact_payload.py::test_capture_serial_checker_accepts_answer_and_refusal_tails",
+    "tests/test_review7_exact_payload.py::test_samples_seed_plan_and_gpio_whatever_tlvs_follow[link]",
+    "tests/test_review7_exact_payload.py::test_samples_seed_plan_and_gpio_whatever_tlvs_follow[restart]",
+    "tests/test_review7_exact_payload.py::test_sample_extension_readers_skip_an_answer_tail[resources]",
+    "tests/test_review7_exact_payload.py::test_sample_extension_readers_skip_an_answer_tail[retention]",
+    "tests/test_review7_exact_payload.py::test_sample_extension_readers_skip_an_answer_tail[corr]",
+    "tests/test_review7_exact_payload.py::test_sample_extension_readers_skip_an_answer_tail[session_loss]",
+    "tests/test_review7_exact_payload.py::test_sample_extension_readers_skip_an_answer_tail[retention_lifecycle]",
+    "tests/test_review7_exact_payload.py::test_sample_extension_readers_skip_an_answer_tail[replay_pressure]",
+    "tests/test_review7_exact_payload.py::test_sample_extension_readers_skip_an_answer_tail[recovery]",
+    "tests/test_review7_exact_payload.py::test_sample_extension_readers_skip_an_answer_tail[exhausted]",
+    "tests/test_review7_exact_payload.py::test_sample_extension_readers_skip_an_answer_tail[recovery_races]",
+    "tests/test_review7_exact_payload.py::test_sample_extension_readers_skip_an_answer_tail[routes]",
+    "tests/test_review7_exact_payload.py::test_sample_extension_readers_skip_an_answer_tail[notification_sequence]",
+    "tests/test_review7_exact_payload.py::test_sample_extension_readers_skip_an_answer_tail[host_resend]",
+    "tests/test_review7_exact_payload.py::test_sample_extension_readers_skip_an_answer_tail[tlv_requests]",
+    "tests/test_review7_exact_payload.py::test_sample_extension_readers_skip_an_answer_tail[response_race]",
+    "tests/test_review7_exact_payload.py::test_sample_extension_readers_skip_an_answer_tail[probe_input]",
+    "tests/test_review7_exact_payload.py::test_sample_extension_readers_skip_an_answer_tail[tcp_recovery]",
+    "tests/test_review7_exact_payload.py::test_sample_extension_readers_skip_an_answer_tail[execution_order]",
+    "tests/test_review7_exact_payload.py::test_core_checkers_accept_tlvs_after_a_refusal[probe-input]",
+    "tests/test_review7_exact_payload.py::test_core_checkers_accept_tlvs_after_a_refusal[tcp-recovery]"
    ],
    "mutants": [
     "tests/test_conformance_host_tlv.py::test_faults_are_detected[reject_unknown-UNKNOWN]",
@@ -353,7 +378,12 @@
    "verify": [
     "tests/test_trace_core.py::test_unsupported_names_the_tag_as_received[core-v1]",
     "tests/test_trace_core.py::test_unsupported_names_the_tag_as_received[full]",
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_plan_apply_any_one_reason_that_applies"
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_plan_apply_any_one_reason_that_applies",
+    "tests/test_review7_tlv_readers.py::test_models_refuse_a_critical_unknown_tag_after_a_non_critical_copy[logic]",
+    "tests/test_review7_tlv_readers.py::test_models_refuse_a_critical_unknown_tag_after_a_non_critical_copy[analog]",
+    "tests/test_review7_tlv_readers.py::test_models_refuse_a_critical_unknown_tag_after_a_non_critical_copy[timeline]",
+    "tests/test_review7_tlv_readers.py::test_models_refuse_a_critical_unknown_tag_after_a_non_critical_copy[group]",
+    "tests/test_review7_tlv_readers.py::test_logic_checker_fails_a_model_that_skips_a_repeated_unknown_tag"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_unsupported_tag_mutant"
@@ -391,7 +421,20 @@
     "tests/test_review5_core_a.py::test_the_hardware_preflight_reads_the_first_copy_of_fn_0s_describe",
     "tests/test_review6_core_early.py::test_configure_answer_uses_the_first_copy_and_only_values_of_their_length",
     "tests/test_review6_core_early.py::test_calibration_takes_only_whole_values_and_the_first_vrefint",
-    "tests/test_review6_core_early.py::test_the_retention_checker_reads_the_first_owner_of_a_lock_state_answer"
+    "tests/test_review6_core_early.py::test_the_retention_checker_reads_the_first_owner_of_a_lock_state_answer",
+    "tests/test_review7_tlv_readers.py::test_unavailable_uses_the_first_cause_whatever_a_later_copy_is",
+    "tests/test_review7_tlv_readers.py::test_tlv_request_model_checks_a_later_copy",
+    "tests/test_review7_tlv_readers.py::test_tlv_request_checker_fails_a_model_that_skips_later_copies",
+    "tests/test_review7_tlv_readers.py::test_logic_checker_runs_raw_tags_and_first_wins_on_the_models",
+    "tests/test_review7_tlv_readers.py::test_logic_checker_fails_a_model_that_does_not_check_later_copies",
+    "tests/test_review7_tlv_readers.py::test_other_capture_models_check_later_copies[analog]",
+    "tests/test_review7_tlv_readers.py::test_other_capture_models_check_later_copies[timeline]",
+    "tests/test_review7_tlv_readers.py::test_analog_checker_reads_the_first_vrefint_copy",
+    "tests/test_review7_tlv_readers.py::test_bench_checks_a_later_copy_of_a_configure_tlv[rate-0]",
+    "tests/test_review7_tlv_readers.py::test_bench_checks_a_later_copy_of_a_configure_tlv[samples-0]",
+    "tests/test_review7_tlv_readers.py::test_bench_checks_a_later_copy_of_a_configure_tlv[rate-out-of-range]",
+    "tests/test_review7_tlv_readers.py::test_bench_checks_a_later_copy_of_a_configure_tlv[mode-undefined]",
+    "tests/test_review7_tlv_readers.py::test_bench_checks_a_later_copy_of_a_configure_tlv[trigger-value-undefined]"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_later_duplicate_unchecked_mutant",
@@ -757,7 +800,10 @@
   "core:4.3:3": {
    "text": "| 0x03 | malformed | 長さ・値域の誤り | — |",
    "verify": [
-    "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says"
+    "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says",
+    "tests/test_review7_exact_payload.py::test_core_checkers_accept_tlvs_after_a_refusal[refusal-order]",
+    "tests/test_review7_exact_payload.py::test_core_checkers_accept_tlvs_after_a_refusal[probe-input]",
+    "tests/test_review7_exact_payload.py::test_core_checkers_accept_tlvs_after_a_refusal[response-race]"
    ],
    "mutants": [],
    "note": "malformed for a short list"
@@ -766,7 +812,10 @@
    "text": "| 0x04 | unavailable | 今の状態・資源・方針では受けられな",
    "verify": [
     "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says",
-    "tests/test_trace_core.py::test_the_cause_fn_and_channel_tlvs"
+    "tests/test_trace_core.py::test_the_cause_fn_and_channel_tlvs",
+    "tests/test_review7_exact_payload.py::test_capture_checkers_accept_tlvs_after_a_refusal[logic]",
+    "tests/test_review7_exact_payload.py::test_capture_checkers_accept_tlvs_after_a_refusal[analog]",
+    "tests/test_review7_exact_payload.py::test_capture_serial_checker_accepts_answer_and_refusal_tails"
    ],
    "mutants": [],
    "note": "unavailable with cause and channel TLVs"
@@ -783,7 +832,9 @@
    "text": "| 0x07 | no_session | 要求は session_id を持つ",
    "verify": [
     "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says",
-    "tests/test_session.py::test_a_lapsed_lock_is_no_session_and_the_host_opens_anew"
+    "tests/test_session.py::test_a_lapsed_lock_is_no_session_and_the_host_opens_anew",
+    "tests/test_review7_exact_payload.py::test_core_checkers_accept_tlvs_after_a_refusal[probe-input]",
+    "tests/test_review7_exact_payload.py::test_core_checkers_accept_tlvs_after_a_refusal[tcp-recovery]"
    ],
    "mutants": [],
    "note": "no_session with no holder; the host leaves the ended session and opens a new one"
@@ -794,7 +845,9 @@
     "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says",
     "tests/test_trace_core.py::test_the_decision_table[core-v1]",
     "tests/test_trace_core.py::test_the_decision_table[full]",
-    "tests/test_review5_core_a.py::test_the_checker_takes_a_locked_answer_with_remaining_time_0"
+    "tests/test_review5_core_a.py::test_the_checker_takes_a_locked_answer_with_remaining_time_0",
+    "tests/test_review7_exact_payload.py::test_core_checkers_accept_tlvs_after_a_refusal[refusal-order]",
+    "tests/test_review7_exact_payload.py::test_core_checkers_accept_tlvs_after_a_refusal[response-race]"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_decision_table_mutant"
@@ -813,7 +866,8 @@
    "text": "| 0x0A | no_resource | 要求の資源（connection、",
    "verify": [
     "tests/test_trace_core.py::test_each_core_reason_is_given_where_the_table_says",
-    "tests/test_trace_core.py::test_no_resource_the_host_makes_the_resource_again"
+    "tests/test_trace_core.py::test_no_resource_the_host_makes_the_resource_again",
+    "tests/test_review7_exact_payload.py::test_core_checkers_accept_tlvs_after_a_refusal[execution-order]"
    ],
    "mutants": [],
    "note": "no_resource for an unknown connection; the host raises NoResource and makes the connection again"
@@ -826,7 +880,26 @@
     "tests/test_trace_core.py::test_unsupported_names_the_tag_as_received[full]",
     "tests/test_trace_core.py::test_no_revision_in_range_is_unsupported_with_supported[core-v1]",
     "tests/test_trace_core.py::test_no_revision_in_range_is_unsupported_with_supported[full]",
-    "tests/test_trace_core.py::test_unsupported_names_the_element_after_its_tag"
+    "tests/test_trace_core.py::test_unsupported_names_the_element_after_its_tag",
+    "tests/test_review7_exact_payload.py::test_debug_checkers_accept_tlvs_after_a_refusal[attach]",
+    "tests/test_review7_exact_payload.py::test_debug_checkers_accept_tlvs_after_a_refusal[scan]",
+    "tests/test_review7_exact_payload.py::test_debug_checkers_accept_tlvs_after_a_refusal[wire_options]",
+    "tests/test_review7_exact_payload.py::test_debug_checkers_accept_tlvs_after_a_refusal[scan_options]",
+    "tests/test_review7_exact_payload.py::test_debug_checkers_accept_tlvs_after_a_refusal[mailbox]",
+    "tests/test_review7_exact_payload.py::test_debug_checkers_accept_tlvs_after_a_refusal[debug]",
+    "tests/test_review7_exact_payload.py::test_debug_checkers_accept_tlvs_after_a_refusal[blocks]",
+    "tests/test_review7_exact_payload.py::test_debug_checkers_accept_tlvs_after_a_refusal[step]",
+    "tests/test_review7_exact_payload.py::test_debug_checkers_accept_tlvs_after_a_refusal[reset]",
+    "tests/test_review7_exact_payload.py::test_debug_checkers_accept_tlvs_after_a_refusal[run]",
+    "tests/test_review7_exact_payload.py::test_debug_checkers_accept_tlvs_after_a_refusal[retry]",
+    "tests/test_review7_exact_payload.py::test_debug_checkers_accept_tlvs_after_a_refusal[cut]",
+    "tests/test_review7_exact_payload.py::test_debug_checkers_accept_tlvs_after_a_refusal[writer_lease]",
+    "tests/test_review7_exact_payload.py::test_debug_checkers_accept_tlvs_after_a_refusal[arm_adi]",
+    "tests/test_review7_exact_payload.py::test_debug_checkers_accept_tlvs_after_a_refusal[arm_adi_blocks]",
+    "tests/test_review7_exact_payload.py::test_capture_checkers_accept_tlvs_after_a_refusal[logic]",
+    "tests/test_review7_exact_payload.py::test_capture_checkers_accept_tlvs_after_a_refusal[analog]",
+    "tests/test_review7_exact_payload.py::test_restart_checker_accepts_tlvs_after_the_unsupported_tag",
+    "tests/test_review7_exact_payload.py::test_core_checkers_accept_tlvs_after_a_refusal[refusal-order]"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_unsupported_tag_mutant"
@@ -886,7 +959,8 @@
     "tests/test_trace_core.py::test_the_rest_is_checked_before_anything_changes[core-v1]",
     "tests/test_trace_core.py::test_the_rest_is_checked_before_anything_changes[full]",
     "tests/test_virtual_bench_rules_2026_10_06.py::test_plan_apply_any_one_reason_that_applies",
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_plan_apply_unsupported_or_unavailable_and_nothing_changes"
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_plan_apply_unsupported_or_unavailable_and_nothing_changes",
+    "tests/test_review7_request_validation.py::test_group_checker_takes_unknown_function_for_a_bind_naming_no_fn"
    ],
    "mutants": [],
    "note": "any one reason that applies; nothing changed by the refused request"
@@ -1000,7 +1074,11 @@
     "tests/test_host_wait_bound.py::test_open_reads_max_op_ms_before_it_goes_out",
     "tests/test_host_wait_bound.py::test_the_bound_by_request",
     "tests/test_review5_core_a.py::test_the_checkers_wire_waits_at_least_max_op_ms_plus_1_s_for_an_answer",
-    "tests/test_review5_core_a.py::test_the_checker_sets_the_wires_processing_bound_from_max_op_ms"
+    "tests/test_review5_core_a.py::test_the_checker_sets_the_wires_processing_bound_from_max_op_ms",
+    "tests/test_review7_host_recovery.py::test_a_port_speed_revert_of_the_link_waits_max_op_ms",
+    "tests/test_review7_host_recovery.py::test_a_recovery_confirm_waits_its_floor_on_a_short_link_timeout",
+    "tests/test_review7_host_recovery.py::test_a_resync_confirm_from_a_pump_waits_its_floor",
+    "tests/test_review7_host_recovery.py::test_an_open_that_shows_a_reboot_reads_max_op_ms_again"
    ],
    "mutants": [
     "tests/test_conformance_host_deadline.py::test_actual_wait_loop_faults_are_detected[no_margin-SINGLE]",
@@ -1014,7 +1092,9 @@
    "text": "- **この下限はすべての要求に当てはまる**。インターフェースの文書が要求と要",
    "verify": [
     "tests/test_trace_core.py::test_an_interfaces_wait_does_not_shorten_the_floor",
-    "tests/test_trace_core.py::test_repeated_confirms_are_new_requests_and_a_late_answer_to_an_earlier_one_is_read_past"
+    "tests/test_trace_core.py::test_repeated_confirms_are_new_requests_and_a_late_answer_to_an_earlier_one_is_read_past",
+    "tests/test_review7_host_recovery.py::test_the_links_own_keepalive_waits_the_floor",
+    "tests/test_review7_host_recovery.py::test_the_last_of_repeated_confirms_waits_its_floor"
    ],
    "mutants": [
     "tests/test_conformance_host_deadline.py::test_old_argument_time_floor_is_detected[argument_only-SINGLE]",
@@ -1041,7 +1121,38 @@
     "tests/test_trace_core.py::test_the_probe_keeps_the_last_corr_and_refuses_one_not_ahead[full]",
     "tests/test_trace_core.py::test_a_record_half_the_space_old_is_not_used[core-v1]",
     "tests/test_trace_core.py::test_a_record_half_the_space_old_is_not_used[full]",
-    "tests/test_trace_core.py::test_the_holders_open_again_keeps_resources_subscriptions_and_resend_state"
+    "tests/test_trace_core.py::test_the_holders_open_again_keeps_resources_subscriptions_and_resend_state",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[allocator]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[analog]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[attach]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[arm_adi]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[arm_adi_blocks]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[capture_group]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[cut]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[debug]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[dmseq]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[dependencies]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[blocks]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[mailbox]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[logic]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[outcomes]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[i2c]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[reset]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[scan]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[retry]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[step]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[run]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[scan_options]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[uart]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[spi]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[stream]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[wire_options]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[writer_lease]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[execution_order]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[data]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[resources]",
+    "tests/test_conformance_replay_records_optional.py::test_replay_without_records_passes[subscriptions]",
+    "tests/test_conformance_replay_records_optional.py::test_timeline_lifecycle_replay_without_records_passes"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_no_order_state_mutant"
@@ -1131,7 +1242,8 @@
     "tests/test_trace_core.py::test_the_host_gives_up_after_the_resend_and_recovers_before_more",
     "tests/test_conformance_host_resend.py::test_same_byte_resends_and_probe_cache",
     "tests/test_trace_core.py::test_on_tcp_a_resend_given_up_closes_and_opens_the_connection_and_confirms_first",
-    "tests/test_review6_core_late.py::test_a_tcp_request_given_up_without_a_resend_reopens_the_connection_before_the_next"
+    "tests/test_review6_core_late.py::test_a_tcp_request_given_up_without_a_resend_reopens_the_connection_before_the_next",
+    "tests/test_review7_host_recovery.py::test_a_serial_request_given_up_confirms_the_boot_id_before_the_next"
    ],
    "mutants": [
     "tests/test_conformance_host_resend.py::test_retry_fault_observations_are_detected[no_confirm-FAILURE-RECOVER]",
@@ -1744,7 +1856,8 @@
    "text": "- 解いたピンは、どの道で解いても（インターフェースが定める解く操作、§9 の ",
    "verify": [
     "tests/test_trace_core.py::test_a_released_pin_returns_to_idle_whichever_way",
-    "tests/test_trace_core.py::test_a_released_pin_returns_to_its_configured_idle_whichever_way"
+    "tests/test_trace_core.py::test_a_released_pin_returns_to_its_configured_idle_whichever_way",
+    "tests/test_review7_state_resources.py::test_a_channel_moving_to_another_fn_is_released_to_the_idle_the_settings_give_it_now"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_pin_left_driven_after_release_mutant"
@@ -2006,7 +2119,8 @@
   "core:10.3:4": {
    "text": "- **購読はロックの持ち主だけができ、ロックと一緒に終わる**（end、期限切",
    "verify": [
-    "tests/test_trace_core.py::test_only_the_holder_subscribes_and_the_subscription_ends_with_the_lock"
+    "tests/test_trace_core.py::test_only_the_holder_subscribes_and_the_subscription_ends_with_the_lock",
+    "tests/test_review7_state_resources.py::test_the_session_end_drops_what_its_subscriptions_had_not_sent"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_subscription_outlives_the_lock_mutant",
@@ -2035,7 +2149,8 @@
     "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[1]",
     "tests/test_trace_core.py::test_a_subscribe_again_drops_the_old_subscriptions_unsent_notifications_on_the_transport",
     "tests/test_trace_transports.py::test_notifications_for_a_closed_connection_are_dropped_and_not_carried_to_a_new_one",
-    "tests/test_trace_core.py::test_an_answer_on_another_transport_does_not_wait_for_the_old_ones_frames"
+    "tests/test_trace_core.py::test_an_answer_on_another_transport_does_not_wait_for_the_old_ones_frames",
+    "tests/test_review7_state_resources.py::test_the_session_end_drops_what_its_subscriptions_had_not_sent"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_resubscribe_keeps_seq_mutant",

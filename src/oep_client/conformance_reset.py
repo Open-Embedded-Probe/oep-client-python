@@ -64,7 +64,7 @@ class ResetChecks(StepChecks):
         self.fresh()
         with self.c.holding(3000) as sid:
             parent=self.parent(sid);self.console(sid,parent,2);request,frame=self.reset(sid,parent,2,result);self.a.reset_behavior('fault');before=self.a.state()
-            require(self.c.exchange(request)==frame and self.a.state()==before,'reset replay executed ndmreset or recomputed answer')
+            require(self.c.replayed(request,frame,frame=True) and self.a.state()==before,'reset replay executed ndmreset or recomputed answer')
     def refusal_reset(self,kind):
         self.fresh()
         if kind=='SESSION':self.refused(self.reset_request(0,65535,255,b'\xfe'),'session_required');return

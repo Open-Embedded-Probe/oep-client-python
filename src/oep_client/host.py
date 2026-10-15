@@ -184,10 +184,11 @@ class Unavailable(Rejected):
             return []
 
     def _first(self, tag: int, size: int) -> bytes | None:
-        """The first TLV `tag`; None when absent or any copy is not `size` bytes (broken: not used, core §2.3). A tag with
-        bit 7 set is not this one in an answer (core §2.2)."""
-        values = [v for t, v in self.tlvs if t == tag]
-        return values[0] if values and all(len(v) == size for v in values) else None
+        """The first TLV `tag` when it is `size` bytes; None when absent or that first copy is broken (not used, and no
+        later copy stands in for it; a broken later copy does not hide a good first one: core §2.3). A tag with bit 7
+        set is not this one in an answer (core §2.2)."""
+        value = next((v for t, v in self.tlvs if t == tag), None)
+        return value if value is not None and len(value) == size else None
 
     @property
     def cause(self) -> str | None:
@@ -556,6 +557,11 @@ class Host:
         self.session = sid
         self.boot_id_seen(boot_id)                          # a reboot: one loss, and the names listed again
         self.lease_ms = lease
+        if rebooted and self.max_op_ms() is None:
+            # the old boot's declarations went with it: max_op_ms read again before a request that changes state
+            # (core §4.4: "host は状態を変える要求の前に fn 0 の describe で max_op_ms を取得する")
+            from . import core
+            core.describe(self, m.CORE_FN)
         if self.kept is not None:
             self.kept.opened(sid, self._corr)
         return Opened(lease, boot_id)

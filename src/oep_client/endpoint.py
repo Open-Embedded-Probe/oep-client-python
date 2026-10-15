@@ -1417,7 +1417,11 @@ class Endpoint:
         §2), its subscriptions; the owner is forgotten. Nothing passes to the next session."""
         self.holder = None
         self.owner = None
-        self.subscribed.clear()                                    # subscriptions end with the lock
+        for fn in list(self.subscribed):                           # subscriptions end with the lock (core §9), and
+            self._drop_unsent(fn)                                  # what they had not sent yet goes (§10.3)
+            self.sub_epoch[fn] = self.sub_epoch.get(fn, 0) + 1
+            self.data_since_ms.pop(fn, None)
+        self.subscribed.clear()
         self.push_link.clear()
         for fn in {a[0] for a in self.plan}:
             self._drop_plan(fn)
@@ -1800,12 +1804,13 @@ class Endpoint:
         in - an output idle keeps driving - until the first set (fixture §1); the idle modes 0-4 are the gpio modes of
         the same numbers."""
         old = {a for a in self.plan if a[0] in fns}
-        kept = {ch for f, _, ch in old if self.names.get(f) == "oep.fixture.gpio"} & \
-               {ch for f, _, ch in got if self.names.get(f) == "oep.fixture.gpio"}
-        released = {a[2] for a in old} - {a[2] for a in got}
+        # what stays is the same (fn, role, channel), not the same channel: a channel moving to another fn is released
+        # (to the idle state the settings give it now) and then taken (oep-if-plan §2.1, core §8)
+        kept = {a[2] for a in old & set(got) if self.names.get(a[0]) == "oep.fixture.gpio"}
+        released = {a[2] for a in old - set(got)}
         for ch in {a[2] for a in old} - kept:
             self.gpio_modes.pop(ch, None)
-        self.plan = {a for a in self.plan if a[0] not in fns}
+        self.plan = {a for a in self.plan if a[0] not in fns} | (old & set(got))
         self._park(released)
         self.plan |= set(got)
         for fn, _, ch in got:
@@ -3212,7 +3217,8 @@ class Endpoint:
                                                                    # whichever comes second (capture §1.2)
         repark =(self.disabled - disabled) | {ch for ch in set(old_idle) | set(new_idle)
                                                if old_idle.get(ch) != new_idle.get(ch)}
-        self.config = new
+        repark -= {a[2] for a in self.plan}                        # a channel a plan holds is not free, a logic's that only
+        self.config = new                                          # listens too (core §8): its new idle waits for its release
         self.generation += 1
         self._park(repark)                                         # a free channel's new idle, an enabled one (§1)
 

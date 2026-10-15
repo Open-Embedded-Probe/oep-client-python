@@ -126,3 +126,51 @@ def test_wire_pin_control_cannot_change_owned_channel():
         c.success(c.request(17,struct.pack('<BHHI',0,0,1,2000),session=sid,fn=1));before=model.wire_options_state()
         with pytest.raises(ValueError):model.wire_pin(0,'output')
         assert model.wire_options_state()==before
+
+
+@pytest.mark.parametrize('variant',['omitted','unhalted'])
+def test_dpc_is_an_optional_diagnostic(variant):
+    """debug §3 (a09fa45): "dpc TLVは任意のRV32診断値で、bit3が立ち、読めた場合だけ付ける" - a method 1 attach without dpc
+    passes; a dpc on an answer without flags bit3 (method 0) fails."""
+    model,c,a=setup();install=model.install
+    def variant_install():
+        install();e=model.extension;dispatch=e.dispatch_request
+        def changed(fn,op,payload,tags):
+            value=dispatch(fn,op,payload,tags);data=bytes(value);outcome=getattr(value,'outcome',0)
+            if fn<=3 and op==17 and len(data)>=13 and not outcome:
+                if variant=='omitted':data=data[:13]+b''.join(tlv_bytes(t,v) for t,v in tlvs(data[13:]) if t!=17)
+                elif not data[8]&8:data=data+tlv_bytes(17,struct.pack('<I',0x1000))
+            return Completed(data,outcome)
+        e.dispatch_request=changed
+    model.install=variant_install;r=WireOptionsChecks(c,a).run()
+    if variant=='omitted':assert r['status']=='passed',[(row['id'],row.get('error')) for row in r['checks'] if row['status']!='passed']
+    else:assert r['status']=='failed'
+
+
+def tlv_bytes(tag,value):return bytes((tag,))+struct.pack('<H',len(value))+value
+
+
+from oep_client.conformance import tlvs
+
+
+def test_rvswd_target_id_may_be_attached():
+    """debug §1 (a09fa45): "attach の応答の後ろに、probe が読めた target の識別子を TLV 0x10 target_id で付けてよい" and the
+    connections entry carries it (§2.1) - an rvswd / swio probe that attaches one (scheme 1, DMI 0x7F) passes."""
+    model,c,a=setup();install=model.install
+    def tid_install():
+        install();e=model.extension;dispatch=e.dispatch_request;page=e.connection_page;given=set()
+        def with_tid(fn,op,payload,tags):
+            value=dispatch(fn,op,payload,tags);data=bytes(value);outcome=getattr(value,'outcome',0)
+            if fn in (1,2) and op==17 and len(data)>=13 and not outcome:
+                given.add(struct.unpack_from('<I',data)[0]);data=data+tlv_bytes(16,b'\1'+struct.pack('<I',0x12345678))
+            return Completed(data,outcome)
+        def listed(fn,first):
+            data=bytearray(page(fn,first));at=2
+            for _ in range(data[1]):
+                rid=struct.unpack_from('<I',data,at)[0]
+                if rid in given and data[at+13]==0:data[at+12:at+14]=b'\1\4';data[at+14:at+14]=struct.pack('<I',0x12345678)
+                at+=14+data[at+13]
+            return bytes(data)
+        e.dispatch_request=with_tid;e.connection_page=listed
+    model.install=tid_install;r=WireOptionsChecks(c,a).run()
+    assert r['status']=='passed',[(row['id'],row.get('error')) for row in r['checks'] if row['status']!='passed']

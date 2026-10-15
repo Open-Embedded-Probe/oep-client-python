@@ -1,0 +1,49 @@
+{
+ "reviewed_commit": "49c22c2",
+ "class": "readers of answer / event / data TLVs and of host-input request TLVs (core §2.2, §2.3): last copy wins, length not checked against the defined length, bit 7 masked off, broken first copy replaced or a good first hidden by a later one, unknown tags (every copy) not handled, later copies not checked",
+ "sites_examined": 225,
+ "divergences": [
+  {
+   "unit": "core:2.3:10",
+   "spec": "繰り返すと定義が言わない tag が 2 つ以上あれば、読む側は最初のものを使う。後続の同じtagも上の検証対象である。",
+   "code": "src/oep_client/host.py:Unavailable._first (cause, fn)",
+   "fix": "the first copy is used when it has its length; a broken later copy no longer makes cause / fn None (was: None when any copy was not `size` bytes)"
+  },
+  {
+   "unit": "core:2.3:4",
+   "spec": "応答、出来事、データの TLV で、値が定義の決める長さ（可変の部分を持つ値なら、その数と長さが決める長さ）を持たないものは壊れている: host はそれを使わない。 / core §7.5: unit_id は text で 1〜32 byte",
+   "code": "src/oep_client/link.py:check_unit_id, _unit_id; src/oep_client/hardware.py (virtual and real preflight); new core.unit_id_value / core.unit_id",
+   "fix": "the first unit_id copy is used only when 1-32 bytes (was: any non-empty value, so a 33+ byte unit_id matched a named one / became the speed-record key)"
+  },
+  {
+   "unit": "core:2.3:4",
+   "spec": "応答、出来事、データの TLV で、値が定義の決める長さ（可変の部分を持つ値なら、その数と長さが決める長さ）を持たないものは壊れている: host はそれを使わない。",
+   "code": "src/oep_client/dump.py:required_missing",
+   "fix": "describe transport rows count only as 3 bytes (was: any non-empty); confirm's transport only as 1 byte (was: any non-empty, a 2-byte copy used)"
+  },
+  {
+   "unit": "core:2.3:10",
+   "spec": "繰り返すと定義が言わない tag が 2 つ以上あれば、読む側は最初のものを使う。後続の同じtagも上の検証対象である。例えば、正常な既知TLVの後に同じtagで不正な長さの値があれば、要求全体をmalformedで断る。",
+   "code": "src/oep_client/virtual_tlv_request_model.py:TlvRequests.request_tags; src/oep_client/conformance_tlv_requests.py:TlvRequestChecks.duplicates",
+   "fix": "a later copy of tag 1 is checked for length and value (malformed / unsupported with that copy's tag), the first used (was: skipped unchecked); the checker's DUPLICATES sends a wrong-length later copy (malformed) and an unhandled later value (unsupported, its tag)"
+  },
+  {
+   "unit": "core:2.3:7",
+   "spec": "知らない TLV（この probe が実装しない tag）: critical なら、probe は要求を rejected unsupported（payload に受け取ったままの tag）で断る。",
+   "code": "src/oep_client/virtual_logic_model.py:Logic.request_tags; virtual_analog_model.py:Analog.request_tags; virtual_capture_timeline_model.py:Track.request_tags; virtual_capture_group_model.py:CaptureGroup.request_tags; conformance_logic.py / conformance_analog.py (RAW-TAGS), conformance_capture_group.py (TLV)",
+   "fix": "an unknown tag is judged on every copy: a critical copy after a non-critical one of the same number is refused unsupported with its tag (was: skipped as a duplicate before the critical check); the checkers send 0x7e then 0xfe (0x41 then 0xc1 for the group's bind) and require unsupported"
+  },
+  {
+   "unit": "core:2.3:10",
+   "spec": "繰り返すと定義が言わない tag が 2 つ以上あれば、読む側は最初のものを使う。後続の同じtagも上の検証対象である。 / core §2.3: 定義が使わずに残した値と、この probe が扱わない値は rejected unsupported（受け取ったままの tag）。",
+   "code": "src/oep_client/virtual_bench_capture.py:VirtualCapture.settle; virtual_logic_model.py / virtual_analog_model.py / virtual_capture_timeline_model.py:settings; conformance_logic.py:LogicChecks.case(FIRST-WINS)",
+   "fix": "later copies of configure's mode / rate / samples / segments / trigger / pretrigger are checked for their values: rate / samples / segments 0 malformed, an undeclared mode, a rate outside the declared range, an undefined trigger type or value, a pretrigger past max_pretrigger unsupported with that copy's tag (was: only their length); FIRST-WINS no longer requires a later rate of 1 Hz (below the declared range) to be accepted - it takes a later in-range rate and requires rate 0 malformed and 1 Hz unsupported 0xc2"
+  },
+  {
+   "unit": "core:2.3:10",
+   "spec": "繰り返すと定義が言わない tag が 2 つ以上あれば、読む側は最初のものを使う。後続の同じtagも上の検証対象である。",
+   "code": "src/oep_client/conformance_analog.py:AnalogChecks.case(CALIBRATION)",
+   "fix": "vrefint read from its first copy (dict(reversed(...))) and every factory copy compared (was dict(tlvs(p)): the last copy of each)"
+  }
+ ]
+}

@@ -26,16 +26,21 @@ class WireOptionsChecks(AttachChecks):
         expected=[];wanted={}
         for rid,s in before['connections'].items():
             if s['fn']!=fn:continue
-            tid=struct.pack('<I',0x2ba01477) if fn==3 else b''            # swd: tid_scheme 2, the DPIDR read at attach
+            # swd: tid_scheme 2, the DPIDR read at attach; rvswd / swio: the target_id attach's answer carried (it may, debug
+            # §1), none: 0, 0 (debug §2.1)
+            scheme,tid=(2,struct.pack('<I',0x2ba01477)) if fn==3 else getattr(self,'attach_tids',{}).get(rid,(0,b''))
             if s['targetsel'] is not None:wanted[len(expected)]=s['targetsel']
-            expected.append(((rid,*s['pins'],s['speed'],2 if fn==3 else 0,len(tid)),tid))
+            expected.append(((rid,*s['pins'],s['speed'],scheme,len(tid)),tid))
         require(rows==expected and selected==wanted and self.a.state()==before,'connections target identity, selector or side effects');return rows
     def attached(self,sid,fn=1,idle=None,reset=None,targetsel=None,method=0,marked=True,pair=None,extra=b''):
         before=self.a.state();req=self.option_request(sid,fn,pair,idle,reset,targetsel,method,marked,extra);value=self.c.success(req)
         require(len(value)>=13,'attach response');rid,identity,flags,speed=struct.unpack_from('<IIBI',value);tags=dict(reversed(tlvs(value[13:])))
         wanted=(8 if method else 0)|(1 if reset is not None and fn!=3 else 0)|(4 if fn==3 and before['wire_behavior']=='dormant' else 0)
         require(flags==wanted and speed<=2000 and identity==(0x2ba01477 if fn==3 else 0x302 if method else 0xc02),'attach identity/flags/speed')
-        require((tags.get(17)==struct.pack('<I',0x1000)) if method else 17 not in tags,'halted dpc metadata')
+        # dpc is an optional diagnostic (debug §3): only with flags bit3, and then the halted pc when the probe attaches it
+        require(tags.get(17) in (None,struct.pack('<I',0x1000)) and (flags&8 or 17 not in tags),'halted dpc metadata')
+        target_id=tags.get(16)
+        if target_id is not None:require(len(target_id)>=1,'target_id scheme');self.attach_tids=getattr(self,'attach_tids',{});self.attach_tids[rid]=(target_id[0],target_id[1:])
         after=self.a.state();s=after['connections'][rid];pins=pair or self.a.pairs[fn][0]
         require(tuple(s['pins'])==pins and s['idle_clock']==(idle or 0) and s['targetsel']==targetsel,'attach option binding')
         expected_levels=[1,(idle or 0)^1] if fn==1 else [1] if fn==2 else [0,1]
@@ -107,7 +112,7 @@ class WireOptionsChecks(AttachChecks):
         self.fresh()
         with self.c.holding(3000) as sid:
             rid,req=self.attached(sid,reset=(6,1));result=self.c.exchange(req);self.a.behavior('dm-line');before=self.a.state()
-            require(self.c.exchange(req)==result and self.a.state()==before and rid in before['connections'],'attach replay reset/reallocated')
+            require(self.c.replayed(req,result,frame=True) and self.a.state()==before and rid in before['connections'],'attach replay reset/reallocated')
     def run(self):
         start=len(self.c.results)
         def context():

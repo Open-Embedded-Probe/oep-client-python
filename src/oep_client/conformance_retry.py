@@ -15,7 +15,7 @@ class RetryChecks(DebugChecks):
             require(len(rows)==1 and rows[0]['status']==status,'ambiguous host DMI step was retried')
             require(state['plans'][parent]==[0] and state['targets'][parent]['registers'].get(5)==None,'failed step consumed retry or suffix')
             if kind!='READ' and status==2:require(state['targets'][parent]['registers'][0x10 if kind=='RESUME' else 4]==(0x40000000 if kind=='RESUME' else 42),'fixture did not represent ambiguous delivered write')
-            before=self.a.state();require(self.c.exchange(req)==result and self.a.state()==before,'failed result replay repeated wire activity')
+            before=self.a.state();require(self.c.replayed(req,result,frame=True) and self.a.state()==before,'failed result replay repeated wire activity')
             require(parent in state['connections'],'status line/fault alone closed connection')
     def busy(self,kind,exhaust=False):
         self.fresh()

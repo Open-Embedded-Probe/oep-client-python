@@ -268,6 +268,28 @@ class Checks:
                 f'expected completed success, got {reply.hex()}')
         return reply[5:]
 
+    def replayed(self, request, expected, frame=False):
+        """Whether sending `request` again (same session, same corr) is answered without running it again (core §5.1):
+        with the recorded answer - `expected` is that whole result frame (frame=True) or its completed-success payload -
+        or rejected result_lost, since a probe may keep no replay records ("0 件でもよい")."""
+        reply = self.exchange(request)
+        if reply[3:5] == bytes((self.reg['resolutions']['rejected'], self.reasons['result_lost'])):
+            return True
+        if frame:
+            return reply == expected
+        return reply[3:5] == bytes((self.reg['resolutions']['completed'], self.reg['outcomes']['success'])) and \
+            reply[5:] == expected
+
+    def replay_answer(self, request):
+        """Send `request` again (same session, same corr): the recorded completed-success payload, or None when the probe
+        answers rejected result_lost - it may keep no replay records (core §5.1, "0 件でもよい")."""
+        reply = self.exchange(request)
+        if reply[3:5] == bytes((self.reg['resolutions']['rejected'], self.reasons['result_lost'])):
+            return None
+        require(reply[3:5] == bytes((self.reg['resolutions']['completed'], self.reg['outcomes']['success'])),
+                f'expected the recorded success or rejected result_lost, got {reply.hex()}')
+        return reply[5:]
+
     def rejected(self, request, reason):
         reply = self.exchange(request)
         require(reply[3:5] == bytes((self.reg['resolutions']['rejected'], self.reasons[reason])),

@@ -36,7 +36,7 @@ class RecoveryRaceChecks(RecoveryChecks):
             def change():
                 replacement = self.takeover(sid,boot)
                 value = self.peer.success(self.peer.request(16,b'\x01\x07',fn=self.a.functions[1],session=replacement))
-                rid = struct.unpack('<H',value)[0]
+                rid = struct.unpack_from('<H',value)[0]; tlvs(value[2:])   # fixed part, then a TLV tail (core §2.3)
                 require(rid == old['next_resource_id'] and rid not in old['resources'], 'force reused old resource number')
                 replacement_state.append(self.state())
             self.a.arm_transition(point,sid,change)
@@ -79,7 +79,8 @@ class RecoveryRaceChecks(RecoveryChecks):
                 require(len(raw) == 3, 'missing/extra raw batch replies')
                 for frame,request,reason in zip(raw,requests,(None,'malformed',None)):
                     self.result(frame,request,reason)
-                require(len(raw[0]) == len(raw[2]) == 7 and
+                tlvs(raw[0][7:]); tlvs(raw[2][7:])                        # TLV tails after the fixed parts (core §2.3)
+                require(len(raw[0]) >= 7 and len(raw[2]) >= 7 and
                         [struct.unpack_from('<H',raw[index],5)[0] for index in (0,2)] ==
                         [before['next_resource_id'],before['next_resource_id']+1], 'batch create result IDs/order')
                 if mode == 'prefix': require(ledger.accept(self.a.primary,epoch,raw[0]), 'delivered prefix not recorded')

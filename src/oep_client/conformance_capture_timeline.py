@@ -134,11 +134,20 @@ class CaptureTimelineChecks:
             first=(page[-1][0]+1)&0xffffffff
         require(self.a.state()==before,'segments consumed data');return rows
     def read(self,fn,generation,position=0,maximum=65535):
-        before=self.a.state();p=self.c.success(self.req(fn,'read',payload=struct.pack('<IQH',generation,position,maximum)))
-        require(len(p)>=11,'track read header');start,flags,count=struct.unpack_from('<QBH',p)
-        require(flags&~3==0 and count<=maximum and len(p)>=11+count,'track read bounds');tlvs(p[11+count:])
+        """Up to `maximum` bytes from `position`: the probe decides how much one read returns (max or less, capture
+        §3.2), so while it sets more the rest is read on from where the answer ended; (first start, first gap | last
+        more, the data)."""
+        before=self.a.state();first=None;data=b''
+        while True:
+            p=self.c.success(self.req(fn,'read',payload=struct.pack('<IQH',generation,position,maximum-len(data))))
+            require(len(p)>=11,'track read header');start,flags,count=struct.unpack_from('<QBH',p)
+            require(flags&~3==0 and count<=maximum-len(data) and len(p)>=11+count,'track read bounds');tlvs(p[11+count:])
+            if first is None:first=(start,flags&2)
+            elif start!=position or flags&2:break
+            data+=p[11:11+count];position=start+count;more=flags&1
+            if not more or not count or len(data)>=maximum:break
         require(self.a.state()==before,'track read consumed data')
-        return start,flags,p[11:11+count]
+        return first[0],first[1]|more,data
     def read_rules(self,fn,generation,write_pos,stream=False):
         """capture §2.1/§3.2 read positions; returns the read from position 0."""
         for position in (write_pos,write_pos+1,write_pos+4096):

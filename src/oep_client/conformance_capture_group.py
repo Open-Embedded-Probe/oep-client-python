@@ -80,10 +80,20 @@ class CaptureGroupChecks:
         before=self.a.state();p=self.c.success(self.req(fn,'segments',payload=b'\0'*4));require(len(p)>=2 and p[0]==0 and len(p)>=2+37*p[1],'fixture complete segment page')
         rows=[struct.unpack_from('<IQIQIIBI',p,2+37*i) for i in range(p[1])];tlvs(p[2+37*p[1]:]);require(self.a.state()==before,'group track segments consumed data');return rows
     def read(self,fn,generation,position=0,maximum=65535):
-        before=self.a.state();p=self.c.success(self.req(fn,'read',payload=struct.pack('<IQH',generation,position,maximum)))
-        require(len(p)>=11,'track read header');start,flags,count=struct.unpack_from('<QBH',p)
-        require(flags&~3==0 and count<=maximum and len(p)>=11+count,'track read bounds');tlvs(p[11+count:]);require(self.a.state()==before,'track read consumed group data')
-        return start,flags,p[11:11+count]
+        """Up to `maximum` bytes from `position`: the probe decides how much one read returns (max or less, capture
+        §3.2), so while it sets more the rest is read on from where the answer ended; (first start, first gap | last
+        more, the data)."""
+        before=self.a.state();first=None;data=b''
+        while True:
+            p=self.c.success(self.req(fn,'read',payload=struct.pack('<IQH',generation,position,maximum-len(data))))
+            require(len(p)>=11,'track read header');start,flags,count=struct.unpack_from('<QBH',p)
+            require(flags&~3==0 and count<=maximum-len(data) and len(p)>=11+count,'track read bounds');tlvs(p[11+count:])
+            if first is None:first=(start,flags&2)
+            elif start!=position or flags&2:break
+            data+=p[11:11+count];position=start+count;more=flags&1
+            if not more or not count or len(data)>=maximum:break
+        require(self.a.state()==before,'track read consumed group data')
+        return first[0],first[1]|more,data
     @staticmethod
     def rows(count=8):return [{2:[i,4095-i],3:[i&1,(i>>1)&1]} for i in range(count)]
     def data(self,generations,rows):
@@ -126,7 +136,17 @@ class CaptureGroupChecks:
             self.plan(sid);self.configure(sid)
             if kind in ('BIND-DUP','BIND-UNKNOWN'):
                 if kind=='BIND-DUP':self.refused(self.req(4,'bind',sid,self.binding((2,2))),'malformed');return
-                for fn in (1,0x7777):self.refused(self.req(4,'bind',sid,self.binding((2,fn))),'unsupported',fn=fn,tag=0)
+                self.refused(self.req(4,'bind',sid,self.binding((2,1))),'unsupported',fn=1,tag=0)
+                # 0x7777 names no fn: unknown_function (core §4.3, an fn the payload names) and unsupported (not in
+                # tracks, §4.1) both apply, and the probe answers either (core §4.3 order 4)
+                before=self.a.state();reply=self.c.exchange(self.req(4,'bind',sid,self.binding((2,0x7777))))
+                rejected=self.c.reg['resolutions']['rejected']
+                if reply[3:5]==bytes((rejected,self.c.reasons['unknown_function'])):tlvs(reply[5:])
+                else:
+                    require(reply[3:5]==bytes((rejected,self.c.reasons['unsupported'])) and reply[5:6]==b'\0'
+                            and dict(reversed(tlvs(reply[6:]))).get(self.fn_tag)==struct.pack('<H',0x7777),
+                            f'expected rejected unknown_function or unsupported 0x00 fn, got {reply.hex()}')
+                require(self.a.state()==before,'group refusal changed tracks/bind/generations/pins')
                 return
             if kind=='BIND-UNCONFIGURED':self.a.invalidate(3);self.refused(self.req(4,'bind',sid,self.binding()),'unavailable',6,3);return
             if kind in ('BIND-MODE','BIND-RATE'):
@@ -147,6 +167,7 @@ class CaptureGroupChecks:
             if kind=='BIND-TLV':
                 critical=self.tlv(0xc1,b'\1')
                 self.refused(self.req(4,'bind',sid,self.binding()+critical),'unsupported',tag=0xc1)
+                self.refused(self.req(4,'bind',sid,self.binding()+self.tlv(0x41,b'\1')+critical),'unsupported',tag=0xc1)   # every copy (core §2.3)
                 self.ok(self.req(4,'bind',sid,self.binding()+self.tlv(0x41,b'\1')));require(self.a.state()['bound']==[2,3],'non-critical bind TLV ignored')
                 for op in ('start','stop'):self.refused(self.req(4,op,sid,critical),'unsupported',tag=0xc1)
                 self.refused(self.req(4,'status',0,critical),'unsupported',tag=0xc1)
@@ -156,7 +177,7 @@ class CaptureGroupChecks:
             bind_request,bind_reply=self.bind(sid,members)
             if kind in ('BIND','REPLAY-BIND'):
                 require(self.status()[0]==(1,NO_TIME,0) and self.a.state()['bound']==list(members),'configured group bind')
-                if kind=='REPLAY-BIND':before=self.a.state();require(self.c.success(bind_request)==bind_reply and self.a.state()==before,'bind replay changed resources')
+                if kind=='REPLAY-BIND':before=self.a.state();require(self.c.replayed(bind_request,bind_reply) and self.a.state()==before,'bind replay changed resources')
                 return
             if kind=='UNBIND':
                 self.bind(sid,());require(self.status()[0][0]==0,'unbind state');self.c.success(self.req(2,'configure',sid,self.settings(2)));return
@@ -223,11 +244,11 @@ class CaptureGroupChecks:
                 require(state['generation']==generation and all(t['state']==0 and not t['config'] and not t['data'] and not t['current'] and not t['segments'] and t['generation']==gens.get(fn,t['generation']) for fn,t in state['tracks'].items()),'session closure retained capture or reset generation');return
             self.a.feed(self.rows(3))
             if kind=='REPLAY-START':
-                before=self.a.state();require(self.c.success(start_request)==start_reply and self.a.state()==before,'group start replay applied twice');return
+                before=self.a.state();require(self.c.replayed(start_request,start_reply) and self.a.state()==before,'group start replay applied twice');return
             stop_request=self.req(4,'stop',sid);stop_reply=self.ok(stop_request)
             require(self.status()[0][0]==1 and all(self.status(fn)[0][0]==1 for fn in members),'group stop failed to stop every track')
             for fn in members:require(self.segments(fn)[0][2]==3 and self.segments(fn)[0][6]&2,'group stop short segment')
-            if kind=='REPLAY-STOP':before=self.a.state();require(self.c.success(stop_request)==stop_reply and self.a.state()==before,'group stop replay changed data')
+            if kind=='REPLAY-STOP':before=self.a.state();require(self.c.replayed(stop_request,stop_reply) and self.a.state()==before,'group stop replay changed data')
             if kind=='REBIND-GEN':
                 self.bind(sid,());self.bind(sid,(3,2));new,newgens,_,_=self.start(sid,(3,2));require(new==generation+1 and all(newgens[fn]==gens[fn]+1 for fn in members),'rebind reset generations')
             require(self.idle_pads(self.a.state()),'group operations changed electrical pin state')

@@ -89,7 +89,7 @@ class BlockChecks(DebugChecks):
         with self.c.holding(3000) as sid:
             parent=self.parent(sid);req,result=self.block(sid,parent,write,values=[0x12345678,0xabcdef01])
             self.a.memory(parent,{self.base:999});before=self.a.state()
-            require(self.c.exchange(req)==result and self.a.state()==before,'block replay touched bus or recomputed result')
+            require(self.c.replayed(req,result,frame=True) and self.a.state()==before,'block replay touched bus or recomputed result')
     def cleanup_failed(self,write):
         """debug §4: the restore after a transfer fails - partial even with every word done, status the failure, then
         the connection and its streams close."""

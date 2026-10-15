@@ -91,3 +91,11 @@ def test_mailbox_controls_require_live_resource(method,args):
     model,_,_=setup();before=model.mailbox_state()
     with pytest.raises(ValueError):getattr(model,method)(*args)
     assert model.mailbox_state()==before
+
+
+def test_short_reads_are_the_probe_choice():
+    """common §1.2 (console §1): len is max or less and the probe decides how much one read returns, setting more while
+    bytes remain; the checker reads the buffer on from where an answer ended (every console read's max cut to 1)."""
+    from test_conformance_logic import one_byte_reads
+    _,c,a=setup();one_byte_reads(c,fn=4,op=17,at=23);report=MailboxChecks(c,a).run()
+    assert report['status']=='passed',[(r['id'],r.get('error')) for r in report['checks'] if r['status']!='passed']

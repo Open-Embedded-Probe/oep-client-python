@@ -1,6 +1,7 @@
 """Same-byte resends, Probe deduplication and gated post-failure recovery."""
 from .conformance import require
 from .conformance_host_deadline import reviewed_identity
+from .conformance_registered_ops import fixed_then_tlvs
 
 
 class HostResendChecks:
@@ -40,12 +41,12 @@ class HostResendChecks:
             require(confirms,'next request bypassed recovery confirm')
             if name=='FAILURE-BLOCKED':require(r['next_error']=='ConnectionError' and r['failed_after_next'] and r['next_id']==2,'failed recovery allowed next state change')
             else:
-                require(r['next_error'] is None and not r['failed_after_next'] and r['next_id']==2 and r['next_reply_hex']=='020300010001010001','recovered state query failed or repeated unknown state change')
+                require(r['next_error'] is None and not r['failed_after_next'] and r['next_id']==2 and r['next_reply_hex'] is not None and fixed_then_tlvs(bytes.fromhex(r['next_reply_hex']),bytes.fromhex('020300010001010001')),'recovered state query failed or repeated unknown state change')
                 state=[e for e in peers if bytes.fromhex(e['request_hex'])[3:6]==b'\1\0\x13']
                 require(len(state)==1 and events.index(confirms[0])<events.index(state[0]),'state query preceded recovery')
         else:
             expected_replies=['02020001000100','02030001000200'] if pipeline else ['02020001000100']
-            require(r['error'] is None and r['replies_hex']==expected_replies and r['next_id']==count+1,'Host retry returned wrong result or allocated twice')
+            require(r['error'] is None and len(r['replies_hex'])==len(expected_replies) and all(fixed_then_tlvs(bytes.fromhex(h),bytes.fromhex(x)) for h,x in zip(r['replies_hex'],expected_replies)) and r['next_id']==count+1,'Host retry returned wrong result or allocated twice')
         self.observations.append(r)
     def run(self):
         self.check('CONTEXT',self.context)

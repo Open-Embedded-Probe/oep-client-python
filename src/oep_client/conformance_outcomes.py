@@ -61,7 +61,7 @@ class OutcomeChecks:
                     # Changing current capacity must not change a cached acceptance result.
                     if before['queued']:self.a.drain_tx(len(before['queued']))
                     stable=self.a.outcome_state()
-                    require(self.c.exchange(request)==frame and self.a.outcome_state()==stable,'replayed write re-enqueued/recomputed')
+                    require(self.c.replayed(request,frame,frame=True) and self.a.outcome_state()==stable,'replayed write re-enqueued/recomputed')
                     if data==b'abcdef':self.write(sid,b'abcd',4,0)
 
     def batch(self, sid, count, done, status, outcome):
@@ -86,7 +86,7 @@ class OutcomeChecks:
                 for done in (0,2):
                     self.a.configure_debug(done,status);request,frame=self.batch(sid,3,done,status,1 if done==0 else 2)
                     self.a.configure_debug(None,status);stable=self.a.outcome_state()
-                    require(self.c.exchange(request)==frame and self.a.outcome_state()==stable,'debug replay re-executed or recomputed failure')
+                    require(self.c.replayed(request,frame,frame=True) and self.a.outcome_state()==stable,'debug replay re-executed or recomputed failure')
             else:
                 frame=self.c.exchange(self.request('single',sid));require(frame[3:5]==b'\x01\0' and len(frame)>=9,'single success layout')
                 require(struct.unpack_from('<I',frame,5)[0]==0x12345678,'single success payload');tlvs(frame[9:])
@@ -94,7 +94,7 @@ class OutcomeChecks:
                     self.a.configure_debug(0,status);request=self.request('single',sid);frame=self.c.exchange(request)
                     require(frame[3:5]==b'\x01\x01' and len(frame)>=6 and frame[5]==status,'no-done failure must be status-only completed failed')
                     tlvs(frame[6:]);stable=self.a.outcome_state()
-                    require(self.c.exchange(request)==frame and self.a.outcome_state()==stable,'single failure replay changed state')
+                    require(self.c.replayed(request,frame,frame=True) and self.a.outcome_state()==stable,'single failure replay changed state')
 
     def malformed(self, kind):
         self.fresh()

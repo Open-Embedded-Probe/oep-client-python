@@ -1,6 +1,6 @@
 """Explicit logical restart/write/route controls; no equipment discovery."""
 import struct
-from .conformance import require
+from .conformance import require, tlvs
 from .conformance_link_transfer_sample import SampleLinkTransferAdapter
 
 
@@ -18,7 +18,8 @@ class SampleRestartAdapter(SampleLinkTransferAdapter):
     def events(self):return self.model.events
     def seed(self,checks,sid):
         assignment=struct.pack('<HBH',2,1,1)
-        require(checks.success(checks.request(16,b'\x90\x05\x00'+assignment,fn=1,session=sid))==b'', 'seed plan')
-        require(checks.success(checks.request(16,b'\x01\x01\x00\x04',fn=2,session=sid))==b'', 'seed GPIO high')
+        # plan_apply / gpio set answer —: no fixed part, a TLV tail may follow (core §2.3, §4.3)
+        tlvs(checks.success(checks.request(16,b'\x90\x05\x00'+assignment,fn=1,session=sid)))
+        tlvs(checks.success(checks.request(16,b'\x01\x01\x00\x04',fn=2,session=sid)))
         state=self.model.gpio_state()
         require(state['plans']=={2:[1]} and state['pins'][1]==4,'live plan/pin seed missing')

@@ -147,3 +147,15 @@ def test_optional_timestamp_can_be_absent():
         return reply
     c.send=without_timestamp;r=I2cChecks(c,SampleI2cAdapter(model)).run()
     assert r['status']=='passed',r['checks']
+
+
+def test_features_may_be_absent():
+    """core §7.4 / fixture §3 (a09fa45): features holds optional bits; a probe without internal pull-ups need not
+    declare it (absent = no bits) - the metadata and behaviour checkers pass without the tag."""
+    from oep_client.conformance_fixture_metadata import FixtureMetadataChecks
+    model,c=setup(pullups=False);original=model.extension.describe
+    model.extension.describe=lambda fn:tuple(row for row in original(fn) if fn!=2 or row[0]!=5)
+    r=FixtureMetadataChecks(c,{2:'oep.fixture.i2c-target'}).run();assert r['status']=='passed',r['checks']
+    model,c=setup(pullups=False);original2=model.extension.describe
+    model.extension.describe=lambda fn:tuple(row for row in original2(fn) if fn!=2 or row[0]!=5)
+    r=I2cChecks(c,SampleI2cAdapter(model)).run();assert r['status']=='passed',[(x['id'],x.get('error')) for x in r['checks'] if x['status']!='passed']

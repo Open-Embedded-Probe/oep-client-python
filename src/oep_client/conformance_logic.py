@@ -2,7 +2,7 @@
 import secrets
 import struct
 from .conformance import require, tlvs
-from .conformance_registered_ops import RegisteredOpsChecks
+from .conformance_registered_ops import RegisteredOpsChecks, refusal_carries
 
 
 class LogicChecks:
@@ -32,7 +32,17 @@ class LogicChecks:
     def start(self,sid):
         req=self.req(2,'start',sid);v=self.c.success(req);require(len(v)>=4,'start fields');generation,=struct.unpack_from('<I',v);tlvs(v[4:]);require(generation>0,'start generation after first start');return generation,req,v
     def read(self,generation,position=0,maximum=65535):
-        before=self.a.state();v=self.c.success(self.req(2,'read',payload=struct.pack('<IQH',generation,position,maximum)));require(len(v)>=11,'capture read header');start,flags,count=struct.unpack_from('<QBH',v);require(flags&~3==0 and count<=maximum and len(v)>=11+count,'capture read bounds/flags');tlvs(v[11+count:]);require(self.a.state()==before,'read consumed capture data');return start,flags,v[11:11+count]
+        """Up to `maximum` bytes from `position`: the probe decides how much one read returns (max or less, capture
+        §3.2), so while it sets more the rest is read on from where the answer ended; (first start, first gap | last
+        more, the data)."""
+        before=self.a.state();first=None;data=b''
+        while True:
+            v=self.c.success(self.req(2,'read',payload=struct.pack('<IQH',generation,position,maximum-len(data))));require(len(v)>=11,'capture read header');start,flags,count=struct.unpack_from('<QBH',v);require(flags&~3==0 and count<=maximum-len(data) and len(v)>=11+count,'capture read bounds/flags');tlvs(v[11+count:])
+            if first is None:first=(start,flags&2)
+            elif start!=position or flags&2:break
+            data+=v[11:11+count];position=start+count;more=flags&1
+            if not more or not count or len(data)>=maximum:break
+        require(self.a.state()==before,'read consumed capture data');return first[0],first[1]|more,data
     def segments(self,first=0):
         before=self.a.state();rows=[]
         for _ in range(8):
@@ -43,7 +53,7 @@ class LogicChecks:
         require(self.a.state()==before,'segments changed acquisition');return rows
     def refused(self,req,reason,payload=None):
         before=self.a.state();v=self.c.rejected(req,reason)
-        if payload is not None:require(v==payload,'capture refusal raw tag/cause')
+        if payload is not None:require(refusal_carries(reason,v,payload),'capture refusal raw tag/cause')   # a TLV tail may follow (core §4.3)
         require(self.a.state()==before,'refusal changed capture/plan/pins')
     def fresh(self):
         boot=self.a.restart_fixture();require(boot['scope']=='logical-model' and boot['boot_id']!=self.c.boot,'explicit new logical boot');self.c.confirm();self.c.identity();require(self.c.boot==boot['boot_id'],'boot readback')
@@ -88,14 +98,22 @@ class LogicChecks:
                     self.configure(sid,critical=critical)
                     for field,kwargs in [('mode',dict(mode=4)),('rate',dict(rate=99)),('trigger',dict(trigger=(3,0,0)))]:self.refused(self.req(2,'configure',sid,self.settings(critical=critical,**kwargs)),'unsupported',bytes((self.tags[field]|(128 if critical else 0),)))
                 self.configure(sid);self.refused(self.req(2,'configure',sid,self.settings()+self.tlv(254,b'x')),'unsupported',b'\xfe')
+                # core §2.3: every copy of an unknown tag counts - a critical one after a non-critical one is refused
+                self.refused(self.req(2,'configure',sid,self.settings()+self.tlv(126,b'x')+self.tlv(254,b'x')),'unsupported',b'\xfe')
             elif kind=='FIRST-WINS':
-                v=self.answer(self.c.success(self.req(2,'configure',sid,self.settings()+self.tlv(self.tags['rate']|128,struct.pack('<I',1)))));require(struct.unpack('<II',v[self.answers['actual_rate']])==(1000,1),'duplicate rate did not retain first')
+                v=self.answer(self.c.success(self.req(2,'configure',sid,self.settings()+self.tlv(self.tags['rate']|128,struct.pack('<I',500)))));require(struct.unpack('<II',v[self.answers['actual_rate']])==(1000,1),'duplicate rate did not retain first')
+                # core §2.3: a later copy is checked too - a value excluded (rate 0) is malformed, one the probe does not
+                # handle (below the declared range) unsupported with that copy's tag as received
+                self.refused(self.req(2,'configure',sid,self.settings()+self.tlv(self.tags['rate'],struct.pack('<I',0))),'malformed')
+                self.refused(self.req(2,'configure',sid,self.settings()+self.tlv(self.tags['rate']|128,struct.pack('<I',1))),'unsupported',bytes((self.tags['rate']|128,)))
             elif kind=='RATE':
                 for rate in (100,537,1000):require(struct.unpack('<II',self.configure(sid,rate=rate)[self.answers['actual_rate']])==(rate,1),'exact fixture rate')
                 for rate in (99,1001):self.refused(self.req(2,'configure',sid,self.settings(rate=rate)),'unsupported',bytes((self.tags['rate'],)))
             elif kind=='SAMPLES':
                 v=self.configure(sid,samples=100);require(struct.unpack('<I',v[self.answers['actual_samples']])[0]==16,'samples must clamp capacity');self.configure(sid,mode=2,segments=1);require(self.a.state()['config']['segments']==1,'repeat segment count')
-                for segments in (100,None):v=self.configure(sid,mode=2,segments=segments);require(struct.unpack('<I',v[self.answers['actual_segments']])[0]==2==self.a.state()['config']['segments'],'repeat segments must clamp/default to capacity')
+                v=self.configure(sid,mode=2,segments=100);require(struct.unpack('<I',v[self.answers['actual_segments']])[0]==2==self.a.state()['config']['segments'],'repeat segments must clamp to capacity')
+                # omitted: the probe chooses, at least 1 and within what it holds (capture §3.3)
+                v=self.configure(sid,mode=2);actual=struct.unpack('<I',v[self.answers['actual_segments']])[0];require(1<=actual<=2 and actual==self.a.state()['config']['segments'],'omitted repeat segments must be the probe choice 1..capacity')
             elif kind=='TRIGGER':
                 self.configure(sid,trigger=(0,255,0xffffffff));self.refused(self.req(2,'configure',sid,self.settings(trigger=(1,2,0))),'unavailable',self.tlv(1,b'\6'))
                 for trigger in ((1,0,2),(2,0,3)):self.refused(self.req(2,'configure',sid,self.settings(trigger=trigger)),'unsupported',bytes((self.tags['trigger'],)))
@@ -112,7 +130,7 @@ class LogicChecks:
                 elif kind=='GEN-EXHAUST':require(generation==0xffffffff,'generation before exhaustion');self.refused(self.req(2,'start',sid),'unavailable',self.tlv(1,b'\2'));self.configure(sid);self.refused(self.req(2,'start',sid),'unavailable',self.tlv(1,b'\2'));require(self.status()[0][-1]==0xffffffff,'exhausted generation reused')
                 elif kind=='RECONFIGURE':self.configure(sid);require(self.read(generation)==(0,0,b'') and not self.segments() and self.status()[0][-1]==generation,'configure data reset/generation')
                 elif kind=='REPLAY-START':
-                    gen,req,v=self.start(sid);self.a.feed(samples);before=self.a.state();require(self.c.success(req)==v and self.a.state()==before and self.status()[0][-1]==gen,'start replay recreated generation/data')
+                    gen,req,v=self.start(sid);self.a.feed(samples);before=self.a.state();require(self.c.replayed(req,v) and self.a.state()==before and self.status()[0][-1]==gen,'start replay recreated generation/data')
             elif kind=='READ-GAP':
                 self.configure(sid,mode=2,samples=8,segments=2);generation,_,_=self.start(sid);self.a.feed([[i&1,(i>>1)&1] for i in range(16)]);end=self.status()[0][2]
                 require(self.read(generation,end)==self.read(generation,end+1,0)==(end,0,b''),'read at/after write_pos must answer write_pos, gap 0, len 0')
@@ -125,7 +143,7 @@ class LogicChecks:
                 self.configure(sid,mode=2,samples=8,segments=2);generation,_,_=self.start(sid);self.a.feed([[i&1,(i>>1)&1] for i in range(16)]);rows=self.segments();require(len(rows)==2 and rows[0][0:3]==(0,0,8) and rows[1][0:3]==(1,3,8) and self.status()[0][0]==5,'repeat capacity/positions/paging');require(rows[1][3]-rows[0][3]==8000000,'repeat segment timestamps not continuous');require(self.segments(1)==[rows[1]] and self.segments(2)==[],'segment inclusive/next cursor')
                 if kind!='PAGES':
                     req=self.req(2,'release',sid,struct.pack('<II',generation,0));v=self.ok(req);require(self.status()[0][0]==3 and self.read(generation)[0:2]==(3,2),'release resume/gap');self.a.feed([[0,1]]*8);last=self.segments()[-1];require(last[0:3]==(2,6,8) and last[6]&1,'resumed segment gap flag/positions')
-                    if kind=='REPLAY-RELEASE':before=self.a.state();require(self.c.success(req)==v and self.a.state()==before,'release replay freed current segment')
+                    if kind=='REPLAY-RELEASE':before=self.a.state();require(self.c.replayed(req,v) and self.a.state()==before,'release replay freed current segment')
             elif kind=='SHORT-STOP':
                 self.configure(sid);generation,_,_=self.start(sid);self.a.feed([[1,0]]*3);self.ok(self.req(2,'stop',sid));require(self.status()[0][0]==1 and self.segments()[0][2]==3 and self.segments()[0][6]&2,'stop short segment/state');self.data(generation,[[1,0]]*3)
             elif kind=='ERROR':

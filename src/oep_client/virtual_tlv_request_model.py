@@ -31,7 +31,6 @@ class TlvRequests(Resources):
             if number not in (1, 3):
                 if tag & 128: raise Reject(11, bytes((tag,)))
                 continue
-            if number == 1 and number in first: continue
             if number == 3:
                 if len(value) != 1: raise Reject(3)
                 if len(repeated) == 255: raise Reject(11, bytes((tag,)))
@@ -45,7 +44,7 @@ class TlvRequests(Resources):
             if (fn, op) == (2, 17):
                 if value == b'\x00': raise Reject(3)
                 if value != b'\x01': raise Reject(11, bytes((tag,)))
-            first[number] = value
+            first.setdefault(number, value)              # the first is used; a later copy is checked too (core §2.3)
         first[3] = repeated
         return first
 

@@ -37,7 +37,8 @@
    "text": "| 0x10 | set | n(u8)、n × (channel(u16)、m",
    "verify": [
     "tests/test_trace_fixture.py::test_gpio_set_row_needs_the_lock_and_answers_nothing",
-    "tests/test_interfaces.py::test_gpio_set_is_a_list_in_order_and_only_planned_channels"
+    "tests/test_interfaces.py::test_gpio_set_is_a_list_in_order_and_only_planned_channels",
+    "tests/test_review7_exact_payload.py::test_samples_seed_plan_and_gpio_whatever_tlvs_follow[link]"
    ],
    "mutants": [
     "tests/test_conformance_gpio.py::test_checker_rejects_wrong_wire_results[SESSION]"
@@ -322,7 +323,9 @@
    "verify": [
     "tests/test_trace_fixture.py::test_uart_without_write_takes_no_tx_role",
     "tests/test_trace_fixture.py::test_uart_write_needs_tx_and_a_tx_only_plan_receives_nothing",
-    "tests/test_conformance_uart.py::test_uart_checks"
+    "tests/test_conformance_uart.py::test_uart_checks",
+    "tests/test_conformance_fixture_metadata.py::test_uart_without_write_declares_no_tx_role[\\x01\\x04\\x00\\x02\\x00\\x00\\x01]",
+    "tests/test_conformance_fixture_metadata.py::test_uart_without_write_declares_no_tx_role[\\x06\\x08\\x00\\x00\\x02\\x01\\x00\\x00\\x02\\x01\\x00]"
    ],
    "mutants": [
     "tests/test_conformance_uart.py::test_wrong_wire_results_detected[RX-ONLY]",
@@ -529,7 +532,9 @@
     "tests/test_trace_fixture.py::test_i2c_drives_open_drain_only_with_its_pullups_as_declared[False]",
     "tests/test_trace_fixture.py::test_i2c_drives_open_drain_only_with_its_pullups_as_declared[True]",
     "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_3_i2c_target_open_drain_and_declared_pullups",
-    "tests/test_conformance_i2c.py::test_i2c_contract[True-False]"
+    "tests/test_conformance_i2c.py::test_i2c_contract[True-False]",
+    "tests/test_conformance_i2c.py::test_features_may_be_absent",
+    "tests/test_conformance_fixture_metadata.py::test_optional_metadata_absent[12-5]"
    ],
    "mutants": [
     "tests/test_conformance_i2c.py::test_bad_wire_results_detected[PULLUPS]"
@@ -779,7 +784,9 @@
     "tests/test_virtual_bench_targets.py::test_spi_armed_consumed_unarmed_and_overflow",
     "tests/test_conformance_spi.py::test_spi_contract[True]",
     "tests/test_conformance_spi.py::test_spi_contract[False]",
-    "tests/test_review6_rest.py::test_fixture_checkers_accept_more_tlvs_in_refusals[spi]"
+    "tests/test_review6_rest.py::test_fixture_checkers_accept_more_tlvs_in_refusals[spi]",
+    "tests/test_conformance_spi.py::test_features_may_be_absent",
+    "tests/test_conformance_fixture_metadata.py::test_optional_metadata_absent[13-5]"
    ],
    "mutants": [
     "tests/test_conformance_spi.py::test_side_effect_faults_detected[keep_config-RECONFIGURE]",
@@ -867,7 +874,9 @@
     "tests/test_spec_2c6d18d.py::test_the_virtual_bench_clears_the_bits_that_did_not_come[1]",
     "tests/test_trace_fixture.py::test_spi_counts_stop_at_their_limits_and_go_with_configure_or_release",
     "tests/test_conformance_spi.py::test_spi_contract[True]",
-    "tests/test_conformance_spi.py::test_spi_contract[False]"
+    "tests/test_conformance_spi.py::test_spi_contract[False]",
+    "tests/test_conformance_spi.py::test_empty_rx_must_be_zero_without_timestamp[bits]",
+    "tests/test_conformance_spi.py::test_empty_rx_must_be_zero_without_timestamp[timestamp]"
    ],
    "mutants": [
     "tests/test_conformance_spi.py::test_side_effect_faults_detected[truncate_bits-TRUNCATE]",

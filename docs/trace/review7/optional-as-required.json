@@ -1,0 +1,73 @@
+{
+ "reviewed_commit": "49c22c2",
+ "class": "optional as required / range as one value, and the reverse: checkers and clients that treat something the spec leaves optional or to the probe as required (optional describe tags and answer TLVs, replay records, the amount one read returns, a default the probe chooses, a TCP connection cap) or that do not enforce something the spec requires",
+ "sites_examined": 124,
+ "divergences": [
+  {
+   "unit": "core:5.1:2",
+   "spec": "要求・応答の再送用の記録は任意で、件数と byte 数に上限を置いてよく、0 件でもよい。",
+   "code": "src/oep_client/conformance.py:Checks (new replayed / replay_answer); the replay comparisons in conformance_allocator, analog, arm_adi, arm_adi_blocks, attach, blocks, capture_group, capture_timeline_lifecycle, cut, data, debug, dependencies, dmseq, execution_order, i2c, lease, logic, mailbox, outcomes, reset, resources, retry, run, scan, scan_options, spi, step, stream, subscriptions, uart, wire_options, writer_lease",
+   "fix": "a replay of a recorded request (same session, same corr) is checked with Checks.replayed / replay_answer: the recorded answer or rejected result_lost both pass (nothing may run again either way); before, `success(req)==value` / `exchange(req)==frame` failed a probe that keeps no byte records. The checkers whose explicit fixtures declare or instrument their records (link_transfers, link_routes, retention, the replay pressure cases) still require them"
+  },
+  {
+   "unit": "capture:3.2:19",
+   "spec": "read が実際に返す量は probe が決める（max 以下で、応答が max_frame に収まる量）。",
+   "code": "src/oep_client/conformance_logic.py:LogicChecks.read (inherited by AnalogChecks); conformance_capture_group.py:CaptureGroupChecks.read; conformance_capture_timeline.py:CaptureTimelineChecks.read (inherited by the lifecycle checks)",
+   "fix": "read gathers up to max: while an answer sets more, it reads on from where the answer ended (first start, first gap | last more); before, one answer had to hold all the data (flags==0 and the full byte count)"
+  },
+  {
+   "unit": "common:1.2:8",
+   "spec": "len は max 以下で、かつ max_frame の中で応答に収まる分以下。バイトが残っていれば `more` を立てる: この応答の後ろにまだ読めるバイトがあり、host はすぐ次を読んでよい。",
+   "code": "src/oep_client/conformance_stream.py:StreamChecks.read; conformance_uart.py:UartChecks.read; conformance_mailbox.py:MailboxChecks.read_all (inherited by DmseqChecks); conformance_attach.py:AttachChecks.console_case(INDEPENDENT); conformance_oep_smoke.py:OepExampleSmokeChecks.uart",
+   "fix": "reads go on from start+len while more is set and the data is compared as a whole; the frame-bound / overflow cases that check one answer use read(..., whole=False); before, a probe answering fewer bytes than max (more set) failed"
+  },
+  {
+   "unit": "capture:3.3:17",
+   "spec": "mode 2のsegmentsも、実際のsamplesと役割数で持てる上限へ切り下げる。省略時はprobeが決め、actual_segmentsは常に1以上。",
+   "code": "src/oep_client/conformance_logic.py:LogicChecks.case(SAMPLES)",
+   "fix": "a mode 2 configure without segments accepts any actual_segments 1..capacity that matches the fixture state (was: must equal the capacity 2)"
+  },
+  {
+   "unit": "debug:3:7",
+   "spec": "method 0に、hart選択の変更や停止状態の確認は要求しない。dpc TLVは任意のRV32診断値で、bit3が立ち、読めた場合だけ付ける。",
+   "code": "src/oep_client/conformance_wire_options.py:WireOptionsChecks.attached",
+   "fix": "dpc (TLV 17) may be left out of a halting attach; when present it needs flags bit3 and the halted pc (was: required whenever method 1)"
+  },
+  {
+   "unit": "debug:1:17",
+   "spec": "**target の識別子**: attach の応答の後ろに、probe が読めた target の識別子を TLV 0x10 target_id（scheme(u8)、値）で付けてよい。",
+   "code": "src/oep_client/conformance_wire_options.py:WireOptionsChecks.listing / attached",
+   "fix": "the rvswd / swio connections entry is expected to carry the target_id attach's answer carried (debug §2.1), none: 0, 0 (was: always tid_scheme 0 / tid_len 0, so a probe attaching a target_id failed)"
+  },
+  {
+   "unit": "fixture:3:8",
+   "spec": "**内部のプルアップ**: configure されている間 SDA / SCL に自分のプルアップを入れる probe は、features の bit2（内部プルアップ）でそれを宣言する。宣言しない probe はプルアップを入れない。 (core §7.4: features | u32。op でない任意機能のビット)",
+   "code": "src/oep_client/conformance_fixture_metadata.py:FixtureMetadataChecks.metadata; conformance_i2c.py:I2cChecks.run(context)",
+   "fix": "an I2C target's describe may leave features out (no bits); present it must be a u32 (was: required, and the I2C checker read it with values[...])"
+  },
+  {
+   "unit": "fixture:4:7",
+   "spec": "features の bit0 が無いのに bit_order 1 は rejected unsupported。 (core §7.4: features | u32。op でない任意機能のビット)",
+   "code": "src/oep_client/conformance_fixture_metadata.py:FixtureMetadataChecks.metadata; conformance_spi.py:SpiChecks.run(context)",
+   "fix": "an SPI target's describe may leave features out (MSB first only); present it must be a u32 (was: required); tests/test_conformance_fixture_metadata.py no longer counts a missing features as a defect"
+  },
+  {
+   "unit": "fixture:4:13",
+   "spec": "read_rx はいちばん古いものを返す（無ければpending/bits/countはすべて0、dataは空でtimestampを付けない）。",
+   "code": "src/oep_client/conformance_spi.py:SpiChecks.rx",
+   "fix": "reverse: an empty read_rx must have pending, bits and count 0 and no ns TLV (was not enforced; the old test_empty_rx_bits_field_is_not_specified asserted the opposite and is replaced)"
+  },
+  {
+   "unit": "fixture:2:10",
+   "spec": "writeを提供しないfnは、planのTX roleを受け付けず、そのroleのrole_channels/channel_groupを宣言しない。",
+   "code": "src/oep_client/conformance_fixture_metadata.py:FixtureMetadataChecks.metadata (oep.fixture.uart)",
+   "fix": "reverse: a UART fn whose ops do not set write fails when a role_channels or channel_group row names the TX role (was not checked)"
+  },
+  {
+   "unit": "transports:1:21",
+   "spec": "probe は同時接続数に上限を置いてよく、1 接続だけでもよい。上限を超える新しい接続は受け付けないか閉じる。",
+   "code": "src/oep_client/conformance_tcp_peers.py:Peers.peer",
+   "fix": "a second TCP connection refused, or closed before any answer, makes the two-connection cases not_applicable instead of failed + aborting the run"
+  }
+ ]
+}

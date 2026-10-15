@@ -10,7 +10,7 @@ import struct
 from fractions import Fraction
 from .virtual_gpio_model import Gpio
 from .virtual_logic_model import Logic, LogicModel
-from .virtual_analog_model import Analog
+from .virtual_analog_model import Analog, refuse_output_idle
 from .virtual_core import Core, Reject, tlv
 
 NO_TIME=(1<<64)-1
@@ -28,7 +28,7 @@ class CaptureGroup(Gpio):
     requires_equal_rate=True
     def __init__(self,ep):
         super().__init__();self.ep=ep;self.tracks={2:Analog(ep),3:Logic(ep),**{fn:Logic(ep) for fn in EXTRA}}
-        self.idle.update({ch:0 for ch in range(8,16)});self.pins=dict(self.idle);self.external.update({ch:ch%2 for ch in range(8,16)})
+        self.idle.update({ch:0 for ch in (0,1,*range(8,16))});self.pins=dict(self.idle);self.external.update({ch:ch%2 for ch in range(8,16)})   # the analog's 0, 1: no output idle (capture §1.2)
         self.groups={fn:Group() for fn in GROUPS}
     # fn 4 is the group the checker drives; these keep its fields directly reachable.
     bound=property(lambda self:self.groups[4].bound,lambda self,value:setattr(self.groups[4],'bound',value))
@@ -58,15 +58,12 @@ class CaptureGroup(Gpio):
     def request_tags(self,fn,op,data):
         if fn==1:return super().request_tags(fn,op,data)
         if fn in self.tracks:return self.tracks[fn].request_tags(2,op,data)
-        seen=set()
         while data:
             if len(data)<3:raise Reject(3)
             raw,size=struct.unpack_from('<BH',data);key=raw&127
             if not key or len(data)<3+size:raise Reject(3)
             data=data[3+size:]
-            if key in seen:continue
-            seen.add(key)
-            if raw&128:raise Reject(11,bytes((raw,)))   # v1 defines no group request TLV
+            if raw&128:raise Reject(11,bytes((raw,)))   # v1 defines no group request TLV: every copy (core §2.3)
         return {}
     def owner(self,fn):return next((gid for gid,g in self.groups.items() if fn in g.bound),None)
     def unbind(self,gid=4):self.groups[gid].bound=[]
@@ -97,10 +94,13 @@ class CaptureGroup(Gpio):
             roles,channels=((1,3),(0,1)) if fn==2 else ((0,1),(2,3)) if fn==3 else ((0,),(fn-2,))
             if fn not in self.tracks or role not in roles or ch not in channels:raise Reject(11,bytes((raw,)))
         if len({(r[1],r[2]) for r in rows})!=len(rows) or len({r[3] for r in rows})!=len(rows):raise Reject(11,bytes((rows[0][0],)))   # one channel per role: unsupported (plan §2.4)
+        refuse_output_idle(self.idle,(r[3] for r in rows if r[1]==2))   # the analog track (capture §1.2)
         wanted={fn:sorted((role,ch) for _,owner,role,ch in rows if owner==fn) for fn in affected}
         for fn in sorted(affected):
             if self.owner(fn) is not None and wanted[fn]!=self.assigned(fn):raise self.refusal(4,fn)
         changed=[fn for fn in affected if wanted[fn]!=self.assigned(fn)]   # the same set is a no-op (plan §2.1)
+        for fn in sorted(changed):                                 # a running track's set does not change (capture §3.2)
+            if self.tracks[fn].state in (2,3,5):raise self.refusal(6,fn)
         self.release_plans(changed)
         for fn in changed:
             self.tracks[fn].roles=[role for role,ch in wanted[fn]];self.plans[fn]=[ch for role,ch in wanted[fn]]

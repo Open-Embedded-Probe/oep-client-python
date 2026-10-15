@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- (JA) 第 7 回は単位ごとではなく、繰り返し現れる誤りの種類ごとにコード全体を掃いた（docs/trace/review7/、6 種類・約 1070 か所）。46 件の食い違いを見つけて直した:
+  - 応答・断りの payload を完全一致で比べていた検査器（14 件、core §2.3 / §4.3: 固定部分の後ろの TLV は空の固定部分と rejected にも付く）。
+  - 応答 TLV の読み手（7 件）: 壊れた後続のコピーが正しい最初のコピーを隠さない、unit_id・transport は定義の長さのときだけ使う、後続のコピーも検証する。
+  - 任意のものを必須にしていた検査器（11 件）: 再送の記録（core §5.1）、1 回の read の量、I2C / SPI の features、halt する attach の dpc、2 本目の TCP 接続。逆向きに、空の read_rx と write の無い UART の TX を検査に足した。
+  - host の待ちと立て直し（7 件）: core §4.4 の下限を全要求の処理時間の上限で数える、シリアルの口で諦めた要求も経路の立て直しと boot_id の確認へ、再起動を見た open の後は describe を読み直す、port_speed の戻しの答えを失ったら状態を読む。
+  - 要求の検証（2 件）と状態・資源（5 件）: hold_ms が max_op_ms を超える reset、bind の知らない fn、plan の保持は (fn, role, channel) ごと、plan の持つピンは idle の再設定から外す、ロックの終わりで未送信の購読フレームを捨てる、出力の idle のピンへのアナログの plan を断る。
+
 - (JA) 第 6 回の独立レビュー（docs/trace/review6/、文書の割り振りをまた変えた）で、33 件の食い違いを見つけて直した。主なもの:
   - core §2.3 / §5.1 / §6.4 / §7.2 / §7.5 / §10.3、transports §5、common §1.3: 応答の TLV は定義どおりの長さと最初のコピーだけを使う（capture・riscv の読み手）、TCP で再送を諦めたら接続を閉じて開き直す、区切りを失って静かにならない口は閉じて開き直す、list の数えた並びの後ろは TLV、owner を実装しない probe を許す、x- の unit_id で経路をまとめない、serial の範囲は持っている印どうしの差。
   - debug §1 / §2 / §3 / §4 / §4.6 / §6: role_channels は挙げた role だけを縛る、線の応答が無い間は放して休ませる、遅い速さでの再試行は任意、attach の flags bit0、resume の前に DATA0 / DATA1 を戻す、コンソールの読みで havereset を確認応答する、ブロックの op の無い arm-adi は生の transfer で組む、features は bit が立つときだけ欠陥。

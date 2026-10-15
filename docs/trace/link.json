@@ -144,7 +144,8 @@
   "link:2:3": {
    "text": "- host はその応答を、ほかの要求と同じように待つ（core §4.4）。c",
    "verify": [
-    "tests/test_trace_link.py::test_the_host_waits_for_a_source_answer_as_for_any_request_never_repeating_it_like_confirm"
+    "tests/test_trace_link.py::test_the_host_waits_for_a_source_answer_as_for_any_request_never_repeating_it_like_confirm",
+    "tests/test_review7_host_recovery.py::test_a_measurements_source_and_sink_wait_max_op_ms"
    ],
    "mutants": [],
    "note": "the host's wait for a line test: the normal wait and one resend with the same corr, no confirm-like retries"
@@ -377,7 +378,9 @@
     "tests/test_trace_link.py::test_the_host_goes_back_on_another_ids_force_open_not_on_its_own",
     "tests/test_trace_link.py::test_the_host_goes_back_after_a_restart",
     "tests/test_port_speed.py::test_the_sessions_end_takes_the_link_back_to_the_boot_speed",
-    "tests/test_trace_link.py::test_the_host_reads_the_phase_with_a_new_corr_not_from_an_old_answer"
+    "tests/test_trace_link.py::test_the_host_reads_the_phase_with_a_new_corr_not_from_an_old_answer",
+    "tests/test_review7_host_recovery.py::test_a_step_down_whose_revert_answer_is_lost_reads_port_state",
+    "tests/test_review7_host_recovery.py::test_linktests_lost_revert_answer_reads_port_state"
    ],
    "mutants": [],
    "note": "the host goes back to the boot speed on revert / end / another id's force open / restart; not on the same id's open"

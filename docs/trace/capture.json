@@ -458,7 +458,9 @@
   "capture:1.2:20": {
    "text": "- idle が出力（mode 3 / 4）の channel へのアナログの ",
    "verify": [
-    "tests/test_trace_capture.py::test_analog_plan_on_an_output_idle_channel_is_unavailable_cause_5"
+    "tests/test_trace_capture.py::test_analog_plan_on_an_output_idle_channel_is_unavailable_cause_5",
+    "tests/test_review7_state_resources.py::test_analog_model_refuses_a_plan_onto_an_output_idle_with_cause_5",
+    "tests/test_review7_state_resources.py::test_group_and_timeline_models_refuse_an_analog_plan_onto_an_output_idle"
    ],
    "mutants": [],
    "note": "analog plan on output-low/high idle -> unavailable cause 5; logic there is taken"
@@ -910,7 +912,8 @@
    "verify": [
     "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[read-False]",
     "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[read-True]",
-    "tests/test_trace_capture.py::test_read_positions_gaps_and_max_0"
+    "tests/test_trace_capture.py::test_read_positions_gaps_and_max_0",
+    "tests/test_review7_exact_payload.py::test_capture_serial_checker_accepts_answer_and_refusal_tails"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[future_keeps_position-READ]"
@@ -922,7 +925,8 @@
    "verify": [
     "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[segments-False]",
     "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[segments-True]",
-    "tests/test_trace_capture.py::test_segment_records_are_a_small_ring_the_probe_sizes"
+    "tests/test_trace_capture.py::test_segment_records_are_a_small_ring_the_probe_sizes",
+    "tests/test_review7_exact_payload.py::test_capture_serial_checker_accepts_answer_and_refusal_tails"
    ],
    "mutants": [],
    "note": "segments: its op number, lock (session 0 -> session_required) or lock-free, its answer form, in describe's ops"
@@ -932,7 +936,8 @@
    "verify": [
     "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[release-False]",
     "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[release-True]",
-    "tests/test_trace_capture.py::test_release_frees_finished_segments_up_to_serial_inclusive"
+    "tests/test_trace_capture.py::test_release_frees_finished_segments_up_to_serial_inclusive",
+    "tests/test_review7_exact_payload.py::test_capture_serial_checker_accepts_answer_and_refusal_tails"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_resume-RELEASE]"
@@ -1090,7 +1095,74 @@
   "capture:3.2:19": {
    "text": "- read が実際に返す量は probe が決める（max 以下で、応答が m",
    "verify": [
-    "tests/test_trace_capture.py::test_read_returns_at_most_max_and_within_max_frame"
+    "tests/test_trace_capture.py::test_read_returns_at_most_max_and_within_max_frame",
+    "tests/test_conformance_logic.py::test_short_reads_are_the_probe_choice",
+    "tests/test_conformance_analog.py::test_short_reads_are_the_probe_choice",
+    "tests/test_conformance_capture_group.py::test_short_reads_are_the_probe_choice",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario0]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario1]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario2]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario3]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario4]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario5]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario6]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario7]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario8]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario9]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario10]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario11]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario12]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario13]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario14]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario15]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario16]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario17]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario18]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario19]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario20]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario21]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario22]",
+    "tests/test_conformance_capture_timeline.py::test_short_reads_are_the_probe_choice[scenario23]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario0]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario1]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario2]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario3]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario4]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario5]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario6]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario7]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario8]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario9]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario10]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario11]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario12]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario13]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario14]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario15]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario16]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario17]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario18]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario19]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario20]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario21]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario22]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario23]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario24]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario25]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario26]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario27]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario28]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario29]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario30]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario31]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario32]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario33]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario34]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario35]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario36]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario37]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario38]",
+    "tests/test_conformance_capture_timeline_lifecycle.py::test_short_reads_are_the_probe_choice[scenario39]"
    ],
    "mutants": [],
    "note": "read returns <= max within max_frame (512)"
@@ -1870,7 +1942,8 @@
    "text": "- mode 2のsegmentsも、実際のsamplesと役割数で持てる上限へ",
    "verify": [
     "tests/test_trace_capture.py::test_samples_and_segments_are_rounded_down_to_what_it_holds",
-    "tests/test_trace_capture.py::test_review_pretrigger_is_checked_against_the_rounded_samples"
+    "tests/test_trace_capture.py::test_review_pretrigger_is_checked_against_the_rounded_samples",
+    "tests/test_conformance_logic.py::test_omitted_repeat_segments_are_the_probe_choice"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[segments_unclamped-SAMPLES]"
@@ -2301,7 +2374,8 @@
     "tests/test_virtual_bench_capture.py::test_a_group_refuses_what_it_cannot_bind",
     "tests/test_virtual_bench_capture.py::test_a_bind_short_of_resources_is_unavailable_limit_naming_the_fn",
     "tests/test_trace_capture.py::test_review2_bind_refuses_a_track_not_in_1_4_6",
-    "tests/test_trace_capture.py::test_review3_a_track_bound_in_another_group_is_cause_4"
+    "tests/test_trace_capture.py::test_review3_a_track_bound_in_another_group_is_cause_4",
+    "tests/test_review7_request_validation.py::test_group_checker_takes_unknown_function_for_a_bind_naming_no_fn"
    ],
    "mutants": [
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[dup_accepted-BIND-DUP]",

@@ -1,6 +1,12 @@
 """Probe role discard and minimum message header, separate from payload refusal."""
 from .conformance import require
 from .conformance_host_deadline import reviewed_identity
+from .conformance_registered_ops import fixed_then_tlvs
+
+
+def answers(reply_hex,fixed_hex):
+    """The reply starts with these bytes (header and fixed part); TLVs may follow (core §2.3, §4.3)."""
+    return reply_hex is not None and fixed_then_tlvs(bytes.fromhex(reply_hex),bytes.fromhex(fixed_hex))
 
 
 class ProbeInputChecks:
@@ -38,23 +44,23 @@ class ProbeInputChecks:
         self.fresh();self.a.advance_to(500 if mode=='end' else 1000)
         transition=self.observe(mode+'-transition',bytes.fromhex('01030000001107000000') if mode=='end' else b'\xff'+self.request[1:])
         b,a=transition['before'],transition['after']
-        require(transition['reply_hex']==('0203000100' if mode=='end' else None),'end/expiry transition reply differs')
+        require(answers(transition['reply_hex'],'0203000100') if mode=='end' else transition['reply_hex'] is None,'end/expiry transition reply differs')
         require(a['holder'] is None and not a['owner_hex'] and not a['live'] and a['last']==7 and a['next_id']==2 and a['deadline']==1000 and a['generation']==b['generation']+1,'unowned discard seed lost release/identity/deadline')
         require(a['high']==(3 if mode=='end' else 2) and set(a['cache'])==({'1','2','3'} if mode=='end' else {'1','2'}),'end/expiry history seed differs')
         require(all(a['cache'][k]==v for k,v in b['cache'].items()),'end/expiry changed old historical replies')
         self.discard_inputs(mode+'-role',mode+'-short')
         clock=self.observe(mode+'-clock',bytes.fromhex('01ffff00000400000000'))
         expected=b'\2\xff\xff\1\0'+(17).to_bytes(4,'little')+(a['now_ms']*1000000).to_bytes(8,'little')
-        require(clock['reply_hex']==expected.hex() and clock['before']==clock['after'],'unowned discard swallowed observer clock or mutated history')
+        require(answers(clock['reply_hex'],expected.hex()) and clock['before']==clock['after'],'unowned discard swallowed observer clock or mutated history')
         old=self.observe(mode+'-old-session',bytes.fromhex('0104000100100700000001'))
         x=old['after']
-        require(old['reply_hex']=='0204000007' and x['holder'] is None and not x['live'] and x['generation']==a['generation'] and x['next_id']==2 and x['deadline']==1000,'discard revived old session/resource or swallowed no_session')
+        require(answers(old['reply_hex'],'0204000007') and x['holder'] is None and not x['live'] and x['generation']==a['generation'] and x['next_id']==2 and x['deadline']==1000,'discard revived old session/resource or swallowed no_session')
     def controls(self):
         self.fresh();self.a.advance_to(500)
         short=self.observe('valid-header-short-payload',self.request[:10])
-        require(short['reply_hex']=='0203000003' and short['after']['deadline']==1500 and short['after']['live']=={'1':[1,1]} and short['after']['high']==3,'complete header with short payload must refuse,not disappear')
+        require(answers(short['reply_hex'],'0203000003') and short['after']['deadline']==1500 and short['after']['live']=={'1':[1,1]} and short['after']['high']==3,'complete header with short payload must refuse,not disappear')
         complete=self.observe('valid-request',bytes.fromhex('0104000100100700000001'))
-        require(complete['reply_hex']=='02040001000200' and complete['after']['live']=={'1':[1,1],'2':[1,1]} and complete['after']['next_id']==3,'discard fixture swallowed valid requests')
+        require(answers(complete['reply_hex'],'02040001000200') and complete['after']['live']=={'1':[1,1],'2':[1,1]} and complete['after']['next_id']==3,'discard fixture swallowed valid requests')
     def expiry(self):
         self.fresh();self.a.advance_to(999)
         before=self.observe('before-expiry',b'\3'+self.request[1:])
@@ -67,7 +73,7 @@ class ProbeInputChecks:
         short=self.observe('short-after-expiry',self.request[:4])
         require(short['reply_hex'] is None and short['before']==short['after'],'short header changed expired state')
         old=self.observe('old-session-after-expiry',self.request)
-        require(old['reply_hex']=='0203000007' and old['after']['holder'] is None and not old['after']['live'] and old['after']['deadline']==1000,'valid old-session request revived expired ownership')
+        require(answers(old['reply_hex'],'0203000007') and old['after']['holder'] is None and not old['after']['live'] and old['after']['deadline']==1000,'valid old-session request revived expired ownership')
     def run(self):
         self.check('CONTEXT',self.context)
         if self.checks[-1]['status']=='passed':

@@ -154,10 +154,10 @@ class DmseqChecks(MailboxChecks):
         with self.c.holding(3000) as sid:
             rid=self.opened(sid,2);req,original=self.write(sid,rid,b'abcd',0,4)
             self.step(rid,target_frame(syn=True,data=b'x'),b'x',reply_word(0,0,b'ab'),b'cd',self.protocol(syn=True,pending=b'ab'))
-            before=self.a.state();require(self.c.exchange(req)==original and self.a.state()==before,'write replay duplicated dmseq queue')
+            before=self.a.state();require(self.c.replayed(req,original,frame=True) and self.a.state()==before,'write replay duplicated dmseq queue')
             self.close(sid,rid);state=self.a.state()
             require(rid not in state['streams'] and rid not in state['protocols'] and rid not in state['mailboxes'],'closed dmseq pending remained live')
-            require(self.c.exchange(req)==original and self.a.state()==state,'historical write replay recreated dmseq state')
+            require(self.c.replayed(req,original,frame=True) and self.a.state()==state,'historical write replay recreated dmseq state')
             new=self.opened_new(sid);protocol=self.a.state()['protocols'][new]
             require(new>rid and not protocol['synced'] and not protocol['pending'],'reopened dmseq reused state or ID')
     def mark_event(self,kind):

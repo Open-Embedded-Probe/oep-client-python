@@ -22,8 +22,18 @@ class UartChecks:
         value=self.c.success(self.config_request(sid,baud,format_value,**kwargs));require(len(value)>=4,'configure actual baud');actual=struct.unpack_from('<I',value)[0];tlvs(value[4:]);require(actual>0 and abs(actual-baud)*100<=baud*self.tolerance,'actual baud exceeds tolerance');return actual
     def status(self):
         before=self.a.state();value=self.c.success(self.req(2,'status'));require(len(value)>=5,'UART status width');baud,format_value=struct.unpack_from('<IB',value);tlvs(value[5:]);require(self.a.state()==before,'status changed UART');return baud,format_value
-    def read(self,mode=0,arg=0,maximum=65535):
-        before=self.a.state();value=self.c.success(self.req(2,'read',payload=struct.pack('<BQH',mode,arg,maximum)));require(len(value)>=11,'UART read header');start,flags,count=struct.unpack_from('<QBH',value);require(count<=maximum and len(value)>=11+count,'UART read count');data=value[11:11+count];tlvs(value[11+count:]);require(self.a.state()==before,'read consumed UART bytes or changed state');return start,flags,data
+    def read(self,mode=0,arg=0,maximum=65535,whole=True):
+        """Up to `maximum` bytes: len is max or less (common §1.2) and how much one read returns is the probe's, so while
+        it sets more the rest is read on (from 0) where the answer ended; (first start, first gap | last more, data).
+        whole=False: the one answer as it came."""
+        before=self.a.state();first=None;data=b''
+        while True:
+            value=self.c.success(self.req(2,'read',payload=struct.pack('<BQH',mode,arg,maximum-len(data))));require(len(value)>=11,'UART read header');start,flags,count=struct.unpack_from('<QBH',value);require(count<=maximum-len(data) and len(value)>=11+count,'UART read count');tlvs(value[11+count:])
+            if first is None:first=(start,flags&2)
+            elif start!=arg or flags&2:break
+            data+=value[11:11+count];mode,arg,more=0,start+count,flags&1
+            if not whole or not more or not count or len(data)>=maximum:break
+        require(self.a.state()==before,'read consumed UART bytes or changed state');return first[0],first[1]|more,data
     def marks(self,first=0):
         before=self.a.state();rows=[]
         for _ in range(8):
@@ -86,7 +96,7 @@ class UartChecks:
             elif kind=='READ':
                 self.a.feed_bytes(b'abcdef');require(self.read(maximum=2)==(0,1,b'ab'),'read max/more');require(self.read(arg=2)==(2,0,b'cdef'),'read continuation');require(self.read(arg=100)==(6,0,b''),'future position');require(self.read(mode=2)==(6,0,b''),'read now');self.refused(self.req(2,'read',payload=struct.pack('<BQH',4,0,1)),'unsupported',b'\0')
             elif kind=='OVERFLOW':
-                data=bytes(range(80));self.a.feed_bytes(data);start,flags,part=self.read();require(start==16 and flags&2 and part==data[16:16+len(part)] and flags&1,'overflow gap/frame bound');require(self.read(arg=start+len(part))[2]==data[start+len(part):],'overflow continuation');require(any(r[2]==1 and r[4]==1 for r in self.marks()),'overflow lost mark')
+                data=bytes(range(80));self.a.feed_bytes(data);start,flags,part=self.read(whole=False);require(start==16 and flags&2 and part==data[16:16+len(part)] and flags&1,'overflow gap/frame bound');require(self.read(arg=start+len(part))[2]==data[start+len(part):],'overflow continuation');require(any(r[2]==1 and r[4]==1 for r in self.marks()),'overflow lost mark')
             elif kind=='MARKS':
                 self.a.feed_bytes(b'ab');self.a.error(2);self.a.feed_bytes(b'c');self.a.error(3);rows=self.marks();require([(r[1],r[2],r[4]) for r in rows]==[(2,1,2),(3,1,3)],'framing/parity lost mark or position');require(rows[0][3]<=rows[1][3],'mark time decreased');require(self.marks(rows[-1][0])==[rows[-1]],'marks cursor not inclusive')
             elif kind=='CLEAR':
@@ -94,9 +104,9 @@ class UartChecks:
             elif kind=='WRITE':
                 self.write(sid,b'abc',3,0);self.write(sid,b'def',1,2);require(self.a.state()['tx']==b'abcd','write must accept prefix');self.write(sid,b'x',0,1);self.write(sid,b'',0,0);require(self.a.drain(4)==b'abcd','queue drain order');self.write(sid,b'ef',2,0)
             elif kind=='WRITE-REPLAY':
-                req,reply=self.write(sid,b'ab',2,0);self.a.drain(2);before=self.a.state();require(self.c.exchange(req)==reply and self.a.state()==before,'write replay enqueued or delivered twice')
+                req,reply=self.write(sid,b'ab',2,0);self.a.drain(2);before=self.a.state();require(self.c.replayed(req,reply,frame=True) and self.a.state()==before,'write replay enqueued or delivered twice')
             elif kind=='CONFIGURE-REPLAY':
-                req=self.config_request(sid,57600,4);self.c.success(req);self.configure(sid,115200,17);before=self.a.state();self.c.success(req);require(self.a.state()==before and self.status()==(115200,17),'configure replay restored old UART settings')
+                req=self.config_request(sid,57600,4);first=self.c.success(req);self.configure(sid,115200,17);before=self.a.state();require(self.c.replayed(req,first) and self.a.state()==before and self.status()==(115200,17),'configure replay restored old UART settings')
             elif kind=='COUNTS':
                 for name,payload in [('write',b'\2\0x'),('read',b'\0'),('marks',b'\0'),('configure',b'\0')]:self.refused(self.req(2,name,sid,payload),'malformed')
             elif kind=='SESSION':

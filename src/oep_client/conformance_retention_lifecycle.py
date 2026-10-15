@@ -71,8 +71,9 @@ class RetentionLifecycleChecks(RetentionChecks):
                 self.replay_unchanged(request, reason='locked')  # S only on original primary
                 req = self.peer.request(16, b'\x01\x07', session=replacement, fn=self.a.functions[0])
                 value = self.peer.success(req)
-                require(len(value) == 2 and struct.unpack('<H', value)[0] == before['next_resource_id'] and
-                        struct.unpack('<H', value)[0] != rid, 'force reused old resource ID')
+                tlvs(value[2:])                                  # fixed part, then a TLV tail (core §2.3)
+                require(len(value) >= 2 and struct.unpack_from('<H', value)[0] == before['next_resource_id'] and
+                        struct.unpack_from('<H', value)[0] != rid, 'force reused old resource ID')
             finally:
                 if self.peer.session is not None:
                     tlvs(self.peer.success(self.peer.request(self.peer.core['end'], session=replacement)))

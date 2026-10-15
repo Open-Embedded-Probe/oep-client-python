@@ -70,7 +70,7 @@ class LeaseChecks(ReplayPressureChecks):
         with self.c.holding(1000) as sid:
             request, saved = self.setup(sid)
             old = self.state(); self.a.wait_ms(150)
-            require(self.c.exchange(request) == saved, 'success replay changed')
+            require(self.c.replayed(request, saved, frame=True), 'success replay changed')
             self.peer.clock()
             invalid = self.c.request(self.c.core['clock'], session=sid, fn=65535)
             self.c.rejected(invalid, 'unknown_function')
@@ -95,7 +95,7 @@ class LeaseChecks(ReplayPressureChecks):
                 self.unhold(); saved = self.frames(self.a.primary, [request])[0]
                 require(self.state()['holder'] is None and self.state()['deadline'] == expired['deadline'],
                         'late response resurrected expired session')
-                require(self.c.exchange(request) == saved, 'expiry lost recorded success')
+                require(self.c.replayed(request, saved, frame=True), 'expiry lost recorded success')
                 self.c.rejected(self.c.request(self.c.core['keepalive'], session=sid), 'no_session')
                 require(self.state()['holder'] is None, 'post-expiry request reopened session')
             finally: self.unhold()
@@ -140,7 +140,7 @@ class LeaseChecks(ReplayPressureChecks):
                 self.a.wait_ms(150); self.unhold(); frames = self.frames(self.a.primary, [first, end])
                 require(self.state()['holder'] is None and self.state()['deadline'] == before['deadline'],
                         'old success/end completion revived session')
-                require(self.c.exchange(end) == frames[1], 'end replay changed')
+                require(self.c.replayed(end, frames[1], frame=True), 'end replay changed')
             finally: self.unhold()
 
     def run(self):

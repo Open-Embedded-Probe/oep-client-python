@@ -35,7 +35,8 @@ class AllocatorChecks(ResourceChecks):
                 require(len(p)>=5 and p[:5]==b'\0'*5,'lease boundary did not release lock');tlvs(p[5:])
             else:tlvs(self.c.success(self.c.request(self.c.core['end'],session=sid)))
             self.c.session=None;self.empty()
-            require(self.a.decode_created(self.c.success(created))==rid,'historical last-ID response lost')
+            reply=self.c.exchange(created)   # the recorded answer, or result_lost from a probe without records (core §5.1)
+            require(reply[3:5]==bytes((0,self.c.reasons['result_lost'])) or (reply[3:5]==b'\1\0' and self.a.decode_created(reply[5:])==rid),'historical last-ID response lost')
             self.empty();self.c.rejected(self.a.request('use',sid,slot,rid),'no_session')
         with self.c.holding(60000) as sid:self.exhausted(sid,slot)
     def force_boundary(self):
@@ -56,7 +57,7 @@ class AllocatorChecks(ResourceChecks):
             request=self.a.request('create',sid,slot);frame=self.c.exchange(request)
             require(frame[3:5]==bytes((0,self.c.reasons['unavailable'])) and dict(reversed(tlvs(frame[5:]))).get(1)==b'\x02','exhaustion cause')
             self.close(sid,slot,rid);before=self.a.state()
-            require(self.c.exchange(request)==frame and self.a.state()==before,'failed-create replay executed/changed allocator')
+            require(self.c.replayed(request,frame,frame=True) and self.a.state()==before,'failed-create replay executed/changed allocator')
             self.empty();self.exhausted(sid,slot)
     def reboot_boundary(self):
         self.fresh(65534)

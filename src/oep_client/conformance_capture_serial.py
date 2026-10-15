@@ -2,7 +2,19 @@
 import hashlib
 from pathlib import Path
 import struct
-from .conformance import require
+from .conformance import require, tlvs
+from .conformance_registered_ops import refusal_carries
+
+
+def answered(reply,fixed):
+    """A completed success whose payload starts with `fixed`; the rest is the answer's TLV tail (core §2.3)."""
+    if reply[3:5]!=b'\1\0' or reply[5:5+len(fixed)]!=fixed:return False
+    tlvs(reply[5+len(fixed):]);return True
+
+
+def refused_stale(reply):
+    """rejected unavailable carrying cause 6, other TLVs in any order around it (core §4.3)."""
+    return reply[3:5]==b'\0\4' and refusal_carries('unavailable',reply[5:],b'\1\1\0\6')
 from .conformance_host_deadline import reviewed_identity as core_identity
 
 REVIEWED={'interfaces/oep-if-capture.ja.md':'430950c71e6bbd78b9e8233db075a99ab6587ad99b37aae30132d6e66eced9d9',
@@ -55,26 +67,26 @@ class CaptureSerialChecks:
             require(int.from_bytes(request[3:5],'little')==e['fn'] and request[5]==e['op'],'trace request fn/op differs')
             require(reply[:3]==b'\2'+request[1:3],'response corr differs')
             if e['op'] in (21,22) and e['fn']==2:require(e['before']==e['after'],'capture read/segments consumed state')
-            if e.get('replay'):require(e['before']==e['after'] and reply[3:]==b'\1\0','cached release modified wrapped acquisition')
+            if e.get('replay'):require(e['before']==e['after'] and answered(reply,b''),'cached release modified wrapped acquisition')
             if e['fn']==2 and e['op']==22:
                 first=int.from_bytes(request[10:14],'little');available=e['before']['segments'];next_serial=e['before']['serial']
                 index=next((i for i,row in enumerate(available) if row[0]==first),0)
                 rows_expected=[] if first==next_serial or not available else available[index:]
                 wire=bytes((0,len(rows_expected)))+b''.join(struct.pack('<IQIQIIBI',*row) for row in rows_expected)
-                require(reply[3:]==b'\1\0'+wire,'wrapped serial page from/inclusive/fallback differs')
+                require(answered(reply,wire),'wrapped serial page from/inclusive/fallback differs')
             if e['fn']==2 and e['op']==21:
                 # read: generation(u32) position(u64) max(u16) -> position(u64) flags(u8) len(u16) data (capture §3.2).
                 require(len(request)==24,'read request shape differs');generation_read,position,maximum=struct.unpack_from('<IQH',request,10);s=e['before']
                 if generation_read!=s['generation']:
-                    require(reply[3:]==b'\0\4\1\1\0\6' and e['before']==e['after'],'wrong generation read not refused with cause 6');continue
+                    require(refused_stale(reply) and e['before']==e['after'],'wrong generation read not refused with cause 6');continue
                 raw=bytes.fromhex(s['data_hex']);start=max(s['base'],min(position,s['base']+len(raw)));part=raw[start-s['base']:start-s['base']+maximum]
                 # Before write_pos a recycled position moves forward with gap (also when nothing is left: write_pos, gap, len 0);
                 # at or past write_pos it is write_pos, no gap, len 0. max=0 is an empty success under the same rules.
                 flags=(2 if position<s['base'] else 0)|(1 if start+len(part)<s['base']+len(raw) else 0)
-                require(reply[3:]==b'\1\0'+struct.pack('<QBH',start,flags,len(part))+part,'u64 read position/gap/count differs')
+                require(answered(reply,struct.pack('<QBH',start,flags,len(part))+part),'u64 read position/gap/count differs')
         for op in (21,23):
             stale=[e for e in trace if e['fn']==2 and e['op']==op and int.from_bytes(bytes.fromhex(e['request_hex'])[10:14],'little')==generation-1]
-            require(stale and all(bytes.fromhex(e['reply_hex'])[3:]==b'\0\4\1\1\0\6' and e['before']==e['after'] for e in stale),'wrong generation read/release missing or changed capture')
+            require(stale and all(refused_stale(bytes.fromhex(e['reply_hex'])) and e['before']==e['after'] for e in stale),'wrong generation read/release missing or changed capture')
         reads=[struct.unpack_from('<QH',bytes.fromhex(e['request_hex']),14) for e in trace if e['fn']==2 and e['op']==21]
         require(any(m==0 for _,m in reads) and any(e['op']==21 and e['before']['data_hex']=='' and e['before']['base']>base and
                     int.from_bytes(bytes.fromhex(e['request_hex'])[14:22],'little')<e['before']['base'] for e in trace),'max=0 and all-released read stimulus missing')

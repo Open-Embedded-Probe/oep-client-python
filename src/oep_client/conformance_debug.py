@@ -92,7 +92,7 @@ class DebugChecks(DmseqChecks):
         self.fresh()
         with self.c.holding(3000) as sid:
             parent,_=self.attach(sid);req,result=self.dmi(sid,parent,[self.write_reg(4,123),self.read(4)],2,0,[123])
-            self.a.registers(parent,{4:456});before=self.a.state();require(self.c.exchange(req)==result and self.a.state()==before,'dmi replay repeated target access')
+            self.a.registers(parent,{4:456});before=self.a.state();require(self.c.replayed(req,result,frame=True) and self.a.state()==before,'dmi replay repeated target access')
     def overall_timeout(self):
         self.fresh()
         with self.c.holding(3000) as sid:

@@ -18,6 +18,16 @@ def refusal_carries(reason, payload, expected):
     return all(got.get(tag) == value for tag, value in dict(reversed(tlvs(expected))).items())
 
 
+
+def fixed_then_tlvs(payload, fixed):
+    """Whether `payload` (a whole reply or its payload) starts with `fixed` and the rest is a TLV list: every answer's
+    fixed part, an empty one and a rejected one too, may be followed by TLVs the reader skips (core §2.3, §4.3)."""
+    payload, fixed = bytes(payload), bytes(fixed)
+    if payload[:len(fixed)] != fixed:
+        return False
+    tlvs(payload[len(fixed):])
+    return True
+
 # An optional op that requires another: state with save, port_state with port_speed, marks with mark.
 IMPLIED={'oep.probe.config':(('save','state'),),'oep.probe.link':(('port_speed','port_state'),),
          'oep.target.console':(('mark','marks'),),'oep.fixture.uart':(('mark','marks'),)}

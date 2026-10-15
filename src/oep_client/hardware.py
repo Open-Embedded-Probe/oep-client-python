@@ -381,7 +381,8 @@ def virtual_smoke(equipment: Equipment, probes=()):
             values = dict(reversed(core.describe(hst)))   # a tag twice: the first copy is used (core §2.3)
             # answer text shown with control characters and bad UTF-8 replaced (core §2.1)
             result['firmware'] = message.shown(values.get(virtual_bench.CORE_FIRMWARE, b'')) or None
-            result['unit_id'] = message.shown(values.get(virtual_bench.CORE_UNIT_ID, b'')) or None
+            # unit_id: 1-32 bytes; a broken first copy is not used (core §2.3, §7.5)
+            result['unit_id'] = message.shown(core.unit_id_value(core.describe(hst)) or b'') or None
             if result['unit_id'] != node['identity']['value']:
                 raise RuntimeError('probe identity does not match explicit configuration')
             if capabilities.missing:
@@ -474,8 +475,10 @@ def physical_preflight(equipment: Equipment, probes=(), *, lock_path=None):
                 values = dict(reversed(core.describe(hst)))   # a tag twice: the first copy is used (core §2.3)
                 tags = registry.CORE.tlv['describe']
                 for field in ('firmware', 'model', 'unit_id', 'chip'):
-                    # answer text shown with control characters and bad UTF-8 replaced (core §2.1)
-                    result[field] = message.shown(values.get(tags[field], b'')) or None
+                    # answer text shown with control characters and bad UTF-8 replaced (core §2.1); unit_id: 1-32
+                    # bytes, a broken first copy not used (core §2.3, §7.5)
+                    value = core.unit_id_value(core.describe(hst)) if field == 'unit_id' else values.get(tags[field])
+                    result[field] = message.shown(value or b'') or None
                 if not result['unit_id'] or result['unit_id'].lower() != node['identity']['value'].lower():
                     raise RuntimeError('probe identity does not match explicit configuration')
                 caps = dump.collect(lambda fn, op, payload: hst.call(fn, op, payload, locked=False).payload,

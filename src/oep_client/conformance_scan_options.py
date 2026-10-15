@@ -80,7 +80,7 @@ class ScanOptionsChecks(WireOptionsChecks):
         self.fresh()
         with self.c.holding(3000) as sid:
             pair=self.a.pairs[3][0];self.a.identity(3,pair,0x01000001,0x2ba01477);req,value=self.scan(sid,3,[pair],[self.found(3,pair,0x2ba01477)],selector=0x01000001)
-            self.a.identity(3,pair,0x01000001,None);before=self.a.state();require(self.c.success(req)==value and self.a.state()==before,'scan replay probed/selected target again')
+            self.a.identity(3,pair,0x01000001,None);before=self.a.state();require(self.c.replayed(req,value) and self.a.state()==before,'scan replay probed/selected target again')
     def refused_scan(self,kind):
         self.fresh();pairs=list(self.a.pairs[1])
         if kind=='SESSION':self.refused(self.scan_request(0,1,pairs,extra=b'\xfe'),'session_required');return

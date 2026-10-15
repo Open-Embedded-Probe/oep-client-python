@@ -54,7 +54,12 @@ def exercise_boot_change(observer, before, after, host_type=host.Host):
     observed = len(requests)
     assert h._boot_id == after
     assert h.epoch == epoch + 1, 'changed boot did not invalidate resource epoch'
-    assert not h._fns and not h._revisions and not h._describes, 'old discovery caches survived boot change'
+    # open: fn 0's describe is read again from the new boot right after (max_op_ms before a state change, core §4.4)
+    fresh = {0} if observer == 'open' else set()
+    assert not h._fns and not h._revisions and set(h._describes) == fresh, 'old discovery caches survived boot change'
+    if fresh:
+        ops = [(r.fn, r.op) for r in requests[start:observed]]
+        assert ops[-1] == (0, m.OP_DESCRIBE) and ops.index((0, m.OP_OPEN)) < len(ops) - 1
     assert not h.subscriptions, 'old subscription survived boot change'
     assert core.find(h, NAME) == 513
     h.call(513, 16, locked=False)

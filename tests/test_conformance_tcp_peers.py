@@ -13,9 +13,9 @@ from test_conformance import REG
 
 
 @contextmanager
-def runner():
+def runner(*extra):
     proc = subprocess.Popen([sys.executable, '-m', 'oep_client.virtual_bench_serve',
-                             '--tcp', '0', '--profile', 'core-v1'],
+                             '--tcp', '0', '--profile', 'core-v1', *extra],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     wire = None
     try:
@@ -210,3 +210,15 @@ def test_response_to_partial_header_aborts_without_followup_requests():
         check.check('peer', 'transports', Peers(check).partial)
         assert check.results[-1]['status'] == 'failed' and check.abort
         assert 'partial TCP header' in check.results[-1]['error']
+
+
+def test_one_connection_probe_makes_peer_cases_not_applicable():
+    """transports §1 (a09fa45): "probe は同時接続数に上限を置いてよく、1 接続だけでもよい。上限を超える新しい接続は受け付けないか
+    閉じる" - a probe serving one connection closes the peer at once; the two-connection cases are not applicable, not
+    failed, and nothing else is aborted."""
+    with runner('--framing', 'length', '--tcp-connections', '1') as check:
+        report = check.run()
+        rows = {r['id']: r for r in report['checks']}
+        assert report['status'] == 'passed', [(r['id'], r.get('error')) for r in report['checks'] if r['status'] not in ('passed', 'not_applicable')]
+        assert all(rows[name]['status'] == 'not_applicable' for name, _ in TCP_PEER_CASES)
+        assert check.session is None

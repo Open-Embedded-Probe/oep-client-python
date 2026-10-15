@@ -211,6 +211,11 @@ class VirtualCapture:
         for tag in (TLV["samples"], TLV["segments"]):
             if tag in got and not struct.unpack("<I", got[tag])[0]:
                 raise Reject(m.MALFORMED)                          # 1 or more (§3.3)
+        # a later copy of a tag is checked too, the first used (core §2.3): a value the definition excludes ...
+        later = {tag: [(raw, v) for raw, v in t.repeated if raw & 0x7F == tag][1:] for tag in TLV.values()}
+        for tag in (TLV["rate"], TLV["samples"], TLV["segments"]):
+            if any(not struct.unpack("<I", v)[0] for _, v in later[tag]):
+                raise Reject(m.MALFORMED)
         trigger = None
         if TLV["trigger"] in got:
             kind, role, value = struct.unpack("<BBI", got[TLV["trigger"]])   # type role value(u32)
@@ -235,6 +240,21 @@ class VirtualCapture:
             top = {TRIGGER["level"]: 1, TRIGGER["edge"]: 2}.get(trigger[0], FULL)
             if trigger[2] > top:
                 raise t.refuse(TLV["trigger"])
+        # ... and one this probe does not handle: unsupported with that copy's tag as received (core §2.3)
+        for raw, v in later[TLV["mode"]]:
+            if v[0] not in self.modes:
+                raise Reject(m.UNSUPPORTED, bytes([raw]))
+        for raw, v in later[TLV["rate"]]:
+            if not self.min_hz <= struct.unpack("<I", v)[0] <= self.max_hz:
+                raise Reject(m.UNSUPPORTED, bytes([raw]))
+        for raw, v in later[TLV["trigger"]]:
+            kind, _, value = struct.unpack("<BBI", v)
+            allowed = (TRIGGER["cross_up"], TRIGGER["cross_down"]) if self.analog else (TRIGGER["level"], TRIGGER["edge"])
+            if kind and (kind not in allowed or value > {TRIGGER["level"]: 1, TRIGGER["edge"]: 2}.get(kind, FULL)):
+                raise Reject(m.UNSUPPORTED, bytes([raw]))
+        for raw, v in later[TLV["pretrigger"]]:
+            if struct.unpack("<I", v)[0] > self.max_pretrigger:
+                raise Reject(m.UNSUPPORTED, bytes([raw]))
         if not channels:
             raise wrong_state()                                    # no plan (§3.2)
         role_ids = sorted(planned_roles) if planned_roles is not None else list(range(channels))

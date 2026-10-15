@@ -1,5 +1,6 @@
 """Core TLV request rules against an explicitly adopted four-context fixture."""
 from .conformance import require, tlvs
+from .conformance_registered_ops import fixed_then_tlvs
 
 
 def field(tag, value):
@@ -23,7 +24,7 @@ class TlvRequestChecks:
         request = self.request(sid, context, raw)
         payload = self.c.success(request)
         expected = len(value).to_bytes(2, 'little') + value + bytes((len(repeats),)) + bytes(repeats)
-        require(payload == expected, 'context-specific TLV value/order differs')
+        require(fixed_then_tlvs(payload, expected), 'context-specific TLV value/order differs')   # a TLV tail may follow (core §2.3)
         after = self.state()
         self.observations.append({'action': 'accepted', 'request_hex': request.hex(),
                                   'before': before, 'after': after})
@@ -105,6 +106,13 @@ class TlvRequestChecks:
             for context in self.contexts:
                 self.accepted(sid, context, field(3, b'\x09') + field(1, context[2]) + field(131, b'\x02'),
                               context[2], (9, 2))
+            # core §2.3: a later copy of a non-repeating tag is checked too - a wrong length after a good first copy
+            # is malformed, an unhandled value unsupported with that copy's tag as received
+            for context in self.contexts:
+                for first, second in ((1, 129), (129, 1)):
+                    self.refused(sid, context, field(first, context[2]) + field(second, b''), 'malformed')
+            for first, second in ((1, 129), (129, 1)):
+                self.refused(sid, self.contexts[3], field(first, b'\x01') + field(second, b'\x02'), 'unsupported', second)
 
     def run(self):
         start = len(self.c.results)

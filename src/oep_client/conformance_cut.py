@@ -36,7 +36,7 @@ class CutChecks(DebugChecks):
             self.verify_closed(held,after,parent,rid)
             rows=after['lifecycle'];write=next(i for i,r in enumerate(rows) if r[:2]==('response-write',accepted['corr']));close=next(i for i,r in enumerate(rows) if r[:2]==('stream-close',rid));require(write<close,'response was written after child close')
             require(not any(r[0]=='mark' for r in rows),'line loss left a mark on a released stream')
-            packets=after['packets'];targets=after['closed_targets'];require(self.c.exchange(req)==frame,'cached cut response differs')
+            packets=after['packets'];targets=after['closed_targets'];require(self.c.replayed(req,frame,frame=True),'cached cut response differs')
             replay=self.a.state();require(replay['packets']==packets and replay['closed_targets']==targets and replay['connections']==after['connections'],'cached cut response reexecuted or reopened')
             self.refused(self.dmi_request(sid,parent,[self.read(4)]),'no_resource')
     def console_cut(self,halt=False):

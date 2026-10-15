@@ -60,7 +60,7 @@ class RestartChecks:
                     other=1 if sid!=1 else 2;self.refused(self.request(other),'locked')
                 elif name=='TLV':
                     for tail in (b'\0\0\0',b'\x80\0\0',b'\x7f',b'\x7f\2\0x'):self.refused(self.request(sid,tail),'malformed')
-                    payload=self.refused(self.request(sid,b'\xff\0\0'),'unsupported');require(payload==b'\xff','restart critical tag not echoed')
+                    payload=self.refused(self.request(sid,b'\xff\0\0'),'unsupported');require(payload[:1]==b'\xff','restart critical tag not echoed');tlvs(payload[1:])   # tag(u8), [TLV] (core §4.3)
                     self.restart(sid,b'\x7f\0\0')
                 else:self.restart(sid)
             finally:

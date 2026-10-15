@@ -122,6 +122,12 @@ class ExampleCore(SmallCore):
             source, arg, maximum = struct.unpack('<BQH', body)
             if source == 3:
                 return reject(11, b'\0')
+            if self.oep_fault == 'short_reads':  # common §1.2: one byte an answer, more while bytes remain
+                first = self.position - len(self.buffer)
+                at = max(arg, first) - first if source == 0 else 0
+                data = self.buffer[at:at + min(maximum, 1)]
+                more = int(at + len(data) < len(self.buffer))
+                return success(struct.pack('<QBH', first + at, more, len(data)) + data)
             data = self.buffer[:maximum]
             result = success(struct.pack('<QBH', self.position - len(self.buffer), 0, len(data)) + data)
             if self.oep_fault == 'uart_consumes':
@@ -183,3 +189,10 @@ def test_missing_stimulus_is_not_a_pass_or_equipment_skip():
     _, report = execute(stimulus=False)
     assert report['status'] == 'incomplete'
     assert next(row for row in report['checks'] if row['id'] == 'OEP-SMOKE-UART')['status'] == 'not_run'
+
+
+def test_short_uart_reads_are_the_probe_choice():
+    """common §1.2 (fixture §2): len is max or less and how much one read returns is the probe's (more while bytes
+    remain); a probe answering one byte at a time passes UART."""
+    probe, report = execute('short_reads')
+    assert report['status'] == 'passed', report['checks']

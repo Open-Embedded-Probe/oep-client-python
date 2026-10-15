@@ -160,3 +160,36 @@ def test_future_empty_read_must_answer_write_pos():
         return reply
     c.send=requested_position;checker=LogicChecks(c,SampleLogicAdapter(model));checker.cases=('READ',);r=checker.run()
     assert next(row for row in r['checks'] if row['id']=='OEP-LOGIC-READ')['status']=='failed'
+
+
+def test_omitted_repeat_segments_are_the_probe_choice():
+    """capture §3.3 (a09fa45): mode 2 without segments - "省略時はprobeが決め、actual_segmentsは常に1以上"; a probe that
+    picks 1 segment (not its capacity 2) passes SAMPLES."""
+    model,c=setup();install=model.install
+    def one_by_default():
+        install();e=model.extension;settings=e.settings
+        def chosen(tags):
+            config=settings(tags)
+            if config['mode']==2 and 68 not in tags:config['segments']=1
+            return config
+        e.settings=chosen
+    model.install=one_by_default;model.install()
+    checker=LogicChecks(c,SampleLogicAdapter(model));checker.cases=('SAMPLES',);r=checker.run()
+    assert next(row for row in r['checks'] if row['id']=='OEP-LOGIC-SAMPLES')['status']=='passed',r['checks']
+
+
+def one_byte_reads(c,fn=2,op=21,at=22):
+    """A probe that returns at most 1 byte a read (capture §3.2: "read が実際に返す量は probe が決める（max 以下..."):
+    every read request's max (the u16 at byte `at` of the request) is cut to 1 before the model answers."""
+    original=c.send
+    def send(req):
+        req=bytes(req)
+        if len(req)>=at+2 and int.from_bytes(req[3:5],'little')==fn and req[5]==op and int.from_bytes(req[at:at+2],'little')>1:
+            req=req[:at]+b'\1\0'+req[at+2:]
+        return original(req)
+    c.send=send
+
+
+def test_short_reads_are_the_probe_choice():
+    model,c=setup();one_byte_reads(c);r=LogicChecks(c,SampleLogicAdapter(model)).run()
+    assert r['status']=='passed',[(row['id'],row.get('error')) for row in r['checks'] if row['status']!='passed']

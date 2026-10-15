@@ -277,7 +277,8 @@
     "tests/test_trace_debug.py::test_target_id_scheme_1_is_not_reported_for_its_none_values[4294967295-False]",
     "tests/test_trace_debug.py::test_target_id_scheme_1_is_not_reported_for_its_none_values[56493569-True]",
     "tests/test_interfaces.py::test_attach_reports_the_target_id_when_the_probe_reads_one",
-    "tests/test_debug_attach.py::test_the_client_reads_connections"
+    "tests/test_debug_attach.py::test_the_client_reads_connections",
+    "tests/test_conformance_wire_options.py::test_rvswd_target_id_may_be_attached"
    ],
    "note": "TLV 0x10 target_id scheme(u8) value only when read; scheme 1's 0 / 0xFFFFFFFF are none (not reported)"
   },
@@ -622,7 +623,9 @@
     "tests/test_trace_debug.py::test_attach_acknowledges_a_pending_havereset_and_says_so",
     "tests/test_target_parts.py::test_swd_attach_decodes_dpidr_and_dormant",
     "tests/test_interfaces.py::test_attach_under_reset_is_the_reset_tlv",
-    "tests/test_review6_debug_a.py::test_an_attach_under_reset_acknowledges_the_havereset_its_reset_left"
+    "tests/test_review6_debug_a.py::test_an_attach_under_reset_acknowledges_the_havereset_its_reset_left",
+    "tests/test_conformance_wire_options.py::test_dpc_is_an_optional_diagnostic[omitted]",
+    "tests/test_conformance_wire_options.py::test_dpc_is_an_optional_diagnostic[unhalted]"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[wrong_flags-RESET-HALT-1]",
@@ -656,7 +659,8 @@
     "tests/test_target_parts.py::test_find_reset_line_hits_the_vector_skips_disallowed_and_retries_failures",
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
     "tests/test_review4_debug.py::test_an_attach_whose_reset_line_is_one_of_its_own_pins_is_refused_before_the_reset",
-    "tests/test_review6_debug_a.py::test_an_attach_under_reset_acknowledges_the_havereset_its_reset_left"
+    "tests/test_review6_debug_a.py::test_an_attach_under_reset_acknowledges_the_havereset_its_reset_left",
+    "tests/test_review7_request_validation.py::test_attach_model_refuses_a_reset_hold_past_max_op_ms"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[reset_ignored-NO-RESET]",

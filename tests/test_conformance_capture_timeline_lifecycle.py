@@ -157,3 +157,13 @@ def test_lifecycle_preflight_blocks(invalid):
     result=CaptureTimelineLifecycleChecks(checks,adapter).run()
     assert result['checks'][0]['status']=='failed' and all(r['status']=='blocked' for r in result['checks'][1:])
     assert not adapter.trace
+
+
+@pytest.mark.parametrize('scenario',CaptureTimelineLifecycleChecks.scenarios)
+def test_short_reads_are_the_probe_choice(scenario):
+    """capture §3.2: the probe decides how much one read returns (max or less); the checker reads on while more is set."""
+    from test_conformance_logic import one_byte_reads
+    model,checks=setup()
+    for fn in range(1,8):one_byte_reads(checks,fn=fn)
+    result=run(model,checks,scenario)
+    assert result['status']=='passed',[(r['id'],r.get('error')) for r in result['checks'] if r['status']!='passed']

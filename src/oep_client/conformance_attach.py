@@ -1,6 +1,7 @@
 """SPEC-driven standard attach admission and console open checks."""
 import struct
 from .conformance import require, ops, tlvs
+from .conformance_registered_ops import refusal_carries
 
 
 class AttachChecks:
@@ -41,7 +42,7 @@ class AttachChecks:
         return rid,req
     def refused(self, req, reason, payload=None, cause=None):
         before=self.a.state();value=self.c.rejected(req,reason)
-        if payload is not None:require(value==payload,'refusal payload/raw tag')
+        if payload is not None:require(refusal_carries(reason,value,payload),'refusal payload/raw tag')   # a TLV tail may follow (core §4.3)
         if cause is not None:require(dict(reversed(tlvs(value))).get(1)==bytes((cause,)),'unavailable cause')
         require(self.a.state()==before,'refused request changed resource/allocator or touched target')
     def detach(self, sid, fn, rid):tlvs(self.c.success(self.request(fn,'detach',sid,struct.pack('<I',rid))))
@@ -97,8 +98,9 @@ class AttachChecks:
                 after=self.a.state();require(after['connections']==before['connections'] and after['streams']==before['streams'],'failed attach changed live resources')
                 self.a.fail_attach(False)
             else:
-                rid,req=self.attach(sid);old=self.c.success(req);self.detach(sid,1,rid);before=self.a.state()
-                require(self.c.success(req)==old and self.a.state()==before,'attach replay resurrected connection or repeated bringup')
+                rid,req=self.attach(sid);old=self.c.exchange(req);require(old[3:5] in (b'\1\0',bytes((0,self.c.reasons['result_lost']))),'attach replay answer')   # recorded, or result_lost (core §5.1)
+                self.detach(sid,1,rid);before=self.a.state()
+                require(self.c.replayed(req,old,frame=True) and self.a.state()==before,'attach replay resurrected connection or repeated bringup')
     def console_case(self, kind):
         self.fresh()
         with self.c.holding(3000) as sid:
@@ -123,14 +125,20 @@ class AttachChecks:
                 require([struct.unpack_from('<IIB',value,i) for i in (2,11)]==[(s1,parent,1),(s2,p2,1)],'console streams ordering/entry shape')
                 before=self.a.state()
                 for stream,data in ((s1,b'one'),(s2,b'two')):
-                    read=self.c.success(self.request(4,'read',0,struct.pack('<IBQH',stream,1,0,32)))
-                    require(len(read)>=14 and struct.unpack_from('<QBH',read)==(0,0,3) and read[11:14]==data,'console read selected wrong stream');tlvs(read[14:])
+                    # len is max or less and more is set while bytes remain (common §1.2): read on to the end
+                    got,mode,arg=b'',1,0
+                    while True:
+                        read=self.c.success(self.request(4,'read',0,struct.pack('<IBQH',stream,mode,arg,32)));require(len(read)>=11,'console read shape')
+                        start,flags,count=struct.unpack_from('<QBH',read);require(start==len(got) and not flags&2 and len(read)>=11+count,'console read selected wrong stream');tlvs(read[11+count:])
+                        got+=read[11:11+count];mode,arg=0,start+count
+                        if not flags&1 or not count:break
+                    require(got==data and not flags&1,'console read selected wrong stream')
                 require(self.a.state()==before,'console read consumed buffer')
             else:
-                stream,req=self.console(sid,parent);self.a.feed_bytes(stream,b'old');old=self.c.success(req);self.close(sid,stream)
+                stream,req=self.console(sid,parent);self.a.feed_bytes(stream,b'old');old=self.c.exchange(req);require(old[3:5] in (b'\1\0',bytes((0,self.c.reasons['result_lost']))),'console open replay answer');self.close(sid,stream)
                 new,_=self.console(sid,parent);state=self.a.state();s=state['streams'][new]
                 require(new>stream and s['position']==0 and not s['data'] and not s['tx'],'console recreate reused state')
-                require(self.c.success(req)==old and self.a.state()==state,'console open replay resurrected stream')
+                require(self.c.replayed(req,old,frame=True) and self.a.state()==state,'console open replay resurrected stream')
     def locks(self):
         self.fresh();self.refused(self.attach_request(0,extra=b'\xfe'),'session_required')
         self.refused(self.console_request(0,0),'session_required')

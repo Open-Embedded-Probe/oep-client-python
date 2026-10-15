@@ -134,7 +134,7 @@ class SubscriptionChecks:
             fn = self.a.functions[0]
             request = self.subscribe(sid, fn)
             self.event(fn, 0)
-            tlvs(self.c.success(request))
+            tlvs(self.c.replay_answer(request) or b'')
             self.event(fn, 1)
             self.event(fn, 2)
 
@@ -160,7 +160,7 @@ class SubscriptionChecks:
             self.event(fn)
             self.subscribe(sid, fn)
             self.event(fn, 0)
-            tlvs(self.c.success(request))
+            tlvs(self.c.replay_answer(request) or b'')
             self.event(fn, 1)  # cached old unsubscribe must not remove new subscription
 
     def open_retain(self):
@@ -181,7 +181,7 @@ class SubscriptionChecks:
             fn = self.a.functions[0]
             self.subscribe(sid, fn)
             self.event(fn, 0)
-            require(self.c.success(request) == original, 'open replay changed')
+            require(self.c.replayed(request, original), 'open replay changed')
             self.event(fn, 1)
 
     def ended(self, kind):

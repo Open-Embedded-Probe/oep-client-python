@@ -27,3 +27,10 @@ def test_common_wrong_result_detected(name):
         if request[3:5]==b'\2\0' and reply[3]==1:reply=reply[:4]+b'\1'+reply[5:]
         return reply
     c.send=broken;r=UartStreamChecks(c,SampleUartStreamAdapter(model)).run();assert next(row for row in r['checks'] if row['id']=='IF-UART-STREAM-'+name)['status']=='failed'
+
+
+def test_short_reads_are_the_probe_choice():
+    """common §1.2: the probe decides how much one read returns; the checker reads on while more is set."""
+    from test_conformance_logic import one_byte_reads
+    model,c=setup();one_byte_reads(c,fn=2,op=17,at=19);r=UartStreamChecks(c,SampleUartStreamAdapter(model)).run()
+    assert r['status']=='passed',[(x['id'],x.get('error')) for x in r['checks'] if x['status']!='passed']

@@ -132,3 +132,11 @@ def test_connections_metadata_must_match_attached_resource():
         e.connection_page=bad;return result
     model.restart_fixture=corrupt
     assert AttachChecks(c,a).run()['status']=='failed'
+
+
+def test_short_reads_are_the_probe_choice():
+    """common §1.2 (console §1): the probe decides how much one read returns (max or less, more while bytes remain);
+    the checker reads on from where an answer ended (every console read's max cut to 1)."""
+    from test_conformance_logic import one_byte_reads
+    _,c,a=setup();one_byte_reads(c,fn=4,op=17,at=23);r=AttachChecks(c,a).run()
+    assert r['status']=='passed',[(row['id'],row.get('error')) for row in r['checks'] if row['status']!='passed']

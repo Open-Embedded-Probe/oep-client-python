@@ -248,7 +248,7 @@ class DataChecks(SubscriptionChecks):
             self.expect_event(fn, 0)
             if not replay:
                 opened = self.c.request(self.c.core['open'], struct.pack('<IB', 60000, 0), session=sid)
-            require(self.c.success(opened) == original, 'same-session open response changed')
+            require(self.c.replayed(opened, original), 'same-session open response changed')
             self.wait(.45)
             seq = self.expect_data(fn, position, b'ab', 1)
             self.expect_event(fn, seq)
@@ -266,7 +266,7 @@ class DataChecks(SubscriptionChecks):
             position = self.feed(fn, b'ab')
             self.no_data()
             self.expect_event(fn, 0)
-            tlvs(self.c.success(request))
+            tlvs(self.c.replay_answer(request) or b'')
             self.wait(.45)
             seq = self.expect_data(fn, position, b'ab', 1)
             self.expect_event(fn, seq)

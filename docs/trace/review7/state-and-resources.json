@@ -1,0 +1,37 @@
+{
+ "reviewed_commit": "49c22c2",
+ "class": "state machines and resource lifetimes in bench, models and checkers: plan acquire/release (keep what stays), pin idle states and probe.config idle/disable, capture states / generations / release, console streams and buffers, subscriptions on session end / connection close, resource ids never reused in a boot, refusals that must change nothing",
+ "sites_examined": 64,
+ "divergences": [
+  {
+   "unit": "plan:2.1:3",
+   "spec": "plan §2.1: 同じ(fn, role, channel)のまま残る割り当ては解放も再取得もせず、ピンのlevel・向き・プル・強さと機能の状態を保つ。取り除く割り当てだけを解放し、追加する割り当てだけを取得する。 / core §8: 解いたピンは、どの道で解いても…空きの状態にする。",
+   "code": "src/oep_client/endpoint.py:Endpoint._replace_plans",
+   "fix": "kept / released are computed per (fn, role, channel), not per channel: a channel leaving one fn for another in the same plan_apply is released (parked to the idle the settings give it now, e.g. an idle set while it was in use) before it is taken; before, it kept the stale parked state"
+  },
+  {
+   "unit": "probe-config:1:8",
+   "spec": "probe.config §1: idleは空きのchannelの状態（core §8）。空きのchannelへの変更はただちに効き、使用中なら次に空きになったときに効く。 / core §8: channel…は、インターフェースがそれを取っていないとき、空きの状態にある。",
+   "code": "src/oep_client/endpoint.py:Endpoint._change_config",
+   "fix": "channels any plan holds (a logic plan that only listens included) are left out of the reparking on set/unset; their new idle applies when the plan releases them (it was applied at once to a logic-held channel)"
+  },
+  {
+   "unit": "core:10.3:6",
+   "spec": "core §10.3: 購読はロックの持ち主だけができ、ロックと一緒に終わる（end、期限切れ、force で奪われたとき）。 / 置き換えや解除では旧購読の未送信通知を捨てる。",
+   "code": "src/oep_client/endpoint.py:Endpoint._release_lock",
+   "fix": "when the lock ends (end, expiry, force) every subscribed fn's unsent frames are dropped from the outbox and its sub_epoch moves on (the serial port drops its waiting ones); before, an ended subscription's queued events still went out"
+  },
+  {
+   "unit": "capture:1.2:20",
+   "spec": "capture §1.2: idle が出力（mode 3 / 4）の channel へのアナログの plan は rejected unavailable（cause 5）。",
+   "code": "src/oep_client/virtual_analog_model.py:Analog.plan; virtual_capture_group_model.py:CaptureGroup.plan; virtual_capture_timeline_model.py:TimelineGroup.plan",
+   "fix": "new refuse_output_idle: an analog plan onto an output-idle channel is rejected unavailable cause 5 with the channel TLV before anything changes; the three fixtures had the analog's channel 0 idle as output high (accepted the plan) - their analog channels now idle as no output"
+  },
+  {
+   "unit": "plan:2.4:5",
+   "spec": "plan §2.1: 変更するfnの機能が動作中なら、そのインターフェースの定義に従いunavailable（cause 6）で断る。 / capture §3.2: planの割り当て（role, channel）の集合が変わるplan_applyは、state 2/3/5ではunavailable（cause 6）で断る。",
+   "code": "src/oep_client/virtual_capture_group_model.py:CaptureGroup.plan",
+   "fix": "a changed set for an unbound track in state 2/3/5 is refused unavailable cause 6 (with the fn TLV) before anything changes; it used to close the running track"
+  }
+ ]
+}

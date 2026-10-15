@@ -45,7 +45,7 @@ class ArmAdiChecks(AttachChecks):
             elif kind == 'REPLAY':
                 req, frame = self.transfer(sid, parent, [self.write(8, 0x1234), self.read(4)], 2, 0, 1, [0])
                 self.a.acks([4]); before = self.a.state()
-                require(self.c.exchange(req) == frame and self.a.state() == before, 'ARM replay reexecuted or recomputed target')
+                require(self.c.replayed(req, frame, frame=True) and self.a.state() == before, 'ARM replay reexecuted or recomputed target')
             elif kind == 'FRAME':
                 count = (self.c.max_frame - 11) // 4
                 self.transfer(sid, parent, [self.read(0)] * count, count, 0, 1, [0] * count)

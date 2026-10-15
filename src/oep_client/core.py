@@ -24,6 +24,7 @@ TAG_RESTART_MAX_MS = reg.PROBE_RESTART.tlv["describe"]["restart_max_ms"]
 CORE_LABEL = reg.CORE.tlv["describe"]["label"]
 CORE_TRANSPORT = reg.CORE.tlv["describe"]["transport"]
 CORE_MAX_OP_MS = reg.CORE.tlv["describe"]["max_op_ms"]
+CORE_UNIT_ID = reg.CORE.tlv["describe"]["unit_id"]
 TRANSPORT_KIND = reg.CORE.enum["transport_kind"]
 SERIAL_KINDS = {TRANSPORT_KIND["uart_bridge"], TRANSPORT_KIND["usb_cdc"], TRANSPORT_KIND["usb_serial_jtag"]}
 FALLBACK_MAX_OP_MS = 10000      # what this client takes for a probe whose describe declares no max_op_ms (not conforming)
@@ -209,6 +210,19 @@ def restart_max_ms(hst: h.Host) -> int | None:
         return None
     value = catalog.first_fixed(describe(hst, fn), TAG_RESTART_MAX_MS, 4)   # the first copy only (core §2.3)
     return struct.unpack("<I", value)[0] if value is not None else None
+
+
+def unit_id_value(rows) -> bytes | None:
+    """fn 0's describe unit_id (core §7.5: text of 1 to 32 bytes) from its TLVs: the first copy only, None when absent
+    or that copy is not 1-32 bytes (broken: not used, and no later copy stands in for it, core §2.3)."""
+    value = catalog.first_value(rows, CORE_UNIT_ID)
+    return value if value is not None and 1 <= len(value) <= reg.LIMITS["unit_id_max_bytes"] else None
+
+
+def unit_id(hst: h.Host) -> str | None:
+    """The probe's unit_id (`unit_id_value` of fn 0's describe) as text, None when there is none usable."""
+    value = unit_id_value(describe(hst, m.CORE_FN))
+    return value.decode("ascii", "replace") if value is not None else None
 
 
 def transports(hst: h.Host) -> list[tuple[int, int, int]]:

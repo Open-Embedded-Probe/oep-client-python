@@ -78,7 +78,7 @@ class RunChecks(ResetChecks):
         self.fresh()
         with self.c.holding(3000) as sid:
             parent=self.parent(sid);req,frame=self.loader(sid,parent,mode);self.a.run_behavior('stopped',0x3000);before=self.a.state()
-            require(self.c.exchange(req)==frame and self.a.state()==before,'run replay executed/recomputed loader')
+            require(self.c.replayed(req,frame,frame=True) and self.a.state()==before,'run replay executed/recomputed loader')
     def refusal_run(self,kind):
         self.fresh()
         if kind=='SESSION':self.refused(self.request(5,'run',0,b'\xfe'),'session_required');return

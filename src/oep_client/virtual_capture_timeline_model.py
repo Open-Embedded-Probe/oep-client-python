@@ -9,6 +9,7 @@ import struct
 from fractions import Fraction
 from .virtual_gpio_model import Gpio, GpioModel
 from .virtual_core import Completed, Core, Reject, tlv
+from .virtual_analog_model import refuse_output_idle
 
 NO_TIME=(1<<64)-1
 NONE=0xffffffff
@@ -52,7 +53,7 @@ class Track:
     def due(self):return self.origin+Fraction(self.next*1000000000,self.config['rate'])
     def grid_ns(self,index):return int(self.origin+Fraction(index*1000000000,self.config['rate']))
     def request_tags(self,op,data):
-        got={};seen=set();frontends=[]
+        got={};seen=set();frontends=[];later=[]
         while data:
             if len(data)<3:raise Reject(3)
             raw,size=struct.unpack_from('<BH',data);key=raw&127
@@ -60,24 +61,29 @@ class Track:
             value,data=data[3:3+size],data[3+size:]
             known=op in (16,24) and (key in (64,66,67,68,69,70) or (key==71 and self.fn==2))
             if known and size!={64:1,69:6,71:2}.get(key,4):raise Reject(3)   # a later copy too (core §2.3)
-            if key in seen and key!=71:continue
+            if not known:                                  # every copy of an unknown tag: critical -> unsupported (core §2.3)
+                if raw&128:raise Reject(11,bytes((raw,)))
+                continue
+            if key in seen and key!=71:later.append((key,raw,value));continue   # a later copy: checked in settings (core §2.3)
             seen.add(key)
-            if known:
-                if key==71:frontends.append((raw,value))
-                else:got[key]=(raw,value)
-            elif raw&128:raise Reject(11,bytes((raw,)))
-        got[71]=frontends;return got
+            if key==71:frontends.append((raw,value))
+            else:got[key]=(raw,value)
+        got[71]=frontends;got['later']=later;return got
     def settings(self,tags):
         if not self.roles:raise refusal(6)
         if not all(k in tags for k in (64,66)):raise Reject(3)
         mode=tags[64][1][0];rate=struct.unpack('<I',tags[66][1])[0]
         if rate==0 or any(k in tags and struct.unpack('<I',tags[k][1])[0]==0 for k in (67,68)):raise Reject(3)
         if mode==1 and 67 not in tags:raise Reject(3)
+        later=tags.get('later',[])                         # every later copy is checked too, the first used (core §2.3)
+        if any(k in (66,67,68) and not struct.unpack('<I',v)[0] for k,_,v in later):raise Reject(3)
         if mode not in (1,3):raise Reject(11,bytes((tags[64][0],)))
         for key in (67,68,70):
             if key in tags and ((key==67 and mode==3) or key==68 or (key==70 and (69 not in tags or tags[69][1][0]==0))):raise Reject(11,bytes((tags[key][0],)))
         if not 100<=rate<=1000:raise Reject(11,bytes((tags[66][0],)))
         if 69 in tags and tags[69][1][0]!=0:raise Reject(11,bytes((tags[69][0],)))
+        for k,raw,v in later:                              # a value this probe does not handle: that copy's tag as received
+            if k==64 and v[0] not in (1,3) or k==66 and not 100<=struct.unpack('<I',v)[0]<=1000 or k==69 and v[0]!=0:raise Reject(11,bytes((raw,)))
         frontend={role:0 for role in self.roles};seen=set()
         for raw,(role,fe) in tags[71]:
             if role in seen:raise Reject(3)
@@ -185,6 +191,7 @@ class TimelineGroup(Gpio):
     functions=(1,2,3,4)
     def __init__(self,ep):
         super().__init__();self.ep=ep;self.pending=[];self.tracks={fn:Track(fn,ep,self.pending) for fn in (2,3)}
+        self.idle.update({ch:0 for ch in CHANNELS[2]});self.pins=dict(self.idle)   # the analog's channels: no output idle (capture §1.2)
         self.bound=[];self.generation=0;self.start_ns=NO_TIME
     def list_page(self,first,limit):
         names=[b'oep.probe.plan',b'oep.fixture.analog',b'oep.fixture.logic',b'oep.fixture.capture-group']
@@ -234,6 +241,7 @@ class TimelineGroup(Gpio):
             if fn not in self.functions:raise Reject(1)
             if fn not in self.tracks or role not in ROLES[fn] or ch not in CHANNELS[fn]:raise Reject(11,bytes((raw,)))
         if len({(r[1],r[2]) for r in rows})!=len(rows) or len({r[3] for r in rows})!=len(rows):raise Reject(11,bytes((rows[0][0],)))   # one channel per role: unsupported (plan §2.4)
+        refuse_output_idle(self.idle,(r[3] for r in rows if r[1]==2))   # the analog track (capture §1.2)
         affected={r[1] for r in rows};changed=set()
         for fn in affected:
             selected=sorted((role,ch) for _,owner,role,ch in rows if owner==fn)

@@ -43,7 +43,9 @@ class Attachments(Dependencies):
                 if raw&128:raise Reject(11,bytes((raw,)))
                 continue
             if size!=known[tag]:raise Reject(3)                 # every copy is checked; the first is used
-            if struct.unpack_from('<H',value)[0]!=self.reset_channel:raise Reject(11,bytes((raw,)))
+            channel,hold=struct.unpack('<HH',value)
+            # not the reset line, or a hold past max_op_ms (debug §3, core §7.5): the tag as received, every copy
+            if channel!=self.reset_channel or hold>self.ep.max_op_ms:raise Reject(11,bytes((raw,)))
             result.setdefault(tag,(raw,value))
         return result
     def close_stream(self,rid):

@@ -9,9 +9,17 @@ from .virtual_logic_model import Logic, LogicModel
 from .virtual_core import Core, Reject, tlv
 
 
+def refuse_output_idle(idle,channels):
+    """An analog plan onto a channel whose idle is an output (mode 3 / 4): rejected unavailable cause 5 naming the
+    channel, before anything changes (capture §1.2, plan §2.4)."""
+    for ch in channels:
+        if idle.get(ch) in (3,4):raise Reject(4,tlv(1,b'\5')+tlv(2,struct.pack('<H',ch)))
+
+
 class Analog(Logic):
     def __init__(self,ep):
         super().__init__(ep);self.calibration_ns=None;self.factory_raw=b'\x12\x34'
+        self.idle={ch:0 for ch in range(8)};self.pins=dict(self.idle)   # the analog channels' idle is no output (capture §1.2)
     def list_page(self,first,limit):
         rows=[struct.pack('<HHBB',fn,0,1,len(name))+name for fn,name in
               ((1,b'oep.probe.plan'),(2,b'oep.fixture.analog'))]
@@ -36,26 +44,29 @@ class Analog(Logic):
             if fn!=2 or role not in (1,3) or ch not in (0,1):raise Reject(11,bytes((raw,)))
         if not rows:return b''
         if len({r[2] for r in rows})!=len(rows) or len({r[3] for r in rows})!=len(rows):raise Reject(11,bytes((rows[0][0],)))   # one channel per role: unsupported (plan §2.4)
+        refuse_output_idle(self.idle,(r[3] for r in rows))
         if sorted((r[2],r[3]) for r in rows)==sorted(zip(self.roles,self.plans.get(2,[]))):return b''   # the same set: nothing (plan §2.1)
         if self.state in (2,3,5):raise Reject(4,tlv(1,b'\6'))           # running: a change is cause 6 (capture §3.2)
         self.release_plans([2]);rows.sort(key=lambda r:r[2]);self.roles=[r[2] for r in rows];self.plans[2]=[r[3] for r in rows]
         return b''
     def request_tags(self,fn,op,data):
         if fn==1:return super().request_tags(fn,op,data)
-        got={};seen=set();frontends=[]
+        got={};seen=set();frontends=[];later=[]
         while data:
             if len(data)<3:raise Reject(3)
             raw,size=struct.unpack_from('<BH',data);key=raw&127
             if not key or len(data)<3+size:raise Reject(3)
             value,data=data[3:3+size],data[3+size:]
-            if op in (16,24) and key in (64,66,67,68,69,70,71) and size!=({64:1,69:6,71:2}.get(key,4)):raise Reject(3)   # a later copy too (core §2.3)
-            if key in seen and key!=71:continue
+            known=op in (16,24) and key in (64,66,67,68,69,70,71)
+            if known and size!=({64:1,69:6,71:2}.get(key,4)):raise Reject(3)   # a later copy too (core §2.3)
+            if not known:                                  # every copy of an unknown tag: critical -> unsupported (core §2.3)
+                if raw&128:raise Reject(11,bytes((raw,)))
+                continue
+            if key in seen and key!=71:later.append((key,raw,value));continue   # a later copy: checked in settings (core §2.3)
             seen.add(key)
-            if op in (16,24) and key in (64,66,67,68,69,70,71):
-                if key==71:frontends.append((raw,value))
-                else:got[key]=(raw,value)
-            elif raw&128:raise Reject(11,bytes((raw,)))
-        got[71]=frontends
+            if key==71:frontends.append((raw,value))
+            else:got[key]=(raw,value)
+        got[71]=frontends;got['later']=later
         return got
     def settings(self,tags):
         if not self.roles:raise Reject(4,tlv(1,b'\6'))
@@ -63,12 +74,18 @@ class Analog(Logic):
         mode=tags[64][1][0];rate=struct.unpack('<I',tags[66][1])[0]
         if rate==0 or any(k in tags and struct.unpack('<I',tags[k][1])[0]==0 for k in (67,68)):raise Reject(3)
         if mode in (1,2) and 67 not in tags:raise Reject(3)
+        later=tags.get('later',[])                         # every later copy is checked too, the first used (core §2.3)
+        if any(k in (66,67,68) and not struct.unpack('<I',v)[0] for k,_,v in later):raise Reject(3)
         for key in (67,68,70):
             if key in tags and ((key==67 and mode==3) or (key==68 and mode!=2) or (key==70 and (69 not in tags or tags[69][1][0]==0))):raise Reject(11,bytes((tags[key][0],)))
         if mode not in (1,2):raise Reject(11,bytes((tags[64][0],)))
         if not 100<=rate<=1000:raise Reject(11,bytes((tags[66][0],)))
         trigger=struct.unpack('<BBI',tags[69][1]) if 69 in tags else (0,0,0)
         if trigger[0] not in (0,3,4) or (trigger[0] and trigger[2]>4095):raise Reject(11,bytes((tags[69][0],)))
+        for k,raw,v in later:                              # a value this probe does not handle: that copy's tag as received
+            t=struct.unpack('<BBI',v) if k==69 else None
+            if (k==64 and v[0] not in (1,2) or k==66 and not 100<=struct.unpack('<I',v)[0]<=1000 or k==70 and struct.unpack('<I',v)[0]>8
+                    or t is not None and (t[0] not in (0,3,4) or (t[0] and t[2]>4095))):raise Reject(11,bytes((raw,)))
         if trigger[0] and trigger[1] not in self.roles:raise Reject(4,tlv(1,b'\6'))
         samples=min(16,struct.unpack('<I',tags[67][1])[0]);segments=min(2,struct.unpack('<I',tags[68][1])[0]) if 68 in tags else 2 if mode==2 else 1
         pre=struct.unpack('<I',tags[70][1])[0] if 70 in tags else 0

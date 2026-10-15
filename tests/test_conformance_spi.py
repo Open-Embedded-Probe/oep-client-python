@@ -170,13 +170,17 @@ def test_active_cs_release_must_restore_miso(case):
     assert next(row for row in r['checks'] if row['id']=='OEP-SPI-'+case)['status']=='failed'
 
 
-def test_empty_rx_bits_field_is_not_specified():
+@pytest.mark.parametrize('fault',['bits','timestamp'])
+def test_empty_rx_must_be_zero_without_timestamp(fault):
+    """fixture §4 (a09fa45): read_rx with nothing queued answers pending / bits / count all 0, no data and no
+    timestamp; an empty answer with stray bits or an ns TLV fails the checker."""
     model,c=setup();original=model.handle
-    def unused_bits(req):
+    def stray(req):
         reply=original(req)
-        if int.from_bytes(req[3:5],'little')==2 and req[5]==18 and reply[3:5]==b'\1\0' and reply[10:12]==b'\0\0':reply=reply[:6]+b'\xef\xbe\xad\xde'+reply[10:]
+        if int.from_bytes(req[3:5],'little')==2 and req[5]==18 and reply[3:5]==b'\1\0' and reply[10:12]==b'\0\0':
+            reply=reply[:6]+b'\xef\xbe\xad\xde'+reply[10:] if fault=='bits' else reply+b'\x01\x08\x00'+bytes(8)
         return reply
-    c.send=unused_bits;r=SpiChecks(c,SampleSpiAdapter(model)).run();assert r['status']=='passed',r['checks']
+    c.send=stray;r=SpiChecks(c,SampleSpiAdapter(model)).run();assert r['status']=='failed'
 
 
 @pytest.mark.parametrize('fault',['failed','missing_cause','wrong_cause','arms'])
@@ -198,3 +202,14 @@ def test_state0_arm_refusal_faults(fault,planned):
     checker=SpiChecks(c,SampleSpiAdapter(model));checker.cases=('ARM-STATE0',)
     r=checker.run()
     assert next(row for row in r['checks'] if row['id']=='OEP-SPI-ARM-STATE0')['status']=='failed'
+
+
+def test_features_may_be_absent():
+    """core §7.4 / fixture §4 (a09fa45): features holds optional bits ("features の bit0 が無いのに bit_order 1 は
+    unsupported"); an MSB-only probe need not declare it - the metadata and behaviour checkers pass without the tag."""
+    from oep_client.conformance_fixture_metadata import FixtureMetadataChecks
+    for checker in ('metadata','behaviour'):
+        model,c=setup(lsb=False);original=model.extension.describe
+        model.extension.describe=lambda fn,original=original:tuple(row for row in original(fn) if fn!=2 or row[0]!=5)
+        r=(FixtureMetadataChecks(c,{2:'oep.fixture.spi-target'}) if checker=='metadata' else SpiChecks(c,SampleSpiAdapter(model))).run()
+        assert r['status']=='passed',[(x['id'],x.get('error')) for x in r['checks'] if x['status']!='passed']

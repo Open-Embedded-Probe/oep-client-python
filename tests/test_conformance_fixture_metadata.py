@@ -32,7 +32,7 @@ def test_fixture_metadata_passes_read_only():
     (11,64,None),(11,64,b''),(11,64,b'\0'),(11,64,b'\2\0'),(11,64,b'\1\4'),
     (11,64,b'\2\0\x02'),(11,64,b'\2\0\x0c'),(11,64,b'\2\0\x20'),
     (12,65,None),(12,65,b'\0'*4),(12,65,b'\1'),(13,67,b'\1'),
-    *[(fn,tag,None) for fn in (12,13) for tag in (2,3,5,64)],
+    *[(fn,tag,None) for fn in (12,13) for tag in (2,3,64)],
     *[(fn,tag,b'\1'*width) for fn in (12,13) for tag,width in ((2,3),(3,1),(5,3),(64,2))],
     (12,3,struct.pack('<H',53)),(13,3,struct.pack('<H',51)),
 ])
@@ -53,7 +53,9 @@ def test_no_invented_lower_bounds(fn,tag):
     assert FixtureMetadataChecks(c,model.metadata_selection).run()['status']=='passed'
 
 
-@pytest.mark.parametrize('fn,tag',[(13,67)])
+# features (tag 5) holds optional bits (core §7.4): absent = no bits, so an I2C target without internal pull-ups and an
+# MSB-first-only SPI target need not carry it (fixture §3 / §4)
+@pytest.mark.parametrize('fn,tag',[(13,67),(12,5),(13,5)])
 def test_optional_metadata_absent(fn,tag):
     model,c=setup();replace(model,fn,tag,None)
     assert FixtureMetadataChecks(c,model.metadata_selection).run()['status']=='passed'
@@ -119,3 +121,13 @@ def test_spi_modes_are_required_one_byte_1_to_15(value):
 def test_spi_modes_any_nonempty_subset_passes(value):
     model,c=setup();replace(model,13,65,value)
     assert FixtureMetadataChecks(c,model.metadata_selection).run()['status']=='passed'
+
+
+@pytest.mark.parametrize('row',[tlv(1,b'\2\0\0\1'),tlv(6,b'\0\2\1\0\0\2\1\0')])
+def test_uart_without_write_declares_no_tx_role(row):
+    """fixture §2 (a09fa45): a fn that does not offer write takes no TX role and declares none in role_channels /
+    channel_group; the RX role alone passes."""
+    model,c=setup();model.extension.metadata[11].append(tlv(1,b'\1\0\0\1'))
+    assert FixtureMetadataChecks(c,model.metadata_selection).run()['status']=='passed'
+    model,c=setup();model.extension.metadata[11].append(row);r=FixtureMetadataChecks(c,model.metadata_selection).run()
+    assert next(x for x in r['checks'] if x['id']=='OEP-FIXTURE-METADATA-11')['status']=='failed',r['checks']

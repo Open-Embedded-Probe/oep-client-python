@@ -138,7 +138,13 @@
    "verify": [
     "tests/test_trace_common.py::test_len_stays_within_max_and_max_frame_and_more_says_bytes_are_left",
     "tests/test_interfaces.py::test_stream_io_fits_a_64_byte_frame",
-    "tests/test_conformance_stream.py::test_stream_contracts_pass"
+    "tests/test_conformance_stream.py::test_stream_contracts_pass",
+    "tests/test_conformance_stream.py::test_short_reads_are_the_probe_choice",
+    "tests/test_conformance_uart.py::test_short_reads_are_the_probe_choice",
+    "tests/test_conformance_uart_stream.py::test_short_reads_are_the_probe_choice",
+    "tests/test_conformance_mailbox.py::test_short_reads_are_the_probe_choice",
+    "tests/test_conformance_attach.py::test_short_reads_are_the_probe_choice",
+    "tests/test_conformance_oep_smoke.py::test_short_uart_reads_are_the_probe_choice"
    ],
    "mutants": [
     "tests/test_conformance_stream.py::test_stream_mutants_fail[more]"

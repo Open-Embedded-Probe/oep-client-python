@@ -23,19 +23,20 @@ class Logic(Gpio):
         return (tlv(7,b'\x10\xf7\x01'),*(tlv(1,bytes((role,0,0,7))) for role in range(3)),tlv(5,b'\0'*4),tlv(64,struct.pack('<BII',1,16,0)),tlv(64,struct.pack('<BII',2,16,2)),tlv(65,struct.pack('<II',100,1000)),tlv(68,b'\3'),tlv(69,struct.pack('<II',7,8)))
     def request_tags(self,fn,op,data):
         if fn==1:return super().request_tags(fn,op,data)
-        got={};seen=set()
+        got={};seen=set();later=[]
         while data:
             if len(data)<3:raise Reject(3)
             raw,size=struct.unpack_from('<BH',data);key=raw&127
             if not key or len(data)<3+size:raise Reject(3)
             value,data=data[3:3+size],data[3+size:]
-            if op in (16,24) and key in (64,66,67,68,69,70) and size!=({64:1,69:6}.get(key,4)):raise Reject(3)   # a later copy too (core §2.3)
-            if key in seen:continue
-            seen.add(key)
-            if op in (16,24) and key in (64,66,67,68,69,70):
-                got[key]=(raw,value)
-            elif raw&128:raise Reject(11,bytes((raw,)))
-        return got
+            known=op in (16,24) and key in (64,66,67,68,69,70)
+            if known and size!=({64:1,69:6}.get(key,4)):raise Reject(3)   # a later copy too (core §2.3)
+            if not known:                                  # every copy of an unknown tag: critical -> unsupported (core §2.3)
+                if raw&128:raise Reject(11,bytes((raw,)))
+                continue
+            if key in seen:later.append((key,raw,value));continue    # a later copy: checked in settings, not used (core §2.3)
+            seen.add(key);got[key]=(raw,value)
+        got['later']=later;return got
     def release_plans(self,functions):
         if 2 in functions:self.config=None;self.roles=[];self.clear(0)
         super().release_plans(functions)
@@ -61,12 +62,18 @@ class Logic(Gpio):
         mode=tags[64][1][0];rate=struct.unpack('<I',tags[66][1])[0]
         if rate==0 or any(key in tags and struct.unpack('<I',tags[key][1])[0]==0 for key in (67,68)):raise Reject(3)
         if mode in (1,2) and 67 not in tags:raise Reject(3)
+        later=tags.get('later',[])                         # every later copy is checked too, the first used (core §2.3)
+        if any(k in (66,67,68) and not struct.unpack('<I',v)[0] for k,_,v in later):raise Reject(3)
         for key in (67,68,70):
             if key in tags and ((key==67 and mode==3) or (key==68 and mode!=2) or (key==70 and (69 not in tags or tags[69][1][0]==0))):raise Reject(11,bytes((tags[key][0],)))
         if mode not in (1,2):raise Reject(11,bytes((tags[64][0],)))
         if not 100<=rate<=1000:raise Reject(11,bytes((tags[66][0],)))
         trigger=struct.unpack('<BBI',tags[69][1]) if 69 in tags else (0,0,0)
         if trigger[0] not in (0,1,2) or (trigger[0]==1 and trigger[2]>1) or (trigger[0]==2 and trigger[2]>2):raise Reject(11,bytes((tags[69][0],)))
+        for k,raw,v in later:                              # a value this probe does not handle: that copy's tag as received
+            t=struct.unpack('<BBI',v) if k==69 else None
+            if (k==64 and v[0] not in (1,2) or k==66 and not 100<=struct.unpack('<I',v)[0]<=1000 or k==70 and struct.unpack('<I',v)[0]>8
+                    or t is not None and (t[0] not in (0,1,2) or (t[0]==1 and t[2]>1) or (t[0]==2 and t[2]>2))):raise Reject(11,bytes((raw,)))
         if not self.roles or (trigger[0] and trigger[1] not in self.roles):raise Reject(4,tlv(1,b'\6'))
         samples=min(16,struct.unpack('<I',tags[67][1])[0]);segments=min(2,struct.unpack('<I',tags[68][1])[0]) if 68 in tags else 2 if mode==2 else 1;pre=struct.unpack('<I',tags[70][1])[0] if 70 in tags else 0
         if pre>8 or pre>=samples:raise Reject(11,bytes((tags[70][0],)))

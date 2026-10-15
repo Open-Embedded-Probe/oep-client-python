@@ -29,9 +29,9 @@ class RetentionChecks(ReplayPressureChecks):
     def created_one(self, request, size=7):
         frame = self.c.exchange(request)
         self.result(frame, request)
-        require(len(frame) == size, 'sample response size')
+        require(len(frame) >= size, 'sample response size')
         rid = struct.unpack_from('<H', frame, 5)[0]
-        require(rid != 0, 'zero resource ID'); tlvs(frame[7:])
+        require(rid != 0, 'zero resource ID'); tlvs(frame[size:])  # fixed part, then a TLV tail (core §2.3)
         return frame, rid
 
     def record(self, request, wanted_request, wanted_response):

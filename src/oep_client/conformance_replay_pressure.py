@@ -33,7 +33,7 @@ class ReplayPressureChecks(PipelineChecks):
     def created(self, frames):
         ids = []
         for frame in frames:
-            require(len(frame) == 7, 'sample create response size')
+            require(len(frame) >= 7, 'sample create response size'); tlvs(frame[7:])  # fixed part, then a TLV tail (core §2.3)
             rid = struct.unpack_from('<H', frame, 5)[0]
             require(rid != 0 and rid not in ids, 'invalid/duplicate resource IDs')
             ids.append(rid)

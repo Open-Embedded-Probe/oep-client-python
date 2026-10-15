@@ -1,5 +1,6 @@
 """Header -> replay -> session -> unordered remaining rejection conditions."""
-from .conformance import require
+from .conformance import require, tlvs
+from .conformance_registered_ops import fixed_then_tlvs
 from .conformance_host_deadline import reviewed_identity
 
 
@@ -49,8 +50,11 @@ class RefusalOrderChecks:
                 else:
                     require(reply[3]==0 and reply[4] in reasons,'wrong refusal priority')
                     reason=reply[4]
-                    expected_payload=(1000-before['now_ms']).to_bytes(4,'little')+b'\1\10\0priority' if reason==8 else b'\xfe' if reason==11 else b''
-                    require(reply[5:]==expected_payload,'refusal payload/tag/remaining owner differs')
+                    # locked: remaining(u32) then TLVs with the owner; unsupported: the tag, then TLVs; the rest: TLVs
+                    # only. More TLVs, in any order, may follow each fixed part (core §2.3, §4.3).
+                    fixed=(1000-before['now_ms']).to_bytes(4,'little') if reason==8 else b'\xfe' if reason==11 else b''
+                    require(fixed_then_tlvs(reply[5:],fixed) and (reason!=8 or dict(reversed(tlvs(reply[9:]))).get(1)==b'priority'),
+                            'refusal payload/tag/remaining owner differs')
                 if name in ('OWN-BAD','OTHER-ANY'):
                     for field in ('holder','last','owner_hex','lease_ms','generation','next_id','live'):
                         require(after[field]==before[field],'payload/state refusal changed extension/owner: '+field)

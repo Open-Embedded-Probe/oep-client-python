@@ -64,7 +64,7 @@ class ArmAdiBlockChecks(ArmAdiChecks):
             parent=self.setup_block(sid);request=self.block_request(sid,parent,write)
             frame=self.block_result(request,4,0,() if write else range(0x100,0x104))
             self.a.block_fault(0,'data',4);before=self.a.state()
-            require(self.c.exchange(request)==frame and self.a.state()==before,'MEM-AP block replay reexecuted or recomputed')
+            require(self.c.replayed(request,frame,frame=True) and self.a.state()==before,'MEM-AP block replay reexecuted or recomputed')
     def recover(self):
         self.fresh()
         with self.c.holding(3000) as sid:

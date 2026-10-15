@@ -108,6 +108,7 @@ PROJECT_VID_PIDS: tuple[tuple[int, int], ...] = ((USB_VID, USB_PID),)
 # the probing rule's wait for confirm's answer before max_op_ms is known: core_quick_op_max_ms + host_wait_add_ms (2000 ms,
 # transports §3, core §4.4), then the transfer time
 PROBE_WAIT_S = (reg.TIMING["core_quick_op_max_ms"] + reg.TIMING["host_wait_add_ms"]) / 1000
+QUICK_OP_S = reg.TIMING["core_quick_op_max_ms"] / 1000   # a request's processing bound while max_op_ms is unknown (§4.4)
 
 
 RESULT_HEADER, DATA_HEADER, EVENT_HEADER = 5, 5, 6   # the shortest result, data and event frames (core §4.2, §11.1)
@@ -348,6 +349,7 @@ class SerialLink:
         self.failed_transport = ""                 # why: a resend went unanswered (core §5.2, C-38); recover first
         self.recoveries = 0                        # failed-transport recoveries made (a confirm answered)
         self.wait_add_s = WAIT_ADD_S               # the floor's host_wait_add_ms (a test of an in-process virtual bench shortens it)
+        self._req_bound_s: float | None = None     # the processing bound of the requests whose answers are awaited now
         self.tx_len = 0                            # the longest frame on the wire of the last write
         self.confirm_body = lambda: _OWN_CONFIRM   # the link's own confirm: the revision in use once bound (C-15)
         self.held = lambda: False                  # a session holds the port (its raw transfer stopped): broken = resend
@@ -387,14 +389,30 @@ class SerialLink:
             return 0.0
         return (self.tx_len + self.max_frame * (1 + NOTIFY_PENDING)) * 10 / self.baud
 
-    def wait_floor_s(self) -> float:
+    def wait_floor_s(self, bound_s: float | None = None) -> float:
         """The least a request's answer is waited for (core §4.4, C-06): the request's processing bound (Host.expecting:
-        Host.op_bound_ms - max_op_ms, fn 0's quick ops' shorter one - or longer when its arguments say so) +
-        host_wait_add_ms + the transfer time; counted
+        Host.op_bound_ms - max_op_ms, fn 0's quick ops' shorter one - or longer when its arguments say so; `bound_s`:
+        the bound of the requests on the wire, `_bound_s`) + host_wait_add_ms + the transfer time; counted
         from the write, or from the answer before it while several are outstanding (each reply's wait starts when it is
-        read). The link's own short requests (its confirms, port_speed's procedure, a measurement) are the host guide's
-        and keep their own waits."""
-        return self.expected_s() + self.wait_add_s + self.transfer_s()
+        read). "この下限はすべての要求に当てはまる" (core §4.4): the link's own requests too - its keepalive, port_speed's
+        revert, a measurement's source / sink (oep-if-link §2: "ほかの要求と同じように待つ"), a resync's or a recovery's
+        confirm. Only confirms repeated with new corrs on a port that may have used port_speed may go before the earlier
+        one's floor (core §4.4, transports §4); the last of them still gets its whole floor before the host decides
+        that none came (`confirm_raw(floor=True)`)."""
+        return max(self.expected_s(), bound_s or 0.0) + self.wait_add_s + self.transfer_s()
+
+    def _bound_s(self, messages: list[bytes]) -> float:
+        """core §4.4: the processing bound of the slowest of `messages` - the bound host's op_bound_ms (max_op_ms; fn 0's
+        quick ops min(max_op_ms, core_quick_op_max_ms)), core_quick_op_max_ms while max_op_ms is unknown or no host is
+        bound."""
+        hst = getattr(self, "bound_host", None)
+        ms = 0.0
+        for msg in messages:
+            if len(msg) < m.REQUEST_HEADER:
+                continue
+            fn, op = msg[3] | msg[4] << 8, msg[5]
+            ms = max(ms, hst.op_bound_ms(fn, op) / 1000 if hst is not None else QUICK_OP_S)
+        return ms
 
     def _settle_before_confirm(self) -> None:
         """transports §5: before a resync's confirm, and the first confirm on a length-prefixed port, longer than
@@ -546,7 +564,9 @@ class SerialLink:
                 reopened = True
             self._settle_before_confirm()
             corr = self.corr_source()
-            self._write([m.Request(corr, m.CORE_FN, m.OP_CONFIRM, self.confirm_body()).pack()])
+            confirm = m.Request(corr, m.CORE_FN, m.OP_CONFIRM, self.confirm_body()).pack()
+            self._write([confirm])
+            saved_bound, self._req_bound_s = self._req_bound_s, self._bound_s([confirm])   # its own floor (§4.4)
             try:
                 while True:
                     reply = self._recv()
@@ -557,6 +577,8 @@ class SerialLink:
                         return                  # any result with our correlation proves the boundaries again
             except (FramingLost, TimeoutError):
                 continue
+            finally:
+                self._req_bound_s = saved_bound
         raise ConnectionError(f"resync: no confirm came back in {tries} tries")
 
     def _recover(self) -> None:
@@ -603,10 +625,14 @@ class SerialLink:
 
     def _given_up(self, e: Exception) -> None:
         """A request not sent again (resend off): core §5.1 "再送を諦めたら、その経路の未解決の要求は結果不明となる。host は
-        TCP では接続を閉じて開き直し" - on TCP whose boundaries held (a broken framing has just reopened it, `_recover`), the
-        connection is closed, opened again and confirmed before anything else goes out (`recover_transport`)."""
-        if (self._keeps_boundaries() and not isinstance(e, FramingLost) and not getattr(self, "_probing", False)
-                and not self._own):
+        TCP では接続を閉じて開き直し、ほかの経路では [経路] §5 に従って立て直す。boot_id を確認し、状態を読んでから次の
+        状態変更を判断する" - on TCP whose boundaries held (a broken framing has just reopened it, `_recover`), the
+        connection is closed, opened again and confirmed before anything else goes out (`recover_transport`); on a
+        serial port (COBS: the next delimiter is the next frame, transports §5) a confirm shows the boot_id before
+        anything else goes out too. Vendor bulk / HID have just resynced with a confirm (`_recover`)."""
+        if getattr(self, "_probing", False) or self._own:
+            return
+        if (self._keeps_boundaries() and not isinstance(e, FramingLost)) or self.framing == "cobs":
             self.failed_transport = f"a request got no answer and was not sent again ({type(e).__name__}: {e})"
 
     def recover_transport(self, tries: int = 3) -> None:
@@ -624,8 +650,10 @@ class SerialLink:
                     self._quiet_serial(RESYNC_QUIET_S, self.NOISY_S)
                     self._settle_before_confirm()
                     corr = self.corr_source()
-                    self._write([m.Request(corr, m.CORE_FN, m.OP_CONFIRM, self.confirm_body()).pack()])
-                    deadline = time.monotonic() + max(saved, self.wait_add_s + self.transfer_s())
+                    confirm = m.Request(corr, m.CORE_FN, m.OP_CONFIRM, self.confirm_body()).pack()
+                    self._write([confirm])
+                    # core §4.4: the confirm's processing bound + host_wait_add_ms + the transfer time, at the least
+                    deadline = time.monotonic() + max(saved, self.wait_floor_s(self._bound_s([confirm])))
                     try:
                         while True:
                             self.timeout = max(0.0, deadline - time.monotonic())
@@ -726,6 +754,15 @@ class SerialLink:
                 and message[at] == SPEED_STEP["revert"])
 
     def _send(self, message: bytes) -> bytes:
+        """`message` and its answer, sent again as core §5.1 allows; each wait at least core §4.4's floor for it."""
+        saved = self._req_bound_s
+        self._req_bound_s = self._bound_s([message])
+        try:
+            return self._send_loop(message)
+        finally:
+            self._req_bound_s = saved
+
+    def _send_loop(self, message: bytes) -> bytes:
         corr = self._corr(message)
         waited = broken = 0                        # resends after a wait / after a broken frame
         while True:
@@ -818,13 +855,18 @@ class SerialLink:
             self.stream.reset_input_buffer()
         return rate
 
-    def confirm_raw(self, timeout: float) -> bool:
+    def confirm_raw(self, timeout: float, floor: bool = False) -> bool:
         """A confirm straight on the link (not through the host): True when its answer came within `timeout`. On a held
         serial port a broken frame is normally the awaited answer (§5.2), but a confirm sent to re-sync a measurement
         reads past the broken leftovers of the lost frames it follows: it keeps reading until its own answer or the
-        deadline, not giving up on the first broken one."""
+        deadline, not giving up on the first broken one. A shorter `timeout` than core §4.4's floor is a confirm
+        repeated before the earlier one's floor (core §4.4, transports §4); `floor`: the last one before the host
+        decides that no answer came - it waits at least its floor (`wait_floor_s`)."""
         corr = self.corr_source()
-        self._write([m.Request(corr, m.CORE_FN, m.OP_CONFIRM, self.confirm_body()).pack()])
+        confirm = m.Request(corr, m.CORE_FN, m.OP_CONFIRM, self.confirm_body()).pack()
+        self._write([confirm])
+        if floor:
+            timeout = max(timeout, self.wait_floor_s(self._bound_s([confirm])))
         saved = self.timeout
         deadline = time.monotonic() + timeout
         self._own += 1
@@ -845,13 +887,20 @@ class SerialLink:
             self._own -= 1
 
     def _confirm_within(self, wait_s: float, each_s: float) -> bool:
-        """Confirms, each waiting `each_s`, until one is answered (True) or `wait_s` has passed (False)."""
+        """Confirms, each waiting `each_s`, until one is answered (True) or `wait_s` has passed (False); the last one
+        waits its whole core §4.4 floor before it counts as unanswered (transports §3: "最後の送り直しの待ち時間が過ぎても")."""
         deadline = time.monotonic() + wait_s
         while True:
-            if self.confirm_raw(each_s):
+            last = time.monotonic() + each_s >= deadline
+            if self.confirm_raw(each_s, floor=last):
                 return True
-            if time.monotonic() >= deadline:
+            if last:
                 return False
+
+    def confirm_tries(self, tries: int, each_s: float) -> bool:
+        """Up to `tries` confirms, each waiting `each_s` (repeated before the earlier one's floor, core §4.4), the last
+        its whole floor: True as soon as one is answered."""
+        return any(self.confirm_raw(each_s, floor=i == tries - 1) for i in range(tries))
 
     def back_to_base(self, wait_s: float = OPEN_RETRY_S) -> bool:
         """The host at the boot speed again, and the probe confirmed there: confirms every 0.25 s up to `wait_s`
@@ -911,9 +960,9 @@ class SerialLink:
             lease = self.lease_s()
             if lease is not None:
                 wait = min(wait, max(RAISED_WAIT_MIN_S, lease / 4))
-        if self._own:
-            return wait
-        return max(wait, self.wait_floor_s())                     # never under core §4.4's floor (C-06)
+        if self._own and self._req_bound_s is None:
+            return wait                                           # a read of the link's own (pump, a repeated confirm)
+        return max(wait, self.wait_floor_s(self._req_bound_s))    # never under core §4.4's floor (C-06)
 
     def _strike(self, e: Exception) -> None:
         """A request's answer did not come (`e`): a lost frame (host guide §17.3.2: counted at the boot speed for the
@@ -987,6 +1036,7 @@ class SerialLink:
         rate = self.baud
         self.step_due = ""
         self.window.clear()
+        lost = False                               # the revert went out and its answer did not come
         if self.session_frame is not None and self.speed_port is not None and self.speed_fn is not None:
             saved = self.timeout, self.resend, self.fallback
             self.timeout, self.resend, self.fallback = STEP_DOWN_WAIT_S, False, False
@@ -995,12 +1045,20 @@ class SerialLink:
                 self._send(self.session_frame(OP_PORT_SPEED, struct.pack("<IBH", 0, SPEED_STEP["revert"], 0),
                                               self.speed_fn))
             except LINK_ERRORS:
-                pass
+                lost = True
             finally:
                 self.timeout, self.resend, self.fallback = saved
                 self._own -= 1
         if not self.back_to_base():
             raise ConnectionError(f"the probe answers neither at {rate} nor at the boot speed {self.base_baud}")
+        hst = getattr(self, "bound_host", None)
+        if lost and hst is not None:
+            # oep-if-link §3: "try/commit/revertの応答を失った場合は、起動時/試した速さでconfirmと新しいcorrのport_stateを
+            # 使って復旧する" - the confirm above, then the port's phase now (never an old answer's)
+            state = port_state(hst, self.speed_fn)
+            if state is not None and state != (self.base_baud, 0):
+                raise ConnectionError(f"after the revert from {rate}: the port reports {state[0]} in phase {state[1]}, "
+                                      "not the boot speed")
         self._stepped(rate, why)
         self._step_lower()
 
@@ -1074,6 +1132,16 @@ class SerialLink:
 
     def _exchange_once(self, messages: list[bytes], max_inflight: int, window_bytes: int,
                        replies: list[bytes]) -> list[bytes]:
+        """`messages` pipelined once; each answer waited for at least core §4.4's floor of the slowest of them."""
+        saved = self._req_bound_s
+        self._req_bound_s = self._bound_s(messages)
+        try:
+            return self._exchange_pipelined(messages, max_inflight, window_bytes, replies)
+        finally:
+            self._req_bound_s = saved
+
+    def _exchange_pipelined(self, messages: list[bytes], max_inflight: int, window_bytes: int,
+                            replies: list[bytes]) -> list[bytes]:
         outstanding: list[tuple[int, int]] = []      # (correlation, size) of requests in flight
         batch: list[bytes] = []
         try:
@@ -1451,10 +1519,8 @@ def check_unit_id(hst, unit_id: str) -> None:
     from . import core
     said = None
     try:
-        # the first copy only: an empty (broken) one is not used and no later one stands in (core §2.3)
-        value = next((v for tag, v in core.describe(hst, 0) if tag == reg.CORE.tlv["describe"]["unit_id"]), None)
-        if value:
-            said = value.decode("ascii", "replace")
+        # the first copy only: one not of 1-32 bytes (broken) is not used and no later one stands in (core §2.3, §7.5)
+        said = core.unit_id(hst)
     except Exception as e:
         hst.link.close()
         raise UnitIdMismatch(f"unit id {unit_id}: describe failed ({type(e).__name__}: {e}); closed") from e
@@ -1905,8 +1971,7 @@ def _speed_port(hst) -> tuple[int | None, int | None, str]:
 def _unit_id(hst) -> str:
     """The probe's unit_id (core §7.5, mandatory) - the record's key with the port."""
     from . import core
-    value = next((v for tag, v in core.describe(hst, 0) if tag == UNIT_ID_TAG), None)   # the first copy (core §2.3)
-    return value.decode("ascii", "replace") if value else "?"
+    return core.unit_id(hst) or "?"           # the first copy, 1-32 bytes; a broken one is not used (core §2.3, §7.5)
 
 
 def _answer_wait(size: int, rate: int, n: int) -> float:
@@ -1990,7 +2055,7 @@ def _flow_run(hst, lk: SerialLink, flow: str, n: int, size: int, frames: int, ra
                     res.broken += 1
             res.lost += len(msgs) - len(replies)
             res.frames += len(msgs)
-            if len(replies) < len(msgs) and not any(lk.confirm_raw(CONFIRM_WAIT_S) for _ in range(CONFIRM_TRIES)):
+            if len(replies) < len(msgs) and not lk.confirm_tries(CONFIRM_TRIES, CONFIRM_WAIT_S):
                 res.lost += max(0, frames - res.frames)
                 res.frames, res.gone = max(frames, res.frames), True
                 break
@@ -2353,7 +2418,7 @@ def _try(hst, lk: SerialLink, report: SpeedReport, rates: list[int], run: _Run) 
             back(rate, False)
             note(trial, False, "try")
             continue
-        if not any(lk.confirm_raw(CONFIRM_WAIT_S) for _ in range(CONFIRM_TRIES)):
+        if not lk.confirm_tries(CONFIRM_TRIES, CONFIRM_WAIT_S):
             trial.why = "no confirm at the new rate"
             back(rate, True)
             failed(trial, "confirm")

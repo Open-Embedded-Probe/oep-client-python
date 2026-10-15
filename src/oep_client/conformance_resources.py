@@ -115,7 +115,8 @@ class ResourceChecks:
             slot = self.a.slots[0]
             rid, request = self.create(sid, slot)
             before = self.inventory()
-            require(self.a.decode_created(self.c.success(request)) == rid, 'replayed create ID changed')
+            p = self.c.replay_answer(request)
+            require(p is None or self.a.decode_created(p) == rid, 'replayed create ID changed')
             require(self.inventory() == before, 'replayed create allocated twice')
             self.use(sid, slot, rid)
 
@@ -125,11 +126,13 @@ class ResourceChecks:
             rid, _ = self.create(sid, slot)
             request = self.close(sid, slot, rid)
             self.empty()
-            self.a.decode_empty(self.c.success(request))
+            p = self.c.replay_answer(request)
+            if p is not None: self.a.decode_empty(p)
             self.c.rejected(self.a.request('close', sid, slot, rid), 'no_resource')
             next_id, _ = self.create(sid, slot)
             require(next_id > rid, 'closed ID reused')
-            self.a.decode_empty(self.c.success(request))
+            p = self.c.replay_answer(request)
+            if p is not None: self.a.decode_empty(p)
             self.use(sid, slot, next_id)
             require(self.inventory()[slot] == {next_id}, 'replayed close affected another resource')
 
@@ -153,7 +156,7 @@ class ResourceChecks:
             slot = self.a.slots[0]
             rid, _ = self.create(sid, slot)
             before = self.inventory()
-            require(self.c.success(opened) == original, 'open replay response changed')
+            require(self.c.replayed(opened, original), 'open replay response changed')
             require(self.inventory() == before, 'open replay released resources')
             self.use(sid, slot, rid)
 
@@ -184,7 +187,7 @@ class ResourceChecks:
             if kind != 'force':
                 # Replay gives historical IDs, without resurrecting resources.
                 slot, rid, request = allocations[-1]
-                require(self.a.decode_created(self.c.success(request)) == rid, 'ended-session replay lost')
+                p = self.c.replay_answer(request); require(p is None or self.a.decode_created(p) == rid, 'ended-session replay lost')
                 self.empty()
                 self.c.rejected(self.a.request('use', sid, slot, rid), 'no_session')
             else:

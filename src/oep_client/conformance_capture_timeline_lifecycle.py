@@ -63,7 +63,7 @@ class CaptureTimelineLifecycleChecks(CaptureTimelineChecks):
             generation=self.track_start(sid,fast);self.a.advance_to(self.origin+100000000);require(self.status(fast)[0]==4,'restart after failed track start');self.raw(fast,generation,16);return
         self.prepare(sid,fast,start=False);target=self.members[0 if kind=='START-FAIL-FIRST' else 1];other=5-target
         self.a.fail_next_start(target,1);generation,gens,request,reply=self.start(sid,self.members,failed=True)
-        again=self.c.exchange(request);require(again[5:]==reply and again[3:5]==bytes((self.c.reg['resolutions']['completed'],self.c.reg['outcomes']['failed'])),'failed start replay answer')
+        again=self.c.exchange(request);require(again[3:5]==bytes((self.c.reg['resolutions']['rejected'],self.c.reasons['result_lost'])) or (again[5:]==reply and again[3:5]==bytes((self.c.reg['resolutions']['completed'],self.c.reg['outcomes']['failed']))),'failed start replay answer')   # or result_lost: records are optional (core §5.1)
         require(self.status()[0]==6,'failed group start state')
         require(self.status(target)[:3]==(6,0,0) and self.status(target)[4:]==(gens[target],b'\1'),'failed track state/error after group start')
         require(self.status(other)[:3]==(1,0,0) and self.status(other)[4]==gens[other],'unstarted/stopped peer state after failed group start')
@@ -131,7 +131,7 @@ class CaptureTimelineLifecycleChecks(CaptureTimelineChecks):
                 for fn in self.members:self.raw(fn,gens[fn],16)
                 return
             if kind=='REPLAY-START':
-                before=self.a.state();require(self.c.success(request)==reply and self.a.state()==before,'start replay changed asynchronous capture')
+                before=self.a.state();require(self.c.replayed(request,reply) and self.a.state()==before,'start replay changed asynchronous capture')
                 self.a.advance_to(self.origin+100000000);require(self.status()[0]==4,'start replay disrupted capture')
                 for fn in self.members:self.raw(fn,gens[fn],16)
                 return
@@ -156,7 +156,7 @@ class CaptureTimelineLifecycleChecks(CaptureTimelineChecks):
                 for fn in self.members:
                     require(self.status(fn)[0]==(4 if mixed and fn==fast else 1),'stop changed completed/active track state');self.raw(fn,gens[fn],counts[fn])
                 if kind=='REPLAY-STOP':
-                    before=self.a.state();require(self.c.success(stop)==answer and self.a.state()==before,'stop replay changed completed partials')
+                    before=self.a.state();require(self.c.replayed(stop,answer) and self.a.state()==before,'stop replay changed completed partials')
             self.stable_advance(self.origin+100000000)
             new,newgens,_,_=self.start(sid,self.members);require(new==generation+1 and all(newgens[fn]==gens[fn]+1 for fn in gens),'restart did not advance generations')
             for fn in gens:
