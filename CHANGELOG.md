@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- (JA) 仮想ベンチに `--minimal-ops`（`virtual_bench.minimal_ops`）を足す。console と fixture UART の任意の op（marks、clear、mark、write）を
+  ops から外し、unknown_operation で答える。host が任意の op を describe の ops を見ずに使っていないかを、実機なしで試せる
+  （oep-spec 0c5cb8c / dbfa865 の適合の項目。ch32rv のモニタが最小構成の console で止まった事例からの提案）。
+
 - (JA) oep-spec 67876b7（probe.config §1.2 console_passthrough）に追従。仮想ベンチは、セッションがその口とピンを使っていない間、止めない attach で
   target のコンソールの出力をフレームの外で口へ送る（OEP の接続・ストリームは作らない。試し直しは swio だけ）。クライアントは `config.ConsolePassthrough`。
 

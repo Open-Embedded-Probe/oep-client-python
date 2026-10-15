@@ -92,6 +92,9 @@ Options:
                         configured it (%d = a counter)
   --no-port-speed       the profile's port_speed (oep.probe.link, oep-if-link §3; esp32-v003 has it) off: not in the ops, unknown_operation
   --no-restart          a probe without oep.probe.restart (oep-if-restart, optional): not listed, unknown_function
+  --minimal-ops         console and fixture UART at their smallest (console §1, fixture §2): marks, clear, mark and
+                        write not in their ops (unknown_operation; read from 3 unsupported) - a host's test that it
+                        sends an optional op only when describe's ops set it (conformance §2)
   --broken-rate SPEC    port_speed's line model: frames at RATE break (repeatable). SPEC is
                         RATE[:MIN_SIZE][:in|out][:duplex][:everyN][:afterB]: only frames of MIN_SIZE bytes and more on the wire
                         (default every frame), only towards the host (in) or the probe (out) (default both), only
@@ -162,6 +165,8 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
         probe = virtual_bench.with_unit_id(probe, a.unit_id)
     if getattr(a, "no_restart", False):
         probe = virtual_bench.without(probe, virtual_bench.RESTART)        # the optional oep.probe.restart left out (oep-if-restart)
+    if getattr(a, "minimal_ops", False):
+        probe = virtual_bench.minimal_ops(probe)                          # console / fixture UART at their smallest
     start = time.monotonic_ns()
     # the clock in ns since this start (core §2.6a), and a boot_id from the OS's random source (core §6.5, C-19)
     ep = endpoint.Endpoint(probe, lambda: (time.monotonic_ns() - start) // 1_000_000, boot_id=secrets.randbits(32),
@@ -671,6 +676,7 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--capture-slipped", action="store_true")
     ap.add_argument("--no-port-speed", action="store_true")
     ap.add_argument("--no-restart", action="store_true")
+    ap.add_argument("--minimal-ops", action="store_true")
     ap.add_argument("--broken-rate", action="append", default=[])
     ap.add_argument("--listen", default="127.0.0.1", metavar="ADDR")
     ap.add_argument("--unit-id", metavar="ID")

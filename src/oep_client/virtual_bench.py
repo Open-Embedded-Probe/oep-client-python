@@ -502,6 +502,21 @@ def without(probe: VirtualProbe, name: str) -> VirtualProbe:
     return _again(probe, kept)
 
 
+STREAM_OPTIONAL_OPS = ("marks", "clear", "mark", "write")   # common §1: what a position stream may leave out
+
+
+def minimal_ops(probe: VirtualProbe) -> VirtualProbe:
+    """The profile with oep.target.console and oep.fixture.uart at their smallest (console §1: open / read / close /
+    streams; fixture §2: configure / read / status): marks, clear, mark and write left out of their ops tags, so they
+    answer unknown_operation and read's from 3 is unsupported - for a host's test that it sends an optional op only
+    when describe's ops set it (conformance §2). VIRTUAL BENCH ONLY."""
+    def small(o: Offered) -> Offered:
+        if o.name not in ("oep.target.console", "oep.fixture.uart"):
+            return o
+        return _with(o, ops_of(o.name, *STREAM_OPTIONAL_OPS) + tuple(t for t in o.tlvs if t[0] != catalog.OPS))
+    return _again(probe, [small(o) for o in probe.offered])
+
+
 def with_unit_id(probe: VirtualProbe, unit_id: str) -> VirtualProbe:
     """The profile with another unit_id in fn 0's describe - an `x-` one is a probe with neither a unique number nor
     storage (core §7.5, C-24: hosts key nothing kept across sessions by it). VIRTUAL BENCH ONLY."""
