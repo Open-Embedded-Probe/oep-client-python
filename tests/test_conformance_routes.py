@@ -124,3 +124,18 @@ def test_unexpected_exchange_output_is_retained_without_filtering():
     assert runner.c.results[-1]['status'] == 'failed'
     raw = next(row for row in reversed(adapter.trace) if row['method']=='receive')
     assert len(raw['result'])==2 and raw['result'][1]['hex'].startswith('03')
+
+
+@pytest.mark.parametrize('limit', [64, 80])
+def test_partial_accepts_a_queue_smaller_than_the_bound(limit):
+    """core §10.4 rule 2: max_frame x 2 is an upper bound, not a queue the probe must keep - a probe that keeps less
+    drops the second data frame (seq 1 used) or both, and still passes IF-ROUTE-PARTIAL."""
+    model, adapter, runner = build()
+    runner.c.confirm(); runner.peer.confirm()
+    offer = model.offer
+    def smaller(route, frame):
+        if sum(len(part) for part in model.queue(route)) + len(frame) <= limit:
+            offer(route, frame)
+    model.offer = smaller
+    runner.c.check('IF-ROUTE-PARTIAL', 'core §10.4', runner.partial)
+    assert runner.c.results[-1]['status'] == 'passed', runner.c.results[-1].get('error')

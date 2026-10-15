@@ -319,6 +319,18 @@ class Host:
             return QUICK_OP_MAX_MS
         return min(known, QUICK_OP_MAX_MS) if fn == m.CORE_FN and op in QUICK_OPS else known
 
+    def _know_max_op_ms(self, ops) -> None:
+        """Before a request whose processing bound is max_op_ms - any but fn 0's confirm / list / describe / clock /
+        keepalive / lock_state - fn 0's describe is read when max_op_ms is not known yet (core §4.4: the wait is at least
+        "要求全体の処理時間の上限 + 1000 ms + 転送の時間", the bound being max_op_ms; core_quick_op_max_ms stands in only for
+        those quick ops while max_op_ms is unknown). A describe that declares none is not asked again (cached)."""
+        if self.limits is None or self.max_op_ms() is not None or m.CORE_FN in self._describes:
+            return                                          # no confirm answer yet (a bare `send`): nothing to ask
+        if all(fn == m.CORE_FN and op in QUICK_OPS for fn, op in ops):
+            return
+        from . import core
+        core.describe(self, m.CORE_FN)
+
     def next_corr(self, sid: int = 0) -> int:
         """The next corr: cyclic, never 0, one counter for every session_id this host sends (core §4.1). `sid`: the
         session_id the request carries (its last corr is remembered for `_session_room`)."""
@@ -370,6 +382,7 @@ class Host:
         the probe (`expecting`). Rejections raise; any other answer is returned (Result.succeeded / .ran say what it
         was)."""
         self.require_usable()
+        self._know_max_op_ms([(fn, op)])
         if self.before_request is not None:
             self.before_request()
         sid = session if session is not None else self._session_for(locked)
@@ -428,6 +441,7 @@ class Host:
         """Several requests in flight (`exchange` keeps the probe's in-flight and window limits); results in
         order, rejects NOT raised - the caller looks at each result. Without `exchange`, one at a time."""
         self.require_usable()
+        self._know_max_op_ms([(fn, op) for fn, op, _ in requests])
         session = self._session_for(locked)
         if self.before_request is not None:
             self.before_request()

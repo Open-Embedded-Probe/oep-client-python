@@ -14,6 +14,8 @@ class Attachments(Dependencies):
     pairs={1:[(0,1),(2,3),(6,7)],2:[(0,65535),(2,65535),(6,65535)],3:[(4,5)]}
     mechanisms=(0,1)
     reset_channel=8
+    attach_halt=False            # rvswd / swio method 1: offered only with features bit0 attach_halt (debug §3)
+    def methods(self,fn):return (0,1) if fn in (1,2) and self.attach_halt else (0,)
     def __init__(self, ep):
         super().__init__(ep);self.connections={};self.meta={};self.touch=[];self.failure=False
     def list_page(self,first,limit):
@@ -30,6 +32,7 @@ class Attachments(Dependencies):
             members=[(1,pair[0])] if fn==2 else [(1,pair[0]),(2,pair[1])]
             rows.append(tlv(6,bytes((index,len(members)))+b''.join(struct.pack('<BH',*row) for row in members)))
         rows.append(tlv(1,struct.pack('<BH',3,self.reset_channel)+b'\x01'))   # the reset line: role 3 (debug §3)
+        if fn in (1,2) and self.attach_halt:rows.append(tlv(5,struct.pack('<I',1)))   # features bit0 attach_halt
         return tuple(rows)
     def request_tags(self,fn,op,data):
         known={5:4} if fn<=3 and op==17 else {}
@@ -73,7 +76,7 @@ class Attachments(Dependencies):
                 self.close_connection(rid);return b''
             method,swdio,swclk,speed=struct.unpack_from('<BHHI',payload);pair=(swdio,swclk)
             if not speed:raise Reject(3)                                  # max_speed 0 (debug §1)
-            if method not in ((0,) if fn==3 else (0,1)):raise Reject(11,b'\0')
+            if method not in self.methods(fn):raise Reject(11,b'\0')    # method 1 without attach_halt too (debug §3)
             if speed<1000:raise Reject(11,b'\0')                         # below min_clock_hz: the fixed part
             if pair not in self.pairs[fn]:raise Reject(11,b'\0')
             active={pin for s in self.connections.values() for pin in s['pins'] if pin!=65535}

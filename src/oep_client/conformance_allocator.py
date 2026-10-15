@@ -5,7 +5,7 @@ from .conformance_resources import ResourceChecks
 
 
 class AllocatorChecks(ResourceChecks):
-    def fresh(self, seed=65535):
+    def fresh(self, seed=0xFFFFFFFF):
         reset=self.a.restart_fixture();require(reset['scope']=='logical-model','logical reset required')
         self.c.confirm();self.c.identity();self.c.declarations();require(self.c.boot==reset['boot_id'],'reset boot differs')
         self.a.seed(seed)
@@ -14,10 +14,10 @@ class AllocatorChecks(ResourceChecks):
         self.cause(request,2);require(self.inventory()==before,'exhaustion left a live resource')
         return request
     def boundary(self):
-        self.fresh(65534)
+        self.fresh(0xFFFFFFFE)
         with self.c.holding(60000) as sid:
             allocations=[(self.a.slots[0],self.create(sid,self.a.slots[0])[0]),(self.a.slots[-1],self.create(sid,self.a.slots[-1])[0])]
-            require([rid for _,rid in allocations]==[65534,65535],'global allocator u16 boundary differs')
+            require([rid for _,rid in allocations]==[0xFFFFFFFE,0xFFFFFFFF],'global allocator u32 boundary differs')   # core §9: u32, 0xFFFFFFFF the last
             for slot in self.a.slots:self.exhausted(sid,slot)
             for slot,rid in allocations:self.use(sid,slot,rid)
             self.cause(self.a.request('use',sid,self.a.slots[-1],allocations[0][1]),6)
@@ -28,7 +28,7 @@ class AllocatorChecks(ResourceChecks):
     def ended_boundary(self, expiry=False):
         self.fresh()
         with self.c.holding(1000 if expiry else 60000) as sid:
-            slot=self.a.slots[0];rid,created=self.create(sid,slot);require(rid==65535,'last ID differs')
+            slot=self.a.slots[0];rid,created=self.create(sid,slot);require(rid==0xFFFFFFFF,'last ID differs')
             self.exhausted(sid,slot)
             if expiry:
                 self.a.advance(1000);p=self.c.success(self.c.request(self.c.core['lock_state']))
@@ -60,7 +60,7 @@ class AllocatorChecks(ResourceChecks):
             require(self.c.replayed(request,frame,frame=True) and self.a.state()==before,'failed-create replay executed/changed allocator')
             self.empty();self.exhausted(sid,slot)
     def reboot_boundary(self):
-        self.fresh(65534)
+        self.fresh(0xFFFFFFFE)
         with self.c.holding(60000) as sid:
             slot=self.a.slots[0];rid,created=self.create(sid,slot);self.create(sid,self.a.slots[-1])
             boot=self.c.boot;reset=self.a.restart_fixture();self.c.session=None
@@ -83,6 +83,6 @@ class AllocatorChecks(ResourceChecks):
             first=len(self.a.trace);self.c.check('CORE-ALLOCATOR-'+name,'core §5.2/6/9',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]
         return dict(status='passed' if all(x['status']=='passed' for x in rows) else 'failed',checks=rows,adapter_trace=self.a.trace,
-                    observed=self.c.observed,full_conformance=False,scope='logical seeded u16 allocation boundary and session/reboot invariants',
-                    unchecked=['65535 actual allocations without seed','failed reservations and arbitrary resource geometry',
+                    observed=self.c.observed,full_conformance=False,scope='logical seeded u32 allocation boundary and session/reboot invariants',
+                    unchecked=['2^32-1 actual allocations without seed','failed reservations and arbitrary resource geometry',
                                'physical resources and concurrent allocators','complete core/common normative audit'])

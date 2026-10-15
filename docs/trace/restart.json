@@ -104,7 +104,8 @@
     "tests/test_restart.py::test_the_saved_settings_come_back_the_unsaved_ones_do_not",
     "tests/test_trace_restart.py::test_after_the_restart_the_serial_port_runs_at_its_boot_speed",
     "tests/test_conformance_restart.py::test_restart_contract",
-    "tests/test_trace_restart.py::test_nothing_of_the_old_boot_is_left_on_the_bench"
+    "tests/test_trace_restart.py::test_nothing_of_the_old_boot_is_left_on_the_bench",
+    "tests/test_review8_core_1.py::test_the_restart_checker_takes_any_uptime_since_the_answer"
    ],
    "mutants": [
     "tests/test_conformance_restart.py::test_state_faults_are_detected[reuse_boot-BARRIER]",

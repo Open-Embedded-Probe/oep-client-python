@@ -238,7 +238,7 @@ class RetentionChecks(ReplayPressureChecks):
             payload = self.c.success(self.c.request(self.c.core['lock_state']))
             require(len(payload) >= 5, 'owner lock_state shape')
             flag, remaining = struct.unpack_from('<BI', payload)
-            require((flag == 1 and 0 < remaining <= 1000) if held else (flag, remaining) == (0, 0),
+            require((flag == 1 and remaining <= 1000) if held else (flag, remaining) == (0, 0),   # 0 too (core §6.4)
                     'owner lock_state held/remaining mismatch')
             check_owner(payload, 5, expected, 'lock_state')
         for owner in owners:
@@ -258,7 +258,7 @@ class RetentionChecks(ReplayPressureChecks):
                     for corr, op, payload in ((1, self.c.core['open'], struct.pack('<IB', 1000, 0)),
                                               (2, self.c.core['keepalive'], b'')):
                         refused = self.peer.rejected(self.peer.request(op, payload, session=other, corr=corr), 'locked')
-                        require(len(refused) >= 4 and 0 < struct.unpack_from('<I', refused)[0] <= 1000,
+                        require(len(refused) >= 4 and struct.unpack_from('<I', refused)[0] <= 1000,   # any u32 up to the lease (§4.3)
                                 'owner locked remaining mismatch')
                         check_owner(refused, 4, owner, 'locked')
                     lock(owner)

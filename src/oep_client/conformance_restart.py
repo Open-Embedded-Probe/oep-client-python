@@ -44,7 +44,10 @@ class RestartChecks:
         require(boot['gpio']['plans']=={} and boot['gpio']['pins']==boot['gpio']['idle'],'restart retained plan/pin drive')
         self.c.confirm();self.c.identity();require(self.c.boot==boot['boot_id'],'new confirm boot differs')
         clock=self.c.success(self.c.request(self.c.core['clock']))
-        require(len(clock)>=12 and int.from_bytes(clock[:4],'little')==boot['boot_id'] and clock[4:12]==b'\0'*8,'new boot clock identity/uptime differs');tlvs(clock[12:])
+        # the new boot's clock counts from that boot (core §2.7), which began after the answer went out (restart §2): any
+        # uptime up to the time since then, not one exact value (the probe may count its own start-up)
+        uptime=int.from_bytes(clock[4:12],'little') if len(clock)>=12 else None
+        require(len(clock)>=12 and int.from_bytes(clock[:4],'little')==boot['boot_id'] and uptime<=(boot['time_ms']-sent['time_ms'])*1000000,'new boot clock identity/uptime differs');tlvs(clock[12:])
         for route in self.a.routes:
             answer=self.a.raw(self.c.request(self.c.core['confirm'],b'OEP?\1\1'),route)
             require(answer is not None and answer[3:5]==b'\1\0' and int.from_bytes(answer[17:21],'little')==boot['boot_id'],'route did not return by declared bound')

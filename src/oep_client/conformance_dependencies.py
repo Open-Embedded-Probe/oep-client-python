@@ -94,7 +94,8 @@ class DependencyChecks:
                 self.empty(self.request('stream','close',sid,struct.pack('<I',s)))
                 state=self.visible();require(p in state['connections'] and not state['streams'],'stream close released parent or retained buffers')
                 self.missing(s,sid);fresh,_=self.allocate('stream',sid,p);new=self.visible()['streams'][fresh]
-                require(fresh>s and new['position']==0 and new['next_serial']==0 and not new['data'] and not new['marks'] and not new['tx'],'recreated stream reused state/ID')
+                # the position starts at 0 (common §1.1); where the mark serial starts is not defined (§1.3)
+                require(fresh>s and new['position']==0 and not new['data'] and not new['marks'] and not new['tx'],'recreated stream reused state/ID')
             elif kind=='WRONG-KIND':
                 before=self.visible()
                 self.cause(self.request('stream','read',payload=struct.pack('<IBQH',p,1,0,1)))

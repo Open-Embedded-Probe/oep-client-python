@@ -57,6 +57,7 @@ STATUS_ERROR = _CAP.tlv["status_answer"]["error"]          # status's TLV: why t
 DATA_GENERATION = _CAP.tlv["data"]["generation"]           # a data frame's TLV: its generation (always in streaming)
 SEGMENT_INFO = _CAP.tlv["data"]["segment_info"]            # and its segment: position samples start_ns uncertainty
 REFERENCE_SOURCE = {v: k for k, v in _ANA.enum["reference_source"].items()}
+REFERENCE_MEASURED = {_ANA.enum["reference_how"]["nominal"]: False, _ANA.enum["reference_how"]["measured"]: True}
 CRITICAL = m.TAG_CRITICAL
 ONE_SHOT, REPEAT, STREAMING = (_CAP.enum["mode"][k] for k in ("one_shot", "repeat", "streaming"))
 IMMEDIATE, LEVEL, EDGE, CROSS_UP, CROSS_DOWN = range(5)
@@ -154,7 +155,7 @@ class Config:
     zero: dict[int, int] = field(default_factory=dict)         # analog, per channel
     scale_nv: dict[int, int] = field(default_factory=dict)     # analog, nV per value, per channel
     frontend: dict[int, int] = field(default_factory=dict)     # analog: the frontend each channel took
-    reference: tuple[str, int, bool] | None = None             # analog: (source, mV, measured)
+    reference: tuple[str, int, bool | str] | None = None       # analog: (source, mV, measured; an unknown how as str)
     pretrigger: int = 0                                        # what this host asked
 
     def segment_bytes(self, samples: int) -> int:
@@ -363,7 +364,8 @@ def _config(payload: bytes, analog: bool) -> Config:
             c.frontend[v[0]] = v[1]
         elif tag == REFERENCE and analog and len(v) == 6:
             source, mv, how = struct.unpack("<BIB", v)
-            c.reference = (REFERENCE_SOURCE.get(source, str(source)), mv, how == 1)
+            # how: nominal False, measured True; an unknown value is shown as it is, not as nominal (core §2.4)
+            c.reference = (REFERENCE_SOURCE.get(source, str(source)), mv, REFERENCE_MEASURED.get(how, str(how)))
     for k in c.order:
         c.skew_ns.setdefault(k, 0)                            # a role with no delay may be left out (§3.3)
     return c

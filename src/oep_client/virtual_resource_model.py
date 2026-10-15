@@ -15,6 +15,8 @@ from .virtual_core import Core, Reject, tlv
 class Resources:
     functions = (1, 2)
     fixed = {16: 1, 17: 3, 18: 3, 19: 0}
+    rid_format = 'H'                                    # the sample's documented id width (u16 on this wire)
+    last_id = 0xFFFF                                    # the last id that width holds (core §9: u32 -> 0xFFFFFFFF)
     free = {19}
     name = b'io.github.open-embedded-probe.resource'
 
@@ -45,18 +47,18 @@ class Resources:
     def dispatch(self, fn, op, payload):
         if op == 19:
             rows = [(rid, kind) for rid, (owner, kind) in self.live.items() if owner == fn]
-            return bytes((len(rows),)) + b''.join(struct.pack('<HB', rid, kind) for rid, kind in rows)
+            return bytes((len(rows),)) + b''.join(struct.pack('<' + self.rid_format + 'B', rid, kind) for rid, kind in rows)
         kind = payload[0]
         if kind not in (1, 2):
             raise Reject(3)
         if op == 16:
-            if self.next_id > 65535 or len(self.live) >= 8:
+            if self.next_id > self.last_id or len(self.live) >= 8:   # the last id used up: cause 2 (core §9)
                 raise Reject(4, tlv(1, b'\x02'))
             rid = self.next_id
             self.next_id += 1
             self.live[rid] = (fn, kind)
-            return struct.pack('<H', rid)
-        rid = struct.unpack_from('<H', payload, 1)[0]
+            return struct.pack('<' + self.rid_format, rid)
+        rid = struct.unpack_from('<' + self.rid_format, payload, 1)[0]
         if rid not in self.live:
             raise Reject(10)
         if self.live[rid] != (fn, kind):

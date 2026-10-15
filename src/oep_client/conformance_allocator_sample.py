@@ -5,6 +5,7 @@ from .conformance_route_sample import SampleRouteAdapter
 
 class SampleAllocatorAdapter(SampleResourceAdapter,SampleRouteAdapter):
     reset_scope='logical-model'
+    rid_format='I'                     # resource numbers u32 (core §9): the boundary is 0xFFFFFFFF
     reference='docs/allocator-conformance.ja.md'
     def __init__(self, checks, source):
         SampleResourceAdapter.__init__(self,checks,functions=(1,2),kinds=(1,2),capacity=8)

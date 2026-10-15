@@ -58,7 +58,7 @@ def test_state_faults_are_detected(fault,case):
         if fault=='keep_pin':model.extension.pins[1]=(4,0)
         if fault=='keep_cache':model.ep.current_core.cache=old.cache;model.ep.current_core.last=old.last
         if fault=='keep_owner':model.ep.current_core.holder=old.holder
-        if fault=='bad_uptime':model.ep._origin_ns-=1000000
+        if fault=='bad_uptime':model.ep._origin_ns-=51000000   # an uptime past the 50 ms since the answer went out
     def bad_advance(delta):
         if fault=='never_boot' and model.return_at is not None:model.clock_ms+=delta
         else:advance(delta)

@@ -120,3 +120,16 @@ def test_empty_completion_payload_requires_well_formed_tlvs(operation):
         e.dispatch=bad;return result
     model.restart_fixture=corrupt;r=DependencyChecks(c,a,wait=wait).run()
     assert r['status']=='failed' and any(x['status']=='failed' for x in r['checks'][1:])
+
+
+def test_recreated_stream_may_start_its_mark_serial_anywhere(monkeypatch):
+    """common §1.3: serial is the stream's own mark counter (u32, wrapping) - where a new stream's serial starts is not
+    defined (only its byte position starts at 0, §1.1), so a probe whose new streams start at 7 passes CLOSE."""
+    import oep_client.virtual_dependency_model as dm
+    plain = dm.Stream
+    monkeypatch.setattr(dm, 'Stream', lambda ep: plain(ep, serial=7))
+    _, c, a, wait = setup()
+    runner = DependencyChecks(c, a, wait=wait)
+    c.check('IF-DEPENDENCY-CLOSE', 'common §1.3', lambda: runner.basic('CLOSE'))
+    c.check('IF-DEPENDENCY-MARKS', 'common §1.3', runner.marks)
+    assert [r['status'] for r in c.results] == ['passed', 'passed'], [r.get('error') for r in c.results]

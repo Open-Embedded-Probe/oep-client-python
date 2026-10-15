@@ -51,7 +51,8 @@ class SessionSmokeChecks:
         payload = self.c.success(self.c.call('lock_state'))
         require(len(payload) >= 5, 'lock_state fixed fields')
         locked, remaining = struct.unpack_from('<BI', payload)
-        require(locked == int(held) and (0 < remaining <= 1000 if held else remaining == 0), 'lock/lease state')
+        # held: at most the 1000 ms lease, 0 included (a lease at its very end may read 0, core §6.4); free: 0
+        require(locked == int(held) and (remaining <= 1000 if held else remaining == 0), 'lock/lease state')
         tlvs(payload[5:])
 
     def release_observation(self, action):
@@ -62,7 +63,8 @@ class SessionSmokeChecks:
 
     def locked(self, reply):
         require(reply[3:5] == bytes([0, self.c.reg['reject_reasons']['locked']]), 'expected locked')
-        require(len(reply) >= 9 and 0 < int.from_bytes(reply[5:9], 'little') <= 1000, 'locked remaining time')
+        # remaining ms (u32): at most the 1000 ms lease, 0 included (core §4.3: "残り時間 ms（u32）")
+        require(len(reply) >= 9 and int.from_bytes(reply[5:9], 'little') <= 1000, 'locked remaining time')
         tlvs(reply[9:])
 
     def replay(self, corr, original):

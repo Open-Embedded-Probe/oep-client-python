@@ -195,7 +195,8 @@
     "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[analog-rows3]",
     "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[capture-group-rows4]",
     "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[capture-timeline-rows5]",
-    "tests/test_review5_small.py::test_plan_unsupported_names_the_tag_of_the_refused_assignment"
+    "tests/test_review5_small.py::test_plan_unsupported_names_the_tag_of_the_refused_assignment",
+    "tests/test_review8_core_2.py::test_plan_apply_refuses_a_role_on_a_channel_role_channels_offers_another_role_only"
    ],
    "mutants": [
     "tests/test_trace_plan.py::test_a_bench_that_skips_the_role_and_channel_checks_fails_them[test_one_refusal_changes_nothing_not_even_the_replaced_fns_plan]",

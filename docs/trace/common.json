@@ -196,7 +196,8 @@
    "text": "- マークの position は、probe がそのマークを付けた時の書き込み",
    "verify": [
     "tests/test_trace_common.py::test_a_host_mark_carries_the_value_at_the_write_position_and_the_probe_clock",
-    "tests/test_trace_common.py::test_reading_consumes_nothing_and_a_target_reset_drops_nothing"
+    "tests/test_trace_common.py::test_reading_consumes_nothing_and_a_target_reset_drops_nothing",
+    "tests/test_conformance_stream.py::test_overflow_mark_where_the_first_byte_was_pushed_out"
    ],
    "mutants": [
     "tests/test_conformance_stream.py::test_mark_arrivals_between_pages_faults[position_truncated]"
@@ -219,7 +220,8 @@
     "tests/test_interfaces.py::test_console_marks_follow_serials_and_more",
     "tests/test_conformance_stream.py::test_stream_contracts_pass",
     "tests/test_trace_common.py::test_mark_serials_are_counted_per_stream",
-    "tests/test_review6_core_early.py::test_the_stream_checker_holds_the_span_of_the_marks_kept_not_from_next_serial"
+    "tests/test_review6_core_early.py::test_the_stream_checker_holds_the_span_of_the_marks_kept_not_from_next_serial",
+    "tests/test_conformance_dependencies.py::test_recreated_stream_may_start_its_mark_serial_anywhere"
    ],
    "mutants": [
     "tests/test_conformance_stream.py::test_stream_mutants_fail[serial_gap]",

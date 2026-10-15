@@ -1,0 +1,525 @@
+{
+ "reviewed_commit": "3ec1541",
+ "units": {
+  "core:4.1:1": {
+   "verdict": "ok",
+   "reason": "Host.next_corr: one cyclic counter, never 0, 65535->1; _session_room keeps session-0 requests from moving a session half the space; link resends byte-identical; bench/virtual_core judge d=(corr-last) mod 65536"
+  },
+  "core:4.1:2": {
+   "verdict": "ok",
+   "reason": "every Request packs session_id; Host._session_for sends the session id or 0"
+  },
+  "core:4.1:3": {
+   "verdict": "ok",
+   "reason": "endpoint._header / virtual_core: lock op with session_id 0 -> session_required before replay and session checks"
+  },
+  "core:4.1:4": {
+   "verdict": "ok",
+   "reason": "session-0 lock-free ops skip _resent/_check and the lease; a non-zero id goes through both and restarts the lease"
+  },
+  "core:4.1:5": {
+   "verdict": "ok",
+   "reason": "endpoint._open / virtual_core: open with id 0 -> malformed; Host.open draws randrange(1, 2^32)"
+  },
+  "core:4.2:1": {
+   "verdict": "ok",
+   "reason": "table header row (informative)"
+  },
+  "core:4.2:2": {
+   "verdict": "ok",
+   "reason": "resolution values match registry and message.Result"
+  },
+  "core:4.2:3": {
+   "verdict": "ok",
+   "reason": "resolution values match registry and message.Result"
+  },
+  "core:4.2:4": {
+   "verdict": "ok",
+   "reason": "one Result per request with the request corr and no fn/op; coalesced unanswered copies dropped (Endpoint.receive, PipelineModel.submit)"
+  },
+  "core:4.2:5": {
+   "verdict": "ok",
+   "reason": "interface failures are completed failed/partial; rejected only for header/session/format/state; Host raises Failed without re-running"
+  },
+  "core:4.2:6": {
+   "verdict": "ok",
+   "reason": "the client never re-runs a state change on failed alone (riscv held retry stops after a write, capture retries reads only)"
+  },
+  "core:4.3:1": {
+   "verdict": "ok",
+   "reason": "reason value and payload as the table says (endpoint, virtual_core, Host rejection classes)"
+  },
+  "core:4.3:2": {
+   "verdict": "ok",
+   "reason": "reason value and payload as the table says (endpoint, virtual_core, Host rejection classes)"
+  },
+  "core:4.3:3": {
+   "verdict": "ok",
+   "reason": "reason value and payload as the table says (endpoint, virtual_core, Host rejection classes)"
+  },
+  "core:4.3:4": {
+   "verdict": "ok",
+   "reason": "reason value and payload as the table says (endpoint, virtual_core, Host rejection classes)"
+  },
+  "core:4.3:5": {
+   "verdict": "ok",
+   "reason": "reason value and payload as the table says (endpoint, virtual_core, Host rejection classes)"
+  },
+  "core:4.3:6": {
+   "verdict": "ok",
+   "reason": "reason value and payload as the table says (endpoint, virtual_core, Host rejection classes)"
+  },
+  "core:4.3:7": {
+   "verdict": "fixed",
+   "reason": "FIXED: SessionSmokeChecks.locked and RetentionChecks.owner_lifecycle still required a locked remaining time above 0"
+  },
+  "core:4.3:8": {
+   "verdict": "ok",
+   "reason": "reason value and payload as the table says (endpoint, virtual_core, Host rejection classes)"
+  },
+  "core:4.3:9": {
+   "verdict": "ok",
+   "reason": "reason value and payload as the table says (endpoint, virtual_core, Host rejection classes)"
+  },
+  "core:4.3:10": {
+   "verdict": "ok",
+   "reason": "reason value and payload as the table says (endpoint, virtual_core, Host rejection classes)"
+  },
+  "core:4.3:11": {
+   "verdict": "ok",
+   "reason": "reason value and payload as the table says (endpoint, virtual_core, Host rejection classes)"
+  },
+  "core:4.3:12": {
+   "verdict": "ok",
+   "reason": "endpoint._header / virtual_core: corr 0, unknown_function, unknown_operation (ops tag), session_required in order before replay"
+  },
+  "core:4.3:13": {
+   "verdict": "ok",
+   "reason": "Endpoint._resent / virtual_core cache answer result_lost / malformed / the record after the header; copies coalesced"
+  },
+  "core:4.3:14": {
+   "verdict": "ok",
+   "reason": "endpoint._check and _open, virtual_core: no_session / locked before payload checks; force read where it stands"
+  },
+  "core:4.3:15": {
+   "verdict": "ok",
+   "reason": "payload checks (Take.tail/check, interface sims) run before any change; any one reason given"
+  },
+  "core:4.3:16": {
+   "verdict": "ok",
+   "reason": "reason value and payload as the table says (endpoint, virtual_core, Host rejection classes)"
+  },
+  "core:4.3:17": {
+   "verdict": "ok",
+   "reason": "reason value and payload as the table says (endpoint, virtual_core, Host rejection classes)"
+  },
+  "core:4.3:18": {
+   "verdict": "ok",
+   "reason": "reason value and payload as the table says (endpoint, virtual_core, Host rejection classes)"
+  },
+  "core:4.4:1": {
+   "verdict": "ok",
+   "reason": "confirm answers max_frame, window (u32), max_inflight; link counts message length (+2 conservatively)"
+  },
+  "core:4.4:2": {
+   "verdict": "ok",
+   "reason": "link._exchange_pipelined keeps max_inflight and window; PipelineModel refuses overflow window_exceeded as an explicit sample policy"
+  },
+  "core:4.4:3": {
+   "verdict": "ok",
+   "reason": "Endpoint.receive queues every request within the limits while one is processed"
+  },
+  "core:4.4:4": {
+   "verdict": "ok",
+   "reason": "copies of an unresolved request coalesced/dropped without credit or lease (Endpoint.receive, PipelineModel.submit)"
+  },
+  "core:4.4:5": {
+   "verdict": "ok",
+   "reason": "per-interface (block ops, link source); fn 0 answers always fit 64"
+  },
+  "core:4.4:6": {
+   "verdict": "ok",
+   "reason": "bench and models process and answer in arrival order per route"
+  },
+  "core:4.4:7": {
+   "verdict": "ok",
+   "reason": "confirm limits per route (PipelineModel per-route limits); one resend table per probe"
+  },
+  "core:4.4:8": {
+   "verdict": "fixed",
+   "reason": "FIXED: Host.op_bound_ms used core_quick_op_max_ms for every op while max_op_ms was unknown; a confirmed host now reads fn 0 describe first (Host._know_max_op_ms)"
+  },
+  "core:4.4:9": {
+   "verdict": "ok",
+   "reason": "link wait_floor_s applies to every request incl. its own; repeated confirms only on port_speed probing"
+  },
+  "core:5.1:1": {
+   "verdict": "ok",
+   "reason": "link resends the same bytes once; no automatic re-execution with a new corr"
+  },
+  "core:5.1:2": {
+   "verdict": "ok",
+   "reason": "Endpoint.newest_corr / virtual_core.high kept for the last new session; records optional and bounded (remember_count/max)"
+  },
+  "core:5.1:3": {
+   "verdict": "ok",
+   "reason": "_resent / virtual_core: request bytes not kept -> result_lost, differ -> malformed, same -> record or result_lost; nothing re-run"
+  },
+  "core:5.1:4": {
+   "verdict": "ok",
+   "reason": "0 < d < 32768 new, else result_lost (equal and half included)"
+  },
+  "core:5.1:5": {
+   "verdict": "ok",
+   "reason": "_remember / virtual_core record every request past order 2 incl. rejected ones"
+  },
+  "core:5.1:6": {
+   "verdict": "ok",
+   "reason": "end/expiry keep order state; only a new id open resets; Host.end_previous never reopens an ended id"
+  },
+  "core:5.1:7": {
+   "verdict": "ok",
+   "reason": "session 0 never deduplicated; corr 0 malformed"
+  },
+  "core:5.1:8": {
+   "verdict": "ok",
+   "reason": "one resend table per Endpoint / Core shared by all routes"
+  },
+  "core:5.1:9": {
+   "verdict": "ok",
+   "reason": "link _fail_transport / TCP close-reopen, boot_id checked on reconnect (review 6/7)"
+  },
+  "core:5.1:10": {
+   "verdict": "ok",
+   "reason": "no automatic re-injection across routes; kept_session reserves corrs ahead"
+  },
+  "core:6.1:1": {
+   "verdict": "ok",
+   "reason": "one holder per Endpoint / Core"
+  },
+  "core:6.1:2": {
+   "verdict": "ok",
+   "reason": "Host.open uses SystemRandom randrange(1, 2^32); bench remembers the last id"
+  },
+  "core:6.1:3": {
+   "verdict": "ok",
+   "reason": "lease restarts at answer generation for the holder past order 3, rejected too; replays/session-0/other ids do not touch it; expiry handled before the next request"
+  },
+  "core:6.2:1": {
+   "verdict": "ok",
+   "reason": "table header row (informative)"
+  },
+  "core:6.2:2": {
+   "verdict": "ok",
+   "reason": "_open: free lock and id != last -> takes it, lease from lease_ms, owner from the open"
+  },
+  "core:6.2:3": {
+   "verdict": "ok",
+   "reason": "free lock: last id open or any other request with an id -> no_session"
+  },
+  "core:6.2:4": {
+   "verdict": "ok",
+   "reason": "holder S open again: lease_ms updated, resources, resend table, owner and subscription targets kept"
+  },
+  "core:6.2:5": {
+   "verdict": "ok",
+   "reason": "other id without force -> locked + remaining (+owner)"
+  },
+  "core:6.2:6": {
+   "verdict": "ok",
+   "reason": "force: _release_lock (§9) then new holder"
+  },
+  "core:6.2:7": {
+   "verdict": "ok",
+   "reason": "holder requests processed"
+  },
+  "core:6.2:8": {
+   "verdict": "ok",
+   "reason": "other id requests -> locked + remaining (+owner)"
+  },
+  "core:6.4:1": {
+   "verdict": "ok",
+   "reason": "open answers lease_ms and boot_id; Host.open reads both and watches boot_id"
+  },
+  "core:6.4:2": {
+   "verdict": "ok",
+   "reason": "0 -> probe default; clamp to 1000..60000; checkers accept 1000..60000 for 0 and exact values in range"
+  },
+  "core:6.4:3": {
+   "verdict": "ok",
+   "reason": "end, expiry and force all go through _release_lock / Core.release"
+  },
+  "core:6.4:4": {
+   "verdict": "ok",
+   "reason": "keepalive answers empty success and only restarts the lease"
+  },
+  "core:6.4:5": {
+   "verdict": "fixed",
+   "reason": "FIXED: tcp_peers.lock_state, SessionSmokeChecks.state, Checks.keepalive, RetentionChecks.owner_lifecycle required remaining > 0 while held"
+  },
+  "core:6.4:6": {
+   "verdict": "ok",
+   "reason": "owner kept from the taking open, 1..32 bytes, shown after lock_state/locked; Host.owner_of first copy"
+  },
+  "core:6.4:7": {
+   "verdict": "ok",
+   "reason": "force releases the previous session before handing over"
+  },
+  "core:7.1:1": {
+   "verdict": "ok",
+   "reason": "confirm answer carries TLV transport = the route index (Endpoint._confirm, virtual_core)"
+  },
+  "core:7.1:2": {
+   "verdict": "ok",
+   "reason": "fixed shape identical; Host.confirm refuses a revision outside the range asked"
+  },
+  "core:7.1:3": {
+   "verdict": "ok",
+   "reason": "revision_in_use per link/connection"
+  },
+  "core:7.1:4": {
+   "verdict": "ok",
+   "reason": "Host.confirm_range / link confirm_body send min=max=revision in use after the first confirm"
+  },
+  "core:7.1:5": {
+   "verdict": "ok",
+   "reason": "unsupported tag 0x00 + TLV supported(min,max); min>max malformed; Unsupported.supported reads it"
+  },
+  "core:7.2:1": {
+   "verdict": "ok",
+   "reason": "VirtualProbe._list fills the frame; fn 0 never listed; checkers require full pages"
+  },
+  "core:7.2:2": {
+   "verdict": "ok",
+   "reason": "names 1..48 of a-z0-9-.; checkers check the alphabet"
+  },
+  "core:7.2:3": {
+   "verdict": "ok",
+   "reason": "instance unique per (name, revision); core.find picks the pair the client speaks"
+  },
+  "core:7.2:4": {
+   "verdict": "ok",
+   "reason": "list fixed per boot; Host caches name->fn until boot_id changes"
+  },
+  "core:7.2:5": {
+   "verdict": "ok",
+   "reason": "past the end: total, count 0 (TLVs may follow)"
+  },
+  "core:7.3:1": {
+   "verdict": "ok",
+   "reason": "describe past the end: more 0, no TLVs; Host stops at more 0"
+  },
+  "core:7.4:1": {
+   "verdict": "fixed",
+   "reason": "FIXED: the bench took a role on a channel its role_channels offers for another role only (non-i2c/spi fns)"
+  },
+  "core:7.4:2": {
+   "verdict": "ok",
+   "reason": "u32 read with first_fixed"
+  },
+  "core:7.4:3": {
+   "verdict": "ok",
+   "reason": "max_length u16; interfaces refuse unsupported past it"
+  },
+  "core:7.4:4": {
+   "verdict": "ok",
+   "reason": "u32"
+  },
+  "core:7.4:5": {
+   "verdict": "ok",
+   "reason": "features u32; optional ops in ops only"
+  },
+  "core:7.4:6": {
+   "verdict": "ok",
+   "reason": "channel_group matched exactly for the roles it names (endpoint, riscv candidate pairs)"
+  },
+  "core:7.4:7": {
+   "verdict": "ok",
+   "reason": "every fn including fn 0 carries ops; header refuses ops not set"
+  },
+  "core:7.4:8": {
+   "verdict": "ok",
+   "reason": "catalog.check_ops / conformance.ops: base + 8 x bytes <= 256, bitmap >= 1 byte"
+  },
+  "core:7.4:9": {
+   "verdict": "ok",
+   "reason": "examples match catalog.ops_tlv"
+  },
+  "core:7.4:10": {
+   "verdict": "ok",
+   "reason": "role_channels binds only the roles it lists, groups the roles they name (endpoint._check_plan_pass, _allows)"
+  },
+  "core:7.4:11": {
+   "verdict": "ok",
+   "reason": "the same declarations govern plan and attach-argument pin choice"
+  },
+  "core:7.5:1": {
+   "verdict": "ok",
+   "reason": "firmware text optional"
+  },
+  "core:7.5:2": {
+   "verdict": "ok",
+   "reason": "model text optional"
+  },
+  "core:7.5:3": {
+   "verdict": "ok",
+   "reason": "unit_id 1..32 a-z0-9-, same on every route; checkers and kept_session check the grammar"
+  },
+  "core:7.5:4": {
+   "verdict": "ok",
+   "reason": "channels u16; labels below it"
+  },
+  "core:7.5:5": {
+   "verdict": "ok",
+   "reason": "label = channel u16 + text, firmware labels only"
+  },
+  "core:7.5:6": {
+   "verdict": "ok",
+   "reason": "one transport TLV per route; UART bridge and TCP 0xFF (asserted in _transports)"
+  },
+  "core:7.5:7": {
+   "verdict": "ok",
+   "reason": "chip text optional"
+  },
+  "core:7.5:8": {
+   "verdict": "ok",
+   "reason": "max_op_ms required, 1..600000 checked by Host (NotUsable) and checkers"
+  },
+  "core:7.5:9": {
+   "verdict": "ok",
+   "reason": "kinds 1..6; serial kinds 1..3"
+  },
+  "core:7.5:10": {
+   "verdict": "ok",
+   "reason": "add_transport takes the next unused index, never reused"
+  },
+  "core:7.5:11": {
+   "verdict": "ok",
+   "reason": "x- unit_id never a grouping/kept key (review 6)"
+  },
+  "core:7.5:12": {
+   "verdict": "ok",
+   "reason": "profiles derive unit_id from the unit only"
+  },
+  "core:7.6:1": {
+   "verdict": "ok",
+   "reason": "clock answers boot_id and uptime_ns"
+  },
+  "core:7.6:2": {
+   "verdict": "ok",
+   "reason": "clock lock-free; session-0 clock touches no session (Host.clock sends 0)"
+  },
+  "core:7.6:3": {
+   "verdict": "ok",
+   "reason": "uptime read while handling the request (now_ns at dispatch)"
+  },
+  "plan:pre:1": {
+   "verdict": "ok",
+   "reason": "oep.probe.plan revision 1 in registry and profiles"
+  },
+  "plan:pre:2": {
+   "verdict": "ok",
+   "reason": "pins chosen by request arguments (attach pins) are not plan roles in the bench"
+  },
+  "plan:pre:3": {
+   "verdict": "ok",
+   "reason": "profiles with plan-role interfaces list one oep.probe.plan; without() drops it when none remain"
+  },
+  "plan:pre:4": {
+   "verdict": "ok",
+   "reason": "_release_lock drops every plan; the client never re-applies one on its own"
+  },
+  "plan:1:1": {
+   "verdict": "ok",
+   "reason": "plan_apply needs the lock (session_required)"
+  },
+  "plan:1:2": {
+   "verdict": "ok",
+   "reason": "plan_release needs the lock"
+  },
+  "plan:1:3": {
+   "verdict": "ok",
+   "reason": "plan_roles u32 declared by every bench plan; core.plan_roles reads the first copy"
+  },
+  "plan:2.1:1": {
+   "verdict": "ok",
+   "reason": "role_assignment fn/role/channel, repeated, bit 7 either way"
+  },
+  "plan:2.1:2": {
+   "verdict": "ok",
+   "reason": "only named fns replaced; others kept; conflicts checked against the other fns only; all-or-nothing"
+  },
+  "plan:2.1:3": {
+   "verdict": "ok",
+   "reason": "kept (fn, role, channel) untouched, removed ones parked, unchanged fns untouched; running cause 6, bound cause 4"
+  },
+  "plan:2.1:4": {
+   "verdict": "ok",
+   "reason": "other fns plus the request counted against plan_roles -> unavailable cause 2"
+  },
+  "plan:2.1:5": {
+   "verdict": "ok",
+   "reason": "completed success, empty payload"
+  },
+  "plan:2.2:1": {
+   "verdict": "ok",
+   "reason": "fns checked first (unknown_function, bound cause 4), n = 0 every fn, fn without a plan (fn 0 too) ignored"
+  },
+  "plan:2.2:2": {
+   "verdict": "ok",
+   "reason": "completed success, empty payload"
+  },
+  "plan:2.4:1": {
+   "verdict": "ok",
+   "reason": "malformed: bad TLV, duplicate triple, fn 0"
+  },
+  "plan:2.4:2": {
+   "verdict": "ok",
+   "reason": "unknown fn -> unknown_function"
+  },
+  "plan:2.4:3": {
+   "verdict": "fixed",
+   "reason": "FIXED: a role on a channel role_channels offers for another role only was taken for uart/gpio fns"
+  },
+  "plan:2.4:4": {
+   "verdict": "ok",
+   "reason": "plan_roles cause 2, pin conflict cause 1, refused output idle cause 5"
+  },
+  "plan:2.4:5": {
+   "verdict": "ok",
+   "reason": "running cause 6, bound cause 4"
+  }
+ },
+ "divergences": [
+  {
+   "unit": "plan:2.4:3",
+   "spec": "| role がそのインターフェースに無い（plan の role でない）、channel が role_channels の候補に無い、channel_group のどれにも一致しない、個別機能が定める役割の個数・ピンの組を満たさない | unsupported（受け取ったままの tag） | / core §7.4: bit i が立っていれば channel base+i をその role に使える。",
+   "code": "src/oep_client/endpoint.py:Endpoint._check_plan_pass",
+   "fix": "the per-role role_channels check (a role role_channels lists must have the channel among its own candidates) now applies to every fn, not only i2c-target / spi-target; a uart RX on a channel offered for TX only is refused unsupported with the tag as received"
+  },
+  {
+   "unit": "core:7.4:1",
+   "spec": "| 0x01 | role_channels | role(u8)、base(u16)、bitmap。bit i が立っていれば channel base+i をその role に使える。同じ role を複数書いてよい（和集合） |",
+   "code": "src/oep_client/endpoint.py:Endpoint._check_plan_pass",
+   "fix": "same change as plan:2.4:3"
+  },
+  {
+   "unit": "core:6.4:5",
+   "spec": "- **lock_state**: ロックの有無と残り時間（ロックが空いていれば 0）。",
+   "code": "src/oep_client/conformance_tcp_peers.py:lock_state, conformance_session_smoke.py:SessionSmokeChecks.state, conformance.py:Checks.keepalive, conformance_retention.py:RetentionChecks.owner_lifecycle",
+   "fix": "a held lock may read remaining 0 (a lease at its very end); only \"0 when free\" and the upper bound (the lease) are required"
+  },
+  {
+   "unit": "core:4.3:7",
+   "spec": "| 0x08 | locked | 他のセッションがロックを持つ | 残り時間 ms（u32）、[TLV owner（§6.4）] |",
+   "code": "src/oep_client/conformance_session_smoke.py:SessionSmokeChecks.locked, conformance_retention.py:RetentionChecks.owner_lifecycle",
+   "fix": "the locked remaining time is any u32 up to the lease (0 included), as review 5 did for Checks.exchange"
+  },
+  {
+   "unit": "core:4.4:8",
+   "spec": "host は要求ごとに**少なくとも**次を待つ: 要求全体の処理時間の上限 + 1000 ms（`host_wait_add_ms`）+ 転送の時間（[経路](oep-transports.ja.md) §6）。処理時間の上限は max_op_ms（§7.5）。… max_op_msをまだ取得していない間は、これらの処理上限にcore_quick_op_max_msを使う（待ちの下限は2000 msと転送の時間）。",
+   "code": "src/oep_client/host.py:Host.request / Host.pipeline (op_bound_ms)",
+   "fix": "a confirmed host reads fn 0 describe (max_op_ms) before any request other than fn 0 confirm/list/describe/clock/keepalive/lock_state when max_op_ms is unknown (Host._know_max_op_ms); a lock-free interface request before any session used to be waited for only core_quick_op_max_ms + 1 s"
+  }
+ ]
+}

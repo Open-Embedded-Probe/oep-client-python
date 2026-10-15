@@ -18,9 +18,14 @@ class ResetChecks(StepChecks):
         require(not frame[6]&~1,'reset reserved flags')
         after=self.a.state();access=after['access'][len(before['access']):]
         require(after['next_id']==before['next_id'] and after['touch']==before['touch'],'reset touched pins or allocated')
+        mine=[rid for rid,s in before['streams'].items() if s['connection']==parent]
         if result=='cleanup-line':                             # the cleanup failed: closed after the answer (debug §4)
-            mine=[rid for rid,s in before['streams'].items() if s['connection']==parent]
             require(parent not in after['connections'] and not any(rid in after['streams'] for rid in mine),'connection kept after a failed cleanup')
+            return request,frame
+        if result=='dm-line' and parent not in after['connections']:
+            # a DM that never answered: "必要な後始末が済まなければconnectionを閉じる" (debug §4.3) - a probe that cannot
+            # count haltreq / havereset as done closes the connection and its streams after the answer
+            require(not any(rid in after['streams'] for rid in mine),'streams kept after their connection closed')
             return request,frame
         require(after['connections']==before['connections'],'reset destroyed connection')
         target=after['targets'][parent]
@@ -49,6 +54,10 @@ class ResetChecks(StepChecks):
             other,_=self.attach(sid,pair=(2,3));other_rid,_=self.console(sid,other,2);self.a.frame(other_rid,*target_frame(syn=True,data=b'peer'));self.a.poll(other_rid)
             self.c.success(self.request(5,'halt',sid,struct.pack('<I',parent)));before=self.a.state();self.reset(sid,parent,mode,result);after=self.a.state()
             require(before['protocols'][rid]['synced'] and before['protocols'][rid]['pending']==b'AB','explicit pending/reset premise')
+            if parent not in after['connections']:                 # closed: a silent DM's cleanup not done (debug §4.3)
+                for field in ('targets','streams','mailboxes','protocols'):
+                    key=other if field=='targets' else other_rid;require(after[field][key]==before[field][key],'reset changed other connection')
+                return
             if result!='dm-line':require(not after['protocols'][rid]['synced'] and after['protocols'][rid]['pending']==b'','reset retained dmseq sync/pending')
             for field in ('data','position','tx'):require(after['streams'][rid][field]==before['streams'][rid][field],'reset lost live buffer/queue')
             marks=after['streams'][rid]['marks'];new=marks[len(before['streams'][rid]['marks']):]

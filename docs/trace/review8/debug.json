@@ -1,0 +1,749 @@
+{
+ "reviewed_commit": "3ec1541",
+ "units": {
+  "debug:pre:1": {
+   "verdict": "ok",
+   "reason": "interface table / connection model: wires make connections (endpoint._wire, Attachments), targets take connection(u32) first (no_resource, cause 6 for another kind), only connections lock-free (Endpoint._lock_free); checkers attach/debug/arm RESOURCE cases agree"
+  },
+  "debug:pre:2": {
+   "verdict": "ok",
+   "reason": "interface table / connection model: wires make connections (endpoint._wire, Attachments), targets take connection(u32) first (no_resource, cause 6 for another kind), only connections lock-free (Endpoint._lock_free); checkers attach/debug/arm RESOURCE cases agree"
+  },
+  "debug:pre:3": {
+   "verdict": "ok",
+   "reason": "interface table / connection model: wires make connections (endpoint._wire, Attachments), targets take connection(u32) first (no_resource, cause 6 for another kind), only connections lock-free (Endpoint._lock_free); checkers attach/debug/arm RESOURCE cases agree"
+  },
+  "debug:pre:4": {
+   "verdict": "ok",
+   "reason": "interface table / connection model: wires make connections (endpoint._wire, Attachments), targets take connection(u32) first (no_resource, cause 6 for another kind), only connections lock-free (Endpoint._lock_free); checkers attach/debug/arm RESOURCE cases agree"
+  },
+  "debug:pre:5": {
+   "verdict": "ok",
+   "reason": "interface table / connection model: wires make connections (endpoint._wire, Attachments), targets take connection(u32) first (no_resource, cause 6 for another kind), only connections lock-free (Endpoint._lock_free); checkers attach/debug/arm RESOURCE cases agree"
+  },
+  "debug:pre:6": {
+   "verdict": "ok",
+   "reason": "interface table / connection model: wires make connections (endpoint._wire, Attachments), targets take connection(u32) first (no_resource, cause 6 for another kind), only connections lock-free (Endpoint._lock_free); checkers attach/debug/arm RESOURCE cases agree"
+  },
+  "debug:pre:7": {
+   "verdict": "ok",
+   "reason": "interface table / connection model: wires make connections (endpoint._wire, Attachments), targets take connection(u32) first (no_resource, cause 6 for another kind), only connections lock-free (Endpoint._lock_free); checkers attach/debug/arm RESOURCE cases agree"
+  },
+  "debug:pre:8": {
+   "verdict": "ok",
+   "reason": "interface table / connection model: wires make connections (endpoint._wire, Attachments), targets take connection(u32) first (no_resource, cause 6 for another kind), only connections lock-free (Endpoint._lock_free); checkers attach/debug/arm RESOURCE cases agree"
+  },
+  "debug:0:1": {
+   "verdict": "ok",
+   "reason": "shared wire rules: ops 0x10-0x13, attach/detach/connections mandatory, scan optional in ops (attach checker context, oep_declarations); other-wire requirements are definition text, nothing in code contradicts"
+  },
+  "debug:0:2": {
+   "verdict": "ok",
+   "reason": "shared wire rules: ops 0x10-0x13, attach/detach/connections mandatory, scan optional in ops (attach checker context, oep_declarations); other-wire requirements are definition text, nothing in code contradicts"
+  },
+  "debug:0:3": {
+   "verdict": "ok",
+   "reason": "shared wire rules: ops 0x10-0x13, attach/detach/connections mandatory, scan optional in ops (attach checker context, oep_declarations); other-wire requirements are definition text, nothing in code contradicts"
+  },
+  "debug:0:4": {
+   "verdict": "ok",
+   "reason": "shared wire rules: ops 0x10-0x13, attach/detach/connections mandatory, scan optional in ops (attach checker context, oep_declarations); other-wire requirements are definition text, nothing in code contradicts"
+  },
+  "debug:0:5": {
+   "verdict": "ok",
+   "reason": "shared wire rules: ops 0x10-0x13, attach/detach/connections mandatory, scan optional in ops (attach checker context, oep_declarations); other-wire requirements are definition text, nothing in code contradicts"
+  },
+  "debug:0:6": {
+   "verdict": "ok",
+   "reason": "shared wire rules: ops 0x10-0x13, attach/detach/connections mandatory, scan optional in ops (attach checker context, oep_declarations); other-wire requirements are definition text, nothing in code contradicts"
+  },
+  "debug:0:7": {
+   "verdict": "ok",
+   "reason": "shared wire rules: ops 0x10-0x13, attach/detach/connections mandatory, scan optional in ops (attach checker context, oep_declarations); other-wire requirements are definition text, nothing in code contradicts"
+  },
+  "debug:0:8": {
+   "verdict": "ok",
+   "reason": "shared wire rules: ops 0x10-0x13, attach/detach/connections mandatory, scan optional in ops (attach checker context, oep_declarations); other-wire requirements are definition text, nothing in code contradicts"
+  },
+  "debug:0:9": {
+   "verdict": "ok",
+   "reason": "shared wire rules: ops 0x10-0x13, attach/detach/connections mandatory, scan optional in ops (attach checker context, oep_declarations); other-wire requirements are definition text, nothing in code contradicts"
+  },
+  "debug:1:1": {
+   "verdict": "ok",
+   "reason": "attach/scan norms re-read word by word against endpoint._wire (bring_up writes, scratch PROGBUF0, max_speed 0 malformed / below min_clock_hz unsupported, preflight of every pair, tried prefix, pins freed, cause 1/2/5, target_id none values) and the attach/scan/scan-options models and checkers; no contradiction found"
+  },
+  "debug:1:2": {
+   "verdict": "ok",
+   "reason": "attach/scan norms re-read word by word against endpoint._wire (bring_up writes, scratch PROGBUF0, max_speed 0 malformed / below min_clock_hz unsupported, preflight of every pair, tried prefix, pins freed, cause 1/2/5, target_id none values) and the attach/scan/scan-options models and checkers; no contradiction found"
+  },
+  "debug:1:3": {
+   "verdict": "ok",
+   "reason": "attach/scan norms re-read word by word against endpoint._wire (bring_up writes, scratch PROGBUF0, max_speed 0 malformed / below min_clock_hz unsupported, preflight of every pair, tried prefix, pins freed, cause 1/2/5, target_id none values) and the attach/scan/scan-options models and checkers; no contradiction found"
+  },
+  "debug:1:4": {
+   "verdict": "ok",
+   "reason": "attach/scan norms re-read word by word against endpoint._wire (bring_up writes, scratch PROGBUF0, max_speed 0 malformed / below min_clock_hz unsupported, preflight of every pair, tried prefix, pins freed, cause 1/2/5, target_id none values) and the attach/scan/scan-options models and checkers; no contradiction found"
+  },
+  "debug:1:5": {
+   "verdict": "ok",
+   "reason": "attach/scan norms re-read word by word against endpoint._wire (bring_up writes, scratch PROGBUF0, max_speed 0 malformed / below min_clock_hz unsupported, preflight of every pair, tried prefix, pins freed, cause 1/2/5, target_id none values) and the attach/scan/scan-options models and checkers; no contradiction found"
+  },
+  "debug:1:6": {
+   "verdict": "ok",
+   "reason": "attach/scan norms re-read word by word against endpoint._wire (bring_up writes, scratch PROGBUF0, max_speed 0 malformed / below min_clock_hz unsupported, preflight of every pair, tried prefix, pins freed, cause 1/2/5, target_id none values) and the attach/scan/scan-options models and checkers; no contradiction found"
+  },
+  "debug:1:7": {
+   "verdict": "ok",
+   "reason": "attach/scan norms re-read word by word against endpoint._wire (bring_up writes, scratch PROGBUF0, max_speed 0 malformed / below min_clock_hz unsupported, preflight of every pair, tried prefix, pins freed, cause 1/2/5, target_id none values) and the attach/scan/scan-options models and checkers; no contradiction found"
+  },
+  "debug:1:8": {
+   "verdict": "ok",
+   "reason": "attach/scan norms re-read word by word against endpoint._wire (bring_up writes, scratch PROGBUF0, max_speed 0 malformed / below min_clock_hz unsupported, preflight of every pair, tried prefix, pins freed, cause 1/2/5, target_id none values) and the attach/scan/scan-options models and checkers; no contradiction found"
+  },
+  "debug:1:9": {
+   "verdict": "ok",
+   "reason": "attach/scan norms re-read word by word against endpoint._wire (bring_up writes, scratch PROGBUF0, max_speed 0 malformed / below min_clock_hz unsupported, preflight of every pair, tried prefix, pins freed, cause 1/2/5, target_id none values) and the attach/scan/scan-options models and checkers; no contradiction found"
+  },
+  "debug:1:10": {
+   "verdict": "ok",
+   "reason": "attach/scan norms re-read word by word against endpoint._wire (bring_up writes, scratch PROGBUF0, max_speed 0 malformed / below min_clock_hz unsupported, preflight of every pair, tried prefix, pins freed, cause 1/2/5, target_id none values) and the attach/scan/scan-options models and checkers; no contradiction found"
+  },
+  "debug:1:11": {
+   "verdict": "ok",
+   "reason": "attach/scan norms re-read word by word against endpoint._wire (bring_up writes, scratch PROGBUF0, max_speed 0 malformed / below min_clock_hz unsupported, preflight of every pair, tried prefix, pins freed, cause 1/2/5, target_id none values) and the attach/scan/scan-options models and checkers; no contradiction found"
+  },
+  "debug:1:12": {
+   "verdict": "ok",
+   "reason": "attach/scan norms re-read word by word against endpoint._wire (bring_up writes, scratch PROGBUF0, max_speed 0 malformed / below min_clock_hz unsupported, preflight of every pair, tried prefix, pins freed, cause 1/2/5, target_id none values) and the attach/scan/scan-options models and checkers; no contradiction found"
+  },
+  "debug:1:13": {
+   "verdict": "ok",
+   "reason": "attach/scan norms re-read word by word against endpoint._wire (bring_up writes, scratch PROGBUF0, max_speed 0 malformed / below min_clock_hz unsupported, preflight of every pair, tried prefix, pins freed, cause 1/2/5, target_id none values) and the attach/scan/scan-options models and checkers; no contradiction found"
+  },
+  "debug:1:14": {
+   "verdict": "ok",
+   "reason": "attach/scan norms re-read word by word against endpoint._wire (bring_up writes, scratch PROGBUF0, max_speed 0 malformed / below min_clock_hz unsupported, preflight of every pair, tried prefix, pins freed, cause 1/2/5, target_id none values) and the attach/scan/scan-options models and checkers; no contradiction found"
+  },
+  "debug:1:15": {
+   "verdict": "ok",
+   "reason": "attach/scan norms re-read word by word against endpoint._wire (bring_up writes, scratch PROGBUF0, max_speed 0 malformed / below min_clock_hz unsupported, preflight of every pair, tried prefix, pins freed, cause 1/2/5, target_id none values) and the attach/scan/scan-options models and checkers; no contradiction found"
+  },
+  "debug:1:16": {
+   "verdict": "ok",
+   "reason": "attach/scan norms re-read word by word against endpoint._wire (bring_up writes, scratch PROGBUF0, max_speed 0 malformed / below min_clock_hz unsupported, preflight of every pair, tried prefix, pins freed, cause 1/2/5, target_id none values) and the attach/scan/scan-options models and checkers; no contradiction found"
+  },
+  "debug:1:17": {
+   "verdict": "ok",
+   "reason": "attach/scan norms re-read word by word against endpoint._wire (bring_up writes, scratch PROGBUF0, max_speed 0 malformed / below min_clock_hz unsupported, preflight of every pair, tried prefix, pins freed, cause 1/2/5, target_id none values) and the attach/scan/scan-options models and checkers; no contradiction found"
+  },
+  "debug:2:1": {
+   "verdict": "ok",
+   "reason": "connection lifetime: bench _dm (_Unanswered: line, lines released, connection kept), _close_conn (streams first, pins parked), retry/cut/wire-options models and checkers; line-cut is a may, reset keeps the connection"
+  },
+  "debug:2:2": {
+   "verdict": "ok",
+   "reason": "connection lifetime: bench _dm (_Unanswered: line, lines released, connection kept), _close_conn (streams first, pins parked), retry/cut/wire-options models and checkers; line-cut is a may, reset keeps the connection"
+  },
+  "debug:2:3": {
+   "verdict": "ok",
+   "reason": "connection lifetime: bench _dm (_Unanswered: line, lines released, connection kept), _close_conn (streams first, pins parked), retry/cut/wire-options models and checkers; line-cut is a may, reset keeps the connection"
+  },
+  "debug:2:4": {
+   "verdict": "fixed",
+   "reason": "the ARM transfer checker required an unanswered (no ACK) transfer never to be sent again; the probe may retry the line within a request - now accepted within a silent fixture window"
+  },
+  "debug:2:5": {
+   "verdict": "ok",
+   "reason": "connection lifetime: bench _dm (_Unanswered: line, lines released, connection kept), _close_conn (streams first, pins parked), retry/cut/wire-options models and checkers; line-cut is a may, reset keeps the connection"
+  },
+  "debug:2:6": {
+   "verdict": "ok",
+   "reason": "connection lifetime: bench _dm (_Unanswered: line, lines released, connection kept), _close_conn (streams first, pins parked), retry/cut/wire-options models and checkers; line-cut is a may, reset keeps the connection"
+  },
+  "debug:2:7": {
+   "verdict": "ok",
+   "reason": "connection lifetime: bench _dm (_Unanswered: line, lines released, connection kept), _close_conn (streams first, pins parked), retry/cut/wire-options models and checkers; line-cut is a may, reset keeps the connection"
+  },
+  "debug:2:8": {
+   "verdict": "ok",
+   "reason": "connection lifetime: bench _dm (_Unanswered: line, lines released, connection kept), _close_conn (streams first, pins parked), retry/cut/wire-options models and checkers; line-cut is a may, reset keeps the connection"
+  },
+  "debug:2:9": {
+   "verdict": "ok",
+   "reason": "connection lifetime: bench _dm (_Unanswered: line, lines released, connection kept), _close_conn (streams first, pins parked), retry/cut/wire-options models and checkers; line-cut is a may, reset keeps the connection"
+  },
+  "debug:2:10": {
+   "verdict": "ok",
+   "reason": "connection lifetime: bench _dm (_Unanswered: line, lines released, connection kept), _close_conn (streams first, pins parked), retry/cut/wire-options models and checkers; line-cut is a may, reset keeps the connection"
+  },
+  "debug:2:11": {
+   "verdict": "ok",
+   "reason": "connection lifetime: bench _dm (_Unanswered: line, lines released, connection kept), _close_conn (streams first, pins parked), retry/cut/wire-options models and checkers; line-cut is a may, reset keeps the connection"
+  },
+  "debug:2:12": {
+   "verdict": "ok",
+   "reason": "connection lifetime: bench _dm (_Unanswered: line, lines released, connection kept), _close_conn (streams first, pins parked), retry/cut/wire-options models and checkers; line-cut is a may, reset keeps the connection"
+  },
+  "debug:2:13": {
+   "verdict": "ok",
+   "reason": "connection lifetime: bench _dm (_Unanswered: line, lines released, connection kept), _close_conn (streams first, pins parked), retry/cut/wire-options models and checkers; line-cut is a may, reset keeps the connection"
+  },
+  "debug:2:14": {
+   "verdict": "ok",
+   "reason": "connection lifetime: bench _dm (_Unanswered: line, lines released, connection kept), _close_conn (streams first, pins parked), retry/cut/wire-options models and checkers; line-cut is a may, reset keeps the connection"
+  },
+  "debug:2:15": {
+   "verdict": "ok",
+   "reason": "connection lifetime: bench _dm (_Unanswered: line, lines released, connection kept), _close_conn (streams first, pins parked), retry/cut/wire-options models and checkers; line-cut is a may, reset keeps the connection"
+  },
+  "debug:2:16": {
+   "verdict": "ok",
+   "reason": "connection lifetime: bench _dm (_Unanswered: line, lines released, connection kept), _close_conn (streams first, pins parked), retry/cut/wire-options models and checkers; line-cut is a may, reset keeps the connection"
+  },
+  "debug:2:17": {
+   "verdict": "ok",
+   "reason": "connection lifetime: bench _dm (_Unanswered: line, lines released, connection kept), _close_conn (streams first, pins parked), retry/cut/wire-options models and checkers; line-cut is a may, reset keeps the connection"
+  },
+  "debug:2.1:1": {
+   "verdict": "ok",
+   "reason": "connections: first(u8), creation order, more/count, entry with tid (none 0,0; swd 2/4/DPIDR), selected_target per entry index; bench _paged, attach/wire-options models, checkers listing(), client WireBase.connections agree"
+  },
+  "debug:2.1:2": {
+   "verdict": "ok",
+   "reason": "connections: first(u8), creation order, more/count, entry with tid (none 0,0; swd 2/4/DPIDR), selected_target per entry index; bench _paged, attach/wire-options models, checkers listing(), client WireBase.connections agree"
+  },
+  "debug:3:1": {
+   "verdict": "ok",
+   "reason": "rvswd/swio table: scan/attach/detach/connections shapes, swio swclk 0xFFFF, kinds, methods, flags, wake/set-up writes, scratch, reset TLV (role 3, open drain, cause 1/5, 0x85), idle_clock; bench, models and client Wire agree"
+  },
+  "debug:3:2": {
+   "verdict": "ok",
+   "reason": "rvswd/swio table: scan/attach/detach/connections shapes, swio swclk 0xFFFF, kinds, methods, flags, wake/set-up writes, scratch, reset TLV (role 3, open drain, cause 1/5, 0x85), idle_clock; bench, models and client Wire agree"
+  },
+  "debug:3:3": {
+   "verdict": "ok",
+   "reason": "rvswd/swio table: scan/attach/detach/connections shapes, swio swclk 0xFFFF, kinds, methods, flags, wake/set-up writes, scratch, reset TLV (role 3, open drain, cause 1/5, 0x85), idle_clock; bench, models and client Wire agree"
+  },
+  "debug:3:4": {
+   "verdict": "ok",
+   "reason": "rvswd/swio table: scan/attach/detach/connections shapes, swio swclk 0xFFFF, kinds, methods, flags, wake/set-up writes, scratch, reset TLV (role 3, open drain, cause 1/5, 0x85), idle_clock; bench, models and client Wire agree"
+  },
+  "debug:3:5": {
+   "verdict": "ok",
+   "reason": "rvswd/swio table: scan/attach/detach/connections shapes, swio swclk 0xFFFF, kinds, methods, flags, wake/set-up writes, scratch, reset TLV (role 3, open drain, cause 1/5, 0x85), idle_clock; bench, models and client Wire agree"
+  },
+  "debug:3:6": {
+   "verdict": "fixed",
+   "reason": "method 1 was accepted by the attach fixture (and its wire-options subclass) without features bit0 attach_halt; now offered only when declared, and the attach checker refuses method 1 where bit0 is absent"
+  },
+  "debug:3:7": {
+   "verdict": "ok",
+   "reason": "rvswd/swio table: scan/attach/detach/connections shapes, swio swclk 0xFFFF, kinds, methods, flags, wake/set-up writes, scratch, reset TLV (role 3, open drain, cause 1/5, 0x85), idle_clock; bench, models and client Wire agree"
+  },
+  "debug:3:8": {
+   "verdict": "ok",
+   "reason": "rvswd/swio table: scan/attach/detach/connections shapes, swio swclk 0xFFFF, kinds, methods, flags, wake/set-up writes, scratch, reset TLV (role 3, open drain, cause 1/5, 0x85), idle_clock; bench, models and client Wire agree"
+  },
+  "debug:3:9": {
+   "verdict": "ok",
+   "reason": "rvswd/swio table: scan/attach/detach/connections shapes, swio swclk 0xFFFF, kinds, methods, flags, wake/set-up writes, scratch, reset TLV (role 3, open drain, cause 1/5, 0x85), idle_clock; bench, models and client Wire agree"
+  },
+  "debug:3:10": {
+   "verdict": "ok",
+   "reason": "rvswd/swio table: scan/attach/detach/connections shapes, swio swclk 0xFFFF, kinds, methods, flags, wake/set-up writes, scratch, reset TLV (role 3, open drain, cause 1/5, 0x85), idle_clock; bench, models and client Wire agree"
+  },
+  "debug:3:11": {
+   "verdict": "ok",
+   "reason": "rvswd/swio table: scan/attach/detach/connections shapes, swio swclk 0xFFFF, kinds, methods, flags, wake/set-up writes, scratch, reset TLV (role 3, open drain, cause 1/5, 0x85), idle_clock; bench, models and client Wire agree"
+  },
+  "debug:3:12": {
+   "verdict": "ok",
+   "reason": "rvswd/swio table: scan/attach/detach/connections shapes, swio swclk 0xFFFF, kinds, methods, flags, wake/set-up writes, scratch, reset TLV (role 3, open drain, cause 1/5, 0x85), idle_clock; bench, models and client Wire agree"
+  },
+  "debug:3:13": {
+   "verdict": "ok",
+   "reason": "rvswd/swio table: scan/attach/detach/connections shapes, swio swclk 0xFFFF, kinds, methods, flags, wake/set-up writes, scratch, reset TLV (role 3, open drain, cause 1/5, 0x85), idle_clock; bench, models and client Wire agree"
+  },
+  "debug:3:14": {
+   "verdict": "ok",
+   "reason": "rvswd/swio table: scan/attach/detach/connections shapes, swio swclk 0xFFFF, kinds, methods, flags, wake/set-up writes, scratch, reset TLV (role 3, open drain, cause 1/5, 0x85), idle_clock; bench, models and client Wire agree"
+  },
+  "debug:3:15": {
+   "verdict": "ok",
+   "reason": "rvswd/swio table: scan/attach/detach/connections shapes, swio swclk 0xFFFF, kinds, methods, flags, wake/set-up writes, scratch, reset TLV (role 3, open drain, cause 1/5, 0x85), idle_clock; bench, models and client Wire agree"
+  },
+  "debug:3:16": {
+   "verdict": "ok",
+   "reason": "rvswd/swio table: scan/attach/detach/connections shapes, swio swclk 0xFFFF, kinds, methods, flags, wake/set-up writes, scratch, reset TLV (role 3, open drain, cause 1/5, 0x85), idle_clock; bench, models and client Wire agree"
+  },
+  "debug:3:17": {
+   "verdict": "ok",
+   "reason": "rvswd/swio table: scan/attach/detach/connections shapes, swio swclk 0xFFFF, kinds, methods, flags, wake/set-up writes, scratch, reset TLV (role 3, open drain, cause 1/5, 0x85), idle_clock; bench, models and client Wire agree"
+  },
+  "debug:3:18": {
+   "verdict": "ok",
+   "reason": "rvswd/swio table: scan/attach/detach/connections shapes, swio swclk 0xFFFF, kinds, methods, flags, wake/set-up writes, scratch, reset TLV (role 3, open drain, cause 1/5, 0x85), idle_clock; bench, models and client Wire agree"
+  },
+  "debug:3.1:1": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:2": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:3": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:4": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:5": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:6": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:7": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:8": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:9": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:10": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:11": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:12": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:13": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:14": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:15": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:16": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:17": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:18": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:19": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:20": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:21": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:22": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:23": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.1:24": {
+   "verdict": "ok",
+   "reason": "RVSWD frame timing is electrical: no code in this repository drives it; the bench models only its effects (idle levels in pin_state, set-up pair in bring_up)"
+  },
+  "debug:3.2:1": {
+   "verdict": "ok",
+   "reason": "SWIO frame timing is electrical; the fixed speed is min_clock_hz (bench speed_hz = SWIO_HZ, max_speed below it unsupported); nothing in code contradicts"
+  },
+  "debug:3.2:2": {
+   "verdict": "ok",
+   "reason": "SWIO frame timing is electrical; the fixed speed is min_clock_hz (bench speed_hz = SWIO_HZ, max_speed below it unsupported); nothing in code contradicts"
+  },
+  "debug:3.2:3": {
+   "verdict": "ok",
+   "reason": "SWIO frame timing is electrical; the fixed speed is min_clock_hz (bench speed_hz = SWIO_HZ, max_speed below it unsupported); nothing in code contradicts"
+  },
+  "debug:3.2:4": {
+   "verdict": "ok",
+   "reason": "SWIO frame timing is electrical; the fixed speed is min_clock_hz (bench speed_hz = SWIO_HZ, max_speed below it unsupported); nothing in code contradicts"
+  },
+  "debug:3.2:5": {
+   "verdict": "ok",
+   "reason": "SWIO frame timing is electrical; the fixed speed is min_clock_hz (bench speed_hz = SWIO_HZ, max_speed below it unsupported); nothing in code contradicts"
+  },
+  "debug:3.2:6": {
+   "verdict": "ok",
+   "reason": "SWIO frame timing is electrical; the fixed speed is min_clock_hz (bench speed_hz = SWIO_HZ, max_speed below it unsupported); nothing in code contradicts"
+  },
+  "debug:3.2:7": {
+   "verdict": "ok",
+   "reason": "SWIO frame timing is electrical; the fixed speed is min_clock_hz (bench speed_hz = SWIO_HZ, max_speed below it unsupported); nothing in code contradicts"
+  },
+  "debug:3.2:8": {
+   "verdict": "ok",
+   "reason": "SWIO frame timing is electrical; the fixed speed is min_clock_hz (bench speed_hz = SWIO_HZ, max_speed below it unsupported); nothing in code contradicts"
+  },
+  "debug:4:1": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4:2": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4:3": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4:4": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4:5": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4:6": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4:7": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4:8": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4:9": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4:10": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4:11": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4:12": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4:13": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4:14": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4:15": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4:16": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4:17": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4:18": {
+   "verdict": "ok",
+   "reason": "riscv-dm table and cleanup rules: dmi mandatory, others optional by ops (client RiscvDm.declared, debug checker needs), hartsel 0 for high-level ops (_hart0), raw dmi adds nothing, failed cleanup closes (blocks/step/reset models), empty/edge values"
+  },
+  "debug:4.1:1": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before running, short args malformed, done/nvals rule, 10+4r frame preflight, wait sum vs max_op_ms; bench _dm_op, debug/retry models, debug checker and client count_steps/dmi_value_count agree"
+  },
+  "debug:4.1:2": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before running, short args malformed, done/nvals rule, 10+4r frame preflight, wait sum vs max_op_ms; bench _dm_op, debug/retry models, debug checker and client count_steps/dmi_value_count agree"
+  },
+  "debug:4.1:3": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before running, short args malformed, done/nvals rule, 10+4r frame preflight, wait sum vs max_op_ms; bench _dm_op, debug/retry models, debug checker and client count_steps/dmi_value_count agree"
+  },
+  "debug:4.1:4": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before running, short args malformed, done/nvals rule, 10+4r frame preflight, wait sum vs max_op_ms; bench _dm_op, debug/retry models, debug checker and client count_steps/dmi_value_count agree"
+  },
+  "debug:4.1:5": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before running, short args malformed, done/nvals rule, 10+4r frame preflight, wait sum vs max_op_ms; bench _dm_op, debug/retry models, debug checker and client count_steps/dmi_value_count agree"
+  },
+  "debug:4.1:6": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before running, short args malformed, done/nvals rule, 10+4r frame preflight, wait sum vs max_op_ms; bench _dm_op, debug/retry models, debug checker and client count_steps/dmi_value_count agree"
+  },
+  "debug:4.1:7": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before running, short args malformed, done/nvals rule, 10+4r frame preflight, wait sum vs max_op_ms; bench _dm_op, debug/retry models, debug checker and client count_steps/dmi_value_count agree"
+  },
+  "debug:4.1:8": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before running, short args malformed, done/nvals rule, 10+4r frame preflight, wait sum vs max_op_ms; bench _dm_op, debug/retry models, debug checker and client count_steps/dmi_value_count agree"
+  },
+  "debug:4.1:9": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before running, short args malformed, done/nvals rule, 10+4r frame preflight, wait sum vs max_op_ms; bench _dm_op, debug/retry models, debug checker and client count_steps/dmi_value_count agree"
+  },
+  "debug:4.1:10": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before running, short args malformed, done/nvals rule, 10+4r frame preflight, wait sum vs max_op_ms; bench _dm_op, debug/retry models, debug checker and client count_steps/dmi_value_count agree"
+  },
+  "debug:4.1:11": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before running, short args malformed, done/nvals rule, 10+4r frame preflight, wait sum vs max_op_ms; bench _dm_op, debug/retry models, debug checker and client count_steps/dmi_value_count agree"
+  },
+  "debug:4.2:1": {
+   "verdict": "ok",
+   "reason": "halt/resume/step: already-halted ok, haltreq lowered, timeout/state statuses, one resumereq, step_left closes, moved/dpcs 0 unless ok; bench, step model/checker and client StepError agree"
+  },
+  "debug:4.2:2": {
+   "verdict": "ok",
+   "reason": "halt/resume/step: already-halted ok, haltreq lowered, timeout/state statuses, one resumereq, step_left closes, moved/dpcs 0 unless ok; bench, step model/checker and client StepError agree"
+  },
+  "debug:4.2:3": {
+   "verdict": "ok",
+   "reason": "halt/resume/step: already-halted ok, haltreq lowered, timeout/state statuses, one resumereq, step_left closes, moved/dpcs 0 unless ok; bench, step model/checker and client StepError agree"
+  },
+  "debug:4.2:4": {
+   "verdict": "ok",
+   "reason": "halt/resume/step: already-halted ok, haltreq lowered, timeout/state statuses, one resumereq, step_left closes, moved/dpcs 0 unless ok; bench, step model/checker and client StepError agree"
+  },
+  "debug:4.2:5": {
+   "verdict": "ok",
+   "reason": "halt/resume/step: already-halted ok, haltreq lowered, timeout/state statuses, one resumereq, step_left closes, moved/dpcs 0 unless ok; bench, step model/checker and client StepError agree"
+  },
+  "debug:4.3:1": {
+   "verdict": "ok",
+   "reason": "reset modes 0/2, flags bit0, pc, status mapping, DM wait, havereset ack, haltreq lowered, no reset line; bench _dm_op reset, reset model/checker, client _reset agree"
+  },
+  "debug:4.3:2": {
+   "verdict": "ok",
+   "reason": "reset modes 0/2, flags bit0, pc, status mapping, DM wait, havereset ack, haltreq lowered, no reset line; bench _dm_op reset, reset model/checker, client _reset agree"
+  },
+  "debug:4.3:3": {
+   "verdict": "ok",
+   "reason": "reset modes 0/2, flags bit0, pc, status mapping, DM wait, havereset ack, haltreq lowered, no reset line; bench _dm_op reset, reset model/checker, client _reset agree"
+  },
+  "debug:4.3:4": {
+   "verdict": "ok",
+   "reason": "reset modes 0/2, flags bit0, pc, status mapping, DM wait, havereset ack, haltreq lowered, no reset line; bench _dm_op reset, reset model/checker, client _reset agree"
+  },
+  "debug:4.3:5": {
+   "verdict": "ok",
+   "reason": "reset modes 0/2, flags bit0, pc, status mapping, DM wait, havereset ack, haltreq lowered, no reset line; bench _dm_op reset, reset model/checker, client _reset agree"
+  },
+  "debug:4.3:6": {
+   "verdict": "ok",
+   "reason": "reset modes 0/2, flags bit0, pc, status mapping, DM wait, havereset ack, haltreq lowered, no reset line; bench _dm_op reset, reset model/checker, client _reset agree"
+  },
+  "debug:4.3:7": {
+   "verdict": "fixed",
+   "reason": "the reset checker required the connection kept when the DM never answered after the release; the probe closes it when the needed cleanup (mode 2 haltreq) is not done - now either is accepted"
+  },
+  "debug:4.3:8": {
+   "verdict": "ok",
+   "reason": "reset modes 0/2, flags bit0, pc, status mapping, DM wait, havereset ack, haltreq lowered, no reset line; bench _dm_op reset, reset model/checker, client _reset agree"
+  },
+  "debug:4.4:1": {
+   "verdict": "ok",
+   "reason": "run: ebreakm/prv, no re-run, timeout_ms vs max_op_ms unsupported, stopped 0-3 with dpc/nvals validity, elapsed_us; bench, run model/checker and client RunResult agree"
+  },
+  "debug:4.4:2": {
+   "verdict": "ok",
+   "reason": "run: ebreakm/prv, no re-run, timeout_ms vs max_op_ms unsupported, stopped 0-3 with dpc/nvals validity, elapsed_us; bench, run model/checker and client RunResult agree"
+  },
+  "debug:4.4:3": {
+   "verdict": "ok",
+   "reason": "run: ebreakm/prv, no re-run, timeout_ms vs max_op_ms unsupported, stopped 0-3 with dpc/nvals validity, elapsed_us; bench, run model/checker and client RunResult agree"
+  },
+  "debug:4.4:4": {
+   "verdict": "ok",
+   "reason": "run: ebreakm/prv, no re-run, timeout_ms vs max_op_ms unsupported, stopped 0-3 with dpc/nvals validity, elapsed_us; bench, run model/checker and client RunResult agree"
+  },
+  "debug:4.5:1": {
+   "verdict": "ok",
+   "reason": "blocks: max_length bytes mandatory, count limits, count 0 success, unaligned malformed, halted precondition, bus reads; bench, block model/checker, client BlockLength agree"
+  },
+  "debug:4.5:2": {
+   "verdict": "ok",
+   "reason": "blocks: max_length bytes mandatory, count limits, count 0 success, unaligned malformed, halted precondition, bus reads; bench, block model/checker, client BlockLength agree"
+  },
+  "debug:4.5:3": {
+   "verdict": "ok",
+   "reason": "blocks: max_length bytes mandatory, count limits, count 0 success, unaligned malformed, halted precondition, bus reads; bench, block model/checker, client BlockLength agree"
+  },
+  "debug:4.5:4": {
+   "verdict": "ok",
+   "reason": "blocks: max_length bytes mandatory, count limits, count 0 success, unaligned malformed, halted precondition, bus reads; bench, block model/checker, client BlockLength agree"
+  },
+  "debug:4.6:1": {
+   "verdict": "ok",
+   "reason": "havereset: attach acks first (flags bit0), high-level ops and console reads ack automatically with a restart mark, reset op one reset mark; bench _ack_havereset/_host_reset, reset/dmseq models agree"
+  },
+  "debug:4.6:2": {
+   "verdict": "ok",
+   "reason": "havereset: attach acks first (flags bit0), high-level ops and console reads ack automatically with a restart mark, reset op one reset mark; bench _ack_havereset/_host_reset, reset/dmseq models agree"
+  },
+  "debug:5:1": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, kind 2 / DPIDR ids, targetsel critical and kept, one connection a pin pair, idle levels SWDIO low / SWCLK high; attach/wire-options/scan-options models and checkers, client SwdWire agree"
+  },
+  "debug:5:2": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, kind 2 / DPIDR ids, targetsel critical and kept, one connection a pin pair, idle levels SWDIO low / SWCLK high; attach/wire-options/scan-options models and checkers, client SwdWire agree"
+  },
+  "debug:5:3": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, kind 2 / DPIDR ids, targetsel critical and kept, one connection a pin pair, idle levels SWDIO low / SWCLK high; attach/wire-options/scan-options models and checkers, client SwdWire agree"
+  },
+  "debug:5:4": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, kind 2 / DPIDR ids, targetsel critical and kept, one connection a pin pair, idle levels SWDIO low / SWCLK high; attach/wire-options/scan-options models and checkers, client SwdWire agree"
+  },
+  "debug:5:5": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, kind 2 / DPIDR ids, targetsel critical and kept, one connection a pin pair, idle levels SWDIO low / SWCLK high; attach/wire-options/scan-options models and checkers, client SwdWire agree"
+  },
+  "debug:5:6": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, kind 2 / DPIDR ids, targetsel critical and kept, one connection a pin pair, idle levels SWDIO low / SWCLK high; attach/wire-options/scan-options models and checkers, client SwdWire agree"
+  },
+  "debug:5:7": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, kind 2 / DPIDR ids, targetsel critical and kept, one connection a pin pair, idle levels SWDIO low / SWCLK high; attach/wire-options/scan-options models and checkers, client SwdWire agree"
+  },
+  "debug:5:8": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, kind 2 / DPIDR ids, targetsel critical and kept, one connection a pin pair, idle levels SWDIO low / SWCLK high; attach/wire-options/scan-options models and checkers, client SwdWire agree"
+  },
+  "debug:5:9": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, kind 2 / DPIDR ids, targetsel critical and kept, one connection a pin pair, idle levels SWDIO low / SWCLK high; attach/wire-options/scan-options models and checkers, client SwdWire agree"
+  },
+  "debug:5:10": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, kind 2 / DPIDR ids, targetsel critical and kept, one connection a pin pair, idle levels SWDIO low / SWCLK high; attach/wire-options/scan-options models and checkers, client SwdWire agree"
+  },
+  "debug:5:11": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, kind 2 / DPIDR ids, targetsel critical and kept, one connection a pin pair, idle levels SWDIO low / SWCLK high; attach/wire-options/scan-options models and checkers, client SwdWire agree"
+  },
+  "debug:5:12": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, kind 2 / DPIDR ids, targetsel critical and kept, one connection a pin pair, idle levels SWDIO low / SWCLK high; attach/wire-options/scan-options models and checkers, client SwdWire agree"
+  },
+  "debug:5:13": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, kind 2 / DPIDR ids, targetsel critical and kept, one connection a pin pair, idle levels SWDIO low / SWCLK high; attach/wire-options/scan-options models and checkers, client SwdWire agree"
+  },
+  "debug:5:14": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, kind 2 / DPIDR ids, targetsel critical and kept, one connection a pin pair, idle levels SWDIO low / SWCLK high; attach/wire-options/scan-options models and checkers, client SwdWire agree"
+  },
+  "debug:5:15": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, kind 2 / DPIDR ids, targetsel critical and kept, one connection a pin pair, idle levels SWDIO low / SWCLK high; attach/wire-options/scan-options models and checkers, client SwdWire agree"
+  },
+  "debug:6:1": {
+   "verdict": "ok",
+   "reason": "arm-adi transfer/blocks: reserved req bits unsupported before running, nvals, ack raw, n=0, WAIT retried / FAULT stops, frame preflight, blocks max_length, TAR advanced, SELECT/CSW kept; arm models/checkers and client ArmAdi/MemAp agree"
+  },
+  "debug:6:2": {
+   "verdict": "ok",
+   "reason": "arm-adi transfer/blocks: reserved req bits unsupported before running, nvals, ack raw, n=0, WAIT retried / FAULT stops, frame preflight, blocks max_length, TAR advanced, SELECT/CSW kept; arm models/checkers and client ArmAdi/MemAp agree"
+  },
+  "debug:6:3": {
+   "verdict": "ok",
+   "reason": "arm-adi transfer/blocks: reserved req bits unsupported before running, nvals, ack raw, n=0, WAIT retried / FAULT stops, frame preflight, blocks max_length, TAR advanced, SELECT/CSW kept; arm models/checkers and client ArmAdi/MemAp agree"
+  },
+  "debug:6:4": {
+   "verdict": "ok",
+   "reason": "arm-adi transfer/blocks: reserved req bits unsupported before running, nvals, ack raw, n=0, WAIT retried / FAULT stops, frame preflight, blocks max_length, TAR advanced, SELECT/CSW kept; arm models/checkers and client ArmAdi/MemAp agree"
+  },
+  "debug:6:5": {
+   "verdict": "ok",
+   "reason": "arm-adi transfer/blocks: reserved req bits unsupported before running, nvals, ack raw, n=0, WAIT retried / FAULT stops, frame preflight, blocks max_length, TAR advanced, SELECT/CSW kept; arm models/checkers and client ArmAdi/MemAp agree"
+  },
+  "debug:6:6": {
+   "verdict": "ok",
+   "reason": "arm-adi transfer/blocks: reserved req bits unsupported before running, nvals, ack raw, n=0, WAIT retried / FAULT stops, frame preflight, blocks max_length, TAR advanced, SELECT/CSW kept; arm models/checkers and client ArmAdi/MemAp agree"
+  },
+  "debug:6:7": {
+   "verdict": "ok",
+   "reason": "arm-adi transfer/blocks: reserved req bits unsupported before running, nvals, ack raw, n=0, WAIT retried / FAULT stops, frame preflight, blocks max_length, TAR advanced, SELECT/CSW kept; arm models/checkers and client ArmAdi/MemAp agree"
+  },
+  "debug:6:8": {
+   "verdict": "ok",
+   "reason": "arm-adi transfer/blocks: reserved req bits unsupported before running, nvals, ack raw, n=0, WAIT retried / FAULT stops, frame preflight, blocks max_length, TAR advanced, SELECT/CSW kept; arm models/checkers and client ArmAdi/MemAp agree"
+  },
+  "debug:7:1": {
+   "verdict": "ok",
+   "reason": "reference table: informative pointers; nothing in code contradicts"
+  },
+  "debug:7:2": {
+   "verdict": "ok",
+   "reason": "reference table: informative pointers; nothing in code contradicts"
+  },
+  "debug:7:3": {
+   "verdict": "ok",
+   "reason": "reference table: informative pointers; nothing in code contradicts"
+  }
+ },
+ "divergences": [
+  {
+   "unit": "debug:3:6",
+   "spec": "method 1はdescribeのfeatures bit0（attach_halt）を宣言するときだけ提供する。提供しないmethodと未知のmethodはunsupported（固定部分の印0）。",
+   "code": "src/oep_client/virtual_attach_model.py:Attachments.dispatch_request / describe; src/oep_client/virtual_wire_options_model.py:WireOptions.dispatch_request; src/oep_client/conformance_attach.py:AttachChecks.wire_case (METHOD)",
+   "fix": "Attachments.methods(fn): (0,1) only with attach_halt (class flag, default False) and features tag 0x05 bit0 declared for rvswd/swio when set; WireOptions (whose checkers attach halting) sets attach_halt; the METHOD case also refuses method 1 on a wire whose describe lacks bit0"
+  },
+  {
+   "unit": "debug:2:4",
+   "spec": "probe は 1 つの要求の中で線を再試行してよい（どれだけ続けるかは probe が決め、遅い速さでの再試行を含む）。",
+   "code": "src/oep_client/conformance_arm_adi.py:ArmAdiChecks.failure",
+   "fix": "ACK-0-* injects 8 silent packets and accepts index+1..index+8 packets, every extra one the same failing req with no answer (was exactly index+1); FAULT still exactly one, WAIT the fixture's 3"
+  },
+  {
+   "unit": "debug:4.3:7",
+   "spec": "ndmresetを解いた後の待ちは§2。DMが答えなければstatus lineのcompleted failed。必要な後始末が済まなければconnectionを閉じる（§4）。",
+   "code": "src/oep_client/conformance_reset.py:ResetChecks.reset / console_reset",
+   "fix": "for dm-line a closed connection (its streams closed too, the other connection untouched) is accepted besides the kept one; the existing connection_lost mutant moved to DM-RECOVER-2, where the reset succeeded and closing is a defect"
+  }
+ ]
+}

@@ -27,7 +27,7 @@ from oep_client.virtual_core import Completed, Reject
     ('false_success','STATE-TIMEOUT-0'),('wrong_timeout','STATE-TIMEOUT-2'),
     ('missing_ack','OK-0'),('release_haltreq','OK-2'),('dm_no_retry','DM-RECOVER-0'),
     ('dm_before_release','DM-RECOVER-2'),('dm_over_budget','DM-LINE-0'),
-    ('connection_lost','DM-LINE-2'),('reset_pin','OK-0'),
+    ('connection_lost','DM-RECOVER-2'),('reset_pin','OK-0'),
     ('ndmreset_left','OK-0'),('hartsel_left','OK-2'),('haltreq_left','OK-2'),
     ('mark_detail','CONSOLE-0'),('missing_mark','CONSOLE-2'),
     ('sync_retained','CONSOLE-0'),('pending_retained','CONSOLE-2'),

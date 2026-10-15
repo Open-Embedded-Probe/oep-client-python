@@ -514,16 +514,20 @@ class RunResult:
     not_halted: bool = False      # the limit passed and the probe could not halt the hart: dpc and values mean nothing
     not_run: bool = False         # the preparation (registers, dcsr, pc) failed: the hart was not run and is still
                                   # halted, the loader did not run (dpc means nothing; debug §4.4)
+    unknown_stopped: int | None = None   # a stopped byte this client does not know, as it came (core §2.4: shown as an
+                                  # unknown value, never as one of the four; its dpc and values are not taken as valid)
 
     @property
     def dpc_valid(self) -> bool:
         """Whether dpc means something: the hart halted (on its own or at the limit)."""
-        return not (self.not_halted or self.not_run)
+        return not (self.not_halted or self.not_run or self.unknown_stopped is not None)
 
     def where(self) -> str:
         """The dpc for a message, never an invalid one."""
         if self.not_run:
             return "not run"
+        if self.unknown_stopped is not None:
+            return f"stopped 0x{self.unknown_stopped:02x} (unknown), dpc unknown"
         return f"dpc {self.dpc:#x}" if self.dpc_valid else "not halted, dpc unknown"
 
 
@@ -852,7 +856,8 @@ class RiscvDm(Interface, BlockLength):
         values = rd.words(nvals)
         rd.tail()
         return RunResult(status, stopped == RUN_STOPPED["stopped"], dpc, us, values,
-                         not_halted=stopped == RUN_STOPPED["not_halted"], not_run=stopped == RUN_STOPPED["not_run"])
+                         not_halted=stopped == RUN_STOPPED["not_halted"], not_run=stopped == RUN_STOPPED["not_run"],
+                         unknown_stopped=None if stopped in RUN_STOPPED.values() else stopped)
 
     def run(self, pc: int, regs: list[tuple[int, int]], timeout_ms: int | None = 200,
             outs: tuple[int, ...] = (REG_A0,)) -> RunResult:

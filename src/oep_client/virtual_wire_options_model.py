@@ -7,6 +7,7 @@ from .virtual_core import Core, Completed, Reject, tlv
 
 class WireOptions(Attachments):
     pairs={**Attachments.pairs,3:[(4,5),(2,3)]}
+    attach_halt=True             # the halting attach is offered, and declared (features bit0, debug §3)
     def __init__(self,ep):
         super().__init__(ep);self.reset_supported=True;self.behavior='ok';self.clock_ms=0;self.wire_events=[];self.targets={};self.pin_modes={i:'free' for i in range(8)};self.pin_levels={i:dict(mode='free',level=None) for i in range(8)}
     def describe(self,fn):
@@ -57,7 +58,7 @@ class WireOptions(Attachments):
         if fn>3 or op!=17:return super().dispatch_request(fn,op,payload,tags)
         method,swdio,swclk,speed=struct.unpack_from('<BHHI',payload);pair=(swdio,swclk);idle=tags[4][1][0] if 4 in tags else 0
         if not speed:raise Reject(3)
-        if method not in ((0,) if fn==3 else (0,1)):raise Reject(11,b'\0')
+        if method not in self.methods(fn):raise Reject(11,b'\0')
         if speed<1000 or pair not in self.pairs[fn]:raise Reject(11,b'\0')
         if idle not in (0,1):raise Reject(11,bytes((tags[4][0],)))
         active={pin for s in self.connections.values() for pin in s['pins'] if pin!=65535}

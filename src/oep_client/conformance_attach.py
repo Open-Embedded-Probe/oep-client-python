@@ -73,6 +73,10 @@ class AttachChecks:
                 self.refused(self.attach_request(sid,fn=2,pair=(0,1)),'unsupported',b'\0')
             elif kind=='METHOD':
                 for fn,method in [(1,2),(2,2),(3,1)]:self.refused(self.attach_request(sid,fn,self.a.pairs[fn][0],method=method),'unsupported',b'\0')
+                for fn in (1,2):                               # method 1 only with features bit0 attach_halt (debug §3)
+                    features=dict(reversed(self.c.describe(fn))).get(self.c.reg['describe_common'].get('features',5),b'\0'*4)
+                    if not int.from_bytes(features[:4],'little')&1:
+                        self.refused(self.attach_request(sid,fn,self.a.pairs[fn][0],method=1),'unsupported',b'\0')
             elif kind=='TLV':
                 self.refused(self.attach_request(sid,extra=self.tlv(0xfe,b'x')),'unsupported',b'\xfe')
                 for marked in (True,False):                    # not a reset line: the tag as received (core §2.3)

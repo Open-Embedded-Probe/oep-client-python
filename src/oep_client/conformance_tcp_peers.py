@@ -13,7 +13,8 @@ def lock_state(check):
     require(len(payload) >= 5, 'lock_state fixed fields')
     held, remaining = struct.unpack_from('<BI', payload)
     owner = dict(reversed(tlvs(payload[5:]))).get(1, b'')
-    require(held in (0, 1) and (remaining > 0 if held else remaining == 0), 'lock_state value')
+    # remaining: any u32 while held (a lease at its very end may read 0, core §6.4 / §4.3), 0 when free
+    require(held in (0, 1) and (held or remaining == 0), 'lock_state value')
     return held, remaining, owner
 
 

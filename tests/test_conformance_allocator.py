@@ -28,7 +28,7 @@ def test_allocator_faults_are_detected(fault,case):
     def restart():
         value=reset();e=model.extension;dispatch=e.dispatch;release=e.release
         def corrupt(fn,op,payload):
-            if op==16 and e.next_id>65535:
+            if op==16 and e.next_id>0xFFFFFFFF:
                 if fault=='wrap':e.next_id=1
                 elif fault=='zero':e.next_id=0
                 elif fault=='cause':raise Reject(4,tlv(1,b'\x06'))
@@ -79,10 +79,24 @@ def test_allocator_cause_uses_first_duplicate_tlv(first,last,status):
     def restart():
         value=reset();e=model.extension;dispatch=e.dispatch
         def repeated(fn,op,payload):
-            if op==16 and e.next_id>65535:raise Reject(4,tlv(1,bytes((first,)))+tlv(1,bytes((last,))))
+            if op==16 and e.next_id>0xFFFFFFFF:raise Reject(4,tlv(1,bytes((first,)))+tlv(1,bytes((last,))))
             return dispatch(fn,op,payload)
         e.dispatch=repeated
         return value
     model.restart_fixture=restart
     c.check('CORE-ALLOCATOR-REPLAY','core §2.3/9',runner.replay_boundary)
     assert c.results[-1]['status']==status,c.results
+
+
+def test_allocator_boundary_is_the_u32_end(monkeypatch):
+    """core §9: resource numbers are u32 and creation is refused (cause 2) only once 0xFFFFFFFF is used up - the boundary
+    case allocates 0xFFFFFFFE and 0xFFFFFFFF; a probe that stops at the old u16 end (65535) fails it."""
+    import oep_client.virtual_allocator_model as am
+    model,c,a,runner=setup();runner.c.check('CORE-ALLOCATOR-BOUNDARY','core §9',runner.boundary)
+    assert c.results[-1]['status']=='passed',c.results[-1].get('error')
+    created=[bytes.fromhex(x['response_hex'])[5:9] for x in c.results[-1]['exchanges']
+             if bytes.fromhex(x['request_hex'])[5]==16 and bytes.fromhex(x['request_hex'])[3:5]!=b'\0\0' and bytes.fromhex(x['response_hex'])[3:5]==b'\1\0']
+    assert created==[b'\xfe\xff\xff\xff',b'\xff\xff\xff\xff']
+    monkeypatch.setattr(am.U32Resources,'last_id',0xFFFF)
+    model,c,a,runner=setup();runner.c.check('CORE-ALLOCATOR-BOUNDARY','core §9',runner.boundary)
+    assert c.results[-1]['status']=='failed'

@@ -56,12 +56,20 @@ class ArmAdiChecks(AttachChecks):
             parent = self.parent(sid)
             self.a.seed(parent, {4:0x20000000}, {}, 0)
             steps = [self.write(1, 0x55), self.read(4), self.write(8, 0xaa), self.read(4)]
-            self.a.acks([1] * index + ([2] * 3 if ack == 2 else [ack]))
+            # no answer (ack 0): the probe may retry the line within the request (debug §2: "probe は 1 つの要求の中で線を
+            # 再試行してよい"); this fixture keeps the line silent for SILENT packets, so retries see no answer either
+            silent = 8
+            self.a.acks([1] * index + ([2] * 3 if ack == 2 else [0] * silent if ack == 0 else [ack]))
             before = self.a.state()
             self.transfer(sid, parent, steps, index, {0:2, 2:1, 4:3}[ack], ack, [0x20000000] if index >= 2 else [])
             after = self.a.state()
             require(len(after['executed']) - len(before['executed']) == index, 'ARM executed failing transfer or suffix')
-            require(len(after['packets']) - len(before['packets']) == index + (3 if ack == 2 else 1), 'ARM retried non-WAIT or skipped WAIT retries')
+            packets = after['packets'][len(before['packets']):]
+            if ack == 0:
+                require(index + 1 <= len(packets) <= index + silent and all(row[1] == steps[index][0] and row[2] == 0 for row in packets[index:]),
+                        'ARM unanswered transfer: another transfer sent, or retried past the silent fixture')
+            else:                                          # FAULT stops at once; WAIT is retried (the fixture's 3 tries)
+                require(len(packets) == index + (3 if ack == 2 else 1), 'ARM retried FAULT or skipped WAIT retries')
     def rejection(self, kind):
         self.fresh()
         if kind == 'SESSION': self.refused(self.transfer_request(0, 0, [b'\xff']), 'session_required'); return

@@ -1758,11 +1758,12 @@ class Endpoint:
                     and not self.offers(fn, _UART.op["write"])):
                 check(not_declared(ch))                            # no write: no TX role (fixture §2)
                 continue
-            if fn in self.i2c or fn in self.spi:                  # role_channels binds the roles it lists (core §7.4)
-                listed = self._listed_roles(fn)
-                if role in listed and role not in self._declared_roles(fn, ch):
-                    check(not_declared(ch))
-                    continue
+            # role_channels binds the roles it lists, each to its own candidates (core §7.4: "bit i が立っていれば
+            # channel base+i をその role に使える"), for every fn - a uart's RX on a channel offered for TX only too
+            # (oep-if-plan §2.4: "channel が role_channels の候補に無い" -> unsupported)
+            if role in self._listed_roles(fn) and role not in self._declared_roles(fn, ch):
+                check(not_declared(ch))
+                continue
             if any(k[2] == ch for k in kept) or ch in slot_pins:
                 check(held(ch, next((k[0] for k in kept if k[2] == ch), None)))
         for fn in {f for f, _, _ in got if f in self.i2c or f in self.spi}:

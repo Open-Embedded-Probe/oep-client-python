@@ -133,3 +133,26 @@ def test_short_reads_are_the_probe_choice():
     from test_conformance_logic import one_byte_reads
     _,c,a=setup();one_byte_reads(c,fn=1,op=16,at=19);report=StreamChecks(c,a).run()
     assert report['status']=='passed',[(r['id'],r.get('error')) for r in report['checks'] if r['status']!='passed']
+
+
+def test_overflow_mark_where_the_first_byte_was_pushed_out(monkeypatch):
+    """common §1.3: a mark's position is the write position when the probe made it - a probe that marks the overflow
+    as the first byte is pushed out (at 65 of 80 bytes with 64 kept), not after the whole burst, passes GAP; a mark
+    outside the burst does not."""
+    import oep_client.virtual_stream_model as sm
+    def at_first_push(self, data):
+        lost = False
+        for b in data:
+            self.data.append(b); self.position += 1
+            if len(self.data) > self.capacity:
+                del self.data[0]
+                if not lost: self.mark(1, 1); lost = True
+    monkeypatch.setattr(sm.Stream, 'feed', at_first_push)
+    _, c, a = setup(); runner = StreamChecks(c, a)
+    c.check('IF-STREAM-GAP', 'common §1.3', runner.gap)
+    assert c.results[-1]['status'] == 'passed', c.results[-1].get('error')
+    def before_burst(self, data):
+        self.mark(1, 1); self.data.extend(data); self.position += len(data); del self.data[:-self.capacity]
+    monkeypatch.setattr(sm.Stream, 'feed', before_burst)
+    c.check('IF-STREAM-GAP', 'common §1.3', runner.gap)
+    assert c.results[-1]['status'] == 'failed'

@@ -165,10 +165,14 @@ class RouteChecks:
                 request = self.c.request(self.c.core['clock'], session=sid)
                 self.a.submit([(self.a.primary, request)])
                 frames = self.drain()
-                require(len(frames) == 3, 'partial frame/result/queued data/drop mismatch')
+                # core §10.4 rule 2: max_frame x 2 is an upper bound, not a queue the probe must keep - the second
+                # data frame (seq 1) and the event (seq 2) may each have been dropped; both kept is over the bound
+                require(len(frames) in (2, 3), 'partial frame/result/queued data/drop mismatch')
                 self.data(frames[0], fn, 0, position, data)  # finish an already started frame
                 self.result(frames[1], request)  # before the next notification
-                self.data(frames[2], fn, 1, second, data)
+                if len(frames) == 3:
+                    if frames[2][0] == 4: self.data(frames[2], fn, 1, second, data)
+                    else: self.event(frames[2], fn, 2, 104)
                 self.a.stimulate(fn, 105)
                 self.service()
                 final = self.a.receive(self.a.primary)

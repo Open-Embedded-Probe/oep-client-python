@@ -668,7 +668,8 @@ class Checks:
             p = self.success(self.request(self.core['lock_state']))
             require(len(p) >= 5, 'lock_state fixed payload')
             locked, remaining = struct.unpack_from('<BI', p)
-            require(locked == 1 and 0 < remaining <= 3000, 'lock_state not held')
+            # remaining: at most the 3000 ms lease, 0 included (a lease at its very end may read 0, core §6.4)
+            require(locked == 1 and remaining <= 3000, 'lock_state not held')
             tlvs(p[5:])
             other = secrets.randbelow(0xffffffff) + 1
             while other == sid:

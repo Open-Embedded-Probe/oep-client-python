@@ -321,7 +321,7 @@
     "tests/test_trace_console.py::test_a_reset_op_marks_reset_detail_1_once_and_no_restart_for_it"
    ],
    "mutants": [
-    "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[connection_lost-DM-LINE-2]"
+    "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[connection_lost-DM-RECOVER-2]"
    ],
    "note": "a target reset (reset op, attach under reset) keeps the connection usable"
   },
@@ -330,7 +330,8 @@
    "verify": [
     "tests/test_conformance_retry.py::test_retry_contracts_pass",
     "tests/test_trace_common.py::test_the_bench_answers_line_and_state_and_timeout_where_they_happen",
-    "tests/test_review6_debug_a.py::test_the_retry_checker_takes_a_probe_owned_retry_at_the_same_speed"
+    "tests/test_review6_debug_a.py::test_the_retry_checker_takes_a_probe_owned_retry_at_the_same_speed",
+    "tests/test_review8_debug.py::test_arm_checker_lets_the_probe_retry_an_unanswered_transfer"
    ],
    "mutants": [
     "tests/test_conformance_retry.py::test_retry_checker_detects_independent_faults[no_owned-OWNED-0]",
@@ -612,7 +613,9 @@
     "tests/test_trace_debug.py::test_method_1_only_where_attach_halt_is_declared_and_method_0_leaves_the_hart_running",
     "tests/test_virtual_bench_rules_2026_10_02.py::test_c02_attach_method_and_reset_mode_a_later_revision_may_define",
     "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass",
-    "tests/test_trace_debug.py::test_method_1_selects_hart_0_drops_haltreq_and_succeeds_only_with_hart_0_halted"
+    "tests/test_trace_debug.py::test_method_1_selects_hart_0_drops_haltreq_and_succeeds_only_with_hart_0_halted",
+    "tests/test_review8_debug.py::test_attach_model_offers_method_1_only_with_attach_halt",
+    "tests/test_review8_debug.py::test_attach_checker_refuses_method_1_offered_without_attach_halt"
    ],
    "note": "method 0 mandatory; method 1 only with features attach_halt, success with hart 0 halted; others unsupported 0x00"
   },
@@ -1432,7 +1435,8 @@
    "verify": [
     "tests/test_console_queue_and_reset_settle.py::test_reset_waits_out_a_self_restarting_target_within_max_op_ms[10000-True]",
     "tests/test_console_queue_and_reset_settle.py::test_reset_waits_out_a_self_restarting_target_within_max_op_ms[10001-False]",
-    "tests/test_conformance_reset.py::test_optional_reset_contracts_pass"
+    "tests/test_conformance_reset.py::test_optional_reset_contracts_pass",
+    "tests/test_review8_debug.py::test_reset_checker_lets_a_silent_dm_close_the_connection"
    ],
    "mutants": [
     "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[dm_over_budget-DM-LINE-0]",

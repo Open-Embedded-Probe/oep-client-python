@@ -64,7 +64,11 @@ def exercise_boot_change(observer, before, after, host_type=host.Host):
     assert core.find(h, NAME) == 513
     h.call(513, 16, locked=False)
     assert all(r.fn == 0 for r in requests[start:observed])          # the observer (open: fn 0's describe first)
-    assert [(r.fn, r.op) for r in requests[observed:]] == [(0, m.OP_LIST), (513, 16)], 'Host must rediscover before interface use'
+    # max_op_ms went with the old boot: fn 0's describe is read again before a request it bounds (core §4.4), unless the
+    # observer (open) read it already
+    again = [] if observer == 'open' else [(0, m.OP_DESCRIBE)]
+    assert [(r.fn, r.op) for r in requests[observed:]] == [(0, m.OP_LIST), *again, (513, 16)], \
+        'Host must rediscover before interface use'
     assert h.epoch == epoch + 1
 
 

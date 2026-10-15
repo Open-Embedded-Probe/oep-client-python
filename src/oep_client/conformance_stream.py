@@ -72,7 +72,10 @@ class StreamChecks:
         self.expect_read((16,3,data[16:20]),arg=0,maximum=4)
         self.expect_read((16,1,data[16:20]),mode=1,maximum=4)
         self.expect_read((80,0,b''),mode=2)
-        _,rows=self.marks(0);require(rows and rows[-1][1:3]==(80,1) and rows[-1][4]==1,'overflow lost mark')
+        # common §1.3: the mark's position is the write position when the probe made it - from the first byte pushed
+        # out (the ring full at byte_capacity) to the end of the burst, not one fixed point
+        _,rows=self.marks(0);cap=self.a.adoption['byte_capacity']
+        require(any(row[2]==1 and row[4]==1 and cap<=row[1]<=80 for row in rows),'overflow lost mark')
 
     def selectors(self):
         self.fresh();self.a.feed_bytes(b'ab');self.a.mark_external(3,11);self.a.feed_bytes(b'cd');self.a.mark_external(0x40,1);self.a.feed_bytes(b'ef')

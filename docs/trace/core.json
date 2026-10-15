@@ -541,7 +541,9 @@
    "verify": [
     "tests/test_trace_core.py::test_unknown_values_that_tell_no_failure_are_shown_as_unknown",
     "tests/test_conformance_host_values.py::test_selected_unknown_value_contracts_pass",
-    "tests/test_trace_core.py::test_the_client_ignores_reserved_flag_bits_and_shows_an_unknown_scan_kind"
+    "tests/test_trace_core.py::test_the_client_ignores_reserved_flag_bits_and_shows_an_unknown_scan_kind",
+    "tests/test_review8_core_1.py::test_an_unknown_reference_how_is_shown_as_it_is",
+    "tests/test_review8_core_1.py::test_an_unknown_run_stopped_is_shown_as_it_is"
    ],
    "mutants": [
     "tests/test_conformance_host_values.py::test_independent_reader_faults[cause_refusal-CAUSE-Violation:]",
@@ -847,7 +849,9 @@
     "tests/test_trace_core.py::test_the_decision_table[full]",
     "tests/test_review5_core_a.py::test_the_checker_takes_a_locked_answer_with_remaining_time_0",
     "tests/test_review7_exact_payload.py::test_core_checkers_accept_tlvs_after_a_refusal[refusal-order]",
-    "tests/test_review7_exact_payload.py::test_core_checkers_accept_tlvs_after_a_refusal[response-race]"
+    "tests/test_review7_exact_payload.py::test_core_checkers_accept_tlvs_after_a_refusal[response-race]",
+    "tests/test_review8_core_2.py::test_the_session_smoke_checker_takes_remaining_0_while_held",
+    "tests/test_review8_core_2.py::test_the_retention_owner_checks_take_remaining_0"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_decision_table_mutant"
@@ -1078,7 +1082,8 @@
     "tests/test_review7_host_recovery.py::test_a_port_speed_revert_of_the_link_waits_max_op_ms",
     "tests/test_review7_host_recovery.py::test_a_recovery_confirm_waits_its_floor_on_a_short_link_timeout",
     "tests/test_review7_host_recovery.py::test_a_resync_confirm_from_a_pump_waits_its_floor",
-    "tests/test_review7_host_recovery.py::test_an_open_that_shows_a_reboot_reads_max_op_ms_again"
+    "tests/test_review7_host_recovery.py::test_an_open_that_shows_a_reboot_reads_max_op_ms_again",
+    "tests/test_review8_core_2.py::test_a_lock_free_interface_request_waits_max_op_ms_even_before_the_host_read_it"
    ],
    "mutants": [
     "tests/test_conformance_host_deadline.py::test_actual_wait_loop_faults_are_detected[no_margin-SINGLE]",
@@ -1452,7 +1457,11 @@
    "text": "- **lock_state**: ロックの有無と残り時間（ロックが空いていれば",
    "verify": [
     "tests/test_trace_core.py::test_lock_state_tells_any_holder_and_0_when_free[core-v1]",
-    "tests/test_trace_core.py::test_lock_state_tells_any_holder_and_0_when_free[full]"
+    "tests/test_trace_core.py::test_lock_state_tells_any_holder_and_0_when_free[full]",
+    "tests/test_review8_core_2.py::test_the_tcp_peer_checker_takes_lock_state_held_with_remaining_0",
+    "tests/test_review8_core_2.py::test_the_session_smoke_checker_takes_remaining_0_while_held",
+    "tests/test_review8_core_2.py::test_the_checkers_keepalive_case_takes_lock_state_held_with_remaining_0",
+    "tests/test_review8_core_2.py::test_the_retention_owner_checks_take_remaining_0"
    ],
    "mutants": [],
    "note": "locked and remaining for any holder; 0, 0 when free"
@@ -1598,7 +1607,8 @@
    "verify": [
     "tests/test_trace_core.py::test_the_common_describe_tags_have_their_forms",
     "tests/test_trace_core.py::test_a_channel_group_is_matched_whole_and_role_channels_bound_their_roles",
-    "tests/test_trace_core.py::test_repeated_role_channels_of_one_role_are_their_union"
+    "tests/test_trace_core.py::test_repeated_role_channels_of_one_role_are_their_union",
+    "tests/test_review8_core_2.py::test_plan_apply_refuses_a_role_on_a_channel_role_channels_offers_another_role_only"
    ],
    "mutants": [],
    "note": "role_channels role base bitmap; a pin outside its candidates refused; the same role twice: the union (host decode, probe plan)"
@@ -1986,7 +1996,8 @@
     "tests/test_trace_core.py::test_resource_numbers_are_u32_from_1",
     "tests/test_trace_core.py::test_resource_number_0xffffffff_is_given_and_only_then_cause_2",
     "tests/test_trace_core.py::test_an_attach_refused_for_spent_numbers_touches_nothing_first",
-    "tests/test_conformance_resources.py::test_a_u32_resource_number_is_a_valid_one"
+    "tests/test_conformance_resources.py::test_a_u32_resource_number_is_a_valid_one",
+    "tests/test_conformance_allocator.py::test_allocator_boundary_is_the_u32_end"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_resource_number_reused_mutant",
@@ -2221,7 +2232,9 @@
    "verify": [
     "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[0]",
     "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[1]",
-    "tests/test_trace_core.py::test_the_serial_port_sends_answers_first_and_keeps_notifications_within_twice_max_frame"
+    "tests/test_trace_core.py::test_the_serial_port_sends_answers_first_and_keeps_notifications_within_twice_max_frame",
+    "tests/test_conformance_routes.py::test_partial_accepts_a_queue_smaller_than_the_bound[64]",
+    "tests/test_conformance_routes.py::test_partial_accepts_a_queue_smaller_than_the_bound[80]"
    ],
    "mutants": [
     "tests/test_conformance_notification_output.py::test_output_faults[reuse_dropped_seq-PARTIAL-FRAME]"
