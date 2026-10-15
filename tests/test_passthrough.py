@@ -184,3 +184,28 @@ def test_the_client_sets_and_reads_a_console_pass_through(bench):
     want = config.ConsolePassthrough(port=0, wire_fn=WIRE, swdio=16, console_fn=CONSOLE, mechanism=DMSEQ)
     cfg.set([want])
     assert want in cfg.items()
+
+
+def test_after_a_line_loss_rvswd_waits_for_the_condition_to_start_again():
+    """§1.2: line loss closes it; rvswd (its wake may reset the target) is not tried again until the condition starts
+    again - a session on the port and its end, or unset and set; swio tries again by itself."""
+    start = time.monotonic()
+    ep = endpoint.Endpoint(virtual_bench.p4_x035(), lambda: int((time.monotonic() - start) * 1000))
+    hst = h.Host(ep.handle)
+    core.take(hst, 10000)
+    wire = core.find(hst, "oep.wire.rvswd")
+    console = core.find(hst, "oep.target.console")
+    (pair,) = [p for (f, p) in ep.targets if f == wire]
+    cfg = config.ProbeConfig(hst)
+    cfg.set([config.ConsolePassthrough(port=0, wire_fn=wire, swdio=pair[0], swclk=pair[1], console_fn=console,
+                                       mechanism=DMSEQ)])
+    hst.end()
+    assert ep.console_passthroughs() == {0: (wire, pair)}
+    ep.console_line_lost(0)
+    assert ep.console_passthroughs() == {}                # not tried again by itself
+    core.take(hst, 10000)
+    cfg.unset([("console_passthrough", 0)])
+    cfg.set([config.ConsolePassthrough(port=0, wire_fn=wire, swdio=pair[0], swclk=pair[1], console_fn=console,
+                                       mechanism=DMSEQ)])
+    hst.end()
+    assert ep.console_passthroughs() == {0: (wire, pair)}  # unset and set: the condition started again

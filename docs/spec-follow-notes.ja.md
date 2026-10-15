@@ -371,10 +371,34 @@ probe がその UART を動かし、受けた byte をフレームの外で口�
 
 | # | 判断 | 反映 |
 |---|---|---|
-| R1 | **戻した**: probe.config §1.2 の任意の項目 console_passthrough（oep-spec 67876b7）。旧版の slot と bind の組をまとめ、OEP の資源にしない形（接続もストリームも現れない）にした。試し直しは wake が target をリセットしない swio だけ | 仮想ベンチ・Python 済み。Arduino は config の書き直し（段 A5）で旧 slot の仕組みを移す |
+| R1 | **戻した**: probe.config §1.2 の任意の項目 console_passthrough（oep-spec 67876b7）。旧版の slot と bind の組をまとめ、OEP の資源にしない形（接続もストリームも現れない）にした。試し直しは wake が target をリセットしない swio だけ | 仮想ベンチ・Python・Arduino（A5b）済み |
 | R2 | 戻さない。firmware 内部（SWIO / RVSWD の PHY）で使う段は「強さは probe が決める」で足り、host が gpio の drive TLV を使った記録が無い | Arduino は gpio の TLV を外した |
-| R3 | 保留（ミックスドシグナルの需要と、従うトラックのリングの重さを測ってから） | — |
+| R3 | **戻さない**（下の試算 R3' を参照）。必要になった firmware は自身の拡張で持つ | Arduino の旧 group の follower のコードは、自身の拡張へ移す候補として残す |
 | R4、R5 | 戻さない（host で組める。コアと共通部分を小さく） | — |
 | R6 | 標準には入れず、firmware 自身の拡張にする（経路の設定は製品ごと。複数の製品で要るようになったら `oep.` にする） | Arduino で段 A5 と一緒に |
 | R7 | 単独では戻さない。素通しの項目が UART の設定（baud、format）を自分で持つ | — |
-| R8 | **戻した**: probe.config §1.1 の任意の項目 passthrough と transports §4 の素通し（oep-spec df32360 / 91a5653）。実験で host の失敗 0 を確かめた | 仮想ベンチ・Python 済み。Arduino は段 A5 |
+| R8 | **戻した**: probe.config §1.1 の任意の項目 passthrough と transports §4 の素通し（oep-spec df32360 / 91a5653）。実験で host の失敗 0 を確かめた | 仮想ベンチ・Python・Arduino（A5b）済み |
+
+### Arduino への反映で見つかったもの（2026-10-15、段 A5b）
+
+Arduino の config を書き直した（follow-cf69012 の e53f11b）。vectors の config は 15 件の失敗が 0 件になった。素通しの host 検査は 19 件を足し、すべて通った。
+
+| # | 内容 | 判断 |
+|---|---|---|
+| A1 | §1.2 の矛盾: 「線切れは止めずに試し直しで扱う」が「rvswd は条件が成り立つたびに 1 回」とぶつかっていた | **仕様を直した**（oep-spec a16b2dd）。線切れでは接続を閉じ、試し直しの規則に従う。rvswd でやり直させたい host は、その口でセッションを開いて終えるか、unset して set し直す。仮想ベンチに `console_line_lost` を足し、Python で確かめた |
+| A2 | RP2 の EEPROM（flash の最後の sector）の書き換えは、電源断に対して原子的でない。§3 は「旧か新が残る」を求めている | 仕様は変えない。今は CRC で、壊れた書き込みを unreadable（reason 1）として読む。2 sector を交互に使えば旧か新が残るので、実装の課題として持つ |
+| A3 | 素通しの UART はピンを plan の持ち主として取らない（入力だけ）。別の fn の plan が RX を取ると、次の poll で止まる | 一瞬重なるが、入力だけなので害は無い。仕様は変えない |
+| A4 | 「count separates items from response extensions」の vector の応答末尾の 0x7F TLV は、host の読みの検査用で、probe はそれを作れない | Python の試験と同じく、probe 側の試験では末尾を外して比べる。vector の state にそう書くと親切（小さいので依頼しない） |
+
+### R3' 連動トリガの試算（2026-10-15）
+
+使っていたのは ESP32-P4 のミックスドシグナルで、ロジックが先導し、アナログがそれに従う。P4 のアナログの上限は 46 kHz（OepAnalog.h）で、一回取りだけ。
+今の v1 で host が代わりにできること:
+
+- capture-group の即時開始でロジックとアナログを同時に始め、ロジックだけは group の外で自分のトリガを持つ。トリガの trigger_ns と、アナログの開始時刻と速さから、
+  host が後で切り出す。
+- アナログを 1 秒張るのに要るのは 46 k × 2 B ≒ 92 KB。P4 の PSRAM なら 10 秒（約 0.9 MB）でも入る。合わせの誤差は 1 標本（約 22 µs）と開始時刻の不確かさの和。
+- 取れなくなるのは「いつ起きるか分からない事象の前の区画」だけ。治具の試験は host 自身が DUT を動かすので、事象の時刻はおおむね分かる。
+
+連動トリガを戻すと、capture §4 に follower のリング、トリガの遅れの上限、group の pretrigger の換算（P_k = ceil(P × rate_k / rate_t)）が戻る。
+コアに近い共通部分が大きくなる割に、得るものは小さい。だから戻さない。需要が出たら firmware 自身の拡張として測る。

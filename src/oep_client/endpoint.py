@@ -1215,6 +1215,7 @@ class Endpoint:
         self._transport = transport
         if req.session and req.session == self.holder:
             self.session_ports.add(transport)                      # its pass-through stops for the session (config §1.1)
+            self.resident.pop(transport, None)                     # (its console's too: closed, §1.2)
         self._via = transport if link is None else link
         self._lapse()                                              # an expired lease is cleaned up before the next
         #                                                            request's processing, its resend check too (core §6.1)
@@ -1486,6 +1487,7 @@ class Endpoint:
         # subscriptions send (core §6.2): a subscribe again moves them (§10.3)
         self.holder = self.last = session
         self.session_ports.add(self._transport)                    # its pass-through stops for the session (config §1.1)
+        self.resident.pop(self._transport, None)                   # (its console's too: closed, §1.2)
         # 0: the probe's default; else rounded into lease_min_ms .. lease_max_ms (core §6.4)
         lo, hi = reg.LIMITS["lease_min_ms"], min(self.lease_max_ms, reg.LIMITS["lease_max_ms"])
         self.lease_ms = self.lease_default_ms if lease == 0 else min(max(lease, lo), hi)
@@ -2916,6 +2918,9 @@ class Endpoint:
         condition starts again (its wake may reset the target). Off: its connection closes, the target untouched."""
         busy = {a[2] for a in self.plan} | {p for c in self.conns.values() for p in c.pair}
         out = {}
+        items = {port for (tag, port) in self.config if tag == ITEM["console_passthrough"]}
+        for port in set(self.resident) - items:                    # unset: the condition starts again with a set
+            self.resident.pop(port)
         for (tag, port), v in self.config.items():
             if tag != ITEM["console_passthrough"]:
                 continue
@@ -2930,6 +2935,12 @@ class Endpoint:
             if self.resident[port]:
                 out[port] = (wfn, pair)
         return out
+
+    def console_line_lost(self, port: int) -> None:
+        """The console pass-through of `port` lost its line (debug §2, config §1.2): its connection closes; swio tries
+        again at the next look, rvswd only when the condition starts again."""
+        if self.resident.get(port):
+            self.resident[port] = False
 
     def passthrough_take(self, port: int) -> bytes:
         """The pass-through bytes serial port `port` sends now, between frames (transports §4); none while it does
@@ -3305,6 +3316,8 @@ class Endpoint:
         repark =(self.disabled - disabled) | {ch for ch in set(old_idle) | set(new_idle)
                                                if old_idle.get(ch) != new_idle.get(ch)}
         repark -= {a[2] for a in self.plan}                        # a channel a plan holds is not free, a logic's that only
+        for _, port in {k for k in self.config if k[0] == ITEM["console_passthrough"]} - set(new):
+            self.resident.pop(port, None)                          # an item gone: its condition starts again (§1.2)
         self.config = new                                          # listens too (core §8): its new idle waits for its release
         self.generation += 1
         self._park(repark)                                         # a free channel's new idle, an enabled one (§1)
