@@ -26,7 +26,7 @@ class PortSpeedExecutionChecks(PortSpeedChecks):
                 original=self.c.send;self.c.send=self.a.begin
                 try:payload=self.c.success(self.c.request(16,struct.pack('<I',16),fn=4))
                 finally:self.c.send=original;self.a.select(self.c,0)
-                require(payload==b'\x10\0'+bytes(range(16)),'timed link response differs')
+                require(payload[:18]==b'\x10\0'+bytes(range(16)),'timed link response differs');tlvs(payload[18:])   # len data [TLV]
                 held=self.observe('after-execution');p=start['ports'][0]
                 require(held['time_ms']==start['time_ms']+3500 and held['executions'][-1]==dict(fn=4,op=16,duration_ms=3500),'execution control did not apply to selected operation')
                 require(held['ports'][0]==dict(p,deadline=p['deadline']+3500),'execution consumed verify/idle time')
@@ -52,7 +52,8 @@ class PortSpeedExecutionChecks(PortSpeedChecks):
                 original=self.c.send;self.c.send=self.a.begin
                 try:
                     payload=self.c.success(req)
-                    require(payload==b'\x10\0'+bytes(range(16)) if op=='source' else payload==b'','timed link response differs')
+                    fixed=b'\x10\0'+bytes(range(16)) if op=='source' else b''   # source len data, sink nothing; [TLV] after (link §1)
+                    require(payload[:len(fixed)]==fixed,'timed link response differs');tlvs(payload[len(fixed):])
                 finally:self.c.send=original
                 held=self.observe('after-execution')
                 require(held['time_ms']==start['time_ms']+duration,'execution did not consume declared logical time')

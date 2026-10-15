@@ -645,20 +645,20 @@ class Endpoint:
         self.pin_roles: dict[int, dict[int, set[int]]] = {}   # wire fn -> role -> candidates (role_channels wires)
         for fn, name in self.names.items():
             if name in WIRES:
-                self.pairs[fn] = [self._group_pair(name, v) for tag, v in self.decl[fn] if tag == catalog.CHANNEL_GROUP]
                 roles: dict[int, set[int]] = {}
                 for tag, v in self.decl[fn]:
                     if tag == catalog.ROLE_CHANNELS and v[0] in (1, 2):
                         roles.setdefault(v[0], set()).update(_role_channels(v))
                 if roles:
                     self.pin_roles[fn] = roles
+                self.pairs[fn] = self._group_pairs(fn, name, roles)
                 self.reset_channels[fn] = {
                     c for tag, v in self.decl[fn] if tag == catalog.ROLE_CHANNELS and v[0] == PIN_ROLE_RESET
                     for c in _role_channels(v)}
                 self.max_connections[fn] = next((v[0] for tag, v in self.decl[fn] if tag == virtual_bench.MAX_CONNECTIONS), 1)
         self.targets: dict[tuple[int, tuple[int, int]], VirtualTarget] = {
             (fn, p): VirtualTarget() for fn in sorted(self.pairs) for p in self.pairs[fn]}
-        for fn in sorted(self.pin_roles):                          # any pair: one target, on the first pair
+        for fn in sorted(f for f in self.pin_roles if not self.pairs[f]):   # any pair: one target, on the first pair
             first = self._role_pairs(fn)[0]
             self.targets[(fn, first)] = VirtualTarget()
         self.target = next(iter(self.targets.values()), VirtualTarget())
@@ -1127,10 +1127,24 @@ class Endpoint:
             tg = self.targets[(fn, pair)] = VirtualTarget(present=False)
         return tg
 
-    @staticmethod
-    def _group_pair(name: str, v: bytes) -> tuple[int, int]:
-        roles = dict(catalog.unpack_channel_group(v)[1])
-        return roles.get(1, 0xFFFF), roles.get(2, 0xFFFF) if name != "oep.wire.swio" else 0xFFFF
+    def _group_pairs(self, fn: int, name: str, roles: dict[int, set[int]]) -> list[tuple[int, int]]:
+        """A wire with channel_groups: the (swdio, swclk) pairs they allow, in declared order (debug §1, core §7.4) - a
+        role a group lists is that group's channel (in role_channels' candidates when they list the role), a role it
+        does not list comes from role_channels alone. No groups: [] (role_channels alone, `_role_pairs`)."""
+        swio = name == "oep.wire.swio"
+        out: list[tuple[int, int]] = []
+        for tag, v in self.decl[fn]:
+            if tag != catalog.CHANNEL_GROUP:
+                continue
+            group = dict(catalog.unpack_channel_group(v)[1])
+
+            def options(role: int) -> list[int]:
+                if role in group:
+                    return [group[role]] if role not in roles or group[role] in roles[role] else []
+                return sorted(roles.get(role, ()))
+            out += [(d, c) for d in options(1) for c in ([0xFFFF] if swio else options(2))
+                    if (swio or d != c) and (d, c) not in out]
+        return out
 
     def _raw_ns(self) -> int:
         return int(self._clock_ns()) if self._clock_ns is not None else int(self.now() * 1_000_000)
@@ -2229,6 +2243,7 @@ class Endpoint:
             tg = self._target(fn, pair)                            # (core §9, §4.3 order 4)
             if reset is not None and tg.resets_through(channel):
                 tg.silent_until_reset = False                      # held in reset and let go: it answers again
+                tg.havereset = True                                # the reset leaves havereset pending: acked below (§3, §4.6)
                 if not self._settled(tg, hold_ms):                 # silent past max_op_ms, the hold counted (debug §2)
                     return m.COMPLETED, m.FAILED, bytes([LINE])
             if not tg.answers:
@@ -2751,10 +2766,19 @@ class Endpoint:
 
     def _console_poll(self) -> None:
         """The probe's polling of the console streams (console §2, §3): one poll per ms on the timers' clock while the
-        hart runs and answers, each handing the queue's head to the target - dmseq 2 bytes, DMDATA 3."""
+        hart runs and answers, each handing the queue's head to the target - dmseq 2 bytes, DMDATA 3. A poll is an
+        exchange on its connection's lines (debug §2, "要求の中でもコンソールの読みの中でも"): unanswered, the lines rest
+        released (`Connection.free`) until an exchange succeeds; answered, the connection's rest state is back."""
         now = self.now()
         for st in self.streams.values():
-            if not st.queue or now <= st.fed_ms or st.conn not in self.conns:
+            if st.conn not in self.conns:
+                continue
+            self.conns[st.conn].free = not self._target_of(st.conn).answers
+            tg = self._target_of(st.conn)
+            if tg.answers and not tg.halted:
+                # the console's read acknowledges a pending havereset too, with a restart mark (debug §4.6)
+                self._ack_havereset(st.conn, tg)
+            if not st.queue or now <= st.fed_ms:
                 continue
             tg = self._target_of(st.conn)
             if tg.answers and not tg.halted:

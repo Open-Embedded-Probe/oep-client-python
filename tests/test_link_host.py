@@ -156,32 +156,26 @@ def test_a_frame_that_stops_half_way_resyncs(monkeypatch):
     assert lk.resyncs == 1 and [op for _, _, op in sent(s)] == [0x01, m.OP_CONFIRM, 0x01]
 
 
-def test_pushes_that_never_stop_are_stopped_blind_with_unsubscribe_and_end(monkeypatch):
+def test_pushes_that_never_stop_reopen_the_transport_and_send_no_state_change(monkeypatch):
+    """transports §5: "静かにできなければ経路を閉じて開き直す" - no unsubscribe or end goes out blind (core §5.1: "boot_id
+    を確認し、状態を読んでから次の状態変更を判断する"); the session stays the host's."""
     monkeypatch.setattr(link.SerialLink, "NOISY_S", 0.05)
     s = Stream()
+    s.close = lambda: None
     lk = make_link(s)
     hst = h.Host(lk.send)
     hst.session, hst.revision, hst.subscriptions = 0xABCD, 1, {5}
-    lk.corr_source, lk.blind = hst.next_corr, hst.blind_stop
+    lk._bind_host(hst)                                           # what open_host binds
     s.noise = frame(bytes([m.ROLE_DATA]) + struct.pack("<HHQ", 5, 0, 0) + b"x" * 32)
-
-    def respond(msg):
-        req = m.Request.unpack(msg)
-        if req.op == m.OP_END:
-            s.noise = None                                        # the lock ends, the subscription with it
-        if req.op == m.OP_CONFIRM:
-            return [result(req.corr, CONFIRM_V1)]
-        return [result(req.corr)]
-
-    s.respond = respond
+    fresh = Stream(answering())
+    lk.reopener = lambda: fresh
     lk.frames.max_frame = 1024
     s.rx += BROKEN                                                # a lost boundary starts the resync
-    with pytest.raises(frames.FramingLost):
-        lk.send(m.Request(hst.next_corr(), 5, 0x01, b"", session=0xABCD).pack())
-    ops = sent(s)
-    assert [op for _, _, op in ops][1:] == [m.OP_UNSUBSCRIBE, m.OP_END, m.OP_CONFIRM]
-    assert all(sid == 0xABCD for sid, _, op in ops if op in (m.OP_UNSUBSCRIBE, m.OP_END))   # in the session (§4.1)
-    assert hst.subscriptions == set() and hst.session is None     # the blind end ended it: no resume (core §9)
+    lk.send(m.Request(hst.next_corr(), 5, 0x01, b"", session=0xABCD).pack())
+    assert lk.stream is fresh
+    assert [op for _, _, op in sent(s)] == [0x01]                 # nothing more on the noisy one: no unsubscribe, no end
+    assert [op for _, _, op in sent(fresh)] == [m.OP_CONFIRM, 0x01]   # confirmed, then the request sent again
+    assert hst.subscriptions == {5} and hst.session == 0xABCD
 
 
 def test_each_frame_goes_out_in_one_write():

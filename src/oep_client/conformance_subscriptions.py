@@ -239,7 +239,7 @@ class SubscriptionChecks:
                                                session=sid, fn=fn), 'malformed')
                 self.event(fn, seq)
                 seq += 1
-            request = self.c.request(1, struct.pack('<HI', 65535, 1) + b'\xfe\0\0', session=sid, fn=fn)
+            request = self.c.request(1, struct.pack('<HI', 0, 0) + b'\xfe\0\0', session=sid, fn=fn)   # a condition any probe holds (core §10.3)
             payload = self.c.rejected(request, 'unsupported')
             require(payload and payload[0] == 254, 'unsupported must identify critical tag')
             tlvs(payload[1:])

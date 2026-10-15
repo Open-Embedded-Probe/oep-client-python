@@ -2,7 +2,10 @@
 import struct
 from contextlib import contextmanager
 from .conformance import require,tlvs,ops
-from .conformance_registered_ops import RegisteredOpsChecks
+from .conformance_registered_ops import RegisteredOpsChecks, refusal_carries
+
+
+CAUSE6=b'\1\1\0\6'      # the TLV cause 6 (core §4.3) every refusal of link §3 carries, among what else the probe attaches
 
 
 class PortSpeedChecks:
@@ -21,7 +24,7 @@ class PortSpeedChecks:
         require(after==protected,'port_speed changed live plan/pin/ownership')
     def refused(self,request,reason,tag=None):
         before=self.a.speed();payload=self.c.rejected(request,reason)
-        if reason=='unavailable':require(payload==b'\1\1\0\6','state refusal must report cause6')
+        if reason=='unavailable':require(refusal_carries(reason,payload,CAUSE6),'state refusal must report cause6')
         if reason=='unsupported':require(payload and payload[0]==(0 if tag is None else tag),'unsupported tag/mark differs');tlvs(payload[1:])
         after=self.a.speed();self.observations.append(dict(action='refused',request_hex=request.hex(),before=before,after=after))
         require(after==before,'refused port_speed changed state')
@@ -36,7 +39,7 @@ class PortSpeedChecks:
         before=self.observe('pending-return');original=self.c.send;self.c.send=self.a.begin
         try:payload=self.c.success(request) if reason is None else self.c.rejected(request,reason)
         finally:self.c.send=original
-        if reason=='unavailable':require(payload==b'\1\1\0\6','state refusal must report cause6')
+        if reason=='unavailable':require(refusal_carries(reason,payload,CAUSE6),'state refusal must report cause6')
         p=self.observe('pending-answer')['ports'][0]
         require(p['state']==state and p['baud']==230400 and (state!=3 or p==before['ports'][0]),'pending return changed before frame boundary')
         self.a.finish();require(self.a.events()[-1]['baud']==230400,'pending answer not sent at raised baud')
@@ -191,7 +194,9 @@ class PortSpeedChecks:
                     if kind=='invalid':
                         require(self.a.raw(b'\0') is None,'invalid frame got a response');self.speed(0,115200);self.phase(0,115200);continue
                     if kind=='state':require(self.during(self.state_request(),state=2)[:5]==struct.pack('<IB',230400,2),'port_state did not report cancelled phase2')
-                    else:require(self.during(self.c.request(16,struct.pack('<I',4),fn=4),state=2)==b'\4\0'+bytes(range(4)),'source answer differs')
+                    else:
+                        p=self.during(self.c.request(16,struct.pack('<I',4),fn=4),state=2)
+                        require(p[:6]==b'\4\0'+bytes(range(4)),'source answer differs');tlvs(p[6:])   # len data [TLV] (link §1)
                     p=self.observe('cancelled');require(p['ports'][0]['state']==2 and p['ports'][0]['deadline']==p['time_ms']+3000,'cancel did not restart idle')
                     self.a.advance(2999);self.speed(2,230400);self.a.advance(1);self.speed(0,115200)
         self.speed(0,115200)

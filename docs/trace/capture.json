@@ -433,7 +433,11 @@
     "tests/test_trace_capture.py::test_logic_capture_never_changes_a_driven_pin",
     "tests/test_trace_capture.py::test_analog_pad_leaves_idle_only_while_it_acquires",
     "tests/test_virtual_bench_capture.py::test_a_capture_listens_on_pins_other_interfaces_hold",
-    "tests/test_trace_capture.py::test_review2_an_analog_plan_leaves_the_pin_as_it_was_and_logic_keeps_a_pull"
+    "tests/test_trace_capture.py::test_review2_an_analog_plan_leaves_the_pin_as_it_was_and_logic_keeps_a_pull",
+    "tests/test_review6_capture_console.py::test_analog_checker_lets_the_pads_leave_their_free_state_while_acquiring",
+    "tests/test_review6_capture_console.py::test_analog_checker_still_wants_the_pads_back_when_acquisition_stops",
+    "tests/test_review6_capture_console.py::test_group_checker_lets_the_analog_pads_leave_their_free_state_while_acquiring",
+    "tests/test_review6_capture_console.py::test_timeline_checker_lets_the_analog_pads_leave_their_free_state_while_acquiring"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[pin_output-ONE-SHOT]",
@@ -445,7 +449,8 @@
    "text": "- アナログの取得が止まるとpadを空きの状態へ戻す（stop、完了、state",
    "verify": [
     "tests/test_trace_capture.py::test_analog_pad_leaves_idle_only_while_it_acquires",
-    "tests/test_trace_capture.py::test_review_analog_switch_time_is_in_start_ns_and_resuming_sets_the_gap"
+    "tests/test_trace_capture.py::test_review_analog_switch_time_is_in_start_ns_and_resuming_sets_the_gap",
+    "tests/test_review6_capture_console.py::test_analog_checker_still_wants_the_pads_back_when_acquisition_stops"
    ],
    "mutants": [],
    "note": "pad back to idle at completion, stop, state 5 and error, plan kept; analog again on resuming from 5"
@@ -1716,7 +1721,9 @@
     "tests/test_review4_capture.py::test_logic_trigger_role_is_the_planned_role_number",
     "tests/test_review4_capture.py::test_models_check_a_later_copy_of_a_configure_tlv[logic]",
     "tests/test_review4_capture.py::test_models_check_a_later_copy_of_a_configure_tlv[analog]",
-    "tests/test_review4_capture.py::test_models_check_a_later_copy_of_a_configure_tlv[timeline]"
+    "tests/test_review4_capture.py::test_models_check_a_later_copy_of_a_configure_tlv[timeline]",
+    "tests/test_review6_capture_console.py::test_logic_width_case_accepts_the_contract_refusal_for_segments_and_pretrigger",
+    "tests/test_review6_capture_console.py::test_analog_width_case_accepts_the_contract_refusal_for_segments_and_pretrigger"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[lone_pretrigger-CONTRACT]",
@@ -1747,7 +1754,9 @@
   "capture:3.3:11": {
    "text": "- **断りが 2 つ以上当たるとき**（例: mode 1 で samples",
    "verify": [
-    "tests/test_trace_capture.py::test_two_refusals_answer_one_of_them"
+    "tests/test_trace_capture.py::test_two_refusals_answer_one_of_them",
+    "tests/test_review6_capture_console.py::test_logic_width_case_accepts_the_contract_refusal_for_segments_and_pretrigger",
+    "tests/test_review6_capture_console.py::test_analog_width_case_accepts_the_contract_refusal_for_segments_and_pretrigger"
    ],
    "mutants": [],
    "note": "two refusals apply: one of them answers"

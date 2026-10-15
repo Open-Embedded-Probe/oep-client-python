@@ -7,6 +7,7 @@ from .conformance_registered_ops import RegisteredOpsChecks
 
 class LogicChecks:
     cases=('STATE0','QUERY','CONTRACT','WIDTH','RAW-TAGS','FIRST-WINS','RATE','SAMPLES','TRIGGER','PRETRIGGER','WAIT','ONE-SHOT','READ','READ-GAP','GENERATION','GEN-EXHAUST','PAGES','REPEAT','RELEASE','SHORT-STOP','ERROR','RECONFIGURE','REPLAY-START','REPLAY-RELEASE','PLAN-REPLACE','PLAN-RELEASE','END','EXPIRY','FORCE','SESSION')
+    sample_trigger=(1,0,1)   # a trigger the fixture takes (level, role 0)
     def __init__(self,checks,adapter):self.c,self.a=checks,adapter
     @staticmethod
     def tlv(tag,value):return bytes((tag,))+struct.pack('<H',len(value))+value
@@ -53,6 +54,9 @@ class LogicChecks:
         for i,row in enumerate(samples):
             for k,value in enumerate(row):require((data[(3*i+k)//8]>>((3*i+k)%8))&1==value,'logic channel sample packing')
         return data
+    def kept(self,pins):
+        """The pins' electrical state is still `pins` (as before the plan): a logic capture only listens (capture §1.2)."""
+        return self.a.state()['pins']==pins
     def closed(self):
         s=self.a.state();require(s['state']==0 and not s['config'] and not s['data'] and not s['segments'] and not s['current'] and not s['history'] and s['pins']==s['idle'],'plan closure retained capture/config/pins')
     def case(self,kind):
@@ -72,8 +76,12 @@ class LogicChecks:
                 for p,tag in [(self.settings(segments=2),self.tags['segments']),(self.settings(trigger=(0,255,0xffffffff),pre=0),self.tags['pretrigger']),(self.settings(pre=0),self.tags['pretrigger']),(self.settings(mode=3,samples=None),self.tags['mode'])]:self.refused(self.req(2,'configure',sid,p),'unsupported',bytes((tag,)))
                 self.refused(self.req(2,'query',payload=self.settings(mode=3,samples=None)),'unsupported',bytes((self.tags['mode'],)))
             elif kind=='WIDTH':
+                # capture §3.3: segments outside mode 2 and a pretrigger without a trigger are unsupported whatever
+                # their value, and with two refusals the probe answers either - so each goes where it is allowed and
+                # its length is the only fault
                 for name in ('mode','rate','samples','segments','trigger','pretrigger'):
-                    base=b''.join(self.tlv(tag,value) for tag,value in tlvs(self.settings()) if tag!=self.tags[name])
+                    where=dict(mode=2) if name=='segments' else dict(trigger=self.sample_trigger) if name=='pretrigger' else {}
+                    base=b''.join(self.tlv(tag,value) for tag,value in tlvs(self.settings(**where)) if tag!=self.tags[name])
                     for width in (0,2 if name=='mode' else 1):self.refused(self.req(2,'configure',sid,base+self.tlv(self.tags[name]|128,b'x'*width)),'malformed')
             elif kind=='RAW-TAGS':
                 for critical in (False,True):
@@ -121,7 +129,7 @@ class LogicChecks:
             elif kind=='SHORT-STOP':
                 self.configure(sid);generation,_,_=self.start(sid);self.a.feed([[1,0]]*3);self.ok(self.req(2,'stop',sid));require(self.status()[0][0]==1 and self.segments()[0][2]==3 and self.segments()[0][6]&2,'stop short segment/state');self.data(generation,[[1,0]]*3)
             elif kind=='ERROR':
-                self.configure(sid,mode=2);generation,_,_=self.start(sid);self.a.feed([[1,0]]*9);before=self.read(generation)[2];self.a.fail(2);status,tail=self.status();require(status==(6,1,len(before),1,generation) and dict(tlvs(tail)).get(1)==b'\2','error status/write_pos');require(self.read(generation)[2]==before and len(self.segments())==1,'error canceled committed segment/kept incomplete');new,_,_=self.start(sid);require(new==generation+1 and self.status()[0][3]==0,'error restart flags/generation')
+                self.configure(sid,mode=2);generation,_,_=self.start(sid);self.a.feed([[1,0]]*9);before=self.read(generation)[2];self.a.fail(2);status,tail=self.status();require(status==(6,1,len(before),1,generation) and dict(reversed(tlvs(tail))).get(1)==b'\2','error status/write_pos');require(self.read(generation)[2]==before and len(self.segments())==1,'error canceled committed segment/kept incomplete');new,_,_=self.start(sid);require(new==generation+1 and self.status()[0][3]==0,'error restart flags/generation')
             elif kind in ('PLAN-REPLACE','PLAN-RELEASE','END','EXPIRY','FORCE'):
                 self.configure(sid,mode=2);generation,_,_=self.start(sid);self.a.feed([[1,0]]*9)
                 if kind=='PLAN-REPLACE':
@@ -143,7 +151,7 @@ class LogicChecks:
             elif kind=='SESSION':
                 for name,payload in [('configure',self.settings()),('start',b''),('stop',b''),('release',b'\0'*8)]:self.refused(self.req(2,name,0,payload),'session_required')
                 self.status();self.read(0);self.segments();self.answer(self.c.success(self.req(2,'query',payload=self.settings())))
-            require(self.a.state()['pins']==pins,'logic capture changed pin electrical state')
+            require(self.kept(pins),'logic capture changed pin electrical state')
     def run(self):
         start=len(self.c.results)
         def context():

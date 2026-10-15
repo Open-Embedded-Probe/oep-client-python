@@ -8,7 +8,14 @@ from .conformance_registered_ops import RegisteredOpsChecks
 
 class AnalogChecks(LogicChecks):
     cases=LogicChecks.cases+('RAW','FRONTEND','CALIBRATION','CALIBRATION-FIT','DOWN',*(f'QUERY-STATE-{state}' for state in range(7)))
+    sample_trigger=(3,1,1500)   # a trigger the fixture takes (cross up, role 1)
     def plan(self,sid,roles=((1,0),(3,1))):return super().plan(sid,roles)
+    def kept(self,pins):
+        """capture §1.2: the analog channels leave their free state at start (the pad leaves its digital function) and
+        go back when acquisition stops (stop, done, state 5, error) - while waiting or capturing they are not compared;
+        every other pin, and all of them otherwise, keep their electrical state."""
+        s=self.a.state();skip=set(s['plans'].get(2,())) if s['state'] in (2,3) else set()
+        return {ch:v for ch,v in s['pins'].items() if ch not in skip}=={ch:v for ch,v in pins.items() if ch not in skip}
     def answer(self,payload,mode=1):
         self.config=self.payload.configure(payload,roles=(1,3),frontends={0,1},mode=mode)
         require(self.config['slot']==16 and self.config['offset']==2 and self.config['bits']==12 and self.config['order']==[3,1],'explicit ADC layout differs')
@@ -109,7 +116,7 @@ class AnalogChecks(LogicChecks):
                 require(self.status()[0][0]==state,'ADC query fixture state')
                 before=self.a.state();self.answer(self.c.success(self.req(2,'query',payload=self.settings(rate=537,samples=5))))
                 require(self.a.state()==before,'active ADC query applied settings/data')
-            require(self.a.state()['pins']==pins,'ADC acquisition changed electrical pin state')
+            require(self.kept(pins),'ADC acquisition changed electrical pin state')
     def run(self):
         start=len(self.c.results)
         def context():

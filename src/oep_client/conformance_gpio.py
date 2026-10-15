@@ -1,7 +1,7 @@
 """SPEC-driven selected logical GPIO set/read and plan lifecycle checks."""
 import struct
 from .conformance import require, tlvs
-from .conformance_registered_ops import RegisteredOpsChecks
+from .conformance_registered_ops import RegisteredOpsChecks, refusal_carries
 
 
 class GpioChecks:
@@ -21,7 +21,7 @@ class GpioChecks:
         require(len(value)>=1+len(channels) and value[0]==len(channels) and all(v in (0,1) for v in value[1:1+len(channels)]),'read count/levels');tlvs(value[1+len(channels):]);require(self.a.state()==before,'read changed GPIO/plan state');return list(value[1:1+len(channels)])
     def refused(self,request,reason,payload=None):
         before=self.a.state();value=self.c.rejected(request,reason)
-        if payload is not None:require(value==payload,'refusal payload/tag/channel/index')
+        if payload is not None:require(refusal_carries(reason,value,payload),'refusal payload/tag/channel/index')
         require(self.a.state()==before,'refused request touched plan/pin journal')
     def fresh(self):
         boot=self.a.restart_fixture();require(boot['scope']=='logical-model' and boot['boot_id']!=self.c.boot,'fresh logical boot');self.c.confirm();self.c.identity();require(self.c.boot==boot['boot_id'],'fresh boot readback')

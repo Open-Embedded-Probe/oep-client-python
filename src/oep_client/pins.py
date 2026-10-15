@@ -398,8 +398,10 @@ class PinFinder:
             clk = set(role_channels(self.hst, self.wire.fn, ROLE_SWCLK))
             if dio or clk:
                 pool = cands
-                pairs = [(d, c) for d in pool for c in pool if d != c and d in dio and c in clk
-                         and (declared is None or (d, c) in declared)]
+                # with channel_groups the declared pairs decide alone: a role a group fixes need not be in
+                # role_channels (core §7.4: "channel_group に無い role は role_channels だけで決まる", and the converse)
+                pairs = [(d, c) for d in pool for c in pool if d != c
+                         and ((d, c) in declared if declared is not None else d in dio and c in clk)]
                 if len(pairs) > MAX_PAIRS:
                     self.report.resolution = 'limit-exceeded'
                     self.note(f"{len(pairs)} pairs exceed {MAX_PAIRS}; nothing scanned; narrow with --exclude or "

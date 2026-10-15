@@ -538,12 +538,12 @@
     "tests/test_host_rules_2026_10_02.py::test_c07_a_resync_waits_250_ms_after_the_hosts_last_write",
     "tests/test_link_host.py::test_an_impossible_length_resyncs",
     "tests/test_link_host.py::test_a_frame_that_stops_half_way_resyncs",
-    "tests/test_link_host.py::test_pushes_that_never_stop_are_stopped_blind_with_unsubscribe_and_end",
     "tests/test_trace_transports.py::test_a_length_port_that_never_goes_quiet_is_closed_and_opened_again[True]",
-    "tests/test_trace_transports.py::test_a_length_port_that_never_goes_quiet_is_closed_and_opened_again[False]"
+    "tests/test_trace_transports.py::test_a_length_port_that_never_goes_quiet_is_closed_and_opened_again[False]",
+    "tests/test_link_host.py::test_pushes_that_never_stop_reopen_the_transport_and_send_no_state_change"
    ],
    "mutants": [],
-   "note": "vendor bulk/HID resync: read and discard until quiet, wait past probe_frame_gap_ms since the last write, own-corr confirm; never quiet: closed and opened again (client fixed)"
+   "note": "vendor bulk/HID resync: read and discard until quiet, wait past probe_frame_gap_ms since the last write, own-corr confirm; never quiet: closed and opened again, nothing state-changing sent blind (client fixed, review6)"
   },
   "transports:5:3": {
    "text": "- COBS は壊れた候補を捨て、次の区切りから読む。要求の結果が不明な場合は ",

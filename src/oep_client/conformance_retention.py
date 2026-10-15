@@ -320,7 +320,7 @@ class RetentionChecks(ReplayPressureChecks):
                 require(start + 1000 <= after['deadline'] <= finish + 1000,
                         'invalid owner refusal did not renew lease')
                 state = self.c.success(self.c.request(self.c.core['lock_state']))
-                require(len(state) >= 5 and dict(tlvs(state[5:])).get(1) == owner,
+                require(len(state) >= 5 and dict(reversed(tlvs(state[5:]))).get(1) == owner,
                         'invalid owner changed displayed owner')
                 self.replay_unchanged(saved_request, saved)
                 self.replay_unchanged(request, frame, reason='result_lost' if len(request) > 16 else None)
@@ -332,7 +332,7 @@ class RetentionChecks(ReplayPressureChecks):
             tail += bytes((second_tag,)) + struct.pack('<H', len(second)) + second
             with self.c.holding(1000, tail):
                 state = self.c.success(self.c.request(self.c.core['lock_state']))
-                require(len(state) >= 5 and dict(tlvs(state[5:])).get(1) == first,
+                require(len(state) >= 5 and dict(reversed(tlvs(state[5:]))).get(1) == first,
                         'duplicate owner did not use first tag number')
                 observations.append({'case': 'duplicate', 'tags': [first_tag, second_tag],
                                      'owner_hex': first.hex(), 'tlv_hex': tail.hex()})

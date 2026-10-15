@@ -1,4 +1,4 @@
-"""Bounded logical save execution, suppressed inputs and response-write barrier."""
+"""Bounded logical save execution, inputs held while it writes and answered after its answer, response-write barrier."""
 import struct
 from .virtual_config_model import ConfigModel,FIXED,FREE
 from .virtual_core import tlv
@@ -8,6 +8,7 @@ class ConfigExecutionModel(ConfigModel):
     routes=(0,1,2)
     def __init__(self,*,boot_id=17):
         self.clock_ms=0;self.pending=None;self.in_write=False;self.execution_ms=0;self.probes=[];self.events=[];self.writes=0
+        self.held=[]          # (route, request) that came while save wrote: answered, in order, after save's answer (core §4.4)
         super().__init__(boot_id=boot_id);self.ep.now=lambda:self.clock_ms;self.ep.max_op_ms=5000
         self.ep.static[0]=tuple(t for t in self.ep.static[0] if t[0] not in (73,77))+tuple(tlv(73,bytes((r,k,255))) for r,k in ((0,1),(1,4),(2,6)))+(tlv(77,struct.pack('<I',5000)),)
     def arm(self,duration,probes):
@@ -44,15 +45,22 @@ class ConfigExecutionModel(ConfigModel):
         p,self.pending=self.pending,None
         if p['reply'] is not None:self.ep.current_core.response_sent(p['token'])
         self.events.append(dict(action='sent',time_ms=self.clock_ms,route=p['route'],request_hex=p['request'].hex(),reply_hex=None if p['reply'] is None else p['reply'].hex()))
+        self.answer_held()
         return p['reply']
+    def answer_held(self):
+        # core §4.4: new requests are taken without loss while an earlier one runs, and answered in the order received.
+        held,self.held=self.held,[]
+        for route,request in held:
+            reply=self.handle(request,route)
+            self.events.append(dict(action='held-result',time_ms=self.clock_ms,route=route,request_hex=request.hex(),reply_hex=None if reply is None else reply.hex()))
     def handle(self,request,route=0):
         if self.in_write:
             self.events.append(dict(action='suppressed',time_ms=self.clock_ms,route=route,request_hex=request.hex(),reply_hex=None))
-            return None
+            self.held.append((route,request));return None
         self.begin(request,route);return self.finish()
     def restart_fixture(self):
         if self.pending is not None or self.in_write:raise ValueError('idle fixture required')
-        self.clock_ms=0;self.execution_ms=0;self.probes=[]
+        self.clock_ms=0;self.execution_ms=0;self.probes=[];self.held=[]
         return super().restart_fixture()
     def execution_state(self):
         c=self.ep.current_core

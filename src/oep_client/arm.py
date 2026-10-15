@@ -10,7 +10,7 @@ import struct
 
 from . import host as h, message as m, registry as reg
 from .core import Interface
-from .riscv import OK, BlockLength, TargetError, WireBase, check, ran, status_name  # noqa: F401
+from .riscv import OK, BlockLength, TargetError, WireBase, check, ran, status_name, target_id_of  # noqa: F401
 
 DP_DPIDR = DP_ABORT = 0x0
 DP_CTRL_STAT = 0x4
@@ -42,8 +42,7 @@ class SwdWire(WireBase):
             body += m.tlv(self.TAG_TARGETSEL, struct.pack("<I", targetsel), critical=True)
         rd = m.Reader(self._call(self.ATTACH, body, expect_ms=self.attach_ms(reset)).payload)
         conn, dpidr, self.flags, self.speed_hz = rd.take("IIBI")
-        v = rd.tail().get(self.TAG_TARGET_ID)
-        self.target_id = (v[0], bytes(v[1:])) if v else None
+        self.target_id = target_id_of(rd.tail().get(self.TAG_TARGET_ID))   # a broken one is not used (core §2.3)
         return conn, dpidr, bool(self.flags & self.FLAGS["dormant_woken"])
 
 
@@ -122,6 +121,11 @@ class ArmAdi(Interface, BlockLength):
         self._ap_select(ap, reg)
         self.transfer(self.req(True, False, reg, value))
 
+    def has_blocks(self) -> bool:
+        """Whether the probe offers read_block / write_block (optional, a pair: oep-if-debug §6); a describe without an
+        ops tag: tried (the probe answers)."""
+        return self.offers(self.READ_BLOCK) and self.offers(self.WRITE_BLOCK)
+
     def power_up(self) -> int:
         """Clear sticky errors, request debug + system power, wait for both acks. -> CTRL/STAT"""
         self.dp_write(DP_ABORT, 0x1E)
@@ -146,8 +150,45 @@ class MemAp:
         csw = adi.ap_read(ap, self.base)
         adi.ap_write(ap, self.base, (((csw & ~0x37) | 0x12) | csw_set) & ~csw_clear)   # 32 bits, AddrInc single
         adi._ap_select(ap, self.base)                        # the bank the block operations assume
-        # Words per block operation: min(max_length, max_frame - 8 / - 20) / 4 for read / write (oep-if-debug §6, §4.5)
-        self.chunk, self.read_chunk = adi.write_words, adi.read_words
+        self.blocks = adi.has_blocks()
+        if self.blocks:
+            # Words per block operation: min(max_length, max_frame - 8 / - 20) / 4 for read / write (oep-if-debug §6, §4.5)
+            self.chunk, self.read_chunk = adi.write_words, adi.read_words
+        else:
+            # A probe with transfer only (oep-if-debug §6: the host sets TAR and collects the posted reads with raw
+            # transfers). A read list - TAR write, k DRW reads, RDBUFF - asks 22 + k bytes and answers 11 + 4 (k + 1);
+            # a write list - TAR write, k DRW writes, RDBUFF - asks 22 + 5 k (header 10, connection 4, n 2).
+            frame = adi._route_frame() or reg.MIN_MAX_FRAME
+            self.read_chunk = max(1, min(frame - 22, (frame - 15) // 4))
+            self.chunk = max(1, (frame - 22) // 5)
+
+    @staticmethod
+    def _spans(address: int, words: int, chunk: int):
+        """(offset, address, n) per raw transfer list: at most `chunk` words, never across the 1 KB that TAR's
+        auto-increment is guaranteed within (ADI)."""
+        off = 0
+        while off < words:
+            at = address + 4 * off
+            n = min(chunk, words - off, (0x400 - (at & 0x3FF)) // 4)
+            yield off, at, n
+            off += n
+
+    def _raw_read(self, address: int, words: int) -> list[int]:
+        adi, out = self.adi, []
+        for _, at, n in self._spans(address, words, self.read_chunk):
+            adi._ap_select(self.ap, self.base)
+            steps = (adi.req(True, False, self.base + 0x4, at) + adi.req(True, True, self.base + 0xC) * n
+                     + adi.req(False, True, DP_RDBUFF))
+            out += adi.transfer(steps)[1:]                  # the first DRW read returns the stale posted value
+        return out
+
+    def _raw_write(self, address: int, values: list[int]) -> None:
+        adi = self.adi
+        for off, at, n in self._spans(address, len(values), self.chunk):
+            adi._ap_select(self.ap, self.base)
+            steps = adi.req(True, False, self.base + 0x4, at) + b"".join(
+                adi.req(True, False, self.base + 0xC, v) for v in values[off:off + n])
+            adi.transfer(steps + adi.req(False, True, DP_RDBUFF))   # RDBUFF: the last write has landed
 
     def write_many(self, pairs: list[tuple[int, int]]) -> None:
         """Scattered single-word writes in one transfer list (TAR, DRW per word, RDBUFF at the end so the last one
@@ -158,6 +199,8 @@ class MemAp:
         self.adi.transfer(steps + self.adi.req(False, True, DP_RDBUFF))
 
     def read_block(self, address: int, words: int) -> list[int]:
+        if not self.blocks:
+            return self._raw_read(address, words)
         out, chunk = [], self.read_chunk
         for off in range(0, words, chunk):
             self.adi._ap_select(self.ap, self.base)
@@ -173,6 +216,9 @@ class MemAp:
         return out
 
     def write_block(self, address: int, values: list[int]) -> None:
+        if not self.blocks:
+            self._raw_write(address, values)
+            return
         chunk = self.chunk
         for off in range(0, len(values), chunk):
             self.adi._ap_select(self.ap, self.base)

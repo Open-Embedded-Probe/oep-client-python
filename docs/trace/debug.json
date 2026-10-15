@@ -119,7 +119,10 @@
     "tests/test_virtual_bench_spec.py::test_a_wire_takes_any_free_pair_the_host_names",
     "tests/test_review5_debug_wires.py::test_a_pair_in_role_channels_but_in_no_channel_group_is_unsupported_on_the_bench",
     "tests/test_review5_debug_wires.py::test_the_client_candidate_pairs_meet_both_declarations",
-    "tests/test_review5_debug_wires.py::test_oep_pins_scans_a_swio_wire_declared_by_channel_group"
+    "tests/test_review5_debug_wires.py::test_oep_pins_scans_a_swio_wire_declared_by_channel_group",
+    "tests/test_review6_debug_a.py::test_the_declarations_checker_takes_a_group_for_swdio_and_role_channels_for_swclk",
+    "tests/test_review6_debug_a.py::test_the_bench_serves_a_wire_whose_group_and_role_channels_split_the_roles",
+    "tests/test_review6_debug_a.py::test_oep_pins_scans_the_pairs_of_a_group_and_role_channels_together"
    ],
    "mutants": [
     "tests/test_conformance_attach.py::test_attach_and_console_mutants_fail[refusal_touches-WIRE-PINS]"
@@ -325,7 +328,8 @@
    "text": "- **1 つの要求の中の再試行**: probe は 1 つの要求の中で線を再",
    "verify": [
     "tests/test_conformance_retry.py::test_retry_contracts_pass",
-    "tests/test_trace_common.py::test_the_bench_answers_line_and_state_and_timeout_where_they_happen"
+    "tests/test_trace_common.py::test_the_bench_answers_line_and_state_and_timeout_where_they_happen",
+    "tests/test_review6_debug_a.py::test_the_retry_checker_takes_a_probe_owned_retry_at_the_same_speed"
    ],
    "mutants": [
     "tests/test_conformance_retry.py::test_retry_checker_detects_independent_faults[no_owned-OWNED-0]",
@@ -372,7 +376,8 @@
    "verify": [
     "tests/test_conformance_cut.py::test_cut_contracts_pass",
     "tests/test_virtual_bench_serve_reboot.py::test_lose_closes_the_connection_and_its_streams",
-    "tests/test_trace_common.py::test_a_connection_closes_on_detach_session_end_lost_line_or_failed_cleanup_streams_first[lost]"
+    "tests/test_trace_common.py::test_a_connection_closes_on_detach_session_end_lost_line_or_failed_cleanup_streams_first[lost]",
+    "tests/test_review6_debug_a.py::test_a_console_poll_that_goes_unanswered_releases_the_lines_until_one_succeeds"
    ],
    "mutants": [
     "tests/test_conformance_cut.py::test_cut_checker_detects_independent_faults[early_close-REQUEST]",
@@ -407,7 +412,8 @@
     "tests/test_virtual_bench_rules_2026_10_06.py::test_lines_rest_undriven_from_an_unanswered_exchange_until_one_succeeds",
     "tests/test_conformance_retry.py::test_retry_contracts_pass",
     "tests/test_trace_debug.py::test_after_an_unanswered_exchange_the_line_is_released_until_one_succeeds[p4-bench-oep.wire.rvswd]",
-    "tests/test_trace_debug.py::test_after_an_unanswered_exchange_the_line_is_released_until_one_succeeds[esp32-v003-oep.wire.swio]"
+    "tests/test_trace_debug.py::test_after_an_unanswered_exchange_the_line_is_released_until_one_succeeds[esp32-v003-oep.wire.swio]",
+    "tests/test_review6_debug_a.py::test_a_console_poll_that_goes_unanswered_releases_the_lines_until_one_succeeds"
    ],
    "mutants": [
     "tests/test_conformance_retry.py::test_retry_checker_detects_independent_faults[drive-OWNED-1]",
@@ -615,7 +621,8 @@
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
     "tests/test_trace_debug.py::test_attach_acknowledges_a_pending_havereset_and_says_so",
     "tests/test_target_parts.py::test_swd_attach_decodes_dpidr_and_dormant",
-    "tests/test_interfaces.py::test_attach_under_reset_is_the_reset_tlv"
+    "tests/test_interfaces.py::test_attach_under_reset_is_the_reset_tlv",
+    "tests/test_review6_debug_a.py::test_an_attach_under_reset_acknowledges_the_havereset_its_reset_left"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[wrong_flags-RESET-HALT-1]",
@@ -648,7 +655,8 @@
     "tests/test_virtual_bench_spec.py::test_no_default_reset_line_only_the_declared_channels",
     "tests/test_target_parts.py::test_find_reset_line_hits_the_vector_skips_disallowed_and_retries_failures",
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
-    "tests/test_review4_debug.py::test_an_attach_whose_reset_line_is_one_of_its_own_pins_is_refused_before_the_reset"
+    "tests/test_review4_debug.py::test_an_attach_whose_reset_line_is_one_of_its_own_pins_is_refused_before_the_reset",
+    "tests/test_review6_debug_a.py::test_an_attach_under_reset_acknowledges_the_havereset_its_reset_left"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[reset_ignored-NO-RESET]",
@@ -1051,7 +1059,8 @@
    "verify": [
     "tests/test_conformance_debug.py::test_mandatory_debug_contracts_pass",
     "tests/test_target_parts.py::test_read_register_then_resume_writes_data0_back",
-    "tests/test_review5_debug_targets.py::test_reset_run_writes_data0_back_before_the_hart_runs"
+    "tests/test_review5_debug_targets.py::test_reset_run_writes_data0_back_before_the_hart_runs",
+    "tests/test_review6_debug_b.py::test_run_payload_writes_data0_back_before_it_resumes_the_hart"
    ],
    "mutants": [
     "tests/test_conformance_debug.py::test_debug_checker_detects_independent_faults[raw_restore-MIXED]"
@@ -1569,7 +1578,9 @@
     "tests/test_conformance_dmseq.py::test_logical_probe_dmseq_contracts_pass",
     "tests/test_conformance_debug.py::test_mandatory_debug_contracts_pass",
     "tests/test_trace_console.py::test_a_reset_op_marks_reset_detail_1_once_and_no_restart_for_it",
-    "tests/test_trace_debug.py::test_high_level_ops_acknowledge_a_pending_havereset_and_raw_dmi_does_not"
+    "tests/test_trace_debug.py::test_high_level_ops_acknowledge_a_pending_havereset_and_raw_dmi_does_not",
+    "tests/test_review6_debug_b.py::test_the_console_read_acknowledges_a_pending_havereset_with_a_restart_mark",
+    "tests/test_review6_debug_b.py::test_the_console_does_not_read_a_halted_hart"
    ],
    "mutants": [
     "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[mark_detail-CONSOLE-0]",
@@ -1731,7 +1742,8 @@
     "tests/test_target_parts.py::test_mem_ap_sets_csw_from_the_caller_and_chunks_blocks",
     "tests/test_trace_debug.py::test_swd_and_arm_adi_ops_need_the_lock_and_connections_does_not",
     "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.arm-adi-extra32-False]",
-    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.arm-adi-extra34-True]"
+    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.arm-adi-extra34-True]",
+    "tests/test_review6_debug_b.py::test_mem_ap_reads_and_writes_with_raw_transfers_when_the_probe_has_no_block_ops"
    ],
    "mutants": [
     "tests/test_conformance_arm_adi.py::test_arm_checker_detects_independent_faults[block_stale-BLOCK-LIVE]"
@@ -1746,7 +1758,9 @@
     "tests/test_target_parts.py::test_mem_ap_sets_csw_from_the_caller_and_chunks_blocks",
     "tests/test_trace_debug.py::test_swd_and_arm_adi_ops_need_the_lock_and_connections_does_not",
     "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.arm-adi-extra33-False]",
-    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.arm-adi-extra34-True]"
+    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.arm-adi-extra34-True]",
+    "tests/test_review6_debug_b.py::test_mem_ap_reads_and_writes_with_raw_transfers_when_the_probe_has_no_block_ops",
+    "tests/test_review6_debug_b.py::test_an_arm_adi_features_tag_without_bits_is_not_a_defect"
    ],
    "mutants": [
     "tests/test_conformance_arm_adi_blocks.py::test_mem_ap_checker_catches_packet_and_progress_faults[done-FAIL-True-4-1]"

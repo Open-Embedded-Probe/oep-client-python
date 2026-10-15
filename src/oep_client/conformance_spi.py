@@ -2,7 +2,7 @@
 import secrets
 import struct
 from .conformance import require, tlvs
-from .conformance_registered_ops import RegisteredOpsChecks
+from .conformance_registered_ops import RegisteredOpsChecks, refusal_carries
 
 
 class SpiChecks:
@@ -24,7 +24,7 @@ class SpiChecks:
         req=self.req(2,'read_rx',sid);v=self.c.success(req);require(len(v)>=7,'read_rx header');pending,bits,count=struct.unpack_from('<BIH',v);require(count<=self.maximum and len(v)>=7+count,'SPI read_rx count');tags=tlvs(v[7+count:]);require(all(len(value)==8 for tag,value in tags if tag&127==self.ns),'SPI timestamp width');return pending,bits,v[7:7+count],req,v
     def refused(self,req,reason,payload=None):
         before=self.a.state();v=self.c.rejected(req,reason)
-        if payload is not None:require(v==payload,'SPI refusal raw tag/cause')
+        if payload is not None:require(refusal_carries(reason,v,payload),'SPI refusal raw tag/cause')
         require(self.a.state()==before,'rejected SPI request changed target/pins/queue')
     def fresh(self):
         boot=self.a.restart_fixture();require(boot['scope']=='logical-model' and boot['boot_id']!=self.c.boot,'explicit logical restart');self.c.confirm();self.c.identity();require(self.c.boot==boot['boot_id'],'logical boot readback')

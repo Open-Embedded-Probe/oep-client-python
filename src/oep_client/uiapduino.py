@@ -76,6 +76,8 @@ def run_payload(hst: h.Host, wire: riscv.Wire, payload: list[int]) -> None:
         mstatus, dpc = dm.read_register(MSTATUS), dm.read_register(DPC)
         if mstatus & MSTATUS_MIE or dpc != PAYLOAD_BASE:
             raise RuntimeError(f"the payload's registers did not take (mstatus {mstatus:#x}, dpc {dpc:#x})")
+        # DATA0 the register accesses changed goes back first: the host writes it back before the hart runs (debug §4)
+        dm.restore_data()
         # resumereq twice, then drop haltreq so the payload's own system reset is not halted again (E129). Not held:
         # the resume changes the hart's state, so the link may drop at it and no look after it could pass.
         dm.dmi(dm.step_write(DMCONTROL, 0x40000001) + dm.step_write(DMCONTROL, 0x40000001)

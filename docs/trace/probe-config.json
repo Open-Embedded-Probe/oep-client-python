@@ -95,7 +95,8 @@
     "tests/test_config_disable.py::test_describe_is_unchanged",
     "tests/test_conformance_config.py::test_current_config_storage_contract",
     "tests/test_conformance_config_fallback.py::test_saved_items_partial_and_unreadable_fallback",
-    "tests/test_trace_probe_config.py::test_a_key_twice_or_a_wrong_length_stays_malformed_beside_an_idle_disable_conflict"
+    "tests/test_trace_probe_config.py::test_a_key_twice_or_a_wrong_length_stays_malformed_beside_an_idle_disable_conflict",
+    "tests/test_review6_rest.py::test_config_checkers_accept_an_erase_answer_tail"
    ],
    "mutants": [
     "tests/test_conformance_config.py::test_semantic_faults[disable_drives-IDLE]",
@@ -171,7 +172,8 @@
     "tests/test_config.py::test_save_state_and_the_next_boot",
     "tests/test_config.py::test_describe_and_a_probe_without_storage",
     "tests/test_conformance_config_storage.py::test_content_save_suppression_and_capacity_boundaries",
-    "tests/test_trace_probe_config.py::test_the_lock_column_of_the_op_table[erase]"
+    "tests/test_trace_probe_config.py::test_the_lock_column_of_the_op_table[erase]",
+    "tests/test_review6_rest.py::test_config_checkers_accept_an_erase_answer_tail"
    ],
    "mutants": [
     "tests/test_conformance_config_storage.py::test_semantic_faults_are_detected[erase_keeps_blob-ERASE]"
@@ -285,7 +287,8 @@
    "text": "- count 0のset/unsetはno-op。外側の未知critical ",
    "verify": [
     "tests/test_trace_probe_config.py::test_count_0_is_a_no_op_and_a_critical_tail_is_refused_before_anything",
-    "tests/test_conformance_config.py::test_current_config_storage_contract"
+    "tests/test_conformance_config.py::test_current_config_storage_contract",
+    "tests/test_review6_rest.py::test_config_execution_accepts_more_tlvs_after_the_unsupported_tag"
    ],
    "mutants": [
     "tests/test_conformance_config.py::test_semantic_faults[ignore_critical_tail-ATOMIC]",
@@ -313,7 +316,9 @@
    "text": "- 保存は、書込みの任意の時点で電源が落ちても、更新前の保存か新しい完全な保存の",
    "verify": [
     "tests/test_conformance_config_power_loss.py::test_all_durable_write_boundaries_restore_whole_config",
-    "tests/test_trace_probe_config.py::test_save_and_erase_complete_within_max_op_ms"
+    "tests/test_trace_probe_config.py::test_save_and_erase_complete_within_max_op_ms",
+    "tests/test_review6_rest.py::test_save_execution_answers_the_requests_it_held_after_its_own_answer",
+    "tests/test_review6_rest.py::test_save_execution_checker_requires_held_requests_answered"
    ],
    "mutants": [
     "tests/test_conformance_config_power_loss.py::test_power_loss_faults_are_detected[overwrite_active-REPLACE]",

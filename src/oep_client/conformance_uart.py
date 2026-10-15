@@ -2,7 +2,7 @@
 import secrets
 import struct
 from .conformance import require, tlvs
-from .conformance_registered_ops import RegisteredOpsChecks
+from .conformance_registered_ops import RegisteredOpsChecks, refusal_carries
 
 
 class UartChecks:
@@ -37,7 +37,7 @@ class UartChecks:
         req=self.write_request(sid,data);reply=self.c.exchange(req);require(reply[3:5]==bytes((1,outcome)) and len(reply)>=7 and struct.unpack_from('<H',reply,5)[0]==accepted,'UART accepted/outcome');tlvs(reply[7:]);return req,reply
     def refused(self,req,reason,payload=None):
         before=self.a.state();value=self.c.rejected(req,reason)
-        if payload is not None:require(value==payload,'UART refusal payload/raw tag/cause')
+        if payload is not None:require(refusal_carries(reason,value,payload),'UART refusal payload/raw tag/cause')
         require(self.a.state()==before,'refused UART request touched stream/config/pins')
     def fresh(self):
         boot=self.a.restart_fixture();require(boot['scope']=='logical-model' and boot['boot_id']!=self.c.boot,'new logical boot');self.c.confirm();self.c.identity();require(self.c.boot==boot['boot_id'],'boot readback')

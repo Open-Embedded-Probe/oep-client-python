@@ -1,5 +1,5 @@
 """Save suppression by contents (not by generation), erase and storage capacity boundaries."""
-from .conformance import require
+from .conformance import require,tlvs
 from .conformance_config import ConfigChecks,item
 from .conformance_registered_ops import RegisteredOpsChecks
 
@@ -46,7 +46,7 @@ class ConfigStorageChecks(ConfigChecks):
                 changed=self.set(sid,item(130,expected[0][1]));require(changed==g+1,'changed contents did not count the generation');g=changed
                 self.save(sid,g,2);self.save(sid,g,2)
             elif name=='ERASE':
-                before=self.a.state()['items'];require(self.c.success(self.op(19,sid=sid))==b'','erase response')
+                before=self.a.state()['items'];tlvs(self.c.success(self.op(19,sid=sid)))   # erase: no fixed part, [TLV] (§3)
                 self.storage(0,0);require(self.a.state()['items']==before and self.a.storage_snapshot() is None,'erase changed current config or retained backend blob')
                 self.writes(1);self.save(sid,g,2)
             else:

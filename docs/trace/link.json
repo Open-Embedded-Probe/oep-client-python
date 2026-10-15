@@ -45,7 +45,10 @@
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[64]",
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[256]",
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[1024]",
-    "tests/test_trace_link.py::test_the_lock_column_of_the_op_table[source-False]"
+    "tests/test_trace_link.py::test_the_lock_column_of_the_op_table[source-False]",
+    "tests/test_review6_rest.py::test_link_routes_accept_a_source_answer_tail",
+    "tests/test_review6_rest.py::test_port_speed_execution_accepts_source_and_sink_answer_tails",
+    "tests/test_review6_rest.py::test_port_speed_accepts_more_tlvs_in_its_refusals_and_a_source_tail"
    ],
    "mutants": [
     "tests/test_conformance_link_transfers.py::test_wrong_wire_results_are_detected[SOURCE-64]",
@@ -61,7 +64,8 @@
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[64]",
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[256]",
     "tests/test_conformance_link_transfers.py::test_link_transfer_profiles[1024]",
-    "tests/test_trace_link.py::test_the_lock_column_of_the_op_table[sink-False]"
+    "tests/test_trace_link.py::test_the_lock_column_of_the_op_table[sink-False]",
+    "tests/test_review6_rest.py::test_port_speed_execution_accepts_source_and_sink_answer_tails"
    ],
    "mutants": [
     "tests/test_conformance_link_transfers.py::test_wrong_wire_results_are_detected[SINK-64]",
@@ -184,7 +188,10 @@
     "tests/test_port_speed.py::test_a_step_that_does_not_fit_the_boot_state_is_cause_6",
     "tests/test_port_speed.py::test_try_then_commit_answered_at_the_old_speed",
     "tests/test_port_speed.py::test_only_the_uart_bridge_the_request_came_in_on_and_one_port_at_a_time",
-    "tests/test_conformance_port_speed.py::test_port_speed_handshake"
+    "tests/test_conformance_port_speed.py::test_port_speed_handshake",
+    "tests/test_review6_rest.py::test_port_speed_accepts_more_tlvs_in_its_refusals_and_a_source_tail",
+    "tests/test_review6_rest.py::test_port_speed_lifecycle_accepts_more_tlvs_in_its_refusals",
+    "tests/test_review6_rest.py::test_port_speed_still_requires_cause_6"
    ],
    "mutants": [
     "tests/test_conformance_port_speed.py::test_wrong_wire_result_is_detected[STATES]",

@@ -94,9 +94,10 @@ class StreamChecks:
         require(self.marks(serial)[1]==seen[:len(self.marks(serial)[1])],'marks not repeatable')
 
     def retained_span(self):
-        state=self.a.stream_state();next_serial=state['next_serial'];rows=state['marks']
+        state=self.a.stream_state();rows=state['marks']
         require(len(rows)<=self.a.adoption['mark_capacity'],'mark ring exceeded explicit capacity')
-        require(all((next_serial-row[0])%2**32<2**30 for row in rows),'retained mark serial reached quarter span')
+        # core §2.6: the newest kept minus the oldest kept is under a quarter of the space (not next_serial minus it)
+        require(not rows or all((rows[-1][0]-row[0])%2**32<2**30 for row in rows),'retained mark serial reached quarter span')
 
     def lost_marks(self, serial=100):
         self.fresh(serial=serial)

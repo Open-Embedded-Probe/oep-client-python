@@ -33,7 +33,9 @@ class RetryChecks(DebugChecks):
             parent,_=self.attach(sid);self.a.idle(parent,idle);self.a.plan(parent,[2,2 if exhaust else 0,0]);before=self.a.state()
             result=self.a.probe_read(parent);after=self.a.state();rows=self.packets(parent)
             require(result==dict(status=2 if exhaust else 0,value=None if exhaust else 0xc00),'probe-owned read outcome')
-            require(len(rows)==2 and rows[0]['speed']==before['connections'][parent]['speed'] and rows[1]['speed']<rows[0]['speed'],'logical slow retry absent')
+            # a retry at a slower speed is allowed, not required (debug §2: "遅い速さでの再試行を含む"); either way the
+            # connection's speed_hz stays (checked below)
+            require(len(rows)==2 and rows[0]['speed']==before['connections'][parent]['speed'],'probe-owned retry absent')
             require(after['connections']==before['connections'] and after['targets']==before['targets'],'retry changed connection speed or target state')
             require(all(p['mode']=='released' and p['pull'] in (None,1-idle if i==1 else 1) for i,p in enumerate(rows[0]['rest'])),'failed exchange kept driving or wrong pull')
             if exhaust:require(all(p['mode']=='released' for p in rows[-1]['rest']),'failed retry restored drive')

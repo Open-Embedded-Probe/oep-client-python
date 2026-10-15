@@ -50,9 +50,9 @@ class ConfigChecks:
         require(ch is None or all(v==struct.pack('<H',ch) for t,v in rows if t==2),'config unavailable channel differs')
     def context(self):
         for name in ('state','seed','restart_fixture','generation_at'):require(callable(getattr(self.a,name,None)),'explicit config controls required')
-        self.c.confirm();self.c.identity();desc=dict(self.c.describe(4))
+        self.c.confirm();self.c.identity();desc=dict(reversed(self.c.describe(4)))
         require(desc.get(64)==struct.pack('<I',64) and desc.get(65)==b'\2\3\7','explicit config storage/items profile differs')
-        require(dict(self.c.describe(0)).get(67)==struct.pack('<H',self.channels),'explicit config channel profile differs')
+        require(dict(reversed(self.c.describe(0))).get(67)==struct.pack('<H',self.channels),'explicit config channel profile differs')
     def case(self,name):
         fresh=self.a.restart_fixture();self.c.confirm();self.c.identity();require(self.c.boot==fresh['boot_id'],'fresh config fixture')
         label,idle=(2,b'\4\0nrst'),(3,b'\1\0\4')
@@ -71,7 +71,7 @@ class ConfigChecks:
                 s=self.a.state()['gpio'];require(s['plans']=={} and s['pins'][1]==4,'saved idle boot differs')
                 self.observe('restored')
                 with self.c.holding() as new:
-                    before=self.settled();require(self.c.success(self.op(19,sid=new))==b'','erase response')
+                    before=self.settled();tlvs(self.c.success(self.op(19,sid=new)))   # erase: no fixed part, [TLV] (§3)
                     after=self.settled();require(after['items']==before['items'] and after['generation']==before['generation'] and after['gpio']==before['gpio'],'erase changed current config/generation/pins')
                     self.storage(0,0);self.observe('erased')
                 self.a.restart_fixture();self.c.confirm();self.c.identity();require(self.get([])==1,'erased settings came back');self.storage(0,0)
@@ -79,13 +79,13 @@ class ConfigChecks:
                 self.a.seed(self.c,sid);live=self.a.state()['gpio'];require(live['plans']=={2:[1]} and live['pins'][1]==4,'live seed')
                 self.set(sid,item(3,b'\1\0\2'));require(self.a.state()['gpio']['pins'][1]==4,'idle immediately changed a channel in use')
                 self.set(sid,item(3,b'\2\0\1'));require(self.a.state()['gpio']['pins'][2]==1,'idle of a free channel did not take effect at once')
-                require(self.c.success(self.c.request(17,b'\1\2\0',fn=1,session=sid))==b'','release plan')
+                tlvs(self.c.success(self.c.request(17,b'\1\2\0',fn=1,session=sid)))   # release plan: — [TLV] (core §4.3)
                 require(self.a.state()['gpio']['pins'][1]==2,'release did not apply configured idle')
                 self.set(sid,item(7,b'\3\0'));require(self.a.state()['gpio']['pins'][3] is None,'disable left the channel driven')
                 self.unavailable(self.c.request(16,item(144,b'\3\0\1\3\0'),fn=1,session=sid),5,3)
                 self.unset(sid,(7,3));require(self.a.state()['gpio']['pins'][3]==0,'disable unset did not re-park the channel at once')
-                require(self.c.success(self.c.request(16,item(144,b'\3\0\1\3\0'),fn=1,session=sid))==b'','enabled channel unusable')
-                require(self.c.success(self.c.request(17,b'\1\3\0',fn=1,session=sid))==b'','release plan')
+                tlvs(self.c.success(self.c.request(16,item(144,b'\3\0\1\3\0'),fn=1,session=sid)))   # the enabled channel is usable
+                tlvs(self.c.success(self.c.request(17,b'\1\3\0',fn=1,session=sid)))
                 self.observe('idle-disable')
             elif name=='ATOMIC':
                 g=self.set(sid,item(2,label[1]),item(3,idle[1]));before=self.settled()

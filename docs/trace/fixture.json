@@ -161,7 +161,9 @@
    "verify": [
     "tests/test_trace_fixture.py::test_gpio_refusals_name_the_channel_and_its_place",
     "tests/test_conformance_gpio.py::test_gpio_plan_checks",
-    "tests/test_interfaces.py::test_gpio_set_is_a_list_in_order_and_only_planned_channels"
+    "tests/test_interfaces.py::test_gpio_set_is_a_list_in_order_and_only_planned_channels",
+    "tests/test_review6_rest.py::test_fixture_checkers_accept_more_tlvs_in_refusals[gpio]",
+    "tests/test_review6_rest.py::test_refusal_matcher[more-after]"
    ],
    "mutants": [
     "tests/test_conformance_gpio.py::test_checker_rejects_wrong_wire_results[SET-UNAVAILABLE]",
@@ -333,7 +335,8 @@
    "verify": [
     "tests/test_trace_fixture.py::test_uart_without_a_plan_is_unavailable_6_after_the_header_and_format_rules",
     "tests/test_conformance_uart.py::test_uart_checks",
-    "tests/test_interfaces.py::test_uart_stream_is_the_plans_and_its_position_never_goes_back"
+    "tests/test_interfaces.py::test_uart_stream_is_the_plans_and_its_position_never_goes_back",
+    "tests/test_review6_rest.py::test_fixture_checkers_accept_more_tlvs_in_refusals[uart]"
    ],
    "mutants": [
     "tests/test_conformance_uart.py::test_wrong_wire_results_detected[CONFIGURE]"
@@ -554,7 +557,8 @@
     "tests/test_virtual_bench_rules_2026_10_06.py::test_t5_i2c_target_refuses_the_reserved_addresses[0-11]",
     "tests/test_virtual_bench_rules_2026_10_06.py::test_t5_i2c_target_refuses_the_reserved_addresses[128-3]",
     "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
-    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]",
+    "tests/test_review6_rest.py::test_fixture_checkers_accept_more_tlvs_in_refusals[i2c]"
    ],
    "mutants": [
     "tests/test_conformance_i2c.py::test_side_effect_faults_detected[keep_config-RECONFIGURE]",
@@ -774,7 +778,8 @@
     "tests/test_virtual_bench_targets.py::test_spi_refusals_in_order",
     "tests/test_virtual_bench_targets.py::test_spi_armed_consumed_unarmed_and_overflow",
     "tests/test_conformance_spi.py::test_spi_contract[True]",
-    "tests/test_conformance_spi.py::test_spi_contract[False]"
+    "tests/test_conformance_spi.py::test_spi_contract[False]",
+    "tests/test_review6_rest.py::test_fixture_checkers_accept_more_tlvs_in_refusals[spi]"
    ],
    "mutants": [
     "tests/test_conformance_spi.py::test_side_effect_faults_detected[keep_config-RECONFIGURE]",

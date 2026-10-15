@@ -8,7 +8,7 @@ likely the awaited answer, sent again at once - and an answer to another request
 by the timeout only, and the request goes once more with the same corr. Vendor bulk, HID and TCP are length(u16) message;
 lost boundaries there are recovered by the §5.1 resync: on an impossible length or a frame that stops half way (a
 result for another request is read past there too, core §10.1), read and discard until the input is quiet for 50 ms, prove the link with a confirm, and go
-on. When pushes keep the input from going quiet, the host's unsubscribe and end (harmless twice) are sent blind.
+on. When pushes keep the input from going quiet, the transport is closed and opened again (transports §5).
 
 A request is sent once more after a missing (or, on length frames, broken) reply, with the same corr: the probe keeps
 the lock holder's recent results by corr and answers the repeat from them, so a state-changing request is not run
@@ -279,7 +279,7 @@ class TcpStream:
 
 
 class SerialLink:
-    NOISY_S = 1.0          # a resync that is still not quiet after this sends the blind stops
+    NOISY_S = 1.0          # a resync that is still not quiet after this closes the transport and opens it again
 
     def __init__(self, port: str, timeout: float = 3.0, baud: int = BASE_BAUD):
         self._setup(open_serial(port, baud), "cobs", timeout)
@@ -309,7 +309,6 @@ class SerialLink:
         self.stale = 0                             # replies that answered another request
         self.noise = 0                             # serial ports: bytes that were not a frame (the probe's raw side)
         self.resyncs = 0
-        self.ended_blind = False
         self.dropped = 0                           # probe-initiated frames of a role this client does not handle
         self.pushes: collections.deque[bytes] = collections.deque()   # role 0x06 frames, oldest first
         self.events: collections.deque[bytes] = collections.deque()   # role 0x05 frames, oldest first
@@ -352,7 +351,6 @@ class SerialLink:
         self.tx_len = 0                            # the longest frame on the wire of the last write
         self.confirm_body = lambda: _OWN_CONFIRM   # the link's own confirm: the revision in use once bound (C-15)
         self.held = lambda: False                  # a session holds the port (its raw transfer stopped): broken = resend
-        self.blind = lambda: []                    # the host's blind stops (unsubscribe / end) once bound
         self._corr_n = 0x8000
         if self.framing == "length":
             self.frames = LengthFrames(self.stream)
@@ -529,30 +527,23 @@ class SerialLink:
 
     def resync(self, tries: int = 3) -> None:
         """transports §5: read and discard until the input is quiet for 50 ms, then prove the link with a confirm (a read,
-        safe to send), then go on. When the input does not go quiet (pushes keep coming), the host's unsubscribe and end go
-        out blind, once (and send() then does not send its request again); when it is still not quiet, the transport is
-        closed and opened again (transports §5), once - ConnectionError when it cannot be opened again or stays noisy.
-        TCP: the connection is closed and opened again first (`_reopen`)."""
+        safe to send), then go on. When the input does not go quiet (pushes keep coming), the transport is closed and
+        opened again ("静かにできなければ経路を閉じて開き直す"), once - ConnectionError when it cannot be opened again or
+        stays noisy. Nothing that changes state goes out before the confirm (core §5.1: "boot_id を確認し、状態を読んでから
+        次の状態変更を判断する"). TCP: the connection is closed and opened again first (`_reopen`)."""
         self.resyncs += 1
         if self.framing != "length":
             return                                  # COBS frames carry their own boundaries: nothing to find again
         if self._keeps_boundaries():
             self._reopen()
-        blind_sent = reopened = False
+        reopened = False
         for _ in range(tries):
             while not self.frames.discard_until_quiet(RESYNC_QUIET_S, self.NOISY_S):
-                if blind_sent:
-                    if reopened or self.reopener is None:
-                        raise ConnectionError("resync: the input never went quiet, even after unsubscribe and end - "
-                                              "close the transport and open it again (transports §5)")
-                    self._reopen()                  # transports §5: no quiet - closed and opened again
-                    reopened = True
-                    continue
-                stops = self.blind()
-                blind_sent = True
-                if stops:
-                    self._write(stops)
-                    self.ended_blind = True     # the session ended: a request sent again would only meet no_session
+                if reopened or self.reopener is None:
+                    raise ConnectionError("resync: the input never went quiet - close the transport and open it "
+                                          "again (transports §5)")
+                self._reopen()                      # transports §5: no quiet - closed and opened again
+                reopened = True
             self._settle_before_confirm()
             corr = self.corr_source()
             self._write([m.Request(corr, m.CORE_FN, m.OP_CONFIRM, self.confirm_body()).pack()])
@@ -609,6 +600,14 @@ class SerialLink:
                                         and not isinstance(getattr(self, "link_error", None), FramingLost)):
             self.failed_transport = why
         raise TransportFailed(why) from e
+
+    def _given_up(self, e: Exception) -> None:
+        """A request not sent again (resend off): core §5.1 "再送を諦めたら、その経路の未解決の要求は結果不明となる。host は
+        TCP では接続を閉じて開き直し" - on TCP whose boundaries held (a broken framing has just reopened it, `_recover`), the
+        connection is closed, opened again and confirmed before anything else goes out (`recover_transport`)."""
+        if (self._keeps_boundaries() and not isinstance(e, FramingLost) and not getattr(self, "_probing", False)
+                and not self._own):
+            self.failed_transport = f"a request got no answer and was not sent again ({type(e).__name__}: {e})"
 
     def recover_transport(self, tries: int = 3) -> None:
         """core §5.2 / §5.1 (C-38), on every kind of frame, COBS included: read and discard until the input is quiet,
@@ -728,7 +727,6 @@ class SerialLink:
 
     def _send(self, message: bytes) -> bytes:
         corr = self._corr(message)
-        self.ended_blind = False
         waited = broken = 0                        # resends after a wait / after a broken frame
         while True:
             self._write([message])
@@ -749,7 +747,8 @@ class SerialLink:
                     self._fail_transport(e)                # the resend got no answer either (core §5.2)
                 else:
                     waited += 1
-                if not self.resend or (_session_of(message) and self.ended_blind):
+                if not self.resend:
+                    self._given_up(e)
                     raise
                 # sent once more with the same corr, state-changing ones too: the probe keeps the lock holder's recent
                 # results and answers a repeat from them instead of running it twice (core §5.2). A result too large
@@ -780,7 +779,8 @@ class SerialLink:
                 replies += got
                 rest = rest[len(got):]
                 self._strike(e)
-                if self.ended_blind or not self.resend:
+                if not self.resend:
+                    self._given_up(e)
                     raise
                 if isinstance(e, cobs.CorruptFrame) and self.framing == "cobs" and broken < BROKEN_RESENDS:
                     broken += 1
@@ -1117,7 +1117,7 @@ class SerialLink:
         return lambda msgs: self.exchange(msgs, self.inflight_for(limits), limits["window"])
 
     def attach_host(self, hst) -> None:
-        """Bind to a host: its correlation counter and blind stops for the resync, and after a confirm, the probe's
+        """Bind to a host: its correlation counter for the resync, and after a confirm, the probe's
         limits (in-flight, window, max_frame) for pipelining and the framing check."""
         self._bind_host(hst)
         limits = self.probe(hst)
@@ -1126,7 +1126,6 @@ class SerialLink:
     def _bind_host(self, hst) -> None:
         self.bound_host = hst
         self.corr_source = hst.next_corr
-        self.blind = hst.blind_stop
         self.held = lambda: hst.session is not None
         self.session_frame = lambda op, payload, fn=None: m.Request(
             hst.next_corr(), m.CORE_FN if fn is None else fn, op, payload, hst.session).pack()
@@ -1407,13 +1406,17 @@ def _merge_probes(usb: list[dict], hid: list[dict], ports: list[tuple[str, str |
     """One UsbProbe per device: entries of the three lists are the same device when their USB serials match (case
     aside), or, when one has no serial, when their locations match. A device's ways in are counted once, however many
     interfaces or lists show them. A HID entry with no serial is left out when libusb listed devices (it saw the HID
-    interfaces itself)."""
+    interfaces itself). An `x-` serial is no unit_id to group by (core §7.5: "host は `x-` で始まる unit_id で経路を
+    まとめず"): such entries are told apart by their location only."""
     probes: list[UsbProbe] = []
+
+    def key(serial):
+        return serial.lower() if serial and not serial.lower().startswith("x-") else None
 
     def add(serial, location, ways, port=None):
         for p in probes:
-            same = (serial and p.unit_id and serial.lower() == p.unit_id.lower()) or \
-                (location and p.location == location and not (serial and p.unit_id))
+            same = (key(serial) and key(serial) == key(p.unit_id)) or \
+                (location and p.location == location and not (key(serial) and key(p.unit_id)))
             if same:
                 break
         else:
@@ -1428,7 +1431,7 @@ def _merge_probes(usb: list[dict], hid: list[dict], ports: list[tuple[str, str |
     for d in usb:
         add(d["serial"], d["location"], d["ways"])
     for d in hid:
-        if d["serial"] or not usb:
+        if key(d["serial"]) or not usb:
             add(d["serial"], d["location"], d["ways"])
     for path, serial, location in ports:
         add(serial, location, {"cdc"}, path)

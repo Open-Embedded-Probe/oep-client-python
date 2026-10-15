@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- (JA) 第 6 回の独立レビュー（docs/trace/review6/、文書の割り振りをまた変えた）で、33 件の食い違いを見つけて直した。主なもの:
+  - core §2.3 / §5.1 / §6.4 / §7.2 / §7.5 / §10.3、transports §5、common §1.3: 応答の TLV は定義どおりの長さと最初のコピーだけを使う（capture・riscv の読み手）、TCP で再送を諦めたら接続を閉じて開き直す、区切りを失って静かにならない口は閉じて開き直す、list の数えた並びの後ろは TLV、owner を実装しない probe を許す、x- の unit_id で経路をまとめない、serial の範囲は持っている印どうしの差。
+  - debug §1 / §2 / §3 / §4 / §4.6 / §6: role_channels は挙げた role だけを縛る、線の応答が無い間は放して休ませる、遅い速さでの再試行は任意、attach の flags bit0、resume の前に DATA0 / DATA1 を戻す、コンソールの読みで havereset を確認応答する、ブロックの op の無い arm-adi は生の transfer で組む、features は bit が立つときだけ欠陥。
+  - 検査器: 固定部分が空の応答や断りの payload の後ろの TLV を認める（link、probe.config、fixture、plan）、断りが 2 つ当たる組を送らない（capture）、アナログの取得中の pad を空きの状態と比べない、save の間に来た要求を順に答える。
+
 - (JA) 第 5 回の独立レビュー（docs/trace/review5/、文書の割り振りをまた変えた）で、31 件の食い違いを見つけて直した（第 4 回は 41 件）。主なもの:
   - core §2.2 / §2.3 / §4.3 / §4.4 / §6.4 / §7.2 / §7.5 / §10.1 / §10.3: 応答の bit 7 の立った TLV を知らない tag として読み飛ばす、繰り返さない tag は最初のものだけを使い長さは定義どおりに確かめる（describe を読むクライアント各所）、locked の残り時間は 0 でもよい、検査器の待ちを §4.4 の下限以上にする、owner は最初の正しいコピーを使う、list の revision は名前と組で選ぶ、unit_id は 1〜32 byte の a-z 0-9 -（x- は名指さない）、待っていない corr の応答はどのフレーミングでも捨てる、購読の保持量が足りなければ cause 2 で断ってよい。
   - debug §1 / §2 / §3 / §4 / console §1: channel_group と role_channels の両方に合う組だけを使う、attach reset の後の待ちも max_op_ms に収める、後続の同じ tag も検証する、halt / resume は任意の op、reset の前に DATA0 / DATA1 を書き戻す、console の最小の op は open / read / close / streams。

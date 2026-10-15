@@ -330,30 +330,38 @@ def take_events(link, fn: int) -> list[bytes]:
 
 
 def _config(payload: bytes, analog: bool) -> Config:
+    """configure's answer TLVs (§3.3). A tag that does not repeat is taken from its first copy only, and a value not of
+    its defined length (layout: its count and length) is broken and not used - nor replaced by a later copy (core
+    §2.3). scale, skew and frontend_used repeat, one per role."""
     c = Config()
+    seen: set[int] = set()
     for tag, v in tlvs(payload):
-        if tag == ACTUAL_RATE:
+        if tag in (ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, REFERENCE):
+            if tag in seen:
+                continue
+            seen.add(tag)
+        if tag == ACTUAL_RATE and len(v) == 8:
             num, den = struct.unpack("<II", v)
-            c.rate = Fraction(num, den)
-        elif tag == LAYOUT and not analog:
+            c.rate = Fraction(num, den) if den else c.rate
+        elif tag == LAYOUT and not analog and len(v) >= 2 and len(v) == 2 + v[1]:
             c.width, n = v[0], v[1]
             c.positions = list(v[2:2 + n])
-        elif tag == LAYOUT and analog:
+        elif tag == LAYOUT and analog and len(v) >= 4 and len(v) == 4 + v[3]:
             c.slot, c.offset, c.bits, n = v[0], v[1], v[2], v[3]
             c.order = list(v[4:4 + n])
-        elif tag == ACTUAL_SAMPLES:
+        elif tag == ACTUAL_SAMPLES and len(v) == 4:
             c.samples = struct.unpack("<I", v)[0]
-        elif tag == ACTUAL_SEGMENTS:
+        elif tag == ACTUAL_SEGMENTS and len(v) == 4:
             c.segments = struct.unpack("<I", v)[0]
-        elif tag == SCALE and analog:
+        elif tag == SCALE and analog and len(v) == 9:
             role, zero, scale = struct.unpack("<Bii", v)            # signed: an inverting frontend (§3.3)
             c.zero[role], c.scale_nv[role] = zero, scale
-        elif tag == SKEW and analog:
+        elif tag == SKEW and analog and len(v) == 5:
             role, ns = struct.unpack("<BI", v)
             c.skew_ns[role] = ns
-        elif tag == FRONTEND_USED and analog:
+        elif tag == FRONTEND_USED and analog and len(v) == 2:
             c.frontend[v[0]] = v[1]
-        elif tag == REFERENCE and analog:
+        elif tag == REFERENCE and analog and len(v) == 6:
             source, mv, how = struct.unpack("<BIB", v)
             c.reference = (REFERENCE_SOURCE.get(source, str(source)), mv, how == 1)
     for k in c.order:
@@ -549,9 +557,9 @@ class LogicCapture(Interface):
         generation a host that did not start the capture needs for read."""
         rd = m.Reader(self._call(self.STATUS, locked=False).payload)
         state, done, pos, flags, generation = rd.take("BIQBI")
-        error = rd.tail().get(STATUS_ERROR)
+        error = rd.tail().get(STATUS_ERROR)                  # u8: another length is broken, not used (core §2.3)
         self.generation = generation
-        return Status(state, done, pos, flags, generation, error[0] if error else None)
+        return Status(state, done, pos, flags, generation, error[0] if error is not None and len(error) == 1 else None)
 
     def release(self, serial: int, generation: int | None = None) -> None:
         """Repeat: segments up to and including `serial` may be reused (of this generation; another one is rejected
@@ -777,15 +785,22 @@ class AnalogCapture(LogicCapture):
 
     def calibration(self) -> Calibration:
         out = Calibration()
+        seen_vrefint = False
+        # a value not of its defined length (factory: its counts and lengths) is broken and not used; vrefint does not
+        # repeat: its first copy only, a broken first not replaced by a later one (core §2.3)
         for tag, v in tlvs(self._call(self.CALIBRATION, locked=False).payload):
             if tag == FACTORY:                               # frontend scheme_len scheme raw_len(u16) raw
+                if len(v) < 2 or len(v) < 4 + v[1] or len(v) != 4 + v[1] + struct.unpack_from("<H", v, 2 + v[1])[0]:
+                    continue
                 rd = m.Reader(v)
                 fe = rd.u8()
                 scheme = rd.counted("B").decode("utf-8", "replace")
                 out.factory.append((None if fe == 0xFF else fe, scheme, bytes(rd.counted("H"))))
-            elif tag == VREFINT:                             # raw(u32) ns(u64) nominal_mv(u32)
-                raw, ns, nominal = struct.unpack_from("<IQI", v)
-                out.vrefint, out.vrefint_nominal_mv = (raw, ns), nominal
+            elif tag == VREFINT and not seen_vrefint:        # raw(u32) ns(u64) nominal_mv(u32)
+                seen_vrefint = True
+                if len(v) == 16:
+                    raw, ns, nominal = struct.unpack("<IQI", v)
+                    out.vrefint, out.vrefint_nominal_mv = (raw, ns), nominal
         return out
 
 

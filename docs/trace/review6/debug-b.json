@@ -1,0 +1,391 @@
+{
+ "reviewed_commit": "f7abef0",
+ "units": {
+  "debug:4:1": {
+   "verdict": "ok",
+   "reason": "riscv-dm op table and cleanup rows: bench _dm_op, the debug/block/step/reset/run models and checkers, and client RiscvDm compared row by row (dmi mandatory, others optional by ops; hart 0 / hartsel 0; halt lowers haltreq; resume once; step / block / run restores; cleanup failure answers then closes)"
+  },
+  "debug:4:2": {
+   "verdict": "ok",
+   "reason": "riscv-dm op table and cleanup rows: bench _dm_op, the debug/block/step/reset/run models and checkers, and client RiscvDm compared row by row (dmi mandatory, others optional by ops; hart 0 / hartsel 0; halt lowers haltreq; resume once; step / block / run restores; cleanup failure answers then closes)"
+  },
+  "debug:4:3": {
+   "verdict": "ok",
+   "reason": "riscv-dm op table and cleanup rows: bench _dm_op, the debug/block/step/reset/run models and checkers, and client RiscvDm compared row by row (dmi mandatory, others optional by ops; hart 0 / hartsel 0; halt lowers haltreq; resume once; step / block / run restores; cleanup failure answers then closes)"
+  },
+  "debug:4:4": {
+   "verdict": "ok",
+   "reason": "riscv-dm op table and cleanup rows: bench _dm_op, the debug/block/step/reset/run models and checkers, and client RiscvDm compared row by row (dmi mandatory, others optional by ops; hart 0 / hartsel 0; halt lowers haltreq; resume once; step / block / run restores; cleanup failure answers then closes)"
+  },
+  "debug:4:5": {
+   "verdict": "ok",
+   "reason": "riscv-dm op table and cleanup rows: bench _dm_op, the debug/block/step/reset/run models and checkers, and client RiscvDm compared row by row (dmi mandatory, others optional by ops; hart 0 / hartsel 0; halt lowers haltreq; resume once; step / block / run restores; cleanup failure answers then closes)"
+  },
+  "debug:4:6": {
+   "verdict": "ok",
+   "reason": "riscv-dm op table and cleanup rows: bench _dm_op, the debug/block/step/reset/run models and checkers, and client RiscvDm compared row by row (dmi mandatory, others optional by ops; hart 0 / hartsel 0; halt lowers haltreq; resume once; step / block / run restores; cleanup failure answers then closes)"
+  },
+  "debug:4:7": {
+   "verdict": "ok",
+   "reason": "riscv-dm op table and cleanup rows: bench _dm_op, the debug/block/step/reset/run models and checkers, and client RiscvDm compared row by row (dmi mandatory, others optional by ops; hart 0 / hartsel 0; halt lowers haltreq; resume once; step / block / run restores; cleanup failure answers then closes)"
+  },
+  "debug:4:8": {
+   "verdict": "ok",
+   "reason": "riscv-dm op table and cleanup rows: bench _dm_op, the debug/block/step/reset/run models and checkers, and client RiscvDm compared row by row (dmi mandatory, others optional by ops; hart 0 / hartsel 0; halt lowers haltreq; resume once; step / block / run restores; cleanup failure answers then closes)"
+  },
+  "debug:4:9": {
+   "verdict": "fixed",
+   "reason": "fixed: uiapduino.run_payload resumed the hart through raw DMCONTROL writes with DATA0 left as its abstract commands changed it; it now writes DATA0 back first (restore_data)"
+  },
+  "debug:4:10": {
+   "verdict": "ok",
+   "reason": "riscv-dm op table and cleanup rows: bench _dm_op, the debug/block/step/reset/run models and checkers, and client RiscvDm compared row by row (dmi mandatory, others optional by ops; hart 0 / hartsel 0; halt lowers haltreq; resume once; step / block / run restores; cleanup failure answers then closes)"
+  },
+  "debug:4:11": {
+   "verdict": "ok",
+   "reason": "riscv-dm op table and cleanup rows: bench _dm_op, the debug/block/step/reset/run models and checkers, and client RiscvDm compared row by row (dmi mandatory, others optional by ops; hart 0 / hartsel 0; halt lowers haltreq; resume once; step / block / run restores; cleanup failure answers then closes)"
+  },
+  "debug:4:12": {
+   "verdict": "ok",
+   "reason": "riscv-dm op table and cleanup rows: bench _dm_op, the debug/block/step/reset/run models and checkers, and client RiscvDm compared row by row (dmi mandatory, others optional by ops; hart 0 / hartsel 0; halt lowers haltreq; resume once; step / block / run restores; cleanup failure answers then closes)"
+  },
+  "debug:4:13": {
+   "verdict": "ok",
+   "reason": "riscv-dm op table and cleanup rows: bench _dm_op, the debug/block/step/reset/run models and checkers, and client RiscvDm compared row by row (dmi mandatory, others optional by ops; hart 0 / hartsel 0; halt lowers haltreq; resume once; step / block / run restores; cleanup failure answers then closes)"
+  },
+  "debug:4:14": {
+   "verdict": "ok",
+   "reason": "riscv-dm op table and cleanup rows: bench _dm_op, the debug/block/step/reset/run models and checkers, and client RiscvDm compared row by row (dmi mandatory, others optional by ops; hart 0 / hartsel 0; halt lowers haltreq; resume once; step / block / run restores; cleanup failure answers then closes)"
+  },
+  "debug:4:15": {
+   "verdict": "ok",
+   "reason": "riscv-dm op table and cleanup rows: bench _dm_op, the debug/block/step/reset/run models and checkers, and client RiscvDm compared row by row (dmi mandatory, others optional by ops; hart 0 / hartsel 0; halt lowers haltreq; resume once; step / block / run restores; cleanup failure answers then closes)"
+  },
+  "debug:4:16": {
+   "verdict": "ok",
+   "reason": "riscv-dm op table and cleanup rows: bench _dm_op, the debug/block/step/reset/run models and checkers, and client RiscvDm compared row by row (dmi mandatory, others optional by ops; hart 0 / hartsel 0; halt lowers haltreq; resume once; step / block / run restores; cleanup failure answers then closes)"
+  },
+  "debug:4:17": {
+   "verdict": "ok",
+   "reason": "riscv-dm op table and cleanup rows: bench _dm_op, the debug/block/step/reset/run models and checkers, and client RiscvDm compared row by row (dmi mandatory, others optional by ops; hart 0 / hartsel 0; halt lowers haltreq; resume once; step / block / run restores; cleanup failure answers then closes)"
+  },
+  "debug:4:18": {
+   "verdict": "ok",
+   "reason": "riscv-dm op table and cleanup rows: bench _dm_op, the debug/block/step/reset/run models and checkers, and client RiscvDm compared row by row (dmi mandatory, others optional by ops; hart 0 / hartsel 0; halt lowers haltreq; resume once; step / block / run restores; cleanup failure answers then closes)"
+  },
+  "debug:4.1:1": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before anything runs, short args malformed, done = failing index, nvals rule (+1 for a timed-out poll), 10 + 4r frame check, wait_us + max_us sum vs max_op_ms, 0 limits read once; bench, debug model/checker and client (count_steps, dmi_value_count, held groups in one request) agree"
+  },
+  "debug:4.1:2": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before anything runs, short args malformed, done = failing index, nvals rule (+1 for a timed-out poll), 10 + 4r frame check, wait_us + max_us sum vs max_op_ms, 0 limits read once; bench, debug model/checker and client (count_steps, dmi_value_count, held groups in one request) agree"
+  },
+  "debug:4.1:3": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before anything runs, short args malformed, done = failing index, nvals rule (+1 for a timed-out poll), 10 + 4r frame check, wait_us + max_us sum vs max_op_ms, 0 limits read once; bench, debug model/checker and client (count_steps, dmi_value_count, held groups in one request) agree"
+  },
+  "debug:4.1:4": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before anything runs, short args malformed, done = failing index, nvals rule (+1 for a timed-out poll), 10 + 4r frame check, wait_us + max_us sum vs max_op_ms, 0 limits read once; bench, debug model/checker and client (count_steps, dmi_value_count, held groups in one request) agree"
+  },
+  "debug:4.1:5": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before anything runs, short args malformed, done = failing index, nvals rule (+1 for a timed-out poll), 10 + 4r frame check, wait_us + max_us sum vs max_op_ms, 0 limits read once; bench, debug model/checker and client (count_steps, dmi_value_count, held groups in one request) agree"
+  },
+  "debug:4.1:6": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before anything runs, short args malformed, done = failing index, nvals rule (+1 for a timed-out poll), 10 + 4r frame check, wait_us + max_us sum vs max_op_ms, 0 limits read once; bench, debug model/checker and client (count_steps, dmi_value_count, held groups in one request) agree"
+  },
+  "debug:4.1:7": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before anything runs, short args malformed, done = failing index, nvals rule (+1 for a timed-out poll), 10 + 4r frame check, wait_us + max_us sum vs max_op_ms, 0 limits read once; bench, debug model/checker and client (count_steps, dmi_value_count, held groups in one request) agree"
+  },
+  "debug:4.1:8": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before anything runs, short args malformed, done = failing index, nvals rule (+1 for a timed-out poll), 10 + 4r frame check, wait_us + max_us sum vs max_op_ms, 0 limits read once; bench, debug model/checker and client (count_steps, dmi_value_count, held groups in one request) agree"
+  },
+  "debug:4.1:9": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before anything runs, short args malformed, done = failing index, nvals rule (+1 for a timed-out poll), 10 + 4r frame check, wait_us + max_us sum vs max_op_ms, 0 limits read once; bench, debug model/checker and client (count_steps, dmi_value_count, held groups in one request) agree"
+  },
+  "debug:4.1:10": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before anything runs, short args malformed, done = failing index, nvals rule (+1 for a timed-out poll), 10 + 4r frame check, wait_us + max_us sum vs max_op_ms, 0 limits read once; bench, debug model/checker and client (count_steps, dmi_value_count, held groups in one request) agree"
+  },
+  "debug:4.1:11": {
+   "verdict": "ok",
+   "reason": "dmi steps: unknown kind unsupported 0x00 before anything runs, short args malformed, done = failing index, nvals rule (+1 for a timed-out poll), 10 + 4r frame check, wait_us + max_us sum vs max_op_ms, 0 limits read once; bench, debug model/checker and client (count_steps, dmi_value_count, held groups in one request) agree"
+  },
+  "debug:4.2:1": {
+   "verdict": "ok",
+   "reason": "halt already halted -> ok, stuck -> timeout with haltreq lowered; resume one resumereq, state when not seen; step moved/dpcs 0 unless ok, step_left closes the connection; bench, step model/checker, client StepError agree"
+  },
+  "debug:4.2:2": {
+   "verdict": "ok",
+   "reason": "halt already halted -> ok, stuck -> timeout with haltreq lowered; resume one resumereq, state when not seen; step moved/dpcs 0 unless ok, step_left closes the connection; bench, step model/checker, client StepError agree"
+  },
+  "debug:4.2:3": {
+   "verdict": "ok",
+   "reason": "halt already halted -> ok, stuck -> timeout with haltreq lowered; resume one resumereq, state when not seen; step moved/dpcs 0 unless ok, step_left closes the connection; bench, step model/checker, client StepError agree"
+  },
+  "debug:4.2:4": {
+   "verdict": "ok",
+   "reason": "halt already halted -> ok, stuck -> timeout with haltreq lowered; resume one resumereq, state when not seen; step moved/dpcs 0 unless ok, step_left closes the connection; bench, step model/checker, client StepError agree"
+  },
+  "debug:4.2:5": {
+   "verdict": "ok",
+   "reason": "halt already halted -> ok, stuck -> timeout with haltreq lowered; resume one resumereq, state when not seen; step moved/dpcs 0 unless ok, step_left closes the connection; bench, step model/checker, client StepError agree"
+  },
+  "debug:4.3:1": {
+   "verdict": "ok",
+   "reason": "reset modes 0 / 2 only (else unsupported 0x00), flags bit0 / pc, line when the DM stays silent, havereset acked and haltreq lowered, one reset mark and no restart, no reset line moved; bench, reset model/checker, client agree"
+  },
+  "debug:4.3:2": {
+   "verdict": "ok",
+   "reason": "reset modes 0 / 2 only (else unsupported 0x00), flags bit0 / pc, line when the DM stays silent, havereset acked and haltreq lowered, one reset mark and no restart, no reset line moved; bench, reset model/checker, client agree"
+  },
+  "debug:4.3:3": {
+   "verdict": "ok",
+   "reason": "reset modes 0 / 2 only (else unsupported 0x00), flags bit0 / pc, line when the DM stays silent, havereset acked and haltreq lowered, one reset mark and no restart, no reset line moved; bench, reset model/checker, client agree"
+  },
+  "debug:4.3:4": {
+   "verdict": "ok",
+   "reason": "reset modes 0 / 2 only (else unsupported 0x00), flags bit0 / pc, line when the DM stays silent, havereset acked and haltreq lowered, one reset mark and no restart, no reset line moved; bench, reset model/checker, client agree"
+  },
+  "debug:4.3:5": {
+   "verdict": "ok",
+   "reason": "reset modes 0 / 2 only (else unsupported 0x00), flags bit0 / pc, line when the DM stays silent, havereset acked and haltreq lowered, one reset mark and no restart, no reset line moved; bench, reset model/checker, client agree"
+  },
+  "debug:4.3:6": {
+   "verdict": "ok",
+   "reason": "reset modes 0 / 2 only (else unsupported 0x00), flags bit0 / pc, line when the DM stays silent, havereset acked and haltreq lowered, one reset mark and no restart, no reset line moved; bench, reset model/checker, client agree"
+  },
+  "debug:4.3:7": {
+   "verdict": "ok",
+   "reason": "reset modes 0 / 2 only (else unsupported 0x00), flags bit0 / pc, line when the DM stays silent, havereset acked and haltreq lowered, one reset mark and no restart, no reset line moved; bench, reset model/checker, client agree"
+  },
+  "debug:4.3:8": {
+   "verdict": "ok",
+   "reason": "reset modes 0 / 2 only (else unsupported 0x00), flags bit0 / pc, line when the DM stays silent, havereset acked and haltreq lowered, one reset mark and no restart, no reset line moved; bench, reset model/checker, client agree"
+  },
+  "debug:4.4:1": {
+   "verdict": "ok",
+   "reason": "run: no re-issue, timeout_ms > max_op_ms unsupported, stopped 0/1/2/3 with dpc/nvals validity, elapsed_us from resumereq (0 when not run), regno abstract numbers; bench, run model/checker, client RunResult agree"
+  },
+  "debug:4.4:2": {
+   "verdict": "ok",
+   "reason": "run: no re-issue, timeout_ms > max_op_ms unsupported, stopped 0/1/2/3 with dpc/nvals validity, elapsed_us from resumereq (0 when not run), regno abstract numbers; bench, run model/checker, client RunResult agree"
+  },
+  "debug:4.4:3": {
+   "verdict": "ok",
+   "reason": "run: no re-issue, timeout_ms > max_op_ms unsupported, stopped 0/1/2/3 with dpc/nvals validity, elapsed_us from resumereq (0 when not run), regno abstract numbers; bench, run model/checker, client RunResult agree"
+  },
+  "debug:4.4:4": {
+   "verdict": "ok",
+   "reason": "run: no re-issue, timeout_ms > max_op_ms unsupported, stopped 0/1/2/3 with dpc/nvals validity, elapsed_us from resumereq (0 when not run), regno abstract numbers; bench, run model/checker, client RunResult agree"
+  },
+  "debug:4.5:1": {
+   "verdict": "ok",
+   "reason": "blocks: words, max_length bytes mandatory with block ops, count bounds per route, count 0 success, unaligned malformed, bus reads, halted else state; bench, block model/checker, client BlockLength agree"
+  },
+  "debug:4.5:2": {
+   "verdict": "ok",
+   "reason": "blocks: words, max_length bytes mandatory with block ops, count bounds per route, count 0 success, unaligned malformed, bus reads, halted else state; bench, block model/checker, client BlockLength agree"
+  },
+  "debug:4.5:3": {
+   "verdict": "ok",
+   "reason": "blocks: words, max_length bytes mandatory with block ops, count bounds per route, count 0 success, unaligned malformed, bus reads, halted else state; bench, block model/checker, client BlockLength agree"
+  },
+  "debug:4.5:4": {
+   "verdict": "ok",
+   "reason": "blocks: words, max_length bytes mandatory with block ops, count bounds per route, count 0 success, unaligned malformed, bus reads, halted else state; bench, block model/checker, client BlockLength agree"
+  },
+  "debug:4.6:1": {
+   "verdict": "ok",
+   "reason": "attach acks a pending havereset; automatic ack by high-level ops (and console reads), raw dmi adds nothing, restart / reset marks"
+  },
+  "debug:4.6:2": {
+   "verdict": "fixed",
+   "reason": "fixed: the bench's console reads never acknowledged a pending havereset; a console read of a running, answering target now acknowledges it with a restart mark (detail 1)"
+  },
+  "debug:5:1": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, scan kind 2 and DPIDR id, scan/attach TLVs, targetsel critical and one connection per pin pair, dormant flag, no console; attach/scan/wire-options models and checkers and client SwdWire agree (electrical packet/idle rules are out of a logical bench's reach and traced as before)"
+  },
+  "debug:5:2": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, scan kind 2 and DPIDR id, scan/attach TLVs, targetsel critical and one connection per pin pair, dormant flag, no console; attach/scan/wire-options models and checkers and client SwdWire agree (electrical packet/idle rules are out of a logical bench's reach and traced as before)"
+  },
+  "debug:5:3": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, scan kind 2 and DPIDR id, scan/attach TLVs, targetsel critical and one connection per pin pair, dormant flag, no console; attach/scan/wire-options models and checkers and client SwdWire agree (electrical packet/idle rules are out of a logical bench's reach and traced as before)"
+  },
+  "debug:5:4": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, scan kind 2 and DPIDR id, scan/attach TLVs, targetsel critical and one connection per pin pair, dormant flag, no console; attach/scan/wire-options models and checkers and client SwdWire agree (electrical packet/idle rules are out of a logical bench's reach and traced as before)"
+  },
+  "debug:5:5": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, scan kind 2 and DPIDR id, scan/attach TLVs, targetsel critical and one connection per pin pair, dormant flag, no console; attach/scan/wire-options models and checkers and client SwdWire agree (electrical packet/idle rules are out of a logical bench's reach and traced as before)"
+  },
+  "debug:5:6": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, scan kind 2 and DPIDR id, scan/attach TLVs, targetsel critical and one connection per pin pair, dormant flag, no console; attach/scan/wire-options models and checkers and client SwdWire agree (electrical packet/idle rules are out of a logical bench's reach and traced as before)"
+  },
+  "debug:5:7": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, scan kind 2 and DPIDR id, scan/attach TLVs, targetsel critical and one connection per pin pair, dormant flag, no console; attach/scan/wire-options models and checkers and client SwdWire agree (electrical packet/idle rules are out of a logical bench's reach and traced as before)"
+  },
+  "debug:5:8": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, scan kind 2 and DPIDR id, scan/attach TLVs, targetsel critical and one connection per pin pair, dormant flag, no console; attach/scan/wire-options models and checkers and client SwdWire agree (electrical packet/idle rules are out of a logical bench's reach and traced as before)"
+  },
+  "debug:5:9": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, scan kind 2 and DPIDR id, scan/attach TLVs, targetsel critical and one connection per pin pair, dormant flag, no console; attach/scan/wire-options models and checkers and client SwdWire agree (electrical packet/idle rules are out of a logical bench's reach and traced as before)"
+  },
+  "debug:5:10": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, scan kind 2 and DPIDR id, scan/attach TLVs, targetsel critical and one connection per pin pair, dormant flag, no console; attach/scan/wire-options models and checkers and client SwdWire agree (electrical packet/idle rules are out of a logical bench's reach and traced as before)"
+  },
+  "debug:5:11": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, scan kind 2 and DPIDR id, scan/attach TLVs, targetsel critical and one connection per pin pair, dormant flag, no console; attach/scan/wire-options models and checkers and client SwdWire agree (electrical packet/idle rules are out of a logical bench's reach and traced as before)"
+  },
+  "debug:5:12": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, scan kind 2 and DPIDR id, scan/attach TLVs, targetsel critical and one connection per pin pair, dormant flag, no console; attach/scan/wire-options models and checkers and client SwdWire agree (electrical packet/idle rules are out of a logical bench's reach and traced as before)"
+  },
+  "debug:5:13": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, scan kind 2 and DPIDR id, scan/attach TLVs, targetsel critical and one connection per pin pair, dormant flag, no console; attach/scan/wire-options models and checkers and client SwdWire agree (electrical packet/idle rules are out of a logical bench's reach and traced as before)"
+  },
+  "debug:5:14": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, scan kind 2 and DPIDR id, scan/attach TLVs, targetsel critical and one connection per pin pair, dormant flag, no console; attach/scan/wire-options models and checkers and client SwdWire agree (electrical packet/idle rules are out of a logical bench's reach and traced as before)"
+  },
+  "debug:5:15": {
+   "verdict": "ok",
+   "reason": "swd wire: method 0 only, scan kind 2 and DPIDR id, scan/attach TLVs, targetsel critical and one connection per pin pair, dormant flag, no console; attach/scan/wire-options models and checkers and client SwdWire agree (electrical packet/idle rules are out of a logical bench's reach and traced as before)"
+  },
+  "debug:6:1": {
+   "verdict": "ok",
+   "reason": "arm-adi: transfer mandatory, blocks an optional pair with max_length, raw ACK, reserved req bits unsupported 0x00 before any transfer, posted reads, WAIT retried / FAULT stops, 11 + 4r frame check, TAR/DRW blocks keeping SELECT/CSW; arm model/checkers and client ArmAdi agree"
+  },
+  "debug:6:2": {
+   "verdict": "fixed",
+   "reason": "fixed: the client's MemAp required the optional read_block / write_block (and their max_length); it now builds memory reads/writes from raw transfers on a probe that offers transfer only"
+  },
+  "debug:6:3": {
+   "verdict": "fixed",
+   "reason": "fixed: as debug:6:2 (MemAp raw-transfer writes); also the selected-metadata checker failed an arm-adi features tag even with no bit set - now only feature bits are a defect"
+  },
+  "debug:6:4": {
+   "verdict": "ok",
+   "reason": "arm-adi: transfer mandatory, blocks an optional pair with max_length, raw ACK, reserved req bits unsupported 0x00 before any transfer, posted reads, WAIT retried / FAULT stops, 11 + 4r frame check, TAR/DRW blocks keeping SELECT/CSW; arm model/checkers and client ArmAdi agree"
+  },
+  "debug:6:5": {
+   "verdict": "ok",
+   "reason": "arm-adi: transfer mandatory, blocks an optional pair with max_length, raw ACK, reserved req bits unsupported 0x00 before any transfer, posted reads, WAIT retried / FAULT stops, 11 + 4r frame check, TAR/DRW blocks keeping SELECT/CSW; arm model/checkers and client ArmAdi agree"
+  },
+  "debug:6:6": {
+   "verdict": "ok",
+   "reason": "arm-adi: transfer mandatory, blocks an optional pair with max_length, raw ACK, reserved req bits unsupported 0x00 before any transfer, posted reads, WAIT retried / FAULT stops, 11 + 4r frame check, TAR/DRW blocks keeping SELECT/CSW; arm model/checkers and client ArmAdi agree"
+  },
+  "debug:6:7": {
+   "verdict": "ok",
+   "reason": "arm-adi: transfer mandatory, blocks an optional pair with max_length, raw ACK, reserved req bits unsupported 0x00 before any transfer, posted reads, WAIT retried / FAULT stops, 11 + 4r frame check, TAR/DRW blocks keeping SELECT/CSW; arm model/checkers and client ArmAdi agree"
+  },
+  "debug:6:8": {
+   "verdict": "ok",
+   "reason": "arm-adi: transfer mandatory, blocks an optional pair with max_length, raw ACK, reserved req bits unsupported 0x00 before any transfer, posted reads, WAIT retried / FAULT stops, 11 + 4r frame check, TAR/DRW blocks keeping SELECT/CSW; arm model/checkers and client ArmAdi agree"
+  },
+  "debug:7:1": {
+   "verdict": "ok",
+   "reason": "references only: no behavior beyond the sections that use them"
+  },
+  "debug:7:2": {
+   "verdict": "ok",
+   "reason": "references only: no behavior beyond the sections that use them"
+  },
+  "debug:7:3": {
+   "verdict": "ok",
+   "reason": "references only: no behavior beyond the sections that use them"
+  },
+  "restart:pre:1": {
+   "verdict": "ok",
+   "reason": "restart: optional interface, op 0x10 lock required, answer first then silent on every route until reboot, new boot_id, nothing kept, boot speed, restart_max_ms mandatory as the internal bound; bench (_restart / after_answer / reboot), restart model/checker and client restart_probe agree"
+  },
+  "restart:pre:2": {
+   "verdict": "ok",
+   "reason": "restart: optional interface, op 0x10 lock required, answer first then silent on every route until reboot, new boot_id, nothing kept, boot speed, restart_max_ms mandatory as the internal bound; bench (_restart / after_answer / reboot), restart model/checker and client restart_probe agree"
+  },
+  "restart:pre:3": {
+   "verdict": "ok",
+   "reason": "restart: optional interface, op 0x10 lock required, answer first then silent on every route until reboot, new boot_id, nothing kept, boot speed, restart_max_ms mandatory as the internal bound; bench (_restart / after_answer / reboot), restart model/checker and client restart_probe agree"
+  },
+  "restart:1:1": {
+   "verdict": "ok",
+   "reason": "restart: optional interface, op 0x10 lock required, answer first then silent on every route until reboot, new boot_id, nothing kept, boot speed, restart_max_ms mandatory as the internal bound; bench (_restart / after_answer / reboot), restart model/checker and client restart_probe agree"
+  },
+  "restart:1:2": {
+   "verdict": "ok",
+   "reason": "restart: optional interface, op 0x10 lock required, answer first then silent on every route until reboot, new boot_id, nothing kept, boot speed, restart_max_ms mandatory as the internal bound; bench (_restart / after_answer / reboot), restart model/checker and client restart_probe agree"
+  },
+  "restart:2:1": {
+   "verdict": "ok",
+   "reason": "restart: optional interface, op 0x10 lock required, answer first then silent on every route until reboot, new boot_id, nothing kept, boot speed, restart_max_ms mandatory as the internal bound; bench (_restart / after_answer / reboot), restart model/checker and client restart_probe agree"
+  },
+  "restart:2:2": {
+   "verdict": "ok",
+   "reason": "restart: optional interface, op 0x10 lock required, answer first then silent on every route until reboot, new boot_id, nothing kept, boot speed, restart_max_ms mandatory as the internal bound; bench (_restart / after_answer / reboot), restart model/checker and client restart_probe agree"
+  },
+  "restart:2:3": {
+   "verdict": "ok",
+   "reason": "restart: optional interface, op 0x10 lock required, answer first then silent on every route until reboot, new boot_id, nothing kept, boot speed, restart_max_ms mandatory as the internal bound; bench (_restart / after_answer / reboot), restart model/checker and client restart_probe agree"
+  },
+  "restart:2:4": {
+   "verdict": "ok",
+   "reason": "restart: optional interface, op 0x10 lock required, answer first then silent on every route until reboot, new boot_id, nothing kept, boot speed, restart_max_ms mandatory as the internal bound; bench (_restart / after_answer / reboot), restart model/checker and client restart_probe agree"
+  },
+  "restart:2:5": {
+   "verdict": "ok",
+   "reason": "restart: optional interface, op 0x10 lock required, answer first then silent on every route until reboot, new boot_id, nothing kept, boot speed, restart_max_ms mandatory as the internal bound; bench (_restart / after_answer / reboot), restart model/checker and client restart_probe agree"
+  },
+  "restart:2:6": {
+   "verdict": "ok",
+   "reason": "restart: optional interface, op 0x10 lock required, answer first then silent on every route until reboot, new boot_id, nothing kept, boot speed, restart_max_ms mandatory as the internal bound; bench (_restart / after_answer / reboot), restart model/checker and client restart_probe agree"
+  },
+  "restart:2:7": {
+   "verdict": "ok",
+   "reason": "restart: optional interface, op 0x10 lock required, answer first then silent on every route until reboot, new boot_id, nothing kept, boot speed, restart_max_ms mandatory as the internal bound; bench (_restart / after_answer / reboot), restart model/checker and client restart_probe agree"
+  }
+ },
+ "divergences": [
+  {
+   "unit": "debug:4:9",
+   "spec": "host は、dmi の要求で抽象コマンドなどを使って DATA0 / DATA1 を変えたら、hart を走らせる前に、変える前の値を書き戻す。",
+   "code": "src/oep_client/uiapduino.py:run_payload",
+   "fix": "dm.restore_data() before the raw resumereq DMCONTROL writes (tests/test_link_drop.py's copy of the sequence updated the same way)"
+  },
+  {
+   "unit": "debug:4.6:2",
+   "spec": "haveresetの自動確認応答は高水準のopとコンソールの読みで行う。",
+   "code": "src/oep_client/endpoint.py:Endpoint._console_poll",
+   "fix": "a console poll of a running, answering target acknowledges a pending havereset through _ack_havereset (restart mark kind 0x41, detail 1); tests/test_trace_debug.py's raw-dmi case halts the hart first so the console does not read (console §3)"
+  },
+  {
+   "unit": "debug:6:2",
+   "spec": "最小の実装はtransferだけでよく、hostがAPの選択、CSW/TARの設定、posted readの回収を生の転送で組む。",
+   "code": "src/oep_client/arm.py:MemAp.__init__/read_block/write_block",
+   "fix": "ArmAdi.has_blocks (ops); without block ops MemAp reads/writes with raw transfer lists (TAR write, DRW accesses, RDBUFF) sized to the route's max_frame and never across TAR's 1 KB auto-increment"
+  },
+  {
+   "unit": "debug:6:3",
+   "spec": "任意opのためのfeaturesは追加しない。",
+   "code": "src/oep_client/conformance_selected_metadata.py:SelectedMetadataChecks.metadata",
+   "fix": "an arm-adi features tag is a defect only when it sets a bit (u32 0 passes); the defect case in tests/test_conformance_selected_metadata.py now sets bit 0"
+  }
+ ]
+}

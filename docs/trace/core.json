@@ -310,14 +310,21 @@
     "tests/test_trace_core.py::test_fn_0_answers_have_their_fixed_parts_and_a_tlv_tail_after",
     "tests/test_conformance_host_tlv.py::test_sample_reader_contracts_pass",
     "tests/test_trace_common.py::test_a_failed_attach_answers_status_alone_and_a_bad_form_is_malformed",
-    "tests/test_review5_core_a.py::test_describe_readers_use_the_first_copy_and_never_a_later_one_for_a_broken_first"
+    "tests/test_review5_core_a.py::test_describe_readers_use_the_first_copy_and_never_a_later_one_for_a_broken_first",
+    "tests/test_review6_core_early.py::test_confirms_refusal_takes_supported_only_of_two_bytes",
+    "tests/test_review6_core_early.py::test_an_attach_dpc_of_another_length_than_u32_is_not_used",
+    "tests/test_review6_core_early.py::test_a_target_id_of_a_known_scheme_needs_its_u32",
+    "tests/test_review6_core_early.py::test_step_left_is_taken_only_with_its_length_0",
+    "tests/test_review6_core_early.py::test_capture_status_error_is_taken_only_as_one_byte",
+    "tests/test_review6_core_early.py::test_configure_answer_uses_the_first_copy_and_only_values_of_their_length",
+    "tests/test_review6_core_early.py::test_calibration_takes_only_whole_values_and_the_first_vrefint"
    ],
    "mutants": [
     "tests/test_conformance_host_tlv.py::test_faults_are_detected[reject_unknown-UNKNOWN]",
     "tests/test_conformance_host_tlv.py::test_faults_are_detected[accept_bad_width-KNOWN_WIDTH]",
     "tests/test_conformance_host_core.py::test_semantic_reader_faults_are_detected[short_fixed-SHORT]"
    ],
-   "note": "host skips unknown tags, raises on a short fixed part, does not use a known TLV of a wrong length; attach failed: status alone, another fixed part than its success (op, resolution, outcome)"
+   "note": "host skips unknown tags, raises on a short fixed part, does not use a known TLV of a wrong length; attach failed: status alone, another fixed part than its success (op, resolution, outcome); review6: confirm's supported, attach target_id / dpc, step_left, capture status error, configure answer and calibration take only values of their defined length"
   },
   "core:2.3:5": {
    "text": "- **出来事とデータ**（§10.2）も応答と同じ: 固定部分の後ろは TLV",
@@ -381,7 +388,10 @@
     "tests/test_review5_core_a.py::test_describe_readers_use_the_first_copy_and_never_a_later_one_for_a_broken_first",
     "tests/test_review5_core_a.py::test_pin_finder_reads_the_first_gpio_modes_copy_only",
     "tests/test_review5_core_a.py::test_the_named_unit_id_check_uses_the_first_copy",
-    "tests/test_review5_core_a.py::test_the_hardware_preflight_reads_the_first_copy_of_fn_0s_describe"
+    "tests/test_review5_core_a.py::test_the_hardware_preflight_reads_the_first_copy_of_fn_0s_describe",
+    "tests/test_review6_core_early.py::test_configure_answer_uses_the_first_copy_and_only_values_of_their_length",
+    "tests/test_review6_core_early.py::test_calibration_takes_only_whole_values_and_the_first_vrefint",
+    "tests/test_review6_core_early.py::test_the_retention_checker_reads_the_first_owner_of_a_lock_state_answer"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_later_duplicate_unchecked_mutant",
@@ -389,7 +399,7 @@
     "tests/test_conformance_host_tlv.py::test_faults_are_detected[last_duplicate-DUPLICATES]",
     "tests/test_conformance_host_tlv.py::test_faults_are_detected[later_for_broken_first-KNOWN_WIDTH]"
    ],
-   "note": "two owners: the first used; a later owner of a wrong length makes the open malformed; review4: the host reads only the first ops / max_op_ms / common describe tag; a broken first copy is not replaced by a later one"
+   "note": "two owners: the first used; a later owner of a wrong length makes the open malformed; review4: the host reads only the first ops / max_op_ms / common describe tag; a broken first copy is not replaced by a later one; review6: capture configure answer / calibration vrefint read their first copy; the checkers (retention, capture-group, timeline, config, logic, restart) read the first copy"
   },
   "core:2.3:11": {
    "text": "- 固定部分より短い要求は rejected malformed。",
@@ -1120,7 +1130,8 @@
    "verify": [
     "tests/test_trace_core.py::test_the_host_gives_up_after_the_resend_and_recovers_before_more",
     "tests/test_conformance_host_resend.py::test_same_byte_resends_and_probe_cache",
-    "tests/test_trace_core.py::test_on_tcp_a_resend_given_up_closes_and_opens_the_connection_and_confirms_first"
+    "tests/test_trace_core.py::test_on_tcp_a_resend_given_up_closes_and_opens_the_connection_and_confirms_first",
+    "tests/test_review6_core_late.py::test_a_tcp_request_given_up_without_a_resend_reopens_the_connection_before_the_next"
    ],
    "mutants": [
     "tests/test_conformance_host_resend.py::test_retry_fault_observations_are_detected[no_confirm-FAILURE-RECOVER]",
@@ -1342,7 +1353,8 @@
     "tests/test_trace_core.py::test_the_host_sends_a_clean_owner_and_takes_none_back_as_no_failure",
     "tests/test_trace_core.py::test_the_owner_comes_from_the_force_open_and_goes_at_expiry[core-v1]",
     "tests/test_trace_core.py::test_the_owner_comes_from_the_force_open_and_goes_at_expiry[full]",
-    "tests/test_review5_core_b.py::test_the_owner_shown_is_the_first_copy_even_when_a_later_copy_is_broken"
+    "tests/test_review5_core_b.py::test_the_owner_shown_is_the_first_copy_even_when_a_later_copy_is_broken",
+    "tests/test_review6_core_late.py::test_the_core_checker_takes_a_probe_without_the_owner_display"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_owner_changed_by_the_holders_open_mutant"
@@ -1410,7 +1422,9 @@
     "tests/test_trace_core.py::test_core_is_fn_0_has_no_name_and_is_never_listed[core-v1]",
     "tests/test_trace_core.py::test_core_is_fn_0_has_no_name_and_is_never_listed[full]",
     "tests/test_review5_core_b.py::test_a_listed_interface_at_revision_0_is_not_refused_by_the_discovery_checks",
-    "tests/test_review5_core_b.py::test_the_core_smoke_list_takes_an_interface_at_revision_0"
+    "tests/test_review5_core_b.py::test_the_core_smoke_list_takes_an_interface_at_revision_0",
+    "tests/test_review6_core_late.py::test_the_core_checker_takes_tlvs_after_the_list_entries",
+    "tests/test_review6_core_late.py::test_the_discovery_and_smoke_checkers_take_tlvs_after_the_list_entries"
    ],
    "mutants": [
     "tests/test_conformance_discovery.py::test_a_page_that_stops_before_the_frame_is_full_fails[list]"
@@ -1449,7 +1463,8 @@
    "verify": [
     "tests/test_trace_core.py::test_list_from_first_past_total_is_total_and_count_0[core-v1]",
     "tests/test_trace_core.py::test_list_from_first_past_total_is_total_and_count_0[full]",
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_c39_list_from_beyond_the_matches_gives_the_total_and_count_0"
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c39_list_from_beyond_the_matches_gives_the_total_and_count_0",
+    "tests/test_review6_core_late.py::test_the_core_checker_takes_tlvs_after_the_list_entries"
    ],
    "mutants": [],
    "note": "first >= total: total and count 0"
@@ -1665,7 +1680,8 @@
    "text": "- **unit_id の一意性**: unit_id は個体ごとに違う値にする",
    "verify": [
     "tests/test_trace_core.py::test_an_x_unit_id_keys_nothing_kept_across_sessions",
-    "tests/test_trace_core.py::test_an_x_unit_id_names_no_probe_and_keeps_no_session"
+    "tests/test_trace_core.py::test_an_x_unit_id_names_no_probe_and_keeps_no_session",
+    "tests/test_review6_core_late.py::test_two_devices_with_the_same_x_serial_are_two_probes"
    ],
    "mutants": [],
    "note": "the speed record keeps nothing under an x- unit_id; tcp:x-/usb:x- refused, kept_session keeps nothing for x-"
@@ -2037,7 +2053,8 @@
     "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[0]",
     "tests/test_conformance_notification_output.py::test_bounded_raw_notification_output[1]",
     "tests/test_review5_core_b.py::test_the_subscription_checks_take_a_probe_that_bounds_what_it_holds[True]",
-    "tests/test_review5_core_b.py::test_the_subscription_checks_take_a_probe_that_bounds_what_it_holds[False]"
+    "tests/test_review5_core_b.py::test_the_subscription_checks_take_a_probe_that_bounds_what_it_holds[False]",
+    "tests/test_review6_core_late.py::test_the_subscription_checker_asks_the_unsupported_case_under_a_condition_any_probe_holds"
    ],
    "mutants": [
     "tests/test_conformance_notification_output.py::test_output_faults[rejected_seq_reset-REJECTED-SUBSCRIBE]"

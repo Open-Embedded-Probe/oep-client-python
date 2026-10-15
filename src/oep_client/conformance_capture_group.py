@@ -46,14 +46,20 @@ class CaptureGroupChecks:
         return request,reply
     def refused(self,request,reason,cause=None,fn=None,tag=None):
         before=self.a.state();payload=self.c.rejected(request,reason)
-        if cause is not None:require(dict(tlvs(payload)).get(self.cause_tag)==bytes((cause,)),'group refusal cause')
+        if cause is not None:require(dict(reversed(tlvs(payload))).get(self.cause_tag)==bytes((cause,)),'group refusal cause')
         if tag is not None:require(payload[:1]==bytes((tag,)),'group unsupported tag')
         if fn is not None:
-            values=dict(tlvs(payload[1:] if reason=='unsupported' else payload))
+            values=dict(reversed(tlvs(payload[1:] if reason=='unsupported' else payload)))
             require(values.get(self.fn_tag)==struct.pack('<H',fn),'group refusal affected fn')
         require(self.a.state()==before,'group refusal changed tracks/bind/generations/pins')
+    def idle_pads(self,state):
+        """capture §1.2: every pin keeps its free (idle) state, except an analog track's channels while it waits or
+        captures - their pad leaves the digital function at start and comes back when acquisition stops."""
+        analog=[fn for fn,name in self.a.selection.items() if name=='oep.fixture.analog']
+        skip={ch for fn in analog if state['tracks'].get(fn,{}).get('state') in (2,3) for ch in state['plans'].get(fn,())}
+        return {ch:v for ch,v in state['pins'].items() if ch not in skip}=={ch:v for ch,v in state['idle'].items() if ch not in skip}
     def status(self,fn=4,tail=b''):
-        before=self.a.state();require(before['pins']==before['idle'],'active group changed electrical state');payload=self.c.success(self.req(fn,'status',payload=tail))
+        before=self.a.state();require(self.idle_pads(before),'active group changed electrical state');payload=self.c.success(self.req(fn,'status',payload=tail))
         size=13 if fn in (4,5) else 18;require(len(payload)>=size,'group/track status fixed header');tlvs(payload[size:])
         require(self.a.state()==before,'group/track status changed acquisition')
         return struct.unpack_from('<BQI' if fn in (4,5) else '<BIQBI',payload),payload[size:]
@@ -213,7 +219,7 @@ class CaptureGroupChecks:
                     new=secrets.randbelow(0xffffffff)+1
                     while new==sid:new=secrets.randbelow(0xffffffff)+1
                     self.c.corr=0;self.c.success(self.c.request(self.c.core['open'],struct.pack('<IB',1000,1),session=new));self.c.session=new
-                state=self.a.state();require(not state['bound'] and not state['plans'] and state['pins']==state['idle'],'session closure retained group/plan/pins')
+                state=self.a.state();require(not state['bound'] and not state['plans'] and self.idle_pads(state),'session closure retained group/plan/pins')
                 require(state['generation']==generation and all(t['state']==0 and not t['config'] and not t['data'] and not t['current'] and not t['segments'] and t['generation']==gens.get(fn,t['generation']) for fn,t in state['tracks'].items()),'session closure retained capture or reset generation');return
             self.a.feed(self.rows(3))
             if kind=='REPLAY-START':
@@ -224,7 +230,7 @@ class CaptureGroupChecks:
             if kind=='REPLAY-STOP':before=self.a.state();require(self.c.success(stop_request)==stop_reply and self.a.state()==before,'group stop replay changed data')
             if kind=='REBIND-GEN':
                 self.bind(sid,());self.bind(sid,(3,2));new,newgens,_,_=self.start(sid,(3,2));require(new==generation+1 and all(newgens[fn]==gens[fn]+1 for fn in members),'rebind reset generations')
-            require(self.a.state()['pins']==self.a.state()['idle'],'group operations changed electrical pin state')
+            require(self.idle_pads(self.a.state()),'group operations changed electrical pin state')
     def run(self):
         start=len(self.c.results)
         def context():
@@ -240,7 +246,7 @@ class CaptureGroupChecks:
         self.c.check('OEP-GROUP-CONTEXT','capture §4; core §7',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         def execute(kind):
-            self.case(kind);state=self.a.state();require(state['pins']==state['idle'],'group actions changed electrical state')
+            self.case(kind);state=self.a.state();require(self.idle_pads(state),'group actions changed electrical state')
         for kind in self.cases:
             first=len(self.a.trace);self.c.check('OEP-GROUP-'+kind,'capture §4.1; plan §2; core §4.3/4.4/6/8/9',lambda kind=kind:execute(kind));self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]

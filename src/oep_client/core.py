@@ -235,8 +235,8 @@ def plan_fn(hst: h.Host) -> int:
 
 
 def plan_roles(hst: h.Host) -> int | None:
-    """The most role assignments the probe's plan holds at once, every fn together and the settings' plan included
-    (oep.probe.plan's describe plan_roles, oep-if-plan §1). None: no oep.probe.plan, or no limit declared."""
+    """The most role assignments the probe's plan holds at once, every fn together (oep.probe.plan's describe
+    plan_roles, oep-if-plan §1). None: no oep.probe.plan, or no limit declared."""
     try:
         fn = plan_fn(hst)
     except LookupError:
@@ -264,8 +264,8 @@ def plan_apply(hst: h.Host, assignments: list[tuple[int, int, int]]) -> None:
 
 
 class PinsTaken(h.Rejected):
-    """plan_apply refused (unavailable) and the probe's settings say why: a pin kept by another fn's saved plan or by a
-    slot, or a channel the settings disable (oep.probe.config). `holders`: (channel, what holds it)."""
+    """plan_apply refused (unavailable) and the probe's settings say why: a channel the settings disable
+    (oep.probe.config; it keeps no plan, oep-if-plan: the plan is the session's). `holders`: (channel, what holds it)."""
 
     def __init__(self, result, holders: list[tuple[int, str]]):
         super().__init__(result)
@@ -294,8 +294,7 @@ def _pin_holders(hst: h.Host, assignments: list[tuple[int, int, int]]) -> list[t
 
 
 def plan_release(hst: h.Host, fns: list[int] | tuple[int, ...] = ()) -> None:
-    """Release the plan of these fns (none: every fn; the settings' plans stay), through oep.probe.plan (oep-if-plan
-    §2.2)."""
+    """Release the plan of these fns (none: every fn), through oep.probe.plan (oep-if-plan §2.2)."""
     hst.call(plan_fn(hst), OP_PLAN_RELEASE, bytes([len(fns)]) + b"".join(struct.pack("<H", f) for f in fns))
 
 

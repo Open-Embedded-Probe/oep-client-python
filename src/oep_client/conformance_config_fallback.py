@@ -1,6 +1,6 @@
 """Saved items checked one by one at boot: partial application, unreadable containers and capacity, through current wire ops."""
 import struct
-from .conformance import require
+from .conformance import require,tlvs
 from .conformance_config import ConfigChecks,item
 from .conformance_registered_ops import RegisteredOpsChecks
 
@@ -30,8 +30,8 @@ class ConfigFallbackChecks(ConfigChecks):
                 req=self.c.request(16,item(144,struct.pack('<HBH',3,1,ch)),fn=1,session=sid)
                 if ch in off:self.unavailable(req,5,ch)
                 else:
-                    require(self.c.success(req)==b'','channel not disabled is unusable')
-                    require(self.c.success(self.c.request(17,b'\1\3\0',fn=1,session=sid))==b'','release plan')
+                    tlvs(self.c.success(req))                                  # a channel not disabled is usable: — [TLV]
+                    tlvs(self.c.success(self.c.request(17,b'\1\3\0',fn=1,session=sid)))
     def case(self,name):
         fresh=self.a.prepare();self.c.confirm();self.c.identity()
         require(self.c.boot==fresh['boot_id'],'fresh fallback fixture')
@@ -49,7 +49,7 @@ class ConfigFallbackChecks(ConfigChecks):
         require(self.a.storage_snapshot()==stored,'second boot rewrote the saved settings')
         with self.c.holding() as sid:
             if name in ('UNKNOWN','DUPLICATE'):
-                require(self.c.success(self.op(19,sid=sid))==b'','fallback erase response')
+                tlvs(self.c.success(self.op(19,sid=sid)))                  # erase: no fixed part, [TLV] (§3)
                 self.get(applied);self.storage(0,0)
             ch=b'\0\0' if name=='CAPACITY' else b'\4\0'           # within the held capacity: replace, not add
             g=self.set(sid,item(2,ch+b'repair'))

@@ -677,14 +677,14 @@ class Noisy(Stream):
 @pytest.mark.parametrize("reopens", [True, False])
 def test_a_length_port_that_never_goes_quiet_is_closed_and_opened_again(monkeypatch, reopens):
     """transports §5: vendor bulk / HID with lost boundaries - the host reads and discards; when the input cannot be made
-    quiet (here not even after the blind unsubscribe and end) it closes the transport and opens it again, then
-    confirms with its own corr there; with no way to open it again it says so."""
+    quiet it closes the transport and opens it again (nothing that changes state goes out blind), then confirms with
+    its own corr there; with no way to open it again it says so."""
     monkeypatch.setattr(link.SerialLink, "NOISY_S", 0.05)
     s = Noisy(lambda msg: [])
     lk = link.SerialLink.on_stream(s, "length", 0.3)
     hst = h.Host(lk.send)
     hst.session, hst.revision, hst.subscriptions = 0xABCD, 1, {5}
-    lk.corr_source, lk.blind = hst.next_corr, hst.blind_stop
+    lk._bind_host(hst)                                           # what open_host binds
     s.noise = frame(bytes([m.ROLE_DATA]) + struct.pack("<HHQ", 5, 0, 0) + b"x" * 32)   # pushes that never stop
     new = Noisy(confirming())
     lk.reopener = (lambda: new) if reopens else None
@@ -696,11 +696,12 @@ def test_a_length_port_that_never_goes_quiet_is_closed_and_opened_again(monkeypa
         with pytest.raises(ConnectionError, match="close the transport and open it again"):
             lk.send(req(hst.next_corr(), 0x01, fn=5, session=0xABCD))
         return
-    with pytest.raises(frames.FramingLost):                               # the blind end ended the session
-        lk.send(req(hst.next_corr(), 0x01, fn=5, session=0xABCD))
+    lk.send(req(hst.next_corr(), 0x01, fn=5, session=0xABCD))             # sent again there after the confirm
     assert s.closed and lk.stream is new
+    assert [m.Request.unpack(w[2:]).op for w in s.writes] == [0x01]       # no blind unsubscribe / end
     sent = [m.Request.unpack(w[2:]) for w in new.writes]
-    assert [r.op for r in sent] == [m.OP_CONFIRM] and boots == [0x11]       # confirmed there, its boot_id seen
+    assert [r.op for r in sent] == [m.OP_CONFIRM, 0x01] and boots == [0x11]   # confirmed there, its boot_id seen
+    assert hst.session == 0xABCD and hst.subscriptions == {5}
 
 
 # ---- second review (docs/trace/review2/transports.json) -------------------------------------------------------------

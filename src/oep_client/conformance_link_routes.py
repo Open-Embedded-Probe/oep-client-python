@@ -68,7 +68,8 @@ class LinkRoutesChecks:
                     self.select(route);before=self.a.state()
                     request=self.c.request(16,struct.pack('<I',0xffffffff),fn=4,corr=60000)
                     payload=self.c.success(request);n=self.a.limits[route]-7
-                    require(payload==struct.pack('<H',n)+bytes(i&255 for i in range(n)),'SID0 was cached or route bound was reused')
+                    require(payload[:2+n]==struct.pack('<H',n)+bytes(i&255 for i in range(n)),'SID0 was cached or route bound was reused')
+                    tlvs(payload[2+n:])                                        # len data [TLV] (link §1)
                     self.unchanged('free-source',before,route)
             elif name=='SHARED-LOCK':
                 for route in self.a.routes:

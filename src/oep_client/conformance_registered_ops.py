@@ -3,7 +3,19 @@
 Optionality comes from normative interface text, not op lock bits or numbers.
 No operation behavior or mandatory describe metadata is certified here.
 """
-from .conformance import require, ops
+from .conformance import require, ops, tlvs
+
+
+def refusal_carries(reason, payload, expected):
+    """Whether a rejected payload carries `expected`'s items (core §4.3): unsupported's tag(u8) first, then each TLV of
+    `expected` as the first copy of its tag (core §2.3). The probe attaches what it knows and may add other TLVs after
+    the fixed part, rejected answers too (core §4.3), so neither more TLVs nor their order is a difference."""
+    if reason == 'unsupported':
+        if payload[:1] != expected[:1]:
+            return False
+        payload, expected = payload[1:], expected[1:]
+    got = dict(reversed(tlvs(payload)))
+    return all(got.get(tag) == value for tag, value in dict(reversed(tlvs(expected))).items())
 
 
 # An optional op that requires another: state with save, port_state with port_speed, marks with mark.

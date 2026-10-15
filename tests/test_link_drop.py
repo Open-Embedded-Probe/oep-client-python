@@ -74,6 +74,7 @@ def new_run_payload_registers(d: riscv.RiscvDm) -> None:
     mstatus, dpc = d.read_register(uiapduino.MSTATUS), d.read_register(uiapduino.DPC)
     if mstatus & uiapduino.MSTATUS_MIE or dpc != uiapduino.PAYLOAD_BASE:
         raise RuntimeError("the payload's registers did not take")
+    d.restore_data()                                             # DATA0 back before the hart runs (debug §4)
     d.dmi(d.step_write(0x10, 0x40000001) + d.step_write(0x10, 0x40000001) + d.step_write(0x10, 0x00000001))
 
 

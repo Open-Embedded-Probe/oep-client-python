@@ -212,13 +212,14 @@
     "tests/test_trace_common.py::test_marks_page_by_serial",
     "tests/test_interfaces.py::test_console_marks_follow_serials_and_more",
     "tests/test_conformance_stream.py::test_stream_contracts_pass",
-    "tests/test_trace_common.py::test_mark_serials_are_counted_per_stream"
+    "tests/test_trace_common.py::test_mark_serials_are_counted_per_stream",
+    "tests/test_review6_core_early.py::test_the_stream_checker_holds_the_span_of_the_marks_kept_not_from_next_serial"
    ],
    "mutants": [
     "tests/test_conformance_stream.py::test_stream_mutants_fail[serial_gap]",
     "tests/test_conformance_stream.py::test_stream_mutants_fail[sort_wrap]"
    ],
-   "note": "per-stream u32 serial that wraps; marks at one position read without loss or repeat"
+   "note": "per-stream u32 serial that wraps; marks at one position read without loss or repeat; review6: the stream checker holds newest kept - oldest kept under 2^30 (core §2.6), not from next_serial"
   },
   "common:1.3:7": {
    "text": "- `time_ns` は probe の時計（起動からの ns、u64、cor",

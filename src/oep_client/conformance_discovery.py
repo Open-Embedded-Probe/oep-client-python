@@ -22,7 +22,8 @@ class DiscoveryChecks:
                         'list entry fields')                    # revision: any u8 (core §7.2)
                 name = p[at:at+length].decode('ascii'); at += length
                 page.append(dict(fn=fn, instance=instance, revision=revision, name=name))
-            require(at == len(p) and page == self.entries[first:first+count], 'list cursor does not select entry suffix')
+            tlvs(p[at:])                                          # TLVs may follow the entries (core §2.3)
+            require(page == self.entries[first:first+count], 'list cursor does not select entry suffix')
             require(first >= total or count > 0, 'list cursor made no progress')
             if first + count < total:  # core §7.2: as many as one frame holds - the next entry would not fit
                 require(5 + len(p) + 6 + len(self.entries[first+count]['name']) > self.c.max_frame,

@@ -162,7 +162,7 @@ class Unsupported(Rejected):
         if self.tag is not None:
             return None
         v = next((v for t, v in self.tlvs if t == SUPPORTED), None)
-        return (v[0], v[1]) if v is not None and len(v) >= 2 else None
+        return (v[0], v[1]) if v is not None and len(v) == 2 else None   # another length: broken, not used (§2.3)
 
 
 SUPPORTED = reg.CORE.tlv["unsupported_payload"]["supported"]
@@ -270,7 +270,7 @@ class Host:
     limits: dict | None = None             # confirm's answer as a dict
     lease_ms: int | None = None            # the lease the last open gave
     epoch: int = 0                         # +1 whenever every connection and the plan are lost (core §6.5, §9)
-    subscriptions: set = field(default_factory=set)   # fns subscribed in this session (a resync stops them blind)
+    subscriptions: set = field(default_factory=set)   # fns subscribed in this session
     # Called with every capture segment read (capture.CaptureRecord): the hook a run recorder hangs on.
     on_capture: list = field(default_factory=list)
     _corr: int = 0
@@ -781,17 +781,3 @@ class Host:
             raise ValueError("fn 0 sends no notifications (core §10.2): its op 0x02 is not unsubscribe")
         self.call(fn, m.OP_UNSUBSCRIBE)
         self.subscriptions.discard(fn)
-
-    def blind_stop(self) -> list[bytes]:
-        """The requests a resync may send without confirming (§1): unsubscribe every subscription and end the session
-        - both harmless when run twice - for when pushes keep the input from going quiet."""
-        if self.session is None or not self.revision:
-            return []
-        out = [m.Request(self.next_corr(self.session), fn, m.OP_UNSUBSCRIBE, b"", self.session).pack()
-               for fn in sorted(self.subscriptions)]
-        out.append(m.Request(self.next_corr(self.session), m.CORE_FN, m.OP_END, b"", self.session).pack())
-        self.subscriptions.clear()
-        self.session = None                                 # the blind end ends it: nothing of it lasts (core §9)
-        self.epoch += 1
-        return out
-

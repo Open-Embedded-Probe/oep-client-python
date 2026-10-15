@@ -16,7 +16,7 @@ class RestartChecks:
         self.c.confirm();self.c.identity()
         spec=next(r for r in self.c.reg['interface'] if r['name']=='oep.probe.restart')
         require(spec['revision']==1 and spec['op'][0]['name']=='restart' and spec['op'][0]['code']==16,'reviewed restart numbers differ')
-        desc=dict(self.c.describe(4));require(16 in ops(desc[7]) and desc[64]==struct.pack('<I',50),'restart ops/max_ms50 declaration differs')
+        desc=dict(reversed(self.c.describe(4)));require(16 in ops(desc[7]) and desc[64]==struct.pack('<I',50),'restart ops/max_ms50 declaration differs')
     def refused(self,request,reason):
         before=self.a.state();payload=self.c.rejected(request,reason)
         after=self.a.state()

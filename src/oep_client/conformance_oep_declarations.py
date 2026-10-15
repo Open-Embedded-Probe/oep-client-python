@@ -40,13 +40,17 @@ class OepDeclarationChecks:
                 require(len(value)>=2 and len(value)==2+3*value[1],'channel_group shape')
                 members=[struct.unpack_from('<BH',value,i) for i in range(2,len(value),3)]
                 require(all(pin<count for _,pin in members),'group pin out of range');groups.append(members)
-        required={self.specs[name]['enum']['pin_role']['swdio']}
-        if name!='oep.wire.swio':required.add(self.specs[name]['enum']['pin_role']['swclk'])
-        valid_group=any(required<={role for role,_ in members} and len({pin for _,pin in members})==len(members) for members in groups)
-        if len(required)==1:valid_roles=bool(roles.get(next(iter(required))))
-        else:
-            first,second=sorted(required);valid_roles=any(a!=b for a in roles.get(first,()) for b in roles.get(second,()))
-        require(valid_group or valid_roles,'no explicitly declared usable wire pin combination')
+        required=[self.specs[name]['enum']['pin_role']['swdio']]
+        if name!='oep.wire.swio':required.append(self.specs[name]['enum']['pin_role']['swclk'])
+        # core §7.4: a role a group lists is that group's channel (and in role_channels' candidates when they list the
+        # role); a role the group does not list comes from role_channels alone; no groups: role_channels alone
+        def options(group,role):
+            if role in group:return [group[role]] if role not in roles or group[role] in roles[role] else []
+            return sorted(roles.get(role,()))
+        def usable(group):
+            choices=[options(group,role) for role in required]
+            return bool(choices[0]) if len(choices)==1 else any(a!=b for a in choices[0] for b in choices[1])
+        require(any(usable(dict(members)) for members in (groups or [[]])),'no explicitly declared usable wire pin combination')
 
     def swio_clock(self, fn, name):
         values=dict(reversed(self.rows[fn]));tag=self.c.reg['describe_common']['min_clock_hz']

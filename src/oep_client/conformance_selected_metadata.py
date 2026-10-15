@@ -19,7 +19,9 @@ class SelectedMetadataChecks:
                 require(codes['save'] in offered and codes['erase'] in offered,'storage advertised without save/erase')
                 require(len(values[tag])==4 and struct.unpack('<I',values[tag])[0]>=1,'storage max_bytes must be positive u32');result['max_bytes']=struct.unpack('<I',values[tag])[0]
         else:
-            if name=='oep.target.arm-adi':require(common['features'] not in values,'arm-adi must not advertise features')
+            # debug §6 defines no feature bits for arm-adi (none for its optional ops: those are in ops); a features tag
+            # with no bit set says nothing and is not a defect
+            if name=='oep.target.arm-adi':require(values.get(common['features'],b'\0'*4)==b'\0'*4,'arm-adi must not advertise feature bits')
             active=codes['read_block'] in offered or codes['write_block'] in offered;result=dict(blocks=active)
             if active:
                 tag=common['max_length'];require(tag in values and len(values[tag])==2,'block max_length u16 missing or malformed')

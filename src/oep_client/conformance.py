@@ -486,14 +486,16 @@ class Checks:
                 require(all(c in 'abcdefghijklmnopqrstuvwxyz0123456789-.' for c in name), 'interface name format')
                 entries.append(dict(fn=fn, instance=instance, revision=revision, name=name))
                 at += length
-            require(at == len(p) and first + count <= total, 'list trailing bytes/count')
+            tlvs(p[at:])                                          # TLVs may follow the entries (core §2.3)
+            require(first + count <= total, 'list count')
             first += count
             if first == total:
                 break
             require(count, 'list makes no progress')
         require(len({x['fn'] for x in entries}) == len(entries), 'duplicate fn')
         end = self.success(self.request(self.core['list'], struct.pack('<H', 65535)))
-        require(end == struct.pack('<HB', total, 0), 'list past end')
+        require(end[:3] == struct.pack('<HB', total, 0), 'list past end')
+        tlvs(end[3:])
         return entries
 
     def interfaces(self):
@@ -736,6 +738,8 @@ class Checks:
     def owners(self):
         owner = b'conformance-first'
         tail = b'\x01' + struct.pack('<H', len(owner)) + owner
+        if not self.owner_displayed(tail):
+            raise NotApplicable('owner display not implemented (core §6.4: optional); a non-critical owner is ignored')
         tail += b'\x81\x06\x00second'  # same tag, critical flag, first occurrence wins
         with self.holding(tail=tail) as sid:
             def observed_owner():
@@ -753,6 +757,14 @@ class Checks:
                 self.session = sid
             require(len(state) >= 5 and struct.unpack_from('<BI', state) == (0, 0), 'owner end left lock held')
             require(1 not in dict(tlvs(state[5:])), 'ended session retained owner')
+
+    def owner_displayed(self, tail):
+        """core §6.4: owner is an optional display - a probe that does not implement it ignores a non-critical owner
+        (an unknown TLV, §2.3) and shows none. -> whether lock_state shows the owner of an open that gave one."""
+        with self.holding(tail=tail):
+            p = self.success(self.request(self.core['lock_state']))
+            require(len(p) >= 5 and p[0] == 1, 'owner lock state')
+            return 1 in dict(tlvs(p[5:]))
 
     def lease_rejections(self, header):
         with self.holding(1000) as sid:

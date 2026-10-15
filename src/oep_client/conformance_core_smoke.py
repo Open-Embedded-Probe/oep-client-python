@@ -105,7 +105,8 @@ class CoreSmokeChecks:
                 require(all(c in 'abcdefghijklmnopqrstuvwxyz0123456789-.' for c in name), 'list name')
                 entries.append({'fn': fn, 'instance': instance, 'revision': revision, 'name': name})
             first += count
-            require(at == len(p) and first <= total and (first == total or count), 'list progress/shape')
+            tlvs(p[at:])                                          # TLVs may follow the entries (core §2.3)
+            require(first <= total and (first == total or count), 'list progress/shape')
             if first == total:
                 break
         require(len({row['fn'] for row in entries}) == len(entries), 'unique list fn')

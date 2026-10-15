@@ -2,7 +2,7 @@
 import secrets
 import struct
 from .conformance import require, tlvs, ops
-from .conformance_registered_ops import RegisteredOpsChecks
+from .conformance_registered_ops import RegisteredOpsChecks, refusal_carries
 
 
 class I2cChecks:
@@ -24,7 +24,7 @@ class I2cChecks:
         req=self.req(2,'read_rx',sid);v=self.c.success(req);require(len(v)>=3,'read_rx header');pending,count=struct.unpack_from('<BH',v);require(count<=self.maximum and len(v)>=3+count,'read_rx frame bound');tags=tlvs(v[3+count:]);require(all(len(value)==8 for tag,value in tags if tag&127==self.ns),'read_rx timestamp width');return pending,v[3:3+count],req,v
     def refused(self,req,reason,payload=None):
         before=self.a.state();value=self.c.rejected(req,reason)
-        if payload is not None:require(value==payload,'I2C refusal raw tag/cause')
+        if payload is not None:require(refusal_carries(reason,value,payload),'I2C refusal raw tag/cause')
         require(self.a.state()==before,'refused request mutated target/plan/pins')
     def fresh(self):
         boot=self.a.restart_fixture();require(boot['scope']=='logical-model' and boot['boot_id']!=self.c.boot,'explicit new logical boot');self.c.confirm();self.c.identity();require(self.c.boot==boot['boot_id'],'boot identity')

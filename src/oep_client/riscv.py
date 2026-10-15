@@ -54,6 +54,18 @@ def status_name(status: int) -> str:
     return STATUS_NAMES.get(status, f"unknown status 0x{status:02x}")
 
 
+_TARGET_ID_U32 = frozenset(reg.COMMON.enum["target_id_scheme"].values())   # every scheme defined so far: a u32
+
+
+def target_id_of(v: bytes | None) -> tuple[int, bytes] | None:
+    """An attach answer's target_id TLV, scheme(u8) value (oep-if-debug §1) -> (scheme, value), or None: absent, or a
+    known scheme whose value is not its u32 (a broken TLV is not used, core §2.3). An unknown scheme's value is kept
+    raw (its length is that scheme's)."""
+    if not v or (v[0] in _TARGET_ID_U32 and len(v) != 5):
+        return None
+    return v[0], bytes(v[1:])
+
+
 class NoMaxLength(h.OepError):
     """The probe declares no max_length for an interface with read_block / write_block. oep-if-debug §4.5 / §6 make it
     mandatory there; the host's count is at most it and what the route's max_frame carries (§4.5)."""
@@ -341,8 +353,7 @@ class Wire(WireBase):
         self.target_id: tuple[int, bytes] | None = None   # (scheme, value) the last attach read, or None
 
     def _take_target_id(self, tail: m.Tail) -> None:
-        v = tail.get(self.TAG_TARGET_ID)
-        self.target_id = (v[0], bytes(v[1:])) if v else None
+        self.target_id = target_id_of(tail.get(self.TAG_TARGET_ID))
 
     def _idle_tlv(self, idle_clock: str | None) -> bytes:
         # rvswd only, critical: a probe that cannot rest the line that way must refuse (oep-if-debug §3)
@@ -384,7 +395,8 @@ class Wire(WireBase):
         tail = rd.tail()
         self._take_target_id(tail)
         dpc = tail.get(self.TAG_DPC)
-        self.dpc = int.from_bytes(dpc, "little") if self.halted and dpc else None
+        # dpc is a u32: a value of another length is broken, not used (core §2.3)
+        self.dpc = struct.unpack("<I", dpc)[0] if self.halted and dpc is not None and len(dpc) == 4 else None
         return conn, status
 
     def attach_under_reset(self, channel: int, hold_ms: int = 20, max_speed: int | None = None,
@@ -780,7 +792,8 @@ class RiscvDm(Interface, BlockLength):
         status, moved, before, after = rd.take("BBII")
         tail = rd.tail()
         if status != OK or not r.succeeded:
-            raise StepError(status, r, tail.get(self.TAG_STEP_LEFT) is not None)   # moved / dpcs: 0, not read (§4.2)
+            left = tail.get(self.TAG_STEP_LEFT)                    # length 0; any other is broken, not used (core §2.3)
+            raise StepError(status, r, left is not None and not left)   # moved / dpcs: 0, not read (§4.2)
         return bool(moved), before, after
 
     def read_block(self, address: int, count: int) -> bytes:

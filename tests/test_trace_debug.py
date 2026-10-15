@@ -527,6 +527,7 @@ def test_high_level_ops_acknowledge_a_pending_havereset_and_raw_dmi_does_not():
     con = reg.TARGET_CONSOLE
     sid = struct.unpack_from("<I", hv.ok(3, con.op["open"], struct.pack("<IB", cid, console.Console.DMSEQ)))[0]
     tg = ep.targets[(1, pair)]
+    tg.halted = True                                               # halted: the console does not read (console §3)
     tg.havereset = True                                            # the target reset itself
     read = struct.pack("<IHBB", cid, 1, 2, 0x11)
     assert struct.unpack("<HBHI", hv.ok(2, RV["dmi"], read))[3] & 0xC0000 == 0xC0000

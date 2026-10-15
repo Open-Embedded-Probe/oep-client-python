@@ -89,11 +89,17 @@ class CaptureTimelineChecks:
         require(self.decode(fn,data)[:count]==[wave(fn,first+i) for i in range(count)] and len(self.decode(fn,data))>=count,message)
     def refused(self,request,reason,cause=None,fn=None):
         before=self.a.state();payload=self.c.rejected(request,reason)
-        if cause is not None:require(dict(tlvs(payload)).get(self.cause_tag)==bytes((cause,)),'timeline refusal cause')
-        if fn is not None:require(dict(tlvs(payload)).get(self.fn_tag,struct.pack('<H',fn))==struct.pack('<H',fn),'timeline refusal affected fn')
+        if cause is not None:require(dict(reversed(tlvs(payload))).get(self.cause_tag)==bytes((cause,)),'timeline refusal cause')
+        if fn is not None:require(dict(reversed(tlvs(payload))).get(self.fn_tag,struct.pack('<H',fn))==struct.pack('<H',fn),'timeline refusal affected fn')
         require(self.a.state()==before,'timeline refusal changed tracks/bind/generations/data')
+    def idle_pads(self,state):
+        """capture §1.2: every pin keeps its free (idle) state, except an analog track's channels while it waits or
+        captures - their pad leaves the digital function at start and comes back when acquisition stops."""
+        analog=[fn for fn,name in self.a.selection.items() if name=='oep.fixture.analog']
+        skip={ch for fn in analog if state['tracks'].get(fn,{}).get('state') in (2,3) for ch in state['plans'].get(fn,())}
+        return {ch:v for ch,v in state['pins'].items() if ch not in skip}=={ch:v for ch,v in state['idle'].items() if ch not in skip}
     def status(self,fn=4):
-        before=self.a.state();require(before['pins']==before['idle'],'capture changed electrical state');payload=self.c.success(self.req(fn,'status'))
+        before=self.a.state();require(self.idle_pads(before),'capture changed electrical state');payload=self.c.success(self.req(fn,'status'))
         size=13 if fn==4 else 18;require(len(payload)>=size,'group/track status fixed header');tail=tlvs(payload[size:])
         require(self.a.state()==before,'group/track status changed acquisition')
         if fn==4:return struct.unpack_from('<BQI',payload)
@@ -148,7 +154,7 @@ class CaptureTimelineChecks:
         self.refused(self.req(fn,'read',payload=struct.pack('<IQH',(generation-1)&0xffffffff,0,1)),'unavailable',6)
         return full
     def released(self,generation,gens):
-        state=self.a.state();require(not state['bound'] and not state['plans'] and state['pins']==state['idle'] and not state['pending'],'session closure retained group/plans/pins/notifications')
+        state=self.a.state();require(not state['bound'] and not state['plans'] and self.idle_pads(state) and not state['pending'],'session closure retained group/plans/pins/notifications')
         require(state['generation']==generation and all(t['state']==0 and not t['config'] and not t['data'] and not t['current'] and not t['segments'] and not t['subscribed'] and t['generation']==gens[fn] for fn,t in state['tracks'].items()),'session closure retained capture/subscription or reset generation')
     def one_shot(self,sid,members,rates,offset):
         for fn,rate in zip(members,rates):self.configure(sid,fn,1,rate)
