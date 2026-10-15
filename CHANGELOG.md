@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- (JA) oep-spec cf69012（link §3: phase 3 は理由によらず取り消さない）に追従。仮想ベンチと検査器の論理モデルから idle の復帰保留の取り消しを外し、
+  検査器の PENDING-IDLE-OWNER / -OTHER は phase 3 のまま旧 baud で答えてから戻ることを求める（故障注入は取り消してしまうモデル）。
+
 - (JA) oep-spec bd40a9c（debug §4.1「やり直してよい群」）に追従。`RiscvDm.held` は、DM の作業用レジスタと、値のほかに作用の無いレジスタ
   （GPR、dpc、dcsr）の読み書きだけの群（`same_value_rewrites`）を、確かめられなかったときに新しい corr でやり直す。それ以外の書き込みを含む群はやり直さない。
   `write_register` は GPR / dpc / dcsr で同じ群に読み戻しを入れ、線のちらつきで取りこぼした書き込みを成功として返さない（以前は黙って書き損じた）。

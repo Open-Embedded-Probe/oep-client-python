@@ -301,6 +301,12 @@ U4 について、Python の `RiscvDm.held` は、応答 success の後に look 
 | 1 | 3e7b7b8: host ガイドの U1（購読は subscribe し直しでだけ移る）と U2（走り直す host は先の corr を保存する）、ベクタの E1（max_length を u16） | 変更なし（core のとおり） | c3d9df7: ベクタを同期し、E1 の試験を正常値の確認に戻した | 文書と core の矛盾が無くなった。ベクタの壊れた TLV が 0 件 |
 | 1 | bd40a9c: debug §4.1「やり直してよい群」（U4、行 7）と common §3 からの参照 | 変更なし（host の規則） | `same_value_rewrites`、write_register の読み戻し | 下の試算 |
 
+| 1 | cf69012: link §3 の phase 3 を取り消さない（U3、行 3）。受信中の frame とその応答の境界で戻り、新しい要求で復帰を延ばさない | 取り消しの処理を外した（endpoint、論理モデル） | 検査器の 2 ケースと故障注入を新しい規則に | 下の試算 |
+
+U3 の試算: 取り消しが効くのは、idle の期限（3000 ms）の瞬間に受信中だった 1 フレームだけ（64 byte で 1 Mbps なら約 0.64 ms）。
+Python の host は上げている間 1 s ごとに keepalive を送るので通常は起きず、秒単位で止まった host の遅れが一様なら約 0.03%。
+起きても戻った速さからの通常の立て直しで済む。取り消しのために要った規則（仕様 3 文、ベンチ 2 か所、検査器 2 ケース・約 30 行、故障注入 4 個）は消えた。
+
 U4 の試算（仮想ベンチのリンク断のモデル: stale / ones / ones_line / glitch / glitch_parity を全アクセス位置で、1 要求と 2 要求の断）:
 
 | 案 | read_register | write_register（GPR） | dpc の読み | 誤り |

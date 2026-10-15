@@ -203,7 +203,7 @@
     "tests/test_conformance_port_speed.py::test_semantic_faults[refusal_changes_other_port-ONE-PORT]",
     "tests/test_conformance_port_speed.py::test_semantic_faults[one_port_committed_accepted-ONE-PORT]",
     "tests/test_conformance_port_speed.py::test_semantic_faults[one_port_pending_accepted-ONE-PORT]",
-    "tests/test_conformance_port_speed.py::test_semantic_faults[cancelled_accepts_commit-PENDING-IDLE-OWNER]"
+    "tests/test_conformance_port_speed.py::test_semantic_faults[verify_return_cancelled-PENDING-VERIFY]"
    ],
    "note": "per-port phase; the table's refusals are cause 6 and change nothing; one raised port at a time; a good request frame while the owner session remains cancels an idle return first"
   },
@@ -336,17 +336,16 @@
     "tests/test_conformance_port_speed.py::test_port_speed_handshake",
     "tests/test_conformance_port_speed_lifecycle.py::test_session_release_and_stale_writes",
     "tests/test_trace_link.py::test_a_pending_return_starts_no_new_notification_frame_until_the_port_is_back",
-    "tests/test_review4_small.py::test_any_good_request_frame_cancels_an_idle_return_while_the_owner_session_remains",
+    "tests/test_review4_small.py::test_no_request_frame_cancels_an_idle_return",
     "tests/test_review4_small.py::test_a_commit_arriving_after_verify_ms_is_refused_cause_6_and_the_port_goes_back_after_its_answer"
    ],
    "mutants": [
     "tests/test_conformance_port_speed_execution.py::test_pause_faults_are_detected[consume_verify-VERIFY]",
     "tests/test_conformance_port_speed.py::test_semantic_faults[pending_switch_mid_frame-PENDING-IDLE-OTHER]",
-    "tests/test_conformance_port_speed.py::test_semantic_faults[owner_does_not_cancel-PENDING-IDLE-OWNER]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[idle_return_cancelled-PENDING-IDLE-OWNER]",
     "tests/test_conformance_port_speed.py::test_semantic_faults[verify_return_cancelled-PENDING-VERIFY]",
     "tests/test_conformance_port_speed_lifecycle.py::test_state_faults_are_detected[expiry_pending_immediate-EXPIRY-PENDING]",
-    "tests/test_conformance_port_speed.py::test_semantic_faults[other_does_not_cancel-PENDING-IDLE-OTHER]",
-    "tests/test_conformance_port_speed.py::test_semantic_faults[owner_does_not_cancel-PENDING-IDLE-OTHER]",
+    "tests/test_conformance_port_speed.py::test_semantic_faults[idle_return_cancelled-PENDING-IDLE-OTHER]",
     "tests/test_conformance_port_speed.py::test_semantic_faults[pending_return_missing-PENDING-VERIFY]"
    ],
    "note": "timers paused while executing; a return waits for frame boundaries and starts no new notification frame meanwhile; while the session that raised the port remains, any good request frame (a session-less port_state / source too: the timer is not the lease) cancels an idle return - an invalid frame does not (review 4: bench, model and checker had required the owner's own frame); verify/session returns never; a late commit is refused cause 6 and the return follows its answer"

@@ -47,25 +47,18 @@ def _idle_pending(owner_stays=True):
     return ep, hst, clock, core
 
 
-def test_any_good_request_frame_cancels_an_idle_return_while_the_owner_session_remains():
-    """A request frame without a session id (port_state, source: lock-free) on the raised port, while the session that
-    raised it still holds the lock, cancels the pending idle return (phase 2 again, the idle timer counted anew) - the
-    timer is not the lease, which only the owner's requests renew (link §3 return condition 2). The bench and the
-    checker's model cancelled only on the owner's own frame."""
+def test_no_request_frame_cancels_an_idle_return():
+    """link §3 (oep-spec cf69012): phase 3 is never cancelled, whatever its reason. A request frame on the raised port
+    while the idle return is pending - with or without a session id - is answered at the raised rate (port_state says
+    phase 3), and the port goes back at that answer's boundary."""
     for op in ("port_state", "source"):
         ep, hst, clock, core = _idle_pending()
         payload = struct.pack("<I", 4) if op == "source" else b""
         r = h_call(hst, ep.link_fn, reg.PROBE_LINK.op[op], payload)
         if op == "port_state":
-            assert struct.unpack_from("<IB", r) == (500000, 2)
-        assert ep.speed_phase(0) == 2 and ep.speed_fallback is None and ep.port_baud(0) == 500000
-        ep.speed_frame_busy = False
-        clock.t += 2999
-        ep.tick()
-        assert ep.speed_phase(0) == 2                                           # the timer counts from that frame
-        clock.t += 1
-        ep.tick()
-        ep.speed_after_answer()
+            assert struct.unpack_from("<IB", r) == (500000, 3)
+        assert ep.speed_phase(0) == 3 and ep.speed_fallback == "idle"
+        ep.speed_frame_done()                                                   # the answer's boundary
         assert ep.speed_phase(0) == 0 and ep.port_baud(0) == 115200
 
 

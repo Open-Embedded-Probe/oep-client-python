@@ -1212,7 +1212,6 @@ class Endpoint:
         self._lapse()                                              # an expired lease is cleaned up before the next
         #                                                            request's processing, its resend check too (core §6.1)
         self._speed_due(transport)                                 # a return due now waits for this frame's end (link §3)
-        self._speed_cancel(transport)                              # a good request frame, before the step's check (link §3)
         header = self._header(req)                                 # core §4.3: the header, before the resend table
         if header is not None:
             return m.Result(req.corr, m.REJECTED, header).pack()
@@ -2132,15 +2131,6 @@ class Endpoint:
             self.speed_fallback = why
         else:
             self._speed_fall(why)
-
-    def _speed_cancel(self, transport: int) -> None:
-        """A good request frame on the raised port while the session that raised it is still there (whoever sent the
-        frame: unlike the lease, core §6.1) cancels a pending idle return and restarts the idle timer (phase 2 again);
-        a verify or a session's return is never cancelled (oep-if-link §3)."""
-        if (self.speed_fallback == "idle" and self.speed_state == "committed" and transport == self.speed_port
-                and self.holder is not None and self.holder == self.speed_owner):
-            self.speed_fallback = None
-            self.speed_good_ms = self.now()
 
     def speed_frame(self, port: int, good: bool) -> None:
         """A candidate closed on serial port `port`: a frame (good) or not. A good frame restarts the committed rate's

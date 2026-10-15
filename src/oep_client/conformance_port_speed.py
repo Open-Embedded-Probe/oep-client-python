@@ -175,30 +175,25 @@ class PortSpeedChecks:
                     else:self.during(self.request(sid,step=kind),'unavailable')
                     self.speed(0,115200);self.phase(0,115200)
             elif name=='PENDING-IDLE-OWNER':
-                # The owner's normal request cancels the idle return first, then the table applies.
+                # phase 3 is never cancelled, whatever its reason (link §3): the owner's request that straddles the idle
+                # boundary is answered at the raised rate, then the port goes back; every step is cause6.
                 for kind in ('state','keepalive',0,1,2):
                     self.trial(sid);self.a.advance(20);self.commit(sid);self.straddle(3000)
-                    if kind=='state':require(self.during(self.state_request(sid),state=2)[:5]==struct.pack('<IB',230400,2),'port_state did not report cancelled phase2')
-                    elif kind=='keepalive':tlvs(self.during(self.c.request(self.c.core['keepalive'],session=sid),state=2))
-                    elif kind==2:
-                        require(self.during(self.request(sid,step=2,verify=0),state=2)[:4]==struct.pack('<I',115200),'revert answer baud differs')
-                        self.speed(0,115200);self.phase(0,115200);continue
-                    else:self.during(self.request(sid,step=kind),'unavailable',state=2)
-                    p=self.observe('cancelled');require(p['ports'][0]['state']==2 and p['ports'][0]['deadline']==p['time_ms']+3000,'cancel did not restart idle')
-                    self.a.advance(2999);self.speed(2,230400);self.a.advance(1);self.speed(0,115200)
+                    if kind=='state':require(self.during(self.state_request(sid))[:5]==struct.pack('<IB',230400,3),'port_state did not report phase3')
+                    elif kind=='keepalive':tlvs(self.during(self.c.request(self.c.core['keepalive'],session=sid)))
+                    else:self.during(self.request(sid,step=kind),'unavailable')
+                    self.speed(0,115200);self.phase(0,115200)
             elif name=='PENDING-IDLE-OTHER':
-                # While the session that raised the port remains, any normal request frame cancels an idle return - one
-                # without a session id too (the timer is not the lease, link §3); a frame that is no request does not.
+                # Nor does a request without a session id, nor a frame that is no request (link §3).
                 for kind in ('state','source','invalid'):
                     self.trial(sid);self.a.advance(20);self.commit(sid);self.straddle(3000)
                     if kind=='invalid':
                         require(self.a.raw(b'\0') is None,'invalid frame got a response');self.speed(0,115200);self.phase(0,115200);continue
-                    if kind=='state':require(self.during(self.state_request(),state=2)[:5]==struct.pack('<IB',230400,2),'port_state did not report cancelled phase2')
+                    if kind=='state':require(self.during(self.state_request())[:5]==struct.pack('<IB',230400,3),'port_state did not report phase3')
                     else:
-                        p=self.during(self.c.request(16,struct.pack('<I',4),fn=4),state=2)
+                        p=self.during(self.c.request(16,struct.pack('<I',4),fn=4))
                         require(p[:6]==b'\4\0'+bytes(range(4)),'source answer differs');tlvs(p[6:])   # len data [TLV] (link §1)
-                    p=self.observe('cancelled');require(p['ports'][0]['state']==2 and p['ports'][0]['deadline']==p['time_ms']+3000,'cancel did not restart idle')
-                    self.a.advance(2999);self.speed(2,230400);self.a.advance(1);self.speed(0,115200)
+                    self.speed(0,115200);self.phase(0,115200)
         self.speed(0,115200)
     def run(self):
         start=len(self.c.results);RegisteredOpsChecks(self.c,self.a.selection).run()

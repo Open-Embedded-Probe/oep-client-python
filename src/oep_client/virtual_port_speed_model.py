@@ -60,11 +60,6 @@ class PortSpeedModel(LinkTransferModel):
                 if p['state']:p.update(state=3,why='session')
         else:
             for r in self.ports:self.fall(r,'session')
-    def cancel(self):
-        # A normal request frame on the port while the session that raised it is still there (whoever sent it:
-        # the timer is not the lease, link §3), before the step table.
-        p=self.ports.get(self.active_route);holder=self.ep.current_core.holder
-        if p and p['why']=='idle' and len(self.request)>=10 and self.request[0]==1 and holder is not None and holder==p['owner']:p.update(state=2,why=None,deadline=self.clock_ms+3000)
     def tick(self):
         self.ep.current_core.tick()
         for route,port in list(self.ports.items()):
@@ -115,7 +110,6 @@ class PortSpeedModel(LinkTransferModel):
         self.ep.probe.max_frame=e.frame_limit=self.limits[route]
         started=self.clock_ms;raised=[p for p in self.ports.values() if p['state']]
         try:
-            self.cancel()
             reply=self.ep.current_core.handle(request,route,defer_send=True)
         finally:
             self.in_release_request=False;self.handling=None;e.fixed,e.free=fixed,free;self.ep.probe.max_frame,e.frame_limit=frame,limit

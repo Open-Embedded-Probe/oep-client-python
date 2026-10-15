@@ -53,30 +53,29 @@ def test_wrong_wire_result_is_detected(case):
     ('refusal_changes_other_port','ONE-PORT'),
     ('state_phase_stale','STATES'),('state_baud_boot','TRY-BARRIER'),('state_nonbridge_accepted','NON-BRIDGE'),
     ('state_ignores_critical','TLV'),('state_after_verify_stale','VERIFY'),('state_after_idle_stale','IDLE'),
-    ('boot_rate_accepted','BOOT-RATE'),('revert_wrong_baud','REVERT-TRIAL'),('revert_wrong_baud','PENDING-IDLE-OWNER'),
+    ('boot_rate_accepted','BOOT-RATE'),('revert_wrong_baud','REVERT-TRIAL'),
     ('commit_zero_verify_rejected','COMMIT'),('commit_needs_actual_baud','TOLERANCE'),
     ('one_port_committed_accepted','ONE-PORT'),('one_port_pending_accepted','ONE-PORT'),('end_not_pending','END-BARRIER'),
     ('no_pending_return','PENDING-VERIFY'),('pending_accepts_step','PENDING-VERIFY'),('verify_return_cancelled','PENDING-VERIFY'),
     ('pending_switch_mid_frame','PENDING-IDLE-OTHER'),('pending_return_missing','PENDING-VERIFY'),
-    ('other_does_not_cancel','PENDING-IDLE-OTHER'),('owner_does_not_cancel','PENDING-IDLE-OTHER'),('owner_does_not_cancel','PENDING-IDLE-OWNER'),
-    ('cancelled_accepts_commit','PENDING-IDLE-OWNER'),('cancelled_revert_refused','PENDING-IDLE-OWNER'),
+    ('idle_return_cancelled','PENDING-IDLE-OWNER'),('idle_return_cancelled','PENDING-IDLE-OTHER'),
 ])
 def test_semantic_faults(defect,case):
-    model,c=setup();begin=model.begin;finish=model.finish;advance=model.advance;cancel=model.cancel;fall=model.fall
+    model,c=setup();begin=model.begin;finish=model.finish;advance=model.advance;fall=model.fall
     raised=lambda state,deadline:dict(model.boot(),state=state,baud=230400,asked=230400,deadline=deadline,owner=model.ep.current_core.holder)
     ok=lambda reply,value:reply[:3]+b'\1\0'+value;stale=[]
-    def bad_cancel():
-        p=model.ports.get(model.active_route)
-        if defect=='owner_does_not_cancel':return
-        if defect=='other_does_not_cancel' and p and p['why']=='idle':
-            sid=int.from_bytes(model.request[6:10],'little') if len(model.request)>=10 else 0
-            if not sid:return                                  # the old rule: only the owner's own frame cancels
-        if defect=='verify_return_cancelled' and p and p['why']=='verify':p.update(state=1,why=None);return
-        cancel()
+    def bad_cancel(route):
+        # the rule before oep-spec cf69012: a request frame on the port cancelled a pending return (an idle one, or -
+        # wrongly even then - a verify one)
+        p=model.ports.get(route)
+        if not p or p['state']!=3:return
+        if defect=='idle_return_cancelled' and p['why']=='idle':p.update(state=2,why=None,deadline=model.clock_ms+3000)
+        if defect=='verify_return_cancelled' and p['why']=='verify':p.update(state=1,why=None,deadline=model.clock_ms+100)
     def bad_fall(route,why):
         if defect=='no_pending_return':model.reset_port(route)
         else:fall(route,why)
     def bad_begin(request,route=0):
+        if len(request)>=10 and request[0]==1:bad_cancel(route)
         deadline=model.ports[0]['deadline'];phase=model.ports.get(route,{}).get('state')
         reply=begin(request,route)
         if request[3:6]==b'\4\0\x13' and reply:
@@ -110,8 +109,6 @@ def test_semantic_faults(defect,case):
             if defect=='one_port_committed_accepted' and route==2 and step==0 and model.ports[0]['state']==2:reply=ok(reply,(230400).to_bytes(4,'little'))
             if defect=='one_port_pending_accepted' and route==2 and step==0 and model.ports[0]['state']==3:reply=ok(reply,(230400).to_bytes(4,'little'))
             if defect=='pending_accepts_step' and phase==3 and step==1:reply=ok(reply,(230400).to_bytes(4,'little'))
-            if defect=='cancelled_accepts_commit' and phase==3 and step==1:reply=ok(reply,(230400).to_bytes(4,'little'))
-            if defect=='cancelled_revert_refused' and phase==3 and step==2:reply=reply[:3]+b'\0\4\1\1\0\6';model.pending['actions']=[]
             rate=int.from_bytes(request[10:14],'little')
             if defect=='allowed_boundary_rejected' and rate==235102:reply=reply[:3]+b'\0\x0b\0'
             if defect=='outside_boundary_accepted' and rate==235103:reply=reply[:3]+b'\1\0'+(230400).to_bytes(4,'little')
@@ -140,7 +137,7 @@ def test_semantic_faults(defect,case):
         if defect=='no_idle_expiry' and p['state']==2:model.ports[0]=p
         if defect=='idle_early' and p['state']==2:model.reset_port(0)
         if defect in ('state_after_verify_stale','state_after_idle_stale') and p['state']==(1 if 'verify' in defect else 2) and not model.ports[0]['state']:stale[:]=[p['state']]
-    model.begin=bad_begin;model.finish=bad_finish;model.advance=bad_advance;model.cancel=bad_cancel;model.fall=bad_fall
+    model.begin=bad_begin;model.finish=bad_finish;model.advance=bad_advance;model.fall=bad_fall
     r=PortSpeedChecks(c,SamplePortSpeedAdapter(model)).run()
     row=next(x for x in r['checks'] if x['id']=='OEP-PORT-SPEED-'+case)
     assert row['status']=='failed' and row['error'].startswith('Violation:'),row
