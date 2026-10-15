@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- (JA) `RiscvDm.held`: 応答が success でも前後の look や二度読みが合わなかった群のうち、書き込みを含むものはやり直さず、
+  LinkNotHeld で止める（common §3、core §4.2: 作用が不明な書き込みを新しい corr で繰り返さない）。読むだけの群はこれまでどおりやり直す。
+  落ちやすい debug link（CH32L103 と RVSWD）では read_register / write_register が LinkNotHeld になりやすくなる。緩めてよいかは仕様の判断を待つ
+  （docs/spec-follow-notes.ja.md の行 7 / U4）。
+
 - (JA) TCP の接続を開き直したとき（transports §5: 区切りを失った）、Host は次の要求の前に、残っている購読を同じ条件で購読し直す。
   購読は閉じた接続へ送り続け、新しい接続へは持ち越されない（core §6.2、§10.3、transports §3）ため、以前は開き直した後のストリーミングのデータが黙って止まっていた。
   host ガイド §12 の「同じ session_id の open で通知が移る」は core と食い違う（docs/spec-follow-notes.ja.md の U1）。

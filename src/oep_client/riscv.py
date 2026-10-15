@@ -642,12 +642,13 @@ class RiscvDm(Interface, BlockLength):
         all ones, with nothing in the answer to say so - a stale DATA0 reads like a register. A drop lasts until the
         link is brought up again; when the look after the steps passes, every step met the link up - provided the
         probe did not bring it up again between the looks (its revive after a rest), which a probe with the per-request
-        check (oep-probe-arduino 0.0.29-dev, the 2026-10-06 debug-link proposal P4) answers status line. A try whose
-        looks do not pass, whose values `agree` (when given) does not take, or that stopped with a status a drop can
-        cause (line, timeout, wait) before reaching any of its writes, is run again after HELD_RETRY_S, `tries` times at
-        most; then LinkNotHeld. Any other stop - a failed try that reached a write included: its effect is unknown and a
-        new corr never repeats it (common §3) - raises StepListError at once. The group must be one that may run twice: it writes values fixed before it
-        and reads what nothing in it changes (a cmderr left by an earlier try is the group's to clear)."""
+        check (oep-probe-arduino 0.0.29-dev, the 2026-10-06 debug-link proposal P4) answers status line. A try that
+        stopped with a status a drop can cause (line, timeout, wait) before reaching any of its writes is run again
+        after HELD_RETRY_S, `tries` times at most; so is a try of a group of reads only whose looks do not pass or whose
+        values `agree` (when given) does not take; then LinkNotHeld. A group with writes whose looks or values do not
+        pass raises LinkNotHeld at once: its writes ran over a link it could not confirm, their effect is unknown, and
+        a new corr does not repeat them (common §3; core §4.2 - spec-follow notes row 7 / U4 ask whether this may be
+        relaxed). Any other stop - a failed try that reached a write included - raises StepListError at once."""
         raw = b"".join(steps) if isinstance(steps, list) else steps
         look = self.look()
         kinds = count_steps(look + raw + look)
@@ -666,11 +667,14 @@ class RiscvDm(Interface, BlockLength):
                 continue
             if not (link_held(*values[:2]) and link_held(*values[-2:])):
                 last = "looks " + " ".join(f"{v:#010x}" for v in values[:2] + values[-2:])
-                continue
-            if agree is not None and not agree(values[2:-2]):
+            elif agree is not None and not agree(values[2:-2]):
                 last = "values that do not agree: " + " ".join(f"{v:#010x}" for v in values[2:-2])
-                continue
-            return values[2:-2]
+            else:
+                return values[2:-2]
+            if STEP_WRITE in kinds:
+                # the try ran all its writes over a link it could not confirm: their effect is unknown, and a new
+                # corr does not repeat them (common §3; core §4.2). Only a group of reads is tried again.
+                raise LinkNotHeld(what, attempt + 1, f"{last}; a group with writes is not run again (common §3)")
         raise LinkNotHeld(what, tries, last)
 
     def _abstract(self, command: int, before: bytes = b"") -> bytes:

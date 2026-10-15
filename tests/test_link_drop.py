@@ -124,9 +124,9 @@ def test_a_held_read_register_never_returns_a_value_it_could_not_confirm():
     # DATA0 saved first, held (look 2, DATA0, look 2: debug §4, restored before the hart runs); then look 2, cmderr
     # clear, (DATA0 sentinel, command, poll 1, DATA0) twice with a DMSTATUS read before the second DATA0, look 2
     assert accesses(lambda d, tg: d.read_register(S0)) == READ_ACCESSES == 5 + 14
-    # every drop met: the next try got the register, or - a try that failed after reaching one of its writes, never
-    # run again (common §3) - StepListError; never a wrong value
-    assert not got["wrong"] and {name for _, _, name in got["raised"]} <= {"StepListError"}
+    # every drop met: the next try of a group of reads got the register; a group with writes is never run again
+    # (common §3) - StepListError or LinkNotHeld; never a wrong value
+    assert not got["wrong"] and {name for _, _, name in got["raised"]} <= {"StepListError", "LinkNotHeld"}
     assert len(got["right"]) + len(got["raised"]) == READ_ACCESSES * len(MODES) and got["right"]
 
 
@@ -145,7 +145,9 @@ def test_one_missed_access_between_passing_looks_never_gives_a_wrong_register():
     old = sweep(lambda d, tg: held_once_read_register(d, S0), lambda tg, v: v == VALUE, modes=("glitch",))
     assert {v for _, _, v in old["wrong"]} >= {STALE}         # the command lost: DATA0's old word, looks passing
     new = sweep(lambda d, tg: d.read_register(S0), lambda tg, v: v == VALUE, modes=("glitch",))
-    assert not new["wrong"] and not new["raised"] and len(new["right"]) == READ_ACCESSES
+    # the miss caught (looks or the two reads): the command group, which writes, is not run again (common §3)
+    assert not new["wrong"] and {name for _, _, name in new["raised"]} <= {"LinkNotHeld"}
+    assert len(new["right"]) + len(new["raised"]) == READ_ACCESSES
     # two misses in one group, at every pair of accesses: never a wrong register (agreeing twice by chance aside -
     # a sentinel and the register, or ABSTRACTCS and DMSTATUS, would have to be the same value)
     wrong = []
@@ -182,9 +184,10 @@ def test_link_not_held_says_what_and_how_often():
     n = len(ep.requests)
     with pytest.raises(riscv.LinkNotHeld) as e:
         d.read_register(S0)
-    assert e.value.tries == riscv.HELD_TRIES and "read_register 0x1008" in str(e.value)
+    # the command group writes: one try, not run again over a link it could not confirm (common §3)
+    assert e.value.tries == 1 and "read_register 0x1008" in str(e.value) and "not run again" in str(e.value)
     dmi = [r for r in ep.requests[n:] if (r.fn, r.op) == (d.fn, riscv.RiscvDm.DMI)]
-    assert len(dmi) == riscv.HELD_TRIES                          # every try, nothing more
+    assert len(dmi) == 1                                         # that try, nothing more
 
 
 def test_a_drop_lasting_fewer_requests_than_the_tries_is_ridden_out():
@@ -263,22 +266,23 @@ def _no_cmderr(tg) -> bool:
     return not (tg.dmi.get(riscv.ABSTRACTCS, 0) >> 8) & 7
 
 
-def test_cmderr_6_is_a_failed_try_and_the_group_is_run_again():
+def test_cmderr_6_is_a_failed_try_and_the_group_is_not_run_again():
     """A write missed with cmderr 6 set (QingKe's "parity bit error": the module ignored the frame) at every access of
     read_register and write_register (bench, oep-probe-arduino 0.0.29-dev+f594f04, tests/hw test_wire on a CH32L103
     through an RVSWD probe: "read_register 0x100a / 0x1009 / 0x100b failed (cmderr 6)", 3 of 8 runs). It raised
-    RuntimeError; now the group is cleared and run again within the tries: the right value, no cmderr left."""
+    RuntimeError. The group writes, so it is not run again (common §3): LinkNotHeld, cmderr cleared, never a wrong
+    value."""
     old = sweep(lambda d, tg: old_cmderr_read_register(d, S0), lambda tg, v: v == VALUE, modes=("glitch_parity",))
     assert ("RuntimeError" in {name for _, _, name in old["raised"]})
     new = sweep(lambda d, tg: (d.read_register(S0), _no_cmderr(tg)), lambda tg, v: v == (VALUE, True),
                 modes=("glitch_parity",))
-    assert not new["wrong"] and not new["raised"] and new["right"]
+    assert not new["wrong"] and {name for _, _, name in new["raised"]} <= {"LinkNotHeld"} and new["raised"]
 
     def write(d, tg):
         d.write_register(S0, 0x13572468)
         return tg.regs[S0], _no_cmderr(tg)
     got = sweep(write, lambda tg, v: v == (0x13572468, True), modes=("glitch_parity",))
-    assert not got["wrong"] and not got["raised"] and got["right"]
+    assert not got["wrong"] and {name for _, _, name in got["raised"]} <= {"LinkNotHeld"} and got["raised"]
 
 
 def test_cmderr_6_twice_in_a_read_never_gives_a_wrong_register():
@@ -295,9 +299,9 @@ def test_cmderr_6_twice_in_a_read_never_gives_a_wrong_register():
                 continue
             if v != VALUE:
                 wrong.append((a, b, v))
-    # never a wrong value nor an error (two misses may hide each other's cmderr 6 - a sentinel write lost and the poll
-    # after it read stale - with DATA0 still the first command's right value; the next group clears it first)
-    assert not wrong and not raised
+    # never a wrong value (two misses may hide each other's cmderr 6 - a sentinel write lost and the poll after it
+    # read stale - with DATA0 still the first command's right value); a miss caught is LinkNotHeld, not run again
+    assert not wrong and {name for _, _, name in raised} <= {"LinkNotHeld"}
 
 
 def test_cmderr_6_at_every_try_raises_link_not_held_and_leaves_no_cmderr():
@@ -308,7 +312,7 @@ def test_cmderr_6_at_every_try_raises_link_not_held_and_leaves_no_cmderr():
     tg.abstract = parity
     with pytest.raises(riscv.LinkNotHeld) as e:
         d.read_register(S0)
-    assert e.value.tries == riscv.HELD_TRIES and _no_cmderr(tg)
+    assert e.value.tries == 1 and _no_cmderr(tg)                 # a group with writes: one try (common §3)
     with pytest.raises(riscv.LinkNotHeld):
         d.write_register(S0, 1)
     assert _no_cmderr(tg)
@@ -348,10 +352,15 @@ def test_run_payload_places_and_starts_the_payload_on_the_virtual_bench():
     wire = riscv.Wire(hst)
     wire.detach(d.conn)                                          # run_payload attaches on its own (debug §1)
     tg.regs[uiapduino.MSTATUS] = 0x88
-    tg.drop_at = {tg.dmi_accesses + 9: "stale"}                  # inside the dpc write's group
     uiapduino.run_payload(hst, wire, [0x0000006F])
     assert tg.dpc == uiapduino.PAYLOAD_BASE and tg.regs[uiapduino.MSTATUS] == 0 and not tg.halted
-    assert tg.lost_writes                                        # the drop was met, and the group run again
+    ep, hst, tg, d = bench()
+    wire = riscv.Wire(hst)
+    wire.detach(d.conn)
+    tg.drop_at = {tg.dmi_accesses + 9: "stale"}                  # inside the dpc write's group
+    with pytest.raises(riscv.LinkNotHeld):                       # met, and not run again (common §3)
+        uiapduino.run_payload(hst, wire, [0x0000006F])
+    assert tg.lost_writes and tg.halted                          # the hart is not started on an unconfirmed write
 
 
 # ---- ch32_flash.resume reads dpc right after a resume (a change of state) --------------------------------------------
@@ -370,5 +379,5 @@ def test_ch32_resume_does_not_take_a_dropped_dpc_read_for_a_move(monkeypatch):
         old = sweep(op, right)
     assert [at for mode, at, went in old["wrong"] if mode == "ones" and went is True and at >= first]
     new = sweep(op, right)                                       # (all ones read for dpc: "it moved", so it went)
-    assert not new["wrong"] and {name for _, _, name in new["raised"]} <= {"StepListError"}   # a failed try past a
+    assert not new["wrong"] and {name for _, _, name in new["raised"]} <= {"StepListError", "LinkNotHeld"}   # past a
     assert len(new["right"]) + len(new["raised"]) == accesses(op) * len(MODES) and new["right"]   # write: not re-run
