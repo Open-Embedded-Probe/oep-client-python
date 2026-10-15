@@ -8,7 +8,7 @@ and the interfaces `interfaces/*.ja.md`), v1 before the freeze: until the freeze
 oep-spec's generated `generated/oep-v1/oep_v1_registry.py`. This is an experimental stage: breaking changes are expected and
 no compatible API is promised.
 
-**The spec this implements: oep-spec commit `91a5653`** (no `v0.x` tag yet; oep-spec versioning §2 / §6 - before the
+**The spec this implements: oep-spec commit `67876b7`** (no `v0.x` tag yet; oep-spec versioning §2 / §6 - before the
 freeze, revision 1 alone does not fix the forms, so an implementation names the spec commit it implements). The registry
 and the shared vectors in `tests/vectors/` are copied from that commit (`tests/vectors/SPEC_COMMIT`); what changed on the
 way to it is in [CHANGELOG.md](CHANGELOG.md).
@@ -316,7 +316,7 @@ The virtual bench is a probe, the targets behind it and the fixture wiring, mode
 the environment host software is tested in, without hardware. ("Bench" alone in this repository means the real
 hardware-in-the-loop jigs; the software one is always "virtual bench".)
 
-Its probe, `endpoint.Endpoint`, answers as oep-spec 91a5653 says (every answer carries the length of its data or list,
+Its probe, `endpoint.Endpoint`, answers as oep-spec 67876b7 says (every answer carries the length of its data or list,
 TLVs may follow anything, describe = declarations and lock-free state ops for the rest, capture generations); ch32rv,
 this client and the probe firmware are checked against it (when the spec changes, this is brought in line before the
 firmware). `virtual_bench` holds example declarations (profiles `p4-x035`, `esp32-v003` = the classic ESP32 firmware's

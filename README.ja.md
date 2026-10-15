@@ -6,7 +6,7 @@ Open Embedded Probe の host 側。v1（oep-spec の本体 `docs/oep-core.ja.md`
 `generated/oep-v1/oep_v1_registry.py` をそのまま写した `oep_client.registry` から取る。破壊的変更を前提とする
 実験段階で、互換 API は約束しない。
 
-**実装する仕様: oep-spec の commit `91a5653`**（`v0.x` のタグはまだ無い。oep-spec versioning §2 / §6: 凍結の前は revision 1 だけでは
+**実装する仕様: oep-spec の commit `67876b7`**（`v0.x` のタグはまだ無い。oep-spec versioning §2 / §6: 凍結の前は revision 1 だけでは
 形が決まらないので、実装は自分が実装する仕様の commit を名乗る）。番号の表と `tests/vectors/` の共有ベクタはその commit から写したもの
 （`tests/vectors/SPEC_COMMIT`）。そこまでの変更は [CHANGELOG.md](CHANGELOG.md) にある。
 
@@ -287,7 +287,7 @@ max(基準 × 2, 10 %) を超えて壊れ・失われたら下げる。下げる
 仮想ベンチは、probe とその先の target、治具の配線を、実際の治具に合わせてソフトウェアで作ったもので、ハードウェアなしで host の
 ソフトウェアを試す環境である（この repo で「ベンチ」とだけ書けば実機の HIL の治具を指し、ソフトウェアのほうは常に「仮想ベンチ」と書く）。
 
-その probe、`endpoint.Endpoint` は oep-spec 91a5653 の規範どおりに答え（応答のデータと並びは長さを持ち、どの応答にも TLV が
+その probe、`endpoint.Endpoint` は oep-spec 67876b7 の規範どおりに答え（応答のデータと並びは長さを持ち、どの応答にも TLV が
 続けられる、describe は宣言だけで状態はロック不要の状態の op、キャプチャの世代）、ch32rv・この client・probe の firmware を突き合わせる
 「動く spec」として使う（spec が変わったら、probe の firmware より先にここを合わせる）。`virtual_bench` は宣言の例（profile:
 `p4-x035`、`esp32-v003` = classic ESP32 の firmware と同じフレームの上限 - max_frame 512、riscv-dm の max_length 488 -、

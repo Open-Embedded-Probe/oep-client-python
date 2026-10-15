@@ -1,5 +1,5 @@
 {
- "spec_commit": "91a5653",
+ "spec_commit": "67876b7",
  "units": {
   "restart:pre:1": {
    "text": "| `oep.probe.restart` | 1 | probe 自身を起動し",

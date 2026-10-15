@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- (JA) oep-spec 67876b7（probe.config §1.2 console_passthrough）に追従。仮想ベンチは、セッションがその口とピンを使っていない間、止めない attach で
+  target のコンソールの出力をフレームの外で口へ送る（OEP の接続・ストリームは作らない。試し直しは swio だけ）。クライアントは `config.ConsolePassthrough`。
+
 - (JA) oep-spec df32360 / 91a5653（probe.config §1.1 passthrough、transports §4 の素通し）に追従。仮想ベンチは、セッションがその口・fn・RX のピンを
   使っていない間、fixture UART が受けたバイトをフレームの間に送り、後ろに区切りの 0x00 を置く。クライアントは `config.Passthrough` で設定・読み出し・解除する。
   実験（docs/spec-follow-notes.ja.md R8）: テキストのコンソールを素通しにしても、セッションの外の照会・セッションの要求とも失敗 0。

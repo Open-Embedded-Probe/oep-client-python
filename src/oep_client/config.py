@@ -113,7 +113,30 @@ class Passthrough:
         return struct.pack("<BHHIB", self.port, self.fn, self.rx, self.baud, self.format)
 
 
-KINDS = {"label": Label, "idle": Idle, "disable": Disable, "passthrough": Passthrough}
+@dataclass(kw_only=True)
+class ConsolePassthrough:
+    """Serial port `port` carries the target's debug console - read by the probe itself over `wire_fn` on (swdio, swclk)
+    with method 0 (no halt, no reset), through console `console_fn`'s `mechanism` - outside the OEP frames, while no
+    session uses the port or those pins (probe.config §1.2, item 0x06): a target that prints through the debug
+    mailbox, watched with a plain serial monitor. Not an OEP resource (no connection, no stream). Key: the port."""
+    port: int
+    wire_fn: int
+    swdio: int
+    swclk: int = 0xFFFF
+    max_speed: int = 1_000_000
+    console_fn: int
+    mechanism: int
+    TAG = ITEM["console_passthrough"]
+
+    def key(self) -> tuple:
+        return (self.TAG, self.port)
+
+    def value(self) -> bytes:
+        return struct.pack("<BHHHIHB", self.port, self.wire_fn, self.swdio, self.swclk, self.max_speed, self.console_fn,
+                           self.mechanism)
+
+
+KINDS = {"label": Label, "idle": Idle, "disable": Disable, "passthrough": Passthrough, "console_passthrough": ConsolePassthrough}
 
 
 @dataclass(frozen=True)
@@ -151,6 +174,10 @@ def decode(tag: int, v: bytes):
     if tag == ITEM["passthrough"] and len(v) == 10:
         port, fn, rx, baud, fmt = struct.unpack("<BHHIB", v)
         return Passthrough(port=port, fn=fn, rx=rx, baud=baud, format=fmt)
+    if tag == ITEM["console_passthrough"] and len(v) == 14:
+        port, wfn, swdio, swclk, speed, cfn, mech = struct.unpack("<BHHHIHB", v)
+        return ConsolePassthrough(port=port, wire_fn=wfn, swdio=swdio, swclk=swclk, max_speed=speed, console_fn=cfn,
+                                  mechanism=mech)
     return (tag, v)
 
 

@@ -106,3 +106,81 @@ def test_what_it_passes_is_not_kept_in_the_uarts_stream(bench):
     assert s.port.output() == b"" and kept() == before
     ep.session_ports.clear()
     assert s.port.output() == b""                         # not kept for later
+
+
+# ---- console_passthrough (probe.config §1.2) -------------------------------------------------------------------------
+
+WIRE, PAIR, CONSOLE, DMSEQ = 1, (16, 0xFFFF), 3, 2
+
+
+def console_item(port=0, wire=WIRE, pair=PAIR, speed=1_000_000, console=CONSOLE, mech=DMSEQ):
+    return (struct.pack("<BH", config.ITEM["console_passthrough"], 14)
+            + struct.pack("<BHHHIHB", port, wire, pair[0], pair[1], speed, console, mech))
+
+
+def test_the_targets_console_goes_out_while_no_session_uses_it(bench):
+    ep, s, lk, hst = bench
+    core.take(hst, 10000)
+    config.ProbeConfig(hst).set([console_item()])
+    ep.target_says(b"in session\r\n")
+    assert s.port.output() == b""                         # the session's port: nothing raw
+    hst.end()
+    ep.target_says(b"printf\r\n")
+    assert s.port.output() == b"printf\r\n\x00"
+    assert not ep.conns and not ep.streams                # no OEP resource: no connection, no stream (§1.2)
+    assert hst.lock_state()[0] is False                   # session-less requests still answered
+
+
+def test_a_session_on_the_port_closes_it_and_it_comes_back_after(bench):
+    ep, s, lk, hst = bench
+    core.take(hst, 10000)
+    config.ProbeConfig(hst).set([console_item()])
+    hst.end()
+    assert ep.console_passthroughs() == {0: (WIRE, PAIR)}
+    core.take(hst, 10000)
+    assert ep.console_passthroughs() == {} and 0 not in ep.resident   # closed, the target untouched
+    ep.target_says(b"x")
+    hst.end()
+    assert s.port.output() == b""                         # what the session's time made was not kept
+    ep.target_says(b"y")
+    assert s.port.output() == b"y\x00"
+
+
+def test_swio_tries_again_until_the_target_answers(bench):
+    ep, s, lk, hst = bench
+    core.take(hst, 10000)
+    config.ProbeConfig(hst).set([console_item()])
+    ep.target.present = False
+    hst.end()
+    assert ep.console_passthroughs() == {}
+    ep.target.present = True                              # swio's wake does not reset the target: tried again
+    assert ep.console_passthroughs() == {0: (WIRE, PAIR)}
+
+
+@pytest.mark.parametrize("value, reason", [
+    (dict(port=7), m.UNSUPPORTED), (dict(wire=4), m.UNSUPPORTED), (dict(pair=(17, 0xFFFF)), m.UNSUPPORTED),
+    (dict(speed=0), m.MALFORMED), (dict(console=4), m.UNSUPPORTED), (dict(mech=9), m.UNSUPPORTED),
+], ids=["port", "wire", "pair", "speed0", "console", "mechanism"])
+def test_a_console_item_it_cannot_take_is_refused(bench, value, reason):
+    ep, s, lk, hst = bench
+    core.take(hst, 10000)
+    with pytest.raises(h.Rejected) as e:
+        config.ProbeConfig(hst).set([console_item(**value)])
+    assert e.value.result.detail == reason
+
+
+def test_one_pass_through_per_port(bench):
+    ep, s, lk, hst = bench
+    core.take(hst, 10000)
+    with pytest.raises(h.Unavailable) as e:
+        config.ProbeConfig(hst).set([item(), console_item()])
+    assert e.value.cause == "held_by_settings"
+
+
+def test_the_client_sets_and_reads_a_console_pass_through(bench):
+    ep, s, lk, hst = bench
+    core.take(hst, 10000)
+    cfg = config.ProbeConfig(hst)
+    want = config.ConsolePassthrough(port=0, wire_fn=WIRE, swdio=16, console_fn=CONSOLE, mechanism=DMSEQ)
+    cfg.set([want])
+    assert want in cfg.items()

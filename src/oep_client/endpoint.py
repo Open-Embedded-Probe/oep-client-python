@@ -535,7 +535,9 @@ class Connection:
     free: bool = False                                 # an exchange went unanswered: the lines rest undriven (debug §2)
 
 
-ITEM_SIZES = {ITEM["idle"]: 3, ITEM["disable"]: 2, ITEM["passthrough"]: 10}   # the items of a fixed length (probe.config §1)
+ITEM_SIZES = {ITEM["idle"]: 3, ITEM["disable"]: 2, ITEM["passthrough"]: 10,    # the items of a fixed length (probe.config §1)
+              ITEM["console_passthrough"]: 14}
+PASSTHROUGHS = (ITEM["passthrough"], ITEM["console_passthrough"])
 
 
 @dataclass
@@ -744,6 +746,7 @@ class Endpoint:
         self.holder: int | None = None
         self.session_ports: set[int] = set()   # the transports the lock holder's requests came on (probe.config §1.1)
         self.passthrough_out: dict[int, bytearray] = {}   # a serial port's pass-through bytes not sent yet
+        self.resident: dict[int, bool] = {}       # console_passthrough's own connection per port: attached (config §1.2)
         self.last: int | None = None         # S: the id that holds or last held the lock (the resend table's, §5.2)
         self.owner: bytes | None = None      # the holder's owner, while the lock is held (core §6.4)
         self.lease_ms = self.lease_default_ms
@@ -2794,11 +2797,15 @@ class Endpoint:
         self.streams[sid].data += data
 
     def target_says(self, data: bytes, target: VirtualTarget | None = None) -> None:
-        """The target (the first one by default) writes to its console: every open stream on a connection to it."""
+        """The target (the first one by default) writes to its console: every open stream on a connection to it, and a
+        serial port whose console pass-through is attached to it (probe.config §1.2)."""
         target = target or self.target
         for st in self.streams.values():
             if st.conn in self.conns and self._target_of(st.conn) is target:
                 st.data += data
+        for port, (wfn, pair) in self.console_passthroughs().items():
+            if self.targets.get((wfn, pair)) is target and target.answers and not target.halted:
+                self.passthrough_out.setdefault(port, bytearray()).extend(data)
 
     # ---- oep.fixture.gpio -----------------------------------------------------------------------
     def _gpio(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
@@ -2902,11 +2909,33 @@ class Endpoint:
                 out[port] = (fn, rx)
         return out
 
+    def console_passthroughs(self) -> dict[int, tuple[int, tuple[int, int]]]:
+        """The serial ports whose console pass-through runs and is attached now (probe.config §1.2) -> port: (wire fn,
+        pair). The condition: no session request on the port, no session connection or plan on its pins. When it
+        starts, the probe attaches (method 0); unanswered, swio tries again at every look, rvswd only when the
+        condition starts again (its wake may reset the target). Off: its connection closes, the target untouched."""
+        busy = {a[2] for a in self.plan} | {p for c in self.conns.values() for p in c.pair}
+        out = {}
+        for (tag, port), v in self.config.items():
+            if tag != ITEM["console_passthrough"]:
+                continue
+            _, wfn, swdio, swclk, _, _, _ = struct.unpack("<BHHHIHB", v)
+            pair = (swdio, swclk)
+            if port in self.session_ports or busy & {p for p in pair if p != 0xFFFF}:
+                self.resident.pop(port, None)                      # closed, the target untouched (debug §2)
+                continue
+            tg = self.targets.get((wfn, pair))
+            if port not in self.resident or (not self.resident[port] and self.names[wfn] == "oep.wire.swio"):
+                self.resident[port] = tg is not None and tg.present and tg.answers
+            if self.resident[port]:
+                out[port] = (wfn, pair)
+        return out
+
     def passthrough_take(self, port: int) -> bytes:
         """The pass-through bytes serial port `port` sends now, between frames (transports §4); none while it does
         not run (what was waiting is dropped then: not kept, config §1.1)."""
         waiting = self.passthrough_out.pop(port, bytearray())
-        return bytes(waiting) if port in self.passthroughs() else b""
+        return bytes(waiting) if port in self.passthroughs() or port in self.console_passthroughs() else b""
 
     # ---- oep.fixture.i2c-target (fixture §3) ------------------------------------------------------
     def _i2c_op(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
@@ -3108,11 +3137,11 @@ class Endpoint:
     def _item_channel(tag: int, value: bytes) -> int:
         """A known item's key - its channel, a passthrough's port; another length than its form is malformed (probe.config
         §1)."""
-        if tag == ITEM["passthrough"]:
+        if tag in PASSTHROUGHS:
             if len(value) != ITEM_SIZES[tag]:
                 raise Reject(m.MALFORMED)
-            if struct.unpack_from("<I", value, 5)[0] == 0:
-                raise Reject(m.MALFORMED)                          # baud 0 (fixture §2's rule, config §1.1)
+            if struct.unpack_from("<I", value, 5 if tag == ITEM["passthrough"] else 7)[0] == 0:
+                raise Reject(m.MALFORMED)                          # baud 0 / max_speed 0 (fixture §2, debug §1)
             return value[0]
         if tag == ITEM["label"]:
             ok = 3 <= len(value) <= 2 + reg.LIMITS["label_max_bytes"]     # channel and 1-32 bytes of text
@@ -3125,6 +3154,12 @@ class Endpoint:
     def _item_refusal(self, tag: int, ch: int, value: bytes) -> bool:
         """Whether this probe cannot take the item's values (probe.config §1): a channel at or past `channels` or its
         own, an idle mode left unused (5 or more), an output on an input-only channel, a pull the channel lacks."""
+        if tag == ITEM["console_passthrough"]:
+            port, wfn, swdio, swclk, speed, cfn, mech = struct.unpack("<BHHHIHB", value)
+            return (self.transports.get(port) not in virtual_bench.SERIAL_KINDS
+                    or self.names.get(wfn) not in ("oep.wire.rvswd", "oep.wire.swio") or not self._allows(wfn, (swdio, swclk))
+                    or speed < self._min_clock(wfn) or self.names.get(cfn) != "oep.target.console"
+                    or mech not in self.mechanisms)
         if tag == ITEM["passthrough"]:
             port, fn, rx, baud, fmt = struct.unpack("<BHHIB", value)
             if (self.transports.get(port) not in virtual_bench.SERIAL_KINDS or self.names.get(fn) != _UART.name
@@ -3242,12 +3277,17 @@ class Endpoint:
         disabled = {ch for tag, ch in new if tag == ITEM["disable"]}
         idles = {ch for tag, ch in new if tag == ITEM["idle"]}
         outputs = (IDLE_MODE["output_low"], IDLE_MODE["output_high"])
-        for (tag, _), v in sorted(new.items()):
-            if tag == ITEM["passthrough"]:
-                rx = struct.unpack_from("<H", v, 3)[0]
-                idle = new.get((ITEM["idle"], rx))
-                if rx in disabled or (idle is not None and idle[2] in outputs):
-                    raise unavailable("held_by_settings", rx)      # a disabled rx or one with an output idle (config §1.1)
+        for (tag, port), v in sorted(new.items()):
+            if tag not in PASSTHROUGHS:
+                continue
+            if all((t, port) in new for t in PASSTHROUGHS):
+                raise unavailable("held_by_settings")              # one pass-through per port (config §1.1)
+            pins = ([struct.unpack_from("<H", v, 3)[0]] if tag == ITEM["passthrough"]
+                    else [p for p in struct.unpack_from("<HH", v, 3) if p != 0xFFFF])
+            for pin in pins:
+                idle = new.get((ITEM["idle"], pin))
+                if pin in disabled or (idle is not None and idle[2] in outputs):
+                    raise unavailable("held_by_settings", pin)     # a disabled pin or one with an output idle (§1.1, §1.2)
         busy = {a[2] for a in self.plan} | {p for c in self.conns.values() for p in c.pair}
         for ch in sorted(disabled - self.disabled):
             if ch in busy:

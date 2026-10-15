@@ -1,5 +1,5 @@
 {
- "spec_commit": "91a5653",
+ "spec_commit": "67876b7",
  "units": {
   "probe-config:pre:1": {
    "text": "| `oep.probe.config` | 1 | channelのdisab",
@@ -43,6 +43,14 @@
    "note": "the passthrough item, its form and key"
   },
   "probe-config:1:4": {
+   "text": "| 0x06 | console_passthrough | port(u8)、",
+   "verify": [
+    "tests/test_passthrough.py::test_the_client_sets_and_reads_a_console_pass_through"
+   ],
+   "mutants": [],
+   "note": "the console_passthrough item, its form and key"
+  },
+  "probe-config:1:5": {
    "text": "| 0x07 | disable | channel(u16) | channe",
    "verify": [
     "tests/test_config_disable.py::test_the_item_round_trips_and_moves_the_generation",
@@ -51,7 +59,7 @@
    "mutants": [],
    "note": "disable 0x07: channel(u16) keyed by channel"
   },
-  "probe-config:1:5": {
+  "probe-config:1:6": {
    "text": "- channelはfn 0のchannels未満で、firmware自身が使う",
    "verify": [
     "tests/test_config.py::test_a_refused_set_changes_nothing",
@@ -63,7 +71,7 @@
    ],
    "note": "a channel at or past fn 0's channels or the firmware's own: unsupported with the item tag"
   },
-  "probe-config:1:6": {
+  "probe-config:1:7": {
    "text": "- 知っている項目の長さが違う場合はmalformed。項目の値を後ろへ伸ばさず",
    "verify": [
     "tests/test_config.py::test_an_item_of_another_length_or_number_0_is_malformed_and_an_unknown_one_unsupported",
@@ -78,7 +86,7 @@
    ],
    "note": "a known item of another length is malformed (bit 7 or not); nothing applied"
   },
-  "probe-config:1:7": {
+  "probe-config:1:8": {
    "text": "- labelは設定の名前で、firmwareのdescribeのlabelを変",
    "verify": [
     "tests/test_trace_probe_config.py::test_a_label_is_the_settings_name_and_leaves_the_firmwares_alone",
@@ -87,7 +95,7 @@
    "mutants": [],
    "note": "a label leaves describe's firmware label and every line as they were; the host's own lookup by name"
   },
-  "probe-config:1:8": {
+  "probe-config:1:9": {
    "text": "- disableはそのchannelの駆動/設定を行わない指定で、起動時と解放",
    "verify": [
     "tests/test_config_disable.py::test_a_plan_naming_a_disabled_channel_is_held_by_settings",
@@ -116,7 +124,7 @@
    ],
    "note": "disable before the boot / release park; requests naming it cause 5; disabling one in use cause 1; idle+disable cause 5; nothing changed; unset frees it at once; a key twice / wrong length stays malformed beside the idle+disable conflict"
   },
-  "probe-config:1:9": {
+  "probe-config:1:10": {
    "text": "- idleは空きのchannelの状態（core §8）。空きのchannel",
    "verify": [
     "tests/test_trace_probe_config.py::test_an_idle_set_while_the_channel_is_in_use_applies_when_it_is_free",
@@ -181,6 +189,60 @@
    ],
    "mutants": [],
    "note": "unset by the port in the channel field"
+  },
+  "probe-config:1.1:7": {
+   "text": "- 1 つの口には passthrough と console_passthro",
+   "verify": [
+    "tests/test_passthrough.py::test_one_pass_through_per_port"
+   ],
+   "mutants": [],
+   "note": "both on one port: cause 5"
+  },
+  "probe-config:1.2:1": {
+   "text": "- wire_fn は `oep.wire.rvswd` か `oep.wire",
+   "verify": [
+    "tests/test_passthrough.py::test_a_console_item_it_cannot_take_is_refused[port]",
+    "tests/test_passthrough.py::test_a_console_item_it_cannot_take_is_refused[wire]",
+    "tests/test_passthrough.py::test_a_console_item_it_cannot_take_is_refused[pair]",
+    "tests/test_passthrough.py::test_a_console_item_it_cannot_take_is_refused[speed0]",
+    "tests/test_passthrough.py::test_a_console_item_it_cannot_take_is_refused[console]",
+    "tests/test_passthrough.py::test_a_console_item_it_cannot_take_is_refused[mechanism]"
+   ],
+   "mutants": [],
+   "note": "wire / pair / speed / console / mechanism refusals"
+  },
+  "probe-config:1.2:2": {
+   "text": "- **素通しの条件**: その口からセッションの要求が来ていない、セッションの",
+   "verify": [
+    "tests/test_passthrough.py::test_the_targets_console_goes_out_while_no_session_uses_it",
+    "tests/test_passthrough.py::test_swio_tries_again_until_the_target_answers"
+   ],
+   "mutants": [],
+   "note": "attached while no session uses the port or the pins; swio retries"
+  },
+  "probe-config:1.2:3": {
+   "text": "- 条件が成り立たなくなったら、probe はその接続を target に触れず",
+   "verify": [
+    "tests/test_passthrough.py::test_a_session_on_the_port_closes_it_and_it_comes_back_after"
+   ],
+   "mutants": [],
+   "note": "a session closes it, the target untouched; back after"
+  },
+  "probe-config:1.2:4": {
+   "text": "- 素通しの接続とコンソールは OEP の資源ではない: connections",
+   "verify": [
+    "tests/test_passthrough.py::test_the_targets_console_goes_out_while_no_session_uses_it"
+   ],
+   "mutants": [],
+   "note": "no connection or stream appears"
+  },
+  "probe-config:1.2:5": {
+   "text": "- 線切れ（debug §2）と target の自己リセットは、素通しを止めず",
+   "verify": [
+    "tests/test_passthrough.py::test_swio_tries_again_until_the_target_answers"
+   ],
+   "mutants": [],
+   "note": "an absent target is tried again (swio)"
   },
   "probe-config:2:1": {
    "text": "| 0x10 | get | first(u16) | more(u8)、gen",
