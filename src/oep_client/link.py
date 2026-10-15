@@ -346,6 +346,7 @@ class SerialLink:
         self.last_write: float | None = None       # when this host last wrote to the port (None: never; transports §5)
         self.max_frame = reg.MIN_MAX_FRAME         # min_max_frame until a confirm answer, then its max_frame (§4.4, N-1)
         self.on_boot_id = lambda boot_id: None     # the boot_id of the link's own confirms (resync, recovery)
+        self.on_reopen = lambda: None              # the transport closed and opened again (`_reopen`)
         self.failed_transport = ""                 # why: a resend went unanswered (core §5.2, C-38); recover first
         self.recoveries = 0                        # failed-transport recoveries made (a confirm answered)
         self.wait_add_s = WAIT_ADD_S               # the floor's host_wait_add_ms (a test of an in-process virtual bench shortens it)
@@ -608,6 +609,7 @@ class SerialLink:
         self.stream = self.reopener()
         self.frames = LengthFrames(self.stream, self.frames.max_frame)
         self.last_write = None
+        self.on_reopen()                                   # the subscriptions stayed on the closed one (core §10.3)
 
     def _fail_transport(self, e: Exception) -> None:
         """core §5.2 (C-38): the resend went unanswered too - the transport failed. Its outcome is unknown, so are the
@@ -1203,6 +1205,7 @@ class SerialLink:
         self.expected_s = lambda: hst.expect_ms / 1000
         self.confirm_body = hst.confirm_body        # the revision in use after the first confirm (core §7.1, C-15)
         self.on_boot_id = hst.boot_id_seen          # the link's own confirms (resync, recovery): a reboot shows (C-38)
+        self.on_reopen = hst.transport_reopened     # a subscribe again moves the pushes to the new one (core §10.3)
         hst.on_limits = self._limits                # every confirm answer: max_frame for the transfer time (N-1)
         hst.link = self
 

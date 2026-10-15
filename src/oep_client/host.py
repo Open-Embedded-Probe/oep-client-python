@@ -272,6 +272,8 @@ class Host:
     lease_ms: int | None = None            # the lease the last open gave
     epoch: int = 0                         # +1 whenever every connection and the plan are lost (core §6.5, §9)
     subscriptions: set = field(default_factory=set)   # fns subscribed in this session
+    _conditions: dict = field(default_factory=dict)   # fn -> (min_bytes, max_delay_ms) of its subscribe
+    _moved: set = field(default_factory=set)   # fns whose pushes went to a transport since closed (`transport_reopened`)
     # Called with every capture segment read (capture.CaptureRecord): the hook a run recorder hangs on.
     on_capture: list = field(default_factory=list)
     _corr: int = 0
@@ -382,6 +384,7 @@ class Host:
         the probe (`expecting`). Rejections raise; any other answer is returned (Result.succeeded / .ran say what it
         was)."""
         self.require_usable()
+        self._subscribe_again()
         self._know_max_op_ms([(fn, op)])
         if self.before_request is not None:
             self.before_request()
@@ -413,6 +416,7 @@ class Host:
         """This session's resources (plan, connections, streams, subscriptions) are gone; the probe is the same."""
         self.epoch += 1
         self.subscriptions.clear()
+        self._moved.clear()
 
     def _lost(self) -> None:
         """The probe restarted: the resources, and the fn numbers with them."""
@@ -441,6 +445,7 @@ class Host:
         """Several requests in flight (`exchange` keeps the probe's in-flight and window limits); results in
         order, rejects NOT raised - the caller looks at each result. Without `exchange`, one at a time."""
         self.require_usable()
+        self._subscribe_again()
         self._know_max_op_ms([(fn, op) for fn, op, _ in requests])
         session = self._session_for(locked)
         if self.before_request is not None:
@@ -794,6 +799,24 @@ class Host:
             raise ValueError("fn 0 sends no notifications (core §10.2): its op 0x01 is not subscribe")
         self.call(fn, m.OP_SUBSCRIBE, struct.pack("<HI", min_bytes, max_delay_ms))
         self.subscriptions.add(fn)
+        self._conditions[fn] = (min_bytes, max_delay_ms)
+        self._moved.discard(fn)
+
+    def transport_reopened(self) -> None:
+        """The link closed its transport and opened it again (transports §5: a TCP connection whose framing broke).
+        The session and its subscriptions stay on the probe, but they still send where their subscribe came - the
+        closed transport, whose pushes are dropped and never carried to the new one (core §6.2, §10.3; transports
+        §3). Only a subscribe again moves them: `_subscribe_again` sends it before the next request."""
+        self._moved |= self.subscriptions
+
+    def _subscribe_again(self) -> None:
+        """core §10.3: each subscription left on a closed transport is subscribed again, with its conditions, on the
+        transport in use (its seq starts at 0; what went to the closed one is lost, as the seq and position show)."""
+        moved, self._moved = self._moved, set()
+        if self.session is None:
+            return
+        for fn in sorted(moved & self.subscriptions):
+            self.subscribe(fn, *self._conditions.get(fn, (0, 0)))
 
     def unsubscribe(self, fn: int) -> None:
         """Interface `fn`'s own unsubscribe op (0x02, core §10.3); one without a subscription succeeds doing nothing."""
