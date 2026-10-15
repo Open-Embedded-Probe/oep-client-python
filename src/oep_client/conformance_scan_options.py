@@ -52,7 +52,7 @@ class ScanOptionsChecks(WireOptionsChecks):
         self.fresh()
         with self.c.holding(3000) as sid:
             fn=3 if swd else 1;pair=self.a.pairs[fn][0];selector=0x01000001 if swd else None;self.a.identity(fn,pair,selector,0x2ba01477 if swd else 0x202)
-            self.scan(sid,fn,[pair],[self.found(fn,pair,0x2ba01477 if swd else 0x202)],selector=selector,idle=None if swd else 1,speed=1500,extra=self.tlv(6,struct.pack('<I',0x01000002)) if swd else self.tlv(4,b'\x02')+self.tlv(1,struct.pack('<I',999)))
+            self.scan(sid,fn,[pair],[self.found(fn,pair,0x2ba01477 if swd else 0x202)],selector=selector,idle=None if swd else 1,speed=1500,extra=self.tlv(6,struct.pack('<I',0x01000002)) if swd else self.tlv(4,b'\x00')+self.tlv(1,struct.pack('<I',2000)))   # valid later copies (core §2.3: checked too)
     def unmarked(self):
         self.fresh()
         with self.c.holding(3000) as sid:
@@ -93,6 +93,8 @@ class ScanOptionsChecks(WireOptionsChecks):
                 self.a.pin(pairs[1][0],kind.split('-')[0].lower());self.refused(self.scan_request(sid,1,pairs[:2],idle=1),'unavailable',cause=1 if kind=='RESERVED-LATE' else 5)
             elif kind=='IDLE':
                 self.refused(self.scan_request(sid,1,pairs,idle=2),'unsupported',b'\x84')
+                self.refused(self.scan_request(sid,1,pairs,idle=1,extra=self.tlv(4,b'\x02')),'unsupported',b'\x04')   # a later copy too
+                self.refused(self.scan_request(sid,1,pairs,idle=1,speed=1500,extra=self.tlv(1,struct.pack('<I',999))),'unsupported',b'\x01')
                 for fn in (2,3):self.refused(self.scan_request(sid,fn,self.a.pairs[fn],idle=1),'unsupported',b'\x84')
             elif kind=='WIDTH':
                 for fn,tag,size in ((1,0x84,2),(3,0x86,3)):self.refused(self.scan_request(sid,fn,self.a.pairs[fn],extra=self.tlv(tag,b'\0'*size)),'malformed')

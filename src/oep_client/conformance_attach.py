@@ -142,13 +142,17 @@ class AttachChecks:
             require(self.a.reset_scope=='logical-model' and self.a.reference and self.a.mechanisms==[0,1],'explicit logical sample required')
             self.specs={fn:next(row for row in self.c.reg['interface'] if row['name']==name and row['revision']==1) for fn,name in self.a.selection.items()}
             self.operations={fn:{row['name']:row['code'] for row in spec['op']} for fn,spec in self.specs.items()}
-            require(all(self.operations[fn]['attach']==17 and self.specs[fn]['tlv']['attach']=={'reset':5} for fn in (1,2,3)) and
-                    self.specs[4]['enum']['mechanism']=={'sdi':0,'dmdata':1,'dmseq':2,'none':255},'selected SPEC differs from fixture contract')
+            # attach's reset TLV is 0x05 on every wire (debug §3, §5); rvswd's idle_clock / swd's targetsel are not used here
+            require(all(self.operations[fn]['attach']==17 and self.specs[fn]['tlv']['attach'].get('reset')==5 for fn in (1,2,3)) and
+                    self.specs[4]['enum']['mechanism']=={'sdi':0,'dmdata':1,'dmseq':2},'selected SPEC differs from fixture contract')   # console §1: no 'none' value
             self.c.confirm();self.c.identity();self.c.declarations();entries=self.c.list_snapshot()
             for fn,name in self.a.selection.items():
                 require(any(row['fn']==fn and row['name']==name and row['revision']==1 for row in entries),'standard fn/name/revision mismatch')
                 rows=dict(reversed(self.c.describe(fn)));offered=ops(rows[self.c.reg['describe_common']['ops']])
-                require({code for op,code in self.operations[fn].items() if op!='scan'}<=offered,'mandatory standard ops missing')
+                # optional: a wire's scan (debug §0); the console's marks / clear / mark / write (console §1: the minimum is
+                # open / read / close / streams)
+                optional={'scan'}|({'marks','clear','mark','write'} if name=='oep.target.console' else set())
+                require({code for op,code in self.operations[fn].items() if op not in optional}<=offered,'mandatory standard ops missing')
                 if fn in (1,2,3):                              # the reset TLV takes only a declared role 3 channel (debug §3)
                     lines=set()
                     for tag,v in self.c.describe(fn):

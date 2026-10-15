@@ -113,7 +113,7 @@ def test_attach_with_the_reset_tlv_waits_too_and_makes_nothing_when_it_fails():
     ep.target.restart_ms = MAX_OP_MS + 100
     with pytest.raises(h.Failed):
         wire.attach(halt=False, reset=(23, 20))                    # status line within max_op_ms (debug §3)
-    assert not ep.conns and ep.settle_log[-1] == MAX_OP_MS
+    assert not ep.conns and ep.settle_log[-1] == MAX_OP_MS - 20               # the hold is part of max_op_ms (debug §2)
     assert wire.attach_ms((23, 20)) == wire.attach_ms() == wire.scan_ms() == core.max_op_ms(hst)   # core §4.4
 
 

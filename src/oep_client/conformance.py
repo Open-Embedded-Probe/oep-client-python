@@ -241,7 +241,8 @@ class Checks:
                               'no_session', 'session_required', 'no_resource', 'result_lost'}:
                     tlvs(reply[5:])
                 elif reason == 'locked':
-                    require(len(reply) >= 9 and int.from_bytes(reply[5:9], 'little') > 0, 'locked remaining time')
+                    # remaining ms (u32), any value: a lease at its very end may read 0 (core §4.3)
+                    require(len(reply) >= 9, 'locked remaining time')
                     tlvs(reply[9:])
                 elif reason == 'unsupported':
                     require(len(reply) >= 6, 'unsupported tag required')
@@ -339,6 +340,13 @@ class Checks:
                 'unit_id format')
         for field in ('unit_id', 'firmware', 'model', 'chip'):
             self.observed[field] = values.get(tags[field], b'').decode('utf-8') or None
+        maximum = values.get(tags['max_op_ms'], b'')
+        if len(maximum) == 4 and 1 <= int.from_bytes(maximum, 'little') <= 600000:
+            # every later answer is waited for at least max_op_ms + host_wait_add_ms + the transfer time (core §4.4):
+            # open / end are bounded by max_op_ms alone, and waiting longer than a quick op's bound is always allowed
+            for wire in (self.wire, self.tcp_wire, self.usb_wire):
+                if wire is not None:
+                    wire.op_wait_s = max(1.0, int.from_bytes(maximum, 'little') / 1000)
 
     def declarations(self):
         rows = [(x['tag'], bytes.fromhex(x['value_hex'])) for x in self.observed['core_describe']]
@@ -473,7 +481,7 @@ class Checks:
                 fn, instance, revision, length = struct.unpack_from('<HHBB', p, at)
                 at += 6
                 require(fn and 1 <= length <= 48 and len(p) >= at + length, 'list fn/name length')
-                require(revision >= 1, 'interface revision')
+                # the interface revision is any u8 (core §7.2, §2.8): no lower bound
                 name = p[at:at + length].decode('ascii')
                 require(all(c in 'abcdefghijklmnopqrstuvwxyz0123456789-.' for c in name), 'interface name format')
                 entries.append(dict(fn=fn, instance=instance, revision=revision, name=name))

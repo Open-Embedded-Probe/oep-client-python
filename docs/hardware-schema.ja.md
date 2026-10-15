@@ -42,7 +42,7 @@ node の ID は probe/target 全体で重複禁止。各種類の接続 ID と e
 
 identity は probe の `oep-unit-id`、target の `chip-uid` を優先する。`manual-label` は `reason` を必須とし、preflight で人の確認が必要な識別として扱う。serial port、chip family、slot label だけで物理個体の一致を判断しない。観測できない UID を生成しない。
 
-v1 の transport は OEP `serial`、unit ID で名指す `usb`、明示指定 `tcp`、実機を使わない `virtual`（既存仮想 profile を指定）、debug は `swio` / `rvswd` / `swd` を扱う。serial は path、tcp は host/port、usb は完全な hexadecimal unit_id を持つ。usb selector と identity の一致を validator で検証し、接続後も OEP describe の unit_id を照合する。channel 対応は `data`、`clock`、任意の `reset` を共通キーとし、protocol ごとの本数を offline validator で検証し、profile/pad 機能と予約 pin は今後の preflight で検証する。WCH-Link は別 backend であり OEP probe を装わない。**WCH-Link、計測器、自動電源 switch の具体キーは今回の v1 雛形の対象外**。全体計画から外すのでなく、それらの実機契約を採用する前に追加例と validator を揃える作業として残す。
+v1 の transport は OEP `serial`、unit ID で名指す `usb`、明示指定 `tcp`、実機を使わない `virtual`（既存仮想 profile を指定）、debug は `swio` / `rvswd` / `swd` を扱う。serial は path、tcp は host/port、usb は完全な unit_id（core §7.5: `a-z 0-9 -` の 1〜32 byte。`x-` で始まるものは名指しに使えない）を持つ。usb selector と identity の一致を validator で検証し、接続後も OEP describe の unit_id を照合する。channel 対応は `data`、`clock`、任意の `reset` を共通キーとし、protocol ごとの本数を offline validator で検証し、profile/pad 機能と予約 pin は今後の preflight で検証する。WCH-Link は別 backend であり OEP probe を装わない。**WCH-Link、計測器、自動電源 switch の具体キーは今回の v1 雛形の対象外**。全体計画から外すのでなく、それらの実機契約を採用する前に追加例と validator を揃える作業として残す。
 
 signal endpoint は target の pad または probe の非負 channel のいずれかを持つ。mode は `input-only` / `output-only` / `bidirectional` / `open-drain`。共有 bus の同時駆動条件、pull-up、アナログ値等は契約に必要な詳細を追加してからその試験を採用する。`digital` の接続だけで I2C、PWM 精度、電圧精度を保証しない。
 

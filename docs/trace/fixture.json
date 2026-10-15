@@ -345,7 +345,9 @@
    "verify": [
     "tests/test_trace_fixture.py::test_uart_format_bits_default_and_baud_refusals",
     "tests/test_interfaces.py::test_uart_configure_format_and_reads_that_do_not_consume",
-    "tests/test_conformance_uart.py::test_uart_checks"
+    "tests/test_conformance_uart.py::test_uart_checks",
+    "tests/test_review5_small.py::test_the_uart_model_checks_a_later_copy_of_the_format",
+    "tests/test_review5_small.py::test_the_uart_checker_requires_a_later_bad_format_copy_refused"
    ],
    "mutants": [
     "tests/test_trace_fixture.py::test_uart_checker_catches_baud_0_answered_unsupported",
@@ -407,7 +409,8 @@
    "verify": [
     "tests/test_trace_fixture.py::test_uart_tx_idles_high_from_the_plan_and_its_release_frees_the_line",
     "tests/test_virtual_bench_rules_2026_10_02.py::test_p2_o13_taking_a_plan_changes_no_pin_and_an_analog_plan_on_an_output_idle_is_refused",
-    "tests/test_conformance_uart.py::test_uart_checks"
+    "tests/test_conformance_uart.py::test_uart_checks",
+    "tests/test_review5_small.py::test_the_uart_model_keeps_a_kept_tx_through_an_unconfigured_replacement"
    ],
    "mutants": [
     "tests/test_conformance_uart.py::test_wrong_wire_results_detected[DEFAULT]"
@@ -432,7 +435,9 @@
    "verify": [
     "tests/test_trace_fixture.py::test_i2c_op_rows[configure]",
     "tests/test_conformance_i2c.py::test_i2c_contract[True-True]",
-    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]"
+    "tests/test_conformance_i2c.py::test_i2c_contract[False-False]",
+    "tests/test_review5_small.py::test_the_target_models_refuse_a_later_critical_copy_of_an_unknown_tag[i2c]",
+    "tests/test_review5_small.py::test_the_target_checkers_require_a_later_critical_copy_refused[i2c]"
    ],
    "mutants": [
     "tests/test_conformance_i2c.py::test_bad_wire_results_detected[SESSION]"
@@ -686,7 +691,9 @@
    "verify": [
     "tests/test_trace_fixture.py::test_spi_op_rows[configure]",
     "tests/test_conformance_spi.py::test_spi_contract[True]",
-    "tests/test_conformance_spi.py::test_spi_contract[False]"
+    "tests/test_conformance_spi.py::test_spi_contract[False]",
+    "tests/test_review5_small.py::test_the_target_models_refuse_a_later_critical_copy_of_an_unknown_tag[spi]",
+    "tests/test_review5_small.py::test_the_target_checkers_require_a_later_critical_copy_refused[spi]"
    ],
    "mutants": [
     "tests/test_conformance_spi.py::test_wire_faults_detected[SESSION]"

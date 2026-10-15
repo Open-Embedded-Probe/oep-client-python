@@ -46,10 +46,9 @@ class Gpio(Interface):
 
     def modes(self) -> int:
         """describe modes: a u32 bit set, bit n = mode n (0xFF when not declared)."""
-        for tag, v in describe(self.host, self.fn):
-            if tag & ~catalog.CRITICAL == self.TAG_MODES and len(v) >= 4:
-                return struct.unpack_from("<I", v)[0]
-        return 0xFF
+        # the first copy, a u32 exactly; bit 7 in an answer is an unknown tag (core §2.2, §2.3)
+        v = catalog.first_fixed(describe(self.host, self.fn), self.TAG_MODES, 4)
+        return struct.unpack("<I", v)[0] if v is not None else 0xFF
 
     def configure(self, channel: int, mode: int) -> None:
         self.set([(channel, mode)])
@@ -178,9 +177,10 @@ class _TargetDeclarations:
         if self._decl is None:
             self._decl = {}
             for t, value in describe(self.host, self.fn):
-                self._decl.setdefault(t & ~catalog.CRITICAL, value)
+                self._decl.setdefault(t, value)   # the first copy; bit 7 in an answer: an unknown tag (core §2.2, §2.3)
         value = self._decl.get(tag)
-        return struct.unpack_from("<" + fmt, value)[0] if value is not None and len(value) >= struct.calcsize(fmt) else None
+        # a value without its defined length is broken and not used (core §2.3)
+        return struct.unpack("<" + fmt, value)[0] if value is not None and len(value) == struct.calcsize("<" + fmt) else None
 
     @property
     def max_length(self) -> int | None:

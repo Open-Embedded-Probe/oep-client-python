@@ -43,7 +43,8 @@
     "tests/test_trace_console.py::test_a_fn_without_marks_takes_no_from_3_and_has_no_mark_ops",
     "tests/test_conformance_stream.py::test_stream_contracts_pass",
     "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[marks-False]",
-    "tests/test_conformance_oep_declarations.py::test_a_console_offering_only_the_minimum_ops_passes"
+    "tests/test_conformance_oep_declarations.py::test_a_console_offering_only_the_minimum_ops_passes",
+    "tests/test_review5_debug_targets.py::test_attach_checker_takes_a_minimal_console"
    ],
    "mutants": [
     "tests/test_conformance_stream.py::test_stream_mutants_fail[serial_gap]"
@@ -57,7 +58,8 @@
     "tests/test_conformance_dependencies.py::test_dependency_contracts_pass",
     "tests/test_conformance_stream.py::test_stream_contracts_pass",
     "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[clear-True]",
-    "tests/test_conformance_oep_declarations.py::test_a_console_offering_only_the_minimum_ops_passes"
+    "tests/test_conformance_oep_declarations.py::test_a_console_offering_only_the_minimum_ops_passes",
+    "tests/test_review5_debug_targets.py::test_attach_checker_takes_a_minimal_console"
    ],
    "mutants": [
     "tests/test_conformance_dependencies.py::test_dependency_mutants_fail[clear_tx]",
@@ -72,7 +74,8 @@
     "tests/test_conformance_stream.py::test_stream_contracts_pass",
     "tests/test_trace_console.py::test_a_fn_without_marks_takes_no_from_3_and_has_no_mark_ops",
     "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[mark-True]",
-    "tests/test_conformance_oep_declarations.py::test_a_console_offering_only_the_minimum_ops_passes"
+    "tests/test_conformance_oep_declarations.py::test_a_console_offering_only_the_minimum_ops_passes",
+    "tests/test_review5_debug_targets.py::test_attach_checker_takes_a_minimal_console"
    ],
    "mutants": [
     "tests/test_conformance_stream.py::test_stream_mutants_fail[kind]",
@@ -87,7 +90,8 @@
     "tests/test_interfaces.py::test_console_io_writes_through_the_send_queue_and_sdi_takes_no_write",
     "tests/test_conformance_mailbox.py::test_logical_mailbox_contracts_pass",
     "tests/test_trace_console.py::test_the_lock_column_of_the_op_table[write-True]",
-    "tests/test_conformance_oep_declarations.py::test_a_console_offering_only_the_minimum_ops_passes"
+    "tests/test_conformance_oep_declarations.py::test_a_console_offering_only_the_minimum_ops_passes",
+    "tests/test_review5_debug_targets.py::test_attach_checker_takes_a_minimal_console"
    ],
    "mutants": [
     "tests/test_conformance_mailbox.py::test_mailbox_checker_detects_independent_faults[sdi_write_taken-SDI-WRITE]"

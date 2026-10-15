@@ -431,7 +431,7 @@ def test_the_host_skips_unknown_tags_and_refuses_a_short_answer():
         p = struct.pack("<BI", 1, 5) + m.tlv(OWNER, bad)
         assert h.Host(scripted(completed(p))).lock_owner() == (True, 5, None)
     p = struct.pack("<BI", 1, 5) + m.tlv(OWNER, b"ok") + m.tlv(OWNER, b"x" * 33)
-    assert h.Host(scripted(completed(p))).lock_owner()[2] is None
+    assert h.Host(scripted(completed(p))).lock_owner()[2] == "ok"      # the first copy; the broken later one unused
 
 
 def streaming(profile=vb.p4_x035, min_bytes=0, max_delay_ms=0):

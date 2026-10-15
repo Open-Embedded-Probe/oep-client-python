@@ -90,7 +90,7 @@ def test_a_trigger_is_where_the_channel_does_it(kind, role, value, index):
     lc.start()
     clock.t = 1  # The trigger and the complete segment have now elapsed.
     (seg,) = lc.wait()
-    assert seg.trigger_index == index and seg.samples == 64 - 10 + index and seg.flags & 2
+    assert seg.trigger_index == index and seg.samples == 64 - 10 + index and not seg.flags & 2   # short of pretrigger, not stopped: no bit1 (§2.2)
 
 
 

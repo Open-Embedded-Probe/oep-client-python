@@ -51,7 +51,7 @@ def test_waiting_error_has_matching_stopped_reason_and_no_segment(error):
 def test_force_uses_current_sample_and_available_pretrigger(elapsed,index,count):
     ep,_,track,clock=waiting();generation=track.generation;clock.t+=elapsed;forced_ns=clock.t*1000000;track.force();clock.t+=10
     segment,=track.segments();assert segment.trigger_index==index and segment.samples==count
-    assert bool(segment.flags&2)==(count<8) and track.generation==generation
+    assert not segment.flags&2 and track.generation==generation   # bit1 is stop's (§2.2)
     rows=events(ep,track.fn);assert [r[0] for r in rows]==[c.EVENT_TRIGGERED,c.EVENT_SEGMENT,c.EVENT_STOPPED]
     expected=forced_ns
     assert rows[0][1][1]==index and rows[0][1][2]==expected

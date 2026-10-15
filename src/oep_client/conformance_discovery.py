@@ -18,8 +18,8 @@ class DiscoveryChecks:
             for _ in range(count):
                 require(len(p) >= at + 6, 'list entry header')
                 fn, instance, revision, length = struct.unpack_from('<HHBB', p, at); at += 6
-                require(fn and revision and 1 <= length <= 48 and len(p) >= at+length,
-                        'list entry fields')
+                require(fn and 1 <= length <= 48 and len(p) >= at+length,
+                        'list entry fields')                    # revision: any u8 (core §7.2)
                 name = p[at:at+length].decode('ascii'); at += length
                 page.append(dict(fn=fn, instance=instance, revision=revision, name=name))
             require(at == len(p) and page == self.entries[first:first+count], 'list cursor does not select entry suffix')

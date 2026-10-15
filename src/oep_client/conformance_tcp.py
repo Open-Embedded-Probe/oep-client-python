@@ -23,6 +23,7 @@ class TcpWire:
     def __init__(self, stream, timeout=3.0, settle=0.03):
         self.stream, self.timeout, self.settle = stream, timeout, settle
         self.max_frame, self.last_exchange = 64, {}
+        self.op_wait_s = 1.0   # the request's processing bound: core_quick_op_max_ms until max_op_ms is read (core §4.4)
 
     @classmethod
     def open(cls, value):
@@ -50,7 +51,7 @@ class TcpWire:
                 self.stream.sendall(chunk)
                 if pause and index + 1 < len(chunks):
                     time.sleep(pause)
-            deadline = time.monotonic() + max(self.timeout, silence + self.settle)
+            deadline = time.monotonic() + max(self.timeout, self.op_wait_s + 1, silence + self.settle)   # core §4.4
             quiet = time.monotonic() + silence if count == 0 and not expect_close else None
             while time.monotonic() < deadline:
                 self.stream.settimeout(min(0.01, max(0, deadline - time.monotonic())))

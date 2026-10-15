@@ -32,6 +32,7 @@ class UsbWire:
         self.out_packet_size, self.timeout, self.settle = out_packet_size, timeout, settle
         self.clock, self.sleep = clock, sleep
         self.max_frame, self.last_exchange = 64, {}
+        self.op_wait_s = 1.0   # the request's processing bound: core_quick_op_max_ms until max_op_ms is read (core §4.4)
 
     def close(self):
         self.backend.close()
@@ -68,7 +69,7 @@ class UsbWire:
                         self.write(b'', method, record)  # required host ZLP, not a length-zero message
                 if pause and index + 1 < len(chunks):
                     self.sleep(pause)
-            deadline = self.clock() + max(self.timeout, silence + self.settle)
+            deadline = self.clock() + max(self.timeout, self.op_wait_s + 1, silence + self.settle)   # core §4.4
             quiet = self.clock() + silence if count == 0 else None
             while self.clock() < deadline:
                 transfer = self.backend.read(min(0.01, max(0, deadline - self.clock())))

@@ -149,8 +149,8 @@ class PinFinder:
         self.probe, self.save, self.name = probe, save, name
         self.report = Report(wire=wire, power=power, excluded=self.exclude)
         self.gpio = Gpio(hst)
-        self.modes = next((struct.unpack_from("<I", v)[0] for t, v in core.describe(hst, self.gpio.fn)
-                           if t == GPIO_MODES_TAG and len(v) >= 4), 0xFF)
+        modes = catalog.first_fixed(core.describe(hst, self.gpio.fn), GPIO_MODES_TAG, 4)   # first copy, u32 (core §2.3)
+        self.modes = struct.unpack("<I", modes)[0] if modes is not None else 0xFF
         self.wire = arm.SwdWire(hst) if wire == "swd" else riscv.Wire(hst, f"oep.wire.{wire}")
         self.riscv = wire != "swd"
         self.kinds: dict[int, Channel] = {}
@@ -384,8 +384,12 @@ class PinFinder:
         cands = self.candidates()
         self._plan([])                                     # nothing of the gpio's on the pins scanned (power stays)
         name = self.report.wire
+        # the declared pairs (debug §1, core §7.4): with channel_groups, a pair matches one of them (and role_channels'
+        # candidates for the roles it lists too) - never role_channels alone
+        declared = set(self.wire.candidate_pairs()) if self.wire._description().groups else None
         if name == "swio":
-            allowed = set(role_channels(self.hst, self.wire.fn, ROLE_SWDIO))
+            allowed = ({d for d, _ in declared} if declared is not None
+                       else set(role_channels(self.hst, self.wire.fn, ROLE_SWDIO)))
             chans = sorted(c for c in cands if c in allowed)
             pairs = [(c, 0xFFFF) for c in chans]
             self.report.scanned = chans
@@ -394,20 +398,16 @@ class PinFinder:
             clk = set(role_channels(self.hst, self.wire.fn, ROLE_SWCLK))
             if dio or clk:
                 pool = cands
-                pairs = [(d, c) for d in pool for c in pool if d != c and d in dio and c in clk]
+                pairs = [(d, c) for d in pool for c in pool if d != c and d in dio and c in clk
+                         and (declared is None or (d, c) in declared)]
                 if len(pairs) > MAX_PAIRS:
                     self.report.resolution = 'limit-exceeded'
                     self.note(f"{len(pairs)} pairs exceed {MAX_PAIRS}; nothing scanned; narrow with --exclude or "
                               f"--power")
                     return []
             else:                                          # fixed pairs (channel_group): those wholly safe
-                pairs = []
-                for tag, v in core.describe(self.hst, self.wire.fn):
-                    if tag == catalog.CHANNEL_GROUP:
-                        roles = dict(catalog.unpack_channel_group(v)[1])
-                        pair = (roles.get(1, 0xFFFF), roles.get(2, 0xFFFF))
-                        if all(p in self.kinds and self.kinds[p].kind in SAFE for p in pair if p != 0xFFFF):
-                            pairs.append(pair)
+                pairs = [pair for pair in self.wire.candidate_pairs()
+                         if all(p in self.kinds and self.kinds[p].kind in SAFE for p in pair if p != 0xFFFF)]
             self.report.scanned = sorted({p for pr in pairs for p in pr if p != 0xFFFF})
         unsafe = sorted(c for c, k in self.kinds.items() if k.kind not in SAFE)
         found: list[riscv.Found] = []

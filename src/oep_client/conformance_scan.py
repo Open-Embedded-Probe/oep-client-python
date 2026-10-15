@@ -65,6 +65,8 @@ class ScanChecks(AttachChecks):
                 for raw in (1,129):self.refused(self.scan_request(sid,1,pairs,self.tlv(raw,bytes(4))),'malformed')
                 return
             elif kind=='LATER-WIDTH':extra=self.tlv(1,struct.pack('<I',1500))+self.tlv(1,b'x')   # a later copy is checked too (core §2.3)
+            elif kind=='LATER-LOW':                        # a later copy below min_clock_hz: unsupported, its tag as sent
+                self.refused(self.scan_request(sid,1,pairs,self.tlv(129,struct.pack('<I',1500))+self.tlv(1,struct.pack('<I',999))),'unsupported',b'\x01');return
             elif kind=='WIDTH':extra=self.tlv(129,b'x')
             elif kind=='TLV-STRUCTURE':extra=b'\x7f\x05\0x'
             elif kind=='CRITICAL':extra=self.tlv(254,b'x');reason='unsupported';payload=b'\xfe'
@@ -73,10 +75,11 @@ class ScanChecks(AttachChecks):
         self.fresh()
         with self.c.holding(3000) as sid:
             pair=self.a.pairs[1][0];self.a.scan_id(1,pair,0x202)
-            req=self.scan_request(sid,1,[pair],self.tlv(126,b'x')+self.tlv(129,struct.pack('<I',1500))+self.tlv(1,struct.pack('<I',999)))
+            # the first max_speed is used; a later copy is checked too, so it is a valid one here (core §2.3)
+            req=self.scan_request(sid,1,[pair],self.tlv(126,b'x')+self.tlv(129,struct.pack('<I',1200))+self.tlv(1,struct.pack('<I',1500)))
             before=self.a.state();value=self.c.success(req);require(value[:2]==b'\x01\x01','known speed/unknown optional/first TLV not accepted')
             require(struct.unpack_from('<BHHI',value,2)==self.found(1,pair,0x202),'scan with optional tags');tlvs(value[11:])
-            after=self.a.state();require(after['touch'][-1][-1]<=1500 and after['next_id']==before['next_id'] and not after['scan_live'],'scan speed or resource state')
+            after=self.a.state();require(after['touch'][-1][-1]<=1200 and after['next_id']==before['next_id'] and not after['scan_live'],'scan speed or resource state')
     def replay(self):
         self.fresh()
         with self.c.holding(3000) as sid:
@@ -108,7 +111,7 @@ class ScanChecks(AttachChecks):
         self.c.check('OEP-SCAN-CONTEXT','debug §0/1/3/5; explicit finite fixture',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         cases=[('SINGLE',self.single),('PREFIX',self.prefix),('EMPTY-HITS',lambda:self.prefix(True)),('VERSIONS',self.versions)]
-        cases += [(kind,lambda kind=kind:self.refusal(kind)) for kind in ('ZERO','DUPLICATE','TRUNCATED','UNDECLARED-LATE','SWIO-CLOCK','BUSY-LATE','DISABLED-LATE','OUTPUT-LATE','LOW-SPEED','ZERO-SPEED','WIDTH','LATER-WIDTH','TLV-STRUCTURE','CRITICAL')]
+        cases += [(kind,lambda kind=kind:self.refusal(kind)) for kind in ('ZERO','DUPLICATE','TRUNCATED','UNDECLARED-LATE','SWIO-CLOCK','BUSY-LATE','DISABLED-LATE','OUTPUT-LATE','LOW-SPEED','ZERO-SPEED','WIDTH','LATER-WIDTH','LATER-LOW','TLV-STRUCTURE','CRITICAL')]
         cases += [('EXTRAS',self.extras),('REPLAY',self.replay),('RETAINED',self.retained),('LOCKS',self.lock_scan)]
         for name,case in cases:
             first=len(self.a.trace);self.c.check('OEP-SCAN-'+name,'debug §1/3/5; core §2.3/5.2/8.1',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]

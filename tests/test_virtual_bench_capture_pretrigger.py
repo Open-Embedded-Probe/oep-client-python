@@ -15,7 +15,7 @@ def test_logic_fires_at_first_observed_condition_and_keeps_available_history(kin
     clock.t=1
     segment,=track.segments();available=min(pre,first);begin=first-available;count=64-pre+available
     assert (segment.trigger_index,segment.samples)==(available,count)
-    assert bool(segment.flags&2)==(first<pre) and segment.position==0
+    assert not segment.flags&2 and segment.position==0   # bit1 is stop's (§2.2)
     assert segment.start_ns==begin*1000
     raw=track.read_segment(segment)
     expected=bytearray((count+1)//2)
@@ -35,7 +35,7 @@ def test_analog_crossing_keeps_bounded_history_and_no_sample_before_start(kind,r
     track.configure(rate=1000,samples=40,trigger=(kind,role,2500),pretrigger=pre);track.subscribe();track.start()
     clock.t=first+40  # Include the post-trigger record and analog start offset.
     segment,=track.segments();available=min(pre,first);count=40-pre+available
-    assert segment.trigger_index==available and segment.samples==count and bool(segment.flags&2)==(first<pre)
+    assert segment.trigger_index==available and segment.samples==count and not segment.flags&2
     origin=ep.captures[track.fn].start_offset_ns
     assert segment.start_ns==origin+int(Fraction((first-available)*1000000000)/track.config.rate)
     rows=events(ep,track.fn);assert rows[0][1][1]==available

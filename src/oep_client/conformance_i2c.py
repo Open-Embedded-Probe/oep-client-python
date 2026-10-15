@@ -67,7 +67,7 @@ class I2cChecks:
                 after=self.a.state();require(all(after[k]==before[k] for k in ('rx','tx','rx_frames','errors','stretch_us','pins','configured','address')),'wrong address consumed target state')
                 require(self.read_bus(2)==b'tx' and self.rx(sid)[:2]==(0,b'keep'),'wrong address corrupted queues')
             elif kind=='TLV':
-                self.configure(sid,extra=self.tlv(126,b'x'));self.refused(self.req(2,'configure',sid,b'B'+self.tlv(254,b'x')),'unsupported',b'\xfe');self.refused(self.req(2,'configure',sid,b'B\x7e\3\0x'),'malformed')
+                self.configure(sid,extra=self.tlv(126,b'x'));self.refused(self.req(2,'configure',sid,b'B'+self.tlv(254,b'x')),'unsupported',b'\xfe');self.refused(self.req(2,'configure',sid,b'B'+self.tlv(126,b'x')+self.tlv(254,b'x')),'unsupported',b'\xfe');self.refused(self.req(2,'configure',sid,b'B\x7e\3\0x'),'malformed')
             elif kind=='WRITE':
                 result=self.written(b'abc');require(self.status()==(1,1,1,0,0),'one frame count');pending,data,_,v=self.rx(sid);require((pending,data)==(0,b'abc'),'write data');timestamps=[value for tag,value in tlvs(v[3+len(data):]) if tag&127==self.ns]
                 if timestamps:require(struct.unpack('<Q',timestamps[0])[0]==result['ended_ns'],'STOP timestamp')

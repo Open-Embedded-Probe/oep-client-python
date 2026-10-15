@@ -116,7 +116,10 @@
     "tests/test_interfaces.py::test_attach_makes_a_new_connection_on_named_pins",
     "tests/test_debug_attach.py::test_busy_pins_are_refused_and_the_connection_is_left_as_it_was",
     "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass",
-    "tests/test_virtual_bench_spec.py::test_a_wire_takes_any_free_pair_the_host_names"
+    "tests/test_virtual_bench_spec.py::test_a_wire_takes_any_free_pair_the_host_names",
+    "tests/test_review5_debug_wires.py::test_a_pair_in_role_channels_but_in_no_channel_group_is_unsupported_on_the_bench",
+    "tests/test_review5_debug_wires.py::test_the_client_candidate_pairs_meet_both_declarations",
+    "tests/test_review5_debug_wires.py::test_oep_pins_scans_a_swio_wire_declared_by_channel_group"
    ],
    "mutants": [
     "tests/test_conformance_attach.py::test_attach_and_console_mutants_fail[refusal_touches-WIRE-PINS]"
@@ -164,7 +167,8 @@
     "tests/test_host_rules_2026_10_02.py::test_c06_attach_scan_and_reset_wait_max_op_ms",
     "tests/test_console_queue_and_reset_settle.py::test_attach_with_the_reset_tlv_waits_too_and_makes_nothing_when_it_fails",
     "tests/test_trace_common.py::test_a_failed_attach_answers_status_alone_and_a_bad_form_is_malformed",
-    "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass"
+    "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
+    "tests/test_review5_debug_wires.py::test_the_wait_after_an_attach_reset_shares_max_op_ms_with_the_hold"
    ],
    "note": "attach / scan answer within max_op_ms (the host's argument time); an attach nothing answers is completed failed, status line"
   },
@@ -232,12 +236,15 @@
     "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass",
     "tests/test_conformance_scan_options.py::test_scan_options_contracts_pass",
     "tests/test_review4_debug.py::test_the_scan_checker_requires_max_speed_0_and_a_bad_later_copy_to_be_malformed[ZERO-SPEED]",
-    "tests/test_review4_debug.py::test_the_scan_checker_requires_max_speed_0_and_a_bad_later_copy_to_be_malformed[LATER-WIDTH]"
+    "tests/test_review4_debug.py::test_the_scan_checker_requires_max_speed_0_and_a_bad_later_copy_to_be_malformed[LATER-WIDTH]",
+    "tests/test_review5_debug_wires.py::test_the_bench_checks_every_copy_of_a_wire_tlv",
+    "tests/test_review5_debug_wires.py::test_the_scan_checkers_pass_a_probe_that_checks_later_copies"
    ],
    "mutants": [
     "tests/test_conformance_attach.py::test_attach_and_console_mutants_fail[zero_speed_taken-WIRE-ZERO-SPEED]",
     "tests/test_conformance_attach.py::test_attach_and_console_mutants_fail[speed_exceeds-WIRE-BUSY]",
-    "tests/test_conformance_scan_options.py::test_scan_option_checker_detects_independent_faults[speed-FIRST-IDLE]"
+    "tests/test_conformance_scan_options.py::test_scan_option_checker_detects_independent_faults[speed-FIRST-IDLE]",
+    "tests/test_review5_debug_wires.py::test_the_scan_checker_refuses_a_probe_that_takes_a_later_copy_below_min_clock"
    ],
    "note": "max_speed 0 malformed; under min_clock_hz unsupported (attach 0x00, scan the tag); speed <= max_speed; scan TLV 0x01; review 4: the scan fixture answers max_speed 0 (and a bad later copy) malformed and the scan checker requires it"
   },
@@ -279,7 +286,8 @@
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
     "tests/test_conformance_reset.py::test_optional_reset_contracts_pass",
     "tests/test_trace_debug.py::test_on_a_connection_the_probe_sends_no_set_up_and_changes_nothing_by_itself[p4-bench-oep.wire.rvswd]",
-    "tests/test_trace_debug.py::test_on_a_connection_the_probe_sends_no_set_up_and_changes_nothing_by_itself[esp32-v003-oep.wire.swio]"
+    "tests/test_trace_debug.py::test_on_a_connection_the_probe_sends_no_set_up_and_changes_nothing_by_itself[esp32-v003-oep.wire.swio]",
+    "tests/test_review5_debug_wires.py::test_the_wait_after_an_attach_reset_shares_max_op_ms_with_the_hold"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[read_before_release-RESET-1]",
@@ -555,7 +563,8 @@
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[rvswd_attach__a_second_target_on_separate_pins]",
     "tests/test_trace_debug.py::test_debug_vector_through_the_client[rvswd_attach__a_second_target_on_separate_pins]",
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[rvswd_attach__a_resource_ID_above_u16]",
-    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass"
+    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass",
+    "tests/test_review5_debug_wires.py::test_the_attach_checker_runs_on_the_a09fa45_registry"
    ],
    "note": "attach 0x11 method swdio swclk max_speed [TLV] -> connection id flags speed_hz [TLV], mandatory"
   },
@@ -686,17 +695,22 @@
    "verify": [
     "tests/test_conformance_scan_options.py::test_scan_options_contracts_pass",
     "tests/test_debug_attach.py::test_a_scan_over_a_live_pair_is_refused_and_leaves_its_settings",
-    "tests/test_trace_debug.py::test_max_speed_under_min_clock_is_unsupported_attach_fixed_part_scan_the_tag"
+    "tests/test_trace_debug.py::test_max_speed_under_min_clock_is_unsupported_attach_fixed_part_scan_the_tag",
+    "tests/test_review5_debug_wires.py::test_the_bench_checks_every_copy_of_a_wire_tlv",
+    "tests/test_review5_debug_wires.py::test_the_scan_checkers_pass_a_probe_that_checks_later_copies"
    ],
    "mutants": [
-    "tests/test_conformance_scan_options.py::test_scan_option_checker_detects_independent_faults[speed-FIRST-IDLE]"
+    "tests/test_conformance_scan_options.py::test_scan_option_checker_detects_independent_faults[speed-FIRST-IDLE]",
+    "tests/test_review5_debug_wires.py::test_the_scan_checker_refuses_a_probe_that_takes_a_later_copy_below_min_clock"
    ],
    "note": "scan TLV 0x01 max_speed u32 (absent: the slowest)"
   },
   "debug:3:14": {
    "text": "| scan（rvswd だけ） | 0x04 | idle_clock | u",
    "verify": [
-    "tests/test_conformance_scan_options.py::test_scan_options_contracts_pass"
+    "tests/test_conformance_scan_options.py::test_scan_options_contracts_pass",
+    "tests/test_review5_debug_wires.py::test_the_bench_checks_every_copy_of_a_wire_tlv",
+    "tests/test_review5_debug_wires.py::test_the_scan_checkers_pass_a_probe_that_checks_later_copies"
    ],
    "mutants": [
     "tests/test_conformance_scan_options.py::test_scan_option_checker_detects_independent_faults[clock-IDLE-1]",
@@ -714,7 +728,8 @@
     "tests/test_request_tails.py::test_attach_idle_clock_value_left_unused_is_unsupported_with_the_tag_as_received[True]",
     "tests/test_request_tails.py::test_attach_idle_clock_value_left_unused_is_unsupported_with_the_tag_as_received[False]",
     "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
-    "tests/test_trace_debug.py::test_the_client_sends_rvswd_idle_clock_critical_and_nothing_for_the_default"
+    "tests/test_trace_debug.py::test_the_client_sends_rvswd_idle_clock_critical_and_nothing_for_the_default",
+    "tests/test_review5_debug_wires.py::test_the_bench_checks_every_copy_of_a_wire_tlv"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[clock_high-IDLE-1]",
@@ -728,7 +743,9 @@
    "verify": [
     "tests/test_request_tails.py::test_attach_reset_of_another_length_is_malformed_either_way[True]",
     "tests/test_request_tails.py::test_attach_reset_of_another_length_is_malformed_either_way[False]",
-    "tests/test_interfaces.py::test_attach_under_reset_is_the_reset_tlv"
+    "tests/test_interfaces.py::test_attach_under_reset_is_the_reset_tlv",
+    "tests/test_review5_debug_wires.py::test_the_bench_checks_every_copy_of_a_wire_tlv",
+    "tests/test_review5_debug_wires.py::test_the_attach_checker_runs_on_the_a09fa45_registry"
    ],
    "note": "attach TLV 0x05 reset: channel(u16) hold_ms(u16), another length malformed"
   },
@@ -914,7 +931,9 @@
     "tests/test_host_rules_2026_10_06.py::test_c21_riscv_dm_says_which_optional_ops_the_probe_offers",
     "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra1-False]",
     "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra2-False]",
-    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra3-True]"
+    "tests/test_conformance_registered_ops.py::test_optional_ops_pairs_and_calibration[oep.target.riscv-dm-extra3-True]",
+    "tests/test_review5_debug_targets.py::test_riscv_dm_declared_names_halt_and_resume_as_optional",
+    "tests/test_review5_debug_targets.py::test_debug_checker_takes_a_dmi_only_fixture"
    ],
    "note": "dmi mandatory; halt resume reset read/write_block run step optional in ops (absent -> unknown_operation)"
   },
@@ -1014,7 +1033,8 @@
   "debug:4:8": {
    "text": "| run | pc、host が指定した GPR、dcsr（ebreakm、p",
    "verify": [
-    "tests/test_conformance_run.py::test_optional_run_contracts_pass"
+    "tests/test_conformance_run.py::test_optional_run_contracts_pass",
+    "tests/test_review5_debug_targets.py::test_run_checker_takes_data0_restored_before_data1"
    ],
    "mutants": [
     "tests/test_conformance_run.py::test_run_checker_detects_independent_faults[gpr_reverted-STOPPED]",
@@ -1030,7 +1050,8 @@
    "text": "| dmi | host が書いたもの | 何も触らず、何も戻さない（host ",
    "verify": [
     "tests/test_conformance_debug.py::test_mandatory_debug_contracts_pass",
-    "tests/test_target_parts.py::test_read_register_then_resume_writes_data0_back"
+    "tests/test_target_parts.py::test_read_register_then_resume_writes_data0_back",
+    "tests/test_review5_debug_targets.py::test_reset_run_writes_data0_back_before_the_hart_runs"
    ],
    "mutants": [
     "tests/test_conformance_debug.py::test_debug_checker_detects_independent_faults[raw_restore-MIXED]"
@@ -1069,7 +1090,9 @@
     "tests/test_trace_debug.py::test_debug_vector_through_the_client[riscv-dm_halt__halted]",
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_halt_on_an_unknown_connection]",
     "tests/test_trace_debug.py::test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock",
-    "tests/test_trace_debug.py::test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out[halt]"
+    "tests/test_trace_debug.py::test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out[halt]",
+    "tests/test_review5_debug_targets.py::test_riscv_dm_declared_names_halt_and_resume_as_optional",
+    "tests/test_review5_debug_targets.py::test_debug_checker_takes_a_dmi_only_fixture"
    ],
    "note": "halt 0x11 -> status [TLV], optional; lock required; optional (absent from ops: unknown_operation)"
   },
@@ -1079,7 +1102,9 @@
     "tests/test_trace_debug.py::test_resume_answers_status_alone",
     "tests/test_conformance_debug.py::test_mandatory_debug_contracts_pass",
     "tests/test_trace_debug.py::test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock",
-    "tests/test_trace_debug.py::test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out[resume]"
+    "tests/test_trace_debug.py::test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out[resume]",
+    "tests/test_review5_debug_targets.py::test_riscv_dm_declared_names_halt_and_resume_as_optional",
+    "tests/test_review5_debug_targets.py::test_debug_checker_takes_a_dmi_only_fixture"
    ],
    "note": "resume 0x12 -> status [TLV], optional; lock required; optional (absent from ops: unknown_operation)"
   },

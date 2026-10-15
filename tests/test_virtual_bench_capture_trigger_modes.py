@@ -68,7 +68,7 @@ def test_known_waveform_has_one_initial_trigger_and_correct_retained_history(ana
     if mode==c.REPEAT:
         segments=track.segments();segment=segments[0]
         assert segment.samples==32-pre+available and segment.trigger_index==available
-        assert bool(segment.flags&2)==(pre>first)
+        assert not segment.flags&2   # bit1 is stop's (§2.2)
         assert all(s.trigger_index is None for s in segments[1:])
         assert segment.start_ns==origin+int(Fraction((first-available)*1000000000)/track.config.rate)
     else:

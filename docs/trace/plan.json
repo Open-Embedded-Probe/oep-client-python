@@ -101,7 +101,8 @@
     "tests/test_review4_small.py::test_a_capture_model_keeps_its_configuration_on_the_same_set_and_refuses_a_change_while_running[logic-rows0]",
     "tests/test_review4_small.py::test_a_capture_model_keeps_its_configuration_on_the_same_set_and_refuses_a_change_while_running[analog-rows1]",
     "tests/test_conformance_gpio.py::test_gpio_plan_checks",
-    "tests/test_conformance_logic.py::test_logic_contract"
+    "tests/test_conformance_logic.py::test_logic_contract",
+    "tests/test_review5_small.py::test_the_uart_model_keeps_a_kept_tx_through_an_unconfigured_replacement"
    ],
    "mutants": [],
    "note": "a kept triple keeps its pin state (bench; gpio checker PLAN-REPLACE now adds a channel beside a set one); the same set does nothing (logic / analog checkers PLAN-REPLACE: the same set keeps a running capture, review 4 - they had required it closed); a running fn cause 6; a bound one cause 4; an unchanged set keeps a running UART configured with its bytes and pins"
@@ -190,7 +191,8 @@
     "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[analog-rows2]",
     "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[analog-rows3]",
     "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[capture-group-rows4]",
-    "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[capture-timeline-rows5]"
+    "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[capture-timeline-rows5]",
+    "tests/test_review5_small.py::test_plan_unsupported_names_the_tag_of_the_refused_assignment"
    ],
    "mutants": [
     "tests/test_trace_plan.py::test_a_bench_that_skips_the_role_and_channel_checks_fails_them[test_one_refusal_changes_nothing_not_even_the_replaced_fns_plan]",

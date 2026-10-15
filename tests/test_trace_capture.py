@@ -435,7 +435,7 @@ def test_no_sample_is_taken_before_start(analog):
     t.start()
     clock.t = 200
     (seg,) = t.segments()
-    assert seg.trigger_index == first and seg.samples == 8 + first and seg.flags & SHORT
+    assert seg.trigger_index == first and seg.samples == 8 + first and not seg.flags & SHORT   # bit1: stop's only
     assert seg.start_ns >= 100_000_000
 
 
@@ -555,7 +555,7 @@ def test_segment_fields_position_samples_times_trigger_flags_generation():
     lc.start()
     clock.t = 20
     first, second = lc.segments()[:2]
-    assert first.trigger_index == 1 and second.trigger_index is None and first.flags & SHORT
+    assert first.trigger_index == 1 and second.trigger_index is None and not first.flags & SHORT
     raw = hst.request(lc.fn, lc.SEGMENTS, struct.pack("<I", second.serial), locked=False).payload
     assert struct.unpack_from("<I", raw, 2 + 28)[0] == 0xFFFFFFFF   # trigger_index of a segment without the trigger
     assert first.start_ns == 2_000_000 and second.start_ns == first.start_ns + first.samples * 1_000_000
@@ -1227,7 +1227,7 @@ def test_samples_count_the_pretrigger_and_an_early_trigger_shortens():
     lc.start()
     clock.t = 80
     (seg,) = lc.segments()
-    assert (seg.samples, seg.trigger_index) == (14, 2) and seg.flags & SHORT
+    assert (seg.samples, seg.trigger_index) == (14, 2) and not seg.flags & SHORT   # short, not stopped
     events(ep, lc.fn)
     lc.configure(rate=1000, samples=16)
     lc.start()

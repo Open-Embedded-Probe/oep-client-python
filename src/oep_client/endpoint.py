@@ -1065,8 +1065,8 @@ class Endpoint:
                 n = t.take("B")
                 fns = [t.take("H") for _ in range(n)]
                 t.tail()                                           # v1 defines no bind TLV (§4.3)
-                grp.bind(self.captures, fns, [g for g in self.groups.values() if g is not grp],
-                         self.probe.max_frame - m.RESULT_HEADER)
+                # the start answer's message (18 + 6 x n bytes, its result header in the 18) against the frame (§4.1)
+                grp.bind(self.captures, fns, [g for g in self.groups.values() if g is not grp], self.probe.max_frame)
                 return self._answer(b"")
             if op == O["start"]:
                 t.tail()
@@ -1102,12 +1102,17 @@ class Endpoint:
         return self._role_pairs(fn) if fn in self.pin_roles else self.pairs.get(fn, [])
 
     def _allows(self, fn: int, pair: tuple[int, int]) -> bool:
-        if fn in self.pin_roles:
-            roles = self.pin_roles[fn]
-            swio = self.names[fn] == "oep.wire.swio"
-            return pair[0] in roles.get(1, ()) and (pair[1] == 0xFFFF if swio else
-                                                    pair[1] in roles.get(2, ()) and pair[1] != pair[0])
-        return pair in self.pairs.get(fn, [])
+        """Whether the declaration allows (swdio, swclk) (debug §1, core §7.4): with channel_groups, the roles a group
+        lists match that group exactly; role_channels binds the roles it lists; a role neither names is not allowed.
+        Both declared: one group matched AND the role_channels candidates."""
+        swio = self.names[fn] == "oep.wire.swio"
+        if (pair[1] != 0xFFFF) if swio else pair[1] == pair[0]:
+            return False
+        want = {1: pair[0]} if swio else {1: pair[0], 2: pair[1]}
+        roles = self.pin_roles.get(fn, {})
+        groups = [dict(catalog.unpack_channel_group(v)[1]) for tag, v in self.decl[fn] if tag == catalog.CHANNEL_GROUP]
+        return any(all((r in g or r in roles) and (r not in g or g[r] == ch) and (r not in roles or ch in roles[r])
+                       for r, ch in want.items()) for g in (groups or [{}]))
 
     def _held(self, fn: int | None = None, pair: tuple[int, int] | None = None) -> set[int]:
         """Channels something holds (core §8.1): the plan and the live connections' pairs - except
@@ -1593,14 +1598,15 @@ class Endpoint:
                     raise Reject(m.MALFORMED)                      # fn(u16) role(u8) channel(u16) (oep-if-plan §2.1)
                 a = struct.unpack("<HBH", value)
                 got.append(a)
-                tags.setdefault(a[0], tag)                         # the tag as received, for unsupported (§2.5)
+                tags.setdefault(a[0], tag)                         # the tag as received, for unsupported (§2.4): the
+                tags.setdefault(a, tag)                            # refused assignment's own (core §4.3), or the fn's first
             if len(set(got)) != len(got) or any(fn == m.CORE_FN for fn, _, _ in got):
                 raise Reject(m.MALFORMED)                          # the same (fn, role, channel) twice, or fn 0 (oep-if-plan §2.5)
             named = {fn for fn, _, _ in got}
             if any(fn not in self.names for fn in named):
                 raise Reject(m.UNKNOWN_FUNCTION)                   # ... then its fns ...
             t.check()                                              # ... an unknown critical TLV ...
-            tag_of = lambda fn: tags.get(fn, ROLE_ASSIGNMENT)      # noqa: E731
+            tag_of = lambda key: tags.get(key, ROLE_ASSIGNMENT)    # noqa: E731  key: an fn or an (fn, role, channel)
             self._check_plan(got, held=False, tag_of=tag_of)       # ... roles and channels not declared ...
             self._check_plan(got, tag_of=tag_of)
             self._refuse_disabled(ch for _, _, ch in got)          # a disabled channel (probe.config §1): cause 5
@@ -1709,7 +1715,7 @@ class Endpoint:
             if r is not None:
                 raise r
         for fn, role, ch in got:
-            current[0] = fn
+            current[0] = (fn, role, ch)                            # an unsupported names this assignment's tag
             beside = [f for f, _, c in got if c == ch and f != fn] + [a[0] for a in others if a[2] == ch]
             if fn in analog:   # the analog shares its pin with nothing: another fn's plan, a connection
                 if role not in self._declared_roles(fn, ch):
@@ -2161,13 +2167,15 @@ class Endpoint:
             pairs = [t.take("HH") for _ in range(count)]
             known = {_T_SCAN["max_speed"]} | ({_T_SCAN["idle_clock"]} if rvswd else set())
             got = t.tail(known, defer=True)
-            max_speed = t.fixed(got, _T_SCAN["max_speed"], 4)
-            if not count or len(set(pairs)) != len(pairs) or max_speed == bytes(4):
-                raise Reject(m.MALFORMED)                          # no implicit list, no pair twice, no speed 0 (§1)
-            self._idle_clock(t, got)
+            t.fixed(got, _T_SCAN["max_speed"], 4)
+            speeds = [(raw, struct.unpack("<I", v)[0]) for raw, v in t.repeated if raw & 0x7F == _T_SCAN["max_speed"]]
+            if not count or len(set(pairs)) != len(pairs) or any(not hz for _, hz in speeds):
+                raise Reject(m.MALFORMED)                          # no implicit list, no pair twice, no speed 0 (§1) -
+            self._idle_clock(t, got)                               # in any copy of max_speed (core §2.3)
             t.check()                                              # an unknown critical TLV (core §2.3)
-            if max_speed is not None and struct.unpack("<I", max_speed)[0] < self._min_clock(fn):
-                raise Reject(m.UNSUPPORTED, bytes([t.received(_T_SCAN["max_speed"])]))
+            for raw, hz in speeds:                                 # below min_clock_hz, a later copy too (core §2.3):
+                if hz < self._min_clock(fn):                       # the tag as that copy came
+                    raise Reject(m.UNSUPPORTED, bytes([raw]))
             for i, p in enumerate(pairs):                          # not a combination the declaration allows:
                 if not self._allows(fn, p):                        # unsupported, 0x00 + its index (debug §1)
                     raise unsupported_fixed(m.tlv(_WIRE_INDEX, bytes([i])))
@@ -2202,9 +2210,11 @@ class Endpoint:
                 raise Reject(m.UNSUPPORTED)                        # a pair the declaration does not allow (§1)
             if reset is not None:
                 channel, hold_ms = struct.unpack("<HH", reset)
-                if channel not in self.reset_channels.get(fn, set()) or hold_ms > self.max_op_ms:
-                    # not a reset line here (§3), or longer than one request may take: the tag as received
-                    raise Reject(m.UNSUPPORTED, bytes([t.received(_T_ATTACH["reset"])]))
+                for raw, v in t.repeated:                          # every copy, the first used (core §2.3)
+                    ch, hold = struct.unpack("<HH", v) if raw & 0x7F == _T_ATTACH["reset"] else (channel, 0)
+                    if ch not in self.reset_channels.get(fn, set()) or hold > self.max_op_ms:
+                        # not a reset line here (§3), or longer than one request may take: the tag as received
+                        raise Reject(m.UNSUPPORTED, bytes([raw]))
             self._refuse_named(fn, pair)                           # busy pins never join or evict (§1)
             if reset is not None:
                 self._refuse_disabled([channel])                   # a disabled reset line: cause 5 (probe.config §1)
@@ -2219,7 +2229,7 @@ class Endpoint:
             tg = self._target(fn, pair)                            # (core §9, §4.3 order 4)
             if reset is not None and tg.resets_through(channel):
                 tg.silent_until_reset = False                      # held in reset and let go: it answers again
-                if not self._settled(tg):                          # silent past max_op_ms (debug §2)
+                if not self._settled(tg, hold_ms):                 # silent past max_op_ms, the hold counted (debug §2)
                     return m.COMPLETED, m.FAILED, bytes([LINE])
             if not tg.answers:
                 return m.COMPLETED, m.FAILED, bytes([LINE])        # failed: status [TLV] (common §3); nothing made
@@ -2310,8 +2320,9 @@ class Endpoint:
         value = t.fixed(got, tag, 1)
         if value is None:
             return None
-        if value[0] not in reg.WIRE_RVSWD.enum["idle_clock"].values():
-            raise t.refuse(tag)
+        for raw, v in t.repeated:                                  # a later copy is checked too (core §2.3)
+            if raw & 0x7F == tag and v[0] not in reg.WIRE_RVSWD.enum["idle_clock"].values():
+                raise Reject(m.UNSUPPORTED, bytes([raw]))          # the tag as that copy came
         return value[0]
 
     def _conn_at(self, fn: int, pair: tuple[int, int]) -> int | None:
@@ -2578,12 +2589,13 @@ class Endpoint:
                     struct.pack(f"<BBIIB{n_out}I", status, code, dpc, us, n_out, *values))   # ... nvals values
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
-    def _settled(self, tg: VirtualTarget) -> bool:
-        """The wait after a reset's release for a target that restarts by itself (debug §3, §4.3): the DM answers after
-        tg.restart_ms; the probe answers within max_op_ms. -> whether it answered in time (the wait goes in
-        `settle_log`)."""
-        self.settle_log.append(min(tg.restart_ms, self.max_op_ms))
-        return tg.restart_ms <= self.max_op_ms
+    def _settled(self, tg: VirtualTarget, spent_ms: int = 0) -> bool:
+        """The wait after a reset's release for a target that restarts by itself (debug §2, §3, §4.3): the DM answers
+        after tg.restart_ms; the whole request - `spent_ms` already gone (an attach's hold_ms), the wait and the cleanup
+        - ends within max_op_ms. -> whether it answered in time (the wait goes in `settle_log`)."""
+        left = max(0, self.max_op_ms - spent_ms)
+        self.settle_log.append(min(tg.restart_ms, left))
+        return tg.restart_ms <= left
 
     def _ack_havereset(self, cid: int, tg: VirtualTarget) -> VirtualTarget:
         """A high-level op's automatic havereset acknowledgement (debug §4.6): a pending one (the target reset by

@@ -480,7 +480,8 @@ class VirtualCapture:
         if self.mode == MODE["one_shot"]:
             n = self.first_segment_samples or self.samples
             if self.one_shot_due(now_ms) - self.produced >= n:
-                seg = self._segment(n, self.first_trigger_index, FLAG["short"] if n < self.samples else 0)
+                # an early trigger's segment is short of pretrigger, not ended by stop: no flags bit1 (§2.2, §3.3)
+                seg = self._segment(n, self.first_trigger_index)
                 self.state = STATE["done"]
                 events += [bytes([EVENT["segment"]]) + seg.pack(), self.stopped_event(STOPPED["complete"])]
             return events
@@ -491,7 +492,7 @@ class VirtualCapture:
                     self.state = STATE["paused"]
                     break
                 n = self.first_segment_samples or self.samples
-                seg = self._segment(n, self.first_trigger_index, FLAG["short"] if n < self.samples else 0)
+                seg = self._segment(n, self.first_trigger_index)       # bit1 only when stop ends it (§2.2)
                 self.first_segment_samples, self.first_trigger_index = 0, NONE
                 events.append(bytes([EVENT["segment"]]) + seg.pack())
                 if len(self.segs) >= self.segments_max:

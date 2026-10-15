@@ -301,7 +301,7 @@ def test_c21_riscv_dm_says_which_optional_ops_the_probe_offers():
     wire = riscv.Wire(hst, "oep.wire.swio")
     conn, _ = wire.attach(halt=True)
     dm = riscv.RiscvDm(hst, conn)
-    assert dm.declared() == {"block", "run", "reset"}
+    assert dm.declared() == {"halt", "resume", "block", "run", "reset"}
     with pytest.raises(h.Rejected) as e:
         dm.step()
     assert e.value.result.detail == m.UNKNOWN_OPERATION

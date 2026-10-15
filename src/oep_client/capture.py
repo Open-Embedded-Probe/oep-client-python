@@ -522,8 +522,16 @@ class LogicCapture(Interface):
 
     def start(self) -> int:
         """-> the new capture's generation (also self.generation). A start whose initialisation failed is completed
-        failed with the same fixed part (§3.2): host.Failed, the state 6 and error read by status()."""
-        rd = m.Reader(self._call(self.START).payload)
+        failed with the same fixed part (§3.2): host.Failed, the state 6 and error read by status() - the generation
+        that fixed part names is taken all the same (read / release name it, §0)."""
+        try:
+            payload = self._call(self.START).payload
+        except h.Failed as e:
+            if e.result is not None and len(e.result.payload) >= 4:
+                self.generation = struct.unpack_from("<I", e.result.payload)[0]
+                self.armed_s = time.monotonic()
+            raise
+        rd = m.Reader(payload)
         self.generation = rd.take("I")
         rd.tail()
         self.armed_s = time.monotonic()
@@ -815,8 +823,19 @@ class CaptureGroup(Interface):
     def start(self, tracks: list[LogicCapture] = ()) -> int:
         """-> the group's start_ns. The answer's fixed part: start_ns generation(the group's) n, then n x (fn,
         generation) - each bound track's new generation, in bind order (§4.1). self.generation: the group's;
-        self.generations: the tracks' by fn. `tracks`: whose armed_s and generation to set."""
-        rd = m.Reader(self._call(self.START).payload)
+        self.generations: the tracks' by fn. `tracks`: whose armed_s and generation to set. A start that failed to
+        begin is completed failed with the same fixed form (§4.1): host.Failed, the generations it names taken first
+        (a stopped track's short segments are read with its new one)."""
+        try:
+            payload = self._call(self.START).payload
+        except h.Failed as e:
+            if e.result is not None and len(e.result.payload) >= 13:
+                self._started(e.result.payload, tracks)
+            raise
+        return self._started(payload, tracks)
+
+    def _started(self, payload: bytes, tracks) -> int:
+        rd = m.Reader(payload)
         start_ns, self.generation, n = rd.take("QIB")
         self.generations = dict(rd.take("HI") for _ in range(n))
         rd.tail()

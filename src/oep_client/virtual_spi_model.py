@@ -22,15 +22,12 @@ class Spi(Gpio):
         return (tlv(7,b'\x10\x0f'),*(tlv(1,bytes((role,0,0,15))) for role in range(1,5)),tlv(2,struct.pack('<I',1000000)),tlv(3,struct.pack('<H',8)),tlv(5,struct.pack('<I',int(self.lsb_available))),tlv(64,b'\3'),tlv(65,bytes((self.modes,))),tlv(67,b'\0'*4))
     def request_tags(self,fn,op,data):
         if fn==1:return super().request_tags(fn,op,data)
-        seen=set()
         while data:
             if len(data)<3:raise Reject(3)
             raw,size=struct.unpack_from('<BH',data);key=raw&127
             if not key or len(data)<3+size:raise Reject(3)
             data=data[3+size:]
-            if key in seen:continue
-            seen.add(key)
-            if raw&128:raise Reject(11,bytes((raw,)))
+            if raw&128:raise Reject(11,bytes((raw,)))   # no request TLV defined: every copy, a later one too (core §2.3)
         return []
     def release_plans(self,functions):
         if 2 in functions:self.reset();self.events.append(('spi-stop',))

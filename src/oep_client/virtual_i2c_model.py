@@ -22,15 +22,12 @@ class I2c(Gpio):
         return rows+((tlv(65,struct.pack('<I',1000)),) if self.stretch_available else ())
     def request_tags(self,fn,op,data):
         if fn==1:return super().request_tags(fn,op,data)
-        seen=set()
         while data:
             if len(data)<3:raise Reject(3)
             raw,size=struct.unpack_from('<BH',data);key=raw&127
             if not key or len(data)<3+size:raise Reject(3)
             data=data[3+size:]
-            if key in seen:continue
-            seen.add(key)
-            if raw&128:raise Reject(11,bytes((raw,)))
+            if raw&128:raise Reject(11,bytes((raw,)))   # no request TLV defined: every copy, a later one too (core §2.3)
         return []
     def release_plans(self,functions):
         if 2 in functions:self.reset();self.events.append(('i2c-stop',))

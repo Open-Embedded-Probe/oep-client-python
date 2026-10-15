@@ -81,7 +81,7 @@ class SpiChecks:
                 if self.lsb:self.configure(sid,3,1);require(self.status()[1:3]==(3,1),'LSB declared but refused')
                 else:self.refused(self.req(2,'configure',sid,b'\0\1'),'unsupported',b'\0')
             elif kind=='TLV':
-                self.configure(sid,extra=self.tlv(126,b'x'));self.refused(self.req(2,'configure',sid,b'\0\0'+self.tlv(254,b'x')),'unsupported',b'\xfe');self.refused(self.arm_request(sid,extra=b'\x7e\3\0x'),'malformed');self.ok(self.arm_request(sid,extra=self.tlv(126,b'x')))
+                self.configure(sid,extra=self.tlv(126,b'x'));self.refused(self.req(2,'configure',sid,b'\0\0'+self.tlv(254,b'x')),'unsupported',b'\xfe');self.refused(self.req(2,'configure',sid,b'\0\0'+self.tlv(126,b'x')+self.tlv(254,b'x')),'unsupported',b'\xfe');self.refused(self.arm_request(sid,extra=b'\x7e\3\0x'),'malformed');self.ok(self.arm_request(sid,extra=self.tlv(126,b'x')))
             elif kind in ('MODES','PARTIAL'):
                 for mode in range(4):
                     for order in range(2 if self.lsb else 1):

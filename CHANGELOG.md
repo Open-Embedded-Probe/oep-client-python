@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- (JA) 第 5 回の独立レビュー（docs/trace/review5/、文書の割り振りをまた変えた）で、31 件の食い違いを見つけて直した（第 4 回は 41 件）。主なもの:
+  - core §2.2 / §2.3 / §4.3 / §4.4 / §6.4 / §7.2 / §7.5 / §10.1 / §10.3: 応答の bit 7 の立った TLV を知らない tag として読み飛ばす、繰り返さない tag は最初のものだけを使い長さは定義どおりに確かめる（describe を読むクライアント各所）、locked の残り時間は 0 でもよい、検査器の待ちを §4.4 の下限以上にする、owner は最初の正しいコピーを使う、list の revision は名前と組で選ぶ、unit_id は 1〜32 byte の a-z 0-9 -（x- は名指さない）、待っていない corr の応答はどのフレーミングでも捨てる、購読の保持量が足りなければ cause 2 で断ってよい。
+  - debug §1 / §2 / §3 / §4 / console §1: channel_group と role_channels の両方に合う組だけを使う、attach reset の後の待ちも max_op_ms に収める、後続の同じ tag も検証する、halt / resume は任意の op、reset の前に DATA0 / DATA1 を書き戻す、console の最小の op は open / read / close / streams。
+  - capture §2.2 / §3.2 / §4.1: flags bit1 は stop で終わった区画だけ、repeat の release は state 3 と 5 だけ解放、start の失敗の固定形から世代を取る、group の bind は frame 全体で start の答えの大きさを確かめる。
+  - plan §2.1 / §2.4、fixture §2 / §3 / §4: 残る割り当ては取り直さない、unsupported は断った割り当ての tag、uart / i2c / spi の後続の同じ tag も検証する。
+
 - (JA) 第 4 回の独立レビュー（docs/trace/review4/、コードと a09fa45 の食い違いを探すことに絞った）で、41 件の食い違いを見つけて直した。各件は仕様の一文を引用して記録してある（review4 の `divergences`）。主なもの:
   - core §2.3 / §4.3 / §5.1 / §6.1 / §6.2 / §7.1 / §7.2 / §9 / §12: 繰り返さない tag は最初のものを使う（ops、max_op_ms、describe の共通 tag）、open のセッションの判定を書式より先に、順 4 で断る要求も最後の corr と lease を進める、list は 1 フレームに入る分を返す、revision 0 の答えを読まない、資源の番号の使い切りは何も触る前に断る、`end_previous` は lock_state を先に見て空いていれば何も開かない、名前は逆 DNS か `oep.<層>.<名前>` だけ。
   - debug §1 / §2.1 / §3 / §4.4 / §4.5 / §6: connections の swd の tid は DPIDR、read_block / run の結果が max_frame に収まらなければ実行前に unsupported、count 0 は success done 0、reset の channel が attach のピンなら cause 1、reset channel は role 3 で宣言、scan は答えが収まる分だけ試す。

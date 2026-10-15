@@ -62,16 +62,36 @@ def find_all(hst: h.Host, name: str) -> list[int]:
     return [e.fn for e in list_entries(hst, name, True)]
 
 
-def find(hst: h.Host, name: str) -> int:
-    """fn of the first interface with exactly this name. Cached on the host until the probe reboots (boot_id), so
-    building a client per connection costs no list request."""
-    fn = hst._fns.get(name)
+def find(hst: h.Host, name: str, revision: int | None = None) -> int:
+    """fn of the first interface with exactly this name - with `revision`, the first of that (name, revision) pair:
+    a probe that offers several revisions is used through the pair the client speaks (core §7.2: "複数の revision を
+    提供するときは各 revision の組を明示的に選び"). Cached on the host until the probe reboots (boot_id), so building a
+    client per connection costs no list request."""
+    key = name if revision is None else (name, revision)
+    fn = hst._fns.get(key)
+    if fn is None and revision is not None and name in hst._fns \
+            and hst._revisions.get(hst._fns[name], revision) == revision:
+        fn = hst._fns[name]                                # the name's fn, of that revision (or not listed yet)
     if fn is None:
-        fns = find_all(hst, name)
+        entries = list_entries(hst, name, True)
+        fns = [e.fn for e in entries if revision is None or e.revision == revision]
         if not fns:
+            if entries:                                    # the name, in no revision this client speaks
+                fn = entries[0].fn
+                raise UnsupportedRevision(f"{name} (fn {fn}) is revision {entries[0].revision} on this probe; this "
+                                          f"client speaks revision {revision} only")
             raise LookupError(f"probe does not offer {name}")
-        fn = hst._fns[name] = fns[0]
+        fn = hst._fns[key] = fns[0]
     return fn
+
+
+def _find_spoken(hst: h.Host, name: str, rev: int) -> int:
+    """`find` of an optional interface in the revision this client speaks: offered in another revision only, it is
+    one this host does not use (core §2.8, §7.2) - LookupError like an interface not offered."""
+    try:
+        return find(hst, name, rev)
+    except UnsupportedRevision as e:
+        raise LookupError(str(e)) from None
 
 
 def revision(hst: h.Host, name: str, fn: int) -> int:
@@ -176,7 +196,7 @@ def max_op_ms(hst: h.Host) -> int:
 
 def restart_fn(hst: h.Host) -> int:
     """The fn of the probe's oep.probe.restart (LookupError: the probe offers none - it is optional, oep-if-restart)."""
-    return find(hst, RESTART_NAME)
+    return _find_spoken(hst, RESTART_NAME, reg.PROBE_RESTART.revision)
 
 
 def restart_max_ms(hst: h.Host) -> int | None:
@@ -187,10 +207,8 @@ def restart_max_ms(hst: h.Host) -> int | None:
         fn = restart_fn(hst)
     except LookupError:
         return None
-    for tag, value in describe(hst, fn):
-        if tag == TAG_RESTART_MAX_MS and len(value) == 4:
-            return struct.unpack_from("<I", value)[0]
-    return None
+    value = catalog.first_fixed(describe(hst, fn), TAG_RESTART_MAX_MS, 4)   # the first copy only (core §2.3)
+    return struct.unpack("<I", value)[0] if value is not None else None
 
 
 def transports(hst: h.Host) -> list[tuple[int, int, int]]:
@@ -213,7 +231,7 @@ def take(hst: h.Host, lease_ms: int = 3000, *, owner: str | None = None, wait_s:
 def plan_fn(hst: h.Host) -> int:
     """The fn of the probe's oep.probe.plan (LookupError: the probe offers none - it lists one exactly when an
     interface has plan roles, oep-if-plan)."""
-    return find(hst, PLAN_NAME)
+    return _find_spoken(hst, PLAN_NAME, reg.PROBE_PLAN.revision)
 
 
 def plan_roles(hst: h.Host) -> int | None:
@@ -223,10 +241,8 @@ def plan_roles(hst: h.Host) -> int | None:
         fn = plan_fn(hst)
     except LookupError:
         return None
-    for tag, value in describe(hst, fn):
-        if tag == TAG_PLAN_ROLES and len(value) == 4:
-            return struct.unpack_from("<I", value)[0]
-    return None
+    value = catalog.first_fixed(describe(hst, fn), TAG_PLAN_ROLES, 4)   # the first copy only (core §2.3)
+    return struct.unpack("<I", value)[0] if value is not None else None
 
 
 def plan_apply(hst: h.Host, assignments: list[tuple[int, int, int]]) -> None:
@@ -294,7 +310,7 @@ class Interface:
     def __init__(self, hst: h.Host, name: str | None = None, prefix: bytes = b"", fn: int | None = None):
         self.host = hst
         self.name = name or self.NAME
-        self.fn = fn if fn is not None else find(hst, self.name)
+        self.fn = fn if fn is not None else find(hst, self.name, self.REVISION)   # the pair it speaks (core §7.2)
         self.prefix = prefix
         ops(hst, self.fn)                          # an ops tag outside core §7.4's encoding: not used (UnusableFunction)
         if self.REVISION is not None:
@@ -352,7 +368,7 @@ def link_sink_size(max_frame: int) -> int:
 def link_fn(hst: h.Host) -> int:
     """The fn of the probe's oep.probe.link (LookupError: the probe offers none - the link test and port_speed are
     optional, oep-if-link)."""
-    return find(hst, LINK_NAME)
+    return _find_spoken(hst, LINK_NAME, reg.PROBE_LINK.revision)
 
 
 def link_source_request(size: int) -> bytes:

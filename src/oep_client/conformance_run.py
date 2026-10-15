@@ -43,7 +43,8 @@ class RunChecks(ResetChecks):
             require(target['halted']==(stopped!=2),'run final halted state')
         require(not target['haltreq'] and not target['registers'][0x10]&(HARTSEL|0x80000000),'run left haltreq/hartsel')
         for reg in (4,5,0x18):require(target['registers'].get(reg,0)==before['targets'][parent]['registers'].get(reg,0),'run DATA/abstractauto restoration')
-        require([row[2] for row in after['restore'][len(before['restore']):] if row[2] in (4,5)]==[5,4],'run DATA1/DATA0 restore order')
+        # DATA1 and DATA0 both come back (checked above); debug §4's run row names no order between them
+        require(sorted(row[2] for row in after['restore'][len(before['restore']):] if row[2] in (4,5))==[4,5],'run DATA1/DATA0 not each restored once')
         return request,frame
     def outcome_run(self,mode,pc=0x2000,after=0x2004,timeout=1,empty=False):
         self.fresh()

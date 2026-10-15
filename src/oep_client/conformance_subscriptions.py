@@ -36,6 +36,18 @@ class SubscriptionChecks:
         tlvs(self.c.success(request))
         return request
 
+    def subscribe_bounded(self, sid, fn, minimum, delay):
+        """subscribe with a large batching condition. core §10.3: a probe may bound what it holds for subscriptions and
+        refuses one it cannot hold rejected unavailable (cause 2), changing nothing. -> True accepted, False refused."""
+        reply = self.c.exchange(self.c.request(1, struct.pack('<HI', minimum, delay), session=sid, fn=fn))
+        if reply[3:5] == bytes((self.c.reg['resolutions']['completed'], self.c.reg['outcomes']['success'])):
+            tlvs(reply[5:])
+            return True
+        require(reply[3:5] == bytes((self.c.reg['resolutions']['rejected'], self.c.reasons['unavailable'])),
+                f'expected completed success or rejected unavailable, got {reply.hex()}')
+        require(dict(reversed(tlvs(reply[5:]))).get(1) == b'\x02', 'a subscription bound is refused with cause 2')
+        return False
+
     def unsub(self, sid, fn):
         request = self.c.request(2, session=sid, fn=fn)
         tlvs(self.c.success(request))
@@ -111,9 +123,11 @@ class SubscriptionChecks:
             self.subscribe(sid, fn)
             self.event(fn, 0)
             self.event(fn, 1)
-            self.subscribe(sid, fn, 65535, 0xffffffff)
-            self.event(fn, 0)
-            self.event(fn, 1)  # exactly one subscription remains
+            if self.subscribe_bounded(sid, fn, 65535, 0xffffffff):
+                self.event(fn, 0)
+                self.event(fn, 1)  # exactly one subscription remains
+            else:  # refused: the old conditions, destination and seq stay (core §10.3)
+                self.event(fn, 2)
 
     def replay(self):
         with self.c.holding() as sid:
@@ -236,9 +250,11 @@ class SubscriptionChecks:
     def threshold(self):
         with self.c.holding() as sid:
             fn = self.a.functions[0]
-            self.subscribe(sid, fn, 65535, 0xffffffff)
-            self.event(fn, 0)
-            self.event(fn, 1)
+            if self.subscribe_bounded(sid, fn, 65535, 0xffffffff):
+                self.event(fn, 0)
+                self.event(fn, 1)
+            else:
+                self.event(fn)  # refused: nothing subscribed (core §10.3)
 
     def run(self):
         start = len(self.c.results)

@@ -31,8 +31,8 @@ class ScriptedHost(h.Host):
         fn = struct.unpack_from("<H", p)[0]
         if max_length is not None and fn in (FNS["oep.target.riscv-dm"], FNS["oep.target.arm-adi"]):
             return b"\x00" + catalog.u16(catalog.MAX_LENGTH, max_length)
-        if fn == FNS["oep.wire.rvswd"]:                                  # one SWIO-like pair, attach_halt (debug §3)
-            return b"\x00" + catalog.channel_group(1, [(1, 19)]) + catalog.u32(catalog.FEATURES, 1)
+        if fn == FNS["oep.wire.rvswd"]:                                  # one pair (roles 1 and 2), attach_halt (debug §3)
+            return b"\x00" + catalog.channel_group(1, [(1, 19), (2, 20)]) + catalog.u32(catalog.FEATURES, 1)
         if fn == FNS["oep.wire.swd"]:
             return b"\x00" + catalog.channel_group(1, [(1, 10), (2, 11)])
         return b"\x00"
@@ -59,7 +59,7 @@ def ok(body=b""):
 
 
 CONFIRM = struct.pack("<4sBHIBI", b"OEP!", 1, 1024, 4096, 8, 0x1234)
-FIXED = struct.pack("<HHI", 19, 0xFFFF, target.WireBase.DEFAULT_MAX_SPEED)   # attach's swdio swclk max_speed
+FIXED = struct.pack("<HHI", 19, 20, target.WireBase.DEFAULT_MAX_SPEED)   # attach's swdio swclk max_speed
 SWD_FIXED = struct.pack("<HHI", 10, 11, target.WireBase.DEFAULT_MAX_SPEED)
 
 
@@ -132,7 +132,7 @@ def _pin_choice_wire(limit=False):
     def connections(p):
         if state["live"] is None:
             return ok(bytes([0, 0]))
-        row = struct.pack("<IHHIBB", state["live"], 19, 0xFFFF, 1_000_000, 0, 0)
+        row = struct.pack("<IHHIBB", state["live"], 19, 20, 1_000_000, 0, 0)
         return ok(bytes([0, 1]) + row)                                    # count x entry (core §2.3)
 
     hst = ScriptedHost({(1, target.Wire.ATTACH): attach, (1, target.Wire.DETACH): detach,
@@ -147,7 +147,7 @@ def test_find_reset_line_names_the_pins_on_a_wire_whose_pins_the_host_chooses():
     refused unavailable, read as 'not a reset line' -> []. With pins every try attaches on its own."""
     hst, state = _pin_choice_wire()
     wire = target.Wire(hst)
-    assert wire.find_reset_line([0, 6, 4], tries=2, pins=(19, 0xFFFF)) == [4]
+    assert wire.find_reset_line([0, 6, 4], tries=2, pins=(19, 20)) == [4]
     assert wire.last_search[0] == [0x2f8, 0x2f8] and isinstance(wire.last_search[6], h.Unavailable)
     assert state["live"] is None                                   # its own connections closed again
 

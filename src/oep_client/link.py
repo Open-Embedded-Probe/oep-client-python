@@ -6,8 +6,8 @@ COBS + CRC-16 sent as 0x00 <COBS> 0x00, and the port carries OEP frames only (tr
 (and from the open to the first 0x00) is a candidate; one that does not decode or fails its CRC is a broken frame - most
 likely the awaited answer, sent again at once - and an answer to another request is read past (transports §1). A missing answer is seen
 by the timeout only, and the request goes once more with the same corr. Vendor bulk, HID and TCP are length(u16) message;
-lost boundaries there are recovered by the §5.1 resync: on a result for another request, an impossible length or a
-frame that stops half way, read and discard until the input is quiet for 50 ms, prove the link with a confirm, and go
+lost boundaries there are recovered by the §5.1 resync: on an impossible length or a frame that stops half way (a
+result for another request is read past there too, core §10.1), read and discard until the input is quiet for 50 ms, prove the link with a confirm, and go
 on. When pushes keep the input from going quiet, the host's unsubscribe and end (harmless twice) are sent blind.
 
 A request is sent once more after a missing (or, on length frames, broken) reply, with the same corr: the probe keeps
@@ -473,9 +473,9 @@ class SerialLink:
         raise cobs.CorruptFrame(why)
 
     def _recv_for(self, corr: int) -> bytes:
-        """The reply to request `corr` (pushes and events routed on the way). Length frames: a result for another
-        request raises CorrMismatch (the §5.1 resync follows); a serial port and TCP: it is read past (oep-core §10.1;
-        transports §5: on TCP an answer to a corr not waited for is no broken boundary)."""
+        """The reply to request `corr` (pushes and events routed on the way). A result for a corr not waited for is
+        read past on every framing (oep-core §10.1: "待っていない corr の応答は捨てる"; transports §5: no broken
+        boundary) - it starts no resync."""
         deadline = time.monotonic() + self._wait()                 # pushes that keep coming never extend it (core §10.1)
         while True:
             if time.monotonic() > deadline:
@@ -486,9 +486,6 @@ class SerialLink:
             if len(reply) >= 3 and self._corr(reply) == corr:
                 return reply
             self.stale += 1
-            if self.framing == "length" and not self._keeps_boundaries():
-                raise CorrMismatch(f"a result for correlation {self._corr(reply) if len(reply) >= 3 else None}, "
-                                   f"waiting for {corr}")
 
     def pump(self, timeout: float = 0.0, until_one: bool = False) -> int:
         """Read the frames that arrive within `timeout` in total (pushes are kept, stray results counted stale); a
@@ -1451,10 +1448,10 @@ def check_unit_id(hst, unit_id: str) -> None:
     from . import core
     said = None
     try:
-        for tag, value in core.describe(hst, 0):
-            if tag == reg.CORE.tlv["describe"]["unit_id"] and value:
-                said = value.decode("ascii", "replace")
-                break
+        # the first copy only: an empty (broken) one is not used and no later one stands in (core §2.3)
+        value = next((v for tag, v in core.describe(hst, 0) if tag == reg.CORE.tlv["describe"]["unit_id"]), None)
+        if value:
+            said = value.decode("ascii", "replace")
     except Exception as e:
         hst.link.close()
         raise UnitIdMismatch(f"unit id {unit_id}: describe failed ({type(e).__name__}: {e}); closed") from e
@@ -1905,10 +1902,8 @@ def _speed_port(hst) -> tuple[int | None, int | None, str]:
 def _unit_id(hst) -> str:
     """The probe's unit_id (core §7.5, mandatory) - the record's key with the port."""
     from . import core
-    for tag, value in core.describe(hst, 0):
-        if tag == UNIT_ID_TAG and value:
-            return value.decode("ascii", "replace")
-    return "?"
+    value = next((v for tag, v in core.describe(hst, 0) if tag == UNIT_ID_TAG), None)   # the first copy (core §2.3)
+    return value.decode("ascii", "replace") if value else "?"
 
 
 def _answer_wait(size: int, rate: int, n: int) -> float:

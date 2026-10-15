@@ -143,6 +143,14 @@ def first_value(tlvs, tag: int) -> bytes | None:
     return next((v for t, v in tlvs if t == tag), None)
 
 
+def first_fixed(tlvs, tag: int, size: int) -> bytes | None:
+    """The first TLV `tag`'s value when it has its defined length `size` (core §2.3: a value without the length its
+    definition gives is broken and not used; a later copy never stands in for the first; core §2.2: a tag with bit 7
+    in an answer is an unknown one, never this tag). None: absent or broken."""
+    value = first_value(tlvs, tag)
+    return value if value is not None and len(value) == size else None
+
+
 def channels_to_bitmap(channels) -> tuple[int, bytes]:
     chans = sorted(set(channels))
     if not chans:

@@ -268,7 +268,7 @@ def test_usb_requires_complete_matching_identity():
     node = config.data['probes'][0]
     node['transport'] = {'kind': 'usb', 'unit_id': 'fafe00000003'}
     hardware.validate(config.data)
-    node['transport']['unit_id'] = 'fafe'
+    node['transport']['unit_id'] = 'fafe_0003'
     with pytest.raises(hardware.ConfigurationError, match='complete'):
         hardware.validate(config.data)
     node['transport']['unit_id'] = 'fafe00000004'

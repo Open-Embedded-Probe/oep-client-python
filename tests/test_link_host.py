@@ -55,6 +55,8 @@ def result(corr, payload=b"", res=m.COMPLETED, detail=m.SUCCESS):
     return m.Result(corr, res, detail, payload).pack()
 
 
+BROKEN = struct.pack("<H", 5000) + b"garbage"   # a length above max_frame: the boundaries are lost (transports §5)
+
 CONFIRM_V1 = struct.pack("<4sBHIBI", b"OEP!", 1, 1024, 65536, 4, 0x11)   # ... boot_id (core §7.1)
 
 
@@ -99,17 +101,6 @@ def test_pushes_are_routed_by_role_and_never_taken_for_a_reply():
 
 # ---- §1 resync ----------------------------------------------------------------------------------------------
 
-def test_a_reply_for_another_request_resyncs_and_a_read_is_sent_once_more():
-    s = Stream(answering({0x13: b"\x00" + bytes(4)}))
-    lk = make_link(s)
-    s.rx += frame(result(6, b"old"))                              # 6 answered late
-    reply = lk.send(m.Request(7, 0, m.OP_LOCK_STATE, b"").pack())
-    assert m.Result.unpack(reply).corr == 7
-    ops = sent(s)
-    assert [op for _, _, op in ops] == [m.OP_LOCK_STATE, m.OP_CONFIRM, m.OP_LOCK_STATE]   # resync confirm between
-    assert lk.stale == 1 and lk.resyncs == 1 and lk.retries == 1
-
-
 def confirm_ranges(stream):
     """(min_rev, max_rev) of every confirm written."""
     out = []
@@ -129,7 +120,7 @@ def test_the_links_own_confirms_ask_for_the_revisions_the_client_handles():
     confirm_raw too, not 0..0xFF."""
     s = Stream(answering())
     lk = make_link(s)
-    s.rx += frame(result(99))
+    s.rx += BROKEN                                                # a lost boundary starts the resync
     lk.send(m.Request(7, 0, m.OP_LOCK_STATE, b"").pack())
     assert lk.confirm_raw(0.2)
     assert confirm_ranges(s) == [(h.MIN_REVISION, h.MAX_REVISION)] * 2 == [(1, 1)] * 2
@@ -138,7 +129,7 @@ def test_the_links_own_confirms_ask_for_the_revisions_the_client_handles():
 def test_a_state_changing_request_is_sent_again_with_the_same_corr_after_a_resync():
     s = Stream(answering())
     lk = make_link(s)
-    s.rx += frame(result(99))
+    s.rx += BROKEN                                                # a lost boundary (a stray corr is only read past)
     reply = lk.send(m.Request(7, 1, 0x01, b"x", session=0x1234).pack())   # the probe answers a repeat from its table
     assert m.Result.unpack(reply).corr == 7
     ops = sent(s)
@@ -183,8 +174,9 @@ def test_pushes_that_never_stop_are_stopped_blind_with_unsubscribe_and_end(monke
         return [result(req.corr)]
 
     s.respond = respond
-    s.rx += frame(result(50))                                     # a stray result starts the resync
-    with pytest.raises(link.CorrMismatch):
+    lk.frames.max_frame = 1024
+    s.rx += BROKEN                                                # a lost boundary starts the resync
+    with pytest.raises(frames.FramingLost):
         lk.send(m.Request(hst.next_corr(), 5, 0x01, b"", session=0xABCD).pack())
     ops = sent(s)
     assert [op for _, _, op in ops][1:] == [m.OP_UNSUBSCRIBE, m.OP_END, m.OP_CONFIRM]
@@ -205,14 +197,14 @@ def test_each_frame_goes_out_in_one_write():
         at = 0
 
 
-def test_exchange_resyncs_after_a_stray_reply_and_sends_the_rest_again():
+def test_exchange_resyncs_after_a_lost_boundary_and_sends_the_rest_again():
     s = Stream()
     lk = make_link(s)
     reqs = [m.Request(c, 1, 0x02, b"x").pack() for c in (10, 11, 12)]
     s.rx += frame(result(10)) + frame(result(11)) + frame(result(12))
     assert [m.Result.unpack(r).corr for r in lk.exchange(reqs, 2, 4096)] == [10, 11, 12]
     s.respond = answering()
-    s.rx += frame(result(19))                                     # not 20: resync, then 20 and 21 go once more
+    s.rx += BROKEN                                                # a lost boundary: resync, then 20 and 21 go once more
     got = lk.exchange([m.Request(c, 1, 0x02, b"x").pack() for c in (20, 21)], 2, 4096)
     assert [m.Result.unpack(r).corr for r in got] == [20, 21]
     assert lk.resyncs == 1 and lk.retries == 1

@@ -1,0 +1,555 @@
+{
+ "reviewed_commit": "ebf0a7c",
+ "units": {
+  "core:6.1:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._open/_check/_lapse/handle and virtual_core.Core (session id 0 malformed, last id kept, lease paused while running and restarted at answer generation incl. rejected answers, replays/session-0/other ids never renew, expiry cleaned before the next request), Host.open (SystemRandom id, never 0), conformance_lease checks compared; no further divergence"
+  },
+  "core:6.1:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._open/_check/_lapse/handle and virtual_core.Core (session id 0 malformed, last id kept, lease paused while running and restarted at answer generation incl. rejected answers, replays/session-0/other ids never renew, expiry cleaned before the next request), Host.open (SystemRandom id, never 0), conformance_lease checks compared; no further divergence"
+  },
+  "core:6.1:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._open/_check/_lapse/handle and virtual_core.Core (session id 0 malformed, last id kept, lease paused while running and restarted at answer generation incl. rejected answers, replays/session-0/other ids never renew, expiry cleaned before the next request), Host.open (SystemRandom id, never 0), conformance_lease checks compared; no further divergence"
+  },
+  "core:6.2:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; decision table checked row by row in Endpoint._open/_check and virtual_core.Core._handle (ended last id -> no_session with or without force, holder open keeps resources/replay/push_link, force releases first, locked carries remaining and owner); checkers (conformance owners/force_owned/must_not_reopen) require only these rows"
+  },
+  "core:6.2:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; decision table checked row by row in Endpoint._open/_check and virtual_core.Core._handle (ended last id -> no_session with or without force, holder open keeps resources/replay/push_link, force releases first, locked carries remaining and owner); checkers (conformance owners/force_owned/must_not_reopen) require only these rows"
+  },
+  "core:6.2:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; decision table checked row by row in Endpoint._open/_check and virtual_core.Core._handle (ended last id -> no_session with or without force, holder open keeps resources/replay/push_link, force releases first, locked carries remaining and owner); checkers (conformance owners/force_owned/must_not_reopen) require only these rows"
+  },
+  "core:6.2:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; decision table checked row by row in Endpoint._open/_check and virtual_core.Core._handle (ended last id -> no_session with or without force, holder open keeps resources/replay/push_link, force releases first, locked carries remaining and owner); checkers (conformance owners/force_owned/must_not_reopen) require only these rows"
+  },
+  "core:6.2:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; decision table checked row by row in Endpoint._open/_check and virtual_core.Core._handle (ended last id -> no_session with or without force, holder open keeps resources/replay/push_link, force releases first, locked carries remaining and owner); checkers (conformance owners/force_owned/must_not_reopen) require only these rows"
+  },
+  "core:6.2:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; decision table checked row by row in Endpoint._open/_check and virtual_core.Core._handle (ended last id -> no_session with or without force, holder open keeps resources/replay/push_link, force releases first, locked carries remaining and owner); checkers (conformance owners/force_owned/must_not_reopen) require only these rows"
+  },
+  "core:6.2:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; decision table checked row by row in Endpoint._open/_check and virtual_core.Core._handle (ended last id -> no_session with or without force, holder open keeps resources/replay/push_link, force releases first, locked carries remaining and owner); checkers (conformance owners/force_owned/must_not_reopen) require only these rows"
+  },
+  "core:6.2:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; decision table checked row by row in Endpoint._open/_check and virtual_core.Core._handle (ended last id -> no_session with or without force, holder open keeps resources/replay/push_link, force releases first, locked carries remaining and owner); checkers (conformance owners/force_owned/must_not_reopen) require only these rows"
+  },
+  "core:6.4:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; open/end/keepalive/lock_state/force in Endpoint and Core: lease 0 -> default, 1000..60000 as asked, clamped outside; owner taken from the locking open, kept while held, forgotten at release, on lock_state and locked; client Host.open/lock_state/Locked compared"
+  },
+  "core:6.4:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; open/end/keepalive/lock_state/force in Endpoint and Core: lease 0 -> default, 1000..60000 as asked, clamped outside; owner taken from the locking open, kept while held, forgotten at release, on lock_state and locked; client Host.open/lock_state/Locked compared"
+  },
+  "core:6.4:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; open/end/keepalive/lock_state/force in Endpoint and Core: lease 0 -> default, 1000..60000 as asked, clamped outside; owner taken from the locking open, kept while held, forgotten at release, on lock_state and locked; client Host.open/lock_state/Locked compared"
+  },
+  "core:6.4:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; open/end/keepalive/lock_state/force in Endpoint and Core: lease 0 -> default, 1000..60000 as asked, clamped outside; owner taken from the locking open, kept while held, forgotten at release, on lock_state and locked; client Host.open/lock_state/Locked compared"
+  },
+  "core:6.4:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; open/end/keepalive/lock_state/force in Endpoint and Core: lease 0 -> default, 1000..60000 as asked, clamped outside; owner taken from the locking open, kept while held, forgotten at release, on lock_state and locked; client Host.open/lock_state/Locked compared"
+  },
+  "core:6.4:6": {
+   "verdict": "fixed",
+   "reason": "host.owner_of dropped the owner when any later copy was broken; the first copy is used"
+  },
+  "core:6.4:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; open/end/keepalive/lock_state/force in Endpoint and Core: lease 0 -> default, 1000..60000 as asked, clamped outside; owner taken from the locking open, kept while held, forgotten at release, on lock_state and locked; client Host.open/lock_state/Locked compared"
+  },
+  "core:7.1:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._confirm / Core confirm (transport TLV, unsupported tag 0 + supported, min>max malformed, revision per route), Host.confirm/confirm_range (min=max after the first), conformance confirm/revisions checks compared"
+  },
+  "core:7.1:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._confirm / Core confirm (transport TLV, unsupported tag 0 + supported, min>max malformed, revision per route), Host.confirm/confirm_range (min=max after the first), conformance confirm/revisions checks compared"
+  },
+  "core:7.1:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._confirm / Core confirm (transport TLV, unsupported tag 0 + supported, min>max malformed, revision per route), Host.confirm/confirm_range (min=max after the first), conformance confirm/revisions checks compared"
+  },
+  "core:7.1:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._confirm / Core confirm (transport TLV, unsupported tag 0 + supported, min>max malformed, revision per route), Host.confirm/confirm_range (min=max after the first), conformance confirm/revisions checks compared"
+  },
+  "core:7.1:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._confirm / Core confirm (transport TLV, unsupported tag 0 + supported, min>max malformed, revision per route), Host.confirm/confirm_range (min=max after the first), conformance confirm/revisions checks compared"
+  },
+  "core:7.2:1": {
+   "verdict": "fixed",
+   "reason": "conformance list checks (Checks.list_snapshot, DiscoveryChecks.lists, CoreSmokeChecks) required interface revision >= 1; revision is any u8"
+  },
+  "core:7.2:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; list in VirtualProbe._list / Core list_page, client core.list_entries/find, conformance list_snapshot / DiscoveryChecks.lists / CoreSmokeChecks compared"
+  },
+  "core:7.2:3": {
+   "verdict": "fixed",
+   "reason": "core.find took the first fn of a name whatever its revision, so a probe offering two revisions was refused (or an unknown revision of an optional probe interface used); find now selects the (name, revision) pair the client speaks"
+  },
+  "core:7.2:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; list in VirtualProbe._list / Core list_page, client core.list_entries/find, conformance list_snapshot / DiscoveryChecks.lists / CoreSmokeChecks compared"
+  },
+  "core:7.2:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; list in VirtualProbe._list / Core list_page, client core.list_entries/find, conformance list_snapshot / DiscoveryChecks.lists / CoreSmokeChecks compared"
+  },
+  "core:7.3:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; describe paging (Endpoint._page, Core describe page, core.describe, conformance describe/describes) compared"
+  },
+  "core:7.4:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; common tags: catalog.check_ops/unpack_ops/pack_ops, Endpoint._declarations, conformance interface()/ops compared"
+  },
+  "core:7.4:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; common tags: catalog.check_ops/unpack_ops/pack_ops, Endpoint._declarations, conformance interface()/ops compared"
+  },
+  "core:7.4:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; common tags: catalog.check_ops/unpack_ops/pack_ops, Endpoint._declarations, conformance interface()/ops compared"
+  },
+  "core:7.4:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; common tags: catalog.check_ops/unpack_ops/pack_ops, Endpoint._declarations, conformance interface()/ops compared"
+  },
+  "core:7.4:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; common tags: catalog.check_ops/unpack_ops/pack_ops, Endpoint._declarations, conformance interface()/ops compared"
+  },
+  "core:7.4:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; common tags: catalog.check_ops/unpack_ops/pack_ops, Endpoint._declarations, conformance interface()/ops compared"
+  },
+  "core:7.4:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; common tags: catalog.check_ops/unpack_ops/pack_ops, Endpoint._declarations, conformance interface()/ops compared"
+  },
+  "core:7.4:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; common tags: catalog.check_ops/unpack_ops/pack_ops, Endpoint._declarations, conformance interface()/ops compared"
+  },
+  "core:7.4:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; common tags: catalog.check_ops/unpack_ops/pack_ops, Endpoint._declarations, conformance interface()/ops compared"
+  },
+  "core:7.4:10": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; common tags: catalog.check_ops/unpack_ops/pack_ops, Endpoint._declarations, conformance interface()/ops compared"
+  },
+  "core:7.4:11": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; common tags: catalog.check_ops/unpack_ops/pack_ops, Endpoint._declarations, conformance interface()/ops compared"
+  },
+  "core:7.5:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 declarations (unit_id, channels, label, transport, max_op_ms) in virtual_bench/Endpoint.add_transport, client core/link/kept_session/speed_record (x- unit_id), conformance identity/transport_declarations compared"
+  },
+  "core:7.5:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 declarations (unit_id, channels, label, transport, max_op_ms) in virtual_bench/Endpoint.add_transport, client core/link/kept_session/speed_record (x- unit_id), conformance identity/transport_declarations compared"
+  },
+  "core:7.5:3": {
+   "verdict": "fixed",
+   "reason": "hardware.validate required a 12..32-digit hexadecimal unit_id for usb; now the spec grammar (1..32 of a-z 0-9 -, not x-)"
+  },
+  "core:7.5:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 declarations (unit_id, channels, label, transport, max_op_ms) in virtual_bench/Endpoint.add_transport, client core/link/kept_session/speed_record (x- unit_id), conformance identity/transport_declarations compared"
+  },
+  "core:7.5:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 declarations (unit_id, channels, label, transport, max_op_ms) in virtual_bench/Endpoint.add_transport, client core/link/kept_session/speed_record (x- unit_id), conformance identity/transport_declarations compared"
+  },
+  "core:7.5:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 declarations (unit_id, channels, label, transport, max_op_ms) in virtual_bench/Endpoint.add_transport, client core/link/kept_session/speed_record (x- unit_id), conformance identity/transport_declarations compared"
+  },
+  "core:7.5:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 declarations (unit_id, channels, label, transport, max_op_ms) in virtual_bench/Endpoint.add_transport, client core/link/kept_session/speed_record (x- unit_id), conformance identity/transport_declarations compared"
+  },
+  "core:7.5:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 declarations (unit_id, channels, label, transport, max_op_ms) in virtual_bench/Endpoint.add_transport, client core/link/kept_session/speed_record (x- unit_id), conformance identity/transport_declarations compared"
+  },
+  "core:7.5:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 declarations (unit_id, channels, label, transport, max_op_ms) in virtual_bench/Endpoint.add_transport, client core/link/kept_session/speed_record (x- unit_id), conformance identity/transport_declarations compared"
+  },
+  "core:7.5:10": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 declarations (unit_id, channels, label, transport, max_op_ms) in virtual_bench/Endpoint.add_transport, client core/link/kept_session/speed_record (x- unit_id), conformance identity/transport_declarations compared"
+  },
+  "core:7.5:11": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 declarations (unit_id, channels, label, transport, max_op_ms) in virtual_bench/Endpoint.add_transport, client core/link/kept_session/speed_record (x- unit_id), conformance identity/transport_declarations compared"
+  },
+  "core:7.5:12": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 declarations (unit_id, channels, label, transport, max_op_ms) in virtual_bench/Endpoint.add_transport, client core/link/kept_session/speed_record (x- unit_id), conformance identity/transport_declarations compared"
+  },
+  "core:7.6:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; clock in Endpoint._core / Core (lock-free, session 0 untouched, read at handling), Host.clock, conformance_clock / virtual_clock_model compared"
+  },
+  "core:7.6:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; clock in Endpoint._core / Core (lock-free, session 0 untouched, read at handling), Host.clock, conformance_clock / virtual_clock_model compared"
+  },
+  "core:7.6:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; clock in Endpoint._core / Core (lock-free, session 0 untouched, read at handling), Host.clock, conformance_clock / virtual_clock_model compared"
+  },
+  "core:8:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; idle state in Endpoint._boot/_park/_drop_plan/_close_conn/pin_state and the output-idle refusals (cause 5) compared; interface-specific start-of-use left to the interface documents"
+  },
+  "core:8:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; idle state in Endpoint._boot/_park/_drop_plan/_close_conn/pin_state and the output-idle refusals (cause 5) compared; interface-specific start-of-use left to the interface documents"
+  },
+  "core:8:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; idle state in Endpoint._boot/_park/_drop_plan/_close_conn/pin_state and the output-idle refusals (cause 5) compared; interface-specific start-of-use left to the interface documents"
+  },
+  "core:8:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; idle state in Endpoint._boot/_park/_drop_plan/_close_conn/pin_state and the output-idle refusals (cause 5) compared; interface-specific start-of-use left to the interface documents"
+  },
+  "core:8:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; idle state in Endpoint._boot/_park/_drop_plan/_close_conn/pin_state and the output-idle refusals (cause 5) compared; interface-specific start-of-use left to the interface documents"
+  },
+  "core:8.1:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; conflict checks before any change (plan_apply, _refuse_named, _seat limit cause 2) compared"
+  },
+  "core:8.1:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; conflict checks before any change (plan_apply, _refuse_named, _seat limit cause 2) compared"
+  },
+  "core:9:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._release_lock (plan, streams, connections, subscriptions; nothing carried over), _new_resource (u32 from 1, never reused, cause 2 at the end), no_resource / cause 6 (wrong_kind), conformance_resources compared"
+  },
+  "core:9:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._release_lock (plan, streams, connections, subscriptions; nothing carried over), _new_resource (u32 from 1, never reused, cause 2 at the end), no_resource / cause 6 (wrong_kind), conformance_resources compared"
+  },
+  "core:9:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._release_lock (plan, streams, connections, subscriptions; nothing carried over), _new_resource (u32 from 1, never reused, cause 2 at the end), no_resource / cause 6 (wrong_kind), conformance_resources compared"
+  },
+  "core:9:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._release_lock (plan, streams, connections, subscriptions; nothing carried over), _new_resource (u32 from 1, never reused, cause 2 at the end), no_resource / cause 6 (wrong_kind), conformance_resources compared"
+  },
+  "core:9:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._release_lock (plan, streams, connections, subscriptions; nothing carried over), _new_resource (u32 from 1, never reused, cause 2 at the end), no_resource / cause 6 (wrong_kind), conformance_resources compared"
+  },
+  "core:9:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._release_lock (plan, streams, connections, subscriptions; nothing carried over), _new_resource (u32 from 1, never reused, cause 2 at the end), no_resource / cause 6 (wrong_kind), conformance_resources compared"
+  },
+  "core:9:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._new_resource (u32 from 1, never reused within a boot_id, cause 2 past 0xFFFFFFFF, existing resources usable), no_resource / cause 6, conformance_resources (u32 range since review 4) compared; no product divergence. Open observation, not changed here: the in-process sample extension virtual_resource_model (io.github.open-embedded-probe.resource) encodes its resource number as u16 and refuses the 65536th creation - a fixture width that ~100 replay/retention/lease checker tests are byte-tuned to"
+  },
+  "core:9:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._release_lock (plan, streams, connections, subscriptions; nothing carried over), _new_resource (u32 from 1, never reused, cause 2 at the end), no_resource / cause 6 (wrong_kind), conformance_resources compared"
+  },
+  "core:9:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._release_lock (plan, streams, connections, subscriptions; nothing carried over), _new_resource (u32 from 1, never reused, cause 2 at the end), no_resource / cause 6 (wrong_kind), conformance_resources compared"
+  },
+  "core:9:10": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._release_lock (plan, streams, connections, subscriptions; nothing carried over), _new_resource (u32 from 1, never reused, cause 2 at the end), no_resource / cause 6 (wrong_kind), conformance_resources compared"
+  },
+  "core:10.1:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; link._route/_recv_for/pump (role routing, unknown roles dropped, deadline not extended by pushes), conformance_host_notifications compared"
+  },
+  "core:10.1:2": {
+   "verdict": "fixed",
+   "reason": "link._recv_for raised CorrMismatch (and resynced) on a result for another corr on vendor bulk / HID; now read past on every framing"
+  },
+  "core:10.1:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; link._route/_recv_for/pump (role routing, unknown roles dropped, deadline not extended by pushes), conformance_host_notifications compared"
+  },
+  "core:10.2:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._next_seq/_events/pushes (per-fn seq from 0 at subscribe, shared by data and events, dropped frames consume seq), fn 0 sends none; Host.subscribe refuses fn 0"
+  },
+  "core:10.2:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._next_seq/_events/pushes (per-fn seq from 0 at subscribe, shared by data and events, dropped frames consume seq), fn 0 sends none; Host.subscribe refuses fn 0"
+  },
+  "core:10.2:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._next_seq/_events/pushes (per-fn seq from 0 at subscribe, shared by data and events, dropped frames consume seq), fn 0 sends none; Host.subscribe refuses fn 0"
+  },
+  "core:10.3:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._subscription (atomic replace, unsent dropped, seq 0, route), push_due batching, Core-based notification model and conformance_subscriptions compared"
+  },
+  "core:10.3:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._subscription (atomic replace, unsent dropped, seq 0, route), push_due batching, Core-based notification model and conformance_subscriptions compared"
+  },
+  "core:10.3:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._subscription (atomic replace, unsent dropped, seq 0, route), push_due batching, Core-based notification model and conformance_subscriptions compared"
+  },
+  "core:10.3:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._subscription (atomic replace, unsent dropped, seq 0, route), push_due batching, Core-based notification model and conformance_subscriptions compared"
+  },
+  "core:10.3:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._subscription (atomic replace, unsent dropped, seq 0, route), push_due batching, Core-based notification model and conformance_subscriptions compared"
+  },
+  "core:10.3:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._subscription (atomic replace, unsent dropped, seq 0, route), push_due batching, Core-based notification model and conformance_subscriptions compared"
+  },
+  "core:10.3:7": {
+   "verdict": "fixed",
+   "reason": "conformance_subscriptions required a min_bytes 65535 subscribe to succeed; a refusal unavailable cause 2 that changes nothing is now taken"
+  },
+  "core:10.3:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._subscription (atomic replace, unsent dropped, seq 0, route), push_due batching, Core-based notification model and conformance_subscriptions compared"
+  },
+  "core:10.3:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; Endpoint._subscription (atomic replace, unsent dropped, seq 0, route), push_due batching, Core-based notification model and conformance_subscriptions compared"
+  },
+  "core:10.4:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; virtual_bench_serial.tick / virtual_bench_serve (answers first, notifications bounded by 2 x max_frame and dropped before starting, sent to the subscribe route) compared"
+  },
+  "core:10.4:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; virtual_bench_serial.tick / virtual_bench_serve (answers first, notifications bounded by 2 x max_frame and dropped before starting, sent to the subscribe route) compared"
+  },
+  "core:10.4:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; virtual_bench_serial.tick / virtual_bench_serve (answers first, notifications bounded by 2 x max_frame and dropped before starting, sent to the subscribe route) compared"
+  },
+  "core:11:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 op table: registry core ops/lock_free, Endpoint._core and Core FIXED/FREE, conformance declarations (every core op mandatory) compared"
+  },
+  "core:11:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 op table: registry core ops/lock_free, Endpoint._core and Core FIXED/FREE, conformance declarations (every core op mandatory) compared"
+  },
+  "core:11:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 op table: registry core ops/lock_free, Endpoint._core and Core FIXED/FREE, conformance declarations (every core op mandatory) compared"
+  },
+  "core:11:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 op table: registry core ops/lock_free, Endpoint._core and Core FIXED/FREE, conformance declarations (every core op mandatory) compared"
+  },
+  "core:11:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 op table: registry core ops/lock_free, Endpoint._core and Core FIXED/FREE, conformance declarations (every core op mandatory) compared"
+  },
+  "core:11:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 op table: registry core ops/lock_free, Endpoint._core and Core FIXED/FREE, conformance declarations (every core op mandatory) compared"
+  },
+  "core:11:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 op table: registry core ops/lock_free, Endpoint._core and Core FIXED/FREE, conformance declarations (every core op mandatory) compared"
+  },
+  "core:11:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; fn 0 op table: registry core ops/lock_free, Endpoint._core and Core FIXED/FREE, conformance declarations (every core op mandatory) compared"
+  },
+  "core:12:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:10": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:11": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:12": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:13": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:14": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:15": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:16": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:17": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:18": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12:19": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; extension rules: names.validate (labels, 2+ labels, oep.<layer>.<name>), conformance interface() (no op 0 or 3..15, subscribe/unsubscribe together) compared; the rest is guidance for interface documents"
+  },
+  "core:12.1:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; evolution rules: nothing in the code adds values outside these routes; unknown enum/flags handling is core §2.4 (reviewed elsewhere)"
+  },
+  "core:12.1:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; evolution rules: nothing in the code adds values outside these routes; unknown enum/flags handling is core §2.4 (reviewed elsewhere)"
+  },
+  "core:12.1:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; evolution rules: nothing in the code adds values outside these routes; unknown enum/flags handling is core §2.4 (reviewed elsewhere)"
+  },
+  "core:12.1:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; evolution rules: nothing in the code adds values outside these routes; unknown enum/flags handling is core §2.4 (reviewed elsewhere)"
+  },
+  "core:12.1:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; evolution rules: nothing in the code adds values outside these routes; unknown enum/flags handling is core §2.4 (reviewed elsewhere)"
+  },
+  "core:12.1:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; evolution rules: nothing in the code adds values outside these routes; unknown enum/flags handling is core §2.4 (reviewed elsewhere)"
+  },
+  "core:12.1:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; evolution rules: nothing in the code adds values outside these routes; unknown enum/flags handling is core §2.4 (reviewed elsewhere)"
+  },
+  "core:13:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; informative list of guides: no code"
+  },
+  "core:13:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; informative list of guides: no code"
+  },
+  "core:13:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; informative list of guides: no code"
+  },
+  "core:13:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; informative list of guides: no code"
+  }
+ },
+ "divergences": [
+  {
+   "unit": "core:10.1:2",
+   "spec": "知らない role のフレームと、待っていない corr の応答は捨てる。",
+   "code": "src/oep_client/link.py:SerialLink._recv_for",
+   "fix": "a result for a corr not waited for is counted stale and read past on every framing (vendor bulk / HID no longer raise CorrMismatch and resync, which could end the session blind); tests that used a stray result to start a resync now use a lost boundary"
+  },
+  {
+   "unit": "core:7.2:1",
+   "spec": "entry: fn(u16)、instance(u16)、revision(u8)、name_len(u8)、name / §2.8: インターフェースのどの**固定の形**（§2.3: 固定部分、TLV の値、並びの要素、項目）も、形と意味は **(名前, revision) で決まる**（list の revision、u8）。",
+   "code": "src/oep_client/conformance.py:Checks.list_snapshot; conformance_discovery.py:DiscoveryChecks.lists; conformance_core_smoke.py:CoreSmokeChecks (list)",
+   "fix": "removed the revision >= 1 / nonzero requirement on list entries"
+  },
+  {
+   "unit": "core:7.2:3",
+   "spec": "複数の revision を提供するときは各 revision の組を明示的に選び、保存した設定を別の revision へ自動で移さない。（§2.8: host は知らない revision のインターフェースを使わない。）",
+   "code": "src/oep_client/core.py:find, Interface.__init__, restart_fn/plan_fn/link_fn",
+   "fix": "find(hst, name, revision) picks the first entry of that (name, revision); Interface passes its REVISION (UnsupportedRevision only when the name has no such revision); the optional probe interfaces are looked up in revision 1 and are not offered (LookupError) otherwise"
+  },
+  {
+   "unit": "core:7.5:3",
+   "spec": "unit_id | 個体の ID。**必須**。text で 1〜32 byte、使える文字は `a-z 0-9 -` だけ（チップの固有の番号を小文字の 16 進にしたもの、など）",
+   "code": "src/oep_client/hardware.py:validate (usb transport)",
+   "fix": "usb unit_id checked against 1..32 of a-z 0-9 - (case-insensitive, x- refused since it names no unit) instead of 12..32 hex digits; docs/hardware-schema.ja.md updated"
+  },
+  {
+   "unit": "core:6.4:6",
+   "spec": "ロックが持たれている間、lock_state の応答と rejected locked の payload の後ろに TLV 0x01 owner で付ける（owner が無ければ付けない）。 / §2.3: 繰り返すと定義が言わない tag が 2 つ以上あれば、読む側は最初のものを使う。",
+   "code": "src/oep_client/host.py:owner_of",
+   "fix": "the first owner copy is used when it is 1..32 bytes; a broken later copy no longer hides it (test_trace_core expectation updated)"
+  },
+  {
+   "unit": "core:10.3:7",
+   "spec": "probe は購読用の保持量に上限を置いてよい。要求したデータの送信条件を満たすための保持量が足りない場合は、何も変えずに rejected unavailable（cause 2）で断る。",
+   "code": "src/oep_client/conformance_subscriptions.py:SubscriptionChecks.replace/threshold",
+   "fix": "subscribe_bounded accepts success or rejected unavailable cause 2; after a refusal the old subscription (seq continuing) or none must remain"
+  }
+ ]
+}

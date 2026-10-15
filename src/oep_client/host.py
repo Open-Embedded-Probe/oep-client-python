@@ -103,9 +103,10 @@ def check_max_op_ms(value: int) -> str:
 
 def owner_of(tlvs: bytes) -> str | None:
     """The owner TLV after lock_state's fixed part or rejected locked's remaining ms (core §6.4), shown as core §2.1 says;
-    None when there is none, or any copy is not 1-32 bytes (a broken TLV is not used, core §2.3)."""
+    None when there is none, or the first copy is not 1-32 bytes (a broken TLV is not used, core §2.3). The first copy
+    is the one used: a broken later copy is not used either, and does not hide the first (core §2.3)."""
     values = [v for t, v in m.split_tlvs(tlvs) if t == OWNER]
-    return m.shown(values[0]) if values and all(1 <= len(v) <= reg.LIMITS["owner_max_bytes"] for v in values) else None
+    return m.shown(values[0]) if values and 1 <= len(values[0]) <= reg.LIMITS["owner_max_bytes"] else None
 
 
 class Locked(Rejected):

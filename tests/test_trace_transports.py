@@ -690,12 +690,13 @@ def test_a_length_port_that_never_goes_quiet_is_closed_and_opened_again(monkeypa
     lk.reopener = (lambda: new) if reopens else None
     boots = []
     lk.on_boot_id = boots.append
-    s.rx += frame(result(50))                                             # a stray result starts the resync
+    lk.frames.max_frame = 1024
+    s.rx += struct.pack("<H", 5000) + b"garbage"                          # a lost boundary starts the resync
     if not reopens:
         with pytest.raises(ConnectionError, match="close the transport and open it again"):
             lk.send(req(hst.next_corr(), 0x01, fn=5, session=0xABCD))
         return
-    with pytest.raises(link.CorrMismatch):                                # the blind end ended the session
+    with pytest.raises(frames.FramingLost):                               # the blind end ended the session
         lk.send(req(hst.next_corr(), 0x01, fn=5, session=0xABCD))
     assert s.closed and lk.stream is new
     sent = [m.Request.unpack(w[2:]) for w in new.writes]

@@ -28,7 +28,7 @@ from oep_client.virtual_core import Completed, Reject, tlv
     ('elapsed_prepare','PREPARE-LINE'),('reverse_outputs','STOPPED'),('deduplicate','STOPPED'),
     ('gpr_reverted','STOPPED'),('pc_reverted','SAME-PC'),('dcsr_reverted','STOPPED'),
     ('auto','STOPPED'),('data0','STOPPED'),('data1','PREPARE-FAULT'),
-    ('haltreq','TIMEOUT-HALTED'),('hartsel','STOPPED'),('restore_order','STOPPED'),
+    ('haltreq','TIMEOUT-HALTED'),('hartsel','STOPPED'),
     ('repeat_resume','SAME-PC'),('prepare_resume','PREPARE-FAULT'),('missing_rehalt','NOT-HALTED'),
     ('prep_running','PREPARE-LINE'),('program_omitted','PROGRAM-EFFECTS'),
     ('other_connection','CONSOLE-STOPPED'),('mailbox_interleave','CONSOLE-STOPPED'),

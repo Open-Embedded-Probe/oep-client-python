@@ -153,7 +153,8 @@ class DebugChecks(DmseqChecks):
             self.operations={fn:{row['name']:row['code'] for row in spec['op']} for fn,spec in self.specs.items()}
             require(self.specs[5]['enum']['dmi_step']==dict(write=1,read=2,poll_reads=3,wait_us=4,poll_us=5),'selected dmi step grammar differs')
             require(self.c.reg['status']==dict(ok=0,wait=1,line=2,fault=3,timeout=4,state=5),'selected standard status meanings differ')
-            self.c.confirm();self.c.identity();self.c.declarations();require({16,17,18}<=ops(dict(reversed(self.c.describe(5)))[7]),'mandatory debug ops missing')
+            self.c.confirm();self.c.identity();self.c.declarations();self.offered=ops(dict(reversed(self.c.describe(5)))[7])
+            require(16 in self.offered,'mandatory dmi missing')   # debug §4: dmi is the one mandatory op; halt / resume are optional
             require(self.a.state()['max_op_ms']==1 and self.a.state()['read_cost_us']==10,'selected logical budget differs from fixture')
         self.c.check('OEP-DEBUG-CONTEXT','debug §4/4.1/4.2; console §3',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
@@ -164,6 +165,11 @@ class DebugChecks(DmseqChecks):
         cases += [('HARTSEL-HALT',self.hart_selection),('HARTSEL-HALT-ALREADY',lambda:self.hart_selection(already=True)),('HARTSEL-RESUME',lambda:self.hart_selection(True)),('HARTSEL-HALT-FAIL',lambda:self.hart_selection(failed=True)),('HARTSEL-RESUME-FAIL',lambda:self.hart_selection(True,True)),('HARTSEL-RAW',lambda:self.hart_selection(raw=True))]
         cases += [('OUTPUT-BOUND',self.output_bound),('OVERALL-TIMEOUT',self.overall_timeout),('HALT-FAILURE',lambda:self.hart_failed(False)),('RESUME-FAILURE',lambda:self.hart_failed(True))]
         cases += [('POLL-LINE',lambda:self.poll_failure(2)),('POLL-TIMEOUT',lambda:self.poll_failure(4))]
+        # the cases that send halt / resume run only when the fixture offers them (debug §4: optional, declared in ops)
+        needs={'HALT-RESUME':{17,18},'HARTSEL-HALT':{17},'HARTSEL-HALT-ALREADY':{17},'HARTSEL-RESUME':{17,18},'HARTSEL-HALT-FAIL':{17},
+               'HARTSEL-RESUME-FAIL':{17,18},'HALT-FAILURE':{17},'RESUME-FAILURE':{17,18}}
+        offered=getattr(self,'offered',None)
+        if offered is not None:cases=[(name,case) for name,case in cases if needs.get(name,set())<=offered]
         for name,case in cases:
             first=len(self.a.trace);self.c.check('OEP-DEBUG-'+name,'debug §4.1/4.2; console §3; core §5/9',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]
         rows=self.c.results[start:]

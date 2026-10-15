@@ -676,13 +676,15 @@
    "verify": [
     "tests/test_trace_capture.py::test_segment_fields_position_samples_times_trigger_flags_generation",
     "tests/test_trace_capture.py::test_repeat_follows_on_without_gaps_into_free_segments_only",
-    "tests/test_virtual_bench_capture.py::test_slipped_segments_say_so"
+    "tests/test_virtual_bench_capture.py::test_slipped_segments_say_so",
+    "tests/test_review5_capture.py::test_an_early_trigger_segment_is_short_without_bit1[1]",
+    "tests/test_review5_capture.py::test_an_early_trigger_segment_is_short_without_bit1[2]"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_gap-REPEAT]",
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_short-SHORT-STOP]"
    ],
-   "note": "flags bit0 gap, bit1 short, bit2 slipped"
+   "note": "flags bit0 gap, bit1 short, bit2 slipped; review5: bit1 only for a segment stop ended (an early-trigger segment is short without it)"
   },
   "capture:2.2:11": {
    "text": "| generation | この区画の世代（冒頭の非再利用の規則） |",
@@ -844,12 +846,13 @@
    "text": "| 0x11 | start | — | generation(u32)、[TL",
    "verify": [
     "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[start-False]",
-    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[start-True]"
+    "tests/test_trace_capture.py::test_operation_rows_numbers_locks_and_answers[start-True]",
+    "tests/test_review5_capture.py::test_client_takes_the_generation_of_a_failed_start"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[old_start_shape-ONE-SHOT]"
    ],
-   "note": "start: its op number, lock (session 0 -> session_required) or lock-free, its answer form, in describe's ops"
+   "note": "start: its op number, lock (session 0 -> session_required) or lock-free, its answer form, in describe's ops; review5: the client takes the generation of a completed-failed start"
   },
   "capture:3.2:3": {
    "text": "| 0x12 | stop | — | — | 必要 | 必須 |",
@@ -1067,13 +1070,17 @@
     "tests/test_virtual_bench_capture_lifetime.py::test_release_frees_inclusive_data_then_resumes_with_gap[False]",
     "tests/test_virtual_bench_capture_lifetime.py::test_release_frees_inclusive_data_then_resumes_with_gap[True]",
     "tests/test_trace_capture.py::test_review_a_repeat_release_after_stop_or_error_changes_nothing",
-    "tests/test_trace_capture.py::test_review2_release_of_an_unfinished_segment_and_in_streaming"
+    "tests/test_trace_capture.py::test_review2_release_of_an_unfinished_segment_and_in_streaming",
+    "tests/test_review5_capture.py::test_model_release_in_state_1_or_6_does_nothing[stop-LogicModel]",
+    "tests/test_review5_capture.py::test_model_release_in_state_1_or_6_does_nothing[stop-AnalogModel]",
+    "tests/test_review5_capture.py::test_model_release_in_state_1_or_6_does_nothing[error-LogicModel]",
+    "tests/test_review5_capture.py::test_model_release_in_state_1_or_6_does_nothing[error-AnalogModel]"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_resume-RELEASE]",
     "tests/test_conformance_capture_serial.py::test_actual_capture_faults[unsigned_release]"
    ],
-   "note": "release repeat only, inclusive by core §2.6, unfinished kept, resumes 5 -> 3 with bit0, no stopped; review2: an unfinished serial is not freed, streaming release changes nothing"
+   "note": "release repeat only, inclusive by core §2.6, unfinished kept, resumes 5 -> 3 with bit0, no stopped; review2: an unfinished serial is not freed, streaming release changes nothing; review5: the models free only in states 3 and 5"
   },
   "capture:3.2:19": {
    "text": "- read が実際に返す量は probe が決める（max 以下で、応答が m",
@@ -1112,10 +1119,12 @@
     "tests/test_trace_capture.py::test_state_table_stop_force_release[1-False]",
     "tests/test_trace_capture.py::test_state_table_stop_force_release[1-True]",
     "tests/test_trace_capture.py::test_review_a_repeat_release_after_stop_or_error_changes_nothing",
-    "tests/test_trace_capture.py::test_review2_start_in_state_1_clears_the_old_segments_and_goes_to_2_or_3"
+    "tests/test_trace_capture.py::test_review2_start_in_state_1_clears_the_old_segments_and_goes_to_2_or_3",
+    "tests/test_review5_capture.py::test_model_release_in_state_1_or_6_does_nothing[stop-LogicModel]",
+    "tests/test_review5_capture.py::test_model_release_in_state_1_or_6_does_nothing[stop-AnalogModel]"
    ],
    "mutants": [],
-   "note": "state 1's row: configure, start, stop, force, release and the automatic column; review2: start from a stopped repeat (state 1 with segments) clears them, gen+1, 3 / 2 with a trigger; stop in 1 changes nothing"
+   "note": "state 1's row: configure, start, stop, force, release and the automatic column; review2: start from a stopped repeat (state 1 with segments) clears them, gen+1, 3 / 2 with a trigger; stop in 1 changes nothing; review5: the logic/analog models' release in state 1 does nothing"
   },
   "capture:3.2:23": {
    "text": "| 2 トリガ待ち | unavailable 6 | unavailable ",
@@ -1183,10 +1192,12 @@
     "tests/test_trace_capture.py::test_state_table_configure_and_start[6-1-new-True]",
     "tests/test_trace_capture.py::test_state_table_stop_force_release[6-False]",
     "tests/test_trace_capture.py::test_state_table_stop_force_release[6-True]",
-    "tests/test_trace_capture.py::test_review_a_repeat_release_after_stop_or_error_changes_nothing"
+    "tests/test_trace_capture.py::test_review_a_repeat_release_after_stop_or_error_changes_nothing",
+    "tests/test_review5_capture.py::test_model_release_in_state_1_or_6_does_nothing[error-LogicModel]",
+    "tests/test_review5_capture.py::test_model_release_in_state_1_or_6_does_nothing[error-AnalogModel]"
    ],
    "mutants": [],
-   "note": "state 6's row: configure, start, stop, force, release and the automatic column"
+   "note": "state 6's row: configure, start, stop, force, release and the automatic column; review5: the logic/analog models' release in state 6 does nothing"
   },
   "capture:3.3:1": {
    "text": "| 0x40 | mode | u8: 1 ワンショット、2 リピート、3 スト",
@@ -1813,10 +1824,12 @@
     "tests/test_virtual_bench_capture_waiting.py::test_force_uses_current_sample_and_available_pretrigger[20-4-8]",
     "tests/test_virtual_bench_capture.py::test_a_trigger_is_where_the_channel_does_it[2-1-0-2]",
     "tests/test_virtual_bench_capture.py::test_a_trigger_is_where_the_channel_does_it[2-2-1-8]",
-    "tests/test_virtual_bench_capture.py::test_a_trigger_is_where_the_channel_does_it[1-3-1-8]"
+    "tests/test_virtual_bench_capture.py::test_a_trigger_is_where_the_channel_does_it[1-3-1-8]",
+    "tests/test_review5_capture.py::test_an_early_trigger_segment_is_short_without_bit1[1]",
+    "tests/test_review5_capture.py::test_an_early_trigger_segment_is_short_without_bit1[2]"
    ],
    "mutants": [],
-   "note": "samples include the pretrigger; early trigger short with smaller index; force's index and triggered; immediate no triggered"
+   "note": "samples include the pretrigger; early trigger short with smaller index; force's index and triggered; immediate no triggered; review5: the early-trigger short segment carries no flags bit1 (stop only)"
   },
   "capture:3.3:15": {
    "text": "- **rate**: 宣言したrate_rangeの中で、その役割/モード/設",
@@ -2228,13 +2241,14 @@
   "capture:4.1:2": {
    "text": "| 0x11 | start | [TLV] | start_ns(u64)、g",
    "verify": [
-    "tests/test_trace_capture.py::test_group_operation_rows[start-17-True]"
+    "tests/test_trace_capture.py::test_group_operation_rows[start-17-True]",
+    "tests/test_review5_capture.py::test_client_takes_the_generations_of_a_failed_group_start"
    ],
    "mutants": [
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[reverse_reply-REVERSE]",
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[legacy_start-START]"
    ],
-   "note": "group start: op number, lock, form"
+   "note": "group start: op number, lock, form; review5: the client takes the group's and tracks' generations of a completed-failed start"
   },
   "capture:4.1:3": {
    "text": "| 0x12 | stop | [TLV] | — | 必要 | 必須 |",
@@ -2308,12 +2322,13 @@
   "capture:4.1:9": {
    "text": "- bindは、同じ経路のstart成功応答（18+6×n byte）がfram",
    "verify": [
-    "tests/test_trace_capture.py::test_group_bind_checks_the_start_answer_fits_the_frame"
+    "tests/test_trace_capture.py::test_group_bind_checks_the_start_answer_fits_the_frame",
+    "tests/test_review5_capture.py::test_bench_bind_counts_the_start_answer_message_against_max_frame"
    ],
    "mutants": [
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[ignore_frame-BIND-FRAME]"
    ],
-   "note": "bind refuses (unsupported 0x00) when 18+6n does not fit"
+   "note": "bind refuses (unsupported 0x00) when 18+6n does not fit; review5: the bench compares the 18+6n-byte start answer message with max_frame (not max_frame - 5)"
   },
   "capture:4.1:10": {
    "text": "- startは束ねがあり、全trackがstate 1/4/6のときだけ受け付",
@@ -2334,12 +2349,13 @@
     "tests/test_trace_capture.py::test_group_error_stops_the_others_and_a_failed_start",
     "tests/test_trace_capture.py::test_review2_a_group_error_keeps_a_finished_tracks_data_and_stops_the_others_as_stop_does",
     "tests/test_trace_capture.py::test_review3_a_failed_group_start_makes_the_group_6",
-    "tests/test_review4_capture.py::test_a_failed_group_start_sends_the_group_stopped_reason_3"
+    "tests/test_review4_capture.py::test_a_failed_group_start_sends_the_group_stopped_reason_3",
+    "tests/test_review5_capture.py::test_client_takes_the_generations_of_a_failed_group_start"
    ],
    "mutants": [
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[error_peer_runs-ERROR-ADC]"
    ],
-   "note": "a track's error makes the group 6 and stops the others; failed start's fixed form and states; review2: a finished track keeps its data, a capturing one gets stopped reason 1 and a short segment; review3: a failed group start makes the group 6"
+   "note": "a track's error makes the group 6 and stops the others; failed start's fixed form and states; review2: a finished track keeps its data, a capturing one gets stopped reason 1 and a short segment; review3: a failed group start makes the group 6; review5: the client takes the generations of a failed group start"
   },
   "capture:4.1:12": {
    "text": "- stopは全trackへ適用し、短い区画とpadは各trackの規則に従う。",

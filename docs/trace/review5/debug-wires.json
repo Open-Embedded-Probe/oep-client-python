@@ -1,0 +1,629 @@
+{
+ "reviewed_commit": "ebf0a7c",
+ "units": {
+  "debug:pre:1": {
+   "verdict": "ok",
+   "reason": "interface table and preamble read: riscv-dm listed before attach and no_resource without a connection (endpoint._dm_op/_connection); only connections lock-free (registry lock_free {0x13}); scan optional everywhere (oep_declarations, oep_smoke, registered_ops); target requests name their connection explicitly"
+  },
+  "debug:pre:2": {
+   "verdict": "ok",
+   "reason": "interface table and preamble read: riscv-dm listed before attach and no_resource without a connection (endpoint._dm_op/_connection); only connections lock-free (registry lock_free {0x13}); scan optional everywhere (oep_declarations, oep_smoke, registered_ops); target requests name their connection explicitly"
+  },
+  "debug:pre:3": {
+   "verdict": "ok",
+   "reason": "interface table and preamble read: riscv-dm listed before attach and no_resource without a connection (endpoint._dm_op/_connection); only connections lock-free (registry lock_free {0x13}); scan optional everywhere (oep_declarations, oep_smoke, registered_ops); target requests name their connection explicitly"
+  },
+  "debug:pre:4": {
+   "verdict": "ok",
+   "reason": "interface table and preamble read: riscv-dm listed before attach and no_resource without a connection (endpoint._dm_op/_connection); only connections lock-free (registry lock_free {0x13}); scan optional everywhere (oep_declarations, oep_smoke, registered_ops); target requests name their connection explicitly"
+  },
+  "debug:pre:5": {
+   "verdict": "ok",
+   "reason": "interface table and preamble read: riscv-dm listed before attach and no_resource without a connection (endpoint._dm_op/_connection); only connections lock-free (registry lock_free {0x13}); scan optional everywhere (oep_declarations, oep_smoke, registered_ops); target requests name their connection explicitly"
+  },
+  "debug:pre:6": {
+   "verdict": "ok",
+   "reason": "interface table and preamble read: riscv-dm listed before attach and no_resource without a connection (endpoint._dm_op/_connection); only connections lock-free (registry lock_free {0x13}); scan optional everywhere (oep_declarations, oep_smoke, registered_ops); target requests name their connection explicitly"
+  },
+  "debug:pre:7": {
+   "verdict": "ok",
+   "reason": "interface table and preamble read: riscv-dm listed before attach and no_resource without a connection (endpoint._dm_op/_connection); only connections lock-free (registry lock_free {0x13}); scan optional everywhere (oep_declarations, oep_smoke, registered_ops); target requests name their connection explicitly"
+  },
+  "debug:pre:8": {
+   "verdict": "ok",
+   "reason": "interface table and preamble read: riscv-dm listed before attach and no_resource without a connection (endpoint._dm_op/_connection); only connections lock-free (registry lock_free {0x13}); scan optional everywhere (oep_declarations, oep_smoke, registered_ops); target requests name their connection explicitly"
+  },
+  "debug:0:1": {
+   "verdict": "ok",
+   "reason": "wire common rules: ops 0x10-0x13 with scan optional (conformance_oep_declarations.mandatory, bench ops), swdio/swclk as role 1/2 channels (bench _allows, client candidate_pairs), connection per common §2; the 'another wire' list is a writing guide for new wires, nothing to implement"
+  },
+  "debug:0:2": {
+   "verdict": "ok",
+   "reason": "wire common rules: ops 0x10-0x13 with scan optional (conformance_oep_declarations.mandatory, bench ops), swdio/swclk as role 1/2 channels (bench _allows, client candidate_pairs), connection per common §2; the 'another wire' list is a writing guide for new wires, nothing to implement"
+  },
+  "debug:0:3": {
+   "verdict": "ok",
+   "reason": "wire common rules: ops 0x10-0x13 with scan optional (conformance_oep_declarations.mandatory, bench ops), swdio/swclk as role 1/2 channels (bench _allows, client candidate_pairs), connection per common §2; the 'another wire' list is a writing guide for new wires, nothing to implement"
+  },
+  "debug:0:4": {
+   "verdict": "ok",
+   "reason": "wire common rules: ops 0x10-0x13 with scan optional (conformance_oep_declarations.mandatory, bench ops), swdio/swclk as role 1/2 channels (bench _allows, client candidate_pairs), connection per common §2; the 'another wire' list is a writing guide for new wires, nothing to implement"
+  },
+  "debug:0:5": {
+   "verdict": "ok",
+   "reason": "wire common rules: ops 0x10-0x13 with scan optional (conformance_oep_declarations.mandatory, bench ops), swdio/swclk as role 1/2 channels (bench _allows, client candidate_pairs), connection per common §2; the 'another wire' list is a writing guide for new wires, nothing to implement"
+  },
+  "debug:0:6": {
+   "verdict": "ok",
+   "reason": "wire common rules: ops 0x10-0x13 with scan optional (conformance_oep_declarations.mandatory, bench ops), swdio/swclk as role 1/2 channels (bench _allows, client candidate_pairs), connection per common §2; the 'another wire' list is a writing guide for new wires, nothing to implement"
+  },
+  "debug:0:7": {
+   "verdict": "ok",
+   "reason": "wire common rules: ops 0x10-0x13 with scan optional (conformance_oep_declarations.mandatory, bench ops), swdio/swclk as role 1/2 channels (bench _allows, client candidate_pairs), connection per common §2; the 'another wire' list is a writing guide for new wires, nothing to implement"
+  },
+  "debug:0:8": {
+   "verdict": "ok",
+   "reason": "wire common rules: ops 0x10-0x13 with scan optional (conformance_oep_declarations.mandatory, bench ops), swdio/swclk as role 1/2 channels (bench _allows, client candidate_pairs), connection per common §2; the 'another wire' list is a writing guide for new wires, nothing to implement"
+  },
+  "debug:0:9": {
+   "verdict": "ok",
+   "reason": "wire common rules: ops 0x10-0x13 with scan optional (conformance_oep_declarations.mandatory, bench ops), swdio/swclk as role 1/2 channels (bench _allows, client candidate_pairs), connection per common §2; the 'another wire' list is a writing guide for new wires, nothing to implement"
+  },
+  "debug:1:1": {
+   "verdict": "ok",
+   "reason": "VirtualTarget.bring_up: the set-up pair twice, dmactive only when DMCONTROL does not read it, then (attach only) ABSTRACTAUTO=0 and PROGBUF0 read / written / given back; scan writes no scratch and leaves dmactive; failure to read back fails the attach with no connection; found = version >= 2 and != 15"
+  },
+  "debug:1:2": {
+   "verdict": "ok",
+   "reason": "VirtualTarget.bring_up: the set-up pair twice, dmactive only when DMCONTROL does not read it, then (attach only) ABSTRACTAUTO=0 and PROGBUF0 read / written / given back; scan writes no scratch and leaves dmactive; failure to read back fails the attach with no connection; found = version >= 2 and != 15"
+  },
+  "debug:1:3": {
+   "verdict": "ok",
+   "reason": "VirtualTarget.bring_up: the set-up pair twice, dmactive only when DMCONTROL does not read it, then (attach only) ABSTRACTAUTO=0 and PROGBUF0 read / written / given back; scan writes no scratch and leaves dmactive; failure to read back fails the attach with no connection; found = version >= 2 and != 15"
+  },
+  "debug:1:4": {
+   "verdict": "ok",
+   "reason": "VirtualTarget.bring_up: the set-up pair twice, dmactive only when DMCONTROL does not read it, then (attach only) ABSTRACTAUTO=0 and PROGBUF0 read / written / given back; scan writes no scratch and leaves dmactive; failure to read back fails the attach with no connection; found = version >= 2 and != 15"
+  },
+  "debug:1:5": {
+   "verdict": "ok",
+   "reason": "VirtualTarget.bring_up: the set-up pair twice, dmactive only when DMCONTROL does not read it, then (attach only) ABSTRACTAUTO=0 and PROGBUF0 read / written / given back; scan writes no scratch and leaves dmactive; failure to read back fails the attach with no connection; found = version >= 2 and != 15"
+  },
+  "debug:1:6": {
+   "verdict": "fixed",
+   "reason": "pin pairs from channel_group / role_channels: with both declared the bench used role_channels alone, the client's candidate_pairs the groups alone and oep pins ignored a swio wire's channel_group - fixed (core §7.4)"
+  },
+  "debug:1:7": {
+   "verdict": "ok",
+   "reason": "scan: count 0 / a pair twice malformed, every pair validated (unsupported + index TLV, unavailable cause 1 / 5) before any side effect, tried from the front at least 1, host carries the rest (endpoint._wire, WireBase.scan, ScanChecks); a live connection's pins never scanned"
+  },
+  "debug:1:8": {
+   "verdict": "ok",
+   "reason": "scan: count 0 / a pair twice malformed, every pair validated (unsupported + index TLV, unavailable cause 1 / 5) before any side effect, tried from the front at least 1, host carries the rest (endpoint._wire, WireBase.scan, ScanChecks); a live connection's pins never scanned"
+  },
+  "debug:1:9": {
+   "verdict": "fixed",
+   "reason": "attach / scan answer within max_op_ms; the bench's wait after an attach's reset release took all of max_op_ms without the hold already spent - fixed (see divergences)"
+  },
+  "debug:1:10": {
+   "verdict": "ok",
+   "reason": "max_connections u8 default 1, attach always new (busy pins cause 1 incl. own connection, limit cause 2 with nothing closed), a failed attach changes nothing and makes no connection, speed_hz the chosen speed (endpoint._wire/_seat, AttachChecks BUSY/CAPACITY/FAILED, wire_options failed_reset)"
+  },
+  "debug:1:11": {
+   "verdict": "ok",
+   "reason": "max_connections u8 default 1, attach always new (busy pins cause 1 incl. own connection, limit cause 2 with nothing closed), a failed attach changes nothing and makes no connection, speed_hz the chosen speed (endpoint._wire/_seat, AttachChecks BUSY/CAPACITY/FAILED, wire_options failed_reset)"
+  },
+  "debug:1:12": {
+   "verdict": "ok",
+   "reason": "max_connections u8 default 1, attach always new (busy pins cause 1 incl. own connection, limit cause 2 with nothing closed), a failed attach changes nothing and makes no connection, speed_hz the chosen speed (endpoint._wire/_seat, AttachChecks BUSY/CAPACITY/FAILED, wire_options failed_reset)"
+  },
+  "debug:1:13": {
+   "verdict": "ok",
+   "reason": "max_connections u8 default 1, attach always new (busy pins cause 1 incl. own connection, limit cause 2 with nothing closed), a failed attach changes nothing and makes no connection, speed_hz the chosen speed (endpoint._wire/_seat, AttachChecks BUSY/CAPACITY/FAILED, wire_options failed_reset)"
+  },
+  "debug:1:14": {
+   "verdict": "ok",
+   "reason": "max_connections u8 default 1, attach always new (busy pins cause 1 incl. own connection, limit cause 2 with nothing closed), a failed attach changes nothing and makes no connection, speed_hz the chosen speed (endpoint._wire/_seat, AttachChecks BUSY/CAPACITY/FAILED, wire_options failed_reset)"
+  },
+  "debug:1:15": {
+   "verdict": "fixed",
+   "reason": "max_speed 0 malformed / below min_clock_hz unsupported (attach 0x00, scan the TLV tag): the bench checked only the first copy of scan's max_speed and the scan checkers required accepting a later copy below min_clock_hz - fixed (core §2.3)"
+  },
+  "debug:1:16": {
+   "verdict": "ok",
+   "reason": "VirtualTarget.bring_up: the set-up pair twice, dmactive only when DMCONTROL does not read it, then (attach only) ABSTRACTAUTO=0 and PROGBUF0 read / written / given back; scan writes no scratch and leaves dmactive; failure to read back fails the attach with no connection; found = version >= 2 and != 15"
+  },
+  "debug:1:17": {
+   "verdict": "ok",
+   "reason": "target_id TLV 0x10 scheme 1 only when DMI 0x7F read and not 0 / 0xFFFFFFFF (endpoint._seat), client keeps (scheme, value) uninterpreted; one probe-wide scheme space from registry common.enum.target_id_scheme"
+  },
+  "debug:2:1": {
+   "verdict": "fixed",
+   "reason": "wait after the reset release: re-read DMSTATUS at the slowest speed until it answers, the whole request within max_op_ms - the bench did not count the attach's hold_ms in that budget; fixed"
+  },
+  "debug:2:2": {
+   "verdict": "ok",
+   "reason": "detach / end / lapse / force / line loss release the connection and its streams first, pins parked to core §8 idle, hart untouched (endpoint._close_conn/_release_lock, CutChecks.verify_closed, wire_options cleanup/end_idle); target reset keeps the connection"
+  },
+  "debug:2:3": {
+   "verdict": "ok",
+   "reason": "detach / end / lapse / force / line loss release the connection and its streams first, pins parked to core §8 idle, hart untouched (endpoint._close_conn/_release_lock, CutChecks.verify_closed, wire_options cleanup/end_idle); target reset keeps the connection"
+  },
+  "debug:2:4": {
+   "verdict": "ok",
+   "reason": "retries inside one request do not change speed_hz; the bench never repeats a store; the client's held() reruns a group only when it stopped before any write (review4), place_loader / resume retries follow answers that were received (not lost)"
+  },
+  "debug:2:5": {
+   "verdict": "ok",
+   "reason": "retries inside one request do not change speed_hz; the bench never repeats a store; the client's held() reruns a group only when it stopped before any write (review4), place_loader / resume retries follow answers that were received (not lost)"
+  },
+  "debug:2:6": {
+   "verdict": "ok",
+   "reason": "retries inside one request do not change speed_hz; the bench never repeats a store; the client's held() reruns a group only when it stopped before any write (review4), place_loader / resume retries follow answers that were received (not lost)"
+  },
+  "debug:2:7": {
+   "verdict": "ok",
+   "reason": "line loss decided only inside a request or a console read after unanswered failures with no success, answer first then close, no mark (CutChecks, conformance_cut model); the lines rest released while exchanges fail (endpoint pin_state wire-free / wire-free pull-up, Connection.free)"
+  },
+  "debug:2:8": {
+   "verdict": "ok",
+   "reason": "line loss decided only inside a request or a console read after unanswered failures with no success, answer first then close, no mark (CutChecks, conformance_cut model); the lines rest released while exchanges fail (endpoint pin_state wire-free / wire-free pull-up, Connection.free)"
+  },
+  "debug:2:9": {
+   "verdict": "ok",
+   "reason": "line loss decided only inside a request or a console read after unanswered failures with no success, answer first then close, no mark (CutChecks, conformance_cut model); the lines rest released while exchanges fail (endpoint pin_state wire-free / wire-free pull-up, Connection.free)"
+  },
+  "debug:2:10": {
+   "verdict": "ok",
+   "reason": "detach / end / lapse / force / line loss release the connection and its streams first, pins parked to core §8 idle, hart untouched (endpoint._close_conn/_release_lock, CutChecks.verify_closed, wire_options cleanup/end_idle); target reset keeps the connection"
+  },
+  "debug:2:11": {
+   "verdict": "ok",
+   "reason": "detach / end / lapse / force / line loss release the connection and its streams first, pins parked to core §8 idle, hart untouched (endpoint._close_conn/_release_lock, CutChecks.verify_closed, wire_options cleanup/end_idle); target reset keeps the connection"
+  },
+  "debug:2:12": {
+   "verdict": "ok",
+   "reason": "detach / end / lapse / force / line loss release the connection and its streams first, pins parked to core §8 idle, hart untouched (endpoint._close_conn/_release_lock, CutChecks.verify_closed, wire_options cleanup/end_idle); target reset keeps the connection"
+  },
+  "debug:2:13": {
+   "verdict": "ok",
+   "reason": "detach / end / lapse / force / line loss release the connection and its streams first, pins parked to core §8 idle, hart untouched (endpoint._close_conn/_release_lock, CutChecks.verify_closed, wire_options cleanup/end_idle); target reset keeps the connection"
+  },
+  "debug:2:14": {
+   "verdict": "ok",
+   "reason": "detach / end / lapse / force / line loss release the connection and its streams first, pins parked to core §8 idle, hart untouched (endpoint._close_conn/_release_lock, CutChecks.verify_closed, wire_options cleanup/end_idle); target reset keeps the connection"
+  },
+  "debug:2:15": {
+   "verdict": "ok",
+   "reason": "detach / end / lapse / force / line loss release the connection and its streams first, pins parked to core §8 idle, hart untouched (endpoint._close_conn/_release_lock, CutChecks.verify_closed, wire_options cleanup/end_idle); target reset keeps the connection"
+  },
+  "debug:2:16": {
+   "verdict": "ok",
+   "reason": "detach / end / lapse / force / line loss release the connection and its streams first, pins parked to core §8 idle, hart untouched (endpoint._close_conn/_release_lock, CutChecks.verify_closed, wire_options cleanup/end_idle); target reset keeps the connection"
+  },
+  "debug:2:17": {
+   "verdict": "ok",
+   "reason": "detach / end / lapse / force / line loss release the connection and its streams first, pins parked to core §8 idle, hart untouched (endpoint._close_conn/_release_lock, CutChecks.verify_closed, wire_options cleanup/end_idle); target reset keeps the connection"
+  },
+  "debug:2.1:1": {
+   "verdict": "ok",
+   "reason": "connections: live ones of that interface in creation order from first, paged to the frame, more flag, tid as attach read it or (0,0), swd (2,4,DPIDR) and selected_target TLVs (endpoint._paged, WireBase.connections, AttachChecks.attach, WireOptionsChecks.listing)"
+  },
+  "debug:2.1:2": {
+   "verdict": "ok",
+   "reason": "connections: live ones of that interface in creation order from first, paged to the frame, more flag, tid as attach read it or (0,0), swd (2,4,DPIDR) and selected_target TLVs (endpoint._paged, WireBase.connections, AttachChecks.attach, WireOptionsChecks.listing)"
+  },
+  "debug:3:1": {
+   "verdict": "ok",
+   "reason": "rvswd / swio op table, swio swclk 0xFFFF, method 0 / 1 with features attach_halt (unknown 0x00), flags bit0 / bit3 and dpc only when halted, wake / set-up pairs, PROGBUF0 scratch freed by ABSTRACTAUTO=0, reset TLV on declared role 3 only (undeclared unsupported 0x85, conflicts before the reset), target_id scheme 1 none for 0 / all ones: endpoint._wire, Wire.attach / attach_body, wire_options checker"
+  },
+  "debug:3:2": {
+   "verdict": "fixed",
+   "reason": "attach fixed part and reset TLV 0x05: the bench checked only the first copy of the reset TLV, and the attach checker required the selected SPEC's attach TLVs to be exactly {reset:5} (and console mechanisms with 'none') so it could not run on a09fa45 - fixed"
+  },
+  "debug:3:3": {
+   "verdict": "ok",
+   "reason": "rvswd / swio op table, swio swclk 0xFFFF, method 0 / 1 with features attach_halt (unknown 0x00), flags bit0 / bit3 and dpc only when halted, wake / set-up pairs, PROGBUF0 scratch freed by ABSTRACTAUTO=0, reset TLV on declared role 3 only (undeclared unsupported 0x85, conflicts before the reset), target_id scheme 1 none for 0 / all ones: endpoint._wire, Wire.attach / attach_body, wire_options checker"
+  },
+  "debug:3:4": {
+   "verdict": "ok",
+   "reason": "rvswd / swio op table, swio swclk 0xFFFF, method 0 / 1 with features attach_halt (unknown 0x00), flags bit0 / bit3 and dpc only when halted, wake / set-up pairs, PROGBUF0 scratch freed by ABSTRACTAUTO=0, reset TLV on declared role 3 only (undeclared unsupported 0x85, conflicts before the reset), target_id scheme 1 none for 0 / all ones: endpoint._wire, Wire.attach / attach_body, wire_options checker"
+  },
+  "debug:3:5": {
+   "verdict": "ok",
+   "reason": "rvswd / swio op table, swio swclk 0xFFFF, method 0 / 1 with features attach_halt (unknown 0x00), flags bit0 / bit3 and dpc only when halted, wake / set-up pairs, PROGBUF0 scratch freed by ABSTRACTAUTO=0, reset TLV on declared role 3 only (undeclared unsupported 0x85, conflicts before the reset), target_id scheme 1 none for 0 / all ones: endpoint._wire, Wire.attach / attach_body, wire_options checker"
+  },
+  "debug:3:6": {
+   "verdict": "ok",
+   "reason": "rvswd / swio op table, swio swclk 0xFFFF, method 0 / 1 with features attach_halt (unknown 0x00), flags bit0 / bit3 and dpc only when halted, wake / set-up pairs, PROGBUF0 scratch freed by ABSTRACTAUTO=0, reset TLV on declared role 3 only (undeclared unsupported 0x85, conflicts before the reset), target_id scheme 1 none for 0 / all ones: endpoint._wire, Wire.attach / attach_body, wire_options checker"
+  },
+  "debug:3:7": {
+   "verdict": "ok",
+   "reason": "rvswd / swio op table, swio swclk 0xFFFF, method 0 / 1 with features attach_halt (unknown 0x00), flags bit0 / bit3 and dpc only when halted, wake / set-up pairs, PROGBUF0 scratch freed by ABSTRACTAUTO=0, reset TLV on declared role 3 only (undeclared unsupported 0x85, conflicts before the reset), target_id scheme 1 none for 0 / all ones: endpoint._wire, Wire.attach / attach_body, wire_options checker"
+  },
+  "debug:3:8": {
+   "verdict": "ok",
+   "reason": "rvswd / swio op table, swio swclk 0xFFFF, method 0 / 1 with features attach_halt (unknown 0x00), flags bit0 / bit3 and dpc only when halted, wake / set-up pairs, PROGBUF0 scratch freed by ABSTRACTAUTO=0, reset TLV on declared role 3 only (undeclared unsupported 0x85, conflicts before the reset), target_id scheme 1 none for 0 / all ones: endpoint._wire, Wire.attach / attach_body, wire_options checker"
+  },
+  "debug:3:9": {
+   "verdict": "ok",
+   "reason": "rvswd / swio op table, swio swclk 0xFFFF, method 0 / 1 with features attach_halt (unknown 0x00), flags bit0 / bit3 and dpc only when halted, wake / set-up pairs, PROGBUF0 scratch freed by ABSTRACTAUTO=0, reset TLV on declared role 3 only (undeclared unsupported 0x85, conflicts before the reset), target_id scheme 1 none for 0 / all ones: endpoint._wire, Wire.attach / attach_body, wire_options checker"
+  },
+  "debug:3:10": {
+   "verdict": "ok",
+   "reason": "rvswd / swio op table, swio swclk 0xFFFF, method 0 / 1 with features attach_halt (unknown 0x00), flags bit0 / bit3 and dpc only when halted, wake / set-up pairs, PROGBUF0 scratch freed by ABSTRACTAUTO=0, reset TLV on declared role 3 only (undeclared unsupported 0x85, conflicts before the reset), target_id scheme 1 none for 0 / all ones: endpoint._wire, Wire.attach / attach_body, wire_options checker"
+  },
+  "debug:3:11": {
+   "verdict": "ok",
+   "reason": "rvswd / swio op table, swio swclk 0xFFFF, method 0 / 1 with features attach_halt (unknown 0x00), flags bit0 / bit3 and dpc only when halted, wake / set-up pairs, PROGBUF0 scratch freed by ABSTRACTAUTO=0, reset TLV on declared role 3 only (undeclared unsupported 0x85, conflicts before the reset), target_id scheme 1 none for 0 / all ones: endpoint._wire, Wire.attach / attach_body, wire_options checker"
+  },
+  "debug:3:12": {
+   "verdict": "ok",
+   "reason": "rvswd / swio op table, swio swclk 0xFFFF, method 0 / 1 with features attach_halt (unknown 0x00), flags bit0 / bit3 and dpc only when halted, wake / set-up pairs, PROGBUF0 scratch freed by ABSTRACTAUTO=0, reset TLV on declared role 3 only (undeclared unsupported 0x85, conflicts before the reset), target_id scheme 1 none for 0 / all ones: endpoint._wire, Wire.attach / attach_body, wire_options checker"
+  },
+  "debug:3:13": {
+   "verdict": "fixed",
+   "reason": "scan max_speed / idle_clock and attach idle_clock: known with or without bit 7, first copy used; the bench validated only the first copy and the scan checkers / models accepted a later idle_clock 2 or max_speed below min_clock_hz - fixed (core §2.3)"
+  },
+  "debug:3:14": {
+   "verdict": "fixed",
+   "reason": "scan max_speed / idle_clock and attach idle_clock: known with or without bit 7, first copy used; the bench validated only the first copy and the scan checkers / models accepted a later idle_clock 2 or max_speed below min_clock_hz - fixed (core §2.3)"
+  },
+  "debug:3:15": {
+   "verdict": "fixed",
+   "reason": "scan max_speed / idle_clock and attach idle_clock: known with or without bit 7, first copy used; the bench validated only the first copy and the scan checkers / models accepted a later idle_clock 2 or max_speed below min_clock_hz - fixed (core §2.3)"
+  },
+  "debug:3:16": {
+   "verdict": "fixed",
+   "reason": "attach fixed part and reset TLV 0x05: the bench checked only the first copy of the reset TLV, and the attach checker required the selected SPEC's attach TLVs to be exactly {reset:5} (and console mechanisms with 'none') so it could not run on a09fa45 - fixed"
+  },
+  "debug:3:17": {
+   "verdict": "ok",
+   "reason": "rvswd / swio op table, swio swclk 0xFFFF, method 0 / 1 with features attach_halt (unknown 0x00), flags bit0 / bit3 and dpc only when halted, wake / set-up pairs, PROGBUF0 scratch freed by ABSTRACTAUTO=0, reset TLV on declared role 3 only (undeclared unsupported 0x85, conflicts before the reset), target_id scheme 1 none for 0 / all ones: endpoint._wire, Wire.attach / attach_body, wire_options checker"
+  },
+  "debug:3:18": {
+   "verdict": "ok",
+   "reason": "rvswd / swio op table, swio swclk 0xFFFF, method 0 / 1 with features attach_halt (unknown 0x00), flags bit0 / bit3 and dpc only when halted, wake / set-up pairs, PROGBUF0 scratch freed by ABSTRACTAUTO=0, reset TLV on declared role 3 only (undeclared unsupported 0x85, conflicts before the reset), target_id scheme 1 none for 0 / all ones: endpoint._wire, Wire.attach / attach_body, wire_options checker"
+  },
+  "debug:3.1:1": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:2": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:3": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:4": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:5": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:6": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:7": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:8": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:9": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:10": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:11": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:12": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:13": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:14": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:15": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:16": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:17": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:18": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:19": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:20": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:21": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:22": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:23": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.1:24": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.2:1": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.2:2": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.2:3": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.2:4": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.2:5": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.2:6": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.2:7": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "debug:3.2:8": {
+   "verdict": "ok",
+   "reason": "RVSWD / SWIO frame timing is electrical: no frame encoder exists in this repository (the bench models DMI accesses, not bits); the rest levels the code does model match (scan_options levels [1, 1-idle] / [1], wire_options expected_levels, pin_state wire-free pull-up for swio after a failure); swio speed_hz = min_clock_hz and max_speed below it unsupported (endpoint._wire, conformance_oep_declarations.swio_clock)"
+  },
+  "common:1.1:1": {
+   "verdict": "ok",
+   "reason": "positions u64 from 0 per created resource, never reused; reads do not consume; bytes go only on overflow / clear / release; fixture UART carries position and serial within a boot (endpoint.Stream/_uart_plan_changed, virtual_stream_model, StreamChecks POSITION/LIMIT/PERSISTENT)"
+  },
+  "common:1.1:2": {
+   "verdict": "ok",
+   "reason": "positions u64 from 0 per created resource, never reused; reads do not consume; bytes go only on overflow / clear / release; fixture UART carries position and serial within a boot (endpoint.Stream/_uart_plan_changed, virtual_stream_model, StreamChecks POSITION/LIMIT/PERSISTENT)"
+  },
+  "common:1.1:3": {
+   "verdict": "ok",
+   "reason": "positions u64 from 0 per created resource, never reused; reads do not consume; bytes go only on overflow / clear / release; fixture UART carries position and serial within a boot (endpoint.Stream/_uart_plan_changed, virtual_stream_model, StreamChecks POSITION/LIMIT/PERSISTENT)"
+  },
+  "common:1.1:4": {
+   "verdict": "ok",
+   "reason": "positions u64 from 0 per created resource, never reused; reads do not consume; bytes go only on overflow / clear / release; fixture UART carries position and serial within a boot (endpoint.Stream/_uart_plan_changed, virtual_stream_model, StreamChecks POSITION/LIMIT/PERSISTENT)"
+  },
+  "common:1.1:5": {
+   "verdict": "ok",
+   "reason": "positions u64 from 0 per created resource, never reused; reads do not consume; bytes go only on overflow / clear / release; fixture UART carries position and serial within a boot (endpoint.Stream/_uart_plan_changed, virtual_stream_model, StreamChecks POSITION/LIMIT/PERSISTENT)"
+  },
+  "common:1.1:6": {
+   "verdict": "ok",
+   "reason": "positions u64 from 0 per created resource, never reused; reads do not consume; bytes go only on overflow / clear / release; fixture UART carries position and serial within a boot (endpoint.Stream/_uart_plan_changed, virtual_stream_model, StreamChecks POSITION/LIMIT/PERSISTENT)"
+  },
+  "common:1.2:1": {
+   "verdict": "ok",
+   "reason": "read from 0-3 (from 3 needs marks else unsupported 0x00, no such mark = now), start/gap when pushed out, past the write position start=end len 0 flags 0, len within max and the frame, more flag, lock-free (endpoint._stream_op, virtual_stream_model, StreamChecks)"
+  },
+  "common:1.2:2": {
+   "verdict": "ok",
+   "reason": "read from 0-3 (from 3 needs marks else unsupported 0x00, no such mark = now), start/gap when pushed out, past the write position start=end len 0 flags 0, len within max and the frame, more flag, lock-free (endpoint._stream_op, virtual_stream_model, StreamChecks)"
+  },
+  "common:1.2:3": {
+   "verdict": "ok",
+   "reason": "read from 0-3 (from 3 needs marks else unsupported 0x00, no such mark = now), start/gap when pushed out, past the write position start=end len 0 flags 0, len within max and the frame, more flag, lock-free (endpoint._stream_op, virtual_stream_model, StreamChecks)"
+  },
+  "common:1.2:4": {
+   "verdict": "ok",
+   "reason": "read from 0-3 (from 3 needs marks else unsupported 0x00, no such mark = now), start/gap when pushed out, past the write position start=end len 0 flags 0, len within max and the frame, more flag, lock-free (endpoint._stream_op, virtual_stream_model, StreamChecks)"
+  },
+  "common:1.2:5": {
+   "verdict": "ok",
+   "reason": "read from 0-3 (from 3 needs marks else unsupported 0x00, no such mark = now), start/gap when pushed out, past the write position start=end len 0 flags 0, len within max and the frame, more flag, lock-free (endpoint._stream_op, virtual_stream_model, StreamChecks)"
+  },
+  "common:1.2:6": {
+   "verdict": "ok",
+   "reason": "read from 0-3 (from 3 needs marks else unsupported 0x00, no such mark = now), start/gap when pushed out, past the write position start=end len 0 flags 0, len within max and the frame, more flag, lock-free (endpoint._stream_op, virtual_stream_model, StreamChecks)"
+  },
+  "common:1.2:7": {
+   "verdict": "ok",
+   "reason": "read from 0-3 (from 3 needs marks else unsupported 0x00, no such mark = now), start/gap when pushed out, past the write position start=end len 0 flags 0, len within max and the frame, more flag, lock-free (endpoint._stream_op, virtual_stream_model, StreamChecks)"
+  },
+  "common:1.2:8": {
+   "verdict": "ok",
+   "reason": "read from 0-3 (from 3 needs marks else unsupported 0x00, no such mark = now), start/gap when pushed out, past the write position start=end len 0 flags 0, len within max and the frame, more flag, lock-free (endpoint._stream_op, virtual_stream_model, StreamChecks)"
+  },
+  "common:1.2:9": {
+   "verdict": "ok",
+   "reason": "read from 0-3 (from 3 needs marks else unsupported 0x00, no such mark = now), start/gap when pushed out, past the write position start=end len 0 flags 0, len within max and the frame, more flag, lock-free (endpoint._stream_op, virtual_stream_model, StreamChecks)"
+  },
+  "common:1.3:1": {
+   "verdict": "ok",
+   "reason": "marks 22 bytes, position = write position when marked, kinds/detail spaces, serial per stream wrapping, time_ns probe clock, small ring with drops seen as serial gaps, inclusive paging from from_serial / next / oldest (message.serial_page_start, endpoint marks, StreamChecks PAGES/EVICTION/MOVING-PAGES)"
+  },
+  "common:1.3:2": {
+   "verdict": "ok",
+   "reason": "marks 22 bytes, position = write position when marked, kinds/detail spaces, serial per stream wrapping, time_ns probe clock, small ring with drops seen as serial gaps, inclusive paging from from_serial / next / oldest (message.serial_page_start, endpoint marks, StreamChecks PAGES/EVICTION/MOVING-PAGES)"
+  },
+  "common:1.3:3": {
+   "verdict": "ok",
+   "reason": "marks 22 bytes, position = write position when marked, kinds/detail spaces, serial per stream wrapping, time_ns probe clock, small ring with drops seen as serial gaps, inclusive paging from from_serial / next / oldest (message.serial_page_start, endpoint marks, StreamChecks PAGES/EVICTION/MOVING-PAGES)"
+  },
+  "common:1.3:4": {
+   "verdict": "ok",
+   "reason": "marks 22 bytes, position = write position when marked, kinds/detail spaces, serial per stream wrapping, time_ns probe clock, small ring with drops seen as serial gaps, inclusive paging from from_serial / next / oldest (message.serial_page_start, endpoint marks, StreamChecks PAGES/EVICTION/MOVING-PAGES)"
+  },
+  "common:1.3:5": {
+   "verdict": "ok",
+   "reason": "marks 22 bytes, position = write position when marked, kinds/detail spaces, serial per stream wrapping, time_ns probe clock, small ring with drops seen as serial gaps, inclusive paging from from_serial / next / oldest (message.serial_page_start, endpoint marks, StreamChecks PAGES/EVICTION/MOVING-PAGES)"
+  },
+  "common:1.3:6": {
+   "verdict": "ok",
+   "reason": "marks 22 bytes, position = write position when marked, kinds/detail spaces, serial per stream wrapping, time_ns probe clock, small ring with drops seen as serial gaps, inclusive paging from from_serial / next / oldest (message.serial_page_start, endpoint marks, StreamChecks PAGES/EVICTION/MOVING-PAGES)"
+  },
+  "common:1.3:7": {
+   "verdict": "ok",
+   "reason": "marks 22 bytes, position = write position when marked, kinds/detail spaces, serial per stream wrapping, time_ns probe clock, small ring with drops seen as serial gaps, inclusive paging from from_serial / next / oldest (message.serial_page_start, endpoint marks, StreamChecks PAGES/EVICTION/MOVING-PAGES)"
+  },
+  "common:1.3:8": {
+   "verdict": "ok",
+   "reason": "marks 22 bytes, position = write position when marked, kinds/detail spaces, serial per stream wrapping, time_ns probe clock, small ring with drops seen as serial gaps, inclusive paging from from_serial / next / oldest (message.serial_page_start, endpoint marks, StreamChecks PAGES/EVICTION/MOVING-PAGES)"
+  },
+  "common:1.3:9": {
+   "verdict": "ok",
+   "reason": "marks 22 bytes, position = write position when marked, kinds/detail spaces, serial per stream wrapping, time_ns probe clock, small ring with drops seen as serial gaps, inclusive paging from from_serial / next / oldest (message.serial_page_start, endpoint marks, StreamChecks PAGES/EVICTION/MOVING-PAGES)"
+  },
+  "common:1.3:10": {
+   "verdict": "ok",
+   "reason": "marks 22 bytes, position = write position when marked, kinds/detail spaces, serial per stream wrapping, time_ns probe clock, small ring with drops seen as serial gaps, inclusive paging from from_serial / next / oldest (message.serial_page_start, endpoint marks, StreamChecks PAGES/EVICTION/MOVING-PAGES)"
+  },
+  "common:1.3:11": {
+   "verdict": "ok",
+   "reason": "marks 22 bytes, position = write position when marked, kinds/detail spaces, serial per stream wrapping, time_ns probe clock, small ring with drops seen as serial gaps, inclusive paging from from_serial / next / oldest (message.serial_page_start, endpoint marks, StreamChecks PAGES/EVICTION/MOVING-PAGES)"
+  },
+  "common:1.3:12": {
+   "verdict": "ok",
+   "reason": "marks 22 bytes, position = write position when marked, kinds/detail spaces, serial per stream wrapping, time_ns probe clock, small ring with drops seen as serial gaps, inclusive paging from from_serial / next / oldest (message.serial_page_start, endpoint marks, StreamChecks PAGES/EVICTION/MOVING-PAGES)"
+  },
+  "common:1.4:1": {
+   "verdict": "ok",
+   "reason": "clear (with a clear mark when marks are offered), mark host detail, write accepted = min(count, room) with success / partial / failed, all locked (endpoint._stream_op, console write, StreamChecks CLEAR/PERSISTENT/REFUSALS)"
+  },
+  "common:1.4:2": {
+   "verdict": "ok",
+   "reason": "clear (with a clear mark when marks are offered), mark host detail, write accepted = min(count, room) with success / partial / failed, all locked (endpoint._stream_op, console write, StreamChecks CLEAR/PERSISTENT/REFUSALS)"
+  },
+  "common:1.4:3": {
+   "verdict": "ok",
+   "reason": "clear (with a clear mark when marks are offered), mark host detail, write accepted = min(count, room) with success / partial / failed, all locked (endpoint._stream_op, console write, StreamChecks CLEAR/PERSISTENT/REFUSALS)"
+  },
+  "common:1.4:4": {
+   "verdict": "ok",
+   "reason": "clear (with a clear mark when marks are offered), mark host detail, write accepted = min(count, room) with success / partial / failed, all locked (endpoint._stream_op, console write, StreamChecks CLEAR/PERSISTENT/REFUSALS)"
+  },
+  "common:2:1": {
+   "verdict": "ok",
+   "reason": "debug connection: session-owned, u32 numbers never reused within a boot (core §9), closed by detach / session end / line loss / failed cleanup with its streams first; another wire's connection unavailable cause 6, unknown no_resource, never the last one implicitly (endpoint._connection/_dm_op, DebugChecks.resources, console RESOURCE)"
+  },
+  "common:2:2": {
+   "verdict": "ok",
+   "reason": "debug connection: session-owned, u32 numbers never reused within a boot (core §9), closed by detach / session end / line loss / failed cleanup with its streams first; another wire's connection unavailable cause 6, unknown no_resource, never the last one implicitly (endpoint._connection/_dm_op, DebugChecks.resources, console RESOURCE)"
+  },
+  "common:2:3": {
+   "verdict": "ok",
+   "reason": "debug connection: session-owned, u32 numbers never reused within a boot (core §9), closed by detach / session end / line loss / failed cleanup with its streams first; another wire's connection unavailable cause 6, unknown no_resource, never the last one implicitly (endpoint._connection/_dm_op, DebugChecks.resources, console RESOURCE)"
+  },
+  "common:2:4": {
+   "verdict": "ok",
+   "reason": "debug connection: session-owned, u32 numbers never reused within a boot (core §9), closed by detach / session end / line loss / failed cleanup with its streams first; another wire's connection unavailable cause 6, unknown no_resource, never the last one implicitly (endpoint._connection/_dm_op, DebugChecks.resources, console RESOURCE)"
+  },
+  "common:3:1": {
+   "verdict": "ok",
+   "reason": "status 0-5, unknown = failure (riscv.check / status_name), failures completed failed / partial in the success shape with done / status, scan / attach / detach failures status(u8) [TLV] (endpoint DM_LINE_FAILED, attach status line), no automatic re-run of writes (review4 held())"
+  },
+  "common:3:2": {
+   "verdict": "ok",
+   "reason": "status 0-5, unknown = failure (riscv.check / status_name), failures completed failed / partial in the success shape with done / status, scan / attach / detach failures status(u8) [TLV] (endpoint DM_LINE_FAILED, attach status line), no automatic re-run of writes (review4 held())"
+  },
+  "common:3:3": {
+   "verdict": "ok",
+   "reason": "status 0-5, unknown = failure (riscv.check / status_name), failures completed failed / partial in the success shape with done / status, scan / attach / detach failures status(u8) [TLV] (endpoint DM_LINE_FAILED, attach status line), no automatic re-run of writes (review4 held())"
+  },
+  "common:3:4": {
+   "verdict": "ok",
+   "reason": "status 0-5, unknown = failure (riscv.check / status_name), failures completed failed / partial in the success shape with done / status, scan / attach / detach failures status(u8) [TLV] (endpoint DM_LINE_FAILED, attach status line), no automatic re-run of writes (review4 held())"
+  },
+  "common:3:5": {
+   "verdict": "ok",
+   "reason": "status 0-5, unknown = failure (riscv.check / status_name), failures completed failed / partial in the success shape with done / status, scan / attach / detach failures status(u8) [TLV] (endpoint DM_LINE_FAILED, attach status line), no automatic re-run of writes (review4 held())"
+  },
+  "common:3:6": {
+   "verdict": "ok",
+   "reason": "status 0-5, unknown = failure (riscv.check / status_name), failures completed failed / partial in the success shape with done / status, scan / attach / detach failures status(u8) [TLV] (endpoint DM_LINE_FAILED, attach status line), no automatic re-run of writes (review4 held())"
+  },
+  "common:3:7": {
+   "verdict": "ok",
+   "reason": "status 0-5, unknown = failure (riscv.check / status_name), failures completed failed / partial in the success shape with done / status, scan / attach / detach failures status(u8) [TLV] (endpoint DM_LINE_FAILED, attach status line), no automatic re-run of writes (review4 held())"
+  },
+  "common:3:8": {
+   "verdict": "ok",
+   "reason": "status 0-5, unknown = failure (riscv.check / status_name), failures completed failed / partial in the success shape with done / status, scan / attach / detach failures status(u8) [TLV] (endpoint DM_LINE_FAILED, attach status line), no automatic re-run of writes (review4 held())"
+  },
+  "common:3:9": {
+   "verdict": "ok",
+   "reason": "status 0-5, unknown = failure (riscv.check / status_name), failures completed failed / partial in the success shape with done / status, scan / attach / detach failures status(u8) [TLV] (endpoint DM_LINE_FAILED, attach status line), no automatic re-run of writes (review4 held())"
+  },
+  "common:3:10": {
+   "verdict": "ok",
+   "reason": "status 0-5, unknown = failure (riscv.check / status_name), failures completed failed / partial in the success shape with done / status, scan / attach / detach failures status(u8) [TLV] (endpoint DM_LINE_FAILED, attach status line), no automatic re-run of writes (review4 held())"
+  }
+ },
+ "divergences": [
+  {
+   "unit": "debug:1:6",
+   "spec": "core §7.4（debug §1「describe の channel_group / role_channels が候補を宣言する。」）: 両方を書いた場合、選んだピンの組は channel_group のどれかに一致し、かつ role_channels の候補にも入っていなければならない。",
+   "code": "src/oep_client/endpoint.py:Endpoint._allows; src/oep_client/riscv.py:WireBase.candidate_pairs; src/oep_client/pins.py:PinFinder.scan",
+   "fix": "the bench allows a pair only when it matches one channel_group (roles it lists) and role_channels (roles it lists), a role named by neither not allowed; the client candidate pairs apply the same rule (group role from role_channels when the group omits it); oep pins scans the declared pairs when the wire has channel_groups (a swio wire declared by channel_group was never scanned); tests/test_target_parts.py: its rvswd fixture declared a group with role 1 only (no SWCLK) - now a full role 1 / role 2 group"
+  },
+  {
+   "unit": "debug:2:1",
+   "spec": "待ちと後始末を含め要求全体のmax_op_msのうちに終える。",
+   "code": "src/oep_client/endpoint.py:Endpoint._settled (attach)",
+   "fix": "the wait after an attach reset release gets max_op_ms minus the hold_ms already spent; settle_log records the wait actually allowed"
+  },
+  {
+   "unit": "debug:1:15",
+   "spec": "core §2.3: 後続の同じtagも上の検証対象である。（上: 「この probe が扱わない値は rejected unsupported（受け取ったままの tag）」; debug §1: 「0はmalformed。probeのmin_clock_hzより小さければunsupported」）",
+   "code": "src/oep_client/endpoint.py:Endpoint._wire scan / attach reset, Endpoint._idle_clock",
+   "fix": "every copy of scan max_speed (0 malformed, below min_clock_hz unsupported), idle_clock (unused value unsupported) and attach reset (undeclared channel / hold past max_op_ms unsupported) is checked, the offending copy's tag as received"
+  },
+  {
+   "unit": "debug:3:13",
+   "spec": "core §2.3: 後続の同じtagも上の検証対象である。",
+   "code": "src/oep_client/conformance_scan.py:ScanChecks.extras; src/oep_client/conformance_scan_options.py:ScanOptionsChecks.first_wins; virtual_scan_model.Scans.request_tags; virtual_scan_options_model.ScanOptions.request_tags",
+   "fix": "the first-wins cases send valid later copies (still telling the first from the later); new OEP-SCAN-LATER-LOW and IDLE refusals require a later max_speed below min_clock_hz / idle_clock 2 to be unsupported with its tag; the models refuse them"
+  },
+  {
+   "unit": "debug:3:16",
+   "spec": "debug §3 TLV表: attach（rvswd だけ） 0x04 idle_clock / attach 0x05 reset; §5: attachのTLVは0x02 targetsel、0x05 reset; registry [interface.enum.mechanism] = sdi 0 / dmdata 1 / dmseq 2",
+   "code": "src/oep_client/conformance_attach.py:AttachChecks.run context",
+   "fix": "the context requires reset = 5 among the selected SPEC attach TLVs instead of exactly {reset: 5}, and the a09fa45 console mechanisms (no none: 255); the test registry now carries a09fa45 attach TLVs and mechanisms"
+  }
+ ]
+}

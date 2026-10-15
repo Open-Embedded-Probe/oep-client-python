@@ -63,12 +63,11 @@ def declared_max_length(hst: h.Host, fn: int, name: str) -> int:
     """The describe common tag max_length (core §7.4) of interface `fn`, in bytes, rounded down to a word: the
     function's limit, whatever the route (the host's count is at most min(max_length, max_frame - 8 / - 20) / 4 on the
     route it uses, oep-if-debug §4.5). NoMaxLength when the probe does not declare it (or declares less than one word)."""
-    for tag, value in describe(hst, fn):
-        if tag == catalog.MAX_LENGTH and len(value) >= 2:
-            length = struct.unpack_from("<H", value)[0] // 4 * 4
-            if length >= 4:
-                return length
-            break
+    value = catalog.first_fixed(describe(hst, fn), catalog.MAX_LENGTH, 2)   # the first copy, a u16 (core §2.3)
+    if value is not None:
+        length = struct.unpack("<H", value)[0] // 4 * 4
+        if length >= 4:
+            return length
     raise NoMaxLength(f"{name} (fn {fn}) declares no usable max_length: read_block / write_block need it "
                       f"(oep-if-debug §4.5)")
 
@@ -190,19 +189,26 @@ class WireBase(Interface):
         return catalog.decode_description(b"".join(catalog.tlv(t, v) for t, v in describe(self.host, self.fn)))
 
     def candidate_pairs(self) -> list[tuple[int, int]]:
-        """The (swdio, swclk) pairs the wire's describe allows (oep-if-debug §1): its channel_groups' role 1 / role 2,
-        else role_channels' role 1 x role 2 without using a channel twice (swio: swclk 0xFFFF)."""
+        """The (swdio, swclk) pairs the wire's describe allows (oep-if-debug §1, core §7.4): per channel_group its role
+        1 / role 2 (kept only when role_channels, listing that role too, has the channel; a role the group does not
+        list from role_channels), else role_channels' role 1 x role 2 without using a channel twice (swio: swclk
+        0xFFFF)."""
         d = self._description()
-        if d.groups:
-            out = []
-            for pins in d.groups.values():
-                roles = dict(pins)
-                if 1 in roles:
-                    out.append((roles[1], 0xFFFF if self.ONE_WIRE else roles.get(2, 0xFFFF)))
-            return out
-        if self.ONE_WIRE:
-            return [(dio, 0xFFFF) for dio in d.roles.get(1, [])]
-        return [(dio, clk) for dio in d.roles.get(1, []) for clk in d.roles.get(2, []) if dio != clk]
+
+        def options(group: dict, role: int) -> list[int]:
+            # core §7.4: a role a group lists is that group's channel - and in role_channels' candidates when it lists
+            # the role too; a role the group does not list comes from role_channels alone
+            if role in group:
+                return [group[role]] if role not in d.roles or group[role] in d.roles[role] else []
+            return list(d.roles.get(role, []))
+
+        out: list[tuple[int, int]] = []
+        for group in ([dict(pins) for pins in d.groups.values()] if d.groups else [{}]):
+            dios = options(group, 1)
+            clks = [0xFFFF] if self.ONE_WIRE else options(group, 2)
+            out += [(dio, clk) for dio in dios for clk in clks
+                    if (self.ONE_WIRE or dio != clk) and (dio, clk) not in out]
+        return out
 
     def _pins(self, pins: tuple[int, int] | None) -> tuple[int, int]:
         if pins is not None:
@@ -217,10 +223,9 @@ class WireBase(Interface):
         cached), else DEFAULT_MAX_SPEED. The target's ceiling is the host's to know (oep-if-debug §1)."""
         if max_speed is not None:
             return max_speed
-        for tag, v in describe(self.host, self.fn):
-            if tag & ~m.TAG_CRITICAL == catalog.MAX_CLOCK_HZ and len(v) >= 4:
-                return struct.unpack_from("<I", v)[0]
-        return self.DEFAULT_MAX_SPEED
+        # the first copy, a u32 exactly; bit 7 in an answer is an unknown tag (core §2.2, §2.3)
+        v = catalog.first_fixed(describe(self.host, self.fn), catalog.MAX_CLOCK_HZ, 4)
+        return struct.unpack("<I", v)[0] if v is not None else self.DEFAULT_MAX_SPEED
 
     def _max_op_ms(self) -> int:
         """The probe's max_op_ms (core §7.5), FALLBACK_MAX_OP_MS when it cannot be read."""
@@ -292,7 +297,8 @@ class WireBase(Interface):
                 tid = rd.bytes(n)
                 page.append([conn, (swdio, swclk), speed, (scheme, tid) if scheme else None, None])
             for tag, value in m.split_tlvs(rd.rest()):
-                if tag & ~m.TAG_CRITICAL == _SELECTED_TARGET and len(value) >= 5 and value[0] < len(page):
+                # entry_index(u8) targetsel(u32), repeatable; bit 7 in an answer: an unknown tag (core §2.2, §2.3)
+                if tag == _SELECTED_TARGET and len(value) == 5 and value[0] < len(page):
                     page[value[0]][4] = struct.unpack_from("<I", value, 1)[0]
             out += [ConnectionInfo(*row) for row in page]
             if not more or not count or len(out) > 0xFF:
@@ -557,7 +563,8 @@ class RiscvDm(Interface, BlockLength):
         _RV.op[k] for k in ("dmi", "halt", "resume", "reset", "read_block", "write_block", "run", "step"))
     RESET_RUN, RESET_HALT = (_RV.enum["reset_mode"][k] for k in ("run", "halt_at_reset"))
     TAG_STEP_LEFT = _RV.tlv["step_answer"]["step_left"]
-    OPTIONAL = {"block": (_RV.op["read_block"], _RV.op["write_block"]), "run": (_RV.op["run"],),
+    OPTIONAL = {"halt": (_RV.op["halt"],), "resume": (_RV.op["resume"],),
+                "block": (_RV.op["read_block"], _RV.op["write_block"]), "run": (_RV.op["run"],),
                 "reset": (_RV.op["reset"],), "step": (_RV.op["step"],)}   # the optional ops (debug §4), by name
 
     def __init__(self, hst: h.Host, conn: int, name: str = "oep.target.riscv-dm"):
@@ -567,10 +574,10 @@ class RiscvDm(Interface, BlockLength):
         self.data_saved: int | None = None   # DATA0 as it was before this host's own abstract commands changed it
 
     def declared(self) -> set[str]:
-        """The optional ops this probe offers, from its describe's ops tag (debug §4, core §1.2, §7.4): "block"
-        (read_block / write_block, offered as a pair), "run", "reset", "step". dmi, halt and resume are always there;
-        an op not offered is answered unknown_operation, and the host builds the same thing from dmi. A describe
-        without an ops tag (not a conforming probe) declares none."""
+        """The optional ops this probe offers, from its describe's ops tag (debug §4, core §1.2, §7.4): "halt",
+        "resume", "block" (read_block / write_block, offered as a pair), "run", "reset", "step". Only dmi is always
+        there (debug §4: halt and resume are optional too); an op not offered is answered unknown_operation, and the
+        host builds the same thing from dmi. A describe without an ops tag (not a conforming probe) declares none."""
         offered = self.ops() or set()
         return {name for name, ops in self.OPTIONAL.items() if all(op in offered for op in ops)}
 
@@ -600,7 +607,7 @@ class RiscvDm(Interface, BlockLength):
     def restore_data(self) -> None:
         """Write DATA0 back as it was before this host's own abstract commands changed it (debug §4: before the hart
         runs; read_register / write_register leave it changed). Nothing when they did not run since the hart last ran;
-        resume, step and run call it first."""
+        resume, step, run and reset (mode 0) call it first."""
         if self.data_saved is not None:
             self.held([self.step_write(DATA0, self.data_saved)], "restoring DATA0")
             self.data_saved = None
@@ -752,7 +759,9 @@ class RiscvDm(Interface, BlockLength):
     def reset(self) -> tuple[int, int]:
         """Reset through ndmreset and let it run (success: the probe saw it running, flags bit0). The reset op never
         drives a reset line (debug §4.3): a line moves only through attach's reset TLV (`Wire.attach_under_reset`) or
-        a fixture. -> (flags, pc)"""
+        a fixture. The hart runs after it, so DATA0 this host's abstract commands changed is written back first
+        (`restore_data`, debug §4: before the hart runs). -> (flags, pc)"""
+        self.restore_data()
         return self._reset(self.RESET_RUN)
 
     def reset_halt(self) -> int:

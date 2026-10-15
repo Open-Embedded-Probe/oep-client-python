@@ -46,7 +46,7 @@ def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, byte
     op of §12 set (a probe whose fn 0 ops break the form is not used). -> what is missing (empty: nothing seen missing). The bounds of confirm's values and of
     max_op_ms are checked by the host itself (host.check_confirm, host.check_max_op_ms: the probe is not used)."""
     out = []
-    have = {tag & 0x7F for tag, _ in core_describe}
+    have = {tag for tag, _ in core_describe}               # bit 7 in an answer: an unknown tag, not this one (core §2.2)
     if len(confirm_payload) > 4 and confirm_payload[4] >= 1:
         try:
             where = m.Tail.parse(confirm_payload[16:]).get(reg.CORE.tlv["confirm_answer"]["transport"])

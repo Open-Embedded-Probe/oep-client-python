@@ -149,8 +149,9 @@ class Console(PositionStream):
 
     def mechanisms(self) -> list[int]:
         """The mechanisms the probe opens (describe tag 0x40: n(u8) n x mechanism(u8), console §1)."""
-        return [b for tag, v in describe(self.host, self.fn) if tag == self.TAG_MECHANISMS and v
-                for b in v[1:1 + v[0]]]
+        # the first copy, n(u8) then exactly n bytes; a broken one is not used (core §2.3)
+        v = next((v for tag, v in describe(self.host, self.fn) if tag == self.TAG_MECHANISMS), None)
+        return list(v[1:]) if v and len(v) == 1 + v[0] else []
 
     def open(self, conn: int, mechanism: int = DMSEQ) -> int:
         """-> a new stream (u32) on the connection (console §2). A mechanism the probe lacks is rejected unsupported; a

@@ -1,5 +1,6 @@
 import copy
 import pytest
+from oep_client import registry as current
 from oep_client.conformance import Checks
 from oep_client.conformance_attach import AttachChecks
 from oep_client.conformance_attach_sample import SampleAttachAdapter
@@ -10,7 +11,11 @@ from test_conformance import REG
 
 def setup():
     reg=copy.deepcopy(REG);reg['interface']=copy.deepcopy(SPECS)
-    for row in reg['interface'][:3]:row['tlv']['attach']={'reset':5}
+    # a09fa45's attach TLVs (rvswd idle_clock / reset, swio reset, swd targetsel / reset) and console mechanisms
+    for row in reg['interface']:
+        spec=current.INTERFACES[row['name']]
+        if 'attach' in spec.tlv:row['tlv']['attach']=dict(spec.tlv['attach'])
+        if 'mechanism' in spec.enum:row['enum']['mechanism']=dict(spec.enum['mechanism'])
     model=AttachModel(lambda:0,boot_id=17);c=Checks(model.handle,reg,'virtual-resource-1')
     return model,c,SampleAttachAdapter(model)
 

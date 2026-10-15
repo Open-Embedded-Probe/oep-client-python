@@ -21,7 +21,7 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 
-from . import core, message as m, registry as reg
+from . import catalog, core, message as m, registry as reg
 from .core import Interface
 
 _CFG = reg.PROBE_CONFIG
@@ -282,12 +282,14 @@ class ProbeConfig(Interface):
     def describe(self) -> Declared:
         """The declarations (describe, cached by the host while the probe's boot_id holds)."""
         d = Declared()
-        for tag, v in core.describe(self.host, self.fn):
-            tag &= 0x7F
-            if tag == DESCRIBE["storage"] and len(v) >= 4:
-                d.storage_bytes = struct.unpack_from("<I", v)[0]
-            elif tag == DESCRIBE["items"]:
-                d.items = list(v)
+        tlvs = core.describe(self.host, self.fn)
+        # the first copy of each, bit 7 an unknown tag in an answer (core §2.2, §2.3); storage is a u32 exactly
+        storage = catalog.first_fixed(tlvs, DESCRIBE["storage"], 4)
+        if storage is not None:
+            d.storage_bytes = struct.unpack("<I", storage)[0]
+        items = catalog.first_value(tlvs, DESCRIBE["items"])
+        if items is not None:
+            d.items = list(items)
         return d
 
     def state(self) -> State:

@@ -28,10 +28,10 @@ class Uart(Gpio):
             raw,size=struct.unpack_from('<BH',data);key=raw&127
             if not key or len(data)<3+size:raise Reject(3)
             value,data=data[3:3+size],data[3+size:]
-            if key in result:continue
             if op==16 and key==1:
                 if size!=1:raise Reject(3)
-                result[key]=(raw,value)
+                if key in result:result.setdefault('later',[]).append((raw,value))   # used: the first; a later copy is checked too (core §2.3)
+                else:result[key]=(raw,value)
             elif raw&128:raise Reject(11,bytes((raw,)))
         return result
     def close(self,reason):
@@ -58,8 +58,12 @@ class Uart(Gpio):
         channels=[ch for _,_,_,ch in assignments]
         if sorted(channels)==sorted(self.plans.get(2,[])):return b''   # the same set: nothing changes (plan §2.1)
         if self.stream is not None and self.baud:raise Reject(4,tlv(1,b'\6'))   # configured: a change is cause 6 (fixture §2)
-        self.release_plans([2]);self.plans[2]=channels;self.stream=Stream(self.ep,self.position,self.serial)
-        if 1 in self.plans[2]:self.pins[1]=4;self.events.append(('uart-tx-idle',1))
+        old=self.plans.get(2,[])
+        for ch in old:                                             # only what leaves goes to its idle; a kept
+            if ch not in channels:self.restore(ch)                 # (fn, role, channel) is not released (plan §2.1)
+        if self.stream is not None:self.position=self.stream.position;self.serial=self.stream.serial   # the buffer and the
+        self.plans[2]=channels;self.stream=Stream(self.ep,self.position,self.serial)                    # marks go (fixture §2)
+        if 1 in channels and 1 not in old:self.pins[1]=4;self.events.append(('uart-tx-idle',1))
         return b''
     def actual(self,baud):
         if baud==0:return None
@@ -73,7 +77,8 @@ class Uart(Gpio):
         if op==16:
             requested=struct.unpack('<I',payload)[0];raw,format_value=tags.get(1,(1,b'\0'));format_value=format_value[0]
             if requested==0:raise Reject(3)                        # baud 0 is malformed (fixture §2)
-            if format_value not in (0,4,17):raise Reject(11,bytes((raw,)))
+            for later_raw,later in [(raw,bytes((format_value,)))]+tags.get('later',[]):
+                if later[0] not in (0,4,17):raise Reject(11,bytes((later_raw,)))
             baud=self.actual(requested)
             if baud is None:raise Reject(11,b'\0')
             if self.stream is None:raise Reject(4,tlv(1,b'\6'))

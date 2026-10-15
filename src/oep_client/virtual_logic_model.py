@@ -114,7 +114,7 @@ class Logic(Gpio):
         if generation!=self.generation:raise Reject(4,tlv(1,b'\6'))
         if op==23:
             serial=struct.unpack_from('<I',payload,4)[0]
-            if self.config and self.config['mode']==2:
+            if self.config and self.config['mode']==2 and self.state in (3,5):   # the state table: '—' in 0/1/2/4/6 (capture §3.2)
                 self.segments[:]=[row for row in self.segments if ((serial-row[0])&0xffffffff)>=0x80000000]
                 new=self.segments[0][1] if self.segments else self.base+len(self.data);del self.data[:new-self.base];self.base=new
                 if self.state==5 and len(self.segments)<self.config['segments']:self.state=3;self.gap=True;self.start_ns=self.ep.now_ns()

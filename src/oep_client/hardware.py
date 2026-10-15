@@ -168,8 +168,9 @@ def validate(d):
             choice(transport['profile'], where + '.profile', PROFILES)
         if kind == 'usb':
             import re
-            if not re.fullmatch(r'[0-9a-fA-F]{12,32}', transport['unit_id']):
-                fail(where, 'USB transport requires a complete hexadecimal unit_id')
+            # core §7.5: a unit_id is 1-32 bytes of a-z 0-9 - (hex is only an example); an x- one names no unit
+            if not re.fullmatch(r'[0-9a-zA-Z-]{1,32}', transport['unit_id']) or transport['unit_id'].lower().startswith('x-'):
+                fail(where, 'USB transport requires a complete unit_id (1-32 of a-z 0-9 -, not x-)')
             if identity['method'] != 'oep-unit-id' or identity['value'].lower() != transport['unit_id'].lower():
                 fail(where, 'USB selector must match configured OEP identity')
 
@@ -377,7 +378,7 @@ def virtual_smoke(equipment: Equipment, probes=()):
             capabilities = dump.collect(lambda fn, op, payload: hst.call(fn, op, payload, locked=False).payload,
                                         confirm=hst.confirm_range())
             result['declarations'] = json.loads(dump.to_json(capabilities))
-            values = dict(core.describe(hst))
+            values = dict(reversed(core.describe(hst)))   # a tag twice: the first copy is used (core §2.3)
             # answer text shown with control characters and bad UTF-8 replaced (core §2.1)
             result['firmware'] = message.shown(values.get(virtual_bench.CORE_FIRMWARE, b'')) or None
             result['unit_id'] = message.shown(values.get(virtual_bench.CORE_UNIT_ID, b'')) or None
@@ -470,7 +471,7 @@ def physical_preflight(equipment: Equipment, probes=(), *, lock_path=None):
                 limits = hst.limits
                 result['confirm'] = {k: v for k, v in limits.items() if k != 'tail'}
                 result['confirm']['magic'] = limits['magic'].decode('ascii')
-                values = dict(core.describe(hst))
+                values = dict(reversed(core.describe(hst)))   # a tag twice: the first copy is used (core §2.3)
                 tags = registry.CORE.tlv['describe']
                 for field in ('firmware', 'model', 'unit_id', 'chip'):
                     # answer text shown with control characters and bad UTF-8 replaced (core §2.1)

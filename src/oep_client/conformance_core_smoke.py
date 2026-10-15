@@ -100,7 +100,7 @@ class CoreSmokeChecks:
             for _ in range(count):
                 require(at + 6 <= len(p), 'list entry prefix')
                 fn, instance, revision, n = struct.unpack_from('<HHBB', p, at); at += 6
-                require(fn and revision and 1 <= n <= 48 and at + n <= len(p), 'list entry values')
+                require(fn and 1 <= n <= 48 and at + n <= len(p), 'list entry values')   # revision: any u8 (core §7.2)
                 name = p[at:at+n].decode('ascii'); at += n
                 require(all(c in 'abcdefghijklmnopqrstuvwxyz0123456789-.' for c in name), 'list name')
                 entries.append({'fn': fn, 'instance': instance, 'revision': revision, 'name': name})

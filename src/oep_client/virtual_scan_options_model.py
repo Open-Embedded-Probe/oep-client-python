@@ -24,6 +24,8 @@ class ScanOptions(WireOptions):
                 continue
             if size!=known[tag]:raise Reject(3)                 # every copy's length is checked (core §2.3)
             if tag==1 and not struct.unpack('<I',value)[0]:raise Reject(3)   # max_speed 0 (debug §1)
+            if tag in result and (tag==1 and struct.unpack('<I',value)[0]<1000 or tag==4 and value[0] not in (0,1)):
+                raise Reject(11,bytes((raw,)))                  # a later copy's unhandled value (core §2.3)
             result.setdefault(tag,(raw,value))
         return result
     def dispatch_request(self,fn,op,payload,tags):

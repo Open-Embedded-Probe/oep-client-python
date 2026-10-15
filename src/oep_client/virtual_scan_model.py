@@ -22,6 +22,7 @@ class Scans(Attachments):
                 if raw&128:raise Reject(11,bytes((raw,)))
                 continue
             if size!=4 or not struct.unpack('<I',value)[0]:raise Reject(3)   # every copy; max_speed 0 (debug §1, core §2.3)
+            if tag in result and struct.unpack('<I',value)[0]<1000:raise Reject(11,bytes((raw,)))   # a later copy below min_clock_hz
             result.setdefault(tag,(raw,value))
         return result
     def dispatch_request(self,fn,op,payload,tags):

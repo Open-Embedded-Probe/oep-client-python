@@ -59,6 +59,7 @@ class SerialWire:
         self.stream = stream
         self.timeout, self.settle = timeout, settle
         self.max_frame = 64
+        self.op_wait_s = 1.0   # the request's processing bound: core_quick_op_max_ms until max_op_ms is read (core §4.4)
         self.last_exchange = {}
 
     def send(self, message):
@@ -81,10 +82,11 @@ class SerialWire:
             flush = getattr(self.stream, 'flush', None)
             if flush:
                 flush()
-            # Before transport kind is known, use the conservative UART wait floor (core §4.4).
+            # Before transport kind is known, use the conservative UART wait floor (core §4.4): the processing
+            # bound + host_wait_add_ms (1 s) + the transfer time.
             baud = getattr(self.stream, 'baudrate', 115200)
             transfer = (sum(map(len, chunks)) + self.max_frame * 3) * 10 / baud
-            deadline = time.monotonic() + max(self.timeout, 1 + transfer, silence + self.settle)
+            deadline = time.monotonic() + max(self.timeout, self.op_wait_s + 1 + transfer, silence + self.settle)
             quiet = time.monotonic() + silence if count == 0 else None
             while time.monotonic() < deadline:
                 self.stream.timeout = min(0.01, max(0, deadline - time.monotonic()))

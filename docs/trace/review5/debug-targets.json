@@ -1,0 +1,565 @@
+{
+ "reviewed_commit": "ebf0a7c",
+ "units": {
+  "debug:4:1": {
+   "verdict": "fixed",
+   "reason": "halt/resume are optional: riscv.RiscvDm.declared() now names halt and resume (it called them always there) and conformance_debug's context requires only dmi (16) in ops, running its halt/resume cases only when declared"
+  },
+  "debug:4:2": {
+   "verdict": "ok",
+   "reason": "hart 0 / hartsel: bench _hart0 clears hartsel for high-level ops and leaves the host's dmi hartsel; DebugChecks hart_selection checks the same; RV32 u32 fields in client/bench packing"
+  },
+  "debug:4:3": {
+   "verdict": "ok",
+   "reason": "halt row: bench answers ok when halted, timeout with haltreq cleared when allhalted never comes; debug model/checker require haltreq lowered in every case"
+  },
+  "debug:4:4": {
+   "verdict": "ok",
+   "reason": "resume row: one haltreq=0/resumereq=1, nothing restored; bench never re-issues (resume_misses -> state); checker counts one resume"
+  },
+  "debug:4:5": {
+   "verdict": "ok",
+   "reason": "step row: bench/step model lower dcsr.step, restore DATA1/DATA0, lower haltreq; step_left closes the connection; checker matches"
+  },
+  "debug:4:6": {
+   "verdict": "ok",
+   "reason": "reset row: bench/reset model release ndmreset, ack havereset, lower haltreq, mode 2 stays halted; checker matches"
+  },
+  "debug:4:7": {
+   "verdict": "ok",
+   "reason": "block row: block model restores GPRs, DATA1, DATA0, abstractauto, leaves progbuf/sysbus; checker follows the row's listed order"
+  },
+  "debug:4:8": {
+   "verdict": "fixed",
+   "reason": "run row (abstractauto と haltreq は戻す; general rule: DATA0 / DATA1 restored before success) names no DATA1/DATA0 order: conformance_run now requires each restored, not DATA1 first; bench/model restore before resumereq as required"
+  },
+  "debug:4:9": {
+   "verdict": "fixed",
+   "reason": "dmi row (host が DATA を使ったら host が戻す) with §4 'hart を走らせる前に、変える前の値を書き戻す': RiscvDm.reset() (mode 0 runs the hart) now calls restore_data() first; resume/step/run already did; bench raw dmi adds nothing"
+  },
+  "debug:4:10": {
+   "verdict": "ok",
+   "reason": "console read row: DATA0/DATA1 per console §3 (mailbox/dmseq models); bench console never touches DMI registers"
+  },
+  "debug:4:11": {
+   "verdict": "ok",
+   "reason": "dmi row: n(u16) steps -> done status nvals values; bench, debug model and client RiscvDm.dmi agree"
+  },
+  "debug:4:12": {
+   "verdict": "fixed",
+   "reason": "halt is optional (任意): same fix as debug:4:1 (RiscvDm.declared, DebugChecks context/cases)"
+  },
+  "debug:4:13": {
+   "verdict": "fixed",
+   "reason": "resume is optional (任意): same fix as debug:4:1 (RiscvDm.declared, DebugChecks context/cases)"
+  },
+  "debug:4:14": {
+   "verdict": "ok",
+   "reason": "reset op shape mode(u8) -> status flags pc: bench, model, client _reset agree"
+  },
+  "debug:4:15": {
+   "verdict": "ok",
+   "reason": "read_block shape: bench, block model, client read_block_result agree"
+  },
+  "debug:4:16": {
+   "verdict": "ok",
+   "reason": "write_block shape: bench, block model, client agree"
+  },
+  "debug:4:17": {
+   "verdict": "ok",
+   "reason": "run shape incl. n_out frame bound: bench (review4 fix), run model, client run_body/run_result agree"
+  },
+  "debug:4:18": {
+   "verdict": "ok",
+   "reason": "step shape status moved dpc_before dpc_after: bench, step model, client agree"
+  },
+  "debug:4.1:1": {
+   "verdict": "ok",
+   "reason": "dmi steps/kinds/args, unknown kind unsupported 0x00 with nothing run, short args malformed, done/nvals rules, 10+4r frame bound, wait sum bound, timeout at max_op_ms, one-request rules: bench _dm_op, debug model, client count_steps/dmi_value_count/held and DebugChecks agree with the text"
+  },
+  "debug:4.1:2": {
+   "verdict": "ok",
+   "reason": "dmi steps/kinds/args, unknown kind unsupported 0x00 with nothing run, short args malformed, done/nvals rules, 10+4r frame bound, wait sum bound, timeout at max_op_ms, one-request rules: bench _dm_op, debug model, client count_steps/dmi_value_count/held and DebugChecks agree with the text"
+  },
+  "debug:4.1:3": {
+   "verdict": "ok",
+   "reason": "dmi steps/kinds/args, unknown kind unsupported 0x00 with nothing run, short args malformed, done/nvals rules, 10+4r frame bound, wait sum bound, timeout at max_op_ms, one-request rules: bench _dm_op, debug model, client count_steps/dmi_value_count/held and DebugChecks agree with the text"
+  },
+  "debug:4.1:4": {
+   "verdict": "ok",
+   "reason": "dmi steps/kinds/args, unknown kind unsupported 0x00 with nothing run, short args malformed, done/nvals rules, 10+4r frame bound, wait sum bound, timeout at max_op_ms, one-request rules: bench _dm_op, debug model, client count_steps/dmi_value_count/held and DebugChecks agree with the text"
+  },
+  "debug:4.1:5": {
+   "verdict": "ok",
+   "reason": "dmi steps/kinds/args, unknown kind unsupported 0x00 with nothing run, short args malformed, done/nvals rules, 10+4r frame bound, wait sum bound, timeout at max_op_ms, one-request rules: bench _dm_op, debug model, client count_steps/dmi_value_count/held and DebugChecks agree with the text"
+  },
+  "debug:4.1:6": {
+   "verdict": "ok",
+   "reason": "dmi steps/kinds/args, unknown kind unsupported 0x00 with nothing run, short args malformed, done/nvals rules, 10+4r frame bound, wait sum bound, timeout at max_op_ms, one-request rules: bench _dm_op, debug model, client count_steps/dmi_value_count/held and DebugChecks agree with the text"
+  },
+  "debug:4.1:7": {
+   "verdict": "ok",
+   "reason": "dmi steps/kinds/args, unknown kind unsupported 0x00 with nothing run, short args malformed, done/nvals rules, 10+4r frame bound, wait sum bound, timeout at max_op_ms, one-request rules: bench _dm_op, debug model, client count_steps/dmi_value_count/held and DebugChecks agree with the text"
+  },
+  "debug:4.1:8": {
+   "verdict": "ok",
+   "reason": "dmi steps/kinds/args, unknown kind unsupported 0x00 with nothing run, short args malformed, done/nvals rules, 10+4r frame bound, wait sum bound, timeout at max_op_ms, one-request rules: bench _dm_op, debug model, client count_steps/dmi_value_count/held and DebugChecks agree with the text"
+  },
+  "debug:4.1:9": {
+   "verdict": "ok",
+   "reason": "dmi steps/kinds/args, unknown kind unsupported 0x00 with nothing run, short args malformed, done/nvals rules, 10+4r frame bound, wait sum bound, timeout at max_op_ms, one-request rules: bench _dm_op, debug model, client count_steps/dmi_value_count/held and DebugChecks agree with the text"
+  },
+  "debug:4.1:10": {
+   "verdict": "ok",
+   "reason": "dmi steps/kinds/args, unknown kind unsupported 0x00 with nothing run, short args malformed, done/nvals rules, 10+4r frame bound, wait sum bound, timeout at max_op_ms, one-request rules: bench _dm_op, debug model, client count_steps/dmi_value_count/held and DebugChecks agree with the text"
+  },
+  "debug:4.1:11": {
+   "verdict": "ok",
+   "reason": "dmi steps/kinds/args, unknown kind unsupported 0x00 with nothing run, short args malformed, done/nvals rules, 10+4r frame bound, wait sum bound, timeout at max_op_ms, one-request rules: bench _dm_op, debug model, client count_steps/dmi_value_count/held and DebugChecks agree with the text"
+  },
+  "debug:4.2:1": {
+   "verdict": "ok",
+   "reason": "halt/resume/step semantics (ok when halted, timeout, allresumeack, no resumereq repeat, step once, moved 0 ok, step_left, zeros unless ok): bench, step model, client StepError/ch32_flash.resume agree"
+  },
+  "debug:4.2:2": {
+   "verdict": "ok",
+   "reason": "halt/resume/step semantics (ok when halted, timeout, allresumeack, no resumereq repeat, step once, moved 0 ok, step_left, zeros unless ok): bench, step model, client StepError/ch32_flash.resume agree"
+  },
+  "debug:4.2:3": {
+   "verdict": "ok",
+   "reason": "halt/resume/step semantics (ok when halted, timeout, allresumeack, no resumereq repeat, step once, moved 0 ok, step_left, zeros unless ok): bench, step model, client StepError/ch32_flash.resume agree"
+  },
+  "debug:4.2:4": {
+   "verdict": "ok",
+   "reason": "halt/resume/step semantics (ok when halted, timeout, allresumeack, no resumereq repeat, step once, moved 0 ok, step_left, zeros unless ok): bench, step model, client StepError/ch32_flash.resume agree"
+  },
+  "debug:4.2:5": {
+   "verdict": "ok",
+   "reason": "halt/resume/step semantics (ok when halted, timeout, allresumeack, no resumereq repeat, step once, moved 0 ok, step_left, zeros unless ok): bench, step model, client StepError/ch32_flash.resume agree"
+  },
+  "debug:4.3:1": {
+   "verdict": "ok",
+   "reason": "reset modes 0/2 only (others unsupported 0x00), flags bit0/pc, success only with bit0 and cleanup, DM silence status line, other flag bits 0, havereset ack/haltreq lowered, no reset line: bench, reset model/checker, client agree"
+  },
+  "debug:4.3:2": {
+   "verdict": "ok",
+   "reason": "reset modes 0/2 only (others unsupported 0x00), flags bit0/pc, success only with bit0 and cleanup, DM silence status line, other flag bits 0, havereset ack/haltreq lowered, no reset line: bench, reset model/checker, client agree"
+  },
+  "debug:4.3:3": {
+   "verdict": "ok",
+   "reason": "reset modes 0/2 only (others unsupported 0x00), flags bit0/pc, success only with bit0 and cleanup, DM silence status line, other flag bits 0, havereset ack/haltreq lowered, no reset line: bench, reset model/checker, client agree"
+  },
+  "debug:4.3:4": {
+   "verdict": "ok",
+   "reason": "reset modes 0/2 only (others unsupported 0x00), flags bit0/pc, success only with bit0 and cleanup, DM silence status line, other flag bits 0, havereset ack/haltreq lowered, no reset line: bench, reset model/checker, client agree"
+  },
+  "debug:4.3:5": {
+   "verdict": "ok",
+   "reason": "reset modes 0/2 only (others unsupported 0x00), flags bit0/pc, success only with bit0 and cleanup, DM silence status line, other flag bits 0, havereset ack/haltreq lowered, no reset line: bench, reset model/checker, client agree"
+  },
+  "debug:4.3:6": {
+   "verdict": "ok",
+   "reason": "reset modes 0/2 only (others unsupported 0x00), flags bit0/pc, success only with bit0 and cleanup, DM silence status line, other flag bits 0, havereset ack/haltreq lowered, no reset line: bench, reset model/checker, client agree"
+  },
+  "debug:4.3:7": {
+   "verdict": "ok",
+   "reason": "reset modes 0/2 only (others unsupported 0x00), flags bit0/pc, success only with bit0 and cleanup, DM silence status line, other flag bits 0, havereset ack/haltreq lowered, no reset line: bench, reset model/checker, client agree"
+  },
+  "debug:4.3:8": {
+   "verdict": "ok",
+   "reason": "reset modes 0/2 only (others unsupported 0x00), flags bit0/pc, success only with bit0 and cleanup, DM silence status line, other flag bits 0, havereset ack/haltreq lowered, no reset line: bench, reset model/checker, client agree"
+  },
+  "debug:4.4:1": {
+   "verdict": "ok",
+   "reason": "run: ebreakm/prv M, no re-run, timeout_ms > max_op_ms unsupported, whole request within max_op_ms, stopped 0..3 with dpc/nvals validity, elapsed_us from resumereq, regno abstract numbers: bench, run model/checker, client RunResult agree"
+  },
+  "debug:4.4:2": {
+   "verdict": "ok",
+   "reason": "run: ebreakm/prv M, no re-run, timeout_ms > max_op_ms unsupported, whole request within max_op_ms, stopped 0..3 with dpc/nvals validity, elapsed_us from resumereq, regno abstract numbers: bench, run model/checker, client RunResult agree"
+  },
+  "debug:4.4:3": {
+   "verdict": "ok",
+   "reason": "run: ebreakm/prv M, no re-run, timeout_ms > max_op_ms unsupported, whole request within max_op_ms, stopped 0..3 with dpc/nvals validity, elapsed_us from resumereq, regno abstract numbers: bench, run model/checker, client RunResult agree"
+  },
+  "debug:4.4:4": {
+   "verdict": "ok",
+   "reason": "run: ebreakm/prv M, no re-run, timeout_ms > max_op_ms unsupported, whole request within max_op_ms, stopped 0..3 with dpc/nvals validity, elapsed_us from resumereq, regno abstract numbers: bench, run model/checker, client RunResult agree"
+  },
+  "debug:4.5:1": {
+   "verdict": "ok",
+   "reason": "blocks: words, max_length in bytes mandatory, count bounds per route, count 0 success, unaligned malformed, no probe-side copy, halted hart else state: bench, block model/checker, client BlockLength agree (review4 fixes kept)"
+  },
+  "debug:4.5:2": {
+   "verdict": "ok",
+   "reason": "blocks: words, max_length in bytes mandatory, count bounds per route, count 0 success, unaligned malformed, no probe-side copy, halted hart else state: bench, block model/checker, client BlockLength agree (review4 fixes kept)"
+  },
+  "debug:4.5:3": {
+   "verdict": "ok",
+   "reason": "blocks: words, max_length in bytes mandatory, count bounds per route, count 0 success, unaligned malformed, no probe-side copy, halted hart else state: bench, block model/checker, client BlockLength agree (review4 fixes kept)"
+  },
+  "debug:4.5:4": {
+   "verdict": "ok",
+   "reason": "blocks: words, max_length in bytes mandatory, count bounds per route, count 0 success, unaligned malformed, no probe-side copy, halted hart else state: bench, block model/checker, client BlockLength agree (review4 fixes kept)"
+  },
+  "debug:4.6:1": {
+   "verdict": "ok",
+   "reason": "attach acks pending havereset (bench flags bit0); auto ack in high-level ops and console reads with restart mark, none in raw dmi; reset op marks reset only: bench _ack_havereset/_host_reset, reset/dmseq models agree"
+  },
+  "debug:4.6:2": {
+   "verdict": "ok",
+   "reason": "attach acks pending havereset (bench flags bit0); auto ack in high-level ops and console reads with restart mark, none in raw dmi; reset op marks reset only: bench _ack_havereset/_host_reset, reset/dmseq models agree"
+  },
+  "debug:5:1": {
+   "verdict": "ok",
+   "reason": "swd ops/TLVs/kind 2/DPIDR id/method 0 only/wake/speed by DPIDR read/idle and rest levels/targetsel critical, one connection per pin pair, no console: client SwdWire, attach/wire-options/scan-options models and checkers agree; the bench has no swd"
+  },
+  "debug:5:2": {
+   "verdict": "ok",
+   "reason": "swd ops/TLVs/kind 2/DPIDR id/method 0 only/wake/speed by DPIDR read/idle and rest levels/targetsel critical, one connection per pin pair, no console: client SwdWire, attach/wire-options/scan-options models and checkers agree; the bench has no swd"
+  },
+  "debug:5:3": {
+   "verdict": "ok",
+   "reason": "swd ops/TLVs/kind 2/DPIDR id/method 0 only/wake/speed by DPIDR read/idle and rest levels/targetsel critical, one connection per pin pair, no console: client SwdWire, attach/wire-options/scan-options models and checkers agree; the bench has no swd"
+  },
+  "debug:5:4": {
+   "verdict": "ok",
+   "reason": "swd ops/TLVs/kind 2/DPIDR id/method 0 only/wake/speed by DPIDR read/idle and rest levels/targetsel critical, one connection per pin pair, no console: client SwdWire, attach/wire-options/scan-options models and checkers agree; the bench has no swd"
+  },
+  "debug:5:5": {
+   "verdict": "ok",
+   "reason": "swd ops/TLVs/kind 2/DPIDR id/method 0 only/wake/speed by DPIDR read/idle and rest levels/targetsel critical, one connection per pin pair, no console: client SwdWire, attach/wire-options/scan-options models and checkers agree; the bench has no swd"
+  },
+  "debug:5:6": {
+   "verdict": "ok",
+   "reason": "swd ops/TLVs/kind 2/DPIDR id/method 0 only/wake/speed by DPIDR read/idle and rest levels/targetsel critical, one connection per pin pair, no console: client SwdWire, attach/wire-options/scan-options models and checkers agree; the bench has no swd"
+  },
+  "debug:5:7": {
+   "verdict": "ok",
+   "reason": "swd ops/TLVs/kind 2/DPIDR id/method 0 only/wake/speed by DPIDR read/idle and rest levels/targetsel critical, one connection per pin pair, no console: client SwdWire, attach/wire-options/scan-options models and checkers agree; the bench has no swd"
+  },
+  "debug:5:8": {
+   "verdict": "ok",
+   "reason": "swd ops/TLVs/kind 2/DPIDR id/method 0 only/wake/speed by DPIDR read/idle and rest levels/targetsel critical, one connection per pin pair, no console: client SwdWire, attach/wire-options/scan-options models and checkers agree; the bench has no swd"
+  },
+  "debug:5:9": {
+   "verdict": "ok",
+   "reason": "swd ops/TLVs/kind 2/DPIDR id/method 0 only/wake/speed by DPIDR read/idle and rest levels/targetsel critical, one connection per pin pair, no console: client SwdWire, attach/wire-options/scan-options models and checkers agree; the bench has no swd"
+  },
+  "debug:5:10": {
+   "verdict": "ok",
+   "reason": "swd ops/TLVs/kind 2/DPIDR id/method 0 only/wake/speed by DPIDR read/idle and rest levels/targetsel critical, one connection per pin pair, no console: client SwdWire, attach/wire-options/scan-options models and checkers agree; the bench has no swd"
+  },
+  "debug:5:11": {
+   "verdict": "ok",
+   "reason": "swd ops/TLVs/kind 2/DPIDR id/method 0 only/wake/speed by DPIDR read/idle and rest levels/targetsel critical, one connection per pin pair, no console: client SwdWire, attach/wire-options/scan-options models and checkers agree; the bench has no swd"
+  },
+  "debug:5:12": {
+   "verdict": "ok",
+   "reason": "swd ops/TLVs/kind 2/DPIDR id/method 0 only/wake/speed by DPIDR read/idle and rest levels/targetsel critical, one connection per pin pair, no console: client SwdWire, attach/wire-options/scan-options models and checkers agree; the bench has no swd"
+  },
+  "debug:5:13": {
+   "verdict": "ok",
+   "reason": "swd ops/TLVs/kind 2/DPIDR id/method 0 only/wake/speed by DPIDR read/idle and rest levels/targetsel critical, one connection per pin pair, no console: client SwdWire, attach/wire-options/scan-options models and checkers agree; the bench has no swd"
+  },
+  "debug:5:14": {
+   "verdict": "ok",
+   "reason": "swd ops/TLVs/kind 2/DPIDR id/method 0 only/wake/speed by DPIDR read/idle and rest levels/targetsel critical, one connection per pin pair, no console: client SwdWire, attach/wire-options/scan-options models and checkers agree; the bench has no swd"
+  },
+  "debug:5:15": {
+   "verdict": "ok",
+   "reason": "swd ops/TLVs/kind 2/DPIDR id/method 0 only/wake/speed by DPIDR read/idle and rest levels/targetsel critical, one connection per pin pair, no console: client SwdWire, attach/wire-options/scan-options models and checkers agree; the bench has no swd"
+  },
+  "debug:6:1": {
+   "verdict": "ok",
+   "reason": "arm-adi transfer req bits, reserved bits unsupported with nothing run, raw ACK, WAIT retried, FAULT stop, nvals, 11+4r bound, blocks with max_length/TAR advance/SELECT-CSW kept/done = words sent: client ArmAdi/MemAp, ARM model and checkers agree"
+  },
+  "debug:6:2": {
+   "verdict": "ok",
+   "reason": "arm-adi transfer req bits, reserved bits unsupported with nothing run, raw ACK, WAIT retried, FAULT stop, nvals, 11+4r bound, blocks with max_length/TAR advance/SELECT-CSW kept/done = words sent: client ArmAdi/MemAp, ARM model and checkers agree"
+  },
+  "debug:6:3": {
+   "verdict": "ok",
+   "reason": "arm-adi transfer req bits, reserved bits unsupported with nothing run, raw ACK, WAIT retried, FAULT stop, nvals, 11+4r bound, blocks with max_length/TAR advance/SELECT-CSW kept/done = words sent: client ArmAdi/MemAp, ARM model and checkers agree"
+  },
+  "debug:6:4": {
+   "verdict": "ok",
+   "reason": "arm-adi transfer req bits, reserved bits unsupported with nothing run, raw ACK, WAIT retried, FAULT stop, nvals, 11+4r bound, blocks with max_length/TAR advance/SELECT-CSW kept/done = words sent: client ArmAdi/MemAp, ARM model and checkers agree"
+  },
+  "debug:6:5": {
+   "verdict": "ok",
+   "reason": "arm-adi transfer req bits, reserved bits unsupported with nothing run, raw ACK, WAIT retried, FAULT stop, nvals, 11+4r bound, blocks with max_length/TAR advance/SELECT-CSW kept/done = words sent: client ArmAdi/MemAp, ARM model and checkers agree"
+  },
+  "debug:6:6": {
+   "verdict": "ok",
+   "reason": "arm-adi transfer req bits, reserved bits unsupported with nothing run, raw ACK, WAIT retried, FAULT stop, nvals, 11+4r bound, blocks with max_length/TAR advance/SELECT-CSW kept/done = words sent: client ArmAdi/MemAp, ARM model and checkers agree"
+  },
+  "debug:6:7": {
+   "verdict": "ok",
+   "reason": "arm-adi transfer req bits, reserved bits unsupported with nothing run, raw ACK, WAIT retried, FAULT stop, nvals, 11+4r bound, blocks with max_length/TAR advance/SELECT-CSW kept/done = words sent: client ArmAdi/MemAp, ARM model and checkers agree"
+  },
+  "debug:6:8": {
+   "verdict": "ok",
+   "reason": "arm-adi transfer req bits, reserved bits unsupported with nothing run, raw ACK, WAIT retried, FAULT stop, nvals, 11+4r bound, blocks with max_length/TAR advance/SELECT-CSW kept/done = words sent: client ArmAdi/MemAp, ARM model and checkers agree"
+  },
+  "debug:7:1": {
+   "verdict": "ok",
+   "reason": "reference table: informative; the code uses the named registers only"
+  },
+  "debug:7:2": {
+   "verdict": "ok",
+   "reason": "reference table: informative; the code uses the named registers only"
+  },
+  "debug:7:3": {
+   "verdict": "ok",
+   "reason": "reference table: informative; the code uses the named registers only"
+  },
+  "console:pre:1": {
+   "verdict": "ok",
+   "reason": "interface row: oep.target.console revision 1 in bench, models and client"
+  },
+  "console:1:1": {
+   "verdict": "ok",
+   "reason": "op table / mechanism / describe mechanisms / unknown stream no_resource / other-kind unavailable 6 / swd connection unavailable 6 / no reuse / streams paging: bench _console, attach/mailbox models, client Console agree"
+  },
+  "console:1:2": {
+   "verdict": "ok",
+   "reason": "op table / mechanism / describe mechanisms / unknown stream no_resource / other-kind unavailable 6 / swd connection unavailable 6 / no reuse / streams paging: bench _console, attach/mailbox models, client Console agree"
+  },
+  "console:1:3": {
+   "verdict": "fixed",
+   "reason": "marks/clear/mark/write are optional (任意; 最小はopen/read/close/streams): conformance_attach's context required every console op; it now exempts these four (bench, client Console, conformance_oep_declarations and registered_ops already treated them as optional)"
+  },
+  "console:1:4": {
+   "verdict": "fixed",
+   "reason": "marks/clear/mark/write are optional (任意; 最小はopen/read/close/streams): conformance_attach's context required every console op; it now exempts these four (bench, client Console, conformance_oep_declarations and registered_ops already treated them as optional)"
+  },
+  "console:1:5": {
+   "verdict": "fixed",
+   "reason": "marks/clear/mark/write are optional (任意; 最小はopen/read/close/streams): conformance_attach's context required every console op; it now exempts these four (bench, client Console, conformance_oep_declarations and registered_ops already treated them as optional)"
+  },
+  "console:1:6": {
+   "verdict": "fixed",
+   "reason": "marks/clear/mark/write are optional (任意; 最小はopen/read/close/streams): conformance_attach's context required every console op; it now exempts these four (bench, client Console, conformance_oep_declarations and registered_ops already treated them as optional)"
+  },
+  "console:1:7": {
+   "verdict": "ok",
+   "reason": "op table / mechanism / describe mechanisms / unknown stream no_resource / other-kind unavailable 6 / swd connection unavailable 6 / no reuse / streams paging: bench _console, attach/mailbox models, client Console agree"
+  },
+  "console:1:8": {
+   "verdict": "ok",
+   "reason": "op table / mechanism / describe mechanisms / unknown stream no_resource / other-kind unavailable 6 / swd connection unavailable 6 / no reuse / streams paging: bench _console, attach/mailbox models, client Console agree"
+  },
+  "console:1:9": {
+   "verdict": "ok",
+   "reason": "op table / mechanism / describe mechanisms / unknown stream no_resource / other-kind unavailable 6 / swd connection unavailable 6 / no reuse / streams paging: bench _console, attach/mailbox models, client Console agree"
+  },
+  "console:1:10": {
+   "verdict": "ok",
+   "reason": "op table / mechanism / describe mechanisms / unknown stream no_resource / other-kind unavailable 6 / swd connection unavailable 6 / no reuse / streams paging: bench _console, attach/mailbox models, client Console agree"
+  },
+  "console:1:11": {
+   "verdict": "ok",
+   "reason": "op table / mechanism / describe mechanisms / unknown stream no_resource / other-kind unavailable 6 / swd connection unavailable 6 / no reuse / streams paging: bench _console, attach/mailbox models, client Console agree"
+  },
+  "console:1:12": {
+   "verdict": "ok",
+   "reason": "op table / mechanism / describe mechanisms / unknown stream no_resource / other-kind unavailable 6 / swd connection unavailable 6 / no reuse / streams paging: bench _console, attach/mailbox models, client Console agree"
+  },
+  "console:1:13": {
+   "verdict": "ok",
+   "reason": "op table / mechanism / describe mechanisms / unknown stream no_resource / other-kind unavailable 6 / swd connection unavailable 6 / no reuse / streams paging: bench _console, attach/mailbox models, client Console agree"
+  },
+  "console:1:14": {
+   "verdict": "ok",
+   "reason": "op table / mechanism / describe mechanisms / unknown stream no_resource / other-kind unavailable 6 / swd connection unavailable 6 / no reuse / streams paging: bench _console, attach/mailbox models, client Console agree"
+  },
+  "console:2:1": {
+   "verdict": "ok",
+   "reason": "stream rules: one live stream per connection (unavailable 6), release on close/connection/session, polling, dmseq sync per debug §4.6, marks only with marks, send queue accepted/partial/failed, dmseq 2 / DMDATA 3 bytes, queue dropped on close, clear leaves it: bench, mailbox/dmseq models and checkers agree"
+  },
+  "console:2:2": {
+   "verdict": "ok",
+   "reason": "stream rules: one live stream per connection (unavailable 6), release on close/connection/session, polling, dmseq sync per debug §4.6, marks only with marks, send queue accepted/partial/failed, dmseq 2 / DMDATA 3 bytes, queue dropped on close, clear leaves it: bench, mailbox/dmseq models and checkers agree"
+  },
+  "console:2:3": {
+   "verdict": "ok",
+   "reason": "stream rules: one live stream per connection (unavailable 6), release on close/connection/session, polling, dmseq sync per debug §4.6, marks only with marks, send queue accepted/partial/failed, dmseq 2 / DMDATA 3 bytes, queue dropped on close, clear leaves it: bench, mailbox/dmseq models and checkers agree"
+  },
+  "console:2:4": {
+   "verdict": "ok",
+   "reason": "stream rules: one live stream per connection (unavailable 6), release on close/connection/session, polling, dmseq sync per debug §4.6, marks only with marks, send queue accepted/partial/failed, dmseq 2 / DMDATA 3 bytes, queue dropped on close, clear leaves it: bench, mailbox/dmseq models and checkers agree"
+  },
+  "console:2:5": {
+   "verdict": "ok",
+   "reason": "stream rules: one live stream per connection (unavailable 6), release on close/connection/session, polling, dmseq sync per debug §4.6, marks only with marks, send queue accepted/partial/failed, dmseq 2 / DMDATA 3 bytes, queue dropped on close, clear leaves it: bench, mailbox/dmseq models and checkers agree"
+  },
+  "console:2:6": {
+   "verdict": "ok",
+   "reason": "stream rules: one live stream per connection (unavailable 6), release on close/connection/session, polling, dmseq sync per debug §4.6, marks only with marks, send queue accepted/partial/failed, dmseq 2 / DMDATA 3 bytes, queue dropped on close, clear leaves it: bench, mailbox/dmseq models and checkers agree"
+  },
+  "console:2:7": {
+   "verdict": "ok",
+   "reason": "stream rules: one live stream per connection (unavailable 6), release on close/connection/session, polling, dmseq sync per debug §4.6, marks only with marks, send queue accepted/partial/failed, dmseq 2 / DMDATA 3 bytes, queue dropped on close, clear leaves it: bench, mailbox/dmseq models and checkers agree"
+  },
+  "console:2:8": {
+   "verdict": "ok",
+   "reason": "stream rules: one live stream per connection (unavailable 6), release on close/connection/session, polling, dmseq sync per debug §4.6, marks only with marks, send queue accepted/partial/failed, dmseq 2 / DMDATA 3 bytes, queue dropped on close, clear leaves it: bench, mailbox/dmseq models and checkers agree"
+  },
+  "console:2:9": {
+   "verdict": "ok",
+   "reason": "stream rules: one live stream per connection (unavailable 6), release on close/connection/session, polling, dmseq sync per debug §4.6, marks only with marks, send queue accepted/partial/failed, dmseq 2 / DMDATA 3 bytes, queue dropped on close, clear leaves it: bench, mailbox/dmseq models and checkers agree"
+  },
+  "console:2:10": {
+   "verdict": "ok",
+   "reason": "stream rules: one live stream per connection (unavailable 6), release on close/connection/session, polling, dmseq sync per debug §4.6, marks only with marks, send queue accepted/partial/failed, dmseq 2 / DMDATA 3 bytes, queue dropped on close, clear leaves it: bench, mailbox/dmseq models and checkers agree"
+  },
+  "console:2:11": {
+   "verdict": "ok",
+   "reason": "stream rules: one live stream per connection (unavailable 6), release on close/connection/session, polling, dmseq sync per debug §4.6, marks only with marks, send queue accepted/partial/failed, dmseq 2 / DMDATA 3 bytes, queue dropped on close, clear leaves it: bench, mailbox/dmseq models and checkers agree"
+  },
+  "console:2:12": {
+   "verdict": "ok",
+   "reason": "stream rules: one live stream per connection (unavailable 6), release on close/connection/session, polling, dmseq sync per debug §4.6, marks only with marks, send queue accepted/partial/failed, dmseq 2 / DMDATA 3 bytes, queue dropped on close, clear leaves it: bench, mailbox/dmseq models and checkers agree"
+  },
+  "console:2:13": {
+   "verdict": "ok",
+   "reason": "stream rules: one live stream per connection (unavailable 6), release on close/connection/session, polling, dmseq sync per debug §4.6, marks only with marks, send queue accepted/partial/failed, dmseq 2 / DMDATA 3 bytes, queue dropped on close, clear leaves it: bench, mailbox/dmseq models and checkers agree"
+  },
+  "console:2:14": {
+   "verdict": "ok",
+   "reason": "stream rules: one live stream per connection (unavailable 6), release on close/connection/session, polling, dmseq sync per debug §4.6, marks only with marks, send queue accepted/partial/failed, dmseq 2 / DMDATA 3 bytes, queue dropped on close, clear leaves it: bench, mailbox/dmseq models and checkers agree"
+  },
+  "console:2:15": {
+   "verdict": "ok",
+   "reason": "stream rules: one live stream per connection (unavailable 6), release on close/connection/session, polling, dmseq sync per debug §4.6, marks only with marks, send queue accepted/partial/failed, dmseq 2 / DMDATA 3 bytes, queue dropped on close, clear leaves it: bench, mailbox/dmseq models and checkers agree"
+  },
+  "console:2:16": {
+   "verdict": "ok",
+   "reason": "stream rules: one live stream per connection (unavailable 6), release on close/connection/session, polling, dmseq sync per debug §4.6, marks only with marks, send queue accepted/partial/failed, dmseq 2 / DMDATA 3 bytes, queue dropped on close, clear leaves it: bench, mailbox/dmseq models and checkers agree"
+  },
+  "console:2:17": {
+   "verdict": "ok",
+   "reason": "stream rules: one live stream per connection (unavailable 6), release on close/connection/session, polling, dmseq sync per debug §4.6, marks only with marks, send queue accepted/partial/failed, dmseq 2 / DMDATA 3 bytes, queue dropped on close, clear leaves it: bench, mailbox/dmseq models and checkers agree"
+  },
+  "console:3:1": {
+   "verdict": "ok",
+   "reason": "mechanism table and halted/busy rule (DMSTATUS before DATA0 after a riscv-dm request, nothing while anyhalted): mailbox/debug models and checkers agree"
+  },
+  "console:3:2": {
+   "verdict": "ok",
+   "reason": "mechanism table and halted/busy rule (DMSTATUS before DATA0 after a riscv-dm request, nothing while anyhalted): mailbox/debug models and checkers agree"
+  },
+  "console:3:3": {
+   "verdict": "ok",
+   "reason": "mechanism table and halted/busy rule (DMSTATUS before DATA0 after a riscv-dm request, nothing while anyhalted): mailbox/debug models and checkers agree"
+  },
+  "console:3:4": {
+   "verdict": "ok",
+   "reason": "mechanism table and halted/busy rule (DMSTATUS before DATA0 after a riscv-dm request, nothing while anyhalted): mailbox/debug models and checkers agree"
+  },
+  "console:3:5": {
+   "verdict": "ok",
+   "reason": "mechanism table and halted/busy rule (DMSTATUS before DATA0 after a riscv-dm request, nothing while anyhalted): mailbox/debug models and checkers agree"
+  },
+  "console:3.1:1": {
+   "verdict": "ok",
+   "reason": "SDI byte layout, L 1..7 read DATA1 then write 0, L >= 8 cleared, no write (unsupported): mailbox model/checker and bench agree"
+  },
+  "console:3.1:2": {
+   "verdict": "ok",
+   "reason": "SDI byte layout, L 1..7 read DATA1 then write 0, L >= 8 cleared, no write (unsupported): mailbox model/checker and bench agree"
+  },
+  "console:3.1:3": {
+   "verdict": "ok",
+   "reason": "SDI byte layout, L 1..7 read DATA1 then write 0, L >= 8 cleared, no write (unsupported): mailbox model/checker and bench agree"
+  },
+  "console:3.1:4": {
+   "verdict": "ok",
+   "reason": "SDI byte layout, L 1..7 read DATA1 then write 0, L >= 8 cleared, no write (unsupported): mailbox model/checker and bench agree"
+  },
+  "console:3.2:1": {
+   "verdict": "ok",
+   "reason": "DMDATA status byte, T bit, bit 6 ignored, L 5..11 bytes, L 4 empty frame, invalid L cleared with no input, one DATA0 answer of up to 3 queue bytes, DATA1 never written: mailbox model/checker agree"
+  },
+  "console:3.2:2": {
+   "verdict": "ok",
+   "reason": "DMDATA status byte, T bit, bit 6 ignored, L 5..11 bytes, L 4 empty frame, invalid L cleared with no input, one DATA0 answer of up to 3 queue bytes, DATA1 never written: mailbox model/checker agree"
+  },
+  "console:3.2:3": {
+   "verdict": "ok",
+   "reason": "DMDATA status byte, T bit, bit 6 ignored, L 5..11 bytes, L 4 empty frame, invalid L cleared with no input, one DATA0 answer of up to 3 queue bytes, DATA1 never written: mailbox model/checker agree"
+  },
+  "console:3.2:4": {
+   "verdict": "ok",
+   "reason": "DMDATA status byte, T bit, bit 6 ignored, L 5..11 bytes, L 4 empty frame, invalid L cleared with no input, one DATA0 answer of up to 3 queue bytes, DATA1 never written: mailbox model/checker agree"
+  },
+  "console:3.2:5": {
+   "verdict": "ok",
+   "reason": "DMDATA status byte, T bit, bit 6 ignored, L 5..11 bytes, L 4 empty frame, invalid L cleared with no input, one DATA0 answer of up to 3 queue bytes, DATA1 never written: mailbox model/checker agree"
+  },
+  "console:3.2:6": {
+   "verdict": "ok",
+   "reason": "DMDATA status byte, T bit, bit 6 ignored, L 5..11 bytes, L 4 empty frame, invalid L cleared with no input, one DATA0 answer of up to 3 queue bytes, DATA1 never written: mailbox model/checker agree"
+  },
+  "console:3.2:7": {
+   "verdict": "ok",
+   "reason": "DMDATA status byte, T bit, bit 6 ignored, L 5..11 bytes, L 4 empty frame, invalid L cleared with no input, one DATA0 answer of up to 3 queue bytes, DATA1 never written: mailbox model/checker agree"
+  },
+  "console:3.2:8": {
+   "verdict": "ok",
+   "reason": "DMDATA status byte, T bit, bit 6 ignored, L 5..11 bytes, L 4 empty frame, invalid L cleared with no input, one DATA0 answer of up to 3 queue bytes, DATA1 never written: mailbox model/checker agree"
+  },
+  "console:3.2:9": {
+   "verdict": "ok",
+   "reason": "DMDATA status byte, T bit, bit 6 ignored, L 5..11 bytes, L 4 empty frame, invalid L cleared with no input, one DATA0 answer of up to 3 queue bytes, DATA1 never written: mailbox model/checker agree"
+  },
+  "console:3.2:10": {
+   "verdict": "ok",
+   "reason": "DMDATA status byte, T bit, bit 6 ignored, L 5..11 bytes, L 4 empty frame, invalid L cleared with no input, one DATA0 answer of up to 3 queue bytes, DATA1 never written: mailbox model/checker agree"
+  },
+  "console:3.2:11": {
+   "verdict": "ok",
+   "reason": "DMDATA status byte, T bit, bit 6 ignored, L 5..11 bytes, L 4 empty frame, invalid L cleared with no input, one DATA0 answer of up to 3 queue bytes, DATA1 never written: mailbox model/checker agree"
+  },
+  "console:3.2:12": {
+   "verdict": "ok",
+   "reason": "DMDATA status byte, T bit, bit 6 ignored, L 5..11 bytes, L 4 empty frame, invalid L cleared with no input, one DATA0 answer of up to 3 queue bytes, DATA1 never written: mailbox model/checker agree"
+  },
+  "console:4:1": {
+   "verdict": "ok",
+   "reason": "reference table: informative"
+  }
+ },
+ "divergences": [
+  {
+   "unit": "debug:4:1",
+   "spec": "- **必須のopはdmiだけ**。halt、resume、reset、read_block、write_block、run、stepは任意で、describeのopsで宣言する",
+   "code": "src/oep_client/riscv.py:RiscvDm.declared (OPTIONAL)",
+   "fix": "halt and resume added to OPTIONAL, so declared() reports them only when the ops tag sets them (the docstring said 'dmi, halt and resume are always there')"
+  },
+  {
+   "unit": "debug:4:1",
+   "spec": "- **必須のopはdmiだけ**。halt、resume、reset、read_block、write_block、run、stepは任意で、describeのopsで宣言する",
+   "code": "src/oep_client/conformance_debug.py:DebugChecks.run (context)",
+   "fix": "context required {16,17,18} as 'mandatory debug ops'; now only 16 (dmi), and the halt/resume cases run only when 17/18 are declared"
+  },
+  {
+   "unit": "console:1:3",
+   "spec": "方式はdescribeのmechanisms、操作はopsで宣言する。最小はopen/read/close/streamsで、marksのリングや送信queueを持たなくてよい。",
+   "code": "src/oep_client/conformance_attach.py:AttachChecks.run (context)",
+   "fix": "'mandatory standard ops missing' required every console op but scan; marks/clear/mark/write are now exempt for oep.target.console"
+  },
+  {
+   "unit": "debug:4:8",
+   "spec": "| run | pc、host が指定した GPR、dcsr（ebreakm、prv）、haltreq | **host の指示どおりに変えたまま返す**（host の責任）。abstractauto と haltreq は戻す |",
+   "code": "src/oep_client/conformance_run.py:RunChecks.loader",
+   "fix": "'run DATA1/DATA0 restore order' required DATA1 written back before DATA0, an order the run row does not give; now each of DATA1 and DATA0 must be restored (the fault case restore_order dropped from test_conformance_run)"
+  },
+  {
+   "unit": "debug:4:9",
+   "spec": "host は、dmi の要求で抽象コマンドなどを使って DATA0 / DATA1 を変えたら、hart を走らせる前に、変える前の値を書き戻す。",
+   "code": "src/oep_client/riscv.py:RiscvDm.reset",
+   "fix": "reset() (mode 0: the hart runs) calls restore_data() first; it left DATA0 changed and data_saved stale, so a later resume wrote the pre-reset value over the restarted firmware's mailbox"
+  }
+ ]
+}
