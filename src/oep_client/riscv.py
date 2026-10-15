@@ -545,6 +545,66 @@ def count_steps(steps: bytes) -> list[int]:
     return kinds
 
 
+# DM registers a host's own group may write over and over while the hart is halted: the abstract command's
+# scratch (cmderr's clear, DATA0, DATA1) - no target state, and the console leaves them alone while the hart is
+# halted (console §3)
+SCRATCH_WRITES = {ABSTRACTCS, DATA0, 0x05}
+RERUN_RULE = None                                  # which groups with writes are run again: same_value_rewrites (below)
+NO_SIDE_EFFECT_READS = set(range(0x1000, 0x1020)) | {0x7B0, 0x7B1}   # the GPRs, dcsr, dpc
+
+
+def same_value_rewrites(steps: bytes) -> bool:
+    """Whether a step list writes nothing but the DM's scratch, register reads as `target_state_untouched` takes, and
+    access-register commands that write (transfer 1, write 1, postexec 0, aarsize 32) a register whose write has no
+    side effect beyond its value (NO_SIDE_EFFECT_READS: the GPRs, dcsr, dpc) from DATA0 written in the same group: run
+    again, it writes the same value to the same register, and the target ends as one run leaves it."""
+    at, data0_set = 0, False
+    while at < len(steps):
+        kind = steps[at]
+        if kind == STEP_WRITE:
+            address, value = steps[at + 1], struct.unpack_from("<I", steps, at + 2)[0]
+            if address == COMMAND:
+                cmdtype, size, postexec, transfer, write = (value >> 24, (value >> 20) & 7, (value >> 18) & 1,
+                                                           (value >> 17) & 1, (value >> 16) & 1)
+                if (cmdtype, size, postexec, transfer) != (0, 2, 0, 1) or value & 0xFFFF not in NO_SIDE_EFFECT_READS \
+                        or (write and not data0_set):
+                    return False
+                data0_set = False                  # a read command fills DATA0: the next write needs its own
+            elif address == DATA0:
+                data0_set = True
+            elif address not in SCRATCH_WRITES:
+                return False
+        size = STEP_SIZES.get(kind)
+        if size is None:
+            return False
+        at += size
+    return True
+
+
+def target_state_untouched(steps: bytes) -> bool:
+    """Whether a step list writes nothing but the DM's scratch (SCRATCH_WRITES) and access-register commands that
+    read (transfer 1, write 0, postexec 0, aarsize 32) a register whose read has no side effect: a group that leaves
+    the target as it found it, so running it again cannot add an effect (debug §4.1 proposal, spec-follow U4)."""
+    at = 0
+    while at < len(steps):
+        kind = steps[at]
+        if kind == STEP_WRITE:
+            address, value = steps[at + 1], struct.unpack_from("<I", steps, at + 2)[0]
+            if address == COMMAND:
+                cmdtype, size, postexec, transfer, write = (value >> 24, (value >> 20) & 7, (value >> 18) & 1,
+                                                           (value >> 17) & 1, (value >> 16) & 1)
+                if (cmdtype, size, postexec, transfer, write) != (0, 2, 0, 1, 0) or \
+                        value & 0xFFFF not in NO_SIDE_EFFECT_READS:
+                    return False
+            elif address not in SCRATCH_WRITES:
+                return False
+        size = STEP_SIZES.get(kind)
+        if size is None:
+            return False
+        at += size
+    return True
+
+
 def dmi_wait_ms(raw: bytes) -> int:
     """The time a step list may take by its waits and time-bounded polls (wait_us, poll_us), in ms (rounded up)."""
     us, at = 0, 0
@@ -635,7 +695,7 @@ class RiscvDm(Interface, BlockLength):
         return self.step_read(DMSTATUS) + self.step_read(DMCONTROL)
 
     def held(self, steps: bytes | list[bytes], what: str = "DMI group", tries: int = HELD_TRIES,
-             agree=None) -> list[int]:
+             agree=None, rerun=None) -> list[int]:
         """Run a DMI group with the link looked at around it, in one dmi request: look, the steps, look. -> the
         values of the steps (the looks' taken off). A debug link may drop for a while after a change of hart state (a
         CH32L103 behind an RVSWD probe, about 0.7 - 2 ms): writes are then lost and reads give the last value read or
@@ -644,14 +704,17 @@ class RiscvDm(Interface, BlockLength):
         probe did not bring it up again between the looks (its revive after a rest), which a probe with the per-request
         check (oep-probe-arduino 0.0.29-dev, the 2026-10-06 debug-link proposal P4) answers status line. A try that
         stopped with a status a drop can cause (line, timeout, wait) before reaching any of its writes is run again
-        after HELD_RETRY_S, `tries` times at most; so is a try of a group of reads only whose looks do not pass or whose
-        values `agree` (when given) does not take; then LinkNotHeld. A group with writes whose looks or values do not
-        pass raises LinkNotHeld at once: its writes ran over a link it could not confirm, their effect is unknown, and
-        a new corr does not repeat them (common §3; core §4.2 - spec-follow notes row 7 / U4 ask whether this may be
-        relaxed). Any other stop - a failed try that reached a write included - raises StepListError at once."""
+        after HELD_RETRY_S, `tries` times at most; so is a try whose looks do not pass or whose values `agree` (when
+        given) does not take; then LinkNotHeld. Past a write that holds only for a group that may run again (`rerun`,
+        default `same_value_rewrites`: the DM's scratch and 32-bit register reads, and writes of the same value, of
+        registers without side effects - debug §4.1): it leaves the target as one run does. Any other group with
+        writes is not run again once a try reached them - their effect is unknown (common §3; core §4.2): LinkNotHeld
+        when its looks or values did not pass, StepListError when it failed."""
         raw = b"".join(steps) if isinstance(steps, list) else steps
         look = self.look()
         kinds = count_steps(look + raw + look)
+        # debug §4.1: a group whose writes leave the target as one run of it does may be run again on a new corr
+        rerun_ok = rerun if rerun is not None else (RERUN_RULE or same_value_rewrites)(raw)
         last = None
         for attempt in range(tries):
             if attempt:
@@ -661,7 +724,7 @@ class RiscvDm(Interface, BlockLength):
             except StepListError as e:
                 # a try that stopped at or after one of its writes is not run again: failed / done 0 is no proof the
                 # write did not reach the target (common §3; core §4.2: no automatic re-run on a failure alone)
-                if e.status not in HELD_RETRY_STATUSES or STEP_WRITE in kinds[:e.done + 1]:
+                if e.status not in HELD_RETRY_STATUSES or (STEP_WRITE in kinds[:e.done + 1] and not rerun_ok):
                     raise
                 last = e
                 continue
@@ -671,7 +734,7 @@ class RiscvDm(Interface, BlockLength):
                 last = "values that do not agree: " + " ".join(f"{v:#010x}" for v in values[2:-2])
             else:
                 return values[2:-2]
-            if STEP_WRITE in kinds:
+            if STEP_WRITE in kinds and not rerun_ok:
                 # the try ran all its writes over a link it could not confirm: their effect is unknown, and a new
                 # corr does not repeat them (common §3; core §4.2). Only a group of reads is tried again.
                 raise LinkNotHeld(what, attempt + 1, f"{last}; a group with writes is not run again (common §3)")
@@ -755,6 +818,17 @@ class RiscvDm(Interface, BlockLength):
         write done again (the same value: a register write may be redone), as in read_register."""
         what = f"write_register {regno:#x}"
         self._save_data()
+        if regno in NO_SIDE_EFFECT_READS:
+            # read back in the same group (DATA0 first set to a sentinel): a write or command missed between looks
+            # that pass - the old DATA0 written, or nothing - does not read back as the value (a CH32L103 flicker)
+            steps = (self._abstract(0x00230000 | regno, self.step_write(DATA0, value))
+                     + self._abstract(0x00220000 | regno, self.step_write(DATA0, value ^ 0xFFFFFFFF))
+                     + self.step_read(DATA0))
+            cs, cs2, back = self._held_abstract(
+                steps, what, lambda v: CMDERR_PARITY not in (_cmderr_of(v[0]), _cmderr_of(v[1]))
+                and (bool((v[0] | v[1]) & 0x700) or v[2] == value))
+            self._cmderr(cs | cs2, what)
+            return
         (cs,) = self._held_abstract(self._abstract(0x00230000 | regno, self.step_write(DATA0, value)), what,
                                     lambda values: _cmderr_of(values[0]) != CMDERR_PARITY)
         self._cmderr(cs, what)

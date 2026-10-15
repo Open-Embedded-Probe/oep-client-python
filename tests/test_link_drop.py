@@ -184,10 +184,10 @@ def test_link_not_held_says_what_and_how_often():
     n = len(ep.requests)
     with pytest.raises(riscv.LinkNotHeld) as e:
         d.read_register(S0)
-    # the command group writes: one try, not run again over a link it could not confirm (common §3)
-    assert e.value.tries == 1 and "read_register 0x1008" in str(e.value) and "not run again" in str(e.value)
+    # the command group writes only the DM's scratch and reads a GPR: run again (debug §4.1), every try, no more
+    assert e.value.tries == riscv.HELD_TRIES and "read_register 0x1008" in str(e.value)
     dmi = [r for r in ep.requests[n:] if (r.fn, r.op) == (d.fn, riscv.RiscvDm.DMI)]
-    assert len(dmi) == 1                                         # that try, nothing more
+    assert len(dmi) == riscv.HELD_TRIES
 
 
 def test_a_drop_lasting_fewer_requests_than_the_tries_is_ridden_out():
@@ -234,15 +234,44 @@ def test_a_group_that_keeps_failing_on_the_line_before_any_write_is_tried_then_r
 def test_a_failed_try_that_reached_a_write_is_never_run_again():
     """common §3: failed or done 0 is no proof a write did not reach the target, so a failed write is not repeated by
     a new corr (core §4.2: no automatic re-run on a failure alone). A held group whose try stopped at or after one of
-    its writes raises at once - one dmi request, the COMMAND write sent once."""
+    its writes raises at once - one dmi request, the COMMAND write sent once - unless its writes are ones debug §4.1
+    lets run again: a CSR such as mstatus may have side effects, so its write is not."""
     ep, hst, tg, d = bench()
-    d.read_register(S0)                                          # DATA0 saved: the next read is the command group alone
+    d.read_register(S0)                                          # DATA0 saved: the next group is the command alone
     tg.fail_write.add(riscv.COMMAND)
     before = len(ep.requests)
     with pytest.raises(riscv.StepListError) as e:
-        d.read_register(S0)
+        d.write_register(uiapduino.MSTATUS, 0)
     assert e.value.status == riscv.STATUS["line"]
     assert len(ep.requests) == before + 1
+
+
+def test_a_failed_group_of_scratch_and_register_reads_is_run_again():
+    """debug §4.1: a group that writes only the DM's scratch and reads a register without side effects leaves the
+    target as one run does, so a try that failed after its writes is run again on a new corr, HELD_TRIES at most."""
+    ep, hst, tg, d = bench()
+    d.read_register(S0)
+    tg.fail_write.add(riscv.COMMAND)
+    before = len(ep.requests)
+    with pytest.raises(riscv.LinkNotHeld) as e:
+        d.read_register(S0)
+    assert e.value.tries == riscv.HELD_TRIES and len(ep.requests) == before + riscv.HELD_TRIES
+    tg.fail_write.clear()
+    assert d.read_register(S0) == VALUE
+
+
+@pytest.mark.parametrize("steps, again", [
+    (lambda d: d._abstract(0x00220000 | S0, d.step_write(riscv.DATA0, 0)) + d.step_read(riscv.DATA0), True),
+    (lambda d: d._abstract(0x00230000 | S0, d.step_write(riscv.DATA0, 5)), True),     # the same value to a GPR
+    (lambda d: d._abstract(0x00230000 | S0), False),                                    # DATA0 not set in the group
+    (lambda d: d._abstract(0x00230000 | uiapduino.MSTATUS, d.step_write(riscv.DATA0, 0)), False),   # a CSR
+    (lambda d: d._abstract(0x00260000 | S0, d.step_write(riscv.DATA0, 0)), False),     # postexec
+    (lambda d: d.step_write(riscv.DMCONTROL, 0x40000001), False),                       # resumereq
+    (lambda d: d.step_write(0x18, 1), False),                                           # abstractauto
+], ids=["read", "same-value-gpr-write", "write-without-data0", "csr-write", "postexec", "resumereq", "abstractauto"])
+def test_which_groups_may_run_again(steps, again):
+    ep, hst, tg, d = bench()
+    assert riscv.same_value_rewrites(steps(d)) is again
 
 
 # ---- cmderr 6: a frame the module took for one with a bad parity (QingKe) - a missed access, not a failed command ----
@@ -266,23 +295,23 @@ def _no_cmderr(tg) -> bool:
     return not (tg.dmi.get(riscv.ABSTRACTCS, 0) >> 8) & 7
 
 
-def test_cmderr_6_is_a_failed_try_and_the_group_is_not_run_again():
+def test_cmderr_6_is_a_failed_try_and_the_group_is_run_again():
     """A write missed with cmderr 6 set (QingKe's "parity bit error": the module ignored the frame) at every access of
     read_register and write_register (bench, oep-probe-arduino 0.0.29-dev+f594f04, tests/hw test_wire on a CH32L103
     through an RVSWD probe: "read_register 0x100a / 0x1009 / 0x100b failed (cmderr 6)", 3 of 8 runs). It raised
-    RuntimeError. The group writes, so it is not run again (common §3): LinkNotHeld, cmderr cleared, never a wrong
-    value."""
+    RuntimeError; now the group is cleared and run again within the tries (debug §4.1: its writes are the DM's
+    scratch and the same value to a GPR): the right value, no cmderr left."""
     old = sweep(lambda d, tg: old_cmderr_read_register(d, S0), lambda tg, v: v == VALUE, modes=("glitch_parity",))
     assert ("RuntimeError" in {name for _, _, name in old["raised"]})
     new = sweep(lambda d, tg: (d.read_register(S0), _no_cmderr(tg)), lambda tg, v: v == (VALUE, True),
                 modes=("glitch_parity",))
-    assert not new["wrong"] and {name for _, _, name in new["raised"]} <= {"LinkNotHeld"} and new["raised"]
+    assert not new["wrong"] and not new["raised"] and new["right"]
 
     def write(d, tg):
         d.write_register(S0, 0x13572468)
         return tg.regs[S0], _no_cmderr(tg)
     got = sweep(write, lambda tg, v: v == (0x13572468, True), modes=("glitch_parity",))
-    assert not got["wrong"] and {name for _, _, name in got["raised"]} <= {"LinkNotHeld"} and got["raised"]
+    assert not got["wrong"] and not got["raised"] and got["right"]
 
 
 def test_cmderr_6_twice_in_a_read_never_gives_a_wrong_register():
@@ -312,7 +341,7 @@ def test_cmderr_6_at_every_try_raises_link_not_held_and_leaves_no_cmderr():
     tg.abstract = parity
     with pytest.raises(riscv.LinkNotHeld) as e:
         d.read_register(S0)
-    assert e.value.tries == 1 and _no_cmderr(tg)                 # a group with writes: one try (common §3)
+    assert e.value.tries == riscv.HELD_TRIES and _no_cmderr(tg)
     with pytest.raises(riscv.LinkNotHeld):
         d.write_register(S0, 1)
     assert _no_cmderr(tg)
@@ -357,10 +386,22 @@ def test_run_payload_places_and_starts_the_payload_on_the_virtual_bench():
     ep, hst, tg, d = bench()
     wire = riscv.Wire(hst)
     wire.detach(d.conn)
-    tg.drop_at = {tg.dmi_accesses + 9: "stale"}                  # inside the dpc write's group
-    with pytest.raises(riscv.LinkNotHeld):                       # met, and not run again (common §3)
-        uiapduino.run_payload(hst, wire, [0x0000006F])
-    assert tg.lost_writes and tg.halted                          # the hart is not started on an unconfirmed write
+    ridden = []                                                  # drops met in a group that may run again (the
+    for k in range(40):                                          # dpc write and the reads, debug §4.1)
+        ep, hst, tg, d = bench()
+        wire = riscv.Wire(hst)
+        wire.detach(d.conn)
+        tg.regs[uiapduino.MSTATUS] = 0x88
+        tg.drop_at = {tg.dmi_accesses + k: "stale"}
+        try:
+            uiapduino.run_payload(hst, wire, [0x0000006F])
+        except (host.OepError, RuntimeError):
+            assert tg.halted                                     # never started on what it could not confirm
+            continue
+        assert tg.dpc == uiapduino.PAYLOAD_BASE and tg.regs[uiapduino.MSTATUS] == 0 and not tg.halted
+        if tg.lost_writes:
+            ridden.append(k)
+    assert ridden
 
 
 # ---- ch32_flash.resume reads dpc right after a resume (a change of state) --------------------------------------------

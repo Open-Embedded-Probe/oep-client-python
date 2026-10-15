@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- (JA) oep-spec bd40a9c（debug §4.1「やり直してよい群」）に追従。`RiscvDm.held` は、DM の作業用レジスタと、値のほかに作用の無いレジスタ
+  （GPR、dpc、dcsr）の読み書きだけの群（`same_value_rewrites`）を、確かめられなかったときに新しい corr でやり直す。それ以外の書き込みを含む群はやり直さない。
+  `write_register` は GPR / dpc / dcsr で同じ群に読み戻しを入れ、線のちらつきで取りこぼした書き込みを成功として返さない（以前は黙って書き損じた）。
+  仮想ベンチのリンク断のモデル（5 種、全アクセス位置）での試算: read_register 38.9% → 100%、write_register 36.7% → 96.7%、dpc の読み 34.7% → 97.9%、
+  誤った値・誤った書き込みは 0 件。
+
 - (JA) `RiscvDm.held`: 応答が success でも前後の look や二度読みが合わなかった群のうち、書き込みを含むものはやり直さず、
   LinkNotHeld で止める（common §3、core §4.2: 作用が不明な書き込みを新しい corr で繰り返さない）。読むだけの群はこれまでどおりやり直す。
   落ちやすい debug link（CH32L103 と RVSWD）では read_register / write_register が LinkNotHeld になりやすくなる。緩めてよいかは仕様の判断を待つ

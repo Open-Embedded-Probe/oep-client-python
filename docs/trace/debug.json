@@ -1300,6 +1300,38 @@
    ],
    "note": "a reset-and-halt sequence (haltreq, ndmreset, havereset ack, wait, haltreq clear) in one dmi request"
   },
+  "debug:4.1:12": {
+   "text": "- **やり直してよい群**（[共通部品](oep-if-common.ja.m",
+   "verify": [
+    "tests/test_link_drop.py::test_a_failed_group_of_scratch_and_register_reads_is_run_again",
+    "tests/test_link_drop.py::test_a_failed_try_that_reached_a_write_is_never_run_again",
+    "tests/test_link_drop.py::test_cmderr_6_is_a_failed_try_and_the_group_is_run_again"
+   ],
+   "mutants": [],
+   "note": "a group the host could not confirm is run again on a new corr only when its writes are the ones this unit lists"
+  },
+  "debug:4.1:13": {
+   "text": "1. ABSTRACTCS への cmderr の消去と、DATA0 / DAT",
+   "verify": [
+    "tests/test_link_drop.py::test_which_groups_may_run_again[read]",
+    "tests/test_link_drop.py::test_which_groups_may_run_again[abstractauto]"
+   ],
+   "mutants": [],
+   "note": "cmderr clear and DATA0/DATA1 writes are scratch; abstractauto is not"
+  },
+  "debug:4.1:14": {
+   "text": "2. aarsize 2（32 bit）、transfer 1、postexec",
+   "verify": [
+    "tests/test_link_drop.py::test_which_groups_may_run_again[same-value-gpr-write]",
+    "tests/test_link_drop.py::test_which_groups_may_run_again[write-without-data0]",
+    "tests/test_link_drop.py::test_which_groups_may_run_again[csr-write]",
+    "tests/test_link_drop.py::test_which_groups_may_run_again[postexec]",
+    "tests/test_link_drop.py::test_which_groups_may_run_again[resumereq]",
+    "tests/test_link_drop.py::test_a_held_read_register_never_returns_a_value_it_could_not_confirm"
+   ],
+   "mutants": [],
+   "note": "register reads and same-value writes (DATA0 set in the group) of GPRs/dpc/dcsr only; no postexec, no CSR, no resumereq"
+  },
   "debug:4.2:1": {
    "text": "- **halt**は、すでに止まっていればhaltreqを下ろしてok。待って",
    "verify": [
