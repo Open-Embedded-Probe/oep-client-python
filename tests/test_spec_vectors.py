@@ -1054,12 +1054,6 @@ def test_debug_vectors_as_the_client_sends_and_reads_them(case):
     assert sent[-1] == hx(case["request_hex"])
 
 
-# oep-spec a09fa45's 'mode0 SPI target' profile packs max_length as u32 (tools/oepvectors1.py); core §7.4 makes it u16:
-# the host takes it as a broken TLV and does not use it (core §2.3). docs/spec-follow-notes.ja.md E1 - when the spec's
-# vector is fixed, the assertion below says so.
-SPI_PROFILE_U32 = "mode0 SPI target"
-
-
 @pytest.mark.parametrize("profile", load("interface_profiles.json")["profiles"], ids=lambda p: p["name"])
 def test_interface_profiles_as_the_host_reads_them(profile):
     """interface_profiles.json (core §7.2-§7.4): the list entries (no flags byte) and each describe's ops."""
@@ -1072,7 +1066,7 @@ def test_interface_profiles_as_the_host_reads_them(profile):
         assert payload[0] == 0                                          # more = 0
         d = catalog.decode_description(payload[1:])
         assert d.ops == set(p["ops"])
-        assert d.broken == ([catalog.MAX_LENGTH] if profile["name"] == SPI_PROFILE_U32 and "spi" in p["name"] else [])
+        assert d.broken == []                                           # every declaration its defined length (E1 fixed)
 
 
 # ---- console and probe.config: the client's requests and its reading of the answers ----------------------------------
