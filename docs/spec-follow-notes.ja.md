@@ -366,3 +366,15 @@ core §9 の「セッションと独立して適用する設定の有無と作�
 `passthrough`（シリアルの口、fixture UART の fn、RX / TX の channel、baud、format）として定義する。どのセッションもその口・fn・ピンを使っていない間だけ
 probe がその UART を動かし、受けた byte をフレームの外で口へ送り、口でフレームの外に来た byte を TX へ送る。セッションがその口から要求を送るか、
 その fn やピンを取ったら、素通しはそのセッションが終わるまで止まる。v1 はテキストを想定した fixture UART だけを扱い、debug のコンソール（R1）は後で測る。
+
+### 棚卸しの判断（2026-10-15 の時点）
+
+| # | 判断 | 反映 |
+|---|---|---|
+| R1 | **戻した**: probe.config §1.2 の任意の項目 console_passthrough（oep-spec 67876b7）。旧版の slot と bind の組をまとめ、OEP の資源にしない形（接続もストリームも現れない）にした。試し直しは wake が target をリセットしない swio だけ | 仮想ベンチ・Python 済み。Arduino は config の書き直し（段 A5）で旧 slot の仕組みを移す |
+| R2 | 戻さない。firmware 内部（SWIO / RVSWD の PHY）で使う段は「強さは probe が決める」で足り、host が gpio の drive TLV を使った記録が無い | Arduino は gpio の TLV を外した |
+| R3 | 保留（ミックスドシグナルの需要と、従うトラックのリングの重さを測ってから） | — |
+| R4、R5 | 戻さない（host で組める。コアと共通部分を小さく） | — |
+| R6 | 標準には入れず、firmware 自身の拡張にする（経路の設定は製品ごと。複数の製品で要るようになったら `oep.` にする） | Arduino で段 A5 と一緒に |
+| R7 | 単独では戻さない。素通しの項目が UART の設定（baud、format）を自分で持つ | — |
+| R8 | **戻した**: probe.config §1.1 の任意の項目 passthrough と transports §4 の素通し（oep-spec df32360 / 91a5653）。実験で host の失敗 0 を確かめた | 仮想ベンチ・Python 済み。Arduino は段 A5 |
