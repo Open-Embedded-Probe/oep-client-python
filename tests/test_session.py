@@ -246,16 +246,18 @@ def test_confirm_sends_a_range_and_reads_the_v1_answer(bench):
 
 
 def test_no_session_request_to_a_v0_probe(bench):
+    """core §7.1: confirm's fixed part is the same in every protocol revision, and the probe answers a revision inside
+    the range asked. A probe that answers revision 0 to 1..1 (an old v0 probe, in its own shape) is no answer: nothing
+    of it is read (no limits, no revision), and no request with a session_id goes to it."""
     clock, _ = bench
     ep = endpoint.Endpoint(virtual_bench.with_stand_in(virtual_bench.esp32_v003()), clock, revision=0)
     a = new_host(ep, 1)
-    with pytest.raises(host.NotV1):
+    with pytest.raises(host.ProtocolError):
         a.open()
-    assert a.revision == 0 and a.limits["window"] == 0xFFFF                        # read in the v0 shape
+    assert a.revision is None and a.limits is None                                  # nothing read in a v0 shape
     a.session = 0x1234                                                              # a saved id, say
-    with pytest.raises(host.NotV1):
+    with pytest.raises(host.ProtocolError):
         write(a, 1)
-    assert read(a) == 0                                                             # session_id 0 still goes
     assert ep.dropped == 0 and all(r.session == 0 for r in ep.requests)
 
 

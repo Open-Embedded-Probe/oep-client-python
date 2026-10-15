@@ -5,6 +5,9 @@ from .virtual_dependency_model import Dependencies, DependencyModel
 from .virtual_stream_model import Stream
 
 
+DPIDR=0x2ba01477                 # what the logical swd target's DPIDR reads (attach id, connections tid)
+
+
 class Attachments(Dependencies):
     functions=(1,2,3,4)
     names=(b'oep.wire.rvswd',b'oep.wire.swio',b'oep.wire.swd',b'oep.target.console')
@@ -26,6 +29,7 @@ class Attachments(Dependencies):
         for index,pair in enumerate(self.pairs[fn]):
             members=[(1,pair[0])] if fn==2 else [(1,pair[0]),(2,pair[1])]
             rows.append(tlv(6,bytes((index,len(members)))+b''.join(struct.pack('<BH',*row) for row in members)))
+        rows.append(tlv(1,struct.pack('<BH',3,self.reset_channel)+b'\x01'))   # the reset line: role 3 (debug §3)
         return tuple(rows)
     def request_tags(self,fn,op,data):
         known={5:4} if fn<=3 and op==17 else {}
@@ -49,7 +53,9 @@ class Attachments(Dependencies):
             if parent==rid:self.close_stream(child)
         del self.connections[rid];self.events.append(('connection',rid))
     def connection_page(self,fn,first):
-        rows=[struct.pack('<IHHIBB',rid,*s['pins'],s['speed'],0,0) for rid,s in self.connections.items() if s['fn']==fn]
+        # tid: swd scheme 2, length 4, the DPIDR read at attach; the RISC-V wires read no target_id here (debug §2.1)
+        rows=[struct.pack('<IHHIBB',rid,*s['pins'],s['speed'],*((2,4) if fn==3 else (0,0)))+(struct.pack('<I',DPIDR) if fn==3 else b'')
+              for rid,s in self.connections.items() if s['fn']==fn]
         return self.page(rows,first)
     def page(self,rows,first):
         page=bytearray(b'\0\0');index=first
@@ -79,7 +85,7 @@ class Attachments(Dependencies):
             rid=self.allocate();chosen=1000 if fn==2 else min(speed,100000)
             self.connections[rid]={'fn':fn,'pins':pair,'speed':chosen}
             flags=8 if method else 0
-            return struct.pack('<IIBI',rid,0x200,flags,chosen)+(tlv(17,struct.pack('<I',0)) if method else b'')+tlv(127,b'x')
+            return struct.pack('<IIBI',rid,DPIDR if fn==3 else 0x200,flags,chosen)+(tlv(17,struct.pack('<I',0)) if method else b'')+tlv(127,b'x')
         if op==23:return self.page([struct.pack('<IIB',rid,parent,self.meta[rid]) for rid,(parent,_) in self.streams.items()],struct.unpack('<H',payload)[0])
         rid=struct.unpack_from('<I',payload)[0]
         if op==16:
@@ -101,7 +107,7 @@ class Attachments(Dependencies):
 class AttachModel(DependencyModel):
     def __init__(self,now_ms=None,boot_id=None):
         super().__init__(now_ms,boot_id);self.install()
-        self.ep.static[0]=tuple(row for row in self.ep.static[0] if row[0]!=67)+(tlv(67,struct.pack('<H',8)),)
+        self.ep.static[0]=tuple(row for row in self.ep.static[0] if row[0]!=67)+(tlv(67,struct.pack('<H',9)),)   # 8: the reset line
     def install(self):self.extension=Attachments(self.ep);self.ep.current_core=Core(self.ep,self.extension)
     def handle(self,request):
         e=self.extension;fixed,free=e.fixed,e.free

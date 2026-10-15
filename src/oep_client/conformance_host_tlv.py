@@ -81,6 +81,11 @@ class HostTlvChecks:
             require(result is None or result['fixed'] == 0x1234 and result['blob'] == b'abc' and
                     result['first'] in (kept['first'], None) and result['repeated'] in (kept['repeated'], []),
                     'broken later duplicate TLV used')
+        # core §2.3: the reader uses the first copy of a non-repeating tag; a broken first copy is not used, and a
+        # later copy never stands in for it.
+        result = self.read(payload(field(1, b'\x07\x08') + field(1, b'\x09')))
+        require(result is None or result['fixed'] == 0x1234 and result['first'] is None,
+                'a later copy used in place of a broken first one')
 
     def sizes(self):
         for blob in (b'', bytes(range(256)), b'x' * 65535):

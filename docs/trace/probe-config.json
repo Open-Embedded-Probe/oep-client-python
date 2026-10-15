@@ -15,7 +15,8 @@
     "tests/test_trace_probe_config.py::test_a_labels_text_is_1_to_32_bytes",
     "tests/test_config.py::test_items_round_trip_with_the_generation",
     "tests/test_config.py::test_get_is_paged_at_a_small_frame",
-    "tests/test_conformance_config.py::test_current_config_storage_contract"
+    "tests/test_conformance_config.py::test_current_config_storage_contract",
+    "tests/test_review4_small.py::test_the_config_model_takes_a_label_with_control_characters"
    ],
    "mutants": [],
    "note": "label 0x02: channel(u16) text 1-32 bytes keyed by channel; 0 or 33 bytes malformed; the longest fits a 64-byte frame"
@@ -489,9 +490,9 @@
     "tests/test_conformance_selected_metadata.py::test_selected_metadata_passes_read_only"
    ],
    "mutants": [
+    "tests/test_conformance_selected_metadata.py::test_metadata_defects_are_detected[17-rows7]",
     "tests/test_conformance_selected_metadata.py::test_metadata_defects_are_detected[17-rows8]",
     "tests/test_conformance_selected_metadata.py::test_metadata_defects_are_detected[17-rows9]",
-    "tests/test_conformance_selected_metadata.py::test_metadata_defects_are_detected[17-rows10]",
     "tests/test_conformance_selected_metadata.py::test_storage_without_save_ops_is_rejected"
    ],
    "note": "storage 0x40 max_bytes(u32 >= 1) with save / erase only; a save past it cause 3"

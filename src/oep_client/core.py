@@ -105,9 +105,10 @@ def describe(hst: h.Host, fn: int = 0) -> list[tuple[int, bytes]]:
             break
     out = catalog.split_tlv(data)
     if fn == m.CORE_FN:
-        value = next((v for tag, v in out if tag == CORE_MAX_OP_MS and len(v) == 4), None)
-        why = h.check_max_op_ms(struct.unpack_from("<I", value)[0]) if value is not None else ""
-        bad_ops = next((catalog.check_ops(v) for tag, v in out if tag == m.TAG_OPS and catalog.check_ops(v)), "")
+        value = catalog.first_value(out, CORE_MAX_OP_MS)            # the first copy only (core §2.3)
+        why = h.check_max_op_ms(struct.unpack_from("<I", value)[0]) if value is not None and len(value) == 4 else ""
+        first_ops = catalog.first_value(out, m.TAG_OPS)
+        bad_ops = catalog.check_ops(first_ops) if first_ops is not None else ""
         if bad_ops and not why:
             why = f"describe of fn 0: {bad_ops} - outside core §7.4, so the probe is not used"
         if why:
@@ -121,14 +122,13 @@ def ops(hst: h.Host, fn: int = 0) -> set[int] | None:
     the optional ones included); None when the describe carries no ops tag (a probe that does not conform: the host
     sends and lets the probe answer). An ops tag outside core §7.4's form: the fn is not used -
     UnusableFunction (fn 0: NotUsable from `describe`, the probe is not used)."""
-    found = None
-    for tag, value in describe(hst, fn):
-        if tag == m.TAG_OPS:                     # bit 7 set: an unknown tag in an answer (core §2.2)
-            why = catalog.check_ops(value)
-            if why:
-                raise UnusableFunction(f"fn {fn}: {why} - outside core §7.4, so the fn is not used")
-            found = (found or set()) | catalog.unpack_ops(value)
-    return found
+    value = catalog.first_value(describe(hst, fn), m.TAG_OPS)   # bit 7 set: an unknown tag in an answer (core §2.2);
+    if value is None:                                              # ops twice: the first is used (core §2.3)
+        return None
+    why = catalog.check_ops(value)
+    if why:
+        raise UnusableFunction(f"fn {fn}: {why} - outside core §7.4, so the fn is not used")
+    return catalog.unpack_ops(value)
 
 
 def offers(hst: h.Host, fn: int, op: int) -> bool:
@@ -168,9 +168,9 @@ def max_op_ms(hst: h.Host) -> int:
     """The longest one request may take on this probe (fn 0's describe max_op_ms, core §7.5): the ceiling of run's
     timeout_ms, a dmi list's waits, an attach's hold_ms, and the argument time of attach, scan and riscv-dm's reset
     (oep-if-debug §1, §4.3). A probe that declares none (not conforming) is taken as FALLBACK_MAX_OP_MS (10000 ms)."""
-    for tag, value in describe(hst):
-        if tag == CORE_MAX_OP_MS and len(value) == 4:
-            return struct.unpack_from("<I", value)[0]
+    value = catalog.first_value(describe(hst), CORE_MAX_OP_MS)   # the first copy only (core §2.3)
+    if value is not None and len(value) == 4:
+        return struct.unpack_from("<I", value)[0]
     return FALLBACK_MAX_OP_MS
 
 

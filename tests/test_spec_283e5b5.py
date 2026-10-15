@@ -157,6 +157,25 @@ def test_end_previous_does_not_touch_a_session_of_another_holder():
     assert a.lock_state() == (False, 0)                              # a's session is gone
 
 
+def test_end_previous_never_opens_an_ended_id_again():
+    """core §5.1: the host never resumes a session under an ended id. The previous run's session S expired, another
+    session T came and ended (the lock is free, the last id is T's): ending S opens nothing - an open under S would
+    start a new session with the ended id (review 4: it did, then ended it)."""
+    ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
+    a, t, b = (h.Host(lambda x: ep.handle(x)) for _ in range(3))
+    a.open(1000)
+    s, corr = a.session, a._corr
+    ep.now.ms += 1001                                                # S lapses
+    t.open(3000)
+    t_id = t.session
+    t.end()
+    opens = []
+    send = b.send
+    b.send = lambda data: (opens.append(data) if data[5] == m.OP_OPEN else None, send(data))[1]
+    assert b.end_previous(s, corr=corr) is False
+    assert opens == [] and ep.last == t_id and ep.holder is None
+
+
 def test_default_dir_order(monkeypatch, tmp_path):
     monkeypatch.setenv(kept_session.ENV, str(tmp_path / "x"))
     assert kept_session.default_dir() == tmp_path / "x"

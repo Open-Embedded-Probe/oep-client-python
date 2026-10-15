@@ -230,11 +230,18 @@ class VirtualCapture:
             allowed = (TRIGGER["cross_up"], TRIGGER["cross_down"]) if self.analog else (TRIGGER["level"], TRIGGER["edge"])
             if trigger[0] not in allowed:
                 raise t.refuse(TLV["trigger"])                     # a type not declared (or undefined)
+            # the value's defined range (§3.3): level 0 / 1, edge 0 / 1 / 2, a threshold an ADC value (b 12 bits); a
+            # value left undefined is unsupported with the tag as received (core §2.3)
+            top = {TRIGGER["level"]: 1, TRIGGER["edge"]: 2}.get(trigger[0], FULL)
+            if trigger[2] > top:
+                raise t.refuse(TLV["trigger"])
         if not channels:
             raise wrong_state()                                    # no plan (§3.2)
-        role_ids = sorted(planned_roles) if self.analog and planned_roles is not None else list(range(channels))
+        role_ids = sorted(planned_roles) if planned_roles is not None else list(range(channels))
         if trigger is not None and trigger[1] not in role_ids:
             raise wrong_state()                                    # a role not in the fn's plan: cause 6 (§3.3)
+        if trigger is not None and not self.analog:                # logic channel k: the k-th smallest role (§1.1)
+            trigger = (trigger[0], role_ids.index(trigger[1]), trigger[2])
         top = Fraction(self.max_hz, channels) if self.analog else self.max_hz   # an ADC's rate is shared by its channels
         if self.exact:
             if top < self.min_hz:
@@ -529,8 +536,22 @@ class VirtualCapture:
                 index = self.first_trigger_index if self.first_trigger_index < partial else NONE
                 segment = self._segment(partial, index, flags=FLAG["short"])
                 events.append(bytes([EVENT["segment"]]) + segment.pack())
+        if self.state == STATE["capturing"] and self.mode == MODE["streaming"]:
+            # the segment being taken ends here, short: one more finished (serial_done, §3.2), its bytes all kept
+            if self.produced - self.capture_begin > self._stream_done_samples():
+                self.serial_done = (self.serial_done + 1) & 0xFFFFFFFF
+                self.stream_committed_bytes = self.base + len(self.data)
+        was = self.state
         self.state = STATE["configured"]
+        if was == STATE["paused"]:
+            return events                                          # 5 -> 1: no stopped (§3.2's state table)
         return events + [self.stopped_event(STOPPED["host"])]
+
+    def _stream_done_samples(self) -> int:
+        """Streaming: the samples (from the retained start) of the segments finished so far."""
+        taken, first = self.produced - self.capture_begin, self.first_segment_samples or self.samples
+        complete = 0 if taken < first else 1 + (taken - first) // self.samples
+        return 0 if not complete else first + (complete - 1) * self.samples
 
     def overflow(self, error: int = CAP.enum["error"]["storage"]) -> list[bytes]:
         """TEST HOOK: the probe dropped data inside the segment it is taking (§2.2: a capture queue or ring overflow,
@@ -750,9 +771,12 @@ class VirtualGroup:
                     c._clear()
                     c.generation += 1
                     c.state = STATE["configured"]
-                caps[fn].state, caps[fn].error = STATE["error"], CAP.enum["error"]["peripheral"]
+                failed = caps[fn]
+                failed.state, failed.error = STATE["error"], CAP.enum["error"]["peripheral"]
                 per += [(started, caps[started].stop(now_ms)) for started in self.tracks[:k]]
-                return per, [], True
+                # state 6 always says stopped reason 3 (§3.2 エラー), and the group in 6 too (§4.1, §4.2)
+                per.append((fn, [failed.stopped_event(STOPPED["error"], failed.error)]))
+                return per, [self.stopped_event(STOPPED["error"], failed.error)], True
             per.append((fn, caps[fn].start(now_ms, self.start_ns, subscribed=subscribed(fn))))
         return per, self._finished(caps, False), False
 
@@ -778,8 +802,11 @@ class VirtualGroup:
                 + b"".join(struct.pack("<HI", fn, caps[fn].generation) for fn in self.tracks))
 
     def stop(self, caps: dict[int, VirtualCapture], now_ms: int | None = None) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
-        per = [(fn, caps[fn].stop(now_ms)) for fn in self.tracks]
-        return per, [self.stopped_event(STOPPED["host"])] if any(e for _, e in per) else []
+        ticked = {fn: caps[fn].tick(now_ms) if now_ms is not None else [] for fn in self.tracks}   # the clock first
+        was = self.state(caps)
+        per = [(fn, ticked[fn] + caps[fn].stop(now_ms)) for fn in self.tracks]
+        # the group's stopped when its stop ended an acquisition (state 3: a track in 2, 3 or 5; §4.1, §4.2)
+        return per, [self.stopped_event(STOPPED["host"])] if was == STATE["capturing"] else []
 
     def state(self, caps: dict[int, VirtualCapture]) -> int:
         """The group's state from its tracks' (§4.1): 0 with none bound; 6 if any is 6; else 4 if started and every

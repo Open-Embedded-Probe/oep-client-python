@@ -58,10 +58,11 @@ class Track:
             raw,size=struct.unpack_from('<BH',data);key=raw&127
             if not key or len(data)<3+size:raise Reject(3)
             value,data=data[3:3+size],data[3+size:]
+            known=op in (16,24) and (key in (64,66,67,68,69,70) or (key==71 and self.fn==2))
+            if known and size!={64:1,69:6,71:2}.get(key,4):raise Reject(3)   # a later copy too (core §2.3)
             if key in seen and key!=71:continue
             seen.add(key)
-            if op in (16,24) and (key in (64,66,67,68,69,70) or (key==71 and self.fn==2)):
-                if size!={64:1,69:6,71:2}.get(key,4):raise Reject(3)
+            if known:
                 if key==71:frontends.append((raw,value))
                 else:got[key]=(raw,value)
             elif raw&128:raise Reject(11,bytes((raw,)))
@@ -81,7 +82,7 @@ class Track:
         for raw,(role,fe) in tags[71]:
             if role in seen:raise Reject(3)
             seen.add(role)
-            if role not in self.roles:raise refusal(6)
+            if role not in self.roles:raise Reject(11,bytes((raw,)))   # capture §3.3: an unlisted refusal is unsupported
             if fe not in (0,1):raise Reject(11,bytes((raw,)))
             frontend[role]=fe
         return dict(mode=mode,rate=rate,samples=min(16,struct.unpack('<I',tags[67][1])[0]) if mode==1 else 0,frontend=frontend)
@@ -222,6 +223,7 @@ class TimelineGroup(Gpio):
     def plan(self,op,payload,tags):
         if op==17:
             count=payload[0];functions=list(struct.unpack('<'+'H'*count,payload[1:])) or list(self.plans)
+            if any(fn and fn not in self.functions for fn in functions):raise Reject(1)   # every fn first; fn 0 has no plan (plan §2.2)
             for fn in functions:
                 if fn in self.bound:raise refusal(4,fn)
             self.release_plans(functions);return b''
@@ -231,7 +233,7 @@ class TimelineGroup(Gpio):
             if fn==0:raise Reject(3)
             if fn not in self.functions:raise Reject(1)
             if fn not in self.tracks or role not in ROLES[fn] or ch not in CHANNELS[fn]:raise Reject(11,bytes((raw,)))
-        if len({(r[1],r[2]) for r in rows})!=len(rows) or len({r[3] for r in rows})!=len(rows):raise Reject(3)
+        if len({(r[1],r[2]) for r in rows})!=len(rows) or len({r[3] for r in rows})!=len(rows):raise Reject(11,bytes((rows[0][0],)))   # one channel per role: unsupported (plan §2.4)
         affected={r[1] for r in rows};changed=set()
         for fn in affected:
             selected=sorted((role,ch) for _,owner,role,ch in rows if owner==fn)

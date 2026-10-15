@@ -371,14 +371,17 @@
    "text": "- 繰り返すと定義が言わない tag が 2 つ以上あれば、読む側は最初のものを",
    "verify": [
     "tests/test_trace_core.py::test_a_tag_twice_the_first_is_used_and_the_later_is_checked_too[core-v1]",
-    "tests/test_trace_core.py::test_a_tag_twice_the_first_is_used_and_the_later_is_checked_too[full]"
+    "tests/test_trace_core.py::test_a_tag_twice_the_first_is_used_and_the_later_is_checked_too[full]",
+    "tests/test_trace_core.py::test_the_host_uses_the_first_copy_of_a_describe_tag_that_does_not_repeat",
+    "tests/test_trace_core.py::test_a_describe_tlv_of_another_length_is_not_used_and_a_tag_twice_uses_the_first"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_later_duplicate_unchecked_mutant",
     "tests/test_conformance_host_tlv.py::test_faults_are_detected[unvalidated_later_first-KNOWN_WIDTH]",
-    "tests/test_conformance_host_tlv.py::test_faults_are_detected[last_duplicate-DUPLICATES]"
+    "tests/test_conformance_host_tlv.py::test_faults_are_detected[last_duplicate-DUPLICATES]",
+    "tests/test_conformance_host_tlv.py::test_faults_are_detected[later_for_broken_first-KNOWN_WIDTH]"
    ],
-   "note": "two owners: the first used; a later owner of a wrong length makes the open malformed"
+   "note": "two owners: the first used; a later owner of a wrong length makes the open malformed; review4: the host reads only the first ops / max_op_ms / common describe tag; a broken first copy is not replaced by a later one"
   },
   "core:2.3:11": {
    "text": "- 固定部分より短い要求は rejected malformed。",
@@ -849,12 +852,14 @@
    "text": "3. セッション（§6.2）: no_session / locked。",
    "verify": [
     "tests/test_trace_core.py::test_the_session_check_comes_after_the_header_and_before_the_payload[core-v1]",
-    "tests/test_trace_core.py::test_the_session_check_comes_after_the_header_and_before_the_payload[full]"
+    "tests/test_trace_core.py::test_the_session_check_comes_after_the_header_and_before_the_payload[full]",
+    "tests/test_trace_core.py::test_an_open_s_session_check_comes_before_its_payload[core-v1]",
+    "tests/test_trace_core.py::test_an_open_s_session_check_comes_before_its_payload[full]"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_decision_table_mutant"
    ],
-   "note": "another id with a broken payload: locked; the holder's: malformed"
+   "note": "another id with a broken payload: locked; the holder's: malformed; open too: another id without force is locked and the ended id no_session before a broken owner or fixed part (review 4)"
   },
   "core:4.3:15": {
    "text": "4. そのほか: probe は、書式（malformed: 長さ、中身と合わな",
@@ -931,10 +936,11 @@
    "text": "- window / max_inflightは、その経路の異なる未解決要求につ",
    "verify": [
     "tests/test_trace_core.py::test_a_copy_of_an_unfinished_request_is_not_a_new_one",
-    "tests/test_trace_core.py::test_a_copy_of_a_request_not_yet_answered_is_dropped_and_touches_no_lease"
+    "tests/test_trace_core.py::test_a_copy_of_a_request_not_yet_answered_is_dropped_and_touches_no_lease",
+    "tests/test_conformance_pipeline.py::test_a_copy_of_an_unresolved_request_takes_no_credit_and_runs_nothing_again"
    ],
    "mutants": [],
-   "note": "a waiting copy is coalesced, run once, one credit; a copy waiting, running or answered-not-sent: coalesced, lease untouched, session 0 too"
+   "note": "a waiting copy is coalesced, run once, one credit; a copy waiting, running or answered-not-sent: coalesced, lease untouched, session 0 too; the pipeline model counts no copy of an unresolved request and drops a session-0 copy (review 4)"
   },
   "core:4.4:5": {
    "text": "- 要求が収まっても、要求の引数から必要となる固定結果がその経路のmax_fra",
@@ -1054,10 +1060,12 @@
    "text": "- 最後に成功した新規セッションの新しい要求で §4.3 の順 2 を通ったもの",
    "verify": [
     "tests/test_trace_core.py::test_a_new_corr_that_is_refused_still_moves_the_last_corr[core-v1]",
-    "tests/test_trace_core.py::test_a_new_corr_that_is_refused_still_moves_the_last_corr[full]"
+    "tests/test_trace_core.py::test_a_new_corr_that_is_refused_still_moves_the_last_corr[full]",
+    "tests/test_trace_core.py::test_an_order_4_unknown_function_moves_the_last_corr_and_the_lease[core-v1]",
+    "tests/test_trace_core.py::test_an_order_4_unknown_function_moves_the_last_corr_and_the_lease[full]"
    ],
    "mutants": [],
-   "note": "a refused corr 50 makes 49 result_lost"
+   "note": "a refused corr 50 makes 49 result_lost; an order-4 unknown_function (describe naming a missing fn) also moves the last corr and is recorded (review 4)"
   },
   "core:5.1:6": {
    "text": "- end と期限切れでも順序状態を残す。保持中の byte 記録も、その保持上",
@@ -1068,7 +1076,8 @@
     "tests/test_trace_core.py::test_a_force_open_releases_and_replaces_the_resend_state",
     "tests/test_trace_core.py::test_a_new_session_id_after_a_loss_never_reuses_the_ended_one",
     "tests/test_trace_core.py::test_a_refused_open_of_another_id_keeps_the_resend_state[core-v1]",
-    "tests/test_trace_core.py::test_a_refused_open_of_another_id_keeps_the_resend_state[full]"
+    "tests/test_trace_core.py::test_a_refused_open_of_another_id_keeps_the_resend_state[full]",
+    "tests/test_spec_283e5b5.py::test_end_previous_never_opens_an_ended_id_again"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_end_clears_the_record_mutant",
@@ -1076,7 +1085,7 @@
     "tests/test_conformance_retention.py::test_retention_mutants_fail[same_open]",
     "tests/test_conformance_corr.py::test_corr_mutants_fail[new_session_high]"
    ],
-   "note": "after the holder's open and after end the record answers; a new id's open replaces it; expiry keeps the record; a refused other-id open keeps it, a successful one replaces it; the host never reuses the ended id"
+   "note": "after the holder's open and after end the record answers; a new id's open replaces it; expiry keeps the record; a refused other-id open keeps it, a successful one replaces it; the host never reuses the ended id; end_previous opens nothing when the lock is free, never a new session under an ended id (review 4)"
   },
   "core:5.1:7": {
    "text": "- session_id 0の処理済み要求は重複排除しない。未完了コピーは§4.",
@@ -1151,7 +1160,9 @@
     "tests/test_conformance_lease.py::test_close_discards_renewal_and_expires",
     "tests/test_conformance_lease.py::test_same_session_open_renews_at_generation_and_replay_does_not",
     "tests/test_conformance_lease.py::test_long_execution_pauses_lease[True]",
-    "tests/test_conformance_writer_lease.py::test_writer_lease_contracts_pass"
+    "tests/test_conformance_writer_lease.py::test_writer_lease_contracts_pass",
+    "tests/test_trace_core.py::test_an_order_4_unknown_function_moves_the_last_corr_and_the_lease[core-v1]",
+    "tests/test_trace_core.py::test_an_order_4_unknown_function_moves_the_last_corr_and_the_lease[full]"
    ],
    "mutants": [
     "tests/test_conformance_lease.py::test_lease_mutants_fail[replay]",
@@ -1161,7 +1172,7 @@
     "tests/test_conformance_lease.py::test_lease_mutants_fail[partial]",
     "tests/test_conformance_lease.py::test_lease_mutants_fail[stale]"
    ],
-   "note": "the lease is paused while the holder's request runs and restarts at its answer's generation (rejected too) - not at the write, which waiting, completing or a closed route leave alone; a new owner's from its open's answer; resends, waiting copies, session 0 and other ids renew nothing; an expiry is cleaned up before the next request, its resend check too (bench, core-v1 and the logical-writer checkers)"
+   "note": "the lease is paused while the holder's request runs and restarts at its answer's generation (rejected too) - not at the write, which waiting, completing or a closed route leave alone; a new owner's from its open's answer; resends, waiting copies, session 0 and other ids renew nothing; an expiry is cleaned up before the next request, its resend check too (bench, core-v1 and the logical-writer checkers); a holder request refused in order 4 with unknown_function restarts the lease too (review 4)"
   },
   "core:6.2:1": {
    "text": "| ロック | 要求 | 結果 |",
@@ -1186,7 +1197,9 @@
     "tests/test_trace_core.py::test_open_answers_the_lease_and_boot_id_and_nothing_resumes[core-v1]",
     "tests/test_trace_core.py::test_open_answers_the_lease_and_boot_id_and_nothing_resumes[full]",
     "tests/test_trace_core.py::test_the_decision_table_whatever_force_says[core-v1]",
-    "tests/test_trace_core.py::test_the_decision_table_whatever_force_says[full]"
+    "tests/test_trace_core.py::test_the_decision_table_whatever_force_says[full]",
+    "tests/test_trace_core.py::test_an_open_s_session_check_comes_before_its_payload[core-v1]",
+    "tests/test_trace_core.py::test_an_open_s_session_check_comes_before_its_payload[full]"
    ],
    "mutants": [],
    "note": "free lock: the ended id's open (with force too) and any id's other request are no_session"
@@ -1208,7 +1221,9 @@
    "text": "| S が持つ | 別の id の open、force なし | reject",
    "verify": [
     "tests/test_trace_core.py::test_the_decision_table[core-v1]",
-    "tests/test_trace_core.py::test_the_decision_table[full]"
+    "tests/test_trace_core.py::test_the_decision_table[full]",
+    "tests/test_trace_core.py::test_an_open_s_session_check_comes_before_its_payload[core-v1]",
+    "tests/test_trace_core.py::test_an_open_s_session_check_comes_before_its_payload[full]"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_decision_table_mutant"
@@ -1344,10 +1359,11 @@
    "text": "- confirm の要求と応答の見出し（§4.1、§4.2）と固定部分、mag",
    "verify": [
     "tests/test_trace_core.py::test_confirms_shape_is_the_same_for_every_revision_and_fits_64_bytes[core-v1]",
-    "tests/test_trace_core.py::test_confirms_shape_is_the_same_for_every_revision_and_fits_64_bytes[full]"
+    "tests/test_trace_core.py::test_confirms_shape_is_the_same_for_every_revision_and_fits_64_bytes[full]",
+    "tests/test_session.py::test_no_session_request_to_a_v0_probe"
    ],
    "mutants": [],
-   "note": "OEP! form within 64 bytes for a wide range"
+   "note": "OEP! form within 64 bytes for a wide range; review4: the host no longer reads a revision-0 answer in a v0 shape (outside the range asked: ProtocolError)"
   },
   "core:7.1:3": {
    "text": "- probe が選んだ revision は、**その confirm が来た",
@@ -1382,8 +1398,10 @@
     "tests/test_trace_core.py::test_core_is_fn_0_has_no_name_and_is_never_listed[core-v1]",
     "tests/test_trace_core.py::test_core_is_fn_0_has_no_name_and_is_never_listed[full]"
    ],
-   "mutants": [],
-   "note": "pages within max_frame (64 and 1024), total right, no fn 0"
+   "mutants": [
+    "tests/test_conformance_discovery.py::test_a_page_that_stops_before_the_frame_is_full_fails[list]"
+   ],
+   "note": "pages within max_frame (64 and 1024), total right, no fn 0; review4: a page holds as many entries as fit (bench overcounted each entry by 1; the discovery checker now requires full pages)"
   },
   "core:7.2:2": {
    "text": "- 名前は 1〜48 byte、使える文字は `a-z 0-9 - .`（§12",
@@ -1427,8 +1445,10 @@
     "tests/test_trace_core.py::test_describe_paging_ends_with_more_0_and_nothing[full]",
     "tests/test_trace_core.py::test_the_host_pages_describe_until_more_0_and_list_until_total"
    ],
-   "mutants": [],
-   "note": "probe: more 0 and nothing past the end; host: first += TLVs while more 1, stops at more 0; list stops at total"
+   "mutants": [
+    "tests/test_conformance_discovery.py::test_a_page_that_stops_before_the_frame_is_full_fails[describe]"
+   ],
+   "note": "probe: more 0 and nothing past the end; host: first += TLVs while more 1, stops at more 0; list stops at total; review4: the checker requires a describe page to hold every TLV that fits"
   },
   "core:7.4:1": {
    "text": "| 0x01 | role_channels | role(u8)、base(u",
@@ -1492,10 +1512,11 @@
    "text": "| 0x07 | ops | base(u8)、bitmap。bit i が立っ",
    "verify": [
     "tests/test_trace_core.py::test_every_listed_fn_and_fn_0_declare_their_ops",
-    "tests/test_trace_core.py::test_ops_value_form_and_the_examples"
+    "tests/test_trace_core.py::test_ops_value_form_and_the_examples",
+    "tests/test_trace_core.py::test_the_host_uses_the_first_copy_of_a_describe_tag_that_does_not_repeat"
    ],
    "mutants": [],
-   "note": "ops in every describe"
+   "note": "ops in every describe; review4: ops is not a repeating tag - a second ops adds nothing"
   },
   "core:7.4:8": {
    "text": "- **ops の値**: base(u8) と、1 byte 以上の bitm",
@@ -1600,7 +1621,8 @@
    "verify": [
     "tests/test_trace_core.py::test_max_op_ms_is_required_and_in_range",
     "tests/test_virtual_bench_rules_2026_10_06.py::test_c47_max_op_ms_outside_1_to_600000_is_not_a_probe[0]",
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_c47_max_op_ms_outside_1_to_600000_is_not_a_probe[600001]"
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c47_max_op_ms_outside_1_to_600000_is_not_a_probe[600001]",
+    "tests/test_trace_core.py::test_the_host_uses_the_first_copy_of_a_describe_tag_that_does_not_repeat"
    ],
    "mutants": [],
    "note": "1-600000; a hold past it unsupported; the host refuses others"
@@ -1647,12 +1669,13 @@
    "verify": [
     "tests/test_trace_core.py::test_clock_gives_the_boot_id_of_confirm_and_open_and_the_uptime[core-v1]",
     "tests/test_trace_core.py::test_clock_gives_the_boot_id_of_confirm_and_open_and_the_uptime[full]",
-    "tests/test_virtual_bench_rules_2026_10_06.py::test_c31_a_reboot_starts_the_clock_again_and_clock_says_so"
+    "tests/test_virtual_bench_rules_2026_10_06.py::test_c31_a_reboot_starts_the_clock_again_and_clock_says_so",
+    "tests/test_trace_core.py::test_the_hosts_clock_waits_as_long_as_any_quick_core_op"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_clock_is_read_at_the_request_mutant"
    ],
-   "note": "clock's boot_id = confirm's = open's; uptime_ns the clock"
+   "note": "clock's boot_id = confirm's = open's; uptime_ns the clock; review4: the host's clock waits with the quick-op bound like confirm/list/describe"
   },
   "core:7.6:2": {
    "text": "- clock はロックの要らない読むだけの op（§6.3）である。セッション",
@@ -1815,13 +1838,15 @@
    "verify": [
     "tests/test_trace_core.py::test_resource_numbers_are_never_reused_and_run_out_with_cause_2",
     "tests/test_trace_core.py::test_resource_numbers_are_u32_from_1",
-    "tests/test_trace_core.py::test_resource_number_0xffffffff_is_given_and_only_then_cause_2"
+    "tests/test_trace_core.py::test_resource_number_0xffffffff_is_given_and_only_then_cause_2",
+    "tests/test_trace_core.py::test_an_attach_refused_for_spent_numbers_touches_nothing_first",
+    "tests/test_conformance_resources.py::test_a_u32_resource_number_is_a_valid_one"
    ],
    "mutants": [
     "tests/test_trace_core.py::test_resource_number_reused_mutant",
     "tests/test_conformance_resources.py::test_common_checker_detects_resource_mutants[reuse-RESOURCE-ID]"
    ],
-   "note": "from 1, never reused; past 0xFFFFFFFF cause 2 while the old ones work"
+   "note": "from 1, never reused; past 0xFFFFFFFF cause 2 while the old ones work; spent numbers refuse an attach before the target is touched; the resource checker takes any u32 number (review 4)"
   },
   "core:9:8": {
    "text": "- 閉じた資源の番号、存在しない番号は rejected no_resource",
@@ -2135,10 +2160,13 @@
    "text": "1. **名前**: インターフェースの名前は、定義する者の逆 DNS の名前（",
    "verify": [
     "tests/test_trace_core.py::test_interfaces_are_named_by_reverse_dns_or_the_oep_prefix_with_their_own_revision",
-    "tests/test_trace_core.py::test_every_interface_has_a_name_revision_and_op_table"
+    "tests/test_trace_core.py::test_every_interface_has_a_name_revision_and_op_table",
+    "tests/test_capabilities.py::test_valid_names[xn--p1ai.example.probe]",
+    "tests/test_capabilities.py::test_invalid_names_say_why[oep.tool-layer]",
+    "tests/test_capabilities.py::test_invalid_names_say_why[oep.tools.uart-layer]"
    ],
    "mutants": [],
-   "note": "names validated: labels, length, oep. layers"
+   "note": "names validated: labels, length, oep. layers; review4: names.validate checks only core §12 rule 1 (labels, 2+, 48 bytes, oep.<layer>.<name>); the draft uuid./local./TLD rules are gone"
   },
   "core:12:2": {
    "text": "2. **定義が決めるもの**: インターフェースの文書はどれも、次のチェックリ",

@@ -154,16 +154,18 @@
     "tests/test_trace_console.py::test_describe_declares_the_mechanisms_counted_without_duplicates",
     "tests/test_console_queue_and_reset_settle.py::test_the_send_queue_is_not_declared",
     "tests/test_conformance_oep_declarations.py::test_standard_declarations_pass_without_mutating_requests",
-    "tests/test_conformance_oep_declarations.py::test_scan_is_optional_and_the_mechanisms_are_counted"
+    "tests/test_conformance_oep_declarations.py::test_scan_is_optional_and_the_mechanisms_are_counted",
+    "tests/test_conformance_oep_declarations.py::test_sdi_only_without_write_passes"
    ],
    "mutants": [
     "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[missing_mechanisms]",
     "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[uncounted_mechanisms]",
     "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[duplicate_mechanism]",
     "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[empty_mechanisms]",
-    "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[unknown_mechanism]"
+    "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[unknown_mechanism]",
+    "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[write_with_sdi_only]"
    ],
-   "note": "describe 0x40 mechanisms n(u8) n x mechanism(u8), n >= 1, no duplicate, always"
+   "note": "describe 0x40 mechanisms n(u8) n x mechanism(u8), n >= 1, no duplicate, always; a fn offering write declares mechanism 1 or 2 (checker)"
   },
   "console:1:12": {
    "text": "- 知らない stream は rejected no_resource（cor",

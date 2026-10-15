@@ -304,9 +304,9 @@ class Host:
 
     def max_op_ms(self) -> int | None:
         """fn 0's describe max_op_ms (core §7.5) as far as this host has read it, else None."""
-        v = next((v for t, v in self._describes.get(m.CORE_FN, ()) if t == reg.CORE.tlv["describe"]["max_op_ms"]
-                  and len(v) == 4), None)
-        return struct.unpack("<I", v)[0] if v is not None else None
+        v = next((v for t, v in self._describes.get(m.CORE_FN, ()) if t == reg.CORE.tlv["describe"]["max_op_ms"]),
+                 None)                                     # the first copy only; a broken one is not used (core §2.3)
+        return struct.unpack("<I", v)[0] if v is not None and len(v) == 4 else None
 
     def op_bound_ms(self, fn: int, op: int) -> int:
         """The whole request's processing bound the wait for its answer starts from (core §4.4): max_op_ms; fn 0's
@@ -473,7 +473,8 @@ class Host:
         "window", "max_inflight", "boot_id", "transport", "tail"}. The boot_id is the probe's for this boot (core §6.5,
         §7.1): a host without the lock learns of a restart from it. transport: the index (fn 0's describe) of the
         transport this confirm came on (core §7.1, C-05; 0xFF from a relaying broker; None when the probe sent none).
-        A v0 probe answers revision 0 in the v0 shape; one that refuses the ranged confirm as malformed is not v1 either
+        The answer's fixed part is the same in every revision (core §7.1): a revision outside the range asked is a
+        ProtocolError and nothing of the answer is used. A probe that refuses the ranged confirm as malformed is not v1
         (revision 0 is recorded and the rejection raised). No revision in the range: rejected unsupported (Unsupported:
         `.supported` says the probe's range)."""
         lo, hi = self.confirm_range()
@@ -491,21 +492,16 @@ class Host:
         magic, revision = rd.bytes(4), rd.u8()
         if magic != m.CONFIRM_RESULT:
             raise ProtocolError(f"confirm answered magic {magic!r}")
-        boot_id = None
-        if revision == 0:                                   # v0: max_frame(16) window(16) max_inflight(8) flags(8)
-            max_frame, window, inflight = rd.take("HHB")
-            if rd.at < len(rd.data):
-                rd.u8()                                     # v0 flags
-            tail = m.Tail()
-        else:
-            if not min_rev <= revision <= max_rev:
-                raise ProtocolError(f"confirm answered revision {revision}, outside the {min_rev}..{max_rev} asked")
-            max_frame, window, inflight, boot_id = rd.take("HIBI")
-            tail = rd.tail()
-            why = check_confirm(max_frame, window, inflight)
-            if why:
-                self.not_usable(why)                        # sends nothing more and reports the values (C-20)
-            self.boot_id_seen(boot_id)
+        # the fixed part is the same in every protocol revision (core §7.1); a revision outside the range asked (a
+        # revision 0 too) is no answer to this confirm: nothing of it is used
+        if not min_rev <= revision <= max_rev:
+            raise ProtocolError(f"confirm answered revision {revision}, outside the {min_rev}..{max_rev} asked")
+        max_frame, window, inflight, boot_id = rd.take("HIBI")
+        tail = rd.tail()
+        why = check_confirm(max_frame, window, inflight)
+        if why:
+            self.not_usable(why)                            # sends nothing more and reports the values (C-20)
+        self.boot_id_seen(boot_id)
         self.revision = revision
         where = tail.get(CONFIRM_TRANSPORT)
         self.limits = {"magic": magic, "revision": revision, "max_frame": max_frame, "window": window,
@@ -572,6 +568,11 @@ class Host:
         previous run sent (kept_session's reservation): the open and the end go on after it (core §4.1, §5.1)."""
         if corr is not None:
             self._corr = corr
+        locked, _ = self.lock_state()
+        if not locked:
+            # no session holds the lock: the previous one ended (end, expiry, a force) and released what it held. An
+            # open under its id would start a new session with an ended id (core §5.1: never) - nothing to end
+            return False
         tail = m.tlv(OWNER, owner_text(owner)) if owner else b""
         try:
             r = self.request(m.CORE_FN, m.OP_OPEN, struct.pack("<IB", reg.LIMITS["lease_min_ms"], 0) + tail,
@@ -643,9 +644,10 @@ class Host:
         self._session_room(1)
         req = m.Request(self.next_corr(), m.CORE_FN, m.OP_CLOCK, b"", m.NO_SESSION_ID)
         packed = req.pack()
-        before = now()
-        raw = self.send(packed)
-        after = now()
+        with self.expecting(self.op_bound_ms(m.CORE_FN, m.OP_CLOCK)):   # a quick core op's wait (core §4.4)
+            before = now()
+            raw = self.send(packed)
+            after = now()
         r = self._answered(req, m.Result.unpack(raw))
         if not r.succeeded:
             raise Failed(r)

@@ -112,3 +112,29 @@ def test_invalid_revision_profiles_block_the_complete_run(profile):
     assert report['checks'][0]['status']=='failed'
     assert all(row['status']=='blocked' for row in report['checks'][1:])
     assert c.trace==[] and model.ep.current_core.last is None
+
+
+@pytest.mark.parametrize('cut', ['list', 'describe'])
+def test_a_page_that_stops_before_the_frame_is_full_fails(cut):
+    """core §7.2 / §7.3: list and describe return, from first, as many as one frame holds - a page that leaves out an
+    entry or a TLV that still fits is caught."""
+    model,c,runner=setup()
+    if cut=='list':
+        listing=model.extension.list_page
+        model.extension.list_page=lambda first,limit:listing(first,3+6+len(model.extension.name))   # one entry a page
+    else:
+        send=c.send
+        def one(request):
+            answer=send(request)
+            if request[5]==3 and not struct.unpack_from('<H',request,10)[0] and answer[3]==1 and answer[5]==0:
+                rest=answer[6:]
+                if rest:
+                    size=3+int.from_bytes(rest[1:3],'little')
+                    if size<len(rest):
+                        return answer[:5]+b'\x01'+rest[:size]                                    # one TLV a page
+            return answer
+        c.send=one
+    report=runner.run()
+    case='LIST-CURSORS' if cut=='list' else 'CORE-CURSORS'
+    row=next(x for x in report['checks'] if x['id']=='CORE-DISCOVERY-'+case)
+    assert row['status']=='failed' and 'frame is full' in str(row),row

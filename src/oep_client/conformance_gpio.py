@@ -41,7 +41,8 @@ class GpioChecks:
             elif kind=='PLAN-CONFLICT':
                 self.apply(sid,[(2,1,0)]);self.set(sid,[(0,3)]);self.refused(self.apply_request(sid,[(3,1,0)]),'unavailable',self.tlv(1,b'\1'))
             elif kind=='PLAN-REPLACE':
-                self.apply(sid,[(2,1,0)]);self.set(sid,[(0,3)]);self.apply(sid,[(2,1,1)]);s=self.a.state();require(s['plans']=={2:[1]} and s['pins'][0]==s['idle'][0] and s['pins'][1]==s['idle'][1],'replacement did not restore old idle')
+                self.apply(sid,[(2,1,0)]);self.set(sid,[(0,3)]);self.apply(sid,[(2,1,0),(2,1,1)]);s=self.a.state();require(s['plans']=={2:[0,1]} and s['pins'][0]==3,'a kept (fn, role, channel) was released (plan §2.1)')
+                self.apply(sid,[(2,1,1)]);s=self.a.state();require(s['plans']=={2:[1]} and s['pins'][0]==s['idle'][0] and s['pins'][1]==s['idle'][1],'replacement did not restore old idle')
             elif kind=='PLAN-OTHER':
                 self.apply(sid,[(2,1,0),(3,1,1)]);self.set(sid,[(1,4)],fn=3);before=self.a.state();self.apply(sid,[(2,1,2)]);s=self.a.state();require(s['plans']=={3:[1],2:[2]} and s['pins'][1]==before['pins'][1],'replacement touched other fn')
             elif kind=='PLAN-TRANSFER':
@@ -49,7 +50,8 @@ class GpioChecks:
             else:
                 self.apply(sid,[(2,1,0),(2,1,1),(3,1,2)])
                 if kind=='RELEASE-ONE':
-                    self.set(sid,[(0,3)]);self.set(sid,[(2,4)],fn=3);before=self.a.state();self.release(sid,[2,99]);s=self.a.state();require(s['plans']=={3:[2]} and s['pins'][0]==s['idle'][0] and s['pins'][2]==before['pins'][2],'selective release changed other fn')
+                    self.set(sid,[(0,3)]);self.set(sid,[(2,4)],fn=3);self.refused(self.request(1,'plan_release',sid,b'\2\2\0\x63\0'),'unknown_function')   # every fn checked first (plan §2.2)
+                    before=self.a.state();self.release(sid,[2]);s=self.a.state();require(s['plans']=={3:[2]} and s['pins'][0]==s['idle'][0] and s['pins'][2]==before['pins'][2],'selective release changed other fn')
                 elif kind=='RELEASE-ALL':
                     self.set(sid,[(0,3),(1,4)]);self.release(sid,[]);s=self.a.state();require(not s['plans'] and s['pins']==s['idle'],'release all did not restore idle');self.release(sid,[])
                 elif kind=='SET-ORDER':

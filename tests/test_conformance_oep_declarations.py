@@ -37,7 +37,7 @@ MECH=lambda value:b'\x40'+len(value).to_bytes(2,'little')+value   # describe tag
 
 
 @pytest.mark.parametrize('defect',['missing_attach','missing_detach','missing_connections','missing_console_close','console_mark_without_marks','missing_mechanisms','unknown_mechanism','preset_none','capacity_width','missing_pins','same_pin','pin_range',
-                                   'uncounted_mechanisms','duplicate_mechanism','empty_mechanisms'])
+                                   'uncounted_mechanisms','duplicate_mechanism','empty_mechanisms','write_with_sdi_only'])
 def test_standard_declaration_mutants_fail(defect):
     model,c=setup();describe=model.extension.describe
     def bad(fn):
@@ -53,6 +53,7 @@ def test_standard_declaration_mutants_fail(defect):
             if defect=='uncounted_mechanisms':rows=[MECH(b'\x01') if row[0]==64 else row for row in rows]        # the mechanism alone, no n
             if defect=='duplicate_mechanism':rows=[MECH(b'\x02\x01\x01') if row[0]==64 else row for row in rows]
             if defect=='empty_mechanisms':rows=[MECH(b'\x00') if row[0]==64 else row for row in rows]
+            if defect=='write_with_sdi_only':rows=[MECH(b'\x01\x00') if row[0]==64 else row for row in rows]   # write 0x15 kept (console §1)
         if fn==1:
             if defect=='capacity_width':rows=[b'\x40\x02\0\x01\0' if row[0]==64 else row for row in rows]
             if defect=='missing_pins':rows=[row for row in rows if row[0] not in (1,6)]
@@ -115,3 +116,14 @@ def test_a_console_offering_only_the_minimum_ops_passes():
             return tuple(rows)
         model.extension.describe=bad;r=OepDeclarationChecks(c,SELECTION).run()
         assert (r['status']=='passed')==ok,[(x['id'],x.get('error')) for x in r['checks']]
+
+
+def test_sdi_only_without_write_passes():
+    """console §1: a fn that offers write offers mechanism 1 or 2; one without write may declare SDI alone."""
+    model,c=setup();describe=model.extension.describe
+    def sdi(fn):
+        rows=list(describe(fn))
+        if fn==4:rows=[MECH(b'\x01\x00') if row[0]==64 else row[:4]+bytes((row[4]&~32,)) if row[0]==7 else row for row in rows]
+        return tuple(rows)
+    model.extension.describe=sdi
+    assert OepDeclarationChecks(c,SELECTION).run()['status']=='passed'

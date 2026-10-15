@@ -10,7 +10,7 @@ from test_conformance_registered_ops import setup as registered_setup
 def setup():
     _,original=registered_setup();reg=original.reg;reg.setdefault('constants',{})['min_max_frame']=64
     for s in reg['interface']:
-        tags={'oep.fixture.gpio':{'modes':64},'oep.fixture.uart':{'formats':64},'oep.fixture.i2c-target':{'queue_depth':64,'max_stretch_us':65},'oep.fixture.spi-target':{'queue_depth':64,'cs_setup_ns':67}}
+        tags={'oep.fixture.gpio':{'modes':64},'oep.fixture.uart':{'formats':64},'oep.fixture.i2c-target':{'queue_depth':64,'max_stretch_us':65},'oep.fixture.spi-target':{'queue_depth':64,'modes':65,'cs_setup_ns':67}}
         if s['name'] in tags:s['tlv']={'describe':tags[s['name']]}
     model=FixtureMetadataModel(lambda:0,boot_id=17)
     return model,Checks(model.handle,reg,'virtual-resource-1')
@@ -106,3 +106,16 @@ def test_fixture_metadata_preflight(invalid):
     assert FixtureMetadataChecks(c,selection).run()['status']=='failed'
 
 
+
+
+@pytest.mark.parametrize('value',[None,b'',b'\x0f\0',b'\0',b'\x10',b'\x1f',b'\xff'])
+def test_spi_modes_are_required_one_byte_1_to_15(value):
+    """fixture §4: describe's modes (tag 0x41, u8) is required - bit k = mode k, bits 4-7 0, at least 1."""
+    model,c=setup();replace(model,13,65,value);r=FixtureMetadataChecks(c,model.metadata_selection).run()
+    assert next(row for row in r['checks'] if row['id']=='OEP-FIXTURE-METADATA-13')['status']=='failed',r['checks']
+
+
+@pytest.mark.parametrize('value',[b'\x01',b'\x08',b'\x0f'])
+def test_spi_modes_any_nonempty_subset_passes(value):
+    model,c=setup();replace(model,13,65,value)
+    assert FixtureMetadataChecks(c,model.metadata_selection).run()['status']=='passed'

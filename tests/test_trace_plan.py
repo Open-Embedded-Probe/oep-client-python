@@ -197,21 +197,22 @@ def test_a_refused_plan_request_changes_no_pin_and_no_function():
     assert uart.read(uart.FROM_OLDEST).data == b"kept"
 
 
-@pytest.mark.parametrize("payload, detail", [
-    (assignment(99, 1, 4) + assignment(0, 1, 4), m.MALFORMED),                # fn 0 before an fn the probe lacks
-    (assignment(99, 1, 4) + assignment(4, 1, 4) + assignment(4, 1, 4), m.MALFORMED),   # the same triple twice
-    (assignment(4, 7, 4) + assignment(99, 1, 4), m.UNKNOWN_FUNCTION),         # no such fn before no such role
-    (assignment(5, 1, 4) + assignment(5, 9, 13), m.UNSUPPORTED),             # no such role before the pin conflict
-    (assignment(6, 0, 13) + assignment(6, 1, 14) + assignment(4, 7, 5), m.UNSUPPORTED),   # before plan_roles
+@pytest.mark.parametrize("payload, details", [
+    (assignment(99, 1, 4) + assignment(0, 1, 4), {m.MALFORMED, m.UNKNOWN_FUNCTION}),          # fn 0 and an fn it lacks
+    (assignment(99, 1, 4) + assignment(4, 1, 4) + assignment(4, 1, 4), {m.MALFORMED, m.UNKNOWN_FUNCTION}),   # a triple twice
+    (assignment(4, 7, 4) + assignment(99, 1, 4), {m.UNKNOWN_FUNCTION, m.UNSUPPORTED}),      # no such fn, no such role
+    (assignment(5, 1, 4) + assignment(5, 9, 13), {m.UNSUPPORTED, m.UNAVAILABLE}),           # no such role, a pin conflict
+    (assignment(6, 0, 13) + assignment(6, 1, 14) + assignment(4, 7, 5), {m.UNSUPPORTED, m.UNAVAILABLE}),   # and plan_roles
 ], ids=["fn0-before-unknown-fn", "twice-before-unknown-fn", "unknown-fn-before-role", "role-before-pin-conflict",
         "role-before-plan-roles"])
-def test_plan_apply_refusals_follow_the_tables_order(payload, detail):
-    """plan §2.4 (plan_apply, core §4.3's order): malformed (form, a triple twice, fn 0) before unknown_function before
-    unsupported (role, channel, group) before unavailable (plan_roles, a pin conflict) - a request with two faults is
-    refused for the earlier row, and nothing changes."""
+def test_plan_apply_refusals_follow_the_tables_order(payload, details):
+    """plan §2.4 (plan_apply, core §4.3's order): every row of the table is order 4 of core §4.3, which the probe checks
+    whole before changing anything and answers with any one of the reasons that hold ("当たった理由のどれか 1 つで断る") - a
+    request with two faults is refused for one of them (review 4: the test had required the table's row order, which
+    core §4.3 does not), and nothing changes."""
     ep, hst = bench()
     core.plan_apply(hst, [(4, 1, 4)])
     ep.plan_roles = 2
     r = raw(hst, APPLY, payload)
-    assert r.detail == detail, r.describe()
+    assert r.resolution == m.REJECTED and r.detail in details, r.describe()
     assert ep.plan == {(4, 1, 4)}

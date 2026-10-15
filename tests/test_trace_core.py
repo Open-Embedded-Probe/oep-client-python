@@ -918,6 +918,35 @@ def test_the_session_check_comes_after_the_header_and_before_the_payload(ep):
     rejected(a.raw(0, m.OP_KEEPALIVE, b"\x01"), m.MALFORMED)
 
 
+def test_an_open_s_session_check_comes_before_its_payload(ep):
+    """core §4.3 order 3 before 4, §6.2: an open of another id without force while the lock is held is locked, and the
+    ended id's open is no_session, even when the owner TLV (or the fixed part) is broken; the holder's broken open is
+    then malformed (review 4: the full bench read the payload first and answered malformed)."""
+    a, b = Wire(ep, 0x10), Wire(ep, 0x20)
+    a.open()
+    bad = m.tlv(OWNER, b"x" * 33)
+    rejected(b.open(tail=bad), m.LOCKED)
+    rejected(b.raw(0, m.OP_OPEN, b"\0\0"), m.LOCKED)                         # too short to ask for force
+    rejected(a.open(tail=bad), m.MALFORMED)
+    assert a.raw(0, m.OP_END).succeeded
+    rejected(a.open(tail=bad), m.NO_SESSION)
+
+
+def test_an_order_4_unknown_function_moves_the_last_corr_and_the_lease(ep):
+    """core §5.1, §6.1: a holder's request refused in order 4 with unknown_function (describe naming an fn the probe
+    lacks) passed orders 2 and 3: it is recorded and moves the last corr, and the lease restarts at its answer (review 4:
+    the full bench took any unknown_function for the header's and did neither)."""
+    w = Wire(ep)
+    w.open(lease=3000)
+    ep.now.t = 2000
+    data = w.bytes(0, m.OP_DESCRIBE, struct.pack("<HH", 0x7777, 0))
+    first = ep.handle(data, 0)
+    rejected(m.Result.unpack(first), m.UNKNOWN_FUNCTION)
+    assert w.lock_state()[1] == 3000                                          # restarted at the answer
+    assert ep.handle(data, 0) == first                                        # recorded
+    rejected(m.Result.unpack(ep.handle(data + m.tlv(0x3E, b"x"), 0)), m.MALFORMED)   # its corr is in the record
+
+
 def test_the_rest_is_checked_before_anything_changes(ep):
     """core §4.3 order 4: format, support and state are all checked before a change - a refused open changes nothing
     (no lock, no owner); a refused plan changes no plan."""
@@ -1417,12 +1446,15 @@ def test_list_pages_from_first_and_fits_every_frame():
     for profile in (vb.esp32_v003_64, vb.p4_x035):
         ep = build(profile)
         w, seen, first = Wire(ep), [], 0
+        every = [e for e in entries(ep)[1]]
         while True:
             raw = ep.handle(w.bytes(0, m.OP_LIST, struct.pack("<H", first), sid=0), 0)
             assert len(raw) <= ep.probe.max_frame
             total, page = catalog.unpack_list_result(raw[5:])
             if not page:
                 break
+            if first + len(page) < total:                    # "as many as one frame holds": the next one does not fit
+                assert len(raw) + len(catalog.pack_entry(every[first + len(page)])) > ep.probe.max_frame
             seen += page
             first += len(page)
         assert total == len(seen) == len(ep.names) - 1 and 0 not in [e.fn for e in seen]
@@ -2296,13 +2328,14 @@ def test_confirm_transport_mutant():
 
 def test_a_describe_tlv_of_another_length_is_not_used_and_a_tag_twice_uses_the_first():
     """core §2.3: an answer's TLV whose value is not its defined length is broken - the host does not use it (it does
-    not fail on it either); of a tag the definition does not repeat, the first copy is used."""
+    not fail on it either); of a tag the definition does not repeat, the first copy is used - a broken first copy is
+    not used, and a later copy never stands in for it (max_length below)."""
     from oep_client import catalog
     data = (catalog.u32(catalog.MAX_CLOCK_HZ, 1_000_000) + catalog.u32(catalog.MAX_CLOCK_HZ, 2_000_000)
             + catalog.tlv(catalog.MIN_CLOCK_HZ, b"\x01\x02") + catalog.tlv(catalog.MAX_LENGTH, b"\x01")
             + catalog.u16(catalog.MAX_LENGTH, 64))
     d = catalog.decode_description(data)
-    assert d.max_clock_hz == 1_000_000 and d.min_clock_hz is None and d.max_length == 64
+    assert d.max_clock_hz == 1_000_000 and d.min_clock_hz is None and d.max_length is None
     assert d.broken == [catalog.MIN_CLOCK_HZ, catalog.MAX_LENGTH]
 
 
@@ -3332,6 +3365,21 @@ def test_resource_number_0xffffffff_is_given_and_only_then_cause_2():
     assert w.raw(2, RV.op["halt"], struct.pack("<I", 0xFFFFFFFF)).succeeded
 
 
+def test_an_attach_refused_for_spent_numbers_touches_nothing_first():
+    """core §9, §4.3 order 4: with the u32 space spent, an attach is refused unavailable cause 2 before anything changes -
+    no DMI bring-up on the target, its debug module as it was (review 4: the bench brought the target up, then found no
+    number to give)."""
+    ep = build(vb.p4_bench)
+    w = Wire(ep)
+    w.open()
+    ep._next_resource = 0x1_0000_0000
+    tg = ep._target(1, (4, 5))
+    before = (list(tg.bringup), dict(tg.dmi), tg.halted, tg.havereset)
+    r = rejected(w.raw(1, RVSWD.op["attach"], struct.pack("<BHHI", 1, 4, 5, 4_000_000)), m.UNAVAILABLE)
+    assert h.Unavailable(r).cause == "limit"
+    assert (list(tg.bringup), dict(tg.dmi), tg.halted, tg.havereset) == before
+
+
 def test_an_answer_on_another_transport_does_not_wait_for_the_old_ones_frames():
     """core §10.3: a subscribe again from another transport is answered there at once - it does not wait for the frames
     the old transport still has queued; those, the old subscription's unsent ones, are dropped, and the new
@@ -3445,3 +3493,52 @@ def test_answers_go_before_notifications_whichever_condition_makes_data_due(min_
     got = [cobs.unframe(c) for c in port.output(1 << 20).split(b"\x00") if c]
     assert [m.Result.unpack(f).corr for f in got[:2]] == [60001, 60002]
     assert any(f[0] == m.ROLE_DATA for f in got[2:]) and all(f[0] in (m.ROLE_DATA, m.ROLE_EVENT) for f in got[2:])
+
+
+def _describing(per_fn):
+    """A host whose probe answers describe with `per_fn[fn]` (the TLV bytes, one page) - nothing else."""
+    def send(raw):
+        req = m.Request.unpack(raw)
+        assert (req.fn, req.op) == (0, m.OP_DESCRIBE)
+        fn, first = struct.unpack_from("<HH", req.payload)
+        tlvs = catalog.split_tlv(per_fn[fn])[first:]
+        return m.Result(req.corr, m.COMPLETED, m.SUCCESS, b"\x00" + b"".join(m.tlv(t, v) for t, v in tlvs)).pack()
+    return h.Host(send, rng=random.Random(7))
+
+
+def test_the_host_uses_the_first_copy_of_a_describe_tag_that_does_not_repeat():
+    """core §2.3: a tag the definition does not repeat, sent twice: the reader uses the first. ops (0x07) and max_op_ms
+    (0x4D) are such tags (core §7.4, §7.5): a second ops never adds ops, a second max_op_ms never stands in for a
+    broken first one."""
+    max_op = reg.CORE.tlv["describe"]["max_op_ms"]
+    fn0 = (m.tlv(m.TAG_OPS, catalog.pack_ops(m.CORE_OPS)) + m.tlv(m.TAG_OPS, catalog.pack_ops({0x20}))
+           + m.tlv(max_op, b"\x10\x27\x00") + m.tlv(max_op, struct.pack("<I", 5000)))
+    fn3 = m.tlv(m.TAG_OPS, catalog.pack_ops({0x10})) + m.tlv(m.TAG_OPS, catalog.pack_ops({0x11}))
+    hst = _describing({0: fn0, 3: fn3})
+    assert core.ops(hst, 3) == {0x10} and not core.offers(hst, 3, 0x11)
+    assert core.ops(hst, 0) == set(m.CORE_OPS)
+    assert hst.max_op_ms() is None and core.max_op_ms(hst) == core.FALLBACK_MAX_OP_MS   # the first is broken: unused
+    d = catalog.decode_description(fn3 + m.tlv(catalog.MAX_LENGTH, b"\x01") + m.tlv(catalog.MAX_LENGTH, b"\x08\x00"))
+    assert d.ops == {0x10} and d.max_length is None
+    from oep_client import dump
+    missing = dump.required_missing(b"", catalog.split_tlv(m.tlv(m.TAG_OPS, catalog.pack_ops({1, 2, 3, 4}))
+                                                           + m.tlv(m.TAG_OPS, catalog.pack_ops(m.CORE_OPS))))
+    assert any(x.startswith("describe of fn 0: ops ") for x in missing)        # the second ops does not count
+
+
+def test_the_hosts_clock_waits_as_long_as_any_quick_core_op():
+    """core §7.6 with §4.4: clock is one of fn 0's quick ops - its answer is waited for min(max_op_ms,
+    core_quick_op_max_ms) (core_quick_op_max_ms before max_op_ms is known) + host_wait_add_ms + the transfer time, as
+    for confirm, list or describe; the host's clock sends it with that processing bound, never with none."""
+    seen = []
+    ep = build()
+
+    def send(raw):
+        seen.append(hst.expect_ms)
+        return ep.handle(raw, 0)
+    hst = h.Host(send, rng=random.Random(7))
+    hst.clock()
+    assert seen[-1] == reg.TIMING["core_quick_op_max_ms"]
+    hst._describes[0] = [(reg.CORE.tlv["describe"]["max_op_ms"], struct.pack("<I", 300))]
+    hst.clock()
+    assert seen[-1] == 300 and hst.expect_ms == 0

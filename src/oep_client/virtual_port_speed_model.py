@@ -19,8 +19,6 @@ class PortSpeedExtension(LinkTransfers):
         return (tlv(7,b'\x10\x0f'),) if fn==4 else super().describe(fn)
     def release(self):super().release();self.model.release_speed()
     def dispatch_request(self,fn,op,payload,tags):
-        # Reached only after the core header/replay/session checks, before the step table.
-        self.model.cancel()
         if fn==4 and op==18:return self.model.port_speed(payload)
         if fn==4 and op==19:return self.model.port_state()
         return super().dispatch_request(fn,op,payload,tags)
@@ -63,9 +61,10 @@ class PortSpeedModel(LinkTransferModel):
         else:
             for r in self.ports:self.fall(r,'session')
     def cancel(self):
-        # Only a normal request frame of the session that raised the port, while it holds the lock.
-        p=self.ports.get(self.active_route);sid=int.from_bytes(self.request[6:10],'little') if len(self.request)>=10 else 0
-        if p and p['why']=='idle' and sid and sid==self.ep.current_core.holder==p['owner']:p.update(state=2,why=None,deadline=self.clock_ms+3000)
+        # A normal request frame on the port while the session that raised it is still there (whoever sent it:
+        # the timer is not the lease, link §3), before the step table.
+        p=self.ports.get(self.active_route);holder=self.ep.current_core.holder
+        if p and p['why']=='idle' and len(self.request)>=10 and self.request[0]==1 and holder is not None and holder==p['owner']:p.update(state=2,why=None,deadline=self.clock_ms+3000)
     def tick(self):
         self.ep.current_core.tick()
         for route,port in list(self.ports.items()):
@@ -116,8 +115,8 @@ class PortSpeedModel(LinkTransferModel):
         self.ep.probe.max_frame=e.frame_limit=self.limits[route]
         started=self.clock_ms;raised=[p for p in self.ports.values() if p['state']]
         try:
+            self.cancel()
             reply=self.ep.current_core.handle(request,route,defer_send=True)
-            if self.ep.current_core.renewal:self.cancel()
         finally:
             self.in_release_request=False;self.handling=None;e.fixed,e.free=fixed,free;self.ep.probe.max_frame,e.frame_limit=frame,limit
         # Execution consumes wall time but neither verify nor idle time, whichever

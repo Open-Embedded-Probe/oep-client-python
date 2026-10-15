@@ -29,10 +29,10 @@ class Logic(Gpio):
             raw,size=struct.unpack_from('<BH',data);key=raw&127
             if not key or len(data)<3+size:raise Reject(3)
             value,data=data[3:3+size],data[3+size:]
+            if op in (16,24) and key in (64,66,67,68,69,70) and size!=({64:1,69:6}.get(key,4)):raise Reject(3)   # a later copy too (core §2.3)
             if key in seen:continue
             seen.add(key)
             if op in (16,24) and key in (64,66,67,68,69,70):
-                if size!=({64:1,69:6}.get(key,4)):raise Reject(3)
                 got[key]=(raw,value)
             elif raw&128:raise Reject(11,bytes((raw,)))
         return got
@@ -41,7 +41,9 @@ class Logic(Gpio):
         super().release_plans(functions)
     def plan(self,op,payload,tags):
         if op==17:
-            n=payload[0];fns=list(struct.unpack('<'+'H'*n,payload[1:]));self.release_plans(fns if n else list(self.plans));return b''
+            n=payload[0];fns=list(struct.unpack('<'+'H'*n,payload[1:]))
+            if any(fn and fn not in self.functions for fn in fns):raise Reject(1)   # every fn first; fn 0 has no plan (plan §2.2)
+            self.release_plans(fns if n else list(self.plans));return b''
         rows=[(raw,*struct.unpack('<HBH',v)) for raw,v in tags];seen=set()
         for raw,fn,role,ch in rows:
             if fn==0 or (fn,role,ch) in seen:raise Reject(3)
@@ -50,7 +52,9 @@ class Logic(Gpio):
             if fn not in self.functions:raise Reject(1)
             if fn!=2 or role not in range(3) or ch not in range(3):raise Reject(11,bytes((raw,)))
         if not rows:return b''
-        if len({row[2] for row in rows})!=len(rows) or len({row[3] for row in rows})!=len(rows):raise Reject(3)
+        if len({row[2] for row in rows})!=len(rows) or len({row[3] for row in rows})!=len(rows):raise Reject(11,bytes((rows[0][0],)))   # one channel per role: unsupported (plan §2.4)
+        if sorted((row[2],row[3]) for row in rows)==sorted(zip(self.roles,self.plans.get(2,[]))):return b''   # the same set: nothing (plan §2.1)
+        if self.state in (2,3,5):raise Reject(4,tlv(1,b'\6'))           # running: a change is cause 6 (capture §3.2)
         self.release_plans([2]);rows.sort(key=lambda row:row[2]);self.roles=[row[2] for row in rows];self.plans[2]=[row[3] for row in rows];return b''
     def settings(self,tags):
         if not all(key in tags for key in (64,66)):raise Reject(3)

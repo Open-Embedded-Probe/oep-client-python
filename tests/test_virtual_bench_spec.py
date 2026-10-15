@@ -379,8 +379,10 @@ def test_dmi_and_run_answers_count_their_values_and_rejects_follow_the_order():
 
 @pytest.mark.parametrize("profile", sorted(virtual_bench.PROFILES))
 def test_max_length_fits_a_read_answer_and_a_write_request_in_max_frame(profile):
-    """oep-if-debug §4.5: a probe with block ops declares max_length (bytes, a multiple of 4) so that read_block's answer
-    (5 + 2 + 1 + words) and write_block's request (10 + 2 + 4 + 2 + words) both fit max_frame: max_frame - 24 at most."""
+    """The bench profiles' choice (the reference firmware's), not a rule of oep-if-debug §4.5 (a09fa45: max_length is
+    the function's limit and the host sizes each route's count): max_length (bytes, a multiple of 4) = max_frame - 24
+    rounded down to a word, so that read_block's answer (5 + 2 + 1 + words) and write_block's request
+    (10 + 4 + 4 + 2 + words) both fit max_frame."""
     probe = virtual_bench.PROFILES[profile]()
     ep = endpoint.Endpoint(probe, Clock())
     fns = [fn for fn, name in ep.names.items() if name == "oep.target.riscv-dm"]

@@ -44,7 +44,9 @@ class Uart(Gpio):
     def release(self):self.release_plans(list(self.plans),2)
     def plan(self,op,payload,tags):
         if op==17:
-            n=payload[0];fns=list(struct.unpack('<'+'H'*n,payload[1:]));self.release_plans(fns if n else list(self.plans));return b''
+            n=payload[0];fns=list(struct.unpack('<'+'H'*n,payload[1:]))
+            if any(fn and fn not in self.functions for fn in fns):raise Reject(1)   # every fn first; fn 0 has no plan (plan §2.2)
+            self.release_plans(fns if n else list(self.plans));return b''
         assignments=[(raw,*struct.unpack('<HBH',v)) for raw,v in tags];seen=set()
         for raw,fn,role,ch in assignments:
             if fn==0 or (fn,role,ch) in seen:raise Reject(3)

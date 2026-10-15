@@ -11,7 +11,7 @@ class FixtureMetadata(RegisteredOps):
             10:[tlv(64,struct.pack('<I',127))],
             11:[tlv(64,bytes([3,0,4,17]))],
             12:[tlv(2,struct.pack('<I',400000)),tlv(3,struct.pack('<H',8)),tlv(5,struct.pack('<I',4)),tlv(64,b'\x04'),tlv(65,struct.pack('<I',1000))],
-            13:[tlv(2,struct.pack('<I',1000000)),tlv(3,struct.pack('<H',8)),tlv(5,struct.pack('<I',1)),tlv(64,b'\x04'),tlv(67,struct.pack('<I',100))],
+            13:[tlv(2,struct.pack('<I',1000000)),tlv(3,struct.pack('<H',8)),tlv(5,struct.pack('<I',1)),tlv(64,b'\x04'),tlv(65,b'\x0f'),tlv(67,struct.pack('<I',100))],
         }
     def describe(self,fn):return super().describe(fn)+tuple(self.metadata.get(fn,()))
 

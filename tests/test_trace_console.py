@@ -148,9 +148,12 @@ def test_a_reset_op_marks_reset_detail_1_once_and_no_restart_for_it():
     con = console.Console(hst)
     sid = con.open(conn, console.Console.DMSEQ)
     ep.emit(sid, b"before")
-    riscv.RiscvDm(hst, conn).reset()
+    dm = riscv.RiscvDm(hst, conn)
+    dm.reset()
     marks = con.marks()
     assert [(mk.kind, mk.detail) for mk in marks] == [(console.MARK_KIND["reset"], 1)]
+    dm.halt()                                                         # the ops after it: still no restart for it
+    assert [(mk.kind, mk.detail) for mk in con.marks()] == [(console.MARK_KIND["reset"], 1)]
     assert con.read(console.Console.FROM_OLDEST, 0, 64).data == b"before"
 
 

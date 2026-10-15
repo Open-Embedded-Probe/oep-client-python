@@ -59,7 +59,7 @@ def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, byte
             elif where[0] != _RELAYING_BROKER and _TRANSPORT_TAG in have and where[0] not in indexes:
                 out.append(f"describe of fn 0: the transport confirm names (index {where[0]})")
     out += [f"describe of fn 0: {name}" for tag, name in _REQUIRED_CORE_TAGS.items() if tag not in have]
-    values = [v for tag, v in core_describe if tag == m.TAG_OPS]
+    values = [v for tag, v in core_describe if tag == m.TAG_OPS][:1]   # ops twice: the first is used (core §2.3)
     if not values:
         out.append("describe of fn 0: ops")                    # every fn's describe carries it (core §1.2, §7.4)
     else:

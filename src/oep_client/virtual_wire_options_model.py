@@ -10,7 +10,7 @@ class WireOptions(Attachments):
     def __init__(self,ep):
         super().__init__(ep);self.reset_supported=True;self.behavior='ok';self.clock_ms=0;self.wire_events=[];self.targets={};self.pin_modes={i:'free' for i in range(8)};self.pin_levels={i:dict(mode='free',level=None) for i in range(8)}
     def describe(self,fn):
-        rows=super().describe(fn)
+        rows=tuple(row for row in super().describe(fn) if row[0]!=1)        # its own reset line (channel 6) only
         return rows+(tlv(1,b'\x03\0\0\x40'),) if fn<=3 and self.reset_supported else rows
     def request_tags(self,fn,op,data):
         if fn>3 or op!=17:return super().request_tags(fn,op,data)

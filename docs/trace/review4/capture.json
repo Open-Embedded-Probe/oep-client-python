@@ -1,0 +1,677 @@
+{
+ "reviewed_commit": "4c31015",
+ "units": {
+  "capture:pre:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; names/revisions: registry, bench offer and client NAME/REVISION read against the table; no divergence from a09fa45; verify asserts it (test_names_are_revision_1_and_offered_as_such[oep.fixture.logic])"
+  },
+  "capture:pre:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; names/revisions: registry, bench offer and client NAME/REVISION read against the table; no divergence from a09fa45; verify asserts it (test_names_are_revision_1_and_offered_as_such[oep.fixture.analog])"
+  },
+  "capture:pre:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; names/revisions: registry, bench offer and client NAME/REVISION read against the table; no divergence from a09fa45; verify asserts it (test_names_are_revision_1_and_offered_as_such[oep.fixture.capture-group])"
+  },
+  "capture:1.1:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; logic layout: bench pack_samples/answer, client channel(), logic/timeline models and checkers compared bit by bit (w 1-128, pos in role order, undefined bits ignored, ceil(N*w/8)); no divergence from a09fa45; verify asserts it (test_logic_layout_w_c_pos_and_n_are_the_probes[1-widths0-1])"
+  },
+  "capture:1.1:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; logic layout: bench pack_samples/answer, client channel(), logic/timeline models and checkers compared bit by bit (w 1-128, pos in role order, undefined bits ignored, ceil(N*w/8)); no divergence from a09fa45; verify asserts it (test_logic_layout_w_c_pos_and_n_are_the_probes[1-widths0-1])"
+  },
+  "capture:1.1:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; logic layout: bench pack_samples/answer, client channel(), logic/timeline models and checkers compared bit by bit (w 1-128, pos in role order, undefined bits ignored, ceil(N*w/8)); no divergence from a09fa45; verify asserts it (test_logic_layout_w_c_pos_and_n_are_the_probes[1-widths0-1]); sparse logic plan test added (role 2 = channel 1)"
+  },
+  "capture:1.1:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; logic layout: bench pack_samples/answer, client channel(), logic/timeline models and checkers compared bit by bit (w 1-128, pos in role order, undefined bits ignored, ceil(N*w/8)); no divergence from a09fa45; verify asserts it (test_logic_layout_w_c_pos_and_n_are_the_probes[1-widths0-1])"
+  },
+  "capture:1.1:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; logic layout: bench pack_samples/answer, client channel(), logic/timeline models and checkers compared bit by bit (w 1-128, pos in role order, undefined bits ignored, ceil(N*w/8)); no divergence from a09fa45; verify asserts it (test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[1])"
+  },
+  "capture:1.1:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; logic layout: bench pack_samples/answer, client channel(), logic/timeline models and checkers compared bit by bit (w 1-128, pos in role order, undefined bits ignored, ceil(N*w/8)); no divergence from a09fa45; verify asserts it (test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[1])"
+  },
+  "capture:1.1:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; logic layout: bench pack_samples/answer, client channel(), logic/timeline models and checkers compared bit by bit (w 1-128, pos in role order, undefined bits ignored, ceil(N*w/8)); no divergence from a09fa45; verify asserts it (test_logic_bits_no_channel_hits_are_ignored)"
+  },
+  "capture:1.1:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; logic layout: bench pack_samples/answer, client channel(), logic/timeline models and checkers compared bit by bit (w 1-128, pos in role order, undefined bits ignored, ceil(N*w/8)); no divergence from a09fa45; verify asserts it (test_logic_sample_i_is_bits_i_w_and_channel_k_bit_pos_k[1])"
+  },
+  "capture:1.1:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; logic layout: bench pack_samples/answer, client channel(), logic/timeline models and checkers compared bit by bit (w 1-128, pos in role order, undefined bits ignored, ceil(N*w/8)); no divergence from a09fa45; verify asserts it (test_logic_whole_byte_samples_are_little_endian_integers)"
+  },
+  "capture:1.1:10": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; logic layout: bench pack_samples/answer, client channel(), logic/timeline models and checkers compared bit by bit (w 1-128, pos in role order, undefined bits ignored, ceil(N*w/8)); no divergence from a09fa45; verify asserts it (test_logic_layout_examples[w1-1ch])"
+  },
+  "capture:1.1:11": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; logic layout: bench pack_samples/answer, client channel(), logic/timeline models and checkers compared bit by bit (w 1-128, pos in role order, undefined bits ignored, ceil(N*w/8)); no divergence from a09fa45; verify asserts it (test_logic_layout_examples[w3-3ch])"
+  },
+  "capture:1.1:12": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; logic layout: bench pack_samples/answer, client channel(), logic/timeline models and checkers compared bit by bit (w 1-128, pos in role order, undefined bits ignored, ceil(N*w/8)); no divergence from a09fa45; verify asserts it (test_logic_layout_examples[w8-1ch])"
+  },
+  "capture:1.1:13": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; logic layout: bench pack_samples/answer, client channel(), logic/timeline models and checkers compared bit by bit (w 1-128, pos in role order, undefined bits ignored, ceil(N*w/8)); no divergence from a09fa45; verify asserts it (test_logic_layout_examples[w8-bit5])"
+  },
+  "capture:1.1:14": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; logic layout: bench pack_samples/answer, client channel(), logic/timeline models and checkers compared bit by bit (w 1-128, pos in role order, undefined bits ignored, ceil(N*w/8)); no divergence from a09fa45; verify asserts it (test_logic_layout_examples[w4-3ch])"
+  },
+  "capture:1.1:15": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; logic layout: bench pack_samples/answer, client channel(), logic/timeline models and checkers compared bit by bit (w 1-128, pos in role order, undefined bits ignored, ceil(N*w/8)); no divergence from a09fa45; verify asserts it (test_logic_layout_examples[w8-3ch])"
+  },
+  "capture:1.1:16": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; logic layout: bench pack_samples/answer, client channel(), logic/timeline models and checkers compared bit by bit (w 1-128, pos in role order, undefined bits ignored, ceil(N*w/8)); no divergence from a09fa45; verify asserts it (test_logic_layout_examples[w16-9ch])"
+  },
+  "capture:1.2:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_analog_layout_s_o_b_c_order_n)"
+  },
+  "capture:1.2:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_analog_layout_s_o_b_c_order_n)"
+  },
+  "capture:1.2:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_analog_layout_s_o_b_c_order_n)"
+  },
+  "capture:1.2:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_analog_layout_s_o_b_c_order_n)"
+  },
+  "capture:1.2:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_analog_layout_s_o_b_c_order_n)"
+  },
+  "capture:1.2:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_analog_slots_frames_and_value_bits[8-0-8])"
+  },
+  "capture:1.2:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_analog_slots_frames_and_value_bits[8-0-8])"
+  },
+  "capture:1.2:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_analog_slots_frames_and_value_bits[8-0-8])"
+  },
+  "capture:1.2:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_analog_voltage_skew_and_clipping)"
+  },
+  "capture:1.2:10": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_analog_voltage_skew_and_clipping)"
+  },
+  "capture:1.2:11": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_analog_voltage_skew_and_clipping)"
+  },
+  "capture:1.2:12": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_analog_layout_examples[32-0-12-80572-2748])"
+  },
+  "capture:1.2:13": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_analog_layout_examples[16-0-12-15036-2748])"
+  },
+  "capture:1.2:14": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_analog_layout_examples[16-0-12-2748-2748])"
+  },
+  "capture:1.2:15": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_analog_layout_examples[8-0-8-165-165])"
+  },
+  "capture:1.2:16": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_logic_plan_on_an_output_idle_channel_listens_without_driving)"
+  },
+  "capture:1.2:17": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_an_analog_pin_is_shared_with_nothing)"
+  },
+  "capture:1.2:18": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_logic_capture_never_changes_a_driven_pin)"
+  },
+  "capture:1.2:19": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_analog_pad_leaves_idle_only_while_it_acquires)"
+  },
+  "capture:1.2:20": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; analog layout/scale/clip: bench answer/_pack, client values/millivolts/clipped, analog payload checker and models compared (s/o/b/order of planned role numbers, offset binary, clip ends); no divergence from a09fa45; verify asserts it (test_analog_plan_on_an_output_idle_channel_is_unavailable_cause_5)"
+  },
+  "capture:2.1:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; modes and streaming rules: bench tick/pushes/drop_to/stop, client stream/finish/coverage, timeline checker and model compared; no divergence from a09fa45; verify asserts it (test_one_shot_takes_samples_stops_in_4_and_the_next_start_clears[False])"
+  },
+  "capture:2.1:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; modes and streaming rules: bench tick/pushes/drop_to/stop, client stream/finish/coverage, timeline checker and model compared; no divergence from a09fa45; verify asserts it (test_repeat_follows_on_without_gaps_into_free_segments_only)"
+  },
+  "capture:2.1:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; modes and streaming rules: bench tick/pushes/drop_to/stop, client stream/finish/coverage, timeline checker and model compared; no divergence from a09fa45; verify asserts it (test_streaming_sends_while_the_lock_holder_subscribes)"
+  },
+  "capture:2.1:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; modes and streaming rules: bench tick/pushes/drop_to/stop, client stream/finish/coverage, timeline checker and model compared; no divergence from a09fa45; verify asserts it (test_known_waveform_has_one_initial_trigger_and_correct_retained_history[0-2-False])"
+  },
+  "capture:2.1:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; modes and streaming rules: bench tick/pushes/drop_to/stop, client stream/finish/coverage, timeline checker and model compared; no divergence from a09fa45; verify asserts it (test_no_sample_is_taken_before_start[False])"
+  },
+  "capture:2.1:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; modes and streaming rules: bench tick/pushes/drop_to/stop, client stream/finish/coverage, timeline checker and model compared; no divergence from a09fa45; verify asserts it (test_streaming_without_room_drops_and_the_position_jumps)"
+  },
+  "capture:2.1:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; modes and streaming rules: bench tick/pushes/drop_to/stop, client stream/finish/coverage, timeline checker and model compared; no divergence from a09fa45; verify asserts it (test_after_stop_the_rest_goes_without_waiting_for_the_batching)"
+  },
+  "capture:2.1:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; modes and streaming rules: bench tick/pushes/drop_to/stop, client stream/finish/coverage, timeline checker and model compared; no divergence from a09fa45; verify asserts it (test_streaming_sends_while_the_lock_holder_subscribes)"
+  },
+  "capture:2.1:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; modes and streaming rules: bench tick/pushes/drop_to/stop, client stream/finish/coverage, timeline checker and model compared; no divergence from a09fa45; verify asserts it (test_streaming_read_of_pushed_data_points_at_write_pos_with_gap)"
+  },
+  "capture:2.2:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_one_shot_takes_samples_stops_in_4_and_the_next_start_clears[False])"
+  },
+  "capture:2.2:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_repeat_follows_on_without_gaps_into_free_segments_only)"
+  },
+  "capture:2.2:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_streaming_segments_are_the_probes_and_every_frame_says_which)"
+  },
+  "capture:2.2:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_segment_serials_wrap_and_compare_by_core_2_6)"
+  },
+  "capture:2.2:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_segment_serials_wrap_and_compare_by_core_2_6)"
+  },
+  "capture:2.2:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_segment_fields_position_samples_times_trigger_flags_generation)"
+  },
+  "capture:2.2:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_segment_fields_position_samples_times_trigger_flags_generation)"
+  },
+  "capture:2.2:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_segment_fields_position_samples_times_trigger_flags_generation)"
+  },
+  "capture:2.2:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_segment_fields_position_samples_times_trigger_flags_generation)"
+  },
+  "capture:2.2:10": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_segment_fields_position_samples_times_trigger_flags_generation)"
+  },
+  "capture:2.2:11": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_one_shot_takes_samples_stops_in_4_and_the_next_start_clears[False])"
+  },
+  "capture:2.2:12": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_repeat_segments_follow_on_unless_flags_bit0)"
+  },
+  "capture:2.2:13": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_a_drop_inside_a_segment_is_an_error_not_a_gap[1-False])"
+  },
+  "capture:2.2:14": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_repeat_follows_on_without_gaps_into_free_segments_only)"
+  },
+  "capture:2.2:15": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_a_drop_inside_a_segment_is_an_error_not_a_gap[1-False])"
+  },
+  "capture:2.2:16": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_the_pretrigger_ring_is_not_public_while_waiting)"
+  },
+  "capture:2.2:17": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_unfinished_tail_bytes_are_not_returned_before_the_segment_ends)"
+  },
+  "capture:2.2:18": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_slipped_segments_say_so)"
+  },
+  "capture:2.2:19": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; segments: bench _segment/overflow/read/release, client Received.drop_from, logic/serial/timeline checkers compared (gap only at a segment start, in-segment drop -> state 6, write_pos); no divergence from a09fa45; verify asserts it (test_segment_records_are_a_small_ring_the_probe_sizes)"
+  },
+  "capture:3.1:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; roles: bench plan check and settle (logic channel k = k-th smallest planned role, analog order = planned numbers), models compared; no divergence from a09fa45; verify asserts it (test_role_k_is_channel_k)"
+  },
+  "capture:3.1:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; roles: bench plan check and settle (logic channel k = k-th smallest planned role, analog order = planned numbers), models compared; no divergence from a09fa45; verify asserts it (test_analog_plan_refuses_a_pin_without_an_adc_channel)"
+  },
+  "capture:3.2:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_operation_rows_numbers_locks_and_answers[configure-False])"
+  },
+  "capture:3.2:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_operation_rows_numbers_locks_and_answers[start-False])"
+  },
+  "capture:3.2:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_operation_rows_numbers_locks_and_answers[stop-False])"
+  },
+  "capture:3.2:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_operation_rows_numbers_locks_and_answers[force-False])"
+  },
+  "capture:3.2:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_operation_rows_numbers_locks_and_answers[status-False])"
+  },
+  "capture:3.2:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_operation_rows_numbers_locks_and_answers[read-False])"
+  },
+  "capture:3.2:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_operation_rows_numbers_locks_and_answers[segments-False])"
+  },
+  "capture:3.2:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_operation_rows_numbers_locks_and_answers[release-False])"
+  },
+  "capture:3.2:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_operation_rows_numbers_locks_and_answers[query-False])"
+  },
+  "capture:3.2:10": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_operation_rows_numbers_locks_and_answers[calibration-False])"
+  },
+  "capture:3.2:11": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_operation_rows_numbers_locks_and_answers[subscribe-False])"
+  },
+  "capture:3.2:12": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_operation_rows_numbers_locks_and_answers[unsubscribe-False])"
+  },
+  "capture:3.2:13": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_states_0_to_6_and_status_fields[False])"
+  },
+  "capture:3.2:14": {
+   "verdict": "fixed",
+   "reason": "Streaming: a stop ending the segment being taken (short) did not count it in serial_done; now it does."
+  },
+  "capture:3.2:15": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_status_flags_reset_at_start_and_error_tlv_in_state_6)"
+  },
+  "capture:3.2:16": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_generation_on_read_and_release_and_zero_before_start[1])"
+  },
+  "capture:3.2:17": {
+   "verdict": "fixed",
+   "reason": "The client read() ignored the answer position and gap flag, taking the bytes of another position as those asked for; now ReadGap (ProtocolError) with the readable position."
+  },
+  "capture:3.2:18": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_release_frees_finished_segments_up_to_serial_inclusive)"
+  },
+  "capture:3.2:19": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_read_returns_at_most_max_and_within_max_frame)"
+  },
+  "capture:3.2:20": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_segment_records_are_a_small_ring_the_probe_sizes)"
+  },
+  "capture:3.2:21": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_state_table_configure_and_start[0-1-cause6-False])"
+  },
+  "capture:3.2:22": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_state_table_configure_and_start[1-1-new-False])"
+  },
+  "capture:3.2:23": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_state_table_configure_and_start[2-cause6-cause6-False])"
+  },
+  "capture:3.2:24": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_state_table_configure_and_start[3-cause6-cause6-False]); streaming stop short last segment test added"
+  },
+  "capture:3.2:25": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_state_table_configure_and_start[4-1-new-False])"
+  },
+  "capture:3.2:26": {
+   "verdict": "fixed",
+   "reason": "stop in state 5 sent stopped reason 1, which the state table gives only rows 2 and 3; now 5 -> 1 silently (the group still says stopped 1 when its stop ends state 3)."
+  },
+  "capture:3.2:27": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; operations/state table: bench VirtualCapture ops and endpoint._capture, client LogicCapture, logic/analog/timeline-lifecycle checkers and models compared; no divergence from a09fa45; verify asserts it (test_state_table_configure_and_start[6-1-new-False])"
+  },
+  "capture:3.3:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_configure_contract_refusals_change_nothing[no-mode-False-configure])"
+  },
+  "capture:3.3:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_configure_contract_refusals_change_nothing[no-mode-False-configure])"
+  },
+  "capture:3.3:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_configure_contract_refusals_change_nothing[no-mode-False-configure])"
+  },
+  "capture:3.3:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_configure_contract_refusals_change_nothing[no-mode-False-configure])"
+  },
+  "capture:3.3:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_trigger_types_per_interface[False])"
+  },
+  "capture:3.3:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_configure_contract_refusals_change_nothing[no-mode-False-configure])"
+  },
+  "capture:3.3:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_requested_frontend_is_returned_per_role_and_query_preserves_capture[0-False-False]); checker mutant test for the frontend refusal added"
+  },
+  "capture:3.3:8": {
+   "verdict": "fixed",
+   "reason": "The bench refused a logic trigger whose role is in the plan unless roles were 0..C-1 (and took one not planned); now the planned role numbers, the trigger watching channel index(role). The logic/analog/timeline models skipped validating a later copy of a configure TLV (core §2.3); now malformed."
+  },
+  "capture:3.3:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_the_critical_bit_on_the_tables_tlvs_changes_nothing[False])"
+  },
+  "capture:3.3:10": {
+   "verdict": "fixed",
+   "reason": "The analog checker (and analog/timeline models) required rejected unavailable cause 6 for a frontend TLV naming an unplanned role; §3.3 lists no such refusal, so it is an unlisted one: unsupported with the tag as received (as the bench already does)."
+  },
+  "capture:3.3:11": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_two_refusals_answer_one_of_them)"
+  },
+  "capture:3.3:12": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_query_is_its_own_lock_free_op_that_changes_nothing)"
+  },
+  "capture:3.3:13": {
+   "verdict": "fixed",
+   "reason": "The bench accepted undefined trigger values (level > 1, edge > 2, an analog threshold past 2^b - 1); now unsupported with the trigger tag as received."
+  },
+  "capture:3.3:14": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_samples_count_the_pretrigger_and_an_early_trigger_shortens)"
+  },
+  "capture:3.3:15": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_rate_is_the_nearest_kept_within_the_range[1000-1000])"
+  },
+  "capture:3.3:16": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_samples_and_segments_are_rounded_down_to_what_it_holds)"
+  },
+  "capture:3.3:17": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_samples_and_segments_are_rounded_down_to_what_it_holds)"
+  },
+  "capture:3.3:18": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_configure_answer_rows[1-False])"
+  },
+  "capture:3.3:19": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_configure_answer_rows[1-False])"
+  },
+  "capture:3.3:20": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_configure_answer_rows[1-False])"
+  },
+  "capture:3.3:21": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_configure_answer_rows[1-False])"
+  },
+  "capture:3.3:22": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_configure_answer_rows[1-False])"
+  },
+  "capture:3.3:23": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_configure_answer_rows[1-False])"
+  },
+  "capture:3.3:24": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_configure_answer_rows[1-False])"
+  },
+  "capture:3.3:25": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; configure/query contract and answer: bench settle/answer, client configure/_config, logic/analog/payload checkers and models compared; no divergence from a09fa45; verify asserts it (test_configure_answer_rows[1-False])"
+  },
+  "capture:3.4:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; notifications: bench events/pushes (segment_info, generation), client unpack_event/stream, timeline checker compared; no divergence from a09fa45; verify asserts it (test_segment_event_carries_the_record_and_not_in_streaming[False])"
+  },
+  "capture:3.4:2": {
+   "verdict": "fixed",
+   "reason": "A start whose initialisation failed put the track in state 6 without the stopped reason 3 event; now sent with the error and generation."
+  },
+  "capture:3.4:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; notifications: bench events/pushes (segment_info, generation), client unpack_event/stream, timeline checker compared; no divergence from a09fa45; verify asserts it (test_triggered_event_serial_index_time_generation[False])"
+  },
+  "capture:3.4:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; notifications: bench events/pushes (segment_info, generation), client unpack_event/stream, timeline checker compared; no divergence from a09fa45; verify asserts it (test_streaming_data_frames_carry_generation_and_segment_info)"
+  },
+  "capture:3.4:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; notifications: bench events/pushes (segment_info, generation), client unpack_event/stream, timeline checker compared; no divergence from a09fa45; verify asserts it (test_host_takes_events_of_another_generation_as_old)"
+  },
+  "capture:3.4:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; notifications: bench events/pushes (segment_info, generation), client unpack_event/stream, timeline checker compared; no divergence from a09fa45; verify asserts it (test_streaming_needs_a_subscription_and_declares_subscribe)"
+  },
+  "capture:3.5:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; describe: bench _capture_decl/_analog_decl, metadata checker/model compared; no divergence from a09fa45; verify asserts it (test_describe_declarations[oep.fixture.logic])"
+  },
+  "capture:3.5:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; describe: bench _capture_decl/_analog_decl, metadata checker/model compared; no divergence from a09fa45; verify asserts it (test_describe_declarations[oep.fixture.logic])"
+  },
+  "capture:3.5:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; describe: bench _capture_decl/_analog_decl, metadata checker/model compared; no divergence from a09fa45; verify asserts it (test_describe_declarations[oep.fixture.logic])"
+  },
+  "capture:3.5:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; describe: bench _capture_decl/_analog_decl, metadata checker/model compared; no divergence from a09fa45; verify asserts it (test_describe_declarations[oep.fixture.logic])"
+  },
+  "capture:3.5:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; describe: bench _capture_decl/_analog_decl, metadata checker/model compared; no divergence from a09fa45; verify asserts it (test_describe_declarations[oep.fixture.logic])"
+  },
+  "capture:3.5:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; describe: bench _capture_decl/_analog_decl, metadata checker/model compared; no divergence from a09fa45; verify asserts it (test_describe_declarations[oep.fixture.logic])"
+  },
+  "capture:3.5:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; describe: bench _capture_decl/_analog_decl, metadata checker/model compared; no divergence from a09fa45; verify asserts it (test_describe_declarations[oep.fixture.logic])"
+  },
+  "capture:3.5:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; describe: bench _capture_decl/_analog_decl, metadata checker/model compared; no divergence from a09fa45; verify asserts it (test_describe_declarations[oep.fixture.logic])"
+  },
+  "capture:3.5:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; describe: bench _capture_decl/_analog_decl, metadata checker/model compared; no divergence from a09fa45; verify asserts it (test_a_probe_declares_only_the_modes_it_has)"
+  },
+  "capture:3.5:10": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; describe: bench _capture_decl/_analog_decl, metadata checker/model compared; no divergence from a09fa45; verify asserts it (test_the_configure_answer_is_what_holds_not_the_declaration)"
+  },
+  "capture:3.7:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; calibration: bench calibration(), client Calibration, analog checker CALIBRATION/CALIBRATION-FIT and model compared; no divergence from a09fa45; verify asserts it (test_calibration_returns_raw_factory_rows_and_vrefint_after_a_start)"
+  },
+  "capture:3.7:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; calibration: bench calibration(), client Calibration, analog checker CALIBRATION/CALIBRATION-FIT and model compared; no divergence from a09fa45; verify asserts it (test_calibration_returns_raw_factory_rows_and_vrefint_after_a_start)"
+  },
+  "capture:3.7:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; calibration: bench calibration(), client Calibration, analog checker CALIBRATION/CALIBRATION-FIT and model compared; no divergence from a09fa45; verify asserts it (test_chip_firmware_frontends_and_reference_are_where_the_rules_say)"
+  },
+  "capture:3.7:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; calibration: bench calibration(), client Calibration, analog checker CALIBRATION/CALIBRATION-FIT and model compared; no divergence from a09fa45; verify asserts it (test_chip_firmware_frontends_and_reference_are_where_the_rules_say)"
+  },
+  "capture:4.1:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; group ops: bench VirtualGroup bind/start/stop/status and endpoint._group, client CaptureGroup, group/timeline checkers and models compared; no divergence from a09fa45; verify asserts it (test_group_operation_rows[bind-16-True])"
+  },
+  "capture:4.1:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; group ops: bench VirtualGroup bind/start/stop/status and endpoint._group, client CaptureGroup, group/timeline checkers and models compared; no divergence from a09fa45; verify asserts it (test_group_operation_rows[start-17-True])"
+  },
+  "capture:4.1:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; group ops: bench VirtualGroup bind/start/stop/status and endpoint._group, client CaptureGroup, group/timeline checkers and models compared; no divergence from a09fa45; verify asserts it (test_group_operation_rows[stop-18-True])"
+  },
+  "capture:4.1:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; group ops: bench VirtualGroup bind/start/stop/status and endpoint._group, client CaptureGroup, group/timeline checkers and models compared; no divergence from a09fa45; verify asserts it (test_group_operation_rows[status-20-False])"
+  },
+  "capture:4.1:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; group ops: bench VirtualGroup bind/start/stop/status and endpoint._group, client CaptureGroup, group/timeline checkers and models compared; no divergence from a09fa45; verify asserts it (test_group_operation_rows[subscribe-1-True])"
+  },
+  "capture:4.1:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; group ops: bench VirtualGroup bind/start/stop/status and endpoint._group, client CaptureGroup, group/timeline checkers and models compared; no divergence from a09fa45; verify asserts it (test_group_operation_rows[unsubscribe-2-True])"
+  },
+  "capture:4.1:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; group ops: bench VirtualGroup bind/start/stop/status and endpoint._group, client CaptureGroup, group/timeline checkers and models compared; no divergence from a09fa45; verify asserts it (test_group_bind_rules)"
+  },
+  "capture:4.1:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; group ops: bench VirtualGroup bind/start/stop/status and endpoint._group, client CaptureGroup, group/timeline checkers and models compared; no divergence from a09fa45; verify asserts it (test_group_unbind)"
+  },
+  "capture:4.1:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; group ops: bench VirtualGroup bind/start/stop/status and endpoint._group, client CaptureGroup, group/timeline checkers and models compared; no divergence from a09fa45; verify asserts it (test_group_bind_checks_the_start_answer_fits_the_frame)"
+  },
+  "capture:4.1:10": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; group ops: bench VirtualGroup bind/start/stop/status and endpoint._group, client CaptureGroup, group/timeline checkers and models compared; no divergence from a09fa45; verify asserts it (test_group_start_only_from_1_4_6_and_atomic)"
+  },
+  "capture:4.1:11": {
+   "verdict": "fixed",
+   "reason": "A group start failing on a track (group state 6) sent no group stopped; now stopped reason 3 with the track error (and the track its own stopped 3)."
+  },
+  "capture:4.1:12": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; group ops: bench VirtualGroup bind/start/stop/status and endpoint._group, client CaptureGroup, group/timeline checkers and models compared; no divergence from a09fa45; verify asserts it (test_group_stop_and_status_state); group stop of paused tracks still says stopped (guard for the 3.2:26 fix)"
+  },
+  "capture:4.1:13": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; group ops: bench VirtualGroup bind/start/stop/status and endpoint._group, client CaptureGroup, group/timeline checkers and models compared; no divergence from a09fa45; verify asserts it (test_group_stop_and_status_state)"
+  }
+ },
+ "divergences": [
+  {
+   "unit": "capture:3.3:8",
+   "spec": "trigger の type が 0 でなく、その role がその fn の plan に無ければ rejected unavailable（cause 6）。",
+   "code": "src/oep_client/virtual_bench_capture.py:VirtualCapture.settle",
+   "fix": "logic role_ids are the planned role numbers; the stored trigger role becomes the channel index (k-th smallest role, §1.1)"
+  },
+  {
+   "unit": "capture:3.3:8",
+   "spec": "後続の同じtagも上の検証対象である。例えば、正常な既知TLVの後に同じtagで不正な長さの値があれば、要求全体をmalformedで断る。（core §2.3; capture §3.3 の設定の TLV は core §2.3 に従う）",
+   "code": "src/oep_client/virtual_logic_model.py:Logic.request_tags, virtual_analog_model.py:Analog.request_tags, virtual_capture_timeline_model.py:Track.request_tags",
+   "fix": "length checked before a duplicate is skipped"
+  },
+  {
+   "unit": "capture:3.3:13",
+   "spec": "trigger の type: 0 即時（省略時）、1 レベル（value 0 / 1）、2 エッジ（value 0 立ち上がり / 1 立ち下がり / 2 両方）、3 しきい値を上向きに横切る、4 下向きに横切る（value は o / b で切り出した後の ADC の値）。 + core §2.3「定義が使わずに残した値と、この probe が扱わない値は rejected unsupported（受け取ったままの tag）」",
+   "code": "src/oep_client/virtual_bench_capture.py:VirtualCapture.settle",
+   "fix": "level > 1, edge > 2, threshold > 4095 refused unsupported with the trigger tag"
+  },
+  {
+   "unit": "capture:3.2:14",
+   "spec": "`serial_done` は次に終わる区画の serial（start から終わった区画の数を 2^32 で割った余り）",
+   "code": "src/oep_client/virtual_bench_capture.py:VirtualCapture.stop",
+   "fix": "streaming stop counts the short segment it ends"
+  },
+  {
+   "unit": "capture:3.4:2",
+   "spec": "**エラー**: トラックが state 6 に入るのは取得の失敗（§2.2 の区画の中の落としを含む）のときだけで、そのときは理由によらず必ず出来事 stopped を reason 3 と、status の error と同じ error で送る（購読していれば。§3.4）。",
+   "code": "src/oep_client/endpoint.py:Endpoint._capture (start, capture_fail_start)",
+   "fix": "stopped reason 3 with the error sent when the start fails"
+  },
+  {
+   "unit": "capture:4.1:11",
+   "spec": "初期化/取得の失敗でtrackがstate 6になれば組も6とし、ほかのtrackをstopと同じに止める。 / §4.2 reason(u8: 0 全track完了、1 stop、3 error)、error(u8: reason3のtrack error、ほかは0)",
+   "code": "src/oep_client/virtual_bench_capture.py:VirtualGroup.start",
+   "fix": "failed track sends stopped 3, the group stopped 3 with its error"
+  },
+  {
+   "unit": "capture:3.2:26",
+   "spec": "| 5 止まっている | unavailable 6 | unavailable 6 | → 1 | — | 空きができれば → 3（flags bit0） | |",
+   "code": "src/oep_client/virtual_bench_capture.py:VirtualCapture.stop, VirtualGroup.stop",
+   "fix": "no stopped on 5 -> 1; the group says stopped 1 when its state was 3 before its stop"
+  },
+  {
+   "unit": "capture:3.2:17",
+   "spec": "readの要求位置が使い回された/押し出された場合、次の読める位置へ進めてgapを立てる。",
+   "code": "src/oep_client/capture.py:LogicCapture._read_data/read",
+   "fix": "answer position/gap checked: ReadGap (ProtocolError) instead of returning bytes of another position"
+  },
+  {
+   "unit": "capture:3.3:10",
+   "spec": "**挙げていない断り**: この節が挙げる断りは全部ではない。probe は、自分が扱えないほかの値と値の組み合わせ（宣言で表せない probe 自身の上限。例: pretrigger と samples の差の下限）も、core §2.3 のとおり rejected unsupported で断る。tag はその値を持つ TLV の受け取ったままのtag",
+   "code": "src/oep_client/conformance_analog.py:AnalogChecks.case(FRONTEND), virtual_analog_model.py:Analog.settings, virtual_capture_timeline_model.py:Track.settings",
+   "fix": "frontend of an unplanned role: unsupported with the frontend tag as received (checker requires it, models answer it)"
+  }
+ ]
+}

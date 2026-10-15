@@ -18,12 +18,11 @@ class Scans(Attachments):
             raw,size=struct.unpack_from('<BH',data);value=data[3:3+size]
             if not raw&127 or len(value)!=size:raise Reject(3)
             data=data[3+size:];tag=raw&127
-            if tag in result:continue
             if tag!=1:
                 if raw&128:raise Reject(11,bytes((raw,)))
                 continue
-            if size!=4:raise Reject(3)
-            result[tag]=(raw,value)
+            if size!=4 or not struct.unpack('<I',value)[0]:raise Reject(3)   # every copy; max_speed 0 (debug §1, core §2.3)
+            result.setdefault(tag,(raw,value))
         return result
     def dispatch_request(self,fn,op,payload,tags):
         if fn>3 or op!=16:return super().dispatch_request(fn,op,payload,tags)

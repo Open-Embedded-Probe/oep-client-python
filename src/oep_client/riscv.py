@@ -60,9 +60,9 @@ class NoMaxLength(h.OepError):
 
 
 def declared_max_length(hst: h.Host, fn: int, name: str) -> int:
-    """The describe common tag max_length (core §7.4) of interface `fn`, in bytes, rounded down to a word. The probe
-    declares it so that both a read_block answer and a write_block request fit its max_frame (oep-if-debug §4.5).
-    NoMaxLength when the probe does not declare it (or declares less than one word)."""
+    """The describe common tag max_length (core §7.4) of interface `fn`, in bytes, rounded down to a word: the
+    function's limit, whatever the route (the host's count is at most min(max_length, max_frame - 8 / - 20) / 4 on the
+    route it uses, oep-if-debug §4.5). NoMaxLength when the probe does not declare it (or declares less than one word)."""
     for tag, value in describe(hst, fn):
         if tag == catalog.MAX_LENGTH and len(value) >= 2:
             length = struct.unpack_from("<H", value)[0] // 4 * 4
@@ -621,11 +621,13 @@ class RiscvDm(Interface, BlockLength):
         probe did not bring it up again between the looks (its revive after a rest), which a probe with the per-request
         check (oep-probe-arduino 0.0.29-dev, the 2026-10-06 debug-link proposal P4) answers status line. A try whose
         looks do not pass, whose values `agree` (when given) does not take, or that stopped with a status a drop can
-        cause (line, timeout, wait), is run again after HELD_RETRY_S, `tries` times at most; then LinkNotHeld. Any other
-        stop raises StepListError at once. The group must be one that may run twice: it writes values fixed before it
+        cause (line, timeout, wait) before reaching any of its writes, is run again after HELD_RETRY_S, `tries` times at
+        most; then LinkNotHeld. Any other stop - a failed try that reached a write included: its effect is unknown and a
+        new corr never repeats it (common §3) - raises StepListError at once. The group must be one that may run twice: it writes values fixed before it
         and reads what nothing in it changes (a cmderr left by an earlier try is the group's to clear)."""
         raw = b"".join(steps) if isinstance(steps, list) else steps
         look = self.look()
+        kinds = count_steps(look + raw + look)
         last = None
         for attempt in range(tries):
             if attempt:
@@ -633,7 +635,9 @@ class RiscvDm(Interface, BlockLength):
             try:
                 _, values = self.dmi(look + raw + look)
             except StepListError as e:
-                if e.status not in HELD_RETRY_STATUSES:
+                # a try that stopped at or after one of its writes is not run again: failed / done 0 is no proof the
+                # write did not reach the target (common §3; core §4.2: no automatic re-run on a failure alone)
+                if e.status not in HELD_RETRY_STATUSES or STEP_WRITE in kinds[:e.done + 1]:
                     raise
                 last = e
                 continue

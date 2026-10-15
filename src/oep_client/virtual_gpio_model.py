@@ -41,7 +41,9 @@ class Gpio(Resources):
     def dispatch_request(self,fn,op,payload,tags):
         if fn==1:
             if op==17:
-                n=payload[0];functions=list(struct.unpack('<'+'H'*n,payload[1:]));self.release_plans(functions if n else list(self.plans));return b''
+                n=payload[0];functions=list(struct.unpack('<'+'H'*n,payload[1:]))
+                if any(fn and fn not in self.functions for fn in functions):raise Reject(1)   # every fn first; fn 0 has no plan (plan §2.2)
+                self.release_plans(functions if n else list(self.plans));return b''
             assignments=[(raw,*struct.unpack('<HBH',v)) for raw,v in tags];seen=set()
             for raw,owner,role,ch in assignments:
                 if owner==0 or (owner,role,ch) in seen:raise Reject(3)
@@ -54,7 +56,10 @@ class Gpio(Resources):
             all_pins=[ch for chs in new.values() for ch in chs]
             if len(all_pins)>4:raise Reject(4,tlv(1,b'\2'))
             if len(set(all_pins))!=len(all_pins):raise Reject(4,tlv(1,b'\1'))
-            self.release_plans(sorted(replaced));self.plans=new;return b''
+            for owner in sorted(replaced):   # only what leaves goes to its idle; a kept (fn, role, channel) keeps its pin (plan §2.1)
+                for ch in self.plans.get(owner,[]):
+                    if ch not in new.get(owner,[]):self.restore(ch)
+            self.plans=new;return b''
         n=payload[0]
         if op==17:
             channels=list(struct.unpack('<'+'H'*n,payload[1:]))

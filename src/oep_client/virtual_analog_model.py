@@ -35,7 +35,9 @@ class Analog(Logic):
             if fn not in self.functions:raise Reject(1)
             if fn!=2 or role not in (1,3) or ch not in (0,1):raise Reject(11,bytes((raw,)))
         if not rows:return b''
-        if len({r[2] for r in rows})!=len(rows) or len({r[3] for r in rows})!=len(rows):raise Reject(3)
+        if len({r[2] for r in rows})!=len(rows) or len({r[3] for r in rows})!=len(rows):raise Reject(11,bytes((rows[0][0],)))   # one channel per role: unsupported (plan §2.4)
+        if sorted((r[2],r[3]) for r in rows)==sorted(zip(self.roles,self.plans.get(2,[]))):return b''   # the same set: nothing (plan §2.1)
+        if self.state in (2,3,5):raise Reject(4,tlv(1,b'\6'))           # running: a change is cause 6 (capture §3.2)
         self.release_plans([2]);rows.sort(key=lambda r:r[2]);self.roles=[r[2] for r in rows];self.plans[2]=[r[3] for r in rows]
         return b''
     def request_tags(self,fn,op,data):
@@ -46,10 +48,10 @@ class Analog(Logic):
             raw,size=struct.unpack_from('<BH',data);key=raw&127
             if not key or len(data)<3+size:raise Reject(3)
             value,data=data[3:3+size],data[3+size:]
+            if op in (16,24) and key in (64,66,67,68,69,70,71) and size!=({64:1,69:6,71:2}.get(key,4)):raise Reject(3)   # a later copy too (core §2.3)
             if key in seen and key!=71:continue
             seen.add(key)
             if op in (16,24) and key in (64,66,67,68,69,70,71):
-                if size!=({64:1,69:6,71:2}.get(key,4)):raise Reject(3)
                 if key==71:frontends.append((raw,value))
                 else:got[key]=(raw,value)
             elif raw&128:raise Reject(11,bytes((raw,)))
@@ -76,7 +78,7 @@ class Analog(Logic):
             role,fe=value
             if role in seen:raise Reject(3)
             seen.add(role)
-            if role not in self.roles:raise Reject(4,tlv(1,b'\6'))
+            if role not in self.roles:raise Reject(11,bytes((raw,)))   # capture §3.3: an unlisted refusal is unsupported
             if fe not in (0,1):raise Reject(11,bytes((raw,)))
             frontend[role]=fe
         return dict(mode=mode,rate=rate,samples=samples,segments=segments,trigger=trigger,pretrigger=pre,frontend=frontend)

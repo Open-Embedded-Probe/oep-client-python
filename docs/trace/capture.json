@@ -62,7 +62,8 @@
     "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[2-widths3-8]",
     "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[9-widths4-16]",
     "tests/test_trace_capture.py::test_logic_layout_w_c_pos_and_n_are_the_probes[5-widths5-128]",
-    "tests/test_trace_capture.py::test_role_k_is_channel_k"
+    "tests/test_trace_capture.py::test_role_k_is_channel_k",
+    "tests/test_review4_capture.py::test_logic_trigger_role_is_the_planned_role_number"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[layout_count-QUERY]"
@@ -1001,7 +1002,8 @@
     "tests/test_trace_capture.py::test_states_0_to_6_and_status_fields[False]",
     "tests/test_trace_capture.py::test_states_0_to_6_and_status_fields[True]",
     "tests/test_trace_capture.py::test_write_pos_counts_dropped_streaming_bytes",
-    "tests/test_trace_capture.py::test_segment_serials_wrap_and_compare_by_core_2_6"
+    "tests/test_trace_capture.py::test_segment_serials_wrap_and_compare_by_core_2_6",
+    "tests/test_review4_capture.py::test_streaming_stop_counts_the_short_last_segment_as_finished"
    ],
    "mutants": [],
    "note": "serial_done = segments finished mod 2^32; write_pos the next byte, dropped ones counted"
@@ -1044,7 +1046,8 @@
    "text": "- readの要求位置が使い回された/押し出された場合、次の読める位置へ進めてg",
    "verify": [
     "tests/test_trace_capture.py::test_read_positions_gaps_and_max_0",
-    "tests/test_trace_capture.py::test_streaming_read_of_pushed_data_points_at_write_pos_with_gap"
+    "tests/test_trace_capture.py::test_streaming_read_of_pushed_data_points_at_write_pos_with_gap",
+    "tests/test_review4_capture.py::test_client_read_does_not_take_bytes_of_another_position"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[gone_without_gap-READ-GAP]",
@@ -1137,7 +1140,8 @@
     "tests/test_trace_capture.py::test_state_table_stop_force_release[3-False]",
     "tests/test_trace_capture.py::test_state_table_stop_force_release[3-True]",
     "tests/test_trace_capture.py::test_state_table_automatic_transitions[False]",
-    "tests/test_trace_capture.py::test_state_table_automatic_transitions[True]"
+    "tests/test_trace_capture.py::test_state_table_automatic_transitions[True]",
+    "tests/test_review4_capture.py::test_streaming_stop_counts_the_short_last_segment_as_finished"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[wrong_stop_state-SHORT-STOP]",
@@ -1164,7 +1168,8 @@
     "tests/test_trace_capture.py::test_state_table_stop_force_release[5-False]",
     "tests/test_trace_capture.py::test_state_table_stop_force_release[5-True]",
     "tests/test_virtual_bench_capture_requests.py::test_paused_capture_rejects_configure_and_keeps_queued_segments[False]",
-    "tests/test_virtual_bench_capture_requests.py::test_paused_capture_rejects_configure_and_keeps_queued_segments[True]"
+    "tests/test_virtual_bench_capture_requests.py::test_paused_capture_rejects_configure_and_keeps_queued_segments[True]",
+    "tests/test_review4_capture.py::test_stop_in_state_5_sends_no_stopped"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[no_resume-RELEASE]"
@@ -1614,7 +1619,8 @@
     "tests/test_virtual_bench_capture_requests.py::test_two_frontends_for_the_same_role_are_malformed_even_if_identical[True-False-False]",
     "tests/test_virtual_bench_capture_requests.py::test_two_frontends_for_the_same_role_are_malformed_even_if_identical[True-False-True]",
     "tests/test_virtual_bench_capture_requests.py::test_two_frontends_for_the_same_role_are_malformed_even_if_identical[True-True-False]",
-    "tests/test_virtual_bench_capture_requests.py::test_two_frontends_for_the_same_role_are_malformed_even_if_identical[True-True-True]"
+    "tests/test_virtual_bench_capture_requests.py::test_two_frontends_for_the_same_role_are_malformed_even_if_identical[True-True-True]",
+    "tests/test_review4_capture.py::test_analog_checker_requires_unsupported_for_a_frontend_of_a_role_not_planned"
    ],
    "mutants": [
     "tests/test_conformance_analog.py::test_semantic_faults_are_detected[ignore_frontend-FRONTEND]"
@@ -1695,7 +1701,11 @@
     "tests/test_trace_capture.py::test_type_0_trigger_role_and_value_are_not_looked_at[False]",
     "tests/test_trace_capture.py::test_type_0_trigger_role_and_value_are_not_looked_at[True]",
     "tests/test_trace_capture.py::test_review3_contract_in_mode_2_and_mode_3_and_type_0_sent_as_0[False]",
-    "tests/test_trace_capture.py::test_review3_contract_in_mode_2_and_mode_3_and_type_0_sent_as_0[True]"
+    "tests/test_trace_capture.py::test_review3_contract_in_mode_2_and_mode_3_and_type_0_sent_as_0[True]",
+    "tests/test_review4_capture.py::test_logic_trigger_role_is_the_planned_role_number",
+    "tests/test_review4_capture.py::test_models_check_a_later_copy_of_a_configure_tlv[logic]",
+    "tests/test_review4_capture.py::test_models_check_a_later_copy_of_a_configure_tlv[analog]",
+    "tests/test_review4_capture.py::test_models_check_a_later_copy_of_a_configure_tlv[timeline]"
    ],
    "mutants": [
     "tests/test_conformance_logic.py::test_side_effect_faults_detected[lone_pretrigger-CONTRACT]",
@@ -1717,7 +1727,8 @@
    "text": "- **挙げていない断り**: この節が挙げる断りは全部ではない。probe は",
    "verify": [
     "tests/test_trace_capture.py::test_values_it_cannot_handle_are_unsupported_with_their_tag",
-    "tests/test_virtual_bench_capture.py::test_analog_frontend_past_the_declared_is_unsupported_critical_or_not"
+    "tests/test_virtual_bench_capture.py::test_analog_frontend_past_the_declared_is_unsupported_critical_or_not",
+    "tests/test_review4_capture.py::test_analog_checker_requires_unsupported_for_a_frontend_of_a_role_not_planned"
    ],
    "mutants": [],
    "note": "a value it cannot handle (frontend 9) unsupported with its tag; capacity rounded not refused"
@@ -1784,7 +1795,11 @@
     "tests/test_virtual_bench_capture_pretrigger.py::test_analog_crossing_keeps_bounded_history_and_no_sample_before_start[0-3-3-5]",
     "tests/test_virtual_bench_capture_pretrigger.py::test_analog_crossing_keeps_bounded_history_and_no_sample_before_start[10-3-0-64]",
     "tests/test_virtual_bench_capture_pretrigger.py::test_analog_crossing_keeps_bounded_history_and_no_sample_before_start[10-4-0-32]",
-    "tests/test_virtual_bench_capture_pretrigger.py::test_analog_crossing_keeps_bounded_history_and_no_sample_before_start[10-3-3-5]"
+    "tests/test_virtual_bench_capture_pretrigger.py::test_analog_crossing_keeps_bounded_history_and_no_sample_before_start[10-3-3-5]",
+    "tests/test_review4_capture.py::test_logic_trigger_value_left_undefined_is_unsupported[trigger0]",
+    "tests/test_review4_capture.py::test_logic_trigger_value_left_undefined_is_unsupported[trigger1]",
+    "tests/test_review4_capture.py::test_logic_trigger_value_left_undefined_is_unsupported[trigger2]",
+    "tests/test_review4_capture.py::test_analog_threshold_past_the_value_bits_is_unsupported"
    ],
    "mutants": [],
    "note": "types 1-2 logic, 3-4 analog, others unsupported; edge values 0/1/2; review3: analog cross up / down on the o/b value"
@@ -1992,7 +2007,8 @@
     "tests/test_virtual_bench_capture_notifications.py::test_error_notification_matches_status_without_incomplete_segment[2-True]",
     "tests/test_virtual_bench_capture_notifications.py::test_error_notification_matches_status_without_incomplete_segment[3-False]",
     "tests/test_virtual_bench_capture_notifications.py::test_error_notification_matches_status_without_incomplete_segment[3-True]",
-    "tests/test_trace_capture.py::test_review_a_group_stop_is_reason_1_on_each_tracks_subscription"
+    "tests/test_trace_capture.py::test_review_a_group_stop_is_reason_1_on_each_tracks_subscription",
+    "tests/test_review4_capture.py::test_a_failed_start_sends_stopped_reason_3"
    ],
    "mutants": [
     "tests/test_virtual_bench_capture_notifications.py::test_notification_corruption_is_detected[reserved_reason-False]",
@@ -2317,7 +2333,8 @@
    "verify": [
     "tests/test_trace_capture.py::test_group_error_stops_the_others_and_a_failed_start",
     "tests/test_trace_capture.py::test_review2_a_group_error_keeps_a_finished_tracks_data_and_stops_the_others_as_stop_does",
-    "tests/test_trace_capture.py::test_review3_a_failed_group_start_makes_the_group_6"
+    "tests/test_trace_capture.py::test_review3_a_failed_group_start_makes_the_group_6",
+    "tests/test_review4_capture.py::test_a_failed_group_start_sends_the_group_stopped_reason_3"
    ],
    "mutants": [
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[error_peer_runs-ERROR-ADC]"
@@ -2330,7 +2347,8 @@
     "tests/test_trace_capture.py::test_group_stop_and_status_state",
     "tests/test_trace_capture.py::test_group_start_only_from_1_4_6_and_atomic",
     "tests/test_virtual_bench_capture_lifetime.py::test_group_stop_commits_short_segments_on_both_tracks",
-    "tests/test_trace_capture.py::test_review3_a_group_stop_gives_the_analog_pad_back_as_its_own_stop_does"
+    "tests/test_trace_capture.py::test_review3_a_group_stop_gives_the_analog_pad_back_as_its_own_stop_does",
+    "tests/test_review4_capture.py::test_group_stop_of_paused_tracks_still_says_stopped"
    ],
    "mutants": [
     "tests/test_conformance_capture_group.py::test_semantic_group_faults_are_detected[stop_one_track-STOP]",

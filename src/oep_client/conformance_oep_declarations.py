@@ -59,6 +59,8 @@ class OepDeclarationChecks:
         listed=list(raw[1:]);require(len(set(listed))==len(listed),'console mechanisms listed twice')
         known={value for key,value in spec['enum']['mechanism'].items() if key!='none'}
         require(all(value in known for value in listed),'unknown or preset-only console mechanism declared')
+        write={row['name']:row['code'] for row in spec['op']}['write'];both={spec['enum']['mechanism'][k] for k in ('dmdata','dmseq')}
+        require(write not in self.offered(fn) or any(value in both for value in listed),'console write offered without mechanism 1 or 2')   # console §1
         self.c.observed.setdefault('console_mechanisms',{})[str(fn)]=listed
 
     def run(self):

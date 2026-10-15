@@ -184,13 +184,16 @@ class PortSpeedChecks:
                     p=self.observe('cancelled');require(p['ports'][0]['state']==2 and p['ports'][0]['deadline']==p['time_ms']+3000,'cancel did not restart idle')
                     self.a.advance(2999);self.speed(2,230400);self.a.advance(1);self.speed(0,115200)
             elif name=='PENDING-IDLE-OTHER':
-                # A frame not from the owning session does not cancel: back after it.
+                # While the session that raised the port remains, any normal request frame cancels an idle return - one
+                # without a session id too (the timer is not the lease, link §3); a frame that is no request does not.
                 for kind in ('state','source','invalid'):
                     self.trial(sid);self.a.advance(20);self.commit(sid);self.straddle(3000)
-                    if kind=='invalid':require(self.a.raw(b'\0') is None,'invalid frame got a response')
-                    elif kind=='state':require(self.during(self.state_request())[:5]==struct.pack('<IB',230400,3),'port_state did not report phase3')
-                    else:require(self.during(self.c.request(16,struct.pack('<I',4),fn=4))==b'\4\0'+bytes(range(4)),'source answer differs')
-                    self.speed(0,115200);self.phase(0,115200)
+                    if kind=='invalid':
+                        require(self.a.raw(b'\0') is None,'invalid frame got a response');self.speed(0,115200);self.phase(0,115200);continue
+                    if kind=='state':require(self.during(self.state_request(),state=2)[:5]==struct.pack('<IB',230400,2),'port_state did not report cancelled phase2')
+                    else:require(self.during(self.c.request(16,struct.pack('<I',4),fn=4),state=2)==b'\4\0'+bytes(range(4)),'source answer differs')
+                    p=self.observe('cancelled');require(p['ports'][0]['state']==2 and p['ports'][0]['deadline']==p['time_ms']+3000,'cancel did not restart idle')
+                    self.a.advance(2999);self.speed(2,230400);self.a.advance(1);self.speed(0,115200)
         self.speed(0,115200)
     def run(self):
         start=len(self.c.results);RegisteredOpsChecks(self.c,self.a.selection).run()

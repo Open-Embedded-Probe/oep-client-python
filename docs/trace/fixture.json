@@ -885,13 +885,18 @@
    "verify": [
     "tests/test_trace_fixture.py::test_spi_describe_declares_modes_and_cs_setup[p4_x035-0]",
     "tests/test_trace_fixture.py::test_spi_describe_declares_modes_and_cs_setup[esp32_v003-4000]",
-    "tests/test_conformance_spi.py::test_metadata"
+    "tests/test_conformance_spi.py::test_metadata",
+    "tests/test_conformance_fixture_metadata.py::test_spi_modes_any_nonempty_subset_passes[\\x01]",
+    "tests/test_conformance_fixture_metadata.py::test_spi_modes_any_nonempty_subset_passes[\\x0f]"
    ],
    "mutants": [
     "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[13-64-None]",
-    "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[13-67-\\x01]"
+    "tests/test_conformance_fixture_metadata.py::test_fixture_metadata_defects_detected[13-67-\\x01]",
+    "tests/test_conformance_fixture_metadata.py::test_spi_modes_are_required_one_byte_1_to_15[None]",
+    "tests/test_conformance_fixture_metadata.py::test_spi_modes_are_required_one_byte_1_to_15[\\x00]",
+    "tests/test_conformance_fixture_metadata.py::test_spi_modes_are_required_one_byte_1_to_15[\\x10]"
    ],
-   "note": "describe: ops, role_channels/channel_group, max_length, max_clock_hz, features bit0, queue_depth 0x40, modes 0x41 (1..15), cs_setup_ns 0x43"
+   "note": "describe: ops, role_channels/channel_group, max_length, max_clock_hz, features bit0, queue_depth 0x40, modes 0x41 (required, u8, 1..15: the metadata checker requires it, review4), cs_setup_ns 0x43"
   },
   "fixture:4:16": {
    "text": "- max_lengthは、最大長のarm要求（見出し10 + length 2",

@@ -28,10 +28,11 @@ class ConfigExtension(Gpio):
         self.idle={ch:0 for ch in range(8)};self.pins=dict(self.idle)
         self.restore_saved();self.apply()
     def form(self,tag,value):
-        # A known item's channel; another length (or a label that is not text) is malformed (§1).
+        # A known item's channel; another length (or a label that is not UTF-8, core §2.1's text) is malformed (§1).
+        # Control characters are text: the host replaces them when it shows one (core §2.1).
         ok=3<=len(value)<=34 if tag==LABEL else len(value)==(3 if tag==IDLE else 2)
         if ok and tag==LABEL:
-            try:ok=not any(c<32 or c==127 for c in value[2:]) and bool(value[2:].decode('utf-8'))
+            try:value[2:].decode('utf-8')
             except UnicodeDecodeError:ok=False
         if not ok:raise Reject(3)
         return int.from_bytes(value[:2],'little')

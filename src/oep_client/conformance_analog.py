@@ -73,8 +73,10 @@ class AnalogChecks(LogicChecks):
                     samples=[[0,4095],[1,4094],[17,30000%4096],[2048,1500],[4095,0],[3000,1000],[123,321],[4040,40]]
                     generation,_,_=self.start(sid);require(self.a.feed(samples)==8,'ADC raw admission');self.data(generation,samples)
                 else:
-                    for value,reason in [(b'\3\1'+b'\0','malformed'),(b'\3\2','unsupported'),(b'\0\1','unavailable')]:
-                        self.refused(self.req(2,'configure',sid,self.settings()+self.tlv(self.tags['frontend']|128,value)),reason)
+                    # a frontend the probe cannot take (an undeclared number, a role not planned): §3.3 lists no
+                    # refusal for it, so it is one of its unlisted ones - unsupported with the tag as received
+                    for value,reason,payload in [(b'\3\1'+b'\0','malformed',None),(b'\3\2','unsupported',bytes((self.tags['frontend']|128,))),(b'\0\1','unsupported',bytes((self.tags['frontend']|128,)))]:
+                        self.refused(self.req(2,'configure',sid,self.settings()+self.tlv(self.tags['frontend']|128,value)),reason,payload)
                     self.refused(self.req(2,'configure',sid,p+self.tlv(self.tags['frontend'],b'\3\0')),'malformed')
             elif kind=='CALIBRATION':
                 before=self.a.state();initial=self.c.success(self.req(2,'calibration'));self.payload.calibration(initial,frontends={0,1})

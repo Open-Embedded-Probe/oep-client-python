@@ -21,8 +21,8 @@ _MODE = _GPIO.enum["mode"]
 
 class Gpio(Interface):
     """oep.fixture.gpio. `set` applies (channel, mode) pairs in order in one request (pull NRST, then release it); a
-    channel the plan did not assign or a mode the probe lacks rejects the whole list as unavailable (host.Unavailable:
-    .channels, and its position as TLV 0x40). The open-drain modes never drive a line high: the way to move a target's reset line.
+    channel the plan did not assign rejects the whole list as unavailable (host.Unavailable: .channels, and its
+    position as TLV 0x40); a mode the probe does not declare, unsupported (0x00, then the same channel / index TLVs). The open-drain modes never drive a line high: the way to move a target's reset line.
     The output strength is the probe's own (fixture §1: revision 1 defines no strength selection)."""
     NAME = "oep.fixture.gpio"
     REVISION = 1

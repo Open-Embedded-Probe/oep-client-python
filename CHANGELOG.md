@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- (JA) 第 4 回の独立レビュー（docs/trace/review4/、コードと a09fa45 の食い違いを探すことに絞った）で、41 件の食い違いを見つけて直した。各件は仕様の一文を引用して記録してある（review4 の `divergences`）。主なもの:
+  - core §2.3 / §4.3 / §5.1 / §6.1 / §6.2 / §7.1 / §7.2 / §9 / §12: 繰り返さない tag は最初のものを使う（ops、max_op_ms、describe の共通 tag）、open のセッションの判定を書式より先に、順 4 で断る要求も最後の corr と lease を進める、list は 1 フレームに入る分を返す、revision 0 の答えを読まない、資源の番号の使い切りは何も触る前に断る、`end_previous` は lock_state を先に見て空いていれば何も開かない、名前は逆 DNS か `oep.<層>.<名前>` だけ。
+  - debug §1 / §2.1 / §3 / §4.4 / §4.5 / §6: connections の swd の tid は DPIDR、read_block / run の結果が max_frame に収まらなければ実行前に unsupported、count 0 は success done 0、reset の channel が attach のピンなら cause 1、reset channel は role 3 で宣言、scan は答えが収まる分だけ試す。
+  - capture §3.2 / §3.3 / §3.4 / §4.1: trigger の role は plan の role 番号、trigger の value の範囲、ストリーミングの stop の serial_done、start の失敗とエラーの stopped reason 3、group の stopped の reason、クライアントの read が別の位置の答えを受けない。
+  - plan §2.1 / §2.2 / §2.4、link §3、probe.config §1、fixture §4、common §3: plan_release の fn 0 は無視、同じ割り当ての集合は何もしない、port_speed の idle 復帰の取り消しと verify 期限の扱い、label の文字列は UTF-8 であればよい、spi-target の modes は必須、書き込みを含むかもしれない step の一覧を自動で再実行しない。
+
 - (JA) 規則の対応表に第 3 回の独立レビューをかけた（docs/trace/review3/、文書の割り振りをまた変えた）。902 単位のうち 105 単位を弱いとして試験を足した（第 1 回 84、第 2 回 80: まだ収束していない）。見つけて直した a09fa45 との食い違い:
   - core §6.1: lease は応答を生成した時点から数え直す（送信待ち・送信完了によらない）。論理のコア（virtual_core）と、送信完了で数え直すことを求めていた独立検査器 5 本（lease、writer lease、config execution、port_speed execution、response race）を直した。
   - core §2.1: preflight と virtual smoke が、fn 0 の describe の文字列を表示の前に置き換える。

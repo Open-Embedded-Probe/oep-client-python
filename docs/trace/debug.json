@@ -130,7 +130,8 @@
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[rvswd_scan__count_0_is_malformed]",
     "tests/test_virtual_bench_spec.py::test_the_client_scan_walks_every_candidate_pair",
     "tests/test_conformance_scan.py::test_finite_scan_contracts_pass",
-    "tests/test_trace_debug.py::test_the_client_scan_sends_the_untried_candidates_again"
+    "tests/test_trace_debug.py::test_the_client_scan_sends_the_untried_candidates_again",
+    "tests/test_review4_debug.py::test_a_scan_tries_no_more_pairs_than_its_answer_can_report_in_one_frame"
    ],
    "mutants": [
     "tests/test_conformance_scan.py::test_scan_checker_detects_independent_faults[zero_tried-SINGLE]",
@@ -138,7 +139,7 @@
     "tests/test_conformance_scan.py::test_scan_checker_detects_independent_faults[extra_candidate-SINGLE]",
     "tests/test_conformance_scan_options.py::test_scan_option_checker_detects_independent_faults[prefix_ignored-PREFIX]"
    ],
-   "note": "count 0 / a pair twice malformed; tried counts from the front; the host builds role1 x role2 and resends the untried; review 3: the client resends exactly the untried candidates after a partial tried"
+   "note": "count 0 / a pair twice malformed; tried counts from the front; the host builds role1 x role2 and resends the untried; review 3: the client resends exactly the untried candidates after a partial tried; review 4: tried stops where another hit might not fit the frame"
   },
   "debug:1:8": {
    "text": "- 宣言が許さない組は unsupported。使用中のピンを含む組は unav",
@@ -229,14 +230,16 @@
     "tests/test_trace_debug.py::test_max_speed_under_min_clock_is_unsupported_attach_fixed_part_scan_the_tag",
     "tests/test_interfaces.py::test_attach_makes_a_new_connection_on_named_pins",
     "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass",
-    "tests/test_conformance_scan_options.py::test_scan_options_contracts_pass"
+    "tests/test_conformance_scan_options.py::test_scan_options_contracts_pass",
+    "tests/test_review4_debug.py::test_the_scan_checker_requires_max_speed_0_and_a_bad_later_copy_to_be_malformed[ZERO-SPEED]",
+    "tests/test_review4_debug.py::test_the_scan_checker_requires_max_speed_0_and_a_bad_later_copy_to_be_malformed[LATER-WIDTH]"
    ],
    "mutants": [
     "tests/test_conformance_attach.py::test_attach_and_console_mutants_fail[zero_speed_taken-WIRE-ZERO-SPEED]",
     "tests/test_conformance_attach.py::test_attach_and_console_mutants_fail[speed_exceeds-WIRE-BUSY]",
     "tests/test_conformance_scan_options.py::test_scan_option_checker_detects_independent_faults[speed-FIRST-IDLE]"
    ],
-   "note": "max_speed 0 malformed; under min_clock_hz unsupported (attach 0x00, scan the tag); speed <= max_speed; scan TLV 0x01"
+   "note": "max_speed 0 malformed; under min_clock_hz unsupported (attach 0x00, scan the tag); speed <= max_speed; scan TLV 0x01; review 4: the scan fixture answers max_speed 0 (and a bad later copy) malformed and the scan checker requires it"
   },
   "debug:1:16": {
    "text": "- **scan が書くもの**: 「速さを確かめる前の書き込み」の 1 と 2",
@@ -528,13 +531,14 @@
     "tests/test_debug_attach.py::test_the_client_reads_connections",
     "tests/test_trace_debug.py::test_target_id_scheme_1_is_not_reported_for_its_none_values[0-False]",
     "tests/test_trace_debug.py::test_connections_tell_a_targetsel_of_0_from_none_with_page_relative_indexes",
-    "tests/test_trace_debug.py::test_connections_report_the_target_id_read_at_attach"
+    "tests/test_trace_debug.py::test_connections_report_the_target_id_read_at_attach",
+    "tests/test_review4_debug.py::test_the_attach_checker_requires_swd_connections_to_carry_the_dpidr_as_tid"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[listing_scheme-TARGETSEL-None]",
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[targetsel_lost-TARGETSEL-16777217]"
    ],
-   "note": "tid is attach's target_id (none: scheme 0 len 0); swd scheme 2 len 4 DPIDR; selected_target TLV per entry with a targetsel; review 3: tid stays the value read at attach"
+   "note": "tid is attach's target_id (none: scheme 0 len 0); swd scheme 2 len 4 DPIDR; selected_target TLV per entry with a targetsel; review 3: tid stays the value read at attach; review 4: the attach checker and its fixture now carry swd's scheme 2 / DPIDR too"
   },
   "debug:3:1": {
    "text": "| 0x10 | scan | count(u8)、count × (swdio",
@@ -634,14 +638,15 @@
     "tests/test_interfaces.py::test_attach_under_reset_is_the_reset_tlv",
     "tests/test_virtual_bench_spec.py::test_no_default_reset_line_only_the_declared_channels",
     "tests/test_target_parts.py::test_find_reset_line_hits_the_vector_skips_disallowed_and_retries_failures",
-    "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass"
+    "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
+    "tests/test_review4_debug.py::test_an_attach_whose_reset_line_is_one_of_its_own_pins_is_refused_before_the_reset"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[reset_ignored-NO-RESET]",
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[reset_short-RESET-1]",
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[reject_effect-HOLD]"
    ],
-   "note": "TLV 0x05 reset (channel hold_ms): held, released, method 1 halts early (bit3 + dpc), method 0 no halt; not offered -> unsupported 0x85"
+   "note": "TLV 0x05 reset (channel hold_ms): held, released, method 1 halts early (bit3 + dpc), method 0 no halt; not offered -> unsupported 0x85; review 4: a reset line that is one of the attach's own pins is unavailable cause 1 before the reset"
   },
   "debug:3:11": {
    "text": "- resetの線を離した後の待ちは§2。DMが答えてから速さを確認する（§1）",
@@ -665,7 +670,8 @@
     "tests/test_config.py::test_reset_channels_and_a_named_reset_line",
     "tests/test_config_disable.py::test_an_attach_reset_on_a_disabled_channel",
     "tests/test_target_parts.py::test_attach_after_gpio_reset_pipelines_release_with_attach_and_retries",
-    "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass"
+    "tests/test_conformance_wire_options.py::test_wire_options_contracts_pass",
+    "tests/test_review4_debug.py::test_the_attach_checker_requires_the_reset_line_to_be_declared_as_role_3"
    ],
    "mutants": [
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[reset_push_pull-RESET-1]",
@@ -673,7 +679,7 @@
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[reset_default-IDLE-None]",
     "tests/test_conformance_wire_options.py::test_wire_options_checker_detects_independent_faults[reset_channel_ignored-CHANNEL]"
    ],
-   "note": "no default reset line: role 3 channels only (else unsupported 0x85), held ones unavailable; open-drain low, released free"
+   "note": "no default reset line: role 3 channels only (else unsupported 0x85), held ones unavailable; open-drain low, released free; review 4: the attach fixture declares its reset line as role 3 and the checker requires it"
   },
   "debug:3:13": {
    "text": "| scan | 0x01 | max_speed | u32 Hz（無ければそ",
@@ -1120,9 +1126,10 @@
     "tests/test_interfaces.py::test_run_returns_the_registers_asked_for",
     "tests/test_trace_debug.py::test_debug_ops_vector_on_the_bench[riscv-dm_run__the_preparation_fails__the_hart_is_not_run]",
     "tests/test_trace_debug.py::test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_lock",
-    "tests/test_trace_debug.py::test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out[run]"
+    "tests/test_trace_debug.py::test_each_optional_riscv_dm_op_is_unknown_operation_once_ops_leaves_it_out[run]",
+    "tests/test_review4_debug.py::test_a_run_whose_answer_would_not_fit_the_route_is_unsupported_before_the_hart_runs"
    ],
-   "note": "run 0x16 pc timeout_ms regs outs -> status stopped dpc elapsed_us nvals values; lock required; optional (absent from ops: unknown_operation)"
+   "note": "run 0x16 pc timeout_ms regs outs -> status stopped dpc elapsed_us nvals values; lock required; optional (absent from ops: unknown_operation); review 4: a run whose answer (11 + 4 x n_out) would not fit is unsupported 0x00 before the hart runs"
   },
   "debug:4:18": {
    "text": "| 0x17 | step | — | status(u8)、moved(u8)",
@@ -1481,21 +1488,25 @@
   "debug:4.5:2": {
    "text": "- **1 回の長さ**: read_block / write_block を",
    "verify": [
-    "tests/test_virtual_bench_spec.py::test_max_length_fits_a_read_answer_and_a_write_request_in_max_frame[p4-bench]",
-    "tests/test_virtual_bench_spec.py::test_max_length_fits_a_read_answer_and_a_write_request_in_max_frame[esp32-v003-64]",
     "tests/test_virtual_bench_spec.py::test_a_block_past_max_length_is_unsupported_not_malformed",
     "tests/test_target_parts.py::test_block_length_comes_from_the_declared_max_length_only",
     "tests/test_conformance_blocks.py::test_block_preflight_blocks[length]",
     "tests/test_conformance_blocks.py::test_optional_block_contracts_pass",
     "tests/test_trace_debug.py::test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame[64]",
     "tests/test_trace_debug.py::test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame[120]",
-    "tests/test_trace_debug.py::test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame[1024]"
+    "tests/test_trace_debug.py::test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame[1024]",
+    "tests/test_review4_debug.py::test_a_read_block_whose_answer_would_not_fit_the_route_is_unsupported_before_the_bus",
+    "tests/test_review4_debug.py::test_a_count_0_block_is_success_done_0_even_on_a_running_hart",
+    "tests/test_conformance_selected_metadata.py::test_a_max_length_past_a_route_frame_is_not_a_defect[64-48-routes0]",
+    "tests/test_conformance_selected_metadata.py::test_a_max_length_past_a_route_frame_is_not_a_defect[128-108-routes1]",
+    "tests/test_conformance_selected_metadata.py::test_a_max_length_past_a_route_frame_is_not_a_defect[64-4096-routes2]",
+    "tests/test_review4_debug.py::test_the_metadata_checker_takes_a_block_max_length_past_the_route_frame[7]"
    ],
    "mutants": [
     "tests/test_conformance_blocks.py::test_block_checker_detects_independent_faults[length_ignored-READ-OVER]",
     "tests/test_conformance_blocks.py::test_block_checker_detects_independent_faults[alignment_ignored-READ-ALIGN]"
    ],
-   "note": "max_length (bytes, x4) declared; count x 4 over it unsupported 0x00; count 0 success; the host count <= min(max_length, max_frame - 8 / - 20) / 4"
+   "note": "max_length (bytes, x4) declared; count x 4 over it unsupported 0x00; count 0 success; the host count <= min(max_length, max_frame - 8 / - 20) / 4; review 4: the answer must fit the route (unsupported 0x00 before the bus) though max_length allows more, count 0 succeeds on a running hart, and a max_length past a route's frame is not a defect (the checker's old fit rule dropped)"
   },
   "debug:4.5:3": {
    "text": "- **読みの意味**: read_block は target のバスを通して",
@@ -1764,13 +1775,14 @@
     "tests/test_target_parts.py::test_block_length_comes_from_the_declared_max_length_only",
     "tests/test_trace_debug.py::test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame[64]",
     "tests/test_trace_debug.py::test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame[120]",
-    "tests/test_trace_debug.py::test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame[1024]"
+    "tests/test_trace_debug.py::test_the_host_sizes_a_block_by_max_length_and_its_routes_max_frame[1024]",
+    "tests/test_review4_debug.py::test_the_metadata_checker_takes_a_block_max_length_past_the_route_frame[8]"
    ],
    "mutants": [
     "tests/test_conformance_arm_adi.py::test_arm_checker_detects_independent_faults[block_stale-BLOCK-LIVE]",
     "tests/test_conformance_arm_adi.py::test_arm_checker_detects_independent_faults[empty_bus-BLOCK-EMPTY]"
    ],
-   "note": "blocks: max_length mandatory (bytes); count x 4 over it unsupported 0x00; read through the bus"
+   "note": "blocks: max_length mandatory (bytes); count x 4 over it unsupported 0x00; read through the bus; review 4: the selected-metadata checker no longer requires max_length to fit the route's frame"
   },
   "debug:6:8": {
    "text": "- read_block / write_block は今の MEM-AP の ",

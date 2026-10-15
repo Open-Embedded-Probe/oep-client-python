@@ -31,7 +31,10 @@ class FixtureMetadataChecks:
                 codes={r['name']:r['code'] for r in spec['op']};offered=ops(values[common['ops']])
                 if codes['stretch'] in offered:
                     maximum=fixed(tags['max_stretch_us'],4,'max_stretch_us');require(maximum>=1,'stretch max must be positive');result['max_stretch_us']=maximum
-            elif tags['cs_setup_ns'] in values:result['cs_setup_ns']=fixed(tags['cs_setup_ns'],4,'cs_setup_ns')
+            else:
+                modes=fixed(tags['modes'],1,'modes');require(1<=modes<=15,'SPI modes is bit k = mode k, bits 4-7 0, at least one')   # required (fixture §4)
+                result['modes']=modes
+                if tags['cs_setup_ns'] in values:result['cs_setup_ns']=fixed(tags['cs_setup_ns'],4,'cs_setup_ns')
         self.c.observed.setdefault('fixture_metadata',{})[str(fn)]=dict(name=name,**result)
     def run(self):
         start=len(self.c.results)

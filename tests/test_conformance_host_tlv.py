@@ -29,6 +29,7 @@ def test_sample_reader_contracts_pass():
     ('accept_bad_width', 'KNOWN_WIDTH'), ('reject_large', 'SIZES'),
     ('reject_127', 'UNKNOWN'), ('skip_unknown_length', 'BROKEN'),
     ('unvalidated_later_first', 'KNOWN_WIDTH'), ('unvalidated_later_repeat', 'KNOWN_WIDTH'),
+    ('later_for_broken_first', 'KNOWN_WIDTH'),
 ])
 def test_faults_are_detected(defect, case):
     def broken(raw):
@@ -55,6 +56,9 @@ def test_faults_are_detected(defect, case):
             return {'fixed': 0x1234, 'blob': b'abc', 'first': 9, 'repeated': []}
         if defect == 'unvalidated_later_repeat' and raw.endswith(b'\x03\x01\x00\x07\x03\x02\x00\x09\x08'):
             return {'fixed': 0x1234, 'blob': b'abc', 'first': None, 'repeated': [7, 9]}
+        # core §2.3: the first copy is the one used; this reader skips a broken first copy and takes the next
+        if defect == 'later_for_broken_first' and raw.endswith(b'\x01\x02\x00\x07\x08\x01\x01\x00\x09'):
+            return {'fixed': 0x1234, 'blob': b'abc', 'first': 9, 'repeated': []}
         return decode(raw)
     report = HostTlvChecks(broken, spec=SPEC).run()
     assert report['status'] == 'failed'

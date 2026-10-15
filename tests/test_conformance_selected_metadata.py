@@ -24,7 +24,7 @@ def test_selected_metadata_passes_read_only():
 
 @pytest.mark.parametrize('fn,rows',[
  (2,[]),(2,[tlv(64,b'\0')]),(7,[]),(7,[tlv(3,b'\0')]),(7,[tlv(3,struct.pack('<H',6))]),
- (7,[tlv(3,struct.pack('<H',48))]),(8,[]),(8,[tlv(3,struct.pack('<H',8)),tlv(5,b'\0'*4)]),
+ (8,[]),(8,[tlv(3,struct.pack('<H',8)),tlv(5,b'\0'*4)]),
  (17,[tlv(64,b'\0')]),(17,[tlv(64,b'\0'*4)]),(17,[]),
 ])
 def test_metadata_defects_are_detected(fn,rows):
@@ -55,10 +55,14 @@ def test_large_single_route_length_is_supported():
     assert SelectedMetadataChecks(c,model.metadata_selection).run()['status']=='passed'
 
 
-def test_unconfirmed_other_route_prevents_false_global_pass():
-    model,c=setup();model.ep.probe.max_frame=128;model.ep.static[0]+= (tlv(73,b'\x01\x06\xff'),)
-    model.extension.metadata[7]=[tlv(3,struct.pack('<H',108))]
-    assert SelectedMetadataChecks(c,model.metadata_selection).run()['status']=='failed'
+@pytest.mark.parametrize('frame,length,routes',[(64,48,()),(128,108,(tlv(73,b'\x01\x06\xff'),)),(64,4096,())])
+def test_a_max_length_past_a_route_frame_is_not_a_defect(frame,length,routes):
+    """debug §4.5 (a09fa45): max_length is the function's limit; the host takes min(max_length, max_frame - 8 / - 20)
+    per route, and "大きい経路を小さい経路の転送量へ一律に制限しない" - a max_length past this or another route's frame passes
+    (the old rule that it fit every route's frame is gone)."""
+    model,c=setup();model.ep.probe.max_frame=frame;model.ep.static[0]+=routes
+    model.extension.metadata[7]=[tlv(3,struct.pack('<H',length))]
+    assert SelectedMetadataChecks(c,model.metadata_selection).run()['status']=='passed'
 
 
 def test_protocol_minimum_is_enough_for_small_multiroute_block_length():

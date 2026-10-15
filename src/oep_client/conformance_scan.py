@@ -61,6 +61,10 @@ class ScanChecks(AttachChecks):
             elif kind=='LOW-SPEED':
                 for raw in (1,129):self.refused(self.scan_request(sid,1,pairs,self.tlv(raw,struct.pack('<I',999))),'unsupported',bytes((raw,)))
                 return
+            elif kind=='ZERO-SPEED':                       # max_speed 0: malformed, marked or not (debug §1)
+                for raw in (1,129):self.refused(self.scan_request(sid,1,pairs,self.tlv(raw,bytes(4))),'malformed')
+                return
+            elif kind=='LATER-WIDTH':extra=self.tlv(1,struct.pack('<I',1500))+self.tlv(1,b'x')   # a later copy is checked too (core §2.3)
             elif kind=='WIDTH':extra=self.tlv(129,b'x')
             elif kind=='TLV-STRUCTURE':extra=b'\x7f\x05\0x'
             elif kind=='CRITICAL':extra=self.tlv(254,b'x');reason='unsupported';payload=b'\xfe'
@@ -104,7 +108,7 @@ class ScanChecks(AttachChecks):
         self.c.check('OEP-SCAN-CONTEXT','debug §0/1/3/5; explicit finite fixture',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         cases=[('SINGLE',self.single),('PREFIX',self.prefix),('EMPTY-HITS',lambda:self.prefix(True)),('VERSIONS',self.versions)]
-        cases += [(kind,lambda kind=kind:self.refusal(kind)) for kind in ('ZERO','DUPLICATE','TRUNCATED','UNDECLARED-LATE','SWIO-CLOCK','BUSY-LATE','DISABLED-LATE','OUTPUT-LATE','LOW-SPEED','WIDTH','TLV-STRUCTURE','CRITICAL')]
+        cases += [(kind,lambda kind=kind:self.refusal(kind)) for kind in ('ZERO','DUPLICATE','TRUNCATED','UNDECLARED-LATE','SWIO-CLOCK','BUSY-LATE','DISABLED-LATE','OUTPUT-LATE','LOW-SPEED','ZERO-SPEED','WIDTH','LATER-WIDTH','TLV-STRUCTURE','CRITICAL')]
         cases += [('EXTRAS',self.extras),('REPLAY',self.replay),('RETAINED',self.retained),('LOCKS',self.lock_scan)]
         for name,case in cases:
             first=len(self.a.trace);self.c.check('OEP-SCAN-'+name,'debug §1/3/5; core §2.3/5.2/8.1',case);self.c.results[-1]['adapter_trace']=self.a.trace[first:]

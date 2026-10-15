@@ -93,3 +93,26 @@ def test_current_core_remains_valid(monkeypatch):
     report = Checks(lambda req: adapter.exchange(adapter.primary, req), copy.deepcopy(REG), 'virtual-routes-1').run()
     assert report['status'] == 'passed', [(x['id'], x.get('error')) for x in report['checks']]
     assert len(report['checks']) == 49
+
+
+def _req(corr, sid=0, op=4):
+    import struct
+    return struct.pack('<BHHBI', 1, corr, 0, op, sid)
+
+
+def test_a_copy_of_an_unresolved_request_takes_no_credit_and_runs_nothing_again():
+    """core §4.4: copies on the same route with the same session_id and corr are not new unresolved requests - a copy
+    of a request still waiting does not use max_inflight (the next new request is admitted), and a session-0 copy is
+    not run again (review 4: the model counted the copy and ran a session-0 clock twice)."""
+    import struct
+    model = PipelineModel(lambda: 0, boot_id=17)
+    model.hold('primary', 0)
+    a, b, c = _req(1), _req(2), _req(3)
+    model.submit([('primary', a), ('primary', a), ('primary', b), ('primary', c)])
+    assert model.pending('primary') == [a, b, c]
+    model.service()
+    model.hold('primary', None)
+    model.service()
+    out = model.receive('primary')
+    assert [struct.unpack_from('<H', f, 1)[0] for f in out] == [1, 2, 3]
+    assert all(f[3:5] == b'\x01\0' for f in out)

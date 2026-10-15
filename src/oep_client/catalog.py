@@ -137,6 +137,12 @@ def split_tlv(data: bytes) -> list[tuple[int, bytes]]:
     return split_tlvs(data)
 
 
+def first_value(tlvs, tag: int) -> bytes | None:
+    """The value of the first TLV `tag` (core §2.3: a tag the definition does not repeat, sent twice - the reader uses
+    the first; a first copy that is broken is not used, and no later copy stands in for it). None: no such TLV."""
+    return next((v for t, v in tlvs if t == tag), None)
+
+
 def channels_to_bitmap(channels) -> tuple[int, bytes]:
     chans = sorted(set(channels))
     if not chans:
@@ -209,6 +215,10 @@ def decode_description(data: bytes) -> Description:
         t = tag
         single = {MAX_CLOCK_HZ: ("max_clock_hz", "<I"), MIN_CLOCK_HZ: ("min_clock_hz", "<I"),
                   MAX_LENGTH: ("max_length", "<H"), FEATURES: ("features", "<I")}
+        if t == OPS or t in single:
+            if t in seen:
+                continue                                    # a tag sent twice: the first is used (core §2.3)
+            seen.add(t)
         try:
             if t == ROLE_CHANNELS:
                 role, base = struct.unpack_from("<BH", value)
@@ -218,10 +228,7 @@ def decode_description(data: bytes) -> Description:
                 d.groups[group] = pins
             elif t in single:
                 name, fmt = single[t]
-                got = struct.unpack(fmt, value)[0]
-                if t not in seen:
-                    setattr(d, name, got)                   # a tag sent twice: the first is used (core §2.3)
-                seen.add(t)
+                setattr(d, name, struct.unpack(fmt, value)[0])
         except (struct.error, ValueError):
             d.broken.append(tag)                            # not its defined length: broken, not used (core §2.3)
             continue
@@ -232,7 +239,7 @@ def decode_description(data: bytes) -> Description:
             if why:
                 d.ops_invalid = why
             else:
-                d.ops = (d.ops or set()) | unpack_ops(value)
+                d.ops = unpack_ops(value)
         elif t >= INTERFACE_TAG_FIRST:
             d.specific.append((tag, value))
         elif tag & CRITICAL:

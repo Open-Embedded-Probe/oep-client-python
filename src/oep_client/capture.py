@@ -73,6 +73,18 @@ def tlvs(payload: bytes) -> list[tuple[int, bytes]]:
     return m.split_tlvs(payload)
 
 
+READ_GAP = 0x02                                            # read's flags bit1 (§3.2)
+
+
+class ReadGap(h.ProtocolError):
+    """read() asked for bytes the probe no longer has (§3.2: a position re-used or pushed on - the answer moved on to
+    the next readable position, gap set): `position` is where readable data starts (write_pos when none is left)."""
+
+    def __init__(self, asked: int, position: int):
+        super().__init__(f"capture read at {asked}: those bytes are gone, readable from {position} (oep-if-capture §3.2)")
+        self.asked, self.position = asked, position
+
+
 SEGMENT_BYTES = 37   # serial u32, position u64, samples u32, start_ns u64, start_uncertainty_ns u32, trigger_index u32,
                      # flags u8, generation u32 (oep-if-capture §2)
 
@@ -591,10 +603,17 @@ class LogicCapture(Interface):
     READ_HEAD = 11   # the answer's position(u64) flags(u8) len(u16) in front of the data
 
     @staticmethod
-    def _read_data(payload: bytes) -> bytes:
+    def _read_data(payload: bytes, asked: int) -> bytes:
+        """read's answer (position flags len(u16) data [TLV], §3.2) -> the data, which must start at `asked`: an
+        answer moved on from there (gap: the bytes were re-used or pushed on) holds other bytes - ReadGap."""
         rd = m.Reader(payload)
-        rd.take("QB")
-        return rd.counted("H")                             # position flags len(u16) data [TLV]
+        position, flags = rd.take("QB")
+        data = rd.counted("H")
+        if flags & READ_GAP:
+            raise ReadGap(asked, position)
+        if position != asked and data:                     # at or past write_pos: write_pos, len 0 (no data yet)
+            raise h.ProtocolError(f"capture read at {asked} answered position {position} without gap")
+        return data
 
     def read(self, position: int, length: int, generation: int | None = None) -> bytes:
         """Bytes [position, position+length) of the stream, pipelined in frame-sized reads. `generation`: the capture
@@ -625,11 +644,12 @@ class LogicCapture(Interface):
                     if attempt == self.READ_TRIES - 1:
                         raise
             for off, r in zip(batch, replies):
-                data = self._read_data(r.payload)
+                data = self._read_data(r.payload, position + off)
                 want = min(chunk, length - off)
                 while len(data) < want:                   # a short answer: read on from where it stopped
+                    at = position + off + len(data)
                     more = self._read_data(self._call(self.READ, struct.pack(
-                        "<IQH", g, position + off + len(data), want - len(data)), locked=False).payload)
+                        "<IQH", g, at, want - len(data)), locked=False).payload, at)
                     if not more:
                         raise h.ProtocolError(f"read at {position + off + len(data)} returned nothing")
                     data += more

@@ -12,7 +12,7 @@ class LogicChecks:
     def tlv(tag,value):return bytes((tag,))+struct.pack('<H',len(value))+value
     def req(self,fn,name,sid=0,payload=b''):return self.c.request(self.codes[fn][name],payload,fn=fn,session=sid)
     def ok(self,req):v=self.c.success(req);tlvs(v);return v
-    def plan(self,sid,roles=((0,0),(1,1))):self.planned=len(roles);self.ok(self.req(1,'plan_apply',sid,b''.join(self.tlv(self.assignment,struct.pack('<HBH',2,role,ch)) for role,ch in roles)))
+    def plan(self,sid,roles=((0,0),(1,1))):self.planned=len(roles);self.planned_roles=tuple(roles);self.ok(self.req(1,'plan_apply',sid,b''.join(self.tlv(self.assignment,struct.pack('<HBH',2,role,ch)) for role,ch in roles)))
     def release_plan(self,sid):self.ok(self.req(1,'plan_release',sid,b'\1\2\0'))
     def settings(self,mode=1,rate=1000,samples=8,segments=None,trigger=None,pre=None,critical=False):
         result=b''
@@ -124,7 +124,13 @@ class LogicChecks:
                 self.configure(sid,mode=2);generation,_,_=self.start(sid);self.a.feed([[1,0]]*9);before=self.read(generation)[2];self.a.fail(2);status,tail=self.status();require(status==(6,1,len(before),1,generation) and dict(tlvs(tail)).get(1)==b'\2','error status/write_pos');require(self.read(generation)[2]==before and len(self.segments())==1,'error canceled committed segment/kept incomplete');new,_,_=self.start(sid);require(new==generation+1 and self.status()[0][3]==0,'error restart flags/generation')
             elif kind in ('PLAN-REPLACE','PLAN-RELEASE','END','EXPIRY','FORCE'):
                 self.configure(sid,mode=2);generation,_,_=self.start(sid);self.a.feed([[1,0]]*9)
-                if kind=='PLAN-REPLACE':self.plan(sid)
+                if kind=='PLAN-REPLACE':
+                    # plan §2.1 / capture §3.2: the same (role, channel) set does nothing, a changed one is cause 6 while
+                    # running and, once stopped, closes the capture (state 0, data gone, generation kept)
+                    roles=self.planned_roles;swapped=tuple(zip([r for r,_ in roles],[ch for _,ch in reversed(roles)]))
+                    before=self.status();self.plan(sid,roles);require(self.status()==before,'the same plan set changed the running capture')
+                    self.refused(self.req(1,'plan_apply',sid,b''.join(self.tlv(self.assignment,struct.pack('<HBH',2,r,ch)) for r,ch in swapped)),'unavailable',self.tlv(1,b'\6'))
+                    self.ok(self.req(2,'stop',sid));self.plan(sid,swapped)
                 elif kind=='PLAN-RELEASE':self.release_plan(sid)
                 elif kind=='END':self.ok(self.c.request(self.c.core['end'],session=sid));self.c.session=None
                 elif kind=='EXPIRY':self.a.advance(1000);require(struct.unpack_from('<BI',self.c.success(self.c.request(self.c.core['lock_state'])))==(0,0),'capture expiry');self.c.session=None

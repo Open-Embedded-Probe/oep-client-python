@@ -57,8 +57,8 @@ def test_wrong_wire_result_is_detected(case):
     ('commit_zero_verify_rejected','COMMIT'),('commit_needs_actual_baud','TOLERANCE'),
     ('one_port_committed_accepted','ONE-PORT'),('one_port_pending_accepted','ONE-PORT'),('end_not_pending','END-BARRIER'),
     ('no_pending_return','PENDING-VERIFY'),('pending_accepts_step','PENDING-VERIFY'),('verify_return_cancelled','PENDING-VERIFY'),
-    ('pending_switch_mid_frame','PENDING-IDLE-OTHER'),('pending_return_missing','PENDING-IDLE-OTHER'),
-    ('other_cancels','PENDING-IDLE-OTHER'),('owner_does_not_cancel','PENDING-IDLE-OWNER'),
+    ('pending_switch_mid_frame','PENDING-IDLE-OTHER'),('pending_return_missing','PENDING-VERIFY'),
+    ('other_does_not_cancel','PENDING-IDLE-OTHER'),('owner_does_not_cancel','PENDING-IDLE-OTHER'),('owner_does_not_cancel','PENDING-IDLE-OWNER'),
     ('cancelled_accepts_commit','PENDING-IDLE-OWNER'),('cancelled_revert_refused','PENDING-IDLE-OWNER'),
 ])
 def test_semantic_faults(defect,case):
@@ -68,7 +68,9 @@ def test_semantic_faults(defect,case):
     def bad_cancel():
         p=model.ports.get(model.active_route)
         if defect=='owner_does_not_cancel':return
-        if defect=='other_cancels' and p and p['why']=='idle':p.update(state=2,why=None,deadline=model.clock_ms+3000);return
+        if defect=='other_does_not_cancel' and p and p['why']=='idle':
+            sid=int.from_bytes(model.request[6:10],'little') if len(model.request)>=10 else 0
+            if not sid:return                                  # the old rule: only the owner's own frame cancels
         if defect=='verify_return_cancelled' and p and p['why']=='verify':p.update(state=1,why=None);return
         cancel()
     def bad_fall(route,why):

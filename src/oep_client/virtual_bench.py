@@ -138,7 +138,7 @@ class VirtualProbe:
         budget = self.max_frame - RESULT_HEADER - 3
         page, used = [], 0
         for o in hits[first:]:
-            size = 1 + len(catalog.pack_entry(self._entry(o)))
+            size = len(catalog.pack_entry(self._entry(o)))     # fn instance revision name_len name (core §7.2)
             if page and used + size > budget:
                 break
             page.append(self._entry(o))
@@ -235,8 +235,9 @@ MAX_CONNECTIONS = reg.WIRE_RVSWD.tlv["describe"]["max_connections"]
 _CFG = reg.PROBE_CONFIG.tlv["describe"]
 
 
-BLOCK_HEADERS = 24   # write_block's request (10 + connection 2 + address 4 + count 2) and read_block's answer (5 + done 2
-                     # + status 1) need 18; the reference firmware keeps 24 (a probe may declare less, oep-if-debug §4.5)
+BLOCK_HEADERS = 24   # write_block's request (10 + connection 4 + address 4 + count 2) needs 20 and read_block's answer
+                     # (5 + done 2 + status 1) 8; the reference firmware keeps 24. A probe may declare more or less: the
+                     # host takes min(max_length, max_frame - 8 / - 20) per route (oep-if-debug §4.5)
 
 
 def block_max_length(max_frame: int) -> int:

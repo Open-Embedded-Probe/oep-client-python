@@ -24,6 +24,9 @@ class DiscoveryChecks:
                 page.append(dict(fn=fn, instance=instance, revision=revision, name=name))
             require(at == len(p) and page == self.entries[first:first+count], 'list cursor does not select entry suffix')
             require(first >= total or count > 0, 'list cursor made no progress')
+            if first + count < total:  # core §7.2: as many as one frame holds - the next entry would not fit
+                require(5 + len(p) + 6 + len(self.entries[first+count]['name']) > self.c.max_frame,
+                        'list page stops before the frame is full')
 
     def describes(self):
         rows = self.rows
@@ -33,6 +36,9 @@ class DiscoveryChecks:
             page = tlvs(p[1:]); suffix = rows[first:]
             require(page == suffix[:len(page)] and len(page) <= len(suffix), 'core describe cursor does not select TLV suffix')
             require(p[0] == int(len(page) < len(suffix)) and (not p[0] or page), 'core describe more/progress/end')
+            if p[0]:  # core §7.3: from first, as many as one frame holds - the next TLV would not fit
+                require(5 + len(p) + 3 + len(suffix[len(page)][1]) > self.c.max_frame,
+                        'core describe page stops before the frame is full')
             require(all(len(value)+9 <= self.c.max_frame for _, value in page), 'core TLV frame bound')
 
     def locked(self):

@@ -1,0 +1,925 @@
+{
+ "reviewed_commit": "4c31015",
+ "units": {
+  "core:0:1": {
+   "verdict": "ok",
+   "reason": "exclusion right: informative: the header row of a table (column names only) (§0's two layers)"
+  },
+  "core:0:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (informative layer table; fn 0 unnamed/unlisted checked in core.list_entries, catalog, both benches); no divergence from a09fa45; verify asserts it (e.g. test_core_is_fn_0_has_no_name_and_is_never_listed[core-v1]); fn 0 has no name and no list entry on both benches; confirm gives protocol revision 1"
+  },
+  "core:0:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (informative layer table; fn 0 unnamed/unlisted checked in core.list_entries, catalog, both benches); no divergence from a09fa45; verify asserts it (e.g. test_interfaces_are_named_by_reverse_dns_or_the_oep_prefix_with_their_own_revision); every listed name is reverse DNS or oep.<layer>.<name>; each entry has its own revision"
+  },
+  "core:1:1": {
+   "verdict": "ok",
+   "reason": "exclusion right: informative: the header row of a table (column names only) (§1's glossary)"
+  },
+  "core:1:2": {
+   "verdict": "ok",
+   "reason": "exclusion right: informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:3": {
+   "verdict": "ok",
+   "reason": "exclusion right: informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:4": {
+   "verdict": "ok",
+   "reason": "exclusion right: informative: a row of §1's glossary (a term and its meaning); the rules that use it are traced at §4-§10"
+  },
+  "core:1:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (terms used as defined: client core/host, Endpoint and virtual_core.Core; §1.2 conformance set (fn 0 ops, required describe tags) checked in dump.required_missing, conformance.declarations and the benches); no divergence from a09fa45; verify asserts it (e.g. test_one_transport_entry_per_transport_with_its_kind_and_interface); the six transport kinds of the glossary are transport_kind 1-6 the bench declares"
+  },
+  "core:1:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (terms used as defined: client core/host, Endpoint and virtual_core.Core; §1.2 conformance set (fn 0 ops, required describe tags) checked in dump.required_missing, conformance.declarations and the benches); no divergence from a09fa45; verify asserts it (e.g. test_answers_and_notifications_go_as_whole_frames_one_after_another); the serial port carries only whole OEP frames"
+  },
+  "core:1:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (terms used as defined: client core/host, Endpoint and virtual_core.Core; §1.2 conformance set (fn 0 ops, required describe tags) checked in dump.required_missing, conformance.declarations and the benches); no divergence from a09fa45; verify asserts it (e.g. test_an_optional_op_is_known_by_ops_and_not_sent_when_absent); an interface found by name in list and called by its fn"
+  },
+  "core:1:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (terms used as defined: client core/host, Endpoint and virtual_core.Core; §1.2 conformance set (fn 0 ops, required describe tags) checked in dump.required_missing, conformance.declarations and the benches); no divergence from a09fa45; verify asserts it (e.g. test_core_is_fn_0_has_no_name_and_is_never_listed[core-v1]); fn u16, the same for one boot_id; fn 0 unnamed and unlisted"
+  },
+  "core:1:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (terms used as defined: client core/host, Endpoint and virtual_core.Core; §1.2 conformance set (fn 0 ops, required describe tags) checked in dump.required_missing, conformance.declarations and the benches); no divergence from a09fa45; verify asserts it (e.g. test_the_host_draws_a_random_non_zero_session_id); the host chooses the u32 session_id"
+  },
+  "core:1:10": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (terms used as defined: client core/host, Endpoint and virtual_core.Core; §1.2 conformance set (fn 0 ops, required describe tags) checked in dump.required_missing, conformance.declarations and the benches); no divergence from a09fa45; verify asserts it (e.g. test_keepalive_only_extends_the_lease[core-v1]); keepalive and other requests of the session restart the lease"
+  },
+  "core:1:11": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (terms used as defined: client core/host, Endpoint and virtual_core.Core; §1.2 conformance set (fn 0 ops, required describe tags) checked in dump.required_missing, conformance.declarations and the benches); no divergence from a09fa45; verify asserts it (e.g. test_channels_are_numbered_from_0); channel numbers are u16"
+  },
+  "core:1.2:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (terms used as defined: client core/host, Endpoint and virtual_core.Core; §1.2 conformance set (fn 0 ops, required describe tags) checked in dump.required_missing, conformance.declarations and the benches); no divergence from a09fa45; verify asserts it (e.g. test_a_probe_declares_a_transport_and_speaks_its_frames); the bench declares its transports and answers in serial frames; over TCP the independent checker passes"
+  },
+  "core:1.2:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (terms used as defined: client core/host, Endpoint and virtual_core.Core; §1.2 conformance set (fn 0 ops, required describe tags) checked in dump.required_missing, conformance.declarations and the benches); no divergence from a09fa45; verify asserts it (e.g. test_the_main_virtual_bench_passes_every_core_check); the independent core checker (§4-§6 cases) passes on the full bench and on core-v1"
+  },
+  "core:1.2:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (terms used as defined: client core/host, Endpoint and virtual_core.Core; §1.2 conformance set (fn 0 ops, required describe tags) checked in dump.required_missing, conformance.declarations and the benches); no divergence from a09fa45; verify asserts it (e.g. test_fn_0_offers_its_eight_ops_and_answers_each[core-v1]); fn 0's ops tag is exactly the eight core ops and each is answered"
+  },
+  "core:1.2:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (terms used as defined: client core/host, Endpoint and virtual_core.Core; §1.2 conformance set (fn 0 ops, required describe tags) checked in dump.required_missing, conformance.declarations and the benches); no divergence from a09fa45; verify asserts it (e.g. test_fn_0_declares_unit_id_transport_and_max_op_ms[core-v1]); unit_id, transport and max_op_ms in fn 0's describe"
+  },
+  "core:1.2:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (terms used as defined: client core/host, Endpoint and virtual_core.Core; §1.2 conformance set (fn 0 ops, required describe tags) checked in dump.required_missing, conformance.declarations and the benches); no divergence from a09fa45; verify asserts it (e.g. test_every_listed_fn_and_fn_0_declare_their_ops); ops in fn 0's and every listed fn's describe, four profiles"
+  },
+  "core:1.2:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (terms used as defined: client core/host, Endpoint and virtual_core.Core; §1.2 conformance set (fn 0 ops, required describe tags) checked in dump.required_missing, conformance.declarations and the benches); no divergence from a09fa45; verify asserts it (e.g. test_a_probe_with_channels_declares_them_and_parks_them_idle); channels declared; every channel not the probe's own is Hi-Z idle from boot"
+  },
+  "core:1.2:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (terms used as defined: client core/host, Endpoint and virtual_core.Core; §1.2 conformance set (fn 0 ops, required describe tags) checked in dump.required_missing, conformance.declarations and the benches); no divergence from a09fa45; verify asserts it (e.g. test_every_fn_that_sends_notifications_has_subscribe_and_unsubscribe); notifying fns set both subscribe and unsubscribe; §10.3/§10.4 traced at their units"
+  },
+  "core:2.1:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (little endian / bitmap / bool (nonzero true: Endpoint._open, virtual_core force) / message.shown for text the host shows); no divergence from a09fa45; verify asserts it (e.g. test_a_boolean_is_sent_0_or_1_and_any_non_zero_reads_true[core-v1]); probe reads force 2 as true; host sends force 1 and reads locked 7 as true; the probe sends lock_state locked and describe more as 0 / 1 only, the host force 0 "
+  },
+  "core:2.1:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (little endian / bitmap / bool (nonzero true: Endpoint._open, virtual_core force) / message.shown for text the host shows); no divergence from a09fa45; verify asserts it (e.g. test_text_is_shown_with_control_characters_and_bad_utf8_replaced); m.shown, lock_owner and Locked.owner replace C0, 0x7F and bad UTF-8; list entry names shown cleaned too (catalog fixed); hardware preflight reports describe tex"
+  },
+  "core:2.2:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (message.split_tlvs, Endpoint.Take.tail, virtual_core.tail: one TLV form, tag 0 malformed/broken, bit 7 critical in requests only, skipped in answers); no divergence from a09fa45; verify asserts it (e.g. test_one_tlv_form_and_a_length_past_the_end[core-v1]); one TLV form for 0/255/300-byte values; len past the end: malformed (probe), ShortPayload (host); an event / data frame with a TLV past its end is broken for th"
+  },
+  "core:2.2:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (message.split_tlvs, Endpoint.Take.tail, virtual_core.tail: one TLV form, tag 0 malformed/broken, bit 7 critical in requests only, skipped in answers); no divergence from a09fa45; verify asserts it (e.g. test_bit_7_is_the_critical_mark_in_requests_and_an_unknown_tag_in_answers[core-v1]); owner 0x81 taken as owner; a bit-7 TLV in lock_state / unavailable / describe answers is skipped; the bench answers, events and data with bit 7 clear; the host "
+  },
+  "core:2.2:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (message.split_tlvs, Endpoint.Take.tail, virtual_core.tail: one TLV form, tag 0 malformed/broken, bit 7 critical in requests only, skipped in answers); no divergence from a09fa45; verify asserts it (e.g. test_tlv_number_0_is_never_a_tlv[core-v1]); tag 0x00 / 0x80 in a request: malformed; in an answer: ProtocolError; unsupported's 0x00 is no TLV; 0x00 and 0x80 in an answer both broken; TLV 0x00 / 0x80 in a"
+  },
+  "core:2.2:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (message.split_tlvs, Endpoint.Take.tail, virtual_core.tail: one TLV form, tag 0 malformed/broken, bit 7 critical in requests only, skipped in answers); no divergence from a09fa45; verify asserts it (e.g. test_unsupported_names_the_tag_as_received[core-v1]); unknown critical 0xC5 refused with payload C5"
+  },
+  "core:2.2:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (message.split_tlvs, Endpoint.Take.tail, virtual_core.tail: one TLV form, tag 0 malformed/broken, bit 7 critical in requests only, skipped in answers); no divergence from a09fa45; verify asserts it (e.g. test_the_tag_space_is_the_payloads_context[core-v1]); 0x01 is owner on open, ignored on clock, transport in confirm's answer, supported in its refusal; describe 0x40: fn 0 firmware vs plan plan_roles; max_op_ms rea"
+  },
+  "core:2.2:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (message.split_tlvs, Endpoint.Take.tail, virtual_core.tail: one TLV form, tag 0 malformed/broken, bit 7 critical in requests only, skipped in answers); no divergence from a09fa45; verify asserts it (e.g. test_a_tag_repeats_only_where_its_definition_says); repeating channel / label kept in order; non-repeating cause: the first"
+  },
+  "core:2.3:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Take.tail/fixed/refuse, virtual_core.tail, message.Reader/Tail, catalog.decode_description, core.ops/describe, conformance_host_tlv); no divergence from a09fa45; verify asserts it (e.g. test_containers_know_their_length[core-v1]); list / describe / clock answers read by their own counts and lengths, nothing left over"
+  },
+  "core:2.3:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Take.tail/fixed/refuse, virtual_core.tail, message.Reader/Tail, catalog.decode_description, core.ops/describe, conformance_host_tlv); no divergence from a09fa45; verify asserts it (e.g. test_fn_0_answers_have_their_fixed_parts_and_a_tlv_tail_after); fn 0 answers are exactly their fixed parts; additions come as a TLV tail the host skips"
+  },
+  "core:2.3:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Take.tail/fixed/refuse, virtual_core.tail, message.Reader/Tail, catalog.decode_description, core.ops/describe, conformance_host_tlv); no divergence from a09fa45; verify asserts it (e.g. test_a_list_is_count_then_elements_without_lengths); list is total count and count entries read field by field"
+  },
+  "core:2.3:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Take.tail/fixed/refuse, virtual_core.tail, message.Reader/Tail, catalog.decode_description, core.ops/describe, conformance_host_tlv); no divergence from a09fa45; verify asserts it (e.g. test_the_host_skips_unknown_tags_and_refuses_a_short_answer); host skips unknown tags, raises on a short fixed part, does not use a known TLV of a wrong length; attach failed: status alone, another fixed part than its succ"
+  },
+  "core:2.3:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Take.tail/fixed/refuse, virtual_core.tail, message.Reader/Tail, catalog.decode_description, core.ops/describe, conformance_host_tlv); no divergence from a09fa45; verify asserts it (e.g. test_data_frames_are_their_fixed_part_then_tlvs); the bench's data frames: fixed part, len, data, then TLVs; events parse by kind; the host reads data / events the same with an unknown TLV after the fixed part"
+  },
+  "core:2.3:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Take.tail/fixed/refuse, virtual_core.tail, message.Reader/Tail, catalog.decode_description, core.ops/describe, conformance_host_tlv); no divergence from a09fa45; verify asserts it (e.g. test_the_host_sends_harmful_or_meaningless_if_ignored_tlvs_critical); the client sends scan's max_speed and attach's reset with bit 7"
+  },
+  "core:2.3:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Take.tail/fixed/refuse, virtual_core.tail, message.Reader/Tail, catalog.decode_description, core.ops/describe, conformance_host_tlv); no divergence from a09fa45; verify asserts it (e.g. test_unsupported_names_the_tag_as_received[core-v1]); unknown critical: unsupported with the tag as received; unknown non-critical: ignored"
+  },
+  "core:2.3:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Take.tail/fixed/refuse, virtual_core.tail, message.Reader/Tail, catalog.decode_description, core.ops/describe, conformance_host_tlv); no divergence from a09fa45; verify asserts it (e.g. test_an_implemented_tlv_is_the_same_with_or_without_bit_7[core-v1]); owner of 33 bytes malformed with and without bit 7; a right one taken either way; rvswd idle_clock 2: unsupported naming 0x04 / 0x84 as received, a wrong length"
+  },
+  "core:2.3:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Take.tail/fixed/refuse, virtual_core.tail, message.Reader/Tail, catalog.decode_description, core.ops/describe, conformance_host_tlv); no divergence from a09fa45; verify asserts it (e.g. test_a_request_tlvs_value_is_not_extended); role_assignment one byte longer: malformed, nothing applied"
+  },
+  "core:2.3:10": {
+   "verdict": "fixed",
+   "reason": "fixed: the host read ops as the union of every ops TLV and max_op_ms / common describe tags from the first copy of the right length (a later copy stood in for a broken first); core.ops/describe/max_op_ms, Host.max_op_ms, catalog.decode_description and dump.required_missing now use the first copy only; host TLV checker gained the broken-first case"
+  },
+  "core:2.3:11": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Take.tail/fixed/refuse, virtual_core.tail, message.Reader/Tail, catalog.decode_description, core.ops/describe, conformance_host_tlv); no divergence from a09fa45; verify asserts it (e.g. test_a_request_shorter_than_its_fixed_part_is_malformed[core-v1]); short confirm / list / describe / open: malformed"
+  },
+  "core:2.3:12": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Take.tail/fixed/refuse, virtual_core.tail, message.Reader/Tail, catalog.decode_description, core.ops/describe, conformance_host_tlv); no divergence from a09fa45; verify asserts it (e.g. test_a_counted_list_may_be_followed_by_tlvs); TLVs after list's counted entries and unsupported's tag"
+  },
+  "core:2.3:13": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Take.tail/fixed/refuse, virtual_core.tail, message.Reader/Tail, catalog.decode_description, core.ops/describe, conformance_host_tlv); no divergence from a09fa45; verify asserts it (e.g. test_a_request_shorter_than_its_fixed_part_is_malformed[core-v1]); no fixed-part field may be omitted: open without force is malformed, nothing changes"
+  },
+  "core:2.4:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint.handle / Core._handle drop non-requests and <10 bytes; link._route (short result/event/data broken, role 0x01 dropped); Result.ran/succeeded; capture unknown kinds); no divergence from a09fa45; verify asserts it (e.g. test_the_host_routes_by_role_and_drops_unknown_roles_and_requests); host drops role 0x05; probe answers nothing to any role but 0x01"
+  },
+  "core:2.4:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint.handle / Core._handle drop non-requests and <10 bytes; link._route (short result/event/data broken, role 0x01 dropped); Result.ran/succeeded; capture unknown kinds); no divergence from a09fa45; verify asserts it (e.g. test_the_probe_drops_what_is_not_a_whole_request[core-v1]); probe: no answer to roles != 1 or under 10 bytes; host drops a request frame"
+  },
+  "core:2.4:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint.handle / Core._handle drop non-requests and <10 bytes; link._route (short result/event/data broken, role 0x01 dropped); Result.ran/succeeded; capture unknown kinds); no divergence from a09fa45; verify asserts it (e.g. test_the_host_takes_short_results_and_notifications_for_broken_frames); results under 5 bytes, events under 6, data under 5: broken frames"
+  },
+  "core:2.4:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint.handle / Core._handle drop non-requests and <10 bytes; link._route (short result/event/data broken, role 0x01 dropped); Result.ran/succeeded; capture unknown kinds); no divergence from a09fa45; verify asserts it (e.g. test_an_unknown_resolution_or_outcome_is_a_failure); resolution 2, outcome 3 / 0xFF: Failed"
+  },
+  "core:2.4:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint.handle / Core._handle drop non-requests and <10 bytes; link._route (short result/event/data broken, role 0x01 dropped); Result.ran/succeeded; capture unknown kinds); no divergence from a09fa45; verify asserts it (e.g. test_an_unknown_reject_reason_or_status_is_a_failure); unknown reason raised as a refusal; unknown status a failure (selected reader); the client's riscv.check raises on an unknown status beside outcome success"
+  },
+  "core:2.4:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint.handle / Core._handle drop non-requests and <10 bytes; link._route (short result/event/data broken, role 0x01 dropped); Result.ran/succeeded; capture unknown kinds); no divergence from a09fa45; verify asserts it (e.g. test_an_unknown_event_kind_is_dropped_and_its_seq_counted); an unknown kind is not returned by events() and its seq is no lost frame"
+  },
+  "core:2.4:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint.handle / Core._handle drop non-requests and <10 bytes; link._route (short result/event/data broken, role 0x01 dropped); Result.ran/succeeded; capture unknown kinds); no divergence from a09fa45; verify asserts it (e.g. test_unknown_values_that_tell_no_failure_are_shown_as_unknown); an unknown cause is shown raw; reserved flags ignored by the selected reader; the client: attach flags bits 4-7 ignored, scan kind 0x7E kept raw"
+  },
+  "core:2.5:1": {
+   "verdict": "ok",
+   "reason": "exclusion right: informative: the header row of a table (column names only) (§2.5's number spaces)"
+  },
+  "core:2.5:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (registry numbers; Endpoint refusals of unused enum values / reserved bits as unsupported; conformance interface() common-op range); no divergence from a09fa45; verify asserts it (e.g. test_the_probe_drops_what_is_not_a_whole_request[core-v1]); role 0x00 and unassigned roles get no answer"
+  },
+  "core:2.5:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (registry numbers; Endpoint refusals of unused enum values / reserved bits as unsupported; conformance interface() common-op range); no divergence from a09fa45; verify asserts it (e.g. test_fn_0_op_space[core-v1]); fn 0 ops in 0x01-0x0F / 0x10-0x1F; others unknown_operation"
+  },
+  "core:2.5:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (registry numbers; Endpoint refusals of unused enum values / reserved bits as unsupported; conformance interface() common-op range); no divergence from a09fa45; verify asserts it (e.g. test_interface_op_space_keeps_0x01_0x0f_for_the_shared_ops); registry: below 0x10 only subscribe 0x01 / unsubscribe 0x02"
+  },
+  "core:2.5:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (registry numbers; Endpoint refusals of unused enum values / reserved bits as unsupported; conformance interface() common-op range); no divergence from a09fa45; verify asserts it (e.g. test_reason_and_cause_spaces); core reasons 0x01-0x3F, interface ones 0x40-0x7F"
+  },
+  "core:2.5:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (registry numbers; Endpoint refusals of unused enum values / reserved bits as unsupported; conformance interface() common-op range); no divergence from a09fa45; verify asserts it (e.g. test_reason_and_cause_spaces); core causes 0x01-0x3F, interface ones 0x40-0x7F"
+  },
+  "core:2.5:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (registry numbers; Endpoint refusals of unused enum values / reserved bits as unsupported; conformance interface() common-op range); no divergence from a09fa45; verify asserts it (e.g. test_outcome_space); outcomes 0/1/2, others not run"
+  },
+  "core:2.5:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (registry numbers; Endpoint refusals of unused enum values / reserved bits as unsupported; conformance interface() common-op range); no divergence from a09fa45; verify asserts it (e.g. test_event_kind_space); event kinds 0x01-0x7F; fn 0 none"
+  },
+  "core:2.5:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (registry numbers; Endpoint refusals of unused enum values / reserved bits as unsupported; conformance interface() common-op range); no divergence from a09fa45; verify asserts it (e.g. test_tlv_tag_spaces); every registry tag 0x01-0x7F; 0 never a TLV"
+  },
+  "core:2.5:10": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (registry numbers; Endpoint refusals of unused enum values / reserved bits as unsupported; conformance interface() common-op range); no divergence from a09fa45; verify asserts it (e.g. test_tlv_tag_spaces); describe common tags 0x01-0x3F, probe-wide and interface ones 0x40-0x7F"
+  },
+  "core:2.5:11": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (registry numbers; Endpoint refusals of unused enum values / reserved bits as unsupported; conformance interface() common-op range); no divergence from a09fa45; verify asserts it (e.g. test_resource_numbers_are_u32_from_1); resource numbers u32 from 1, one space for connections and streams"
+  },
+  "core:2.8:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Interface.REVISION check (core.Interface), list revision per entry; confirm revision 1); no divergence from a09fa45; verify asserts it (e.g. test_the_host_does_not_use_an_interface_revision_it_does_not_know); the client's interface classes speak one (name, revision); another revision is refused"
+  },
+  "core:2.8:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Interface.REVISION check (core.Interface), list revision per entry; confirm revision 1); no divergence from a09fa45; verify asserts it (e.g. test_the_host_does_not_use_an_interface_revision_it_does_not_know); UnsupportedRevision for revision 2"
+  },
+  "core:2.8:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Interface.REVISION check (core.Interface), list revision per entry; confirm revision 1); no divergence from a09fa45; verify asserts it (e.g. test_an_optional_op_is_known_by_ops_and_not_sent_when_absent); an optional op is used only when ops sets it; nothing sent otherwise"
+  },
+  "core:2.8:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Interface.REVISION check (core.Interface), list revision per entry; confirm revision 1); no divergence from a09fa45; verify asserts it (e.g. test_the_protocol_revision_is_confirms); protocol revision 1 from confirm"
+  },
+  "core:7.1:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (host.confirm / confirm_range, link _OWN_CONFIRM, Endpoint._confirm, virtual_core op 1, conformance_discovery.revisions); no divergence from a09fa45; verify asserts it (e.g. test_confirm_names_the_transport_it_came_on); TLV 0x01 = the transport index it came on, both benches"
+  },
+  "core:7.1:2": {
+   "verdict": "fixed",
+   "reason": "fixed: host.confirm parsed an answer of revision 0 in a v0 fixed part (u16 window, flags) and kept it; the fixed part is the same in every revision, so a revision outside the range asked is now a ProtocolError and nothing is used"
+  },
+  "core:7.1:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (host.confirm / confirm_range, link _OWN_CONFIRM, Endpoint._confirm, virtual_core op 1, conformance_discovery.revisions); no divergence from a09fa45; verify asserts it (e.g. test_the_revision_is_chosen_per_transport); revision 1 recorded per transport / TCP connection; a refused confirm on another connection chooses nothing"
+  },
+  "core:7.1:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (host.confirm / confirm_range, link _OWN_CONFIRM, Endpoint._confirm, virtual_core op 1, conformance_discovery.revisions); no divergence from a09fa45; verify asserts it (e.g. test_later_confirms_ask_for_the_revision_in_use); first confirm 1..1 range, later min = max = 1"
+  },
+  "core:7.1:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (host.confirm / confirm_range, link _OWN_CONFIRM, Endpoint._confirm, virtual_core op 1, conformance_discovery.revisions); no divergence from a09fa45; verify asserts it (e.g. test_no_revision_in_range_is_unsupported_with_supported[core-v1]); unsupported 00 + supported(1,1); min > max malformed"
+  },
+  "core:7.2:1": {
+   "verdict": "fixed",
+   "reason": "fixed: virtual_bench.VirtualProbe._list counted every entry one byte too long, so esp32-v003-64 returned 1 entry at first=6 while 2 fit; the test now requires each non-final page to leave no room for the next entry, and conformance_discovery.lists/describes require full pages (mutants added)"
+  },
+  "core:7.2:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (VirtualProbe._list, model list_page, core.list_entries, catalog.unpack_list_result, conformance_discovery.lists); no divergence from a09fa45; verify asserts it (e.g. test_a_name_of_48_bytes_fits_the_smallest_frame); 48-byte name: a 62-byte answer; 49 refused"
+  },
+  "core:7.2:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (VirtualProbe._list, model list_page, core.list_entries, catalog.unpack_list_result, conformance_discovery.lists); no divergence from a09fa45; verify asserts it (e.g. test_instances_are_unique_per_name_and_revision); instance unique per (name, revision), 0 and gaps allowed, not the fn order: bench instance_errors and both checkers (checker bug fixed: they required fn-order n"
+  },
+  "core:7.2:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (VirtualProbe._list, model list_page, core.list_entries, catalog.unpack_list_result, conformance_discovery.lists); no divergence from a09fa45; verify asserts it (e.g. test_the_list_holds_for_the_boot_and_the_host_forgets_fns_at_a_reboot); same list in a boot; host drops name -> fn at a reboot"
+  },
+  "core:7.2:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (VirtualProbe._list, model list_page, core.list_entries, catalog.unpack_list_result, conformance_discovery.lists); no divergence from a09fa45; verify asserts it (e.g. test_list_from_first_past_total_is_total_and_count_0[core-v1]); first >= total: total and count 0"
+  },
+  "core:7.3:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._page, VirtualProbe._describe, virtual_core op 3, core.describe paging, conformance_discovery.describes); no divergence from a09fa45; verify asserts it (e.g. test_describe_paging_ends_with_more_0_and_nothing[core-v1]); probe: more 0 and nothing past the end; host: first += TLVs while more 1, stops at more 0; list stops at total; review4: the checker requires a describe page to"
+  },
+  "core:7.4:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (catalog.pack_ops/check_ops/unpack_ops/decode_description, core.ops, Endpoint._declarations/offers, pins matching of role_channels/channel_group); no divergence from a09fa45; verify asserts it (e.g. test_the_common_describe_tags_have_their_forms); role_channels role base bitmap; a pin outside its candidates refused; the same role twice: the union (host decode, probe plan)"
+  },
+  "core:7.4:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (catalog.pack_ops/check_ops/unpack_ops/decode_description, core.ops, Endpoint._declarations/offers, pins matching of role_channels/channel_group); no divergence from a09fa45; verify asserts it (e.g. test_the_common_describe_tags_have_their_forms); max_clock_hz is 4 bytes"
+  },
+  "core:7.4:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (catalog.pack_ops/check_ops/unpack_ops/decode_description, core.ops, Endpoint._declarations/offers, pins matching of role_channels/channel_group); no divergence from a09fa45; verify asserts it (e.g. test_max_length_bounds_a_request); read_block past max_length: unsupported 0x00; at it: runs; requests and answers at max_length fit max_frame on every profile"
+  },
+  "core:7.4:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (catalog.pack_ops/check_ops/unpack_ops/decode_description, core.ops, Endpoint._declarations/offers, pins matching of role_channels/channel_group); no divergence from a09fa45; verify asserts it (e.g. test_min_clock_hz_bounds_a_requested_speed); min_clock_hz u32; a max_speed below it unsupported"
+  },
+  "core:7.4:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (catalog.pack_ops/check_ops/unpack_ops/decode_description, core.ops, Endpoint._declarations/offers, pins matching of role_channels/channel_group); no divergence from a09fa45; verify asserts it (e.g. test_the_common_describe_tags_have_their_forms); features is a u32; optional ops are read from ops, not features"
+  },
+  "core:7.4:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (catalog.pack_ops/check_ops/unpack_ops/decode_description, core.ops, Endpoint._declarations/offers, pins matching of role_channels/channel_group); no divergence from a09fa45; verify asserts it (e.g. test_a_channel_group_is_matched_whole_and_role_channels_bound_their_roles); a pair matching no group whole: unsupported; roles outside the groups bound by role_channels alone"
+  },
+  "core:7.4:7": {
+   "verdict": "fixed",
+   "reason": "fixed with core:2.3:10: ops is not a repeating tag - a second ops TLV no longer adds ops (core.ops, decode_description, dump)"
+  },
+  "core:7.4:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (catalog.pack_ops/check_ops/unpack_ops/decode_description, core.ops, Endpoint._declarations/offers, pins matching of role_channels/channel_group); no divergence from a09fa45; verify asserts it (e.g. test_ops_value_form_and_the_examples); base + 8 x n <= 256, a bitmap byte or more; outside: the fn not used"
+  },
+  "core:7.4:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (catalog.pack_ops/check_ops/unpack_ops/decode_description, core.ops, Endpoint._declarations/offers, pins matching of role_channels/channel_group); no divergence from a09fa45; verify asserts it (e.g. test_ops_value_form_and_the_examples); 07 02 00 10 FF and 07 02 00 10 07 decode as the example says; F9 01 invalid"
+  },
+  "core:7.4:10": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (catalog.pack_ops/check_ops/unpack_ops/decode_description, core.ops, Endpoint._declarations/offers, pins matching of role_channels/channel_group); no divergence from a09fa45; verify asserts it (e.g. test_a_channel_group_is_matched_whole_and_role_channels_bound_their_roles); p4-bench's fixed groups vs rp2350's any-pin role_channels; both declared: a group whole and role_channels' candidates, a role only role_channels names bound by "
+  },
+  "core:7.4:11": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (catalog.pack_ops/check_ops/unpack_ops/decode_description, core.ops, Endpoint._declarations/offers, pins matching of role_channels/channel_group); no divergence from a09fa45; verify asserts it (e.g. test_a_channel_group_is_matched_whole_and_role_channels_bound_their_roles); the same declarations bound an attach's arguments and a plan's assignment"
+  },
+  "core:7.5:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (virtual_bench _core/_transports, Endpoint.add_transport, conformance identity/transport_declarations, host.check_max_op_ms, link.check_unit_id/find_usb, speed_record x- rule); no divergence from a09fa45; verify asserts it (e.g. test_firmware_model_and_chip_are_text); firmware is text"
+  },
+  "core:7.5:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (virtual_bench _core/_transports, Endpoint.add_transport, conformance identity/transport_declarations, host.check_max_op_ms, link.check_unit_id/find_usb, speed_record x- rule); no divergence from a09fa45; verify asserts it (e.g. test_firmware_model_and_chip_are_text); model is text"
+  },
+  "core:7.5:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (virtual_bench _core/_transports, Endpoint.add_transport, conformance identity/transport_declarations, host.check_max_op_ms, link.check_unit_id/find_usb, speed_record x- rule); no divergence from a09fa45; verify asserts it (e.g. test_unit_id_is_required_its_grammar_and_the_same_on_every_transport); 1-32 of a-z 0-9 -, the same on 4 transports; the host names a probe by it as the USB serial number (usb:<unit_id>, checked against describe)"
+  },
+  "core:7.5:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (virtual_bench _core/_transports, Endpoint.add_transport, conformance identity/transport_declarations, host.check_max_op_ms, link.check_unit_id/find_usb, speed_record x- rule); no divergence from a09fa45; verify asserts it (e.g. test_channels_are_numbered_from_0); u16; channel == channels is unsupported; core-v1 without channels"
+  },
+  "core:7.5:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (virtual_bench _core/_transports, Endpoint.add_transport, conformance identity/transport_declarations, host.check_max_op_ms, link.check_unit_id/find_usb, speed_record x- rule); no divergence from a09fa45; verify asserts it (e.g. test_labels_are_the_firmwares_fixed_names); channel(u16) text, read by the host; a settings label never shows in describe"
+  },
+  "core:7.5:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (virtual_bench _core/_transports, Endpoint.add_transport, conformance identity/transport_declarations, host.check_max_op_ms, link.check_unit_id/find_usb, speed_record x- rule); no divergence from a09fa45; verify asserts it (e.g. test_one_transport_entry_per_transport_with_its_kind_and_interface); index kind interface, one per transport; UART bridge / TCP 0xFF"
+  },
+  "core:7.5:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (virtual_bench _core/_transports, Endpoint.add_transport, conformance identity/transport_declarations, host.check_max_op_ms, link.check_unit_id/find_usb, speed_record x- rule); no divergence from a09fa45; verify asserts it (e.g. test_firmware_model_and_chip_are_text); chip is text, optional"
+  },
+  "core:7.5:8": {
+   "verdict": "fixed",
+   "reason": "fixed with core:2.3:10: a broken first max_op_ms is not replaced by a later one"
+  },
+  "core:7.5:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (virtual_bench _core/_transports, Endpoint.add_transport, conformance identity/transport_declarations, host.check_max_op_ms, link.check_unit_id/find_usb, speed_record x- rule); no divergence from a09fa45; verify asserts it (e.g. test_one_transport_entry_per_transport_with_its_kind_and_interface); kinds 1-6 as the registry says"
+  },
+  "core:7.5:10": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (virtual_bench _core/_transports, Endpoint.add_transport, conformance identity/transport_declarations, host.check_max_op_ms, link.check_unit_id/find_usb, speed_record x- rule); no divergence from a09fa45; verify asserts it (e.g. test_a_firmware_that_adds_a_transport_gives_it_an_unused_index); an added transport takes an index not used before (firmware releases themselves are not modelled)"
+  },
+  "core:7.5:11": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (virtual_bench _core/_transports, Endpoint.add_transport, conformance identity/transport_declarations, host.check_max_op_ms, link.check_unit_id/find_usb, speed_record x- rule); no divergence from a09fa45; verify asserts it (e.g. test_an_x_unit_id_keys_nothing_kept_across_sessions); the speed record keeps nothing under an x- unit_id; tcp:x-/usb:x- refused, kept_session keeps nothing for x-"
+  },
+  "core:7.5:12": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (virtual_bench _core/_transports, Endpoint.add_transport, conformance identity/transport_declarations, host.check_max_op_ms, link.check_unit_id/find_usb, speed_record x- rule); no divergence from a09fa45; verify asserts it (e.g. test_unit_id_is_required_its_grammar_and_the_same_on_every_transport); the same unit_id on every transport (kind does not change it); the host finds the probe by the USB serial = unit_id"
+  },
+  "core:7.6:1": {
+   "verdict": "fixed",
+   "reason": "fixed: Host.clock sent without the quick-op processing bound (expect_ms 0), so its wait could fall under core §4.4's min(max_op_ms, 1000) + 1000 + transfer when the link timeout is short; now sent inside expecting(op_bound_ms)"
+  },
+  "core:7.6:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (host.clock, Endpoint OP_CLOCK, virtual_core op 4); no divergence from a09fa45; verify asserts it (e.g. test_clock_touches_no_session_lock_or_lease); session-0 clock touches no lease or record"
+  },
+  "core:7.6:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (host.clock, Endpoint OP_CLOCK, virtual_core op 4); no divergence from a09fa45; verify asserts it (e.g. test_clock_gives_the_boot_id_of_confirm_and_open_and_the_uptime[core-v1]); uptime_ns read for this request"
+  },
+  "core:8:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._park/_boot_channels/_output_idle and the plan/attach refusals); no divergence from a09fa45; verify asserts it (e.g. test_the_idle_state_is_the_settings_or_hi_z); Hi-Z without settings; an output-high idle item drives high"
+  },
+  "core:8:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._park/_boot_channels/_output_idle and the plan/attach refusals); no divergence from a09fa45; verify asserts it (e.g. test_a_released_pin_returns_to_idle_whichever_way); plan_release, end, expiry, force: back to idle"
+  },
+  "core:8:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._park/_boot_channels/_output_idle and the plan/attach refusals); no divergence from a09fa45; verify asserts it (e.g. test_a_probe_with_channels_declares_them_and_parks_them_idle); every non-own channel idle from boot"
+  },
+  "core:8:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._park/_boot_channels/_output_idle and the plan/attach refusals); no divergence from a09fa45; verify asserts it (e.g. test_taking_a_pin_keeps_its_idle_state_until_used); a planned pin stays idle until gpio set; logic capture on a driven / output-idle / pulled pin changes nothing"
+  },
+  "core:8:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._park/_boot_channels/_output_idle and the plan/attach refusals); no divergence from a09fa45; verify asserts it (e.g. test_taking_an_output_idle_channel_is_unavailable_cause_5); plan on an output-idle channel: cause 5, nothing"
+  },
+  "core:8.1:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._park/_boot_channels/_output_idle and the plan/attach refusals); no divergence from a09fa45; verify asserts it (e.g. test_a_conflicting_take_is_unavailable_and_changes_nothing); a held pin: unavailable cause 1, the plan unchanged"
+  },
+  "core:8.1:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._park/_boot_channels/_output_idle and the plan/attach refusals); no divergence from a09fa45; verify asserts it (e.g. test_more_than_the_probe_can_run_at_once_is_unavailable_cause_2); a third attach past 2 seats: cause 2, no change"
+  },
+  "core:10.1:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_the_host_routes_by_role_and_drops_unknown_roles_and_requests); an event / data frame whose fn equals the corr is not the reply"
+  },
+  "core:10.1:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_the_host_routes_by_role_and_drops_unknown_roles_and_requests); unknown roles dropped, a stray corr read past"
+  },
+  "core:10.1:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_notifications_do_not_keep_the_host_past_its_deadline); a flood of events cannot hold pump or the wait for a reply past its deadline"
+  },
+  "core:10.2:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_data_frames_are_their_fixed_part_then_tlvs); position u64, len u16, data, TLVs"
+  },
+  "core:10.2:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_seq_counts_per_fn_from_0_at_each_subscribe_and_wraps); seq per fn from 0, 0xFFFF then 0"
+  },
+  "core:10.2:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_fn_0_sends_no_notifications); fn 0's 0x01 is confirm; no push from fn 0; host refuses to subscribe it"
+  },
+  "core:10.3:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_subscribe_and_unsubscribe_forms_and_lock); min_bytes u16 max_delay_ms u32 [TLV], lock needed, empty answer"
+  },
+  "core:10.3:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_subscribe_and_unsubscribe_forms_and_lock); unsubscribe [TLV], lock needed, empty answer"
+  },
+  "core:10.3:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_every_fn_that_sends_notifications_has_subscribe_and_unsubscribe); both ops set in ops wherever one is"
+  },
+  "core:10.3:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_only_the_holder_subscribes_and_the_subscription_ends_with_the_lock); another id: locked; end / expiry / force end it"
+  },
+  "core:10.3:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_unsubscribe_without_a_subscription_succeeds); succeeds, nothing changes"
+  },
+  "core:10.3:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_subscribe_again_replaces_atomically); conditions, transport and seq replaced; unsent old notifications dropped; the bench's serial port drops the old subscription's waiting frames"
+  },
+  "core:10.3:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_subscription_conditions_are_kept_as_asked); conditions kept as asked; a refused replacement (cause 2) keeps conditions and seq"
+  },
+  "core:10.3:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_data_waits_for_min_bytes_or_max_delay_and_events_never_wait); push_due: min_bytes or max_delay_ms, 0 unused, both 0 at once; due data cut into max_frame frames, the rest not held for min_bytes; data due by max_delay_ms sti"
+  },
+  "core:10.3:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_data_waits_for_min_bytes_or_max_delay_and_events_never_wait); with min_bytes 60000 no data yet but the stopped event goes"
+  },
+  "core:10.4:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_bounded_raw_notification_output[0]); answers before new notifications; a started frame completes before the next answer; the bench's serial port: the answer before new notifications"
+  },
+  "core:10.4:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_bounded_raw_notification_output[0]); pending notification bytes stay within max_frame x 2; dropped ones consume seq; the bench's serial port: notifications waiting within 2 x max_frame, the rest dr"
+  },
+  "core:10.4:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (Endpoint._subscription/pushes/_events/_next_seq, virtual_bench_serial/serve buffer bound, link._route/_recv_for, conformance_subscriptions / notification checkers); no divergence from a09fa45; verify asserts it (e.g. test_notifications_go_to_the_transport_the_subscribe_came_on); pushes_to names the subscribe's connection"
+  },
+  "core:11:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (fn 0 op table: registry, Endpoint._core, virtual_core OPS/FREE/FIXED); no divergence from a09fa45; verify asserts it (e.g. test_fn_0_op_table[core-v1-confirm]); fn 0 confirm: present, answered, lock not needed"
+  },
+  "core:11:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (fn 0 op table: registry, Endpoint._core, virtual_core OPS/FREE/FIXED); no divergence from a09fa45; verify asserts it (e.g. test_fn_0_op_table[core-v1-list]); fn 0 list: present, answered, lock not needed"
+  },
+  "core:11:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (fn 0 op table: registry, Endpoint._core, virtual_core OPS/FREE/FIXED); no divergence from a09fa45; verify asserts it (e.g. test_fn_0_op_table[core-v1-describe]); fn 0 describe: present, answered, lock not needed"
+  },
+  "core:11:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (fn 0 op table: registry, Endpoint._core, virtual_core OPS/FREE/FIXED); no divergence from a09fa45; verify asserts it (e.g. test_fn_0_op_table[core-v1-clock]); fn 0 clock: present, answered, lock not needed"
+  },
+  "core:11:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (fn 0 op table: registry, Endpoint._core, virtual_core OPS/FREE/FIXED); no divergence from a09fa45; verify asserts it (e.g. test_fn_0_open_row[core-v1]); open lease force [owner] -> lease boot_id; it takes the lock"
+  },
+  "core:11:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (fn 0 op table: registry, Endpoint._core, virtual_core OPS/FREE/FIXED); no divergence from a09fa45; verify asserts it (e.g. test_fn_0_op_table[core-v1-end]); fn 0 end: present, answered, lock needed"
+  },
+  "core:11:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (fn 0 op table: registry, Endpoint._core, virtual_core OPS/FREE/FIXED); no divergence from a09fa45; verify asserts it (e.g. test_fn_0_op_table[core-v1-keepalive]); fn 0 keepalive: present, answered, lock needed"
+  },
+  "core:11:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (fn 0 op table: registry, Endpoint._core, virtual_core OPS/FREE/FIXED); no divergence from a09fa45; verify asserts it (e.g. test_fn_0_op_table[core-v1-lock_state]); fn 0 lock_state: present, answered, lock not needed"
+  },
+  "core:12:1": {
+   "verdict": "fixed",
+   "reason": "fixed: names.validate enforced a draft scheme (uuid./local. namespaces, alphabetic TLD - rejecting xn-- TLDs -, 3+ labels for reverse DNS) and accepted oep. names without a layer (oep.aaaa); now exactly §12 rule 1 (labels, 2+, 1-48 bytes, oep.<probe|wire|target|fixture>.<name>), which the bench uses on every profile name"
+  },
+  "core:12:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_every_interface_has_a_name_revision_and_op_table); the registry built from the documents carries each interface's name, revision, ops, lock, TLV contexts"
+  },
+  "core:12:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_every_interface_has_a_name_revision_and_op_table); every interface: name and revision"
+  },
+  "core:12:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_every_interface_has_a_name_revision_and_op_table); op numbers and lock-free sets; optional ops by the ops tag"
+  },
+  "core:12:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_every_interface_has_a_name_revision_and_op_table); every TLV context is an op, an event, describe or the refusals"
+  },
+  "core:12:6": {
+   "verdict": "ok",
+   "reason": "exclusion right: cannot be modelled here: it says what an interface document in oep-spec must contain, not what a host or probe does, and no registry field this repository reads carries it (each op's completed success / failed / partial payload)"
+  },
+  "core:12:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_an_interfaces_own_values_and_describe_tags_are_in_its_range); interface statuses / reasons / causes and refusal tags in 0x40-0x7F"
+  },
+  "core:12:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_an_interfaces_own_values_and_describe_tags_are_in_its_range); interface describe tags 0x40-0x7F; every describe TLV within max_frame - 9, pages of whole TLVs"
+  },
+  "core:12:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_every_interface_has_a_name_revision_and_op_table); each registry interface names its target family or none"
+  },
+  "core:12:10": {
+   "verdict": "ok",
+   "reason": "exclusion right: cannot be modelled here: it says what an interface document in oep-spec must contain, not what a host or probe does, and no registry field this repository reads carries it (the resources an interface makes and their lifetime; the general §9 rules are traced at §9)"
+  },
+  "core:12:11": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_an_interface_with_events_declares_subscribe_and_unsubscribe); interfaces with events have both ops"
+  },
+  "core:12:12": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_unknown_values_that_tell_no_failure_are_shown_as_unknown); the client follows §2.4 for unknown enum values and ignores reserved flag bits"
+  },
+  "core:12:13": {
+   "verdict": "ok",
+   "reason": "exclusion right: cannot be modelled here: it says what an interface document in oep-spec must contain, not what a host or probe does, and no registry field this repository reads carries it (the referenced external specifications)"
+  },
+  "core:12:14": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_a_request_shorter_than_its_fixed_part_is_malformed[core-v1]); restates §2.3: fixed forms, counted lists, critical safety arguments"
+  },
+  "core:12:15": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_executed_and_failed_is_completed_failed_not_rejected); not accepted: rejected; run and failed: completed failed"
+  },
+  "core:12:16": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_a_lock_free_op_changes_no_state); every lock-free op sent with session 0 leaves lock, plan, pins, subscriptions"
+  },
+  "core:12:17": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_the_host_does_not_use_an_interface_revision_it_does_not_know); restates §2.8"
+  },
+  "core:12:18": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_the_bench_adds_nothing_to_the_projects_interfaces); the bench's oep. fns offer only registry ops; its own experiment is under its own name"
+  },
+  "core:12:19": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_the_family_an_interface_is_for_is_in_the_registry); the family an oep. interface is for is in the registry's target (wires / target ops of one architecture), generic ones none, no family or 'generic' word in the "
+  },
+  "core:12.1:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_fn_0_answers_have_their_fixed_parts_and_a_tlv_tail_after); a new answer TLV is skipped by the host, a new non-critical request TLV ignored by the probe"
+  },
+  "core:12.1:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_an_optional_op_is_known_by_ops_and_not_sent_when_absent); a new optional op used only when declared; a new event kind dropped"
+  },
+  "core:12.1:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_a_reserved_value_in_a_request_is_unsupported); gpio mode 7: unsupported 0x00; unassigned fn 0 ops unknown_operation"
+  },
+  "core:12.1:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_the_host_does_not_use_an_interface_revision_it_does_not_know); a changed fixed form means a revision the host refuses"
+  },
+  "core:12.1:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_an_enum_answer_value_never_moves_a_field); an unknown cause does not move the channel TLV"
+  },
+  "core:12.1:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_an_unknown_resolution_or_outcome_is_a_failure); restates §2.4"
+  },
+  "core:12.1:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (names.validate, registry interface table, every interface module and conformance_registered_ops); no divergence from a09fa45; verify asserts it (e.g. test_unknown_values_that_tell_no_failure_are_shown_as_unknown); an unknown cause shown raw"
+  },
+  "core:13:1": {
+   "verdict": "ok",
+   "reason": "exclusion right: informative: §13 lists the non-normative guides (a reference list; they add no rules)"
+  },
+  "core:13:2": {
+   "verdict": "ok",
+   "reason": "exclusion right: informative: §13 lists the non-normative guides (a reference list; they add no rules)"
+  },
+  "core:13:3": {
+   "verdict": "ok",
+   "reason": "exclusion right: informative: §13 lists the non-normative guides (a reference list; they add no rules)"
+  },
+  "core:13:4": {
+   "verdict": "ok",
+   "reason": "exclusion right: informative: §13 lists the non-normative guides (a reference list; they add no rules)"
+  },
+  "transports:1:1": {
+   "verdict": "ok",
+   "reason": "exclusion right: informative: the header row of the transport/framing table (column names only); its data rows are traced"
+  },
+  "transports:1:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_a_serial_frame_is_message_crc16_le_cobs_between_zeros_and_empty_frames_are_skipped); serial ports (bench pty, client) carry COBS+CRC-16 frames between 0x00s, both directions"
+  },
+  "transports:1:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_length_frames_skip_length_0_and_need_no_boundaries_from_the_reads); vendor bulk / TCP length(u16) message, no CRC; length 0 skipped by client and by bench (CORE-USB-ZERO, CORE-TCP-ZERO)"
+  },
+  "transports:1:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_hid_reports_carry_counted_bytes_skip_count_0_and_ignore_any_padding); HID report = count(u16), the stream's bytes, padding to the descriptor's size; client and bench model"
+  },
+  "transports:1:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_reads_join_the_counted_bytes_and_drop_the_padding); per direction the reports carry one byte stream (client joins reads, splits writes; bench model reassembles)"
+  },
+  "transports:1:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_reads_join_the_counted_bytes_and_drop_the_padding); the counted bytes joined in report order are the vendor-bulk length stream, frames across report boundaries"
+  },
+  "transports:1:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_hid_reports_carry_counted_bytes_skip_count_0_and_ignore_any_padding); count 0 reports are empty and skipped (client; bench CORE-HID-EMPTY-REPORT)"
+  },
+  "transports:1:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_hid_reports_carry_counted_bytes_skip_count_0_and_ignore_any_padding); sender pads with 0; receiver ignores nonzero padding (client and bench CORE-HID-PADDING)"
+  },
+  "transports:1:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_hid_reports_keep_the_declared_report_id_and_drop_another); a declared report ID starts every report both ways, count after it; another ID is dropped (client; bench CORE-HID-REPORT-ID)"
+  },
+  "transports:1:10": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_usb_probe_drops_a_frame_that_stops_for_probe_frame_gap_ms[hid]); a HID frame stopping 200 ms is dropped by the probe and the next byte read as a length"
+  },
+  "transports:1:11": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_hid_count_over_the_report_breaks_the_stream_until_a_gap_at_the_probe); count over report capacity: report dropped, input dropped until 200 ms quiet (bench model and client, fixed)"
+  },
+  "transports:1:12": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_a_serial_frame_is_message_crc16_le_cobs_between_zeros_and_empty_frames_are_skipped); CRC-16/CCITT-FALSE LE, standard COBS, 0x00 both sides, no empty block after 254, both decoded, empty frames skipped"
+  },
+  "transports:1:13": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_on_tcp_an_answer_to_a_corr_not_waited_for_is_read_past); host COBS: the span from open to the first 0x00 is a candidate; bad candidates and other-corr results discarded"
+  },
+  "transports:1:14": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_the_host_ends_a_whole_packet_bulk_write_with_a_zero_length_packet); host ZLP after a write that is a multiple of wMaxPacketSize (both backends, fixed for 64-byte FS); probe ZLP / short last packet"
+  },
+  "transports:1:15": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_the_probe_drops_a_frame_over_max_frame_and_what_follows_until_a_gap[esp32_v003]); over max_frame: dropped with input until a gap, no answer (serial/bulk/HID); TCP closes"
+  },
+  "transports:1:16": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_the_framing_follows_the_kind_of_transport_not_the_vid_pid); framing chosen by transport kind (serial COBS; usb/tcp length), whatever the VID:PID"
+  },
+  "transports:1:17": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_the_virtual_bench_listens_on_the_local_host_unless_told); the bench's TCP listens on 127.0.0.1 by default; several hosts share one probe's one lock/session"
+  },
+  "transports:1:18": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_two_clients_at_once_share_one_lock); virtual_bench_serve answers OEP itself over TCP, so it is a probe: core and transport probe rules pass on it"
+  },
+  "transports:1:19": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_current_virtual_tcp_passes_core_and_tcp_faults); the self-answering TCP endpoint implements discovery, transport declaration, sessions, resend, resource lifetime in full"
+  },
+  "transports:1:20": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_lose_closes_the_connection_and_its_streams); lost downstream line invalidates its resources (no_resource); a regenerated endpoint has a new boot_id; client close ends nothing"
+  },
+  "transports:1:21": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (cobs.py, frames.LengthFrames, hid_stream.HidReportStream, usb_stream ZLP, virtual_bench_serial/usb/serve, conformance_usb(_cases)/serial/tcp*); no divergence from a09fa45; verify asserts it (e.g. test_c05_c07_virtual_bench_serve_tcp_is_a_tcp_transport_and_closes_on_an_over_long_length); one listener = one describe entry (kind 6, 0xFF) named by every connection's confirm; per-connection rules (revision in use, window / max_inflight credits, noti"
+  },
+  "transports:2:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link._write (whole frames), frames stall rule (not TCP), bench gap rules); no divergence from a09fa45; verify asserts it (e.g. test_answers_on_one_transport_keep_the_order_of_the_requests); answers in request order on one transport; after a reopen only the unresolved request goes again, nothing carried over"
+  },
+  "transports:2:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link._write (whole frames), frames stall rule (not TCP), bench gap rules); no divergence from a09fa45; verify asserts it (e.g. test_current_virtual_serial_passes_faults_and_reconnect); frames split or coalesced over writes/transfers/reports/segments are read alike (bench CORE-*-SPLIT/COALESCE; client)"
+  },
+  "transports:2:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link._write (whole frames), frames stall rule (not TCP), bench gap rules); no divergence from a09fa45; verify asserts it (e.g. test_the_host_writes_frames_whole_in_one_write[cobs]); host writes each frame batch in one write; bench sends whole frames"
+  },
+  "transports:2:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link._write (whole frames), frames stall rule (not TCP), bench gap rules); no divergence from a09fa45; verify asserts it (e.g. test_the_probe_drops_a_frame_that_stops_for_probe_frame_gap_ms); 200 ms gap restarts the reader on serial/bulk/HID; TCP reads on (bench CORE-TCP-PARTIAL-GAP, client)"
+  },
+  "transports:3:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.open_host/_open_host/probe/check_unit_id/usb_probes/_merge_probes, discovery browse/find_unit/check, open_serial exclusive, hid flock, Endpoint transports); no divergence from a09fa45; verify asserts it (e.g. test_two_clients_at_once_share_one_lock); transports share one session/lock; answers to the request's transport, notifications to the subscriber's"
+  },
+  "transports:3:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.open_host/_open_host/probe/check_unit_id/usb_probes/_merge_probes, discovery browse/find_unit/check, open_serial exclusive, hid flock, Endpoint transports); no divergence from a09fa45; verify asserts it (e.g. test_a_dropped_tcp_client_keeps_its_session_and_a_new_connection_takes_it_back); a closed transport keeps session, lock, subscriptions and resend table until a core §9 event"
+  },
+  "transports:3:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.open_host/_open_host/probe/check_unit_id/usb_probes/_merge_probes, discovery browse/find_unit/check, open_serial exclusive, hid flock, Endpoint transports); no divergence from a09fa45; verify asserts it (e.g. test_the_probe_does_not_check_which_transport_a_sessions_request_came_on); probe does not check which transport a session's request came on; session 0 anywhere"
+  },
+  "transports:3:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.open_host/_open_host/probe/check_unit_id/usb_probes/_merge_probes, discovery browse/find_unit/check, open_serial exclusive, hid flock, Endpoint transports); no divergence from a09fa45; verify asserts it (e.g. test_open_usb_host_falls_back_from_vendor_to_hid); host tries vendor bulk, then HID (CDC by name)"
+  },
+  "transports:3:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.open_host/_open_host/probe/check_unit_id/usb_probes/_merge_probes, discovery browse/find_unit/check, open_serial exclusive, hid flock, Endpoint transports); no divergence from a09fa45; verify asserts it (e.g. test_only_the_project_vid_pid_identifies_a_probe); only 1209:4F45 identifies automatically; iProduct not used"
+  },
+  "transports:3:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.open_host/_open_host/probe/check_unit_id/usb_probes/_merge_probes, discovery browse/find_unit/check, open_serial exclusive, hid flock, Endpoint transports); no divergence from a09fa45; verify asserts it (e.g. test_usb_unit_id_matches_the_serial_and_checks_describe); named unit_id: device by serial (case-insensitive), used only when describe's unit_id matches, else closed"
+  },
+  "transports:3:7": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.open_host/_open_host/probe/check_unit_id/usb_probes/_merge_probes, discovery browse/find_unit/check, open_serial exclusive, hid flock, Endpoint transports); no divergence from a09fa45; verify asserts it (e.g. test_a_named_vid_pid_has_no_cdc_fallback_and_no_listing); other devices and ports are opened only when named by the user"
+  },
+  "transports:3:8": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.open_host/_open_host/probe/check_unit_id/usb_probes/_merge_probes, discovery browse/find_unit/check, open_serial exclusive, hid flock, Endpoint transports); no divergence from a09fa45; verify asserts it (e.g. test_open_usb_host_probes_with_confirm_first); probing: confirm (and its resend) only; no valid OEP! answer with the same corr -> closed, nothing else sent"
+  },
+  "transports:3:9": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.open_host/_open_host/probe/check_unit_id/usb_probes/_merge_probes, discovery browse/find_unit/check, open_serial exclusive, hid flock, Endpoint transports); no divergence from a09fa45; verify asserts it (e.g. test_the_host_takes_the_vendor_interface_by_class_subclass_protocol_alone); vendor bulk by class 0xFF/0x4F/0x45 only; HID by usage page 0xFF4F usage 0x45 only (client fixed); a probe offers at most one vendor bulk and one HID (bench fix"
+  },
+  "transports:3:10": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.open_host/_open_host/probe/check_unit_id/usb_probes/_merge_probes, discovery browse/find_unit/check, open_serial exclusive, hid flock, Endpoint transports); no divergence from a09fa45; verify asserts it (e.g. test_a_bare_usb_target_with_one_probe_of_all_three_ways_opens_vendor); a probe with vendor/HID: its CDC is not opened by enumeration (client fixed); CDC-only probe: CDC is OEP"
+  },
+  "transports:3:11": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.open_host/_open_host/probe/check_unit_id/usb_probes/_merge_probes, discovery browse/find_unit/check, open_serial exclusive, hid flock, Endpoint transports); no divergence from a09fa45; verify asserts it (e.g. test_find_usb_matches_the_serial_alone); host finds a probe by its USB serial = unit_id without opening, confirms by describe (probe descriptor side is hardware)"
+  },
+  "transports:3:12": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.open_host/_open_host/probe/check_unit_id/usb_probes/_merge_probes, discovery browse/find_unit/check, open_serial exclusive, hid flock, Endpoint transports); no divergence from a09fa45; verify asserts it (e.g. test_the_records_and_the_two_answer_forms); DNS-SD _oep._tcp over mDNS, SRV port, TXT unit_id; host opens found/explicit only, checks describe unit_id"
+  },
+  "transports:3:13": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.open_host/_open_host/probe/check_unit_id/usb_probes/_merge_probes, discovery browse/find_unit/check, open_serial exclusive, hid flock, Endpoint transports); no divergence from a09fa45; verify asserts it (e.g. test_max_frame_binds_the_host_and_is_64_until_a_confirm_answer); probe answers within max_frame; host refuses to send over max_frame (client fixed)"
+  },
+  "transports:3:14": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.open_host/_open_host/probe/check_unit_id/usb_probes/_merge_probes, discovery browse/find_unit/check, open_serial exclusive, hid flock, Endpoint transports); no divergence from a09fa45; verify asserts it (e.g. test_max_frame_binds_the_host_and_is_64_until_a_confirm_answer); probes take 64-byte messages before confirm; host sends <=64 until confirm's answer; host reads 65535"
+  },
+  "transports:3:15": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.open_host/_open_host/probe/check_unit_id/usb_probes/_merge_probes, discovery browse/find_unit/check, open_serial exclusive, hid flock, Endpoint transports); no divergence from a09fa45; verify asserts it (e.g. test_open_host_on_a_serial_port_with_tiocexcl); serial ports opened exclusively (TIOCEXCL, flock): a second open is PortBusy; HID: flock on the hidraw node (client fixed), a second open is HidBusy"
+  },
+  "transports:3:16": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.open_host/_open_host/probe/check_unit_id/usb_probes/_merge_probes, discovery browse/find_unit/check, open_serial exclusive, hid flock, Endpoint transports); no divergence from a09fa45; verify asserts it (e.g. test_current_virtual_core_passes_usb_contracts[hid-6-9]); the HID model takes output reports by interrupt OUT and by SET_REPORT (CORE-HID-SET-REPORT)"
+  },
+  "transports:3:17": {
+   "verdict": "ok",
+   "reason": "exclusion right: behaviour this repository cannot model: a USB device descriptor of the probe hardware (the Microsoft OS 2.0 compatible ID of its vendor interface); there is no USB device here"
+  },
+  "transports:4:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (open_serial 8N1 DTR/RTS, VirtualSerialPort candidates, port_speed boot-speed confirms); no divergence from a09fa45; verify asserts it (e.g. test_c09_a_serial_port_opens_8n1_without_flow_control_and_dtr_rts_asserted); 8N1, no flow control, 115200 at boot; set_baud changes only the rate"
+  },
+  "transports:4:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (open_serial 8N1 DTR/RTS, VirtualSerialPort candidates, port_speed boot-speed confirms); no divergence from a09fa45; verify asserts it (e.g. test_open_waits_out_a_raised_rate_a_host_that_died_left); a host handling port_speed retries confirm at the boot speed and decides its own limit"
+  },
+  "transports:4:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (open_serial 8N1 DTR/RTS, VirtualSerialPort candidates, port_speed boot-speed confirms); no divergence from a09fa45; verify asserts it (e.g. test_a_usb_serial_port_takes_any_line_coding); bench USB CDC port answers whatever line coding the host set (bench fixed); only a UART bridge has a rate"
+  },
+  "transports:4:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (open_serial 8N1 DTR/RTS, VirtualSerialPort candidates, port_speed boot-speed confirms); no divergence from a09fa45; verify asserts it (e.g. test_c09_a_serial_port_opens_8n1_without_flow_control_and_dtr_rts_asserted); host asserts DTR and RTS while the port is open (probe side: no control lines in the bench)"
+  },
+  "transports:4:5": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (open_serial 8N1 DTR/RTS, VirtualSerialPort candidates, port_speed boot-speed confirms); no divergence from a09fa45; verify asserts it (e.g. test_the_probe_takes_only_candidates_between_zeros_and_the_closing_zero_opens_the_next); probe processes only 0x00 COBS 0x00 candidates; bad CRC / undecodable / timed out dropped; closing 0x00 opens the next"
+  },
+  "transports:4:6": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (open_serial 8N1 DTR/RTS, VirtualSerialPort candidates, port_speed boot-speed confirms); no divergence from a09fa45; verify asserts it (e.g. test_answers_and_notifications_go_as_whole_frames_one_after_another); answers and notifications use the same COBS frames, whole, one after another"
+  },
+  "transports:5:1": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.resync/_reopen/recover_transport/_recv (COBS read past), conformance_tcp_recovery); no divergence from a09fa45; verify asserts it (e.g. test_on_tcp_broken_framing_closes_and_opens_the_connection_and_confirms_there); TCP broken framing: close and reopen (client fixed); pause is no breakage; other-corr answers just dropped"
+  },
+  "transports:5:2": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.resync/_reopen/recover_transport/_recv (COBS read past), conformance_tcp_recovery); no divergence from a09fa45; verify asserts it (e.g. test_c07_a_resync_waits_250_ms_after_the_hosts_last_write); vendor bulk/HID resync: read and discard until quiet, wait past probe_frame_gap_ms since the last write, own-corr confirm; never quiet: closed and opened again "
+  },
+  "transports:5:3": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.resync/_reopen/recover_transport/_recv (COBS read past), conformance_tcp_recovery); no divergence from a09fa45; verify asserts it (e.g. test_a_broken_answer_on_a_held_port_is_resent_at_once_with_the_same_corr); COBS: broken candidates dropped, reading goes on at the next delimiter; unknown outcome resent by core §5.1"
+  },
+  "transports:5:4": {
+   "verdict": "ok",
+   "reason": "spec unit read in full; code compared (link.resync/_reopen/recover_transport/_recv (COBS read past), conformance_tcp_recovery); no divergence from a09fa45; verify asserts it (e.g. test_a_dropped_tcp_client_keeps_its_session_and_a_new_connection_takes_it_back); after reopening, session and resend history stay; the new transport is confirmed and boot_id checked; no queue carried over"
+  },
+  "transports:7:1": {
+   "verdict": "ok",
+   "reason": "exclusion right: informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
+  },
+  "transports:7:2": {
+   "verdict": "ok",
+   "reason": "exclusion right: informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
+  },
+  "transports:7:3": {
+   "verdict": "ok",
+   "reason": "exclusion right: informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
+  },
+  "transports:7:4": {
+   "verdict": "ok",
+   "reason": "exclusion right: informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
+  },
+  "transports:7:5": {
+   "verdict": "ok",
+   "reason": "exclusion right: informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
+  },
+  "transports:7:6": {
+   "verdict": "ok",
+   "reason": "exclusion right: informative: a reference list naming the outside specification this document leans on and the sections that use it; its rules are traced at those sections"
+  }
+ },
+ "divergences": [
+  {
+   "unit": "core:7.2:1",
+   "spec": "probe のインターフェースを、first 番目から 1 フレームに入る分だけ返す。",
+   "code": "src/oep_client/virtual_bench.py:VirtualProbe._list",
+   "fix": "entry size counted without the extra byte; test asserts each non-final page cannot hold the next entry; conformance_discovery requires full list and describe pages"
+  },
+  {
+   "unit": "core:2.3:10",
+   "spec": "繰り返すと定義が言わない tag が 2 つ以上あれば、読む側は最初のものを使う。",
+   "code": "src/oep_client/core.py:ops/describe/max_op_ms; host.py:Host.max_op_ms; catalog.py:decode_description; dump.py:required_missing",
+   "fix": "only the first ops / max_op_ms / common describe TLV is read (catalog.first_value); a broken first copy is not used and no later copy replaces it; conformance_host_tlv checks the broken-first case"
+  },
+  {
+   "unit": "core:7.1:2",
+   "spec": "confirm の要求と応答の見出し（§4.1、§4.2）と固定部分、magic の `OEP?` / `OEP!`、confirm の前の規則（64 byte、[経路](oep-transports.ja.md) §1 のフレーム、[経路](oep-transports.ja.md) §3）は、どのプロトコルの revision でも同じ。",
+   "code": "src/oep_client/host.py:Host.confirm",
+   "fix": "v0-shape parsing of a revision-0 answer removed; a revision outside min_rev..max_rev raises ProtocolError"
+  },
+  {
+   "unit": "core:7.6:1",
+   "spec": "fn 0のconfirm / list / describe / clock / keepalive / lock_stateの要求全体の処理上限は、max_op_msと `core_quick_op_max_ms`（1000 ms）の小さい方である。(core §4.4, applied to clock §7.6)",
+   "code": "src/oep_client/host.py:Host.clock",
+   "fix": "clock is sent inside expecting(op_bound_ms(0, clock)) like the other quick fn 0 ops"
+  },
+  {
+   "unit": "core:12:1",
+   "spec": "例外は project 自身のインターフェースだけで、逆 DNS の名前の代わりに、予約した短い接頭辞 `oep.` を使う: `oep.<層>.<名前>`、層は `probe`、`wire`、`target`、`fixture`。…名前の label はそれぞれ `a-z 0-9 -` の 1 文字以上で、`-` で始まらず `-` で終わらない。名前は label を 2 つ以上持つ。",
+   "code": "src/oep_client/names.py:validate/kind",
+   "fix": "draft uuid./local./TLD/3-label rules removed; oep. names must be oep.<layer>.<name>"
+  }
+ ]
+}

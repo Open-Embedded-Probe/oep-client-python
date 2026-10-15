@@ -21,7 +21,7 @@ def setup():
 def test_finite_scan_contracts_pass():
     _,c,a=setup();r=ScanChecks(c,a).run()
     assert r['status']=='passed',[(row['id'],row.get('error')) for row in r['checks'] if row['status']!='passed']
-    assert len(r['checks'])==21 and not r['full_conformance']
+    assert len(r['checks'])==23 and not r['full_conformance']
     assert all(row['level']=='oep-interface' for row in r['checks'])
 
 

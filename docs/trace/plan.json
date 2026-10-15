@@ -97,10 +97,14 @@
     "tests/test_plan.py::test_a_released_assignment_frees_its_pin_and_a_kept_one_is_not_released",
     "tests/test_plan.py::test_a_running_function_refuses_a_change_with_cause_6",
     "tests/test_plan.py::test_a_resource_bound_to_another_fn_refuses_with_cause_4",
-    "tests/test_trace_plan.py::test_an_unchanged_set_keeps_a_running_function_as_it_is"
+    "tests/test_trace_plan.py::test_an_unchanged_set_keeps_a_running_function_as_it_is",
+    "tests/test_review4_small.py::test_a_capture_model_keeps_its_configuration_on_the_same_set_and_refuses_a_change_while_running[logic-rows0]",
+    "tests/test_review4_small.py::test_a_capture_model_keeps_its_configuration_on_the_same_set_and_refuses_a_change_while_running[analog-rows1]",
+    "tests/test_conformance_gpio.py::test_gpio_plan_checks",
+    "tests/test_conformance_logic.py::test_logic_contract"
    ],
    "mutants": [],
-   "note": "a kept triple keeps its pin state; the same set does nothing; a running fn cause 6; a bound one cause 4; an unchanged set keeps a running UART configured with its bytes and pins"
+   "note": "a kept triple keeps its pin state (bench; gpio checker PLAN-REPLACE now adds a channel beside a set one); the same set does nothing (logic / analog checkers PLAN-REPLACE: the same set keeps a running capture, review 4 - they had required it closed); a running fn cause 6; a bound one cause 4; an unchanged set keeps a running UART configured with its bytes and pins"
   },
   "plan:2.1:4": {
    "text": "- **割り当ての数**: 置き換えた後の割り当ての合計（すべての fn）が p",
@@ -126,10 +130,19 @@
     "tests/test_plan.py::test_release_of_an_unknown_fn_or_a_bound_one_changes_nothing",
     "tests/test_trace_plan.py::test_the_sessions_end_releases_a_plan_plan_release_would_refuse",
     "tests/test_trace_plan.py::test_plan_release_checks_every_fn_before_it_releases_any",
-    "tests/test_trace_plan.py::test_a_refused_plan_request_changes_no_pin_and_no_function"
+    "tests/test_trace_plan.py::test_a_refused_plan_request_changes_no_pin_and_no_function",
+    "tests/test_review4_small.py::test_plan_release_naming_fn_0_is_ignored_like_any_existing_fn_without_a_plan",
+    "tests/test_review4_small.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[analog]",
+    "tests/test_review4_small.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[capture-group]",
+    "tests/test_review4_small.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[capture-timeline]",
+    "tests/test_review4_small.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[gpio]",
+    "tests/test_review4_small.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[i2c]",
+    "tests/test_review4_small.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[logic]",
+    "tests/test_review4_small.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[spi]",
+    "tests/test_review4_small.py::test_every_model_refuses_a_plan_release_naming_an_fn_it_lacks_and_ignores_fn_0[uart]"
    ],
    "mutants": [],
-   "note": "named fns released, n 0 all, no plan ignored; unknown fn / bound: whole request refused; the session's end still releases; every fn checked before any release (a releasable fn named first is kept; n 0 refused alike); a refused release leaves the pins and the functions as they were"
+   "note": "named fns released, n 0 all, no plan ignored (fn 0 exists and has none: ignored, review 4); an fn the probe lacks / bound: whole request refused - on the bench and every checker model (the gpio checker had required [2, 99] to succeed); the session's end still releases; every fn checked before any release; a refused release leaves the pins and the functions as they were"
   },
   "plan:2.2:2": {
    "text": "- 応答は completed success で、payload は無い。",
@@ -149,7 +162,7 @@
     "tests/test_trace_plan.py::test_plan_apply_refusals_follow_the_tables_order[twice-before-unknown-fn]"
    ],
    "mutants": [],
-   "note": "malformed: a short assignment, the same triple twice, fn 0; refused before every later row (core §4.3 order)"
+   "note": "malformed: a short assignment, the same triple twice, fn 0; with a second fault the probe answers one of them (core §4.3 order 4: any reason that holds), nothing changed"
   },
   "plan:2.4:2": {
    "text": "| fn が無い | unknown_function |",
@@ -159,7 +172,7 @@
     "tests/test_trace_plan.py::test_plan_apply_refusals_follow_the_tables_order[unknown-fn-before-role]"
    ],
    "mutants": [],
-   "note": "an fn the probe lacks: unknown_function; after malformed, before unsupported"
+   "note": "an fn the probe lacks: unknown_function; with a second fault one of them (core §4.3 order 4)"
   },
   "plan:2.4:3": {
    "text": "| role がそのインターフェースに無い（plan の role でない）、c",
@@ -171,13 +184,19 @@
     "tests/test_trace_plan.py::test_a_target_plan_missing_a_role_or_holding_one_twice_is_unsupported",
     "tests/test_trace_plan.py::test_plan_apply_refusals_follow_the_tables_order[unknown-fn-before-role]",
     "tests/test_trace_plan.py::test_plan_apply_refusals_follow_the_tables_order[role-before-pin-conflict]",
-    "tests/test_trace_plan.py::test_plan_apply_refusals_follow_the_tables_order[role-before-plan-roles]"
+    "tests/test_trace_plan.py::test_plan_apply_refusals_follow_the_tables_order[role-before-plan-roles]",
+    "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[logic-rows0]",
+    "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[logic-rows1]",
+    "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[analog-rows2]",
+    "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[analog-rows3]",
+    "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[capture-group-rows4]",
+    "tests/test_review4_small.py::test_a_capture_role_twice_or_two_roles_on_one_pin_is_unsupported_not_malformed[capture-timeline-rows5]"
    ],
    "mutants": [
     "tests/test_trace_plan.py::test_a_bench_that_skips_the_role_and_channel_checks_fails_them[test_one_refusal_changes_nothing_not_even_the_replaced_fns_plan]",
     "tests/test_trace_plan.py::test_a_bench_that_skips_the_role_and_channel_checks_fails_them[test_a_channel_group_mismatch_and_a_pin_conflict]"
    ],
-   "note": "no such plan role, a channel not among role_channels, no channel_group matched: unsupported with the tag as received; after unknown_function, before unavailable"
+   "note": "no such plan role, a channel not among role_channels, no channel_group matched, a role twice / two roles on one pin of a capture (the capture models said malformed, review 4): unsupported with the tag as received; with a second fault one of them (core §4.3 order 4)"
   },
   "plan:2.4:4": {
    "text": "| plan_roles を超える、ピンや資源の取り合い（core §8.1）、",
@@ -192,13 +211,15 @@
    "mutants": [
     "tests/test_trace_plan.py::test_a_bench_that_skips_the_role_and_channel_checks_fails_them[test_a_channel_group_mismatch_and_a_pin_conflict]"
    ],
-   "note": "unavailable cause 2 (plan_roles), 1 (a pin another fn holds), 5 (an output idle the interface refuses); after unsupported; a pin a live connection holds is cause 1 too"
+   "note": "unavailable cause 2 (plan_roles), 1 (a pin another fn holds), 5 (an output idle the interface refuses); with a second fault one of them (core §4.3 order 4); a pin a live connection holds is cause 1 too"
   },
   "plan:2.4:5": {
    "text": "| 変更対象が動作中、別fnに束ねられている | unavailable（cau",
    "verify": [
     "tests/test_plan.py::test_a_running_function_refuses_a_change_with_cause_6",
-    "tests/test_plan.py::test_a_resource_bound_to_another_fn_refuses_with_cause_4"
+    "tests/test_plan.py::test_a_resource_bound_to_another_fn_refuses_with_cause_4",
+    "tests/test_review4_small.py::test_a_capture_model_keeps_its_configuration_on_the_same_set_and_refuses_a_change_while_running[logic-rows0]",
+    "tests/test_review4_small.py::test_a_capture_model_keeps_its_configuration_on_the_same_set_and_refuses_a_change_while_running[analog-rows1]"
    ],
    "mutants": [],
    "note": "unavailable cause 6 (running), 4 (bound to another fn)"

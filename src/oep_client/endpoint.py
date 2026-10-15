@@ -774,7 +774,7 @@ class Endpoint:
         self.gpio_log: list[tuple[int, int]] = []
         self.uarts: dict[int, Stream] = {}             # fn -> stream (while its plan has RX or TX)
         self.uart_carry: dict[int, tuple[int, int]] = {}   # fn -> (position, mark serial) a released stream left off at
-        self.uart_baud: dict[int, tuple[int, int]] = {}   # fn -> (baud, format) in force (absent: 115200 8N1)
+        self.uart_baud: dict[int, tuple[int, int]] = {}   # fn -> (baud, format) in force (absent: not configured, status 0 0)
         self.uart_fail_configure: set[int] = set()     # TEST HOOK: fns whose next accepted configure fails to come up
         self.i2c: dict[int, I2cState] = {fn: I2cState() for fn, n in self.names.items() if n == _I2C.name}
         self.spi_selected: set[int] = set()            # spi-target fns whose CS is active now (spi_select)
@@ -1004,6 +1004,8 @@ class Endpoint:
                 self._events(fn, cap.start(self.uptime_ms(), subscribed=fn in self.subscribed))
                 if fn in self.capture_fail_start:                  # TEST HOOK: the start's initialisation failed
                     cap.state, cap.error = virtual_bench_capture.STATE["error"], virtual_bench_capture.CAP.enum["error"]["peripheral"]
+                    # state 6 always says stopped reason 3 with the error (capture §3.2 エラー)
+                    self._events(fn, [cap.stopped_event(virtual_bench_capture.STOPPED["error"], cap.error)])
                     return m.COMPLETED, m.FAILED, struct.pack("<I", cap.generation)   # the same fixed form (§3.2)
                 return m.COMPLETED, m.SUCCESS, struct.pack("<I", cap.generation)
             if op == O["stop"]:
@@ -1089,7 +1091,8 @@ class Endpoint:
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
     def _role_pairs(self, fn: int) -> list[tuple[int, int]]:
-        """A role_channels wire's pairs in the count = 0 order (oep-if-debug §1): swdio ascending, then swclk."""
+        """A role_channels wire's allowed pairs (oep-if-debug §1: role 1 x role 2, no channel twice): swdio ascending, then
+        swclk."""
         roles = self.pin_roles[fn]
         if self.names[fn] == "oep.wire.swio":
             return [(d, 0xFFFF) for d in sorted(roles.get(1, ()))]
@@ -1189,6 +1192,8 @@ class Endpoint:
         self._via = transport if link is None else link
         self._lapse()                                              # an expired lease is cleaned up before the next
         #                                                            request's processing, its resend check too (core §6.1)
+        self._speed_due(transport)                                 # a return due now waits for this frame's end (link §3)
+        self._speed_cancel(transport)                              # a good request frame, before the step's check (link §3)
         header = self._header(req)                                 # core §4.3: the header, before the resend table
         if header is not None:
             return m.Result(req.corr, m.REJECTED, header).pack()
@@ -1213,16 +1218,16 @@ class Endpoint:
             payload = bytes([m.TAG_FIXED])                         # core §4.3: unsupported is always tag [TLV]
         if res != m.REJECTED and not self._closed_tail(req.fn, req.op) and self.revision >= 1:
             payload += self.tail
-        past_header = not (res == m.REJECTED and detail in (m.UNKNOWN_FUNCTION, m.UNKNOWN_OPERATION,
-                                                            m.SESSION_REQUIRED))
         is_open = req.fn == m.CORE_FN and req.op == m.OP_OPEN
-        if req.session and req.session == self.holder and past_header:
+        # the header's refusals were answered above: every request here passed orders 1-2 (an unknown_function here is
+        # order 4's, a payload's fn, and counts like any other refusal)
+        if req.session and req.session == self.holder:
             # every answer to the holder's request past the session check, rejected ones too (core §6.1)
             self.expires_ms = self.now() + self.lease_ms
         took_lock = is_open and res == m.COMPLETED
         out = m.Result(req.corr, res, detail, payload).pack()
         self.speed_answered(transport)                             # a committed rate's idle counts from here too
-        if req.session and req.session == self.last and past_header:
+        if req.session and req.session == self.last:
             self._remember(req, data, out)                         # rejected answers too, open too (core §5.1)
         if transport not in self.serial_ports:
             self.after_answer()                                    # the answer is not on a port whose speed changes
@@ -1325,7 +1330,6 @@ class Endpoint:
             refused = self._check(req.session)
             if refused:
                 return refused
-            self._speed_cancel(req, self._transport)               # before the step's check (oep-if-link §3)
         if req.fn == m.CORE_FN and req.op == m.OP_CONFIRM:
             return self._confirm(t)
         if req.fn == m.CORE_FN:
@@ -1425,19 +1429,22 @@ class Endpoint:
     def _open(self, t: Take, req: m.Request) -> tuple[int, int, bytes]:
         """open (core §6.4): lease_ms(u32) force(u8) [TLV owner], the id in the header; the decision table of §6.2.
         force is a boolean: any value but 0 is true (core §2.1)."""
-        lease, force = t.take("IB")
-        got = t.tail({OWNER})
         session = req.session
         if session == 0:
             raise Reject(m.MALFORMED)                              # session_id 0 (§4.1)
+        # the session check (core §4.3 order 3: no_session / locked) comes before the payload's (order 4: malformed);
+        # force is read where it stands, a payload too short to hold it asks for no force
+        asks_force = len(req.payload) >= 5 and req.payload[4] != 0
+        if self.holder is None and session == self.last:
+            return m.REJECTED, m.NO_SESSION, b""                   # the ended id is never opened again (core §6.2)
+        if self.holder is not None and self.holder != session and not asks_force:
+            return self._locked()
+        lease, force = t.take("IB")
+        got = t.tail({OWNER})
         owner = got.get(OWNER)
         if any(not 1 <= len(v) <= reg.LIMITS["owner_max_bytes"] for tag, v in t.repeated if tag & 0x7F == OWNER):
             raise Reject(m.MALFORMED)                              # owner: 1-32 bytes, a later copy too (core §6.4, §2.3)
-        if self.holder is None and session == self.last:
-            return m.REJECTED, m.NO_SESSION, b""                   # the ended id is never opened again (core §6.2)
         if self.holder is not None and self.holder != session:
-            if not force:
-                return self._locked()
             self._release_lock()                                   # force: the old session is released first (§9)
         if session != self.holder:                                 # a new lock (a resent open keeps everything)
             self.subscribed.clear()
@@ -1618,8 +1625,9 @@ class Endpoint:
             n = t.take("B")
             fns = {t.take("H") for _ in range(n)}
             t.tail()
-            if any(fn not in self.names or fn == m.CORE_FN for fn in fns):
-                raise Reject(m.UNKNOWN_FUNCTION)                   # every fn checked before anything is released (§2.2)
+            if any(fn not in self.names for fn in fns):
+                raise Reject(m.UNKNOWN_FUNCTION)                   # every fn checked before anything is released (§2.2);
+            #                                                        fn 0 exists and has no plan: ignored like any such fn
             dropping = {a[0] for a in self.plan if not fns or a[0] in fns}
             if any(fn in self.captures and self.captures[fn].group is not None for fn in dropping):
                 raise unavailable("bound_in_group")                # a track bound in a group (oep-if-plan §2.2)
@@ -1854,7 +1862,7 @@ class Endpoint:
     # ---- oep.fixture.uart's stream: made by the plan, gone with it (fixture §2) ---------------------
     def _uart_plan_changed(self, fn: int) -> None:
         """fn's plan moved: a fixture UART with RX or TX gets its stream (carrying on from where the last one ended,
-        common §1.1) and the settings' uart item unless a session's configure holds; one without loses it. A fixture
+        common §1.1), not configured until the host's configure (fixture §2); one without loses it and its configure. A fixture
         I2C / SPI target goes back to not configured (state 0): its configure is made on the plan's pins."""
         if fn in self.i2c:
             self.i2c[fn] = I2cState()
@@ -2029,6 +2037,8 @@ class Endpoint:
         free state, nothing driven before). A test calling `handle` itself on a serial port index calls this as
         VirtualSerialPort does."""
         self.speed_after_answer()
+        if self.speed_fallback is not None and not self.speed_frame_busy:
+            self._speed_revert()                                   # a return that waited for this answer (link §3)
         if self.restarting:
             self.reboot()
 
@@ -2080,11 +2090,29 @@ class Endpoint:
         if self.speed_fallback is not None:
             self._speed_revert()
 
-    def _speed_cancel(self, req: m.Request, transport: int) -> None:
-        """A good request frame of the session that raised the port, while it holds the lock, cancels a pending idle
-        return and restarts the idle timer (phase 2 again); a verify or a session's return is never cancelled."""
+    def _speed_due(self, transport: int) -> None:
+        """A request frame arrives: a verify_ms or port_speed_idle_ms that has run out by now is a return condition even
+        when no tick saw it yet (oep-if-link §3). On the raised port this frame is on the line, so the return waits for
+        its answer (phase 3: a late commit is refused cause 6, answered at the raised rate, then back); elsewhere it
+        happens at once."""
+        if self.speed_state == "base" or self.speed_fallback is not None or self.speed_pending is not None:
+            return
+        now = self.now()
+        why = ("verify" if self.speed_state == "try" and now >= self.speed_until_ms else
+               "idle" if self.speed_state == "committed" and now - self.speed_good_ms >= SPEED_IDLE_MS else None)
+        if why is None:
+            return
+        if transport == self.speed_port:
+            self.speed_fallback = why
+        else:
+            self._speed_fall(why)
+
+    def _speed_cancel(self, transport: int) -> None:
+        """A good request frame on the raised port while the session that raised it is still there (whoever sent the
+        frame: unlike the lease, core §6.1) cancels a pending idle return and restarts the idle timer (phase 2 again);
+        a verify or a session's return is never cancelled (oep-if-link §3)."""
         if (self.speed_fallback == "idle" and self.speed_state == "committed" and transport == self.speed_port
-                and req.session and req.session == self.holder == self.speed_owner):
+                and self.holder is not None and self.holder == self.speed_owner):
             self.speed_fallback = None
             self.speed_good_ms = self.now()
 
@@ -2145,14 +2173,17 @@ class Endpoint:
                     raise unsupported_fixed(m.tlv(_WIRE_INDEX, bytes([i])))
             for p in pairs:                                        # a pin disabled, with an output idle, or held
                 self._refuse_named(fn, p)                          # (a live connection's included): every pair first
-            found = []
+            found, tried = [], 0
             for p in pairs:
+                if m.RESULT_HEADER + 2 + 9 * (len(found) + 1) > self.probe.max_frame:
+                    break                                          # another hit might not fit: the rest next time (§1)
+                tried += 1
                 tg = self._target(fn, p)
                 if tg.answers:                                     # the set-up pair and dmactive, left set (§1)
                     tg.bring_up(scratch=False)
                 if tg.answers and tg.found:
                     found.append(struct.pack("<BHHI", 1, *p, tg.dmstatus()))   # 9 bytes, no length (§2.3)
-            return m.COMPLETED, m.SUCCESS, struct.pack("<BB", len(pairs), len(found)) + b"".join(found)
+            return m.COMPLETED, m.SUCCESS, struct.pack("<BB", tried, len(found)) + b"".join(found)
         if op == O["attach"]:                                      # attach: method swdio swclk max_speed [TLV] (§1, §3)
             method, swdio, swclk, max_speed = t.take("BHHI")
             known = {_T_ATTACH["reset"]} | ({_T_ATTACH["idle_clock"]} if rvswd else set())
@@ -2179,11 +2210,13 @@ class Endpoint:
                 self._refuse_disabled([channel])                   # a disabled reset line: cause 5 (probe.config §1)
                 if self._output_idle(channel):                     # its idle drives it: nothing executed (debug §1)
                     raise unavailable("held_by_settings", channel)
-                if any(a[2] == channel for a in self.plan) or channel in self._held():
-                    raise unavailable("pin_in_use", channel)
+                if any(a[2] == channel for a in self.plan) or channel in self._held() or channel in pair:
+                    raise unavailable("pin_in_use", channel)               # this attach's own pins too (§3)
             if len([c for c in self.conns.values() if c.fn == fn]) >= self.max_connections.get(fn, 1):
                 raise unavailable("limit")                         # no connection is closed to make room (§1)
-            tg = self._target(fn, pair)
+            if self._next_resource > 0xFFFFFFFF:
+                raise unavailable("limit")                         # the u32 space is spent: before the target is touched
+            tg = self._target(fn, pair)                            # (core §9, §4.3 order 4)
             if reset is not None and tg.resets_through(channel):
                 tg.silent_until_reset = False                      # held in reset and let go: it answers again
                 if not self._settled(tg):                          # silent past max_op_ms (debug §2)
@@ -2257,13 +2290,6 @@ class Endpoint:
 
     def _min_clock(self, fn: int) -> int:
         return self._own(fn, catalog.MIN_CLOCK_HZ, "I", 0)
-
-    def _candidate(self, fn: int, pair: tuple[int, int]) -> bool:
-        """A pair the count = 0 sequence lists (debug §1): no channel disabled, held by something else, or with an
-        idle item (any mode) in the settings."""
-        chans = {ch for ch in pair if ch != 0xFFFF}
-        return not (chans & self.disabled or chans & self._held(fn, pair)
-                    or any(self._idle_mode(ch) is not None for ch in chans))
 
     def _refuse_named(self, fn: int, pair: tuple[int, int], any_idle: bool = False) -> None:
         """A pair a request names (scan's list, attach's pins): a disabled channel or an output idle (any idle with
@@ -2477,6 +2503,11 @@ class Endpoint:
                 raise Reject(m.MALFORMED)                          # not a word address (debug §4.5)
             if 4 * count > self.block_max.get(fn, 1 << 16):
                 raise unsupported_fixed()                          # past the declared max_length (bytes; debug §4.5)
+            if m.RESULT_HEADER + 3 + 4 * count > self.probe.max_frame:
+                raise unsupported_fixed()                          # the answer would not fit the route (§4.5, core §4.4)
+            if not count:
+                self._connection(conn)
+                return m.COMPLETED, m.SUCCESS, struct.pack("<HB", 0, OK)   # count 0: success, done 0 (debug §4.5)
             tg = target()
             if not tg.halted:
                 return m.COMPLETED, m.FAILED, struct.pack("<HB", 0, STATE)   # a running hart (debug §4.5)
@@ -2498,6 +2529,9 @@ class Endpoint:
                 raise Reject(m.MALFORMED)
             if 4 * count > self.block_max.get(fn, 1 << 16):
                 raise unsupported_fixed()                          # past the declared max_length (debug §4.5)
+            if not count:
+                self._connection(conn)
+                return m.COMPLETED, m.SUCCESS, struct.pack("<HB", 0, OK)   # count 0: success, done 0 (debug §4.5)
             tg = target()
             if not tg.halted:
                 return m.COMPLETED, m.FAILED, struct.pack("<HB", 0, STATE)
@@ -2519,6 +2553,8 @@ class Endpoint:
             t.tail()
             if timeout_ms > self.max_op_ms:
                 raise Reject(m.UNSUPPORTED)                        # longer than one request may take (debug §4.4)
+            if m.RESULT_HEADER + 11 + 4 * n_out > self.probe.max_frame:
+                raise unsupported_fixed()                          # the answer would not fit the route (core §4.4)
             tg = target()
             not_run = struct.pack("<BIIB", RUN_STOPPED["not_run"], 0, 0, 0)   # stopped 3, dpc invalid, nvals 0 (Q1)
             if not tg.halted:                                      # nothing prepared on a running hart: not run

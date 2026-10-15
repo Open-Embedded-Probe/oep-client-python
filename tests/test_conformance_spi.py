@@ -11,7 +11,7 @@ def setup(**kwargs):
     for spec in reg['interface']:
         if spec['name']=='oep.probe.plan':spec['tlv']={'plan_apply':{'role_assignment':16},'describe':{'plan_roles':64}}
         if spec['name']=='oep.fixture.spi-target':
-            spec['tlv']={'describe':{'queue_depth':64,'cs_setup_ns':67},'read_rx_answer':{'ns':1}}
+            spec['tlv']={'describe':{'queue_depth':64,'modes':65,'cs_setup_ns':67},'read_rx_answer':{'ns':1}}
             spec['enum']={'role':{'sck':1,'mosi':2,'miso':3,'cs':4},'state':{'unconfigured':0,'running':1},'features':{'lsb_first':1}}
     model=SpiModel(boot_id=17,**kwargs);return model,Checks(model.handle,reg,'virtual-resource-1')
 

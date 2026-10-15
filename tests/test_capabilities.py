@@ -10,9 +10,9 @@ from oep_client import catalog, dump, virtual_bench, names
 # ---- names ---------------------------------------------------------------
 
 @pytest.mark.parametrize("name", [
-    "oep.probe.plan", "oep.fixture.i2c-target", "io.github.ch32-riscv-ug.p4.i2c-target",
-    "local.bench.thing", "uuid.0123456789abcdef0123456789abcdef.tool", "jp.example.probe",
-    "oep." + "a" * 44,                                              # 48 bytes (core §7.2)
+    "oep.probe.plan", "oep.fixture.i2c-target", "io.github.ch32-riscv-ug.p4.i2c-target", "jp.example.probe",
+    "oep.probe." + "a" * 38,                                        # 48 bytes (core §7.2)
+    "xn--p1ai.example.probe", "com.example",                        # core §12 rule 1: labels, two or more - no more
 ])
 def test_valid_names(name):
     assert names.validate(name) == name
@@ -22,10 +22,10 @@ def test_valid_names(name):
     ("oep", "namespace"),
     ("OEP.core", "label"),
     ("oep.fixture_uart", "label"),
-    ("1com.example.x", "top-level"),
-    ("io.github", "reverse DNS"),
-    ("uuid.1234.tool", "32 lowercase hex"),
-    ("oep." + "a" * 45, "bytes"),                                  # 49 bytes: over the 48 of core §7.2
+    ("oep.tool", "layer"),                                          # oep.<layer>.<name> (core §12 rule 1)
+    ("oep.tools.uart", "layer"),                                    # the layer: probe, wire, target or fixture
+    ("oep.probe", "layer"),
+    ("oep.probe." + "a" * 39, "bytes"),                             # 49 bytes: over the 48 of core §7.2
     ("oep.-fixture", "label"),                                      # a label never starts or ends with '-' (C-23)
     ("oep.fixture-", "label"),
     ("oep..core", "label"),

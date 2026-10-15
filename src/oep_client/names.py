@@ -1,15 +1,10 @@
-"""Interface names (oep-spec docs/capability-identification-comparison.ja.md, draft).
+"""Interface names (oep-spec core §12 rule 1, §7.2).
 
 A name is dot-separated labels of lowercase ASCII letters, digits and '-' - each label 1 or more of them, not starting
-or ending with '-', at least two labels - 1 to 48 bytes (core §7.2, §13 rule 1). The first label says which kind of
-namespace it is:
-
-  oep.                      the project's own interfaces: the reserved short prefix in place of a reverse DNS name
-                            (core §13 rule 1; `oep` is not a real top-level domain) - nothing else sets them apart
-  local.                    bench-only experiments, never published, no interoperability promise
-  uuid.<32 hex>.            an author with no domain who still wants a unique namespace
-  <tld>.<domain>...         reverse DNS of a domain the author owns, including hosting domains
-                            such as io.github.<name> (GitHub gives <name>.github.io to one owner)
+or ending with '-', at least two labels - 1 to 48 bytes (core §7.2, §12 rule 1). It is the defining party's reverse DNS
+name (io.github.<owner>.<name>, ...); the one exception is the project's own interfaces, which use the reserved short
+prefix `oep.` instead: oep.<layer>.<name>, the layer one of probe, wire, target, fixture (core §12 rule 1) - nothing else
+sets them apart. Nothing more is asked of a name here: which domains exist (the IANA list) is not checked.
 """
 
 from __future__ import annotations
@@ -19,9 +14,8 @@ import re
 from . import registry as reg
 
 MAX_NAME = reg.LIMITS["interface_name_max_bytes"]   # 48 (core §7.2: one list entry fits the smallest max_frame)
-_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\Z")   # no '-' at either end (core §13 rule 1)
-_TLD = re.compile(r"[a-z]{2,63}\Z")
-_UUID = re.compile(r"[0-9a-f]{32}\Z")
+_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\Z")   # no '-' at either end (core §12 rule 1)
+OEP_LAYERS = ("probe", "wire", "target", "fixture")   # oep.<layer>.<name> (core §12 rule 1)
 
 
 class InvalidName(ValueError):
@@ -29,13 +23,12 @@ class InvalidName(ValueError):
 
 
 def kind(name: str) -> str:
-    """'oep', 'local', 'uuid' or 'domain' - after validate()."""
-    first = name.split(".", 1)[0]
-    return {"oep": "oep", "local": "local", "uuid": "uuid"}.get(first, "domain")
+    """'oep' (the project's short oep. names) or 'domain' (a reverse DNS name) - after validate()."""
+    return "oep" if name.split(".", 1)[0] == "oep" else "domain"
 
 
 def validate(name: str) -> str:
-    """Return the name, or raise InvalidName saying which rule it breaks."""
+    """Return the name, or raise InvalidName saying which rule of core §12 rule 1 it breaks."""
     raw = name.encode("ascii", "strict") if name.isascii() else None
     if raw is None:
         raise InvalidName(f"{name!r}: not ASCII")
@@ -47,15 +40,8 @@ def validate(name: str) -> str:
     for label in labels:
         if not _LABEL.match(label):
             raise InvalidName(f"{name!r}: label {label!r} is not [a-z0-9-]+ without '-' at either end")
-    first = labels[0]
-    if first == "uuid":
-        if len(labels) < 3 or not _UUID.match(labels[1]):
-            raise InvalidName(f"{name!r}: uuid. must be followed by 32 lowercase hex digits and a name")
-    elif first not in ("oep", "local"):
-        if not _TLD.match(first):
-            raise InvalidName(f"{name!r}: {first!r} is not a top-level domain (reverse DNS expected)")
-        if len(labels) < 3:
-            raise InvalidName(f"{name!r}: reverse DNS needs <tld>.<domain>.<name>")
+    if labels[0] == "oep" and (len(labels) < 3 or labels[1] not in OEP_LAYERS):
+        raise InvalidName(f"{name!r}: an oep. name is oep.<layer>.<name>, the layer one of {', '.join(OEP_LAYERS)}")
     return name
 
 

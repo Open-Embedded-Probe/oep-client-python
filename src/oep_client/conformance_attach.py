@@ -7,7 +7,7 @@ class AttachChecks:
     def __init__(self, checks, adapter):self.c,self.a=checks,adapter
     def fresh(self):
         boot=self.a.restart_fixture();require(boot['scope']=='logical-model' and boot['boot_id']!=self.c.boot,'fresh logical boot')
-        self.c.confirm();self.c.identity();require(self.c.boot==boot['boot_id'],'boot readback')
+        self.c.confirm();self.c.identity();require(self.c.boot==boot['boot_id'],'boot readback');self.tids={}
     def request(self, fn, name, sid, payload):return self.c.request(self.operations[fn][name],payload,session=sid,fn=fn)
     def attach_request(self, sid, fn=1, pair=None, speed=2000, method=0, extra=b'', cut=0):
         """method swdio swclk max_speed (debug §1), `cut` bytes short, then `extra`."""
@@ -20,7 +20,10 @@ class AttachChecks:
     def tlv(tag, value):return bytes((tag,))+struct.pack('<H',len(value))+value
     def attach(self, sid, fn=1, pair=None, **kwargs):
         pair=pair or self.a.pairs[fn][0];req=self.attach_request(sid,fn,pair,**kwargs);value=self.c.success(req)
-        require(len(value)>=13,'attach fixed response');rid,identity,flags,speed=struct.unpack_from('<IIBI',value);tlvs(value[13:])
+        require(len(value)>=13,'attach fixed response');rid,identity,flags,speed=struct.unpack_from('<IIBI',value);tail=dict(reversed(tlvs(value[13:])))
+        # connections' tid (debug §2.1): swd scheme 2, length 4, the DPIDR (attach's id); else attach's target_id, none: 0, 0
+        swd=self.specs[fn]['name']=='oep.wire.swd';tid=tail.get(self.specs[fn]['tlv'].get('attach_answer',{}).get('target_id',0x10))
+        self.tids=getattr(self,'tids',{});self.tids[rid]=(2,struct.pack('<I',identity)) if swd else (tid[0],tid[1:]) if tid else (0,b'')
         require(rid and flags==0 and 0<speed<=kwargs.get('speed',2000),'attach ID/flags/speed')
         state=self.a.state();require(state['connections'][rid]['fn']==fn and tuple(state['connections'][rid]['pins'])==pair and state['connections'][rid]['speed']==speed,'attach resource differs from request')
         before=self.a.state();rows=[];first=0
@@ -33,7 +36,7 @@ class AttachChecks:
             tlvs(page[at:])
             if not page[0]:break
             require(page[1]>0,'connections paging progress');first+=page[1]
-        expected=[((id,*s['pins'],s['speed'],0,0),b'') for id,s in state['connections'].items() if s['fn']==fn]
+        expected=[((id,*s['pins'],s['speed'],self.tids[id][0],len(self.tids[id][1])),self.tids[id][1]) for id,s in state['connections'].items() if s['fn']==fn]
         require(rows==expected and self.a.state()==before,'connections enumeration/routing mutated state or lost metadata')
         return rid,req
     def refused(self, req, reason, payload=None, cause=None):
@@ -146,6 +149,12 @@ class AttachChecks:
                 require(any(row['fn']==fn and row['name']==name and row['revision']==1 for row in entries),'standard fn/name/revision mismatch')
                 rows=dict(reversed(self.c.describe(fn)));offered=ops(rows[self.c.reg['describe_common']['ops']])
                 require({code for op,code in self.operations[fn].items() if op!='scan'}<=offered,'mandatory standard ops missing')
+                if fn in (1,2,3):                              # the reset TLV takes only a declared role 3 channel (debug §3)
+                    lines=set()
+                    for tag,v in self.c.describe(fn):
+                        if tag==self.c.reg['describe_common'].get('role_channels',1) and len(v)>=3 and v[0]==3:
+                            base=struct.unpack_from('<H',v,1)[0];lines|={base+i for i in range(8*(len(v)-3)) if v[3+i//8]>>(i%8)&1}
+                    require(self.a.reset_channel in lines,'reset TLV channel not declared as role 3 (reset)')
             declared=rows[self.specs[4]['tlv']['describe']['mechanisms']]
             require(declared[:1]==bytes((len(declared)-1,)) and list(declared[1:])==self.a.mechanisms,'declared mechanism subset differs (n(u8) n x mechanism)')
             self.c.observed['attach_fixture']={'selection':self.a.selection,'pairs':self.a.pairs,'mechanisms':self.a.mechanisms,'scope':'logical-model','reference':self.a.reference}

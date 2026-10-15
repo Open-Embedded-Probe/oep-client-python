@@ -160,3 +160,27 @@ def test_sample_extension_also_passes_existing_core_contracts(monkeypatch):
     assert report['status'] == 'passed', [(x['id'], x.get('error')) for x in report['checks']]
     assert len(report['checks']) == 49
     assert model.ep.current_core.holder is None
+
+
+def test_a_u32_resource_number_is_a_valid_one():
+    """core §9: resource numbers are u32 - the checker takes 0x10000 .. 0xFFFFFFFF from an adapter (review 4: it
+    required 1..65535, the sample's own width)."""
+    class C:
+        def success(self, request):
+            return b''
+
+    class A:
+        slots = ((1, 1),)
+
+        def request(self, *args):
+            return b''
+
+        def decode_created(self, payload):
+            return 0xFFFFFFFF
+
+        def snapshot(self):
+            return {(1, 1): {0x10000, 0xFFFFFFFF}}
+
+    runner = ResourceChecks(C(), A())
+    assert runner.create(7, (1, 1))[0] == 0xFFFFFFFF
+    assert runner.inventory() == {(1, 1): {0x10000, 0xFFFFFFFF}}

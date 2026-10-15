@@ -458,12 +458,14 @@
    "text": "- failedやdone 0は、targetへ書き込みが届かなかった保証ではな",
    "verify": [
     "tests/test_trace_common.py::test_the_client_never_runs_a_failed_target_write_again_by_itself",
-    "tests/test_conformance_outcomes.py::test_completed_failure_and_partial_are_cached_without_reexecution[1]"
+    "tests/test_conformance_outcomes.py::test_completed_failure_and_partial_are_cached_without_reexecution[1]",
+    "tests/test_link_drop.py::test_a_failed_try_that_reached_a_write_is_never_run_again",
+    "tests/test_link_drop.py::test_a_group_that_keeps_failing_on_the_line_before_any_write_is_tried_then_raised"
    ],
    "mutants": [
     "tests/test_conformance_outcomes.py::test_outcome_mutants_fail[reexecute]"
    ],
-   "note": "a failed write is not run again by a new corr; the probe answers a repeat from its table"
+   "note": "a failed write is not run again by a new corr (RiscvDm.held re-runs a failed try only when it stopped before any of its writes, review4); the probe answers a repeat from its table"
   },
   "common:3:10": {
    "text": "- 成功の形に done / status が無い op（scan、attach",

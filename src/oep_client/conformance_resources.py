@@ -35,14 +35,14 @@ class ResourceChecks:
         inventory = self.a.snapshot()
         require(set(inventory) == set(self.a.slots), 'snapshot omitted configured fn/kind')
         ids = [rid for values in inventory.values() for rid in values]
-        require(all(type(rid) is int and 1 <= rid <= 65535 for rid in ids), 'invalid resource ID')
+        require(all(type(rid) is int and 1 <= rid <= 0xFFFFFFFF for rid in ids), 'invalid resource ID')   # u32 (core §9)
         require(len(ids) == len(set(ids)), 'resource ID space is not global')
         return inventory
 
     def create(self, sid, slot):
         request = self.a.request('create', sid, slot)
         rid = self.a.decode_created(self.c.success(request))
-        require(type(rid) is int and 1 <= rid <= 65535, 'invalid allocated resource ID')
+        require(type(rid) is int and 1 <= rid <= 0xFFFFFFFF, 'invalid allocated resource ID')   # u32 (core §9)
         return rid, request
 
     def use(self, sid, slot, rid):

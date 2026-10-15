@@ -84,6 +84,7 @@ class CaptureGroup(Gpio):
     def plan(self,op,payload,tags):
         if op==17:
             count=payload[0];functions=list(struct.unpack('<'+'H'*count,payload[1:])) or list(self.plans)
+            if any(fn and fn not in self.functions for fn in functions):raise Reject(1)   # every fn first; fn 0 has no plan (plan §2.2)
             for fn in functions:
                 if self.owner(fn) is not None:raise self.refusal(4,fn)
             self.release_plans(functions);return b''
@@ -95,7 +96,7 @@ class CaptureGroup(Gpio):
             if fn not in self.functions:raise Reject(1)
             roles,channels=((1,3),(0,1)) if fn==2 else ((0,1),(2,3)) if fn==3 else ((0,),(fn-2,))
             if fn not in self.tracks or role not in roles or ch not in channels:raise Reject(11,bytes((raw,)))
-        if len({(r[1],r[2]) for r in rows})!=len(rows) or len({r[3] for r in rows})!=len(rows):raise Reject(3)
+        if len({(r[1],r[2]) for r in rows})!=len(rows) or len({r[3] for r in rows})!=len(rows):raise Reject(11,bytes((rows[0][0],)))   # one channel per role: unsupported (plan §2.4)
         wanted={fn:sorted((role,ch) for _,owner,role,ch in rows if owner==fn) for fn in affected}
         for fn in sorted(affected):
             if self.owner(fn) is not None and wanted[fn]!=self.assigned(fn):raise self.refusal(4,fn)

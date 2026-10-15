@@ -24,10 +24,9 @@ class SelectedMetadataChecks:
             if active:
                 tag=common['max_length'];require(tag in values and len(values[tag])==2,'block max_length u16 missing or malformed')
                 length=struct.unpack('<H',values[tag])[0];require(length%4==0,'block max_length unit is aligned bytes')
-                require(18+length<=self.c.max_frame and 8+length<=self.c.max_frame,'block request/response do not fit negotiated route')
-                transport=self.c.reg['core']['tlv']['describe']['transport'];indices={bytes.fromhex(r['value_hex'])[0] for r in self.c.observed['core_describe'] if r['tag']==transport}
-                require(18+length<=64 or indices=={self.c.confirm_transport},'other route limits are unconfirmed; cannot prove global block max_length')
-                result.update(max_length=length,route_bound='protocol minimum 64' if 18+length<=64 else 'sole advertised route')
+                # max_length is the function's limit, not the route's: the host takes min(max_length, max_frame - 8 / - 20)
+                # per route, and a larger route is not held to a smaller one's transfer (debug §4.5, conformance §3)
+                result.update(max_length=length)
         self.c.observed.setdefault('selected_metadata',{})[str(fn)]=dict(name=name,**result)
     def run(self):
         start=len(self.c.results)
@@ -39,4 +38,4 @@ class SelectedMetadataChecks:
         self.base=RegisteredOpsChecks(self.c,self.selection);self.base.run()
         for fn,name in (self.selection.items() if type(self.selection)is dict else []):self.c.check('OEP-METADATA-'+str(fn),'restart §1; debug §4.5/6; probe-config §4',lambda fn=fn,name=name:self.metadata(fn,name))
         rows=self.c.results[start:]
-        return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,observed=self.c.observed,full_conformance=False,scope='selected standard op and restart/block/storage describe constraints; read-only',unchecked=['metadata of other standard interfaces','unconfirmed route limits beyond protocol minimum','restart duration, bus operations and storage behavior','physical transports and production Host integration'])
+        return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,observed=self.c.observed,full_conformance=False,scope='selected standard op and restart/block/storage describe constraints; read-only',unchecked=['metadata of other standard interfaces','per-route block counts (the host sizes them by max_frame)','restart duration, bus operations and storage behavior','physical transports and production Host integration'])

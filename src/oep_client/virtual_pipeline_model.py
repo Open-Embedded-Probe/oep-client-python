@@ -24,6 +24,14 @@ class PipelineModel(RouteModel):
                 raise OSError('closed logical route')
             window, count = self.limits[route]
             reason = None
+            if any(len(request) >= 10 and held[1:3] == request[1:3] and held[6:10] == request[6:10]
+                   for held in self.unresolved[route]):
+                # core §4.4: a copy (same route, session_id and corr) of a request not yet answered is no new unresolved
+                # request - no credit. A session's copy is answered from the record after the original (§5.1); a
+                # session-0 copy, never deduplicated, is dropped unexamined so the original never runs again.
+                if request[6:10] != bytes(4):
+                    self.requests.append((route, request, None))
+                continue
             if len(request) > self.ep.probe.max_frame:
                 reason = 3
             elif len(self.unresolved[route]) >= count or sum(map(len, self.unresolved[route])) + len(request) > window:

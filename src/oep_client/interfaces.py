@@ -148,6 +148,7 @@ KNOWN: dict[str, Known] = {
         "an SPI target the DUT can clock (ESP-IDF slave driver)",
         roles={1: "SCK", 2: "MOSI", 3: "MISO", 4: "CS"}, features={0: "LSB first"},
         tags={0x40: ("queue depth", lambda v: str(v[0])),
+              0x41: ("modes", lambda v: ", ".join(str(k) for k in range(4) if v[0] >> k & 1)),
               0x43: ("CS setup ns", lambda v: f"{_u32(v)} (SCK sooner after CS: the first bit is not sure)")}),
 }
 

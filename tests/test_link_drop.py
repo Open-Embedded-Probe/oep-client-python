@@ -123,8 +123,10 @@ def test_a_held_read_register_never_returns_a_value_it_could_not_confirm():
     # DATA0 saved first, held (look 2, DATA0, look 2: debug §4, restored before the hart runs); then look 2, cmderr
     # clear, (DATA0 sentinel, command, poll 1, DATA0) twice with a DMSTATUS read before the second DATA0, look 2
     assert accesses(lambda d, tg: d.read_register(S0)) == READ_ACCESSES == 5 + 14
-    assert not got["wrong"] and not got["raised"]            # every drop met, and the next try got the register
-    assert len(got["right"]) == READ_ACCESSES * len(MODES)
+    # every drop met: the next try got the register, or - a try that failed after reaching one of its writes, never
+    # run again (common §3) - StepListError; never a wrong value
+    assert not got["wrong"] and {name for _, _, name in got["raised"]} <= {"StepListError"}
+    assert len(got["right"]) + len(got["raised"]) == READ_ACCESSES * len(MODES) and got["right"]
 
 
 def held_once_read_register(d: riscv.RiscvDm, regno: int) -> int:
@@ -162,7 +164,8 @@ def test_one_missed_access_between_passing_looks_never_gives_a_wrong_register():
 def test_a_drop_that_does_not_end_raises_link_not_held():
     got = sweep(lambda d, tg: d.read_register(S0), lambda tg, v: v == VALUE, drop_requests=riscv.HELD_TRIES)
     assert not got["wrong"] and not got["right"]
-    assert {name for _, _, name in got["raised"]} == {"LinkNotHeld"}
+    # tried again up to HELD_TRIES, or raised at once when a failed try had reached a write (common §3)
+    assert "LinkNotHeld" in {name for _, _, name in got["raised"]} <= {"LinkNotHeld", "StepListError"}
 
 
 def test_link_not_held_says_what_and_how_often():
@@ -214,12 +217,28 @@ def test_a_cmderr_is_cleared_and_raised_and_one_left_behind_does_not_stop_the_co
     assert tg.dmi[riscv.ABSTRACTCS] >> 8 & 7 == 0                # cleared before raising
 
 
-def test_a_group_that_keeps_failing_on_the_line_is_tried_then_raised():
+def test_a_group_that_keeps_failing_on_the_line_before_any_write_is_tried_then_raised():
+    """A try that stopped on the line (a drop can cause it) before any of its writes is run again: nothing it would
+    repeat was written yet."""
     ep, hst, tg, d = bench()
-    tg.fail_write.add(riscv.COMMAND)                             # line: a drop can cause it, so it is tried again
+    tg.drop_at, tg.drop_requests = {0: "ones_line"}, 100       # every try's first look fails: no write reached
     with pytest.raises(riscv.LinkNotHeld) as e:
         d.read_register(S0)
     assert isinstance(e.value.last, riscv.StepListError) and e.value.last.status == riscv.STATUS["line"]
+
+
+def test_a_failed_try_that_reached_a_write_is_never_run_again():
+    """common §3: failed or done 0 is no proof a write did not reach the target, so a failed write is not repeated by
+    a new corr (core §4.2: no automatic re-run on a failure alone). A held group whose try stopped at or after one of
+    its writes raises at once - one dmi request, the COMMAND write sent once."""
+    ep, hst, tg, d = bench()
+    d.read_register(S0)                                          # DATA0 saved: the next read is the command group alone
+    tg.fail_write.add(riscv.COMMAND)
+    before = len(ep.requests)
+    with pytest.raises(riscv.StepListError) as e:
+        d.read_register(S0)
+    assert e.value.status == riscv.STATUS["line"]
+    assert len(ep.requests) == before + 1
 
 
 # ---- cmderr 6: a frame the module took for one with a bad parity (QingKe) - a missed access, not a failed command ----
@@ -319,7 +338,8 @@ def test_held_payload_registers_are_right_or_raise_at_every_drop():
     got = sweep(op, _payload_right, skip_last=3)
     assert not got["wrong"] and got["right"]
     got = sweep(op, _payload_right, skip_last=3, drop_requests=99)
-    assert not got["wrong"] and {name for _, _, name in got["raised"]} == {"LinkNotHeld"}
+    assert not got["wrong"] and "LinkNotHeld" in {name for _, _, name in got["raised"]} <= {"LinkNotHeld",
+                                                                                              "StepListError"}
 
 
 def test_run_payload_places_and_starts_the_payload_on_the_virtual_bench():
@@ -349,4 +369,5 @@ def test_ch32_resume_does_not_take_a_dropped_dpc_read_for_a_move(monkeypatch):
         old = sweep(op, right)
     assert [at for mode, at, went in old["wrong"] if mode == "ones" and went is True and at >= first]
     new = sweep(op, right)                                       # (all ones read for dpc: "it moved", so it went)
-    assert not new["wrong"] and not new["raised"] and len(new["right"]) == accesses(op) * len(MODES)
+    assert not new["wrong"] and {name for _, _, name in new["raised"]} <= {"StepListError"}   # a failed try past a
+    assert len(new["right"]) + len(new["raised"]) == accesses(op) * len(MODES) and new["right"]   # write: not re-run

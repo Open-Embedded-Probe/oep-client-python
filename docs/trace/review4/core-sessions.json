@@ -1,0 +1,359 @@
+{
+ "reviewed_commit": "4c31015",
+ "units": {
+  "core:4.1:1": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.1:2": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.1:3": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.1:4": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.1:5": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.2:1": {
+   "verdict": "ok",
+   "reason": "table header; excluded as informative"
+  },
+  "core:4.2:2": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.2:3": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.2:4": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.2:5": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.2:6": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.3:1": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.3:2": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.3:3": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.3:4": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.3:5": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.3:6": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.3:7": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.3:8": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.3:9": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.3:10": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.3:11": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.3:12": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.3:13": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.3:14": {
+   "verdict": "fixed",
+   "reason": "endpoint._open read the payload (take/tail/owner) before the session check: another id's open without force with a broken owner or short fixed part was malformed instead of locked, the ended id's was malformed instead of no_session; now the session check comes first (core-v1 already did)"
+  },
+  "core:4.3:15": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.3:16": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.3:17": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.3:18": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.4:1": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.4:2": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.4:3": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.4:4": {
+   "verdict": "fixed",
+   "reason": "virtual_pipeline_model counted a copy (same route, session_id, corr) of an unresolved request as a new one (window/max_inflight) and ran a session-0 copy again; copies now take no credit, a session copy is answered from the record, a session-0 copy is dropped"
+  },
+  "core:4.4:5": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.4:6": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.4:7": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.4:8": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:4.4:9": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:5.1:1": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:5.1:2": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:5.1:3": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:5.1:4": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:5.1:5": {
+   "verdict": "fixed",
+   "reason": "endpoint.handle took every unknown_function / unknown_operation / session_required answer for a header refusal (past_header); an order-4 unknown_function (describe or plan naming a missing fn) was then neither recorded nor moved the last corr; the flag is gone (header refusals return earlier)"
+  },
+  "core:5.1:6": {
+   "verdict": "fixed",
+   "reason": "host.end_previous opened the previous run's id even when the lock was free (that session had ended): a new session under an ended id; it now reads lock_state first and opens nothing when the lock is free"
+  },
+  "core:5.1:7": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:5.1:8": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:5.1:9": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:5.1:10": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:6.1:1": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:6.1:2": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:6.1:3": {
+   "verdict": "fixed",
+   "reason": "same past_header flag: a holder's request refused in order 4 with unknown_function did not restart the lease; fixed"
+  },
+  "core:6.2:1": {
+   "verdict": "ok",
+   "reason": "table header; excluded as informative"
+  },
+  "core:6.2:2": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:6.2:3": {
+   "verdict": "fixed",
+   "reason": "the ended id's open with a broken owner TLV was malformed on the full bench; now no_session as the table says (same fix as 4.3:14)"
+  },
+  "core:6.2:4": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:6.2:5": {
+   "verdict": "fixed",
+   "reason": "another id's open without force while held, with a broken owner or a short payload, was malformed on the full bench; now locked (same fix as 4.3:14)"
+  },
+  "core:6.2:6": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:6.2:7": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:6.2:8": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:6.4:1": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:6.4:2": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:6.4:3": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:6.4:4": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:6.4:5": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:6.4:6": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it. Note: the full bench takes an owner that is not UTF-8 (rule review 2026-10-07, 'probe は解釈しない') while core-v1 and the retention checker refuse it malformed (text is UTF-8, §2.3 '定義が除く値'); a09fa45 reads either way, left as is"
+  },
+  "core:6.4:7": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:9:1": {
+   "verdict": "ok",
+   "reason": "table header; excluded as informative"
+  },
+  "core:9:2": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:9:3": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:9:4": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:9:5": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:9:6": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:9:7": {
+   "verdict": "fixed",
+   "reason": "attach with the u32 space spent ran the target bring-up (DMI writes) before _new_resource refused cause 2; the exhaustion is now checked with the other refusals before anything changes. conformance_resources required numbers 1..65535 (the sample's u16 width), now any u32"
+  },
+  "core:9:8": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:9:9": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  },
+  "core:9:10": {
+   "verdict": "ok",
+   "reason": "read the unit, the full bench (endpoint.Endpoint), core-v1 (virtual_core.Core), the client (host/link) and the checkers/models that check it; they follow a09fa45 and the named tests assert it"
+  }
+ },
+ "divergences": [
+  {
+   "unit": "core:4.3:14",
+   "spec": "3. セッション（§6.2）: no_session / locked。 / 4. そのほか: probe は、書式（malformed ...）... を、何も変える前にすべて確かめ",
+   "code": "src/oep_client/endpoint.py:Endpoint._open",
+   "fix": "session check (no_session for the ended id, locked for another id without force - force read where it stands, a short payload asks for none) before take/tail/owner checks; force release after them"
+  },
+  {
+   "unit": "core:6.2:5",
+   "spec": "| S が持つ | 別の id の open、force なし | rejected locked と残り時間（と owner） |",
+   "code": "src/oep_client/endpoint.py:Endpoint._open",
+   "fix": "same as above"
+  },
+  {
+   "unit": "core:5.1:5",
+   "spec": "最後に成功した新規セッションの新しい要求で §4.3 の順 2 を通ったものは、後で rejected となるものも含めて最後の corr を更新する。",
+   "code": "src/oep_client/endpoint.py:Endpoint.handle",
+   "fix": "removed past_header (it treated order-4 unknown_function as a header refusal): every request reaching dispatch is recorded and moves the last corr"
+  },
+  {
+   "unit": "core:6.1:3",
+   "spec": "ロックの持ち主の新規要求で§4.3の順3を通ったものは、検証・実行・後始末・応答生成の間だけleaseを止める。応答を生成した時点からlease_msを数え直す（rejectedの応答も含む）。",
+   "code": "src/oep_client/endpoint.py:Endpoint.handle",
+   "fix": "same change: the lease restarts for an order-4 unknown_function too"
+  },
+  {
+   "unit": "core:9:7",
+   "spec": "0xFFFFFFFF を使い切ったら、新しい資源の作成を rejected unavailable（cause 2）で断る。 / (§4.3) 何も変える前にすべて確かめ",
+   "code": "src/oep_client/endpoint.py:Endpoint._wire (attach)",
+   "fix": "exhaustion checked with the other refusals before the target is touched"
+  },
+  {
+   "unit": "core:9:7",
+   "spec": "資源の番号は u32、probe 全体で 1 つの空間。",
+   "code": "src/oep_client/conformance_resources.py:ResourceChecks.inventory/create",
+   "fix": "accept 1..0xFFFFFFFF instead of 1..65535"
+  },
+  {
+   "unit": "core:4.4:4",
+   "spec": "同じ経路・session_id・corrの再送コピーは、新たな未解決要求として数えない。...元の要求を再実行せず、そのコピーだけを理由にleaseや処理期限を更新しない。",
+   "code": "src/oep_client/virtual_pipeline_model.py:PipelineModel.submit",
+   "fix": "a copy of an unresolved request takes no credit; session copies answered from the record, session-0 copies dropped"
+  },
+  {
+   "unit": "core:5.1:6",
+   "spec": "hostは終了したidでsessionを再開せず、idを意図的に循環・再利用しない。",
+   "code": "src/oep_client/host.py:Host.end_previous",
+   "fix": "lock_state first; with the lock free nothing is opened (returns False)"
+  }
+ ]
+}
