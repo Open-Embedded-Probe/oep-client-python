@@ -194,6 +194,9 @@ class VirtualSerialPort:
             self.spoiled = {k - 1 for k in self.spoiled if k}
             if len(out) >= room:
                 return bytes(out)
+        raw = self.ep.passthrough_take(self.index)      # between frames, never inside one (transports §4)
+        if raw:
+            out += raw + b"\x00"                           # a delimiter: the next frame does not take them in
         return bytes(out)
 
 

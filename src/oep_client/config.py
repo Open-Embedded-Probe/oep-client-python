@@ -93,7 +93,27 @@ class Disable:
         return struct.pack("<H", self.channel)
 
 
-KINDS = {"label": Label, "idle": Idle, "disable": Disable}
+@dataclass(kw_only=True)
+class Passthrough:
+    """Serial port `port` (fn 0's describe transport index) carries what fixture UART `fn` receives on `rx`, outside the
+    OEP frames, while no session uses the port, the fn or the pin (probe.config §1.1, item 0x05; transports §4): a plain
+    serial monitor on a probe whose one port is a UART bridge sees the target. A host on that port reads those bytes past
+    as noise; its session's request there stops it for the session. Key: the port (unset puts it in the channel field)."""
+    port: int
+    fn: int
+    rx: int
+    baud: int = 115200
+    format: int = 0
+    TAG = ITEM["passthrough"]
+
+    def key(self) -> tuple:
+        return (self.TAG, self.port)
+
+    def value(self) -> bytes:
+        return struct.pack("<BHHIB", self.port, self.fn, self.rx, self.baud, self.format)
+
+
+KINDS = {"label": Label, "idle": Idle, "disable": Disable, "passthrough": Passthrough}
 
 
 @dataclass(frozen=True)
@@ -128,6 +148,9 @@ def decode(tag: int, v: bytes):
         return Idle(channel=struct.unpack_from("<H", v)[0], mode=_name(IDLE, v[2]))
     if tag == ITEM["disable"] and len(v) >= 2:
         return Disable(channel=struct.unpack_from("<H", v)[0])
+    if tag == ITEM["passthrough"] and len(v) == 10:
+        port, fn, rx, baud, fmt = struct.unpack("<BHHIB", v)
+        return Passthrough(port=port, fn=fn, rx=rx, baud=baud, format=fmt)
     return (tag, v)
 
 

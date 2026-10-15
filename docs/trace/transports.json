@@ -1,5 +1,5 @@
 {
- "spec_commit": "cf69012",
+ "spec_commit": "91a5653",
  "units": {
   "transports:1:1": {
    "text": "| 経路 | フレーム |",
@@ -522,6 +522,14 @@
    ],
    "mutants": [],
    "note": "answers and notifications use the same COBS frames, whole, one after another"
+  },
+  "transports:4:7": {
+   "text": "- **素通し（任意）**: [probe の設定](../interfaces",
+   "verify": [
+    "tests/test_passthrough.py::test_the_uart_goes_out_between_frames_while_no_session_uses_it"
+   ],
+   "mutants": [],
+   "note": "between frames, a delimiter after, none while a session sends on the port; the host reads them past"
   },
   "transports:5:1": {
    "text": "- TCP のフレームの長さや形が壊れた場合は接続を閉じて開き直す。入力を静かに",

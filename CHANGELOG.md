@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- (JA) oep-spec df32360 / 91a5653（probe.config §1.1 passthrough、transports §4 の素通し）に追従。仮想ベンチは、セッションがその口・fn・RX のピンを
+  使っていない間、fixture UART が受けたバイトをフレームの間に送り、後ろに区切りの 0x00 を置く。クライアントは `config.Passthrough` で設定・読み出し・解除する。
+  実験（docs/spec-follow-notes.ja.md R8）: テキストのコンソールを素通しにしても、セッションの外の照会・セッションの要求とも失敗 0。
+
 - (JA) oep-spec cf69012（link §3: phase 3 は理由によらず取り消さない）に追従。仮想ベンチと検査器の論理モデルから idle の復帰保留の取り消しを外し、
   検査器の PENDING-IDLE-OWNER / -OTHER は phase 3 のまま旧 baud で答えてから戻ることを求める（故障注入は取り消してしまうモデル）。
 

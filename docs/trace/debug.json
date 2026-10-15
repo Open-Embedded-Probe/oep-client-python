@@ -1,5 +1,5 @@
 {
- "spec_commit": "cf69012",
+ "spec_commit": "91a5653",
  "units": {
   "debug:0:1": {
    "text": "1. op 0x10 scan、0x11 attach、0x12 detach、",

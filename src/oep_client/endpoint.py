@@ -535,7 +535,7 @@ class Connection:
     free: bool = False                                 # an exchange went unanswered: the lines rest undriven (debug §2)
 
 
-ITEM_SIZES = {ITEM["idle"]: 3, ITEM["disable"]: 2}          # the items of a fixed length (probe.config §1)
+ITEM_SIZES = {ITEM["idle"]: 3, ITEM["disable"]: 2, ITEM["passthrough"]: 10}   # the items of a fixed length (probe.config §1)
 
 
 @dataclass
@@ -742,6 +742,8 @@ class Endpoint:
         self.restarting = False              # restart answered (oep-if-restart §2): nothing more until reboot()
         self.unanswered = 0                  # requests that came while restarting (no answer, oep-if-restart §2)
         self.holder: int | None = None
+        self.session_ports: set[int] = set()   # the transports the lock holder's requests came on (probe.config §1.1)
+        self.passthrough_out: dict[int, bytearray] = {}   # a serial port's pass-through bytes not sent yet
         self.last: int | None = None         # S: the id that holds or last held the lock (the resend table's, §5.2)
         self.owner: bytes | None = None      # the holder's owner, while the lock is held (core §6.4)
         self.lease_ms = self.lease_default_ms
@@ -1208,6 +1210,8 @@ class Endpoint:
             return None
         self.requests.append(req)
         self._transport = transport
+        if req.session and req.session == self.holder:
+            self.session_ports.add(transport)                      # its pass-through stops for the session (config §1.1)
         self._via = transport if link is None else link
         self._lapse()                                              # an expired lease is cleaned up before the next
         #                                                            request's processing, its resend check too (core §6.1)
@@ -1416,6 +1420,7 @@ class Endpoint:
         §2), its subscriptions; the owner is forgotten. Nothing passes to the next session."""
         self.holder = None
         self.owner = None
+        self.session_ports.clear()                                 # the pass-throughs may run again (config §1.1)
         for fn in list(self.subscribed):                           # subscriptions end with the lock (core §9), and
             self._drop_unsent(fn)                                  # what they had not sent yet goes (§10.3)
             self.sub_epoch[fn] = self.sub_epoch.get(fn, 0) + 1
@@ -1477,6 +1482,7 @@ class Endpoint:
         # the holder's open again (from any connection) keeps the resources, the resend state and where the
         # subscriptions send (core §6.2): a subscribe again moves them (§10.3)
         self.holder = self.last = session
+        self.session_ports.add(self._transport)                    # its pass-through stops for the session (config §1.1)
         # 0: the probe's default; else rounded into lease_min_ms .. lease_max_ms (core §6.4)
         lo, hi = reg.LIMITS["lease_min_ms"], min(self.lease_max_ms, reg.LIMITS["lease_max_ms"])
         self.lease_ms = self.lease_default_ms if lease == 0 else min(max(lease, lo), hi)
@@ -2871,11 +2877,36 @@ class Endpoint:
             raise unavailable("wrong_state")                       # no TX in the plan, or not configured (fixture §2)
         return self._stream_op(s, op, args, t, self.uart_accept)
 
-    def uart_rx(self, fn: int, data: bytes) -> None:
+    def uart_rx(self, fn: int, data: bytes, channel: int | None = None) -> None:
         """Bytes arrive on fixture UART `fn`'s RX line: kept only while it is configured with RX in its plan (fixture
-        §2: nothing is received before a configure, after a failed one, or on a TX-only plan)."""
+        §2: nothing is received before a configure, after a failed one, or on a TX-only plan). `channel`: the line they
+        came on - a serial port's pass-through on it takes them while it runs (probe.config §1.1)."""
         if fn in self.uart_baud and any(a[0] == fn and a[1] == _UART.enum["role"]["rx"] for a in self.plan):
             self.uarts[fn].data += data
+            return
+        for port, (pfn, rx) in self.passthroughs().items():
+            if pfn == fn and (channel is None or channel == rx):
+                self.passthrough_out.setdefault(port, bytearray()).extend(data)
+
+    def passthroughs(self) -> dict[int, tuple[int, int]]:
+        """The serial ports whose pass-through runs now (probe.config §1.1) -> port: (fn, rx). One runs while no session
+        request came on its port, its fn has no plan, and no plan or connection takes its rx."""
+        busy = {a[2] for a in self.plan} | {p for c in self.conns.values() for p in c.pair}
+        planned = {a[0] for a in self.plan}
+        out = {}
+        for (tag, port), v in self.config.items():
+            if tag != ITEM["passthrough"] or port in self.session_ports:
+                continue
+            _, fn, rx, _, _ = struct.unpack("<BHHIB", v)
+            if fn not in planned and rx not in busy:
+                out[port] = (fn, rx)
+        return out
+
+    def passthrough_take(self, port: int) -> bytes:
+        """The pass-through bytes serial port `port` sends now, between frames (transports §4); none while it does
+        not run (what was waiting is dropped then: not kept, config §1.1)."""
+        waiting = self.passthrough_out.pop(port, bytearray())
+        return bytes(waiting) if port in self.passthroughs() else b""
 
     # ---- oep.fixture.i2c-target (fixture §3) ------------------------------------------------------
     def _i2c_op(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
@@ -3075,7 +3106,14 @@ class Endpoint:
 
     @staticmethod
     def _item_channel(tag: int, value: bytes) -> int:
-        """A known item's channel; another length than its form is malformed (probe.config §1)."""
+        """A known item's key - its channel, a passthrough's port; another length than its form is malformed (probe.config
+        §1)."""
+        if tag == ITEM["passthrough"]:
+            if len(value) != ITEM_SIZES[tag]:
+                raise Reject(m.MALFORMED)
+            if struct.unpack_from("<I", value, 5)[0] == 0:
+                raise Reject(m.MALFORMED)                          # baud 0 (fixture §2's rule, config §1.1)
+            return value[0]
         if tag == ITEM["label"]:
             ok = 3 <= len(value) <= 2 + reg.LIMITS["label_max_bytes"]     # channel and 1-32 bytes of text
         else:
@@ -3087,6 +3125,17 @@ class Endpoint:
     def _item_refusal(self, tag: int, ch: int, value: bytes) -> bool:
         """Whether this probe cannot take the item's values (probe.config §1): a channel at or past `channels` or its
         own, an idle mode left unused (5 or more), an output on an input-only channel, a pull the channel lacks."""
+        if tag == ITEM["passthrough"]:
+            port, fn, rx, baud, fmt = struct.unpack("<BHHIB", value)
+            if (self.transports.get(port) not in virtual_bench.SERIAL_KINDS or self.names.get(fn) != _UART.name
+                    or rx not in {c for tag, v in self.decl[fn] if tag == catalog.ROLE_CHANNELS
+                                  and v[0] == _UART.enum["role"]["rx"] for c in _role_channels(v)}):
+                return True
+            try:
+                self._uart_check(baud, fmt, fn, None, divide=False)
+            except Reject:
+                return True
+            return False
         if not self._channel_ok(ch):
             return True
         if tag == ITEM["idle"]:
@@ -3192,6 +3241,13 @@ class Endpoint:
             raise unavailable("limit")                             # no generation left before a restart (§2)
         disabled = {ch for tag, ch in new if tag == ITEM["disable"]}
         idles = {ch for tag, ch in new if tag == ITEM["idle"]}
+        outputs = (IDLE_MODE["output_low"], IDLE_MODE["output_high"])
+        for (tag, _), v in sorted(new.items()):
+            if tag == ITEM["passthrough"]:
+                rx = struct.unpack_from("<H", v, 3)[0]
+                idle = new.get((ITEM["idle"], rx))
+                if rx in disabled or (idle is not None and idle[2] in outputs):
+                    raise unavailable("held_by_settings", rx)      # a disabled rx or one with an output idle (config §1.1)
         busy = {a[2] for a in self.plan} | {p for c in self.conns.values() for p in c.pair}
         for ch in sorted(disabled - self.disabled):
             if ch in busy:
