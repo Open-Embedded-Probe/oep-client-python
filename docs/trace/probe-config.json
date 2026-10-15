@@ -1,5 +1,5 @@
 {
- "spec_commit": "a09fa45",
+ "spec_commit": "cf69012",
  "units": {
   "probe-config:pre:1": {
    "text": "| `oep.probe.config` | 1 | channelのdisab",

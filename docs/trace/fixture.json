@@ -1,5 +1,5 @@
 {
- "spec_commit": "a09fa45",
+ "spec_commit": "cf69012",
  "units": {
   "fixture:pre:1": {
    "text": "| `oep.fixture.gpio` | 1 | ピンを駆動し、読む | 1",
