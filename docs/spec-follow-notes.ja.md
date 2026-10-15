@@ -317,3 +317,20 @@ U4 の試算（仮想ベンチのリンク断のモデル: stale / ones / ones_l
 
 C' は B より安全（メモリ、CSR、resumereq などを含む群はやり直さない）で、成功率は最も高い。B との差は、失敗の応答の後も条件を満たす群はやり直すことと、
 読み戻しで書き込みの取りこぼしを見つけてやり直すことによる。
+
+## 旧仕様から消え、firmware が実機で使っていた機能（2026-10-15、Arduino への反映で測定）
+
+oep-probe-arduino（oep-spec 498ae95 を実装、src 約 2 万行）を cf69012 の registry に合わせると、消えた番号の参照がコンパイルエラーとして出る。
+それを機能ごとにまとめ、Arduino の CHANGELOG（実機の記録）から使われた理由を拾った。方針（コアと共通部分は小さく、`oep.` の拡張は
+実装・実機で要るものだけ）に沿って分類する。
+
+| # | 消えた機能 | firmware での使われ方（CHANGELOG） | host で代われるか | 判断 |
+|---|---|---|---|---|
+| R1 | probe.config の slot / bind（保存した設定で、起動時からセッション無しに debug 接続とコンソールを保つ） | classic ESP32 の V003 の治具で at-boot の slot を運用（attach の再試行、生存確認、bind の続きの位置）。行 4 の問題（コマンドの合間の出力を失う）を解いていた | できない（host が居ない間の受信） | **拡張として戻す候補**。コアの資源の寿命（§9）は変えず、セッションの外の資源を持つ任意の `oep.` インターフェースとして定義する（個別検討 #4 の (b)）。仮想ベンチで、1 コマンドごとにセッションを開く host が起動直後の出力を何 byte 失うかを測ってから決める |
+| R2 | gpio の出力の強さ（describe drive_levels、set の drive TLV） | classic ESP32 / P4（約 5〜40 mA の 4 段）、RP2040 / RP2350（2〜12 mA）。SWIO / RVSWD の PHY も最弱の段で動かす | できない（pad の設定） | **拡張として戻す候補**。fixture §1 は「必要なら新しい任意機能の TLV で定義する」としている。gpio の任意の TLV と describe の tag で、非 critical の既定は今のまま |
+| R3 | capture-group の trigger_track / force / triggered（連動トリガ） | ESP32-P4 のミックスドシグナル（ロジックが先導し、アナログがその時刻で区画を切る） | 部分的（各トラックの時刻で後から合わせられるが、トリガ前の区画は取れない） | 保留。v1 の capture-group は即時開始だけで、実装の重さ（従うトラックのリング）と需要を測ってから |
+| R4 | attach の pins 探索、search_retries、scan の skip | 配線の自動探索 | できる（scan と host の候補） | 戻さない（コアと共通部分を小さく） |
+| R5 | detach の force、console の stream の users（共有）、マークの attach / detach / link lost / closed | 接続とストリームの共有、閉じた理由の記録 | おおむねできる（connections / streams の読み、host のログ） | 戻さない |
+
+R1 と R2 は、Arduino の追従では今の名前（`oep.`）では出さず、firmware 自身の逆 DNS の名前の拡張として残す（core §12 規則 7）。
+仕様に戻すかは、その拡張を使った測定で決める。
