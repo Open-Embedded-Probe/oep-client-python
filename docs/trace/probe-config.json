@@ -237,12 +237,13 @@
    "note": "no connection or stream appears"
   },
   "probe-config:1.2:5": {
-   "text": "- 線切れ（debug §2）と target の自己リセットは、素通しを止めず",
+   "text": "- 線切れ（debug §2）では、probe はその接続を閉じ、上の試し直しの",
    "verify": [
-    "tests/test_passthrough.py::test_swio_tries_again_until_the_target_answers"
+    "tests/test_passthrough.py::test_swio_tries_again_until_the_target_answers",
+    "tests/test_passthrough.py::test_after_a_line_loss_rvswd_waits_for_the_condition_to_start_again"
    ],
    "mutants": [],
-   "note": "an absent target is tried again (swio)"
+   "note": "line loss closes it; swio again, rvswd after the condition starts again"
   },
   "probe-config:2:1": {
    "text": "| 0x10 | get | first(u16) | more(u8)、gen",
