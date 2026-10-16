@@ -606,7 +606,7 @@ P4X `e8f60ae84e28`、classic ESP32 `0070070d9394`）を Arduino 0.0.32 のリリ
 | H1 | capture の start の応答に、Arduino が仕様に無い blocking_ms(u32) を generation の前に残していた（logic、analog）。仕様の形で読む host は generation を TLV と読んで落ちる。共有ベクタは start の応答を見ていなかった | Arduino を直した（ffd6a14、未リリース。実機は 0.0.32 のまま）。**ベクタへの提案の候補**: capture / analog の start の応答の形 |
 | H2 | CH32L103（Pico 2 の rvswd）は、線を休ませる間に SWCLK が high だと debug module がリセットされる（DMCONTROL 0、hart が走る。リセット要因は増えない）。idle_clock low の attach なら halt が保たれる。旧設定の slot は idle_clock low を持っていた | tests/hw に OEP_HW_IDLE_CLOCK を足した。**仕様への提案の候補**: probe.config の console-passthrough（§1.2）に idle_clock が無く、L103 のような target では素通しを使えない（attach と同じ値を持たせる）。ベンチでは L103 の素通しを外した |
 
-### 未決: rvswd の線の休ませ方を誰が決めるか（2026-10-16、仕様の所有者の判断待ち）
+### 決定: rvswd の線の休ませ方（2026-10-16、所有者が決定。oep-spec 3b32b12 / ba4e8ee）
 
 仕様にはまだ入れていない（oep-spec edbe841 で 1ad434f と 91209aa の欄を取り下げ、判断基準を probe ガイド §12 に書いた e25a654）。実装の試作は
 oep-client-python の `wip/rvswd-rest` ブランチ。
@@ -629,3 +629,8 @@ oep-client-python の `wip/rvswd-rest` ブランチ。
      DMI 0x7F の bit 31〜20 で系統を引けるかは、古い系統（V103 など）の id の形で確かめる（ch32rv の DB には例外の形がある）。
 - 残る論点: core §12 規則 8（チップ固有の処理を汎用のインターフェースに入れない）との関係。rvswd は対象の系統が限られる線なので、
   その線の定義の中に置いてよいか。
+
+決定（所有者）: 基本は host が判定し、タイミング系などは probe の自動判定を足せる。自動判定は設定で OFF にでき、判定したことが分かるようにする
+（core §12 規則 8）。仕様は上の案のとおり（key は SWCLK の channel）。Python ebcf306 以降、Arduino 77a8002。
+実機（77a8002）: idle_clock 無しの attach で Pico 2 + L103 は low（halt を 3 秒保つ）、P4 + X035 は high。`rvswd-rest=high` で L103 は high になり halt が
+0.1 s で外れる（OFF が効く）。

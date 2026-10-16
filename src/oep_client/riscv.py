@@ -197,6 +197,10 @@ class WireBase(Interface):
     ONE_WIRE = False                                   # swio: swclk is 0xFFFF (§3)
     DEFAULT_MAX_SPEED = 1_000_000                      # when the wire declares no max_clock_hz either
 
+    def _is_rvswd(self) -> bool:
+        """The rest TLVs are rvswd's (debug §3.1); the name as opened, else the class's."""
+        return getattr(self, "name", self.NAME) == "oep.wire.rvswd"
+
     def _description(self) -> catalog.Description:
         return catalog.decode_description(b"".join(catalog.tlv(t, v) for t, v in describe(self.host, self.fn)))
 
@@ -310,10 +314,10 @@ class WireBase(Interface):
                 page.append([conn, (swdio, swclk), speed, (scheme, tid) if scheme else None, None, None])
             for tag, value in m.split_tlvs(rd.rest()):
                 # entry_index(u8) targetsel(u32), repeatable; bit 7 in an answer: an unknown tag (core §2.2, §2.3)
-                if self.name == "oep.wire.swd" and tag == _SELECTED_TARGET and len(value) == 5 and value[0] < len(page):
+                if tag == _SELECTED_TARGET and len(value) == 5 and value[0] < len(page):
                     page[value[0]][4] = struct.unpack_from("<I", value, 1)[0]
                 # rvswd: entry_index(u8) idle_clock(u8) for every entry (debug §2.1, §3.1)
-                if self.name == "oep.wire.rvswd" and tag == _REST and len(value) == 2 and value[0] < len(page):
+                if self._is_rvswd() and tag == _REST and len(value) == 2 and value[0] < len(page):
                     page[value[0]][5] = _REST_NAMES.get(value[1])
             out += [ConnectionInfo(*row) for row in page]
             if not more or not count or len(out) > 0xFF:
@@ -405,7 +409,7 @@ class Wire(WireBase):
         # dpc is a u32: a value of another length is broken, not used (core §2.3)
         self.dpc = struct.unpack("<I", dpc)[0] if self.halted and dpc is not None and len(dpc) == 4 else None
         # rvswd: the rest the connection uses, the host's or the probe's choice from target_id (debug §3.1)
-        rest = tail.get(self.TAG_REST) if self.name == "oep.wire.rvswd" else None
+        rest = tail.get(self.TAG_REST) if self._is_rvswd() else None
         names = {v: k for k, v in self.IDLE_CLOCK.items()}
         self.idle_clock = names.get(rest[0]) if rest is not None and len(rest) == 1 else None
         return conn, status
