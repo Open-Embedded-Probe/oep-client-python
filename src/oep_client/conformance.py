@@ -717,10 +717,11 @@ class Checks:
         elif mode == 'tlv-critical-zero':
             self.rejected(self.request(self.core['confirm'], b'OEP?\x01\x01\x80\x00\x00'), 'malformed')
         elif mode == 'unknown-optional':
-            p = self.success(self.request(self.core['confirm'], b'OEP?\x01\x01\x7f\x01\x00x'))
+            # an unknown named extension (core §2.2): name_len 4, name "io.x"
+            p = self.success(self.request(self.core['confirm'], b'OEP?\x01\x01\x7f\x05\x00\x04io.x'))
             require(len(p) >= 17 and p[:5] == b'OEP!\x01', 'ignored TLV broke confirm')
         elif mode == 'unknown-critical':
-            p = self.rejected(self.request(self.core['confirm'], b'OEP?\x01\x01\xff\x01\x00x'), 'unsupported')
+            p = self.rejected(self.request(self.core['confirm'], b'OEP?\x01\x01\xff\x05\x00\x04io.x'), 'unsupported')
             require(p and p[0] == 255, 'unsupported did not echo critical tag')
         elif mode == 'zero-priority':
             self.rejected(self.request(255, b'x', fn=self.absent_fn(), session=0xffffffff, corr=0), 'malformed')

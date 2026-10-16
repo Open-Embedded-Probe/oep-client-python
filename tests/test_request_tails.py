@@ -61,8 +61,8 @@ class Tagging:
         if key in NO_TAIL or (key == (CORE_NAME, m.OP_CONFIRM) and self.ep.revision == 0):
             return self.ep.handle(data, self.transport)
         plain = answer(self.ep, req, req.payload, self.transport)
-        crit = answer(self.ep, req, req.payload + raw_tlv(self.tag | m.TAG_CRITICAL, b"\x01"), self.transport)
-        out = self.ep.handle(dataclasses.replace(req, payload=req.payload + raw_tlv(self.tag, b"\x01")).pack(),
+        crit = answer(self.ep, req, req.payload + raw_tlv(self.tag | m.TAG_CRITICAL, b"\x04io.x"), self.transport)
+        out = self.ep.handle(dataclasses.replace(req, payload=req.payload + raw_tlv(self.tag, b"\x04io.x")).pack(),
                              self.transport)
         res = m.Result.unpack(out)
         assert res == plain, (key, res, plain)                     # ignored silently

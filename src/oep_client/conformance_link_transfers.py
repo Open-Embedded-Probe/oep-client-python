@@ -68,10 +68,10 @@ class LinkTransferChecks:
                     for data in (b'\0'*count,b'\xff'*count,bytes(i&255 for i in range(count))):self.sink(data,sid)
             elif name=='TLV':
                 for op,base in (('source',struct.pack('<I',8)),('sink',b'\x03\x00abc')):
-                    tail=self.field(127,b'ignore')
+                    tail=self.field(127,b'\x06ignore')
                     if op=='source':self.source(8,sid,tail)
                     else:self.sink(b'abc',sid,tail)
-                    self.refused(self.request(op,base+self.field(255,b'ignored'),sid),'unsupported',255)
+                    self.refused(self.request(op,base+self.field(255,b'\x07ignored'),sid),'unsupported',255)
                     for tag in (0,128):self.refused(self.request(op,base+self.field(tag,b''),sid),'malformed')
                     for tail in (b'\x7f',b'\x7f\x00',b'\x7f\x02\x00x',b'\xff\x02\x00x'):
                         self.refused(self.request(op,base+tail,sid),'malformed')

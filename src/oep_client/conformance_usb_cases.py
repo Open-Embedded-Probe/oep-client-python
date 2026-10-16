@@ -79,7 +79,7 @@ def run(check, kind):
         chunks = [frame(bytes((0,)) + req[1:]) + good]
     elif kind == 'boundary':
         size = check.max_frame - 13
-        req = check.request(check.core['clock'], b'\x7f' + size.to_bytes(2, 'little') + b'x' * size)
+        req = check.request(check.core['clock'], b'\x7f' + size.to_bytes(2, 'little') + b'\x04io.x' + b'x' * (size - 5))
         require(len(req) == check.max_frame, 'tester max_frame stimulus size')
         chunks = [frame(req)]
     elif kind == 'empty-report':

@@ -71,8 +71,8 @@ class TlvRequestChecks:
             for context in self.contexts:
                 for tag in (1, 129):
                     self.accepted(sid, context, field(tag, context[2]), context[2])
-                self.accepted(sid, context, field(127, b'ignored') + field(1, context[2]), context[2])
-                self.refused(sid, context, field(255, b'ignored'), 'unsupported', 255)
+                self.accepted(sid, context, field(127, b'\x07ignored') + field(1, context[2]), context[2])
+                self.refused(sid, context, field(255, b'\x07ignored'), 'unsupported', 255)
 
     def malformed(self):
         with self.c.holding(60000) as sid:

@@ -143,7 +143,7 @@ def test_replay_accepts_cached_or_lost_result_but_catches_reexecution(monkeypatc
     ('tlv-header', 0, 1, 0, 1001, b'OEP?\x01\x01\x7f\0', 3, b''),
     ('tlv-value', 0, 1, 0, 1001, b'OEP?\x01\x01\x7f\x02\0x', 3, b''),
     ('tlv-critical-zero', 0, 1, 0, 1001, b'OEP?\x01\x01\x80\0\0', 3, b''),
-    ('unknown-critical', 0, 1, 0, 1001, b'OEP?\x01\x01\xff\x01\0x', 11, b'\xff'),
+    ('unknown-critical', 0, 1, 0, 1001, b'OEP?\x01\x01\xff\x05\0\x04io.x', 11, b'\xff'),
     ('zero-priority', 65535, 255, 0xffffffff, 0, b'x', 3, b''),
     ('fn-priority', 65535, 255, 0xffffffff, 1, b'x', 1, b''),
     ('op-priority', 0, 0, 0xffffffff, 1, b'x', 2, b''),

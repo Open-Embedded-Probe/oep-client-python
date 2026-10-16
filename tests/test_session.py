@@ -325,7 +325,7 @@ def test_the_host_skips_tlvs_it_does_not_know_after_every_result(bench):
 
 def test_request_tails_critical_refused_non_critical_ignored(bench):
     """core §2.3: an unknown non-critical TLV is ignored silently (the answer is the one without it); an unknown
-    critical one is rejected unsupported with the tag as received; 0x00 / 0x7F are never tags (so unknown ones)."""
+    critical one is rejected unsupported with the tag as received; a named extension (0x7F) of an unknown name likewise."""
     _, ep = bench
     a = new_host(ep, 1)
     a.open()
@@ -337,9 +337,9 @@ def test_request_tails_critical_refused_non_critical_ignored(bench):
     assert e.value.tag == 0xA1
     assert read(a) == 5                                                  # refused: nothing written
     with pytest.raises(host.Unsupported) as e:
-        a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 7) + bytes([0xFF, 0, 0]))   # 0x7F critical: unknown
+        a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 7) + bytes([0xFF, 5, 0, 4]) + b"io.x")   # an unknown named extension, critical
     assert e.value.tag == 0xFF and read(a) == 5
-    assert a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 7) + bytes([0x7F, 0, 0])).payload == plain.payload
+    assert a.request(TOY, endpoint.TOY_WRITE, struct.pack("<I", 7) + bytes([0x7F, 5, 0, 4]) + b"io.x").payload == plain.payload
     with pytest.raises(host.Rejected, match="malformed"):
         a.request(TOY, endpoint.TOY_WRITE, b"\x01\x02")                  # shorter than the fixed part
     with pytest.raises(ValueError):

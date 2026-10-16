@@ -37,7 +37,7 @@ class ConfigExecutionChecks(ConfigChecks):
                 if name=='SAME':require(self.changed(18,b'',sid)==g,'initial save generation')
                 if name=='CAPACITY':g=self.set(sid,item(2,b'\2\0'+b'a'*32),item(2,b'\3\0'+b'b'*32))
                 self.a.advance(400);start=self.observe(name+'-start');probes=self.probes();self.a.arm(duration,probes)
-                req=self.op(18,item(255,b'') if name=='TLV' else b'',sid)
+                req=self.op(18,item(255,b'\x04io.x') if name=='TLV' else b'',sid)
                 p=self.buffered(req,'unsupported' if name=='TLV' else 'unavailable' if name=='CAPACITY' else None)
                 held=self.observe(name+'-prepared');writing=name.startswith(('RUN-','EXPIRE-'))
                 elapsed=duration if writing else 0

@@ -127,13 +127,13 @@ class PortSpeedChecks:
                 self.refused(self.request(sid,verify=0),'malformed')
                 for step in (3,255):self.refused(self.request(sid,step=step),'unsupported')
             elif name=='TLV':
-                self.refused(self.request(sid,tail=b'\xff\0\0'),'unsupported',255)
+                self.refused(self.request(sid,tail=b'\xff\5\0\4io.x'),'unsupported',255)
                 for tail in (b'\0\0\0',b'\x80\0\0',b'\x7f',b'\x7f\2\0x'):
                     self.refused(self.request(sid,tail=tail),'malformed')
-                self.success(self.request(sid,tail=b'\x7f\0\0'),230400)
-                before=self.a.speed();payload=self.c.rejected(self.state_request(tail=b'\xff\0\0'),'unsupported')
+                self.success(self.request(sid,tail=b'\x7f\5\0\4io.x'),230400)
+                before=self.a.speed();payload=self.c.rejected(self.state_request(tail=b'\xff\5\0\4io.x'),'unsupported')
                 require(payload[:1]==b'\xff' and self.a.speed()==before,'port_state critical TLV not refused');tlvs(payload[1:])
-                payload=self.c.success(self.state_request(tail=b'\x7f\0\0'));require(payload[:5]==struct.pack('<IB',230400,1),'port_state optional TLV not ignored')
+                payload=self.c.success(self.state_request(tail=b'\x7f\5\0\4io.x'));require(payload[:5]==struct.pack('<IB',230400,1),'port_state optional TLV not ignored')
             elif name=='REPLAY':
                 req=self.request(sid);self.success(req,230400);self.a.advance(20);before=self.a.speed()
                 self.success(req,230400);require(self.a.speed()==before,'replayed try restarted deadline or switched again')
