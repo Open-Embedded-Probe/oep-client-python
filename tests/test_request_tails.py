@@ -211,6 +211,7 @@ def one_shot(cap, clock, **kw):
     cap.segments()
     cap.read_segment(seg)
     cap.release(seg.serial)
+    cap.triggers()
     cap.stop()
 
 

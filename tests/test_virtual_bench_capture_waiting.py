@@ -56,9 +56,9 @@ def test_force_uses_current_sample_and_available_pretrigger(elapsed,index,count)
     assert not segment.flags&2 and track.generation==generation   # bit1 is stop's (§2.2)
     rows=events(ep,track.fn);assert [r[0] for r in rows]==[c.EVENT_TRIGGERED,c.EVENT_SEGMENT,c.EVENT_STOPPED]
     expected=forced_ns
-    assert rows[0][1][1]==index and rows[0][1][2]==expected
+    assert rows[0][1][1]==index and rows[0][1][4]==expected   # serial index record sample trigger_ns ...
     assert rows[0][1][-1]==generation and track.status().state==c.STATE['done']
-    assert abs(segment.start_ns+Fraction(index*1000000000)/track.config.rate-rows[0][1][2])<=Fraction(500000000)/track.config.rate
+    assert abs(segment.start_ns+Fraction(index*1000000000)/track.config.rate-rows[0][1][4])<=Fraction(500000000)/track.config.rate
     track.force();assert events(ep,track.fn)==[] and track.segments()==[segment]
 
 

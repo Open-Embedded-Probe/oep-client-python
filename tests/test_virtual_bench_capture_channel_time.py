@@ -41,7 +41,7 @@ def test_analog_trigger_waits_for_sparse_role_channel_time(mode,rate,channels):
     clock_ns+=step
     events=source.tick(clock_ns/1000000)
     triggered,=[e for e in events if e[0]==c.EVENT_TRIGGERED]
-    assert struct.unpack_from('<IIQI',triggered,1)[2]==int(clock_ns)
+    assert struct.unpack_from('<IIIQQII',triggered,1)[4]==int(clock_ns)
     assert calls==[0,1] and source.state==c.STATE['capturing']
     assert source.capture_begin+source.first_trigger_index==1
 
@@ -56,7 +56,7 @@ def test_force_reports_request_instant_without_offset_or_sample_rounding(analog,
     track.start(0)
     events=track.force(elapsed)
     event,=[e for e in events if e[0]==c.EVENT_TRIGGERED]
-    assert struct.unpack_from('<IIQI',event,1)[2]==elapsed*1000000
+    assert struct.unpack_from('<IIIQQII',event,1)[4]==elapsed*1000000
     sample=track.capture_begin+track.first_trigger_index
     when=track.t0_ns+Fraction(sample*1000000000)/track.rate
     if elapsed or not analog:assert abs(when-elapsed*1000000)<=Fraction(500000000)/track.rate

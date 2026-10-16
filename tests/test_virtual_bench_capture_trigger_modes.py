@@ -14,7 +14,7 @@ def setup(analog,mode,pre=0,unreachable=True,internal_samples=None):
     core.plan_apply(hst,[(track.fn,r,(16 if analog else 20)+i) for i,r in enumerate(roles)])
     if unreachable:ep.captures[track.fn].value=lambda role,index:0
     trigger=(c.CROSS_UP,3,2500) if analog else (c.EDGE,0,0)
-    track.configure(rate=1000,mode=mode,samples=32 if mode==c.REPEAT else None,segments=3 if mode==c.REPEAT else None,trigger=trigger,pretrigger=pre)
+    track.configure(rate=1000,mode=mode,samples=32 if mode==c.REPEAT else None,segments=3 if mode==c.REPEAT else None,trigger=trigger,pretrigger=pre,trigger_opts=c.TriggerOpts(arm=0))   # the first condition seen from start
     if internal_samples is not None:ep.captures[track.fn].samples=internal_samples  # explicit prototype-owned stream geometry
     track.subscribe();track.start()
     return ep,track,clock

@@ -112,7 +112,8 @@ def test_c21_capture_query_and_force_need_their_ops():
     assert h.raw(logic, LOGIC.op["status"], session=False).succeeded
     ep, h = bench(virtual_bench.p4_x035())                                             # both offered
     assert h.raw(fn_of(ep, "oep.fixture.logic"), LOGIC.op["force"]).succeeded
-    assert "force" not in GROUP.op                                                     # a group has none (a09fa45)
+    group = fn_of(ep, "oep.fixture.capture-group")                                 # a group's force comes with §4.4
+    assert h.raw(group, GROUP.op["force"]).detail == m.UNKNOWN_OPERATION
 
 
 def test_c21_order_1_refusals_are_not_remembered_and_do_not_restart_the_lease():

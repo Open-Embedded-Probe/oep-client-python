@@ -15,7 +15,8 @@ def setup(analog_source, grouped, trigger, pre=0):
     for track in tracks:
         track.configure(rate=1000, samples=8, pretrigger=pre if trigger != 'none' and track is source else None,
                         trigger=((c.CROSS_UP, 0, 1500) if analog_source else (c.EDGE, 0, 0))
-                        if trigger != 'none' and track is source else None)
+                        if trigger != 'none' and track is source else None,
+                        trigger_opts=c.TriggerOpts(arm=0) if trigger != 'none' and track is source else None)
         track.subscribe()
     for track in tracks:
         cap = ep.captures[track.fn]

@@ -38,7 +38,7 @@ import zipfile
 from dataclasses import dataclass, field
 from fractions import Fraction
 
-from . import cobs, host as h, message as m, registry as reg
+from . import capture_blocks, cobs, host as h, message as m, registry as reg
 from .frames import FramingLost
 from .core import Interface, confirm
 
@@ -46,8 +46,12 @@ _CAP = reg.FIXTURE_LOGIC
 _ANA = reg.FIXTURE_ANALOG
 _GRP = reg.FIXTURE_CAPTURE_GROUP
 # configure TLVs; bit 7 of a tag = critical (the probe must reject what it cannot do)
-MODE, RATE, SAMPLES, SEGMENTS, TRIGGER, PRETRIGGER = (
-    _CAP.tlv["configure"][k] for k in ("mode", "rate", "samples", "segments", "trigger", "pretrigger"))
+MODE, RATE, SAMPLES, SEGMENTS, TRIGGER, PRETRIGGER, TRIGGER_OPTS, FORMAT, CARRIAGE, BLOCK_MAX = (
+    _CAP.tlv["configure"][k] for k in ("mode", "rate", "samples", "segments", "trigger", "pretrigger", "trigger_opts",
+                                       "format", "carriage", "block_max"))
+ANSWER_FORMAT, ANSWER_BLOCK = _CAP.tlv["configure_answer"]["format"], _CAP.tlv["configure_answer"]["block"]
+DATA_FORMAT = _CAP.enum["data_format"]
+LOGIC_CARRIAGE = _CAP.enum["logic_carriage"]
 FRONTEND = _ANA.tlv["configure"]["frontend"]             # analog only
 ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, SCALE, SKEW, FRONTEND_USED, REFERENCE = (
     _ANA.tlv["configure_answer"][k] for k in (
@@ -60,7 +64,8 @@ REFERENCE_SOURCE = {v: k for k, v in _ANA.enum["reference_source"].items()}
 REFERENCE_MEASURED = {_ANA.enum["reference_how"]["nominal"]: False, _ANA.enum["reference_how"]["measured"]: True}
 CRITICAL = m.TAG_CRITICAL
 ONE_SHOT, REPEAT, STREAMING = (_CAP.enum["mode"][k] for k in ("one_shot", "repeat", "streaming"))
-IMMEDIATE, LEVEL, EDGE, CROSS_UP, CROSS_DOWN = range(5)
+IMMEDIATE, LEVEL, EDGE, LINKED = (_CAP.enum["trigger"][k] for k in ("immediate", "level", "edge", "linked"))
+CROSS_UP, CROSS_DOWN = _ANA.enum["trigger"]["cross_up"], _ANA.enum["trigger"]["cross_down"]
 STATE = _CAP.enum["state"]
 SEGMENT_SLIPPED = _CAP.enum["segment_flag"]["slipped"]
 STATUS_FLAGS = _CAP.enum["status_flag"]                    # dropped, slipped (reset at start)
@@ -157,6 +162,10 @@ class Config:
     frontend: dict[int, int] = field(default_factory=dict)     # analog: the frontend each channel took
     reference: tuple[str, int, bool | str] | None = None       # analog: (source, mV, measured; an unknown how as str)
     pretrigger: int = 0                                        # what this host asked
+    format: int = 0                                            # the data format in use (§1; absent: 0)
+    block: int = 0                                             # format 1 / 2: L
+    raw_roles: list[int] = field(default_factory=list)         # format 1: the raw channels' roles (as asked)
+    event_d: dict[int, int] = field(default_factory=dict)      # format 1: events role -> D (as asked)
 
     def segment_bytes(self, samples: int) -> int:
         """Length of a segment of `samples` samples in the stream (§1.1 rule 4, §1.2 rule 3)."""
@@ -272,7 +281,7 @@ def take_pushes(link, fn: int) -> list[tuple[int, int, bytes, int | None, Segmen
 class Event:
     """A capture event (oep-if-capture §3.4, §4.2; core §10.2 role 0x03). `generation`: the start it was made in - a
     track's for a track's event, the group's for the group's stopped. kind "segment" has `segment`; "stopped" has
-    `reason` and `error`; "triggered" has `serial`, `trigger_index` and `trigger_ns`. An event of another kind (or a
+    `reason` and `error`; "triggered" has `serial`, `trigger_index`, `record`, `sample`, `trigger_ns` and `uncertainty_ns`. An event of another kind (or a
     group's other than stopped) keeps its fixed part in `raw` and generation None."""
     fn: int
     seq: int
@@ -284,6 +293,9 @@ class Event:
     serial: int | None = None
     trigger_index: int | None = None
     trigger_ns: int | None = None
+    record: int | None = None                # triggered: the trigger record's serial (None: no record, §3.10)
+    sample: int | None = None                # triggered: the original sample from the generation's start
+    uncertainty_ns: int | None = None        # triggered: trigger_ns's +-ns
     raw: bytes = b""
 
     @property
@@ -310,14 +322,41 @@ def unpack_event(frame: bytes, group: bool = False) -> Event:
             reason, error, generation = rd.take("BBI")
             e = Event(fn, seq, "stopped", generation, reason=reason, error=error)
         elif kind == EVENT_TRIGGERED and not group:
-            serial, index, trigger_ns, generation = rd.take("IIQI")
-            e = Event(fn, seq, "triggered", generation, serial=serial, trigger_index=index, trigger_ns=trigger_ns)
+            serial, index, record, sample, trigger_ns, uncertainty, generation = rd.take("IIIQQII")
+            e = Event(fn, seq, "triggered", generation, serial=serial, trigger_index=index, trigger_ns=trigger_ns,
+                      record=None if record == NO_RECORD else record, sample=sample, uncertainty_ns=uncertainty)
         else:
             return Event(fn, seq, f"kind 0x{kind:02x}", None, raw=bytes(body))
     except m.ShortPayload as err:
         raise h.ProtocolError(f"capture event kind {kind} too short: {frame.hex()}") from err
     rd.tail()
     return e
+
+
+NO_RECORD = 0xFFFFFFFF
+TRIGGER_RECORD_BYTES = 24                  # serial u32, sample u64, trigger_ns u64, uncertainty_ns u32 (§3.10)
+
+
+@dataclass(frozen=True)
+class TriggerOpts:
+    """configure's trigger_opts (§3.3): `arm` 1 looks once the pretrigger is there (0: at once, a short segment);
+    `rearm` 1 a trigger for every segment (streaming: a record for every event, §2.1, §3.10); `when` 1 a level
+    already true at arming counts; `hysteresis` (analog cross, in ADC values) back that far before the next crossing.
+    The defaults are every probe's; the others as describe's trigger opts says."""
+    arm: int = 1
+    rearm: int = 0
+    when: int = 0
+    hysteresis: int = 0
+
+
+@dataclass(frozen=True)
+class TriggerRecord:
+    """A trigger record (§3.10): serial (from 0 in the generation), the original sample from the generation's start,
+    trigger_ns and its uncertainty."""
+    serial: int
+    sample: int
+    trigger_ns: int
+    uncertainty_ns: int
 
 
 def take_events(link, fn: int) -> list[bytes]:
@@ -337,7 +376,7 @@ def _config(payload: bytes, analog: bool) -> Config:
     c = Config()
     seen: set[int] = set()
     for tag, v in tlvs(payload):
-        if tag in (ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, REFERENCE):
+        if tag in (ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, REFERENCE, ANSWER_FORMAT, ANSWER_BLOCK):
             if tag in seen:
                 continue
             seen.add(tag)
@@ -350,6 +389,10 @@ def _config(payload: bytes, analog: bool) -> Config:
         elif tag == LAYOUT and analog and len(v) >= 4 and len(v) == 4 + v[3]:
             c.slot, c.offset, c.bits, n = v[0], v[1], v[2], v[3]
             c.order = list(v[4:4 + n])
+        elif tag == ANSWER_FORMAT and len(v) == 1:
+            c.format = v[0]
+        elif tag == ANSWER_BLOCK and len(v) == 4:
+            c.block = struct.unpack("<I", v)[0]
         elif tag == ACTUAL_SAMPLES and len(v) == 4:
             c.samples = struct.unpack("<I", v)[0]
         elif tag == ACTUAL_SEGMENTS and len(v) == 4:
@@ -376,8 +419,9 @@ class LogicCapture(Interface):
     NAME = "oep.fixture.logic"
     REVISION = 1
     ANALOG = False
-    CONFIGURE, START, STOP, FORCE, STATUS, READ, SEGMENTS, RELEASE, QUERY_OP = (
-        _CAP.op[k] for k in ("configure", "start", "stop", "force", "status", "read", "segments", "release", "query"))
+    CONFIGURE, START, STOP, FORCE, STATUS, READ, SEGMENTS, RELEASE, QUERY_OP, TRIGGERS = (
+        _CAP.op[k] for k in ("configure", "start", "stop", "force", "status", "read", "segments", "release", "query",
+                             "triggers"))
 
     generation: int | None = None         # the current capture's generation (start / status / the group's start)
 
@@ -389,10 +433,16 @@ class LogicCapture(Interface):
 
     def configure(self, *, rate: int, mode: int = ONE_SHOT, samples: int | None = None, segments: int | None = None,
                   trigger: tuple[int, int, int] | None = None, pretrigger: int | None = None, query: bool = False,
-                  frontends: dict[int, int] | None = None) -> Config:
+                  frontends: dict[int, int] | None = None, trigger_opts: TriggerOpts | None = None,
+                  data_format: int = 0, events: dict[int, int] | None = None, roles: list[int] | None = None,
+                  block_max: int | None = None) -> Config:
         """-> the probe's actual values. A value the probe cannot honour is refused: host.Unsupported, .tag = the TLV as
         sent (§3.3). The TLVs go without the critical bit (§3.3). Read Config.samples / .segments: the probe rounds
         samples down.
+
+        Format 1 (logic blocks, §1.3): `data_format` DATA_FORMAT["logic_blocks"], `events` role -> D for the channels
+        carried as events (the others raw), `roles` the plan's roles (to name the raw channels), `block_max` the
+        longest block. Format 4 (test counter) needs nothing else. These go critical.
 
         §3.3's contract is checked before anything is sent (ValueError): `samples` is needed in one-shot and repeat
         and not taken in streaming, `segments` is repeat's only, `pretrigger` needs a trigger (type other than 0) - a
@@ -426,10 +476,24 @@ class LogicCapture(Interface):
             body += tlv(PRETRIGGER, struct.pack("<I", pretrigger))
         for role, fe in sorted((frontends or {}).items()):   # analog: the input range per channel (describe frontend)
             body += tlv(FRONTEND, bytes([role, fe]))
+        if data_format:                                      # critical: a probe without it refuses (§3.3)
+            body += m.tlv(FORMAT | CRITICAL, bytes([data_format]))
+        if data_format == DATA_FORMAT["logic_blocks"] and roles is None:
+            raise ValueError("capture configure: format 1 needs the plan's roles (to name the raw channels)")
+        for role, d in sorted((events or {}).items()):
+            body += m.tlv(CARRIAGE | CRITICAL, struct.pack("<BBI", role, LOGIC_CARRIAGE["events"], d))
+        if block_max is not None:
+            body += m.tlv(BLOCK_MAX | CRITICAL, struct.pack("<I", block_max))
+        if trigger_opts is not None:                         # critical: a probe without it refuses (§3.3)
+            o = trigger_opts
+            body += m.tlv(TRIGGER_OPTS | CRITICAL, struct.pack("<BBBI", o.arm, o.rearm, o.when, o.hysteresis))
         # query is its own operation: the lock is decided per operation, before the payload is looked at
         op = self.QUERY_OP if query else self.CONFIGURE
         c = _config(self._call(op, body, locked=not query).payload, self.ANALOG)
         c.pretrigger = pretrigger or 0
+        if data_format == DATA_FORMAT["logic_blocks"]:
+            c.event_d = dict(events or {})
+            c.raw_roles = [r for r in sorted(roles) if r not in c.event_d]
         if mode == ONE_SHOT and not c.segments:
             c.segments = 1                                     # one-shot's answer has no actual_segments (§3.3)
         if not query:
@@ -584,6 +648,25 @@ class LogicCapture(Interface):
         rd.tail()
         return out, bool(more)
 
+    def triggers_page(self, from_serial: int = 0, generation: int | None = None) -> tuple[list[TriggerRecord], bool]:
+        """One answer's trigger records (§3.10) from `from_serial` on, paged as segments are. -> (records, more)."""
+        payload = struct.pack("<II", self._generation(generation), from_serial)
+        rd = m.Reader(self._call(self.TRIGGERS, payload, locked=False).payload)
+        more, count = rd.take("BB")
+        out = [TriggerRecord(*struct.unpack("<IQQI", rd.bytes(TRIGGER_RECORD_BYTES))) for _ in range(count)]
+        rd.tail()
+        return out, bool(more)
+
+    def triggers(self, from_serial: int = 0, generation: int | None = None) -> list[TriggerRecord]:
+        """Every trigger record kept from `from_serial` on; a jump in the serials is what was overwritten."""
+        out: list[TriggerRecord] = []
+        while True:
+            page, more = self.triggers_page(from_serial, generation)
+            out += page
+            if not more or not page:
+                return out
+            from_serial = (page[-1].serial + 1) & 0xFFFFFFFF
+
     def segments(self, from_serial: int = 0) -> list[Segment]:
         """Every segment record from `from_serial` on, following `more` (each next page from the last serial + 1,
         until more 0)."""
@@ -678,13 +761,46 @@ class LogicCapture(Interface):
         """The segment's bytes (of its generation); every Host.on_capture callback gets them as a CaptureRecord (a run
         recorder, e.g. pytest-embedded-wireskein, without this package knowing it)."""
         c = self.config
-        n = c.segment_bytes(segment.samples)
-        data = self.read(segment.position, n, segment.generation or None)
+        if c.format == DATA_FORMAT["logic_blocks"]:
+            data = self._read_blocks(segment)
+        else:
+            data = self.read(segment.position, c.segment_bytes(segment.samples), segment.generation or None)
         if self.host.on_capture:
             record = CaptureRecord(self.fn, self.name, c, segment, data, self.armed_s, time.monotonic())
             for callback in list(self.host.on_capture):
                 callback(record)
         return data
+
+    def _read_blocks(self, segment: Segment) -> bytes:
+        """A format 1 segment's bytes: its length is not in its record (§1.3), so it ends where the next segment
+        begins, or at write_pos for the last; read at once, then cut by its blocks' headers."""
+        after = [s.position for s in self.segments((segment.serial + 1) & 0xFFFFFFFF)
+                 if s.generation == segment.generation and s.position > segment.position]
+        end = after[0] if after else self.status().write_pos
+        data = self.read(segment.position, end - segment.position, segment.generation or None)
+        return data[:self._blocks_length(data, segment.samples)]
+
+    def _blocks_length(self, data: bytes, samples: int) -> int:
+        """The bytes the blocks of `samples` samples take at the start of `data` (from their headers, §1.3)."""
+        c = self.config
+        nb = (len(c.event_d) + 7) // 8
+        at = 0
+        for first in range(0, samples, c.block):
+            r = min(c.block, samples - first)
+            head = data[at:at + 2 * nb + 4]
+            if len(head) < 2 * nb + 4:
+                raise h.ProtocolError(f"format 1: the segment's bytes end inside block {first // c.block}")
+            fallbacks = bin(int.from_bytes(head[:nb], "little")).count("1")
+            n = int.from_bytes(head[2 * nb:], "little")
+            at += len(head) + (r * (len(c.raw_roles) + fallbacks) + 7) // 8 + capture_blocks.EVENT_BYTES * n
+        if at > len(data):
+            raise h.ProtocolError("format 1: the segment's bytes end inside its last block")
+        return at
+
+    def blocks(self, data: bytes, samples: int) -> list[capture_blocks.LogicBlock]:
+        """A format 1 segment's bytes -> its blocks (raw channels as bits, events channels as ticks, §1.3)."""
+        c = self.config
+        return capture_blocks.read_logic_blocks(data, samples, c.raw_roles, c.event_d, c.block)
 
     # ---- the §3.0 layout ---------------------------------------------------------------------------------
     def channel(self, data: bytes, k: int, samples: int | None = None) -> list[int]:

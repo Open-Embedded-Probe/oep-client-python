@@ -19,7 +19,7 @@ def events(ep,fn):
             fixed=struct.unpack_from('<BBI',body);tail=body[6:];generation=fixed[-1]
         else:
             assert kind==c.EVENT_TRIGGERED
-            fixed=struct.unpack_from('<IIQI',body);tail=body[20:];generation=fixed[-1]
+            fixed=struct.unpack_from('<IIIQQII',body);tail=body[36:];generation=fixed[-1]
         m.Tail.parse(tail)
         decoded=c.unpack_event(frame);assert decoded.generation==generation
         result.append((kind,fixed,frame))
@@ -78,9 +78,11 @@ def test_queued_old_events_keep_old_generation_and_host_discards_them(analog):
 def test_reachable_trigger_event_matches_segment_time_and_generation(analog):
     ep,_,track,clock=configured(analog);trigger=(c.CROSS_UP,1,2500) if analog else (c.EDGE,0,0)
     track.configure(rate=1000,samples=64,trigger=trigger,pretrigger=10);track.subscribe();track.start()
-    clock.t=100
+    clock.t=300   # arm 1 (the default): the analog's first crossing past its 10-sample pretrigger is at about 69
     rows=events(ep,track.fn);assert [row[0] for row in rows]==[c.EVENT_TRIGGERED,c.EVENT_SEGMENT,c.EVENT_STOPPED]
-    serial,index,ns,generation=rows[0][1];segment,=track.segments()
+    serial,index,record,sample,ns,uncertainty,generation=rows[0][1]
+    assert record==c.NO_RECORD and index==10   # rearm 0: no record; arm 1: the pretrigger is there
+    segment,=track.segments();segment,=track.segments()
     assert serial==segment.serial and index==segment.trigger_index and generation==segment.generation==track.generation
     expected=segment.start_ns+int(index*1000000000/track.config.rate)+(track.config.skew_ns[1] if analog else 0)
     assert ns==expected
@@ -99,7 +101,7 @@ def test_notification_corruption_is_detected(monkeypatch,analog,fault):
                 if (fault=='segment_generation' and frame[0]==c.EVENT_SEGMENT) or (fault=='stopped_generation' and frame[0]==c.EVENT_STOPPED):data[-1]^=1
                 if fault=='reserved_reason' and frame[0]==c.EVENT_STOPPED:data[1]=2
                 if fault=='segment_time' and frame[0]==c.EVENT_SEGMENT:struct.pack_into('<Q',data,17,struct.unpack_from('<Q',data,17)[0]+1)
-                if fault=='extra_trigger' and frame[0]==c.EVENT_SEGMENT:changed.append(bytes((c.EVENT_TRIGGERED,))+struct.pack('<IIQI',0,0,0,track.generation))
+                if fault=='extra_trigger' and frame[0]==c.EVENT_SEGMENT:changed.append(bytes((c.EVENT_TRIGGERED,))+struct.pack('<IIIQQII',0,0,0xFFFFFFFF,0,0,0,track.generation))
             changed.append(bytes(data))
         original(fn,changed)
     ep._events=broken

@@ -918,6 +918,8 @@ class Endpoint:
         d = reg.FIXTURE_ANALOG.tlv["describe"]                     # the logic's tags are the same numbers
         modes, lo, hi, fronts, most_samples = set(), 1, 1_000_000, {}, {}
         max_pre = virtual_bench_capture.MAX_SAMPLES - 1
+        opts = records = kinds = 0
+        formats, lo_d, hi_d = set(), 1, 1
         for tag, v in decl:
             if tag == d["frontend"]:                               # analog: frontend min_mv max_mv
                 fe, lo_mv, hi_mv = struct.unpack("<Bii", v)
@@ -925,14 +927,22 @@ class Endpoint:
             elif tag == d["mode"]:
                 modes.add(v[0])
                 most_samples[v[0]] = struct.unpack_from("<I", v, 1)[0]   # mode max_samples max_segments
-            elif tag == d["trigger"]:                              # types(u32) max_pretrigger(u32)
-                max_pre = struct.unpack_from("<I", v, 4)[0]
+            elif tag == d["trigger"]:                              # types(u32) max_pretrigger(u32) opts(u8)
+                max_pre, opts = struct.unpack_from("<IB", v, 4)
+            elif tag == d["trigger_records"]:                      # u16 (§3.10)
+                records = struct.unpack("<H", v)[0]
+            elif tag == d["formats"]:                              # u8 list (§3.5)
+                formats = set(v)
+            elif tag == d["carriage"]:                             # kinds(u8) min_d(u32) max_d(u32)
+                kinds, lo_d, hi_d = struct.unpack("<BII", v)
             elif tag == d["rate_range"]:                           # min_hz(u32) max_hz(u32)
                 lo, hi = struct.unpack("<II", v)
         return virtual_bench_capture.VirtualCapture(modes or {virtual_bench_capture.MODE["one_shot"]}, set(inner.get("widths", (8,))), lo, hi,
                                         inner.get("ring", 8), inner.get("max_read", 4096), fronts,
                                         max_samples=most_samples, max_pretrigger=max_pre, exact=inner.get("exact", False),
-                                        skews=inner.get("skews"), diagnostics=inner.get("diagnostics", True))
+                                        skews=inner.get("skews"), diagnostics=inner.get("diagnostics", True),
+                                        opts=opts, records_max=records, formats=formats, carriage_kinds=kinds,
+                                        carriage_d=(lo_d, hi_d))
 
     @staticmethod
     def _group_from(decl: list[tuple[int, bytes]], inner: dict) -> virtual_bench_capture.VirtualGroup:
@@ -1020,9 +1030,9 @@ class Endpoint:
             if op in (O["configure"], O["query"]):
                 analog = self.names[fn] == "oep.fixture.analog"
                 frontend_tag = virtual_bench_capture.ANA.tlv["configure"]["frontend"]
-                known = set(virtual_bench_capture.TLV.values()) | ({frontend_tag} if analog else set())
+                known = set(virtual_bench_capture.IMPLEMENTED) | ({frontend_tag} if analog else set())
                 # the frontend comes once per channel (capture §3.3): it repeats
-                got = t.tail(known, repeats={frontend_tag})
+                got = t.tail(known, repeats={frontend_tag, virtual_bench_capture.TLV["carriage"]})
                 fronts = []                                        # (role, frontend, the tag as received)
                 for tag, v in t.repeated:
                     if tag & 0x7F != frontend_tag:
@@ -1077,6 +1087,10 @@ class Endpoint:
                 t.tail()
                 cap.release(generation, serial, self.uptime_ms())
                 return m.COMPLETED, m.SUCCESS, b""
+            if op == O["triggers"]:
+                generation, first = t.take("II")                   # generation from_serial (§3.10)
+                t.tail()
+                return m.COMPLETED, m.SUCCESS, cap.trigger_list(generation, first, budget)
             if op == virtual_bench_capture.ANA.op["calibration"] and cap.analog:
                 t.tail()
                 answer = cap.calibration()

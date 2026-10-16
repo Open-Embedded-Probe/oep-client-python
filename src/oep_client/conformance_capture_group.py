@@ -261,7 +261,7 @@ class CaptureGroupChecks:
             selected={**expected,**auxiliary};base=RegisteredOpsChecks(self.c,selected);require(base.run()['status']=='passed','registered group/track ops')
             self.codes={fn:{r['name']:r['code'] for r in base.specs[name]['op']} for fn,name in selected.items()}
             self.tags={fn:base.specs[expected[fn]]['tlv']['configure'] for fn in (2,3)};self.answers={fn:base.specs[expected[fn]]['tlv']['configure_answer'] for fn in (2,3)}
-            require(not base.specs[expected[4]]['tlv'].get('bind'),'selected group revision defines no bind TLV');self.assignment=base.specs[expected[1]]['tlv']['plan_apply']['role_assignment']
+            self.assignment=base.specs[expected[1]]['tlv']['plan_apply']['role_assignment']
             self.cause_tag=self.c.reg['core']['tlv']['unavailable_payload']['cause'];self.fn_tag=self.c.reg['core']['tlv']['unavailable_payload']['fn']
             self.payload=AnalogPayloadChecks(self.c);require(self.a.state()['clock_scope']=='explicit-logical-ms','explicit group fixture clock')
         self.c.check('OEP-GROUP-CONTEXT','capture §4; core §7',context)

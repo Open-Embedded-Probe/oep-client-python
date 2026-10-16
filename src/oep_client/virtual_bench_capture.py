@@ -58,6 +58,13 @@ WRONG_STATE = m.tlv(CAUSE, bytes([reg.CORE.enum["unavailable_cause"]["wrong_stat
 LIMIT = m.tlv(CAUSE, bytes([reg.CORE.enum["unavailable_cause"]["limit"]]))
 DATA_GENERATION, SEGMENT_INFO = CAP.tlv["data"]["generation"], CAP.tlv["data"]["segment_info"]
 LAST_GENERATION = 0xFFFFFFFF
+# the configure TLVs this bench handles (§3.3); the others (threshold, clock, data_path, ...: §3.8, §3.9) it does not
+# have, so they are unknown to it - ignored plain, refused critical as the host sends them (core §2.3)
+IMPLEMENTED = tuple(TLV[k] for k in ("mode", "rate", "samples", "segments", "trigger", "pretrigger", "trigger_opts",
+                                     "format", "carriage", "block_max"))
+FORMAT = CAP.enum["data_format"]
+CARRIAGE = CAP.enum["logic_carriage"]
+BLOCK_TOP = 4096                       # its own: the longest block L it makes (§1.3)
 
 
 class Reject(Exception):
@@ -111,6 +118,34 @@ def pack_samples(values: list[int], w: int) -> bytes:
             v >>= 8
             at += 1
     return bytes(out)
+
+
+def logic_block(raw: list[list[int]], events: list[list[int]], ds: list[int], before: list[int], L: int) -> bytes:
+    """One format 1 block (§1.3) of r = len(levels) samples: the raw channels' and events channels' levels, the events
+    channels' D and the level before the block (start_level). A channel whose events would pass L / 8 bytes goes raw
+    (fallback, required); the others may not."""
+    r = len((raw + events)[0])
+    E = len(events)
+    fb, ev = [], []
+    for e, lv in enumerate(events):
+        d, last, mine = ds[e], before[e], []
+        for t in range(-(-r // d)):
+            c = 0
+            for v in lv[t * d:min((t + 1) * d, r)]:
+                c += v != last
+                last = v
+            if c:
+                mine.append(struct.pack("<HBB", t, e, (last << 7) | min(c, 127)))
+        if len(mine) * 4 > L // 8:
+            fb.append(e)
+        else:
+            ev += mine
+    nb = (E + 7) // 8
+    fallback = sum(1 << e for e in fb).to_bytes(nb, "little")
+    start = sum(before[e] << e for e in range(E)).to_bytes(nb, "little")
+    cols = raw + [events[e] for e in fb]
+    body = pack_samples([sum(c[i] << k for k, c in enumerate(cols)) for i in range(r)], len(cols)) if cols else b""
+    return fallback + start + struct.pack("<I", len(ev)) + body + b"".join(ev)
 
 
 def analog_value(k: int, i: int) -> int:
@@ -171,6 +206,24 @@ class VirtualCapture:
     exact: bool = False                # its own: any rate in rate_range (else max_hz / a whole number)
     skews: tuple[int, ...] | None = None   # its own: analog skew_ns by the order's place (None: the channels in turn)
     diagnostics: bool = True           # analog: frontend_used and reference in the configure answer (optional, §3.3)
+    opts: int = 0                      # describe trigger: opts (bit 0 arm 0, bit 1 rearm 1, bit 2 when 1, bit 3 hysteresis)
+    records_max: int = 0               # describe trigger_records: the trigger records it keeps (§3.10)
+    arm: int = 1                       # trigger_opts (§3.3): arm 1 looks once the pretrigger is there
+    rearm: int = 0                     # 1: every segment / event its own trigger (§2.1)
+    when: int = 0                      # level: 0 false -> true, 1 true at arming too
+    hysteresis: int = 0                # cross: back past value -/+ hysteresis before the next crossing counts
+    records: list[tuple[int, int, int, int]] = field(default_factory=list)   # (serial, sample, ns, uncertainty_ns)
+    record_next: int = 0               # the serial the next trigger record gets
+    trigger_floor: int = 0             # rearm: the first sample a new segment may hold (the previous one's end)
+    trigger_false_seen: bool = False   # level, when 0: a false sample since arming
+    trigger_ready: bool = True         # cross: back past the hysteresis since the last crossing
+    rearm_waiting: bool = False        # repeat, rearm 1: between segments, looking for the next trigger (state 3)
+    formats: set[int] = field(default_factory=set)   # describe formats: the data formats beyond 0 (§1, §3.5)
+    carriage_kinds: int = 0            # describe carriage: kinds (bit set), min_d, max_d
+    carriage_d: tuple[int, int] = (1, 1)
+    format: int = 0                    # the configured data format
+    carriages: dict[int, tuple[int, int]] = field(default_factory=dict)   # format 1: role -> (kind, d)
+    block: int = 0                     # format 1: L
 
     @property
     def analog(self) -> bool:
@@ -198,7 +251,7 @@ class VirtualCapture:
         # contract (§3.3: mode and rate required, samples in modes 1 and 2), then what this probe does not handle:
         # unsupported with the tag as received (core §2.3, capture §3.3)
         for tag, size in ((TLV["mode"], 1), (TLV["rate"], 4), (TLV["samples"], 4), (TLV["segments"], 4),
-                          (TLV["trigger"], 6), (TLV["pretrigger"], 4)):
+                          (TLV["trigger"], 6), (TLV["pretrigger"], 4), (TLV["trigger_opts"], 7)):
             t.fixed(got, tag, size)
         if TLV["rate"] not in got or TLV["mode"] not in got:
             raise Reject(m.MALFORMED)                              # mode and rate are required (§3.3)
@@ -255,6 +308,35 @@ class VirtualCapture:
         for raw, v in later[TLV["pretrigger"]]:
             if struct.unpack("<I", v)[0] > self.max_pretrigger:
                 raise Reject(m.UNSUPPORTED, bytes([raw]))
+        arm, rearm, when, hysteresis = struct.unpack("<BBBI", got[TLV["trigger_opts"]]) if TLV["trigger_opts"] in got else (1, 0, 0, 0)
+        # trigger_opts (§3.3): arm 1, rearm 0, when 0, hysteresis 0 are every probe's; the others as its describe's opts
+        # say (bits 0-3), an undefined value refused as one it does not handle (core §2.3)
+        if (arm > 1 or rearm > 1 or when > 1 or (not arm and not self.opts & 1) or (rearm and not self.opts & 2)
+                or (when and not self.opts & 4) or (hysteresis and (not self.opts & 8 or not self.analog))
+                or hysteresis > FULL):
+            raise t.refuse(TLV["trigger_opts"])
+        for tag, size in ((TLV["format"], 1), (TLV["block_max"], 4)):
+            t.fixed(got, tag, size)
+        fmt = got[TLV["format"]][0] if TLV["format"] in got else FORMAT["packed"]
+        carriage = []                                              # (role, kind, d, the tag as received)
+        for raw_tag, v in t.repeated:
+            if raw_tag & 0x7F == TLV["carriage"]:
+                if len(v) != 6:
+                    raise Reject(m.MALFORMED)
+                role, kind, d = struct.unpack("<BBI", v)
+                carriage.append((role, kind, d, raw_tag))
+        # carriage (§3.3): d 0, raw with d > 1, a role twice, carriage without format 1 / 2 -> malformed
+        if (any(d == 0 or kind == CARRIAGE["raw"] and d > 1 for _, kind, d, _ in carriage)
+                or len({c[0] for c in carriage}) != len(carriage)
+                or carriage and fmt not in (FORMAT["logic_blocks"], FORMAT["analog_blocks"])):
+            raise Reject(m.MALFORMED)
+        if fmt != FORMAT["packed"] and (fmt not in self.formats or fmt == FORMAT["logic_blocks"] and (
+                self.analog or mode == MODE["streaming"])):
+            raise t.refuse(TLV["format"])                          # not declared (this bench: format 1 in mode 1 / 2)
+        for role, kind, d, raw_tag in carriage:
+            if not self.carriage_kinds >> kind & 1 or d > 1 and not self.carriage_d[0] <= d <= self.carriage_d[1]:
+                raise Reject(m.UNSUPPORTED, bytes([raw_tag]))
+        block_max = struct.unpack("<I", got[TLV["block_max"]])[0] if TLV["block_max"] in got else BLOCK_TOP
         if not channels:
             raise wrong_state()                                    # no plan (§3.2)
         role_ids = sorted(planned_roles) if planned_roles is not None else list(range(channels))
@@ -303,15 +385,29 @@ class VirtualCapture:
             if mode == MODE["streaming"] and step > 1:             # its own split (no samples TLV in mode 3): a
                 samples = max(step, samples // step * step)        # piece ends on a byte; repeat's segments take the
                 # samples asked and end padded (§1.1 rule 4) - rounding down is for capacity only (§3.3)
+        carried, block = {}, 0
+        if fmt == FORMAT["logic_blocks"]:
+            for role, kind, d, _ in carriage:
+                if role not in role_ids:
+                    raise wrong_state()                            # a role not in the fn's plan: cause 6 (§3.3)
+                carried[role_ids.index(role)] = (kind, d)          # logic channel k: the k-th smallest role (§1.1)
+            unit = math.lcm(8, *(d for _, d in carried.values()))  # L: a multiple of 8 and of every D (§1.3)
+            block = min(block_max, BLOCK_TOP) // unit * unit
+            if not block:
+                raise t.refuse(TLV["block_max"] if block_max < unit else carriage[0][3] & 0x7F)
+            width = sum(1 for k in role_ids if carried.get(k, (CARRIAGE["raw"], 1))[0] == CARRIAGE["raw"])
         if pre > self.max_pretrigger or (mode != MODE["streaming"] and pre >= samples):
             raise t.refuse(TLV["pretrigger"])                      # past max_pretrigger, or not below samples (§3.3)
         return {"mode": mode, "rate": rate, "samples": samples, "segments": segs, "trigger": trigger,
-                "pretrigger": pre, "width": width, "channels": channels, "roles": role_ids, "frontends": chosen}
+                "pretrigger": pre, "width": width, "channels": channels, "roles": role_ids, "frontends": chosen,
+                "opts": (arm, rearm, when, hysteresis), "format": fmt, "carriages": carried, "block": block}
 
     def apply(self, s: dict) -> None:
         self.mode, self.rate, self.samples, self.segments_max = s["mode"], s["rate"], s["samples"], s["segments"]
         self.trigger, self.pretrigger, self.width, self.channels = s["trigger"], s["pretrigger"], s["width"], s["channels"]
         self.frontend_of = s["frontends"]
+        self.arm, self.rearm, self.when, self.hysteresis = s["opts"]
+        self.format, self.carriages, self.block = s["format"], s["carriages"], s["block"]
         self.analog_roles = tuple(s["roles"]) if self.analog else ()
         self.state = STATE["configured"]
         self._clear()
@@ -322,8 +418,14 @@ class VirtualCapture:
         out = tlv(ANSWER["actual_rate"], struct.pack("<II", s["rate"].numerator, s["rate"].denominator))
         if self.analog:
             out += tlv(ANSWER["layout"], bytes([16, 0, 12, c]) + bytes(s["roles"]))
+        elif s["format"] == FORMAT["logic_blocks"]:                # w = C = R, the raw channels (§1.3)
+            out += tlv(ANSWER["layout"], bytes([s["width"], s["width"]]) + bytes(range(s["width"])))
         else:
             out += tlv(ANSWER["layout"], bytes([s["width"], c]) + bytes(range(c)))
+        if s["format"] != FORMAT["packed"]:
+            out += tlv(ANSWER["format"], bytes([s["format"]]))
+        if s["format"] == FORMAT["logic_blocks"]:
+            out += tlv(ANSWER["block"], struct.pack("<I", s["block"]))
         if s["mode"] != MODE["streaming"]:                         # the rows of §3.3: actual_samples in modes 1 / 2,
             out += tlv(ANSWER["actual_samples"], struct.pack("<I", s["samples"]))
         if s["mode"] == MODE["repeat"]:                            # actual_segments in mode 2 only
@@ -371,37 +473,94 @@ class VirtualCapture:
         self.stream_committed_bytes = 0
         self.trigger_scan, self.trigger_previous = 0, 0
         self.trigger_time_ns = NO_TIME
+        self.records, self.record_next, self.trigger_floor = [], 0, 0
+        self.trigger_false_seen, self.trigger_ready, self.rearm_waiting = False, True, False
 
-    def _pack(self, first: int, n: int) -> bytes:
-        """The stream of samples first .. first + n - 1 of the track."""
+    def _pack(self, first: int, n: int, contiguous: bool = False) -> bytes:
+        """The stream of samples first .. first + n - 1 of the track. Format 4: the byte at stream position k is
+        k & 0xFF, as many as format 0's (§1); format 1: the blocks, `contiguous` with the sample before (§1.3)."""
+        if self.format == FORMAT["test_counter"]:
+            at = self.base + len(self.data)
+            return bytes((at + j) & 0xFF for j in range(self.bytes_of(n)))
+        if self.format == FORMAT["logic_blocks"]:
+            return self._blocks(first, n, contiguous)
         if self.analog:
             return b"".join(struct.pack(f"<{self.channels}H", *(self.value(k, first + i) for k in self.analog_roles))
                             for i in range(n))
         return pack_samples([sum(self.value(k, first + i) << k for k in range(self.width)) for i in range(n)], self.width)
 
+    def _blocks(self, first: int, n: int, contiguous: bool) -> bytes:
+        """A format 1 segment (§1.3): blocks of L from its sample 0; start_level the sample before when it is
+        contiguous in the generation, else the block's first."""
+        roles = list(range(self.channels))
+        raw = [k for k in roles if self.carriages.get(k, (CARRIAGE["raw"], 1))[0] == CARRIAGE["raw"]]
+        ev = [k for k in roles if k not in raw]
+        ds = [self.carriages[k][1] for k in ev]
+        out = bytearray()
+        for b in range(0, n, self.block):
+            r = min(self.block, n - b)
+            at = first + b
+            before = [self.value(k, at - 1) if (b or contiguous) else self.value(k, at) for k in ev]
+            out += logic_block([[self.value(k, at + i) for i in range(r)] for k in raw],
+                               [[self.value(k, at + i) for i in range(r)] for k in ev], ds, before, self.block)
+        return bytes(out)
+
     def value(self, k: int, i: int) -> int:
         return analog_value(k, i) if self.analog else (i >> k) & 1
 
     def poll_trigger(self, now_ms: int) -> list[bytes]:
-        """Waiting input: inspect only elapsed, previously unobserved samples, retaining the edge predecessor."""
-        if self.state != STATE["waiting"] or self.trigger is None:
+        """Waiting input: inspect only elapsed, previously unobserved samples, retaining the edge predecessor. Looks
+        in state 2, and with rearm 1 between repeat's segments and all through streaming (§2.1). One trigger at a time,
+        but streaming's (no segment to wait for)."""
+        if self.trigger is None or self.group is not None and self.state != STATE["waiting"]:
+            return []
+        looking = self.state == STATE["waiting"] or (
+            self.state == STATE["capturing"] and self.rearm and (self.rearm_waiting or self.mode == MODE["streaming"]))
+        if not looking:
             return []
         kind, role, value = self.trigger
         skew = self.channel_skew(role)
         last = int((Fraction(now_ms * 1_000_000) - self.t0_ns - skew) * self.rate // 1_000_000_000)
+        events = []
+        while (i := self._scan(last)) is not None:
+            when = self.time_of(i) + skew
+            sample = max(0, round(Fraction(when - self.t0_ns) * self.rate / 1_000_000_000)) if self.group is not None else i
+            events += self._triggered(sample, when, self.pretrigger)
+            if self.mode != MODE["streaming"] or not self.rearm:
+                break
+        return events
+
+    def _scan(self, last: int) -> int | None:
+        """The next sample up to `last` the trigger holds at (§3.3: arm, when, hysteresis), or None; what it saw is
+        kept for the next call."""
+        kind, role, value = self.trigger
+        begin = self.trigger_floor + (self.pretrigger if self.arm else 0)   # arm 1: once the pretrigger is there
+        if self.trigger_scan < begin:
+            if last < begin:
+                return None                                        # not there yet: nothing read before its time
+            self.trigger_scan = begin
+            self.trigger_previous = self.value(role, begin - 1) if begin > 0 else 0
         for i in range(self.trigger_scan, last + 1):
             current, previous = self.value(role, i), self.trigger_previous
             self.trigger_scan, self.trigger_previous = i + 1, current
-            matched = (kind == TRIGGER["level"] and current == (value & 1)
-                       or i > 0 and kind == TRIGGER["edge"] and current != previous
-                       and (value == 2 or (value == 0) == (current == 1))
-                       or i > 0 and kind == TRIGGER["cross_up"] and previous < value <= current
-                       or i > 0 and kind == TRIGGER["cross_down"] and previous > value >= current)
-            if matched:
-                when = self.time_of(i) + skew
-                sample = max(0, round(Fraction(when - self.t0_ns) * self.rate / 1_000_000_000)) if self.group is not None else i
-                return self._triggered(sample, when, self.pretrigger)
-        return []
+            if kind == TRIGGER["level"]:
+                if current != (value & 1):
+                    self.trigger_false_seen = True
+                    continue
+                if self.trigger_false_seen or self.when and self.trigger_ready:   # when 1: at arming only
+                    self.trigger_false_seen = self.trigger_ready = False
+                    return i
+            elif kind == TRIGGER["edge"]:
+                if i > 0 and current != previous and (value == 2 or (value == 0) == (current == 1)):
+                    return i
+            elif kind in (TRIGGER["cross_up"], TRIGGER["cross_down"]):
+                up = kind == TRIGGER["cross_up"]
+                if not self.trigger_ready and (current < value - self.hysteresis if up else current > value + self.hysteresis):
+                    self.trigger_ready = True
+                if i > 0 and self.trigger_ready and (previous < value <= current if up else previous > value >= current):
+                    self.trigger_ready = False
+                    return i
+        return None
 
     def channel_skew(self, role: int) -> int:
         """The advertised channel delay follows layout.order, not a dense role number."""
@@ -420,7 +579,7 @@ class VirtualCapture:
                       trigger_index, flags | (FLAG["slipped"] if self.slipped else 0), self.generation)
         if self.slipped:
             self.flags |= CAP.enum["status_flag"]["slipped"]
-        self.data += self._pack(self.produced, n)
+        self.data += self._pack(self.produced, n, contiguous=self.serial_done != 0 and not flags & FLAG["gap"])
         self.produced += n
         self.segs.append(seg)
         self.serial_done = (self.serial_done + 1) & 0xFFFFFFFF    # serials wrap (core §2.6, capture §3.2)
@@ -464,10 +623,28 @@ class VirtualCapture:
             raise exhausted(fn)
 
     def _triggered(self, sample: int, when: int, requested: int) -> list[bytes]:
-        """Retain available prehistory; trigger_index is relative to this segment, not acquisition start."""
+        """Retain available prehistory; trigger_index is relative to this segment, not acquisition start. With rearm 1
+        a record too (§3.10); streaming's later triggers cut nothing (§2.1)."""
+        period = -(-1_000_000_000 // self.rate)
+        uncertainty = max(self.uncertainty_ns, int(period))
+        record = NONE
+        if self.rearm:
+            record = self.record_next
+            self.records.append((record, sample, when, uncertainty))
+            del self.records[:max(0, len(self.records) - self.records_max)]
+            self.record_next = (record + 1) & 0xFFFFFFFF
+        if self.mode == MODE["streaming"] and self.state == STATE["capturing"]:
+            rel, first = sample - self.capture_begin, self.first_segment_samples or self.samples
+            serial, index = (0, rel) if rel < first else (1 + (rel - first) // self.samples, (rel - first) % self.samples)
+            return [self._triggered_event(serial & 0xFFFFFFFF, index, record, sample, when, uncertainty)]
         self.trigger_time_ns = when
-        index = min(requested, sample)
-        self.produced = self.capture_begin = sample - index
+        index = min(requested, sample - self.trigger_floor)
+        begin = sample - index
+        if self.state == STATE["waiting"]:
+            self.capture_begin = begin
+        elif begin != self.produced:
+            self.gap_next = True                                   # rearm: not straight after the previous segment
+        self.produced = begin
         if self.mode == MODE["streaming"]:
             self.samples = max(self.samples, requested + 1)  # internal stream segment size, not a configure TLV
         self.first_segment_samples = self.samples - requested + index
@@ -475,9 +652,29 @@ class VirtualCapture:
         if self.mode == MODE["streaming"]:
             unit = 1 if self.analog else 8 // math.gcd(self.width, 8)
             self.first_segment_samples = -(-self.first_segment_samples // unit) * unit
-        events = [bytes([EVENT["triggered"]]) + struct.pack("<IIQI", 0, index, when, self.generation)]
+        self.rearm_waiting = False
         self.state = STATE["capturing"]
-        return events
+        return [self._triggered_event(self.serial_done, index, record, sample, when, uncertainty)]
+
+    def _triggered_event(self, serial: int, index: int, record: int, sample: int, when: int, uncertainty: int) -> bytes:
+        """kind triggered (§3.4): serial trigger_index record sample(u64) trigger_ns(u64) uncertainty_ns generation."""
+        return bytes([EVENT["triggered"]]) + struct.pack("<IIIQQII", serial, index, record, sample, when, uncertainty,
+                                                         self.generation)
+
+    def rearm_after(self) -> None:
+        """rearm 1 in repeat: a segment ended; the next waits for its own trigger from here (§2.1)."""
+        self.rearm_waiting = True
+        self.trigger_floor = self.trigger_scan = self.produced
+        self.trigger_false_seen, self.trigger_ready = False, True
+
+    def trigger_list(self, generation: int, first: int, budget: int) -> bytes:
+        """triggers (§3.10): more(u8) count(u8) count x record(serial sample(u64) trigger_ns(u64) uncertainty_ns),
+        paged by serial as segments are (common §1.3)."""
+        self.check_generation(generation)
+        at = m.serial_page_start([r[0] for r in self.records], self.record_next, first)
+        rows = [struct.pack("<IQQI", *r) for r in self.records[at:]]
+        out = rows[:max(0, (budget - 2) // 24)][:255]
+        return bytes([int(len(out) < len(rows)), len(out)]) + b"".join(out)
 
     def force(self, now_ms: int, *, trigger_ns: int | None = None,
               pretrigger: int | None = None) -> list[bytes]:
@@ -485,7 +682,7 @@ class VirtualCapture:
 
         The trigger opens acquisition; the one-shot segment still waits for its sample times.
         """
-        if self.state != STATE["waiting"]:
+        if self.state != STATE["waiting"] and not self.rearm_waiting:
             return []
         when = trigger_ns if trigger_ns is not None else now_ms * 1_000_000
         sample = max(0, round(Fraction(when - self.t0_ns) * self.rate / 1_000_000_000))
@@ -507,14 +704,24 @@ class VirtualCapture:
             return events
         due = int((now_ms - self.started_ms) * self.rate / 1000)   # samples the clock has taken since start
         if self.mode == MODE["repeat"]:
-            while due - self.produced >= (self.first_segment_samples or self.samples):
+            while True:
+                if self.rearm_waiting:                             # rearm 1: the next segment's own trigger first
+                    got = self.poll_trigger(now_ms)
+                    if not got:
+                        break
+                    events += got
+                if due - self.produced < (self.first_segment_samples or self.samples):
+                    break
                 if len(self.segs) >= self.segments_max:            # no free segment: it pauses (state 5, no event; §3.2)
                     self.state = STATE["paused"]
                     break
                 n = self.first_segment_samples or self.samples
-                seg = self._segment(n, self.first_trigger_index)       # bit1 only when stop ends it (§2.2)
+                own = FLAG["rearm"] if self.rearm and self.first_trigger_index != NONE else 0   # its own trigger (§2.1)
+                seg = self._segment(n, self.first_trigger_index, own)  # bit1 only when stop ends it (§2.2)
                 self.first_segment_samples, self.first_trigger_index = 0, NONE
                 events.append(bytes([EVENT["segment"]]) + seg.pack())
+                if self.rearm and self.trigger is not None:
+                    self.rearm_after()
                 if len(self.segs) >= self.segments_max:
                     self.state = STATE["paused"]
                     break
@@ -550,7 +757,8 @@ class VirtualCapture:
             return events
         if self.state not in (STATE["capturing"], STATE["waiting"], STATE["paused"]):
             return events
-        if self.state == STATE["capturing"] and self.mode in (MODE["one_shot"], MODE["repeat"]) and now_ms is not None and len(self.segs) < self.segments_max:
+        if (self.state == STATE["capturing"] and self.mode in (MODE["one_shot"], MODE["repeat"]) and now_ms is not None
+                and len(self.segs) < self.segments_max and not self.rearm_waiting):
             due = self.one_shot_due(now_ms) if self.mode == MODE["one_shot"] else int((now_ms - self.started_ms) * self.rate / 1000)
             partial = min((self.first_segment_samples or self.samples) - 1, max(0, due - self.produced))
             if partial:
@@ -604,7 +812,9 @@ class VirtualCapture:
         return bytes([EVENT["stopped"], reason, error]) + struct.pack("<I", self.generation)
 
     def status(self) -> bytes:
-        out = struct.pack("<BIQBI", self.state, self.serial_done, self.base + len(self.data), self.flags, self.generation)
+        waiting = CAP.enum["status_flag"]["rearm_waiting"] if self.rearm_waiting and self.state == STATE["capturing"] else 0
+        out = struct.pack("<BIQBI", self.state, self.serial_done, self.base + len(self.data), self.flags | waiting,
+                          self.generation)
         if self.state == STATE["error"]:
             out += m.tlv(CAP.tlv["status_answer"]["error"], bytes([self.error]))   # why (§3.2)
         return out

@@ -1,6 +1,19 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) oep-spec 8e7ca20 の capture に追従（第 1 波）。
+  - 形式 1（ロジックのブロック、§1.3）: `capture_blocks.read_logic_blocks` で復号する。raw と fallback のチャネルはビット列（bytes）で、events の
+    チャネルは (tick、level、count) で返す。numpy があれば、見出しだけを Python で読み、残りを numpy でまとめて読む。
+    `LogicCapture.configure(data_format=, events=, roles=, block_max=)` で設定し、read_segment は区画の終わり（次の区画の position か
+    write_pos）まで 1 回で読む。`lc.blocks()` で復号し、`worst_bytes()` で最悪の大きさを計算する。
+  - 形式 4（試験の並び）: ストリームの position k のバイトが k & 0xFF になる。
+  - trigger_opts（arm、rearm、when、hysteresis）は `capture.TriggerOpts` で設定する。既定は arm 1、when 0 で、前の版の「最初に見えた条件で立つ」は
+    arm 0、when 1 で表す。
+  - トリガの記録（§3.10）は `lc.triggers()` で読む。triggered の出来事は record、sample、uncertainty_ns も持つ。
+  - 仮想ベンチ: P4 のロジックは形式 1（mode 1 / 2）と形式 4 を、アナログは形式 4 を宣言する。rearm 1 の repeat では区画の間も state 3 のまま
+    待ち、status の flags bit2、区画の flags bit3 / bit0 を立てる。configure は実装した TLV だけを知っていて、ほかを critical なら unsupported で
+    断る。capture-group の force は §4.4 を入れるまで ops から外す。
+  - conformance: triggers と group の force を任意の op として扱い、bind の TLV が定義されていても通す。
 
 ## 0.0.34
 - (JA) oep-spec bc52327（debug §2 の閉じた後の保持、§2.2 holds、probe.config の wire-hold、core §8 の例外）に追従。仮想ベンチは、線切れ以外で

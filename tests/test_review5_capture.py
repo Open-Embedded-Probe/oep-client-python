@@ -21,7 +21,8 @@ def test_an_early_trigger_segment_is_short_without_bit1(mode):
     ep, hst, lc, clock = bench()
     core.plan_apply(hst, [(lc.fn, r, 20 + r) for r in range(4)])
     lc.configure(rate=1000, mode=mode, samples=16, segments=4 if mode == c.REPEAT else None,
-                 trigger=(c.EDGE, 1, 0), pretrigger=4)                     # bit 1 rises at sample 2
+                 trigger=(c.EDGE, 1, 0), pretrigger=4,
+                 trigger_opts=c.TriggerOpts(arm=0))                        # bit 1 rises at sample 2; arm 0: at once
     lc.start()
     clock.t = 40
     first = lc.segments()[0]

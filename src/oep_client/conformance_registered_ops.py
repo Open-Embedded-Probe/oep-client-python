@@ -35,8 +35,8 @@ IMPLIED={'oep.probe.config':(('save','state'),),'oep.probe.link':(('port_speed',
 # subscribe (and so unsubscribe) with mode 3 (capture §1/3.2/3.4).
 BY_MODE={n:((2,'release'),(3,'subscribe')) for n in ('oep.fixture.logic','oep.fixture.analog')}
 # An op a standard never offers, named by the interface whose op space holds its code:
-# logic has no calibration (analog-only), capture-group has no force in v1 (capture §3.2/4.3).
-ABSENT={'oep.fixture.logic':(('oep.fixture.analog','calibration'),),'oep.fixture.capture-group':(('oep.fixture.logic','force'),)}
+# logic has no calibration (analog-only) (capture §3.2).
+ABSENT={'oep.fixture.logic':(('oep.fixture.analog','calibration'),)}
 POLICIES={
     'oep.probe.plan':((),(),'plan §1'),
     'oep.probe.restart':((),(),'restart §1'),
@@ -49,9 +49,9 @@ POLICIES={
     'oep.fixture.uart':(('marks','clear','mark','write'),(),'fixture §2'),
     'oep.fixture.i2c-target':(('stretch',),(),'fixture §3'),
     'oep.fixture.spi-target':((),(),'fixture §4'),
-    'oep.fixture.logic':(('force','release','query','subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §1/3.2/3.4'),
-    'oep.fixture.analog':(('force','release','query','calibration','subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §1/3.2/3.4/3.7'),
-    'oep.fixture.capture-group':(('subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §4.1/4.3'),
+    'oep.fixture.logic':(('force','release','query','triggers','subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §1/3.2/3.4'),
+    'oep.fixture.analog':(('force','release','query','triggers','calibration','subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §1/3.2/3.4/3.7'),
+    'oep.fixture.capture-group':(('force','subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §4.1/4.3'),
     'oep.probe.config':(('save','erase','state','network'),(('save','erase'),),'probe-config §2, §4'),
 }
 

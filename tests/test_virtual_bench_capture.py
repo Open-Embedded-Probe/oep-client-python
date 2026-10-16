@@ -86,7 +86,8 @@ def test_a_rate_is_the_source_divided_by_a_whole_number():
 def test_a_trigger_is_where_the_channel_does_it(kind, role, value, index):
     ep, hst, lc, clock = bench()
     core.plan_apply(hst, [(lc.fn, r, 20 + r) for r in range(4)])
-    lc.configure(rate=1_000_000, samples=64, trigger=(kind, role, value), pretrigger=10)
+    lc.configure(rate=1_000_000, samples=64, trigger=(kind, role, value), pretrigger=10,
+                 trigger_opts=c.TriggerOpts(arm=0, when=1))   # the first condition seen from start (§3.3)
     lc.start()
     clock.t = 1  # The trigger and the complete segment have now elapsed.
     (seg,) = lc.wait()

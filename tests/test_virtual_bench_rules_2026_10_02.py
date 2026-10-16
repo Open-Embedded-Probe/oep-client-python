@@ -554,7 +554,8 @@ def test_p2_o10_capture_group_with_nothing_bound_and_the_checks_before_start():
     grp = reg.FIXTURE_CAPTURE_GROUP.op
     r = h.raw(12, grp["start"])
     assert r.detail == m.UNAVAILABLE and una(r)[UNA["cause"]] == b"\x06"
-    assert h.raw(12, grp["stop"]).succeeded and "force" not in grp
+    assert h.raw(12, grp["stop"]).succeeded
+    assert h.raw(12, grp["force"]).detail == m.UNKNOWN_OPERATION   # force comes with §4.4's trigger source, not offered
     assert h.ok(12, grp["status"])[0] == 0
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 7, 0, 30), critical=True)
          + m.tlv(0x10, struct.pack("<HBH", 11, 0, 17), critical=True))

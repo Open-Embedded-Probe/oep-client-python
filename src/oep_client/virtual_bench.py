@@ -205,25 +205,37 @@ def _analog_decl(frontends: list[tuple[int, int, int]], max_samples: int, min_hz
     out += (catalog.tlv(_ANAD["rate_range"], struct.pack("<II", min_hz, max_hz)),)
     out += tuple(catalog.tlv(_ANAD["frontend"], struct.pack("<Bii", *f)) for f in frontends)
     return out + (catalog.u8(_ANAD["channels"], 4),
-                  catalog.tlv(_ANAD["trigger"], struct.pack("<II", 0b11001, max_samples - 1)))   # immediate, cross up / down
+                  # immediate, cross up / down; every trigger_opts (arm 0, rearm 1, when 1, hysteresis) with 16 records
+                  catalog.tlv(_ANAD["trigger"], struct.pack("<IIB", 0b11001, max_samples - 1, 0b1111)),
+                  catalog.u16(_ANAD["trigger_records"], 16),
+                  catalog.tlv(_ANAD["formats"], bytes([_FMT["test_counter"]])))
     # no features: revision 1 defines no bit (query, force, subscribe / unsubscribe: every op offered, the ops tag)
 
 
 def _group_decl(tracks: list[int]) -> tuple[bytes, ...]:
-    """oep.fixture.capture-group's declarations (§4.3): tracks n x fn (force, subscribe / unsubscribe: the ops tag)."""
-    return (catalog.tlv(_GRPD["tracks"], struct.pack(f"<B{len(tracks)}H", len(tracks), *tracks)),)
+    """oep.fixture.capture-group's declarations (§4.3): tracks n x fn; the ops tag without force (it comes with the
+    trigger source, §4.4, which this bench does not have yet)."""
+    return ops_of("oep.fixture.capture-group", "force") + (
+        catalog.tlv(_GRPD["tracks"], struct.pack(f"<B{len(tracks)}H", len(tracks), *tracks)),)
 _CAPM = reg.FIXTURE_LOGIC.enum["mode"]
+_FMT = reg.FIXTURE_LOGIC.enum["data_format"]
+_CARRIAGE = reg.FIXTURE_LOGIC.enum["logic_carriage"]
 
 
 def _capture_decl(modes: list[str], max_channels: int, max_samples: int, ring: int, min_hz: int,
-                  max_hz: int) -> tuple[bytes, ...]:
+                  max_hz: int, opts: int = 0, records: int = 0, formats: tuple[int, ...] = (),
+                  carriage: tuple[int, int, int] | None = None) -> tuple[bytes, ...]:
     """oep.fixture.logic's declarations (oep-if-capture §3.5): a mode entry per mode (mode, max_samples, max_segments:
     0 outside repeat), rate_range, channels (max), the trigger types (immediate, level, edge) with the most pretrigger."""
     out = tuple(catalog.tlv(_CAPD["mode"], struct.pack("<BII", _CAPM[k], max_samples, ring if k == "repeat" else 0))
                 for k in modes)
-    return out + (catalog.tlv(_CAPD["rate_range"], struct.pack("<II", min_hz, max_hz)),
-                  catalog.u8(_CAPD["channels"], max_channels),
-                  catalog.tlv(_CAPD["trigger"], struct.pack("<II", 0b111, max_samples - 1)))   # types u32, max_pretrigger
+    out += (catalog.tlv(_CAPD["rate_range"], struct.pack("<II", min_hz, max_hz)),
+            catalog.u8(_CAPD["channels"], max_channels),
+            # types u32, max_pretrigger, opts (trigger_opts beyond the defaults: bit 0 arm 0, bit 1 rearm 1, bit 2 when 1)
+            catalog.tlv(_CAPD["trigger"], struct.pack("<IIB", 0b111, max_samples - 1, opts)))
+    out += (catalog.u16(_CAPD["trigger_records"], records),) if records else ()
+    out += (catalog.tlv(_CAPD["formats"], bytes(formats)),) if formats else ()
+    return out + ((catalog.tlv(_CAPD["carriage"], struct.pack("<BII", *carriage)),) if carriage else ())
     # no features: revision 1 defines no bit (query, force, subscribe / unsubscribe: every op offered, the ops tag)
 
 
@@ -386,7 +398,9 @@ def p4_x035() -> VirtualProbe:
         _uart(6, 1, pins, 3_000_000),
         # the P4's PARLIO: w 1-16, one-shot / repeat / streaming
         Offered(7, 0, "oep.fixture.logic", _roles({k: pins for k in range(16)})
-            + _capture_decl(["one_shot", "repeat", "streaming"], 16, 1 << 20, 8, 1_000, 20_000_000),
+            + _capture_decl(["one_shot", "repeat", "streaming"], 16, 1 << 20, 8, 1_000, 20_000_000, 0b0111, 16,
+                            (_FMT["logic_blocks"], _FMT["test_counter"]),
+                            (sum(1 << v for v in _CARRIAGE.values()), 2, 4096)),   # raw and events, D 2 - 4096
             inner=_capture_inner([1, 2, 4, 8, 16], 8, 4096)),
         _i2c_target(8, pins, max_length=128, max_hz=1_000_000, features=0, queue_depth=8,
                     max_stretch_us=100_000),                                                       # stretch

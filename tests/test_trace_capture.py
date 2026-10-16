@@ -23,6 +23,8 @@ ST = c.STATE
 GAP, SHORT, SLIPPED = (LOGIC.enum["segment_flag"][k] for k in ("gap", "short", "slipped"))
 DROPPED = LOGIC.enum["status_flag"]["dropped"]
 
+FIRST_SEEN = c.TriggerOpts(arm=0, when=1)   # §3.3: the first condition seen from start, a level already true too
+
 
 # ---- helpers --------------------------------------------------------------------------------------------------------
 
@@ -432,7 +434,7 @@ def test_no_sample_is_taken_before_start(analog):
     t = track(hst, analog)
     trig = (c.CROSS_UP, 1, 2100) if analog else (c.LEVEL, 0, 0)    # the sine's sample 1 / bit 0 low at sample 0
     first = 1 if analog else 0
-    t.configure(rate=1000, samples=16, trigger=trig, pretrigger=8)
+    t.configure(rate=1000, samples=16, trigger=trig, pretrigger=8, trigger_opts=FIRST_SEEN)
     clock.t = 100
     t.start()
     clock.t = 200
@@ -553,7 +555,7 @@ def test_segment_fields_position_samples_times_trigger_flags_generation():
     ep, hst, clock = bench()
     lc = track(hst)
     clock.t = 2
-    lc.configure(rate=1000, mode=c.REPEAT, samples=8, segments=4, trigger=(c.EDGE, 0, 0), pretrigger=2)
+    lc.configure(rate=1000, mode=c.REPEAT, samples=8, segments=4, trigger=(c.EDGE, 0, 0), pretrigger=2, trigger_opts=FIRST_SEEN)
     lc.start()
     clock.t = 20
     first, second = lc.segments()[:2]
@@ -1207,7 +1209,7 @@ def test_logic_edge_values(value, first):
     """capture §3.3: edge value 0 rising, 1 falling, 2 both - on bit 1 of the counter (rises at 2, falls at 4)."""
     ep, hst, clock = bench()
     lc = track(hst)
-    lc.configure(rate=1000, samples=8, trigger=(c.EDGE, 1, value), pretrigger=4)
+    lc.configure(rate=1000, samples=8, trigger=(c.EDGE, 1, value), pretrigger=4, trigger_opts=FIRST_SEEN)
     lc.start()
     clock.t = 30
     (seg,) = lc.segments()
@@ -1225,7 +1227,7 @@ def test_samples_count_the_pretrigger_and_an_early_trigger_shortens():
     clock.t = 40
     (seg,) = lc.segments()
     assert (seg.samples, seg.trigger_index) == (16, 4)
-    lc.configure(rate=1000, samples=16, trigger=(c.EDGE, 1, 0), pretrigger=4)    # bit 1 rises at sample 2
+    lc.configure(rate=1000, samples=16, trigger=(c.EDGE, 1, 0), pretrigger=4, trigger_opts=FIRST_SEEN)    # bit 1 rises at sample 2
     lc.start()
     clock.t = 80
     (seg,) = lc.segments()
@@ -1371,7 +1373,7 @@ def test_triggered_event_serial_index_time_generation(analog):
     ep, hst, clock = bench()
     t = track(hst, analog)
     t.subscribe()
-    t.configure(rate=1000, samples=16, trigger=(c.CROSS_UP, 1, 2100) if analog else (c.EDGE, 1, 0), pretrigger=4)
+    t.configure(rate=1000, samples=16, trigger=(c.CROSS_UP, 1, 2100) if analog else (c.EDGE, 1, 0), pretrigger=4, trigger_opts=FIRST_SEEN)
     clock.t = 5
     t.start()
     clock.t = 40
@@ -1468,7 +1470,7 @@ def test_describe_declarations(name):
     lo, hi = struct.unpack("<II", dict(d)[DESCRIBE["rate_range"]])
     assert 1 <= lo <= hi
     assert len(dict(d)[DESCRIBE["channels"]]) == 1
-    types, max_pre = struct.unpack("<II", dict(d)[DESCRIBE["trigger"]])
+    types, max_pre = struct.unpack_from("<II", dict(d)[DESCRIBE["trigger"]])
     assert types & 1 and max_pre >= 0
     fronts = [struct.unpack("<Bii", v) for t, v in d
               if name.endswith("analog") and t == ANALOG.tlv["describe"]["frontend"]]
@@ -1879,7 +1881,7 @@ def test_review_max_pretrigger_is_the_declared_bound(name):
     fn = ep.fns[name]
     analog = name.endswith("analog")
     t = track(hst, analog)
-    _, most = struct.unpack("<II", dict(describe(hst, fn))[DESCRIBE["trigger"]])
+    _, most = struct.unpack_from("<II", dict(describe(hst, fn))[DESCRIBE["trigger"]])
     trig = (T["trigger"], struct.pack("<BBI", c.CROSS_UP if analog else c.EDGE, 0, 1))
     body = lambda pre: tlvs(mode(3), rate_tlv(), trig, (T["pretrigger"], u32(pre)))   # noqa: E731
     assert ask(hst, fn, t.QUERY_OP, body(most), locked=False).succeeded
@@ -2259,7 +2261,7 @@ def test_review3_contract_in_mode_2_and_mode_3_and_type_0_sent_as_0(analog):
         assert unsupported_tag(r) == T["pretrigger"] and snap(ep, t.fn) == before
     assert hst.request(t.fn, t.QUERY_OP, tlvs(mode(2), rate_tlv(), samples(8), seg2, trig, (T["pretrigger"], u32(7))),
                        locked=False).succeeded
-    _, most = struct.unpack("<II", dict(describe(hst, t.fn))[DESCRIBE["trigger"]])
+    _, most = struct.unpack_from("<II", dict(describe(hst, t.fn))[DESCRIBE["trigger"]])
     assert most > 8 and hst.request(t.fn, t.QUERY_OP, tlvs(mode(3), rate_tlv(), trig, (T["pretrigger"], u32(most))),
                                     locked=False).succeeded
     t.configure(rate=1000, samples=8, trigger=(c.IMMEDIATE, 9, 7))
