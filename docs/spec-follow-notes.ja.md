@@ -634,3 +634,17 @@ oep-client-python の `wip/rvswd-rest` ブランチ。
 （core §12 規則 8）。仕様は上の案のとおり（key は SWCLK の channel）。Python ebcf306 以降、Arduino 77a8002。
 実機（77a8002）: idle_clock 無しの attach で Pico 2 + L103 は low（halt を 3 秒保つ）、P4 + X035 は high。`rvswd-rest=high` で L103 は high になり halt が
 0.1 s で外れる（OFF が効く）。
+
+## 2026-10-16 capture の第 1 波（形式 1 / 4、trigger_opts、トリガの記録）
+
+- 形式 1 の区画は可変長で、区画の情報（37 byte）にバイト数が無い。host は、次の区画の position（最後なら write_pos）まで読み、ブロックの見出しで
+  切る。見出しを 1 つずつ読むと 1 ブロック 2 往復になるので避ける。wireskein と相談し、区画の情報は変えない（自己区切りで足りる）。
+- trigger_opts の既定（arm 1、when 0）は、前の版の「start から最初に見えた条件で立つ」と違う。前の版の動きは arm 0、when 1 で表す。テストの
+  多くがこの前提で書かれていて、既定が変わると一斉に落ちた（634 件）。
+- 実装して見つけ、仕様に戻したもの（oep-spec 8e7ca20）:
+  - rearm 1 のリピートで区画の間に待つときの state。2 にすると release を受けられないので、3 のまま status の bit2 で示す。
+  - flags bit0 は「置き場が無いときだけ」だったが、rearm の待ちでも区画は続かない。理由によらない意味にし、落としかどうかは bit3 で分ける。
+  - 全部 events のときの layout の w = 0。
+  - 形式 4 の「区画の position」は、ストリームの position の意味。
+  - 共有ベクタの logic triggered が旧来の 20 byte の形のまま残っていた。
+- arm 1 の飛ばしで、まだ時刻の来ていないサンプル（pretrigger − 1）を先に読むバグを、仮想ベンチの「時刻の前に波形を読まない」テストが捕まえた。
