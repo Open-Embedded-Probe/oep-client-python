@@ -178,16 +178,22 @@ def test_the_command(capsys, monkeypatch):
 
 
 def test_lines_by_label():
-    """host guide §5.3: `<profile>.<name>` first, then for a single target the bare name, then the firmware's label;
-    two channels at one step: none."""
+    """host guide §5.3: `<port>.<name>` first, then while at most one port is named the bare name, then the firmware's
+    label; two channels at one step: none."""
     labels = [config.Label(channel=3, text="A.NRST"), config.Label(channel=4, text="nrst"),
               config.Label(channel=5, text="power_hi"), config.Label(channel=6, text="b.power_hi")]
     assert config.find_line(labels, "nrst", "a", single=False) == 3
-    assert config.find_line(labels, "nrst") == 4
+    assert config.find_line(labels, "nrst") is None                   # ports a and b named: "N" names nothing
+    assert config.find_line(labels, "nrst", single=True) == 4         # the host says there is one target
     assert config.find_line(labels, "nrst", "b", single=False) is None
+    # by default from the labels (host guide §5.3): two ports named - "N" names nothing for either
+    two = [config.Label(channel=7, text="a.swdio"), config.Label(channel=8, text="b.swdio"),
+           config.Label(channel=9, text="nrst")]
+    assert config.ports_named([(l.channel, l.text) for l in two]) == ["a", "b"]
+    assert config.find_line(two, "nrst", "a") is None and config.find_line(two[:1] + two[2:], "nrst", "a") == 9
     assert config.find_line(labels, "power_hi", "b", single=False) == 6
-    assert config.find_line(labels, "power_lo", firmware=[(9, "POWER_LO")]) == 9
-    assert config.find_line(labels + [config.Label(channel=7, text="NRST")], "nrst") is None   # ambiguous
+    assert config.find_line(labels, "power_lo", firmware=[(9, "POWER_LO")], single=True) == 9
+    assert config.find_line(labels + [config.Label(channel=7, text="NRST")], "nrst", single=True) is None   # ambiguous
 
 
 def test_reset_channels_and_a_named_reset_line():

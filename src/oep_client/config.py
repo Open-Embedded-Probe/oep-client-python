@@ -582,12 +582,25 @@ def fold_name(text: str) -> str:
     return text.translate(_ASCII_LOWER)
 
 
-def line_from_labels(labels, name: str, profile: str | None = None, firmware=(), single: bool = True) -> int | None:
+def ports_named(labels) -> list[str]:
+    """The ports the settings' labels name (host guide §5.3): the distinct S of the "S.N" labels, folded, in order."""
+    out = []
+    for _, text in labels:
+        port, dot, rest = text.partition(".")
+        if dot and port and rest and fold_name(port) not in out:
+            out.append(fold_name(port))
+    return out
+
+
+def line_from_labels(labels, name: str, profile: str | None = None, firmware=(), single: bool | None = None) -> int | None:
     """Host guide §5.3 on bare data: labels as (channel, text) - the settings' label items - firmware the firmware's
     fixed labels (fn 0 describe) as (channel, text). In order, stopping at the first step that finds exactly one
-    channel: (a) with a profile name, a settings label equal to `<profile>.<name>`; (b) only for a single target
-    (`single`), a settings label equal to `name`; (c) the same, a firmware label equal to `name`. A step that finds two
-    or more ends the search with none (ambiguous). Texts compare ignoring ASCII case."""
+    channel: (a) with a port name (`profile`), a settings label equal to `<port>.<name>`; (b) only while at most one
+    port is named (`single`; by default from the labels: the distinct S of "S.N"), a settings label equal to `name`;
+    (c) the same, a firmware label equal to `name`. A step that finds two or more ends the search with none
+    (ambiguous). Texts compare ignoring ASCII case."""
+    if single is None:
+        single = len(ports_named(labels)) <= 1
     steps = ([(labels, f"{profile}.{name}")] if profile is not None else []) + (
         [(labels, name), (firmware, name)] if single else [])
     for source, text in steps:
@@ -599,10 +612,11 @@ def line_from_labels(labels, name: str, profile: str | None = None, firmware=(),
     return None
 
 
-def find_line(config, name: str, profile: str | None = None, firmware=None, single: bool = True) -> int | None:
+def find_line(config, name: str, profile: str | None = None, firmware=None, single: bool | None = None) -> int | None:
     """The channel of the line `name` (nrst, power_hi, power_lo: LINE_NAMES) by the label convention (host guide §5.3),
     or None. config: a Host (its settings are read with `ProbeConfig.items()`, no lock) or the decoded items. profile:
-    the host's connection profile name when the probe serves several targets (`single` False); firmware: the fixed
+    the port's name (the S of its "S.N" labels); `single`: whether at most one port is named (by default from the
+    labels); firmware: the fixed
     labels as (channel, text) - read from the probe's describe when `config` is a Host, none when it is a list of items
     and this is not given."""
     if isinstance(config, (list, tuple)):
