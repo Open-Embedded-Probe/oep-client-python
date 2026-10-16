@@ -564,3 +564,27 @@ B にした。core §12 の規則 7 を「他者は名前で識別する所か�
   （持ち主は新しい revision、ほかの者は自分のインターフェース、拡張の形は新しい名前）。拡張例に §7 として、この連鎖を載せた。
 - **実装（Python の仮想 core）**: 仮想 core は、拡張の op 表を 1 つしか持てなかった。インターフェースが 2 つあると、同じ op 番号でも形とロックが違う。
   fn ごとの op 表（`fixed_for`、`free_for`）を受けるようにした。仕様の問題ではない。
+
+## 実機試験に向けた Arduino の追従（2026-10-16〜）
+
+目標: Arduino ベンチを仕様に追従させ、実機試験を始められる状態にする。全部 main にコミットした。
+
+**仕様に戻したもの**
+
+| # | 見つけたこと | 仕様の変更 |
+|---|---|---|
+| S1 | riscv-dm の「reset して halt を待つ」の vector が、DMSTATUS を 0x200（version 0 = DM が無い）としていた。線を見張る probe（Arduino）は線切れと判断する | vector を生きた線で読める値（0x00000382）にした（oep-spec 9b71069）。検査は待ちのマスクで値を見る |
+| S2 | 名前つきの拡張 TLV の tag 0x7F が registry に無く、実装が直書きしていた | registry の constants に `tag_named_extension` を足した（675288a）。Python も Arduino も名前から引く |
+| S3 | 要求側の名前つきの拡張（知らない名前の無視、critical は 0xFF で unsupported、name_len が値に収まらなければ malformed）の共有ベクタが無かった。Arduino も Python も name_len の検査が抜けていた | core_extensions.json に request_cases を足した（675288a）。両方の実装に検査を足した |
+
+**実装だけの直し（仕様は変えない）**
+
+| # | 見つけたこと | 判断 |
+|---|---|---|
+| A10 | Arduino の endpoint が、list の instance を add の順から数えていた。core §7.2 は「fn の順や list の位置から計算しない」と決めている | instance() をそのまま使い、同じ (name, revision, instance) の 2 つ目は add で断るようにした。仕様は明確で、変更なし |
+| A11 | op 1 だけを持つインターフェース（試験用）は、op 1 が subscribe（共通の範囲）なので、通知を出さないと ops の bitmap が空になった（core §7.4 の不正な形） | add で、ops に載る op が無いインターフェースを断るようにした。固有の op は 0x10 から（core §12 の最小の拡張）なので、仕様は変えない |
+| A12 | capture-group の連動トリガ、SWD の旧 attach（max_speed の TLV、既存接続への join、count 0 の scan）、read の max / len の u32 が、Arduino に残っていた | 仕様（即時の一括開始、attach の固定部、u16）に合わせた |
+| A13 | ホスト試験の多くが古い番号や古い形（confirm の固定部 17 byte、ops の tag 0x09、slot、drive）を直書きしていて、実装の誤りではないのに失敗していた | 期待値を今の仕様の形と registry の名前に直した |
+| A14 | classic ESP32 で、設定の書き直しで増えた静的バッファが DRAM を 392 byte 超えた | set / unset / 起動時の適用で作業領域を共用し、保存用はスタックに戻した |
+
+**ビルド**: RP2350、ESP32-P4、classic ESP32 の参照 firmware が通る（arduino-cli のプロファイル）。実機では未確認。
