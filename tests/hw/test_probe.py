@@ -6,6 +6,9 @@
   required     what every probe must give and a lock-free look can check (core §1.2, §7.1, §7.5): dump's MISSING
   config       probe.config set / get / save / state / unset with a disable item, a reboot in between (oep.probe.restart
                when the probe lists it - on a USB probe only with OEP_HW_RESTART=1 -, else a bridge board's EN line)
+  network      probe.config's network (when the probe lists a netif): its state; with OEP_WIFI_SSID_<n> /
+               OEP_WIFI_PASS_<n> the wifi entries set and saved (bench settings, left on the probe) and the link waited
+               for (OEP_HW_WIFI_WAIT_S, 30 s) - the ssid, passphrase and address never recorded
   wire         scan, attach (with the reset TLV when OEP_HW_RESET names the line), halt -> read_block -> resume 50x
                with s0 / s1 / a0 / a1 read before and after each block op       (only with OEP_HW_TARGET)
   gpio         fixture gpio set / read on two free channels (outputs read back, pull-up / pull-down levels)
@@ -192,7 +195,7 @@ def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: di
     h_items, items1 = cfg.get()
     assert h_items == h1, "set's generation is not get's (probe.config §2)"
     assert h1 != h0, "the generation did not move with the settings (probe.config §2)"
-    decoded = [config.decode(t, v) for t, v in items1]
+    decoded = cfg.items()
     assert any(isinstance(it, config.Label) and it.channel == label_ch and it.text == "HW-A" for it in decoded)
     assert any(isinstance(it, config.Disable) and it.channel == disable_ch for it in decoded)
     rec.update(generation_set=h1, items_after_set=len(items1))
@@ -255,7 +258,7 @@ def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: di
         # applied whole at boot: saved_generation 1, the generation 1 (probe.config §2, §3)
         assert st2.storage == "applied" and st2.saved_generation == h2 == 1, f"saved settings not applied at boot: {st2}"
         assert config.same_items(items2, items1), "the settings after the reboot are not the ones saved"
-        decoded2 = [config.decode(t, v) for t, v in items2]
+        decoded2 = cfg.items()
         assert any(isinstance(it, config.Disable) and it.channel == disable_ch for it in decoded2)
         assert any(isinstance(it, config.Label) and it.channel == label_ch for it in decoded2)
         hst = run.take()
@@ -269,7 +272,7 @@ def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: di
     # unset both, save: back to what was there
     h3 = cfg.unset([("label", label_ch), ("disable", disable_ch)])
     _, items3 = cfg.get()
-    decoded3 = [config.decode(t, v) for t, v in items3]
+    decoded3 = cfg.items()
     assert not any(isinstance(it, (config.Label, config.Disable)) and it.channel in (label_ch, disable_ch) for it in decoded3)
     # compared item by item (host guide §15): the generation counts changes, not contents
     assert config.same_items(items3, items0), "after unset the settings are not the ones from before the test"
@@ -508,8 +511,8 @@ def _capture_declared(decl: dict) -> dict:
         out.setdefault("modes", {})[mode] = {"max_samples": max_samples, "max_segments": max_segments}
     rr = decl["own"].get(_LOGIC_D["rate_range"])
     if rr:
-        lo, hi, exact = struct.unpack_from("<IIB", rr[0])
-        out["rate_range"] = {"min_hz": lo, "max_hz": hi, "exact": bool(exact)}
+        lo, hi = struct.unpack_from("<II", rr[0])                    # min_hz max_hz (capture §3.5)
+        out["rate_range"] = {"min_hz": lo, "max_hz": hi, "exact": False}
     elif decl.get("min_clock_hz") and decl.get("max_clock_hz"):      # the common tags instead (the virtual bench's esp32 profile)
         out["rate_range"] = {"min_hz": decl["min_clock_hz"], "max_hz": decl["max_clock_hz"], "exact": False}
     ch = decl["own"].get(_LOGIC_D["channels"])
@@ -975,7 +978,7 @@ def test_console(run: record.Run):
                 rec.setdefault("wrong_state_on", []).append(fn)
         else:
             pytest.fail(f"no oep.target.console serves connection {conn} of {wires[0]}")
-        rec.update(stream=stream, existing=con.existing)
+        rec.update(stream=stream)
         backlog = con.read(con.FROM_OLDEST, 0, 1000)
         rec["backlog_bytes"] = len(backlog.data)
         io = console_mod.ConsoleIO(con)
@@ -993,6 +996,49 @@ def test_console(run: record.Run):
             wire.detach(conn)
         except h.OepError as e:
             rec["detach_error"] = str(e)
+
+
+# ---- network (probe.config §1.3-§1.5, §2) --------------------------------------------------------------------------
+
+def test_network(run: record.Run):
+    """The network op (lock-free) and, with OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n> (n the entry), the wifi items: set
+    and saved - the bench's own settings, left on the probe - then the link waited for. An entry whose ssid is the
+    probe's already is sent with pass_len 0xFF unless its passphrase is given (it cannot be compared: write-only)."""
+    hst = run.take()
+    cfg = config.ProbeConfig(hst)
+    declared = cfg.describe()
+    if not declared.netifs:
+        pytest.skip("the probe lists no netif (probe.config §1.3)")
+    net = cfg.network()
+    rec = run.record("network", netifs=declared.netifs, tcp_port=net.tcp_port,
+                     before=[{"netif": n.netif, "state": n.state, "reason": n.reason} for n in net.netifs])
+    wanted = {int(k.rsplit("_", 1)[1]): v for k, v in os.environ.items() if k.startswith("OEP_WIFI_SSID_")}
+    if not wanted or "wifi" not in declared.netifs:
+        return
+    have = {i.entry: i for i in cfg.items() if isinstance(i, config.Wifi)}
+    items, unchanged = [], []
+    for n, ssid in sorted(wanted.items()):
+        passphrase = os.environ.get(f"OEP_WIFI_PASS_{n}")
+        if passphrase is None and have.get(n) and have[n].ssid == ssid:
+            unchanged.append(n)   # the probe's already, its passphrase kept (write-only: it cannot be compared)
+        elif passphrase is not None:
+            items.append(config.Wifi(entry=n, ssid=ssid, passphrase=passphrase))
+        else:
+            pytest.fail(f"OEP_WIFI_SSID_{n} is not the probe's entry {n}: give OEP_WIFI_PASS_{n} ('' for an open one)")
+    if items:
+        cfg.set(items)
+        cfg.save()
+    rec.update(entries=sorted(wanted), set=len(items), unchanged=unchanged)
+    deadline = time.monotonic() + _env_int("OEP_HW_WIFI_WAIT_S", 30)
+    began = time.monotonic()
+    while True:
+        (row,) = [n for n in cfg.network().netifs if n.netif == "wifi"]
+        if row.state == "up" or time.monotonic() > deadline:
+            break
+        time.sleep(0.5)
+    rec.update(state=row.state, reason=row.reason, entry=row.entry, rssi=row.rssi, address_given=row.address is not None,
+               seconds=round(time.monotonic() - began, 1), tcp_port=cfg.network().tcp_port)
+    assert row.state == "up" and row.address, f"the wifi netif is {row.state} ({row.reason})"
 
 
 # ---- 10. port_speed (UART bridge) --------------------------------------------------------------------------------------------
