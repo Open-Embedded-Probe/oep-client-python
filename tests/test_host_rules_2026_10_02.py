@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from oep_client import (capture, config, core, dump, endpoint, virtual_bench, fixture, frames, host as h, link, message as m,
+from oep_client import (capture, config, registry, core, dump, endpoint, virtual_bench, fixture, frames, host as h, link, message as m,
                         registry as reg, riscv, speed_record)
 
 from test_virtual_bench_rules_2026_10_02 import Clock
@@ -229,7 +229,7 @@ def test_pc1_find_line_takes_the_firmware_labels_as_step_c():
     assert config.find_line([], "nrst", "b", [(23, "NRST")], single=False) is None   # several targets: (b), (c) not
     ep, hst = in_process(virtual_bench.esp32_v003)
     assert config.find_line(hst, "nrst") == 23                         # a Host: describe's labels are read
-    assert config.LINE_NAMES == ("nrst", "power_hi", "power_lo")       # from the registry (PC-2)
+    assert config.LINE_NAMES == tuple(registry.PROBE_CONFIG.line_names)   # from the registry (PC-2)
 
 
 def test_pc5_a_label_the_probe_would_refuse_or_a_host_would_not_show_is_not_sent():

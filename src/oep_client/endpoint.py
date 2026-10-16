@@ -542,7 +542,7 @@ class Connection:
 
 
 ITEM_SIZES = {ITEM["idle"]: 1, ITEM["disable"]: 0, ITEM["passthrough"]: 9,     # the data of a fixed length (probe.config §1)
-              ITEM["console_passthrough"]: 13, ITEM["ipv4"]: 14}
+              ITEM["console_passthrough"]: 14, ITEM["ipv4"]: 14}
 PASSTHROUGHS = (ITEM["passthrough"], ITEM["console_passthrough"])
 
 
@@ -2949,7 +2949,7 @@ class Endpoint:
         for (tag, port), v in self.config.items():
             if tag != ITEM["console_passthrough"]:
                 continue
-            wfn, swdio, swclk, _, _, _ = struct.unpack("<HHHIHB", v)
+            wfn, swdio, swclk, _, _, _, _ = struct.unpack("<HHHIHBB", v)
             pair = (swdio, swclk)
             if port in self.session_ports or busy & {p for p in pair if p != 0xFFFF}:
                 self.resident.pop(port, None)                      # closed, the target untouched (debug §2)
@@ -3248,8 +3248,10 @@ class Endpoint:
         if name == ITEM["ipv4"]:
             return key == 0                                        # netifs from 1 (core §7.7)
         if name == ITEM["console_passthrough"]:
-            wfn, swdio, swclk, speed, cfn, mech = struct.unpack("<HHHIHB", d)
-            return (self.transports.get(key) not in virtual_bench.SERIAL_KINDS
+            wfn, swdio, swclk, speed, cfn, mech, idle = struct.unpack("<HHHIHBB", d)
+            idle_ok = idle in reg.WIRE_RVSWD.enum["idle_clock"].values() and (
+                idle == reg.WIRE_RVSWD.enum["idle_clock"]["high"] or self.names.get(wfn) == "oep.wire.rvswd")
+            return (not idle_ok or self.transports.get(key) not in virtual_bench.SERIAL_KINDS
                     or self.names.get(wfn) not in ("oep.wire.rvswd", "oep.wire.swio") or not self._allows(wfn, (swdio, swclk))
                     or speed < self._min_clock(wfn) or self.names.get(cfn) != "oep.target.console"
                     or mech not in self.mechanisms)

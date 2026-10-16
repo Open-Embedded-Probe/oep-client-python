@@ -153,6 +153,7 @@ class ConsolePassthrough:
     max_speed: int = 1_000_000
     console_fn: int
     mechanism: int
+    idle_clock: int = 0          # debug §3's idle_clock: 0 high, 1 low (rvswd only) - how the passthrough's attach rests the line
     NAME = "console-passthrough"
 
     def key(self) -> int:
@@ -163,8 +164,8 @@ class ConsolePassthrough:
         return struct.pack("<H", self.key()) + self.data()
 
     def data(self) -> bytes:
-        return struct.pack("<HHHIHB", self.wire_fn, self.swdio, self.swclk, self.max_speed, self.console_fn,
-                           self.mechanism)
+        return struct.pack("<HHHIHBB", self.wire_fn, self.swdio, self.swclk, self.max_speed, self.console_fn,
+                           self.mechanism, self.idle_clock)
 
 
 @dataclass(kw_only=True)
@@ -300,10 +301,10 @@ def decode(name: str, key: int, d: bytes, setting: Setting | None = None, netifs
         if name == "passthrough" and len(d) == 9:
             fn, rx, baud, fmt = struct.unpack("<HHIB", d)
             return Passthrough(port=key, fn=fn, rx=rx, baud=baud, format=fmt)
-        if name == "console-passthrough" and len(d) == 13:
-            wfn, swdio, swclk, speed, cfn, mech = struct.unpack("<HHHIHB", d)
+        if name == "console-passthrough" and len(d) == 14:
+            wfn, swdio, swclk, speed, cfn, mech, idle = struct.unpack("<HHHIHBB", d)
             return ConsolePassthrough(port=key, wire_fn=wfn, swdio=swdio, swclk=swclk, max_speed=speed, console_fn=cfn,
-                                      mechanism=mech)
+                                      mechanism=mech, idle_clock=idle)
         if name == "wifi" and len(d) >= 2 and len(d) == 2 + d[0]:
             return Wifi(entry=key, ssid=d[1:1 + d[0]].decode("utf-8", "replace"),
                         passphrase=None if d[1 + d[0]] == 0xFF else "")
