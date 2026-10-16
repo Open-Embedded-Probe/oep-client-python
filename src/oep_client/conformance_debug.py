@@ -58,7 +58,7 @@ class DebugChecks(DmseqChecks):
     def resources(self):
         self.fresh()
         with self.c.holding(3000) as sid:
-            parent,_=self.attach(sid);stream,_=self.console(sid,parent,2)
+            parent,_=self.attach(sid);stream,_=self.console(sid,parent,'dmseq')
             self.refused(self.dmi_request(sid,65535,[]),'no_resource')
             self.refused(self.dmi_request(sid,stream,[]),'unavailable',cause=6)
             arm,_=self.attach(sid,fn=3);self.refused(self.dmi_request(sid,arm,[]),'unavailable',cause=6)
@@ -68,7 +68,7 @@ class DebugChecks(DmseqChecks):
     def arbitration(self):
         self.fresh()
         with self.c.holding(3000) as sid:
-            parent,_=self.attach(sid);rid,_=self.console(sid,parent,2);self.a.frame(rid,*target_frame(syn=True,data=b'x'))
+            parent,_=self.attach(sid);rid,_=self.console(sid,parent,'dmseq');self.a.frame(rid,*target_frame(syn=True,data=b'x'))
             before=self.a.state();steps=[self.read(4),self.write_reg(5,0x12345678),self.read(5)]
             self.dmi(sid,parent,steps,3,0,[target_frame(syn=True,data=b'x')[0],0x12345678]);after=self.a.state()
             polls=after['arbitration'][len(before['arbitration']):]
@@ -80,7 +80,7 @@ class DebugChecks(DmseqChecks):
     def halt_resume(self):
         self.fresh()
         with self.c.holding(3000) as sid:
-            parent,_=self.attach(sid);rid,_=self.console(sid,parent,2);self.a.frame(rid,*target_frame(syn=True,data=b'x'))
+            parent,_=self.attach(sid);rid,_=self.console(sid,parent,'dmseq');self.a.frame(rid,*target_frame(syn=True,data=b'x'))
             for name in ('halt','halt','resume'):
                 value=self.c.success(self.request(5,name,sid,struct.pack('<I',parent)));require(value[:1]==b'\0','halt/resume status');tlvs(value[1:])
                 require(not self.a.state()['targets'][parent]['haltreq'],'halt/resume left haltreq asserted')

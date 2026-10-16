@@ -2,13 +2,22 @@
 import struct
 from .virtual_resource_model import ResourceModel, Resources
 from .virtual_core import Core, Reject, tlv
+from . import registry as _reg
+from .catalog import pack_ops
+from .virtual_names import R, DC, extension
+
+MARK = _reg.COMMON.enum["mark_kind"]                     # lost, clear, host (common §1.3)
+LOST = _reg.COMMON.enum["mark_detail_lost"]
+FROM = _reg.COMMON.enum["read_from"]                     # position, oldest, now, last_mark (common §1.2)
 
 
 class Stream(Resources):
     functions=(1,)
     name=b'io.github.open-embedded-probe.stream'
-    fixed={16:11,17:4,18:0,19:1,20:2}
-    free={16,17}
+    # this test interface's own ops (its name's definition, core §12 rule 7): the common §1 stream ops
+    OPS=dict(read=0x10,marks=0x11,clear=0x12,mark=0x13,write=0x14)
+    fixed={OPS['read']:11,OPS['marks']:4,OPS['clear']:0,OPS['mark']:1,OPS['write']:2}
+    free={OPS['read'],OPS['marks']}
     capacity=64
     mark_capacity=5
 
@@ -18,7 +27,7 @@ class Stream(Resources):
 
     def release(self):pass  # persistent fn: end never resets byte position or mark serial
 
-    def describe(self, fn):return (tlv(7,b'\x10\x1f'),)
+    def describe(self, fn):return (tlv(DC['ops'],pack_ops(set(self.OPS.values()))),)
 
     def mark(self, kind, detail):
         self.marks.append((self.serial,self.position,kind,self.ep.now_ns(),detail))
@@ -29,26 +38,26 @@ class Stream(Resources):
         if self.position+len(data)>0xffffffffffffffff:raise ValueError('position never wraps')
         self.data.extend(data);self.position+=len(data)
         if len(self.data)>self.capacity:
-            del self.data[:-self.capacity];self.mark(1,1)   # lost, overflow (common §1.3)
+            del self.data[:-self.capacity];self.mark(MARK['lost'],LOST['overflow'])   # common §1.3
 
     def dispatch(self, fn, op, payload):
-        suffix=tlv(0x7f,b'x')
-        if op==16:
+        suffix=extension(b'io.x',b'')       # a short named extension the reader skips (core §2.2), keeping the fixture's page geometry
+        if op==self.OPS['read']:
             mode,arg,maximum=struct.unpack('<BQH',payload)
             oldest=self.position-len(self.data)
-            if mode==0:start=arg
-            elif mode==1:start=oldest
-            elif mode==2:start=self.position
-            elif mode==3:
+            if mode==FROM['position']:start=arg
+            elif mode==FROM['oldest']:start=oldest
+            elif mode==FROM['now']:start=self.position
+            elif mode==FROM['last_mark']:
                 selected=[row for row in self.marks if not arg or row[2]==arg]
                 start=selected[-1][1] if selected else self.position
-            else:raise Reject(11,b'\0')
+            else:raise Reject(R['unsupported'],b'\0')
             gap=start<oldest;start=min(self.position,max(oldest,start))
             size=min(maximum,self.position-start,self.ep.probe.max_frame-16-len(suffix))
             data=bytes(self.data[start-oldest:start-oldest+size])
             flags=int(start+size<self.position)|(int(gap)<<1)
             return struct.pack('<QBH',start,flags,len(data))+data+suffix
-        if op==17:
+        if op==self.OPS['marks']:
             first=struct.unpack('<I',payload)[0]
             if first==self.serial or not self.marks:rows=[]
             else:
@@ -56,8 +65,8 @@ class Stream(Resources):
                 rows=self.marks[index:]
             count=min(len(rows),(self.ep.probe.max_frame-7-len(suffix))//22)
             return bytes((int(count<len(rows)),count))+b''.join(struct.pack('<IQBQB',*row) for row in rows[:count])+suffix
-        if op==18:self.data.clear();self.mark(2,0);return b''      # clear
-        if op==19:self.mark(3,payload[0]);return b''             # host
+        if op==self.OPS['clear']:self.data.clear();self.mark(MARK['clear'],0);return b''
+        if op==self.OPS['mark']:self.mark(MARK['host'],payload[0]);return b''
         count=struct.unpack_from('<H',payload)[0];self.tx.extend(payload[2:]);return struct.pack('<H',count)
 
 
@@ -68,10 +77,11 @@ class StreamModel(ResourceModel):
 
     def handle(self, request):
         # Counted write payload before TLVs. This logical fixture executes serially.
-        write=len(request)>=12 and struct.unpack_from('<HB',request,3)==(1,20)
-        if write:self.extension.fixed[20]=2+struct.unpack_from('<H',request,10)[0]
+        W=Stream.OPS['write']
+        write=len(request)>=12 and struct.unpack_from('<HB',request,3)==(1,W)
+        if write:self.extension.fixed[W]=2+struct.unpack_from('<H',request,10)[0]
         try:return super().handle(request)
-        finally:self.extension.fixed[20]=2
+        finally:self.extension.fixed[W]=2
 
     def restart_fixture(self, position, serial):
         if self.ep.current_core.holder is not None:raise ValueError('fixture reset while owned')

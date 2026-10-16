@@ -1,5 +1,5 @@
 {
- "spec_commit": "67876b7",
+ "spec_commit": "e49550d",
  "units": {
   "fixture:pre:1": {
    "text": "| `oep.fixture.gpio` | 1 | ピンを駆動し、読む | 1",
@@ -933,7 +933,7 @@
    "note": "14 + max_length fits max_frame on every profile; the checker's exact boundary"
   },
   "fixture:4:17": {
-   "text": "- **cs_setup_ns**（describe の tag 0x43、u3",
+   "text": "- **cs_setup_ns**（describe の tag 0x42、u3",
    "verify": [
     "tests/test_trace_fixture.py::test_spi_describe_declares_modes_and_cs_setup[esp32_v003-4000]",
     "tests/test_trace_fixture.py::test_spi_describe_declares_modes_and_cs_setup[p4_x035-0]",

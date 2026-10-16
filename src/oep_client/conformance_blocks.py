@@ -78,7 +78,7 @@ class BlockChecks(DebugChecks):
     def mailbox(self):
         self.fresh()
         with self.c.holding(3000) as sid:
-            parent=self.parent(sid);rid,_=self.console(sid,parent,2);frame=target_frame(syn=True,data=b'wire');self.a.frame(rid,*frame)
+            parent=self.parent(sid);rid,_=self.console(sid,parent,'dmseq');frame=target_frame(syn=True,data=b'wire');self.a.frame(rid,*frame)
             before=self.a.state();self.block(sid,parent,values=[0x12345678,0xabcdef01]);after=self.a.state()
             require(after['mailboxes'][rid]['data0']==frame[0] and after['mailboxes'][rid]['data1']==frame[1] and after['protocols'][rid]==before['protocols'][rid],'block destroyed live console frame/state')
             polls=after['arbitration'][len(before['arbitration']):];require(len(polls)==2 and all(not row['events'] for row in polls),'console read block scratch mid-operation')
@@ -95,7 +95,7 @@ class BlockChecks(DebugChecks):
         the connection and its streams close."""
         self.fresh()
         with self.c.holding(3000) as sid:
-            parent=self.parent(sid);rid,_=self.console(sid,parent,2);self.a.restore_failure(True)
+            parent=self.parent(sid);rid,_=self.console(sid,parent,'dmseq');self.a.restore_failure(True)
             try:frame=self.c.exchange(self.block_request(sid,parent,write))
             finally:self.a.restore_failure(False)
             require(len(frame)>=8 and frame[3:5]==b'\x01\x02','cleanup failure must answer completed partial')
@@ -105,7 +105,7 @@ class BlockChecks(DebugChecks):
     def bad_resource(self):
         self.fresh()
         with self.c.holding(3000) as sid:
-            parent=self.parent(sid);rid,_=self.console(sid,parent,2)
+            parent=self.parent(sid);rid,_=self.console(sid,parent,'dmseq')
             self.refused(self.block_request(sid,65535),'no_resource');self.refused(self.block_request(sid,rid),'unavailable',cause=6)
     def run(self):
         start=len(self.c.results)

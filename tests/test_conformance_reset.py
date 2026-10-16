@@ -6,7 +6,7 @@ from test_conformance_step import setup as step_setup
 
 
 def setup():
-    _,c,_=step_setup();spec=c.reg['interface'][-1];spec['op'].append({'name':'reset','code':19});spec.setdefault('enum',{}).update(reset_mode=dict(run=0,halt_at_reset=2),reset_flags=dict(reached=1))
+    _,c,_=step_setup()
     model=ResetModel(lambda:0,boot_id=17)
     return model,Checks(model.handle,c.reg,'virtual-resource-1'),SampleResetAdapter(model)
 
@@ -18,23 +18,30 @@ def test_optional_reset_contracts_pass():
 
 
 import pytest
+from oep_client.conformance import ops
+from oep_client.catalog import pack_ops
+from oep_client.virtual_core import tlv
+from oep_client.virtual_names import DC
+from oep_client.registry import TARGET_RISCV_DM
+
+RV = TARGET_RISCV_DM.op
 import struct
 from oep_client.virtual_core import Completed, Reject
 
 
 @pytest.mark.parametrize('fault,case',[
-    ('pc_mode0','OK-0'),('verified_mode0','OK-0'),('reserved_flags','OK-2'),
-    ('false_success','STATE-TIMEOUT-0'),('wrong_timeout','STATE-TIMEOUT-2'),
-    ('missing_ack','OK-0'),('release_haltreq','OK-2'),('dm_no_retry','DM-RECOVER-0'),
-    ('dm_before_release','DM-RECOVER-2'),('dm_over_budget','DM-LINE-0'),
-    ('connection_lost','DM-RECOVER-2'),('reset_pin','OK-0'),
-    ('ndmreset_left','OK-0'),('hartsel_left','OK-2'),('haltreq_left','OK-2'),
-    ('mark_detail','CONSOLE-0'),('missing_mark','CONSOLE-2'),
-    ('sync_retained','CONSOLE-0'),('pending_retained','CONSOLE-2'),
-    ('buffer_lost','CONSOLE-2'),('other_connection','CONSOLE-0'),
-    ('mailbox_interleave','CONSOLE-0'),('reject_effect','MODE'),
-    ('cleanup_kept','CLEANUP-LINE-0'),('cleanup_success','CLEANUP-LINE-2'),
-    ('mark_on_failure','CONSOLE-DM-LINE-0'),
+    ('pc_mode0','OK-RUN'),('verified_mode0','OK-RUN'),('reserved_flags','OK-HALT-AT-RESET'),
+    ('false_success','STATE-TIMEOUT-RUN'),('wrong_timeout','STATE-TIMEOUT-HALT-AT-RESET'),
+    ('missing_ack','OK-RUN'),('release_haltreq','OK-HALT-AT-RESET'),('dm_no_retry','DM-RECOVER-RUN'),
+    ('dm_before_release','DM-RECOVER-HALT-AT-RESET'),('dm_over_budget','DM-LINE-RUN'),
+    ('connection_lost','DM-RECOVER-HALT-AT-RESET'),('reset_pin','OK-RUN'),
+    ('ndmreset_left','OK-RUN'),('hartsel_left','OK-HALT-AT-RESET'),('haltreq_left','OK-HALT-AT-RESET'),
+    ('mark_detail','CONSOLE-RUN'),('missing_mark','CONSOLE-HALT-AT-RESET'),
+    ('sync_retained','CONSOLE-RUN'),('pending_retained','CONSOLE-HALT-AT-RESET'),
+    ('buffer_lost','CONSOLE-HALT-AT-RESET'),('other_connection','CONSOLE-RUN'),
+    ('mailbox_interleave','CONSOLE-RUN'),('reject_effect','MODE'),
+    ('cleanup_kept','CLEANUP-LINE-RUN'),('cleanup_success','CLEANUP-LINE-HALT-AT-RESET'),
+    ('mark_on_failure','CONSOLE-DM-LINE-RUN'),
 ])
 def test_reset_checker_detects_independent_faults(fault,case):
     model,c,a=setup();install=model.install
@@ -52,9 +59,9 @@ def test_reset_checker_detects_independent_faults(fault,case):
         def broken_dispatch(fn,op,payload,tags):
             try:value=dispatch(fn,op,payload,tags)
             except Reject:
-                if fn==5 and op==19 and fault=='reject_effect':e.access.append(('unexpected-reset',))
+                if fn==5 and op==RV['reset'] and fault=='reject_effect':e.access.append(('unexpected-reset',))
                 raise
-            if fn!=5 or op!=19:return value
+            if fn!=5 or op!=RV['reset']:return value
             parent,mode=struct.unpack('<IB',payload);data=bytes(value);outcome=value.outcome
             if fault=='cleanup_success' and e.reset_result=='cleanup-line':return Completed(b'\0'+data[1:],0)
             if parent not in e.targets:return Completed(data,outcome)
@@ -96,13 +103,13 @@ def test_reset_checker_detects_independent_faults(fault,case):
 def test_reset_preflight_blocks(invalid):
     model,c,a=setup();spec=c.reg['interface'][-1]
     if invalid=='scope':a.reset_scope='physical'
-    elif invalid=='operation':spec['op'][-1]['code']=24
-    elif invalid=='mode':spec['enum']['reset_mode']['halt_at_reset']=3
-    elif invalid=='flags':spec['enum']['reset_flags']['reached']=2
-    elif invalid=='status':c.reg['status']['line']=3
+    elif invalid=='operation':spec['op']=[o for o in spec['op'] if o['name']!='reset']   # a SPEC without what the checker uses
+    elif invalid=='mode':del spec['enum']['reset_mode']['halt_at_reset']
+    elif invalid=='flags':del spec['enum']['reset_flags']['reached']
+    elif invalid=='status':del c.reg['status']['line']
     elif invalid=='budget':model.ep.max_op_ms=2
     else:
-        describe=model.extension.describe;model.extension.describe=lambda fn:tuple(row[:4]+bytes((row[4]&~8,)) if fn==5 and row[0]==7 else row for row in describe(fn))
+        describe=model.extension.describe;model.extension.describe=lambda fn:tuple(tlv(DC['ops'],pack_ops(set(ops(row[1]))-{RV['reset']})) if fn==5 and row[0]==DC['ops'] else row for row in describe(fn))
     r=ResetChecks(c,a).run();assert r['checks'][0]['status']=='failed'
     assert all(row['status']=='blocked' for row in r['checks'][1:])
     if invalid!='budget':assert not a.trace

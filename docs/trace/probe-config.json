@@ -1,5 +1,5 @@
 {
- "spec_commit": "67876b7",
+ "spec_commit": "e49550d",
  "units": {
   "probe-config:pre:1": {
    "text": "| `oep.probe.config` | 1 | channelのdisab",
@@ -10,7 +10,52 @@
    "note": "the probe lists oep.probe.config at revision 1"
   },
   "probe-config:1:1": {
-   "text": "| 0x02 | label | channel(u16)、text（1〜32b",
+   "text": "- **名前**: 標準の項目は下の表の短い名前（`a-z 0-9 -`、`.`",
+   "verify": [
+    "tests/test_config_network.py::test_a_probes_own_item_by_its_name_and_form",
+    "tests/test_trace_core_names.py::test_standard_names_have_no_dot_and_another_partys_have_one"
+   ],
+   "mutants": [],
+   "note": "standard short names, own reverse-DNS names"
+  },
+  "probe-config:1:2": {
+   "text": "- **番号**: probeはdescribeのsetting（§4）を扱う項",
+   "verify": [
+    "tests/test_config_network.py::test_item_numbers_follow_the_probes_list_and_the_host_finds_them_by_name"
+   ],
+   "mutants": [],
+   "note": "k-th setting is item number k"
+  },
+  "probe-config:1:3": {
+   "text": "- **wireの形**: `number(u8)、len(u16)、key(u",
+   "verify": [
+    "tests/test_config.py::test_items_round_trip_with_the_generation",
+    "tests/test_spec_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config unset: number and key]",
+    "tests/test_spec_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config set: longest label fits frame64]"
+   ],
+   "mutants": [],
+   "note": "number len key data"
+  },
+  "probe-config:1:4": {
+   "text": "- **キー**: どの項目もkeyで区別し、(番号、key)ごとに1つの値を持",
+   "verify": [
+    "tests/test_config_network.py::test_a_probes_own_item_by_its_name_and_form",
+    "tests/test_config_network.py::test_dhcp_with_an_address_is_malformed_and_a_netif_past_the_list_unsupported"
+   ],
+   "mutants": [],
+   "note": "one value per (number, key); a key past keys unsupported"
+  },
+  "probe-config:1:5": {
+   "text": "- **保存**: 保存はprobeの形でよいが、項目を名前で読み戻す（firm",
+   "verify": [
+    "tests/test_config_network.py::test_item_numbers_follow_the_probes_list_and_the_host_finds_them_by_name",
+    "tests/test_config.py::test_save_state_and_the_next_boot"
+   ],
+   "mutants": [],
+   "note": "saved items read back by name"
+  },
+  "probe-config:1:6": {
+   "text": "| `label` | channel | text（1〜32byte、core",
    "verify": [
     "tests/test_trace_probe_config.py::test_a_labels_text_is_1_to_32_bytes",
     "tests/test_config.py::test_items_round_trip_with_the_generation",
@@ -21,37 +66,18 @@
    "mutants": [],
    "note": "label 0x02: channel(u16) text 1-32 bytes keyed by channel; 0 or 33 bytes malformed; the longest fits a 64-byte frame"
   },
-  "probe-config:1:2": {
-   "text": "| 0x03 | idle | channel(u16)、mode(u8: 0 ",
+  "probe-config:1:7": {
+   "text": "| `idle` | channel | mode(u8: 0 Hi-Z、1 p",
    "verify": [
     "tests/test_config_idle.py::test_idle_modes_have_names_both_spellings",
-    "tests/test_config_idle.py::test_output_idle_on_an_input_only_channel_is_unsupported",
-    "tests/test_config.py::test_a_refused_set_changes_nothing",
-    "tests/test_conformance_config.py::test_current_config_storage_contract"
-   ],
-   "mutants": [
-    "tests/test_conformance_config.py::test_semantic_faults[accept_unknown_mode-ATOMIC]"
-   ],
-   "note": "idle 0x03: channel(u16) mode(u8 0-4) keyed by channel; mode 5+ unsupported"
-  },
-  "probe-config:1:3": {
-   "text": "| 0x05 | passthrough | port(u8)、fn(u16)、",
-   "verify": [
-    "tests/test_passthrough.py::test_the_client_sets_reads_and_unsets_it"
+    "tests/test_trace_probe_config.py::test_an_idle_unset_on_a_free_channel_is_hi_z_at_once",
+    "tests/test_config_idle.py::test_output_idle_drives_and_survives_take_until_the_first_set"
    ],
    "mutants": [],
-   "note": "the passthrough item, its form and key"
+   "note": "the idle row: channel key, mode"
   },
-  "probe-config:1:4": {
-   "text": "| 0x06 | console_passthrough | port(u8)、",
-   "verify": [
-    "tests/test_passthrough.py::test_the_client_sets_and_reads_a_console_pass_through"
-   ],
-   "mutants": [],
-   "note": "the console_passthrough item, its form and key"
-  },
-  "probe-config:1:5": {
-   "text": "| 0x07 | disable | channel(u16) | channe",
+  "probe-config:1:8": {
+   "text": "| `disable` | channel | なし | §1 |",
    "verify": [
     "tests/test_config_disable.py::test_the_item_round_trips_and_moves_the_generation",
     "tests/test_conformance_config.py::test_current_config_storage_contract"
@@ -59,26 +85,64 @@
    "mutants": [],
    "note": "disable 0x07: channel(u16) keyed by channel"
   },
-  "probe-config:1:6": {
-   "text": "- channelはfn 0のchannels未満で、firmware自身が使う",
+  "probe-config:1:9": {
+   "text": "| `passthrough` | port | fn(u16)、rx(u16)",
    "verify": [
-    "tests/test_config.py::test_a_refused_set_changes_nothing",
-    "tests/test_config_disable.py::test_disabling_a_channel_the_firmware_does_not_declare_is_unsupported",
-    "tests/test_conformance_config.py::test_current_config_storage_contract"
+    "tests/test_passthrough.py::test_the_client_sets_reads_and_unsets_it"
    ],
-   "mutants": [
-    "tests/test_conformance_config.py::test_semantic_faults[accept_channel_past-ATOMIC]"
-   ],
-   "note": "a channel at or past fn 0's channels or the firmware's own: unsupported with the item tag"
+   "mutants": [],
+   "note": "the passthrough item, its form and key"
   },
-  "probe-config:1:7": {
-   "text": "- 知っている項目の長さが違う場合はmalformed。項目の値を後ろへ伸ばさず",
+  "probe-config:1:10": {
+   "text": "| `console-passthrough` | port | wire_fn",
+   "verify": [
+    "tests/test_passthrough.py::test_the_client_sets_and_reads_a_console_pass_through"
+   ],
+   "mutants": [],
+   "note": "the console_passthrough item, its form and key"
+  },
+  "probe-config:1:11": {
+   "text": "| `wifi` | entry | ssid_len(u8)、ssid、pas",
+   "verify": [
+    "tests/test_config_network.py::test_the_wifi_passphrase_is_write_only",
+    "tests/test_spec_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config set: the longest wifi item fits wifi_min_max_frame]"
+   ],
+   "mutants": [],
+   "note": "the wifi row"
+  },
+  "probe-config:1:12": {
+   "text": "| `ipv4` | netif（§1.3の番号） | mode(u8)、add",
+   "verify": [
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-p4_x035-ethernet]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-p4_x035-ethernet]",
+    "tests/test_spec_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config set: ipv4 static on wifi]"
+   ],
+   "mutants": [],
+   "note": "the ipv4 row"
+  },
+  "probe-config:1:13": {
+   "text": "- keyの範囲（settingのkeys）は、channelの項目ではfn 0",
+   "verify": [
+    "tests/test_config_network.py::test_dhcp_with_an_address_is_malformed_and_a_netif_past_the_list_unsupported",
+    "tests/test_config_disable.py::test_disabling_a_channel_the_firmware_does_not_declare_is_unsupported",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[value0-11]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[value1-11]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[value2-11]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[value3-3]",
+    "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[value4-11]",
+    "tests/test_spec_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config set: ipv4 on a netif not in the list is unsupported]"
+   ],
+   "mutants": [],
+   "note": "key ranges by item"
+  },
+  "probe-config:1:14": {
+   "text": "- 標準の項目のdataの長さが表の形と違えばmalformed。値を後ろへ伸ば",
    "verify": [
     "tests/test_config.py::test_an_item_of_another_length_or_number_0_is_malformed_and_an_unknown_one_unsupported",
-    "tests/test_request_tails.py::test_config_item_of_another_length_is_malformed_either_way[False]",
-    "tests/test_request_tails.py::test_config_item_of_another_length_is_malformed_either_way[True]",
-    "tests/test_console_queue_and_reset_settle.py::test_an_item_of_another_length_is_malformed_with_or_without_bit_7[False]",
-    "tests/test_console_queue_and_reset_settle.py::test_an_item_of_another_length_is_malformed_with_or_without_bit_7[True]",
+    "tests/test_request_tails.py::test_config_item_of_another_length_is_malformed",
+    "tests/test_console_queue_and_reset_settle.py::test_an_item_of_another_length_is_malformed",
     "tests/test_conformance_config.py::test_current_config_storage_contract"
    ],
    "mutants": [
@@ -86,7 +150,7 @@
    ],
    "note": "a known item of another length is malformed (bit 7 or not); nothing applied"
   },
-  "probe-config:1:8": {
+  "probe-config:1:15": {
    "text": "- labelは設定の名前で、firmwareのdescribeのlabelを変",
    "verify": [
     "tests/test_trace_probe_config.py::test_a_label_is_the_settings_name_and_leaves_the_firmwares_alone",
@@ -95,7 +159,7 @@
    "mutants": [],
    "note": "a label leaves describe's firmware label and every line as they were; the host's own lookup by name"
   },
-  "probe-config:1:9": {
+  "probe-config:1:16": {
    "text": "- disableはそのchannelの駆動/設定を行わない指定で、起動時と解放",
    "verify": [
     "tests/test_config_disable.py::test_a_plan_naming_a_disabled_channel_is_held_by_settings",
@@ -124,7 +188,7 @@
    ],
    "note": "disable before the boot / release park; requests naming it cause 5; disabling one in use cause 1; idle+disable cause 5; nothing changed; unset frees it at once; a key twice / wrong length stays malformed beside the idle+disable conflict"
   },
-  "probe-config:1:10": {
+  "probe-config:1:17": {
    "text": "- idleは空きのchannelの状態（core §8）。空きのchannel",
    "verify": [
     "tests/test_trace_probe_config.py::test_an_idle_set_while_the_channel_is_in_use_applies_when_it_is_free",
@@ -144,7 +208,7 @@
    "note": "a free channel's idle at once, one in use when next free; no idle (an idle unset on a free channel): Hi-Z at once; an unsupported pull/output/mode unsupported (item tag)"
   },
   "probe-config:1.1:1": {
-   "text": "- port は fn 0 の describe の経路の index で、シリ",
+   "text": "- key の port は fn 0 の describe の経路の inde",
    "verify": [
     "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[value0-11]",
     "tests/test_passthrough.py::test_a_set_it_cannot_take_is_refused[value1-11]",
@@ -183,15 +247,7 @@
    "excluded": "informative: says what the item does not define (input to the target goes by OEP write)"
   },
   "probe-config:1.1:6": {
-   "text": "- キーは port。unset ではその channel(u16) の欄に p",
-   "verify": [
-    "tests/test_passthrough.py::test_the_client_sets_reads_and_unsets_it"
-   ],
-   "mutants": [],
-   "note": "unset by the port in the channel field"
-  },
-  "probe-config:1.1:7": {
-   "text": "- 1 つの口には passthrough と console_passthro",
+   "text": "- 1 つの口には passthrough と console-passthro",
    "verify": [
     "tests/test_passthrough.py::test_one_pass_through_per_port"
    ],
@@ -244,6 +300,257 @@
    ],
    "mutants": [],
    "note": "line loss closes it; swio again, rvswd after the condition starts again"
+  },
+  "probe-config:1.3:1": {
+   "text": "- **netif**は名前の並び（core §7.7）: probeはネットワ",
+   "verify": [
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-p4_x035-ethernet]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-p4_x035-ethernet]",
+    "tests/test_config_network.py::test_the_network_op_is_offered_only_with_netifs"
+   ],
+   "mutants": [],
+   "note": "netif named list"
+  },
+  "probe-config:1.3:2": {
+   "text": "- **共通の既定**: wifiの項目が1つも無ければ、probeはWi-Fi",
+   "verify": [
+    "tests/test_config_network.py::test_common_defaults_wifi_off_without_entries_dhcp_without_ipv4"
+   ],
+   "mutants": [],
+   "note": "no wifi item: off; no ipv4 item: DHCP"
+  },
+  "probe-config:1.3:3": {
+   "text": "- **probeが決めるもの**: つなぎ直しの間隔、mDNSのinstanc",
+   "verify": [
+    "tests/test_config_network.py::test_the_network_op_is_offered_only_with_netifs"
+   ],
+   "mutants": [],
+   "note": "the probe decides; network shows tcp_port"
+  },
+  "probe-config:1.3:4": {
+   "text": "- **効く時**: set/unsetが使っている経路の設定（使っているwif",
+   "verify": [
+    "tests/test_config_network.py::test_a_change_to_the_settings_in_use_reconnects_after_the_answer",
+    "tests/test_config_network.py::test_an_unsaved_change_is_undone_by_a_restart"
+   ],
+   "mutants": [],
+   "note": "the settings in use reconnect after the answer"
+  },
+  "probe-config:1.3:5": {
+   "text": "- **（参考）TCPからの変更**: その経路で使っている設定を変えると、その",
+   "excluded": "(参考) informative: a consequence of §1.3 efficacy over TCP"
+  },
+  "probe-config:1.3:6": {
+   "text": "- 今の様子はnetwork（§2）で読む。",
+   "verify": [
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-p4_x035-ethernet]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-p4_x035-ethernet]",
+    "tests/test_spec_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config network: wifi connected]"
+   ],
+   "mutants": [],
+   "note": "the state through network"
+  },
+  "probe-config:1.4:1": {
+   "text": "| ssid_len、ssid | ネットワークの名前。1〜32byte（reg",
+   "verify": [
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x00\\x00]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[!sssssssssssssssssssssssssssssssss\\x00]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03lab\\x07passwor]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03lab\\x08pass\\x7fwor]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03lab@gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03labAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03lab\\x00x]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03lab]"
+   ],
+   "mutants": [],
+   "note": "ssid 1-32 bytes"
+  },
+  "probe-config:1.4:2": {
+   "text": "| pass_len、passphrase | 0はpassphraseなし（開",
+   "verify": [
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x00\\x00]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[!sssssssssssssssssssssssssssssssss\\x00]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03lab\\x07passwor]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03lab\\x08pass\\x7fwor]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03lab@gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03labAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03lab\\x00x]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03lab]",
+    "tests/test_config_network.py::test_pass_len_ff_without_the_entry_is_malformed",
+    "tests/test_spec_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config set: pass_len 0xFF without the entry is malformed]"
+   ],
+   "mutants": [],
+   "note": "passphrase lengths and bytes"
+  },
+  "probe-config:1.4:3": {
+   "text": "- dataの長さは2 + ssid_len + passphraseの長さ（p",
+   "verify": [
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x00\\x00]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[!sssssssssssssssssssssssssssssssss\\x00]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03lab\\x07passwor]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03lab\\x08pass\\x7fwor]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03lab@gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03labAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03lab\\x00x]",
+    "tests/test_config_network.py::test_a_wifi_item_out_of_its_ranges_is_malformed[\\x03lab]"
+   ],
+   "mutants": [],
+   "note": "data length 2 + ssid + passphrase"
+  },
+  "probe-config:1.4:4": {
+   "text": "- **max_frame**: wifiを扱うprobeは、どの経路でもcon",
+   "verify": [
+    "tests/test_spec_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config set: the longest wifi item fits wifi_min_max_frame]"
+   ],
+   "mutants": [],
+   "note": "the longest wifi set fits 114"
+  },
+  "probe-config:1.4:5": {
+   "text": "- **passphraseは書くだけ**: getはpass_lenを、pas",
+   "verify": [
+    "tests/test_config_network.py::test_the_wifi_passphrase_is_write_only",
+    "tests/test_spec_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config get: wifi passphrase is write-only]"
+   ],
+   "mutants": [],
+   "note": "get shows pass_len 0xFF/0 only"
+  },
+  "probe-config:1.4:6": {
+   "text": "- **つなぎ方**: probeはentryを小さい順に試し、最初につながった",
+   "verify": [
+    "tests/test_config_network.py::test_the_wifi_passphrase_is_write_only",
+    "tests/test_config_network.py::test_the_network_rows_reason_when_it_does_not_connect"
+   ],
+   "mutants": [],
+   "note": "entries tried in key order"
+  },
+  "probe-config:1.5:1": {
+   "text": "| mode | 0 DHCP、1 固定。ほかはmalformed |",
+   "verify": [
+    "tests/test_config_network.py::test_an_ipv4_item_of_another_mode_prefix_or_length_is_malformed[\\x02\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00]",
+    "tests/test_config_network.py::test_an_ipv4_item_of_another_mode_prefix_or_length_is_malformed[\\x01\\xc0\\xa8\\x01\\t\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00]",
+    "tests/test_config_network.py::test_an_ipv4_item_of_another_mode_prefix_or_length_is_malformed[\\x01\\xc0\\xa8\\x01\\t!\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00]",
+    "tests/test_config_network.py::test_an_ipv4_item_of_another_mode_prefix_or_length_is_malformed[\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00]",
+    "tests/test_config_network.py::test_an_ipv4_item_of_another_mode_prefix_or_length_is_malformed[\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00]"
+   ],
+   "mutants": [],
+   "note": "mode 0 or 1"
+  },
+  "probe-config:1.5:2": {
+   "text": "| address、prefix、gateway、dns | 固定のときの値。a",
+   "verify": [
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-p4_x035-ethernet]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-p4_x035-ethernet]",
+    "tests/test_config_network.py::test_a_static_address_a_host_cannot_have_is_malformed[0.0.0.0/24-None-3]",
+    "tests/test_config_network.py::test_a_static_address_a_host_cannot_have_is_malformed[127.0.0.1/8-None-3]",
+    "tests/test_config_network.py::test_a_static_address_a_host_cannot_have_is_malformed[224.0.0.1/4-None-3]",
+    "tests/test_config_network.py::test_a_static_address_a_host_cannot_have_is_malformed[192.168.1.9/24-10.0.0.1-3]"
+   ],
+   "mutants": [],
+   "note": "static address fields"
+  },
+  "probe-config:1.5:3": {
+   "text": "- dataは14byte。違えばmalformed。",
+   "verify": [
+    "tests/test_config_network.py::test_an_ipv4_item_of_another_mode_prefix_or_length_is_malformed[\\x02\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00]",
+    "tests/test_config_network.py::test_an_ipv4_item_of_another_mode_prefix_or_length_is_malformed[\\x01\\xc0\\xa8\\x01\\t\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00]",
+    "tests/test_config_network.py::test_an_ipv4_item_of_another_mode_prefix_or_length_is_malformed[\\x01\\xc0\\xa8\\x01\\t!\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00]",
+    "tests/test_config_network.py::test_an_ipv4_item_of_another_mode_prefix_or_length_is_malformed[\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00]",
+    "tests/test_config_network.py::test_an_ipv4_item_of_another_mode_prefix_or_length_is_malformed[\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00]"
+   ],
+   "mutants": [],
+   "note": "14 bytes"
+  },
+  "probe-config:1.5:4": {
+   "text": "- mode 0では、address、prefix、gateway、dnsはすべ",
+   "verify": [
+    "tests/test_config_network.py::test_dhcp_with_an_address_is_malformed_and_a_netif_past_the_list_unsupported",
+    "tests/test_spec_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config set: ipv4 dhcp with an address is malformed]"
+   ],
+   "mutants": [],
+   "note": "DHCP: all zero"
+  },
+  "probe-config:1.5:5": {
+   "text": "- mode 1では、addressは0.0.0.0、255.255.255.2",
+   "verify": [
+    "tests/test_config_network.py::test_a_static_address_a_host_cannot_have_is_malformed[0.0.0.0/24-None-3]",
+    "tests/test_config_network.py::test_a_static_address_a_host_cannot_have_is_malformed[127.0.0.1/8-None-3]",
+    "tests/test_config_network.py::test_a_static_address_a_host_cannot_have_is_malformed[224.0.0.1/4-None-3]",
+    "tests/test_config_network.py::test_a_static_address_a_host_cannot_have_is_malformed[192.168.1.9/24-10.0.0.1-3]",
+    "tests/test_config_network.py::test_an_ipv4_item_of_another_mode_prefix_or_length_is_malformed[\\x02\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00]",
+    "tests/test_config_network.py::test_an_ipv4_item_of_another_mode_prefix_or_length_is_malformed[\\x01\\xc0\\xa8\\x01\\t\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00]",
+    "tests/test_config_network.py::test_an_ipv4_item_of_another_mode_prefix_or_length_is_malformed[\\x01\\xc0\\xa8\\x01\\t!\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00]",
+    "tests/test_config_network.py::test_an_ipv4_item_of_another_mode_prefix_or_length_is_malformed[\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00]",
+    "tests/test_config_network.py::test_an_ipv4_item_of_another_mode_prefix_or_length_is_malformed[\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00]",
+    "tests/test_spec_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config set: ipv4 gateway outside the prefix is malformed]"
+   ],
+   "mutants": [],
+   "note": "addresses a host cannot have; prefix 1-32"
+  },
+  "probe-config:1.5:6": {
+   "text": "- 固定のアドレスが同じネットワークで使われていると分かったときの扱いはprob",
+   "excluded": "the probe decides how it detects a duplicate address; the bench never sees one"
+  },
+  "probe-config:1.6:1": {
+   "text": "- 名前は定義する者の逆DNSの名前で、core §12規則1のインターフェース",
+   "verify": [
+    "tests/test_config_network.py::test_a_probes_own_item_by_its_name_and_form"
+   ],
+   "mutants": [],
+   "note": "own names are reverse-DNS"
+  },
+  "probe-config:1.6:2": {
+   "text": "- dataの形はsettingのform（registryの`setting_",
+   "verify": [
+    "tests/test_config_network.py::test_own_items_of_every_form[3-7-\\x07\\x00\\x00\\x00]",
+    "tests/test_config_network.py::test_own_items_of_every_form[5-True-\\x01]",
+    "tests/test_config_network.py::test_own_items_of_every_form[4-10.1.2.3-\\n\\x01\\x02\\x03]",
+    "tests/test_config_network.py::test_a_probes_own_item_by_its_name_and_form",
+    "tests/test_spec_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config set: a probe's own text item]"
+   ],
+   "mutants": [],
+   "note": "data by form"
+  },
+  "probe-config:1.6:3": {
+   "text": "- keyは0からsettingのkeys未満。1つだけの設定ならkeysは1で",
+   "verify": [
+    "tests/test_config_network.py::test_a_probes_own_item_by_its_name_and_form"
+   ],
+   "mutants": [],
+   "note": "key below keys"
+  },
+  "probe-config:1.6:4": {
+   "text": "- 経路やOEPの動作に関わる設定（§1.3の目的のもの）は独自の項目にしない。",
+   "excluded": "guidance for probe authors on what to make an own item"
+  },
+  "probe-config:1.7:1": {
+   "text": "- bit0 secret: dataは書くだけ。getはkeyだけを返し（da",
+   "verify": [
+    "tests/test_config_network.py::test_a_secret_own_item_is_write_only"
+   ],
+   "mutants": [],
+   "note": "secret: write-only"
+  },
+  "probe-config:1.7:2": {
+   "text": "- bit1 restart: 新しい値は再起動の後に効く（getは新しい値を返",
+   "verify": [
+    "tests/test_config_network.py::test_setting_flags_restart_and_no_other_bit"
+   ],
+   "mutants": [],
+   "note": "restart: get shows the new value"
+  },
+  "probe-config:1.7:3": {
+   "text": "- ほかのbitは0。",
+   "verify": [
+    "tests/test_config_network.py::test_setting_flags_restart_and_no_other_bit"
+   ],
+   "mutants": [],
+   "note": "no other bit"
   },
   "probe-config:2:1": {
    "text": "| 0x10 | get | first(u16) | more(u8)、gen",
@@ -300,7 +607,7 @@
    "note": "erase 0x13 -> nothing; goes with save"
   },
   "probe-config:2:5": {
-   "text": "| 0x14 | unset | count(u8)、count × (tag(",
+   "text": "| 0x14 | unset | count(u8)、count × (numb",
    "verify": [
     "tests/test_config.py::test_items_round_trip_with_the_generation",
     "tests/test_config_disable.py::test_unset_enables_it_again",
@@ -326,6 +633,20 @@
    "note": "state 0x15 -> storage_state saved_generation reason, lock-free; with save, else optional (absent here)"
   },
   "probe-config:2:7": {
+   "text": "| 0x16 | network | [TLV] | tcp_port(u16)",
+   "verify": [
+    "tests/test_config_network.py::test_the_network_op_is_offered_only_with_netifs",
+    "tests/test_trace_probe_config.py::test_the_lock_column_of_the_op_table[get]",
+    "tests/test_trace_probe_config.py::test_the_lock_column_of_the_op_table[set]",
+    "tests/test_trace_probe_config.py::test_the_lock_column_of_the_op_table[save]",
+    "tests/test_trace_probe_config.py::test_the_lock_column_of_the_op_table[erase]",
+    "tests/test_trace_probe_config.py::test_the_lock_column_of_the_op_table[unset]",
+    "tests/test_trace_probe_config.py::test_the_lock_column_of_the_op_table[state]"
+   ],
+   "mutants": [],
+   "note": "network op: lock-free, only with netifs"
+  },
+  "probe-config:2:8": {
    "text": "- 設定は最大65535項目。probeはさらに小さい有限量にしてよく、保持でき",
    "verify": [
     "tests/test_trace_probe_config.py::test_a_save_past_storage_is_cause_3_before_anything",
@@ -340,13 +661,13 @@
    ],
    "note": "a change or save the probe cannot keep: unavailable cause 2 / 3, nothing changed"
   },
-  "probe-config:2:8": {
-   "text": "- setは(tag,channel)ごとに置換し、送らないキーは保つ。unse",
+  "probe-config:2:9": {
+   "text": "- setは(番号、key)ごとに置換し、送らないキーは保つ。unsetは指定キ",
    "verify": [
     "tests/test_config.py::test_items_round_trip_with_the_generation",
     "tests/test_config.py::test_an_item_of_another_length_or_number_0_is_malformed_and_an_unknown_one_unsupported",
     "tests/test_conformance_config.py::test_current_config_storage_contract",
-    "tests/test_trace_probe_config.py::test_unset_ignores_bit_7_of_the_item_tag"
+    "tests/test_trace_probe_config.py::test_unset_of_a_number_past_the_list_is_unsupported"
    ],
    "mutants": [
     "tests/test_conformance_config.py::test_semantic_faults[accept_duplicate-ATOMIC]",
@@ -354,7 +675,7 @@
    ],
    "note": "set replaces per (tag, channel) keeping the rest; unset of a missing key does nothing; a key twice malformed"
   },
-  "probe-config:2:9": {
+  "probe-config:2:10": {
    "text": "- 変更後の設定全体、容量、実行中の資源との競合を先に検証する。拒否時は設定・世",
    "verify": [
     "tests/test_config.py::test_a_refused_set_changes_nothing",
@@ -369,7 +690,7 @@
    ],
    "note": "the whole result is checked first; a refusal keeps settings, generation and pins; no change touches no pin; bench: a refusal or a no-op parks nothing"
   },
-  "probe-config:2:10": {
+  "probe-config:2:11": {
    "text": "- generationは内容のdigestではなく、同じboot内の変更カウン",
    "verify": [
     "tests/test_config.py::test_items_round_trip_with_the_generation",
@@ -383,8 +704,8 @@
    ],
    "note": "a change counter from 1 (also with a saved set), +1 per change, same contents unchanged, 0xFFFFFFFF refuses cause 2"
   },
-  "probe-config:2:11": {
-   "text": "- getはtag、channelの順に並べ、firstから1frameに入る項",
+  "probe-config:2:12": {
+   "text": "- getは番号、keyの順に並べ、firstから1frameに入る項目を返す。",
    "verify": [
     "tests/test_config.py::test_get_is_paged_at_a_small_frame",
     "tests/test_conformance_config_paging.py::test_config_paging_and_generation_recovery[64]",
@@ -402,7 +723,7 @@
    ],
    "note": "tag then channel order, pages from first by item count, never split, bit 7 clear, more/first, the same generation same contents"
   },
-  "probe-config:2:12": {
+  "probe-config:2:13": {
    "text": "- count 0のset/unsetはno-op。外側の未知critical ",
    "verify": [
     "tests/test_trace_probe_config.py::test_count_0_is_a_no_op_and_a_critical_tail_is_refused_before_anything",
@@ -414,6 +735,74 @@
     "tests/test_conformance_config.py::test_semantic_faults[tail_as_item-ATOMIC]"
    ],
    "note": "count 0 set / unset: success, nothing changes; an unknown critical outer TLV refused before any change"
+  },
+  "probe-config:2:14": {
+   "text": "| netif(u8) | §1.3のnetifの番号 |",
+   "verify": [
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-p4_x035-ethernet]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-p4_x035-ethernet]"
+   ],
+   "mutants": [],
+   "note": "netif number"
+  },
+  "probe-config:2:15": {
+   "text": "| state(u8) | 0 使わない（wifiの項目が無い、有線の線がつなが",
+   "verify": [
+    "tests/test_config_network.py::test_common_defaults_wifi_off_without_entries_dhcp_without_ipv4",
+    "tests/test_config_network.py::test_the_network_rows_reason_when_it_does_not_connect",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-p4_x035-ethernet]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-p4_x035-ethernet]"
+   ],
+   "mutants": [],
+   "note": "states off / waiting / up"
+  },
+  "probe-config:2:16": {
+   "text": "| entry(u16) | Wi-Fiで、state 1では試している、sta",
+   "verify": [
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-p4_x035-ethernet]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-p4_x035-ethernet]",
+    "tests/test_config_network.py::test_the_network_rows_reason_when_it_does_not_connect"
+   ],
+   "mutants": [],
+   "note": "entry in use, else 0xFFFF"
+  },
+  "probe-config:2:17": {
+   "text": "| reason(u8) | 最後の失敗の理由: 0 なし、1 ネットワークが見",
+   "verify": [
+    "tests/test_config_network.py::test_the_network_rows_reason_when_it_does_not_connect"
+   ],
+   "mutants": [],
+   "note": "reasons not_found / auth, 0 when up"
+  },
+  "probe-config:2:18": {
+   "text": "| rssi(i8) | Wi-Fiのstate 2で、受けている電波の強さ（d",
+   "verify": [
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-p4_x035-ethernet]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-p4_x035-ethernet]",
+    "tests/test_config_network.py::test_the_network_rows_reason_when_it_does_not_connect"
+   ],
+   "mutants": [],
+   "note": "rssi on Wi-Fi up only"
+  },
+  "probe-config:2:19": {
+   "text": "| address(4)、prefix(u8)、gateway(4)、dns(4",
+   "verify": [
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-p4_x035-ethernet]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-p4_x035-ethernet]",
+    "tests/test_config_network.py::test_common_defaults_wifi_off_without_entries_dhcp_without_ipv4"
+   ],
+   "mutants": [],
+   "note": "the address in use, DHCP too"
   },
   "probe-config:3:1": {
    "text": "- save/eraseを提供するときだけ不揮発領域を使う。saveは明示操作で",
@@ -622,19 +1011,57 @@
    "note": "storage 0x40 max_bytes(u32 >= 1) with save / erase only; a save past it cause 3"
   },
   "probe-config:4:2": {
-   "text": "| 0x41 | items | 対応する項目tagの並び（u8）。1つ以上、重",
+   "text": "| 0x41 | setting | form(u8)、keys(u16、1以上",
    "verify": [
-    "tests/test_config.py::test_describe_and_a_probe_without_storage",
-    "tests/test_conformance_capture_metadata.py::test_metadata_passes_read_only",
-    "tests/test_conformance_capture_metadata.py::test_config_items_only[65-\\x02\\x03\\x07]"
+    "tests/test_config_network.py::test_a_probes_own_item_by_its_name_and_form",
+    "tests/test_config_network.py::test_item_numbers_follow_the_probes_list_and_the_host_finds_them_by_name"
    ],
-   "mutants": [
-    "tests/test_conformance_capture_metadata.py::test_metadata_defects[17-65-None]",
-    "tests/test_conformance_capture_metadata.py::test_metadata_defects[17-65-]",
-    "tests/test_conformance_capture_metadata.py::test_metadata_defects[17-65-\\x02\\x03\\x02]",
-    "tests/test_conformance_capture_metadata.py::test_metadata_defects[17-65-\\x02\\x80]"
+   "mutants": [],
+   "note": "setting TLV"
+  },
+  "probe-config:4:3": {
+   "text": "| 0x42 | netif | text: ネットワークの口の名前。口ごとに1",
+   "verify": [
+    "tests/test_config_network.py::test_the_network_op_is_offered_only_with_netifs",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[None-p4_x035-ethernet]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-esp32_v003-wifi]",
+    "tests/test_config_network.py::test_one_host_routine_sets_up_either_probe[192.168.7.9/24-p4_x035-ethernet]"
    ],
-   "note": "items 0x41: the item tags (u8), one or more, no duplicates, required"
+   "mutants": [],
+   "note": "netif TLV"
+  },
+  "probe-config:4:4": {
+   "text": "- settingのformは、標準の項目では0（名前が決める形、§1の表）、独",
+   "verify": [
+    "tests/test_config_network.py::test_a_standard_name_is_form_named_and_an_own_one_has_a_form"
+   ],
+   "mutants": [],
+   "note": "form 0 for standard names, 1-5 for own"
+  },
+  "probe-config:4:5": {
+   "text": "- settingの値は5 + 名前の長さで、名前が48byteでも53byte",
+   "excluded": "arithmetic on the spec's own limits (5 + 48 <= 55); nothing to run"
+  },
+  "probe-config:4:6": {
+   "text": "- form 1/2のmax_lenは、その項目1つのsetが自分のどの経路のm",
+   "verify": [
+    "tests/test_config_network.py::test_a_probes_own_item_by_its_name_and_form",
+    "tests/test_spec_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config set: longest label fits frame64]"
+   ],
+   "mutants": [],
+   "note": "max_len fits every route's max_frame"
+  },
+  "probe-config:4:7": {
+   "text": "- hostは、知らない名前の項目も、formとflagsのとおりに表示と入力が",
+   "verify": [
+    "tests/test_config_network.py::test_own_items_of_every_form[3-7-\\x07\\x00\\x00\\x00]",
+    "tests/test_config_network.py::test_own_items_of_every_form[5-True-\\x01]",
+    "tests/test_config_network.py::test_own_items_of_every_form[4-10.1.2.3-\\n\\x01\\x02\\x03]",
+    "tests/test_config_network.py::test_a_secret_own_item_is_write_only"
+   ],
+   "mutants": [],
+   "note": "the client handles unknown names by form and flags"
   }
  }
 }

@@ -1,4 +1,8 @@
-from oep_client.conformance import Checks
+from oep_client.conformance import Checks, ops
+from oep_client.catalog import pack_ops
+from oep_client.virtual_core import tlv
+from oep_client.virtual_names import DC
+from oep_client.virtual_scan_options_model import SC, KIND, WOP
 from oep_client.conformance_scan_options import ScanOptionsChecks
 from oep_client.conformance_scan_options_sample import SampleScanOptionsAdapter
 from oep_client.virtual_scan_options_model import ScanOptionsModel
@@ -7,9 +11,6 @@ from test_conformance_wire_options import setup as wire_setup
 
 def setup():
     _,c,_=wire_setup()
-    for i,s in enumerate(c.reg['interface'][:3]):
-        s['tlv']['scan']={'max_speed':1};s['enum']['scan_kind']={'arm_adi' if i==2 else 'riscv_dm':2 if i==2 else 1}
-    c.reg['interface'][0]['tlv']['scan']['idle_clock']=4;c.reg['interface'][2]['tlv']['scan']['targetsel']=6
     model=ScanOptionsModel(lambda:0,boot_id=17)
     return model,Checks(model.handle,c.reg,'virtual-resource-1'),SampleScanOptionsAdapter(model)
 
@@ -40,21 +41,21 @@ def test_scan_option_checker_detects_independent_faults(fault,case):
     def faulty_install():
         install();e=model.extension;dispatch=e.dispatch_request
         def broken(fn,op,payload,tags):
-            if fn>3 or op!=16:return dispatch(fn,op,payload,tags)
+            if fn>3 or op!=WOP['scan']:return dispatch(fn,op,payload,tags)
             start=len(e.scan_events)
-            if fault=='selector_ignored' or fault=='zero_ignored' and 6 in tags and tags[6][1]==b'\0'*4:tags=dict(tags);tags.pop(6,None)
-            if fault=='default_selected' and fn==3 and 6 not in tags:tags=dict(tags);tags[6]=(0x86,struct.pack('<I',0x01000001))
+            if fault=='selector_ignored' or fault=='zero_ignored' and SC['targetsel'] in tags and tags[SC['targetsel']][1]==b'\0'*4:tags=dict(tags);tags.pop(SC['targetsel'],None)
+            if fault=='default_selected' and fn==3 and SC['targetsel'] not in tags:tags=dict(tags);tags[SC['targetsel']]=(SC['targetsel']|128,struct.pack('<I',0x01000001))
             if fault=='prefix_ignored':e.scan_limit=3
-            if fault=='idle_value_ignored' and 4 in tags:tags=dict(tags);tags[4]=(tags[4][0],b'\0')
+            if fault=='idle_value_ignored' and SC['idle_clock'] in tags:tags=dict(tags);tags[SC['idle_clock']]=(tags[SC['idle_clock']][0],b'\0')
             try:data=dispatch(fn,op,payload,tags)
             except Reject:
                 if fault=='early_touch':e.scan_events.append(('invalid-read',fn))
                 raise
-            if fault=='wrong_kind' and data[1]:data=data[:2]+b'\x01'+data[3:]
+            if fault=='wrong_kind' and data[1]:data=data[:2]+bytes((KIND['arm_adi'] if data[2]==KIND['riscv_dm'] else KIND['riscv_dm'],))+data[3:]
             elif fault=='wrong_identity' and data[1]:data=data[:7]+struct.pack('<I',0xdeadbeef)+data[11:]
             elif fault=='bad_version' and data[1]==0:
                 pair=struct.unpack_from('<HH',payload,1);identity=e.identities.get((fn,pair,None))
-                if identity is not None:data=bytes((data[0],1))+struct.pack('<BHHI',1,*pair,identity)+data[2:]
+                if identity is not None:data=bytes((data[0],1))+struct.pack('<BHHI',KIND['riscv_dm'],*pair,identity)+data[2:]
             elif fault=='release_leaked':e.scan_live.add(0);e.pin_levels[0]=dict(mode='wire',level=1)
             elif fault=='allocated':e.allocate()
             elif fault=='existing_buffer':
@@ -79,12 +80,12 @@ def test_scan_option_checker_detects_independent_faults(fault,case):
 def test_scan_option_preflight_blocks(invalid):
     model,c,a=setup()
     if invalid=='scope':a.reset_scope='physical'
-    elif invalid=='idle':c.reg['interface'][0]['tlv']['scan']['idle_clock']=5
-    elif invalid=='selector':c.reg['interface'][2]['tlv']['scan']['targetsel']=2
-    elif invalid=='kind':c.reg['interface'][2]['enum']['scan_kind']['arm_adi']=1
+    elif invalid=='idle':del c.reg['interface'][0]['tlv']['scan']['idle_clock']          # a SPEC without what the checker uses
+    elif invalid=='selector':del c.reg['interface'][2]['tlv']['scan']['targetsel']
+    elif invalid=='kind':del c.reg['interface'][2]['enum']['scan_kind']['arm_adi']
     elif invalid=='budget':model.ep.max_op_ms=6
     else:
-        describe=model.extension.describe;model.extension.describe=lambda fn:tuple(r[:4]+bytes((r[4]&~1,)) if fn==3 and r[0]==7 else r for r in describe(fn))
+        describe=model.extension.describe;model.extension.describe=lambda fn:tuple(tlv(DC['ops'],pack_ops(set(ops(r[1]))-{WOP['scan']})) if fn==3 and r[0]==DC['ops'] else r for r in describe(fn))
     r=ScanOptionsChecks(c,a).run();assert r['checks'][0]['status']=='failed'
     assert all(row['status']=='blocked' for row in r['checks'][1:])
 

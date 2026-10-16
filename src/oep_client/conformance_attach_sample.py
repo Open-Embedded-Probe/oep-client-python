@@ -9,7 +9,7 @@ class SampleAttachAdapter(SampleRouteAdapter):
     pairs={1:[(0,1),(2,3),(6,7)],2:[(0,65535),(2,65535),(6,65535)],3:[(4,5)]}
     console_fn=4
     reset_channel=8
-    mechanisms=[0,1]
+    mechanisms=['sdi','dmdata']                     # the console's mechanism list, by name (core §7.7)
     def restart_fixture(self):return self.call('restart_fixture')
     def state(self):return self.call('attach_state')
     def fail_attach(self, value):return self.call('fail_attach',value)

@@ -7,6 +7,8 @@ import struct
 
 import pytest
 
+from oep_client.registry import WIRE_RVSWD as _RV_WIRE
+RESET_TLV, IDLE_TLV = _RV_WIRE.tlv['attach']['reset'], _RV_WIRE.tlv['attach']['idle_clock']   # by name (debug §3)
 from oep_client import capture, console, core, endpoint, virtual_bench, fixture, host, message as m, riscv
 
 WIRE, DM, CONSOLE, GPIO, UART = 1, 2, 3, 4, 5          # p4_x035
@@ -84,14 +86,14 @@ def test_attach_under_reset_is_the_reset_tlv(bench):
     conn, dpc = wire.attach_under_reset(23, hold_ms=30)
     assert dpc == 0 and wire.halted and ep.target.halted
     assert ep.requests[-1].payload == struct.pack("<BHHI", 1, 16, 0xFFFF, 1_000_000) \
-        + bytes([0x85, 4, 0]) + struct.pack("<HH", 23, 30)
+        + bytes([RESET_TLV | 0x80, 4, 0]) + struct.pack("<HH", 23, 30)
     wire.detach(conn)
     conn2, _ = wire.attach(halt=False, reset=(23, 20))          # a new connection, the target reset while running
     assert conn2 != conn and not wire.halted and wire.dpc is None and not ep.target.halted
     wire.detach(conn2)
     with pytest.raises(host.Unsupported) as e:
         wire.attach(reset=(22, 20))                               # not a reset line
-    assert e.value.tag == 0x85
+    assert e.value.tag == RESET_TLV | 0x80
     with pytest.raises(host.Unsupported):
         wire.attach(reset=(23, 20000))                            # longer than max_op_ms
 
@@ -241,7 +243,7 @@ def test_console_open_makes_a_stream_and_reads_by_position(dm):
     ep, hst, d = dm
     con = console.Console(hst)
     sid = con.open(d.conn, console.Console.DMSEQ)
-    assert ep.requests[-1].payload == struct.pack("<IB", d.conn, 2)
+    assert ep.requests[-1].payload == struct.pack("<IB", d.conn, con.mechanism_number(console.Console.DMSEQ))
     io = console.ConsoleIO(con)
     ep.emit(sid, b"hello ")
     assert io.read() == b"hello "
@@ -256,7 +258,7 @@ def test_console_open_makes_a_stream_and_reads_by_position(dm):
         with pytest.raises(host.Unavailable) as e:
             console.Console(hst).open(d.conn, mech)
         assert e.value.cause == "wrong_state"
-    assert con.streams() == [console.StreamInfo(sid, d.conn, 2)]
+    assert con.streams() == [console.StreamInfo(sid, d.conn, console.Console.DMSEQ)]
 
 
 def test_console_marks_follow_serials_and_more(dm):

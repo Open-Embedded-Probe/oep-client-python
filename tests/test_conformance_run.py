@@ -6,7 +6,7 @@ from test_conformance_reset import setup as reset_setup
 
 
 def setup():
-    _,c,_=reset_setup();spec=c.reg['interface'][-1];spec['op'].append({'name':'run','code':22});spec['enum']['run_stopped']=dict(timeout_halted=0,stopped=1,not_halted=2,not_run=3)
+    _,c,_=reset_setup()
     model=RunModel(lambda:0,boot_id=17)
     return model,Checks(model.handle,c.reg,'virtual-resource-1'),SampleRunAdapter(model)
 
@@ -95,7 +95,7 @@ def test_run_checker_detects_independent_faults(fault,case):
 def test_run_preflight_blocks(invalid):
     model,c,a=setup();spec=c.reg['interface'][-1]
     if invalid=='scope':a.reset_scope='physical'
-    elif invalid=='operation':spec['op'][-1]['code']=24
+    elif invalid=='operation':spec['op']=[o for o in spec['op'] if o['name']!='run']   # a SPEC without what the checker uses
     elif invalid=='stopped':spec['enum']['run_stopped']['not_run']=4
     elif invalid=='status':c.reg['status']['timeout']=3
     elif invalid=='budget':model.ep.max_op_ms=2

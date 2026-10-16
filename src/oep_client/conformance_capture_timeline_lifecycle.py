@@ -102,7 +102,7 @@ class CaptureTimelineLifecycleChecks(CaptureTimelineChecks):
         require(self.status()[0]==6 and self.status(fast)[0]==6 and self.status(fast)[5]==b'\2' and self.status(5-fast)[0]==1,'streaming error stops the peer')
         for fn in self.members:
             row=self.status(fn);rows=self.segments(fn);failed=fn==fast
-            total=self.stream(fn,store[fn],gens[fn],self.origin,self.rates[fn],row[2],rows,(3,2) if failed else (1,0),exact=not failed)
+            total=self.stream(fn,store[fn],gens[fn],self.origin,self.rates[fn],row[2],rows,(2,2) if failed else (1,0),exact=not failed)
             if failed:
                 ends=[i['position']+len(i['data']) for i in store[fn] if i['kind']=='data']
                 require(max(ends)>row[2],'fixture sent part of the failed segment before the error')

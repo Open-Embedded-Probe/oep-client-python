@@ -134,7 +134,6 @@ import tty
 
 from . import catalog, endpoint, virtual_bench, virtual_bench_serial, message as m, registry as reg
 
-_ITEM = reg.PROBE_CONFIG.tlv["item"]
 TCP_CONNECTIONS = 3                                      # --tcp-connections' default (length framing)
 
 
@@ -197,8 +196,7 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
     items = []
     for spec in getattr(a, "label", []):
         channel, _, text = spec.partition("=")
-        value = struct.pack("<H", int(channel, 0)) + text.encode()
-        items.append(m.tlv(_ITEM["label"], value))
+        items.append(("label", int(channel, 0), text.encode()))
     if items:
         ep.load_config(items, saved=True)
     return ep

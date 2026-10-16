@@ -60,7 +60,7 @@ class StreamInfo:
     """One row of the console's streams answer (oep-if-console §1): a live stream, its connection and mechanism."""
     stream: int
     connection: int
-    mechanism: int
+    mechanism: str | int           # its name in the probe's list (core §7.7); a number the list lacks as it came
 
 
 class PositionStream(Interface):
@@ -136,7 +136,7 @@ class Console(PositionStream):
     NAME = "oep.target.console"
     REVISION = 1
     OPEN, CLOSE, STREAMS = _CON.op["open"], _CON.op["close"], _CON.op["streams"]
-    SDI, DMDATA, DMSEQ = (_CON.enum["mechanism"][k] for k in ("sdi", "dmdata", "dmseq"))
+    SDI, DMDATA, DMSEQ = "sdi", "dmdata", "dmseq"            # the standard mechanisms' names (console §3)
 
     def __init__(self, hst: h.Host, name: str = "oep.target.console"):
         super().__init__(hst, name)
@@ -145,18 +145,26 @@ class Console(PositionStream):
     def _stream_prefix(self) -> bytes:
         return struct.pack("<I", self.stream)
 
-    TAG_MECHANISMS = _CON.tlv["describe"]["mechanisms"]
+    TAG_MECHANISM = _CON.tlv["describe"]["mechanism"]
 
-    def mechanisms(self) -> list[int]:
-        """The mechanisms the probe opens (describe tag 0x40: n(u8) n x mechanism(u8), console §1)."""
-        # the first copy, n(u8) then exactly n bytes; a broken one is not used (core §2.3)
-        v = next((v for tag, v in describe(self.host, self.fn) if tag == self.TAG_MECHANISMS), None)
-        return list(v[1:]) if v and len(v) == 1 + v[0] else []
+    def mechanisms(self) -> list[str]:
+        """The mechanisms the probe opens, by name, in its order: a named list (describe tag 0x40 repeated, console §1,
+        core §7.7); the number of the k-th is k (from 1)."""
+        return [v.decode("utf-8", "replace") for tag, v in describe(self.host, self.fn) if tag == self.TAG_MECHANISM]
 
-    def open(self, conn: int, mechanism: int = DMSEQ) -> int:
-        """-> a new stream (u32) on the connection (console §2). A mechanism the probe lacks is rejected unsupported; a
-        connection with a live stream (any mechanism) is rejected unavailable (cause 6)."""
-        rd = m.Reader(self._call(self.OPEN, struct.pack("<IB", conn, mechanism)).payload)
+    def mechanism_number(self, mechanism: str | int) -> int:
+        """A mechanism's number on the wire: its place in the probe's list (from 1); a name the probe does not list: 0
+        (the probe refuses it unsupported)."""
+        if isinstance(mechanism, int):
+            return mechanism
+        names = self.mechanisms()
+        return names.index(mechanism) + 1 if mechanism in names else 0
+
+    def open(self, conn: int, mechanism: str | int = DMSEQ) -> int:
+        """-> a new stream (u32) on the connection (console §2). mechanism: a name (looked up in describe) or the
+        number. A mechanism the probe lacks is rejected unsupported; a connection with a live stream (any mechanism) is
+        rejected unavailable (cause 6)."""
+        rd = m.Reader(self._call(self.OPEN, struct.pack("<IB", conn, self.mechanism_number(mechanism))).payload)
         self.stream = rd.u32()
         rd.tail()
         return self.stream
@@ -170,10 +178,12 @@ class Console(PositionStream):
         first(u16) / more, each page from the number already read, until more 0): how a host without the lock finds a
         stream's number."""
         out: list[StreamInfo] = []
+        names = self.mechanisms()                                  # the mechanism by name (core §7.7)
+        name = lambda n: names[n - 1] if 1 <= n <= len(names) else n
         while True:
             rd = m.Reader(self._call(self.STREAMS, struct.pack("<H", len(out)), locked=False).payload)
             more, count = rd.take("BB")
-            out += [StreamInfo(*rd.take("IIB")) for _ in range(count)]
+            out += [StreamInfo(stream, conn, name(mech)) for stream, conn, mech in (rd.take("IIB") for _ in range(count))]
             rd.tail()
             if not more or not count or len(out) > 0xFFFF:
                 return out

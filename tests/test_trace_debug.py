@@ -159,7 +159,7 @@ def test_detach_answers_nothing_and_releases_the_connection_and_its_streams():
     pair = ep.pairs[1][0]
     cid = struct.unpack_from("<I", attach(hv, pair).payload)[0]
     con = reg.TARGET_CONSOLE
-    sid = struct.unpack_from("<I", hv.ok(3, con.op["open"], struct.pack("<IB", cid, console.Console.DMSEQ)))[0]
+    sid = struct.unpack_from("<I", hv.ok(3, con.op["open"], struct.pack("<IB", cid, ep.mechanism_number("dmseq"))))[0]
     r = hv.raw(1, W["detach"], struct.pack("<I", cid))
     assert r.succeeded and r.payload == b""
     assert not ep.conns and not ep.streams and rows(hv.raw(1, W["connections"], b"\x00", session=False).payload)[1] == []
@@ -509,12 +509,13 @@ def test_a_reset_op_acknowledges_havereset_and_clears_haltreq():
     pair = ep.pairs[1][0]
     cid = struct.unpack_from("<I", attach(hv, pair).payload)[0]
     tg = ep.targets[(1, pair)]
-    for mode in (0, 2):
+    HALT = reg.TARGET_RISCV_DM.enum["reset_mode"]["halt_at_reset"]
+    for mode in reg.TARGET_RISCV_DM.enum["reset_mode"].values():
         r = hv.raw(2, RV["reset"], struct.pack("<IB", cid, mode))
         assert r.succeeded and struct.unpack("<BBI", r.payload)[:2] == (reg.STATUS["ok"], 1)
         done, status, nvals, dmstatus = struct.unpack("<HBHI", hv.ok(2, RV["dmi"], struct.pack("<IHBB", cid, 1, 2, 0x11)))
         assert not dmstatus & 0xC0000 and not tg.havereset, mode     # havereset acknowledged
-        assert not tg.haltreq and tg.halted == (mode == 2)
+        assert not tg.haltreq and tg.halted == (mode == HALT)
 
 
 def test_high_level_ops_acknowledge_a_pending_havereset_and_raw_dmi_does_not():
@@ -525,7 +526,7 @@ def test_high_level_ops_acknowledge_a_pending_havereset_and_raw_dmi_does_not():
     pair = ep.pairs[1][0]
     cid = struct.unpack_from("<I", attach(hv, pair).payload)[0]
     con = reg.TARGET_CONSOLE
-    sid = struct.unpack_from("<I", hv.ok(3, con.op["open"], struct.pack("<IB", cid, console.Console.DMSEQ)))[0]
+    sid = struct.unpack_from("<I", hv.ok(3, con.op["open"], struct.pack("<IB", cid, ep.mechanism_number("dmseq"))))[0]
     tg = ep.targets[(1, pair)]
     tg.halted = True                                               # halted: the console does not read (console §3)
     tg.havereset = True                                            # the target reset itself
@@ -710,7 +711,7 @@ def test_the_wires_ids_are_dmstatus_scan_kind_1_and_a_swio_connection_takes_the_
         assert hv.raw(ep.fns["oep.target.riscv-dm"], RV["halt"], struct.pack("<I", cid)).succeeded
         con = reg.TARGET_CONSOLE
         assert hv.raw(ep.fns["oep.target.console"], con.op["open"],
-                      struct.pack("<IB", cid, console.Console.DMSEQ)).succeeded, wire
+                      struct.pack("<IB", cid, ep.mechanism_number("dmseq"))).succeeded, wire
 
 
 def test_method_1_selects_hart_0_drops_haltreq_and_succeeds_only_with_hart_0_halted():
@@ -810,7 +811,7 @@ def test_every_target_interface_is_listed_before_attach_and_every_target_op_with
         assert (r.resolution, r.detail) == (m.REJECTED, m.NO_RESOURCE), name
         asked += 1
     assert asked >= 7
-    r = hv.raw(con, reg.TARGET_CONSOLE.op["open"], struct.pack("<IB", 0x7777, console.Console.DMSEQ))
+    r = hv.raw(con, reg.TARGET_CONSOLE.op["open"], struct.pack("<IB", 0x7777, 3))
     assert (r.resolution, r.detail) == (m.REJECTED, m.NO_RESOURCE)
     assert not ep.conns and not ep.streams
     assert {k: (t.dmi, t.halted, t.regs, t.mem) for k, t in ep.targets.items()} == states
@@ -876,7 +877,7 @@ def test_on_a_connection_the_probe_sends_no_set_up_and_changes_nothing_by_itself
     tg.bringup.clear()
     con = reg.TARGET_CONSOLE
     sid = struct.unpack_from("<I", hv.ok(ep.fns["oep.target.console"], con.op["open"],
-                                         struct.pack("<IB", cid, console.Console.DMSEQ)))[0]
+                                         struct.pack("<IB", cid, ep.mechanism_number("dmseq"))))[0]
     read = struct.pack("<IHBB", cid, 1, STEP["read"], 0x11)
     hv.ok(dm, RV["dmi"], read)
     hv.ok(dm, RV["read_block"], struct.pack("<IIH", cid, 0x2000_0000, 1))
@@ -1021,7 +1022,7 @@ def test_connections_report_the_target_id_read_at_attach():
 
 def test_the_client_sends_rvswd_idle_clock_critical_and_nothing_for_the_default():
     """debug §3 (the TLV table: attach's 0x04 idle_clock, rvswd only, critical; 0 high - also when left out - 1 low): the
-    client's attach sends tag 0x84 with 0 / 1 for "high" / "low", and no TLV when none is asked (the probe's high)."""
+    client's attach sends tag 0x83 with 0 / 1 for "high" / "low", and no TLV when none is asked (the probe's high)."""
     ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     sent = []
 

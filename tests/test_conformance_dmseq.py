@@ -1,4 +1,5 @@
 import pytest
+from spec_names import SPEC
 from oep_client.conformance import Checks
 from oep_client.conformance_dmseq import DmseqChecks, crc_reference
 from oep_client.conformance_dmseq_sample import SampleDmseqAdapter
@@ -8,8 +9,7 @@ from test_conformance_mailbox import setup as mailbox_setup
 
 def setup():
     _,c,_=mailbox_setup();model=DmseqModel(lambda:0,boot_id=17)
-    c.reg['interface'][3]['enum']['mechanism']['dmseq']=2
-    c.reg['common']={'enum':{'mark_kind':{'lost':1,'clear':2,'host':3}}}
+    c.reg['common']=SPEC['common']                                  # the common enums by name (tests/spec_names.py)
     return model,Checks(model.handle,c.reg,'virtual-resource-1'),SampleDmseqAdapter(model)
 
 
@@ -92,9 +92,9 @@ def test_dmseq_checker_detects_independent_faults(fault,case):
 def test_dmseq_preflight_blocks(invalid):
     model,c,a=setup()
     if invalid=='scope':a.reset_scope='physical'
-    elif invalid=='mechanism':c.reg['interface'][3]['enum']['mechanism']['dmseq']=3
+    elif invalid=='mechanism':c.reg['interface'][3]['names']['mechanism'].pop('dmseq')   # a SPEC without dmseq
     elif invalid=='marks':c.reg['interface'][3]['enum']['mark_kind']['restart']=3
-    else:model.extension.mechanisms=(0,1)
+    else:model.extension.mechanisms=('sdi','dmdata')
     r=DmseqChecks(c,a).run()
     assert r['checks'][0]['status']=='failed'
     assert all(x['status']=='blocked' for x in r['checks'][1:])

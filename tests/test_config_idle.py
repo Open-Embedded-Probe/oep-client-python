@@ -27,7 +27,7 @@ def test_idle_modes_have_names_both_spellings():
     assert config.Idle(channel=7, mode="output_low").value() == bytes([7, 0, 3])          # channel mode (probe.config §1)
     with pytest.raises(ValueError, match="output-high"):
         config.Idle(channel=7, mode="output-medium").value()
-    assert config.decode(config.ITEM["idle"], bytes([7, 0, 4])) == config.Idle(channel=7, mode="output-high")
+    assert config.decode("idle", 7, bytes([4])) == config.Idle(channel=7, mode="output-high")
 
 
 def test_output_idle_drives_and_survives_take_until_the_first_set():

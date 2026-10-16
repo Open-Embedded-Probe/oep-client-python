@@ -1,4 +1,10 @@
 import pytest
+from spec_names import iface
+
+
+def tags_of(name):
+    return {c:dict(t) for c,t in iface(name)['tlv'].items()}
+
 from oep_client.conformance import Checks
 from oep_client.conformance_i2c import I2cChecks
 from oep_client.conformance_i2c_sample import SampleI2cAdapter
@@ -9,8 +15,8 @@ from test_conformance_registered_ops import setup as registered_setup
 def setup(**kwargs):
     _,c=registered_setup();reg=c.reg;reg['constants']={'min_max_frame':64}
     for spec in reg['interface']:
-        if spec['name']=='oep.probe.plan':spec['tlv']={'plan_apply':{'role_assignment':16},'describe':{'plan_roles':64}}
-        if spec['name']=='oep.fixture.i2c-target':spec['tlv']={'describe':{'queue_depth':64,'max_stretch_us':65},'read_rx_answer':{'ns':1}};spec['enum']={'role':{'sda':1,'scl':2},'state':{'unconfigured':0,'running':1},'features':{'internal_pullups':4}}
+        if spec['name']=='oep.probe.plan':spec['tlv']=tags_of(spec['name'])   # by name from the selected SPEC
+        if spec['name']=='oep.fixture.i2c-target':spec['tlv']=tags_of(spec['name'])   # by name from the selected SPEC
     model=I2cModel(boot_id=17,**kwargs);return model,Checks(model.handle,reg,'virtual-resource-1')
 
 

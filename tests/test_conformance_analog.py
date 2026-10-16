@@ -1,6 +1,8 @@
 import copy
 import struct
 import pytest
+from oep_client.virtual_analog_model import OP, C, A, ST, MODE
+from oep_client.registry import OUTCOMES
 from oep_client import registry as registry
 from oep_client.conformance import Checks
 from oep_client.conformance_analog import AnalogChecks
@@ -84,29 +86,29 @@ def test_semantic_faults_are_detected(fault,case):
             from oep_client.virtual_core import Reject, Completed
             old_data=bytes(e.data);old_state=e.state
             if fn==2:
-                if fault=='wrap_to_one' and op==17 and e.generation==0xffffffff and e.state in (1,4,6):e.generation=0
-                if fault=='mode3_accepted' and op in (16,24) and tags.get(64,(0,b''))[1]==b'\3':tags={**tags,64:(64,b'\1'),67:(67,struct.pack('<I',8))}
-                if op==25 and fault in ('truncate_factory','omit_vrefint','partial_calibration'):
+                if fault=='wrap_to_one' and op==OP['start'] and e.generation==0xffffffff and e.state in (ST['configured'],ST['done'],ST['error']):e.generation=0
+                if fault=='mode3_accepted' and op in (OP['configure'],OP['query']) and tags.get(C['mode'],(0,b''))[1]==bytes((MODE['streaming'],)):tags={**tags,C['mode']:(C['mode'],bytes((MODE['one_shot'],))),C['samples']:(C['samples'],struct.pack('<I',8))}
+                if op==OP['calibration'] and fault in ('truncate_factory','omit_vrefint','partial_calibration'):
                     raw,ns=e.factory_raw,e.calibration_ns
                     try:return dispatch(fn,op,payload,tags)
                     except Reject:
                         if fault=='omit_vrefint':e.calibration_ns=None
                         else:e.factory_raw=raw[:max(0,len(raw)-19)]
                         result=dispatch(fn,op,payload,tags)
-                        return Completed(result,2) if fault=='partial_calibration' else result
+                        return Completed(result,OUTCOMES['partial']) if fault=='partial_calibration' else result
                     finally:e.factory_raw,e.calibration_ns=raw,ns
             result=dispatch(fn,op,payload,tags)
             if fn==2:
-                if fault=='generation_zero' and op==17:e.generation=0;result=b'\0'*4
-                if fault=='missing_scale' and op in (16,24):result=result.replace(tlv(85,struct.pack('<Bii',3,-17,1000000)),b'').replace(tlv(85,struct.pack('<Bii',3,-17,-1000000)),b'')
-                if fault=='gone_without_gap' and op==21 and result[8]&2 and result[9:11]==b'\0\0':result=result[:8]+bytes((result[8]&~2,))+result[9:]
-                if fault=='keep_old_data' and op==17:e.data[:]=old_data
-                if fault=='no_resume' and op==23:e.state=5
-                if fault=='no_gap' and op==23:e.gap=False
-                if fault=='wrong_stop_state' and op==18 and old_state==3:e.state=4
-                if fault=='query_applies' and op==24:e.config=e.settings(tags);e.clear(1)
-                if fault=='calibration_changes_data' and op==25:e.data.append(255)
-                if fault=='future_reference' and op==25 and e.calibration_ns is not None:
+                if fault=='generation_zero' and op==OP['start']:e.generation=0;result=b'\0'*4
+                if fault=='missing_scale' and op in (OP['configure'],OP['query']):result=result.replace(tlv(A['scale'],struct.pack('<Bii',3,-17,1000000)),b'').replace(tlv(A['scale'],struct.pack('<Bii',3,-17,-1000000)),b'')
+                if fault=='gone_without_gap' and op==OP['read'] and result[8]&2 and result[9:11]==b'\0\0':result=result[:8]+bytes((result[8]&~2,))+result[9:]
+                if fault=='keep_old_data' and op==OP['start']:e.data[:]=old_data
+                if fault=='no_resume' and op==OP['release']:e.state=ST['paused']
+                if fault=='no_gap' and op==OP['release']:e.gap=False
+                if fault=='wrong_stop_state' and op==OP['stop'] and old_state==ST['capturing']:e.state=ST['done']
+                if fault=='query_applies' and op==OP['query']:e.config=e.settings(tags);e.clear(ST['configured'])
+                if fault=='calibration_changes_data' and op==OP['calibration']:e.data.append(255)
+                if fault=='future_reference' and op==OP['calibration'] and e.calibration_ns is not None:
                     from oep_client.conformance import tlvs
                     result=b''.join(tlv(tag,struct.pack('<IQI',1365,e.calibration_ns+1000,1100) if tag==2 else value) for tag,value in tlvs(result))
             return result

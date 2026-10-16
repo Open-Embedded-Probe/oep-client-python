@@ -18,6 +18,7 @@ def test_logical_mailbox_contracts_pass():
 
 
 import pytest
+from oep_client.virtual_attach_model import COP
 
 
 @pytest.mark.parametrize('fault,case',[
@@ -35,26 +36,26 @@ def test_mailbox_checker_detects_independent_faults(fault,case):
     def faulty_install():
         install();e=model.extension;poll=e.poll;dispatch=e.dispatch_request
         def broken_poll(rid):
-            m=e.mailboxes[rid];s=e.streams[rid][1];start=0;previous=bytes(s.tx);d0=m['data0'];mechanism=e.meta[rid]
+            m=e.mailboxes[rid];s=e.streams[rid][1];start=0;previous=bytes(s.tx);d0=m['data0'];sdi=e.mechanism_numbers()[e.meta[rid]]=='sdi'
             poll(rid);events=m['events'];delta=events[start:];length=d0&255
-            if fault=='sdi_skip_data1' and not mechanism and 1<=length<=3:events[start:]=[row for row in delta if row[:2]!=('read',5)]
-            elif fault=='sdi_clear_invalid' and not mechanism and length>=8:events.append(('write',4,0));m['data0']=0
-            elif fault=='dm_read_data1_short' and mechanism and 5<=length&63<=7:events.insert(start+2,('read',5,m['data1']))
-            elif fault=='dm_skip_data1_long' and mechanism and 8<=length&63<=11:events[start:]=[row for row in delta if row[:2]!=('read',5)]
-            elif fault=='dm_write_data1' and mechanism:events.append(('write',5,0))
-            elif fault=='dm_consume_invalid' and mechanism and length&128 and not 4<=length&63<=11:del s.tx[:1]
-            elif fault=='dm_overwrite_own' and mechanism and not length&128:events.append(('write',4,0));m['data0']=0
-            elif fault in ('dm_send_reverse','dm_send_short') and mechanism and len(previous)>=3:
+            if fault=='sdi_skip_data1' and sdi and 1<=length<=3:events[start:]=[row for row in delta if row[:2]!=('read',5)]
+            elif fault=='sdi_clear_invalid' and sdi and length>=8:events.append(('write',4,0));m['data0']=0
+            elif fault=='dm_read_data1_short' and not sdi and 5<=length&63<=7:events.insert(start+2,('read',5,m['data1']))
+            elif fault=='dm_skip_data1_long' and not sdi and 8<=length&63<=11:events[start:]=[row for row in delta if row[:2]!=('read',5)]
+            elif fault=='dm_write_data1' and not sdi:events.append(('write',5,0))
+            elif fault=='dm_consume_invalid' and not sdi and length&128 and not 4<=length&63<=11:del s.tx[:1]
+            elif fault=='dm_overwrite_own' and not sdi and not length&128:events.append(('write',4,0));m['data0']=0
+            elif fault in ('dm_send_reverse','dm_send_short') and not sdi and len(previous)>=3:
                 reply=previous[:3][::-1] if fault=='dm_send_reverse' else previous[:2]
                 events[-1]=('write',4,(len(reply)+4)|int.from_bytes(reply,'little')<<8)
                 if fault=='dm_send_short':s.tx[:]=previous[2:]
             elif fault=='halt_access' and m['halted']:events.append(('read',4,d0))
             elif fault=='busy_access' and m['debug_busy']:events.append(('read',4,d0))
             elif fault=='status_after_data' and len(delta)>=2:events[start],events[start+1]=events[start+1],events[start]
-            elif fault=='bit6_reject' and mechanism and length&64:s.data.clear();s.position=0
-            elif fault=='ack_not_written' and not mechanism and 1<=length<=7:m['data0']=d0
+            elif fault=='bit6_reject' and not sdi and length&64:s.data.clear();s.position=0
+            elif fault=='ack_not_written' and sdi and 1<=length<=7:m['data0']=d0
         def broken_dispatch(fn,op,payload,tags):
-            if fault=='sdi_write_taken' and fn==4 and op==21 and e.meta.get(int.from_bytes(payload[:4],'little'))==0:
+            if fault=='sdi_write_taken' and fn==4 and op==COP['write'] and e.mechanism_numbers().get(e.meta.get(int.from_bytes(payload[:4],'little')))=='sdi':
                 from oep_client.virtual_core import Completed
                 return Completed(payload[4:6],0)                      # an SDI write taken as if it had a way in
             return dispatch(fn,op,payload,tags)
@@ -68,8 +69,8 @@ def test_mailbox_checker_detects_independent_faults(fault,case):
 def test_mailbox_preflight_blocks(invalid):
     _,c,a=setup()
     if invalid=='scope':a.reset_scope='physical'
-    elif invalid=='registry':c.reg['interface'][3]['enum']['mechanism']['sdi']=3
-    else:a.mechanisms=[0]
+    elif invalid=='registry':c.reg['interface'][3]['names']['mechanism'].pop('sdi')   # a SPEC without sdi
+    else:a.mechanisms=['sdi']
     report=MailboxChecks(c,a).run()
     assert report['checks'][0]['status']=='failed'
     assert all(r['status']=='blocked' for r in report['checks'][1:])

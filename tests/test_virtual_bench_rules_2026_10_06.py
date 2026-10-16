@@ -8,6 +8,8 @@ import struct
 
 import pytest
 
+from oep_client.registry import WIRE_RVSWD as _RV_WIRE
+RESET_TLV, IDLE_TLV = _RV_WIRE.tlv['attach']['reset'], _RV_WIRE.tlv['attach']['idle_clock']   # by name (debug §3)
 from oep_client import catalog, endpoint, virtual_bench, message as m, registry as reg
 
 from test_virtual_bench_rules_2026_10_02 import ITEM, PLAN_APPLY, W, Clock, Host, att
@@ -318,15 +320,12 @@ def idle(ch, mode):
 def test_probe_config_set_any_one_reason_and_nothing_changes():
     """core §4.3 (rule review 2026-10-07): an item the probe does not declare (unsupported, the item tag as received)
     and an item of another length (malformed, probe.config §1) in one set - either answers, nothing is applied."""
-    without_disable = with_tlvs(virtual_bench.p4_bench(), "oep.probe.config", lambda tlvs: [
-        catalog.tlv(CFG.tlv["describe"]["items"], bytes(v for v in ITEM.values() if v != ITEM["disable"]))
-        if t[0] == CFG.tlv["describe"]["items"] else t for t in tlvs])
-    ep, h = bench(without_disable)
-    disable = m.tlv(ITEM["disable"], struct.pack("<H", 20), critical=True)
-    r = cfg_set(h, 6, disable, m.tlv(ITEM["idle"], struct.pack("<H", 21)))      # an idle of 2 bytes
-    assert r.detail in (m.MALFORMED, m.UNSUPPORTED) and (r.detail != m.UNSUPPORTED or r.payload == b"\x87")
-    r = cfg_set(h, 6, disable, idle(21, 0))
-    assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([ITEM["disable"] | 0x80]))
+    ep, h = bench(virtual_bench.p4_bench())
+    unlisted = m.tlv(len(ep.setting_names) + 1, struct.pack("<H", 20))         # a number past the setting list
+    r = cfg_set(h, 6, unlisted, m.tlv(ITEM["idle"], struct.pack("<H", 21)))   # and an idle without its mode
+    assert r.detail in (m.MALFORMED, m.UNSUPPORTED)
+    r = cfg_set(h, 6, unlisted, idle(21, 0))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([len(ep.setting_names) + 1]))
     r = cfg_set(h, 6, idle(21, 0), m.tlv(ITEM["idle"], struct.pack("<HBB", 22, 0, 0)))   # 4 bytes: too long
     assert r.detail == m.MALFORMED
     r = h.raw(6, CFG.op["unset"], b"\x02" + bytes([ITEM["disable"], 20, 0]) + bytes([ITEM["idle"], 21]))
@@ -376,7 +375,7 @@ def test_attach_reset_tlv_on_an_output_idle_channel_is_unavailable_and_runs_noth
     tg = ep._target(1, swio)
     tg.silent_until_reset = True
     assert cfg_set(h, 9, idle(23, 4)).succeeded                    # NRST idles high
-    reset = m.tlv(0x05, struct.pack("<HH", 23, 20), critical=True)
+    reset = m.tlv(RESET_TLV, struct.pack("<HH", 23, 20), critical=True)
     r = h.raw(1, W["attach"], att(swio) + reset)
     assert r.detail == m.UNAVAILABLE
     assert una(r) == {UNA["cause"]: bytes([CORE.enum["unavailable_cause"]["held_by_settings"]]),
@@ -391,13 +390,13 @@ def test_o2_reset_is_ndmreset_and_moves_no_line():
     the reset line. Its answer is status(u8) flags(u8) pc(u32)."""
     ep, h = bench(virtual_bench.esp32_v003())
     cid = attached(ep, h, pair=ep.pairs[1][0])
-    sid = struct.unpack_from("<I", h.ok(3, reg.TARGET_CONSOLE.op["open"], struct.pack("<IB", cid, 2)))[0]
-    for mode in (0, 2):
+    sid = struct.unpack_from("<I", h.ok(3, reg.TARGET_CONSOLE.op["open"], struct.pack("<IB", cid, ep.mech_names.index("dmseq") + 1)))[0]
+    for mode in RV.enum["reset_mode"].values():
         r = h.raw(2, RV.op["reset"], struct.pack("<IB", cid, mode))
         assert r.succeeded and len(r.payload) == 6
         status, flags, pc = struct.unpack("<BBI", r.payload)
         assert status == 0 and flags == 1                                     # bit0 reached; no other bit (§4.3)
-    assert h.raw(2, RV.op["reset"], struct.pack("<IB", cid, 1)).detail == m.UNSUPPORTED   # mode 1 is not defined
+    assert h.raw(2, RV.op["reset"], struct.pack("<IB", cid, max(RV.enum["reset_mode"].values()) + 1)).detail == m.UNSUPPORTED   # past the defined modes
     con = reg.TARGET_CONSOLE.enum
     assert [(mk[2], mk[4]) for mk in ep.streams[sid].marks] == [(con["mark_kind"]["reset"],
                                                                  con["mark_detail_reset"]["ndmreset"])] * 2   # no restart

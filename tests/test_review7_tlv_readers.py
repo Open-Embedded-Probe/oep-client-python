@@ -9,6 +9,7 @@ import types
 
 import pytest
 
+from oep_client.registry import FIXTURE_ANALOG as _CAP, REJECT_REASONS as _R
 from oep_client import capture as c, core, dump, host as h, link, message as m, registry as reg
 from oep_client.virtual_core import Reject, tlv
 
@@ -201,23 +202,25 @@ def test_logic_checker_fails_a_model_that_skips_a_repeated_unknown_tag(monkeypat
 
 @pytest.mark.parametrize("which", ["analog", "timeline"])
 def test_other_capture_models_check_later_copies(which):
-    good = tlv(64, b"\1") + tlv(66, struct.pack("<I", 1000)) + tlv(67, struct.pack("<I", 8))
+    C, OP = _CAP.tlv["configure"], _CAP.op
+    good = tlv(C["mode"], bytes([_CAP.enum["mode"]["one_shot"]])) + tlv(C["rate"], struct.pack("<I", 1000)) + tlv(C["samples"], struct.pack("<I", 8))
     if which == "timeline":
         from oep_client.virtual_capture_timeline_model import Track
         track = Track(2, None, [])
         track.roles = [0]
-        parse, settle = (lambda data: track.request_tags(16, data)), track.settings
+        parse, settle = (lambda data: track.request_tags(OP["configure"], data)), track.settings
     else:
         e = _analog()
         e.roles = [1, 3]
-        parse, settle = (lambda data: e.request_tags(2, 16, data)), e.settings
-    settle(parse(good + tlv(0xC2, struct.pack("<I", 500))))                   # a later copy the probe handles: ignored
+        parse, settle = (lambda data: e.request_tags(2, OP["configure"], data)), e.settings
+    rate = C["rate"] | 0x80                                                    # the rate, critical
+    settle(parse(good + tlv(rate, struct.pack("<I", 500))))                    # a later copy the probe handles: ignored
     with pytest.raises(Reject) as r:
-        settle(parse(good + tlv(0xC2, struct.pack("<I", 1))))
-    assert (r.value.reason, r.value.payload) == (11, b"\xc2")
+        settle(parse(good + tlv(rate, struct.pack("<I", 1))))
+    assert (r.value.reason, r.value.payload) == (_R["unsupported"], bytes([rate]))
     with pytest.raises(Reject) as r:
-        settle(parse(good + tlv(66, struct.pack("<I", 0))))
-    assert r.value.reason == 3
+        settle(parse(good + tlv(C["rate"], struct.pack("<I", 0))))
+    assert r.value.reason == _R["malformed"]
 
 
 # ---- the bench: a later copy of a capture configure TLV is checked for its value too ---------------------------------

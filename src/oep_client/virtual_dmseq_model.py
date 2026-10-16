@@ -1,6 +1,7 @@
 """Independent logical probe-side dmseq fixture; no target transport."""
 import copy
 import struct
+from .virtual_attach_model import COP
 from .virtual_mailbox_model import Mailboxes, MailboxModel
 from .virtual_core import Core
 
@@ -17,16 +18,16 @@ def initial():return {'synced':False,'last_s':0,'last_syn':False,'h':0,'pending'
 
 
 class Dmseq(Mailboxes):
-    mechanisms=(0,1,2)
+    mechanisms=('sdi','dmdata','dmseq')   # a named list (core §7.7)
     def __init__(self,ep):super().__init__(ep);self.protocols={}
     def dispatch_request(self,fn,op,payload,tags):
         value=super().dispatch_request(fn,op,payload,tags)
-        if fn==4 and op==16 and payload[4]==2:self.protocols[struct.unpack_from('<I',value)[0]]=initial()
+        if fn==4 and op==COP['open'] and self.mechanism_numbers().get(payload[4])=='dmseq':self.protocols[struct.unpack_from('<I',value)[0]]=initial()
         return value
     def close_stream(self,rid):super().close_stream(rid);self.protocols.pop(rid,None)
     def poll(self,rid):
         self.resource(rid,'stream')
-        if self.meta[rid]!=2:return super().poll(rid)
+        if self.mechanism_numbers()[self.meta[rid]]!='dmseq':return super().poll(rid)
         m=self.mailboxes[rid];p=self.protocols[rid];stream=self.streams[rid][1];m['events']=[]
         if m['debug_busy']:return
         status=0x100 if m['halted'] else 0;m['events'].append(('read',0x11,status))

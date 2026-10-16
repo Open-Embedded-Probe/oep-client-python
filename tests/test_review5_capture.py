@@ -42,21 +42,23 @@ def test_model_release_in_state_1_or_6_does_nothing(model_class, end):
     e = model.extension
     roles = (0, 1) if model_class is LogicModel else (1, 3)
     e.roles, e.plans[2] = list(roles), [0, 1]
-    tags = {64: (64, b"\2"), 66: (66, struct.pack("<I", 1000)), 67: (67, struct.pack("<I", 8)),
-            68: (68, struct.pack("<I", 2))}
+    from oep_client import registry as R
+    C, OP, ST, MODE = R.FIXTURE_ANALOG.tlv["configure"], R.FIXTURE_ANALOG.op, R.FIXTURE_LOGIC.enum["state"], R.FIXTURE_LOGIC.enum["mode"]
+    tags = {C["mode"]: (C["mode"], bytes([MODE["repeat"]])), C["rate"]: (C["rate"], struct.pack("<I", 1000)),
+            C["samples"]: (C["samples"], struct.pack("<I", 8)), C["segments"]: (C["segments"], struct.pack("<I", 2))}
     if model_class is AnalogModel:
-        tags[71] = []
-    e.dispatch_request(2, 16, b"", tags)
-    generation = struct.unpack("<I", e.dispatch_request(2, 17, b"", {}))[0]
+        tags[C["frontend"]] = []
+    e.dispatch_request(2, OP["configure"], b"", tags)
+    generation = struct.unpack("<I", e.dispatch_request(2, OP["start"], b"", {}))[0]
     e.feed([[i & 1, (i >> 1) & 1] for i in range(12)])                   # one segment and 4 samples more
     if end == "stop":
-        e.dispatch_request(2, 18, b"", {})
-        assert e.state == 1 and len(e.segments) == 2
+        e.dispatch_request(2, OP["stop"], b"", {})
+        assert e.state == ST["configured"] and len(e.segments) == 2
     else:
-        (model.logic_fail if model_class is LogicModel else model.analog_fail)(2)
-        assert e.state == 6
+        (model.logic_fail if model_class is LogicModel else model.analog_fail)(R.FIXTURE_LOGIC.enum["error"]["storage"])
+        assert e.state == ST["error"]
     rows, data, base = list(e.segments), bytes(e.data), e.base
-    assert e.dispatch_request(2, 23, struct.pack("<II", generation, 1), {}) == b""
+    assert e.dispatch_request(2, OP["release"], struct.pack("<II", generation, 1), {}) == b""
     assert (list(e.segments), bytes(e.data), e.base) == (rows, data, base)
 
 

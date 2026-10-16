@@ -155,7 +155,7 @@ def test_core_describe_lists_the_transports_and_max_op_ms():
     ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     holder = Host(ep)
     holder.open()
-    holder.ok(10, CFG.op["set"], b"\x01" + m.tlv(CFG.tlv["item"]["label"], struct.pack("<H", 20) + b"DUT"))
+    holder.ok(10, CFG.op["set"], b"\x01" + m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["label"], struct.pack("<H", 20) + b"DUT"))
     assert all(v[2:] != b"DUT" for t, v in describe(ep, 0) if t == tags["label"])
 
 
@@ -288,13 +288,14 @@ def test_no_default_reset_line_only_the_declared_channels():
     h.open()
     swio = ep.pairs[1][0]
     assert ep.reset_channels[1] == {23}
-    reset = lambda ch, hold=20: m.tlv(0x05, struct.pack("<HH", ch, hold), critical=True)
+    RESET = reg.WIRE_SWIO.tlv["attach"]["reset"]
+    reset = lambda ch, hold=20: m.tlv(RESET, struct.pack("<HH", ch, hold), critical=True)
     for channel in (0xFFFF, 22):                                    # no default; 22 is not a reset line
         r = h.raw(1, W["attach"], att(swio, 1) + reset(channel))
-        assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([0x85]))
+        assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([RESET | 0x80]))
     rd = m.Reader(h.ok(1, W["attach"], att(swio, 1) + reset(23)))
     conn, _, flags, _ = rd.take("IIBI")
-    assert flags & 0x08 and rd.tail().get(0x11) == struct.pack("<I", 0)   # halted at the reset vector: TLV dpc
+    assert flags & reg.WIRE_SWIO.enum["attach_flags"]["halted"] and rd.tail().get(reg.WIRE_SWIO.tlv["attach_answer"]["dpc"]) == struct.pack("<I", 0)   # halted at the reset vector: TLV dpc
     h.ok(1, W["detach"], struct.pack("<I", conn))
     assert h.raw(1, W["attach"], att(swio, 1) + reset(23, 20000)).detail == m.UNSUPPORTED   # hold_ms over max_op_ms
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x90, struct.pack("<HBH", 4, 1, 23)))   # fixture.gpio takes NRST
@@ -305,14 +306,15 @@ def test_no_default_reset_line_only_the_declared_channels():
 def test_idle_clock_is_rvswd_s():
     ep, h = bench()
     pair = ep.pairs[1][0]
-    idle_low = m.tlv(0x04, b"\x01", critical=True)
+    IDLE = reg.WIRE_RVSWD.tlv["attach"]["idle_clock"]
+    idle_low = m.tlv(IDLE, bytes([reg.WIRE_RVSWD.enum["idle_clock"]["low"]]), critical=True)
     h.ok(1, W["attach"], att(pair, 1) + idle_low)
     assert ep.conns[ep._conn_at(1, pair)].idle_clock == 1
     assert h.raw(1, W["attach"], att(ep.pairs[1][1], 1)
-                 + m.tlv(0x04, b"\x02", critical=True)).payload == b"\x84"   # a value a later revision may define
+                 + m.tlv(IDLE, bytes([max(reg.WIRE_RVSWD.enum["idle_clock"].values()) + 1]), critical=True)).payload == bytes([IDLE | 0x80])   # a value a later revision may define
     scan = b"\x01" + struct.pack("<HH", *ep.pairs[1][2])
-    assert h.raw(1, W["scan"], scan + m.tlv(0x04, b"\x01", critical=True)
-                 + m.tlv(0x01, struct.pack("<I", 4_000_000), critical=True)).succeeded   # scan takes them too
+    assert h.raw(1, W["scan"], scan + m.tlv(reg.WIRE_RVSWD.tlv["scan"]["idle_clock"], b"\x01", critical=True)
+                 + m.tlv(reg.WIRE_RVSWD.tlv["scan"]["max_speed"], struct.pack("<I", 4_000_000), critical=True)).succeeded   # scan takes them too
     v003 = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
     hv = Host(v003)
     hv.open()

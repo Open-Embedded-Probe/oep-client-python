@@ -52,7 +52,7 @@ POLICIES={
     'oep.fixture.logic':(('force','release','query','subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §1/3.2/3.4'),
     'oep.fixture.analog':(('force','release','query','calibration','subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §1/3.2/3.4/3.7'),
     'oep.fixture.capture-group':(('subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §4.1/4.3'),
-    'oep.probe.config':(('save','erase','state'),(('save','erase'),),'probe-config §2, §4'),
+    'oep.probe.config':(('save','erase','state','network'),(('save','erase'),),'probe-config §2, §4'),
 }
 
 

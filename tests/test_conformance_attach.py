@@ -7,15 +7,15 @@ from oep_client.conformance_attach_sample import SampleAttachAdapter
 from oep_client.virtual_attach_model import AttachModel
 from test_conformance_oep_declarations import SPECS
 from test_conformance import REG
+from oep_client.virtual_attach_model import WOP, WT, COP
+from oep_client.virtual_names import R
+
+RESET = WT['attach']['reset']                       # the wire family's reset TLV (debug §3)
+UNKNOWN = max(WT['attach'].values())+1              # a tag attach does not define: what the checker sends (core §2.3)
 
 
 def setup():
-    reg=copy.deepcopy(REG);reg['interface']=copy.deepcopy(SPECS)
-    # a09fa45's attach TLVs (rvswd idle_clock / reset, swio reset, swd targetsel / reset) and console mechanisms
-    for row in reg['interface']:
-        spec=current.INTERFACES[row['name']]
-        if 'attach' in spec.tlv:row['tlv']['attach']=dict(spec.tlv['attach'])
-        if 'mechanism' in spec.enum:row['enum']['mechanism']=dict(spec.enum['mechanism'])
+    reg=copy.deepcopy(REG);reg['interface']=copy.deepcopy(SPECS)   # the wires and the console as the SPEC defines them
     model=AttachModel(lambda:0,boot_id=17);c=Checks(model.handle,reg,'virtual-resource-1')
     return model,c,SampleAttachAdapter(model)
 
@@ -48,30 +48,30 @@ def test_attach_and_console_mutants_fail(defect,case):
     def corrupt():
         result=restart();e=model.extension;parse=e.request_tags;dispatch=e.dispatch_request
         def bad_tags(fn,op,data):
-            if defect=='critical_ignored':data=data.replace(b'\xfe\x01\0x',b'\x7e\x01\0x')
+            if defect=='critical_ignored':data=data.replace(bytes((UNKNOWN|128,1,0))+b'x',bytes((UNKNOWN,1,0))+b'x')
             values=parse(fn,op,data)
-            if defect=='noncritical_rejected' and 5 in values and values[5][0]==5:
+            if defect=='noncritical_rejected' and RESET in values and values[RESET][0]==RESET:
                 from oep_client.virtual_core import Reject
-                raise Reject(11,b'\x05')
-            if defect=='last_wins' and fn==1 and op==17 and b'\x85\x04\0\x08\0\x14\0' in data:values[5]=(133,b'\x08\0\x14\0')
+                raise Reject(R['unsupported'],bytes((RESET,)))
+            if defect=='last_wins' and fn==1 and op==WOP['attach'] and bytes((RESET|128,4,0,8,0,20,0)) in data:values[RESET]=(RESET|128,b'\x08\0\x14\0')
             return values
         def raw_lost(fn,op,data):
             from oep_client.virtual_core import Reject
             try:return bad_tags(fn,op,data)
             except Reject as r:
-                if defect=='raw_tag_lost' and r.payload[:1] in (b'\x05',b'\x85'):raise Reject(r.reason if hasattr(r,'reason') else 11,bytes((r.payload[0]&127,)))
+                if defect=='raw_tag_lost' and r.payload[:1] in (bytes((RESET,)),bytes((RESET|128,))):raise Reject(r.reason if hasattr(r,'reason') else R['unsupported'],bytes((r.payload[0]&127,)))
                 raise
         def unchecked(fn,op,data):
-            if defect=='later_copy_unchecked' and fn<=3 and op==17:
-                first=data.find(b'\x85\x04\0')
-                if first>=0 and data[first+7:first+10]==b'\x85\x01\0':data=data[:first+7]
+            if defect=='later_copy_unchecked' and fn<=3 and op==WOP['attach']:
+                first=data.find(bytes((RESET|128,4,0)))
+                if first>=0 and data[first+7:first+10]==bytes((RESET|128,1,0)):data=data[:first+7]
             return raw_lost(fn,op,data)
         def bad_dispatch(fn,op,payload,tags):
-            if defect=='zero_speed_taken' and fn<=3 and op==17 and payload[5:9]==b'\0'*4:payload=payload[:5]+b'\xd0\x07\0\0'+payload[9:]
-            if defect=='arm_console' and fn==4 and op==16:
+            if defect=='zero_speed_taken' and fn<=3 and op==WOP['attach'] and payload[5:9]==b'\0'*4:payload=payload[:5]+b'\xd0\x07\0\0'+payload[9:]
+            if defect=='arm_console' and fn==4 and op==COP['open']:
                 parent=int.from_bytes(payload[:4],'little')
                 if parent in e.connections and e.connections[parent]['fn']==3:e.connections[parent]['fn']=1
-            if defect=='duplicate_stream' and fn==4 and op==16:
+            if defect=='duplicate_stream' and fn==4 and op==COP['open']:
                 parent=int.from_bytes(payload[:4],'little')
                 for rid,(owner,_) in list(e.streams.items()):
                     if owner==parent:e.close_stream(rid)
@@ -79,10 +79,10 @@ def test_attach_and_console_mutants_fail(defect,case):
             except Exception:
                 if defect=='refusal_touches':e.touch.append(('refused',fn))
                 raise
-            if defect=='console_extra_byte' and fn==4 and op==16:value=value[:4]+b'\x01'+value[4:]   # an old flags byte
-            if defect=='streams_reversed' and fn==4 and op==23 and value[1]>1:   # console §1: live streams in creation order
+            if defect=='console_extra_byte' and fn==4 and op==COP['open']:value=value[:4]+b'\x01'+value[4:]   # an old flags byte
+            if defect=='streams_reversed' and fn==4 and op==COP['streams'] and value[1]>1:   # console §1: live streams in creation order
                 rows=[value[2+9*i:11+9*i] for i in range(value[1])];value=value[:2]+b''.join(reversed(rows))+value[2+9*len(rows):]
-            if defect=='speed_exceeds' and fn<=3 and op==17 and not getattr(value,'outcome',0):value=value[:9]+b'\xff\xff\xff\x7f'+value[13:]
+            if defect=='speed_exceeds' and fn<=3 and op==WOP['attach'] and not getattr(value,'outcome',0):value=value[:9]+b'\xff\xff\xff\x7f'+value[13:]
             return value
         e.request_tags=unchecked;e.dispatch_request=bad_dispatch
         if defect=='replay_executes':

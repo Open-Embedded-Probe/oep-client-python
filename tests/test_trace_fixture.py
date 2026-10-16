@@ -601,7 +601,7 @@ def test_i2c_drives_open_drain_only_with_its_pullups_as_declared(pullups):
     probe = virtual_bench.p4_x035()
     ep, h = bench(virtual_bench.with_i2c_pullups(probe) if pullups else probe)
     features = struct.unpack("<I", decl(ep, h, I2C)[catalog.FEATURES])[0]
-    assert bool(features & 0x04) == pullups
+    assert bool(features & reg.FIXTURE_I2C_TARGET.enum["features"]["internal_pullups"]) == pullups
     h.ok(h.plan_fn, PLAN_APPLY, assign((I2C, 1, 30), (I2C, 2, 31)))
     h.ok(I2C, 0x10, b"\x42")
     want = "open-drain pull-up" if pullups else "open-drain"
@@ -877,7 +877,8 @@ def test_spi_describe_declares_modes_and_cs_setup(profile, cs_setup):
     assert len(d[0x41]) == 1 and 1 <= d[0x41][0] <= 0x0F
     assert not struct.unpack("<I", d[catalog.FEATURES])[0] & ~0x01
     assert len(d[0x40]) == 1 and d[0x40][0] >= 1
-    assert (0x43 in d) == bool(cs_setup) and (not cs_setup or struct.unpack("<I", d[0x43])[0] == cs_setup)
+    CS = reg.FIXTURE_SPI_TARGET.tlv["describe"]["cs_setup_ns"]
+    assert (CS in d) == bool(cs_setup) and (not cs_setup or struct.unpack("<I", d[CS])[0] == cs_setup)
     assert fixture.SpiTarget(host.Host(ep.handle, rng=random.Random(1)), fn).cs_setup_ns == cs_setup
 
 

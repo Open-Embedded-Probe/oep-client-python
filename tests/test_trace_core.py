@@ -723,7 +723,7 @@ def test_resource_numbers_are_u32_from_1():
     first = struct.unpack_from("<I", w.ok(1, RVSWD.op["attach"], struct.pack("<BHHI", 1, 2, 3, 4_000_000)))[0]
     assert first == 1
     con = ep.fns["oep.target.console"]
-    second = struct.unpack_from("<I", w.ok(con, reg.TARGET_CONSOLE.op["open"], struct.pack("<IB", first, 0)))[0]
+    second = struct.unpack_from("<I", w.ok(con, reg.TARGET_CONSOLE.op["open"], struct.pack("<IB", first, ep.mechanism_number("sdi"))))[0]
     assert second == 2
 
 
@@ -1712,7 +1712,7 @@ def cfg_set(w, ep, *items):
 
 
 def idle_item(ch, mode):
-    return m.tlv(CFG.tlv["item"]["idle"], struct.pack("<HB", ch, mode))
+    return m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["idle"], struct.pack("<HB", ch, mode))
 
 
 def test_the_idle_state_is_the_settings_or_hi_z():
@@ -1890,7 +1890,7 @@ def test_a_closed_or_unknown_number_is_no_resource_and_another_kind_cause_6():
     w.open()
     a = attach(w)
     con = ep.fns["oep.target.console"]
-    stream = struct.unpack_from("<I", w.ok(con, reg.TARGET_CONSOLE.op["open"], struct.pack("<IB", a, 0)))[0]
+    stream = struct.unpack_from("<I", w.ok(con, reg.TARGET_CONSOLE.op["open"], struct.pack("<IB", a, ep.mechanism_number("sdi"))))[0]
     r = rejected(w.raw(2, RV.op["halt"], struct.pack("<I", stream)), m.UNAVAILABLE)
     assert h.Unavailable(r).cause == "wrong_state"
     w.ok(1, RVSWD.op["detach"], struct.pack("<I", a))
@@ -2875,7 +2875,7 @@ def test_at_boot_the_saved_idles_are_applied_and_a_disabled_channel_is_left_alon
     ep = build()
     w = Wire(ep)
     w.open()
-    disable = m.tlv(CFG.tlv["item"]["disable"], struct.pack("<H", 31))
+    disable = m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["disable"], struct.pack("<H", 31))
     assert cfg_set(w, ep, idle_item(30, CFG.enum["idle_mode"]["output_high"]), disable).succeeded
     w.ok(ep.fns[CFG.name], CFG.op["save"])
     ep.reboot()
@@ -2906,7 +2906,7 @@ def test_a_take_clashing_with_a_runtime_resource_or_a_setting_changes_nothing():
     ep = build()
     w = Wire(ep)
     w.open()
-    assert cfg_set(w, ep, m.tlv(CFG.tlv["item"]["disable"], struct.pack("<H", 21))).succeeded
+    assert cfg_set(w, ep, m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["disable"], struct.pack("<H", 21))).succeeded
     before = ([ep.pin_state(c) for c in range(55)], sorted(ep.plan))
     r = rejected(w.raw(ep.fns[PLAN.name], PLAN.op["plan_apply"], assign(4, 1, 20) + assign(4, 1, 21)), m.UNAVAILABLE)
     assert h.Unavailable(r).cause == "held_by_settings" and ([ep.pin_state(c) for c in range(55)], sorted(ep.plan)) == before
@@ -3470,7 +3470,7 @@ def test_a_label_set_in_the_settings_is_not_in_describe():
     w = Wire(ep)
     w.open()
     before = describe(ep)
-    item = m.tlv(CFG.tlv["item"]["label"], struct.pack("<H", 20) + b"from-settings")
+    item = m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["label"], struct.pack("<H", 20) + b"from-settings")
     assert cfg_set(w, ep, item).succeeded
     assert describe(ep) == before
     assert all(b"from-settings" not in v for _, v in describe(ep))

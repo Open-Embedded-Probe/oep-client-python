@@ -6,19 +6,21 @@ from oep_client.conformance_capture_timeline import CaptureTimelineChecks
 from oep_client.conformance_capture_timeline_sample import SampleCaptureTimelineAdapter
 from oep_client.virtual_capture_timeline_model import CaptureTimelineModel
 from test_conformance_registered_ops import setup as registered_setup
+from spec_names import iface, tags
 
 
-# Independent literal capture a09fa45 tags (registry/oep-v1.toml), not the runtime client's registry.
-TRACK={'configure':{'mode':0x40,'rate':0x42,'samples':0x43,'segments':0x44,'trigger':0x45,'pretrigger':0x46},
-       'configure_answer':{'actual_rate':0x50,'layout':0x51,'actual_samples':0x52,'actual_segments':0x53},
-       'status_answer':{'error':0x01},'data':{'generation':0x01,'segment_info':0x02},
-       'describe':{'mode':0x40,'rate_range':0x41,'channels':0x44,'trigger':0x45}}
-ANALOG=copy.deepcopy(TRACK);ANALOG['configure']['frontend']=0x47;ANALOG['describe']['frontend']=0x46
-ANALOG['configure_answer'].update(scale=0x55,skew=0x57,frontend_used=0x58,reference=0x59);ANALOG['calibration_answer']={'factory':0x01,'vrefint':0x02}
-EVENTS={'segment':0x01,'stopped':0x02,'triggered':0x03}
-TAGS={'oep.probe.plan':({'plan_apply':{'role_assignment':0x10},'describe':{'plan_roles':0x40}},{}),
+def tags_of(name):
+    return {c:dict(t) for c,t in iface(name)['tlv'].items()}
+
+
+# The capture family's tags and events by name from the selected SPEC (tests/spec_names.py).
+_CTX=('configure','configure_answer','status_answer','data','describe')
+TRACK={c:tags('oep.fixture.logic',c) for c in _CTX}
+ANALOG={c:tags('oep.fixture.analog',c) for c in _CTX+('calibration_answer',)}
+EVENTS=dict(iface('oep.fixture.logic')['event'])
+TAGS={'oep.probe.plan':(tags_of('oep.probe.plan'),{}),
       'oep.fixture.analog':(ANALOG,EVENTS),'oep.fixture.logic':(TRACK,EVENTS),
-      'oep.fixture.capture-group':({'bind':{},'describe':{'tracks':0x40}},{'stopped':0x02})}
+      'oep.fixture.capture-group':({'bind':{},**tags_of('oep.fixture.capture-group')},dict(iface('oep.fixture.capture-group')['event']))}
 
 
 def setup():

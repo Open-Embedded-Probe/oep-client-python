@@ -25,7 +25,7 @@ def profile() -> virtual_bench.VirtualProbe:
                                                 catalog.u8(virtual_bench.MAX_CONNECTIONS, 1))),
         virtual_bench.Offered(DM, 0, "oep.target.riscv-dm", (catalog.u32(catalog.FEATURES, 0b1111),
                                                     catalog.u16(catalog.MAX_LENGTH, virtual_bench.block_max_length(1024)))),
-        virtual_bench.Offered(3, 0, "oep.target.console", (catalog.tlv(virtual_bench.MECHANISMS, bytes([0, 1, 2])),)),
+        virtual_bench._console(3),
         virtual_bench._gpio(GPIO, PINS),
         virtual_bench._config(CFG, 0),
     ], own_channels=(24, 25))

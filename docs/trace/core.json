@@ -1,5 +1,5 @@
 {
- "spec_commit": "67876b7",
+ "spec_commit": "e49550d",
  "units": {
   "core:0:1": {
    "text": "| 層 | 中身 | 名前 | 版 |",
@@ -272,6 +272,44 @@
    ],
    "note": "repeating channel / label kept in order; non-repeating cause: the first"
   },
+  "core:2.2:7": {
+   "text": "- **名前つきの拡張 TLV（tag 0x7F）**: どの文脈でも、tag ",
+   "verify": [
+    "tests/test_trace_core_names.py::test_the_named_extension_tag_is_reserved_in_every_context",
+    "tests/test_trace_core_names.py::test_a_request_with_an_unknown_named_extension[False]",
+    "tests/test_trace_core_names.py::test_a_request_with_an_unknown_named_extension[True]"
+   ],
+   "mutants": [],
+   "note": "tag 0x7F is the named extension; no interface defines it"
+  },
+  "core:2.2:8": {
+   "text": "- 繰り返してよい。同じ名前を 2 つ置けるかは、その名前の定義が決める。",
+   "verify": [
+    "tests/test_trace_core_names.py::test_a_request_with_an_unknown_named_extension[False]",
+    "tests/test_trace_core_names.py::test_a_request_with_an_unknown_named_extension[True]",
+    "tests/test_trace_core_names.py::test_a_reader_skips_an_unknown_named_extension_in_answers_and_describe"
+   ],
+   "mutants": [],
+   "note": "two extensions in one request and one answer"
+  },
+  "core:2.2:9": {
+   "text": "- 要求で、知らない名前の拡張は、critical（0xFF）なら reject",
+   "verify": [
+    "tests/test_trace_core_names.py::test_a_request_with_an_unknown_named_extension[False]",
+    "tests/test_trace_core_names.py::test_a_request_with_an_unknown_named_extension[True]"
+   ],
+   "mutants": [],
+   "note": "unknown name: ignored, or unsupported naming 0xFF when critical"
+  },
+  "core:2.2:10": {
+   "text": "- 応答、出来事、データ、describe で、読む側は知らない名前の拡張を読み",
+   "verify": [
+    "tests/test_trace_core_names.py::test_a_reader_skips_an_unknown_named_extension_in_answers_and_describe",
+    "tests/test_spec_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config get: count separates items from response extensions]"
+   ],
+   "mutants": [],
+   "note": "the client skips an unknown extension in get and describe"
+  },
   "core:2.3:1": {
    "text": "- **容器は自分の長さを知る**: フレーム、TLV、並び、バイト列（data",
    "verify": [
@@ -364,12 +402,20 @@
    "text": "- **要求**: 要求の後ろに足せるのは TLV の並びだけ。host は、効",
    "verify": [
     "tests/test_trace_core.py::test_the_host_sends_harmful_or_meaningless_if_ignored_tlvs_critical",
-    "tests/test_conformance_host_critical_calls.py::test_public_calls_send_critical_fields_and_surface_refusal[rvswd-133]",
-    "tests/test_conformance_host_critical_calls.py::test_public_calls_send_critical_fields_and_surface_refusal[swd-133]"
+    "tests/test_conformance_host_critical_calls.py::test_public_calls_send_critical_fields_and_surface_refusal[rvswd-131]",
+    "tests/test_conformance_host_critical_calls.py::test_public_calls_send_critical_fields_and_surface_refusal[rvswd-132]",
+    "tests/test_conformance_host_critical_calls.py::test_public_calls_send_critical_fields_and_surface_refusal[swd-130]",
+    "tests/test_conformance_host_critical_calls.py::test_public_calls_send_critical_fields_and_surface_refusal[swd-132]",
+    "tests/test_conformance_host_critical_calls.py::test_public_calls_send_critical_fields_and_surface_refusal[swio-132]",
+    "tests/test_conformance_host_critical_calls.py::test_public_calls_send_critical_fields_and_surface_refusal[uart-129]"
    ],
    "mutants": [
-    "tests/test_conformance_host_critical_calls.py::test_critical_field_assertion_detects_dropped_bit[rvswd-133]",
-    "tests/test_conformance_host_critical_calls.py::test_critical_field_assertion_detects_dropped_bit[swio-133]"
+    "tests/test_conformance_host_critical_calls.py::test_critical_field_assertion_detects_dropped_bit[rvswd-131]",
+    "tests/test_conformance_host_critical_calls.py::test_critical_field_assertion_detects_dropped_bit[rvswd-132]",
+    "tests/test_conformance_host_critical_calls.py::test_critical_field_assertion_detects_dropped_bit[swd-130]",
+    "tests/test_conformance_host_critical_calls.py::test_critical_field_assertion_detects_dropped_bit[swd-132]",
+    "tests/test_conformance_host_critical_calls.py::test_critical_field_assertion_detects_dropped_bit[swio-132]",
+    "tests/test_conformance_host_critical_calls.py::test_critical_field_assertion_detects_dropped_bit[uart-129]"
    ],
    "note": "the client sends scan's max_speed and attach's reset with bit 7"
   },
@@ -643,6 +689,26 @@
    ],
    "mutants": [],
    "note": "resource numbers u32 from 1, one space for connections and streams"
+  },
+  "core:2.5:12": {
+   "text": "1. 番号を振るのは、その空間の持ち主（本体は project、インターフェース",
+   "excluded": "a rule for whoever assigns numbers (the registry owners); oep-spec's generator checks the registry, the client only reads it by name (tests/test_literals.py)"
+  },
+  "core:2.5:13": {
+   "text": "2. 範囲に意味を持たせるのは、(a) 1 つの空間を複数の持ち主が振るとき（本",
+   "excluded": "a rule for the registry owners (ranges); checked by oep-spec's generator"
+  },
+  "core:2.5:14": {
+   "text": "3. それ以外は、持ち主の範囲の先頭から定義の順に連番で振る。凍結前は欠番を作ら",
+   "excluded": "a rule for the registry owners (sequential numbers); checked by oep-spec's generator"
+  },
+  "core:2.5:15": {
+   "text": "4. 複数のインターフェースが同じ意味で使う値（同じ一族の TLV、role、e",
+   "excluded": "a rule for the registry owners (family spaces); checked by oep-spec's generator (family consistency)"
+  },
+  "core:2.5:16": {
+   "text": "5. 外の仕様が決める値（protocol の応答の値、ビットの位置）は、その値",
+   "excluded": "a rule for the registry owners (external values kept as they are)"
   },
   "core:2.8:1": {
    "text": "- インターフェースのどの**固定の形**（§2.3: 固定部分、TLV の値、",
@@ -1854,6 +1920,43 @@
    ],
    "note": "uptime_ns read for this request"
   },
+  "core:7.7:1": {
+   "text": "- インターフェースは、describe に名前を持つ TLV を 1 つずつ繰",
+   "verify": [
+    "tests/test_trace_core_names.py::test_a_named_lists_numbers_count_from_1_and_follow_the_probes_order",
+    "tests/test_config_network.py::test_dhcp_with_an_address_is_malformed_and_a_netif_past_the_list_unsupported",
+    "tests/test_trace_console.py::test_describe_declares_the_mechanisms_as_a_named_list"
+   ],
+   "mutants": [],
+   "note": "list place from 1; 0 is no number"
+  },
+  "core:7.7:2": {
+   "text": "- 標準の名前は registry が持つ（`a-z 0-9 -`、`.` を含",
+   "verify": [
+    "tests/test_trace_core_names.py::test_standard_names_have_no_dot_and_another_partys_have_one",
+    "tests/test_config_network.py::test_a_probes_own_item_by_its_name_and_form"
+   ],
+   "mutants": [],
+   "note": "standard names without a dot, own ones reverse-DNS"
+  },
+  "core:7.7:3": {
+   "text": "- 番号は同じ boot_id の間変わらない。host は名前から番号を引き、",
+   "verify": [
+    "tests/test_config_network.py::test_item_numbers_follow_the_probes_list_and_the_host_finds_them_by_name"
+   ],
+   "mutants": [],
+   "note": "the client looks numbers up by name and again after a reboot"
+  },
+  "core:7.7:4": {
+   "text": "- 並びに無い番号は、その要求の定義に従って断る（ふつうは unsupporte",
+   "verify": [
+    "tests/test_config_network.py::test_dhcp_with_an_address_is_malformed_and_a_netif_past_the_list_unsupported",
+    "tests/test_trace_probe_config.py::test_unset_of_a_number_past_the_list_is_unsupported",
+    "tests/test_spec_vectors.py::test_ops_vectors_from_the_virtual_bench_byte_for_byte[probe.config set: item number 7 past the settings is unsupported]"
+   ],
+   "mutants": [],
+   "note": "a number past the list: unsupported"
+  },
   "core:8:1": {
    "text": "- **空きの状態**: 設定（インターフェースが定める）がそのピンの空きの状態",
    "verify": [
@@ -2380,7 +2483,7 @@
    "note": "interface statuses / reasons / causes and refusal tags in 0x40-0x7F"
   },
   "core:12:8": {
-   "text": "- describe のインターフェース固有のタグ（0x40〜0x7F）と、ピン",
+   "text": "- describe のインターフェース固有のタグ（0x40〜0x7E）と、ピン",
    "verify": [
     "tests/test_trace_core.py::test_an_interfaces_own_values_and_describe_tags_are_in_its_range",
     "tests/test_trace_core.py::test_every_describe_tlv_fits_the_frame_and_a_page_never_splits_one"
@@ -2461,7 +2564,7 @@
    "note": "restates §2.8"
   },
   "core:12:18": {
-   "text": "7. **ほかの者の名前のインターフェースに、op、tag、値を足さない。** ",
+   "text": "7. **ほかの者の名前のインターフェースに、番号（op、tag、enum の値",
    "verify": [
     "tests/test_trace_core.py::test_the_bench_adds_nothing_to_the_projects_interfaces"
    ],
@@ -2469,6 +2572,35 @@
    "note": "the bench's oep. fns offer only registry ops; its own experiment is under its own name"
   },
   "core:12:19": {
+   "text": "- 名前つきの拡張 TLV（§2.2、tag 0x7F）: 要求、応答、出来事、",
+   "verify": [
+    "tests/test_trace_core_names.py::test_a_reader_skips_an_unknown_named_extension_in_answers_and_describe",
+    "tests/test_trace_core_names.py::test_a_request_with_an_unknown_named_extension[False]",
+    "tests/test_trace_core_names.py::test_a_request_with_an_unknown_named_extension[True]"
+   ],
+   "mutants": [],
+   "note": "another party adds by a named extension"
+  },
+  "core:12:20": {
+   "text": "- 名前の並び（§7.7）: インターフェースが名前で宣言する選択肢に、自分の名",
+   "verify": [
+    "tests/test_config_network.py::test_a_probes_own_item_by_its_name_and_form",
+    "tests/test_config_network.py::test_own_items_of_every_form[3-7-\\x07\\x00\\x00\\x00]",
+    "tests/test_config_network.py::test_own_items_of_every_form[5-True-\\x01]",
+    "tests/test_config_network.py::test_own_items_of_every_form[4-10.1.2.3-\\n\\x01\\x02\\x03]"
+   ],
+   "mutants": [],
+   "note": "another party adds an own item to the settings list"
+  },
+  "core:12:21": {
+   "text": "- 自分の名前のインターフェース: 新しい機能（別の fn として出す）。",
+   "verify": [
+    "tests/test_conformance_resources.py::test_resource_contracts_pass_independent_minimal_extension"
+   ],
+   "mutants": [],
+   "note": "another party adds its own interface (a separate fn)"
+  },
+  "core:12:22": {
    "text": "8. **特定のチップ向けの手順は、汎用のインターフェースに入れない。** チッ",
    "verify": [
     "tests/test_trace_core.py::test_the_family_an_interface_is_for_is_in_the_registry",

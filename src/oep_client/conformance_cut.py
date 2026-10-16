@@ -6,7 +6,7 @@ from .conformance_debug import DebugChecks
 
 class CutChecks(DebugChecks):
     def prepare(self,sid,halt=False):
-        parent,_=self.attach(sid);rid,_=self.console(sid,parent,2)
+        parent,_=self.attach(sid);rid,_=self.console(sid,parent,'dmseq')
         if halt:self.c.success(self.request(5,'halt',sid,struct.pack('<I',parent)))
         return parent,rid
     def failed(self,sid,parent):
@@ -56,7 +56,7 @@ class CutChecks(DebugChecks):
     def isolated(self):
         self.fresh()
         with self.c.holding(3000) as sid:
-            parent,rid=self.prepare(sid);other,_=self.attach(sid,pair=self.a.pairs[1][1]);child,_=self.console(sid,other,2);before=self.a.state()
+            parent,rid=self.prepare(sid);other,_=self.attach(sid,pair=self.a.pairs[1][1]);child,_=self.console(sid,other,'dmseq');before=self.a.state()
             self.failed(sid,parent);self.failed(sid,parent);after=self.a.state()
             require(other in after['connections'] and child in after['streams'] and after['targets'][other]==before['targets'][other] and after['streams'][child]==before['streams'][child],'wire cut affected another connection')
     def rejected(self):

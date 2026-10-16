@@ -6,23 +6,24 @@ import pytest
 
 from oep_client.conformance import Checks, Violation, ops, tlvs
 from oep_client import endpoint, virtual_bench, cobs
+from spec_names import SPEC, op, tag
 
-# Deliberately independent of the runtime registry, which still describes the old SPEC.
+# The selected SPEC's registry by name (tests/spec_names.py), independent of the runtime client's registry.
+_CORE_OPS = ('confirm', 'list', 'describe', 'clock', 'open', 'end', 'keepalive', 'lock_state')
 REG = {
-    'roles': {'request': 1, 'result': 2},
-    'resolutions': {'rejected': 0, 'completed': 1},
-    'outcomes': {'success': 0, 'failed': 1, 'partial': 2},
-    'reject_reasons': {'unknown_function': 1, 'unknown_operation': 2, 'malformed': 3,
-                      'unavailable': 4, 'window_exceeded': 6, 'no_session': 7, 'locked': 8,
-                      'session_required': 9, 'no_resource': 10, 'unsupported': 11, 'result_lost': 12},
-    'describe_common': {'ops': 7},
-    'limits': {'request_header_bytes': 10, 'result_header_bytes': 5, 'corr_max': 0xFFFF, 'corr_half_range': 0x8000},
-    'core': {'op': [{'name': n, 'code': c} for n, c in
-                    [('confirm', 1), ('list', 2), ('describe', 3), ('clock', 4),
-                     ('open', 16), ('end', 17), ('keepalive', 18), ('lock_state', 19)]],
-             'tlv': {'confirm_answer': {'transport': 1},
-                     'describe': {'firmware': 64, 'model': 65, 'unit_id': 66, 'channels': 67,
-                                  'transport': 73, 'chip': 76, 'max_op_ms': 77}}},
+    'roles': {k: SPEC['roles'][k] for k in ('request', 'result')},
+    'resolutions': dict(SPEC['resolutions']),
+    'outcomes': {k: SPEC['outcomes'][k] for k in ('success', 'failed', 'partial')},
+    'reject_reasons': dict(SPEC['reject_reasons']),
+    'describe_common': dict(SPEC['describe_common']),
+    'status': dict(SPEC['status']),
+    'limits': {k: SPEC['limits'][k] for k in ('request_header_bytes', 'result_header_bytes', 'corr_max', 'corr_half_range')},
+    'core': {'op': [{'name': n, 'code': op('core', n)} for n in _CORE_OPS],
+             'enum': {'unavailable_cause': dict(SPEC['core']['enum']['unavailable_cause'])},
+             'tlv': {'confirm_answer': {'transport': tag('core', 'confirm_answer', 'transport')},
+                     'unavailable_payload': dict(SPEC['core']['tlv']['unavailable_payload']),
+                     'describe': {k: tag('core', 'describe', k) for k in
+                                  ('firmware', 'model', 'unit_id', 'channels', 'transport', 'chip', 'max_op_ms')}}},
     'interface': [],
 }
 

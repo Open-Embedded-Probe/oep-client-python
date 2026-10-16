@@ -1,5 +1,7 @@
 """Capture §3.4 notifications, with independent fixed-part wire decoding."""
 import struct
+from oep_client.registry import FIXTURE_LOGIC as _LOGIC
+STOPPED_ERROR = _LOGIC.enum['stopped_reason']['error']   # capture §3.4, by name
 from types import SimpleNamespace
 import pytest
 from oep_client import capture as c,message as m
@@ -51,7 +53,7 @@ def test_error_notification_matches_status_without_incomplete_segment(analog,err
     ep,_,track,clock=configured(analog);track.configure(rate=1000,mode=c.REPEAT,samples=8,segments=2);track.subscribe();track.start();clock.t=9;track.status();events(ep,track.fn)
     ep.capture_overflow(track.fn,error);rows=events(ep,track.fn)
     assert [row[0] for row in rows]==[c.EVENT_STOPPED]
-    status=track.status();assert rows[0][1]==(3,status.error,status.generation)
+    status=track.status();assert rows[0][1]==(STOPPED_ERROR,status.error,status.generation)
 
 
 @pytest.mark.parametrize('analog',[False,True])

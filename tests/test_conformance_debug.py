@@ -1,4 +1,6 @@
+import copy
 from oep_client.conformance import Checks
+from spec_names import iface
 from oep_client.conformance_debug import DebugChecks
 from oep_client.conformance_debug_sample import SampleDebugAdapter
 from oep_client.virtual_debug_model import DebugModel
@@ -6,9 +8,7 @@ from test_conformance_dmseq import setup as dmseq_setup
 
 
 def setup():
-    _,c,_=dmseq_setup();c.reg['interface'].append({'name':'oep.target.riscv-dm','revision':1,'op':[{'name':name,'code':code} for name,code in [('dmi',16),('halt',17),('resume',18)]],'enum':{'dmi_step':dict(write=1,read=2,poll_reads=3,wait_us=4,poll_us=5)}})
-    c.reg['describe_common'].update(role_channels=1,max_clock_hz=2,max_length=3,min_clock_hz=4,features=5,channel_group=6)
-    c.reg['status']=dict(ok=0,wait=1,line=2,fault=3,timeout=4,state=5)
+    _,c,_=dmseq_setup();c.reg['interface'].append(copy.deepcopy(iface('oep.target.riscv-dm')))   # as the SPEC defines it
     model=DebugModel(lambda:0,boot_id=17)
     return model,Checks(model.handle,c.reg,'virtual-resource-1'),SampleDebugAdapter(model)
 

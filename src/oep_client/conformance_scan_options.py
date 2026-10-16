@@ -7,9 +7,10 @@ from .conformance_wire_options import WireOptionsChecks
 class ScanOptionsChecks(WireOptionsChecks):
     def scan_request(self,sid,fn,pairs,idle=None,selector=None,speed=None,marked=True,extra=b''):
         bit=128 if marked else 0;payload=bytes((len(pairs),))+b''.join(struct.pack('<HH',*pair) for pair in pairs)
-        if idle is not None:payload+=self.tlv(4|bit,bytes((idle,)))
-        if selector is not None:payload+=self.tlv(6|bit,struct.pack('<I',selector))
-        if speed is not None:payload+=self.tlv(1|bit,struct.pack('<I',speed))
+        S=self.S
+        if idle is not None:payload+=self.tlv(S['idle_clock']|bit,bytes((idle,)))
+        if selector is not None:payload+=self.tlv(S['targetsel']|bit,struct.pack('<I',selector))
+        if speed is not None:payload+=self.tlv(S['max_speed']|bit,struct.pack('<I',speed))
         return self.request(fn,'scan',sid,payload+extra)
     def scan(self,sid,fn,pairs,expected,*,tried=None,idle=None,selector=None,speed=None,marked=True,extra=b''):
         before=self.a.state();req=self.scan_request(sid,fn,pairs,idle,selector,speed,marked,extra);value=self.c.success(req)
@@ -33,8 +34,7 @@ class ScanOptionsChecks(WireOptionsChecks):
         selects=[r for r in events if r[0]=='select'];require(selects==[('select',fn,selector)]*tried if selector is not None else not selects,'scan implicit TARGETSEL or multiple selector choices')
         require(after['clock_ms']-before['clock_ms']==tried and tried<=before['max_op_ms'],'explicit scan clock/budget')
         return req,value
-    @staticmethod
-    def found(fn,pair,value):return (2 if fn==3 else 1,*pair,value)
+    def found(self,fn,pair,value):return (self.kinds['arm_adi' if fn==3 else 'riscv_dm'],*pair,value)
     def idle_case(self,idle):
         self.fresh()
         with self.c.holding(3000) as sid:
@@ -52,7 +52,7 @@ class ScanOptionsChecks(WireOptionsChecks):
         self.fresh()
         with self.c.holding(3000) as sid:
             fn=3 if swd else 1;pair=self.a.pairs[fn][0];selector=0x01000001 if swd else None;self.a.identity(fn,pair,selector,0x2ba01477 if swd else 0x202)
-            self.scan(sid,fn,[pair],[self.found(fn,pair,0x2ba01477 if swd else 0x202)],selector=selector,idle=None if swd else 1,speed=1500,extra=self.tlv(6,struct.pack('<I',0x01000002)) if swd else self.tlv(4,b'\x00')+self.tlv(1,struct.pack('<I',2000)))   # valid later copies (core §2.3: checked too)
+            self.scan(sid,fn,[pair],[self.found(fn,pair,0x2ba01477 if swd else 0x202)],selector=selector,idle=None if swd else 1,speed=1500,extra=self.tlv(self.S['targetsel'],struct.pack('<I',0x01000002)) if swd else self.tlv(self.S['idle_clock'],b'\x00')+self.tlv(self.S['max_speed'],struct.pack('<I',2000)))   # valid later copies (core §2.3: checked too)
     def unmarked(self):
         self.fresh()
         with self.c.holding(3000) as sid:
@@ -88,29 +88,33 @@ class ScanOptionsChecks(WireOptionsChecks):
             if kind=='ZERO':self.refused(self.scan_request(sid,1,[]),'malformed')
             elif kind=='DUP':self.refused(self.scan_request(sid,1,[pairs[0]]*2),'malformed')
             elif kind=='BAD-LATE':self.refused(self.scan_request(sid,1,[pairs[0],(7,7)],idle=1),'unsupported',b'\0')
-            elif kind=='BUSY-LATE':self.attached(sid,idle=1);self.refused(self.scan_request(sid,1,[pairs[1],pairs[0]],idle=1),'unavailable',cause=1)
+            elif kind=='BUSY-LATE':self.attached(sid,idle=1);self.refused(self.scan_request(sid,1,[pairs[1],pairs[0]],idle=1),'unavailable',cause='pin_in_use')
             elif kind in ('DISABLED-LATE','OUTPUT-LATE','RESERVED-LATE'):
-                self.a.pin(pairs[1][0],kind.split('-')[0].lower());self.refused(self.scan_request(sid,1,pairs[:2],idle=1),'unavailable',cause=1 if kind=='RESERVED-LATE' else 5)
+                self.a.pin(pairs[1][0],kind.split('-')[0].lower());self.refused(self.scan_request(sid,1,pairs[:2],idle=1),'unavailable',cause='pin_in_use' if kind=='RESERVED-LATE' else 'held_by_settings')
             elif kind=='IDLE':
-                self.refused(self.scan_request(sid,1,pairs,idle=2),'unsupported',b'\x84')
-                self.refused(self.scan_request(sid,1,pairs,idle=1,extra=self.tlv(4,b'\x02')),'unsupported',b'\x04')   # a later copy too
-                self.refused(self.scan_request(sid,1,pairs,idle=1,speed=1500,extra=self.tlv(1,struct.pack('<I',999))),'unsupported',b'\x01')
-                for fn in (2,3):self.refused(self.scan_request(sid,fn,self.a.pairs[fn],idle=1),'unsupported',b'\x84')
+                S=self.S;bad_idle=max(self.idle_values)+1
+                self.refused(self.scan_request(sid,1,pairs,idle=bad_idle),'unsupported',bytes((S['idle_clock']|128,)))
+                self.refused(self.scan_request(sid,1,pairs,idle=1,extra=self.tlv(S['idle_clock'],bytes((bad_idle,)))),'unsupported',bytes((S['idle_clock'],)))   # a later copy too
+                self.refused(self.scan_request(sid,1,pairs,idle=1,speed=1500,extra=self.tlv(S['max_speed'],struct.pack('<I',999))),'unsupported',bytes((S['max_speed'],)))
+                for fn in (2,3):self.refused(self.scan_request(sid,fn,self.a.pairs[fn],idle=1),'unsupported',bytes((S['idle_clock']|128,)))
             elif kind=='WIDTH':
-                for fn,tag,size in ((1,0x84,2),(3,0x86,3)):self.refused(self.scan_request(sid,fn,self.a.pairs[fn],extra=self.tlv(tag,b'\0'*size)),'malformed')
-            elif kind=='TARGETSEL-WIRE':self.refused(self.scan_request(sid,1,pairs,selector=1),'unsupported',b'\x86')
-            elif kind=='TLV':self.refused(self.scan_request(sid,1,pairs,extra=b'\x7f\x05\0x'),'malformed')
+                for fn,tag,size in ((1,self.S['idle_clock']|128,2),(3,self.S['targetsel']|128,3)):self.refused(self.scan_request(sid,fn,self.a.pairs[fn],extra=self.tlv(tag,b'\0'*size)),'malformed')
+            elif kind=='TARGETSEL-WIRE':self.refused(self.scan_request(sid,1,pairs,selector=1),'unsupported',bytes((self.S['targetsel']|128,)))
+            elif kind=='TLV':self.refused(self.scan_request(sid,1,pairs,extra=bytes((self.unknown,5,0))+b'x'),'malformed')   # a TLV past the payload
             elif kind=='FOREIGN':self.refused(self.scan_request(sid%0xffffffff+1,1,pairs,extra=b'\xfe'),'locked')
-            elif kind=='LOW':self.refused(self.scan_request(sid,1,pairs,speed=999),'unsupported',b'\x81')
+            elif kind=='LOW':self.refused(self.scan_request(sid,1,pairs,speed=999),'unsupported',bytes((self.S['max_speed']|128,)))
     def run(self):
         start=len(self.c.results)
         def context():
             require(self.a.reset_scope=='logical-model' and self.a.reference,'explicit scan-options fixture')
             self.specs={fn:next(s for s in self.c.reg['interface'] if s['name']==name and s['revision']==1) for fn,name in self.a.selection.items()};self.operations={fn:{r['name']:r['code'] for r in s['op']} for fn,s in self.specs.items()}
-            require(self.specs[1]['tlv']['scan']['idle_clock']==4 and self.specs[3]['tlv']['scan']['targetsel']==6 and all(self.specs[fn]['tlv']['scan']['max_speed']==1 for fn in (1,2,3)),'selected scan option tags differ')
-            require(all(self.specs[fn]['enum']['scan_kind']==({'arm_adi':2} if fn==3 else {'riscv_dm':1}) for fn in (1,2,3)),'selected scan kinds differ')
+            # every number by name from the selected SPEC (the wire family's one space, core §2.5)
+            self.S=self.specs[1]['tlv']['scan']|self.specs[3]['tlv']['scan'];self.kinds=self.specs[1]['enum']['scan_kind']|self.specs[3]['enum']['scan_kind']
+            self.idle_values=set(self.specs[1]['enum']['idle_clock'].values());self.unknown=max(self.S.values())+1
+            self.T=self.specs[1]['tlv']['attach']|self.specs[3]['tlv']['attach'];self.answer=self.specs[1]['tlv']['attach_answer'];self.flags=self.specs[1]['enum']['attach_flags']|self.specs[3]['enum']['attach_flags']   # attach (the wire options' checks)
+            require({'idle_clock','targetsel','max_speed'}<=set(self.S) and {'arm_adi','riscv_dm'}<=set(self.kinds),'selected SPEC lacks the scan options used')
             self.c.confirm();self.c.identity();self.c.declarations();require(self.a.state()['max_op_ms']==5,'explicit scan budget differs')
-            for fn in (1,2,3):require(16 in ops(dict(reversed(self.c.describe(fn)))[7]),'selected optional scan not offered')
+            for fn in (1,2,3):require(self.operations[fn]['scan'] in ops(dict(reversed(self.c.describe(fn)))[self.c.reg['describe_common']['ops']]),'selected optional scan not offered')
         self.c.check('OEP-SCAN-OPTIONS-CONTEXT','debug §1/3/5; explicit finite logical fixture',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         cases=[('IDLE-'+str(v),lambda v=v:self.idle_case(v)) for v in (None,0,1)]+[('SELECTOR-'+str(v),lambda v=v:self.selector_case(v)) for v in (None,0x01000001,0x01000002)]

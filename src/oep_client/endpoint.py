@@ -114,11 +114,15 @@ MARK_RESET, MARK_RESTART = _CON.enum["mark_detail_reset"], _CON.enum["mark_detai
 ATTACH_FLAGS = reg.WIRE_RVSWD.enum["attach_flags"]
 RUN_STOPPED = _RV.enum["run_stopped"]
 RESET_MODE = _RV.enum["reset_mode"]
+READ_FROM = reg.COMMON.enum["read_from"]                  # position, oldest, now, last_mark (common §1.2)
 STEP_LEFT = _RV.tlv["step_answer"]["step_left"]            # step's answer: the hart could not be halted again (§4.2)
-ITEM = cfgmod.ITEM                                         # label / idle / disable (probe.config §1)
+ITEM = {k.replace("-", "_"): k for k in cfgmod.NAMES}       # the standard items by name (probe.config §1, core §7.7)
 CHANNEL_ITEMS = (ITEM["label"], ITEM["idle"], ITEM["disable"])   # items keyed by a channel (probe.config §1)
 IDLE_MODE = _CFG.enum["idle_mode"]
 CFG_DESCRIBE = cfgmod.DESCRIBE
+SETTING_FORM = _CFG.enum["setting_form"]
+SETTING_SECRET = _CFG.enum["setting_flag"]["secret"]
+NET_STATE, NET_REASON = _CFG.enum["network_state"], _CFG.enum["network_reason"]
 WIRES = ("oep.wire.rvswd", "oep.wire.swio")
 OWNER = reg.CORE.tlv["open"]["owner"]
 ROLE_ASSIGNMENT = reg.PROBE_PLAN.tlv["plan_apply"]["role_assignment"]   # the tag number (0x10); hosts send it critical
@@ -535,8 +539,8 @@ class Connection:
     free: bool = False                                 # an exchange went unanswered: the lines rest undriven (debug §2)
 
 
-ITEM_SIZES = {ITEM["idle"]: 3, ITEM["disable"]: 2, ITEM["passthrough"]: 10,    # the items of a fixed length (probe.config §1)
-              ITEM["console_passthrough"]: 14}
+ITEM_SIZES = {ITEM["idle"]: 1, ITEM["disable"]: 0, ITEM["passthrough"]: 9,     # the data of a fixed length (probe.config §1)
+              ITEM["console_passthrough"]: 13, ITEM["ipv4"]: 14}
 PASSTHROUGHS = (ITEM["passthrough"], ITEM["console_passthrough"])
 
 
@@ -671,11 +675,11 @@ class Endpoint:
         self.groups: dict[int, virtual_bench_capture.VirtualGroup] = {
             fn: self._group_from(self.decl[fn], self.inner[fn]) for fn, name in self.names.items()
             if name == "oep.fixture.capture-group"}
-        self.mechanisms = set()
+        self.mechanisms, self.mech_names = set(), []
         for fn, name in self.names.items():
             if name == "oep.target.console":
-                self.mechanisms |= {b for tag, v in self.decl[fn] if tag == virtual_bench.MECHANISMS
-                                    for b in v[1:1 + v[0]]}          # n(u8) n x mechanism (console §1)
+                self.mech_names = [v.decode() for tag, v in self.decl[fn] if tag == virtual_bench.MECHANISM]
+                self.mechanisms |= set(range(1, len(self.mech_names) + 1))   # a named list: the place from 1 (core §7.7)
         self.block_max = {fn: self._own(fn, catalog.MAX_LENGTH, "H", 1 << 16)
                           for fn, name in self.names.items() if name == "oep.target.riscv-dm"}
         self.gpio_allowed = {fn: self._own(fn, virtual_bench.GPIO_MODES, "I", 0xFF)
@@ -699,13 +703,32 @@ class Endpoint:
                             for fn, name in self.names.items() if name == _I2C.name}
         cfg_fn = self.fns.get("oep.probe.config")
         cfg = dict(self.decl.get(cfg_fn, ()))
-        self.items = set(cfg.get(CFG_DESCRIBE["items"], b""))
+        # the settings, a named list (probe.config §1, §4): name -> (form, keys, max_len, flags), and their order
+        self.settings: dict[str, tuple[int, int, int, int]] = {}
+        self.setting_names: list[str] = []
+        for tag, v in self.decl.get(cfg_fn, ()):
+            if tag == CFG_DESCRIBE["setting"]:
+                form, keys, max_len, flags = struct.unpack_from("<BHBB", v)
+                self.settings[v[5:].decode()] = (form, keys, max_len, flags)
+                self.setting_names.append(v[5:].decode())
+        self.items = set(self.setting_names)
+        # the network (§1.3): the netifs, a named list (numbers from 1); around the bench: Wi-Fi access points (ssid ->
+        # passphrase), the Ethernet cable, what DHCP gives; every drop and reconnect of a netif (an in-use setting changed)
+        self.netif_names = [v.decode() for tag, v in self.decl.get(cfg_fn, ()) if tag == CFG_DESCRIBE["netif"]]
+        self.netif_numbers = list(range(1, len(self.netif_names) + 1))
+        self.aps: dict[bytes, bytes] = {b"lab": b"password1"}
+        self.ether_link = True
+        self.dhcp = {"wifi": (bytes([192, 168, 1, 23]), 24, bytes([192, 168, 1, 1]), bytes([192, 168, 1, 1])),
+                     "ethernet": (bytes([10, 0, 0, 23]), 16, bytes([10, 0, 0, 1]), bytes([10, 0, 0, 1]))}
+        self.tcp_port = 4242 if reg.CORE.enum["transport_kind"]["tcp"] in self.transports.values() else 0
+        self.reconnects = {n: 0 for n in self.netif_numbers}
         self.storage_max = struct.unpack_from("<I", cfg[CFG_DESCRIBE["storage"]])[0] if CFG_DESCRIBE["storage"] in cfg else 0
         # the console's send queue (console §2): its size is the probe's (not declared); what a poll hands to the target
         # per mechanism (dmseq 2 bytes, DMDATA 3; SDI carries nothing to the target, §3.1)
         con_fn = self.fns.get(_CON.name)
         self.send_queue = self.inner[con_fn].get("send_queue", virtual_bench.CONSOLE_SEND_QUEUE) if con_fn is not None else 0
-        self.console_feed = {_CON.enum["mechanism"]["dmdata"]: 3, _CON.enum["mechanism"]["dmseq"]: 2}
+        names = getattr(self, "mech_names", [])
+        self.console_feed = {names.index(k) + 1: n for k, n in (("dmdata", 3), ("dmseq", 2)) if k in names}
         self.settle_log: list[int] = []                 # every wait for a silent DM after a reset (ms): riscv-dm reset,
                                                         # attach's reset TLV - at most max_op_ms (debug §3, §4.3)
         self.uart_accept = 256
@@ -821,7 +844,7 @@ class Endpoint:
     def _idle_mode(self, ch: int) -> int | None:
         """The mode of channel `ch`'s idle item (probe.config §1), None without one."""
         item = self.config.get((ITEM["idle"], ch))
-        return item[2] if item and len(item) >= 3 else None
+        return item[0] if item and len(item) == 1 else None
 
     def _output_idle(self, ch: int) -> bool:
         return self._idle_mode(ch) in (IDLE_MODE["output_low"], IDLE_MODE["output_high"])
@@ -859,7 +882,7 @@ class Endpoint:
             if ch == 0xFFFF or ch in self.disabled or ch in busy:
                 continue
             item = self.config.get((ITEM["idle"], ch))
-            self.parked[ch] = item[2] if item else 0               # 0 = Hi-Z
+            self.parked[ch] = item[0] if item else 0               # 0 = Hi-Z
 
     @property
     def target_id(self) -> int | None:
@@ -2505,8 +2528,8 @@ class Endpoint:
             tg.havereset = True
             if not self._settled(tg):                              # the DM still silent at max_op_ms (§4.3)
                 return m.COMPLETED, m.FAILED, struct.pack("<BBI", LINE, 0, 0)   # the connection kept
-            tg.halted = mode == 2
-            tg.dpc = tg.reset_vector if mode == 2 else tg.reset_vector + 0x200
+            tg.halted = mode == RESET_MODE["halt_at_reset"]
+            tg.dpc = tg.reset_vector if mode == RESET_MODE["halt_at_reset"] else tg.reset_vector + 0x200
             tg.havereset = tg.haltreq = False                      # havereset acknowledged, haltreq cleared (§4.3)
             self._host_reset(conn, MARK_RESET["ndmreset"])         # a successful reset op: one mark reset (§4.6)
             # debug §4.3: status flags(bit0 reached the mode's state) pc (mode 2: dpc)
@@ -2671,11 +2694,11 @@ class Endpoint:
         fixture UART's queue); None: a console, its send queue (`send_queue`)."""
         if op == _CON.op["read"]:
             frm, arg, mx = args
-            if frm == 0:
+            if frm == READ_FROM["position"]:
                 pos = arg
-            elif frm == 1:
+            elif frm == READ_FROM["oldest"]:
                 pos = s.base
-            elif frm == 2:
+            elif frm == READ_FROM["now"]:
                 pos = s.end
             else:
                 hits = [mk for mk in s.marks if arg == 0 or mk[2] == arg]
@@ -2749,7 +2772,7 @@ class Endpoint:
             return m.REJECTED, m.UNKNOWN_OPERATION, b""
         sid = t.take("I")
         args = self._stream_args(op, t)                            # the request first (core §4.3 orders 5 / 6) ...
-        if op == _CON.op["read"] and args[0] == 3 and not self.offers(fn, _CON.op["marks"]):
+        if op == _CON.op["read"] and args[0] == READ_FROM["last_mark"] and not self.offers(fn, _CON.op["marks"]):
             raise Reject(m.UNSUPPORTED)                            # from 3 needs marks (console §1, common §1)
         s = self._stream(sid)                                      # ... then no_resource (unavailable 6: a connection's)
         if op == _CON.op["close"]:
@@ -2876,7 +2899,7 @@ class Endpoint:
             return m.REJECTED, m.UNKNOWN_OPERATION, b""
         op = _CON.op[names[op]]                                    # the same form as the console's (common §1)
         args = self._stream_args(op, t)                            # the request first (core §4.3 orders 5 / 6)
-        if op == _CON.op["read"] and args[0] == 3 and not self.offers(fn, _UART.op["marks"]):
+        if op == _CON.op["read"] and args[0] == READ_FROM["last_mark"] and not self.offers(fn, _UART.op["marks"]):
             raise Reject(m.UNSUPPORTED)                            # from 3 needs marks (fixture §2): 0x00
         s = self.uarts.get(fn)
         if s is None:
@@ -2906,7 +2929,7 @@ class Endpoint:
         for (tag, port), v in self.config.items():
             if tag != ITEM["passthrough"] or port in self.session_ports:
                 continue
-            _, fn, rx, _, _ = struct.unpack("<BHHIB", v)
+            fn, rx, _, _ = struct.unpack("<HHIB", v)
             if fn not in planned and rx not in busy:
                 out[port] = (fn, rx)
         return out
@@ -2924,7 +2947,7 @@ class Endpoint:
         for (tag, port), v in self.config.items():
             if tag != ITEM["console_passthrough"]:
                 continue
-            _, wfn, swdio, swclk, _, _, _ = struct.unpack("<BHHHIHB", v)
+            wfn, swdio, swclk, _, _, _ = struct.unpack("<HHHIHB", v)
             pair = (swdio, swclk)
             if port in self.session_ports or busy & {p for p in pair if p != 0xFFFF}:
                 self.resident.pop(port, None)                      # closed, the target untouched (debug §2)
@@ -3131,49 +3154,106 @@ class Endpoint:
         return (tx + bytes(n))[:n]
 
     # ---- oep.probe.config -----------------------------------------------------------------------
-    @staticmethod
-    def _read_items(t: Take, count: int) -> list[tuple[int, int, bytes]]:
-        """`count` items, tag(u8) len(u16) value each (probe.config §1) -> (tag as received, number, value); item
-        number 0 is malformed."""
+    # Items are named (probe.config §1, core §7.7): the settings are kept as (name, key) -> data; on the wire an item is
+    # number(u8) len(u16) key(u16) data, the number its place (from 1) in describe's setting list.
+    def _read_items(self, t: Take, count: int) -> list[tuple[int, str | None, int, bytes]]:
+        """`count` items -> (number as received, its name or None when not in the list, key, data); number 0 and a
+        len below 2 are malformed (§1)."""
         out = []
         for _ in range(count):
-            received, n = t.take("BH")
-            value = t.bytes(n)
-            if not received & 0x7F:
+            number, n = t.take("BH")
+            if number == 0 or n < 2:
                 raise Reject(m.MALFORMED)
-            out.append((received, received & 0x7F, value))
+            key = t.take("H")
+            data = t.bytes(n - 2)
+            out.append((number, self.setting_names[number - 1] if number <= len(self.setting_names) else None, key, data))
         return out
 
-    @staticmethod
-    def _item_channel(tag: int, value: bytes) -> int:
-        """A known item's key - its channel, a passthrough's port; another length than its form is malformed (probe.config
-        §1)."""
-        if tag in PASSTHROUGHS:
-            if len(value) != ITEM_SIZES[tag]:
-                raise Reject(m.MALFORMED)
-            if struct.unpack_from("<I", value, 5 if tag == ITEM["passthrough"] else 7)[0] == 0:
-                raise Reject(m.MALFORMED)                          # baud 0 / max_speed 0 (fixture §2, debug §1)
-            return value[0]
-        if tag == ITEM["label"]:
-            ok = 3 <= len(value) <= 2 + reg.LIMITS["label_max_bytes"]     # channel and 1-32 bytes of text
+    def _setting(self, name: str) -> tuple[int, int, int, int]:
+        """(form, keys, max_len, flags) of a setting this probe lists."""
+        return self.settings[name]
+
+    def _item_form(self, name: str, key: int, d: bytes) -> None:
+        """An item's data against its form (probe.config §1, §1.4-§1.6): another length or value is malformed."""
+        form, _, max_len, flags = self._setting(name)
+        if name == ITEM["wifi"]:
+            self._wifi_form(key, d)
+            return
+        if name == ITEM["ipv4"]:
+            self._ipv4_form(d)
+            return
+        if name in PASSTHROUGHS:
+            ok = len(d) == ITEM_SIZES[name] and struct.unpack_from("<I", d, 4 if name == ITEM["passthrough"] else 6)[0] != 0
+        elif name == ITEM["label"]:
+            ok = 1 <= len(d) <= reg.LIMITS["label_max_bytes"]           # 1-32 bytes of text
+        elif name in ITEM_SIZES:
+            ok = len(d) == ITEM_SIZES[name]
+        elif flags & SETTING_SECRET and not d:
+            ok = (name, key) in self.config                            # keep the value: there must be one (§1.7)
+        elif form == SETTING_FORM["bytes"]:
+            ok = len(d) <= max_len
+        elif form == SETTING_FORM["text"]:
+            ok = 1 <= len(d) <= max_len and m.valid_text(d)
+        elif form in (SETTING_FORM["u32"], SETTING_FORM["ipv4"]):
+            ok = len(d) == 4
+        elif form == SETTING_FORM["bool"]:
+            ok = len(d) == 1 and d[0] in (0, 1)
         else:
-            ok = len(value) == ITEM_SIZES[tag]
+            ok = False
         if not ok:
             raise Reject(m.MALFORMED)
-        return struct.unpack_from("<H", value)[0]
 
-    def _item_refusal(self, tag: int, ch: int, value: bytes) -> bool:
-        """Whether this probe cannot take the item's values (probe.config §1): a channel at or past `channels` or its
-        own, an idle mode left unused (5 or more), an output on an input-only channel, a pull the channel lacks."""
-        if tag == ITEM["console_passthrough"]:
-            port, wfn, swdio, swclk, speed, cfn, mech = struct.unpack("<BHHHIHB", value)
-            return (self.transports.get(port) not in virtual_bench.SERIAL_KINDS
+    def _wifi_form(self, key: int, d: bytes) -> None:
+        """§1.4: ssid_len ssid pass_len passphrase; pass_len 0xFF keeps the entry's passphrase (none there: malformed)."""
+        if len(d) < 2 or not 1 <= d[0] <= reg.LIMITS["wifi_ssid_max_bytes"] or len(d) < 2 + d[0]:
+            raise Reject(m.MALFORMED)
+        n, pw = d[1 + d[0]], d[2 + d[0]:]
+        if n == 0xFF:
+            ok = not pw and (ITEM["wifi"], key) in self.config
+        elif n == 0:
+            ok = not pw
+        elif 8 <= n <= 63:
+            ok = len(pw) == n and all(0x20 <= b <= 0x7E for b in pw)
+        elif n == 64:
+            ok = len(pw) == 64 and all(chr(b) in "0123456789abcdefABCDEF" for b in pw)
+        else:
+            ok = False
+        if not ok:
+            raise Reject(m.MALFORMED)
+
+    @staticmethod
+    def _ipv4_form(d: bytes) -> None:
+        """§1.5: mode address prefix gateway dns, 14 bytes; DHCP all zero, a static address one a host may have."""
+        if len(d) != 14 or d[0] not in (0, 1):
+            raise Reject(m.MALFORMED)
+        addr, pfx, gw = int.from_bytes(d[1:5], "big"), d[5], int.from_bytes(d[6:10], "big")
+        if d[0] == 0:
+            ok = not any(d[1:])
+        else:
+            mask = (0xFFFFFFFF << (32 - pfx)) & 0xFFFFFFFF if 1 <= pfx <= 32 else None
+            ok = (mask is not None and addr not in (0, 0xFFFFFFFF) and d[1] != 127 and not 224 <= d[1] <= 239
+                  and (gw == 0 or gw & mask == addr & mask))
+        if not ok:
+            raise Reject(m.MALFORMED)
+
+    def _item_refusal(self, name: str, key: int, d: bytes) -> bool:
+        """Whether this probe cannot take the item's values (probe.config §1): a key at or past the setting's keys; a
+        channel it uses itself; an idle mode left unused, an output on an input-only channel, a pull the channel lacks;
+        a pass-through's port that is not a serial port, its fn, rx, baud, format, wire, pins, console or mechanism; an
+        ipv4's netif 0."""
+        if key >= self._setting(name)[1]:
+            return True
+        if name == ITEM["ipv4"]:
+            return key == 0                                        # netifs from 1 (core §7.7)
+        if name == ITEM["console_passthrough"]:
+            wfn, swdio, swclk, speed, cfn, mech = struct.unpack("<HHHIHB", d)
+            return (self.transports.get(key) not in virtual_bench.SERIAL_KINDS
                     or self.names.get(wfn) not in ("oep.wire.rvswd", "oep.wire.swio") or not self._allows(wfn, (swdio, swclk))
                     or speed < self._min_clock(wfn) or self.names.get(cfn) != "oep.target.console"
                     or mech not in self.mechanisms)
-        if tag == ITEM["passthrough"]:
-            port, fn, rx, baud, fmt = struct.unpack("<BHHIB", value)
-            if (self.transports.get(port) not in virtual_bench.SERIAL_KINDS or self.names.get(fn) != _UART.name
+        if name == ITEM["passthrough"]:
+            fn, rx, baud, fmt = struct.unpack("<HHIB", d)
+            if (self.transports.get(key) not in virtual_bench.SERIAL_KINDS or self.names.get(fn) != _UART.name
                     or rx not in {c for tag, v in self.decl[fn] if tag == catalog.ROLE_CHANNELS
                                   and v[0] == _UART.enum["role"]["rx"] for c in _role_channels(v)}):
                 return True
@@ -3182,23 +3262,35 @@ class Endpoint:
             except Reject:
                 return True
             return False
-        if not self._channel_ok(ch):
-            return True
-        if tag == ITEM["idle"]:
-            mode = value[2]
-            if mode not in IDLE_MODE.values():
+        if name in CHANNEL_ITEMS:
+            if not self._channel_ok(key):
                 return True
-            if mode in (IDLE_MODE["output_low"], IDLE_MODE["output_high"]) and ch in self.input_only:
-                return True
-            if mode in (IDLE_MODE["pull_up"], IDLE_MODE["pull_down"]) and mode in self.no_pull.get(ch, ()):
-                return True
+            if name == ITEM["idle"]:
+                mode = d[0]
+                if mode not in IDLE_MODE.values():
+                    return True
+                if mode in (IDLE_MODE["output_low"], IDLE_MODE["output_high"]) and key in self.input_only:
+                    return True
+                if mode in (IDLE_MODE["pull_up"], IDLE_MODE["pull_down"]) and mode in self.no_pull.get(key, ()):
+                    return True
         return False
+
+    def _shown(self, name: str, d: bytes) -> bytes:
+        """What get shows of an item's data: a wifi passphrase as pass_len 0xFF / 0 alone, a secret's nothing (§1.4,
+        §1.7)."""
+        if name == ITEM["wifi"]:
+            return d[:1 + d[0]] + (b"\xff" if d[1 + d[0]] else b"\0")
+        if self._setting(name)[3] & SETTING_SECRET:
+            return b""
+        return d
 
     def _config_op(self, fn: int, op: int, t: Take) -> tuple[int, int, bytes]:
         if op == _CFG.op["get"]:                                   # first(u16): more generation count items [TLV]
             first = t.take("H")
             t.tail()
-            items = [struct.pack("<BH", tag, len(v)) + v for (tag, _), v in sorted(self.config.items())]
+            order = {n: i + 1 for i, n in enumerate(self.setting_names)}
+            items = [struct.pack("<BHH", order[n], 2 + len(d), k) + d for (n, k), d in
+                     sorted(((k, self._shown(k[0], v)) for k, v in self.config.items()), key=lambda kv: (order[kv[0][0]], kv[0][1]))]
             budget = self.probe.max_frame - m.RESULT_HEADER - 6
             out, sent = b"", 0
             for item in items[first:]:
@@ -3211,47 +3303,64 @@ class Endpoint:
         if op == _CFG.op["set"]:                                   # count(u8) items [TLV]
             items = self._read_items(t, t.take("B"))
             t.tail()                                               # the request's own tail (core §2.3), not items
-            new, seen, undeclared = dict(self.config), set(), None
-            for received, tag, value in items:
-                if tag not in self.items:
-                    undeclared = received if undeclared is None else undeclared   # after every item's form (§4.3)
+            new, seen, unlisted = dict(self.config), set(), None
+            for number, name, key, d in items:
+                if name is None:
+                    unlisted = number if unlisted is None else unlisted   # after every item's form (core §4.3)
                     continue
-                ch = self._item_channel(tag, value)
-                if (tag, ch) in seen:
+                self._item_form(name, key, d)
+                if (name, key) in seen:
                     raise Reject(m.MALFORMED)                      # the same key twice in one set (§2)
-                seen.add((tag, ch))
-                new[(tag, ch)] = value
-            if undeclared is not None:
-                raise Reject(m.UNSUPPORTED, bytes([undeclared]))   # an item it does not declare, as received (§1)
-            for received, tag, value in items:
-                if self._item_refusal(tag, struct.unpack_from("<H", value)[0], value):
-                    raise Reject(m.UNSUPPORTED, bytes([received]))
+                seen.add((name, key))
+            if unlisted is not None:
+                raise Reject(m.UNSUPPORTED, bytes([unlisted]))     # a number past the list, as received (§1)
+            for number, name, key, d in items:
+                if self._item_refusal(name, key, d):
+                    raise Reject(m.UNSUPPORTED, bytes([number]))
+            for number, name, key, d in items:                     # write-only values kept (§1.4, §1.7)
+                if name == ITEM["wifi"] and d[1 + d[0]] == 0xFF:
+                    old = self.config[(name, key)]
+                    d = d[:1 + d[0]] + old[1 + old[0]:]
+                elif self._setting(name)[3] & SETTING_SECRET and not d:
+                    d = self.config[(name, key)]
+                new[(name, key)] = d
+            before = {n: self._in_use(n) for n in self.netif_numbers}
             self._change_config(new)
+            self._reconnect(before)
             return m.COMPLETED, m.SUCCESS, struct.pack("<I", self.generation)
-        if op == _CFG.op["unset"]:                                 # count(u8) count x (tag(u8) channel(u16)) [TLV]
+        if op == _CFG.op["unset"]:                                 # count(u8) count x (number(u8) key(u16)) [TLV]
             keys = [t.take("BH") for _ in range(t.take("B"))]
             t.tail()
-            undeclared = next((tag for tag, _ in keys if tag & 0x7F not in self.items), None)
-            if any(not tag & 0x7F for tag, _ in keys) or len({(tag & 0x7F, ch) for tag, ch in keys}) != len(keys):
-                raise Reject(m.MALFORMED)                          # item 0, or a key twice
-            if undeclared is not None:
-                raise Reject(m.UNSUPPORTED, bytes([undeclared]))
+            if any(not number for number, _ in keys) or len(set(keys)) != len(keys):
+                raise Reject(m.MALFORMED)                          # number 0, or a key twice
+            unlisted = next((number for number, _ in keys if number > len(self.setting_names)), None)
+            if unlisted is not None:
+                raise Reject(m.UNSUPPORTED, bytes([unlisted]))
             new = dict(self.config)
-            for tag, ch in keys:
-                new.pop((tag & 0x7F, ch), None)                    # a key that is not there: nothing
+            for number, key in keys:
+                new.pop((self.setting_names[number - 1], key), None)   # a key that is not there: nothing
+            before = {n: self._in_use(n) for n in self.netif_numbers}
             self._change_config(new)
+            self._reconnect(before)
             return m.COMPLETED, m.SUCCESS, struct.pack("<I", self.generation)
+        if op == _CFG.op["network"] and self.netif_names:          # lock-free: tcp_port count x 19 bytes (§2)
+            t.tail()
+            out = struct.pack("<HB", self.tcp_port, len(self.netif_names))
+            for n in self.netif_numbers:
+                st, entry, reason, rssi, (addr, pfx, gw, dns) = self.network(n)
+                out += bytes([n, st]) + struct.pack("<HBb", entry, reason, rssi) + addr + bytes([pfx]) + gw + dns
+            return m.COMPLETED, m.SUCCESS, out
         if op == _CFG.op["state"]:                                 # lock-free (§3)
             t.tail()
             return m.COMPLETED, m.SUCCESS, struct.pack("<BIB", self.storage_state, self.saved_generation,
                                                         self.storage_reason)
         if op == _CFG.op["save"]:
             t.tail()
-            if sum(3 + len(v) for v in self.config.values()) > self.storage_max:
+            if sum(5 + len(v) for v in self.config.values()) > self.storage_max:
                 raise unavailable("storage_full")                  # past max_bytes, before anything (§4)
             if self._storage_failed():
                 return m.COMPLETED, m.FAILED, struct.pack("<I", self.generation)   # the same fixed part (§3)
-            self.saved, self.saved_unreadable = dict(self.config), False
+            self.saved, self.saved_unreadable = dict(self.config), False   # by name: read back by name (§1)
             self.storage_state, self.storage_reason, self.saved_generation = 1, 0, self.generation
             return m.COMPLETED, m.SUCCESS, struct.pack("<I", self.generation)
         if op == _CFG.op["erase"]:
@@ -3262,6 +3371,48 @@ class Endpoint:
             self.storage_state, self.storage_reason, self.saved_generation = 0, 0, 0
             return m.COMPLETED, m.SUCCESS, b""
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
+
+    # ---- the network (probe.config §1.3-§1.5, §2 network) ------------------------------------------
+    def network(self, netif: int) -> tuple[int, int, int, int, tuple[bytes, int, bytes, bytes]]:
+        """Netif `netif` (its number, from 1) now: state, entry, reason, rssi, (address, prefix, gateway, dns). wifi
+        tries the entries in key order against the access points around (`aps`); none: off. ethernet: on while the
+        cable is in (`ether_link`). Without an ipv4 item: what DHCP gives (§1.3)."""
+        zero = (bytes(4), 0, bytes(4), bytes(4))
+        name = self.netif_names[netif - 1]
+        entry, rssi = 0xFFFF, 0
+        if name == "wifi":
+            entries = sorted((k, v) for (n, k), v in self.config.items() if n == ITEM["wifi"])
+            if not entries:
+                return NET_STATE["off"], 0xFFFF, 0, 0, zero
+            reason = NET_REASON["not_found"]
+            for k, v in entries:
+                ssid, pw = v[1:1 + v[0]], v[2 + v[0]:]
+                if ssid not in self.aps:
+                    continue
+                if self.aps[ssid] != pw:
+                    reason = NET_REASON["auth"]
+                    continue
+                entry, rssi = k, -52
+                break
+            else:
+                return NET_STATE["waiting"], 0xFFFF, reason, 0, zero
+        elif not self.ether_link:
+            return NET_STATE["off"], 0xFFFF, 0, 0, zero
+        ip = self.config.get((ITEM["ipv4"], netif))
+        got = (ip[1:5], ip[5], ip[6:10], ip[10:14]) if ip is not None and ip[0] == 1 else self.dhcp[name]
+        return NET_STATE["up"], entry, 0, rssi, got
+
+    def _in_use(self, netif: int):
+        """The settings a netif connects with now (§1.3: the wifi entry in use, its ipv4)."""
+        st, entry, *_ = self.network(netif)
+        wifi = self.config.get((ITEM["wifi"], entry)) if entry != 0xFFFF else None
+        return st, wifi, self.config.get((ITEM["ipv4"], netif))
+
+    def _reconnect(self, before: dict) -> None:
+        """After the answer (§1.3): a netif whose in-use settings changed drops and connects again with the new ones."""
+        for n, was in before.items():
+            if was[0] == NET_STATE["up"] and self._in_use(n) != was:
+                self.reconnects[n] += 1
 
     def _storage_failed(self) -> bool:
         """TEST HOOK `storage_fault`: the next save / erase does not complete (probe.config §3) and the storage is then
@@ -3293,11 +3444,11 @@ class Endpoint:
                 continue
             if all((t, port) in new for t in PASSTHROUGHS):
                 raise unavailable("held_by_settings")              # one pass-through per port (config §1.1)
-            pins = ([struct.unpack_from("<H", v, 3)[0]] if tag == ITEM["passthrough"]
-                    else [p for p in struct.unpack_from("<HH", v, 3) if p != 0xFFFF])
+            pins = ([struct.unpack_from("<H", v, 2)[0]] if tag == ITEM["passthrough"]
+                    else [p for p in struct.unpack_from("<HH", v, 2) if p != 0xFFFF])
             for pin in pins:
                 idle = new.get((ITEM["idle"], pin))
-                if pin in disabled or (idle is not None and idle[2] in outputs):
+                if pin in disabled or (idle is not None and idle[0] in outputs):
                     raise unavailable("held_by_settings", pin)     # a disabled pin or one with an output idle (§1.1, §1.2)
         busy = {a[2] for a in self.plan} | {p for c in self.conns.values() for p in c.pair}
         for ch in sorted(disabled - self.disabled):
@@ -3310,7 +3461,7 @@ class Endpoint:
         outputs = (IDLE_MODE["output_low"], IDLE_MODE["output_high"])
         for ch in sorted({a[2] for a in self.plan if a[0] in self.captures and self.captures[a[0]].analog}):
             v = new_idle.get(ch)
-            if v != old_idle.get(ch) and v is not None and len(v) >= 3 and v[2] in outputs:
+            if v != old_idle.get(ch) and v is not None and len(v) == 1 and v[0] in outputs:
                 raise unavailable("pin_in_use", ch)                # an output idle onto an analog plan's pad: refused
                                                                    # whichever comes second (capture §1.2)
         repark =(self.disabled - disabled) | {ch for ch in set(old_idle) | set(new_idle)
@@ -3323,32 +3474,36 @@ class Endpoint:
         self._park(repark)                                         # a free channel's new idle, an enabled one (§1)
 
     def _apply_saved(self) -> None:
-        """At boot (probe.config §3): every saved item checked by itself against this firmware - disable first, then
-        idle (a channel with both keeps the disable), then label; one it cannot take is left out and the rest applied
-        (storage_state 3 partial, reason 2), never read as another channel or mode."""
+        """At boot (probe.config §3): every saved item, by name, checked by itself against this firmware - disable first,
+        then idle (a channel with both keeps the disable), then label, then the others; one it cannot take (a name it
+        does not list, a form or value it refuses) is left out and the rest applied (storage_state 3 partial, reason 2),
+        never read as another item, channel or mode."""
         order = {ITEM["disable"]: 0, ITEM["idle"]: 1, ITEM["label"]: 2}
         applied, bad = {}, False
-        for (tag, ch), value in sorted(self.saved.items(), key=lambda kv: (order.get(kv[0][0], 3), kv[0][1])):
+        for (name, key), d in sorted(self.saved.items(), key=lambda kv: (order.get(kv[0][0], 3), kv[0][0], kv[0][1])):
             try:
-                ok = (tag in self.items and self._item_channel(tag, value) == ch
-                      and not self._item_refusal(tag, ch, value))
+                ok = name in self.settings and (self._item_form(name, key, d) is None) and not self._item_refusal(name, key, d)
             except Reject:
                 ok = False
-            if ok and tag == ITEM["idle"] and (ITEM["disable"], ch) in applied:
+            if ok and name == ITEM["idle"] and (ITEM["disable"], key) in applied:
                 ok = False                                         # disable wins over idle on one channel
             if ok:
-                applied[(tag, ch)] = value
+                applied[(name, key)] = d
             bad |= not ok
         self.config = applied
         self.storage_state, self.storage_reason = (3, 2) if bad else (1, 0)
         self.saved_generation = 0 if bad else 1
 
-    def load_config(self, items: list[bytes], saved: bool = True) -> None:
-        """TEST HOOK: `items` (item bytes: tag len value) as the settings - with `saved`, as a probe that booted with them
-        stored (applied as at boot); without, as the settings now (generation one on, the free pins reparked)."""
+    def load_config(self, items: list[tuple[str, int, bytes]], saved: bool = True) -> None:
+        """TEST HOOK: `items` as (name, key, data) or item bytes - with `saved`, as a probe that booted with them stored (applied as
+        at boot); without, as the settings now (generation one on, the free pins reparked)."""
         new = {}
-        for tag, value in m.split_tlvs(b"".join(items)):
-            new[(tag & 0x7F, struct.unpack_from("<H", value)[0])] = value
+        for it in items:
+            if isinstance(it, (bytes, bytearray)):                 # an item on the wire, numbered as this probe lists them
+                number, n, k = struct.unpack_from("<BHH", it)
+                it = (self.setting_names[number - 1], k, bytes(it[5:3 + n]))
+            n, k, d = it
+            new[(n, k)] = bytes(d)
         if saved:
             self.saved, self.saved_unreadable = new, False
             self._apply_saved()
@@ -3356,6 +3511,14 @@ class Endpoint:
             self.config = new
             self.generation += 1
         self._park(self._boot_channels())
+
+    def mechanism_number(self, name: str) -> int:
+        """TEST HELPER: a console mechanism's number (its place in describe's mechanism list, from 1; core §7.7)."""
+        return self.mech_names.index(name) + 1
+
+    def setting_number(self, name: str) -> int:
+        """TEST HELPER: an item's number on the wire (its place in describe's setting list, from 1)."""
+        return self.setting_names.index(name) + 1
 
     def tick(self) -> None:
         """Time passes: the lease, the console polls, the captures, port_speed's timers."""

@@ -51,13 +51,13 @@ def test_describe_readers_take_a_tag_with_bit_7_for_an_unknown_one():
     gpio_modes = reg.FIXTURE_GPIO.tlv["describe"]["modes"]
     i2c_depth = reg.FIXTURE_I2C_TARGET.tlv["describe"]["queue_depth"]
     hst = a_host({
-        3: [(cfg_tags["storage"] | CRIT, u32(512)), (cfg_tags["items"] | CRIT, b"\x02")],
+        3: [(cfg_tags["storage"] | CRIT, u32(512)), (cfg_tags["setting"] | CRIT, b"\x00\x01\x00\x00\x00label")],
         4: [(gpio_modes | CRIT, u32(0x07))],
         5: [(i2c_depth | CRIT, b"\x04")],
         6: [(catalog.MAX_CLOCK_HZ | CRIT, u32(4_000_000))],
     })
     d = client(config.ProbeConfig, hst, 3).describe()
-    assert d.storage_bytes == 0 and d.items == []
+    assert d.storage_bytes == 0 and d.settings == []
     assert client(fixture.Gpio, hst, 4).modes() == 0xFF
     assert client(fixture.I2cTarget, hst, 5).queue_depth is None
     assert client(riscv.Wire, hst, 6)._speed_or_default(None) == riscv.WireBase.DEFAULT_MAX_SPEED
@@ -90,28 +90,28 @@ def test_describe_readers_use_the_first_copy_and_never_a_later_one_for_a_broken_
     cfg_tags = reg.PROBE_CONFIG.tlv["describe"]
     gpio_modes = reg.FIXTURE_GPIO.tlv["describe"]["modes"]
     stretch = reg.FIXTURE_I2C_TARGET.tlv["describe"]["max_stretch_us"]
-    mech = reg.TARGET_CONSOLE.tlv["describe"]["mechanisms"]
+    mech = reg.TARGET_CONSOLE.tlv["describe"]["mechanism"]
     restart = reg.PROBE_RESTART.tlv["describe"]["restart_max_ms"]
     roles = reg.PROBE_PLAN.tlv["describe"]["plan_roles"]
     hst = a_host({
         3: [(cfg_tags["storage"], u32(512)), (cfg_tags["storage"], u32(1024)),
-            (cfg_tags["items"], b"\x02"), (cfg_tags["items"], b"\x03\x07")],
+            (cfg_tags["setting"], b"\x00\x40\x00\x00\x00label"), (cfg_tags["setting"], b"\x00\x40\x00")],   # a second one too short: not a setting
         4: [(gpio_modes, b"\x07\x00\x00"), (gpio_modes, u32(0x07))],          # broken first copy (3 bytes)
         5: [(stretch, b"\x10\x00\x00\x00\x00"), (stretch, u32(100))],         # broken first copy (5 bytes)
         6: [(catalog.MAX_CLOCK_HZ, b"\x01\x02\x03"), (catalog.MAX_CLOCK_HZ, u32(4_000_000)),
             (catalog.MAX_LENGTH, b"\x40"), (catalog.MAX_LENGTH, struct.pack("<H", 64))],
-        7: [(mech, b"\x02\x01"), (mech, b"\x01\x01")],                           # n 2 with one byte: broken
+        7: [(mech, b"sdi"), (mech, b"dmseq")],                                  # a named list: every copy (core §7.7)
         8: [(restart, b"\x10\x27"), (restart, u32(5000))],
         9: [(roles, b"\x08"), (roles, u32(8))],
     }, {core.RESTART_NAME: 8, core.PLAN_NAME: 9})
     d = client(config.ProbeConfig, hst, 3).describe()
-    assert d.storage_bytes == 512 and d.items == [2]                         # the first, not the last
+    assert d.storage_bytes == 512 and [x.name for x in d.settings] == ["label"]   # the first storage; the setting list
     assert client(fixture.Gpio, hst, 4).modes() == 0xFF
     assert client(fixture.I2cTarget, hst, 5).max_stretch_us is None
     assert client(riscv.Wire, hst, 6)._speed_or_default(None) == riscv.WireBase.DEFAULT_MAX_SPEED
     with pytest.raises(riscv.NoMaxLength):
         riscv.declared_max_length(hst, 6, "wire")
-    assert client(console.Console, hst, 7).mechanisms() == []
+    assert client(console.Console, hst, 7).mechanisms() == ["sdi", "dmseq"]
     assert core.restart_max_ms(hst) is None
     assert core.plan_roles(hst) is None
 

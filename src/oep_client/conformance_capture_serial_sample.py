@@ -26,7 +26,7 @@ class SampleCaptureSerialAdapter:
         exchange(0,16,struct.pack('<IB',60000,0),7)
         roles=(0,1) if case['kind']=='logic' else (1,3)
         exchange(1,16,b''.join(tlv(144,struct.pack('<HBH',2,role,ch)) for ch,role in enumerate(roles)),7)
-        settings=tlv(64,b'\2')+tlv(66,struct.pack('<I',1000))+tlv(67,struct.pack('<I',2))+tlv(68,struct.pack('<I',2))
+        settings=tlv(1,b'\2')+tlv(2,struct.pack('<I',1000))+tlv(3,struct.pack('<I',2))+tlv(4,struct.pack('<I',2))   # mode rate samples segments (capture §3.3)
         exchange(2,16,settings,7);start=exchange(2,17,b'',7);generation=int.from_bytes(start.payload[0:4],'little')
         # A retired, unretained prefix is represented by an explicit seed. No
         # claim that billions of acquisitions were physically performed.

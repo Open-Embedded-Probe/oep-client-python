@@ -57,14 +57,14 @@ class OepDeclarationChecks:
         require(tag in values and len(values[tag])==4 and struct.unpack('<I',values[tag])[0]>0,'SWIO requires its fixed bit timing as min_clock_hz')
 
     def mechanisms(self, fn, name):
-        spec=self.specs[name];tag=spec['tlv']['describe']['mechanisms'];values=dict(reversed(self.rows[fn]))
-        require(tag in values,'console mechanisms declaration missing')
-        raw=values[tag];require(len(raw)>=1 and raw[0]>=1 and len(raw)==1+raw[0],'console mechanisms is n(u8) n x mechanism, n >= 1')
-        listed=list(raw[1:]);require(len(set(listed))==len(listed),'console mechanisms listed twice')
-        known={value for key,value in spec['enum']['mechanism'].items() if key!='none'}
-        require(all(value in known for value in listed),'unknown or preset-only console mechanism declared')
-        write={row['name']:row['code'] for row in spec['op']}['write'];both={spec['enum']['mechanism'][k] for k in ('dmdata','dmseq')}
-        require(write not in self.offered(fn) or any(value in both for value in listed),'console write offered without mechanism 1 or 2')   # console §1
+        spec=self.specs[name];tag=spec['tlv']['describe']['mechanism']
+        listed=[v.decode('utf-8','replace') for t,v in self.rows[fn] if t==tag]   # a named list (core §7.7)
+        require(listed,'console mechanism list missing')
+        require(len(set(listed))==len(listed),'console mechanism listed twice')
+        known=set(spec['names']['mechanism'])
+        require(all(n in known or '.' in n for n in listed),'a mechanism neither standard nor a reverse-DNS name')
+        write={row['name']:row['code'] for row in spec['op']}['write']
+        require(write not in self.offered(fn) or bool({'dmdata','dmseq'}&set(listed)),'console write offered without dmdata or dmseq')   # console §1
         self.c.observed.setdefault('console_mechanisms',{})[str(fn)]=listed
 
     def run(self):

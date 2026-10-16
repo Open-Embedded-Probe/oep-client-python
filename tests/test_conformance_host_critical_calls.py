@@ -9,28 +9,43 @@ The wire forms are oep-spec a09fa45's (attach: method swdio swclk max_speed, the
 import struct
 
 import pytest
+from spec_names import enum, tag
 
 from oep_client import arm, catalog, core, fixture, host, message as m, riscv
 
 
-CASES = [('uart', 0x81)] + [
-    (kind, tag) for kind, tags in (
-        ('rvswd', (0x84, 0x85)),
-        ('swio', (0x85,)),
-        ('swd', (0x85, 0x82)),
-    ) for tag in tags
+# the tags by name from the selected SPEC (tests/spec_names.py), critical (bit 7)
+CRIT = 0x80
+UART_FORMAT = tag('oep.fixture.uart', 'configure', 'format') | CRIT
+RV_IDLE, RV_RESET = (tag('oep.wire.rvswd', 'attach', k) | CRIT for k in ('idle_clock', 'reset'))
+SWIO_RESET = tag('oep.wire.swio', 'attach', 'reset') | CRIT
+SWD_RESET, SWD_TARGETSEL = (tag('oep.wire.swd', 'attach', k) | CRIT for k in ('reset', 'targetsel'))
+LOW = enum('oep.wire.rvswd', 'idle_clock')['low']
+
+CASES = [('uart', UART_FORMAT)] + [
+    (kind, t) for kind, tags in (
+        ('rvswd', (RV_IDLE, RV_RESET)),
+        ('swio', (SWIO_RESET,)),
+        ('swd', (SWD_RESET, SWD_TARGETSEL)),
+    ) for t in tags
 ]
+
+
+def item(t, value):
+    return bytes((t,)) + struct.pack('<H', len(value)) + value
 
 
 def exercise_call(kind, refused_tag):
     names = {'gpio': 'oep.fixture.gpio', 'uart': 'oep.fixture.uart',
              'rvswd': 'oep.wire.rvswd', 'swio': 'oep.wire.swio', 'swd': 'oep.wire.swd'}
-    # Literal protocol oracle: independent of catalog/Host TLV encoders.
+    # The protocol oracle: built from the SPEC's names, independent of catalog/Host TLV encoders.
+    attach = lambda swclk: struct.pack('<BHHI', enum('oep.wire.rvswd', 'attach_method')['run'], 1, swclk, 1_000_000)
+    reset = lambda t: item(t, struct.pack('<HH', 3, 10))
     expected = {
-        'uart': bytes.fromhex('00c20100 81 0100 05'),
-        'rvswd': bytes.fromhex('00 0100 0200 40420f00 84 0100 01 85 0400 03000a00'),
-        'swio': bytes.fromhex('00 0100 ffff 40420f00 85 0400 03000a00'),
-        'swd': bytes.fromhex('00 0100 0200 40420f00 85 0400 03000a00 82 0400 78563412'),
+        'uart': struct.pack('<I', 115200) + item(UART_FORMAT, b'\x05'),
+        'rvswd': attach(2) + item(RV_IDLE, bytes((LOW,))) + reset(RV_RESET),
+        'swio': attach(0xFFFF) + reset(SWIO_RESET),
+        'swd': attach(2) + reset(SWD_RESET) + item(SWD_TARGETSEL, struct.pack('<I', 0x12345678)),
     }[kind]
     sent = []
 

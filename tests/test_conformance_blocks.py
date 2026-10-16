@@ -6,7 +6,7 @@ from test_conformance_debug import setup as debug_setup
 
 
 def setup():
-    _,c,_=debug_setup();c.reg['interface'][-1]['op'] += [{'name':'read_block','code':20},{'name':'write_block','code':21}]
+    _,c,_=debug_setup()
     model=BlockModel(lambda:0,boot_id=17)
     return model,Checks(model.handle,c.reg,'virtual-resource-1'),SampleBlockAdapter(model)
 
@@ -79,7 +79,7 @@ def test_block_checker_detects_independent_faults(fault,case):
 def test_block_preflight_blocks(invalid):
     model,c,a=setup()
     if invalid=='scope':a.reset_scope='physical'
-    elif invalid=='registry':c.reg['interface'][-1]['op'][-1]['code']=22
+    elif invalid=='registry':c.reg['interface'][-1]['op']=[o for o in c.reg['interface'][-1]['op'] if o['name']!='write_block']   # a SPEC without what the checker uses
     else:
         describe=model.extension.describe
         def wrong(fn):

@@ -10,12 +10,14 @@ import sys
 
 import pytest
 
-from oep_client import catalog, endpoint, virtual_bench, virtual_bench_capture, message as m, registry as reg
+from oep_client.registry import WIRE_RVSWD as _RV_WIRE
+RESET_TLV, IDLE_TLV = _RV_WIRE.tlv['attach']['reset'], _RV_WIRE.tlv['attach']['idle_clock']   # by name (debug §3)
+from oep_client import catalog, config, endpoint, virtual_bench, virtual_bench_capture, message as m, registry as reg
 
 
 CORE = reg.CORE
 CFG = reg.PROBE_CONFIG
-ITEM, SET = CFG.tlv["item"], CFG.op["set"]
+ITEM, SET = config.ITEM, CFG.op["set"]
 W = reg.WIRE_RVSWD.op                                               # scan 0x10 attach 0x11 detach 0x12 connections 0x13
 PLAN_APPLY, PLAN_RELEASE = reg.PROBE_PLAN.op["plan_apply"], reg.PROBE_PLAN.op["plan_release"]   # oep.probe.plan
 
@@ -180,8 +182,8 @@ def test_a_non_repeating_tag_twice_the_first_is_used():
     """core §2.3 (rule review 2026-10-07): a tag the definition does not repeat, twice - the reader uses the first
     (no malformed any more)."""
     ep, h = bench()
-    once = m.tlv(0x04, b"\x01", critical=True)
-    r = h.raw(1, W["attach"], att(ep.pairs[1][0]) + once + m.tlv(0x04, b"\x00"))
+    once = m.tlv(IDLE_TLV, b"\x01", critical=True)
+    r = h.raw(1, W["attach"], att(ep.pairs[1][0]) + once + m.tlv(IDLE_TLV, b"\x00"))
     assert r.succeeded and ep.conns[struct.unpack_from("<I", r.payload)[0]].idle_clock == 1
 
 
@@ -192,7 +194,7 @@ def test_an_implemented_tlv_of_another_length_is_malformed_with_or_without_bit_7
     ep, h = bench()
     pair = ep.pairs[1][0]
     assert h.raw(1, W["attach"], att(pair)[:-1]).detail == m.MALFORMED              # the fixed part cut short
-    long_idle = m.tlv(0x04, b"\x00\x00", critical=critical)
+    long_idle = m.tlv(IDLE_TLV, b"\x00\x00", critical=critical)
     assert h.raw(1, W["attach"], att(pair) + long_idle).detail == m.MALFORMED
     short_speed = m.tlv(0x01, b"\x00\x09\x3d", critical=critical)                    # scan's max_speed
     assert h.raw(1, W["scan"], b"\x01" + struct.pack("<HH", *pair) + short_speed).detail == m.MALFORMED
@@ -204,8 +206,8 @@ def test_an_implemented_tlvs_value_the_probe_does_not_handle_is_unsupported_with
     """core §2.3: a value the definition leaves unused or this probe does not handle is unsupported with the tag as
     received, critical or not (idle_clock 2: debug §3 defines 0 and 1)."""
     ep, h = bench()
-    r = h.raw(1, W["attach"], att(ep.pairs[1][0]) + m.tlv(0x04, b"\x02", critical=critical))
-    assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([0x04 | (0x80 if critical else 0)]))
+    r = h.raw(1, W["attach"], att(ep.pairs[1][0]) + m.tlv(IDLE_TLV, b"\x02", critical=critical))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([IDLE_TLV | (0x80 if critical else 0)]))
     assert not ep.conns
 
 
@@ -225,7 +227,7 @@ def test_an_unknown_critical_and_a_malformed_tlv_any_one_reason():
     """core §4.3 (rule review 2026-10-07): after the session check every reason that applies may answer - an unknown
     critical TLV (unsupported) and a cut-short idle_clock (malformed) in one request get either, and nothing runs."""
     ep, h = bench()
-    r = h.raw(1, W["attach"], att(ep.pairs[1][0]) + m.tlv(UNKNOWN, b"", critical=True) + m.tlv(0x04, b"", critical=True))
+    r = h.raw(1, W["attach"], att(ep.pairs[1][0]) + m.tlv(UNKNOWN, b"", critical=True) + m.tlv(IDLE_TLV, b"", critical=True))
     assert r.detail in (m.MALFORMED, m.UNSUPPORTED)
     assert r.detail != m.UNSUPPORTED or r.payload == bytes([UNKNOWN | 0x80])
     assert not ep.conns
@@ -491,7 +493,8 @@ def test_p2_3_i2c_target_open_drain_and_declared_pullups():
     i2c = 8
     r = h.raw(0, m.OP_DESCRIBE, struct.pack("<HH", i2c, 0), session=False)
     d = dict(m.split_tlvs(r.payload[1:]))
-    assert struct.unpack("<I", d[catalog.FEATURES])[0] & virtual_bench.I2C_INTERNAL_PULLUPS == 0x04 and 0x42 not in d
+    assert struct.unpack("<I", d[catalog.FEATURES])[0] & virtual_bench.I2C_INTERNAL_PULLUPS == reg.FIXTURE_I2C_TARGET.enum['features']['internal_pullups']
+    assert set(d) <= set(reg.DESCRIBE_COMMON.values()) | set(reg.FIXTURE_I2C_TARGET.tlv['describe'].values())   # only what the SPEC defines (no pullup_ohms)
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", i2c, 1, 30), critical=True)
          + m.tlv(0x10, struct.pack("<HBH", i2c, 2, 31), critical=True))
     assert ep.pin_state(30) == "idle hi-z"                        # state 0: released, nothing ACKed
@@ -579,8 +582,8 @@ def test_p2_o11_a_read_past_the_write_position():
 def test_pc3_an_idle_pull_the_channel_lacks_is_unsupported():
     ep, h = bench()
     ep.no_pull = {20: {IDLE["pull_down"]}}
-    r = h.raw(6, SET, cset(idle_item(20, IDLE["pull_down"], tag=ITEM["idle"] | 0x80)))
-    assert (r.detail, r.payload[:1]) == (m.UNSUPPORTED, bytes([ITEM["idle"] | 0x80]))
+    r = h.raw(6, SET, cset(idle_item(20, IDLE["pull_down"])))
+    assert (r.detail, r.payload[:1]) == (m.UNSUPPORTED, bytes([ITEM["idle"]]))   # the item number as received
     assert h.raw(6, SET, cset(idle_item(20, IDLE["pull_up"]))).succeeded
 
 
@@ -592,7 +595,7 @@ def test_pc3_a_saved_idle_pull_the_channel_lacks_is_left_out_at_boot():
     h.ok(6, reg.PROBE_CONFIG.op["save"])
     ep.no_pull = {20: {IDLE["pull_down"]}}
     ep.reboot(0x99)
-    assert state(ep) == (3, 0, 2) and list(ep.config) == [(ITEM["label"], 21)]
+    assert state(ep) == (3, 0, 2) and list(ep.config) == [("label", 21)]
 
 
 @pytest.mark.parametrize("ch", [24, 55, 0xFFFF])                  # the probe's own, = channels, far past

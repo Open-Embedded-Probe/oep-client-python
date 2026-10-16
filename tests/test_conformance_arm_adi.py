@@ -2,6 +2,7 @@ import copy
 import struct
 import pytest
 from oep_client.conformance import Checks
+from spec_names import iface
 from oep_client.conformance_arm_adi import ArmAdiChecks
 from oep_client.conformance_arm_adi_sample import SampleArmAdiAdapter
 from oep_client.virtual_arm_adi_model import ArmAdiModel
@@ -11,9 +12,7 @@ from test_conformance_attach import setup as attach_setup
 
 def setup():
     _,c,_ = attach_setup(); reg = copy.deepcopy(c.reg)
-    reg['interface'].append(dict(name='oep.target.arm-adi',revision=1,op=[dict(name=name,code=code) for name,code in [('transfer',16),('read_block',17),('write_block',18)]],enum=dict(swd_ack=dict(ok=1,wait=2,fault=4))))
-    reg['status'] = dict(ok=0,wait=1,line=2,fault=3,timeout=4,state=5)
-    reg['describe_common']['max_length'] = 3
+    reg['interface'].append(copy.deepcopy(iface('oep.target.arm-adi')))   # as the SPEC defines it
     model = ArmAdiModel(lambda:0,boot_id=17)
     return model,Checks(model.handle,reg,'virtual-resource-1'),SampleArmAdiAdapter(model)
 

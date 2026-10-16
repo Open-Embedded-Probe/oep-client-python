@@ -127,7 +127,7 @@ def test_one_shot_error_never_commits_incomplete_samples(analog_source, grouped,
     frames = ep.pushes()
     notices = [c.unpack_event(f) for f in frames if f[0] == m.ROLE_EVENT and int.from_bytes(f[1:3], 'little') == tracks[0].fn]
     notice, = notices
-    assert notice.kind == 'stopped' and notice.reason == 3 and notice.error == error
+    assert notice.kind == "stopped" and notice.reason == 2 and notice.error == error
     assert notice.generation == tracks[0].generation
     clock.t = 20
     assert tracks[0].segments() == [] and read_available(tracks[0]) == b''

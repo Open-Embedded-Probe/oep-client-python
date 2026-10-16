@@ -2,13 +2,18 @@ import struct
 import pytest
 from oep_client.conformance_capture_timeline_lifecycle import CaptureTimelineLifecycleChecks
 from oep_client.conformance_capture_timeline_sample import SampleCaptureTimelineAdapter
-from oep_client.virtual_capture_timeline_model import Completed
+from oep_client.virtual_capture_timeline_model import OP, GOP, ST, EV, STOPPED, ADC, LOGIC, GROUP, Completed
 from test_conformance_capture_timeline import setup,run as run_checker,failed as failed_row
 
 
 def run(model,checks,scenario):return run_checker(model,checks,scenario,CaptureTimelineLifecycleChecks)
 def failed(result):return failed_row(result,'OEP-TIMELINE-LIFE-0')
 
+
+OTHER={ADC:LOGIC,LOGIC:ADC}                                   # the peer track
+FAILED=__import__('oep_client.registry',fromlist=['OUTCOMES']).OUTCOMES['failed']
+_E=sorted(__import__('oep_client.registry',fromlist=['FIXTURE_LOGIC']).FIXTURE_LOGIC.enum['error'].values())
+OTHER_ERROR={e:_E[(i+1)%len(_E)] for i,e in enumerate(_E)}   # another defined error
 
 @pytest.mark.parametrize('scenario',CaptureTimelineLifecycleChecks.scenarios)
 def test_timeline_lifecycle(scenario):
@@ -48,26 +53,26 @@ def test_lifecycle_semantic_faults_are_detected(fault,kind):
     def faulty_install():
         install();e=model.extension;dispatch=e.dispatch_request;release=e.release;start=e.start;failure=e.failure
         def broken_dispatch(fn,op,payload,tags):
-            if fault=='stop_peer_runs' and fn==4 and op==18:return e.tracks[2].dispatch(18,payload,{})
-            if fault=='configure_active' and fn in e.tracks and op==16 and e.tracks[fn].state==3:return e.tracks[fn].answer(e.tracks[fn].config)
-            if fault=='release_no_generation' and fn in e.tracks and op==23:return b''
-            if fault=='start_from_error' and fn in e.tracks and op==17 and e.tracks[fn].state==6:raise_unavailable()
-            if fault=='configure_unplanned' and fn in e.tracks and op==24 and not e.tracks[fn].roles:return b''
-            if fault=='stop_unconfigured' and fn in e.tracks and op==18 and e.tracks[fn].state==0:e.tracks[fn].flags|=2
-            if fault=='exhaust_side_effect' and fn==4 and op==17 and e.generation==0xffffffff:
+            if fault=='stop_peer_runs' and fn==GROUP and op==GOP['stop']:return e.tracks[ADC].dispatch(OP['stop'],payload,{})
+            if fault=='configure_active' and fn in e.tracks and op==OP['configure'] and e.tracks[fn].state==ST['capturing']:return e.tracks[fn].answer(e.tracks[fn].config)
+            if fault=='release_no_generation' and fn in e.tracks and op==OP['release']:return b''
+            if fault=='start_from_error' and fn in e.tracks and op==OP['start'] and e.tracks[fn].state==ST['error']:raise_unavailable()
+            if fault=='configure_unplanned' and fn in e.tracks and op==OP['query'] and not e.tracks[fn].roles:return b''
+            if fault=='stop_unconfigured' and fn in e.tracks and op==OP['stop'] and e.tracks[fn].state==ST['unconfigured']:e.tracks[fn].flags|=2
+            if fault=='exhaust_side_effect' and fn==GROUP and op==GOP['start'] and e.generation==0xffffffff:
                 for t in e.tracks.values():t.data.extend(b'x')
-            if fault=='exhaust_wrong_cause' and fn in e.tracks and op==17 and e.tracks[fn].generation==0xffffffff:raise_unavailable()
+            if fault=='exhaust_wrong_cause' and fn in e.tracks and op==OP['start'] and e.tracks[fn].generation==0xffffffff:raise_unavailable()
             result=dispatch(fn,op,payload,tags)
-            if fault=='discard_done' and fn==4 and op==18:e.tracks[2].data.clear();e.tracks[2].segments.clear()
-            if fault=='query_applies' and fn==2 and op==24:e.tracks[2].config['samples']=5
-            if fault=='stop_done_clears' and fn in e.tracks and op==18 and e.tracks[fn].state==4:e.tracks[fn].segments.clear()
-            if fault=='stop_error_keeps' and fn in e.tracks and op==18 and e.tracks[fn].state==1 and e.tracks[fn].error:e.tracks[fn].state=6
-            if op==20 and fn in e.tracks and ((fn==3 and fault=='wrong_write_pos') or (fault=='failed_position' and e.tracks[fn].state==6)):
+            if fault=='discard_done' and fn==GROUP and op==GOP['stop']:e.tracks[ADC].data.clear();e.tracks[ADC].segments.clear()
+            if fault=='query_applies' and fn==ADC and op==OP['query']:e.tracks[ADC].config['samples']=5
+            if fault=='stop_done_clears' and fn in e.tracks and op==OP['stop'] and e.tracks[fn].state==ST['done']:e.tracks[fn].segments.clear()
+            if fault=='stop_error_keeps' and fn in e.tracks and op==OP['stop'] and e.tracks[fn].state==ST['configured'] and e.tracks[fn].error:e.tracks[fn].state=ST['error']
+            if op==OP['status'] and fn in e.tracks and ((fn==LOGIC and fault=='wrong_write_pos') or (fault=='failed_position' and e.tracks[fn].state==ST['error'])):
                 result=result[:5]+(int.from_bytes(result[5:13],'little')+1).to_bytes(8,'little')+result[13:]
             return result
         def raise_unavailable():
             from oep_client.virtual_capture_timeline_model import refusal
-            raise refusal(6)
+            raise refusal('wrong_state')
         def broken_release():
             kept={fn:(list(t.current),t.config) for fn,t in e.tracks.items()};release()
             if fault=='keep_cache':
@@ -87,13 +92,13 @@ def test_lifecycle_semantic_faults_are_detected(fault,kind):
                 for t in e.tracks.values():t.origin-=1000000
             if isinstance(result,Completed):
                 if fault=='failure_success':result=bytes(result)
-                if fault=='failure_short_form':result=Completed(bytes(result)[:12],1)
+                if fault=='failure_short_form':result=Completed(bytes(result)[:12],FAILED)
                 if fault=='failure_state':
                     for t in e.tracks.values():
-                        if t.state==6:t.state=1
+                        if t.state==ST['error']:t.state=ST['configured']
                 if fault=='failure_peer_runs':
                     for fn in e.bound:
-                        if e.tracks[fn].state==1:e.tracks[fn].state=3;e.tracks[fn].origin=e.start_ns
+                        if e.tracks[fn].state==ST['configured']:e.tracks[fn].state=ST['capturing'];e.tracks[fn].origin=e.start_ns
                 if fault=='failure_rollback':
                     for fn,g in generations.items():e.tracks[fn].generation=g
             return result
@@ -101,26 +106,26 @@ def test_lifecycle_semantic_faults_are_detected(fault,kind):
             if fault=='publish_failed':e.tracks[fn].finish(True)
             if fault=='error_publishes':e.tracks[fn].finish(True)
             failure(fn,error)
-            if fault=='error_peer_runs':e.tracks[5-fn].state=3
-            if fault=='wrong_error':e.tracks[fn].error=3
-            if fault=='error_discards_done':e.tracks[5-fn].data.clear();e.tracks[5-fn].segments.clear()
-            if fault=='error_resets_done_state':e.tracks[5-fn].state=1
+            if fault=='error_peer_runs':e.tracks[OTHER[fn]].state=ST['capturing']
+            if fault=='wrong_error':e.tracks[fn].error=OTHER_ERROR[e.tracks[fn].error]
+            if fault=='error_discards_done':e.tracks[OTHER[fn]].data.clear();e.tracks[OTHER[fn]].segments.clear()
+            if fault=='error_resets_done_state':e.tracks[OTHER[fn]].state=ST['configured']
             if fault=='error_write_pos':e.tracks[fn].position+=1
-            if fault=='error_keeps_streaming':e.tracks[5-fn].state=3
+            if fault=='error_keeps_streaming':e.tracks[OTHER[fn]].state=ST['capturing']
         e.dispatch_request=broken_dispatch;e.release=broken_release;e.start=broken_start;e.failure=broken_failure
         for fn,track in e.tracks.items():
             finish,event,fail,dispatch_track=track.finish,track.event,track.fail,track.dispatch
             def broken_finish(short=False,track=track,finish=finish):
                 finish(False if fault=='no_short' else short)
-                if fault=='old_generation' and track.segments and track.fn==3:row=track.segments[-1];track.segments[-1]=row[:7]+(0,)
+                if fault=='old_generation' and track.segments and track.fn==LOGIC:row=track.segments[-1];track.segments[-1]=row[:7]+(0,)
             def broken_event(kind,fixed,event=event):
-                if fault=='error_wrong_reason' and kind==2 and fixed[0]==3:fixed=b'\1\0'+fixed[2:]
+                if fault=='error_wrong_reason' and kind==EV['stopped'] and fixed[0]==STOPPED['error']:fixed=bytes((STOPPED['host'],0))+fixed[2:]
                 event(kind,fixed)
             def broken_track_dispatch(op,payload,tags,track=track,dispatch_track=dispatch_track):
-                if fault in ('failure_success','failure_state') and op==17 and track.fail_start is not None:
+                if fault in ('failure_success','failure_state') and op==OP['start'] and track.fail_start is not None:
                     result=dispatch_track(op,payload,tags)
                     if fault=='failure_success':return bytes(result)
-                    track.state=3;return result
+                    track.state=ST['capturing'];return result
                 return dispatch_track(op,payload,tags)
             track.finish=broken_finish;track.event=broken_event;track.dispatch=broken_track_dispatch
     model.install=faulty_install

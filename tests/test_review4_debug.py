@@ -53,11 +53,11 @@ def test_an_attach_whose_reset_line_is_one_of_its_own_pins_is_refused_before_the
     h = Host(ep)
     h.open()
     for channel in (0, 1):
-        r = h.raw(1, W["attach"], att((0, 1)) + m.tlv(0x05, struct.pack("<HH", channel, 10), critical=True))
+        r = h.raw(1, W["attach"], att((0, 1)) + m.tlv(0x04, struct.pack("<HH", channel, 10), critical=True))
         assert r.resolution == m.REJECTED and r.detail == m.UNAVAILABLE
         assert dict(m.split_tlvs(r.payload)).get(0x01) == bytes([1])
         assert not ep.conns
-    r = h.raw(1, W["attach"], att((0, 1)) + m.tlv(0x05, struct.pack("<HH", 2, 10), critical=True))
+    r = h.raw(1, W["attach"], att((0, 1)) + m.tlv(0x04, struct.pack("<HH", 2, 10), critical=True))
     assert r.succeeded
 
 

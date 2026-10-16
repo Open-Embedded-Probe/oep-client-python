@@ -60,7 +60,7 @@ def _console_bench():
     r = hv.raw(1, W["attach"], struct.pack("<BHHI", 0, *pair, 4_000_000))
     assert r.succeeded
     cid = struct.unpack_from("<I", r.payload)[0]
-    sid = struct.unpack_from("<I", hv.ok(3, CON.op["open"], struct.pack("<IB", cid, console.Console.DMSEQ)))[0]
+    sid = struct.unpack_from("<I", hv.ok(3, CON.op["open"], struct.pack("<IB", cid, 3)))[0]
     return ep, hv, ep.targets[(1, pair)], cid, sid
 
 

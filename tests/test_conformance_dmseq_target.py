@@ -73,7 +73,7 @@ def test_target_preflight_blocks(invalid):
     elif invalid=='short':a.short_ms=19
     elif invalid=='long':a.long_ms=999
     elif invalid=='capacity':a.input_capacity=3
-    else:c.reg['interface'][3]['enum']['mechanism']['dmseq']=3
+    else:c.reg['interface'][3]['names']['mechanism'].pop('dmseq')   # a SPEC without dmseq
     r=TargetDmseqChecks(c,a).run();assert r['checks'][0]['status']=='failed'
     assert all(x['status']=='blocked' for x in r['checks'][1:]) and not a.trace
 

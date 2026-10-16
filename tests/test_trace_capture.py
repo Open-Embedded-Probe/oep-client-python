@@ -6,6 +6,8 @@ down."""
 import copy
 import dataclasses
 import struct
+from oep_client.registry import FIXTURE_LOGIC as _LOGIC
+STOPPED_ERROR = _LOGIC.enum['stopped_reason']['error']   # capture §3.4, by name
 from fractions import Fraction
 
 import pytest
@@ -93,7 +95,7 @@ CFG = reg.PROBE_CONFIG
 
 def output_idle(hst, ep, ch, mode="output_high"):
     """probe.config set: channel ch's idle is an output (core §8)."""
-    item = m.tlv(CFG.tlv["item"]["idle"], struct.pack("<HB", ch, CFG.enum["idle_mode"][mode]))
+    item = m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["idle"], struct.pack("<HB", ch, CFG.enum["idle_mode"][mode]))
     assert hst.request(ep.fns[CFG.name], CFG.op["set"], bytes([1]) + item).succeeded
     assert ep.pin_state(ch) == f"idle {mode.replace('_', '-')}"
 
@@ -599,7 +601,7 @@ def test_a_drop_inside_a_segment_is_an_error_not_a_gap(analog, error):
     st = t.status()
     assert (st.state, st.error, st.flags & DROPPED) == (ST["error"], error, DROPPED)
     assert t.segments() == done and st.write_pos == done[-1].position + t.config.segment_bytes(8)
-    assert [(e.kind, e.reason, e.error) for e in events(ep, t.fn)] == [("stopped", 3, error)]
+    assert [(e.kind, e.reason, e.error) for e in events(ep, t.fn)] == [("stopped", STOPPED_ERROR, error)]
     r = hst.request(t.fn, t.READ, struct.pack("<IQH", t.generation, st.write_pos, 64), locked=False).payload
     assert struct.unpack_from("<QBH", r) == (st.write_pos, 0, 0)
 
@@ -1018,14 +1020,14 @@ def test_state_table_automatic_transitions(analog):
     t.start()
     assert t.status().state == 2                                    # waiting: the error comes from 2
     ep.capture_overflow(t.fn)
-    assert t.status().state == 6 and [(e.kind, e.reason) for e in events(ep, t.fn)] == [("stopped", 3)]
+    assert t.status().state == 6 and [(e.kind, e.reason) for e in events(ep, t.fn)] == [("stopped", STOPPED_ERROR)]
     t.configure(rate=1000, mode=c.REPEAT, samples=8, segments=1)
     t.start()
     clock.t = 50
     assert t.status().state == 5 and [e.kind for e in events(ep, t.fn)] == ["segment"]
     t.release(0)
     ep.capture_overflow(t.fn)
-    assert t.status().state == 6 and [(e.kind, e.reason) for e in events(ep, t.fn)] == [("stopped", 3)]
+    assert t.status().state == 6 and [(e.kind, e.reason) for e in events(ep, t.fn)] == [("stopped", STOPPED_ERROR)]
 
 
 # ---- §3.3 configure -------------------------------------------------------------------------------------------------
@@ -1360,7 +1362,7 @@ def test_stopped_event_reasons_error_and_generation(analog):
     assert [(e.reason, e.generation) for e in events(ep, t.fn) if e.kind == "stopped"] == [(1, 2)]
     t.start()
     ep.capture_overflow(t.fn, 1)
-    assert [(e.reason, e.error, e.generation) for e in events(ep, t.fn)] == [(3, t.status().error, 3)]
+    assert [(e.reason, e.error, e.generation) for e in events(ep, t.fn)] == [(STOPPED_ERROR, t.status().error, 3)]
 
 
 @pytest.mark.parametrize("analog", [False, True])
@@ -1574,13 +1576,13 @@ def grouped(mode=c.ONE_SHOT, samples=8):
     return ep, hst, clock, lc, an, grp
 
 
-@pytest.mark.parametrize("name, number, locked", [("bind", 0x10, True), ("start", 0x11, True), ("stop", 0x12, True),
-                                                  ("status", 0x14, False), ("subscribe", 0x01, True),
-                                                  ("unsubscribe", 0x02, True)])
-def test_group_operation_rows(name, number, locked):
+@pytest.mark.parametrize("name, locked", [("bind", True), ("start", True), ("stop", True), ("status", False),
+                                          ("subscribe", True), ("unsubscribe", True)])
+def test_group_operation_rows(name, locked):
     """capture §4.1's table: op numbers, the lock, and the forms - bind n x fn -> nothing; start -> start_ns(u64)
     generation(u32) n(u8) n x (fn u16, generation u32); stop -> nothing; status -> state(u8) start_ns(u64)
     generation(u32); subscribe / unsubscribe as core §10.3."""
+    number = __import__("spec_names").op("oep.fixture.capture-group", name)   # the selected SPEC's number, by name
     assert GROUP.op[name] == number
     ep, hst, clock, lc, an, grp = grouped()
     assert number in core.ops(hst, grp.fn)
@@ -1692,7 +1694,7 @@ def test_group_error_stops_the_others_and_a_failed_start():
     clock.t = 9
     ep.capture_overflow(an.fn, 2)
     assert grp.status().state == ST["error"] and lc.status().state == ST["configured"] and lc.segments()
-    assert [(e.kind, e.reason, e.error, e.generation) for e in events(ep, grp.fn)] == [("stopped", 3, 2, 1)]
+    assert [(e.kind, e.reason, e.error, e.generation) for e in events(ep, grp.fn)] == [("stopped", STOPPED_ERROR, 2, 1)]
     ep.capture_fail_start = {lc.fn}
     grp.bind([])
     grp.bind([an, lc])
@@ -1830,12 +1832,12 @@ def test_review_an_output_idle_set_onto_an_analog_pin_is_refused():
     an = track(hst, analog=True, roles=(0,))
     cfg_fn = ep.fns[CFG.name]
     for mode_name in ("output_low", "output_high"):
-        item = m.tlv(CFG.tlv["item"]["idle"], struct.pack("<HB", 16, CFG.enum["idle_mode"][mode_name]))
+        item = m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["idle"], struct.pack("<HB", 16, CFG.enum["idle_mode"][mode_name]))
         before = copy.deepcopy((ep.config, ep.generation, ep.plan))
         r = ask(hst, cfg_fn, CFG.op["set"], bytes([1]) + item)
         assert cause(r) == reg.CORE.enum["unavailable_cause"]["pin_in_use"]
         assert copy.deepcopy((ep.config, ep.generation, ep.plan)) == before
-    pull = m.tlv(CFG.tlv["item"]["idle"], struct.pack("<HB", 16, CFG.enum["idle_mode"]["pull_up"]))
+    pull = m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["idle"], struct.pack("<HB", 16, CFG.enum["idle_mode"]["pull_up"]))
     assert hst.request(cfg_fn, CFG.op["set"], bytes([1]) + pull).succeeded
     output_idle(hst, ep, 17)
     core.plan_release(hst, [an.fn])
@@ -2028,7 +2030,7 @@ def test_review2_an_analog_plan_leaves_the_pin_as_it_was_and_logic_keeps_a_pull(
     assert ep.pin_state(16) == "analog"
     clock.t = 20
     assert an.status().state == ST["done"] and ep.pin_state(16) == free
-    pull = m.tlv(CFG.tlv["item"]["idle"], struct.pack("<HB", 30, CFG.enum["idle_mode"]["pull_up"]))
+    pull = m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["idle"], struct.pack("<HB", 30, CFG.enum["idle_mode"]["pull_up"]))
     assert hst.request(ep.fns[CFG.name], CFG.op["set"], bytes([1]) + pull).succeeded
     pulled = ep.pin_state(30)
     lc = c.LogicCapture(hst)

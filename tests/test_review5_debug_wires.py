@@ -122,12 +122,12 @@ def test_the_wait_after_an_attach_reset_shares_max_op_ms_with_the_hold():
     assert h.raw(fn, W["attach"], att(pair, speed=1_000_000) + reset).succeeded
 
 
-def test_the_attach_checker_runs_on_the_a09fa45_registry():
-    """The selected SPEC's attach TLVs are a09fa45's (rvswd idle_clock 4 / reset 5, swio reset 5, swd targetsel 2 /
-    reset 5) and its console mechanisms sdi / dmdata / dmseq: the context check must accept them."""
+def test_the_attach_checker_runs_on_the_selected_registry():
+    """The selected SPEC's attach TLVs (by name: the wire family's one space) and its console mechanisms (a named list):
+    the context check must accept them."""
     _, c, a = attach_setup()
-    assert c.reg["interface"][0]["tlv"]["attach"] == {"idle_clock": 4, "reset": 5}
-    assert "none" not in c.reg["interface"][3]["enum"]["mechanism"]
+    assert {"idle_clock", "reset"} <= set(c.reg["interface"][0]["tlv"]["attach"])
+    assert list(c.reg["interface"][3]["names"]["mechanism"]) == ["sdi", "dmdata", "dmseq"]
     r = AttachChecks(c, a).run()
     assert r["checks"][0]["status"] == "passed", r["checks"][0].get("error")
     assert r["status"] == "passed", [(x["id"], x.get("error")) for x in r["checks"] if x["status"] != "passed"]
@@ -145,24 +145,27 @@ def test_the_bench_checks_every_copy_of_a_wire_tlv():
     ep, h = p4()
     pair = ep.pairs[1][0]
     scan = b"\x01" + struct.pack("<HH", *pair)
-    first = later(1, struct.pack("<I", 1500))
-    r = h.raw(1, W["scan"], scan + first + later(1, bytes(4)))
+    SC, AT = reg.WIRE_RVSWD.tlv["scan"], reg.WIRE_RVSWD.tlv["attach"]
+    first = later(SC["max_speed"], struct.pack("<I", 1500))
+    r = h.raw(1, W["scan"], scan + first + later(SC["max_speed"], bytes(4)))
     assert (r.resolution, r.detail) == (m.REJECTED, m.MALFORMED)
     ep.decl[1].append((catalog.MIN_CLOCK_HZ, struct.pack("<I", 1000)))
-    r = h.raw(1, W["scan"], scan + first + later(1, struct.pack("<I", 999), critical=False))
-    assert (r.resolution, r.detail, r.payload) == (m.REJECTED, m.UNSUPPORTED, b"\x01")
-    for op, body in ((W["scan"], scan), (W["attach"], att(pair))):
-        r = h.raw(1, op, body + later(4, b"\x01") + later(4, b"\x02", critical=False))
-        assert (r.resolution, r.detail, r.payload) == (m.REJECTED, m.UNSUPPORTED, b"\x04")
+    r = h.raw(1, W["scan"], scan + first + later(SC["max_speed"], struct.pack("<I", 999), critical=False))
+    assert (r.resolution, r.detail, r.payload) == (m.REJECTED, m.UNSUPPORTED, bytes([SC["max_speed"]]))
+    bad_idle = bytes([max(reg.WIRE_RVSWD.enum["idle_clock"].values()) + 1])
+    for op, body, idle in ((W["scan"], scan, SC["idle_clock"]), (W["attach"], att(pair), AT["idle_clock"])):
+        r = h.raw(1, op, body + later(idle, b"\x01") + later(idle, bad_idle, critical=False))
+        assert (r.resolution, r.detail, r.payload) == (m.REJECTED, m.UNSUPPORTED, bytes([idle]))
     v = virtual_bench.esp32_v003()
     ep = endpoint.Endpoint(v, lambda: 0)
     h = Host(ep)
     h.open()
     fn = ep.fns["oep.wire.swio"]
-    body = att(ep.pairs[fn][0], speed=1_000_000) + later(5, struct.pack("<HH", 23, 20))
+    RESET = reg.WIRE_SWIO.tlv["attach"]["reset"]
+    body = att(ep.pairs[fn][0], speed=1_000_000) + later(RESET, struct.pack("<HH", 23, 20))
     for copy in (struct.pack("<HH", 5, 20), struct.pack("<HH", 23, ep.max_op_ms + 1)):
-        r = h.raw(fn, W["attach"], body + later(5, copy))
-        assert (r.resolution, r.detail, r.payload) == (m.REJECTED, m.UNSUPPORTED, b"\x85")
+        r = h.raw(fn, W["attach"], body + later(RESET, copy))
+        assert (r.resolution, r.detail, r.payload) == (m.REJECTED, m.UNSUPPORTED, bytes([RESET | 0x80]))
         assert not ep.conns
 
 

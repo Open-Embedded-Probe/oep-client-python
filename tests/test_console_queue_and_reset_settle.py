@@ -33,7 +33,7 @@ def bench(profile=virtual_bench.p4_x035):
 def test_the_send_queue_is_not_declared():
     """console §1 / §2: describe carries mechanisms alone (0x41 reserved); the queue's size is the probe's."""
     assert "send_queue" not in reg.TARGET_CONSOLE.tlv["describe"]
-    assert [t[0] for t in virtual_bench._console(3).tlvs] == [reg.TARGET_CONSOLE.tlv["describe"]["mechanisms"]]
+    assert [t[0] for t in virtual_bench._console(3).tlvs] == [reg.TARGET_CONSOLE.tlv["describe"]["mechanism"]] * 3
     clock, ep, hst = bench()
     conn, _ = riscv.Wire(hst).attach(halt=False)
     con = console.Console(hst)
@@ -119,13 +119,12 @@ def test_attach_with_the_reset_tlv_waits_too_and_makes_nothing_when_it_fails():
 
 # ---- an item of another length; source's len -------------------------------------------------------------------
 
-@pytest.mark.parametrize("bit7", [False, True])
-def test_an_item_of_another_length_is_malformed_with_or_without_bit_7(bit7):
-    """probe-config §1: an item whose value is longer or shorter than its form is malformed whatever bit 7 says (the
-    probe ignores bit 7 of items) - nothing applied; a label's text runs to the item's end."""
+def test_an_item_of_another_length_is_malformed():
+    """probe-config §1: an item whose data is longer or shorter than its form is malformed - nothing applied; a
+    label's text runs to the item's end."""
     clock, ep, hst = bench(virtual_bench.p4_bench)
     cfg = config.ProbeConfig(hst)
-    tag = config.ITEM["idle"] | (0x80 if bit7 else 0)
+    tag = ep.setting_number("idle")
     for value in (struct.pack("<HBB", 20, 1, 0), struct.pack("<H", 20)):
         with pytest.raises(h.Rejected) as e:
             hst.call(cfg.fn, cfg.SET, b"\x02" + struct.pack("<BH", tag, len(value)) + value

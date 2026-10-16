@@ -51,7 +51,7 @@ def test_set_has_no_drive_tlv_and_the_idle_item_is_3_bytes():
         raw_set(hst, g, [(20, 3)], m.tlv(0x01, b"\x00\x01", critical=True))
     assert e.value.tag == 0x81 and ep.gpio_modes[20] == 4
     it = config.Idle(channel=7, mode="output-high")
-    assert it.value() == bytes([7, 0, 4]) and config.decode(config.ITEM["idle"], it.value()) == it
+    assert it.value() == bytes([7, 0, 4]) and config.decode("idle", 7, it.data()) == it
     assert not any(t == 0x41 for t, _ in core.describe(hst, g.fn))      # no drive_levels
 
 
@@ -80,7 +80,7 @@ def test_a_host_attach_with_reset_wakes_a_silent_target_and_scan_does_not_see_it
     assert hst.call(1, W["scan"], struct.pack("<BHH", 1, *V003_PAIR)).payload[1] == 0   # scan: nothing found
     attach = struct.pack("<BHHI", 0, *V003_PAIR, 1_000_000)
     assert not hst.request(1, W["attach"], attach).succeeded
-    reset = m.tlv(0x05, struct.pack("<HH", NRST, 20), critical=True)
+    reset = m.tlv(reg.WIRE_RVSWD.tlv["attach"]["reset"], struct.pack("<HH", NRST, 20), critical=True)
     assert hst.call(1, W["attach"], attach + reset).succeeded and not tg.silent_until_reset
 
 

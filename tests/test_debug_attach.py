@@ -10,7 +10,7 @@ from oep_client import endpoint, virtual_bench, host as h, message as m, riscv
 from test_virtual_bench_spec import Clock, Host
 
 W = riscv.reg.WIRE_RVSWD.op
-HIGH, LOW = m.tlv(0x04, b"\x00", critical=True), m.tlv(0x04, b"\x01", critical=True)
+HIGH, LOW = m.tlv(0x03, b"\x00", critical=True), m.tlv(0x03, b"\x01", critical=True)   # idle_clock (debug §3)
 UNA = riscv.reg.CORE.tlv["unavailable_payload"]
 
 

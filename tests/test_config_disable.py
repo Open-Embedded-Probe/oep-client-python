@@ -21,15 +21,15 @@ def _cause(e) -> tuple[str | None, list[int]]:
 def test_the_item_round_trips_and_moves_the_generation():
     ep, hst = open_bench()
     cfg = config.ProbeConfig(hst)
-    assert config.ITEM["disable"] == 0x07 and config.item(config.Disable(channel=40)) == bytes([0x07, 2, 0, 40, 0])
+    assert config.ITEM["disable"] == 3 and config.item(config.Disable(channel=40)) == bytes([3, 2, 0, 40, 0])   # number len key, no data
     g1 = cfg.set([config.Disable(channel=41), config.Disable(channel=40), config.Label(channel=40, text="NC")])
     items = cfg.items()
     assert items == [config.Label(channel=40, text="NC"), config.Disable(channel=40), config.Disable(channel=41)]
     assert g1 == cfg.get()[0] == 2                                            # the change counter (probe.config §2)
-    assert config.decode(0x07, struct.pack("<H", 9)) == config.Disable(channel=9)
+    assert config.decode("disable", 9, b"") == config.Disable(channel=9)
     assert ep.disabled == {40, 41}
     g2 = cfg.unset([("disable", 41)])
-    assert ep.requests[-1].payload == bytes([1, 7, 41, 0])                    # count, then tag channel(u16)
+    assert ep.requests[-1].payload == bytes([1, config.ITEM["disable"], 41, 0])   # count, then number key(u16)
     assert g2 == cfg.get()[0] == 3 and config.same_items(cfg.items(), items[:2])
     cfg.set([config.remove("disable", 40)])
     assert ep.disabled == set()

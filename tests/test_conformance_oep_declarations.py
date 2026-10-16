@@ -1,25 +1,20 @@
 import copy
 import pytest
-from oep_client.conformance import Checks
+from oep_client.conformance import Checks, ops
+from oep_client.catalog import pack_ops
 from oep_client.conformance_oep_declarations import OepDeclarationChecks
 from oep_client.virtual_oep_declaration_model import OepDeclarationModel
 from test_conformance import REG
+from spec_names import SPEC, iface
 
 
-# The public tests carry only the registry subset they actually consume.
-SPECS=[{'name':name,'revision':1,'op':[{'name':op,'code':code} for op,code in operations],
-        'tlv':{'describe':{'mechanisms' if name.endswith('console') else 'max_connections':64}},
-        'enum':{'mechanism':{'sdi':0,'dmdata':1,'dmseq':2,'none':255},'mark_kind':{'reset':0x40,'restart':0x41},
-                'mark_detail_reset':{'ndmreset':1},'mark_detail_restart':{'havereset':1,'resync':2},
-                'mark_detail_lost':{'target_timeout':0x40}} if name.endswith('console') else
-               {'pin_role':{'swdio':1,**({} if name.endswith('swio') else {'swclk':2})}}}
-       for name,operations in [(name,[('scan',16),('attach',17),('detach',18),('connections',19)]) for name in
-                               ('oep.wire.rvswd','oep.wire.swio','oep.wire.swd')]+[('oep.target.console',list(zip(('open','read','marks','clear','mark','write','close','streams'),range(16,24))))]]
+# The selected SPEC's wires and console, by name (tests/spec_names.py).
+SPECS=[copy.deepcopy(iface(name)) for name in ('oep.wire.rvswd','oep.wire.swio','oep.wire.swd','oep.target.console')]
 SELECTION={1:'oep.wire.rvswd',2:'oep.wire.swio',3:'oep.wire.swd',4:'oep.target.console'}
 
 
 def setup():
-    reg=copy.deepcopy(REG);reg['interface']=copy.deepcopy(SPECS);reg['describe_common'].update(role_channels=1,channel_group=6,min_clock_hz=4)
+    reg=copy.deepcopy(REG);reg['interface']=copy.deepcopy(SPECS);reg['describe_common'].update({k:SPEC['describe_common'][k] for k in ('role_channels','channel_group','min_clock_hz')})
     model=OepDeclarationModel(lambda:0,boot_id=17);c=Checks(model.handle,reg,'virtual-resource-1')
     return model,c
 
@@ -33,7 +28,19 @@ def test_standard_declarations_pass_without_mutating_requests():
     assert r['observed']['wire_max_connections']=={'1':2,'2':1,'3':1}
 
 
-MECH=lambda value:b'\x40'+len(value).to_bytes(2,'little')+value   # describe tag 0x40 mechanisms
+MECH_TAG=iface('oep.target.console')['tlv']['describe']['mechanism']
+MECH=lambda name:bytes((MECH_TAG,))+len(name).to_bytes(2,'little')+name   # one mechanism of the named list (core §7.7)
+OPS_TAG=SPEC['describe_common']['ops']
+WIRE_OPS=dict((o['name'],o['code']) for o in iface('oep.wire.rvswd')['op']);CON_OPS=dict((o['name'],o['code']) for o in iface('oep.target.console')['op'])
+
+
+def without(row,codes):
+    """An ops row without these ops."""
+    return bytes((OPS_TAG,))+len(packed:=pack_ops(set(ops(row[3:]))-set(codes))).to_bytes(2,'little')+packed
+
+
+def only(row,codes):
+    return bytes((OPS_TAG,))+len(packed:=pack_ops(set(ops(row[3:]))&set(codes))).to_bytes(2,'little')+packed
 
 
 @pytest.mark.parametrize('defect',['missing_attach','missing_detach','missing_connections','missing_console_close','console_mark_without_marks','missing_mechanisms','unknown_mechanism','preset_none','capacity_width','missing_pins','same_pin','pin_range',
@@ -43,22 +50,22 @@ def test_standard_declaration_mutants_fail(defect):
     def bad(fn):
         rows=list(describe(fn))
         if defect.startswith('missing_') and defect in ('missing_attach','missing_detach','missing_connections') and fn==1:
-            bit={'missing_attach':1,'missing_detach':2,'missing_connections':3}[defect]
-            rows=[row[:4]+bytes((row[4]&~(1<<bit),)) if row[0]==7 else row for row in rows]
+            gone=WIRE_OPS[defect[len('missing_'):]]
+            rows=[without(row,[gone]) if row[0]==OPS_TAG else row for row in rows]
         if fn==4:
-            if defect=='missing_console_close':rows=[row[:4]+bytes((row[4]&~64,)) if row[0]==7 else row for row in rows]   # close 0x16: required
-            if defect=='console_mark_without_marks':rows=[row[:4]+bytes((row[4]&~4,)) if row[0]==7 else row for row in rows]   # mark kept, marks 0x12 gone
-            if defect=='missing_mechanisms':rows=[row for row in rows if row[0]!=64]
-            if defect in ('unknown_mechanism','preset_none'):rows=[MECH(bytes((1,3 if defect=='unknown_mechanism' else 255))) if row[0]==64 else row for row in rows]
-            if defect=='uncounted_mechanisms':rows=[MECH(b'\x01') if row[0]==64 else row for row in rows]        # the mechanism alone, no n
-            if defect=='duplicate_mechanism':rows=[MECH(b'\x02\x01\x01') if row[0]==64 else row for row in rows]
-            if defect=='empty_mechanisms':rows=[MECH(b'\x00') if row[0]==64 else row for row in rows]
-            if defect=='write_with_sdi_only':rows=[MECH(b'\x01\x00') if row[0]==64 else row for row in rows]   # write 0x15 kept (console §1)
+            if defect=='missing_console_close':rows=[without(row,[CON_OPS['close']]) if row[0]==OPS_TAG else row for row in rows]   # close: required
+            if defect=='console_mark_without_marks':rows=[without(row,[CON_OPS['marks']]) if row[0]==OPS_TAG else row for row in rows]   # mark kept, marks gone
+            if defect in ('missing_mechanisms','empty_mechanisms'):rows=[row for row in rows if row[0]!=MECH_TAG]
+            if defect in ('unknown_mechanism','preset_none'):rows=[MECH(b'bogus' if defect=='unknown_mechanism' else b'none') if row[0]==MECH_TAG else row for row in rows]
+            if defect=='uncounted_mechanisms':rows=[MECH(b'') if row[0]==MECH_TAG else row for row in rows]        # an empty name
+            if defect=='duplicate_mechanism':rows=[row for row in rows]+[MECH(b'dmdata')]
+            if defect=='write_with_sdi_only':rows=[MECH(b'sdi') if row[0]==MECH_TAG else row for row in rows]   # write kept (console §1)
         if fn==1:
-            if defect=='capacity_width':rows=[b'\x40\x02\0\x01\0' if row[0]==64 else row for row in rows]
-            if defect=='missing_pins':rows=[row for row in rows if row[0] not in (1,6)]
-            if defect=='same_pin':rows=[row[:-1]+b'\x01' if row[0]==1 else row for row in rows]
-            if defect=='pin_range':rows=[row[:-1]+b'\x80' if row[0]==1 else row for row in rows]
+            CAP=iface('oep.wire.rvswd')['tlv']['describe']['max_connections'];RC,CG=SPEC['describe_common']['role_channels'],SPEC['describe_common']['channel_group']
+            if defect=='capacity_width':rows=[bytes((CAP,2,0,1,0)) if row[0]==CAP else row for row in rows]
+            if defect=='missing_pins':rows=[row for row in rows if row[0] not in (RC,CG)]
+            if defect=='same_pin':rows=[row[:-1]+b'\x01' if row[0]==RC else row for row in rows]
+            if defect=='pin_range':rows=[row[:-1]+b'\x80' if row[0]==RC else row for row in rows]
         return tuple(rows)
     model.extension.describe=bad;r=OepDeclarationChecks(c,SELECTION).run()
     assert r['status']=='failed' and any(x['status']=='failed' for x in r['checks'][1:])
@@ -80,7 +87,7 @@ def test_scan_is_optional_and_the_mechanisms_are_counted():
     """debug §1: scan is optional; console §1: mechanisms is n(u8) n x mechanism, n >= 1, no duplicates."""
     model,c=setup()
     r=OepDeclarationChecks(c,SELECTION).run();assert r['status']=='passed'
-    assert 16 not in r['observed']['oep_required_ops']['1'] and r['observed']['console_mechanisms']['4']==[1]
+    assert WIRE_OPS['scan'] not in r['observed']['oep_required_ops']['1'] and r['observed']['console_mechanisms']['4']==['dmdata']
 
 
 def test_future_registry_mandatory_op_is_not_silently_ignored():
@@ -94,8 +101,9 @@ def test_swio_fixed_clock_must_be_declared(invalid):
     def bad(fn):
         rows=describe(fn)
         if fn!=2:return rows
-        if invalid=='missing':return tuple(row for row in rows if row[0]!=4)
-        return tuple((b'\x04\x01\0\x01' if invalid=='width' else b'\x04\x04\0\0\0\0\0') if row[0]==4 else row for row in rows)
+        MIN=SPEC['describe_common']['min_clock_hz']
+        if invalid=='missing':return tuple(row for row in rows if row[0]!=MIN)
+        return tuple((bytes((MIN,1,0,1)) if invalid=='width' else bytes((MIN,4,0,0,0,0,0))) if row[0]==MIN else row for row in rows)
     model.extension.describe=bad
     assert OepDeclarationChecks(c,SELECTION).run()['status']=='failed'
 
@@ -108,11 +116,12 @@ def test_nonmapping_selection_reports_failure_without_wire():
 def test_a_console_offering_only_the_minimum_ops_passes():
     """console §1 (the op table, 要否): marks, clear, mark and write are optional - a console offering only open, read,
     close and streams passes the declaration checks; one offering mark without marks fails them."""
-    for keep, ok in ((0x01 | 0x02 | 0x40 | 0x80, True), (0x01 | 0x02 | 0x10 | 0x40 | 0x80, False)):
+    minimum=[CON_OPS[k] for k in ('open','read','close','streams')]
+    for keep, ok in ((minimum, True), (minimum+[CON_OPS['mark']], False)):
         model,c=setup();describe=model.extension.describe
         def bad(fn, keep=keep):
             rows=list(describe(fn))
-            if fn==4:rows=[row[:4]+bytes((row[4]&keep,)) if row[0]==7 else row for row in rows]
+            if fn==4:rows=[only(row,keep) if row[0]==OPS_TAG else row for row in rows]
             return tuple(rows)
         model.extension.describe=bad;r=OepDeclarationChecks(c,SELECTION).run()
         assert (r['status']=='passed')==ok,[(x['id'],x.get('error')) for x in r['checks']]
@@ -123,7 +132,7 @@ def test_sdi_only_without_write_passes():
     model,c=setup();describe=model.extension.describe
     def sdi(fn):
         rows=list(describe(fn))
-        if fn==4:rows=[MECH(b'\x01\x00') if row[0]==64 else row[:4]+bytes((row[4]&~32,)) if row[0]==7 else row for row in rows]
+        if fn==4:rows=[MECH(b'sdi') if row[0]==MECH_TAG else without(row,[CON_OPS['write']]) if row[0]==OPS_TAG else row for row in rows]
         return tuple(rows)
     model.extension.describe=sdi
     assert OepDeclarationChecks(c,SELECTION).run()['status']=='passed'

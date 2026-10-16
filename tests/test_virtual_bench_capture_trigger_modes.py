@@ -1,4 +1,6 @@
 """Capture §2.1/3.2/3.3: trigger is an initial gate for repeat and streaming too."""
+from oep_client.registry import FIXTURE_LOGIC as _LOGIC
+STOPPED_ERROR = _LOGIC.enum['stopped_reason']['error']   # capture §3.4, by name
 from fractions import Fraction
 import struct
 import pytest
@@ -87,7 +89,7 @@ def test_stream_error_rolls_back_to_real_completed_boundary_after_trigger(pre,se
     ep.capture_overflow(track.fn,2);status=track.status()
     assert status.state==c.STATE['error'] and status.error==2 and status.write_pos==committed
     stopped=[c.unpack_event(f) for f in frames(ep,track) if f[0]==m.ROLE_EVENT]
-    assert len(stopped)==1 and stopped[0].kind=='stopped' and stopped[0].reason==3
+    assert len(stopped)==1 and stopped[0].kind=='stopped' and stopped[0].reason==STOPPED_ERROR
 
 
 @pytest.mark.parametrize('pre',[0,10])

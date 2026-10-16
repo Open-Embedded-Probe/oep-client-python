@@ -50,7 +50,7 @@ class StepChecks(BlockChecks):
     def mailbox_step(self,mode):
         self.fresh()
         with self.c.holding(3000) as sid:
-            parent=self.parent(sid);rid,_=self.console(sid,parent,2);data=target_frame(syn=True,data=b'wire');self.a.frame(rid,*data)
+            parent=self.parent(sid);rid,_=self.console(sid,parent,'dmseq');data=target_frame(syn=True,data=b'wire');self.a.frame(rid,*data)
             self.a.seed_step(parent,0x1000,0x40008003);before=self.a.state();self.step(sid,parent,mode,0x1000,0x1004);after=self.a.state()
             if mode=='running':require(rid not in after['streams'],'console stream outlived its connection');return
             require(after['mailboxes'][rid]['data0']==data[0] and after['mailboxes'][rid]['data1']==data[1] and after['protocols'][rid]==before['protocols'][rid],'step damaged console frame/pending')
@@ -67,7 +67,7 @@ class StepChecks(BlockChecks):
             elif kind=='TRUNCATED':self.refused(self.request(5,'step',sid,b'\x01\0\0'),'malformed')
             elif kind=='FOREIGN':self.refused(self.request_step(sid%0xffffffff+1,parent,b'\xfe'),'locked')
             elif kind=='RESOURCE':
-                self.refused(self.request_step(sid,65535),'no_resource');rid,_=self.console(sid,parent,2);self.refused(self.request_step(sid,rid),'unavailable',cause=6)
+                self.refused(self.request_step(sid,65535),'no_resource');rid,_=self.console(sid,parent,'dmseq');self.refused(self.request_step(sid,rid),'unavailable',cause=6)
                 arm,_=self.attach(sid,fn=3);self.refused(self.request_step(sid,arm),'unavailable',cause=6)
     def replay_step(self,mode):
         self.fresh()

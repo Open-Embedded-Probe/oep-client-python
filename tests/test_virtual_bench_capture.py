@@ -443,11 +443,12 @@ def test_describe_declares_no_background_layouts_or_budgets():
     an, grp = c.AnalogCapture(hst), c.CaptureGroup(hst)
     for fn in (lc.fn, an.fn):
         d = core.describe(hst, fn)
-        modes = [v for t, v in d if t & 0x7F == 0x40]
+        modes = [v for t, v in d if t & 0x7F == __import__('oep_client.registry',fromlist=['FIXTURE_LOGIC']).FIXTURE_LOGIC.tlv['describe']['mode']]
         assert modes and all(len(v) == 9 for v in modes)
         assert {v[0] for v in modes} == {c.ONE_SHOT, c.REPEAT, c.STREAMING}
-        assert [v for t, v in d if t & 0x7F == 0x44] == [bytes([16 if fn == lc.fn else 4])]
-        assert not {0x42, 0x43, 0x47, 0x48, 0x49} & {t & 0x7F for t, _ in d}
+        assert [v for t, v in d if t & 0x7F == __import__('oep_client.registry',fromlist=['FIXTURE_LOGIC']).FIXTURE_LOGIC.tlv['describe']['channels']] == [bytes([16 if fn == lc.fn else 4])]
+        R_=__import__('oep_client.registry',fromlist=['FIXTURE_ANALOG'])
+        assert {t & 0x7F for t, _ in d} <= set(R_.DESCRIBE_COMMON.values()) | set(R_.FIXTURE_ANALOG.tlv['describe'].values())   # only what the SPEC defines
     tags = {t & 0x7F for t, _ in core.describe(hst, grp.fn)}
     assert 0x40 in tags and not {0x41, 0x42, 0x43} & tags
 

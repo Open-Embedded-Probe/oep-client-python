@@ -469,10 +469,13 @@ Arduino の config を書き直した（follow-cf69012 の e53f11b）。vectors 
 3. probe が選べるものを並べ、host が選ぶ所: describe の名前の並びにし、番号は並びの位置にする（fn と list と同じ形）。console の mechanism、netif、calibration の scheme（済み）が当たる。
 4. 新しい機能: 自分の名前のインターフェース（今の規則のまま）。
 
-### 未決
+### 決めたこと（oep-spec 2b3d89a）
 
-- B にするなら、core §12 の規則 7 を「他者は名前つきの拡張点からだけ足せる」に変える。
-- 凍結前の欠番は詰め直す。共有の空間は registry に明示する。
+B にした。core §12 の規則 7 を「他者は名前で識別する所からだけ足せる」に変えた。名前で識別する所は 3 つ:
+
+- 名前つきの拡張 TLV（§2.2、どの文脈でも tag 0x7F）
+- 名前の並び（§7.7、番号は 1 からの位置）
+- 自分のインターフェース
 
 ### 連番か、範囲に意味を持たせるか（2026-10-16）
 
@@ -510,3 +513,10 @@ Arduino の config を書き直した（follow-cf69012 の e53f11b）。vectors 
     - capture-group の op の 0x13
     - analog の answer の 0x54 / 0x56
 - core の番号（reject reason の 0x05 の欠番を含む）は、暫定確定なので動かさない。0x05 は retired として記録する。
+
+**決めたこと（oep-spec 2b3d89a）**: 上の原則を core §2.5 に入れた。
+
+- wire と capture の一族を registry の `family` で明示し、generator で検査するようにした。
+- 欠番は詰めた。
+- capture の error から、probe 固有の番号の範囲を外した。
+- console の方式と config の netif は、名前の並びにした。

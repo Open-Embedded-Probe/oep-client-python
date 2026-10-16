@@ -5,12 +5,12 @@ from oep_client.conformance_stream import StreamChecks
 from oep_client.conformance_stream_sample import SampleStreamAdapter
 from oep_client.virtual_stream_model import StreamModel
 from test_conformance import REG
+from spec_names import SPEC
 
 
 def setup():
     reg=copy.deepcopy(REG)
-    reg['common']={'enum':{'read_from':{'position':0,'oldest':1,'now':2,'last_mark':3},'read_flags':{'more':1,'gap':2},
-                          'mark_kind':{'lost':1,'clear':2,'host':3},'mark_detail_lost':{'overflow':1}}}
+    reg['common']=copy.deepcopy(SPEC['common'])                      # the common enums by name (tests/spec_names.py)
     now=[0];model=StreamModel(lambda:now[0]);c=Checks(model.handle,reg,'virtual-resource-1')
     return model,c,SampleStreamAdapter(model)
 

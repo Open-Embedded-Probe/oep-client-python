@@ -1,5 +1,7 @@
 """Capture §3.2/3.3/4.1: unreachable threshold must wait, never fabricate a trigger."""
 import struct
+from oep_client.registry import FIXTURE_LOGIC as _LOGIC
+STOPPED_ERROR = _LOGIC.enum['stopped_reason']['error']   # capture §3.4, by name
 from fractions import Fraction
 import pytest
 from oep_client import capture as c,core,host
@@ -44,7 +46,7 @@ def test_waiting_error_has_matching_stopped_reason_and_no_segment(error):
     status=track.status();assert status.state==c.STATE['error'] and status.error==error
     assert track.segments()==[]
     rows=events(ep,track.fn);assert [r[0] for r in rows]==[c.EVENT_STOPPED]
-    assert rows[0][1]==(3,error,track.generation)
+    assert rows[0][1]==(STOPPED_ERROR,error,track.generation)
 
 
 @pytest.mark.parametrize('elapsed,index,count',[(0,0,4),(2,2,6),(20,4,8)])

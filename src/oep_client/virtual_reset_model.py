@@ -5,6 +5,9 @@ from .virtual_block_model import HARTSEL
 from .virtual_debug_model import fixed_dmi
 from .virtual_dmseq_model import initial
 from .virtual_core import Core, Completed, Reject, tlv
+from . import registry as _reg
+
+MODE = _reg.TARGET_RISCV_DM.enum['reset_mode']             # run, halt_at_reset (debug §4.3)
 
 
 class Resets(Steps):
@@ -14,16 +17,16 @@ class Resets(Steps):
         if fn!=5 or op!=19:return super().dispatch_request(fn,op,payload,tags)
         parent,mode=struct.unpack('<IB',payload);self.resource(parent,'connection')
         if self.connections[parent]['fn']==3:raise Reject(4,tlv(1,b'\x06'))
-        if mode not in (0,2):raise Reject(11,b'\0')                   # debug §4.3: modes 0 and 2 only
+        if mode not in MODE.values():raise Reject(11,b'\0')           # debug §4.3: the two modes only
         target=self.targets[parent];result=self.reset_result;related=[rid for rid,(p,_) in self.streams.items() if p==parent]
         for rid in related:self.mailboxes[rid]['debug_busy']=True
         control=target['registers'].get(0x10,0)&~(HARTSEL|0x80000002)
-        target['haltreq']=mode==2;control|=0x80000000 if mode==2 else 0
+        target['haltreq']=mode==MODE['halt_at_reset'];control|=0x80000000 if mode==MODE['halt_at_reset'] else 0
         status=0;flags=0;pc=0;cleaned=True
         try:
             self.writereg(parent,0x10,control|2);self.access.append(('ndmreset-assert',parent))
             self.writereg(parent,0x10,control);self.access.append(('ndmreset-release',parent,target['haltreq']))
-            target['pc']=0x2000;target['halted']=mode==2
+            target['pc']=0x2000;target['halted']=mode==MODE['halt_at_reset']
             failures=5 if result=='dm-line' else 2 if result=='dm-recover' else 0
             responded=False
             for attempt in range(5):
@@ -34,10 +37,10 @@ class Resets(Steps):
                 self.access.append(('ack-havereset',parent))
                 for rid in related:
                     if rid in self.protocols:self.protocols[rid]=initial()   # dmseq unsynced again (debug §4.6)
-                if result=='state-timeout':status=4;target['halted']=mode!=2
+                if result=='state-timeout':status=4;target['halted']=mode!=MODE['halt_at_reset']
                 elif result=='fault':status=3
                 else:
-                    flags=1;pc=target['pc'] if mode==2 else 0
+                    flags=1;pc=target['pc'] if mode==MODE['halt_at_reset'] else 0
                     if result=='cleanup-line':status=2;cleaned=False   # haltreq could not be lowered
         finally:
             if cleaned:target['haltreq']=False                        # lowered in both modes; mode 2 stays halted

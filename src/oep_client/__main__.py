@@ -356,7 +356,7 @@ def _config_parser(sub) -> None:
     dis.add_argument("--save", action="store_true")
     rm = cs.add_parser("remove", help="remove one item (unset): label CH, idle CH, disable CH")
     rm.add_argument("probe")
-    rm.add_argument("kind", choices=sorted(config.ITEM))
+    rm.add_argument("kind", help="the item's name: label, idle, disable, passthrough, wifi, ... or a probe's own")
     rm.add_argument("channel", type=int)
     rm.add_argument("--save", action="store_true")
     for name in ("save", "erase"):

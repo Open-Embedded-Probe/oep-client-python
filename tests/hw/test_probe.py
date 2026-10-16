@@ -168,7 +168,7 @@ def test_config(run: record.Run):
     run.settings_before(cfg)                          # what restore_settings puts back, whatever happens below
     h0, items0 = cfg.get()
     rec = run.record("config", storage_bytes=declared.storage_bytes, items_before=len(items0), generation_before=h0)
-    assert config.ITEM["disable"] in declared.items, "the probe declares no disable item"
+    assert "disable" in [s.name for s in declared.settings], "the probe declares no disable item"
     assert declared.storage_bytes > 0, "the probe declares no storage: nothing to save"
     label_ch, disable_ch = board.label or board.gpio[0], board.disable
     if not label_ch or not disable_ch:
@@ -934,7 +934,7 @@ def test_spi_target(run: record.Run):
 
 # ---- 9. the target's console -------------------------------------------------------------------------------------------------
 
-_MECHANISMS = reg.TARGET_CONSOLE.tlv["describe"]["mechanisms"]
+_MECHANISMS = reg.TARGET_CONSOLE.tlv["describe"]["mechanism"]
 
 
 def test_console(run: record.Run):
@@ -961,7 +961,7 @@ def test_console(run: record.Run):
         for fn in core.find_all(hst, console_mod.Console.NAME):
             con.fn = fn
             decl = record.declared(hst, con.fn)
-            mechanisms = list(decl["own"].get(_MECHANISMS, [b""])[0])
+            mechanisms = [v.decode() for v in decl["own"].get(_MECHANISMS, [])]   # a named list (core §7.7)
             mechanism = con.DMSEQ if con.DMSEQ in mechanisms or not mechanisms else mechanisms[0]
             rec.update(console_fn=fn, mechanisms=mechanisms, mechanism=mechanism)
             try:

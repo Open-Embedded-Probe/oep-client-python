@@ -4,6 +4,8 @@ import struct
 
 import pytest
 
+from oep_client.registry import FIXTURE_LOGIC as _LOGIC
+STOPPED_ERROR = _LOGIC.enum['stopped_reason']['error']   # capture §3.4, by name
 from oep_client import capture as c, core, host as h, message as m, registry as reg
 from test_virtual_bench_capture import bench
 
@@ -102,7 +104,7 @@ def test_a_failed_start_sends_stopped_reason_3():
     st = lc.status()
     assert st.state == ST["error"]
     assert [(e.kind, e.reason, e.error, e.generation) for e in events(ep, lc.fn)] == \
-        [("stopped", 3, st.error, st.generation)]
+        [("stopped", STOPPED_ERROR, st.error, st.generation)]
 
 
 def test_a_failed_group_start_sends_the_group_stopped_reason_3():
@@ -118,7 +120,7 @@ def test_a_failed_group_start_sends_the_group_stopped_reason_3():
     assert (r.resolution, r.detail) == (m.COMPLETED, m.FAILED)
     gen = struct.unpack_from("<QI", r.payload)[1]
     error = lc.status().error
-    assert [(e.kind, e.reason, e.error, e.generation) for e in events(ep, grp.fn)] == [("stopped", 3, error, gen)]
+    assert [(e.kind, e.reason, e.error, e.generation) for e in events(ep, grp.fn)] == [("stopped", STOPPED_ERROR, error, gen)]
 
 
 # ---- §3.2 state table: "| 5 止まっている | unavailable 6 | unavailable 6 | → 1 | ..." (no stopped, as rows 2 and 3
@@ -193,8 +195,8 @@ def test_analog_checker_requires_unsupported_for_a_frontend_of_a_role_not_planne
     original = virtual_analog_model.Analog.settings
 
     def old_rule(self, tags):
-        if any(value[0] not in self.roles for _, value in tags.get(71, [])):
-            raise Reject(4, tlv(1, b"\6"))
+        if any(value[0] not in self.roles for _, value in tags.get(virtual_analog_model.C['frontend'], [])):
+            raise Reject(virtual_analog_model.R['unavailable'], virtual_analog_model.cause('wrong_state'))
         return original(self, tags)
     monkeypatch.setattr(virtual_analog_model.Analog, "settings", old_rule)
     model, checks = _analog_model()
@@ -211,15 +213,16 @@ def test_models_check_a_later_copy_of_a_configure_tlv(model_name):
     if model_name == "timeline":
         from oep_client.virtual_capture_timeline_model import Track
         track = Track(2, None, [])
-        tags = lambda data: track.request_tags(16, data)                       # noqa: E731
+        tags = lambda data: track.request_tags(_LOGIC.op["configure"], data)    # noqa: E731
     else:
         from oep_client.virtual_logic_model import Logic
         from oep_client.virtual_analog_model import Analog
         ext = (Logic if model_name == "logic" else Analog).__new__(Logic if model_name == "logic" else Analog)
-        tags = lambda data: ext.request_tags(2, 16, data)                       # noqa: E731
+        tags = lambda data: ext.request_tags(2, _LOGIC.op["configure"], data)   # noqa: E731
     from oep_client.virtual_core import Reject, tlv
-    good = tlv(64, b"\1") + tlv(66, struct.pack("<I", 1000))
-    tags(good + tlv(66, struct.pack("<I", 5)))                                 # a well-formed later copy: ignored
+    C = _LOGIC.tlv["configure"]
+    good = tlv(C["mode"], bytes([_LOGIC.enum["mode"]["one_shot"]])) + tlv(C["rate"], struct.pack("<I", 1000))
+    tags(good + tlv(C["rate"], struct.pack("<I", 5)))                          # a well-formed later copy: ignored
     with pytest.raises(Reject) as e:
-        tags(good + tlv(66, b"\5"))
-    assert e.value.reason == 3                                                 # malformed
+        tags(good + tlv(C["rate"], b"\5"))
+    assert e.value.reason == __import__("oep_client.registry", fromlist=["REJECT_REASONS"]).REJECT_REASONS["malformed"]

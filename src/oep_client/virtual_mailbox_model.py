@@ -1,7 +1,7 @@
 """Logical SDI/DMDATA mailbox fixture; no target or DMI transport is opened."""
 import copy
 import struct
-from .virtual_attach_model import Attachments, AttachModel
+from .virtual_attach_model import Attachments, AttachModel, COP
 from .virtual_core import Core
 
 
@@ -11,7 +11,7 @@ class Mailboxes(Attachments):
         super().close_stream(rid);self.mailboxes.pop(rid,None)
     def dispatch_request(self,fn,op,payload,tags):
         value=super().dispatch_request(fn,op,payload,tags)
-        if fn==4 and op==16:
+        if fn==4 and op==COP['open']:
             rid=struct.unpack_from('<I',value)[0]
             self.mailboxes[rid]={'data0':0,'data1':0,'halted':False,'debug_busy':False,'events':[]}
         return value
@@ -23,7 +23,7 @@ class Mailboxes(Attachments):
         status=0x100 if m['halted'] else 0;m['events'].append(('read',0x11,status))
         if status:return
         d0,d1=m['data0'],m['data1'];m['events'].append(('read',4,d0));length=d0&255
-        if self.meta[rid]==0:
+        if self.mechanism_numbers()[self.meta[rid]]=='sdi':
             if not length:return
             if length>7:m['events'].append(('write',4,0));m['data0']=0;return   # not a frame: cleared (console §3.1)
             m['events'].append(('read',5,d1));s.feed((d0.to_bytes(4,'little')[1:]+d1.to_bytes(4,'little'))[:length]);answer=0

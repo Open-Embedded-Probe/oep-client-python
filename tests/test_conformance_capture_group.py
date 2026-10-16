@@ -4,7 +4,11 @@ from oep_client import registry as registry
 from oep_client.conformance import Checks
 from oep_client.conformance_capture_group import CaptureGroupChecks
 from oep_client.conformance_capture_group_sample import SampleCaptureGroupAdapter
-from oep_client.virtual_capture_group_model import CaptureGroupModel
+from oep_client.virtual_capture_group_model import CaptureGroupModel, OP, GOP, PLAN, ST, GS, ADC, LOGIC, GROUPS
+from oep_client.virtual_names import R
+
+GROUP = GROUPS[0]                     # the group the checker drives
+RUNNING = (ST['waiting'], ST['capturing'], ST['paused'])
 from test_conformance_registered_ops import setup as registered_setup
 
 
@@ -92,22 +96,22 @@ def test_semantic_group_faults_are_detected(fault,case):
         def bound_states(states):
             saved={fn:t.state for fn,t in e.tracks.items()}
             for fn,t in e.tracks.items():
-                if t.state in states:t.state=1
+                if t.state in states:t.state=ST['configured']
             return saved
         def broken_bind(payload,tags,gid=4):
             functions=list(struct.unpack('<'+'H'*payload[0],payload[1:]));g=e.groups[gid]
             if fault=='dup_accepted' and len(set(functions))!=len(functions):g.bound=functions;return b''
-            if fault=='same_list_refused' and functions==g.bound and e.state(gid)==3:raise e.refusal(6)
-            if fault=='change_active' and e.state(gid)==3 and functions!=g.bound:g.bound=functions;return b''
-            if fault=='rebind_done_refused' and functions!=g.bound and any(e.tracks[fn].state==4 for fn in functions if fn in e.tracks):raise e.refusal(6)
+            if fault=='same_list_refused' and functions==g.bound and e.state(gid)==GS['capturing']:raise e.refusal('wrong_state')
+            if fault=='change_active' and e.state(gid)==GS['capturing'] and functions!=g.bound:g.bound=functions;return b''
+            if fault=='rebind_done_refused' and functions!=g.bound and any(e.tracks[fn].state==ST['done'] for fn in functions if fn in e.tracks):raise e.refusal('wrong_state')
             saved=frame=configs=peers=None
             if fault=='ignore_frame':frame=model.ep.probe.max_frame;model.ep.probe.max_frame=65535
-            if fault=='allow_active_track':saved=bound_states((2,3,5))
+            if fault=='allow_active_track':saved=bound_states(RUNNING)
             if fault=='allow_trigger':configs={fn:t.config for fn,t in e.tracks.items()};[setattr(t,'config',dict(t.config,trigger=(0,0,0))) for t in e.tracks.values() if t.config]
             if fault=='steal_track':peers={other:list(h.bound) for other,h in e.groups.items() if other!=gid};[setattr(h,'bound',[]) for other,h in e.groups.items() if other!=gid]
             try:result=bind(payload,tags,gid)
             except Reject as error:
-                if fault=='mutate_bind_refusal':e.bound=[2]
+                if fault=='mutate_bind_refusal':e.bound=[ADC]
                 if fault=='wrong_refusal_fn':raise Reject(error.reason,tlv(1,b'\6')+tlv(5,b'\2\0'))
                 if fault=='unknown_no_fn' and error.reason==11:raise Reject(11,b'\0')
                 if fault=='other_group_cause6' and error.payload[:4]==tlv(1,b'\4'):raise Reject(4,tlv(1,b'\6')+error.payload[4:])
@@ -130,13 +134,13 @@ def test_semantic_group_faults_are_detected(fault,case):
             if fault=='track_generation_wrap':
                 for fn in g.bound:
                     if e.tracks[fn].generation==LAST:e.tracks[fn].generation=0
-            if fault=='start_while_active':bound_states((2,3,5))
+            if fault=='start_while_active':bound_states(RUNNING)
             try:result=start(gid)
             except Reject:
-                if fault=='partial_start':e.tracks[2].generation+=1;e.tracks[2].clear(3)
+                if fault=='partial_start':e.tracks[ADC].generation+=1;e.tracks[ADC].clear(ST['capturing'])
                 raise
             if fault=='reverse_reply':result=result[:13]+result[19:25]+result[13:19]
-            if fault=='track_generation':e.tracks[2].generation-=1
+            if fault=='track_generation':e.tracks[ADC].generation-=1
             if fault=='drive_pin':e.pins[1]=(4,0)
             if fault=='legacy_start':result=b'\0'*4+result
             return result
@@ -146,7 +150,7 @@ def test_semantic_group_faults_are_detected(fault,case):
         def broken_tags(fn,op,data):
             try:return tags(fn,op,data)
             except Reject as error:
-                if fault=='critical_ignored' and fn in e.groups and error.reason==11:return {}
+                if fault=='critical_ignored' and fn in e.groups and error.reason==R['unsupported']:return {}
                 raise
         def broken_release():
             before=list(e.bound);release()
@@ -158,26 +162,26 @@ def test_semantic_group_faults_are_detected(fault,case):
                 try:return plan(op,payload,tags)
                 finally:
                     for gid,value in owned.items():e.groups[gid].bound=value
-            if fault=='same_plan_refused' and op==16 and any(struct.unpack('<H',value[:2])[0] in e.bound for _,value in tags):raise e.refusal(4,e.bound[0])
+            if fault=='same_plan_refused' and op==PLAN['plan_apply'] and any(struct.unpack('<H',value[:2])[0] in e.bound for _,value in tags):raise e.refusal('bound_in_group',e.bound[0])
             return plan(op,payload,tags)
         def broken_dispatch(fn,op,payload,tags):
-            if fault=='stop_one_track' and fn==4 and op==18:return e.tracks[2].dispatch_request(2,18,payload,{})
-            if fault=='allow_track_op' and fn in e.bound and op in (16,17,18,19):
+            if fault=='stop_one_track' and fn==GROUP and op==GOP['stop']:return e.tracks[ADC].dispatch_request(2,OP['stop'],payload,{})
+            if fault=='allow_track_op' and fn in e.bound and op in (OP['configure'],OP['start'],OP['stop'],OP['force']):
                 before=e.bound;e.bound=[]
                 try:return dispatch(fn,op,payload,tags)
                 finally:e.bound=before
             result=dispatch(fn,op,payload,tags)
-            if fault=='query_applies' and fn==2 and op==24:e.tracks[2].config=e.tracks[2].settings(tags);e.tracks[2].clear(1)
-            if fault=='release_peer' and fn==2 and op==23:e.tracks[3].segments.clear();e.tracks[3].data.clear()
+            if fault=='query_applies' and fn==ADC and op==OP['query']:e.tracks[ADC].config=e.tracks[ADC].settings(tags);e.tracks[ADC].clear(ST['configured'])
+            if fault=='release_peer' and fn==ADC and op==OP['release']:e.tracks[LOGIC].segments.clear();e.tracks[LOGIC].data.clear()
             return result
         def broken_state(gid=4):
             result=state(gid)
-            if fault=='premature_done' and result==3:return 4
-            if fault=='paused_group' and e.groups[gid].bound and all(e.tracks[fn].state==5 for fn in e.groups[gid].bound):return 5
+            if fault=='premature_done' and result==GS['capturing']:return GS['done']
+            if fault=='paused_group' and e.groups[gid].bound and all(e.tracks[fn].state==ST['paused'] for fn in e.groups[gid].bound):return ST['paused']
             return result
         e.bind=broken_bind;e.start=broken_start;e.status=broken_status;e.request_tags=broken_tags;e.release=broken_release;e.plan=broken_plan;e.dispatch_request=broken_dispatch;e.state=broken_state
         if fault=='no_short':
-            track=e.tracks[3];finish=track.finish
+            track=e.tracks[LOGIC];finish=track.finish
             def broken_finish(short=False):
                 finish(short)
                 if track.segments:
@@ -187,7 +191,7 @@ def test_semantic_group_faults_are_detected(fault,case):
     if fault=='error_peer_runs':
         fail=model.group_fail
         def broken_fail(fn,error):
-            fail(fn,error);model.extension.tracks[3].state=3
+            fail(fn,error);model.extension.tracks[LOGIC].state=ST['capturing']
         model.group_fail=broken_fail
     checker=CaptureGroupChecks(checks,SampleCaptureGroupAdapter(model));checker.cases=(case,)
     result=checker.run()
@@ -195,16 +199,16 @@ def test_semantic_group_faults_are_detected(fault,case):
     assert row['status']=='failed' and row['error'].startswith('Violation:'),row.get('error')
 
 
-@pytest.mark.parametrize('case,op',[('REPLAY-START',17),('REPLAY-BIND',16),('REPLAY-STOP',18)])
+@pytest.mark.parametrize('case,op',[('REPLAY-START',GOP['start']),('REPLAY-BIND',GOP['bind']),('REPLAY-STOP',GOP['stop'])])
 def test_replay_group_side_effects_are_detected(case,op):
     model,checks=setup();original=model.handle;seen=set()
     def broken(req):
         result=original(req)
-        if int.from_bytes(req[3:5],'little')==4 and req[5]==op:
+        if int.from_bytes(req[3:5],'little')==GROUP and req[5]==op:
             if req in seen:
-                if op==17:model.extension.generation+=1;model.extension.tracks[2].data.clear()
-                elif op==16:model.extension.bound=[]
-                else:model.extension.tracks[2].data.clear()
+                if op==GOP['start']:model.extension.generation+=1;model.extension.tracks[ADC].data.clear()
+                elif op==GOP['bind']:model.extension.bound=[]
+                else:model.extension.tracks[ADC].data.clear()
             seen.add(req)
         return result
     checks.send=broken;checker=CaptureGroupChecks(checks,SampleCaptureGroupAdapter(model));checker.cases=(case,)

@@ -51,7 +51,7 @@ def test_a_failed_test_leaves_nothing():
     assert ("disable", 7) not in now and config.decode(*now[("label", 5)]).text == "MINE"
     st = cfg.state()
     assert st.storage == "applied" and not cfg.needs_save() and not r.settings_pending and not r.settings_saved
-    assert ep.saved == {(config.ITEM["label"], 5): struct.pack("<H", 5) + b"MINE"}      # stored as before the test
+    assert ep.saved == {("label", 5): b"MINE"}      # stored as before the test
     assert r.restore_settings("again")                          # nothing more to do
     assert r.tests["_settings"]["restored"][0]["removed"] == ["disable 7"]
 

@@ -103,7 +103,7 @@ class TargetDmseqChecks:
         probe.operations={fn:{op['name']:op['code'] for op in spec['op']} for fn,spec in probe.specs.items()}
         probe.fresh()
         with self.c.holding(3000) as sid:
-            rid=probe.opened(sid,2);probe.write(sid,rid,b'abcd',0,4);self.a.begin(data=b'x')
+            rid=probe.opened(sid,'dmseq');probe.write(sid,rid,b'abcd',0,4);self.a.begin(data=b'x')
             joint=self.a.link_poll(rid)
             require(joint['target']['input']==b'ab' and joint['target']['a']==0 and joint['target']['s']==1,'linked first target input/ack')
             require(joint['probe']['streams'][rid]['data']==b'x' and joint['probe']['streams'][rid]['tx']==b'cd' and joint['probe']['protocols'][rid]['pending']==b'ab','linked first probe output/pending')
@@ -120,7 +120,7 @@ class TargetDmseqChecks:
             require(self.a.reset_scope=='logical-model' and self.a.reference and self.a.short_ms>=20 and self.a.long_ms>=1000 and self.a.input_capacity==2 and self.a.output_capacity==6,'explicit logical target timing/capacity contract')
             require(self.a.short_ms==20 and self.a.long_ms==1000,'selected fixture timing differs from boundary tests')
             spec=next(s for s in self.c.reg['interface'] if s['name']=='oep.target.console' and s['revision']==1)
-            require(spec['enum']['mechanism']['dmseq']==2,'selected SPEC mechanism mismatch');self.c.confirm();self.c.identity()
+            require('dmseq' in spec['names']['mechanism'],'selected SPEC lacks dmseq');self.c.confirm();self.c.identity()
         self.c.check('OEP-DMSEQ-TARGET-CONTEXT','dmseq target rules and timeout; explicit logical fixture',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         cases=[('LENGTHS',self.begin_lengths),('SEEDS',self.seeds)]

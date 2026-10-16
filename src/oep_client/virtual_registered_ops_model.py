@@ -2,18 +2,21 @@
 import struct
 from .virtual_resource_model import ResourceModel, Resources
 from .virtual_core import Core, Reject, tlv
+from . import registry as _reg
 
 
-MINIMAL={
-    'oep.probe.plan':(16,17),'oep.probe.restart':(16,),'oep.probe.link':(16,17),
-    'oep.wire.rvswd':(17,18,19),'oep.wire.swio':(17,18,19),'oep.wire.swd':(17,18,19),
-    'oep.target.riscv-dm':(16,),'oep.target.arm-adi':(16,),
-    'oep.target.console':(16,17,22,23),
-    'oep.fixture.gpio':(16,17),'oep.fixture.uart':(16,17,22),
-    'oep.fixture.i2c-target':tuple(range(16,20)),'oep.fixture.spi-target':tuple(range(16,20)),
-    'oep.fixture.logic':(16,17,18,20,21,22),'oep.fixture.analog':(16,17,18,20,21,22),
-    'oep.fixture.capture-group':(16,17,18,20),'oep.probe.config':(16,17,20),
+# Each interface's mandatory ops, by name (looked up in the registry: never literal numbers).
+_MANDATORY={
+    'oep.probe.plan':('plan_apply','plan_release'),'oep.probe.restart':('restart',),'oep.probe.link':('source','sink'),
+    **{w:('attach','detach','connections') for w in ('oep.wire.rvswd','oep.wire.swio','oep.wire.swd')},
+    'oep.target.riscv-dm':('dmi',),'oep.target.arm-adi':('transfer',),
+    'oep.target.console':('open','read','close','streams'),
+    'oep.fixture.gpio':('set','read'),'oep.fixture.uart':('configure','read','status'),
+    'oep.fixture.i2c-target':('configure','read_rx','preload_tx','status'),'oep.fixture.spi-target':('configure','arm','read_rx','status'),
+    **{c:('configure','start','stop','status','read','segments') for c in ('oep.fixture.logic','oep.fixture.analog')},
+    'oep.fixture.capture-group':('bind','start','stop','status'),'oep.probe.config':('get','set','unset'),
 }
+MINIMAL={name:tuple(_reg.INTERFACES[name].op[o] for o in ops) for name,ops in _MANDATORY.items()}
 
 
 class RegisteredOps(Resources):

@@ -45,15 +45,9 @@ def reopen_s() -> float:
     return float(os.environ.get("OEP_HW_REOPEN_S", "") or 0)
 
 
-def _by_key(items) -> dict[tuple[str, int], tuple[int, bytes]]:
-    """The label / idle / disable items (what tests/hw sets) as {(kind, channel): (tag, value)}."""
-    out = {}
-    for tag, value in items:
-        it = config.decode(tag, value)
-        kind = _ITEM_KINDS.get(type(it))
-        if kind:
-            out[(kind, it.channel)] = (tag, value)
-    return out
+def _by_key(items) -> dict[tuple[str, int], tuple[str, int, bytes]]:
+    """The label / idle / disable items (what tests/hw sets) as {(name, channel): (name, channel, data)}."""
+    return {(n, k): (n, k, d) for n, k, d in items if n in ("label", "idle", "disable")}
 
 
 def _open_serial_with_write_timeout(port: str, baud: int = link.BASE_BAUD):
@@ -332,7 +326,7 @@ class Run:
             cfg = config.ProbeConfig(hst)
             now = _by_key(cfg.get()[1])
             unsets = [key for key in self.settings_pending if key not in base["items"] and key in now]
-            sets = [m.tlv(*base["items"][key]) for key in self.settings_pending
+            sets = [config.decode(*base["items"][key]) for key in self.settings_pending
                     if key in base["items"] and now.get(key) != base["items"][key]]
             if unsets:
                 cfg.unset(unsets)

@@ -1,6 +1,7 @@
 """Round 7, request validation (docs/trace/review7/request-validation.json)."""
 import struct
 
+from oep_client.registry import WIRE_RVSWD as _WIRE, REJECT_REASONS as _R
 from oep_client.conformance_capture_group import CaptureGroupChecks
 from oep_client.conformance_capture_group_sample import SampleCaptureGroupAdapter
 from oep_client.virtual_attach_model import AttachModel
@@ -25,13 +26,14 @@ def test_attach_model_refuses_a_reset_hold_past_max_op_ms():
     model = AttachModel(lambda: 0, boot_id=17)
     sid = _open(model)
     limit = model.ep.max_op_ms
-    reset = lambda hold, raw=0x85: bytes((raw,)) + struct.pack("<HHH", 4, model.extension.reset_channel, hold)
+    RESET = _WIRE.tlv["attach"]["reset"]
+    reset = lambda hold, raw=RESET | 0x80: bytes((raw,)) + struct.pack("<HHH", 4, model.extension.reset_channel, hold)
     attach = struct.pack("<BHHI", 0, 0, 1, 2000)
-    for corr, tail, tag in ((2, reset(limit + 1), 0x85), (3, reset(10) + reset(limit + 1, 0x05), 0x05)):
-        reply = model.handle(_request(corr, 1, 17, sid, attach + tail))
-        assert reply[3:6] == bytes((0, 11, tag)), reply.hex()
+    for corr, tail, tag in ((2, reset(limit + 1), RESET | 0x80), (3, reset(10) + reset(limit + 1, RESET), RESET)):
+        reply = model.handle(_request(corr, 1, _WIRE.op["attach"], sid, attach + tail))
+        assert reply[3:6] == bytes((0, _R["unsupported"], tag)), reply.hex()
         assert not model.extension.connections and not model.extension.touch
-    reply = model.handle(_request(4, 1, 17, sid, attach + reset(limit)))   # max_op_ms itself is taken
+    reply = model.handle(_request(4, 1, _WIRE.op["attach"], sid, attach + reset(limit)))   # max_op_ms itself is taken
     assert reply[3:5] == b"\1\0", reply.hex()
 
 

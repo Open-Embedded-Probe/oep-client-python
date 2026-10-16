@@ -1,5 +1,5 @@
 {
- "spec_commit": "67876b7",
+ "spec_commit": "e49550d",
  "units": {
   "console:pre:1": {
    "text": "| `oep.target.console` | 1 | target のコンソ",
@@ -143,19 +143,9 @@
    "note": "read / marks / clear / mark / write in common §1's form, stream first"
   },
   "console:1:10": {
-   "text": "- mechanism: 0 SDI、1 DMDATA、2 dmseq（fram",
+   "text": "- **方式は名前の並び**（core §7.7）: describe の ta",
    "verify": [
-    "tests/test_trace_console.py::test_a_mechanism_not_declared_or_unknown_is_unsupported_0x00",
-    "tests/test_interfaces.py::test_console_open_makes_a_stream_and_reads_by_position",
-    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass"
-   ],
-   "mutants": [],
-   "note": "0 SDI, 1 DMDATA, 2 dmseq; an unknown mechanism or one not in describe's mechanisms: unsupported 0x00, nothing opened"
-  },
-  "console:1:11": {
-   "text": "- describe: tag 0x40 mechanisms（n(u8)、n ",
-   "verify": [
-    "tests/test_trace_console.py::test_describe_declares_the_mechanisms_counted_without_duplicates",
+    "tests/test_trace_console.py::test_describe_declares_the_mechanisms_as_a_named_list",
     "tests/test_console_queue_and_reset_settle.py::test_the_send_queue_is_not_declared",
     "tests/test_conformance_oep_declarations.py::test_standard_declarations_pass_without_mutating_requests",
     "tests/test_conformance_oep_declarations.py::test_scan_is_optional_and_the_mechanisms_are_counted",
@@ -170,6 +160,16 @@
     "tests/test_conformance_oep_declarations.py::test_standard_declaration_mutants_fail[write_with_sdi_only]"
    ],
    "note": "describe 0x40 mechanisms n(u8) n x mechanism(u8), n >= 1, no duplicate, always; a fn offering write declares mechanism 1 or 2 (checker)"
+  },
+  "console:1:11": {
+   "text": "- 標準の方式の名前は `sdi`、`dmdata`、`dmseq`（§3）。**名前が方式を正確に決める**（版を持た",
+   "verify": [
+    "tests/test_trace_console.py::test_a_mechanism_not_declared_or_unknown_is_unsupported_0x00",
+    "tests/test_interfaces.py::test_console_open_makes_a_stream_and_reads_by_position",
+    "tests/test_conformance_attach.py::test_standard_attach_and_console_contracts_pass"
+   ],
+   "mutants": [],
+   "note": "0 SDI, 1 DMDATA, 2 dmseq; an unknown mechanism or one not in describe's mechanisms: unsupported 0x00, nothing opened"
   },
   "console:1:12": {
    "text": "- 知らない stream は rejected no_resource（cor",
@@ -208,7 +208,7 @@
    "note": "only live streams, in creation order, first(u16); a closed stream is no_resource"
   },
   "console:2:1": {
-   "text": "- openはセッション所有の新しいstreamを作る。mechanism 0〜",
+   "text": "- openはセッション所有の新しいstreamを作る。標準の方式では同じcon",
    "verify": [
     "tests/test_interfaces.py::test_console_open_makes_a_stream_and_reads_by_position",
     "tests/test_trace_console.py::test_stream_numbers_are_never_used_again_in_a_boot",
@@ -263,8 +263,8 @@
    "mutants": [
     "tests/test_conformance_dmseq.py::test_dmseq_checker_detects_independent_faults[reset_keep_protocol-RESET]",
     "tests/test_conformance_dmseq.py::test_dmseq_checker_detects_independent_faults[reset_drop_output-RESET]",
-    "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[sync_retained-CONSOLE-0]",
-    "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[pending_retained-CONSOLE-2]"
+    "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[sync_retained-CONSOLE-RUN]",
+    "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[pending_retained-CONSOLE-HALT-AT-RESET]"
    ],
    "note": "a target reset drops the dmseq sync / pending answer, keeps output and queue (debug §4.6)"
   },
@@ -288,9 +288,9 @@
     "tests/test_conformance_reset.py::test_optional_reset_contracts_pass"
    ],
    "mutants": [
-    "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[mark_detail-CONSOLE-0]",
-    "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[missing_mark-CONSOLE-2]",
-    "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[mark_on_failure-CONSOLE-DM-LINE-0]"
+    "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[mark_detail-CONSOLE-RUN]",
+    "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[missing_mark-CONSOLE-HALT-AT-RESET]",
+    "tests/test_conformance_reset.py::test_reset_checker_detects_independent_faults[mark_on_failure-CONSOLE-DM-LINE-RUN]"
    ],
    "note": "reset 0x40 detail 1 ndmreset: one mark on the reset op's success, none on failure, no restart for it"
   },
@@ -385,7 +385,7 @@
    "note": "an invalid frame's SYN / TO never gives restart / resync or lost / TO; CRC lost/framing apart"
   },
   "console:2:15": {
-   "text": "- **送りの列**: writeを提供するfnは、mechanism 1/2の",
+   "text": "- **送りの列**: writeを提供するfnは、`dmdata`/`dmse",
    "verify": [
     "tests/test_interfaces.py::test_console_write_partial_and_a_closed_stream_is_gone",
     "tests/test_interfaces.py::test_console_io_writes_through_the_send_queue_and_sdi_takes_no_write",
@@ -442,11 +442,7 @@
    "note": "no DATA0 / DATA1 access while the connection's riscv-dm request runs or the hart is halted; DMSTATUS read before DATA0"
   },
   "console:3:2": {
-   "text": "| mechanism | 名前 | 向き | 定義 |",
-   "excluded": "informative: the header row of the mechanism table"
-  },
-  "console:3:3": {
-   "text": "| 0 | SDI | target → host | 下の 3.1 |",
+   "text": "| `sdi` | target → host | 下の 3.1 |",
    "verify": [
     "tests/test_trace_console.py::test_streams_lists_the_live_streams_in_the_order_made",
     "tests/test_console_queue_and_reset_settle.py::test_dmseq_hands_on_2_bytes_a_poll_and_sdi_takes_no_write",
@@ -455,8 +451,8 @@
    "mutants": [],
    "note": "mechanism 0 is SDI (streams lists it as 0), target -> host only: its write is unsupported"
   },
-  "console:3:4": {
-   "text": "| 1 | DMDATA | 両方向 | 下の 3.2 |",
+  "console:3:3": {
+   "text": "| `dmdata` | 両方向 | 下の 3.2 |",
    "verify": [
     "tests/test_trace_console.py::test_streams_lists_the_live_streams_in_the_order_made",
     "tests/test_console_queue_and_reset_settle.py::test_the_queue_is_handed_on_a_poll_at_a_time_and_survives_resets_and_restarts",
@@ -465,8 +461,8 @@
    "mutants": [],
    "note": "mechanism 1 is DMDATA (streams lists it as 1), both ways: output read, the send queue handed to the target"
   },
-  "console:3:5": {
-   "text": "| 2 | dmseq | 両方向 | [target-console-dmse",
+  "console:3:4": {
+   "text": "| `dmseq` | 両方向 | [target-console-dmseq]",
    "verify": [
     "tests/test_interfaces.py::test_console_open_makes_a_stream_and_reads_by_position",
     "tests/test_console_queue_and_reset_settle.py::test_dmseq_hands_on_2_bytes_a_poll_and_sdi_takes_no_write"

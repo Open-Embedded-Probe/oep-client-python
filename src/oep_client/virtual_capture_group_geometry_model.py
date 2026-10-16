@@ -5,6 +5,10 @@ does not import this module or use its expected records.
 """
 import struct
 
+from . import registry as _reg
+
+_A = _reg.FIXTURE_ANALOG.tlv["configure_answer"]           # the capture family's answer tags (capture §3.3)
+
 
 def tlv(tag,value):return bytes((tag,))+struct.pack('<H',len(value))+value
 
@@ -14,12 +18,12 @@ def geometry(*,rates=((1000,1),(333,1)),start_ns=20000000,offsets=(0,0),samples=
     configs={};records={};generation=11
     for at,(fn,words,offset,count) in enumerate(zip(members,rates,offsets,samples)):
         records[fn]=struct.pack('<IQIQIIBI',0,0,count,start_ns+offset,0,index,0,21+at)
-        body=tlv(80,struct.pack('<II',*words))+tlv(82,struct.pack('<I',count))
+        body=tlv(_A['actual_rate'],struct.pack('<II',*words))+tlv(_A['actual_samples'],struct.pack('<I',count))
         analog=at%2==0
         if analog:
-            body+=tlv(81,bytes((16,0,12,2,1,3)))+tlv(89,struct.pack('<BIB',2,3300,0))
-            for role in (1,3):body+=tlv(85,struct.pack('<Bii',role,0,1000000))+tlv(88,bytes((role,0)))
-        else:body+=tlv(81,b'\3\2\0\1')
+            body+=tlv(_A['layout'],bytes((16,0,12,2,1,3)))+tlv(_A['reference'],struct.pack('<BIB',2,3300,0))
+            for role in (1,3):body+=tlv(_A['scale'],struct.pack('<Bii',role,0,1000000))+tlv(_A['frontend_used'],bytes((role,0)))
+        else:body+=tlv(_A['layout'],b'\3\2\0\1')
         configs[fn]=('oep.fixture.analog' if analog else 'oep.fixture.logic',body)
     start=struct.pack('<QIB',start_ns,generation,len(members))+b''.join(struct.pack('<HI',fn,21+at) for at,fn in enumerate(members))
     status=struct.pack('<BQI',4,start_ns,generation)

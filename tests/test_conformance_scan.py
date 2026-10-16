@@ -11,9 +11,6 @@ from test_conformance import REG
 
 def setup():
     reg=copy.deepcopy(REG);reg['interface']=copy.deepcopy(SPECS)
-    for i,row in enumerate(reg['interface'][:3]):
-        row['tlv']['attach']={'max_speed':1,'pins':3};row['tlv']['scan']={'max_speed':1}
-        row['enum']['scan_kind']={'arm_adi' if i==2 else 'riscv_dm':2 if i==2 else 1}
     model=ScanModel(lambda:0,boot_id=17);c=Checks(model.handle,reg,'virtual-resource-1')
     return model,c,SampleScanAdapter(model)
 

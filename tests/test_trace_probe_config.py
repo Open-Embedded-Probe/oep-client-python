@@ -178,17 +178,16 @@ def test_the_lock_column_of_the_op_table(op, payload, locked):
         assert r.succeeded
 
 
-def test_unset_ignores_bit_7_of_the_item_tag():
-    """probe-config §2: an item tag's bit 7 is treated in unset as in set - unset of (0x83, channel) removes the idle
-    item (0x03, channel) and moves the generation; the same key once more is a no-op."""
+def test_unset_of_a_number_past_the_list_is_unsupported():
+    """probe-config §2, core §7.7: an item number is a place in describe's setting list; unset of a number past it
+    (0x82: no bit-7 rule any more) is unsupported with the number as received, and nothing changes."""
     ep, hst = open_bench()
     cfg = config.ProbeConfig(hst)
     g = cfg.set([config.Idle(channel=21, mode="pull-up"), config.Label(channel=21, text="x")])
-    r = hst.call(cfg.fn, cfg.UNSET, b"\x01" + struct.pack("<BH", config.ITEM["idle"] | 0x80, 21))
-    assert struct.unpack_from("<I", r.payload)[0] == g + 1
-    assert cfg.items() == [config.Label(channel=21, text="x")]
-    r = hst.call(cfg.fn, cfg.UNSET, b"\x01" + struct.pack("<BH", config.ITEM["idle"] | 0x80, 21))
-    assert struct.unpack_from("<I", r.payload)[0] == g + 1
+    with pytest.raises(h.Unsupported) as e:
+        hst.call(cfg.fn, cfg.UNSET, b"\x01" + struct.pack("<BH", config.ITEM["idle"] | 0x80, 21))
+    assert e.value.tag == config.ITEM["idle"] | 0x80
+    assert cfg.get()[0] == g and len(cfg.items()) == 2
 
 
 def test_save_and_erase_complete_within_max_op_ms():

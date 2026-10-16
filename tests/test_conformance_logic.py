@@ -1,5 +1,13 @@
 import struct
 import pytest
+from oep_client.virtual_logic_model import OP, C, A, ST, MODE
+from oep_client.registry import OUTCOMES
+from spec_names import iface
+
+
+def tags_of(name):
+    return {c:dict(t) for c,t in iface(name)['tlv'].items()}
+
 from oep_client.conformance import Checks
 from oep_client.conformance_logic import LogicChecks
 from oep_client.conformance_logic_sample import SampleLogicAdapter
@@ -10,8 +18,8 @@ from test_conformance_registered_ops import setup as registered_setup
 def setup():
     _,c=registered_setup();reg=c.reg
     for spec in reg['interface']:
-        if spec['name']=='oep.probe.plan':spec['tlv']={'plan_apply':{'role_assignment':16},'describe':{'plan_roles':64}}
-        if spec['name']=='oep.fixture.logic':spec['tlv']={'configure':{'mode':64,'rate':66,'samples':67,'segments':68,'trigger':69,'pretrigger':70},'configure_answer':{'actual_rate':80,'layout':81,'actual_samples':82,'actual_segments':83},'describe':{'mode':64,'rate_range':65,'channels':68,'trigger':69}}
+        if spec['name']=='oep.probe.plan':spec['tlv']=tags_of(spec['name'])   # by name from the selected SPEC
+        if spec['name']=='oep.fixture.logic':spec['tlv']=tags_of(spec['name'])   # by name from the selected SPEC
     model=LogicModel(boot_id=17);return model,Checks(model.handle,reg,'virtual-resource-1')
 
 
@@ -74,22 +82,22 @@ def test_side_effect_faults_detected(fault,case):
         def broken_dispatch(fn,op,payload,tags):
             old_data=bytes(e.data);old_state=e.state
             if fn==2:
-                if fault=='wrap_to_one' and op==17 and e.generation==0xffffffff and e.state in (1,4,6):e.generation=0
-                if fault=='lone_pretrigger' and op in (16,24) and 70 in tags and 69 not in tags:tags={k:v for k,v in tags.items() if k!=70}
-                if fault=='mode3_accepted' and op in (16,24) and tags.get(64,(0,b''))[1]==b'\3':tags={**tags,64:(64,b'\1'),67:(67,struct.pack('<I',8))}
+                if fault=='wrap_to_one' and op==OP['start'] and e.generation==0xffffffff and e.state in (ST['configured'],ST['done'],ST['error']):e.generation=0
+                if fault=='lone_pretrigger' and op in (OP['configure'],OP['query']) and C['pretrigger'] in tags and C['trigger'] not in tags:tags={k:v for k,v in tags.items() if k!=C['pretrigger']}
+                if fault=='mode3_accepted' and op in (OP['configure'],OP['query']) and tags.get(C['mode'],(0,b''))[1]==bytes((MODE['streaming'],)):tags={**tags,C['mode']:(C['mode'],bytes((MODE['one_shot'],))),C['samples']:(C['samples'],struct.pack('<I',8))}
             result=dispatch(fn,op,payload,tags)
             if fn==2:
-                if fault=='query_applies' and op==24:e.config=e.settings(tags);e.state=1
-                if fault=='generation_zero' and op==17:e.generation=0;result=b'\0'*4
-                if fault=='old_start_shape' and op==17:result=b'\0'*4+result
-                if fault=='layout_count' and op in (16,24):result=rewrite(result,81,b'\3\3\0\1\2')
-                if fault=='missing_actual_samples' and op in (16,24):result=rewrite(result,82)
-                if fault=='segments_unclamped' and op in (16,24) and 68 in tags:result=rewrite(result,83,tags[68][1])
-                if op==21:result=read_fault(fault,payload,result)
-                if fault=='keep_old_data' and op==17:e.data[:]=old_data
-                if fault=='no_resume' and op==23:e.state=5
-                if fault=='no_gap' and op==23:e.gap=False
-                if fault=='wrong_stop_state' and op==18 and old_state==3:e.state=4
+                if fault=='query_applies' and op==OP['query']:e.config=e.settings(tags);e.state=ST['configured']
+                if fault=='generation_zero' and op==OP['start']:e.generation=0;result=b'\0'*4
+                if fault=='old_start_shape' and op==OP['start']:result=b'\0'*4+result
+                if fault=='layout_count' and op in (OP['configure'],OP['query']):result=rewrite(result,A['layout'],b'\3\3\0\1\2')
+                if fault=='missing_actual_samples' and op in (OP['configure'],OP['query']):result=rewrite(result,A['actual_samples'])
+                if fault=='segments_unclamped' and op in (OP['configure'],OP['query']) and C['segments'] in tags:result=rewrite(result,A['actual_segments'],tags[C['segments']][1])
+                if op==OP['read']:result=read_fault(fault,payload,result)
+                if fault=='keep_old_data' and op==OP['start']:e.data[:]=old_data
+                if fault=='no_resume' and op==OP['release']:e.state=ST['paused']
+                if fault=='no_gap' and op==OP['release']:e.gap=False
+                if fault=='wrong_stop_state' and op==OP['stop'] and old_state==ST['capturing']:e.state=ST['done']
             return result
         def broken_finish(short=False):
             finish(short)
@@ -170,7 +178,7 @@ def test_omitted_repeat_segments_are_the_probe_choice():
         install();e=model.extension;settings=e.settings
         def chosen(tags):
             config=settings(tags)
-            if config['mode']==2 and 68 not in tags:config['segments']=1
+            if config['mode']==MODE['repeat'] and C['segments'] not in tags:config['segments']=1
             return config
         e.settings=chosen
     model.install=one_by_default;model.install()

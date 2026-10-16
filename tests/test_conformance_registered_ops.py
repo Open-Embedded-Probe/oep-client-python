@@ -4,32 +4,20 @@ from oep_client.conformance import Checks
 from oep_client.conformance_registered_ops import RegisteredOpsChecks
 from oep_client.virtual_registered_ops_model import RegisteredOpsModel, MINIMAL
 from test_conformance import REG
+from spec_names import SPEC, iface, ops
 
 
-# Independent literal op names/numbers, including all optional operations.
-OPERATIONS={
-'oep.probe.plan':[(16,'plan_apply'),(17,'plan_release')], 'oep.probe.restart':[(16,'restart')],
-'oep.probe.link':[(16,'source'),(17,'sink'),(18,'port_speed'),(19,'port_state')],
-**{n:list(zip(range(16,20),('scan','attach','detach','connections'))) for n in ('oep.wire.rvswd','oep.wire.swio','oep.wire.swd')},
-'oep.target.riscv-dm':list(zip(range(16,24),('dmi','halt','resume','reset','read_block','write_block','run','step'))),
-'oep.target.arm-adi':[(16,'transfer'),(17,'read_block'),(18,'write_block')],
-'oep.target.console':list(zip(range(16,24),('open','read','marks','clear','mark','write','close','streams'))),
-'oep.fixture.gpio':[(16,'set'),(17,'read')],
-'oep.fixture.uart':list(zip(range(16,23),('configure','read','marks','clear','mark','write','status'))),
-'oep.fixture.i2c-target':list(zip(range(16,21),('configure','read_rx','preload_tx','status','stretch'))),
-'oep.fixture.spi-target':list(zip(range(16,20),('configure','arm','read_rx','status'))),
-'oep.fixture.logic':list(zip(range(16,25),('configure','start','stop','force','status','read','segments','release','query')))+[(1,'subscribe'),(2,'unsubscribe')],
-'oep.fixture.analog':list(zip(range(16,26),('configure','start','stop','force','status','read','segments','release','query','calibration')))+[(1,'subscribe'),(2,'unsubscribe')],
-'oep.fixture.capture-group':[(16,'bind'),(17,'start'),(18,'stop'),(20,'status'),(1,'subscribe'),(2,'unsubscribe')],
-'oep.probe.config':list(zip(range(16,22),('get','set','save','erase','unset','state'))),
-}
+# Every op of these interfaces, all optional ones included, by name from the selected SPEC (tests/spec_names.py).
+_NAMES=('oep.probe.plan','oep.probe.restart','oep.probe.link','oep.wire.rvswd','oep.wire.swio','oep.wire.swd',
+        'oep.target.riscv-dm','oep.target.arm-adi','oep.target.console','oep.fixture.gpio','oep.fixture.uart',
+        'oep.fixture.i2c-target','oep.fixture.spi-target','oep.fixture.logic','oep.fixture.analog',
+        'oep.fixture.capture-group','oep.probe.config')
+OPERATIONS={name:[(code,op_name) for op_name,code in ops(name).items()] for name in _NAMES}
 
 
 def setup():
-    reg=copy.deepcopy(REG);reg['interface']=[dict(name=name,revision=1,op=[dict(code=code,name=op) for code,op in rows]) for name,rows in OPERATIONS.items()]
-    for spec in reg['interface']:
-        if spec['name'] in ('oep.fixture.logic','oep.fixture.analog'):spec['tlv']={'describe':{'mode':64}}
-    reg['describe_common'].update(role_channels=1,max_clock_hz=2,max_length=3,min_clock_hz=4,features=5,channel_group=6)
+    reg=copy.deepcopy(REG);reg['interface']=[copy.deepcopy(iface(name)) for name in OPERATIONS]   # each as the SPEC defines it
+    reg['describe_common'].update({k:SPEC['describe_common'][k] for k in ('role_channels','max_clock_hz','max_length','min_clock_hz','features','channel_group')})
     model=RegisteredOpsModel(lambda:0,boot_id=17)
     return model,Checks(model.handle,reg,'virtual-resource-1')
 

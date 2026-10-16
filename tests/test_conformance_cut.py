@@ -1,4 +1,5 @@
 from oep_client.conformance import Checks
+from spec_names import SPEC
 from oep_client.conformance_cut import CutChecks
 from oep_client.conformance_cut_sample import SampleCutAdapter
 from oep_client.virtual_cut_model import CutModel
@@ -6,7 +7,7 @@ from test_conformance_debug import setup as debug_setup
 
 
 def setup():
-    _,c,_=debug_setup();c.reg.setdefault('common',{}).setdefault('enum',{}).update(mark_kind={'lost':1,'clear':2,'host':3});model=CutModel(lambda:0,boot_id=17)
+    _,c,_=debug_setup();c.reg['common']=SPEC['common'];model=CutModel(lambda:0,boot_id=17)
     return model,Checks(model.handle,c.reg,'virtual-resource-1'),SampleCutAdapter(model)
 
 

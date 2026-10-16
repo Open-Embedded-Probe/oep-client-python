@@ -189,7 +189,7 @@ FORMATS_8 = (0x00, 0x04, 0x08, 0x10, 0x14, 0x18)   # 8N1 8E1 8O1 8N2 8E2 8O2: th
 TRANSPORT = reg.CORE.enum["transport_kind"]
 SERIAL_KINDS = {TRANSPORT["uart_bridge"], TRANSPORT["usb_cdc"], TRANSPORT["usb_serial_jtag"]}
 NS = "io.github.ch32-riscv-ug"
-MECHANISMS = reg.TARGET_CONSOLE.tlv["describe"]["mechanisms"]
+MECHANISM = reg.TARGET_CONSOLE.tlv["describe"]["mechanism"]
 _CAPD = reg.FIXTURE_LOGIC.tlv["describe"]
 _ANAD = reg.FIXTURE_ANALOG.tlv["describe"]
 _GRPD = reg.FIXTURE_CAPTURE_GROUP.tlv["describe"]
@@ -256,14 +256,28 @@ def _transports(kinds: list[tuple[int, int]]) -> tuple[bytes, ...]:
     return tuple(catalog.tlv(CORE_TRANSPORT, bytes([i, k, itf])) for i, (k, itf) in enumerate(kinds))
 
 
-def _config(fn: int, instance: int, storage: int = 4096) -> Offered:
-    """oep.probe.config's declarations (probe.config §4): the items label / idle / disable; storage 0 = none - no
-    storage tag, and save / erase / state not in its ops (save, erase and state come together, probe.config §2)."""
-    from . import config as cfgmod
-    return Offered(fn, instance, "oep.probe.config", (
-        ops_of("oep.probe.config") if storage else ops_of("oep.probe.config", "save", "erase", "state"))
-        + ((catalog.u32(_CFG["storage"], storage),) if storage else ()) + (
-        catalog.tlv(_CFG["items"], bytes(sorted(cfgmod.ITEM.values()))),))
+def _setting(name: str, keys: int, form: int = 0, max_len: int = 0, flags: int = 0) -> bytes:
+    """One describe setting (probe.config §4): form keys max_len flags name."""
+    return catalog.tlv(_CFG["setting"], struct.pack("<BHBB", form, keys, max_len, flags) + name.encode())
+
+
+def _config(fn: int, instance: int, storage: int = 4096, *, channels: int = 64, ports: int = 4, netifs=(), wifi_entries: int = 4,
+            own=()) -> Offered:
+    """oep.probe.config's declarations (probe.config §4): the standard items label / idle / disable (keys: the
+    channels), passthrough / console-passthrough (keys: the transports), with `netifs` (names) wifi / ipv4 and the
+    network op; `own`: the probe's own items as (name, form, keys, max_len, flags) (§1.6). storage 0 = none - no storage
+    tag, and save / erase / state not in its ops (save, erase and state come together, probe.config §2)."""
+    drop = (() if storage else ("save", "erase", "state")) + (() if netifs else ("network",))
+    settings = [_setting(n, channels) for n in ("label", "idle", "disable")] + [
+        _setting(n, ports) for n in ("passthrough", "console-passthrough")]
+    if netifs:
+        if "wifi" in netifs:
+            settings.append(_setting("wifi", wifi_entries))
+        settings.append(_setting("ipv4", len(netifs) + 1))
+    settings += [_setting(name, keys, form, max_len, flags) for name, form, keys, max_len, flags in own]
+    return Offered(fn, instance, "oep.probe.config", ops_of("oep.probe.config", *drop)
+        + ((catalog.u32(_CFG["storage"], storage),) if storage else ()) + tuple(settings)
+        + tuple(catalog.tlv(_CFG["netif"], n.encode()) for n in netifs))
 
 
 def _gpio(fn: int, channels: list[int], modes: int = 0x7F) -> Offered:
@@ -305,10 +319,10 @@ def _spi_decl(max_length: int, max_hz: int, features: int, queue_depth: int,
 CONSOLE_SEND_QUEUE = 256      # each console stream's send queue, bytes: the probe's own size (console §2, not declared)
 
 
-def _console(fn: int, mechanisms=(0, 1, 2), send_queue: int = CONSOLE_SEND_QUEUE) -> Offered:
-    """oep.target.console: the mechanisms it opens (console §1), and - kept to itself - the send queue a stream of
-    DMDATA / dmseq has (§2)."""
-    return Offered(fn, 0, "oep.target.console", (catalog.tlv(MECHANISMS, bytes([len(mechanisms), *mechanisms])),),
+def _console(fn: int, mechanisms=("sdi", "dmdata", "dmseq"), send_queue: int = CONSOLE_SEND_QUEUE) -> Offered:
+    """oep.target.console: the mechanisms it opens, a named list (console §1, core §7.7: the place from 1 is the number),
+    and - kept to itself - the send queue a stream of dmdata / dmseq has (§2)."""
+    return Offered(fn, 0, "oep.target.console", tuple(catalog.tlv(MECHANISM, m.encode()) for m in mechanisms),
                    inner=(("send_queue", send_queue),))
 
 
@@ -374,7 +388,7 @@ def p4_x035() -> VirtualProbe:
                     max_stretch_us=100_000),                                                       # stretch
         Offered(9, 0, "oep.fixture.spi-target", _roles({1: pins, 2: pins, 3: pins, 4: pins})
                 + _spi_decl(max_length=64, max_hz=3_000_000, features=0b1, queue_depth=8)),             # LSB first
-        _config(10, 0),
+        _config(10, 0, channels=55, ports=4, netifs=("ethernet",)),
         # the P4's ADC1 (GPIO16-23): one ADC for all its channels, 611 Hz - 83.3 kHz in all; ESP32-style attenuations
         Offered(11, 0, "oep.fixture.analog", _roles({k: list(range(16, 24)) for k in range(4)})
             + _analog_decl([(0, 0, 950), (1, 0, 1250), (2, 0, 1750), (3, 0, 3100)], 65536, 611, 83_333),
@@ -419,7 +433,8 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
             catalog.channel_group(1, [(1, 18), (2, 19), (3, 5), (4, 4)]),
             catalog.channel_group(2, [(1, 14), (2, 13), (3, 27), (4, 26)]))
             + _spi_decl(max_length=32, max_hz=3_000_000, features=0, queue_depth=4, cs_setup_ns=4000)),   # MISO in software
-        _config(9, 0, storage=1024),
+        _config(9, 0, storage=1024, channels=40, ports=1, netifs=("wifi",),
+                own=(("io.github.open-embedded-probe.ntp-server", 2, 1, 32, 0),)),
         _link(10, port_speed=True),
         _plan(11),
         _restart(12),
@@ -450,7 +465,7 @@ def p4_bench() -> VirtualProbe:
         _console(3),
         _gpio(4, pins),
         _uart(5, 0, pins, 3_000_000),
-        _config(6, 0),
+        _config(6, 0, channels=55, ports=4),
         _link(7),
         _plan(8),
         _restart(9),

@@ -14,7 +14,9 @@ from test_console_queue_and_reset_settle import Clock, bench
 from test_conformance_dmseq import setup as dmseq_setup
 
 CON = reg.TARGET_CONSOLE
-MECHANISMS = CON.tlv["describe"]["mechanisms"]
+READ_FROM = reg.COMMON.enum["read_from"]
+MECHANISM = CON.tlv["describe"]["mechanism"]
+STANDARD = list(CON.names["mechanism"])                      # sdi, dmdata, dmseq
 
 
 def call(ep, hst, op, payload, locked=True):
@@ -23,25 +25,22 @@ def call(ep, hst, op, payload, locked=True):
                                                hst.session if locked else 0).pack(), 1))
 
 
-def test_describe_declares_the_mechanisms_counted_without_duplicates():
-    """console §1: describe tag 0x40 mechanisms - n(u8) then n mechanisms (u8), n >= 1, no duplicate - always there."""
+def test_describe_declares_the_mechanisms_as_a_named_list():
+    """console §1, core §7.7: describe tag 0x40 mechanism, one name per mechanism, at least one, no name twice."""
     clock, ep, hst = bench()
-    values = [v for t, v in core.describe(hst, ep.fns[CON.name]) if t & 0x7F == MECHANISMS]
-    assert len(values) == 1
-    v = values[0]
-    assert v[0] >= 1 and len(v) == 1 + v[0] and len(set(v[1:])) == v[0] and set(v[1:]) <= set(CON.enum["mechanism"].values())
+    names = [v.decode() for t, v in core.describe(hst, ep.fns[CON.name]) if t & 0x7F == MECHANISM]
+    assert names and len(set(names)) == len(names) and set(names) <= set(STANDARD)
 
 
 def test_a_mechanism_not_declared_or_unknown_is_unsupported_0x00():
-    """console §1: the mechanism number fixes the mechanism; an unknown one and one describe's mechanisms leaves out
-    are rejected unsupported with tag 0x00 - nothing is opened."""
+    """console §1, core §7.7: the mechanism is its place in describe's list (from 1); 0 and a number past the list are
+    rejected unsupported with tag 0x00 - nothing is opened."""
     clock, ep, hst = bench()
     conn, _ = riscv.Wire(hst).attach(halt=False)
-    ep.mechanisms = {CON.enum["mechanism"]["dmseq"]}                  # a probe that opens dmseq alone
-    for mech in (CON.enum["mechanism"]["sdi"], CON.enum["mechanism"]["dmdata"], 3, 0xFF):
+    for mech in (0, len(ep.mech_names) + 1, 0xFF):
         r = call(ep, hst, CON.op["open"], struct.pack("<IB", conn, mech))
         assert (r.resolution, r.detail, r.payload) == (m.REJECTED, m.UNSUPPORTED, b"\x00") and not ep.streams
-    assert call(ep, hst, CON.op["open"], struct.pack("<IB", conn, 2)).succeeded
+    assert call(ep, hst, CON.op["open"], struct.pack("<IB", conn, ep.mech_names.index("dmseq") + 1)).succeeded
 
 
 def test_unknown_numbers_no_resource_and_another_kinds_number_cause_6():
@@ -51,7 +50,7 @@ def test_unknown_numbers_no_resource_and_another_kinds_number_cause_6():
     conn, _ = riscv.Wire(hst).attach(halt=False)
     sid = console.Console(hst).open(conn, console.Console.DMSEQ)
     for op, payload in ((CON.op["read"], struct.pack("<IBQH", conn, 1, 0, 16)), (CON.op["close"], struct.pack("<I", conn)),
-                        (CON.op["open"], struct.pack("<IB", sid, 2))):
+                        (CON.op["open"], struct.pack("<IB", sid, ep.mechanism_number("dmseq")))):
         r = call(ep, hst, op, payload, locked=op != CON.op["read"])
         assert r.detail == m.UNAVAILABLE and dict(m.split_tlvs(r.payload))[1] == b"\x06"
     for op, payload in ((CON.op["read"], struct.pack("<IBQH", 0x7777, 1, 0, 16)), (CON.op["close"], struct.pack("<I", 0x7777)),
@@ -92,9 +91,9 @@ def test_streams_lists_the_live_streams_in_the_order_made():
     a, b = console.Console(hst), console.Console(hst)
     sa = a.open(two, console.Console.DMDATA)
     sb = b.open(one, console.Console.SDI)
-    assert a.streams() == [console.StreamInfo(sa, two, 1), console.StreamInfo(sb, one, 0)]
+    assert a.streams() == [console.StreamInfo(sa, two, "dmdata"), console.StreamInfo(sb, one, "sdi")]
     a.close()
-    assert a.streams() == [console.StreamInfo(sb, one, 0)]
+    assert a.streams() == [console.StreamInfo(sb, one, "sdi")]
     with pytest.raises(h.NoResource):
         a.read()
 
@@ -122,7 +121,7 @@ def test_a_fn_without_marks_takes_no_from_3_and_has_no_mark_ops():
     from 3 is unsupported; open / read / close / streams are its minimum."""
     probe = virtual_bench.p4_x035()
     probe = virtual_bench._again(probe, [
-        virtual_bench.Offered(o.fn, o.instance, o.name, (catalog.tlv(virtual_bench.MECHANISMS, b"\x03\x00\x01\x02"),)
+        virtual_bench.Offered(o.fn, o.instance, o.name, tuple(catalog.tlv(virtual_bench.MECHANISM, n) for n in (b"sdi", b"dmdata", b"dmseq"))
                               + virtual_bench.ops_of(CON.name, "marks", "mark", "clear", "write"), inner=o.inner)
         if o.name == CON.name else o for o in probe.offered])
     clock = Clock()
@@ -134,10 +133,10 @@ def test_a_fn_without_marks_takes_no_from_3_and_has_no_mark_ops():
     sid = con.open(conn, console.Console.DMSEQ)
     assert call(ep, hst, CON.op["marks"], struct.pack("<II", sid, 0), locked=False).detail == m.UNKNOWN_OPERATION
     assert call(ep, hst, CON.op["mark"], struct.pack("<IB", sid, 1)).detail == m.UNKNOWN_OPERATION
-    r = call(ep, hst, CON.op["read"], struct.pack("<IBQH", sid, 3, 0, 16), locked=False)
+    r = call(ep, hst, CON.op["read"], struct.pack("<IBQH", sid, READ_FROM["last_mark"], 0, 16), locked=False)
     assert (r.detail, r.payload) == (m.UNSUPPORTED, b"\x00")
-    assert call(ep, hst, CON.op["read"], struct.pack("<IBQH", sid, 1, 0, 16), locked=False).succeeded
-    assert con.streams() == [console.StreamInfo(sid, conn, 2)]
+    assert call(ep, hst, CON.op["read"], struct.pack("<IBQH", sid, READ_FROM["oldest"], 0, 16), locked=False).succeeded
+    assert con.streams() == [console.StreamInfo(sid, conn, "dmseq")]
 
 
 def test_a_reset_op_marks_reset_detail_1_once_and_no_restart_for_it():
@@ -206,7 +205,7 @@ def test_the_lock_column_of_the_op_table(op, locked):
     con = console.Console(hst)
     sid = con.open(conn, console.Console.DMDATA)
     ep.emit(sid, b"out")
-    payload = {"open": struct.pack("<IB", conn, 2), "read": struct.pack("<IBQH", sid, 1, 0, 16),
+    payload = {"open": struct.pack("<IB", conn, ep.mechanism_number("dmseq")), "read": struct.pack("<IBQH", sid, READ_FROM["oldest"], 0, 16),
                "marks": struct.pack("<II", sid, 0), "clear": struct.pack("<I", sid), "mark": struct.pack("<IB", sid, 1),
                "write": struct.pack("<IH", sid, 1) + b"x", "close": struct.pack("<I", sid),
                "streams": struct.pack("<H", 0)}[op]

@@ -23,7 +23,7 @@ class AttachChecks:
         pair=pair or self.a.pairs[fn][0];req=self.attach_request(sid,fn,pair,**kwargs);value=self.c.success(req)
         require(len(value)>=13,'attach fixed response');rid,identity,flags,speed=struct.unpack_from('<IIBI',value);tail=dict(reversed(tlvs(value[13:])))
         # connections' tid (debug §2.1): swd scheme 2, length 4, the DPIDR (attach's id); else attach's target_id, none: 0, 0
-        swd=self.specs[fn]['name']=='oep.wire.swd';tid=tail.get(self.specs[fn]['tlv'].get('attach_answer',{}).get('target_id',0x10))
+        swd=self.specs[fn]['name']=='oep.wire.swd';tid=tail.get(self.specs[fn]['tlv']['attach_answer']['target_id'])
         self.tids=getattr(self,'tids',{});self.tids[rid]=(2,struct.pack('<I',identity)) if swd else (tid[0],tid[1:]) if tid else (0,b'')
         require(rid and flags==0 and 0<speed<=kwargs.get('speed',2000),'attach ID/flags/speed')
         state=self.a.state();require(state['connections'][rid]['fn']==fn and tuple(state['connections'][rid]['pins'])==pair and state['connections'][rid]['speed']==speed,'attach resource differs from request')
@@ -43,13 +43,21 @@ class AttachChecks:
     def refused(self, req, reason, payload=None, cause=None):
         before=self.a.state();value=self.c.rejected(req,reason)
         if payload is not None:require(refusal_carries(reason,value,payload),'refusal payload/raw tag')   # a TLV tail may follow (core §4.3)
-        if cause is not None:require(dict(reversed(tlvs(value))).get(1)==bytes((cause,)),'unavailable cause')
+        if cause is not None:require(dict(reversed(tlvs(value))).get(self.c.reg['core']['tlv']['unavailable_payload']['cause'])==bytes((self.cause(cause) if isinstance(cause,str) else cause,)),'unavailable cause')
         require(self.a.state()==before,'refused request changed resource/allocator or touched target')
     def detach(self, sid, fn, rid):tlvs(self.c.success(self.request(fn,'detach',sid,struct.pack('<I',rid))))
-    def console_request(self, sid, parent, mechanism=1, extra=b''):
-        return self.request(self.a.console_fn,'open',sid,struct.pack('<IB',parent,mechanism)+extra)
-    def console(self, sid, parent, mechanism=1):
-        req=self.console_request(sid,parent,mechanism);value=self.c.success(req)
+    def mechanism(self, mechanism):
+        """A console mechanism's number: a name looked up in the probe's describe list (core §7.7), or a number as given."""
+        if isinstance(mechanism,int):return mechanism
+        if not hasattr(self,'mech'):
+            tag=next(s for s in self.c.reg['interface'] if s['name']=='oep.target.console')['tlv']['describe']['mechanism']
+            self.mech={v.decode():i+1 for i,v in enumerate(v for t,v in self.c.describe(self.a.console_fn) if t==tag)}
+        return self.mech[mechanism]
+    def cause(self, name):return self.c.reg['core']['enum']['unavailable_cause'][name]
+    def console_request(self, sid, parent, mechanism='dmdata', extra=b''):
+        return self.request(self.a.console_fn,'open',sid,struct.pack('<IB',parent,self.mechanism(mechanism))+extra)
+    def console(self, sid, parent, mechanism='dmdata'):
+        mechanism=self.mechanism(mechanism);req=self.console_request(sid,parent,mechanism);value=self.c.success(req)
         require(len(value)>=4,'console open fixed response');rid=struct.unpack_from('<I',value)[0];tlvs(value[4:])
         require(rid,'console stream ID');state=self.a.state()
         require(state['streams'][rid]['connection']==parent and state['streams'][rid]['mechanism']==mechanism,'console binding differs')
@@ -74,31 +82,32 @@ class AttachChecks:
             elif kind=='METHOD':
                 for fn,method in [(1,2),(2,2),(3,1)]:self.refused(self.attach_request(sid,fn,self.a.pairs[fn][0],method=method),'unsupported',b'\0')
                 for fn in (1,2):                               # method 1 only with features bit0 attach_halt (debug §3)
-                    features=dict(reversed(self.c.describe(fn))).get(self.c.reg['describe_common'].get('features',5),b'\0'*4)
-                    if not int.from_bytes(features[:4],'little')&1:
-                        self.refused(self.attach_request(sid,fn,self.a.pairs[fn][0],method=1),'unsupported',b'\0')
+                    features=dict(reversed(self.c.describe(fn))).get(self.c.reg['describe_common']['features'],b'\0'*4)
+                    if not int.from_bytes(features[:4],'little')&self.specs[fn]['enum']['features']['attach_halt']:
+                        self.refused(self.attach_request(sid,fn,self.a.pairs[fn][0],method=self.specs[fn]['enum']['attach_method']['halt']),'unsupported',b'\0')
             elif kind=='TLV':
-                self.refused(self.attach_request(sid,extra=self.tlv(0xfe,b'x')),'unsupported',b'\xfe')
+                self.refused(self.attach_request(sid,extra=self.tlv(self.unknown|128,b'x')),'unsupported',bytes((self.unknown|128,)))
                 for marked in (True,False):                    # not a reset line: the tag as received (core §2.3)
                     self.refused(self.attach_request(sid,extra=self.reset_tlv(channel=0,marked=marked)),'unsupported',
                                  bytes((self.specs[1]['tlv']['attach']['reset']|(128 if marked else 0),)))
-                self.attach(sid,extra=self.tlv(0x7e,b'x'))
+                self.attach(sid,extra=self.tlv(self.unknown,b'x'))
             elif kind=='MALFORMED':
-                for tail in (b'\0\0\0',b'\x85',b'\xfe\x04\0x',self.reset_tlv()+self.tlv(0x85,b'x')):
+                reset=self.specs[1]['tlv']['attach']['reset']|128
+                for tail in (b'\0\0\0',bytes((reset,)),bytes((self.unknown|128,4,0))+b'x',self.reset_tlv()+self.tlv(reset,b'x')):
                     self.refused(self.attach_request(sid,extra=tail),'malformed')
-            elif kind=='UNMARKED':self.attach(sid,extra=self.reset_tlv(marked=False)+self.tlv(0x7e,b'x'))
+            elif kind=='UNMARKED':self.attach(sid,extra=self.reset_tlv(marked=False)+self.tlv(self.unknown,b'x'))
             elif kind=='FIRST-WINS':
                 self.attach(sid,speed=1500,extra=self.reset_tlv(hold=10)+self.reset_tlv(hold=20))
                 require(self.a.state()['touch'][-1][2]==10,'a later copy of reset was used')
             elif kind=='BUSY':
-                self.attach(sid);self.refused(self.attach_request(sid,pair=(0,1)),'unavailable',cause=1)   # never joined
-                self.refused(self.attach_request(sid,fn=2,pair=(0,65535)),'unavailable',cause=1)
+                self.attach(sid);self.refused(self.attach_request(sid,pair=(0,1)),'unavailable',cause='pin_in_use')   # never joined
+                self.refused(self.attach_request(sid,fn=2,pair=(0,65535)),'unavailable',cause='pin_in_use')
             elif kind=='CAPACITY':
-                self.attach(sid,pair=(0,1));self.attach(sid,pair=(2,3));self.refused(self.attach_request(sid,pair=(6,7)),'unavailable',cause=2)
+                self.attach(sid,pair=(0,1));self.attach(sid,pair=(2,3));self.refused(self.attach_request(sid,pair=(6,7)),'unavailable',cause='limit')
             elif kind=='FAILED':
                 parent,_=self.attach(sid);stream,_=self.console(sid,parent);self.a.feed_bytes(stream,b'keep');before=self.a.state();self.a.fail_attach(True)
                 frame=self.c.exchange(self.attach_request(sid,fn=3,pair=(4,5)))
-                require(frame[3:6]==b'\x01\x01\x02','failed bringup must complete with status line');tlvs(frame[6:])
+                require(frame[3:6]==bytes((self.c.reg['resolutions']['completed'],self.c.reg['outcomes']['failed'],self.c.reg['status']['line'])),'failed bringup must complete with status line');tlvs(frame[6:])
                 after=self.a.state();require(after['connections']==before['connections'] and after['streams']==before['streams'],'failed attach changed live resources')
                 self.a.fail_attach(False)
             else:
@@ -110,14 +119,14 @@ class AttachChecks:
         with self.c.holding(3000) as sid:
             parent,_=self.attach(sid)
             if kind=='UNSUPPORTED':
-                for mechanism in (2,3,255):self.refused(self.console_request(sid,parent,mechanism),'unsupported',b'\0')
+                for mechanism in (0,len(self.mech)+1,255):self.refused(self.console_request(sid,parent,mechanism),'unsupported',b'\0')   # 0, and past the list (core §7.7)
             elif kind=='RESOURCE':
                 self.refused(self.console_request(sid,65535),'no_resource')
-                arm,_=self.attach(sid,fn=3);self.refused(self.console_request(sid,arm),'unavailable',cause=6)
-                stream,_=self.console(sid,parent);self.refused(self.console_request(sid,stream),'unavailable',cause=6)
+                arm,_=self.attach(sid,fn=3);self.refused(self.console_request(sid,arm),'unavailable',cause='wrong_state')
+                stream,_=self.console(sid,parent);self.refused(self.console_request(sid,stream),'unavailable',cause='wrong_state')
             elif kind=='DUPLICATE':
-                self.console(sid,parent,0)
-                for mechanism in (0,1):self.refused(self.console_request(sid,parent,mechanism),'unavailable',cause=6)
+                self.console(sid,parent,'sdi')
+                for mechanism in ('sdi','dmdata'):self.refused(self.console_request(sid,parent,mechanism),'unavailable',cause='wrong_state')
             elif kind=='MALFORMED':
                 self.refused(self.request(4,'open',sid,struct.pack('<I',parent)),'malformed')
                 self.refused(self.console_request(sid,parent,extra=b'\x7f'),'malformed')
@@ -126,7 +135,7 @@ class AttachChecks:
                 self.a.feed_bytes(s1,b'one');self.a.feed_bytes(s2,b'two')
                 value=self.c.success(self.request(4,'streams',0,b'\0\0'))
                 require(value[:2]==b'\0\x02' and len(value)>=20,'console streams page');tlvs(value[20:])
-                require([struct.unpack_from('<IIB',value,i) for i in (2,11)]==[(s1,parent,1),(s2,p2,1)],'console streams ordering/entry shape')
+                require([struct.unpack_from('<IIB',value,i) for i in (2,11)]==[(s1,parent,self.mechanism('dmdata')),(s2,p2,self.mechanism('dmdata'))],'console streams ordering/entry shape')
                 before=self.a.state()
                 for stream,data in ((s1,b'one'),(s2,b'two')):
                     # len is max or less and more is set while bytes remain (common §1.2): read on to the end
@@ -151,12 +160,13 @@ class AttachChecks:
     def run(self):
         start=len(self.c.results)
         def context():
-            require(self.a.reset_scope=='logical-model' and self.a.reference and self.a.mechanisms==[0,1],'explicit logical sample required')
+            require(self.a.reset_scope=='logical-model' and self.a.reference and self.a.mechanisms==['sdi','dmdata'],'explicit logical sample required')
             self.specs={fn:next(row for row in self.c.reg['interface'] if row['name']==name and row['revision']==1) for fn,name in self.a.selection.items()}
             self.operations={fn:{row['name']:row['code'] for row in spec['op']} for fn,spec in self.specs.items()}
-            # attach's reset TLV is 0x05 on every wire (debug §3, §5); rvswd's idle_clock / swd's targetsel are not used here
-            require(all(self.operations[fn]['attach']==17 and self.specs[fn]['tlv']['attach'].get('reset')==5 for fn in (1,2,3)) and
-                    self.specs[4]['enum']['mechanism']=={'sdi':0,'dmdata':1,'dmseq':2},'selected SPEC differs from fixture contract')   # console §1: no 'none' value
+            # every number by name from the selected SPEC; the wire family shares attach's reset TLV (debug §3, core §2.5)
+            require(all('reset' in self.specs[fn]['tlv']['attach'] for fn in (1,2,3)) and len({self.specs[fn]['tlv']['attach']['reset'] for fn in (1,2,3)})==1
+                    and set(self.specs[4]['names']['mechanism'])>={'sdi','dmdata'},'selected SPEC lacks what the fixture contract uses')
+            self.unknown=max(self.specs[1]['tlv']['attach'].values())+1   # a tag attach does not define (core §2.3)
             self.c.confirm();self.c.identity();self.c.declarations();entries=self.c.list_snapshot()
             for fn,name in self.a.selection.items():
                 require(any(row['fn']==fn and row['name']==name and row['revision']==1 for row in entries),'standard fn/name/revision mismatch')
@@ -168,11 +178,11 @@ class AttachChecks:
                 if fn in (1,2,3):                              # the reset TLV takes only a declared role 3 channel (debug §3)
                     lines=set()
                     for tag,v in self.c.describe(fn):
-                        if tag==self.c.reg['describe_common'].get('role_channels',1) and len(v)>=3 and v[0]==3:
+                        if tag==self.c.reg['describe_common']['role_channels'] and len(v)>=3 and v[0]==self.specs[fn]['enum']['pin_role']['reset']:
                             base=struct.unpack_from('<H',v,1)[0];lines|={base+i for i in range(8*(len(v)-3)) if v[3+i//8]>>(i%8)&1}
                     require(self.a.reset_channel in lines,'reset TLV channel not declared as role 3 (reset)')
-            declared=rows[self.specs[4]['tlv']['describe']['mechanisms']]
-            require(declared[:1]==bytes((len(declared)-1,)) and list(declared[1:])==self.a.mechanisms,'declared mechanism subset differs (n(u8) n x mechanism)')
+            listed=[v.decode() for tag,v in self.c.describe(4) if tag==self.specs[4]['tlv']['describe']['mechanism']]   # a named list (core §7.7)
+            require(listed==self.a.mechanisms,'declared mechanism list differs');self.mech={name:i+1 for i,name in enumerate(listed)}
             self.c.observed['attach_fixture']={'selection':self.a.selection,'pairs':self.a.pairs,'mechanisms':self.a.mechanisms,'scope':'logical-model','reference':self.a.reference}
         self.c.check('OEP-ATTACH-CONTEXT','debug §1/3/5; console §1',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True

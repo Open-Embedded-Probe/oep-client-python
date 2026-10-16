@@ -2,6 +2,12 @@
 import struct
 from .virtual_resource_model import ResourceModel, Resources
 from .virtual_core import Core, Reject, tlv
+from . import registry as _reg
+from .catalog import pack_ops
+from .virtual_names import R, DC, extension
+
+WOP, WT, WE = _reg.WIRE_RVSWD.op, _reg.WIRE_RVSWD.tlv, _reg.WIRE_RVSWD.enum
+COP, CD = _reg.TARGET_CONSOLE.op, _reg.TARGET_CONSOLE.tlv['describe']
 
 
 class OepDeclarations(Resources):
@@ -17,31 +23,33 @@ class OepDeclarations(Resources):
         return bytes(page)
 
     def describe(self, fn):
-        if fn==4:return (tlv(7,b'\x10\xff'),tlv(64,b'\x01\x01'))
-        rows=[tlv(7,b'\x10\x0e')]
-        if fn==1:rows.append(tlv(64,b'\x02'))
-        if fn==2:rows.append(tlv(4,struct.pack('<I',1000000)))
-        if fn==3:rows.append(tlv(6,b'\x01\x02'+struct.pack('<BH',1,2)+struct.pack('<BH',2,3)))
+        if fn==4:return (tlv(DC['ops'],pack_ops(set(COP.values()))),tlv(CD['mechanism'],b'dmdata'))
+        rows=[tlv(DC['ops'],pack_ops({WOP['attach'],WOP['detach'],WOP['connections']}))]
+        if fn==1:rows.append(tlv(WT['describe']['max_connections'],b'\x02'))
+        if fn==2:rows.append(tlv(DC['min_clock_hz'],struct.pack('<I',1000000)))
+        role=WE['pin_role']
+        if fn==3:rows.append(tlv(DC['channel_group'],b'\x01\x02'+struct.pack('<BH',role['swdio'],2)+struct.pack('<BH',role['swclk'],3)))
         else:
-            rows.append(tlv(1,struct.pack('<BH',1,0)+b'\x01'))
-            if fn!=2:rows.append(tlv(1,struct.pack('<BH',2,0)+b'\x02'))
+            rows.append(tlv(DC['role_channels'],struct.pack('<BH',role['swdio'],0)+b'\x01'))
+            if fn!=2:rows.append(tlv(DC['role_channels'],struct.pack('<BH',role['swclk'],0)+b'\x02'))
         return tuple(rows)
 
     def dispatch(self, fn, op, payload):
-        if (fn!=4 and op==19) or (fn==4 and op==23):return b'\0\0'+tlv(127,b'x')
-        raise Reject(10)  # declarations only: no simulated attach or target work
+        if (fn!=4 and op==WOP['connections']) or (fn==4 and op==COP['streams']):return b'\0\0'+extension()
+        raise Reject(R['no_resource'])  # declarations only: no simulated attach or target work
 
 
 class OepDeclarationModel(ResourceModel):
     def __init__(self, now_ms=None, boot_id=None):
         super().__init__(now_ms,boot_id);self.extension=OepDeclarations();self.ep.current_core=Core(self.ep,self.extension)
-        self.ep.static[0]=tuple(row for row in self.ep.static[0] if row[0]!=67)+(tlv(67,struct.pack('<H',4)),)
+        CH=_reg.CORE.tlv['describe']['channels']
+        self.ep.static[0]=tuple(row for row in self.ep.static[0] if row[0]!=CH)+(tlv(CH,struct.pack('<H',4)),)
 
     def handle(self, request):
         e=self.extension;fixed,free=e.fixed,e.free
         if len(request)>=6:
             fn=struct.unpack_from('<H',request,3)[0]
-            if fn==4:e.fixed={16:5,17:15,18:8,19:4,20:5,21:6,22:4,23:2};e.free={17,18,23}
-            else:e.fixed={17:9,18:4,19:1};e.free={19}
+            if fn==4:e.fixed={COP['open']:5,COP['read']:15,COP['marks']:8,COP['clear']:4,COP['mark']:5,COP['write']:6,COP['close']:4,COP['streams']:2};e.free={COP['read'],COP['marks'],COP['streams']}
+            else:e.fixed={WOP['attach']:9,WOP['detach']:4,WOP['connections']:1};e.free={WOP['connections']}
         try:return super().handle(request)
         finally:e.fixed,e.free=fixed,free

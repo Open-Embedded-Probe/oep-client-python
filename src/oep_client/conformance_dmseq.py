@@ -47,7 +47,7 @@ class DmseqChecks(MailboxChecks):
             require(not any(m[2]==0x41 for m in self.a.state()['streams'][rid]['marks'] if m not in before),'restart mark on first synchronisation')
         self.fresh()
         with self.c.holding(3000) as sid:
-            rid=self.opened(sid,2)
+            rid=self.opened(sid,'dmseq')
             if kind=='VECTOR':
                 require(crc_reference(b'123456789')==0xfb and crc_reference(b'\0')==0xf3,'normative CRC check values')
                 require(target_frame(syn=True,data=b'')[0]&0xffff==0x3298 and reply_word(0,0)==0xf300,'normative word examples')
@@ -60,18 +60,18 @@ class DmseqChecks(MailboxChecks):
                     self.step(rid,target_frame(s,a,kind=='SYN',data=b'x'),b'x',reply_word(s,1-a),b'',self.protocol(s,kind=='SYN',1-a))
                     no_restart(rid,before)
     def opened_new(self,sid):
-        state=self.a.state();parent=next(iter(state['connections']));rid,_=self.console(sid,parent,2);return rid
+        state=self.a.state();parent=next(iter(state['connections']));rid,_=self.console(sid,parent,'dmseq');return rid
     def lengths(self):
         self.fresh()
         with self.c.holding(3000) as sid:
-            rid=self.opened(sid,2);output=b''
+            rid=self.opened(sid,'dmseq');output=b''
             for n in range(7):
                 data=bytes(range(n));self.step(rid,target_frame(n&1,data=data,syn=n==0),data,reply_word(n&1,0),b'',self.protocol(n&1,n==0));output+=data
             self.read_all(rid,output)
     def invalid(self,kind):
         self.fresh()
         with self.c.holding(3000) as sid:
-            rid=self.opened(sid,2);self.write(sid,rid,b'abcd',0,4)
+            rid=self.opened(sid,'dmseq');self.write(sid,rid,b'abcd',0,4)
             if kind=='HOST-TURN':
                 for status in range(128):self.step(rid,(0xabcdef00|status,0xffffffff),b'',None,b'abcd')
             elif kind=='N7':
@@ -88,14 +88,14 @@ class DmseqChecks(MailboxChecks):
     def duplicate(self,kind):
         self.fresh()
         with self.c.holding(3000) as sid:
-            rid=self.opened(sid,2);self.write(sid,rid,b'abcd',0,4)
+            rid=self.opened(sid,'dmseq');self.write(sid,rid,b'abcd',0,4)
             syn=kind!='PLAIN';self.step(rid,target_frame(syn=syn,data=b'x'),b'x',reply_word(0,0,b'ab'),b'cd',self.protocol(syn=syn,pending=b'ab'))
             frame=target_frame(syn=syn,to=kind=='TO',data=b'x')
             self.step(rid,frame,b'',reply_word(0,0,b'ab'),b'cd',self.protocol(syn=syn,pending=b'ab'))
     def transitions(self,kind):
         self.fresh()
         with self.c.holding(3000) as sid:
-            rid=self.opened(sid,2);self.write(sid,rid,b'abcd',0,4)
+            rid=self.opened(sid,'dmseq');self.write(sid,rid,b'abcd',0,4)
             self.step(rid,target_frame(data=b'x'),b'x',reply_word(0,0,b'ab'),b'cd',self.protocol(pending=b'ab'))
             if kind=='SAME-S-SYN':self.step(rid,target_frame(a=0,syn=True,data=b'y'),b'y',reply_word(0,1,b'cd'),b'',self.protocol(syn=True,h=1,pending=b'cd'))
             elif kind=='NEW-S-SYN':self.step(rid,target_frame(1,0,True,data=b'y'),b'y',reply_word(1,1,b'cd'),b'',self.protocol(1,True,1,b'cd'))
@@ -110,13 +110,13 @@ class DmseqChecks(MailboxChecks):
     def queue(self,n):
         self.fresh()
         with self.c.holding(3000) as sid:
-            rid=self.opened(sid,2);data=b'abcde'[:n];accepted=min(n,4);self.write(sid,rid,data,0 if n<=4 else 2,accepted)
+            rid=self.opened(sid,'dmseq');data=b'abcde'[:n];accepted=min(n,4);self.write(sid,rid,data,0 if n<=4 else 2,accepted)
             first=data[:accepted][:2];rest=data[:accepted][2:]
             self.step(rid,target_frame(syn=True),b'',reply_word(0,0,first),rest,self.protocol(syn=True,pending=first))
     def stopped(self,busy):
         self.fresh()
         with self.c.holding(3000) as sid:
-            rid=self.opened(sid,2);self.write(sid,rid,b'abcd',0,4);frame=target_frame(syn=True,data=b'x')
+            rid=self.opened(sid,'dmseq');self.write(sid,rid,b'abcd',0,4);frame=target_frame(syn=True,data=b'x')
             self.a.frame(rid,*frame);control=self.a.debug_busy if busy else self.a.halted;control(rid,True)
             before=self.a.state();self.a.poll(rid);after=self.a.state()
             require(after['mailboxes'][rid]['events']==([] if busy else [('read',0x11,0x100)]) and after['streams']==before['streams'] and after['protocols']==before['protocols'],'dmseq poll during halt/debug')
@@ -124,7 +124,7 @@ class DmseqChecks(MailboxChecks):
     def reset(self):
         self.fresh()
         with self.c.holding(3000) as sid:
-            parent,_=self.attach(sid);rid,_=self.console(sid,parent,2);self.write(sid,rid,b'abcd',0,4)
+            parent,_=self.attach(sid);rid,_=self.console(sid,parent,'dmseq');self.write(sid,rid,b'abcd',0,4)
             self.step(rid,target_frame(syn=True,data=b'x'),b'x',reply_word(0,0,b'ab'),b'cd',self.protocol(syn=True,pending=b'ab'))
             before=self.a.state();self.a.reset_target(parent);after=self.a.state()
             require(not after['protocols'][rid]['synced'] and not after['protocols'][rid]['pending'],'detected reset did not discard dmseq state')
@@ -135,7 +135,7 @@ class DmseqChecks(MailboxChecks):
     def clear(self):
         self.fresh()
         with self.c.holding(3000) as sid:
-            rid=self.opened(sid,2);self.write(sid,rid,b'abcd',0,4);frame=target_frame(syn=True,data=b'x')
+            rid=self.opened(sid,'dmseq');self.write(sid,rid,b'abcd',0,4);frame=target_frame(syn=True,data=b'x')
             self.step(rid,frame,b'x',reply_word(0,0,b'ab'),b'cd',self.protocol(syn=True,pending=b'ab'))
             before=self.a.state();self.c.success(self.request(4,'clear',sid,struct.pack('<I',rid)));after=self.a.state()
             require(after['protocols']==before['protocols'] and after['streams'][rid]['tx']==b'cd' and after['streams'][rid]['data']==b'' and after['streams'][rid]['position']==1,'clear discarded pending or queue or synchronization')
@@ -143,8 +143,8 @@ class DmseqChecks(MailboxChecks):
     def independent(self):
         self.fresh()
         with self.c.holding(3000) as sid:
-            parent,_=self.attach(sid);one,_=self.console(sid,parent,2)
-            parent2,_=self.attach(sid,pair=self.a.pairs[1][1]);two,_=self.console(sid,parent2,2)
+            parent,_=self.attach(sid);one,_=self.console(sid,parent,'dmseq')
+            parent2,_=self.attach(sid,pair=self.a.pairs[1][1]);two,_=self.console(sid,parent2,'dmseq')
             self.write(sid,one,b'abcd',0,4);self.write(sid,two,b'XYZ',0,3)
             self.step(one,target_frame(syn=True,data=b'1'),b'1',reply_word(0,0,b'ab'),b'cd',self.protocol(syn=True,pending=b'ab'))
             before=self.a.state();self.step(two,target_frame(1,0,True,data=b'2'),b'2',reply_word(1,1,b'XY'),b'Z',self.protocol(1,True,1,b'XY'))
@@ -152,7 +152,7 @@ class DmseqChecks(MailboxChecks):
     def close_replay(self):
         self.fresh()
         with self.c.holding(3000) as sid:
-            rid=self.opened(sid,2);req,original=self.write(sid,rid,b'abcd',0,4)
+            rid=self.opened(sid,'dmseq');req,original=self.write(sid,rid,b'abcd',0,4)
             self.step(rid,target_frame(syn=True,data=b'x'),b'x',reply_word(0,0,b'ab'),b'cd',self.protocol(syn=True,pending=b'ab'))
             before=self.a.state();require(self.c.replayed(req,original,frame=True) and self.a.state()==before,'write replay duplicated dmseq queue')
             self.close(sid,rid);state=self.a.state()
@@ -163,7 +163,7 @@ class DmseqChecks(MailboxChecks):
     def mark_event(self,kind):
         self.fresh()
         with self.c.holding(3000) as sid:
-            rid=self.opened(sid,2)
+            rid=self.opened(sid,'dmseq')
             self.step(rid,target_frame(data=b'x'),b'x',reply_word(0,0),b'',self.protocol())
             if kind in ('RESYNC-SAME','RESYNC-NEW'):
                 bit=int(kind=='RESYNC-NEW');frame=target_frame(bit,syn=True,data=b'y');expected=(0x41,2)
@@ -188,7 +188,7 @@ class DmseqChecks(MailboxChecks):
     def invalid_flags(self):
         self.fresh()
         with self.c.holding(3000) as sid:
-            rid=self.opened(sid,2)
+            rid=self.opened(sid,'dmseq')
             self.step(rid,target_frame(data=b'x'),b'x',reply_word(0,0),b'',self.protocol())
             for frame in ((0xff,0xffffffff),(0x78,0xffffffff)):
                 before=self.a.state()['streams'][rid]['marks'];self.step(rid,frame,b'',None,b'')
@@ -200,12 +200,13 @@ class DmseqChecks(MailboxChecks):
             require(self.a.reset_scope=='logical-model' and self.a.reference,'explicit logical dmseq fixture')
             self.specs={fn:next(s for s in self.c.reg['interface'] if s['name']==name and s['revision']==1) for fn,name in self.a.selection.items()}
             self.operations={fn:{op['name']:op['code'] for op in spec['op']} for fn,spec in self.specs.items()}
-            require(self.specs[4]['enum']['mechanism']['dmseq']==2 and 2 in self.a.mechanisms,'selected SPEC/mechanism mismatch')
+            require('dmseq' in self.specs[4]['names']['mechanism'] and 'dmseq' in self.a.mechanisms,'selected SPEC/mechanism mismatch')
             console=self.specs[4]['enum'];common=self.c.reg['common']['enum']
             require(console['mark_kind']['restart']==0x41 and console['mark_detail_restart']=={'havereset':1,'resync':2},'reset mark SPEC mismatch')
             require(common['mark_kind']['lost']==1 and console['mark_detail_lost']['target_timeout']==0x40,'dmseq event mark SPEC mismatch')
             self.c.confirm();self.c.identity();self.c.declarations()
-            declared=dict(reversed(self.c.describe(4)))[64];require(2 in declared[1:1+declared[0]],'probe did not declare dmseq')   # n x mechanism
+            listed=[v.decode() for tag,v in self.c.describe(4) if tag==self.specs[4]['tlv']['describe']['mechanism']]   # a named list (core §7.7)
+            require('dmseq' in listed,'probe did not declare dmseq');self.mech={name:i+1 for i,name in enumerate(listed)}
         self.c.check('OEP-DMSEQ-CONTEXT','dmseq host rules; console §1/2/3',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         cases=[(k,lambda k=k:self.first(k)) for k in ('VECTOR','SYN','UNSYNCED')]+[('LENGTHS',self.lengths)]

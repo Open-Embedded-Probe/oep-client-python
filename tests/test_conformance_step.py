@@ -6,7 +6,7 @@ from test_conformance_blocks import setup as block_setup
 
 
 def setup():
-    _,c,_=block_setup();c.reg['interface'][-1]['op'].append({'name':'step','code':23});c.reg['interface'][-1]['tlv']={'step_answer':{'step_left':1}}
+    _,c,_=block_setup()
     model=StepModel(lambda:0,boot_id=17)
     return model,Checks(model.handle,c.reg,'virtual-resource-1'),SampleStepAdapter(model)
 

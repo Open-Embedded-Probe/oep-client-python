@@ -13,7 +13,8 @@ UART_FN, RX = 5, 13
 
 
 def item(port=0, fn=UART_FN, rx=RX, baud=115200, fmt=0):
-    return struct.pack("<BHB", config.ITEM["passthrough"], 10, 0)[:3] + struct.pack("<BHHIB", port, fn, rx, baud, fmt)
+    data = struct.pack("<HHIB", fn, rx, baud, fmt)                       # number len key data (probe.config §1)
+    return struct.pack("<BHH", config.ITEM["passthrough"], 2 + len(data), port) + data
 
 
 @pytest.fixture
@@ -76,7 +77,7 @@ def test_a_set_it_cannot_take_is_refused(bench, value, reason):
 def test_a_disabled_rx_or_an_output_idle_on_it_is_held_by_settings(bench):
     ep, s, lk, hst = bench
     core.take(hst, 10000)
-    disable = struct.pack("<BH", config.ITEM["disable"], 2) + struct.pack("<H", RX)
+    disable = config.item(config.Disable(channel=RX))
     with pytest.raises(h.Unavailable) as e:
         config.ProbeConfig(hst).set([disable, item()])
     assert e.value.cause == "held_by_settings"            # cause 5
@@ -110,12 +111,12 @@ def test_what_it_passes_is_not_kept_in_the_uarts_stream(bench):
 
 # ---- console_passthrough (probe.config §1.2) -------------------------------------------------------------------------
 
-WIRE, PAIR, CONSOLE, DMSEQ = 1, (16, 0xFFFF), 3, 2
+WIRE, PAIR, CONSOLE, DMSEQ = 1, (16, 0xFFFF), 3, 3      # dmseq: third in the mechanism list (core §7.7)
 
 
 def console_item(port=0, wire=WIRE, pair=PAIR, speed=1_000_000, console=CONSOLE, mech=DMSEQ):
-    return (struct.pack("<BH", config.ITEM["console_passthrough"], 14)
-            + struct.pack("<BHHHIHB", port, wire, pair[0], pair[1], speed, console, mech))
+    data = struct.pack("<HHHIHB", wire, pair[0], pair[1], speed, console, mech)
+    return struct.pack("<BHH", config.ITEM["console_passthrough"], 2 + len(data), port) + data
 
 
 def test_the_targets_console_goes_out_while_no_session_uses_it(bench):
@@ -204,7 +205,7 @@ def test_after_a_line_loss_rvswd_waits_for_the_condition_to_start_again():
     ep.console_line_lost(0)
     assert ep.console_passthroughs() == {}                # not tried again by itself
     core.take(hst, 10000)
-    cfg.unset([("console_passthrough", 0)])
+    cfg.unset([("console-passthrough", 0)])
     cfg.set([config.ConsolePassthrough(port=0, wire_fn=wire, swdio=pair[0], swclk=pair[1], console_fn=console,
                                        mechanism=DMSEQ)])
     hst.end()

@@ -78,7 +78,6 @@ def _u32_list(v: bytes) -> str:
 
 
 _TRANSPORTS = {1: "UART bridge", 2: "USB CDC", 3: "USB-Serial/JTAG", 4: "vendor bulk", 5: "HID", 6: "TCP"}
-_MECHANISMS = {0: "SDI", 1: "DMDATA", 2: "dmseq"}
 
 
 def _transport(v: bytes) -> str:
@@ -97,59 +96,84 @@ class Known:
 
 CORE_KEY = ""                                   # the core (fn 0): no name (core §0)
 
+def _d(name: str, *pairs) -> dict[int, tuple]:
+    """describe tags by their registry names -> (label, render)."""
+    from . import registry as reg
+    table = (reg.CORE if name == CORE_KEY else reg.INTERFACES[name]).tlv["describe"]
+    return {table[key]: (label, render) for key, label, render in pairs}
+
+
+def _roles(name: str, enum: str, labels: dict[str, str]) -> dict[int, str]:
+    from . import registry as reg
+    return {reg.INTERFACES[name].enum[enum][k]: v for k, v in labels.items()}
+
+
+def _bits(name: str, labels: dict[str, str]) -> dict[int, str]:
+    """features bits (masks in the registry) -> their positions."""
+    from . import registry as reg
+    return {reg.INTERFACES[name].enum["features"][k].bit_length() - 1: v for k, v in labels.items()}
+
+
+_WIRE_ROLES = {"swdio": "SWDIO", "swclk": "SWCLK", "reset": "reset"}
+_MAXCONN = ("max_connections", "max connections", lambda v: str(v[0]))
+_CAPTURE = (("mode", "mode", _capture_mode), ("rate_range", "rate range", _rate_range),
+            ("channels", "channels", lambda v: str(v[0])), ("trigger", "trigger", _trigger))
+
 KNOWN: dict[str, Known] = {
     CORE_KEY: Known(
         "the core: confirm, list, describe, clock, open / end / keepalive, lock state; describe = the probe itself",
-        tags={0x40: ("firmware", _text), 0x41: ("model", _text), 0x42: ("unit id", _text),
-              0x43: ("channels", _u16), 0x46: ("label", _label), 0x49: ("transport", _transport),
-              0x4C: ("chip", _text), 0x4D: ("max op ms", _u32)}),
+        tags=_d(CORE_KEY, ("firmware", "firmware", _text), ("model", "model", _text), ("unit_id", "unit id", _text),
+                ("channels", "channels", _u16), ("label", "label", _label), ("transport", "transport", _transport),
+                ("chip", "chip", _text), ("max_op_ms", "max op ms", _u32))),
     "oep.probe.link": Known("the link test (source, sink) and, when its ops offer it, port_speed on a UART bridge"),
     "oep.probe.plan": Known("the plan: which channel each role of an interface uses (plan_apply, plan_release)",
-                            tags={0x40: ("plan roles", _u32)}),
+                            tags=_d("oep.probe.plan", ("plan_roles", "plan roles", _u32))),
     "oep.probe.restart": Known("the probe restarts itself, answering first",
-                               tags={0x40: ("restart max ms", _u32)}),
+                               tags=_d("oep.probe.restart", ("restart_max_ms", "restart max ms", _u32))),
     "oep.wire.rvswd": Known("scan, attach, detach over RVSWD (attach returns a connection)",
-                            roles={1: "SWDIO", 2: "SWCLK", 3: "reset"},
-                            tags={0x40: ("max connections", lambda v: str(v[0]))}),
+                            roles=_roles("oep.wire.rvswd", "pin_role", _WIRE_ROLES),
+                            tags=_d("oep.wire.rvswd", _MAXCONN)),
     "oep.wire.swio": Known("scan, attach, detach over SWIO, one wire (attach returns a connection)",
-                           roles={1: "SWIO", 3: "reset"},
-                           tags={0x40: ("max connections", lambda v: str(v[0]))}),
-    "oep.wire.swd": Known("scan, attach, detach over ARM SWD", roles={1: "SWDIO", 2: "SWCLK", 3: "reset"},
-                          tags={0x40: ("max connections", lambda v: str(v[0]))}),
+                           roles=_roles("oep.wire.swio", "pin_role", {"swdio": "SWIO", "reset": "reset"}),
+                           tags=_d("oep.wire.swio", _MAXCONN)),
+    "oep.wire.swd": Known("scan, attach, detach over ARM SWD", roles=_roles("oep.wire.swd", "pin_role", _WIRE_ROLES),
+                          tags=_d("oep.wire.swd", _MAXCONN)),
     "oep.target.riscv-dm": Known(
         "RISC-V Debug Module over DMI: step lists, block read/write, run until halt, halt/resume (optional ops: ops)"),
     "oep.target.arm-adi": Known("ARM Debug Interface: DP/AP transfer lists, block transfers"),
     "oep.target.console": Known(
         "console streams on a debug connection (position-addressed, marks)",
-        tags={0x40: ("mechanisms", lambda v: ", ".join(_MECHANISMS.get(b, str(b)) for b in v[1:1 + v[0]]))}),
+        tags=_d("oep.target.console", ("mechanism", "mechanism", lambda v: v.decode("utf-8", "replace")))),
     "oep.probe.config": Known(
-        "the probe's settings (labels, idle pins, disabled channels) and their storage; the state is op state",
-        tags={0x40: ("storage", lambda v: f"{_u32(v[:4])} bytes"),
-              0x41: ("items", lambda v: ", ".join(str(b) for b in v))}),
-    "oep.fixture.gpio": Known("drive and read probe pins", roles={1: "line"},
-                              tags={0x40: ("modes", lambda v: ", ".join(str(b) for b in range(32) if _u32v(v) >> b & 1))}),
-    "oep.fixture.uart": Known("a UART (USART, asynchronous) on probe pins", roles={1: "RX", 2: "TX"},
-                              tags={0x40: ("formats", lambda v: ", ".join(f"0x{b:02x}" for b in v[1:1 + v[0]]))}),
+        "the probe's settings (named items: pins, pass-throughs, network, its own) and their storage; the state is op state",
+        tags=_d("oep.probe.config", ("storage", "storage", lambda v: f"{_u32(v[:4])} bytes"),
+                ("setting", "setting", lambda v: v[5:].decode("utf-8", "replace") if len(v) > 5 else v.hex()),
+                ("netif", "netif", lambda v: v.decode("utf-8", "replace")))),
+    "oep.fixture.gpio": Known("drive and read probe pins", roles=_roles("oep.fixture.gpio", "role", {"line": "line"}),
+                              tags=_d("oep.fixture.gpio", ("modes", "modes", lambda v: ", ".join(str(b) for b in range(32) if _u32v(v) >> b & 1)))),
+    "oep.fixture.uart": Known("a UART (USART, asynchronous) on probe pins",
+                              roles=_roles("oep.fixture.uart", "role", {"rx": "RX", "tx": "TX"}),
+                              tags=_d("oep.fixture.uart", ("formats", "formats", lambda v: ", ".join(f"0x{b:02x}" for b in v[1:1 + v[0]])))),
     "oep.fixture.logic": Known("sampled logic capture", roles={k: f"line{k}" for k in range(8)},
-                               tags={0x40: ("mode", _capture_mode), 0x41: ("rate range", _rate_range),
-                                     0x44: ("channels", lambda v: str(v[0])), 0x45: ("trigger", _trigger)}),
+                               tags=_d("oep.fixture.logic", *_CAPTURE)),
     "oep.fixture.analog": Known("sampled analog capture", roles={k: f"ch{k}" for k in range(8)},
-                                tags={0x40: ("mode", _capture_mode), 0x41: ("rate range", _rate_range),
-                                      0x44: ("channels", lambda v: str(v[0])), 0x45: ("trigger", _trigger),
-                                      0x46: ("frontend", _frontend)}),
+                                tags=_d("oep.fixture.analog", *_CAPTURE, ("frontend", "frontend", _frontend))),
     "oep.fixture.capture-group": Known("captures started at once and stopped together",
-                                       tags={0x40: ("tracks", lambda v: ", ".join(
-                                           str(f) for f in struct.unpack_from(f"<{v[0]}H", v, 1)))}),
+                                       tags=_d("oep.fixture.capture-group", ("tracks", "tracks", lambda v: ", ".join(
+                                           str(f) for f in struct.unpack_from(f"<{v[0]}H", v, 1))))),
     "oep.fixture.i2c-target": Known(
         "an I2C target the DUT can address (open-drain only, fixture §3)",
-        roles={1: "SDA", 2: "SCL"}, features={2: "internal pull-ups"},
-        tags={0x40: ("queue depth", lambda v: str(v[0])), 0x41: ("max stretch us", _u32)}),
+        roles=_roles("oep.fixture.i2c-target", "role", {"sda": "SDA", "scl": "SCL"}),
+        features=_bits("oep.fixture.i2c-target", {"internal_pullups": "internal pull-ups"}),
+        tags=_d("oep.fixture.i2c-target", ("queue_depth", "queue depth", lambda v: str(v[0])),
+                ("max_stretch_us", "max stretch us", _u32))),
     "oep.fixture.spi-target": Known(
         "an SPI target the DUT can clock (ESP-IDF slave driver)",
-        roles={1: "SCK", 2: "MOSI", 3: "MISO", 4: "CS"}, features={0: "LSB first"},
-        tags={0x40: ("queue depth", lambda v: str(v[0])),
-              0x41: ("modes", lambda v: ", ".join(str(k) for k in range(4) if v[0] >> k & 1)),
-              0x43: ("CS setup ns", lambda v: f"{_u32(v)} (SCK sooner after CS: the first bit is not sure)")}),
+        roles=_roles("oep.fixture.spi-target", "role", {"sck": "SCK", "mosi": "MOSI", "miso": "MISO", "cs": "CS"}),
+        features=_bits("oep.fixture.spi-target", {"lsb_first": "LSB first"}),
+        tags=_d("oep.fixture.spi-target", ("queue_depth", "queue depth", lambda v: str(v[0])),
+                ("modes", "modes", lambda v: ", ".join(str(k) for k in range(4) if v[0] >> k & 1)),
+                ("cs_setup_ns", "CS setup ns", lambda v: f"{_u32(v)} (SCK sooner after CS: the first bit is not sure)"))),
 }
 
 

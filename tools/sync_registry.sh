@@ -13,7 +13,9 @@ root, spec, ref = sys.argv[1:]
 root = Path(root)
 commit = subprocess.check_output(['git', '-C', spec, 'rev-parse', ref + '^{commit}'], text=True).strip()
 paths = subprocess.check_output(['git', '-C', spec, 'ls-tree', '--name-only', commit + ':tests/vectors'], text=True).splitlines()
-inputs = {'src/oep_client/registry.py': 'generated/oep-v1/oep_v1_registry.py'}
+inputs = {'src/oep_client/registry.py': 'generated/oep-v1/oep_v1_registry.py',
+          # the spec's own registry: tests and checks look numbers up by name in it (never literal numbers)
+          'tests/spec/oep-v1.toml': 'registry/oep-v1.toml'}
 inputs.update({'tests/vectors/' + name: 'tests/vectors/' + name for name in paths if name.endswith('.json')})
 # Read every committed input before modifying the local snapshot.
 blobs = {name: subprocess.check_output(['git', '-C', spec, 'show', commit + ':' + upstream])

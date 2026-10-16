@@ -40,7 +40,7 @@ def test_items_round_trip_with_the_generation():
     assert config.same_items(items, wanted) and not config.same_items(items, wanted[:2])
     assert cfg.set([config.Label(channel=20, text="DUT TX")]) == 2              # the same contents: no change
     assert cfg.unset([("idle", 21), ("idle", 22)]) == 3                          # a key not there: nothing
-    assert ep.requests[-1].payload == bytes([2]) + struct.pack("<BHBH", 3, 21, 3, 22)
+    assert ep.requests[-1].payload == bytes([2]) + struct.pack("<BHBH", config.ITEM["idle"], 21, config.ITEM["idle"], 22)
     assert cfg.set([config.remove("disable", 30)]) == 4
     assert cfg.items() == [config.Label(channel=20, text="DUT TX")]
 
@@ -117,7 +117,7 @@ def test_save_state_and_the_next_boot():
 def test_describe_and_a_probe_without_storage():
     ep, hst = open_bench()
     d = config.ProbeConfig(hst).describe()
-    assert d.storage_bytes == 4096 and sorted(d.items) == sorted(config.ITEM.values())
+    assert d.storage_bytes == 4096 and d.items == ["label", "idle", "disable", "passthrough", "console-passthrough"]
     probe = virtual_bench.VirtualProbe("no-storage", 1024, [virtual_bench._config(o.fn, 0, storage=0)
                                        if o.name == "oep.probe.config" else o for o in virtual_bench.p4_bench().offered])
     ep = endpoint.Endpoint(probe, Clock())

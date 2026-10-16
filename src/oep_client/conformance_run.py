@@ -65,8 +65,8 @@ class RunChecks(ResetChecks):
     def console_run(self,mode):
         self.fresh()
         with self.c.holding(3000) as sid:
-            parent=self.parent(sid);rid,_=self.console(sid,parent,2);data=target_frame(syn=True,data=b'wire');self.a.frame(rid,*data)
-            other,_=self.attach(sid,pair=(2,3));other_rid,_=self.console(sid,other,2);before=self.a.state();self.loader(sid,parent,mode);after=self.a.state()
+            parent=self.parent(sid);rid,_=self.console(sid,parent,'dmseq');data=target_frame(syn=True,data=b'wire');self.a.frame(rid,*data)
+            other,_=self.attach(sid,pair=(2,3));other_rid,_=self.console(sid,other,'dmseq');before=self.a.state();self.loader(sid,parent,mode);after=self.a.state()
             require(after['mailboxes'][rid]['data0']==data[0] and after['mailboxes'][rid]['data1']==data[1] and after['protocols'][rid]==before['protocols'][rid],'run damaged mailbox/pending')
             require(after['streams'][rid]==before['streams'][rid],'run damaged console buffer/marks/queue')
             for field in ('targets','streams','mailboxes','protocols'):
@@ -92,7 +92,7 @@ class RunChecks(ResetChecks):
             elif kind=='TRUNCATED':self.refused(self.request(5,'run',sid,b'\x01\0'),'malformed')
             elif kind=='FOREIGN':self.refused(self.request(5,'run',sid%0xffffffff+1,b'\xfe'),'locked')
             elif kind=='RESOURCE':
-                self.refused(self.run_request(sid,65535),'no_resource');rid,_=self.console(sid,parent,2);self.refused(self.run_request(sid,rid),'unavailable',cause=6)
+                self.refused(self.run_request(sid,65535),'no_resource');rid,_=self.console(sid,parent,'dmseq');self.refused(self.run_request(sid,rid),'unavailable',cause=6)
                 arm,_=self.attach(sid,fn=3);self.refused(self.run_request(sid,arm),'unavailable',cause=6)
     def run(self):
         start=len(self.c.results)

@@ -192,6 +192,8 @@ def drive_config(hst):
     cfg.set([config.Label(channel=30, text="t.nrst")])
     cfg.get()
     cfg.state()
+    if cfg.describe().netifs:
+        cfg.network()                                              # the network op, when the probe has netifs (§2)
     cfg.unset([("label", 30)])
     cfg.save()
     cfg.erase()
@@ -301,7 +303,7 @@ def test_config_set_refuses_an_unknown_item_with_the_tag_as_received():
     fn = ep.fns["oep.probe.config"]
     for tag in (UNKNOWN, UNKNOWN | m.TAG_CRITICAL):              # an item it does not declare (probe.config §1)
         with pytest.raises(h.Unsupported) as e:
-            hst.call(fn, reg.PROBE_CONFIG.op["set"], b"\x01" + m.tlv(tag, b"\x01"))
+            hst.call(fn, reg.PROBE_CONFIG.op["set"], b"\x01" + m.tlv(tag, b"\x01\x00"))   # number len key
         assert e.value.result.payload[:1] == bytes([tag])
 
 
@@ -459,20 +461,18 @@ def test_open_owner_length_checked_either_way(critical):
             == (m.MALFORMED, b"")
 
 
-@BITS
-def test_config_item_of_another_length_is_malformed_either_way(critical):
-    """probe.config §1: an item the probe handles with a value of another length -> malformed, critical or not."""
+def test_config_item_of_another_length_is_malformed():
+    """probe.config §1: an item the probe handles with data of another length -> malformed (items have no bit-7
+    rule: a number is a place in describe's setting list)."""
     ep, rec, hst = recorded(virtual_bench.p4_bench())
     cfg = config.ProbeConfig(hst)
     cfg.set([config.Label(channel=30, text="t.nrst")])
     fn, op = ep.fns["oep.probe.config"], reg.PROBE_CONFIG.op["set"]
-    idle = reg.PROBE_CONFIG.tlv["item"]["idle"]
-    good = struct.pack("<HB", 30, 3)                                   # channel mode (probe.config §1)
-    assert rec.variant(fn, op, 1, lambda t: [(idle | (m.TAG_CRITICAL if critical else 0), good)]).resolution \
-        == m.COMPLETED                                                 # after count(u8): one item
-    for value in (good[:2], good + b"\x00"):
-        assert refused(rec.variant(fn, op, 1, lambda t: [(idle | (m.TAG_CRITICAL if critical else 0), value)])) \
-            == (m.MALFORMED, b"")
+    idle = ep.setting_number("idle")
+    good = struct.pack("<HB", 30, reg.PROBE_CONFIG.enum["idle_mode"]["output_low"])   # key(channel) mode
+    assert rec.variant(fn, op, 1, lambda t: [(idle, good)]).resolution == m.COMPLETED   # after count(u8): one item
+    for value in (good[:2] + b"\x00\x00", good + b"\x00"):
+        assert refused(rec.variant(fn, op, 1, lambda t: [(idle, value)])) == (m.MALFORMED, b"")
 
 
 # ---- a non-repeating tag twice: the first is used (core §2.3) ------------------------------------------------

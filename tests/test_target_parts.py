@@ -6,6 +6,8 @@ import struct
 
 import pytest
 
+from oep_client.registry import WIRE_RVSWD as _RV_WIRE
+RESET_TLV, IDLE_TLV = _RV_WIRE.tlv['attach']['reset'], _RV_WIRE.tlv['attach']['idle_clock']   # by name (debug §3)
 from oep_client import arm, catalog, endpoint, fixture, virtual_bench, host as h, message as m, riscv as target
 
 FNS = {"oep.wire.rvswd": 1, "oep.target.riscv-dm": 2, "oep.fixture.gpio": 3, "oep.wire.swd": 4,
@@ -65,7 +67,7 @@ SWD_FIXED = struct.pack("<HHI", 10, 11, target.WireBase.DEFAULT_MAX_SPEED)
 
 def attach_answer(conn, id_, flags, speed, dpc=None):
     """connection(u32) id flags speed_hz [TLV dpc] (oep-if-debug §3)."""
-    tail = b"" if dpc is None else bytes([0x11, 4, 0]) + struct.pack("<I", dpc)
+    tail = b"" if dpc is None else bytes([_RV_WIRE.tlv["attach_answer"]["dpc"], 4, 0]) + struct.pack("<I", dpc)
     return struct.pack("<IIBI", conn, id_, flags, speed) + tail
 
 
@@ -78,12 +80,12 @@ def test_find_reset_line_hits_the_vector_skips_disallowed_and_retries_failures()
 
     def aur(p):
         assert p[0] == 1 and p[1:9] == FIXED                           # method halt, the pins, max_speed
-        reset = dict(m.split_tlvs(p[9:]))[0x85]                        # the reset TLV, critical
+        reset = dict(m.split_tlvs(p[9:]))[RESET_TLV | 0x80]                        # the reset TLV, critical
         channel, hold = struct.unpack("<HH", reset)
         assert hold == 20
         tries[channel] = tries.get(channel, 0) + 1
         if channel == 9:
-            return m.REJECTED, m.UNSUPPORTED, bytes([0x85])            # not a reset line on this probe
+            return m.REJECTED, m.UNSUPPORTED, bytes([RESET_TLV | 0x80])            # not a reset line on this probe
         if channel == 5 and tries[5] == 1:
             return m.COMPLETED, m.FAILED, bytes([2])                   # the attach itself failed once: status line
         dpc = 0 if channel == 2 and tries[2] == 2 else 0x1300 + channel  # the real line, caught on its second try
@@ -112,7 +114,7 @@ def _pin_choice_wire(limit=False):
 
     def attach(p):
         pins = struct.unpack_from("<HH", p, 1)
-        channel = struct.unpack("<HH", dict(m.split_tlvs(p[9:]))[0x85])[0] if len(p) > 9 else None
+        channel = struct.unpack("<HH", dict(m.split_tlvs(p[9:]))[RESET_TLV | 0x80])[0] if len(p) > 9 else None
         if limit:
             return m.REJECTED, m.UNAVAILABLE, m.tlv(0x01, bytes([2]))
         if state["live"] is not None:
@@ -204,7 +206,7 @@ def test_reset_halt_and_step_decode():
                         (2, target.RiscvDm.STEP): lambda p: ok(struct.pack("<BBII", 0, 1, 0x0, 0x17f0) + b"\x40\x01\x00\x00")})
     dm = target.RiscvDm(hst, 1)
     assert dm.reset_halt() == 0
-    assert hst.log[-1][2] == struct.pack("<IB", 1, 2)                   # connection(u32), mode 2, nothing more
+    assert hst.log[-1][2] == struct.pack("<IB", 1, target.RiscvDm.RESET_HALT)   # connection(u32), halt_at_reset, nothing more
     assert dm.reset() == (0b01, 0) and hst.log[-1][2] == struct.pack("<IB", 1, 0)
     assert dm.step() == (True, 0x0, 0x17f0)                             # an unknown TLV after the fixed part: skipped
     assert not [k for k in vars(target.RiscvDm) if k.startswith("METHOD_")]

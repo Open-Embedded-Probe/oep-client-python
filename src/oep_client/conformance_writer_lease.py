@@ -41,7 +41,7 @@ class WriterLeaseChecks(CutChecks):
     def expiry(self,cut=False):
         self.fresh()
         with self.c.holding(1000) as sid:
-            parent,rid=self.prepare(sid,halt=True);other,_=self.attach(sid,pair=self.a.pairs[1][1]);child,_=self.console(sid,other,2)
+            parent,rid=self.prepare(sid,halt=True);other,_=self.attach(sid,pair=self.a.pairs[1][1]);child,_=self.console(sid,other,'dmseq')
             if cut:self.failed(sid,parent);self.a.plan(parent,[2])
             req=self.dmi_request(sid,parent,[self.write_reg(4,42)]);self.a.accept(req)
             try:
