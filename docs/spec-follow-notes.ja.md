@@ -618,8 +618,14 @@ oep-client-python の `wip/rvswd-rest` ブランチ。
 - 案:
   1. attach に idle_clock の TLV が無ければ、probe は target_id の系統（bit 31〜20）から決める。系統の表は registry（名前で引くデータ）。
   2. 使った休ませ方は attach の応答と connections に必ず出す。
-  3. OFF は probe.config の項目 `rvswd-rest`（key: wire の fn、値: auto / high / low。項目が無ければ auto）。host の居ない場面
-     （素通し、ブラウザで設定した probe）にも効き、console-passthrough に idle_clock の欄は要らない。
+  3. OFF は probe.config の項目 `rvswd-rest`（値: auto / high / low。項目が無ければ auto）。**口ごとに決める**: 1 台に X035 の口と L103 の口が
+     並ぶことがあるので、key は wire の fn ではなく、その口の SWCLK の channel（label / idle と同じ「channel が key」。attach は swclk を固定部で
+     名指すので probe はその channel の項目を引く。ユーザーと ch32rv の指摘）。host の居ない場面（素通し、ブラウザで設定した probe）にも効き、
+     console-passthrough に idle_clock の欄は要らない。
   4. 優先: attach の TLV > 設定の `rvswd-rest`（high / low）> 自動（auto）。
+  5. 1 つの接続の休ませ方は 1 つ。変えるには detach が要る（違う TLV の attach は、生きた接続のピンなので cause 1 で断られる。ch32rv の
+     ブローカーは応答の休ませ方と合えば貸し、違えば断る）。
+  6. 系統の事実の正本は ch32-device-data の family 属性。registry の表はそこから作るか CI で突き合わせ、2 つの正本にしない。
+     DMI 0x7F の bit 31〜20 で系統を引けるかは、古い系統（V103 など）の id の形で確かめる（ch32rv の DB には例外の形がある）。
 - 残る論点: core §12 規則 8（チップ固有の処理を汎用のインターフェースに入れない）との関係。rvswd は対象の系統が限られる線なので、
   その線の定義の中に置いてよいか。
