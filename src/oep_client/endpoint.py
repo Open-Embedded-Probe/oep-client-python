@@ -918,7 +918,7 @@ class Endpoint:
         d = reg.FIXTURE_ANALOG.tlv["describe"]                     # the logic's tags are the same numbers
         modes, lo, hi, fronts, most_samples = set(), 1, 1_000_000, {}, {}
         max_pre = virtual_bench_capture.MAX_SAMPLES - 1
-        opts = records = kinds = 0
+        opts = records = kinds = types = 0
         formats, lo_d, hi_d = set(), 1, 1
         for tag, v in decl:
             if tag == d["frontend"]:                               # analog: frontend min_mv max_mv
@@ -928,6 +928,7 @@ class Endpoint:
                 modes.add(v[0])
                 most_samples[v[0]] = struct.unpack_from("<I", v, 1)[0]   # mode max_samples max_segments
             elif tag == d["trigger"]:                              # types(u32) max_pretrigger(u32) opts(u8)
+                types = struct.unpack_from("<I", v)[0]
                 max_pre, opts = struct.unpack_from("<IB", v, 4)
             elif tag == d["trigger_records"]:                      # u16 (§3.10)
                 records = struct.unpack("<H", v)[0]
@@ -942,7 +943,8 @@ class Endpoint:
                                         max_samples=most_samples, max_pretrigger=max_pre, exact=inner.get("exact", False),
                                         skews=inner.get("skews"), diagnostics=inner.get("diagnostics", True),
                                         opts=opts, records_max=records, formats=formats, carriage_kinds=kinds,
-                                        carriage_d=(lo_d, hi_d))
+                                        carriage_d=(lo_d, hi_d),
+                                        linked=bool(types >> reg.FIXTURE_LOGIC.enum["trigger"]["linked"] & 1))
 
     @staticmethod
     def _group_from(decl: list[tuple[int, bytes]], inner: dict) -> virtual_bench_capture.VirtualGroup:
@@ -951,7 +953,9 @@ class Endpoint:
         for tag, v in decl:
             if tag == d["tracks"]:                                 # n(u8) n x fn(u16)
                 tracks = list(struct.unpack_from(f"<{v[0]}H", v, 1))
-        return virtual_bench_capture.VirtualGroup(tracks, inner.get("max_tracks", len(tracks)), list(inner.get("budgets", ())))
+        features = next((struct.unpack("<I", v)[0] for tag, v in decl if tag == catalog.FEATURES), 0)
+        return virtual_bench_capture.VirtualGroup(tracks, inner.get("max_tracks", len(tracks)), list(inner.get("budgets", ())),
+                                                  sourced=bool(features & reg.FIXTURE_CAPTURE_GROUP.enum["features"]["trigger_source"]))
 
     def _next_seq(self, fn: int) -> int:
         seq = self.push_seq.get(fn, 0)
@@ -1123,9 +1127,12 @@ class Endpoint:
             if op == O["bind"]:
                 n = t.take("B")
                 fns = [t.take("H") for _ in range(n)]
-                t.tail()                                           # v1 defines no bind TLV (§4.3)
+                bind_tlvs = virtual_bench_capture.GRP.tlv["bind"]   # the trigger source's (§4.4), if it has one
+                t.tail(set(bind_tlvs.values()) if grp.sourced else set(), repeats={bind_tlvs["stage"], bind_tlvs["cond"]})
+                roles = {f: sorted(a[1] for a in self.plan if a[0] == f) for f in fns}
                 # the start answer's message (18 + 6 x n bytes, its result header in the 18) against the frame (§4.1)
-                grp.bind(self.captures, fns, [g for g in self.groups.values() if g is not grp], self.probe.max_frame)
+                grp.bind(self.captures, fns, [g for g in self.groups.values() if g is not grp], self.probe.max_frame,
+                         t.repeated, roles)
                 return self._answer(b"")
             if op == O["start"]:
                 t.tail()
@@ -1138,6 +1145,13 @@ class Endpoint:
             if op == O["stop"]:
                 t.tail()
                 per, own = grp.stop(self.captures, self.uptime_ms())
+                for track, events in per:
+                    self._events(track, events)
+                self._events(fn, own)
+                return m.COMPLETED, m.SUCCESS, b""
+            if op == O["force"]:
+                t.tail()
+                per, own = grp.force(self.captures, self.uptime_ms())
                 for track, events in per:
                     self._events(track, events)
                 self._events(fn, own)

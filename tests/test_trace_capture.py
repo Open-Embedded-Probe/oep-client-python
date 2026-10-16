@@ -1752,14 +1752,14 @@ def test_group_notifications_are_stopped_only():
 
 
 def test_group_describe_tracks():
-    """capture §4.3: describe has ops and tracks (n >= 1, n x fn); no features bit."""
+    """capture §4.3: describe has ops and tracks (n >= 1, n x fn); features bit 0 when it has the trigger source (§4.4)."""
     ep, hst, clock = bench()
     grp = c.CaptureGroup(hst)
     d = dict(describe(hst, grp.fn))
     v = d[GROUP.tlv["describe"]["tracks"]]
     assert v[0] >= 1 and list(struct.unpack_from(f"<{v[0]}H", v, 1)) == [ep.fns["oep.fixture.logic"],
                                                                           ep.fns["oep.fixture.analog"]]
-    assert int.from_bytes(d.get(0x05, b"\0"), "little") == 0
+    assert int.from_bytes(d.get(0x05, b"\0"), "little") == GROUP.enum["features"]["trigger_source"]
 
 
 # ---- independent review (docs/trace/review/capture.json): rules the trace above left unchecked ---------------------

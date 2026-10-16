@@ -16,6 +16,15 @@
   - conformance: triggers と group の force を任意の op として扱い、bind の TLV が定義されていても通す。
   - 仮想ベンチの形式 1 は streaming にも対応する。ブロックは揃ってから送る。stop では短い最後のブロックを送る。区画の位置は、区画が始まるたびに
     記録した表から引く。購読が無い間に始まった区画は丸ごと捨てる。
+  - capture-group §4.4 の出来事の元（trigger source）を入れた。
+    - クライアント: `capture.TriggerSource`、`Stage`、`Cond`（level、edge、cross_up / cross_down、above / below、timer）で式を組み、
+      `CaptureGroup.bind(tracks, source)` で送る（どれも critical）。`CaptureGroup.force()`、`GroupStatus.trigger`（fn、ns、uncertainty_ns）、
+      group の triggered（trigger_fn、record、ns、uncertainty）。トラックは `trigger=(LINKED, 0, 0)` と自分の pretrigger で configure する。
+    - 仮想ベンチ（P4 の group）: features bit 0 と trigger_caps を宣言し、force を持つ。持つものは、4 段 × 4 項 × 4 条件、トラックをまたぐ AND、
+      count、within_ns、on_timeout 0 / 1、abort、arm。rearm 1、外部の入力、trigger_out、serial は持たない。
+      - 判定は、項が見るトラックのうち最も速いもののサンプルで行う（時刻の来たサンプルだけを見る）。
+      - 出来事では、各トラックが自分のサンプルで区画を切り、自分の triggered を送る。
+      - linked のトラックを単独で start すると cause 6、trigger source の組に linked でないトラックを入れると cause 6。
   - 仮想ベンチの `--logic-wave ROLE=SPEC`（`virtual_bench_capture.logic_wave`）: ロジックの役割ごとに波形を選ぶ。counter、quiet[:LEVEL]、
     square:PERIOD、uart:BAUD[:TEXT]（8N1 の文字、文字の間はアイドル）。静かな線と UART のような線で、形式 1 の典型の帯域を測れる
     （§1.3 の例: 2110 B / ブロック、125 MHz で 64.4 MB/s。仕様の見積もりは 63.6 MB/s）。

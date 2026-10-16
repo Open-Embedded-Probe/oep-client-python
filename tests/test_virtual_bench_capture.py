@@ -377,8 +377,9 @@ def test_a_group_refuses_what_it_cannot_bind():
     with pytest.raises(h.Unavailable) as e:
         grp.bind([lc, an])                                          # a group starts at once: immediate tracks only
     assert e.value.cause == "wrong_state" and e.value.fn == lc.fn
-    with pytest.raises(h.Unsupported):
+    with pytest.raises(h.Rejected) as e:                           # trigger_source (§4.4) of another length
         hst.call(grp.fn, grp.BIND, struct.pack("<BH", 1, an.fn) + m.tlv(0x01, struct.pack("<H", an.fn), critical=True))
+    assert e.value.result.detail == m.MALFORMED
 
 
 # ---- what configure / describe say (oep-if-capture §3.3, §2; core §2.3) --------------------------------------------
@@ -451,7 +452,7 @@ def test_describe_declares_no_background_layouts_or_budgets():
         R_=__import__('oep_client.registry',fromlist=['FIXTURE_ANALOG'])
         assert {t & 0x7F for t, _ in d} <= set(R_.DESCRIBE_COMMON.values()) | set(R_.FIXTURE_ANALOG.tlv['describe'].values())   # only what the SPEC defines
     tags = {t & 0x7F for t, _ in core.describe(hst, grp.fn)}
-    assert 0x40 in tags and not {0x41, 0x42, 0x43} & tags
+    assert 0x40 in tags and 0x41 in tags and not {0x42, 0x43} & tags   # tracks, trigger_caps (§4.4)
 
 
 def test_a_bind_short_of_resources_is_unavailable_limit_naming_the_fn():

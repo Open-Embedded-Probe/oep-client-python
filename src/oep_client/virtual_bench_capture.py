@@ -256,6 +256,7 @@ class VirtualCapture:
     carriages: dict[int, tuple[int, int]] = field(default_factory=dict)   # format 1: role -> (kind, d)
     block: int = 0                     # format 1: L
     stream_segs: list[list[int]] = field(default_factory=list)
+    linked: bool = False               # describe trigger types bit 7: linked to a group's trigger source (§4.4)
     logic_roles: tuple[int, ...] = ()   # logic: the planned roles, channel k the k-th
     waves: dict = field(default_factory=dict)   # logic: role -> wave(i, rate) instead of the counter's bit (logic_wave)   # format 1 streaming: [position, first, samples] a segment
 
@@ -318,7 +319,9 @@ class VirtualCapture:
             raise t.refuse(TLV["mode"])                            # undefined (left unused) or not declared
         if not self.min_hz <= asked <= self.max_hz:
             raise t.refuse(TLV["rate"])                            # out of the declared range (§3.3)
-        if trigger is not None:
+        if trigger is not None and trigger[0] == TRIGGER["linked"] and self.linked:
+            trigger = (TRIGGER["linked"], 0, 0)                    # role and value not used (§3.3)
+        elif trigger is not None:
             allowed = (TRIGGER["cross_up"], TRIGGER["cross_down"]) if self.analog else (TRIGGER["level"], TRIGGER["edge"])
             if trigger[0] not in allowed:
                 raise t.refuse(TLV["trigger"])                     # a type not declared (or undefined)
@@ -373,9 +376,9 @@ class VirtualCapture:
         if not channels:
             raise wrong_state()                                    # no plan (§3.2)
         role_ids = sorted(planned_roles) if planned_roles is not None else list(range(channels))
-        if trigger is not None and trigger[1] not in role_ids:
+        if trigger is not None and trigger[0] != TRIGGER["linked"] and trigger[1] not in role_ids:
             raise wrong_state()                                    # a role not in the fn's plan: cause 6 (§3.3)
-        if trigger is not None and not self.analog:                # logic channel k: the k-th smallest role (§1.1)
+        if trigger is not None and trigger[0] != TRIGGER["linked"] and not self.analog:   # logic channel k: the k-th
             trigger = (trigger[0], role_ids.index(trigger[1]), trigger[2])
         top = Fraction(self.max_hz, channels) if self.analog else self.max_hz   # an ADC's rate is shared by its channels
         if self.exact:
@@ -572,6 +575,8 @@ class VirtualCapture:
         """The next sample up to `last` the trigger holds at (§3.3: arm, when, hysteresis), or None; what it saw is
         kept for the next call."""
         kind, role, value = self.trigger
+        if kind == TRIGGER["linked"]:
+            return None                                            # the group's trigger source decides (§4.4)
         begin = self.trigger_floor + (self.pretrigger if self.arm else 0)   # arm 1: once the pretrigger is there
         if self.trigger_scan < begin:
             if last < begin:
@@ -657,6 +662,8 @@ class VirtualCapture:
             raise wrong_state(fn)
         if self.mode == MODE["streaming"] and not subscribed:
             raise wrong_state(fn)
+        if self.trigger is not None and self.trigger[0] == TRIGGER["linked"] and self.group is None:
+            raise wrong_state(fn)                                  # linked, not bound to a trigger source (§3.3)
         if self.generation == LAST_GENERATION:
             raise exhausted(fn)
 
@@ -1019,8 +1026,13 @@ class VirtualGroup:
     tracks: list[int] = field(default_factory=list)
     start_ns: int = NO_TIME            # all ones before a start (§4.1)
     generation: int = 0                # the group's: +1 at every group start, as a track's (§4.1); kept across binds
+    sourced: bool = False              # describe features bit 0: it has a trigger source (§4.4)
+    expr: object | None = None         # the bind's trigger source (virtual_bench_trigger.Expression)
+    judge: object | None = None        # while waiting: its Evaluator
+    event: tuple[int, int, int] | None = None   # the event: (fn, ns, uncertainty_ns)
 
-    def bind(self, caps: dict[int, VirtualCapture], fns: list[int], others=(), budget: int = 1 << 16) -> None:
+    def bind(self, caps: dict[int, VirtualCapture], fns: list[int], others=(), budget: int = 1 << 16,
+             repeated: list[tuple[int, bytes]] = (), roles: dict[int, list[int]] | None = None) -> None:
         """§4.1's refusals, every one checked before anything changes: the same fn twice -> malformed; an fn not in
         tracks -> unsupported (0x00, fn); the start answer past the route's frame -> unsupported (0x00); the same list
         -> nothing changes; a change while capturing -> cause 6; a track in another group (`others`) -> cause 4; a
@@ -1033,7 +1045,12 @@ class VirtualGroup:
                 reg.CORE.tlv["unsupported_payload"]["fn"], struct.pack("<H", next(fn for fn in fns if fn not in self.tracks_allowed))))
         if 18 + 6 * len(fns) > budget:
             raise Reject(m.UNSUPPORTED, bytes([m.TAG_FIXED]))      # its start answer would not fit (§4.1)
-        if fns == self.tracks:
+        from . import virtual_bench_trigger as vbt
+        if repeated and not self.sourced:
+            raise Reject(m.UNSUPPORTED, bytes([repeated[0][0]]))   # no trigger source here (§4.4)
+        expr = vbt.parse(list(repeated), fns, roles or {fn: [] for fn in fns},
+                         {fn: caps[fn].analog for fn in fns if fn in caps}) if repeated else None
+        if fns == self.tracks and expr is None and self.expr is None:
             return                                                 # the same list: the state kept
         if self.state(caps) == STATE["capturing"]:
             raise wrong_state()                                    # not while the group captures
@@ -1045,8 +1062,10 @@ class VirtualGroup:
             if fn not in self.tracks and any(fn in g.tracks for g in others):
                 raise Reject(m.UNAVAILABLE, m.tlv(CAUSE, bytes([reg.CORE.enum["unavailable_cause"]["bound_in_group"]]))
                              + m.tlv(FN_TLV, struct.pack("<H", fn)))
-            if c.state not in (STATE["configured"], STATE["done"], STATE["error"]) or c.trigger is not None:
-                raise wrong_state(fn)
+            linked = c.trigger is not None and c.trigger[0] == TRIGGER["linked"]
+            if c.state not in (STATE["configured"], STATE["done"], STATE["error"]) or (
+                    not linked if expr is not None else c.trigger is not None):
+                raise wrong_state(fn)                              # with a trigger source every track linked (§4.4)
         if len({caps[fn].mode for fn in fns}) != 1:
             raise wrong_state(fns[0])
         if len(fns) > self.max_tracks:
@@ -1056,6 +1075,7 @@ class VirtualGroup:
                 over = next(fn for fn in fns if fn in shared)
                 raise Reject(m.UNAVAILABLE, LIMIT + m.tlv(FN_TLV, struct.pack("<H", over)))
         self._unbind(caps)                                         # refused above: nothing changed (§4.1)
+        self.expr, self.judge, self.event = expr, None, None
         self.tracks = list(fns)
         for fn in fns:
             caps[fn].group = self
@@ -1100,8 +1120,39 @@ class VirtualGroup:
                 # state 6 always says stopped reason 3 (§3.2 エラー), and the group in 6 too (§4.1, §4.2)
                 per.append((fn, [failed.stopped_event(STOPPED["error"], failed.error)]))
                 return per, [self.stopped_event(STOPPED["error"], failed.error)], True
-            per.append((fn, caps[fn].start(now_ms, self.start_ns, subscribed=subscribed(fn))))
+            per.append((fn, caps[fn].start(now_ms, self.start_ns, subscribed=subscribed(fn),
+                                           waiting=self.expr is not None)))
+        self.event = None
+        if self.expr is not None:
+            from . import virtual_bench_trigger as vbt
+            begin = self.start_ns                                  # arm 1: once every track's pretrigger is there
+            if self.expr.arm:
+                begin = max([begin] + [caps[fn].time_of(caps[fn].pretrigger) for fn in self.tracks])
+            self.judge = vbt.Evaluator(self.expr, caps, begin)
+            per += self._judge(caps, now_ms)[0]
         return per, self._finished(caps, False), False
+
+    def _judge(self, caps: dict[int, VirtualCapture], now_ms) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
+        """While waiting: the trigger source judged up to now; at its event every track cuts its segment there."""
+        if self.judge is None or self.event is not None:
+            return [], []
+        event = self.judge.run(int(now_ms * 1_000_000))
+        return self._happened(caps, now_ms, event) if event is not None else ([], [])
+
+    def _happened(self, caps, now_ms, event: tuple[int, int, int]):
+        self.event, self.judge = event, None
+        fn, ns, unc = event
+        per = [(t, caps[t].force(now_ms, trigger_ns=ns, pretrigger=caps[t].pretrigger)) for t in self.tracks]
+        own = [bytes([GRP.event["triggered"]]) + struct.pack("<HIQII", fn, NONE, ns, unc, self.generation)]
+        return per, own
+
+    def force(self, caps: dict[int, VirtualCapture], now_ms) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
+        """§4.4 force: waiting, the event happens now (fn 0); otherwise nothing."""
+        per, own = self._judge(caps, now_ms)
+        if self.judge is None:
+            return per, own
+        more, mine = self._happened(caps, now_ms, (0, int(now_ms * 1_000_000), 0))
+        return per + more, own + mine
 
     def _finished(self, caps: dict[int, VirtualCapture], was_done: bool) -> list[bytes]:
         """The group's stopped 0 when every track has completed (§4.2)."""
@@ -1111,8 +1162,9 @@ class VirtualGroup:
 
     def tick(self, caps: dict[int, VirtualCapture], now_ms: int) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
         was_done = self.state(caps) == STATE["done"]
-        per = [(fn, caps[fn].tick(now_ms)) for fn in self.tracks]
-        return per, self._finished(caps, was_done)
+        judged, own = self._judge(caps, now_ms)
+        per = judged + [(fn, caps[fn].tick(now_ms)) for fn in self.tracks]
+        return per, own + self._finished(caps, was_done)
 
     def stopped_event(self, reason: int, error: int = 0) -> bytes:
         """The group's stopped: reason(u8) error(u8) generation(u32: the group's, §4.2)."""
@@ -1141,10 +1193,15 @@ class VirtualGroup:
             return STATE["error"]
         if self.start_ns != NO_TIME and all(s == STATE["done"] for s in states):
             return STATE["done"]
+        if self.judge is not None and any(s == STATE["waiting"] for s in states):
+            return STATE["waiting"]                                # the trigger source has not happened (§4.4)
         if any(s in (STATE["waiting"], STATE["capturing"], STATE["paused"]) for s in states):
             return STATE["capturing"]
         return STATE["configured"]
 
     def status(self, caps: dict[int, VirtualCapture]) -> bytes:
-        """state(u8) start_ns(u64) generation(u32) (§4.1)."""
-        return struct.pack("<BQI", self.state(caps), self.start_ns, self.generation)
+        """state(u8) start_ns(u64) generation(u32) (§4.1), and once the event happened TLV trigger (§4.4)."""
+        out = struct.pack("<BQI", self.state(caps), self.start_ns, self.generation)
+        if self.event is not None:
+            out += m.tlv(GRP.tlv["status_answer"]["trigger"], struct.pack("<HQI", *self.event))
+        return out

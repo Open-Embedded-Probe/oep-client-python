@@ -227,6 +227,7 @@ def drive_captures(hst, ep):
         an.calibration()
         grp.bind([lc, an])
         grp.start([lc, an])
+        grp.force()
         grp.status()
         grp.stop()
 

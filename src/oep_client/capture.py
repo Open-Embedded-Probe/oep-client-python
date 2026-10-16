@@ -296,6 +296,7 @@ class Event:
     record: int | None = None                # triggered: the trigger record's serial (None: no record, §3.10)
     sample: int | None = None                # triggered: the original sample from the generation's start
     uncertainty_ns: int | None = None        # triggered: trigger_ns's +-ns
+    trigger_fn: int | None = None            # a group's triggered: the track that judged it (0: force, timer)
     raw: bytes = b""
 
     @property
@@ -321,6 +322,10 @@ def unpack_event(frame: bytes, group: bool = False) -> Event:
         elif kind == EVENT_STOPPED:
             reason, error, generation = rd.take("BBI")
             e = Event(fn, seq, "stopped", generation, reason=reason, error=error)
+        elif kind == EVENT_TRIGGERED and group:                # §4.4: trigger_fn record trigger_ns uncertainty generation
+            trigger_fn, record, trigger_ns, uncertainty, generation = rd.take("HIQII")
+            e = Event(fn, seq, "triggered", generation, trigger_ns=trigger_ns, uncertainty_ns=uncertainty,
+                      record=None if record == NO_RECORD else record, trigger_fn=trigger_fn)
         elif kind == EVENT_TRIGGERED and not group:
             serial, index, record, sample, trigger_ns, uncertainty, generation = rd.take("IIIQQII")
             e = Event(fn, seq, "triggered", generation, serial=serial, trigger_index=index, trigger_ns=trigger_ns,
@@ -927,6 +932,88 @@ class GroupStatus:
     state: int
     start_ns: int | None             # None before the group's first start
     generation: int = 0              # the group's (§4.1; 0 before its first start)
+    trigger: tuple[int, int, int] | None = None   # §4.4, once the event happened: (fn judging, 0 force / timer; ns; +-ns)
+
+
+GROUP_BIND = _GRP.tlv["bind"]
+COND = _GRP.enum["trigger_cond"]
+COND_SRC = _GRP.enum["cond_src"]
+
+
+@dataclass(frozen=True)
+class Cond:
+    """A condition of the trigger source (§4.4): built with level() / edge() / cross_up() / cross_down() / above() /
+    below() / timer(). `fn` the bound track (0 for timer), `role` its plan role, `kind` enum trigger_cond, `args` the
+    type's arguments packed."""
+    fn: int
+    role: int
+    kind: int
+    args: bytes
+    src: int = COND_SRC["track"]
+
+    @staticmethod
+    def level(track: "LogicCapture", role: int, level: int, when: int = 0) -> "Cond":
+        return Cond(track.fn, role, COND["level"], struct.pack("<BB", level, when))
+
+    @staticmethod
+    def edge(track: "LogicCapture", role: int, edge: int = 0) -> "Cond":
+        """edge 0 rising, 1 falling, 2 both."""
+        return Cond(track.fn, role, COND["edge"], struct.pack("<B", edge))
+
+    @staticmethod
+    def cross_up(track: "LogicCapture", role: int, value: int, hysteresis: int = 0) -> "Cond":
+        return Cond(track.fn, role, COND["cross_up"], struct.pack("<II", value, hysteresis))
+
+    @staticmethod
+    def cross_down(track: "LogicCapture", role: int, value: int, hysteresis: int = 0) -> "Cond":
+        return Cond(track.fn, role, COND["cross_down"], struct.pack("<II", value, hysteresis))
+
+    @staticmethod
+    def above(track: "LogicCapture", role: int, value: int, hysteresis: int = 0, when: int = 0) -> "Cond":
+        return Cond(track.fn, role, COND["above"], struct.pack("<IIB", value, hysteresis, when))
+
+    @staticmethod
+    def below(track: "LogicCapture", role: int, value: int, hysteresis: int = 0, when: int = 0) -> "Cond":
+        return Cond(track.fn, role, COND["below"], struct.pack("<IIB", value, hysteresis, when))
+
+    @staticmethod
+    def timer(ns: int) -> "Cond":
+        """ns after the stage was entered."""
+        return Cond(0, 0, COND["timer"], struct.pack("<Q", ns), COND_SRC["track"])
+
+
+@dataclass(frozen=True)
+class Stage:
+    """A stage (§4.4): its terms are OR'd, a term's conditions AND'd; `count` times the OR becomes true; `within_ns`
+    from entering it (0 none); `on_timeout` 0 back to stage 0 when it passes, 1 the "should come" stage (its OR in
+    time goes back to stage 0, the time passing makes it hold). `aborts`: terms that send it back to stage 0."""
+    terms: list[list[Cond]]
+    count: int = 1
+    within_ns: int = 0
+    on_timeout: int = 0
+    aborts: list[list[Cond]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class TriggerSource:
+    """The group's trigger source (§4.4): stages in order, the last one holding is the event."""
+    stages: list[Stage]
+    holdoff_ns: int = 0
+    arm: int = 1
+    rearm: int = 0
+
+    def tlvs(self) -> bytes:
+        """The bind TLVs, every one critical (§4.4)."""
+        out = m.tlv(GROUP_BIND["trigger_source"] | CRITICAL,
+                    struct.pack("<BQBB", len(self.stages), self.holdoff_ns, self.arm, self.rearm))
+        for k, st in enumerate(self.stages):
+            out += m.tlv(GROUP_BIND["stage"] | CRITICAL, struct.pack("<BIQB", k, st.count, st.within_ns, st.on_timeout))
+            for part, terms in ((0, st.terms), (1, st.aborts)):
+                for term, conds in enumerate(terms):
+                    for c in conds:
+                        out += m.tlv(GROUP_BIND["cond"] | CRITICAL,
+                                     struct.pack("<BBBBHBB", k, part, term, c.src, c.fn, c.role, c.kind) + c.args)
+        return out
 
 
 class CaptureGroup(Interface):
@@ -936,19 +1023,26 @@ class CaptureGroup(Interface):
     uncertainty place it)."""
     NAME = "oep.fixture.capture-group"
     REVISION = 1
-    BIND, START, STOP, STATUS = (_GRP.op[k] for k in ("bind", "start", "stop", "status"))
+    BIND, START, STOP, STATUS, FORCE = (_GRP.op[k] for k in ("bind", "start", "stop", "status", "force"))
     EVENT_STOPPED = _GRP.event["stopped"]
     NO_TIME = 0xFFFFFFFFFFFFFFFF
 
-    def bind(self, tracks: list[LogicCapture]) -> None:
-        """Bind these (configured, immediate-trigger) tracks; [] unbinds. A track with a trigger of its own is refused
-        here before sending (ValueError, §4.1); the probe refuses a track not in state 1/4/6 or modes apart
-        (unavailable cause 6, `.fn`), one in another group (cause 4) and more than it takes together (cause 2)."""
+    def bind(self, tracks: list[LogicCapture], source: TriggerSource | None = None) -> None:
+        """Bind these configured tracks; [] unbinds. Without `source` they start at once (immediate triggers): a track
+        with a trigger of its own is refused here before sending (ValueError, §4.1). With `source` (§4.4, describe
+        features bit 0) every track has the linked trigger (with its own pretrigger) and the group's event starts them.
+        The probe refuses a track not in state 1/4/6 or modes apart (unavailable cause 6, `.fn`), one in another group
+        (cause 4) and more than it takes together (cause 2)."""
         for t in tracks:
-            if t.config is not None and t.config.pretrigger:
+            if source is None and t.config is not None and t.config.pretrigger:
                 raise ValueError(f"capture-group bind: fn {t.fn} has a trigger of its own - a group starts its tracks "
                                  "at once (oep-if-capture §4.1)")
-        self._call(self.BIND, struct.pack(f"<B{len(tracks)}H", len(tracks), *(t.fn for t in tracks)))
+        self._call(self.BIND, struct.pack(f"<B{len(tracks)}H", len(tracks), *(t.fn for t in tracks))
+                   + (source.tlvs() if source is not None else b""))
+
+    def force(self) -> None:
+        """§4.4: waiting for the event, it happens now (nothing otherwise)."""
+        self._call(self.FORCE)
 
     generation: int | None = None     # the group's current generation (start / status, §4.1)
     stale_events: int = 0             # the group's events of an earlier generation that events() dropped
@@ -985,9 +1079,11 @@ class CaptureGroup(Interface):
     def status(self) -> GroupStatus:
         rd = m.Reader(self._call(self.STATUS, locked=False).payload)
         state, start, generation = rd.take("BQI")
-        rd.tail()
+        tail = rd.tail()
         self.generation = generation
-        return GroupStatus(state, None if start == self.NO_TIME else start, generation)
+        trig = tail.get(_GRP.tlv["status_answer"]["trigger"])
+        trigger = struct.unpack("<HQI", trig) if trig is not None and len(trig) == 14 else None
+        return GroupStatus(state, None if start == self.NO_TIME else start, generation, trigger)
 
     def events(self, link) -> list[Event]:
         """The group's own events waiting on the link (taken off it; stopped, §4.2), the current group generation's
