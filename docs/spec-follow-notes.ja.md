@@ -587,4 +587,11 @@ B にした。core §12 の規則 7 を「他者は名前で識別する所か�
 | A13 | ホスト試験の多くが古い番号や古い形（confirm の固定部 17 byte、ops の tag 0x09、slot、drive）を直書きしていて、実装の誤りではないのに失敗していた | 期待値を今の仕様の形と registry の名前に直した |
 | A14 | classic ESP32 で、設定の書き直しで増えた静的バッファが DRAM を 392 byte 超えた | set / unset / 起動時の適用で作業領域を共用し、保存用はスタックに戻した |
 
-**ビルド**: RP2350、ESP32-P4、classic ESP32 の参照 firmware が通る（arduino-cli のプロファイル）。実機では未確認。
+| A15 | riscv-dm の read_block / write_block で、後始末（使った値を戻す）に失敗しても、Arduino は接続を閉じていなかった。debug §4 は「答えてから、その接続と stream を閉じる」 | Ch32Dm::cleanupFailed で区別し、答えてから閉じるようにした。test_wire に再現を足した（後始末の最初の命令で線が切れる: partial、done 2、status line、閉じる） |
+| A16 | Arduino のホスト試験の大半が、古い番号と古い仕組み（slot、join、旧 attach、u16 の資源番号、u32 の read、連動トリガ）のまま壊れていた | 全部を今の仕様に書き直した。連動トリガだけを試す test_group_follow は外した |
+| A17 | 実機試験のスイート（Python tests/hw）に network の試験が無く、config と capture は旧 API で落ちた。CLI にも wifi / ipv4 / network / 素通し / 独自項目のコマンドが無かった | 直して足した。仮想ベンチでスイートが全部通る（ターゲットあり 13 件、network も） |
+
+**ビルド**: 参照 firmware は RP2350、ESP32-P4、classic ESP32 で通る。example は全プロファイルでビルド中に確認（下）。実機では未確認。
+
+**仕様への提案の候補（まだ出していない）**: 共有ベクタのうち「仕様書の例の probe」に固有の値（fn 19 の CPU 捕捉の 16 ms、analog の skew や scale の値）を前提にするものは、
+実装の harness が名前で見分けて飛ばしている。ベクタに「例の probe の構成」を示す欄があれば、各実装が機械的に扱える。小さいので、ch32rv の追従の後にまとめて判断する。
