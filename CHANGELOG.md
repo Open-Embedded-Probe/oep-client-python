@@ -1,6 +1,14 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) oep-spec ba4e8ee（debug §3.1、core §12 規則 8、probe.config の rvswd-rest）に追従。rvswd の線の休ませ方は、attach の idle_clock が無ければ
+  probe が決める（その SWCLK の channel の設定 rvswd-rest、無ければ target_id の系統: CH32L103 は low）。仮想ベンチはそのとおりに休ませ、attach の応答と
+  connections に使う休ませ方を返す。クライアントは `Wire.idle_clock`、`ConnectionInfo.idle_clock` で読み、`config.RvswdRest` と
+  `oep config rvswd-rest PROBE CH auto|high|low` で口ごとに自動を止められる。
+- (JA) oep-spec 91209aa の線の名前（swdio / swclk / swio / rx / tx）を registry から引く（`config.LINE_NAMES`）。console-passthrough は 13 byte のまま
+  （91209aa の idle_clock の欄は oep-spec edbe841 で取り下げ）。
+- (JA) tests/hw: `OEP_HW_IDLE_CLOCK=low|high` で rvswd の attach に休ませ方を明示できる。無ければ probe の判定に任せ、結果に使った休ませ方を記録する。
+- (JA) CI: equipment の段が走ったときだけ証跡を upload する（テストの段が落ちると .pytest-results/ が空で警告が出ていた）。
 
 ## 0.0.32
 - (JA) 仮想ベンチに `--minimal-ops`（`virtual_bench.minimal_ops`）を足す。console と fixture UART の任意の op（marks、clear、mark、write）を
