@@ -2,80 +2,66 @@
 
 ## Unreleased
 
+## 0.0.32
 - (JA) 仮想ベンチに `--minimal-ops`（`virtual_bench.minimal_ops`）を足す。console と fixture UART の任意の op（marks、clear、mark、write）を
   ops から外し、unknown_operation で答える。host が任意の op を describe の ops を見ずに使っていないかを、実機なしで試せる
   （oep-spec 0c5cb8c / dbfa865 の適合の項目。ch32rv のモニタが最小構成の console で止まった事例からの提案）。
-
 - (JA) oep-spec 67876b7（probe.config §1.2 console_passthrough）に追従。仮想ベンチは、セッションがその口とピンを使っていない間、止めない attach で
   target のコンソールの出力をフレームの外で口へ送る（OEP の接続・ストリームは作らない。試し直しは swio だけ）。クライアントは `config.ConsolePassthrough`。
-
 - (JA) oep-spec df32360 / 91a5653（probe.config §1.1 passthrough、transports §4 の素通し）に追従。仮想ベンチは、セッションがその口・fn・RX のピンを
   使っていない間、fixture UART が受けたバイトをフレームの間に送り、後ろに区切りの 0x00 を置く。クライアントは `config.Passthrough` で設定・読み出し・解除する。
   実験（docs/spec-follow-notes.ja.md R8）: テキストのコンソールを素通しにしても、セッションの外の照会・セッションの要求とも失敗 0。
-
 - (JA) oep-spec cf69012（link §3: phase 3 は理由によらず取り消さない）に追従。仮想ベンチと検査器の論理モデルから idle の復帰保留の取り消しを外し、
   検査器の PENDING-IDLE-OWNER / -OTHER は phase 3 のまま旧 baud で答えてから戻ることを求める（故障注入は取り消してしまうモデル）。
-
 - (JA) oep-spec bd40a9c（debug §4.1「やり直してよい群」）に追従。`RiscvDm.held` は、DM の作業用レジスタと、値のほかに作用の無いレジスタ
   （GPR、dpc、dcsr）の読み書きだけの群（`same_value_rewrites`）を、確かめられなかったときに新しい corr でやり直す。それ以外の書き込みを含む群はやり直さない。
   `write_register` は GPR / dpc / dcsr で同じ群に読み戻しを入れ、線のちらつきで取りこぼした書き込みを成功として返さない（以前は黙って書き損じた）。
   仮想ベンチのリンク断のモデル（5 種、全アクセス位置）での試算: read_register 38.9% → 100%、write_register 36.7% → 96.7%、dpc の読み 34.7% → 97.9%、
   誤った値・誤った書き込みは 0 件。
-
 - (JA) `RiscvDm.held`: 応答が success でも前後の look や二度読みが合わなかった群のうち、書き込みを含むものはやり直さず、
   LinkNotHeld で止める（common §3、core §4.2: 作用が不明な書き込みを新しい corr で繰り返さない）。読むだけの群はこれまでどおりやり直す。
   落ちやすい debug link（CH32L103 と RVSWD）では read_register / write_register が LinkNotHeld になりやすくなる。緩めてよいかは仕様の判断を待つ
   （docs/spec-follow-notes.ja.md の行 7 / U4）。
-
 - (JA) TCP の接続を開き直したとき（transports §5: 区切りを失った）、Host は次の要求の前に、残っている購読を同じ条件で購読し直す。
   購読は閉じた接続へ送り続け、新しい接続へは持ち越されない（core §6.2、§10.3、transports §3）ため、以前は開き直した後のストリーミングのデータが黙って止まっていた。
   host ガイド §12 の「同じ session_id の open で通知が移る」は core と食い違う（docs/spec-follow-notes.ja.md の U1）。
-
 - (JA) 第 8 回のレビュー（docs/trace/review8/）は途中で打ち切った。core §0〜§7・restart・plan と debug の一部で見つけた食い違いの修正だけを入れた（全試験と check_trace は通る）。a09fa45 への追従はここで区切り、以降は下流のモジュールや実機で見つかったものを都度直す。
-
 - (JA) 第 7 回は単位ごとではなく、繰り返し現れる誤りの種類ごとにコード全体を掃いた（docs/trace/review7/、6 種類・約 1070 か所）。46 件の食い違いを見つけて直した:
   - 応答・断りの payload を完全一致で比べていた検査器（14 件、core §2.3 / §4.3: 固定部分の後ろの TLV は空の固定部分と rejected にも付く）。
   - 応答 TLV の読み手（7 件）: 壊れた後続のコピーが正しい最初のコピーを隠さない、unit_id・transport は定義の長さのときだけ使う、後続のコピーも検証する。
   - 任意のものを必須にしていた検査器（11 件）: 再送の記録（core §5.1）、1 回の read の量、I2C / SPI の features、halt する attach の dpc、2 本目の TCP 接続。逆向きに、空の read_rx と write の無い UART の TX を検査に足した。
   - host の待ちと立て直し（7 件）: core §4.4 の下限を全要求の処理時間の上限で数える、シリアルの口で諦めた要求も経路の立て直しと boot_id の確認へ、再起動を見た open の後は describe を読み直す、port_speed の戻しの答えを失ったら状態を読む。
   - 要求の検証（2 件）と状態・資源（5 件）: hold_ms が max_op_ms を超える reset、bind の知らない fn、plan の保持は (fn, role, channel) ごと、plan の持つピンは idle の再設定から外す、ロックの終わりで未送信の購読フレームを捨てる、出力の idle のピンへのアナログの plan を断る。
-
 - (JA) 第 6 回の独立レビュー（docs/trace/review6/、文書の割り振りをまた変えた）で、33 件の食い違いを見つけて直した。主なもの:
   - core §2.3 / §5.1 / §6.4 / §7.2 / §7.5 / §10.3、transports §5、common §1.3: 応答の TLV は定義どおりの長さと最初のコピーだけを使う（capture・riscv の読み手）、TCP で再送を諦めたら接続を閉じて開き直す、区切りを失って静かにならない口は閉じて開き直す、list の数えた並びの後ろは TLV、owner を実装しない probe を許す、x- の unit_id で経路をまとめない、serial の範囲は持っている印どうしの差。
   - debug §1 / §2 / §3 / §4 / §4.6 / §6: role_channels は挙げた role だけを縛る、線の応答が無い間は放して休ませる、遅い速さでの再試行は任意、attach の flags bit0、resume の前に DATA0 / DATA1 を戻す、コンソールの読みで havereset を確認応答する、ブロックの op の無い arm-adi は生の transfer で組む、features は bit が立つときだけ欠陥。
   - 検査器: 固定部分が空の応答や断りの payload の後ろの TLV を認める（link、probe.config、fixture、plan）、断りが 2 つ当たる組を送らない（capture）、アナログの取得中の pad を空きの状態と比べない、save の間に来た要求を順に答える。
-
 - (JA) 第 5 回の独立レビュー（docs/trace/review5/、文書の割り振りをまた変えた）で、31 件の食い違いを見つけて直した（第 4 回は 41 件）。主なもの:
   - core §2.2 / §2.3 / §4.3 / §4.4 / §6.4 / §7.2 / §7.5 / §10.1 / §10.3: 応答の bit 7 の立った TLV を知らない tag として読み飛ばす、繰り返さない tag は最初のものだけを使い長さは定義どおりに確かめる（describe を読むクライアント各所）、locked の残り時間は 0 でもよい、検査器の待ちを §4.4 の下限以上にする、owner は最初の正しいコピーを使う、list の revision は名前と組で選ぶ、unit_id は 1〜32 byte の a-z 0-9 -（x- は名指さない）、待っていない corr の応答はどのフレーミングでも捨てる、購読の保持量が足りなければ cause 2 で断ってよい。
   - debug §1 / §2 / §3 / §4 / console §1: channel_group と role_channels の両方に合う組だけを使う、attach reset の後の待ちも max_op_ms に収める、後続の同じ tag も検証する、halt / resume は任意の op、reset の前に DATA0 / DATA1 を書き戻す、console の最小の op は open / read / close / streams。
   - capture §2.2 / §3.2 / §4.1: flags bit1 は stop で終わった区画だけ、repeat の release は state 3 と 5 だけ解放、start の失敗の固定形から世代を取る、group の bind は frame 全体で start の答えの大きさを確かめる。
   - plan §2.1 / §2.4、fixture §2 / §3 / §4: 残る割り当ては取り直さない、unsupported は断った割り当ての tag、uart / i2c / spi の後続の同じ tag も検証する。
-
 - (JA) 第 4 回の独立レビュー（docs/trace/review4/、コードと a09fa45 の食い違いを探すことに絞った）で、41 件の食い違いを見つけて直した。各件は仕様の一文を引用して記録してある（review4 の `divergences`）。主なもの:
   - core §2.3 / §4.3 / §5.1 / §6.1 / §6.2 / §7.1 / §7.2 / §9 / §12: 繰り返さない tag は最初のものを使う（ops、max_op_ms、describe の共通 tag）、open のセッションの判定を書式より先に、順 4 で断る要求も最後の corr と lease を進める、list は 1 フレームに入る分を返す、revision 0 の答えを読まない、資源の番号の使い切りは何も触る前に断る、`end_previous` は lock_state を先に見て空いていれば何も開かない、名前は逆 DNS か `oep.<層>.<名前>` だけ。
   - debug §1 / §2.1 / §3 / §4.4 / §4.5 / §6: connections の swd の tid は DPIDR、read_block / run の結果が max_frame に収まらなければ実行前に unsupported、count 0 は success done 0、reset の channel が attach のピンなら cause 1、reset channel は role 3 で宣言、scan は答えが収まる分だけ試す。
   - capture §3.2 / §3.3 / §3.4 / §4.1: trigger の role は plan の role 番号、trigger の value の範囲、ストリーミングの stop の serial_done、start の失敗とエラーの stopped reason 3、group の stopped の reason、クライアントの read が別の位置の答えを受けない。
   - plan §2.1 / §2.2 / §2.4、link §3、probe.config §1、fixture §4、common §3: plan_release の fn 0 は無視、同じ割り当ての集合は何もしない、port_speed の idle 復帰の取り消しと verify 期限の扱い、label の文字列は UTF-8 であればよい、spi-target の modes は必須、書き込みを含むかもしれない step の一覧を自動で再実行しない。
-
 - (JA) 規則の対応表に第 3 回の独立レビューをかけた（docs/trace/review3/、文書の割り振りをまた変えた）。902 単位のうち 105 単位を弱いとして試験を足した（第 1 回 84、第 2 回 80: まだ収束していない）。見つけて直した a09fa45 との食い違い:
   - core §6.1: lease は応答を生成した時点から数え直す（送信待ち・送信完了によらない）。論理のコア（virtual_core）と、送信完了で数え直すことを求めていた独立検査器 5 本（lease、writer lease、config execution、port_speed execution、response race）を直した。
   - core §2.1: preflight と virtual smoke が、fn 0 の describe の文字列を表示の前に置き換える。
   - probe.config §3: 消去・保存の途中で完全性を確かめられない保存が残ったら、次の起動で何も適用せず storage_state 2 / reason 1 を示す（仮想ベンチ）。
   - debug §3.2 / §4 / §4.4 / §6: 失敗の後の swio の線はプルアップで放す、halt の後は haltreq を下ろす、run は要求全体を max_op_ms のうちに終える、arm-adi の read_block / write_block は組の任意（論理モデルと検査器）。
   - capture §3.3: repeat の samples を容量と関係なくバイト境界へ切り下げない、役割数で上限が rate_range を下回るときは rate の tag で unsupported。
-
 - (JA) 規則の対応表を、文書の割り振りを変えた別の担当で第 2 回の独立レビューにかけた（docs/trace/review2/*.json）。第 1 回が ok とした単位から 80 個の弱い対応を見つけて試験を足し、除外 10 個を覆して試験にした。抜き取りの照合（docs/trace/review/sample-audit.ja.md）では、その後の無作為の 40 個すべてで試験が規則を確かめていた。見つけて直した a09fa45 との食い違い:
   - core §2.1: list のインターフェース名も、表示の前に制御文字と不正な UTF-8 を置き換える。
   - link §3: 戻りを待つ phase 3 の間は、上げた口に新しい通知のフレームを始めない（口が戻ってから送る）。
   - debug §1 / §3 / §4: scan は dmactive を立てる、attach は設定の書き込みと scratch（PROGBUF0）の書き込みと読み戻しで線を確かめ、読み戻らなければ completed failed / line で connection を作らない、method 1 で止まらない hart は timeout で haltreq を下げ hartsel を 0 に戻す、高水準の op の後は hartsel を 0 に戻す。
-
 - (JA) 規則の対応表（docs/trace）を、書いた者と別のレビューで全 902 単位について審査した（docs/trace/review/*.json）: 名指した試験が単位の規則そのものを確かめているか、除外が妥当か。弱い 84 件は試験を足して直し、抜き取りの照合（docs/trace/review/sample-audit.ja.md）でもう 1 件を直した。その過程で見つけた a09fa45 との食い違いを直した:
   - core §4.1: session_id 0 の照会を 32768 回以上続けても、次のセッションの要求が result_lost にならない（半周の前にセッションの keepalive を挟む。メモの 6 行目）。
   - core §6.2 / §10.3 / §10.4: 持ち主が別の経路から open し直しても通知の送り先は変えない（subscribe し直したら移る）、置き換えた購読の未送信分はシリアルの口の送信待ちからも捨てる、シリアルの口と TCP の通知の送信待ちは max_frame × 2 まで。
   - fixture §3 / §4: read_rx の ns TLV は応答が max_frame に収まるときだけ付ける。
   - capture §1.2: アナログの plan が持つピンに probe.config で出力の idle を入れる set を断る（どちらが後でも）。
   - debug §4.3 / §4.5 / §4.6 / §6: クライアントはブロックの長さを max_frame にも収め、仮想ベンチは reset op と高水準の op で havereset を確認応答する。
-
 - (JA) oep-spec a09fa45 の全文書（core、transports、common、plan、restart、link、fixture、debug、console、probe.config、capture）の規範の単位 902 個を、それを確かめる試験と故障注入に 1 つずつ対応させた（docs/trace/*.json、`tools/spec_units.py`、`tools/check_trace.py`。除外は見出し行・用語集・参照の一覧・仕様書の書き方の規則・電気的な線と target 側の規則だけで、理由つき）。足りない規則には tests/test_trace_*.py に試験を足した。その照合で見つけた a09fa45 との食い違いを直した:
   - transports §1 / §3 / §5: HID の report の count が長さを超えたら捨てる（切り詰めない）、HID の口は usage page 0xFF4F・usage 0x45 だけ、full speed の USB でも OUT endpoint の wMaxPacketSize で長さ 0 のパケットを送る、TCP では待っていない corr の応答を読み飛ばし、壊れたフレームでは接続を開き直して confirm する。
   - fixture §2: write を持たない UART は plan の TX role を受けない、configure していない RX のピンは空きの状態。
@@ -83,59 +69,33 @@
   - capture §1.2 / §2.1 / §3.2: アナログの pad は取得が止まれば空きへ戻る、購読の無い間のストリーミングは送れない分を捨てて位置が飛び（flags bit0）、送る余地の無いまま始まった区画は再購読の後も丸ごと捨てる。
   - console §2: dmseq の検査器が、未同期からの初回同期に restart のマークを付けないことを確かめる。
   - core §2.3: 応答の describe で長さの違う共通 tag は使わずに読み飛ばし（`Description.broken`）、繰り返さない tag は最初のものを使う。interface_profiles.json の「mode0 SPI target」（max_length を u32 で書くベクタの誤り、メモ E1）はこの規則で読み、xfail は無くなった。
-
 - (JA) 段階 9 / 9b を規則ごとに確かめ直した（docs/stage9-rule-trace.ja.md）。console の describe mechanisms を仕様どおり `n(u8)、n × mechanism` で宣言・読みするように直した（仮想ベンチ、`Console.mechanisms()`、`oep dump`、検査器とそのモデル。これまで n が無かった）。宣言の検査は n ≥ 1・重複なし・count の一致も確かめる。故障注入を足した: probe.config の項目番号 0・範囲外 channel・長さ違い・未知の mode を受け付ける、変えない set でピンを触る、console の streams の順番違い、失敗した reset にマークを付ける、mechanisms の count 無し / 重複 / 空。
-
 - (JA) oep-spec a09fa45 の節ごとの確認表（docs/spec-a09fa45-sections.ja.md）を足した: core / transports / 各インターフェース文書の番号付きの節ごとに、名指して確かめる試験と独立した検査器を挙げる。足りなかった節に試験を足した: oep.probe.plan の各規則（tests/test_plan.py: list に出す条件、セッションの資源、§1 の宣言、§2.1 の置き換えと原子性・残る割り当て・cause 6 / 4 / 2、§2.2 の解放、§2.3 のピン、§2.4 の断り方）、common §1.5（位置の飛びは通知の欠落で、保持は read で確かめる）、core §2.7 / §12.1、capture §3.1 / §3.6（tests/test_spec_sections.py）。
-
 - (JA) swd の scan と detach をクライアントから送る試験を足した（oep-if-debug §5 の形）。scan の行の `Found.id`（rvswd / swio は DMSTATUS、swd は DPIDR）を足し、`dmstatus` は旧名として残す。
-
 - (JA) oep-spec a09fa45 の core_lifecycle.json と core_policy.json も仮想ベンチに当てる。仮想ベンチは経路ごとの受付を段階で動かせる（`Endpoint.receive` / `process` / `sent` / `close_route` / `credits`、`executions`）: 待っているか答えている途中の同じ要求の写しはまとめて捨て（core §4.4）、持ち主の処理の間は lease を数えず（§6.1）、閉じた経路はまだ実行していない要求を捨ててセッションは残す。任意の受付方針（試験フック `Endpoint.policy`）は、見出しの判定の後、再送記録の前に unavailable cause 7 で断り、fn 0 の confirm / list / describe / clock / lock_state は断らない（§4.3）。checks.json の dmseq の CRC-8 と DATA0 の語も、dmseq の検査器の参照実装と仮想ベンチのモデルに当てる。試験の probe は io.example.* の fn に、ロック不要で副作用の無い読み出しの op を持たせられる（Offered の inner `reads`）。
-
 - (JA) oep-spec a09fa45 の interface_boundaries.json を全節読むようにした（batching / reception / serial_loss / storage / groups / fixtures）。仮想ベンチは、止まったストリーミングの残りを min_bytes / max_delay_ms を待たずに送り（capture §2.1 規則 2、`endpoint.push_due`）、probe.config の save / erase の失敗（試験フック `storage_fault`: 更新前の保存が残る / 保存なし / 読めない）を §3 の表どおりに state へ示し、capture-group の start の途中でトラックが開始に失敗したら completed failed（同じ固定部分）で、失敗したトラックは state 6、未開始は 1、開始済みは stop と同じに止め、世代は戻さない（§4.1）。group の start の拒否には fn の TLV を付けない（ベクタどおり。core §4.3 で任意）。クライアントに `capture.coverage`（受け取った範囲が write_pos まで欠けなく覆うか）と `message.serials_lost`（同じストリームの通し番号の前方への飛びの欠落数、common §1.3）を足した。core_lifecycle / core_policy は SPEC 自身のモデル用のベクタとして読まない（docs/conformance-spec-compatibility.ja.md）。
-
 - (JA) oep-spec a09fa45 への追従の仕上げ。旧インターフェース表の `registry_legacy.py`、b80555a のベクタの写し（`tests/vectors_legacy/`、`tests/test_vectors.py`）と追従待ちの印（`PENDING_FOLLOW`）を外し、どのモジュールも `oep_client.registry` だけを読む。ベクタは `tests/test_spec_vectors.py` が読み、ops.json の capture の出来事とデータフレーム、refusals.json を host が読む試験もそちらへ移した。仮想ベンチの UART の configure は、2 つ目以降の format の値も検査する（core §2.3）。応答の待ちの下限を core §4.4 に合わせた: その要求の処理上限（max_op_ms、fn 0 の confirm / list / describe / clock / keepalive / lock_state は min(max_op_ms, 1000)、max_op_ms を読む前は 1000 ms。`Host.op_bound_ms`）+ 1000 ms + 転送時間で、引数の待ちはそれより長いときだけ使う。`Host.open` は max_op_ms を知らなければ先に fn 0 の describe を読み、最初の confirm の待ちは 2 秒と転送時間（transports §3）。port_speed の試しの後の戻すは、応答を失っても confirm と port_state で立て直すので link 自身の短い待ちを使う。仕様の文書の SHA に固定した独立検査器（host core / deadline / wait / resend / requests / tlv、core smoke、OEP 代表シナリオ smoke、core fixed fields）を a09fa45 と照らし合わせて直し、固定を更新した。
-
 - (JA) oep-spec a09fa45 への追従（段階10: oep.fixture.logic / analog / capture-group と core §10 の通知）。op を 0x10〜0x19 に移し、subscribe / unsubscribe はどのインターフェースでも 0x01 / 0x02、出来事は role 0x03、データは role 0x04（fn 0 は通知を送らず、`Host.subscribe(0)` は送る前に ValueError）。multirate（`oep_client.multirate`、`configure(multirate=)`、`decode_multirate`）と start の blocking_ms（`capture.blocked`）は仕様から無くなったので外した。start の応答は generation だけ（`LogicCapture.start()` は世代を返す）、世代は 0xFFFFFFFF の後に 1 へ戻らず、次の start は再起動まで unavailable cause 2。read は max と len が u16 で、write_pos 以上の位置は write_pos・gap 0・len 0、読めるものが残っていなければ write_pos・gap 1・len 0。ストリーミングのデータ frame は generation と segment_info（区画の position・取った sample 数・start_ns・不確かさ）を毎回持ち、区画をまたがない（`capture.push_segment`、`Received.segments`）。アナログの configure 応答は scale を役割ごとに必ず返し、遅れ 0 の skew は省いてよい（クライアントは 0 で補う）、frontend_used / reference は任意。describe の rate_range は min / max だけ、frontend は減衰を持たない、mode の max_segments は repeat 以外 0。calibration の応答が経路の frame に収まらなければ unsupported（固定部分の印 0）。capture-group は即時のトラックを一度に始めるだけになり（trigger_track・force・triggered・連動 pretrigger は無い）、bind は state 1/4/6 で即時・同じ mode のトラックだけを受け、同じ並びは何もしない、start の応答は start_ns・generation・各トラックの世代、status は state・start_ns・generation。仮想ベンチのスタンドイン fn の op は 0x10 / 0x11 に移した（0x01 / 0x02 は subscribe の番号）。購読の置き換え・解除では、旧購読のまだ送っていない通知を捨てる（core §10.3）。独立した検査器（logic / analog / analog payload / capture-group / group geometry / capture timeline / timeline lifecycle / capture serial / capture metadata / 通知の seq と出力 / host の通知）と見本モデルも a09fa45 に合わせた。op の要否の検査は、mode 2 を宣言する fn に release、mode 3 を宣言する fn に subscribe を求め、analog の calibration は任意、group の force は宣言させない。port_speed の検査器は phase 0〜3 と port_state に合わせ、port_speed を持つ fn に port_state を求める。
-
 - (JA) oep-spec a09fa45 への追従（段階9b: 独立した検査器の console と config）。console 系（attach / mailbox / dmseq / dependencies / cut / reset / writer lease / 宣言）は stream と connection を u32、open の応答を番号だけ、streams の行を stream・connection・mechanism で読む。SDI の write は unsupported、SDI の L≥8 は DATA0 を消すことを確かめる。マークは共通の lost 1 / clear 2 と console の reset 0x40（成功時だけ）・restart 0x41・target_timeout 0x40 で照合し、閉じたストリームの closed / link_lost マークと検査用の archives を外した（閉じた後の read は no_resource）。config 系（config / execution / fallback / paging / power-loss / storage と capture metadata の config 部分）は label / idle / disable の項目、op 0x10〜0x15、generation と storage_state に合わせた。op の要否の検査（registered ops）は console / UART の marks・clear・mark・write（mark には marks が伴う）、riscv-dm の halt・resume、config の state（save には state が伴う）を任意にし、save/erase を持つ probe には storage を求める。
-
 - (JA) oep-spec a09fa45 への追従（段階9: oep.probe.config と oep.target.console）。probe.config は label / idle / disable の項目だけになり（slot、bind、wifi、uart、plan の項目と slot_state / bind_state / wifi の状態は削除）、op を 0x10〜0x15 に移した。set / unset / get は count 付き、unset のキーは tag と channel、hash の代わりに起動から 1 で数える generation、state は storage_state・saved_generation・reason（部分適用 3 を含む）。起動時は保存した項目を 1 つずつ確かめ、disable を先に当て、当てられない項目は外す。idle と disable の同居は unavailable cause 5。console は op を 0x10〜0x17 に移し、ストリームと connection の番号は u32、open はいつも新しいストリーム（応答は番号だけ。同じ connection の 2 つ目の open は cause 6）、ストリームはセッション所有で close・connection の解放・セッションの終わりで消える（以後 no_resource）。streams の行は stream・connection・mechanism。マークは共通の lost / clear / host と console の reset 0x40（reset op の成功時に 1 つ）・restart 0x41 で、attach / detach / closed / link_lost は無い。marks・clear・mark・write は任意で、marks の無い fn の from 3 と SDI への write は unsupported。シリアルの経路は OEP のフレームだけを運ぶ（生のバイトの bind は無い）。CLI の `oep config slot / bind / plan / uart / wifi` と `virtual_bench_serve` の `--slot`・`--bind`・`--uart-plan`・`--wifi-*`・`wifi-air` を外した。`oep pins` は slot の代わりに host が持つ接続プロファイルと label（`nrst` / `power_hi`、`--name` で `<名前>.nrst`）を出し、`--save` は label だけを書く。`config.find_line(cfg, name, profile=None, single=True)` は host ガイド §5.3 の探し方。独立した検査器の console / config 部分は次の段で合わせる。
-
 - (JA) oep-spec a09fa45 への追従（段階8: oep.wire.rvswd / swio / swd と oep.target.riscv-dm / arm-adi）。wire の op を 0x10〜0x13、riscv-dm を 0x10〜0x17、arm-adi を 0x10〜0x12 に移した。attach は method・swdio・swclk・max_speed を固定部分に持ち（pins と max_speed の TLV、search_retries、detach の force、attach の existing と既存接続への合流、scan の skip と count 0 の暗黙の候補一覧は無くなった）、いつも新しい connection を作る（使用中のピンは cause 1、上限は cause 2 で、空きを作るために閉じない）。method 1 は features の attach_halt を宣言するときだけ。connection などの資源番号は u32 で、同じ boot_id の間は再利用しない。connections の entry は connection(u32) と target_id、swd はそれに DPIDR と selected_target TLV を持つ。riscv-dm の reset は mode 0 / 2 と flags bit0 だけ（`RiscvDm.reset()`）。未知の dmi の kind と arm-adi の req の予約 bit は unsupported。後始末に失敗した高水準の op（step_left、block の DATA 復元）は応答の後に connection とその stream を閉じる。クライアントは scan と attach の候補を describe から作る（`WireBase.candidate_pairs()`）。`find_reset_line` は同じピンの接続を先に閉じる。catalog の共通 describe tag（min_clock_hz 0x04、features 0x05、channel_group 0x06）を registry から取るようにした（段階1の取りこぼし）。独立した検査器（attach / scan / scan-options / wire-options / debug / block / step / reset / run / retry / cut / arm-adi）と見本モデルも合わせた。interface_profiles.json の「mode0 SPI target」は max_length を u32 で書いており core §7.4（u16）と食い違うため xfail にした（docs/spec-follow-notes.ja.md E1）。
-
 - (JA) oep-spec a09fa45 への追従（段階7: oep.fixture.i2c-target / spi-target）。op を 0x10〜 に移した。役割の数・ピンの組を満たさない plan は unsupported（role_assignment の tag）、configure の初期化失敗は固定部分の無い completed failed で state 0 に戻る（I2C は stretch を保つ）。SPI は describe に modes（必須）を持ち、宣言に無い mode は unsupported。累計は 0xFFFFFFFF で飽和する。独立した検査器に RUNNING-PLAN と CONFIGURE-FAIL を加え、同じ plan の当て直しで初期化する旧 REPLACE は外した。
-
 - (JA) oep-spec a09fa45 への追従（段階6: oep.fixture.uart と共通の位置付きストリーム）。op を 0x10〜0x16 に移した。configure するまで受信せず、status は baud 0 / format 0（暗黙の既定 baud は無い）。configure が通らなければ baud 0 の completed failed で未 configure に戻り、未送信 TX を捨て、受信済みのデータは読める。write は TX と configure を要する。configure 済みの割り当て変更は cause 6、未 configure の変更は buffer とマークを解く。plan の無い fn の status は cause 6。共通のマーク kind は lost 1 / clear 2 / host 3、console の restart は 0x41、target_timeout は lost の detail 0x40 になり、独立した検査器（stream / uart / uart-stream / dmseq / dependencies）と見本モデルを合わせた。仮想ベンチの read は、押し出された位置で保持データが無くても gap を立てる。
-
 - (JA) oep-spec a09fa45 への追従（段階5: oep.fixture.gpio と出力の強さの削除）。op を 0x10/0x11 に移した。出力の強さ（set の drive TLV、describe の drive_levels、`fixture.Drive` / `DriveLevels`、設定の idle 項目の drive）は仕様から無くなったので、クライアント・仮想ベンチ・CLI（`config idle --drive-*`、`virtual_bench_serve --no-drive-levels`）・独立した検査器と見本モデルから外した。idle 項目は channel(u16) mode(u8) の 3 byte。見本モデルのピンの状態は mode だけを持つ。
-
 - (JA) oep-spec a09fa45 への追従（段階4: oep.probe.link）。op を 0x10〜0x12 に移し、port_state（0x13、port_speed とともに必須）を加えた。仮想ベンチは phase 0〜3 を持ち、送りかけのフレームがある間の復帰を phase 3（理由: verify / idle / session）として保ち、idle の保留だけを元の所有者の要求で取り消す。試す速さは起動時より上だけを受ける。host は異なる session_id への force open の成功でも起動時の速さに戻り、試しが通らなかった後は新しい corr の port_state で phase 0 を確かめる（`link.port_state`）。
-
 - (JA) oep-spec a09fa45 への追従（段階3: oep.probe.restart）。op を 0x10 に移した。restart_max_ms は probe 内部の再起動の上限になったので、`restart_probe` の既定の待ちは restart_max_ms に外部の待ち `RESTART_EXTERNAL_S`（5 s）を足したもの（host ガイド §5.2）。指定した `wait_s` は切り詰めない。
-
 - (JA) oep-spec a09fa45 への追従（段階2: oep.probe.plan）。op を 0x10/0x11 に移し、plan_apply は割り当ての集合が変わる fn だけを置き換え（同じ集合は何も変えない）、動作中の機能（configure 済み UART、state 1 の I2C/SPI target、state 2/3/5 のキャプチャ）は cause 6、group に束ねたトラックは cause 4 で断る。plan の変わったキャプチャは generation を保って state 0 へ戻す。出力 idle のチャンネルは GPIO とロジック以外が cause 5 で断る。plan_release は存在しない fn を unknown_function、束ねたトラックを cause 4 で、何も変えずに断る。
-
 - (JA) oep-spec a09fa45 への追従（段階1: コア）。registry とベクタを同期し、confirm と list entry から flags を外し、corr16 の循環と要求全体での再送照合（同じ corr の異なる要求は malformed、異なる ID の open だけが再送状態を置き換える）、TLV 番号 0 の拒否と 0x7F の通常の tag 化、シリアル経路のフレーム専用化に合わせた。no_connection は no_resource（`host.NoResource`）、accepted と busy は削除。kept session は corr の予約を保存し、次の実行がその先から終了処理を送る。コアの独立検査器（`conformance.py` ほか）を同じ core に合わせ、corr 枯渇前の session 切替検査（rollover）は不要になったため削除した。インターフェースはまだ b80555a の番号で、`registry_legacy.py` と `tests/vectors_legacy/` を段階ごとに外す（`tests/conftest.py` の PENDING_FOLLOW）。
-
 - (JA) 有限保持の通知契約をraw fixtureで確認。通知1frame slotと7byte chunkで購読拒否時不変・seq抜け・frame完了・応答優先を検査し、4つのfaultを検出。本番virtualと実driverの適合は範囲外。
-
 - (JA) 循環corr作業版のlease/forceを確認する選択raw検査を追加。時間と代表資源のadapterを明示入力とし、cache0/1、core-only/資源ありの論理fixtureと6つのfaultで検証。全適合・実タイマー・本番virtualの適合は主張しない。
-
 - (JA) 新コア仕様4681d22の最小バーチャルprofile `core-v1` を追加。既存のvirtual-bench CLIでPTY/TCPとして提供し、コアの拒否順・session・要求全体の再送照合・終了後の履歴とシリアルの過大frame破棄を実装。target/interfaceは持たず、旧profileと旧clientの期待値は固定したまま。独立したTCP length検査器と7項目のfault検査も追加。
-
 - (JA) transport宣言・describeサイズ・ロック中の発見・confirm後の履歴を個別検査。serial port再接続後のsession/lock・再送・終了履歴・leaseを検査し、boot/個体変化は後続を止める。個体照合は仕様に従い大文字小文字を区別しない。
-
 - (JA) コアの独立検査を47項目へ拡張し、独立したシリアルCOBS/CRC検査8項目とport再接続検査4項目を追加。拒否順、未知/破損TLV、owner、拒否結果の再送とlease、自分のsession間のforceを検査。固定部後の応答TLVを許容し、失敗したconfirmの後は他の要求を送らない。raw送受信と各検査器moduleのhashも保存。
-
 - (JA) 指定した SPEC checkout に対する独立した raw-message 適合検査器と項目別 pytest 入口を追加。コアと共通インターフェースの結果、送受信 byte、SPEC commit/dirty/hash、未検査範囲を保存する。旧実装の成功を新仕様の適合として扱わない。プロトコル実装の追従は別段階。既存ベクタ検査は取り込んだ SPEC commit と hash を固定し、明示した checkout の同じ commit と比較する。隣接 HEAD への暗黙依存を除去。
-
 - (EN) Refresh copied shared vectors from oep-spec b80555a. Only explanatory state text changes from fake to virtual bench; request/response bytes and the registry are unchanged.
 - (JA) oep-spec b80555a から共有ベクタを同期。説明文の fake を virtual bench に合わせる変更だけで、要求・応答のバイト列と registry は変更なし。
-
 - (EN) Handle native POSIX baud-rate refusal in port-speed fallback and candidate reporting. Use a standard baud rate for the PTY CLI/report test and cover rejected rates separately.
 - (JA) port_speed の速度設定で POSIX の例外も扱い、fallback と候補の失敗記録へ接続。PTY の CLI 検査は標準速度を使い、OS の拒否は独立に検証する。
-
 - (EN) Add explicit hardware TOML validation, connected-role planning and a hardware-free virtual OEP smoke command (`oep-hardware`). Document shared test ownership and a generic consumer guide; physical execution remains separate.
 - (JA) 明示 TOML の検証、接続に基づく役割計画、実機を使わない仮想 OEP smoke の `oep-hardware` を追加。全体テスト責任と汎用利用者ガイドを整備し、実機実行は別工程とする。
 
