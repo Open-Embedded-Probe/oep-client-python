@@ -1,0 +1,372 @@
+{
+  "schema": 1,
+  "board": {
+    "id": "9489dd2ae0953650",
+    "kind": "rp2",
+    "profile": "promicrorp2350",
+    "model": "rp2350",
+    "port": "cdc:9489dd2ae0953650",
+    "unit_id": "9489dd2ae0953650",
+    "gpio": [
+      26,
+      27
+    ],
+    "disable": 28,
+    "uart": [
+      13,
+      12
+    ],
+    "notes": "SparkFun Pro Micro RP2350 (the firmware enumerates as the project's 1209:4F45); no board-identify id: keyed by unit id"
+  },
+  "client": {
+    "version": "0.0.31",
+    "python": "3.13.16",
+    "commit": "81f6bd6",
+    "dirty": false
+  },
+  "firmware": {
+    "before": {
+      "boot_id": 2569143782,
+      "revision": 1,
+      "max_frame": 1024,
+      "max_inflight": 8,
+      "window": 4096,
+      "firmware": "0.0.32",
+      "model": "rp2350",
+      "unit_id": "9489dd2ae0953650",
+      "chip": "rp2350 v3",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 2
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 10,
+      "plan_fn": 11,
+      "restart_fn": 12,
+      "restart_max_ms": 2000
+    },
+    "source": {
+      "kind": "on-board",
+      "why": "OEP_HW_NOFLASH"
+    },
+    "expected": null,
+    "flashed": false,
+    "after": {
+      "boot_id": 2569143782,
+      "revision": 1,
+      "max_frame": 1024,
+      "max_inflight": 8,
+      "window": 4096,
+      "firmware": "0.0.32",
+      "model": "rp2350",
+      "unit_id": "9489dd2ae0953650",
+      "chip": "rp2350 v3",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 2
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 10,
+      "plan_fn": 11,
+      "restart_fn": 12,
+      "restart_max_ms": 2000
+    }
+  },
+  "started": "2026-10-16T13:15:26+09:00",
+  "seconds": 5.0,
+  "host": {
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+    "python": "3.13.16"
+  },
+  "environment": {
+    "OEP_HW_NOFLASH": "1",
+    "OEP_HW_TARGET": "l103@0,1",
+    "OEP_HW_BOARDS": "9489dd2ae0953650"
+  },
+  "tests": {
+    "flash": {
+      "port": "/dev/ttyACM4",
+      "skipped": "nothing flashed: OEP_HW_NOFLASH",
+      "boot_seconds": 0.0,
+      "firmware_after": "0.0.32",
+      "verdict": "passed"
+    },
+    "identity": {
+      "boot_id": 2569143782,
+      "firmware": "0.0.32",
+      "model": "rp2350",
+      "unit_id": "9489dd2ae0953650",
+      "chip": "rp2350 v3",
+      "revision": 1,
+      "max_frame": 1024,
+      "max_inflight": 8,
+      "interfaces": [
+        "1:oep.wire.rvswd@1",
+        "2:oep.target.riscv-dm@1",
+        "3:oep.target.console@1",
+        "4:oep.wire.swd@1",
+        "5:oep.target.arm-adi@1",
+        "6:oep.fixture.gpio@1",
+        "7:oep.fixture.uart@1",
+        "8:oep.probe.config@1",
+        "9:oep.fixture.analog@1",
+        "10:oep.probe.link@1",
+        "11:oep.probe.plan@1",
+        "12:oep.probe.restart@1"
+      ],
+      "clock_uptime_ns": 504632957000,
+      "clock_round_trip_us": 431.8,
+      "firmware_expected": null,
+      "verdict": "passed"
+    },
+    "required": {
+      "missing": [],
+      "verdict": "passed"
+    },
+    "config": {
+      "storage_bytes": 800,
+      "items_before": 3,
+      "generation_before": 6,
+      "generation_set": 7,
+      "items_after_set": 5,
+      "disabled_refused_as": "PinsTaken",
+      "generation_saved": 7,
+      "storage": "applied",
+      "saved_generation": 7,
+      "reboot": "skipped: oep.probe.restart on a USB probe needs OEP_HW_RESTART=1 (a restart left the device failing enumeration until a replug); the saved settings were not checked across a reboot",
+      "generation_after_unset": 8,
+      "saved_generation_final": 8,
+      "verdict": "passed"
+    },
+    "_settings": {
+      "restored": [
+        {
+          "where": "config",
+          "removed": [],
+          "set_back": 0
+        }
+      ]
+    },
+    "wire": {
+      "target": "l103",
+      "wire": "oep.wire.rvswd",
+      "pairs_asked": [
+        [
+          0,
+          1
+        ]
+      ],
+      "scan_tries": 1,
+      "scan": [
+        {
+          "kind": 1,
+          "pins": [
+            0,
+            1
+          ],
+          "dmstatus": "0x00000c82"
+        }
+      ],
+      "scan_seconds": 0.02,
+      "connection": 5,
+      "dmstatus": "0x00000382",
+      "attach_flags": 8,
+      "speed_hz": 661491,
+      "halted": true,
+      "dpc": "0x0000111c",
+      "target_id": "10073110",
+      "reset": null,
+      "failure": {
+        "loop": 14,
+        "error": "LinkNotHeld: saving DATA0: no try of 4 ran with the debug link held over the whole DMI group (a dropped link loses writes and reads back stale values or all ones), so nothing it read is confirmed; last: looks 0x00000c82 0x00000000 0x00000c82 0x00000000",
+        "dmstatus": [
+          "0x00000c82",
+          "0x00000c82"
+        ],
+        "dmcontrol": "0x00000000",
+        "dpc": "not read: the hart is not halted"
+      },
+      "loops": 50,
+      "loop_seconds": 0.91,
+      "registers_changed": [],
+      "block_address": "0x20000000",
+      "verdict": "failed",
+      "why": "src/oep_client/riscv.py:741: LinkNotHeld"
+    },
+    "gpio": {
+      "channels": [
+        26,
+        27
+      ],
+      "levels": {
+        "26:output_high": 1,
+        "26:output_low": 0,
+        "26:input_pullup": 1,
+        "26:input_pulldown": 0,
+        "27:output_high": 1,
+        "27:output_low": 0,
+        "27:input_pullup": 1,
+        "27:input_pulldown": 0,
+        "both:input": [
+          0,
+          0
+        ]
+      },
+      "verdict": "passed"
+    },
+    "uart": {
+      "rx": 13,
+      "tx": 12,
+      "loopback": false,
+      "actual_115200": 115200,
+      "status_baud": 115200,
+      "status_format": 0,
+      "actual_9600": 9600,
+      "verdict": "passed"
+    },
+    "capture": {
+      "verdict": "skipped",
+      "why": "Skipped: the probe does not list oep.fixture.logic"
+    },
+    "capture_analog": {
+      "channel": 26,
+      "rate": 1000,
+      "samples_asked": 16,
+      "frontend": 0,
+      "declared": {
+        "features": null,
+        "modes": {
+          "1": {
+            "max_samples": 16384,
+            "max_segments": 1
+          }
+        },
+        "rate_range": {
+          "min_hz": 733,
+          "max_hz": 500000,
+          "exact": false
+        },
+        "channels": {
+          "max": 4
+        },
+        "frontends": {
+          "0": {
+            "min_mv": 0,
+            "max_mv": 3300,
+            "attenuation_mdb": 0
+          }
+        }
+      },
+      "shared_with_gpio": "refused: Unavailable: rejected: unavailable",
+      "pull": null,
+      "configured": {
+        "actual_rate": 1000.0,
+        "samples": 16,
+        "segments": 1,
+        "bytes": 32,
+        "layout": {
+          "s": 16,
+          "o": 0,
+          "b": 12,
+          "order": [
+            0
+          ]
+        },
+        "zero": {
+          "0": 0
+        },
+        "scale_nv": {
+          "0": 805861
+        },
+        "frontend_used": {
+          "0": 0
+        },
+        "skew_ns": {
+          "0": 0
+        },
+        "reference": [
+          "supply",
+          3300,
+          false
+        ]
+      },
+      "values": {},
+      "captures": [],
+      "actual_rate": 1000.0,
+      "layout": {
+        "s": 16,
+        "o": 0,
+        "b": 12,
+        "order": [
+          0
+        ]
+      },
+      "samples": 16,
+      "seconds": null,
+      "verdict": "failed",
+      "why": "src/oep_client/message.py:161: ShortPayload"
+    },
+    "capture_group": {
+      "verdict": "skipped",
+      "why": "Skipped: the probe does not list oep.fixture.capture-group"
+    },
+    "i2c_target": {
+      "verdict": "skipped",
+      "why": "Skipped: the probe does not list oep.fixture.i2c-target"
+    },
+    "spi_target": {
+      "verdict": "skipped",
+      "why": "Skipped: the probe does not list oep.fixture.spi-target"
+    },
+    "console": {
+      "target": "l103",
+      "wire": "oep.wire.rvswd",
+      "scan_tries": 1,
+      "connection": 6,
+      "dmstatus": "0x00000c82",
+      "console_fn": 3,
+      "mechanisms": [
+        "sdi",
+        "dmdata",
+        "dmseq"
+      ],
+      "mechanism": "dmseq",
+      "stream": 7,
+      "backlog_bytes": 0,
+      "bytes_seen": 174,
+      "lost": 0,
+      "marks": 0,
+      "streams": [
+        {
+          "stream": 7,
+          "connection": 6,
+          "mechanism": "dmseq"
+        }
+      ],
+      "sample": "BOOT reason=poweron\r\nVREF raw12=1600\r\nVREF raw12=1531\r\nVREF raw1",
+      "verdict": "passed"
+    },
+    "network": {
+      "verdict": "skipped",
+      "why": "Skipped: the probe lists no netif (probe.config \u00a71.3)"
+    },
+    "port_speed": {
+      "verdict": "skipped",
+      "why": "Skipped: port_speed is for a UART bridge probe only"
+    },
+    "session": {
+      "lease_ms": 1000,
+      "boot_id": 2569143782,
+      "after_lapse": "rejected: no session",
+      "forced_new_id": true,
+      "forced_lease_ms": 3000,
+      "old_id_after_force": "locked by oep tests/hw force (2998 ms of its lease left)",
+      "old_id_after_end": "rejected: no session",
+      "verdict": "passed"
+    }
+  }
+}

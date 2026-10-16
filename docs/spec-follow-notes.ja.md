@@ -595,3 +595,13 @@ B にした。core §12 の規則 7 を「他者は名前で識別する所か�
 
 **仕様への提案の候補（まだ出していない）**: 共有ベクタのうち「仕様書の例の probe」に固有の値（fn 19 の CPU 捕捉の 16 ms、analog の skew や scale の値）を前提にするものは、
 実装の harness が名前で見分けて飛ばしている。ベクタに「例の probe の構成」を示す欄があれば、各実装が機械的に扱える。小さいので、ch32rv の追従の後にまとめて判断する。
+
+## 実機の入れ替え（2026-10-16、リリース 0.0.32）
+
+既存の OEP プローブ 6 台（RP2040 `53032847491a571c`、Pico 2 `9489dd2ae0953650`、P4 `30eda0ea068b` / `30eda0e34a0e`、
+P4X `e8f60ae84e28`、classic ESP32 `0070070d9394`）を Arduino 0.0.32 のリリース版に入れ替え、設定を新しい形（ラベル `S.N`、素通し、wifi）で入れ直した。
+
+| # | 見つけたこと | 判断 |
+|---|---|---|
+| H1 | capture の start の応答に、Arduino が仕様に無い blocking_ms(u32) を generation の前に残していた（logic、analog）。仕様の形で読む host は generation を TLV と読んで落ちる。共有ベクタは start の応答を見ていなかった | Arduino を直した（ffd6a14、未リリース。実機は 0.0.32 のまま）。**ベクタへの提案の候補**: capture / analog の start の応答の形 |
+| H2 | CH32L103（Pico 2 の rvswd）は、線を休ませる間に SWCLK が high だと debug module がリセットされる（DMCONTROL 0、hart が走る。リセット要因は増えない）。idle_clock low の attach なら halt が保たれる。旧設定の slot は idle_clock low を持っていた | tests/hw に OEP_HW_IDLE_CLOCK を足した。**仕様への提案の候補**: probe.config の console-passthrough（§1.2）に idle_clock が無く、L103 のような target では素通しを使えない（attach と同じ値を持たせる）。ベンチでは L103 の素通しを外した |

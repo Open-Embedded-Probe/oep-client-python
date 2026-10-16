@@ -336,6 +336,16 @@ def _dm_state(dm: riscv.RiscvDm) -> dict:
     return out
 
 
+def _idle_clock(wire_name: str, rec: dict) -> str | None:
+    """OEP_HW_IDLE_CLOCK=low|high: how the rvswd clock rests between frames (debug §3, the idle_clock TLV) - what the
+    target needs (a CH32L103 resets its debug module when SWCLK rests high). Unset: the attach carries no TLV."""
+    value = os.environ.get("OEP_HW_IDLE_CLOCK") or None
+    if value is None or "rvswd" not in wire_name:              # only rvswd's attach takes it
+        return None
+    rec["idle_clock"] = value
+    return value
+
+
 def test_wire(run: record.Run):
     spec = os.environ.get("OEP_HW_TARGET", "")
     if not spec:
@@ -356,7 +366,7 @@ def test_wire(run: record.Run):
         ch = int(reset, 0)
         assert ch in wire.reset_channels(), f"channel {ch} is not one the wire allows for reset ({wire.reset_channels()})"
         reset_tlv = (ch, 20)
-    conn, status = wire.attach(halt=True, pins=found[0].pins, reset=reset_tlv)
+    conn, status = wire.attach(halt=True, pins=found[0].pins, reset=reset_tlv, idle_clock=_idle_clock(wires[0], rec))
     rec.update(connection=conn, dmstatus=f"{status:#010x}", attach_flags=wire.flags, speed_hz=wire.speed_hz,
                halted=wire.halted, dpc=None if wire.dpc is None else f"{wire.dpc:#010x}",
                target_id=None if wire.target_id is None else wire.target_id[1].hex(), reset=reset_tlv)
@@ -954,7 +964,8 @@ def test_console(run: record.Run):
     rec = run.record("console", target=name, wire=wires[0])
     found = _scan_settled(wire, pairs, rec)
     assert found, "scan found no target"
-    conn, status = wire.attach(halt=False, pins=found[0].pins)        # running: whatever it prints is what arrives
+    conn, status = wire.attach(halt=False, pins=found[0].pins,         # running: whatever it prints is what arrives
+                               idle_clock=_idle_clock(wires[0], rec))
     rec.update(connection=conn, dmstatus=f"{status:#010x}")
     seen = bytearray()
     try:

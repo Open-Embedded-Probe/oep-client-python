@@ -1,0 +1,719 @@
+{
+  "schema": 1,
+  "board": {
+    "id": "esp32-d0wd-v3-0070070d9394",
+    "kind": "esp32",
+    "profile": "esp32",
+    "model": "esp32",
+    "port": "/run/board-identify/by-id/esp32-d0wd-v3-0070070d9394",
+    "flash_port": "/run/board-identify/by-id/esp32-d0wd-v3-0070070d9394",
+    "rates": [
+      921600,
+      500000
+    ],
+    "disable": 34,
+    "label": 35,
+    "notes": "V003 jig (classic ESP32 + CH340): the bench's; ask first"
+  },
+  "client": {
+    "version": "0.0.31",
+    "python": "3.13.16",
+    "commit": "81f6bd6",
+    "dirty": false
+  },
+  "firmware": {
+    "before": {
+      "boot_id": 3791952346,
+      "revision": 1,
+      "max_frame": 512,
+      "max_inflight": 2,
+      "window": 1024,
+      "firmware": "0.0.32",
+      "model": "esp32",
+      "unit_id": "0070070d9394",
+      "chip": "esp32d0wdv3 v3.1",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 1
+        },
+        {
+          "index": 1,
+          "kind": 6
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 12,
+      "port_speed": true,
+      "plan_fn": 13,
+      "restart_fn": 14,
+      "restart_max_ms": 15000
+    },
+    "source": {
+      "kind": "on-board",
+      "why": "OEP_HW_NOFLASH"
+    },
+    "expected": null,
+    "flashed": false,
+    "after": {
+      "boot_id": 3791952346,
+      "revision": 1,
+      "max_frame": 512,
+      "max_inflight": 2,
+      "window": 1024,
+      "firmware": "0.0.32",
+      "model": "esp32",
+      "unit_id": "0070070d9394",
+      "chip": "esp32d0wdv3 v3.1",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 1
+        },
+        {
+          "index": 1,
+          "kind": 6
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 12,
+      "port_speed": true,
+      "plan_fn": 13,
+      "restart_fn": 14,
+      "restart_max_ms": 15000
+    }
+  },
+  "started": "2026-10-16T13:09:22+09:00",
+  "seconds": 56.6,
+  "host": {
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+    "python": "3.13.16"
+  },
+  "environment": {
+    "OEP_HW_RESET": "23",
+    "OEP_HW_NOFLASH": "1",
+    "OEP_HW_TARGET": "v003@16",
+    "OEP_HW_BOARDS": "esp32-d0wd-v3-0070070d9394",
+    "OEP_WIFI_PASS_0": "(set)",
+    "OEP_WIFI_SSID_0": "(set)"
+  },
+  "tests": {
+    "flash": {
+      "port": "/run/board-identify/by-id/esp32-d0wd-v3-0070070d9394",
+      "skipped": "nothing flashed: OEP_HW_NOFLASH",
+      "boot_seconds": 0.2,
+      "firmware_after": "0.0.32",
+      "verdict": "passed"
+    },
+    "identity": {
+      "boot_id": 3791952346,
+      "firmware": "0.0.32",
+      "model": "esp32",
+      "unit_id": "0070070d9394",
+      "chip": "esp32d0wdv3 v3.1",
+      "revision": 1,
+      "max_frame": 512,
+      "max_inflight": 2,
+      "interfaces": [
+        "1:oep.wire.swio@1",
+        "2:oep.target.riscv-dm@1",
+        "3:oep.target.console@1",
+        "4:oep.fixture.gpio@1",
+        "5:oep.fixture.uart@1",
+        "6:oep.fixture.i2c-target@1",
+        "7:oep.fixture.spi-target@1",
+        "8:oep.fixture.logic@1",
+        "9:oep.probe.config@1",
+        "10:oep.fixture.analog@1",
+        "11:oep.fixture.capture-group@1",
+        "12:oep.probe.link@1",
+        "13:oep.probe.plan@1",
+        "14:oep.probe.restart@1"
+      ],
+      "clock_uptime_ns": 73480560000,
+      "clock_round_trip_us": 5614.4,
+      "firmware_expected": null,
+      "verdict": "passed"
+    },
+    "required": {
+      "missing": [],
+      "verdict": "passed"
+    },
+    "config": {
+      "storage_bytes": 800,
+      "items_before": 7,
+      "generation_before": 8,
+      "generation_set": 9,
+      "items_after_set": 9,
+      "disabled_refused_as": "PinsTaken",
+      "generation_saved": 9,
+      "storage": "applied",
+      "saved_generation": 9,
+      "reboot": {
+        "how": "oep.probe.restart",
+        "boot_id_before": 3791952346,
+        "boot_id_after": 2307857129,
+        "restart_max_ms": 15000,
+        "reopen_s": 0.0,
+        "reopened": false,
+        "seconds": 0.66
+      },
+      "storage_after_reboot": "applied",
+      "saved_generation_after_reboot": 1,
+      "generation_after_reboot": 1,
+      "generation_after_unset": 2,
+      "saved_generation_final": 2,
+      "verdict": "passed"
+    },
+    "_settings": {
+      "restored": [
+        {
+          "where": "config",
+          "removed": [],
+          "set_back": 0
+        }
+      ]
+    },
+    "wire": {
+      "target": "v003",
+      "wire": "oep.wire.swio",
+      "pairs_asked": [
+        [
+          16,
+          65535
+        ]
+      ],
+      "scan_tries": 1,
+      "scan": [
+        {
+          "kind": 1,
+          "pins": [
+            16,
+            65535
+          ],
+          "dmstatus": "0x00400c82"
+        }
+      ],
+      "scan_seconds": 0.01,
+      "connection": 1,
+      "dmstatus": "0x00400382",
+      "attach_flags": 8,
+      "speed_hz": 888888,
+      "halted": true,
+      "dpc": "0x00000000",
+      "target_id": "10053100",
+      "reset": [
+        23,
+        20
+      ],
+      "loops": 50,
+      "loop_seconds": 9.28,
+      "registers_changed": [],
+      "block_address": "0x20000000",
+      "verdict": "passed"
+    },
+    "gpio": {
+      "verdict": "skipped",
+      "why": "Skipped: the table gives this board no two free channels that can drive and pull (OEP_HW_GPIO=a,b names them)"
+    },
+    "uart": {
+      "rx": 0,
+      "tx": 0,
+      "loopback": false,
+      "verdict": "skipped",
+      "why": "Skipped: the table gives this board no free UART pair for the fixture UART (OEP_HW_UART=rx,tx names one)"
+    },
+    "capture": {
+      "verdict": "skipped",
+      "why": "Skipped: the table gives this board no two free channels that can pull (OEP_HW_GPIO=a,b names them)"
+    },
+    "capture_analog": {
+      "channel": 34,
+      "rate": 20000,
+      "samples_asked": 200,
+      "frontend": 3,
+      "declared": {
+        "features": null,
+        "modes": {
+          "1": {
+            "max_samples": 16384,
+            "max_segments": 1
+          }
+        },
+        "rate_range": {
+          "min_hz": 20000,
+          "max_hz": 100000,
+          "exact": false
+        },
+        "channels": {
+          "max": 4
+        },
+        "frontends": {
+          "0": {
+            "min_mv": 100,
+            "max_mv": 950,
+            "attenuation_mdb": 0
+          },
+          "1": {
+            "min_mv": 100,
+            "max_mv": 1250,
+            "attenuation_mdb": 2500
+          },
+          "2": {
+            "min_mv": 150,
+            "max_mv": 1750,
+            "attenuation_mdb": 6000
+          },
+          "3": {
+            "min_mv": 150,
+            "max_mv": 2450,
+            "attenuation_mdb": 12000
+          }
+        }
+      },
+      "shared_with_gpio": "refused: Unavailable: rejected: unavailable",
+      "pull": null,
+      "configured": {
+        "actual_rate": 20000.0,
+        "samples": 200,
+        "segments": 1,
+        "bytes": 400,
+        "layout": {
+          "s": 16,
+          "o": 0,
+          "b": 12,
+          "order": [
+            0
+          ]
+        },
+        "zero": {
+          "0": -267
+        },
+        "scale_nv": {
+          "0": 561661
+        },
+        "frontend_used": {
+          "0": 3
+        },
+        "skew_ns": {
+          "0": 0
+        },
+        "reference": [
+          "internal",
+          1100,
+          false
+        ]
+      },
+      "values": {},
+      "captures": [],
+      "actual_rate": 20000.0,
+      "layout": {
+        "s": 16,
+        "o": 0,
+        "b": 12,
+        "order": [
+          0
+        ]
+      },
+      "samples": 200,
+      "seconds": null,
+      "verdict": "failed",
+      "why": "src/oep_client/message.py:161: ShortPayload"
+    },
+    "capture_group": {
+      "verdict": "skipped",
+      "why": "Skipped: the table gives this board no two free channels for the logic track (OEP_HW_GPIO=a,b names them)"
+    },
+    "i2c_target": {
+      "verdict": "skipped",
+      "why": "Skipped: no free channel of the table for role 1 (allowed [4, 5, 13, 14, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33]); OEP_HW_I2C=<channels> names them"
+    },
+    "spi_target": {
+      "verdict": "skipped",
+      "why": "Skipped: no free channel of the table for role 3 (allowed [4, 5, 13, 14, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33]); OEP_HW_SPI=<channels> names them"
+    },
+    "console": {
+      "target": "v003",
+      "wire": "oep.wire.swio",
+      "scan_tries": 1,
+      "connection": 2,
+      "dmstatus": "0x00430c82",
+      "console_fn": 3,
+      "mechanisms": [
+        "sdi",
+        "dmdata",
+        "dmseq"
+      ],
+      "mechanism": "dmseq",
+      "stream": 3,
+      "backlog_bytes": 0,
+      "bytes_seen": 0,
+      "lost": 0,
+      "marks": 0,
+      "streams": [
+        {
+          "stream": 3,
+          "connection": 2,
+          "mechanism": "dmseq"
+        }
+      ],
+      "sample": "",
+      "verdict": "passed"
+    },
+    "network": {
+      "netifs": [
+        "wifi"
+      ],
+      "tcp_port": 7450,
+      "before": [
+        {
+          "netif": "wifi",
+          "state": "up",
+          "reason": "none"
+        }
+      ],
+      "entries": [
+        0
+      ],
+      "set": 1,
+      "unchanged": [],
+      "state": "up",
+      "reason": "none",
+      "entry": 0,
+      "rssi": -85,
+      "address_given": true,
+      "seconds": 0.0,
+      "verdict": "passed"
+    },
+    "port_speed": {
+      "rates": [
+        "now",
+        921600,
+        500000
+      ],
+      "inflight": [
+        1,
+        2
+      ],
+      "frames": 100,
+      "size": 505,
+      "timeout": 0.3,
+      "results": [
+        {
+          "asked": "now",
+          "rate": 115200,
+          "actual": null,
+          "switched": false,
+          "why": "",
+          "cells": [
+            {
+              "rate": 115200,
+              "pattern": "in",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 5.0278980799921555,
+              "kb_s": 10.043958568085928,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 115200,
+              "pattern": "in",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 4.639025217999006,
+              "kb_s": 10.885907626469564,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 115200,
+              "pattern": "out",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 4.962392077999539,
+              "kb_s": 10.176543732585875,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 115200,
+              "pattern": "out",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 5.020764090004377,
+              "kb_s": 10.05823000139327,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 115200,
+              "pattern": "duplex",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 5.026986103999661,
+              "kb_s": 10.045780703435858,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 115200,
+              "pattern": "duplex",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 2.6345965759974206,
+              "kb_s": 19.16802005289232,
+              "error": "",
+              "error_rate": 0.0
+            }
+          ]
+        },
+        {
+          "asked": 921600,
+          "rate": 921600,
+          "actual": 922190,
+          "switched": true,
+          "why": "",
+          "cells": [
+            {
+              "rate": 921600,
+              "pattern": "in",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 1.0183651719999034,
+              "kb_s": 49.589284265118984,
+              "error": "",
+              "error_rate": 0.0,
+              "threshold": 0.05
+            },
+            {
+              "rate": 921600,
+              "pattern": "in",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 0.6721374600019772,
+              "kb_s": 75.13344070995753,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 921600,
+              "pattern": "out",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 1.0740093670028728,
+              "kb_s": 47.02007408084824,
+              "error": "",
+              "error_rate": 0.0,
+              "threshold": 0.05
+            },
+            {
+              "rate": 921600,
+              "pattern": "out",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 1.084465376989101,
+              "kb_s": 46.56672409423314,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 921600,
+              "pattern": "duplex",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 1.070845090012881,
+              "kb_s": 47.15901531508404,
+              "error": "",
+              "error_rate": 0.0,
+              "threshold": 0.05
+            },
+            {
+              "rate": 921600,
+              "pattern": "duplex",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 0.6218879880034365,
+              "kb_s": 81.2043341794229,
+              "error": "",
+              "error_rate": 0.0
+            }
+          ],
+          "passed": true,
+          "failing": []
+        },
+        {
+          "asked": 500000,
+          "rate": 500000,
+          "actual": 500000,
+          "switched": true,
+          "why": "",
+          "cells": [
+            {
+              "rate": 500000,
+              "pattern": "in",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 1.5875145260069985,
+              "kb_s": 31.81073254618986,
+              "error": "",
+              "error_rate": 0.0,
+              "threshold": 0.05
+            },
+            {
+              "rate": 500000,
+              "pattern": "in",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 1.1573720589949517,
+              "kb_s": 43.63333260684866,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 500000,
+              "pattern": "out",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 1.5980446729954565,
+              "kb_s": 31.601119075939362,
+              "error": "",
+              "error_rate": 0.0,
+              "threshold": 0.05
+            },
+            {
+              "rate": 500000,
+              "pattern": "out",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 1.5563165299972752,
+              "kb_s": 32.44841202071433,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 500000,
+              "pattern": "duplex",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 1.5710736070031999,
+              "kb_s": 32.14362444566046,
+              "error": "",
+              "error_rate": 0.0,
+              "threshold": 0.05
+            },
+            {
+              "rate": 500000,
+              "pattern": "duplex",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 0.857018580994918,
+              "kb_s": 58.92521016449171,
+              "error": "",
+              "error_rate": 0.0
+            }
+          ],
+          "passed": true,
+          "failing": []
+        }
+      ],
+      "seconds": 41.3,
+      "failing": [],
+      "passed_rates": [
+        921600,
+        500000
+      ],
+      "failed_rates": [],
+      "link_counters": {
+        "corrupt": 0,
+        "stale": 0,
+        "noise": 324,
+        "retries": 0,
+        "resyncs": 0
+      },
+      "verdict": "passed"
+    },
+    "session": {
+      "lease_ms": 1000,
+      "boot_id": 2307857129,
+      "after_lapse": "rejected: no session",
+      "forced_new_id": true,
+      "forced_lease_ms": 3000,
+      "old_id_after_force": "locked by oep tests/hw force (2994 ms of its lease left)",
+      "old_id_after_end": "rejected: no session",
+      "verdict": "passed"
+    }
+  }
+}
