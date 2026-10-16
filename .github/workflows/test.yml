@@ -26,13 +26,15 @@ jobs:
         run: uv run --locked pytest tests
 
       - name: Verify explicit virtual equipment contract
+        id: equipment
         env:
           OEP_HW_CONFIG: tests/fixtures/hardware.virtual.toml
           OEP_HW_RESULTS: .pytest-results/equipment
         run: uv run --locked pytest tests/equipment --junitxml=.pytest-results/equipment.xml -o junit_family=legacy
 
       - name: Upload equipment evidence
-        if: always()
+        # only when the equipment step ran (a failed test step above skips it: nothing to upload)
+        if: always() && steps.equipment.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: virtual-equipment-evidence
