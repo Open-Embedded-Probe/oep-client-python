@@ -117,7 +117,8 @@ def test_save_state_and_the_next_boot():
 def test_describe_and_a_probe_without_storage():
     ep, hst = open_bench()
     d = config.ProbeConfig(hst).describe()
-    assert d.storage_bytes == 4096 and d.items == ["label", "idle", "disable", "passthrough", "console-passthrough"]
+    assert d.storage_bytes == 4096 and d.items == ["label", "idle", "disable", "passthrough", "console-passthrough",
+                                                 "rvswd-rest"]
     probe = virtual_bench.VirtualProbe("no-storage", 1024, [virtual_bench._config(o.fn, 0, storage=0)
                                        if o.name == "oep.probe.config" else o for o in virtual_bench.p4_bench().offered])
     ep = endpoint.Endpoint(probe, Clock())

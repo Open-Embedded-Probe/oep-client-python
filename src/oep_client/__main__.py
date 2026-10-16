@@ -353,6 +353,12 @@ def _config_parser(sub) -> None:
     idle.add_argument("channel", type=int)
     idle.add_argument("mode", choices=sorted(config.IDLE))
     idle.add_argument("--save", action="store_true")
+    rest = cs.add_parser("rvswd-rest", help="how rvswd rests a port's SWCLK: auto (the probe decides from the target_id), "
+                                            "or high / low fixed (the automatic choice off; debug §3.1)")
+    rest.add_argument("probe")
+    rest.add_argument("channel", type=int, help="the port's SWCLK channel")
+    rest.add_argument("mode", choices=sorted(config.REST_MODE))
+    rest.add_argument("--save", action="store_true")
     dis = cs.add_parser("disable", help="channels the probe never drives or sets up (not on this board)")
     dis.add_argument("probe")
     dis.add_argument("channels", type=int, nargs="+")
@@ -435,6 +441,8 @@ def _config(args) -> int:
             _change(hst, cfg, [config.Label(channel=args.channel, text=args.text)], args.save)
         elif args.action == "idle":
             _change(hst, cfg, [config.Idle(channel=args.channel, mode=args.mode)], args.save)
+        elif args.action == "rvswd-rest":
+            _change(hst, cfg, [config.RvswdRest(channel=args.channel, mode=args.mode)], args.save)
         elif args.action == "disable":
             _change(hst, cfg, [config.Disable(channel=ch) for ch in args.channels], args.save)
         elif args.action == "remove":

@@ -36,6 +36,7 @@ NAMES = tuple(_CFG.names["setting"])                            # the standard i
 ITEM = {k.replace("-", "_"): i + 1 for i, k in enumerate(NAMES)}
 DESCRIBE = _CFG.tlv["describe"]
 IDLE = {k.replace("_", "-"): v for k, v in _CFG.enum["idle_mode"].items()}
+REST_MODE = dict(_CFG.enum["rvswd_rest_mode"])          # rvswd-rest: auto / high / low (debug §3.1)
 STORAGE_STATE = {v: k for k, v in _CFG.enum["storage_state"].items()}
 UNREADABLE = {v: k for k, v in _CFG.enum["storage_unreadable"].items()}
 FORM = _CFG.enum["setting_form"]
@@ -138,6 +139,27 @@ class Passthrough:
 
     def data(self) -> bytes:
         return struct.pack("<HHIB", self.fn, self.rx, self.baud, self.format)
+
+
+@dataclass
+class RvswdRest:
+    """How an rvswd attach without idle_clock rests the SWCLK on `channel` (the port's SWCLK; debug §3.1): auto - the
+    probe's choice from the target_id it reads (also with no item) - or high / low fixed, the automatic choice off for
+    that port. An attach's idle_clock TLV still decides."""
+    channel: int
+    mode: str = "auto"
+    NAME = "rvswd-rest"
+
+    def key(self) -> int:
+        return self.channel
+
+    def value(self) -> bytes:
+        return struct.pack("<H", self.key()) + self.data()
+
+    def data(self) -> bytes:
+        if self.mode not in REST_MODE:
+            raise ValueError(f"rvswd-rest mode {self.mode!r}: one of {', '.join(REST_MODE)}")
+        return bytes([REST_MODE[self.mode]])
 
 
 @dataclass(kw_only=True)
@@ -293,6 +315,8 @@ def decode(name: str, key: int, d: bytes, setting: Setting | None = None, netifs
     try:
         if name == "label":
             return Label(channel=key, text=d.decode("utf-8", "replace"))
+        if name == "rvswd-rest" and len(d) == 1 and d[0] in REST_MODE.values():
+            return RvswdRest(channel=key, mode={v: k for k, v in REST_MODE.items()}[d[0]])
         if name == "idle" and len(d) == 1:
             return Idle(channel=key, mode=_name(IDLE, d[0]))
         if name == "disable" and not d:

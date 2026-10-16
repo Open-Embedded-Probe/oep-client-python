@@ -117,7 +117,8 @@ RESET_MODE = _RV.enum["reset_mode"]
 READ_FROM = reg.COMMON.enum["read_from"]                  # position, oldest, now, last_mark (common §1.2)
 STEP_LEFT = _RV.tlv["step_answer"]["step_left"]            # step's answer: the hart could not be halted again (§4.2)
 ITEM = {k.replace("-", "_"): k for k in cfgmod.NAMES}       # the standard items by name (probe.config §1, core §7.7)
-CHANNEL_ITEMS = (ITEM["label"], ITEM["idle"], ITEM["disable"])   # items keyed by a channel (probe.config §1)
+CHANNEL_ITEMS = (ITEM["label"], ITEM["idle"], ITEM["disable"], ITEM["rvswd_rest"])   # keyed by a channel (probe.config §1)
+REST_MODE = cfgmod.REST_MODE
 IDLE_MODE = _CFG.enum["idle_mode"]
 CFG_DESCRIBE = cfgmod.DESCRIBE
 SETTING_FORM = _CFG.enum["setting_form"]
@@ -137,7 +138,18 @@ I2C_FEATURES, SPI_FEATURES = _I2C.enum["features"], _SPI.enum["features"]
 TARGET_ROLES = {"oep.fixture.gpio": {1}, "oep.fixture.uart": {1, 2}, _I2C.name: set(_I2C.enum["role"].values()),
                 _SPI.name: set(_SPI.enum["role"].values())}   # the plan roles each fixture takes
 UART_FORMAT_MASK = 0x1F                                    # the defined format bits (fixture §2)
-_T_SCAN, _T_ATTACH, _T_ATTACH_ANSWER = (reg.WIRE_RVSWD.tlv[k] for k in ("scan", "attach", "attach_answer"))
+_T_SCAN, _T_ATTACH, _T_ATTACH_ANSWER, _T_CONNECTIONS_ANSWER = (
+    reg.WIRE_RVSWD.tlv[k] for k in ("scan", "attach", "attach_answer", "connections_answer"))
+_IDLE_CLOCK = reg.WIRE_RVSWD.enum["idle_clock"]
+
+
+def rvswd_rest(target_id: int | None) -> int:
+    """The rest an rvswd attach without idle_clock uses (debug §3.1): low for a family in the registry's
+    idle_low_family (target_id >> target_id_family.shift), high otherwise and when no target_id was read."""
+    if target_id is None:
+        return _IDLE_CLOCK["high"]
+    family = target_id >> reg.WIRE_RVSWD.enum["target_id_family"]["shift"]
+    return _IDLE_CLOCK["low"] if family in reg.WIRE_RVSWD.enum["idle_low_family"].values() else _IDLE_CLOCK["high"]
 _WIRE_INDEX = reg.WIRE_RVSWD.tlv["unsupported_payload"]["index"]   # scan's candidate index (debug §1)
 ATTACH_METHOD = reg.WIRE_RVSWD.enum["attach_method"]
 GPIO_MODE_MAX = max(_GPIO.enum["mode"].values())           # 6: the modes revision 1 defines are 0-6 (fixture §1)
@@ -542,7 +554,7 @@ class Connection:
 
 
 ITEM_SIZES = {ITEM["idle"]: 1, ITEM["disable"]: 0, ITEM["passthrough"]: 9,     # the data of a fixed length (probe.config §1)
-              ITEM["console_passthrough"]: 13, ITEM["ipv4"]: 14}
+              ITEM["console_passthrough"]: 13, ITEM["ipv4"]: 14, ITEM["rvswd_rest"]: 1}
 PASSTHROUGHS = (ITEM["passthrough"], ITEM["console_passthrough"])
 
 
@@ -2293,8 +2305,11 @@ class Endpoint:
             if tg.havereset:
                 tg.havereset, flags = False, flags | ATTACH_FLAGS["havereset_acked"]
             c = self.conns[cid]
-            if idle_clock is not None:
-                c.idle_clock = idle_clock
+            if rvswd:                                              # the host's TLV, the setting, else from target_id (§3.1)
+                setting = self.config.get((ITEM["rvswd_rest"], pair[1]), bytes([REST_MODE["auto"]]))[0]
+                c.idle_clock = (idle_clock if idle_clock is not None
+                                else _IDLE_CLOCK["high"] if setting == REST_MODE["high"]
+                                else _IDLE_CLOCK["low"] if setting == REST_MODE["low"] else rvswd_rest(c.tid))
             if reset is not None and tg.reset_line not in (None, channel):
                 if method == 1:                                    # a line that resets nothing: halted where it ran
                     tg.halted, tg.dpc = True, tg.reset_vector + 0x2f8
@@ -2308,6 +2323,8 @@ class Endpoint:
             if tg.halted and method == 1:                          # bit3: the probe saw hart 0 halted (§3)
                 flags |= ATTACH_FLAGS["halted"]
                 tail += m.tlv(_T_ATTACH_ANSWER["dpc"], struct.pack("<I", tg.dpc))
+            if rvswd:                                              # the rest in use, always (§3.1)
+                tail += m.tlv(_T_ATTACH_ANSWER["idle_clock"], bytes([c.idle_clock]))
             return self._answer(struct.pack("<IIBI", cid, tg.dmstatus(), flags, c.speed) + tail)
         if op == O["detach"]:
             cid = t.take("I")
@@ -2321,24 +2338,31 @@ class Endpoint:
             first = t.take("B")
             t.tail()
             mine = sorted((c.order, cid) for cid, c in self.conns.items() if c.fn == fn)
-            rows = []
+            rows, rests = [], []
             for _, cid in mine:
                 c = self.conns[cid]
                 tid = b"" if c.tid is None else struct.pack("<I", c.tid)
                 scheme = TARGET_ID_SCHEME["dmi_7f"] if tid else 0
                 rows.append(struct.pack("<IHHIBB", cid, *c.pair, c.speed, scheme, len(tid)) + tid)
-            return m.COMPLETED, m.SUCCESS, self._paged(rows, first)
+                rests.append(c.idle_clock)
+            # rvswd: TLV idle_clock (entry_index, rest) for every entry of the page (§2.1, §3.1)
+            return m.COMPLETED, m.SUCCESS, self._paged(rows, first, rests if rvswd else None)
         return m.REJECTED, m.UNKNOWN_OPERATION, b""
 
-    def _paged(self, rows: list[bytes], first: int) -> bytes:
-        """more(u8) count(u8) the rows from `first` that fit the frame (connections, streams: core §2.3's lists)."""
+    def _paged(self, rows: list[bytes], first: int, rests: list[int] | None = None) -> bytes:
+        """more(u8) count(u8) the rows from `first` that fit the frame (connections, streams: core §2.3's lists);
+        with `rests` (rvswd's connections), each row's TLV idle_clock (entry_index, rest) after them, counted in."""
         budget = self.probe.max_frame - m.RESULT_HEADER - 2
         out: list[bytes] = []
-        for row in rows[first:]:
-            if out and sum(map(len, out)) + len(row) > budget:
+        tail: list[bytes] = []
+        for i, row in enumerate(rows[first:]):
+            extra = b"" if rests is None else m.tlv(_T_CONNECTIONS_ANSWER["idle_clock"], bytes([len(out), rests[first + i]]))
+            if out and sum(map(len, out + tail)) + len(row) + len(extra) > budget:
                 break
             out.append(row)
-        return bytes([int(first + len(out) < len(rows)), len(out)]) + b"".join(out)
+            if extra:
+                tail.append(extra)
+        return bytes([int(first + len(out) < len(rows)), len(out)]) + b"".join(out) + b"".join(tail)
 
     def _attach_methods(self, fn: int) -> set[int]:
         """method 0, and 1 when the wire declares features bit0 attach_halt (debug §3)."""
@@ -3275,6 +3299,8 @@ class Endpoint:
                     return True
                 if mode in (IDLE_MODE["pull_up"], IDLE_MODE["pull_down"]) and mode in self.no_pull.get(key, ()):
                     return True
+            if name == ITEM["rvswd_rest"] and d[0] not in REST_MODE.values():
+                return True                                        # a mode the definition leaves unused (§1)
         return False
 
     def _shown(self, name: str, d: bytes) -> bytes:

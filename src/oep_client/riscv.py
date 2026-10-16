@@ -307,17 +307,22 @@ class WireBase(Interface):
             for _ in range(count):
                 conn, swdio, swclk, speed, scheme, n = rd.take("IHHIBB")
                 tid = rd.bytes(n)
-                page.append([conn, (swdio, swclk), speed, (scheme, tid) if scheme else None, None])
+                page.append([conn, (swdio, swclk), speed, (scheme, tid) if scheme else None, None, None])
             for tag, value in m.split_tlvs(rd.rest()):
                 # entry_index(u8) targetsel(u32), repeatable; bit 7 in an answer: an unknown tag (core §2.2, §2.3)
-                if tag == _SELECTED_TARGET and len(value) == 5 and value[0] < len(page):
+                if self.name == "oep.wire.swd" and tag == _SELECTED_TARGET and len(value) == 5 and value[0] < len(page):
                     page[value[0]][4] = struct.unpack_from("<I", value, 1)[0]
+                # rvswd: entry_index(u8) idle_clock(u8) for every entry (debug §2.1, §3.1)
+                if self.name == "oep.wire.rvswd" and tag == _REST and len(value) == 2 and value[0] < len(page):
+                    page[value[0]][5] = _REST_NAMES.get(value[1])
             out += [ConnectionInfo(*row) for row in page]
             if not more or not count or len(out) > 0xFF:
                 return out
 
 
 _SELECTED_TARGET = reg.WIRE_SWD.tlv["connections_answer"]["selected_target"]
+_REST = reg.WIRE_RVSWD.tlv["connections_answer"]["idle_clock"]
+_REST_NAMES = {v: k for k, v in reg.WIRE_RVSWD.enum["idle_clock"].items()}
 
 
 @dataclass(frozen=True)
@@ -329,6 +334,7 @@ class ConnectionInfo:
     speed_hz: int
     target_id: tuple[int, bytes] | None
     targetsel: int | None = None
+    idle_clock: str | None = None      # rvswd: "high" / "low", the rest the connection uses (debug §3.1)
 
 
 class Wire(WireBase):
@@ -342,6 +348,7 @@ class Wire(WireBase):
     SCHEME_DMI_7F = reg.COMMON.enum["target_id_scheme"]["dmi_7f"]   # the u32 at DMI 0x7F (oep-if-debug §3)
 
     TAG_DPC = reg.WIRE_RVSWD.tlv["attach_answer"]["dpc"]
+    TAG_REST = reg.WIRE_RVSWD.tlv["attach_answer"]["idle_clock"]
 
     def __init__(self, hst: h.Host, name: str = "oep.wire.rvswd"):
         super().__init__(hst, name)
@@ -397,6 +404,10 @@ class Wire(WireBase):
         dpc = tail.get(self.TAG_DPC)
         # dpc is a u32: a value of another length is broken, not used (core §2.3)
         self.dpc = struct.unpack("<I", dpc)[0] if self.halted and dpc is not None and len(dpc) == 4 else None
+        # rvswd: the rest the connection uses, the host's or the probe's choice from target_id (debug §3.1)
+        rest = tail.get(self.TAG_REST) if self.name == "oep.wire.rvswd" else None
+        names = {v: k for k, v in self.IDLE_CLOCK.items()}
+        self.idle_clock = names.get(rest[0]) if rest is not None and len(rest) == 1 else None
         return conn, status
 
     def attach_under_reset(self, channel: int, hold_ms: int = 20, max_speed: int | None = None,

@@ -337,8 +337,9 @@ def _dm_state(dm: riscv.RiscvDm) -> dict:
 
 
 def _idle_clock(wire_name: str, rec: dict) -> str | None:
-    """OEP_HW_IDLE_CLOCK=low|high: how the rvswd clock rests between frames (debug §3, the idle_clock TLV) - what the
-    target needs (a CH32L103 resets its debug module when SWCLK rests high). Unset: the attach carries no TLV."""
+    """OEP_HW_IDLE_CLOCK=low|high: how the rvswd clock rests between frames (debug §3, the idle_clock TLV), the host's
+    explicit choice. Unset: no TLV - the probe rests the line as the target's family needs (debug §3.1, from target_id;
+    a CH32L103 low), and the test records the rest the attach answered."""
     value = os.environ.get("OEP_HW_IDLE_CLOCK") or None
     if value is None or "rvswd" not in wire_name:              # only rvswd's attach takes it
         return None
@@ -367,6 +368,7 @@ def test_wire(run: record.Run):
         assert ch in wire.reset_channels(), f"channel {ch} is not one the wire allows for reset ({wire.reset_channels()})"
         reset_tlv = (ch, 20)
     conn, status = wire.attach(halt=True, pins=found[0].pins, reset=reset_tlv, idle_clock=_idle_clock(wires[0], rec))
+    rec["rest"] = getattr(wire, "idle_clock", None)               # rvswd: the rest in use (debug §3.1)
     rec.update(connection=conn, dmstatus=f"{status:#010x}", attach_flags=wire.flags, speed_hz=wire.speed_hz,
                halted=wire.halted, dpc=None if wire.dpc is None else f"{wire.dpc:#010x}",
                target_id=None if wire.target_id is None else wire.target_id[1].hex(), reset=reset_tlv)
