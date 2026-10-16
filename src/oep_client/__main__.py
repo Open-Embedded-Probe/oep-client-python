@@ -29,7 +29,9 @@ from __future__ import annotations
 import argparse
 import sys
 
+import getpass
 import json
+import os
 import struct
 
 from . import catalog, config, core, dump, virtual_bench, host, link
@@ -332,7 +334,8 @@ def _speed(args) -> int:
 # ---- oep config ----------------------------------------------------------------------------------------------------
 
 def _config_parser(sub) -> None:
-    c = sub.add_parser("config", help="the probe's channel settings (oep.probe.config): labels, idle, disable, save")
+    c = sub.add_parser("config", help="the probe's settings (oep.probe.config): labels, idle, disable, pass-throughs, "
+                                      "Wi-Fi / IPv4, its own settings, save")
     cs = c.add_subparsers(dest="action", required=True)
     show = cs.add_parser("show", help="the settings, what the probe declares, and the storage state")
     show.add_argument("probe")
@@ -359,6 +362,49 @@ def _config_parser(sub) -> None:
     rm.add_argument("kind", help="the item's name: label, idle, disable, passthrough, wifi, ... or a probe's own")
     rm.add_argument("channel", type=int)
     rm.add_argument("--save", action="store_true")
+    wifi = cs.add_parser("wifi", help="a Wi-Fi network the probe tries, by entry (the passphrase asked, never shown)")
+    wifi.add_argument("probe")
+    wifi.add_argument("entry", type=int)
+    wifi.add_argument("ssid")
+    pw = wifi.add_mutually_exclusive_group()
+    pw.add_argument("--open", action="store_true", help="a network without a passphrase")
+    pw.add_argument("--keep", action="store_true", help="keep the entry's passphrase (pass_len 0xFF)")
+    pw.add_argument("--passphrase-env", metavar="VAR", help="take the passphrase from this environment variable")
+    wifi.add_argument("--save", action="store_true")
+    ip = cs.add_parser("ipv4", help="how a netif gets its IPv4 address: dhcp, or a.b.c.d/prefix")
+    ip.add_argument("probe")
+    ip.add_argument("address", help="dhcp, or a.b.c.d/prefix")
+    ip.add_argument("--netif", default="wifi", help="the netif's name (describe's netif list; default wifi)")
+    ip.add_argument("--gateway")
+    ip.add_argument("--dns")
+    ip.add_argument("--save", action="store_true")
+    net = cs.add_parser("network", help="the network now: the TCP port, each netif's state and address (lock-free)")
+    net.add_argument("probe")
+    net.add_argument("--json", action="store_true")
+    pt = cs.add_parser("passthrough", help="a serial port carries a fixture UART's receive outside the OEP frames")
+    pt.add_argument("probe")
+    pt.add_argument("port", type=int, help="fn 0's transport index of a serial port")
+    pt.add_argument("uart", help="the fixture UART: fn number or name#instance")
+    pt.add_argument("rx", type=int, help="the RX channel")
+    pt.add_argument("--baud", type=int, default=115200)
+    pt.add_argument("--format", type=int, default=0)
+    pt.add_argument("--save", action="store_true")
+    cp = cs.add_parser("console-passthrough", help="a serial port carries the target's debug console outside the frames")
+    cp.add_argument("probe")
+    cp.add_argument("port", type=int, help="fn 0's transport index of a serial port")
+    cp.add_argument("wire", help="the wire: fn number or name#instance (oep.wire.rvswd / oep.wire.swio)")
+    cp.add_argument("swdio", type=int)
+    cp.add_argument("swclk", type=int, nargs="?", default=0xFFFF)
+    cp.add_argument("--console", required=True, help="the console: fn number or name#instance")
+    cp.add_argument("--mechanism", required=True, help="the console's mechanism by name (sdi, dmdata, dmseq, ...)")
+    cp.add_argument("--max-speed", type=int, default=1_000_000)
+    cp.add_argument("--save", action="store_true")
+    own = cs.add_parser("set", help="a probe's own setting by its name (reverse-DNS), its form from describe")
+    own.add_argument("probe")
+    own.add_argument("name")
+    own.add_argument("value", help="text, a number (u32), 0 / 1 (bool), a.b.c.d (ipv4) or hex (bytes)")
+    own.add_argument("--key", type=int, default=0)
+    own.add_argument("--save", action="store_true")
     for name in ("save", "erase"):
         cs.add_parser(name, help=f"{name} the stored settings").add_argument("probe")
 
@@ -393,6 +439,37 @@ def _config(args) -> int:
             _change(hst, cfg, [config.Disable(channel=ch) for ch in args.channels], args.save)
         elif args.action == "remove":
             _change(hst, cfg, [config.remove(args.kind, args.channel)], args.save)
+        elif args.action == "wifi":
+            if args.keep:
+                passphrase = None
+            elif args.open:
+                passphrase = ""
+            elif args.passphrase_env:
+                passphrase = os.environ[args.passphrase_env]
+            else:
+                passphrase = getpass.getpass(f"passphrase for {args.ssid}: ")
+            _change(hst, cfg, [config.Wifi(entry=args.entry, ssid=args.ssid, passphrase=passphrase)], args.save)
+        elif args.action == "ipv4":
+            address = None if args.address == "dhcp" else args.address
+            _change(hst, cfg, [config.Ipv4(netif=args.netif, address=address, gateway=args.gateway, dns=args.dns)],
+                    args.save)
+        elif args.action == "network":
+            return _network(cfg, args.json)
+        elif args.action == "passthrough":
+            _change(hst, cfg, [config.Passthrough(port=args.port, fn=_fn(hst, args.uart), rx=args.rx, baud=args.baud,
+                                                  format=args.format)], args.save)
+        elif args.action == "console-passthrough":
+            from . import console as _console
+            cfn = _fn(hst, args.console)
+            names = [v.decode() for t, v in core.describe(hst, cfn) if t == _console.Console.TAG_MECHANISM]
+            if args.mechanism not in names:
+                raise SystemExit(f"the console declares no mechanism {args.mechanism} ({', '.join(names)})")
+            mech = names.index(args.mechanism) + 1   # the place in describe's list, from 1 (core §7.7)
+            _change(hst, cfg, [config.ConsolePassthrough(port=args.port, wire_fn=_fn(hst, args.wire), swdio=args.swdio,
+                                                         swclk=args.swclk, max_speed=args.max_speed, console_fn=cfn,
+                                                         mechanism=mech)], args.save)
+        elif args.action == "set":
+            _change(hst, cfg, [config.Own(args.name, _own_value(cfg, args.name, args.value), args.key)], args.save)
         else:
             core.take(hst, 3000, owner="oep config")
             try:
@@ -409,6 +486,45 @@ def _config(args) -> int:
         return 2
     finally:
         hst.link.close()
+
+
+def _fn(hst, ref: str) -> int:
+    """A fn by number, or by `name#instance` (host guide §5.3; #0 may be left out) resolved through list."""
+    if ref.isdigit():
+        return int(ref)
+    name, _, instance = ref.partition("#")
+    for e in core.list_entries(hst, name, exact=True):
+        if e.instance == int(instance or 0):
+            return e.fn
+    raise SystemExit(f"no {ref} on this probe")
+
+
+def _own_value(cfg, name: str, text: str):
+    """A probe's own setting's value from the command line, by the form its describe declares (probe.config §1.6)."""
+    form = cfg.describe().by_name(name).form
+    if form == config.FORM["u32"]:
+        return int(text, 0)
+    if form == config.FORM["bool"]:
+        return text.lower() in ("1", "true", "on", "yes")
+    if form == config.FORM["bytes"]:
+        return bytes.fromhex(text)
+    return text
+
+
+def _network(cfg, as_json: bool) -> int:
+    """op network (lock-free): the TCP port and each netif's state."""
+    net = cfg.network()
+    if as_json:
+        print(json.dumps({"tcp_port": net.tcp_port, "netifs": [vars(n) for n in net.netifs]}, indent=2))
+        return 0
+    print(f"tcp port: {net.tcp_port or 'not listening'}")
+    for n in net.netifs:
+        where = f" {n.address} gateway {n.gateway} dns {n.dns}" if n.address else ""
+        entry = f" entry {n.entry}" if n.entry is not None else ""
+        rssi = f" {n.rssi} dBm" if n.state == "up" and n.netif == "wifi" else ""
+        why = f" ({n.reason})" if n.reason != "none" else ""
+        print(f"  {n.netif}: {n.state}{why}{entry}{rssi}{where}")
+    return 0
 
 
 def _plain(o):

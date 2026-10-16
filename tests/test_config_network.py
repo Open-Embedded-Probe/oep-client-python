@@ -8,7 +8,7 @@ import struct
 
 import pytest
 
-from oep_client import config, core, endpoint, host as h, message as m, registry as reg, virtual_bench
+from oep_client import catalog, config, core, endpoint, host as h, message as m, registry as reg, virtual_bench
 
 FORM, FLAG = reg.PROBE_CONFIG.enum["setting_form"], reg.PROBE_CONFIG.enum["setting_flag"]
 
@@ -268,3 +268,66 @@ def test_a_standard_name_is_form_named_and_an_own_one_has_a_form():
     for profile in (virtual_bench.esp32_v003, virtual_bench.p4_x035):
         for s in bench(profile())[2].describe().settings:
             assert (s.form == FORM["named"]) == ("." not in s.name), s
+
+
+def test_the_command_sets_up_the_network_and_own_settings(capsys, monkeypatch):
+    """`oep config wifi / ipv4 / network / set` (the passphrase from the environment, never printed)."""
+    from oep_client import __main__ as cli
+    ep, hst, cfg = bench(virtual_bench.esp32_v003())
+
+    class FakeLink:
+        def close(self):
+            pass
+    hst.link = FakeLink()
+    hst.end()
+    monkeypatch.setattr(cli.link, "open_host", lambda target: hst)
+    monkeypatch.setenv("LAB_PASS", "password1")
+    assert cli.main(["config", "wifi", "x", "0", "lab", "--passphrase-env", "LAB_PASS"]) == 0
+    assert cli.main(["config", "ipv4", "x", "192.168.1.50/24", "--gateway", "192.168.1.1"]) == 0
+    own = next(s.name for s in cfg.describe().settings if "." in s.name)
+    assert cli.main(["config", "set", "x", own, "pool.ntp.org"]) == 0
+    capsys.readouterr()
+    assert cli.main(["config", "network", "x"]) == 0
+    out = capsys.readouterr().out
+    assert "wifi: up entry 0" in out and "192.168.1.50/24" in out and "password1" not in out
+    assert cli.main(["config", "show", "x"]) == 0
+    shown = capsys.readouterr().out
+    assert "password1" not in shown and "lab" in shown and "pool.ntp.org" in shown
+    assert cli.main(["config", "ipv4", "x", "dhcp"]) == 0
+    assert config.Ipv4(netif="wifi") in config.ProbeConfig(hst).items() or not [
+        i for i in config.ProbeConfig(hst).items() if isinstance(i, config.Ipv4) and i.address]
+
+
+def test_the_command_sets_the_pass_throughs(capsys, monkeypatch):
+    """`oep config passthrough / console-passthrough`: fns by name#instance, the mechanism by name (core §7.7)."""
+    from oep_client import __main__ as cli
+    ep, hst, cfg = bench(virtual_bench.p4_x035())
+
+    class FakeLink:
+        def close(self):
+            pass
+    hst.link = FakeLink()
+    hst.end()
+    monkeypatch.setattr(cli.link, "open_host", lambda target: hst)
+    port = next(i for i, kind, _ in core.transports(hst) if kind in virtual_bench.SERIAL_KINDS)
+    uart = next(e for e in core.list_entries(hst, "oep.fixture.uart", exact=True))
+    described = catalog.decode_description(b"".join(m.tlv(t, v) for t, v in core.describe(hst, uart.fn)))
+    rx = described.roles[reg.FIXTURE_UART.enum["role"]["rx"]][0]
+    assert cli.main(["config", "passthrough", "x", str(port), f"oep.fixture.uart#{uart.instance}", str(rx)]) == 0
+    assert config.Passthrough(port=port, fn=uart.fn, rx=rx) in config.ProbeConfig(hst).items()
+    assert cli.main(["config", "remove", "x", "passthrough", str(port)]) == 0
+    wire = next(e for e in core.list_entries(hst, "oep.wire.rvswd", exact=True))
+    console = next(e for e in core.list_entries(hst, "oep.target.console", exact=True))
+    capsys.readouterr()
+    rc = cli.main(["config", "console-passthrough", "x", str(port), f"oep.wire.rvswd#{wire.instance}", "1", "2",
+                   "--console", f"oep.target.console#{console.instance}", "--mechanism", "dmseq"])
+    assert rc in (0, 2)   # the bench's wire may not allow pins 1 / 2: refused, never a crash
+    if rc == 0:
+        (it,) = [i for i in config.ProbeConfig(hst).items() if isinstance(i, config.ConsolePassthrough)]
+        assert it.mechanism == console_mechanism(hst, console.fn, "dmseq")
+
+
+def console_mechanism(hst, fn, name):
+    from oep_client import console as c
+    names = [v.decode() for t, v in core.describe(hst, fn) if t == c.Console.TAG_MECHANISM]
+    return names.index(name) + 1
