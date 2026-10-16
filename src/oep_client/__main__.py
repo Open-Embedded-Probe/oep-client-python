@@ -35,7 +35,6 @@ import os
 import struct
 
 from . import catalog, config, core, dump, virtual_bench, host, link
-from . import registry as _reg
 
 USB_HINT = ("install the usb / hid extras (pip install 'oep-client-python[usb-async,hid]') so every way in to the USB "
             "device can be tried, or name the probe's port (a serial port such as /dev/ttyACM0 or COM3, tcp://HOST:PORT)")
@@ -399,8 +398,6 @@ def _config_parser(sub) -> None:
     cp.add_argument("--console", required=True, help="the console: fn number or name#instance")
     cp.add_argument("--mechanism", required=True, help="the console's mechanism by name (sdi, dmdata, dmseq, ...)")
     cp.add_argument("--max-speed", type=int, default=1_000_000)
-    cp.add_argument("--idle-clock", choices=sorted(_reg.WIRE_RVSWD.enum["idle_clock"]), default="high",
-                    help="rvswd: SWCLK while the line rests (debug §3; a CH32L103 needs low)")
     cp.add_argument("--save", action="store_true")
     own = cs.add_parser("set", help="a probe's own setting by its name (reverse-DNS), its form from describe")
     own.add_argument("probe")
@@ -470,9 +467,7 @@ def _config(args) -> int:
             mech = names.index(args.mechanism) + 1   # the place in describe's list, from 1 (core §7.7)
             _change(hst, cfg, [config.ConsolePassthrough(port=args.port, wire_fn=_fn(hst, args.wire), swdio=args.swdio,
                                                          swclk=args.swclk, max_speed=args.max_speed, console_fn=cfn,
-                                                         mechanism=mech,
-                                                         idle_clock=_reg.WIRE_RVSWD.enum["idle_clock"][args.idle_clock])],
-                    args.save)
+                                                         mechanism=mech)], args.save)
         elif args.action == "set":
             _change(hst, cfg, [config.Own(args.name, _own_value(cfg, args.name, args.value), args.key)], args.save)
         else:

@@ -605,3 +605,21 @@ P4X `e8f60ae84e28`、classic ESP32 `0070070d9394`）を Arduino 0.0.32 のリリ
 |---|---|---|
 | H1 | capture の start の応答に、Arduino が仕様に無い blocking_ms(u32) を generation の前に残していた（logic、analog）。仕様の形で読む host は generation を TLV と読んで落ちる。共有ベクタは start の応答を見ていなかった | Arduino を直した（ffd6a14、未リリース。実機は 0.0.32 のまま）。**ベクタへの提案の候補**: capture / analog の start の応答の形 |
 | H2 | CH32L103（Pico 2 の rvswd）は、線を休ませる間に SWCLK が high だと debug module がリセットされる（DMCONTROL 0、hart が走る。リセット要因は増えない）。idle_clock low の attach なら halt が保たれる。旧設定の slot は idle_clock low を持っていた | tests/hw に OEP_HW_IDLE_CLOCK を足した。**仕様への提案の候補**: probe.config の console-passthrough（§1.2）に idle_clock が無く、L103 のような target では素通しを使えない（attach と同じ値を持たせる）。ベンチでは L103 の素通しを外した |
+
+### 未決: rvswd の線の休ませ方を誰が決めるか（2026-10-16、仕様の所有者の判断待ち）
+
+仕様にはまだ入れていない（oep-spec edbe841 で 1ad434f と 91209aa の欄を取り下げ、判断基準を probe ガイド §12 に書いた e25a654）。実装の試作は
+oep-client-python の `wip/rvswd-rest` ブランチ。
+
+- 事実: CH32L103 は high で休ませると約 1 ms で debug module がリセットされる。CH32X035 は low で休ませると attach できない。attach は 2 本とも high
+  から始まるので、どの系統でも target_id（DMI 0x7F）までは読める。ch32rv は今、L103 を見たら low で attach し直す回避を持っている（B になれば外す）。
+- 方向（所有者の意見）: 自動の決定は足してよい。初期設定はブラウザから行う予定で、時間の猶予が無い操作は host から間に合わない。
+  ただし自動を OFF にする手段もあった方がよい。
+- 案:
+  1. attach に idle_clock の TLV が無ければ、probe は target_id の系統（bit 31〜20）から決める。系統の表は registry（名前で引くデータ）。
+  2. 使った休ませ方は attach の応答と connections に必ず出す。
+  3. OFF は probe.config の項目 `rvswd-rest`（key: wire の fn、値: auto / high / low。項目が無ければ auto）。host の居ない場面
+     （素通し、ブラウザで設定した probe）にも効き、console-passthrough に idle_clock の欄は要らない。
+  4. 優先: attach の TLV > 設定の `rvswd-rest`（high / low）> 自動（auto）。
+- 残る論点: core §12 規則 8（チップ固有の処理を汎用のインターフェースに入れない）との関係。rvswd は対象の系統が限られる線なので、
+  その線の定義の中に置いてよいか。

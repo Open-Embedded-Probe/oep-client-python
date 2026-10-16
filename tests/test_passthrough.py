@@ -116,8 +116,8 @@ def test_what_it_passes_is_not_kept_in_the_uarts_stream(bench):
 WIRE, PAIR, CONSOLE, DMSEQ = 1, (16, 0xFFFF), 3, 3      # dmseq: third in the mechanism list (core §7.7)
 
 
-def console_item(port=0, wire=WIRE, pair=PAIR, speed=1_000_000, console=CONSOLE, mech=DMSEQ, idle=0):
-    data = struct.pack("<HHHIHBB", wire, pair[0], pair[1], speed, console, mech, idle)
+def console_item(port=0, wire=WIRE, pair=PAIR, speed=1_000_000, console=CONSOLE, mech=DMSEQ):
+    data = struct.pack("<HHHIHB", wire, pair[0], pair[1], speed, console, mech)
     return struct.pack("<BHH", config.ITEM["console_passthrough"], 2 + len(data), port) + data
 
 
@@ -163,8 +163,7 @@ def test_swio_tries_again_until_the_target_answers(bench):
 @pytest.mark.parametrize("value, reason", [
     (dict(port=7), m.UNSUPPORTED), (dict(wire=4), m.UNSUPPORTED), (dict(pair=(17, 0xFFFF)), m.UNSUPPORTED),
     (dict(speed=0), m.MALFORMED), (dict(console=4), m.UNSUPPORTED), (dict(mech=9), m.UNSUPPORTED),
-    (dict(idle=IDLE["low"]), m.UNSUPPORTED), (dict(idle=max(IDLE.values()) + 1), m.UNSUPPORTED),
-], ids=["port", "wire", "pair", "speed0", "console", "mechanism", "idle-low-on-swio", "idle-unused"])
+], ids=["port", "wire", "pair", "speed0", "console", "mechanism"])
 def test_a_console_item_it_cannot_take_is_refused(bench, value, reason):
     ep, s, lk, hst = bench
     core.take(hst, 10000)
@@ -214,18 +213,3 @@ def test_after_a_line_loss_rvswd_waits_for_the_condition_to_start_again():
     hst.end()
     assert ep.console_passthroughs() == {0: (wire, pair)}  # unset and set: the condition started again
 
-
-def test_a_rvswd_console_pass_through_keeps_its_idle_clock():
-    """§1.2: idle_clock is debug §3's (0 high, 1 low); low is taken on rvswd (a CH32L103 needs it) and read back."""
-    start = time.monotonic()
-    ep = endpoint.Endpoint(virtual_bench.p4_x035(), lambda: int((time.monotonic() - start) * 1000))
-    hst = h.Host(ep.handle)
-    core.take(hst, 10000)
-    wire = core.find(hst, "oep.wire.rvswd")
-    console = core.find(hst, "oep.target.console")
-    (pair,) = [p for (f, p) in ep.targets if f == wire]
-    cfg = config.ProbeConfig(hst)
-    want = config.ConsolePassthrough(port=0, wire_fn=wire, swdio=pair[0], swclk=pair[1], console_fn=console,
-                                     mechanism=DMSEQ, idle_clock=IDLE["low"])
-    cfg.set([want])
-    assert want in cfg.items()
