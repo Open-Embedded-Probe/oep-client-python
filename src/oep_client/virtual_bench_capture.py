@@ -150,6 +150,35 @@ def logic_block(raw: list[list[int]], events: list[list[int]], ds: list[int], be
     return fallback + start + struct.pack("<I", len(ev)) + body + b"".join(ev)
 
 
+def logic_wave(spec: str):
+    """A logic channel's waveform instead of the counter's bit: `counter`; `quiet[:LEVEL]` (never changes, default
+    high); `square:PERIOD` (samples); `uart:BAUD[:TEXT]` - 8N1 characters of TEXT (default "OEP\\n") one after another
+    with a character's time of idle (high) between them, at the track's rate. -> wave(i, rate) or None (the counter)."""
+    kind, *args = spec.split(":", 2)
+    if kind == "counter":
+        return None
+    if kind == "quiet":
+        level = int(args[0]) if args else 1
+        return lambda i, rate: level
+    if kind == "square":
+        half = max(1, int(args[0]) // 2)
+        return lambda i, rate: (i // half) & 1
+    if kind == "uart":
+        baud = int(args[0])
+        text = (args[1] if len(args) > 1 else "OEP\n").encode()
+
+        def uart(i, rate):
+            bit = int(i * baud / rate)                             # the bit time sample i falls in
+            char, at = divmod(bit, 20)                             # 10 bits of frame, 10 of idle
+            if at == 0:
+                return 0                                           # start
+            if at <= 8:
+                return text[char % len(text)] >> (at - 1) & 1      # LSB first
+            return 1                                               # stop, idle
+        return uart
+    raise ValueError(f"logic wave {spec!r}: counter, quiet[:LEVEL], square:PERIOD or uart:BAUD[:TEXT]")
+
+
 def analog_value(k: int, i: int) -> int:
     """Channel k's value at sample i of the virtual analog waveform."""
     period = 64 * (k // 2 + 1)
@@ -226,7 +255,9 @@ class VirtualCapture:
     format: int = 0                    # the configured data format
     carriages: dict[int, tuple[int, int]] = field(default_factory=dict)   # format 1: role -> (kind, d)
     block: int = 0                     # format 1: L
-    stream_segs: list[list[int]] = field(default_factory=list)   # format 1 streaming: [position, first, samples] a segment
+    stream_segs: list[list[int]] = field(default_factory=list)
+    logic_roles: tuple[int, ...] = ()   # logic: the planned roles, channel k the k-th
+    waves: dict = field(default_factory=dict)   # logic: role -> wave(i, rate) instead of the counter's bit (logic_wave)   # format 1 streaming: [position, first, samples] a segment
 
     @property
     def analog(self) -> bool:
@@ -411,6 +442,7 @@ class VirtualCapture:
         self.arm, self.rearm, self.when, self.hysteresis = s["opts"]
         self.format, self.carriages, self.block = s["format"], s["carriages"], s["block"]
         self.analog_roles = tuple(s["roles"]) if self.analog else ()
+        self.logic_roles = () if self.analog else tuple(s["roles"])
         self.state = STATE["configured"]
         self._clear()
 
@@ -509,7 +541,10 @@ class VirtualCapture:
         return bytes(out)
 
     def value(self, k: int, i: int) -> int:
-        return analog_value(k, i) if self.analog else (i >> k) & 1
+        if self.analog:
+            return analog_value(k, i)
+        wave = self.waves.get(self.logic_roles[k]) if k < len(self.logic_roles) else None
+        return (i >> k) & 1 if wave is None else wave(i, self.rate)
 
     def poll_trigger(self, now_ms: int) -> list[bytes]:
         """Waiting input: inspect only elapsed, previously unobserved samples, retaining the edge predecessor. Looks

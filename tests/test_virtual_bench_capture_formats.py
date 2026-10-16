@@ -261,3 +261,26 @@ def test_format_1_streaming_drops_a_segment_whole_while_unsubscribed():
         lc.blocks(data, samples)                             # every segment received is whole from its start
         complete += 1
     assert complete >= 2 and lc.status().flags & c.STATUS_FLAGS["dropped"]
+
+
+def test_logic_waves_quiet_and_uart_lines_carry_few_events():
+    """--logic-wave: quiet and UART-like lines (§1.3's typical case) - their events stay far below the worst case."""
+    from oep_client import virtual_bench_capture as vbc
+    ep, hst, lc, clock = bench()
+    roles = planned(hst, lc, 16)
+    cap = ep.captures[lc.fn]
+    for r in range(4, 16):
+        cap.waves[r] = vbc.logic_wave("uart:115200" if r % 2 else "quiet")
+    events = {r: 64 for r in range(4, 16)}
+    lc.configure(rate=20_000_000, samples=65536, data_format=LOGIC_BLOCKS, events=events, roles=roles)
+    lc.start()
+    clock.t += 10
+    (seg,) = lc.wait()
+    data = lc.read_segment(seg)
+    blocks = lc.blocks(data, seg.samples)
+    assert not any(b.fallback for b in blocks)
+    worst = cb.worst_bytes(4, list(events.values()), lc.config.block) * len(blocks)
+    assert len(data) < 0.45 * worst                            # 4 raw lines dominate: 2048 B of a 5128 B worst block
+    uart = blocks[0].events[5]
+    assert cb.COUNT_SATURATED not in list(uart.counts)         # a 115200 bit is 173 samples: one change a tick at most
+    assert vbc.logic_wave("uart:115200:A")(0, 20_000_000) == 0  # the start bit

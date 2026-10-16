@@ -88,6 +88,10 @@ Options:
   --label CH=TEXT       a label item on channel CH at boot, as if saved (repeatable; e.g. 23=v003.nrst names the
                         reset line of the host's profile v003, host guide §5.3)
   --capture-slipped     every oep.fixture.logic segment says flags bit2 (slipped: a pace that fell behind)
+  --logic-wave ROLE=SPEC
+                        a logic role's waveform instead of the counter's bit (repeatable): counter, quiet[:LEVEL],
+                        square:PERIOD (samples) or uart:BAUD[:TEXT] (8N1 characters with idle between) - quiet and
+                        UART-like lines to measure format 1's typical bandwidth (capture §1.3)
   --uart-rx TEXT        what arrives on the first oep.fixture.uart's RX every --every ms once a session planned and
                         configured it (%d = a counter)
   --no-port-speed       the profile's port_speed (oep.probe.link, oep-if-link §3; esp32-v003 has it) off: not in the ops, unknown_operation
@@ -132,7 +136,7 @@ import sys
 import time
 import tty
 
-from . import catalog, endpoint, virtual_bench, virtual_bench_serial, message as m, registry as reg
+from . import catalog, endpoint, virtual_bench, virtual_bench_capture, virtual_bench_serial, message as m, registry as reg
 
 TCP_CONNECTIONS = 3                                      # --tcp-connections' default (length framing)
 
@@ -179,6 +183,11 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
         for tg in ep.targets.values():
             tg.run_hook = (lambda t: lambda pc, regs: hook(t, pc, regs))(tg)
     ep.capture_slipped = getattr(a, "capture_slipped", False)
+    for spec in getattr(a, "logic_wave", []):
+        role, _, wave = spec.partition("=")
+        for cap in ep.captures.values():
+            if not cap.analog:
+                cap.waves[int(role)] = virtual_bench_capture.logic_wave(wave)
     if getattr(a, "no_port_speed", False):
         ep.port_speed_base = None
     for spec in getattr(a, "broken_rate", []):
@@ -672,6 +681,7 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--tcp-connections", type=int, metavar="N")
     ap.add_argument("--keep-on-eof", action="store_true")
     ap.add_argument("--capture-slipped", action="store_true")
+    ap.add_argument("--logic-wave", action="append", default=[], metavar="ROLE=SPEC")
     ap.add_argument("--no-port-speed", action="store_true")
     ap.add_argument("--no-restart", action="store_true")
     ap.add_argument("--minimal-ops", action="store_true")

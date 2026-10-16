@@ -16,6 +16,9 @@
   - conformance: triggers と group の force を任意の op として扱い、bind の TLV が定義されていても通す。
   - 仮想ベンチの形式 1 は streaming にも対応する。ブロックは揃ってから送る。stop では短い最後のブロックを送る。区画の位置は、区画が始まるたびに
     記録した表から引く。購読が無い間に始まった区画は丸ごと捨てる。
+  - 仮想ベンチの `--logic-wave ROLE=SPEC`（`virtual_bench_capture.logic_wave`）: ロジックの役割ごとに波形を選ぶ。counter、quiet[:LEVEL]、
+    square:PERIOD、uart:BAUD[:TEXT]（8N1 の文字、文字の間はアイドル）。静かな線と UART のような線で、形式 1 の典型の帯域を測れる
+    （§1.3 の例: 2110 B / ブロック、125 MHz で 64.4 MB/s。仕様の見積もりは 63.6 MB/s）。
 
 ## 0.0.34
 - (JA) oep-spec bc52327（debug §2 の閉じた後の保持、§2.2 holds、probe.config の wire-hold、core §8 の例外）に追従。仮想ベンチは、線切れ以外で
