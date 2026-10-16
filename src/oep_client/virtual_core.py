@@ -108,10 +108,14 @@ class Core:
             return answer(3)
         if fn and (self.extension is None or fn not in self.extension.functions):
             return answer(1)
-        fixed = FIXED if fn == 0 else self.extension.fixed
+        # an extension with several interfaces gives each fn its own op table (fixed_for / free_for): op numbers are
+        # each interface's own (core §2.5), so the same op may differ in form and lock between fns
+        fixed = (FIXED if fn == 0 else self.extension.fixed_for(fn) if hasattr(self.extension, 'fixed_for')
+                 else self.extension.fixed)
         if op not in fixed:
             return answer(2)
-        free = op in FREE if fn == 0 else op in self.extension.free
+        free = op in (FREE if fn == 0 else self.extension.free_for(fn) if hasattr(self.extension, 'free_for')
+                      else self.extension.free)
         opening = fn == 0 and op == 16
         if sid == 0 and not free and not opening:
             return answer(9)

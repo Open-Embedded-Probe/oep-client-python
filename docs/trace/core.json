@@ -1,5 +1,5 @@
 {
- "spec_commit": "e49550d",
+ "spec_commit": "cb3067c",
  "units": {
   "core:0:1": {
    "text": "| 層 | 中身 | 名前 | 版 |",
@@ -283,6 +283,15 @@
    "note": "tag 0x7F is the named extension; no interface defines it"
   },
   "core:2.2:8": {
+   "text": "- 名前は revision を持たない。同じ名前の data は、どの文脈、ど",
+   "verify": [
+    "tests/test_extension_patterns.py::test_another_party_adds_information_by_a_named_extension",
+    "tests/test_extension_patterns.py::test_a_number_another_party_took_collides_a_name_does_not"
+   ],
+   "mutants": [],
+   "note": "another form is another name: B's and C's humidity side by side, each read by its own name"
+  },
+  "core:2.2:9": {
    "text": "- 繰り返してよい。同じ名前を 2 つ置けるかは、その名前の定義が決める。",
    "verify": [
     "tests/test_trace_core_names.py::test_a_request_with_an_unknown_named_extension[False]",
@@ -292,7 +301,7 @@
    "mutants": [],
    "note": "two extensions in one request and one answer"
   },
-  "core:2.2:9": {
+  "core:2.2:10": {
    "text": "- 要求で、知らない名前の拡張は、critical（0xFF）なら reject",
    "verify": [
     "tests/test_trace_core_names.py::test_a_request_with_an_unknown_named_extension[False]",
@@ -301,7 +310,7 @@
    "mutants": [],
    "note": "unknown name: ignored, or unsupported naming 0xFF when critical"
   },
-  "core:2.2:10": {
+  "core:2.2:11": {
    "text": "- 応答、出来事、データ、describe で、読む側は知らない名前の拡張を読み",
    "verify": [
     "tests/test_trace_core_names.py::test_a_reader_skips_an_unknown_named_extension_in_answers_and_describe",

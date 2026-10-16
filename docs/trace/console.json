@@ -1,5 +1,5 @@
 {
- "spec_commit": "e49550d",
+ "spec_commit": "cb3067c",
  "units": {
   "console:pre:1": {
    "text": "| `oep.target.console` | 1 | target のコンソ",
