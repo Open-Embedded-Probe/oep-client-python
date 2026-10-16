@@ -36,7 +36,7 @@ class Attachments(Dependencies):
         return bytes(page)
     def describe(self,fn):
         if fn==4:return (tlv(DC['ops'],pack_ops(set(COP.values()))),*(tlv(CD['mechanism'],name.encode()) for name in self.mechanisms))
-        rows=[tlv(DC['ops'],pack_ops({WOP['attach'],WOP['detach'],WOP['connections']})),tlv(WT['describe']['max_connections'],b'\x02'),tlv(DC['min_clock_hz'],struct.pack('<I',1000))]
+        rows=[tlv(DC['ops'],pack_ops({WOP['attach'],WOP['detach'],WOP['connections'],WOP['holds']})),tlv(WT['describe']['max_connections'],b'\x02'),tlv(DC['min_clock_hz'],struct.pack('<I',1000))]
         for index,pair in enumerate(self.pairs[fn]):
             members=[(WE['pin_role']['swdio'],pair[0])] if fn==2 else [(WE['pin_role']['swdio'],pair[0]),(WE['pin_role']['swclk'],pair[1])]
             rows.append(tlv(DC['channel_group'],bytes((index,len(members)))+b''.join(struct.pack('<BH',*row) for row in members)))
@@ -79,6 +79,7 @@ class Attachments(Dependencies):
     def dispatch_request(self,fn,op,payload,tags):
         if fn<=3:
             if op==WOP['connections']:return self.connection_page(fn,payload[0])
+            if op==WOP['holds']:return b'\0\0'+extension()   # no port held in this model (debug §2.2)
             if op==WOP['detach']:
                 rid=struct.unpack('<I',payload)[0];self.resource(rid,'connection')
                 if self.connections[rid]['fn']!=fn:raise Reject(R['unavailable'],cause('wrong_state'))
@@ -131,7 +132,7 @@ class AttachModel(DependencyModel):
         if len(request)>=6 and struct.unpack_from('<H',request,3)[0]==4:
             e.fixed={COP['open']:5,COP['read']:15,COP['marks']:8,COP['clear']:4,COP['mark']:5,COP['write']:6,COP['close']:4,COP['streams']:2};e.free={COP['read'],COP['marks'],COP['streams']}
             if request[5]==COP['write'] and len(request)>=16:e.fixed[COP['write']]=6+struct.unpack_from('<H',request,14)[0]
-        else:e.fixed={WOP['attach']:9,WOP['detach']:4,WOP['connections']:1};e.free={WOP['connections']}
+        else:e.fixed={WOP['attach']:9,WOP['detach']:4,WOP['connections']:1,WOP['holds']:1};e.free={WOP['connections'],WOP['holds']}
         try:return self.ep.handle(request)
         finally:e.fixed,e.free=fixed,free
     def restart_fixture(self):

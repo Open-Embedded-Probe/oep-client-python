@@ -14,7 +14,7 @@ KIND = _reg.WIRE_RVSWD.enum["scan_kind"] | _reg.WIRE_SWD.enum["scan_kind"]
 
 class ScanOptions(WireOptions):
     def __init__(self,ep):super().__init__(ep);self.scan_limit=2;self.identities={};self.scan_live=set();self.scan_events=[]
-    def describe(self,fn):return tuple(tlv(DC['ops'],pack_ops({WOP['scan'],WOP['attach'],WOP['detach'],WOP['connections']})) if fn<=3 and row[0]==DC['ops'] else row for row in super().describe(fn))
+    def describe(self,fn):return tuple(tlv(DC['ops'],pack_ops({WOP['scan'],WOP['attach'],WOP['detach'],WOP['connections'],WOP['holds']})) if fn<=3 and row[0]==DC['ops'] else row for row in super().describe(fn))
     def request_tags(self,fn,op,data):
         if fn>3 or op!=WOP['scan']:return super().request_tags(fn,op,data)
         known={SC['max_speed']:4}

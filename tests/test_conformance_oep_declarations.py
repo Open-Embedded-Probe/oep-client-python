@@ -91,7 +91,8 @@ def test_scan_is_optional_and_the_mechanisms_are_counted():
 
 
 def test_future_registry_mandatory_op_is_not_silently_ignored():
-    _,c=setup();c.reg['interface'][0]['op'].append({'name':'future_required','code':20})
+    _,c=setup();ops=c.reg['interface'][0]['op']
+    ops.append({'name':'future_required','code':max(o['code'] for o in ops)+1})   # a code no probe offers yet
     assert OepDeclarationChecks(c,SELECTION).run()['status']=='failed'
 
 

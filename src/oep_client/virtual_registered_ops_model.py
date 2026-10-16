@@ -8,7 +8,7 @@ from . import registry as _reg
 # Each interface's mandatory ops, by name (looked up in the registry: never literal numbers).
 _MANDATORY={
     'oep.probe.plan':('plan_apply','plan_release'),'oep.probe.restart':('restart',),'oep.probe.link':('source','sink'),
-    **{w:('attach','detach','connections') for w in ('oep.wire.rvswd','oep.wire.swio','oep.wire.swd')},
+    **{w:('attach','detach','connections','holds') for w in ('oep.wire.rvswd','oep.wire.swio','oep.wire.swd')},
     'oep.target.riscv-dm':('dmi',),'oep.target.arm-adi':('transfer',),
     'oep.target.console':('open','read','close','streams'),
     'oep.fixture.gpio':('set','read'),'oep.fixture.uart':('configure','read','status'),

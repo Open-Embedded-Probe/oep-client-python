@@ -1,6 +1,9 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) oep-spec bc52327（debug §2 の閉じた後の保持、§2.2 holds、probe.config の wire-hold、core §8 の例外）に追従。仮想ベンチは、線切れ以外で
+  接続を閉じたらその口の休みの状態を保持し、ピンを取られる、wire-hold が off、idle / disable の項目、で保持を終える。駆動が止まると halt を失う
+  target（`VirtualTarget.needs_drive`、CH32L103）を表せる。クライアントは `WireBase.holds()`、`config.WireHold`、`oep config wire-hold PROBE CH on|off`。
 
 ## 0.0.33
 - (JA) oep-spec ba4e8ee（debug §3.1、core §12 規則 8、probe.config の rvswd-rest）に追従。rvswd の線の休ませ方は、attach の idle_clock が無ければ

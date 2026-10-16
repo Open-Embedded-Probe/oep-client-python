@@ -188,7 +188,7 @@ class WireBase(Interface):
     """oep.wire.<link>: scan / attach / detach / connections (oep-if-debug §0-§2). The shared part; each link's attach
     takes its own arguments. A failed scan, attach or detach is completed failed with `status(u8) [TLV]` (common §3).
     attach names its pins in the fixed part (§1): `pins` None takes the wire's one candidate pair (candidate_pairs)."""
-    SCAN, ATTACH, DETACH, CONNECTIONS = (_WIRE.op[k] for k in ("scan", "attach", "detach", "connections"))
+    SCAN, ATTACH, DETACH, CONNECTIONS, HOLDS = (_WIRE.op[k] for k in ("scan", "attach", "detach", "connections", "holds"))
     REVISION = 1
     TAG_RESET = _WIRE.tlv["attach"]["reset"]           # channel(u16) hold_ms(u16), critical: attach under reset (§3)
     TAG_SCAN_MAX_SPEED = _WIRE.tlv["scan"]["max_speed"]
@@ -298,6 +298,19 @@ class WireBase(Interface):
     def detach(self, conn: int) -> None:
         """Close the connection and its streams (oep-if-debug §2)."""
         self._call(self.DETACH, struct.pack("<I", conn))
+
+    def holds(self) -> list[tuple[tuple[int, int], int]]:
+        """The ports this wire holds at their rest after a close (oep-if-debug §2.2, lock-free; paged like connections):
+        [((swdio, swclk), rest)] - rest: rvswd's idle_clock value (0 high, 1 low), 0 on other wires. Not connections."""
+        out: list[tuple[tuple[int, int], int]] = []
+        while True:
+            rd = m.Reader(self._call(self.HOLDS, bytes([len(out)]), locked=False).payload)
+            more, count = rd.take("BB")
+            page = [((d, c), r) for d, c, r in (rd.take("HHB") for _ in range(count))]
+            rd.tail()
+            out += page
+            if not more or not count or len(out) > 0xFF:
+                return out
 
     def connections(self) -> list["ConnectionInfo"]:
         """The wire's live connections, in the order they were made (oep-if-debug §2.1, lock-free; paged: the request

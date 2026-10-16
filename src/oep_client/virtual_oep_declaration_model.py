@@ -24,7 +24,7 @@ class OepDeclarations(Resources):
 
     def describe(self, fn):
         if fn==4:return (tlv(DC['ops'],pack_ops(set(COP.values()))),tlv(CD['mechanism'],b'dmdata'))
-        rows=[tlv(DC['ops'],pack_ops({WOP['attach'],WOP['detach'],WOP['connections']}))]
+        rows=[tlv(DC['ops'],pack_ops({WOP['attach'],WOP['detach'],WOP['connections'],WOP['holds']}))]
         if fn==1:rows.append(tlv(WT['describe']['max_connections'],b'\x02'))
         if fn==2:rows.append(tlv(DC['min_clock_hz'],struct.pack('<I',1000000)))
         role=WE['pin_role']
@@ -35,7 +35,7 @@ class OepDeclarations(Resources):
         return tuple(rows)
 
     def dispatch(self, fn, op, payload):
-        if (fn!=4 and op==WOP['connections']) or (fn==4 and op==COP['streams']):return b'\0\0'+extension()
+        if (fn!=4 and op in (WOP['connections'],WOP['holds'])) or (fn==4 and op==COP['streams']):return b'\0\0'+extension()
         raise Reject(R['no_resource'])  # declarations only: no simulated attach or target work
 
 
@@ -50,6 +50,6 @@ class OepDeclarationModel(ResourceModel):
         if len(request)>=6:
             fn=struct.unpack_from('<H',request,3)[0]
             if fn==4:e.fixed={COP['open']:5,COP['read']:15,COP['marks']:8,COP['clear']:4,COP['mark']:5,COP['write']:6,COP['close']:4,COP['streams']:2};e.free={COP['read'],COP['marks'],COP['streams']}
-            else:e.fixed={WOP['attach']:9,WOP['detach']:4,WOP['connections']:1};e.free={WOP['connections']}
+            else:e.fixed={WOP['attach']:9,WOP['detach']:4,WOP['connections']:1,WOP['holds']:1};e.free={WOP['connections'],WOP['holds']}
         try:return super().handle(request)
         finally:e.fixed,e.free=fixed,free

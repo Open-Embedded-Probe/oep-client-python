@@ -359,6 +359,12 @@ def _config_parser(sub) -> None:
     rest.add_argument("channel", type=int, help="the port's SWCLK channel")
     rest.add_argument("mode", choices=sorted(config.REST_MODE))
     rest.add_argument("--save", action="store_true")
+    hold = cs.add_parser("wire-hold", help="whether a debug wire's lines stay held at their rest after a close "
+                                           "(on, the default) or go free at once (off; debug §2)")
+    hold.add_argument("probe")
+    hold.add_argument("channel", type=int, help="the port's SWDIO channel")
+    hold.add_argument("mode", choices=sorted(config.HOLD_MODE))
+    hold.add_argument("--save", action="store_true")
     dis = cs.add_parser("disable", help="channels the probe never drives or sets up (not on this board)")
     dis.add_argument("probe")
     dis.add_argument("channels", type=int, nargs="+")
@@ -441,6 +447,8 @@ def _config(args) -> int:
             _change(hst, cfg, [config.Label(channel=args.channel, text=args.text)], args.save)
         elif args.action == "idle":
             _change(hst, cfg, [config.Idle(channel=args.channel, mode=args.mode)], args.save)
+        elif args.action == "wire-hold":
+            _change(hst, cfg, [config.WireHold(channel=args.channel, mode=args.mode)], args.save)
         elif args.action == "rvswd-rest":
             _change(hst, cfg, [config.RvswdRest(channel=args.channel, mode=args.mode)], args.save)
         elif args.action == "disable":

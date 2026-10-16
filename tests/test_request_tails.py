@@ -131,6 +131,7 @@ def drive_wire_dm_console(hst, wire_name):
     wire.scan()
     conn, _ = wire.attach(halt=True)
     wire.connections()
+    wire.holds()                                          # debug §2.2, lock-free
     dm = riscv.RiscvDm(hst, conn)
     dm.dmi([dm.step_read(0x11)])
     dm.halt()

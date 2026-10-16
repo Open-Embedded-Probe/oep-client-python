@@ -262,7 +262,7 @@ def _setting(name: str, keys: int, form: int = 0, max_len: int = 0, flags: int =
 
 
 def _config(fn: int, instance: int, storage: int = 4096, *, channels: int = 64, ports: int = 4, netifs=(), wifi_entries: int = 4,
-            own=(), rvswd: bool = False) -> Offered:
+            own=(), rvswd: bool = False, hold: bool = True) -> Offered:
     """oep.probe.config's declarations (probe.config §4): the standard items label / idle / disable (keys: the
     channels), passthrough / console-passthrough (keys: the transports), with `netifs` (names) wifi / ipv4 and the
     network op; `own`: the probe's own items as (name, form, keys, max_len, flags) (§1.6). storage 0 = none - no storage
@@ -276,6 +276,8 @@ def _config(fn: int, instance: int, storage: int = 4096, *, channels: int = 64, 
         settings.append(_setting("ipv4", len(netifs) + 1))
     if rvswd:                                              # its automatic rest can be turned off per port (debug §3.1)
         settings.append(_setting("rvswd-rest", channels))
+    if hold:                                               # a debug wire's hold after a close, per port (debug §2)
+        settings.append(_setting("wire-hold", channels))
     settings += [_setting(name, keys, form, max_len, flags) for name, form, keys, max_len, flags in own]
     return Offered(fn, instance, "oep.probe.config", ops_of("oep.probe.config", *drop)
         + ((catalog.u32(_CFG["storage"], storage),) if storage else ()) + tuple(settings)

@@ -117,7 +117,8 @@ RESET_MODE = _RV.enum["reset_mode"]
 READ_FROM = reg.COMMON.enum["read_from"]                  # position, oldest, now, last_mark (common §1.2)
 STEP_LEFT = _RV.tlv["step_answer"]["step_left"]            # step's answer: the hart could not be halted again (§4.2)
 ITEM = {k.replace("-", "_"): k for k in cfgmod.NAMES}       # the standard items by name (probe.config §1, core §7.7)
-CHANNEL_ITEMS = (ITEM["label"], ITEM["idle"], ITEM["disable"], ITEM["rvswd_rest"])   # keyed by a channel (probe.config §1)
+CHANNEL_ITEMS = (ITEM["label"], ITEM["idle"], ITEM["disable"], ITEM["rvswd_rest"], ITEM["wire_hold"])   # keyed by a channel
+HOLD_MODE = cfgmod.HOLD_MODE
 REST_MODE = cfgmod.REST_MODE
 IDLE_MODE = _CFG.enum["idle_mode"]
 CFG_DESCRIBE = cfgmod.DESCRIBE
@@ -327,6 +328,7 @@ class VirtualTarget:
     havereset: bool = True
     resume_misses: int = 0                             # resumes that do not take (status state, dpc unchanged)
     present: bool = True                               # something answers on this pin pair (scan, attach)
+    needs_drive: bool = False                          # loses its halt once the probe stops driving the line (a CH32L103)
     target_id: int | None = None                       # the dmi_7f target_id attach reports (None: none)
     # run(pc, regs) -> (stopped, dpc, elapsed_us); default: halts 0x10 past the start
     run_hook: Callable | None = None
@@ -554,7 +556,7 @@ class Connection:
 
 
 ITEM_SIZES = {ITEM["idle"]: 1, ITEM["disable"]: 0, ITEM["passthrough"]: 9,     # the data of a fixed length (probe.config §1)
-              ITEM["console_passthrough"]: 13, ITEM["ipv4"]: 14, ITEM["rvswd_rest"]: 1}
+              ITEM["console_passthrough"]: 13, ITEM["ipv4"]: 14, ITEM["rvswd_rest"]: 1, ITEM["wire_hold"]: 1}
 PASSTHROUGHS = (ITEM["passthrough"], ITEM["console_passthrough"])
 
 
@@ -784,6 +786,7 @@ class Endpoint:
         self.session_ports: set[int] = set()   # the transports the lock holder's requests came on (probe.config §1.1)
         self.passthrough_out: dict[int, bytearray] = {}   # a serial port's pass-through bytes not sent yet
         self.resident: dict[int, bool] = {}       # console_passthrough's own connection per port: attached (config §1.2)
+        self.holds: dict[tuple[int, tuple[int, int]], int] = {}   # (wire fn, pair) -> rest: lines held after a close (debug §2)
         self.last: int | None = None         # S: the id that holds or last held the lock (the resend table's, §5.2)
         self.owner: bytes | None = None      # the holder's owner, while the lock is held (core §6.4)
         self.lease_ms = self.lease_default_ms
@@ -1561,7 +1564,7 @@ class Endpoint:
         connections closed (an unknown `cid`: none)."""
         gone = [c for c in (list(self.conns) if cid is None else [cid]) if c in self.conns]
         for c in gone:
-            self._close_conn(c)
+            self._close_conn(c, lost=True)
         return gone
 
     # ---- core -----------------------------------------------------------------------------------
@@ -2334,6 +2337,11 @@ class Endpoint:
                 raise wrong_kind()                                 # another wire's connection
             self._close_conn(cid)
             return m.COMPLETED, m.SUCCESS, b""
+        if op == O["holds"]:                                       # lock-free, paged by first (debug §2.2)
+            first = t.take("B")
+            t.tail()
+            rows = [struct.pack("<HHB", *pair, rest) for pair, rest in self.held_ports(fn)]
+            return m.COMPLETED, m.SUCCESS, self._paged(rows, first)
         if op == O["connections"]:                                 # lock-free, paged by first (debug §2.1)
             first = t.take("B")
             t.tail()
@@ -2409,14 +2417,45 @@ class Endpoint:
         self.conns[cid] = Connection(fn, pair, self._order, speed, tid)
         return cid
 
-    def _close_conn(self, cid: int) -> None:
-        """The connection goes, its console streams first (common §2); its pins go back to their idle state."""
+    def _close_conn(self, cid: int, lost: bool = False) -> None:
+        """The connection goes, its console streams first (common §2). Its lines stay held at its rest unless the line
+        was lost, the port's wire-hold is off or a pin has an idle / disable item (debug §2); else to their idle state,
+        and a target that needs the drive loses its halt."""
         for sid in [k for k, st in self.streams.items() if st.conn == cid]:
             self._close_stream(sid)
         gone = self.conns.pop(cid, None)
         self.resources.pop(cid, None)
-        if gone is not None:
-            self._park(gone.pair)
+        if gone is None:
+            return
+        if not lost and self._may_hold(gone.pair):
+            self.holds[(gone.fn, gone.pair)] = gone.idle_clock if self.names[gone.fn] == "oep.wire.rvswd" else 0
+            return
+        self._park(gone.pair)
+        tg = self.targets.get((gone.fn, gone.pair))
+        if tg is not None and tg.needs_drive:
+            tg.halted = False                                      # its debug module dropped the link: the hart runs
+
+    def _may_hold(self, pair: tuple[int, int]) -> bool:
+        """debug §2: wire-hold on (no item: on) for the port's SWDIO, and no idle / disable item on its pins."""
+        mode = self.config.get((ITEM["wire_hold"], pair[0]), bytes([HOLD_MODE["on"]]))[0]
+        pins = [p for p in pair if p != 0xFFFF]
+        return (mode == HOLD_MODE["on"] and not any((ITEM["idle"], p) in self.config for p in pins)
+                and not any(p in self.disabled for p in pins))
+
+    def held_ports(self, fn: int) -> list[tuple[tuple[int, int], int]]:
+        """The ports wire `fn` holds now (debug §2.2): a hold ends once its pins are taken (a plan, a connection), its
+        wire-hold goes off or an idle / disable item lands on them; an ended hold's pins go to their free state."""
+        busy = {a[2] for a in self.plan if not self._listens(a[0])} | {p for c in self.conns.values() for p in c.pair}
+        for key in list(self.holds):
+            hfn, pair = key
+            if any(p in busy for p in pair if p != 0xFFFF) or not self._may_hold(pair):
+                del self.holds[key]
+                if not any(p in busy for p in pair if p != 0xFFFF):
+                    self._park(pair)
+                    tg = self.targets.get(key)
+                    if tg is not None and tg.needs_drive:
+                        tg.halted = False
+        return [(pair, rest) for (hfn, pair), rest in self.holds.items() if hfn == fn]
 
     def _cleanup_failed(self, cid: int, done: int, payload: bytes) -> tuple[int, int, bytes]:
         """A block op whose restore of DATA0 / DATA1 failed: partial when done > 0 (all words included), else failed,
@@ -3301,6 +3340,8 @@ class Endpoint:
                     return True
             if name == ITEM["rvswd_rest"] and d[0] not in REST_MODE.values():
                 return True                                        # a mode the definition leaves unused (§1)
+            if name == ITEM["wire_hold"] and d[0] not in HOLD_MODE.values():
+                return True
         return False
 
     def _shown(self, name: str, d: bytes) -> bytes:

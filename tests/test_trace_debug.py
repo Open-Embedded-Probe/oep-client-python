@@ -619,7 +619,7 @@ def test_every_op_but_connections_needs_the_lock_and_two_connections_share_one_l
     c0 = struct.unpack_from("<I", attach(hv, p0).payload)[0]
     c1 = struct.unpack_from("<I", attach(hv, p1).payload)[0]
     for op in W.values():
-        if op != W["connections"]:
+        if op not in (W["connections"], W["holds"]):            # both lock-free (debug §2.1, §2.2)
             r = hv.raw(1, op, fixed(ep.pairs[1][2]), session=False)
             assert (r.resolution, r.detail) == (m.REJECTED, m.SESSION_REQUIRED), op
     for op in RV.values():
