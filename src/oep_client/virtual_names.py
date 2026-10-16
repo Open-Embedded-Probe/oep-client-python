@@ -21,7 +21,7 @@ def cause(name, channel=None):
     return out if channel is None else out + tlv(UNAVAILABLE_TLV["channel"], struct.pack('<H', channel))
 
 
-NAMED_EXTENSION = 0x7F                                   # every context's named extension TLV (core §2.2)
+NAMED_EXTENSION = _reg.TAG_NAMED_EXTENSION                # every context's named extension TLV (core §2.2)
 
 
 def extension(name=b'io.example.note', data=b'x'):

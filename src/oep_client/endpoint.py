@@ -259,6 +259,8 @@ class Take:
             number = tag & 0x7F
             if number == 0:
                 raise Reject(m.MALFORMED)                          # TLV number 0, critical bit or not (core §2.2)
+            if number == reg.TAG_NAMED_EXTENSION and (not value or value[0] + 1 > len(value)):
+                raise Reject(m.MALFORMED)                          # a name_len past its value, critical or not (core §2.2)
             if number in known:
                 self.repeated.append((tag, value))                 # later copies are checked too (core §2.3)
                 if number in got and number not in repeats:

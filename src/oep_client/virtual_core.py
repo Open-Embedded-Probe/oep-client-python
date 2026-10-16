@@ -7,6 +7,8 @@ Explicit sample models may supply an independently defined extension hook.
 from collections import OrderedDict
 import struct
 
+from . import registry as _reg
+
 SPEC_COMMIT = '4681d2258c8a30cb03df3d93845b03bc6d8acd0a'
 OPS = {1, 2, 3, 4, 16, 17, 18, 19}
 FREE = {1, 2, 3, 4, 19}
@@ -42,6 +44,8 @@ def tail(data, owner=False):
             raise Reject(3)
         value, data = data[3:3 + size], data[3 + size:]
         key = tag & 127
+        if key == _reg.TAG_NAMED_EXTENSION and (not value or value[0] + 1 > len(value)):
+            raise Reject(_reg.REJECT_REASONS["malformed"])   # a name_len past its value, critical or not (core §2.2)
         if owner and key == 1:
             if not 1 <= size <= 32:
                 raise Reject(3)                          # a later copy is checked too (core §2.3)

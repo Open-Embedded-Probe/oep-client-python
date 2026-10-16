@@ -333,6 +333,21 @@ def test_an_unknown_answer_tlv_is_skipped_by_the_host(case):
     assert tail and all(t & 0x7F == 0x7F or t for t, _ in tail)
 
 
+REQUEST_EXTENSIONS = load("core_extensions.json")["request_cases"]
+
+
+@pytest.mark.parametrize("profile", [virtual_bench.p4_x035, virtual_bench.core_v1])
+@pytest.mark.parametrize("case", REQUEST_EXTENSIONS, ids=lambda c: c["name"])
+def test_a_named_extension_in_a_request_on_the_virtual_bench(case, profile):
+    """core §2.2: unknown name ignored, critical refused unsupported 0xFF, a name_len past its value malformed - on the
+    full bench and the core-only profile (the clock's own values aside)."""
+    ep = endpoint.Endpoint(profile(), lambda: 0)
+    got, want = m.Result.unpack(ep.handle(hx(case["request_hex"]), 0)), m.Result.unpack(hx(case["answer_hex"]))
+    assert (got.resolution, got.detail) == (want.resolution, want.detail)
+    if want.resolution == m.REJECTED:
+        assert got.payload == want.payload
+
+
 # ---- per-op vectors (ops.json) of the interfaces that follow the current spec --------------------------------------
 from oep_client import config, console, core, fixture, riscv, virtual_bench_capture
 
