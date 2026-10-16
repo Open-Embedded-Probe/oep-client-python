@@ -390,6 +390,20 @@ Arduino の config を書き直した（follow-cf69012 の e53f11b）。vectors 
 | A3 | 素通しの UART はピンを plan の持ち主として取らない（入力だけ）。別の fn の plan が RX を取ると、次の poll で止まる | 一瞬重なるが、入力だけなので害は無い。仕様は変えない |
 | A4 | 「count separates items from response extensions」の vector の応答末尾の 0x7F TLV は、host の読みの検査用で、probe はそれを作れない | Python の試験と同じく、probe 側の試験では末尾を外して比べる。vector の state にそう書くと親切（小さいので依頼しない） |
 
+### 名前つき項目の Arduino への反映（2026-10-16、段 A5c）
+
+Arduino の config を名前つき項目に書き直した（follow-cf69012 の 4c495c2、oep-spec e49550d）。内部は種類（label、idle、…、独自）で持ち、
+wire では describe の並びの位置を番号にする。保存は名前で持つ。vectors は 220 件で失敗 20 件。直前（e53f11b）と同じ 20 件で、config の
+失敗は 0 件（wifi、ipv4、network、独自の項目の新しい vector を含む）。
+
+| # | 内容 | 判断 |
+|---|---|---|
+| A5 | capture-group の op が start 0x11、stop 0x12、status 0x14、bind 0x1A と飛び飛びになり、op を範囲で判定していた実装（offers）が壊れた | 一族の共有の空間（core §2.5 規則 4）の結果で正しい。実装は op を範囲で判定しない。仕様は変えない |
+| A6 | channel の項目の keys は「fn 0 の channels」で、config の側はその値を知らない | sketch から渡す口（setChannels）を足した。小さいので仕様は変えない |
+| A7 | 保存を名前で持つと、名前の分だけ保存が大きくなる（標準 7 種と独自 4 種で最大約 560 byte） | max_bytes は wire の形で数え、保存の管理の領域を含めない（§4）。だから仕様のままで足りる |
+| A8 | vectors は setting の並び（1 label … 6 独自）を前提にする。passthrough を持つ probe は並びが違う | 並びは probe が決めるもので、vector の state に並びが書いてある。試験の側で同じ並びを作れば実行できる。仕様は変えない |
+| A9 | wifi の pass_len 0xFF と、secret の data 0 byte は、どちらも set で今の値を差し込む処理になる | 書くだけの規則は 2 つある（wifi は secret を立てない、§1.7）。実装の手間は小さいので、仕様は変えない |
+
 ### R3' 連動トリガの試算（2026-10-15）
 
 使っていたのは ESP32-P4 のミックスドシグナルで、ロジックが先導し、アナログがそれに従う。P4 のアナログの上限は 46 kHz（OepAnalog.h）で、一回取りだけ。
