@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.33
 - (JA) oep-spec ba4e8ee（debug §3.1、core §12 規則 8、probe.config の rvswd-rest）に追従。rvswd の線の休ませ方は、attach の idle_clock が無ければ
   probe が決める（その SWCLK の channel の設定 rvswd-rest、無ければ target_id の系統: CH32L103 は low）。仮想ベンチはそのとおりに休ませ、attach の応答と
   connections に使う休ませ方を返す。クライアントは `Wire.idle_clock`、`ConnectionInfo.idle_clock` で読み、`config.RvswdRest` と
