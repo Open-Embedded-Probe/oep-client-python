@@ -7,9 +7,8 @@ import time
 
 import pytest
 
-from oep_client import config, core, endpoint, host as h, link, message as m, registry as reg, virtual_bench, virtual_bench_serial
+from oep_client import config, core, endpoint, host as h, link, message as m, virtual_bench, virtual_bench_serial
 
-IDLE = reg.WIRE_RVSWD.enum["idle_clock"]
 
 UART_FN, RX = 5, 13
 
