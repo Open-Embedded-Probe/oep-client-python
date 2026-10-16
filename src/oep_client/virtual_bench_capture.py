@@ -33,6 +33,7 @@ events. Segment serials wrap (core §2.6); segments pages by common §1.3.
 
 from __future__ import annotations
 
+import bisect
 import math
 import struct
 from dataclasses import dataclass, field
@@ -65,6 +66,7 @@ IMPLEMENTED = tuple(TLV[k] for k in ("mode", "rate", "samples", "segments", "tri
 FORMAT = CAP.enum["data_format"]
 CARRIAGE = CAP.enum["logic_carriage"]
 BLOCK_TOP = 4096                       # its own: the longest block L it makes (§1.3)
+UNKNOWN_END = 1 << 62                  # streaming format 1: a segment dropped whole whose end is not taken yet
 
 
 class Reject(Exception):
@@ -224,6 +226,7 @@ class VirtualCapture:
     format: int = 0                    # the configured data format
     carriages: dict[int, tuple[int, int]] = field(default_factory=dict)   # format 1: role -> (kind, d)
     block: int = 0                     # format 1: L
+    stream_segs: list[list[int]] = field(default_factory=list)   # format 1 streaming: [position, first, samples] a segment
 
     @property
     def analog(self) -> bool:
@@ -330,9 +333,8 @@ class VirtualCapture:
                 or len({c[0] for c in carriage}) != len(carriage)
                 or carriage and fmt not in (FORMAT["logic_blocks"], FORMAT["analog_blocks"])):
             raise Reject(m.MALFORMED)
-        if fmt != FORMAT["packed"] and (fmt not in self.formats or fmt == FORMAT["logic_blocks"] and (
-                self.analog or mode == MODE["streaming"])):
-            raise t.refuse(TLV["format"])                          # not declared (this bench: format 1 in mode 1 / 2)
+        if fmt != FORMAT["packed"] and (fmt not in self.formats or fmt == FORMAT["logic_blocks"] and self.analog):
+            raise t.refuse(TLV["format"])                          # not declared
         for role, kind, d, raw_tag in carriage:
             if not self.carriage_kinds >> kind & 1 or d > 1 and not self.carriage_d[0] <= d <= self.carriage_d[1]:
                 raise Reject(m.UNSUPPORTED, bytes([raw_tag]))
@@ -471,6 +473,7 @@ class VirtualCapture:
         self.produced, self.sent, self.gap_next, self.drop_until = 0, 0, False, 0
         self.capture_begin, self.first_segment_samples, self.first_trigger_index = 0, 0, NONE
         self.stream_committed_bytes = 0
+        self.stream_segs = []
         self.trigger_scan, self.trigger_previous = 0, 0
         self.trigger_time_ns = NO_TIME
         self.records, self.record_next, self.trigger_floor = [], 0, 0
@@ -725,6 +728,8 @@ class VirtualCapture:
                 if len(self.segs) >= self.segments_max:
                     self.state = STATE["paused"]
                     break
+        elif self.mode == MODE["streaming"] and self.format == FORMAT["logic_blocks"]:
+            self._stream_blocks(due, whole=True)
         elif self.mode == MODE["streaming"]:
             per_byte = 1 if self.analog else 8 // math.gcd(self.width, 8)   # whole bytes only (§2.2)
             n = min((due - self.produced) // per_byte * per_byte, MAX_SAMPLES)
@@ -738,6 +743,40 @@ class VirtualCapture:
                 done_samples = 0 if not complete else first + (complete - 1) * self.samples
                 self.stream_committed_bytes = self.bytes_of(done_samples)
         return events
+
+    def _stream_geometry(self, rel: int) -> tuple[int, int, int]:
+        """Streaming: the segment holding sample `rel` (from the retained start) -> (its number, first sample, size)."""
+        first = self.first_segment_samples or self.samples
+        if rel < first:
+            return 0, 0, first
+        k = (rel - first) // self.samples
+        return 1 + k, first + k * self.samples, self.samples
+
+    def _stream_blocks(self, due: int, whole: bool) -> None:
+        """Format 1 streaming: the blocks the clock has taken - each whole (a block counts its events first, §1.3),
+        `whole` False at stop: the rest too, a short last block of a short segment."""
+        while True:
+            rel = self.produced - self.capture_begin
+            k, at, size = self._stream_geometry(rel)
+            end = min(at + ((rel - at) // self.block + 1) * self.block, at + size)
+            if due - self.capture_begin < end:
+                if whole or due - self.capture_begin <= rel:
+                    break
+                end = due - self.capture_begin
+            if rel == at:                                          # a segment begins: where its bytes start
+                position = self.base + len(self.data)
+                self.stream_segs.append([position, at, size])
+                if self.drop_until >= UNKNOWN_END:
+                    self.drop_until = position                     # the segment dropped whole ended here
+            # start_level: the sample before, but for the generation's first segment (§1.3)
+            self.data += self._blocks(self.produced, end - rel, contiguous=rel != 0)
+            self.produced = self.capture_begin + end
+            if end == at + size or not whole:
+                self.stream_segs[-1][2] = end - at                 # its final size (short at stop)
+                self.serial_done = (k + 1) & 0xFFFFFFFF
+                self.stream_committed_bytes = self.base + len(self.data)
+            if not whole:
+                break
 
     def one_shot_due(self, now_ms: int) -> int:
         """Count samples whose complete frame has elapsed, including sample 0 at its timestamp.
@@ -765,7 +804,16 @@ class VirtualCapture:
                 index = self.first_trigger_index if self.first_trigger_index < partial else NONE
                 segment = self._segment(partial, index, flags=FLAG["short"])
                 events.append(bytes([EVENT["segment"]]) + segment.pack())
-        if self.state == STATE["capturing"] and self.mode == MODE["streaming"]:
+        if self.state == STATE["capturing"] and self.mode == MODE["streaming"] and self.format == FORMAT["logic_blocks"]:
+            if now_ms is not None:                                 # the taken samples, a short last block
+                self._stream_blocks(int((now_ms - self.started_ms) * self.rate / 1000), whole=False)
+            rel = self.produced - self.capture_begin
+            if self.stream_segs and self.stream_segs[-1][1] + self.stream_segs[-1][2] > rel:
+                self.stream_segs[-1][2] = rel - self.stream_segs[-1][1]
+            if self.stream_segs and self.serial_done < len(self.stream_segs):
+                self.serial_done = len(self.stream_segs) & 0xFFFFFFFF
+                self.stream_committed_bytes = self.base + len(self.data)
+        elif self.state == STATE["capturing"] and self.mode == MODE["streaming"]:
             # the segment being taken ends here, short: one more finished (serial_done, §3.2), its bytes all kept
             if self.produced - self.capture_begin > self._stream_done_samples():
                 self.serial_done = (self.serial_done + 1) & 0xFFFFFFFF
@@ -872,6 +920,9 @@ class VirtualCapture:
     def stream_segment(self, position: int) -> tuple[int, int, int]:
         """Streaming: the segment the byte at `position` is in -> (its position, its first sample counted from the
         retained start, its samples in all)."""
+        if self.format == FORMAT["logic_blocks"]:                  # variable bytes: as recorded when each began
+            at = bisect.bisect_right([r[0] for r in self.stream_segs], position) - 1
+            return tuple(self.stream_segs[at]) if at >= 0 else (0, 0, self.first_segment_samples or self.samples)
         first = self.first_segment_samples or self.samples
         first_bytes = self.bytes_of(first)
         if position < first_bytes:
@@ -892,6 +943,9 @@ class VirtualCapture:
         """Streaming: where the segment holding stream byte `position` ends (a segment boundary at `position`: that
         position itself, the segment beginning there not begun yet)."""
         at, _, total = self.stream_segment(position)
+        if self.format == FORMAT["logic_blocks"]:
+            later = [r[0] for r in self.stream_segs if r[0] > at]
+            return position if position == at else later[0] if later else UNKNOWN_END   # its end: when the next begins
         return position if position == at else at + self.bytes_of(total)
 
     def pushes(self, fn: int, next_seq, budget: int) -> list[bytes]:
@@ -906,7 +960,10 @@ class VirtualCapture:
         room = budget - 15 - len(tail) - 3 - 24
         while self.sent < end:
             at, first, total = self.stream_segment(self.sent)
-            n = min(end - self.sent, at + self.bytes_of(total) - self.sent, room)
+            seg_end = at + self.bytes_of(total)
+            if self.format == FORMAT["logic_blocks"]:                  # up to the next segment's bytes
+                seg_end = next((r[0] for r in self.stream_segs if r[0] > at), end)
+            n = min(end - self.sent, seg_end - self.sent, room)
             taken = min(total, self.produced - self.capture_begin - first)
             info = struct.pack("<QIQI", at, taken, self.time_of(self.capture_begin + first), self.uncertainty_ns)
             chunk = bytes(self.data[self.sent - self.base:self.sent - self.base + n])

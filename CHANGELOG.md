@@ -14,6 +14,8 @@
     待ち、status の flags bit2、区画の flags bit3 / bit0 を立てる。configure は実装した TLV だけを知っていて、ほかを critical なら unsupported で
     断る。capture-group の force は §4.4 を入れるまで ops から外す。
   - conformance: triggers と group の force を任意の op として扱い、bind の TLV が定義されていても通す。
+  - 仮想ベンチの形式 1 は streaming にも対応する。ブロックは揃ってから送る。stop では短い最後のブロックを送る。区画の位置は、区画が始まるたびに
+    記録した表から引く。購読が無い間に始まった区画は丸ごと捨てる。
 
 ## 0.0.34
 - (JA) oep-spec bc52327（debug §2 の閉じた後の保持、§2.2 holds、probe.config の wire-hold、core §8 の例外）に追従。仮想ベンチは、線切れ以外で

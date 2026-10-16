@@ -79,8 +79,6 @@ def test_format_1_contract():
                  + m.tlv(c.SAMPLES, struct.pack("<I", 64)) + m.tlv(c.FORMAT | c.CRITICAL, bytes([LOGIC_BLOCKS]))
                  + m.tlv(c.CARRIAGE | c.CRITICAL, struct.pack("<BBI", 0, c.LOGIC_CARRIAGE["raw"], 4)))
     assert e.value.result.detail == m.MALFORMED
-    with pytest.raises(h.Unsupported):                      # format 1 in streaming: not this bench's
-        lc.configure(rate=1000, mode=c.STREAMING, data_format=LOGIC_BLOCKS, events={3: 8}, roles=roles)
     with pytest.raises(h.Unsupported):                      # L can't be a multiple of 8 and 3 within 16
         lc.configure(rate=1000, samples=64, data_format=LOGIC_BLOCKS, events={3: 3}, roles=roles, block_max=16)
     with pytest.raises(h.Unsupported):                      # a critical TLV it does not have (threshold, §3.8)
@@ -197,3 +195,69 @@ def test_trigger_opts_beyond_the_declared_are_refused():
     planned(hst, lc, 2)
     with pytest.raises(h.Unsupported):                       # hysteresis is an analog's
         lc.configure(rate=1000, samples=32, trigger=(c.EDGE, 0, 0), trigger_opts=c.TriggerOpts(hysteresis=5))
+
+
+def streamed_segments(ep, segs):
+    """position -> (bytes, samples) of each streamed segment, from the data frames' segment_info (§3.4)."""
+    for f in ep.pushes():
+        if f[0] != m.ROLE_DATA:
+            continue
+        _, _, position, chunk, _ = c.unpack_push(f)
+        info = c.push_segment(f)
+        data, _ = segs.get(info.position, (b"", 0))
+        assert info.position + len(data) == position              # frames of a segment in order, never across one
+        segs[info.position] = (data + chunk, info.samples)
+
+
+def test_format_1_streaming_blocks_per_segment_and_a_short_end():
+    ep, hst, lc, clock = bench()
+    roles = planned(hst, lc, 10)
+    events = {8: 16, 9: 16}
+    cfg = lc.configure(rate=100_000, mode=c.STREAMING, data_format=LOGIC_BLOCKS, events=events, roles=roles,
+                       block_max=512)
+    assert cfg.block == 512
+    lc.subscribe()
+    lc.start()
+    got = {}
+    for _ in range(10):
+        clock.t += 7
+        streamed_segments(ep, got)
+    clock.t += 3
+    lc.stop()
+    streamed_segments(ep, got)
+    first = 0
+    for k, position in enumerate(sorted(got)):
+        data, samples = got[position]
+        blocks = lc.blocks(data, samples)
+        check_blocks(blocks, events, samples, first, contiguous_before=k > 0)
+        first += samples
+    assert first == 7300                                     # 73 ms at 100 kHz: all of it, the last block short
+    st = lc.status()
+    assert st.write_pos == sum(len(d) for d, _ in got.values()) and st.serial_done == len(got)
+
+
+def test_format_1_streaming_drops_a_segment_whole_while_unsubscribed():
+    ep, hst, lc, clock = bench()
+    roles = planned(hst, lc, 10)
+    events = {9: 16}
+    lc.configure(rate=100_000, mode=c.STREAMING, data_format=LOGIC_BLOCKS, events=events, roles=roles, block_max=512)
+    lc.subscribe()
+    lc.start()
+    got = {}
+    clock.t += 15
+    streamed_segments(ep, got)
+    lc.unsubscribe()
+    clock.t += 3                                             # inside a segment: it goes whole, the next ones too
+    ep.pushes()
+    lc.subscribe()
+    for _ in range(6):
+        clock.t += 7
+        streamed_segments(ep, got)
+    lc.stop()
+    streamed_segments(ep, got)
+    complete = 0
+    for position in sorted(got):
+        data, samples = got[position]
+        lc.blocks(data, samples)                             # every segment received is whole from its start
+        complete += 1
+    assert complete >= 2 and lc.status().flags & c.STATUS_FLAGS["dropped"]
