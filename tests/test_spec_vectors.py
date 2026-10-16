@@ -641,8 +641,9 @@ def dm_state(case, ep, hst):
         tg.halted = False
     if "writing a0 fails" in state:
         tg.fail_regs = {0x100A}
-    if "DMSTATUS0x200" in state:                                         # allhalted on the first wait read
-        tg.dmi[0x11] = 0x200
+    stated = re.search(r"DMSTATUS(0x[0-9a-fA-F]+)", state)
+    if stated:                                                           # the wait's first read, as the vector states it
+        tg.dmi[0x11] = int(stated.group(1), 16)
     if "DMSTATUS reads" in state:
         tg.dmi[0x11] = DMSTATUS
     if "restoring saved DATA failed" in state or "closed after the previous high-level op failed cleanup" in state:
