@@ -158,12 +158,13 @@ class Evaluator:
         fn = max(tracks, key=lambda f: self.caps[f].rate)
         return fn, self.caps[fn].rate
 
-    def _sample_at(self, fn: int, role: int, ns: int) -> int | None:
-        """The track's last sample of `role` at or before `ns` (its channel's own time, analog skew included)."""
+    def _sample_at(self, fn: int, role: int, ns: int, back: int = 0) -> int | None:
+        """The track's last sample of `role` at or before `ns` (its channel's own time, analog skew included), or the
+        one `back` samples before it."""
         cap = self.caps[fn]
         k = cap.analog_roles.index(role) if cap.analog else cap.logic_roles.index(role)
         skew = cap.channel_skew(role) if cap.analog else 0
-        i = int((Fraction(ns) - cap.t0_ns - skew) * cap.rate // 1_000_000_000)
+        i = int((Fraction(ns) - cap.t0_ns - skew) * cap.rate // 1_000_000_000) - back
         return None if i < 0 else cap.value(role if cap.analog else k, i)
 
     def _truth(self, c: Cond, ns: int, prev_ns: int) -> bool:
@@ -173,6 +174,8 @@ class Evaluator:
         v = self._sample_at(c.fn, c.role, ns)
         if v is None:
             return False
+        if c.previous is None:                                     # arming: the last sample before it (§4.4)
+            c.previous = self._sample_at(c.fn, c.role, ns, back=1)
         before, c.previous = c.previous, v
         if c.kind == COND["level"]:
             level, when = c.args
@@ -238,7 +241,7 @@ class Evaluator:
             return
         if st.within_ns and ns >= self.entered_ns + st.within_ns:
             if st.on_timeout:                                      # "should come" did not: the stage holds
-                self._advance(ns, fn)
+                self._advance(ns, fn, conds, timed_out=True)
             else:
                 self._enter(0, ns)
             return
@@ -249,17 +252,26 @@ class Evaluator:
                 return
             self.done += 1
             if self.done >= st.count:
-                self._advance(ns, fn)
+                self._advance(ns, fn, conds)
 
     def _enter(self, stage: int, ns: int) -> None:
+        """A stage entered: a state condition with when 0 counts only after it goes false to true from here (§4.4);
+        when 1 counts one already true (the OR's first rising is the entry's)."""
         self.stage, self.entered_ns, self.done, self.prev_or = stage, ns, 0, False
+        st = self.expr.stages[stage]
+        for term in list(st.terms.values()) + list(st.aborts.values()):
+            for c in term:
+                c.false_seen = False
 
-    def _advance(self, ns: int, fn) -> None:
+    def _advance(self, ns: int, fn, conds, timed_out: bool = False) -> None:
         if self.stage + 1 < len(self.expr.stages):
             self._enter(self.stage + 1, ns)
             return
-        tracks = {c.fn for c in self._conds() if c.kind != COND["timer"]}
-        # the uncertainty: the judging track's sample period; across tracks the slowest's (§4.4)
+        # the uncertainty (§4.4): the deciding stage's tracks' period, across tracks the slowest's; a timed-out
+        # on_timeout 1 stage that or this bench's timing step (the judging track's period), the larger
+        tracks = {c.fn for c in conds if c.kind != COND["timer"]}
         slow = min((self.caps[f].rate for f in tracks), default=None)
         unc = int(-(-Fraction(1_000_000_000) // slow)) if slow else 0
+        if timed_out and fn is not None:
+            unc = max(unc, int(-(-Fraction(1_000_000_000) // self.caps[fn].rate)))
         self.event = (fn or 0, ns, unc)

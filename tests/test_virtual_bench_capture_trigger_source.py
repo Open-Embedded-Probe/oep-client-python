@@ -101,3 +101,19 @@ def test_refusals():
     logic.configure(rate=10_000, samples=32)                 # immediate: not with a trigger source
     with pytest.raises(h.Unavailable):
         group.bind([logic, analog], TriggerSource([Stage([[Cond.cross_up(analog, 0, 100)]])]))
+
+
+@pytest.mark.parametrize("when", [0, 1])
+def test_a_stage_entered_with_its_level_already_true_follows_when(when):
+    """§4.4 段の入り口: role 4 is high all along. Stage 1's level(4, high) counts at entry only with when 1; with when 0
+    it waits for false to true inside the stage - never here."""
+    ep, hst, logic, analog, group, clock = setup(logic_waves={4: "quiet:1"})
+    source = TriggerSource([Stage([[Cond.edge(logic, 5)]]), Stage([[Cond.level(logic, 4, 1, when=when)]])])
+    group.bind([logic, analog], source)
+    group.start([logic, analog])
+    clock.t += 20
+    trigger = group.status().trigger
+    if when:
+        assert trigger[1] == ep.captures[logic.fn].time_of(33)   # the sample after stage 0's (one stage a sample)
+    else:
+        assert trigger is None
