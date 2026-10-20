@@ -155,3 +155,19 @@ def test_segment_columns_match_the_lines():
             cb.segment_columns(data[:-1], samples, list(range(R)), event_d, L)
         with pytest.raises(h.ProtocolError):
             cb.segment_columns(data + b"\0", samples, list(range(R)), event_d, L)
+
+
+def test_group_trigger_caps():
+    """capture-group describe's trigger_caps (§4.4): read as TriggerCaps from the virtual bench (what it declares, by
+    name too); a value of another length is not used (None); trigger_out_latency 0xFFFFFFFF: none."""
+    import struct
+    from oep_client import capture as c, virtual_bench_trigger as vbt
+    from test_virtual_bench_capture import bench
+    ep, hst, lc, clock = bench()
+    caps = c.CaptureGroup(hst).trigger_caps()
+    assert caps is not None and (caps.max_stages, caps.max_terms, caps.max_conds) == (vbt.MAX_STAGES, vbt.MAX_TERMS, vbt.MAX_CONDS)
+    assert caps.cross_track and caps.trigger_out_latency_ns is None
+    assert set(caps.kinds()) == set(vbt.TYPES) and all(caps.takes(c.COND[k]) for k in vbt.TYPES)
+    p4 = c.TriggerCaps.unpack(struct.pack("<BBBBIBI", 1, 1, 1, 0, 0b11110, 0, 0xFFFFFFFF))   # the P4's (ed51b03)
+    assert p4.kinds() == ["level", "edge", "cross_up", "cross_down"] and not p4.takes(c.COND["above"])
+    assert c.TriggerCaps.unpack(b"\x01\x01\x01") is None

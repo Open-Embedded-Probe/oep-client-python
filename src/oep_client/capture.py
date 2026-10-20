@@ -35,12 +35,13 @@ from __future__ import annotations
 import struct
 import time
 import zipfile
+from typing import NamedTuple
 from dataclasses import dataclass, field
 from fractions import Fraction
 
 from . import capture_blocks, cobs, host as h, message as m, registry as reg
 from .frames import FramingLost
-from .core import Interface, confirm
+from .core import Interface, confirm, describe
 
 _CAP = reg.FIXTURE_LOGIC
 _ANA = reg.FIXTURE_ANALOG
@@ -1087,6 +1088,37 @@ class TriggerSource:
         return out
 
 
+class TriggerCaps(NamedTuple):
+    """capture-group describe's trigger_caps (§4.4, tag 0x41): what its trigger source takes - a declaration (core §7.3),
+    bind's answer is the probe's word. `types`: the condition types (enum trigger_cond, bit k = type k); `protocols`:
+    serial's (bit k = protocol k); trigger_out_latency_ns None: no trigger_out."""
+    max_stages: int
+    max_terms: int
+    max_conds: int
+    cross_track: bool
+    types: int
+    protocols: int
+    trigger_out_latency_ns: int | None
+
+    FORMAT = "<BBBBIBI"
+
+    @classmethod
+    def unpack(cls, v: bytes) -> "TriggerCaps | None":
+        """-> its fields, or None for a value of another length (a form this host does not know)."""
+        if len(v) != struct.calcsize(cls.FORMAT):
+            return None
+        st, te, co, ct, types, prot, lat = struct.unpack(cls.FORMAT, v)
+        return cls(st, te, co, bool(ct), types, prot, None if lat == 0xFFFFFFFF else lat)
+
+    def takes(self, kind: int) -> bool:
+        """Whether the condition type `kind` (COND[...]) is declared."""
+        return 0 <= kind < 32 and bool(self.types >> kind & 1)
+
+    def kinds(self) -> list[str]:
+        """The declared condition types by name (COND), in number order."""
+        return [name for name, k in sorted(COND.items(), key=lambda kv: kv[1]) if self.takes(k)]
+
+
 class CaptureGroup(Interface):
     """oep.fixture.capture-group (§4): tracks (LogicCapture / AnalogCapture, each configured as usual with an immediate
     trigger, all in one mode) started at once by one request. Each track is read as usual; a track's offset is its
@@ -1114,6 +1146,16 @@ class CaptureGroup(Interface):
     def force(self) -> None:
         """§4.4: waiting for the event, it happens now (nothing otherwise)."""
         self._call(self.FORCE)
+
+    TRIGGER_CAPS = _GRP.tlv["describe"]["trigger_caps"]
+
+    def trigger_caps(self) -> TriggerCaps | None:
+        """describe's trigger_caps (§4.4): what the group's trigger source takes; None when the probe declares none (no
+        trigger source, or a form this host does not know). A declaration: bind still has the last word (§4.3)."""
+        for tag, v in describe(self.host, self.fn):
+            if tag == self.TRIGGER_CAPS:
+                return TriggerCaps.unpack(v)
+        return None
 
     generation: int | None = None     # the group's current generation (start / status, §4.1)
     stale_events: int = 0             # the group's events of an earlier generation that events() dropped

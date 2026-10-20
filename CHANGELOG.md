@@ -1,6 +1,10 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) `CaptureGroup.trigger_caps()` -> `TriggerCaps | None`: capture-group の describe の trigger_caps（§4.4、0x41）を読む（max_stages、
+  max_terms、max_conds、cross_track、types、protocols、trigger_out_latency_ns。trigger_out が無ければ None）。`takes(COND[...])` と
+  `kinds()`（宣言された条件の型の名前）で、bind の前に頼めるかを確かめられる。宣言なしや知らない形では None（宣言は目安で、正しいのは
+  bind の答え）。wireskein の依頼。P4X（5a61110）で level、edge、cross_up、cross_down と読めた。
 - (JA) `capture_blocks.segment_columns` / `LogicCapture.columns(data, samples)`: 形式 1 の区画を、ブロックを作らずに列で読む（numpy が要る）。
   raw のチャネルはビット列、events のチャネルは区画を通した刻み（`EventColumn`: quanta、levels、counts、start_level）。fallback の
   ブロックは、その標本から probe と同じ数え方で刻みに直す。検査は read_logic_blocks と同じ。ヘッダだけを Python で辿り、raw は
