@@ -90,7 +90,9 @@ def test_named_extensions_and_capture_drops():
     assert (d.no_stage_bytes, d.dma_overruns, d.zero_copy, d.stages, d.psram_total) == (12288, 1, True, 4, 0)
     assert d.buffer_peak is None                                            # the form before buffer_peak
     d = c.CaptureDrops.unpack(struct.pack("<IIIIBBIIII", 0, 0, 0, 0, 1, 8, 1, 2, 3, 3585344))
-    assert (d.stages, d.psram_total, d.buffer_peak) == (8, 3, 3585344)
+    assert (d.stages, d.psram_total, d.buffer_peak) == (8, 3, 3585344) and d.spill_peak is None
+    d = c.CaptureDrops.unpack(struct.pack("<IIIIBBIIIIII", 0, 0, 0, 0, 1, 8, 1, 2, 3, 4928, 5 << 20, 8 << 20))
+    assert (d.buffer_peak, d.spill_peak, d.spill_bytes) == (4928, 5 << 20, 8 << 20)   # the spill behind the ring
     assert c.CaptureDrops.unpack(b"short") is None
 
 

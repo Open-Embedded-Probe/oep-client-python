@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) `CaptureDrops` に spill_peak と spill_bytes を足した。P4 のファーム 826eee0 からの、ストリームの DMA リングの後ろの
+  待避 FIFO（PSRAM、8 MiB）の最大使用量と大きさ。それより前のファームの形では None。
 - (JA) `UsbAsyncStream` の既定を 32 KiB × 480 本にした（前は 64 KiB × 128）。
   - probe は各転送を短いパケットで終えるので、URB の大きさによらず 1 本に 1 フレーム（40 MB/s の P4X で約 19 KB）しか入らない。
     host が溜められるのは「本数 × 1 フレーム」になる（64 KiB × 128 は約 2.4 MB、40 MB/s で 60 ms）。wireskein の測定による。
