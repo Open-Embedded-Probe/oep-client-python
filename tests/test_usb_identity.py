@@ -254,7 +254,7 @@ def test_project_serial_ports_lists_the_project_vid_pid_only(monkeypatch):
 
 def test_open_usb_host_probes_with_confirm_first(monkeypatch):
     s = LengthStream(fake_ep())
-    monkeypatch.setattr(link, "_open_usb_stream", lambda kind, vid, pid, serial: s)
+    monkeypatch.setattr(link, "_open_usb_stream", lambda kind, vid, pid, serial, *sizes: s)
     hst = link.open_usb_host()
     assert ops(s.sent) == [m.OP_CONFIRM] and hst.limits["max_frame"] >= 64 and not s.closed
 
@@ -280,7 +280,7 @@ def test_an_answer_that_is_not_a_valid_confirm_closes_the_device(monkeypatch):
         return m.Result(m.Request.unpack(msg).corr, m.COMPLETED, m.SUCCESS, b"HELLO" + bytes(12)).pack()
 
     s = LengthStream(answer=not_oep)
-    monkeypatch.setattr(link, "_open_usb_stream", lambda kind, vid, pid, serial: s)
+    monkeypatch.setattr(link, "_open_usb_stream", lambda kind, vid, pid, serial, *sizes: s)
     with pytest.raises(link.NotOepProbe):
         link.open_usb_host(transports=("vendor",))
     assert ops(s.sent) == [m.OP_CONFIRM] and s.closed
@@ -305,7 +305,7 @@ def test_usb_unit_id_matches_the_serial_and_checks_describe(monkeypatch):
 def test_usb_unit_id_whose_describe_says_another_unit_is_closed(monkeypatch):
     s = LengthStream(fake_ep(unit_id="ffffffffffff"))
     monkeypatch.setattr(link, "find_usb", lambda unit_id: (0x1234, 0x5678))
-    monkeypatch.setattr(link, "_open_usb_stream", lambda kind, vid, pid, serial: s)
+    monkeypatch.setattr(link, "_open_usb_stream", lambda kind, vid, pid, serial, *sizes: s)
     with pytest.raises(link.UnitIdMismatch):
         link.open_host("usb:30eda0e3b001")
     assert s.closed and set(ops(s.sent)) <= {m.OP_CONFIRM, m.OP_DESCRIBE}

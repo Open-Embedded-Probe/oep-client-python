@@ -115,12 +115,13 @@ class UsbAsyncStream:
     transfer whose length is a whole number of packets with a zero-length packet, so small answers never wait."""
     READER = "usb-async"     # queued asynchronous IN transfers: a host's pause is taken by the kernel (link.reader)
 
-    # 64 KiB x 128: a read completes every few frames, so the latency at a low rate stays short (1 MiB reads waited
-    # 0.8 s at 1.25 MB/s), and 8 MiB (200 ms at 40 MB/s) stay queued for the host's hiccups - with 2 MiB (x 32) the
-    # P4X at 40 MB/s lost 0.2-0.6 % in 30 s to the USB side's pauses (URBs resubmitted late, the bus); with 8 MiB none
-    # in 6 runs (2026-10-20, wireskein and here)
-    URB_SIZE = 64 * 1024
-    DEPTH = 128
+    # The probe ends every transfer with a short packet (a frame, ~19 KB at 40 MB/s on the P4X), so a transfer holds
+    # one frame whatever its size: what the host can hold back is DEPTH frames, not DEPTH x URB_SIZE - 64 KiB x 128 kept
+    # ~2.4 MB (60 ms at 40 MB/s), 256 KiB x 32 lost far more (wireskein, 2026-10-20). So transfers of a frame's most
+    # (32 KiB) and as many as usbfs takes: 480 x 32 KiB is 15 MiB of usbfs_memory_mb's default 16. A submit usbfs
+    # refuses (its memory, another device's transfers in this process) leaves the depth at what it took.
+    URB_SIZE = 32 * 1024
+    DEPTH = 480
 
     def __init__(self, context, handle, endpoint_in: int, endpoint_out: int, interface: int, out_packet: int = 512,
                  urb_size: int | None = None, depth: int | None = None):
@@ -145,10 +146,16 @@ class UsbAsyncStream:
         for _ in range(self.depth):
             t = handle.getTransfer()
             t.setBulk(endpoint_in, self.urb_size, callback=self._done, timeout=0)
-            t.submit()
+            try:
+                t.submit()
+            except usb1.USBError:
+                if not self._transfers:
+                    raise                  # not even one: the endpoint is unusable
+                break                      # usbfs' memory: the depth is what it took
             self._transfers.append(t)
             self._active += 1
             self._inflight += 1
+        self.depth = len(self._transfers)
         self._events = threading.Thread(target=self._run, daemon=True)
         self._events.start()
         # Closed at exit too: left to usb1's own finalizers, the context went while the event thread was inside
@@ -401,8 +408,10 @@ class UsbProcessStream:
         cmd_parent, cmd_child = socket.socketpair()
         package_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [package_root, os.environ.get("PYTHONPATH")])))
-        args = [sys.executable, "-m", "oep_client.usb_stream", str(vid), str(pid), serial or "", str(urb_size or 0),
-                str(depth or 0), str(data_w), str(cmd_child.fileno())]
+        # this process's sizes (UsbAsyncStream.URB_SIZE / DEPTH as set here), not the new process's own defaults
+        urb_size, depth = urb_size or UsbAsyncStream.URB_SIZE, depth or UsbAsyncStream.DEPTH
+        args = [sys.executable, "-m", "oep_client.usb_stream", str(vid), str(pid), serial or "", str(urb_size),
+                str(depth), str(data_w), str(cmd_child.fileno())]
         p = subprocess.Popen(args, pass_fds=(data_w, cmd_child.fileno()), env=env, stdin=subprocess.DEVNULL)
         os.close(data_w)
         cmd_child.close()

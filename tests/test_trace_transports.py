@@ -368,7 +368,7 @@ def test_the_framing_follows_the_kind_of_transport_not_the_vid_pid(monkeypatch):
             super().__init__()
 
     monkeypatch.setattr(link, "TcpStream", Tcp)
-    monkeypatch.setattr(link, "_open_usb_stream", lambda kind, vid, pid, serial: Stream())
+    monkeypatch.setattr(link, "_open_usb_stream", lambda kind, vid, pid, serial, *sizes: Stream())
     assert link.open_host("/dev/ttyUSB9", keep_session=False).link.framing == "cobs"
     assert link.open_host("tcp://127.0.0.1:7450", keep_session=False).link.framing == "length"
     for target in ("usb:1209:4f45", "usb:303a:1001"):
@@ -595,7 +595,7 @@ def test_a_named_unit_id_is_compared_without_letter_case(monkeypatch):
     s = LengthStream(fake_ep(unit_id="30eda0e3b001"))
     asked = []
     monkeypatch.setattr(link, "find_usb", lambda unit_id: asked.append(unit_id) or (0x1234, 0x5678))
-    monkeypatch.setattr(link, "_open_usb_stream", lambda kind, vid, pid, serial: s)
+    monkeypatch.setattr(link, "_open_usb_stream", lambda kind, vid, pid, serial, *sizes: s)
     hst = link.open_host("usb:30EDA0E3B001")
     assert not s.closed and hst.limits is not None and m.OP_DESCRIBE in ops(s.sent)
 

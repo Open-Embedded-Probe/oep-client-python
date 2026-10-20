@@ -1320,17 +1320,20 @@ class SerialLink:
 
 
 def open_usb_host(vid: int = USB_VID, pid: int = USB_PID, serial: str | None = None, timeout: float = 3.0,
-                  transports: tuple[str, ...] = ("vendor", "hid")):
+                  transports: tuple[str, ...] = ("vendor", "hid"), *, urb_size: int | None = None,
+                  depth: int | None = None):
     """A Host on the probe's USB device (the P4's HS OTG port), trying its ways in in the transports §3 order: vendor bulk,
     then vendor-defined HID (when raw USB is not permitted or the probe offers no vendor interface). A CDC port is
     opened by path (open_host). Length-prefixed frames on all of them. The device is one the caller chose (or named),
     not one identified: each way in is probed by the confirm-only rule (SerialLink.probe); one that gives no valid
-    answer is closed and the next tried. NotOepProbe when every opened way in failed that way."""
+    answer is closed and the next tried. NotOepProbe when every opened way in failed that way. `urb_size` / `depth`:
+    the vendor way's IN transfers (UsbAsyncStream.URB_SIZE x DEPTH by default)."""
     from . import host
     errors, probed = [], []
+    sizes = {k: v for k, v in (("urb_size", urb_size), ("depth", depth)) if v}   # only when the caller chose them
     for kind in transports:
         try:
-            stream = _open_usb_stream(kind, vid, pid, serial)
+            stream = _open_usb_stream(kind, vid, pid, serial, **sizes)
         except (OSError, FileNotFoundError, ImportError) as e:
             errors.append(f"{kind}: {e}")
             continue
@@ -1339,7 +1342,7 @@ def open_usb_host(vid: int = USB_VID, pid: int = USB_PID, serial: str | None = N
             continue
         lk = SerialLink.on_stream(stream, "length", timeout)
         lk.transport = kind
-        lk.reopener = lambda kind=kind: _open_usb_stream(kind, vid, pid, serial)   # re-enumerated after a restart
+        lk.reopener = lambda kind=kind: _open_usb_stream(kind, vid, pid, serial, **sizes)   # re-enumerated after a restart
         hst = host.Host(lk.send)
         try:
             lk.attach_host(hst)
@@ -1575,7 +1578,8 @@ def find_usb(unit_id: str) -> tuple[int, int]:
     raise FileNotFoundError(f"no USB device with serial number (unit id) {unit_id}")
 
 
-def _open_usb_stream(kind: str, vid: int, pid: int, serial: str | None):
+def _open_usb_stream(kind: str, vid: int, pid: int, serial: str | None, urb_size: int | None = None,
+                     depth: int | None = None):
     if kind == "hid":
         from .hid_stream import open_hid
         return open_hid(vid, pid, serial)
@@ -1583,8 +1587,8 @@ def _open_usb_stream(kind: str, vid: int, pid: int, serial: str | None):
     try:
         import usb1  # noqa: F401  python-libusb1: queued asynchronous IN transfers (streaming near the HS ceiling)
         if os.environ.get("OEP_USB_STREAM") == "process":   # the transfers in a process of their own (no GIL stalls)
-            return UsbProcessStream.open(vid, pid, serial)
-        return UsbAsyncStream.open(vid, pid, serial)
+            return UsbProcessStream.open(vid, pid, serial, urb_size=urb_size, depth=depth)
+        return UsbAsyncStream.open(vid, pid, serial, urb_size=urb_size, depth=depth)
     except ImportError:
         return UsbBulkStream.open(vid, pid, serial)
 

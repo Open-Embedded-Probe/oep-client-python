@@ -221,3 +221,29 @@ def test_the_process_side_sends_what_came_in_and_answers_requests(monkeypatch):
     cmd_parent.send(("close", None))
     t.join(2.0)
     assert not t.is_alive() and fake.closed
+
+
+def test_a_submit_usbfs_refuses_leaves_the_depth_at_what_it_took(monkeypatch):
+    """usbfs' memory (usbfs_memory_mb) refusing the 11th transfer: the stream runs on 10; refusing the first: raised."""
+    monkeypatch.setitem(sys.modules, "usb1", usb1)
+    from oep_client import usb_stream
+
+    for room, ok in ((10, True), (0, False)):
+        ctx = Context()
+        h = Handle(ctx)
+        taken = []
+
+        def submit(self, taken=taken, room=room):
+            if len(taken) >= room:
+                raise usb1.USBError("no memory")
+            taken.append(self)
+            self.out = True
+
+        monkeypatch.setattr(Transfer, "submit", submit)
+        if ok:
+            s = usb_stream.UsbAsyncStream(ctx, h, 0x81, 0x01, 0)
+            assert s.depth == 10 and s.stats()["depth"] == 10
+            s.close()
+        else:
+            with pytest.raises(usb1.USBError):
+                usb_stream.UsbAsyncStream(ctx, h, 0x81, 0x01, 0)

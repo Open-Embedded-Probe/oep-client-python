@@ -1,6 +1,12 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) `UsbAsyncStream` の既定を 32 KiB × 480 本にした（前は 64 KiB × 128）。
+  - probe は各転送を短いパケットで終えるので、URB の大きさによらず 1 本に 1 フレーム（40 MB/s の P4X で約 19 KB）しか入らない。
+    host が溜められるのは「本数 × 1 フレーム」になる（64 KiB × 128 は約 2.4 MB、40 MB/s で 60 ms）。wireskein の測定による。
+  - 480 × 32 KiB は 15 MiB で、usbfs_memory_mb の既定 16 に収まる。usbfs が途中で断ったら、そこまでの本数で続ける
+    （1 本も出せなければ例外）。
+  - `open_usb_host(urb_size=, depth=)` で選べる。UsbProcessStream は、このプロセスの URB_SIZE / DEPTH を引き継ぐ。
 - (JA) `UsbProcessStream`: UsbAsyncStream を別のプロセス（`python -m oep_client.usb_stream`）で動かす。形は UsbAsyncStream と同じ
   （read、in_waiting、write、reset_input_buffer、close、stats）。
   - IN の転送の受け取りと出し直しは、そのプロセスの event のスレッドと GIL で行う。host の側のスレッドが GIL を長く持っても
