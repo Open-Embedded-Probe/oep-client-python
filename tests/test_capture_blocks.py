@@ -92,3 +92,14 @@ def test_named_extensions_and_capture_drops():
     d = c.CaptureDrops.unpack(struct.pack("<IIIIBBIIII", 0, 0, 0, 0, 1, 8, 1, 2, 3, 3585344))
     assert (d.stages, d.psram_total, d.buffer_peak) == (8, 3, 3585344)
     assert c.CaptureDrops.unpack(b"short") is None
+
+
+def test_configure_answer_judge_latency():
+    """§3.3 judge_latency_ns (0x15, optional): read into Config; absent, None; a value of another length not used."""
+    import struct
+    from oep_client import capture as c, message as m
+    rate = m.tlv(c.ACTUAL_RATE, struct.pack("<II", 5000000, 1))
+    cfg = c._config(rate + m.tlv(c.JUDGE_LATENCY, struct.pack("<I", 100819200)), analog=False)
+    assert cfg.judge_latency_ns == 100819200
+    assert c._config(rate, analog=False).judge_latency_ns is None
+    assert c._config(rate + m.tlv(c.JUDGE_LATENCY, b"\x01\x02"), analog=True).judge_latency_ns is None

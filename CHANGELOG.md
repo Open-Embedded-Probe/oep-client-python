@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) oep-spec e1d5495 に追従（registry とベクタを取り込み）。configure / query の応答の judge_latency_ns（§3.3）を
+  `Config.judge_latency_ns` で読む（組の出来事の元の条件を判定するトラックの、出来事と知るまでの最大の時間。返さない probe は None）。
 - (JA) `UsbAsyncStream.DEPTH` の既定を 32 から 128 にした（64 KiB × 128 = 8 MiB、40 MB/s で 200 ms ぶん）。P4X の 40 MHz・8 本の 30 秒で、
   32 では USB の受け取り側のときどきの止まり（URB の出し直しの遅れ、バス）で 0.2〜0.6 % を落とした。128 では wireskein の 2 回と
   こちらの 5 回（形式 0 を 4 回、形式 4 を 1 回）、すべて落としなし。

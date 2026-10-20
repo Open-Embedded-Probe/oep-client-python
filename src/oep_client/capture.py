@@ -51,6 +51,7 @@ MODE, RATE, SAMPLES, SEGMENTS, TRIGGER, PRETRIGGER, TRIGGER_OPTS, FORMAT, CARRIA
                                        "format", "carriage", "block_max"))
 ANSWER_FORMAT, ANSWER_BLOCK = _CAP.tlv["configure_answer"]["format"], _CAP.tlv["configure_answer"]["block"]
 STREAM_BUFFER = _CAP.tlv["configure_answer"]["stream_buffer"]
+JUDGE_LATENCY = _CAP.tlv["configure_answer"]["judge_latency_ns"]
 DATA_FORMAT = _CAP.enum["data_format"]
 LOGIC_CARRIAGE = _CAP.enum["logic_carriage"]
 FRONTEND = _ANA.tlv["configure"]["frontend"]             # analog only
@@ -167,6 +168,7 @@ class Config:
     format: int = 0                                            # the data format in use (§1; absent: 0)
     block: int = 0                                             # format 1 / 2: L
     stream_buffer: int | None = None                           # streaming: the most bytes held unsent (§3.3; None: not said)
+    judge_latency_ns: int | None = None   # judging a group's trigger source condition, the longest to know it (§3.3, §4.4)
     raw_roles: list[int] = field(default_factory=list)         # format 1: the raw channels' roles (as asked)
     event_d: dict[int, int] = field(default_factory=dict)      # format 1: events role -> D (as asked)
 
@@ -434,7 +436,8 @@ def _config(payload: bytes, analog: bool) -> Config:
     c = Config()
     seen: set[int] = set()
     for tag, v in tlvs(payload):
-        if tag in (ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, REFERENCE, ANSWER_FORMAT, ANSWER_BLOCK, STREAM_BUFFER):
+        if tag in (ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, REFERENCE, ANSWER_FORMAT, ANSWER_BLOCK, STREAM_BUFFER,
+                   JUDGE_LATENCY):
             if tag in seen:
                 continue
             seen.add(tag)
@@ -453,6 +456,8 @@ def _config(payload: bytes, analog: bool) -> Config:
             c.block = struct.unpack("<I", v)[0]
         elif tag == STREAM_BUFFER and len(v) == 4:
             c.stream_buffer = struct.unpack("<I", v)[0]
+        elif tag == JUDGE_LATENCY and len(v) == 4:
+            c.judge_latency_ns = struct.unpack("<I", v)[0]
         elif tag == ACTUAL_SAMPLES and len(v) == 4:
             c.samples = struct.unpack("<I", v)[0]
         elif tag == ACTUAL_SEGMENTS and len(v) == 4:
