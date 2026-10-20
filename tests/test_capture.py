@@ -174,3 +174,21 @@ def test_stream_keepalive_counts_across_calls():
     for _ in range(8):                       # 8 x 0.15 s, keepalive every 0.5 s: two at least
         lc.stream(Link(), seconds=0.15, into=got, keepalive_s=0.5)
     assert Host.keepalives >= 2
+
+
+def test_group_stream_splits_the_pushes_by_track():
+    """A capture-group's streaming tracks (§4.1): their pushes interleaved on one link, each into its own Received by
+    fn, each with its own seq and gaps; collected until every track has nbytes."""
+    logic_cap, analog_cap = c.LogicCapture.__new__(c.LogicCapture), c.AnalogCapture.__new__(c.AnalogCapture)
+    logic_cap.fn, analog_cap.fn = 1, 2
+    group = c.CaptureGroup.__new__(c.CaptureGroup)
+    link = FakeLink([[push(1, 0, 0, b"ab"), push(2, 0, 0, b"AB")],
+                     [push(2, 1, 2, b"CD"), push(1, 1, 2, b"cd")],
+                     [push(2, 3, 8192, b"EF")]])          # the analog's seq 2 lost, and a segment dropped by the probe
+    got = group.stream(link, [logic_cap, analog_cap], nbytes=4, keepalive_s=0)
+    assert set(got) == {1, 2}
+    assert bytes(got[1].data) == b"abcd" and got[1].gaps == [] and got[1].seq_lost == 0
+    assert bytes(got[2].data) == b"ABCD"
+    got = group.stream(link, [logic_cap, analog_cap], nbytes=6, seconds=0.05, into=got, keepalive_s=0)
+    assert bytes(got[2].data) == b"ABCDEF" and got[2].gaps == [(4, 8188)] and got[2].seq_lost == 1
+    assert bytes(got[1].data) == b"abcd" and list(link.pushes) == []

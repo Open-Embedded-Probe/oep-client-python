@@ -1,6 +1,10 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) `CaptureGroup.stream(link, tracks, seconds=, nbytes=, into=)` -> `{fn: Received}`: ストリーミングのトラックを集めた
+  capture-group で、1 本の経路に混ざって届く push をトラックごと（fn ごと）の Received に分けて集める。seq、generation、gap、
+  segment_info の扱いは `LogicCapture.stream()` と同じ（その内側を `_collect()` に切り出した）。nbytes は全トラックが届くまで待つ。
+  `CaptureGroup.finish()` は各トラックの `finish()` を呼ぶ。wireskein の依頼。
 - (JA) `Wire.scan`: 1 回の要求に入れる組を、255 までかつ経路の max_frame に収まる数にした。前は 255 組を詰めていて、
   max_frame 1024 の経路で候補が多いと（rp2350-pins の 812 組）1031 バイトの要求を送っていた（仮想ベンチはそれを受けていた）。JS への移植で見つかった。
 

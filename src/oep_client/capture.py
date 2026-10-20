@@ -606,35 +606,8 @@ class LogicCapture(Interface):
         got = into or Received()
         deadline = time.monotonic() + seconds if seconds is not None else None
         kept = getattr(got, "_kept", None) or time.monotonic()   # on from the last call with the same `into`: a host
-        expect_seq = getattr(got, "_seq", None)                   # calling in short slices still keeps the lease
-        event_seqs = getattr(got, "_events", set())   # events share the fn's seq (they stay on the link for the caller)
-        while True:
-            for e in link.events:
-                if struct.unpack_from("<H", e, 1)[0] == self.fn:
-                    event_seqs.add(struct.unpack_from("<H", e, 3)[0])
-            for seq, position, data, generation, info in take_pushes(link, self.fn):
-                while expect_seq is not None and expect_seq != seq:
-                    if expect_seq in event_seqs:
-                        event_seqs.discard(expect_seq)
-                    else:
-                        got.seq_lost += 1
-                    expect_seq = (expect_seq + 1) & 0xFFFF
-                expect_seq = (seq + 1) & 0xFFFF
-                if generation is not None and self.generation is not None and generation != self.generation:
-                    got.stale += 1                              # the generation before: not this capture's bytes
-                    continue
-                if info is not None:
-                    got.segments[info.position] = info              # the latest: samples grow while it is taken
-                if got.start is None:
-                    got.start = position
-                else:
-                    expected = got.start + len(got.data) + sum(n for _, n in got.gaps)   # u64 positions: no wrap
-                    skipped = position - expected
-                    if skipped:
-                        got.gaps.append((len(got.data), skipped))
-                got.data += data
-                got.frames += 1
-            got._seq, got._events = expect_seq, event_seqs
+        while True:                                               # calling in short slices still keeps the lease
+            self._collect(link, got)
             if keepalive_s and time.monotonic() - kept >= keepalive_s:
                 self.host.keepalive()
                 kept = time.monotonic()
@@ -644,6 +617,37 @@ class LogicCapture(Interface):
             if deadline is not None and time.monotonic() >= deadline:
                 return got
             link.pump(0.02, until_one=True)
+
+    def _collect(self, link, got: Received) -> None:
+        """The pushes of this fn waiting on the link into `got` (stream()'s rules: seq, generation, gaps, segments)."""
+        expect_seq = getattr(got, "_seq", None)
+        event_seqs = getattr(got, "_events", set())   # events share the fn's seq (they stay on the link for the caller)
+        for e in link.events:
+            if struct.unpack_from("<H", e, 1)[0] == self.fn:
+                event_seqs.add(struct.unpack_from("<H", e, 3)[0])
+        for seq, position, data, generation, info in take_pushes(link, self.fn):
+            while expect_seq is not None and expect_seq != seq:
+                if expect_seq in event_seqs:
+                    event_seqs.discard(expect_seq)
+                else:
+                    got.seq_lost += 1
+                expect_seq = (expect_seq + 1) & 0xFFFF
+            expect_seq = (seq + 1) & 0xFFFF
+            if generation is not None and self.generation is not None and generation != self.generation:
+                got.stale += 1                              # the generation before: not this capture's bytes
+                continue
+            if info is not None:
+                got.segments[info.position] = info              # the latest: samples grow while it is taken
+            if got.start is None:
+                got.start = position
+            else:
+                expected = got.start + len(got.data) + sum(n for _, n in got.gaps)   # u64 positions: no wrap
+                skipped = position - expected
+                if skipped:
+                    got.gaps.append((len(got.data), skipped))
+            got.data += data
+            got.frames += 1
+        got._seq, got._events = expect_seq, event_seqs
 
     def finish(self, link, got: Received, timeout: float = 5.0) -> Received:
         """Streaming, after stop() or an error stop: collect the pushes still to come, up to the last byte captured
@@ -1209,6 +1213,37 @@ class CaptureGroup(Interface):
         out = [e for e in got if e.generation is None or e.generation == self.generation]
         self.stale_events += len(got) - len(out)
         return out
+
+    def stream(self, link, tracks: list[LogicCapture], *, seconds: float | None = None, nbytes: int | None = None,
+               into: dict[int, Received] | None = None, keepalive_s: float = 1.0) -> dict[int, Received]:
+        """Streaming tracks of this group (§4.1: all in mode 3, each subscribed): collect every track's pushes together,
+        each into its own Received by fn (LogicCapture.stream()'s rules per track), until each has `nbytes` or
+        `seconds` have passed (at least one is needed). The lock is kept alive every `keepalive_s`."""
+        if seconds is None and nbytes is None:
+            raise ValueError("stream() needs seconds or nbytes")
+        got = into if into is not None else {}
+        for t in tracks:
+            got.setdefault(t.fn, Received())
+        deadline = time.monotonic() + seconds if seconds is not None else None
+        kept = getattr(self, "_kept", None) or time.monotonic()
+        while True:
+            for t in tracks:
+                t._collect(link, got[t.fn])
+            if keepalive_s and time.monotonic() - kept >= keepalive_s:
+                self.host.keepalive()
+                kept = time.monotonic()
+            self._kept = kept
+            if nbytes is not None and all(len(got[t.fn].data) >= nbytes for t in tracks):
+                return got
+            if deadline is not None and time.monotonic() >= deadline:
+                return got
+            link.pump(0.02, until_one=True)
+
+    def finish(self, link, tracks: list[LogicCapture], got: dict[int, Received], timeout: float = 5.0) -> dict[int, Received]:
+        """Streaming, after stop(): each track's pushes still to come (LogicCapture.finish() per track)."""
+        for t in tracks:
+            t.finish(link, got.setdefault(t.fn, Received()), timeout)
+        return got
 
     def wait(self, timeout: float = 5.0, keepalive_s: float = 1.0) -> GroupStatus:
         """Poll until every track is done (one-shot). The lock is kept alive every `keepalive_s` while it waits."""
