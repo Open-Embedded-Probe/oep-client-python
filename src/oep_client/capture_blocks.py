@@ -45,12 +45,14 @@ class EventChannel:
 class LogicBlock:
     """One block of a format 1 segment: samples `first` .. `first + samples - 1` of the segment. `raw`: role -> bits
     for the raw channels and this block's fallback channels; `fallback`: the events channels carried raw here;
-    `events`: role -> EventChannel for the others."""
+    `events`: role -> EventChannel for the others; `start_levels`: role -> the level before the block's first sample
+    for every events channel, fallback ones included (§1.3 start_level: a segment's seam is counted from it)."""
     first: int
     samples: int
     raw: dict[int, bytes] = field(default_factory=dict)
     fallback: set[int] = field(default_factory=set)
     events: dict[int, EventChannel] = field(default_factory=dict)
+    start_levels: dict[int, int] = field(default_factory=dict)
 
 
 def _bit(data: bytes, j: int) -> int:
@@ -101,7 +103,8 @@ def read_logic_blocks(data: bytes, samples: int, raw_roles: list[int], event_d: 
         rb = (r * wb + 7) // 8
         if pos + rb + EVENT_BYTES * n > len(data):
             raise h.ProtocolError(f"format 1: block at sample {first} cut short ({n} events)")
-        b = LogicBlock(first, r, fallback={ev[e] for e in range(E) if fb[e]})
+        b = LogicBlock(first, r, fallback={ev[e] for e in range(E) if fb[e]},
+                       start_levels={ev[e]: start[e] for e in range(E)})
         for role, bits in zip(cols, (_columns_np if fast and wb > 1 else _columns)(data[pos:pos + rb], r, wb)):
             b.raw[role] = bits
         pos += rb

@@ -79,8 +79,9 @@ class LengthFrames:
                 if self._buffer and time.monotonic() - self._last_rx >= self.stall_s:
                     raise FramingLost(f"a frame stopped after {len(self._buffer)} bytes")
                 if time.monotonic() >= deadline:
-                    if self._buffer:
-                        raise FramingLost(f"a frame stopped after {len(self._buffer)} bytes")
+                    # a frame still coming (its bytes stopped for less than stall_s) is kept for the next call: the
+                    # caller's timeout is not the frame gap rule (a 16 KiB push across a 20 ms pump was declared lost
+                    # and every push after it went to resync, 2026-10-20 P4X format 4)
                     return None
 
     def discard_until_quiet(self, quiet_s: float, limit_s: float) -> bool:

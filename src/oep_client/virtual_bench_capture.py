@@ -67,6 +67,10 @@ FORMAT = CAP.enum["data_format"]
 CARRIAGE = CAP.enum["logic_carriage"]
 BLOCK_TOP = 4096                       # its own: the longest block L it makes (§1.3)
 UNKNOWN_END = 1 << 62                  # streaming format 1: a segment dropped whole whose end is not taken yet
+BLOCKS_A_TICK = 1 << 14                # streaming format 1: the most samples one tick encodes - Python encodes far below
+                                       # a fast rate, and catching up on all the time passed fell further behind every
+                                       # tick until the bench answered nothing (wireskein, 2 MHz x 4 lines): it makes
+                                       # what it can and the stream runs late instead
 
 
 class Reject(Exception):
@@ -795,8 +799,14 @@ class VirtualCapture:
         return 1 + k, first + k * self.samples, self.samples
 
     def _stream_blocks(self, due: int, whole: bool) -> None:
-        """Format 1 streaming: the blocks the clock has taken - each whole (a block counts its events first, §1.3),
-        `whole` False at stop: the rest too, a short last block of a short segment."""
+        """Format 1 streaming: the blocks the clock has taken - each whole (a block counts its events first, §1.3), at
+        most BLOCKS_A_TICK samples a call; `whole` False at stop: the block being taken ends there, short."""
+        if whole:
+            due = min(due, self.produced + BLOCKS_A_TICK)
+        else:                                                      # stop: only the block begun, not all the time behind
+            rel = self.produced - self.capture_begin
+            _, at, size = self._stream_geometry(rel)
+            due = min(due, self.capture_begin + min(at + ((rel - at) // self.block + 1) * self.block, at + size))
         while True:
             rel = self.produced - self.capture_begin
             k, at, size = self._stream_geometry(rel)

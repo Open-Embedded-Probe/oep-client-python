@@ -44,6 +44,7 @@ def test_logic_blocks_read_back(case, fast):
             before = prev_end[e] if seg["contiguous"] and prev_end else int(levels[0])
             for b in blocks:
                 part = levels[b.first:b.first + b.samples]
+                assert b.start_levels[role] == before              # fallback or not (§1.3 start_level)
                 if role in b.fallback:
                     assert "".join(map(str, cb.bits_list(b.raw[role], b.samples))) == part
                 else:

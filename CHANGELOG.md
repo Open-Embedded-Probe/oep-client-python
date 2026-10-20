@@ -1,6 +1,14 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) 受信: 呼び出し側の時間切れの時点で frame が途中まで届いていても、FramingLost にしない（届いた分を取っておいて次の呼び出しで続ける）。
+  FramingLost は、frame の途中で受信が probe_frame_gap_ms 以上止まったときだけ。16 KiB の push が 20 ms の pump の境目にかかると「区切りが
+  崩れた」とみなして同期をやり直し、その間の push を捨てていた（2026-10-20、P4X の形式 4）。
+- (JA) `capture_blocks.LogicBlock.start_levels`: events のチャネル全部（fallback も含む）の、ブロックの直前のレベル（§1.3 start_level）。
+  区画の境目の変化を、fallback のブロックでも数えられる（wireskein の依頼）。
+- (JA) 仮想ベンチ: 形式 1 の streaming は、1 回の tick で作るサンプルを BLOCKS_A_TICK までにする（作れる速さで遅れて流す）。stop は作りかけの
+  ブロックだけを閉じる。2 MHz × 4 本で、遅れを取り戻そうとして応答しなくなっていた（wireskein の報告）。
+- (JA) 仮想ベンチの §4.4 を oep-spec e87b50b に合わせた（段の入り口の when、アーム前の最後のサンプルとの比較、決めた段のトラックの不確かさ）。
 - (JA) oep-spec 8e7ca20 の capture に追従（第 1 波）。
   - 形式 1（ロジックのブロック、§1.3）: `capture_blocks.read_logic_blocks` で復号する。raw と fallback のチャネルはビット列（bytes）で、events の
     チャネルは (tick、level、count) で返す。numpy があれば、見出しだけを Python で読み、残りを numpy でまとめて読む。
