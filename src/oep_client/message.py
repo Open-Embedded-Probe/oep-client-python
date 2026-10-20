@@ -46,6 +46,7 @@ REJECT_NAMES = {v: k.replace("_", " ") for k, v in _R.items()}
 REJECT_NAMES[MALFORMED] = "malformed payload"
 
 TAG_CRITICAL = reg.TAG_CRITICAL
+TAG_NAMED_EXTENSION = reg.TAG_NAMED_EXTENSION   # name_len(u8) name data, in every context (core §2.2)
 TAG_FIXED = reg.TAG_RESERVED_ZERO          # the rejected unsupported payload's first byte for a fixed-part value (core §4.3)
 TAG_OPS = reg.DESCRIBE_COMMON["ops"]       # every fn's describe: base(u8) bitmap - the ops it offers (core §1.2, §7.4)
 
@@ -182,6 +183,26 @@ class Tail:
     @classmethod
     def parse(cls, data: bytes) -> Tail:
         return cls(split_tlvs(data))
+
+    def named(self) -> dict[str, bytes]:
+        """The named extensions in it (core §2.2): name -> data; see named_extensions."""
+        return named_extensions(self.tlvs)
+
+
+def named_extensions(tlvs: list[tuple[int, bytes]]) -> dict[str, bytes]:
+    """Named extension TLVs (core §2.2: tag 0x7F, critical bit or not; name_len(u8) name data) -> name -> data, in
+    order, the first of a name kept (core §2.3). One that cannot be read (its name past its value, a name that is not
+    text) is left out: whoever knows a name reads it, the rest pass it over."""
+    out: dict[str, bytes] = {}
+    for tag, value in tlvs:
+        if tag & 0x7F != TAG_NAMED_EXTENSION or not value or 1 + value[0] > len(value):
+            continue
+        try:
+            name = value[1:1 + value[0]].decode("ascii")
+        except UnicodeDecodeError:
+            continue
+        out.setdefault(name, bytes(value[1 + value[0]:]))
+    return out
 
 
 class Reader:

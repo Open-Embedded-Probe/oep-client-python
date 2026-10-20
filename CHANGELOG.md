@@ -1,6 +1,9 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) 名前付き拡張（core §2.2、tag 0x7F）を共通に読む: `message.named_extensions(tlvs)`、`Tail.named()`（名前 → data、同じ名前は最初）。
+  キャプチャの `Status.named`。Arduino の firmware 独自の診断 `capture.CaptureDrops`（`io.github.open-embedded-probe.capture-drops`:
+  落としの内訳、経路、stage の数、メモリ）を `CaptureDrops.of(status)` で読む（wireskein の依頼）。registry と vectors は oep-spec 0eb94f8。
 - (JA) 受信: 呼び出し側の時間切れの時点で frame が途中まで届いていても、FramingLost にしない（届いた分を取っておいて次の呼び出しで続ける）。
   FramingLost は、frame の途中で受信が probe_frame_gap_ms 以上止まったときだけ。16 KiB の push が 20 ms の pump の境目にかかると「区切りが
   崩れた」とみなして同期をやり直し、その間の push を捨てていた（2026-10-20、P4X の形式 4）。

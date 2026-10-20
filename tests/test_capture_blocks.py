@@ -71,3 +71,21 @@ def test_a_cut_segment_is_a_protocol_error(fast):
 def test_worst_bytes_matches_the_spec_example():
     # §1.3: 16 channels, 4 raw, 12 events at D 64, L 4096 -> 8 + 2048 + 3072
     assert cb.worst_bytes(4, [64] * 12, 4096) == 5128
+
+
+def test_named_extensions_and_capture_drops():
+    """core §2.2 named extensions read in order, the first of a name kept; the firmware's capture-drops data."""
+    import struct
+    from oep_client import capture as c, message as m
+    drops = struct.pack("<IIIIBBIII", 12288, 0, 1, 0, 1, 4, 49140, 49140, 0)
+    name = c.CAPTURE_DROPS.encode()
+    other = b"com.example.x"
+    tail = m.Tail.parse(m.tlv(m.TAG_NAMED_EXTENSION, bytes([len(name)]) + name + drops)
+                        + m.tlv(m.TAG_NAMED_EXTENSION, bytes([len(other)]) + other + b"\x01", critical=True)
+                        + m.tlv(m.TAG_NAMED_EXTENSION, bytes([len(name)]) + name + b"later")
+                        + m.tlv(m.TAG_NAMED_EXTENSION, b"\x09ab"))                     # its name past its value
+    named = tail.named()
+    assert list(named) == [c.CAPTURE_DROPS, "com.example.x"] and named["com.example.x"] == b"\x01"
+    d = c.CaptureDrops.unpack(named[c.CAPTURE_DROPS])
+    assert (d.no_stage_bytes, d.dma_overruns, d.zero_copy, d.stages, d.psram_total) == (12288, 1, True, 4, 0)
+    assert c.CaptureDrops.unpack(b"short") is None

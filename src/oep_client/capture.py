@@ -128,6 +128,7 @@ class Status:
     flags: int                       # bit0 dropped, bit1 slipped - since start
     generation: int
     error: int | None = None         # state 6: why (ERRORS)
+    named: dict[str, bytes] = field(default_factory=dict)   # named extensions (core §2.2): a probe's own diagnostics
 
     def __iter__(self):
         return iter((self.state, self.serial_done, self.write_pos, self.flags))
@@ -340,6 +341,42 @@ def unpack_event(frame: bytes, group: bool = False) -> Event:
 
 NO_RECORD = 0xFFFFFFFF
 TRIGGER_RECORD_BYTES = 24                  # serial u32, sample u64, trigger_ns u64, uncertainty_ns u32 (§3.10)
+
+
+CAPTURE_DROPS = "io.github.open-embedded-probe.capture-drops"
+
+
+@dataclass(frozen=True)
+class CaptureDrops:
+    """The Arduino reference firmware's own diagnostics in a capture's status (named extension CAPTURE_DROPS, not an OEP
+    definition): where data a stream dropped went, since start - bytes no free stage took, bytes the transport would not
+    queue, DMA chunks rewritten before they were copied (a hole: the track stops in error), chunks the harvest queue had
+    no room for - then the way the data goes (1 the zero-copy stages, 0 the store), the stages held, and the memory a
+    capture draws on: internal RAM's and DMA-capable internal RAM's largest free blocks, PSRAM's total (0: none)."""
+    no_stage_bytes: int
+    unqueued_bytes: int
+    dma_overruns: int
+    queue_overflows: int
+    zero_copy: bool
+    stages: int
+    internal_largest: int
+    dma_largest: int
+    psram_total: int
+
+    FORMAT = "<IIIIBBIII"
+
+    @classmethod
+    def unpack(cls, data: bytes) -> "CaptureDrops | None":
+        """-> its fields, or None for data of another length (a form this host does not know)."""
+        if len(data) != struct.calcsize(cls.FORMAT):
+            return None
+        f = struct.unpack(cls.FORMAT, data)
+        return cls(*f[:4], bool(f[4]), *f[5:])
+
+    @classmethod
+    def of(cls, status: "Status") -> "CaptureDrops | None":
+        data = status.named.get(CAPTURE_DROPS)
+        return None if data is None else cls.unpack(data)
 
 
 @dataclass(frozen=True)
@@ -628,9 +665,11 @@ class LogicCapture(Interface):
         generation a host that did not start the capture needs for read."""
         rd = m.Reader(self._call(self.STATUS, locked=False).payload)
         state, done, pos, flags, generation = rd.take("BIQBI")
-        error = rd.tail().get(STATUS_ERROR)                  # u8: another length is broken, not used (core §2.3)
+        tail = rd.tail()
+        error = tail.get(STATUS_ERROR)                       # u8: another length is broken, not used (core §2.3)
         self.generation = generation
-        return Status(state, done, pos, flags, generation, error[0] if error is not None and len(error) == 1 else None)
+        return Status(state, done, pos, flags, generation, error[0] if error is not None and len(error) == 1 else None,
+                      tail.named())
 
     def release(self, serial: int, generation: int | None = None) -> None:
         """Repeat: segments up to and including `serial` may be reused (of this generation; another one is rejected
