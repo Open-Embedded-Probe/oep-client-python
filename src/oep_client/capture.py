@@ -363,7 +363,9 @@ class CaptureDrops:
     definition): where data a stream dropped went, since start - bytes no free stage took, bytes the transport would not
     queue, DMA chunks rewritten before they were copied (a hole: the track stops in error), chunks the harvest queue had
     no room for - then the way the data goes (1 the zero-copy stages, 0 the store), the stages held, and the memory a
-    capture draws on: internal RAM's and DMA-capable internal RAM's largest free blocks, PSRAM's total (0: none)."""
+    capture draws on: internal RAM's and DMA-capable internal RAM's largest free blocks, PSRAM's total (0: none); then
+    the most the stream's buffer (the DMA ring, in PSRAM on a P4) held not yet sent since start (bytes; None from a
+    firmware before it)."""
     no_stage_bytes: int
     unqueued_bytes: int
     dma_overruns: int
@@ -373,16 +375,19 @@ class CaptureDrops:
     internal_largest: int
     dma_largest: int
     psram_total: int
+    buffer_peak: int | None = None
 
-    FORMAT = "<IIIIBBIII"
+    FORMAT = "<IIIIBBIIII"
+    FORMAT_BEFORE_PEAK = "<IIIIBBIII"   # a firmware before buffer_peak (until 2026-10-20)
 
     @classmethod
     def unpack(cls, data: bytes) -> "CaptureDrops | None":
         """-> its fields, or None for data of another length (a form this host does not know)."""
-        if len(data) != struct.calcsize(cls.FORMAT):
-            return None
-        f = struct.unpack(cls.FORMAT, data)
-        return cls(*f[:4], bool(f[4]), *f[5:])
+        for form in (cls.FORMAT, cls.FORMAT_BEFORE_PEAK):
+            if len(data) == struct.calcsize(form):
+                f = struct.unpack(form, data)
+                return cls(*f[:4], bool(f[4]), *f[5:])
+        return None
 
     @classmethod
     def of(cls, status: "Status") -> "CaptureDrops | None":

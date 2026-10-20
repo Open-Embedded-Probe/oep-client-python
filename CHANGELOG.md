@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) `capture.CaptureDrops.buffer_peak`: Arduino の firmware の capture-drops に足された最後の u32（ストリームの溜め、P4 では PSRAM の
+  DMA リングが、送られずに持っていた最大のバイト数）。前の形（30 B）は `buffer_peak` を None にして読む。
 - (JA) oep-spec 569e86b（capture §3.3 stream_buffer）に追従。`Config.stream_buffer` と `Config.tolerable_delay_s()`（host が読みを止めて
   よい時間の目安。形式 1 / 2 は最悪の帯域を渡す）。仮想ベンチは streaming の応答で 1 MiB を返す。`link.reader`（"usb-async"、"usb-sync"、
   ほかは stream の型の名前）で、どちらの USB の読みかが分かる（wireskein の依頼。同期の読みでは host の揺れが probe の落としになる）。

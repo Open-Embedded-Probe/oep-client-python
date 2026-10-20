@@ -88,4 +88,7 @@ def test_named_extensions_and_capture_drops():
     assert list(named) == [c.CAPTURE_DROPS, "com.example.x"] and named["com.example.x"] == b"\x01"
     d = c.CaptureDrops.unpack(named[c.CAPTURE_DROPS])
     assert (d.no_stage_bytes, d.dma_overruns, d.zero_copy, d.stages, d.psram_total) == (12288, 1, True, 4, 0)
+    assert d.buffer_peak is None                                            # the form before buffer_peak
+    d = c.CaptureDrops.unpack(struct.pack("<IIIIBBIIII", 0, 0, 0, 0, 1, 8, 1, 2, 3, 3585344))
+    assert (d.stages, d.psram_total, d.buffer_peak) == (8, 3, 3585344)
     assert c.CaptureDrops.unpack(b"short") is None
