@@ -247,3 +247,39 @@ def test_a_submit_usbfs_refuses_leaves_the_depth_at_what_it_took(monkeypatch):
         else:
             with pytest.raises(usb1.USBError):
                 usb_stream.UsbAsyncStream(ctx, h, 0x81, 0x01, 0)
+
+
+def test_the_usb_stream_is_a_process_by_default_and_a_thread_when_asked(monkeypatch):
+    """_open_usb_stream (POSIX): UsbProcessStream by default; OEP_USB_STREAM=thread, or a process that does not run
+    (ChildProcessError), UsbAsyncStream. A device that is not there is not retried on the thread."""
+    import os
+    from oep_client import link, usb_stream
+    monkeypatch.setitem(sys.modules, "usb1", usb1)
+    monkeypatch.setattr(os, "name", "posix")
+    opened = []
+    monkeypatch.setattr(usb_stream.UsbAsyncStream, "open", classmethod(lambda cls, *a, **k: opened.append("thread") or "t"))
+    process = {"raise": None}
+
+    def proc_open(cls, *a, **k):
+        opened.append("process")
+        if process["raise"]:
+            raise process["raise"]
+        return "p"
+
+    monkeypatch.setattr(usb_stream.UsbProcessStream, "open", classmethod(proc_open))
+    monkeypatch.delenv("OEP_USB_STREAM", raising=False)
+    assert link._open_usb_stream("vendor", 1, 2, None) == "p" and opened == ["process"]
+    monkeypatch.setenv("OEP_USB_STREAM", "thread")
+    opened.clear()
+    assert link._open_usb_stream("vendor", 1, 2, None) == "t" and opened == ["thread"]
+    monkeypatch.delenv("OEP_USB_STREAM")
+    opened.clear()
+    process["raise"] = ChildProcessError("no")
+    with pytest.warns(RuntimeWarning):
+        assert link._open_usb_stream("vendor", 1, 2, None) == "t"
+    assert opened == ["process", "thread"]
+    opened.clear()
+    process["raise"] = FileNotFoundError("no USB device")
+    with pytest.raises(FileNotFoundError):
+        link._open_usb_stream("vendor", 1, 2, None)
+    assert opened == ["process"]

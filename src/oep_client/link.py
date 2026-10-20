@@ -1586,8 +1586,15 @@ def _open_usb_stream(kind: str, vid: int, pid: int, serial: str | None, urb_size
     from .usb_stream import UsbAsyncStream, UsbBulkStream, UsbProcessStream
     try:
         import usb1  # noqa: F401  python-libusb1: queued asynchronous IN transfers (streaming near the HS ceiling)
-        if os.environ.get("OEP_USB_STREAM") == "process":   # the transfers in a process of their own (no GIL stalls)
-            return UsbProcessStream.open(vid, pid, serial, urb_size=urb_size, depth=depth)
+        # The transfers in a process of their own by default (POSIX: it takes its pipes by fd): a host thread holding the
+        # GIL no longer stops them (P4X at 40 MB/s beside a host under load: 3 of 6 runs lost data on a thread, none of
+        # 3 in a process - wireskein, 2026-10-20). OEP_USB_STREAM=thread: on this process's thread, as before.
+        if os.name == "posix" and os.environ.get("OEP_USB_STREAM", "process") != "thread":
+            try:
+                return UsbProcessStream.open(vid, pid, serial, urb_size=urb_size, depth=depth)
+            except (TimeoutError, ChildProcessError, PermissionError) as e:   # the process itself did not run
+                import warnings
+                warnings.warn(f"the USB stream's process did not start ({e}); its thread instead", RuntimeWarning)
         return UsbAsyncStream.open(vid, pid, serial, urb_size=urb_size, depth=depth)
     except ImportError:
         return UsbBulkStream.open(vid, pid, serial)

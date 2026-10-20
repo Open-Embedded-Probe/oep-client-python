@@ -412,7 +412,14 @@ class UsbProcessStream:
         urb_size, depth = urb_size or UsbAsyncStream.URB_SIZE, depth or UsbAsyncStream.DEPTH
         args = [sys.executable, "-m", "oep_client.usb_stream", str(vid), str(pid), serial or "", str(urb_size),
                 str(depth), str(data_w), str(cmd_child.fileno())]
-        p = subprocess.Popen(args, pass_fds=(data_w, cmd_child.fileno()), env=env, stdin=subprocess.DEVNULL)
+        try:
+            p = subprocess.Popen(args, pass_fds=(data_w, cmd_child.fileno()), env=env, stdin=subprocess.DEVNULL)
+        except OSError as e:
+            for fd in (data_r, data_w):
+                os.close(fd)
+            cmd_parent.close()
+            cmd_child.close()
+            raise ChildProcessError(f"the USB stream's process: {e}") from e
         os.close(data_w)
         cmd_child.close()
         data = Connection(data_r, writable=False)
@@ -422,8 +429,11 @@ class UsbProcessStream:
             if not cmd.poll(start_timeout):
                 raise TimeoutError("the USB stream's process did not start")
             kind, arg = cmd.recv()
-        except EOFError:
-            kind, arg = "err", "the USB stream's process ended before it was ready"
+        except EOFError:   # it ended before it was ready (not the device's answer): ChildProcessError
+            proc.join(1.0)
+            data.close()
+            cmd.close()
+            raise ChildProcessError("the USB stream's process ended before it was ready") from None
         except Exception:
             proc.kill()
             data.close()

@@ -1,6 +1,14 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) USB（vendor bulk）の既定を `UsbProcessStream` にした（POSIX のみ）。
+  - wireskein の測定: 負荷 14 の host で、P4X の 40 MB/s・30 秒を取った。thread の版は 6 回中 3 回で欠損があり、process の
+    版は 3 回とも欠損 0 だった。
+  - `OEP_USB_STREAM=thread` で、今までどおり UsbAsyncStream（このプロセスのスレッド）を使う。Windows は pipe を fd で
+    渡せないので、今までどおり。
+  - 子プロセスが動かない（起動できない、準備の前に終わった、時間切れ）ときは、警告を出して UsbAsyncStream に戻す。機器が
+    無いという答えはそのまま返す。
+  - 開くのに、子プロセスを起こす分だけ時間がかかる（約 0.6 秒）。
 - (JA) `CaptureDrops` に spill_peak と spill_bytes を足した。P4 のファーム 826eee0 からの、ストリームの DMA リングの後ろの
   待避 FIFO（PSRAM、8 MiB）の最大使用量と大きさ。それより前のファームの形では None。
 - (JA) `UsbAsyncStream` の既定を 32 KiB × 480 本にした（前は 64 KiB × 128）。
