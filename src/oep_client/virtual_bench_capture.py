@@ -66,6 +66,7 @@ IMPLEMENTED = tuple(TLV[k] for k in ("mode", "rate", "samples", "segments", "tri
 FORMAT = CAP.enum["data_format"]
 CARRIAGE = CAP.enum["logic_carriage"]
 BLOCK_TOP = 4096                       # its own: the longest block L it makes (§1.3)
+STREAM_BUFFER_BYTES = 1 << 20          # its own: what a stream holds unsent, said in the answer (stream_buffer, §3.3)
 UNKNOWN_END = 1 << 62                  # streaming format 1: a segment dropped whole whose end is not taken yet
 BLOCKS_A_TICK = 1 << 14                # streaming format 1: the most samples one tick encodes - Python encodes far below
                                        # a fast rate, and catching up on all the time passed fell further behind every
@@ -467,6 +468,8 @@ class VirtualCapture:
             out += tlv(ANSWER["format"], bytes([s["format"]]))
         if s["format"] == FORMAT["logic_blocks"]:
             out += tlv(ANSWER["block"], struct.pack("<I", s["block"]))
+        if s["mode"] == MODE["streaming"]:                         # what it holds unsent: the bench's own (§3.3)
+            out += tlv(ANSWER["stream_buffer"], struct.pack("<I", STREAM_BUFFER_BYTES))
         if s["mode"] != MODE["streaming"]:                         # the rows of §3.3: actual_samples in modes 1 / 2,
             out += tlv(ANSWER["actual_samples"], struct.pack("<I", s["samples"]))
         if s["mode"] == MODE["repeat"]:                            # actual_segments in mode 2 only

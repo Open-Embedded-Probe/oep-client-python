@@ -24,6 +24,7 @@ VENDOR_CLASS, VENDOR_SUBCLASS, VENDOR_PROTOCOL = (reg.USB[k] for k in ("vendor_b
 
 class UsbBulkStream:
     READ_SIZE = 16384
+    READER = "usb-sync"      # one synchronous read at a time: a host's pause stalls the probe's sending (link.reader)
 
     def __init__(self, device, endpoint_in, endpoint_out, interface: int):
         self.device, self.ep_in, self.ep_out, self.interface = device, endpoint_in, endpoint_out, interface
@@ -112,6 +113,7 @@ class UsbAsyncStream:
     kept queued by an event thread, so a continuous stream near the HS ceiling (wch-protocols E116: 1 MiB x 8 reaches
     ~47 MB/s over usbipd; 64 KiB x 32 carried 2 x 160 Msps here) is taken without gaps. A transfer completes when full or on a short packet; the probe ends a
     transfer whose length is a whole number of packets with a zero-length packet, so small answers never wait."""
+    READER = "usb-async"     # queued asynchronous IN transfers: a host's pause is taken by the kernel (link.reader)
 
     # 64 KiB x 32: a probe streaming whole-packet frames (16 KiB) completes a read every four frames, so the latency at
     # a low rate stays short (1 MiB reads waited 0.8 s at 1.25 MB/s), and 2 MiB stay queued for the host's hiccups

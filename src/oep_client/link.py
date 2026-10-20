@@ -298,6 +298,13 @@ class SerialLink:
         lk.reopener = None                         # how to open the stream again (open_host sets it); None: it stays
         return lk
 
+    @property
+    def reader(self) -> str:
+        """How this link reads: "usb-async" (queued asynchronous IN transfers, python-libusb1: the extra usb-async),
+        "usb-sync" (one synchronous read at a time: a pause of the host stalls a streaming probe), or the stream's type
+        name for anything else (a serial port, HID, TCP) - for a record of a measurement."""
+        return getattr(self.stream, "READER", type(self.stream).__name__)
+
     def _setup(self, stream, framing: str, timeout: float) -> None:
         self.stream = stream
         self.framing = framing

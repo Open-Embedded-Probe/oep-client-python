@@ -114,7 +114,7 @@ def test_the_answer_rows_follow_the_mode():
         rows[mode] = [t for t, _ in m.split_tlvs(r.payload)]
     assert rows[c.ONE_SHOT] == [c.ACTUAL_RATE, c.LAYOUT, c.ACTUAL_SAMPLES]
     assert rows[c.REPEAT] == [c.ACTUAL_RATE, c.LAYOUT, c.ACTUAL_SAMPLES, c.ACTUAL_SEGMENTS]
-    assert rows[c.STREAMING] == [c.ACTUAL_RATE, c.LAYOUT]
+    assert rows[c.STREAMING] == [c.ACTUAL_RATE, c.LAYOUT, c.STREAM_BUFFER]   # the optional stream_buffer (§3.3) too
     assert lc.configure(rate=1_000_000, samples=100).segments == 1      # one-shot: one segment, no row for it
 
 

@@ -284,3 +284,14 @@ def test_logic_waves_quiet_and_uart_lines_carry_few_events():
     uart = blocks[0].events[5]
     assert cb.COUNT_SATURATED not in list(uart.counts)         # a 115200 bit is 173 samples: one change a tick at most
     assert vbc.logic_wave("uart:115200:A")(0, 20_000_000) == 0  # the start bit
+
+
+def test_streaming_answer_says_its_stream_buffer():
+    """§3.3 stream_buffer (mode 3 only): the host's tolerable read delay = stream_buffer / the data rate."""
+    from oep_client import virtual_bench_capture as vbc
+    ep, hst, lc, clock = bench()
+    planned(hst, lc, 8)
+    cfg = lc.configure(rate=10_000_000, mode=c.STREAMING, query=True)
+    assert cfg.stream_buffer == vbc.STREAM_BUFFER_BYTES
+    assert cfg.tolerable_delay_s() == pytest.approx(vbc.STREAM_BUFFER_BYTES / 10e6)
+    assert lc.configure(rate=10_000_000, samples=100).stream_buffer is None    # one-shot: not said

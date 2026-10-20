@@ -1,6 +1,9 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) oep-spec 569e86b（capture §3.3 stream_buffer）に追従。`Config.stream_buffer` と `Config.tolerable_delay_s()`（host が読みを止めて
+  よい時間の目安。形式 1 / 2 は最悪の帯域を渡す）。仮想ベンチは streaming の応答で 1 MiB を返す。`link.reader`（"usb-async"、"usb-sync"、
+  ほかは stream の型の名前）で、どちらの USB の読みかが分かる（wireskein の依頼。同期の読みでは host の揺れが probe の落としになる）。
 - (JA) 名前付き拡張（core §2.2、tag 0x7F）を共通に読む: `message.named_extensions(tlvs)`、`Tail.named()`（名前 → data、同じ名前は最初）。
   キャプチャの `Status.named`。Arduino の firmware 独自の診断 `capture.CaptureDrops`（`io.github.open-embedded-probe.capture-drops`:
   落としの内訳、経路、stage の数、メモリ）を `CaptureDrops.of(status)` で読む（wireskein の依頼）。registry と vectors は oep-spec 0eb94f8。

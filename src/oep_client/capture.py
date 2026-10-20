@@ -50,6 +50,7 @@ MODE, RATE, SAMPLES, SEGMENTS, TRIGGER, PRETRIGGER, TRIGGER_OPTS, FORMAT, CARRIA
     _CAP.tlv["configure"][k] for k in ("mode", "rate", "samples", "segments", "trigger", "pretrigger", "trigger_opts",
                                        "format", "carriage", "block_max"))
 ANSWER_FORMAT, ANSWER_BLOCK = _CAP.tlv["configure_answer"]["format"], _CAP.tlv["configure_answer"]["block"]
+STREAM_BUFFER = _CAP.tlv["configure_answer"]["stream_buffer"]
 DATA_FORMAT = _CAP.enum["data_format"]
 LOGIC_CARRIAGE = _CAP.enum["logic_carriage"]
 FRONTEND = _ANA.tlv["configure"]["frontend"]             # analog only
@@ -165,8 +166,18 @@ class Config:
     pretrigger: int = 0                                        # what this host asked
     format: int = 0                                            # the data format in use (§1; absent: 0)
     block: int = 0                                             # format 1 / 2: L
+    stream_buffer: int | None = None                           # streaming: the most bytes held unsent (§3.3; None: not said)
     raw_roles: list[int] = field(default_factory=list)         # format 1: the raw channels' roles (as asked)
     event_d: dict[int, int] = field(default_factory=dict)      # format 1: events role -> D (as asked)
+
+    def tolerable_delay_s(self, worst_bytes_per_s: float | None = None) -> float | None:
+        """Streaming: how long the host may stop reading before the probe drops (§3.3: stream_buffer over the data rate;
+        formats 1 / 2: pass their worst bandwidth, a lower bound). None when the probe does not say."""
+        if self.stream_buffer is None:
+            return None
+        rate = worst_bytes_per_s if worst_bytes_per_s is not None else float(self.rate) * (
+            self.width / 8 if self.width else len(self.order) * self.slot / 8)
+        return self.stream_buffer / rate if rate else None
 
     def segment_bytes(self, samples: int) -> int:
         """Length of a segment of `samples` samples in the stream (§1.1 rule 4, §1.2 rule 3)."""
@@ -418,7 +429,7 @@ def _config(payload: bytes, analog: bool) -> Config:
     c = Config()
     seen: set[int] = set()
     for tag, v in tlvs(payload):
-        if tag in (ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, REFERENCE, ANSWER_FORMAT, ANSWER_BLOCK):
+        if tag in (ACTUAL_RATE, LAYOUT, ACTUAL_SAMPLES, ACTUAL_SEGMENTS, REFERENCE, ANSWER_FORMAT, ANSWER_BLOCK, STREAM_BUFFER):
             if tag in seen:
                 continue
             seen.add(tag)
@@ -435,6 +446,8 @@ def _config(payload: bytes, analog: bool) -> Config:
             c.format = v[0]
         elif tag == ANSWER_BLOCK and len(v) == 4:
             c.block = struct.unpack("<I", v)[0]
+        elif tag == STREAM_BUFFER and len(v) == 4:
+            c.stream_buffer = struct.unpack("<I", v)[0]
         elif tag == ACTUAL_SAMPLES and len(v) == 4:
             c.samples = struct.unpack("<I", v)[0]
         elif tag == ACTUAL_SEGMENTS and len(v) == 4:
