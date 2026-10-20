@@ -120,3 +120,104 @@ def test_the_transfers_size_and_depth_are_the_callers(monkeypatch):
     s = usb_stream.UsbAsyncStream(ctx, h, 0x81, 0x01, 0, urb_size=256 * 1024, depth=32)
     assert len(h.transfers) == 32 and s.stats()["urb_size"] == 256 * 1024
     s.close()
+
+
+class FakeProcess:
+    def __init__(self, thread):
+        self.thread = thread
+
+    def join(self, timeout=None):
+        self.thread.join(timeout)
+
+    def is_alive(self):
+        return self.thread.is_alive()
+
+    def kill(self):
+        pass
+
+
+def test_the_process_stream_reads_what_its_process_sends_and_writes_through_it():
+    """UsbProcessStream: the data the process sends is read as one stream; a write is the process's (its answer is
+    write's); stats are the process's; close ends it."""
+    import multiprocessing as mp
+    from oep_client import usb_stream
+    data_parent, data_child = mp.Pipe(duplex=False)
+    cmd_parent, cmd_child = mp.Pipe()
+    written = []
+
+    def child():
+        data_child.send_bytes(b"abc")
+        data_child.send_bytes(b"def")
+        while True:
+            kind, arg = cmd_child.recv()
+            if kind == "close":
+                data_child.close()
+                return
+            if kind == "write":
+                written.append(arg)
+                cmd_child.send(("ok", len(arg)))
+            elif kind == "stats":
+                cmd_child.send(("ok", {"callbacks": 7}))
+
+    t = threading.Thread(target=child, daemon=True)
+    t.start()
+    s = usb_stream.UsbProcessStream(FakeProcess(t), data_parent, cmd_parent, 512)
+    s.timeout = 1.0
+    got = b""
+    while len(got) < 6:
+        got += s.read(10)
+    assert got == b"abcdef" and s.write(b"xy") == 2 and written == [b"xy"] and s.stats() == {"callbacks": 7}
+    s.close()
+    assert not t.is_alive()
+    with pytest.raises(OSError):
+        s.write(b"z")
+    s.close()
+
+
+def test_the_process_side_sends_what_came_in_and_answers_requests(monkeypatch):
+    """_child (the process's body) on a fake UsbAsyncStream: ready with the OUT packet size, the IN bytes sent in
+    order however they came, a write answered with its count, an error as ("err", ...), close closes the device."""
+    import multiprocessing as mp
+    from oep_client import usb_stream
+
+    class Fake:
+        out_packet = 64
+
+        def __init__(self):
+            self._cond, self._buffer, self.closed = threading.Condition(), bytearray(), False
+
+        def write(self, data):
+            if data == b"bad":
+                raise ValueError("no")
+            return len(data)
+
+        def stats(self):
+            return {"callbacks": 1}
+
+        def close(self):
+            self.closed = True
+
+    fake = Fake()
+    monkeypatch.setattr(usb_stream.UsbAsyncStream, "open", classmethod(lambda cls, *a, **k: fake))
+    data_parent, data_child = mp.Pipe(duplex=False)
+    cmd_parent, cmd_child = mp.Pipe()
+    t = threading.Thread(target=usb_stream._child, args=(1, 2, None, None, None, data_child, cmd_child), daemon=True)
+    t.start()
+    assert cmd_parent.recv() == ("ready", 64)
+    for part in (b"ab", b"cd", b"e"):
+        with fake._cond:
+            fake._buffer += part
+            fake._cond.notify_all()
+    got = b""
+    while len(got) < 5:
+        got += data_parent.recv_bytes()
+    assert got == b"abcde"
+    cmd_parent.send(("write", b"xyz"))
+    assert cmd_parent.recv() == ("ok", 3)
+    cmd_parent.send(("write", b"bad"))
+    assert cmd_parent.recv()[0] == "err"
+    cmd_parent.send(("stats", None))
+    assert cmd_parent.recv() == ("ok", {"callbacks": 1})
+    cmd_parent.send(("close", None))
+    t.join(2.0)
+    assert not t.is_alive() and fake.closed

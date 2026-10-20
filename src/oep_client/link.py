@@ -77,6 +77,7 @@ the slowest is tried once); `max_tries` bounds the candidates one call tries.
 from __future__ import annotations
 
 import atexit
+import os
 import collections
 import select
 import socket
@@ -1578,9 +1579,11 @@ def _open_usb_stream(kind: str, vid: int, pid: int, serial: str | None):
     if kind == "hid":
         from .hid_stream import open_hid
         return open_hid(vid, pid, serial)
-    from .usb_stream import UsbAsyncStream, UsbBulkStream
+    from .usb_stream import UsbAsyncStream, UsbBulkStream, UsbProcessStream
     try:
         import usb1  # noqa: F401  python-libusb1: queued asynchronous IN transfers (streaming near the HS ceiling)
+        if os.environ.get("OEP_USB_STREAM") == "process":   # the transfers in a process of their own (no GIL stalls)
+            return UsbProcessStream.open(vid, pid, serial)
         return UsbAsyncStream.open(vid, pid, serial)
     except ImportError:
         return UsbBulkStream.open(vid, pid, serial)

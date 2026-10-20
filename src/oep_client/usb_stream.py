@@ -292,3 +292,218 @@ class UsbAsyncStream:
         finally:
             self.handle.close()
             self.context.close()
+
+
+def _child(vid: int, pid: int, serial: str | None, urb_size: int | None, depth: int | None, data_conn, cmd_conn) -> None:
+    """UsbProcessStream's process: a UsbAsyncStream of its own (its event thread and its GIL away from the host's), a
+    thread sending what came in to the host as it can take it, and the host's writes and requests on `cmd_conn`."""
+    try:
+        s = UsbAsyncStream.open(vid, pid, serial, urb_size=urb_size, depth=depth)
+    except Exception as e:                           # noqa: BLE001  the host raises it
+        cmd_conn.send(("err", f"{type(e).__name__}: {e}"))
+        return
+    cmd_conn.send(("ready", s.out_packet))
+    stop = threading.Event()
+
+    def send() -> None:
+        while not stop.is_set():
+            with s._cond:
+                if not s._buffer:
+                    s._cond.wait(0.05)
+                data = bytes(s._buffer)              # all of it: no memmove of a backlog at every send
+                s._buffer.clear()
+            view = memoryview(data)
+            try:
+                for at in range(0, len(data), ProcessStreamChunk):
+                    data_conn.send_bytes(view[at:at + ProcessStreamChunk])
+            except (OSError, EOFError):
+                return
+
+    sender = threading.Thread(target=send, daemon=True)
+    sender.start()
+    try:
+        while True:
+            try:
+                kind, arg = cmd_conn.recv()
+            except (EOFError, OSError):
+                break
+            if kind == "close":
+                break
+            try:
+                if kind == "write":
+                    cmd_conn.send(("ok", s.write(arg)))
+                elif kind == "stats":
+                    cmd_conn.send(("ok", s.stats()))
+                else:
+                    cmd_conn.send(("err", f"unknown request {kind!r}"))
+            except Exception as e:                   # noqa: BLE001
+                cmd_conn.send(("err", f"{type(e).__name__}: {e}"))
+    finally:
+        stop.set()
+        sender.join(timeout=0.5)
+        s.close()
+        data_conn.close()
+
+
+ProcessStreamChunk = 1 << 20   # the most one data message carries to the host
+
+
+class _Proc:
+    """A Popen shaped as UsbProcessStream uses a process: join, is_alive, kill."""
+
+    def __init__(self, popen):
+        self.popen = popen
+
+    def join(self, timeout=None):
+        import subprocess
+        try:
+            self.popen.wait(timeout)
+        except subprocess.TimeoutExpired:
+            pass
+
+    def is_alive(self):
+        return self.popen.poll() is None
+
+    def kill(self):
+        self.popen.kill()
+
+
+class UsbProcessStream:
+    """UsbAsyncStream in a process of its own, shaped the same (read with a timeout, in_waiting, write,
+    reset_input_buffer, close, stats). The IN transfers are taken back and sent out again there: a host thread
+    holding the GIL (numpy, a large bytes join) no longer stops them - the P4X at 40 MB/s lost data whenever the event
+    thread stopped longer than the probe's ring holds (26 ms; 6 s once beside a host under load, wireskein
+    2026-10-20). What came in waits in that process until this one reads it."""
+    READER = "usb-process"
+
+    def __init__(self, process, data_conn, cmd_conn, out_packet: int):
+        self.process, self._data, self._cmd, self.out_packet = process, data_conn, cmd_conn, out_packet
+        self.timeout = 0.05
+        self._buffer = bytearray()
+        self._cond = threading.Condition()
+        self._cmd_lock = threading.Lock()
+        self._closed = False
+        self._reader = threading.Thread(target=self._take, daemon=True)
+        self._reader.start()
+        atexit.register(self.close)
+
+    @classmethod
+    def open(cls, vid: int, pid: int, serial: str | None = None, *, urb_size: int | None = None,
+             depth: int | None = None, start_timeout: float = 10.0) -> "UsbProcessStream":
+        """The process is `python -m oep_client.usb_stream` (not multiprocessing's spawn: that runs the caller's
+        __main__ again, a script without a main guard twice), the data on a pipe and the requests on a socket pair."""
+        import os
+        import socket
+        import subprocess
+        import sys
+        from multiprocessing.connection import Connection
+        data_r, data_w = os.pipe()
+        cmd_parent, cmd_child = socket.socketpair()
+        package_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [package_root, os.environ.get("PYTHONPATH")])))
+        args = [sys.executable, "-m", "oep_client.usb_stream", str(vid), str(pid), serial or "", str(urb_size or 0),
+                str(depth or 0), str(data_w), str(cmd_child.fileno())]
+        p = subprocess.Popen(args, pass_fds=(data_w, cmd_child.fileno()), env=env, stdin=subprocess.DEVNULL)
+        os.close(data_w)
+        cmd_child.close()
+        data = Connection(data_r, writable=False)
+        cmd = Connection(cmd_parent.detach())
+        proc = _Proc(p)
+        try:
+            if not cmd.poll(start_timeout):
+                raise TimeoutError("the USB stream's process did not start")
+            kind, arg = cmd.recv()
+        except EOFError:
+            kind, arg = "err", "the USB stream's process ended before it was ready"
+        except Exception:
+            proc.kill()
+            data.close()
+            cmd.close()
+            raise
+        if kind != "ready":
+            proc.join(1.0)
+            data.close()
+            cmd.close()
+            raise FileNotFoundError(arg)
+        return cls(proc, data, cmd, arg)
+
+    def _take(self) -> None:
+        while not self._closed:
+            try:
+                data = self._data.recv_bytes()
+            except (EOFError, OSError):
+                break
+            with self._cond:
+                self._buffer += data
+                self._cond.notify_all()
+
+    def _request(self, kind: str, arg=None):
+        with self._cmd_lock:
+            if self._closed:
+                raise OSError("the USB stream is closed")
+            try:
+                self._cmd.send((kind, arg))
+                status, value = self._cmd.recv()
+            except (EOFError, OSError) as e:
+                raise OSError("the USB stream's process is gone") from e
+        if status != "ok":
+            raise OSError(value)
+        return value
+
+    @property
+    def in_waiting(self) -> int:
+        with self._cond:
+            return len(self._buffer)
+
+    def read(self, n: int = 1) -> bytes:
+        deadline = time.monotonic() + (self.timeout or 0)
+        with self._cond:
+            while not self._buffer:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    return b""
+                self._cond.wait(left)
+            out = bytes(self._buffer[:n])
+            del self._buffer[:n]
+            return out
+
+    def write(self, data: bytes) -> int:
+        return self._request("write", bytes(data))
+
+    def reset_input_buffer(self) -> None:
+        with self._cond:
+            self._buffer.clear()
+
+    def stats(self) -> dict:
+        """The process's UsbAsyncStream.stats()."""
+        return self._request("stats")
+
+    def close(self) -> None:
+        """The process cancels its transfers and closes the device; then it ends. Safe to call twice (atexit)."""
+        if self._closed:
+            return
+        atexit.unregister(self.close)
+        with self._cmd_lock:
+            self._closed = True
+            try:
+                self._cmd.send(("close", None))
+            except (OSError, EOFError):
+                pass
+        self.process.join(timeout=3.0)
+        if self.process.is_alive():
+            self.process.kill()
+            self.process.join(timeout=1.0)
+        self._reader.join(timeout=1.0)
+        for c in (self._data, self._cmd):
+            try:
+                c.close()
+            except OSError:
+                pass
+
+
+if __name__ == "__main__":   # UsbProcessStream's process: vid pid serial urb_size depth data_fd cmd_fd
+    import sys
+    from multiprocessing.connection import Connection
+    _vid, _pid, _serial, _urb, _depth, _data_fd, _cmd_fd = sys.argv[1:8]
+    _child(int(_vid), int(_pid), _serial or None, int(_urb) or None, int(_depth) or None,
+           Connection(int(_data_fd), readable=False), Connection(int(_cmd_fd)))

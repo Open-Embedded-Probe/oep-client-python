@@ -1,6 +1,15 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) `UsbProcessStream`: UsbAsyncStream を別のプロセス（`python -m oep_client.usb_stream`）で動かす。形は UsbAsyncStream と同じ
+  （read、in_waiting、write、reset_input_buffer、close、stats）。
+  - IN の転送の受け取りと出し直しは、そのプロセスの event のスレッドと GIL で行う。host の側のスレッドが GIL を長く持っても
+    （numpy、大きな bytes の結合など）、転送は止まらない。読まれていない分は、そのプロセスに溜まる。
+  - データはパイプで、write と stats は socket pair で受け渡す。multiprocessing の spawn は使わない（呼び出し側の __main__ を
+    もう一度走らせるため）。
+  - 環境変数 `OEP_USB_STREAM=process` で、open_host の USB がこれを使う（既定は今までどおり UsbAsyncStream）。
+  - wireskein の切り分けを受けた。負荷 14 のとき、event のスレッドが最大 6 秒止まり、40 MB/s の P4X で欠損が出ていた。
+    実機では、まだ確かめていない。
 - (JA) `UsbAsyncStream`: 戻った IN の転送は、データを写したらすぐ出し直し、ロック（read() と共有）はその後に取るようにした。
   前はロックを取ってから出し直していたので、read() がロックを持つ間は転送が戻らなかった。`stats()` を足した（callbacks、
   inflight_min = callback の時点で出ていた転送の最少、gap_max_s = callback の間隔の最大、buffered_max、bytes、urb_size、
