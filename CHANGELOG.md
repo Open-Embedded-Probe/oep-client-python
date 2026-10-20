@@ -1,6 +1,9 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) `UsbAsyncStream.DEPTH` の既定を 32 から 128 にした（64 KiB × 128 = 8 MiB、40 MB/s で 200 ms ぶん）。P4X の 40 MHz・8 本の 30 秒で、
+  32 では USB の受け取り側のときどきの止まり（URB の出し直しの遅れ、バス）で 0.2〜0.6 % を落とした。128 では wireskein の 2 回と
+  こちらの 5 回（形式 0 を 4 回、形式 4 を 1 回）、すべて落としなし。
 - (JA) `LogicCapture.stream()` の keepalive の間隔を、同じ `into` の呼びをまたいで数えるようにした。前は呼ぶたびに数え直していたので、
   0.2 秒ずつ刻んで呼ぶ host では keepalive が 1 度も出ず、30 秒の取得の途中で lease が切れていた（wireskein の報告）。
 - (JA) `capture.CaptureDrops.buffer_peak`: Arduino の firmware の capture-drops に足された最後の u32（ストリームの溜め、P4 では PSRAM の

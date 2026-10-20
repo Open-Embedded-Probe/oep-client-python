@@ -111,14 +111,16 @@ class UsbBulkStream:
 class UsbAsyncStream:
     """The same shape as UsbBulkStream on python-libusb1 (`usb1`): IN runs as DEPTH asynchronous transfers of URB_SIZE
     kept queued by an event thread, so a continuous stream near the HS ceiling (wch-protocols E116: 1 MiB x 8 reaches
-    ~47 MB/s over usbipd; 64 KiB x 32 carried 2 x 160 Msps here) is taken without gaps. A transfer completes when full or on a short packet; the probe ends a
+    ~47 MB/s over usbipd; 64 KiB x 32 carried 2 x 160 Msps here, x 128 40 MB/s for 30 s with no loss) is taken without gaps. A transfer completes when full or on a short packet; the probe ends a
     transfer whose length is a whole number of packets with a zero-length packet, so small answers never wait."""
     READER = "usb-async"     # queued asynchronous IN transfers: a host's pause is taken by the kernel (link.reader)
 
-    # 64 KiB x 32: a probe streaming whole-packet frames (16 KiB) completes a read every four frames, so the latency at
-    # a low rate stays short (1 MiB reads waited 0.8 s at 1.25 MB/s), and 2 MiB stay queued for the host's hiccups
+    # 64 KiB x 128: a read completes every few frames, so the latency at a low rate stays short (1 MiB reads waited
+    # 0.8 s at 1.25 MB/s), and 8 MiB (200 ms at 40 MB/s) stay queued for the host's hiccups - with 2 MiB (x 32) the
+    # P4X at 40 MB/s lost 0.2-0.6 % in 30 s to the USB side's pauses (URBs resubmitted late, the bus); with 8 MiB none
+    # in 6 runs (2026-10-20, wireskein and here)
     URB_SIZE = 64 * 1024
-    DEPTH = 32
+    DEPTH = 128
 
     def __init__(self, context, handle, endpoint_in: int, endpoint_out: int, interface: int, out_packet: int = 512):
         import usb1
