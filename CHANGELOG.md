@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) `LogicCapture.stream()` の keepalive の間隔を、同じ `into` の呼びをまたいで数えるようにした。前は呼ぶたびに数え直していたので、
+  0.2 秒ずつ刻んで呼ぶ host では keepalive が 1 度も出ず、30 秒の取得の途中で lease が切れていた（wireskein の報告）。
 - (JA) `capture.CaptureDrops.buffer_peak`: Arduino の firmware の capture-drops に足された最後の u32（ストリームの溜め、P4 では PSRAM の
   DMA リングが、送られずに持っていた最大のバイト数）。前の形（30 B）は `buffer_peak` を None にして読む。
 - (JA) oep-spec 569e86b（capture §3.3 stream_buffer）に追従。`Config.stream_buffer` と `Config.tolerable_delay_s()`（host が読みを止めて

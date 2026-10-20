@@ -592,13 +592,15 @@ class LogicCapture(Interface):
         A position that does not follow the previous push is a probe-side drop (a gap); a seq that skips is a lost frame.
         A push of another generation than this capture's (a leftover of the start before, oep-if-capture §3.4) is
         dropped; each push's segment_info goes to `segments`. The subscription ends with the lock, so the lock is kept alive every `keepalive_s` while collecting (a
-        stream longer than the lease otherwise stopped: 35 MB missing at the end of 10 s at 150 MHz with a 10 s lease)."""
+        stream longer than the lease otherwise stopped: 35 MB missing at the end of 10 s at 150 MHz with a 10 s lease) -
+        counted across calls with the same `into` (a host calling every 0.2 s lost its 30 s lease: each call began the
+        count again)."""
         if seconds is None and nbytes is None:
             raise ValueError("stream() needs seconds or nbytes")
         got = into or Received()
         deadline = time.monotonic() + seconds if seconds is not None else None
-        kept = time.monotonic()
-        expect_seq = getattr(got, "_seq", None)
+        kept = getattr(got, "_kept", None) or time.monotonic()   # on from the last call with the same `into`: a host
+        expect_seq = getattr(got, "_seq", None)                   # calling in short slices still keeps the lease
         event_seqs = getattr(got, "_events", set())   # events share the fn's seq (they stay on the link for the caller)
         while True:
             for e in link.events:
@@ -630,6 +632,7 @@ class LogicCapture(Interface):
             if keepalive_s and time.monotonic() - kept >= keepalive_s:
                 self.host.keepalive()
                 kept = time.monotonic()
+            got._kept = kept
             if nbytes is not None and len(got.data) >= nbytes:
                 return got
             if deadline is not None and time.monotonic() >= deadline:

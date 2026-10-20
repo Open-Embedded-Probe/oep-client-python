@@ -148,3 +148,29 @@ def test_sigrok_file_takes_sixteen_channels_in_two_bytes(tmp_path):
         meta = z.read("metadata").decode()
         assert "unitsize=2" in meta and "total probes=16" in meta and "samplerate=20000000 Hz" in meta
         assert z.read("logic-1-1") == bytes([0x01, 0x80, 0x02, 0x01])
+
+
+def test_stream_keepalive_counts_across_calls():
+    """stream() in short slices into one Received keeps the lock alive: the keepalive count runs on across the calls
+    (a host calling every 0.2 s with keepalive_s 1 lost its 30 s lease: each call began the count again)."""
+    import time as _t
+    from oep_client import capture as c
+
+    class Link:
+        events, pushes = [], []
+
+        def pump(self, timeout, until_one=False):
+            _t.sleep(timeout)
+
+    class Host:
+        keepalives = 0
+
+        def keepalive(self):
+            Host.keepalives += 1
+
+    lc = object.__new__(c.LogicCapture)
+    lc.host, lc.fn, lc.generation = Host(), 9, None
+    got = c.Received()
+    for _ in range(8):                       # 8 x 0.15 s, keepalive every 0.5 s: two at least
+        lc.stream(Link(), seconds=0.15, into=got, keepalive_s=0.5)
+    assert Host.keepalives >= 2
