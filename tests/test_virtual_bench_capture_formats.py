@@ -295,3 +295,22 @@ def test_streaming_answer_says_its_stream_buffer():
     assert cfg.stream_buffer == vbc.STREAM_BUFFER_BYTES
     assert cfg.tolerable_delay_s() == pytest.approx(vbc.STREAM_BUFFER_BYTES / 10e6)
     assert lc.configure(rate=10_000_000, samples=100).stream_buffer is None    # one-shot: not said
+
+
+def test_format_0_streaming_makes_a_tick_at_most_and_stop_answers():
+    """Streaming format 0: a tick makes at most BLOCKS_A_TICK samples, so a bench far behind a fast rate still answers
+    (the stream runs late) - catching up on all the time passed at once answered stop after 12.8 s (wireskein: 1 MHz x
+    2 lines)."""
+    from oep_client import virtual_bench_capture as vbc
+    ep, hst, lc, clock = bench()
+    planned(hst, lc, 2)
+    lc.configure(rate=1_000_000, mode=c.STREAMING)
+    lc.subscribe(16384, 20)
+    lc.start()
+    cap = ep.captures[lc.fn]
+    clock.t += 2_000                                           # 2 s (within the lease): two million samples due
+    cap.tick(clock.t)
+    assert cap.produced == vbc.BLOCKS_A_TICK
+    lc.stop()
+    assert cap.produced <= 4 * vbc.BLOCKS_A_TICK < 2_000_000   # a tick or a few (the requests tick too), not 2 s
+    assert lc.status().state == c.STATE["configured"]

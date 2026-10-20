@@ -1,6 +1,9 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) 仮想ベンチ: 形式 0 / 4 とアナログの streaming も、1 回の tick で作るサンプルを BLOCKS_A_TICK までにした（形式 1 と同じ。作れる
+  速さで遅れて流す）。前は経過した時間ぶんを一度に作ろうとして、tick が長引くほど次の tick が重くなり、1 MHz × 2 本でも 0.3 秒の
+  あいだ push が 1 つも来ず、stop の応答に 12.8 秒かかっていた（wireskein の報告）。
 - (JA) oep-spec e1d5495 に追従（registry とベクタを取り込み）。configure / query の応答の judge_latency_ns（§3.3）を
   `Config.judge_latency_ns` で読む（組の出来事の元の条件を判定するトラックの、出来事と知るまでの最大の時間。返さない probe は None）。
 - (JA) `UsbAsyncStream.DEPTH` の既定を 32 から 128 にした（64 KiB × 128 = 8 MiB、40 MB/s で 200 ms ぶん）。P4X の 40 MHz・8 本の 30 秒で、

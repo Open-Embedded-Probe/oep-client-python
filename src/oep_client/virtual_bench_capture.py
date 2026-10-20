@@ -68,10 +68,11 @@ CARRIAGE = CAP.enum["logic_carriage"]
 BLOCK_TOP = 4096                       # its own: the longest block L it makes (§1.3)
 STREAM_BUFFER_BYTES = 1 << 20          # its own: what a stream holds unsent, said in the answer (stream_buffer, §3.3)
 UNKNOWN_END = 1 << 62                  # streaming format 1: a segment dropped whole whose end is not taken yet
-BLOCKS_A_TICK = 1 << 14                # streaming format 1: the most samples one tick encodes - Python encodes far below
-                                       # a fast rate, and catching up on all the time passed fell further behind every
-                                       # tick until the bench answered nothing (wireskein, 2 MHz x 4 lines): it makes
-                                       # what it can and the stream runs late instead
+BLOCKS_A_TICK = 1 << 14                # streaming: the most samples one tick makes - Python makes far below a fast rate,
+                                       # and catching up on all the time passed fell further behind every tick until the
+                                       # bench answered nothing (wireskein: format 1 at 2 MHz x 4 lines; format 0 at 1 MHz
+                                       # x 2 lines, stop answered after 12.8 s): it makes what it can and the stream runs
+                                       # late instead
 
 
 class Reject(Exception):
@@ -781,7 +782,7 @@ class VirtualCapture:
             self._stream_blocks(due, whole=True)
         elif self.mode == MODE["streaming"]:
             per_byte = 1 if self.analog else 8 // math.gcd(self.width, 8)   # whole bytes only (§2.2)
-            n = min((due - self.produced) // per_byte * per_byte, MAX_SAMPLES)
+            n = min((due - self.produced) // per_byte * per_byte, BLOCKS_A_TICK)
             if n > 0:
                 self.data += self._pack(self.produced, n)
                 self.produced += n
