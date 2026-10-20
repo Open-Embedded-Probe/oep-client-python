@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) `Wire.scan`: 1 回の要求に入れる組を、255 までかつ経路の max_frame に収まる数にした。前は 255 組を詰めていて、
+  max_frame 1024 の経路で候補が多いと（rp2350-pins の 812 組）1031 バイトの要求を送っていた（仮想ベンチはそれを受けていた）。JS への移植で見つかった。
 
 ## 0.0.36
 - (JA) 試験: segment_columns の試験は、numpy が無ければ飛ばす（numpy は任意の依存。numpy の無い CI で落ちていた）。

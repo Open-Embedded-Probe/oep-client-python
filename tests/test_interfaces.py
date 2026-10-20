@@ -529,3 +529,16 @@ def test_ch32_resume_asks_again_while_dpc_has_not_moved(dm):
     assert ch32_flash.resume(d) and not ep.target.halted
     ep.target.halted, ep.target.resume_misses = True, 9
     assert not ch32_flash.resume(d, tries=3)                       # it never went
+
+
+def test_a_scan_of_every_candidate_pair_fits_max_frame():
+    """oep-if-debug §1: scan's list goes in requests of at most 255 pairs and no longer than the route's max_frame
+    (rp2350-pins: 812 pairs at max_frame 1024 - 255 pairs would be a 1031-byte request)."""
+    ep = endpoint.Endpoint(virtual_bench.PROFILES["rp2350-pins"](), Clock())
+    sizes = []
+    hst = host.Host(lambda b: sizes.append(len(b)) or ep.handle(b, 1), rng=random.Random(1))
+    hst.open()
+    wire = riscv.Wire(hst)
+    assert len(wire.candidate_pairs()) > 255
+    wire.scan()
+    assert max(sizes) <= hst.confirmed()["max_frame"]

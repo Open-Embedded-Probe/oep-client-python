@@ -281,8 +281,15 @@ class WireBase(Interface):
             extra += m.tlv(self.TAG_SCAN_MAX_SPEED, struct.pack("<I", max_speed), critical=True)
         if idle_clock is not None:
             extra += m.tlv(self.TAG_SCAN_IDLE_CLOCK, bytes([_WIRE.enum["idle_clock"][idle_clock]]), critical=True)
+        # count(u8) and 4 bytes a pair after the request's header, the TLVs at the end: at most 255, and what the
+        # route's max_frame carries (a request longer than max_frame is not one the probe has to take, core §7.1)
+        try:
+            frame = int(self.host.confirmed()["max_frame"])
+        except (h.OepError, AttributeError, KeyError, TypeError):
+            frame = reg.MIN_MAX_FRAME
+        most = max(1, min(255, (frame - m.REQUEST_HEADER - 1 - len(extra)) // 4))
         while pairs:
-            chunk = pairs[:255]
+            chunk = pairs[:most]
             body = bytes([len(chunk)]) + b"".join(struct.pack("<HH", d, c) for d, c in chunk)
             rd = m.Reader(self._call(self.SCAN, body + extra, expect_ms=self.scan_ms()).payload)
             tried, count = rd.take("BB")
