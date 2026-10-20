@@ -1,6 +1,10 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) `capture_blocks.segment_columns` / `LogicCapture.columns(data, samples)`: 形式 1 の区画を、ブロックを作らずに列で読む（numpy が要る）。
+  raw のチャネルはビット列、events のチャネルは区画を通した刻み（`EventColumn`: quanta、levels、counts、start_level）。fallback の
+  ブロックは、その標本から probe と同じ数え方で刻みに直す。検査は read_logic_blocks と同じ。ヘッダだけを Python で辿り、raw は
+  （fallback の組、r）ごとにまとめて、events は区画の全行を一度に読む（wireskein の提案と試作。60 ブロックの区画で 54 → 10 ms）。
 - (JA) 仮想ベンチ: 形式 0 / 4 とアナログの streaming も、1 回の tick で作るサンプルを BLOCKS_A_TICK までにした（形式 1 と同じ。作れる
   速さで遅れて流す）。前は経過した時間ぶんを一度に作ろうとして、tick が長引くほど次の tick が重くなり、1 MHz × 2 本でも 0.3 秒の
   あいだ push が 1 つも来ず、stop の応答に 12.8 秒かかっていた（wireskein の報告）。

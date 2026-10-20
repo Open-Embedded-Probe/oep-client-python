@@ -872,6 +872,12 @@ class LogicCapture(Interface):
         c = self.config
         return capture_blocks.read_logic_blocks(data, samples, c.raw_roles, c.event_d, c.block)
 
+    def columns(self, data: bytes, samples: int) -> dict:
+        """A format 1 segment's bytes -> role -> its raw bits or its EventColumn over the whole segment, without blocks
+        (capture_blocks.segment_columns; needs numpy)."""
+        c = self.config
+        return capture_blocks.segment_columns(data, samples, c.raw_roles, c.event_d, c.block)
+
     # ---- the §3.0 layout ---------------------------------------------------------------------------------
     def channel(self, data: bytes, k: int, samples: int | None = None) -> list[int]:
         """Channel k's values, one per sample (§1.1 rules 1-3: bit i*w + pos[k] of the stream, bit j being bit j mod 8

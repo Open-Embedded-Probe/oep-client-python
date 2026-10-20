@@ -103,3 +103,55 @@ def test_configure_answer_judge_latency():
     assert cfg.judge_latency_ns == 100819200
     assert c._config(rate, analog=False).judge_latency_ns is None
     assert c._config(rate + m.tlv(c.JUDGE_LATENCY, b"\x01\x02"), analog=True).judge_latency_ns is None
+
+
+def test_segment_columns_match_the_lines():
+    """segment_columns (format 1 as columns, no blocks): random segments (R 0-3, E 0-9, D 1/2/8/64, L 64-1024, a short
+    last block, quiet and busy lines so some blocks fall back) read back as the lines they were made from - a raw
+    channel's bits, an events channel's ticks counted from the segment's first sample (changes in each, the level at
+    its end; a fallback block's counted from its samples) and its level before the segment. Malformed: cut short, a
+    byte past the end."""
+    import random
+    import numpy as np
+    from oep_client import host as h
+    from oep_client.virtual_bench_capture import logic_block
+    rng = random.Random(2)
+    for _ in range(60):
+        L = rng.choice([64, 256, 1024])
+        R, E = rng.randint(0, 3), rng.randint(0, 9)
+        R = R or (E == 0)
+        ds = [d if L % d == 0 else 1 for d in (rng.choice([1, 2, 8, 64]) for _ in range(E))]
+        samples = rng.randint(1, 5 * L)
+
+        def line(p):
+            out, v = [], rng.randint(0, 1)
+            for _ in range(samples):
+                v ^= rng.random() < p
+                out.append(int(v))
+            return out
+        raw = [line(.5) for _ in range(R)]
+        evs = [line(rng.choice([.001, .05, .5])) for _ in range(E)]
+        before = [rng.randint(0, 1) for _ in range(E)]
+        data = b"".join(logic_block([x[f:f + L] for x in raw], [x[f:f + L] for x in evs], ds,
+                                    [evs[e][f - 1] if f else before[e] for e in range(E)], L)
+                        for f in range(0, samples, L))
+        event_d = {R + e: ds[e] for e in range(E)}
+        cols = cb.segment_columns(data, samples, list(range(R)), event_d, L)
+        for k in range(R):
+            assert cb.bits_list(cols[k], samples) == raw[k]
+        for e in range(E):
+            d, v, prev = ds[e], evs[e], before[e]
+            want = []
+            for q in range(-(-samples // d)):
+                part = v[q * d:(q + 1) * d]
+                n = sum(a != b for a, b in zip([prev] + part[:-1], part))
+                if n:
+                    want.append((q, part[-1], n))
+                prev = part[-1]
+            col = cols[R + e]
+            got = list(zip(col.quanta.tolist(), col.levels.tolist(), col.counts.tolist()))
+            assert got == want and col.start_level == before[e]
+        with pytest.raises(h.ProtocolError):
+            cb.segment_columns(data[:-1], samples, list(range(R)), event_d, L)
+        with pytest.raises(h.ProtocolError):
+            cb.segment_columns(data + b"\0", samples, list(range(R)), event_d, L)

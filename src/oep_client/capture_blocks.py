@@ -17,6 +17,7 @@ numpy (ticks, levels and counts are then arrays); without it, the same result in
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
 from . import host as h
 
@@ -165,6 +166,121 @@ def _events_np(data: bytes, pending: list, ev: list[int], E: int, event_d: dict[
                 continue
             c = b.events[role]
             c.ticks, c.levels, c.counts = ticks[lo:hi], levels[lo:hi], changes[lo:hi]
+
+
+class EventColumn(NamedTuple):
+    """An events channel over a whole segment (segment_columns): for each tick of D samples, counted from the segment's
+    first sample, where the level changed - the tick (`quanta`), the level after it, the changes in it (127 meaning at
+    least 127 where the probe sent events; a fallback block's are counted from its samples) - and the level before the
+    segment's first sample (`start_level`). numpy arrays."""
+    quanta: object
+    levels: object
+    counts: object
+    start_level: int
+
+
+def segment_columns(data: bytes, samples: int, raw_roles: list[int], event_d: dict[int, int],
+                    block: int) -> dict[int, bytes | EventColumn]:
+    """A format 1 segment (§1.3) read as columns without blocks: role -> a raw channel's bits (bytes, sample i at bit
+    i mod 8; the bits past `samples` 0) or an events channel's EventColumn. A fallback block's samples of an events
+    channel are turned into its ticks the way the probe counts them (the changes in each tick, the level at its end).
+    The same checks as read_logic_blocks (ProtocolError). Needs numpy: the headers are followed in Python, the raw parts
+    grouped by (fallback mask, r) and unpacked at once, every event row of the segment read at once - several times
+    read_logic_blocks' speed (wireskein's spool: 60 blocks 54 -> 10 ms), for a host that keeps lines, not blocks."""
+    if _np is None:
+        raise RuntimeError("segment_columns needs numpy (read_logic_blocks reads without it)")
+    np = _np
+    raw_roles, ev = sorted(raw_roles), sorted(event_d)
+    R, E = len(raw_roles), len(ev)
+    nb = (E + 7) // 8
+    hdr = 2 * nb + 4
+    B = -(-samples // block)
+    fbm = np.zeros(B, np.int64)           # fallback mask (bit e)
+    stm = np.zeros(B, np.int64)           # start levels (bit e)
+    nev = np.zeros(B, np.int64)
+    praw = np.zeros(B, np.int64)
+    pev = np.zeros(B, np.int64)
+    pos, size = 0, len(data)
+    fb_of: dict[int, int] = {}
+    for k in range(B):                    # the headers: where each block's raw part and events are
+        r = min(block, samples - k * block)
+        if pos + hdr > size:
+            raise h.ProtocolError(f"format 1: block at sample {k * block} cut short (header)")
+        fb = int.from_bytes(data[pos:pos + nb], "little")
+        n = int.from_bytes(data[pos + 2 * nb:pos + hdr], "little")
+        wb = fb_of.get(fb)
+        if wb is None:
+            wb = fb_of[fb] = R + bin(fb).count("1")
+        fbm[k], stm[k], nev[k] = fb, int.from_bytes(data[pos + nb:pos + 2 * nb], "little"), n
+        praw[k] = pos + hdr
+        pos += hdr + (r * wb + 7) // 8
+        pev[k] = pos
+        pos += EVENT_BYTES * n
+        if pos > size:
+            raise h.ProtocolError(f"format 1: block at sample {k * block} cut short ({n} events)")
+    if pos != size:
+        raise h.ProtocolError(f"format 1: {size - pos} bytes past the segment's {samples} samples")
+    buf = np.frombuffer(data, np.uint8)
+    rs = np.minimum(block, samples - np.arange(B) * block)
+    first = np.arange(B) * block
+    # raw columns: blocks grouped by (fallback mask, r); column c of a group is a (blocks, r) bit matrix
+    bits = {role: np.zeros((B, block), np.uint8) for role in raw_roles}
+    fbits: dict[int, list] = {}           # events role -> [(block indices, bit rows)] carried raw
+    for fb, wb in fb_of.items():
+        cols = raw_roles + [ev[e] for e in range(E) if fb >> e & 1]
+        for r in np.unique(rs[fbm == fb]):
+            r = int(r)
+            ks = np.flatnonzero((fbm == fb) & (rs == r))
+            rb = (r * wb + 7) // 8
+            u = np.unpackbits(buf[praw[ks][:, None] + np.arange(rb)], axis=1, bitorder="little")[:, :r * wb]
+            u = u.reshape(len(ks), r, wb)
+            for c, role in enumerate(cols):
+                if role in bits:
+                    bits[role][ks, :r] = u[:, :, c]
+                else:
+                    fbits.setdefault(role, []).append((ks, u[:, :, c]))
+    out: dict[int, bytes | EventColumn] = {
+        role: np.packbits(bits[role].reshape(-1)[:samples], bitorder="little").tobytes() for role in raw_roles}
+    # events: every block's rows at once
+    tot = int(nev.sum())
+    bid = np.repeat(np.arange(B), nev)
+    at = np.repeat(pev - EVENT_BYTES * (np.cumsum(nev) - nev), nev) + EVENT_BYTES * np.arange(tot)
+    rows = buf[at[:, None] + np.arange(EVENT_BYTES)] if tot else np.zeros((0, EVENT_BYTES), np.uint8)
+    tick = rows[:, 0].astype(np.int64) | rows[:, 1].astype(np.int64) << 8
+    ch, state = rows[:, 2].astype(np.int64), rows[:, 3]
+    if tot:
+        if (np.diff(bid * 256 + ch) < 0).any():
+            raise h.ProtocolError("format 1: events not in channel order (§1.3)")
+        if int(ch.max()) >= E:
+            raise h.ProtocolError(f"format 1: an event of a channel past {E}")
+        if ((fbm[bid] >> ch) & 1).any():
+            raise h.ProtocolError("format 1: events of a channel carried raw in its block")
+        if (tick * np.array([event_d[role] for role in ev])[ch] >= rs[bid]).any():
+            raise h.ProtocolError("format 1: a tick past its block (§1.3)")
+    for e, role in enumerate(ev):
+        d = event_d[role]
+        sel = ch == e
+        q = first[bid[sel]] // d + tick[sel]
+        lv = (state[sel] >> 7).astype(np.uint8)
+        ct = (state[sel] & COUNT_SATURATED).astype(np.int64)
+        if role in fbits:                 # counted from the samples, the way the probe counts (§1.3)
+            qs, ls, cs = [q], [lv], [ct]
+            for ks, u in fbits[role]:
+                r = u.shape[1]
+                prev = np.concatenate((((stm[ks] >> e) & 1).astype(np.uint8)[:, None], u[:, :-1]), axis=1)
+                nt = -(-r // d)
+                pad = np.zeros((len(ks), nt * d), np.int64)
+                pad[:, :r] = u != prev
+                per = pad.reshape(len(ks), nt, d).sum(-1)
+                bi, t = np.nonzero(per)
+                qs.append(first[ks][bi] // d + t)
+                ls.append(u[bi, np.minimum((t + 1) * d, r) - 1])
+                cs.append(per[bi, t])
+            q, lv, ct = np.concatenate(qs), np.concatenate(ls), np.concatenate(cs)
+            o = np.argsort(q, kind="stable")
+            q, lv, ct = q[o], lv[o], ct[o]
+        out[role] = EventColumn(q, lv, ct, int(stm[0] >> e & 1) if B else 0)
+    return out
 
 
 def bits_list(bits: bytes, n: int) -> list[int]:
