@@ -1,6 +1,11 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) `UsbAsyncStream`: 戻った IN の転送は、データを写したらすぐ出し直し、ロック（read() と共有）はその後に取るようにした。
+  前はロックを取ってから出し直していたので、read() がロックを持つ間は転送が戻らなかった。`stats()` を足した（callbacks、
+  inflight_min = callback の時点で出ていた転送の最少、gap_max_s = callback の間隔の最大、buffered_max、bytes、urb_size、
+  depth）。`open()` / コンストラクタで urb_size と depth を選べる（既定は URB_SIZE × DEPTH = 64 KiB × 128）。
+  wireskein の切り分け（負荷 14 で 40 MB/s に欠損。event のスレッドが時々数百 ms から数秒止まる）を受けた。
 - (JA) `CaptureGroup.stream(link, tracks, seconds=, nbytes=, into=)` -> `{fn: Received}`: ストリーミングのトラックを集めた
   capture-group で、1 本の経路に混ざって届く push をトラックごと（fn ごと）の Received に分けて集める。seq、generation、gap、
   segment_info の扱いは `LogicCapture.stream()` と同じ（その内側を `_collect()` に切り出した）。nbytes は全トラックが届くまで待つ。

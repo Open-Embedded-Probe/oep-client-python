@@ -94,3 +94,29 @@ def test_close_is_hooked_to_exit(stream, monkeypatch):
     monkeypatch.setattr(atexit, "unregister", lambda f: calls.append(f))
     s.close()
     assert calls == [s.close]                          # it was registered, and an explicit close takes it off
+
+
+def test_a_completed_transfer_goes_out_again_and_is_counted(stream):
+    """A transfer back with data: copied out and submitted again; stats() counts it, the fewest out at a callback and
+    the bytes waiting."""
+    s, ctx, h = stream
+    t = h.transfers[0]
+    t.status, t.out = usb1.TRANSFER_COMPLETED, False
+    t.getActualLength = lambda: 3
+    t.getBuffer = lambda: bytearray(b"abcdef")
+    t.callback(t)
+    st = s.stats()
+    assert t.out and st["callbacks"] == 1 and st["inflight_min"] == s.depth - 1 and st["bytes"] == 3
+    assert st["buffered_max"] == 3 and s.read(10) == b"abc"
+    s.close()
+    assert h.closed_with_out == 0
+
+
+def test_the_transfers_size_and_depth_are_the_callers(monkeypatch):
+    monkeypatch.setitem(sys.modules, "usb1", usb1)
+    from oep_client import usb_stream
+    ctx = Context()
+    h = Handle(ctx)
+    s = usb_stream.UsbAsyncStream(ctx, h, 0x81, 0x01, 0, urb_size=256 * 1024, depth=32)
+    assert len(h.transfers) == 32 and s.stats()["urb_size"] == 256 * 1024
+    s.close()

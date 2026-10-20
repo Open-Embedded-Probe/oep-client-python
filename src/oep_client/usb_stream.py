@@ -122,7 +122,8 @@ class UsbAsyncStream:
     URB_SIZE = 64 * 1024
     DEPTH = 128
 
-    def __init__(self, context, handle, endpoint_in: int, endpoint_out: int, interface: int, out_packet: int = 512):
+    def __init__(self, context, handle, endpoint_in: int, endpoint_out: int, interface: int, out_packet: int = 512,
+                 urb_size: int | None = None, depth: int | None = None):
         import usb1
         self._usb1 = usb1
         self.context, self.handle, self.ep_in, self.ep_out, self.interface = context, handle, endpoint_in, endpoint_out, interface
@@ -132,14 +133,22 @@ class UsbAsyncStream:
         self._cond = threading.Condition()
         self._closed = False           # no more resubmits (close() started)
         self._stop = False             # the event thread ends (every transfer is back)
+        self.urb_size, self.depth = urb_size or self.URB_SIZE, depth or self.DEPTH
         self._transfers = []
         self._active = 0               # transfers submitted and not yet back for good
-        for _ in range(self.DEPTH):
+        # what stats() reports: the transfers out at a callback's start (the fewest seen: how near the queue came to
+        # empty - the kernel takes the stream only into transfers that are out), the longest between two callbacks,
+        # the most bytes waiting for read()
+        self._inflight = 0
+        self._stats = {"callbacks": 0, "inflight_min": None, "gap_max_s": 0.0, "buffered_max": 0, "bytes": 0}
+        self._last_cb = None
+        for _ in range(self.depth):
             t = handle.getTransfer()
-            t.setBulk(endpoint_in, self.URB_SIZE, callback=self._done, timeout=0)
+            t.setBulk(endpoint_in, self.urb_size, callback=self._done, timeout=0)
             t.submit()
             self._transfers.append(t)
             self._active += 1
+            self._inflight += 1
         self._events = threading.Thread(target=self._run, daemon=True)
         self._events.start()
         # Closed at exit too: left to usb1's own finalizers, the context went while the event thread was inside
@@ -147,7 +156,11 @@ class UsbAsyncStream:
         atexit.register(self.close)
 
     @classmethod
-    def open(cls, vid: int, pid: int, serial: str | None = None) -> "UsbAsyncStream":
+    def open(cls, vid: int, pid: int, serial: str | None = None, *, urb_size: int | None = None,
+             depth: int | None = None) -> "UsbAsyncStream":
+        """`urb_size` / `depth`: the IN transfers (URB_SIZE x DEPTH by default). Each transfer back is a callback that
+        takes the GIL: fewer, larger ones keep up better beside a thread that holds it (a low rate's latency grows
+        with the size)."""
         import usb1
         context = usb1.USBContext()
         context.open()
@@ -168,30 +181,55 @@ class UsbAsyncStream:
                 outs = [a for a, attr in eps if attr & 3 == 2 and not a & 0x80]
                 if ins and outs:
                     handle.claimInterface(setting.getNumber())
-                    return cls(context, handle, ins[0], outs[0], setting.getNumber(), sizes[outs[0]])
+                    return cls(context, handle, ins[0], outs[0], setting.getNumber(), sizes[outs[0]],
+                               urb_size=urb_size, depth=depth)
             handle.close()
         context.close()
         raise FileNotFoundError(f"no USB device {vid:04x}:{pid:04x}" + (f" serial {serial}" if serial else ""))
 
     def _done(self, transfer) -> None:
         usb1 = self._usb1
+        now = time.monotonic()
+        st = self._stats
+        self._inflight -= 1            # the event thread alone changes it once running
+        st["callbacks"] += 1
+        if st["inflight_min"] is None or self._inflight < st["inflight_min"]:
+            st["inflight_min"] = self._inflight
+        if self._last_cb is not None and now - self._last_cb > st["gap_max_s"]:
+            st["gap_max_s"] = now - self._last_cb
+        self._last_cb = now
         status = transfer.getStatus()
+        data = b""
         if status == usb1.TRANSFER_COMPLETED:
             n = transfer.getActualLength()
             if n:
-                data = transfer.getBuffer()[:n]
-                with self._cond:
-                    self._buffer += data
-                    self._cond.notify_all()
+                data = bytes(transfer.getBuffer()[:n])   # copied out: the transfer goes back out at once
+        # out again before the lock: a read() holding it does not keep the transfer back
         if not self._closed and status in (usb1.TRANSFER_COMPLETED, usb1.TRANSFER_TIMED_OUT):
             try:
                 transfer.submit()
-                return
+                self._inflight += 1
+                resubmitted = True
             except usb1.USBError:
-                pass
+                resubmitted = False
+        else:
+            resubmitted = False
         with self._cond:
-            self._active -= 1          # back for good (cancelled, failed, or closing)
+            if data:
+                self._buffer += data
+                st["bytes"] += len(data)
+                if len(self._buffer) > st["buffered_max"]:
+                    st["buffered_max"] = len(self._buffer)
+            if not resubmitted:
+                self._active -= 1      # back for good (cancelled, failed, or closing)
             self._cond.notify_all()
+
+    def stats(self) -> dict:
+        """The IN side so far: callbacks, inflight_min (the fewest transfers out at a callback; near 0, the stream
+        outran the host and the probe's buffer took it), gap_max_s (the longest between two callbacks), buffered_max
+        (bytes waiting for read() at most), bytes, and urb_size / depth."""
+        with self._cond:
+            return dict(self._stats, urb_size=self.urb_size, depth=self.depth)
 
     def _run(self) -> None:
         while not self._stop:
