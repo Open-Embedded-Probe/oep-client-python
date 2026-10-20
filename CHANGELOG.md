@@ -1,6 +1,7 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) 試験: segment_columns の試験は、numpy が無ければ飛ばす（numpy は任意の依存。numpy の無い CI で落ちていた）。
 - (JA) `CaptureGroup.trigger_caps()` -> `TriggerCaps | None`: capture-group の describe の trigger_caps（§4.4、0x41）を読む（max_stages、
   max_terms、max_conds、cross_track、types、protocols、trigger_out_latency_ns。trigger_out が無ければ None）。`takes(COND[...])` と
   `kinds()`（宣言された条件の型の名前）で、bind の前に頼めるかを確かめられる。宣言なしや知らない形では None（宣言は目安で、正しいのは

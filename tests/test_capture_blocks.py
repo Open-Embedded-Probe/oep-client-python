@@ -112,7 +112,7 @@ def test_segment_columns_match_the_lines():
     its end; a fallback block's counted from its samples) and its level before the segment. Malformed: cut short, a
     byte past the end."""
     import random
-    import numpy as np
+    pytest.importorskip("numpy")                  # optional (segment_columns needs it; read_logic_blocks does not)
     from oep_client import host as h
     from oep_client.virtual_bench_capture import logic_block
     rng = random.Random(2)
