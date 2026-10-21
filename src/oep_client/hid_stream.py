@@ -286,14 +286,21 @@ def _open_usb1(vid: int, pid: int, serial: str | None) -> HidReportStream:
             outs = [a for a, attr in eps if attr & 3 == 3 and not a & 0x80]
             if not ins:
                 continue
+            # the interface ours before anything goes to it: with the kernel's HID driver bound, Linux usbfs refuses
+            # even its GET_DESCRIPTOR (LIBUSB_ERROR_IO; an RP2's HID at interface 3, 2026-10-22), and gives it back
+            # when the descriptor is not OEP's
+            detached = bool(handle.kernelDriverActive(number))
+            if detached:
+                handle.detachKernelDriver(number)
+            handle.claimInterface(number)
             # GET_DESCRIPTOR (report) on the interface
             desc = bytes(handle.controlRead(0x81, 0x06, 0x2200, number, 4096, timeout=1000))
             r = vendor_report(desc)
             if r is None:
+                handle.releaseInterface(number)
+                if detached:
+                    handle.attachKernelDriver(number)
                 continue
-            if handle.kernelDriverActive(number):
-                handle.detachKernelDriver(number)
-            handle.claimInterface(number)
             backend = Usb1HidBackend(context, handle, number, ins[0], outs[0] if outs else None, r["report_id"], r["input"])
             return HidReportStream(backend, r["input"], r["output"])
         handle.close()
