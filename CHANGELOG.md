@@ -1,6 +1,9 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) libusb1 経由の HID（hidapi がない環境の経路）で、カーネルの HID ドライバを外して interface を claim してから、
+  レポート記述子を読むようにした。今までは claim の前に読んでいて、Linux の usbfs に LIBUSB_ERROR_IO で断られていた
+  （RP2 の HID は interface 3、2026-10-22）。OEP の記述子でなければ interface を戻し、ドライバを付け直す。
 - (JA) `CaptureDrops` に dropped_bytes を足した。ストリームが落としたバイト数の合計で、理由を問わない（写す経路で区画を捨てた
   分も含む）。oep-probe-arduino e08687c 以降。それより前の形では None。
 - (JA) USB（vendor bulk）の既定を `UsbProcessStream` にした（POSIX のみ）。
