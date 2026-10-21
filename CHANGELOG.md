@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) `CaptureDrops` に dropped_bytes を足した。ストリームが落としたバイト数の合計で、理由を問わない（写す経路で区画を捨てた
+  分も含む）。oep-probe-arduino e08687c 以降。それより前の形では None。
 - (JA) USB（vendor bulk）の既定を `UsbProcessStream` にした（POSIX のみ）。
   - wireskein の測定: 負荷 14 の host で、P4X の 40 MB/s・30 秒を取った。thread の版は 6 回中 3 回で欠損があり、process の
     版は 3 回とも欠損 0 だった。

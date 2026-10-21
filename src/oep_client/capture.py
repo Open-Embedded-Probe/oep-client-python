@@ -369,7 +369,8 @@ class CaptureDrops:
     capture draws on: internal RAM's and DMA-capable internal RAM's largest free blocks, PSRAM's total (0: none); then
     the most the stream's buffer (the DMA ring, in PSRAM on a P4) held not yet sent since start (bytes; None from a
     firmware before it); then the spill behind the ring: the most it held since start and its size (bytes, 0 0: none;
-    None from a firmware before it)."""
+    None from a firmware before it); then every byte the stream dropped since start, whatever the way (the copied way's
+    segments with no room to send too; None from a firmware before it)."""
     no_stage_bytes: int
     unqueued_bytes: int
     dma_overruns: int
@@ -382,15 +383,17 @@ class CaptureDrops:
     buffer_peak: int | None = None
     spill_peak: int | None = None
     spill_bytes: int | None = None
+    dropped_bytes: int | None = None
 
-    FORMAT = "<IIIIBBIIIIII"
+    FORMAT = "<IIIIBBIIIIIIQ"
+    FORMAT_BEFORE_DROPPED = "<IIIIBBIIIIII"   # a firmware before dropped_bytes (until 2026-10-21)
     FORMAT_BEFORE_SPILL = "<IIIIBBIIII"   # a firmware before the spill (until 2026-10-20)
     FORMAT_BEFORE_PEAK = "<IIIIBBIII"   # a firmware before buffer_peak (until 2026-10-20)
 
     @classmethod
     def unpack(cls, data: bytes) -> "CaptureDrops | None":
         """-> its fields, or None for data of another length (a form this host does not know)."""
-        for form in (cls.FORMAT, cls.FORMAT_BEFORE_SPILL, cls.FORMAT_BEFORE_PEAK):
+        for form in (cls.FORMAT, cls.FORMAT_BEFORE_DROPPED, cls.FORMAT_BEFORE_SPILL, cls.FORMAT_BEFORE_PEAK):
             if len(data) == struct.calcsize(form):
                 f = struct.unpack(form, data)
                 return cls(*f[:4], bool(f[4]), *f[5:])

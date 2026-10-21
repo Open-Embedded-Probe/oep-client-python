@@ -93,6 +93,9 @@ def test_named_extensions_and_capture_drops():
     assert (d.stages, d.psram_total, d.buffer_peak) == (8, 3, 3585344) and d.spill_peak is None
     d = c.CaptureDrops.unpack(struct.pack("<IIIIBBIIIIII", 0, 0, 0, 0, 1, 8, 1, 2, 3, 4928, 5 << 20, 8 << 20))
     assert (d.buffer_peak, d.spill_peak, d.spill_bytes) == (4928, 5 << 20, 8 << 20)   # the spill behind the ring
+    assert d.dropped_bytes is None
+    d = c.CaptureDrops.unpack(struct.pack("<IIIIBBIIIIIIQ", 0, 0, 0, 0, 0, 0, 1, 2, 3, 0, 0, 0, 7 << 30))
+    assert d.zero_copy is False and d.dropped_bytes == 7 << 30   # every byte dropped, the copied way's too
     assert c.CaptureDrops.unpack(b"short") is None
 
 
