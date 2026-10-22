@@ -657,3 +657,17 @@ oep-client-python の `wip/rvswd-rest` ブランチ。
 - Arduino d92d988 は、追い越されたバイトと queue に入らなかった塊を落とし、position を飛ばす（隙間）。エラーにはしない。
   wireskein が §2.2 を「失った範囲を区画の外に置けるなら、理由によらず隙間。区画の中で失ったときだけエラー」に直す案を出している。
   → oep-spec bfbde01 でその案のとおりに直した（wireskein と合意）。実装と文面のずれは解消。
+
+## 2026-10-22 機能を選べるファームと、設定の項目の fn 番号
+
+Firmware/OepProbe のインターフェースと transport を、ビルドオプションなしで選べるようにした（oep-probe-arduino
+009873d〜cff9253）。選び方を変えて焼き直すと、fn の番号と経路（transport）の index が変わる。
+
+- probe.config の項目は、fn を番号で持つ。passthrough の fn、console-passthrough の wire_fn と console_fn がそれにあたる。
+  port も、fn 0 の経路の index で持つ。
+- 選び方を変えて焼き直すと、保存済みの項目が別の fn や経路を指す。たいていは型の検査で unsupported になり、その項目が
+  無効になるだけで済む。ただし同じ型の fn が別にあると、黙って別のものを指す。例は P4 の uart が 2 本ある場合。
+- 今の実装の回避: 新しい fn は既存の fn の後ろに足し、同じ選び方なら番号が変わらないようにした。選び方そのものを
+  変えた場合は防げない。
+- 仕様への論点（未決。所有者の判断待ち）: 項目の参照を fn の名前と instance で持つか。または、保存したときの
+  インターフェースの一覧（名前の並び）と一致しないときは、項目を unreadable にする規則を明記するか。
