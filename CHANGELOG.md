@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.37
 - (JA) 設定を core（oep-spec core §13、9fc6ad9 / c4fbd6e）に合わせた。`oep_client.config`（`oep.probe.config`）を無くし、
   `oep_client.settings` を足した:
   - fn 0 の get / set / unset / save / state / network。値は（fn、項目番号、key）で運び、host には（カテゴリ、平らな名前、値、出どころ）で見せる。
