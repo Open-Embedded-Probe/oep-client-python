@@ -191,9 +191,10 @@ def test_default_dir_order(monkeypatch, tmp_path):
 def test_the_cli_keeps_its_session(tcp_bench):
     """`oep` commands open through link.open_host: a session one left behind is ended by the next."""
     hst = link.open_host(tcp_bench)
-    core.take(hst, 30000, owner="oep config", wait_s=0)
+    core.take(hst, 30000, owner="oep settings", wait_s=0)
     hst.link.close()                                                 # the command was killed
-    out = subprocess.run([sys.executable, "-m", "oep_client", "config", "label", tcp_bench, "5", "x.y"],
+    out = subprocess.run([sys.executable, "-m", "oep_client", "settings", "set", tcp_bench, "core",
+                          f"channel.{virtual_bench.channel_name(5)}.label=x.y"],
                          capture_output=True, text=True, timeout=60)
     assert out.returncode == 0 and "set: generation" in out.stdout, out.stdout + out.stderr
 

@@ -1,13 +1,13 @@
 """The console's per-stream send queue (console §2, §3: its size is the probe's, not declared), the wait for a target
 that restarts by itself after a reset (debug §3, §4.3: within max_op_ms, the argument time of core §4.4), an item of
-another length (probe-config §1) and oep.link source's len (oep-if-link §2)."""
+another length (core §13.3) and oep.link source's len (oep-if-link §2)."""
 
 import random
 import struct
 
 import pytest
 
-from oep_client import config, console, core, endpoint, virtual_bench, host as h, message as m, registry as reg, riscv
+from oep_client import console, core, endpoint, virtual_bench, host as h, message as m, registry as reg, riscv
 
 MAX_OP_MS = virtual_bench.MAX_OP_MS
 
@@ -120,19 +120,20 @@ def test_attach_with_the_reset_tlv_waits_too_and_makes_nothing_when_it_fails():
 # ---- an item of another length; source's len -------------------------------------------------------------------
 
 def test_an_item_of_another_length_is_malformed():
-    """probe-config §1: an item whose data is longer or shorter than its form is malformed - nothing applied; a
-    label's text runs to the item's end."""
+    """core §13.3: a value whose data is longer or shorter than its form is malformed - nothing applied; a label's text
+    runs to the value's end."""
+    from oep_client import settings
     clock, ep, hst = bench(virtual_bench.p4_bench)
-    cfg = config.ProbeConfig(hst)
-    tag = ep.setting_number("idle")
-    for value in (struct.pack("<HBB", 20, 1, 0), struct.pack("<H", 20)):
+    st = settings.Settings(hst)
+    number = ep.setting_number("channel.{}.idle")
+    label = struct.pack("<HBHH", 0, ep.setting_number("channel.{}.label"), 20, 2) + b"ok"
+    for value in (b"\x01\x00", b""):
         with pytest.raises(h.Rejected) as e:
-            hst.call(cfg.fn, cfg.SET, b"\x02" + struct.pack("<BH", tag, len(value)) + value
-                     + config.item(config.Label(channel=20, text="ok")))
+            hst.call(0, settings.OP["set"], b"\x02" + struct.pack("<HBHH", 0, number, 20, len(value)) + value + label)
         assert e.value.result.detail == m.MALFORMED
-    assert cfg.items() == []
-    cfg.set([config.Label(channel=21, text="a long label text")])
-    assert [type(i).__name__ for i in cfg.items()] == ["Label"]
+    assert [v for v in st.get()[1] if v.origin == "user"] == []
+    st.set_named(settings.CORE_CATEGORY, {"channel.GPIO21.label": "a long label text"})
+    assert [v.origin for v in st.get()[1] if v.origin == "user"] == ["user"]
 
 
 def test_link_source_is_max_frame_less_7_with_or_without_a_tlv():

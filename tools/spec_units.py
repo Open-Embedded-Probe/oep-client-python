@@ -11,7 +11,7 @@ from pathlib import Path
 DOCS = {"core": "docs/oep-core.ja.md", "transports": "docs/oep-transports.ja.md", "common": "interfaces/oep-if-common.ja.md",
         "plan": "interfaces/oep-if-plan.ja.md", "restart": "interfaces/oep-if-restart.ja.md", "link": "interfaces/oep-if-link.ja.md",
         "fixture": "interfaces/oep-if-fixture.ja.md", "debug": "interfaces/oep-if-debug.ja.md",
-        "console": "interfaces/oep-if-console.ja.md", "probe-config": "interfaces/oep-if-probe-config.ja.md",
+        "console": "interfaces/oep-if-console.ja.md",
         "capture": "interfaces/oep-if-capture.ja.md"}
 
 

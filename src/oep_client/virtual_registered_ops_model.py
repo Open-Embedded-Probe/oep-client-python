@@ -14,7 +14,7 @@ _MANDATORY={
     'oep.fixture.gpio':('set','read'),'oep.fixture.uart':('configure','read','status'),
     'oep.fixture.i2c-target':('configure','read_rx','preload_tx','status'),'oep.fixture.spi-target':('configure','arm','read_rx','status'),
     **{c:('configure','start','stop','status','read','segments') for c in ('oep.fixture.logic','oep.fixture.analog')},
-    'oep.fixture.capture-group':('bind','start','stop','status'),'oep.probe.config':('get','set','unset'),
+    'oep.fixture.capture-group':('bind','start','stop','status'),
 }
 MINIMAL={name:tuple(_reg.INTERFACES[name].op[o] for o in ops) for name,ops in _MANDATORY.items()}
 

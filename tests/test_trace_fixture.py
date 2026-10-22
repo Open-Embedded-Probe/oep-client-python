@@ -13,7 +13,7 @@ from oep_client.conformance_uart_sample import SampleUartAdapter
 from test_conformance_uart import setup as uart_setup
 from test_virtual_bench_rules_2026_10_02 import IDLE, PLAN_APPLY, PLAN_RELEASE, SET, Clock, Host, cset, idle_item, una
 
-GPIO, UART, I2C, SPI, CFG = 4, 5, 8, 9, 10                       # p4_x035
+GPIO, UART, I2C, SPI = 4, 5, 8, 9                                  # p4_x035
 V003_I2C, V003_SPI = 7, 8                                         # esp32_v003
 _GPIO, _UART, _I2C, _SPI = reg.FIXTURE_GPIO, reg.FIXTURE_UART, reg.FIXTURE_I2C_TARGET, reg.FIXTURE_SPI_TARGET
 UNA = reg.CORE.tlv["unavailable_payload"]
@@ -181,7 +181,7 @@ def test_gpio_plan_keeps_the_line_as_it_was_until_the_first_set():
     """fixture §1: a channel the plan takes keeps its state until the first set - an output idle goes on driving its
     level, a hi-z one stays hi-z; taking it changes no level. A gpio plan takes an output idle channel."""
     ep, h = bench()
-    h.ok(CFG, SET, cset(idle_item(30, IDLE["output_high"]) + idle_item(31, IDLE["pull_up"])))
+    h.ok(virtual_bench.CORE_FN, SET, cset(idle_item(30, IDLE["output_high"]), idle_item(31, IDLE["pull_up"])))
     before = [ep.pin_state(ch) for ch in (30, 31, 32)]
     h.ok(h.plan_fn, PLAN_APPLY, assign((GPIO, 1, 30), (GPIO, 1, 31), (GPIO, 1, 32)))
     assert ep.gpio_log == []
@@ -195,7 +195,7 @@ def test_gpio_plan_keeps_the_line_as_it_was_until_the_first_set():
 def test_gpio_plan_takes_an_output_idle_channel_another_fixture_does_not():
     """fixture §1: the gpio's plan accepts a channel whose idle is an output (a uart's TX on it is held_by_settings)."""
     ep, h = bench()
-    h.ok(CFG, SET, cset(idle_item(30, IDLE["output_low"])))
+    h.ok(virtual_bench.CORE_FN, SET, cset(idle_item(30, IDLE["output_low"])))
     r = h.raw(h.plan_fn, PLAN_APPLY, assign((UART, 2, 30)))
     assert cause(r) == reg.CORE.enum["unavailable_cause"]["held_by_settings"]
     assert h.raw(h.plan_fn, PLAN_APPLY, assign((GPIO, 1, 30))).succeeded
@@ -206,7 +206,7 @@ def test_gpio_read_only_looks_and_release_or_end_gives_the_line_back():
     """fixture §1: read observes the level and changes nothing (no switch to input, pull or strength); releasing the
     plan or ending the session undoes the gpio's settings and returns the line to its idle (core §8 / §9)."""
     ep, h = bench()
-    h.ok(CFG, SET, cset(idle_item(31, IDLE["pull_up"])))
+    h.ok(virtual_bench.CORE_FN, SET, cset(idle_item(31, IDLE["pull_up"])))
     h.ok(h.plan_fn, PLAN_APPLY, assign((GPIO, 1, 30), (GPIO, 1, 31)))
     h.ok(GPIO, 0x10, bytes([2]) + struct.pack("<HBHB", 30, 4, 31, 5))
     state = (dict(ep.gpio_modes), list(ep.gpio_log), ep.pin_state(30), ep.pin_state(31))
@@ -404,7 +404,7 @@ def test_uart_configure_comes_up_or_fails_back_to_not_configured(uart):
     high. Either way an accepted configure drops the TX not yet sent."""
     ep, h = uart
     h.ok(h.plan_fn, PLAN_RELEASE, bytes([0]))
-    h.ok(CFG, SET, cset(idle_item(20, IDLE["pull_up"])))
+    h.ok(virtual_bench.CORE_FN, SET, cset(idle_item(20, IDLE["pull_up"])))
     h.ok(h.plan_fn, PLAN_APPLY, assign((UART, 1, 20), (UART, 2, 21)))
     assert ep.pin_state(20) == "idle pull-up" and ep.pin_state(21) == "uart-tx-high"   # RX unused before configure
     ep.uart_accept = 100
@@ -495,7 +495,7 @@ def test_uart_tx_idles_high_from_the_plan_and_its_release_frees_the_line():
     """fixture §2: TX idles high (not sending) while the plan holds it, before configure too; the plan's release stops
     the UART driving and the line goes to its idle (core §8) - an idle item may make it a pull-up input."""
     ep, h = bench()
-    h.ok(CFG, SET, cset(idle_item(23, IDLE["pull_up"])))
+    h.ok(virtual_bench.CORE_FN, SET, cset(idle_item(23, IDLE["pull_up"])))
     h.ok(h.plan_fn, PLAN_APPLY, assign((UART, 2, 21), (UART, 1, 20)))
     assert ep.pin_state(21) == "uart-tx-high"
     h.ok(h.plan_fn, PLAN_RELEASE, bytes([1]) + struct.pack("<H", UART))
@@ -615,7 +615,7 @@ def test_i2c_state_0_acks_nothing_and_leaves_the_lines_idle():
     """fixture §3: in state 0 no address is ACKed, the I2C function drives nothing and its pull-ups are off: the
     channels are in their idle (core §8) - an idle's pull-up is that, not the I2C function's."""
     ep, h = bench(virtual_bench.with_i2c_pullups(virtual_bench.p4_x035()))
-    h.ok(CFG, SET, cset(idle_item(30, IDLE["pull_up"])))
+    h.ok(virtual_bench.CORE_FN, SET, cset(idle_item(30, IDLE["pull_up"])))
     h.ok(h.plan_fn, PLAN_APPLY, assign((I2C, 1, 30), (I2C, 2, 31)))
     assert (ep.pin_state(30), ep.pin_state(31)) == ("idle pull-up", "idle hi-z")
     assert not ep.i2c_write(I2C, b"\x01") and ep.i2c_read(I2C, 1) is None

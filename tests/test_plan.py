@@ -227,9 +227,9 @@ def test_a_channel_group_mismatch_and_a_pin_conflict():
 
 def test_an_output_idle_channel_is_refused_by_an_interface_that_does_not_take_it():
     """§2.4: an interface refusing an output idle - unavailable cause 5 (logic only listens: it takes it)."""
-    from oep_client import config
+    from oep_client import endpoint
     ep, hst = bench()
-    ep.load_config([config.item(config.Idle(channel=5, mode="output-high"))], saved=False)
+    ep.load_settings([(0, "channel.{}.idle", 5, bytes([endpoint.IDLE_MODE["high"]]))], saved=False)
     r = raw(hst, APPLY, assignment(UART, 2, 5))
     assert r.detail == m.UNAVAILABLE and cause(r) == b"\x05" and not ep.plan
     assert raw(hst, APPLY, assignment(LOGIC, 0, 5)).succeeded

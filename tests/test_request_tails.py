@@ -17,13 +17,13 @@ import struct
 
 import pytest
 
-from oep_client import (capture as c, config, console, core, endpoint, virtual_bench, fixture, host as h, message as m,
+from oep_client import (capture as c, console, settings, core, endpoint, virtual_bench, fixture, host as h, message as m,
                         registry as reg, riscv)
 
 UNKNOWN = 0x3D                                 # no context defines it
 CORE_NAME = "(core)"                           # fn 0: the core has no name (core §0); a label for these tests
-# probe.config set's TLVs are the items: an undeclared one is refused unsupported critical or not (probe.config §1)
-NO_TAIL = {("oep.probe.config", reg.PROBE_CONFIG.op["set"])}
+# every request reads its tail by the general rule; the settings' set / unset carry their values before it (core §13.5)
+NO_TAIL: set = set()
 
 
 class Clock:
@@ -188,16 +188,14 @@ def drive_fixtures(hst, ep):
 
 
 def drive_config(hst):
-    cfg = config.ProbeConfig(hst)
-    cfg.describe()
-    cfg.set([config.Label(channel=30, text="t.nrst")])
-    cfg.get()
-    cfg.state()
-    if cfg.describe().netifs:
-        cfg.network()                                              # the network op, when the probe has netifs (§2)
-    cfg.unset([("label", 30)])
-    cfg.save()
-    cfg.erase()
+    st = settings.Settings(hst)
+    st.set_named(settings.CORE_CATEGORY, {"channel.GPIO30.label": "t.nrst"})
+    st.get()
+    st.state()
+    if st.offers("network"):
+        st.network()                                               # the network op, when the probe has netifs
+    st.unset_named(settings.CORE_CATEGORY, ["channel.GPIO30.label"])
+    st.save()
 
 
 def one_shot(cap, clock, **kw):
@@ -284,13 +282,13 @@ def test_a_tlv_numbered_0_is_malformed(tag):
 
 @pytest.mark.parametrize("op", ["describe", "get"])
 def test_a_tlv_in_a_describe_or_get_request_follows_the_general_rule(op):
-    """core §2.3: describe and probe.config get read their tail like any request (no malformed for a TLV there)."""
+    """core §2.3: describe and the settings' get read their tail like any request (no malformed for a TLV there)."""
     ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     hst = h.Host(lambda b: ep.handle(b, 1))
     if op == "describe":
         fn, op, payload = m.CORE_FN, reg.CORE.op["describe"], struct.pack("<HH", 0, 0)
     else:
-        fn, op, payload = ep.fns["oep.probe.config"], reg.PROBE_CONFIG.op["get"], struct.pack("<H", 0)
+        fn, op, payload = m.CORE_FN, reg.CORE.op["get"], struct.pack("<H", 0)
     plain = hst.request(fn, op, payload, locked=False)
     assert plain.succeeded
     assert hst.request(fn, op, payload + m.tlv(UNKNOWN, b"\x01"), locked=False).payload == plain.payload
@@ -299,15 +297,14 @@ def test_a_tlv_in_a_describe_or_get_request_follows_the_general_rule(op):
     assert e.value.result.payload == bytes([UNKNOWN | m.TAG_CRITICAL])
 
 
-def test_config_set_refuses_an_unknown_item_with_the_tag_as_received():
+def test_settings_set_refuses_an_item_it_does_not_declare_with_the_values_place():
     ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     hst = h.Host(lambda b: ep.handle(b, 1))
     hst.open(3000)
-    fn = ep.fns["oep.probe.config"]
-    for tag in (UNKNOWN, UNKNOWN | m.TAG_CRITICAL):              # an item it does not declare (probe.config §1)
+    for number in (UNKNOWN, UNKNOWN | m.TAG_CRITICAL):           # a number past fn 0's items (core §13.5)
         with pytest.raises(h.Unsupported) as e:
-            hst.call(fn, reg.PROBE_CONFIG.op["set"], b"\x01" + m.tlv(tag, b"\x01\x00"))   # number len key
-        assert e.value.result.payload[:1] == bytes([tag])
+            hst.call(m.CORE_FN, reg.CORE.op["set"], b"\x01" + struct.pack("<HBHH", 0, number, 30, 1) + b"\x01")
+        assert e.value.item == 0
 
 
 # ---- implemented TLVs: the same with or without bit 7 (core §2.3) ----------------------------------------------
@@ -464,18 +461,19 @@ def test_open_owner_length_checked_either_way(critical):
             == (m.MALFORMED, b"")
 
 
-def test_config_item_of_another_length_is_malformed():
-    """probe.config §1: an item the probe handles with data of another length -> malformed (items have no bit-7
-    rule: a number is a place in describe's setting list)."""
-    ep, rec, hst = recorded(virtual_bench.p4_bench())
-    cfg = config.ProbeConfig(hst)
-    cfg.set([config.Label(channel=30, text="t.nrst")])
-    fn, op = ep.fns["oep.probe.config"], reg.PROBE_CONFIG.op["set"]
-    idle = ep.setting_number("idle")
-    good = struct.pack("<HB", 30, reg.PROBE_CONFIG.enum["idle_mode"]["output_low"])   # key(channel) mode
-    assert rec.variant(fn, op, 1, lambda t: [(idle, good)]).resolution == m.COMPLETED   # after count(u8): one item
-    for value in (good[:2] + b"\x00\x00", good + b"\x00"):
-        assert refused(rec.variant(fn, op, 1, lambda t: [(idle, value)])) == (m.MALFORMED, b"")
+def test_settings_value_of_another_length_is_malformed():
+    """core §13.3: a value of another length than its form -> malformed (values have no bit-7 rule: a number is a
+    place in the fn's setting list)."""
+    ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
+    hst = h.Host(lambda b: ep.handle(b, 1))
+    hst.open(3000)
+    idle = ep.setting_number("channel.{}.idle")
+    low = bytes([reg.CORE.enum["channel_idle"]["low"]])
+    hst.call(m.CORE_FN, reg.CORE.op["set"], b"\x01" + struct.pack("<HBHH", 0, idle, 30, 1) + low)
+    for value in (b"", low + b"\x00"):
+        with pytest.raises(h.Rejected) as e:
+            hst.call(m.CORE_FN, reg.CORE.op["set"], b"\x01" + struct.pack("<HBHH", 0, idle, 30, len(value)) + value)
+        assert e.value.result.detail == m.MALFORMED
 
 
 # ---- a non-repeating tag twice: the first is used (core §2.3) ------------------------------------------------

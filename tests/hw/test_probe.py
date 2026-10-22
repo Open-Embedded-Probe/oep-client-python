@@ -4,10 +4,11 @@
   identity     confirm / list / describe: a new boot_id, the expected firmware string, the expected model; no list entry
                is fn 0 (the core has no name); clock (core §7.7): its boot_id, the shortest of 4 round trips recorded
   required     what every probe must give and a lock-free look can check (core §1.2, §7.1, §7.5): dump's MISSING
-  config       probe.config set / get / save / state / unset with a disable item, a reboot in between (oep.probe.restart
-               when the probe lists it - on a USB probe only with OEP_HW_RESTART=1 -, else a bridge board's EN line)
-  network      probe.config's network (when the probe lists a netif): its state; with OEP_WIFI_SSID_<n> /
-               OEP_WIFI_PASS_<n> the wifi entries set and saved (bench settings, left on the probe) and the link waited
+  config       the settings (core §13) set / get / save / state / unset with a label and a disable, a reboot in between
+               (oep.probe.restart when the probe lists it - on a USB probe only with OEP_HW_RESTART=1 -, else a bridge
+               board's EN line), and the export / import of the settings file across it
+  network      fn 0's network (when the probe lists a netif): its state; with OEP_WIFI_SSID_<n> /
+               OEP_WIFI_PASS_<n> the Wi-Fi entries set and saved (bench settings, left on the probe) and the link waited
                for (OEP_HW_WIFI_WAIT_S, 30 s) - the ssid, passphrase and address never recorded
   wire         scan, attach (with the reset TLV when OEP_HW_RESET names the line), halt -> read_block -> resume 50x
                with s0 / s1 / a0 / a1 read before and after each block op       (only with OEP_HW_TARGET)
@@ -39,8 +40,8 @@ import pytest
 
 import json
 
-from oep_client import (capture, catalog, config, console as console_mod, core, dump, fixture, host as h, link, linktest,
-                        message as m, registry as reg, riscv)
+from oep_client import (capture, catalog, console as console_mod, core, dump, fixture, host as h, link, linktest,
+                        message as m, registry as reg, riscv, settings)
 
 from . import firmware as fwmod, flash, record
 
@@ -161,59 +162,65 @@ def test_required(run: record.Run):
     assert not missing, f"{dump.MISSING_HEADING}: " + ", ".join(missing)
 
 
-# ---- 3. probe.config ------------------------------------------------------------------------------------------------------
+# ---- 3. the settings (core §13) ------------------------------------------------------------------------------------------
 
 def test_config(run: record.Run):
     board = run.board
     hst = run.take()
-    cfg = config.ProbeConfig(hst)
-    declared = cfg.describe()
-    run.settings_before(cfg)                          # what restore_settings puts back, whatever happens below
-    h0, items0 = cfg.get()
-    rec = run.record("config", storage_bytes=declared.storage_bytes, items_before=len(items0), generation_before=h0)
-    assert "disable" in [s.name for s in declared.settings], "the probe declares no disable item"
-    assert declared.storage_bytes > 0, "the probe declares no storage: nothing to save"
+    if not core.offers(hst, 0, settings.OP["get"]):
+        pytest.skip("the probe offers no settings (fn 0 get)")
+    st = settings.Settings(hst)
+    cat = st.catalog()
+    run.settings_before(st)                           # what restore_settings puts back, whatever happens below
+    h0, values0 = st.get()
+    rec = run.record("config", items=sum(len(v) for v in cat.items.values()), values_before=len(values0), generation_before=h0)
+    assert any(it.name == "channel.{}.disable" for it in cat.items[0]), "the probe declares no channel.{}.disable"
+    assert st.offers("save"), "the probe offers no save: nothing to keep over a reboot"
     label_ch, disable_ch = board.label or board.gpio[0], board.disable
     if not label_ch or not disable_ch:
         pytest.skip("the table gives this board no free channel to label and to disable (OEP_HW_DISABLE, OEP_HW_GPIO)")
     try:
-        _config_steps(run, hst, cfg, rec, h0, items0, label_ch, disable_ch)
+        _config_steps(run, hst, st, rec, h0, label_ch, disable_ch)
     finally:
-        # a failure, or a probe that did not come back: the label / disable items and the storage go back as they were
-        # (the probe opened again when it went away); what cannot be put back is recorded and printed with its commands
+        # a failure, or a probe that did not come back: the label / disable and the storage go back as they were (the
+        # probe opened again when it went away); what cannot be put back is recorded and printed with its commands
         if not run.restore_settings("config"):
             print(f"\n  config: settings left on the probe: {run.settings_left}")
 
 
-def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: dict, h0: int, items0: list,
-                  label_ch: int, disable_ch: int) -> None:
+def _config_steps(run: record.Run, hst: h.Host, st: settings.Settings, rec: dict, h0: int, label_ch: int,
+                  disable_ch: int) -> None:
     board = run.board
-    added = [config.Label(channel=label_ch, text="HW-A"), config.Disable(channel=disable_ch)]
-    run.settings_changing("config", "label", label_ch)
-    run.settings_changing("config", "disable", disable_ch)
-    h1 = cfg.set(added)
-    h_items, items1 = cfg.get()
-    assert h_items == h1, "set's generation is not get's (probe.config §2)"
-    assert h1 != h0, "the generation did not move with the settings (probe.config §2)"
-    decoded = cfg.items()
-    assert any(isinstance(it, config.Label) and it.channel == label_ch and it.text == "HW-A" for it in decoded)
-    assert any(isinstance(it, config.Disable) and it.channel == disable_ch for it in decoded)
-    rec.update(generation_set=h1, items_after_set=len(items1))
+    cat = st.catalog()
+    label = f"channel.{cat.channel[label_ch]}.label"
+    disable = f"channel.{cat.channel[disable_ch]}.disable"
+    run.settings_changing("config", settings.CORE_CATEGORY, label)
+    run.settings_changing("config", settings.CORE_CATEGORY, disable)
+    h1 = st.set_named(settings.CORE_CATEGORY, {label: "HW-A", disable: True})
+    h_items, _ = st.get()
+    assert h_items == h1, "set's generation is not get's (core §13.5)"
+    assert h1 != h0, "the generation did not move with the settings (core §13.5)"
+    shown = {(c, n): (v, o) for c, n, v, o in st.show()}
+    assert shown.get((settings.CORE_CATEGORY, label)) == ("HW-A", "user")
+    assert shown.get((settings.CORE_CATEGORY, disable)) == (True, "user")
+    rec.update(generation_set=h1)
     # a plan naming the disabled channel is refused (unavailable, held by settings)
     gpio = fixture.Gpio(hst)
     with pytest.raises(h.Rejected) as e:
         core.plan_apply(hst, [(gpio.fn, GPIO_ROLE_LINE, disable_ch)])
     rec["disabled_refused_as"] = type(e.value).__name__
     assert isinstance(e.value, (core.PinsTaken, h.Unavailable))
+    # export: the user's values by name (the settings file)
+    doc = st.export()
+    assert doc["settings"][settings.CORE_CATEGORY][label] == "HW-A" and doc["settings"][settings.CORE_CATEGORY][disable] is True
     # save, state
     run.settings_saving()
-    assert cfg.needs_save(), "saved_generation already equals the new settings' generation before a save"
-    h_saved = cfg.save()
-    st = cfg.state()
-    rec.update(generation_saved=h_saved, storage=st.storage, saved_generation=st.saved_generation)
-    # saved_generation: the generation saved (probe.config §3)
-    assert h_saved == h1 and st.storage == "applied" and st.saved_generation == h_saved, f"state after save: {st}"
-    assert not cfg.needs_save(), "a save right after a save would write again (host guide §15)"
+    assert st.needs_save(), "saved_generation already equals the new settings' generation before a save"
+    h_saved = st.save()
+    state = st.state()
+    rec.update(generation_saved=h_saved, storage=state.storage, saved_generation=state.saved_generation)
+    assert h_saved == h1 and state.storage == "applied" and state.saved_generation == h_saved, f"state after save: {state}"
+    assert not st.needs_save(), "a save right after a save would write again (host guide §15)"
     # reboot: oep.probe.restart when the probe lists it (oep-if-restart: answers, then restarts; restart_probe waits up to
     # its restart_max_ms and confirms the new boot_id), else a bridge board's EN line through DTR / RTS (esptool's hard
     # reset); neither: skipped. On a USB probe oep.probe.restart only with OEP_HW_RESTART=1: an RP2350 and an ESP32-P4
@@ -250,17 +257,14 @@ def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: di
                 rec["reboot"] = {"how": "EN line", "error": f"{type(e).__name__}: {e}"}
                 run.lost = f"no confirm after the EN line reset: {e}"
                 raise
-        cfg = config.ProbeConfig(hst)                 # fns found again on the new boot
-        st2 = cfg.state()
-        h2, items2 = cfg.get()
-        rec.update(storage_after_reboot=st2.storage, saved_generation_after_reboot=st2.saved_generation,
+        st = settings.Settings(hst)                  # numbers found again on the new boot
+        state2 = st.state()
+        h2, _ = st.get()
+        rec.update(storage_after_reboot=state2.storage, saved_generation_after_reboot=state2.saved_generation,
                    generation_after_reboot=h2)
-        # applied whole at boot: saved_generation 1, the generation 1 (probe.config §2, §3)
-        assert st2.storage == "applied" and st2.saved_generation == h2 == 1, f"saved settings not applied at boot: {st2}"
-        assert config.same_items(items2, items1), "the settings after the reboot are not the ones saved"
-        decoded2 = cfg.items()
-        assert any(isinstance(it, config.Disable) and it.channel == disable_ch for it in decoded2)
-        assert any(isinstance(it, config.Label) and it.channel == label_ch for it in decoded2)
+        # applied whole at boot: saved_generation 1, the generation 1 (core §13.5, §13.7)
+        assert state2.storage == "applied" and state2.saved_generation == h2 == 1, f"saved settings not applied at boot: {state2}"
+        assert st.export() == doc, "the settings after the reboot are not the ones saved"
         hst = run.take()
     elif usb_restart_skipped:
         rec["reboot"] = ("skipped: oep.probe.restart on a USB probe needs OEP_HW_RESTART=1 (a restart left the device "
@@ -269,18 +273,20 @@ def _config_steps(run: record.Run, hst: h.Host, cfg: config.ProbeConfig, rec: di
     else:
         rec["reboot"] = "skipped: no oep.probe.restart and " + ("the virtual bench" if board.kind == "virtual"
                                                                 else "no reset line from the host (a USB probe)")
-    # unset both, save: back to what was there
-    h3 = cfg.unset([("label", label_ch), ("disable", disable_ch)])
-    _, items3 = cfg.get()
-    decoded3 = cfg.items()
-    assert not any(isinstance(it, (config.Label, config.Disable)) and it.channel in (label_ch, disable_ch) for it in decoded3)
-    # compared item by item (host guide §15): the generation counts changes, not contents
-    assert config.same_items(items3, items0), "after unset the settings are not the ones from before the test"
+    # unset both: the settings file's import puts them back, then unset again and save: back to what was there
+    h3 = st.unset_named(settings.CORE_CATEGORY, [label, disable])
+    shown = {(c, n) for c, n, v, o in st.show() if o == "user"}
+    assert (settings.CORE_CATEGORY, label) not in shown and (settings.CORE_CATEGORY, disable) not in shown
+    plan = st.plan_import(doc)
+    assert not plan.unresolved and len(plan.sets) >= 2, f"the import of the export: {plan}"
+    st.apply_import(plan)
+    assert st.export() == doc, "the import did not put the exported values back"
+    h3 = st.unset_named(settings.CORE_CATEGORY, [label, disable])
     run.settings_saving()
-    h_saved2 = cfg.save()
-    st3 = cfg.state()
-    rec.update(generation_after_unset=h3, saved_generation_final=st3.saved_generation)
-    assert h_saved2 == h3 and st3.saved_generation == h3
+    h_saved2 = st.save()
+    state3 = st.state()
+    rec.update(generation_after_unset=h3, saved_generation_final=state3.saved_generation)
+    assert h_saved2 == h3 and state3.saved_generation == h3
     core.plan_apply(hst, [(gpio.fn, GPIO_ROLE_LINE, disable_ch)])      # enabled again
     core.plan_release(hst, [gpio.fn])
 
@@ -606,15 +612,15 @@ class _Pull:
                  channels: list[int], rec: dict, idle_fallback: bool = True):
         self.run, self.hst, self.cap, self.assignments, self.channels = run, hst, cap, assignments, channels
         self.gpio = fixture.Gpio(hst)
-        self.cfg: config.ProbeConfig | None = None
+        self.cfg: settings.Settings | None = None
         self.idle_set = False
         try:
             core.plan_apply(hst, assignments + [(self.gpio.fn, GPIO_ROLE_LINE, ch) for ch in channels])
             self.how = "gpio on the same channel"
         except h.Rejected as e:
             rec["shared_with_gpio"] = f"refused: {type(e).__name__}: {e}"
-            if idle_fallback and _listed(hst, "oep.probe.config"):
-                self.cfg = config.ProbeConfig(hst)
+            if idle_fallback and core.offers(hst, 0, settings.OP["set"]):
+                self.cfg = settings.Settings(hst)
                 self.how = "idle item on the released channel"
             else:
                 self.how = None
@@ -629,9 +635,10 @@ class _Pull:
         if self.cfg is not None:
             core.plan_release(self.hst, [self.cap.fn])
             self.run.settings_before(self.cfg)
+            names = {ch: f"channel.{self.cfg.catalog().channel[ch]}.idle" for ch in self.channels}
             for ch in self.channels:
-                self.run.settings_changing("capture", "idle", ch)
-            self.cfg.set([config.Idle(channel=ch, mode="pull-up" if up else "pull-down") for ch in self.channels])
+                self.run.settings_changing("capture", settings.CORE_CATEGORY, names[ch])
+            self.cfg.set_named(settings.CORE_CATEGORY, {names[ch]: "pull-up" if up else "pull-down" for ch in self.channels})
             self.idle_set = True
             core.plan_apply(self.hst, self.assignments)
         elif self.how:
@@ -644,7 +651,8 @@ class _Pull:
         try:
             core.plan_release(self.hst, [self.cap.fn] + ([self.gpio.fn] if self.how and self.cfg is None else []))
             if self.idle_set:
-                self.cfg.unset([("idle", ch) for ch in self.channels])
+                self.cfg.unset_named(settings.CORE_CATEGORY,
+                                     [f"channel.{self.cfg.catalog().channel[ch]}.idle" for ch in self.channels])
         finally:
             self.run.restore_settings("capture")
 
@@ -1011,46 +1019,48 @@ def test_console(run: record.Run):
             rec["detach_error"] = str(e)
 
 
-# ---- network (probe.config §1.3-§1.5, §2) --------------------------------------------------------------------------
+# ---- network (transports §7) ------------------------------------------------------------------------------------
 
 def test_network(run: record.Run):
-    """The network op (lock-free) and, with OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n> (n the entry), the wifi items: set
+    """fn 0's network (lock-free) and, with OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n> (n the entry), the Wi-Fi values: set
     and saved - the bench's own settings, left on the probe - then the link waited for. An entry whose ssid is the
-    probe's already is sent with pass_len 0xFF unless its passphrase is given (it cannot be compared: write-only)."""
+    probe's already keeps its passphrase unless one is given (a secret: it cannot be compared)."""
     hst = run.take()
-    cfg = config.ProbeConfig(hst)
-    declared = cfg.describe()
-    if not declared.netifs:
-        pytest.skip("the probe lists no netif (probe.config §1.3)")
-    net = cfg.network()
-    rec = run.record("network", netifs=declared.netifs, tcp_port=net.tcp_port,
+    if not core.offers(hst, 0, settings.OP["network"]):
+        pytest.skip("the probe offers no network (transports §7.3)")
+    st = settings.Settings(hst)
+    netifs = list(st.catalog().netif.values())
+    net = st.network()
+    rec = run.record("network", netifs=netifs, tcp_port=net.tcp_port,
                      before=[{"netif": n.netif, "state": n.state, "reason": n.reason} for n in net.netifs])
     wanted = {int(k.rsplit("_", 1)[1]): v for k, v in os.environ.items() if k.startswith("OEP_WIFI_SSID_")}
-    if not wanted or "wifi" not in declared.netifs:
+    if not wanted or "wifi" not in netifs:
         return
-    have = {i.entry: i for i in cfg.items() if isinstance(i, config.Wifi)}
-    items, unchanged = [], []
+    have = {n: v for c, n, v, o in st.show() if c == settings.CORE_CATEGORY}
+    values, unchanged = {}, []
     for n, ssid in sorted(wanted.items()):
         passphrase = os.environ.get(f"OEP_WIFI_PASS_{n}")
-        if passphrase is None and have.get(n) and have[n].ssid == ssid:
-            unchanged.append(n)   # the probe's already, its passphrase kept (write-only: it cannot be compared)
+        if passphrase is None and have.get(f"wifi.{n}.ssid") == ssid:
+            unchanged.append(n)   # the probe's already, its passphrase kept (a secret: it cannot be compared)
         elif passphrase is not None:
-            items.append(config.Wifi(entry=n, ssid=ssid, passphrase=passphrase))
+            values[f"wifi.{n}.ssid"] = ssid
+            if passphrase:
+                values[f"wifi.{n}.passphrase"] = passphrase
         else:
             pytest.fail(f"OEP_WIFI_SSID_{n} is not the probe's entry {n}: give OEP_WIFI_PASS_{n} ('' for an open one)")
-    if items:
-        cfg.set(items)
-        cfg.save()
-    rec.update(entries=sorted(wanted), set=len(items), unchanged=unchanged)
+    if values:
+        st.set_named(settings.CORE_CATEGORY, values)
+        st.save()
+    rec.update(entries=sorted(wanted), set=len(values), unchanged=unchanged)
     deadline = time.monotonic() + _env_int("OEP_HW_WIFI_WAIT_S", 30)
     began = time.monotonic()
     while True:
-        (row,) = [n for n in cfg.network().netifs if n.netif == "wifi"]
+        (row,) = [n for n in st.network().netifs if n.netif == "wifi"]
         if row.state == "up" or time.monotonic() > deadline:
             break
         time.sleep(0.5)
     rec.update(state=row.state, reason=row.reason, entry=row.entry, rssi=row.rssi, address_given=row.address is not None,
-               seconds=round(time.monotonic() - began, 1), tcp_port=cfg.network().tcp_port)
+               seconds=round(time.monotonic() - began, 1), tcp_port=st.network().tcp_port)
     assert row.state == "up" and row.address, f"the wifi netif is {row.state} ({row.reason})"
 
 

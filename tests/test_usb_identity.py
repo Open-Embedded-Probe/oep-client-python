@@ -213,7 +213,7 @@ def test_usb_probes_counts_each_device_once_whatever_its_ways_in():
     assert [(p.unit_id, p.ways) for p in one] == [(None, ["hid"])]
 
 
-@pytest.mark.parametrize("command", [["dump", "--port", "usb"], ["config", "show", "usb"], ["linktest", "usb"],
+@pytest.mark.parametrize("command", [["dump", "--port", "usb"], ["settings", "show", "usb"], ["linktest", "usb"],
                                      ["pins", "usb"], ["speed", "usb"]])
 def test_the_oep_command_says_in_one_line_that_no_usb_probe_is_there(monkeypatch, capsys, command):
     """No device on the project's VID:PID and no hid module: one line, no traceback, with the hint (extras, or name

@@ -19,14 +19,14 @@ MODE, TRIG, ST, REF = _A.enum["mode"], _A.enum["trigger"], _A.enum["state"], _A.
 PLAN = _reg.PROBE_PLAN.op
 SIZES = {C["mode"]: 1, C["trigger"]: 6, C["frontend"]: 2}      # the other configure tags are u32
 RUNNING = (ST["waiting"], ST["capturing"], ST["paused"])
-IDLE = _reg.PROBE_CONFIG.enum["idle_mode"]
+IDLE = _reg.CORE.enum["channel_idle"]
 
 
 def refuse_output_idle(idle,channels):
     """An analog plan onto a channel whose idle is an output (mode 3 / 4): rejected unavailable cause 5 naming the
     channel, before anything changes (capture §1.2, plan §2.4)."""
     for ch in channels:
-        if idle.get(ch) in (IDLE['output_low'],IDLE['output_high']):raise Reject(R['unavailable'],cause('held_by_settings',ch))
+        if idle.get(ch) in (IDLE['low'],IDLE['high']):raise Reject(R['unavailable'],cause('held_by_settings',ch))
 
 
 class Analog(Logic):

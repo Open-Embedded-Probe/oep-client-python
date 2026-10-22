@@ -5,7 +5,7 @@ import struct
 
 import pytest
 
-from oep_client import catalog, config, console, core, endpoint, host as h, message as m, registry as reg
+from oep_client import catalog, console, settings, core, endpoint, host as h, message as m, registry as reg
 from oep_client import virtual_bench as vb
 from oep_client.virtual_names import NAMED_EXTENSION, extension
 
@@ -50,10 +50,10 @@ def test_a_reader_skips_an_unknown_named_extension_in_answers_and_describe():
     """core §2.2: in an answer and in describe, an extension the reader does not know is skipped."""
     ep, hst = bench()
     hst.open(3000)
-    cfg = config.ProbeConfig(hst)
-    cfg.set([config.Label(channel=21, text="DUT RX")])
+    st = settings.Settings(hst)
+    st.set_named(settings.CORE_CATEGORY, {"channel.GPIO33.label": "DUT RX"})
     ep.config_get_tail = extension() + extension(b"io.example.other", b"\x01\x02")
-    assert config.Label(channel=21, text="DUT RX") in cfg.items()
+    assert (settings.CORE_CATEGORY, "channel.GPIO33.label", "DUT RX", "user") in st.show()
     plain = catalog.decode_description(m.tlv(catalog.OPS, b"\x10\x01"))
     extended = catalog.decode_description(m.tlv(catalog.OPS, b"\x10\x01") + extension())
     assert extended.ops == plain.ops
@@ -66,9 +66,9 @@ def test_a_named_lists_numbers_count_from_1_and_follow_the_probes_order():
     con = console.Console(hst)
     names = con.mechanisms()
     assert names and [con.mechanism_number(n) for n in names] == list(range(1, len(names) + 1))
-    decl = config.ProbeConfig(hst).describe()
-    assert [decl.by_number(k).name for k in range(1, len(decl.settings) + 1)] == [s.name for s in decl.settings]
-    assert decl.netif_number(decl.netifs[0]) == 1
+    cat = settings.Settings(hst).catalog()
+    assert [it.number for it in cat.items[0]] == list(range(1, len(cat.items[0]) + 1))   # settings: the place from 1
+    assert min(cat.netif) == 1
 
 
 def test_standard_names_have_no_dot_and_another_partys_have_one():
@@ -79,5 +79,5 @@ def test_standard_names_have_no_dot_and_another_partys_have_one():
                 assert "." not in name and all(c.isalnum() or c == "-" for c in name) and name == name.lower(), name
     ep, hst = bench()
     hst.open(3000)
-    own = [s.name for s in config.ProbeConfig(hst).describe().settings if "." in s.name]
-    assert own == ["io.github.open-embedded-probe.ntp-server"]
+    cat = settings.Settings(hst).catalog()
+    assert {cat.category[fn] for fn in cat.items if cat.items[fn]} >= {"core", "oep.target.console/0"}   # owners by name

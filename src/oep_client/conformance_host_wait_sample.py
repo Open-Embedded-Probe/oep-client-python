@@ -2,7 +2,7 @@
 import hashlib
 from pathlib import Path
 import struct
-from . import config,host,link,message
+from . import host,link,message,settings
 
 
 class MemoryStream:
@@ -36,21 +36,21 @@ class SampleHostWaitAdapter:
             else:payload=struct.pack('<I',0x12345678)
             return message.Result(req.corr,message.COMPLETED,message.FAILED if failed[0] else message.SUCCESS,payload).pack()
         h=host.Host(send,revision=1,session=7,lease_ms=1000)
-        h._boot_id=17;h._revisions={4:1};h._fns={'oep.probe.config':4}
-        h._describes={0:[(77,struct.pack('<I',maximum))],4:[(7,b'\x10\x3f')]}
+        h._boot_id=17
+        h._describes={0:[(77,struct.pack('<I',maximum)),(7,bytes([settings.OP['save']&~7,1<<(settings.OP['save']&7)]))]}
         driver.expected_s=lambda:h.expect_ms/1000;driver.lease_s=lambda:h.lease_ms/1000;h.on_limits=driver._limits
         failed=[False]
         return h,driver,records,advertised,failed
     def save(self,case):
         h,d,rows,advertised,failed=self.setup(case['kind'],case['baud'],case['maximum'],case['timeout'])
-        d._limits(dict(max_frame=case['frame']));cfg=config.ProbeConfig(h,fn=4);failed[0]=case.get('failure',False)
+        d._limits(dict(max_frame=case['frame']));cfg=settings.Settings(h);failed[0]=case.get('failure',False)
         error=None;value=None
         with h.expecting(case['outer_ms']):
             try:value=cfg.save()
             except host.Failed as exc:error=type(exc).__name__
             restored=h.expect_ms
         return dict(record=rows[-1],restored_outer_ms=restored,final_expect_ms=h.expect_ms,error=error,value=value,
-                    save_code=config.ProbeConfig.SAVE)
+                    save_code=settings.OP['save'])
     def limits(self,kind,baud):
         h,d,rows,advertised,failed=self.setup(kind,baud,5000,0.05)
         for value in (256,64,65535):
@@ -62,4 +62,4 @@ class SampleHostWaitAdapter:
     def source_sha256(self):
         root=Path(__file__).parent
         return {n:hashlib.sha256((root/n).read_bytes()).hexdigest() for n in
-                ('host.py','core.py','config.py','link.py','cobs.py','frames.py','message.py','catalog.py','registry.py')}
+                ('host.py','core.py','settings.py','link.py','cobs.py','frames.py','message.py','catalog.py','registry.py')}

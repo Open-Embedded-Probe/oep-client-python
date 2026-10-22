@@ -59,7 +59,7 @@ names starting with `_`, may change. Check probe/client compatibility using the 
 | `pins` | `oep pins`: classify the channels, hold-low search, scan, identify, confirm the reset line, suggest the connection profile and the labels (`PinFinder`) |
 | `console` | `oep.target.console` (position streams: read answers carry their length; marks carry `time_ns`, the common kinds lost / clear / host and the console's reset 0x40 / restart 0x41; the lock-free `streams()` list of stream, connection and mechanism; `open(conn, mechanism)` always makes a new stream (u32) on the connection - a second on a connection with a live one is unavailable cause 6 -; a stream is the session's - close, its connection's release and the session's end release it with its buffer, and its number answers no_resource after that; a write goes into the stream's send queue - its size is the probe's own, not declared -, accepted = min(count, its free space), 0 only when full; an SDI stream's write is unsupported; marks, clear, mark and write are optional) and `ConsoleIO`, read as bytes and written in chunks of at most one frame, on from each answer's accepted (`stall_s`: TimeoutError when nothing is taken for that long) |
 | `fixture` | `oep.fixture.gpio` (`set([(ch, mode)])` applied in order in one request, `read(channels)` the levels; the output strength is the probe's own - there is no drive selection) / `uart` (its stream is the plan's; nothing is received until `configure(baud, fmt)`; `status()` = `UartStatus(baud, format)` in force, baud 0 and format 0 while not configured; a configure the probe could not bring up raises `Failed` and leaves it not configured) / `i2c-target` (one form: `configure(address)` - the target made anew -, every controller write with data one frame for `read_rx`, reads answered from `preload_tx(data)` slots or 0xFF, `status()` = `I2cStatus(state, queued, rx_frames, tx_slots, errors)`, `stretch` when the ops offer it, `internal_pullups`: whether it enables pull-ups of its own; the reserved addresses 0x00-0x07 / 0x78-0x7F refused before sending) / `spi-target` (no reset: configure again; `cs_setup_ns`: how long after CS the first bit is sure; `oep dump` shows it) |
-| `config` | `oep.probe.config` (label / idle / disable items keyed by channel, get / set / unset with counts, save / erase / state when the probe has storage; `describe()` = the declarations, `state()` = `State(storage, saved_generation, reason)`; the generation counts the changes of a boot from 1: `same_items(a, b)` compares items, `needs_save()` says whether a save would change the storage, `apply(wanted, save=False)` sets / unsets what differs (host guide §15); `find_line(cfg, "nrst", profile=None)` = host guide §5.3's line lookup, the firmware's fixed labels as its last step) |
+| `settings` | the core's settings (oep-spec core §13): fn 0's get / set / unset / save / state / network. `Settings(hst)`: `catalog()` = the names of this boot (each fn's category `core` / `name/instance`, items, choices, channel / route / netif names), `show()` = every value as (category, flat name, value, origin), `set_named(category, {flat: value})` / `unset_named` / `unset_all`, raw `set` / `unset` by (fn, number, key), `save()`, `state()`, `network()`; `export()` / `plan_import(doc)` / `apply_import(plan)` = the settings file (oep-spec docs/oep-settings-file.ja.md; secrets never read); `find_line(source, "nrst", profile=None)` = host guide §5.3's line lookup over every channel label |
 | `capture` | `oep.fixture.logic` / `analog` / `capture-group` (revision 1, oep-spec oep-if-capture). configure's TLVs follow core §2.3: a value the probe cannot honour is refused unsupported with the tag as sent (the table's TLVs go without the critical bit); the answer holds the actual values, its samples among them (analog: a scale for every role, a skew left out read as 0). Every `start()` returns a new generation (`LogicCapture.generation`, never re-used within a boot: past 0xFFFFFFFF a start is refused until a reboot) that read and release name - `read_segment(segment)` passes the segment's own - and every event carries (`events()` drops an earlier start's); streaming data frames carry their generation and their segment (segment_info, never crossing a segment: `Received.segments`); `status()` returns a `Status`. A capture-group binds configured tracks with an immediate trigger, all in one mode, and starts them at once (`CaptureGroup.start` -> the group's start_ns; the group's and each track's generation). Every segment read goes to the `Host.on_capture` callbacks as a `CaptureRecord` (the hook for run recorders; no wireskein dependency) |
 | `decode` | decoding capture channels (I2C) |
 | `registry` | generated from oep-spec's number table (never edited; copied again from oep-spec). The public way to reach an interface by name is `registry.INTERFACES[name]` (`.revision`, `.op`, `.tlv`, `.enum`, e.g. `INTERFACES["oep.fixture.uart"].enum["role"]`); the module-level names (`FIXTURE_UART`, ...) are the same objects |
@@ -110,10 +110,13 @@ A probe's CDC ports (`/dev/ttyACM*`) need no rule beyond the usual `dialout` gro
 
 ```sh
 oep dump --port <probe>                      # what the probe offers (--virtual p4-x035: no hardware)
-oep config show <probe>                      # the settings, the declarations and the storage state
-oep config state <probe>                     # the storage state alone (lock-free)
-oep config label <probe> 23 nrst             # also: idle CH MODE, disable CH..., remove KIND CH (each takes --save)
-oep config save <probe>                      # kept over a restart (also: erase)
+oep settings show <probe>                    # every value with its origin, and the storage state
+oep settings items <probe>                   # what each owner declares (names, forms, choices)
+oep settings set <probe> core channel.GPIO23.label=nrst channel.GPIO20.idle=pull-up [--save]
+oep settings unset <probe> core channel.GPIO20.idle [--save]     # or --all (then --save empties the storage)
+oep settings save <probe>                    # kept over a restart
+oep settings export <probe> jig.oep-settings.json                # the user's values by name (secrets left out)
+oep settings import <probe> jig.oep-settings.json [--save]       # shows the changes, asks, then sets / unsets
 oep speed <probe> [921600,500000] [--verify] [--flows out:2]  # port_speed: raise a UART bridge (default 500000), print the report (below)
 oep pins <probe> --power 5 --wire swio       # where the target is wired: debug pins, reset line, labels (below)
 oep clock <probe> [-n 8] [--json]            # fn 0's clock: uptime_ns and boot_id against this host's time (shortest of n)
@@ -125,7 +128,7 @@ oep linktest <probe> ...                     # --timeout: 0.3 s an answer by def
 
 `<probe>` is a serial port, `tcp://HOST:PORT`, `tcp://HOST` (the port DNS-SD finds for that host), `tcp:UNIT_ID` (the
 probe DNS-SD finds by its TXT unit_id; describe's unit_id must say the same, else it is closed) or
-`usb[:VID:PID[:SERIAL]]`. A change takes the lock (owner "oep config") and
+`usb[:VID:PID[:SERIAL]]`. A change takes the lock (owner "oep settings") and
 ends the session after it; it takes effect at once and, after `save`, stays over a restart.
 
 ### A host run again: the kept session id
@@ -151,7 +154,7 @@ sets `hst.kept = kept_session.KeptSession()` on a Host it builds itself.
 
 ### TCP
 
-A probe that serves OEP over TCP is found by DNS-SD (its network settings are not oep.probe.config's).
+A probe that serves OEP over TCP is found by DNS-SD (its network settings are the core's: transports §7).
 
 - `oep find` browses `_oep._tcp` (transports §3, host guide §4.1) and lists unit_id, host, port and address. The
   service name `oep` is not registered, so another service may advertise `_oep._tcp`: each instance is verified first
@@ -224,9 +227,9 @@ attach swio 19: target_id 00310510 (WCH DMI 0x7F) -> ch32v00x, halted at dpc 0x1
   option bytes (read only): RST_MODE 10 (USER 0xf7): NRST on PD7, 12 ms ignore window
   attach under reset through 4 (held 20 ms): dpc 0x0 -> the reset line
 profile: wire swio, pins 19   (the host's to keep: the probe keeps no wiring)
-label: oep config label ... 4 nrst   (not written)
-label: oep config label ... 5 power_hi   (not written)
-idle:  oep config idle ... 5 output-high   (keeps the target powered while no plan holds channel 5; not written by this tool)
+label: oep settings set ... core channel.GPIO4.label=nrst   (not written)
+label: oep settings set ... core channel.GPIO5.label=power_hi   (not written)
+idle:  oep settings set ... core channel.GPIO5.idle=high   (keeps the target powered while no plan holds channel 5; not written by this tool)
 released every plan (channel 5 is back to its idle state: the target is powered only while something drives it)
 done in 7.3 s
 ```
@@ -369,10 +372,10 @@ halted or a riscv-dm request of that connection runs (`console_take(sid)` hands 
 lines outside through `gpio_world`); uart receives nothing until configured, status baud and format; i2c-target one form
 (a write with data one frame, cut at max_length; reads from preload_tx slots, else 0xFF); spi-target without reset.
 Capture: configure's TLVs follow core §2.3 alone; a bound track's start / configure is unavailable cause 4, a bind short
-of resources cause 2 with the fn; a read at or past the write position answers write_pos and len 0. probe.config: label / idle /
-disable items (idle 3 bytes; an item of another length malformed); the generation counts the changes of a boot from 1;
-state is storage_state, saved_generation, reason; at boot the saved items are checked one by one, disable first, and what
-fails is left out (partial). port_speed: baud / step / verify_ms on the UART bridge the request came in on, within
+of resources cause 2 with the fn; a read at or past the write position answers write_pos and len 0. The settings (core §13): each fn's items from its
+describe, values with their origin (the firmware's fixed / default ones from the profile); a value of another length
+malformed; the generation counts the changes of a boot from 1; state is storage_state, saved_generation, reason; at boot
+the saved values (by category and item name) are checked one by one, disable first, and what fails is left out (partial). port_speed: baud / step / verify_ms on the UART bridge the request came in on, within
 port_speed_tolerance_pct, phases 0-3 read by port_state; the virtual bench goes back after verify_ms, after
 port_speed_idle_ms with no good frame, or at the session's end - never on broken frames.
 

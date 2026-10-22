@@ -215,7 +215,7 @@ class TimelineGroup(Gpio):
     functions=(1,2,3,4)
     def __init__(self,ep):
         super().__init__();self.ep=ep;self.pending=[];self.tracks={fn:Track(fn,ep,self.pending) for fn in (ADC,LOGIC)}
-        self.idle.update({ch:_reg.PROBE_CONFIG.enum['idle_mode']['hi_z'] for ch in CHANNELS[ADC]});self.pins=dict(self.idle)   # the analog's channels: no output idle (capture §1.2)
+        self.idle.update({ch:_reg.CORE.enum['channel_idle']['hi_z'] for ch in CHANNELS[ADC]});self.pins=dict(self.idle)   # the analog's channels: no output idle (capture §1.2)
         self.bound=[];self.generation=0;self.start_ns=NO_TIME
     def list_page(self,first,limit):
         names=[b'oep.probe.plan',b'oep.fixture.analog',b'oep.fixture.logic',b'oep.fixture.capture-group']

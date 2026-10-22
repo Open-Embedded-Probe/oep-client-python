@@ -79,12 +79,12 @@ def test_the_core_is_never_listed_and_dump_shows_it_first():
     """fn 0 has no name and list never returns it (core §0, §7.2): dump describes it first as the core."""
     probe = virtual_bench.esp32_v003()
     total, entries = catalog.unpack_list_result(probe.call(0, 0x02, catalog.pack_list_request(0)))
-    assert total == 12 and all(e.fn != 0 for e in entries)
+    assert total == 11 and all(e.fn != 0 for e in entries)
     caps = dump.collect(probe.call)
     first = caps.offers[0].entry
     assert (first.fn, first.name, first.revision) == (0, "", 1)
     assert dump.describe_offer(caps.offers[0])["name"] == "(core)"
-    assert caps.offers[0].description.ops == set(virtual_bench.reg.CORE.op.values())     # the eight, every one mandatory
+    assert caps.offers[0].description.ops == set(virtual_bench.reg.CORE.op.values())     # the eight and the settings ops
     assert caps.revision == 1 and caps.max_frame == 512                              # the classic ESP32 firmware's
 
 
@@ -113,9 +113,9 @@ def test_description_keeps_what_it_does_not_know():
 def test_p4_follows_the_agreed_names():
     caps = dump.collect(virtual_bench.p4_x035().call)
     by_name = {o.entry.name: o for o in caps.offers}
-    assert len(caps.offers) == 16                    # fn 0 and 15 listed: link, plan and restart the last three
+    assert len(caps.offers) == 15                    # fn 0 and 14 listed: link, plan and restart the last three
     assert [o.entry.name for o in caps.offers[-3:]] == ["oep.probe.link", "oep.probe.plan", "oep.probe.restart"]
-    assert caps.requests["list"] == 1 and caps.requests["describe"] == 16
+    assert caps.requests["list"] == 1 and caps.requests["describe"] == 15
     link_ops = virtual_bench.reg.PROBE_LINK.op
     assert by_name["oep.probe.link"].description.ops == {link_ops["source"], link_ops["sink"]}   # no UART bridge here
     assert by_name["oep.fixture.logic"].description.ops >= {0x01, 0x02}     # it sends notifications (core §10.3)
@@ -136,7 +136,8 @@ def test_the_probe_itself_is_described_by_core():
     assert row["name"] == "(core)" and row["namespace"] == "core"
     d = row["declares"]
     assert d["unit id"] == "fafe00000003" and d["transport"] == "0 = UART bridge"
-    assert "16 = SWIO" in d["label"] and "23 = NRST" in d["label"]    # repeated tags all kept
+    assert "16 = GPIO16" in d["channel name"] and "23 = GPIO23" in d["channel name"]    # repeated tags all kept
+    assert d["netif"] == "wifi"
 
 
 def test_paging_does_not_change_what_is_seen():
@@ -195,7 +196,7 @@ def test_fn0_ops_lacking_a_core_op_or_broken_are_named_missing():
     every = set(virtual_bench.reg.CORE.op.values())
     assert with_core_ops(catalog.pack_ops(every) + b"\x00\x00") == []          # a longer bitmap: the same set
     assert with_core_ops(bytes.fromhex("0100")) == ["describe of fn 0: ops " + ", ".join(
-        name for name, op in sorted(virtual_bench.reg.CORE.op.items(), key=lambda kv: kv[1]))]   # valid, names no op
+        dump.CORE_REQUIRED_OPS)]                                               # valid, names no op (the settings ops optional)
     for broken in (bytes.fromhex("01"), bytes.fromhex("f901"), bytes.fromhex("f0000000")):   # no bitmap; past 0xFF
         (why,) = with_core_ops(broken)
         assert why.startswith("describe of fn 0: ops in core §7.4"), why
@@ -228,6 +229,6 @@ def test_text_and_json_outputs():
     assert "instance 0" in text and "oep.fixture.i2c-target" in text
     assert "preloaded tx" not in text and "clock stretching" not in text   # one form (fixture §3); stretch is an op
     assert "ops: configure, read_rx, preload_tx, status, stretch" in text
-    assert "15 interfaces in 1 list and 16 describe requests" in text
+    assert "14 interfaces in 1 list and 15 describe requests" in text
     data = json.loads(dump.to_json(caps))
-    assert data["max_frame"] == 1024 and len(data["interfaces"]) == 16
+    assert data["max_frame"] == 1024 and len(data["interfaces"]) == 15

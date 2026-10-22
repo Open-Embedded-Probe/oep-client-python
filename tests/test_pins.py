@@ -6,11 +6,11 @@ import random
 
 import pytest
 
-from oep_client import catalog, config, endpoint, virtual_bench, host, pins, targets
+from oep_client import catalog, endpoint, settings, virtual_bench, host, pins, targets
 from oep_client.fixture import Gpio
 
 PINS = [p for p in range(30) if p not in (24, 25)]
-WIRE, DM, GPIO, CFG = 1, 2, 4, 10
+WIRE, DM, GPIO = 1, 2, 4
 TARGET_PINS = {4, 6, 19, 21, 22, 23}          # the target's pins: an unpowered target sinks the probe's pull-up
 V003_ID = 0x00310510
 OPTION_ON = 0x08F75AA5                        # RDPR a5, nRDPR 5a, USER f7 (RST_MODE 10), nUSER 08
@@ -18,8 +18,8 @@ OPTION_OFF = 0x00FF5AA5                       # USER ff: RST_MODE 11, PD7 is a G
 
 
 def profile() -> virtual_bench.VirtualProbe:
-    return virtual_bench.VirtualProbe("p4-pins", 1024, [
-        virtual_bench._core("3.0.0", "esp32p4", "30eda0ea068b", 30, {},
+    return virtual_bench.VirtualProbe("p4-pins", 1024, virtual_bench.with_settings([
+        virtual_bench._core("3.0.0", "esp32p4", "30eda0ea068b", 30,
                    virtual_bench._transports([(virtual_bench.TRANSPORT["usb_serial_jtag"], 0xFF)])),
         virtual_bench.Offered(WIRE, 0, "oep.wire.swio", (catalog.u32(catalog.FEATURES, 1), catalog.role_channels(1, PINS), catalog.role_channels(3, PINS),
                                                 catalog.u8(virtual_bench.MAX_CONNECTIONS, 1))),
@@ -27,8 +27,7 @@ def profile() -> virtual_bench.VirtualProbe:
                                                     catalog.u16(catalog.MAX_LENGTH, virtual_bench.block_max_length(1024)))),
         virtual_bench._console(3),
         virtual_bench._gpio(GPIO, PINS),
-        virtual_bench._config(CFG, 0),
-    ], own_channels=(24, 25))
+    ], storage=True), own_channels=(24, 25))
 
 
 class World:
@@ -136,8 +135,8 @@ def test_finds_the_swio_pin_and_the_reset_line_without_being_told():
     assert r.family == "ch32v00x" and r.target_id.startswith("00310510") and r.nrst_enabled is True
     assert r.reset_channel == 4 and r.reset_dpc == 0
     assert "wire swio, pins 19" in r.profile and not r.saved
-    assert any("label" in line and " 4 nrst" in line for line in lines)   # the reset line as a label (host guide §5.3)
-    assert any(" power_hi" in line for line in lines) and any("output-high" in line for line in lines)
+    assert any("label" in line and "channel.GPIO4.label=nrst" in line for line in lines)   # the reset line as a label (host guide §5.3)
+    assert any(".label=power_hi" in line for line in lines) and any(".idle=high" in line for line in lines)
     assert r.elapsed_s < 60
 
 
@@ -149,7 +148,7 @@ def test_safety_never_drives_a_driven_or_active_channel_and_releases_every_plan(
     assert {c for c, m in ep.gpio_log if m in (Gpio.OUTPUT_LOW, Gpio.OUTPUT_HIGH)} == {5}   # only the power
     assert not ep.plan                                        # every plan released
     assert not ep.conns                                       # every connection closed
-    assert not config.ProbeConfig(hst).items()                # nothing written
+    assert not settings.labels(hst)                           # nothing written
 
 
 def test_without_power_the_power_channel_is_never_touched():
@@ -177,15 +176,14 @@ def test_nothing_active_the_attach_under_reset_decides():
 
 
 def test_save_writes_the_lines_as_labels():
-    """The probe keeps no wiring (probe.config): --save writes the labels only; with a profile name
+    """The probe keeps no wiring (core §13): --save writes the labels only; with a profile name
     `<name>.nrst` / `<name>.power_hi` (host guide §5.3)."""
     ep, hst, t = bench()
     r = finder(hst, t, [], power=5, save=True, name="v003").run()
     assert r.saved and "wire swio" in r.profile
-    items = config.ProbeConfig(hst).items()
-    assert {(it.channel, it.text) for it in items if isinstance(it, config.Label)} == {(4, "v003.nrst"),
-                                                                                       (5, "v003.power_hi")}
-    assert config.find_line(items, "nrst", "v003", single=False) == 4
+    labels = settings.labels(hst)
+    assert set(labels) == {(4, "v003.nrst"), (5, "v003.power_hi")}
+    assert settings.find_line(labels, "nrst", "v003", single=False) == 4
 
 
 def test_steps_are_optional():
@@ -229,13 +227,13 @@ def test_target_table():
 
 
 def test_suggested_labels_are_checked_by_the_line_lookup():
-    """The suggested nrst / power_hi are looked up by config.find_line (host guide §5.3) in the settings as they would
+    """The suggested nrst / power_hi are looked up by settings.find_line (host guide §5.3) in the settings as they would
     be: another channel already named so (any case) would make the line not found - said in a note."""
     ep, hst, t = bench()
     r = finder(hst, t, [], power=5).run()
     assert not any("would find no" in n for n in r.notes)        # nothing else named so: found as suggested
     ep, hst, t = bench()
-    config.ProbeConfig(hst).set([config.Label(channel=9, text="NRST"), config.Label(channel=4, text="nrst")])
+    settings.Settings(hst).set_named(settings.CORE_CATEGORY, {"channel.GPIO9.label": "NRST", "channel.GPIO4.label": "nrst"})
     r = finder(hst, t, [], power=5).run()
     notes = [n for n in r.notes if "would find no" in n]
     assert len(notes) == 1 and "nrst" in notes[0] and "[9]" in notes[0]   # 4 itself is relabelled: no clash

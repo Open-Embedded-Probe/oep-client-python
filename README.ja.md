@@ -52,7 +52,7 @@ GitHub Release、PyPI（Trusted Publishing）へ出す。変更は CHANGELOG.md 
 | `pins` | `oep pins`: channel の分類、low に保つ探索、scan、識別、リセットの線の確かめ、接続プロファイルと label の提案（`PinFinder`） |
 | `console` | `oep.target.console`（位置つきのストリーム: read の応答は長さを持ち、マークは `time_ns` と、共通の kind の lost / clear / host、コンソールの reset 0x40 / restart 0x41 を持つ。ロック不要の `streams()` は stream、connection、mechanism の並び。`open(conn, mechanism)` はいつもその connection に新しいストリーム（u32）を作る - 生きているストリームのある connection への 2 つ目は unavailable cause 6 -。ストリームはセッションのもので、close、connection の解放、セッションの終わりでバッファごと解放され、その番号はその後 no_resource。write はストリームの送りの列に入る - 列の大きさは probe が決め、宣言しない -。accepted = count と列の空きの小さい方で、0 は列が満ちたときだけ。SDI のストリームへの write は unsupported。marks、clear、mark、write は任意）と、バイト列として読み、多くても 1 フレームずつ、応答の accepted の続きから書く `ConsoleIO`（`stall_s`: その間何も受けなければ TimeoutError） |
 | `fixture` | `oep.fixture.gpio`（`set([(ch, mode)])` は 1 つの要求で順に当て、`read(channels)` は level を返す。出力の強さは probe 自身のもので、選ぶ手段は無い）/ `uart`（ストリームは plan が作る。`configure(baud, fmt)` までは何も受けない。`status()` = いま効いている `UartStatus(baud, format)` で、configure していなければ baud 0、format 0。probe が立ち上げられなかった configure は `Failed` を上げ、configure していない状態に戻る）/ `i2c-target`（1 つの形: `configure(address)` - target を作り直す -、データのある controller の書き込み 1 回が `read_rx` の 1 フレーム、読み出しには `preload_tx(data)` の置き場か 0xFF で答える、`status()` = `I2cStatus(state, queued, rx_frames, tx_slots, errors)`、ops にあれば `stretch`、`internal_pullups`: 自分の pull-up を入れるか。予約のアドレス 0x00〜0x07 / 0x78〜0x7F は送る前に断る）/ `spi-target`（reset は無く、configure し直す。`cs_setup_ns`: CS の後、最初のビットが確かになるまでの時間。`oep dump` が出す） |
-| `config` | `oep.probe.config`（channel ごとの label / idle / disable の項目、count 付きの get / set / unset、保存を持つ probe では save / erase / state。`describe()` = 宣言、`state()` = `State(storage, saved_generation, reason)`。generation は起動から 1 で数える変更の回数: `same_items(a, b)` は項目で比べ、`needs_save()` は保存すると保存が変わるかを言い、`apply(wanted, save=False)` は違う分を set / unset する（host ガイド §15）。`find_line(cfg, "nrst", profile=None)` = host ガイド §5.3 の線の探し方で、firmware の固定 label が最後の段） |
+| `settings` | core の設定（oep-spec core §13）: fn 0 の get / set / unset / save / state / network。`Settings(hst)`: `catalog()` = その起動の名前（各 fn のカテゴリ `core` / `name/instance`、項目、選択肢、channel・経路・netif の名前）、`show()` = 全部の値を（カテゴリ、平らな名前、値、出どころ）で、`set_named(category, {平らな名前: 値})` / `unset_named` / `unset_all`、番号での `set` / `unset`、`save()`、`state()`、`network()`。`export()` / `plan_import(doc)` / `apply_import(plan)` = 設定のファイル（oep-spec docs/oep-settings-file.ja.md。secret は読まない）。`find_line(source, "nrst", profile=None)` = host ガイド §5.3 の線の探し方（全部の channel の label から） |
 | `capture` | `oep.fixture.logic` / `analog` / `capture-group`（revision 1、oep-spec の oep-if-capture）。configure の TLV は core §2.3 に従う: probe が守れない値は送ったままの tag で unsupported で断られる（表の TLV は critical を付けずに送る）。応答が実際の値で、samples もそれが正しい（アナログ: scale は役割ごとに必ずあり、省かれた skew は 0 と読む）。`start()` はそのたびに新しい世代を返す（`LogicCapture.generation`。同じ起動の間は使い回さず、0xFFFFFFFF の後の start は再起動まで断られる）。read と release はその世代を付け（`read_segment(segment)` は区画自身の世代を付ける）、どの出来事も世代を持つ（`events()` は前の start のものを捨てる）。ストリーミングのデータフレームは世代と自分の区画を持ち、区画をまたがない（segment_info、`Received.segments`）。`status()` は `Status` を返す。capture-group は configure 済みで即時のトリガの、同じ mode のトラックを束ね、一度に始める（`CaptureGroup.start` -> group の start_ns。group と各トラックの世代）。読んだ区画は `Host.on_capture` の callback に `CaptureRecord` で渡る（記録の受け口。wireskein には依存しない） |
 | `decode` | キャプチャのチャネルの復号（I2C） |
 | `registry` | oep-spec の番号の表から生成したモジュール（編集しない。oep-spec から写し直す）。名前からインターフェースの番号を引く公開の入口は `registry.INTERFACES[name]`（`.revision`、`.op`、`.tlv`、`.enum`。例 `INTERFACES["oep.fixture.uart"].enum["role"]`）。`FIXTURE_UART` などのモジュールの名前は同じもの |
@@ -102,10 +102,13 @@ probe の CDC の口（`/dev/ttyACM*`）は、いつもの `dialout` グルー�
 
 ```sh
 oep dump --port <probe>                      # 能力の一覧（--virtual p4-x035 でハードウェアなし）
-oep config show <probe>                      # 設定、宣言、保存の状態
-oep config state <probe>                     # 保存の状態だけ（ロック不要）
-oep config label <probe> 23 nrst             # ほかに idle CH MODE、disable CH...、remove KIND CH（どれも --save を取る）
-oep config save <probe>                      # 再起動の後も残す（erase もある）
+oep settings show <probe>                    # 全部の値と出どころ、保存の状態
+oep settings items <probe>                   # 各持ち主が宣言する項目（名前、形、選択肢）
+oep settings set <probe> core channel.GPIO23.label=nrst channel.GPIO20.idle=pull-up [--save]
+oep settings unset <probe> core channel.GPIO20.idle [--save]     # --all なら全部（その後の --save で保存も空に）
+oep settings save <probe>                    # 再起動の後も残す
+oep settings export <probe> jig.oep-settings.json                # 利用者の値を名前で書き出す（secret は入らない）
+oep settings import <probe> jig.oep-settings.json [--save]       # 変わる所を見せ、確かめてから set / unset
 oep speed <probe> [921600,500000] [--verify] [--flows out:2]  # port_speed: UART bridge を速くし（既定 500000）、結果を出す（下）
 oep pins <probe> --power 5 --wire swio       # target のつながり方: debug のピン、リセットの線、label（下）
 oep clock <probe> [-n 8] [--json]            # fn 0 の clock: uptime_ns と boot_id をこの host の時刻に合わせて（n 回のうち往復が最短のもの）
@@ -116,7 +119,7 @@ oep linktest <probe> ...                     # --timeout: 既定は応答 1 つ�
 ```
 
 `<probe>` はシリアルの口、`tcp://HOST:PORT`、`tcp://HOST`（その host に DNS-SD が見つけた port）、`tcp:UNIT_ID`（TXT の unit_id で
-DNS-SD が見つけた probe。describe の unit_id が同じでなければ閉じる）、`usb[:VID:PID[:SERIAL]]`。変更はロックを取り（owner "oep config"）、終わったら
+DNS-SD が見つけた probe。describe の unit_id が同じでなければ閉じる）、`usb[:VID:PID[:SERIAL]]`。変更はロックを取り（owner "oep settings"）、終わったら
 セッションを閉じる。変更はすぐ効き、`save` の後は再起動しても残る。
 
 ### 走り直す host: 残したセッションの id
@@ -141,7 +144,7 @@ Host に `hst.kept = kept_session.KeptSession()` を置く。
 
 ### TCP
 
-TCP で OEP を運ぶ probe は DNS-SD で見つける（ネットワークの設定は oep.probe.config のものではない）。
+TCP で OEP を運ぶ probe は DNS-SD で見つける（ネットワークの設定は core のもの: transports §7）。
 
 - `oep find` は `_oep._tcp` を browse し（transports §3、host ガイド §4.1）、unit_id、host、port、アドレスを並べる。service の名前
   `oep` は登録した名前ではないので、別のサービスが `_oep._tcp` を広告しうる: どの instance もまず確かめる（`discovery.verify`、
@@ -209,9 +212,9 @@ attach swio 19: target_id 00310510 (WCH DMI 0x7F) -> ch32v00x, halted at dpc 0x1
   option bytes (read only): RST_MODE 10 (USER 0xf7): NRST on PD7, 12 ms ignore window
   attach under reset through 4 (held 20 ms): dpc 0x0 -> the reset line
 profile: wire swio, pins 19   (the host's to keep: the probe keeps no wiring)
-label: oep config label ... 4 nrst   (not written)
-label: oep config label ... 5 power_hi   (not written)
-idle:  oep config idle ... 5 output-high   (keeps the target powered while no plan holds channel 5; not written by this tool)
+label: oep settings set ... core channel.GPIO4.label=nrst   (not written)
+label: oep settings set ... core channel.GPIO5.label=power_hi   (not written)
+idle:  oep settings set ... core channel.GPIO5.idle=high   (keeps the target powered while no plan holds channel 5; not written by this tool)
 released every plan (channel 5 is back to its idle state: the target is powered only while something drives it)
 done in 7.3 s
 ```
@@ -331,9 +334,9 @@ restart 0x41。DMDATA / dmseq のストリームの送りの列は poll ごと�
 （外の線は `gpio_world`）。uart は configure するまで何も受けず、status は baud と format。i2c-target は 1 つの形（データのある書き込み
 1 回が 1 フレームで max_length で切る。読み出しは preload_tx の置き場から、無ければ 0xFF）。spi-target に reset は無い。capture:
 configure の TLV は core §2.3 だけに従う。bind されたトラックの start / configure は unavailable cause 4、資源の足りない bind は cause 2 と
-fn。書き込み位置以降の read は write_pos と len 0 を答える。probe.config: label / idle / disable の項目（idle は 3 byte。長さが形と違う
-項目は malformed）。generation は起動から 1 で数える変更の回数。state は storage_state、saved_generation、reason。起動時は保存した項目を
-1 つずつ確かめ、disable を先に当て、当てられないものは外す（部分適用）。port_speed: 要求が来た UART bridge の口への
+fn。書き込み位置以降の read は write_pos と len 0 を答える。設定（core §13）: 各 fn の項目は describe から、値は出どころつき（firmware の固定・既定は
+profile から）。長さが形と違う値は malformed。generation は起動から 1 で数える変更の回数。state は storage_state、saved_generation、reason。
+起動時は保存した値（カテゴリと項目の名前で）を 1 つずつ確かめ、disable を先に当て、当てられないものは外す（部分適用）。port_speed: 要求が来た UART bridge の口への
 baud / step / verify_ms で、port_speed_tolerance_pct の内、phase 0〜3 は port_state で読める。仮想ベンチが戻るのは verify_ms の後、正常な
 フレームの無い port_speed_idle_ms の後、セッションの終わり - 壊れたフレームでは戻らない。
 

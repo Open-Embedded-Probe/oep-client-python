@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from oep_client import catalog, cobs, config, core, endpoint, virtual_bench, fixture, host as h, link, message as m
+from oep_client import catalog, cobs, core, endpoint, virtual_bench, fixture, host as h, link, message as m
 from oep_client import registry as reg, riscv
 
 from test_virtual_bench_rules_2026_10_02 import Clock
@@ -349,7 +349,7 @@ def test_an_fn_whose_ops_break_the_encoding_is_not_used(value):
         core.ops(hst, 4)
     with pytest.raises(core.UnusableFunction):
         fixture.Gpio(hst)                                                     # a client is never built on it
-    assert core.ops(hst, 0) == set(reg.CORE.op.values())                     # the rest of the probe is used
+    assert core.ops(hst, 0) >= {reg.CORE.op[k] for k in virtual_bench.CORE_REQUIRED}   # the rest of the probe is used
     assert not hst.unusable
 
 

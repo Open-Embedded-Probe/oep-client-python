@@ -12,7 +12,7 @@ import time
 
 import pytest
 
-from oep_client import cobs, config, core, endpoint, virtual_bench, virtual_bench_serial, host as h, link, message as m, registry as reg
+from oep_client import cobs, core, settings, endpoint, virtual_bench, virtual_bench_serial, host as h, link, message as m, registry as reg
 
 RESTART = reg.PROBE_RESTART.op["restart"]
 VENDOR = 1                                       # p4-x035's transport 1: vendor bulk (not a serial port)
@@ -101,14 +101,15 @@ def test_a_tlv_after_restart():
 def test_the_saved_settings_come_back_the_unsaved_ones_do_not():
     ep, hst = bench()
     hst.open(3000)
-    cfg = config.ProbeConfig(hst)
-    cfg.set([config.Idle(channel=21, mode="pull-down")])
+    cfg = settings.Settings(hst)
+    cfg.set_named(settings.CORE_CATEGORY, {"channel.GPIO21.idle": "pull-down"})
     cfg.save()
-    cfg.set([config.Disable(channel=20)])                               # not saved
+    cfg.set_named(settings.CORE_CATEGORY, {"channel.GPIO20.disable": True})   # not saved
     hst.restart_probe(wait_s=1)
     assert ep.disabled == set() and ep.parked[21] == 2
     hst.open(3000)
-    assert config.ProbeConfig(hst).items() == [config.Idle(channel=21, mode="pull-down")]
+    assert [(c, n, v) for c, n, v, o in settings.Settings(hst).show() if o == "user"] == [
+        (settings.CORE_CATEGORY, "channel.GPIO21.idle", "pull-down")]
 
 
 def test_restart_probe_on_a_bare_send():

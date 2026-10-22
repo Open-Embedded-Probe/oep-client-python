@@ -1,4 +1,4 @@
-"""Core §7.4 pin constraint intersection through plan requests (probe.config holds no plan any more).
+"""Core §7.4 pin constraint intersection through plan requests (the settings hold no plan).
 
 These test the existing logical Endpoint's selection semantics. Its legacy
 operation numbering is not evidence of current interface-schema conformance.
@@ -51,12 +51,11 @@ def fixture(kind, interface='oep.fixture.i2c-target'):
 
 
 def apply(h, fn, pair, path):
-    tag = 0x90 if path == 'plan' else 0x81
+    assert path == 'plan'
+    tag = reg.PROBE_PLAN.tlv['plan_apply']['role_assignment'] | m.TAG_CRITICAL
     body = b''.join(bytes((tag, 5, 0)) + struct.pack('<HBH', fn, role, channel)
                     for role, channel in enumerate(pair, 1))
-    name = 'oep.probe.plan' if path == 'plan' else 'oep.probe.config'
-    operation = reg.PROBE_PLAN.op['plan_apply'] if path == 'plan' else reg.PROBE_CONFIG.op['set']
-    return h.raw(h.ep.fns[name], operation, body)
+    return h.raw(h.ep.fns[reg.PROBE_PLAN.name], reg.PROBE_PLAN.op['plan_apply'], body)
 
 
 def snapshot(ep):
@@ -76,7 +75,7 @@ def test_channel_selection_obeys_combined_declarations(path, kind, pair, allowed
         assert {(role, channel) for f, role, channel in ep.plan if f == fn} == set(enumerate(pair, 1))
     else:
         assert (result.resolution, result.detail) == (m.REJECTED, m.UNSUPPORTED)
-        assert result.payload[0] == (0x90 if path == 'plan' else 0x81)
+        assert result.payload[0] == reg.PROBE_PLAN.tlv['plan_apply']['role_assignment'] | m.TAG_CRITICAL
         assert snapshot(ep) == before, 'rejected selection changed existing plan/settings/idle'
 
 

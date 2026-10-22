@@ -1,6 +1,13 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) 設定を core（oep-spec core §13、9fc6ad9 / c4fbd6e）に合わせた。`oep_client.config`（`oep.probe.config`）を無くし、
+  `oep_client.settings` を足した:
+  - fn 0 の get / set / unset / save / state / network。値は（fn、項目番号、key）で運び、host には（カテゴリ、平らな名前、値、出どころ）で見せる。
+  - 設定のファイル（docs/oep-settings-file.ja.md）の書き出しと入れ直し（`export`、`plan_import`、`apply_import`）。secret は読まない。
+  - `oep config` を `oep settings`（show / items / set / unset / save / state / network / export / import）に置き換えた。
+  - 仮想ベンチは fn 0 の設定（各持ち主の項目、固定・既定の値、名前での保存）を持つ。共有ベクタの設定の場合と settings_file.json を通す。
+  - 線の名前の探し方（`find_line`）は、出どころによらず全部の `channel.{}.label` から探す（firmware の label も設定の固定の値）。
 - (JA) libusb1 経由の HID（hidapi がない環境の経路）で、カーネルの HID ドライバを外して interface を claim してから、
   レポート記述子を読むようにした。今までは claim の前に読んでいて、Linux の usbfs に LIBUSB_ERROR_IO で断られていた
   （RP2 の HID は interface 3、2026-10-22）。OEP の記述子でなければ interface を戻し、ドライバを付け直す。

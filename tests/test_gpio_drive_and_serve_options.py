@@ -1,11 +1,11 @@
 """The virtual bench against oep-spec a09fa45: gpio set without a strength and the 3-byte idle item (fixture §1,
-probe.config §1); a target silent until a reset; virtual_bench_serve's options."""
+core §13.8); a target silent until a reset; virtual_bench_serve's options."""
 
 import struct
 
 import pytest
 
-from oep_client import config, core, endpoint, virtual_bench, fixture, host as h, message as m, registry as reg
+from oep_client import core, settings, endpoint, virtual_bench, fixture, host as h, message as m, registry as reg
 
 
 class Clock:
@@ -39,19 +39,17 @@ def raw_read(hst, g, channels):
     return hst.request(g.fn, g.READ, body, locked=False).payload
 
 
-# ---- gpio set and the idle item: no strength selection (fixture §1, probe.config §1) -------------------------------
+# ---- gpio set and the idle item: no strength selection (fixture §1, core §13.8) -------------------------------
 
 def test_set_has_no_drive_tlv_and_the_idle_item_is_3_bytes():
     """fixture §1: revision 1 defines no strength selection, so the old drive TLV (0x01) is an unknown tag - ignored plain,
-    unsupported critical; probe.config §1: idle is channel(u16) mode(u8)."""
+    unsupported critical."""
     ep, hst, _ = open_probe()
     g = gpio_of(ep, hst)
     assert raw_set(hst, g, [(20, 4)], m.tlv(0x01, b"\x00\x01")).ran and ep.gpio_modes[20] == 4
     with pytest.raises(h.Unsupported) as e:
         raw_set(hst, g, [(20, 3)], m.tlv(0x01, b"\x00\x01", critical=True))
     assert e.value.tag == 0x81 and ep.gpio_modes[20] == 4
-    it = config.Idle(channel=7, mode="output-high")
-    assert it.value() == bytes([7, 0, 4]) and config.decode("idle", 7, it.data()) == it
     assert not any(t == 0x41 for t, _ in core.describe(hst, g.fn))      # no drive_levels
 
 
@@ -95,11 +93,10 @@ def test_idle_from_the_command(capsys, monkeypatch):
     hst.link = FakeLink()
     hst.end()
     monkeypatch.setattr(cli.link, "open_host", lambda target: hst)
-    for gone in (["config", "slot", "x", "--name", "v003"], ["config", "bind", "x", "--port", "0"],
-                 ["config", "wifi", "x", "--index", "0"]):
-        with pytest.raises(SystemExit):                            # gone from probe.config (oep-spec a09fa45)
+    for gone in (["config", "idle", "x", "21", "low"], ["settings", "wifi", "x"]):
+        with pytest.raises(SystemExit):                            # gone: the settings are fn 0's (core §13)
             cli.main(gone)
-    assert cli.main(["config", "idle", "x", "21", "output-low"]) == 0
+    assert cli.main(["settings", "set", "x", "core", "channel.GPIO21.idle=low"]) == 0
     assert ep.parked[21] == 3
 
 
@@ -124,4 +121,4 @@ def test_virtual_bench_serve_label_wants_ch_eq_text(capsys):
         virtual_bench_serve.parse(["--label", "nrst"])
     assert "CH=TEXT" in capsys.readouterr().err
     ep, hst = serve("--label", "0x14=t.nrst")
-    assert ep.saved and config.find_line(config.ProbeConfig(hst).items(), "nrst", "t", single=False) == 0x14
+    assert ep.saved and settings.find_line(hst, "nrst", "t", single=False) == 0x14

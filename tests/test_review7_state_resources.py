@@ -2,7 +2,7 @@
 
 import struct
 
-from oep_client import capture, config, core, endpoint, host as h, message as m, virtual_bench
+from oep_client import capture, core, settings, endpoint, host as h, message as m, virtual_bench
 from oep_client.virtual_analog_model import AnalogModel
 from oep_client.virtual_capture_group_model import CaptureGroupModel
 from oep_client.virtual_capture_timeline_model import CaptureTimelineModel
@@ -31,18 +31,18 @@ def test_a_channel_moving_to_another_fn_is_released_to_the_idle_the_settings_giv
     taking it changes nothing."""
     ep, hst = bench()
     core.plan_apply(hst, [(GPIO, 1, 4)])
-    config.ProbeConfig(hst, fn=CONFIG).set([config.Idle(channel=4, mode="pull-up")])   # in use: waits for the release
+    settings.Settings(hst).set_named(settings.CORE_CATEGORY, {"channel.GPIO4.idle": "pull-up"})   # in use: waits for the release
     assert ep.pin_state(4) == "idle hi-z"
     core.plan_apply(hst, [(GPIO, 1, 5), (UART, 1, 4)])
     assert ep.pin_state(4) == "idle pull-up"
 
 
 def test_an_idle_change_on_a_channel_a_logic_plan_holds_waits_for_its_release():
-    """probe.config §1: a channel in use takes its new idle when it is next free; a logic plan holds its channel too
+    """core §13.8: a channel in use takes its new idle when it is next free; a logic plan holds its channel too
     (core §8: taken, only listened to), so its pin keeps the old idle state until the plan goes."""
     ep, hst = bench()
     core.plan_apply(hst, [(LOGIC, 0, 13)])
-    config.ProbeConfig(hst, fn=CONFIG).set([config.Idle(channel=13, mode="pull-up")])
+    settings.Settings(hst).set_named(settings.CORE_CATEGORY, {"channel.GPIO13.idle": "pull-up"})
     assert ep.pin_state(13) == "idle hi-z"
     core.plan_release(hst, [LOGIC])
     assert ep.pin_state(13) == "idle pull-up"

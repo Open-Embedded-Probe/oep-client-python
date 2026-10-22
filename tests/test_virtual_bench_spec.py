@@ -13,7 +13,6 @@ import pytest
 
 from oep_client import cobs, endpoint, virtual_bench, message as m, registry as reg
 
-CFG = reg.PROBE_CONFIG
 W, RV = reg.WIRE_RVSWD.op, reg.TARGET_RISCV_DM.op
 
 
@@ -155,16 +154,18 @@ def test_core_describe_lists_the_transports_and_max_op_ms():
     ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
     holder = Host(ep)
     holder.open()
-    holder.ok(10, CFG.op["set"], b"\x01" + m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["label"], struct.pack("<H", 20) + b"DUT"))
-    assert all(v[2:] != b"DUT" for t, v in describe(ep, 0) if t == tags["label"])
+    number = ep.setting_number("channel.{}.label")
+    holder.ok(0, reg.CORE.op["set"], b"\x01" + struct.pack("<HBHH", 0, number, 20, 3) + b"DUT")
+    assert all(b"DUT" not in v for t, v in describe(ep, 0))
 
 
 @pytest.mark.parametrize("profile", sorted(virtual_bench.PROFILES))
 def test_core_describe_has_no_removed_tags(profile):
     """core §7.5 (rule review 2026-10-07): reserved (0x44), profile (0x45), resets_on_open (0x47) and discoverable
     (0x4A) are gone - the registry names none of them and no virtual bench profile describes them (implementation went
-    from the common tags, whose 0x07 is now ops)."""
-    gone = {0x44, 0x45, 0x47, 0x4A}
+    from the common tags, whose 0x07 is now ops). 0x44 and 0x45 are channel_name and netif now (core §7.5: numbers
+    removed before the freeze may be used again)."""
+    gone = {0x47, 0x4A}
     tags = reg.CORE.tlv["describe"]
     assert not {"implementation", "reserved", "profile", "resets_on_open", "discoverable"} & set(tags)
     assert not gone & set(tags.values())

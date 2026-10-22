@@ -29,7 +29,7 @@ def fixed_then_tlvs(payload, fixed):
     return True
 
 # An optional op that requires another: state with save, port_state with port_speed, marks with mark.
-IMPLIED={'oep.probe.config':(('save','state'),),'oep.probe.link':(('port_speed','port_state'),),
+IMPLIED={'oep.probe.link':(('port_speed','port_state'),),
          'oep.target.console':(('mark','marks'),),'oep.fixture.uart':(('mark','marks'),)}
 # An optional op that a describe mode (TLV 0x40 rows) makes required: release with mode 2,
 # subscribe (and so unsubscribe) with mode 3 (capture §1/3.2/3.4).
@@ -52,7 +52,6 @@ POLICIES={
     'oep.fixture.logic':(('force','release','query','triggers','subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §1/3.2/3.4'),
     'oep.fixture.analog':(('force','release','query','triggers','calibration','subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §1/3.2/3.4/3.7'),
     'oep.fixture.capture-group':(('force','subscribe','unsubscribe'),(('subscribe','unsubscribe'),),'capture §4.1/4.3'),
-    'oep.probe.config':(('save','erase','state','network'),(('save','erase'),),'probe-config §2, §4'),
 }
 
 

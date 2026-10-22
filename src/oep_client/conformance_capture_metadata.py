@@ -1,11 +1,11 @@
-"""Read-only selected capture and config describe contracts, not op behavior."""
+"""Read-only selected capture describe contracts, not op behavior."""
 import struct
 from .conformance import require
 from .conformance_registered_ops import RegisteredOpsChecks
 
 
 class CaptureMetadataChecks:
-    supported={'oep.fixture.logic','oep.fixture.analog','oep.fixture.capture-group','oep.probe.config'}
+    supported={'oep.fixture.logic','oep.fixture.analog','oep.fixture.capture-group'}
     def __init__(self,checks,selection):self.c,self.selection=checks,selection
     def metadata(self,fn,name):
         rows=self.base.rows[fn];values=dict(reversed(rows));spec=self.base.specs[name];tags=spec['tlv']['describe'];common=self.c.reg['describe_common']
@@ -13,10 +13,7 @@ class CaptureMetadataChecks:
             require(tag in values and len(values[tag])==width,label+' required fixed width');return values[tag]
         def repeated(tag,width,label):
             found=[v for t,v in rows if t==tag];require(found and all(len(v)==width for v in found),label+' required repeated fixed shape');return found
-        if name=='oep.probe.config':
-            require(tags['items'] in values,'items declaration required');items=list(values[tags['items']])
-            require(items and len(set(items))==len(items) and all(t&127 for t in items),'items: one or more item tags without duplicates or item 0');result=dict(items=items)
-        else:
+        if True:
             # Revision 1 defines no feature bits; features may be left out when 0 (capture §3.5/4.3).
             features=values.get(common['features'],b'\0'*4);require(len(features)==4,'features is u32 when present');result=dict(features=int.from_bytes(features,'little'))
             if name=='oep.fixture.capture-group':
@@ -33,10 +30,10 @@ class CaptureMetadataChecks:
         self.c.observed.setdefault('capture_metadata',{})[str(fn)]=dict(name=name,**result)
     def run(self):
         start=len(self.c.results)
-        def context():require(type(self.selection)is dict and self.selection and all(type(n)is str and n in self.supported for n in self.selection.values()),'explicit supported capture/config selection required')
-        self.c.check('OEP-CAPTURE-METADATA-CONTEXT','capture §3.5/4.3; config §4',context)
+        def context():require(type(self.selection)is dict and self.selection and all(type(n)is str and n in self.supported for n in self.selection.values()),'explicit supported capture selection required')
+        self.c.check('OEP-CAPTURE-METADATA-CONTEXT','capture §3.5/4.3',context)
         if self.c.results[-1]['status']!='passed':self.c.abort=True
         self.base=RegisteredOpsChecks(self.c,self.selection);self.base.run()
-        for fn,name in (self.selection.items() if type(self.selection)is dict else []):self.c.check('OEP-CAPTURE-METADATA-'+str(fn),'capture §3.5/4.3; config §4',lambda fn=fn,name=name:self.metadata(fn,name))
+        for fn,name in (self.selection.items() if type(self.selection)is dict else []):self.c.check('OEP-CAPTURE-METADATA-'+str(fn),'capture §3.5/4.3',lambda fn=fn,name=name:self.metadata(fn,name))
         rows=self.c.results[start:]
-        return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,observed=self.c.observed,full_conformance=False,scope='selected capture/config describe shapes, mode rows, rate range, immediate trigger and plan declarations; read-only',unchecked=['capture/config operation behavior, notifications and lifetime','capture capacity/rate/frontends operational semantics and track binding','role_channels/channel_group contents against plan roles','config storage max_bytes and its presence with save/erase','metadata of other standard interfaces and physical behavior'])
+        return dict(status='passed' if all(r['status']=='passed' for r in rows) else 'failed',checks=rows,observed=self.c.observed,full_conformance=False,scope='selected capture describe shapes, mode rows, rate range, immediate trigger and plan declarations; read-only',unchecked=['capture operation behavior, notifications and lifetime','capture capacity/rate/frontends operational semantics and track binding','role_channels/channel_group contents against plan roles','metadata of other standard interfaces and physical behavior'])

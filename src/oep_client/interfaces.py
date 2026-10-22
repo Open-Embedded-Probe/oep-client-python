@@ -121,9 +121,10 @@ _CAPTURE = (("mode", "mode", _capture_mode), ("rate_range", "rate range", _rate_
 
 KNOWN: dict[str, Known] = {
     CORE_KEY: Known(
-        "the core: confirm, list, describe, clock, open / end / keepalive, lock state; describe = the probe itself",
+        "the core: confirm, list, describe, clock, open / end / keepalive, lock state, the settings (core §13); describe = the probe itself",
         tags=_d(CORE_KEY, ("firmware", "firmware", _text), ("model", "model", _text), ("unit_id", "unit id", _text),
-                ("channels", "channels", _u16), ("label", "label", _label), ("transport", "transport", _transport),
+                ("channels", "channels", _u16), ("channel_name", "channel name", _label), ("netif", "netif", _text),
+                ("transport", "transport", _transport),
                 ("chip", "chip", _text), ("max_op_ms", "max op ms", _u32))),
     "oep.probe.link": Known("the link test (source, sink) and, when its ops offer it, port_speed on a UART bridge"),
     "oep.probe.plan": Known("the plan: which channel each role of an interface uses (plan_apply, plan_release)",
@@ -144,11 +145,6 @@ KNOWN: dict[str, Known] = {
     "oep.target.console": Known(
         "console streams on a debug connection (position-addressed, marks)",
         tags=_d("oep.target.console", ("mechanism", "mechanism", lambda v: v.decode("utf-8", "replace")))),
-    "oep.probe.config": Known(
-        "the probe's settings (named items: pins, pass-throughs, network, its own) and their storage; the state is op state",
-        tags=_d("oep.probe.config", ("storage", "storage", lambda v: f"{_u32(v[:4])} bytes"),
-                ("setting", "setting", lambda v: v[5:].decode("utf-8", "replace") if len(v) > 5 else v.hex()),
-                ("netif", "netif", lambda v: v.decode("utf-8", "replace")))),
     "oep.fixture.gpio": Known("drive and read probe pins", roles=_roles("oep.fixture.gpio", "role", {"line": "line"}),
                               tags=_d("oep.fixture.gpio", ("modes", "modes", lambda v: ", ".join(str(b) for b in range(32) if _u32v(v) >> b & 1)))),
     "oep.fixture.uart": Known("a UART (USART, asynchronous) on probe pins",

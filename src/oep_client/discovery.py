@@ -23,7 +23,7 @@ Two ways to ask, the same answer:
   a probe on the Wi-Fi adapter never hears it). The 5353 socket joins the group on each of them. IPv4 only.
 
 mDNS stays on the local link: behind a NAT (WSL 2's default network, a VM) or across subnets nothing is found - name the
-probe as tcp://HOST:PORT then (the address is also in `oep config state` over another transport: the wifi state's ip).
+probe as tcp://HOST:PORT then (the address is also in `oep settings network` over another transport).
 """
 
 from __future__ import annotations

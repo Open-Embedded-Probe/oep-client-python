@@ -12,12 +12,14 @@ import pytest
 
 from oep_client.registry import WIRE_RVSWD as _RV_WIRE
 RESET_TLV, IDLE_TLV = _RV_WIRE.tlv['attach']['reset'], _RV_WIRE.tlv['attach']['idle_clock']   # by name (debug §3)
-from oep_client import catalog, config, endpoint, virtual_bench, virtual_bench_capture, message as m, registry as reg
+from oep_client import catalog, endpoint, virtual_bench, virtual_bench_capture, message as m, registry as reg
 
 
 CORE = reg.CORE
-CFG = reg.PROBE_CONFIG
-ITEM, SET = config.ITEM, CFG.op["set"]
+SET = reg.CORE.op["set"]                                          # the settings (core §13.5): fn 0
+# the core's items as every settings profile declares them (virtual_bench.CORE_ITEMS: the k-th is number k)
+ITEM = {it.name.split(".")[-1]: k for k, it in enumerate(virtual_bench.CORE_ITEMS, 1)}
+ITEM_TLV = reg.CORE.tlv["unsupported_payload"]["item"]
 W = reg.WIRE_RVSWD.op                                               # scan 0x10 attach 0x11 detach 0x12 connections 0x13
 PLAN_APPLY, PLAN_RELEASE = reg.PROBE_PLAN.op["plan_apply"], reg.PROBE_PLAN.op["plan_release"]   # oep.probe.plan
 
@@ -60,18 +62,25 @@ class Host:
 
 
 UNA = CORE.tlv["unavailable_payload"]
-IDLE = reg.PROBE_CONFIG.enum["idle_mode"]
+IDLE = dict(reg.CORE.enum["channel_idle"], output_low=reg.CORE.enum["channel_idle"]["low"],
+            output_high=reg.CORE.enum["channel_idle"]["high"])
 UNKNOWN = 0x3E                                                    # a tag no context defines
 
 
-def cset(items: bytes) -> bytes:
-    """probe.config set's body: count(u8) and the items (probe.config §2)."""
-    return bytes([len(m.split_tlvs(items))]) + items
+def cset(*values: bytes) -> bytes:
+    """fn 0 set's body: count(u8) and the values (core §13.5)."""
+    flat = [v for group in values for v in (group if isinstance(group, list) else [group])]
+    return bytes([len(flat)]) + b"".join(flat)
 
 
-def state(ep, fn=6):
-    """probe.config's state op (lock-free, §3): -> (storage_state, saved_generation, reason)."""
-    rd = m.Reader(Host(ep).raw(fn, CFG.op["state"], session=False).payload)
+def item_refused(index: int = 0) -> bytes:
+    """set's unsupported payload: the fixed-part marker and the refused value's place (core §4.3, §13.5)."""
+    return bytes([m.TAG_FIXED]) + m.tlv(ITEM_TLV, bytes([index]))
+
+
+def state(ep, fn=0):
+    """fn 0's state (lock-free, core §13.7): -> (storage_state, saved_generation, reason)."""
+    rd = m.Reader(Host(ep).raw(fn, reg.CORE.op["state"], session=False).payload)
     out = rd.take("BIB")
     rd.tail()
     return out
@@ -96,13 +105,22 @@ def una(r) -> dict[int, bytes]:
     return out
 
 
-def idle_item(ch, mode, tag=ITEM["idle"]):
-    """An idle item (probe.config §1): channel(u16) mode(u8), 3 bytes."""
-    return m.tlv(tag & 0x7F, struct.pack("<HB", ch, mode), critical=bool(tag & 0x80))
+def value(number, key, data: bytes, fn=0) -> bytes:
+    """One set value: fn(u16) number(u8) key(u16) len(u16) data (core §13.5)."""
+    return struct.pack("<HBHH", fn, number, key, len(data)) + data
 
 
-def label_item(ch, text: bytes, tag=ITEM["label"]):
-    return m.tlv(tag & 0x7F, struct.pack("<H", ch) + text, critical=bool(tag & 0x80))
+def idle_item(ch, mode, number=ITEM["idle"]):
+    """channel.{}.idle of `ch`: an enum (core §13.8)."""
+    return value(number, ch, bytes([mode]))
+
+
+def label_item(ch, text: bytes, number=ITEM["label"]):
+    return value(number, ch, text)
+
+
+def disable_item(ch, on=True):
+    return value(ITEM["disable"], ch, bytes([1 if on else 0]))
 
 
 def att(pair, method=0, speed=4_000_000):
@@ -172,8 +190,8 @@ def test_c02_read_from_4_unsupported_and_from_3_with_a_wide_arg_reads_from_now()
 
 def test_c02_probe_config_a_mode_a_later_revision_may_define():
     ep, h = bench()
-    r = h.raw(6, SET, cset(idle_item(20, 5)))
-    assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([ITEM["idle"]]))
+    r = h.raw(0, SET, cset(idle_item(20, 5)))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, item_refused())
 
 
 # ---- C-03 (as the rule review 2026-10-07 left it): repeated, short and long request TLVs -------------------------
@@ -280,7 +298,8 @@ def test_c10_a_probe_without_plan_roles_lists_no_plan():
     probe = virtual_bench.VirtualProbe("bare", 256, [virtual_bench.Offered(o.fn, o.instance, o.name, tuple(t for t in o.tlvs if t[0] != 0x09))
                                          for o in virtual_bench.p4_bench().offered if o.name in keep])   # ops made anew
     ep = endpoint.Endpoint(probe, Clock())
-    assert "oep.probe.plan" not in ep.fns and ep.ops[0] == set(reg.CORE.op.values())
+    assert "oep.probe.plan" not in ep.fns and ep.ops[0] == {
+        reg.CORE.op[k] for k in virtual_bench.CORE_REQUIRED + virtual_bench.SETTINGS_OPS + ("save", "state")}
     h = Host(ep)
     h.open()
     assert h.raw(0, 0x05, b"\x00").detail == m.UNKNOWN_OPERATION
@@ -373,7 +392,7 @@ def test_p2_1_scan_has_no_implicit_list_and_takes_an_input_idle_pair():
     with an input idle is scanned."""
     ep, h = bench()
     a, b, c = ep.pairs[1]
-    h.ok(6, SET, cset(idle_item(a[0], IDLE["pull_up"])))               # an input idle on pair A
+    h.ok(0, SET, cset(idle_item(a[0], IDLE["pull_up"])))               # an input idle on pair A
     assert h.raw(1, W["scan"], b"\x00").detail == m.MALFORMED
     assert h.raw(1, W["scan"], b"\x02" + struct.pack("<HHHH", *a, *a)).detail == m.MALFORMED
     rd = m.Reader(h.ok(1, W["scan"], b"\x01" + struct.pack("<HH", *a)))
@@ -384,7 +403,7 @@ def test_p2_1_a_named_output_idle_channel_is_unavailable_cause_5_and_the_channel
     """debug §1; the unavailable payload is cause, channel, fn only (core §4.3, rule review 2026-10-07)."""
     ep, h = bench()
     a = ep.pairs[1][0]
-    h.ok(6, SET, cset(idle_item(a[1], IDLE["output_high"])))
+    h.ok(0, SET, cset(idle_item(a[1], IDLE["output_high"])))
     for r in (h.raw(1, W["scan"], b"\x01" + struct.pack("<HH", *a)), h.raw(1, W["attach"], att(a))):
         t = una(r)
         assert r.detail == m.UNAVAILABLE
@@ -397,7 +416,7 @@ def test_p2_1_an_attach_on_an_input_idle_pin_is_taken():
     h = Host(ep)
     h.open()
     swio = ep.pairs[1][0][0]
-    h.ok(9, SET, cset(idle_item(swio, IDLE["pull_up"])))
+    h.ok(0, SET, cset(idle_item(swio, IDLE["pull_up"])))
     assert h.raw(1, W["attach"], att((swio, 0xFFFF))).succeeded           # named: an input idle is accepted
 
 
@@ -475,7 +494,7 @@ def test_p2_2_spi_target_drives_miso_only_while_cs_is_active():
     spi = 9
     plan = b"".join(m.tlv(0x10, struct.pack("<HBH", spi, role, ch), critical=True)
                     for role, ch in ((1, 30), (2, 31), (3, 32), (4, 33)))
-    h.ok(6 + 4, SET, cset(idle_item(32, IDLE["pull_up"])))             # MISO's idle: a pull-up input
+    h.ok(0, SET, cset(idle_item(32, IDLE["pull_up"])))             # MISO's idle: a pull-up input
     h.ok(h.plan_fn, PLAN_APPLY, plan)
     assert ep.pin_state(32) == "idle pull-up"                     # before configure: the idle state
     h.ok(spi, reg.FIXTURE_SPI_TARGET.op["configure"], b"\x00\x00")
@@ -508,11 +527,11 @@ def test_p2_3_i2c_target_open_drain_and_declared_pullups():
 
 def test_p2_o13_taking_a_plan_changes_no_pin_and_an_analog_plan_on_an_output_idle_is_refused():
     ep, h = x035()
-    h.ok(10, SET, cset(idle_item(16, IDLE["output_high"]) + idle_item(20, IDLE["output_low"]) + idle_item(21, IDLE["output_high"])))
+    h.ok(0, SET, cset(idle_item(16, IDLE["output_high"]), idle_item(20, IDLE["output_low"]), idle_item(21, IDLE["output_high"])))
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 4, 1, 20), critical=True)
          + m.tlv(0x10, struct.pack("<HBH", 7, 0, 21), critical=True))
     assert ep.pin_state(20) == "gpio 3" and ep.gpio_log == []     # gpio: the idle's output low kept, no set yet
-    assert ep.pin_state(21) == "idle output-high"                 # logic: it only listens
+    assert ep.pin_state(21) == "idle high"                 # logic: it only listens
     h.ok(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 5, 2, 22), critical=True))
     assert ep.pin_state(22) == "uart-tx-high"                     # uart TX: from the plan
     r = h.raw(h.plan_fn, PLAN_APPLY, m.tlv(0x10, struct.pack("<HBH", 11, 0, 16), critical=True))
@@ -583,29 +602,29 @@ def test_p2_o11_a_read_past_the_write_position():
 def test_pc3_an_idle_pull_the_channel_lacks_is_unsupported():
     ep, h = bench()
     ep.no_pull = {20: {IDLE["pull_down"]}}
-    r = h.raw(6, SET, cset(idle_item(20, IDLE["pull_down"])))
-    assert (r.detail, r.payload[:1]) == (m.UNSUPPORTED, bytes([ITEM["idle"]]))   # the item number as received
-    assert h.raw(6, SET, cset(idle_item(20, IDLE["pull_up"]))).succeeded
+    r = h.raw(0, SET, cset(idle_item(20, IDLE["pull_down"])))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, item_refused())   # the refused value's place
+    assert h.raw(0, SET, cset(idle_item(20, IDLE["pull_up"]))).succeeded
 
 
 def test_pc3_a_saved_idle_pull_the_channel_lacks_is_left_out_at_boot():
     """probe.config §3: an item this firmware cannot take is left out at boot and the others applied (partial,
     reason 2)."""
     ep, h = bench()
-    h.ok(6, SET, cset(idle_item(20, IDLE["pull_down"]) + label_item(21, b"x")))
-    h.ok(6, reg.PROBE_CONFIG.op["save"])
+    h.ok(0, SET, cset(idle_item(20, IDLE["pull_down"]), label_item(21, b"x")))
+    h.ok(0, reg.CORE.op["save"])
     ep.no_pull = {20: {IDLE["pull_down"]}}
     ep.reboot(0x99)
-    assert state(ep) == (3, 0, 2) and list(ep.config) == [("label", 21)]
+    assert state(ep) == (3, 0, 2) and list(ep.config) == [(0, "channel.{}.label", 21)]
 
 
 @pytest.mark.parametrize("ch", [24, 55, 0xFFFF])                  # the probe's own, = channels, far past
 def test_pc4_the_channel_of_an_item(ch):
     ep, h = bench()
-    for item in (label_item(ch, b"x"), idle_item(ch, IDLE["hi_z"]), m.tlv(ITEM["disable"], struct.pack("<H", ch))):
-        r = h.raw(6, SET, cset(item))
+    for item in (label_item(ch, b"x"), idle_item(ch, IDLE["hi_z"]), disable_item(ch)):
+        r = h.raw(0, SET, cset(item))
         assert (r.detail, r.payload[:1]) == (m.UNSUPPORTED, item[:1])
-    assert h.raw(6, SET, cset(label_item(54, b"x"))).succeeded         # below channels, not its own, declared by none
+    assert h.raw(0, SET, cset(label_item(54, b"x"))).succeeded         # below channels, not its own, declared by none
 
 
 @pytest.mark.parametrize("text, ok", [(b"x" * 32, True), (b"x" * 33, False), (b"", False), (b"a\nb", True),
@@ -614,7 +633,7 @@ def test_pc5_label_text(text, ok):
     """probe.config §1 (rule review 2026-10-07): a label's text is checked for its length (1-32) only - request text
     is not validated (core §2.1); the host replaces what it shows."""
     ep, h = bench()
-    r = h.raw(6, SET, cset(label_item(20, text)))
+    r = h.raw(0, SET, cset(label_item(20, text)))
     assert r.succeeded if ok else r.detail == m.MALFORMED
 
 

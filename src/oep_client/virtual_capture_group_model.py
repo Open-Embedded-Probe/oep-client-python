@@ -39,7 +39,7 @@ class CaptureGroup(Gpio):
     requires_equal_rate=True
     def __init__(self,ep):
         super().__init__();self.ep=ep;self.tracks={ADC:Analog(ep),LOGIC:Logic(ep),**{fn:Logic(ep) for fn in EXTRA}}
-        self.idle.update({ch:_reg.PROBE_CONFIG.enum['idle_mode']['hi_z'] for ch in (0,1,*range(8,16))});self.pins=dict(self.idle);self.external.update({ch:ch%2 for ch in range(8,16)})   # the analog's 0, 1: no output idle (capture §1.2)
+        self.idle.update({ch:_reg.CORE.enum['channel_idle']['hi_z'] for ch in (0,1,*range(8,16))});self.pins=dict(self.idle);self.external.update({ch:ch%2 for ch in range(8,16)})   # the analog's 0, 1: no output idle (capture §1.2)
         self.groups={fn:Group() for fn in GROUPS}
     # fn 4 is the group the checker drives; these keep its fields directly reachable.
     bound=property(lambda self:self.groups[4].bound,lambda self,value:setattr(self.groups[4],'bound',value))

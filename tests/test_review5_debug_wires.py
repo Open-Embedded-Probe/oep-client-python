@@ -34,7 +34,7 @@ def both_declared(name="oep.wire.rvswd") -> virtual_bench.VirtualProbe:
         catalog.role_channels(1, [2, 4]), catalog.role_channels(2, [3, 5]))
     group = catalog.channel_group(1, [(1, 2)] if name == "oep.wire.swio" else [(1, 2), (2, 3)])
     return virtual_bench.VirtualProbe("both", 1024, [
-        virtual_bench._core("3.0.0", "rp2350", "b0b0b0b0b0b0", 30, {},
+        virtual_bench._core("3.0.0", "rp2350", "b0b0b0b0b0b0", 30,
                             virtual_bench._transports([(virtual_bench.TRANSPORT["usb_cdc"], 0)])),
         virtual_bench.Offered(1, 0, name, (group,) + roles + (catalog.u32(catalog.FEATURES, ATTACH_HALT),
                                                              catalog.u8(virtual_bench.MAX_CONNECTIONS, 1))),
@@ -87,7 +87,7 @@ def test_oep_pins_scans_a_swio_wire_declared_by_channel_group():
     """debug §1: "describe の channel_group / role_channels が候補を宣言する" - a swio wire whose SWIO pin is a
     channel_group (as the esp32-v003 profile) is scanned on that pin, not skipped for having no role_channels."""
     probe = virtual_bench.VirtualProbe("swio-group", 1024, [
-        virtual_bench._core("3.0.0", "esp32", "c0c0c0c0c0c0", 30, {},
+        virtual_bench._core("3.0.0", "esp32", "c0c0c0c0c0c0", 30,
                             virtual_bench._transports([(virtual_bench.TRANSPORT["usb_cdc"], 0)])),
         virtual_bench.Offered(1, 0, "oep.wire.swio", (catalog.channel_group(1, [(1, 19)]),
                                                      catalog.u8(virtual_bench.MAX_CONNECTIONS, 1))),

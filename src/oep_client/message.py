@@ -4,7 +4,7 @@ what follows a payload's fixed part.
   request : role(0x01) corr(u16) fn(u16) op(u8) session_id(u32) payload     10 bytes; session_id 0 = no session
   result  : role(0x02) corr(u16) resolution(u8) detail(u8) payload
 
-§2.3: every fixed form (a fixed part, a TLV's value, a sequence's element, a probe.config item) is fixed by (name,
+§2.3: every fixed form (a fixed part, a TLV's value, a sequence's element, a settings value) is fixed by (name,
 revision) and never extended at its end; a sequence is count x element with no element length. After a result's fixed
 part (and any counted list) come TLVs (tag u8, len u16, value - core §2.2, one form whatever the length); the host skips
 tags it does not know. A request may end with TLVs too; tag bit 7 = critical: a probe that does not implement the tag
@@ -207,7 +207,7 @@ def named_extensions(tlvs: list[tuple[int, bytes]]) -> dict[str, bytes]:
 
 class Reader:
     """Reads a result payload's fixed part front to back; too short -> ShortPayload. `tail()` then reads the rest as
-    core §2.3 TLVs; `rest()` takes the rest as bytes (an answer that is a TLV list itself: probe.config get)."""
+    core §2.3 TLVs; `rest()` takes the rest as bytes (an answer that is a container itself: the settings' get)."""
 
     def __init__(self, payload: bytes):
         self.data, self.at = payload, 0

@@ -92,14 +92,20 @@ def events(ep, fn):
             for f in ep.pushes() if f[0] == m.ROLE_EVENT and struct.unpack_from("<H", f, 1)[0] == fn]
 
 
-CFG = reg.PROBE_CONFIG
+SET = reg.CORE.op["set"]                                            # fn 0's settings set (core §13.5)
+IDLE_MODE = dict(reg.CORE.enum["channel_idle"], output_low=reg.CORE.enum["channel_idle"]["low"],
+                 output_high=reg.CORE.enum["channel_idle"]["high"])
+
+
+def idle_value(ep, ch, mode) -> bytes:
+    """One set value: channel.{}.idle of ch."""
+    return bytes([1]) + struct.pack("<HBHH", 0, ep.setting_number("channel.{}.idle"), ch, 1) + bytes([IDLE_MODE[mode]])
 
 
 def output_idle(hst, ep, ch, mode="output_high"):
-    """probe.config set: channel ch's idle is an output (core §8)."""
-    item = m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["idle"], struct.pack("<HB", ch, CFG.enum["idle_mode"][mode]))
-    assert hst.request(ep.fns[CFG.name], CFG.op["set"], bytes([1]) + item).succeeded
-    assert ep.pin_state(ch) == f"idle {mode.replace('_', '-')}"
+    """channel ch's idle is an output (core §8, §13.8)."""
+    assert hst.request(0, SET, idle_value(ep, ch, mode)).succeeded
+    assert ep.pin_state(ch) == f"idle {mode.replace('output_', '')}"
 
 
 def logic_of(width, positions):
@@ -1828,19 +1834,16 @@ def test_review_analog_switch_time_is_in_start_ns_and_resuming_sets_the_gap():
 
 def test_review_an_output_idle_set_onto_an_analog_pin_is_refused():
     """capture §1.2: a pin the analog cannot share is refused whichever comes second - the analog plan on an output
-    idle is cause 5, and probe.config's set of an output idle on a channel an analog plan holds is unavailable too
+    idle is cause 5, and the settings' set of an output idle on a channel an analog plan holds is unavailable too
     (nothing changed); a pull idle there, or an output idle on another channel, is taken."""
     ep, hst, clock = bench()
     an = track(hst, analog=True, roles=(0,))
-    cfg_fn = ep.fns[CFG.name]
     for mode_name in ("output_low", "output_high"):
-        item = m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["idle"], struct.pack("<HB", 16, CFG.enum["idle_mode"][mode_name]))
         before = copy.deepcopy((ep.config, ep.generation, ep.plan))
-        r = ask(hst, cfg_fn, CFG.op["set"], bytes([1]) + item)
+        r = ask(hst, 0, SET, idle_value(ep, 16, mode_name))
         assert cause(r) == reg.CORE.enum["unavailable_cause"]["pin_in_use"]
         assert copy.deepcopy((ep.config, ep.generation, ep.plan)) == before
-    pull = m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["idle"], struct.pack("<HB", 16, CFG.enum["idle_mode"]["pull_up"]))
-    assert hst.request(cfg_fn, CFG.op["set"], bytes([1]) + pull).succeeded
+    assert hst.request(0, SET, idle_value(ep, 16, "pull_up")).succeeded
     output_idle(hst, ep, 17)
     core.plan_release(hst, [an.fn])
     output_idle(hst, ep, 16)                                        # the plan gone: the pin is free for it
@@ -2032,8 +2035,7 @@ def test_review2_an_analog_plan_leaves_the_pin_as_it_was_and_logic_keeps_a_pull(
     assert ep.pin_state(16) == "analog"
     clock.t = 20
     assert an.status().state == ST["done"] and ep.pin_state(16) == free
-    pull = m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["idle"], struct.pack("<HB", 30, CFG.enum["idle_mode"]["pull_up"]))
-    assert hst.request(ep.fns[CFG.name], CFG.op["set"], bytes([1]) + pull).succeeded
+    assert hst.request(0, SET, idle_value(ep, 30, "pull_up")).succeeded
     pulled = ep.pin_state(30)
     lc = c.LogicCapture(hst)
     core.plan_apply(hst, [(lc.fn, 0, 30)])

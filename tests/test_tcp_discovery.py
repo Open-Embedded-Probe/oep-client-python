@@ -1,6 +1,5 @@
 """TCP discovery (transports §3, host guide §4.1: `discovery`, `oep find`, tcp://HOST and tcp:UNIT_ID), linktest's TCP
-wait and KeptSession at exit. (The wifi item of probe.config is gone in oep-spec a09fa45: network settings are not
-probe.config's.)"""
+wait and KeptSession at exit. (The network settings are the core's, transports §7.)"""
 
 import json
 import re
@@ -11,7 +10,7 @@ import sys
 
 import pytest
 
-from oep_client import (__main__ as cli, config, core, discovery, endpoint, host as h, kept_session, link, linktest,
+from oep_client import (__main__ as cli, core, settings, discovery, endpoint, host as h, kept_session, link, linktest,
                         message as m, virtual_bench)
 
 def _rr(name: bytes, rtype: int, rdata: bytes) -> bytes:
@@ -96,9 +95,9 @@ def test_tcp_unit_id_opens_the_probe_dns_sd_names_and_checks_describe(tcp_bench,
     hst = link.open_host(f"tcp:{unit}", keep_session=False)
     try:
         assert hst.link.transport == "tcp" and linktest.default_timeout(hst) == linktest.TCP_TIMEOUT
-        cfg = config.ProbeConfig(hst)
+        cfg = settings.Settings(hst)
         core.take(hst, 3000)
-        assert cfg.set([config.Label(channel=23, text="nrst")]) == 2         # a session over the found link
+        assert cfg.set_named(settings.CORE_CATEGORY, {"channel.GPIO24.label": "nrst"}) == 2   # a session over the found link
         hst.end()
     finally:
         hst.link.close()

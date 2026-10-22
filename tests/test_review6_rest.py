@@ -91,64 +91,6 @@ def test_port_speed_still_requires_cause_6(monkeypatch):
     assert checks.run()['status'] == 'failed'
 
 
-# ---- probe-config §3: erase 応答の固定部分は無く、末尾に[TLV]; save の unsupported は tag(u8)、[TLV] -----------------------
-def test_config_checkers_accept_an_erase_answer_tail(monkeypatch):
-    from oep_client.conformance_config import ConfigChecks
-    from oep_client.conformance_config_fallback import ConfigFallbackChecks
-    from oep_client.conformance_config_fallback_sample import SampleConfigFallbackAdapter
-    from oep_client.conformance_config_sample import SampleConfigAdapter
-    from oep_client.conformance_config_storage import ConfigStorageChecks
-    from oep_client.conformance_config_storage_sample import SampleConfigStorageAdapter
-    import test_conformance_config
-    import test_conformance_config_storage
-    # erase, and the plan / gpio answers the config checkers make on the way (plan §2, fixture §1: — [TLV])
-    extended(monkeypatch, success={(4, 19), (1, 16), (1, 17), (2, 16)})
-    model, c = test_conformance_config.setup()
-    passed(ConfigChecks(c, SampleConfigAdapter(model)).run())
-    model, c = test_conformance_config.setup()
-    passed(ConfigFallbackChecks(c, SampleConfigFallbackAdapter(model)).run())
-    model, c = test_conformance_config_storage.setup()
-    passed(ConfigStorageChecks(c, SampleConfigStorageAdapter(model)).run())
-
-
-def test_config_execution_accepts_more_tlvs_after_the_unsupported_tag(monkeypatch):
-    from oep_client.conformance_config_execution import ConfigExecutionChecks
-    from oep_client.conformance_config_execution_sample import SampleConfigExecutionAdapter
-    from test_conformance_config_execution import setup
-    extended(monkeypatch)
-    model, c = setup()
-    checks = ConfigExecutionChecks(c, SampleConfigExecutionAdapter(model));checks.cases = ('TLV', 'CAPACITY')
-    passed(checks.run())
-
-
-# ---- core §4.4 with probe-config §3: requests that come while save writes are answered after it, not lost ----------
-def test_save_execution_answers_the_requests_it_held_after_its_own_answer():
-    from oep_client.virtual_config_execution_model import ConfigExecutionModel
-    model = ConfigExecutionModel()
-    confirm = struct.pack('<BHHBI', 1, 7, 0, 1, 0) + b'OEP?\1\1'
-    opened = model.handle(struct.pack('<BHHBI', 1, 1, 0, 16, 5) + struct.pack('<IB', 60000, 0))
-    assert opened[3:5] == b'\1\0'
-    model.arm(1000, [(1, confirm)])
-    save = struct.pack('<BHHBI', 1, 2, 4, 0x12, 5)
-    reply = model.handle(save)
-    assert reply[3:5] == b'\1\0'
-    late = [e for e in model.events if e['action'] == 'held-result']
-    assert [(e['route'], bytes.fromhex(e['request_hex'])) for e in late] == [(1, confirm)]
-    assert late[0]['reply_hex'] is not None and bytes.fromhex(late[0]['reply_hex'])[3:5] == b'\1\0'
-    sent = next(i for i, e in enumerate(model.events) if e['action'] == 'sent')
-    assert model.events.index(late[0]) > sent                     # in order: the save's answer first
-
-
-def test_save_execution_checker_requires_held_requests_answered():
-    from oep_client.conformance_config_execution import ConfigExecutionChecks
-    from oep_client.conformance_config_execution_sample import SampleConfigExecutionAdapter
-    from test_conformance_config_execution import setup
-    model, c = setup()
-    model.answer_held = lambda: None                            # the old model: what came during the write is lost
-    checks = ConfigExecutionChecks(c, SampleConfigExecutionAdapter(model));checks.cases = ('RUN-1500-60000',)
-    assert checks.run()['status'] == 'failed'
-
-
 # ---- fixture §1-§4: rejected payloads are TLV lists the probe may extend --------------------------------------------
 @pytest.mark.parametrize('name', ['gpio', 'uart', 'i2c', 'spi'])
 def test_fixture_checkers_accept_more_tlvs_in_refusals(monkeypatch, name):

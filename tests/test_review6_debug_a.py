@@ -95,7 +95,7 @@ def test_the_declarations_checker_takes_a_group_for_swdio_and_role_channels_for_
 def split_wire() -> virtual_bench.VirtualProbe:
     """An rvswd wire whose channel_group fixes SWDIO (19) and whose role_channels give SWCLK (20, 21)."""
     return virtual_bench.VirtualProbe("rvswd-split", 1024, [
-        virtual_bench._core("3.0.0", "esp32", "c0c0c0c0c0c1", 30, {},
+        virtual_bench._core("3.0.0", "esp32", "c0c0c0c0c0c1", 30,
                             virtual_bench._transports([(virtual_bench.TRANSPORT["usb_cdc"], 0)])),
         virtual_bench.Offered(1, 0, "oep.wire.rvswd", (catalog.channel_group(1, [(1, 19)]),
                                                       catalog.role_channels(2, [20, 21]),

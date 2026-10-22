@@ -7,11 +7,13 @@ import struct
 
 import pytest
 
-from oep_client import config, core, endpoint, virtual_bench, host as h
+from oep_client import core, endpoint, settings, virtual_bench, host as h
 
 from . import boards, record
 
 VENDOR = 1
+CORE = settings.CORE_CATEGORY
+LABEL5, DISABLE7, DISABLE28 = "channel.GPIO5.label", "channel.GPIO7.disable", "channel.GPIO28.disable"
 
 
 class Clock:
@@ -31,54 +33,55 @@ def _bench():
 
 
 def _items(hst) -> dict:
-    return record._by_key(config.ProbeConfig(hst).get()[1])
+    return record._by_key(settings.Settings(hst))
 
 
 def test_a_failed_test_leaves_nothing():
     """The user's label on 5 (saved) stays; the test's label over it, its disable 7 and its save are undone."""
     ep, hst, r = _bench()
-    cfg = config.ProbeConfig(hst)
-    cfg.set([config.Label(channel=5, text="MINE")])
-    cfg.save()
-    r.settings_before(cfg)
-    r.settings_changing("config", "label", 5)
-    r.settings_changing("config", "disable", 7)
-    cfg.set([config.Label(channel=5, text="HW-A"), config.Disable(channel=7)])
+    st = settings.Settings(hst)
+    st.set_named(CORE, {LABEL5: "MINE"})
+    st.save()
+    r.settings_before(st)
+    r.settings_changing("config", CORE, LABEL5)
+    r.settings_changing("config", CORE, DISABLE7)
+    st.set_named(CORE, {LABEL5: "HW-A", DISABLE7: True})
     r.settings_saving()
-    cfg.save()                                                  # ... and the test fails here
+    st.save()                                                   # ... and the test fails here
     assert r.restore_settings("config")
     now = _items(hst)
-    assert ("disable", 7) not in now and config.decode(*now[("label", 5)]).text == "MINE"
-    st = cfg.state()
-    assert st.storage == "applied" and not cfg.needs_save() and not r.settings_pending and not r.settings_saved
-    assert ep.saved == {("label", 5): b"MINE"}      # stored as before the test
+    assert (CORE, DISABLE7) not in now and now[(CORE, LABEL5)] == "MINE"
+    state = st.state()
+    assert state.storage == "applied" and not st.needs_save() and not r.settings_pending and not r.settings_saved
+    assert ep.saved == {("core", "channel.{}.label", 5): b"MINE"}      # stored as before the test
     assert r.restore_settings("again")                          # nothing more to do
-    assert r.tests["_settings"]["restored"][0]["removed"] == ["disable 7"]
+    assert r.tests["_settings"]["restored"][0]["removed"] == [f"{CORE} {DISABLE7}"]
 
 
-def test_nothing_saved_before_is_erased_again():
+def test_nothing_saved_before_is_saved_empty_again():
+    """No erase (core §13.7): a probe that had nothing saved gets every user value unset and an empty save."""
     ep, hst, r = _bench()
-    cfg = config.ProbeConfig(hst)
-    r.settings_before(cfg)
+    st = settings.Settings(hst)
+    r.settings_before(st)
     assert r.settings_baseline["storage"] == "none"
-    r.settings_changing("config", "disable", 7)
-    cfg.set([config.Disable(channel=7)])
+    r.settings_changing("config", CORE, DISABLE7)
+    st.set_named(CORE, {DISABLE7: True})
     r.settings_saving()
-    cfg.save()
+    st.save()
     assert r.restore_settings("config")
-    assert cfg.state().storage == "none" and ("disable", 7) not in _items(hst)
+    assert ep.saved == {} and (CORE, DISABLE7) not in _items(hst)
 
 
 def test_a_probe_that_went_away(monkeypatch):
     """Not back (connect times out): False, what is left recorded with the commands, and require() skips naming the
-    loss. Back later (it rebooted with the saved disable): the next try removes it and erases the storage."""
+    loss. Back later (it rebooted with the saved disable): the next try removes it and saves the storage empty."""
     ep, hst, r = _bench()
-    cfg = config.ProbeConfig(hst)
-    r.settings_before(cfg)
-    r.settings_changing("config", "disable", 28)
-    cfg.set([config.Disable(channel=28)])
+    st = settings.Settings(hst)
+    r.settings_before(st)
+    r.settings_changing("config", CORE, DISABLE28)
+    st.set_named(CORE, {DISABLE28: True})
     r.settings_saving()
-    cfg.save()
+    st.save()
     r.lost = "not back after oep.probe.restart"
     tries = []
 
@@ -87,10 +90,11 @@ def test_a_probe_that_went_away(monkeypatch):
         raise TimeoutError("no confirm")
     monkeypatch.setattr(r, "connect", gone)
     assert not r.restore_settings("config")
-    assert r.settings_left == ["oep config remove /dev/ttyTEST disable 28", "oep config erase /dev/ttyTEST"]
+    assert r.settings_left == [f"oep settings unset /dev/ttyTEST {CORE} {DISABLE28}",
+                               "oep settings unset --all /dev/ttyTEST --save"]
     assert tries == [record.RESTORE_CONNECT_S] and r.settings_pending
     assert any("SETTINGS LEFT ON THE PROBE" in line for line in r.summary())
-    assert any("oep config remove /dev/ttyTEST disable 28" in line for line in r.summary())
+    assert any(f"oep settings unset /dev/ttyTEST {CORE} {DISABLE28}" in line for line in r.summary())
     with pytest.raises(pytest.skip.Exception, match="the probe is gone: not back"):
         r.require()
     monkeypatch.setenv("OEP_HW_REOPEN_S", "40")
@@ -103,7 +107,7 @@ def test_a_probe_that_went_away(monkeypatch):
         r.hst.confirm()
         return r.hst
     monkeypatch.setattr(r, "connect", back)
-    assert ("disable", 28) in _items(h.Host(lambda b: ep.handle(b, VENDOR)))
+    assert (CORE, DISABLE28) in _items(h.Host(lambda b: ep.handle(b, VENDOR)))
     assert r.require() is r.hst and r.lost is None                # reconnected: the settings put back first
-    assert ("disable", 28) not in _items(r.hst) and config.ProbeConfig(r.hst).state().storage == "none"
+    assert (CORE, DISABLE28) not in _items(r.hst) and ep.saved == {}
     assert not r.settings_left and not any("SETTINGS LEFT" in line for line in r.summary())

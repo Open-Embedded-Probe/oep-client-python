@@ -90,12 +90,12 @@ def test_small_multiroute_bound_is_proven():
 
 def test_fixture_common_declarations():
     from oep_client.conformance_interfaces import InterfaceChecks
-    _,c=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==137
+    _,c=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==129
 
 
 def test_fixture_registered_ops():
     from oep_client.conformance_registered_ops import RegisteredOpsChecks
-    model,c=setup();r=RegisteredOpsChecks(c,model.selection).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==18
+    model,c=setup();r=RegisteredOpsChecks(c,model.selection).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==17
 
 
 @pytest.mark.parametrize('invalid',['minimum','selection','revision','tag'])

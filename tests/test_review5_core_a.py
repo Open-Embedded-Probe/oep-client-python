@@ -16,7 +16,7 @@ import types
 
 import pytest
 
-from oep_client import catalog, config, conformance, console, core, dump, fixture, host as h, link, pins, riscv
+from oep_client import catalog, conformance, settings, console, core, dump, fixture, host as h, link, pins, riscv
 from oep_client import message as m, registry as reg
 from oep_client.conformance_serial import SerialWire, frame as serial_frame
 from oep_client.conformance_tcp import TcpWire
@@ -47,17 +47,16 @@ u32 = lambda v: struct.pack("<I", v)   # noqa: E731
 # ---- core §2.2: bit 7 in an answer's TLV is an unknown tag -------------------------------------------------------
 
 def test_describe_readers_take_a_tag_with_bit_7_for_an_unknown_one():
-    cfg_tags = reg.PROBE_CONFIG.tlv["describe"]
     gpio_modes = reg.FIXTURE_GPIO.tlv["describe"]["modes"]
     i2c_depth = reg.FIXTURE_I2C_TARGET.tlv["describe"]["queue_depth"]
+    text = reg.CORE.enum["setting_form"]["text"]
+    cat = settings.Catalog([(settings.SETTING | CRIT, bytes([text, 0, 0, 0, 32, 0]) + b"label")], [])
+    assert cat.items[0] == []                                                 # a setting with bit 7: an unknown tag
     hst = a_host({
-        3: [(cfg_tags["storage"] | CRIT, u32(512)), (cfg_tags["setting"] | CRIT, b"\x00\x01\x00\x00\x00label")],
         4: [(gpio_modes | CRIT, u32(0x07))],
         5: [(i2c_depth | CRIT, b"\x04")],
         6: [(catalog.MAX_CLOCK_HZ | CRIT, u32(4_000_000))],
     })
-    d = client(config.ProbeConfig, hst, 3).describe()
-    assert d.storage_bytes == 0 and d.settings == []
     assert client(fixture.Gpio, hst, 4).modes() == 0xFF
     assert client(fixture.I2cTarget, hst, 5).queue_depth is None
     assert client(riscv.Wire, hst, 6)._speed_or_default(None) == riscv.WireBase.DEFAULT_MAX_SPEED
@@ -87,15 +86,16 @@ def test_a_connections_selected_target_with_bit_7_is_not_used():
 # ---- core §2.3: the first copy, of its defined length --------------------------------------------------------------
 
 def test_describe_readers_use_the_first_copy_and_never_a_later_one_for_a_broken_first():
-    cfg_tags = reg.PROBE_CONFIG.tlv["describe"]
     gpio_modes = reg.FIXTURE_GPIO.tlv["describe"]["modes"]
+    text = reg.CORE.enum["setting_form"]["text"]
+    cat = settings.Catalog([(settings.SETTING, bytes([text, 0, 0, 0, 32, 0]) + b"label"),
+                            (settings.SETTING, bytes([text, 0, 0]))], [])   # a second one too short: not a setting
+    assert [it.name for it in cat.items[0]] == ["label"]
     stretch = reg.FIXTURE_I2C_TARGET.tlv["describe"]["max_stretch_us"]
     mech = reg.TARGET_CONSOLE.tlv["describe"]["mechanism"]
     restart = reg.PROBE_RESTART.tlv["describe"]["restart_max_ms"]
     roles = reg.PROBE_PLAN.tlv["describe"]["plan_roles"]
     hst = a_host({
-        3: [(cfg_tags["storage"], u32(512)), (cfg_tags["storage"], u32(1024)),
-            (cfg_tags["setting"], b"\x00\x40\x00\x00\x00label"), (cfg_tags["setting"], b"\x00\x40\x00")],   # a second one too short: not a setting
         4: [(gpio_modes, b"\x07\x00\x00"), (gpio_modes, u32(0x07))],          # broken first copy (3 bytes)
         5: [(stretch, b"\x10\x00\x00\x00\x00"), (stretch, u32(100))],         # broken first copy (5 bytes)
         6: [(catalog.MAX_CLOCK_HZ, b"\x01\x02\x03"), (catalog.MAX_CLOCK_HZ, u32(4_000_000)),
@@ -104,8 +104,6 @@ def test_describe_readers_use_the_first_copy_and_never_a_later_one_for_a_broken_
         8: [(restart, b"\x10\x27"), (restart, u32(5000))],
         9: [(roles, b"\x08"), (roles, u32(8))],
     }, {core.RESTART_NAME: 8, core.PLAN_NAME: 9})
-    d = client(config.ProbeConfig, hst, 3).describe()
-    assert d.storage_bytes == 512 and [x.name for x in d.settings] == ["label"]   # the first storage; the setting list
     assert client(fixture.Gpio, hst, 4).modes() == 0xFF
     assert client(fixture.I2cTarget, hst, 5).max_stretch_us is None
     assert client(riscv.Wire, hst, 6)._speed_or_default(None) == riscv.WireBase.DEFAULT_MAX_SPEED

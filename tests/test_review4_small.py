@@ -73,23 +73,6 @@ def h_call(hst, fn, op, payload):
 
 # ---- probe-config §1: label = "text（1〜32byte、coreのtext）"; core §2.1: text is UTF-8, the host replaces C0 / 0x7F ----
 
-def test_the_config_model_takes_a_label_with_control_characters():
-    """A label is core text: UTF-8 bytes, control characters included (core §2.1 has the host replace them when it shows
-    one). The checker's config model refused a label with a C0 byte or 0x7F as malformed; invalid UTF-8 stays malformed."""
-    from oep_client.virtual_config_model import ConfigModel, LABEL
-    from oep_client.virtual_core import Reject
-    e = ConfigModel().extension
-    assert e.form(LABEL, b"\x04\x00a\x01b\x7f") == 4
-    try:
-        e.form(LABEL, b"\x04\x00\xff")
-    except Reject as r:
-        assert r.reason == m.MALFORMED
-    else:
-        raise AssertionError("invalid UTF-8 taken")
-
-
-# ---- the checkers' models: plan_release §2.2 (unknown fn), plan_apply §2.4 (no malformed for a role / pin set) -----------
-
 def _models():
     from oep_client.virtual_analog_model import AnalogModel
     from oep_client.virtual_capture_group_model import CaptureGroupModel

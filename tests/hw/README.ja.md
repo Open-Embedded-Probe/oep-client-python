@@ -49,8 +49,8 @@ OEP_HW_BOARDS=virtual-esp32-v003 uv run pytest tests/hw -m hw
 | `flash` | image が入る（esptool / DFU / picotool）。45 秒以内に起動して confirm に答える | 焼く前と後の firmware（describe）、焼いたコマンド、秒数、最後の数行 |
 | `identity` | confirm の revision ≥ 1。list に fn 0 の項目が無い（本体は名前を持たない、core §7.2）。clock（core §7.7）の boot_id が confirm と同じ。describe の model が表のとおり。焼いたことで boot_id が変わった。firmware の文字列が焼いた版（ローカルのビルドは `library.properties`、リリースはその版）に等しい | boot_id、firmware、model、unit_id、chip、limits、interface の一覧、clock の uptime_ns と 4 回のうち最短の往復 |
 | `required` | どのプローブも出すべきもののうち、ロックなしで確かめられるもの（core §1.2、§7.1、§7.5。oep-spec `docs/conformance.md` 1 節）。`oep dump` が MISSING として出す一覧と同じ：confirm の transport TLV（fn 0 の describe の transport のどれか、または 0xFF を指す）、fn 0 の describe の unit_id、transport、max_op_ms。欠けたものを名指しして失敗する | 一覧（欠けがなければ空） |
-| `config` | `oep.probe.config`: label（表の `label` のチャネル、無ければ gpio の 1 本目）と `disable`（`OEP_HW_DISABLE`）を set → get に出て、get の generation が set の generation に等しく、前の generation とは違う（probe.config §2）。disable したチャネルへの plan は拒否（unavailable / PinsTaken）。save の前は `needs_save`、save → state が `applied` でその generation、その後は `needs_save` でない。**再起動**（probe が `oep.probe.restart` を出していればそれで。USB の probe では `OEP_HW_RESTART=1` のときだけ。無ければ bridge の classic ESP32 を RTS から EN。どちらも無ければ飛ばす）→ 保存した項目が名前で読み戻され、起動時に適用されている（`same_items`）。両方 unset → 項目が試験前のものと同じ。save。probe にあったほかの設定はそのまま残す。何が失敗しても、項目と保存は元に戻す | 各段階の generation、再起動のやり方、前後の boot_id と秒数 |
-| `network` | `oep.probe.config` の network（describe に netif があるとき。probe.config §1.3〜§1.5、§2）: 様子を記録する。`OEP_WIFI_SSID_<n>` / `OEP_WIFI_PASS_<n>`（n は entry）があれば: wifi の項目を set して save する - ベンチの設定なので probe に**残す** -。probe の entry と ssid が同じで passphrase が無ければ送らない（passphrase は書くだけで比べられない）。`OEP_HW_WIFI_WAIT_S`（30 秒）のうちに wifi の netif が up でアドレス付きになる | netif の一覧、tcp_port、前の様子、送った / 同じだった entry、state、reason、entry、rssi、アドレスが来たか、秒数。ssid、passphrase、アドレスは記録しない |
+| `config` | core の設定（core §13）: `channel.<ピン>.label`（表の `label` のチャネル、無ければ gpio の 1 本目）と `channel.<ピン>.disable`（`OEP_HW_DISABLE`）を set → get に利用者の値として出て、get の generation が set の generation に等しく、前の generation とは違う。書き出し（設定のファイル）に両方が入る。disable したチャネルへの plan は拒否（unavailable / PinsTaken）。save の前は `needs_save`、save → state が `applied` でその generation、その後は `needs_save` でない。**再起動**（probe が `oep.probe.restart` を出していればそれで。USB の probe では `OEP_HW_RESTART=1` のときだけ。無ければ bridge の classic ESP32 を RTS から EN。どちらも無ければ飛ばす）→ 保存した値が名前で読み戻され、起動時に適用されている（書き出しが同じ）。両方 unset → 書き出したファイルを入れ直す（両方戻る）→ もう一度両方 unset。save。probe にあったほかの設定はそのまま残す。何が失敗しても、値と保存は元に戻す | 各段階の generation、再起動のやり方、前後の boot_id と秒数 |
+| `network` | fn 0 の network（probe が持つとき。transports §7）: 様子を記録する。`OEP_WIFI_SSID_<n>` / `OEP_WIFI_PASS_<n>`（n は entry）があれば: `wifi.<n>.ssid` / `wifi.<n>.passphrase` を set して save する - ベンチの設定なので probe に**残す** -。probe の entry と ssid が同じで passphrase が無ければ送らない（secret で比べられない）。`OEP_HW_WIFI_WAIT_S`（30 秒）のうちに wifi の netif が up でアドレス付きになる | netif の一覧、tcp_port、前の様子、送った / 同じだった entry、state、reason、entry、rssi、アドレスが来たか、秒数。ssid、passphrase、アドレスは記録しない |
 | `wire` | `OEP_HW_TARGET=<name>[@swdio[,swclk]]` のときだけ: scan（名指しの組か全部）、`OEP_HW_RESET=<channel>` なら reset TLV 付きで attach、そのあと 50 回（`OEP_HW_LOOPS`）halt → dmi で s0 / s1 / a0 / a1 → read_block（`OEP_HW_TARGET_ADDR`、既定 0x20000000 から 8 語）→ 同じ 4 本をもう一度、変わっていない → resume | scan の結果、connection、DMSTATUS、速さ、target_id、dpc、回数と秒数、変わったレジスタ: 前、後、読み直し、block の直後の 2 語、dpc（失敗のメッセージにすべての変化を省かずに出す）。op が例外を出したとき: その回、例外、2 回読んだ DMSTATUS と DMCONTROL（生の dmi）、止まっていれば dpc |
 | `gpio` | 表の空き 2 チャネル（`OEP_HW_GPIO=a,b`）で `oep.fixture.gpio`: output_high を読むと 1、output_low は 0、input_pullup は 1、input_pulldown は 0。表がその board に空きを与えていなければ skip | 読んだ値すべて |
 | `uart` | 表の RX / TX（`OEP_HW_UART=rx,tx`）で、または probe の設定にその plan があるときや表がその board に組を与えていないときはその plan のピンで（どちらも無ければ skip）`oep.fixture.uart`: configure 115200 8N1 が 5 % 以内、status がいま効いている baud と形式（configure の実際の速さ、8N1）を出す、configure 9600。`OEP_HW_UART_LOOP=rx,tx`（2 本を結線）なら write したものが read で戻る | 実際の速さ、status、ループバックのバイト数 |
@@ -84,9 +84,9 @@ restart_max_ms（RP2350 では 2.0 s）より長く掛かりうる。`OEP_HW_REO
 
 | 場所 | 変えるもの | 戻し方 |
 |---|---|---|
-| `wifi` | `OEP_WIFI_*` からの `wifi` の項目（set と save） | 戻さない: ベンチの設定（消すなら `oep config wifi-unset`） |
-| `config` | `label` と `disable` の項目（set）、保存（2 回 save） | 試験が両方 unset して save する。そのうえで `finally` が `Run.restore_settings` を呼ぶ: 項目は取り除くか、走る前の値に set し直し、保存はもう一度 save する（走る前に何も保存されていなければ erase） |
-| `capture`（logic。probe が capture の pin に gpio を重ねるのを断るとき） | 2 本のチャネルの `idle` 項目（set、保存しない） | `_Pull.release` が unset し、その `finally` で `restore_settings` |
+| `wifi` | `OEP_WIFI_*` からの `wifi.<n>.*` の値（set と save） | 戻さない: ベンチの設定（消すなら `oep settings unset <probe> core wifi.<n>.ssid wifi.<n>.passphrase --save`） |
+| `config` | `channel.<ピン>.label` と `.disable`（set）、保存（2 回 save） | 試験が両方 unset して save する。そのうえで `finally` が `Run.restore_settings` を呼ぶ: 値は unset するか、走る前の値に set し直し、保存はもう一度 save する（走る前に何も保存されていなければ全部 unset して save） |
+| `capture`（logic。probe が capture の pin に gpio を重ねるのを断るとき） | 2 本のチャネルの `channel.<ピン>.idle`（set、保存しない） | `_Pull.release` が unset し、その `finally` で `restore_settings` |
 | `gpio`、`uart`、`capture*`、`i2c_target`、`spi_target` | plan（oep.probe.plan）、セッションの状態 | それぞれの `finally` で `plan_release`。plan はセッションのものなので、失敗で残ったものも走り終わりのセッションの終わりで解放される |
 | `wire`、`console` | connection、console のストリーム | `finally` で detach（と close）。これもセッションのもの |
 | `capture_group` | group の track の bind | `finally` で `bind([])`。これもセッションのもの |
@@ -97,14 +97,14 @@ restart_max_ms（RP2350 では 2.0 s）より長く掛かりうる。`OEP_HW_REO
 probe にセッションを残す（経路が閉じてもセッションは終わらない、transports §3）が、次の実行の最初の open がそれを終え、30 s の lease
 が切れるのを待たない。
 
-設定の slot、bind、uart、plan の項目にはどの試験も触れない: bench が持たせているものは変えない。probe が無くなったときは、
+自分の label と disable のほかの設定にはどの試験も触れない: bench が持たせているものは変えない。probe が無くなったときは、
 `restore_settings` が開き直し（`OEP_HW_REOPEN_S`、少なくとも 5 s 待ち、無くなったセッションの lease を 35 s まで待つ）、
 走り終わりの後始末でもう 1 度試す。それでも戻せなかったものは結果のファイル（`_settings.left_on_probe`）に書き、まとめに
 **SETTINGS LEFT ON THE PROBE** として、probe が戻ってから打つコマンドと一緒に出す。例:
 
 ```sh
-oep config remove <probe> disable 28
-oep config save <probe>        # 走る前に何も保存されていなければ `oep config erase <probe>`
+oep settings unset <probe> core channel.GPIO28.disable
+oep settings save <probe>      # 走る前に何も保存されていなければ `oep settings unset --all <probe> --save`
 ```
 
 ## 対象と更新経路
@@ -125,7 +125,7 @@ TCP は `OEP_HW_BOARDS=tcp:<unit_id>` または `tcp://<host>:<port>` を明示�
 | 変数 | 意味 |
 |---|---|
 | `OEP_HW_BOARDS` | ボード id のコンマ区切り（必須。無ければ何も回らない）。`tcp:<unit_id>` / `tcp://<host>[:<port>]` は表に無い TCP の probe |
-| `OEP_WIFI_SSID_<n>`、`OEP_WIFI_PASS_<n>` | `wifi` の試験が使うベンチの Wi-Fi（n は entry の index。PASS が無ければ開いたネットワーク）。環境変数から読み、表示せず、`(set)` とだけ記録する。`oep config wifi <probe> --from-env` も同じ変数を読む |
+| `OEP_WIFI_SSID_<n>`、`OEP_WIFI_PASS_<n>` | `wifi` の試験が使うベンチの Wi-Fi（n は entry の index。PASS が無ければ開いたネットワーク）。環境変数から読み、表示せず、`(set)` とだけ記録する。手で入れるなら `oep settings set <probe> core wifi.<n>.ssid=... wifi.<n>.passphrase=...`（passphrase は表示されない） |
 | `OEP_HW_WIFI_WAIT_S` | `wifi` の試験がつながりを待つ秒数（既定 30） |
 | `OEP_HW_ATOM_TCP` | `esp32-pico-d4-50029191fe34-tcp` の TCP の行き先（既定 `tcp:50029191fe34`、DNS-SD） |
 | `OEP_PROBE_DIR` / `OEP_PROBE_VERSION` / `OEP_HW_NOFLASH` | firmware の出所（どれか 1 つ） |

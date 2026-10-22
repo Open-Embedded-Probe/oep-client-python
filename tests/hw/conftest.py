@@ -9,8 +9,6 @@ import sys
 
 import pytest
 
-from oep_client import config
-
 from . import boards, record
 
 _RUNS: list[record.Run] = []

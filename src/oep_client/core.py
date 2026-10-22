@@ -21,7 +21,6 @@ TAG_PLAN_ROLES = reg.PROBE_PLAN.tlv["describe"]["plan_roles"]
 RESTART_NAME = reg.PROBE_RESTART.name
 OP_RESTART = reg.PROBE_RESTART.op["restart"]
 TAG_RESTART_MAX_MS = reg.PROBE_RESTART.tlv["describe"]["restart_max_ms"]
-CORE_LABEL = reg.CORE.tlv["describe"]["label"]
 CORE_TRANSPORT = reg.CORE.tlv["describe"]["transport"]
 CORE_MAX_OP_MS = reg.CORE.tlv["describe"]["max_op_ms"]
 CORE_UNIT_ID = reg.CORE.tlv["describe"]["unit_id"]
@@ -172,16 +171,19 @@ def require(hst: h.Host, fn: int, op: int) -> None:
 
 
 def firmware_labels(hst: h.Host) -> list[tuple[int, str]]:
-    """The firmware's fixed channel labels from fn 0's describe (tag 0x46) as (channel, text), in describe order -
-    every one, two channels with the same text included (probe.config §1.3 step (c) finds none then). Text shown as
-    core §2.1 says (`m.shown`)."""
-    return [(struct.unpack_from("<H", value)[0], m.shown(value[2:]))
-            for tag, value in describe(hst) if tag == CORE_LABEL and len(value) >= 2]
+    """The labels the firmware fixes (channel.{}.label of origin fixed, core §13.4) as (channel, text), in get's order.
+    A probe without the settings: none."""
+    from . import settings
+    if not offers(hst, 0, settings.OP["get"]):
+        return []
+    st = settings.Settings(hst)
+    cat = st.catalog()
+    return [(v.key, m.shown(v.data)) for v in st.get()[1] if v.fn == 0 and v.origin == "fixed"
+            and (cat.item(0, v.number) or settings.Item(0, 0, "", "", "", 0, 0, 0)).name == settings.LABEL]
 
 
 def probe_labels(hst: h.Host) -> dict[str, int]:
-    """The firmware's fixed channel labels from fn 0's describe (tag 0x46): {"NRST": 23, ...}. Labels the
-    settings gave are read from oep.probe.config (config.ProbeConfig.items(), Label)."""
+    """The firmware's fixed channel labels: {"NRST": 23, ...}."""
     return {text: ch for ch, text in firmware_labels(hst)}
 
 
@@ -279,7 +281,7 @@ def plan_apply(hst: h.Host, assignments: list[tuple[int, int, int]]) -> None:
 
 class PinsTaken(h.Rejected):
     """plan_apply refused (unavailable) and the probe's settings say why: a channel the settings disable
-    (oep.probe.config; it keeps no plan, oep-if-plan: the plan is the session's). `holders`: (channel, what holds it)."""
+    (channel.{}.disable, core §13.8). `holders`: (channel, what holds it)."""
 
     def __init__(self, result, holders: list[tuple[int, str]]):
         super().__init__(result)
@@ -287,23 +289,27 @@ class PinsTaken(h.Rejected):
 
     def __str__(self) -> str:
         return "pins taken: " + "; ".join(f"channel {ch} by {who}" for ch, who in self.holders) + \
-            " (oep config show)"
+            " (oep settings show)"
 
 
 def _pin_holders(hst: h.Host, assignments: list[tuple[int, int, int]]) -> list[tuple[int, str]]:
-    """What the settings keep on the channels asked for (best effort: an empty list when there is no oep.probe.config
-    or it cannot be read)."""
-    from . import config
+    """What the settings keep on the channels asked for (best effort: an empty list when the probe has no settings or
+    they cannot be read)."""
+    from . import settings
     try:
-        items = config.ProbeConfig(hst).items()
+        if not offers(hst, 0, settings.OP["get"]):
+            return []
+        st = settings.Settings(hst)
+        cat = st.catalog()
+        disabled = {v.key for v in st.get()[1] if v.fn == 0 and v.data == b"\x01"
+                    and (cat.item(0, v.number) or settings.Item(0, 0, "", "", "", 0, 0, 0)).name == "channel.{}.disable"}
     except (LookupError, h.OepError):
         return []
-    fns = {fn for fn, _, _ in assignments}
     out = []
     for fn, role, ch in assignments:
-        for it in items:
-            if isinstance(it, config.Disable) and it.channel == ch:
-                out.append((ch, "the settings (disabled; oep config remove <probe> disable <channel> enables it)"))
+        if ch in disabled:
+            name = cat.channel.get(ch, str(ch))
+            out.append((ch, f"the settings (disabled; oep settings unset <probe> core channel.{name}.disable enables it)"))
     return out
 
 

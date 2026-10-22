@@ -11,8 +11,6 @@ def encode(interface, operation, fixed, fields):
         critical = {16}
     elif (interface, operation) == ('oep.fixture.uart', 'configure'):
         critical = {1}
-    elif (interface, operation) == ('oep.probe.config', 'set'):
-        critical = set()  # setting-data items: bit 7 is always 0 (config §1)
     elif interface == 'core' and operation == 'open' or interface in ('oep.fixture.logic', 'oep.fixture.analog') \
             and operation in ('configure', 'query'):
         critical = set()

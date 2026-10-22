@@ -1,11 +1,12 @@
-"""The oep command: what a probe offers (dump) and its settings (config).
+"""The oep command: what a probe offers (dump) and its settings (settings, core §13).
 
   oep dump --port /run/board-identify/by-id/<probe>        oep dump --virtual p4-x035 --prefix oep.target --json
-  oep config show <probe>                 (the settings and what the probe declares; lock-free)
-  oep config state <probe>                (the storage state; lock-free)
-  oep config label <probe> 23 nrst         oep config idle <probe> 20 pull-up
-  oep config disable <probe> 3 4           (channels the probe never drives or sets up; remove disable CH re-enables)
-  oep config remove <probe> idle 20       oep config save <probe>        oep config erase <probe>
+  oep settings show <probe>               (every value with its origin, the storage state; lock-free)
+  oep settings items <probe>              (what each owner declares: names, forms, choices)
+  oep settings set <probe> core channel.GPIO23.label=nrst channel.GPIO20.idle=pull-up [--save]
+  oep settings unset <probe> core channel.GPIO20.idle     oep settings unset --all <probe> --save   (empties the storage)
+  oep settings save <probe>     oep settings state <probe>     oep settings network <probe>
+  oep settings export <probe> jig.oep-settings.json       oep settings import <probe> jig.oep-settings.json [--save]
   oep find [--timeout 2] [--json] [--no-verify]   (probes announcing _oep._tcp by DNS-SD over mDNS: unit_id, host,
                                            port, IP; each verified first by confirm + describe's unit_id, host guide
                                            §4.1 - one that fails is dropped with a warning)
@@ -20,7 +21,7 @@
   oep restart <probe> [--reopen-s S]      (oep.probe.restart: the probe restarts; waits until it is back, its new boot_id)
 
 <probe>: a serial port, tcp://HOST[:PORT] (no port: the one DNS-SD finds), tcp:UNIT_ID (found by DNS-SD) or
-usb[:VID:PID[:SERIAL]]. A change takes the lock (owner "oep config") and
+usb[:VID:PID[:SERIAL]]. A change takes the lock (owner "oep settings") and
 ends the session after it; it takes effect at once, and stays over a restart only after `save` (or --save).
 """
 
@@ -29,12 +30,10 @@ from __future__ import annotations
 import argparse
 import sys
 
-import getpass
 import json
 import os
-import struct
 
-from . import catalog, config, core, dump, virtual_bench, host, link
+from . import catalog, core, dump, settings, virtual_bench, host, link
 
 USB_HINT = ("install the usb / hid extras (pip install 'oep-client-python[usb-async,hid]') so every way in to the USB "
             "device can be tried, or name the probe's port (a serial port such as /dev/ttyACM0 or COM3, tcp://HOST:PORT)")
@@ -56,7 +55,7 @@ def _open_host(target: str, **kw):
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="oep", description="Open Embedded Probe: what a probe offers, its settings")
     sub = parser.add_subparsers(dest="command", required=True)
-    _config_parser(sub)
+    _settings_parser(sub)
     sp = sub.add_parser("speed", help="port_speed (oep-if-link §3; this client's procedure): try faster rates on a UART bridge, "
                         "print the report")
     sp.add_argument("probe", help="the probe's serial port (a UART bridge this host opens)")
@@ -104,7 +103,7 @@ def main(argv=None) -> int:
     pn.add_argument("--wire", choices=("swio", "rvswd", "swd"), default="swio")
     pn.add_argument("--steps", default="classify,hold,scan,identify,reset,labels",
                     help="the steps to run, comma-separated (default all: classify, hold, scan, identify, reset, labels)")
-    pn.add_argument("--save", action="store_true", help="write the suggested labels (config set, then save)")
+    pn.add_argument("--save", action="store_true", help="write the suggested labels (settings set, then save)")
     pn.add_argument("--name", help="the host's connection profile name: labels <name>.nrst / <name>.power_hi (a probe "
                     "serving several targets; default: nrst / power_hi)")
     pn.add_argument("--json", action="store_true", help="the report as JSON (the steps' lines go to stderr)")
@@ -136,8 +135,8 @@ def main(argv=None) -> int:
     d.add_argument("--exact", action="store_true", help="the prefix is a whole name")
     d.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args(argv)
-    if args.command == "config":
-        return _config(args)
+    if args.command == "settings":
+        return _settings(args)
     if args.command == "speed":
         return _speed(args)
     if args.command == "linktest":
@@ -331,172 +330,114 @@ def _speed(args) -> int:
     return 0 if report.supported else 2
 
 
-# ---- oep config ----------------------------------------------------------------------------------------------------
+# ---- oep settings ---------------------------------------------------------------------------------------------------
 
-def _config_parser(sub) -> None:
-    c = sub.add_parser("config", help="the probe's settings (oep.probe.config): labels, idle, disable, pass-throughs, "
-                                      "Wi-Fi / IPv4, its own settings, save")
+def _settings_parser(sub) -> None:
+    c = sub.add_parser("settings", help="the probe's settings (core §13): show, set / unset by name, save, export / "
+                                        "import a settings file, the network")
     cs = c.add_subparsers(dest="action", required=True)
-    show = cs.add_parser("show", help="the settings, what the probe declares, and the storage state")
+    show = cs.add_parser("show", help="every value (category, name, value, origin) and the storage state (lock-free)")
     show.add_argument("probe")
     show.add_argument("--json", action="store_true")
-    state = cs.add_parser("state", help="the storage state (op state, lock-free)")
+    items = cs.add_parser("items", help="what the probe declares: each category's items, forms and choices")
+    items.add_argument("probe")
+    items.add_argument("--json", action="store_true")
+    st = cs.add_parser("set", help="values by name in one category: NAME=VALUE ... (core channel.GPIO2.label=nrst)")
+    st.add_argument("probe")
+    st.add_argument("category", help="core, or an interface's name/instance (oep.fixture.uart/0)")
+    st.add_argument("values", nargs="+", metavar="NAME=VALUE")
+    st.add_argument("--save", action="store_true")
+    un = cs.add_parser("unset", help="values by name back to their default (or none)")
+    un.add_argument("probe")
+    un.add_argument("category", nargs="?")
+    un.add_argument("names", nargs="*")
+    un.add_argument("--all", action="store_true", help="every value the user set (then --save empties the storage)")
+    un.add_argument("--save", action="store_true")
+    cs.add_parser("save", help="save the values now in effect").add_argument("probe")
+    state = cs.add_parser("state", help="the storage state (lock-free)")
     state.add_argument("probe")
     state.add_argument("--json", action="store_true")
-    label = cs.add_parser("label", help="name a channel (a setting, read with config show)")
-    label.add_argument("probe")
-    label.add_argument("channel", type=int)
-    label.add_argument("text")
-    label.add_argument("--save", action="store_true")
-    idle = cs.add_parser("idle", help="the state of a free pin")
-    idle.add_argument("probe")
-    idle.add_argument("channel", type=int)
-    idle.add_argument("mode", choices=sorted(config.IDLE))
-    idle.add_argument("--save", action="store_true")
-    rest = cs.add_parser("rvswd-rest", help="how rvswd rests a port's SWCLK: auto (the probe decides from the target_id), "
-                                            "or high / low fixed (the automatic choice off; debug §3.1)")
-    rest.add_argument("probe")
-    rest.add_argument("channel", type=int, help="the port's SWCLK channel")
-    rest.add_argument("mode", choices=sorted(config.REST_MODE))
-    rest.add_argument("--save", action="store_true")
-    hold = cs.add_parser("wire-hold", help="whether a debug wire's lines stay held at their rest after a close "
-                                           "(on, the default) or go free at once (off; debug §2)")
-    hold.add_argument("probe")
-    hold.add_argument("channel", type=int, help="the port's SWDIO channel")
-    hold.add_argument("mode", choices=sorted(config.HOLD_MODE))
-    hold.add_argument("--save", action="store_true")
-    dis = cs.add_parser("disable", help="channels the probe never drives or sets up (not on this board)")
-    dis.add_argument("probe")
-    dis.add_argument("channels", type=int, nargs="+")
-    dis.add_argument("--save", action="store_true")
-    rm = cs.add_parser("remove", help="remove one item (unset): label CH, idle CH, disable CH")
-    rm.add_argument("probe")
-    rm.add_argument("kind", help="the item's name: label, idle, disable, passthrough, wifi, ... or a probe's own")
-    rm.add_argument("channel", type=int)
-    rm.add_argument("--save", action="store_true")
-    wifi = cs.add_parser("wifi", help="a Wi-Fi network the probe tries, by entry (the passphrase asked, never shown)")
-    wifi.add_argument("probe")
-    wifi.add_argument("entry", type=int)
-    wifi.add_argument("ssid")
-    pw = wifi.add_mutually_exclusive_group()
-    pw.add_argument("--open", action="store_true", help="a network without a passphrase")
-    pw.add_argument("--keep", action="store_true", help="keep the entry's passphrase (pass_len 0xFF)")
-    pw.add_argument("--passphrase-env", metavar="VAR", help="take the passphrase from this environment variable")
-    wifi.add_argument("--save", action="store_true")
-    ip = cs.add_parser("ipv4", help="how a netif gets its IPv4 address: dhcp, or a.b.c.d/prefix")
-    ip.add_argument("probe")
-    ip.add_argument("address", help="dhcp, or a.b.c.d/prefix")
-    ip.add_argument("--netif", default="wifi", help="the netif's name (describe's netif list; default wifi)")
-    ip.add_argument("--gateway")
-    ip.add_argument("--dns")
-    ip.add_argument("--save", action="store_true")
     net = cs.add_parser("network", help="the network now: the TCP port, each netif's state and address (lock-free)")
     net.add_argument("probe")
     net.add_argument("--json", action="store_true")
-    pt = cs.add_parser("passthrough", help="a serial port carries a fixture UART's receive outside the OEP frames")
-    pt.add_argument("probe")
-    pt.add_argument("port", type=int, help="fn 0's transport index of a serial port")
-    pt.add_argument("uart", help="the fixture UART: fn number or name#instance")
-    pt.add_argument("rx", type=int, help="the RX channel")
-    pt.add_argument("--baud", type=int, default=115200)
-    pt.add_argument("--format", type=int, default=0)
-    pt.add_argument("--save", action="store_true")
-    cp = cs.add_parser("console-passthrough", help="a serial port carries the target's debug console outside the frames")
-    cp.add_argument("probe")
-    cp.add_argument("port", type=int, help="fn 0's transport index of a serial port")
-    cp.add_argument("wire", help="the wire: fn number or name#instance (oep.wire.rvswd / oep.wire.swio)")
-    cp.add_argument("swdio", type=int)
-    cp.add_argument("swclk", type=int, nargs="?", default=0xFFFF)
-    cp.add_argument("--console", required=True, help="the console: fn number or name#instance")
-    cp.add_argument("--mechanism", required=True, help="the console's mechanism by name (sdi, dmdata, dmseq, ...)")
-    cp.add_argument("--max-speed", type=int, default=1_000_000)
-    cp.add_argument("--save", action="store_true")
-    own = cs.add_parser("set", help="a probe's own setting by its name (reverse-DNS), its form from describe")
-    own.add_argument("probe")
-    own.add_argument("name")
-    own.add_argument("value", help="text, a number (u32), 0 / 1 (bool), a.b.c.d (ipv4) or hex (bytes)")
-    own.add_argument("--key", type=int, default=0)
-    own.add_argument("--save", action="store_true")
-    for name in ("save", "erase"):
-        cs.add_parser(name, help=f"{name} the stored settings").add_argument("probe")
+    ex = cs.add_parser("export", help="write the user's values to a settings file (JSON; secrets left out)")
+    ex.add_argument("probe")
+    ex.add_argument("file", help="the file to write, - for stdout")
+    im = cs.add_parser("import", help="make the probe's user values a settings file's (shows what changes first)")
+    im.add_argument("probe")
+    im.add_argument("file")
+    im.add_argument("--yes", action="store_true", help="apply without asking")
+    im.add_argument("--save", action="store_true")
+    im.add_argument("--secret-env", action="append", default=[], metavar="CATEGORY:NAME=VAR",
+                    help="a secret the file cannot carry, from an environment variable")
 
 
-def _change(hst, cfg, items, save: bool) -> None:
-    core.take(hst, 3000, owner="oep config")
+def _change(hst, fn, save: bool) -> None:
+    core.take(hst, 3000, owner="oep settings")
     try:
-        gen = cfg.set(items)
-        print(f"set: generation {gen}")
+        gen = fn()
+        if gen is not None:
+            print(f"set: generation {gen}")
         if save:
-            if cfg.needs_save():
-                print(f"saved: generation {cfg.save()}")
+            st = settings.Settings(hst)
+            if st.needs_save():
+                print(f"saved: generation {st.save()}")
             else:
                 print("saved already (saved_generation is the current generation): not written")
     finally:
         hst.end()
 
 
-def _config(args) -> int:
+def _pairs(texts: list[str]) -> dict:
+    out = {}
+    for t in texts:
+        name, eq, value = t.partition("=")
+        if not eq:
+            raise SystemExit(f"{t!r}: NAME=VALUE")
+        out[name] = value
+    return out
+
+
+def _settings(args) -> int:
     hst = _open_host(args.probe)
     try:
-        cfg = config.ProbeConfig(hst)
+        st = settings.Settings(hst)
         if args.action == "show":
-            return _show(hst, cfg, args.json)
+            return _show(st, args.json)
+        if args.action == "items":
+            return _items(st, args.json)
         if args.action == "state":
-            return _state(cfg, args.json)
-        if args.action == "label":
-            _change(hst, cfg, [config.Label(channel=args.channel, text=args.text)], args.save)
-        elif args.action == "idle":
-            _change(hst, cfg, [config.Idle(channel=args.channel, mode=args.mode)], args.save)
-        elif args.action == "wire-hold":
-            _change(hst, cfg, [config.WireHold(channel=args.channel, mode=args.mode)], args.save)
-        elif args.action == "rvswd-rest":
-            _change(hst, cfg, [config.RvswdRest(channel=args.channel, mode=args.mode)], args.save)
-        elif args.action == "disable":
-            _change(hst, cfg, [config.Disable(channel=ch) for ch in args.channels], args.save)
-        elif args.action == "remove":
-            _change(hst, cfg, [config.remove(args.kind, args.channel)], args.save)
-        elif args.action == "wifi":
-            if args.keep:
-                passphrase = None
-            elif args.open:
-                passphrase = ""
-            elif args.passphrase_env:
-                passphrase = os.environ[args.passphrase_env]
+            return _state(st, args.json)
+        if args.action == "network":
+            return _network(st, args.json)
+        if args.action == "set":
+            values = _pairs(args.values)
+            _change(hst, lambda: st.set_named(args.category, values), args.save)
+        elif args.action == "unset":
+            if args.all:
+                _change(hst, st.unset_all, args.save)
             else:
-                passphrase = getpass.getpass(f"passphrase for {args.ssid}: ")
-            _change(hst, cfg, [config.Wifi(entry=args.entry, ssid=args.ssid, passphrase=passphrase)], args.save)
-        elif args.action == "ipv4":
-            address = None if args.address == "dhcp" else args.address
-            _change(hst, cfg, [config.Ipv4(netif=args.netif, address=address, gateway=args.gateway, dns=args.dns)],
-                    args.save)
-        elif args.action == "network":
-            return _network(cfg, args.json)
-        elif args.action == "passthrough":
-            _change(hst, cfg, [config.Passthrough(port=args.port, fn=_fn(hst, args.uart), rx=args.rx, baud=args.baud,
-                                                  format=args.format)], args.save)
-        elif args.action == "console-passthrough":
-            from . import console as _console
-            cfn = _fn(hst, args.console)
-            names = [v.decode() for t, v in core.describe(hst, cfn) if t == _console.Console.TAG_MECHANISM]
-            if args.mechanism not in names:
-                raise SystemExit(f"the console declares no mechanism {args.mechanism} ({', '.join(names)})")
-            mech = names.index(args.mechanism) + 1   # the place in describe's list, from 1 (core §7.7)
-            _change(hst, cfg, [config.ConsolePassthrough(port=args.port, wire_fn=_fn(hst, args.wire), swdio=args.swdio,
-                                                         swclk=args.swclk, max_speed=args.max_speed, console_fn=cfn,
-                                                         mechanism=mech)], args.save)
-        elif args.action == "set":
-            _change(hst, cfg, [config.Own(args.name, _own_value(cfg, args.name, args.value), args.key)], args.save)
-        else:
-            core.take(hst, 3000, owner="oep config")
-            try:
-                if args.action == "save":
-                    print(f"saved: generation {cfg.save()}")
-                else:
-                    cfg.erase()
-                    print("erased (the settings now in effect stay until the probe restarts)")
-            finally:
-                hst.end()
+                if not args.category or not args.names:
+                    raise SystemExit("unset: CATEGORY NAME ..., or --all")
+                _change(hst, lambda: st.unset_named(args.category, args.names), args.save)
+        elif args.action == "save":
+            _change(hst, lambda: None, True)
+        elif args.action == "export":
+            doc = st.export()
+            text = json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+            if args.file == "-":
+                sys.stdout.write(text)
+            else:
+                with open(args.file, "w", encoding="utf-8") as f:
+                    f.write(text)
+                n = sum(len(v) for v in doc["settings"].values())
+                print(f"wrote {n} values to {args.file}")
+        elif args.action == "import":
+            return _import(hst, st, args)
         return 0
+    except (LookupError, ValueError) as e:
+        print(f"settings: {e}", file=sys.stderr)
+        return 2
     except host.Rejected as e:
         print(f"refused: {e}", file=sys.stderr)
         return 2
@@ -504,32 +445,51 @@ def _config(args) -> int:
         hst.link.close()
 
 
-def _fn(hst, ref: str) -> int:
-    """A fn by number, or by `name#instance` (host guide §5.3; #0 may be left out) resolved through list."""
-    if ref.isdigit():
-        return int(ref)
-    name, _, instance = ref.partition("#")
-    for e in core.list_entries(hst, name, exact=True):
-        if e.instance == int(instance or 0):
-            return e.fn
-    raise SystemExit(f"no {ref} on this probe")
+def _import(hst, st, args) -> int:
+    with open(args.file, encoding="utf-8") as f:
+        doc = json.load(f)
+    plan = st.plan_import(doc)
+    cat = st.catalog()
+    secrets = {}
+    for spec in args.secret_env:
+        where, eq, var = spec.partition("=")
+        category, _, name = where.partition(":")
+        if not eq or not name:
+            raise SystemExit(f"--secret-env {spec!r}: CATEGORY:NAME=VAR")
+        secrets[(category, name)] = os.environ[var]
+    if plan.other_probe:
+        print(f"note: the file is of another probe ({doc.get('probe', {})})")
+    for category, flat in plan.unresolved:
+        print(f"  not on this probe: {category} {flat}")
+    for fn, number, key, data in plan.sets:
+        it = cat.item(fn, number)
+        print(f"  set   {cat.category[fn]} {cat.flat(it, key)} = {json.dumps(cat.to_json(it, data))}")
+    for fn, number, key in plan.unsets:
+        it = cat.item(fn, number)
+        print(f"  unset {cat.category[fn]} {cat.flat(it, key)}")
+    for category, flat in plan.secret_without_value:
+        if (category, flat) in secrets:
+            it, key = cat.resolve(category, flat)
+            plan.sets.append((it.fn, it.number, key, secrets[(category, flat)].encode()))
+            print(f"  set   {category} {flat} (secret, from the environment)")
+        else:
+            print(f"  no value on the probe for secret {category} {flat}: give it with --secret-env")
+    if not plan.sets and not plan.unsets:
+        print("nothing to change")
+        if args.save:
+            _change(hst, lambda: None, True)
+        return 0
+    if not args.yes:
+        if input("apply? [y/N] ").strip().lower() not in ("y", "yes"):
+            print("not applied")
+            return 1
+    _change(hst, lambda: st.apply_import(plan), args.save)
+    return 0
 
 
-def _own_value(cfg, name: str, text: str):
-    """A probe's own setting's value from the command line, by the form its describe declares (probe.config §1.6)."""
-    form = cfg.describe().by_name(name).form
-    if form == config.FORM["u32"]:
-        return int(text, 0)
-    if form == config.FORM["bool"]:
-        return text.lower() in ("1", "true", "on", "yes")
-    if form == config.FORM["bytes"]:
-        return bytes.fromhex(text)
-    return text
-
-
-def _network(cfg, as_json: bool) -> int:
+def _network(st, as_json: bool) -> int:
     """op network (lock-free): the TCP port and each netif's state."""
-    net = cfg.network()
+    net = st.network()
     if as_json:
         print(json.dumps({"tcp_port": net.tcp_port, "netifs": [vars(n) for n in net.netifs]}, indent=2))
         return 0
@@ -543,41 +503,47 @@ def _network(cfg, as_json: bool) -> int:
     return 0
 
 
-def _plain(o):
-    return {k: (v.hex() if isinstance(v, bytes) else v) for k, v in vars(o).items()} if hasattr(o, "__dict__") \
-        else list(o)
-
-
-def _state(cfg, as_json: bool) -> int:
+def _state(st, as_json: bool) -> int:
     """The storage state alone (op state, lock-free)."""
-    st = cfg.state()
+    s = st.state()
     if as_json:
-        print(json.dumps(vars(st), indent=2))
+        print(json.dumps(vars(s), indent=2))
         return 0
-    why = f" ({st.reason})" if st.reason else ""
-    print(f"storage: {st.storage}{why}, saved generation {st.saved_generation}")
+    why = f" ({s.reason})" if s.reason else ""
+    print(f"storage: {s.storage}{why}, saved generation {s.saved_generation}")
     return 0
 
 
-def _show(hst, cfg, as_json: bool) -> int:
-    gen, _ = cfg.get()
-    items = cfg.items()
-    decl = cfg.describe()
-    st = cfg.state() if cfg.offers(cfg.STATE) else None
+def _show(st, as_json: bool) -> int:
+    gen, _ = st.get()
+    rows = st.show()
+    state = st.state() if st.offers("state") else None
     if as_json:
-        out = {"generation": gen, "items": [dict(type=type(i).__name__, **_plain(i)) if hasattr(i, "__dict__")
-                                             else _plain(i) for i in items],
-               "declared": _plain(decl), "state": vars(st) if st else None}
-        print(json.dumps(out, indent=2, default=lambda o: o.hex() if isinstance(o, bytes) else str(o)))
+        print(json.dumps({"generation": gen, "state": vars(state) if state else None,
+                          "values": [dict(category=c, name=n, value=v, origin=o) for c, n, v, o in rows]}, indent=2))
         return 0
-    if st is not None:
-        why = f" ({st.reason})" if st.reason else ""
-        print(f"storage: {st.storage}{why} ({decl.storage_bytes} bytes), saved generation {st.saved_generation}; "
-              f"now {gen}")
+    if state is not None:
+        why = f" ({state.reason})" if state.reason else ""
+        print(f"storage: {state.storage}{why}, saved generation {state.saved_generation}; now {gen}")
     else:
         print(f"no storage; generation {gen}")
-    for it in items:
-        print(f"  {it}")
+    for c, n, v, o in rows:
+        shown = "(secret)" if isinstance(v, dict) else json.dumps(v)
+        print(f"  {c} {n} = {shown}" + ("" if o == "user" else f"   ({o})"))
+    return 0
+
+
+def _items(st, as_json: bool) -> int:
+    cat = st.catalog()
+    rows = [dict(category=cat.category[fn], number=it.number, name=it.name, form=it.form, key=it.key_kind,
+                 keys=it.keys, max_len=it.max_len, secret=it.secret, choices=sorted(it.choices.values()))
+            for fn in sorted(cat.items) for it in cat.items[fn]]
+    if as_json:
+        print(json.dumps(rows, indent=2))
+        return 0
+    for r in rows:
+        extra = f" {'|'.join(r['choices'])}" if r["choices"] else ""
+        print(f"  {r['category']} {r['name']}  {r['form']}{extra}" + ("  secret" if r["secret"] else ""))
     return 0
 
 

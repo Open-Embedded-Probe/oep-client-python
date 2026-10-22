@@ -148,7 +148,7 @@ def test_ops_encoding_as_the_host_reads_it(case):
 
 def core_probe(max_frame: int = 1024) -> virtual_bench.VirtualProbe:
     """The vectors' example probe: fn 0 alone, one UART bridge (index 0)."""
-    core = virtual_bench._core("1.0.0", "vectors", "0123456789ab", 16, {},
+    core = virtual_bench._core("1.0.0", "vectors", "0123456789ab", 16,
                                virtual_bench._transports([(virtual_bench.TRANSPORT["uart_bridge"], 0xFF)]))
     return virtual_bench.VirtualProbe("vectors", max_frame, [core])
 
@@ -349,18 +349,20 @@ def test_a_named_extension_in_a_request_on_the_virtual_bench(case, profile):
 
 
 # ---- per-op vectors (ops.json) of the interfaces that follow the current spec --------------------------------------
-from oep_client import config, console, core, fixture, riscv, virtual_bench_capture
+from oep_client import console, core, fixture, riscv, settings, virtual_bench_capture
 
 
 def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None) -> virtual_bench.VirtualProbe:
     """A virtual bench whose fn numbers are a vector's: fn 0 with one UART bridge (index 0), then each named interface
     with channels 0-15 for its roles (the wire on pins 1 / 2; gpio without drive_levels). `ops`: fn -> the ops its
     ops tag sets instead of every op of its table (core §1.2, §7.4)."""
-    core = virtual_bench._core("1.0.0", "vectors", "0123456789ab", 16, {},
+    core = virtual_bench._core("1.0.0", "vectors", "0123456789ab", 16,
                       virtual_bench._transports([(virtual_bench.TRANSPORT["uart_bridge"], 0xFF)]))
     chans = list(range(16))
     offered = [core]
     for fn, name in sorted(((int(k), v) for k, v in fns.items())):
+        if fn == 0:
+            continue                                                   # the core
         if name == "oep.fixture.gpio":
             o = virtual_bench._gpio(fn, chans)
         elif name == "oep.fixture.i2c-target":
@@ -380,8 +382,6 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None) -> v
             o = virtual_bench._plan(fn)
         elif name == "oep.probe.restart":
             o = virtual_bench._restart(fn)
-        elif name == "oep.probe.config":
-            o = vector_config(fn, 0)   # no storage: no save / erase
         elif name == "oep.fixture.logic":                              # 80 MHz / 4 = 20 MHz exact; w 2 for two channels
             o = virtual_bench.Offered(fn, 0, name, virtual_bench._roles({k: chans for k in range(4)})
                              + virtual_bench._capture_decl(["one_shot", "repeat", "streaming"], 8, 1 << 20, 8, 1, 80_000_000),
@@ -396,8 +396,10 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None) -> v
         elif name == "oep.fixture.capture-group":
             tracks = sorted(int(k) for k, v in fns.items() if v in ("oep.fixture.logic", "oep.fixture.analog"))
             o = virtual_bench.Offered(fn, 0, name, virtual_bench._group_decl(tracks))
-        elif name.startswith("io.example."):                          # an example fn: op 0x10, a lock-free read
-            o = virtual_bench.Offered(fn, 0, name, (catalog.ops_tlv({0x10}),), inner=(("reads", (0x10,)),))
+        elif name.startswith("io.example."):                          # an example fn: op 0x10, a lock-free read; the
+            o = virtual_bench.Offered(fn, 0, name, (catalog.ops_tlv({0x10}),)   # settings vectors' board: its item
+                                      + (virtual_bench.items_tlvs(VECTOR_BOARD_ITEMS) if name == VECTOR_BOARD else ()),
+                                      inner=(("reads", (0x10,)),))
         else:
             raise AssertionError(f"a vector names {name}: add it here")
         if ops and fn in ops:
@@ -410,7 +412,7 @@ def vector_probe(fns: dict, max_frame: int = 1024, ops: dict | None = None) -> v
 S = 0x11223344                                                          # ops.json about: the lock holder's id
 FOLLOWED = {"oep.probe.plan", "oep.probe.restart", "oep.probe.link", "oep.fixture.gpio", "oep.fixture.uart",
             "oep.fixture.i2c-target", "oep.fixture.spi-target", "oep.wire.rvswd",
-            "oep.target.riscv-dm", "oep.target.console", "oep.probe.config", "oep.fixture.logic",
+            "oep.target.riscv-dm", "oep.target.console", "core", "oep.fixture.logic",
             "oep.fixture.analog", "oep.fixture.capture-group"}                                       # grows with each stage
 NOT_ON_THE_BENCH = {"oep.wire.swd", "oep.target.arm-adi"}               # read by the client only (no swd on the bench)
 OPS = load("ops.json")["cases"]
@@ -445,9 +447,10 @@ def bench_for(case):
         "state", "") else 1024, ops=ops)
     no_storage = "no storage" in case.get("state", "")
     probe = virtual_bench.VirtualProbe(probe.label, probe.max_frame, [
-        vector_config(o.fn, 0 if no_storage else 4096) if o.name == "oep.probe.config" else
         virtual_bench._console(o.fn, ("sdi",) if "mechanism list [sdi]" in case.get("state", "") else ("sdi", "dmdata", "dmseq"))
         if o.name == "oep.target.console" and o.fn not in ops else o for o in probe.offered])
+    probe = virtual_bench.VirtualProbe(probe.label, probe.max_frame, virtual_bench.with_settings(   # the core's settings
+        probe.offered, storage=not no_storage, netifs=("wifi",)))
     if "port_s" in case["name"] and "not offered" not in case["name"]:   # a UART bridge probe with port_speed
         probe.offered = [virtual_bench._link(o.fn, port_speed=True) if o.name == virtual_bench.LINK else o
                          for o in probe.offered]
@@ -499,8 +502,7 @@ def plan_state(case, ep, hst):
         core.plan_apply(hst, [(9, 0, 1)])
         ep.captures[9].state = virtual_bench_capture.STATE["capturing"]
     if "channel3 idle high in volatile config" in state:                 # the settings, not a session's
-        it = config.Idle(channel=3, mode="output-high")
-        ep.load_config([(it.NAME, it.key(), it.data())], saved=False)   # by name: the probe may list no settings fn
+        ep.load_settings([(0, "channel.{}.idle", 3, bytes([endpoint.IDLE_MODE["high"]]))], saved=False)
 
 
 def restart_state(case, ep, hst):
@@ -694,26 +696,32 @@ def console_state(case, ep, hst):
         s.serial = 9
 
 
-def config_state(case, ep, hst):
-    """probe.config §1-§3's cases on fn 8, made through the client."""
+def settings_state(case, ep, hst):
+    """The settings' cases (core §13, transports §7) on fn 0, made through the client."""
     state = case["state"]
     hst.open(3000)
-    cfg = config.ProbeConfig(hst)
+    st = settings.Settings(hst)
+    core_ = settings.CORE_CATEGORY
     if "response extensions" in case["name"]:
-        ep.config_get_tail = m.tlv(0x7F, bytes([15]) + b"io.example.note" + b"x")   # a named extension after the items (core §2.2)
-    if "idle channel4 exists" in state or "one item generation2" in state or "one idle item" in state:
-        cfg.set([config.Idle(channel=4, mode="hi-z")])
-    if "disable channel4" in state:
-        cfg.set([config.Disable(channel=4)])
-    if "CRC-valid saved blob" in state:
-        ep.saved = {("disable", 5): b"", ("idle", 6): b"\x01", ("label", 99): b"gone"}   # 99: past the probe's channels
+        ep.config_get_tail = m.tlv(0x7F, bytes([15]) + b"io.example.note" + b"x")   # a named extension after the values (core §2.2)
+    if "one user idle value" in state or "one value generation2" in state or "idle channel4 exists" in state:
+        st.set_named(core_, {"channel.GPIO4.idle": "hi-z"})
+    if "disable channel4 true" in state:
+        st.set_named(core_, {"channel.GPIO4.disable": True})
+    if "label fixed NRST" in state:
+        ep.firm[(0, "channel.{}.label", 0)] = (virtual_bench.ORIGIN["fixed"], b"NRST")
+    if "complete saved settings" in state:                         # GPIO40: past this probe's channels
+        ep.saved = {("core", "channel.{}.disable", 5): b"\x01", ("core", "channel.{}.idle", 4): b"\x00",
+                    ("core", "channel.{}.label", 40): b"x"}
         ep.reboot(EXAMPLE_BOOT_ID)
         hst.session = None
         hst.open(3000)
     if "generation0xFFFFFFFF" in state:
         ep.generation = 0xFFFFFFFF
-    if "wifi entry 0 ssid lab passphrase password1" in state or "entry 0 connected" in state:
-        cfg.set([config.Wifi(entry=0, ssid="lab", passphrase="password1")])
+    if "passphrase password1" in state or "entry 0 connected" in state:
+        st.set_named(core_, {"wifi.0.ssid": "lab", "wifi.0.passphrase": "password1"})
+    elif "ssid lab" in state:
+        st.set_named(core_, {"wifi.0.ssid": "lab"})
     if "TCP listening on 4242" in state:
         ep.tcp_port = 4242
 
@@ -808,7 +816,7 @@ def capture_state(case, ep, hst):
 STATES = {"oep.probe.plan": plan_state, "oep.probe.restart": restart_state, "oep.probe.link": link_state,
           "oep.fixture.gpio": gpio_state, "oep.fixture.uart": uart_state, "oep.fixture.i2c-target": i2c_state,
           "oep.fixture.spi-target": spi_state, "oep.wire.rvswd": rvswd_state, "oep.target.riscv-dm": dm_state,
-          "oep.target.console": console_state, "oep.probe.config": config_state, "oep.fixture.logic": capture_state,
+          "oep.target.console": console_state, "core": settings_state, "oep.fixture.logic": capture_state,
           "oep.fixture.analog": capture_state, "oep.fixture.capture-group": capture_state}
 
 
@@ -927,7 +935,7 @@ def test_interface_refusals_from_the_virtual_bench(case):
     hst.open(3000)
     gpio = next((int(k) for k, v in case["fns"].items() if v == "oep.fixture.gpio"), None)
     if gpio is not None:
-        ep.load_config([], saved=False)
+        ep.load_settings([], saved=False)
         ep.plan.add((gpio, 1, 3))
     corr = m.Request.unpack(hx(case["request_hex"])).corr
     ep.newest_corr, _ = (corr - 2) % 0xFFFF + 1, ep.resend.clear()
@@ -993,18 +1001,10 @@ DEBUG_CLIENT = [c for c in OPS if c["name"].startswith((                # what t
     "riscv-dm dmi: n = 0", "riscv-dm step on", "riscv-dm run: the preparation", "riscv-dm write_block"))]
 
 
-# The vectors' probe.config lists these items in this order (oep-spec tools/oepvectors1.py) and netif [wifi]; its
-# console the standard mechanisms, sdi / dmdata / dmseq (or sdi alone when the case says so).
-VECTOR_SETTINGS = tuple(virtual_bench._setting(*a) for a in (
-    ("label", 0xFFFF), ("idle", 0xFFFF), ("disable", 0xFFFF), ("wifi", 4), ("ipv4", 2),
-    ("com.example.ntp-server", 1, config.FORM["text"], 32)))
-VECTOR_NETIFS = (catalog.tlv(reg.PROBE_CONFIG.tlv["describe"]["netif"], b"wifi"),)
-
-
-def vector_config(fn: int, storage: int):
-    return virtual_bench.Offered(fn, 0, "oep.probe.config", virtual_bench.ops_of(
-        "oep.probe.config", *(() if storage else ("save", "erase", "state"))) + (
-        (catalog.u32(reg.PROBE_CONFIG.tlv["describe"]["storage"], storage),) if storage else ()) + VECTOR_SETTINGS + VECTOR_NETIFS)
+# The settings vectors' interface with an item of its own (oep-spec tools/oepvectors1.py: fn 8 io.example.board, its
+# ntp-server); its console the standard mechanisms, sdi / dmdata / dmseq (or sdi alone when the case says so).
+VECTOR_BOARD = "io.example.board"
+VECTOR_BOARD_ITEMS = (virtual_bench.Item("ntp-server", "text", max_len=32),)
 
 
 def scripted(case):
@@ -1014,14 +1014,14 @@ def scripted(case):
     hst = h.Host(lambda b: sent.append(b) or hx(case["answer_hex"]))
     hst._corr, hst.revision, hst.session = r.corr - 1, 1, S
     name = case["fns"][str(r.fn)]
-    hst._fns[name], hst._revisions[r.fn] = r.fn, 1
-    table = reg.INTERFACES[name]
-    hst._describes[r.fn] = [(catalog.OPS, catalog.pack_ops(table.op.values())), (catalog.MAX_LENGTH, struct.pack("<H", 256))]
-    if name == "oep.probe.config":
-        hst._describes[r.fn] += [m.split_tlvs(t)[0] for t in VECTOR_SETTINGS + VECTOR_NETIFS]
+    if r.fn:
+        hst._fns[name], hst._revisions[r.fn] = r.fn, 1
+        table = reg.INTERFACES[name]
+        hst._describes[r.fn] = [(catalog.OPS, catalog.pack_ops(table.op.values())), (catalog.MAX_LENGTH, struct.pack("<H", 256))]
     if name == "oep.target.console":
         hst._describes[r.fn] += [(reg.TARGET_CONSOLE.tlv["describe"]["mechanism"], n) for n in (b"sdi", b"dmdata", b"dmseq")]
-    hst._describes[0] = [(core.CORE_MAX_OP_MS, struct.pack("<I", 1000))]
+    hst._describes[0] = [(core.CORE_MAX_OP_MS, struct.pack("<I", 1000))] + (
+        [(catalog.OPS, catalog.pack_ops(reg.CORE.op.values()))] if r.fn == 0 else [])
     hst.limits = {"max_frame": 64 if "frame64" in case["name"] else 1024}    # what confirm said (a set's size check)
     return r, hst, sent
 
@@ -1107,7 +1107,7 @@ def test_interface_profiles_as_the_host_reads_them(profile):
         assert d.broken == []                                           # every declaration its defined length (E1 fixed)
 
 
-# ---- console and probe.config: the client's requests and its reading of the answers ----------------------------------
+# ---- console and the settings: the client's requests and its reading of the answers ----------------------------------
 
 CONSOLE_CLIENT = [c for c in OPS if c["name"].startswith(("console open", "console marks: one", "console marks: from_serial",
                                                           "console streams: one", "console streams: resource",
@@ -1140,44 +1140,46 @@ def test_console_vectors_as_the_client_sends_and_reads_them(case):
     assert sent[-1] == hx(case["request_hex"])
 
 
-CONFIG_CLIENT = [c for c in OPS if c["name"].startswith((
-    "probe.config state: no saved", "probe.config state: independent", "probe.config get:", "probe.config unset:",
-    "probe.config set: longest", "probe.config set: changed contents", "probe.config set: disable conflicts",
-    "probe.config set: idle conflicts"))]
+SETTINGS_CLIENT = [c for c in OPS if c["name"].startswith((
+    "settings state: no saved", "settings state: independent", "settings get:", "settings unset:",
+    "settings set: longest label", "settings set: changed contents", "settings set: disable conflicts",
+    "settings set: idle conflicts", "settings set: ipv4 static"))]
 
 
-@pytest.mark.parametrize("case", CONFIG_CLIENT, ids=lambda c: c["name"])
-def test_config_vectors_as_the_client_sends_and_reads_them(case):
-    """probe.config §1-§3: the client's get / set / unset / state are the case's bytes, and it reads the answers - get's
+@pytest.mark.parametrize("case", SETTINGS_CLIENT, ids=lambda c: c["name"])
+def test_settings_vectors_as_the_client_sends_and_reads_them(case):
+    """core §13.5, §13.7: the client's get / set / unset / state are the case's bytes, and it reads the answers - get's
     count apart from the answer's own TLVs."""
     r, hst, sent = scripted(case)
-    name, cfg = case["name"], config.ProbeConfig(hst)
+    name, st = case["name"], settings.Settings(hst)
     res = m.Result.unpack(hx(case["answer_hex"]))
-    if name.startswith("probe.config state"):
-        st = cfg.state()
-        assert (st.storage, st.saved_generation, st.reason) == (
+    if name.startswith("settings state"):
+        state = st.state()
+        assert (state.storage, state.saved_generation, state.reason) == (
             ("none", 0, None) if "no saved" in name else ("partial", 0, "item"))
-    elif name.startswith("probe.config get"):
+    elif name.startswith("settings get"):
         first = struct.unpack_from("<H", r.payload)[0]
-        hst._corr = r.corr - 1
         if first:
-            rd = m.Reader(cfg._call(cfg.GET, r.payload, locked=False).payload)
+            rd = m.Reader(st._call("get", r.payload, locked=False).payload)
             assert rd.take("BIB") == (0, 2, 0)
-        elif "wifi" in name:
-            assert cfg.get() == (2, [("wifi", 0, bytes([3]) + b"lab" + b"\xff")])   # passphrase write-only (§1.4)
         else:
-            assert cfg.get() == (2, [("idle", 4, b"\x00")])
-    elif name.startswith("probe.config unset"):
-        assert cfg.unset([("wifi", 0)] if "wifi" in name else [("disable", 4)]) == 3
+            gen, values = st.get()
+            assert gen == 2 and [(v.fn, v.key, v.origin) for v in values] == [
+                (0, k, "user") for k in ([0, 0] if "secret" in name else [4])]
+    elif name.startswith("settings unset"):
+        count, rest = r.payload[0], r.payload[1:]
+        assert st.unset([struct.unpack_from("<HBH", rest, 5 * i) for i in range(count)]) == 3
     else:
-        decl = cfg.describe()
-        items = [config.decode(decl.by_number(n).name, k, d, decl.by_number(n))
-                 for n, k, d in config.split_items(r.payload[1:], r.payload[0])[0]]
+        count, at, values = r.payload[0], 1, []
+        for _ in range(count):
+            fn, number, key, n = struct.unpack_from("<HBHH", r.payload, at)
+            values.append((fn, number, key, r.payload[at + 7:at + 7 + n]))
+            at += 7 + n
         if res.resolution == m.REJECTED:
             with pytest.raises(h.Unavailable):
-                cfg.set(items)
+                st.set(values)
         else:
-            assert cfg.set(items) == 2
+            assert st.set(values) == struct.unpack_from("<I", res.payload)[0]
     assert sent[-1] == hx(case["request_hex"])
 
 
@@ -1357,18 +1359,19 @@ def test_boundary_serial_loss_as_the_client_counts_it(row):
 
 @pytest.mark.parametrize("row", BOUNDARIES["storage"], ids=lambda r: r["name"])
 def test_boundary_storage_on_the_virtual_bench(row):
-    """probe.config §3: a save / erase answers the same fixed part either way; state then shows the storage as seen
-    after it (the save before kept, none, or unreadable), the settings and generation unchanged."""
-    case = {"name": row["name"], "fns": {"8": "oep.probe.config"}, "state": ""}
+    """core §13.7: a save answers the same fixed part either way; state then shows the storage as seen after it (the
+    save before kept, none, or unreadable), the settings and generation unchanged."""
+    case = {"name": row["name"], "fns": {"0": "core"}, "state": ""}
     ep, hst, _ = bench_for(case)
     hst.open(3000)
-    ep.load_config([config.item(config.Label(channel=k, text=f"l{k}")) for k in range(1, 5)], saved=False)
+    ep.load_settings([(0, "channel.{}.label", k, f"l{k}".encode()) for k in range(1, 5)], saved=False)
     ep.generation = row["generation"]
     ep.storage_state, ep.saved_generation, ep.storage_reason = row["before"]
     ep.saved = {} if row["before"][0] in (1, 3) else None
     if row["result"] == "failed":
         ep.storage_fault = row["observed"]
-    for request_hex, answer_hex in ((row["request_hex"], row["answer_hex"]), ("0102000800" "15" "00000000", row["state_answer_hex"])):
+    state_request = m.Request(2, 0, reg.CORE.op["state"], b"", 0).pack().hex()
+    for request_hex, answer_hex in ((row["request_hex"], row["answer_hex"]), (state_request, row["state_answer_hex"])):
         r = m.Request.unpack(hx(request_hex))
         ep.newest_corr, _ = (r.corr - 2) % 0xFFFF + 1, ep.resend.clear()
         sid = hst.session if r.session else 0

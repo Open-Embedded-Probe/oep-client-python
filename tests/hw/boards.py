@@ -18,7 +18,7 @@ Port forms (see oep_client.link.open_host):
                                    router between; tcp://<host> alone takes the port DNS-SD finds)
 
 A TCP board (kind tcp) is never flashed: put the firmware on and give it its network through the board's serial / USB
-entry first (its own run; the network settings are not oep.probe.config's). OEP_HW_BOARDS
+entry first (its own run). OEP_HW_BOARDS
 may also name a TCP probe directly - `tcp:<unit_id>` or `tcp://<host>:<port>` - as a board of kind tcp with no table
 entry (no expected model, no free channels unless OEP_HW_GPIO / OEP_HW_UART / OEP_HW_DISABLE give them).
 """
@@ -106,13 +106,13 @@ TABLE: dict[str, Board] = {b.id: b for b in (
     Board("esp32-series-30eda0ea068b", "esp32p4-usj", "esp32p4", "esp32p4", f"{BY_ID}/esp32-series-30eda0ea068b",
           unit_id="30eda0ea068b", flash_port=f"{BY_ID}/esp32-series-30eda0ea068b",
           notes="third P4 (ESP32-P4, FS USB-Serial/JTAG port only), ours: a CH32V003 on SWIO 19, NRST 4, power from 5 "
-                "(the idle output-high its settings keep), its UART on 22 / 23, its app's output on 21", **_P4),
+                "(the idle high its settings keep), its UART on 22 / 23, its app's output on 21", **_P4),
     Board("9489dd2ae0953650", "rp2", "promicrorp2350", "rp2350", "cdc:9489dd2ae0953650", unit_id="9489dd2ae0953650",
           notes="SparkFun Pro Micro RP2350 (the firmware enumerates as the project's 1209:4F45); no board-identify id: keyed by unit id",
           **_RP2350),
     # The ATOM over Wi-Fi / TCP: the same board and firmware as above, flashed and given its networks through its bridge
     # entry (OEP_WIFI_SSID_<n> / OEP_WIFI_PASS_<n> on that run); found by DNS-SD unless OEP_HW_ATOM_TCP names it
-    # (tcp://HOST:PORT - from WSL 2's NAT mDNS does not reach the board; `oep config state` over the bridge shows its ip)
+    # (tcp://HOST:PORT - from WSL 2's NAT mDNS does not reach the board; `oep settings network` over the bridge shows its ip)
     Board("esp32-pico-d4-50029191fe34-tcp", "tcp", "esp32", "esp32", os.environ.get("OEP_HW_ATOM_TCP", "tcp:50029191fe34"),
           unit_id="50029191fe34", notes="M5Stack ATOM over Wi-Fi / TCP (reference firmware: port 7450); free for OEP tests",
           **{k: v for k, v in _ESP32_ATOM.items() if k != "rates"}),

@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass, field
 
 import oep_client
-from oep_client import catalog, config, core, host as h, link, message as m, registry as reg
+from oep_client import catalog, core, host as h, link, message as m, registry as reg, settings
 
 from . import boards
 
@@ -36,7 +36,6 @@ def recorded_environment(environ=None) -> dict:
 
 RESTORE_CONNECT_S = 5.0          # putting the settings back: the wait for a probe that is not open (more with OEP_HW_REOPEN_S)
 RESTORE_LOCK_WAIT_S = 35.0       # ... and for the lock: a lost connection's session lapses within its 30 s lease
-_ITEM_KINDS = {config.Label: "label", config.Idle: "idle", config.Disable: "disable"}
 
 
 def reopen_s() -> float:
@@ -45,9 +44,9 @@ def reopen_s() -> float:
     return float(os.environ.get("OEP_HW_REOPEN_S", "") or 0)
 
 
-def _by_key(items) -> dict[tuple[str, int], tuple[str, int, bytes]]:
-    """The label / idle / disable items (what tests/hw sets) as {(name, channel): (name, channel, data)}."""
-    return {(n, k): (n, k, d) for n, k, d in items if n in ("label", "idle", "disable")}
+def _by_key(st: settings.Settings) -> dict[tuple[str, str], object]:
+    """The user's values now as {(category, flat name): value} (secrets left out: never read)."""
+    return {(c, n): v for c, n, v, o in st.show() if o == "user" and not isinstance(v, dict)}
 
 
 def _open_serial_with_write_timeout(port: str, baud: int = link.BASE_BAUD):
@@ -276,18 +275,18 @@ class Run:
             hst.link.timeout = saved
 
     # ---- the probe's settings: put back whatever a test changed -------------------------------------------------
-    def settings_before(self, cfg: config.ProbeConfig) -> None:
-        """The probe's settings before tests/hw changes any (once a run): the label / idle / disable items and the
-        storage (state, whether it held the settings in force) - what restore_settings puts back."""
+    def settings_before(self, st: settings.Settings) -> None:
+        """The probe's settings before tests/hw changes any (once a run): the user's values and the storage (state,
+        whether it held the values in force) - what restore_settings puts back."""
         if self.settings_baseline is None:
-            gen, items = cfg.get()
-            st = cfg.state()
-            self.settings_baseline = {"generation": gen, "items": _by_key(items), "storage": st.storage,
-                                      "saved_current": st.storage == "applied" and st.saved_generation == gen}
+            gen, _ = st.get()
+            state = st.state()
+            self.settings_baseline = {"generation": gen, "items": _by_key(st), "storage": state.storage,
+                                      "saved_current": state.storage == "applied" and state.saved_generation == gen}
 
-    def settings_changing(self, test: str, kind: str, channel: int) -> None:
-        """A test is about to set this item: restore_settings puts it back (removes it, or the value it had)."""
-        self.settings_pending.setdefault((kind, channel), test)
+    def settings_changing(self, test: str, category: str, name: str) -> None:
+        """A test is about to set this value: restore_settings puts it back (unsets it, or sets the value it had)."""
+        self.settings_pending.setdefault((category, name), test)
 
     def settings_saving(self) -> None:
         """A test is about to save: restore_settings puts the storage back as it was."""
@@ -323,23 +322,22 @@ class Run:
         base = self.settings_baseline or {"items": {}, "storage": None, "saved_current": False}
         try:
             hst = self._host_for_restore()
-            cfg = config.ProbeConfig(hst)
-            now = _by_key(cfg.get()[1])
+            st = settings.Settings(hst)
+            now = _by_key(st)
             unsets = [key for key in self.settings_pending if key not in base["items"] and key in now]
-            sets = [config.decode(*base["items"][key]) for key in self.settings_pending
-                    if key in base["items"] and now.get(key) != base["items"][key]]
-            if unsets:
-                cfg.unset(unsets)
-            if sets:
-                cfg.set(sets)
-            done = {"where": where, "removed": [f"{k} {c}" for k, c in unsets], "set_back": len(sets)}
+            sets = [key for key in self.settings_pending if key in base["items"] and now.get(key) != base["items"][key]]
+            for category, name in unsets:
+                st.unset_named(category, [name])
+            for category, name in sets:
+                st.set_named(category, {name: base["items"][(category, name)]})
+            done = {"where": where, "removed": [f"{c} {n}" for c, n in unsets], "set_back": len(sets)}
             if self.settings_saved:
-                st = cfg.state()
-                if base["storage"] in ("applied", "partial") and cfg.needs_save():
-                    done["saved"] = cfg.save()       # the live settings now: as before the tests, but for unsaved ones
-                elif base["storage"] == "none" and st.storage != "none":
-                    cfg.erase()
-                    done["erased"] = True
+                state = st.state()
+                if base["storage"] in ("applied", "partial") and st.needs_save():
+                    done["saved"] = st.save()        # the live values now: as before the tests, but for unsaved ones
+                elif base["storage"] == "none" and state.storage != "none":
+                    st.unset_all()                   # no erase (core §13.7): every user value unset, then saved
+                    done["emptied"] = st.save()
             self.settings_pending.clear()
             self.settings_saved = False
             self.settings_left = []
@@ -355,14 +353,15 @@ class Run:
         """The `oep` commands that put the settings back by hand (the probe never came back during the run)."""
         probe = self.port or self.board.port or "<probe>"
         steps = []
-        for (kind, channel), test in self.settings_pending.items():
-            if (kind, channel) in base["items"]:
-                was = config.decode(*base["items"][(kind, channel)])
-                steps.append(f"{kind} {channel} (set by {test}) had {was} before: set it again with oep config")
+        for (category, name), test in self.settings_pending.items():
+            if (category, name) in base["items"]:
+                was = base["items"][(category, name)]
+                steps.append(f"oep settings set {probe} {category} {name}={was}   (set by {test}; its value before)")
             else:
-                steps.append(f"oep config remove {probe} {kind} {channel}")
+                steps.append(f"oep settings unset {probe} {category} {name}")
         if self.settings_saved:
-            steps.append(f"oep config save {probe}" if base["storage"] != "none" else f"oep config erase {probe}")
+            steps.append(f"oep settings save {probe}" if base["storage"] != "none"
+                         else f"oep settings unset --all {probe} --save")
         return steps
 
     # ---- the record ------------------------------------------------------------------------------------------------

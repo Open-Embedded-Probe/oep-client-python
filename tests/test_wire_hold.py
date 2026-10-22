@@ -1,11 +1,11 @@
 """debug §2: a connection closed other than by line loss leaves its lines held at its rest (a CH32L103 keeps its
-halt across processes); probe.config wire-hold turns it off per port; holds (§2.2) lists the held ports; the hold is a
+halt across processes); the wire's hold.{} setting turns it off per port; holds (§2.2) lists the held ports; the hold is a
 kind of free state - taken like a free pin, never refused for it."""
 import time
 
 import pytest
 
-from oep_client import config, core, endpoint, host as h, riscv, virtual_bench
+from oep_client import core, endpoint, host as h, riscv, settings, virtual_bench
 
 
 def bench():
@@ -37,8 +37,9 @@ def test_the_halt_survives_another_session_by_default():
 
 def test_wire_hold_off_lets_the_lines_go_and_the_target_loses_its_halt():
     ep, hst, wire, pair = bench()
-    config.ProbeConfig(hst).set([config.WireHold(channel=pair[0], mode="off")])
-    assert config.WireHold(channel=pair[0], mode="off") in config.ProbeConfig(hst).items()
+    st = settings.Settings(hst)
+    st.set_named("oep.wire.rvswd/0", {f"hold.GPIO{pair[0]}": False})
+    assert ("oep.wire.rvswd/0", f"hold.GPIO{pair[0]}", False, "user") in st.show()
     halt_then_end(ep, hst, wire, pair)
     assert wire.holds() == []
     assert not ep.targets[(core.find(hst, "oep.wire.rvswd"), pair)].halted
@@ -55,5 +56,5 @@ def test_an_idle_item_on_a_held_pin_ends_the_hold():
     ep, hst, wire, pair = bench()
     halt_then_end(ep, hst, wire, pair)
     assert wire.holds()
-    config.ProbeConfig(hst).set([config.Idle(channel=pair[1], mode="pull-down")])
+    settings.Settings(hst).set_named(settings.CORE_CATEGORY, {f"channel.GPIO{pair[1]}.idle": "pull-down"})
     assert wire.holds() == []

@@ -11,7 +11,7 @@ from spec_names import SPEC, iface, ops
 _NAMES=('oep.probe.plan','oep.probe.restart','oep.probe.link','oep.wire.rvswd','oep.wire.swio','oep.wire.swd',
         'oep.target.riscv-dm','oep.target.arm-adi','oep.target.console','oep.fixture.gpio','oep.fixture.uart',
         'oep.fixture.i2c-target','oep.fixture.spi-target','oep.fixture.logic','oep.fixture.analog',
-        'oep.fixture.capture-group','oep.probe.config')
+        'oep.fixture.capture-group')
 OPERATIONS={name:[(code,op_name) for op_name,code in ops(name).items()] for name in _NAMES}
 
 
@@ -24,7 +24,7 @@ def setup():
 
 def test_registered_standard_ops_pass_read_only():
     model,c=setup();r=RegisteredOpsChecks(c,model.selection).run()
-    assert r['status']=='passed',r['checks'];assert len(r['checks'])==18 and not r['full_conformance']
+    assert r['status']=='passed',r['checks'];assert len(r['checks'])==17 and not r['full_conformance']
     assert all(bytes.fromhex(row['request_hex'])[6:10]==b'\0'*4 for row in c.trace)
 
 
@@ -36,7 +36,6 @@ def test_every_minimal_mandatory_op_is_checked(name,code):
 
 @pytest.mark.parametrize('name,extra,passed',[
  ('oep.target.riscv-dm',{19,22,23},True),('oep.target.riscv-dm',{20},False),('oep.target.riscv-dm',{21},False),('oep.target.riscv-dm',{20,21},True),
- ('oep.probe.config',{18,21},False),('oep.probe.config',{19,21},False),('oep.probe.config',{18,19,21},True),('oep.probe.config',{18,19},False),('oep.probe.config',{21},True),
  ('oep.fixture.logic',{1},False),('oep.fixture.logic',{2},False),('oep.fixture.logic',{1,2,19,23,24},True),('oep.fixture.logic',{25},False),
  ('oep.fixture.analog',{1,2,19,23,24,25},True),('oep.fixture.analog',{25},True),('oep.fixture.capture-group',{1},False),('oep.fixture.capture-group',{1,2},True),
  ('oep.fixture.capture-group',{19},True),('oep.fixture.capture-group',{1,2,19},True),
@@ -79,7 +78,7 @@ def test_future_mandatory_op_is_not_silently_ignored():
 
 def test_registered_ops_common_declarations_pass():
     from oep_client.conformance_interfaces import InterfaceChecks
-    _,c=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==137
+    _,c=setup();r=InterfaceChecks(c).run();assert r['status']=='passed',r['checks'];assert len(r['checks'])==129
 
 
 @pytest.mark.parametrize('invalid',['fn','width','name','type','revision','optional'])

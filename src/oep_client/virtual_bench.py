@@ -43,11 +43,11 @@ CORE_NAME = ""                       # fn 0 is the core: it has no name and is n
 PLAN_ROLE_INTERFACES = {"oep.fixture.gpio", "oep.fixture.uart", "oep.fixture.i2c-target", "oep.fixture.spi-target",
                         "oep.fixture.logic", "oep.fixture.analog"}   # the interfaces with plan roles (oep-if-plan)
 STAND_IN_OPS = (0x10, 0x11)          # the endpoint's two stand-in ops of an fn it does not simulate (VIRTUAL BENCH ONLY)
-CORE_REQUIRED = tuple(reg.CORE.op)   # fn 0's ops: every one mandatory, none optional (core §1.2, §12)
+CORE_REQUIRED = ("confirm", "list", "describe", "clock", "open", "end", "keepalive", "lock_state")   # fn 0's required ops (core §1.2)
 
 
 def default_ops(fn: int, name: str) -> set[int]:
-    """The ops an fn offers when its profile says nothing (core §1.2): fn 0 the core's (all mandatory); an interface
+    """The ops an fn offers when its profile says nothing (core §1.2): fn 0 the core's required ones; an interface
     every op of its table, the optional ones included; one the registry does not know the stand-in ops."""
     if fn == CORE_FN:
         return {reg.CORE.op[k] for k in CORE_REQUIRED}
@@ -70,7 +70,7 @@ class VirtualProbe:
         False: left as given - a probe that does not conform, for tests). A probe offering an interface with plan roles
         and no oep.probe.plan gets one at the next free fn (oep-if-plan: it must list one). fn 0 is the core (no name,
         never listed); every other fn has a name. `own_channels`: the channels the probe uses itself (its own UART,
-        USB, strapping pins): never an interface's, never parked, not an item's channel (core §8, probe.config §1) -
+        USB, strapping pins): never an interface's, never parked, not a settings key (core §8, §13.8) -
         not declared."""
         self.core_contract = core_contract
         self.label = label
@@ -167,11 +167,12 @@ class VirtualProbe:
 # ---- example profiles ----------------------------------------------------
 # Probe-wide declarations in fn 0's describe (the core, 0x40..), oep.wire.<link> to scan and attach,
 # oep.target.riscv-dm and oep.target.console on the connection, fixtures gpio / uart / capture / i2c / spi targets,
-# oep.probe.config, oep.probe.link, and then oep.probe.plan and oep.probe.restart (appended: the fns before them keep
+# oep.probe.link, and then oep.probe.plan and oep.probe.restart (appended: the fns before them keep
 # their numbers). Probe-wide tags:
 _CORE_TAGS = reg.CORE.tlv["describe"]
 CORE_FIRMWARE, CORE_MODEL, CORE_UNIT_ID, CORE_CHANNELS = (_CORE_TAGS[k] for k in ("firmware", "model", "unit_id", "channels"))
-CORE_LABEL, CORE_TRANSPORT, CORE_MAX_OP_MS = _CORE_TAGS["label"], _CORE_TAGS["transport"], _CORE_TAGS["max_op_ms"]
+CORE_TRANSPORT, CORE_MAX_OP_MS = _CORE_TAGS["transport"], _CORE_TAGS["max_op_ms"]
+CHANNEL_NAME, NETIF = _CORE_TAGS["channel_name"], _CORE_TAGS["netif"]
 MAX_OP_MS = 10000                                 # what the virtual bench declares: the longest one request may take (core §7.5)
 PLAN, RESTART, LINK = reg.PROBE_PLAN.name, reg.PROBE_RESTART.name, reg.PROBE_LINK.name
 RESTART_MAX_MS_TAG = reg.PROBE_RESTART.tlv["describe"]["restart_max_ms"]
@@ -249,7 +250,6 @@ def _capture_inner(widths: list[int], ring: int, max_read: int) -> tuple[tuple[s
     the segment records it keeps, and the most one read returns."""
     return (("widths", tuple(widths)), ("ring", ring), ("max_read", max_read))
 MAX_CONNECTIONS = reg.WIRE_RVSWD.tlv["describe"]["max_connections"]
-_CFG = reg.PROBE_CONFIG.tlv["describe"]
 
 
 BLOCK_HEADERS = 24   # write_block's request (10 + connection 4 + address 4 + count 2) needs 20 and read_block's answer
@@ -273,32 +273,109 @@ def _transports(kinds: list[tuple[int, int]]) -> tuple[bytes, ...]:
     return tuple(catalog.tlv(CORE_TRANSPORT, bytes([i, k, itf])) for i, (k, itf) in enumerate(kinds))
 
 
-def _setting(name: str, keys: int, form: int = 0, max_len: int = 0, flags: int = 0) -> bytes:
-    """One describe setting (probe.config §4): form keys max_len flags name."""
-    return catalog.tlv(_CFG["setting"], struct.pack("<BHBB", form, keys, max_len, flags) + name.encode())
+# ---- the settings (core §13) -------------------------------------------------------------------------------
+SETTING, SETTING_CHOICE = reg.DESCRIBE_COMMON["setting"], reg.DESCRIBE_COMMON["setting_choice"]
+FORM, KEY_KIND, FLAG = reg.CORE.enum["setting_form"], reg.CORE.enum["setting_key_kind"], reg.CORE.enum["setting_flag"]
+ORIGIN = reg.CORE.enum["setting_origin"]
+SETTINGS_OPS = ("get", "set", "unset")             # fn 0's ops with settings; save / state with storage, network with netifs
 
 
-def _config(fn: int, instance: int, storage: int = 4096, *, channels: int = 64, ports: int = 4, netifs=(), wifi_entries: int = 4,
-            own=(), rvswd: bool = False, hold: bool = True) -> Offered:
-    """oep.probe.config's declarations (probe.config §4): the standard items label / idle / disable (keys: the
-    channels), passthrough / console-passthrough (keys: the transports), with `netifs` (names) wifi / ipv4 and the
-    network op; `own`: the probe's own items as (name, form, keys, max_len, flags) (§1.6). storage 0 = none - no storage
-    tag, and save / erase / state not in its ops (save, erase and state come together, probe.config §2)."""
-    drop = (() if storage else ("save", "erase", "state")) + (() if netifs else ("network",))
-    settings = [_setting(n, channels) for n in ("label", "idle", "disable")] + [
-        _setting(n, ports) for n in ("passthrough", "console-passthrough")]
-    if netifs:
-        if "wifi" in netifs:
-            settings.append(_setting("wifi", wifi_entries))
-        settings.append(_setting("ipv4", len(netifs) + 1))
-    if rvswd:                                              # its automatic rest can be turned off per port (debug §3.1)
-        settings.append(_setting("rvswd-rest", channels))
-    if hold:                                               # a debug wire's hold after a close, per port (debug §2)
-        settings.append(_setting("wire-hold", channels))
-    settings += [_setting(name, keys, form, max_len, flags) for name, form, keys, max_len, flags in own]
-    return Offered(fn, instance, "oep.probe.config", ops_of("oep.probe.config", *drop)
-        + ((catalog.u32(_CFG["storage"], storage),) if storage else ()) + tuple(settings)
-        + tuple(catalog.tlv(_CFG["netif"], n.encode()) for n in netifs))
+def choices_of(enum: dict[str, int]) -> dict[int, str]:
+    """An enum item's choices (core §13.2): the registry's enum, its keys with '-' for '_'."""
+    return {v: k.replace("_", "-") for k, v in enum.items()}
+
+
+def format_name(fmt: int) -> str:
+    """A UART format's choice name (fixture §2.1): data bits, parity (n e o), stop bits - "8n1"."""
+    return f"{7 if fmt & 0x03 else 8}{'neo'[(fmt >> 2) & 0x03]}{2 if fmt & 0x10 else 1}"
+
+
+@dataclass(frozen=True)
+class Item:
+    """One settings item an owner declares (core §13.2): its describe setting and choices."""
+    name: str
+    form: str
+    key_kind: str = "none"
+    keys: int = 0
+    max_len: int = 0
+    flags: int = 0
+    choices: tuple[tuple[int, str], ...] = ()
+
+    def tlvs(self, number: int) -> tuple[bytes, ...]:
+        out = (catalog.tlv(SETTING, struct.pack("<BBHBB", FORM[self.form], KEY_KIND[self.key_kind], self.keys,
+                                                self.max_len, self.flags) + self.name.encode()),)
+        return out + tuple(catalog.tlv(SETTING_CHOICE, bytes([number, v]) + n.encode()) for v, n in self.choices)
+
+
+_CS = reg.CORE.settings
+CORE_ITEMS = (Item("channel.{}.label", "text", "channel", 0, reg.LIMITS["label_max_bytes"]),
+              Item("channel.{}.idle", "enum", "channel", choices=tuple(choices_of(reg.CORE.enum["channel_idle"]).items())),
+              Item("channel.{}.disable", "bool", "channel"))
+WIFI_ENTRIES = 4
+NETWORK_ITEMS = (Item("wifi.{}.ssid", "text", "index", WIFI_ENTRIES, reg.LIMITS["wifi_ssid_max_bytes"]),
+                 Item("wifi.{}.passphrase", "text", "index", WIFI_ENTRIES, 64, FLAG["secret"]),
+                 Item("ipv4.{}.mode", "enum", "netif", choices=tuple(choices_of(reg.CORE.enum["ipv4_mode"]).items())),
+                 Item("ipv4.{}.address", "ipv4", "netif"), Item("ipv4.{}.prefix", "u32", "netif"),
+                 Item("ipv4.{}.gateway", "ipv4", "netif"), Item("ipv4.{}.dns", "ipv4", "netif"))
+assert {i.name for i in CORE_ITEMS + NETWORK_ITEMS} == set(_CS), "the core's items as the registry names them"
+HOLD = Item("hold.{}", "bool", "channel")
+REST = Item("rest.{}", "enum", "channel", choices=tuple(choices_of(reg.WIRE_RVSWD.enum["rest"]).items()))
+
+
+def uart_items(formats) -> tuple[Item, ...]:
+    """oep.fixture.uart's pass-through items (fixture §2.1)."""
+    return (Item("passthrough.{}.rx", "channel", "transport"), Item("passthrough.{}.baud", "u32", "transport"),
+            Item("passthrough.{}.format", "enum", "transport", choices=tuple((f, format_name(f)) for f in formats)))
+
+
+CONSOLE_ITEMS = (Item("passthrough.{}.wire", "fn", "transport"), Item("passthrough.{}.swdio", "channel", "transport"),
+                 Item("passthrough.{}.swclk", "channel", "transport"), Item("passthrough.{}.max-speed", "u32", "transport"),
+                 Item("passthrough.{}.mechanism", "text", "transport", max_len=32))
+assert {i.name for i in uart_items(())} == set(reg.FIXTURE_UART.settings)
+assert {i.name for i in CONSOLE_ITEMS} == set(reg.TARGET_CONSOLE.settings)
+
+
+def items_tlvs(items) -> tuple[bytes, ...]:
+    return tuple(t for k, it in enumerate(items, 1) for t in it.tlvs(k))
+
+
+def channel_name(channel: int) -> str:
+    """The virtual bench's channels are named as an RP2's / ESP32's (core §7.5)."""
+    return f"GPIO{channel}"
+
+
+def with_settings(offered: list[Offered], *, storage: bool = True, netifs=(), labels: dict[int, str] | None = None,
+                  defaults=()) -> list[Offered]:
+    """A profile's fns with the settings (core §13): fn 0 offers get / set / unset (save / state with `storage`, network
+    with `netifs`) and declares its channel items (the network's with `netifs`, a named list of netifs); each debug wire
+    its hold (rvswd its rest too), each fixture UART and console its pass-through. `labels`: channel labels the firmware
+    fixes; `defaults`: more firmware values as (fn, item, key, data) given by default (core §13.4)."""
+    out = []
+    for o in offered:
+        extra: tuple[Item, ...] = ()
+        inner = o.inner
+        if o.fn == CORE_FN:
+            ops = [reg.CORE.op[k] for k in CORE_REQUIRED + SETTINGS_OPS]
+            ops += [reg.CORE.op[k] for k in ("save", "state")] if storage else []
+            ops += [reg.CORE.op["network"]] if netifs else []
+            items = CORE_ITEMS + (NETWORK_ITEMS if netifs else ())
+            firm = tuple((0, "channel.{}.label", ch, ORIGIN["fixed"], n.encode()) for ch, n in (labels or {}).items())
+            firm += tuple((fn, item, key, ORIGIN["default"], data) for fn, item, key, data in defaults)
+            out.append(Offered(o.fn, o.instance, o.name, (catalog.ops_tlv(ops),) + tuple(t for t in o.tlvs if t[0] != catalog.OPS)
+                               + tuple(catalog.tlv(NETIF, n.encode()) for n in netifs) + items_tlvs(items), o.revision,
+                               inner + (("firmware_values", firm),)))
+            continue
+        if o.name == "oep.wire.rvswd":
+            extra = (REST, HOLD)
+        elif o.name in ("oep.wire.swio", "oep.wire.swd"):
+            extra = (HOLD,)
+        elif o.name == "oep.fixture.uart":
+            formats = next((t[4:4 + t[3]] for t in o.tlvs if t[0] == UART_FORMATS), b"\0")
+            extra = uart_items(formats)
+        elif o.name == "oep.target.console":
+            extra = CONSOLE_ITEMS
+        out.append(Offered(o.fn, o.instance, o.name, o.tlvs + items_tlvs(extra), o.revision, inner) if extra else o)
+    return out
 
 
 def _gpio(fn: int, channels: list[int], modes: int = 0x7F) -> Offered:
@@ -367,19 +444,15 @@ def _roles(assign: dict[int, list[int]]) -> tuple[bytes, ...]:
     return tuple(catalog.role_channels(r, ch) for r, ch in assign.items())
 
 
-def _label(channel: int, name: str) -> bytes:
-    return catalog.tlv(CORE_LABEL, struct.pack("<H", channel) + name.encode("ascii"))
-
-
-def _core(firmware: str, model: str, unit_id: str, channels: int, labels: dict[int, str],
-          extra: tuple[bytes, ...] = ()) -> Offered:
+def _core(firmware: str, model: str, unit_id: str, channels: int, extra: tuple[bytes, ...] = ()) -> Offered:
     """fn 0's declarations (core §7.5): firmware and model (free text), the required unit_id, transport (in `extra`)
-    and max_op_ms, the channel count, the firmware's fixed labels. fn 0 is the core: no name, never listed."""
+    and max_op_ms, the channel count and every channel's name. fn 0 is the core: no name, never listed."""
     assert UNIT_ID.fullmatch(unit_id), "core §7.5: unit_id grammar"
     return Offered(0, 0, CORE_NAME, (
         catalog.text(CORE_FIRMWARE, firmware), catalog.text(CORE_MODEL, model), catalog.text(CORE_UNIT_ID, unit_id),
         catalog.u16(CORE_CHANNELS, channels), catalog.u32(CORE_MAX_OP_MS, MAX_OP_MS),
-        ) + tuple(_label(c, n) for c, n in labels.items()) + extra)
+        ) + tuple(catalog.tlv(CHANNEL_NAME, struct.pack("<H", c) + channel_name(c).encode()) for c in range(channels))
+        + extra)
 
 
 def p4_x035() -> VirtualProbe:
@@ -388,8 +461,8 @@ def p4_x035() -> VirtualProbe:
     on the project's VID:PID."""
     own = [24, 25]                                  # USB-Serial/JTAG (the probe's own: never an interface's)
     pins = [p for p in range(55) if p not in own + [2, 54]]   # the fixtures' pins: all but the RVSWD pair
-    return VirtualProbe("p4-x035", 1024, [
-        _core("3.0.0", "esp32p4", "fafe00000035", 55, {2: "SWDIO", 54: "SWCLK", 51: "LED"},
+    return VirtualProbe("p4-x035", 1024, with_settings([
+        _core("3.0.0", "esp32p4", "fafe00000035", 55,
               _transports([(TRANSPORT["usb_serial_jtag"], 0xFF), (TRANSPORT["vendor_bulk"], 0),
                            (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)])
               + (catalog.text(CORE_CHIP, "esp32p4 v1.0"),)),
@@ -411,7 +484,7 @@ def p4_x035() -> VirtualProbe:
                     max_stretch_us=100_000),                                                       # stretch
         Offered(9, 0, "oep.fixture.spi-target", _roles({1: pins, 2: pins, 3: pins, 4: pins})
                 + _spi_decl(max_length=64, max_hz=3_000_000, features=0b1, queue_depth=8)),             # LSB first
-        _config(10, 0, channels=55, ports=4, netifs=("ethernet",), rvswd=True),
+        # fn 10: the settings' interface before they moved into the core (core §13); its number left unused
         # the P4's ADC1 (GPIO16-23): one ADC for all its channels, 611 Hz - 83.3 kHz in all; ESP32-style attenuations
         Offered(11, 0, "oep.fixture.analog", _roles({k: list(range(16, 24)) for k in range(4)})
             + _analog_decl([(0, 0, 950), (1, 0, 1250), (2, 0, 1750), (3, 0, 3100)], 65536, 611, 83_333),
@@ -423,7 +496,7 @@ def p4_x035() -> VirtualProbe:
         _link(13),
         _plan(14),
         _restart(15),
-    ], own_channels=own)
+    ], netifs=("ethernet",), labels={2: "SWDIO", 54: "SWCLK", 51: "LED"}), own_channels=own)
 
 
 def esp32_v003(max_frame: int = 512) -> VirtualProbe:
@@ -432,12 +505,11 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
     down to a word, oep-if-debug §4.5), so a host splits its block ops as it does on that probe (a 9168-byte image: 19
     write_blocks of up to 122 words, not 230 of 10). oep.probe.link with port_speed (oep-if-link §3), as that firmware.
     Its channels and the other interfaces' limits are this profile's own. `max_frame`: the same probe at another frame
-    size (esp32_v003_64: the smallest a probe may declare). oep.probe.config with 1024 bytes of storage."""
+    size (esp32_v003_64: the smallest a probe may declare). The core's settings with storage and the Wi-Fi netif."""
     own = [0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15]   # UART0, strapping, flash: the probe's own (SWIO 16 is the wire's)
     wired = [4, 5, 13, 14, 17, 18, 19, 21, 22, 25, 26, 27, 32, 33]
-    return VirtualProbe("esp32-v003" if max_frame == 512 else f"esp32-v003-{max_frame}", max_frame, [
-        _core("3.0.0", "esp32", "fafe00000003", 40, {16: "SWIO", 23: "NRST", 22: "DUT TX", 21: "DUT RX"},
-              _transports([(TRANSPORT["uart_bridge"], 0xFF)])),
+    return VirtualProbe("esp32-v003" if max_frame == 512 else f"esp32-v003-{max_frame}", max_frame, with_settings([
+        _core("3.0.0", "esp32", "fafe00000003", 40, _transports([(TRANSPORT["uart_bridge"], 0xFF)])),
         Offered(1, 0, "oep.wire.swio", (catalog.u32(FEATURES, ATTACH_HALT), catalog.channel_group(1, [(1, 16)]), catalog.role_channels(3, [23]),
                                         catalog.u8(MAX_CONNECTIONS, 1),
                                         # the fixed speed of a 0 slot, as the reference firmware (oep-if-debug §3.2)
@@ -456,12 +528,11 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
             catalog.channel_group(1, [(1, 18), (2, 19), (3, 5), (4, 4)]),
             catalog.channel_group(2, [(1, 14), (2, 13), (3, 27), (4, 26)]))
             + _spi_decl(max_length=32, max_hz=3_000_000, features=0, queue_depth=4, cs_setup_ns=4000)),   # MISO in software
-        _config(9, 0, storage=1024, channels=40, ports=1, netifs=("wifi",),
-                own=(("io.github.open-embedded-probe.ntp-server", 2, 1, 32, 0),)),
+        # fn 9: the settings' interface before they moved into the core (core §13); its number left unused
         _link(10, port_speed=True),
         _plan(11),
         _restart(12),
-    ], own_channels=own)
+    ], netifs=("wifi",), labels={16: "SWIO", 23: "NRST", 22: "DUT TX", 21: "DUT RX"}), own_channels=own)
 
 
 def esp32_v003_64() -> VirtualProbe:
@@ -475,9 +546,8 @@ def p4_bench() -> VirtualProbe:
     port 0), vendor bulk, HID and a CDC (serial port 3) on the project's VID:PID."""
     own = [24, 25]                                  # USB-Serial/JTAG (the wires' pins 2-7 are interfaces')
     pins = [p for p in range(55) if p not in own + list(range(2, 8))]
-    return VirtualProbe("p4-bench", 1024, [
+    return VirtualProbe("p4-bench", 1024, with_settings([
         _core("3.0.0", "esp32p4", "30eda0e3b001", 55,
-              {2: "A SWDIO", 3: "A SWCLK", 4: "B SWDIO", 5: "B SWCLK", 6: "C SWDIO", 7: "C SWCLK"},
               _transports([(TRANSPORT["usb_serial_jtag"], 0xFF), (TRANSPORT["vendor_bulk"], 0),
                            (TRANSPORT["hid"], 1), (TRANSPORT["usb_cdc"], 2)])),
         Offered(1, 0, "oep.wire.rvswd", (catalog.u32(FEATURES, ATTACH_HALT),
@@ -488,11 +558,11 @@ def p4_bench() -> VirtualProbe:
         _console(3),
         _gpio(4, pins),
         _uart(5, 0, pins, 3_000_000),
-        _config(6, 0, channels=55, ports=4, rvswd=True),
+        # fn 6: the settings' interface before they moved into the core (core §13); its number left unused
         _link(7),
         _plan(8),
         _restart(9),
-    ], own_channels=own)
+    ], labels={2: "A SWDIO", 3: "A SWCLK", 4: "B SWDIO", 5: "B SWCLK", 6: "C SWDIO", 7: "C SWCLK"}), own_channels=own)
 
 
 def rp2350_pins() -> VirtualProbe:
@@ -503,7 +573,7 @@ def rp2350_pins() -> VirtualProbe:
     own = [19]
     pins = [p for p in range(30) if p not in own]
     return VirtualProbe("rp2350-pins", 1024, [
-        _core("3.0.0", "rp2350", "e66138935f2b1f2c", 30, {}, _transports([(TRANSPORT["usb_cdc"], 0)])),
+        _core("3.0.0", "rp2350", "e66138935f2b1f2c", 30, _transports([(TRANSPORT["usb_cdc"], 0)])),
         Offered(1, 0, "oep.wire.rvswd", _roles({1: pins, 2: pins, 3: pins}) + (catalog.u32(FEATURES, ATTACH_HALT),
             catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(MAX_CONNECTIONS, 1))),
         Offered(2, 0, "oep.target.riscv-dm", (catalog.u16(MAX_LENGTH, block_max_length(1024)),)),

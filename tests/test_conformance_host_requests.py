@@ -17,7 +17,7 @@ def selected_spec(monkeypatch):
 def test_adopted_policy_passes():
     r=HostRequestChecks(encode,spec=SPEC).run()
     assert r['status']=='passed',r['checks']
-    assert r['contexts']==14 and len(r['checks'])==5 and not r['full_conformance']
+    assert r['contexts']==13 and len(r['checks'])==5 and not r['full_conformance']
 
 
 def map_tags(raw, fixed_len, transform):
@@ -102,8 +102,8 @@ def registry_fixture():
     entries={}
     for name,op,fixed,fields in contexts():
         entry=entries.setdefault(name,dict(name=name,revision=1,op=[],tlv={}))
-        entry['op'].append(dict(name=op,code=17 if name=='oep.probe.config' and op=='set' else 16 if op in ('scan','configure','open','plan_apply') else 17 if op=='attach' else 24))
-        entry['tlv']['item' if name=='oep.probe.config' and op=='set' else 'configure' if op=='query' else op]={str(t):t for t,v,c in fields}
+        entry['op'].append(dict(name=op,code=16 if op in ('scan','configure','open','plan_apply') else 17 if op=='attach' else 24))
+        entry['tlv']['configure' if op=='query' else op]={str(t):t for t,v,c in fields}
     return dict(protocol=dict(revision=1,byte_order='little'),core=entries.pop('core'),interface=list(entries.values()))
 
 
@@ -126,7 +126,7 @@ def test_selected_schema_guard(tmp_path,monkeypatch,change):
 
 
 @pytest.mark.parametrize('interface,operation',[
-    ('oep.probe.plan','plan_apply'),('oep.fixture.uart','configure'),('oep.probe.config','set')])
+    ('oep.probe.plan','plan_apply'),('oep.fixture.uart','configure')])
 def test_new_operation_number_requires_review(tmp_path,monkeypatch,interface,operation):
     hashes={}
     for name in REVIEWED:
@@ -141,14 +141,12 @@ def test_new_operation_number_requires_review(tmp_path,monkeypatch,interface,ope
     with pytest.raises(Exception,match='request operation number changed'):reviewed_identity(tmp_path)
 
 
-@pytest.mark.parametrize('legacy',['config_items_critical','attach_legacy_shape','logic_multirate_critical'])
+@pytest.mark.parametrize('legacy',['attach_legacy_shape','logic_multirate_critical'])
 def test_superseded_policies_are_detected(legacy):
-    # Rules changed at a09fa45: config items carry bit 7 = 0 (config §1); attach max_speed/pins are fixed fields,
+    # Rules changed at a09fa45: attach max_speed/pins are fixed fields,
     # so attach tag 1/3 have no critical policy; multirate (0x60) no longer exists and capture TLVs are non-critical.
     def broken(name,op,fixed,fields):
         raw=encode(name,op,fixed,fields)
-        if legacy=='config_items_critical' and (name,op)==('oep.probe.config','set'):
-            raw=map_tags(raw,len(fixed),lambda t:t|128)
         if legacy=='attach_legacy_shape' and op=='attach':
             raw=map_tags(raw,len(fixed),lambda t:t|128 if t&127 in (1,2,3,4,5,6) else t)
             raw=raw[:len(fixed)-4]+raw[len(fixed):]  # max_speed moved back into a TLV: fixed part shortened

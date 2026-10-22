@@ -15,7 +15,8 @@ from oep_client import catalog, endpoint, virtual_bench, message as m, registry 
 from test_virtual_bench_rules_2026_10_02 import ITEM, PLAN_APPLY, W, Clock, Host, att
 
 CORE = reg.CORE
-RV, CFG = reg.TARGET_RISCV_DM, reg.PROBE_CONFIG
+RV = reg.TARGET_RISCV_DM
+SETTINGS = reg.CORE.op                                              # fn 0's settings ops (core §13.5)
 LOGIC, GROUP, I2C = reg.FIXTURE_LOGIC, reg.FIXTURE_CAPTURE_GROUP, reg.FIXTURE_I2C_TARGET
 UNA = CORE.tlv["unavailable_payload"]
 
@@ -71,7 +72,7 @@ def test_c21_an_op_fn_0_does_not_define_is_unknown_operation_not_session_require
 def test_c21_an_op_an_interface_does_not_define_is_unknown_operation():
     ep = endpoint.Endpoint(virtual_bench.p4_bench(), Clock())
     h = Host(ep)
-    for fn in (1, 2, 3, 4, 5, 6):                                             # wire, dm, console, gpio, uart, config
+    for fn in (1, 2, 3, 4, 5):                                                # wire, dm, console, gpio, uart
         assert h.raw(fn, 0x7E, session=False).detail == m.UNKNOWN_OPERATION, fn
     assert h.open().succeeded
     assert h.raw(1, 0x04).detail == m.UNKNOWN_OPERATION                       # 0x04 is reserved on the wires
@@ -92,16 +93,17 @@ def test_c21_riscv_dm_ops_are_gated_on_the_ops_tag():
         assert h.raw(2, RV.op[op], body).detail == m.NO_RESOURCE, op      # required: the connection is looked up
 
 
-def test_c21_save_and_erase_without_storage_are_unknown_operation():
-    probe = virtual_bench.VirtualProbe("x", 1024, [virtual_bench._config(6, 0, storage=0) if o.name == CFG.name else o
-                                       for o in virtual_bench.p4_bench().offered])
+def test_c21_save_and_state_without_storage_are_unknown_operation():
+    """core §13.7: save and state only with storage (fn 0's ops say so); no erase at all."""
+    base = [o for o in virtual_bench.p4_bench().offered if o.fn != 0] + [virtual_bench._core(
+        "3.0.0", "esp32p4", "30eda0e3b009", 55, virtual_bench._transports([(virtual_bench.TRANSPORT["vendor_bulk"], 0)]))]
+    probe = virtual_bench.VirtualProbe("x", 1024, virtual_bench.with_settings(base, storage=False), own_channels=[24, 25])
     ep, h = bench(probe)
-    assert not [t for t in ep.static[6] if t[0] == CFG.tlv["describe"]["storage"]]   # no storage tag (probe.config §2)
-    for op in ("save", "erase"):
-        assert h.raw(6, CFG.op[op]).detail == m.UNKNOWN_OPERATION
-    assert h.raw(6, CFG.op["get"], struct.pack("<H", 0), session=False).succeeded
+    for op in ("save", "state"):
+        assert h.raw(0, SETTINGS[op]).detail == m.UNKNOWN_OPERATION
+    assert h.raw(0, SETTINGS["get"], struct.pack("<H", 0), session=False).succeeded
     ep, h = bench()
-    assert h.raw(6, CFG.op["save"]).succeeded and h.raw(6, CFG.op["erase"]).succeeded
+    assert h.raw(0, SETTINGS["save"]).succeeded and "erase" not in SETTINGS
 
 
 def test_c21_capture_query_and_force_need_their_ops():
@@ -172,9 +174,11 @@ def test_clock_touches_no_session_lock_or_lease():
     assert h.raw(0, m.OP_CLOCK, b"\x01", session=False).detail == m.MALFORMED  # a broken tail
 
 
-def test_fn_0_has_exactly_the_eight_core_ops_and_no_subscribe():
+def test_fn_0_has_the_eight_core_ops_the_settings_and_no_subscribe():
     ep = endpoint.Endpoint(virtual_bench.p4_x035(), Clock())
-    assert ep.ops[0] == set(CORE.op.values()) == {0x01, 0x02, 0x03, 0x04, 0x10, 0x11, 0x12, 0x13}
+    assert ep.ops[0] == {CORE.op[k] for k in virtual_bench.CORE_REQUIRED} | {
+        CORE.op[k] for k in ("get", "set", "unset", "save", "state", "network")}   # the settings: optional (core §13)
+    assert {CORE.op[k] for k in virtual_bench.CORE_REQUIRED} == {0x01, 0x02, 0x03, 0x04, 0x10, 0x11, 0x12, 0x13}
     h = Host(ep)
     h.open()
     for op in (0x05, 0x14, 0x30, 0x32):                                      # old plan_release, restart, subscribe
@@ -308,29 +312,28 @@ def test_subscribe_is_the_emitting_interfaces_own_op():
     assert h.raw(99, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0)).detail == m.UNKNOWN_FUNCTION
 
 
-def cfg_set(h, fn, *items):
-    """probe.config set: count(u8) items (probe.config §2)."""
-    return h.raw(fn, CFG.op["set"], bytes([len(items)]) + b"".join(items))
+def cfg_set(h, *values):
+    """fn 0's set: count(u8) values (core §13.5)."""
+    return h.raw(0, SETTINGS["set"], bytes([len(values)]) + b"".join(values))
 
 
-def idle(ch, mode):
-    """An idle item: channel(u16) mode(u8), 3 bytes (probe.config §1)."""
-    return m.tlv(ITEM["idle"], struct.pack("<HB", ch, mode))
+def value(number, key, data: bytes) -> bytes:
+    return struct.pack("<HBHH", 0, number, key, len(data)) + data
 
 
-def test_probe_config_set_any_one_reason_and_nothing_changes():
-    """core §4.3 (rule review 2026-10-07): an item the probe does not declare (unsupported, the item tag as received)
-    and an item of another length (malformed, probe.config §1) in one set - either answers, nothing is applied."""
+def test_settings_set_any_one_reason_and_nothing_changes():
+    """core §4.3, §13.5: a value of an item the probe does not declare (unsupported, its place) and a value of another
+    length (malformed) in one set - malformed first; nothing is applied."""
     ep, h = bench(virtual_bench.p4_bench())
-    unlisted = m.tlv(len(ep.setting_names) + 1, struct.pack("<H", 20))         # a number past the setting list
-    r = cfg_set(h, 6, unlisted, m.tlv(ITEM["idle"], struct.pack("<H", 21)))   # and an idle without its mode
-    assert r.detail in (m.MALFORMED, m.UNSUPPORTED)
-    r = cfg_set(h, 6, unlisted, idle(21, 0))
-    assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([len(ep.setting_names) + 1]))
-    r = cfg_set(h, 6, idle(21, 0), m.tlv(ITEM["idle"], struct.pack("<HBB", 22, 0, 0)))   # 4 bytes: too long
+    unlisted = value(len(ep.setting_items[0]) + 1, 20, b"\x00")                # a number past the setting list
+    r = cfg_set(h, unlisted, value(ITEM["idle"], 21, b""))                        # and an idle without its mode
     assert r.detail == m.MALFORMED
-    r = h.raw(6, CFG.op["unset"], b"\x02" + bytes([ITEM["disable"], 20, 0]) + bytes([ITEM["idle"], 21]))
-    assert r.detail in (m.MALFORMED, m.UNSUPPORTED)                          # the second row is cut short
+    r = cfg_set(h, unlisted, value(ITEM["idle"], 21, b"\x00"))
+    assert (r.detail, r.payload) == (m.UNSUPPORTED, bytes([m.TAG_FIXED]) + m.tlv(reg.CORE.tlv["unsupported_payload"]["item"], b"\x00"))
+    r = cfg_set(h, value(ITEM["idle"], 21, b"\x00"), value(ITEM["idle"], 22, b"\x00\x00"))   # 2 bytes: too long
+    assert r.detail == m.MALFORMED
+    r = h.raw(0, SETTINGS["unset"], b"\x02" + struct.pack("<HBH", 0, ITEM["disable"], 20) + struct.pack("<HB", 0, ITEM["idle"]))
+    assert r.detail == m.MALFORMED                                            # the second row is cut short
     assert not ep.config
 
 
@@ -375,7 +378,7 @@ def test_attach_reset_tlv_on_an_output_idle_channel_is_unavailable_and_runs_noth
     swio = ep.pairs[1][0]
     tg = ep._target(1, swio)
     tg.silent_until_reset = True
-    assert cfg_set(h, 9, idle(23, 4)).succeeded                    # NRST idles high
+    assert cfg_set(h, value(ITEM["idle"], 23, bytes([CORE.enum["channel_idle"]["high"]]))).succeeded   # NRST idles high
     reset = m.tlv(RESET_TLV, struct.pack("<HH", 23, 20), critical=True)
     r = h.raw(1, W["attach"], att(swio) + reset)
     assert r.detail == m.UNAVAILABLE

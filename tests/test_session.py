@@ -275,7 +275,9 @@ def test_the_first_session_request_confirms_first(bench):
     _, ep = bench
     a = new_host(ep, 1)
     a.open()
-    assert [(r.fn, r.op) for r in ep.requests[:3]] == [(0, m.OP_CONFIRM), (0, m.OP_DESCRIBE), (0, m.OP_OPEN)]   # max_op_ms
+    seen = [(r.fn, r.op) for r in ep.requests]
+    opened = seen.index((0, m.OP_OPEN))   # max_op_ms, from fn 0's describe (its pages)
+    assert seen[0] == (0, m.OP_CONFIRM) and opened > 1 and set(seen[1:opened]) == {(0, m.OP_DESCRIBE)}
     # before a request that changes state (core §4.4)
 
 
@@ -290,7 +292,7 @@ def test_the_host_skips_tlvs_it_does_not_know_after_every_result(bench):
     assert opened.lease_ms == 1000
     write(a, 9)
     assert read(a) == 9 and a.lock_state() == (True, 1000)
-    from oep_client import capture, config, console, core, fixture, riscv
+    from oep_client import capture, console, core, fixture, riscv, settings
     wire = riscv.Wire(a, "oep.wire.swio")
     conn, _ = wire.attach()
     dm = riscv.RiscvDm(a, conn)
@@ -318,9 +320,9 @@ def test_the_host_skips_tlvs_it_does_not_know_after_every_result(bench):
     clock.ms += 1                                                # one-shot completes once its samples have elapsed
     (seg,) = lc.wait()
     assert len(lc.read_segment(seg)) == 64 and lc.status().state == capture.STATE["done"]
-    cfg = config.ProbeConfig(a)
-    assert cfg.set([config.Label(channel=4, text="x")]) == cfg.get()[0] and cfg.state().storage == "none"
-    assert cfg.describe().items
+    st = settings.Settings(a)
+    assert st.set_named(settings.CORE_CATEGORY, {"channel.GPIO4.label": "x"}) == st.get()[0]
+    assert st.state().storage == "none" and st.catalog().items[0]
 
 
 def test_request_tails_critical_refused_non_critical_ignored(bench):

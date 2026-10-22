@@ -23,7 +23,7 @@ Steps, each optional and each saying what it did:
 6. print the connection profile the host keeps (wire, pins, line settings: host guide §5.3 - the probe keeps no
    wiring) and the labels that name the lines found: `nrst` on the reset line (5) and `power_hi` on --power, or
    `<profile>.nrst` / `<profile>.power_hi` with --name (a probe serving several targets); --save writes the labels
-   (config set + save). Nothing is written otherwise.
+   (settings set + save). Nothing is written otherwise.
 
 Everything is bounded in time (the whole run under a minute) and every plan is released at the end. A plan_apply
 replaces the gpio's whole plan, and the probe lets every pin of the old plan go first (oep-core §8) - the power
@@ -38,7 +38,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
-from . import arm, catalog, config, core, host as h, registry as reg, riscv, targets
+from . import arm, catalog, core, host as h, registry as reg, riscv, settings, targets
 from .fixture import Gpio
 
 FLOATING, DRIVEN_HIGH, DRIVEN_LOW, ACTIVE = "floating", "driven-high", "driven-low", "active"
@@ -237,7 +237,7 @@ class PinFinder:
         except h.OepError:
             pass
         if held:
-            self.note(f"a live connection holds {ranges(held)}: left out (oep config state)")
+            self.note(f"a live connection holds {ranges(held)}: left out (oep settings show)")
         chans = [c for c in allowed if c != self.power and c not in self.exclude and c not in held]
         chans = self._plan(chans, cycle=False)
         g = self.gpio
@@ -572,39 +572,41 @@ class PinFinder:
             labels.append((self.power, f"{prefix}power_hi"))
         r.labels = labels
         for ch, text in labels:
-            self.say(f"label: oep config label {self.probe} {ch} {text}" + ("" if self.save else "   (not written)"))
+            self.say(f"label: oep settings set {self.probe} core channel.{self._name(ch)}.label={text}"
+                     + ("" if self.save else "   (not written)"))
         self._check_lines(labels)
         if self.power is not None:
-            self.say(f"idle:  oep config idle {self.probe} {self.power} output-high   (keeps the target powered while no "
-                     f"plan holds channel {self.power}; not written by this tool)")
+            self.say(f"idle:  oep settings set {self.probe} core channel.{self._name(self.power)}.idle=high   (keeps the "
+                     f"target powered while no plan holds channel {self.power}; not written by this tool)")
         if self.save and labels:
-            cfg = config.ProbeConfig(self.hst)
-            cfg.set([config.Label(channel=ch, text=text) for ch, text in labels])
-            cfg.save()
+            st = settings.Settings(self.hst)
+            st.set_named(settings.CORE_CATEGORY, {f"channel.{self._name(ch)}.label": text for ch, text in labels})
+            st.save()
             r.saved = True
             self.say("  labels written and saved")
 
+    def _name(self, channel: int) -> str:
+        """A channel's name (fn 0's channel_name, core §7.5); its number when the probe names none."""
+        try:
+            return settings.Settings(self.hst).catalog().channel.get(channel, str(channel))
+        except (LookupError, h.OepError):
+            return str(channel)
+
     def _check_lines(self, labels: list[tuple[int, str]]) -> None:
-        """Would the suggested labels find their lines (host guide §5.3, config.find_line) in the probe's settings as
+        """Would the suggested labels find their lines (host guide §5.3, settings.find_line) in the probe's labels as
         they would be after them - each labelled channel relabelled? Another channel already carrying the same name
         (any case) makes the line not found at all; say so, naming those channels."""
         try:
-            items = config.ProbeConfig(self.hst).items()
+            have = settings.labels(self.hst)
         except (LookupError, h.OepError):
-            items = []                                     # no oep.probe.config: nothing else to meet
+            have = []                                      # no settings: nothing else to meet
         relabelled = {ch for ch, _ in labels}
-        after = [it for it in items if not (isinstance(it, config.Label) and it.channel in relabelled)]
-        after += [config.Label(channel=ch, text=text) for ch, text in labels]
-        try:
-            fixed = core.firmware_labels(self.hst)
-        except h.OepError:
-            fixed = []
+        after = [(ch, t) for ch, t in have if ch not in relabelled] + list(labels)
         for ch, text in labels:
             line = text.rpartition(".")[2]
-            found = config.find_line(after, line, self.name, fixed, single=self.name is None)
+            found = settings.find_line(after, line, self.name, single=self.name is None)
             if found != ch:
-                clash = sorted(it.channel for it in after if isinstance(it, config.Label) and it.channel != ch
-                               and config.fold_name(it.text) == config.fold_name(text))
+                clash = sorted(c for c, t in after if c != ch and settings.fold_name(t) == settings.fold_name(text))
                 self.note(f"label {text}: the settings already name channel(s) {clash} the same way - a host would "
                           f"find no {line} line; relabel or remove those first")
 

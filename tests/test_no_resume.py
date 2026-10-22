@@ -7,7 +7,7 @@ import struct
 
 import pytest
 
-from oep_client import config, console, core, endpoint, virtual_bench, fixture, host as h, message as m, registry as reg, riscv
+from oep_client import console, core, endpoint, virtual_bench, fixture, host as h, message as m, registry as reg, riscv
 
 
 

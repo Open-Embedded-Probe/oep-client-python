@@ -10,9 +10,14 @@ import time
 
 import pytest
 
-from oep_client import cobs, config, core, host as h, riscv
+from oep_client import cobs, core, settings, host as h, riscv
 
-from test_config import open_bench
+from test_settings import open_bench as _open_settings_bench
+
+
+def open_bench():
+    ep, hst, _ = _open_settings_bench()
+    return ep, hst
 
 
 def _serve(*argv):
@@ -138,10 +143,10 @@ def test_reboot_resets_what_a_probe_loses_and_applies_the_saved_settings_again()
     ep, hst = open_bench()
     ep.capture_slipped = True                                        # the simulation's own knobs stay
     ep.uart_clock_hz = 1_000_000
-    cfg = config.ProbeConfig(hst)
-    cfg.set([config.Idle(channel=21, mode="pull-down")])
+    cfg = settings.Settings(hst)
+    cfg.set_named(settings.CORE_CATEGORY, {"channel.GPIO21.idle": "pull-down"})
     cfg.save()
-    cfg.set([config.Disable(channel=20)])                            # not saved
+    cfg.set_named(settings.CORE_CATEGORY, {"channel.GPIO20.disable": True})   # not saved
     core.plan_apply(hst, [(4, 1, 30)])
     riscv.Wire(hst, "oep.wire.rvswd").attach(pins=(4, 5))
     ep.subscribed[4] = (0, 0)                                        # (p4-bench has nothing that emits: a stand-in)
@@ -158,13 +163,13 @@ def test_reboot_resets_what_a_probe_loses_and_applies_the_saved_settings_again()
     assert ep.plan == set() and ep.resend == {} and ep.newest_corr is None
     assert ep.subscribed == {} and ep.outbox == []
     assert ep.revision_in_use == {} and ep.speed_state == "base"
-    assert ep.disabled == set() and ep.config == saved and ep.parked[21] == 2   # the saved settings, applied again
+    assert ep.disabled == set() and ep._by_name(ep.config) == saved and ep.parked[21] == 2   # the saved settings, applied again
     assert ep.capture_slipped and ep.uart_clock_hz == 1_000_000
 
     with pytest.raises(h.NoSession):
         hst.keepalive()
     hst.open(3000)
-    assert config.ProbeConfig(hst).items() == [config.Idle(channel=21, mode="pull-down")]
+    assert [(n, v) for c, n, v, o in settings.Settings(hst).show() if o == "user"] == [("channel.GPIO21.idle", "pull-down")]
 
 
 # ---- `lose` on stdin: a connection's line lost for good (debug §2, P1) -------------------------------------------------

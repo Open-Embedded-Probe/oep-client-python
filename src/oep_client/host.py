@@ -9,7 +9,7 @@ No resume (core §6.2, §6.4, §9): when a session's lock ends - by end, by leas
 force - the probe releases everything the session created (its plan, its shares of connections and streams, its
 subscriptions); nothing passes to the next session and an ended session never continues. A request of an ended
 session is rejected no_session (`NoSession`) while the lock is free, locked while another holds it: the caller opens a
-new session and builds again. What lasts between sessions is the probe's settings (oep.probe.config) and what the
+new session and builds again. What lasts between sessions is the probe's settings (core §13) and what the
 interfaces keep readable: an attach on a live combination returns the slot's connection, a console open on the same
 place and mechanism returns its stream with position and marks.
 
@@ -156,6 +156,12 @@ class Unsupported(Rejected):
             return []
 
     @property
+    def item(self) -> int | None:
+        """A settings set / unset's refused value: its place in the request (TLV item, core §13.5); None without one."""
+        v = next((v for t, v in self.tlvs if t == reg.CORE.tlv["unsupported_payload"]["item"]), None)
+        return v[0] if v is not None and len(v) == 1 else None
+
+    @property
     def supported(self) -> tuple[int, int] | None:
         """confirm's refusal (core §7.1, C-15): (min, max) of the protocol revisions the probe handles (TLV 0x01
         supported after tag 0x00); None for any other refusal."""
@@ -172,7 +178,7 @@ CONFIRM_TRANSPORT = reg.CORE.tlv["confirm_answer"]["transport"]
 class Unavailable(Rejected):
     """rejected unavailable (core §4.3): the payload's TLVs say why (each may be missing): cause, the channels it met,
     the fn it is about (capture-group's bind). `tlvs` has every TLV, the interface's own (0x40 and up) too. cause 5
-    (held_by_settings): the settings' plan, disable, output idle or slot hold it - probe.config's get says which."""
+    (held_by_settings): the settings' disable or output idle hold it - fn 0's settings get says which."""
     CAUSES = {v: k for k, v in reg.CORE.enum["unavailable_cause"].items()}
     _T = reg.CORE.tlv["unavailable_payload"]
 

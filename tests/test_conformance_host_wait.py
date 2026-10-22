@@ -71,7 +71,7 @@ def test_missing_controls_do_not_pass(missing):
 
 def registry():
     return dict(timing=dict(host_wait_add_ms=1000,notify_pending_max_frames=2,core_quick_op_max_ms=1000),constants=dict(min_max_frame=64),limits=dict(max_op_ms_max=600000),
-                interface=[dict(name='oep.probe.config',revision=1,op=[dict(name='save',code=18)])])
+                core=dict(op=[dict(name='save',code=__import__('oep_client.registry',fromlist=['CORE']).CORE.op['save'])]),interface=[])
 
 
 @pytest.mark.parametrize('document',REVIEWED)
@@ -96,7 +96,7 @@ def test_changed_registry_wait_rule_is_not_accepted(monkeypatch,field):
     if field=='notifications':r['timing']['notify_pending_max_frames']=1
     if field=='frame':r['constants']['min_max_frame']=63
     if field=='maximum':r['limits']['max_op_ms_max']=600001
-    if field=='save':r['interface'][0]['op'][0]['code']=3
+    if field=='save':r['core']['op'][0]['code']=3
     if field=='quick':r['timing']['core_quick_op_max_ms']=2000
     monkeypatch.setattr(module,'spec_identity',lambda path:(r,{'commit':'unit-fixture'}))
     with pytest.raises(Violation):actual_review('/explicit/changed-wait-spec')

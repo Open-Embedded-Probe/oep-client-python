@@ -85,7 +85,7 @@ Options:
   --silent-until-reset N
                         the N-th pin pair of the first wire has a target that answers nothing on the wire until a
                         reset through its line (repeatable): a host's attach with the reset TLV
-  --label CH=TEXT       a label item on channel CH at boot, as if saved (repeatable; e.g. 23=v003.nrst names the
+  --label CH=TEXT       channel.{}.label of channel CH at boot, as if saved (repeatable; e.g. 23=v003.nrst names the
                         reset line of the host's profile v003, host guide §5.3)
   --capture-slipped     every oep.fixture.logic segment says flags bit2 (slipped: a pace that fell behind)
   --logic-wave ROLE=SPEC
@@ -205,9 +205,9 @@ def build(a: argparse.Namespace) -> endpoint.Endpoint:
     items = []
     for spec in getattr(a, "label", []):
         channel, _, text = spec.partition("=")
-        items.append(("label", int(channel, 0), text.encode()))
+        items.append((0, "channel.{}.label", int(channel, 0), text.encode()))
     if items:
-        ep.load_config(items, saved=True)
+        ep.load_settings(items, saved=True)
     return ep
 
 

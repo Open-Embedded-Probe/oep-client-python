@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from oep_client import (capture, config, registry, core, dump, endpoint, virtual_bench, fixture, frames, host as h, link, message as m,
+from oep_client import (capture, settings, registry, core, dump, endpoint, virtual_bench, fixture, frames, host as h, link, message as m,
                         registry as reg, riscv, speed_record)
 
 from test_virtual_bench_rules_2026_10_02 import Clock
@@ -221,24 +221,15 @@ def test_c07_a_resync_waits_250_ms_after_the_hosts_last_write():
 
 # ---- PC-1: the line search's step (c) ------------------------------------------------------------------------------
 
-def test_pc1_find_line_takes_the_firmware_labels_as_step_c():
-    """host guide §5.3: `<profile>.<name>`, then for a single target the bare name, then the firmware's label."""
-    assert config.find_line([], "nrst", firmware=[(23, "NRST")]) == 23
-    assert config.find_line([config.Label(channel=22, text="nrst")], "nrst", firmware=[(23, "NRST")]) == 22
-    assert config.find_line([], "nrst", firmware=[(23, "NRST"), (24, "nrst")]) is None   # two at one step
-    assert config.find_line([], "nrst", "b", [(23, "NRST")], single=False) is None   # several targets: (b), (c) not
+def test_pc1_find_line_reads_every_label_whatever_its_origin():
+    """host guide §5.3: `<port>.<name>`, then for a single target the bare name; the firmware's labels are
+    channel.{}.label values of origin fixed, read with the others."""
+    assert settings.find_line([(23, "NRST")], "nrst") == 23
+    assert settings.find_line([(23, "NRST"), (24, "nrst")], "nrst") is None   # two at one step
+    assert settings.find_line([(23, "NRST")], "nrst", "b", single=False) is None   # several targets: the bare name not
     ep, hst = in_process(virtual_bench.esp32_v003)
-    assert config.find_line(hst, "nrst") == 23                         # a Host: describe's labels are read
-    assert config.LINE_NAMES == tuple(registry.PROBE_CONFIG.line_names)   # from the registry (PC-2)
-
-
-def test_pc5_a_label_the_probe_would_refuse_or_a_host_would_not_show_is_not_sent():
-    """probe.config §1: a probe refuses a label outside 1-32 bytes; it no longer checks the characters (core §2.1), but
-    this client still sends only text it would show unchanged (m.valid_text)."""
-    for text in ("", "x" * 33, "a\tb"):
-        with pytest.raises(ValueError):
-            config.Label(channel=1, text=text).value()
-    assert config.Label(channel=1, text="x" * 32).value()[2:] == b"x" * 32
+    assert settings.find_line(hst, "nrst") == 23                       # a Host: its labels are read
+    assert settings.LINE_NAMES == tuple(registry.CORE.line_names)      # from the registry (PC-2)
 
 
 # ---- C-22: text ---------------------------------------------------------------------------------------------------

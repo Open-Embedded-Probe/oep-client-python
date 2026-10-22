@@ -12,7 +12,6 @@ from .conformance import require, spec_identity
 REVIEWED = {
     'interfaces/oep-if-plan.ja.md': 'da8bd60af53499573c07bc33dbd8c4df93eb61a93b91dc57907f26620ae36bbf',
     'interfaces/oep-if-fixture.ja.md': '4fe81f7920094abe02261cdf3f73a4f4207979244883669b77665872c4f510c5',
-    'interfaces/oep-if-probe-config.ja.md': 'ecc3e2e0d2d6e5c3deb7801c15041c69ddc03f3afc78a97e681237ba0a93ac82',
     'docs/oep-core.ja.md': '4c5dcdcc779c5ba0ee85060a33b2b629deddad3e8f8f1a22e18bdeea9d471bdc',
     'interfaces/oep-if-debug.ja.md': 'b3fdd56f002815c8d85ee6a0d83470e9e4a197d815c46aa5eb0a308b2edf8234',
     'interfaces/oep-if-capture.ja.md': '430950c71e6bbd78b9e8233db075a99ab6587ad99b37aae30132d6e66eced9d9',
@@ -33,10 +32,10 @@ def reviewed_identity(spec):
     for name,op,fixed,fields in contexts():
         entry=registry['core'] if name=='core' else interfaces.get(name,{})
         require(name=='core' or entry.get('revision')==1,'request interface revision changed')
-        expected_op=17 if name=='oep.probe.config' and op=='set' else 16 if op in ('scan','configure','open','plan_apply') else 17 if op=='attach' else 24
+        expected_op=16 if op in ('scan','configure','open','plan_apply') else 17 if op=='attach' else 24
         require(next((r['code'] for r in entry['op'] if r['name']==op),None)==expected_op,
                 'request operation number changed')
-        tags=entry['tlv']['item' if name=='oep.probe.config' and op=='set' else 'configure' if op=='query' else op]
+        tags=entry['tlv']['configure' if op=='query' else op]
         require(set(tags.values())=={t for t,v,c in fields},'request tag space changed')
     return dict(identity, reviewed_request_policy_sha256=REVIEWED.copy())
 
@@ -71,11 +70,6 @@ def contexts():
     rows.append(('oep.probe.plan','plan_apply',b'',[
         (16,b'\x02\x00\x01\x01\x00',True),(16,b'\x02\x00\x01\x03\x00',True)]))
     rows.append(('oep.fixture.uart','configure',b'\x00\xc2\x01\x00',[(1,b'\x05',True)]))
-    # config §1 (a09fa45): set items are a counted setting-data container, not request tail TLVs.
-    # The Host sends every item number with bit 7 clear; the Probe refuses unknown items regardless of bit 7.
-    rows.append(('oep.probe.config','set',b'\x05',[
-        (2,b'\x04\x00nrst',False),(3,b'\x01\x00\x04',False),(3,b'\x02\x00\x03',False),
-        (7,b'\x07\x00',False),(2,b'\x05\x00swdio',False)]))
     return rows
 
 
@@ -151,7 +145,7 @@ class HostRequestChecks:
             sources_sha256={n:hashlib.sha256(Path(__file__).with_name(n).read_bytes()).hexdigest()
                 for n in ('conformance_host_requests.py','conformance_host_request_sample.py')},
             unchecked=['production Host encoders','field selection/defaults/mandatory arguments',
-                'set item count/key semantics (config items are checked as an opaque counted container)',
+                'settings value semantics (core §13: values, not request TLVs)',
                 'Probe execution and refusal nonmutation','all request schemas and other extensions',
                 'fixed payload construction/transport bounds','external encoder provenance'],
             adoption='docs/host-request-conformance.ja.md')

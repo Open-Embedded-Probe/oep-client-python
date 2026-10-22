@@ -2,19 +2,19 @@
 import hashlib
 from pathlib import Path
 from .conformance import require,spec_identity
+from . import registry as _reg
+SAVE=_reg.CORE.op['save']  # fn 0's save (core §13.7)
 
 
 REVIEWED={'docs/oep-core.ja.md':'4c5dcdcc779c5ba0ee85060a33b2b629deddad3e8f8f1a22e18bdeea9d471bdc',
-          'docs/oep-transports.ja.md':'17f863aeb335bdf5b06a3bd94451b32361af6c7513866a2d987daa99e83b719d',
-          'interfaces/oep-if-probe-config.ja.md':'ecc3e2e0d2d6e5c3deb7801c15041c69ddc03f3afc78a97e681237ba0a93ac82'}
+          'docs/oep-transports.ja.md':'17f863aeb335bdf5b06a3bd94451b32361af6c7513866a2d987daa99e83b719d'}
 QUICK_MS=1000  # core_quick_op_max_ms
 
 
 def reviewed_identity(path):
     registry,identity=spec_identity(path)
     require(registry['timing']['host_wait_add_ms']==1000 and registry['timing']['notify_pending_max_frames']==2 and registry['constants']['min_max_frame']==64 and registry['limits']['max_op_ms_max']==600000 and registry['timing'].get('core_quick_op_max_ms')==QUICK_MS,'reviewed Host wait numbers changed')
-    cfg=next(row for row in registry['interface'] if row['name']=='oep.probe.config')
-    require(cfg['revision']==1 and next(row['code'] for row in cfg['op'] if row['name']=='save')==18,'reviewed save operation changed')
+    require(next(row['code'] for row in registry['core']['op'] if row['name']=='save')==SAVE,'reviewed save operation changed')
     for name,h in REVIEWED.items():require(hashlib.sha256((Path(path)/name).read_bytes()).hexdigest()==h,'reviewed Host wait document changed: '+name)
     return identity
 
@@ -22,7 +22,7 @@ def reviewed_identity(path):
 class HostWaitChecks:
     def __init__(self,a,*,spec):self.a=a;self.identity=reviewed_identity(spec);self.results=[];self.observations=[]
     def check(self,name,fn):
-        row=dict(id='HOST-WAIT-'+name,level='core' if name!='SAVE' else 'oep-interface',clause='core §4.4/7.5; transports §6; config §3')
+        row=dict(id='HOST-WAIT-'+name,level='core',clause='core §4.4/7.5/13.7; transports §6')
         try:fn();row['status']='passed'
         except Exception as exc:row.update(status='failed',error=f'{type(exc).__name__}: {exc}')
         self.results.append(row)
@@ -41,9 +41,9 @@ class HostWaitChecks:
         if failure:cases=cases[::12]
         for case in cases:
             result=self.a.save(case);record=result['record'];expected=max(case['maximum'],case['outer_ms'])
-            require(result['save_code']==18,'save is op 0x12 (probe-config §2)')
+            require(result['save_code']==SAVE,'save is fn 0 save (core §13.7)')
             minimum=self.budget(record,expected,case['kind'],case['frame']);raw=bytes.fromhex(record['request_hex'])
-            require(len(raw)==10 and raw[:1]==b'\1' and raw[3:6]==b'\4\0\x12' and int.from_bytes(raw[6:10],'little')==7,'Host save wire request differs')
+            require(len(raw)==10 and raw[:1]==b'\1' and raw[3:6]==b'\0\0'+bytes([SAVE]) and int.from_bytes(raw[6:10],'little')==7,'Host save wire request differs')
             require(record['tx_len']==(15 if case['kind']=='cobs' else 12),'save wire length differs')
             require(result['restored_outer_ms']==case['outer_ms'] and result['final_expect_ms']==0,'Host expecting scope leaked or discarded outer wait')
             require((result['error']=='Failed' and result['value'] is None) if failure else (result['error'] is None and result['value']==0x12345678),'Host save outcome differs')

@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from oep_client import config, core, endpoint, host as h, message as m, registry as reg, riscv, virtual_bench
+from oep_client import core, settings, endpoint, host as h, message as m, registry as reg, riscv, virtual_bench
 
 RVSWD = reg.WIRE_RVSWD.enum
 SHIFT = RVSWD["target_id_family"]["shift"]
@@ -44,18 +44,20 @@ def test_the_rest_comes_from_the_target_id_unless_the_host_says(target_id, given
     ("high", "low", L103_ID, "low"),
 ], ids=["setting-high-off", "setting-low-off", "setting-auto", "tlv-over-setting"])
 def test_the_setting_turns_the_automatic_rest_off_per_port(setting, given, target_id, rest):
-    """probe.config rvswd-rest (key: the port's SWCLK channel): high / low fixed, auto the probe's choice; the attach's
+    """oep.wire.rvswd's rest.{} (key: the port's SWCLK channel): high / low fixed, auto the probe's choice; the attach's
     TLV still decides (debug §3.1)."""
     ep, hst, wire, pair = bench(target_id)
-    config.ProbeConfig(hst).set([config.RvswdRest(channel=pair[1], mode=setting)])
-    assert config.RvswdRest(channel=pair[1], mode=setting) in config.ProbeConfig(hst).items()
+    st = settings.Settings(hst)
+    st.set_named("oep.wire.rvswd/0", {f"rest.GPIO{pair[1]}": setting})
+    assert ("oep.wire.rvswd/0", f"rest.GPIO{pair[1]}", setting, "user") in st.show()
     wire.attach(halt=False, pins=pair, idle_clock=given)
     assert wire.idle_clock == rest
 
 
 def test_an_unused_rest_mode_is_refused():
     ep, hst, wire, pair = bench(L103_ID)
-    item = struct.pack("<BHHB", config.ITEM["rvswd_rest"], 3, pair[1], max(config.REST_MODE.values()) + 1)
+    fn = core.find(hst, "oep.wire.rvswd")
+    number = ep.setting_number("rest.{}", fn)
     with pytest.raises(h.Rejected) as e:
-        config.ProbeConfig(hst).set([item])
+        settings.Settings(hst).set([(fn, number, pair[1], bytes([max(reg.WIRE_RVSWD.enum["rest"].values()) + 1]))])
     assert e.value.result.detail == m.UNSUPPORTED

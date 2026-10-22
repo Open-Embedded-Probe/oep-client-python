@@ -1,4 +1,4 @@
-"""probe.config §1.1 passthrough and transports §4 (oep-spec df32360): a serial port carries what a fixture UART receives
+"""fixture §2.1 / console §2.1 pass-throughs and transports §4 (the settings, core §13): a serial port carries what a fixture UART receives
 outside the OEP frames while no session uses the port, the UART's fn or its RX pin; a session that sends on the port,
 or takes the fn's plan, stops it for the session. A host reads past the raw bytes as noise."""
 
@@ -7,15 +7,23 @@ import time
 
 import pytest
 
-from oep_client import config, core, endpoint, host as h, link, message as m, virtual_bench, virtual_bench_serial
+from oep_client import core, endpoint, host as h, link, message as m, settings, virtual_bench, virtual_bench_serial
 
 
 UART_FN, RX = 5, 13
 
 
-def item(port=0, fn=UART_FN, rx=RX, baud=115200, fmt=0):
-    data = struct.pack("<HHIB", fn, rx, baud, fmt)                       # number len key data (probe.config §1)
-    return struct.pack("<BHH", config.ITEM["passthrough"], 2 + len(data), port) + data
+UART = "oep.fixture.uart/0"
+PORT = "bridge0"                                                          # the UART bridge, serial port 0 (core §13.3)
+
+
+def uart_values(rx=RX, baud=115200) -> dict:
+    return {f"passthrough.{PORT}.rx": f"GPIO{rx}", f"passthrough.{PORT}.baud": baud}
+
+
+def raw(ep, fn, name, key, data) -> tuple:
+    """One set value by the item's name in fn's list (what a host could send that the client by name would not)."""
+    return (fn, ep.setting_number(name, fn), key, data)
 
 
 @pytest.fixture
@@ -33,7 +41,7 @@ def bench():
 def test_the_uart_goes_out_between_frames_while_no_session_uses_it(bench):
     ep, s, lk, hst = bench
     core.take(hst, 10000)
-    config.ProbeConfig(hst).set([item()])
+    settings.Settings(hst).set_named(UART, uart_values())
     ep.uart_rx(UART_FN, b"boot\r\n", RX)
     assert s.port.output() == b""                         # the session's port: nothing raw (transports §4)
     hst.end()
@@ -48,7 +56,7 @@ def test_the_uart_goes_out_between_frames_while_no_session_uses_it(bench):
 def test_a_session_on_the_port_or_the_fns_plan_stops_it(bench):
     ep, s, lk, hst = bench
     core.take(hst, 10000)
-    config.ProbeConfig(hst).set([item()])
+    settings.Settings(hst).set_named(UART, uart_values())
     hst.end()
     assert ep.passthroughs() == {0: (UART_FN, RX)}
     core.take(hst, 10000)                                 # a session's request on the port
@@ -61,45 +69,47 @@ def test_a_session_on_the_port_or_the_fns_plan_stops_it(bench):
 
 
 @pytest.mark.parametrize("value, reason", [
-    (dict(port=7), m.UNSUPPORTED),                        # no such serial port
-    (dict(fn=4), m.UNSUPPORTED),                          # not a fixture UART
-    (dict(rx=23), m.UNSUPPORTED),                         # not the UART's RX candidate
-    (dict(baud=0), m.MALFORMED),
-    (dict(fmt=0x40), m.UNSUPPORTED),                      # a format the UART does not declare
-])
+    (("passthrough.{}.rx", 7, b"\x0d\x00"), m.UNSUPPORTED),          # no such serial port
+    (("passthrough.{}.rx", 0, b"\x17\x00"), m.UNSUPPORTED),          # not the UART's RX candidate
+    (("passthrough.{}.baud", 0, b"\x00\x00\x00\x00"), m.MALFORMED),
+    (("passthrough.{}.format", 0, b"\x40"), m.UNSUPPORTED),           # a format the UART does not declare
+], ids=["port", "rx", "baud0", "format"])
 def test_a_set_it_cannot_take_is_refused(bench, value, reason):
     ep, s, lk, hst = bench
     core.take(hst, 10000)
     with pytest.raises(h.Rejected) as e:
-        config.ProbeConfig(hst).set([item(**value)])
+        settings.Settings(hst).set([raw(ep, UART_FN, *value)])
     assert e.value.result.detail == reason
 
 
-def test_a_disabled_rx_or_an_output_idle_on_it_is_held_by_settings(bench):
+def test_a_disabled_rx_is_held_by_settings(bench):
     ep, s, lk, hst = bench
     core.take(hst, 10000)
-    disable = config.item(config.Disable(channel=RX))
+    st = settings.Settings(hst)
+    st.set_named(settings.CORE_CATEGORY, {f"channel.GPIO{RX}.disable": True})
     with pytest.raises(h.Unavailable) as e:
-        config.ProbeConfig(hst).set([disable, item()])
+        st.set_named(UART, uart_values())
     assert e.value.cause == "held_by_settings"            # cause 5
 
 
 def test_the_client_sets_reads_and_unsets_it(bench):
     ep, s, lk, hst = bench
     core.take(hst, 10000)
-    cfg = config.ProbeConfig(hst)
-    cfg.set([config.Passthrough(port=0, fn=UART_FN, rx=RX)])
-    assert config.Passthrough(port=0, fn=UART_FN, rx=RX, baud=115200, format=0) in cfg.items()
-    cfg.unset([("passthrough", 0)])                       # the key, the port, in unset's channel field (§1.1)
-    assert not [it for it in cfg.items() if isinstance(it, config.Passthrough)]
+    st = settings.Settings(hst)
+    st.set_named(UART, uart_values())
+    shown = {(c, n): v for c, n, v, o in st.show()}
+    assert shown[(UART, f"passthrough.{PORT}.rx")] == f"GPIO{RX}" and shown[(UART, f"passthrough.{PORT}.baud")] == 115200
+    st.unset_named(UART, [f"passthrough.{PORT}.rx", f"passthrough.{PORT}.baud"])
+    assert not [n for c, n, v, o in st.show() if c == UART]
+    assert ep.passthroughs() == {}
 
 
 def test_what_it_passes_is_not_kept_in_the_uarts_stream(bench):
-    """§1.1: the pass-through's bytes go to the port only - never into the fixture UART's stream - and what the port
-    could not take is dropped (nothing waits for a session)."""
+    """fixture §2.1: the pass-through's bytes go to the port only - never into the fixture UART's stream - and what
+    the port could not take is dropped (nothing waits for a session)."""
     ep, s, lk, hst = bench
     core.take(hst, 10000)
-    config.ProbeConfig(hst).set([item()])
+    settings.Settings(hst).set_named(UART, uart_values())
     hst.end()
     kept = lambda: bytes(ep.uarts[UART_FN].data) if UART_FN in ep.uarts else b""
     before = kept()
@@ -110,33 +120,34 @@ def test_what_it_passes_is_not_kept_in_the_uarts_stream(bench):
     assert s.port.output() == b""                         # not kept for later
 
 
-# ---- console_passthrough (probe.config §1.2) -------------------------------------------------------------------------
+# ---- the console's pass-through (console §2.1) ------------------------------------------------------------------------
 
-WIRE, PAIR, CONSOLE, DMSEQ = 1, (16, 0xFFFF), 3, 3      # dmseq: third in the mechanism list (core §7.7)
+WIRE, PAIR, CONSOLE_FN = 1, (16, 0xFFFF), 3
+CONSOLE = "oep.target.console/0"
 
 
-def console_item(port=0, wire=WIRE, pair=PAIR, speed=1_000_000, console=CONSOLE, mech=DMSEQ):
-    data = struct.pack("<HHHIHB", wire, pair[0], pair[1], speed, console, mech)
-    return struct.pack("<BHH", config.ITEM["console_passthrough"], 2 + len(data), port) + data
+def console_values(swdio=PAIR[0], mech="dmseq", wire="oep.wire.swio/0") -> dict:
+    return {f"passthrough.{PORT}.wire": wire, f"passthrough.{PORT}.swdio": f"GPIO{swdio}",
+            f"passthrough.{PORT}.mechanism": mech}
 
 
 def test_the_targets_console_goes_out_while_no_session_uses_it(bench):
     ep, s, lk, hst = bench
     core.take(hst, 10000)
-    config.ProbeConfig(hst).set([console_item()])
+    settings.Settings(hst).set_named(CONSOLE, console_values())
     ep.target_says(b"in session\r\n")
     assert s.port.output() == b""                         # the session's port: nothing raw
     hst.end()
     ep.target_says(b"printf\r\n")
     assert s.port.output() == b"printf\r\n\x00"
-    assert not ep.conns and not ep.streams                # no OEP resource: no connection, no stream (§1.2)
+    assert not ep.conns and not ep.streams                # no OEP resource: no connection, no stream (console §2.1)
     assert hst.lock_state()[0] is False                   # session-less requests still answered
 
 
 def test_a_session_on_the_port_closes_it_and_it_comes_back_after(bench):
     ep, s, lk, hst = bench
     core.take(hst, 10000)
-    config.ProbeConfig(hst).set([console_item()])
+    settings.Settings(hst).set_named(CONSOLE, console_values())
     hst.end()
     assert ep.console_passthroughs() == {0: (WIRE, PAIR)}
     core.take(hst, 10000)
@@ -151,7 +162,7 @@ def test_a_session_on_the_port_closes_it_and_it_comes_back_after(bench):
 def test_swio_tries_again_until_the_target_answers(bench):
     ep, s, lk, hst = bench
     core.take(hst, 10000)
-    config.ProbeConfig(hst).set([console_item()])
+    settings.Settings(hst).set_named(CONSOLE, console_values())
     ep.target.present = False
     hst.end()
     assert ep.console_passthroughs() == {}
@@ -159,56 +170,67 @@ def test_swio_tries_again_until_the_target_answers(bench):
     assert ep.console_passthroughs() == {0: (WIRE, PAIR)}
 
 
+def test_not_every_value_there_is_no_pass_through(bench):
+    ep, s, lk, hst = bench
+    core.take(hst, 10000)
+    values = console_values()
+    del values[f"passthrough.{PORT}.mechanism"]
+    settings.Settings(hst).set_named(CONSOLE, values)
+    hst.end()
+    assert ep.console_passthroughs() == {}
+
+
 @pytest.mark.parametrize("value, reason", [
-    (dict(port=7), m.UNSUPPORTED), (dict(wire=4), m.UNSUPPORTED), (dict(pair=(17, 0xFFFF)), m.UNSUPPORTED),
-    (dict(speed=0), m.MALFORMED), (dict(console=4), m.UNSUPPORTED), (dict(mech=9), m.UNSUPPORTED),
-], ids=["port", "wire", "pair", "speed0", "console", "mechanism"])
-def test_a_console_item_it_cannot_take_is_refused(bench, value, reason):
+    (("passthrough.{}.wire", 7, b"\x01\x00"), m.UNSUPPORTED),         # no such serial port
+    (("passthrough.{}.wire", 0, b"\x04\x00"), m.UNSUPPORTED),         # not a wire
+    (("passthrough.{}.max-speed", 0, b"\x00\x00\x00\x00"), m.MALFORMED),
+    (("passthrough.{}.mechanism", 0, b"nope"), m.UNSUPPORTED),         # not in the console's mechanism list
+], ids=["port", "wire", "speed0", "mechanism"])
+def test_a_console_value_it_cannot_take_is_refused(bench, value, reason):
     ep, s, lk, hst = bench
     core.take(hst, 10000)
     with pytest.raises(h.Rejected) as e:
-        config.ProbeConfig(hst).set([console_item(**value)])
+        settings.Settings(hst).set([raw(ep, CONSOLE_FN, *value)])
     assert e.value.result.detail == reason
+
+
+def test_a_pair_the_wire_does_not_allow_is_refused(bench):
+    ep, s, lk, hst = bench
+    core.take(hst, 10000)
+    with pytest.raises(h.Unsupported):
+        settings.Settings(hst).set_named(CONSOLE, console_values(swdio=17))
 
 
 def test_one_pass_through_per_port(bench):
     ep, s, lk, hst = bench
     core.take(hst, 10000)
+    st = settings.Settings(hst)
+    st.set_named(UART, uart_values())
     with pytest.raises(h.Unavailable) as e:
-        config.ProbeConfig(hst).set([item(), console_item()])
+        st.set_named(CONSOLE, console_values())
     assert e.value.cause == "held_by_settings"
 
 
-def test_the_client_sets_and_reads_a_console_pass_through(bench):
-    ep, s, lk, hst = bench
-    core.take(hst, 10000)
-    cfg = config.ProbeConfig(hst)
-    want = config.ConsolePassthrough(port=0, wire_fn=WIRE, swdio=16, console_fn=CONSOLE, mechanism=DMSEQ)
-    cfg.set([want])
-    assert want in cfg.items()
-
-
 def test_after_a_line_loss_rvswd_waits_for_the_condition_to_start_again():
-    """§1.2: line loss closes it; rvswd (its wake may reset the target) is not tried again until the condition starts
-    again - a session on the port and its end, or unset and set; swio tries again by itself."""
+    """console §2.1: line loss closes it; rvswd (its wake may reset the target) is not tried again until the condition
+    starts again - a session on the port and its end, or unset and set; swio tries again by itself."""
     start = time.monotonic()
     ep = endpoint.Endpoint(virtual_bench.p4_x035(), lambda: int((time.monotonic() - start) * 1000))
     hst = h.Host(ep.handle)
     core.take(hst, 10000)
     wire = core.find(hst, "oep.wire.rvswd")
-    console = core.find(hst, "oep.target.console")
     (pair,) = [p for (f, p) in ep.targets if f == wire]
-    cfg = config.ProbeConfig(hst)
-    cfg.set([config.ConsolePassthrough(port=0, wire_fn=wire, swdio=pair[0], swclk=pair[1], console_fn=console,
-                                       mechanism=DMSEQ)])
+    st = settings.Settings(hst)
+    route = st.catalog().route[0]
+    values = {f"passthrough.{route}.wire": "oep.wire.rvswd/0", f"passthrough.{route}.swdio": f"GPIO{pair[0]}",
+              f"passthrough.{route}.swclk": f"GPIO{pair[1]}", f"passthrough.{route}.mechanism": "dmseq"}
+    st.set_named(CONSOLE, values)
     hst.end()
     assert ep.console_passthroughs() == {0: (wire, pair)}
     ep.console_line_lost(0)
     assert ep.console_passthroughs() == {}                # not tried again by itself
     core.take(hst, 10000)
-    cfg.unset([("console-passthrough", 0)])
-    cfg.set([config.ConsolePassthrough(port=0, wire_fn=wire, swdio=pair[0], swclk=pair[1], console_fn=console,
-                                       mechanism=DMSEQ)])
+    st.unset_named(CONSOLE, [f"passthrough.{route}.wire"])
+    st.set_named(CONSOLE, values)
     hst.end()
     assert ep.console_passthroughs() == {0: (wire, pair)}  # unset and set: the condition started again
-

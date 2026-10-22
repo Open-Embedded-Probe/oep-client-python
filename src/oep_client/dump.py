@@ -39,11 +39,15 @@ MISSING_HEADING = "MISSING what every probe must give (core §1.2, §7.1, §7.2,
 CORE_NAME = "(core)"             # how fn 0 is shown: the core has no name (core §0)
 
 
+# fn 0's required ops (core §1.2, §11); the settings' (get, set, ... network) are optional (core §13)
+CORE_REQUIRED_OPS = ("confirm", "list", "describe", "clock", "open", "end", "keepalive", "lock_state")
+
+
 def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, bytes]]) -> list[str]:
     """What every probe must give, as far as a lock-free look on one transport shows it (core §1.2, C-10; oep-spec
     docs/conformance.md section 1): confirm's answer carries TLV transport, naming an entry of fn 0's describe or 0xFF
     (§7.1); fn 0's describe carries unit_id, transport, max_op_ms (§1.2, §7.5) and ops in core §7.4's form with every
-    op of §12 set (a probe whose fn 0 ops break the form is not used). -> what is missing (empty: nothing seen missing). The bounds of confirm's values and of
+    required op set (core §11; a probe whose fn 0 ops break the form is not used). -> what is missing (empty: nothing seen missing). The bounds of confirm's values and of
     max_op_ms are checked by the host itself (host.check_confirm, host.check_max_op_ms: the probe is not used)."""
     out = []
     have = {tag for tag, _ in core_describe}               # bit 7 in an answer: an unknown tag, not this one (core §2.2)
@@ -69,9 +73,9 @@ def required_missing(confirm_payload: bytes, core_describe: list[tuple[int, byte
             out.append(f"describe of fn 0: ops in core §7.4's form ({bad}; the probe is not used)")
         else:
             declared = set().union(*(catalog.unpack_ops(v) for v in values))
-            lacking = [k for k, op in reg.CORE.op.items() if op not in declared]
+            lacking = [k for k in CORE_REQUIRED_OPS if reg.CORE.op[k] not in declared]
             if lacking:
-                out.append("describe of fn 0: ops " + ", ".join(lacking))   # every core op is mandatory (§1.2, §12)
+                out.append("describe of fn 0: ops " + ", ".join(lacking))   # fn 0's required ops (core §1.2, §11)
     return out
 
 

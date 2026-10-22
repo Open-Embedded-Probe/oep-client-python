@@ -16,7 +16,10 @@ OWNER = CORE.tlv["open"]["owner"]
 UNA = CORE.tlv["unavailable_payload"]
 CAUSE = CORE.enum["unavailable_cause"]
 PLAN = reg.PROBE_PLAN
-CFG = reg.PROBE_CONFIG
+# the settings (core §13): fn 0's ops; the core's items numbered as every settings profile lists them
+SET_OPS = reg.CORE.op
+CORE_ITEM = {it.name.split(".")[-1]: k for k, it in enumerate(vb.CORE_ITEMS, 1)}
+IDLE_MODE = reg.CORE.enum["channel_idle"]
 GPIO = reg.FIXTURE_GPIO
 RVSWD = reg.WIRE_RVSWD
 RV = reg.TARGET_RISCV_DM
@@ -169,9 +172,9 @@ def test_interfaces_are_named_by_reverse_dns_or_the_oep_prefix_with_their_own_re
 
 def test_fn_0_offers_its_eight_ops_and_answers_each(ep):
     """core §1.2: fn 0's confirm, list, describe, clock, open, end, keepalive and lock_state are all there - in its ops
-    tag and answered (none is unknown_operation)."""
+    tag and answered (none is unknown_operation); the settings' ops are optional (core §13)."""
     ops = next(catalog.unpack_ops(v) for t, v in describe(ep) if t == catalog.OPS)
-    assert ops == set(CORE.op.values())
+    assert ops >= {CORE.op[k] for k in vb.CORE_REQUIRED} and ops <= set(CORE.op.values())
     w = Wire(ep)
     bodies = {m.OP_CONFIRM: m.CONFIRM_REQUEST + b"\x01\x01", m.OP_LIST: b"\0\0", m.OP_DESCRIBE: b"\0\0\0\0",
               m.OP_CLOCK: b"", m.OP_LOCK_STATE: b"", m.OP_OPEN: struct.pack("<IB", 3000, 0)}
@@ -350,14 +353,14 @@ def test_the_tag_space_is_the_payloads_context(ep):
 
 
 def test_a_tag_repeats_only_where_its_definition_says():
-    """core §2.2, §2.3: a repeating tag is a list (unavailable's channel, fn 0's label: all kept in order); a tag that
-    does not repeat is used once - the first."""
+    """core §2.2, §2.3: a repeating tag is a list (unavailable's channel: all kept in order); a tag that does not repeat
+    is used once - the first. The firmware's fixed labels come in get's order (core §13.5: by key)."""
     una = h.Unavailable(m.Result(1, m.REJECTED, m.UNAVAILABLE, m.tlv(0x01, b"\x01") + m.tlv(0x01, b"\x02")
                                  + m.tlv(0x02, b"\x05\x00") + m.tlv(0x02, b"\x07\x00")))
     assert una.cause == "pin_in_use" and una.channels == [5, 7]
     ep = build()
     labels = core.firmware_labels(host_on(ep))
-    assert labels == [(2, "SWDIO"), (54, "SWCLK"), (51, "LED")]
+    assert labels == [(2, "SWDIO"), (51, "LED"), (54, "SWCLK")]
 
 
 # ---- §2.3 fixed forms and TLVs ---------------------------------------------------------------------------------------
@@ -656,13 +659,13 @@ def test_unknown_values_that_tell_no_failure_are_shown_as_unknown():
 # ---- §2.5 number spaces ----------------------------------------------------------------------------------------------
 
 def test_fn_0_op_space(ep):
-    """core §2.5: fn 0's ops are 0x01-0x0F discovery and 0x10-0x1F session; anything else (and an unused one in those
-    ranges) is unknown_operation, before session_required."""
+    """core §2.5: fn 0's ops are 0x01-0x0F discovery, 0x10-0x1F session and 0x20-0x2F the settings; anything else (and
+    an unused one in those ranges) is unknown_operation, before session_required."""
     for op in CORE.op.values():
-        assert 0x01 <= op <= 0x0F or 0x10 <= op <= 0x1F
+        assert 0x01 <= op <= 0x0F or 0x10 <= op <= 0x1F or 0x20 <= op <= 0x2F
     assert {op for op in CORE.op.values() if op < 0x10} == {m.OP_CONFIRM, m.OP_LIST, m.OP_DESCRIBE, m.OP_CLOCK}
     w = Wire(ep)
-    for op in (0x00, 0x05, 0x0F, 0x14, 0x1F, 0x20, 0xFF):
+    for op in (0x00, 0x05, 0x0F, 0x14, 0x1F, 0x2F, 0xFF):
         rejected(w.raw(0, op, sid=0), m.UNKNOWN_OPERATION)
 
 
@@ -1612,7 +1615,7 @@ def test_unit_id_is_required_its_grammar_and_the_same_on_every_transport():
     v = values.pop()
     assert vb.UNIT_ID.fullmatch(v.decode())
     with pytest.raises(AssertionError):
-        vb._core("1", "m", "BAD_ID", 0, {})
+        vb._core("1", "m", "BAD_ID", 0)
 
 
 def test_channels_are_numbered_from_0():
@@ -1627,11 +1630,12 @@ def test_channels_are_numbered_from_0():
     assert not decl(build(vb.core_v1), "channels")
 
 
-def test_labels_are_the_firmwares_fixed_names():
-    """core §7.5: label is channel(u16) text - the firmware's fixed names; the host reads them as shown text."""
+def test_channel_names_and_the_firmwares_fixed_labels():
+    """core §7.5: channel_name is channel(u16) text, one a channel; the firmware's labels are channel.{}.label values of
+    origin fixed (core §13.4), read as shown text."""
     ep = build()
-    for v in decl(ep, "label"):
-        assert struct.unpack_from("<H", v)[0] < ep.channels and v[2:].decode()
+    names = [v for v in decl(ep, "channel_name")]
+    assert [struct.unpack_from("<H", v)[0] for v in names] == list(range(ep.channels)) and all(v[2:].decode() for v in names)
     assert core.probe_labels(host_on(ep))["LED"] == 51
 
 
@@ -1707,12 +1711,17 @@ def test_clock_is_read_at_the_request_mutant(monkeypatch):
 
 # ---- §8 channels -----------------------------------------------------------------------------------------------------
 
-def cfg_set(w, ep, *items):
-    return w.raw(ep.fns[CFG.name], CFG.op["set"], bytes([len(items)]) + b"".join(items))
+def cfg_set(w, ep, *values):
+    return w.raw(0, SET_OPS["set"], bytes([len(values)]) + b"".join(values))
+
+
+def value(item, key, data: bytes) -> bytes:
+    """A set value of the core's item `item` (label, idle, disable): fn number key len data (core §13.5)."""
+    return struct.pack("<HBHH", 0, CORE_ITEM[item], key, len(data)) + data
 
 
 def idle_item(ch, mode):
-    return m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["idle"], struct.pack("<HB", ch, mode))
+    return value("idle", ch, bytes([mode]))
 
 
 def test_the_idle_state_is_the_settings_or_hi_z():
@@ -1721,8 +1730,8 @@ def test_the_idle_state_is_the_settings_or_hi_z():
     w = Wire(ep)
     w.open()
     assert ep.pin_state(30) == "idle hi-z"
-    assert cfg_set(w, ep, idle_item(30, CFG.enum["idle_mode"]["output_high"])).succeeded
-    assert ep.pin_state(30) == "idle output-high"
+    assert cfg_set(w, ep, idle_item(30, IDLE_MODE["high"])).succeeded
+    assert ep.pin_state(30) == "idle high"
 
 
 def test_a_released_pin_returns_to_idle_whichever_way():
@@ -1764,7 +1773,7 @@ def test_taking_an_output_idle_channel_is_unavailable_cause_5():
     ep = build()
     w = Wire(ep)
     w.open()
-    cfg_set(w, ep, idle_item(30, CFG.enum["idle_mode"]["output_low"]))
+    cfg_set(w, ep, idle_item(30, IDLE_MODE["low"]))
     r = rejected(w.raw(ep.fns[PLAN.name], PLAN.op["plan_apply"], assign(5, 1, 30)), m.UNAVAILABLE)
     assert h.Unavailable(r).cause == "held_by_settings" and not ep.plan
 
@@ -2529,8 +2538,8 @@ def test_a_reading_interface_never_changes_a_pins_drive(held):
         hst.call(4, GPIO.op["set"], b"\x01" + struct.pack("<HB", ch, 3))
     else:
         ch = 30
-        mode = CFG.enum["idle_mode"]["output_high" if held == "idle-output-high" else "pull_up"]
-        hst.call(ep.fns[CFG.name], CFG.op["set"], b"\x01" + idle_item(ch, mode))
+        mode = IDLE_MODE["high" if held == "idle-output-high" else "pull_up"]
+        hst.call(0, SET_OPS["set"], b"\x01" + idle_item(ch, mode))
     before = ep.pin_state(ch)
     lc = cap.LogicCapture(hst)
     core.plan_apply(hst, [(lc.fn, 0, ch)] + ([(4, 1, ch)] if held == "gpio-output" else []))
@@ -2850,7 +2859,7 @@ def test_a_released_pin_returns_to_its_configured_idle_whichever_way():
         ep = build()
         w = Wire(ep)
         w.open(1000)
-        assert cfg_set(w, ep, idle_item(20, CFG.enum["idle_mode"]["pull_up"])).succeeded
+        assert cfg_set(w, ep, idle_item(20, IDLE_MODE["pull_up"])).succeeded
         assert ep.pin_state(20) == "idle pull-up"
         plan = ep.fns[PLAN.name]
         w.ok(plan, PLAN.op["plan_apply"], assign(4, 1, 20))
@@ -2875,11 +2884,11 @@ def test_at_boot_the_saved_idles_are_applied_and_a_disabled_channel_is_left_alon
     ep = build()
     w = Wire(ep)
     w.open()
-    disable = m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["disable"], struct.pack("<H", 31))
-    assert cfg_set(w, ep, idle_item(30, CFG.enum["idle_mode"]["output_high"]), disable).succeeded
-    w.ok(ep.fns[CFG.name], CFG.op["save"])
+    disable = value("disable", 31, b"\x01")
+    assert cfg_set(w, ep, idle_item(30, IDLE_MODE["high"]), disable).succeeded
+    w.ok(0, SET_OPS["save"])
     ep.reboot()
-    assert ep.pin_state(30) == "idle output-high" and ep.pin_state(31) == "reset"
+    assert ep.pin_state(30) == "idle high" and ep.pin_state(31) == "reset"
     assert 31 not in ep.parked and not set(ep.parked) & ep.own_channels
     for ch in set(range(ep.channels)) - ep.own_channels - {30, 31}:
         assert ep.pin_state(ch) == "idle hi-z", ch
@@ -2906,7 +2915,7 @@ def test_a_take_clashing_with_a_runtime_resource_or_a_setting_changes_nothing():
     ep = build()
     w = Wire(ep)
     w.open()
-    assert cfg_set(w, ep, m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["disable"], struct.pack("<H", 21))).succeeded
+    assert cfg_set(w, ep, value("disable", 21, b"\x01")).succeeded
     before = ([ep.pin_state(c) for c in range(55)], sorted(ep.plan))
     r = rejected(w.raw(ep.fns[PLAN.name], PLAN.op["plan_apply"], assign(4, 1, 20) + assign(4, 1, 21)), m.UNAVAILABLE)
     assert h.Unavailable(r).cause == "held_by_settings" and ([ep.pin_state(c) for c in range(55)], sorted(ep.plan)) == before
@@ -3464,13 +3473,13 @@ def test_the_revision_a_confirm_chose_is_kept_per_transport_until_the_next():
 
 
 def test_a_label_set_in_the_settings_is_not_in_describe():
-    """core §7.5 (label), §7.3: describe's label is the firmware's fixed name - a label set in the settings is read by
-    probe.config's op and never shows in fn 0's describe (asked afresh, not from a host's cache)."""
+    """core §7.3, §13.2: describe holds declarations only - a label set in the settings is read by fn 0's get and never
+    shows in fn 0's describe (asked afresh, not from a host's cache)."""
     ep = build()
     w = Wire(ep)
     w.open()
     before = describe(ep)
-    item = m.tlv(__import__("oep_client.config", fromlist=["ITEM"]).ITEM["label"], struct.pack("<H", 20) + b"from-settings")
+    item = value("label", 20, b"from-settings")
     assert cfg_set(w, ep, item).succeeded
     assert describe(ep) == before
     assert all(b"from-settings" not in v for _, v in describe(ep))
