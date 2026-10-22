@@ -572,7 +572,7 @@ def rp2350_pins() -> VirtualProbe:
     The virtual target answers on (0, 1), the first pair."""
     own = [19]
     pins = [p for p in range(30) if p not in own]
-    return VirtualProbe("rp2350-pins", 1024, [
+    return VirtualProbe("rp2350-pins", 1024, with_settings([
         _core("3.0.0", "rp2350", "e66138935f2b1f2c", 30, _transports([(TRANSPORT["usb_cdc"], 0)])),
         Offered(1, 0, "oep.wire.rvswd", _roles({1: pins, 2: pins, 3: pins}) + (catalog.u32(FEATURES, ATTACH_HALT),
             catalog.u32(MAX_CLOCK_HZ, 5_000_000), catalog.u8(MAX_CONNECTIONS, 1))),
@@ -583,7 +583,7 @@ def rp2350_pins() -> VirtualProbe:
         _link(6),
         _plan(7),
         _restart(8),
-    ], own_channels=own)
+    ]), own_channels=own)
 
 
 STAND_IN = f"{NS}.stand-in"

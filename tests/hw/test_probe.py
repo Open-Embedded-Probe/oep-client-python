@@ -704,14 +704,15 @@ def test_capture(run: record.Run):
     assert not wrong, "; ".join(wrong)
 
 
-def _analog_channel(hst: h.Host, board, decl: dict) -> int:
-    """The free channel the analog capture's role 0 allows (OEP_HW_ANALOG=<channel> names one)."""
+def _analog_channel(hst: h.Host, board, decl: dict, exclude=()) -> int:
+    """The free channel the analog capture's role 0 allows (OEP_HW_ANALOG=<channel> names one), none of `exclude`
+    (the channels another track of the same run plans: one channel cannot be two tracks' at once)."""
     env = os.environ.get("OEP_HW_ANALOG")
     if env:
         return int(env)
     allowed = decl["role_channels"].get(0)
     for ch in _free_channels(board):
-        if allowed is None or ch in allowed:
+        if ch not in exclude and (allowed is None or ch in allowed):
             return ch
     pytest.skip(f"no free channel of the table is one the analog capture allows ({allowed}); OEP_HW_ANALOG=<channel> names one")
 
@@ -794,7 +795,7 @@ def test_capture_group(run: record.Run):
     chans = list(run.board.gpio)
     if not all(chans):
         pytest.skip("the table gives this board no two free channels for the logic track (OEP_HW_GPIO=a,b names them)")
-    a_ch = _analog_channel(hst, run.board, record.declared(hst, ana.fn))
+    a_ch = _analog_channel(hst, run.board, record.declared(hst, ana.fn), exclude=chans)
     l_rate, l_samples = _capture_rate_samples(_capture_declared(record.declared(hst, cap.fn)))
     a_decl = _capture_declared(record.declared(hst, ana.fn))
     a_rate, a_samples = _capture_rate_samples(a_decl)

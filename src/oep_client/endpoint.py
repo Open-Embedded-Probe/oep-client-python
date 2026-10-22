@@ -3637,6 +3637,9 @@ class Endpoint:
         """TEST HOOK: `values` as (fn, item, key, data) - with `saved`, as a probe that booted with them stored (applied as
         at boot); without, as the settings now (generation one on, the free pins reparked)."""
         new = {(fn, name, key): bytes(d) for fn, name, key, d in values}
+        for fn, name, _ in new:
+            if not self._item_number(fn, name):
+                raise ValueError(f"the probe declares no item {name!r} on fn {fn} (a profile without the settings?)")
         if saved:
             self.saved, self.saved_unreadable = self._by_name(new), False
             self._apply_saved()

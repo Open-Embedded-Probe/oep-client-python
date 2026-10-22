@@ -103,7 +103,7 @@ TABLE: dict[str, Board] = {b.id: b for b in (
           usbip_busid="11-4", notes="second P4 (ESP32-P4, HS USB), the user's: free for dev-oep, nothing wired but its LED "
                 "(an older firmware's USB serial is 30eda0e343c6-hs)",
           **_P4),
-    Board("esp32-series-30eda0ea068b", "esp32p4-usj", "esp32p4", "esp32p4", f"{BY_ID}/esp32-series-30eda0ea068b",
+    Board("esp32-series-30eda0ea068b", "esp32p4-usj", "esp32p4", "esp32p4", "usb:30eda0ea068b",
           unit_id="30eda0ea068b", flash_port=f"{BY_ID}/esp32-series-30eda0ea068b",
           notes="third P4 (ESP32-P4, FS USB-Serial/JTAG port only), ours: a CH32V003 on SWIO 19, NRST 4, power from 5 "
                 "(the idle high its settings keep), its UART on 22 / 23, its app's output on 21", **_P4),

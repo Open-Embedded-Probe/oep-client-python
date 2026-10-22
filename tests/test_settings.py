@@ -463,6 +463,16 @@ def test_unset_all_then_save_empties_the_storage():
     assert ep.saved == {} and st.state().storage == "applied"
 
 
+def test_a_label_given_at_boot_on_a_board_whose_wire_takes_any_pins():
+    """rp2350-pins declares the core's items too: a label given as saved (virtual_bench_serve --label) names a port."""
+    ep, hst, st = open_bench(virtual_bench.rp2350_pins)
+    ep.load_settings([(0, "channel.{}.label", 2, b"bench-a.swdio")])
+    assert user(st) == {(CORE, label(2)): "bench-a.swdio"}
+    assert settings.find_line(hst, "swdio", "bench-a") == 2
+    with pytest.raises(ValueError, match="declares no item"):
+        ep.load_settings([(0, "channel.{}.colour", 2, b"x")])
+
+
 # ---- the command ---------------------------------------------------------------------------------------------------
 
 def _cli_bench(monkeypatch, profile=virtual_bench.p4_bench):

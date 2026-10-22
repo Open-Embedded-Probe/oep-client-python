@@ -1,0 +1,118 @@
+{
+  "schema": 1,
+  "board": {
+    "id": "esp32-series-30eda0ea068b",
+    "kind": "esp32p4-usj",
+    "profile": "esp32p4",
+    "model": "esp32p4",
+    "port": "/run/board-identify/by-id/esp32-series-30eda0ea068b",
+    "unit_id": "30eda0ea068b",
+    "flash_port": "/run/board-identify/by-id/esp32-series-30eda0ea068b",
+    "gpio": [
+      32,
+      33
+    ],
+    "disable": 34,
+    "uart": [
+      36,
+      37
+    ],
+    "notes": "third P4 (ESP32-P4, FS USB-Serial/JTAG port only), ours: a CH32V003 on SWIO 19, NRST 4, power from 5 (the idle high its settings keep), its UART on 22 / 23, its app's output on 21"
+  },
+  "client": {
+    "version": "0.0.36",
+    "python": "3.13.16",
+    "commit": "ebb3f58",
+    "dirty": false
+  },
+  "firmware": {
+    "before": {
+      "error": "SerialException: [Errno 2] could not open port /run/board-identify/by-id/esp32-series-30eda0ea068b: [Errno 2] No such file or directory: '/run/board-identify/by-id/esp32-series-30eda0ea068b'"
+    },
+    "source": {
+      "kind": "on-board",
+      "why": "OEP_HW_NOFLASH"
+    },
+    "expected": null,
+    "flashed": false
+  },
+  "started": "2026-10-22T16:02:22+09:00",
+  "seconds": 45.1,
+  "host": {
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+    "python": "3.13.16"
+  },
+  "environment": {
+    "OEP_HW_RESTART": "1",
+    "OEP_HW_NOFLASH": "1",
+    "OEP_HW_BOARDS": "esp32-series-30eda0ea068b"
+  },
+  "tests": {
+    "flash": {
+      "port": "/run/board-identify/by-id/esp32-series-30eda0ea068b",
+      "skipped": "nothing flashed: OEP_HW_NOFLASH",
+      "verdict": "failed",
+      "why": "tests/hw/record.py:210: TimeoutError"
+    },
+    "identity": {
+      "verdict": "skipped",
+      "why": "Skipped: no connection to the probe (the flash step did not run or failed)"
+    },
+    "required": {
+      "verdict": "skipped",
+      "why": "Skipped: no connection to the probe (the flash step did not run or failed)"
+    },
+    "config": {
+      "verdict": "skipped",
+      "why": "Skipped: no connection to the probe (the flash step did not run or failed)"
+    },
+    "wire": {
+      "verdict": "skipped",
+      "why": "Skipped: no target wired (OEP_HW_TARGET=<name>[@swdio[,swclk]] says one is)"
+    },
+    "gpio": {
+      "verdict": "skipped",
+      "why": "Skipped: no connection to the probe (the flash step did not run or failed)"
+    },
+    "uart": {
+      "verdict": "skipped",
+      "why": "Skipped: no connection to the probe (the flash step did not run or failed)"
+    },
+    "capture": {
+      "verdict": "skipped",
+      "why": "Skipped: no connection to the probe (the flash step did not run or failed)"
+    },
+    "capture_analog": {
+      "verdict": "skipped",
+      "why": "Skipped: no connection to the probe (the flash step did not run or failed)"
+    },
+    "capture_group": {
+      "verdict": "skipped",
+      "why": "Skipped: no connection to the probe (the flash step did not run or failed)"
+    },
+    "i2c_target": {
+      "verdict": "skipped",
+      "why": "Skipped: no connection to the probe (the flash step did not run or failed)"
+    },
+    "spi_target": {
+      "verdict": "skipped",
+      "why": "Skipped: no connection to the probe (the flash step did not run or failed)"
+    },
+    "console": {
+      "verdict": "skipped",
+      "why": "Skipped: no target wired (OEP_HW_TARGET=<name>[@swdio[,swclk]] says one is): the console needs a wire connection"
+    },
+    "network": {
+      "verdict": "skipped",
+      "why": "Skipped: no connection to the probe (the flash step did not run or failed)"
+    },
+    "port_speed": {
+      "verdict": "skipped",
+      "why": "Skipped: no connection to the probe (the flash step did not run or failed)"
+    },
+    "session": {
+      "verdict": "skipped",
+      "why": "Skipped: no connection to the probe (the flash step did not run or failed)"
+    }
+  }
+}
