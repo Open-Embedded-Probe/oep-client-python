@@ -347,7 +347,7 @@ def _settings_parser(sub) -> None:
     st.add_argument("category", help="core, or an interface's name/instance (oep.fixture.uart/0)")
     st.add_argument("values", nargs="+", metavar="NAME=VALUE")
     st.add_argument("--save", action="store_true")
-    un = cs.add_parser("unset", help="values by name back to their default (or none)")
+    un = cs.add_parser("unset", help="remove values by name (the item has none after)")
     un.add_argument("probe")
     un.add_argument("category", nargs="?")
     un.add_argument("names", nargs="*")
