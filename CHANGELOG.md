@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 0.0.38
 - (JA) 名前と初期値（oep-spec cc82b5e）に合わせた:
   - 設定の値は出どころを持たない。get の値は fn number key len data で、`Value.origin` と `show()` の 4 つ目を無くした。書き出しは全部の値、
     入れ直しは unset を先に、全部の値と比べる。`unset_all` は全部の値を消す。`changeable()`（set / unset があるか。初期値だけの probe は get だけ）。
