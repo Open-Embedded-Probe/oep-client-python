@@ -53,7 +53,7 @@ def test_a_reader_skips_an_unknown_named_extension_in_answers_and_describe():
     st = settings.Settings(hst)
     st.set_named(settings.CORE_CATEGORY, {"channel.GPIO33.label": "DUT RX"})
     ep.config_get_tail = extension() + extension(b"io.example.other", b"\x01\x02")
-    assert (settings.CORE_CATEGORY, "channel.GPIO33.label", "DUT RX", "user") in st.show()
+    assert (settings.CORE_CATEGORY, "channel.GPIO33.label", "DUT RX") in st.show()
     plain = catalog.decode_description(m.tlv(catalog.OPS, b"\x10\x01"))
     extended = catalog.decode_description(m.tlv(catalog.OPS, b"\x10\x01") + extension())
     assert extended.ops == plain.ops

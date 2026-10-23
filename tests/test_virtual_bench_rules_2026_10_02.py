@@ -615,7 +615,7 @@ def test_pc3_a_saved_idle_pull_the_channel_lacks_is_left_out_at_boot():
     h.ok(0, reg.CORE.op["save"])
     ep.no_pull = {20: {IDLE["pull_down"]}}
     ep.reboot(0x99)
-    assert state(ep) == (3, 0, 2) and list(ep.config) == [(0, "channel.{}.label", 21)]
+    assert state(ep) == (3, 0, 2) and (0, "channel.{}.label", 21) in ep.config and (0, "channel.{}.idle", 20) not in ep.config
 
 
 @pytest.mark.parametrize("ch", [24, 55, 0xFFFF])                  # the probe's own, = channels, far past

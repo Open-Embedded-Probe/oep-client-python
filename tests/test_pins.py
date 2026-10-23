@@ -123,7 +123,7 @@ def test_pair_budget_does_not_scan_a_prefix(monkeypatch):
 def test_finds_the_swio_pin_and_the_reset_line_without_being_told():
     ep, hst, t = bench()
     lines = []
-    r = finder(hst, t, lines, power=5).run()
+    r = finder(hst, t, lines, power=5, name="v003").run()
     k = kinds(r)
     assert k[pins.DRIVEN_HIGH] == [7, 22, 23] and k[pins.DRIVEN_LOW] == [3] and k[pins.ACTIVE] == [21]
     assert {4, 19} <= set(k[pins.FLOATING])                   # a weak pull-up reads as floating (host guide §19.1)
@@ -135,8 +135,8 @@ def test_finds_the_swio_pin_and_the_reset_line_without_being_told():
     assert r.family == "ch32v00x" and r.target_id.startswith("00310510") and r.nrst_enabled is True
     assert r.reset_channel == 4 and r.reset_dpc == 0
     assert "wire swio, pins 19" in r.profile and not r.saved
-    assert any("label" in line and "channel.GPIO4.label=nrst" in line for line in lines)   # the reset line as a label (host guide §5.3)
-    assert any(".label=power_hi" in line for line in lines) and any(".idle=high" in line for line in lines)
+    assert any("label" in line and "channel.GPIO4.label=v003.nrst" in line for line in lines)   # the reset line as a label (host guide §5.3)
+    assert any(".label=v003.power_hi" in line for line in lines) and any(".idle=high" in line for line in lines)
     assert r.elapsed_s < 60
 
 
@@ -183,7 +183,7 @@ def test_save_writes_the_lines_as_labels():
     assert r.saved and "wire swio" in r.profile
     labels = settings.labels(hst)
     assert set(labels) == {(4, "v003.nrst"), (5, "v003.power_hi")}
-    assert settings.find_line(labels, "nrst", "v003", single=False) == 4
+    assert settings.find_line(labels, "nrst", "v003") == 4
 
 
 def test_steps_are_optional():
@@ -230,10 +230,10 @@ def test_suggested_labels_are_checked_by_the_line_lookup():
     """The suggested nrst / power_hi are looked up by settings.find_line (host guide §5.3) in the settings as they would
     be: another channel already named so (any case) would make the line not found - said in a note."""
     ep, hst, t = bench()
-    r = finder(hst, t, [], power=5).run()
+    r = finder(hst, t, [], power=5, name="v003").run()
     assert not any("would find no" in n for n in r.notes)        # nothing else named so: found as suggested
     ep, hst, t = bench()
-    settings.Settings(hst).set_named(settings.CORE_CATEGORY, {"channel.GPIO9.label": "NRST", "channel.GPIO4.label": "nrst"})
-    r = finder(hst, t, [], power=5).run()
+    settings.Settings(hst).set_named(settings.CORE_CATEGORY, {"channel.GPIO9.label": "V003.NRST", "channel.GPIO4.label": "x"})
+    r = finder(hst, t, [], power=5, name="v003").run()
     notes = [n for n in r.notes if "would find no" in n]
     assert len(notes) == 1 and "nrst" in notes[0] and "[9]" in notes[0]   # 4 itself is relabelled: no clash

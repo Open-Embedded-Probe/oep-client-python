@@ -276,7 +276,6 @@ def _transports(kinds: list[tuple[int, int]]) -> tuple[bytes, ...]:
 # ---- the settings (core §13) -------------------------------------------------------------------------------
 SETTING, SETTING_CHOICE = reg.DESCRIBE_COMMON["setting"], reg.DESCRIBE_COMMON["setting_choice"]
 FORM, KEY_KIND, FLAG = reg.CORE.enum["setting_form"], reg.CORE.enum["setting_key_kind"], reg.CORE.enum["setting_flag"]
-ORIGIN = reg.CORE.enum["setting_origin"]
 SETTINGS_OPS = ("get", "set", "unset")             # fn 0's ops with settings; save / state with storage, network with netifs
 
 
@@ -345,25 +344,25 @@ def channel_name(channel: int) -> str:
 
 
 def with_settings(offered: list[Offered], *, storage: bool = True, netifs=(), labels: dict[int, str] | None = None,
-                  defaults=()) -> list[Offered]:
+                  initial=(), changeable: bool = True) -> list[Offered]:
     """A profile's fns with the settings (core §13): fn 0 offers get / set / unset (save / state with `storage`, network
     with `netifs`) and declares its channel items (the network's with `netifs`, a named list of netifs); each debug wire
-    its hold (rvswd its rest too), each fixture UART and console its pass-through. `labels`: channel labels the firmware
-    fixes; `defaults`: more firmware values as (fn, item, key, data) given by default (core §13.4)."""
+    its hold (rvswd its rest too), each fixture UART and console its pass-through. `labels`: channel labels as initial
+    values; `initial`: more initial values as (fn, item, key, data) (core §13.4: in on a boot without a save);
+    `changeable` False: a probe of initial values only, get alone (§13.5)."""
     out = []
     for o in offered:
         extra: tuple[Item, ...] = ()
         inner = o.inner
         if o.fn == CORE_FN:
-            ops = [reg.CORE.op[k] for k in CORE_REQUIRED + SETTINGS_OPS]
-            ops += [reg.CORE.op[k] for k in ("save", "state")] if storage else []
+            ops = [reg.CORE.op[k] for k in CORE_REQUIRED + (SETTINGS_OPS if changeable else ("get",))]
+            ops += [reg.CORE.op[k] for k in ("save", "state")] if storage and changeable else []
             ops += [reg.CORE.op["network"]] if netifs else []
             items = CORE_ITEMS + (NETWORK_ITEMS if netifs else ())
-            firm = tuple((0, "channel.{}.label", ch, ORIGIN["fixed"], n.encode()) for ch, n in (labels or {}).items())
-            firm += tuple((fn, item, key, ORIGIN["default"], data) for fn, item, key, data in defaults)
+            firm = tuple((0, "channel.{}.label", ch, n.encode()) for ch, n in (labels or {}).items()) + tuple(initial)
             out.append(Offered(o.fn, o.instance, o.name, (catalog.ops_tlv(ops),) + tuple(t for t in o.tlvs if t[0] != catalog.OPS)
                                + tuple(catalog.tlv(NETIF, n.encode()) for n in netifs) + items_tlvs(items), o.revision,
-                               inner + (("firmware_values", firm),)))
+                               inner + (("initial_values", firm),)))
             continue
         if o.name == "oep.wire.rvswd":
             extra = (REST, HOLD)
@@ -496,7 +495,7 @@ def p4_x035() -> VirtualProbe:
         _link(13),
         _plan(14),
         _restart(15),
-    ], netifs=("ethernet",), labels={2: "SWDIO", 54: "SWCLK", 51: "LED"}), own_channels=own)
+    ], netifs=("ethernet",), labels={2: "x035.swdio", 54: "x035.swclk"}), own_channels=own)
 
 
 def esp32_v003(max_frame: int = 512) -> VirtualProbe:
@@ -532,7 +531,7 @@ def esp32_v003(max_frame: int = 512) -> VirtualProbe:
         _link(10, port_speed=True),
         _plan(11),
         _restart(12),
-    ], netifs=("wifi",), labels={16: "SWIO", 23: "NRST", 22: "DUT TX", 21: "DUT RX"}), own_channels=own)
+    ], netifs=("wifi",), labels={16: "v003.swio", 23: "v003.nrst", 22: "v003.rx", 21: "v003.tx"}), own_channels=own)
 
 
 def esp32_v003_64() -> VirtualProbe:
@@ -562,7 +561,7 @@ def p4_bench() -> VirtualProbe:
         _link(7),
         _plan(8),
         _restart(9),
-    ], labels={2: "A SWDIO", 3: "A SWCLK", 4: "B SWDIO", 5: "B SWCLK", 6: "C SWDIO", 7: "C SWCLK"}), own_channels=own)
+    ], labels={2: "a.swdio", 3: "a.swclk", 4: "b.swdio", 5: "b.swclk", 6: "c.swdio", 7: "c.swclk"}), own_channels=own)
 
 
 def rp2350_pins() -> VirtualProbe:

@@ -450,7 +450,7 @@ def bench_for(case):
         virtual_bench._console(o.fn, ("sdi",) if "mechanism list [sdi]" in case.get("state", "") else ("sdi", "dmdata", "dmseq"))
         if o.name == "oep.target.console" and o.fn not in ops else o for o in probe.offered])
     probe = virtual_bench.VirtualProbe(probe.label, probe.max_frame, virtual_bench.with_settings(   # the core's settings
-        probe.offered, storage=not no_storage, netifs=("wifi",)))
+        probe.offered, storage=not no_storage, netifs=("wifi",), changeable="get only" not in case.get("state", "")))
     if "port_s" in case["name"] and "not offered" not in case["name"]:   # a UART bridge probe with port_speed
         probe.offered = [virtual_bench._link(o.fn, port_speed=True) if o.name == virtual_bench.LINK else o
                          for o in probe.offered]
@@ -704,12 +704,13 @@ def settings_state(case, ep, hst):
     core_ = settings.CORE_CATEGORY
     if "response extensions" in case["name"]:
         ep.config_get_tail = m.tlv(0x7F, bytes([15]) + b"io.example.note" + b"x")   # a named extension after the values (core §2.2)
-    if "one user idle value" in state or "one value generation2" in state or "idle channel4 exists" in state:
+    if "one idle value" in state or "one value generation2" in state or "idle channel4 exists" in state:
         st.set_named(core_, {"channel.GPIO4.idle": "hi-z"})
     if "disable channel4 true" in state:
         st.set_named(core_, {"channel.GPIO4.disable": True})
-    if "label fixed NRST" in state:
-        ep.firm[(0, "channel.{}.label", 0)] = (virtual_bench.ORIGIN["fixed"], b"NRST")
+    if "label V003.nrst" in state:                                 # there at generation 1, as an initial value is
+        st.set_named(core_, {"channel.GPIO0.label": "V003.nrst"})
+        ep.generation = 1
     if "complete saved settings" in state:                         # GPIO40: past this probe's channels
         ep.saved = {("core", "channel.{}.disable", 5): b"\x01", ("core", "channel.{}.idle", 4): b"\x00",
                     ("core", "channel.{}.label", 40): b"x"}
@@ -1164,8 +1165,7 @@ def test_settings_vectors_as_the_client_sends_and_reads_them(case):
             assert rd.take("BIB") == (0, 2, 0)
         else:
             gen, values = st.get()
-            assert gen == 2 and [(v.fn, v.key, v.origin) for v in values] == [
-                (0, k, "user") for k in ([0, 0] if "secret" in name else [4])]
+            assert gen == 2 and [(v.fn, v.key) for v in values] == [(0, k) for k in ([0, 0] if "secret" in name else [4])]
     elif name.startswith("settings unset"):
         count, rest = r.payload[0], r.payload[1:]
         assert st.unset([struct.unpack_from("<HBH", rest, 5 * i) for i in range(count)]) == 3

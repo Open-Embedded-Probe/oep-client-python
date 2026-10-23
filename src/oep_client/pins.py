@@ -21,8 +21,8 @@ Steps, each optional and each saying what it did:
 5. reset line, confirmed: attach under reset through each channel that stopped the activity (or, with nothing
    active, through each candidate) - the real line stops the hart at the reset vector.
 6. print the connection profile the host keeps (wire, pins, line settings: host guide §5.3 - the probe keeps no
-   wiring) and the labels that name the lines found: `nrst` on the reset line (5) and `power_hi` on --power, or
-   `<profile>.nrst` / `<profile>.power_hi` with --name (a probe serving several targets); --save writes the labels
+   wiring) and the labels that name the lines found: `<port>.nrst` on the reset line (5) and `<port>.power_hi` on
+   --power, the port being --name or the one port the probe's labels name; --save writes the labels
    (settings set + save). Nothing is written otherwise.
 
 Everything is bounded in time (the whole run under a minute) and every plan is released at the end. A plan_apply
@@ -562,10 +562,16 @@ class PinFinder:
         r.profile = ", ".join(parts)
         self.say(f"profile{' ' + self.name if self.name else ''}: {r.profile}   (the host's to keep: the probe keeps "
                  f"no wiring)")
-        # the lines found are named by label (host guide §5.3): `nrst` - the reset line a host's attach under reset
-        # looks up - and `power_hi`; `<profile>.<line>` when the probe serves several targets (--name)
-        prefix = f"{self.name}." if self.name else ""
+        # the lines found are named by label (host guide §5.3): `<port>.nrst` - the reset line a host's attach under
+        # reset looks up - and `<port>.power_hi`; the port is --name, else the one port the probe's labels name
+        port = self.name or self._only_port()
         labels = []
+        if port is None:
+            if r.reset_channel is not None or self.power is not None:
+                self.note("labels: name the port with --name (a line is named <port>.<line>, host guide §5.3)")
+            r.labels = labels
+            return
+        prefix = f"{port}."
         if r.reset_channel is not None:
             labels.append((r.reset_channel, f"{prefix}nrst"))
         if self.power is not None:
@@ -585,6 +591,14 @@ class PinFinder:
             r.saved = True
             self.say("  labels written and saved")
 
+    def _only_port(self) -> str | None:
+        """The one port the probe's labels name (None: none or several)."""
+        try:
+            ports = settings.ports_named(settings.labels(self.hst))
+        except (LookupError, h.OepError):
+            return None
+        return ports[0] if len(ports) == 1 else None
+
     def _name(self, channel: int) -> str:
         """A channel's name (fn 0's channel_name, core §7.5); its number when the probe names none."""
         try:
@@ -603,8 +617,8 @@ class PinFinder:
         relabelled = {ch for ch, _ in labels}
         after = [(ch, t) for ch, t in have if ch not in relabelled] + list(labels)
         for ch, text in labels:
-            line = text.rpartition(".")[2]
-            found = settings.find_line(after, line, self.name, single=self.name is None)
+            port, _, line = text.partition(".")
+            found = settings.find_line(after, line, port)
             if found != ch:
                 clash = sorted(c for c, t in after if c != ch and settings.fold_name(t) == settings.fold_name(text))
                 self.note(f"label {text}: the settings already name channel(s) {clash} the same way - a host would "

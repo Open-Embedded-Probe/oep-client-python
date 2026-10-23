@@ -49,7 +49,7 @@ def test_the_setting_turns_the_automatic_rest_off_per_port(setting, given, targe
     ep, hst, wire, pair = bench(target_id)
     st = settings.Settings(hst)
     st.set_named("oep.wire.rvswd/0", {f"rest.GPIO{pair[1]}": setting})
-    assert ("oep.wire.rvswd/0", f"rest.GPIO{pair[1]}", setting, "user") in st.show()
+    assert ("oep.wire.rvswd/0", f"rest.GPIO{pair[1]}", setting) in st.show()
     wire.attach(halt=False, pins=pair, idle_clock=given)
     assert wire.idle_clock == rest
 

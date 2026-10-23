@@ -121,4 +121,4 @@ def test_virtual_bench_serve_label_wants_ch_eq_text(capsys):
         virtual_bench_serve.parse(["--label", "nrst"])
     assert "CH=TEXT" in capsys.readouterr().err
     ep, hst = serve("--label", "0x14=t.nrst")
-    assert ep.saved and settings.find_line(hst, "nrst", "t", single=False) == 0x14
+    assert ep.saved and settings.find_line(hst, "nrst", "t") == 0x14

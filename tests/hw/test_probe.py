@@ -200,9 +200,9 @@ def _config_steps(run: record.Run, hst: h.Host, st: settings.Settings, rec: dict
     h_items, _ = st.get()
     assert h_items == h1, "set's generation is not get's (core §13.5)"
     assert h1 != h0, "the generation did not move with the settings (core §13.5)"
-    shown = {(c, n): (v, o) for c, n, v, o in st.show()}
-    assert shown.get((settings.CORE_CATEGORY, label)) == ("HW-A", "user")
-    assert shown.get((settings.CORE_CATEGORY, disable)) == (True, "user")
+    shown = {(c, n): v for c, n, v in st.show()}
+    assert shown.get((settings.CORE_CATEGORY, label)) == "HW-A"
+    assert shown.get((settings.CORE_CATEGORY, disable)) is True
     rec.update(generation_set=h1)
     # a plan naming the disabled channel is refused (unavailable, held by settings)
     gpio = fixture.Gpio(hst)
@@ -275,7 +275,7 @@ def _config_steps(run: record.Run, hst: h.Host, st: settings.Settings, rec: dict
                                                                 else "no reset line from the host (a USB probe)")
     # unset both: the settings file's import puts them back, then unset again and save: back to what was there
     h3 = st.unset_named(settings.CORE_CATEGORY, [label, disable])
-    shown = {(c, n) for c, n, v, o in st.show() if o == "user"}
+    shown = {(c, n) for c, n, v in st.show()}
     assert (settings.CORE_CATEGORY, label) not in shown and (settings.CORE_CATEGORY, disable) not in shown
     plan = st.plan_import(doc)
     assert not plan.unresolved and len(plan.sets) >= 2, f"the import of the export: {plan}"
@@ -1037,7 +1037,7 @@ def test_network(run: record.Run):
     wanted = {int(k.rsplit("_", 1)[1]): v for k, v in os.environ.items() if k.startswith("OEP_WIFI_SSID_")}
     if not wanted or "wifi" not in netifs:
         return
-    have = {n: v for c, n, v, o in st.show() if c == settings.CORE_CATEGORY}
+    have = {n: v for c, n, v in st.show() if c == settings.CORE_CATEGORY}
     values, unchanged = {}, []
     for n, ssid in sorted(wanted.items()):
         passphrase = os.environ.get(f"OEP_WIFI_PASS_{n}")

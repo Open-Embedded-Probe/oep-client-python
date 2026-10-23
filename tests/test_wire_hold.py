@@ -39,7 +39,7 @@ def test_wire_hold_off_lets_the_lines_go_and_the_target_loses_its_halt():
     ep, hst, wire, pair = bench()
     st = settings.Settings(hst)
     st.set_named("oep.wire.rvswd/0", {f"hold.GPIO{pair[0]}": False})
-    assert ("oep.wire.rvswd/0", f"hold.GPIO{pair[0]}", False, "user") in st.show()
+    assert ("oep.wire.rvswd/0", f"hold.GPIO{pair[0]}", False) in st.show()
     halt_then_end(ep, hst, wire, pair)
     assert wire.holds() == []
     assert not ep.targets[(core.find(hst, "oep.wire.rvswd"), pair)].halted

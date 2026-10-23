@@ -1,9 +1,9 @@
 """The oep command: what a probe offers (dump) and its settings (settings, core §13).
 
   oep dump --port /run/board-identify/by-id/<probe>        oep dump --virtual p4-x035 --prefix oep.target --json
-  oep settings show <probe>               (every value with its origin, the storage state; lock-free)
+  oep settings show <probe>               (every value, the storage state; lock-free)
   oep settings items <probe>              (what each owner declares: names, forms, choices)
-  oep settings set <probe> core channel.GPIO23.label=nrst channel.GPIO20.idle=pull-up [--save]
+  oep settings set <probe> core channel.GPIO23.label=v003.nrst channel.GPIO20.idle=pull-up [--save]
   oep settings unset <probe> core channel.GPIO20.idle     oep settings unset --all <probe> --save   (empties the storage)
   oep settings save <probe>     oep settings state <probe>     oep settings network <probe>
   oep settings export <probe> jig.oep-settings.json       oep settings import <probe> jig.oep-settings.json [--save]
@@ -336,13 +336,13 @@ def _settings_parser(sub) -> None:
     c = sub.add_parser("settings", help="the probe's settings (core §13): show, set / unset by name, save, export / "
                                         "import a settings file, the network")
     cs = c.add_subparsers(dest="action", required=True)
-    show = cs.add_parser("show", help="every value (category, name, value, origin) and the storage state (lock-free)")
+    show = cs.add_parser("show", help="every value (category, name, value) and the storage state (lock-free)")
     show.add_argument("probe")
     show.add_argument("--json", action="store_true")
     items = cs.add_parser("items", help="what the probe declares: each category's items, forms and choices")
     items.add_argument("probe")
     items.add_argument("--json", action="store_true")
-    st = cs.add_parser("set", help="values by name in one category: NAME=VALUE ... (core channel.GPIO2.label=nrst)")
+    st = cs.add_parser("set", help="values by name in one category: NAME=VALUE ... (core channel.GPIO2.label=v003.nrst)")
     st.add_argument("probe")
     st.add_argument("category", help="core, or an interface's name/instance (oep.fixture.uart/0)")
     st.add_argument("values", nargs="+", metavar="NAME=VALUE")
@@ -360,10 +360,10 @@ def _settings_parser(sub) -> None:
     net = cs.add_parser("network", help="the network now: the TCP port, each netif's state and address (lock-free)")
     net.add_argument("probe")
     net.add_argument("--json", action="store_true")
-    ex = cs.add_parser("export", help="write the user's values to a settings file (JSON; secrets left out)")
+    ex = cs.add_parser("export", help="write every value to a settings file (JSON; a secret as present only)")
     ex.add_argument("probe")
     ex.add_argument("file", help="the file to write, - for stdout")
-    im = cs.add_parser("import", help="make the probe's user values a settings file's (shows what changes first)")
+    im = cs.add_parser("import", help="make the probe's values a settings file's (shows what changes first)")
     im.add_argument("probe")
     im.add_argument("file")
     im.add_argument("--yes", action="store_true", help="apply without asking")
@@ -520,16 +520,16 @@ def _show(st, as_json: bool) -> int:
     state = st.state() if st.offers("state") else None
     if as_json:
         print(json.dumps({"generation": gen, "state": vars(state) if state else None,
-                          "values": [dict(category=c, name=n, value=v, origin=o) for c, n, v, o in rows]}, indent=2))
+                          "values": [dict(category=c, name=n, value=v) for c, n, v in rows]}, indent=2))
         return 0
     if state is not None:
         why = f" ({state.reason})" if state.reason else ""
         print(f"storage: {state.storage}{why}, saved generation {state.saved_generation}; now {gen}")
     else:
         print(f"no storage; generation {gen}")
-    for c, n, v, o in rows:
+    for c, n, v in rows:
         shown = "(secret)" if isinstance(v, dict) else json.dumps(v)
-        print(f"  {c} {n} = {shown}" + ("" if o == "user" else f"   ({o})"))
+        print(f"  {c} {n} = {shown}")
     return 0
 
 

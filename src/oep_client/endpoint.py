@@ -77,7 +77,8 @@ define (oep-spec a09fa45):
   oep.fixture.spi-target (§4: configure, arm, read_rx, status; errors at most 1 a transfer; `spi_transfer`),
   oep.fixture.logic / analog / capture-group (`virtual_bench_capture`)
 - the settings (core §13), fn 0's get / set / unset / save / state / network: each fn's items from its describe, the
-  user's values by (fn, item, key), the firmware's fixed / default ones beside them (`firm`); a set checked whole (forms
+  values by (fn, item, key) with no origin, the initial values put in on a boot without a save (`initial`, core §13.4),
+  the labels unique but for ASCII case (§13.8); a set checked whole (forms
   malformed, what this probe cannot take unsupported with the value's item index, the whole against what runs); the
   generation counts the changes of one boot from 1; the save by category and item name, applied at boot one value at a
   time (disable first, then idle): what fails is left out (partial, reason 2); a disabled channel is refused everywhere
@@ -118,7 +119,7 @@ READ_FROM = reg.COMMON.enum["read_from"]                  # position, oldest, no
 STEP_LEFT = _RV.tlv["step_answer"]["step_left"]            # step's answer: the hart could not be halted again (§4.2)
 # the settings (core §13): fn 0's ops, the items' forms, key kinds and origins, the core's and the wires' choices
 _SET_OP = reg.CORE.op
-FORM, KEY_KIND, ORIGIN = reg.CORE.enum["setting_form"], reg.CORE.enum["setting_key_kind"], reg.CORE.enum["setting_origin"]
+FORM, KEY_KIND = reg.CORE.enum["setting_form"], reg.CORE.enum["setting_key_kind"]
 SETTING_SECRET = reg.CORE.enum["setting_flag"]["secret"]
 ITEM_TLV = reg.CORE.tlv["unsupported_payload"]["item"]
 IDLE_MODE = reg.CORE.enum["channel_idle"]
@@ -736,10 +737,10 @@ class Endpoint:
         # i2c-target internal pull-ups (fixture §3): features bit2, else none
         self.i2c_pullups = {fn: bool(self.target_decl[fn][1] & I2C_FEATURES["internal_pullups"])
                             for fn, name in self.names.items() if name == _I2C.name}
-        # the settings (core §13): each fn's items (its describe), the firmware's values (fixed / default), the netifs
+        # the settings (core §13): each fn's items (its describe), the firmware's initial values (§13.4), the netifs
         self.setting_items = {fn: setting_items(decl) for fn, decl in self.decl.items() if setting_items(decl)}
-        self.firm: dict[tuple[int, str, int], tuple[int, bytes]] = {
-            (fn, name, key): (origin, bytes(d)) for fn, name, key, origin, d in self.inner.get(0, {}).get("firmware_values", ())}
+        self.initial: dict[tuple[int, str, int], bytes] = {
+            (fn, name, key): bytes(d) for fn, name, key, d in self.inner.get(0, {}).get("initial_values", ())}
         # the network (transports §7): the netifs, a named list (numbers from 1); around the bench: Wi-Fi access points
         # (ssid -> passphrase), the Ethernet cable, what DHCP gives; every drop and reconnect of a netif (a value in use changed)
         self.netif_names = [v.decode() for tag, v in self.decl.get(0, ()) if tag == virtual_bench.NETIF]
@@ -858,8 +859,10 @@ class Endpoint:
         self.speed_frame_busy = False                  # TEST HOOK: a frame on the raised port is not finished yet
         if self.saved is not None:
             self._apply_saved()                        # disable before idle (core §13.7)
-        elif self.saved_unreadable:
-            self.storage_state, self.storage_reason = 2, 1   # nothing applied: state 2, reason 1 at the next boot (§3)
+        else:
+            if self.saved_unreadable:
+                self.storage_state, self.storage_reason = 2, 1   # nothing applied: state 2, reason 1 at the next boot (§3)
+            self._initial_values()                     # no save to use: the initial values (core §13.4)
         self._park(self._boot_channels())              # every free pin's idle state before the first answer (core §8)
 
     def _own(self, fn: int, tag: int, fmt: str, default: int) -> int:
@@ -3263,8 +3266,8 @@ class Endpoint:
         return (tx + bytes(n))[:n]
 
     # ---- the settings (core §13) ----------------------------------------------------------------------
-    # The items each fn's describe declares (setting, setting_choice); the user's values as (fn, item, key) -> data,
-    # the firmware's (fixed / default) beside them; fn 0's ops get / set / unset / save / state / network.
+    # The items each fn's describe declares (setting, setting_choice); the values as (fn, item, key) -> data (no origin,
+    # §13.4: the initial values go in on a boot without a save); fn 0's ops get / set / unset / save / state / network.
     def _items(self, fn: int) -> list[SettingItem]:
         return self.setting_items.get(fn, [])
 
@@ -3273,18 +3276,43 @@ class Endpoint:
         return next((k for k, it in enumerate(self._items(fn), 1) if it.name == name), 0)
 
     def _value(self, fn: int, name: str, key: int) -> bytes | None:
-        """The value now of an item (the user's, else the firmware's)."""
-        v = self.config.get((fn, name, key))
-        if v is None and (fn, name, key) in self.firm:
-            v = self.firm[(fn, name, key)][1]
-        return v
+        """The value now of an item."""
+        return self.config.get((fn, name, key))
 
     def _values_of(self, name: str, fn: int | None = None, config: dict | None = None) -> dict[tuple[int, int], bytes]:
-        """Every value of item `name` (of fn `fn`, else of any fn): (fn, key) -> data, the user's over the firmware's."""
-        out = {(f, k): v for (f, n, k), (_, v) in self.firm.items() if n == name and fn in (None, f)}
-        out.update({(f, k): v for (f, n, k), v in (self.config if config is None else config).items()
-                    if n == name and fn in (None, f)})
-        return out
+        """Every value of item `name` (of fn `fn`, else of any fn): (fn, key) -> data."""
+        return {(f, k): v for (f, n, k), v in (self.config if config is None else config).items() if n == name and fn in (None, f)}
+
+    @staticmethod
+    def _fold(d: bytes) -> bytes:
+        return d.translate(bytes.maketrans(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ", b"abcdefghijklmnopqrstuvwxyz"))
+
+    def _label_clash(self, config: dict) -> int | None:
+        """The later channel of two whose labels are equal but for ASCII case (core §13.8), else None."""
+        seen: dict[bytes, int] = {}
+        for (_, ch), d in sorted(self._values_of("channel.{}.label", 0, config).items()):
+            if self._fold(d) in seen:
+                return ch
+            seen[self._fold(d)] = ch
+        return None
+
+    def _initial_values(self) -> None:
+        """A boot without a save (core §13.4): the initial values, checked as a set's; ones that do not pass (the
+        firmware's mistake) stay out."""
+        values = {}
+        for (fn, name, key), d in self.initial.items():
+            number = self._item_number(fn, name)
+            if not number:
+                continue
+            it = self._items(fn)[number - 1]
+            try:
+                self._value_form(it, key, fn, d)
+            except Reject:
+                continue
+            if not self._value_refused(fn, it, key, d):
+                values[(fn, name, key)] = d
+        if self._label_clash(values) is None:
+            self.config = values
 
     def _key_ok(self, fn: int, it: SettingItem, key: int) -> bool:
         kind = it.key_kind
@@ -3325,11 +3353,9 @@ class Endpoint:
             raise Reject(m.MALFORMED)
 
     def _value_refused(self, fn: int, it: SettingItem, key: int, d: bytes) -> bool:
-        """Whether this probe cannot take the value (unsupported, core §13.3): a key it has no value for, a fixed value
-        (§13.4), a choice it does not declare, a channel or fn it does not have, and what the item's owner refuses."""
+        """Whether this probe cannot take the value (unsupported, core §13.3): a key it has no value for, a choice it does
+        not declare, a channel or fn it does not have, and what the item's owner refuses."""
         if not self._key_ok(fn, it, key):
-            return True
-        if (fn, it.name, key) in self.firm and self.firm[(fn, it.name, key)][0] == ORIGIN["fixed"]:
             return True
         if not d:
             return False                                           # a secret kept
@@ -3390,14 +3416,9 @@ class Endpoint:
             rows = []
             for fn in sorted(self.setting_items):
                 for number, it in enumerate(self._items(fn), 1):
-                    keys = sorted({k for (f, n, k) in self.config if f == fn and n == it.name}
-                                  | {k for (f, n, k) in self.firm if f == fn and n == it.name})
-                    for k in keys:
-                        user = self.config.get((fn, it.name, k))
-                        origin, d = (ORIGIN["user"], user) if user is not None else self.firm[(fn, it.name, k)]
-                        if it.flags & SETTING_SECRET:
-                            d = b""                                # a secret is never read (§13.5)
-                        rows.append(struct.pack("<HBHBH", fn, number, k, origin, len(d)) + d)
+                    for k in sorted(k for (f, n, k) in self.config if f == fn and n == it.name):
+                        d = b"" if it.flags & SETTING_SECRET else self.config[(fn, it.name, k)]   # a secret is never read
+                        rows.append(struct.pack("<HBHH", fn, number, k, len(d)) + d)          # fn number key len data
             budget = self.probe.max_frame - m.RESULT_HEADER - 6
             out, sent = b"", 0
             for row in rows[first:]:
@@ -3432,7 +3453,7 @@ class Endpoint:
             values = self._resolve(self._read_values(t, t.take("B"), False))
             t.tail()
             for i, (fn, it, key, _) in enumerate(values):
-                if it is None or ((fn, it.name, key) in self.firm and self.firm[(fn, it.name, key)][0] == ORIGIN["fixed"]):
+                if it is None:
                     raise self._unsupported_item(i)
             new = dict(self.config)
             for fn, it, key, _ in values:
@@ -3553,6 +3574,9 @@ class Endpoint:
             return
         if self.generation == 0xFFFFFFFF:
             raise unavailable("limit")                             # no generation left before a restart (§13.5)
+        clash = self._label_clash(new)
+        if clash is not None:
+            raise unavailable("held_by_settings", clash)           # two labels equal but for case (§13.8)
         disabled = {k for (f, k), v in self._values_of("channel.{}.disable", 0, new).items() if v == b"\x01"}
         idles = self._values_of("channel.{}.idle", 0, new)
         outputs = (IDLE_MODE["low"], IDLE_MODE["high"])
@@ -3604,7 +3628,8 @@ class Endpoint:
 
     def _apply_saved(self) -> None:
         """At boot (core §13.7): every saved value, by name, checked by itself against this firmware - disable first,
-        then idle (a channel with both keeps the disable), then the rest; one it cannot take (a category or item it does
+        then idle (a channel with both keeps the disable), then the rest; of two labels equal but for case the lower
+        channel's; one it cannot take (a category or item it does
         not have, a form or value it refuses) is left out and the rest applied (storage_state 3 partial, reason 2)."""
         def rank(kv):
             (ident, name, key), _ = kv
@@ -3626,6 +3651,8 @@ class Endpoint:
                     ok = False
             if ok and name == "channel.{}.idle" and applied.get((0, "channel.{}.disable", key)) == b"\x01":
                 ok = False                                         # disable wins over idle on one channel
+            if ok and name == "channel.{}.label" and self._label_clash({**applied, (fn, name, key): d}) is not None:
+                ok = False                                         # labels in key order: the lower channel's stays
             if ok:
                 applied[(fn, name, key)] = d
             bad |= not ok

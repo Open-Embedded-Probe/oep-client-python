@@ -131,9 +131,10 @@ def test_an_item_of_another_length_is_malformed():
         with pytest.raises(h.Rejected) as e:
             hst.call(0, settings.OP["set"], b"\x02" + struct.pack("<HBHH", 0, number, 20, len(value)) + value + label)
         assert e.value.result.detail == m.MALFORMED
-    assert [v for v in st.get()[1] if v.origin == "user"] == []
+    before = st.get()[1]
+    assert all(v.key != 20 for v in before)                                   # nothing set on channel 20
     st.set_named(settings.CORE_CATEGORY, {"channel.GPIO21.label": "a long label text"})
-    assert [v.origin for v in st.get()[1] if v.origin == "user"] == ["user"]
+    assert len(st.get()[1]) == len(before) + 1
 
 
 def test_link_source_is_max_frame_less_7_with_or_without_a_tlv():

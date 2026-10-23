@@ -7,10 +7,10 @@ with storage, network with the network items). A value is (fn, item number, key)
 and the value with references as names - are what a host keeps, shows and writes to a file.
 
     st = settings.Settings(hst)
-    st.show()                                          # [(category, flat name, value, origin)]
+    st.show()                                          # [(category, flat name, value)]
     st.set_named("core", {"channel.GPIO14.label": "NRST", "channel.GPIO14.idle": "pull-up"})
     st.save()
-    doc = st.export()                                   # the settings file (JSON), the user's values only
+    doc = st.export()                                   # the settings file (JSON), every value
     plan = st.plan_import(doc); st.apply_import(plan)
 
 Secrets (core §13.5) are never read: get gives no data, the file a ``{"secret": true}``.
@@ -19,6 +19,7 @@ Secrets (core §13.5) are never read: get gives no data, the file a ``{"secret":
 from __future__ import annotations
 
 import ipaddress
+import re
 import struct
 from dataclasses import dataclass, field
 
@@ -28,7 +29,6 @@ _C = reg.CORE
 OP = {k: _C.op[k] for k in ("get", "set", "unset", "save", "state", "network")}
 FORM = {v: k for k, v in _C.enum["setting_form"].items()}
 KEY_KIND = {v: k for k, v in _C.enum["setting_key_kind"].items()}
-ORIGIN = {v: k for k, v in _C.enum["setting_origin"].items()}
 SECRET = _C.enum["setting_flag"]["secret"]
 STORAGE_STATE = {v: k for k, v in _C.enum["storage_state"].items()}
 STORAGE_REASON = {v: k for k, v in _C.enum["storage_reason"].items()}
@@ -37,8 +37,7 @@ NET_REASON = {v: k for k, v in _C.enum["network_reason"].items()}
 ROUTE = {v: k for k, v in _C.enum["route_kind"].items()}          # a transport kind's short name (core §13.3)
 _D = _C.tlv["describe"]
 SETTING, SETTING_CHOICE = reg.DESCRIBE_COMMON["setting"], reg.DESCRIBE_COMMON["setting_choice"]
-VALUE_HEADER = 8                                                   # fn number key origin len (core §13.5)
-SET_HEADER = 7                                                     # fn number key len
+VALUE_HEADER = 7                                                   # fn number key len, get's and set's alike (core §13.5)
 FILE_VERSION = 1                                                   # the settings file's form (oep_settings)
 CORE_CATEGORY = "core"
 
@@ -63,11 +62,10 @@ class Item:
 
 @dataclass
 class Value:
-    """One value as get gives it."""
+    """One value as get gives it (no origin: core §13.4)."""
     fn: int
     number: int
     key: int
-    origin: str
     data: bytes
 
 
@@ -264,22 +262,22 @@ def values_from(payload_pages) -> list[Value]:
     for raw in payload_pages:
         at = 0
         while at + VALUE_HEADER <= len(raw):
-            fn, number, key, origin, n = struct.unpack_from("<HBHBH", raw, at)
-            out.append(Value(fn, number, key, ORIGIN.get(origin, str(origin)), raw[at + VALUE_HEADER:at + VALUE_HEADER + n]))
+            fn, number, key, n = struct.unpack_from("<HBHH", raw, at)
+            out.append(Value(fn, number, key, raw[at + VALUE_HEADER:at + VALUE_HEADER + n]))
             at += VALUE_HEADER + n
     return out
 
 
 def split_values(data: bytes, count: int) -> tuple[list[Value], bytes]:
-    """count values (fn number key origin len data) from get's answer, then the answer's own TLV tail."""
+    """count values (fn number key len data) from get's answer, then the answer's own TLV tail."""
     out, at = [], 0
     for _ in range(count):
         if at + VALUE_HEADER > len(data):
             raise m.ProtocolError("get: a value past the answer")
-        fn, number, key, origin, n = struct.unpack_from("<HBHBH", data, at)
+        fn, number, key, n = struct.unpack_from("<HBHH", data, at)
         if at + VALUE_HEADER + n > len(data):
             raise m.ProtocolError("get: a value's data past the answer")
-        out.append(Value(fn, number, key, ORIGIN.get(origin, str(origin)), data[at + VALUE_HEADER:at + VALUE_HEADER + n]))
+        out.append(Value(fn, number, key, data[at + VALUE_HEADER:at + VALUE_HEADER + n]))
         at += VALUE_HEADER + n
     return out, data[at:]
 
@@ -364,7 +362,7 @@ class Settings:
         return gen
 
     def save(self) -> int:
-        """Save the user's values (a probe with storage). -> the current generation (completed failed raises: `state`
+        """Save the values (a probe with storage). -> the current generation (completed failed raises: `state`
         says what is kept). Its argument time is max_op_ms (core §13.7)."""
         return self._generation(self._call("save", expect_ms=core.max_op_ms(self.host)))
 
@@ -394,8 +392,8 @@ class Settings:
         return Network(port, out)
 
     # -- by name --
-    def show(self) -> list[tuple[str, str, object, str]]:
-        """Every value as (category, flat name, value, origin); a secret's value is {"secret": True}."""
+    def show(self) -> list[tuple[str, str, object]]:
+        """Every value as (category, flat name, value); a secret's value is {"secret": True}."""
         cat = self.catalog()
         out = []
         for v in self.get()[1]:
@@ -404,7 +402,7 @@ class Settings:
                 continue
             flat = cat.flat(it, v.key) or f"{it.name}#{v.key}"
             out.append((cat.category.get(v.fn, str(v.fn)), flat,
-                        {"secret": True} if it.secret else cat.to_json(it, v.data), v.origin))
+                        {"secret": True} if it.secret else cat.to_json(it, v.data)))
         return out
 
     def _named(self, cat: Catalog, category: str, flat: str) -> tuple[Item, int]:
@@ -432,10 +430,15 @@ class Settings:
             keys.append((it.fn, it.number, key))
         return self.unset(keys)
 
+    def changeable(self) -> bool:
+        """Whether the probe lets its values change: set / unset offered (a probe of initial values only has get alone,
+        core §13.5)."""
+        return self.offers("set") and self.offers("unset")
+
     def unset_all(self) -> int | None:
-        """Every user value back to its default or none (then save to empty the storage: core §13.7)."""
-        users = [(v.fn, v.number, v.key) for v in self.get()[1] if v.origin == "user"]
-        return self.unset(users) if users else None
+        """Every value away (then save to empty the storage: core §13.7). None: there was none."""
+        keys = [(v.fn, v.number, v.key) for v in self.get()[1]]
+        return self.unset(keys) if keys else None
 
     # -- the file (settings file §3, §4) --
     def export(self) -> dict:
@@ -455,11 +458,9 @@ class Settings:
 
 
 def export_file(cat: Catalog, values: list[Value]) -> dict:
-    """The settings file of the user's values (settings file §3)."""
+    """The settings file of every value (settings file §3)."""
     out: dict = {}
     for v in values:
-        if v.origin != "user":
-            continue                                               # fixed and default stay with the firmware
         it = cat.item(v.fn, v.number)
         flat = cat.flat(it, v.key) if it is not None else None
         if flat is None:
@@ -477,7 +478,7 @@ def check_file(doc) -> None:
 
 
 def plan_import(cat: Catalog, current: list[Value], doc: dict) -> ImportPlan:
-    """What making the file's user values the probe's takes (settings file §4)."""
+    """What making the file's values the probe's takes (settings file §4)."""
     check_file(doc)
     plan = ImportPlan()
     probe = doc.get("probe", {})
@@ -502,55 +503,61 @@ def plan_import(cat: Catalog, current: list[Value], doc: dict) -> ImportPlan:
                 plan.unresolved.append((category, flat))
                 continue
             now = have.get((it.fn, it.number, key))
-            if now is None or now.origin != "user" or now.data != data:
+            if now is None or now.data != data:
                 plan.sets.append((it.fn, it.number, key, data))
-    plan.unsets = [(v.fn, v.number, v.key) for v in current if v.origin == "user" and (v.fn, v.number, v.key) not in wanted]
+    plan.unsets = [(v.fn, v.number, v.key) for v in current if (v.fn, v.number, v.key) not in wanted]
     return plan
 
 
-# ---- the label convention (host guide §5.3) ---------------------------------------------------------------
-# The line names: `nrst` a target's reset, `power_hi` high powers it, `power_lo` low powers it. With several targets,
-# `<port>.<name>`.
+# ---- ports and lines by label (host guide §5.3) -----------------------------------------------------------
+# A label "S.N" names port S's line N: S 1-16 of letters, digits and '-', a letter first; N letters, digits, '-' and '_';
+# one '.' between. Other labels are a pin's names only. Kept as written, compared ignoring ASCII case; a probe keeps its
+# labels unique that way (core §13.8). Line names: `swdio`, `swclk`, `swio`, `rx`, `tx`, `nrst`, `power_hi`, `power_lo`.
 LINE_NAMES = tuple(_C.line_names)
 _ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 LABEL = "channel.{}.label"
+_PORT = re.compile(r"[A-Za-z][A-Za-z0-9-]{0,15}")
+_LINE = re.compile(r"[A-Za-z0-9_-]+")
 
 
 def fold_name(text: str) -> str:
-    """ASCII case folded (only A-Z: the convention compares ignoring ASCII case)."""
+    """ASCII case folded (only A-Z): names compare ignoring ASCII case."""
     return text.translate(_ASCII_LOWER)
 
 
+def port_line(text: str) -> tuple[str, str] | None:
+    """(S, N) of a label that names a port's line, as written; None for any other label."""
+    port, dot, line = text.partition(".")
+    if not dot or not _PORT.fullmatch(port) or not _LINE.fullmatch(line):
+        return None
+    return port, line
+
+
 def ports_named(labels) -> list[str]:
-    """The ports the labels name (host guide §5.3): the distinct S of the "S.N" labels, folded, in order."""
-    out = []
+    """The ports the labels name (host guide §5.3): each S once (ignoring case), as written, in order."""
+    out: list[str] = []
     for _, text in labels:
-        port, dot, rest = text.partition(".")
-        if dot and port and rest and fold_name(port) not in out:
-            out.append(fold_name(port))
+        pl = port_line(text)
+        if pl and fold_name(pl[0]) not in {fold_name(p) for p in out}:
+            out.append(pl[0])
     return out
 
 
-def line_from_labels(labels, name: str, profile: str | None = None, single: bool | None = None) -> int | None:
-    """Host guide §5.3 on bare data: labels as (channel, text) - every channel.{}.label value, whatever its origin. In
-    order, stopping at the first step that finds exactly one channel: (a) with a port name (`profile`), a label equal
-    to `<port>.<name>`; (b) only while at most one port is named (`single`; by default from the labels), a label equal
-    to `name`. A step that finds two or more ends the search with none. Texts compare ignoring ASCII case."""
-    if single is None:
-        single = len(ports_named(labels)) <= 1
-    steps = ([f"{profile}.{name}"] if profile is not None else []) + ([name] if single else [])
-    for text in steps:
-        found = {ch for ch, t in labels if fold_name(t) == fold_name(text)}
-        if len(found) > 1:
+def line_from_labels(labels, name: str, port: str | None = None) -> int | None:
+    """The channel of port `port`'s line `name` among labels as (channel, text), or None (host guide §5.3). Without a
+    port, the only port the labels name (a tool's shortcut when exactly one is there). Compared ignoring ASCII case."""
+    if port is None:
+        ports = ports_named(labels)
+        if len(ports) != 1:
             return None
-        if found:
-            return found.pop()
-    return None
+        port = ports[0]
+    found = {ch for ch, text in labels
+             if (pl := port_line(text)) and fold_name(pl[0]) == fold_name(port) and fold_name(pl[1]) == fold_name(name)}
+    return found.pop() if len(found) == 1 else None
 
 
 def labels(hst) -> list[tuple[int, str]]:
-    """Every channel label now (channel.{}.label, fixed / default / user) as (channel, text). A probe without the
-    settings ops: none."""
+    """Every channel label now (channel.{}.label) as (channel, text). A probe without the settings ops: none."""
     if not core.offers(hst, 0, OP["get"]):
         return []
     st = Settings(hst)
@@ -563,8 +570,8 @@ def labels(hst) -> list[tuple[int, str]]:
     return out
 
 
-def find_line(source, name: str, profile: str | None = None, single: bool | None = None) -> int | None:
-    """The channel of the line `name` (LINE_NAMES) by the label convention (host guide §5.3), or None. source: a Host
-    (its labels read with get, no lock) or labels as (channel, text)."""
+def find_line(source, name: str, port: str | None = None) -> int | None:
+    """The channel of the line `name` (LINE_NAMES) of port `port` by the labels (host guide §5.3), or None. source: a
+    Host (its labels read with get, no lock) or labels as (channel, text)."""
     found = list(source) if isinstance(source, (list, tuple)) else labels(source)
-    return line_from_labels(found, name, profile, single)
+    return line_from_labels(found, name, port)

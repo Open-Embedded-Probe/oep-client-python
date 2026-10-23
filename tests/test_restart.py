@@ -108,7 +108,7 @@ def test_the_saved_settings_come_back_the_unsaved_ones_do_not():
     hst.restart_probe(wait_s=1)
     assert ep.disabled == set() and ep.parked[21] == 2
     hst.open(3000)
-    assert [(c, n, v) for c, n, v, o in settings.Settings(hst).show() if o == "user"] == [
+    assert [(c, n, v) for c, n, v in settings.Settings(hst).show() if "label" not in n] == [   # the initial labels aside
         (settings.CORE_CATEGORY, "channel.GPIO21.idle", "pull-down")]
 
 

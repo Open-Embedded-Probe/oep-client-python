@@ -325,6 +325,7 @@ def test_settings_set_any_one_reason_and_nothing_changes():
     """core §4.3, §13.5: a value of an item the probe does not declare (unsupported, its place) and a value of another
     length (malformed) in one set - malformed first; nothing is applied."""
     ep, h = bench(virtual_bench.p4_bench())
+    before = dict(ep.config)                                                  # the profile's initial labels
     unlisted = value(len(ep.setting_items[0]) + 1, 20, b"\x00")                # a number past the setting list
     r = cfg_set(h, unlisted, value(ITEM["idle"], 21, b""))                        # and an idle without its mode
     assert r.detail == m.MALFORMED
@@ -334,7 +335,7 @@ def test_settings_set_any_one_reason_and_nothing_changes():
     assert r.detail == m.MALFORMED
     r = h.raw(0, SETTINGS["unset"], b"\x02" + struct.pack("<HBH", 0, ITEM["disable"], 20) + struct.pack("<HB", 0, ITEM["idle"]))
     assert r.detail == m.MALFORMED                                            # the second row is cut short
-    assert not ep.config
+    assert ep.config == before
 
 
 # ---- 975d88c / 598bb26 / 8d91db0: the lines while the wire does not answer, the rest state ------------------------

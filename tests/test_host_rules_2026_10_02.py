@@ -221,14 +221,14 @@ def test_c07_a_resync_waits_250_ms_after_the_hosts_last_write():
 
 # ---- PC-1: the line search's step (c) ------------------------------------------------------------------------------
 
-def test_pc1_find_line_reads_every_label_whatever_its_origin():
-    """host guide §5.3: `<port>.<name>`, then for a single target the bare name; the firmware's labels are
-    channel.{}.label values of origin fixed, read with the others."""
-    assert settings.find_line([(23, "NRST")], "nrst") == 23
-    assert settings.find_line([(23, "NRST"), (24, "nrst")], "nrst") is None   # two at one step
-    assert settings.find_line([(23, "NRST")], "nrst", "b", single=False) is None   # several targets: the bare name not
+def test_pc1_find_line_reads_every_label():
+    """host guide §5.3: port S's line N is the label `S.N` (ignoring ASCII case); a bare name names no port's line;
+    without a port the one port named (a tool's shortcut). The firmware's initial labels are values like the others."""
+    assert settings.find_line([(23, "dut.NRST")], "nrst", "DUT") == 23
+    assert settings.find_line([(23, "NRST")], "nrst") is None                 # a bare name: no port
+    assert settings.find_line([(23, "a.nrst"), (24, "b.nrst")], "nrst") is None   # two ports: say which
     ep, hst = in_process(virtual_bench.esp32_v003)
-    assert settings.find_line(hst, "nrst") == 23                       # a Host: its labels are read
+    assert settings.find_line(hst, "nrst", "v003") == 23                # a Host: its labels are read
     assert settings.LINE_NAMES == tuple(registry.CORE.line_names)      # from the registry (PC-2)
 
 

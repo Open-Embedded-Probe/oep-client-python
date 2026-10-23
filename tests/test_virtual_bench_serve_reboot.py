@@ -169,7 +169,7 @@ def test_reboot_resets_what_a_probe_loses_and_applies_the_saved_settings_again()
     with pytest.raises(h.NoSession):
         hst.keepalive()
     hst.open(3000)
-    assert [(n, v) for c, n, v, o in settings.Settings(hst).show() if o == "user"] == [("channel.GPIO21.idle", "pull-down")]
+    assert [(n, v) for c, n, v in settings.Settings(hst).show() if "label" not in n] == [("channel.GPIO21.idle", "pull-down")]
 
 
 # ---- `lose` on stdin: a connection's line lost for good (debug §2, P1) -------------------------------------------------

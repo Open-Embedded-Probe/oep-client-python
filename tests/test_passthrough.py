@@ -97,10 +97,10 @@ def test_the_client_sets_reads_and_unsets_it(bench):
     core.take(hst, 10000)
     st = settings.Settings(hst)
     st.set_named(UART, uart_values())
-    shown = {(c, n): v for c, n, v, o in st.show()}
+    shown = {(c, n): v for c, n, v in st.show()}
     assert shown[(UART, f"passthrough.{PORT}.rx")] == f"GPIO{RX}" and shown[(UART, f"passthrough.{PORT}.baud")] == 115200
     st.unset_named(UART, [f"passthrough.{PORT}.rx", f"passthrough.{PORT}.baud"])
-    assert not [n for c, n, v, o in st.show() if c == UART]
+    assert not [n for c, n, v in st.show() if c == UART]
     assert ep.passthroughs() == {}
 
 

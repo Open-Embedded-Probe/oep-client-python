@@ -170,23 +170,6 @@ def require(hst: h.Host, fn: int, op: int) -> None:
         raise not_offered(fn, op)
 
 
-def firmware_labels(hst: h.Host) -> list[tuple[int, str]]:
-    """The labels the firmware fixes (channel.{}.label of origin fixed, core §13.4) as (channel, text), in get's order.
-    A probe without the settings: none."""
-    from . import settings
-    if not offers(hst, 0, settings.OP["get"]):
-        return []
-    st = settings.Settings(hst)
-    cat = st.catalog()
-    return [(v.key, m.shown(v.data)) for v in st.get()[1] if v.fn == 0 and v.origin == "fixed"
-            and (cat.item(0, v.number) or settings.Item(0, 0, "", "", "", 0, 0, 0)).name == settings.LABEL]
-
-
-def probe_labels(hst: h.Host) -> dict[str, int]:
-    """The firmware's fixed channel labels: {"NRST": 23, ...}."""
-    return {text: ch for ch, text in firmware_labels(hst)}
-
-
 def max_op_ms(hst: h.Host) -> int:
     """The longest one request may take on this probe (fn 0's describe max_op_ms, core §7.5): the ceiling of run's
     timeout_ms, a dmi list's waits, an attach's hold_ms, and the argument time of attach, scan and riscv-dm's reset

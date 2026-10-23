@@ -25,7 +25,9 @@ def open_bench(profile=virtual_bench.p4_bench):
     ep = endpoint.Endpoint(profile(), Clock())
     hst = h.Host(lambda b: ep.handle(b, 1))                         # over vendor bulk
     hst.open(3000)
-    return ep, hst, settings.Settings(hst)
+    st = settings.Settings(hst)
+    st.boot = {(c, n): v for c, n, v in st.show()}                  # the profile's initial values (core §13.4)
+    return ep, hst, st
 
 
 def _cause(e) -> tuple[str, list[int]]:
@@ -50,7 +52,9 @@ def disable(n: int) -> str:
 
 
 def user(st) -> dict:
-    return {(c, n): v for c, n, v, o in st.show() if o == "user"}
+    """The values that differ from the boot's (the profile's initial values, core §13.4) by (category, flat name)."""
+    boot = getattr(st, "boot", {})
+    return {(c, n): v for c, n, v in st.show() if boot.get((c, n), object()) != v}
 
 
 # ---- the ops and the generation (core §13.5) --------------------------------------------------------------------------
@@ -139,7 +143,8 @@ def test_get_is_paged_at_a_small_frame():
     st = settings.Settings(hst)
     values = {label(n): f"LINE{n}" for n in (4, 5, 13, 14, 17, 18, 19)}
     st.set_named(CORE, values)
-    assert {n: v for (c, n), v in user(st).items()} == values
+    got = {n: v for c, n, v in st.show()}
+    assert {n: got.get(n) for n in values} == values
 
 
 def test_generation_exhausted_refuses_a_change():
@@ -151,32 +156,60 @@ def test_generation_exhausted_refuses_a_change():
     assert st.set([]) == 0xFFFFFFFF
 
 
-# ---- origins (core §13.4) -----------------------------------------------------------------------------------------
+# ---- initial values (core §13.4) ---------------------------------------------------------------------------------
 
-def test_fixed_labels_refuse_set_and_unset():
+def test_initial_values_are_values_like_any_other():
+    """The profile's initial labels are there on a boot without a save, change and go like any value, are exported,
+    come back on the next boot without a save and stay out after one (an empty one too)."""
     ep, hst, st = open_bench(virtual_bench.p4_x035)
-    shown = {(c, n): (v, o) for c, n, v, o in st.show()}
-    assert shown[(CORE, label(2))] == ("SWDIO", "fixed")
-    with pytest.raises(h.Unsupported):
-        st.set_named(CORE, {label(2): "other"})
-    with pytest.raises(h.Unsupported):
-        st.unset_named(CORE, [label(2)])
-    assert settings.export_file(st.catalog(), st.get()[1])["settings"] == {}   # fixed values are not exported
-    assert core.firmware_labels(hst)[:2] == [(2, "SWDIO"), (51, "LED")]
+    assert st.boot[(CORE, label(2))] == "x035.swdio" and (CORE, label(51)) not in st.boot   # 51: the probe's own LED
+    st.set_named(CORE, {label(2): "dut.swdio"})
+    st.unset_named(CORE, [label(54)])
+    shown = {n: v for c, n, v in st.show()}
+    assert shown[label(2)] == "dut.swdio" and label(54) not in shown
+    assert settings.export_file(st.catalog(), st.get()[1])["settings"][CORE] == {label(2): "dut.swdio"}
+    ep.reboot(0x4321)                                                         # no save: the initial values again
+    hst2 = h.Host(lambda b: ep.handle(b, 1))
+    hst2.open(3000)
+    st2 = settings.Settings(hst2)
+    assert {n: v for c, n, v in st2.show()}[label(54)] == "x035.swclk"
+    st2.unset_all()
+    st2.save()                                                                # an empty save
+    ep.reboot(0x4322)
+    hst3 = h.Host(lambda b: ep.handle(b, 1))
+    hst3.open(3000)
+    assert settings.Settings(hst3).show() == []
 
 
-def test_a_default_comes_back_after_an_unset():
-    profile = lambda: virtual_bench.VirtualProbe("defaults", 1024, virtual_bench.with_settings(
+def test_a_probe_of_initial_values_only_has_get_alone():
+    """core §13.5: no set / unset in fn 0's ops - the values cannot change; the client says so before sending."""
+    profile = lambda: virtual_bench.VirtualProbe("fixed", 1024, virtual_bench.with_settings(
         [o for o in virtual_bench.p4_bench().offered if o.fn != 0] + [virtual_bench._core(
             "3.0.0", "esp32p4", "30eda0e3b002", 55, virtual_bench._transports([(virtual_bench.TRANSPORT["vendor_bulk"], 0)]))],
-        defaults=((0, "channel.{}.idle", 30, bytes([2])),)), own_channels=[24, 25])
+        labels={20: "dut.swdio", 21: "dut.swclk"}, initial=((0, "channel.{}.idle", 30, bytes([2])),), changeable=False),
+        own_channels=[24, 25])
     ep, hst, st = open_bench(profile)
-    assert ep.parked[30] == 2
-    st.set_named(CORE, {idle(30): "pull-up"})
-    assert ep.parked[30] == 1 and user(st)[(CORE, idle(30))] == "pull-up"
-    st.unset_named(CORE, [idle(30)])
-    assert ep.parked[30] == 2 and (CORE, idle(30)) not in user(st)
-    assert {(c, n): o for c, n, v, o in st.show()}[(CORE, idle(30))] == "default"
+    assert not st.changeable() and ep.parked[30] == 2
+    assert st.boot == {(CORE, label(20)): "dut.swdio", (CORE, label(21)): "dut.swclk", (CORE, idle(30)): "pull-down"}
+    with pytest.raises(h.Rejected) as e:
+        st.set_named(CORE, {label(20): "x"})
+    assert e.value.result.detail == m.UNKNOWN_OPERATION
+
+
+def test_labels_are_unique_but_for_case_and_kept_as_written():
+    """core §13.8: a label equal to another channel's but for ASCII case is refused cause 5 with the channel; one set
+    may move a label; labels come back as written; a save with two such labels keeps the lower channel's."""
+    ep, hst, st = open_bench()
+    st.set_named(CORE, {label(20): "V003.nrst"})
+    with pytest.raises(h.Unavailable) as e:
+        st.set_named(CORE, {label(22): "v003.NRST"})
+    assert _cause(e) == ("held_by_settings", [22])
+    st.set_named(CORE, {label(20): "LED", label(22): "V003.nrst"})
+    assert user(st)[(CORE, label(22))] == "V003.nrst"
+    ep.load_settings([(0, "channel.{}.label", 27, b"PORT1"), (0, "channel.{}.label", 26, b"port1")])
+    shown = {n: v for c, n, v in st.show()}
+    assert shown[label(26)] == "port1" and label(27) not in shown
+    assert st.state().storage == "partial"
 
 
 # ---- the channel items (core §13.8) ------------------------------------------------------------------------------
@@ -289,7 +322,7 @@ def test_save_state_and_the_next_boot():
     hst2.open(3000)
     st2 = settings.Settings(hst2)
     assert st2.state() == settings.State("applied", 1, None) and st2.get()[0] == 1
-    assert user(st2) == user(st)
+    assert st2.show() == st.show()                                            # every value, the initial ones too
 
 
 def test_a_saved_value_this_firmware_cannot_take_is_left_out():
@@ -302,7 +335,7 @@ def test_a_saved_value_this_firmware_cannot_take_is_left_out():
 
 def test_a_save_past_storage_is_cause_3_before_anything():
     ep, hst, st = open_bench()
-    st.set_named(CORE, {label(n): "x" * 30 for n in range(26, 50)})
+    st.set_named(CORE, {label(n): f"{n:02d}" + "x" * 28 for n in range(26, 50)})   # labels are unique (§13.8)
     ep.storage_max = 100
     with pytest.raises(h.Unavailable) as e:
         st.save()
@@ -357,7 +390,7 @@ def test_the_passphrase_is_a_secret():
     hst.open(3000)
     st = settings.Settings(hst)
     st.set_named(CORE, {"wifi.0.ssid": "lab", "wifi.0.passphrase": "password1"})
-    shown = {n: v for c, n, v, o in st.show()}
+    shown = {n: v for c, n, v in st.show()}
     assert shown["wifi.0.passphrase"] == {"secret": True}
     (v,) = [v for v in st.get()[1] if v.number == ep.setting_number("wifi.{}.passphrase")]
     assert v.data == b""
@@ -411,7 +444,8 @@ def test_export_and_import_through_another_probe():
     st.set_named(CORE, {label(14): "NRST", idle(14): "pull-up", disable(30): True})
     st.set_named("oep.wire.rvswd/0", {"hold.GPIO2": False})
     doc = st.export()
-    assert doc["settings"] == {CORE: {label(14): "NRST", idle(14): "pull-up", disable(30): True},
+    assert doc["settings"] == {CORE: {label(2): "x035.swdio", label(14): "NRST", label(54): "x035.swclk", idle(14): "pull-up",
+                                      disable(30): True},                     # every value, the initial ones too
                                "oep.wire.rvswd/0": {"hold.GPIO2": False}}
     assert doc["probe"]["unit_id"] == "fafe00000035"
     ep2, hst2, st2 = open_bench(virtual_bench.p4_x035)
@@ -508,15 +542,17 @@ def test_the_command(capsys, monkeypatch, tmp_path):
 # ---- the label convention (host guide §5.3) -------------------------------------------------------------------------
 
 def test_find_line_by_labels():
-    labels = [(20, "a.nrst"), (21, "b.nrst"), (22, "power_hi")]
-    assert settings.find_line(labels, "nrst", "a") == 20
-    assert settings.find_line(labels, "nrst") is None                       # two ports named: a bare name finds none
-    assert settings.find_line([(5, "NRST")], "nrst") == 5                     # ASCII case ignored
-    assert settings.find_line([(5, "nrst"), (6, "nrst")], "nrst") is None     # ambiguous
+    """host guide §5.3: port S's line N by the label S.N, ignoring ASCII case; without a port, the only one named."""
+    labels = [(20, "a.nrst"), (21, "B.nrst"), (22, "power_hi"), (23, "My Port.swdio")]
+    assert settings.ports_named(labels) == ["a", "B"]                      # as written; the others name no port
+    assert settings.find_line(labels, "nrst", "A") == 20 and settings.find_line(labels, "NRST", "b") == 21
+    assert settings.find_line(labels, "nrst") is None                       # two ports: say which
+    assert settings.find_line([(5, "V003.NRST")], "nrst") == 5              # one port: the tool's shortcut
+    assert settings.find_line([(5, "NRST")], "nrst") is None                # a bare name names no port's line
 
 
-def test_find_line_reads_the_probe_fixed_labels_too():
+def test_find_line_reads_the_probe_labels():
     ep = endpoint.Endpoint(virtual_bench.esp32_v003(), Clock())
     hst = h.Host(lambda b: ep.handle(b, 0))
     hst.open(3000)
-    assert settings.find_line(hst, "nrst") == 23
+    assert settings.find_line(hst, "nrst", "v003") == 23 and settings.find_line(hst, "nrst") == 23

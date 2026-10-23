@@ -1,6 +1,15 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (JA) 名前と初期値（oep-spec cc82b5e）に合わせた:
+  - 設定の値は出どころを持たない。get の値は fn number key len data で、`Value.origin` と `show()` の 4 つ目を無くした。書き出しは全部の値、
+    入れ直しは unset を先に、全部の値と比べる。`unset_all` は全部の値を消す。`changeable()`（set / unset があるか。初期値だけの probe は get だけ）。
+  - 口と線（host ガイド §5.3）: label `S.N` が口 S の線 N（S は英字で始まる英字・数字・`-` の 16 文字まで、N は英字・数字・`-`・`_`）。
+    大小文字を区別せずに比べ、書いたとおりに見せる。裸の `nrst` は口の線にならない。`find_line(source, name, port=None)`（口を省くと名付けられた
+    口が 1 つのときだけ）、`ports_named`、`port_line`。`core.firmware_labels` / `probe_labels` は無くした（固定の label が無いため）。
+  - `oep pins` は `<口>.nrst` / `<口>.power_hi` を勧める（口は `--name`、無ければ probe にある 1 つの口）。
+  - 仮想ベンチ: 出どころを無くし、profile の label は初期値（保存の無い起動で入る。`x035.swdio`、`v003.swio` などの `S.N` の形）。label は
+    大小文字を区別せずに一意（重なる set は unavailable cause 5、保存に 2 つあれば channel の小さい方）。`with_settings(changeable=False)` で get だけ。
 
 ## 0.0.37
 - (JA) 設定を core（oep-spec core §13、9fc6ad9 / c4fbd6e）に合わせた。`oep_client.config`（`oep.probe.config`）を無くし、

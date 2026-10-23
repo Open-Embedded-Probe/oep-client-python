@@ -9,7 +9,7 @@ import struct
 import pytest
 
 from oep_client import capture as cap, catalog, core, endpoint, host as h, link, message as m, names, registry as reg
-from oep_client import virtual_bench as vb
+from oep_client import settings, virtual_bench as vb
 
 CORE = reg.CORE
 OWNER = CORE.tlv["open"]["owner"]
@@ -354,13 +354,13 @@ def test_the_tag_space_is_the_payloads_context(ep):
 
 def test_a_tag_repeats_only_where_its_definition_says():
     """core §2.2, §2.3: a repeating tag is a list (unavailable's channel: all kept in order); a tag that does not repeat
-    is used once - the first. The firmware's fixed labels come in get's order (core §13.5: by key)."""
+    is used once - the first. The labels come in get's order (core §13.5: by key)."""
     una = h.Unavailable(m.Result(1, m.REJECTED, m.UNAVAILABLE, m.tlv(0x01, b"\x01") + m.tlv(0x01, b"\x02")
                                  + m.tlv(0x02, b"\x05\x00") + m.tlv(0x02, b"\x07\x00")))
     assert una.cause == "pin_in_use" and una.channels == [5, 7]
     ep = build()
-    labels = core.firmware_labels(host_on(ep))
-    assert labels == [(2, "SWDIO"), (51, "LED"), (54, "SWCLK")]
+    labels = settings.labels(host_on(ep))
+    assert labels == [(2, "x035.swdio"), (54, "x035.swclk")]
 
 
 # ---- §2.3 fixed forms and TLVs ---------------------------------------------------------------------------------------
@@ -1630,13 +1630,13 @@ def test_channels_are_numbered_from_0():
     assert not decl(build(vb.core_v1), "channels")
 
 
-def test_channel_names_and_the_firmwares_fixed_labels():
-    """core §7.5: channel_name is channel(u16) text, one a channel; the firmware's labels are channel.{}.label values of
-    origin fixed (core §13.4), read as shown text."""
+def test_channel_names_and_the_firmwares_initial_labels():
+    """core §7.5: channel_name is channel(u16) text, one a channel; the firmware's labels are channel.{}.label initial
+    values (core §13.4), read as shown text; the probe's own channel (51, its LED) has none (§13.8)."""
     ep = build()
     names = [v for v in decl(ep, "channel_name")]
     assert [struct.unpack_from("<H", v)[0] for v in names] == list(range(ep.channels)) and all(v[2:].decode() for v in names)
-    assert core.probe_labels(host_on(ep))["LED"] == 51
+    assert dict(settings.labels(host_on(ep))) == {2: "x035.swdio", 54: "x035.swclk"}
 
 
 def test_one_transport_entry_per_transport_with_its_kind_and_interface():

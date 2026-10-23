@@ -53,7 +53,9 @@ def test_a_failed_test_leaves_nothing():
     assert (CORE, DISABLE7) not in now and now[(CORE, LABEL5)] == "MINE"
     state = st.state()
     assert state.storage == "applied" and not st.needs_save() and not r.settings_pending and not r.settings_saved
-    assert ep.saved == {("core", "channel.{}.label", 5): b"MINE"}      # stored as before the test
+    assert ep.saved == {("core", "channel.{}.label", 5): b"MINE",       # stored as before the test (every value:
+                        ("core", "channel.{}.label", 2): b"x035.swdio",     # the profile's initial labels too, core §13.7)
+                        ("core", "channel.{}.label", 54): b"x035.swclk"}
     assert r.restore_settings("again")                          # nothing more to do
     assert r.tests["_settings"]["restored"][0]["removed"] == [f"{CORE} {DISABLE7}"]
 

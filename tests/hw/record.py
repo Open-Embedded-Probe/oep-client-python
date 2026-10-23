@@ -45,8 +45,8 @@ def reopen_s() -> float:
 
 
 def _by_key(st: settings.Settings) -> dict[tuple[str, str], object]:
-    """The user's values now as {(category, flat name): value} (secrets left out: never read)."""
-    return {(c, n): v for c, n, v, o in st.show() if o == "user" and not isinstance(v, dict)}
+    """The values now as {(category, flat name): value} (secrets left out: never read)."""
+    return {(c, n): v for c, n, v in st.show() if not isinstance(v, dict)}
 
 
 def _open_serial_with_write_timeout(port: str, baud: int = link.BASE_BAUD):
@@ -336,7 +336,7 @@ class Run:
                 if base["storage"] in ("applied", "partial") and st.needs_save():
                     done["saved"] = st.save()        # the live values now: as before the tests, but for unsaved ones
                 elif base["storage"] == "none" and state.storage != "none":
-                    st.unset_all()                   # no erase (core §13.7): every user value unset, then saved
+                    st.unset_all()                   # no erase (core §13.7): every value unset, then saved
                     done["emptied"] = st.save()
             self.settings_pending.clear()
             self.settings_saved = False
