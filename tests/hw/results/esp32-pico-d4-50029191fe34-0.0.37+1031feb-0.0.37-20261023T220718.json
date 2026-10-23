@@ -1,0 +1,914 @@
+{
+  "schema": 1,
+  "board": {
+    "id": "esp32-pico-d4-50029191fe34",
+    "kind": "esp32",
+    "profile": "esp32",
+    "model": "esp32",
+    "port": "/run/board-identify/by-id/esp32-pico-d4-50029191fe34",
+    "flash_port": "/run/board-identify/by-id/esp32-pico-d4-50029191fe34",
+    "rates": [
+      1500000,
+      921600,
+      500000
+    ],
+    "gpio": [
+      25,
+      26
+    ],
+    "disable": 33,
+    "uart": [
+      32,
+      21
+    ],
+    "notes": "M5Stack ATOM (ESP32-PICO-D4), FTDI bridge; free for OEP tests"
+  },
+  "client": {
+    "version": "0.0.37",
+    "python": "3.13.16",
+    "commit": "dfa6842",
+    "dirty": false
+  },
+  "firmware": {
+    "before": {
+      "boot_id": 3419099421,
+      "revision": 1,
+      "max_frame": 512,
+      "max_inflight": 2,
+      "window": 1024,
+      "firmware": "0.0.37+1031feb",
+      "model": "esp32",
+      "unit_id": "50029191fe34",
+      "chip": "esp32picod4 v1.0",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 1
+        },
+        {
+          "index": 1,
+          "kind": 6
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 11,
+      "port_speed": true,
+      "plan_fn": 16,
+      "restart_fn": 17,
+      "restart_max_ms": 15000
+    },
+    "source": {
+      "kind": "on-board",
+      "why": "OEP_HW_NOFLASH"
+    },
+    "expected": null,
+    "flashed": false,
+    "after": {
+      "boot_id": 3419099421,
+      "revision": 1,
+      "max_frame": 512,
+      "max_inflight": 2,
+      "window": 1024,
+      "firmware": "0.0.37+1031feb",
+      "model": "esp32",
+      "unit_id": "50029191fe34",
+      "chip": "esp32picod4 v1.0",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 1
+        },
+        {
+          "index": 1,
+          "kind": 6
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 11,
+      "port_speed": true,
+      "plan_fn": 16,
+      "restart_fn": 17,
+      "restart_max_ms": 15000
+    }
+  },
+  "started": "2026-10-23T22:07:18+09:00",
+  "seconds": 75.7,
+  "host": {
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+    "python": "3.13.16"
+  },
+  "environment": {
+    "OEP_HW_BOARDS": "esp32-pico-d4-50029191fe34",
+    "OEP_HW_NOFLASH": "1"
+  },
+  "tests": {
+    "flash": {
+      "port": "/run/board-identify/by-id/esp32-pico-d4-50029191fe34",
+      "skipped": "nothing flashed: OEP_HW_NOFLASH",
+      "boot_seconds": 0.3,
+      "firmware_after": "0.0.37+1031feb",
+      "verdict": "passed"
+    },
+    "identity": {
+      "boot_id": 3419099421,
+      "firmware": "0.0.37+1031feb",
+      "model": "esp32",
+      "unit_id": "50029191fe34",
+      "chip": "esp32picod4 v1.0",
+      "revision": 1,
+      "max_frame": 512,
+      "max_inflight": 2,
+      "interfaces": [
+        "1:oep.wire.swio@1",
+        "2:oep.target.riscv-dm@1",
+        "3:oep.target.console@1",
+        "4:oep.fixture.gpio@1",
+        "5:oep.fixture.uart@1",
+        "6:oep.fixture.i2c-target@1",
+        "7:oep.fixture.spi-target@1",
+        "8:oep.fixture.logic@1",
+        "9:oep.fixture.analog@1",
+        "10:oep.fixture.capture-group@1",
+        "11:oep.probe.link@1",
+        "12:oep.wire.swd@1",
+        "13:oep.target.arm-adi@1",
+        "14:oep.wire.rvswd@1",
+        "15:oep.target.console@1",
+        "16:oep.probe.plan@1",
+        "17:oep.probe.restart@1"
+      ],
+      "clock_uptime_ns": 3388170000,
+      "clock_round_trip_us": 4090.8,
+      "firmware_expected": null,
+      "verdict": "passed"
+    },
+    "required": {
+      "missing": [],
+      "verdict": "passed"
+    },
+    "config": {
+      "items": 27,
+      "values_before": 2,
+      "generation_before": 1,
+      "generation_set": 2,
+      "disabled_refused_as": "PinsTaken",
+      "generation_saved": 2,
+      "storage": "applied",
+      "saved_generation": 2,
+      "reboot": {
+        "how": "oep.probe.restart",
+        "boot_id_before": 3419099421,
+        "boot_id_after": 885283296,
+        "restart_max_ms": 15000,
+        "reopen_s": 0.0,
+        "reopened": false,
+        "seconds": 2.82
+      },
+      "storage_after_reboot": "applied",
+      "saved_generation_after_reboot": 1,
+      "generation_after_reboot": 1,
+      "generation_after_unset": 4,
+      "saved_generation_final": 4,
+      "verdict": "passed"
+    },
+    "_settings": {
+      "restored": [
+        {
+          "where": "config",
+          "removed": [],
+          "set_back": 0
+        }
+      ]
+    },
+    "wire": {
+      "verdict": "skipped",
+      "why": "Skipped: no target wired (OEP_HW_TARGET=<name>[@swdio[,swclk]] says one is)"
+    },
+    "gpio": {
+      "channels": [
+        25,
+        26
+      ],
+      "levels": {
+        "25:output_high": 1,
+        "25:output_low": 0,
+        "25:input_pullup": 1,
+        "25:input_pulldown": 0,
+        "26:output_high": 1,
+        "26:output_low": 0,
+        "26:input_pullup": 1,
+        "26:input_pulldown": 0,
+        "both:input": [
+          0,
+          0
+        ]
+      },
+      "verdict": "passed"
+    },
+    "uart": {
+      "rx": 32,
+      "tx": 21,
+      "loopback": false,
+      "actual_115200": 115942,
+      "status_baud": 115942,
+      "status_format": 0,
+      "actual_9600": 9603,
+      "verdict": "passed"
+    },
+    "capture": {
+      "channels": [
+        25,
+        26
+      ],
+      "rate": 1000,
+      "samples_asked": 16,
+      "declared": {
+        "features": null,
+        "modes": {
+          "1": {
+            "max_samples": 60000,
+            "max_segments": 1
+          }
+        },
+        "rate_range": {
+          "min_hz": 1000,
+          "max_hz": 300000,
+          "exact": false
+        },
+        "channels": {
+          "max": 8
+        }
+      },
+      "pull": "gpio on the same channel",
+      "configured": {
+        "actual_rate": 1000.0,
+        "samples": 16,
+        "segments": 1,
+        "bytes": 16,
+        "layout": {
+          "w": 8,
+          "pos": [
+            0,
+            1
+          ]
+        }
+      },
+      "levels": {
+        "25:pull-up": {
+          "ones": 16,
+          "samples": 16
+        },
+        "26:pull-up": {
+          "ones": 16,
+          "samples": 16
+        },
+        "25:pull-down": {
+          "ones": 0,
+          "samples": 16
+        },
+        "26:pull-down": {
+          "ones": 0,
+          "samples": 16
+        }
+      },
+      "captures": [
+        {
+          "done_s": 0.0311,
+          "read_s": 0.008,
+          "window_s": 0.016,
+          "start_ns": 1196213000,
+          "start_uncertainty_ns": 2000,
+          "flags": 0,
+          "generation": 1
+        },
+        {
+          "done_s": 0.0324,
+          "read_s": 0.007,
+          "window_s": 0.016,
+          "start_ns": 1260627000,
+          "start_uncertainty_ns": 2000,
+          "flags": 0,
+          "generation": 2
+        }
+      ],
+      "generations": [
+        1,
+        2
+      ],
+      "actual_rate": 1000.0,
+      "layout": {
+        "w": 8,
+        "pos": [
+          0,
+          1
+        ]
+      },
+      "samples": 16,
+      "seconds": 0.016,
+      "verdict": "passed"
+    },
+    "capture_analog": {
+      "channel": 33,
+      "rate": 20000,
+      "samples_asked": 200,
+      "frontend": 3,
+      "declared": {
+        "features": null,
+        "modes": {
+          "1": {
+            "max_samples": 16384,
+            "max_segments": 1
+          },
+          "3": {
+            "max_samples": 4096,
+            "max_segments": 8
+          }
+        },
+        "rate_range": {
+          "min_hz": 20000,
+          "max_hz": 100000,
+          "exact": false
+        },
+        "channels": {
+          "max": 4
+        },
+        "frontends": {
+          "0": {
+            "min_mv": 100,
+            "max_mv": 950,
+            "attenuation_mdb": 0
+          },
+          "1": {
+            "min_mv": 100,
+            "max_mv": 1250,
+            "attenuation_mdb": 2500
+          },
+          "2": {
+            "min_mv": 150,
+            "max_mv": 1750,
+            "attenuation_mdb": 6000
+          },
+          "3": {
+            "min_mv": 150,
+            "max_mv": 2450,
+            "attenuation_mdb": 12000
+          }
+        }
+      },
+      "shared_with_gpio": "refused: Unavailable: rejected: unavailable",
+      "pull": null,
+      "configured": {
+        "actual_rate": 20000.0,
+        "samples": 200,
+        "segments": 1,
+        "bytes": 400,
+        "layout": {
+          "s": 16,
+          "o": 0,
+          "b": 12,
+          "order": [
+            0
+          ]
+        },
+        "zero": {
+          "0": -267
+        },
+        "scale_nv": {
+          "0": 561661
+        },
+        "frontend_used": {
+          "0": 3
+        },
+        "skew_ns": {
+          "0": 0
+        },
+        "reference": [
+          "internal",
+          1100,
+          false
+        ]
+      },
+      "verdict": "failed",
+      "why": "src/oep_client/host.py:411: Rejected"
+    },
+    "capture_group": {
+      "logic_channels": [
+        25,
+        26
+      ],
+      "analog_channel": 33,
+      "declared": {
+        "tracks": [
+          8,
+          9
+        ],
+        "features": 1
+      },
+      "logic": {
+        "actual_rate": 1000.0,
+        "samples": 16,
+        "segments": 1,
+        "bytes": 16,
+        "layout": {
+          "w": 8,
+          "pos": [
+            0,
+            1
+          ]
+        }
+      },
+      "analog": {
+        "actual_rate": 20000.0,
+        "samples": 200,
+        "segments": 1,
+        "bytes": 400,
+        "layout": {
+          "s": 16,
+          "o": 0,
+          "b": 12,
+          "order": [
+            0
+          ]
+        },
+        "zero": {
+          "0": -267
+        },
+        "scale_nv": {
+          "0": 561661
+        },
+        "frontend_used": {
+          "0": 3
+        },
+        "skew_ns": {
+          "0": 0
+        },
+        "reference": [
+          "internal",
+          1100,
+          false
+        ]
+      },
+      "unbind_error": "rejected: session required",
+      "verdict": "failed",
+      "why": "src/oep_client/host.py:411: Rejected"
+    },
+    "i2c_target": {
+      "sda": 25,
+      "scl": 26,
+      "address": 66,
+      "declared": {
+        "queue_depth": 4,
+        "max_clock_hz": 1000000,
+        "max_length": 128,
+        "features": 1,
+        "max_stretch_us": null,
+        "internal_pullups": true
+      },
+      "status_unconfigured": {
+        "state": 0,
+        "queued": 0,
+        "rx_frames": 0,
+        "tx_slots": 0,
+        "errors": 0
+      },
+      "status_configured": {
+        "state": 1,
+        "queued": 0,
+        "rx_frames": 0,
+        "tx_slots": 0,
+        "errors": 0
+      },
+      "status_preloaded": {
+        "state": 1,
+        "queued": 0,
+        "rx_frames": 0,
+        "tx_slots": 3,
+        "errors": 0
+      },
+      "read_rx": [
+        0,
+        ""
+      ],
+      "status_configured_again": {
+        "state": 1,
+        "queued": 0,
+        "rx_frames": 0,
+        "tx_slots": 0,
+        "errors": 0
+      },
+      "verdict": "passed"
+    },
+    "spi_target": {
+      "sck": 25,
+      "mosi": 26,
+      "miso": 33,
+      "cs": 32,
+      "declared": {
+        "queue_depth": 4,
+        "max_clock_hz": 3000000,
+        "max_length": 64,
+        "features": 1
+      },
+      "status_unconfigured": {
+        "state": 0,
+        "mode": 0,
+        "bit_order": 0,
+        "armed": false,
+        "queued": 0,
+        "transactions": 0,
+        "errors": 0
+      },
+      "status_configured": {
+        "state": 1,
+        "mode": 0,
+        "bit_order": 0,
+        "armed": false,
+        "queued": 0,
+        "transactions": 0,
+        "errors": 0
+      },
+      "status_armed": {
+        "state": 1,
+        "mode": 0,
+        "bit_order": 0,
+        "armed": true,
+        "queued": 0,
+        "transactions": 0,
+        "errors": 0
+      },
+      "second_arm": "refused: rejected: unavailable",
+      "read_rx": [
+        0,
+        0,
+        ""
+      ],
+      "status_configured_again": {
+        "state": 1,
+        "mode": 0,
+        "bit_order": 0,
+        "armed": false,
+        "queued": 0,
+        "transactions": 0,
+        "errors": 0
+      },
+      "verdict": "passed"
+    },
+    "console": {
+      "verdict": "skipped",
+      "why": "Skipped: no target wired (OEP_HW_TARGET=<name>[@swdio[,swclk]] says one is): the console needs a wire connection"
+    },
+    "network": {
+      "netifs": [
+        "wifi"
+      ],
+      "tcp_port": 7450,
+      "before": [
+        {
+          "netif": "wifi",
+          "state": "up",
+          "reason": "none"
+        }
+      ],
+      "verdict": "passed"
+    },
+    "port_speed": {
+      "rates": [
+        "now",
+        1500000,
+        921600,
+        500000
+      ],
+      "inflight": [
+        1,
+        2
+      ],
+      "frames": 100,
+      "size": 505,
+      "timeout": 0.3,
+      "results": [
+        {
+          "asked": "now",
+          "rate": 115200,
+          "actual": null,
+          "switched": false,
+          "why": "",
+          "cells": [
+            {
+              "rate": 115200,
+              "pattern": "in",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 4.94365749892313,
+              "kb_s": 10.215108957487518,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 115200,
+              "pattern": "in",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 95,
+              "broken": 0,
+              "lost": 5,
+              "seconds": 4.57968072895892,
+              "kb_s": 10.475621083504214,
+              "error": "",
+              "error_rate": 0.05
+            },
+            {
+              "rate": 115200,
+              "pattern": "out",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 5.031690767966211,
+              "kb_s": 10.036387832396922,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 115200,
+              "pattern": "out",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 5.0119352008914575,
+              "kb_s": 10.075948306557859,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 115200,
+              "pattern": "duplex",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 4.974940393003635,
+              "kb_s": 10.150875389586421,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 115200,
+              "pattern": "duplex",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 22,
+              "broken": 0,
+              "lost": 78,
+              "seconds": 1.8680970879504457,
+              "kb_s": 5.947228370335488,
+              "error": "",
+              "error_rate": 0.78
+            }
+          ]
+        },
+        {
+          "asked": 1500000,
+          "rate": 1500000,
+          "actual": 1500586,
+          "switched": true,
+          "why": "",
+          "cells": [
+            {
+              "rate": 1500000,
+              "pattern": "in",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 0.7153109549544752,
+              "kb_s": 70.59866712542379,
+              "error": "",
+              "error_rate": 0.0,
+              "threshold": 0.05
+            },
+            {
+              "rate": 1500000,
+              "pattern": "in",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 29,
+              "broken": 0,
+              "lost": 71,
+              "seconds": 0.3511686089914292,
+              "kb_s": 41.703613663137624,
+              "error": "",
+              "error_rate": 0.71
+            },
+            {
+              "rate": 1500000,
+              "pattern": "out",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 0.8589780409820378,
+              "kb_s": 58.7907927684219,
+              "error": "",
+              "error_rate": 0.0,
+              "threshold": 0.05
+            },
+            {
+              "rate": 1500000,
+              "pattern": "out",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 0.8828781410120428,
+              "kb_s": 57.199286803172946,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 1500000,
+              "pattern": "duplex",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 0.7912472480675206,
+              "kb_s": 63.82328674549857,
+              "error": "",
+              "error_rate": 0.0,
+              "threshold": 0.05
+            },
+            {
+              "rate": 1500000,
+              "pattern": "duplex",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 0,
+              "broken": 0,
+              "lost": 100,
+              "seconds": 0.2655577060068026,
+              "kb_s": 0.0,
+              "error": "",
+              "error_rate": 1.0
+            }
+          ],
+          "passed": true,
+          "failing": []
+        },
+        {
+          "asked": 921600,
+          "rate": 921600,
+          "actual": 922190,
+          "switched": false,
+          "why": "no confirm at the new rate",
+          "cells": []
+        },
+        {
+          "asked": 500000,
+          "rate": 500000,
+          "actual": 500000,
+          "switched": true,
+          "why": "",
+          "cells": [
+            {
+              "rate": 500000,
+              "pattern": "in",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 1.5380088279489428,
+              "kb_s": 32.834661987828625,
+              "error": "",
+              "error_rate": 0.0,
+              "threshold": 0.05
+            },
+            {
+              "rate": 500000,
+              "pattern": "in",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 72,
+              "broken": 0,
+              "lost": 28,
+              "seconds": 1.0774742920184508,
+              "kb_s": 33.74558471542388,
+              "error": "",
+              "error_rate": 0.28
+            },
+            {
+              "rate": 500000,
+              "pattern": "out",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 1.6732209500623867,
+              "kb_s": 30.18130988505558,
+              "error": "",
+              "error_rate": 0.0,
+              "threshold": 0.05
+            },
+            {
+              "rate": 500000,
+              "pattern": "out",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 1.6877414839109406,
+              "kb_s": 29.92164409147438,
+              "error": "",
+              "error_rate": 0.0
+            },
+            {
+              "rate": 500000,
+              "pattern": "duplex",
+              "inflight": 1,
+              "size": 505,
+              "frames": 100,
+              "ok": 100,
+              "broken": 0,
+              "lost": 0,
+              "seconds": 1.6130786599824205,
+              "kb_s": 31.30659480706933,
+              "error": "",
+              "error_rate": 0.0,
+              "threshold": 0.05
+            },
+            {
+              "rate": 500000,
+              "pattern": "duplex",
+              "inflight": 2,
+              "size": 505,
+              "frames": 100,
+              "ok": 12,
+              "broken": 0,
+              "lost": 88,
+              "seconds": 0.5298213630449027,
+              "kb_s": 11.437817390323712,
+              "error": "",
+              "error_rate": 0.88
+            }
+          ],
+          "passed": true,
+          "failing": []
+        }
+      ],
+      "seconds": 44.4,
+      "failing": [],
+      "passed_rates": [
+        1500000,
+        500000
+      ],
+      "failed_rates": [],
+      "link_counters": {
+        "corrupt": 111,
+        "stale": 86,
+        "noise": 69338,
+        "retries": 5,
+        "resyncs": 0
+      },
+      "verdict": "passed"
+    },
+    "session": {
+      "lease_ms": 1000,
+      "boot_id": 134679569,
+      "after_lapse": "rejected: no session",
+      "forced_new_id": true,
+      "forced_lease_ms": 3000,
+      "old_id_after_force": "locked by oep tests/hw force (2995 ms of its lease left)",
+      "old_id_after_end": "rejected: no session",
+      "verdict": "passed"
+    }
+  }
+}
