@@ -1,0 +1,350 @@
+{
+  "schema": 1,
+  "board": {
+    "id": "esp32-series-30eda0ea068b",
+    "kind": "esp32p4-usj",
+    "profile": "esp32p4",
+    "model": "esp32p4",
+    "port": "usb:30eda0ea068b",
+    "unit_id": "30eda0ea068b",
+    "flash_port": "/run/board-identify/by-id/esp32-series-30eda0ea068b",
+    "gpio": [
+      32,
+      33
+    ],
+    "disable": 34,
+    "uart": [
+      36,
+      37
+    ],
+    "analog": 17,
+    "notes": "third P4 (ESP32-P4, FS USB-Serial/JTAG port only): the OEP probe of ArduinoCore-CH32RV's bench, its ports v003 (a CH32V003 on SWIO 19, NRST 4, power from 5 - the idle high its settings keep -, its UART on 22 / 23, its app's output on 21) and v407 (SWIO 31) that bench's targets: the tests never drive 4 / 5 / 19 / 21-23 nor turn them into ADC inputs"
+  },
+  "client": {
+    "version": "0.0.39",
+    "python": "3.13.16",
+    "commit": "77d8de1",
+    "dirty": false
+  },
+  "firmware": {
+    "before": {
+      "boot_id": 607637760,
+      "revision": 1,
+      "max_frame": 27136,
+      "max_inflight": 8,
+      "window": 108544,
+      "firmware": "0.0.39+9317805",
+      "model": "esp32p4",
+      "unit_id": "30eda0ea068b",
+      "chip": "esp32p4 v1.3",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 4
+        },
+        {
+          "index": 1,
+          "kind": 3
+        },
+        {
+          "index": 2,
+          "kind": 5
+        },
+        {
+          "index": 3,
+          "kind": 2
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 13,
+      "plan_fn": 20,
+      "restart_fn": 21,
+      "restart_max_ms": 3000
+    },
+    "source": {
+      "kind": "on-board",
+      "why": "OEP_HW_NOFLASH"
+    },
+    "expected": null,
+    "flashed": false,
+    "after": {
+      "boot_id": 607637760,
+      "revision": 1,
+      "max_frame": 27136,
+      "max_inflight": 8,
+      "window": 108544,
+      "firmware": "0.0.39+9317805",
+      "model": "esp32p4",
+      "unit_id": "30eda0ea068b",
+      "chip": "esp32p4 v1.3",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 4
+        },
+        {
+          "index": 1,
+          "kind": 3
+        },
+        {
+          "index": 2,
+          "kind": 5
+        },
+        {
+          "index": 3,
+          "kind": 2
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 13,
+      "plan_fn": 20,
+      "restart_fn": 21,
+      "restart_max_ms": 3000
+    }
+  },
+  "started": "2026-10-27T19:11:46+09:00",
+  "seconds": 2.8,
+  "host": {
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+    "python": "3.13.16"
+  },
+  "environment": {
+    "OEP_HW_NOFLASH": "1",
+    "OEP_HW_BOARDS": "esp32-series-30eda0ea068b"
+  },
+  "tests": {
+    "flash": {
+      "port": "usb:30eda0ea068b",
+      "skipped": "nothing flashed: OEP_HW_NOFLASH",
+      "boot_seconds": 1.0,
+      "firmware_after": "0.0.39+9317805",
+      "verdict": "passed"
+    },
+    "capture_analog_trigger": {
+      "stimulus": null,
+      "forced": {
+        "channel": 17,
+        "trigger_index": 100,
+        "samples": 400
+      },
+      "verdict": "passed"
+    },
+    "pwm_counter": {
+      "channel": 32,
+      "declared": {
+        "pwm_max_hz": 10000000,
+        "counter_max_hz": 100000,
+        "duty_bits": 3,
+        "max_gate_us": 5000000
+      },
+      "verdict": "failed",
+      "why": "src/oep_client/host.py:375: Failed"
+    },
+    "capture_analog": {
+      "channel": 17,
+      "rate": 1000,
+      "samples_asked": 16,
+      "frontend": 3,
+      "declared": {
+        "features": null,
+        "modes": {
+          "1": {
+            "max_samples": 16384,
+            "max_segments": 1
+          },
+          "3": {
+            "max_samples": 4096,
+            "max_segments": 8
+          }
+        },
+        "rate_range": {
+          "min_hz": 611,
+          "max_hz": 46000,
+          "exact": false
+        },
+        "channels": {
+          "max": 4
+        },
+        "frontends": {
+          "0": {
+            "min_mv": 0,
+            "max_mv": 950,
+            "attenuation_mdb": 0
+          },
+          "1": {
+            "min_mv": 0,
+            "max_mv": 1250,
+            "attenuation_mdb": 2500
+          },
+          "2": {
+            "min_mv": 0,
+            "max_mv": 1750,
+            "attenuation_mdb": 6000
+          },
+          "3": {
+            "min_mv": 0,
+            "max_mv": 3100,
+            "attenuation_mdb": 12000
+          }
+        }
+      },
+      "shared_with_gpio": "refused: Unavailable: rejected: unavailable",
+      "pull": null,
+      "configured": {
+        "actual_rate": 1000.0,
+        "samples": 16,
+        "segments": 1,
+        "bytes": 32,
+        "layout": {
+          "s": 16,
+          "o": 0,
+          "b": 12,
+          "order": [
+            0
+          ]
+        },
+        "zero": {
+          "0": 0
+        },
+        "scale_nv": {
+          "0": 757021
+        },
+        "frontend_used": {
+          "0": 3
+        },
+        "skew_ns": {
+          "0": 0
+        },
+        "reference": [
+          "internal",
+          1100,
+          false
+        ]
+      },
+      "calibration": {
+        "factory": [
+          [
+            0,
+            "com.espressif.esp32p4.rtc-calib",
+            13
+          ],
+          [
+            1,
+            "com.espressif.esp32p4.rtc-calib",
+            13
+          ],
+          [
+            2,
+            "com.espressif.esp32p4.rtc-calib",
+            13
+          ],
+          [
+            3,
+            "com.espressif.esp32p4.rtc-calib",
+            13
+          ]
+        ],
+        "vrefint": null,
+        "vrefint_nominal_mv": null
+      },
+      "values": {
+        "idle": {
+          "min": 371,
+          "max": 874,
+          "mean": 563.4,
+          "mean_mv": 426.5,
+          "full_scale": 4095,
+          "clipped": [
+            0,
+            0
+          ]
+        }
+      },
+      "captures": [
+        {
+          "done_s": 0.1309,
+          "read_s": 0.001,
+          "window_s": 0.016,
+          "start_ns": 36949398000,
+          "start_uncertainty_ns": 200000,
+          "flags": 0,
+          "generation": 2
+        }
+      ],
+      "actual_rate": 1000.0,
+      "layout": {
+        "s": 16,
+        "o": 0,
+        "b": 12,
+        "order": [
+          0
+        ]
+      },
+      "samples": 16,
+      "seconds": 0.016,
+      "bands": "not checked: the probe shares an analog channel with nothing (oep-if-capture \u00a71.2), so no pull reaches it",
+      "verdict": "passed"
+    },
+    "i2c_controller": {
+      "sda": 32,
+      "scl": 33,
+      "declared": {
+        "max_clock_hz": 400000,
+        "min_clock_hz": 1000,
+        "max_length": 256,
+        "max_stretch_timeout_us": 100000,
+        "internal_pullups": true
+      },
+      "clock_used": 100000,
+      "write_read": {
+        "result": 1,
+        "at": 0,
+        "index": 0,
+        "data": "b''"
+      },
+      "status": {
+        "state": 1,
+        "held": false,
+        "transfers": 2,
+        "errors": 2
+      },
+      "verdict": "passed"
+    },
+    "spi_controller": {
+      "sck": 32,
+      "mosi": 33,
+      "miso": 34,
+      "cs": 36,
+      "declared": {
+        "max_clock_hz": 2000000,
+        "min_clock_hz": 1000,
+        "max_length": 256,
+        "time_step_ns": 3,
+        "modes": 15,
+        "max_delay_ns": 100000000
+      },
+      "clock_used": 1000000,
+      "transfer": [
+        {
+          "gap_ns": 0,
+          "setup_ns": 1000,
+          "hold_ns": 500,
+          "rx": "0000"
+        },
+        {
+          "gap_ns": 5000,
+          "setup_ns": 2005,
+          "hold_ns": 0,
+          "rx": "00"
+        }
+      ],
+      "status": {
+        "state": 1,
+        "mode": 0,
+        "bit_order": 0,
+        "transfers": 2
+      },
+      "verdict": "passed"
+    }
+  }
+}

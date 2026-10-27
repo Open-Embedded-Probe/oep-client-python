@@ -1,0 +1,318 @@
+{
+  "schema": 1,
+  "board": {
+    "id": "9489dd2ae0953650",
+    "kind": "rp2",
+    "profile": "promicrorp2350",
+    "model": "rp2350",
+    "port": "cdc:9489dd2ae0953650",
+    "unit_id": "9489dd2ae0953650",
+    "gpio": [
+      26,
+      27
+    ],
+    "disable": 28,
+    "uart": [
+      13,
+      12
+    ],
+    "notes": "SparkFun Pro Micro RP2350 (the firmware enumerates as the project's 1209:4F45); no board-identify id: keyed by unit id"
+  },
+  "client": {
+    "version": "0.0.39",
+    "python": "3.13.16",
+    "commit": "77d8de1",
+    "dirty": false
+  },
+  "firmware": {
+    "before": {
+      "boot_id": 43172092,
+      "revision": 1,
+      "max_frame": 1024,
+      "max_inflight": 8,
+      "window": 4096,
+      "firmware": "0.0.39+9317805",
+      "model": "rp2350",
+      "unit_id": "9489dd2ae0953650",
+      "chip": "rp2350 v3",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 2
+        },
+        {
+          "index": 1,
+          "kind": 4
+        },
+        {
+          "index": 2,
+          "kind": 5
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 9,
+      "plan_fn": 18,
+      "restart_fn": 19,
+      "restart_max_ms": 2000
+    },
+    "source": {
+      "kind": "on-board",
+      "why": "OEP_HW_NOFLASH"
+    },
+    "expected": null,
+    "flashed": false,
+    "after": {
+      "boot_id": 43172092,
+      "revision": 1,
+      "max_frame": 1024,
+      "max_inflight": 8,
+      "window": 4096,
+      "firmware": "0.0.39+9317805",
+      "model": "rp2350",
+      "unit_id": "9489dd2ae0953650",
+      "chip": "rp2350 v3",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 2
+        },
+        {
+          "index": 1,
+          "kind": 4
+        },
+        {
+          "index": 2,
+          "kind": 5
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 9,
+      "plan_fn": 18,
+      "restart_fn": 19,
+      "restart_max_ms": 2000
+    }
+  },
+  "started": "2026-10-27T19:11:53+09:00",
+  "seconds": 0.8,
+  "host": {
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+    "python": "3.13.16"
+  },
+  "environment": {
+    "OEP_HW_NOFLASH": "1",
+    "OEP_HW_BOARDS": "9489dd2ae0953650"
+  },
+  "tests": {
+    "flash": {
+      "port": "/dev/ttyACM4",
+      "skipped": "nothing flashed: OEP_HW_NOFLASH",
+      "boot_seconds": 0.0,
+      "firmware_after": "0.0.39+9317805",
+      "verdict": "passed"
+    },
+    "capture_analog_trigger": {
+      "stimulus": null,
+      "forced": {
+        "channel": 26,
+        "trigger_index": 100,
+        "samples": 400
+      },
+      "verdict": "passed"
+    },
+    "pwm_counter": {
+      "channel": 26,
+      "declared": {
+        "pwm_max_hz": 10000000,
+        "counter_max_hz": 100000,
+        "duty_bits": 3,
+        "max_gate_us": 5000000
+      },
+      "runs": [
+        {
+          "hz": 999.9979166710069,
+          "duty": 32768,
+          "window_ns": 200009000,
+          "count": 200,
+          "expected": 200.0
+        },
+        {
+          "hz": 20000.0,
+          "duty": 32767,
+          "window_ns": 200004000,
+          "count": 4000,
+          "expected": 4000.1
+        },
+        {
+          "stopped": 0
+        }
+      ],
+      "verdict": "passed"
+    },
+    "capture_analog": {
+      "channel": 26,
+      "rate": 1000,
+      "samples_asked": 16,
+      "frontend": 0,
+      "declared": {
+        "features": null,
+        "modes": {
+          "1": {
+            "max_samples": 16384,
+            "max_segments": 1
+          }
+        },
+        "rate_range": {
+          "min_hz": 733,
+          "max_hz": 500000,
+          "exact": false
+        },
+        "channels": {
+          "max": 4
+        },
+        "frontends": {
+          "0": {
+            "min_mv": 0,
+            "max_mv": 3300,
+            "attenuation_mdb": 0
+          }
+        }
+      },
+      "shared_with_gpio": "refused: Unavailable: rejected: unavailable",
+      "pull": null,
+      "configured": {
+        "actual_rate": 1000.0,
+        "samples": 16,
+        "segments": 1,
+        "bytes": 32,
+        "layout": {
+          "s": 16,
+          "o": 0,
+          "b": 12,
+          "order": [
+            0
+          ]
+        },
+        "zero": {
+          "0": 0
+        },
+        "scale_nv": {
+          "0": 805861
+        },
+        "frontend_used": {
+          "0": 0
+        },
+        "skew_ns": {
+          "0": 0
+        },
+        "reference": [
+          "supply",
+          3300,
+          false
+        ]
+      },
+      "calibration": {
+        "factory": [],
+        "vrefint": null,
+        "vrefint_nominal_mv": null
+      },
+      "values": {
+        "idle": {
+          "min": 604,
+          "max": 756,
+          "mean": 714.8,
+          "mean_mv": 576.0,
+          "full_scale": 4095,
+          "clipped": [
+            0,
+            0
+          ]
+        }
+      },
+      "captures": [
+        {
+          "done_s": 0.0204,
+          "read_s": 0.001,
+          "window_s": 0.016,
+          "start_ns": 56613828000,
+          "start_uncertainty_ns": 5000,
+          "flags": 0,
+          "generation": 2
+        }
+      ],
+      "actual_rate": 1000.0,
+      "layout": {
+        "s": 16,
+        "o": 0,
+        "b": 12,
+        "order": [
+          0
+        ]
+      },
+      "samples": 16,
+      "seconds": 0.016,
+      "bands": "not checked: the probe shares an analog channel with nothing (oep-if-capture \u00a71.2), so no pull reaches it",
+      "verdict": "passed"
+    },
+    "i2c_controller": {
+      "sda": 26,
+      "scl": 27,
+      "declared": {
+        "max_clock_hz": 250000,
+        "min_clock_hz": 1000,
+        "max_length": 256,
+        "max_stretch_timeout_us": 100000,
+        "internal_pullups": true
+      },
+      "clock_used": 100000,
+      "write_read": {
+        "result": 1,
+        "at": 0,
+        "index": 0,
+        "data": "b''"
+      },
+      "status": {
+        "state": 1,
+        "held": false,
+        "transfers": 2,
+        "errors": 2
+      },
+      "verdict": "passed"
+    },
+    "spi_controller": {
+      "sck": 26,
+      "mosi": 27,
+      "miso": 28,
+      "cs": 13,
+      "declared": {
+        "max_clock_hz": 250000,
+        "min_clock_hz": 1000,
+        "max_length": 256,
+        "time_step_ns": 1000,
+        "modes": 15,
+        "max_delay_ns": 100000000
+      },
+      "clock_used": 250000,
+      "transfer": [
+        {
+          "gap_ns": 0,
+          "setup_ns": 1000,
+          "hold_ns": 1000,
+          "rx": "0000"
+        },
+        {
+          "gap_ns": 5000,
+          "setup_ns": 3000,
+          "hold_ns": 0,
+          "rx": "00"
+        }
+      ],
+      "status": {
+        "state": 1,
+        "mode": 0,
+        "bit_order": 0,
+        "transfers": 2
+      },
+      "verdict": "passed"
+    }
+  }
+}

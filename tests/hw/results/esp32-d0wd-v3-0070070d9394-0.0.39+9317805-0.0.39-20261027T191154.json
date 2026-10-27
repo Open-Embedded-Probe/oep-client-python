@@ -1,0 +1,256 @@
+{
+  "schema": 1,
+  "board": {
+    "id": "esp32-d0wd-v3-0070070d9394",
+    "kind": "esp32",
+    "profile": "esp32",
+    "model": "esp32",
+    "port": "/run/board-identify/by-id/esp32-d0wd-v3-0070070d9394",
+    "flash_port": "/run/board-identify/by-id/esp32-d0wd-v3-0070070d9394",
+    "rates": [
+      921600,
+      500000
+    ],
+    "disable": 34,
+    "label": 35,
+    "notes": "V003 jig (classic ESP32 + CH340): the bench's; ask first"
+  },
+  "client": {
+    "version": "0.0.39",
+    "python": "3.13.16",
+    "commit": "77d8de1",
+    "dirty": false
+  },
+  "firmware": {
+    "before": {
+      "boot_id": 3719822167,
+      "revision": 1,
+      "max_frame": 512,
+      "max_inflight": 2,
+      "window": 1024,
+      "firmware": "0.0.39+9317805",
+      "model": "esp32",
+      "unit_id": "0070070d9394",
+      "chip": "esp32d0wdv3 v3.1",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 1
+        },
+        {
+          "index": 1,
+          "kind": 6
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 11,
+      "port_speed": true,
+      "plan_fn": 20,
+      "restart_fn": 21,
+      "restart_max_ms": 15000
+    },
+    "source": {
+      "kind": "on-board",
+      "why": "OEP_HW_NOFLASH"
+    },
+    "expected": null,
+    "flashed": false,
+    "after": {
+      "boot_id": 3719822167,
+      "revision": 1,
+      "max_frame": 512,
+      "max_inflight": 2,
+      "window": 1024,
+      "firmware": "0.0.39+9317805",
+      "model": "esp32",
+      "unit_id": "0070070d9394",
+      "chip": "esp32d0wdv3 v3.1",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 1
+        },
+        {
+          "index": 1,
+          "kind": 6
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 11,
+      "port_speed": true,
+      "plan_fn": 20,
+      "restart_fn": 21,
+      "restart_max_ms": 15000
+    }
+  },
+  "started": "2026-10-27T19:11:54+09:00",
+  "seconds": 2.1,
+  "host": {
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+    "python": "3.13.16"
+  },
+  "environment": {
+    "OEP_HW_NOFLASH": "1",
+    "OEP_HW_BOARDS": "esp32-d0wd-v3-0070070d9394"
+  },
+  "tests": {
+    "flash": {
+      "port": "/run/board-identify/by-id/esp32-d0wd-v3-0070070d9394",
+      "skipped": "nothing flashed: OEP_HW_NOFLASH",
+      "boot_seconds": 0.3,
+      "firmware_after": "0.0.39+9317805",
+      "verdict": "passed"
+    },
+    "capture_analog_trigger": {
+      "stimulus": null,
+      "forced": {
+        "channel": 34,
+        "trigger_index": 100,
+        "samples": 400
+      },
+      "verdict": "passed"
+    },
+    "pwm_counter": {
+      "verdict": "skipped",
+      "why": "Skipped: no free channel in the board table"
+    },
+    "capture_analog": {
+      "channel": 34,
+      "rate": 20000,
+      "samples_asked": 200,
+      "frontend": 3,
+      "declared": {
+        "features": null,
+        "modes": {
+          "1": {
+            "max_samples": 16384,
+            "max_segments": 1
+          },
+          "3": {
+            "max_samples": 4096,
+            "max_segments": 8
+          }
+        },
+        "rate_range": {
+          "min_hz": 20000,
+          "max_hz": 100000,
+          "exact": false
+        },
+        "channels": {
+          "max": 4
+        },
+        "frontends": {
+          "0": {
+            "min_mv": 100,
+            "max_mv": 950,
+            "attenuation_mdb": 0
+          },
+          "1": {
+            "min_mv": 100,
+            "max_mv": 1250,
+            "attenuation_mdb": 2500
+          },
+          "2": {
+            "min_mv": 150,
+            "max_mv": 1750,
+            "attenuation_mdb": 6000
+          },
+          "3": {
+            "min_mv": 150,
+            "max_mv": 2450,
+            "attenuation_mdb": 12000
+          }
+        }
+      },
+      "shared_with_gpio": "refused: Unavailable: rejected: unavailable",
+      "pull": null,
+      "configured": {
+        "actual_rate": 20000.0,
+        "samples": 200,
+        "segments": 1,
+        "bytes": 400,
+        "layout": {
+          "s": 16,
+          "o": 0,
+          "b": 12,
+          "order": [
+            0
+          ]
+        },
+        "zero": {
+          "0": -267
+        },
+        "scale_nv": {
+          "0": 561661
+        },
+        "frontend_used": {
+          "0": 3
+        },
+        "skew_ns": {
+          "0": 0
+        },
+        "reference": [
+          "internal",
+          1100,
+          false
+        ]
+      },
+      "calibration": {
+        "factory": [
+          [
+            null,
+            "com.espressif.esp32.adc-efuse",
+            4
+          ]
+        ],
+        "vrefint": null,
+        "vrefint_nominal_mv": null
+      },
+      "values": {
+        "idle": {
+          "min": 0,
+          "max": 0,
+          "mean": 0.0,
+          "mean_mv": null,
+          "full_scale": 4095,
+          "clipped": [
+            200,
+            0
+          ]
+        }
+      },
+      "captures": [
+        {
+          "done_s": 0.032,
+          "read_s": 0.044,
+          "window_s": 0.01,
+          "start_ns": 17251244000,
+          "start_uncertainty_ns": 150000,
+          "flags": 0,
+          "generation": 2
+        }
+      ],
+      "actual_rate": 20000.0,
+      "layout": {
+        "s": 16,
+        "o": 0,
+        "b": 12,
+        "order": [
+          0
+        ]
+      },
+      "samples": 200,
+      "seconds": 0.01,
+      "bands": "not checked: the probe shares an analog channel with nothing (oep-if-capture \u00a71.2), so no pull reaches it",
+      "verdict": "passed"
+    },
+    "i2c_controller": {
+      "verdict": "skipped",
+      "why": "Skipped: no free channel of the table for role 1 (allowed [4, 5, 13, 14, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33]); OEP_HW_I2C_CONTROLLER=<channels> names them"
+    },
+    "spi_controller": {
+      "verdict": "skipped",
+      "why": "Skipped: no free channel of the table for role 1 (allowed [4, 5, 13, 14, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33]); OEP_HW_SPI_CONTROLLER=<channels> names them"
+    }
+  }
+}
