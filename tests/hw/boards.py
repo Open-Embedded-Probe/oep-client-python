@@ -106,8 +106,10 @@ TABLE: dict[str, Board] = {b.id: b for b in (
           **_P4),
     Board("esp32-series-30eda0ea068b", "esp32p4-usj", "esp32p4", "esp32p4", "usb:30eda0ea068b",
           unit_id="30eda0ea068b", flash_port=f"{BY_ID}/esp32-series-30eda0ea068b",
-          notes="third P4 (ESP32-P4, FS USB-Serial/JTAG port only), ours: a CH32V003 on SWIO 19, NRST 4, power from 5 "
-                "(the idle high its settings keep), its UART on 22 / 23, its app's output on 21", **_P4),
+          notes="third P4 (ESP32-P4, FS USB-Serial/JTAG port only): the OEP probe of ArduinoCore-CH32RV's bench, its ports "
+                "v003 (a CH32V003 on SWIO 19, NRST 4, power from 5 - the idle high its settings keep -, its UART on 22 / 23, "
+                "its app's output on 21) and v407 (SWIO 31) that bench's targets: the tests never drive 4 / 5 / 19 / 21-23 "
+                "nor turn them into ADC inputs", **_P4),
     Board("e8f60ae84e28", "esp32p4", "esp32p4x", "esp32p4x", "usb:e8f60ae84e28", unit_id="e8f60ae84e28",
           notes="P4X (ESP32-P4 silicon v3, HS USB), ours: an M030 (ArduinoCore-CH32RV's bench) on GPIO30 (its rx, label "
                 "m030.rx) and GPIO31 (its swio, m030.swio); keyed by unit id", **_P4),
