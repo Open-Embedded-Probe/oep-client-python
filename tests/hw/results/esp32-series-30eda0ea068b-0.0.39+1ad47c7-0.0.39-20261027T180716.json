@@ -1,0 +1,286 @@
+{
+  "schema": 1,
+  "board": {
+    "id": "esp32-series-30eda0ea068b",
+    "kind": "esp32p4-usj",
+    "profile": "esp32p4",
+    "model": "esp32p4",
+    "port": "usb:30eda0ea068b",
+    "unit_id": "30eda0ea068b",
+    "flash_port": "/run/board-identify/by-id/esp32-series-30eda0ea068b",
+    "gpio": [
+      32,
+      33
+    ],
+    "disable": 34,
+    "uart": [
+      36,
+      37
+    ],
+    "notes": "third P4 (ESP32-P4, FS USB-Serial/JTAG port only), ours: a CH32V003 on SWIO 19, NRST 4, power from 5 (the idle high its settings keep), its UART on 22 / 23, its app's output on 21"
+  },
+  "client": {
+    "version": "0.0.39",
+    "python": "3.13.16",
+    "commit": "c3f82da",
+    "dirty": false
+  },
+  "firmware": {
+    "before": {
+      "boot_id": 327144919,
+      "revision": 1,
+      "max_frame": 27136,
+      "max_inflight": 8,
+      "window": 108544,
+      "firmware": "0.0.39+1ad47c7",
+      "model": "esp32p4",
+      "unit_id": "30eda0ea068b",
+      "chip": "esp32p4 v1.3",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 4
+        },
+        {
+          "index": 1,
+          "kind": 3
+        },
+        {
+          "index": 2,
+          "kind": 5
+        },
+        {
+          "index": 3,
+          "kind": 2
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 13,
+      "plan_fn": 18,
+      "restart_fn": 19,
+      "restart_max_ms": 3000
+    },
+    "source": {
+      "kind": "on-board",
+      "why": "OEP_HW_NOFLASH"
+    },
+    "expected": null,
+    "flashed": false,
+    "after": {
+      "boot_id": 327144919,
+      "revision": 1,
+      "max_frame": 27136,
+      "max_inflight": 8,
+      "window": 108544,
+      "firmware": "0.0.39+1ad47c7",
+      "model": "esp32p4",
+      "unit_id": "30eda0ea068b",
+      "chip": "esp32p4 v1.3",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 4
+        },
+        {
+          "index": 1,
+          "kind": 3
+        },
+        {
+          "index": 2,
+          "kind": 5
+        },
+        {
+          "index": 3,
+          "kind": 2
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 13,
+      "plan_fn": 18,
+      "restart_fn": 19,
+      "restart_max_ms": 3000
+    }
+  },
+  "started": "2026-10-27T18:07:16+09:00",
+  "seconds": 2.6,
+  "host": {
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+    "python": "3.13.16"
+  },
+  "environment": {
+    "OEP_HW_NOFLASH": "1",
+    "OEP_HW_BOARDS": "esp32-series-30eda0ea068b"
+  },
+  "tests": {
+    "flash": {
+      "port": "usb:30eda0ea068b",
+      "skipped": "nothing flashed: OEP_HW_NOFLASH",
+      "boot_seconds": 1.0,
+      "firmware_after": "0.0.39+1ad47c7",
+      "verdict": "passed"
+    },
+    "i2c_target": {
+      "sda": 32,
+      "scl": 33,
+      "address": 66,
+      "declared": {
+        "queue_depth": 4,
+        "max_clock_hz": 1000000,
+        "max_length": 128,
+        "features": 1,
+        "max_stretch_us": 100000,
+        "internal_pullups": true
+      },
+      "status_unconfigured": {
+        "state": 0,
+        "queued": 0,
+        "rx_frames": 0,
+        "tx_slots": 0,
+        "errors": 0
+      },
+      "status_configured": {
+        "state": 1,
+        "queued": 0,
+        "rx_frames": 0,
+        "tx_slots": 0,
+        "errors": 0
+      },
+      "status_preloaded": {
+        "state": 1,
+        "queued": 0,
+        "rx_frames": 0,
+        "tx_slots": 3,
+        "errors": 0
+      },
+      "read_rx": [
+        0,
+        ""
+      ],
+      "stretch": "0 accepted",
+      "status_configured_again": {
+        "state": 1,
+        "queued": 0,
+        "rx_frames": 0,
+        "tx_slots": 0,
+        "errors": 0
+      },
+      "verdict": "passed"
+    },
+    "spi_target": {
+      "sck": 32,
+      "mosi": 33,
+      "miso": 34,
+      "cs": 36,
+      "declared": {
+        "queue_depth": 4,
+        "max_clock_hz": 24000000,
+        "max_length": 64,
+        "features": 1
+      },
+      "status_unconfigured": {
+        "state": 0,
+        "mode": 0,
+        "bit_order": 0,
+        "armed": false,
+        "queued": 0,
+        "transactions": 0,
+        "errors": 0
+      },
+      "status_configured": {
+        "state": 1,
+        "mode": 0,
+        "bit_order": 0,
+        "armed": false,
+        "queued": 0,
+        "transactions": 0,
+        "errors": 0
+      },
+      "status_armed": {
+        "state": 1,
+        "mode": 0,
+        "bit_order": 0,
+        "armed": true,
+        "queued": 0,
+        "transactions": 0,
+        "errors": 0
+      },
+      "second_arm": "refused: rejected: unavailable",
+      "read_rx": [
+        0,
+        0,
+        ""
+      ],
+      "status_configured_again": {
+        "state": 1,
+        "mode": 0,
+        "bit_order": 0,
+        "armed": false,
+        "queued": 0,
+        "transactions": 0,
+        "errors": 0
+      },
+      "verdict": "passed"
+    },
+    "i2c_controller": {
+      "sda": 32,
+      "scl": 33,
+      "declared": {
+        "max_clock_hz": 400000,
+        "min_clock_hz": 1000,
+        "max_length": 256,
+        "max_stretch_timeout_us": 100000,
+        "internal_pullups": true
+      },
+      "clock_used": 100000,
+      "write_read": {
+        "result": 1,
+        "at": 0,
+        "index": 0,
+        "data": "b''"
+      },
+      "status": {
+        "state": 1,
+        "held": false,
+        "transfers": 2,
+        "errors": 2
+      },
+      "verdict": "passed"
+    },
+    "spi_controller": {
+      "sck": 32,
+      "mosi": 33,
+      "miso": 34,
+      "cs": 36,
+      "declared": {
+        "max_clock_hz": 2000000,
+        "min_clock_hz": 1000,
+        "max_length": 256,
+        "time_step_ns": 3,
+        "modes": 15,
+        "max_delay_ns": 100000000
+      },
+      "clock_used": 1000000,
+      "transfer": [
+        {
+          "gap_ns": 0,
+          "setup_ns": 1000,
+          "hold_ns": 500,
+          "rx": "ffff"
+        },
+        {
+          "gap_ns": 5000,
+          "setup_ns": 2005,
+          "hold_ns": 0,
+          "rx": "ff"
+        }
+      ],
+      "status": {
+        "state": 1,
+        "mode": 0,
+        "bit_order": 0,
+        "transfers": 2
+      },
+      "verdict": "passed"
+    }
+  }
+}
