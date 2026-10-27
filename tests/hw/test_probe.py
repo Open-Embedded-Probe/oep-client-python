@@ -718,10 +718,11 @@ def _analog_channel(hst: h.Host, board, decl: dict, exclude=()) -> int:
 
 
 def test_capture_analog_trigger(run: record.Run):
-    """A crossing the bench's wiring makes (oep_client.stimulus: a line the probe's settings drive, an ADC channel that
-    follows it - nothing written down here, the wiring changes): up as the line goes high, down as it goes low, each at
-    the pretrigger's index with the values before it on the other side of the level. Without one on today's wiring the
-    trigger path is checked with force: waiting, then the segment cut at the sample forced, the pretrigger before it."""
+    """A crossing on the pair the probe's labels allow (oep_client.stimulus: a drive `<port>.stimulus` and an ADC input
+    `<port>.stimulus_in`, checked on the wiring of the day - nothing written down here, and nothing another bench's
+    target owns is moved): up as the line goes high, down as it goes low, each at the pretrigger's index with the values
+    before it on the other side of the level. Without such a pair the trigger path is checked with force: waiting, then
+    the segment cut at the sample forced, the pretrigger before it."""
     hst = run.take()
     if not _listed(hst, capture.AnalogCapture.NAME):
         pytest.skip("the probe does not list oep.fixture.analog")
