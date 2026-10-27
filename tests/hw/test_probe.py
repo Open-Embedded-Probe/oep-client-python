@@ -769,6 +769,65 @@ def test_capture_analog_trigger(run: record.Run):
         core.plan_release(hst, [gpio.fn, ana.fn])                   # the driven line back to its idle
 
 
+def test_capture_repeat_rearm(run: record.Run):
+    """oep-if-capture §2.1 repeat with rearm 1 on a probe that declares it: the gpio fixture drives a free channel the
+    logic watches (it only listens), a rising edge per segment - each segment starts at its own trigger (index = the
+    pretrigger, the line low before it and high at it; flags bit3, bit0 after the first), a record each (§3.10), the
+    slots full -> state 5, release -> the next segment armed again."""
+    hst = run.take()
+    if not _listed(hst, capture.LogicCapture.NAME):
+        pytest.skip("the probe does not list oep.fixture.logic")
+    cap_ = capture.LogicCapture(hst)
+    decl = record.declared(hst, cap_.fn)
+    ch = run.board.gpio[0]
+    if not ch:
+        pytest.skip("no free channel in the board table")
+    gpio = fixture.Gpio(hst)
+    core.plan_apply(hst, [(gpio.fn, GPIO_ROLE_LINE, ch), (cap_.fn, 0, ch)])
+    pre, samples, segs = 20, 200, 3
+    rec = run.record("capture_repeat_rearm", channel=ch)
+    try:
+        gpio.set([(ch, gpio.OUTPUT_LOW)])
+        try:
+            cfg = cap_.configure(rate=100000, mode=capture.REPEAT, samples=samples, segments=segs,
+                                 trigger=(capture.EDGE, 0, 0), pretrigger=pre, trigger_opts=capture.TriggerOpts(rearm=1))
+        except h.Unsupported as e:
+            pytest.skip(f"the probe does not take repeat with rearm 1: {e}")
+        rec["segments"] = cfg.segments
+        gen = cap_.start()
+        for _ in range(cfg.segments):                               # a rising edge a segment
+            time.sleep(0.02)
+            gpio.set([(ch, gpio.OUTPUT_HIGH)])
+            time.sleep(0.02)
+            gpio.set([(ch, gpio.OUTPUT_LOW)])
+        time.sleep(0.05)
+        st = cap_.status()
+        rec["status_full"] = dataclasses.asdict(st)
+        assert st.state == capture.STATE["paused"] and st.serial_done == cfg.segments, f"status {st}"
+        segs_ = cap_.segments()
+        assert len(segs_) == cfg.segments
+        for k, seg in enumerate(segs_):
+            data = cap_.read_segment(seg)
+            line = [b & 1 for b in data]
+            assert seg.trigger_index == pre and seg.flags & reg.FIXTURE_LOGIC.enum["segment_flag"]["rearm"], f"segment {seg}"
+            assert bool(seg.flags & reg.FIXTURE_LOGIC.enum["segment_flag"]["gap"]) == (k > 0), f"segment {seg}"
+            # the edge at the trigger's sample, or one later: a probe may look at the line a cycle after it took a sample
+            # (the RP2's state machine: an edge between the two puts it one sample later)
+            assert not any(line[:pre]) and line[pre + 1] == 1, f"segment {k}: {line[pre - 3:pre + 3]}"
+        recs = cap_.triggers()
+        rec["records"] = len(recs)
+        assert [r.serial for r in recs] == list(range(cfg.segments))
+        cap_.release(0, gen)                                        # a slot free: the next segment armed
+        time.sleep(0.02)
+        assert cap_.status().state == capture.STATE["capturing"]
+        gpio.set([(ch, gpio.OUTPUT_HIGH)])
+        time.sleep(0.05)
+        assert cap_.status().serial_done == cfg.segments + 1
+        cap_.stop()
+    finally:
+        core.plan_release(hst, [gpio.fn, cap_.fn])
+
+
 def test_pwm_counter(run: record.Run):
     """oep-if-fixture §7 / §8 with nothing wired: a PWM on a free channel, counted on the same channel (the counter only
     listens) - the edges in the window match the frequency made, within an edge and the window's own clock; then stopped,
