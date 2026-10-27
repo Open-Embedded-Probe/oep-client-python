@@ -1,0 +1,130 @@
+{
+  "schema": 1,
+  "board": {
+    "id": "e8f60ae84e28",
+    "kind": "esp32p4",
+    "profile": "esp32p4x",
+    "model": "esp32p4x",
+    "port": "usb:e8f60ae84e28",
+    "unit_id": "e8f60ae84e28",
+    "gpio": [
+      32,
+      33
+    ],
+    "disable": 34,
+    "uart": [
+      36,
+      37
+    ],
+    "notes": "P4X (ESP32-P4 silicon v3, HS USB), ours: an M030 (ArduinoCore-CH32RV's bench) on GPIO30 (its rx, label m030.rx) and GPIO31 (its swio, m030.swio); keyed by unit id"
+  },
+  "client": {
+    "version": "0.0.39",
+    "python": "3.13.16",
+    "commit": "fb37fe0",
+    "dirty": false
+  },
+  "firmware": {
+    "before": {
+      "boot_id": 348394401,
+      "revision": 1,
+      "max_frame": 27136,
+      "max_inflight": 8,
+      "window": 108544,
+      "firmware": "0.0.39+1ad47c7",
+      "model": "esp32p4x",
+      "unit_id": "e8f60ae84e28",
+      "chip": "esp32p4 v3.2",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 4
+        },
+        {
+          "index": 1,
+          "kind": 3
+        },
+        {
+          "index": 2,
+          "kind": 5
+        },
+        {
+          "index": 3,
+          "kind": 2
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 13,
+      "plan_fn": 18,
+      "restart_fn": 19,
+      "restart_max_ms": 3000
+    },
+    "source": {
+      "kind": "on-board",
+      "why": "OEP_HW_NOFLASH"
+    },
+    "expected": null,
+    "flashed": false,
+    "after": {
+      "boot_id": 348394401,
+      "revision": 1,
+      "max_frame": 27136,
+      "max_inflight": 8,
+      "window": 108544,
+      "firmware": "0.0.39+1ad47c7",
+      "model": "esp32p4x",
+      "unit_id": "e8f60ae84e28",
+      "chip": "esp32p4 v3.2",
+      "transports": [
+        {
+          "index": 0,
+          "kind": 4
+        },
+        {
+          "index": 1,
+          "kind": 3
+        },
+        {
+          "index": 2,
+          "kind": 5
+        },
+        {
+          "index": 3,
+          "kind": 2
+        }
+      ],
+      "max_op_ms": 10000,
+      "link_fn": 13,
+      "plan_fn": 18,
+      "restart_fn": 19,
+      "restart_max_ms": 3000
+    }
+  },
+  "started": "2026-10-27T18:18:12+09:00",
+  "seconds": 2.7,
+  "host": {
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+    "python": "3.13.16"
+  },
+  "environment": {
+    "OEP_HW_NOFLASH": "1",
+    "OEP_HW_BOARDS": "e8f60ae84e28"
+  },
+  "tests": {
+    "flash": {
+      "port": "usb:e8f60ae84e28",
+      "skipped": "nothing flashed: OEP_HW_NOFLASH",
+      "boot_seconds": 1.1,
+      "firmware_after": "0.0.39+1ad47c7",
+      "verdict": "passed"
+    },
+    "capture_analog": {
+      "verdict": "skipped",
+      "why": "Skipped: no free channel of the table is one the analog capture allows ([16, 17, 18, 19, 20, 21, 22, 23]); OEP_HW_ANALOG=<channel> names one"
+    },
+    "capture_group": {
+      "verdict": "skipped",
+      "why": "Skipped: no free channel of the table is one the analog capture allows ([16, 17, 18, 19, 20, 21, 22, 23]); OEP_HW_ANALOG=<channel> names one"
+    }
+  }
+}

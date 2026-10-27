@@ -1,6 +1,15 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `stimulus.find(hst)`: an analog stimulus on today's wiring, found rather than written down - a line the probe's
+  settings drive (an output idle, e.g. a target's power) and a free ADC channel that follows it (low near the bottom, high
+  clear of it by half the range); `Stimulus.level()` a level a crossing passes. tests/hw: `capture_analog_trigger` -
+  crossings up and down on the stimulus, or force on the trigger path without one; the board table's `analog` (a
+  floating ADC channel: the P4s' 17) lets the analog and capture-group tests run where no other channel is free.
+- (JA) `stimulus.find(hst)`: 今日の配線にあるアナログの刺激を、書き留めずに見つける - probe の設定が駆動している線（idle が出力。
+  ターゲットの電源など）と、それに従う空いた ADC の端子（low で底近く、high でそこから範囲の半分以上離れる）。`Stimulus.level()` は
+  横切りが必ず通る値。tests/hw: `capture_analog_trigger` - 刺激での立ち上がりと立ち下がりの横切り、刺激が無ければ force でトリガの経路。
+  ボード表の `analog`（浮いた ADC の端子: P4 は 17）で、ほかに空いた端子の無いボードでもアナログと capture-group の試験が走る。
 - (EN) `fixture.I2cController` and `fixture.SpiController` (oep-spec 71f3feb, fixture §5, §6): the probe as the I2C /
   SPI controller. I2C: `transfer` of `I2cSegment`s joined by repeated STARTs (`stop=False` keeps the bus), `write`,
   `read`, `write_read`, `stop`; the NACK / bus error / stretch timeout as `I2cTransfer.result`. SPI: `transfer` of

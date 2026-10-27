@@ -47,6 +47,7 @@ class Board:
     disable: int = 0                     # a third free channel the config test disables, then enables again
     label: int = 0                       # the channel the config test labels (0: gpio[0]); neither it nor disable is driven
     uart: tuple[int, int] = (0, 0)       # (rx, tx) channels for the uart configure test
+    analog: int = 0                      # an ADC channel wired to nothing, for the analog tests when no other is free
     virtual_profile: str | None = None   # kind virtual: the oep_client.virtual_bench profile served on a pty
     notes: str = ""
 
@@ -83,7 +84,7 @@ _ESP32_V003_JIG = dict(label=35, disable=34, rates=(921600, 500000))
 # ESP32-P4: GPIO 24 / 25 are the USB-Serial/JTAG. The X035 jig (tests/benches/x035-p4.toml) wires 2 / 54 (RVSWD), 4-6,
 # 9-15, 46-50, 52, 53; the third P4 4, 5, 19, 21-23: none of these. 34-38 are the P4 straps, read only at a chip
 # reset, when the probe drives no pin: disable 34 is never driven, TX 37 only while planned.
-_P4 = dict(gpio=(32, 33), disable=34, uart=(36, 37))
+_P4 = dict(gpio=(32, 33), disable=34, uart=(36, 37), analog=17)
 # Pro Micro RP2350: GP19 is the PSRAM CS; GP0 / GP1 carry the bench's L103 (tests/benches/l103-rp2350.toml: nothing
 # else wired). The fixture UART is Serial1 = UART0, whose pins arduino-pico accepts are TX 0 / 12 / 16 / 28, RX 1 / 13 /
 # 17 / 29 (GP4 / GP5 hung the probe, 2026-10-02).

@@ -40,7 +40,7 @@ import pytest
 
 import json
 
-from oep_client import (capture, catalog, console as console_mod, core, dump, fixture, host as h, link, linktest,
+from oep_client import (capture, catalog, stimulus, console as console_mod, core, dump, fixture, host as h, link, linktest,
                         message as m, registry as reg, riscv, settings)
 
 from . import firmware as fwmod, flash, record
@@ -711,10 +711,61 @@ def _analog_channel(hst: h.Host, board, decl: dict, exclude=()) -> int:
     if env:
         return int(env)
     allowed = decl["role_channels"].get(0)
-    for ch in _free_channels(board):
+    for ch in (*_free_channels(board), board.analog):
         if ch not in exclude and (allowed is None or ch in allowed):
             return ch
     pytest.skip(f"no free channel of the table is one the analog capture allows ({allowed}); OEP_HW_ANALOG=<channel> names one")
+
+
+def test_capture_analog_trigger(run: record.Run):
+    """A crossing the bench's wiring makes (oep_client.stimulus: a line the probe's settings drive, an ADC channel that
+    follows it - nothing written down here, the wiring changes): up as the line goes high, down as it goes low, each at
+    the pretrigger's index with the values before it on the other side of the level. Without one on today's wiring the
+    trigger path is checked with force: waiting, then the segment cut at the sample forced, the pretrigger before it."""
+    hst = run.take()
+    if not _listed(hst, capture.AnalogCapture.NAME):
+        pytest.skip("the probe does not list oep.fixture.analog")
+    ana = capture.AnalogCapture(hst)
+    gpio = fixture.Gpio(hst)
+    pre, samples = 100, 400
+    found = stimulus.find(hst)
+    rec = run.record("capture_analog_trigger", stimulus=dataclasses.asdict(found) if found else None)
+    try:
+        if found:
+            core.plan_apply(hst, [(gpio.fn, stimulus.LINE, found.drive), (ana.fn, 0, found.analog)])
+            level = found.level()
+            for kind, start_high in ((capture.CROSS_UP, False), (capture.CROSS_DOWN, True)):
+                found.drive_to(gpio, start_high)
+                time.sleep(stimulus.SETTLE_S)
+                ana.configure(rate=stimulus.RATE, samples=samples, trigger=(kind, 0, level), pretrigger=pre)
+                ana.start()
+                time.sleep(0.05)                                    # the pretrigger's samples in (5 ms at 20 kHz)
+                assert ana.status().state == capture.STATE["waiting"], "triggered before the line moved"
+                found.drive_to(gpio, not start_high)
+                seg = ana.wait(timeout=5)[0]
+                vals = ana.values(ana.read_segment(seg), 0, seg.samples)
+                name = "up" if kind == capture.CROSS_UP else "down"
+                rec[name] = {"trigger_index": seg.trigger_index, "before": [min(vals[:pre]), max(vals[:pre])],
+                             "at": vals[pre]}
+                assert seg.trigger_index == pre, f"{name}: trigger at {seg.trigger_index}, not {pre}"
+                if kind == capture.CROSS_UP:
+                    assert max(vals[:pre]) < level <= vals[pre], f"up through {level}: {rec[name]}"
+                else:
+                    assert min(vals[:pre]) > level >= vals[pre], f"down through {level}: {rec[name]}"
+        else:
+            ch = _analog_channel(hst, run.board, record.declared(hst, ana.fn))
+            core.plan_apply(hst, [(ana.fn, 0, ch)])
+            top = (1 << 12) - 1                                     # a level the line never reaches: only force ends it
+            ana.configure(rate=stimulus.RATE, samples=samples, trigger=(capture.CROSS_UP, 0, top), pretrigger=pre)
+            ana.start()
+            time.sleep(0.05)
+            assert ana.status().state == capture.STATE["waiting"], "triggered without force"
+            ana.force()
+            seg = ana.wait(timeout=5)[0]
+            rec["forced"] = {"channel": ch, "trigger_index": seg.trigger_index, "samples": seg.samples}
+            assert seg.trigger_index == pre and seg.samples == samples, f"forced: {rec['forced']}"
+    finally:
+        core.plan_release(hst, [gpio.fn, ana.fn])                   # the driven line back to its idle
 
 
 def _widest_frontend(declared: dict) -> int | None:
