@@ -1,6 +1,15 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `fixture.I2cController` and `fixture.SpiController` (oep-spec 71f3feb, fixture §5, §6): the probe as the I2C /
+  SPI controller. I2C: `transfer` of `I2cSegment`s joined by repeated STARTs (`stop=False` keeps the bus), `write`,
+  `read`, `write_read`, `stop`; the NACK / bus error / stretch timeout as `I2cTransfer.result`. SPI: `transfer` of
+  `SpiItem`s run back to back with CS's gap / setup / hold, `SpiDone` with the times the probe kept; `exchange`.
+  `configure` returns the clock used. The registry and the vectors from oep-spec 71f3feb.
+- (JA) `fixture.I2cController` と `fixture.SpiController`（oep-spec 71f3feb、fixture §5、§6）: probe が I2C / SPI の controller になる。
+  I2C: repeated START でつなぐ `I2cSegment` の `transfer`（`stop=False` でバスを持ったまま）、`write`、`read`、`write_read`、`stop`。
+  NACK・バスのエラー・stretch の打ち切りは `I2cTransfer.result`。SPI: CS の gap / setup / hold を指定した `SpiItem` を続けて行う `transfer`、
+  probe が守った時間を返す `SpiDone`、`exchange`。`configure` は使う clock を返す。registry とベクタは oep-spec 71f3feb。
 
 ## 0.0.39
 - (EN) No user-facing changes recorded.

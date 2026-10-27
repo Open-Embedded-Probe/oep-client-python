@@ -1,7 +1,8 @@
-"""oep.fixture.gpio, oep.fixture.uart, oep.fixture.i2c-target and oep.fixture.spi-target, revision 1 (oep-spec
-oep-if-fixture). The capture is in `capture` (oep.fixture.logic / analog).
+"""oep.fixture.gpio, oep.fixture.uart, oep.fixture.i2c-target, oep.fixture.spi-target, oep.fixture.i2c-controller and
+oep.fixture.spi-controller, revision 1 (oep-spec oep-if-fixture). The capture is in `capture` (oep.fixture.logic / analog).
 
-Plan roles: gpio 1 = line; uart 1 = RX, 2 = TX; i2c-target 1 = SDA, 2 = SCL; spi-target 1 = SCK, 2 = MOSI, 3 = MISO, 4 = CS.
+Plan roles: gpio 1 = line; uart 1 = RX, 2 = TX; i2c-target / i2c-controller 1 = SDA, 2 = SCL; spi-target / spi-controller
+1 = SCK, 2 = MOSI, 3 = MISO, 4 = CS.
 Only channels the plan assigned can be used.
 """
 
@@ -16,6 +17,7 @@ from .console import PositionStream, StreamIO
 from .core import Interface, describe
 
 _GPIO, _UART, _I2C, _SPI = reg.FIXTURE_GPIO, reg.FIXTURE_UART, reg.FIXTURE_I2C_TARGET, reg.FIXTURE_SPI_TARGET
+_I2CC, _SPIC = reg.FIXTURE_I2C_CONTROLLER, reg.FIXTURE_SPI_CONTROLLER
 _MODE = _GPIO.enum["mode"]
 
 
@@ -356,3 +358,219 @@ class SpiTarget(_TargetDeclarations, Interface):
         rd.tail()
         return SpiStatus(state=state, mode=mode, bit_order=order, armed=bool(armed), queued=queued, transactions=n,
                          errors=errors)
+
+
+@dataclass(frozen=True)
+class I2cSegment:
+    """One segment of an i2c-controller transfer (fixture §5): a write of `data`, or a read of `count` bytes (count >= 1),
+    to the 7-bit `address`. The segments of a transfer are joined by repeated STARTs."""
+    address: int
+    data: bytes = b""
+    count: int = 0
+    read: bool = False
+
+    @classmethod
+    def write(cls, address: int, data: bytes = b"") -> I2cSegment:
+        return cls(address, bytes(data))
+
+    @classmethod
+    def reading(cls, address: int, count: int) -> I2cSegment:
+        return cls(address, count=count, read=True)
+
+
+@dataclass(frozen=True, kw_only=True)
+class I2cTransfer:
+    result: int         # 0 done, 1 address NACK, 2 data NACK, 3 bus error / arbitration lost, 4 stretch timeout
+    at: int             # the segment it stopped in (0 when done)
+    index: int          # result 2: the NACKed byte's place in that segment
+    data: bytes         # the bytes read, the read segments' in order
+
+    @property
+    def ok(self) -> bool:
+        return self.result == I2cController.DONE
+
+
+@dataclass(frozen=True, kw_only=True)
+class I2cControllerStatus:
+    state: int          # 0 not configured, 1 running
+    held: bool          # the bus held (no STOP yet)
+    transfers: int
+    errors: int         # transfers with a result other than 0
+
+
+class I2cController(_TargetDeclarations, Interface):
+    """oep.fixture.i2c-controller (oep-if-fixture §5): the probe as the I2C controller. transfer() runs segments joined
+    by repeated STARTs; with stop=False the bus stays held and the next transfer starts with a repeated START. A NACK, a
+    bus error or a stretch past the timeout is the answer's result (the probe sends a STOP there), not an exception."""
+    NAME = _I2CC.name
+    REVISION = _I2CC.revision
+    CONFIGURE, TRANSFER, STATUS = (_I2CC.op[k] for k in ("configure", "transfer", "status"))
+    ROLE_SDA, ROLE_SCL = _I2CC.enum["role"]["sda"], _I2CC.enum["role"]["scl"]
+    FEATURE_INTERNAL_PULLUPS = _I2CC.enum["features"]["internal_pullups"]
+    FLAG_STOP = _I2CC.enum["transfer_flags"]["stop"]
+    WRITE, READ = _I2CC.enum["dir"]["write"], _I2CC.enum["dir"]["read"]
+    DONE, ADDRESS_NACK, DATA_NACK, BUS_ERROR, STRETCH_TIMEOUT = (
+        _I2CC.enum["result"][k] for k in ("done", "address_nack", "data_nack", "bus_error", "stretch_timeout"))
+    TAG_MAX_STRETCH_TIMEOUT_US = _I2CC.tlv["describe"]["max_stretch_timeout_us"]
+    TAG_QUEUE_DEPTH = None
+
+    def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
+        super().__init__(hst, name, fn=fn)
+
+    def assignments(self, sda: int, scl: int) -> list[tuple[int, int, int]]:
+        return [(self.fn, self.ROLE_SDA, sda), (self.fn, self.ROLE_SCL, scl)]
+
+    @property
+    def min_clock_hz(self) -> int:
+        return self._declared(catalog.MIN_CLOCK_HZ, "I") or 1
+
+    @property
+    def max_stretch_timeout_us(self) -> int | None:
+        return self._declared(self.TAG_MAX_STRETCH_TIMEOUT_US, "I")
+
+    @property
+    def internal_pullups(self) -> bool:
+        return bool(self.features & self.FEATURE_INTERNAL_PULLUPS)
+
+    def configure(self, clock_hz: int, stretch_timeout_us: int) -> int:
+        """-> the SCL the probe uses: the nearest it makes at or below clock_hz (fixture §5)."""
+        rd = m.Reader(self._call(self.CONFIGURE, struct.pack("<II", clock_hz, stretch_timeout_us)).payload)
+        used = rd.take("I")
+        rd.tail()
+        return used
+
+    @classmethod
+    def transfer_body(cls, segments: list[I2cSegment], stop: bool = True) -> bytes:
+        body = bytearray(struct.pack("<BB", cls.FLAG_STOP if stop else 0, len(segments)))
+        for s in segments:
+            if s.read:
+                body += struct.pack("<BBH", cls.READ, s.address, s.count)
+            else:
+                body += struct.pack("<BBH", cls.WRITE, s.address, len(s.data)) + s.data
+        return bytes(body)
+
+    def transfer(self, segments: list[I2cSegment], stop: bool = True) -> I2cTransfer:
+        rd = m.Reader(self._call(self.TRANSFER, self.transfer_body(segments, stop)).payload)
+        result, at, index = rd.take("BBH")
+        data = rd.counted("H")
+        rd.tail()
+        return I2cTransfer(result=result, at=at, index=index, data=data)
+
+    def stop(self) -> None:
+        """A STOP alone, if the bus is held (n 0 with the STOP flag)."""
+        self.transfer([], stop=True)
+
+    def write(self, address: int, data: bytes, stop: bool = True) -> I2cTransfer:
+        return self.transfer([I2cSegment.write(address, data)], stop)
+
+    def read(self, address: int, count: int, stop: bool = True) -> I2cTransfer:
+        return self.transfer([I2cSegment.reading(address, count)], stop)
+
+    def write_read(self, address: int, data: bytes, count: int) -> I2cTransfer:
+        """A register read: write `data`, a repeated START, read `count`, STOP."""
+        return self.transfer([I2cSegment.write(address, data), I2cSegment.reading(address, count)])
+
+    def status(self) -> I2cControllerStatus:
+        rd = m.Reader(self._call(self.STATUS, locked=False).payload)
+        state, held, transfers, errors = rd.take("BBII")
+        rd.tail()
+        return I2cControllerStatus(state=state, held=bool(held), transfers=transfers, errors=errors)
+
+
+@dataclass(frozen=True)
+class SpiItem:
+    """One CS-framed transfer of an spi-controller request (fixture §6): `tx` clocked out (empty: CS alone); gap_ns from
+    the previous transfer's CS rise (unused on a request's first), setup_ns from CS active to the first SCK edge, hold_ns
+    from the last SCK edge to CS inactive."""
+    tx: bytes = b""
+    gap_ns: int = 0
+    setup_ns: int = 0
+    hold_ns: int = 0
+
+
+@dataclass(frozen=True, kw_only=True)
+class SpiDone:
+    """A transfer as the probe ran it: the times it kept at least (ns) and the MISO bytes."""
+    gap_ns: int
+    setup_ns: int
+    hold_ns: int
+    rx: bytes
+
+
+@dataclass(frozen=True, kw_only=True)
+class SpiControllerStatus:
+    state: int
+    mode: int
+    bit_order: int
+    transfers: int
+
+
+class SpiController(_TargetDeclarations, Interface):
+    """oep.fixture.spi-controller (oep-if-fixture §6): the probe as the SPI controller. transfer() runs its items back to
+    back in one request, each CS time at least the one asked; the answer says the times kept."""
+    NAME = _SPIC.name
+    REVISION = _SPIC.revision
+    CONFIGURE, TRANSFER, STATUS = (_SPIC.op[k] for k in ("configure", "transfer", "status"))
+    ROLE_SCK, ROLE_MOSI, ROLE_MISO, ROLE_CS = (_SPIC.enum["role"][k] for k in ("sck", "mosi", "miso", "cs"))
+    MSB_FIRST, LSB_FIRST = 0, 1
+    FEATURE_LSB_FIRST = _SPIC.enum["features"]["lsb_first"]
+    TAG_TIME_STEP_NS = _SPIC.tlv["describe"]["time_step_ns"]
+    TAG_MODES = _SPIC.tlv["describe"]["modes"]
+    TAG_MAX_DELAY_NS = _SPIC.tlv["describe"]["max_delay_ns"]
+    TAG_QUEUE_DEPTH = None
+
+    def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
+        super().__init__(hst, name, fn=fn)
+
+    def assignments(self, sck: int, mosi: int, miso: int, cs: int) -> list[tuple[int, int, int]]:
+        return [(self.fn, self.ROLE_SCK, sck), (self.fn, self.ROLE_MOSI, mosi), (self.fn, self.ROLE_MISO, miso),
+                (self.fn, self.ROLE_CS, cs)]
+
+    @property
+    def min_clock_hz(self) -> int:
+        return self._declared(catalog.MIN_CLOCK_HZ, "I") or 1
+
+    @property
+    def time_step_ns(self) -> int | None:
+        return self._declared(self.TAG_TIME_STEP_NS, "I")
+
+    @property
+    def modes(self) -> int:
+        return self._declared(self.TAG_MODES, "B") or 0
+
+    @property
+    def max_delay_ns(self) -> int | None:
+        return self._declared(self.TAG_MAX_DELAY_NS, "I")
+
+    def configure(self, mode: int = 0, bit_order: int = 0, clock_hz: int = 1000000) -> int:
+        """-> the SCK the probe uses: the nearest it makes at or below clock_hz (fixture §6)."""
+        rd = m.Reader(self._call(self.CONFIGURE, struct.pack("<BBI", mode, bit_order, clock_hz)).payload)
+        used = rd.take("I")
+        rd.tail()
+        return used
+
+    @staticmethod
+    def transfer_body(items: list[SpiItem]) -> bytes:
+        body = bytearray([len(items)])
+        for it in items:
+            body += struct.pack("<IIIH", it.gap_ns, it.setup_ns, it.hold_ns, len(it.tx)) + it.tx
+        return bytes(body)
+
+    def transfer(self, items: list[SpiItem]) -> list[SpiDone]:
+        rd = m.Reader(self._call(self.TRANSFER, self.transfer_body(items)).payload)
+        done = []
+        for _ in items:
+            gap, setup, hold = rd.take("III")
+            done.append(SpiDone(gap_ns=gap, setup_ns=setup, hold_ns=hold, rx=rd.counted("H")))
+        rd.tail()
+        return done
+
+    def exchange(self, tx: bytes, setup_ns: int = 0, hold_ns: int = 0) -> bytes:
+        """One transfer: the MISO bytes for `tx`."""
+        return self.transfer([SpiItem(bytes(tx), 0, setup_ns, hold_ns)])[0].rx
+
+    def status(self) -> SpiControllerStatus:
+        rd = m.Reader(self._call(self.STATUS, locked=False).payload)
+        state, mode, order, transfers = rd.take("BBBI")
+        rd.tail()
+        return SpiControllerStatus(state=state, mode=mode, bit_order=order, transfers=transfers)
