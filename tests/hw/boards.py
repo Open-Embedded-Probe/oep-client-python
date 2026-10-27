@@ -107,6 +107,9 @@ TABLE: dict[str, Board] = {b.id: b for b in (
           unit_id="30eda0ea068b", flash_port=f"{BY_ID}/esp32-series-30eda0ea068b",
           notes="third P4 (ESP32-P4, FS USB-Serial/JTAG port only), ours: a CH32V003 on SWIO 19, NRST 4, power from 5 "
                 "(the idle high its settings keep), its UART on 22 / 23, its app's output on 21", **_P4),
+    Board("e8f60ae84e28", "esp32p4", "esp32p4x", "esp32p4x", "usb:e8f60ae84e28", unit_id="e8f60ae84e28",
+          notes="P4X (ESP32-P4 silicon v3, HS USB), ours: an M030 (ArduinoCore-CH32RV's bench) on GPIO30 (its rx, label "
+                "m030.rx) and GPIO31 (its swio, m030.swio); keyed by unit id", **_P4),
     Board("9489dd2ae0953650", "rp2", "promicrorp2350", "rp2350", "cdc:9489dd2ae0953650", unit_id="9489dd2ae0953650",
           notes="SparkFun Pro Micro RP2350 (the firmware enumerates as the project's 1209:4F45); no board-identify id: keyed by unit id",
           **_RP2350),
