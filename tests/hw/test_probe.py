@@ -956,6 +956,76 @@ def test_spi_target(run: record.Run):
         core.plan_release(hst, [t.fn])
 
 
+def test_i2c_controller(run: record.Run):
+    """oep-if-fixture §5 with nothing wired (the pads' pull-ups hold the bus high): the clock used at or below the one
+    asked, an address NACKed (result 1, a STOP), the bus held without a STOP and let go by a STOP alone, the counters."""
+    hst = run.take()
+    if not _listed(hst, fixture.I2cController.NAME):
+        pytest.skip("the probe does not list oep.fixture.i2c-controller")
+    c = fixture.I2cController(hst)
+    decl = record.declared(hst, c.fn)
+    roles = _plan_roles(run.board, decl, [c.ROLE_SDA, c.ROLE_SCL], "OEP_HW_I2C_CONTROLLER")
+    rec = run.record("i2c_controller", sda=roles[c.ROLE_SDA], scl=roles[c.ROLE_SCL],
+                     declared={"max_clock_hz": c.max_clock_hz, "min_clock_hz": c.min_clock_hz, "max_length": c.max_length,
+                               "max_stretch_timeout_us": c.max_stretch_timeout_us, "internal_pullups": c.internal_pullups})
+    core.plan_apply(hst, c.assignments(roles[c.ROLE_SDA], roles[c.ROLE_SCL]))
+    try:
+        assert c.status().state == 0
+        asked = 100000
+        used = c.configure(asked, 1000)
+        rec["clock_used"] = used
+        assert c.min_clock_hz <= used <= asked, f"SCL {used} for {asked} asked"
+        t = c.write_read(I2C_ADDRESS, b"\x00", 1)
+        rec["write_read"] = dataclasses.asdict(t)
+        if not c.internal_pullups:
+            return   # the bus floats without its own pull-ups: nothing to judge
+        assert t.result == c.ADDRESS_NACK and t.at == 0 and t.data == b"", f"nobody wired, yet {t}"
+        t = c.write(I2C_ADDRESS, b"", stop=False)
+        assert t.result == c.ADDRESS_NACK and not c.status().held   # a NACK sends its STOP whatever the flag
+        c.stop()                                                    # n 0: nothing held, nothing sent
+        st = c.status()
+        rec["status"] = dataclasses.asdict(st)
+        assert st.state == 1 and not st.held and st.transfers == 2 and st.errors == 2, f"status {st}"
+    finally:
+        core.plan_release(hst, [c.fn])
+
+
+def test_spi_controller(run: record.Run):
+    """oep-if-fixture §6 with nothing wired: the clock used at or below the one asked, two transfers back to back whose
+    gap / setup / hold are at least the times asked (MISO floats: its bytes recorded, not judged), the counter."""
+    hst = run.take()
+    if not _listed(hst, fixture.SpiController.NAME):
+        pytest.skip("the probe does not list oep.fixture.spi-controller")
+    c = fixture.SpiController(hst)
+    decl = record.declared(hst, c.fn)
+    roles = _plan_roles(run.board, decl, [c.ROLE_SCK, c.ROLE_MOSI, c.ROLE_MISO, c.ROLE_CS], "OEP_HW_SPI_CONTROLLER")
+    rec = run.record("spi_controller", sck=roles[c.ROLE_SCK], mosi=roles[c.ROLE_MOSI], miso=roles[c.ROLE_MISO],
+                     cs=roles[c.ROLE_CS], declared={"max_clock_hz": c.max_clock_hz, "min_clock_hz": c.min_clock_hz,
+                                                    "max_length": c.max_length, "time_step_ns": c.time_step_ns,
+                                                    "modes": c.modes, "max_delay_ns": c.max_delay_ns})
+    core.plan_apply(hst, c.assignments(roles[c.ROLE_SCK], roles[c.ROLE_MOSI], roles[c.ROLE_MISO], roles[c.ROLE_CS]))
+    try:
+        assert c.status().state == 0
+        asked = min(1000000, c.max_clock_hz or 1000000)
+        used = c.configure(0, c.MSB_FIRST, asked)
+        rec["clock_used"] = used
+        assert c.min_clock_hz <= used <= asked, f"SCK {used} for {asked} asked"
+        items = [fixture.SpiItem(b"\x9f\x00", 0, 1000, 500), fixture.SpiItem(b"\x01", 5000, 2003, 0)]
+        done = c.transfer(items)
+        rec["transfer"] = [dataclasses.asdict(d) | {"rx": d.rx.hex()} for d in done]
+        assert [len(d.rx) for d in done] == [2, 1]
+        assert done[0].gap_ns == 0
+        for it, d in zip(items[1:], done[1:]):
+            assert d.gap_ns >= it.gap_ns, f"gap {d.gap_ns} for {it.gap_ns} asked"
+        for it, d in zip(items, done):
+            assert d.setup_ns >= it.setup_ns and d.hold_ns >= it.hold_ns, f"times {d} for {it} asked"
+        st = c.status()
+        rec["status"] = dataclasses.asdict(st)
+        assert st.state == 1 and st.transfers == 2, f"status {st}"
+    finally:
+        core.plan_release(hst, [c.fn])
+
+
 # ---- 9. the target's console -------------------------------------------------------------------------------------------------
 
 _MECHANISMS = reg.TARGET_CONSOLE.tlv["describe"]["mechanism"]

@@ -170,6 +170,18 @@ KNOWN: dict[str, Known] = {
         tags=_d("oep.fixture.spi-target", ("queue_depth", "queue depth", lambda v: str(v[0])),
                 ("modes", "modes", lambda v: ", ".join(str(k) for k in range(4) if v[0] >> k & 1)),
                 ("cs_setup_ns", "CS setup ns", lambda v: f"{_u32(v)} (SCK sooner after CS: the first bit is not sure)"))),
+    "oep.fixture.i2c-controller": Known(
+        "the probe as the I2C controller, for a DUT's target (open-drain only, fixture §5)",
+        roles=_roles("oep.fixture.i2c-controller", "role", {"sda": "SDA", "scl": "SCL"}),
+        features=_bits("oep.fixture.i2c-controller", {"internal_pullups": "internal pull-ups"}),
+        tags=_d("oep.fixture.i2c-controller", ("max_stretch_timeout_us", "max stretch timeout us", _u32))),
+    "oep.fixture.spi-controller": Known(
+        "the probe as the SPI controller, for a DUT's target (CS times as asked, fixture §6)",
+        roles=_roles("oep.fixture.spi-controller", "role", {"sck": "SCK", "mosi": "MOSI", "miso": "MISO", "cs": "CS"}),
+        features=_bits("oep.fixture.spi-controller", {"lsb_first": "LSB first"}),
+        tags=_d("oep.fixture.spi-controller", ("time_step_ns", "time step ns", _u32),
+                ("modes", "modes", lambda v: ", ".join(str(k) for k in range(4) if v[0] >> k & 1)),
+                ("max_delay_ns", "max delay ns", _u32))),
 }
 
 
