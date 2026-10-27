@@ -182,6 +182,19 @@ KNOWN: dict[str, Known] = {
         tags=_d("oep.fixture.spi-controller", ("time_step_ns", "time step ns", _u32),
                 ("modes", "modes", lambda v: ", ".join(str(k) for k in range(4) if v[0] >> k & 1)),
                 ("max_delay_ns", "max delay ns", _u32))),
+    "oep.fixture.pwm": Known("a square wave of a frequency and duty on each output (fixture §7)",
+                             roles={k: f"out{k}" for k in range(8)},
+                             tags=_d("oep.fixture.pwm", ("channels", "channels", lambda v: str(v[0])),
+                                     ("duty_bits", "duty bits", lambda v: str(v[0])))),
+    "oep.fixture.counter": Known("the edges on each input within a gate; it only listens (fixture §8)",
+                                 roles={k: f"in{k}" for k in range(8)},
+                                 tags=_d("oep.fixture.counter", ("channels", "channels", lambda v: str(v[0])),
+                                         ("max_gate_us", "max gate us", _u32))),
+    "oep.fixture.dac": Known("an analog value on each output (fixture §9)",
+                             roles={k: f"out{k}" for k in range(8)},
+                             tags=_d("oep.fixture.dac", ("channels", "channels", lambda v: str(v[0])),
+                                     ("bits", "bits", lambda v: str(v[0])),
+                                     ("range", "range mV", lambda v: "%d .. %d" % struct.unpack("<ii", v)))),
 }
 
 

@@ -18,6 +18,7 @@ from .core import Interface, describe
 
 _GPIO, _UART, _I2C, _SPI = reg.FIXTURE_GPIO, reg.FIXTURE_UART, reg.FIXTURE_I2C_TARGET, reg.FIXTURE_SPI_TARGET
 _I2CC, _SPIC = reg.FIXTURE_I2C_CONTROLLER, reg.FIXTURE_SPI_CONTROLLER
+_PWM, _CNT, _DAC = reg.FIXTURE_PWM, reg.FIXTURE_COUNTER, reg.FIXTURE_DAC
 _MODE = _GPIO.enum["mode"]
 
 
@@ -574,3 +575,170 @@ class SpiController(_TargetDeclarations, Interface):
         state, mode, order, transfers = rd.take("BBBI")
         rd.tail()
         return SpiControllerStatus(state=state, mode=mode, bit_order=order, transfers=transfers)
+
+
+@dataclass(frozen=True, kw_only=True)
+class PwmOutput:
+    """An output as the probe makes it: the frequency num / den Hz (0 / 1: stopped) and the duty (0 .. 65535)."""
+    role: int
+    num: int
+    den: int
+    duty: int
+
+    @property
+    def hz(self) -> float:
+        return self.num / self.den if self.den else 0.0
+
+
+class Pwm(_TargetDeclarations, Interface):
+    """oep.fixture.pwm (oep-if-fixture §7): a square wave on output k (role k). hz 0 stops an output (its line low);
+    the duty is 0 (always low) .. 65535 (always high). The probe makes the nearest it can and says what."""
+    NAME = _PWM.name
+    REVISION = _PWM.revision
+    SET, STATUS = _PWM.op["set"], _PWM.op["status"]
+    TAG_CHANNELS, TAG_DUTY_BITS = _PWM.tlv["describe"]["channels"], _PWM.tlv["describe"]["duty_bits"]
+    TAG_QUEUE_DEPTH = None
+    FULL = 65535
+
+    def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
+        super().__init__(hst, name, fn=fn)
+
+    @property
+    def channels(self) -> int:
+        return self._declared(self.TAG_CHANNELS, "B") or 0
+
+    @property
+    def min_clock_hz(self) -> int:
+        return self._declared(catalog.MIN_CLOCK_HZ, "I") or 1
+
+    @property
+    def duty_bits(self) -> int | None:
+        return self._declared(self.TAG_DUTY_BITS, "B")
+
+    def assignments(self, *channels: int) -> list[tuple[int, int, int]]:
+        """Output k on channels[k]."""
+        return [(self.fn, k, ch) for k, ch in enumerate(channels)]
+
+    @staticmethod
+    def _outputs(rd: m.Reader, n: int) -> list[PwmOutput]:
+        out = []
+        for _ in range(n):
+            role, num, den, duty = rd.take("BIIH")
+            out.append(PwmOutput(role=role, num=num, den=den, duty=duty))
+        return out
+
+    def set(self, outputs: list[tuple[int, int, int]]) -> list[PwmOutput]:
+        """(role, hz, duty) each, in order -> what the probe made of each."""
+        body = struct.pack("<B", len(outputs)) + b"".join(struct.pack("<BIH", r, hz, d) for r, hz, d in outputs)
+        rd = m.Reader(self._call(self.SET, body).payload)
+        made = self._outputs(rd, len(outputs))
+        rd.tail()
+        return made
+
+    def start(self, role: int, hz: int, duty: int = 32768) -> PwmOutput:
+        return self.set([(role, hz, duty)])[0]
+
+    def stop(self, role: int) -> PwmOutput:
+        return self.set([(role, 0, 0)])[0]
+
+    def status(self) -> list[PwmOutput]:
+        rd = m.Reader(self._call(self.STATUS, locked=False).payload)
+        made = self._outputs(rd, rd.u8())
+        rd.tail()
+        return made
+
+
+@dataclass(frozen=True, kw_only=True)
+class Count:
+    window_ns: int                  # the time counted (the probe's clock)
+    counts: dict[int, int]          # role -> edges
+
+    def hz(self, role: int, edges_per_period: int = 1) -> float:
+        """The frequency on `role` from its count (rising or falling: 1 edge a period; both: 2)."""
+        return self.counts[role] / edges_per_period / (self.window_ns / 1e9) if self.window_ns else 0.0
+
+
+class Counter(_TargetDeclarations, Interface):
+    """oep.fixture.counter (oep-if-fixture §8): the edges on input k (role k) within a gate. It only listens, so its
+    pins may be another function's - an output's too (a Pwm counted on its own pin, no wiring)."""
+    NAME = _CNT.name
+    REVISION = _CNT.revision
+    MEASURE = _CNT.op["measure"]
+    RISING, FALLING, BOTH = (_CNT.enum["edge"][k] for k in ("rising", "falling", "both"))
+    TAG_CHANNELS, TAG_MAX_GATE_US = _CNT.tlv["describe"]["channels"], _CNT.tlv["describe"]["max_gate_us"]
+    TAG_QUEUE_DEPTH = None
+
+    def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
+        super().__init__(hst, name, fn=fn)
+
+    @property
+    def channels(self) -> int:
+        return self._declared(self.TAG_CHANNELS, "B") or 0
+
+    @property
+    def max_gate_us(self) -> int | None:
+        return self._declared(self.TAG_MAX_GATE_US, "I")
+
+    def assignments(self, *channels: int) -> list[tuple[int, int, int]]:
+        return [(self.fn, k, ch) for k, ch in enumerate(channels)]
+
+    def measure(self, gate_us: int, edge: int = 0) -> Count:
+        rd = m.Reader(self._call(self.MEASURE, struct.pack("<IB", gate_us, edge),
+                                 expect_ms=gate_us // 1000 + 1).payload)
+        window, n = rd.take("QB")
+        counts = {}
+        for _ in range(n):
+            role, count = rd.take("BI")
+            counts[role] = count
+        rd.tail()
+        return Count(window_ns=window, counts=counts)
+
+
+class Dac(_TargetDeclarations, Interface):
+    """oep.fixture.dac (oep-if-fixture §9): an analog value on output k (role k): 0 .. 2^bits - 1, nominally
+    min_mv .. max_mv (describe range)."""
+    NAME = _DAC.name
+    REVISION = _DAC.revision
+    SET, STATUS = _DAC.op["set"], _DAC.op["status"]
+    TAG_CHANNELS, TAG_BITS, TAG_RANGE = (_DAC.tlv["describe"][k] for k in ("channels", "bits", "range"))
+    TAG_QUEUE_DEPTH = None
+
+    def __init__(self, hst: h.Host, fn: int | None = None, name: str | None = None):
+        super().__init__(hst, name, fn=fn)
+
+    @property
+    def channels(self) -> int:
+        return self._declared(self.TAG_CHANNELS, "B") or 0
+
+    @property
+    def bits(self) -> int | None:
+        return self._declared(self.TAG_BITS, "B")
+
+    @property
+    def range_mv(self) -> tuple[int, int] | None:
+        if self._decl is None:
+            self._declared(self.TAG_BITS, "B")
+        v = (self._decl or {}).get(self.TAG_RANGE)
+        return struct.unpack("<ii", v) if v is not None and len(v) == 8 else None
+
+    def assignments(self, *channels: int) -> list[tuple[int, int, int]]:
+        return [(self.fn, k, ch) for k, ch in enumerate(channels)]
+
+    def set(self, values: list[tuple[int, int]]) -> None:
+        """(role, value) each, in order."""
+        self._call(self.SET, struct.pack("<B", len(values)) + b"".join(struct.pack("<BI", r, v) for r, v in values))
+
+    def value_for_mv(self, mv: float) -> int:
+        """The nearest value for `mv` on the nominal range."""
+        lo, hi = self.range_mv or (0, 0)
+        full = (1 << (self.bits or 0)) - 1
+        return max(0, min(full, round((mv - lo) * full / (hi - lo)))) if hi > lo else 0
+
+    def status(self) -> list[tuple[int, int, bool]]:
+        rd = m.Reader(self._call(self.STATUS, locked=False).payload)
+        out = []
+        for _ in range(rd.u8()):
+            role, value, on = rd.take("BIB")
+            out.append((role, value, bool(on)))
+        rd.tail()
+        return out

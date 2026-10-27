@@ -769,6 +769,38 @@ def test_capture_analog_trigger(run: record.Run):
         core.plan_release(hst, [gpio.fn, ana.fn])                   # the driven line back to its idle
 
 
+def test_pwm_counter(run: record.Run):
+    """oep-if-fixture §7 / §8 with nothing wired: a PWM on a free channel, counted on the same channel (the counter only
+    listens) - the edges in the window match the frequency made, within an edge and the window's own clock; then stopped,
+    nothing more is counted."""
+    hst = run.take()
+    if not (_listed(hst, fixture.Pwm.NAME) and _listed(hst, fixture.Counter.NAME)):
+        pytest.skip("the probe does not list oep.fixture.pwm and oep.fixture.counter")
+    pwm, cnt = fixture.Pwm(hst), fixture.Counter(hst)
+    ch = run.board.gpio[0]
+    if not ch:
+        pytest.skip("no free channel in the board table")
+    rec = run.record("pwm_counter", channel=ch, declared={"pwm_max_hz": pwm.max_clock_hz, "counter_max_hz": cnt.max_clock_hz,
+                                                          "duty_bits": pwm.duty_bits, "max_gate_us": cnt.max_gate_us})
+    core.plan_apply(hst, pwm.assignments(ch) + cnt.assignments(ch))
+    try:
+        runs = []
+        for hz in (1000, min(20000, cnt.max_clock_hz or 20000)):
+            made = pwm.start(0, hz, 32768)
+            got = cnt.measure(200000, fixture.Counter.RISING)
+            expected = made.hz * got.window_ns / 1e9
+            runs.append({"hz": made.hz, "duty": made.duty, "window_ns": got.window_ns, "count": got.counts[0],
+                         "expected": round(expected, 1)})
+            assert abs(got.counts[0] - expected) <= 2 + expected * 0.001, f"{runs[-1]}"
+        pwm.stop(0)
+        got = cnt.measure(50000, fixture.Counter.BOTH)
+        runs.append({"stopped": got.counts[0]})
+        assert got.counts[0] == 0, f"edges after the stop: {got.counts[0]}"
+        rec["runs"] = runs
+    finally:
+        core.plan_release(hst, [pwm.fn, cnt.fn])
+
+
 def _widest_frontend(declared: dict) -> int | None:
     fes = declared.get("frontends")
     if not fes:

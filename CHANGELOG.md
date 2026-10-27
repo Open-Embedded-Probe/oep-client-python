@@ -1,6 +1,14 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) `fixture.Pwm`, `fixture.Counter`, `fixture.Dac` (oep-spec 02c08c9, fixture §7-§9): `Pwm.set` / `start` / `stop` /
+  `status` (`PwmOutput`: the frequency as num / den and the duty made), `Counter.measure` (`Count`: the window and the edges a
+  role, `hz()`), `Dac.set` / `status` / `value_for_mv`. dump knows all three. tests/hw: `pwm_counter` - a PWM on a free
+  channel counted on that channel (no wiring), the edges against the frequency made, none after the stop.
+- (JA) `fixture.Pwm`、`fixture.Counter`、`fixture.Dac`（oep-spec 02c08c9、fixture §7〜§9）: `Pwm.set` / `start` / `stop` / `status`
+  （`PwmOutput`: 出した周波数 num / den とデューティ）、`Counter.measure`（`Count`: 時間と role ごとのエッジの数、`hz()`）、`Dac.set` / `status` /
+  `value_for_mv`。dump は 3 つとも知る。tests/hw: `pwm_counter` - 空いた端子に PWM を出し同じ端子で数える（配線なし）。出した周波数とエッジの
+  数を突き合わせ、止めた後は数えない。
 - (EN) `stimulus.find(hst)`: an analog stimulus the probe's labels allow - a drive `<port>.stimulus` and an ADC input
   `<port>.stimulus_in` (nothing else is moved: a line another bench's target owns is not the tests'), checked on the wiring
   of the day (the input low near the bottom, high clear of it by half the range); `Stimulus.level()` a level a crossing
