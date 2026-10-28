@@ -2949,7 +2949,7 @@
    "note": "chip and firmware in core describe"
   },
   "capture:3.7:4": {
-   "text": "- frontend ごとの減衰と測れる範囲は describe の front",
+   "text": "- frontend ごとの測れる範囲（入力ピンの電圧）は describe の",
    "verify": [
     "tests/test_trace_capture.py::test_chip_firmware_frontends_and_reference_are_where_the_rules_say"
    ],
