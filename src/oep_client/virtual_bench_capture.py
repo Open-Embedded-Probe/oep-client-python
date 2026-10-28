@@ -1515,9 +1515,15 @@ class VirtualGroup:
     expr: object | None = None         # the bind's trigger source (virtual_bench_trigger.Expression)
     judge: object | None = None        # while waiting: its Evaluator
     event: tuple[int, int, int] | None = None   # the event: (fn, ns, uncertainty_ns)
+    declared: tuple[int, int, bool] | None = None   # its trigger_caps: (types, protocols, has trigger_out)
+    inputs: dict = field(default_factory=dict)  # TEST HOOK: trig_in role -> level(ns), the external input (idle high)
+    pulses: list = field(default_factory=list)  # trigger_out's pulses: (role, start_ns, width_ns, polarity)
+    record_next: int = 0                        # rearm 1: the next event's serial (§4.4)
+    again_ns: int | None = None                 # rearm 1: an event happened; the next one is looked for from here
 
     def bind(self, caps: dict[int, VirtualCapture], fns: list[int], others=(), budget: int = 1 << 16,
-             repeated: list[tuple[int, bytes]] = (), roles: dict[int, list[int]] | None = None) -> None:
+             repeated: list[tuple[int, bytes]] = (), roles: dict[int, list[int]] | None = None,
+             group_roles: list[int] = ()) -> None:
         """§4.1's refusals, every one checked before anything changes: the same fn twice -> malformed; an fn not in
         tracks -> unsupported (0x00, fn); the start answer past the route's frame -> unsupported (0x00); the same list
         -> nothing changes; a change while capturing -> cause 6; a track in another group (`others`) -> cause 4; a
@@ -1534,7 +1540,7 @@ class VirtualGroup:
         if repeated and not self.sourced:
             raise Reject(m.UNSUPPORTED, bytes([repeated[0][0]]))   # no trigger source here (§4.4)
         expr = vbt.parse(list(repeated), fns, roles or {fn: [] for fn in fns},
-                         {fn: caps[fn].analog for fn in fns if fn in caps}) if repeated else None
+                         {fn: caps[fn].analog for fn in fns if fn in caps}, self.declared, group_roles) if repeated else None
         if fns == self.tracks and expr is None and self.expr is None:
             return                                                 # the same list: the state kept
         if self.state(caps) == STATE["capturing"]:
@@ -1607,28 +1613,62 @@ class VirtualGroup:
                 return per, [self.stopped_event(STOPPED["error"], failed.error)], True
             per.append((fn, caps[fn].start(now_ms, self.start_ns, subscribed=subscribed(fn),
                                            waiting=self.expr is not None)))
-        self.event = None
+        self.event, self.record_next, self.again_ns = None, 0, None
         if self.expr is not None:
             from . import virtual_bench_trigger as vbt
             begin = self.start_ns                                  # arm 1: once every track's pretrigger is there
             if self.expr.arm:
                 begin = max([begin] + [caps[fn].time_of(caps[fn].pretrigger) for fn in self.tracks])
-            self.judge = vbt.Evaluator(self.expr, caps, begin)
+            for fn in self.tracks:
+                caps[fn].rearm = self.expr.rearm                   # each event its tracks' own segment (§4.4)
+            self.judge = vbt.Evaluator(self.expr, caps, begin, self.inputs)
             per += self._judge(caps, now_ms)[0]
         return per, self._finished(caps, False), False
 
     def _judge(self, caps: dict[int, VirtualCapture], now_ms) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
-        """While waiting: the trigger source judged up to now; at its event every track cuts its segment there."""
-        if self.judge is None or self.event is not None:
-            return [], []
-        event = self.judge.run(int(now_ms * 1_000_000))
-        return self._happened(caps, now_ms, event) if event is not None else ([], [])
+        """While waiting: the trigger source judged up to now; at its event every track cuts its segment there. rearm 1:
+        the next event looked for after holdoff_ns, in repeat once every track waits for its next segment (§4.4)."""
+        per, own = [], []
+        while True:
+            if self.judge is None and self.again_ns is not None and self._ready(caps):
+                from . import virtual_bench_trigger as vbt
+                begin = max([self.again_ns] + [caps[fn].time_of(caps[fn].produced) for fn in self.tracks
+                                               if caps[fn].mode == MODE["repeat"]])
+                self.judge, self.again_ns = vbt.Evaluator(self.expr, caps, begin, self.inputs), None
+            if self.judge is None:
+                return per, own
+            event = self.judge.run(int(now_ms * 1_000_000))
+            if event is None:
+                return per, own
+            more, mine = self._happened(caps, now_ms, event)
+            per, own = per + more, own + mine
+
+    def _ready(self, caps: dict[int, VirtualCapture]) -> bool:
+        states = [caps[fn] for fn in self.tracks]
+        if any(c.state != STATE["capturing"] for c in states):
+            return False                                           # done, paused, stopped: no next event
+        return all(c.mode == MODE["streaming"] or c.rearm_waiting for c in states)
 
     def _happened(self, caps, now_ms, event: tuple[int, int, int]):
         self.event, self.judge = event, None
         fn, ns, unc = event
-        per = [(t, caps[t].force(now_ms, trigger_ns=ns, pretrigger=caps[t].pretrigger)) for t in self.tracks]
-        own = [bytes([GRP.event["triggered"]]) + struct.pack("<HIQII", fn, NONE, ns, unc, self.generation)]
+        per = []
+        for t in self.tracks:
+            c = caps[t]
+            if c.mode == MODE["streaming"] and c.state == STATE["capturing"]:   # a record, the stream not cut (§2.1)
+                sample = c.kept(max(0, round(Fraction(ns - c.t0_ns) * c.rate / 1_000_000_000)))
+                per.append((t, c._triggered(sample, ns, c.pretrigger)))
+            else:
+                per.append((t, c.force(now_ms, trigger_ns=ns, pretrigger=c.pretrigger)))
+        record = NONE
+        if self.expr is not None and self.expr.rearm:
+            record, self.record_next = self.record_next, (self.record_next + 1) & 0xFFFFFFFF
+            self.again_ns = ns + max(1, self.expr.holdoff_ns)
+        if self.expr is not None and self.expr.out is not None:
+            from . import virtual_bench_trigger as vbt
+            role, width, polarity = self.expr.out
+            self.pulses.append((role, ns + vbt.TRIGGER_OUT_LATENCY_NS, width, polarity))
+        own = [bytes([GRP.event["triggered"]]) + struct.pack("<HIQII", fn, record, ns, unc, self.generation)]
         return per, own
 
     def force(self, caps: dict[int, VirtualCapture], now_ms) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
@@ -1647,9 +1687,13 @@ class VirtualGroup:
 
     def tick(self, caps: dict[int, VirtualCapture], now_ms: int) -> tuple[list[tuple[int, list[bytes]]], list[bytes]]:
         was_done = self.state(caps) == STATE["done"]
-        judged, own = self._judge(caps, now_ms)
-        per = judged + [(fn, caps[fn].tick(now_ms)) for fn in self.tracks]
-        return per, own + self._finished(caps, was_done)
+        per, own = [], []
+        while True:                                                # rearm 1: an event, its segments, the next event...
+            judged, mine = self._judge(caps, now_ms)
+            per += judged + [(fn, caps[fn].tick(now_ms)) for fn in self.tracks]
+            own += mine
+            if not (self.judge is None and self.again_ns is not None and self._ready(caps)):
+                return per, own + self._finished(caps, was_done)
 
     def stopped_event(self, reason: int, error: int = 0) -> bytes:
         """The group's stopped: reason(u8) error(u8) generation(u32: the group's, §4.2)."""

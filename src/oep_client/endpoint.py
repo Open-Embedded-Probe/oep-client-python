@@ -163,7 +163,8 @@ PIN_ROLE_RESET = reg.WIRE_RVSWD.enum["pin_role"]["reset"]   # the channels an at
 TARGET_ID_SCHEME = reg.COMMON.enum["target_id_scheme"]     # one space for the whole probe (oep-if-debug §1)
 _I2C, _SPI = reg.FIXTURE_I2C_TARGET, reg.FIXTURE_SPI_TARGET
 I2C_FEATURES, SPI_FEATURES = _I2C.enum["features"], _SPI.enum["features"]
-TARGET_ROLES = {"oep.fixture.gpio": {1}, "oep.fixture.uart": {1, 2}, _I2C.name: set(_I2C.enum["role"].values()),
+TARGET_ROLES = {"oep.fixture.capture-group": set(reg.FIXTURE_CAPTURE_GROUP.enum["pin_role"].values()),
+                "oep.fixture.gpio": {1}, "oep.fixture.uart": {1, 2}, _I2C.name: set(_I2C.enum["role"].values()),
                 _SPI.name: set(_SPI.enum["role"].values())}   # the plan roles each fixture takes
 UART_FORMAT_MASK = 0x1F                                    # the defined format bits (fixture §2)
 _T_SCAN, _T_ATTACH, _T_ATTACH_ANSWER, _T_CONNECTIONS_ANSWER = (
@@ -986,8 +987,11 @@ class Endpoint(FixtureDrive):
             if tag == d["tracks"]:                                 # n(u8) n x fn(u16)
                 tracks = list(struct.unpack_from(f"<{v[0]}H", v, 1))
         features = next((struct.unpack("<I", v)[0] for tag, v in decl if tag == catalog.FEATURES), 0)
+        from . import virtual_bench_trigger
+        declared = next((virtual_bench_trigger.caps_of(v) for tag, v in decl if tag == d["trigger_caps"]), None)
         return virtual_bench_capture.VirtualGroup(tracks, inner.get("max_tracks", len(tracks)), list(inner.get("budgets", ())),
-                                                  sourced=bool(features & reg.FIXTURE_CAPTURE_GROUP.enum["features"]["trigger_source"]))
+                                                  sourced=bool(features & reg.FIXTURE_CAPTURE_GROUP.enum["features"]["trigger_source"]),
+                                                  declared=declared)
 
     def _next_seq(self, fn: int) -> int:
         seq = self.push_seq.get(fn, 0)
@@ -1164,7 +1168,7 @@ class Endpoint(FixtureDrive):
                 roles = {f: sorted(a[1] for a in self.plan if a[0] == f) for f in fns}
                 # the start answer's message (18 + 6 x n bytes, its result header in the 18) against the frame (§4.1)
                 grp.bind(self.captures, fns, [g for g in self.groups.values() if g is not grp], self.probe.max_frame,
-                         t.repeated, roles)
+                         t.repeated, roles, sorted(a[1] for a in self.plan if a[0] == fn))   # its trig_in / trig_out
                 return self._answer(b"")
             if op == O["start"]:
                 t.tail()

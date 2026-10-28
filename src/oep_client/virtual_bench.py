@@ -42,7 +42,7 @@ class Offered:
 
 CORE_NAME = ""                       # fn 0 is the core: it has no name and is never listed (core §0, §7.2)
 PLAN_ROLE_INTERFACES = {"oep.fixture.gpio", "oep.fixture.uart", "oep.fixture.i2c-target", "oep.fixture.spi-target",
-                        "oep.fixture.logic", "oep.fixture.analog"}   # the interfaces with plan roles (oep-if-plan)
+                        "oep.fixture.logic", "oep.fixture.analog", "oep.fixture.capture-group"}   # the interfaces with plan roles (oep-if-plan)
 STAND_IN_OPS = (0x10, 0x11)          # the endpoint's two stand-in ops of an fn it does not simulate (VIRTUAL BENCH ONLY)
 CORE_REQUIRED = ("confirm", "list", "describe", "clock", "open", "end", "keepalive", "lock_state")   # fn 0's required ops (core §1.2)
 
@@ -779,8 +779,9 @@ def capture_option_decls(analog: bool, channels: list[int]) -> tuple[bytes, ...]
 def with_capture_options(probe: VirtualProbe) -> VirtualProbe:
     """The profile with every optional capture feature on its logic and analog tracks: named formats (format 0xFF),
     format 3 and the external clock, threshold and glitch filter (logic), coupling, offset, bandwidth, impedance,
-    resolution and oversample (analog), and the external data paths (TCP, UDP). VIRTUAL BENCH ONLY (no profile's
-    probe has them all)."""
+    resolution and oversample (analog), the external data paths (TCP, UDP), and a capture-group trigger source with every
+    condition, UART, trigger_out and the trig_in / trig_out roles. VIRTUAL BENCH ONLY (no profile's probe has them
+    all)."""
     def decl(o: Offered) -> Offered:
         if o.name not in ("oep.fixture.logic", "oep.fixture.analog"):
             return o
@@ -791,7 +792,20 @@ def with_capture_options(probe: VirtualProbe) -> VirtualProbe:
                        for ch in catalog.bitmap_to_channels(struct.unpack_from("<H", t, 4)[0], t[6:])})
         kept = tuple(catalog.tlv(d["formats"], t[3:] + bytes(more)) if t[0] == d["formats"] else t for t in o.tlvs)
         return _with(o, kept + capture_option_decls(analog, pins))
-    return _again(probe, [decl(o) for o in probe.offered])
+
+    def group(o: Offered, pins: list[int]) -> Offered:
+        """Its trigger source with every condition, UART, trigger_out, and the trig_in / trig_out roles (§4.4)."""
+        from . import virtual_bench_trigger
+        if o.name != "oep.fixture.capture-group" or not any(t[0] == _GRPD["trigger_caps"] for t in o.tlvs):
+            return o
+        kept = tuple(catalog.tlv(_GRPD["trigger_caps"], virtual_bench_trigger.caps(full=True))
+                     if t[0] == _GRPD["trigger_caps"] else t for t in o.tlvs)
+        return _with(o, kept + tuple(catalog.role_channels(r, pins)
+                                     for r in reg.FIXTURE_CAPTURE_GROUP.enum["pin_role"].values()))
+    logic_pins = sorted({ch for o in probe.offered if o.name == "oep.fixture.logic" for t in o.tlvs
+                         if t[0] == catalog.ROLE_CHANNELS
+                         for ch in catalog.bitmap_to_channels(struct.unpack_from("<H", t, 4)[0], t[6:])})
+    return _again(probe, [group(decl(o), logic_pins) for o in probe.offered])
 
 
 def core_v1() -> VirtualProbe:

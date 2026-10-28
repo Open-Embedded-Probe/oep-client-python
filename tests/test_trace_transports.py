@@ -777,13 +777,13 @@ def test_notifications_for_a_closed_connection_are_dropped_and_not_carried_to_a_
         watcher, taker = Raw(), Raw()
         taker.corr = a._corr + 10
         corr = taker.send(m.CORE_FN, m.OP_OPEN, struct.pack("<IB", 5000, 0), session=sid)
-        got = taker.frames(0.5)
+        got = taker.frames(2.0)                                           # the bench streams meanwhile: room to answer
         assert [m.Result.unpack(f).corr for f in got if f[0] == m.ROLE_RESULT] == [corr]
         assert m.Result.unpack(next(f for f in got if f[0] == m.ROLE_RESULT)).succeeded   # the session stayed
         assert not [f for f in got if f[0] in (m.ROLE_DATA, m.ROLE_EVENT)]     # nothing of the closed route
         assert not [f for f in watcher.frames(0.2) if f[0] != m.ROLE_RESULT]
         taker.send(lc.fn, m.OP_SUBSCRIBE, struct.pack("<HI", 0, 0), session=sid)
-        pushed = [f for f in taker.frames(0.5) if f[0] in (m.ROLE_DATA, m.ROLE_EVENT)]
+        pushed = [f for f in taker.frames(2.0) if f[0] in (m.ROLE_DATA, m.ROLE_EVENT)]
         assert pushed and struct.unpack_from("<H", pushed[0], 3)[0] == 0      # from seq 0: the new subscription's own
         taker.send(m.CORE_FN, m.OP_END, session=sid)
         taker.frames(0.2)

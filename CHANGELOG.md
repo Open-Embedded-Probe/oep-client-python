@@ -33,11 +33,20 @@
   p4-x035 と esp32-v003 に。断り、結果、時間、plan の規則も。仕様と照らして見つけて直したもの: esp32-v003-64 が max_frame の下限より下で
   Wi-Fi の項目を宣言していた。prefix の外の gateway でアドレスを得ていた。unit_id `any` を受けていた。同じ内容の save を書き直していた。
   コントローラの max_length が 64 byte の frame に収まらなかった。
+- (EN) The virtual bench's capture-group trigger source has the rest of §4.4 where `with_capture_options` declares it:
+  pulse, analog_pulse, pattern, serial (UART: it decodes the logic waves' 8N1 lines; I2C / SPI not declared), the
+  external input trig_in (a TEST HOOK level per role, judged at 1 MHz) and trigger_out (its pulses kept), the group's
+  trig_in / trig_out plan roles, and rearm 1 with holdoff (repeat: a segment a track at every event; streaming: records
+  without cutting). Instants count only after their stage is entered. Client: `Cond.pulse`, `analog_pulse`, `pattern`,
+  `uart`, `external`, `TriggerSource(trigger_out=...)`.
+- (JA) 仮想ベンチの capture-group の出来事の元が、`with_capture_options` の宣言で §4.4 の残りを持つ: pulse、analog_pulse、pattern、serial
+  （UART: ロジックの波形の 8N1 の線を復号する。I2C / SPI は宣言しない）、外部の入力 trig_in（役割ごとの試験用のレベル、1 MHz で判定）と
+  trigger_out（パルスを記録する）、組の plan の役割 trig_in / trig_out、holdoff つきの rearm 1（リピート: 出来事ごとに各トラックの区画、
+  ストリーミング: 区画を切らずに記録）。瞬間の条件は、段に入った後だけを数える。クライアント: `Cond.pulse`、`analog_pulse`、`pattern`、`uart`、
+  `external`、`TriggerSource(trigger_out=...)`。
 - (EN) docs/trace follows oep-spec 02c08c9 for every document: each unit traced to the tests that prove it or excluded
-  with its reason; the parts of capture §4.4 the virtual bench does not model yet (pulse, pattern, analog_pulse, serial,
-  trig_in / trig_out) are excluded as such.
-- (JA) docs/trace をすべての文書で oep-spec 02c08c9 に追従させた。どの単位も、証明する試験か、理由つきの除外を持つ。仮想ベンチがまだ
-  モデルにしていない capture §4.4 の部分（pulse、pattern、analog_pulse、serial、trig_in / trig_out）は、そう書いて除外した。
+  with its reason.
+- (JA) docs/trace をすべての文書で oep-spec 02c08c9 に追従させた。どの単位も、証明する試験か、理由つきの除外を持つ。
 - (EN) The independent conformance checkers follow oep-spec 02c08c9 (they were pinned to a09fa45's text): the reviewed
   document hashes moved after reading the changes. fn 0's required ops are the eight core ops, get with settings, state
   with save, network with a netif (core §11) - the checkers had taken every registry core op as required. The Host request

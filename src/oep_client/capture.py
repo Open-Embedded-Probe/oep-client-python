@@ -1108,6 +1108,9 @@ class GroupStatus:
 GROUP_BIND = _GRP.tlv["bind"]
 COND = _GRP.enum["trigger_cond"]
 COND_SRC = _GRP.enum["cond_src"]
+SERIAL_PROTOCOL, SERIAL_EVENT = _GRP.enum["serial_protocol"], _GRP.enum["serial_event"]
+PIN_ROLE = _GRP.enum["pin_role"]                          # the group's own plan roles: trig_in, trig_out
+NO_ROLE = 0xFF
 
 
 @dataclass(frozen=True)
@@ -1151,6 +1154,43 @@ class Cond:
         """ns after the stage was entered."""
         return Cond(0, 0, COND["timer"], struct.pack("<Q", ns), COND_SRC["track"])
 
+    @staticmethod
+    def pulse(track: "LogicCapture | None", role: int, level: int, cond: int, min_ns: int = 0, max_ns: int = 0) -> "Cond":
+        """A run at `level`: cond 0 longer than min_ns (the instant it gets there), 1 at most max_ns, 2 within min_ns ..
+        max_ns (at its end). `track` None: the group's external input `role` (trig_in)."""
+        return Cond(track.fn if track else 0, role, COND["pulse"], struct.pack("<BBQQ", level, cond, min_ns, max_ns),
+                    COND_SRC["track"] if track else COND_SRC["external"])
+
+    @staticmethod
+    def analog_pulse(track: "AnalogCapture", role: int, value: int, side: int, cond: int, min_ns: int = 0,
+                     max_ns: int = 0, hysteresis: int = 0) -> "Cond":
+        """A run below (side 0) / above (side 1) `value`, timed as pulse()."""
+        return Cond(track.fn, role, COND["analog_pulse"], struct.pack("<IIBBQQ", value, hysteresis, side, cond, min_ns, max_ns))
+
+    @staticmethod
+    def pattern(track: "LogicCapture", levels: dict[int, int], when: int = 0) -> "Cond":
+        """The track's roles at these levels together (role -> 0 / 1; bit k of mask / value is role k)."""
+        n = max(levels) // 8 + 1
+        mask = sum(1 << r for r in levels).to_bytes(n, "little")
+        value = sum(v << r for r, v in levels.items()).to_bytes(n, "little")
+        return Cond(track.fn, 0, COND["pattern"], bytes([n]) + mask + value + bytes([when]))
+
+    @staticmethod
+    def uart(track: "LogicCapture", role: int, baud: int, match: bytes = b"", mask: bytes | None = None,
+             event: int = SERIAL_EVENT["match"], bits: int = 8, parity: int = 0, flags: int = 0) -> "Cond":
+        """serial, UART on RX `role`: the bytes `match` (under `mask`, default all bits), or an event (framing, parity,
+        break)."""
+        mask = mask if mask is not None else b"\xff" * len(match)
+        return Cond(track.fn, role, COND["serial"], struct.pack("<BBBBIBBBB", SERIAL_PROTOCOL["uart"], event, NO_ROLE,
+                                                                NO_ROLE, baud, bits, parity, flags, len(match)) + mask + match)
+
+    @staticmethod
+    def external(kind: str, role: int = PIN_ROLE["trig_in"], **args) -> "Cond":
+        """A condition on the group's external input (trig_in): level(level, when) or edge(edge)."""
+        packed = struct.pack("<BB", args.get("level", 1), args.get("when", 0)) if kind == "level" else \
+            struct.pack("<B", args.get("edge", 0))
+        return Cond(0, role, COND[kind], packed, COND_SRC["external"])
+
 
 @dataclass(frozen=True)
 class Stage:
@@ -1171,6 +1211,7 @@ class TriggerSource:
     holdoff_ns: int = 0
     arm: int = 1
     rearm: int = 0
+    trigger_out: tuple[int, int] | None = None              # (width_ns, polarity) on the group's trig_out role
 
     def tlvs(self) -> bytes:
         """The bind TLVs, every one critical (§4.4)."""
@@ -1183,6 +1224,8 @@ class TriggerSource:
                     for c in conds:
                         out += m.tlv(GROUP_BIND["cond"] | CRITICAL,
                                      struct.pack("<BBBBHBB", k, part, term, c.src, c.fn, c.role, c.kind) + c.args)
+        if self.trigger_out is not None:
+            out += m.tlv(GROUP_BIND["trigger_out"] | CRITICAL, struct.pack("<BIB", PIN_ROLE["trig_out"], *self.trigger_out))
         return out
 
 

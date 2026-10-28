@@ -3489,7 +3489,13 @@
   },
   "capture:4.1:11": {
    "text": "- 組の fn は、trig_in / trig_out（§4.4）を使うときだ",
-   "excluded": "not modelled by the virtual bench yet (trig_in / trig_out, so the group has no plan roles): its §4.4 trigger source has level, edge, cross, above / below and timer only"
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_trig_in_and_trig_out_need_the_groups_plan",
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_the_external_input_is_judged_at_its_own_rate",
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_trigger_out_gives_a_pulse_after_the_event"
+   ],
+   "mutants": [],
+   "note": ""
   },
   "capture:4.1:12": {
    "text": "- startは束ねがあり、全trackがstate 1/4/6のときだけ受け付",
@@ -3553,7 +3559,9 @@
    "verify": [
     "tests/test_virtual_bench_capture_trigger_source.py::test_one_edge_starts_every_track_at_its_nearest_sample",
     "tests/test_virtual_bench_capture_trigger_source.py::test_two_stages_cross_track_and_the_group_event",
-    "tests/test_virtual_bench_capture_trigger_source.py::test_refusals"
+    "tests/test_virtual_bench_capture_trigger_source.py::test_refusals",
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_rearm_1_cuts_a_segment_at_every_event_after_the_holdoff",
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_rearm_1_in_streaming_makes_a_record_a_track_without_cutting"
    ],
    "mutants": [],
    "note": ""
@@ -3572,14 +3580,20 @@
    "verify": [
     "tests/test_virtual_bench_capture_trigger_source.py::test_one_edge_starts_every_track_at_its_nearest_sample",
     "tests/test_virtual_bench_capture_trigger_source.py::test_two_stages_cross_track_and_the_group_event",
-    "tests/test_virtual_bench_capture_trigger_source.py::test_refusals"
+    "tests/test_virtual_bench_capture_trigger_source.py::test_refusals",
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_the_external_input_is_judged_at_its_own_rate"
    ],
    "mutants": [],
    "note": ""
   },
   "capture:4.4:4": {
    "text": "| 0x04 | trigger_out | role(u8: この組の pla",
-   "excluded": "not modelled by the virtual bench yet (trigger_out): its §4.4 trigger source has level, edge, cross, above / below and timer only"
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_trigger_out_gives_a_pulse_after_the_event",
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_trig_in_and_trig_out_need_the_groups_plan"
+   ],
+   "mutants": [],
+   "note": ""
   },
   "capture:4.4:5": {
    "text": "| type | 名前 | 引数 | 元 | 性質 |",
@@ -3590,7 +3604,8 @@
    "verify": [
     "tests/test_virtual_bench_capture_trigger_source.py::test_a_stage_entered_with_its_level_already_true_follows_when[0]",
     "tests/test_virtual_bench_capture_trigger_source.py::test_a_stage_entered_with_its_level_already_true_follows_when[1]",
-    "tests/test_virtual_bench_capture_trigger_source.py::test_two_stages_cross_track_and_the_group_event"
+    "tests/test_virtual_bench_capture_trigger_source.py::test_two_stages_cross_track_and_the_group_event",
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_the_external_input_is_judged_at_its_own_rate"
    ],
    "mutants": [],
    "note": ""
@@ -3625,11 +3640,21 @@
   },
   "capture:4.4:10": {
    "text": "| 5 | pulse | level(u8)、cond(u8: 0 長い、1 ",
-   "excluded": "not modelled by the virtual bench yet (pulse): its §4.4 trigger source has level, edge, cross, above / below and timer only"
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_a_pulse_by_its_width[5-0-2000000-0-52]",
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_a_pulse_by_its_width[0-1-0-150000-6]",
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_a_pulse_by_its_width[2-2-350000-450000-16]"
+   ],
+   "mutants": [],
+   "note": ""
   },
   "capture:4.4:11": {
    "text": "| 6 | pattern | n(u8)、mask(n byte)、value",
-   "excluded": "not modelled by the virtual bench yet (pattern): its §4.4 trigger source has level, edge, cross, above / below and timer only"
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_a_pattern_of_the_tracks_roles"
+   ],
+   "mutants": [],
+   "note": ""
   },
   "capture:4.4:12": {
    "text": "| 7 | above | value(u32)、hysteresis(u32)",
@@ -3652,7 +3677,11 @@
   },
   "capture:4.4:14": {
    "text": "| 9 | analog_pulse | value(u32)、hysteres",
-   "excluded": "not modelled by the virtual bench yet (analog_pulse): its §4.4 trigger source has level, edge, cross, above / below and timer only"
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_an_analog_pulse_below_a_level_for_long_enough"
+   ],
+   "mutants": [],
+   "note": ""
   },
   "capture:4.4:15": {
    "text": "| 10 | timer | ns(u64: 段に入ってから) | — | 瞬間",
@@ -3664,17 +3693,27 @@
   },
   "capture:4.4:16": {
    "text": "| 11 | serial | protocol(u8: 1 uart、2 i2",
-   "excluded": "not modelled by the virtual bench yet (serial): its §4.4 trigger source has level, edge, cross, above / below and timer only"
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_a_uart_match_and_a_protocol_it_does_not_declare"
+   ],
+   "mutants": [],
+   "note": ""
   },
   "capture:4.4:17": {
    "text": "- serial の役割: uart は role = RX。i2c は rol",
-   "excluded": "not modelled by the virtual bench yet (serial): its §4.4 trigger source has level, edge, cross, above / below and timer only"
+   "verify": [
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_a_uart_match_and_a_protocol_it_does_not_declare"
+   ],
+   "mutants": [],
+   "note": ""
   },
   "capture:4.4:18": {
    "text": "- **評価**: 状態の条件は最後の値を保ち、瞬間の条件はその瞬間だけ立つ。*",
    "verify": [
     "tests/test_virtual_bench_capture_trigger_source.py::test_two_stages_cross_track_and_the_group_event",
-    "tests/test_virtual_bench_capture_trigger_source.py::test_refusals"
+    "tests/test_virtual_bench_capture_trigger_source.py::test_refusals",
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_an_abort_term_sends_the_stage_back_to_stage_0",
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_the_external_input_is_judged_at_its_own_rate"
    ],
    "mutants": [],
    "note": ""
@@ -3710,7 +3749,9 @@
    "text": "- **宣言**（capture-group の describe）: 0x41",
    "verify": [
     "tests/test_capture_blocks.py::test_group_trigger_caps",
-    "tests/test_virtual_bench_capture_trigger_source.py::test_refusals"
+    "tests/test_virtual_bench_capture_trigger_source.py::test_refusals",
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_trigger_out_gives_a_pulse_after_the_event",
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_a_uart_match_and_a_protocol_it_does_not_declare"
    ],
    "mutants": [],
    "note": ""
@@ -3726,7 +3767,8 @@
   "capture:4.4:24": {
    "text": "- **start** で全トラックが取得（pretrigger のリングを含む",
    "verify": [
-    "tests/test_virtual_bench_capture_trigger_source.py::test_one_edge_starts_every_track_at_its_nearest_sample"
+    "tests/test_virtual_bench_capture_trigger_source.py::test_one_edge_starts_every_track_at_its_nearest_sample",
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_rearm_1_cuts_a_segment_at_every_event_after_the_holdoff"
    ],
    "mutants": [],
    "note": ""
@@ -3751,7 +3793,8 @@
   "capture:4.4:27": {
    "text": "- **出来事** kind 0x03 triggered: trigger_f",
    "verify": [
-    "tests/test_virtual_bench_capture_trigger_source.py::test_two_stages_cross_track_and_the_group_event"
+    "tests/test_virtual_bench_capture_trigger_source.py::test_two_stages_cross_track_and_the_group_event",
+    "tests/test_virtual_bench_capture_trigger_source_more.py::test_rearm_1_cuts_a_segment_at_every_event_after_the_holdoff"
    ],
    "mutants": [],
    "note": ""
